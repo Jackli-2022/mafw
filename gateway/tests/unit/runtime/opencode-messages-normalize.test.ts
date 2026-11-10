@@ -3,7 +3,7 @@
  * 出口归一为 flat 时，parts 必须转成 content；info.text（runtime 生成的
  * resume/queue 提示）且 parts 为空时必须合成文本 part——否则历史静默丢正文。
  */
-import { createOpencodeAdapter } from '../../../src/runtime/opencode-adapter';
+import { createOpencodeAdapter } from '../../../../adapters/opencode/src/adapter';
 
 const mockMessages = jest.fn();
 jest.mock('@opencode-ai/sdk/v2', () => ({

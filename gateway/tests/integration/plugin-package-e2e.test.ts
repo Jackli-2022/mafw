@@ -554,6 +554,11 @@ console.log(JSON.stringify({ resolved: require.resolve('@mafw/plugin-contract') 
 if (adapter.ADAPTER_PACKAGE_NAME !== '@mafw/adapter-opencode') process.exit(2);
 if (adapter.OPENCODE_RUNTIME_NAME !== 'opencode') process.exit(3);
 if (typeof adapter.loadOpencodeSdkV2 !== 'function') process.exit(4);
+if (typeof adapter.createOpencodeDefinition !== 'function') process.exit(5);
+if (typeof adapter.createOpencodeRuntime !== 'function') process.exit(6);
+if (typeof adapter.createOpencodeAdapter !== 'function') process.exit(7);
+if (typeof adapter.opencodeStaticEntry !== 'function') process.exit(8);
+if (typeof adapter.opencodeCapabilities !== 'function') process.exit(9);
 console.log(JSON.stringify({ resolved: require.resolve('@mafw/adapter-opencode') }));
 `,
     );

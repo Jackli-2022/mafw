@@ -41,12 +41,27 @@ function loadBuiltEntry(entry: string): Record<string, unknown> {
   fs.writeFileSync(
     probe,
     `const adapter = require(process.argv[2]);
+const names = [
+  'createOpencodeDefinition',
+  'createOpencodeRuntime',
+  'createOpencodeAdapter',
+  'opencodeStaticEntry',
+  'opencodeCapabilities',
+  'resolveOpencodeEntry',
+  'thinkingVariantForLevel',
+  'decodeOpencodePtyChunk',
+  'getBridgeEventEntry',
+  'setBridgeEventEntry',
+  'getProviderApiKey',
+  'startServeSidecar',
+];
 console.log(JSON.stringify({
   packageName: adapter.ADAPTER_PACKAGE_NAME,
   runtimeName: adapter.OPENCODE_RUNTIME_NAME,
   variants: adapter.OPENCODE_VARIANTS,
   eventApiVersion: adapter.ADAPTER_EVENT_API_VERSION,
   loader: typeof adapter.loadOpencodeSdkV2,
+  surface: Object.fromEntries(names.map((name) => [name, typeof adapter[name]])),
 }));
 `,
   );
@@ -77,7 +92,7 @@ describe('@mafw/adapter-opencode package skeleton', () => {
     expect(pkg.dependencies?.['cross-spawn']).toBeDefined();
   });
 
-  it('builds dist/index.js with the placeholder exports and CJS typings', () => {
+  it('builds dist/index.js with the driver exports and CJS typings', () => {
     expect(fs.existsSync(DIST_ENTRY)).toBe(true);
     expect(fs.existsSync(DIST_TYPES)).toBe(true);
     expect(readJson(path.join(DIST_DIR, 'package.json')).type).toBe('commonjs');
@@ -88,14 +103,48 @@ describe('@mafw/adapter-opencode package skeleton', () => {
     expect(adapter.variants).toEqual(['adaptive', 'v1', 'v2', 'v21']);
     expect(typeof adapter.eventApiVersion).toBe('number');
     expect(adapter.loader).toBe('function');
+    // Real driver surface (not just package identity placeholders): the built
+    // bundle must expose the runtime/definition assembly the gateway shim loads.
+    expect(adapter.surface).toEqual({
+      createOpencodeDefinition: 'function',
+      createOpencodeRuntime: 'function',
+      createOpencodeAdapter: 'function',
+      opencodeStaticEntry: 'function',
+      opencodeCapabilities: 'function',
+      resolveOpencodeEntry: 'function',
+      thinkingVariantForLevel: 'function',
+      decodeOpencodePtyChunk: 'function',
+      getBridgeEventEntry: 'function',
+      setBridgeEventEntry: 'function',
+      getProviderApiKey: 'function',
+      startServeSidecar: 'function',
+    });
 
-    const types = fs.readFileSync(DIST_TYPES, 'utf8');
+    // Declarations are emitted per module and `index.d.ts` re-exports them, so
+    // scan the emitted declaration set (real tsc output, not a hand-written
+    // list) instead of only the barrel file.
+    const types = fs.readdirSync(DIST_DIR)
+      .filter((name) => name.endsWith('.d.ts'))
+      .map((name) => fs.readFileSync(path.join(DIST_DIR, name), 'utf8'))
+      .join('\n');
     for (const symbol of [
       'ADAPTER_PACKAGE_NAME',
       'OPENCODE_RUNTIME_NAME',
       'OPENCODE_VARIANTS',
       'ADAPTER_EVENT_API_VERSION',
       'loadOpencodeSdkV2',
+      'createOpencodeDefinition',
+      'createOpencodeRuntime',
+      'createOpencodeAdapter',
+      'opencodeStaticEntry',
+      'opencodeCapabilities',
+      'resolveOpencodeEntry',
+      'thinkingVariantForLevel',
+      'decodeOpencodePtyChunk',
+      'getBridgeEventEntry',
+      'setBridgeEventEntry',
+      'getProviderApiKey',
+      'startServeSidecar',
     ]) {
       expect(types).toContain(symbol);
     }

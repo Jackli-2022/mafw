@@ -1,4 +1,4 @@
-import { createOpencodeAdapter } from '../../../src/runtime/opencode-adapter';
+import { createOpencodeAdapter } from '../../../../adapters/opencode/src/adapter';
 
 jest.mock('@opencode-ai/sdk/v2', () => ({
   createOpencodeClient: jest.fn(() => ({})),

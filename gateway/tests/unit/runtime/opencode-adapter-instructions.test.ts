@@ -1,6 +1,6 @@
 jest.mock('@opencode-ai/sdk/v2', () => ({ createOpencodeClient: () => ({}) }));
 
-import { createOpencodeAdapter } from '../../../src/runtime/opencode-adapter';
+import { createOpencodeAdapter } from '../../../../adapters/opencode/src/adapter';
 
 interface FetchCall { url: string; method: string; headers: any; body: any; signal: any }
 

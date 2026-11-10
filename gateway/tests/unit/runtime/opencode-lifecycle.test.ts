@@ -6,11 +6,15 @@ import { RuntimeBus } from '../../../src/runtime/runtime-bus';
 import { createNeutralRuntime } from '../../../src/runtime/neutral-runtime';
 import { RuntimePluginLoader } from '../../../src/runtime/loader';
 import { toRuntimeDefinition, getBridgeEventEntry } from '../../../src/runtime/adapter-bridge';
-import { createOpencodeDefinition } from '../../../src/runtime/opencode-definition';
+import { createOpencodeDefinition } from '../../../../adapters/opencode/src/definition';
 // Identity assertions below compare against the table the gateway definition
 // registers (`opencode-events` shim → the package), so import it from the shim.
 import { OPENCODE_V1_EVENT_MAPPINGS } from '../../../src/runtime/opencode-events';
-import { createOpencodeRuntime } from '../../../src/runtime/opencode-runtime';
+import { createOpencodeRuntime } from '../../../../adapters/opencode/src/runtime';
+// Load the gateway shim once: it registers the adapter's tooling bridge map.
+import '../../../src/runtime/opencode-adapter';
+
+const ctx = { pluginConfig: () => ({}) } as any;
 
 jest.mock('@opencode-ai/sdk/v2', () => ({
   createOpencodeClient: jest.fn(() => ({})),
@@ -60,7 +64,7 @@ describe('opencode definition lifecycle', () => {
         killServe: () => {},
       },
     });
-    const definition = await createOpencodeDefinition({ variant: 'v21', baseUrl: 'http://x' }, { runtime });
+    const definition = await createOpencodeDefinition(ctx, { variant: 'v21', baseUrl: 'http://x' }, { runtime });
     const bus = new RuntimeBus();
     bus.register(definition);
     const neutral = createNeutralRuntime(definition, { bus });
@@ -74,7 +78,7 @@ describe('opencode definition lifecycle', () => {
 
   it('keeps the adapter getBaseUrl when the definition provides one', async () => {
     const runtime = queuedRuntime({ getBaseUrl: () => 'http://serve:4096' });
-    const definition = await createOpencodeDefinition({ variant: 'v21', baseUrl: 'http://x' }, { runtime });
+    const definition = await createOpencodeDefinition(ctx, { variant: 'v21', baseUrl: 'http://x' }, { runtime });
     expect(definition.host?.getBaseUrl?.()).toBe('http://serve:4096');
     expect(definition.host?.activeDialect).toBe('v21');
   });
@@ -82,7 +86,7 @@ describe('opencode definition lifecycle', () => {
   it('defers the adaptive dialect probe until the first event', async () => {
     const runtime = queuedRuntime();
     let probes = 0;
-    const definition = await createOpencodeDefinition(
+    const definition = await createOpencodeDefinition(ctx, 
       { variant: 'adaptive', baseUrl: 'http://x' },
       { runtime, probe: async () => { probes += 1; return 'v21'; } },
     );
@@ -106,7 +110,7 @@ describe('opencode definition lifecycle', () => {
   });
 
   it('registers the translate entry under the loader key for dry-event', async () => {
-    const definition = await createOpencodeDefinition(
+    const definition = await createOpencodeDefinition(ctx, 
       { variant: 'v1', baseUrl: 'http://x', registrationName: 'opencode@v1' },
       { runtime: queuedRuntime() },
     );
@@ -168,7 +172,7 @@ describe('opencode definition lifecycle', () => {
 
   it('exposes the resolved dialect on the neutral runtime', async () => {
     const runtime = queuedRuntime();
-    const definition = await createOpencodeDefinition(
+    const definition = await createOpencodeDefinition(ctx, 
       { variant: 'adaptive', baseUrl: 'http://x' },
       { runtime, probe: async () => 'v21' },
     );
@@ -184,7 +188,7 @@ describe('opencode definition lifecycle', () => {
   it('carries agentProcess from the real opencode runtime and passes validation', async () => {
     const real = await createOpencodeRuntime({ baseUrl: 'http://127.0.0.1:1' });
     try {
-      const definition = await createOpencodeDefinition(
+      const definition = await createOpencodeDefinition(ctx, 
         { variant: 'v21', baseUrl: 'http://127.0.0.1:1' },
         { runtime: real },
       );

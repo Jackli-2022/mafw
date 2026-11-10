@@ -647,6 +647,19 @@ export interface AgentRuntime extends RuntimeClient {
    */
   healthCheck?(): Promise<boolean>;
   /**
+   * Serve proxy headers (Basic auth) — adapter-owned; the gateway proxy reads
+   * them only through this seam after the driver moved out of the gateway.
+   */
+  proxyHeaders?(): Record<string, string>;
+  /**
+   * Provider transport for pre-activation judge/scan paths (adapter-local
+   * provider config → native provider list). Missing = gateway fallback chain.
+   */
+  resolveProviderTransport?(
+    providerID: string,
+  ): { baseUrl?: string | null; apiKey?: string | null }
+    | Promise<{ baseUrl?: string | null; apiKey?: string | null }>;
+  /**
    * Agent 进程重启原语（只有 runtime 自己知道如何重启自己的进程）。
    * 不负责事件流重订——由 gateway recoverServe 编排。
    */

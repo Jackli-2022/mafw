@@ -3,7 +3,7 @@
 import {
   annotateAgentRoles,
   defaultAgentNameFromConfig,
-} from '../../../src/runtime/opencode-adapter';
+} from '../../../../adapters/opencode/src/adapter';
 
 describe('opencode agent role annotation', () => {
   it('defaultAgentNameFromConfig: 多文档配置取最后声明的 default_agent', () => {

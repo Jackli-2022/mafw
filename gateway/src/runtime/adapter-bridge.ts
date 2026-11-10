@@ -137,14 +137,33 @@ export function canonicalToAdapterEvent(
 
 const bridgeEntries = new Map<string, EventMappingEntry>();
 
+/**
+ * Optional external registry (the extracted opencode package keeps its own
+ * tooling map). The gateway shim registers it at load time so dry-event /
+ * validation still see the live dialect entry after the driver moved out.
+ */
+export interface BridgeEventEntryProvider {
+  get(name: string): EventMappingEntry | undefined;
+  set(name: string, entry: EventMappingEntry): void;
+}
+
+let bridgeEntryProvider: BridgeEventEntryProvider | undefined;
+
+export function setBridgeEventEntryProvider(provider?: BridgeEventEntryProvider): void {
+  bridgeEntryProvider = provider;
+}
+
 /** Event-translation declaration registered by a bridged definition (dry-event/audit tooling). */
 export function getBridgeEventEntry(name: string): EventMappingEntry | undefined {
-  return bridgeEntries.get(name);
+  return bridgeEntries.get(name) ?? bridgeEntryProvider?.get(name);
 }
 
 /** Update the tooling entry after a deferred dialect probe resolves. */
 export function setBridgeEventEntry(name: string, entry: EventMappingEntry): void {
   bridgeEntries.set(name, entry);
+  try {
+    bridgeEntryProvider?.set(name, entry);
+  } catch { /* tooling registry must not block activation */ }
 }
 
 export interface AdapterBridgeMeta {
@@ -509,6 +528,10 @@ export function toRuntimeDefinition(
       ...(typeof legacy.healthCheck === 'function' ? { healthCheck: legacy.healthCheck.bind(legacy) } : {}),
       ...(typeof legacy.getBaseUrl === 'function' ? { getBaseUrl: legacy.getBaseUrl.bind(legacy) } : {}),
       ...(legacy.agentProcess ? { agentProcess: legacy.agentProcess } : {}),
+      ...(typeof legacy.proxyHeaders === 'function' ? { proxyHeaders: legacy.proxyHeaders.bind(legacy) } : {}),
+      ...(typeof legacy.resolveProviderTransport === 'function'
+        ? { resolveProviderTransport: legacy.resolveProviderTransport.bind(legacy) }
+        : {}),
       ...(legacy.activeDialect ? { activeDialect: legacy.activeDialect } : {}),
     },
     ...(Object.keys(channelsV2).length > 0 ? { channelsV2, channelApi: 2 as const } : {}),

@@ -42,6 +42,8 @@ export type RuntimeHost = Pick<
   | 'getBaseUrl'
   | 'healthCheck'
   | 'agentProcess'
+  | 'proxyHeaders'
+  | 'resolveProviderTransport'
 >;
 
 export interface RuntimeFacadeOptions {

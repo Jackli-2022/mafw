@@ -9,7 +9,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { serializeAgentToFrontmatter, installAgentFile } from '../../../src/runtime/opencode-runtime';
+import { serializeAgentToFrontmatter, installAgentFile } from '../../../../adapters/opencode/src/runtime';
 import { getManagerAgentDefinition } from '../../../src/skills/manager-agent-config';
 import { AgentDefinition } from '../../../src/runtime/agent-definition';
 import { fullCapabilities, minimalCapabilities, RuntimeCapabilities } from '../../../src/runtime/contract';

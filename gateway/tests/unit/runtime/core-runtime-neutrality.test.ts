@@ -328,8 +328,8 @@ describe('contract surfaces and composition-root wiring', () => {
   });
 
   it('only pi declares the media.session carrier (opencode keeps stateless completion)', () => {
-    expect(codeOf('src/runtime/opencode-adapter.ts')).not.toContain('mediaSession');
-    expect(codeOf('src/runtime/opencode-runtime.ts')).not.toContain('mediaSession');
+    expect(codeOf('../adapters/opencode/src/adapter.ts')).not.toContain('mediaSession');
+    expect(codeOf('../adapters/opencode/src/runtime.ts')).not.toContain('mediaSession');
     expect(codeOf('../adapters/pi/src/runtime.ts')).toContain('mediaSession');
   });
 
@@ -359,7 +359,8 @@ describe('comment stripping keeps every scanned file whole', () => {
     'src/core/approval/policy-service.ts',
     'src/core/manager/manager-session-runtime.ts',
     'src/runtime/opencode-adapter.ts',
-    'src/runtime/opencode-runtime.ts',
+    '../adapters/opencode/src/adapter.ts',
+    '../adapters/opencode/src/runtime.ts',
     '../adapters/pi/src/runtime.ts',
   ];
 

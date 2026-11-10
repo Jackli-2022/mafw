@@ -1,16 +1,16 @@
 /**
  * `@mafw/adapter-opencode` — the opencode runtime driver.
  *
- * Package identity plus the pure driver modules extracted from the gateway
- * (Plan 6 Task 5): canonical message shaping, dialect event tables, history
- * translation, snapshot/channel lookup, MCP runtime + JSONC config, credential
- * and provider-settings readers, and the serve sidecar.
+ * Package identity plus the full driver surface (Plan 6 Task 6): the legacy
+ * adapter client, the serve lifecycle runtime, the neutral definition assembly
+ * and the dialect event tables.
  *
- * The stateful assembler (`opencode-adapter.ts` / `opencode-runtime.ts` /
- * `opencode-definition.ts`) stays in the gateway until Task 6; the gateway
- * keeps one-release re-export shims at the old module paths.
+ * Adapter source may import `@mafw/runtime-contract`, `@mafw/runtime-core`,
+ * `@opencode-ai/sdk`, `jsonc-parser`, `cross-spawn`, Node builtins and local
+ * modules only — never the gateway.
  */
 import { ADAPTER_EVENT_VERSION } from '@mafw/runtime-contract';
+import type { OpencodeVariant } from './definition';
 
 export * from './types';
 export * from './canonical';
@@ -26,6 +26,10 @@ export * from './form-question';
 export * from './provider-settings';
 export * from './auth';
 export * from './serve-sidecar';
+export * from './adapter';
+export * from './runtime';
+export * from './legacy-definition';
+export * from './definition';
 
 /** Package identity used by the gateway shim and the stage manifests. */
 export const ADAPTER_PACKAGE_NAME = '@mafw/adapter-opencode';
@@ -34,9 +38,6 @@ export const ADAPTER_PACKAGE_NAME = '@mafw/adapter-opencode';
 export const OPENCODE_RUNTIME_NAME = 'opencode';
 
 /** Dialect variants the driver can pin or probe for. */
-export type OpencodeVariant = 'adaptive' | 'v1' | 'v2' | 'v21';
-
-/** Every dialect variant, in probe preference order. */
 export const OPENCODE_VARIANTS: readonly OpencodeVariant[] = ['adaptive', 'v1', 'v2', 'v21'];
 
 /** `AdapterEvent` schema version this build expects from the host. */

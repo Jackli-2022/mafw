@@ -1,4 +1,4 @@
-jest.mock('../../../src/runtime/opencode-adapter', () => ({
+jest.mock('../../../../adapters/opencode/src/adapter', () => ({
   createOpencodeAdapter: jest.fn(async () => ({
     __clientMarker: true,
     session: {
@@ -29,26 +29,21 @@ jest.mock('../../../src/runtime/opencode-adapter', () => ({
     },
   })),
 }));
-jest.mock('../../../src/core/utils/logger', () => ({
-  log: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
-}));
-jest.mock('../../../src/runtime/serve-sidecar', () => ({
+jest.mock('../../../../adapters/opencode/src/serve-sidecar', () => ({
   startServeSidecar: jest.fn(),
   killServePort: jest.fn(),
   resolveServePassword: () => 'test-serve-password',
   serveAuthHeaders: () => ({ Authorization: 'Basic dGVzdA==' }),
+  resolveOpencodeBin: () => 'opencode',
 }));
-jest.mock('../../../src/config', () => ({
-  config: { server: { serveUrl: 'http://127.0.0.1:4096', servePort: 4096 } },
-}));
-jest.mock('../../../src/runtime/auth', () => ({
+jest.mock('../../../../adapters/opencode/src/auth', () => ({
   getProviderApiKey: () => null,
   readOpencodeAuth: () => ({}),
   DEFAULT_AUTH_PATH: () => '/tmp/fake-auth.json',
 }));
 
-import { createOpencodeRuntime } from '../../../src/runtime/opencode-runtime';
-import { startServeSidecar, killServePort } from '../../../src/runtime/serve-sidecar';
+import { createOpencodeRuntime } from '../../../../adapters/opencode/src/runtime';
+import { startServeSidecar, killServePort } from '../../../../adapters/opencode/src/serve-sidecar';
 
 const mockStartServe = startServeSidecar as jest.Mock;
 const mockKillServePort = killServePort as jest.Mock;
@@ -86,6 +81,22 @@ describe('opencode-runtime 2.1.0 修复接线', () => {
     await (rt as any).agentProcess.spawnServe({ rootDir: '/home/u/.mafw/runtime-root' } as any);
     const call = mockStartServe.mock.calls.at(-1)?.[0] ?? {};
     expect(call.cwd).toBe('/home/u/.mafw/runtime-root');
+  });
+
+  it('spawnServe host/port/root come from the factory context', async () => {
+    delete process.env.MAFW_SERVER_SERVE_URL;
+    mockStartServe.mockResolvedValueOnce({ url: 'http://127.0.0.1:5123', close: () => {}, password: 'x' });
+    const rt = await createOpencodeRuntime(
+      { baseUrl: 'http://127.0.0.1:4096' },
+      { pluginConfig: () => ({}), serve: { host: '0.0.0.0', port: 5123 }, rootDir: '/ctx/runtime-root' },
+    );
+    await (rt as any).agentProcess.spawnServe({});
+    const call = mockStartServe.mock.calls.at(-1)?.[0] ?? {};
+    expect(call.host).toBe('0.0.0.0');
+    expect(call.port).toBe(5123);
+    expect(call.cwd).toBe('/ctx/runtime-root');
+    rt.agentProcess!.killServe!();
+    expect(mockKillServePort).toHaveBeenCalledWith(5123);
   });
 
   it('healthCheck 打 /api/session?limit=1 且带 Basic auth（2.1.0：真 API 面 + 认证）', async () => {
@@ -190,7 +201,7 @@ describe('createOpencodeRuntime', () => {
 
   it('complete resolves endpoint from opencode provider config baseURL', async () => {
     delete process.env.MAFW_SERVER_SERVE_URL;
-    const { createOpencodeAdapter } = require('../../../src/runtime/opencode-adapter') as any;
+    const { createOpencodeAdapter } = require('../../../../adapters/opencode/src/adapter') as any;
     const rt = await createOpencodeRuntime({ baseUrl: 'http://127.0.0.1:4096' });
     const lastResult = (createOpencodeAdapter as jest.Mock).mock.results[(createOpencodeAdapter as jest.Mock).mock.results.length - 1];
     const adapter = await lastResult.value;

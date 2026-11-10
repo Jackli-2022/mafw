@@ -137,7 +137,7 @@ import { setRouteWriteDeps, getRouteWriteDeps, routeAndWrite, getRouteStats } fr
 import { obsSalience } from "./recall/obs-salience";
 import { buildSchemaClusters, Cluster } from "./memory/schema-clusters";
 import { getReconsolidationQueue } from "./recall/reconsolidation";
-import { getProviderApiKey } from "./runtime/auth";
+import { getProviderApiKey } from "./runtime/opencode-adapter";
 import { readProviderApiKey, readProviderBaseUrlWithPath, readProviderTransportFromList } from "./runtime/provider-settings";
 import { HarmonicUnitFileStore } from "./memory/harmonic-file-store";
 import { L5Store } from "./core/memory/l5-store";
@@ -262,7 +262,7 @@ import { createPluginCredentials } from './runtime/plugin-credentials';
 import { createNeutralRuntime } from './runtime/neutral-runtime';
 import { getBridgeEventEntry } from './runtime/adapter-bridge';
 import type { RuntimeDefinition } from '@mafw/runtime-contract';
-import { createOpencodeDefinition, opencodeCapabilities, opencodeStaticEntry, type OpencodeVariant } from './runtime/opencode-definition';
+import { createOpencodeDefinition, opencodeCapabilities, opencodeStaticEntry, type OpencodeVariant } from './runtime/opencode-adapter';
 
 import { injectServeAuth } from './runtime/proxy-auth';
 import { serveAuthHeaders } from './runtime/serve-sidecar';
@@ -930,13 +930,14 @@ class MafwScheduler {
       v2: 'opencode@v2',
       v21: 'opencode@v21',
     };
-    const opencodeDefinition = (variant: OpencodeVariant) => () => {
+    const opencodeDefinition = (variant: OpencodeVariant) => (ctx: any) => {
       const name = registrationName[variant];
-      return createOpencodeDefinition({
+      return createOpencodeDefinition(ctx, {
         variant,
         registrationName: name,
         baseUrl: sdkSnapshot.baseUrl,
         headers: { ...sdkSnapshot.headers },
+        scanEndpoints: (config.recall as any).scanEndpoints || undefined,
         hooks: {
           onUnmatched: (type) => this.recordTranslationDrop(name, type, 'unmatched'),
           onSuppressed: (type) => this.recordTranslationDrop(name, type, 'suppressed'),
@@ -2023,6 +2024,7 @@ class MafwScheduler {
       projectDir: this.resolvedProjectDir(),
       rootDir: this.ensureRuntimeRootDir(),
       gatewayPort: config.server.apiPort,
+      serve: { host: config.server.serveHost, port: config.server.servePort },
       policy: this.runtimePolicyHooks(),
     });
 
@@ -3220,6 +3222,12 @@ class MafwScheduler {
           // come from the opencode provider config (inline-defined providers
           // like "gateway" keep their credentials in opencode.jsonc options).
           resolveEndpoint: async (providerID) => {
+            // The active driver owns provider config; ask it first when it can
+            // resolve a transport (pre-activation: runtimeHost may be absent).
+            try {
+              const transport = await this.runtimeHost?.resolveProviderTransport?.(providerID);
+              if (transport?.baseUrl) return transport.baseUrl;
+            } catch { /* fail-open to the gateway chain */ }
             try {
               const cfg: any = await this.runtimeHost?.config.get();
               const u = readProviderBaseUrlWithPath(cfg, providerID);
@@ -3232,6 +3240,10 @@ class MafwScheduler {
             return null;
           },
           resolveApiKey: async (providerID) => {
+            try {
+              const transport = await this.runtimeHost?.resolveProviderTransport?.(providerID);
+              if (transport?.apiKey) return transport.apiKey;
+            } catch { /* fail-open to the gateway chain */ }
             try {
               const viaCreds = this.runtimeHost?.credentials?.getApiKey(providerID);
               if (viaCreds) return viaCreds;
@@ -8613,7 +8625,10 @@ class MafwScheduler {
           const proxyReq = http.request(proxyUrl, {
             method: req.method,
             // 2.1.0：serve 强制 Basic——剔除入站 Authorization 后注入 serve 凭证
-            headers: { ...injectServeAuth(req.headers, serveAuthHeaders()), host: proxyUrl.host },
+            headers: {
+              ...injectServeAuth(req.headers, this.runtimeHost?.proxyHeaders?.() ?? serveAuthHeaders()),
+              host: proxyUrl.host,
+            },
           }, (proxyRes) => {
             res.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
             proxyRes.pipe(res);

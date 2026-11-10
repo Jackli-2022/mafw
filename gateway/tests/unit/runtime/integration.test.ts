@@ -12,7 +12,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { RuntimePluginLoader, createRuntimePluginContext } from '../../../src/runtime/loader';
 import { AgentRuntime, RuntimeCapabilities, fullCapabilities, minimalCapabilities } from '../../../src/runtime/contract';
-import { createOpencodeRuntime } from '../../../src/runtime/opencode-runtime';
+import { createOpencodeRuntime } from '../../../../adapters/opencode/src/runtime';
 
 jest.mock('../../../src/core/utils/logger', () => ({
   log: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
@@ -22,7 +22,7 @@ jest.mock('../../../src/config', () => ({
   config: { raw: { runtime: { pluginConfig: {} } } },
 }));
 
-jest.mock('../../../src/runtime/opencode-adapter', () => ({
+jest.mock('../../../../adapters/opencode/src/adapter', () => ({
   createOpencodeAdapter: jest.fn(async () => ({
     session: {
       create: jest.fn(),

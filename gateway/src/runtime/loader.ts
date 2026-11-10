@@ -44,6 +44,8 @@ export interface RuntimePluginContext {
   rootDir?: string;
   /** gateway API 端口（pi getBaseUrl 此前直读 config.server.apiPort） */
   gatewayPort?: number;
+  /** Serve listener the host requests (adapter defaults 127.0.0.1:4096). */
+  serve?: { host?: string; port?: number };
   /** 事件构造与校验助手（L3 构造期防线）。 */
   events: {
     /** 构造形状 A 信封；未知 type 打 warn（构造点第一秒可见）但不阻断（fail-open）。 */
@@ -469,7 +471,13 @@ export class RuntimePluginLoader {
 
 export function createRuntimePluginContext(
   credentials?: RuntimeCredentials,
-  extra?: { projectDir?: string; gatewayPort?: number; rootDir?: string; policy?: import('@mafw/runtime-contract').RuntimePolicyHooks },
+  extra?: {
+    projectDir?: string;
+    gatewayPort?: number;
+    rootDir?: string;
+    serve?: { host?: string; port?: number };
+    policy?: import('@mafw/runtime-contract').RuntimePolicyHooks;
+  },
 ): RuntimePluginContext {
   return {
     fetch: (url: string, opts?: any) =>
@@ -481,6 +489,7 @@ export function createRuntimePluginContext(
     projectDir: extra?.projectDir,
     rootDir: extra?.rootDir,
     gatewayPort: extra?.gatewayPort,
+    serve: extra?.serve,
     events: {
       make: (type: string, props?: Record<string, any>, sessionID?: string) => {
         if (!isKnownEventType(type)) {

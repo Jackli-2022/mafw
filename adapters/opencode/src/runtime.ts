@@ -14,24 +14,28 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { AgentRuntime, SessionInfo, fullCapabilities, CompletionRequest, CompletionResult } from './contract';
-import { MAFW_TERMINAL_PROTOCOL } from './pty';
-import { AgentDefinition } from './agent-definition';
+import type {
+  CompletionRequest,
+  CompletionResult,
+  OpencodeRuntime,
+  RuntimeCredentials,
+  SessionInfo,
+} from './types';
+import { MAFW_TERMINAL_PROTOCOL, fullCapabilities } from './types';
+import type { RuntimeAgentDefinition as AgentDefinition, RuntimeFactoryContext } from '@mafw/runtime-contract';
+import { httpComplete } from '@mafw/runtime-core';
+import { ensureRuntimeRoot, resolveRuntimeRoot } from '@mafw/runtime-core';
 import { startServeSidecar, killServePort, resolveServePassword, serveAuthHeaders, resolveOpencodeBin } from './serve-sidecar';
-import { ensureRuntimeRoot, resolveRuntimeRoot } from './runtime-root';
-import { createOpencodeAdapter } from './opencode-adapter';
+import { createOpencodeAdapter } from './adapter';
 import { readProviderApiKey, readProviderBaseUrlWithPath, readProviderTransportFromList } from './provider-settings';
-import { createOpencodeMcpChannel, resolveMcpListCommand } from './opencode-mcp';
-import { createOpencodeMcpConfigChannel } from './opencode-mcp-config';
+import { createOpencodeMcpChannel, resolveMcpListCommand } from './mcp';
+import { createOpencodeMcpConfigChannel } from './mcp-config';
 import { execFile } from 'child_process';
-import { config as gatewayConfig } from '../config';
 import { getProviderApiKey } from './auth';
-import { httpComplete } from './completion-http';
-import { probeOpencodeDialect } from './opencode-dialect-probe';
-import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS, OPENCODE_V2_EVENT_MAPPINGS, OPENCODE_TRANSFORM_EVENT } from './opencode-events';
-import { OPENCODE_21_EVENT_SOURCE, OPENCODE_21_EVENT_MAPPINGS, translateOpencode21Event } from './opencode-21-events';
-import type { EventMappingEntry } from './event-mapper';
-import { log } from '../core/utils/logger';
+import { probeOpencodeDialect } from './dialect-probe';
+import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS, OPENCODE_V2_EVENT_MAPPINGS, OPENCODE_TRANSFORM_EVENT } from './events';
+import { OPENCODE_21_EVENT_SOURCE, OPENCODE_21_EVENT_MAPPINGS, translateOpencode21Event } from './events-21';
+import type { EventMappingEntry } from '@mafw/runtime-core';
 
 // Re-export auth utilities for consumers (single implementation source)
 export { DEFAULT_AUTH_PATH, readOpencodeAuth, getProviderApiKey } from './auth';
@@ -39,15 +43,28 @@ export type { ProviderCredential } from './auth';
 
 // ─── SQLite 直读层（opencode.db） ────────────────────────────────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const { DatabaseSync } = require('node:sqlite') as {
-  DatabaseSync: new (path: string, opts?: { readOnly?: boolean }) => {
-    prepare(sql: string): {
-      all(...params: unknown[]): Record<string, unknown>[];
-    };
-    close(): void;
+interface DbHandle {
+  prepare(sql: string): {
+    all(...params: unknown[]): Record<string, unknown>[];
   };
-};
+  close(): void;
+}
+
+type DatabaseSyncCtor = new (path: string, opts?: { readOnly?: boolean }) => DbHandle;
+
+/**
+ * Loaded lazily: `node:sqlite` is experimental and prints a process warning at
+ * require time. The driver must stay loadable (definition assembly, gateway
+ * boot, package probes) without touching SQLite.
+ */
+function loadDatabaseSync(): DatabaseSyncCtor | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    return (require('node:sqlite') as { DatabaseSync: DatabaseSyncCtor }).DatabaseSync;
+  } catch {
+    return null;
+  }
+}
 
 interface DbSessionRow {
   id: string;
@@ -138,7 +155,9 @@ function listSessionsFromDb(directory: string, limit = 200): SessionInfo[] {
   const dbPath = opencodeDbPath();
   if (!fs.existsSync(dbPath)) return [];
 
-  let db: InstanceType<typeof DatabaseSync>;
+  const DatabaseSync = loadDatabaseSync();
+  if (!DatabaseSync) return [];
+  let db: DbHandle;
   try {
     db = new DatabaseSync(dbPath, { readOnly: true });
   } catch {
@@ -265,16 +284,31 @@ export interface OpencodeRuntimeConfig {
    *  在（重）接线事件流时经 SSE peek 探测选 @v1/@v2 表（fail-safe 恒 @v1）。
    *  钉死方言（opencode@v1/@v2）不置——其映射表由注册 extras 直接携带。 */
   dialectProbe?: boolean;
+  /** Host override for external mode (default: `MAFW_SERVER_SERVE_URL`). */
+  external?: boolean;
+  /** Host-supplied provider endpoint overrides for the completion fallback. */
+  scanEndpoints?: Record<string, string>;
 }
 
-export async function createOpencodeRuntime(config: OpencodeRuntimeConfig): Promise<AgentRuntime> {
-  const client = await createOpencodeAdapter(config);  const isExternal = !!process.env.MAFW_SERVER_SERVE_URL;
+const NOOP_LOG = { info: (_message: string) => {}, warn: (_message: string) => {} };
+
+function defaultContext(): RuntimeFactoryContext {
+  return { pluginConfig: () => ({}) };
+}
+
+export async function createOpencodeRuntime(
+  config: OpencodeRuntimeConfig,
+  ctx: RuntimeFactoryContext = defaultContext(),
+): Promise<OpencodeRuntime> {
+  const client = await createOpencodeAdapter(config);
+  const isExternal = config.external ?? !!process.env.MAFW_SERVER_SERVE_URL;
+  const log = ctx.log ?? NOOP_LOG;
   const caps = fullCapabilities();
   if (isExternal) {
     // External runtimes only probe; they don't manage the serve process.
     caps.agentProcessApi = false;
   }
-  const rt: AgentRuntime = Object.assign(client, {
+  const rt: OpencodeRuntime = Object.assign(client, {
     name: 'opencode' as const,
     semantics: {
       'prompt.delivery.steer': { boundary: 'after-turn' },
@@ -291,10 +325,8 @@ export async function createOpencodeRuntime(config: OpencodeRuntimeConfig): Prom
            *  返回完整 entry（含 transformEvent——终审 Critical #1：遗漏会使
            *  wrapDialectEventStream 的整体替换丢掉转换器，message.updated 全灭）。 */
           async resolveEventEntry(): Promise<EventMappingEntry> {
-            const dialect = await probeOpencodeDialect(
-              (rt as unknown as { getBaseUrl(): string }).getBaseUrl(),
-            );
-            (rt as AgentRuntime & { activeDialect?: string }).activeDialect = dialect;
+            const dialect = await probeOpencodeDialect(rt.getBaseUrl());
+            rt.activeDialect = dialect;
             // 2.1.0：顶层 type/data 信封 + session.* 富事件流 → @2.1 合成表
             if (dialect === 'v21') {
               return {
@@ -313,8 +345,37 @@ export async function createOpencodeRuntime(config: OpencodeRuntimeConfig): Prom
       : {}),
     credentials: {
       getApiKey(provider: string): string | null {
+        const viaHost = ctx.credentials?.getApiKey(provider);
+        if (viaHost) return viaHost;
         return getProviderApiKey(provider) ?? null;
       },
+    },
+    /** Serve proxy credentials stay adapter-owned (gateway never reads auth env). */
+    proxyHeaders(): Record<string, string> {
+      return { ...serveAuthHeaders(), ...(config.headers ?? {}) };
+    },
+    /**
+     * Provider transport for the pre-activation judge/scan paths: adapter-local
+     * provider config first, then the native provider list, then credentials.
+     */
+    async resolveProviderTransport(providerID: string) {
+      let baseUrl: string | null = null;
+      let apiKey: string | null = null;
+      try {
+        const cfg: any = await client.config.get();
+        baseUrl = readProviderBaseUrlWithPath(cfg, providerID) ?? null;
+        apiKey = readProviderApiKey(cfg, providerID) ?? null;
+      } catch { /* fail-open to the next resolution step */ }
+      if (!baseUrl || !apiKey) {
+        try {
+          const list: any = await rt.provider?.list?.();
+          const transport = readProviderTransportFromList(list, providerID);
+          baseUrl = baseUrl ?? transport.baseUrl ?? null;
+          apiKey = apiKey ?? transport.apiKey ?? null;
+        } catch { /* fail-open */ }
+      }
+      if (!apiKey) apiKey = rt.credentials?.getApiKey(providerID) ?? null;
+      return { baseUrl, apiKey };
     },
     getBaseUrl(): string {
       // 地址归 runtime 所有：bootstrap 取配置，spawnServe 吸收 sidecar 实际
@@ -356,7 +417,7 @@ export async function createOpencodeRuntime(config: OpencodeRuntimeConfig): Prom
   rt.completion = {
     async complete(req: CompletionRequest): Promise<CompletionResult> {
       return httpComplete(req, {
-        scanEndpoints: (gatewayConfig as any).recall?.scanEndpoints || undefined,
+        scanEndpoints: config.scanEndpoints,
         resolveEndpoint: async (providerID) => {
           try {
             const cfg: any = await client.config.get();
@@ -371,7 +432,7 @@ export async function createOpencodeRuntime(config: OpencodeRuntimeConfig): Prom
         },
         resolveApiKey: async (providerID) => {
           try {
-            const viaAuth = getProviderApiKey(providerID);
+            const viaAuth = getProviderApiKey(providerID, undefined, ctx.credentials);
             if (viaAuth) return viaAuth;
             const cfg: any = await client.config.get();
             const key = readProviderApiKey(cfg, providerID);
@@ -501,13 +562,15 @@ export async function createOpencodeRuntime(config: OpencodeRuntimeConfig): Prom
   });
 
   if (!rt.external) {
+    const serveHost = ctx.serve?.host ?? '127.0.0.1';
+    const servePort = ctx.serve?.port ?? 4096;
     rt.agentProcess = {
       spawnServe: async (opts) => {
         // host/port 缺省由 runtime 自定（serve 端口是实现细节，gateway 不传）
         const sidecar = await startServeSidecar({
-          host: opts.host ?? gatewayConfig.server.serveHost ?? '127.0.0.1',
-          port: opts.port ?? gatewayConfig.server.servePort,
-          cwd: opts.rootDir ?? ensureRuntimeRoot(resolveRuntimeRoot()),
+          host: opts.host ?? serveHost,
+          port: opts.port ?? servePort,
+          cwd: opts.rootDir ?? ctx.rootDir ?? ensureRuntimeRoot(resolveRuntimeRoot()),
           timeoutMs: opts.timeoutMs,
           onOutput: opts.onOutput,
           onExit: opts.onExit,
@@ -521,10 +584,10 @@ export async function createOpencodeRuntime(config: OpencodeRuntimeConfig): Prom
         config.baseUrl = sidecar.url;
         return sidecar;
       },
-      killServe: () => killServePort(gatewayConfig.server.servePort),
+      killServe: () => killServePort(servePort),
       async restart(): Promise<void> {
         log.info('[Runtime] agentProcess.restart() — killing serve (gateway orchestrates respawn)');
-        killServePort(gatewayConfig.server.servePort);
+        killServePort(servePort);
       },
     };
   }

@@ -9,8 +9,8 @@ import { join } from 'path';
 const read = (rel: string) => readFileSync(join(__dirname, rel), 'utf8').replace(/\r\n/g, '\n');
 
 describe('dead directory channel removed', () => {
-  const adapter = read('../../../src/runtime/opencode-adapter.ts');
-  const runtime = read('../../../src/runtime/opencode-runtime.ts');
+  const adapter = read('../../../../adapters/opencode/src/adapter.ts');
+  const runtime = read('../../../../adapters/opencode/src/runtime.ts');
   const index = read('../../../src/index.ts');
 
   test('adapter config no longer declares directory', () => {

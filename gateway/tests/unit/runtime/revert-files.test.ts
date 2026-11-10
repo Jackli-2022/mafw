@@ -2,7 +2,7 @@
  * T2-1 Task 2: checkpointApi 能力位 + revert files 参数 + commit 失败清 stage。
  * 活体已证：serve 2.1 stage body 接受 files:boolean|null（计划头部验证点①）。
  */
-import { createOpencodeAdapter } from '../../../src/runtime/opencode-adapter';
+import { createOpencodeAdapter } from '../../../../adapters/opencode/src/adapter';
 import { fullCapabilities, minimalCapabilities, type RuntimeClient } from '../../../src/runtime/contract';
 
 jest.mock('@opencode-ai/sdk/v2', () => ({

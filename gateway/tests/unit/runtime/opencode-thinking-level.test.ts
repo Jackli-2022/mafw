@@ -1,6 +1,6 @@
 // 推理档位的 runtime 内部映射：opencode 用 model variant 表达推理强度，
 // 适配器把契约 ThinkingLevel 映射到当前模型声明的 variants；gateway/前端不接触 variant 目录。
-import { thinkingVariantForLevel } from '../../../src/runtime/opencode-adapter';
+import { thinkingVariantForLevel } from '../../../../adapters/opencode/src/adapter';
 
 describe('opencode thinking level → model variant', () => {
   const gatewayVariants = [

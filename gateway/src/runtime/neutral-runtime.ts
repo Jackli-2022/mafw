@@ -25,6 +25,11 @@ export interface NeutralRuntimeHost {
   getBaseUrl?(): string;
   healthCheck?(): Promise<boolean>;
   agentProcess?: AgentRuntime['agentProcess'];
+  proxyHeaders?(): Record<string, string>;
+  resolveProviderTransport?(
+    providerID: string,
+  ): { baseUrl?: string | null; apiKey?: string | null }
+    | Promise<{ baseUrl?: string | null; apiKey?: string | null }>;
   resolveEventEntry?(): Promise<any>;
   activeDialect?: string;
   dispose?(): Promise<void> | void;
@@ -347,6 +352,8 @@ export function createNeutralRuntime(
   if (host.getBaseUrl) runtime.getBaseUrl = host.getBaseUrl;
   if (host.healthCheck) runtime.healthCheck = host.healthCheck;
   if (host.agentProcess) runtime.agentProcess = host.agentProcess;
+  if (host.proxyHeaders) runtime.proxyHeaders = host.proxyHeaders;
+  if (host.resolveProviderTransport) runtime.resolveProviderTransport = host.resolveProviderTransport;
   Object.defineProperty(runtime, 'activeDialect', {
     enumerable: true,
     // Read through to the definition: the adapter may resolve the dialect

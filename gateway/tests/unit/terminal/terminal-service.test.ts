@@ -7,7 +7,7 @@
  *  - ticket：随机、短 TTL、绑定 ptyId + directory、单次使用。
  */
 import type { RuntimePtyChannel, RuntimePtyInbound } from '../../../src/runtime/pty';
-import { decodeOpencodePtyChunk } from '../../../src/runtime/opencode-adapter';
+import { decodeOpencodePtyChunk } from '../../../../adapters/opencode/src/adapter';
 import { RuntimeAccess } from '../../../src/runtime/runtime-access';
 import { projectExperienceActions } from '../../../src/experience/experience-projector';
 import { MAFW_TERMINAL_PROTOCOL, TERMINAL_CLOSE_CODES } from '../../../src/terminal/terminal-protocol';
