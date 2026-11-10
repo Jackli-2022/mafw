@@ -101,14 +101,16 @@ describe('attachGlobalSse（spec §5.3）', () => {
 
 // wiring 断言（Phase D1 Task H2 起 SSE 路由体在 routes/events-sse.ts，registry
 // dispatch 的 event.subscribe 接管；同一份 parseSince + attachGlobalSse 链路）：
+// D3 Task 6: attach 调用从 index.ts 搬入 subsystems/api-routes.ts（字面量随迁）。
 const src = readFileSync(join(__dirname, '../../../src/index.ts'), 'utf8');
+const attachSrc = readFileSync(join(__dirname, '../../../src/subsystems/api-routes.ts'), 'utf8');
 const sseRouteSrc = readFileSync(join(__dirname, '../../../src/routes/events-sse.ts'), 'utf8');
 describe('SSE 回放接线（wiring）', () => {
   it('SSE 路由经 parseSince + attachGlobalSse', () => {
     expect(sseRouteSrc).toContain('parseSince(');
     expect(sseRouteSrc).toContain('attachGlobalSse(');
     // 组合根仍必须把该模块挂到 registry（否则 handed-off 分支无人接管）。
-    expect(src).toContain('attachEventsSseRoutes(this.routeRegistry');
+    expect(attachSrc).toContain('attachEventsSseRoutes(deps.routeRegistry');
   });
   it('sseClients 为 Map（per-connection write 闭包）', () => {
     expect(src).toMatch(/sseClients[^\n]*Map</);

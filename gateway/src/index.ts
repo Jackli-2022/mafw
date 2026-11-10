@@ -26,6 +26,8 @@ import { createWsHub, type WsHub } from './http/ws-upgrade';
 import { bootKernel, exitAfterPortConflict, persistRegistry, releaseInstanceOwnership, type BootKernel } from './boot';
 // D3 Task 4：dashboard legacy 总分发器移入 subsystems/（R5 保留，逐字搬移）。
 import { handleDashboardAPI, type DashboardLegacyDeps } from './subsystems/dashboard-legacy';
+// D3 Task 6：43 条 attach*（lead/pod cargo 在内）整体搬入 subsystems/（顺序即优先级）。
+import { attachAllRoutes, type ApiRouteDeps } from './subsystems/api-routes';
 import { normalizeDir, isPortHealthy } from './core/http/http-util';
 import { NodeDriver } from './core/goal/driver';
 import { parseReviewRubric, taskIdsFromWavePlan } from './core/goal/review-rubric';
@@ -37,7 +39,6 @@ import {
   type GoalResolution,
 } from './core/goal/goal-identity';
 import { recoverGoals, watchdogScan } from './core/goal/recovery';
-import { attachGoalRoutes } from './routes/goals-inline';
 import { handleTerminal } from './routes/terminal';
 import { TerminalService } from './terminal/terminal-service';
 import { getActivePolicy } from './orchestration/policy';
@@ -104,10 +105,9 @@ import { PodContextSelectionService } from './mcp/handlers/pod-context-select';
 import { ProbeWorkspaceFactory } from './core/pod/pod-probe-workspace';
 import type { GoalProbePort, GoalProbeSessionBinding } from './core/goal/driver';
 import type { ProbeRequest, ProbeReport } from './core/goal/probe';
-import { goalVerdictFromState, buildPodAttention, type PodGoalDescription } from './core/pod/pod-view';
+import { goalVerdictFromState, type PodGoalDescription } from './core/pod/pod-view';
 import { buildPodGoalResult } from './core/pod/pod-result';
 import {
-  createGoalIntake,
   findGoalRequestPath,
   makePodGoalId,
   readGoalRequest,
@@ -200,8 +200,8 @@ import { isHiddenSession, selectVisibleSessions } from './core/session-visibilit
 
 import { mafwBroadcast, projectRegisteredEvent } from './runtime/event-broadcast';
 import { MAFW } from './runtime/mafw-vocabulary';
-import { activateRuntimeTools, buildMafwToolFactory } from './runtime/mafw-tools';
-import { attachToolsRoutes, handleToolsList, handleToolsExecute } from './routes/tools';
+import { activateRuntimeTools } from './runtime/mafw-tools';
+import { handleToolsList, handleToolsExecute } from './routes/tools';
 import { FLAT_EMITTERS } from './runtime/flat-emit-registry';
 import { BudgetGuard } from './core/budget-guard';
 import { resolvePromptBudget, type PromptBudgetExisting } from './core/prompt-budget';
@@ -209,37 +209,6 @@ import { SessionQueue } from './core/session-queue';
 import { shouldFlush } from './core/queue-flush';
 import { createCognitionGate } from './core/cognition/cognition-gate';
 import { validateRules, type CognitionRule } from './core/cognition/rules';
-import { attachCognitionRoutes } from './routes/cognition';
-import { attachPythonRoutes } from './routes/python';
-import { attachTtsRoutes } from './routes/tts';
-import { attachTerminalRoutes, attachAgentRoutes, attachMobileRoutes } from './routes/agent-terminal-mobile';
-import { attachMediaRoutes } from './routes/media-upload';
-import { attachProjectRoutes } from './routes/projects';
-import { attachMafwCommandRoutes } from './routes/mafw-commands';
-import { attachMergeMemoryRoutes } from './routes/merge-memory';
-import { attachTriageRoutes } from './routes/triage';
-import { attachAutomationRoutes } from './routes/automations';
-import { attachChatRoutes } from './routes/chat';
-import { attachObsRoutes } from './routes/obs';
-import { attachSessionsCoreRoutes } from './routes/sessions-core';
-import { attachSessionsReadRoutes } from './routes/sessions-read';
-import { attachSessionsPermissionsRoutes } from './routes/sessions-permissions';
-import { attachApprovalsRoutes } from './routes/approvals';
-import { attachQuestionsPermissionsRoutes } from './routes/questions-permissions';
-import { attachUsageRoutes } from './routes/usage';
-import { attachRecallRoutes } from './routes/recall';
-import { attachMemoryRoutes } from './routes/memory';
-import { attachDashboardRoutes } from './routes/dashboard';
-import { attachMiscRoutes } from './routes/misc';
-import { attachConfigRoutes } from './routes/config';
-import { attachRuntimeConfigRoutes } from './routes/runtime-config';
-import { attachLlmRoutes } from './routes/llm';
-import { attachMediaPluginRoutes } from './routes/media-plugins';
-import { attachPodsEventsRoutes } from './routes/pods-events-dispatch';
-import { attachMcpMgmtRoutes } from './routes/mcp-mgmt';
-import { attachManagerSessionRoutes } from './routes/manager-session';
-import { attachDevicesMobileRoutes } from './routes/devices-mobile';
-import { attachEventsSseRoutes } from './routes/events-sse';
 
 /** 队列防楔死（spec 2026-10-22-session-queue-inbox §5.1 v2 Q2）：busy 陈旧清扫 + 队列项 TTL。 */
 const BUSY_STALE_MS = 15 * 60_000;
@@ -294,9 +263,6 @@ import type { RuntimeDefinition } from '@mafw/runtime-contract';
 import { createOpencodeDefinition, opencodeCapabilities, opencodeStaticEntry, type OpencodeVariant } from './runtime/opencode-definition';
 
 import { createRuntimeFacade, type RuntimeFacade, type RuntimeHost } from './runtime/runtime-facade';
-import {
-  projectSessions,
-} from './runtime/view-projections';
 import { buildRuntimeDiagnostics, type RuntimeDiagnosticsView } from './runtime/runtime-diagnostics';
 import { TOOL_PRIMITIVE_TYPES } from './runtime/tool-part-assembler';
 import { runEventPipeline, type DispatchCtx } from './runtime/event-dispatch';
@@ -312,7 +278,6 @@ const CANONICAL_TYPE_SET: ReadonlySet<string> = new Set([
 ]);
 
 import { surfaceUnavailableMessage } from './runtime/runtime-access';
-import { attachBackgroundJobHandlers } from './routes/background-jobs';
 import { performRuntimeSwitch, type RuntimeSwitchDeps } from './routes/runtime-switch';
 import type { ConformanceDeps } from './routes/conformance';
 import type { PluginsRouteDeps, PluginsPackageEntry } from './routes/plugins';
@@ -343,19 +308,8 @@ import type { UsagePluginsDeps } from './routes/usage-plugins';
 
 import type { ModelConfigDeps } from './routes/model-config';
 import { RouteRegistry } from './routes/registry';
-import { attachTypedRoute } from './routes/typed';
-import { SessionListResponse } from './routes/schemas/session';
 import { buildRouteCatalog } from './routes/route-catalog';
-import { attachWave1Handlers } from './routes/wave1-handlers';
-import { attachLeadTopicRoutes } from './routes/lead-topics';
-import { attachAttentionRoutes } from './routes/attention';
-import { attachSchedulerRoutes } from './routes/scheduler';
-import { attachGoalControlRoutes, pauseStatePatch, resumeStatePatch, selectRetryRun } from './routes/goal-control';
-import { attachLeadBoundaryRoutes } from './routes/lead-boundaries';
-import { buildLeadGoalStatus } from './core/lead/goal-status';
-import { attachWave2Handlers } from './routes/wave2-handlers';
-import { attachPodHandlers } from './routes/pod-handlers';
-import { attachPodA2ARoutes } from './routes/pod-a2a';
+import { pauseStatePatch, resumeStatePatch, selectRetryRun } from './routes/goal-control';
 import type { EmbeddingConfigDeps } from './routes/embedding-config';
 import { runManagerRotate, ManagerRotateDeps, ManagerRotateResult } from './routes/manager-rotate';
 /**
@@ -4656,520 +4610,216 @@ class MafwScheduler {
 
   // 鈹€鈹€ 2. HTTP API 鈹€鈹€
 
+  /**
+   * D3 Task 6: the attach block's dependency surface, built as **live getters**.
+   *
+   * attach 发生在 startApiServer（早于 runtime 初始化 / 热切换重赋值），闭包又会
+   * 在之后每次请求读这些字段——所以一律 getter，绝不按值捕获（2026-09-17 回归）。
+   * `currentProjectDir` / `fokStatsCache` / `switchingRuntime` 是 attach 闭包会写
+   * 的字段，成对提供 setter。方法桥接直接委派本实例（调用时才取方法）。
+   */
+  private apiRouteDeps(): ApiRouteDeps {
+    const self = this;
+    return {
+      get routeRegistry() { return self.routeRegistry; },
+      gatewayRoot: __dirname,
+      get runtime() { return self.runtime; },
+      get runtimeHost() { return self.runtimeHost; },
+      get runtimeName() { return self.runtimeName; },
+      get serveRecovering() { return self.serveRecovering; },
+      get serveRunning() { return self.serveRunning; },
+      get serveUrl() { return self.serveUrl; },
+      get switchingRuntime() { return self.switchingRuntime; },
+      set switchingRuntime(v) { self.switchingRuntime = v; },
+      get taskService() { return self.taskService; },
+      get sessionConfigService() { return self.sessionConfigService; },
+      get checkpointService() { return self.checkpointService; },
+      get dataPartService() { return self.dataPartService; },
+      get runCoordinator() { return self.runCoordinator; },
+      get busySessions() { return self.busySessions; },
+      get leadSessionRegistry() { return self.leadSessionRegistry; },
+      get identityRegistry() { return self.identityRegistry; },
+      get identityState() { return self.identityState; },
+      get automationEngine() { return self.automationEngine; },
+      get ledger() { return self.ledger; },
+      get pluginLoader() { return self.pluginLoader; },
+      get mediaPluginLoader() { return self.mediaPluginLoader; },
+      get backgroundJobs() { return self.backgroundJobs; },
+      get cognitionGate() { return self.cognitionGate; },
+      get discovery() { return self.discovery; },
+      get instructionSync() { return self.instructionSync; },
+      get internalSessionRoles() { return self.internalSessionRoles; },
+      get kernels() { return self.kernels; },
+      get activeGoals() { return self.activeGoals; },
+      get fokStatsCache() { return self.fokStatsCache; },
+      set fokStatsCache(v) { self.fokStatsCache = v; },
+      get registeredProjects() { return self.registeredProjects; },
+      get currentProjectDir() { return self.currentProjectDir; },
+      set currentProjectDir(v) { self.currentProjectDir = v; },
+      get projectDir() { return self.projectDir; },
+      get mafwDir() { return self.mafwDir; },
+      get recallCalledBySession() { return self.recallCalledBySession; },
+      get goalDriverMafwDirCache() { return self.goalDriverMafwDirCache; },
+      get sseClients() { return self.sseClients; },
+      get allowlistStore() { return self.allowlistStore; },
+      get permissionRules() { return self.permissionRules; },
+      get approvalPolicy() { return self.approvalPolicy; },
+      get chatSessions() { return self.chatSessions; },
+      get coactivationGraphStore() { return self.coactivationGraphStore; },
+      get consolidationService() { return self.consolidationService; },
+      get eventStore() { return self.eventStore; },
+      get goalDriver() { return self.goalDriver; },
+      get heartbeat() { return self.heartbeat; },
+      get leadBoundaries() { return self.leadBoundaries; },
+      get leadTopics() { return self.leadTopics; },
+      get leadTopicIndex() { return self.leadTopicIndex; },
+      get leadTopicResume() { return self.leadTopicResume; },
+      get mediaAgent() { return self.mediaAgent; },
+      get mediaService() { return self.mediaService; },
+      get memoryService() { return self.memoryService; },
+      get pairingService() { return self.pairingService; },
+      get podAccess() { return self.podAccess; },
+      get podDirectionService() { return self.podDirectionService; },
+      get podEventService() { return self.podEventService; },
+      get podGoalService() { return self.podGoalService; },
+      get podMemoryService() { return self.podMemoryService; },
+      get podMessageDelivery() { return self.podMessageDelivery; },
+      get podMessageService() { return self.podMessageService; },
+      get podProbeService() { return self.podProbeService; },
+      get podService() { return self.podService; },
+      get podStore() { return self.podStore; },
+      get podTaskService() { return self.podTaskService; },
+      get podTechLeadService() { return self.podTechLeadService; },
+      get pushGateway() { return self.pushGateway; },
+      get sdkSession() { return self.sdkSession; },
+      get sessionQueue() { return self.sessionQueue; },
+      get subagentService() { return self.subagentService; },
+      get trajectoryStore() { return self.trajectoryStore; },
+      get ttsInflight() { return self.ttsInflight; },
+      get ttsRegistry() { return self.ttsRegistry; },
+      get ttsService() { return self.ttsService; },
+      get usagePoller() { return self.usagePoller; },
+      get voiceRuntime() { return self.voiceRuntime; },
+      get getGatewayDb() { return (...a: any[]) => (self.getGatewayDb as any)(...a); },
+      get getDiscoveryService() { return (...a: any[]) => (self.getDiscoveryService as any)(...a); },
+      get rotateDeps() { return (...a: any[]) => (self.rotateDeps as any)(...a); },
+      get embeddingConfigDeps() { return (...a: any[]) => (self.embeddingConfigDeps as any)(...a); },
+      get modelConfigDeps() { return (...a: any[]) => (self.modelConfigDeps as any)(...a); },
+      get usagePluginsDeps() { return (...a: any[]) => (self.usagePluginsDeps as any)(...a); },
+      get broadcast() { return (...a: any[]) => (self.broadcast as any)(...a); },
+      get runtimeDeps() { return (...a: any[]) => (self.runtimeDeps as any)(...a); },
+      get restartAgentDeps() { return (...a: any[]) => (self.restartAgentDeps as any)(...a); },
+      get pluginHubDeps() { return (...a: any[]) => (self.pluginHubDeps as any)(...a); },
+      get pluginPackagesDeps() { return (...a: any[]) => (self.pluginPackagesDeps as any)(...a); },
+      get pluginWebDeps() { return (...a: any[]) => (self.pluginWebDeps as any)(...a); },
+      get conformanceDeps() { return (...a: any[]) => (self.conformanceDeps as any)(...a); },
+      get dryEventDeps() { return (...a: any[]) => (self.dryEventDeps as any)(...a); },
+      get buildInstructionBlocks() { return (...a: any[]) => (self.buildInstructionBlocks as any)(...a); },
+      get buildPresence() { return (...a: any[]) => (self.buildPresence as any)(...a); },
+      get capGuard() { return (...a: any[]) => (self.capGuard as any)(...a); },
+      get capGuardQuestion() { return (...a: any[]) => (self.capGuardQuestion as any)(...a); },
+      get getScanService() { return (...a: any[]) => (self.getScanService as any)(...a); },
+      get getTerminalService() { return (...a: any[]) => (self.getTerminalService as any)(...a); },
+      get getMafwCommandRegistry() { return (...a: any[]) => (self.getMafwCommandRegistry as any)(...a); },
+      get resolvedProjectDir() { return (...a: any[]) => (self.resolvedProjectDir as any)(...a); },
+      get scheduleSnapshotRefresh() { return (...a: any[]) => (self.scheduleSnapshotRefresh as any)(...a); },
+      get emitQueueUpdated() { return (...a: any[]) => (self.emitQueueUpdated as any)(...a); },
+      get enqueueQueuedPrompt() { return (...a: any[]) => (self.enqueueQueuedPrompt as any)(...a); },
+      get attachBudgetGuardForPrompt() { return (...a: any[]) => (self.attachBudgetGuardForPrompt as any)(...a); },
+      get archiveGoal() { return (...a: any[]) => (self.archiveGoal as any)(...a); },
+      get patchState() { return (...a: any[]) => (self.patchState as any)(...a); },
+      get destroyAllSessions() { return (...a: any[]) => (self.destroyAllSessions as any)(...a); },
+      get pauseGoalControl() { return (...a: any[]) => (self.pauseGoalControl as any)(...a); },
+      get resumeGoalControl() { return (...a: any[]) => (self.resumeGoalControl as any)(...a); },
+      get retryGoalControl() { return (...a: any[]) => (self.retryGoalControl as any)(...a); },
+      get loadRequest() { return (...a: any[]) => (self.loadRequest as any)(...a); },
+      get handleValidate() { return (...a: any[]) => (self.handleValidate as any)(...a); },
+      get handleComplete() { return (...a: any[]) => (self.handleComplete as any)(...a); },
+      get findGoalStatePath() { return (...a: any[]) => (self.findGoalStatePath as any)(...a); },
+      get podCost() { return (...a: any[]) => (self.podCost as any)(...a); },
+      get podTranscript() { return (...a: any[]) => (self.podTranscript as any)(...a); },
+      get podA2AAgent() { return (...a: any[]) => (self.podA2AAgent as any)(...a); },
+      get backfillEmbeddings() { return (...a: any[]) => (self.backfillEmbeddings as any)(...a); },
+      get handleCompress() { return (...a: any[]) => (self.handleCompress as any)(...a); },
+      get handleRuntimeEvent() { return (...a: any[]) => (self.handleRuntimeEvent as any)(...a); },
+      get listSessions() { return (...a: any[]) => (self.listSessions as any)(...a); },
+      get skillInstallDeps() { return (...a: any[]) => (self.skillInstallDeps as any)(...a); },
+    };
+  }
+
+  /**
+   * HTTP listener deps (D3 Task 3 wiring, live getters). 留在组合根，但从
+   * startApiServer 抽出，保持启动方法体薄；匹配/顺序语义在 http/transport.ts。
+   */
+  private httpTransportDeps(): Parameters<typeof createRequestListener>[0] {
+    return {
+      cors: () => config.server.cors,
+      apiToken: () => (config.raw as any)?.server?.apiToken || '',
+      dispatchAuthorized: (req, res, apiToken) =>
+        dispatchAuthorized({ registry: this.routeRegistry, apiToken }, req, res),
+      pluginWebWildcard: (req, res) => this.handlePluginWebWildcard(req, res),
+      fileHistory: (req, res, isLoopback) => handleFileHistoryRoutes(req, res, {
+        service: () => this.fileHistory ?? null,
+        isLoopback,
+        resolveDirectory: async (sid) => {
+          try {
+            const info: any = await this.runtime?.session.get({ sessionID: sid });
+            return sessionDirectoryOf(info);
+          } catch { return null; }
+        },
+      }),
+      mediaAgent: () => this.mediaAgent,
+      mcpEndpoint: () => this.mcpEndpoint,
+      mcpStreamable: () => this.mcpStreamableEndpoint,
+      spaRoot: () => config.paths.dashboardPublic,
+      dashboardDispatch: async (req) => ({ status: 200, body: await handleDashboardAPI(req, this.dashboardLegacyDeps()) }),
+      register: {
+        parseIntent: (data) => parseRegisterIntent(data),
+        isUserDataDir: (dir) => this.isUserDataDir(dir),
+        isSelectableProject: (dir) => isSelectableProject(dir, resolveRuntimeRoot()),
+        registeredProject: (dir) => this.registeredProjects.get(dir),
+        registerProject: (dir, entry) => { this.registeredProjects.set(dir, entry); },
+        setCurrentProject: (dir) => {
+          this.currentProjectDir = dir;
+          this.getGatewayDb().kvSet('current-project', 'default', dir);
+        },
+        persistRegistry: () => this.persistRegistry(),
+        broadcastProjectRegistered: (dir) => this.broadcast(projectRegisteredEvent(dir)),
+        hasRuntime: () => !!this.runtime,
+        ensureManagerSession: (dir, mafwDir) => this.ensureManagerSession(dir, mafwDir),
+      },
+      control: {
+        patchState: (goalId, patch) => this.patchState(goalId, patch as any),
+        destroyAllSessions: (goalId) => this.destroyAllSessions(goalId),
+        getActiveGoal: (goalId) => this.activeGoals.get(goalId),
+        registeredProjects: () => this.registeredProjects,
+        getGatewayDb: () => this.getGatewayDb(),
+        archiveGoal: (goalId, outcome) => this.archiveGoal(goalId, outcome as any),
+      },
+      health: {
+        serveRunning: () => !!this.serveInstance,
+        registeredProjectDirs: () => Array.from(this.registeredProjects.keys()),
+        activeGoalIds: () => Array.from(this.activeGoals.keys()),
+        mediaConfigured: () => !!this.mediaService?.isConfigured,
+        releaseFields: () => (this.releaseMetadata && this.runtimeIdentity
+          ? gatewayHealthFields(this.releaseMetadata, this.runtimeIdentity) as Record<string, unknown>
+          : {}),
+      },
+      proxyTarget: () => this.runtimeHost?.getBaseUrl?.() ?? config.server.serveUrl,
+    };
+  }
+
   private async startApiServer(): Promise<boolean> {
     return new Promise<boolean>((resolve) => {
-      // P5 Wave 1: catalog shadow 登记 + 模块 handler 绑定（一次性，重复 attach 会抛错）。
-      // adapter 显式桥接私有成员（结构化类型不认 private）。
-      // runtime/runtimeCaps 必须是 getter（活引用）：attach 发生在 startApiServer，
-      // 早于 runtime 初始化（441 行）与热切换重赋值——字面量快照会让 session.fork 等
-      // 路由永远拿到 null/旧 capabilities（P5 引入的回归，2026-09-17 修复）。
-      const gwSelf = this;
-      attachWave1Handlers(this.routeRegistry, {
-        getGatewayDb: () => this.getGatewayDb(),
-        get runtime() { return gwSelf.runtime; },
-        automationEngine: this.automationEngine,
-        ledger: this.ledger,
-        rotateDeps: () => this.rotateDeps(),
-        embeddingConfigDeps: () => this.embeddingConfigDeps(),
-        modelConfigDeps: () => this.modelConfigDeps(),
-        usagePluginsDeps: () => this.usagePluginsDeps(),
-        pluginLoader: this.pluginLoader,
-        mediaPluginLoader: this.mediaPluginLoader,
-        broadcast: (e) => this.broadcast(e),
-        get taskService() { return gwSelf.taskService; },
-        get sessionConfig() { return gwSelf.sessionConfigService; },
-        get checkpointService() { return gwSelf.checkpointService; },
-        get podService() { return gwSelf.podService; },
-        get runCoordinator() { return gwSelf.runCoordinator; },
-        get dataPartService() { return gwSelf.dataPartService; },
-        get discovery() { return gwSelf.getDiscoveryService(); },
-        isCheckpointBusy: (sid) => gwSelf.busySessions.has(sid),
-        // switchAgent 双向门：coordination 槽位（LeadSessionRegistry 权威）与注册表身份。
-        isCoordinationSession: (sid) => !!gwSelf.leadSessionRegistry?.findBySessionId(sid),
-        isRegistryIdentity: (name) => !!gwSelf.identityRegistry?.get(name),
-      });
-      attachLeadTopicRoutes(this.routeRegistry, {
-        isLeadSession: (sessionID) => !!this.leadSessionRegistry?.findBySessionId(sessionID),
-        projectDirForSession: (sessionID) => this.leadSessionRegistry?.findBySessionId(sessionID)?.projectDir ?? null,
-        topics: this.leadTopics,
-        index: this.leadTopicIndex,
-        goals: (projectDir) => {
-          const pod = this.podStore?.getPodByProject(canonicalProjectDir(projectDir));
-          if (!pod) return [];
-          const views = this.podGoalService.views(pod.id);
-          return buildLeadGoalStatus(views, buildPodAttention(views));
-        },
-        workingSetEnabled: () => process.env.MAFW_LEAD_WORKING_SET !== '0',
-        listMessages: async ({ sessionID, limit }) => {
-          const page: any = await this.runtime!.session.messages({ sessionID, limit });
-          return { data: page?.data ?? [] };
-        },
-        broadcast: (event) => this.broadcast(event as any),
-        now: () => new Date().toISOString(),
-        resume: (topicId) => this.leadTopicResume.resume(topicId),
-        fork: async (topicId, input) => {
-          const topic = this.leadTopics.get(topicId);
-          if (!topic) throw Object.assign(new Error('topic not found'), { status: 404 });
-          const pod = this.podStore.getPodByProject(canonicalProjectDir(topic.projectDir));
-          if (!pod) throw Object.assign(new Error('pod not found'), { status: 404 });
-          const lead = this.leadSessionRegistry
-            ? (this.leadSessionRegistry.current(topic.projectDir)
-              ?? await this.leadSessionRegistry.ensure(topic.projectDir))
-            : null;
-          const created = await this.podTechLeadService.createGoal({
-            podId: pod.id,
-            projectDir: topic.projectDir,
-            title: input.goalTitle || topic.title,
-            objective: topic.summary || topic.title,
-            createdBy: lead?.sessionId ?? topic.leadSessionId,
-            forkFromTopicId: topicId,
-          });
-          return { goalId: created.goalId, sessionID: created.sessionID };
-        },
-      });
-      attachAttentionRoutes(this.routeRegistry, {
-        views: (projectDir) => {
-          const pod = this.podStore?.getPodByProject(canonicalProjectDir(projectDir));
-          return pod ? this.podGoalService.views(pod.id) : [];
-        },
-      });
-      attachSchedulerRoutes(this.routeRegistry, {
-        status: (projectDir) => {
-          const pod = this.podStore?.getPodByProject(canonicalProjectDir(projectDir));
-          return pod ? this.podGoalService.schedulerStatus(pod.id) : null;
-        },
-      });
-      attachGoalControlRoutes(this.routeRegistry, {
-        hasGoal: (goalId) => !!this.podStore?.getGoalByGoalId(goalId) || !!this.findGoalStatePath(goalId),
-        terminal: (goalId) => {
-          const status = this.podStore?.getGoalByGoalId(goalId)?.status;
-          return status === 'done' || status === 'aborted';
-        },
-        patchState: (goalId, patch) => this.patchState(goalId, patch as any),
-        pause: (goalId) => this.pauseGoalControl(goalId),
-        resume: (goalId) => this.resumeGoalControl(goalId),
-        destroySessions: (goalId) => this.destroyAllSessions(goalId),
-        archiveGoal: async (goalId, opts) => {
-          await this.archiveGoal(goalId, opts as any);
-        },
-        retry: (goalId, runId) => this.retryGoalControl(goalId, runId),
-        startGoal: (goalId) => this.podGoalService.admitReadyGoal(goalId).then(() => undefined),
-      });
-      attachLeadBoundaryRoutes(this.routeRegistry, {
-        service: this.leadBoundaries,
-        observe: ({ sessionID, text }) => {
-          const projectDir = this.leadSessionRegistry?.findBySessionId(sessionID)?.projectDir;
-          if (!projectDir) return null;
-          const topic = this.leadTopics.latestForProject(projectDir);
-          if (!topic) return null;
-          const pod = this.podStore?.getPodByProject(canonicalProjectDir(projectDir));
-          const goals = pod ? this.podStore.listGoals(pod.id) : [];
-          const goalActive = goals.some((goal) => goal.status === 'active');
-          const now = new Date().toISOString();
-          const recentWindowMs = 10 * 60_000;
-          const goalJustClosed = goals.some((goal) => {
-            if (goal.status !== 'done' || !goal.endedAt) return false;
-            const ended = Date.parse(goal.endedAt);
-            return Number.isFinite(ended) && Date.parse(now) - ended <= recentWindowMs;
-          });
-          const previousUserText = [...this.leadTopicIndex.listByTopic(topic.id)]
-            .reverse()
-            .find((row) => row.role === 'user')?.text;
-          return this.leadBoundaries.observe({
-            projectDir,
-            leadSessionId: sessionID,
-            fromTopicId: topic.id,
-            text,
-            ...(previousUserText ? { previousUserText } : {}),
-            lastActiveAt: topic.lastActiveAt,
-            now,
-            goalActive,
-            goalJustClosed,
-          });
-        },
-      });
-      attachWave2Handlers(this.routeRegistry, {
-        runtimeDeps: () => this.runtimeDeps(),
-        restartAgentDeps: () => this.restartAgentDeps(),
-        pluginHubDeps: () => this.pluginHubDeps(),
-        pluginPackageDeps: () => this.pluginPackagesDeps(),
-        pluginWebDeps: () => this.pluginWebDeps(),
-        conformanceDeps: () => this.conformanceDeps(),
-        dryEventDeps: () => this.dryEventDeps(),
-        runtimeSwitchBlocked: () => this.serveRecovering || this.switchingRuntime,
-        beginRuntimeSwitch: () => { this.switchingRuntime = true; },
-        endRuntimeSwitch: () => { this.switchingRuntime = false; },
-      });
-      attachPodHandlers(this.routeRegistry, {
-        pods: this.podService,
-        tasks: this.podTaskService,
-        messages: this.podMessageService,
-        goals: this.podGoalService,
-        memory: this.podMemoryService,
-        access: this.podAccess,
-        delivery: this.podMessageDelivery,
-        intake: {
-          create: (input) => createGoalIntake(input, {
-            resolveProject: (requested) => {
-              const canonical = canonicalProjectDir(requested || this.resolvedProjectDir());
-              const hit = Array.from(this.registeredProjects.entries())
-                .find(([dir]) => canonicalProjectDir(dir) === canonical);
-              return hit ? { projectDir: hit[0], mafwDir: hit[1].mafwDir } : null;
-            },
-            now: () => new Date().toISOString(),
-            emitGoalCreated: (event) => eventBus.emit('goal_created', event as any),
-          }),
-        },
-        newGoalId: () => makePodGoalId(new Date().toISOString(), Math.random),
-        // Task 18: POST /goals creates a direct discussion Goal via the Tech Lead.
-        techLead: this.podTechLeadService,
-        cost: async (podId) => this.podCost(podId),
-        transcript: async (podId, sessionId) => this.podTranscript(podId, sessionId),
-      }, {
-        // Task 18: collaboration surface (Tech Lead discussion / direction / probes /
-        // reject / revisions). Services are constructed above, so plain references.
-        pods: this.podService,
-        goals: this.podGoalService,
-        techLead: this.podTechLeadService,
-        directions: this.podDirectionService,
-        probes: this.podProbeService,
-        revisions: { list: (podId, goalId) => this.podStore.listGoalRevisions(podId, goalId) },
-        revisionStatus: (podId, goalId, revision) => {
-          const goal = this.podStore.getGoal(podId, goalId);
-          if (!goal) return null;
-          return this.podStore.getGoalRevision(podId, goalId, revision ?? goal.activeRevision)?.status ?? null;
-        },
-        startPlanning: (goalId) => this.podGoalService.admitReadyGoal(goalId).then(() => undefined),
-        access: this.podAccess,
-      });
-
-      attachPodA2ARoutes(this.routeRegistry, {
-        getAgent: (podId) => this.podA2AAgent(podId),
-      });
-      // Task 3：中性 background jobs façade（三源统一；runtime shell 原生 DTO 不出 gateway）
-      attachBackgroundJobHandlers(this.routeRegistry, () => ({ service: this.backgroundJobs ?? null }));
-      // Phase D1 Task 2：认知面动词迁 registry dispatch（loopback-only 语义随迁）。
-      attachCognitionRoutes(this.routeRegistry, { gate: () => this.cognitionGate });
-      // Phase D1 Task 3a：Python 内核面迁 registry dispatch（loopback-only）。
-      attachPythonRoutes(this.routeRegistry, { kernels: () => this.kernels });
-      // Phase D1 Task 3b：MAFW 工具面迁 registry dispatch（loopback-only）。
-      attachToolsRoutes(this.routeRegistry, {
-        buildFactory: () => buildMafwToolFactory({ baseUrl: `http://127.0.0.1:${config.server.apiPort}` }),
-        emitEvent: (evt) => this.handleRuntimeEvent(evt),
-      });
-      // Phase D1 Task 3c：TTS 面迁 registry dispatch（voices/speak 无 loopback
-      // 门、stream/interrupt 有——legacy 语义逐字等价）。
-      attachTtsRoutes(this.routeRegistry, {
-        ttsRegistry: () => this.ttsRegistry,
-        ttsReady: () => !!(this.ttsService && this.mediaAgent),
-        putArtifact: (dataUrl) => this.mediaAgent!.putArtifact(dataUrl),
-        inflight: this.ttsInflight,
-      });
-      // Phase D1 Task 3d：agent/terminal/mobile 面迁 registry dispatch。
-      attachTerminalRoutes(this.routeRegistry, {
-        getTerminalService: () => this.getTerminalService(),
-        getAccess: () => this.runtime?.access ?? null,
-      });
-      attachAgentRoutes(this.routeRegistry, {
-        listOutcomes: (() => this.getGatewayDb().listGoalOutcomes({ limit: 200 })) as any,
-        getIndex: () => this.memoryService?.harmonicIndex.getIndex() ?? { entries: [] },
-      });
-      attachMobileRoutes(this.routeRegistry, {
-        getMediaAgent: () => this.mediaAgent,
-        apiToken: () => (config.raw as any)?.server?.apiToken || '',
-        loadTtsArtifactHandler: async () => {
-          const { createTtsArtifactHandler } = await import('./mobile/tts-artifact.js');
-          return createTtsArtifactHandler({ agent: this.mediaAgent! });
-        },
-        loadMobileMediaHandler: async () => {
-          const { createMobileMediaHandler } = await import('./mobile/media-proxy.js');
-          return createMobileMediaHandler({
-            agent: this.mediaAgent!,
-            apiToken: (config.raw as any)?.server?.apiToken || '',
-          });
-        },
-      });
-      // Phase D1 Task 3e：媒体上传/分析面迁 registry dispatch（4 分支，
-      // loopback 门 + 尺寸帽 + chunk 流逐字保留）。
-      attachMediaRoutes(this.routeRegistry, {
-        getMediaAgent: () => this.mediaAgent,
-        getMediaService: () => this.mediaService,
-      });
-      // Phase D1 Task A1：project 面迁 registry dispatch（2 分支）。
-      attachProjectRoutes(this.routeRegistry, {
-        registeredProjects: () => this.registeredProjects,
-        currentProjectDir: () => this.currentProjectDir,
-        setCurrentProjectDir: (dir) => { this.currentProjectDir = dir; },
-        db: () => this.getGatewayDb(),
-      });
-      // Phase D1 Task A2：mafw-commands 面迁 registry dispatch（2 分支；409 hold-queue 预检随迁）。
-      attachMafwCommandRoutes(this.routeRegistry, {
-        getRegistry: () => this.getMafwCommandRegistry(),
-        registeredProjects: () => this.registeredProjects,
-        projectDir: () => this.projectDir,
-        shouldHoldQueue: (sessionID) => this.runCoordinator?.shouldHoldQueue(sessionID),
-      });
-      // Phase D1 Task A3：merge-memory 面迁 registry dispatch（1 分支；动态 import 保留）。
-      attachMergeMemoryRoutes(this.routeRegistry, {
-        memory: () => this.memoryService,
-      });
-      // Phase D1 Task A4：triage 面迁 registry dispatch（4 分支；confirm 不读 body 原样保留）。
-      attachTriageRoutes(this.routeRegistry, {
-        automationEngine: () => this.automationEngine,
-        skillInstallDeps: () => this.skillInstallDeps(),
-        mafwDir: () => this.mafwDir,
-        ledger: () => this.ledger,
-      });
-      // Phase D1 Task A5：approvals 面迁 registry dispatch（4 分支；数据根扫描路径全保留）。
-      attachApprovalsRoutes(this.routeRegistry, {
-        registeredProjects: () => this.registeredProjects,
-        allowlistStore: () => this.allowlistStore,
-        permissionRules: () => this.permissionRules,
-      });
-      // Phase D1 Task B1：question / permission 面迁 registry dispatch（5 分支；
-      // workspace 重试链与 capGuard 语义逐字保留）。
-      attachQuestionsPermissionsRoutes(this.routeRegistry, {
-        capGuard: (res, surface) => this.capGuard(res, surface),
-        capGuardQuestion: (res) => this.capGuardQuestion(res),
-        serveUrl: () => this.serveUrl,
-        currentProjectDir: () => this.currentProjectDir,
-        projectDir: () => this.projectDir,
-        runtime: () => this.runtime,
-        registeredProjects: () => this.registeredProjects,
-        permissionRules: () => this.permissionRules,
-      });
-      // Phase D1 Task B2：usage 聚合面迁 registry dispatch（2 分支；fail-open 200 随迁）。
-      attachUsageRoutes(this.routeRegistry, {
-        trajectoryStore: () => this.trajectoryStore,
-        usagePoller: () => this.usagePoller,
-      });
-      // Phase D1 Task B3/B4：recall 面迁 registry dispatch（instructions/pinned/priors/
-      // context；裸 startsWith 收紧为精确段匹配，懒 require 全部保留）。
-      attachRecallRoutes(this.routeRegistry, {
-        buildInstructionBlocks: () => this.buildInstructionBlocks(),
-        instructionSync: () => this.instructionSync ?? null,
-        memoryService: () => this.memoryService,
-        recallCalledBySession: () => this.recallCalledBySession,
-        leadSessionRegistry: () => this.leadSessionRegistry,
-        registeredProjects: () => this.registeredProjects,
-        mafwDir: () => this.mafwDir,
-        getGatewayDb: () => this.getGatewayDb(),
-        getScanService: () => this.getScanService(),
-      });
-      // Phase D1 Task C1：automation 面迁 registry dispatch（6 分支；draft 静态段
-      // 优先于 :id 由 registry 结构保证，legacy 注册序注释语义不变）。
-      attachAutomationRoutes(this.routeRegistry, {
-        automationEngine: () => this.automationEngine,
-        ledger: () => this.ledger,
-      });
-      // Phase D1 Task C2：chat 面迁 registry dispatch（2 分支；enriched 保留
-      // 自有 inline enrichment 副本，不并入 sendEnrichedInternal）。
-      attachChatRoutes(this.routeRegistry, {
-        registeredProjects: () => this.registeredProjects,
-        projectDir: () => this.projectDir,
-        runtime: () => this.runtime,
-        shouldHoldQueue: (sessionID) => this.runCoordinator?.shouldHoldQueue(sessionID),
-        memoryService: () => this.memoryService,
-      });
-      // Phase D1 Task C3：obs 捕获面迁 registry dispatch（手动 chunked reader、
-      // 1MB 静默丢弃、fail-open 200 语义逐字保留）。
-      attachObsRoutes(this.routeRegistry, {
-        internalSessionRoles: () => this.internalSessionRoles,
-        getGatewayDb: () => this.getGatewayDb(),
-        getScanService: () => this.getScanService(),
-        scheduleSnapshotRefresh: (sessionID) => this.scheduleSnapshotRefresh(sessionID),
-      });
-      // Phase D1 Task D1：sessions core 面迁 registry dispatch（10 分支；deleteLegacy
-      // 与 session.delete 的 cleanup 集合不同，R4 各自逐字保留）。
-      attachSessionsCoreRoutes(this.routeRegistry, {
-        getGatewayDb: () => this.getGatewayDb(),
-        resolvedProjectDir: () => this.resolvedProjectDir(),
-        sdkSession: () => this.sdkSession,
-        runtime: () => this.runtime,
-        podService: () => this.podService,
-        instructionSync: () => this.instructionSync,
-        discovery: () => this.discovery,
-        trajectoryStore: () => this.trajectoryStore,
-        identityRegistry: () => this.identityRegistry,
-        identityState: () => this.identityState,
-        runCoordinator: () => this.runCoordinator,
-        busySessions: () => this.busySessions,
-        sessionQueue: () => this.sessionQueue,
-        enqueueQueuedPrompt: (opts, source) => this.enqueueQueuedPrompt(opts, source),
-        attachBudgetGuardForPrompt: (sessionID, maxTurns, maxCostUsd) => this.attachBudgetGuardForPrompt(sessionID, maxTurns, maxCostUsd),
-        emitQueueUpdated: (sessionID, kind, items, itemId) => this.emitQueueUpdated(sessionID, kind, items, itemId),
-      });
-      // Phase D1 Task E1：sessions 读模型面迁 registry dispatch（5 分支；todo/trajectory/
-      // token-summary/children 的 fail-open 200 语义逐字保留）。
-      attachSessionsReadRoutes(this.routeRegistry, {
-        runtime: () => this.runtime,
-        trajectoryStore: () => this.trajectoryStore,
-        projectDir: () => this.projectDir,
-        listDataParts: (sessionID, messageIds) => this.getGatewayDb().listSessionDataParts(sessionID, { messageIds }),
-        subagentService: () => this.subagentService,
-      });
-      // Phase D1 Task E2：sessions 审批 / 子代理面迁 registry dispatch（7 分支；
-      // permission-mode GET/POST method 拆分与 subagents 五操作逐字委托）。
-      attachSessionsPermissionsRoutes(this.routeRegistry, {
-        approvalPolicy: () => this.approvalPolicy,
-        runtime: () => this.runtime,
-        permissionRules: () => this.permissionRules,
-        subagentService: () => this.subagentService,
-      });
-      // Phase D1 Task F1：memory 查询/统计面迁 registry dispatch（9 分支；sticky 的
-      // 503-空壳与 fail-open 200、stats 的 10s fok 缓存直写逐字保留）。
-      attachMemoryRoutes(this.routeRegistry, {
-        memoryService: () => this.memoryService,
-        consolidationService: () => this.consolidationService,
-        heartbeat: () => this.heartbeat,
-        coactivationGraphStore: () => this.coactivationGraphStore,
-        fokStatsCache: () => this.fokStatsCache,
-        setFokStatsCache: (value) => { this.fokStatsCache = value; },
-        mafwDir: () => this.mafwDir,
-        getGatewayDb: () => this.getGatewayDb(),
-        backfillEmbeddings: (limit) => this.backfillEmbeddings(limit),
-      });
-      // Phase D1 Task F2：goals inline 面迁 registry dispatch（6 分支 → 7 op；plan /
-      // plan-approval 仍以原始 req.url 交给 handleGoalPlan 内部分流）。
-      attachGoalRoutes(this.routeRegistry, {
-        mafwDir: () => this.mafwDir,
-        goalDriver: () => this.goalDriver,
-        goalDriverMafwDirCache: () => this.goalDriverMafwDirCache,
-        findGoalStatePath: (goalId) => this.findGoalStatePath(goalId),
-        loadRequest: (goalId) => this.loadRequest(goalId),
-        getGatewayDb: () => this.getGatewayDb(),
-        handleValidate: (goalId, data) => this.handleValidate(goalId, data),
-        handleComplete: (goalId, data) => this.handleComplete(goalId, data),
-      });
-      // Phase D1 Task G：dashboard 影子条（goals.list / dashboard.stats /
-      // memory.add / memory.setSticky）挂 registry dispatch；handleDashboardAPI
-      // 与联合分支整体保留（R5），四个精确 (method, path) 由 registry 先行接管。
-      attachDashboardRoutes(this.routeRegistry, {
-        activeGoals: () => this.activeGoals,
-        registeredProjectsSize: () => this.registeredProjects.size,
-        sseClientsSize: () => this.sseClients.size,
-        serveRunning: () => this.serveRunning,
-        trajectoryStore: () => this.trajectoryStore,
-        memoryService: () => this.memoryService,
-      });
-      // Phase D1 Task H1：long-tail singles 迁 registry dispatch（voice/presence/
-      // eval/orchestration/provider/agents + config GET/PUT + llm/compress +
-      // media plugins 对；私有 handleCompress 经 compress 依赖桥接）。
-      attachMiscRoutes(this.routeRegistry, {
-        voiceRuntime: () => this.voiceRuntime,
-        buildPresence: () => this.buildPresence(),
-        runtime: () => this.runtime,
-        resolvedProjectDir: () => this.resolvedProjectDir(),
-        getGatewayDb: () => this.getGatewayDb(),
-        capGuard: (res, surface) => this.capGuard(res, surface),
-        identityRegistry: () => this.identityRegistry,
-        identityState: () => this.identityState,
-        runtimeName: () => this.runtimeName,
-      });
-      attachConfigRoutes(this.routeRegistry);
-      // Phase D3 Task 2：/api/runtime-config 迁 registry dispatch（catalog 的
-      // runtime.config.get/update 幻影条目从此有 handler；runtime / runtimeHost
-      // 是 adopt 后可重赋值字段，故收 live getter）。
-      attachRuntimeConfigRoutes(this.routeRegistry, {
-        capGuard: (res, surface) => this.capGuard(res, surface),
-        runtime: () => this.runtime,
-        runtimeHost: () => this.runtimeHost,
-      });
-      attachLlmRoutes(this.routeRegistry, {
-        compress: (observations, model) => this.handleCompress(observations, model),
-      });
-      attachMediaPluginRoutes(this.routeRegistry, {
-        mediaPluginLoader: () => this.mediaPluginLoader,
-      });
-      // Phase D1 Task H2：devices / mobile 配对 / pods events / mcp 管理 / manager
-      // session / events SSE 迁 registry dispatch（15 条 legacy 分支；handler 体逐字，
-      // live getter 注入 pushGateway / pairingService / runtime / podEventService）。
-      attachDevicesMobileRoutes(this.routeRegistry, {
-        pushGateway: () => this.pushGateway,
-        pairingService: () => this.pairingService,
-      });
-      attachPodsEventsRoutes(this.routeRegistry, {
-        podEventService: () => this.podEventService,
-      });
-      attachMcpMgmtRoutes(this.routeRegistry, {
-        runtime: () => this.runtime,
-      });
-      attachManagerSessionRoutes(this.routeRegistry, {
-        leadSessionRegistry: () => this.leadSessionRegistry,
-        getGatewayDb: () => this.getGatewayDb(),
-      });
-      attachEventsSseRoutes(this.routeRegistry, {
-        chatSessions: () => this.chatSessions,
-        eventStore: () => this.eventStore,
-        sseClients: () => this.sseClients,
-      });
-      // code-first P0 试点：schema 是响应事实源，handler 返回数据（不写 res）。
-      attachTypedRoute(this.routeRegistry, {
-        operationId: 'session.list',
-        response: SessionListResponse,
-        handler: async ({ url }) => ({
-          sessions: projectSessions(await this.listSessions(url.searchParams.get('projectID'))),
-        }),
-      });
+      // D3 Task 6：43 条 attach*（顺序即 dispatch 优先级）整体搬入
+      // subsystems/api-routes.ts；deps 由 apiRouteDeps() 以 live getter 组装
+      // （runtime 等字段 attach 后会被重赋值，值捕获 = 2026-09-17 回归）。
+      attachAllRoutes(this.apiRouteDeps());
 
       // D3 Task 3：请求监听器整体搬入 http/transport.ts（CORS/OPTIONS → 鉴权 →
       // registry → plugin web → file history → transport 分支 → dashboard 联合兜底 →
       // /register → /control → /health → 反代 → 500）。deploy/attach 时序不变。
-      const server = http.createServer(createRequestListener({
-        cors: () => config.server.cors,
-        apiToken: () => (config.raw as any)?.server?.apiToken || '',
-        dispatchAuthorized: (req, res, apiToken) =>
-          dispatchAuthorized({ registry: this.routeRegistry, apiToken }, req, res),
-        pluginWebWildcard: (req, res) => this.handlePluginWebWildcard(req, res),
-        fileHistory: (req, res, isLoopback) => handleFileHistoryRoutes(req, res, {
-          service: () => this.fileHistory ?? null,
-          isLoopback,
-          resolveDirectory: async (sid) => {
-            try {
-              const info: any = await this.runtime?.session.get({ sessionID: sid });
-              return sessionDirectoryOf(info);
-            } catch { return null; }
-          },
-        }),
-        mediaAgent: () => this.mediaAgent,
-        mcpEndpoint: () => this.mcpEndpoint,
-        mcpStreamable: () => this.mcpStreamableEndpoint,
-        spaRoot: () => config.paths.dashboardPublic,
-        dashboardDispatch: async (req) => ({ status: 200, body: await handleDashboardAPI(req, this.dashboardLegacyDeps()) }),
-        register: {
-          parseIntent: (data) => parseRegisterIntent(data),
-          isUserDataDir: (dir) => this.isUserDataDir(dir),
-          isSelectableProject: (dir) => isSelectableProject(dir, resolveRuntimeRoot()),
-          registeredProject: (dir) => this.registeredProjects.get(dir),
-          registerProject: (dir, entry) => { this.registeredProjects.set(dir, entry); },
-          setCurrentProject: (dir) => {
-            this.currentProjectDir = dir;
-            this.getGatewayDb().kvSet('current-project', 'default', dir);
-          },
-          persistRegistry: () => this.persistRegistry(),
-          broadcastProjectRegistered: (dir) => this.broadcast(projectRegisteredEvent(dir)),
-          hasRuntime: () => !!this.runtime,
-          ensureManagerSession: (dir, mafwDir) => this.ensureManagerSession(dir, mafwDir),
-        },
-        control: {
-          patchState: (goalId, patch) => this.patchState(goalId, patch as any),
-          destroyAllSessions: (goalId) => this.destroyAllSessions(goalId),
-          getActiveGoal: (goalId) => this.activeGoals.get(goalId),
-          registeredProjects: () => this.registeredProjects,
-          getGatewayDb: () => this.getGatewayDb(),
-          archiveGoal: (goalId, outcome) => this.archiveGoal(goalId, outcome as any),
-        },
-        health: {
-          serveRunning: () => !!this.serveInstance,
-          registeredProjectDirs: () => Array.from(this.registeredProjects.keys()),
-          activeGoalIds: () => Array.from(this.activeGoals.keys()),
-          mediaConfigured: () => !!this.mediaService?.isConfigured,
-          releaseFields: () => (this.releaseMetadata && this.runtimeIdentity
-            ? gatewayHealthFields(this.releaseMetadata, this.runtimeIdentity) as Record<string, unknown>
-            : {}),
-        },
-        proxyTarget: () => this.runtimeHost?.getBaseUrl?.() ?? config.server.serveUrl,
-      }));
+      const server = http.createServer(createRequestListener(this.httpTransportDeps()));
 
       server.on('error', async (err: any) => {
         if (err.code === 'EADDRINUSE') {

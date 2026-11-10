@@ -273,8 +273,10 @@ describe('MafwQuestionRequest 投影', () => {
   });
 });
 
-describe('出口接线（index.ts）', () => {
-  const source = fs.readFileSync(path.join(__dirname, '../../../src/index.ts'), 'utf-8');
+describe('出口接线（subsystems/api-routes.ts）', () => {
+  // D3 Task 6: the attach block (incl. the typed `session.list` route) moved
+  // verbatim out of index.ts; the wiring pin follows it, same literal strictness.
+  const source = fs.readFileSync(path.join(__dirname, '../../../src/subsystems/api-routes.ts'), 'utf-8');
   // Phase D1 Task D1: GET /api/sessions/:id 迁入 routes/sessions-core.ts。
   const sessionsCore = fs.readFileSync(path.join(__dirname, '../../../src/routes/sessions-core.ts'), 'utf-8');
   // Phase D1 Task B1: /api/permissions 与 /api/questions 列表迁入 routes/questions-permissions.ts
@@ -286,7 +288,7 @@ describe('出口接线（index.ts）', () => {
 
   it('/api/sessions 列表与单条都过 projectSession（规范 status/reverted/model）', () => {
     // 列表自 code-first P0 起由 registry typed handler 接管（schema + 数据返回，不再手写 stringify）。
-    expect(source).toMatch(/sessions:\s*projectSessions\(await this\.listSessions\(/);
+    expect(source).toMatch(/sessions:\s*projectSessions\(await deps\.listSessions\(/);
     expect(sessionsCore).toMatch(/JSON\.stringify\(projectSession\(session\)\)/);
   });
 
