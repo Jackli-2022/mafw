@@ -21,16 +21,17 @@ describe('legacy route inventory (Phase D1 baseline)', () => {
   const inv = inventory();
 
   it('index.ts has the documented legacy dispatch mass', () => {
-    // Baseline at D1 start: 95 match/startsWith + 40 ===. Tasks shrink this.
-    expect(inv.byKind.match).toBe(95);
+    // D1 Task 2 migrated /api/cognition (3 branches) to registry dispatch.
+    // Baseline was 95 match/startsWith + 40 === = 135; every task shrinks this.
+    expect(inv.byKind.match).toBe(92);
     expect(inv.byKind.equals).toBe(40);
-    expect(inv.total).toBe(135);
+    expect(inv.total).toBe(132);
   });
 
   it('groups match the D1 plan inventory', () => {
     const byPrefix = new Map(inv.groups.map((g) => [g.prefix, g.count]));
     expect(byPrefix.get('/api/recall')).toBe(4);
-    expect(byPrefix.get('/api/cognition')).toBe(3);
+    expect(byPrefix.get('/api/cognition')).toBeUndefined(); // migrated in Task 2
     expect(byPrefix.get('/api/mobile')).toBe(2);
     // The biggest single group is the /api catch-all mass.
     expect(byPrefix.get('/api')).toBe(73);

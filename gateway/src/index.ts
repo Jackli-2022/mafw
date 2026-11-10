@@ -213,7 +213,7 @@ import { SessionQueue } from './core/session-queue';
 import { shouldFlush } from './core/queue-flush';
 import { createCognitionGate } from './core/cognition/cognition-gate';
 import { validateRules, type CognitionRule } from './core/cognition/rules';
-import { handleCognitionGate, handleCognitionRewrite, handleCognitionRules } from './routes/cognition';
+import { attachCognitionRoutes } from './routes/cognition';
 
 /** 队列防楔死（spec 2026-10-22-session-queue-inbox §5.1 v2 Q2）：busy 陈旧清扫 + 队列项 TTL。 */
 const BUSY_STALE_MS = 15 * 60_000;
@@ -5530,6 +5530,8 @@ class MafwScheduler {
       });
       // Task 3：中性 background jobs façade（三源统一；runtime shell 原生 DTO 不出 gateway）
       attachBackgroundJobHandlers(this.routeRegistry, () => ({ service: this.backgroundJobs ?? null }));
+      // Phase D1 Task 2：认知面动词迁 registry dispatch（loopback-only 语义随迁）。
+      attachCognitionRoutes(this.routeRegistry, { gate: () => this.cognitionGate });
       // code-first P0 试点：schema 是响应事实源，handler 返回数据（不写 res）。
       attachTypedRoute(this.routeRegistry, {
         operationId: 'session.list',
@@ -7935,24 +7937,8 @@ class MafwScheduler {
         }
 
         // ── 认知面 HTTP 动词（spec 2026-10-22-cognition-gate-rewrite §5.4；loopback-only）──
-        if (req.url?.startsWith('/api/cognition/gate') && req.method === 'POST') {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          const body = await readBody(req);
-          await handleCognitionGate({ body: body ? JSON.parse(body) : null, gate: this.cognitionGate, res });
-          return;
-        }
-        if (req.url?.startsWith('/api/cognition/rewrite') && req.method === 'POST') {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          const body = await readBody(req);
-          await handleCognitionRewrite({ body: body ? JSON.parse(body) : null, gate: this.cognitionGate, res });
-          return;
-        }
-        if (req.url?.startsWith('/api/cognition/rules') && req.method === 'GET') {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          const raw = config.cognition?.rules;
-          await handleCognitionRules({ res, getRules: () => validateRules(raw) });
-          return;
-        }
+        // Phase D1 Task 2：已迁 registry dispatch（attachCognitionRoutes；loopback
+        // 守卫与 per-request config 读取随 handler 迁移，行为等价）。
 
         // ── 会话队列 inbox 管理面（spec 2026-10-22-session-queue-inbox §5.5）──
         // GET /api/session/{id}/queue — 列队

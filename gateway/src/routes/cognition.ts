@@ -77,3 +77,53 @@ export async function handleCognitionRules(deps: { res: ServerResponse; getRules
     json(deps.res, 500, { error: err?.message ?? 'cognition rules failed' });
   }
 }
+
+// ─── Phase D1 Task 2: registry dispatch wiring ──────────────────────────────
+
+import type { IncomingMessage } from 'http';
+import { isLoopbackAddr } from '../core/auth';
+import { config } from '../config';
+import { validateRules } from '../core/cognition/rules';
+import type { RouteRegistry } from './registry';
+
+/** Shared body reader for migrated route modules (index.ts keeps its own until
+ *  the remaining legacy branches migrate). */
+export function readRouteBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    req.on('data', (chunk: string) => { body += chunk; });
+    req.on('end', () => resolve(body));
+    req.on('error', reject);
+  });
+}
+
+export interface CognitionRouteWiringDeps {
+  gate: () => CognitionGateLike;
+}
+
+/**
+ * Bind the catalog's cognition routes (shadow entries cognition.gate/rewrite/
+ * rules) to their handlers. Loopback-only exactly like the legacy branches;
+ * rules are read from config per request (hot-reload parity).
+ */
+export function attachCognitionRoutes(
+  registry: RouteRegistry,
+  deps: CognitionRouteWiringDeps,
+): void {
+  registry.attachHandler('cognition.gate', async (req, res) => {
+    if (!isLoopbackAddr(req.socket?.remoteAddress || '')) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
+    const body = await readRouteBody(req);
+    await handleCognitionGate({ body: body ? JSON.parse(body) : null, gate: deps.gate(), res });
+  });
+  registry.attachHandler('cognition.rewrite', async (req, res) => {
+    if (!isLoopbackAddr(req.socket?.remoteAddress || '')) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
+    const body = await readRouteBody(req);
+    await handleCognitionRewrite({ body: body ? JSON.parse(body) : null, gate: deps.gate(), res });
+  });
+  registry.attachHandler('cognition.rules', async (_req, res) => {
+    if (!isLoopbackAddr(_req.socket?.remoteAddress || '')) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
+    // config is read per request — identical to the legacy branch (hot-reload parity).
+    const raw = config.cognition?.rules;
+    await handleCognitionRules({ res, getRules: () => validateRules(raw) });
+  });
+}
