@@ -163,6 +163,7 @@ import { buildSchemaClusters, Cluster } from "./memory/schema-clusters";
 import { getReconsolidationQueue } from "./recall/reconsolidation";
 import { HarmonicUnitFileStore } from "./memory/harmonic-file-store";
 import { deoptSkill as deoptInstalledSkill } from './memory/skill-install';
+import { observeSkillInvocation } from './core/skills/skill-invocation';
 import { L5Store } from "./core/memory/l5-store";
 import { CostService } from "./cost/service";
 import { MediaService } from "./media/media-service";
@@ -1060,6 +1061,9 @@ class MafwScheduler {
 
   private handleRuntimeEvent(evt: any): void {
     const f = normalizeRuntimeEvent(evt);
+    // Skill v1 6B: trusted activation signal (runtime `tool.call` with tool=skill).
+    // Reading/listing a skill never reaches this path; failure is mechanical only.
+    try { observeSkillInvocation(this.getGatewayDb(), f); } catch { /* fail-open */ }
     // Phase D2：24 段有序 stage 表（src/runtime/event-dispatch.ts）。数组位置即执行顺序；
     // 仅 nativeDrop / toolPrimitiveDrop / internalFilter 三段可 HALT（legacy early return）。
     runEventPipeline(f, evt, this.buildDispatchCtx());
