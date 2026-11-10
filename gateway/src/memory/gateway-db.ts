@@ -62,6 +62,28 @@ export interface T1TraceRead {
 
 export type T1RetrievalKind = 'search' | 'recall' | 'redeem';
 
+/** One lexical T1 hit (best row per trace, ordered by FTS bm25). */
+export interface T1LexicalHit {
+  traceId: string;
+  sessionId: string;
+  turnId: number;
+  source: string;
+  excerpt: string;
+  /** FTS5 bm25 rank (lower is better). */
+  rank: number;
+}
+
+/**
+ * Turn a user query into a safe FTS5 MATCH expression: every token of at
+ * least three characters is double-quoted (so `.`/`-`/`:` are literal) and
+ * joined with OR. Returns '' when no token is trigram-eligible.
+ */
+export function buildT1FtsQuery(query: string): string {
+  const tokens = String(query || '').match(/[\p{L}\p{N}_./:\\-]{3,}/gu) ?? [];
+  const unique = Array.from(new Set(tokens.map((t) => t.toLowerCase()))).slice(0, 12);
+  return unique.map((t) => `"${t.replace(/"/g, '""')}"`).join(' OR ');
+}
+
 export interface T1RetrievalStats {
   total: number;
   byKind: Record<T1RetrievalKind, number>;
@@ -316,6 +338,19 @@ export class GatewayDatabase {
       );
       CREATE INDEX IF NOT EXISTS idx_t1_turns_session ON t1_turns(session_id, turn_seq);
 
+      -- Lexical derivative of T1 (rebuildable): trigram tokenizer supports
+      -- identifier/path/error-code substring matching that dense retrieval
+      -- misses. Metadata columns are UNINDEXED so deletes can target keys.
+      CREATE VIRTUAL TABLE IF NOT EXISTS t1_fts USING fts5(
+        content,
+        trace_id UNINDEXED,
+        observation_key UNINDEXED,
+        session_id UNINDEXED,
+        turn_id UNINDEXED,
+        source UNINDEXED,
+        tokenize='trigram'
+      );
+
       CREATE TABLE IF NOT EXISTS t1_retrieval_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         trace_id TEXT NOT NULL,
@@ -516,6 +551,8 @@ export class GatewayDatabase {
     // Task 4: backfill durable identity onto pre-Task-4 legacy rows. Idempotent
     // and transactional; a failure is logged and must never block startup.
     this.migrateT1Identity();
+    // Lexical index is a rebuildable derivative of the immutable T1 rows.
+    this.rebuildT1FtsIfEmpty();
   }
 
   /**
@@ -791,6 +828,14 @@ export class GatewayDatabase {
         this.db
           .prepare('UPDATE t1_turns SET archived_at = NULL WHERE trace_id = ?')
           .run(obs.trace_id);
+        // Lexical derivative: same content, same observation key across the
+        // obs→archive move, so archiving needs no FTS change.
+        this.db
+          .prepare(
+            `INSERT INTO t1_fts (content, trace_id, observation_key, session_id, turn_id, source)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+          )
+          .run(obs.content, obs.trace_id, observationKey, obs.session_id, obs.turn_id, obs.source);
       }
       return result.changes > 0 ? Number(result.lastInsertRowid) : null;
     });
@@ -832,10 +877,18 @@ export class GatewayDatabase {
 
   /** Remove all observations for a session up to (and including) a turn. */
   deleteTurn(session_id: string, turn_id: number): number {
-    const result = this.db
-      .prepare('DELETE FROM t1_observations WHERE session_id = ? AND turn_id = ?')
-      .run(session_id, turn_id);
-    return result.changes;
+    const txn = this.db.transaction(() => {
+      this.db
+        .prepare(
+          `DELETE FROM t1_fts WHERE observation_key IN
+             (SELECT observation_key FROM t1_observations WHERE session_id = ? AND turn_id = ?)`,
+        )
+        .run(session_id, turn_id);
+      return this.db
+        .prepare('DELETE FROM t1_observations WHERE session_id = ? AND turn_id = ?')
+        .run(session_id, turn_id).changes;
+    });
+    return txn();
   }
 
   /**
@@ -1071,7 +1124,115 @@ export class GatewayDatabase {
   }
 
   deleteSession(session_id: string): number {
-    return this.db.prepare('DELETE FROM t1_observations WHERE session_id = ?').run(session_id).changes;
+    const txn = this.db.transaction(() => {
+      this.db
+        .prepare(
+          `DELETE FROM t1_fts WHERE observation_key IN
+             (SELECT observation_key FROM t1_observations WHERE session_id = ?)`,
+        )
+        .run(session_id);
+      return this.db.prepare('DELETE FROM t1_observations WHERE session_id = ?').run(session_id).changes;
+    });
+    return txn();
+  }
+
+  /**
+   * Rebuild the lexical derivative from active + archive rows. Idempotent:
+   * clears the FTS table first, so a crashed or partial rebuild cannot
+   * duplicate rows. Returns the number of indexed rows (0 on failure).
+   */
+  rebuildT1Fts(): number {
+    try {
+      const txn = this.db.transaction(() => {
+        this.db.prepare('DELETE FROM t1_fts').run();
+        const active = this.db
+          .prepare(
+            `INSERT INTO t1_fts (content, trace_id, observation_key, session_id, turn_id, source)
+             SELECT content, trace_id, observation_key, session_id, turn_id, source
+             FROM t1_observations WHERE observation_key IS NOT NULL`,
+          )
+          .run().changes;
+        const archived = this.db
+          .prepare(
+            `INSERT INTO t1_fts (content, trace_id, observation_key, session_id, turn_id, source)
+             SELECT content, trace_id, observation_key, session_id, turn_id, source
+             FROM t1_archive WHERE observation_key IS NOT NULL`,
+          )
+          .run().changes;
+        return active + archived;
+      });
+      return txn();
+    } catch (err: any) {
+      log.warn(`[T1FTS] rebuild failed: ${err?.message || err}`);
+      return 0;
+    }
+  }
+
+  private rebuildT1FtsIfEmpty(): void {
+    try {
+      const indexed = (this.db.prepare('SELECT COUNT(*) AS c FROM t1_fts').get() as { c: number }).c;
+      if (indexed > 0) return;
+      const rows = (
+        this.db
+          .prepare(
+            `SELECT (SELECT COUNT(*) FROM t1_observations) + (SELECT COUNT(*) FROM t1_archive) AS c`,
+          )
+          .get() as { c: number }
+      ).c;
+      if (rows === 0) return;
+      const count = this.rebuildT1Fts();
+      log.info(`[T1FTS] rebuilt ${count} row(s) into the lexical index`);
+    } catch (err: any) {
+      log.warn(`[T1FTS] startup rebuild skipped: ${err?.message || err}`);
+    }
+  }
+
+  /**
+   * Lexical T1 search over the FTS5 trigram index. Returns the best-ranked
+   * row per trace. Fail-open: malformed input or an FTS error returns [].
+   */
+  searchT1Lexical(query: string, topK: number): T1LexicalHit[] {
+    const match = buildT1FtsQuery(query);
+    if (!match || !Number.isFinite(topK) || topK <= 0) return [];
+    try {
+      const rows = this.db
+        .prepare(
+          `SELECT trace_id, session_id, turn_id, source,
+                  snippet(t1_fts, 0, '', '', '…', 32) AS excerpt,
+                  bm25(t1_fts) AS rank
+           FROM t1_fts
+           WHERE t1_fts MATCH ?
+           ORDER BY rank
+           LIMIT ?`,
+        )
+        .all(match, Math.max(topK * 4, 12)) as Array<{
+        trace_id: string;
+        session_id: string;
+        turn_id: number;
+        source: string;
+        excerpt: string;
+        rank: number;
+      }>;
+      const seen = new Set<string>();
+      const hits: T1LexicalHit[] = [];
+      for (const row of rows) {
+        if (!row.trace_id || seen.has(row.trace_id)) continue;
+        seen.add(row.trace_id);
+        hits.push({
+          traceId: row.trace_id,
+          sessionId: row.session_id,
+          turnId: row.turn_id,
+          source: row.source,
+          excerpt: row.excerpt || '',
+          rank: row.rank,
+        });
+        if (hits.length >= topK) break;
+      }
+      return hits;
+    } catch (err: any) {
+      log.warn(`[T1FTS] search failed: ${err?.message || err}`);
+      return [];
+    }
   }
 
   count(): number {
