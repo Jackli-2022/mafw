@@ -13,6 +13,7 @@ import { getRetrievalEventBuffer, RetrievalEvent } from './core/memory/retrieval
 import { actrBonus } from './core/memory/retrieval-bonus';
 import { getEmbeddingRuntime } from './memory/embedding-runtime';
 import { runEmbeddingBackfill } from './memory/embedding-backfill';
+import { backfillT1Vectors } from './memory/t1-backfill';
 import { Scheduler, TaskSkippedError, TaskTimeoutError, BudgetExceededError, TaskBudget } from './scheduler';
 
 import { SchedulerLedger } from './ledger';
@@ -196,10 +197,28 @@ function registerBuiltinActionsOn(engine: AutomationEngine): void {
       const res = runEnergyDecay(indexManager, Date.now(), events, catd);
       // Coverage top-up: write-path embedding is fire-and-forget (failed batches
       // are dropped), so vectors drift behind the index. Idempotent + fail-open.
+      const rt = getEmbeddingRuntime();
       const backfill = await runEmbeddingBackfill(
-        getEmbeddingRuntime(),
+        rt,
         indexManager.getIndex().entries.map((e) => e.id),
       );
+      // T1 verbatim coverage: bounded archive-first backfill of missing vectors.
+      let t1Backfill = { indexed: 0, missing: 0, failed: 0 };
+      try {
+        const db = eng.getGatewayDb?.();
+        const limit = config.recall.t1Recall?.t1BackfillLimit ?? 200;
+        if (db && rt?.t1Indexer && rt?.t1Vectors && limit > 0) {
+          t1Backfill = await backfillT1Vectors(
+            {
+              listRows: (offset, pageLimit) => db.listT1RowsForBackfill({ offset, limit: pageLimit }),
+              hasVector: (key) => Boolean(rt.t1Vectors.get(key)),
+              enqueue: (key, text) => rt.t1Indexer.enqueueText(key, text),
+              flush: () => rt.t1Indexer.flushQueue(),
+            },
+            { limit },
+          );
+        }
+      } catch { /* fail-open: T1 coverage converges on a later run */ }
       // T1 retrieval events are observe-only history: prune past retention in
       // the same daily pass (retention never affects energy or ranking).
       let prunedT1 = 0;
@@ -230,6 +249,9 @@ function registerBuiltinActionsOn(engine: AutomationEngine): void {
           backfillIndexed: backfill.indexed,
           backfillMissing: backfill.missing,
           prunedT1,
+          t1BackfillIndexed: t1Backfill.indexed,
+          t1BackfillMissing: t1Backfill.missing,
+          t1BackfillFailed: t1Backfill.failed,
         },
       });
     } catch (err: any) {

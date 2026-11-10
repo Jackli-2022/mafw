@@ -170,8 +170,47 @@ describe('memory:decay incremental decay', () => {
     expect(cutoff).toBeGreaterThanOrEqual(Math.floor((now - 91 * DAY) / 1000));
   });
 
-  test('memory:decay stays green without a gateway DB provider', async () => {
+  test('memory:decay backfills missing T1 vectors and records heartbeat counts', async () => {
     writeIndex(tmpDir, {
+      version: 2,
+      updated_at: new Date().toISOString(),
+      entries: [makeEntry({ last_decay_at: new Date(Date.now() - DAY).toISOString() })],
+    });
+    const enqueued: Array<[string, string]> = [];
+    setEmbeddingRuntime({
+      indexer: { backfill: async () => ({ indexed: 0, skipped: 0, missing: 0 }) },
+      vectors: { size: () => 0 },
+      t1Vectors: { get: () => undefined, size: () => 0 },
+      t1Indexer: {
+        enqueueText: (key: string, text: string) => enqueued.push([key, text]),
+        flushQueue: async () => ({ indexed: 1, failed: 0 }),
+      },
+    } as any);
+    try {
+      const recorded: Array<[string, any]> = [];
+      const engine = new AutomationEngine(tmpDir);
+      engine.setIndexManagerProvider(() => new HarmonicIndexManager(tmpDir));
+      engine.setHeartbeat({ record: (name: string, r: any) => recorded.push([name, r]) } as any);
+      engine.setGatewayDbProvider(() => ({
+        pruneT1RetrievalEvents: () => 0,
+        listT1RowsForBackfill: ({ offset, limit }: any) => offset === 0
+          ? [{ observationKey: 't1o_1', sessionId: 's1', turnId: 1, content: 'missing raw row' }].slice(0, limit)
+          : [],
+      }) as any);
+
+      await engine.getAction('memory:decay')!({} as any, engine);
+
+      expect(enqueued).toHaveLength(1);
+      expect(enqueued[0][1]).toBe('missing raw row');
+      expect(recorded[0][1].counts.t1BackfillIndexed).toBe(1);
+      expect(recorded[0][1].counts.t1BackfillMissing).toBe(0);
+      expect(recorded[0][1].counts.t1BackfillFailed).toBe(0);
+    } finally {
+      setEmbeddingRuntime(null);
+    }
+  });
+
+  test('memory:decay stays green without a gateway DB provider', async () => {    writeIndex(tmpDir, {
       version: 2,
       updated_at: new Date().toISOString(),
       entries: [makeEntry({ last_decay_at: new Date(Date.now() - DAY).toISOString() })],
@@ -235,6 +274,9 @@ describe('memory:decay incremental decay', () => {
       backfillIndexed: 0,
       backfillMissing: 0,
       prunedT1: 0,
+      t1BackfillIndexed: 0,
+      t1BackfillMissing: 0,
+      t1BackfillFailed: 0,
     });
   });
 

@@ -1123,6 +1123,41 @@ export class GatewayDatabase {
       .all(...params, limit) as any[];
   }
 
+  /**
+   * Page through T1 rows for vector backfill: archive rows first (older), then
+   * active rows. Offset is a global row offset across both tables.
+   */
+  listT1RowsForBackfill(opts: { offset: number; limit: number }): Array<{
+    observationKey: string;
+    sessionId: string;
+    turnId: number;
+    content: string;
+  }> {
+    const offset = Math.max(0, Math.floor(opts.offset || 0));
+    const limit = Math.max(0, Math.floor(opts.limit || 0));
+    if (limit === 0) return [];
+    const archiveCount = (this.db.prepare('SELECT COUNT(*) AS c FROM t1_archive').get() as { c: number }).c;
+    const rows: Array<{ observationKey: string; sessionId: string; turnId: number; content: string }> = [];
+    const select = (table: 't1_archive' | 't1_observations', take: number, skip: number) =>
+      this.db
+        .prepare(
+          `SELECT observation_key AS observationKey, session_id AS sessionId,
+                  turn_id AS turnId, content
+           FROM ${table} WHERE observation_key IS NOT NULL
+           ORDER BY id LIMIT ? OFFSET ?`,
+        )
+        .all(take, skip) as Array<{ observationKey: string; sessionId: string; turnId: number; content: string }>;
+
+    if (offset < archiveCount) {
+      rows.push(...select('t1_archive', Math.min(limit, archiveCount - offset), offset));
+    }
+    if (rows.length < limit) {
+      const activeOffset = Math.max(0, offset - archiveCount);
+      rows.push(...select('t1_observations', limit - rows.length, activeOffset));
+    }
+    return rows;
+  }
+
   deleteSession(session_id: string): number {
     const txn = this.db.transaction(() => {
       this.db
