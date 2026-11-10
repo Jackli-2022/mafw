@@ -11,12 +11,11 @@
 //      every other path's pre-D1 behavior;
 //   3. the dead `/api/goals/control` arm (ruling R6) — shadowed by the dashboard
 //      catch-all since cdf678db2 (latent bug, deliberately NOT fixed in D1);
-//   4. the runtime-config helper residue — `GET/PATCH /api/runtime-config` is
-//      still inline legacy dispatch (matchRuntimeConfigRoute, index.ts); the
-//      analyzer never counted it (R9), and catalog entries
-//      runtime.config.get/update are handler-less phantoms. Plus the `/api/ws`
-//      upgrade path, which lives outside the HTTP dispatch chain entirely
-//      (transport-uncounted, D3).
+//   4. the runtime-config helper residue — **D3 Task 2 已清**：`GET/PATCH
+//      /api/runtime-config` 迁入 `routes/runtime-config.ts`（registry
+//      `runtime.config.get/update`，原幻影条目）。analyzer 从不计数这段 helper
+//      分发（R9 盲区），所以迁走不改变本文件的 24 = 10 + 14 基线；`/api/ws`
+//      upgrade 仍不在 HTTP 分发链内（transport-uncounted，D3 Task 3）。
 // Everything else that IS registry-attached lives in routes/*.ts.
 // Spec: 2026-11-09-gateway-kernel-microkernel-design.md §5.2.
 import { execFileSync } from 'child_process';

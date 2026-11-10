@@ -539,7 +539,7 @@ promise：`return handleX(req, res, req.url!, deps)`。`dispatchAuthorized` 把 
 | transport / 静态 / MCP / 根路径 | `/a2a`、`/.well-known`、`/a`、`/assets`、`/static`、`/`、`/index.html`、`/mcp`、`/register`、`/control`、`/health` | **D3**（`http-router.ts`：auth → registry → 404；不进 RouteRegistry） |
 | dashboard 兜底（R5） | `/api/goals`、`/api/stats`、`/api/memory` 联合 `startsWith` + `handleDashboardAPI` | 保留：四个明确影子条目已 registry-first（`goals.list` / `dashboard.stats` / `memory.add` / `memory.setSticky`），其余路径行为不变 |
 | `/api/goals/control` 等价臂（R6） | 与 `/control` 共享的 POST 分支 | 死代码（自 cdf678db2 起被 dashboard 兜底遮蔽）；D1 不修，合并时按潜在 bug 处理 |
-| runtime-config 内联残量 | `GET/PATCH /api/runtime-config`（`matchRuntimeConfigRoute` 门，index.ts 内联分发） | **未迁移**：analyzer 从不计数（R9），catalog 的 `runtime.config.get` / `runtime.config.update` 是**无 handler 的幻影条目**；连同 `/api/ws` upgrade（transport 级、不经 HTTP 分发链）一并归 **D3** |
+| runtime-config | `GET/PATCH /api/runtime-config` | **D3 Task 2 已迁**：`routes/runtime-config.ts` 挂 `runtime.config.get` / `runtime.config.update`（原幻影条目转实）；GET `{ config }` / PATCH `{ status:'ok', config }` 包络、`provider.config(.update)` 门与 503/500 语义逐字随迁，runtime / runtimeHost 走 live getter。analyzer 从不计数这段 helper 分发（R9 盲区），故 24 基线不变；`/api/ws` upgrade 仍归 D3 Task 3 |
 
 `index.ts` 从 **10098 行（D1 起点 `ed2e998e`）降到 8204 行**（−1894 / −18.8%），减掉的
 全是分支体；迁移留下的 tombstone 注释（`// <METHOD> <path> — Phase D1 Task <X>：已迁

@@ -449,15 +449,17 @@ export const NON_PRIMARY_GATES: NonPrimaryGate[] = [
   },
   {
     surface: 'provider.config',
-    file: 'src/index.ts',
+    // Phase D3 Task 2: /api/runtime-config 迁入 routes/runtime-config.ts（capGuard 原文随迁）。
+    file: 'src/routes/runtime-config.ts',
     marker: "capGuard(res, 'provider.config')",
-    why: 'inline provider route',
+    why: 'runtime-config GET route（capGuard 统一中性 503）',
   },
   {
     surface: 'provider.config.update',
-    file: 'src/index.ts',
+    // Phase D3 Task 2: /api/runtime-config 迁入 routes/runtime-config.ts（capGuard 原文随迁）。
+    file: 'src/routes/runtime-config.ts',
     marker: "capGuard(res, 'provider.config.update')",
-    why: 'inline provider route',
+    why: 'runtime-config PATCH route（capGuard 统一中性 503）',
   },
 ];
 

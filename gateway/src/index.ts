@@ -231,6 +231,7 @@ import { attachMemoryRoutes } from './routes/memory';
 import { attachDashboardRoutes } from './routes/dashboard';
 import { attachMiscRoutes } from './routes/misc';
 import { attachConfigRoutes } from './routes/config';
+import { attachRuntimeConfigRoutes } from './routes/runtime-config';
 import { attachLlmRoutes } from './routes/llm';
 import { attachMediaPluginRoutes } from './routes/media-plugins';
 import { attachPodsEventsRoutes } from './routes/pods-events-dispatch';
@@ -298,7 +299,6 @@ import {
   projectSessions,
 } from './runtime/view-projections';
 import { buildRuntimeDiagnostics, type RuntimeDiagnosticsView } from './runtime/runtime-diagnostics';
-import { matchRuntimeConfigRoute } from './routes/runtime-config-route';
 import { TOOL_PRIMITIVE_TYPES } from './runtime/tool-part-assembler';
 import { runEventPipeline, type DispatchCtx } from './runtime/event-dispatch';
 
@@ -5693,6 +5693,14 @@ class MafwScheduler {
         runtimeName: () => this.runtimeName,
       });
       attachConfigRoutes(this.routeRegistry);
+      // Phase D3 Task 2：/api/runtime-config 迁 registry dispatch（catalog 的
+      // runtime.config.get/update 幻影条目从此有 handler；runtime / runtimeHost
+      // 是 adopt 后可重赋值字段，故收 live getter）。
+      attachRuntimeConfigRoutes(this.routeRegistry, {
+        capGuard: (res, surface) => this.capGuard(res, surface),
+        runtime: () => this.runtime,
+        runtimeHost: () => this.runtimeHost,
+      });
       attachLlmRoutes(this.routeRegistry, {
         compress: (observations, model) => this.handleCompress(observations, model),
       });
@@ -6187,36 +6195,10 @@ class MafwScheduler {
 
         // ── Runtime config (Settings page — runtime-neutral config surface) ──
 
-        // GET /api/runtime-config — return the effective runtime Config
-        if (matchRuntimeConfigRoute(req.url, 'GET') && req.method === 'GET') {
-          if (this.capGuard(res, 'provider.config')) return;
-          try {
-            if (!this.runtime) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
-            const configData = await this.runtimeHost?.config.get();
-            res.end(JSON.stringify({ config: configData ?? {} }));
-          } catch (err: any) {
-            log.error('[OpenCodeConfig] get error:', err.message);
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
-        // PATCH /api/runtime-config — merge-update the runtime Config (native merge semantics)
-        if (matchRuntimeConfigRoute(req.url, 'PATCH') && req.method === 'PATCH') {
-          if (this.capGuard(res, 'provider.config.update')) return;
-          try {
-            if (!this.runtime) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
-            const body = JSON.parse(await readBody(req));
-            const result = await this.runtimeHost?.config.update(body);
-            res.end(JSON.stringify({ status: 'ok', config: result ?? null }));
-          } catch (err: any) {
-            log.error('[OpenCodeConfig] update error:', err.message);
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
+        // GET/PATCH /api/runtime-config — Phase D3 Task 2：已迁 registry dispatch。
+        // （routes/runtime-config.ts；GET 包络 `{ config }` / PATCH `{ status:'ok',
+        // config }`、provider.config(.update) 门、503 'LLM client not available'
+        // 与 500 日志格式随迁，runtime / runtimeHost 经 live getter。）
 
         // GET|POST /api/sessions/{sid}/permission-mode — Phase D1 Task E2：已迁 registry dispatch。
 
