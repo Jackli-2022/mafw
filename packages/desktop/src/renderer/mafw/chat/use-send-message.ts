@@ -392,7 +392,7 @@ export function useSendMessage(deps: SendMessageDeps) {
     setStore(prev => {
       const msgs = { ...prev.message }
       const sessionMsgs = [...(msgs[sid] || [])]
-      sessionMsgs.push({ id: userMsgId, sessionID: sid, role: "user", parentID: null, time: { created: Date.now() }, text: bodyMessage, agent: "general", model: { providerID: "opencode", modelID: "" } })
+      sessionMsgs.push({ id: userMsgId, sessionID: sid, role: "user", parentID: null, time: { created: Date.now() }, text: bodyMessage })
       msgs[sid] = sessionMsgs
       return {
         ...prev,

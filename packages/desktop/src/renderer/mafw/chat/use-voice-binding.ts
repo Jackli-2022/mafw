@@ -197,8 +197,6 @@ export function useVoiceBinding(
         parentID: null,
         time: { created: Date.now() },
         text: "",
-        agent: "general",
-        model: { providerID: "opencode", modelID: "" },
         voiceStatus: "uploading",
         voiceDuration: duration,
       })

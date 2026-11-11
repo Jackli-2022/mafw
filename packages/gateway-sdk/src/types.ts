@@ -1,5 +1,5 @@
 // ============================================================
-// Core types (aligned with @opencode-ai/sdk subset)
+// Gateway wire types (neutral client-facing subset)
 // ============================================================
 
 // Task 3：background jobs 复用 Task 1 的 View DTO（单一事实源在 view-dto.ts）
@@ -342,7 +342,7 @@ export interface GatewayStatus {
 }
 
 // ============================================================
-// Namespace interfaces (aligned with @opencode-ai/sdk v2)
+// Namespace interfaces (gateway wire surface)
 // ============================================================
 
 export interface QueueItem {
