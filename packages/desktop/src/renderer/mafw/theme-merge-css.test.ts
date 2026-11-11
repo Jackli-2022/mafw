@@ -74,12 +74,16 @@ describe("合并块保留代码块主题令牌", () => {
   })
 })
 
-describe("悬空 token 兜底别名（值 = 现行 fallback 生效值，零视觉变化）", () => {
-  for (const [name, b] of [["暗色", dark], ["亮色手动", light], ["亮色系统", sysLight]] as const) {
+describe("兜底别名收敛到 v6 语义 token", () => {
+  for (const [name, b, success, borderStrong] of [
+    ["暗色", dark, "#6FC79B", "#8B969F"],
+    ["亮色手动", light, "#247A4D", "#7C858E"],
+    ["亮色系统", sysLight, "#247A4D", "#7C858E"],
+  ] as const) {
     test(`${name}块定义 --text-6 / --success / --border-strong`, () => {
       expect(b).toContain("--text-6: var(--text-5)")
-      expect(b).toContain("--success: #3fb950")
-      expect(b).toContain("--border-strong: var(--text-5)")
+      expect(b).toContain(`--success: ${success}`)
+      expect(b).toContain(`--border-strong: ${borderStrong}`)
     })
   }
 })
@@ -99,9 +103,6 @@ describe("悬空引用扫描 — mafw.css 引用的 token 必须有定义", () =
     )
     const referenced = [...css.matchAll(/var\((--[\w-]+)/g)].map((m) => m[1])
     const missing = [...new Set(referenced.filter((t) => !defined.has(t)))]
-    // --border（NoteCard 3831/3832）无 fallback：当前声明失效 → 不渲染边框。
-    // 定义它会凭空显示边框（视觉变化），故记债白名单，留后续单独修。
-    const allowed = new Set(["--border"])
-    expect(missing.filter((t) => !allowed.has(t))).toEqual([])
+    expect(missing).toEqual([])
   })
 })

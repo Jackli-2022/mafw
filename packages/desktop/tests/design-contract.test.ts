@@ -118,7 +118,7 @@ describe("token v6 — 字体分层", () => {
 
 describe("portal 令牌镜像 — body 暗色块", () => {
   test.each(PORTAL_TOKENS)("定义 %s", (t) => expect(bodyDark).toContain(`${t}:`))
-  test("bg-float 与 .mafw-shell 同值", () => expect(tokenHex(bodyDark, "--bg-float")).toBe("#252320"))
+  test("bg-float 与 .mafw-shell 同值", () => expect(tokenHex(bodyDark, "--bg-float")).toBe("#282D32"))
 })
 
 describe("portal 令牌镜像 — body 亮色手动块", () => {
@@ -180,62 +180,60 @@ export function contrastHex(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05)
 }
 
-describe("token v5 — 暗色暖纸背景", () => {
-  test("bg-base #100F0E", () => expect(dark).toContain("--bg-base: #100F0E"))
-  test("bg-raised #161513", () => expect(dark).toContain("--bg-raised: #161513"))
-  test("bg-overlay #1D1B18", () => expect(dark).toContain("--bg-overlay: #1D1B18"))
-  test("bg-float #252320", () => expect(dark).toContain("--bg-float: #252320"))
-  test("bg-inset #12110F", () => expect(dark).toContain("--bg-inset: #12110F"))
+describe("visual language v6 — 暗色石墨背景", () => {
+  test("bg-base #111315", () => expect(dark).toContain("--bg-base: #111315"))
+  test("bg-raised #181B1E", () => expect(dark).toContain("--bg-raised: #181B1E"))
+  test("bg-overlay #202428", () => expect(dark).toContain("--bg-overlay: #202428"))
+  test("bg-float #282D32", () => expect(dark).toContain("--bg-float: #282D32"))
+  test("bg-inset #15181B", () => expect(dark).toContain("--bg-inset: #15181B"))
 })
 
-describe("token v5 — 亮色米纸背景（手动块）", () => {
-  test("bg-base #FAF9F5", () => expect(light).toContain("--bg-base: #FAF9F5"))
-  test("bg-raised #F3F1EB", () => expect(light).toContain("--bg-raised: #F3F1EB"))
+describe("visual language v6 — 亮色中性背景（手动块）", () => {
+  test("bg-base #F6F7F8", () => expect(light).toContain("--bg-base: #F6F7F8"))
+  test("bg-raised #F0F1F2", () => expect(light).toContain("--bg-raised: #F0F1F2"))
   test("bg-overlay #FFFFFF", () => expect(light).toContain("--bg-overlay: #FFFFFF"))
-  test("bg-inset #EFEDE7", () => expect(light).toContain("--bg-inset: #EFEDE7"))
+  test("bg-inset #E9EBEE", () => expect(light).toContain("--bg-inset: #E9EBEE"))
 })
 
-describe("token v5 — 亮色系统块与手动块一致", () => {
-  test.each(["--bg-base: #FAF9F5", "--bg-raised: #F3F1EB", "--bg-inset: #EFEDE7", "--accent: #17804C"])(
+describe("visual language v6 — 亮色系统块与手动块一致", () => {
+  test.each(["--bg-base: #F6F7F8", "--bg-raised: #F0F1F2", "--bg-inset: #E9EBEE", "--accent: #2B54D8"])(
     "系统块含 %s", (s) => expect(sysLight).toContain(s),
   )
 })
 
-describe("token v5 — accent 绿重校准", () => {
-  test("暗色 accent #4FD388", () => expect(dark).toContain("--accent: #4FD388"))
-  test("暗色 accent-strong #67DE9B", () => expect(dark).toContain("--accent-strong: #67DE9B"))
-  test("暗色 accent-text #8CE0B1", () => expect(dark).toContain("--accent-text: #8CE0B1"))
-  test("暗色 accent alpha 基色 rgb(79,211,136)", () => {
-    expect(dark).toContain("rgba(79,211,136,.12)")  // accent-soft
-    expect(dark).toContain("rgba(79,211,136,.35)")  // accent-border
-    expect(dark).not.toContain("70,220,130")
+describe("visual language v6 — 交互蓝与动作/成功分离", () => {
+  test("暗色 accent #9DB4FF", () => expect(dark).toContain("--accent: #9DB4FF"))
+  test("暗色 accent-strong #B8C7FF", () => expect(dark).toContain("--accent-strong: #B8C7FF"))
+  test("暗色 accent-text #C3D0FF", () => expect(dark).toContain("--accent-text: #C3D0FF"))
+  test("暗色 accent alpha 基色 rgb(157,180,255)", () => {
+    expect(dark).toContain("rgba(157,180,255,.09)")
+    expect(dark).toContain("rgba(157,180,255,.26)")
   })
-  test("亮色 accent #17804C", () => expect(light).toContain("--accent: #17804C"))
+  test("亮色 accent #2B54D8", () => expect(light).toContain("--accent: #2B54D8"))
   test("亮色 accent 对 bg-base 对比度 ≥4.5", () => {
     const accent = tokenHex(light, "--accent")!
     const bg = tokenHex(light, "--bg-base")!
     expect(contrastHex(accent, bg)).toBeGreaterThanOrEqual(4.5)
   })
-  test("亮色 accent alpha 基色 rgb(23,128,76)", () => {
-    expect(light).toContain("rgba(23,128,76,.10)")
-    expect(light).toContain("rgba(23,128,76,.32)")
-    expect(light).not.toContain("31,157,90")
+  test("亮色 accent alpha 基色 rgb(43,84,216)", () => {
+    expect(light).toContain("rgba(43,84,216,.07)")
+    expect(light).toContain("rgba(43,84,216,.24)")
   })
 })
 
-describe("token v5 — 暖色文字阶", () => {
-  test("暗色 text-1 #EDECE9", () => expect(dark).toContain("--text-1: #EDECE9"))
-  test("暗色 text-3 #8E8C86", () => expect(dark).toContain("--text-3: #8E8C86"))
-  test("亮色 text-1 #1A1917", () => expect(light).toContain("--text-1: #1A1917"))
-  test("亮色 text-3 #605D57", () => expect(light).toContain("--text-3: #605D57"))
+describe("visual language v6 — 中性文字阶", () => {
+  test("暗色 text-1 #F2F4F5", () => expect(dark).toContain("--text-1: #F2F4F5"))
+  test("暗色 text-3 #939DA6", () => expect(dark).toContain("--text-3: #939DA6"))
+  test("亮色 text-1 #181A1D", () => expect(light).toContain("--text-1: #181A1D"))
+  test("亮色 text-3 #606A74", () => expect(light).toContain("--text-3: #606A74"))
 })
 
-describe("token v5 — v1/v2 兼容覆盖层跟随", () => {
-  test("暗色 --background-base #100F0E", () => expect(dark).toContain("--background-base: #100F0E"))
-  test("暗色 --v2-background-bg-base #100F0E", () => expect(dark).toContain("--v2-background-bg-base: #100F0E"))
-  test("暗色 --v2-background-bg-layer-03 #2E2C27", () => expect(dark).toContain("--v2-background-bg-layer-03: #2E2C27"))
-  test("亮色 --background-base #FAF9F5", () => expect(light).toContain("--background-base: #FAF9F5"))
-  test("亮色 --v2-background-bg-layer-03 #EAE7E0", () => expect(light).toContain("--v2-background-bg-layer-03: #EAE7E0"))
+describe("visual language v6 — v1/v2 兼容覆盖层跟随", () => {
+  test("暗色 --background-base #111315", () => expect(dark).toContain("--background-base: #111315"))
+  test("暗色 --v2-background-bg-base #111315", () => expect(dark).toContain("--v2-background-bg-base: #111315"))
+  test("暗色 --v2-background-bg-layer-03 #282D32", () => expect(dark).toContain("--v2-background-bg-layer-03: #282D32"))
+  test("亮色 --background-base #F6F7F8", () => expect(light).toContain("--background-base: #F6F7F8"))
+  test("亮色 --v2-background-bg-layer-03 #F0F1F2", () => expect(light).toContain("--v2-background-bg-layer-03: #F0F1F2"))
 })
 
 describe("Rail 主导航 + 会话树（v6 §0b）", () => {
