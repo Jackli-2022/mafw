@@ -7,6 +7,7 @@ import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import type { PodDirectionState, PodGoalAcceptResult, PodGoalRevision, PodMember, PodProbe, PodTask } from "@mafw/sdk"
 import { GoalTimelineLane } from "./GoalTimelineLane"
+import { GoalUserHero } from "./GoalUserHero"
 import { PlanReviewOverlay } from "./PlanReviewOverlay"
 import { PodDirectionPanel } from "./PodDirectionPanel"
 import { PodProbePanel } from "./PodProbePanel"
@@ -27,6 +28,7 @@ import {
 import { requestPodTechLeadOpen } from "../pod-result-store"
 import { goalsRev } from "../goals-rev"
 import { goalModeLabel } from "../work-overview-model"
+import { summarizeGoalForUser } from "../goal-user-view"
 
 const TERMINAL_ACTIONS = new Set(["COMPLETED", "FAILED", "CANCELLED", "ARCHIVED"])
 
@@ -82,6 +84,12 @@ export function GoalDetailPanel(props: {
   const [planOpen, setPlanOpen] = createSignal(false)
   const [sourceFull, setSourceFull] = createSignal<string | null>(null)
   const [sourceBusy, setSourceBusy] = createSignal(false)
+  const [technicalOpen, setTechnicalOpen] = createSignal(false)
+
+  createEffect(() => {
+    props.goalId
+    setTechnicalOpen(false)
+  })
 
   let questionRef: HTMLDivElement | undefined
   let directionRef: HTMLDivElement | undefined
@@ -277,6 +285,13 @@ export function GoalDetailPanel(props: {
       ?? (podDetail()?.goals ?? []).find((goal: any) => goal.goalId === id)
       ?? null
   }
+  const goalSummary = () => {
+    const goal = podGoal()
+    return goal ? summarizeGoalForUser(goal) : null
+  }
+  const userFace = () => goalSummary()?.face ?? null
+  const isDirectionFace = () => !goalSummary() || userFace() === "direction"
+  const isProgressFace = () => userFace() === "progress"
   const stageText = () => {
     const goal = podGoal()
     if (goal) return podStageLabel(goal.stage)
@@ -407,6 +422,10 @@ export function GoalDetailPanel(props: {
     if (goal.resultReady === true) return true
     return goal.status === "done" && !!goal.verdict
   }
+
+  const isResultFace = () => hasResult() && (!userFace() || userFace() === "result" || userFace() === "history")
+  const isHistoryEmpty = () => userFace() === "history" && !hasResult()
+  const technicalVisible = () => technicalOpen() || !goalSummary()
 
   const planGate = () => planEditGate({
     terminal: goalTerminal() || podGoal()?.status === "done" || podGoal()?.status === "aborted",
@@ -566,6 +585,10 @@ export function GoalDetailPanel(props: {
     if (hasResult()) {
       return { label: "查看结果", run: () => resultRef?.scrollIntoView({ block: "start", behavior: "smooth" }) }
     }
+    const summary = goalSummary()
+    if (summary?.needsPerson && summary.nextActionLabel) {
+      return { label: summary.nextActionLabel, run: () => setTechnicalOpen(true) }
+    }
     return null
   }
 
@@ -624,9 +647,22 @@ export function GoalDetailPanel(props: {
                 timelineTitle: timeline()?.goal?.title,
                 goalId: props.goalId ?? "",
               })}</div>
-              <div class="mafw-goal-id">{timeline()?.goal?.goalId || props.goalId}</div>
             </div>
           </div>
+
+          <Show when={goalSummary()}>
+            {(summary) => (
+              <div data-goal-status={summary().statusLabel}>
+                <GoalUserHero
+                  summary={summary()}
+                  actionLabel={currentAction()?.label ?? summary().nextActionLabel}
+                  onAction={currentAction()?.run}
+                  technicalOpen={technicalOpen()}
+                  onToggleTechnical={() => setTechnicalOpen((open) => !open)}
+                />
+              </div>
+            )}
+          </Show>
 
           <Show when={!loading() && !error()} fallback={
             error()
@@ -638,35 +674,8 @@ export function GoalDetailPanel(props: {
                   <LoaderV2 width={16} height={16} />
                 </div>
           }>
-            <div class="mafw-goal-meta" style={{ "flex-wrap": "wrap", "row-gap": "6px" }}>
-              <Show when={timeline()?.goal?.phase}>
-                <span class={`mafw-phase-badge mafw-goal-chip is-phase ${phaseBadge()}`}>{timeline()?.goal?.phase}</span>
-              </Show>
-              <Show when={stageText()}>
-                <span class="mafw-card-meta mafw-goal-chip">{stageText()}</span>
-              </Show>
-              <Show when={activeRevision() != null}>
-                <span class="mafw-card-meta mafw-goal-chip">
-                  revision {activeRevision()}
-                  {currentRevision() ? ` · ${revisionStatusLabel(currentRevision()!.status)}` : ""}
-                </span>
-              </Show>
-              <Show when={podGoal()?.strategy === "quick"}>
-                <span class="mafw-card-meta mafw-goal-chip is-accent">快速执行</span>
-              </Show>
-              <Show when={goalModeLabel(podGoal()?.goalMode)}>
-                <span class="mafw-card-meta mafw-goal-chip">{goalModeLabel(podGoal()?.goalMode)}</span>
-              </Show>
-              <Show when={podGoal()?.assessment === "unreviewed"}>
-                <span class="mafw-card-meta mafw-goal-chip">未独立评审</span>
-              </Show>
-              <Show when={timeline()?.goal}>
-                <span class="mafw-card-meta mafw-goal-chip">Loop {timeline()?.goal?.round ?? 0}/{timeline()?.goal?.maxRounds ?? "?"}</span>
-              </Show>
-              <Show when={elapsed() != null}><span class="mafw-card-meta mafw-goal-chip">已用 {formatDuration(elapsed())}</span></Show>
-              <Show when={timeline()?.goal?.verdict}><span class="mafw-card-meta mafw-goal-chip">verdict {timeline()?.goal?.verdict}</span></Show>
-              <Show when={!timeline()}><span class="mafw-card-meta mafw-goal-chip">尚无执行记录</span></Show>
-              <Show when={planEntry()}>
+            <div class="mafw-goal-meta mafw-goal-user-actions">
+              <Show when={isDirectionFace() && planEntry()}>
                 <ButtonV2 variant="outline" size="small" onClick={planEntry()!.onOpen}>
                   计划{planEntry()!.badge ? ` · ${planEntry()!.badge}` : ""}
                 </ButtonV2>
@@ -680,7 +689,7 @@ export function GoalDetailPanel(props: {
               </Show>
             </div>
 
-            <Show when={podGoal()?.sourceRef}>
+            <Show when={isDirectionFace() && podGoal()?.sourceRef}>
               <div class="mafw-card-meta" data-goal-source>
                 上下文来源：{podGoal()!.sourceRef!.snapshot.slice(0, 120)}
                 <ButtonV2 variant="ghost" size="small" disabled={sourceBusy()} onClick={() => void toggleSourceFull()}>
@@ -696,18 +705,8 @@ export function GoalDetailPanel(props: {
               {(message) => <div class="mafw-goal-hint">最近错误：{message()}</div>}
             </Show>
 
-            <Show when={currentAction()}>
-              {(action) => (
-                <div class="mafw-goal-current-action">
-                  <div>
-                    <span class="mafw-work-kicker">当前行动</span>
-                    <div class="mafw-goal-current-hint">处理完这一步，团队才能继续推进。</div>
-                  </div>
-                  <ButtonV2 variant="contrast" size="small" onClick={() => action().run()}>
-                    {action().label}
-                  </ButtonV2>
-                </div>
-              )}
+            <Show when={isHistoryEmpty()}>
+              <div class="mafw-empty">这个 Goal 已结束，可在技术详情中查看历史执行记录。</div>
             </Show>
 
             <Show when={pendingQuestions().length > 0}>
@@ -750,7 +749,7 @@ export function GoalDetailPanel(props: {
               </div>
             </Show>
 
-            <Show when={showDirection()}>
+            <Show when={isDirectionFace() && showDirection()}>
               <div class="mafw-goal-section" ref={(el) => { directionRef = el }} data-section="direction">
                 <PodDirectionPanel
                   state={directionState()}
@@ -761,7 +760,7 @@ export function GoalDetailPanel(props: {
               </div>
             </Show>
 
-            <Show when={planEntry() || planTaskCount() > 0}>
+            <Show when={isDirectionFace() && (planEntry() || planTaskCount() > 0)}>
               <div class="mafw-goal-section" data-section="plan">
                 <Show when={!planGate().editable && planGate().reason}>
                   <div class="mafw-goal-hint">{planGate().reason}</div>
@@ -783,7 +782,7 @@ export function GoalDetailPanel(props: {
               </div>
             </Show>
 
-            <Show when={hasResult()}>
+            <Show when={isResultFace()}>
               <div class="mafw-goal-section" ref={(el) => { resultRef = el }} data-section="result">
                 <div class="mafw-pod-section-head">
                   <span>结果</span>
@@ -804,7 +803,7 @@ export function GoalDetailPanel(props: {
               </div>
             </Show>
 
-            <Show when={probes().length > 0}>
+            <Show when={probes().length > 0 && (isDirectionFace() || technicalOpen())}>
               <PodProbePanel
                 probes={probes()}
                 revision={activeRevision()}
@@ -813,7 +812,7 @@ export function GoalDetailPanel(props: {
               />
             </Show>
 
-            <Show when={!hasResult() && revisionRows().length > 0}>
+            <Show when={technicalVisible() && !hasResult() && revisionRows().length > 0}>
               <div class="mafw-pod-revisions mafw-goal-section">
                 <div class="mafw-pod-section-head">
                   <span>版本历史</span>
@@ -836,24 +835,79 @@ export function GoalDetailPanel(props: {
               </div>
             </Show>
 
-            <Show when={artifactChips().length > 0}>
-              <div class="mafw-goal-artifacts">
-                <span class="mafw-work-kicker">产物</span>
-                <For each={artifactChips()}>{(name) => <code class="mafw-goal-artifact">{name}</code>}</For>
-              </div>
-            </Show>
+            <Show when={technicalVisible()}>
+              <div class="mafw-goal-technical">
+                <div class="mafw-pod-section-head">
+                  <span>技术详情</span>
+                </div>
+                <div class="mafw-goal-meta" style={{ "flex-wrap": "wrap", "row-gap": "6px" }}>
+                  <span class="mafw-card-meta mafw-goal-chip mafw-goal-id">{props.goalId}</span>
+                  <Show when={timeline()?.goal?.phase}>
+                    <span class={`mafw-phase-badge mafw-goal-chip is-phase ${phaseBadge()}`}>{timeline()?.goal?.phase}</span>
+                  </Show>
+                  <Show when={currentRevision()}>
+                    {(revision) => (
+                      <span class="mafw-card-meta mafw-goal-chip">{revisionStatusLabel(revision().status)}</span>
+                    )}
+                  </Show>
+                  <Show when={podGoal()?.strategy === "quick"}>
+                    <span class="mafw-card-meta mafw-goal-chip is-accent">快速执行</span>
+                  </Show>
+                  <Show when={goalModeLabel(podGoal()?.goalMode)}>
+                    <span class="mafw-card-meta mafw-goal-chip">{goalModeLabel(podGoal()?.goalMode)}</span>
+                  </Show>
+                  <Show when={podGoal()?.assessment === "unreviewed"}>
+                    <span class="mafw-card-meta mafw-goal-chip">未独立评审</span>
+                  </Show>
+                  <Show when={timeline()?.goal}>
+                    <span class="mafw-card-meta mafw-goal-chip">Loop {timeline()?.goal?.round ?? 0}/{timeline()?.goal?.maxRounds ?? "?"}</span>
+                  </Show>
+                  <Show when={elapsed() != null}><span class="mafw-card-meta mafw-goal-chip">已用 {formatDuration(elapsed())}</span></Show>
+                  <Show when={timeline()?.goal?.verdict}><span class="mafw-card-meta mafw-goal-chip">verdict {timeline()?.goal?.verdict}</span></Show>
+                </div>
 
-            <Show when={(timeline()?.nodes || []).length} fallback={<div class="mafw-goal-empty">尚未开始执行</div>}>
-              <GoalTimelineLane
-                goalId={props.goalId!}
-                loops={lanes().loops}
-                lanes={lanes().lanes}
-                artifacts={timeline()?.artifacts}
-                plan={planEntry() ?? undefined}
-                onOpenSession={(sid) => { props.onClose(); props.onOpenSession(sid) }}
-                onRetry={retry}
-                retrying={retrying()}
-              />
+                <Show when={!isDirectionFace() && (planEntry() || planTaskCount() > 0)}>
+                  <div class="mafw-goal-section" data-section="plan-details">
+                    <Show when={!planGate().editable && planGate().reason}>
+                      <div class="mafw-goal-hint">{planGate().reason}</div>
+                    </Show>
+                    <PodTaskBoard
+                      scope="plan"
+                      goalId={props.goalId}
+                      tasks={tasks()}
+                      members={members()}
+                      busy={tableBusy()}
+                      planEditable={planGate().editable}
+                      onCreate={async () => false}
+                      onCreatePlan={createPlanTask}
+                      onEdit={editPlanTask}
+                      onRenameNote={async () => false}
+                      onDelete={deletePlanTask}
+                      onOpenGoal={() => {}}
+                    />
+                  </div>
+                </Show>
+
+                <Show when={artifactChips().length > 0}>
+                  <div class="mafw-goal-artifacts">
+                    <span class="mafw-work-kicker">产物</span>
+                    <For each={artifactChips()}>{(name) => <code class="mafw-goal-artifact">{name}</code>}</For>
+                  </div>
+                </Show>
+
+                <Show when={(timeline()?.nodes || []).length} fallback={<div class="mafw-goal-empty">尚未开始执行</div>}>
+                  <GoalTimelineLane
+                    goalId={props.goalId!}
+                    loops={lanes().loops}
+                    lanes={lanes().lanes}
+                    artifacts={timeline()?.artifacts}
+                    plan={planEntry() ?? undefined}
+                    onOpenSession={(sid) => { props.onClose(); props.onOpenSession(sid) }}
+                    onRetry={retry}
+                    retrying={retrying()}
+                  />
+                </Show>
+              </div>
             </Show>
 
             <Show when={!goalTerminal() && podGoal()?.status !== "done" && podGoal()?.status !== "aborted"}>
