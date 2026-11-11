@@ -133,6 +133,8 @@ import {
   scopeAfterProjectChange,
   type ContentScope,
 } from "./content-scope"
+import { contentScopeStateFor } from "./content-scope-state"
+import { popContentHistory, pushContentHistory, type ContentHistoryEntry } from "./content-history"
 import { PopoverShell } from "./components/pickers/PopoverShell"
 import { type NavTab } from "./components/nav-tab"
 import { WindowControls } from "./components/WindowControls"
@@ -2105,6 +2107,27 @@ export function MafwShell() {
     setRightDockOpen(true)
     try { localStorage.setItem("mafw-right-dock-open", "1") } catch { /* ignore */ }
   }
+  const rememberContentLocation = (): void => {
+    const scope = contentScope()
+    if (!scope) return
+    const key = currentContentScopeKey()
+    if (!key) return
+    setContentHistory((history) => pushContentHistory(history, {
+      scope,
+      rel: contentScopeStateFor(key).activeFile,
+      label: contentScopeLabel(scope),
+    }))
+  }
+  const backContent = (): void => {
+    const popped = popContentHistory(contentHistory())
+    if (!popped.entry) return
+    setContentHistory(popped.rest)
+    setContentScope(popped.entry.scope)
+    openWorkbench("workbench")
+    applyWorkbenchSurface("code")
+    const root = contentScopeRoot(popped.entry.scope)
+    if (root && popped.entry.rel) requestOpenEditor(root, popped.entry.rel)
+  }
   const openGoalContent = (input: {
     goalId: string
     revision: number
@@ -2121,6 +2144,7 @@ export function MafwShell() {
     applyWorkbenchSurface("code")
   }
   const returnToProjectContent = (): void => {
+    rememberContentLocation()
     setContentScope(projectContentScope(currentProject()))
   }
   /** 左栏插件入口：切到「工作台」并激活该 surface（spec 2026-11-09 §6.4）。 */
@@ -2185,6 +2209,7 @@ export function MafwShell() {
   const contentRoot = createMemo(() => contentScopeRoot(contentScope()) ?? currentProject())
   const currentContentScopeKey = createMemo(() => contentScopeKey(contentScope()))
   const contentScopeIsGoal = createMemo(() => contentScope()?.kind === "goal")
+  const [contentHistory, setContentHistory] = createSignal<ContentHistoryEntry[]>([])
   createEffect(() => {
     setContentScope((scope) => scopeAfterProjectChange(scope, currentProject()))
   })
@@ -3169,8 +3194,8 @@ export function MafwShell() {
                   contentScopeKey={currentContentScopeKey()}
                   contentScopeLabel={contentScopeLabel(contentScope())}
                   contentScopeIsGoal={contentScopeIsGoal()}
-                  canGoBack={false}
-                  onBack={() => {}}
+                  canGoBack={contentHistory().length > 0}
+                  onBack={() => backContent()}
                   onReturnToProjectContent={returnToProjectContent}
                   diffs={contentDiffEntries()}
                   onOpenFile={(rel) => {
@@ -3195,6 +3220,7 @@ export function MafwShell() {
                       })()
                       return
                     }
+                    rememberContentLocation()
                     requestOpenEditor(root, rel)
                     openWorkbenchSurface("code")
                   }}
