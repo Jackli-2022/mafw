@@ -427,7 +427,7 @@ export function GoalDetailPanel(props: {
 
   const isResultFace = () => hasResult() && (!userFace() || userFace() === "result" || userFace() === "history")
   const isHistoryEmpty = () => userFace() === "history" && !hasResult()
-  const technicalVisible = () => technicalOpen() || !goalSummary()
+  const technicalVisible = () => technicalOpen()
 
   const planGate = () => planEditGate({
     terminal: goalTerminal() || podGoal()?.status === "done" || podGoal()?.status === "aborted",
@@ -714,16 +714,17 @@ export function GoalDetailPanel(props: {
               </Show>
             </div>
 
-            <Show when={isDirectionFace() && podGoal()?.sourceRef}>
-              <div class="mafw-card-meta" data-goal-source>
-                上下文来源：{podGoal()!.sourceRef!.snapshot.slice(0, 120)}
-                <ButtonV2 variant="ghost" size="small" disabled={sourceBusy()} onClick={() => void toggleSourceFull()}>
-                  {sourceFull() ? "收起全文" : "查看全文"}
+            <Show when={!goalSummary()}>
+              <div class="mafw-goal-meta mafw-goal-user-actions">
+                <ButtonV2
+                  variant="outline"
+                  size="small"
+                  aria-pressed={technicalOpen()}
+                  onClick={() => setTechnicalOpen((open) => !open)}
+                >
+                  {technicalOpen() ? "收起技术详情" : "技术详情"}
                 </ButtonV2>
               </div>
-              <Show when={sourceFull()}>
-                <pre class="mafw-goal-source-full">{sourceFull()}</pre>
-              </Show>
             </Show>
 
             <Show when={podGoal()?.lastError || podGoal()?.stage?.kind === "blocked"}>
@@ -823,6 +824,18 @@ export function GoalDetailPanel(props: {
                   onOpenGoal={() => {}}
                 />
               </div>
+            </Show>
+
+            <Show when={isDirectionFace() && podGoal()?.sourceRef}>
+              <div class="mafw-card-meta" data-goal-source>
+                上下文来源：{podGoal()!.sourceRef!.snapshot.slice(0, 120)}
+                <ButtonV2 variant="ghost" size="small" disabled={sourceBusy()} onClick={() => void toggleSourceFull()}>
+                  {sourceFull() ? "收起全文" : "查看全文"}
+                </ButtonV2>
+              </div>
+              <Show when={sourceFull()}>
+                <pre class="mafw-goal-source-full">{sourceFull()}</pre>
+              </Show>
             </Show>
 
             <Show when={isResultFace()}>
