@@ -56,16 +56,45 @@ const SSE_HEADERS = {
   'Cache-Control': 'no-cache',
   'Connection': 'keep-alive',
   'Access-Control-Allow-Origin': '*',
+  // E1-13: reverse proxies (nginx/Tailscale funnel) buffer text/event-stream by
+  // default, which turns a live stream into batch delivery. Opt out explicitly.
+  'X-Accel-Buffering': 'no',
 };
+
+/** E1-13: reconnect delay advertised in the first frame (ms). */
+export const SSE_RETRY_MS = 3_000;
+/** E1-13: keepalive comment cadence (ms) — must stay under common 30–60s idle cuts. */
+export const SSE_PING_INTERVAL_MS = 15_000;
+
+export interface SseConnection {
+  write(frame: string, seq: number | null): void;
+  /** Stop the keepalive. Idempotent; also runs on `res` close. */
+  dispose(): void;
+  readonly timer: NodeJS.Timeout;
+}
 
 /**
  * 建立 Mode A 连接：SSE 头 + greeting → （有游标且有 store 时）重放 → 排水 → 直播。
  * 返回 write(frame, seq)——broadcast 侧 per-connection 写入口。
  * 全程同步（C4）；greeting 不持久化不经 broadcast。
+ *
+ * E1-13: the greeting frame carries `retry: 3000` (same event block — no extra
+ * frame, existing frame-count contracts hold) and a 15s `: ping` keepalive runs
+ * until the response closes. Both the retry hint and the keepalive are hygiene,
+ * not protocol: consumers that ignore them behave exactly as before.
  */
-export function attachGlobalSse(deps: SseAttachDeps): { write: (frame: string, seq: number | null) => void } {
+export function attachGlobalSse(deps: SseAttachDeps): SseConnection {
   const { res, store, replayLimit, writeFrame } = deps;
   const since = deps.since ?? null;
+
+  let disposed = false;
+  let timer: NodeJS.Timeout;
+  const dispose = (): void => {
+    if (disposed) return;
+    disposed = true;
+    clearInterval(timer);
+    try { res.off?.('close', dispose); } catch { /* not an emitter */ }
+  };
 
   // 1. 缓冲 + listener（纵深防御：无 await 约束被破坏时承重）
   const buffer: Array<{ frame: string; seq: number | null }> = [];
@@ -93,7 +122,9 @@ export function attachGlobalSse(deps: SseAttachDeps): { write: (frame: string, s
     greeting.firstReplayedSeq = replay.firstReplayedSeq;
     if (replay.firstReplayedSeq > since! + 1) greeting.truncated = true; // limit 截断或留存淘汰：起点有洞
   }
-  writeFrame(res, `data: ${JSON.stringify(greeting)}\n\n`);
+  // `retry:` rides in the greeting block so the reconnect delay is known before
+  // the first reconnect; it does not add a frame (SSE parsers share one block).
+  writeFrame(res, `retry: ${SSE_RETRY_MS}\ndata: ${JSON.stringify(greeting)}\n\n`);
 
   // 4. 重放行写出（envelope 补 timestamp + 双层 seq，与直播帧逐字节同形）
   let maxReplayed = since !== null ? since : 0;
@@ -107,5 +138,16 @@ export function attachGlobalSse(deps: SseAttachDeps): { write: (frame: string, s
   buffering = false;
   drainBuffer(buffer, maxReplayed, writeFrame, res);
 
-  return { write };
+  // 6. 保活：注释帧不进入事件流（客户端 EventSource 忽略），只防空闲断连。
+  timer = setInterval(() => {
+    try {
+      writeFrame(res, ': ping\n\n');
+    } catch {
+      dispose(); // write after the socket died: nothing left to keep alive
+    }
+  }, SSE_PING_INTERVAL_MS);
+  timer.unref?.();
+  try { res.on?.('close', dispose); } catch { /* not an emitter */ }
+
+  return { write, dispose, timer };
 }
