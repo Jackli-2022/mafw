@@ -20,20 +20,18 @@ test("Goal detail is an inline panel, not a modal overlay", () => {
   assert.doesNotMatch(panel, /e\.target === e\.currentTarget/)
 })
 
-test("the right work panel keeps its list mounted and renders detail in place", () => {
-  assert.match(work, /import \{ GoalDetailPanel \} from "\.\/GoalDetailPanel"/)
-  assert.match(work, /class="mafw-project-work-overview" hidden=\{!!props\.selectedGoalId\}/)
-  assert.match(work, /<Show when=\{props\.selectedGoalId\} keyed>/)
-  assert.match(work, /<GoalDetailPanel/)
-  assert.match(work, /onClose=\{props\.onCloseGoal\}/)
-  assert.match(work, /onOpenSession=\{props\.onOpenSession\}/)
-  assert.match(work, /mafw-goal-inline-title/)
-  assert.match(work, /data-goal-id/)
-  assert.match(work, /\.mafw-work-item`\)/)
-  assert.match(work, /\(row \?\? fallback\)\?\.focus\(\)/)
+test("the right work panel is the project home; Goal detail is a separate context", () => {
+  assert.doesNotMatch(work, /GoalDetailPanel/)
+  assert.doesNotMatch(work, /props\.selectedGoalId/)
+  assert.match(work, /class="mafw-project-work-overview"/)
+  assert.match(work, /WorkPriorityList/)
+  assert.match(work, /WorkOverview/)
+  assert.match(shell, /goalView=\{\s*<Show when=\{podGoalId\(\)\} keyed>/)
+  assert.match(shell, /<GoalDetailPanel/)
+  assert.match(shell, /onClose=\{\(\) => \{ setPodGoalId\(null\); applyWorkbenchContext\("project"\) \}\}/)
 })
 
-test("every Goal open path goes through the right work panel", () => {
+test("every Goal open path goes into the Goal context", () => {
   assert.doesNotMatch(shell, /import \{ GoalDetailOverlay \}/)
   assert.doesNotMatch(shell, /<GoalDetailOverlay/)
   const start = shell.indexOf("const openGoalDetail =")
@@ -42,22 +40,17 @@ test("every Goal open path goes through the right work panel", () => {
   assert.match(block, /openProjectWork\(\)/)
   assert.match(block, /setGoalDetailFocus\(focus\)/)
   assert.match(block, /setPodGoalId\(goalId\)/)
-  assert.ok(block.indexOf("openProjectWork()") < block.indexOf("setPodGoalId(goalId)"))
+  assert.match(block, /openWorkbenchContext\("goal"\)/)
+  assert.ok(block.indexOf("setPodGoalId(goalId)") < block.indexOf('openWorkbenchContext("goal")'))
   assert.match(shell, /openGoalAndDiscuss\(goalId, "result"\)/)
 })
 
-test("ProjectWorkView receives one shell-owned inline selection", () => {
-  assert.match(shell, /selectedGoalId=\{podGoalId\(\)\}/)
-  assert.match(shell, /detailFocus=\{goalDetailFocus\(\)\}/)
-  assert.match(shell, /podId=\{podIdForCurrentProject\(\)\}/)
+test("ProjectWorkView receives one shell-owned Goal context", () => {
+  assert.doesNotMatch(shell, /selectedGoalId=\{podGoalId\(\)\}/)
+  assert.doesNotMatch(shell, /detailFocus=\{goalDetailFocus\(\)\}/)
   assert.match(shell, /const podIdForCurrentProject = \(\): string \| null => \{[\s\S]{0,220}podStore\.detail\(\)/)
-  assert.match(shell, /onCloseGoal=\{\(\) => setPodGoalId\(null\)\}/)
+  assert.match(shell, /goalView=\{\s*<Show when=\{podGoalId\(\)\} keyed>/)
   assert.match(shell, /onOpenSession=\{\(sid\) => \{ void openPodSession\(sid\) \}\}/)
-})
-
-test("returning to a Goal excluded by the active filter falls back to that filter", () => {
-  assert.match(work, /\.mafw-work-row\[data-goal-id="\$\{previous\}"\] \.mafw-work-item/)
-  assert.match(work, /\.mafw-work-filter\[aria-pressed="true"\]/)
 })
 
 test("switching projects clears the old Goal before rendering the next overview", () => {

@@ -2997,8 +2997,9 @@ html[data-theme="light"] body {
 }
 .mafw-tasklist-collapse:hover { background: var(--hover); color: var(--text-2); }
 
-/* ── B1 右工作台（spec 2026-10-26-agent-workbench-layout-ia）──
-   一级：工作台/执行/审阅；工作台二级：代码/浏览器；执行二级固定下拉；终端常驻底部。 */
+/* ── D1 右工作台（spec 2026-11-11-project-agent-workbench-experience-design）──
+   项目 / Goal / 内容 / 审阅是上下文；内容内保留文件/浏览器/终端 + 插件 surface；
+   执行详情是可开合抽屉，不再是第四个一级 Tab。 */
 .mafw-dock-slot {
   position: relative;
   min-width: 0;
@@ -3011,6 +3012,7 @@ html[data-theme="light"] body {
 .mafw-dock-shell { display: flex; height: 100%; min-width: 0; min-height: 0; }
 .mafw-dock-shell.is-hidden { display: none; }
 .mafw-rw-shell {
+  position: relative;
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -3020,31 +3022,44 @@ html[data-theme="light"] body {
   border-left: 1px solid var(--border-subtle);
   container-type: inline-size;
 }
-.mafw-rw-l1 {
+.mafw-rw-head {
   height: 38px;
   flex: none;
   display: flex;
   align-items: center;
-  gap: 3px;
-  padding: 0 6px;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 8px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-base);
 }
-.mafw-rw-tabs { display: flex; align-items: center; gap: 3px; min-width: 0; }
-.mafw-rw-tab { gap: 4px; }
+.mafw-rw-context {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.mafw-rw-context-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.mafw-rw-actions { display: flex; align-items: center; gap: 2px; flex: none; }
 /* 选中态与左 rail 统一（spec 2026-10-27 §6.1 1a）：accent 12% 填充块 + accent 前景。
    用 aria 属性选择器：ButtonV2 的 classList 对多 token class 不可靠（会把整串当 classList key）。 */
-.mafw-rw-tab[aria-selected="true"],
+.mafw-rw-exec-toggle[aria-pressed="true"],
 .mafw-rw-l2-tab[aria-selected="true"] {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   color: var(--accent);
 }
-.mafw-rw-tab[aria-selected="true"]:hover,
+.mafw-rw-exec-toggle[aria-pressed="true"]:hover,
 .mafw-rw-l2-tab[aria-selected="true"]:hover {
   background: color-mix(in srgb, var(--accent) 16%, transparent);
   color: var(--accent);
 }
-.mafw-rw-l1-spacer { flex: 1; }
 .mafw-rw-l2 {
   height: 32px;
   flex: none;
@@ -3070,6 +3085,32 @@ html[data-theme="light"] body {
 .mafw-rw-exec-trigger:hover { background: var(--bg-hover); }
 .mafw-rw-check { margin-left: auto; color: var(--accent); }
 .mafw-rw-content { flex: 1; min-height: 0; min-width: 0; display: flex; position: relative; }
+.mafw-rw-exec-drawer {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-base);
+}
+.mafw-rw-exec-head {
+  height: 38px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-base);
+}
+.mafw-rw-exec-title {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-1);
+  font-size: 12px;
+  font-weight: 500;
+}
+.mafw-rw-exec-body { flex: 1; min-height: 0; overflow: auto; }
 .mafw-content-scope {
   flex: none;
   min-height: 30px;

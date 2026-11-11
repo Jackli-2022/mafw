@@ -4,15 +4,12 @@ import {
   DEFAULT_WORKBENCH_STATE,
   EXECUTION_SECTIONS,
   WORKBENCH_SURFACES,
-  WORKBENCH_VIEWS,
   clearLegacyWorkbenchKeys,
   executionSectionLabel,
   isPluginSurfaceId,
   nextWorkbenchSurface,
-  nextWorkbenchView,
   normalizeExecutionSection,
   normalizeWorkbenchSurface,
-  normalizeWorkbenchView,
   parsePluginSurfaceId,
   pluginSurfaceId,
   migrateWorkbenchStorage,
@@ -21,17 +18,12 @@ import {
 } from "./workbench-views"
 
 describe("workbench-views", () => {
-  test("defaults and invalid values normalize to work/code/overview", () => {
+  test("defaults and invalid values normalize to project/code/overview", () => {
     assert.deepEqual(DEFAULT_WORKBENCH_STATE, {
-      view: "work",
+      context: "project",
       surface: "code",
       executionSection: "overview",
     })
-    assert.equal(normalizeWorkbenchView("bogus"), "work")
-    assert.equal(normalizeWorkbenchView(null), "work")
-    assert.equal(normalizeWorkbenchView("workbench"), "workbench")
-    assert.equal(normalizeWorkbenchView("execution"), "execution")
-    assert.equal(normalizeWorkbenchView("review"), "review")
     assert.equal(normalizeWorkbenchSurface("bogus"), "code")
     assert.equal(normalizeExecutionSection("bogus"), "overview")
   })
@@ -43,9 +35,7 @@ describe("workbench-views", () => {
     assert.equal(nextWorkbenchSurface("terminal", "ArrowRight"), null)
   })
 
-  test("B1 labels are exact and ordered", () => {
-    assert.deepEqual(WORKBENCH_VIEWS.map((v) => v.label), ["工作", "工作台", "执行", "审阅"])
-    assert.deepEqual(WORKBENCH_VIEWS.map((v) => v.id), ["work", "workbench", "execution", "review"])
+  test("surface and execution labels are exact", () => {
     assert.deepEqual(WORKBENCH_SURFACES.map((v) => v.label), ["文件", "浏览器", "终端"])
     assert.deepEqual(
       EXECUTION_SECTIONS.map((s) => s.label),
@@ -57,15 +47,7 @@ describe("workbench-views", () => {
     assert.equal(normalizeExecutionSection("pod"), "overview")
   })
 
-  test("keyboard helpers move within L1 and L2 without wrapping", () => {
-    assert.equal(nextWorkbenchView("work", "ArrowRight"), "workbench")
-    assert.equal(nextWorkbenchView("workbench", "ArrowRight"), "execution")
-    assert.equal(nextWorkbenchView("execution", "ArrowRight"), "review")
-    assert.equal(nextWorkbenchView("review", "ArrowRight"), null)
-    assert.equal(nextWorkbenchView("review", "ArrowLeft"), "execution")
-    assert.equal(nextWorkbenchView("workbench", "ArrowLeft"), "work")
-    assert.equal(nextWorkbenchView("execution", "Home"), "work")
-    assert.equal(nextWorkbenchView("workbench", "End"), "review")
+  test("L2 keyboard helpers move without wrapping", () => {
     assert.equal(nextWorkbenchSurface("code", "ArrowRight"), "browser")
     assert.equal(nextWorkbenchSurface("browser", "ArrowRight"), "terminal")
     assert.equal(nextWorkbenchSurface("terminal", "ArrowRight"), null)
@@ -91,31 +73,44 @@ describe("workbench-views", () => {
     assert.equal(normal.state.executionSection, "trajectory")
   })
 
-  test("legacy right-dock tabs map to B1 state", () => {
+  test("legacy right-dock tabs map to contexts", () => {
     const cases: Array<[string, string, string]> = [
-      ["tasks", "execution", "todos"],
-      ["trajectory", "execution", "trajectory"],
-      ["subagents", "execution", "subagents"],
-      ["background", "execution", "background"],
+      ["tasks", "project", "todos"],
+      ["trajectory", "project", "trajectory"],
+      ["subagents", "project", "subagents"],
+      ["background", "project", "background"],
       ["changes", "review", "overview"],
-      ["usage", "execution", "overview"],
-      ["quota", "execution", "overview"],
-      ["notes", "workbench", "overview"],
+      ["usage", "project", "overview"],
+      ["quota", "project", "overview"],
+      ["notes", "content", "overview"],
     ]
-    for (const [legacy, view, executionSection] of cases) {
+    for (const [legacy, context, executionSection] of cases) {
       const state = workbenchStateFromStorage((key) =>
         key === "mafw-right-dock-tab" ? legacy : null,
       )
-      assert.equal(state.view, view, legacy)
+      assert.equal(state.context, context, legacy)
       assert.equal(state.executionSection, executionSection, legacy)
     }
   })
 
-  test("legacy editor/browser workbench tab maps to surface; new keys win", () => {
+  test("legacy B1 view and surface migrate; new keys win", () => {
     const legacy = workbenchStateFromStorage((key) =>
+      key === "mafw-workbench-view" ? "workbench" : null,
+    )
+    assert.equal(legacy.context, "content")
+    const execution = workbenchStateFromStorage((key) =>
+      key === "mafw-workbench-view" ? "execution" : null,
+    )
+    assert.equal(execution.context, "project")
+    const review = workbenchStateFromStorage((key) =>
+      key === "mafw-workbench-view" ? "review" : null,
+    )
+    assert.equal(review.context, "review")
+
+    const legacyBrowser = workbenchStateFromStorage((key) =>
       key === "mafw-workbench-tab" ? "browser" : null,
     )
-    assert.equal(legacy.surface, "browser")
+    assert.equal(legacyBrowser.surface, "browser")
     const editor = workbenchStateFromStorage((key) =>
       key === "mafw-workbench-tab" ? "editor" : null,
     )
@@ -131,13 +126,14 @@ describe("workbench-views", () => {
     assert.equal(legacyTerminal.surface, "terminal")
 
     const fresh = workbenchStateFromStorage((key) => {
-      if (key === "mafw-workbench-view") return "review"
+      if (key === "mafw-workbench-context") return "review"
+      if (key === "mafw-workbench-view") return "workbench"
       if (key === "mafw-workbench-surface") return "code"
       if (key === "mafw-execution-section") return "subagents"
       if (key === "mafw-right-dock-tab") return "tasks"
       return null
     })
-    assert.deepEqual(fresh, { view: "review", surface: "code", executionSection: "subagents" })
+    assert.deepEqual(fresh, { context: "review", surface: "code", executionSection: "subagents" })
   })
 
   test("dynamic plugin surfaces are valid L2 ids and survive persistence", () => {
@@ -172,28 +168,28 @@ describe("workbench-views", () => {
 })
 
 describe("terminalSurfaceHotkeyAction（Ctrl+` surface 级开合）", () => {
-  test("dock 关着 → 打开 dock + 工作台 + terminal", () => {
+  test("dock 关着 → 打开 dock + 内容 + terminal", () => {
     assert.deepEqual(
-      terminalSurfaceHotkeyAction({ dockOpen: false, view: "workbench", surface: "code", previousSurface: "code" }),
-      { openDock: true, view: "workbench", surface: "terminal" },
+      terminalSurfaceHotkeyAction({ dockOpen: false, context: "project", surface: "code", previousSurface: "code" }),
+      { openDock: true, context: "content", surface: "terminal" },
     )
   })
-  test("非工作台视图 → 跳到工作台 + terminal", () => {
+  test("非内容上下文 → 跳到内容 + terminal", () => {
     assert.deepEqual(
-      terminalSurfaceHotkeyAction({ dockOpen: true, view: "execution", surface: "code", previousSurface: "browser" }),
-      { openDock: true, view: "workbench", surface: "terminal" },
+      terminalSurfaceHotkeyAction({ dockOpen: true, context: "review", surface: "code", previousSurface: "browser" }),
+      { openDock: true, context: "content", surface: "terminal" },
     )
   })
   test("当前就是 terminal → 回到 previousSurface", () => {
     assert.deepEqual(
-      terminalSurfaceHotkeyAction({ dockOpen: true, view: "workbench", surface: "terminal", previousSurface: "browser" }),
-      { openDock: true, view: "workbench", surface: "browser" },
+      terminalSurfaceHotkeyAction({ dockOpen: true, context: "content", surface: "terminal", previousSurface: "browser" }),
+      { openDock: true, context: "content", surface: "browser" },
     )
   })
   test("非 terminal surface → 切到 terminal", () => {
     assert.deepEqual(
-      terminalSurfaceHotkeyAction({ dockOpen: true, view: "workbench", surface: "code", previousSurface: "browser" }),
-      { openDock: true, view: "workbench", surface: "terminal" },
+      terminalSurfaceHotkeyAction({ dockOpen: true, context: "content", surface: "code", previousSurface: "browser" }),
+      { openDock: true, context: "content", surface: "terminal" },
     )
   })
 })

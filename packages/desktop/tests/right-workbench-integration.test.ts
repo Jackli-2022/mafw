@@ -11,6 +11,6 @@ test("MafwShell renders the B1 shell and no SessionRail", () => {
   assert.match(src, /migrateWorkbenchStorage/)
   assert.doesNotMatch(src, /SessionRail/)
   assert.doesNotMatch(src, /rightDockTab/)
-  assert.match(src, /openWorkbench\("execution",\s*"background"\)/)
-  assert.match(src, /openWorkbench\("review"\)/)
+  assert.match(src, /openExecutionDrawer\("background"\)/)
+  assert.match(src, /openWorkbenchContext\("review"\)/)
 })

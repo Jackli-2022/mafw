@@ -1,5 +1,5 @@
-// B1 右工作台壳：一级「工作 / 工作台 / 执行 / 审阅」+ 二级上下文条 + 终端 L2 surface。
-// 工作 › 项目 Goal 概览；工作台 › 文件/浏览器/终端；执行 › 固定下拉（概览/待办/子代理/后台/轨迹）；工作与审阅无二级。
+// Plan D1 右工作台壳：项目 / Goal / 内容 / 审阅是上下文，不是四个工具 Tab。
+// 内容上下文内保留 文件 / 浏览器 / 终端 + 插件 surface；执行详情收进抽屉。
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, type JSX } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { Icon } from "@mafw/ui/icon"
@@ -7,14 +7,12 @@ import { DropdownMenu } from "@mafw/ui/dropdown-menu"
 import {
   EXECUTION_SECTIONS,
   WORKBENCH_SURFACES,
-  WORKBENCH_VIEWS,
   executionSectionLabel,
   nextWorkbenchSurface,
-  nextWorkbenchView,
   type ExecutionSection,
   type WorkbenchSurface,
-  type WorkbenchView,
 } from "../workbench-views"
+import type { WorkbenchContext } from "../workbench-context"
 import { observePluginTabCapacity, planPluginTabs, type PluginTabSurface } from "../plugins/plugin-view-model"
 import type { PluginWebSurfaceView } from "../plugins/plugin-web-surface"
 import { WorkbenchCodeView } from "./WorkbenchCodeView"
@@ -24,12 +22,16 @@ import type { AnnotationAnchor } from "../../../shared/annotation-types"
 
 export type WorkbenchShellProps = {
   open: boolean
-  view: WorkbenchView
+  context: WorkbenchContext
+  contextLabel: string
   surface: WorkbenchSurface
   executionSection: ExecutionSection
-  onView: (view: WorkbenchView) => void
+  executionOpen: boolean
+  onContext: (context: WorkbenchContext) => void
+  onBackToProject: () => void
   onSurface: (surface: WorkbenchSurface) => void
   onExecutionSection: (section: ExecutionSection) => void
+  onExecutionOpen: (open: boolean) => void
   sessionID: string | null
   contentRoot: string | null
   contentScopeKey: string | null
@@ -56,12 +58,13 @@ export type WorkbenchShellProps = {
     root?: string
   }) => void
   onSendComment?: (sid: string, text: string) => void
-  /** 批注反馈标记点击 → 切审阅面。 */
+  /** 批注反馈标记点击 → 切审阅上下文。 */
   onOpenReview?: () => void
   /** Focus：右工作台占满 chat+workbench 区域（chat 列宽 0，仍保持挂载）。 */
   focus?: boolean
   onToggleFocus?: () => void
   workView: JSX.Element
+  goalView: JSX.Element
   executionView: JSX.Element
   reviewView: JSX.Element
   /** Dynamic L2 tabs contributed by unified plugin packages. */
@@ -80,17 +83,9 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
   const surfaceTabClass = (id: string) =>
     `mafw-rw-l2-tab-${id.replace(/[^A-Za-z0-9_-]/g, "_")}`
 
-  const focusTab = (selector: string, id: string) => {
-    queueMicrotask(() => {
-      (document.querySelector(`${selector}-${id}`) as HTMLElement | null)?.focus()
-    })
-  }
-
   // Plugin tabs overflow when the L2 strip runs out of horizontal room. The
-  // observer is attached lazily from the L2 ref: the workbench may mount in
-  // `review` view where the strip does not exist yet, so an onMount observer
-  // would never measure (capacity stuck at the initial value and overflowing
-  // the widest detent).
+  // observer is attached lazily from the L2 ref because the strip only exists
+  // in the content context.
   const [pluginTabCapacity, setPluginTabCapacity] = createSignal(6)
   let disposeCapacity: (() => void) | null = null
   const attachCapacityObserver = (element: HTMLDivElement | null) => {
@@ -106,9 +101,8 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       }
     })
   }
-  // The strip unmounts in `work`/`review` view; drop the observer with it.
   createEffect(() => {
-    if (props.view === "work" || props.view === "review") attachCapacityObserver(null)
+    if (props.context !== "content") attachCapacityObserver(null)
   })
   onCleanup(() => {
     disposeCapacity?.()
@@ -122,30 +116,19 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
   )
   const pluginSurfaceIds = () => props.pluginSurfaces.map((surface) => surface.id)
 
-  // ButtonV2/Kobalte 不把 data-id/tabIndex 透传到原生 button；用 class 标记并在视图变化后同步 roving tabindex。
+  // ButtonV2/Kobalte 不把 data-id/tabIndex 透传到原生 button；用 class 标记并在 surface 变化后同步 roving tabindex。
   createEffect(() => {
-    const view = props.view
+    const context = props.context
     const surface = props.surface
     const pluginIds = props.pluginSurfaces.map((entry) => entry.id)
     queueMicrotask(() => {
-      for (const item of WORKBENCH_VIEWS) {
-        const el = document.querySelector(`.mafw-rw-tab-${item.id}`) as HTMLButtonElement | null
-        if (el) el.tabIndex = view === item.id ? 0 : -1
-      }
+      if (context !== "content") return
       for (const id of [...WORKBENCH_SURFACES.map((entry) => entry.id), ...pluginIds]) {
         const el = document.querySelector<HTMLButtonElement>(`.${surfaceTabClass(id)}`)
         if (el) el.tabIndex = surface === id ? 0 : -1
       }
     })
   })
-
-  const onL1KeyDown = (e: KeyboardEvent) => {
-    const next = nextWorkbenchView(props.view, e.key)
-    if (!next) return
-    e.preventDefault()
-    props.onView(next)
-    focusTab(".mafw-rw-tab", next)
-  }
 
   const onL2KeyDown = (e: KeyboardEvent) => {
     const next = nextWorkbenchSurface(props.surface, e.key, pluginSurfaceIds())
@@ -159,151 +142,122 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
 
   return (
     <div class="mafw-rw-shell">
-      <div class="mafw-rw-l1">
-        <div class="mafw-rw-tabs" role="tablist" aria-label="右工作台" onKeyDown={onL1KeyDown}>
-          <For each={WORKBENCH_VIEWS}>
-            {(item) => (
-              <ButtonV2
-                variant="ghost"
-                size="small"
-                class={`mafw-rw-tab mafw-rw-tab-${item.id}`}
-                role="tab"
-                aria-selected={props.view === item.id}
-                aria-label={item.label}
-                onClick={() => props.onView(item.id)}
-              >
-                <Icon
-                  name={
-                    item.id === "work"
-                      ? "layout-grid"
-                      : item.id === "workbench"
-                        ? "code"
-                        : item.id === "execution"
-                          ? "dot-grid"
-                          : "review"
-                  }
-                  size="small"
-                />
-                {item.label}
-              </ButtonV2>
-            )}
-          </For>
+      <div class="mafw-rw-head">
+        <div class="mafw-rw-context">
+          <Show when={props.context !== "project"}>
+            <ButtonV2
+              variant="ghost"
+              size="small"
+              class="mafw-rw-back"
+              aria-label="返回"
+              onClick={props.onBackToProject}
+            >
+              <Icon name="arrow-left" size="small" />
+            </ButtonV2>
+          </Show>
+          <span class="mafw-rw-context-label">{props.contextLabel}</span>
         </div>
-        <div class="mafw-rw-l1-spacer" />
-        <Show when={props.onToggleFocus}>
+        <div class="mafw-rw-actions">
           <ButtonV2
             variant="ghost"
             size="small"
-            class="mafw-rw-focus"
-            aria-label={props.focus ? "退出工作台全宽" : "工作台全宽"}
-            aria-pressed={props.focus}
-            onClick={() => props.onToggleFocus?.()}
+            class="mafw-rw-exec-toggle"
+            aria-label={props.executionOpen ? "收起执行详情" : "打开执行详情"}
+            aria-pressed={props.executionOpen}
+            onClick={() => props.onExecutionOpen(!props.executionOpen)}
           >
-            <Icon name="layout-right-full" size="small" />
+            <Icon name="dot-grid" size="small" />
+            执行
           </ButtonV2>
-        </Show>
+          <Show when={props.onToggleFocus}>
+            <ButtonV2
+              variant="ghost"
+              size="small"
+              class="mafw-rw-focus"
+              aria-label={props.focus ? "退出工作台全宽" : "工作台全宽"}
+              aria-pressed={props.focus}
+              onClick={() => props.onToggleFocus?.()}
+            >
+              <Icon name="layout-right-full" size="small" />
+            </ButtonV2>
+          </Show>
+        </div>
       </div>
 
-      <Show when={props.view === "workbench" || props.view === "execution"}>
+      <Show when={props.context === "content"}>
         <div
           class="mafw-rw-l2"
           ref={(element) => {
             attachCapacityObserver(element)
           }}
-          role={props.view === "workbench" ? "tablist" : undefined}
-          aria-label={props.view === "workbench" ? "工作台视图" : undefined}
-          onKeyDown={props.view === "workbench" ? onL2KeyDown : undefined}
+          role="tablist"
+          aria-label="内容视图"
+          onKeyDown={onL2KeyDown}
         >
-          <Show
-            when={props.view === "workbench"}
-            fallback={
-              <DropdownMenu>
-                <DropdownMenu.Trigger as={ButtonV2} variant="ghost" size="small" class="mafw-rw-exec-trigger">
-                  <span>{executionSectionLabel(props.executionSection)}</span>
-                  <Icon name="chevron-down" size="small" />
-                </DropdownMenu.Trigger>
-                <DropdownMenu.Portal>
-                  <DropdownMenu.Content class="mafw-rw-exec-content">
-                    <For each={EXECUTION_SECTIONS}>
-                      {(section) => (
-                        <DropdownMenu.Item onSelect={() => props.onExecutionSection(section.id)}>
-                          <DropdownMenu.ItemLabel>{section.label}</DropdownMenu.ItemLabel>
-                          <Show when={props.executionSection === section.id}>
-                            <Icon name="check-small" size="small" class="mafw-rw-check" />
-                          </Show>
-                        </DropdownMenu.Item>
-                      )}
-                    </For>
-                  </DropdownMenu.Content>
-                </DropdownMenu.Portal>
-              </DropdownMenu>
-            }
-          >
-            <For each={WORKBENCH_SURFACES}>
-              {(surface) => (
-                <ButtonV2
-                  variant="ghost"
-                  size="small"
-                  class={`mafw-rw-l2-tab ${surfaceTabClass(surface.id)}`}
-                  role="tab"
-                  aria-selected={props.surface === surface.id}
-                  onClick={() => props.onSurface(surface.id)}
-                >
-                  {surface.label}
-                </ButtonV2>
-              )}
-            </For>
-            <For each={pluginTabs().visible}>
-              {(surface) => (
-                <ButtonV2
-                  variant="ghost"
-                  size="small"
-                  class={`mafw-rw-l2-tab ${surfaceTabClass(surface.id)}`}
-                  role="tab"
-                  aria-selected={props.surface === surface.id}
-                  aria-label={`${surface.label}（${surface.descriptor.title || surface.descriptor.name}）`}
-                  onClick={() => props.onSurface(surface.id)}
-                >
-                  {surface.label}
-                </ButtonV2>
-              )}
-            </For>
-            <Show when={pluginTabs().overflow.length > 0}>
-              <DropdownMenu>
-                <DropdownMenu.Trigger
-                  as={ButtonV2}
-                  variant="ghost"
-                  size="small"
-                  class="mafw-rw-l2-overflow"
-                  aria-label="更多插件视图"
-                >
-                  <span>更多</span>
-                  <Icon name="chevron-down" size="small" />
-                </DropdownMenu.Trigger>
-                <DropdownMenu.Portal>
-                  <DropdownMenu.Content class="mafw-rw-exec-content">
-                    <For each={pluginTabs().overflow}>
-                      {(surface) => (
-                        <DropdownMenu.Item onSelect={() => props.onSurface(surface.id)}>
-                          <DropdownMenu.ItemLabel>{surface.label}</DropdownMenu.ItemLabel>
-                          <DropdownMenu.ItemDescription>
-                            {surface.descriptor.title || surface.descriptor.name}
-                          </DropdownMenu.ItemDescription>
-                          <Show when={props.surface === surface.id}>
-                            <Icon name="check-small" size="small" class="mafw-rw-check" />
-                          </Show>
-                        </DropdownMenu.Item>
-                      )}
-                    </For>
-                  </DropdownMenu.Content>
-                </DropdownMenu.Portal>
-              </DropdownMenu>
-            </Show>
+          <For each={WORKBENCH_SURFACES}>
+            {(surface) => (
+              <ButtonV2
+                variant="ghost"
+                size="small"
+                class={`mafw-rw-l2-tab ${surfaceTabClass(surface.id)}`}
+                role="tab"
+                aria-selected={props.surface === surface.id}
+                onClick={() => props.onSurface(surface.id)}
+              >
+                {surface.label}
+              </ButtonV2>
+            )}
+          </For>
+          <For each={pluginTabs().visible}>
+            {(surface) => (
+              <ButtonV2
+                variant="ghost"
+                size="small"
+                class={`mafw-rw-l2-tab ${surfaceTabClass(surface.id)}`}
+                role="tab"
+                aria-selected={props.surface === surface.id}
+                aria-label={`${surface.label}（${surface.descriptor.title || surface.descriptor.name}）`}
+                onClick={() => props.onSurface(surface.id)}
+              >
+                {surface.label}
+              </ButtonV2>
+            )}
+          </For>
+          <Show when={pluginTabs().overflow.length > 0}>
+            <DropdownMenu>
+              <DropdownMenu.Trigger
+                as={ButtonV2}
+                variant="ghost"
+                size="small"
+                class="mafw-rw-l2-overflow"
+                aria-label="更多插件视图"
+              >
+                <span>更多</span>
+                <Icon name="chevron-down" size="small" />
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content class="mafw-rw-exec-content">
+                  <For each={pluginTabs().overflow}>
+                    {(surface) => (
+                      <DropdownMenu.Item onSelect={() => props.onSurface(surface.id)}>
+                        <DropdownMenu.ItemLabel>{surface.label}</DropdownMenu.ItemLabel>
+                        <DropdownMenu.ItemDescription>
+                          {surface.descriptor.title || surface.descriptor.name}
+                        </DropdownMenu.ItemDescription>
+                        <Show when={props.surface === surface.id}>
+                          <Icon name="check-small" size="small" class="mafw-rw-check" />
+                        </Show>
+                      </DropdownMenu.Item>
+                    )}
+                  </For>
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu>
           </Show>
         </div>
       </Show>
 
-      <Show when={props.view === "workbench"}>
+      <Show when={props.context === "content"}>
         <ContentScopeHeader
           label={props.contentScopeLabel}
           isGoalScope={props.contentScopeIsGoal}
@@ -315,12 +269,15 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       </Show>
 
       <div class="mafw-rw-content">
-        <div class="mafw-rw-pane" classList={{ "is-active": props.view === "work" }}>
+        <div class="mafw-rw-pane" classList={{ "is-active": props.context === "project" }}>
           {props.workView}
         </div>
-        <div class="mafw-rw-pane" classList={{ "is-active": props.view === "workbench" }}>
+        <div class="mafw-rw-pane" classList={{ "is-active": props.context === "goal" }}>
+          {props.goalView}
+        </div>
+        <div class="mafw-rw-pane" classList={{ "is-active": props.context === "content" }}>
           <WorkbenchCodeView
-            active={props.open && props.view === "workbench"}
+            active={props.open && props.context === "content"}
             surface={props.surface}
             sessionID={props.sessionID}
             contentRoot={props.contentRoot}
@@ -340,13 +297,48 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
             onWebError={props.onWebError}
           />
         </div>
-        <div class="mafw-rw-pane" classList={{ "is-active": props.view === "execution" }}>
-          {props.executionView}
-        </div>
-        <div class="mafw-rw-pane" classList={{ "is-active": props.view === "review" }}>
+        <div class="mafw-rw-pane" classList={{ "is-active": props.context === "review" }}>
           {props.reviewView}
         </div>
       </div>
+
+      <Show when={props.executionOpen}>
+        <div class="mafw-rw-exec-drawer" role="region" aria-label="执行详情">
+          <div class="mafw-rw-exec-head">
+            <span class="mafw-rw-exec-title">执行详情</span>
+            <DropdownMenu>
+              <DropdownMenu.Trigger as={ButtonV2} variant="ghost" size="small" class="mafw-rw-exec-trigger">
+                <span>{executionSectionLabel(props.executionSection)}</span>
+                <Icon name="chevron-down" size="small" />
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content class="mafw-rw-exec-content">
+                  <For each={EXECUTION_SECTIONS}>
+                    {(section) => (
+                      <DropdownMenu.Item onSelect={() => props.onExecutionSection(section.id)}>
+                        <DropdownMenu.ItemLabel>{section.label}</DropdownMenu.ItemLabel>
+                        <Show when={props.executionSection === section.id}>
+                          <Icon name="check-small" size="small" class="mafw-rw-check" />
+                        </Show>
+                      </DropdownMenu.Item>
+                    )}
+                  </For>
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu>
+            <ButtonV2
+              variant="ghost"
+              size="small"
+              class="mafw-rw-exec-close"
+              aria-label="关闭执行详情"
+              onClick={() => props.onExecutionOpen(false)}
+            >
+              <Icon name="close" size="small" />
+            </ButtonV2>
+          </div>
+          <div class="mafw-rw-exec-body">{props.executionView}</div>
+        </div>
+      </Show>
     </div>
   )
 }

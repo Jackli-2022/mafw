@@ -4,12 +4,24 @@ import { readFileSync } from "node:fs"
 
 const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8")
 
-test("right workbench owns L1/L2 and the terminal surface", () => {
+test("right workbench owns context header, L2 surfaces and the terminal surface", () => {
   const shell = read("src/renderer/mafw/components/WorkbenchShell.tsx")
   const code = read("src/renderer/mafw/components/WorkbenchCodeView.tsx")
   const mafwShell = read("src/renderer/mafw/MafwShell.tsx")
 
-  assert.match(shell, /WORKBENCH_VIEWS/)
+  assert.match(shell, /mafw-rw-head/)
+  assert.match(shell, /mafw-rw-context-label/)
+  assert.match(shell, /contextLabel/)
+  assert.match(shell, /executionOpen/)
+  assert.match(shell, /onExecutionOpen/)
+  assert.match(shell, /goalView: JSX\.Element/)
+  assert.match(shell, /props\.context === "project"/)
+  assert.match(shell, /props\.context === "goal"/)
+  assert.match(shell, /props\.context === "content"/)
+  assert.match(shell, /props\.context === "review"/)
+  assert.doesNotMatch(shell, /WORKBENCH_VIEWS/)
+  assert.doesNotMatch(shell, /mafw-rw-tabs/)
+  assert.doesNotMatch(shell, /props\.view ===/)
   assert.match(shell, /EXECUTION_SECTIONS/)
   assert.match(shell, /DropdownMenu/)
   assert.doesNotMatch(shell, /TerminalDock/)
@@ -17,7 +29,6 @@ test("right workbench owns L1/L2 and the terminal surface", () => {
   assert.match(shell, /executionView/)
   assert.match(shell, /reviewView/)
   assert.match(shell, /workView: JSX\.Element/)
-  assert.match(shell, /props\.view === "work"/)
   assert.match(shell, /props\.workView/)
   assert.match(mafwShell, /workView=\{\s*<ProjectWorkView/)
   assert.doesNotMatch(mafwShell, /workView=\{<div class="mafw-empty">项目工作<\/div>\}/)

@@ -123,10 +123,10 @@ test("SDK stage 类型包含新 kind / role / action（Task 19 前置项）", ()
   assert.match(sdkTypes, /'direction_review'/)
 })
 
-test("活动 Goal 变化时 inline 详情 keyed 重挂（不残留旧状态）", () => {
-  const work = read("../src/renderer/mafw/components/ProjectWorkView.tsx")
-  assert.match(work, /<Show when=\{props\.selectedGoalId\} keyed>/)
-  assert.match(work, /<GoalDetailPanel/)
+test("活动 Goal 变化时 Goal 上下文 keyed 重挂（不残留旧状态）", () => {
+  const shell = read("../src/renderer/mafw/MafwShell.tsx")
+  assert.match(shell, /goalView=\{\s*<Show when=\{podGoalId\(\)\} keyed>/)
+  assert.match(shell, /<GoalDetailPanel/)
 })
 
 test("Tech Lead tab 发送走 pod.sendTechLeadMessage（保留身份/ContextManifest）", () => {

@@ -1,13 +1,18 @@
-// B1 右工作台视图状态（2026-10-26 agent-workbench-layout-ia spec）。
-// 一级决定“看什么”，二级决定“当前这一类”；执行二级固定下拉。
+// Plan D1: the right workbench is a context stack, not four tool tabs.
+// Context answers “what am I looking at”; L2 surfaces answer “which tool”.
 //
 // Task 8：L2 surface 从封闭三值扩展为「内置三值 + 插件面板动态 tab」。
 // 插件 surface id 固定为 `plugin:<package>:<panel>`，与插件包/面板 id 的
 // 字符集（NAME_PATTERN）一致，因此可直接持久化到 localStorage。
+import {
+  normalizeWorkbenchContext,
+  workbenchContextFromLegacyView,
+  type WorkbenchContext,
+} from "./workbench-context"
+
 export type BuiltinWorkbenchSurface = "code" | "browser" | "terminal"
 export type PluginSurfaceId = `plugin:${string}`
 export type WorkbenchSurface = BuiltinWorkbenchSurface | PluginSurfaceId
-export type WorkbenchView = "work" | "workbench" | "execution" | "review"
 export type ExecutionSection = "overview" | "pod" | "todos" | "subagents" | "background" | "trajectory"
 
 const PLUGIN_SURFACE_PATTERN = /^plugin:([A-Za-z0-9][A-Za-z0-9._-]*):([A-Za-z0-9][A-Za-z0-9._-]*)$/
@@ -30,23 +35,16 @@ export function isPluginSurfaceId(value: string | null | undefined): value is Pl
 }
 
 export type WorkbenchState = {
-  view: WorkbenchView
+  context: WorkbenchContext
   surface: WorkbenchSurface
   executionSection: ExecutionSection
 }
 
 export const DEFAULT_WORKBENCH_STATE: WorkbenchState = {
-  view: "work",
+  context: "project",
   surface: "code",
   executionSection: "overview",
 }
-
-export const WORKBENCH_VIEWS: readonly { id: WorkbenchView; label: string }[] = [
-  { id: "work", label: "工作" },
-  { id: "workbench", label: "工作台" },
-  { id: "execution", label: "执行" },
-  { id: "review", label: "审阅" },
-]
 
 export const WORKBENCH_SURFACES: readonly { id: BuiltinWorkbenchSurface; label: string }[] = [
   { id: "code", label: "文件" },
@@ -62,13 +60,8 @@ export const EXECUTION_SECTIONS: readonly { id: ExecutionSection; label: string 
   { id: "trajectory", label: "轨迹" },
 ]
 
-const VIEW_IDS = new Set<WorkbenchView>(WORKBENCH_VIEWS.map((v) => v.id))
 const SURFACE_IDS = new Set<string>(WORKBENCH_SURFACES.map((v) => v.id))
 const SECTION_IDS = new Set<ExecutionSection>(EXECUTION_SECTIONS.map((v) => v.id))
-
-export function normalizeWorkbenchView(v: string | null | undefined): WorkbenchView {
-  return v && VIEW_IDS.has(v as WorkbenchView) ? (v as WorkbenchView) : "work"
-}
 
 export function normalizeWorkbenchSurface(v: string | null | undefined): WorkbenchSurface {
   if (isPluginSurfaceId(v)) return v
@@ -96,35 +89,25 @@ export function clearLegacyWorkbenchKeys(remove: (key: string) => void): void {
   for (const key of LEGACY_WORKBENCH_KEYS) remove(key)
 }
 
-export function nextWorkbenchView(current: WorkbenchView, key: string): WorkbenchView | null {
-  const order = WORKBENCH_VIEWS.map((v) => v.id)
-  const index = order.indexOf(current)
-  if (key === "ArrowRight") return order[index + 1] ?? null
-  if (key === "ArrowLeft") return order[index - 1] ?? null
-  if (key === "Home") return order[0]
-  if (key === "End") return order[order.length - 1]
-  return null
-}
-
 export type TerminalSurfaceHotkeyState = {
   dockOpen: boolean
-  view: WorkbenchView
+  context: WorkbenchContext
   surface: WorkbenchSurface
   previousSurface: "code" | "browser"
 }
 
 export type TerminalSurfaceHotkeyResult = {
   openDock: boolean
-  view: WorkbenchView
+  context: "content"
   surface: WorkbenchSurface
 }
 
-/** Ctrl+` surface 级开合：可见即回上一个 surface；否则跳到工作台 › 终端。 */
+/** Ctrl+` surface 级开合：内容面可见即回上一个 surface；否则跳到内容 › 终端。 */
 export function terminalSurfaceHotkeyAction(s: TerminalSurfaceHotkeyState): TerminalSurfaceHotkeyResult {
-  if (s.dockOpen && s.view === "workbench" && s.surface === "terminal") {
-    return { openDock: true, view: "workbench", surface: s.previousSurface }
+  if (s.dockOpen && s.context === "content" && s.surface === "terminal") {
+    return { openDock: true, context: "content", surface: s.previousSurface }
   }
-  return { openDock: true, view: "workbench", surface: "terminal" }
+  return { openDock: true, context: "content", surface: "terminal" }
 }
 
 export function nextWorkbenchSurface(
@@ -143,25 +126,25 @@ export function nextWorkbenchSurface(
 }
 
 type LegacyTab = {
-  view: WorkbenchView
+  context: WorkbenchContext
   executionSection: ExecutionSection
   surface?: WorkbenchSurface
 }
 
 const LEGACY_TABS: Record<string, LegacyTab> = {
-  tasks: { view: "execution", executionSection: "todos" },
-  trajectory: { view: "execution", executionSection: "trajectory" },
-  subagents: { view: "execution", executionSection: "subagents" },
-  background: { view: "execution", executionSection: "background" },
-  changes: { view: "review", executionSection: "overview" },
-  usage: { view: "execution", executionSection: "overview" },
-  quota: { view: "execution", executionSection: "overview" },
-  notes: { view: "workbench", executionSection: "overview" },
+  tasks: { context: "project", executionSection: "todos" },
+  trajectory: { context: "project", executionSection: "trajectory" },
+  subagents: { context: "project", executionSection: "subagents" },
+  background: { context: "project", executionSection: "background" },
+  changes: { context: "review", executionSection: "overview" },
+  usage: { context: "project", executionSection: "overview" },
+  quota: { context: "project", executionSection: "overview" },
+  notes: { context: "content", executionSection: "overview" },
   // pre-merge workbench tabs
-  files: { view: "workbench", executionSection: "overview", surface: "code" },
-  editor: { view: "workbench", executionSection: "overview", surface: "code" },
-  browser: { view: "workbench", executionSection: "overview", surface: "browser" },
-  terminal: { view: "workbench", executionSection: "overview", surface: "terminal" },
+  files: { context: "content", executionSection: "overview", surface: "code" },
+  editor: { context: "content", executionSection: "overview", surface: "code" },
+  browser: { context: "content", executionSection: "overview", surface: "browser" },
+  terminal: { context: "content", executionSection: "overview", surface: "terminal" },
 }
 
 function legacySurface(v: string | null | undefined): WorkbenchSurface | null {
@@ -171,17 +154,20 @@ function legacySurface(v: string | null | undefined): WorkbenchSurface | null {
 export function workbenchStateFromStorage(read: (key: string) => string | null): WorkbenchState {
   const legacyTab = LEGACY_TABS[read("mafw-right-dock-tab") ?? ""]
   const legacyWorkbenchTab = legacySurface(read("mafw-workbench-tab"))
-  const legacy = legacyTab
 
-  const view = normalizeWorkbenchView(read("mafw-workbench-view") ?? legacy?.view)
+  const storedContext = read("mafw-workbench-context")
+  const legacyView = read("mafw-workbench-view") ?? legacyTab?.context
+  const context = storedContext
+    ? normalizeWorkbenchContext(storedContext)
+    : workbenchContextFromLegacyView(legacyView)
   const surface = normalizeWorkbenchSurface(
-    read("mafw-workbench-surface") ?? legacyWorkbenchTab ?? legacy?.surface,
+    read("mafw-workbench-surface") ?? legacyWorkbenchTab ?? legacyTab?.surface,
   )
   const executionSection = normalizeExecutionSection(
-    read("mafw-execution-section") ?? legacy?.executionSection,
+    read("mafw-execution-section") ?? legacyTab?.executionSection,
   )
 
-  return { view, surface, executionSection }
+  return { context, surface, executionSection }
 }
 
 /**

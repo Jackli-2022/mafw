@@ -45,7 +45,7 @@ test("ProjectWorkView polls only while active and consumes each composer request
   assert.match(view, /if \(!props\.active\) return\r?\n\s*void load\(\)\r?\n\s*const timer = setInterval/)
   assert.match(view, /if \(request > lastConsumedComposerRequest && props\.active\) \{/)
   assert.match(view, /lastConsumedComposerRequest = request/)
-  assert.match(shell, /active=\{workbenchContent\(\) === "project" && dockPresent\(\) && workbenchView\(\) === "work"\}/)
+  assert.match(shell, /active=\{workbenchContent\(\) === "project" && dockPresent\(\) && workbenchContext\(\) === "project"\}/)
 })
 
 test("the shell mounts ProjectWorkView in the work L1 pane", () => {

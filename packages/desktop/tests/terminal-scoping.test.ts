@@ -19,6 +19,6 @@ test("Ctrl+` uses surface state, not the retired bottom strip", () => {
 test("terminal surface receives true visibility, not just selection", () => {
   const shell = read("src/renderer/mafw/components/WorkbenchShell.tsx")
   const code = read("src/renderer/mafw/components/WorkbenchCodeView.tsx")
-  assert.match(shell, /active=\{props\.open && props\.view === "workbench"\}/)
+  assert.match(shell, /active=\{props\.open && props\.context === "content"\}/)
   assert.match(code, /active=\{props\.active && props\.surface === "terminal"\}/)
 })

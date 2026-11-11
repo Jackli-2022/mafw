@@ -10,16 +10,14 @@ test("workbench tabs use fill-block active (no contrast variant)", () => {
   const src = read("src/renderer/mafw/components/WorkbenchShell.tsx")
   const surface = read("src/renderer/mafw/components/TerminalSurface.tsx")
   assert.doesNotMatch(src, /variant=\{props\.(view|surface)[^}]*"contrast"/)
-  assert.match(src, /aria-selected=\{props\.view === item\.id\}/)
   assert.match(src, /aria-selected=\{props\.surface === surface\.id\}/)
   assert.match(surface, /aria-selected=\{store\.activeId\(\) === session\.id\}/)
 })
 
 test("right dock active CSS mirrors the rail fill (attribute selectors)", () => {
   const css = read("src/renderer/mafw/mafw.css")
-  const rule = css.match(/\.mafw-rw-tab\[aria-selected="true"\],[\s\S]*?\{([^}]*)\}/)?.[1] ?? ""
+  const rule = css.match(/\.mafw-rw-l2-tab\[aria-selected="true"\]\s*\{([^}]*)\}/)?.[1] ?? ""
   assert.match(rule, /color-mix\(in srgb, var\(--accent\) 12%, transparent\)/)
   assert.match(rule, /color: var\(--accent\)/)
-  assert.match(css, /\.mafw-rw-l2-tab\[aria-selected="true"\]/)
   assert.match(css, /\.mafw-terminal-tab\[aria-selected="true"\]/)
 })

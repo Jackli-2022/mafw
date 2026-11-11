@@ -648,7 +648,7 @@ describe("DiffReviewPanel 接线", () => {
   const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
   test("MafwShell：审阅改动打开 review 一级", () => {
     const src = read("src/renderer/mafw/MafwShell.tsx")
-    expect(src).toContain('openWorkbench("review")')
+    expect(src).toContain('openWorkbenchContext("review")')
   })
   test("审阅改动已移出 composer（归回合动作 + 工作台）", () => {
     const src = read("src/renderer/mafw/components/ChatPane.tsx")
@@ -665,7 +665,7 @@ describe("Dock changes tab（改动列表常驻入口）", () => {
     const src = read("src/renderer/mafw/MafwShell.tsx")
     expect(src).toContain("ChangesDock")
     expect(src).toContain("reviewView=")
-    expect(src).toContain('openWorkbench("review")')
+    expect(src).toContain('openWorkbenchContext("review")')
   })
   test("两级视图：审阅内嵌 DiffReviewPanel（无 shell 级抽屉）", () => {
     const src = read("src/renderer/mafw/MafwShell.tsx")
@@ -799,15 +799,17 @@ describe("topframe — 顶行框架", () => {
     expect(shell.indexOf("<SessionStrip", stripIdx)).toBeGreaterThan(stripIdx)
     expect(shell).not.toContain("DockTabButtons")
   })
-  test("B1 右工作台一级/二级结构（无第二套浮层轨）", () => {
+  test("D1 右工作台上下文头/二级结构（无 L1 工具 Tab）", () => {
     const shell = read("src/renderer/mafw/components/WorkbenchShell.tsx")
     const views = read("src/renderer/mafw/workbench-views.ts")
-    for (const t of ["workbench", "execution", "review"]) expect(views).toContain(`id: "${t}"`)
     for (const t of ["overview", "todos", "subagents", "background", "trajectory"]) {
       expect(views).toContain(`id: "${t}"`)
     }
     // Task 15：鲸群从日常执行分区退役，`pod` 只作为内部团队资源面存在。
     expect(views).not.toContain('{ id: "pod", label: "鲸群" }')
+    expect(shell).toContain("mafw-rw-head")
+    expect(shell).toContain("contextLabel")
+    expect(shell).not.toContain("WORKBENCH_VIEWS")
     expect(shell).toContain("DropdownMenu")
     expect(shell).not.toContain("mafw-session-float")
   })

@@ -215,7 +215,7 @@ describe("shell wiring pins", () => {
   })
 
   test("a rail click opens the workbench on that surface", () => {
-    expect(shell).toContain('openWorkbench("workbench"')
+    expect(shell).toContain('openWorkbenchContext("content"')
     expect(shell).toContain("applyWorkbenchSurface(surfaceId)")
     expect(shell).toContain("onPluginItem={openPluginSurface}")
     expect(shell).toContain("pluginItems={pluginRailItems()}")

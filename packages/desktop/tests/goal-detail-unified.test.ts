@@ -60,7 +60,7 @@ test("attention 按 action.type 分流到计划/问题/方向/结果", () => {
   // needs_you 就是 attention 列表本身；打开时必须带 action 对应的落点。
   assert.match(workOverview, /attentionTarget\(goal\.stage\?\.action\)/)
   assert.match(shell, /openGoalDetail\(/)
-  assert.match(shell, /detailFocus=\{goalDetailFocus\(\)\}/)
+  assert.match(shell, /focus=\{goalDetailFocus\(\)\}/)
   assert.match(workOverview, /onOpenGoal\(goal, attentionTarget\(goal\.stage\?\.action\)\)/)
 })
 

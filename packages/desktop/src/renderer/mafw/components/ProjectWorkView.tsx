@@ -3,9 +3,7 @@ import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import type { PodGoal, PodWorkOverview } from "@mafw/sdk"
 import { WorkOverview } from "./WorkOverview"
 import { WorkPriorityList } from "./WorkPriorityList"
-import { GoalDetailPanel } from "./GoalDetailPanel"
 import { PodGoalComposer } from "./PodGoalComposer"
-import type { GoalWorktreeTarget } from "./PodResultView"
 import { StandingGoalsPanel } from "./StandingGoalsPanel"
 import { buildAttentionList, buildWorkPriority, type WorkFilter } from "../work-overview-model"
 import { goalRevisionOf, type GoalDetailFocus } from "../pod-model"
@@ -31,15 +29,8 @@ export function ProjectWorkView(props: {
   refreshTick: () => number
   composerRequest?: number
   active: boolean
-  selectedGoalId?: string | null
-  detailFocus?: GoalDetailFocus | null
-  podId?: string | null
   onOpenGoal: (goal: PodGoal, focus?: GoalDetailFocus) => void
   onGoalCreated?: (goalId: string, goal?: PodGoal) => void
-  onGoalAccepted?: () => void
-  onOpenGoalWorktree?: (target: GoalWorktreeTarget) => void
-  onCloseGoal: () => void
-  onOpenSession: (sessionId: string) => void
 }): JSX.Element {
   const [overview, setOverview] = createSignal<PodWorkOverview | null>(null)
   const [loading, setLoading] = createSignal(false)
@@ -117,27 +108,6 @@ export function ProjectWorkView(props: {
     isResultViewed: isViewed,
   }))
 
-  let previousGoalId: string | null = null
-  createEffect(() => {
-    const selected = props.selectedGoalId ?? null
-    if (selected) {
-      previousGoalId = selected
-      queueMicrotask(() => document.querySelector<HTMLElement>(".mafw-goal-inline-title")?.focus())
-      return
-    }
-    const previous = previousGoalId
-    if (!previous) return
-    previousGoalId = null
-    queueMicrotask(() => {
-      // The Goal may have come from the priority area or a notification while
-      // the active filter excludes its bucket. Keep keyboard context on the
-      // active filter instead of dropping focus to <body>.
-      const row = document.querySelector<HTMLElement>(`.mafw-work-row[data-goal-id="${previous}"] .mafw-work-item`)
-      const fallback = document.querySelector<HTMLElement>('.mafw-work-filter[aria-pressed="true"]')
-      ;(row ?? fallback)?.focus()
-    })
-  })
-
   const createGoal = async (input: {
     title: string
     objective: string
@@ -169,7 +139,7 @@ export function ProjectWorkView(props: {
 
   return (
     <div class="mafw-project-work" aria-label="项目工作">
-      <div class="mafw-project-work-overview" hidden={!!props.selectedGoalId}>
+      <div class="mafw-project-work-overview">
         <div class="mafw-project-work-head">
           <div>
             <div class="mafw-work-kicker">工作</div>
@@ -221,21 +191,6 @@ export function ProjectWorkView(props: {
           isViewed={isViewed}
         />
       </div>
-
-      <Show when={props.selectedGoalId} keyed>
-        {(goalId) => (
-          <GoalDetailPanel
-            goalId={goalId}
-            projectDir={props.projectDir}
-            podId={props.podId ?? null}
-            focus={props.detailFocus ?? "timeline"}
-            onClose={props.onCloseGoal}
-            onOpenSession={props.onOpenSession}
-            onGoalAccepted={props.onGoalAccepted}
-            onOpenWorktree={props.onOpenGoalWorktree}
-          />
-        )}
-      </Show>
     </div>
   )
 }
