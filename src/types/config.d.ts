@@ -21,7 +21,6 @@ export interface MAFWConfig {
       cleanupThreshold: number;
       criticalThreshold: number;
     };
-    maxMemoriesPerTier: number;
     mergeSimilarityThreshold: number;
   };
   hooks: {
