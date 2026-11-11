@@ -13,8 +13,8 @@ export interface SkillDraft {
 
 export interface SkillDraftDeps {
   copyDir(src: string, dst: string): void;
-  readMemory(id: string): Promise<{ id: string; memory_value: string; cue_anchors?: string[] } | null>;
-  writeMemory(unit: { id: string; memory_value: string; cue_anchors?: string[] }): Promise<unknown>;
+  readMemory(id: string): Promise<Record<string, any> | null>;
+  writeMemory(unit: Record<string, any>): Promise<unknown>;
   stagingDir: string;
   skillsDir: string;
   /** Skill v1: persist the installed capability row (fail-open). */

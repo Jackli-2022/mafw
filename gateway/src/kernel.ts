@@ -3062,8 +3062,8 @@ class MafwScheduler {
   /** W2 安装器 deps：staging→用户级 skills 目录 + 源记忆指针改写。 */
   private skillInstallDeps(): {
     copyDir(src: string, dst: string): void;
-    readMemory(id: string): Promise<{ id: string; memory_value: string; cue_anchors?: string[] } | null>;
-    writeMemory(unit: { id: string; memory_value: string; cue_anchors?: string[] }): Promise<unknown>;
+    readMemory(id: string): Promise<Record<string, any> | null>;
+    writeMemory(unit: Record<string, any>): Promise<unknown>;
     stagingDir: string;
     skillsDir: string;
     recordInstall(record: {
@@ -3079,10 +3079,13 @@ class MafwScheduler {
       : null;
     return {
       copyDir: (src, dst) => fs.cpSync(src, dst, { recursive: true }),
+      // Return the FULL unit: installSkillDraft spreads it when writing the
+      // pointer back, so truncating to {id,memory_value,cue_anchors} drops
+      // type/primary_abstraction and makes the write fail silently.
       readMemory: async (id) => {
         if (!store) return null;
         const u = await store.read(id);
-        return u ? { id: u.id, memory_value: u.memory_value, cue_anchors: u.cue_anchors } : null;
+        return u ? (u as unknown as Record<string, any>) : null;
       },
       writeMemory: async (unit) => {
         if (store) await store.write(unit as any);
