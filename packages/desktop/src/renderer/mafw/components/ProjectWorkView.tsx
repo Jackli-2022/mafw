@@ -226,37 +226,42 @@ export function ProjectWorkView(props: {
           onOpen={(goal, focus) => props.onOpenGoal(goal, focus)}
         />
 
-        <section
-          class="mafw-project-home-content"
-          classList={{ "is-single": !props.files || !props.recents }}
-          aria-label="项目内容"
+        <div
+          class="mafw-project-home-grid"
+          classList={{ "is-single": !props.files && !props.recents }}
         >
-          <Show when={props.files}>
-            <ProjectFilesCard
-              root={props.files!.root}
-              scopeKey={props.files!.scopeKey}
-              sessionID={props.files!.sessionID ?? null}
-              onOpenFile={props.files!.onOpenFile}
-              onBrowse={props.files!.onBrowse}
-            />
+          <Show when={props.files || props.recents}>
+            <section class="mafw-project-home-content" aria-label="项目内容">
+              <Show when={props.files}>
+                <ProjectFilesCard
+                  root={props.files!.root}
+                  scopeKey={props.files!.scopeKey}
+                  sessionID={props.files!.sessionID ?? null}
+                  onOpenFile={props.files!.onOpenFile}
+                  onBrowse={props.files!.onBrowse}
+                />
+              </Show>
+              <Show when={props.recents}>
+                <RecentContentList
+                  items={props.recents!.items}
+                  onOpen={props.recents!.onOpen}
+                />
+              </Show>
+            </section>
           </Show>
-          <Show when={props.recents}>
-            <RecentContentList
-              items={props.recents!.items}
-              onOpen={props.recents!.onOpen}
-            />
-          </Show>
-        </section>
 
-        <WorkOverview
-          goals={overviewGoals()}
-          loading={loading()}
-          error={error()}
-          filter={filter()}
-          onFilter={setFilter}
-          onOpenGoal={(goal, focus) => props.onOpenGoal(goal, focus)}
-          isViewed={isViewed}
-        />
+          <div class="mafw-project-home-goals">
+            <WorkOverview
+              goals={overviewGoals()}
+              loading={loading()}
+              error={error()}
+              filter={filter()}
+              onFilter={setFilter}
+              onOpenGoal={(goal, focus) => props.onOpenGoal(goal, focus)}
+              isViewed={isViewed}
+            />
+          </div>
+        </div>
       </div>
     </div>
   )

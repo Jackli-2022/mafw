@@ -268,7 +268,7 @@ spec §5.1/§5.3/§8.2，plan `docs/superpowers/plans/2026-11-11-project-agent-w
 
 spec §5.1/§5.2/§5.3/§6.1/§7.5，plan `docs/superpowers/plans/2026-11-11-project-agent-workbench-project-home.md`。
 
-- **项目首页**：项目名 + 团队条 + 工作优先级/全部 Goal + 「项目文件 / 最近内容」双列。项目首页不是执行 Dashboard；文件与最近内容直接可达，但不抢工作主视觉。团队条是分隔线而不是卡片，项目文件与最近内容共用一个内容表面，避免首页变成三块并排的盒子。
+- **项目首页**：项目名 + 团队条 + 工作优先级 + 两栏主体：左侧「项目文件」树（下方接最近内容），右侧「全部 Goal」列表；两栏占满工作台高度，左栏内部滚动。项目首页不是执行 Dashboard；文件与最近内容直接可达，但不抢工作主视觉。团队条是分隔线而不是卡片，避免首页变成多块并排的盒子。
 - **项目文件**：`ProjectFilesCard` 复用 `FilesDock`，固定在项目主目录 scope；从项目首页打开文件会先清 `contentReturnGoalId` 并把 `contentScope` 重置为项目 scope，不继承当前 Goal revision。普通点击仍在内容上下文打开，不创建持久 Tab。
 - **最近内容**：`recent-content.ts` 按项目持久化 `mafw-recent-content:<normalized projectDir>`，最多 8 条、同 scope+rel 去重并置顶；D2 只展示项目主目录条目，Goal revision 条目留给 D3 意图视图。
 - **双文件树 watcher**：`dir-watch-pool.ts` 对 `(root, rel)` 做 renderer 侧引用计数；项目首页树与内容树同时挂载时，任一方卸载不会误关另一方的目录监听。

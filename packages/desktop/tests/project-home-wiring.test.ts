@@ -14,6 +14,8 @@ test("project home composes project files and recent content", () => {
   assert.match(work, /ProjectFilesCard/)
   assert.match(work, /RecentContentList/)
   assert.match(work, /mafw-project-home-content/)
+  assert.match(work, /mafw-project-home-grid/)
+  assert.match(work, /mafw-project-home-goals/)
   assert.match(work, /props\.files/)
   assert.match(work, /props\.recents/)
 

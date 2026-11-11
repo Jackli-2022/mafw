@@ -7360,7 +7360,7 @@ html[data-theme="light"] body {
 .mafw-project-work {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -7431,22 +7431,32 @@ html[data-theme="light"] body {
 }
 .mafw-project-team-chip-state { color: var(--text-4); font-size: 9.5px; }
 .mafw-project-team-actions { display: flex; align-items: center; flex: none; gap: 2px; }
-.mafw-project-home-content {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
-  gap: 0;
+.mafw-project-home-grid {
+  flex: 1;
+  min-height: 0;
   min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+}
+.mafw-project-home-grid.is-single { grid-template-columns: 1fr; }
+.mafw-project-home-content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
   overflow: hidden;
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-lg);
   background: var(--bg-inset);
 }
-.mafw-project-home-content.is-single { grid-template-columns: 1fr; }
 .mafw-project-files-card,
 .mafw-project-recent-card {
   min-width: 0;
   min-height: 0;
-  height: 232px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -7454,10 +7464,35 @@ html[data-theme="light"] body {
   border-radius: 0;
   background: transparent;
 }
-.mafw-project-files-card { border-right: 1px solid var(--border-subtle); }
-.mafw-project-home-content.is-single .mafw-project-files-card { border-right: 0; }
+.mafw-project-files-card {
+  flex: 1 1 auto;
+  min-height: 220px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.mafw-project-recent-card {
+  flex: 0 0 180px;
+  height: auto;
+}
 .mafw-project-files-card .mafw-files-panel { height: 100%; min-height: 0; }
 .mafw-project-files-card .mafw-file-tree { flex: 1; min-height: 0; }
+.mafw-project-home-goals {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.mafw-project-home-goals > .mafw-work-overview {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.mafw-project-home-goals .mafw-work-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
 .mafw-project-recent-head {
   flex: none;
   display: flex;
@@ -7515,14 +7550,16 @@ html[data-theme="light"] body {
   color: var(--text-4);
   font-size: 11px;
 }
-@container (max-width: 760px) {
-  .mafw-project-home-content { grid-template-columns: 1fr; }
-  .mafw-project-files-card {
-    height: 220px;
-    border-right: 0;
-    border-bottom: 1px solid var(--border-subtle);
+@container (max-width: 980px) {
+  .mafw-project-home-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+    min-height: 0;
+    overflow-y: auto;
   }
-  .mafw-project-recent-card { height: 200px; }
+  .mafw-project-home-content { height: 420px; }
+  .mafw-project-home-goals { min-height: 380px; }
+  .mafw-project-recent-card { flex-basis: 160px; }
 }
 .mafw-standing-goals {
   padding: 12px;
@@ -7608,7 +7645,6 @@ html[data-theme="light"] body {
   white-space: nowrap;
 }
 .mafw-standing-goal-run-cost { font-family: var(--font-data); }
-.mafw-project-work .mafw-work-overview { flex: 0 0 auto; }
 .mafw-work-overview-head {
   align-items: flex-start;
   padding-bottom: 12px;
@@ -8062,6 +8098,13 @@ html[data-theme="light"] body {
 
 /* ══ Pod 用户工作流（2026-11-09）：双会话入口 / 优先级 / 右侧 inline 详情 ══ */
 .mafw-project-work { container-type: inline-size; }
+.mafw-project-work-overview {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
 .mafw-project-work-overview[hidden] { display: none; }
 
 .mafw-pod-contacts { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }

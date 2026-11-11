@@ -48,9 +48,11 @@ test("priority cards, filters and Goal rows have readable interaction states", (
   assert.match(css, /\.mafw-work-row \.mafw-work-item:focus-visible/)
 })
 
-test("inline detail shares the work panel's single scroll surface", () => {
-  assert.match(rule(".mafw-project-work"), /overflow-y:\s*auto/)
-  assert.match(rule(".mafw-goal-inline"), /overflow:\s*visible/)
+test("project home gives each work surface its own scroll owner", () => {
+  assert.match(rule(".mafw-project-work"), /overflow:\s*hidden/)
+  assert.match(rule(".mafw-project-home-grid"), /flex:\s*1/)
+  assert.match(rule(".mafw-project-home-goals .mafw-work-list"), /overflow-y:\s*auto/)
+  assert.match(css, /\.mafw-goal-inline/, "inline detail styles remain for the Goal context")
   assert.match(css, /container-type:\s*inline-size/)
   assert.match(css, /@container \(max-width: 620px\)/)
 })
