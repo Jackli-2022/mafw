@@ -30,6 +30,7 @@ import {
   ProjectListResponse,
   UsageSummaryResponse,
 } from './schemas/read-models';
+import { KernelStatsResponse } from './schemas/resources';
 
 /**
  * SDK-facing 端点（catalog → gateway-paths → openapi 单向生成；**在此新增**后必须重跑
@@ -336,6 +337,15 @@ const NON_SDK_ROUTES: RouteDef[] = [
   // 形状在 E3-1 清理：costs/alignment/feedback/userAnswer/session.metrics/health.check
   // 与 gateway.* 控制面只在已删除的死模块 src/dashboard/api.ts 里有实现，从不可达）。
   { method: 'GET', path: '/api/stats', operationId: 'dashboard.stats', tags: ['internal'] },
+  // E4-8 内核资源账本快照（internal：desktop/运维诊断面，不进 @mafw/sdk 调用面）。
+  {
+    method: 'GET',
+    path: '/api/kernel/stats',
+    operationId: 'kernel.stats',
+    summary: 'resource ledger snapshot',
+    tags: ['internal'],
+    response: KernelStatsResponse,
+  },
   // 移动端（P5 Wave 2 反向审计后全量登记）
   { method: 'POST', path: '/api/mobile/media/tasks/:id/ask', operationId: 'mobile.mediaTaskAsk', tags: ['internal'] },
   { method: 'POST', path: '/api/mobile/media/tasks', operationId: 'mobile.mediaTaskUpload', tags: ['internal'] },

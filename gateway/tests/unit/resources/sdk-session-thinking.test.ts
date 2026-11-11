@@ -1,4 +1,4 @@
-import { SdkSessionResource } from '../../../src/resources/sdk-session';
+import { SdkSessionResource } from '../../../src/runtime/sdk-session';
 
 function makeSdk() {
   const calls: any[] = [];

@@ -64,6 +64,7 @@ function defer<T>(): Deferred<T> {
 export class Scheduler {
   private readonly maxConcurrent: number;
   private readonly budgetChecker?: BudgetChecker;
+  private readonly admissionChecker?: BudgetChecker;
   private readonly log: (msg: string) => void;
 
   private readonly queue: Task[] = [];
@@ -78,11 +79,21 @@ export class Scheduler {
     // task forever with no warning — a silent deadlock for future consumers.
     this.maxConcurrent = Math.max(1, opts?.maxConcurrent ?? 4);
     this.budgetChecker = opts?.budgetChecker;
+    this.admissionChecker = opts?.admissionChecker;
     this.log = opts?.log ?? (() => {});
   }
 
   submit<T>(task: TaskDescriptor<T>, fn: () => Promise<T>): Promise<T> {
     const descriptor: TaskDescriptor<T> = { ...task, id: task.id ?? `task_${++this.seq}` };
+
+    // 0. Universal admission — every submit, before budget/queue/coalesce.
+    //    E4: resource pressure rejects non-foreground tasks that carry no budget.
+    if (this.admissionChecker) {
+      const admission = this.admissionChecker(descriptor);
+      if (!admission.ok) {
+        return Promise.reject(new BudgetExceededError(admission.reason ?? 'admission denied'));
+      }
+    }
 
     // 1. Budget admission — before any queueing; fn must never run.
     if (descriptor.budget && this.budgetChecker) {

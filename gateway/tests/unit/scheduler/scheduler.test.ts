@@ -375,3 +375,91 @@ describe('Scheduler', () => {
     expect(a).toBe('a'); // if 0 were honored, the queue would never drain
   });
 });
+
+// E4 batch6 review: admission seam runs for EVERY submit (budgeted or not).
+// budgetChecker keeps its budget-only contract.
+describe('Scheduler admission seam', () => {
+  it('admission denies a budgetless background task and fn never runs', async () => {
+    const admission = jest.fn(() => ({ ok: false, reason: 'resource pressure' }));
+    const s = new Scheduler({ admissionChecker: admission });
+    let ran = false;
+    await expect(
+      s.submit({ priority: 'background', strategy: 'queue' }, async () => {
+        ran = true;
+      }),
+    ).rejects.toBeInstanceOf(BudgetExceededError);
+    expect(ran).toBe(false);
+    expect(admission).toHaveBeenCalledTimes(1);
+    expect(s.stats().running).toBe(0);
+    await expect(
+      s.submit({ priority: 'background', strategy: 'queue' }, async () => 'x'),
+    ).rejects.toThrow('resource pressure');
+  });
+
+  it('foreground still runs when admission only denies non-foreground', async () => {
+    const s = new Scheduler({
+      admissionChecker: (t) => (t.priority === 'foreground' ? { ok: true } : { ok: false, reason: 'resource pressure' }),
+    });
+    expect(await s.submit({ priority: 'foreground', strategy: 'queue' }, async () => 'fg')).toBe('fg');
+  });
+
+  it('admission runs before coalesce join (denied same-key submit does not join a running task)', async () => {
+    let degraded = false;
+    const s = new Scheduler({ admissionChecker: () => (degraded ? { ok: false, reason: 'resource pressure' } : { ok: true }) });
+    const gate = manual<string>();
+    const running = s.submit({ priority: 'background', mutexKey: 'k', strategy: 'coalesce' }, () => gate.promise);
+    degraded = true;
+    let ran = false;
+    await expect(
+      s.submit({ priority: 'background', mutexKey: 'k', strategy: 'coalesce' }, async () => {
+        ran = true;
+      }),
+    ).rejects.toBeInstanceOf(BudgetExceededError);
+    expect(ran).toBe(false);
+    gate.resolve('first');
+    expect(await running).toBe('first');
+  });
+
+  it('budgetChecker stays budget-only: budgetless tasks never consult it', async () => {
+    const budgetChecker = jest.fn(() => ({ ok: false, reason: 'daily cap' }));
+    const admission = jest.fn(() => ({ ok: true }));
+    const s = new Scheduler({ budgetChecker, admissionChecker: admission });
+    // Budgetless: admission consulted, budgetChecker not.
+    expect(await s.submit({ priority: 'background', strategy: 'queue' }, async () => 'ok')).toBe('ok');
+    expect(admission).toHaveBeenCalledTimes(1);
+    expect(budgetChecker).not.toHaveBeenCalled();
+  });
+
+  it('budgeted tasks consult admission first, then budgetChecker (behavior unchanged)', async () => {
+    const order: string[] = [];
+    const admission = jest.fn(() => { order.push('admission'); return { ok: true }; });
+    const budgetChecker = jest.fn(() => { order.push('budget'); return { ok: false, reason: 'daily cap' }; });
+    const s = new Scheduler({ admissionChecker: admission, budgetChecker });
+    let ran = false;
+    await expect(
+      s.submit(
+        { priority: 'background', strategy: 'queue', budget: { kind: 'pipeline', pipeline: 'reflect' } },
+        async () => { ran = true; },
+      ),
+    ).rejects.toThrow('daily cap');
+    expect(order).toEqual(['admission', 'budget']);
+    expect(ran).toBe(false);
+  });
+
+  it('admission denial wins over a still-allowing budgetChecker (fn never runs)', async () => {
+    const budgetChecker = jest.fn(() => ({ ok: true }));
+    const s = new Scheduler({
+      admissionChecker: () => ({ ok: false, reason: 'resource pressure' }),
+      budgetChecker,
+    });
+    let ran = false;
+    await expect(
+      s.submit(
+        { priority: 'background', strategy: 'queue', budget: { kind: 'pipeline', pipeline: 'reflect' } },
+        async () => { ran = true; },
+      ),
+    ).rejects.toBeInstanceOf(BudgetExceededError);
+    expect(ran).toBe(false);
+    expect(budgetChecker).not.toHaveBeenCalled();
+  });
+});

@@ -21,7 +21,18 @@ import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
 import { log } from '../core/utils/logger';
+import type { ProcessHandle, ProcessLedger } from '../resources/process-ledger';
 import { buildQueryInput, EmbeddingKind, EmbeddingProvider } from './embedding-provider';
+
+/**
+ * E4-6: 让组合根（kernel）把 llama-server 子进程计入全局进程台账。
+ * 未注入时完全 no-op（单测/独立使用不依赖 gateway）。
+ */
+let processLedger: ProcessLedger | undefined;
+
+export function setLlamaCppProcessLedger(ledger: ProcessLedger | undefined): void {
+  processLedger = ledger;
+}
 
 export interface LlamaCppConfig {
   /** Server port. 0 = pick a free loopback port (default). */
@@ -120,6 +131,10 @@ export class LlamaCppServerProvider implements EmbeddingProvider {
   private queryCache = new Map<string, number[][]>();
   private consecutiveFailures = 0;
   private exitHookRegistered = false;
+  /** E4-6: 侧车子进程的台账句柄（exit/kill 两条路径都释放，幂等）。 */
+  private processHandle?: ProcessHandle;
+  /** 该句柄归属的子进程；旧 child 的迟到 exit 事件不得释放新 child 的句柄。 */
+  private processChild?: ChildProcess;
 
   constructor(opts: { model?: string; dimensions?: number; llamacpp?: LlamaCppConfig }) {
     this.cfg = opts.llamacpp ?? {};
@@ -256,8 +271,24 @@ export class LlamaCppServerProvider implements EmbeddingProvider {
         '--embeddings',
         '--log-disable',
       ], { windowsHide: true, stdio: 'ignore' });
-      this.child.on('exit', code => {
+      this.processHandle?.release();
+      this.processHandle = undefined;
+      this.processChild = undefined;
+      this.processHandle = processLedger?.register({
+        kind: 'llamacpp',
+        pid: this.child.pid ?? undefined,
+        label: 'llama-server',
+        // gateway 亲手 spawn 的 sidecar：由它托管关闭。
+        owned: true,
+        close: () => this.killServer(),
+      });
+      this.processChild = this.child;
+      const spawned = this.child;
+      spawned.on('exit', code => {
         log.warn(`[LlamaCpp] server exited (code ${code}) — next embed restarts it`);
+        // 迟到的 exit 事件：旧 child 已不是当前侧车，禁止动新 child 的句柄/状态。
+        if (spawned !== this.child) return;
+        this.releaseProcessHandle(spawned);
         this.child = null;
         this.baseUrl = null;
         this.starting = null;
@@ -291,6 +322,8 @@ export class LlamaCppServerProvider implements EmbeddingProvider {
     const child = this.child;
     this.child = null;
     this.baseUrl = null;
+    // 只释放「被杀的这个 child」的句柄；旧 child 的延迟清理不得误伤新侧车。
+    this.releaseProcessHandle(child);
     if (!child || child.killed || child.pid == null) return;
     try {
       if (process.platform === 'win32') {
@@ -300,6 +333,14 @@ export class LlamaCppServerProvider implements EmbeddingProvider {
         child.kill('SIGTERM');
       }
     } catch { /* best effort */ }
+  }
+
+  /** 释放属于 `child` 的台账句柄（不是它的 → no-op，保护新侧车）。 */
+  private releaseProcessHandle(child: ChildProcess | null): void {
+    if (!child || this.processChild !== child) return;
+    this.processHandle?.release();
+    this.processHandle = undefined;
+    this.processChild = undefined;
   }
 
   private async postEmbeddings(fetchFn: typeof fetch, baseUrl: string, inputs: string[]): Promise<any> {

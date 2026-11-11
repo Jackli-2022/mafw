@@ -22,8 +22,11 @@
  */
 import { readFileSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
+import { Value } from '@sinclair/typebox/value';
 import { RouteRegistry } from '../../src/routes/registry';
 import { buildRouteCatalog } from '../../src/routes/route-catalog';
+import { KernelStatsResponse } from '../../src/routes/schemas/resources';
+import { buildKernelStatsSnapshot, type KernelStatsInput } from '../../src/resources/stats';
 
 const CONTRACT_PATH = join(__dirname, '..', '..', '..', 'packages', 'gateway-sdk', 'contract', 'openapi.json');
 const GATEWAY_SRC = join(__dirname, '..', '..', 'src');
@@ -243,6 +246,74 @@ describe('api-contract: response schemas（E3-6 四个读接口）', () => {
       console.error('[api-contract] 读接口 response schema 缺失 —— 先跑 emit:openapi + merge-contract:\n' + problems.join('\n'));
     }
     expect(problems).toEqual([]);
+  });
+
+  test('E4-8 kernel.stats 的 200 响应带资源账本 schema', () => {
+    let op: any = null;
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const candidate of Object.values<any>(methods)) {
+        if (candidate?.operationId === 'kernel.stats') op = candidate;
+      }
+    }
+    expect(op).not.toBeNull();
+    expect(op.tags).toContain('internal');
+    const schema = op.responses?.['200']?.content?.['application/json']?.schema;
+    expect(schema).toBeDefined();
+    // 账本的承重字段（少一个客户端就无法判断降级/进程/配额）。
+    for (const field of ['pressure', 'disk', 'connections', 'buffers', 'timers', 'processes', 'quotas', 'handles', 'scheduler', 'events', 'serve']) {
+      expect({ field, present: Object.prototype.hasOwnProperty.call(schema.properties ?? {}, field) })
+        .toEqual({ field, present: true });
+    }
+    // quotas 的每个资源键都是 required（stats 快照永不发半张配额表）。
+    expect(schema.properties.quotas.required).toEqual(['projects', 'sessions', 'sessionRecordsPerProject']);
+    for (const resource of ['projects', 'sessions', 'sessionRecordsPerProject']) {
+      expect(schema.properties.quotas.properties[resource].required).toEqual(['current', 'limit']);
+    }
+  });
+
+  test('E4-8 真实 builder 快照通过 KernelStatsResponse 校验（shape 不漂移）', () => {
+    const input: KernelStatsInput = {
+      uptimeSec: 12,
+      connections: {
+        snapshot: () => ({
+          httpOpen: 1,
+          sse: 0,
+          ws: 0,
+          voice: 0,
+          terminal: 0,
+          limits: { httpConnections: 256, sseClients: 64, wsClients: 64, voiceClients: 16, terminalClients: 16 },
+          refused: { sse: 0, ws: 0, voice: 0, terminal: 0 },
+        }),
+      },
+      buffers: {
+        snapshot: () => ({
+          sseOverflows: 0,
+          sseDropped: 0,
+          sseWriteErrors: 0,
+          sseQueuedFrames: 0,
+          sseQueuedBytes: 0,
+          wsDropped: 0,
+        }),
+      },
+      timers: { stats: () => ({ active: 1, byName: { 'governor:sample': 1 } }) },
+      processes: { snapshot: () => ({ total: 0, byKind: { python: 0, llamacpp: 0, serve: 0 }, entries: [] }) },
+      quotas: {
+        snapshot: () => ({
+          projects: { current: 1, limit: 128 },
+          sessions: { current: 2, limit: 1000 },
+          sessionRecordsPerProject: { current: 0, limit: 200 },
+        }),
+      },
+      scheduler: { stats: () => ({ queued: 0, running: 0, byPriority: {} }) },
+      events: { headSeq: () => 0, appendFailures: () => 0 },
+      serve: { running: false, owned: false },
+      handles: { total: 2, byType: { Timeout: 2 } },
+      quotaCurrents: { projects: 1, sessions: 2, sessionRecordsPerProject: 0 },
+    };
+    const snapshot = buildKernelStatsSnapshot(input);
+    const errors = [...Value.Errors(KernelStatsResponse, snapshot)];
+    expect(errors).toEqual([]);
+    expect(Value.Check(KernelStatsResponse, snapshot)).toBe(true);
   });
 });
 

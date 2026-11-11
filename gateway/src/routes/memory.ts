@@ -49,6 +49,11 @@ export interface MemoryRouteDeps {
   getGatewayDb: () => GatewayDatabase;
   /** Shared core of POST /api/memory/embeddings/backfill（GatewayServer 上保留）。 */
   backfillEmbeddings: (limit?: number) => Promise<any>;
+  /**
+   * E4-6b: live 资源压力（governor.pressure() 的窄面）。disk critical →
+   * backfill 直接 503 `disk_low`，不启动补建（写放大在满盘上最危险）。
+   */
+  pressure?: () => { disk: string; degraded: string[] } | null;
   /** T1 dense search over active/archive verbatim rows. */
   searchT1?: (query: string, k: number) => Promise<import('../recall/verbatim-recall').T1Hit[]>;
 }
@@ -76,6 +81,13 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
   // Optional ?limit=N to batch (full store ≈ 12s for short abstractions).
   registry.attachHandler('memory.embeddingsBackfill', async (req: IncomingMessage, res: ServerResponse) => {
     try {
+      // E4-6b: 满盘时拒绝补建（写放大）——503 + 稳定 code，任何工作都不启动。
+      const pressure = deps.pressure?.() ?? null;
+      if (pressure && (pressure.disk === 'critical' || pressure.degraded.includes('disk_critical'))) {
+        res.writeHead(503);
+        res.end(JSON.stringify({ error: 'disk space critical', code: 'disk_low' }));
+        return;
+      }
       const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
       const limit = parseInt(parsedUrl.searchParams.get('limit') || '', 10);
       const result = await deps.backfillEmbeddings(!Number.isNaN(limit) && limit > 0 ? limit : undefined);

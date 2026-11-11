@@ -13,6 +13,7 @@ export const API_ERROR_CODES = {
   capability_unavailable: 'capability_unavailable',
   schema_epoch_mismatch: 'schema_epoch_mismatch',
   not_found: 'not_found',
+  quota_exceeded: 'quota_exceeded',
   internal: 'internal',
 } as const;
 

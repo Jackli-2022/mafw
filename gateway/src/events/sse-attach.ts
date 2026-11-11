@@ -12,6 +12,8 @@
  *   firstReplayedSeq 显式暴露（truncated ⟺ firstReplayedSeq > since + 1）
  */
 import type * as http from 'http';
+import { randomUUID } from 'crypto';
+import type { TimerHandle, TimerService } from '../core/timer-service';
 import type { EventStore } from './event-store';
 import { enrichBroadcastFrame } from './broadcast-frame';
 
@@ -34,6 +36,11 @@ export interface SseAttachDeps {
   instanceId?: string;
   /** E2-1: 进程纪元（release-policy schemaEpoch）；客户端据此判"旧纪元"。 */
   schemaEpoch?: number;
+  /**
+   * E4-1: kernel 命名 timer 台账。提供时保活以 `sse:ping:<connectionId>` 登记
+   * （每连接唯一，close 即 clear）；缺省退回本地 setInterval（旧行为）。
+   */
+  timers?: TimerService;
 }
 
 /**
@@ -74,7 +81,10 @@ export interface SseConnection {
   write(frame: string, seq: number | null): void;
   /** Stop the keepalive. Idempotent; also runs on `res` close. */
   dispose(): void;
-  readonly timer: NodeJS.Timeout;
+  /** 本地 fallback interval（未注入 TimerService 时）；否则 null。 */
+  readonly timer: NodeJS.Timeout | null;
+  /** 注入 TimerService 时的命名 handle（`sse:ping:<connectionId>`）；否则 null。 */
+  readonly timerHandle: TimerHandle | null;
 }
 
 /**
@@ -92,11 +102,15 @@ export function attachGlobalSse(deps: SseAttachDeps): SseConnection {
   const since = deps.since ?? null;
 
   let disposed = false;
-  let timer: NodeJS.Timeout;
+  let timer: NodeJS.Timeout | null = null;
+  let timerHandle: TimerHandle | null = null;
   const dispose = (): void => {
     if (disposed) return;
     disposed = true;
-    clearInterval(timer);
+    if (timer) clearInterval(timer);
+    timer = null;
+    deps.timers?.clear(timerHandle);
+    timerHandle = null;
     try { res.off?.('close', dispose); } catch { /* not an emitter */ }
   };
 
@@ -162,15 +176,21 @@ export function attachGlobalSse(deps: SseAttachDeps): SseConnection {
   drainBuffer(buffer, maxReplayed, writeFrame, res);
 
   // 6. 保活：注释帧不进入事件流（客户端 EventSource 忽略），只防空闲断连。
-  timer = setInterval(() => {
+  const keepAlive = (): void => {
     try {
       writeFrame(res, ': ping\n\n');
     } catch {
       dispose(); // write after the socket died: nothing left to keep alive
     }
-  }, SSE_PING_INTERVAL_MS);
-  timer.unref?.();
+  };
+  if (deps.timers) {
+    // E4-1: 每连接唯一名字（stats 按 `sse:ping` family 折叠）；close 时 clear。
+    timerHandle = deps.timers.every(`sse:ping:${randomUUID()}`, SSE_PING_INTERVAL_MS, keepAlive);
+  } else {
+    timer = setInterval(keepAlive, SSE_PING_INTERVAL_MS);
+    timer.unref?.();
+  }
   try { res.on?.('close', dispose); } catch { /* not an emitter */ }
 
-  return { write, dispose, timer };
+  return { write, dispose, timer, timerHandle };
 }

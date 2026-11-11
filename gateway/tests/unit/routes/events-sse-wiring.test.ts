@@ -8,6 +8,7 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import { RouteRegistry } from '../../../src/routes/registry';
 import { buildRouteCatalog } from '../../../src/routes/route-catalog';
 import { attachEventsSseRoutes } from '../../../src/routes/events-sse';
+import { TimerService } from '../../../src/core/timer-service';
 
 function fakeReq(opts: { url: string; headers?: Record<string, string> }): { req: IncomingMessage; emit: (ev: string) => void } {
   const listeners: Record<string, Array<() => void>> = {};
@@ -34,6 +35,7 @@ interface FakeRes {
 
 function fakeRes(): FakeRes {
   const out: FakeRes = { res: null as unknown as ServerResponse, status: 200, headers: {}, frames: [], ended: false };
+  const listeners: Record<string, Array<() => void>> = {};
   out.res = {
     writeHead: (status: number, headers?: Record<string, unknown>) => {
       out.status = status;
@@ -42,16 +44,23 @@ function fakeRes(): FakeRes {
     write: (chunk: unknown) => { out.frames.push(String(chunk)); return true; },
     end: () => { out.ended = true; },
     setHeader: () => {},
+    on(ev: string, fn: () => void) { (listeners[ev] = listeners[ev] || []).push(fn); return out.res; },
+    off(ev: string, fn: () => void) {
+      listeners[ev] = (listeners[ev] || []).filter((l) => l !== fn);
+      return out.res;
+    },
+    emit(ev: string) { for (const fn of [...(listeners[ev] || [])]) fn(); },
   } as unknown as ServerResponse;
   return out;
 }
 
-function setup(over: { eventStore?: () => any } = {}) {
+function setup(over: { eventStore?: () => any; timers?: () => TimerService } = {}) {
   const sseClients = new Map<ServerResponse, (frame: string, seq: number | null) => void>();
   const registry = new RouteRegistry().register(...buildRouteCatalog());
   attachEventsSseRoutes(registry, {
     eventStore: over.eventStore ?? (() => null),
     sseClients: () => sseClients,
+    timers: over.timers,
   });
   return { registry, sseClients };
 }
@@ -130,5 +139,29 @@ describe('events SSE registry wiring (D1 Task H2)', () => {
     const greeting = dataOf(r.frames[0]);
     expect(greeting.firstReplayedSeq).toBe(5);
     expect(greeting.truncated).toBe(true); // 5 > since + 1 → hole at the start
+  });
+
+  it('registers a per-connection sse:ping timer and clears it on req close (E4-1)', async () => {
+    const timers = new TimerService();
+    try {
+      const { registry, sseClients } = setup({ timers: () => timers });
+      const r = fakeRes();
+      const { req, emit } = fakeReq({ url: '/api/events' });
+      await handlerFor(registry, '/api/events')!(req, r.res);
+
+      const names = Object.keys(timers.stats().byName);
+      expect(names).toHaveLength(1);
+      expect(names[0].startsWith('sse:ping:')).toBe(true);
+
+      emit('close');
+      expect(sseClients.has(r.res)).toBe(false);
+      // Route cleanup disposes the connection → keepalive timer cleared (E4-1).
+      expect(timers.stats()).toEqual({ active: 0, byName: {} });
+      // A later response close is a no-op (idempotent dispose).
+      (r.res as any).emit('close');
+      expect(timers.stats()).toEqual({ active: 0, byName: {} });
+    } finally {
+      timers.disposeAll();
+    }
   });
 });

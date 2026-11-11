@@ -76,7 +76,13 @@ export interface SchedulerStats {
 export interface SchedulerOpts {
   /** Max concurrently running non-foreground tasks. Default 4. */
   maxConcurrent?: number;
-  /** Admission budget check at submit. Default: allow everything. */
+  /** Admission budget check at submit. Consulted only for budgeted descriptors. */
   budgetChecker?: BudgetChecker;
+  /**
+   * Universal admission check: consulted for EVERY submit (budgeted or not).
+   * Runs before `budgetChecker` and before any queueing/coalescing; `budgetChecker`
+   * stays budget-only. Default: allow everything.
+   */
+  admissionChecker?: BudgetChecker;
   log?: (msg: string) => void;
 }

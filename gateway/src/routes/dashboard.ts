@@ -47,6 +47,12 @@ export interface DashboardRouteDeps {
    * null / undefined = 无持久 event store（纯直播部署）→ 字段省略，保持旧形状。
    */
   eventAppendFailures?: () => number | null;
+  /**
+   * E4-6b: live 资源压力（governor.pressure() 的窄面）。
+   * `disk === 'critical'` 或 `degraded` 含 `disk_critical` → memory.add 拒写
+   * （200 壳 + `code:'disk_low'`，不落盘）。null = 无 governor（fail-open）。
+   */
+  pressure?: () => { disk: string; degraded: string[] } | null;
 }
 
 export function attachDashboardRoutes(registry: RouteRegistry, deps: DashboardRouteDeps): void {
@@ -102,6 +108,20 @@ export function attachDashboardRoutes(registry: RouteRegistry, deps: DashboardRo
         res.end(JSON.stringify({ success: false, error: 'content and valid memoryType required' }));
         return;
       }
+      // Authority 校验先于判压与 dedup：无效输入始终回既有错误（即使盘满）。
+      const { normalizeAuthority } = require('../core/memory/harmonic-types.js');
+      const authority = normalizeAuthority(data?.authority);
+      if (authority === null) {
+        res.end(JSON.stringify({ success: false, error: `invalid authority: ${String(data?.authority)} (user|agent|tool|pipeline)` }));
+        return;
+      }
+      // E4-6b: disk critical → 拒写（在全部输入校验之后、dedup/写之前：合法输入
+      // 不落盘也不推进 exact-hash 状态）。
+      const pressure = deps.pressure?.() ?? null;
+      if (pressure && (pressure.disk === 'critical' || pressure.degraded.includes('disk_critical'))) {
+        res.end(JSON.stringify({ success: false, error: 'disk space critical', code: 'disk_low' }));
+        return;
+      }
       // V2 ①b L1: exact-content guard — skip verbatim re-submits (worker
       // double-writes). LRU is in-memory; read-time collapse backstops.
       if (config.memory.dedup?.exactHash !== false) {
@@ -110,12 +130,6 @@ export function attachDashboardRoutes(registry: RouteRegistry, deps: DashboardRo
           res.end(JSON.stringify({ success: true, deduped: true, reason: 'exact-hash' }));
           return;
         }
-      }
-      const { normalizeAuthority } = require('../core/memory/harmonic-types.js');
-      const authority = normalizeAuthority(data?.authority);
-      if (authority === null) {
-        res.end(JSON.stringify({ success: false, error: `invalid authority: ${String(data?.authority)} (user|agent|tool|pipeline)` }));
-        return;
       }
       if (!deps.memoryService()) { res.end(JSON.stringify({ success: false, error: 'memoryService not ready' })); return; }
       const { HarmonicUnitFileStore } = require('../memory/harmonic-file-store.js');

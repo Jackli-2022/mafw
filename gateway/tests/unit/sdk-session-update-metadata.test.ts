@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { SdkSessionResource } from '../../src/resources/sdk-session';
+import { SdkSessionResource } from '../../src/runtime/sdk-session';
 
 describe('SdkSessionResource.updateMetadata', () => {
   let dir: string;

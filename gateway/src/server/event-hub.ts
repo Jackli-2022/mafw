@@ -35,6 +35,7 @@ import type { MilestonePushNotifier } from '../core/manager/milestone-push';
 import { enrichBroadcastFrame } from '../events/broadcast-frame';
 import type { EventStore } from '../events/event-store';
 import type { PushGateway } from '../mobile/push-gateway';
+import { BufferCounters, sendWsBounded } from '../resources/outbound-buffer';
 import { FLAT_EMITTERS } from '../runtime/flat-emit-registry';
 
 /** Structural logger surface (core/utils/logger `log`). */
@@ -58,6 +59,10 @@ export interface EventHubDeps {
   getMilestonePush(): MilestonePushNotifier | undefined;
   /** P2.4 event layer ingress for internal domain events (inert when disabled). */
   ingestInternalEvent(kind: string, data: any): void;
+  /** E4-5: WS 广播背压上限（live getter；0/缺省 = 不限）。 */
+  wsMaxBufferedBytes?: () => number;
+  /** E4-5: 出站缓冲聚合计数（与 SSE writer 共享）。 */
+  buffers?: BufferCounters;
 }
 
 export class EventHub {
@@ -108,13 +113,14 @@ export class EventHub {
     // E1-7: collect device IDs already served over WS. Mobile sockets register a
     // `deviceId` on the upgrade; push must not re-deliver to those devices.
     const wsDeviceIds = new Set<string>();
+    // E4-5: 慢设备只会让 bufferedAmount 增长，`send` 本身从不报错——广播前
+    // 检查上限，超限 terminate 并移出集合（随后 push 兜底视为未送达）。
+    const wsCap = this.deps.wsMaxBufferedBytes?.() ?? Infinity;
     for (const ws of this.wsClients) {
       if (ws.readyState === WebSocket.OPEN) {
-        try {
-          ws.send(frame);
-        } catch {
-          // E1-7: a failed write means the device was NOT served — drop the
-          // socket but let push deliver the event as the fallback channel.
+        // E1-7: a failed write means the device was NOT served — drop the
+        // socket but let push deliver the event as the fallback channel.
+        if (!sendWsBounded(ws as any, frame, wsCap, this.deps.buffers)) {
           this.wsClients.delete(ws);
           continue;
         }

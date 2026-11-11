@@ -434,6 +434,35 @@ export interface GatewayConfig {
   alignment: {
     userWeightsFile: string;
   };
+  /** E4 资源台账：采样间隔、磁盘/堆水位、连接/进程/配额上限、出站缓冲上限。
+   *  全部阈值由各 provider 通过 live getter 读取（hot reload 生效）；0 = 不限。 */
+  resources: {
+    sampleIntervalMs: number;
+    disk: {
+      warnFreeBytes: number;
+      criticalFreeBytes: number;
+    };
+    heap: {
+      warnRatio: number;
+      criticalRatio: number;
+    };
+    limits: {
+      httpConnections: number;
+      sseClients: number;
+      wsClients: number;
+      voiceClients: number;
+      terminalClients: number;
+      pythonKernels: number;
+      projects: number;
+      sessions: number;
+      sessionRecordsPerProject: number;
+    };
+    buffers: {
+      sseMaxFrames: number;
+      sseMaxBytes: number;
+      wsMaxBufferedBytes: number;
+    };
+  };
   env: {
     mafwOpencodePath: string;
     enableLegacyMcp: string;
@@ -728,6 +757,33 @@ function defaults(projectDir: string): GatewayConfig {
       // （applyEnvOverrides 只遍历 defaults 里存在的 key）。
       plugin: '',
     },
+    resources: {
+      sampleIntervalMs: 30000,
+      disk: {
+        warnFreeBytes: 2 * 1024 * 1024 * 1024, // 2 GiB
+        criticalFreeBytes: 512 * 1024 * 1024, // 512 MiB
+      },
+      heap: {
+        warnRatio: 0.75,
+        criticalRatio: 0.9,
+      },
+      limits: {
+        httpConnections: 256,
+        sseClients: 64,
+        wsClients: 64,
+        voiceClients: 16,
+        terminalClients: 16,
+        pythonKernels: 4,
+        projects: 128,
+        sessions: 1000,
+        sessionRecordsPerProject: 200,
+      },
+      buffers: {
+        sseMaxFrames: 256,
+        sseMaxBytes: 1024 * 1024, // 1 MiB
+        wsMaxBufferedBytes: 1024 * 1024, // 1 MiB
+      },
+    },
     env: {
       mafwOpencodePath: 'MAFW_OPENCODE_PATH',
       enableLegacyMcp: 'ENABLE_LEGACY_MCP',
@@ -838,6 +894,7 @@ export class Config {
   get trajectory() { return this.data.trajectory; }
   get approval() { return this.data.approval; }
   get runtime() { return this.data.runtime; }
+  get resources() { return this.data.resources; }
 
   /**
    * Persist partial config overrides to the project-level config.yaml.

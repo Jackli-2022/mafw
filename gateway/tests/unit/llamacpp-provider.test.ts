@@ -8,6 +8,8 @@ import * as os from 'os';
 import * as path from 'path';
 
 import { createEmbeddingProvider, EmbeddingProvider } from '../../src/memory/embedding-provider';
+import { setLlamaCppProcessLedger } from '../../src/memory/llamacpp-provider';
+import { ProcessLedger } from '../../src/resources/process-ledger';
 
 function makeDeps() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-llamacpp-'));
@@ -21,10 +23,14 @@ function makeDeps() {
   const model = path.join(dir, 'model.gguf');
   fs.writeFileSync(model, 'fake');
 
-  const child = Object.assign(new EventEmitter(), { killed: false, pid: 4242, kill: () => true });
+  // Fresh child per spawn: a respawn must not inherit the previous process
+  // object (stale `exit` listeners are exactly the bug under test).
+  const children: Array<EventEmitter & { killed: boolean; pid: number; kill: () => boolean }> = [];
   const spawns: string[][] = [];
   const spawnFn = ((_exe: string, args: string[]) => {
     spawns.push(args);
+    const child = Object.assign(new EventEmitter(), { killed: false, pid: 4242, kill: () => true });
+    children.push(child);
     return child;
   }) as any;
   const requests: Array<{ url: string; body?: any }> = [];
@@ -49,7 +55,16 @@ function makeDeps() {
     }
     throw new Error('unexpected fetch: ' + u);
   }) as any;
-  return { deps: { spawnFn, fetchFn, binDir: binDir, modelDir: path.join(dir, 'models') }, model, requests, child, spawns };
+  return {
+    deps: { spawnFn, fetchFn, binDir: binDir, modelDir: path.join(dir, 'models') },
+    model,
+    requests,
+    children,
+    get child() {
+      return children[0];
+    },
+    spawns,
+  };
 }
 
 describe('LlamaCppServerProvider', () => {
@@ -156,5 +171,111 @@ describe('LlamaCppServerProvider batch sizing', () => {
     expect(flag(args, '-c')).toBe('512');
     expect(flag(args, '-b')).toBe('512');
     expect(flag(args, '-ub')).toBe('512');
+  });
+});
+
+describe('LlamaCppServerProvider process ledger (E4-6)', () => {
+  afterEach(() => setLlamaCppProcessLedger(undefined));
+
+  function makeLedgerProvider(d: ReturnType<typeof makeDeps>): EmbeddingProvider {
+    return createEmbeddingProvider({
+      provider: 'local',
+      engine: 'llamacpp',
+      llamacpp: { modelFile: d.model, deps: d.deps, threads: 2 },
+    }) as EmbeddingProvider;
+  }
+
+  test('registers the sidecar on spawn and releases it on child exit', async () => {
+    const ledger = new ProcessLedger();
+    setLlamaCppProcessLedger(ledger);
+    const d = makeDeps();
+
+    await makeLedgerProvider(d).embed(['x'], 'document');
+    expect(ledger.count('llamacpp')).toBe(1);
+    expect(ledger.list()[0].pid).toBe(4242);
+    expect(ledger.list()[0].label).toBe('llama-server');
+    // gateway spawn 的 sidecar 由 gateway 托管关闭。
+    expect(ledger.list()[0].owned).toBe(true);
+
+    d.child.emit('exit', 0);
+    expect(ledger.count('llamacpp')).toBe(0);
+  });
+
+  test('releases on killServer and stays idempotent with the exit hook', async () => {
+    const ledger = new ProcessLedger();
+    setLlamaCppProcessLedger(ledger);
+    const d = makeDeps();
+    const provider = makeLedgerProvider(d);
+
+    await provider.embed(['x'], 'document');
+    expect(ledger.count('llamacpp')).toBe(1);
+    d.child.killed = true; // no real taskkill in the test
+
+    (provider as any).killServer();
+    expect(ledger.count('llamacpp')).toBe(0);
+    d.child.emit('exit', 0);
+    expect(ledger.count('llamacpp')).toBe(0);
+  });
+
+  test('works with no ledger configured', async () => {
+    const d = makeDeps();
+    await expect(makeLedgerProvider(d).embed(['x'], 'document')).resolves.toHaveLength(1);
+  });
+
+  test('a stale child exit does not release the current sidecar handle', async () => {
+    const ledger = new ProcessLedger();
+    setLlamaCppProcessLedger(ledger);
+    const d = makeDeps();
+    const provider = makeLedgerProvider(d);
+
+    await provider.embed(['x'], 'document');
+    expect(d.children).toHaveLength(1);
+    expect(ledger.count('llamacpp')).toBe(1);
+
+    d.children[0].emit('exit', 0); // A exits normally
+    expect(ledger.count('llamacpp')).toBe(0);
+
+    await provider.embed(['y'], 'document'); // respawn B
+    expect(d.children).toHaveLength(2);
+    expect(ledger.count('llamacpp')).toBe(1);
+
+    d.children[0].emit('exit', 0); // stale exit from A
+    expect(ledger.count('llamacpp')).toBe(1);
+
+    d.children[1].emit('exit', 0); // current child exits
+    expect(ledger.count('llamacpp')).toBe(0);
+  });
+
+  test('health-check timeout releases the sidecar handle (starting.catch → killServer)', async () => {
+    const ledger = new ProcessLedger();
+    setLlamaCppProcessLedger(ledger);
+    const d = makeDeps();
+    const failingHealth = (async (url: any) => {
+      if (String(url).endsWith('/health')) return { ok: false, status: 503 } as any;
+      throw new Error('unexpected fetch: ' + url);
+    }) as any;
+    // Mark children killed so the failure path never taskkills a real pid.
+    const spawnFn = ((exe: string, args: string[]) => {
+      const child = (d.deps.spawnFn as any)(exe, args);
+      child.killed = true;
+      return child;
+    }) as any;
+    // Make the health deadline pass on the first poll instead of waiting 60s.
+    const realNow = Date.now;
+    let calls = 0;
+    const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => realNow() + (calls++) * 1_000_000);
+    try {
+      const provider = createEmbeddingProvider({
+        provider: 'local',
+        engine: 'llamacpp',
+        llamacpp: { modelFile: d.model, deps: { ...d.deps, spawnFn, fetchFn: failingHealth }, threads: 2 },
+      }) as EmbeddingProvider;
+
+      await expect(provider.embed(['x'], 'document')).rejects.toThrow(/health check timed out/);
+      expect(d.children).toHaveLength(1);
+      expect(ledger.count('llamacpp')).toBe(0);
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 });

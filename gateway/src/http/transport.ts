@@ -36,6 +36,7 @@ import { handleGoalControlCommand } from '../core/goal/control-command';
 import { readBody } from '../core/http/http-util';
 import { log } from '../core/utils/logger';
 import { injectServeAuth } from '../runtime/proxy-auth';
+import { QuotaExceededError } from '../resources/quotas';
 import type { GatewayDatabase } from '../memory/gateway-db';
 import type { MediaAgent } from '../media/media-agent';
 import type { McpSSEEndpoint } from '../mcp/sse-transport';
@@ -413,6 +414,18 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
           res.writeHead(200);
           res.end(JSON.stringify({ status: 'ok', registered: projectDir }));
         } catch (err) {
+          // E4-7: 项目数超限是容量拒绝（429），不能埋进 JSON 解析失败的 400。
+          if (err instanceof QuotaExceededError) {
+            res.writeHead(429);
+            res.end(JSON.stringify({
+              error: err.message,
+              code: API_ERROR_CODES.quota_exceeded,
+              resource: err.resource,
+              limit: err.limit,
+              current: err.current,
+            }));
+            return;
+          }
           res.writeHead(400);
           res.end(JSON.stringify({ error: 'Invalid JSON' }));
         }

@@ -3965,6 +3965,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/kernel/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** resource ledger snapshot */
+        get: operations["kernel.stats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/mobile/media/tasks/{id}/ask": {
         parameters: {
             query?: never;
@@ -10094,6 +10111,138 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    "kernel.stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        timestamp: string;
+                        uptimeSec: number;
+                        pressure: {
+                            disk: "ok" | "warn" | "critical" | "unknown";
+                            heap: "ok" | "warn" | "critical";
+                            degraded: ("disk_critical" | "heap_critical")[];
+                        };
+                        disk: {
+                            totalBytes: number;
+                            freeBytes: number;
+                            state: "ok" | "warn" | "critical" | "unknown";
+                            error: string | null;
+                        };
+                        heap: {
+                            heapUsed: number;
+                            heapTotal: number;
+                            rss: number;
+                            external: number;
+                            arrayBuffers: number;
+                            heapLimit: number;
+                            ratio: number;
+                            state: "ok" | "warn" | "critical";
+                        } | null;
+                        connections: {
+                            httpOpen: number;
+                            sse: number;
+                            ws: number;
+                            voice: number;
+                            terminal: number;
+                            limits: {
+                                httpConnections: number;
+                                sseClients: number;
+                                wsClients: number;
+                                voiceClients: number;
+                                terminalClients: number;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            refused: {
+                                [key: string]: number;
+                            };
+                        };
+                        buffers: {
+                            sseOverflows: number;
+                            sseDropped: number;
+                            sseWriteErrors: number;
+                            sseQueuedFrames: number;
+                            sseQueuedBytes: number;
+                            wsDropped: number;
+                        };
+                        timers: {
+                            active: number;
+                            byName: {
+                                [key: string]: number;
+                            };
+                        };
+                        processes: {
+                            total: number;
+                            byKind: {
+                                [key: string]: number;
+                            };
+                            entries: ({
+                                id: string;
+                                kind: "python" | "llamacpp" | "serve";
+                                pid?: number;
+                                sessionId?: string;
+                                label?: string;
+                                owned?: boolean;
+                                startedAt: number;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                        };
+                        quotas: {
+                            projects: {
+                                current: number;
+                                limit: number;
+                            };
+                            sessions: {
+                                current: number;
+                                limit: number;
+                            };
+                            sessionRecordsPerProject: {
+                                current: number;
+                                limit: number;
+                            };
+                        } & {
+                            [key: string]: unknown;
+                        };
+                        handles: {
+                            total: number;
+                            byType: {
+                                [key: string]: number;
+                            };
+                            fdCount?: number;
+                        };
+                        scheduler: {
+                            queued: number;
+                            running: number;
+                            byPriority: {
+                                [key: string]: number;
+                            };
+                        };
+                        events: {
+                            headSeq: number;
+                            appendFailures: number;
+                        };
+                        serve: {
+                            running: boolean;
+                            owned: boolean;
+                        };
+                    };
+                };
             };
         };
     };

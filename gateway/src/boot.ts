@@ -78,7 +78,7 @@ import { AutomationEngine } from './automation-engine';
 import { MemoryService } from './memory/service';
 import { GatewayDatabase } from './memory/gateway-db';
 import { TaskService } from './runtime/task-service';
-import { SdkSessionResource } from './resources/sdk-session';
+import { SdkSessionResource } from './runtime/sdk-session';
 import { structuredOutput } from './runtime/structured-output';
 import type { RuntimeCapabilities } from './runtime/contract';
 import { RuntimePluginLoader } from './runtime/loader';

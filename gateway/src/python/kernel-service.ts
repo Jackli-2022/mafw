@@ -5,6 +5,10 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { Dealer, Subscriber } from 'zeromq';
 import { log } from '../core/utils/logger';
+import type { TimerHandle, TimerService } from '../core/timer-service';
+import type { ProcessHandle, ProcessLedger } from '../resources/process-ledger';
+import { QuotaExceededError } from '../resources/quotas';
+import { limitOf } from '../resources/settings';
 
 /**
  * Persistent Python kernel service (Prime Agent / Jupyter kernel architecture).
@@ -181,6 +185,19 @@ export class KernelManager {
   ensureStarted(): Promise<void> {
     if (!this.started) this.started = this.start();
     return this.started;
+  }
+
+  /** 子进程 pid（未启动/已退出为 undefined），供进程台账/统计使用。 */
+  getPid(): number | undefined {
+    return this.kernel?.pid ?? undefined;
+  }
+
+  /**
+   * 是否有在途/排队的用户代码。驱逐必须避开忙碌内核：dispose() 会杀掉
+   * 正在执行的单元（用户数据丢失），宁可拒绝新会话也不要中断执行。
+   */
+  isBusy(): boolean {
+    return this.pending.size > 0 || this.queue.length > 0 || this.draining;
   }
 
   private async start(): Promise<void> {
@@ -748,31 +765,110 @@ export class KernelManager {
 // Session-scoped kernel pool
 
 const TTL_MS = 60 * 60 * 1000;
+/** 配额驱逐阈值：超过 10 分钟未使用的内核可被新会话挤出（spec §4.6）。 */
+const DEFAULT_IDLE_EVICT_MS = 10 * 60 * 1000;
+
+export interface SessionKernelsDeps {
+  /** 子进程台账（register/release，disposeAll 时释放全部）。 */
+  ledger?: ProcessLedger;
+  /** live getter：并发帽（`0` = 不限；缺省不限）。 */
+  maxKernels?: () => number;
+  /** 满帽时可驱逐的空闲阈值（缺省 10 分钟）。 */
+  idleEvictMs?: number;
+  /** 可注入时钟（测试驱逐）。 */
+  now?: () => number;
+  /**
+   * E4-1: kernel timer 台账。提供时 TTL 扫描以 `python:sweep`（5min）登记，
+   * `disposeAll()` 经台账清理；缺省退回本地 setInterval（旧行为）。
+   */
+  timers?: TimerService;
+}
+
+export interface SessionKernelInfo {
+  sessionId: string;
+  pid?: number;
+  lastUsed: number;
+}
+
+interface KernelEntry {
+  kernel: KernelManager;
+  lastUsed: number;
+  handle?: ProcessHandle;
+}
 
 export class SessionKernels {
-  private kernels = new Map<string, { kernel: KernelManager; lastUsed: number }>();
+  private kernels = new Map<string, KernelEntry>();
   private cleanupTimer?: ReturnType<typeof setInterval>;
+  private cleanupHandle?: TimerHandle;
+  private readonly now: () => number;
 
-  constructor(private readonly pythonBin: string) {
-    this.cleanupTimer = setInterval(() => this.sweep(), 5 * 60 * 1000);
-    if (this.cleanupTimer && typeof this.cleanupTimer === 'object' && 'unref' in this.cleanupTimer) this.cleanupTimer.unref();
+  constructor(private readonly pythonBin: string, private readonly opts: SessionKernelsDeps = {}) {
+    this.now = opts.now ?? (() => Date.now());
+    if (opts.timers) {
+      // E4-1: 名字是 stats 聚合契约（spec §4.1），不得重命名。
+      this.cleanupHandle = opts.timers.every('python:sweep', 5 * 60 * 1000, () => this.sweep());
+    } else {
+      this.cleanupTimer = setInterval(() => this.sweep(), 5 * 60 * 1000);
+      if (this.cleanupTimer && typeof this.cleanupTimer === 'object' && 'unref' in this.cleanupTimer) this.cleanupTimer.unref();
+    }
   }
 
   get(sessionId: string): KernelManager {
     const entry = this.kernels.get(sessionId);
     if (entry) {
-      entry.lastUsed = Date.now();
+      entry.lastUsed = this.now();
       return entry.kernel;
     }
+
+    this.ensureCapacity();
+
     const kernel = new KernelManager(sessionId, this.pythonBin);
-    this.kernels.set(sessionId, { kernel, lastUsed: Date.now() });
+    const handle = this.opts.ledger?.register({
+      kind: 'python',
+      sessionId,
+      label: 'python kernel',
+      // gateway 亲手 spawn 的内核：由它托管关闭（processes.entries[].owned）。
+      owned: true,
+      startedAt: this.now(),
+    });
+    this.kernels.set(sessionId, { kernel, lastUsed: this.now(), handle });
     return kernel;
+  }
+
+  /**
+   * 新建内核前的准入：满帽时先驱逐 idle（最旧优先），仍满抛 QuotaExceededError。
+   * 只在 `get()` 的新建分支调用——已存在的会话永远不受影响。
+   */
+  private ensureCapacity(): void {
+    const limit = limitOf(this.opts.maxKernels?.() ?? 0);
+    if (this.kernels.size < limit) return;
+
+    const idleMs = this.opts.idleEvictMs ?? DEFAULT_IDLE_EVICT_MS;
+    const now = this.now();
+    const idle = Array.from(this.kernels.entries())
+      .filter(([, entry]) => !entry.kernel.isBusy() && now - entry.lastUsed > idleMs)
+      .sort((a, b) => a[1].lastUsed - b[1].lastUsed);
+
+    for (const [id, entry] of idle) {
+      if (this.kernels.size < limit) break;
+      this.evict(id, entry);
+    }
+
+    if (this.kernels.size >= limit) {
+      throw new QuotaExceededError('python_kernels', limit, this.kernels.size);
+    }
+  }
+
+  private evict(id: string, entry: KernelEntry): void {
+    entry.kernel.dispose();
+    entry.handle?.release();
+    this.kernels.delete(id);
   }
 
   async restart(sessionId: string): Promise<void> {
     const entry = this.kernels.get(sessionId);
     if (!entry) return;
-    entry.lastUsed = Date.now();
+    entry.lastUsed = this.now();
     await entry.kernel.restart();
   }
 
@@ -781,19 +877,37 @@ export class SessionKernels {
     return { running: !!entry && !!entry.kernel && !(entry.kernel as any).dead && !!(entry.kernel as any).kernel };
   }
 
+  /** 活跃内核数（含未启动的懒条目），供 stats/测试使用。 */
+  count(): number {
+    return this.kernels.size;
+  }
+
+  /** 逐会话信息（sessionId/pid/lastUsed），供 stats 使用。 */
+  entries(): SessionKernelInfo[] {
+    return Array.from(this.kernels, ([sessionId, entry]) => ({
+      sessionId,
+      pid: entry.kernel.getPid(),
+      lastUsed: entry.lastUsed,
+    }));
+  }
+
   disposeAll(): void {
     if (this.cleanupTimer) clearInterval(this.cleanupTimer);
-    for (const { kernel } of this.kernels.values()) kernel.dispose();
+    this.cleanupTimer = undefined;
+    this.opts.timers?.clear(this.cleanupHandle);
+    this.cleanupHandle = undefined;
+    for (const entry of this.kernels.values()) {
+      entry.kernel.dispose();
+      entry.handle?.release();
+    }
     this.kernels.clear();
   }
 
   private sweep(): void {
-    const now = Date.now();
+    const now = this.now();
     for (const [id, entry] of this.kernels) {
-      if (now - entry.lastUsed > TTL_MS) {
-        entry.kernel.dispose();
-        this.kernels.delete(id);
-      }
+      // 忙碌内核不回收：dispose() 会中断正在执行的单元，留给下一次扫描。
+      if (!entry.kernel.isBusy() && now - entry.lastUsed > TTL_MS) this.evict(id, entry);
     }
   }
 }

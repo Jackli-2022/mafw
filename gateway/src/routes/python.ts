@@ -11,6 +11,7 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { isLoopbackAddr } from '../core/auth';
 import type { SessionKernels } from '../python/kernel-service';
+import { QuotaExceededError } from '../resources/quotas';
 import type { RouteRegistry } from './registry';
 import { readRouteBody } from './cognition';
 
@@ -38,6 +39,17 @@ export function attachPythonRoutes(registry: RouteRegistry, deps: PythonRouteDep
       }
       json(res, 200, result);
     } catch (err: any) {
+      // E4-6: 并发帽拒绝是容量问题（429），不是内核故障（502）。
+      if (err instanceof QuotaExceededError) {
+        json(res, 429, {
+          error: err.message,
+          code: 'quota_exceeded',
+          resource: err.resource,
+          limit: err.limit,
+          current: err.current,
+        });
+        return;
+      }
       json(res, 502, { error: err?.message || String(err) });
     }
   });
