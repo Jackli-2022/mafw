@@ -30,12 +30,14 @@
 1. **SDK `event.subscribeToSession` 删除**（Mode B 死面）。`event.url(sessionID?)` 与
    `sessions.events()` 仍保留并构造 `?sessionID`，但服务端现在忽略该参数、返回 Mode A
    全局流（旧调用不 404/不挂起）。
-2. **12 个 catalog op 删除**：`dashboard.costs`、`dashboard.alignment`、
+2. **14 个 catalog op 删除**：`dashboard.costs`、`dashboard.alignment`、
    `dashboard.userAnswer`、`feedback.record`、`session.metrics`、`health.check`、
    `gateway.pause`、`gateway.resume`、`gateway.cancel`、`gateway.checkpoint`、
-   `gateway.rollback`，以及 spec 之外的 **`memory.getL5Heuristics`**（唯一实现只在死模块
-   `dashboard/api.ts`；`/api/l5/axioms` 已同时返回 axioms + heuristics）。这些 op 从未
-   出现在 SDK 客户端调用面，只存在于生成的 schema；`openapi.json` 318 → **306 ops**。
+   `gateway.rollback`、**`memory.getL5Heuristics`**（唯一实现只在死模块
+   `dashboard/api.ts`；`/api/l5/axioms` 已同时返回 axioms + heuristics），以及收口
+   修复轮删除的 **`goals.loops` / `goals.loopsAt`**（dashboard catch-all 实际返回
+   goals 列表，形状不对；请求仍由 catch-all 兜底）。这些 op 从未出现在 SDK 客户端
+   调用面，只存在于生成的 schema；`openapi.json` 318 → **304 ops**。
 3. **死模块 `gateway/src/dashboard/{api,server,types}.ts` 删除**（`DashboardServer` 从未
    实例化）。`gateway/src/dashboard/public/` **保留**：SPA 仍由 transport 的 `spaRoot()`
    服务且被 build 脚本复制，删除会破坏 `/` 与 `/index.html`。
@@ -68,6 +70,33 @@
   `api-schema.gen.ts`。四个 op 的 200 schema property 数：goals.get 8 / project.list 1 /
   presence.get 3 / session.usageSummary 4。
 
+## 收口修复轮（2026-11-11，final review）
+
+- **SDK 类型门**：`Goal` DTO 对齐 `projectGoalView`（`phase: string | null`、
+  `error: string | null`、`updatedAt: string | null`、`currentWave/totalWaves` 必填）；
+  `goals.list` override 同步该形状，删除陈旧的 `goals.get` override（catalog 现在是
+  唯一来源）。`CHECK_goals_list` / `CHECK_goals_get` 均对齐真实 DTO，SDK
+  `tsc --noEmit -p tsconfig.json` 回到 **0 errors**。
+- **dashboard-residue 诚实化**：删除 `goals.loops` / `goals.loopsAt` 两个 catalog 误登记
+  （无 handler，catch-all 返回列表形状）；`DASHBOARD_RESIDUE_ALLOWLIST` 清空。运行行为
+  不变（请求仍落 `/api/goals*` catch-all）。catalog/emission 306 → **304 ops**、
+  274 → **272 paths**。
+- **文档漂移**：`docs/architecture/gateway.md` 的 24 段 stage / 26 成员 DispatchCtx
+  → **23 段 / 25 成员**（历史 D2 表述标注来源），kernel 注释同步；runtime-plugin-authoring
+  skill 的 Mode B 描述改为「已删除，per-session 客户端走 Mode A + sessionID 过滤」。
+
+### 修复轮门禁
+
+| 门 | 命令 | 结果 |
+|---|---|---|
+| gateway 类型 | `tsc --noEmit -p tsconfig.json`（`gateway/`） | **0 errors** |
+| gateway 全量 | `jest --no-coverage --forceExit --runInBand` | **6303 tests：6293 passed / 9 failed / 1 skipped**；**815 suites：811 passed / 3 failed / 1 skipped**（同上 3 个 env-red） |
+| 契约/架构/http | `jest tests/unit/api-contract.test.ts tests/unit/architecture/ tests/unit/http/` | **8 suites / 60 tests passed** |
+| SDK 类型 | `tsc --noEmit -p tsconfig.json`（`packages/gateway-sdk`） | **0 errors**（修复目标） |
+| SDK 全量 | `node --import tsx ... --test "src/*.test.ts"` | **213/213 passed** |
+| SDK contract | 同上 `--test src/contract.test.ts` | **4/4 passed** |
+| desktop | `npm run test:desktop` | **3289 tests：3288 passed / 1 failed**（同一 env-red resolver） |
+
 ## 验证（worktree @ E3-7 文档改动前）
 
 | 门 | 命令 | 结果 |
@@ -97,8 +126,9 @@ desktop/TUI 本波零代码改动（数字为当前基线）。
 
 ## Deferred（明确不在 E3 范围）
 
-- **`DASHBOARD_RESIDUE_ALLOWLIST`**：`goals.loops` / `goals.loopsAt` 仍由
-  `subsystems/dashboard-legacy.ts` 的 `/api/goals` 兜底服务（未迁 registry handler）。
+- **dashboard 兜底本身**：`subsystems/dashboard-legacy.ts` 的 `/api/goals*` catch-all
+  仍在（R5）；`goals.loops` / `goals.loopsAt` 的 catalog 误登记已在修复轮删除，但
+  未迁 registry handler。
 - **SDK Mode B 残留面**：`sessions.events()` 与 `event.url(sessionID?)` 仍构造
   `?sessionID`（现降级为全局流）；死面清理留后续波次。
 - **response schema 覆盖**：其余 ~300 ops 仍无 200 schema（E3-6 只建立机制 + 4 个读接口）。

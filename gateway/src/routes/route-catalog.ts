@@ -320,7 +320,6 @@ const NON_SDK_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/memory/stats', operationId: 'memory.stats', tags: ['internal'] },
   { method: 'POST', path: '/api/memory/embeddings/backfill', operationId: 'memory.embeddingsBackfill', tags: ['internal'] },
   // Goal / 编排（§5.20）
-  { method: 'GET', path: '/api/goals/:id/loops', operationId: 'goals.loops', tags: ['internal'] },
   { method: 'POST', path: '/api/work/:goalId/complete', operationId: 'goals.complete', tags: ['internal'] },
   { method: 'POST', path: '/control', operationId: 'goals.controlLegacy', summary: 'MCP 兼容别名，与 /api/goals/control 同 handler', tags: ['internal'] },
   { method: 'GET', path: '/api/orchestration/outcomes', operationId: 'orchestration.outcomes', tags: ['internal'] },
@@ -353,7 +352,6 @@ const NON_SDK_ROUTES: RouteDef[] = [
   // NON_SDK 并标 internal，SDK 死契约门据此豁免。
   { method: 'GET', path: '/api/automations/:id', operationId: 'automations.get', tags: ['internal'] },
   { method: 'GET', path: '/api/automations/:id/history', operationId: 'automations.history', tags: ['internal'] },
-  { method: 'GET', path: '/api/goals/:id/loops/:n', operationId: 'goals.loopsAt', tags: ['internal'] },
   { method: 'POST', path: '/api/runtime/reload', operationId: 'runtime.reload', tags: ['internal'] },
   { method: 'POST', path: '/api/runtime/dry-event', operationId: 'runtime.dryEvent', tags: ['internal'] },
   { method: 'POST', path: '/api/runtime/conformance', operationId: 'runtime.conformance', tags: ['internal'] },

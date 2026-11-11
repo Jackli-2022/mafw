@@ -3067,7 +3067,14 @@
                             "type": "string"
                           },
                           "phase": {
-                            "type": "string"
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "loop": {
                             "type": "number"
@@ -3081,8 +3088,25 @@
                           "nextAction": {
                             "type": "string"
                           },
+                          "error": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "updatedAt": {
-                            "type": "string"
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
@@ -3090,7 +3114,9 @@
                           "phase",
                           "loop",
                           "currentWave",
-                          "totalWaves"
+                          "totalWaves",
+                          "error",
+                          "updatedAt"
                         ]
                       }
                     }
@@ -6539,29 +6565,6 @@
         }
       }
     },
-    "/api/goals/{id}/loops": {
-      "get": {
-        "operationId": "goals.loops",
-        "tags": [
-          "internal"
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
     "/api/work/{goalId}/complete": {
       "post": {
         "operationId": "goals.complete",
@@ -6890,37 +6893,6 @@
         "parameters": [
           {
             "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/goals/{id}/loops/{n}": {
-      "get": {
-        "operationId": "goals.loopsAt",
-        "tags": [
-          "internal"
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "n",
             "in": "path",
             "required": true,
             "schema": {

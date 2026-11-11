@@ -8,7 +8,8 @@
  *    2. TRANSPORT_ALLOWLIST：由 `http/transport.ts` 手写分支服务（A2A、/register、
  *       /control、/health、file-history），不进 registry。
  *    3. DASHBOARD_RESIDUE_ALLOWLIST：由 `subsystems/dashboard-legacy.ts` 的
- *       `/api/goals|/api/stats|/api/memory` 兜底服务（R5 保留的旧形状）。
+ *       `/api/goals|/api/stats|/api/memory` 兜底服务（R5 保留的旧形状）——E3 fix
+ *       删除了最后两个误登记项（goals.loops/loopsAt），名单现为空。
  *    4. RUNTIME_PROXY_ALLOWLIST：反代到 runtime serve 的端点（无 gateway handler）。
  *    每条 allowlist 必须带一句人话 reason；名单只减不增（op 一旦 attach，条目必须移除）。
  *
@@ -53,13 +54,12 @@ const TRANSPORT_ALLOWLIST: AllowEntry[] = [
 ];
 
 /**
- * R5 保留的 dashboard 兜底形状：`subsystems/dashboard-legacy.ts` 的
- * `/api/goals*` catch-all 直接响应，没有独立 registry handler。
+ * R5 保留的 dashboard 兜底形状由 `subsystems/dashboard-legacy.ts` 的
+ * `/api/goals*` catch-all 直接响应、没有独立 registry handler。E3 fix 删除了
+ * 最后两个误登记项（`goals.loops` / `goals.loopsAt` —— catch-all 实际返回的是
+ * goals 列表，形状不对）；现在该名单为空，请求仍由 catch-all 兜底。
  */
-const DASHBOARD_RESIDUE_ALLOWLIST: AllowEntry[] = [
-  { id: 'goals.loops', reason: 'served by dashboard-legacy /api/goals catch-all (R5 residue)' },
-  { id: 'goals.loopsAt', reason: 'served by dashboard-legacy /api/goals catch-all (:n form, R5 residue)' },
-];
+const DASHBOARD_RESIDUE_ALLOWLIST: AllowEntry[] = [];
 
 /** 由反代尾部透传给 runtime serve 的端点（gateway 无 handler 是设计）。 */
 const RUNTIME_PROXY_ALLOWLIST: AllowEntry[] = [
@@ -188,6 +188,12 @@ describe('api-contract: catalog 可达性守卫', () => {
       }
     }
     expect(problems).toEqual([]);
+  });
+
+  test('dashboard-residue 幽灵 op 已删除（goals.loops / goals.loopsAt 无 handler，兜底返回列表形状）', () => {
+    const ids = new Set(registry.list().map((d) => d.operationId));
+    expect(ids.has('goals.loops')).toBe(false);
+    expect(ids.has('goals.loopsAt')).toBe(false);
   });
 
   test('扫描器能解析动态 attach 源（pods / wave1 / lead boundaries / typed）', () => {

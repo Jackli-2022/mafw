@@ -296,8 +296,7 @@ async createRuntime(ctx) {
 >   → RawRuntimeEvent → normalizeOpencodeEvent() → EventFacets
 >     ├─ isMalformedEvent 限频 warn（畸形防护）
 >     ├─ gateway 内部消费（trajectory / step-inject 记忆注入 / BudgetGuard / turnCompress flush / 自更新定位）
->     ├─ Mode B：per-session chat 流（delta/complete/error → ChatPane/TUI Chat）
->     └─ Mode A：全局广播 mafw_event 信封 → desktop renderer / TUI
+>     └─ 全局广播 mafw_event 信封 → desktop renderer / TUI（Mode A；Mode B 已在 E3 删除）
 > ```
 
 ### 3.1 什么格式的事件被接受（输入契约）
@@ -342,7 +341,7 @@ async createRuntime(ctx) {
 | 任意 type+props+directory | TrajectoryCollector | 累积 SQLite；产出 `trajectory.event` / `trajectory.turn` 广播 |
 | `step` 切面 | BudgetGuard | 已结算 step → goal 会话回合/成本计数，超限 abort |
 | `compaction` 切面 | TurnPipeline | 压缩发生 → 该 session pending T1 回合立即 flush |
-| `chatSignal` | 流式增量切面（Mode B 已删） | delta/complete/error 推给订阅该 session 的 SSE 客户端 |
+| `chatSignal` | 流式增量切面（Mode B 已删） | delta/complete/error 仅供网关内部/诊断；per-session 客户端走 Mode A 全局流自行按 `sessionID` 过滤 |
 | `turn.completed`（type） | Mode A + Trajectory | 回合聚合（trajectory.turn + usage.updated 合成）→ mafw_event 信封 passthrough 广播（v2：Mode A 改写已删除） |
 | `toolCommand` | 自更新定位 | 含 `pending-restart` 的命令钉住写令牌的会话 |
 

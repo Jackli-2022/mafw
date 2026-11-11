@@ -8,9 +8,10 @@
  *
  * 这四条是 handleDashboardAPI（index.ts 的返回对象式总分发器）里的**精确匹配**
  * 分支；R5 裁决下该分发器与其联合分支整体保留，继续服务 method-agnostic
- * `/api/stats*`、`/api/goals*` 幻影形状（goals.get/loops/loopsAt）与
- * `/api/memory` catch-all。registry dispatch 先于 legacy 链，因此这四个 (method,
- * path) 被 registry 接管，legacy 里的同名分支成为 dead-but-retained。
+ * `/api/stats*`、`/api/goals*` 未登记形状与 `/api/memory` catch-all。registry
+ * dispatch 先于 legacy 链，因此这四个 (method, path) 被 registry 接管，legacy
+ * 里的同名分支成为 dead-but-retained。E3 fix 删除了 goals.loops/loopsAt 的
+ * catalog 误登记（catch-all 实际返回 goals 列表，形状不对；请求仍落此兜底）。
  *
  * 翻译规则（binding）：legacy 每个分支 `return {…}`，调用方统一
  * `res.setHeader('Content-Type','application/json')` + `JSON.stringify` + `end`，

@@ -55,12 +55,15 @@ export class MethodNotSupportedError extends Error {
 
 export interface Goal {
   goalId: string
-  phase: string
+  /** E1/E3: NodeDriver 状态可能尚未定相。 */
+  phase: string | null
   loop: number
   currentWave: number
   totalWaves: number
   nextAction?: string
-  updatedAt?: string
+  /** 失败原因（成功/未失败时为 null）。 */
+  error: string | null
+  updatedAt: string | null
 }
 
 export interface GoalCreateInput {

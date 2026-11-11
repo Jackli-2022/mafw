@@ -5941,29 +5941,6 @@
         }
       }
     },
-    "/api/goals/{id}/loops": {
-      "get": {
-        "operationId": "goals.loops",
-        "tags": [
-          "internal"
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
     "/api/work/{goalId}/complete": {
       "post": {
         "operationId": "goals.complete",
@@ -6292,37 +6269,6 @@
         "parameters": [
           {
             "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/goals/{id}/loops/{n}": {
-      "get": {
-        "operationId": "goals.loopsAt",
-        "tags": [
-          "internal"
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "n",
             "in": "path",
             "required": true,
             "schema": {

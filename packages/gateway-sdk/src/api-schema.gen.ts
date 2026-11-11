@@ -3788,22 +3788,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/goals/{id}/loops": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["goals.loops"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/work/{goalId}/complete": {
         parameters: {
             query?: never;
@@ -4117,22 +4101,6 @@ export interface paths {
             cookie?: never;
         };
         get: operations["automations.history"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/goals/{id}/loops/{n}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["goals.loopsAt"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6801,12 +6769,13 @@ export interface operations {
                     "application/json": {
                         goals: {
                             goalId: string;
-                            phase: string;
+                            phase: string | null;
                             loop: number;
                             currentWave: number;
                             totalWaves: number;
                             nextAction?: string;
-                            updatedAt?: string;
+                            error: string | null;
+                            updatedAt: string | null;
                         }[];
                     };
                 };
@@ -9846,26 +9815,6 @@ export interface operations {
             };
         };
     };
-    "goals.loops": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     "goals.complete": {
         parameters: {
             query?: never;
@@ -10244,27 +10193,6 @@ export interface operations {
             header?: never;
             path: {
                 id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    "goals.loopsAt": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-                n: string;
             };
             cookie?: never;
         };

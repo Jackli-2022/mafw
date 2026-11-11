@@ -1063,8 +1063,9 @@ class MafwScheduler {
     // Skill v1 6B: trusted activation signal (runtime `tool.call` with tool=skill).
     // Reading/listing a skill never reaches this path; failure is mechanical only.
     try { observeSkillInvocation(this.getGatewayDb(), f); } catch { /* fail-open */ }
-    // Phase D2：24 段有序 stage 表（src/runtime/event-dispatch.ts）。数组位置即执行顺序；
-    // 仅 nativeDrop / toolPrimitiveDrop / internalFilter 三段可 HALT（legacy early return）。
+    // Phase D2：23 段有序 stage 表（src/runtime/event-dispatch.ts；E3-2 删 Mode B 后
+    // 由 24 段降为 23）。数组位置即执行顺序；仅 nativeDrop / toolPrimitiveDrop /
+    // internalFilter 三段可 HALT（legacy early return）。
     runEventPipeline(f, evt, this.buildDispatchCtx());
   }
 

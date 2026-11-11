@@ -111,7 +111,7 @@ gateway/
 │   │   ├── tool-classes.ts       #   工具语义类别层（并集表 + runtime 声明 overlay）
 │   │   ├── host-adapter.ts       #   re-export `@mafw/runtime-core` 认知面契约（四动词，loopback HTTP）
 │   │   ├── event-mapper.ts / canonical-facets.ts / mafw-vocabulary.ts   # 事件映射 + 词汇单源
-│   │   ├── event-dispatch.ts     #   handleRuntimeEvent 的 24 段有序 stage 表（内核重构 Phase D2）
+│   │   ├── event-dispatch.ts     #   handleRuntimeEvent 的 23 段有序 stage 表（D2 起步 24 段；E3-2 删 Mode B）
 │   │   └── identity-registry.ts / identity-state.ts        # agent 身份单一事实源
 │   ├── mcp/                      # MCP 工具注册表 + handlers（/mcp 双传输）
 │   ├── media/                    # A2A Media Agent、pi-adapter、插件引擎加载器
@@ -598,10 +598,11 @@ kernel.ts handleRuntimeEvent(evt)
   = normalizeRuntimeEvent(evt) → runEventPipeline(f, evt, buildDispatchCtx())
 ```
 
-- **数组位置就是执行顺序**（Ruling D2-R1）：`DISPATCH_STAGES` 是 24 段的有序数组，
-  没有冗余 `order` 字段；拓扑断言一律 `stageIndex(name)` 比较（名字是稳定锚点）。
+- **数组位置就是执行顺序**（Ruling D2-R1）：`DISPATCH_STAGES` 是 **23 段**的有序数组
+  （D2 原文 24 段；E3-2 删除 Mode B 转发段后为 23），没有冗余 `order` 字段；拓扑断言一律
+  `stageIndex(name)` 比较（名字是稳定锚点）。
 - **`matches` = legacy 块级 if，`run` = 块体逐字**（`this.x` → `ctx.x()`；ctx 全为
-  **live getter**）：`DispatchCtx` **26 个成员** = 25 个 live getter + 1 个
+  **live getter**）：`DispatchCtx` **25 个成员** = 24 个 live getter + 1 个
   `setTokenWriterSession` 写回口；`buildDispatchCtx()` 在 kernel.ts 里 30 行。
 - **只有三段可以 HALT**（legacy 的 `return`；HALT 停掉全部下游）：
 
@@ -611,8 +612,8 @@ kernel.ts handleRuntimeEvent(evt)
 | 2 | `toolPrimitiveDrop` | `TOOL_PRIMITIVE_TYPES` | 工具三原语属 assembler 内部入口，漏到这里即丢弃 |
 | 16 | `internalFilter` | memoryWorker 且非 turn 终态 | index-scan / extract / reflect 的 token 噪声不出站；**三终态放行**（`TURN_TERMINALS`） |
 
-其余 21 段都是 add/observe（enrich、tap、审批、权限投影、checkpoint、终态清理、
-trajectory、compaction flush、budget、Mode B、回合聚合、passthrough）。
+其余 20 段都是 add/observe（enrich、tap、审批、权限投影、checkpoint、终态清理、
+trajectory、compaction flush、budget、回合聚合、passthrough）。
 
 - **零 await**：整链同步；approval 的 `policy.evaluate` 保持同步契约
   （`policy-service.ts:10`），autoCheckpoint / compact flush / queue flush 仍
@@ -669,7 +670,7 @@ spec —— 它需要幂等设计与不受 retention 裁剪的影子流（`event
 | `server/event-hub.ts` | 145 | `EventHub`：`broadcast()` / `setupEventBus()` / `sseClients` / `wsClients`（D3-R4；kernel 保留同名委托方法，70+ 闭包调用点未动） |
 | `subsystems/api-routes.ts` | 820 | `attachAllRoutes(deps)`：47 条 attach（46 个 `attach*` + 1 条 typed route），顺序 46/46 原样；lead/pod 外来货物逐字 |
 | `subsystems/dashboard-legacy.ts` | 248 | `handleDashboardAPI`（R5 兜底）逐字；transport 经 `dashboardDispatch` 依赖调用 |
-| `runtime/event-dispatch.ts` | 635 | D2 的 24 段 stage 表（未变） |
+| `runtime/event-dispatch.ts` | 615 | 23 段 stage 表（E3-2 删 Mode B 后；D2 历史为 24 段） |
 
 **启动序列（`boot.ts BOOT_STEPS`，27 步，数组顺序即执行顺序）**：
 
@@ -714,7 +715,8 @@ T1 `searchT1` 家族 / goal pause-resume-retry 控制面 / 主题记忆提升 / 
 `sourceTraceIds` 等 34 个 hunk）按 D3 抽取边界**逐段落位**：启动期注册循环 → `boot.ts`，
 组合根状态与路由接线 → `kernel.ts`，反代头 → `http/transport.ts`（`deps.proxyHeaders()`），
 dashboard `memory.add` 影子条 → `subsystems/dashboard-legacy.ts`，MCP `searchT1` →
-`subsystems/api-routes.ts`。D2 的 24 段 stage 表与主线内联链体**逐段等价**（无新增段）。
+`subsystems/api-routes.ts`。**（历史）** D2 抽取时的 24 段 stage 表与主线内联链体**逐段等价**
+（无新增段）；E3-2 删除 Mode B 后为 23 段。
 
 **合入 main P2.4 事件层（Round 2, 2026-11-11）**：主线 `901ed772..7ee50700` 的
 `index.ts` 增量（+258/−71）同样逐段落位——事件层服务/字段/`initServices` 装配与
@@ -784,13 +786,13 @@ D3 承诺内）：`initServices()`（1104 行）拆分到 `subsystems/*`、kerne
 
 | # | 现状 | 边界 / 后续 |
 |---|---|---|
-| E3-1 | `tests/unit/api-contract.test.ts` 的幻影源码字符串断言换成**可达性守卫**：catalog 每个 op 必须 attached（字面 / 动态循环数组 / typed attach）或在三类 allowlist（`TRANSPORT_ALLOWLIST` 9 项、`DASHBOARD_RESIDUE_ALLOWLIST` 2 项、`RUNTIME_PROXY_ALLOWLIST` 1 项，每项带 reason）；allowlist 只减不增。删除 **12 个幽灵 op**（spec 的 11 个 + `memory.getL5Heuristics`，后者的唯一实现只在死模块）。死模块 `gateway/src/dashboard/{api,server,types}.ts` 删除（SPA `public/` 保留，仍由 transport 服务）；catalog 318 → 306 ops。 | `DASHBOARD_RESIDUE`（`goals.loops` / `goals.loopsAt`）仍由 dashboard 兜底，属后续迁移；spec 的 307/296 计数与实际基线（318）不符。 |
+| E3-1 | `tests/unit/api-contract.test.ts` 的幻影源码字符串断言换成**可达性守卫**：catalog 每个 op 必须 attached（字面 / 动态循环数组 / typed attach）或在 allowlist（`TRANSPORT_ALLOWLIST` 9 项、`RUNTIME_PROXY_ALLOWLIST` 1 项，每项带 reason；`DASHBOARD_RESIDUE_ALLOWLIST` 在收口修复轮清空）；allowlist 只减不增。删除 **14 个不可达 op**：E3-1 的 12 个（spec 的 11 个 + `memory.getL5Heuristics`）+ 收口修复轮删除的 `goals.loops` / `goals.loopsAt`（dashboard catch-all 实际返回 goals 列表，形状不对）。死模块 `gateway/src/dashboard/{api,server,types}.ts` 删除（SPA `public/` 保留，仍由 transport 服务）；catalog 318 → 304 ops。 | 请求 `/api/goals/:id/loops(:n)` 仍由 dashboard catch-all 兜底（只是不再登记为 catalog op）；spec 的 307/296 计数与实际基线（318）不符。 |
 | E3-2 | **Mode B 删除**：`?sessionID=` 的 per-session SSE 分支与 `ChatSessionManager` 移除；`event.subscribe` 现在忽略该参数、一律走 Mode A 全局流（SSE 头 + greeting + 回放 + `sseClients`）。`event-dispatch` 24 → 23 段（删 `modeBDelta`），kernel/api-routes 的 `chatSessions` 接线删除。**Breaking**：SDK `event.subscribeToSession` 删除（`?sessionID` 仍被接受并降级为 Mode A）。 | SDK `sessions.events()` 与 `event.url(sessionID?)` 仍构造 `?sessionID`（现降级到全局流），死面清理留后续。 |
 | E3-3 | 框架边界错误带机器码：`core/http/api-error.ts` 的 `API_ERROR_CODES` / `errorBody()`（`unauthorized` / `forbidden` / `capability_unavailable` / `internal`，预留 `schema_epoch_mismatch` / `not_found`）。应用点：transport 401/403/outer 500、registry-dispatch 401、kernel `capGuard`/`capGuardQuestion` 503。既有 `error` 字符串逐字保留。 | 路由内业务错误继续用原信封（错误格式按层）；客户端必须容忍可选 `code`。A2A/MCP 分支内 500 未迁移。 |
 | E3-4 | Experience `ActionDescriptor` 新增可选 `operationId`；projector 用 `EXPERIENCE_ACTION_OPERATIONS` 把 20 个动作绑定到 catalog op（复合动作取入口路由，如 `run.control → session.suspend`）。无路由动作省略该字段。 | 单 operationId 不是完整 verb 集合（run.control 也含 resume/discardRun）；路由改名时绑定测试会红。 |
 | E3-5 | **opt-in schema epoch**：所有响应带 `X-MAFW-Schema-Epoch`（`releaseMetadata.schemaEpoch`，未加载时省略）；客户端**主动携带**且不匹配 → 409 `{error, code:'schema_epoch_mismatch'}`（auth 之后、registry 之前）。不携带 / 匹配 / 服务端未知 → 正常放行。 | 不引入强制拒绝；SDK 尚未主动发送该头。 |
-| E3-6 | 四个读 op 的 200 response schema（`routes/schemas/read-models.ts`，只加 OpenAPI 元数据，不改 handler）：`goals.get`、`project.list`、`presence.get`、`session.usageSummary`。`emit:openapi` 后 274 paths / 306 operations。 | 其余 ~300 ops 仍无 response schema（渐进补齐）。 |
-| E3-7 | 收口：本节 + release 记录 + 全量门禁（gateway / SDK / desktop / TUI / analyzer / kernel-split）。 | deferred：dashboard residue 两 op、SDK `sessions.events()`/`event.url(sessionID?)` 清理、剩余 op 的 schema 覆盖。 |
+| E3-6 | 四个读 op 的 200 response schema（`routes/schemas/read-models.ts`，只加 OpenAPI 元数据，不改 handler）：`goals.get`、`project.list`、`presence.get`、`session.usageSummary`。`emit:openapi` 后 272 paths / 304 operations。 | 其余 ~300 ops 仍无 response schema（渐进补齐）。 |
+| E3-7 | 收口：本节 + release 记录 + 全量门禁（gateway / SDK / desktop / TUI / analyzer / kernel-split）。收口修复轮：SDK `Goal` DTO 对齐 `projectGoalView`（phase/error/updatedAt 可空），`goals.list` override 同步、删除陈旧 `goals.get` override；删除 dashboard-residue 两个 phantom op；同步 23 段/25 DispatchCtx 成员的文档漂移。 | deferred：SDK `sessions.events()`/`event.url(sessionID?)` 清理、剩余 op 的 schema 覆盖。 |
 
 ---
 
