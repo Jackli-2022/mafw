@@ -28,6 +28,8 @@ function fileItem(
 export function buildFilePickerItems(input: {
   worldId: WorldId
   files: readonly string[]
+  /** Root that `files` and project recents are relative to (normally the project root). */
+  filesRoot: string
   recent: readonly RecentContentEntry[]
   root: string
   scope: Scope
@@ -38,7 +40,7 @@ export function buildFilePickerItems(input: {
 
   for (const entry of input.recent) {
     if (entry.scopeKind === "project") {
-      const item = fileItem("recent", input.projectScope, input.root, entry.rel, entry.scopeLabel)
+      const item = fileItem("recent", input.projectScope, input.filesRoot, entry.rel, entry.scopeLabel)
       const key = subjectKey(item.subject)
       if (seen.has(key)) continue
       seen.add(key)
@@ -62,7 +64,8 @@ export function buildFilePickerItems(input: {
   }
 
   const detail = input.scope.kind === "goal" ? `rev ${input.scope.revision}` : "项目文件"
-  for (const rel of input.files) {
+  const canListFiles = input.scope.kind === "world" || input.filesRoot === input.root
+  for (const rel of canListFiles ? input.files : []) {
     const item = fileItem("file", input.scope, input.root, rel, detail)
     const key = subjectKey(item.subject)
     if (seen.has(key)) continue

@@ -42,3 +42,19 @@ test("legacy contexts remain for the strangler slice", () => {
   assert.match(workbench, /props\.context === "goal"/)
   assert.match(workbench, /props\.context === "review"/)
 })
+
+test("focus changes drive the stage and guard the legacy editor", () => {
+  assert.match(shell, /stageActionFor/)
+  assert.match(shell, /syncStageToFocus/)
+  assert.match(shell, /next !== "content" && focusState\(\)\.stack\.length > 0/)
+  assert.match(workbench, /when=\{!props\.focusView\}[\s\S]*WorkbenchCodeView/)
+})
+
+test("focus opens use an explicit request instead of the global pending channel", () => {
+  const editor = read("src/renderer/mafw/components/EditorDock.tsx")
+  assert.match(shell, /requestFocusOpen/)
+  assert.match(shell, /focusOpenRequest=\{focusOpenRequest\(\)\}/)
+  assert.match(workbench, /focusOpenRequest/)
+  assert.match(workbench, /openRequest=\{props\.focusOpenRequest\}/)
+  assert.match(editor, /props\.openRequest/)
+})

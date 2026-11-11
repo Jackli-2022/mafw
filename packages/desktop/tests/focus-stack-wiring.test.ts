@@ -23,6 +23,8 @@ test("focus back closes the last focus and returns to project", () => {
   assert.match(shell, /focusState\(\)\.stack\.length === 1/)
   assert.match(shell, /applyWorkbenchContext\("project"\)/)
   assert.match(shell, /onFocusBack=\{focusBack\}/)
+  assert.match(shell, /syncStageToFocus\(next\)/)
+  assert.match(shell, /const focusCrumb = \(index: number\) => \{/)
 })
 
 test("picker opens with Meta+P or Ctrl+P and closes with Escape", () => {
@@ -35,6 +37,6 @@ test("picker opens with Meta+P or Ctrl+P and closes with Escape", () => {
 })
 
 test("picking an item opens its scope and subject", () => {
-  assert.match(shell, /openSubject\(\{ \.\.\.state, worldId: item\.scope\.worldId \}, item\.scope, item\.subject, item\.lens\)/)
+  assert.match(shell, /openSubject\(\s*\{ \.\.\.focusState\(\), worldId: item\.scope\.worldId \},[\s\S]*?item\.scope,[\s\S]*?item\.subject,[\s\S]*?item\.lens/)
   assert.match(shell, /setPickerOpen\(false\)/)
 })

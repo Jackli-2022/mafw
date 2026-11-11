@@ -30,6 +30,7 @@ test("recent items come first and dedupe against files", () => {
     files: ["src/a.ts", "src/b.ts"],
     recent: [recent("src/a.ts", 10)],
     root: "C:/repo",
+    filesRoot: "C:/repo",
     scope: projectScope,
     projectScope,
   })
@@ -46,6 +47,7 @@ test("file items carry the current scope and root", () => {
     files: ["src/a.ts"],
     recent: [],
     root: "C:/repo-wt",
+    filesRoot: "C:/repo-wt",
     scope: goalScope,
     projectScope,
   })
@@ -71,6 +73,7 @@ test("goal recents use the worktree root and goal scope", () => {
       recent("src/b.ts", 9, { scopeKind: "goal", scopeLabel: "broken" }),
     ],
     root: "C:/repo",
+    filesRoot: "C:/repo",
     scope: projectScope,
     projectScope,
   })
@@ -86,6 +89,7 @@ test("filter is case-insensitive and capped", () => {
     files: Array.from({ length: 60 }, (_, i) => `src/file-${String(i).padStart(2, "0")}.ts`),
     recent: [],
     root: "C:/repo",
+    filesRoot: "C:/repo",
     scope: projectScope,
     projectScope,
   })
@@ -100,6 +104,7 @@ test("empty query returns recent plus files", () => {
     files: ["src/a.ts", "src/b.ts"],
     recent: [recent("src/a.ts", 10)],
     root: "C:/repo",
+    filesRoot: "C:/repo",
     scope: projectScope,
     projectScope,
   })
@@ -115,12 +120,30 @@ test("commands append browser and terminal", () => {
   assert.equal(commands[0]!.scope.kind, "world")
 })
 
+test("goal scope does not mix project-root files", () => {
+  const items = buildFilePickerItems({
+    worldId: "w1",
+    files: ["src/a.ts"],
+    filesRoot: "C:/repo",
+    recent: [recent("src/a.ts", 10)],
+    root: "C:/repo-wt",
+    scope: goalScope,
+    projectScope,
+  })
+  assert.equal(items.filter((item) => item.kind === "file").length, 0)
+  assert.equal(items.length, 1)
+  assert.equal(items[0]!.kind, "recent")
+  assert.equal(items[0]!.scope.kind, "world")
+  assert.equal((items[0]!.subject as { root: string }).root, "C:/repo")
+})
+
 test("picker item identities are stable", () => {
   const items = buildFilePickerItems({
     worldId: "w1",
     files: ["src/a.ts"],
     recent: [],
     root: "C:/repo",
+    filesRoot: "C:/repo",
     scope: projectScope,
     projectScope,
   })

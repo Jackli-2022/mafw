@@ -134,6 +134,7 @@ import {
 } from "./focus/focus-model"
 import { frameView, type FrameView } from "./focus/frame-view"
 import { buildCommandPickerItems, buildFilePickerItems, type PickerItem } from "./focus/picker-model"
+import { stageActionFor } from "./focus/stage-dispatch"
 import {
   configureFocusStorage,
   flushFocusPersistence,
@@ -1954,6 +1955,15 @@ export function MafwShell() {
   const [narrowView, setNarrowView] = createSignal<"chat" | "workbench">("chat")
   // Focus 是会话级瞬态：不持久化，项目切换时退出（spec 2026-11-04 §4.2）。
   const [workbenchFocus, setWorkbenchFocus] = createSignal(false)
+  const [focusState, setFocusState] = createSignal<WorkbenchState>(
+    createWorkbenchState(currentProject() ?? "unscoped"),
+  )
+  const [focusOpenRequest, setFocusOpenRequest] = createSignal<{ root: string; rel: string; nonce: number } | null>(null)
+  let focusOpenNonce = 0
+  const requestFocusOpen = (root: string, rel: string) => {
+    focusOpenNonce += 1
+    setFocusOpenRequest({ root, rel, nonce: focusOpenNonce })
+  }
   let workbenchFocusSnapshot: WorkbenchFocusSnapshot | null = null
   const bootWorkbench = migrateWorkbenchStorage((k) => {
     try { return localStorage.getItem(k) } catch { return null }
@@ -2085,6 +2095,9 @@ export function MafwShell() {
   }
   const applyWorkbenchContext = (context: WorkbenchContext) => {
     const next = normalizeWorkbenchContext(context)
+    if (next !== "content" && focusState().stack.length > 0) {
+      setFocusState(createWorkbenchState(currentProject() ?? "unscoped"))
+    }
     setWorkbenchContext(next)
     persistWorkbenchContext(next)
     if (next !== "goal") setPodGoalId(null)
@@ -2360,7 +2373,7 @@ export function MafwShell() {
       return
     }
     if (rememberLocation) rememberContentLocation()
-    requestOpenEditor(root, rel)
+    requestFocusOpen(root, rel)
     openWorkbenchSurface("code")
     setFocusState((state) =>
       openSubject({ ...state, worldId: nextScope.worldId }, nextScope, { kind: "file", root, rel }, nextLens),
@@ -2492,9 +2505,6 @@ export function MafwShell() {
   const [contentSplit, setContentSplit] = createSignal(false)
   const contentRoot = createMemo(() => contentScopeRoot(contentScope()) ?? currentProject())
   const currentContentScopeKey = createMemo(() => contentScopeKey(contentScope()))
-  const [focusState, setFocusState] = createSignal<WorkbenchState>(
-    createWorkbenchState(currentProject() ?? "unscoped"),
-  )
   const [pickerOpen, setPickerOpen] = createSignal(false)
   const [pickerFiles, setPickerFiles] = createSignal<string[]>([])
   const focusScopeFromContent = (scope: ContentScope | null): Scope => {
@@ -2560,10 +2570,27 @@ export function MafwShell() {
     if (lens === "read") setContentIntent("reading")
     else if (lens === "edit") setContentIntent("editing")
   }
+  const syncStageToFocus = (state: WorkbenchState) => {
+    const focus = state.stack[state.stack.length - 1]
+    if (!focus) return
+    const action = stageActionFor(focus)
+    if (action.kind === "editor") {
+      const scope = contentScopeFromFocus(focus.scope)
+      if (currentContentScopeKey() !== contentScopeKey(scope)) setContentScope(scope)
+      setContentIntent(action.intent)
+      requestFocusOpen(action.root, action.rel)
+      return
+    }
+    if (action.kind === "browser" && /^(mafw-file|https?):\/\//.test(action.url)) {
+      requestBrowserNavigate(action.url)
+    }
+  }
   const focusBack = () => {
     const state = focusState()
     if (state.stack.length > 1) {
-      setFocusState(popFocus(state))
+      const next = popFocus(state)
+      setFocusState(next)
+      syncStageToFocus(next)
       return
     }
     if (focusState().stack.length === 1) {
@@ -2571,7 +2598,11 @@ export function MafwShell() {
       applyWorkbenchContext("project")
     }
   }
-  const focusCrumb = (index: number) => setFocusState((state) => jumpTo(state, index))
+  const focusCrumb = (index: number) => {
+    const next = jumpTo(focusState(), index)
+    setFocusState(next)
+    syncStageToFocus(next)
+  }
   const openSubjectPicker = () => {
     setPickerOpen(true)
     void window.api.mafw.files.list().then(setPickerFiles).catch(() => {})
@@ -2583,7 +2614,14 @@ export function MafwShell() {
       openContentFile(item.subject.rel, item.subject.root, true, item.lens === "edit" ? "editing" : "reading")
       return
     }
-    setFocusState((state) => openSubject({ ...state, worldId: item.scope.worldId }, item.scope, item.subject, item.lens))
+    const next = openSubject(
+      { ...focusState(), worldId: item.scope.worldId },
+      item.scope,
+      item.subject,
+      item.lens,
+    )
+    setFocusState(next)
+    syncStageToFocus(next)
   }
 
   let lastFocusWorld: string | null = null
@@ -2626,6 +2664,7 @@ export function MafwShell() {
     }
     const state = next
     setFocusState(state)
+    syncStageToFocus(state)
     void validateFocusStack(worldId, state)
   })
   createEffect(() => {
@@ -2692,6 +2731,7 @@ export function MafwShell() {
     const items = buildFilePickerItems({
       worldId,
       files: pickerFiles(),
+      filesRoot: project ?? "",
       recent: recentContent(),
       root: contentRoot() ?? project ?? "",
       scope,
@@ -3680,6 +3720,7 @@ export function MafwShell() {
                   onFocusLens={applyFocusLens}
                   onFocusBack={focusBack}
                   onFocusCrumb={focusCrumb}
+                  focusOpenRequest={focusOpenRequest()}
                   pickerOpen={pickerOpen()}
                   pickerItems={pickerItems()}
                   onOpenPicker={openSubjectPicker}

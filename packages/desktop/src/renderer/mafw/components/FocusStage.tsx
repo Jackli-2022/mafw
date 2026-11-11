@@ -19,6 +19,7 @@ export function FocusStage(props: {
   diffs: FileDiffEntry[]
   onOpenFile: (rel: string) => void
   onActiveFileChange?: (rel: string | null) => void
+  openRequest?: { root: string; rel: string; nonce: number } | null
   onSendAnnotation?: (text: string, opts?: { imageDataUrl?: string }) => void
   onAddAnnotation?: (a: {
     rel: string
@@ -59,6 +60,7 @@ export function FocusStage(props: {
             scopeKey={props.contentScopeKey}
             intent={props.focus.lens === "edit" ? "editing" : "reading"}
             onActiveFileChange={props.onActiveFileChange}
+            openRequest={props.openRequest}
             diffs={props.diffs}
             onSendAnnotation={props.onSendAnnotation}
             onAddAnnotation={props.onAddAnnotation}

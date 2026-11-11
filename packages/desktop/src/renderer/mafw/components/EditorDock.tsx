@@ -76,6 +76,8 @@ export function EditorDock(props: {
   onIntent?: (intent: ContentIntent) => void
   /** 活动文档 → 内容 surface 标签直接显示文档名。 */
   onActiveFileChange?: (rel: string | null) => void
+  /** 焦点栈驱动的显式打开请求；与全局 pendingEditorOpen 分开，避免双编辑器抢消费。 */
+  openRequest?: { root: string; rel: string; nonce: number } | null
   diffs?: FileDiffEntry[]
   onSendAnnotation?: (text: string, opts?: { imageDataUrl?: string }) => void
   /** 加入批注草稿（v2：草稿优先，发送时随消息打包） */
@@ -414,6 +416,17 @@ export function EditorDock(props: {
     if (!req) return
     consumeEditorOpen()
     if (req.root !== props.contentRoot) return
+    void openRel(req.rel)
+  })
+
+  // ── 焦点栈显式打开请求：不经过全局单例，back / crumb / restore 都能落到位 ──
+  let lastExplicitOpen = 0
+  createEffect(() => {
+    const req = props.openRequest
+    if (!req) return
+    if (req.root !== props.contentRoot) return
+    if (req.nonce === lastExplicitOpen) return
+    lastExplicitOpen = req.nonce
     void openRel(req.rel)
   })
 

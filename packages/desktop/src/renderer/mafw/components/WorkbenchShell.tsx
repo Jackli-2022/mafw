@@ -85,6 +85,7 @@ export type WorkbenchShellProps = {
   onFocusLens: (lens: Lens) => void
   onFocusBack: () => void
   onFocusCrumb: (index: number) => void
+  focusOpenRequest?: { root: string; rel: string; nonce: number } | null
   pickerOpen: boolean
   pickerItems: readonly PickerItem[]
   onOpenPicker: () => void
@@ -342,6 +343,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
             diffs={props.diffs}
             onOpenFile={props.onOpenFile}
             onActiveFileChange={props.onContentDocument}
+            openRequest={props.focusOpenRequest}
             onSendAnnotation={props.onSendAnnotation}
             onAddAnnotation={props.onAddAnnotation}
             onSendComment={props.onSendComment}
@@ -366,31 +368,33 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
           {props.goalView}
         </div>
         <div class="mafw-rw-pane" classList={{ "is-active": props.context === "content" }}>
-          <WorkbenchCodeView
-            active={props.open && props.context === "content"}
-            surface={props.surface}
-            sessionID={props.sessionID}
-            contentRoot={props.contentRoot}
-            contentScopeKey={props.contentScopeKey}
-            intent={props.contentIntent}
-            onIntent={props.onContentIntent}
-            onActiveFileChange={props.onContentDocument}
-            splitOpen={props.contentSplit}
-            onSplitOpen={props.onContentSplit}
-            pluginProjectDir={props.pluginProjectDir}
-            diffs={props.diffs}
-            onOpenFile={props.onOpenFile}
-            onSendAnnotation={props.onSendAnnotation}
-            onAddAnnotation={props.onAddAnnotation}
-            onSendComment={props.onSendComment}
-            onOpenReview={props.onOpenReview}
-            renderPluginSurface={props.renderPluginSurface}
-            webSurfaces={props.webSurfaces}
-            gatewayUrl={props.gatewayUrl}
-            onWebBadge={props.onWebBadge}
-            onWebTitle={props.onWebTitle}
-            onWebError={props.onWebError}
-          />
+          <Show when={!props.focusView}>
+            <WorkbenchCodeView
+              active={props.open && props.context === "content"}
+              surface={props.surface}
+              sessionID={props.sessionID}
+              contentRoot={props.contentRoot}
+              contentScopeKey={props.contentScopeKey}
+              intent={props.contentIntent}
+              onIntent={props.onContentIntent}
+              onActiveFileChange={props.onContentDocument}
+              splitOpen={props.contentSplit}
+              onSplitOpen={props.onContentSplit}
+              pluginProjectDir={props.pluginProjectDir}
+              diffs={props.diffs}
+              onOpenFile={props.onOpenFile}
+              onSendAnnotation={props.onSendAnnotation}
+              onAddAnnotation={props.onAddAnnotation}
+              onSendComment={props.onSendComment}
+              onOpenReview={props.onOpenReview}
+              renderPluginSurface={props.renderPluginSurface}
+              webSurfaces={props.webSurfaces}
+              gatewayUrl={props.gatewayUrl}
+              onWebBadge={props.onWebBadge}
+              onWebTitle={props.onWebTitle}
+              onWebError={props.onWebError}
+            />
+          </Show>
         </div>
         <div class="mafw-rw-pane" classList={{ "is-active": props.context === "review" }}>
           {props.reviewView}
