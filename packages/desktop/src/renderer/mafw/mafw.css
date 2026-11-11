@@ -7845,7 +7845,7 @@ html[data-theme="light"] body {
   gap: 8px;
   width: 100%;
   padding: 10px;
-  border: 1px solid var(--danger-border, var(--border-subtle));
+  border: 1px solid var(--danger-dim, var(--border-subtle));
   border-radius: var(--r-sm);
   background: var(--bg-inset);
 }
@@ -8040,7 +8040,7 @@ html[data-theme="light"] body {
   }
 }
 
-/* ���� Goal review items��Plan C�� ���� */
+/* ── Goal review items（Plan C） ── */
 .mafw-pod-review {
   display: flex;
   flex-direction: column;
