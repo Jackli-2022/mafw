@@ -9,25 +9,28 @@ function rule(selector: string): string {
   return css.match(new RegExp(`${escaped}[^{}]*\\{([^}]*)\\}`))?.[1] ?? ""
 }
 
-test("project home lays files and recents side by side", () => {
+test("project home lays files and recents side by side in one surface", () => {
   const content = rule(".mafw-project-home-content")
   assert.match(content, /display:\s*grid/)
   assert.match(content, /grid-template-columns:\s*minmax\(0,\s*1\.2fr\)\s*minmax\(0,\s*0\.8fr\)/)
-  assert.match(content, /gap:/)
+  assert.match(content, /gap:\s*0/)
+  assert.match(content, /border-radius:\s*var\(--r-/)
   assert.match(css, /\.mafw-project-home-content\.is-single\s*\{[^}]*grid-template-columns:\s*1fr/)
-  assert.match(rule(".mafw-project-files-card"), /border-radius:\s*var\(--r-/)
-  assert.match(rule(".mafw-project-recent-card"), /border-radius:\s*var\(--r-/)
+  assert.match(css, /\.mafw-project-files-card\s*\{\s*border-right:\s*1px solid var\(--border-subtle\)/)
+  assert.match(rule(".mafw-project-recent-card"), /border:\s*0/)
+  assert.doesNotMatch(rule(".mafw-project-files-card"), /border-radius:\s*var\(--r-/)
 })
 
 test("project home stacks content cards in a narrow container", () => {
   assert.match(css, /@container \(max-width:\s*760px\)[\s\S]*?mafw-project-home-content[\s\S]*?grid-template-columns:\s*1fr/)
 })
 
-test("team strip is compact and wraps without overflowing", () => {
+test("team strip is a quiet project attribute line, not another card", () => {
   const strip = rule(".mafw-project-team-strip")
   assert.match(strip, /display:\s*flex/)
   assert.match(strip, /flex-wrap:\s*wrap/)
-  assert.match(strip, /background:\s*var\(--bg-/)
+  assert.match(strip, /border-bottom:\s*1px solid var\(--border-subtle\)/)
+  assert.match(strip, /background:\s*transparent/)
   assert.match(css, /\.mafw-project-team-actions\s*\{[^}]*flex:\s*none/)
   assert.match(css, /\.mafw-project-team-empty\s*\{[^}]*var\(--text-/)
 })

@@ -7363,8 +7363,8 @@ html[data-theme="light"] body {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 14px;
+  gap: 16px;
+  padding: 16px 18px;
 }
 .mafw-project-work-head {
   display: flex;
@@ -7399,10 +7399,11 @@ html[data-theme="light"] body {
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 6px 10px;
-  padding: 7px 9px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-md);
-  background: var(--bg-inset);
+  padding: 2px 0 10px;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
 }
 .mafw-project-team-main {
   display: flex;
@@ -7433,22 +7434,28 @@ html[data-theme="light"] body {
 .mafw-project-home-content {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
-  gap: 10px;
+  gap: 0;
   min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--bg-inset);
 }
 .mafw-project-home-content.is-single { grid-template-columns: 1fr; }
 .mafw-project-files-card,
 .mafw-project-recent-card {
   min-width: 0;
   min-height: 0;
-  height: 260px;
+  height: 232px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-md);
-  background: var(--bg-inset);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
+.mafw-project-files-card { border-right: 1px solid var(--border-subtle); }
+.mafw-project-home-content.is-single .mafw-project-files-card { border-right: 0; }
 .mafw-project-files-card .mafw-files-panel { height: 100%; min-height: 0; }
 .mafw-project-files-card .mafw-file-tree { flex: 1; min-height: 0; }
 .mafw-project-recent-head {
@@ -7510,8 +7517,12 @@ html[data-theme="light"] body {
 }
 @container (max-width: 760px) {
   .mafw-project-home-content { grid-template-columns: 1fr; }
-  .mafw-project-files-card,
-  .mafw-project-recent-card { height: 220px; }
+  .mafw-project-files-card {
+    height: 220px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .mafw-project-recent-card { height: 200px; }
 }
 .mafw-standing-goals {
   padding: 12px;
