@@ -34,7 +34,7 @@ describe('event flow matrix', () => {
   });
 
   it('facet consumers are a subset of matrix normalizeFacet claims', () => {
-    // turn.completed 必须声明 chatSignal 消费（Mode B / index.ts 现状）
+    // turn.completed 必须声明 chatSignal 消费（流式增量切面）
     expect(EVENT_FLOW_MATRIX['turn.completed'].normalizeFacet).toContain('chatSignal');
     // v2：Mode A 改写 hack 已删除，回合终态统一 passthrough
     expect(EVENT_FLOW_MATRIX['turn.completed'].modeA).toBe('passthrough');

@@ -196,7 +196,6 @@ export interface ApiRouteDeps {
   allowlistStore: ReturnType<ApprovalsDeps['allowlistStore']>;
   permissionRules: ReturnType<ApprovalsDeps['permissionRules']>;
   approvalPolicy: ReturnType<SessionsPermissionsDeps['approvalPolicy']>;
-  chatSessions: ReturnType<EventsSseDeps['chatSessions']>;
   coactivationGraphStore: ReturnType<MemoryDeps['coactivationGraphStore']>;
   consolidationService: ReturnType<MemoryDeps['consolidationService']>;
   eventStore: ReturnType<EventsSseDeps['eventStore']>;
@@ -875,7 +874,6 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
     getGatewayDb: () => deps.getGatewayDb(),
   });
   attachEventsSseRoutes(deps.routeRegistry, {
-    chatSessions: () => deps.chatSessions,
     eventStore: () => deps.eventStore,
     sseClients: () => deps.sseClients,
     releaseIdentity: () => deps.releaseIdentity(),

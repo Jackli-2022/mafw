@@ -176,12 +176,6 @@ function makeWorld(options: WorldOptions = {}): World {
     scheduler: () => ({ submit: () => Promise.resolve() }),
     getTurnPipeline: () => ({ runSession: async () => ({ turns: 0, archived: 0 }) }),
     scanService: () => null,
-    chatSessions: () => ({
-      hasListeners: () => false,
-      pushDelta: () => undefined,
-      pushComplete: () => undefined,
-      pushError: () => undefined,
-    }),
   } as unknown as DispatchCtx;
 
   return { ctx, timeline, broadcasts, trajectoryCalls, taps, lastActive, cfg };
@@ -203,10 +197,12 @@ function dispatch(world: World, type: string, properties: any = {}, extra: any =
 describe('D2 dispatch stage table', () => {
   it('is a non-empty ordered array with unique stage names', () => {
     expect(Array.isArray(DISPATCH_STAGES)).toBe(true);
-    expect(DISPATCH_STAGES.length).toBeGreaterThan(0);
+    expect(DISPATCH_STAGES.length).toBe(23);
     const names = DISPATCH_STAGES.map((s) => s.name);
     expect(names.every((name) => typeof name === 'string' && name.length > 0)).toBe(true);
     expect(new Set(names).size).toBe(names.length);
+    // E3-2: Mode B（per-session SSE）已删，转发段不再在链上。
+    expect(names).not.toContain('modeBDelta');
   });
 
   it('every stage exposes matches + run', () => {
@@ -324,7 +320,7 @@ describe('(b) derived-vs-passthrough broadcast order', () => {
       MAFW.trajectoryEvent,   // stage 19锛圥ath T 娲剧敓锛?
       MAFW.trajectoryTurn,    // stage 23锛堝洖鍚堣仛鍚堟淳鐢燂級
       MAFW.usageUpdated,      // stage 23锛坲sage 鍚堟垚娲剧敓锛?
-      MAFW.turnCompleted,     // stage 24锛坧assthrough锛?
+      MAFW.turnCompleted,     // stage 23锛坧assthrough锛?
     ]);
     // EventStore 鍙湁涓€涓?sink锛氬叏閮ㄧ粡 mafw_event 淇″皝锛堣皟鐢ㄥ簭 == seq 搴忥級锛?
     // 涓?passthrough 浠嶅甫 sessionID銆?

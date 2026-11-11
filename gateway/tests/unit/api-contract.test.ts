@@ -1,25 +1,76 @@
 /**
- * P4 契约防线（gateway 侧）：spec 事实源已收敛到 routes/route-catalog.ts，本测试守两条：
+ * api-contract：catalog 可达性守卫 + 契约产物新鲜度。
  *
- * A. phantom 检查 —— catalog 每条路由必须在 gateway 源码的路由面上有落地
- *    （=== 字面量 / startsWith 前缀 / /^...$/ 正则三种匹配器，路径参数归一化为 {}），
- *    防 catalog 登记了实际不存在的端点。
+ * A. 可达性守卫（E3-1）——catalog 每个 op 必须**可达**，满足其一：
+ *    1. attached：gateway 源码里有 `attachHandler('<id>')` 字面量（含动态 attach：
+ *       `for (const op of [...])` / `for (const op of CONST_ARRAY)`；
+ *       以及 `attachTypedRoute({ operationId: '<id>' })`）。
+ *    2. TRANSPORT_ALLOWLIST：由 `http/transport.ts` 手写分支服务（A2A、/register、
+ *       /control、/health、file-history），不进 registry。
+ *    3. DASHBOARD_RESIDUE_ALLOWLIST：由 `subsystems/dashboard-legacy.ts` 的
+ *       `/api/goals|/api/stats|/api/memory` 兜底服务（R5 保留的旧形状）——E3 fix
+ *       删除了最后两个误登记项（goals.loops/loopsAt），名单现为空。
+ *    4. RUNTIME_PROXY_ALLOWLIST：反代到 runtime serve 的端点（无 gateway handler）。
+ *    每条 allowlist 必须带一句人话 reason；名单只减不增（op 一旦 attach，条目必须移除）。
+ *
  * B. 新鲜度 —— contract/openapi.json 的 paths/operationId 必须与 catalog 重新生成的
  *    结果一致，防 catalog 改了忘跑 emit:openapi（陈旧产物）。
  *
  * 用法：npx jest tests/unit/api-contract.test.ts
- * 新增 gateway 路由：登记进 route-catalog.ts → npm run emit:openapi → (sdk) npm run gen:api。
+ * 新增 gateway 路由：登记进 route-catalog.ts → attach handler → npm run emit:openapi
+ * → (sdk) merge-contract/gen:api。
  */
 import { readFileSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
-import { RouteRegistry, toOpenApiPath } from '../../src/routes/registry';
+import { RouteRegistry } from '../../src/routes/registry';
 import { buildRouteCatalog } from '../../src/routes/route-catalog';
 
 const CONTRACT_PATH = join(__dirname, '..', '..', '..', 'packages', 'gateway-sdk', 'contract', 'openapi.json');
 const GATEWAY_SRC = join(__dirname, '..', '..', 'src');
+const CATALOG_FILE = 'route-catalog.ts';
 
 const contract = JSON.parse(readFileSync(CONTRACT_PATH, 'utf-8'));
 const registry = new RouteRegistry().register(...buildRouteCatalog());
+
+interface AllowEntry {
+  id: string;
+  reason: string;
+}
+
+/**
+ * 无 registry handler、但由 `http/transport.ts` 手写分支服务的 catalog op。
+ * 分支顺序是 load-bearing 的（见 transport 头注释），因此不进 registry。
+ */
+const TRANSPORT_ALLOWLIST: AllowEntry[] = [
+  { id: 'media.createTask', reason: 'POST /a2a JSON-RPC branch in http/transport.ts (A2A media agent)' },
+  { id: 'a2a.agentCard', reason: 'GET /.well-known/agent-card.json branch in http/transport.ts (A2A discovery)' },
+  { id: 'media.artifact', reason: 'GET /a2a/artifacts/:id branch in http/transport.ts (matchArtifactId)' },
+  { id: 'project.setCurrent', reason: 'POST /register branch in http/transport.ts (project registration)' },
+  { id: 'goals.controlLegacy', reason: 'POST /control branch in http/transport.ts (MCP compatibility alias)' },
+  { id: 'health.root', reason: 'GET /health branch in http/transport.ts (standalone health probe)' },
+  { id: 'fileHistory.snapshot', reason: 'transport deps.fileHistory branch (routes/file-history.ts, loopback-only)' },
+  { id: 'fileHistory.list', reason: 'transport deps.fileHistory branch (routes/file-history.ts, loopback-only)' },
+  { id: 'fileHistory.restore', reason: 'transport deps.fileHistory branch (routes/file-history.ts, loopback-only)' },
+];
+
+/**
+ * R5 保留的 dashboard 兜底形状由 `subsystems/dashboard-legacy.ts` 的
+ * `/api/goals*` catch-all 直接响应、没有独立 registry handler。E3 fix 删除了
+ * 最后两个误登记项（`goals.loops` / `goals.loopsAt` —— catch-all 实际返回的是
+ * goals 列表，形状不对）；现在该名单为空，请求仍由 catch-all 兜底。
+ */
+const DASHBOARD_RESIDUE_ALLOWLIST: AllowEntry[] = [];
+
+/** 由反代尾部透传给 runtime serve 的端点（gateway 无 handler 是设计）。 */
+const RUNTIME_PROXY_ALLOWLIST: AllowEntry[] = [
+  { id: 'session.command', reason: 'reverse-proxied to runtime serve (no gateway handler by design)' },
+];
+
+const ALLOWLISTS: ReadonlyArray<{ name: string; entries: AllowEntry[] }> = [
+  { name: 'TRANSPORT_ALLOWLIST', entries: TRANSPORT_ALLOWLIST },
+  { name: 'DASHBOARD_RESIDUE_ALLOWLIST', entries: DASHBOARD_RESIDUE_ALLOWLIST },
+  { name: 'RUNTIME_PROXY_ALLOWLIST', entries: RUNTIME_PROXY_ALLOWLIST },
+];
 
 function walk(dir: string): string[] {
   const out: string[] = [];
@@ -33,83 +84,129 @@ function walk(dir: string): string[] {
   return out;
 }
 
-// ── gateway 源码路由面采集 ──
-
-const exactRoutes = new Set<string>();
-const prefixRoutes = new Set<string>();
-const regexRoutes = new Set<string>();
-
-/** 正则体 → 归一化路径：\/→/、去锚点、去非捕获组、捕获组→{}。 */
-function normalizeRegexBody(body: string): string | null {
-  let s = body.replace(/\\(.)/g, '$1');
-  s = s.replace(/^\^/, '').replace(/\$$/, '');
-  s = s.replace(/\(\?:[^)]*\)/g, '');
-  s = s.replace(/\(([^()]*)\)/g, '{}');
-  if (!s.startsWith('/')) return null;
-  if (/[^a-zA-Z0-9\/\-_.:{}]/.test(s)) return null;
-  return s;
-}
-
-/** 扫描 /^ 开头的正则字面量体（括号/字符类感知的定界符扫描）。 */
-function extractRegexBodies(src: string): string[] {
-  const bodies: string[] = [];
-  for (let i = 0; i < src.length - 2; i++) {
-    if (src[i] === '/' && src[i + 1] === '^') {
-      let j = i + 1;
-      let inBracket = false;
-      let escaped = false;
-      for (; j < src.length; j++) {
-        const c = src[j];
-        if (escaped) { escaped = false; continue; }
-        if (c === '\\') { escaped = true; continue; }
-        if (inBracket) { if (c === ']') inBracket = false; continue; }
-        if (c === '[') { inBracket = true; continue; }
-        if (c === '/') break;
-      }
-      bodies.push(src.slice(i + 1, j));
-      i = j;
+/** 从 `start` 处的开括号起，读取到配对闭括号（跳过字符串）。 */
+function readBalanced(src: string, start: number): string | null {
+  const open = src[start];
+  const close = open === '[' ? ']' : open === '{' ? '}' : open === '(' ? ')' : '';
+  if (!close) return null;
+  let depth = 0;
+  let quote: string | null = null;
+  for (let i = start; i < src.length; i++) {
+    const c = src[i];
+    if (quote) {
+      if (c === '\\') { i++; continue; }
+      if (c === quote) quote = null;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === '`') { quote = c; continue; }
+    if (c === open) depth++;
+    else if (c === close) {
+      depth--;
+      if (depth === 0) return src.slice(start, i + 1);
     }
   }
-  return bodies;
+  return null;
 }
 
-beforeAll(() => {
+function quotedStrings(expr: string): string[] {
+  return [...expr.matchAll(/['"]([^'"]+)['"]/g)].map((m) => m[1]);
+}
+
+/** 解析 `for (const X of <expr>) { ... }` 中的动态 attach id 列表。 */
+function collectLoopIds(src: string): string[] {
+  const ids: string[] = [];
+  const loopRe = /for\s*\(\s*const\s+([\s\S]*?)\s+of\s+([\s\S]*?)\)\s*\{/g;
+  for (const m of src.matchAll(loopRe)) {
+    const bodyOpen = m.index! + m[0].length - 1;
+    const body = readBalanced(src, bodyOpen);
+    if (!body || !body.includes('attachHandler')) continue;
+
+    let expr = m[2].trim().replace(/\s+as\s+const$/, '').trim();
+    if (/^[A-Za-z_$][\w$]*$/.test(expr)) {
+      // `for (const op of CONST_ARRAY)` —— 解析同文件里的 `const CONST_ARRAY = [...]`。
+      const def = new RegExp(`const\\s+${expr}\\s*=\\s*(\\[)`).exec(src);
+      if (!def) continue;
+      const arr = readBalanced(src, def.index + def[0].length - 1);
+      if (!arr) continue;
+      expr = arr;
+    }
+    if (!expr.startsWith('[')) continue;
+    ids.push(...quotedStrings(expr));
+  }
+  return ids;
+}
+
+/** 扫描 gateway 源码，返回所有可证明 attached 的 operationId。 */
+function collectAttachedOperationIds(): Set<string> {
+  const attached = new Set<string>();
   for (const file of walk(GATEWAY_SRC)) {
+    if (file.endsWith(CATALOG_FILE)) continue; // catalog 是登记面，不是 attach 证据
     const src = readFileSync(file, 'utf-8');
-    for (const m of src.matchAll(/\b(?:req\.)?url\s*===\s*['"](\/[^'"]+)['"]/g)) exactRoutes.add(m[1]);
-    for (const m of src.matchAll(/\.startsWith\(\s*['"](\/[^'"]+)['"]\s*\)/g)) prefixRoutes.add(m[1]);
-    for (const body of extractRegexBodies(src)) {
-      const norm = normalizeRegexBody(body);
-      if (norm) regexRoutes.add(norm);
+
+    for (const m of src.matchAll(/attachHandler\(\s*['"]([^'"]+)['"]/g)) attached.add(m[1]);
+    for (const id of collectLoopIds(src)) attached.add(id);
+
+    // attachTypedRoute(registry, { operationId: '...' }) —— 调用点在 api-routes.ts。
+    if (src.includes('attachTypedRoute(')) {
+      for (const m of src.matchAll(/operationId\s*:\s*['"]([^'"]+)['"]/g)) attached.add(m[1]);
     }
   }
-});
-
-/**
- * 由 index.ts 末尾的反代兜底（"Reverse proxy to the agent backend for non-MAFW routes"）
- * 服务的契约路径——无独立路由匹配器，透传 opencode serve。
- */
-const REVERSE_PROXY_PATHS = new Set<string>();
-
-/** 归一化路径是否被源码路由面覆盖。 */
-function isCovered(normPath: string): boolean {
-  if (exactRoutes.has(normPath) || regexRoutes.has(normPath)) return true;
-  if (REVERSE_PROXY_PATHS.has(normPath)) return true;
-  for (const p of prefixRoutes) {
-    if (normPath === p || normPath.startsWith(p.endsWith('/') ? p : p + '/')) return true;
-  }
-  return false;
+  return attached;
 }
 
-describe('api-contract: catalog phantom 检查', () => {
-  test('catalog 每条路由在 gateway 源码有落地', () => {
-    const phantom: string[] = [];
-    for (const def of registry.list()) {
-      const normPath = toOpenApiPath(def.path).replace(/\{[^}]+\}/g, '{}');
-      if (!isCovered(normPath)) phantom.push(`${def.method} ${normPath} (${def.operationId})`);
+describe('api-contract: catalog 可达性守卫', () => {
+  const attached = collectAttachedOperationIds();
+  const allowedIds = new Set(ALLOWLISTS.flatMap((l) => l.entries.map((e) => e.id)));
+
+  test('catalog 每个 op 都 attached 或在 allowlist（catalog − attached − allowlist = ∅）', () => {
+    const unreachable = registry
+      .list()
+      .filter((def) => !attached.has(def.operationId) && !allowedIds.has(def.operationId));
+    if (unreachable.length) {
+      console.error(
+        '[api-contract] 不可达 catalog op（既无 handler 也不在 allowlist）:\n' +
+          unreachable
+            .map((d) => `${d.method} ${d.path} (${d.operationId})`)
+            .join('\n') +
+          '\n修复：attach handler，或按真实服务面加入带 reason 的 allowlist。',
+      );
     }
-    if (phantom.length) console.error('[api-contract] catalog 幻影路由:\n' + phantom.join('\n'));
-    expect(phantom).toEqual([]);
+    expect(unreachable.map((d) => d.operationId)).toEqual([]);
+  });
+
+  test('allowlist 条目：存在、唯一、带 reason、且未被 attach（只减不增）', () => {
+    const catalogIds = new Set(registry.list().map((d) => d.operationId));
+    const seen = new Map<string, string>();
+    const problems: string[] = [];
+    for (const { name, entries } of ALLOWLISTS) {
+      for (const { id, reason } of entries) {
+        if (seen.has(id)) problems.push(`${id}: 同时出现在 ${seen.get(id)} 与 ${name}`);
+        seen.set(id, name);
+        if (!catalogIds.has(id)) problems.push(`${id}: 已不在 catalog（allowlist 陈旧条目，删除）`);
+        if (attached.has(id)) problems.push(`${id}: 已有 handler（从 ${name} 移除）`);
+        if (!reason || reason.trim().length < 8) problems.push(`${id}: 缺少可读 reason`);
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test('dashboard-residue 幽灵 op 已删除（goals.loops / goals.loopsAt 无 handler，兜底返回列表形状）', () => {
+    const ids = new Set(registry.list().map((d) => d.operationId));
+    expect(ids.has('goals.loops')).toBe(false);
+    expect(ids.has('goals.loopsAt')).toBe(false);
+  });
+
+  test('扫描器能解析动态 attach 源（pods / wave1 / lead boundaries / typed）', () => {
+    for (const id of [
+      'pods.ensure', // pod-handlers.ts const operationIds = [...]
+      'pods.goals.techLead', // pod-handlers.ts COLLABORATION_OPERATION_IDS
+      'pods.a2a', // pod-a2a.ts inline array
+      'session.checkpoint', // wave1-handlers.ts inline array
+      'lead.boundaries.accept', // lead-boundaries.ts destructured loop
+      'session.list', // api-routes.ts attachTypedRoute({ operationId })
+    ]) {
+      expect(attached.has(id)).toBe(true);
+    }
   });
 
   test('本次两个漂移 bug 的回归锚点（catalog 内）', () => {
@@ -117,6 +214,35 @@ describe('api-contract: catalog phantom 检查', () => {
     expect(ids.has('triage.dismiss')).toBe(true);
     expect(ids.has('goals.control')).toBe(true);
     expect(ids.has('goals.respondQuestion')).toBe(true);
+  });
+});
+
+describe('api-contract: response schemas（E3-6 四个读接口）', () => {
+  test('goals.get / project.list / presence.get / session.usageSummary 的 200 响应带 JSON schema', () => {
+    const required: Record<string, string> = {
+      'goals.get': 'GET /api/goals/{id}',
+      'project.list': 'GET /api/projects',
+      'presence.get': 'GET /api/presence',
+      'session.usageSummary': 'GET /api/usage/summary',
+    };
+    const problems: string[] = [];
+    for (const [operationId, label] of Object.entries(required)) {
+      let op: any = null;
+      for (const methods of Object.values<any>(contract.paths)) {
+        for (const candidate of Object.values<any>(methods)) {
+          if (candidate?.operationId === operationId) op = candidate;
+        }
+      }
+      if (!op) { problems.push(`${operationId}: 未出现在 openapi.json（${label}）`); continue; }
+      const schema = op.responses?.['200']?.content?.['application/json']?.schema;
+      if (!schema) { problems.push(`${operationId}: responses.200 缺 application/json schema`); continue; }
+      const propertyCount = Object.keys(schema.properties ?? {}).length;
+      if (propertyCount < 1) problems.push(`${operationId}: schema 不含任何 property`);
+    }
+    if (problems.length) {
+      console.error('[api-contract] 读接口 response schema 缺失 —— 先跑 emit:openapi + merge-contract:\n' + problems.join('\n'));
+    }
+    expect(problems).toEqual([]);
   });
 });
 
@@ -137,7 +263,7 @@ describe('api-contract: contract 产物新鲜度', () => {
     }
     const problems = [...missing.map((p) => `contract 缺 path ${p}`), ...extra.map((p) => `contract 多 path ${p}`), ...idDrift];
     if (problems.length) {
-      console.error('[api-contract] 契约产物过期 —— 先跑: (gateway) npm run emit:openapi && (sdk) npm run gen:api\n' + problems.join('\n'));
+      console.error('[api-contract] 契约产物过期 —— 先跑: (gateway) npm run emit:openapi && (sdk) npm run merge-contract\n' + problems.join('\n'));
     }
     expect(problems).toEqual([]);
   });

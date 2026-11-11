@@ -663,21 +663,6 @@ export class MafwClient implements IMafwClient {
       }
     },
 
-    subscribeToSession: async (
-      sessionID: string,
-    ): Promise<{ on(event: string, cb: (data: any) => void): void }> => {
-      this._sse.connectToSession(this.baseUrl, sessionID)
-      return {
-        on: (event: string, cb: (data: any) => void) => {
-          if (event === 'data') {
-            this._sse.on('*', cb)
-          } else {
-            this._sse.on(event, cb)
-          }
-        },
-      }
-    },
-
     /** SSE 杩炴帴鐘舵€侊紙onopen/onerror 缁存姢锛涗緵鐩戠潱鍣ㄥ仴搴疯疆璇級銆?*/
     connected: (): boolean => this._sse.connected,
 

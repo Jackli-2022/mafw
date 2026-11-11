@@ -31,6 +31,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
 import { authorizeRequest, isLoopbackAddr } from '../core/auth';
+import { errorBody, API_ERROR_CODES } from '../core/http/api-error';
 import { handleGoalControlCommand } from '../core/goal/control-command';
 import { readBody } from '../core/http/http-util';
 import { log } from '../core/utils/logger';
@@ -97,6 +98,11 @@ export interface TransportDeps {
   cors(): TransportCorsHeaders;
   /** `(config.raw as any)?.server?.apiToken || ''` — live (config is reloadable). */
   apiToken(): string;
+  /**
+   * E3-5: schema epoch from release metadata (`releaseMetadata.schemaEpoch`).
+   * null = release metadata not loaded yet → no response header, no enforcement.
+   */
+  schemaEpoch?: () => number | null;
   /** Registry-first dispatch (`routes/registry-dispatch`); auth already passed. */
   dispatchAuthorized(req: http.IncomingMessage, res: http.ServerResponse, apiToken: string): Promise<boolean>;
   /** `Scheduler.handlePluginWebWildcard` — `ui/*` / `api/*` plugin surfaces. */
@@ -150,6 +156,11 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
       res.setHeader("Access-Control-Allow-Methods", cors.methods);
       res.setHeader("Access-Control-Allow-Headers", cors.headers);
 
+      // E3-5：schema epoch 握手（opt-in）。header 尽早写出（auth 前），
+      // 客户端可据此判断服务端契约版本；metadata 未就绪（null）时省略。
+      const schemaEpoch = deps.schemaEpoch?.() ?? null;
+      if (schemaEpoch !== null) res.setHeader('X-MAFW-Schema-Epoch', String(schemaEpoch));
+
       if (req.method === "OPTIONS") {
       res.writeHead(204);
       res.end();
@@ -164,8 +175,20 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
     const apiToken = deps.apiToken();
     if (!authorizeRequest({ remoteAddress: req.socket.remoteAddress || '', headers: req.headers as any, url: req.url, host: String(req.headers.host || '') }, apiToken)) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'unauthorized' }));
+      res.end(JSON.stringify(errorBody('unauthorized', API_ERROR_CODES.unauthorized)));
       return;
+    }
+
+    // E3-5：auth 之后、registry 之前校验客户端主动携带的 epoch。只有**携带**且
+    // 不匹配才拒绝（409）；不携带 / 匹配 / 服务端 epoch 未知 → 照旧放行。
+    const requestedEpochHeader = req.headers['x-mafw-schema-epoch'];
+    if (schemaEpoch !== null && requestedEpochHeader !== undefined) {
+      const requestedEpoch = Array.isArray(requestedEpochHeader) ? requestedEpochHeader[0] : requestedEpochHeader;
+      if (String(requestedEpoch).trim() !== '' && Number(requestedEpoch) !== schemaEpoch) {
+        res.writeHead(409, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(errorBody('schema epoch mismatch', API_ERROR_CODES.schema_epoch_mismatch)));
+        return;
+      }
     }
 
     // P5 Wave 1: registry dispatch —— attach 过 handler 的路由在 legacy 链之前
@@ -184,7 +207,7 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
 
     // POST /a2a — A2A JSON-RPC (standard protocol methods)
     if (url === "/a2a" && req.method === "POST") {
-      if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
+      if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify(errorBody('forbidden', API_ERROR_CODES.forbidden))); return; }
       try {
         if (!deps.mediaAgent()) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaAgent not initialized' })); return; }
         const rawBody = await readBody(req);
@@ -205,7 +228,7 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
 
     // GET /.well-known/agent-card.json — A2A agent discovery
     if (url === '/.well-known/agent-card.json' && req.method === 'GET') {
-      if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
+      if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify(errorBody('forbidden', API_ERROR_CODES.forbidden))); return; }
       try {
         if (!deps.mediaAgent()) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaAgent not initialized' })); return; }
         res.setHeader('Content-Type', 'application/a2a+json');
@@ -220,7 +243,7 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
     // GET /a2a/artifacts/<id> — task artifact download (spec §6.7 output reference)
     const artifactId = matchArtifactId(url);
     if (artifactId && req.method === 'GET') {
-      if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
+      if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify(errorBody('forbidden', API_ERROR_CODES.forbidden))); return; }
       try {
         if (!deps.mediaAgent()) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaAgent not initialized' })); return; }
         const artifact = deps.mediaAgent()!.getArtifact(artifactId);
@@ -469,7 +492,7 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
     } catch (err: any) {
       log.error('[Scheduler] Unhandled request error:', err.message);
       if (!res.headersSent) {
-        try { res.writeHead(500); res.end(JSON.stringify({ error: err.message }));
+        try { res.writeHead(500); res.end(JSON.stringify(errorBody(err.message, API_ERROR_CODES.internal)));
         } catch { /* response already ended */ }
       }
     }

@@ -545,8 +545,7 @@ export async function bootKernel(kernel: BootKernel): Promise<void> {
   }
 
   // 4. Dashboard is now served via the API server on the same port
-  // kernel.dashboard = new DashboardServer(3001, kernel.projectDir, this);
-  // kernel.dashboard.start();
+  //    (the legacy in-process DashboardServer was removed in E3-1).
 
   // 5. 恢复注册表（权威源：gateway DB kv_store + legacy 文件兜底）
   await kernel.recoverRegistry();

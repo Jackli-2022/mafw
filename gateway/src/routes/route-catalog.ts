@@ -16,7 +16,7 @@
  *
  * 刻意不登记：/mcp（传输端点非 REST）、/api/ws（websocket upgrade）、dashboard SPA
  * fallback 与静态资源（/index.html、/assets/*、/static/*）、dashboard 委托内部子路由
- * （/api/memory/{tier}/{id} 等，见 dashboard/api.ts）、/api/events?stream=true（与
+ * （/api/memory/{tier}/{id} 等，见 subsystems/dashboard-legacy.ts）、/api/events?stream=true（与
  * /api/events 同路径，不单独登记）。P5 Wave 2 反向审计后补齐：devices/mobile 全家、
  * automations history、goals loops :n、A2A agent-card、runtime reload、permissions
  * runtime 代理、legacy singular session delete。
@@ -24,13 +24,19 @@
 
 import type { RouteDef } from './registry';
 import { SessionListResponse } from './schemas/session';
+import {
+  GoalViewSchema,
+  PresenceResponse,
+  ProjectListResponse,
+  UsageSummaryResponse,
+} from './schemas/read-models';
 
 /**
  * SDK-facing 端点（catalog → gateway-paths → openapi 单向生成；**在此新增**后必须重跑
  * `emit:openapi` + `gen:api`，不要反向手改 openapi.json）。
  */
 const SDK_FACING_ROUTES: RouteDef[] = [
-  { method: 'GET', path: '/api/presence', operationId: 'presence.get', tags: ['presence'] },
+  { method: 'GET', path: '/api/presence', operationId: 'presence.get', tags: ['presence'], response: PresenceResponse },
   { method: 'GET', path: '/api/pods/:podId/events', operationId: 'pod.events.list', tags: ['pod'] },
   { method: 'POST', path: '/api/pods/:podId/events/:id/seen', operationId: 'pod.events.seen', tags: ['pod'] },
   { method: 'POST', path: '/api/pods/:podId/events/seen', operationId: 'pod.events.seenAll', tags: ['pod'] },
@@ -98,7 +104,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'DELETE', path: '/api/terminal/sessions/:id', operationId: 'terminal.remove', tags: ['terminal'] },
   { method: 'POST', path: '/api/terminal/sessions/:id/connect-ticket', operationId: 'terminal.connectTicket', tags: ['terminal'] },
   { method: 'GET', path: '/api/usage', operationId: 'session.usage', tags: ['session'] },
-  { method: 'GET', path: '/api/usage/summary', operationId: 'session.usageSummary', tags: ['session'] },
+  { method: 'GET', path: '/api/usage/summary', operationId: 'session.usageSummary', tags: ['session'], response: UsageSummaryResponse },
   { method: 'GET', path: '/api/usage/plugins', operationId: 'session.usagePluginsList', tags: ['session'] },
   { method: 'POST', path: '/api/usage/plugins/reload', operationId: 'session.usagePluginsReload', tags: ['session'] },
   { method: 'POST', path: '/api/usage/plugins/create', operationId: 'session.usagePluginsCreate', tags: ['session'] },
@@ -118,7 +124,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/mafw-commands', operationId: 'mafwCommands.list', tags: ['mafwCommands'] },
   { method: 'GET', path: '/api/manager/session', operationId: 'manager.session', tags: ['manager'] },
   { method: 'POST', path: '/api/manager/session/rotate', operationId: 'manager.rotate', tags: ['manager'] },
-  { method: 'GET', path: '/api/projects', operationId: 'project.list', tags: ['project'] },
+  { method: 'GET', path: '/api/projects', operationId: 'project.list', tags: ['project'], response: ProjectListResponse },
   { method: 'GET', path: '/api/projects/current', operationId: 'project.current', tags: ['project'] },
   { method: 'POST', path: '/register', operationId: 'project.setCurrent', tags: ['project'] },
   { method: 'POST', path: '/api/file-history/snapshot', operationId: 'fileHistory.snapshot', tags: ['internal'] },
@@ -151,7 +157,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/runtime-config', operationId: 'runtime.config.get', tags: ['runtime'] },
   { method: 'PATCH', path: '/api/runtime-config', operationId: 'runtime.config.update', tags: ['runtime'] },
   { method: 'GET', path: '/api/goals', operationId: 'goals.list', tags: ['goals'] },
-  { method: 'GET', path: '/api/goals/:id', operationId: 'goals.get', tags: ['goals'] },
+  { method: 'GET', path: '/api/goals/:id', operationId: 'goals.get', tags: ['goals'], response: GoalViewSchema },
   { method: 'GET', path: '/api/goals/:id/plan', operationId: 'goals.plan', tags: ['goals'] },
   { method: 'POST', path: '/api/goals/:id/plan-approval', operationId: 'goals.planApproval', tags: ['goals'] },
   { method: 'GET', path: '/api/goals/:id/sessions', operationId: 'goals.sessions', tags: ['goals'] },
@@ -313,9 +319,7 @@ const NON_SDK_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/memory/get', operationId: 'memory.get', tags: ['internal'] },
   { method: 'GET', path: '/api/memory/stats', operationId: 'memory.stats', tags: ['internal'] },
   { method: 'POST', path: '/api/memory/embeddings/backfill', operationId: 'memory.embeddingsBackfill', tags: ['internal'] },
-  { method: 'GET', path: '/api/l5/heuristics', operationId: 'memory.getL5Heuristics', tags: ['internal'] },
   // Goal / 编排（§5.20）
-  { method: 'GET', path: '/api/goals/:id/loops', operationId: 'goals.loops', tags: ['internal'] },
   { method: 'POST', path: '/api/work/:goalId/complete', operationId: 'goals.complete', tags: ['internal'] },
   { method: 'POST', path: '/control', operationId: 'goals.controlLegacy', summary: 'MCP 兼容别名，与 /api/goals/control 同 handler', tags: ['internal'] },
   { method: 'GET', path: '/api/orchestration/outcomes', operationId: 'orchestration.outcomes', tags: ['internal'] },
@@ -324,20 +328,10 @@ const NON_SDK_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/media/resolve-task/:id', operationId: 'media.resolveTask', tags: ['internal'] },
   { method: 'POST', path: '/api/media/analyze-audio', operationId: 'media.analyzeAudio', tags: ['internal'] },
   { method: 'POST', path: '/api/media/plugins/reload', operationId: 'media.pluginsReload', tags: ['internal'] },
-  // 用量 dashboard / 健康
+  // 用量 dashboard（/api/stats 由 routes/dashboard.ts 挂 handler；其余旧 dashboard
+  // 形状在 E3-1 清理：costs/alignment/feedback/userAnswer/session.metrics/health.check
+  // 与 gateway.* 控制面只在已删除的死模块 src/dashboard/api.ts 里有实现，从不可达）。
   { method: 'GET', path: '/api/stats', operationId: 'dashboard.stats', tags: ['internal'] },
-  { method: 'GET', path: '/api/costs/:window', operationId: 'dashboard.costs', tags: ['internal'] },
-  { method: 'GET', path: '/api/alignment', operationId: 'dashboard.alignment', tags: ['internal'] },
-  { method: 'POST', path: '/api/feedback', operationId: 'feedback.record', tags: ['internal'] },
-  { method: 'GET', path: '/api/user-answers/:id', operationId: 'dashboard.userAnswer', tags: ['internal'] },
-  { method: 'GET', path: '/api/sessions/:id/metrics', operationId: 'session.metrics', tags: ['internal'] },
-  { method: 'GET', path: '/api/health', operationId: 'health.check', tags: ['internal'] },
-  // Gateway 控制（goal PAUSE/ABORT 等控制面）
-  { method: 'POST', path: '/api/gateway/pause', operationId: 'gateway.pause', tags: ['internal'] },
-  { method: 'POST', path: '/api/gateway/resume', operationId: 'gateway.resume', tags: ['internal'] },
-  { method: 'POST', path: '/api/gateway/cancel', operationId: 'gateway.cancel', tags: ['internal'] },
-  { method: 'POST', path: '/api/gateway/checkpoint', operationId: 'gateway.checkpoint', tags: ['internal'] },
-  { method: 'POST', path: '/api/gateway/rollback', operationId: 'gateway.rollback', tags: ['internal'] },
   // 移动端（P5 Wave 2 反向审计后全量登记）
   { method: 'POST', path: '/api/mobile/media/tasks/:id/ask', operationId: 'mobile.mediaTaskAsk', tags: ['internal'] },
   { method: 'POST', path: '/api/mobile/media/tasks', operationId: 'mobile.mediaTaskUpload', tags: ['internal'] },
@@ -358,7 +352,6 @@ const NON_SDK_ROUTES: RouteDef[] = [
   // NON_SDK 并标 internal，SDK 死契约门据此豁免。
   { method: 'GET', path: '/api/automations/:id', operationId: 'automations.get', tags: ['internal'] },
   { method: 'GET', path: '/api/automations/:id/history', operationId: 'automations.history', tags: ['internal'] },
-  { method: 'GET', path: '/api/goals/:id/loops/:n', operationId: 'goals.loopsAt', tags: ['internal'] },
   { method: 'POST', path: '/api/runtime/reload', operationId: 'runtime.reload', tags: ['internal'] },
   { method: 'POST', path: '/api/runtime/dry-event', operationId: 'runtime.dryEvent', tags: ['internal'] },
   { method: 'POST', path: '/api/runtime/conformance', operationId: 'runtime.conformance', tags: ['internal'] },

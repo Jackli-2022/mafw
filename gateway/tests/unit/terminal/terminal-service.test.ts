@@ -473,6 +473,7 @@ describe('terminal.pty surface projection', () => {
     expect(projectExperienceActions(access, {})['terminal.attach']).toEqual({
       supported: true,
       enabled: true,
+      operationId: 'terminal.connectTicket',
       semantics: { persistent: true, protocol: MAFW_TERMINAL_PROTOCOL },
     });
   });
@@ -484,6 +485,7 @@ describe('terminal.pty surface projection', () => {
       supported: false,
       enabled: false,
       reason: 'unsupported',
+      operationId: 'terminal.connectTicket',
     });
   });
 });

@@ -67,6 +67,37 @@ export const EXPERIENCE_ACTION_SURFACES: Record<ExperienceActionId, readonly str
 };
 
 /**
+ * action → catalog operationId（E3-4）。只登记**有真实 HTTP 路由**的动作；
+ * 纯客户端动作（或没有单一主路由的复合动作）不填，保持 `operationId` 可选语义。
+ *
+ * 复合动作取「入口/主操作」路由：run.control → suspend（resume/discard 是同
+ * 路由族的兄弟操作）；background.jobs → list（output/cancel 为子资源）；
+ * mcp.manage → servers（connect/disconnect 为子动作）；approval.* → reply。
+ */
+export const EXPERIENCE_ACTION_OPERATIONS: Partial<Record<ExperienceActionId, string>> = {
+  'checkpoint.restore': 'session.restoreCheckpoint',
+  'checkpoint.create': 'session.checkpoint',
+  'branch.fork': 'session.fork',
+  'branch.revert': 'session.revert',
+  'branch.unrevert': 'session.unrevert',
+  'branch.diff': 'session.diff',
+  'run.control': 'session.suspend',
+  'session.worktree': 'session.create',
+  'session.summarize': 'session.summarize',
+  'session.switch-agent': 'session.switchAgent',
+  'session.switch-model': 'session.switchModel',
+  'session.discovery': 'session.discovery',
+  'approval.permission': 'permissions.reply',
+  'approval.question': 'questions.reply',
+  'background.jobs': 'background.jobs.list',
+  'terminal.attach': 'terminal.connectTicket',
+  'prompt.steer': 'session.prompt',
+  'session.background': 'session.background',
+  'mcp.manage': 'mcp.servers',
+  'mcp.config.write': 'mcp.configApply',
+};
+
+/**
  * 回合进行中（busy）不得进入的动作——它们要么会改写会话历史/工作区，要么要求稳定状态。
  * 纯查询（diff/discovery/switch/MCP/approval）与 busy-only 动作（steer / run.control 的
  * suspend）不受限：busy-only 动作正是只在运行中的回合里有意义，禁用它们等于把功能删掉。
@@ -189,7 +220,10 @@ export function projectExperienceActions(
         : environmentBlocked
           ? worktree?.reason ?? 'missing-data'
           : 'busy';
-    actions[id] = action(supported, enabled, reason, semanticsFor(id, access, supported));
+    const descriptor = action(supported, enabled, reason, semanticsFor(id, access, supported));
+    const operationId = EXPERIENCE_ACTION_OPERATIONS[id];
+    if (operationId) descriptor.operationId = operationId;
+    actions[id] = descriptor;
   }
   return actions;
 }

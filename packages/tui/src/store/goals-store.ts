@@ -27,7 +27,7 @@ export class GoalsStore {
   }
 
   static isActive(g: Goal): boolean {
-    return !TERMINAL_PHASES.includes(g.phase)
+    return !TERMINAL_PHASES.includes(g.phase ?? '')
   }
 
   start(): void {

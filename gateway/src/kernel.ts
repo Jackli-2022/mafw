@@ -17,7 +17,6 @@ import { randomUUID } from 'crypto';
 import * as http from 'http';
 import * as https from 'https';
 import { spawn, execSync } from 'child_process';
-// import { DashboardServer } from './dashboard/server';
 import { config } from "./config";
 import { MutexQueue } from './concurrency/mutex-queue';
 import { TtlMap } from './concurrency/ttl-map';
@@ -41,6 +40,7 @@ import { handleDashboardAPI, type DashboardLegacyDeps } from './subsystems/dashb
 // D3 Task 6：43 条 attach*（lead/pod cargo 在内）整体搬入 subsystems/（顺序即优先级）。
 import { attachAllRoutes, type ApiRouteDeps } from './subsystems/api-routes';
 import { normalizeDir, isPortHealthy } from './core/http/http-util';
+import { errorBody, API_ERROR_CODES } from './core/http/api-error';
 import { NodeDriver } from './core/goal/driver';
 import { parseReviewRubric, taskIdsFromWavePlan } from './core/goal/review-rubric';
 import { ensureGoalState, effectiveRevision, isTerminalState, loadGoalState } from './core/goal/state-v3';
@@ -58,7 +58,6 @@ import { recordSessionInDb } from './core/engine/phase-orchestrator';
 
 import { McpSSEEndpoint } from "./mcp/sse-transport";
 import { McpStreamableEndpoint } from "./mcp/streamable-endpoint";
-import { ChatSessionManager } from "./chat/chat-sessions";
 import { SdkSessionResource } from "./resources/sdk-session";
 import { structuredOutput } from './runtime/structured-output';
 import { SubagentService } from './runtime/subagent-service';
@@ -641,7 +640,6 @@ class MafwScheduler {
     getMilestonePush: () => this.getMilestonePush(),
     ingestInternalEvent: (kind, data) => this.ingestInternalEvent(kind, data),
   });
-  private chatSessions: ChatSessionManager;
   private sdkSession!: SdkSessionResource;
   private instructionSync?: InstructionSyncService;
   private discovery?: DiscoveryService;
@@ -750,7 +748,6 @@ class MafwScheduler {
     this.apiPort = config.server.apiPort;
     this.pollInterval = config.timeouts.backupPollInterval;
     this.registryPath = config.paths.registryFile;
-    this.chatSessions = new ChatSessionManager();
     this.serveSupervisor = createServeSupervisor({
       // 全部经组合根 RuntimeHost（facade 不再暴露进程原语）且 late-bound（runtime 可热切换）：
       // managed = runtime 是否持有启停原语；health = 契约 healthCheck；
@@ -1066,8 +1063,9 @@ class MafwScheduler {
     // Skill v1 6B: trusted activation signal (runtime `tool.call` with tool=skill).
     // Reading/listing a skill never reaches this path; failure is mechanical only.
     try { observeSkillInvocation(this.getGatewayDb(), f); } catch { /* fail-open */ }
-    // Phase D2：24 段有序 stage 表（src/runtime/event-dispatch.ts）。数组位置即执行顺序；
-    // 仅 nativeDrop / toolPrimitiveDrop / internalFilter 三段可 HALT（legacy early return）。
+    // Phase D2：23 段有序 stage 表（src/runtime/event-dispatch.ts；E3-2 删 Mode B 后
+    // 由 24 段降为 23）。数组位置即执行顺序；仅 nativeDrop / toolPrimitiveDrop /
+    // internalFilter 三段可 HALT（legacy early return）。
     runEventPipeline(f, evt, this.buildDispatchCtx());
   }
 
@@ -1102,7 +1100,6 @@ class MafwScheduler {
       scheduler: () => this.scheduler,
       getTurnPipeline: () => this.getTurnPipeline(),
       scanService: () => this.scanService,
-      chatSessions: () => this.chatSessions,
     };
   }
 
@@ -1110,7 +1107,10 @@ class MafwScheduler {
   private capGuard(res: http.ServerResponse, surface: string): boolean {
     if (this.runtime?.access.can(surface)) return false;
     res.writeHead(503);
-    res.end(JSON.stringify({ error: `runtime surface '${surface}' is not available` }));
+    res.end(JSON.stringify(errorBody(
+      `runtime surface '${surface}' is not available`,
+      API_ERROR_CODES.capability_unavailable,
+    )));
     return true;
   }
 
@@ -1119,7 +1119,10 @@ class MafwScheduler {
     const legacyQuestion = this.runtimeCaps.questionApi === undefined && !!this.runtimeCaps.nativeApprovals;
     if (this.runtime?.access.can('approval.question.list') || legacyQuestion) return false;
     res.writeHead(503);
-    res.end(JSON.stringify({ error: "runtime surface 'approval.question.list' is not available" }));
+    res.end(JSON.stringify(errorBody(
+      "runtime surface 'approval.question.list' is not available",
+      API_ERROR_CODES.capability_unavailable,
+    )));
     return true;
   }
 
@@ -5104,7 +5107,6 @@ class MafwScheduler {
       get allowlistStore() { return self.allowlistStore; },
       get permissionRules() { return self.permissionRules; },
       get approvalPolicy() { return self.approvalPolicy; },
-      get chatSessions() { return self.chatSessions; },
       get coactivationGraphStore() { return self.coactivationGraphStore; },
       get consolidationService() { return self.consolidationService; },
       get eventStore() { return self.eventStore; },
@@ -5202,6 +5204,8 @@ class MafwScheduler {
     return {
       cors: () => config.server.cors,
       apiToken: () => (config.raw as any)?.server?.apiToken || '',
+      // E3-5：live 读取（release metadata 在 boot 阶段加载，attach 早于它就是 null）。
+      schemaEpoch: () => this.releaseMetadata?.schemaEpoch ?? null,
       dispatchAuthorized: (req, res, apiToken) =>
         dispatchAuthorized({ registry: this.routeRegistry, apiToken }, req, res),
       pluginWebWildcard: (req, res) => this.handlePluginWebWildcard(req, res),
