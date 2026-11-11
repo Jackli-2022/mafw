@@ -120,6 +120,20 @@ import {
   persistedWorkbenchContext,
   type WorkbenchContext,
 } from "./workbench-context"
+import {
+  createWorkbenchState,
+  jumpTo,
+  lensesFor,
+  openSubject,
+  popFocus,
+  replaceLens,
+  type Focus,
+  type Lens,
+  type Scope,
+  type WorkbenchState,
+} from "./focus/focus-model"
+import { frameView, type FrameView } from "./focus/frame-view"
+import { buildCommandPickerItems, buildFilePickerItems, type PickerItem } from "./focus/picker-model"
 import { fileOpenPlan } from "./file-kind"
 import { fileProtocol } from "./file-protocol-client"
 import { requestBrowserNavigate } from "./browser-nav"
@@ -2307,6 +2321,8 @@ export function MafwShell() {
     if (!root) return
     if (intent) setContentIntent(intent)
     const scope = contentScope()
+    const nextScope = focusScopeFromContent(scope)
+    const nextLens = focusLensForIntent(intent ?? contentIntent())
     // 分流（2026-10-27 文件预览）：html → 浏览器 surface（mafw-file:// 单 webview 导航）；
     // 图片/SVG/文本 → 文件 surface（编辑器内部按 kind 渲染）。
     if (fileOpenPlan(rel) === "browser") {
@@ -2320,6 +2336,14 @@ export function MafwShell() {
         try {
           requestBrowserNavigate(buildMafwFileUrl(token, rel))
           openWorkbenchSurface("browser")
+          setFocusState((state) =>
+            openSubject(
+              { ...state, worldId: nextScope.worldId },
+              nextScope,
+              { kind: "web", url: buildMafwFileUrl(token, rel) },
+              "interact",
+            ),
+          )
           recordRecentFile(rel, scope)
         } catch {
           showToastV2({ description: "无法打开该文件路径", variant: "error", duration: 4000 } as any)
@@ -2330,6 +2354,9 @@ export function MafwShell() {
     if (rememberLocation) rememberContentLocation()
     requestOpenEditor(root, rel)
     openWorkbenchSurface("code")
+    setFocusState((state) =>
+      openSubject({ ...state, worldId: nextScope.worldId }, nextScope, { kind: "file", root, rel }, nextLens),
+    )
     recordRecentFile(rel, scope)
   }
   /** 项目首页 › 项目文件：始终回到项目主目录，不继承当前 Goal revision scope。 */
@@ -2457,6 +2484,111 @@ export function MafwShell() {
   const [contentSplit, setContentSplit] = createSignal(false)
   const contentRoot = createMemo(() => contentScopeRoot(contentScope()) ?? currentProject())
   const currentContentScopeKey = createMemo(() => contentScopeKey(contentScope()))
+  const [focusState, setFocusState] = createSignal<WorkbenchState>(
+    createWorkbenchState(currentProject() ?? "unscoped"),
+  )
+  const [pickerOpen, setPickerOpen] = createSignal(false)
+  const [pickerFiles, setPickerFiles] = createSignal<string[]>([])
+  const focusScopeFromContent = (scope: ContentScope | null): Scope => {
+    if (!scope) return { kind: "world", worldId: currentProject() ?? "unscoped" }
+    if (scope.kind === "project") return { kind: "world", worldId: scope.projectDir }
+    return {
+      kind: "goal",
+      worldId: scope.projectDir,
+      goalId: scope.goalId,
+      revision: scope.revision,
+      worktreeDir: scope.worktreeDir,
+    }
+  }
+  const contentScopeFromFocus = (scope: Scope): ContentScope =>
+    scope.kind === "world"
+      ? { kind: "project", projectDir: scope.worldId }
+      : {
+          kind: "goal",
+          projectDir: scope.worldId,
+          goalId: scope.goalId,
+          revision: scope.revision,
+          worktreeDir: scope.worktreeDir,
+          title: null,
+        }
+  const activeFocus = (): Focus | null =>
+    focusState().stack[focusState().stack.length - 1] ?? null
+  const focusLenses = (): readonly Lens[] => {
+    const focus = activeFocus()
+    return focus ? lensesFor(focus.subject) : []
+  }
+  const focusLensForIntent = (intent: ContentIntent): Lens =>
+    intent === "editing" ? "edit" : "read"
+  const focusScope = (): Scope => focusScopeFromContent(contentScope())
+  const focusScopeLabel = (scope: Scope): string =>
+    scope.kind === "world" ? "项目文件" : `Goal · rev ${scope.revision}`
+  const focusFrame = createMemo<FrameView | null>(() => {
+    const focus = activeFocus()
+    if (!focus) return null
+    const subject = focus.subject
+    const subjectLabel =
+      subject.kind === "file" ? subject.rel
+      : subject.kind === "reviewItem" ? (subject.anchor?.rel ?? "评审项")
+      : subject.kind === "changeSet" ? "变更集"
+      : subject.kind === "goal" ? "Goal"
+      : subject.kind === "world" ? "世界"
+      : subject.kind === "web" ? "浏览器"
+      : subject.kind === "terminal" ? "终端"
+      : subject.kind === "plugin" ? "插件"
+      : "证据"
+    return frameView({
+      worldName: railProjectName(currentProject(), true),
+      scopeLabel: focusScopeLabel(focus.scope),
+      subjectLabel,
+      scopeStartIndex: 0,
+      subjectIndex: focusState().stack.length - 1,
+      revision: focus.scope.kind === "goal" ? focus.scope.revision : undefined,
+      external: subject.kind === "web" || subject.kind === "terminal" || subject.kind === "plugin",
+    })
+  })
+  const applyFocusLens = (lens: Lens) => {
+    setFocusState((state) => replaceLens(state, lens))
+    if (lens === "read") setContentIntent("reading")
+    else if (lens === "edit") setContentIntent("editing")
+  }
+  const focusBack = () => {
+    const state = focusState()
+    if (state.stack.length > 1) {
+      setFocusState(popFocus(state))
+      return
+    }
+    setFocusState(createWorkbenchState(currentProject() ?? "unscoped"))
+    applyWorkbenchContext("project")
+  }
+  const focusCrumb = (index: number) => setFocusState((state) => jumpTo(state, index))
+  const openSubjectPicker = () => {
+    setPickerOpen(true)
+    void window.api.mafw.files.list().then(setPickerFiles).catch(() => {})
+  }
+  const pickerItems = createMemo<PickerItem[]>(() => {
+    const project = currentProject()
+    const worldId = project ?? "unscoped"
+    const scope = focusScope()
+    const projectScope: Scope = { kind: "world", worldId }
+    const items = buildFilePickerItems({
+      worldId,
+      files: pickerFiles(),
+      recent: recentContent(),
+      root: contentRoot() ?? project ?? "",
+      scope,
+      projectScope,
+    })
+    return [...items, ...buildCommandPickerItems(scope)]
+  })
+  const pickSubject = (item: PickerItem) => {
+    setPickerOpen(false)
+    if (item.subject.kind === "file") {
+      setContentScope(contentScopeFromFocus(item.scope))
+      openContentFile(item.subject.rel, item.subject.root, true, item.lens === "edit" ? "editing" : "reading")
+      return
+    }
+    setFocusState((state) => openSubject({ ...state, worldId: item.scope.worldId }, item.scope, item.subject, item.lens))
+  }
   const contentScopeIsGoal = createMemo(() => contentScope()?.kind === "goal")
   const [contentHistory, setContentHistory] = createSignal<ContentHistoryEntry[]>([])
   // 项目切换/重启：恢复该项目上次的内容 scope；Goal worktree 不可用时回退项目根。
@@ -3469,6 +3601,17 @@ export function MafwShell() {
                   executionOpen={executionOpen()}
                   focus={workbenchFocus()}
                   onToggleFocus={toggleWorkbenchFocus}
+                  focusView={activeFocus()}
+                  frame={focusFrame()}
+                  lenses={focusLenses()}
+                  onFocusLens={applyFocusLens}
+                  onFocusBack={focusBack}
+                  onFocusCrumb={focusCrumb}
+                  pickerOpen={pickerOpen()}
+                  pickerItems={pickerItems()}
+                  onOpenPicker={openSubjectPicker}
+                  onClosePicker={() => setPickerOpen(false)}
+                  onPick={pickSubject}
                   onContext={applyWorkbenchContext}
                   onBackToProject={backWorkbenchContext}
                   onSurface={applyWorkbenchSurface}

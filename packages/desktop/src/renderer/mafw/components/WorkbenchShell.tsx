@@ -15,6 +15,13 @@ import { observePluginTabCapacity, planPluginTabs, type PluginTabSurface } from 
 import type { PluginWebSurfaceView } from "../plugins/plugin-web-surface"
 import { WorkbenchCodeView } from "./WorkbenchCodeView"
 import { ContentScopeHeader } from "./ContentScopeHeader"
+import { FrameBar } from "./FrameBar"
+import { LensBar } from "./LensBar"
+import { FocusStage } from "./FocusStage"
+import { SubjectPicker } from "./SubjectPicker"
+import type { Focus, Lens } from "../focus/focus-model"
+import type { FrameView } from "../focus/frame-view"
+import type { PickerItem } from "../focus/picker-model"
 import type { ContentIntent } from "../content-intent"
 import type { FileDiffEntry } from "./DiffReviewPanel"
 import type { AnnotationAnchor } from "../../../shared/annotation-types"
@@ -70,6 +77,19 @@ export type WorkbenchShellProps = {
   /** Focus：右工作台占满 chat+workbench 区域（chat 列宽 0，仍保持挂载）。 */
   focus?: boolean
   onToggleFocus?: () => void
+  /** 焦点栈当前对象；非空时优先于 legacy context。 */
+  focusView: Focus | null
+  frame: FrameView | null
+  lenses: readonly Lens[]
+  lensCounts?: Partial<Record<Lens, number>>
+  onFocusLens: (lens: Lens) => void
+  onFocusBack: () => void
+  onFocusCrumb: (index: number) => void
+  pickerOpen: boolean
+  pickerItems: readonly PickerItem[]
+  onOpenPicker: () => void
+  onClosePicker: () => void
+  onPick: (item: PickerItem) => void
   workView: JSX.Element
   goalView: JSX.Element
   executionView: JSX.Element
@@ -156,7 +176,29 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
 
   return (
     <div class="mafw-rw-shell">
-      <div class="mafw-rw-head">
+      <Show when={props.focusView} keyed>
+        {(focus) => (
+          <>
+            <FrameBar
+              crumbs={props.frame?.crumbs ?? []}
+              badges={props.frame?.badges ?? []}
+              canBack={true}
+              onBack={props.onFocusBack}
+              onCrumb={props.onFocusCrumb}
+              onOpenPicker={props.onOpenPicker}
+            />
+            <LensBar
+              lenses={props.lenses}
+              active={focus.lens}
+              counts={props.lensCounts}
+              onLens={props.onFocusLens}
+            />
+          </>
+        )}
+      </Show>
+
+      <Show when={!props.focusView}>
+        <div class="mafw-rw-head">
         <div class="mafw-rw-context">
           <Show when={props.context !== "project"}>
             <ButtonV2
@@ -287,8 +329,36 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
           onReturnToProject={props.onReturnToProjectContent}
         />
       </Show>
+      </Show>
 
-      <div class="mafw-rw-content">
+      <Show when={props.focusView} keyed>
+        {(focus) => (
+          <FocusStage
+            focus={focus}
+            active={props.open}
+            sessionID={props.sessionID}
+            contentRoot={props.contentRoot}
+            contentScopeKey={props.contentScopeKey}
+            diffs={props.diffs}
+            onOpenFile={props.onOpenFile}
+            onActiveFileChange={props.onContentDocument}
+            onSendAnnotation={props.onSendAnnotation}
+            onAddAnnotation={props.onAddAnnotation}
+            onSendComment={props.onSendComment}
+            onOpenReview={props.onOpenReview}
+            renderPluginSurface={props.renderPluginSurface}
+            webSurfaces={props.webSurfaces}
+            gatewayUrl={props.gatewayUrl}
+            onWebBadge={props.onWebBadge}
+            onWebTitle={props.onWebTitle}
+            onWebError={props.onWebError}
+            renderGoal={() => props.goalView}
+            renderWorld={() => props.workView}
+          />
+        )}
+      </Show>
+
+      <div class="mafw-rw-content" style={{ display: props.focusView ? "none" : undefined }}>
         <div class="mafw-rw-pane" classList={{ "is-active": props.context === "project" }}>
           {props.workView}
         </div>
@@ -327,7 +397,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
         </div>
       </div>
 
-      <Show when={props.executionOpen}>
+      <Show when={!props.focusView && props.executionOpen}>
         <div class="mafw-rw-exec-drawer" role="region" aria-label="执行详情">
           <div class="mafw-rw-exec-head">
             <span class="mafw-rw-exec-title">执行详情</span>
@@ -364,6 +434,13 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
           <div class="mafw-rw-exec-body">{props.executionView}</div>
         </div>
       </Show>
+
+      <SubjectPicker
+        open={props.pickerOpen}
+        items={props.pickerItems}
+        onClose={props.onClosePicker}
+        onPick={props.onPick}
+      />
     </div>
   )
 }
