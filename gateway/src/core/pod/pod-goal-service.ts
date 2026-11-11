@@ -729,6 +729,7 @@ export class PodGoalService {
         throw new PodError(
           409,
           `unresolved review items: ${unresolved.length}; handle them or confirm the risk to force acceptance`,
+          'review_gate',
         );
       }
       if (opts.riskAcknowledged !== true) {

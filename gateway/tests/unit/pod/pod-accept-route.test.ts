@@ -83,6 +83,20 @@ describe('POST /api/pods/:podId/goals/:goalId/accept', () => {
     expect(deps.goals.acceptResult).not.toHaveBeenCalled();
   });
 
+  it('returns the review-gate code with the 409 body', async () => {
+    const deps = makeDeps({
+      goals: {
+        ...makeDeps().goals,
+        acceptResult: jest.fn(async () => {
+          throw new PodError(409, 'unresolved review items: 1', 'review_gate');
+        }),
+      },
+    });
+    const out = await call(deps, { revision: 1, confirm: true });
+    expect(out.res.status).toBe(409);
+    expect(out.json).toMatchObject({ code: 'review_gate' });
+  });
+
   it('rejects an agent actor instead of letting it merge', async () => {
     const deps = makeDeps();
     const out = await call(deps, { revision: 1, confirm: true, actorSessionID: 'ses_agent' });

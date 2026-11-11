@@ -255,6 +255,10 @@ export class PodGoalRevisionService {
     });
     // createGoalRevision 幂等：并发/崩溃重试时复用同一 revision 行，carry 也有 origin 去重。
     const openedRevision = row.revision;
+    this.deps.store.refreshGoalRevisionOpen({
+      podId: goal.podId, goalId, revision: openedRevision,
+      status, priority, feedback: reason ? reason : null,
+    });
     // Plan C：未解决意见随新 revision 继续追踪；已解决项留在旧版历史。
     this.deps.store.carryForwardReviewItems({
       podId: goal.podId,

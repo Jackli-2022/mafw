@@ -40,6 +40,17 @@ describe('PodReviewService', () => {
     })).toThrow(PodError);
   });
 
+  test('rejects an oversized batch before writing any row', () => {
+    const { service, store } = setup();
+    const items = Array.from({ length: 20 }, (_, index) => ({
+      rel: `src/${index}.ts`,
+      comment: 'review',
+      code: 'x'.repeat(20000),
+    }));
+    expect(() => service.createItems('pod_1', 'g1', { items })).toThrow(PodError);
+    expect(store.listReviewItems('pod_1', 'g1', 1)).toHaveLength(0);
+  });
+
   test('an invalid item in a batch leaves no partial rows', () => {
     const { service, store } = setup();
     expect(() => service.createItems('pod_1', 'g1', {

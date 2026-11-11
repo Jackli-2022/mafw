@@ -15,6 +15,8 @@ const MAX_CODE = 20000;
 const MAX_ANCHOR = 8000;
 const MAX_RESPONSE = 4000;
 const MAX_NOTE = 2000;
+/** Keep a batch under the route's JSON cap while allowing large single snapshots. */
+const MAX_BATCH_CHARS = 256 * 1024;
 
 export type PodReviewAnchor =
   | { kind: 'quote'; quote: string }
@@ -151,6 +153,13 @@ export class PodReviewService {
       }
       return { rel, comment, code, startLine, endLine, anchorJson };
     });
+    const totalChars = prepared.reduce(
+      (sum, item) => sum + item.rel.length + item.comment.length + item.code.length + (item.anchorJson?.length ?? 0),
+      0,
+    );
+    if (totalChars > MAX_BATCH_CHARS) {
+      throw new PodError(400, 'review item batch is too large');
+    }
 
     // Validate the whole batch before writing: a later invalid item must not
     // leave earlier rows/events behind (annotation send retries would duplicate).

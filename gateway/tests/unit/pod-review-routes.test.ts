@@ -61,6 +61,20 @@ describe('review item routes', () => {
     expect(calls).toEqual(['resolve']);
   });
 
+  test('accepts a review batch larger than the generic pod JSON limit', async () => {
+    const deps = {
+      pods: { get: () => ({ pod: { id: 'pod_1' } }) },
+      reviews: {
+        createItems: (_podId: string, _goalId: string, input: any) => input.items,
+      },
+    } as any as PodRouteDeps;
+    const res = await call(deps, 'POST', '/api/pods/pod_1/goals/g1/review-items', {
+      items: [{ rel: 'src/a.ts', comment: '大文件', code: 'x'.repeat(100 * 1024) }],
+    });
+    expect(res.status).toBe(200);
+    expect(res.json.items).toHaveLength(1);
+  });
+
   test('rejects invalid revisions before calling the service', async () => {
     const deps = {
       pods: { get: () => ({ pod: { id: 'pod_1' } }) },

@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { PodGoalService } from '../../src/core/pod/pod-goal-service';
 import { PodError, PodStore } from '../../src/core/pod/pod-store';
+import { PodReviewService } from '../../src/core/pod/pod-review-service';
 import type { PodGoalResult } from '../../src/core/pod/pod-result';
 
 const now = '2026-11-11T00:00:00.000Z';
@@ -109,6 +110,64 @@ describe('goal acceptance review gate', () => {
     release();
     await pending;
     expect(service.isMutating('pod_1', 'g1')).toBe(false);
+  });
+
+  test('responded items still block normal acceptance in a real store/service stack', async () => {
+    const store = new PodStore(new Database(':memory:'));
+    store.ensurePod({ id: 'pod_1', projectDir: '/tmp/project', name: 'Project', now });
+    store.enqueueGoal({ id: 'podgoal_1', podId: 'pod_1', goalId: 'g1', now });
+    store.setGoalStatus('podgoal_1', 'active', { startedAt: now });
+    store.createGoalRevision({
+      podId: 'pod_1', goalId: 'g1', revision: 1,
+      status: 'completed', verdict: 'PASS', enqueuedAt: now,
+    });
+    store.setActiveRevision('pod_1', 'g1', 1);
+
+    const reviews = new PodReviewService({
+      store,
+      now: () => now,
+      assertTechLeadSession: () => {},
+    });
+    const [item] = reviews.createItems('pod_1', 'g1', {
+      items: [{ rel: 'src/a.ts', comment: '改这里' }],
+    });
+    reviews.respond('pod_1', 'g1', item.id, { sessionID: 'ses_tl', response: '已改，请确认' });
+
+    const result: PodGoalResult = {
+      goalId: 'g1', revision: 1, verdict: 'PASS', resultReady: true,
+      reviewed: true, assessment: 'reviewed', goalAcceptance: [],
+      goalConditions: [], goalResults: [], goalEvalValid: true,
+      tasks: [], reviewFeedback: 'ok', receipt: null, artifacts: [],
+      acceptance: 'pending',
+      worktree: {
+        dir: '/tmp/wt', branch: 'b', baseBranch: 'main',
+        status: 'active', mergeCommit: null, mergedAt: null,
+      },
+    };
+    const service = new PodGoalService({
+      store,
+      pods: { get: () => ({ pod: { id: 'pod_1' } }) } as any,
+      startGoal: async () => {},
+      resolveProjectDir: () => '/tmp/project',
+      now: () => now,
+      newId: () => 'id_1',
+      notify: () => {},
+      resultForGoal: () => result,
+      worktrees: {
+        get: () => ({ status: 'active' }),
+        mergeForAcceptance: async () => ({ branch: 'b', mergeCommit: 'abc1234', mergedAt: now }),
+      } as any,
+      reviews,
+    });
+
+    await expect(service.acceptResult('pod_1', 'g1', { revision: 1 }))
+      .rejects.toMatchObject({ status: 409 });
+    const accepted = await service.acceptResult('pod_1', 'g1', {
+      revision: 1, force: true, riskAcknowledged: true,
+    });
+    expect(accepted.forced).toBe(true);
+    expect(accepted.unresolvedReviewItemIds).toEqual([item.id]);
+    expect(store.getReviewItem(item.id)?.status).toBe('responded');
   });
 
   test('service acceptance has no actor gate; the route enforces human-only', async () => {

@@ -71,7 +71,7 @@ describe('review item revision carry-over', () => {
     // Simulate a crash after create+carry but before setActiveRevision.
     store.createGoalRevision({
       podId: 'pod_1', goalId: 'g1', revision: 2,
-      status: 'discussing', enqueuedAt: now,
+      status: 'discussing', priority: 0, feedback: 'stale', enqueuedAt: now,
     });
     expect(store.carryForwardReviewItems({
       podId: 'pod_1', goalId: 'g1', fromRevision: 1, toRevision: 2, now,
@@ -80,6 +80,9 @@ describe('review item revision carry-over', () => {
     const retry = await revisions.openNextRevision('g1', '请继续', { expectedRevision: 1 });
     expect(retry.opened).toBe(true);
     expect(retry.revision).toBe(2);
+    const row = store.getGoalRevision('pod_1', 'g1', 2);
+    expect(row).toMatchObject({ status: 'discussing', feedback: '请继续' });
+    expect(row!.priority).toBeGreaterThan(0);
     const rev2 = store.listReviewItems('pod_1', 'g1', 2);
     expect(rev2).toHaveLength(1);
     expect(rev2[0].originItemId).toBe(open.id);

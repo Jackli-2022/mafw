@@ -47,6 +47,9 @@ export interface Services {
   hasTrace?: (traceId: string) => boolean;
   /** Bounded abstract→T1 activation propagation (never fails the read). */
   propagateT1Activation?: (traceIds: string[]) => void;
+  /** Plan C: human review items and their store (MCP respond handler). */
+  podReview: import('./core/pod/pod-review-service').PodReviewService;
+  podStore: import('./core/pod/pod-store').PodStore;
 }
 
 export type ToolHandler = (

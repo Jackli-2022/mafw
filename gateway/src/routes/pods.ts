@@ -324,7 +324,7 @@ export async function handlePods(
         const podId = decode(goalReview[1]);
         const goalId = decode(goalReview[2]);
         requirePod(deps, podId);
-        const body = await readJson(req);
+        const body = await readJson(req, REVIEW_ITEMS_BODY_LIMIT);
         if (typeof body?.actorSessionID === 'string' && body.actorSessionID) {
           throw new PodError(403, 'review items are human-only');
         }
@@ -698,7 +698,10 @@ export async function handlePods(
     return false;
   } catch (err: any) {
     const status = err instanceof PodError ? err.status : 500;
-    sendJson(res, status, { error: err?.message ?? String(err) });
+    sendJson(res, status, {
+      error: err?.message ?? String(err),
+      ...(err instanceof PodError && err.code ? { code: err.code } : {}),
+    });
     return true;
   }
 }
@@ -773,14 +776,18 @@ function readMember(deps: PodRouteDeps, url: string, podId: string): PodMemberRo
   return deps.access.requireMember(actor, [...POD_ROSTER_ROLES], podId);
 }
 
-function readJson(req: http.IncomingMessage): Promise<any> {
+const JSON_BODY_LIMIT = 64 * 1024;
+/** Review batches can legitimately carry code snapshots; service limits cap the total. */
+const REVIEW_ITEMS_BODY_LIMIT = 1024 * 1024;
+
+function readJson(req: http.IncomingMessage, maxBytes = JSON_BODY_LIMIT): Promise<any> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
     req.on('data', (chunk: Buffer | string) => {
       const buf = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
       size += buf.length;
-      if (size > 64 * 1024) {
+      if (size > maxBytes) {
         reject(new PodError(413, 'request body too large'));
         return;
       }

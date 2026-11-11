@@ -30,6 +30,7 @@ import {
   type GatewayRuntimeIdentity,
 } from './release-info';
 import { isLoopbackAddr } from './core/auth';
+import type { Services } from './types';
 // D3 Task 3：HTTP 传输链 + WS 上行枢纽（原先内联在 startApiServer 的 626 行回调）。
 import { createRequestListener } from './http/transport';
 import { createWsHub, type WsHub } from './http/ws-upgrade';
@@ -4655,7 +4656,7 @@ class MafwScheduler {
       log.info('[Scheduler] Desktop automation client connected');
     }
 
-    const services = {
+    const services: Services & Record<string, unknown> = {
       memory: this.memoryService,
       searchArchive: (sid: string, anchors: string[], k: number) => this.getGatewayDb().searchArchive(sid, anchors, k),
       resolveT1: (tail: string, turnId: number) => this.getGatewayDb().findT1BySessionTail(tail, turnId),

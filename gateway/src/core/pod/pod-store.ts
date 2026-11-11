@@ -359,7 +359,7 @@ export interface PodSessionRow {
 export const LEGACY_POD_SESSION_RUNTIME = LEGACY_RUNTIME_TAG;
 
 export class PodError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(public status: number, message: string, public code?: string) {
     super(message);
     this.name = 'PodError';
   }
@@ -1269,6 +1269,27 @@ export class PodStore {
       input.startedAt ?? null, input.endedAt ?? null,
     ) as any;
     return goalRevisionFromRow(row);
+  }
+
+  /** Refresh a partial open that is being reused after a crash/retry. */
+  refreshGoalRevisionOpen(input: {
+    podId: string;
+    goalId: string;
+    revision: number;
+    status: PodGoalRevisionStatus;
+    priority: number;
+    feedback: string | null;
+  }): boolean {
+    const info = this.db.prepare(
+      `UPDATE pod_goal_revisions
+       SET status = ?, priority = ?, feedback = ?
+       WHERE pod_id = ? AND goal_id = ? AND revision = ?
+         AND status = 'discussing' AND started_at IS NULL AND verdict IS NULL`,
+    ).run(
+      input.status, input.priority, input.feedback,
+      input.podId, input.goalId, input.revision,
+    );
+    return Number(info.changes) > 0;
   }
 
   getGoalRevision(podId: string, goalId: string, revision: number): PodGoalRevisionRow | null {
