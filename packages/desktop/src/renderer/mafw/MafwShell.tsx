@@ -134,6 +134,12 @@ import {
 } from "./focus/focus-model"
 import { frameView, type FrameView } from "./focus/frame-view"
 import { buildCommandPickerItems, buildFilePickerItems, type PickerItem } from "./focus/picker-model"
+import {
+  configureFocusStorage,
+  flushFocusPersistence,
+  loadFocusState,
+  saveFocusState,
+} from "./focus/focus-persistence"
 import { fileOpenPlan } from "./file-kind"
 import { fileProtocol } from "./file-protocol-client"
 import { requestBrowserNavigate } from "./browser-nav"
@@ -213,6 +219,7 @@ if (typeof window !== "undefined") {
   try {
     configureContentScopeStateStorage(window.localStorage)
     configureEditorDraftStorage(window.localStorage)
+    configureFocusStorage(window.localStorage)
   } catch { /* storage blocked — keep in-memory */ }
 }
 
@@ -2557,8 +2564,10 @@ export function MafwShell() {
       setFocusState(popFocus(state))
       return
     }
-    setFocusState(createWorkbenchState(currentProject() ?? "unscoped"))
-    applyWorkbenchContext("project")
+    if (focusState().stack.length === 1) {
+      setFocusState(createWorkbenchState(currentProject() ?? "unscoped"))
+      applyWorkbenchContext("project")
+    }
   }
   const focusCrumb = (index: number) => setFocusState((state) => jumpTo(state, index))
   const openSubjectPicker = () => {
@@ -2589,6 +2598,52 @@ export function MafwShell() {
     }
     setFocusState((state) => openSubject({ ...state, worldId: item.scope.worldId }, item.scope, item.subject, item.lens))
   }
+
+  let lastFocusWorld: string | null = null
+  const validateFocusStack = async (worldId: string, state: WorkbenchState) => {
+    const valid: Focus[] = []
+    for (const focus of state.stack) {
+      if (focus.scope.kind === "goal") {
+        const entries = await window.api.fs.listDir(focus.scope.worktreeDir, "").catch(() => null)
+        if (entries === null) continue
+      }
+      valid.push(focus)
+    }
+    if (valid.length === state.stack.length) return
+    if (focusState() !== state) return
+    if ((currentProject() ?? "unscoped") !== worldId) return
+    setFocusState({ ...state, stack: valid })
+    if (valid.length === 0) applyWorkbenchContext("project")
+  }
+  createEffect(() => {
+    const worldId = currentProject() ?? "unscoped"
+    if (lastFocusWorld === worldId) return
+    if (lastFocusWorld) flushFocusPersistence(lastFocusWorld)
+    lastFocusWorld = worldId
+    const loaded = loadFocusState(worldId)
+    const next = loaded ?? createWorkbenchState(worldId)
+    setFocusState(next)
+    void validateFocusStack(worldId, next)
+  })
+  createEffect(() => {
+    saveFocusState(focusState())
+  })
+  onCleanup(() => flushFocusPersistence())
+  onMount(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === "p") {
+        event.preventDefault()
+        openSubjectPicker()
+        return
+      }
+      if (event.key === "Escape" && pickerOpen()) {
+        event.preventDefault()
+        setPickerOpen(false)
+      }
+    }
+    window.addEventListener("keydown", onKeyDown)
+    onCleanup(() => window.removeEventListener("keydown", onKeyDown))
+  })
   const contentScopeIsGoal = createMemo(() => contentScope()?.kind === "goal")
   const [contentHistory, setContentHistory] = createSignal<ContentHistoryEntry[]>([])
   // 项目切换/重启：恢复该项目上次的内容 scope；Goal worktree 不可用时回退项目根。
