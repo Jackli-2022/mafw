@@ -210,6 +210,10 @@ export async function mountMonacoEditor(host: HTMLElement, opts: {
       model.setValue(text);
     },
     getDoc: () => model.getValue(),
+    getScroll: () => editor.getScrollTop(),
+    setScroll(top: number) {
+      try { editor.setScrollTop(Math.max(0, top)) } catch { /* disposed */ }
+    },
     destroy() {
       contentSub.dispose();
       selectionSub.dispose();

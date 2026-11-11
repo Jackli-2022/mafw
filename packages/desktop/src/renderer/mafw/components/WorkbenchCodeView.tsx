@@ -25,7 +25,17 @@ export function WorkbenchCodeView(props: {
   diffs: FileDiffEntry[]
   onOpenFile: (rel: string) => void
   onSendAnnotation?: (text: string, opts?: { imageDataUrl?: string }) => void
-  onAddAnnotation?: (a: { rel: string; startLine: number; endLine: number; code: string; comment: string; anchor?: AnnotationAnchor; imageDataUrl?: string }) => void
+  onAddAnnotation?: (a: {
+    rel: string
+    startLine: number
+    endLine: number
+    code: string
+    comment: string
+    anchor?: AnnotationAnchor
+    imageDataUrl?: string
+    scopeKey?: string
+    root?: string
+  }) => void
   onSendComment?: (sid: string, text: string) => void
   onOpenReview?: () => void
   /** Task 8: mount the active `plugin:<package>:<panel>` surface. */

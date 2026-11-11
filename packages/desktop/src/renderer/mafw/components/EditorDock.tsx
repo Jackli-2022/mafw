@@ -15,11 +15,18 @@ import { openMenuOnKey } from "../context-menu/menu-key"
 import { Icon } from "@mafw/ui/icon"
 import { DockBanner, DockEmpty, DockPanelHeader } from "./dock-panel"
 import {
-  createEditorModel, onRootChange, openFile, closeFile, setActive,
+  createEditorModel, openFile, closeFile, setActive,
   markDirty, markSaved, onExternalChange, resolveConflict, applyCleanReload, canApplyCleanReload,
   isReadOnlyPreview,
   type EditorModel, type OpenFile,
 } from "../editor-state"
+import { editorModelFor, saveEditorModel } from "../editor-model-store"
+import {
+  contentScopeStateFor,
+  readingPositionFor,
+  rememberReadingPosition,
+  saveContentScopeState,
+} from "../content-scope-state"
 import {
   clearDraft, getDraft, getEol, getMtime, setDraft, setEol, setMtime,
 } from "../editor-drafts"
@@ -63,7 +70,17 @@ export function EditorDock(props: {
   diffs?: FileDiffEntry[]
   onSendAnnotation?: (text: string, opts?: { imageDataUrl?: string }) => void
   /** 加入批注草稿（v2：草稿优先，发送时随消息打包） */
-  onAddAnnotation?: (a: { rel: string; startLine: number; endLine: number; code: string; comment: string; anchor?: AnnotationAnchor; imageDataUrl?: string }) => void
+  onAddAnnotation?: (a: {
+    rel: string
+    startLine: number
+    endLine: number
+    code: string
+    comment: string
+    anchor?: AnnotationAnchor
+    imageDataUrl?: string
+    scopeKey?: string
+    root?: string
+  }) => void
   onSendComment?: (sid: string, text: string) => void
   /** 批注标记点击 → 切到审阅面（回路闭合）。 */
   onOpenReview?: () => void
@@ -112,6 +129,7 @@ export function EditorDock(props: {
   let host: HTMLDivElement | undefined
   let editor: MountedEditor | null = null
   let mountToken = 0
+  let lastScopeKey: string | null = props.scopeKey ?? null
   /** setDoc 程序化写入期间抑制 markDirty。 */
   let applyingExternal = false
   /** 已 watch 的 (root, rel)；root 变化时用旧 root 退订。 */
@@ -119,6 +137,15 @@ export function EditorDock(props: {
 
   const activeFile = (): OpenFile | null =>
     model().files.find(f => f.rel === model().active) ?? null
+
+  const rememberActiveScroll = (key: string | null = props.scopeKey ?? null): void => {
+    const file = activeFile()
+    if (!file || !editor) return
+    saveContentScopeState(
+      key,
+      rememberReadingPosition(contentScopeStateFor(key), file.rel, editor.getScroll()),
+    )
+  }
 
   const noteFor = (rel: string) => readNotes()[rel]
 
@@ -259,11 +286,16 @@ export function EditorDock(props: {
     watched.clear()
   }
 
-  // ── root 跟随（切会话/worktree）：模型清空、退订旧 watch、清选区 ─────
+  // ── root/scope 跟随：保存旧模型与滚动位置，恢复目标 scope 的模型 ───────
   createEffect(() => {
     const root = props.contentRoot
-    if (root === model().root) return
-    setModel(m => onRootChange(m, root))
+    const scopeKey = props.scopeKey ?? null
+    const current = untrack(model)
+    if (current.root === root && scopeKey === lastScopeKey) return
+    untrack(() => rememberActiveScroll(lastScopeKey))
+    if (current.root) saveEditorModel(current.root, current)
+    lastScopeKey = scopeKey
+    setModel(editorModelFor(root))
     setReadNotes({})
     setFileVersion({})
     setImageMeta({})
@@ -272,6 +304,19 @@ export function EditorDock(props: {
     setMode("edit")
     void unwatchAll()
     untrack(() => { void mountActive() })
+  })
+
+  createEffect(() => {
+    const current = model()
+    const key = props.scopeKey ?? null
+    if (current.root) saveEditorModel(current.root, current)
+    if (!key) return
+    const scopeState = contentScopeStateFor(key)
+    saveContentScopeState(key, {
+      ...scopeState,
+      openFiles: current.files.map((file) => file.rel),
+      activeFile: current.active,
+    })
   })
 
   // M2：会话切换时清掉上一会话的批注标记，防止 renderer 生命周期内累积。
@@ -294,6 +339,7 @@ export function EditorDock(props: {
   async function openRel(rel: string) {
     const root = props.contentRoot
     if (!root) return
+    rememberActiveScroll()
     if (model().files.some(f => f.rel === rel)) {
       setModel(m => setActive(m, rel))
       setMode("edit")
@@ -489,6 +535,7 @@ export function EditorDock(props: {
       })
       if (token !== mountToken) { h.destroy(); return }
       editor = h
+      h.setScroll(readingPositionFor(contentScopeStateFor(props.scopeKey ?? null), f.rel) ?? 0)
       h.setInlineDiff(mode() === "edit" && !previewing() ? inlineRanges() : [])
       if (!f.readOnly) {
         const key = `${root}\u0000${f.rel}`
@@ -525,6 +572,7 @@ export function EditorDock(props: {
     })
     onCleanup(() => {
       off()
+      rememberActiveScroll()
       void unwatchAll()
       editor?.destroy()
       editor = null
@@ -616,6 +664,7 @@ export function EditorDock(props: {
 
   function closeRel(rel: string) {
     const root = props.contentRoot
+    rememberActiveScroll()
     if (root) clearDraft(root, rel)
     setModel(m => closeFile(m, rel))
     setSourceMode(prev => { const next = { ...prev }; delete next[rel]; return next })
@@ -935,6 +984,8 @@ export function EditorDock(props: {
           comment: comment.trim(),
           anchor,
           imageDataUrl: extra?.imageDataUrl,
+          scopeKey: props.scopeKey ?? undefined,
+          root: props.contentRoot ?? undefined,
         })
       }
       setAnnotOpen(false)
@@ -956,6 +1007,8 @@ export function EditorDock(props: {
         endLine: range.endLine,
         code: s.text,
         comment: comment.trim(),
+        scopeKey: props.scopeKey ?? undefined,
+        root: props.contentRoot ?? undefined,
       })
     }
     clearSelection()
@@ -1045,9 +1098,9 @@ export function EditorDock(props: {
                 role="button"
                 tabIndex={0}
                 title={f.rel}
-                onClick={() => { setModel(m => setActive(m, f.rel)); setMode("edit"); clearSelection(); void mountActive() }}
+                onClick={() => { rememberActiveScroll(); setModel(m => setActive(m, f.rel)); setMode("edit"); clearSelection(); void mountActive() }}
                 onContextMenu={(event) => requestTabMenu(f.rel, model().files.findIndex(x => x.rel === f.rel), event)}
-                onKeyDown={(e: KeyboardEvent) => { openMenuOnKey(e); if (e.key === "Enter") { setModel(m => setActive(m, f.rel)); setMode("edit"); clearSelection(); void mountActive() } }}
+                onKeyDown={(e: KeyboardEvent) => { openMenuOnKey(e); if (e.key === "Enter") { rememberActiveScroll(); setModel(m => setActive(m, f.rel)); setMode("edit"); clearSelection(); void mountActive() } }}
               >
                 <span class="mafw-editor-tab-name">{f.rel.split("/").pop()}</span>
                 <Show when={f.dirty}><span class="mafw-editor-tab-dot" title="未保存">●</span></Show>

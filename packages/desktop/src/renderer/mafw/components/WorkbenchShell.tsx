@@ -41,7 +41,17 @@ export type WorkbenchShellProps = {
   diffs: FileDiffEntry[]
   onOpenFile: (rel: string) => void
   onSendAnnotation?: (text: string, opts?: { imageDataUrl?: string }) => void
-  onAddAnnotation?: (a: { rel: string; startLine: number; endLine: number; code: string; comment: string; anchor?: AnnotationAnchor; imageDataUrl?: string }) => void
+  onAddAnnotation?: (a: {
+    rel: string
+    startLine: number
+    endLine: number
+    code: string
+    comment: string
+    anchor?: AnnotationAnchor
+    imageDataUrl?: string
+    scopeKey?: string
+    root?: string
+  }) => void
   onSendComment?: (sid: string, text: string) => void
   /** 批注反馈标记点击 → 切审阅面。 */
   onOpenReview?: () => void
