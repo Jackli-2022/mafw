@@ -8,9 +8,10 @@ import {
 
 const snapshot: WorkbenchFocusSnapshot = {
   detent: 760,
-  view: "execution",
+  context: "review",
   surface: "terminal",
   previousSurface: "browser",
+  executionOpen: true,
   executionSection: "subagents",
 }
 
@@ -23,9 +24,10 @@ test("capture copies the full workbench state", () => {
 test("restore returns the snapshot when present and fallback when absent", () => {
   const fallback: WorkbenchFocusSnapshot = {
     detent: 520,
-    view: "workbench",
+    context: "content",
     surface: "code",
     previousSurface: "code",
+    executionOpen: false,
     executionSection: "overview",
   }
   assert.deepEqual(restoreWorkbenchFocusSnapshot(snapshot, fallback), snapshot)
