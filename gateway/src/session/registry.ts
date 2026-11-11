@@ -43,9 +43,11 @@ export interface RegisterInput {
   sessionID: string;
   scope: SessionScope;
   metadata?: Record<string, unknown>;
-  /** TTL from registration/touch. `undefined`/`null`/`0` (or negative) → the
-   *  record NEVER expires (an explicit 0 is "no TTL", not "immediately
-   *  expired" — pass a positive ttlMs for real expiry). */
+  /** TTL from registration/touch. Three states (E1-12): `undefined` on a
+   *  re-register of an ACTIVE record keeps the current TTL (a lease renewal);
+   *  `null` (or `0`/negative, legacy) = permanent; a positive number overrides
+   *  and re-arms the lease from now. A first registration treats `undefined`
+   *  as permanent. */
   ttlMs?: number | null;
   runtimeName?: string;
   onEvict?: (record: SessionRecord) => void;
@@ -98,15 +100,21 @@ export class SessionRegistry {
         existing.onEvict = input.onEvict; // fresh — the old callback already fired
         existing.createdAt = this.now();
         existing.metadata = { ...(input.metadata ?? {}) };
+        // A new lifecycle starts: no lease to preserve, undefined is permanent
+        // (same as a first registration).
+        existing.ttlMs = input.ttlMs ?? null;
       } else {
         existing.onEvict = input.onEvict ?? existing.onEvict;
         existing.metadata = { ...existing.metadata, ...(input.metadata ?? {}) };
+        // E1-12 three-state patch: an omitted ttlMs is "keep the current
+        // lease" (re-register = renewal), NOT "clear the TTL". Only an
+        // explicit null (or 0/negative, legacy) makes the record permanent.
+        existing.ttlMs = input.ttlMs === undefined ? existing.ttlMs : input.ttlMs;
       }
       existing.scope = input.scope;
       existing.runtimeName = input.runtimeName ?? existing.runtimeName;
       existing.lastActiveAt = this.now();
-      existing.ttlMs = input.ttlMs ?? null;
-      existing.expiresAt = this.expiresAtFor(input.ttlMs);
+      existing.expiresAt = this.expiresAtFor(existing.ttlMs);
       this.records.set(input.sessionID, existing); // collect() removed it when ended
       return this.materialize(existing, 'active');
     }
