@@ -20,6 +20,13 @@ import {
 import { DiffReviewPanel, type FileDiffEntry } from "./DiffReviewPanel"
 import { markResultViewedAfterLoad } from "../pod-result-store"
 
+export type GoalWorktreeTarget = {
+  goalId: string
+  revision: number
+  worktreeDir: string
+  title?: string | null
+}
+
 const TASK_RESULT_LABEL = { pass: "通过", fail: "失败", skipped: "跳过" } as const
 const artifactName = (value: string) => value.split(/[\\/]/).filter(Boolean).pop() ?? value
 
@@ -47,6 +54,8 @@ export function PodResultView(props: {
   onReject: (feedback: string) => Promise<boolean>
   /** 单次点击验收：父组件负责调用 gateway 并刷新鲸群。 */
   onAccept?: () => Promise<PodGoalAcceptResult | null>
+  /** 显式进入当前 revision 的 worktree 内容；不会自动切换 scope。 */
+  onOpenWorktree?: (target: Omit<GoalWorktreeTarget, "title">) => void
 }) {
   const [result, setResult] = createSignal<PodGoalResult | null>(null)
   const [revisions, setRevisions] = createSignal<PodGoalRevision[]>([])
@@ -362,6 +371,25 @@ export function PodResultView(props: {
               <ul class="mafw-pod-result-list">
                 <For each={value().artifacts}>{(item) => <li><code>{artifactName(item)}</code></li>}</For>
               </ul>
+            </Show>
+            <Show when={value().worktree?.dir && value().worktree?.status !== "missing"}>
+              <div class="mafw-pod-result-diff-actions">
+                <ButtonV2
+                  variant="outline"
+                  size="small"
+                  onClick={() => {
+                    const worktree = value().worktree
+                    if (!worktree?.dir) return
+                    props.onOpenWorktree?.({
+                      goalId: props.goalId,
+                      revision: value().revision ?? activeRevision() ?? 1,
+                      worktreeDir: worktree.dir,
+                    })
+                  }}
+                >
+                  查看本版文件
+                </ButtonV2>
+              </div>
             </Show>
             <Show when={canViewDiff()}>
               <div class="mafw-pod-result-diff-actions">

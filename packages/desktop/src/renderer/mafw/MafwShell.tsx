@@ -3265,6 +3265,10 @@ export function MafwShell() {
                       onCloseGoal={() => setPodGoalId(null)}
                       onOpenSession={(sid) => { void openPodSession(sid) }}
                       onGoalAccepted={() => { void openLeadEntry() }}
+                      onOpenGoalWorktree={(target) => {
+                        rememberContentLocation()
+                        openGoalContent(target)
+                      }}
                     />
                   }
                   onSendComment={(sid, text) => {

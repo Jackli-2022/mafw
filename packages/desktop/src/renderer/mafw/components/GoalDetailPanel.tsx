@@ -11,7 +11,7 @@ import { GoalUserHero } from "./GoalUserHero"
 import { PlanReviewOverlay } from "./PlanReviewOverlay"
 import { PodDirectionPanel } from "./PodDirectionPanel"
 import { PodProbePanel } from "./PodProbePanel"
-import { PodResultView } from "./PodResultView"
+import { PodResultView, type GoalWorktreeTarget } from "./PodResultView"
 import { PodTaskBoard } from "./PodTaskBoard"
 import { buildGoalLanes, formatDuration, hideEmptyReviewLane, timelineFailure } from "../goal-timeline"
 import { createPodIdResolver, podStore } from "../pod-store"
@@ -67,6 +67,8 @@ export function GoalDetailPanel(props: {
   onOpenSession: (sid: string) => void
   /** 验收成功后把 Chat 显式切回项目 Lead；右侧 Goal 保持不变。 */
   onGoalAccepted?: () => void
+  /** 显式进入当前 revision 的 worktree 内容；右侧 Goal 保持不变。 */
+  onOpenWorktree?: (target: GoalWorktreeTarget) => void
 }) {
   const [timeline, setTimeline] = createSignal<any>(null)
   const [podDetail, setPodDetail] = createSignal<any>(null)
@@ -836,6 +838,10 @@ export function GoalDetailPanel(props: {
                       }}
                       onReject={rejectGoal}
                       onAccept={acceptGoal}
+                      onOpenWorktree={(target) => props.onOpenWorktree?.({
+                        ...target,
+                        title: podGoal()?.title ?? null,
+                      })}
                     />
                   )}
                 </Show>
