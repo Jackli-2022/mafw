@@ -1991,8 +1991,14 @@ export function MafwShell() {
   const workbenchContent = (): WorkbenchContentMode => (showConfig() ? "config" : "project")
   const workbenchContextLabel = (): string => {
     const context = workbenchContext()
-    if (context === "content") return contentScopeLabel(contentScope())
-    if (context === "goal") return "Goal"
+    if (context === "content") return "内容"
+    if (context === "goal") {
+      const goalId = podGoalId()
+      const goal = goalId
+        ? podStore.detail()?.goals.find((item) => item.goalId === goalId)
+        : null
+      return (goal as any)?.title?.trim?.() || "Goal"
+    }
     if (context === "review") return "变更审阅"
     return "项目"
   }

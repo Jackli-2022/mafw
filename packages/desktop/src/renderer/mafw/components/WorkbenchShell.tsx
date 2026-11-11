@@ -158,6 +158,18 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
           <span class="mafw-rw-context-label">{props.contextLabel}</span>
         </div>
         <div class="mafw-rw-actions">
+          <Show when={props.context === "project"}>
+            <ButtonV2
+              variant="ghost"
+              size="small"
+              class="mafw-rw-files-entry"
+              aria-label="打开项目文件"
+              onClick={() => props.onSurface("code")}
+            >
+              <Icon name="code" size="small" />
+              文件
+            </ButtonV2>
+          </Show>
           <ButtonV2
             variant="ghost"
             size="small"

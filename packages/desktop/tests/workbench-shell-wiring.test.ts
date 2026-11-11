@@ -15,6 +15,7 @@ test("right workbench owns context header, L2 surfaces and the terminal surface"
   assert.match(shell, /executionOpen/)
   assert.match(shell, /onExecutionOpen/)
   assert.match(shell, /goalView: JSX\.Element/)
+  assert.match(shell, /mafw-rw-files-entry/)
   assert.match(shell, /props\.context === "project"/)
   assert.match(shell, /props\.context === "goal"/)
   assert.match(shell, /props\.context === "content"/)

@@ -3092,6 +3092,8 @@ html[data-theme="light"] body {
   display: flex;
   flex-direction: column;
   background: var(--bg-base);
+  will-change: transform;
+  animation: mafw-drawer-in var(--dur-surface) var(--ease-surface);
 }
 .mafw-rw-exec-head {
   height: 38px;
