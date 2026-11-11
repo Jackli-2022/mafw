@@ -22,7 +22,15 @@ const PREFIX = "mafw-editor-drafts:"
 const PERSIST_DELAY_MS = 300
 const loadedRoots = new Set<string>()
 const persistTimers = new Map<string, ReturnType<typeof setTimeout>>()
-let storage: EditorDraftStorage | null = null
+function defaultStorage(): EditorDraftStorage | null {
+  try {
+    const local = (globalThis as { localStorage?: EditorDraftStorage }).localStorage
+    return local ?? null
+  } catch {
+    return null
+  }
+}
+let storage: EditorDraftStorage | null = defaultStorage()
 
 const key = (root: string, rel: string) => `${root}\u0000${rel}`
 const normalizeRoot = (root: string) => root.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase()

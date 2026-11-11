@@ -27,7 +27,15 @@ export type ContentScopeStateListener = (scopeKey: string, state: ContentScopeSt
 const states = new Map<string, ContentScopeState>()
 const listeners = new Set<ContentScopeStateListener>()
 const persistTimers = new Map<string, ReturnType<typeof setTimeout>>()
-let storage: ContentScopeStateStorage | null = null
+function defaultStorage(): ContentScopeStateStorage | null {
+  try {
+    const local = (globalThis as { localStorage?: ContentScopeStateStorage }).localStorage
+    return local ?? null
+  } catch {
+    return null
+  }
+}
+let storage: ContentScopeStateStorage | null = defaultStorage()
 const PERSIST_DELAY_MS = 300
 const STORAGE_PREFIX = "mafw-content-state:"
 

@@ -142,6 +142,10 @@ export function EditorDock(props: {
   let mountToken = 0
   let lastScopeKey: string | null = props.scopeKey ?? null
   let previewRestoredKey: string | null = null
+  /** 初始恢复活动文档期间，禁止空的 editor model 覆盖持久化状态。 */
+  let restoringActive = false
+  /** 用户显式关闭最后一个 tab 后才允许把持久化 activeFile 清空。 */
+  let allowEmptyPersist = false
   /** setDoc 程序化写入期间抑制 markDirty。 */
   let applyingExternal = false
   /** 已 watch 的 (root, rel)；root 变化时用旧 root 退订。 */
@@ -339,6 +343,10 @@ export function EditorDock(props: {
     previewRestoredKey = null
     lastScopeKey = scopeKey
     const restored = editorModelFor(root)
+    const activeRel = scopeKey ? contentScopeStateFor(scopeKey).activeFile : null
+    const shouldRestore = !!root && restored.files.length === 0 && !!activeRel
+    // 必须在 setModel 之前置位：Solid 可能同步触发 model effect，空模型会覆盖持久化状态。
+    restoringActive = shouldRestore
     setModel(restored)
     setReadNotes({})
     setFileVersion({})
@@ -348,9 +356,8 @@ export function EditorDock(props: {
     clearSelection()
     setMode("edit")
     void unwatchAll()
-    const activeRel = scopeKey ? contentScopeStateFor(scopeKey).activeFile : null
-    if (root && restored.files.length === 0 && activeRel) {
-      void openRel(activeRel)
+    if (shouldRestore && activeRel) {
+      void openRel(activeRel).finally(() => { restoringActive = false })
     } else {
       untrack(() => { void mountActive() })
     }
@@ -361,7 +368,11 @@ export function EditorDock(props: {
     const key = props.scopeKey ?? null
     if (current.root) saveEditorModel(current.root, current)
     if (!key) return
+    // 初始挂载时 contentRoot 尚未就绪：空 model 绝不能覆盖上一次持久化的 activeFile。
+    if (!current.root || current.root !== props.contentRoot) return
     const scopeState = contentScopeStateFor(key)
+    if (restoringActive && current.files.length === 0) return
+    if (current.files.length === 0 && !allowEmptyPersist && scopeState.activeFile) return
     saveContentScopeState(key, {
       ...selectTreeFile(scopeState, current.active),
       openFiles: current.files.map((file) => file.rel),
@@ -425,6 +436,7 @@ export function EditorDock(props: {
   async function openRel(rel: string) {
     const root = props.contentRoot
     if (!root) return
+    allowEmptyPersist = false
     rememberActiveScroll()
     if (model().files.some(f => f.rel === rel)) {
       setModel(m => setActive(m, rel))
@@ -774,6 +786,7 @@ export function EditorDock(props: {
 
   function closeRel(rel: string) {
     const root = props.contentRoot
+    allowEmptyPersist = true
     rememberActiveScroll()
     if (root) clearDraft(root, rel)
     setModel(m => closeFile(m, rel))

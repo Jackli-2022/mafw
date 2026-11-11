@@ -14,8 +14,12 @@ test("shell wires localStorage into scope state and drafts", () => {
 
 test("editor restores the last active document and treats restored drafts as dirty", () => {
   assert.match(editor, /const activeRel = scopeKey \? contentScopeStateFor\(scopeKey\)\.activeFile : null/)
-  assert.match(editor, /restored\.files\.length === 0 && activeRel/)
+  assert.match(editor, /const shouldRestore = !!root && restored\.files\.length === 0 && !!activeRel/)
   assert.match(editor, /void openRel\(activeRel\)/)
+  assert.match(editor, /if \(!current\.root \|\| current\.root !== props\.contentRoot\) return/)
+  assert.match(editor, /if \(current\.files\.length === 0 && !allowEmptyPersist && scopeState\.activeFile\) return/)
+  assert.match(editor, /restoringActive = shouldRestore/)
+  assert.match(editor, /if \(restoringActive && current\.files\.length === 0\) return/)
   assert.match(editor, /getDraft\(root, rel\) !== undefined \? markDirty\(next, rel\) : next/)
 })
 
