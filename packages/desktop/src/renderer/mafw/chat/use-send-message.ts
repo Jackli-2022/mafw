@@ -159,12 +159,15 @@ export function useSendMessage(deps: SendMessageDeps) {
   type StageResult = { block: string; annotations: Annotation[] } | null
   let stageTail: Promise<unknown> = Promise.resolve()
   const stageKeys = new Set<string>()
-  const stageAnnotations = (sid: string, key: string): Promise<StageResult> => {
+  const stageAnnotations = (sid: string, key: string, snapshot: Annotation[]): Promise<StageResult> => {
     // Identical send already queued/in flight (double Enter): coalesce.
     if (stageKeys.has(key)) return Promise.resolve(null)
     stageKeys.add(key)
     const run = async (): Promise<StageResult> => {
-      const items = peekAnnotations(sid)
+      // Only annotations composed with this send; a later draft belongs to a
+      // later message even if an earlier queued stage runs first.
+      const wanted = new Set(snapshot.map((item) => item.id))
+      const items = peekAnnotations(sid).filter((item) => wanted.has(item.id))
       if (items.length === 0) return { block: "", annotations: [] }
       if (!persistAnnotations) return { block: "", annotations: takeAnnotations(sid) }
       try {
@@ -212,19 +215,23 @@ export function useSendMessage(deps: SendMessageDeps) {
     }
     let sid: string | null = sidProp()
     if (!sid) { sid = await deps.onCreateSession(); if (!sid) return }
+    const annotationSnapshot = peekAnnotations(sid)
     const stageKey = JSON.stringify({
       sid,
       text,
       voiceOrigin,
       attachments: atts.map((a: any) => ({
         name: a.name, mime: a.mime, path: a.path, token: a.token,
-        size: a.size, dataLength: a.dataUrl?.length ?? 0,
+        size: a.size,
+        dataLength: a.dataUrl?.length ?? 0,
+        dataHead: a.dataUrl?.slice(0, 64),
+        dataTail: a.dataUrl?.slice(-64),
       })),
       agents: mentionedAgents(),
       files: mentionedFiles(),
       agent: agentSel(),
       model: model(),
-      annotations: peekAnnotations(sid).map((a) => a.id),
+      annotations: annotationSnapshot.map((a) => a.id),
       captures: captureCount,
     })
     const hasVoice = atts.some(a => a.name?.startsWith("voice-"))
@@ -234,7 +241,7 @@ export function useSendMessage(deps: SendMessageDeps) {
       // messages queue for the next idle boundary instead of being dropped.
       if (!hasVoice) {
         // Plan C：先落评审项；失败则整条消息不发送（草稿原样保留）。
-        const staged = await stageAnnotations(sid, stageKey)
+        const staged = await stageAnnotations(sid, stageKey, annotationSnapshot)
         if (!staged) return
         const reviewBlock = staged.block
         // Review Focus 4：入队时打包批注快照；入队后新增的批注不跟这条。
@@ -333,7 +340,7 @@ export function useSendMessage(deps: SendMessageDeps) {
     // Set sending before the await so a double-submit cannot start a second stage.
     setSending(true)
     setPhase('searching')
-    const staged = await stageAnnotations(sid, stageKey)
+    const staged = await stageAnnotations(sid, stageKey, annotationSnapshot)
     if (!staged) {
       setSending(false)
       setPhase('idle')

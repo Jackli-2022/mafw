@@ -349,6 +349,57 @@ describe("sendMessage busy 排队路径", () => {
     } finally { delete (globalThis as any).window }
   })
 
+  test("排队中的较早消息不会取走之后新增的批注", async () => {
+    const sent: any[] = []
+    ;(globalThis as any).window = { api: { mafw: { chat: { sendEnriched: async (req: any) => { sent.push(req); return { sessionID: "s_test_session" } } } } } }
+    try {
+      let sending = false
+      let release!: () => void
+      const gate = new Promise<void>((resolve) => { release = resolve })
+      let inputValue = "第一条"
+      let annotations = [{ id: "a1", comment: "第一条的批注" }]
+      const persisted: string[][] = []
+      const f = baseDeps({
+        input: () => inputValue,
+        setInput: (v: string) => { inputValue = v },
+        sending: () => sending,
+        setSending: (v: boolean) => { sending = v },
+        pendingAnnotationCount: () => annotations.length,
+        peekAnnotations: () => annotations,
+        persistAnnotations: async (items: any[]) => {
+          persisted.push(items.map((item) => item.id))
+          await gate
+          return `已登记 ${items.length} 条评审项`
+        },
+        takeAnnotationsById: (_sid: string, ids: readonly string[]) => {
+          const wanted = new Set(ids)
+          const taken = annotations.filter((item) => wanted.has(item.id))
+          annotations = annotations.filter((item) => !wanted.has(item.id))
+          return taken
+        },
+        formatAnnotations: () => "BLOCK",
+      })
+      const { sendMessage } = useSendMessage(f.deps)
+      const first = sendMessage()
+      await settle()
+      inputValue = "第二条"
+      const second = sendMessage()
+      await settle()
+      annotations = [...annotations, { id: "a2", comment: "第二条之后新增" }]
+      inputValue = "第三条"
+      const third = sendMessage()
+      await settle()
+      release()
+      await Promise.all([first, second, third])
+      expect(persisted).toEqual([["a1"], ["a2"]])
+      expect(sent).toHaveLength(1)
+      expect(f.queued()).toHaveLength(2)
+      expect(f.queued()[0].text).not.toContain("BLOCK")
+      expect(f.queued()[1].text).toContain("BLOCK")
+      expect(annotations).toEqual([])
+    } finally { delete (globalThis as any).window }
+  })
+
   test("并发不同消息：等待落库后排队，不静默丢弃", async () => {
     const sent: any[] = []
     ;(globalThis as any).window = { api: { mafw: { chat: { sendEnriched: async (req: any) => { sent.push(req); return { sessionID: "s_test_session" } } } } } }
