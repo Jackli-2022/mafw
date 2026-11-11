@@ -7,6 +7,7 @@ import {
   removePending,
   resetAnnotationStore,
   takeForSend,
+  takeForSendById,
 } from "./annotation-store"
 
 const calls: Array<{ m: string; args: any[] }> = []
@@ -65,6 +66,15 @@ describe("annotation-store", () => {
     const taken = takeForSend("s1")
     expect(taken).toHaveLength(1)
     expect(pendingFor("s1")).toEqual([])
+  })
+
+  test("takeForSendById：只取快照，落库期间新增的留给下一条", () => {
+    addPending({ sessionID: "s1", rel: "a.ts", startLine: 1, endLine: 1, code: "x", comment: "1" })
+    const first = pendingFor("s1")[0]
+    addPending({ sessionID: "s1", rel: "b.ts", startLine: 2, endLine: 2, code: "y", comment: "2" })
+    const taken = takeForSendById("s1", [first.id])
+    expect(taken.map(a => a.id)).toEqual([first.id])
+    expect(pendingFor("s1").map(a => a.comment)).toEqual(["2"])
   })
 
   test("hydrate 与本地新增竞态：不吞掉水合期间加入的批注", async () => {

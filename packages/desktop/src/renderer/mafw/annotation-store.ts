@@ -76,6 +76,14 @@ export function takeForSend(sessionID: string): Annotation[] {
   return items
 }
 
+/** 只取走快照里的批注；落库期间新增的批注留给下一条消息。 */
+export function takeForSendById(sessionID: string, ids: readonly string[]): Annotation[] {
+  const wanted = new Set(ids)
+  const taken = pendingFor(sessionID).filter((item) => wanted.has(item.id))
+  for (const item of taken) removePending(sessionID, item.id)
+  return taken
+}
+
 /** 测试/会话删除清理。 */
 export function resetAnnotationStore(): void {
   db = {}

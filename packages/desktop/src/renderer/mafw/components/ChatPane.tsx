@@ -59,7 +59,7 @@ import { PendingAnnotations } from "./PendingAnnotations"
 import { PendingCaptures } from "./PendingCaptures"
 import { buildAnnotationBatch } from "../editor-annotation"
 import { reviewInputsFromAnnotations, reviewItemPromptBlock } from "../review-item-input"
-import { hydrateAnnotations, pendingFor, takeForSend } from "../annotation-store"
+import { hydrateAnnotations, pendingFor, takeForSend, takeForSendById } from "../annotation-store"
 import { formatCaptureBatch, captureAttachmentName, getPendingCaptures } from "../chat/pending-captures"
 
 import { createInputHistory, shouldNavigateHistory, shouldHintEmptyHistory } from "./input-history"
@@ -997,6 +997,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     pendingAnnotationCount: (sid) => pendingFor(sid).length,
     peekAnnotations: (sid) => pendingFor(sid),
     takeAnnotations: (sid) => takeForSend(sid),
+    takeAnnotationsById: (sid, ids) => takeForSendById(sid, ids),
     formatAnnotations: (items) => buildAnnotationBatch(items),
     persistAnnotations: async (items) => {
       const target = await Promise.resolve(props.techLeadTarget?.() ?? null)

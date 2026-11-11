@@ -140,6 +140,7 @@ describe("sendMessage busy 排队路径", () => {
     let taken = 0
     const f = baseDeps({
       pendingAnnotationCount: () => 1,
+      peekAnnotations: () => [{ id: "a1" }],
       takeAnnotations: () => { taken++; return [{ id: "a1" }] },
       formatAnnotations: () => "BLOCK",
     })
@@ -157,6 +158,7 @@ describe("sendMessage busy 排队路径", () => {
         input: () => "",
         sending: () => false,
         pendingAnnotationCount: () => 1,
+        peekAnnotations: () => [{ id: "a1" }],
         takeAnnotations: () => [{ id: "a1" }],
         formatAnnotations: () => "BLOCK",
       })
@@ -262,6 +264,88 @@ describe("sendMessage busy 排队路径", () => {
       await Promise.all([first, second])
       expect(persistCalls).toBe(1)
       expect(sent).toHaveLength(1)
+    } finally { delete (globalThis as any).window }
+  })
+
+  test("并发不同消息：首个落库失败后第二个重试并排队", async () => {
+    const sent: any[] = []
+    ;(globalThis as any).window = { api: { mafw: { chat: { sendEnriched: async (req: any) => { sent.push(req); return { sessionID: "s_test_session" } } } } } }
+    try {
+      let sending = false
+      let persistCalls = 0
+      let release!: () => void
+      const gate = new Promise<void>((resolve) => { release = resolve })
+      let inputValue = "第一条"
+      let annotations = [{ id: "a1", comment: "改这里" }]
+      const f = baseDeps({
+        input: () => inputValue,
+        setInput: (v: string) => { inputValue = v },
+        sending: () => sending,
+        setSending: (v: boolean) => { sending = v },
+        pendingAnnotationCount: () => annotations.length,
+        peekAnnotations: () => annotations,
+        persistAnnotations: async () => {
+          persistCalls++
+          if (persistCalls === 1) {
+            await gate
+            throw new Error("db down")
+          }
+          return "已登记 1 条评审项：review_1"
+        },
+        takeAnnotations: () => {
+          const taken = annotations
+          annotations = []
+          return taken
+        },
+        formatAnnotations: () => "BLOCK",
+      })
+      const { sendMessage } = useSendMessage(f.deps)
+      const first = sendMessage()
+      inputValue = "第二条"
+      const second = sendMessage()
+      await settle()
+      release()
+      await Promise.all([first, second])
+      expect(persistCalls).toBe(2)
+      expect(sent).toHaveLength(0)
+      expect(f.queued()).toHaveLength(1)
+      expect(f.queued()[0].text).toContain("第二条")
+    } finally { delete (globalThis as any).window }
+  })
+
+  test("落库期间新增的批注留给下一条消息", async () => {
+    const sent: any[] = []
+    ;(globalThis as any).window = { api: { mafw: { chat: { sendEnriched: async (req: any) => { sent.push(req); return { sessionID: "s_test_session" } } } } } }
+    try {
+      let release!: () => void
+      const gate = new Promise<void>((resolve) => { release = resolve })
+      let annotations = [{ id: "a1", comment: "第一条" }]
+      const f = baseDeps({
+        input: () => "要发的话",
+        sending: () => false,
+        pendingAnnotationCount: () => annotations.length,
+        peekAnnotations: () => annotations,
+        persistAnnotations: async (items: any[]) => {
+          annotations = [...annotations, { id: "a2", comment: "落库期间新增" }]
+          await gate
+          return `已登记 ${items.length} 条评审项`
+        },
+        takeAnnotationsById: (_sid: string, ids: readonly string[]) => {
+          const wanted = new Set(ids)
+          const taken = annotations.filter((item) => wanted.has(item.id))
+          annotations = annotations.filter((item) => !wanted.has(item.id))
+          return taken
+        },
+        formatAnnotations: () => "BLOCK",
+      })
+      const { sendMessage } = useSendMessage(f.deps)
+      const pending = sendMessage()
+      await settle()
+      release()
+      await pending
+      expect(sent).toHaveLength(1)
+      expect(sent[0].message).toContain("BLOCK")
+      expect(annotations.map((item) => item.id)).toEqual(["a2"])
     } finally { delete (globalThis as any).window }
   })
 

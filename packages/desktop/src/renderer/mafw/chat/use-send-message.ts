@@ -96,6 +96,8 @@ export interface SendMessageDeps {
   pendingAnnotationCount?: (sid: string) => number
   peekAnnotations?: (sid: string) => Annotation[]
   takeAnnotations?: (sid: string) => Annotation[]
+  /** Take only the persisted snapshot; later drafts stay for the next send. */
+  takeAnnotationsById?: (sid: string, ids: readonly string[]) => Annotation[]
   formatAnnotations?: (items: Annotation[]) => string
   /** Plan C：Goal-bound 发送前把批注落成评审项；返回随消息附带的评审项块。 */
   persistAnnotations?: (items: Annotation[]) => Promise<string>
@@ -149,40 +151,41 @@ export function useSendMessage(deps: SendMessageDeps) {
   const pendingAnnotationCount = deps.pendingAnnotationCount ?? (() => 0)
   const peekAnnotations = deps.peekAnnotations ?? (() => [])
   const takeAnnotations = deps.takeAnnotations ?? (() => [])
+  const takeAnnotationsById = deps.takeAnnotationsById
   const formatAnnotations = deps.formatAnnotations ?? (() => "")
   const persistAnnotations = deps.persistAnnotations
 
   /** Persist before clearing drafts; null means "abort this send" (drafts stay). */
-  type StageResult = { block: string; annotations: any[] } | null
-  let staging: { key: string; promise: Promise<StageResult> } | null = null
-  const stageAnnotations = async (sid: string, key: string): Promise<StageResult> => {
-    if (staging) {
-      // Same message (double Enter): coalesce. A different message waits for the
-      // in-flight persistence instead of being silently dropped.
-      if (staging.key === key) return null
-      await staging.promise.catch(() => undefined)
-    }
-    const items = peekAnnotations(sid)
-    if (items.length === 0 || !persistAnnotations) {
-      return { block: "", annotations: takeAnnotations(sid) }
-    }
-    const entry: { key: string; promise: Promise<StageResult> } = { key, promise: Promise.resolve(null) }
-    entry.promise = (async () => {
+  type StageResult = { block: string; annotations: Annotation[] } | null
+  let stageTail: Promise<unknown> = Promise.resolve()
+  const stageKeys = new Set<string>()
+  const stageAnnotations = (sid: string, key: string): Promise<StageResult> => {
+    // Identical send already queued/in flight (double Enter): coalesce.
+    if (stageKeys.has(key)) return Promise.resolve(null)
+    stageKeys.add(key)
+    const run = async (): Promise<StageResult> => {
+      const items = peekAnnotations(sid)
+      if (items.length === 0) return { block: "", annotations: [] }
+      if (!persistAnnotations) return { block: "", annotations: takeAnnotations(sid) }
       try {
         const block = await persistAnnotations(items)
-        return { block, annotations: takeAnnotations(sid) }
+        const annotations = takeAnnotationsById
+          ? takeAnnotationsById(sid, items.map((item) => item.id))
+          : takeAnnotations(sid)
+        return { block, annotations }
       } catch (err: any) {
         showToastV2({
           description: `评审项保存失败，消息未发送：${String(err?.message ?? err).slice(0, 120)}`,
           duration: 4200,
         })
         return null
-      } finally {
-        if (staging === entry) staging = null
       }
-    })()
-    staging = entry
-    return entry.promise
+    }
+    // One persistence at a time per composer; a failed run leaves the drafts
+    // pending for the next queued send instead of letting waiters double-write.
+    const result = stageTail.then(run, run)
+    stageTail = result.then(() => undefined, () => undefined)
+    return result.finally(() => { stageKeys.delete(key) })
   }
   const pendingCaptureCount = deps.pendingCaptureCount ?? (() => 0)
   const takeCaptures = deps.takeCaptures ?? (() => [])
@@ -209,12 +212,21 @@ export function useSendMessage(deps: SendMessageDeps) {
     }
     let sid: string | null = sidProp()
     if (!sid) { sid = await deps.onCreateSession(); if (!sid) return }
-    const stageKey = [
+    const stageKey = JSON.stringify({
       sid,
       text,
-      atts.map((a) => `${a.name}:${a.mime ?? ""}`).join("|"),
-      peekAnnotations(sid).map((a) => a.id).join("|"),
-    ].join("\u0000")
+      voiceOrigin,
+      attachments: atts.map((a: any) => ({
+        name: a.name, mime: a.mime, path: a.path, token: a.token,
+        size: a.size, dataLength: a.dataUrl?.length ?? 0,
+      })),
+      agents: mentionedAgents(),
+      files: mentionedFiles(),
+      agent: agentSel(),
+      model: model(),
+      annotations: peekAnnotations(sid).map((a) => a.id),
+      captures: captureCount,
+    })
     const hasVoice = atts.some(a => a.name?.startsWith("voice-"))
     console.log("[mafw] sendMessage", sid.slice(-8), "| text:", text.trim().length, "chars | atts:", atts.length, "| sending:", sending(), "| voice:", hasVoice, "| mode:", mode)
     if (sending()) {
