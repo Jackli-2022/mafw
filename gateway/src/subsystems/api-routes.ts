@@ -823,6 +823,10 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
     serveRunning: () => deps.serveRunning,
     trajectoryStore: () => deps.trajectoryStore,
     memoryService: () => deps.memoryService,
+    eventAppendFailures: () => {
+      const store = deps.eventStore;
+      return store ? store.appendFailures() : null;
+    },
   });
   // Phase D1 Task H1：long-tail singles 迁 registry dispatch（voice/presence/
   // eval/orchestration/provider/agents + config GET/PUT + llm/compress +

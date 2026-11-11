@@ -13,9 +13,13 @@
  *   永不被事件日志阻塞。
  */
 import type { Database } from 'better-sqlite3';
+import { log } from '../core/utils/logger';
 
 /** 不入库也不消耗 seq 的事件类型（可从快照重建的高频流；spec v2 Q3）。 */
 export const NON_PERSISTED_EVENT_TYPES: ReadonlySet<string> = new Set(['part.delta']);
+
+/** E2-5: append 失败日志的限频窗口（同一窗口内只记一条，计数照常累计）。 */
+export const APPEND_FAILURE_LOG_INTERVAL_MS = 30_000;
 
 export interface StoredEnvelope {
   seq: number;
@@ -27,6 +31,9 @@ export interface StoredEnvelope {
 
 export class EventStore {
   private appendCount = 0;
+  /** E2-5: 进程级累计失败次数（恢复成功后不清零；随进程重启归零）。 */
+  private appendFailureCount = 0;
+  private lastAppendFailureLogAt: number | null = null;
 
   constructor(private db: Database) {
     // AUTOINCREMENT：跨 DELETE 单调（prune 后 seq 不重用）
@@ -64,9 +71,23 @@ export class EventStore {
         ) as { seq: number } | undefined;
       this.appendCount++;
       return row?.seq ?? null;
-    } catch {
+    } catch (err: any) {
+      // E2-5: 静默 null 让 event_log 停更不可见——计数 + 限频 error（30s 一条）。
+      this.appendFailureCount++;
+      const now = Date.now();
+      if (this.lastAppendFailureLogAt === null || now - this.lastAppendFailureLogAt >= APPEND_FAILURE_LOG_INTERVAL_MS) {
+        this.lastAppendFailureLogAt = now;
+        log.error(
+          `[Events] append failed (total=${this.appendFailureCount}): ${err?.message ?? String(err)}`,
+        );
+      }
       return null;
     }
+  }
+
+  /** E2-5: append 失败累计（/api/stats 的 eventAppendFailures 来源）。 */
+  appendFailures(): number {
+    return this.appendFailureCount;
   }
 
   /** 当前最大 seq（空表 0；异常 fail-open 0）。 */
