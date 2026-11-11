@@ -17,7 +17,7 @@ import { DockBanner, DockEmpty, DockPanelHeader } from "./dock-panel"
 import {
   createEditorModel, openFile, closeFile, setActive,
   markDirty, markSaved, onExternalChange, resolveConflict, applyCleanReload, canApplyCleanReload,
-  isReadOnlyPreview,
+  editorSaveContent, isReadOnlyPreview,
   type EditorModel, type OpenFile,
 } from "../editor-state"
 import { editorModelFor, saveEditorModel } from "../editor-model-store"
@@ -128,8 +128,11 @@ export function EditorDock(props: {
 
   let host: HTMLDivElement | undefined
   let editor: MountedEditor | null = null
+  let mountedRoot: string | null = null
+  let mountedRel: string | null = null
   let mountToken = 0
   let lastScopeKey: string | null = props.scopeKey ?? null
+  let previewRestoredKey: string | null = null
   /** setDoc 程序化写入期间抑制 markDirty。 */
   let applyingExternal = false
   /** 已 watch 的 (root, rel)；root 变化时用旧 root 退订。 */
@@ -138,12 +141,21 @@ export function EditorDock(props: {
   const activeFile = (): OpenFile | null =>
     model().files.find(f => f.rel === model().active) ?? null
 
+  const previewScrollPort = (): HTMLElement | null => {
+    if (!bodyEl) return null
+    return bodyEl.querySelector<HTMLElement>(
+      ".mafw-md-preview, .mafw-json-preview-wrap, .mafw-table-preview, .mafw-office-host",
+    )
+  }
+
   const rememberActiveScroll = (key: string | null = props.scopeKey ?? null): void => {
     const file = activeFile()
-    if (!file || !editor) return
+    if (!file) return
+    const top = previewing() ? previewScrollPort()?.scrollTop : editor?.getScroll()
+    if (top === undefined) return
     saveContentScopeState(
       key,
-      rememberReadingPosition(contentScopeStateFor(key), file.rel, editor.getScroll()),
+      rememberReadingPosition(contentScopeStateFor(key), file.rel, top),
     )
   }
 
@@ -294,12 +306,21 @@ export function EditorDock(props: {
     if (current.root === root && scopeKey === lastScopeKey) return
     untrack(() => rememberActiveScroll(lastScopeKey))
     if (current.root) saveEditorModel(current.root, current)
+    // 旧 editor 必须在模型/根切换前同步失效，避免 refreshActiveFromDisk 的
+    // await 窗口里 saveActive 把旧文档写进新 scope 的同名文件。
+    mountToken += 1
+    editor?.destroy()
+    editor = null
+    mountedRoot = null
+    mountedRel = null
+    previewRestoredKey = null
     lastScopeKey = scopeKey
     setModel(editorModelFor(root))
     setReadNotes({})
     setFileVersion({})
     setImageMeta({})
     setSourceMode({})
+    setIoError(null)
     clearSelection()
     setMode("edit")
     void unwatchAll()
@@ -317,6 +338,26 @@ export function EditorDock(props: {
       openFiles: current.files.map((file) => file.rel),
       activeFile: current.active,
     })
+  })
+
+  // 预览面（markdown/json/table/office）有自己的滚动容器，按 scope/file 恢复。
+  createEffect(() => {
+    const file = activeFile()
+    const key = props.scopeKey ?? null
+    if (!file || !previewing()) {
+      previewRestoredKey = null
+      return
+    }
+    const id = `${key}\u0000${file.rel}`
+    if (previewRestoredKey === id) return
+    previewRestoredKey = id
+    const restore = () => {
+      const port = previewScrollPort()
+      if (!port) return
+      port.scrollTop = readingPositionFor(contentScopeStateFor(key), file.rel) ?? 0
+    }
+    queueMicrotask(restore)
+    requestAnimationFrame(restore)
   })
 
   // M2：会话切换时清掉上一会话的批注标记，防止 renderer 生命周期内累积。
@@ -506,6 +547,8 @@ export function EditorDock(props: {
     const token = ++mountToken
     editor?.destroy()
     editor = null
+    mountedRoot = null
+    mountedRel = null
     await unwatchAll() // 先退订（含 f=null 的情形，防旧 watch 泄漏）
     if (!f) return
     const root = props.contentRoot
@@ -524,17 +567,24 @@ export function EditorDock(props: {
         lang: langForFile(f.rel),
         onDocChanged: () => {
           if (applyingExternal) return // 程序化 setDoc 不算用户编辑（Critical 1）
+          if (root !== props.contentRoot || mountedRoot !== root || mountedRel !== f.rel) return
           setDraft(root, f.rel, h.getDoc())
           setModel(m => markDirty(m, f.rel))
         },
         onSave: () => void saveActive(),
         onSelectionChange: (s) => {
+          if (root !== props.contentRoot || mountedRoot !== root || mountedRel !== f.rel) {
+            clearSelection()
+            return
+          }
           if (!s) { clearSelection(); return }
           setSel({ rel: f.rel, ...s })
         },
       })
       if (token !== mountToken) { h.destroy(); return }
       editor = h
+      mountedRoot = root
+      mountedRel = f.rel
       h.setScroll(readingPositionFor(contentScopeStateFor(props.scopeKey ?? null), f.rel) ?? 0)
       h.setInlineDiff(mode() === "edit" && !previewing() ? inlineRanges() : [])
       if (!f.readOnly) {
@@ -576,6 +626,9 @@ export function EditorDock(props: {
       void unwatchAll()
       editor?.destroy()
       editor = null
+      mountedRoot = null
+      mountedRel = null
+      previewRestoredKey = null
     })
   })
 
@@ -610,7 +663,15 @@ export function EditorDock(props: {
     const f = activeFile()
     const root = props.contentRoot
     if (!f || !root || f.readOnly || saving()) return
-    const content = getDraft(root, f.rel) ?? editor?.getDoc() ?? f.savedContent
+    const content = editorSaveContent({
+      draft: getDraft(root, f.rel),
+      editorDoc: editor?.getDoc(),
+      savedContent: f.savedContent,
+      mountedRoot,
+      mountedRel,
+      root,
+      rel: f.rel,
+    })
     setSaving(true)
     try {
       const res = await window.api.fs.writeFile(root, f.rel, content, {
@@ -973,7 +1034,10 @@ export function EditorDock(props: {
     if (anchor) {
       if (action === "send") {
         if (!props.onSendAnnotation) return
-        props.onSendAnnotation(buildAnnotationPromptAnchored(f.rel, anchor, comment.trim(), { hasImage: !!extra?.imageDataUrl }), extra)
+        props.onSendAnnotation(buildAnnotationPromptAnchored(f.rel, anchor, comment.trim(), {
+          hasImage: !!extra?.imageDataUrl,
+          root: props.contentRoot ?? undefined,
+        }), extra)
         if (props.sessionID) addMark(props.sessionID, f.rel, anchor, extra?.visual)
       } else {
         props.onAddAnnotation?.({
@@ -997,7 +1061,14 @@ export function EditorDock(props: {
     if (!annotationApplies(f.rel, s.rel)) { clearSelection(); return }
     if (action === "send") {
       if (!props.onSendAnnotation) return
-      props.onSendAnnotation(buildAnnotationPrompt(f.rel, range.startLine, range.endLine, s.text, comment.trim()))
+      props.onSendAnnotation(buildAnnotationPrompt(
+        f.rel,
+        range.startLine,
+        range.endLine,
+        s.text,
+        comment.trim(),
+        { root: props.contentRoot ?? undefined },
+      ))
       if (props.sessionID) addMark(props.sessionID, f.rel, undefined, { point: { x: s.left, y: s.top } })
     } else {
       if (!props.onAddAnnotation) return

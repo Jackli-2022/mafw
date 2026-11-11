@@ -114,6 +114,31 @@ export function canApplyCleanReload(m: EditorModel, rel: string): boolean {
   return !!f && !f.dirty && !f.readOnly && f.kind !== "image"
 }
 
+/**
+ * 保存时选择内容来源：草稿优先；只有当前挂载的 editor 仍属于目标 root+rel 时
+ * 才使用 editor 文档。scope/tab 切换期间旧 editor 仍可能短暂存活，绝不能把
+ * 它的文档写进新 scope 的同名文件。
+ */
+export function editorSaveContent(input: {
+  draft?: string
+  editorDoc?: string
+  savedContent: string
+  mountedRoot: string | null
+  mountedRel: string | null
+  root: string
+  rel: string
+}): string {
+  if (input.draft !== undefined) return input.draft
+  if (
+    input.mountedRoot === input.root
+    && input.mountedRel === input.rel
+    && input.editorDoc !== undefined
+  ) {
+    return input.editorDoc
+  }
+  return input.savedContent
+}
+
 function update(m: EditorModel, rel: string, fn: (f: OpenFile) => OpenFile): EditorModel {
   let changed = false
   const files = m.files.map(f => {

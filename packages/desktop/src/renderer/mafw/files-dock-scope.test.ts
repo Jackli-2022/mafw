@@ -21,3 +21,12 @@ test("FilesDock restores and persists tree state per content scope", () => {
 test("selected file rows use theme tokens", () => {
   assert.match(css, /\.mafw-file-tree-row\.is-selected\s*\{[^}]*var\(--/)
 })
+
+test("expanding a directory does not re-run the scope reset effect", () => {
+  const scopeEffect = dock.slice(
+    dock.indexOf("// root/scope 变化"),
+    dock.indexOf("// ── 目录自动刷新"),
+  )
+  assert.match(scopeEffect, /loadRoot\(saved\.treeExpanded\)/)
+  assert.doesNotMatch(scopeEffect, /loadRoot\(\)/)
+})

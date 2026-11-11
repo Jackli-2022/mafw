@@ -112,6 +112,16 @@ export function scopeAfterProjectChange(
   return projectContentScope(dir)
 }
 
+/** A scope (project or its Goal worktree) may only be restored for its own project. */
+export function contentScopeBelongsToProject(
+  scope: ContentScope | null | undefined,
+  projectDir: string | null | undefined,
+): boolean {
+  const dir = clean(projectDir)
+  if (!scope || !dir) return false
+  return normalizePath(scope.projectDir) === normalizePath(dir)
+}
+
 /** Inline diffs come from the active session; only show them when that session
  *  is looking at the same root as the content workbench. */
 export function diffsForContentScope<T>(input: {

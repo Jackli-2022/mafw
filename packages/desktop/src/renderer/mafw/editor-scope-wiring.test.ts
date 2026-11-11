@@ -18,6 +18,8 @@ test("EditorDock restores models and reading positions per scope", () => {
   assert.match(editor, /setScroll\(/)
   assert.match(editor, /mountToken/)
   assert.match(editor, /root !== props\.contentRoot/)
+  assert.match(editor, /\.mafw-md-preview, \.mafw-json-preview-wrap, \.mafw-table-preview, \.mafw-office-host/)
+  assert.match(editor, /previewRestoredKey/)
   assert.match(cm, /getScroll\(\): number/)
   assert.match(cm, /setScroll\(top: number\)/)
   assert.match(monaco, /getScrollTop\(\)/)

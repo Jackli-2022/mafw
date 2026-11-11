@@ -11,8 +11,7 @@ const shell = read("MafwShell.tsx")
 test("the result offers an explicit Goal worktree entry", () => {
   assert.match(result, /查看本版文件/)
   assert.match(result, /onOpenWorktree/)
-  assert.match(result, /worktree\?\.dir|worktree\.dir/)
-  assert.match(result, /status !== "missing"/)
+  assert.match(result, /podResultCanOpenWorktree/)
 })
 
 test("the Goal entry carries revision and title, and never auto-switches scope", () => {

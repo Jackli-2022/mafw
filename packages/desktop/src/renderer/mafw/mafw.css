@@ -5994,6 +5994,14 @@ html[data-theme="light"] body {
 .mafw-pending-annotation { display: flex; align-items: center; gap: 8px; padding: 3px 8px; font-size: 11px; }
 .mafw-pending-annotation + .mafw-pending-annotation { border-top: 1px dashed var(--border); }
 .mafw-pending-annotation-where { color: var(--accent); flex: 0 0 auto; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mafw-pending-annotation-scope {
+  flex: none;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-inset);
+  color: var(--text-3);
+  font-size: 9.5px;
+}
 .mafw-pending-annotation-text { color: var(--text-2); flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mafw-pending-captures { margin: 0 0 6px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg-inset); overflow: hidden; }
 .mafw-pending-captures-head { display: flex; align-items: center; justify-content: space-between; padding: 2px 8px; font-size: 10px; color: var(--text-4); border-bottom: 1px solid var(--border); }

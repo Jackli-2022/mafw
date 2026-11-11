@@ -33,6 +33,8 @@ export type WorkbenchShellProps = {
   sessionID: string | null
   contentRoot: string | null
   contentScopeKey: string | null
+  /** Plugin Web surfaces stay session/project-bound; they are not project files. */
+  pluginProjectDir: string | null
   contentScopeLabel: string
   contentScopeIsGoal: boolean
   canGoBack: boolean
@@ -321,6 +323,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
             sessionID={props.sessionID}
             contentRoot={props.contentRoot}
             contentScopeKey={props.contentScopeKey}
+            pluginProjectDir={props.pluginProjectDir}
             diffs={props.diffs}
             onOpenFile={props.onOpenFile}
             onSendAnnotation={props.onSendAnnotation}

@@ -1,6 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import {
+  contentScopeBelongsToProject,
   contentScopeKey,
   contentScopeLabel,
   contentScopeRoot,
@@ -74,6 +75,19 @@ test("project changes keep a goal scope only inside the same project", () => {
   assert.equal(sameContentScope(scope, scopeAfterProjectChange(scope, "C:\\work\\app")), true)
   assert.equal(scopeAfterProjectChange(scope, "D:\\other")?.kind, "project")
   assert.equal(contentScopeKey(projectContentScope("D:\\other")), "project:d:/other")
+})
+
+test("a content scope belongs only to its own project", () => {
+  const goalScope = goalContentScope({
+    projectDir: "C:\\work\\app",
+    goalId: "g1",
+    revision: 1,
+    worktreeDir: "C:\\work\\app-wt-x",
+  })
+  assert.equal(contentScopeBelongsToProject(projectContentScope("C:\\work\\app"), "C:\\work\\app"), true)
+  assert.equal(contentScopeBelongsToProject(goalScope, "C:\\work\\app"), true)
+  assert.equal(contentScopeBelongsToProject(goalScope, "C:\\work\\other"), false)
+  assert.equal(contentScopeBelongsToProject(null, "C:\\work\\app"), false)
 })
 
 test("inline diffs never cross the content scope", () => {

@@ -13,6 +13,7 @@ import {
 } from "../pod-model"
 import {
   podResultAcceptanceView,
+  podResultCanOpenWorktree,
   podResultCanViewDiff,
   podResultConditionRows,
   podResultWorktreeRows,
@@ -159,6 +160,11 @@ export function PodResultView(props: {
     const value = result()
     return value ? podResultCanViewDiff(value) : false
   }
+  const canOpenWorktree = () => {
+    const value = result()
+    return value ? podResultCanOpenWorktree(value, activeRevision()) : false
+  }
+  const worktreeRevision = () => result()?.revision ?? activeRevision() ?? null
   const worktreeNote = () => {
     const worktree = result()?.worktree
     if (!worktree) return null
@@ -372,17 +378,18 @@ export function PodResultView(props: {
                 <For each={value().artifacts}>{(item) => <li><code>{artifactName(item)}</code></li>}</For>
               </ul>
             </Show>
-            <Show when={value().worktree?.dir && value().worktree?.status !== "missing"}>
+            <Show when={canOpenWorktree()}>
               <div class="mafw-pod-result-diff-actions">
                 <ButtonV2
                   variant="outline"
                   size="small"
                   onClick={() => {
                     const worktree = value().worktree
-                    if (!worktree?.dir) return
+                    const revision = worktreeRevision()
+                    if (!worktree?.dir || revision == null) return
                     props.onOpenWorktree?.({
                       goalId: props.goalId,
-                      revision: value().revision ?? activeRevision() ?? 1,
+                      revision,
                       worktreeDir: worktree.dir,
                     })
                   }}

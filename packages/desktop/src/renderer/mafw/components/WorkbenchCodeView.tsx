@@ -22,6 +22,7 @@ export function WorkbenchCodeView(props: {
   sessionID: string | null
   contentRoot: string | null
   contentScopeKey: string | null
+  pluginProjectDir: string | null
   diffs: FileDiffEntry[]
   onOpenFile: (rel: string) => void
   onSendAnnotation?: (text: string, opts?: { imageDataUrl?: string }) => void
@@ -137,7 +138,7 @@ export function WorkbenchCodeView(props: {
                   view={view}
                   gatewayUrl={props.gatewayUrl ?? ""}
                   sessionID={props.sessionID}
-                  projectDir={props.contentRoot ?? ""}
+                  projectDir={props.pluginProjectDir ?? ""}
                   onBadge={(count) => props.onWebBadge?.(view.surfaceId, count)}
                   onTitle={(title) => props.onWebTitle?.(view.surfaceId, title)}
                   onError={(message) => props.onWebError?.(view.surfaceId, message)}

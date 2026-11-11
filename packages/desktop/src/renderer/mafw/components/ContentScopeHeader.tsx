@@ -11,8 +11,8 @@ export function ContentScopeHeader(props: {
   onReturnToProject: () => void
 }): JSX.Element {
   return (
-    <div class="mafw-content-scope" role="status" aria-live="polite">
-      <span class="mafw-content-scope-label">{props.label}</span>
+    <div class="mafw-content-scope">
+      <span class="mafw-content-scope-label" aria-live="polite">{props.label}</span>
       <div class="mafw-content-scope-actions">
         <Show when={props.canGoBack}>
           <ButtonV2

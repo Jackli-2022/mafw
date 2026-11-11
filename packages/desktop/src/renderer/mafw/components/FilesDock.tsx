@@ -43,10 +43,9 @@ export function FilesDock(props: {
     saveContentScopeState(key, update(contentScopeStateFor(key)))
   }
 
-  const loadRoot = () => {
+  const loadRoot = (expandedRels: readonly string[] = [...expanded()]) => {
     const root = props.contentRoot
     const token = ++loadToken
-    const expandedRels = [...expanded()]
     setChildren({})
     setRootEntries([])
     setError(null)
@@ -60,7 +59,17 @@ export function FilesDock(props: {
         for (const rel of expandedRels) {
           const childEntries = await window.api.fs.listDir(root, rel)
           if (token !== loadToken || root !== props.contentRoot) return
-          if (childEntries) setChildren(prev => ({ ...prev, [rel]: childEntries }))
+          if (childEntries) {
+            setChildren(prev => ({ ...prev, [rel]: childEntries }))
+          } else {
+            setExpanded(prev => {
+              if (!prev.has(rel)) return prev
+              const next = new Set(prev)
+              next.delete(rel)
+              return next
+            })
+            persistScope((state) => setTreeExpanded(state, rel, false))
+          }
         }
       } catch (e: any) {
         if (token === loadToken && root === props.contentRoot) {
@@ -80,7 +89,7 @@ export function FilesDock(props: {
     releaseWatches()
     setExpanded(new Set(saved.treeExpanded))
     setSelectedRel(saved.treeSelected)
-    loadRoot()
+    loadRoot(saved.treeExpanded)
   })
 
   // ── 目录自动刷新（2026-10-31）：watch 根 + 当前展开目录 ─────────────
@@ -255,7 +264,7 @@ export function FilesDock(props: {
       <div class="mafw-file-tree">
         <Show
           when={props.contentRoot}
-          fallback={<DockEmpty icon="file-tree" text="没有打开的会话" hint="打开会话后此处显示项目文件" />}
+          fallback={<DockEmpty icon="file-tree" text="未选择项目" hint="打开项目后此处显示项目文件" />}
         >
           <Show when={loading()}>
             <DockBanner kind="info" busy text="加载中…" />

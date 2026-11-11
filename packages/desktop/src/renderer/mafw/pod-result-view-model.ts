@@ -43,6 +43,21 @@ export function podResultCanViewDiff(result: PodGoalResult): boolean {
   return result.worktree?.status === "active" || result.worktree?.status === "abandoned"
 }
 
+/**
+ * 只有仍存在/可追溯的 revision worktree 才能显式打开文件。
+ * merged 的 checkout 已被验收移除；missing 不可用；revision 未知时无法建立稳定 scope。
+ */
+export function podResultCanOpenWorktree(
+  result: PodGoalResult | null | undefined,
+  fallbackRevision: number | null = null,
+): boolean {
+  const worktree = result?.worktree
+  if (!worktree?.dir) return false
+  if (worktree.status !== "active" && worktree.status !== "abandoned") return false
+  const revision = result?.revision ?? fallbackRevision
+  return typeof revision === "number" && Number.isInteger(revision) && revision > 0
+}
+
 export interface PodResultWorktreeRow {  label: string
   value: string
   tone?: "warning" | "danger"

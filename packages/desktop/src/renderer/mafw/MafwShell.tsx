@@ -124,6 +124,7 @@ import { captureWorkbenchFocusSnapshot, restoreWorkbenchFocusSnapshot, type Work
 import { migrateDockKeys, workbenchColumns, workbenchFocusActive, workbenchShellHidden, workbenchSplit, formatResizePreview, type WorkbenchContentMode } from "./workbench-layout"
 import { resolveWorkbenchRoot } from "./workbench-root"
 import {
+  contentScopeBelongsToProject,
   contentScopeKey,
   contentScopeLabel,
   contentScopeRoot,
@@ -2152,6 +2153,7 @@ export function MafwShell() {
     const popped = popContentHistory(contentHistory())
     if (!popped.entry) return
     setContentHistory(popped.rest)
+    if (!contentScopeBelongsToProject(popped.entry.scope, currentProject())) return
     setContentScope(popped.entry.scope)
     openWorkbench("workbench")
     applyWorkbenchSurface("code")
@@ -2164,14 +2166,27 @@ export function MafwShell() {
     worktreeDir: string
     title?: string | null
   }): void => {
-    const scope = goalContentScope({ projectDir: currentProject(), ...input })
-    if (!scope) {
-      showToastV2({ description: "无法打开该 Goal 版本的文件", variant: "error", duration: 3500 } as any)
-      return
-    }
-    setContentScope(scope)
-    openWorkbench("workbench")
-    applyWorkbenchSurface("code")
+    void (async () => {
+      const scope = goalContentScope({ projectDir: currentProject(), ...input })
+      if (!scope) {
+        showToastV2({ description: "无法打开该 Goal 版本的文件", variant: "error", duration: 3500 } as any)
+        return
+      }
+      let entries: unknown = null
+      try {
+        entries = await window.api.fs.listDir(scope.worktreeDir, "")
+      } catch {
+        entries = null
+      }
+      if (entries === null) {
+        showToastV2({ description: "该 Goal 版本的文件已不可用", variant: "error", duration: 3500 } as any)
+        return
+      }
+      rememberContentLocation()
+      setContentScope(scope)
+      openWorkbench("workbench")
+      applyWorkbenchSurface("code")
+    })()
   }
   const returnToProjectContent = (): void => {
     rememberContentLocation()
@@ -2242,6 +2257,10 @@ export function MafwShell() {
   const [contentHistory, setContentHistory] = createSignal<ContentHistoryEntry[]>([])
   createEffect(() => {
     setContentScope((scope) => scopeAfterProjectChange(scope, currentProject()))
+  })
+  createEffect(() => {
+    currentProject()
+    setContentHistory([])
   })
   const contentDiffEntries = createMemo(() => diffsForContentScope({
     contentRoot: contentRoot(),
@@ -3222,6 +3241,7 @@ export function MafwShell() {
                   sessionID={currentSessionID() || null}
                   contentRoot={contentRoot()}
                   contentScopeKey={currentContentScopeKey()}
+                  pluginProjectDir={benchRoot() ?? currentProject()}
                   contentScopeLabel={contentScopeLabel(contentScope())}
                   contentScopeIsGoal={contentScopeIsGoal()}
                   canGoBack={contentHistory().length > 0}
@@ -3295,10 +3315,7 @@ export function MafwShell() {
                       onCloseGoal={() => setPodGoalId(null)}
                       onOpenSession={(sid) => { void openPodSession(sid) }}
                       onGoalAccepted={() => { void openLeadEntry() }}
-                      onOpenGoalWorktree={(target) => {
-                        rememberContentLocation()
-                        openGoalContent(target)
-                      }}
+                      onOpenGoalWorktree={(target) => openGoalContent(target)}
                     />
                   }
                   onSendComment={(sid, text) => {

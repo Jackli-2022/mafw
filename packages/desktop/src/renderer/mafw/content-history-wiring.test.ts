@@ -13,6 +13,8 @@ test("the shell remembers content locations before opening another one", () => {
   assert.match(shell, /popContentHistory/)
   assert.match(shell, /rememberContentLocation/)
   assert.match(shell, /backContent/)
+  assert.match(shell, /contentScopeBelongsToProject/)
+  assert.match(shell, /setContentHistory\(\[\]\)/)
   const onOpenFile = shell.slice(shell.indexOf("onOpenFile={"), shell.indexOf("onSendAnnotation={"))
   assert.match(onOpenFile, /rememberContentLocation\(\)/)
 })

@@ -54,6 +54,15 @@ describe("buildAnnotationBatch（多条批注打包随消息发送）", () => {
   test("空数组 → 空串", () => {
     expect(buildAnnotationBatch([])).toBe("")
   })
+  test("批注 root：内容根写入单条与批量 prompt", () => {
+    const root = "C:\\work\\app-wt-goal-g1-r1"
+    expect(buildAnnotationPrompt("src/a.ts", 3, 5, "x()", "问", { root }))
+      .toContain(`内容根：\`${root}\``)
+    expect(buildAnnotationPromptAnchored("src/a.md", { kind: "quote", quote: "原文" }, "问", { root }))
+      .toContain(`内容根：\`${root}\``)
+    expect(buildAnnotationBatch([item({ root })])).toContain(`内容根：\`${root}\``)
+  })
+
   test("两条批注：编号块 + 统一行动指令，代码与批注逐字保留", () => {
     expect(buildAnnotationBatch([
       item(),
