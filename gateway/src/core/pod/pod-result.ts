@@ -34,6 +34,13 @@ export interface PodResultWorktree {
 
 export type PodGoalAcceptance = 'pending' | 'accepted' | 'unavailable';
 
+/** Durable record of a human acceptance (especially a forced one). */
+export interface PodGoalAcceptanceView {
+  forced: boolean;
+  acceptedAt: string;
+  unresolvedReviewItemIds: string[];
+}
+
 export interface PodGoalResult {
   goalId: string;
   /** 该结果对应的 revision（legacy 行为 1）。 */
@@ -60,6 +67,8 @@ export interface PodGoalResult {
   worktree?: PodResultWorktree | null;
   /** User acceptance state; absent for legacy results. */
   acceptance?: PodGoalAcceptance;
+  /** Durable acceptance audit (forced state + unresolved snapshot); absent before acceptance. */
+  acceptanceRecord?: PodGoalAcceptanceView | null;
 }
 
 /** PASS or quick UNREVIEWED, with trustworthy evidence and no failure classification. */

@@ -147,6 +147,20 @@ export const DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
+    name: "mafw_pod_review_respond",
+    description: "Tech Lead-only: respond to a human review item. Marks the item 已回应 (never 已解决) and records the response. The calling session must be the Goal-bound Tech Lead session. Only the human can resolve or reopen an item.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        goalId: { type: "string", description: "Goal identifier" },
+        itemId: { type: "string", description: "Review item identifier" },
+        response: { type: "string", description: "What changed or why the item is addressed" },
+        sessionID: { type: "string", description: "Calling Tech Lead session id (MCP does not carry caller identity)" },
+      },
+      required: ["goalId", "itemId", "response", "sessionID"],
+    },
+  },
+  {
     name: "mafw_update_state",
     description: "Update the state file for a goal",
     inputSchema: {
@@ -793,6 +807,7 @@ import {
 } from "./handlers/standing-goals";
 import { handlePodGoalDirection } from "./handlers/pod-goal-direction";
 import { handlePodGoalContext } from "./handlers/pod-context-select";
+import { handlePodReviewRespond } from "./handlers/pod-review-respond";
 import { handleUpdateState } from "./handlers/update-state";
 import { handleSearchHybrid } from "./handlers/search-hybrid";
 import { handleGetDeltas } from "./handlers/get-deltas";
@@ -845,6 +860,7 @@ export function createToolRegistry(): ToolRegistry {
       mafw_lead_goal_status: handleLeadGoalStatus,
       mafw_pod_goal_direction: handlePodGoalDirection,
       mafw_pod_goal_context: handlePodGoalContext,
+      mafw_pod_review_respond: handlePodReviewRespond,
       mafw_update_state: handleUpdateState,
       mafw_search_hybrid: handleSearchHybrid,
       mafw_get_deltas: handleGetDeltas,

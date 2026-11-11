@@ -113,6 +113,7 @@ export const MAFW_TOOL_ANNOTATIONS: Record<string, MafwToolAnnotations> = {
   mafw_lead_goal_status: { readOnlyHint: true, destructiveHint: false },
   mafw_pod_goal_direction: { readOnlyHint: false, destructiveHint: false },
   mafw_pod_goal_context: { readOnlyHint: false, destructiveHint: false },
+  mafw_pod_review_respond: { readOnlyHint: false, destructiveHint: false },
   mafw_set_goal: { readOnlyHint: false, destructiveHint: false },
   mafw_run_automation: { readOnlyHint: false, destructiveHint: false },
   mafw_ask_user: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },

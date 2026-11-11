@@ -43,8 +43,19 @@ function createHarness(unresolved: Array<{ id: string }>) {
     } as any,
     reviews: {
       unresolved: () => unresolved,
-      recordAcceptance: (input: any) => { recorded = input; return input; },
-      acceptance: () => null,
+      recordAcceptance: (input: any) => {
+        recorded = {
+          ...input,
+          id: 'accept_1',
+          actorKind: 'human',
+          acceptedAt: now,
+          unresolvedItemIds: input.unresolvedItemIds,
+        };
+        return recorded;
+      },
+      acceptance: () => (recorded
+        ? { ...recorded, unresolvedItemIds: recorded.unresolvedItemIds }
+        : null),
     },
   });
   return { service, getRecorded: () => recorded };
@@ -74,6 +85,9 @@ describe('goal acceptance review gate', () => {
     expect(accepted.unresolvedReviewItemIds).toEqual(['review_1', 'review_2']);
     expect(getRecorded()).toMatchObject({
       forced: true, riskAcknowledged: true, unresolvedItemIds: ['review_1', 'review_2'],
+    });
+    expect(service.result('pod_1', 'g1').acceptanceRecord).toMatchObject({
+      forced: true, acceptedAt: now, unresolvedReviewItemIds: ['review_1', 'review_2'],
     });
   });
 

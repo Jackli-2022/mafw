@@ -649,10 +649,18 @@ export class PodGoalService {
       : worktree.status === 'active' && isAcceptablePodResult(result)
         ? 'pending'
         : 'unavailable';
+    const record = this.deps.reviews?.acceptance(podId, goalId, revision) ?? null;
     return {
       ...enriched,
       worktree: resultWorktree(worktree),
       acceptance,
+      acceptanceRecord: record
+        ? {
+          forced: record.forced,
+          acceptedAt: record.acceptedAt,
+          unresolvedReviewItemIds: record.unresolvedItemIds,
+        }
+        : null,
     };
   }
 
