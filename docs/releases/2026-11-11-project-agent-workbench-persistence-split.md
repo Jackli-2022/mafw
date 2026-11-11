@@ -11,6 +11,7 @@
 | commit | 内容 |
 |---|---|
 | `f796787e` | 内容 scope 状态/草稿跨重启持久化；活动文档恢复；文件树偏好；显式分屏对照；Goal revision 最近项 |
+| `6f585969` | 初始挂载时空 editor model 不再清空持久化 activeFile；显式关闭最后一个 tab 才允许清空 |
 
 ## 行为变化
 
@@ -27,6 +28,7 @@
   - 树展开/选中恢复；
   - 活动文档自动重新打开（不再只恢复 scope 身份）；
   - 有草稿的文件恢复后标记 dirty 并转持久 Tab，避免被下一次阅读预览替换。
+- 初始挂载时 contentRoot 尚未就绪的空 editor model 不会覆盖持久化 activeFile；只有用户显式关闭最后一个 tab 才允许清空。
 - 选区/滚动位置由现有 `content-scope-state` 恢复路径消费。
 
 ### 显式分屏对照
