@@ -140,6 +140,7 @@ import {
   loadFocusState,
   saveFocusState,
 } from "./focus/focus-persistence"
+import { migrateContentScopeState } from "./focus/legacy-migration"
 import { fileOpenPlan } from "./file-kind"
 import { fileProtocol } from "./file-protocol-client"
 import { requestBrowserNavigate } from "./browser-nav"
@@ -2621,9 +2622,25 @@ export function MafwShell() {
     if (lastFocusWorld) flushFocusPersistence(lastFocusWorld)
     lastFocusWorld = worldId
     const loaded = loadFocusState(worldId)
-    const next = loaded ?? createWorkbenchState(worldId)
-    setFocusState(next)
-    void validateFocusStack(worldId, next)
+    let next = loaded
+    if (!next) {
+      const project = currentProject()
+      const restored = project ? readPersistedContentScope(project, window.localStorage) : null
+      const scope = focusScopeFromContent(restored ?? contentScope())
+      const root = restored
+        ? (contentScopeRoot(restored) ?? project ?? "")
+        : (contentRoot() ?? project ?? "")
+      next = migrateContentScopeState({
+        worldId,
+        root,
+        scope,
+        state: contentScopeStateFor(contentScopeKey(restored ?? contentScope())),
+      })
+      saveFocusState(next)
+    }
+    const state = next
+    setFocusState(state)
+    void validateFocusStack(worldId, state)
   })
   createEffect(() => {
     saveFocusState(focusState())
