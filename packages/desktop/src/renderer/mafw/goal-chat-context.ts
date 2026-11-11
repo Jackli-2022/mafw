@@ -12,7 +12,7 @@ export function goalDiscussionTarget(
   goalId: string,
 ): PodGoal | null {
   if (!detail || !goalId) return null
-  return detail.goals.find((goal) => goal.goalId === goalId) ?? null
+  return (detail.goals ?? []).find((goal) => goal.goalId === goalId) ?? null
 }
 
 export function techLeadSessionForGoal(input: {
@@ -22,9 +22,9 @@ export function techLeadSessionForGoal(input: {
 }): boolean {
   const { detail, goalId, activeSessionId } = input
   if (!detail || !goalId || !activeSessionId) return false
-  const techLead = detail.members.find((member) => member.role === "tech_lead")
+  const techLead = (detail.members ?? []).find((member) => member.role === "tech_lead")
   if (!techLead) return false
-  return detail.sessions.some((session) =>
+  return (detail.sessions ?? []).some((session) =>
     session.memberId === techLead.id
     && session.sessionId === activeSessionId
     && session.goalId === goalId
@@ -46,4 +46,18 @@ export function shouldShowReturnLead(input: {
     goalId: selectedGoalId,
     activeSessionId,
   })
+}
+
+/** Async Goal-open responses may only commit while the same request/Goal/project is current. */
+export function goalDiscussionRequestCurrent(input: {
+  requestSeq: number
+  currentSeq: number
+  requestedGoalId: string
+  selectedGoalId: string | null
+  requestedProject: string | null
+  currentProject: string | null
+}): boolean {
+  return input.requestSeq === input.currentSeq
+    && input.requestedGoalId === input.selectedGoalId
+    && input.requestedProject === input.currentProject
 }

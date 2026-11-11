@@ -75,7 +75,7 @@ import {
   techLeadSendGate,
   type GoalDetailFocus,
 } from "./pod-model"
-import { goalDiscussionTarget, shouldOpenTechLeadForGoal, shouldShowReturnLead } from "./goal-chat-context"
+import { goalDiscussionRequestCurrent, goalDiscussionTarget, shouldOpenTechLeadForGoal, shouldShowReturnLead } from "./goal-chat-context"
 import { ingestPluginEvent, ingestPluginsChanged, pluginClientRevision, pluginDescriptors, refreshPluginClient } from "./plugins/plugin-store"
 import { pluginSurfaceIssues, pluginSurfaces, pluginConfigSurfaces, resolveActiveSurface } from "./plugins/plugin-view-model"
 import { railItemsFromWebSurfaces, webSurfaceTabs, webSurfaceViews } from "./plugins/plugin-web-surface"
@@ -157,7 +157,7 @@ import { countUserTurns, shouldKeepPaging } from "./components/history-paging"
 
 type ModelSel = { providerID: string; modelID: string; label: string }
 import type { AgentEntry } from "./components/pickers/AgentPicker"
-import type { MafwAgent, MafwProvider, ThinkingLevel } from "@mafw/sdk"
+import type { MafwAgent, MafwProvider, PodGoal, ThinkingLevel } from "@mafw/sdk"
 
 /** `/api/provider` 信封：规范 `items` + 默认模型/连接列表（composer 初值用）。 */
 type ProvidersEnvelope = {
@@ -223,6 +223,7 @@ export function MafwShell() {
   const [subagentStack, setSubagentStack] = createStore<Record<string, string>>({})
   const [podGoalId, setPodGoalId] = createSignal<string | null>(null)
   const [goalDetailFocus, setGoalDetailFocus] = createSignal<GoalDetailFocus>("timeline")
+  let goalDiscussSeq = 0
   const [goalComposerRequest, setGoalComposerRequest] = createSignal(0)
   /** 打开统一 Goal 详情，并按 attention action 指定落点（计划/问题/方向/结果）。 */
   const openGoalDetail = (goalId: string, focus: GoalDetailFocus = "timeline"): void => {
@@ -230,14 +231,37 @@ export function MafwShell() {
     setGoalDetailFocus(focus)
     setPodGoalId(goalId)
   }
-  // 进入非终态 Goal 时把 Chat 切到 Tech Lead，但右侧 Goal 先同步打开，
-  // 即使 Tech Lead 会话恢复失败也不丢当前 Goal。
-  const openGoalAndDiscuss = async (goalId: string, focus: GoalDetailFocus = "timeline"): Promise<void> => {
+  // 进入非终态 Goal 时把 Chat 切到 Tech Lead，但右侧 Goal 先同步打开。
+  // snapshot 让“刚创建、SSE/刷新尚未到达”的 Goal 也能进入讨论；seq 防止快速切换
+  // Goal/项目时迟到的 Tech Lead 恢复把 Chat 拉回旧上下文。
+  const openGoalAndDiscuss = async (
+    goalId: string,
+    focus: GoalDetailFocus = "timeline",
+    goalSnapshot?: PodGoal,
+  ): Promise<void> => {
+    const requestSeq = ++goalDiscussSeq
+    const requestedProject = currentProject()
     openGoalDetail(goalId, focus)
-    const goal = goalDiscussionTarget(podStore.detail(), goalId)
-    if (!shouldOpenTechLeadForGoal(goal)) return
+    let goal = goalSnapshot ?? goalDiscussionTarget(podStore.detail(), goalId)
     try {
-      await openTechLead(goalId)
+      await podStore.refresh()
+      goal = goalDiscussionTarget(podStore.detail(), goalId) ?? goal
+    } catch {
+      // fail-open: keep the right Goal detail reachable even if Pod refresh fails
+    }
+    if (!goal) return
+    const isCurrent = () => goalDiscussionRequestCurrent({
+      requestSeq,
+      currentSeq: goalDiscussSeq,
+      requestedGoalId: goalId,
+      selectedGoalId: podGoalId(),
+      requestedProject,
+      currentProject: currentProject(),
+    })
+    if (!isCurrent() || !shouldOpenTechLeadForGoal(goal)) return
+    try {
+      await openTechLead(goalId, isCurrent)
+      if (isCurrent()) await podStore.refresh()
     } catch (err: any) {
       showToastV2({ description: `打开 Tech Lead 失败: ${err?.message || err}`, duration: 4000 } as any)
     }
@@ -541,7 +565,7 @@ export function MafwShell() {
         sourceRef: handoff.sourceRef,
       })
       await podStore.refresh()
-      void openGoalAndDiscuss(created.goalId)
+      void openGoalAndDiscuss(created.goalId, "timeline", created.goal)
       showToastV2({ description: "已交给 Lead，Goal 已创建", duration: 3000 } as any)
     } catch (err: any) {
       showToastV2({ description: `交给 Lead 失败: ${err?.message || err}`, duration: 4500 } as any)
@@ -2258,10 +2282,11 @@ export function MafwShell() {
   }
   // 打开 Goal 的 Tech Lead 讨论：`pod.techLead` 确保隐藏会话存在；tab 标题只由 Goal
   // 标题派生，runtime session id 不出现在任何用户可见文案里（spec §3.2）。
-  const openTechLead = async (goalId: string): Promise<void> => {
+  const openTechLead = async (goalId: string, isCurrent: () => boolean = () => true): Promise<void> => {
     const goal = podStore.detail()?.goals.find((item) => item.goalId === goalId)
     try {
       const history = await podStore.techLead(goalId)
+      if (!isCurrent()) return
       if (!history?.sessionID) {
         showToastV2({ description: "Tech Lead 会话暂不可用", duration: 3000 } as any)
         return
@@ -3162,10 +3187,11 @@ export function MafwShell() {
                       selectedGoalId={podGoalId()}
                       detailFocus={goalDetailFocus()}
                       podId={podIdForCurrentProject()}
-                      onOpenGoal={(goal, focus) => { void openGoalAndDiscuss(goal.goalId, focus) }}
-                      onGoalCreated={(goalId) => { void openGoalAndDiscuss(goalId) }}
+                      onOpenGoal={(goal, focus) => { void openGoalAndDiscuss(goal.goalId, focus, goal) }}
+                      onGoalCreated={(goalId, goal) => { void openGoalAndDiscuss(goalId, "timeline", goal) }}
                       onCloseGoal={() => setPodGoalId(null)}
                       onOpenSession={(sid) => { void openPodSession(sid) }}
+                      onGoalAccepted={() => { void openLeadEntry() }}
                     />
                   }
                   onSendComment={(sid, text) => {

@@ -7731,6 +7731,16 @@ html[data-theme="light"] body {
 }
 .mafw-goal-section .mafw-pod-section-head { margin-bottom: 10px; }
 .mafw-goal-hint { padding: 8px 10px; border-radius: var(--r-sm); background: var(--bg-inset); color: var(--text-3); font-size: 11px; }
+.mafw-goal-blocker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+  border: 1px solid var(--danger-dim);
+  background: var(--danger-dim);
+  color: var(--danger-text);
+}
 .mafw-goal-question { border-color: var(--border-base); background: var(--bg-inset); }
 .mafw-goal-artifacts { padding: 10px 12px; border: 1px solid var(--border-subtle); border-radius: var(--r-lg); background: var(--bg-raised); }
 .mafw-goal-artifact { border: 1px solid var(--border-subtle); }

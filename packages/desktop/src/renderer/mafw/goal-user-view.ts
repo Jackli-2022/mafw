@@ -17,6 +17,38 @@ export type GoalUserSummary = {
   ended: boolean
 }
 
+export type GoalUserActionIntent =
+  | "review_plan"
+  | "answer_question"
+  | "review_direction"
+  | "view_result"
+  | "retry"
+  | "blocker"
+  | null
+
+export function goalUserActionIntent(
+  goal: PodGoal,
+  context: {
+    hasResult: boolean
+    hasPendingQuestion: boolean
+    hasPendingPlan: boolean
+    hasDirectionPending: boolean
+    hasRetryTarget: boolean
+  },
+): GoalUserActionIntent {
+  const stage = goal.stage as any
+  const actionType = String(stage?.action?.type ?? "")
+  const stageKind = String(stage?.kind ?? "")
+  if (context.hasPendingPlan || actionType === "open_plan_review" || stageKind === "plan_approval") return "review_plan"
+  if (context.hasPendingQuestion || actionType === "open_question" || stageKind === "question") return "answer_question"
+  if (context.hasDirectionPending || actionType === "open_direction_review" || stageKind === "direction_review") return "review_direction"
+  if (context.hasResult || actionType === "open_result") return "view_result"
+  if (goal.lastError) return context.hasRetryTarget ? "retry" : "blocker"
+  if (stageKind === "blocked") return context.hasRetryTarget ? "retry" : "blocker"
+  if (stage?.owner === "person") return "blocker"
+  return null
+}
+
 const DIRECTION_STAGE_KINDS = new Set(["discussing", "direction_review", "planning", "plan_approval"])
 
 const ACTION_COPY: Record<string, { status: string; action: string }> = {

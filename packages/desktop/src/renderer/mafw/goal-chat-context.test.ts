@@ -2,6 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import type { PodDetail, PodGoal, PodMember, PodSession } from "@mafw/sdk"
 import {
+  goalDiscussionRequestCurrent,
   goalDiscussionTarget,
   shouldOpenTechLeadForGoal,
   shouldShowReturnLead,
@@ -113,4 +114,24 @@ test("return Lead is visible only for the selected live nonterminal Goal", () =>
   assert.equal(shouldShowReturnLead({ detail, selectedGoalId: "g-ended", activeSessionId: "s-tech-ended" }), false)
   assert.equal(shouldShowReturnLead({ detail, selectedGoalId: "g-ended", activeSessionId: "s-tech-ended-live" }), false)
   assert.equal(shouldShowReturnLead({ detail, selectedGoalId: "missing", activeSessionId: "s-tech" }), false)
+})
+
+test("legacy Pod details without goals or sessions fail open", () => {
+  const legacy = {
+    ...detail,
+    goals: undefined as any,
+    members: undefined as any,
+    sessions: undefined as any,
+  }
+  assert.equal(goalDiscussionTarget(legacy, "g1"), null)
+  assert.equal(techLeadSessionForGoal({ detail: legacy, goalId: "g1", activeSessionId: "s-tech" }), false)
+  assert.equal(shouldShowReturnLead({ detail: legacy, selectedGoalId: "g1", activeSessionId: "s-tech" }), false)
+})
+
+test("stale Goal discussion requests are rejected by sequence, Goal and project", () => {
+  const current = { requestSeq: 2, currentSeq: 2, requestedGoalId: "g1", selectedGoalId: "g1", requestedProject: "p1", currentProject: "p1" }
+  assert.equal(goalDiscussionRequestCurrent(current), true)
+  assert.equal(goalDiscussionRequestCurrent({ ...current, currentSeq: 3 }), false)
+  assert.equal(goalDiscussionRequestCurrent({ ...current, selectedGoalId: "g2" }), false)
+  assert.equal(goalDiscussionRequestCurrent({ ...current, currentProject: "p2" }), false)
 })

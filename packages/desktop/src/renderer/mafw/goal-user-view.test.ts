@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import type { PodGoal, PodGoalStage } from "@mafw/sdk"
-import { goalUserFace, summarizeGoalForUser } from "./goal-user-view"
+import { goalUserActionIntent, goalUserFace, summarizeGoalForUser } from "./goal-user-view"
 
 function goal(input: Partial<PodGoal> & Pick<PodGoal, "goalId">): PodGoal {
   const stage: PodGoalStage = { owner: "team", kind: "working" }
@@ -199,4 +199,22 @@ test("user-facing summary never exposes runtime or internal Goal identity", () =
   }))
   const payload = JSON.stringify(summary)
   assert.doesNotMatch(payload, /ses_|goal-2026|runtime/i)
+})
+
+test("primary Goal action intent never falls through to technical details", () => {
+  const empty = { hasResult: false, hasPendingQuestion: false, hasPendingPlan: false, hasDirectionPending: false, hasRetryTarget: false }
+  assert.equal(goalUserActionIntent(goal({ goalId: "plan" }), { ...empty, hasPendingPlan: true }), "review_plan")
+  assert.equal(goalUserActionIntent(goal({ goalId: "question" }), { ...empty, hasPendingQuestion: true }), "answer_question")
+  assert.equal(goalUserActionIntent(goal({
+    goalId: "direction",
+    stage: { owner: "person", kind: "direction_review" },
+  }), empty), "review_direction")
+  assert.equal(goalUserActionIntent(goal({ goalId: "result", resultReady: true }), { ...empty, hasResult: true }), "view_result")
+  assert.equal(goalUserActionIntent(goal({ goalId: "retry", lastError: "boom" }), { ...empty, hasRetryTarget: true }), "retry")
+  assert.equal(goalUserActionIntent(goal({ goalId: "blocked", lastError: "boom" }), empty), "blocker")
+  assert.equal(goalUserActionIntent(goal({
+    goalId: "blocked-no-error",
+    stage: { owner: "person", kind: "blocked" },
+  }), empty), "blocker")
+  assert.equal(goalUserActionIntent(goal({ goalId: "healthy" }), empty), null)
 })

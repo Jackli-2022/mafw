@@ -49,7 +49,31 @@ test("the primary Goal header does not expose the internal Goal id", () => {
   const headerStart = goalDetailSrc.indexOf('class="mafw-goal-head"')
   const metaStart = goalDetailSrc.indexOf('class="mafw-goal-meta"')
   assert.ok(headerStart >= 0 && metaStart > headerStart)
-  assert.doesNotMatch(goalDetailSrc.slice(headerStart, metaStart), /mafw-goal-id/)
+  const headerBody = goalDetailSrc.slice(headerStart, metaStart)
+  assert.doesNotMatch(headerBody, /mafw-goal-id/)
+  assert.doesNotMatch(headerBody, /stageText\(\)/)
+})
+
+test("blocked and failing Goals expose real first-screen actions, not technical toggles", () => {
+  assert.match(goalDetailSrc, /goalUserActionIntent/)
+  assert.match(goalDetailSrc, /mafw-goal-blocker/)
+  assert.match(goalDetailSrc, /retry\(target\.runId, target\.node\)/)
+  assert.doesNotMatch(goalDetailSrc, /summary\?\.needsPerson[\s\S]{0,160}setTechnicalOpen\(true\)/)
+})
+
+test("Goal opening carries a snapshot and guards stale async requests", () => {
+  assert.match(mafwShellSrc, /goalSnapshot\?: PodGoal/)
+  assert.match(mafwShellSrc, /goalDiscussSeq/)
+  assert.match(mafwShellSrc, /goalDiscussionRequestCurrent/)
+  assert.match(mafwShellSrc, /openTechLead\(goalId, isCurrent\)/)
+  assert.match(mafwShellSrc, /onOpenGoal=\{\(goal, focus\) => \{ void openGoalAndDiscuss\(goal\.goalId, focus, goal\) \}\}/)
+  assert.match(mafwShellSrc, /onGoalCreated=\{\(goalId, goal\) => \{ void openGoalAndDiscuss\(goalId, "timeline", goal\) \}\}/)
+})
+
+test("accepting a Goal explicitly returns Chat to the project Lead", () => {
+  assert.match(goalDetailSrc, /onGoalAccepted\?: \(\) => void/)
+  assert.match(goalDetailSrc, /props\.onGoalAccepted\?\.\(\)/)
+  assert.match(mafwShellSrc, /onGoalAccepted=\{\(\) => \{ void openLeadEntry\(\) \}\}/)
 })
 
 function between(source: string, startMarker: string, endMarker: string): string {
@@ -70,8 +94,8 @@ test("opening a Goal enters its Tech Lead discussion without losing the Goal", (
   assert.match(mafwShellSrc, /openGoalAndDiscuss/)
   assert.match(mafwShellSrc, /shouldOpenTechLeadForGoal/)
   assert.match(mafwShellSrc, /goalDiscussionTarget/)
-  assert.match(mafwShellSrc, /onOpenGoal=\{\(goal, focus\) => \{ void openGoalAndDiscuss\(goal\.goalId, focus\) \}\}/)
-  assert.match(mafwShellSrc, /onGoalCreated=\{\(goalId\) => \{ void openGoalAndDiscuss\(goalId\) \}\}/)
+  assert.match(mafwShellSrc, /onOpenGoal=\{\(goal, focus\) => \{ void openGoalAndDiscuss\(goal\.goalId, focus, goal\) \}\}/)
+  assert.match(mafwShellSrc, /onGoalCreated=\{\(goalId, goal\) => \{ void openGoalAndDiscuss\(goalId, "timeline", goal\) \}\}/)
   assert.doesNotMatch(mafwShellSrc, /onOpenGoal=\{\(goal, focus\) => openGoalDetail\(/)
   assert.doesNotMatch(mafwShellSrc, /onGoalCreated=\{\(goalId\) => openGoalDetail\(/)
 })

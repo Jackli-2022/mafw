@@ -34,7 +34,8 @@ export function ProjectWorkView(props: {
   detailFocus?: GoalDetailFocus | null
   podId?: string | null
   onOpenGoal: (goal: PodGoal, focus?: GoalDetailFocus) => void
-  onGoalCreated?: (goalId: string) => void
+  onGoalCreated?: (goalId: string, goal?: PodGoal) => void
+  onGoalAccepted?: () => void
   onCloseGoal: () => void
   onOpenSession: (sessionId: string) => void
 }): JSX.Element {
@@ -154,7 +155,7 @@ export function ProjectWorkView(props: {
       })
       setComposerOpen(false)
       await load()
-      props.onGoalCreated?.(created.goalId)
+      props.onGoalCreated?.(created.goalId, created.goal)
       return true
     } catch (err) {
       setError(friendlyWorkError(err))
@@ -228,6 +229,7 @@ export function ProjectWorkView(props: {
             focus={props.detailFocus ?? "timeline"}
             onClose={props.onCloseGoal}
             onOpenSession={props.onOpenSession}
+            onGoalAccepted={props.onGoalAccepted}
           />
         )}
       </Show>

@@ -23,7 +23,9 @@ test("pod-store 暴露讨论历史动作（Task 18 SDK 契约）", () => {
 })
 
 test("MafwShell.openTechLead：Goal 标题派生 tab，隐藏会话 id 不泄漏", () => {
-  assert.match(shell, /const openTechLead = async \(goalId: string\)/)
+  // 2026-11-11：异步恢复前检查请求仍属于当前 Goal/项目，迟到的响应不切换 Chat。
+  assert.match(shell, /const openTechLead = async \(goalId: string, isCurrent: \(\) => boolean = \(\) => true\)/)
+  assert.match(shell, /if \(!isCurrent\(\)\) return/)
   assert.match(shell, /podStore\.techLead\(goalId\)/)
   assert.match(shell, /const title = techLeadTabTitle\(/)
   assert.match(shell, /openSessionTab\(history\.sessionID, title, false, \{ mafw: \{ role: "tech_lead" \} \}\)/)
