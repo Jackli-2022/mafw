@@ -1,9 +1,11 @@
 /**
  * Phase D1 Task H2: GET /api/events（SSE）→ registry dispatch（event.subscribe）。
  *
- * Mode B（?sessionID=）把响应注册进 chatSessions；Mode A 建立全局流：
- * Last-Event-ID / ?since 游标 → attachGlobalSse（greeting + newest-window 回放 +
- * 直播），per-connection write 收进 sseClients，req close 时移除。
+ * E3-2：Mode B（`?sessionID=` 的 per-session 流，ChatSessionManager）已删除——
+ * 自述零源码消费方（desktop/TUI 均走全局流）。现在**所有**请求都是 Mode A：
+ * `?sessionID` 被忽略；Last-Event-ID / ?since 游标 → attachGlobalSse（greeting +
+ * newest-window 回放 + 直播），per-connection write 收进 sseClients，req close
+ * 时移除。
  *
  * 迁移评估（brief 要求先评估）：legacy 是单个 `req.url && req.url.startsWith
  * ('/api/events') && method === 'GET'` 盲点分支，全部连接生命周期动作（注册 /
@@ -16,42 +18,42 @@
  */
 import type { IncomingMessage, ServerResponse } from 'http';
 import { config } from '../config';
-import type { ChatSessionManager } from '../chat/chat-sessions';
 import type { EventStore } from '../events/event-store';
 import { parseSince, attachGlobalSse } from '../events/sse-attach';
 import type { RouteRegistry } from './registry';
 
 export interface EventsSseRouteDeps {
-  chatSessions: () => ChatSessionManager;
   /** null = 纯直播（EventStore 初始化失败的降级语义）。 */
   eventStore: () => EventStore | null;
   /** Mode A per-connection write 表（broadcast / dashboard 统计共读）。 */
   sseClients: () => Map<ServerResponse, (frame: string, seq: number | null) => void>;
+  /**
+   * E2-1: greeting 纪元（instanceId / schemaEpoch）。live getter——release
+   * metadata 在 boot 阶段加载，attach 时才取；null = 未就绪（字段省略）。
+   */
+  releaseIdentity?: () => { instanceId: string; schemaEpoch: number } | null;
 }
 
 export function attachEventsSseRoutes(registry: RouteRegistry, deps: EventsSseRouteDeps): void {
   registry.attachHandler('event.subscribe', async (req: IncomingMessage, res: ServerResponse) => {
     const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
-    const sessionID = parsedUrl.searchParams.get('sessionID');
 
-    if (sessionID) {
-      // Mode B: subscribe to specific chat session's delta events
-      deps.chatSessions().register(sessionID, res);
-    } else {
-      // Mode A: subscribe to global event stream (Dashboard)
-      // 2026-10-22 持久回放（spec 2026-10-22-persistent-event-replay-design §5.3）：
-      // Last-Event-ID 头（原生 EventSource 重连自动携带）/ ?since 参数 → 重放后直播
-      // （newest-window + firstReplayedSeq 截断信号）。
-      const since = parseSince(parsedUrl.searchParams, req.headers['last-event-id'] as string | undefined);
-      const conn = attachGlobalSse({
-        res,
-        store: deps.eventStore(),
-        replayLimit: config.events.replayLimit,
-        writeFrame: (r, frame) => { if (frame) r.write(frame); },
-        since,
-      });
-      deps.sseClients().set(res, conn.write);
-      req.on('close', () => { deps.sseClients().delete(res); });
-    }
+    // Mode A（唯一模式）：`?sessionID` 历史参数被忽略，保持向后兼容（旧客户端仍拿到
+    // 全局流，而不是 404/挂起）。2026-10-22 持久回放：Last-Event-ID 头（原生
+    // EventSource 重连自动携带）/ ?since 参数 → 重放后直播（newest-window +
+    // firstReplayedSeq 截断信号）。
+    const since = parseSince(parsedUrl.searchParams, req.headers['last-event-id'] as string | undefined);
+    const release = deps.releaseIdentity?.() ?? null;
+    const conn = attachGlobalSse({
+      res,
+      store: deps.eventStore(),
+      replayLimit: config.events.replayLimit,
+      writeFrame: (r, frame) => { if (frame) r.write(frame); },
+      since,
+      instanceId: release?.instanceId,
+      schemaEpoch: release?.schemaEpoch,
+    });
+    deps.sseClients().set(res, conn.write);
+    req.on('close', () => { deps.sseClients().delete(res); });
   });
 }

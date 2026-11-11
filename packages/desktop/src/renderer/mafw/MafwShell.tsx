@@ -27,6 +27,7 @@ import { agentKey, isAgentKey, resolveSessionAgent } from "./agent-identity"
 import { mergeHiddenTodos } from "./todo-presenter"
   import { traceEvent } from "./event-trace"
 import { dispatchShellEvent, type ShellEventDeps } from "./sse/dispatcher"
+import { SseConnection, withSince } from "./sse/sse-connection"
 import { applyPartUpsert } from "./sse/chat-reducers"
 import { createToolPartScheduler } from "./sse/tool-part-scheduler"
 import { bumpGoalsRev, goalsRev } from "./goals-rev"
@@ -75,6 +76,7 @@ import {
   techLeadSendGate,
   type GoalDetailFocus,
 } from "./pod-model"
+import { goalDiscussionRequestCurrent, goalDiscussionTarget, shouldOpenTechLeadForGoal, shouldShowReturnLead } from "./goal-chat-context"
 import { ingestPluginEvent, ingestPluginsChanged, pluginClientRevision, pluginDescriptors, refreshPluginClient } from "./plugins/plugin-store"
 import { pluginSurfaceIssues, pluginSurfaces, pluginConfigSurfaces, resolveActiveSurface } from "./plugins/plugin-view-model"
 import { railItemsFromWebSurfaces, webSurfaceTabs, webSurfaceViews } from "./plugins/plugin-web-surface"
@@ -121,6 +123,23 @@ import { CHAT_PX_CEIL, CHAT_PX_FLOOR, WORKBENCH_DEFAULT_DETENT, WORKBENCH_MIN_WI
 import { captureWorkbenchFocusSnapshot, restoreWorkbenchFocusSnapshot, type WorkbenchFocusSnapshot } from "./workbench-focus"
 import { migrateDockKeys, workbenchColumns, workbenchFocusActive, workbenchShellHidden, workbenchSplit, formatResizePreview, type WorkbenchContentMode } from "./workbench-layout"
 import { resolveWorkbenchRoot } from "./workbench-root"
+import {
+  contentScopeBelongsToProject,
+  contentScopeKey,
+  contentScopeLabel,
+  contentScopeRoot,
+  diffsForContentScope,
+  goalContentScope,
+  projectContentScope,
+  type ContentScope,
+} from "./content-scope"
+import {
+  contentScopeStateFor,
+  saveContentScopeState,
+  selectTreeFile,
+} from "./content-scope-state"
+import { persistContentScope, readPersistedContentScope } from "./content-scope-persistence"
+import { popContentHistory, pushContentHistory, type ContentHistoryEntry } from "./content-history"
 import { PopoverShell } from "./components/pickers/PopoverShell"
 import { type NavTab } from "./components/nav-tab"
 import { WindowControls } from "./components/WindowControls"
@@ -156,7 +175,7 @@ import { countUserTurns, shouldKeepPaging } from "./components/history-paging"
 
 type ModelSel = { providerID: string; modelID: string; label: string }
 import type { AgentEntry } from "./components/pickers/AgentPicker"
-import type { MafwAgent, MafwProvider, ThinkingLevel } from "@mafw/sdk"
+import type { MafwAgent, MafwProvider, PodGoal, ThinkingLevel } from "@mafw/sdk"
 
 /** `/api/provider` 信封：规范 `items` + 默认模型/连接列表（composer 初值用）。 */
 type ProvidersEnvelope = {
@@ -222,12 +241,48 @@ export function MafwShell() {
   const [subagentStack, setSubagentStack] = createStore<Record<string, string>>({})
   const [podGoalId, setPodGoalId] = createSignal<string | null>(null)
   const [goalDetailFocus, setGoalDetailFocus] = createSignal<GoalDetailFocus>("timeline")
+  let goalDiscussSeq = 0
   const [goalComposerRequest, setGoalComposerRequest] = createSignal(0)
   /** 打开统一 Goal 详情，并按 attention action 指定落点（计划/问题/方向/结果）。 */
   const openGoalDetail = (goalId: string, focus: GoalDetailFocus = "timeline"): void => {
     openProjectWork()
     setGoalDetailFocus(focus)
     setPodGoalId(goalId)
+  }
+  // 进入非终态 Goal 时把 Chat 切到 Tech Lead，但右侧 Goal 先同步打开。
+  // snapshot 让“刚创建、SSE/刷新尚未到达”的 Goal 也能进入讨论；seq 防止快速切换
+  // Goal/项目时迟到的 Tech Lead 恢复把 Chat 拉回旧上下文。
+  const openGoalAndDiscuss = async (
+    goalId: string,
+    focus: GoalDetailFocus = "timeline",
+    goalSnapshot?: PodGoal,
+  ): Promise<void> => {
+    const requestSeq = ++goalDiscussSeq
+    const requestedProject = currentProject()
+    openGoalDetail(goalId, focus)
+    let goal = goalSnapshot ?? goalDiscussionTarget(podStore.detail(), goalId)
+    try {
+      await podStore.refresh()
+      goal = goalDiscussionTarget(podStore.detail(), goalId) ?? goal
+    } catch {
+      // fail-open: keep the right Goal detail reachable even if Pod refresh fails
+    }
+    if (!goal) return
+    const isCurrent = () => goalDiscussionRequestCurrent({
+      requestSeq,
+      currentSeq: goalDiscussSeq,
+      requestedGoalId: goalId,
+      selectedGoalId: podGoalId(),
+      requestedProject,
+      currentProject: currentProject(),
+    })
+    if (!isCurrent() || !shouldOpenTechLeadForGoal(goal)) return
+    try {
+      await openTechLead(goalId, isCurrent)
+      if (isCurrent()) await podStore.refresh()
+    } catch (err: any) {
+      showToastV2({ description: `打开 Tech Lead 失败: ${err?.message || err}`, duration: 4000 } as any)
+    }
   }
 
   // store.session 的 tab 占位只有 directory "."；权威信息（directory/parentID）来自
@@ -528,7 +583,7 @@ export function MafwShell() {
         sourceRef: handoff.sourceRef,
       })
       await podStore.refresh()
-      openGoalDetail(created.goalId)
+      void openGoalAndDiscuss(created.goalId, "timeline", created.goal)
       showToastV2({ description: "已交给 Lead，Goal 已创建", duration: 3000 } as any)
     } catch (err: any) {
       showToastV2({ description: `交给 Lead 失败: ${err?.message || err}`, duration: 4500 } as any)
@@ -1146,12 +1201,7 @@ export function MafwShell() {
       })
       .catch((e: any) => showToastV2({ description: `创建失败：${String(e?.message ?? e).slice(0, 80)}`, duration: 4000 }))
   }
-  let es: EventSource | null = null
-  let esRetry: ReturnType<typeof setTimeout> | null = null
-  const scheduleEsRetry = (delayMs = 5000) => {
-    if (esRetry) return
-    esRetry = setTimeout(() => { esRetry = null; void connectSse() }, delayMs)
-  }
+  // E1-9: SSE lifecycle owned by the tested manager (see below).
 
   onMount(() => {
     const unsubConn = conn.subscribe((ev) => {
@@ -1293,24 +1343,27 @@ export function MafwShell() {
     },
   }
 
-  async function connectSse() {
-    if (es) return
-    const info = await window.api.mafw.gateway.info()
-    if (!info?.url) {
-      console.log("[mafw] SSE: no gateway URL yet, will retry")
-      scheduleEsRetry()
-      return
-    }
-    console.log("[mafw] SSE connecting to", info.url)
-    // URL 契约归 SDK（event.url）；EventSource 传输保持 renderer 直连。
-    const source = new EventSource(await window.api.mafw.event.url())
-    es = source
-    // onopen fires on initial connect AND after every EventSource auto-reconnect:
-    // a gateway restart breaks SSE but keeps the same port, so the reconnect is
-    // the only reliable signal that in-memory lists (session history) are stale.
-    source.onopen = () => {
+  // E1-9: connection lifecycle lives in `sse/sse-connection.ts` (unit-tested
+  // singleton guard). The component only supplies gateway info + event routing.
+  const sse = new SseConnection({
+    open: async (since) => {
+      const info = await window.api.mafw.gateway.info()
+      if (!info?.url) {
+        console.log("[mafw] SSE: no gateway URL yet, will retry")
+        return null
+      }
+      console.log("[mafw] SSE connecting to", info.url)
+      // URL 契约归 SDK（event.url）；EventSource 传输保持 renderer 直连。
+      // E2-3：持久化游标以 ?since= 追加重连恢复点。
+      return new EventSource(withSince(await window.api.mafw.event.url(), since))
+    },
+    onOpen: () => {
       console.log("[mafw] SSE connected")
       conn.report("sse-open")
+    },
+    // E2-3：只有 initial / truncated / reset / 实例变更才整表重同步。干净 resume
+    // 由游标回放覆盖实体事件，不得清空列表（否则每次重连都是全量风暴）。
+    onFullResync: (_reason, _info) => {
       // Gateway restarts keep the same port; reconnect is the only reliable
       // signal that the cached session list is stale.
       sessionStore.invalidate()
@@ -1323,32 +1376,39 @@ export function MafwShell() {
       // Task 7：重连是唯一可靠的「gateway 可能重启过」信号（同一端口），
       // client revision 的 bootId 会变化 → 必须重拉 committed descriptors。
       void refreshPluginClient()
-    }
-    source.onerror = () => {
+      // Seed flow cards that arrived before the SSE connection (native APIs
+      // return pending only). Idempotent, so per-open is safe.
+      seedFlowCards()
+    },
+    // E2-3 / B2：part.delta 从不入 journal，游标回放无法恢复实时文本——
+    // 每次重连都强制补拉活跃会话消息，并从 REST 对账其状态（不依赖空桶假设）。
+    onReconnect: () => {
+      const sid = activeSessionId()
+      if (!sid) return
+      void loadSessionHistory(sid, { force: true })
+    },
+    onError: () => {
       console.log("[mafw] SSE error (will auto-reconnect)")
       conn.report("sse-error")
-      if (source.readyState === EventSource.CLOSED) {
-        // Fatal close (server gone / non-SSE response): EventSource won't
-        // retry on its own — recreate on a short delay.
-        es = null
-        source.close()
-        scheduleEsRetry()
-      }
-    }
-    // Seed flow cards that arrived before the SSE connection (native APIs return pending only).
+    },
+    onMessage: (data) => {
+      let raw: any
+      try { raw = JSON.parse(data) } catch { return }
+      // 全部事件经 dispatcher 纯路由分发（sse/dispatcher.ts + sse/handlers/*，
+      // 分支语义见各 handler 注释；漏接线检测在 dispatcher 尾部 missTrace）。
+      dispatchShellEvent(raw?.data || raw, sseDeps)
+    },
+  })
+  const connectSse = () => sse.connect()
+
+  // Seed flow cards that arrived before the SSE connection (native APIs return pending only).
+  const seedFlowCards = () => {
     window.api.mafw.permissions.list().then((items: any[]) => {
       for (const req of items || []) upsertCard(req.sessionID, { kind: "permission", data: mapPermissionCard(req, Date.now()) })
     }).catch(e => console.warn("[mafw] permissions.list seed:", e))
     window.api.mafw.questions.list(questionsDirectory()).then((items: any[]) => {
       for (const req of items || []) upsertCard(req.sessionID, { kind: "ask", data: mapAskCard(req, Date.now()) })
     }).catch(e => console.warn("[mafw] questions.list seed:", e))
-    es.onmessage = (e: MessageEvent) => {
-      let raw: any
-      try { raw = JSON.parse(e.data) } catch { return }
-      // 全部事件经 dispatcher 纯路由分发（sse/dispatcher.ts + sse/handlers/*，
-      // 分支语义见各 handler 注释；漏接线检测在 dispatcher 尾部 missTrace）。
-      dispatchShellEvent(raw?.data || raw, sseDeps)
-    }
   }
 
   // SSE lifecycle: connect now, close on unmount, reconnect if the gateway
@@ -1401,8 +1461,8 @@ export function MafwShell() {
       clearInterval(backgroundTimer)
       offSubagentNotify()
       offBackgroundNotify()
-      if (esRetry) { clearTimeout(esRetry); esRetry = null }
-      if (es) { console.log("[mafw] SSE closing"); es.close(); es = null }
+      if (sse.source) { console.log("[mafw] SSE closing") }
+      sse.dispose()
     })
     void connectSse()
   })
@@ -1423,7 +1483,8 @@ export function MafwShell() {
   })
 
   // Load session message history from the gateway
-  async function loadSessionHistory(sessionID: string) {
+  // E2-3: `force` = 重连补拉——覆盖已存在的消息/部件并按 REST 对账状态。
+  async function loadSessionHistory(sessionID: string, opts?: { force?: boolean }) {
     console.log("[mafw] loadSessionHistory", sessionID)
     try {
       const [data, sessionData] = await Promise.all([
@@ -1457,9 +1518,20 @@ export function MafwShell() {
         const parts: Record<string, any[]> = {}
         for (const message of page.messages) {
           const msgId = message.id
-          if (!msgId || existingById.has(msgId)) continue
-          msgs.push(message)
+          if (!msgId) continue
           const itemParts = page.parts[msgId]
+          if (existingById.has(msgId)) {
+            // E2-3 force（重连补拉）：就地刷新已有消息的字段（保留对象 identity，
+            // 避免 <For> 全量重挂），并用服务端部件覆盖 live 期间缺失的 delta。
+            if (!opts?.force) continue
+            const current = existingById.get(msgId)
+            Object.assign(current, message)
+            if (Array.isArray(itemParts) && itemParts.length > 0) {
+              parts[msgId] = mergeLocalParts(store.part[msgId], itemParts)
+            }
+            continue
+          }
+          msgs.push(message)
           if (Array.isArray(itemParts) && itemParts.length > 0) {
             parts[msgId] = mergeLocalParts(store.part[msgId], itemParts)
           }
@@ -1484,7 +1556,13 @@ export function MafwShell() {
             part: { ...prev.part, ...parts },
             // 中途进入运行中的会话：规范 status（gateway 已按 time.busy > time.idle 投影）
             // → busy/retry；本地已存状态优先（live SSE 比取回的快照新），不无条件写 idle。
-            session_status: { ...prev.session_status, [sessionID]: sessionStatusFromInfo(sessionData, prev.session_status[sessionID]) },
+            // E2-3 force：重连对账以 REST 快照为准（修正重连期间漏掉的 idle/busy）。
+            session_status: {
+              ...prev.session_status,
+              [sessionID]: opts?.force
+                ? sessionStatusFromInfo(sessionData)
+                : sessionStatusFromInfo(sessionData, prev.session_status[sessionID]),
+            },
           }))
         }
         return msgs
@@ -1531,7 +1609,11 @@ export function MafwShell() {
     // `local-` Session and without silently closing Config.
     if (!opts?.requirePersisted) enterChat()
     try {
-      const result = await window.api.mafw.sessions.create() as any
+      // E1-5: the gateway now requires an absolute `directory` on session
+      // create. Send the current project; without one the call fails and falls
+      // into the existing degraded path below.
+      const projectDir = currentProject()
+      const result = await window.api.mafw.sessions.create(projectDir ? { directory: projectDir } : {}) as any
       const id = result.id || result.sessionID || `sess-${Date.now()}`
       console.log("[mafw] createSession result id:", id)
       if (opts?.requirePersisted) enterChat()
@@ -2060,6 +2142,66 @@ export function MafwShell() {
     setRightDockOpen(true)
     try { localStorage.setItem("mafw-right-dock-open", "1") } catch { /* ignore */ }
   }
+  const rememberContentLocation = (): void => {
+    const scope = contentScope()
+    if (!scope) return
+    const key = currentContentScopeKey()
+    if (!key) return
+    setContentHistory((history) => pushContentHistory(history, {
+      scope,
+      rel: contentScopeStateFor(key).activeFile,
+      label: contentScopeLabel(scope),
+    }))
+  }
+  const backContent = (): void => {
+    const popped = popContentHistory(contentHistory())
+    if (!popped.entry) return
+    setContentHistory(popped.rest)
+    if (!contentScopeBelongsToProject(popped.entry.scope, currentProject())) return
+    if (popped.entry.rel) {
+      const key = contentScopeKey(popped.entry.scope)
+      if (key) {
+        saveContentScopeState(key, selectTreeFile(contentScopeStateFor(key), popped.entry.rel))
+      }
+    }
+    setContentScope(popped.entry.scope)
+    openWorkbench("workbench")
+    applyWorkbenchSurface("code")
+    const root = contentScopeRoot(popped.entry.scope)
+    if (root && popped.entry.rel) requestOpenEditor(root, popped.entry.rel)
+  }
+  const openGoalContent = (input: {
+    goalId: string
+    revision: number
+    worktreeDir: string
+    title?: string | null
+  }): void => {
+    void (async () => {
+      const scope = goalContentScope({ projectDir: currentProject(), ...input })
+      if (!scope) {
+        showToastV2({ description: "无法打开该 Goal 版本的文件", variant: "error", duration: 3500 } as any)
+        return
+      }
+      let entries: unknown = null
+      try {
+        entries = await window.api.fs.listDir(scope.worktreeDir, "")
+      } catch {
+        entries = null
+      }
+      if (entries === null) {
+        showToastV2({ description: "该 Goal 版本的文件已不可用", variant: "error", duration: 3500 } as any)
+        return
+      }
+      rememberContentLocation()
+      setContentScope(scope)
+      openWorkbench("workbench")
+      applyWorkbenchSurface("code")
+    })()
+  }
+  const returnToProjectContent = (): void => {
+    rememberContentLocation()
+    setContentScope(projectContentScope(currentProject()))
+  }
   /** 左栏插件入口：切到「工作台」并激活该 surface（spec 2026-11-09 §6.4）。 */
   const openPluginSurface = (surfaceId: PluginSurfaceId) => {
     closeLeftDockIfOverlay()
@@ -2101,7 +2243,7 @@ export function MafwShell() {
         if (projectDir && projectDir !== currentProject()) {
           await handleSelectProject(projectDir).catch(() => {})
         }
-        openGoalDetail(goalId, "result")
+        await openGoalAndDiscuss(goalId, "result")
       })()
     })
     onCleanup(() => {
@@ -2115,6 +2257,53 @@ export function MafwShell() {
   // 裸函数会让每个读它的消费者重跑（文件树清空重载、Office 预览重解析白帧）。
   const benchRoot = createMemo(() =>
     resolveWorkbenchRoot(currentProject(), store.session.find((s: any) => s.id === currentSessionID())?.directory ?? null))
+
+  // 内容工作台 scope：项目根是默认值；Goal revision 只能由显式动作进入。
+  // 与会话目录解耦，Chat 角色切换不会改变这里。
+  const [contentScope, setContentScope] = createSignal<ContentScope | null>(projectContentScope(currentProject()))
+  const contentRoot = createMemo(() => contentScopeRoot(contentScope()) ?? currentProject())
+  const currentContentScopeKey = createMemo(() => contentScopeKey(contentScope()))
+  const contentScopeIsGoal = createMemo(() => contentScope()?.kind === "goal")
+  const [contentHistory, setContentHistory] = createSignal<ContentHistoryEntry[]>([])
+  // 项目切换/重启：恢复该项目上次的内容 scope；Goal worktree 不可用时回退项目根。
+  createEffect(() => {
+    const project = currentProject()
+    setContentHistory([])
+    if (!project) {
+      setContentScope(null)
+      return
+    }
+    const restored = readPersistedContentScope(project, window.localStorage)
+    const fallback = projectContentScope(project)
+    if (!restored || restored.kind === "project") {
+      setContentScope(restored ?? fallback)
+      return
+    }
+    setContentScope(fallback)
+    void (async () => {
+      try {
+        const entries = await window.api.fs.listDir(restored.worktreeDir, "")
+        if (currentProject() !== project || entries === null) return
+        setContentScope(restored)
+      } catch { /* worktree 已不可用：保持项目 scope */ }
+    })()
+  })
+  createEffect(() => {
+    const scope = contentScope()
+    const project = currentProject()
+    if (!scope || !project || !contentScopeBelongsToProject(scope, project)) return
+    persistContentScope(scope, window.localStorage)
+  })
+  const contentBackLabel = createMemo(() => {
+    const top = contentHistory().at(-1)
+    if (!top) return null
+    return top.rel ? `${top.label} · ${top.rel}` : top.label
+  })
+  const contentDiffEntries = createMemo(() => diffsForContentScope({
+    contentRoot: contentRoot(),
+    sessionDirectory: store.session.find((s: any) => s.id === currentSessionID())?.directory ?? null,
+    diffs: mergedSessionDiffs(),
+  }))
 
   // 鲸群左栏：shell 持有常驻订阅，左右两栏共用同一个 pod-store
   // （spec 2026-10-30-pod-left-rail §4.1）。目录口径与右栏一致。
@@ -2245,10 +2434,11 @@ export function MafwShell() {
   }
   // 打开 Goal 的 Tech Lead 讨论：`pod.techLead` 确保隐藏会话存在；tab 标题只由 Goal
   // 标题派生，runtime session id 不出现在任何用户可见文案里（spec §3.2）。
-  const openTechLead = async (goalId: string): Promise<void> => {
+  const openTechLead = async (goalId: string, isCurrent: () => boolean = () => true): Promise<void> => {
     const goal = podStore.detail()?.goals.find((item) => item.goalId === goalId)
     try {
       const history = await podStore.techLead(goalId)
+      if (!isCurrent()) return
       if (!history?.sessionID) {
         showToastV2({ description: "Tech Lead 会话暂不可用", duration: 3000 } as any)
         return
@@ -2713,7 +2903,7 @@ export function MafwShell() {
       // loaded — e.g. self-update relay restarts.
       if (s?.state === "failed") conn.report("gateway-failed")
       else if (s?.state === "ready") conn.report("gateway-ready")
-      if (s?.state === "ready" && !es) void connectSse()
+      if (s?.state === "ready" && !sse.source) void connectSse()
     })
     onCleanup(unsub)
     // Optional chain: a stale preload (renderer HMR outpaces preload rebuild)
@@ -2964,6 +3154,12 @@ export function MafwShell() {
                           onBoundaryAction={(id, action) => void boundaryAction(id, action)}
                           onCloseTopics={() => setShowTopics(false)}
                           onOpenTechLead={(goalId) => void openTechLead(goalId)}
+                          showReturnLead={() => shouldShowReturnLead({
+                            detail: podStore.detail(),
+                            selectedGoalId: podGoalId(),
+                            activeSessionId: activeSessionId(),
+                          })}
+                          onReturnLead={() => { void openLeadEntry() }}
                           techLeadTarget={activeTechLeadTarget}
                           sendBlocked={activeTechLeadBlocked}
                           onOpenDiffReview={() => openWorkbench("review")}
@@ -3080,10 +3276,18 @@ export function MafwShell() {
                   onSurface={applyWorkbenchSurface}
                   onExecutionSection={applyExecutionSection}
                   sessionID={currentSessionID() || null}
-                  sessionDirectory={benchRoot()}
-                  diffs={mergedSessionDiffs()}
+                  contentRoot={contentRoot()}
+                  contentScopeKey={currentContentScopeKey()}
+                  pluginProjectDir={benchRoot() ?? currentProject()}
+                  contentScopeLabel={contentScopeLabel(contentScope())}
+                  contentScopeIsGoal={contentScopeIsGoal()}
+                  canGoBack={contentHistory().length > 0}
+                  backLabel={contentBackLabel()}
+                  onBack={() => backContent()}
+                  onReturnToProjectContent={returnToProjectContent}
+                  diffs={contentDiffEntries()}
                   onOpenFile={(rel) => {
-                    const root = benchRoot()
+                    const root = contentRoot()
                     if (!root) return
                     // 分流（2026-10-27 文件预览）：html → 浏览器 surface（mafw-file:// 单 webview 导航）；
                     // 图片/SVG/文本 → 文件 surface（编辑器内部按 kind 渲染）。
@@ -3094,7 +3298,7 @@ export function MafwShell() {
                           showToastV2({ description: "无法打开本地文件（文件协议注册失败）", variant: "error", duration: 4000 } as any)
                           return
                         }
-                        if (root !== benchRoot()) return // 根已切换：丢弃迟到结果
+                        if (root !== contentRoot()) return // 根已切换：丢弃迟到结果
                         try {
                           requestBrowserNavigate(buildMafwFileUrl(token, rel))
                           openWorkbenchSurface("browser")
@@ -3104,6 +3308,7 @@ export function MafwShell() {
                       })()
                       return
                     }
+                    rememberContentLocation()
                     requestOpenEditor(root, rel)
                     openWorkbenchSurface("code")
                   }}
@@ -3143,10 +3348,12 @@ export function MafwShell() {
                       selectedGoalId={podGoalId()}
                       detailFocus={goalDetailFocus()}
                       podId={podIdForCurrentProject()}
-                      onOpenGoal={(goal, focus) => openGoalDetail(goal.goalId, focus)}
-                      onGoalCreated={(goalId) => openGoalDetail(goalId)}
+                      onOpenGoal={(goal, focus) => { void openGoalAndDiscuss(goal.goalId, focus, goal) }}
+                      onGoalCreated={(goalId, goal) => { void openGoalAndDiscuss(goalId, "timeline", goal) }}
                       onCloseGoal={() => setPodGoalId(null)}
                       onOpenSession={(sid) => { void openPodSession(sid) }}
+                      onGoalAccepted={() => { void openLeadEntry() }}
+                      onOpenGoalWorktree={(target) => openGoalContent(target)}
                     />
                   }
                   onSendComment={(sid, text) => {

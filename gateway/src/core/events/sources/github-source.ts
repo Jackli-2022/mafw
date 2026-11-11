@@ -105,6 +105,7 @@ export async function pollGitHubSource(input: {
         body: item.body,
         url: item.html_url,
         labels: labelNames(item),
+        branch: item.pull_request?.base?.ref ?? item.pull_request?.head?.ref ?? null,
         pull_request: item.pull_request ?? null,
       },
       occurredAt: updated,

@@ -34,6 +34,6 @@ test("preload: navigate.onGoal subscribes and unsubscribes the IPC channel", () 
 test("renderer: switch project then open Goal detail; pod.event pokes presence", () => {
   assert.match(shell, /mafw\.navigate\.onGoal\(/)
   assert.match(shell, /handleSelectProject\(projectDir\)/)
-  assert.match(shell, /openGoalDetail\(goalId, "result"\)/)
+  assert.match(shell, /openGoalAndDiscuss\(goalId, "result"\)/)
   assert.match(shell, /mafw\.presence\.refresh\(\)/)
 })

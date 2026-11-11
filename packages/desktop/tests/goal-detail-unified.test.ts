@@ -32,7 +32,7 @@ test("结果正文只有一个实现：PodResultView", () => {
 })
 
 test("Goal 详情直接包含结果与打回，不再依赖独立的 Goal 结果入口", () => {
-  assert.match(detail, /import \{ PodResultView \}/)
+  assert.match(detail, /import \{ PodResultView(?:, type GoalWorktreeTarget)? \}/)
   assert.match(detail, /<PodResultView/)
   assert.match(detail, /rejectResult\(/)
   // 取消/中止的 Goal 有终态 verdict 但没有结果证据，不能渲染结果卡。
@@ -58,10 +58,10 @@ test("attention 按 action.type 分流到计划/问题/方向/结果", () => {
   assert.equal(attentionTarget({ type: "open_discussion" }), "timeline")
 
   // needs_you 就是 attention 列表本身；打开时必须带 action 对应的落点。
-  assert.match(workOverview, /attentionTarget\(goal\.stage\.action\)/)
+  assert.match(workOverview, /attentionTarget\(goal\.stage\?\.action\)/)
   assert.match(shell, /openGoalDetail\(/)
   assert.match(shell, /detailFocus=\{goalDetailFocus\(\)\}/)
-  assert.match(workOverview, /onOpenGoal\(goal, attentionTarget\(goal\.stage\.action\)\)/)
+  assert.match(workOverview, /onOpenGoal\(goal, attentionTarget\(goal\.stage\?\.action\)\)/)
 })
 
 test("Goal 详情展示问题回答入口，复用既有 goals.respondQuestion", () => {
@@ -116,10 +116,9 @@ test("quick Goal 不渲染空 Reviewer 泳道，历史评审证据仍保留", ()
   assert.match(detail, /hideEmptyReviewLane\(/)
 })
 
-// 2026-11-04（spec techlead-goal-entry §3.2）：入口 B——Goal 详情头部的
-// 「与 Tech Lead 讨论」常驻按钮。非终态可发送；终态降级为只读浏览（文案变化，
-// 发送由服务端终态门禁拦截）。点击 = 既有 requestPodTechLeadOpen 桥梁 + 关浮层。
-test("Goal 详情头部提供按 Goal 的 Tech Lead 入口（终态降级只读）", () => {
+// 2026-11-11（project agent workbench）：Goal 详情头部的 Tech Lead 入口必须保持
+// 右侧 Goal 打开——换讨论负责人，不换当前工作现场。
+test("Goal 详情头部提供按 Goal 的 Tech Lead 入口且不关闭右栏", () => {
   assert.match(detail, /与 Tech Lead 讨论/)
   assert.match(detail, /查看 Tech Lead 讨论/)
   assert.match(detail, /techLeadEntryMode\(/)
@@ -127,7 +126,8 @@ test("Goal 详情头部提供按 Goal 的 Tech Lead 入口（终态降级只读�
   assert.match(detail, /techLeadTranscript\(/)
   assert.match(detail, /props\.onOpenSession\(sessionId\)/)
   assert.match(detail, /requestPodTechLeadOpen\(id, activeRevision\(\)\)/)
-  assert.match(detail, /props\.onClose\(\)/)
+  const techLeadEntry = detail.slice(detail.indexOf("const techLeadEntry"), detail.indexOf("// Task 21"))
+  assert.doesNotMatch(techLeadEntry, /props\.onClose\(\)/)
 })
 
 test("Goal 详情展示上下文来源与全文入口", () => {

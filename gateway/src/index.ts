@@ -8,12 +8,18 @@
  */
 import { log } from './core/utils/logger';
 import { MafwScheduler } from './kernel';
+import { registerCrashHandlers } from './runtime/crash-handlers';
 
 export { MafwScheduler };
 
 // -- entry --
 
 if (require.main === module) {
+  // E1-11: install the process-level safety net before any boot work, so a
+  // stray rejection during construction/migration still produces a [FATAL]
+  // diagnostic and a controlled exit(1) instead of a silent death.
+  registerCrashHandlers();
+
   const scheduler = new MafwScheduler('.');
 
   process.on('SIGINT', () => {

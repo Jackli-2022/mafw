@@ -1,4 +1,5 @@
 import type { Database } from 'better-sqlite3';
+import { randomUUID } from 'crypto';
 import type { ProbeStatus } from '../goal/probe';
 import type { PodGoalWorktreeStatus } from './pod-worktree-path';
 import type { PodGoalVerdict } from './pod-stage';
@@ -142,6 +143,54 @@ export interface PodGoalWorktreeRow {
   createdAt: string;
   updatedAt: string;
   mergedAt: string | null;
+}
+
+export type PodReviewItemStatus = 'pending' | 'responded' | 'resolved';
+
+/** A human review opinion tied to one Goal revision (Plan C). */
+export interface PodReviewItemRow {
+  id: string;
+  podId: string;
+  goalId: string;
+  revision: number;
+  status: PodReviewItemStatus;
+  rel: string;
+  startLine: number | null;
+  endLine: number | null;
+  code: string;
+  comment: string;
+  anchorJson: string | null;
+  response: string | null;
+  originItemId: string | null;
+  originRevision: number | null;
+  createdAt: string;
+  updatedAt: string;
+  respondedAt: string | null;
+  resolvedAt: string | null;
+}
+
+export interface PodReviewItemEventRow {
+  id: string;
+  podId: string;
+  goalId: string;
+  revision: number;
+  itemId: string;
+  kind: 'created' | 'responded' | 'resolved' | 'reopened' | 'carried';
+  payloadJson: string | null;
+  createdAt: string;
+}
+
+export interface PodGoalAcceptanceRow {
+  id: string;
+  podId: string;
+  goalId: string;
+  revision: number;
+  forced: boolean;
+  unresolvedItemIds: string[];
+  actorKind: 'human';
+  riskAcknowledged: boolean;
+  mergeCommit: string | null;
+  acceptedAt: string;
 }
 
 /** Spike 探针（spec §6）：请求/报告持久化 + 每 Pod 单运行槽。 */
@@ -398,6 +447,62 @@ function goalWorktreeFromRow(row: any): PodGoalWorktreeRow {
   };
 }
 
+function reviewItemFromRow(row: any): PodReviewItemRow {
+  return {
+    id: row.id,
+    podId: row.pod_id,
+    goalId: row.goal_id,
+    revision: Number(row.revision),
+    status: row.status as PodReviewItemStatus,
+    rel: row.rel,
+    startLine: row.start_line ?? null,
+    endLine: row.end_line ?? null,
+    code: row.code ?? '',
+    comment: row.comment,
+    anchorJson: row.anchor_json ?? null,
+    response: row.response ?? null,
+    originItemId: row.origin_item_id ?? null,
+    originRevision: row.origin_revision == null ? null : Number(row.origin_revision),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    respondedAt: row.responded_at ?? null,
+    resolvedAt: row.resolved_at ?? null,
+  };
+}
+
+function reviewItemEventFromRow(row: any): PodReviewItemEventRow {
+  return {
+    id: row.id,
+    podId: row.pod_id,
+    goalId: row.goal_id,
+    revision: Number(row.revision),
+    itemId: row.item_id,
+    kind: row.kind,
+    payloadJson: row.payload_json ?? null,
+    createdAt: row.created_at,
+  };
+}
+
+function goalAcceptanceFromRow(row: any): PodGoalAcceptanceRow {
+  let unresolved: string[] = [];
+  try {
+    const parsed = JSON.parse(row.unresolved_items_json ?? '[]');
+    if (Array.isArray(parsed)) unresolved = parsed.filter((id) => typeof id === 'string');
+  } catch { /* corrupted audit payload degrades to empty, never throws */ }
+  return {
+    id: row.id,
+    podId: row.pod_id,
+    goalId: row.goal_id,
+    revision: Number(row.revision),
+    forced: Number(row.forced) === 1,
+    unresolvedItemIds: unresolved,
+    actorKind: 'human',
+    riskAcknowledged: Number(row.risk_acknowledged) === 1,
+    mergeCommit: row.merge_commit ?? null,
+    acceptedAt: row.accepted_at,
+  };
+}
+
 function taskFromRow(row: any): PodTaskRow {
   return {
     id: row.id,
@@ -589,6 +694,56 @@ export class PodStore {
         updated_at TEXT NOT NULL,
         merged_at TEXT,
         PRIMARY KEY (pod_id, goal_id, revision)
+      );
+
+      CREATE TABLE IF NOT EXISTS pod_goal_review_items (
+        id TEXT PRIMARY KEY,
+        pod_id TEXT NOT NULL,
+        goal_id TEXT NOT NULL,
+        revision INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        rel TEXT NOT NULL,
+        start_line INTEGER,
+        end_line INTEGER,
+        code TEXT NOT NULL DEFAULT '',
+        comment TEXT NOT NULL,
+        anchor_json TEXT,
+        response TEXT,
+        origin_item_id TEXT,
+        origin_revision INTEGER,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        responded_at TEXT,
+        resolved_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_pod_review_items_goal
+        ON pod_goal_review_items(pod_id, goal_id, revision, status);
+
+      CREATE TABLE IF NOT EXISTS pod_goal_review_item_events (
+        id TEXT PRIMARY KEY,
+        pod_id TEXT NOT NULL,
+        goal_id TEXT NOT NULL,
+        revision INTEGER NOT NULL,
+        item_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        payload_json TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_pod_review_item_events_item
+        ON pod_goal_review_item_events(item_id, created_at);
+
+      CREATE TABLE IF NOT EXISTS pod_goal_acceptances (
+        id TEXT PRIMARY KEY,
+        pod_id TEXT NOT NULL,
+        goal_id TEXT NOT NULL,
+        revision INTEGER NOT NULL,
+        forced INTEGER NOT NULL DEFAULT 0,
+        unresolved_items_json TEXT NOT NULL DEFAULT '[]',
+        actor_kind TEXT NOT NULL DEFAULT 'human',
+        risk_acknowledged INTEGER NOT NULL DEFAULT 0,
+        merge_commit TEXT,
+        accepted_at TEXT NOT NULL,
+        UNIQUE(pod_id, goal_id, revision)
       );
 
       CREATE TABLE IF NOT EXISTS pod_tasks (
@@ -1192,6 +1347,204 @@ export class PodStore {
     return (this.db.prepare(
       'SELECT * FROM pod_goal_revisions WHERE pod_id = ? ORDER BY goal_id ASC, revision ASC',
     ).all(podId) as any[]).map(goalRevisionFromRow);
+  }
+
+  // ── Goal review items（Plan C） ──────────────────────────────────────────
+
+  createReviewItem(input: {
+    podId: string;
+    goalId: string;
+    revision: number;
+    rel: string;
+    startLine?: number | null;
+    endLine?: number | null;
+    code?: string;
+    comment: string;
+    anchorJson?: string | null;
+    originItemId?: string | null;
+    originRevision?: number | null;
+    now: string;
+  }): PodReviewItemRow {
+    const row = this.db.prepare(`
+      INSERT INTO pod_goal_review_items (
+        id, pod_id, goal_id, revision, status, rel, start_line, end_line,
+        code, comment, anchor_json, response, origin_item_id, origin_revision,
+        created_at, updated_at, responded_at, resolved_at
+      ) VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, NULL, NULL)
+      RETURNING *
+    `).get(
+      `review_${randomUUID()}`, input.podId, input.goalId, input.revision,
+      input.rel, input.startLine ?? null, input.endLine ?? null,
+      input.code ?? '', input.comment, input.anchorJson ?? null,
+      input.originItemId ?? null, input.originRevision ?? null,
+      input.now, input.now,
+    ) as any;
+    return reviewItemFromRow(row);
+  }
+
+  getReviewItem(itemId: string): PodReviewItemRow | null {
+    const row = this.db.prepare(
+      'SELECT * FROM pod_goal_review_items WHERE id = ?',
+    ).get(itemId) as any;
+    return row ? reviewItemFromRow(row) : null;
+  }
+
+  listReviewItems(podId: string, goalId: string, revision: number): PodReviewItemRow[] {
+    return (this.db.prepare(
+      `SELECT * FROM pod_goal_review_items
+       WHERE pod_id = ? AND goal_id = ? AND revision = ?
+       ORDER BY created_at ASC, id ASC`,
+    ).all(podId, goalId, revision) as any[]).map(reviewItemFromRow);
+  }
+
+  listUnresolvedReviewItems(podId: string, goalId: string, revision: number): PodReviewItemRow[] {
+    return (this.db.prepare(
+      `SELECT * FROM pod_goal_review_items
+       WHERE pod_id = ? AND goal_id = ? AND revision = ? AND status != 'resolved'
+       ORDER BY created_at ASC, id ASC`,
+    ).all(podId, goalId, revision) as any[]).map(reviewItemFromRow);
+  }
+
+  /** Guarded transition: returns false when the row is in another status (stale UI/race). */
+  setReviewItemStatus(input: {
+    podId: string;
+    goalId: string;
+    itemId: string;
+    from: PodReviewItemStatus[];
+    to: PodReviewItemStatus;
+    response?: string | null;
+    now: string;
+  }): boolean {
+    if (input.from.length === 0) return false;
+    const placeholders = input.from.map(() => '?').join(', ');
+    const result = this.db.prepare(`
+      UPDATE pod_goal_review_items SET
+        status = ?,
+        response = COALESCE(?, response),
+        responded_at = CASE WHEN ? = 'responded' THEN ? ELSE responded_at END,
+        resolved_at = CASE
+          WHEN ? = 'resolved' THEN ?
+          WHEN ? = 'pending' THEN NULL
+          ELSE resolved_at
+        END,
+        updated_at = ?
+      WHERE id = ? AND pod_id = ? AND goal_id = ? AND status IN (${placeholders})
+    `).run(
+      input.to, input.response ?? null,
+      input.to, input.now,
+      input.to, input.now,
+      input.to,
+      input.now,
+      input.itemId, input.podId, input.goalId,
+      ...input.from,
+    );
+    return Number(result.changes) > 0;
+  }
+
+  appendReviewItemEvent(input: {
+    podId: string;
+    goalId: string;
+    revision: number;
+    itemId: string;
+    kind: PodReviewItemEventRow['kind'];
+    payloadJson?: string | null;
+    now: string;
+  }): PodReviewItemEventRow {
+    const row = this.db.prepare(`
+      INSERT INTO pod_goal_review_item_events (
+        id, pod_id, goal_id, revision, item_id, kind, payload_json, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      RETURNING *
+    `).get(
+      `review_evt_${randomUUID()}`, input.podId, input.goalId, input.revision,
+      input.itemId, input.kind, input.payloadJson ?? null, input.now,
+    ) as any;
+    return reviewItemEventFromRow(row);
+  }
+
+  listReviewItemEvents(itemId: string): PodReviewItemEventRow[] {
+    return (this.db.prepare(
+      'SELECT * FROM pod_goal_review_item_events WHERE item_id = ? ORDER BY created_at ASC, id ASC',
+    ).all(itemId) as any[]).map(reviewItemEventFromRow);
+  }
+
+  /**
+   * Reject opens a new revision: unresolved opinions continue there as new rows.
+   * Resolved items stay in the old revision; the old rows are never rewritten.
+   */
+  carryForwardReviewItems(input: {
+    podId: string;
+    goalId: string;
+    fromRevision: number;
+    toRevision: number;
+    now: string;
+  }): number {
+    const source = this.listUnresolvedReviewItems(input.podId, input.goalId, input.fromRevision);
+    if (source.length === 0) return 0;
+    const insert = this.db.transaction(() => {
+      for (const item of source) {
+        const clone = this.createReviewItem({
+          podId: input.podId,
+          goalId: input.goalId,
+          revision: input.toRevision,
+          rel: item.rel,
+          startLine: item.startLine,
+          endLine: item.endLine,
+          code: item.code,
+          comment: item.comment,
+          anchorJson: item.anchorJson,
+          originItemId: item.id,
+          originRevision: input.fromRevision,
+          now: input.now,
+        });
+        this.appendReviewItemEvent({
+          podId: input.podId,
+          goalId: input.goalId,
+          revision: input.toRevision,
+          itemId: clone.id,
+          kind: 'carried',
+          payloadJson: JSON.stringify({
+            fromRevision: input.fromRevision,
+            originItemId: item.id,
+          }),
+          now: input.now,
+        });
+      }
+    });
+    insert();
+    return source.length;
+  }
+
+  recordGoalAcceptance(input: {
+    podId: string;
+    goalId: string;
+    revision: number;
+    forced: boolean;
+    unresolvedItemIds: string[];
+    riskAcknowledged: boolean;
+    mergeCommit: string | null;
+    now: string;
+  }): PodGoalAcceptanceRow {
+    this.db.prepare(`
+      INSERT OR IGNORE INTO pod_goal_acceptances (
+        id, pod_id, goal_id, revision, forced, unresolved_items_json,
+        actor_kind, risk_acknowledged, merge_commit, accepted_at
+      ) VALUES (?, ?, ?, ?, ?, ?, 'human', ?, ?, ?)
+    `).run(
+      `accept_${randomUUID()}`, input.podId, input.goalId, input.revision,
+      input.forced ? 1 : 0, JSON.stringify(input.unresolvedItemIds),
+      input.riskAcknowledged ? 1 : 0, input.mergeCommit, input.now,
+    );
+    const row = this.getGoalAcceptance(input.podId, input.goalId, input.revision);
+    if (!row) throw new Error(`goal acceptance insert failed: ${input.goalId}#${input.revision}`);
+    return row;
+  }
+
+  getGoalAcceptance(podId: string, goalId: string, revision: number): PodGoalAcceptanceRow | null {
+    const row = this.db.prepare(
+      'SELECT * FROM pod_goal_acceptances WHERE pod_id = ? AND goal_id = ? AND revision = ?',
+    ).get(podId, goalId, revision) as any;
+    return row ? goalAcceptanceFromRow(row) : null;
   }
 
   /**

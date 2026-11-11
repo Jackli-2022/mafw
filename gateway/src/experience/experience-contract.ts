@@ -51,6 +51,11 @@ export interface ActionDescriptor {
   enabled: boolean;
   reason?: ActionUnavailableReason;
   warningKey?: string;
+  /**
+   * 该动作对应的 catalog operationId（additive，E3-4）。
+   * 仅当动作有真实 HTTP 路由时填写；纯客户端/无路由动作省略此字段。
+   */
+  operationId?: string;
   semantics?: Record<string, unknown>;
 }
 

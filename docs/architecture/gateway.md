@@ -5,6 +5,8 @@
 >
 > 时效：2026-11-05 对照源码更新（Pod 协作 Goal Loop、Plan Package / Goal Eval、事件层与 presence、
 > Mobile P0、idle 归属与复用会话 grace）。NodeDriver 自 LangGraph 迁移与事件词汇 v2 见 2026-10-16 版。
+> 2026-11-11 E1 止血波（14 项确定性缺陷修复）见「E1 止血（2026-11-11）」节；
+> 交付记录 `docs/releases/2026-11-11-gateway-e1-stabilization.md`。
 > 更细的子系统说明见 `docs/architecture/*` 与 `docs/guides/*`（2026-11-10 起根 `AGENTS.md` 只保留索引；
 > 本文末尾的「AGENTS.md 归档」是迁移前的原文）。
 
@@ -17,12 +19,14 @@
 - [Pod 协作 Goal Loop](#pod-协作-goal-loop)
 - [Goal 编排：NodeDriver 状态机](#goal-编排nodedriver-状态机)
 - [事件层与常驻存在感](#事件层与常驻存在感)
+- [长效目标（Standing Goals）](standing-goals.md)
 - [统一调度器（scheduler/，内核重构 Phase B）](#统一调度器scheduler内核重构-phase-b)
 - [统一会话注册表（session/，内核重构 Phase C）](#统一会话注册表session内核重构-phase-c)
 - [MafwScheduler 关键子系统](#mafwscheduler-关键子系统)
 - [插件系统（四类型 loader + 统一包宿主）](#插件系统四类型-loader--统一包宿主)
 - [HTTP 路由分发（内核重构 Phase D1 现状）](#http-路由分发内核重构-phase-d1-现状)
 - [内核拆分（Phase D3 现状：entry / boot / kernel / HTTP）](#内核拆分phase-d3-现状entry--boot--kernel--http)
+- [E1 止血（2026-11-11）](#e1-止血2026-11-11)
 - [API 端点](#api-端点)
 - [UI 服务](#ui-服务)
 - [数据流全景](#数据流全景)
@@ -107,7 +111,7 @@ gateway/
 │   │   ├── tool-classes.ts       #   工具语义类别层（并集表 + runtime 声明 overlay）
 │   │   ├── host-adapter.ts       #   re-export `@mafw/runtime-core` 认知面契约（四动词，loopback HTTP）
 │   │   ├── event-mapper.ts / canonical-facets.ts / mafw-vocabulary.ts   # 事件映射 + 词汇单源
-│   │   ├── event-dispatch.ts     #   handleRuntimeEvent 的 24 段有序 stage 表（内核重构 Phase D2）
+│   │   ├── event-dispatch.ts     #   handleRuntimeEvent 的 23 段有序 stage 表（D2 起步 24 段；E3-2 删 Mode B）
 │   │   └── identity-registry.ts / identity-state.ts        # agent 身份单一事实源
 │   ├── mcp/                      # MCP 工具注册表 + handlers（/mcp 双传输）
 │   ├── media/                    # A2A Media Agent、pi-adapter、插件引擎加载器
@@ -476,6 +480,7 @@ kernel.ts 的 7 个管线 action 经 `setActionsProvider` 注册，`start()`/`re
 | Lead 生命周期 | `core/manager/` + `core/pod/` | per-project Lead registry、goal 快照、里程碑推送、/btw、/waitwhat；人工 new-topic 已退役 |
 | Pod 协作循环 | `core/pod/` + `core/goal/plan-package.ts` | Goal revisions、Tech Lead 讨论/方向、Plan+Goal Eval 批准、Probe、Assignment、rubric review |
 | Pod 事件层 | `core/pod/pod-event-*.ts` + `routes/presence.ts` | `pod_events` 分级、`/api/presence` 跨项目聚合、Lead 唤醒闸门、托盘/任务栏/通知 |
+| 长效目标（Standing Goals） | `core/standing/` + `routes/standing-goals.ts` | cron/event/manual 触发 → GoalRun 分流 → 复用普通 Goal；预算/并发/审批闸门（`MAFW_STANDING_GOALS=1`） |
 | Mobile 接入 | `mobile/` + `routes/mobile` | 一次性配对深链、设备存储、mDNS、Tailscale URL、推送网关、媒体/TTS 代理 |
 | Media Agent | `media/` | A2A 协议、四模态、每模态可插拔引擎 |
 | Python 内核 | `python/` | Jupyter wire 协议（ZeroMQ）、Mutex 队列、TTL 回收 |
@@ -568,7 +573,7 @@ promise：`return handleX(req, res, req.url!, deps)`。`dispatchAuthorized` 把 
 |---|---|---|
 | transport / 静态 / MCP / 根路径 | `/a2a`、`/.well-known`、`/a`、`/assets`、`/static`、`/`、`/index.html`、`/mcp`、`/register`、`/control`、`/health` | **D3**（`http-router.ts`：auth → registry → 404；不进 RouteRegistry） |
 | dashboard 兜底（R5） | `/api/goals`、`/api/stats`、`/api/memory` 联合 `startsWith` + `handleDashboardAPI` | 保留：四个明确影子条目已 registry-first（`goals.list` / `dashboard.stats` / `memory.add` / `memory.setSticky`），其余路径行为不变 |
-| `/api/goals/control` 等价臂（R6） | 与 `/control` 共享的 POST 分支 | 死代码（自 cdf678db2 起被 dashboard 兜底遮蔽）；D1 不修，合并时按潜在 bug 处理 |
+| `/api/goals/control`（原 R6 死臂） | `POST /api/goals/control` | **E1-4 已修复**：registry 的 `goals.control` handler 在 dispatch 阶段接管（与 `/control` 共用 `handleGoalControlCommand`）；dashboard 兜底只服务其余未实现形状（`/api/goals/:id/loops` 等，R5 保留） |
 | runtime-config | `GET/PATCH /api/runtime-config` | **D3 Task 2 已迁**：`routes/runtime-config.ts` 挂 `runtime.config.get` / `runtime.config.update`（原幻影条目转实）；GET `{ config }` / PATCH `{ status:'ok', config }` 包络、`provider.config(.update)` 门与 503/500 语义逐字随迁，runtime / runtimeHost 走 live getter。analyzer 从不计数这段 helper 分发（R9 盲区），故 24 基线不变；`/api/ws` upgrade 仍归 D3 Task 3 |
 
 `index.ts` 从 **10098 行（D1 起点 `ed2e998e`）降到 8204 行**（−1894 / −18.8%），减掉的
@@ -593,10 +598,11 @@ kernel.ts handleRuntimeEvent(evt)
   = normalizeRuntimeEvent(evt) → runEventPipeline(f, evt, buildDispatchCtx())
 ```
 
-- **数组位置就是执行顺序**（Ruling D2-R1）：`DISPATCH_STAGES` 是 24 段的有序数组，
-  没有冗余 `order` 字段；拓扑断言一律 `stageIndex(name)` 比较（名字是稳定锚点）。
+- **数组位置就是执行顺序**（Ruling D2-R1）：`DISPATCH_STAGES` 是 **23 段**的有序数组
+  （D2 原文 24 段；E3-2 删除 Mode B 转发段后为 23），没有冗余 `order` 字段；拓扑断言一律
+  `stageIndex(name)` 比较（名字是稳定锚点）。
 - **`matches` = legacy 块级 if，`run` = 块体逐字**（`this.x` → `ctx.x()`；ctx 全为
-  **live getter**）：`DispatchCtx` **26 个成员** = 25 个 live getter + 1 个
+  **live getter**）：`DispatchCtx` **25 个成员** = 24 个 live getter + 1 个
   `setTokenWriterSession` 写回口；`buildDispatchCtx()` 在 kernel.ts 里 30 行。
 - **只有三段可以 HALT**（legacy 的 `return`；HALT 停掉全部下游）：
 
@@ -606,8 +612,8 @@ kernel.ts handleRuntimeEvent(evt)
 | 2 | `toolPrimitiveDrop` | `TOOL_PRIMITIVE_TYPES` | 工具三原语属 assembler 内部入口，漏到这里即丢弃 |
 | 16 | `internalFilter` | memoryWorker 且非 turn 终态 | index-scan / extract / reflect 的 token 噪声不出站；**三终态放行**（`TURN_TERMINALS`） |
 
-其余 21 段都是 add/observe（enrich、tap、审批、权限投影、checkpoint、终态清理、
-trajectory、compaction flush、budget、Mode B、回合聚合、passthrough）。
+其余 20 段都是 add/observe（enrich、tap、审批、权限投影、checkpoint、终态清理、
+trajectory、compaction flush、budget、回合聚合、passthrough）。
 
 - **零 await**：整链同步；approval 的 `policy.evaluate` 保持同步契约
   （`policy-service.ts:10`），autoCheckpoint / compact flush / queue flush 仍
@@ -655,16 +661,16 @@ spec —— 它需要幂等设计与不受 retention 裁剪的影子流（`event
 
 | 文件 | 行数 | 职责 |
 |---|---|---|
-| `index.ts` | 33 | 日志 + `import { MafwScheduler } from './kernel'`；`export { MafwScheduler }`；`require.main === module` 时 `new MafwScheduler().start()` |
+| `index.ts` | 39 | 日志 + `import { MafwScheduler } from './kernel'`；`export { MafwScheduler }`；`require.main === module` 时先 `registerCrashHandlers()`（E1-11）再 `new MafwScheduler().start()` |
 | `kernel.ts` | 6345 | `class MafwScheduler`（组合根）：字段 / `initServices()` / 子系统方法；不再内联 HTTP 分发 |
 | `boot.ts` | 1027 | `bootKernel(kernel)` = 原 `start()` 逐字（83 成员 `BootKernel` 视图）+ `BOOT_STEPS` 27 步有序声明（D3-R6：DB-open-before-migration 气味只记录不修） |
 | `http-router.ts` | 42 | spec §5.1 HTTP facade：re-export `createRequestListener` / `TransportDeps` / `createWsHub` / `WsHub`（无逻辑、无分发） |
-| `http/transport.ts` | 524 | `createRequestListener(deps)`：CORS/OPTIONS → auth → registry → plugin web → file history → transport 分支 → dashboard 兜底（R6 顺序保留）→ `/register` → `/control` → `/health` → 反代 → 500 |
+| `http/transport.ts` | 478 | `createRequestListener(deps)`：CORS/OPTIONS → auth → registry → plugin web → file history → transport 分支 → dashboard 兜底（顺序保留；`/api/goals/control` 自 E1-4 起由 registry 接管）→ `/register` → `/control` → `/health` → 反代 → 500 |
 | `http/ws-upgrade.ts` | 203 | `createWsHub(server, deps)`：`/api/ws` / voice / terminal / plugin WS 上行 + 30s 心跳 + 60s push 维护；`dispose()` 由 `shutdown()` 收口 |
 | `server/event-hub.ts` | 145 | `EventHub`：`broadcast()` / `setupEventBus()` / `sseClients` / `wsClients`（D3-R4；kernel 保留同名委托方法，70+ 闭包调用点未动） |
 | `subsystems/api-routes.ts` | 820 | `attachAllRoutes(deps)`：47 条 attach（46 个 `attach*` + 1 条 typed route），顺序 46/46 原样；lead/pod 外来货物逐字 |
 | `subsystems/dashboard-legacy.ts` | 248 | `handleDashboardAPI`（R5 兜底）逐字；transport 经 `dashboardDispatch` 依赖调用 |
-| `runtime/event-dispatch.ts` | 635 | D2 的 24 段 stage 表（未变） |
+| `runtime/event-dispatch.ts` | 615 | 23 段 stage 表（E3-2 删 Mode B 后；D2 历史为 24 段） |
 
 **启动序列（`boot.ts BOOT_STEPS`，27 步，数组顺序即执行顺序）**：
 
@@ -687,6 +693,8 @@ D3 Task 3 的 5 → Task 4 的 0）。D3-R2 把 `.match` / `.startsWith` 纪律�
 （exact 12 + prefix 6 + artifact slot 1），dashboard 的 5 个在 `subsystems/dashboard-legacy.ts`
 钉扎；`/api/ws` 不在 HTTP 链上（`http/ws-upgrade.ts`）。
 
+**WS 是 live-only 通道（E2-4）**：`connected` 帧携带 `headSeq`（event store 缺失时为 `null`），仅用于标识实时流的衔接位置；WS **不回放**，重连恢复必须走 SSE 游标（`?since` / `Last-Event-ID`）或 REST 快照，移动端"重连即全量"路径保持不变。
+
 **D3 验收（spec §7 字面）**：
 
 | 条件 | 状态 |
@@ -707,7 +715,8 @@ T1 `searchT1` 家族 / goal pause-resume-retry 控制面 / 主题记忆提升 / 
 `sourceTraceIds` 等 34 个 hunk）按 D3 抽取边界**逐段落位**：启动期注册循环 → `boot.ts`，
 组合根状态与路由接线 → `kernel.ts`，反代头 → `http/transport.ts`（`deps.proxyHeaders()`），
 dashboard `memory.add` 影子条 → `subsystems/dashboard-legacy.ts`，MCP `searchT1` →
-`subsystems/api-routes.ts`。D2 的 24 段 stage 表与主线内联链体**逐段等价**（无新增段）。
+`subsystems/api-routes.ts`。**（历史）** D2 抽取时的 24 段 stage 表与主线内联链体**逐段等价**
+（无新增段）；E3-2 删除 Mode B 后为 23 段。
 
 **合入 main P2.4 事件层（Round 2, 2026-11-11）**：主线 `901ed772..7ee50700` 的
 `index.ts` 增量（+258/−71）同样逐段落位——事件层服务/字段/`initServices` 装配与
@@ -726,13 +735,74 @@ D3 承诺内）：`initServices()`（1104 行）拆分到 `subsystems/*`、kerne
 
 ---
 
+## E1 止血（2026-11-11）
+
+> 14 项确定性缺陷（三份评估合并清单的 A 类 + C7/B17），只修「行为与既定契约不符」，
+> 不动路由契约 / 响应信封 / 协议；每项 = 一个 RED 测试 → 最小修复 → 一个 commit。
+> spec：`docs/superpowers/specs/2026-11-11-gateway-e1-stabilization-design.md`；
+> 交付记录：`docs/releases/2026-11-11-gateway-e1-stabilization.md`。
+
+| # | 现状 | 边界 / 后续 |
+|---|---|---|
+| E1-1 | 实例锁有心跳：`boot.ts` 拿到 `gateway.lock` 后起 10s `setInterval` 调 `InstanceLock.heartbeat()`（unref），`releaseInstanceOwnership()` 先停心跳再释放锁。活进程不再因 >30s 未写被判定可回收。 | **无 fencing**：仍是协作租约，被抢占后旧 owner 的心跳按 nonce 失败→`log.warn`，不中止在飞写入；per-owner fencing 属 E5（身份闭环）。stale 判定本身（pid 存活 + heartbeat>30s）未改。 |
+| E1-2 | `POST /api/events` 只服务**外部发布**：`mafw_event`（含 `mafw_event.*` 前缀）、`EVENT_FLOW_MATRIX` canonical/扁平事件、`MAFW_FLAT_EVENT_NAMES`、runtime 原生 `sync` 一律 400（不广播、不落库、不计遥测）；外部只允许自定义命名空间（推荐 `plugin:<name>:<event>`）。`mafw_event` HTTP 信封——伪造 canonical 事件的入口——已关闭。 | 内部发布走 `EventHub.broadcast()`（不经此路由）；统一插件的 `ctx.emit` 同样直连 hub。 |
+| E1-3 | WS `send` 帧省略 `sessionID` 时在**当前项目**（`resolvedProjectDir()`，与 promptAsync 同源）建会话；没有注册项目 → `ws_error`，不再落"第一个注册项目"或默认目录。 | delivery/idempotencyKey 对齐属 E2（B15）。 |
+| E1-4 | `GET /api/goals/:id` 返回**单个 Goal**（`goalId/phase/loop/currentWave/totalWaves/nextAction/error/updatedAt`；未知 → 404），不再落 dashboard 兜底返回列表。`POST /api/goals/control` 由 registry `goals.control` 接管，与 `/control` 旧路径共用 `handleGoalControlCommand`（PAUSE / ABORT / FORCE_PHASE / RESET_PARAMETRIC）。**R6 死臂已修复**（自 cdf678db2 起被 dashboard 前缀兜底遮蔽）。 | `/api/goals/:id/loops` 等未实现形状仍由 dashboard 兜底（R5 保留）。 |
+| E1-5 | `POST /api/session` 的 `directory` **必填绝对路径**（缺失 / 相对 → 400 `{error:'directory must be an absolute path'}`）；worktree 分支不再回退 `'.'`；不再用 `resolvedProjectDir` 猜项目。desktop 新会话入口随本项改为传当前项目。 | SDK `session.create(params.directory)` 仍是 optional（类型层随后收紧）；runtime-core 的适配器兜底不动（E2）。 |
+| E1-6 | `memory.maxMemoriesPerTier` 死配置已从 `core/types/config.d.ts` 与 config-loader 默认值删除（零消费者）；旧配置带该键仍能加载（忽略、不报错）。 | 归档文档保留历史原文。 |
+| E1-7 | 移动端广播单投：WS 为主通道。`EventHub.broadcast` 只把**发送成功**的 `deviceId` 集合传给 `PushGateway.onBroadcast(event, { excludeDeviceIds })`；WS 写失败会移除 socket 且不进入排除集，push 仍兜底该设备。1 msg/s 全局 + 每设备限流不变。 | gateway 仍无 FCM 发送器：注册但离线的设备实际收不到；`onBroadcast` 是将来接 FCM 的单点。 |
+| E1-8 | TUI `ConnectionStore` 状态**边沿触发**：health tick 仍每秒执行并调度心跳，但 `onState` 只在 ok / reconnecting / down 真正变化时回调；稳定连接不再每秒重载 Experience + gateway queue。 | — |
+| E1-9 | desktop SSE 连接管理抽到 `renderer/mafw/sse/sse-connection.ts`（deps 注入，可单测）：in-flight promise 守卫让并发 `connect()` 共享同一次打开；`dispose()` 关闭并清空、之后可重建。onMount + gateway-ready 竞态不再双开 EventSource。 | `dispose()` 非终态（重挂载 / 致命关闭需要重建）。 |
+| E1-10 | 设备库持久化的是客户端上报的 **FCM push token**（`mobile/lib/src/services/push_service.dart` 把它放在 `body.token`），`apiTokenHash` 由服务端从该 token 派生；网关 bearer token 只走 `Authorization` 头，从不进入设备记录、也没有任何"校验 body.token == 网关 token"的门禁。**2026-11-11 review 更正**：原「网关 token 被明文写进 fcmToken」前提不成立，初版修复引入的 401 门槛与 fcmToken 置空已回退。旧格式记录（无 `apiTokenHash`）仍可读。 | 真正的 per-device 凭据（设备级 token + 校验）属 E5（A13 完整形态）。 |
+| E1-11 | 进程级 `uncaughtException` / `unhandledRejection` 兜底：`runtime/crash-handlers.ts` 写 `[FATAL] <kind>: <stack>`（`log.error` + 同步 fd 2，`fs.writeSync` 保证 exit 前不丢）后 `process.exitCode = 1; process.exit(1)`；`index.ts` 在构造 scheduler 之前注册。 | 退出码 **1**，与自更新约定 **75** 严格区分；不吞异常、不"继续运行"（supervisor 重启）。 |
+| E1-12 | `SessionRegistry.register` 的 TTL 三态：`undefined` = 保持现有 TTL（重注册 = 续租，从当刻重新计时）；`null` = 显式永久；数字 = 覆盖（0 / 负数仍为永久，既有语义）。 | 结束/退休记录重建 generation 时按首次注册语义（`undefined` = 永久）。 |
+| E1-13 | Mode A 全局 SSE 卫生：响应头 `X-Accel-Buffering: no`；首帧同一事件块带 `retry: 3000`（不新增帧，既有帧数契约不变）；15s `: ping` 注释帧（unref，`res close` / 写失败清理）。CORS 默认值补 `PUT/PATCH/DELETE` 与 `Authorization` / `X-API-Token`。 | **显式 `server.cors` 优先**（深合并）：`~/.mafw/config.yaml` 里钉死旧 methods/headers 的部署必须手动更新，否则预检仍按旧值。 |
+| E1-14 | 收口：本节 + release 记录 + 全量门禁（gateway / TUI / desktop / SDK contract / route analyzer）。 | deferred 清单见 release 记录（A2 → E5、A7 → E3、A13 完整 → E5、B15 → E2、SDK directory 类型）。 |
+
+## E2 恢复闭环（2026-11-11）
+
+> 「重连后状态可恢复」从网关单方能力变成端到端协议：greeting 纪元 + 显式 reset →
+> SDK/desktop 游标持久化与 `?since` → 按 truncated/reset 分级重同步 → WS 正式降级为
+> live-only → append 失败可观测。不动回放机制本身（`event_log` / seq / 保留策略）。
+> spec：`docs/superpowers/specs/2026-11-11-gateway-e2-recovery-design.md`；
+> 交付记录：`docs/releases/2026-11-11-gateway-e2-recovery.md`。
+
+| # | 现状 | 边界 / 后续 |
+|---|---|---|
+| E2-1 | Mode A SSE greeting 增加 `instanceId` / `schemaEpoch`（来自 `releaseMetadata` / `runtimeIdentity`，`releaseIdentity` live getter 注入）与显式 `reset`。`since > headSeq`（DB 重置 / 旧纪元）→ `reset:true` 且**零回放帧**（此前静默回放 0 条）；reset 与 truncated 互斥且优先。reset 时 `maxReplayed` 归零，新纪元直播 seq 不被陈旧 since 过滤。 | 客户端对 reset 的处理在 E2-2/E2-3；网关不做自动重放。 |
+| E2-2 | SDK `SSEConnection.subscribe(baseUrl, opts?)` / `MafwClient.event.subscribe(opts?)` 支持可选 `cursor { get/set }` 与 `onReplayInfo(info)`：`cursor.get()` 非空 → URL `?since=N`；仅带 SSE `id:` 的帧写回 cursor；connected greeting 回调 `headSeq/firstReplayedSeq/truncated/reset/instanceId/schemaEpoch`。不传 opts 时行为逐字不变。类型 `SseCursor/SseReplayInfo/SseSubscribeOptions` 从 `@mafw/sdk` 导出。 | TUI 启用游标属后续接线；mobile（Dart）游标 deferred。 |
+| E2-3 | desktop SSE 持久化游标：`localStorage['mafw-sse-seq']` + `['mafw-sse-instance']`；重连带 `?since=`。greeting 分级：`reset` / `truncated` / `instanceId` 变化（含旧网关缺失 instanceId）→ 全量重同步（列表 + experience invalidate 及既有 onOpen 块）；干净 resume → **不 invalidate**。每次非首次连接强制补拉活跃会话消息并按 REST 对账状态（`part.delta` 不入 journal，游标回放无法恢复实时文本）。无 localStorage → 退化为每次 open 全量同步。 | reset/instance 变化清游标但保留当前 EventSource；浏览器内部自动重连可能用旧 URL 再次触发（幂等）。 |
+| E2-4 | WS 正式**降级为 live-only**：`connected` 帧携带 `headSeq`（deps getter，无 event store 时 `null`），既有 `type/timestamp/vocab` 不变；WS 不回放，重连恢复必须走 SSE 游标（`?since` / `Last-Event-ID`）或 REST 快照；mobile「重连即全量」路径保持。 | WS 总线化（cursor+replay）正式放弃。 |
+| E2-5 | `EventStore.append` 失败保持 fail-open（返回 null），但失败计数进程级累计（`appendFailures()`），日志限频 30s 一条 `[Events] append failed (total=N): …`；`/api/stats` 在有持久 event store 时暴露 `eventAppendFailures`（无 store 时字段省略，旧 payload 形状不变）。 | 计数随进程重启归零；无独立指标端点。 |
+| E2-6 | 收口：本节 + release 记录 + 全量门禁（gateway / SDK / desktop / TUI / analyzer / kernel-split）。 | deferred：mobile Dart cursor、event_log 作为恢复源与消费者幂等（C1 → E5）、定时器注册表（E4）。 |
+
+## E3 契约硬化（2026-11-11）
+
+> 修「契约层不一致」：catalog 里的不可达 op、幽灵测试、已死的 Mode B、六种错误方言、
+> 动作描述符无绑定、318 ops 仅 11 个有 response schema。**不改变正常路径的响应形状**
+> （错误仅增加字段；删除的都是不可达/已死面）。
+> spec：`docs/superpowers/specs/2026-11-11-gateway-e3-contract-hardening-design.md`；
+> 交付记录：`docs/releases/2026-11-11-gateway-e3-contract.md`。
+
+| # | 现状 | 边界 / 后续 |
+|---|---|---|
+| E3-1 | `tests/unit/api-contract.test.ts` 的幻影源码字符串断言换成**可达性守卫**：catalog 每个 op 必须 attached（字面 / 动态循环数组 / typed attach）或在 allowlist（`TRANSPORT_ALLOWLIST` 9 项、`RUNTIME_PROXY_ALLOWLIST` 1 项，每项带 reason；`DASHBOARD_RESIDUE_ALLOWLIST` 在收口修复轮清空）；allowlist 只减不增。删除 **14 个不可达 op**：E3-1 的 12 个（spec 的 11 个 + `memory.getL5Heuristics`）+ 收口修复轮删除的 `goals.loops` / `goals.loopsAt`（dashboard catch-all 实际返回 goals 列表，形状不对）。死模块 `gateway/src/dashboard/{api,server,types}.ts` 删除（SPA `public/` 保留，仍由 transport 服务）；catalog 318 → 304 ops。 | 请求 `/api/goals/:id/loops(:n)` 仍由 dashboard catch-all 兜底（只是不再登记为 catalog op）；spec 的 307/296 计数与实际基线（318）不符。 |
+| E3-2 | **Mode B 删除**：`?sessionID=` 的 per-session SSE 分支与 `ChatSessionManager` 移除；`event.subscribe` 现在忽略该参数、一律走 Mode A 全局流（SSE 头 + greeting + 回放 + `sseClients`）。`event-dispatch` 24 → 23 段（删 `modeBDelta`），kernel/api-routes 的 `chatSessions` 接线删除。**Breaking**：SDK `event.subscribeToSession` 删除（`?sessionID` 仍被接受并降级为 Mode A）。 | SDK `sessions.events()` 与 `event.url(sessionID?)` 仍构造 `?sessionID`（现降级到全局流），死面清理留后续。 |
+| E3-3 | 框架边界错误带机器码：`core/http/api-error.ts` 的 `API_ERROR_CODES` / `errorBody()`（`unauthorized` / `forbidden` / `capability_unavailable` / `internal`，预留 `schema_epoch_mismatch` / `not_found`）。应用点：transport 401/403/outer 500、registry-dispatch 401、kernel `capGuard`/`capGuardQuestion` 503。既有 `error` 字符串逐字保留。 | 路由内业务错误继续用原信封（错误格式按层）；客户端必须容忍可选 `code`。A2A/MCP 分支内 500 未迁移。 |
+| E3-4 | Experience `ActionDescriptor` 新增可选 `operationId`；projector 用 `EXPERIENCE_ACTION_OPERATIONS` 把 20 个动作绑定到 catalog op（复合动作取入口路由，如 `run.control → session.suspend`）。无路由动作省略该字段。 | 单 operationId 不是完整 verb 集合（run.control 也含 resume/discardRun）；路由改名时绑定测试会红。 |
+| E3-5 | **opt-in schema epoch**：所有响应带 `X-MAFW-Schema-Epoch`（`releaseMetadata.schemaEpoch`，未加载时省略）；客户端**主动携带**且不匹配 → 409 `{error, code:'schema_epoch_mismatch'}`（auth 之后、registry 之前）。不携带 / 匹配 / 服务端未知 → 正常放行。 | 不引入强制拒绝；SDK 尚未主动发送该头。 |
+| E3-6 | 四个读 op 的 200 response schema（`routes/schemas/read-models.ts`，只加 OpenAPI 元数据，不改 handler）：`goals.get`、`project.list`、`presence.get`、`session.usageSummary`。`emit:openapi` 后 272 paths / 304 operations。 | 其余 ~300 ops 仍无 response schema（渐进补齐）。 |
+| E3-7 | 收口：本节 + release 记录 + 全量门禁（gateway / SDK / desktop / TUI / analyzer / kernel-split）。收口修复轮：SDK `Goal` DTO 对齐 `projectGoalView`（phase/error/updatedAt 可空），`goals.list` override 同步、删除陈旧 `goals.get` override；删除 dashboard-residue 两个 phantom op；同步 23 段/25 DispatchCtx 成员的文档漂移。 | deferred：SDK `sessions.events()`/`event.url(sessionID?)` 清理、剩余 op 的 schema 覆盖。 |
+
+---
+
 ## API 端点
 
 全部挂在 **:3000**（单端口；桌面/TUI/插件同源）。按组列举（完整清单见 `docs/reference/tools.md`）：
 
 | 组 | 代表端点 |
 |---|---|
-| 健康/事件 | `GET /health`、`GET /api/events`（SSE 订阅）、`POST /api/events`（发布：顶层扁平或 `mafw_event` 信封，全 UI 通道） |
+| 健康/事件 | `GET /health`、`GET /api/events`（SSE 订阅）、`POST /api/events`（**外部发布**：只接受自定义命名空间，推荐 `plugin:<pkg>:<event>`；`mafw_event`/canonical/扁平保留名/`sync` 一律 400，见 E1-2，全 UI 通道） |
 | 项目/会话 | `POST /register`、`GET /api/projects`、`GET /api/sessions`、`GET /api/manager/session`、`POST /api/manager/session/rotate` |
 | Pod / 工作 | `GET /api/projects/:id/work`（五桶 overview）、`GET/POST /api/pods/:id/goals`、`/tech-lead`、`/direction-decision`、`/probes`、`/revisions`、`/result`、`/reject`、`POST /api/pods/:id/goals/handoff` |
 | 事件/存在感 | `GET /api/presence`、`GET /api/pods/:id/events`、`POST /api/pods/:id/events/:eventId/seen`（单条）、`POST /api/pods/:id/events/seen`（body `{goalId, revision}` 清当前 revision） |

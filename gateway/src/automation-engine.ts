@@ -831,7 +831,7 @@ export class AutomationEngine {
       for (const file of fs.readdirSync(autoDir).filter((f: string) => f.endsWith('.json'))) {
         try {
           const rule: AutomationRule = JSON.parse(fs.readFileSync(path.join(autoDir, file), 'utf-8'));
-          rule.id = file.replace('.json', '');
+          if (!rule.id) rule.id = file.replace('.json', '');
           if (!rules.find(r => r.id === rule.id)) {
             rules.push(rule);
           }
@@ -844,7 +844,7 @@ export class AutomationEngine {
   getRule(id: string): AutomationRule | undefined {
     const cached = this.rules.get(id);
     if (cached) return cached;
-    const filePath = path.join(this.mafwDir, 'automations', `${id}.json`);
+    const filePath = this.existingAutomationRulePath(id);
     if (fs.existsSync(filePath)) {
       try {
         const rule: AutomationRule = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
@@ -1035,7 +1035,7 @@ export class AutomationEngine {
     const autoDir = path.join(this.mafwDir, 'automations');
     if (!fs.existsSync(autoDir)) fs.mkdirSync(autoDir, { recursive: true });
 
-    const existingPath = path.join(autoDir, `${rule.id}.json`);
+    const existingPath = this.existingAutomationRulePath(String(rule.id));
     if (fs.existsSync(existingPath)) {
       const existing: AutomationRule = JSON.parse(fs.readFileSync(existingPath, 'utf-8'));
       if (existing.enabled) {
@@ -1069,8 +1069,7 @@ export class AutomationEngine {
   }
 
   toggleRule(id: string, enabled: boolean): boolean {
-    const autoDir = path.join(this.mafwDir, 'automations');
-    const filePath = path.join(autoDir, `${id}.json`);
+    const filePath = this.existingAutomationRulePath(id);
     if (!fs.existsSync(filePath)) return false;
     try {
       const rule: AutomationRule = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
@@ -1097,15 +1096,72 @@ export class AutomationEngine {
     }
   }
 
+  /** Filesystem-safe (and reversible) filename for a logical automation rule id. */
+  private automationRulePath(id: string): string {
+    const safe = Buffer.from(id, 'utf8').toString('base64url');
+    return path.join(this.mafwDir, 'automations', `${safe}.json`);
+  }
+
+  /** Prefer the encoded path, but keep legacy human-readable rule files working. */
+  private existingAutomationRulePath(id: string): string {
+    const encoded = this.automationRulePath(id);
+    if (fs.existsSync(encoded)) return encoded;
+    if (!/[<>:"/\\|?*\u0000-\u001f]/.test(id)) {
+      const legacy = path.join(this.mafwDir, 'automations', `${id}.json`);
+      if (fs.existsSync(legacy)) return legacy;
+    }
+    return encoded;
+  }
+
   deleteRule(id: string): boolean {
-    const autoDir = path.join(this.mafwDir, 'automations');
-    const filePath = path.join(autoDir, `${id}.json`);
+    const filePath = this.existingAutomationRulePath(id);
     if (!fs.existsSync(filePath)) return false;
     fs.unlinkSync(filePath);
     this.rules.delete(id);
     const job = this.jobs.get(id);
     if (job) { job.stop(); this.jobs.delete(id); }
     return true;
+  }
+
+  /** P2.5: register one Standing Goal cron trigger as an automation rule. */
+  registerStandingCron(input: {
+    key: string;
+    schedule: string;
+    timezone: string;
+    standingGoalId: string;
+    triggerId: string;
+  }): { nextRunAt: string | null } {
+    const rule: AutomationRule = {
+      id: input.key,
+      enabled: true,
+      trigger: { type: 'cron', schedule: input.schedule, timezone: input.timezone },
+      action: { type: 'standing_goal:tick' },
+      args: { standingGoalId: input.standingGoalId, triggerId: input.triggerId },
+    };
+    const autoDir = path.join(this.mafwDir, 'automations');
+    if (!fs.existsSync(autoDir)) fs.mkdirSync(autoDir, { recursive: true });
+    fs.writeFileSync(this.automationRulePath(input.key), JSON.stringify(rule, null, 2), 'utf-8');
+    const previous = this.jobs.get(input.key);
+    if (previous) { previous.stop(); this.jobs.delete(input.key); }
+    this.rules.set(input.key, rule);
+    this.scheduleRule(input.key, rule);
+    return { nextRunAt: this.getNextTriggers(rule, 1).next5[0] ?? null };
+  }
+
+  /** Next cron fire time for a Standing Goal rule (best effort). */
+  nextStandingCronRun(key: string): string | null {
+    const rule = this.rules.get(key);
+    return rule ? (this.getNextTriggers(rule, 1).next5[0] ?? null) : null;
+  }
+
+  unregisterStandingCron(key: string): void {
+    const job = this.jobs.get(key);
+    if (job) { job.stop(); this.jobs.delete(key); }
+    this.rules.delete(key);
+    try {
+      const filePath = this.automationRulePath(key);
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    } catch { /* best effort */ }
   }
 
   private async llmCreateTriage(automationId: string, rule: AutomationRule): Promise<string> {

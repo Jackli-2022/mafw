@@ -312,7 +312,14 @@
                   "type": "string"
                 },
                 "phase": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "loop": {
                   "type": "number"
@@ -326,8 +333,25 @@
                 "nextAction": {
                   "type": "string"
                 },
+                "error": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "updatedAt": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 }
               },
               "required": [
@@ -335,48 +359,15 @@
                 "phase",
                 "loop",
                 "currentWave",
-                "totalWaves"
+                "totalWaves",
+                "error",
+                "updatedAt"
               ]
             }
           }
         },
         "required": [
           "goals"
-        ]
-      }
-    },
-    "goals.get": {
-      "responseSchema": {
-        "type": "object",
-        "properties": {
-          "goalId": {
-            "type": "string"
-          },
-          "phase": {
-            "type": "string"
-          },
-          "loop": {
-            "type": "number"
-          },
-          "currentWave": {
-            "type": "number"
-          },
-          "totalWaves": {
-            "type": "number"
-          },
-          "nextAction": {
-            "type": "string"
-          },
-          "updatedAt": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "goalId",
-          "phase",
-          "loop",
-          "currentWave",
-          "totalWaves"
         ]
       }
     },

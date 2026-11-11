@@ -36,7 +36,7 @@ test("WorkOverview owns filtering and progress rendering", () => {
   assert.match(overview, /WORK_FILTERS/)
   assert.match(overview, /filterWorkGoals\(props\.goals, props\.filter\)/)
   assert.match(overview, /workFilterCounts\(props\.goals\)/)
-  assert.match(overview, /goalProgressText\(goal\)/)
+  assert.match(overview, /summary\.progressText/)
 })
 
 test("ProjectWorkView polls only while active and consumes each composer request once", () => {

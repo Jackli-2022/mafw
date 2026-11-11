@@ -10,6 +10,7 @@ const MAFW_TOOL_ALLOWLIST = [
   'mafw_list_automation_rules', 'mafw_get_automation_rule', 'mafw_list_triage_items',
   'mafw_get_triage_item', 'mafw_get_automation_history', 'mafw_run_automation',
   'mafw_validate_rule', 'mafw_propose_triage_decision', 'mafw_draft_automation_rule',
+  'mafw_create_standing_goal', 'mafw_update_standing_goal', 'mafw_list_standing_goals', 'mafw_run_standing_goal',
   'mafw_desktop_screenshot', 'mafw_desktop_navigate', 'mafw_desktop_get_ui_state',
   'mafw_desktop_click', 'mafw_desktop_type', 'mafw_desktop_scroll',
   'mafw_restart_agent',

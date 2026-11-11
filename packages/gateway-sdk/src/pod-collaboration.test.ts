@@ -115,6 +115,34 @@ test("pod.acceptResult posts the one-click acceptance body", async () => {
   expect(res.mergeCommit).toBe("abc123")
 })
 
+test("pod.reviewItems/create/resolve/reopen use the review routes", async () => {
+  fetchMock.mockResolvedValue(okJson({ revision: 2, items: [], item: { id: "review_1" } }))
+  const c = new MafwClient("http://gw:3000")
+  await c.pod.reviewItems("pod_1", "g1", { revision: 2 })
+  expect(lastCall()[0]).toBe("http://gw:3000/api/pods/pod_1/goals/g1/review-items?revision=2")
+
+  await c.pod.createReviewItems("pod_1", "g1", { items: [{ rel: "src/a.ts", comment: "x" }] })
+  expect(lastCall()[0]).toBe("http://gw:3000/api/pods/pod_1/goals/g1/review-items")
+  expect(lastCall()[1]?.method).toBe("POST")
+
+  await c.pod.resolveReviewItem("pod_1", "g1", "review_1", { note: "ok" })
+  expect(lastCall()[0]).toBe("http://gw:3000/api/pods/pod_1/goals/g1/review-items/review_1/resolve")
+
+  await c.pod.reopenReviewItem("pod_1", "g1", "review_1")
+  expect(lastCall()[0]).toBe("http://gw:3000/api/pods/pod_1/goals/g1/review-items/review_1/reopen")
+})
+
+test("acceptResult forwards forced acceptance flags", async () => {
+  fetchMock.mockResolvedValue(okJson({
+    podId: "pod_1", goalId: "g1", revision: 1, branch: "b", mergeCommit: "c", mergedAt: "now",
+  }))
+  const c = new MafwClient("http://gw:3000")
+  await c.pod.acceptResult("pod_1", "g1", { revision: 1, confirm: true, force: true, riskAcknowledged: true })
+  expect(JSON.parse(String(lastCall()[1]?.body))).toEqual({
+    revision: 1, confirm: true, force: true, riskAcknowledged: true,
+  })
+})
+
 test("pod.worktreeDiff reads the revision branch diff", async () => {
   fetchMock.mockResolvedValue(okJson({
     goalId: "g1", revision: 1, branch: "mafw/g1-r1", baseRef: "main",

@@ -94,8 +94,11 @@ export interface SendMessageDeps {
   encodeFilePath: (filepath: string) => string
   /** 批注草稿（可选注入；缺省视为无批注） */
   pendingAnnotationCount?: (sid: string) => number
+  peekAnnotations?: (sid: string) => Annotation[]
   takeAnnotations?: (sid: string) => Annotation[]
   formatAnnotations?: (items: Annotation[]) => string
+  /** Plan C：Goal-bound 发送前把批注落成评审项；返回随消息附带的评审项块。 */
+  persistAnnotations?: (items: Annotation[]) => Promise<string>
   /** 截屏/元素点选草稿（可选注入；缺省视为无 capture） */
   pendingCaptureCount?: (sid: string) => number
   takeCaptures?: (sid: string) => PendingCapture[]
@@ -144,8 +147,25 @@ export function useSendMessage(deps: SendMessageDeps) {
   } = deps
   const sidProp = deps.sid
   const pendingAnnotationCount = deps.pendingAnnotationCount ?? (() => 0)
+  const peekAnnotations = deps.peekAnnotations ?? (() => [])
   const takeAnnotations = deps.takeAnnotations ?? (() => [])
   const formatAnnotations = deps.formatAnnotations ?? (() => "")
+  const persistAnnotations = deps.persistAnnotations
+
+  /** Persist before clearing drafts; null means "abort this send" (drafts stay). */
+  const stageAnnotations = async (sid: string): Promise<string | null> => {
+    const items = peekAnnotations(sid)
+    if (items.length === 0 || !persistAnnotations) return ""
+    try {
+      return await persistAnnotations(items)
+    } catch (err: any) {
+      showToastV2({
+        description: `评审项保存失败，消息未发送：${String(err?.message ?? err).slice(0, 120)}`,
+        duration: 4200,
+      })
+      return null
+    }
+  }
   const pendingCaptureCount = deps.pendingCaptureCount ?? (() => 0)
   const takeCaptures = deps.takeCaptures ?? (() => [])
   const formatCaptures = deps.formatCaptures ?? (() => "")
@@ -177,11 +197,14 @@ export function useSendMessage(deps: SendMessageDeps) {
       // Voice messages (walkie-talkie) interrupt the in-flight reply; regular
       // messages queue for the next idle boundary instead of being dropped.
       if (!hasVoice) {
+        // Plan C：先落评审项；失败则整条消息不发送（草稿原样保留）。
+        const reviewBlock = await stageAnnotations(sid)
+        if (reviewBlock === null) return
         // Review Focus 4：入队时打包批注快照；入队后新增的批注不跟这条。
-        const queuedAnnotations = takeAnnotations(sidProp())
-        const queuedCaptures = takeCaptures ? takeCaptures(sidProp()) : []
+        const queuedAnnotations = takeAnnotations(sid)
+        const queuedCaptures = takeCaptures ? takeCaptures(sid) : []
         const queuedCaptureBlock = queuedCaptures.length > 0 && formatCaptures ? formatCaptures(queuedCaptures) : ""
-        const queuedText = [text.trim(), queuedAnnotations.length > 0 ? formatAnnotations(queuedAnnotations) : "", queuedCaptureBlock]
+        const queuedText = [text.trim(), queuedAnnotations.length > 0 ? formatAnnotations(queuedAnnotations) : "", reviewBlock, queuedCaptureBlock]
           .filter(Boolean)
           .join("\n\n")        // region 批注截图随队列入列（同即时路径）
         const queuedAnnotationImages = queuedAnnotations
@@ -269,6 +292,9 @@ export function useSendMessage(deps: SendMessageDeps) {
       }
     }
 
+    // Plan C：先落评审项；失败则消息不发送、输入与批注草稿都保留。
+    const reviewBlock = await stageAnnotations(sid)
+    if (reviewBlock === null) return
     setSending(true)
     setPhase('searching')
     history.push(text)
@@ -387,7 +413,7 @@ export function useSendMessage(deps: SendMessageDeps) {
     // empty user message. Pointers still reach the server via `parts` only.
     const pointerTexts = visionParts.map(p => p.text)
     const failureNote = visionFailed.length > 0 ? `[媒体附件未送达 Media Agent] ${visionFailed.join("; ")}` : ""
-    const bodyMessage = [filePrefix, text.trim(), annotationBlock, captureBlock, ...pointerTexts, failureNote].filter(Boolean).join("\n\n")
+    const bodyMessage = [filePrefix, text.trim(), annotationBlock, reviewBlock, captureBlock, ...pointerTexts, failureNote].filter(Boolean).join("\n\n")
     const optimisticParts = buildOptimisticParts({ userMsgId, ts, sid, bodyMessage, visionThumbs, fileParts, agentParts })
     setStore(prev => {
       const msgs = { ...prev.message }
@@ -420,7 +446,7 @@ export function useSendMessage(deps: SendMessageDeps) {
         const voicePart = voiceOrigin ? composeVoiceOriginPart(ts) : null
         const sendParts = [...visionParts, ...fileParts, ...agentParts, ...(voicePart ? [voicePart] : [])]
         const result = await window.api.mafw.chat.sendEnriched({
-          message: [filePrefix, text.trim(), annotationBlock, captureBlock, failureNote].filter(Boolean).join("\n"),
+          message: [filePrefix, text.trim(), annotationBlock, reviewBlock, captureBlock, failureNote].filter(Boolean).join("\n"),
           sessionID: sid,
           parts: sendParts.length ? sendParts : undefined,
           agent: agentKey(agentSel()) === "manager" ? undefined : (agentKey(agentSel()) || undefined),

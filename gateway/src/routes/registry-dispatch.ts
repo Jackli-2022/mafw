@@ -10,6 +10,7 @@
  */
 import type { IncomingMessage, ServerResponse } from 'http';
 import { authorizeRequest } from '../core/auth';
+import { errorBody, API_ERROR_CODES } from '../core/http/api-error';
 import type { RouteRegistry } from './registry';
 
 export interface DispatchAuthorizedDeps {
@@ -40,7 +41,7 @@ export async function dispatchAuthorized(
   );
   if (!allowed) {
     res.writeHead(401, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'unauthorized' }));
+    res.end(JSON.stringify(errorBody('unauthorized', API_ERROR_CODES.unauthorized)));
     return true;
   }
 

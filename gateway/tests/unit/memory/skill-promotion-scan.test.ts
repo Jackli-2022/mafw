@@ -14,7 +14,7 @@ describe('scanPromotionCandidates', () => {
       }),
       readUnit: async (id) =>
         id === 'mem_1_abcdef'
-          ? { id, memory_value: '1. a\n2. b', cue_anchors: ['verified:2026-10-01', 'serve'] }
+          ? { id, memory_value: '1. a\n2. b', cue_anchors: ['verified:2026-10-01', 'serve'], source_session_id: 's1', source_trace_ids: ['t1t_a'] }
           : null,
       needFor: () => 5,
       existingSkillCount: () => 2,
@@ -25,14 +25,20 @@ describe('scanPromotionCandidates', () => {
     expect(n).toBe(1);
     expect(staged[0].name).toBe('ms-abcdef');
     expect(staged[0].content).toContain('name: ms-abcdef');
-    expect(triaged[0].summary.skillDraft).toEqual({ name: 'ms-abcdef', memoryId: 'mem_1_abcdef' });
+    expect(triaged[0].summary.skillDraft).toEqual({
+      name: 'ms-abcdef',
+      memoryId: 'mem_1_abcdef',
+      version: 1,
+      sourceMemoryIds: ['mem_1_abcdef'],
+      sourceTraceIds: ['t1t_a'],
+    });
   });
 
   it('ineligible (no verified anchor) → nothing staged', async () => {
     const staged: any[] = [];
     const n = await scanPromotionCandidates({
       getIndex: () => ({ entries: [{ id: 'mem_1_abcdef', type: 'procedural', energy: 0.8, updated_at: '2026-09-20T00:00:00Z', cue_anchors: [] }] }),
-      readUnit: async (id) => ({ id, memory_value: '1. a\n2. b', cue_anchors: ['serve'] }),
+      readUnit: async (id) => ({ id, memory_value: '1. a\n2. b', cue_anchors: ['serve'], source_session_id: 's1' }),
       needFor: () => 5,
       existingSkillCount: () => 2,
       writeStaging: (name, content) => staged.push({ name, content }),
@@ -54,5 +60,20 @@ describe('scanPromotionCandidates', () => {
       now: new Date('2026-10-08T00:00:00Z'),
     });
     expect(n).toBe(0);
+  });
+
+  it('rejects a draft without triggers/steps/scope', async () => {
+    const staged: any[] = [];
+    const n = await scanPromotionCandidates({
+      getIndex: () => ({ entries: [{ id: 'mem_1_abcdef', type: 'procedural', energy: 0.8, updated_at: '2026-09-20T00:00:00Z', cue_anchors: [] }] }),
+      readUnit: async (id) => ({ id, memory_value: 'just prose, no steps', cue_anchors: ['verified:2026-10-01'] }),
+      needFor: () => 5,
+      existingSkillCount: () => 0,
+      writeStaging: (name, content) => staged.push({ name, content }),
+      createTriageItem: () => {},
+      now: new Date('2026-10-08T00:00:00Z'),
+    });
+    expect(n).toBe(0);
+    expect(staged).toHaveLength(0);
   });
 });

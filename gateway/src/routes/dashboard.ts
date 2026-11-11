@@ -8,9 +8,10 @@
  *
  * 这四条是 handleDashboardAPI（index.ts 的返回对象式总分发器）里的**精确匹配**
  * 分支；R5 裁决下该分发器与其联合分支整体保留，继续服务 method-agnostic
- * `/api/stats*`、`/api/goals*` 幻影形状（goals.get/loops/loopsAt）与
- * `/api/memory` catch-all。registry dispatch 先于 legacy 链，因此这四个 (method,
- * path) 被 registry 接管，legacy 里的同名分支成为 dead-but-retained。
+ * `/api/stats*`、`/api/goals*` 未登记形状与 `/api/memory` catch-all。registry
+ * dispatch 先于 legacy 链，因此这四个 (method, path) 被 registry 接管，legacy
+ * 里的同名分支成为 dead-but-retained。E3 fix 删除了 goals.loops/loopsAt 的
+ * catalog 误登记（catch-all 实际返回 goals 列表，形状不对；请求仍落此兜底）。
  *
  * 翻译规则（binding）：legacy 每个分支 `return {…}`，调用方统一
  * `res.setHeader('Content-Type','application/json')` + `JSON.stringify` + `end`，
@@ -41,6 +42,11 @@ export interface DashboardRouteDeps {
   serveRunning: () => boolean;
   trajectoryStore: () => TrajectoryStore | null;
   memoryService: () => MemoryService | null | undefined;
+  /**
+   * E2-5: event_log append 失败累计（EventStore.appendFailures()）。
+   * null / undefined = 无持久 event store（纯直播部署）→ 字段省略，保持旧形状。
+   */
+  eventAppendFailures?: () => number | null;
 }
 
 export function attachDashboardRoutes(registry: RouteRegistry, deps: DashboardRouteDeps): void {
@@ -60,11 +66,14 @@ export function attachDashboardRoutes(registry: RouteRegistry, deps: DashboardRo
 
   // GET /api/stats — runtime counters (+ optional global token summary)
   registry.attachHandler('dashboard.stats', async (_req: IncomingMessage, res: ServerResponse) => {
+    const appendFailures = deps.eventAppendFailures?.() ?? null;
     const base = {
       activeGoals: deps.activeGoals().size,
       registeredProjects: deps.registeredProjectsSize(),
       sseClients: deps.sseClientsSize(),
       serveRunning: deps.serveRunning(),
+      // E2-5: 只在有持久 event store 时出现（纯直播部署保持旧 payload 形状）。
+      ...(appendFailures !== null ? { eventAppendFailures: appendFailures } : {}),
     };
     try {
       const store = deps.trajectoryStore();

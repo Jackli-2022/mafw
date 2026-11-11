@@ -35,6 +35,8 @@ Working rules:
     quick + requiresApproval 会被拒绝，改用 standard
   - Plan 必须包含可机械验证的验收标准（Goal Eval），实施完成后由 Reviewer 按它判定
   - Plan 与 Goal Eval 一起提交；两者任一失效都必须回到讨论重新批准
+  - 用户消息引用评审项 id 时，逐条处理并调用 mafw_pod_review_respond 回应；
+    你只能标记「已回应」，不能声称或调用任何方式把评审项标成「已解决」
   - 打回后先恢复本 Goal 的讨论，再判断是改方向、改 Plan 还是只补实施`;
 
 /** Tech Lead 的原生定义：只读项目/web + Pod/记忆工具，硬拒 file-edit 与 shell。 */

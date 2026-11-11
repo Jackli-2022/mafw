@@ -1,8 +1,10 @@
 import { For, Show, createEffect, createSignal } from "solid-js"
-import type { PodGoalAcceptResult, PodGoalResult, PodGoalRevision } from "@mafw/sdk"
+import type { PodGoalAcceptResult, PodGoalResult, PodGoalRevision, PodReviewItem } from "@mafw/sdk"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
+import { CheckboxV2 } from "@mafw/ui/v2/checkbox-v2"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import { TextareaV2 } from "@mafw/ui/v2/textarea-v2"
+import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import {
   podHttpStatus,
   podResultAssessmentLabel,
@@ -13,12 +15,22 @@ import {
 } from "../pod-model"
 import {
   podResultAcceptanceView,
+  podResultCanOpenWorktree,
   podResultCanViewDiff,
   podResultConditionRows,
   podResultWorktreeRows,
 } from "../pod-result-view-model"
 import { DiffReviewPanel, type FileDiffEntry } from "./DiffReviewPanel"
+import { PodReviewItems } from "./PodReviewItems"
+import { forcedAcceptReady, reviewAcceptAction, reviewCounts } from "../pod-review-model"
 import { markResultViewedAfterLoad } from "../pod-result-store"
+
+export type GoalWorktreeTarget = {
+  goalId: string
+  revision: number
+  worktreeDir: string
+  title?: string | null
+}
 
 const TASK_RESULT_LABEL = { pass: "通过", fail: "失败", skipped: "跳过" } as const
 const artifactName = (value: string) => value.split(/[\\/]/).filter(Boolean).pop() ?? value
@@ -46,7 +58,9 @@ export function PodResultView(props: {
   onResubmit?: (result: PodGoalResult) => void
   onReject: (feedback: string) => Promise<boolean>
   /** 单次点击验收：父组件负责调用 gateway 并刷新鲸群。 */
-  onAccept?: () => Promise<PodGoalAcceptResult | null>
+  onAccept?: (opts?: { force?: boolean; riskAcknowledged?: boolean }) => Promise<PodGoalAcceptResult | null>
+  /** 显式进入当前 revision 的 worktree 内容；不会自动切换 scope。 */
+  onOpenWorktree?: (target: Omit<GoalWorktreeTarget, "title">) => void
 }) {
   const [result, setResult] = createSignal<PodGoalResult | null>(null)
   const [revisions, setRevisions] = createSignal<PodGoalRevision[]>([])
@@ -61,6 +75,11 @@ export function PodResultView(props: {
   const [diffFiles, setDiffFiles] = createSignal<FileDiffEntry[]>([])
   const [diffLoading, setDiffLoading] = createSignal(false)
   const [diffError, setDiffError] = createSignal<string | null>(null)
+  const [reviewItems, setReviewItems] = createSignal<PodReviewItem[]>([])
+  const [reviewBusy, setReviewBusy] = createSignal(false)
+  const [forceOpen, setForceOpen] = createSignal(false)
+  const [riskAck, setRiskAck] = createSignal(false)
+  let reviewRef: HTMLDivElement | undefined
 
   let loadSeq = 0
   createEffect(() => {
@@ -77,16 +96,23 @@ export function PodResultView(props: {
     setDiffOpen(false)
     setDiffFiles([])
     setDiffError(null)
-    // revisions 失败（旧 gateway / 无权限）不影响结果本身：fail-open 空历史。
+    setReviewItems([])
+    setForceOpen(false)
+    setRiskAck(false)
+    // revisions/review items 失败（旧 gateway / 无权限）不影响结果本身：fail-open 空历史。
     void Promise.allSettled([
       window.api.mafw.pod.result(podId, goalId),
       window.api.mafw.pod.revisions(podId, goalId),
+      window.api.mafw.pod.reviewItems(podId, goalId),
     ])
-      .then(([resultRes, revisionRes]) => {
+      .then(([resultRes, revisionRes, reviewRes]) => {
         if (my !== loadSeq) return
         const revisionItems = revisionRes.status === "fulfilled" && Array.isArray(revisionRes.value?.items)
           ? revisionRes.value.items
           : []
+        if (reviewRes.status === "fulfilled" && Array.isArray(reviewRes.value?.items)) {
+          setReviewItems(reviewRes.value.items)
+        }
         if (resultRes.status === "fulfilled") {
           setResult(resultRes.value)
           // 已查看只在**结果数据真的加载成功**后标记（打开面板本身不算）：
@@ -150,6 +176,55 @@ export function PodResultView(props: {
     const value = result()
     return value ? podResultCanViewDiff(value) : false
   }
+  const canOpenWorktree = () => {
+    const value = result()
+    return value ? podResultCanOpenWorktree(value, activeRevision()) : false
+  }
+  const worktreeRevision = () => result()?.revision ?? activeRevision() ?? null
+  const reviewCount = () => reviewCounts(reviewItems())
+  const isAccepted = () => {
+    const value = result()
+    return value?.acceptance === "accepted"
+      || value?.worktree?.status === "merged"
+      || Boolean(value?.acceptanceRecord)
+  }
+  const acceptAction = () => reviewAcceptAction({
+    actionable: acceptance()?.actionable === true,
+    unresolved: reviewCount().unresolved,
+  })
+  const refreshReviewItems = async () => {
+    try {
+      const listed = await window.api.mafw.pod.reviewItems(props.podId, props.goalId)
+      setReviewItems(Array.isArray(listed?.items) ? listed.items : [])
+    } catch { /* fail-open: keep the last projected list */ }
+  }
+  const resolveReviewItem = async (item: PodReviewItem) => {
+    if (reviewBusy()) return
+    setReviewBusy(true)
+    try {
+      await window.api.mafw.pod.resolveReviewItem(props.podId, props.goalId, item.id)
+      await refreshReviewItems()
+    } catch (err: any) {
+      showToastV2({ description: `确认解决失败：${String(err?.message ?? err).slice(0, 120)}`, duration: 3200 })
+    } finally {
+      setReviewBusy(false)
+    }
+  }
+  const reopenReviewItem = async (item: PodReviewItem) => {
+    if (reviewBusy()) return
+    setReviewBusy(true)
+    try {
+      await window.api.mafw.pod.reopenReviewItem(props.podId, props.goalId, item.id)
+      await refreshReviewItems()
+    } catch (err: any) {
+      showToastV2({ description: `重新打开失败：${String(err?.message ?? err).slice(0, 120)}`, duration: 3200 })
+    } finally {
+      setReviewBusy(false)
+    }
+  }
+  const revealReviewItems = () => {
+    reviewRef?.scrollIntoView({ block: "nearest", behavior: "smooth" })
+  }
   const worktreeNote = () => {
     const worktree = result()?.worktree
     if (!worktree) return null
@@ -208,19 +283,26 @@ export function PodResultView(props: {
     }
   }
 
-  const submitAccept = async () => {
+  const acceptForced = async () => props.onAccept?.({ force: true, riskAcknowledged: true }) ?? null
+
+  const submitAccept = async (opts?: { force?: boolean; riskAcknowledged?: boolean }) => {
     const value = result()
     if (!value || accepting() || !props.onAccept) return
     setAccepting(true)
     setAcceptError(null)
     try {
-      const accepted = await props.onAccept()
+      const accepted = opts?.force ? await acceptForced() : await props.onAccept(opts)
       // 父组件已 toast/刷新；这里只就地更新合并事实，避免整页重新拉取闪烁。
       if (accepted) {
         setResult((prev) => (prev
           ? {
             ...prev,
             acceptance: "accepted",
+            acceptanceRecord: {
+              forced: accepted.forced === true,
+              acceptedAt: accepted.mergedAt,
+              unresolvedReviewItemIds: accepted.unresolvedReviewItemIds ?? [],
+            },
             worktree: prev.worktree
               ? {
                 ...prev.worktree,
@@ -231,8 +313,20 @@ export function PodResultView(props: {
               : prev.worktree,
           }
           : prev))
+        setForceOpen(false)
+        setRiskAck(false)
+        void refreshReviewItems()
       }
     } catch (err: any) {
+      const status = podHttpStatus(err)
+      if (status === 409 && !opts?.force) {
+        void refreshReviewItems()
+        setForceOpen(true)
+        showToastV2({
+          description: "出现新的未解决意见，请处理或确认风险后强制验收",
+          duration: 3600,
+        })
+      }
       setAcceptError(String(err?.message ?? err))
     } finally {
       setAccepting(false)
@@ -363,6 +457,26 @@ export function PodResultView(props: {
                 <For each={value().artifacts}>{(item) => <li><code>{artifactName(item)}</code></li>}</For>
               </ul>
             </Show>
+            <Show when={canOpenWorktree()}>
+              <div class="mafw-pod-result-diff-actions">
+                <ButtonV2
+                  variant="outline"
+                  size="small"
+                  onClick={() => {
+                    const worktree = value().worktree
+                    const revision = worktreeRevision()
+                    if (!worktree?.dir || revision == null) return
+                    props.onOpenWorktree?.({
+                      goalId: props.goalId,
+                      revision,
+                      worktreeDir: worktree.dir,
+                    })
+                  }}
+                >
+                  查看本版文件
+                </ButtonV2>
+              </div>
+            </Show>
             <Show when={canViewDiff()}>
               <div class="mafw-pod-result-diff-actions">
                 <ButtonV2 variant="ghost" size="small" onClick={() => void toggleDiff()}>
@@ -425,6 +539,16 @@ export function PodResultView(props: {
               )}
             </Show>
 
+            <div ref={(el) => { reviewRef = el }}>
+              <PodReviewItems
+                items={reviewItems()}
+                busy={reviewBusy()}
+                accepted={isAccepted()}
+                onResolve={(item) => void resolveReviewItem(item)}
+                onReopen={(item) => void reopenReviewItem(item)}
+              />
+            </div>
+
             <Show when={acceptance()}>
               {(view) => (
                 <div
@@ -440,21 +564,64 @@ export function PodResultView(props: {
                     fallback={<div class="mafw-pod-result-accept-state">{view().label}</div>}
                   >
                     <div class="mafw-pod-result-label">验收</div>
-                    <div class="mafw-pod-result-accept-note">
-                      会立即把 <code>{value().worktree?.branch ?? "该分支"}</code> 合并到{" "}
-                      <code>{value().worktree?.baseBranch || "主分支"}</code>，不再二次确认。
-                    </div>
+                    <Show when={acceptAction().kind === "handle"}>
+                      <div class="mafw-pod-result-accept-note">
+                        还有 {reviewCount().unresolved} 条未解决意见。默认先处理；看清剩余意见并确认风险后才可强制验收。
+                      </div>
+                      <div class="mafw-pod-result-accept-actions">
+                        <ButtonV2 variant="contrast" size="small" onClick={revealReviewItems}>
+                          先处理意见
+                        </ButtonV2>
+                        <ButtonV2 variant="outline" size="small" onClick={() => setForceOpen((open) => !open)}>
+                          确认风险并强制验收
+                        </ButtonV2>
+                      </div>
+                      <Show when={forceOpen()}>
+                        <div class="mafw-pod-result-force">
+                          <div class="mafw-pod-result-label">仍未解决的意见</div>
+                          <ul class="mafw-pod-result-force-list">
+                            <For each={reviewItems().filter((item) => item.status !== "resolved")}>
+                              {(item) => <li><code>{item.rel}</code> {item.comment}</li>}
+                            </For>
+                          </ul>
+                          <CheckboxV2
+                            checked={riskAck()}
+                            onChange={(checked) => setRiskAck(checked === true)}
+                            label="我已了解这些意见未解决，并接受合并风险"
+                          />
+                          <ButtonV2
+                            variant="contrast"
+                            size="small"
+                            disabled={!forcedAcceptReady({ acknowledged: riskAck(), unresolved: reviewCount().unresolved }) || accepting()}
+                            onClick={() => void submitAccept({ force: true, riskAcknowledged: true })}
+                          >
+                            {accepting() ? "合并中…" : "确认风险并强制验收"}
+                          </ButtonV2>
+                        </div>
+                      </Show>
+                    </Show>
+                    <Show when={acceptAction().kind === "accept"}>
+                      <div class="mafw-pod-result-accept-note">
+                        会立即把 <code>{value().worktree?.branch ?? "该分支"}</code> 合并到{" "}
+                        <code>{value().worktree?.baseBranch || "主分支"}</code>，不再二次确认。
+                      </div>
+                      <ButtonV2
+                        variant="contrast"
+                        size="small"
+                        disabled={accepting()}
+                        onClick={() => void submitAccept()}
+                      >
+                        {accepting() ? "合并中…" : "验收并合并到主分支"}
+                      </ButtonV2>
+                    </Show>
                     <Show when={acceptError()}>
                       <div class="mafw-pod-result-error">{acceptError()}</div>
                     </Show>
-                    <ButtonV2
-                      variant="contrast"
-                      size="small"
-                      disabled={accepting()}
-                      onClick={() => void submitAccept()}
-                    >
-                      {accepting() ? "合并中…" : "验收并合并到主分支"}
-                    </ButtonV2>
+                    <Show when={value().acceptanceRecord?.forced}>
+                      <div class="mafw-pod-result-forced-note">
+                        已强制验收（{value().acceptanceRecord?.unresolvedReviewItemIds.length ?? 0} 条未解决意见）
+                      </div>
+                    </Show>
                   </Show>
                 </div>
               )}

@@ -147,6 +147,20 @@ export const DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
+    name: "mafw_pod_review_respond",
+    description: "Tech Lead-only: respond to a human review item. Marks the item 已回应 (never 已解决) and records the response. The calling session must be the Goal-bound Tech Lead session. Only the human can resolve or reopen an item.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        goalId: { type: "string", description: "Goal identifier" },
+        itemId: { type: "string", description: "Review item identifier" },
+        response: { type: "string", description: "What changed or why the item is addressed" },
+        sessionID: { type: "string", description: "Calling Tech Lead session id (MCP does not carry caller identity)" },
+      },
+      required: ["goalId", "itemId", "response", "sessionID"],
+    },
+  },
+  {
     name: "mafw_update_state",
     description: "Update the state file for a goal",
     inputSchema: {
@@ -723,6 +737,57 @@ export const DEFINITIONS: ToolDefinition[] = [
       },
     },
   },
+  {
+    name: "mafw_create_standing_goal",
+    description: "Create a long-lived Standing Goal with cron/event/manual triggers. Every trigger becomes a GoalRun triaged by the Tech Lead.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectDir: { type: "string", description: "Registered project directory" },
+        title: { type: "string" },
+        objective: { type: "string" },
+        template: { type: "object" },
+        triggers: { type: "array", items: { type: "object" } },
+        concurrency: { type: "number" },
+        cooldownMs: { type: "number" },
+        budget: { type: "object" },
+        approval: { type: "string", enum: ["auto", "plan", "confirm"] },
+      },
+      required: ["title", "objective", "triggers"],
+    },
+  },
+  {
+    name: "mafw_update_standing_goal",
+    description: "Update a Standing Goal's triggers, budget, template or state.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        patch: { type: "object" },
+      },
+      required: ["id", "patch"],
+    },
+  },
+  {
+    name: "mafw_list_standing_goals",
+    description: "List Standing Goals with last/next run information.",
+    inputSchema: {
+      type: "object",
+      properties: { projectDir: { type: "string" } },
+    },
+  },
+  {
+    name: "mafw_run_standing_goal",
+    description: "Manually trigger one Standing Goal run (force).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        payload: { type: "object" },
+      },
+      required: ["id"],
+    },
+  },
 ];
 
 // MCP stable spec 注解物化（2026-10-22 spec §5.3）：模块加载期一次性从 mafw 专属表
@@ -734,8 +799,15 @@ for (const def of DEFINITIONS) {
 
 import { handleCreateGoal } from "./handlers/create-goal";
 import { handleLeadGoalStatus } from "./handlers/lead-goal-status";
+import {
+  handleCreateStandingGoal,
+  handleUpdateStandingGoal,
+  handleListStandingGoals,
+  handleRunStandingGoal,
+} from "./handlers/standing-goals";
 import { handlePodGoalDirection } from "./handlers/pod-goal-direction";
 import { handlePodGoalContext } from "./handlers/pod-context-select";
+import { handlePodReviewRespond } from "./handlers/pod-review-respond";
 import { handleUpdateState } from "./handlers/update-state";
 import { handleSearchHybrid } from "./handlers/search-hybrid";
 import { handleGetDeltas } from "./handlers/get-deltas";
@@ -781,9 +853,14 @@ export function createToolRegistry(): ToolRegistry {
     definitions: DEFINITIONS.map((d) => d.outputSchema ? d : { ...d, outputSchema: genericOutputSchema }),
     handlers: {
       mafw_create_goal: handleCreateGoal,
+  mafw_create_standing_goal: handleCreateStandingGoal,
+  mafw_update_standing_goal: handleUpdateStandingGoal,
+  mafw_list_standing_goals: handleListStandingGoals,
+  mafw_run_standing_goal: handleRunStandingGoal,
       mafw_lead_goal_status: handleLeadGoalStatus,
       mafw_pod_goal_direction: handlePodGoalDirection,
       mafw_pod_goal_context: handlePodGoalContext,
+      mafw_pod_review_respond: handlePodReviewRespond,
       mafw_update_state: handleUpdateState,
       mafw_search_hybrid: handleSearchHybrid,
       mafw_get_deltas: handleGetDeltas,

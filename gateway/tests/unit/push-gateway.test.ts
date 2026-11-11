@@ -39,7 +39,10 @@ describe('DeviceStore', () => {
     const input = makeDevice();
     const entry = store.register(input);
     expect(entry.id).toBe(input.id);
+    // fcmToken 是设备上报的 FCM push token（E1-10 review 更正：网关 bearer token
+    // 从不进入设备记录，因此这里如实持久化即可）。
     expect(entry.fcmToken).toBe(input.fcmToken);
+    expect(entry.apiTokenHash).toBe(input.apiTokenHash);
     expect(entry.lastSeen).toBeTruthy();
 
     // Reload from disk

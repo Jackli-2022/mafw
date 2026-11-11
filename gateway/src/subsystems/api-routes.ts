@@ -39,8 +39,9 @@ import { attachLeadTopicRoutes } from '../routes/lead-topics';
 import { attachAttentionRoutes } from '../routes/attention';
 import { attachSchedulerRoutes } from '../routes/scheduler';
 import { attachLeadBoundaryRoutes } from '../routes/lead-boundaries';
-import { attachGoalControlRoutes } from '../routes/goal-control';
+import { attachGoalControlRoutes, attachGoalControlCommandRoute } from '../routes/goal-control';
 import { attachGoalRoutes } from '../routes/goals-inline';
+import { attachGoalGetRoute } from '../routes/goal-get';
 import { attachBackgroundJobHandlers } from '../routes/background-jobs';
 import { attachCognitionRoutes } from '../routes/cognition';
 import { attachPythonRoutes } from '../routes/python';
@@ -52,6 +53,7 @@ import { attachProjectRoutes } from '../routes/projects';
 import { attachMafwCommandRoutes } from '../routes/mafw-commands';
 import { attachMergeMemoryRoutes } from '../routes/merge-memory';
 import { attachTriageRoutes } from '../routes/triage';
+import { attachSkillRoutes } from '../routes/skills';
 import { attachApprovalsRoutes } from '../routes/approvals';
 import { attachQuestionsPermissionsRoutes } from '../routes/questions-permissions';
 import { attachUsageRoutes } from '../routes/usage';
@@ -71,6 +73,9 @@ import { attachEventRoutes } from '../routes/events';
 import { normalizeGitHubEvent, normalizeWebhookEvent } from '../core/events/event-normalize';
 import type { EventLayerService } from '../core/events/event-layer-service';
 import type { EventStore as EventLayerStore } from '../core/events/event-store';
+import type { StandingGoalService } from '../core/standing/standing-service';
+import type { StandingGoalStore } from '../core/standing/standing-store';
+import { attachStandingGoalRoutes } from '../routes/standing-goals';
 import { attachLlmRoutes } from '../routes/llm';
 import { attachMediaPluginRoutes } from '../routes/media-plugins';
 import { attachDevicesMobileRoutes } from '../routes/devices-mobile';
@@ -87,6 +92,7 @@ import type { LeadTopicResumeService } from '../core/lead/lead-topic-resume-serv
 import type { PodAccess } from '../core/pod/pod-access';
 import type { PodDirectionService } from '../core/pod/pod-direction-service';
 import type { PodGoalService } from '../core/pod/pod-goal-service';
+import type { PodReviewService } from '../core/pod/pod-review-service';
 import type { PodMemoryService } from '../core/pod/pod-memory-service';
 import type { PodMessageDelivery } from '../core/pod/pod-message-delivery';
 import type { PodMessageService } from '../core/pod/pod-message-service';
@@ -184,12 +190,13 @@ export interface ApiRouteDeps {
   recallCalledBySession: ReturnType<RecallDeps['recallCalledBySession']>;
   goalDriverMafwDirCache: ReturnType<GoalsInlineDeps['goalDriverMafwDirCache']>;
   sseClients: ReturnType<EventsSseDeps['sseClients']>;
+  /** E2-1: release identity for the SSE greeting epoch fence (null before boot). */
+  releaseIdentity: () => { instanceId: string; schemaEpoch: number } | null;
 
   // ── services ───────────────────────────────────────────────────────────
   allowlistStore: ReturnType<ApprovalsDeps['allowlistStore']>;
   permissionRules: ReturnType<ApprovalsDeps['permissionRules']>;
   approvalPolicy: ReturnType<SessionsPermissionsDeps['approvalPolicy']>;
-  chatSessions: ReturnType<EventsSseDeps['chatSessions']>;
   coactivationGraphStore: ReturnType<MemoryDeps['coactivationGraphStore']>;
   consolidationService: ReturnType<MemoryDeps['consolidationService']>;
   eventStore: ReturnType<EventsSseDeps['eventStore']>;
@@ -211,6 +218,7 @@ export interface ApiRouteDeps {
   podMessageDelivery: PodMessageDelivery;
   podMessageService: PodMessageService;
   podProbeService: PodProbeService;
+  podReviewService: PodReviewService;
   podService: PodService;
   podStore: PodStore;
   podTaskService: PodTaskService;
@@ -271,10 +279,14 @@ export interface ApiRouteDeps {
   handleRuntimeEvent: (evt: any) => void;
   listSessions: (projectID: string | null) => Promise<any[]>;
   skillInstallDeps: TriageDeps['skillInstallDeps'];
+  deoptSkill(name: string, reason: string): { deopted: boolean; archivedTo?: string; error?: string };
+  listSkills(): Array<Record<string, unknown>>;
 
   // ── P2.4 event layer (live: constructed in initServices, inert when off) ──
   eventLayer?: EventLayerService;
   eventLayerStore?: EventLayerStore;
+  standingGoals?: StandingGoalService;
+  standingGoalStore?: StandingGoalStore;
   processEventThread: (threadId: string) => Promise<void>;
 }
 
@@ -493,6 +505,39 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
       return { accepted: true, duplicate: ingested.duplicate };
     },
   });
+  attachStandingGoalRoutes(deps.routeRegistry, {
+    enabled: () => process.env.MAFW_STANDING_GOALS === '1' && !!deps.standingGoals,
+    list: (projectDir) => deps.standingGoals!.list(projectDir),
+    create: (input: any) => deps.standingGoals!.create({
+      projectDir: (() => {
+        const dir = String(input?.projectDir ?? '');
+        const canonical = dir ? canonicalProjectDir(dir) : '';
+        const registered = dir && Array.from(deps.registeredProjects.keys())
+          .some((candidate) => canonicalProjectDir(candidate) === canonical);
+        if (!registered) {
+          throw Object.assign(new Error('projectDir is not a registered project'), { status: 400 });
+        }
+        return dir;
+      })(),
+      title: String(input?.title ?? ''),
+      objective: String(input?.objective ?? ''),
+      template: input?.template && typeof input.template === 'object' ? input.template : {},
+      triggers: input?.triggers,
+      concurrency: input?.concurrency,
+      cooldownMs: input?.cooldownMs,
+      budget: input?.budget,
+      approval: input?.approval,
+      createdBy: input?.createdBy ?? null,
+    }),
+    update: (id, patch: any) => deps.standingGoals!.update(id, patch ?? {}),
+    runs: (id) => deps.standingGoals!.listRuns(id),
+    pause: (id) => deps.standingGoals!.pause(id),
+    resume: (id) => deps.standingGoals!.resume(id),
+    stop: (id) => deps.standingGoals!.stop(id),
+    run: (id) => deps.standingGoals!.runNow(id),
+    getRun: (id) => deps.standingGoalStore!.getRun(id),
+    approveRun: (id) => deps.standingGoals!.approveRun(id),
+  });
   attachWave2Handlers(deps.routeRegistry, {
     runtimeDeps: () => deps.runtimeDeps(),
     restartAgentDeps: () => deps.restartAgentDeps(),
@@ -530,6 +575,7 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
     techLead: deps.podTechLeadService,
     cost: async (podId) => deps.podCost(podId),
     transcript: async (podId, sessionId) => deps.podTranscript(podId, sessionId),
+    reviews: deps.podReviewService,
   }, {
     // Task 18: collaboration surface (Tech Lead discussion / direction / probes /
     // reject / revisions). Services are constructed above, so plain references.
@@ -624,6 +670,12 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
     skillInstallDeps: () => deps.skillInstallDeps(),
     mafwDir: () => deps.mafwDir,
     ledger: () => deps.ledger,
+  });
+  // Skill v1: deopt is a human/internal action; directory move applies at the
+  // next discovery boundary.
+  attachSkillRoutes(deps.routeRegistry, {
+    deopt: (name, reason) => deps.deoptSkill(name, reason),
+    list: () => deps.listSkills(),
   });
   // Phase D1 Task A5：approvals 面迁 registry dispatch（4 分支；数据根扫描路径全保留）。
   attachApprovalsRoutes(deps.routeRegistry, {
@@ -747,6 +799,22 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
     handleValidate: (goalId, data) => deps.handleValidate(goalId, data),
     handleComplete: (goalId, data) => deps.handleComplete(goalId, data),
   });
+  // E1-4：goals.get 单对象（此前落 dashboard `/api/goals` 前缀兜底返回列表）。
+  attachGoalGetRoute(deps.routeRegistry, {
+    findGoalStatePath: (goalId) => deps.findGoalStatePath(goalId),
+    goalDriverMafwDirCache: () => deps.goalDriverMafwDirCache,
+    activeGoals: () => deps.activeGoals,
+  });
+  // E1-4：SDK `goals.control`（此前被 dashboard 兜底吞掉）。与 transport 的
+  // `/control` 旧路径共用 handleGoalControlCommand（大写动作族）。
+  attachGoalControlCommandRoute(deps.routeRegistry, {
+    patchState: (goalId, patch) => deps.patchState(goalId, patch as any),
+    destroyAllSessions: (goalId) => deps.destroyAllSessions(goalId),
+    getActiveGoal: (goalId) => deps.activeGoals.get(goalId),
+    registeredProjects: () => deps.registeredProjects,
+    getGatewayDb: () => deps.getGatewayDb(),
+    archiveGoal: (goalId, outcome) => deps.archiveGoal(goalId, outcome as any),
+  });
   // Phase D1 Task G：dashboard 影子条（goals.list / dashboard.stats /
   // memory.add / memory.setSticky）挂 registry dispatch；handleDashboardAPI
   // 与联合分支整体保留（R5），四个精确 (method, path) 由 registry 先行接管。
@@ -757,6 +825,10 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
     serveRunning: () => deps.serveRunning,
     trajectoryStore: () => deps.trajectoryStore,
     memoryService: () => deps.memoryService,
+    eventAppendFailures: () => {
+      const store = deps.eventStore;
+      return store ? store.appendFailures() : null;
+    },
   });
   // Phase D1 Task H1：long-tail singles 迁 registry dispatch（voice/presence/
   // eval/orchestration/provider/agents + config GET/PUT + llm/compress +
@@ -805,9 +877,9 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
     getGatewayDb: () => deps.getGatewayDb(),
   });
   attachEventsSseRoutes(deps.routeRegistry, {
-    chatSessions: () => deps.chatSessions,
     eventStore: () => deps.eventStore,
     sseClients: () => deps.sseClients,
+    releaseIdentity: () => deps.releaseIdentity(),
   });
   // code-first P0 试点：schema 是响应事实源，handler 返回数据（不写 res）。
   attachTypedRoute(deps.routeRegistry, {

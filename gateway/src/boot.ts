@@ -47,7 +47,8 @@ import {
   type GatewayRuntimeIdentity,
 } from './release-info';
 import { claimGatewayInstance } from './runtime/instance-ownership';
-import type { InstanceLock } from './runtime/instance-lock';
+import type { InstanceLock, InstanceLockHeartbeatHandle } from './runtime/instance-lock';
+import { startInstanceLockHeartbeat } from './runtime/instance-lock';
 import {
   gatewayDiscoveryPath,
   publishGatewayDiscovery,
@@ -152,6 +153,8 @@ export interface BootKernel {
 
   // ── instance ownership / discovery ──
   instanceLock: InstanceLock | null;
+  /** E1-1: 10s unref'd lease heartbeat owned by boot, cleared on release. */
+  instanceLockHeartbeat: InstanceLockHeartbeatHandle | null;
   instanceDiscovery: GatewayDiscoveryHandle | null;
   discoveryHeartbeatTimer: NodeJS.Timeout | null;
 
@@ -302,6 +305,16 @@ export async function bootKernel(kernel: BootKernel): Promise<void> {
     return;
   }
   kernel.instanceLock = ownership.lock;
+  // E1-1: the lease must stay fresh while we run. Without this loop a live
+  // owner's heartbeat ages past the 30s stale window and a contender reaps a
+  // gateway that is still serving. unref'd: the timer alone never holds the
+  // process open; `releaseInstanceOwnership()` clears it.
+  kernel.instanceLockHeartbeat = startInstanceLockHeartbeat(ownership.lock, {
+    onError: (err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      log.warn(`[Scheduler] instance lock heartbeat failed: ${message}`);
+    },
+  });
   if (takeover) {
     log.info('[Scheduler] Takeover: acquired the instance lock from the previous gateway');
   }
@@ -532,8 +545,7 @@ export async function bootKernel(kernel: BootKernel): Promise<void> {
   }
 
   // 4. Dashboard is now served via the API server on the same port
-  // kernel.dashboard = new DashboardServer(3001, kernel.projectDir, this);
-  // kernel.dashboard.start();
+  //    (the legacy in-process DashboardServer was removed in E3-1).
 
   // 5. 恢复注册表（权威源：gateway DB kv_store + legacy 文件兜底）
   await kernel.recoverRegistry();
@@ -838,6 +850,10 @@ export async function publishInstanceDiscovery(kernel: BootKernel): Promise<void
 }
 
 export async function releaseInstanceOwnership(kernel: BootKernel): Promise<void> {
+  if (kernel.instanceLockHeartbeat) {
+    kernel.instanceLockHeartbeat.stop();
+    kernel.instanceLockHeartbeat = null;
+  }
   if (kernel.discoveryHeartbeatTimer) {
     clearInterval(kernel.discoveryHeartbeatTimer);
     kernel.discoveryHeartbeatTimer = null;

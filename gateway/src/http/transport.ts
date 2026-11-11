@@ -11,10 +11,12 @@
  *   OPTIONS(204) → apiToken auth(401) → registry dispatch → plugin web →
  *   file history → transport branches → dashboard joint catch-all →
  *   /register → /control → /health → reverse proxy → 500.
- * The dashboard joint MUST stay before `/control`: it shadows the
- * `/api/goals/control` arm (ruling R6, latent since cdf678db2 — deliberately
- * not fixed here). `/health` is two branches: the rich 200 (GET) and the dead
- * plain arm that can only be reached by non-GET methods.
+ * The dashboard joint still sits before the transport-level `/control` branch.
+ * Since E1-4, `POST /api/goals/control` is claimed by the registry
+ * (`goals.control` handler) during dispatch, so only `/control` (and a missed
+ * dispatch) reaches the branch below — both run the same
+ * `handleGoalControlCommand`. `/health` is two branches: the rich 200 (GET) and
+ * the dead plain arm that can only be reached by non-GET methods.
  *
  * URL parsing (ruling D3-R2): the raw url and pathname are computed once at the
  * top; every downstream branch compares explicitly. No `req.url`-anchored
@@ -29,6 +31,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
 import { authorizeRequest, isLoopbackAddr } from '../core/auth';
+import { errorBody, API_ERROR_CODES } from '../core/http/api-error';
+import { handleGoalControlCommand } from '../core/goal/control-command';
 import { readBody } from '../core/http/http-util';
 import { log } from '../core/utils/logger';
 import { injectServeAuth } from '../runtime/proxy-auth';
@@ -94,6 +98,11 @@ export interface TransportDeps {
   cors(): TransportCorsHeaders;
   /** `(config.raw as any)?.server?.apiToken || ''` — live (config is reloadable). */
   apiToken(): string;
+  /**
+   * E3-5: schema epoch from release metadata (`releaseMetadata.schemaEpoch`).
+   * null = release metadata not loaded yet → no response header, no enforcement.
+   */
+  schemaEpoch?: () => number | null;
   /** Registry-first dispatch (`routes/registry-dispatch`); auth already passed. */
   dispatchAuthorized(req: http.IncomingMessage, res: http.ServerResponse, apiToken: string): Promise<boolean>;
   /** `Scheduler.handlePluginWebWildcard` — `ui/*` / `api/*` plugin surfaces. */
@@ -147,6 +156,11 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
       res.setHeader("Access-Control-Allow-Methods", cors.methods);
       res.setHeader("Access-Control-Allow-Headers", cors.headers);
 
+      // E3-5：schema epoch 握手（opt-in）。header 尽早写出（auth 前），
+      // 客户端可据此判断服务端契约版本；metadata 未就绪（null）时省略。
+      const schemaEpoch = deps.schemaEpoch?.() ?? null;
+      if (schemaEpoch !== null) res.setHeader('X-MAFW-Schema-Epoch', String(schemaEpoch));
+
       if (req.method === "OPTIONS") {
       res.writeHead(204);
       res.end();
@@ -161,8 +175,20 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
     const apiToken = deps.apiToken();
     if (!authorizeRequest({ remoteAddress: req.socket.remoteAddress || '', headers: req.headers as any, url: req.url, host: String(req.headers.host || '') }, apiToken)) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'unauthorized' }));
+      res.end(JSON.stringify(errorBody('unauthorized', API_ERROR_CODES.unauthorized)));
       return;
+    }
+
+    // E3-5：auth 之后、registry 之前校验客户端主动携带的 epoch。只有**携带**且
+    // 不匹配才拒绝（409）；不携带 / 匹配 / 服务端 epoch 未知 → 照旧放行。
+    const requestedEpochHeader = req.headers['x-mafw-schema-epoch'];
+    if (schemaEpoch !== null && requestedEpochHeader !== undefined) {
+      const requestedEpoch = Array.isArray(requestedEpochHeader) ? requestedEpochHeader[0] : requestedEpochHeader;
+      if (String(requestedEpoch).trim() !== '' && Number(requestedEpoch) !== schemaEpoch) {
+        res.writeHead(409, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(errorBody('schema epoch mismatch', API_ERROR_CODES.schema_epoch_mismatch)));
+        return;
+      }
     }
 
     // P5 Wave 1: registry dispatch —— attach 过 handler 的路由在 legacy 链之前
@@ -181,7 +207,7 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
 
     // POST /a2a — A2A JSON-RPC (standard protocol methods)
     if (url === "/a2a" && req.method === "POST") {
-      if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
+      if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify(errorBody('forbidden', API_ERROR_CODES.forbidden))); return; }
       try {
         if (!deps.mediaAgent()) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaAgent not initialized' })); return; }
         const rawBody = await readBody(req);
@@ -202,7 +228,7 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
 
     // GET /.well-known/agent-card.json — A2A agent discovery
     if (url === '/.well-known/agent-card.json' && req.method === 'GET') {
-      if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
+      if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify(errorBody('forbidden', API_ERROR_CODES.forbidden))); return; }
       try {
         if (!deps.mediaAgent()) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaAgent not initialized' })); return; }
         res.setHeader('Content-Type', 'application/a2a+json');
@@ -217,7 +243,7 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
     // GET /a2a/artifacts/<id> — task artifact download (spec §6.7 output reference)
     const artifactId = matchArtifactId(url);
     if (artifactId && req.method === 'GET') {
-      if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
+      if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify(errorBody('forbidden', API_ERROR_CODES.forbidden))); return; }
       try {
         if (!deps.mediaAgent()) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaAgent not initialized' })); return; }
         const artifact = deps.mediaAgent()!.getArtifact(artifactId);
@@ -394,7 +420,10 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
       return;
     }
 
-    // 控制指令（/control 为 MCP handler 兼容路径；/api/goals/control 为 SDK goals.control 契约路径，两者等价）
+    // 控制指令（/control 为 MCP handler 兼容路径；/api/goals/control 为 SDK
+    // goals.control 契约路径）。**E1-4 起 `/api/goals/control` 由 registry 的
+    // `goals.control` handler 在 dispatch 阶段接管**，只有 `/control`（以及
+    // registry 漏接时的兜底）会到这里；两条路径共用 handleGoalControlCommand。
     if ((url === '/control' || url === '/api/goals/control') && req.method === 'POST') {
       let body = '';
       req.on('data', chunk => body += chunk);
@@ -402,61 +431,9 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
         try {
           const control = JSON.parse(body);
           log.info(`[Scheduler] HTTP control: ${control.action} ${control.goalId || ''}`);
-
-          // 直接处理控制指令（同 processControlFile 逻辑）
-          switch (control.action) {
-            case 'PAUSE':
-              if (control.goalId) await deps.control.patchState(control.goalId, { nextAction: 'PAUSED' });
-              break;
-            case 'ABORT':
-              if (control.goalId) {
-                await deps.control.destroyAllSessions(control.goalId);
-                // W1：取消语义 = 批准门也取消（防 terminal state 下 UI 残留 pending）
-                await deps.control.patchState(control.goalId, { nextAction: 'FAILED', planApproval: null });
-                const state = deps.control.getActiveGoal(control.goalId);
-                // Find projectDir for this goal
-                let projectDir: string | null = null;
-                for (const [pDir, info] of deps.control.registeredProjects()) {
-                  if (fs.existsSync(path.join(info.mafwDir, 'state', `${control.goalId}.json`))) {
-                    projectDir = pDir;
-                    break;
-                  }
-                }
-                if (projectDir) {
-                  const { recordGoalOutcome } = await import('../orchestration/outcome-recorder.js');
-                  recordGoalOutcome(deps.control.getGatewayDb(), {
-                    goalId: control.goalId,
-                    verdict: 'CANCELLED',
-                    rounds: state?.loop ?? 0,
-                    lastError: 'User cancelled',
-                    reviewFeedback: null,
-                    projectDir,
-                    mafwDir: path.join(projectDir, '.mafw'),
-                    projectId: projectDir,
-                  });
-                }
-                await deps.control.archiveGoal(control.goalId, {
-                  verdict: 'CANCELLED',
-                  rounds: state?.loop ?? 0,
-                  lastError: 'User cancelled',
-                });
-              }
-              break;
-            case 'FORCE_PHASE':
-              if (control.goalId && control.targetPhase) {
-                await deps.control.destroyAllSessions(control.goalId);
-                await deps.control.patchState(control.goalId, {
-                  nextAction: `CREATE_${control.targetPhase.toUpperCase()}_SESSION`
-                });
-              }
-              break;
-            case 'RESET_PARAMETRIC':
-              log.info('[Scheduler] Resetting parametric cache...');
-              break;
-          }
-
-          res.writeHead(200);
-          res.end(JSON.stringify({ status: 'ok' }));
+          const out = await handleGoalControlCommand(control, deps.control);
+          res.writeHead(out.status);
+          res.end(JSON.stringify(out.body));
         } catch (err) {
           res.writeHead(400);
           res.end(JSON.stringify({ error: 'Invalid JSON' }));
@@ -515,7 +492,7 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
     } catch (err: any) {
       log.error('[Scheduler] Unhandled request error:', err.message);
       if (!res.headersSent) {
-        try { res.writeHead(500); res.end(JSON.stringify({ error: err.message }));
+        try { res.writeHead(500); res.end(JSON.stringify(errorBody(err.message, API_ERROR_CODES.internal)));
         } catch { /* response already ended */ }
       }
     }

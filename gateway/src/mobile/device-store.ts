@@ -30,7 +30,13 @@ export class DeviceStore {
         const raw = fs.readFileSync(this.filePath, 'utf-8');
         const data: DeviceStoreFile = JSON.parse(raw);
         for (const d of data.devices || []) {
-          this.devices.set(d.id, d);
+          // Tolerate records written before apiTokenHash existed (and any
+          // partially-written entry): only the missing fields are normalized.
+          this.devices.set(d.id, {
+            ...d,
+            fcmToken: typeof d.fcmToken === 'string' ? d.fcmToken : '',
+            apiTokenHash: typeof d.apiTokenHash === 'string' ? d.apiTokenHash : '',
+          });
         }
       }
     } catch {
@@ -54,6 +60,9 @@ export class DeviceStore {
     }
     const entry: DeviceEntry = {
       id: input.id,
+      // `fcmToken` is the FCM push token supplied by the device (mobile client
+      // sends it in `body.token`). It is NOT a gateway credential — the bearer
+      // token only ever travels in the Authorization header.
       fcmToken: input.fcmToken,
       platform: input.platform,
       apiTokenHash: input.apiTokenHash,

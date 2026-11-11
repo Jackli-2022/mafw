@@ -18,6 +18,7 @@ import {
 import { observePluginTabCapacity, planPluginTabs, type PluginTabSurface } from "../plugins/plugin-view-model"
 import type { PluginWebSurfaceView } from "../plugins/plugin-web-surface"
 import { WorkbenchCodeView } from "./WorkbenchCodeView"
+import { ContentScopeHeader } from "./ContentScopeHeader"
 import type { FileDiffEntry } from "./DiffReviewPanel"
 import type { AnnotationAnchor } from "../../../shared/annotation-types"
 
@@ -30,11 +31,30 @@ export type WorkbenchShellProps = {
   onSurface: (surface: WorkbenchSurface) => void
   onExecutionSection: (section: ExecutionSection) => void
   sessionID: string | null
-  sessionDirectory: string | null
+  contentRoot: string | null
+  contentScopeKey: string | null
+  /** Plugin Web surfaces stay session/project-bound; they are not project files. */
+  pluginProjectDir: string | null
+  contentScopeLabel: string
+  contentScopeIsGoal: boolean
+  canGoBack: boolean
+  backLabel: string | null
+  onBack: () => void
+  onReturnToProjectContent: () => void
   diffs: FileDiffEntry[]
   onOpenFile: (rel: string) => void
   onSendAnnotation?: (text: string, opts?: { imageDataUrl?: string }) => void
-  onAddAnnotation?: (a: { rel: string; startLine: number; endLine: number; code: string; comment: string; anchor?: AnnotationAnchor; imageDataUrl?: string }) => void
+  onAddAnnotation?: (a: {
+    rel: string
+    startLine: number
+    endLine: number
+    code: string
+    comment: string
+    anchor?: AnnotationAnchor
+    imageDataUrl?: string
+    scopeKey?: string
+    root?: string
+  }) => void
   onSendComment?: (sid: string, text: string) => void
   /** 批注反馈标记点击 → 切审阅面。 */
   onOpenReview?: () => void
@@ -283,6 +303,17 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
         </div>
       </Show>
 
+      <Show when={props.view === "workbench"}>
+        <ContentScopeHeader
+          label={props.contentScopeLabel}
+          isGoalScope={props.contentScopeIsGoal}
+          canGoBack={props.canGoBack}
+          backLabel={props.backLabel}
+          onBack={props.onBack}
+          onReturnToProject={props.onReturnToProjectContent}
+        />
+      </Show>
+
       <div class="mafw-rw-content">
         <div class="mafw-rw-pane" classList={{ "is-active": props.view === "work" }}>
           {props.workView}
@@ -292,7 +323,9 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
             active={props.open && props.view === "workbench"}
             surface={props.surface}
             sessionID={props.sessionID}
-            sessionDirectory={props.sessionDirectory}
+            contentRoot={props.contentRoot}
+            contentScopeKey={props.contentScopeKey}
+            pluginProjectDir={props.pluginProjectDir}
             diffs={props.diffs}
             onOpenFile={props.onOpenFile}
             onSendAnnotation={props.onSendAnnotation}

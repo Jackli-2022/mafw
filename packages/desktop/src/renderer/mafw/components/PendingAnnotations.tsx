@@ -21,6 +21,11 @@ export function PendingAnnotations(props: { sessionID: string | null }) {
           {(a) => (
             <div class="mafw-pending-annotation">
               <span class="mafw-pending-annotation-kind" data-kind={a.anchor?.kind ?? "lines"} aria-hidden="true" />
+              <Show when={a.scopeKey}>
+                <span class="mafw-pending-annotation-scope" aria-hidden="true">
+                  {a.scopeKey?.startsWith("goal:") ? "Goal 版本" : "项目"}
+                </span>
+              </Show>
               <span class="mafw-pending-annotation-where" title={label(a)}>
                 {label(a)}
               </span>

@@ -3,6 +3,7 @@ import assert from "node:assert/strict"
 import type { PodGoalResult } from "@mafw/sdk"
 import {
   podResultAcceptanceView,
+  podResultCanOpenWorktree,
   podResultCanViewDiff,
   podResultConditionRows,
   podResultWorktreeRows,
@@ -155,6 +156,28 @@ describe("podResultWorktreeRows", () => {
       worktree: { ...result().worktree!, baseBranch: null },
     }))
     assert.equal(rows.find((row) => row.label === "合并到")?.value, "未知")
+  })
+})
+
+describe("podResultCanOpenWorktree", () => {
+  test("only live/abandoned worktrees with a known revision are openable", () => {
+    assert.equal(podResultCanOpenWorktree(result()), true)
+    assert.equal(podResultCanOpenWorktree(result({
+      worktree: { ...result().worktree!, status: "merged" },
+    })), false)
+    assert.equal(podResultCanOpenWorktree(result({
+      worktree: { ...result().worktree!, status: "missing" },
+    })), false)
+    assert.equal(podResultCanOpenWorktree(result({
+      worktree: { ...result().worktree!, dir: "" },
+    })), false)
+    assert.equal(podResultCanOpenWorktree(result({
+      revision: undefined,
+      worktree: { ...result().worktree!, status: "active" },
+    }), null), false)
+    assert.equal(podResultCanOpenWorktree(result({
+      worktree: { ...result().worktree!, status: "abandoned" },
+    })), true)
   })
 })
 

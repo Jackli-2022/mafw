@@ -30,9 +30,11 @@ export function buildAnnotationPrompt(
   endLine: number,
   code: string,
   comment: string,
+  opts?: { root?: string },
 ): string {
   const range = startLine === endLine ? `第 ${startLine} 行` : `第 ${startLine}-${endLine} 行`
   return [
+    ...(opts?.root ? [`内容根：\`${opts.root}\``, ""] : []),
     `文件 \`${rel}\` ${range}：`,
     "",
     "```",
@@ -50,15 +52,24 @@ export function buildAnnotationPromptAnchored(
   rel: string,
   anchor: AnnotationAnchor,
   comment: string,
-  opts?: { hasImage?: boolean },
+  opts?: { hasImage?: boolean; root?: string },
 ): string {
-  return [...anchorBlockLines(rel, anchor, opts), "", `我的批注：${comment}`, "", "请结合批注查看这段内容并回应。"].join("\n")
+  return [
+    ...(opts?.root ? [`内容根：\`${opts.root}\``, ""] : []),
+    ...anchorBlockLines(rel, anchor, opts),
+    "",
+    `我的批注：${comment}`,
+    "",
+    "请结合批注查看这段内容并回应。",
+  ].join("\n")
 }
 
 function annotationBlock(item: Annotation, index: number): string {
+  const rootLine = item.root ? [`内容根：\`${item.root}\``, ""] : []
   if (item.anchor) {
     return [
       `【批注 ${index + 1}】`,
+      ...rootLine,
       ...anchorBlockLines(item.rel, item.anchor, { hasImage: !!item.imageDataUrl }),
       "",
       `我的批注：${item.comment}`,
@@ -67,6 +78,7 @@ function annotationBlock(item: Annotation, index: number): string {
   const range = item.startLine === item.endLine ? `第 ${item.startLine} 行` : `第 ${item.startLine}-${item.endLine} 行`
   return [
     `【批注 ${index + 1}】`,
+    ...rootLine,
     `文件 \`${item.rel}\` ${range}：`,
     "",
     "```",

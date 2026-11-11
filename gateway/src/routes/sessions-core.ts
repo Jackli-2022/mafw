@@ -58,7 +58,9 @@ export function attachSessionsCoreRoutes(registry: RouteRegistry, deps: Sessions
       kvSet: (key, id, v) => deps.getGatewayDb().kvSet(key, id, v),
       kvDel: (key, id) => deps.getGatewayDb().kvDelete(key, id),
       // 目录必填：缺省时回退到 gateway 的单点解析（绝对路径）
-      createSession: (directory, metadata) => deps.sdkSession().create(directory ?? deps.resolvedProjectDir(), metadata),
+      // 目录契约（E1-5）：directory 必填绝对路径，由 handleSessionCreate 校验；
+      // 这里不再用 resolvedProjectDir 兜底（静默猜项目会掩盖漏传调用方）。
+      createSession: (directory, metadata) => deps.sdkSession().create(directory, metadata),
       // worktree 归属（设计 §7.1）：gateway git + session.create({directory}) 契约，
       // 不再按 runtime 私有 worktreeApi 能力位拒绝支持的 runtime。
       worktreeAvailability: async (directory) => {

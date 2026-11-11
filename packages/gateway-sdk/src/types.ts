@@ -6,6 +6,8 @@
 import type { MafwBackgroundJob, MafwMessage } from './view-dto'
 // Task 6：unified plugin package DTOs come from the shared contract package.
 import type { PluginClientDescriptor } from '@mafw/plugin-contract'
+// E2-2：SSE 可恢复订阅选项（cursor / onReplayInfo）。
+import type { SseSubscribeOptions } from './sse'
 
 /**
  * 会话列表/详情条目。
@@ -53,12 +55,15 @@ export class MethodNotSupportedError extends Error {
 
 export interface Goal {
   goalId: string
-  phase: string
+  /** E1/E3: NodeDriver 状态可能尚未定相。 */
+  phase: string | null
   loop: number
   currentWave: number
   totalWaves: number
   nextAction?: string
-  updatedAt?: string
+  /** 失败原因（成功/未失败时为 null）。 */
+  error: string | null
+  updatedAt: string | null
 }
 
 export interface GoalCreateInput {
@@ -721,8 +726,8 @@ export interface ProjectNamespace {
 }
 
 export interface EventNamespace {
-  subscribe(): Promise<{ on(event: string, cb: (data: any) => void): void }>
-  subscribeToSession(sessionID: string): Promise<{ on(event: string, cb: (data: any) => void): void }>
+  /** E2-2: cursor/onReplayInfo 可选——不传时行为与旧版一致。 */
+  subscribe(opts?: SseSubscribeOptions): Promise<{ on(event: string, cb: (data: any) => void): void }>
   /** SSE 连接状态（onopen/onerror 维护；供监督器健康轮询）。 */
   connected(): boolean
   /** SSE 端点 URL（契约归 SDK：renderer 直连 EventSource 时用此构造，不自己拼字符串）。 */
@@ -1392,6 +1397,8 @@ export interface PodGoalResult {
   worktree?: PodGoalResultWorktree | null
   /** User acceptance state; absent on old gateways. */
   acceptance?: 'pending' | 'accepted' | 'unavailable'
+  /** Durable acceptance audit (forced state + unresolved snapshot); absent before acceptance. */
+  acceptanceRecord?: PodGoalAcceptanceRecord | null
 }
 
 export interface PodGoalResultWorktree {
@@ -1410,6 +1417,59 @@ export interface PodGoalAcceptResult {
   branch: string
   mergeCommit: string
   mergedAt: string
+  /** True when unresolved review items were explicitly accepted with risk. */
+  forced?: boolean
+  /** Snapshot of items unresolved at acceptance time. */
+  unresolvedReviewItemIds?: string[]
+}
+
+export type PodReviewItemStatus = 'pending' | 'responded' | 'resolved'
+
+export type PodReviewAnchor =
+  | { kind: 'quote'; quote: string }
+  | { kind: 'jsonPath'; path: string; valueSummary: string }
+  | { kind: 'cell'; sheet?: string; ref: string; value: string }
+  | { kind: 'region'; x: number; y: number; w: number; h: number; slide?: number }
+
+export interface PodReviewItem {
+  id: string
+  podId: string
+  goalId: string
+  revision: number
+  status: PodReviewItemStatus
+  rel: string
+  startLine: number | null
+  endLine: number | null
+  code: string
+  comment: string
+  anchor: PodReviewAnchor | null
+  response: string | null
+  originItemId: string | null
+  originRevision: number | null
+  createdAt: string
+  updatedAt: string
+  respondedAt: string | null
+  resolvedAt: string | null
+}
+
+export interface PodReviewItemInput {
+  rel: string
+  startLine?: number | null
+  endLine?: number | null
+  code?: string
+  comment: string
+  anchor?: PodReviewAnchor
+}
+
+export interface PodReviewItemList {
+  revision: number
+  items: PodReviewItem[]
+}
+
+export interface PodGoalAcceptanceRecord {
+  forced: boolean
+  acceptedAt: string
+  unresolvedReviewItemIds: string[]
 }
 
 export interface PodWorktreeDiffFile {
@@ -1801,10 +1861,28 @@ export interface PodNamespace {
   createProbe(podID: string, goalID: string, body: PodProbeInput | PodProbeInput[]): Promise<{ items: PodProbe[] }>
   rejectResult(podID: string, goalID: string, feedback: string, body?: { actorSessionID?: string }): Promise<PodRejectResult>
   /** Explicit human acceptance: merge the active revision worktree into its base branch. */
-  acceptResult(podID: string, goalID: string, body: { revision?: number; confirm: true }): Promise<PodGoalAcceptResult>
+  acceptResult(podID: string, goalID: string, body: {
+    revision?: number
+    confirm: true
+    /** Required when unresolved review items exist. */
+    force?: boolean
+    /** Required with force; records the explicit risk acknowledgement. */
+    riskAcknowledged?: boolean
+  }): Promise<PodGoalAcceptResult>
   /** Read-only merge-base diff for a revision branch (survives the worktree checkout). */
   worktreeDiff(podID: string, goalID: string, revision?: number): Promise<PodWorktreeDiff>
   revisions(podID: string, goalID: string): Promise<{ items: PodGoalRevision[] }>
+  /** Human review items for a Goal revision (default: active revision). */
+  reviewItems(podID: string, goalID: string, opts?: { revision?: number }): Promise<PodReviewItemList>
+  /** Create review items from human annotations (default: active revision). */
+  createReviewItems(podID: string, goalID: string, body: {
+    revision?: number
+    items: PodReviewItemInput[]
+  }): Promise<{ items: PodReviewItem[] }>
+  /** Human-only: mark an item resolved. */
+  resolveReviewItem(podID: string, goalID: string, itemID: string, body?: { note?: string }): Promise<{ item: PodReviewItem }>
+  /** Human-only: reopen a responded/resolved item. */
+  reopenReviewItem(podID: string, goalID: string, itemID: string, body?: { note?: string }): Promise<{ item: PodReviewItem }>
 }
 
 /** 持久审批规则（切片 1：~/.mafw/permission-rules.json）。 */
@@ -1928,6 +2006,114 @@ export interface EventsNamespace {
   subscribe(threadId: string, input: { subscriberType: string; subscriberId: string; mode: 'work' | 'context' }): Promise<EventSubscriptionView>
   unsubscribe(id: string): Promise<{ ok: boolean }>
   deliveries(threadId: string): Promise<{ items: EventDeliveryView[] }>
+}
+
+export type StandingGoalState = 'active' | 'paused' | 'stopped'
+export type StandingRunMode = 'goal' | 'report' | 'action' | 'skip'
+export type StandingRunStatus =
+  | 'queued'
+  | 'triaging'
+  | 'running'
+  | 'waiting_person'
+  | 'done'
+  | 'failed'
+  | 'skipped'
+export type StandingTriggerType = 'cron' | 'event' | 'manual'
+
+export interface StandingTriggerView {
+  id: string
+  type: StandingTriggerType
+  schedule?: string
+  timezone?: string
+  eventKinds?: string[]
+  filter?: Record<string, unknown>
+}
+
+export interface StandingGoalTemplate {
+  taskType?: 'feature' | 'bug' | 'research' | 'refactor' | 'ops'
+  acceptance?: string[]
+  boundaries?: string[]
+  planReview?: 'auto' | 'manual'
+}
+
+export interface StandingGoalBudget {
+  perRunTurns?: number
+  perRunCostUsd?: number
+  perDayCostUsd?: number
+}
+
+export interface StandingGoalView {
+  id: string
+  projectDir: string
+  title: string
+  objective: string
+  template: StandingGoalTemplate
+  triggers: StandingTriggerView[]
+  state: StandingGoalState
+  stateReason?: string | null
+  concurrency: number
+  cooldownMs: number
+  budget: StandingGoalBudget
+  approval: 'auto' | 'plan' | 'confirm'
+  createdBy: string | null
+  createdAt: string
+  updatedAt: string
+  lastRunAt: string | null
+  nextRunAt: string | null
+}
+
+export interface GoalRunView {
+  id: string
+  standingGoalId: string
+  triggerType: StandingTriggerType
+  triggerKey: string
+  payload: Record<string, unknown>
+  status: StandingRunStatus
+  mode: StandingRunMode | null
+  rationale: string | null
+  goalId: string | null
+  sessionId: string | null
+  worktree: string | null
+  result: Record<string, unknown> | null
+  costUsd: number | null
+  tokens: number | null
+  startedAt: string | null
+  endedAt: string | null
+}
+
+export interface StandingGoalCreateInput {
+  projectDir: string
+  title: string
+  objective: string
+  template?: StandingGoalTemplate
+  triggers: StandingTriggerView[]
+  concurrency?: number
+  cooldownMs?: number
+  budget?: StandingGoalBudget
+  approval?: 'auto' | 'plan' | 'confirm'
+}
+
+export interface StandingGoalUpdateInput {
+  title?: string
+  objective?: string
+  template?: StandingGoalTemplate
+  triggers?: StandingTriggerView[]
+  concurrency?: number
+  cooldownMs?: number
+  budget?: StandingGoalBudget
+  approval?: 'auto' | 'plan' | 'confirm'
+}
+
+export interface StandingGoalsNamespace {
+  list(input?: { projectDir?: string }): Promise<{ items: StandingGoalView[] }>
+  create(input: StandingGoalCreateInput): Promise<{ goal: StandingGoalView }>
+  update(id: string, patch: StandingGoalUpdateInput): Promise<{ goal: StandingGoalView }>
+  runs(id: string): Promise<{ items: GoalRunView[] }>
+  pause(id: string): Promise<{ goal: StandingGoalView }>
+  resume(id: string): Promise<{ goal: StandingGoalView }>
+  stop(id: string): Promise<{ goal: StandingGoalView }>
+  run(id: string): Promise<{ run: GoalRunView }>
+  approveRun(id: string): Promise<{ run: GoalRunView }>
 }
 
 export interface EventSourceView {

@@ -105,13 +105,26 @@ export class EventHub {
     }
     // WebSocket clients receive the same events as JSON frames (seq additive).
     const frame = JSON.stringify(enriched);
+    // E1-7: collect device IDs already served over WS. Mobile sockets register a
+    // `deviceId` on the upgrade; push must not re-deliver to those devices.
+    const wsDeviceIds = new Set<string>();
     for (const ws of this.wsClients) {
       if (ws.readyState === WebSocket.OPEN) {
-        try { ws.send(frame); } catch { this.wsClients.delete(ws); }
+        try {
+          ws.send(frame);
+        } catch {
+          // E1-7: a failed write means the device was NOT served — drop the
+          // socket but let push deliver the event as the fallback channel.
+          this.wsClients.delete(ws);
+          continue;
+        }
+        const deviceId = (ws as any).deviceId;
+        if (typeof deviceId === 'string' && deviceId) wsDeviceIds.add(deviceId);
       }
     }
-    // Push to registered mobile devices via PushGateway (online WS + offline fallback)
-    this.deps.getPushGateway()?.onBroadcast(enriched).catch((err: any) => {
+    // Push to registered mobile devices via PushGateway (fallback channel only —
+    // devices already served above are excluded; see E1-7).
+    this.deps.getPushGateway()?.onBroadcast(enriched, { excludeDeviceIds: wsDeviceIds }).catch((err: any) => {
       this.deps.log.warn(`[PushGateway] broadcast failed: ${err.message}`);
     });
     // 摊销裁剪（每 pruneEveryN 次 append 检查一次；异常吞掉 fail-open）

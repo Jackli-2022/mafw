@@ -268,6 +268,18 @@ export function createMafwApi(): MafwAPI {
       deliveries: (threadId) => invoke("events", "deliveries", threadId),
     },
 
+    standingGoals: {
+      list: (input) => invoke("standingGoals", "list", input),
+      create: (input) => invoke("standingGoals", "create", input),
+      update: (id, patch) => invoke("standingGoals", "update", id, patch),
+      runs: (id) => invoke("standingGoals", "runs", id),
+      pause: (id) => invoke("standingGoals", "pause", id),
+      resume: (id) => invoke("standingGoals", "resume", id),
+      stop: (id) => invoke("standingGoals", "stop", id),
+      run: (id) => invoke("standingGoals", "run", id),
+      approveRun: (id) => invoke("standingGoals", "approveRun", id),
+    },
+
     pod: {
       ensure: (projectID) => invoke("pod", "ensure", projectID),
       lookup: (projectID) => invoke("pod", "lookup", projectID),
@@ -312,6 +324,10 @@ export function createMafwApi(): MafwAPI {
       acceptResult: (podID, goalID, body) => invoke("pod", "acceptResult", podID, goalID, body),
       worktreeDiff: (podID, goalID, revision) => invoke("pod", "worktreeDiff", podID, goalID, revision),
       revisions: (podID, goalID) => invoke("pod", "revisions", podID, goalID),
+      reviewItems: (podID, goalID, opts) => invoke("pod", "reviewItems", podID, goalID, opts),
+      createReviewItems: (podID, goalID, body) => invoke("pod", "createReviewItems", podID, goalID, body),
+      resolveReviewItem: (podID, goalID, itemID, body) => invoke("pod", "resolveReviewItem", podID, goalID, itemID, body),
+      reopenReviewItem: (podID, goalID, itemID, body) => invoke("pod", "reopenReviewItem", podID, goalID, itemID, body),
     },
 
     navigate: {

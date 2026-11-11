@@ -13,6 +13,7 @@ import type { PodGoalWorktreeRow } from './pod-store';
 import type { PodWorktreeService, PodWorktreeDiff } from './pod-worktree-service';
 import { podTaskKindOf } from './pod-task-service';
 import { summarizePodGoalProgress } from './pod-goal-progress';
+import type { PodReviewService } from './pod-review-service';
 import { planPromotions } from './pod-scheduler';
 import { deriveAttention } from '../lead/attention';
 import type {
@@ -62,6 +63,10 @@ export interface PodGoalAcceptResult {
   branch: string;
   mergeCommit: string;
   mergedAt: string;
+  /** True when unresolved review items were explicitly accepted with risk. */
+  forced?: boolean;
+  /** Snapshot of items that were unresolved at acceptance time. */
+  unresolvedReviewItemIds?: string[];
 }
 
 /** 闁诲海鎳撻張顒勫垂濮樿埖鐒绘慨妯夸含閸欌偓缂傚倷鐒﹂幐濠氭倶婢舵劖鏅慨姗嗗墯閸婂崬鈽夐幘顖氫壕 revision 闂佸憡鐟禍婊呯不瀹ュ绠绘い鎾寸箘椤忚鲸绻涢崱顓犵？缂侇喓鍔戝绋款煥閳ь剛鑺遍妸锔绢浄闂婎剚绁撮崑?*/
@@ -96,7 +101,7 @@ export interface PodGoalServiceDeps {
   newId(): string;
   notify(podId: string, kind?: string, goalId?: string): void;
   /** P2: Goal reached a terminal state (memory promotion hook, fail-open). */
-  onGoalCompleted?(goalId: string): void;
+  onGoalCompleted?(goalId: string, outcome?: { verdict?: string }): void;
   budget?: { canStart(podId: string): { ok: boolean; spentUsd: number; limitUsd: number } };
   /** P2: max normal slots per Pod (default 1; MAFW_POD_MAX_GOALS). */
   maxConcurrentGoals?(): number;
@@ -121,6 +126,8 @@ export interface PodGoalServiceDeps {
   }): unknown };
   /** Revision worktree lifecycle; production always injects PodWorktreeService. */
   worktrees?: Pick<PodWorktreeService, 'get' | 'ensure' | 'commitPending' | 'mergeForAcceptance' | 'markAbandoned' | 'branchDiff'>;
+  /** Plan C review-item gate + acceptance audit. */
+  reviews?: Pick<PodReviewService, 'unresolved' | 'recordAcceptance' | 'acceptance'>;
   log?(message: string): void;
 }
 
@@ -239,7 +246,8 @@ export class PodGoalService {
       ...(verdict ? { verdict } : {}),
     });
     try {
-      this.deps.onGoalCompleted?.(goalId);
+      if (outcome) this.deps.onGoalCompleted?.(goalId, outcome);
+      else this.deps.onGoalCompleted?.(goalId);
     } catch {
       /* fail-open: memory promotion must not block Goal archival */
     }
@@ -641,10 +649,18 @@ export class PodGoalService {
       : worktree.status === 'active' && isAcceptablePodResult(result)
         ? 'pending'
         : 'unavailable';
+    const record = this.deps.reviews?.acceptance(podId, goalId, revision) ?? null;
     return {
       ...enriched,
       worktree: resultWorktree(worktree),
       acceptance,
+      acceptanceRecord: record
+        ? {
+          forced: record.forced,
+          acceptedAt: record.acceptedAt,
+          unresolvedReviewItemIds: record.unresolvedItemIds,
+        }
+        : null,
     };
   }
 
@@ -672,7 +688,7 @@ export class PodGoalService {
   async acceptResult(
     podId: string,
     goalId: string,
-    opts: { revision?: number } = {},
+    opts: { revision?: number; force?: boolean; riskAcknowledged?: boolean } = {},
   ): Promise<PodGoalAcceptResult> {
     return this.runGoalMutation(podId, goalId, async () => {
       const row = this.requireGoalRow(podId, goalId);
@@ -702,9 +718,39 @@ export class PodGoalService {
       throw new PodError(409, `goal revision worktree was abandoned: ${goalId}#${revision}`);
     }
 
+    const unresolved = this.deps.reviews?.unresolved(podId, goalId, revision) ?? [];
+    if (unresolved.length > 0) {
+      if (opts.force !== true) {
+        throw new PodError(
+          409,
+          `unresolved review items: ${unresolved.length}; handle them or confirm the risk to force acceptance`,
+        );
+      }
+      if (opts.riskAcknowledged !== true) {
+        throw new PodError(400, 'riskAcknowledged:true is required for forced acceptance');
+      }
+    }
+
     const merged = await this.deps.worktrees!.mergeForAcceptance(podId, goalId, revision);
+    const unresolvedReviewItemIds = unresolved.map((item) => item.id);
+    this.deps.reviews?.recordAcceptance({
+      podId,
+      goalId,
+      revision,
+      unresolvedItemIds: unresolvedReviewItemIds,
+      forced: unresolved.length > 0,
+      riskAcknowledged: opts.riskAcknowledged === true,
+      mergeCommit: merged.mergeCommit,
+    });
     this.deps.notify(podId, 'result', goalId);
-    return { podId, goalId, revision, ...merged };
+    return {
+      podId,
+      goalId,
+      revision,
+      ...merged,
+      forced: unresolved.length > 0,
+      unresolvedReviewItemIds,
+    };
     });
   }
 

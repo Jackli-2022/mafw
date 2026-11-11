@@ -12,6 +12,7 @@ import { randomUUID, createHash } from 'crypto';
 import Database from 'better-sqlite3';
 import { log } from '../core/utils/logger';
 import { ensureEventLayerSchema } from '../core/events/event-store';
+import { ensureStandingSchema } from '../core/standing/standing-store';
 
 export type ObservationSource = 'user_input' | 'assistant_reply' | 'tool_result' | 'reasoning';
 
@@ -101,7 +102,38 @@ export interface T1TraceActivation {
   activationUpdatedAt: number;
 }
 
+export type SkillStatus = 'staging' | 'active' | 'paused' | 'deprecated';
+
+export interface SkillRegistryRecord {
+  name: string;
+  version: number;
+  status: SkillStatus;
+  sourceMemoryIds: string[];
+  sourceTraceIds: string[];
+  installedAt: number;
+  updatedAt: number;
+  deoptReason: string | null;
+}
+
+export interface SkillInvocationStats {
+  total: number;
+  success: number;
+  failure: number;
+  unknown: number;
+  lastAt: number | null;
+}
+
 const T1_RETRIEVAL_KINDS: T1RetrievalKind[] = ['search', 'recall', 'redeem'];
+
+function parseJsonStringArray(raw: unknown): string[] {
+  if (typeof raw !== 'string' || !raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
 
 export interface GoalOutcome {
   goal_id: string;
@@ -384,6 +416,36 @@ export class GatewayDatabase {
       );
       CREATE INDEX IF NOT EXISTS idx_t1_state_activation ON t1_trace_state(activation);
 
+      -- Skill v1 capability registry: installed playbooks, version/status and
+      -- exact source pointers. Files remain the truth; this is the index.
+      CREATE TABLE IF NOT EXISTS skill_registry (
+        name TEXT PRIMARY KEY,
+        version INTEGER NOT NULL DEFAULT 1,
+        status TEXT NOT NULL DEFAULT 'active',
+        source_memory_ids TEXT,
+        source_trace_ids TEXT,
+        installed_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        deopt_reason TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_skill_registry_status ON skill_registry(status);
+
+      -- Skill v1 6B: trusted runtime activations only. The default outcome is
+      -- unknown; success is never inferred from a non-error tool result.
+      CREATE TABLE IF NOT EXISTS skill_invocations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        skill_name TEXT NOT NULL,
+        skill_version INTEGER,
+        session_id TEXT,
+        goal_id TEXT,
+        call_id TEXT NOT NULL UNIQUE,
+        outcome TEXT NOT NULL DEFAULT 'unknown',
+        evidence TEXT,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+      CREATE INDEX IF NOT EXISTS idx_skill_invocations_name ON skill_invocations(skill_name, created_at);
+
       CREATE TABLE IF NOT EXISTS goal_outcomes (
         goal_id TEXT PRIMARY KEY,
         project_id TEXT,
@@ -488,6 +550,7 @@ export class GatewayDatabase {
     `);
 
     ensureEventLayerSchema(this.db);
+    ensureStandingSchema(this.db);
 
     // Migration: add assistant_text column to trajectory_turns if not exists
     try {
@@ -1176,11 +1239,204 @@ export class GatewayDatabase {
     return out;
   }
 
+  /** Record (or version-bump) an installed skill in the capability registry. */
+  recordSkillInstall(record: {
+    name: string;
+    version?: number;
+    status?: SkillStatus;
+    sourceMemoryIds?: string[];
+    sourceTraceIds?: string[];
+  }): { version: number } {
+    const name = String(record?.name || '').trim();
+    if (!name) throw new Error('skill name required');
+    const existing = this.getSkillRecord(name);
+    const requested = Number.isFinite(record.version) ? Math.max(1, Math.floor(record.version!)) : undefined;
+    const version = requested ?? (existing ? existing.version + 1 : 1);
+    const status: SkillStatus = record.status ?? 'active';
+    this.db
+      .prepare(
+        `INSERT INTO skill_registry
+           (name, version, status, source_memory_ids, source_trace_ids, installed_at, updated_at, deopt_reason)
+         VALUES (?, ?, ?, ?, ?, unixepoch(), unixepoch(), NULL)
+         ON CONFLICT(name) DO UPDATE SET
+           version = excluded.version,
+           status = excluded.status,
+           source_memory_ids = excluded.source_memory_ids,
+           source_trace_ids = excluded.source_trace_ids,
+           updated_at = excluded.updated_at,
+           deopt_reason = NULL`,
+      )
+      .run(
+        name,
+        version,
+        status,
+        JSON.stringify(record.sourceMemoryIds ?? []),
+        JSON.stringify(record.sourceTraceIds ?? []),
+      );
+    return { version };
+  }
+
+  getSkillRecord(name: string): SkillRegistryRecord | null {
+    const id = String(name || '').trim();
+    if (!id) return null;
+    try {
+      const row = this.db.prepare('SELECT * FROM skill_registry WHERE name = ?').get(id) as any;
+      if (!row) return null;
+      return {
+        name: row.name,
+        version: row.version,
+        status: row.status as SkillStatus,
+        sourceMemoryIds: parseJsonStringArray(row.source_memory_ids),
+        sourceTraceIds: parseJsonStringArray(row.source_trace_ids),
+        installedAt: row.installed_at,
+        updatedAt: row.updated_at,
+        deoptReason: row.deopt_reason ?? null,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  listSkillRecords(status?: SkillStatus): SkillRegistryRecord[] {
+    try {
+      const rows = (status
+        ? this.db.prepare('SELECT * FROM skill_registry WHERE status = ? ORDER BY updated_at DESC').all(status)
+        : this.db.prepare('SELECT * FROM skill_registry ORDER BY updated_at DESC').all()) as any[];
+      return rows.map((row) => ({
+        name: row.name,
+        version: row.version,
+        status: row.status as SkillStatus,
+        sourceMemoryIds: parseJsonStringArray(row.source_memory_ids),
+        sourceTraceIds: parseJsonStringArray(row.source_trace_ids),
+        installedAt: row.installed_at,
+        updatedAt: row.updated_at,
+        deoptReason: row.deopt_reason ?? null,
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  setSkillStatus(name: string, status: SkillStatus, reason?: string): boolean {
+    const id = String(name || '').trim();
+    if (!id) return false;
+    try {
+      return this.db
+        .prepare('UPDATE skill_registry SET status = ?, deopt_reason = ?, updated_at = unixepoch() WHERE name = ?')
+        .run(status, reason ?? null, id).changes > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Record one trusted runtime skill activation. Deduped by callID; a missing
+   * skill name or callID is rejected (never infer identity from text).
+   */
+  recordSkillInvocation(record: {
+    skillName: string;
+    callId: string;
+    sessionId?: string;
+    goalId?: string;
+    skillVersion?: number;
+  }): boolean {
+    const skillName = String(record?.skillName || '').trim().slice(0, 200);
+    const callId = String(record?.callId || '').trim().slice(0, 200);
+    if (!skillName || !callId) return false;
+    const version = Number.isFinite(record.skillVersion)
+      ? Math.floor(record.skillVersion!)
+      : this.getSkillRecord(skillName)?.version ?? null;
+    try {
+      return this.db
+        .prepare(
+          `INSERT OR IGNORE INTO skill_invocations
+             (skill_name, skill_version, session_id, goal_id, call_id, outcome, evidence, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, 'unknown', 'runtime.tool.call', unixepoch(), unixepoch())`,
+        )
+        .run(
+          skillName,
+          version,
+          record.sessionId ?? null,
+          record.goalId ?? null,
+          callId,
+        ).changes > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Mechanical failure only (tool/load error); non-error results stay unknown. */
+  markSkillInvocationFailed(callId: string, evidence = 'runtime.tool.result'): boolean {
+    const id = String(callId || '').trim();
+    if (!id) return false;
+    try {
+      return this.db
+        .prepare("UPDATE skill_invocations SET outcome = 'failure', evidence = ?, updated_at = unixepoch() WHERE call_id = ?")
+        .run(evidence, id).changes > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  skillInvocationStats(skillName: string): SkillInvocationStats {
+    const empty: SkillInvocationStats = { total: 0, success: 0, failure: 0, unknown: 0, lastAt: null };
+    const name = String(skillName || '').trim();
+    if (!name) return empty;
+    try {
+      const row = this.db
+        .prepare(
+          `SELECT COUNT(*) AS total,
+                  SUM(CASE WHEN outcome = 'success' THEN 1 ELSE 0 END) AS success,
+                  SUM(CASE WHEN outcome = 'failure' THEN 1 ELSE 0 END) AS failure,
+                  SUM(CASE WHEN outcome = 'unknown' THEN 1 ELSE 0 END) AS unknown,
+                  MAX(created_at) AS lastAt
+             FROM skill_invocations WHERE skill_name = ?`,
+        )
+        .get(name) as any;
+      if (!row || !row.total) return empty;
+      return {
+        total: row.total ?? 0,
+        success: row.success ?? 0,
+        failure: row.failure ?? 0,
+        unknown: row.unknown ?? 0,
+        lastAt: row.lastAt ?? null,
+      };
+    } catch {
+      return empty;
+    }
+  }
+
+  listSkillInvocationStats(): Record<string, SkillInvocationStats> {
+    const out: Record<string, SkillInvocationStats> = {};
+    try {
+      const rows = this.db
+        .prepare(
+          `SELECT skill_name,
+                  COUNT(*) AS total,
+                  SUM(CASE WHEN outcome = 'success' THEN 1 ELSE 0 END) AS success,
+                  SUM(CASE WHEN outcome = 'failure' THEN 1 ELSE 0 END) AS failure,
+                  SUM(CASE WHEN outcome = 'unknown' THEN 1 ELSE 0 END) AS unknown,
+                  MAX(created_at) AS lastAt
+             FROM skill_invocations GROUP BY skill_name`,
+        )
+        .all() as any[];
+      for (const row of rows) {
+        out[row.skill_name] = {
+          total: row.total ?? 0,
+          success: row.success ?? 0,
+          failure: row.failure ?? 0,
+          unknown: row.unknown ?? 0,
+          lastAt: row.lastAt ?? null,
+        };
+      }
+    } catch { /* fail-open */ }
+    return out;
+  }
+
   /**
    * Highest-activation known traces for bounded replay selection. Zero/unknown
    * rows are excluded; limit is capped at 100.
-   */
-  topActivatedTraces(
+   */  topActivatedTraces(
     limit: number,
     opts: { minActivation?: number } = {},
   ): Array<{ traceId: string; activation: number }> {

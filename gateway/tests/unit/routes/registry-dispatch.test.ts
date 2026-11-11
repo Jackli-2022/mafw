@@ -53,7 +53,7 @@ describe('dispatchAuthorized (P0-1)', () => {
 
     expect(handled).toBe(true);
     expect(out.status).toBe(401);
-    expect(JSON.parse(out.body!)).toEqual({ error: 'unauthorized' });
+    expect(JSON.parse(out.body!)).toEqual({ error: 'unauthorized', code: 'unauthorized' });
     expect(handler).not.toHaveBeenCalled();
   });
 

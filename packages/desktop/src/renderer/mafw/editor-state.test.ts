@@ -1,5 +1,5 @@
 ﻿import { describe, expect, test } from "bun:test"
-import { createEditorModel as create, onRootChange, openFile, closeFile, markDirty, markSaved, onExternalChange, resolveConflict, applyCleanReload, canApplyCleanReload, isReadOnlyPreview } from "./editor-state"
+import { createEditorModel as create, onRootChange, openFile, closeFile, markDirty, markSaved, onExternalChange, resolveConflict, applyCleanReload, canApplyCleanReload, isReadOnlyPreview, editorSaveContent } from "./editor-state"
 
 describe("editor-state", () => {
   test("openFile 建行并激活；重复打开仅激活不重置内容", () => {
@@ -48,6 +48,32 @@ describe("editor-state", () => {
     expect(canApplyCleanReload(m, "a.ts")).toBe(true)
     expect(canApplyCleanReload(markDirty(m, "a.ts"), "a.ts")).toBe(false)
     expect(canApplyCleanReload(m, "missing.ts")).toBe(false)
+  })
+})
+
+describe("editorSaveContent（scope/tab 切换时的保存隔离）", () => {
+  const base = {
+    draft: undefined,
+    editorDoc: "OLD-EDITOR",
+    savedContent: "TARGET-DISK",
+    mountedRoot: "C:\\old",
+    mountedRel: "src/a.ts",
+    root: "C:\\new",
+    rel: "src/a.ts",
+  }
+
+  test("旧 editor 文档绝不写入新 scope 的同名文件", () => {
+    expect(editorSaveContent(base)).toBe("TARGET-DISK")
+  })
+
+  test("草稿优先；只有 mounted root+rel 与目标一致时才用 editor 文档", () => {
+    expect(editorSaveContent({ ...base, draft: "DRAFT" })).toBe("DRAFT")
+    expect(editorSaveContent({
+      ...base,
+      mountedRoot: "C:\\new",
+      root: "C:\\new",
+      editorDoc: "CURRENT",
+    })).toBe("CURRENT")
   })
 })
 

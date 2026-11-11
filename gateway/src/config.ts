@@ -441,6 +441,18 @@ export interface GatewayConfig {
   };
 }
 
+/**
+ * Default CORS policy (E1-13). Remote dashboard/mobile clients legitimately
+ * PUT/PATCH/DELETE and send `Authorization` / `X-API-Token`; the old defaults
+ * (GET/POST + Content-Type) made every such preflight fail. Explicit
+ * `server.cors` in config.yaml still wins (deep-merged over these).
+ */
+export const DEFAULT_SERVER_CORS = {
+  origin: '*',
+  methods: 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+  headers: 'Content-Type, Authorization, X-API-Token',
+} as const;
+
 function defaults(projectDir: string): GatewayConfig {
   return {
     server: {
@@ -451,9 +463,7 @@ function defaults(projectDir: string): GatewayConfig {
       mcpUrl: 'http://localhost:3001/sse',
       dashboardPort: 3111,
       cors: {
-        origin: '*',
-        methods: 'GET, POST, OPTIONS',
-        headers: 'Content-Type',
+        ...DEFAULT_SERVER_CORS,
       },
       apiToken: '',
     },

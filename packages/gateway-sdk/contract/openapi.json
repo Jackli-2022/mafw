@@ -14,7 +14,260 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "running",
+                    "attention",
+                    "unreadResults"
+                  ],
+                  "properties": {
+                    "running": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "podId",
+                          "projectId",
+                          "projectName",
+                          "goalId",
+                          "title",
+                          "phase",
+                          "node",
+                          "revision",
+                          "progress",
+                          "startedAt",
+                          "updatedAt"
+                        ],
+                        "properties": {
+                          "podId": {
+                            "type": "string"
+                          },
+                          "projectId": {
+                            "type": "string"
+                          },
+                          "projectName": {
+                            "type": "string"
+                          },
+                          "goalId": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "phase": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "node": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "revision": {
+                            "type": "number"
+                          },
+                          "progress": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "required": [
+                                  "current",
+                                  "total"
+                                ],
+                                "properties": {
+                                  "current": {
+                                    "type": "number"
+                                  },
+                                  "total": {
+                                    "type": "number"
+                                  }
+                                }
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "startedAt": {
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "attention": {
+                      "type": "object",
+                      "required": [
+                        "count",
+                        "items"
+                      ],
+                      "properties": {
+                        "count": {
+                          "type": "number"
+                        },
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object",
+                            "required": [
+                              "id",
+                              "goalId",
+                              "revision",
+                              "kind",
+                              "title"
+                            ],
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "goalId": {
+                                "type": "string"
+                              },
+                              "revision": {
+                                "type": "number"
+                              },
+                              "kind": {
+                                "type": "string"
+                              },
+                              "title": {
+                                "type": "string"
+                              },
+                              "podId": {
+                                "type": "string"
+                              },
+                              "projectId": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "unreadResults": {
+                      "type": "object",
+                      "required": [
+                        "count",
+                        "latest"
+                      ],
+                      "properties": {
+                        "count": {
+                          "type": "number"
+                        },
+                        "latest": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "required": [
+                                "podId",
+                                "projectId",
+                                "projectName",
+                                "goalId",
+                                "title",
+                                "phase",
+                                "node",
+                                "revision",
+                                "progress",
+                                "startedAt",
+                                "updatedAt"
+                              ],
+                              "properties": {
+                                "podId": {
+                                  "type": "string"
+                                },
+                                "projectId": {
+                                  "type": "string"
+                                },
+                                "projectName": {
+                                  "type": "string"
+                                },
+                                "goalId": {
+                                  "type": "string"
+                                },
+                                "title": {
+                                  "type": "string"
+                                },
+                                "phase": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "node": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "revision": {
+                                  "type": "number"
+                                },
+                                "progress": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "required": [
+                                        "current",
+                                        "total"
+                                      ],
+                                      "properties": {
+                                        "current": {
+                                          "type": "number"
+                                        },
+                                        "total": {
+                                          "type": "number"
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "startedAt": {
+                                  "type": "string"
+                                },
+                                "updatedAt": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -1673,7 +1926,365 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "session",
+                    "project",
+                    "global"
+                  ],
+                  "properties": {
+                    "session": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "required": [
+                            "totalTokens",
+                            "totalCost",
+                            "turnCount",
+                            "avgTokensPerTurn"
+                          ],
+                          "properties": {
+                            "totalTokens": {
+                              "type": "object",
+                              "required": [
+                                "input",
+                                "output",
+                                "reasoning",
+                                "cache"
+                              ],
+                              "properties": {
+                                "input": {
+                                  "type": "number"
+                                },
+                                "output": {
+                                  "type": "number"
+                                },
+                                "reasoning": {
+                                  "type": "number"
+                                },
+                                "cache": {
+                                  "type": "object",
+                                  "required": [
+                                    "read",
+                                    "write"
+                                  ],
+                                  "properties": {
+                                    "read": {
+                                      "type": "number"
+                                    },
+                                    "write": {
+                                      "type": "number"
+                                    }
+                                  }
+                                }
+                              }
+                            },
+                            "totalCost": {
+                              "type": "number"
+                            },
+                            "turnCount": {
+                              "type": "number"
+                            },
+                            "sessionCount": {
+                              "type": "number"
+                            },
+                            "avgTokensPerTurn": {
+                              "type": "object",
+                              "required": [
+                                "input",
+                                "output",
+                                "reasoning",
+                                "cache"
+                              ],
+                              "properties": {
+                                "input": {
+                                  "type": "number"
+                                },
+                                "output": {
+                                  "type": "number"
+                                },
+                                "reasoning": {
+                                  "type": "number"
+                                },
+                                "cache": {
+                                  "type": "object",
+                                  "required": [
+                                    "read",
+                                    "write"
+                                  ],
+                                  "properties": {
+                                    "read": {
+                                      "type": "number"
+                                    },
+                                    "write": {
+                                      "type": "number"
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "project": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "required": [
+                            "totalTokens",
+                            "totalCost",
+                            "turnCount",
+                            "sessionCount"
+                          ],
+                          "properties": {
+                            "totalTokens": {
+                              "type": "object",
+                              "required": [
+                                "input",
+                                "output",
+                                "reasoning",
+                                "cache"
+                              ],
+                              "properties": {
+                                "input": {
+                                  "type": "number"
+                                },
+                                "output": {
+                                  "type": "number"
+                                },
+                                "reasoning": {
+                                  "type": "number"
+                                },
+                                "cache": {
+                                  "type": "object",
+                                  "required": [
+                                    "read",
+                                    "write"
+                                  ],
+                                  "properties": {
+                                    "read": {
+                                      "type": "number"
+                                    },
+                                    "write": {
+                                      "type": "number"
+                                    }
+                                  }
+                                }
+                              }
+                            },
+                            "totalCost": {
+                              "type": "number"
+                            },
+                            "turnCount": {
+                              "type": "number"
+                            },
+                            "sessionCount": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "global": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "required": [
+                            "totalTokens",
+                            "totalCost",
+                            "turnCount",
+                            "sessionCount"
+                          ],
+                          "properties": {
+                            "totalTokens": {
+                              "type": "object",
+                              "required": [
+                                "input",
+                                "output",
+                                "reasoning",
+                                "cache"
+                              ],
+                              "properties": {
+                                "input": {
+                                  "type": "number"
+                                },
+                                "output": {
+                                  "type": "number"
+                                },
+                                "reasoning": {
+                                  "type": "number"
+                                },
+                                "cache": {
+                                  "type": "object",
+                                  "required": [
+                                    "read",
+                                    "write"
+                                  ],
+                                  "properties": {
+                                    "read": {
+                                      "type": "number"
+                                    },
+                                    "write": {
+                                      "type": "number"
+                                    }
+                                  }
+                                }
+                              }
+                            },
+                            "totalCost": {
+                              "type": "number"
+                            },
+                            "turnCount": {
+                              "type": "number"
+                            },
+                            "sessionCount": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "memory": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "required": [
+                            "totalTokens",
+                            "totalCost",
+                            "turnCount",
+                            "sessionCount",
+                            "byRole"
+                          ],
+                          "properties": {
+                            "totalTokens": {
+                              "type": "object",
+                              "required": [
+                                "input",
+                                "output",
+                                "reasoning",
+                                "cache"
+                              ],
+                              "properties": {
+                                "input": {
+                                  "type": "number"
+                                },
+                                "output": {
+                                  "type": "number"
+                                },
+                                "reasoning": {
+                                  "type": "number"
+                                },
+                                "cache": {
+                                  "type": "object",
+                                  "required": [
+                                    "read",
+                                    "write"
+                                  ],
+                                  "properties": {
+                                    "read": {
+                                      "type": "number"
+                                    },
+                                    "write": {
+                                      "type": "number"
+                                    }
+                                  }
+                                }
+                              }
+                            },
+                            "totalCost": {
+                              "type": "number"
+                            },
+                            "turnCount": {
+                              "type": "number"
+                            },
+                            "sessionCount": {
+                              "type": "number"
+                            },
+                            "byRole": {
+                              "type": "object",
+                              "patternProperties": {
+                                "^(.*)$": {
+                                  "type": "object",
+                                  "required": [
+                                    "totalTokens",
+                                    "totalCost",
+                                    "turnCount",
+                                    "sessionCount"
+                                  ],
+                                  "properties": {
+                                    "totalTokens": {
+                                      "type": "object",
+                                      "required": [
+                                        "input",
+                                        "output",
+                                        "reasoning",
+                                        "cache"
+                                      ],
+                                      "properties": {
+                                        "input": {
+                                          "type": "number"
+                                        },
+                                        "output": {
+                                          "type": "number"
+                                        },
+                                        "reasoning": {
+                                          "type": "number"
+                                        },
+                                        "cache": {
+                                          "type": "object",
+                                          "required": [
+                                            "read",
+                                            "write"
+                                          ],
+                                          "properties": {
+                                            "read": {
+                                              "type": "number"
+                                            },
+                                            "write": {
+                                              "type": "number"
+                                            }
+                                          }
+                                        }
+                                      }
+                                    },
+                                    "totalCost": {
+                                      "type": "number"
+                                    },
+                                    "turnCount": {
+                                      "type": "number"
+                                    },
+                                    "sessionCount": {
+                                      "type": "number"
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -2001,7 +2612,37 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "projects"
+                  ],
+                  "properties": {
+                    "projects": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "worktree"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "worktree": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -2426,7 +3067,14 @@
                             "type": "string"
                           },
                           "phase": {
-                            "type": "string"
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "loop": {
                             "type": "number"
@@ -2440,8 +3088,25 @@
                           "nextAction": {
                             "type": "string"
                           },
+                          "error": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "updatedAt": {
-                            "type": "string"
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
@@ -2449,7 +3114,9 @@
                           "phase",
                           "loop",
                           "currentWave",
-                          "totalWaves"
+                          "totalWaves",
+                          "error",
+                          "updatedAt"
                         ]
                       }
                     }
@@ -2487,12 +3154,28 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "required": [
+                    "goalId",
+                    "phase",
+                    "loop",
+                    "currentWave",
+                    "totalWaves",
+                    "error",
+                    "updatedAt"
+                  ],
                   "properties": {
                     "goalId": {
                       "type": "string"
                     },
                     "phase": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "loop": {
                       "type": "number"
@@ -2506,17 +3189,27 @@
                     "nextAction": {
                       "type": "string"
                     },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "updatedAt": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
-                  },
-                  "required": [
-                    "goalId",
-                    "phase",
-                    "loop",
-                    "currentWave",
-                    "totalWaves"
-                  ]
+                  }
                 }
               }
             }
@@ -3115,6 +3808,191 @@
         "operationId": "events.webhook.receive",
         "tags": [
           "internal"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/standing-goals": {
+      "get": {
+        "operationId": "standingGoals.list",
+        "tags": [
+          "standing"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "standingGoals.create",
+        "tags": [
+          "standing"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/standing-goals/{id}": {
+      "patch": {
+        "operationId": "standingGoals.update",
+        "tags": [
+          "standing"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/standing-goals/{id}/runs": {
+      "get": {
+        "operationId": "standingGoals.runs",
+        "tags": [
+          "standing"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/standing-goals/{id}/pause": {
+      "post": {
+        "operationId": "standingGoals.pause",
+        "tags": [
+          "standing"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/standing-goals/{id}/resume": {
+      "post": {
+        "operationId": "standingGoals.resume",
+        "tags": [
+          "standing"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/standing-goals/{id}/stop": {
+      "post": {
+        "operationId": "standingGoals.stop",
+        "tags": [
+          "standing"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/standing-goals/{id}/run": {
+      "post": {
+        "operationId": "standingGoals.run",
+        "tags": [
+          "standing"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/goal-runs/{id}/approve": {
+      "post": {
+        "operationId": "goalRuns.approve",
+        "tags": [
+          "standing"
         ],
         "parameters": [
           {
@@ -3779,6 +4657,42 @@
               "type": "string"
             }
           }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/skills/{name}/deopt": {
+      "post": {
+        "operationId": "skills.deopt",
+        "tags": [
+          "internal"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/skills": {
+      "get": {
+        "operationId": "skills.list",
+        "tags": [
+          "internal"
         ],
         "responses": {
           "200": {
@@ -5066,6 +5980,144 @@
         }
       }
     },
+    "/api/pods/{podId}/goals/{goalId}/review-items": {
+      "get": {
+        "operationId": "pods.goals.reviewItems",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "goalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "pods.goals.reviewItems.create",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "goalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/pods/{podId}/goals/{goalId}/review-items/{itemId}/resolve": {
+      "post": {
+        "operationId": "pods.goals.reviewItems.resolve",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "goalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "itemId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/pods/{podId}/goals/{goalId}/review-items/{itemId}/reopen": {
+      "post": {
+        "operationId": "pods.goals.reviewItems.reopen",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "goalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "itemId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/pods/{podId}/goals/{goalId}/accept": {
       "post": {
         "operationId": "pods.goals.accept",
@@ -5651,42 +6703,6 @@
         }
       }
     },
-    "/api/l5/heuristics": {
-      "get": {
-        "operationId": "memory.getL5Heuristics",
-        "tags": [
-          "internal"
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/goals/{id}/loops": {
-      "get": {
-        "operationId": "goals.loops",
-        "tags": [
-          "internal"
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
     "/api/work/{goalId}/complete": {
       "post": {
         "operationId": "goals.complete",
@@ -5802,179 +6818,6 @@
     "/api/stats": {
       "get": {
         "operationId": "dashboard.stats",
-        "tags": [
-          "internal"
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/costs/{window}": {
-      "get": {
-        "operationId": "dashboard.costs",
-        "tags": [
-          "internal"
-        ],
-        "parameters": [
-          {
-            "name": "window",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/alignment": {
-      "get": {
-        "operationId": "dashboard.alignment",
-        "tags": [
-          "internal"
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/feedback": {
-      "post": {
-        "operationId": "feedback.record",
-        "tags": [
-          "internal"
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/user-answers/{id}": {
-      "get": {
-        "operationId": "dashboard.userAnswer",
-        "tags": [
-          "internal"
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/sessions/{id}/metrics": {
-      "get": {
-        "operationId": "session.metrics",
-        "tags": [
-          "internal"
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/health": {
-      "get": {
-        "operationId": "health.check",
-        "tags": [
-          "internal"
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/gateway/pause": {
-      "post": {
-        "operationId": "gateway.pause",
-        "tags": [
-          "internal"
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/gateway/resume": {
-      "post": {
-        "operationId": "gateway.resume",
-        "tags": [
-          "internal"
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/gateway/cancel": {
-      "post": {
-        "operationId": "gateway.cancel",
-        "tags": [
-          "internal"
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/gateway/checkpoint": {
-      "post": {
-        "operationId": "gateway.checkpoint",
-        "tags": [
-          "internal"
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/gateway/rollback": {
-      "post": {
-        "operationId": "gateway.rollback",
         "tags": [
           "internal"
         ],
@@ -6188,37 +7031,6 @@
         "parameters": [
           {
             "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/goals/{id}/loops/{n}": {
-      "get": {
-        "operationId": "goals.loopsAt",
-        "tags": [
-          "internal"
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "n",
             "in": "path",
             "required": true,
             "schema": {

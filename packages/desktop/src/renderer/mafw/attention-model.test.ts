@@ -49,6 +49,15 @@ describe("buildAttentionList", () => {
     expect(items[1].kind).toBe("review")
   })
 
+  test("legacy goals without stage stay out of attention instead of crashing", () => {
+    const items = buildAttentionList({
+      goals: [goal({ goalId: "legacy", stage: undefined as any })],
+      attention: [],
+      isResultViewed: () => false,
+    })
+    expect(items).toEqual([])
+  })
+
   test("maps plan/question/direction and failed", () => {
     const items = buildAttentionList({
       goals: [

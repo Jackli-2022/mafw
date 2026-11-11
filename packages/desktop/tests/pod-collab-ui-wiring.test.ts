@@ -97,7 +97,7 @@ test("Goal 详情是统一人工行动面：结果/打回/计划任务/问题回
 })
 
 test("方向 attention 进入工作优先级，并带 action 落点", () => {
-  assert.match(workModel, /goal\.stage\.owner === "person"/)
+  assert.match(workModel, /goal\.stage\?\.owner === "person"/)
   assert.match(workModel, /goal\.bucket === "needs_you"/)
   assert.match(projectWork, /buildWorkPriority\(\{/)
   assert.match(workOverview, /attentionTarget/)

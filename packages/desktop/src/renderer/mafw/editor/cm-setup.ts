@@ -4,6 +4,8 @@ import type { Decoration as CmDecoration, DecorationSet } from "@codemirror/view
 import { langForFile } from "./cm-lang"
 import type { InlineDiffRange } from "./inline-diff"
 
+export type EditorSelection = { anchor: number; head: number }
+
 export interface MountedEditor {
   setDoc(s: string): void
   getDoc(): string
@@ -14,6 +16,12 @@ export interface MountedEditor {
   setInlineDiff(ranges: InlineDiffRange[]): void
   /** 滚动并聚焦到某一行（1-based）。 */
   gotoLine(line: number): void
+  /** 当前滚动位置（px）；用于切换 tab/scope 后恢复阅读位置。 */
+  getScroll(): number
+  setScroll(top: number): void
+  /** 当前文本选区（字符偏移）；切换 tab/scope 后恢复。 */
+  getSelection(): EditorSelection | null
+  setSelection(anchor: number, head: number): void
 }
 
 // “编辑器语言 id → LanguageDescription”匹配：先按名称（大小写不敏感），再按扩展名。
@@ -153,6 +161,21 @@ export async function mountEditor(host: HTMLElement, opts: {
       view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: s } })
     },
     getDoc: () => view.state.doc.toString(),
+    getScroll: () => view.scrollDOM.scrollTop,
+    setScroll(top: number) {
+      try { view.scrollDOM.scrollTop = Math.max(0, top) } catch { /* view 已销毁 */ }
+    },
+    getSelection() {
+      const range = view.state.selection.main
+      return { anchor: range.anchor, head: range.head }
+    },
+    setSelection(anchor: number, head: number) {
+      try {
+        const length = view.state.doc.length
+        const clamp = (value: number) => Math.max(0, Math.min(Math.round(value), length))
+        view.dispatch({ selection: { anchor: clamp(anchor), head: clamp(head) } })
+      } catch { /* view 已销毁 */ }
+    },
     destroy: () => view.destroy(),
     measure() {
       try { view.requestMeasure() } catch { /* view 已销毁 */ }

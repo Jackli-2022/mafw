@@ -110,8 +110,8 @@ export function buildWorkPriority(input: {
   for (const goal of input.goals) {
     const revision = currentRevisionOf(goal)
     const identity = `${goal.goalId}:r${revision}`
-    if (goal.stage.owner === "person" || goal.bucket === "needs_you") {
-      const actionType = goal.stage.action?.type ?? null
+    if (goal.stage?.owner === "person" || goal.bucket === "needs_you") {
+      const actionType = goal.stage?.action?.type ?? null
       attention.push({
         kind: "attention",
         key: `${identity}:attention`,
@@ -187,7 +187,7 @@ export function buildAttentionList(input: {
     const stage = goal.stage
     let kind: AttentionListKind | null = null
     let person = false
-    if (stage.owner === "person") {
+    if (stage?.owner === "person") {
       person = true
       switch (stage.kind) {
         case "plan_approval": kind = "plan_approval"; break
@@ -207,7 +207,7 @@ export function buildAttentionList(input: {
       goal,
       kind,
       label: ATTENTION_LABELS[kind],
-      actionType: stage.action?.type ?? null,
+      actionType: stage?.action?.type ?? null,
       person,
     })
   }
@@ -221,7 +221,7 @@ export function buildAttentionList(input: {
 }
 
 function progressRoleLabel(goal: PodGoal): string {
-  const role = goal.currentAssignment?.role ?? goal.stage.role
+  const role = goal.currentAssignment?.role ?? goal.stage?.role
   if (role === "builder") return "Builder"
   if (role === "reviewer") return "Reviewer"
   return "任务"

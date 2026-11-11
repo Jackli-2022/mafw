@@ -12,7 +12,8 @@ test("terminal store restores without connecting and gates local attach", () => 
   assert.match(src, /ensureLocal/)
   assert.match(src, /applyTerminalEvent/)
   assert.match(src, /persistedTabs/)
-  assert.match(src, /activeId\(\) === local\.id/)
+  assert.match(src, /const active = list\.find\(\(s\) => s\.id === activeId\(\)\)/)
+  assert.match(src, /active\?\.kind === "local"/)
 })
 
 test("terminal surface composes all terminal UI pieces", () => {

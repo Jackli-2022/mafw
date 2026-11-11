@@ -255,6 +255,14 @@ export class PodGoalRevisionService {
     });
     // createGoalRevision 幂等：并发打开同一版时以数据库既有行为准。
     const openedRevision = row.revision;
+    // Plan C：未解决意见随新 revision 继续追踪；已解决项留在旧版历史。
+    this.deps.store.carryForwardReviewItems({
+      podId: goal.podId,
+      goalId,
+      fromRevision: previous.revision,
+      toRevision: openedRevision,
+      now,
+    });
 
     const previousState = loadGoalState(mafwDir, goalId);
     const archivedState = archiveGoalStateForRevision(

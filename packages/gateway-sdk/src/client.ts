@@ -6,6 +6,7 @@ import {
   LeadNamespace, LeadTopicView, LeadTopicIndexMessage, LeadWorkingSet, LeadCompactResult, LeadRecallCandidate,
   LeadBoundaryView, LeadBoundaryDecision,
   EventsNamespace, EventSourceView, EventThreadView, EventTriggerView, EventSubscriptionView, EventDeliveryView,
+  StandingGoalsNamespace, StandingGoalView, StandingGoalCreateInput, StandingGoalUpdateInput, GoalRunView,
   MemoryUnit, MemorySearchOptions, MemoryLayer, MemoryLayeredSearchOptions, MemoryLayeredSearchResult, T1SearchHit, MergedSearchOptions, MemoryFact, EnergyDistribution, Axiom, L5Heuristic,
   StickyNote, StickyNoteBudget, ModelUsageWindows, MemoryStats,
   MafwCommandResult, MafwCommandDef, ManagerSessionInfo, ManagerRotateResult,
@@ -22,6 +23,7 @@ import {
   PodEventItem, PresenceSummary,
   PodTechLeadHistory, PodTechLeadPrompt, PodDirectionDecisionInput, PodDirectionResult,
   PodProbe, PodProbeInput, PodProbeStatus, PodRejectResult, PodGoalRevision, PodGoalAcceptResult, PodWorktreeDiff,
+  PodReviewItem, PodReviewItemInput, PodReviewItemList,
   SessionConfigState, SessionConfigCategory, SessionNamespace,
   VoiceStatusResponse,
   PluginClientSnapshot, PluginsListResult, PluginPackageInstallResult, PluginPackageUpdateResult,
@@ -29,6 +31,7 @@ import {
   MethodNotSupportedError,
 } from './types'
 import { SSEConnection } from './sse'
+import type { SseSubscribeOptions } from './sse'
 import type { ApiPath } from './api-path'
 import type { MafwBackgroundJob, MafwMessage } from './view-dto'
 
@@ -646,23 +649,10 @@ export class MafwClient implements IMafwClient {
   // 鈹€鈹€ Event 鈹€鈹€
 
   event = {
-    subscribe: async (): Promise<{ on(event: string, cb: (data: any) => void): void }> => {
-      this._sse.connect(this.baseUrl)
-      return {
-        on: (event: string, cb: (data: any) => void) => {
-          if (event === 'data') {
-            this._sse.on('*', cb)
-          } else {
-            this._sse.on(event, cb)
-          }
-        },
-      }
-    },
-
-    subscribeToSession: async (
-      sessionID: string,
-    ): Promise<{ on(event: string, cb: (data: any) => void): void }> => {
-      this._sse.connectToSession(this.baseUrl, sessionID)
+    subscribe: async (opts?: SseSubscribeOptions): Promise<{ on(event: string, cb: (data: any) => void): void }> => {
+      // E2-2: 带 cursor/onReplayInfo 时走可恢复订阅；缺省路径逐字保持旧行为。
+      if (opts) this._sse.subscribe(this.baseUrl, opts)
+      else this._sse.connect(this.baseUrl)
       return {
         on: (event: string, cb: (data: any) => void) => {
           if (event === 'data') {
@@ -1394,6 +1384,34 @@ export class MafwClient implements IMafwClient {
       this.request(`/api/event-deliveries?threadId=${encodeURIComponent(threadId)}`),
   }
 
+  standingGoals: StandingGoalsNamespace = {
+    list: async (input = {}): Promise<{ items: StandingGoalView[] }> => {
+      const query = new URLSearchParams()
+      if (input.projectDir) query.set('projectDir', input.projectDir)
+      const suffix = query.toString()
+      return this.request(`/api/standing-goals${suffix ? `?${suffix}` : ''}`)
+    },
+    create: async (input: StandingGoalCreateInput): Promise<{ goal: StandingGoalView }> =>
+      this.request('/api/standing-goals', { method: 'POST', body: JSON.stringify(input) }),
+    update: async (id: string, patch: StandingGoalUpdateInput): Promise<{ goal: StandingGoalView }> =>
+      this.request(`/api/standing-goals/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      }),
+    runs: async (id: string): Promise<{ items: GoalRunView[] }> =>
+      this.request(`/api/standing-goals/${encodeURIComponent(id)}/runs`),
+    pause: async (id: string): Promise<{ goal: StandingGoalView }> =>
+      this.request(`/api/standing-goals/${encodeURIComponent(id)}/pause`, { method: 'POST' }),
+    resume: async (id: string): Promise<{ goal: StandingGoalView }> =>
+      this.request(`/api/standing-goals/${encodeURIComponent(id)}/resume`, { method: 'POST' }),
+    stop: async (id: string): Promise<{ goal: StandingGoalView }> =>
+      this.request(`/api/standing-goals/${encodeURIComponent(id)}/stop`, { method: 'POST' }),
+    run: async (id: string): Promise<{ run: GoalRunView }> =>
+      this.request(`/api/standing-goals/${encodeURIComponent(id)}/run`, { method: 'POST' }),
+    approveRun: async (id: string): Promise<{ run: GoalRunView }> =>
+      this.request(`/api/goal-runs/${encodeURIComponent(id)}/approve`, { method: 'POST' }),
+  }
+
   // ── Project Pod Lite ─────────────────────────────────────────────────────
 
   pod: PodNamespace = {
@@ -1624,11 +1642,51 @@ export class MafwClient implements IMafwClient {
     acceptResult: async (
       podID: string,
       goalID: string,
-      body: { revision?: number; confirm: true },
+      body: { revision?: number; confirm: true; force?: boolean; riskAcknowledged?: boolean },
     ): Promise<PodGoalAcceptResult> =>
       this.request<PodGoalAcceptResult>(`/api/pods/${encodeURIComponent(podID)}/goals/${encodeURIComponent(goalID)}/accept`, {
         method: 'POST',
         body: JSON.stringify(body),
+      }),
+
+    reviewItems: async (
+      podID: string,
+      goalID: string,
+      opts?: { revision?: number },
+    ): Promise<PodReviewItemList> => {
+      if (opts?.revision !== undefined) {
+        return this.request<PodReviewItemList>(`/api/pods/${encodeURIComponent(podID)}/goals/${encodeURIComponent(goalID)}/review-items?revision=${encodeURIComponent(String(opts.revision))}`)
+      }
+      return this.request<PodReviewItemList>(`/api/pods/${encodeURIComponent(podID)}/goals/${encodeURIComponent(goalID)}/review-items`)
+    },
+
+    createReviewItems: async (
+      podID: string,
+      goalID: string,
+      body: { revision?: number; items: PodReviewItemInput[] },
+    ): Promise<{ items: PodReviewItem[] }> =>
+      this.request<{ items: PodReviewItem[] }>(`/api/pods/${encodeURIComponent(podID)}/goals/${encodeURIComponent(goalID)}/review-items`, {
+        method: 'POST', body: JSON.stringify(body),
+      }),
+
+    resolveReviewItem: async (
+      podID: string,
+      goalID: string,
+      itemID: string,
+      body: { note?: string } = {},
+    ): Promise<{ item: PodReviewItem }> =>
+      this.request<{ item: PodReviewItem }>(`/api/pods/${encodeURIComponent(podID)}/goals/${encodeURIComponent(goalID)}/review-items/${encodeURIComponent(itemID)}/resolve`, {
+        method: 'POST', body: JSON.stringify(body),
+      }),
+
+    reopenReviewItem: async (
+      podID: string,
+      goalID: string,
+      itemID: string,
+      body: { note?: string } = {},
+    ): Promise<{ item: PodReviewItem }> =>
+      this.request<{ item: PodReviewItem }>(`/api/pods/${encodeURIComponent(podID)}/goals/${encodeURIComponent(goalID)}/review-items/${encodeURIComponent(itemID)}/reopen`, {
+        method: 'POST', body: JSON.stringify(body),
       }),
 
     worktreeDiff: async (

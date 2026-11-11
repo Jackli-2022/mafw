@@ -10,6 +10,7 @@ import type {
   LeadNamespace, LeadTopicView, LeadTopicIndexMessage, LeadWorkingSet, LeadCompactResult, LeadRecallCandidate,
   LeadBoundaryView, LeadBoundaryDecision,
   EventsNamespace,
+  StandingGoalsNamespace,
   ModelConfigState, ModelConfigUpdate,
   EmbeddingConfigState, EmbeddingConfigGetResponse, EmbeddingRuntimeState, EmbeddingConfigUpdate,
   SessionCheckpoint, CheckpointScope, CheckpointRestoreResult, RunState, DataPart,
@@ -273,6 +274,8 @@ export type MafwAPI = {
   }
 
   events: EventsNamespace
+
+  standingGoals: StandingGoalsNamespace
 
   /** 托盘/OS 通知点击 → 打开 Goal（跨项目时先切项目）。 */
   navigate: {

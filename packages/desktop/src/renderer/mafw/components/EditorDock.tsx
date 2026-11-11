@@ -15,11 +15,21 @@ import { openMenuOnKey } from "../context-menu/menu-key"
 import { Icon } from "@mafw/ui/icon"
 import { DockBanner, DockEmpty, DockPanelHeader } from "./dock-panel"
 import {
-  createEditorModel, onRootChange, openFile, closeFile, setActive,
+  createEditorModel, openFile, closeFile, setActive,
   markDirty, markSaved, onExternalChange, resolveConflict, applyCleanReload, canApplyCleanReload,
-  isReadOnlyPreview,
+  editorSaveContent, isReadOnlyPreview,
   type EditorModel, type OpenFile,
 } from "../editor-state"
+import { editorModelFor, saveEditorModel } from "../editor-model-store"
+import {
+  contentScopeStateFor,
+  readingPositionFor,
+  rememberReadingPosition,
+  rememberSelection,
+  saveContentScopeState,
+  selectTreeFile,
+  selectionFor,
+} from "../content-scope-state"
 import {
   clearDraft, getDraft, getEol, getMtime, setDraft, setEol, setMtime,
 } from "../editor-drafts"
@@ -58,11 +68,22 @@ interface SelectionState {
 
 export function EditorDock(props: {
   sessionID: string | null
-  sessionDirectory: string | null
+  contentRoot: string | null
+  scopeKey?: string | null
   diffs?: FileDiffEntry[]
   onSendAnnotation?: (text: string, opts?: { imageDataUrl?: string }) => void
   /** 加入批注草稿（v2：草稿优先，发送时随消息打包） */
-  onAddAnnotation?: (a: { rel: string; startLine: number; endLine: number; code: string; comment: string; anchor?: AnnotationAnchor; imageDataUrl?: string }) => void
+  onAddAnnotation?: (a: {
+    rel: string
+    startLine: number
+    endLine: number
+    code: string
+    comment: string
+    anchor?: AnnotationAnchor
+    imageDataUrl?: string
+    scopeKey?: string
+    root?: string
+  }) => void
   onSendComment?: (sid: string, text: string) => void
   /** 批注标记点击 → 切到审阅面（回路闭合）。 */
   onOpenReview?: () => void
@@ -110,7 +131,11 @@ export function EditorDock(props: {
 
   let host: HTMLDivElement | undefined
   let editor: MountedEditor | null = null
+  let mountedRoot: string | null = null
+  let mountedRel: string | null = null
   let mountToken = 0
+  let lastScopeKey: string | null = props.scopeKey ?? null
+  let previewRestoredKey: string | null = null
   /** setDoc 程序化写入期间抑制 markDirty。 */
   let applyingExternal = false
   /** 已 watch 的 (root, rel)；root 变化时用旧 root 退订。 */
@@ -119,15 +144,34 @@ export function EditorDock(props: {
   const activeFile = (): OpenFile | null =>
     model().files.find(f => f.rel === model().active) ?? null
 
+  const previewScrollPort = (): HTMLElement | null => {
+    if (!bodyEl) return null
+    return bodyEl.querySelector<HTMLElement>(
+      ".mafw-md-preview, .mafw-json-preview-wrap, .mafw-table-preview, .mafw-office-host",
+    )
+  }
+
+  const rememberActiveScroll = (key: string | null = props.scopeKey ?? null): void => {
+    const file = activeFile()
+    if (!file) return
+    const top = previewing() ? previewScrollPort()?.scrollTop : editor?.getScroll()
+    if (top === undefined) return
+    const withPosition = rememberReadingPosition(contentScopeStateFor(key), file.rel, top)
+    saveContentScopeState(
+      key,
+      rememberSelection(withPosition, file.rel, editor?.getSelection() ?? null),
+    )
+  }
+
   const noteFor = (rel: string) => readNotes()[rel]
 
   /** mafw-file:// URL（带版本号破缓存）；token 未就绪 → 空串（<img> 不渲染）。 */
   const previewUrl = (rel: string): string => {
-    const root = props.sessionDirectory
+    const root = props.contentRoot
     return (root && fileProtocol.urlFor(root, rel, fileVersion()[rel])) ?? ""
   }
 
-  /** 活动文件的预览 URL。按值去抖：props.sessionDirectory 上游会随 sessions 信号抖动，
+  /** 活动文件的预览 URL。按值去抖：props.contentRoot 上游会随 sessions 信号抖动，
    *  裸 getter 会让 OfficePreview 的解析 effect 重跑（清空宿主 → 白帧，2026-10-31）。 */
   const activePreviewUrl = createMemo(() => {
     const f = activeFile()
@@ -205,7 +249,7 @@ export function EditorDock(props: {
   const tableData = createMemo(() => {
     const f = activeFile()
     if (!f || f.kind !== "table") return null
-    const root = props.sessionDirectory
+    const root = props.contentRoot
     const text = (root ? getDraft(root, f.rel) : undefined) ?? f.savedContent
     return parseCsv(text)
   })
@@ -214,7 +258,7 @@ export function EditorDock(props: {
   const activeSourceText = createMemo(() => {
     const f = activeFile()
     if (!f) return ""
-    const root = props.sessionDirectory
+    const root = props.contentRoot
     return (root ? getDraft(root, f.rel) : undefined) ?? f.savedContent
   })
 
@@ -258,19 +302,66 @@ export function EditorDock(props: {
     watched.clear()
   }
 
-  // ── root 跟随（切会话/worktree）：模型清空、退订旧 watch、清选区 ─────
+  // ── root/scope 跟随：保存旧模型与滚动位置，恢复目标 scope 的模型 ───────
   createEffect(() => {
-    const root = props.sessionDirectory
-    if (root === model().root) return
-    setModel(m => onRootChange(m, root))
+    const root = props.contentRoot
+    const scopeKey = props.scopeKey ?? null
+    const current = untrack(model)
+    if (current.root === root && scopeKey === lastScopeKey) return
+    untrack(() => rememberActiveScroll(lastScopeKey))
+    if (current.root) saveEditorModel(current.root, current)
+    // 旧 editor 必须在模型/根切换前同步失效，避免 refreshActiveFromDisk 的
+    // await 窗口里 saveActive 把旧文档写进新 scope 的同名文件。
+    mountToken += 1
+    editor?.destroy()
+    editor = null
+    mountedRoot = null
+    mountedRel = null
+    previewRestoredKey = null
+    lastScopeKey = scopeKey
+    setModel(editorModelFor(root))
     setReadNotes({})
     setFileVersion({})
     setImageMeta({})
     setSourceMode({})
+    setIoError(null)
     clearSelection()
     setMode("edit")
     void unwatchAll()
     untrack(() => { void mountActive() })
+  })
+
+  createEffect(() => {
+    const current = model()
+    const key = props.scopeKey ?? null
+    if (current.root) saveEditorModel(current.root, current)
+    if (!key) return
+    const scopeState = contentScopeStateFor(key)
+    saveContentScopeState(key, {
+      ...selectTreeFile(scopeState, current.active),
+      openFiles: current.files.map((file) => file.rel),
+      activeFile: current.active,
+    })
+  })
+
+  // 预览面（markdown/json/table/office）有自己的滚动容器，按 scope/file 恢复。
+  createEffect(() => {
+    const file = activeFile()
+    const key = props.scopeKey ?? null
+    if (!file || !previewing()) {
+      previewRestoredKey = null
+      return
+    }
+    const id = `${key}\u0000${file.rel}`
+    if (previewRestoredKey === id) return
+    previewRestoredKey = id
+    const restore = () => {
+      const port = previewScrollPort()
+      if (!port) return
+      port.scrollTop = readingPositionFor(contentScopeStateFor(key), file.rel) ?? 0
+    }
+    queueMicrotask(restore)
+    requestAnimationFrame(restore)
   })
 
   // M2：会话切换时清掉上一会话的批注标记，防止 renderer 生命周期内累积。
@@ -286,13 +377,14 @@ export function EditorDock(props: {
     const req = pendingEditorOpen()
     if (!req) return
     consumeEditorOpen()
-    if (req.root !== props.sessionDirectory) return
+    if (req.root !== props.contentRoot) return
     void openRel(req.rel)
   })
 
   async function openRel(rel: string) {
-    const root = props.sessionDirectory
+    const root = props.contentRoot
     if (!root) return
+    rememberActiveScroll()
     if (model().files.some(f => f.rel === rel)) {
       setModel(m => setActive(m, rel))
       setMode("edit")
@@ -303,7 +395,7 @@ export function EditorDock(props: {
     const kind = fileKindFor(rel)
     // 图片：不走 readFile（二进制闸），只需 root token + stat（元数据/版本）。
     if (kind === "image") {      const token = await fileProtocol.ensureRootToken(root)
-      if (root !== props.sessionDirectory) return // root 已切换：丢弃迟到的结果
+      if (root !== props.contentRoot) return // root 已切换：丢弃迟到的结果
       if (!token) {
         setIoError("图片预览不可用（文件协议注册失败）")
         return
@@ -312,7 +404,7 @@ export function EditorDock(props: {
       let size: number | undefined
       try {
         const st = await window.api.fs.statFile(root, rel)
-        if (root !== props.sessionDirectory) return
+        if (root !== props.contentRoot) return
         if (st.ok) {
           version = st.mtimeMs
           size = st.size
@@ -331,7 +423,7 @@ export function EditorDock(props: {
     // Office（xlsx/docx/pptx）：只读预览 tab；数据集走 mafw-file:// + fetch，不读文本。
     if (kind === "xlsx" || kind === "docx" || kind === "pptx") {
       const token = await fileProtocol.ensureRootToken(root)
-      if (root !== props.sessionDirectory) return
+      if (root !== props.contentRoot) return
       if (!token) {
         setIoError("Office 预览不可用（文件协议注册失败）")
         return
@@ -339,7 +431,7 @@ export function EditorDock(props: {
       // 记录打开时 mtime：切回 tab 时 stat 比对，未变则不重解析（防白帧）
       try {
         const st = await window.api.fs.statFile(root, rel)
-        if (root !== props.sessionDirectory) return
+        if (root !== props.contentRoot) return
         if (st.ok) setMtime(root, rel, st.mtimeMs)
       } catch { /* 可选元数据 */ }
       setFileVersion(prev => ({ ...prev, [rel]: Date.now() }))
@@ -353,12 +445,12 @@ export function EditorDock(props: {
     // SVG 默认预览需要协议 token（首次打开即渲染）；注册失败退回源码态。
     if (kind === "svg") {
       const token = await fileProtocol.ensureRootToken(root)
-      if (root !== props.sessionDirectory) return
+      if (root !== props.contentRoot) return
       if (!token) setSourceMode(prev => ({ ...prev, [rel]: true }))
     }
     try {
       const res = await window.api.fs.readFile(root, rel)
-      if (root !== props.sessionDirectory) return // root 已切换：丢弃迟到的结果（Important 2）
+      if (root !== props.contentRoot) return // root 已切换：丢弃迟到的结果（Important 2）
       const editorKind = kind === "svg" ? "svg" : kind === "table" ? "table" : kind === "markdown" ? "markdown" : kind === "json" ? "json" : "text"
       if (res.ok) {
         setMtime(root, rel, res.mtimeMs)
@@ -388,7 +480,7 @@ export function EditorDock(props: {
   // 只读预览 → stat 比对 mtime，未变不 bump（防无谓重解析）；文本 → 读盘，
   // 干净时静默换基准，dirty 时只标冲突、绝不覆盖（沿用 canApplyCleanReload 语义）。
   async function refreshActiveFromDisk(rel: string) {
-    const root = props.sessionDirectory
+    const root = props.contentRoot
     if (!root) return
     const file = model().files.find((x) => x.rel === rel)
     if (!file) return
@@ -397,7 +489,7 @@ export function EditorDock(props: {
     if (action === "stat-preview") {
       try {
         const st = await window.api.fs.statFile(root, rel)
-        if (root !== props.sessionDirectory || !st.ok) return
+        if (root !== props.contentRoot || !st.ok) return
         if (getMtime(root, rel) === st.mtimeMs) return // 未变更：不重解析（否则切 tab 白一帧）
         setMtime(root, rel, st.mtimeMs)
         setFileVersion(prev => ({ ...prev, [rel]: Date.now() }))
@@ -409,7 +501,7 @@ export function EditorDock(props: {
     }
     try {
       const res = await window.api.fs.readFile(root, rel)
-      if (root !== props.sessionDirectory || !res.ok) return
+      if (root !== props.contentRoot || !res.ok) return
       const now = model().files.find((x) => x.rel === rel)
       if (!now) return
       if (now.dirty) {
@@ -432,12 +524,12 @@ export function EditorDock(props: {
   // 默认先按磁盘刷新活动文件（切 tab / 关 tab 后接棒 / 从 diff 返回）；
   // 刚读盘打开的路径传 fresh:true 跳过重复读。
   async function mountActive(opts?: { fresh?: boolean }) {
-    const rootAtStart = props.sessionDirectory
+    const rootAtStart = props.contentRoot
     const current = activeFile()
     if (current && !opts?.fresh) {
       await refreshActiveFromDisk(current.rel)
       // await 期间切了文件/会话：放弃本次挂载（目标路径自己会挂）
-      if (rootAtStart !== props.sessionDirectory || model().active !== current.rel) return
+      if (rootAtStart !== props.contentRoot || model().active !== current.rel) return
     }
     const f = activeFile()
     const el = host
@@ -459,9 +551,11 @@ export function EditorDock(props: {
     const token = ++mountToken
     editor?.destroy()
     editor = null
+    mountedRoot = null
+    mountedRel = null
     await unwatchAll() // 先退订（含 f=null 的情形，防旧 watch 泄漏）
     if (!f) return
-    const root = props.sessionDirectory
+    const root = props.contentRoot
     if (!root) return
     // 图片/Office 没有 CodeMirror：只挂外部变更 watch（变更 → 版本号刷新）。
     if (isReadOnlyPreview(f.kind)) {
@@ -477,17 +571,28 @@ export function EditorDock(props: {
         lang: langForFile(f.rel),
         onDocChanged: () => {
           if (applyingExternal) return // 程序化 setDoc 不算用户编辑（Critical 1）
+          if (root !== props.contentRoot || mountedRoot !== root || mountedRel !== f.rel) return
           setDraft(root, f.rel, h.getDoc())
           setModel(m => markDirty(m, f.rel))
         },
         onSave: () => void saveActive(),
         onSelectionChange: (s) => {
+          if (root !== props.contentRoot || mountedRoot !== root || mountedRel !== f.rel) {
+            clearSelection()
+            return
+          }
           if (!s) { clearSelection(); return }
           setSel({ rel: f.rel, ...s })
         },
       })
       if (token !== mountToken) { h.destroy(); return }
       editor = h
+      mountedRoot = root
+      mountedRel = f.rel
+      const scopeState = contentScopeStateFor(props.scopeKey ?? null)
+      const savedSelection = selectionFor(scopeState, f.rel)
+      if (savedSelection) h.setSelection(savedSelection.anchor, savedSelection.head)
+      h.setScroll(readingPositionFor(scopeState, f.rel) ?? 0)
       h.setInlineDiff(mode() === "edit" && !previewing() ? inlineRanges() : [])
       if (!f.readOnly) {
         const key = `${root}\u0000${f.rel}`
@@ -502,7 +607,7 @@ export function EditorDock(props: {
 
   onMount(() => {
     const off = window.api.fs.onChanged(({ root, rel }) => {
-      if (root !== props.sessionDirectory) return
+      if (root !== props.contentRoot) return
       const f = model().files.find(x => x.rel === rel)
       if (!f) return
       // 版本号对所有 kind 生效（图片/SVG 预览的缓存破坏；文本也会顺带更新预览图）
@@ -510,7 +615,7 @@ export function EditorDock(props: {
       if (isReadOnlyPreview(f.kind)) {
         // 图片/Office 只读：版本号触发重解析；stat 同步 mtime（切 tab 的激活比对用）
         void window.api.fs.statFile(root, rel).then((st) => {
-          if (root !== props.sessionDirectory || !st.ok) return
+          if (root !== props.contentRoot || !st.ok) return
           setMtime(root, rel, st.mtimeMs)
           if (f.kind === "image") {
             setImageMeta(prev => ({ ...prev, [rel]: { ...prev[rel], size: st.size } }))
@@ -524,18 +629,22 @@ export function EditorDock(props: {
     })
     onCleanup(() => {
       off()
+      rememberActiveScroll()
       void unwatchAll()
       editor?.destroy()
       editor = null
+      mountedRoot = null
+      mountedRel = null
+      previewRestoredKey = null
     })
   })
 
   async function reloadClean(rel: string) {
-    const root = props.sessionDirectory
+    const root = props.contentRoot
     if (!root) return
     try {
       const res = await window.api.fs.readFile(root, rel)
-      if (root !== props.sessionDirectory || !res.ok) return
+      if (root !== props.contentRoot || !res.ok) return
       // await 期间用户可能开始输入 → 禁止静默覆盖（Critical 1）
       if (!canApplyCleanReload(model(), rel)) return
       setMtime(root, rel, res.mtimeMs)
@@ -559,16 +668,24 @@ export function EditorDock(props: {
   // ── 保存（显式 + mtime 版本校验 + EOL 保真）─────────────────────────
   async function saveActive(force = false) {
     const f = activeFile()
-    const root = props.sessionDirectory
+    const root = props.contentRoot
     if (!f || !root || f.readOnly || saving()) return
-    const content = getDraft(root, f.rel) ?? editor?.getDoc() ?? f.savedContent
+    const content = editorSaveContent({
+      draft: getDraft(root, f.rel),
+      editorDoc: editor?.getDoc(),
+      savedContent: f.savedContent,
+      mountedRoot,
+      mountedRel,
+      root,
+      rel: f.rel,
+    })
     setSaving(true)
     try {
       const res = await window.api.fs.writeFile(root, f.rel, content, {
         ...(force ? {} : { ifMtimeMs: getMtime(root, f.rel) }),
         eol: getEol(root, f.rel) ?? "\n",
       })
-      if (root !== props.sessionDirectory) return
+      if (root !== props.contentRoot) return
       if (res.ok) {
         clearDraft(root, f.rel)
         setModel(m => markSaved(m, f.rel, content))
@@ -594,10 +711,10 @@ export function EditorDock(props: {
   }
 
   async function reloadFromDisk(rel: string) {
-    const root = props.sessionDirectory
+    const root = props.contentRoot
     if (!root) return
     const res = await window.api.fs.readFile(root, rel)
-    if (root !== props.sessionDirectory) return
+    if (root !== props.contentRoot) return
     if (!res.ok) {
       setIoError(res.reason === "not-found" ? "文件已被删除" : "读取失败")
       return
@@ -614,7 +731,8 @@ export function EditorDock(props: {
   }
 
   function closeRel(rel: string) {
-    const root = props.sessionDirectory
+    const root = props.contentRoot
+    rememberActiveScroll()
     if (root) clearDraft(root, rel)
     setModel(m => closeFile(m, rel))
     setSourceMode(prev => { const next = { ...prev }; delete next[rel]; return next })
@@ -649,7 +767,7 @@ export function EditorDock(props: {
   const requestTabMenu = (rel: string, index: number, event: MouseEvent) => {
     if (shouldUseNativeMenu(guardFactsFromEvent(event))) return
     event.preventDefault()
-    const root = props.sessionDirectory
+    const root = props.contentRoot
     if (!root) return
     const abs = `${root.replace(/[\\/]+$/, "")}/${rel.replace(/^[\\/]+/, "")}`
     menuController.request(
@@ -667,7 +785,7 @@ export function EditorDock(props: {
   }
 
   async function openExternal(rel: string) {
-    const root = props.sessionDirectory
+    const root = props.contentRoot
     if (!root) return
     const res = await window.api.fs.openExternal(root, rel)
     if (!res.ok) setIoError("无法在外部编辑器打开")
@@ -923,7 +1041,10 @@ export function EditorDock(props: {
     if (anchor) {
       if (action === "send") {
         if (!props.onSendAnnotation) return
-        props.onSendAnnotation(buildAnnotationPromptAnchored(f.rel, anchor, comment.trim(), { hasImage: !!extra?.imageDataUrl }), extra)
+        props.onSendAnnotation(buildAnnotationPromptAnchored(f.rel, anchor, comment.trim(), {
+          hasImage: !!extra?.imageDataUrl,
+          root: props.contentRoot ?? undefined,
+        }), extra)
         if (props.sessionID) addMark(props.sessionID, f.rel, anchor, extra?.visual)
       } else {
         props.onAddAnnotation?.({
@@ -934,6 +1055,8 @@ export function EditorDock(props: {
           comment: comment.trim(),
           anchor,
           imageDataUrl: extra?.imageDataUrl,
+          scopeKey: props.scopeKey ?? undefined,
+          root: props.contentRoot ?? undefined,
         })
       }
       setAnnotOpen(false)
@@ -945,7 +1068,14 @@ export function EditorDock(props: {
     if (!annotationApplies(f.rel, s.rel)) { clearSelection(); return }
     if (action === "send") {
       if (!props.onSendAnnotation) return
-      props.onSendAnnotation(buildAnnotationPrompt(f.rel, range.startLine, range.endLine, s.text, comment.trim()))
+      props.onSendAnnotation(buildAnnotationPrompt(
+        f.rel,
+        range.startLine,
+        range.endLine,
+        s.text,
+        comment.trim(),
+        { root: props.contentRoot ?? undefined },
+      ))
       if (props.sessionID) addMark(props.sessionID, f.rel, undefined, { point: { x: s.left, y: s.top } })
     } else {
       if (!props.onAddAnnotation) return
@@ -955,6 +1085,8 @@ export function EditorDock(props: {
         endLine: range.endLine,
         code: s.text,
         comment: comment.trim(),
+        scopeKey: props.scopeKey ?? undefined,
+        root: props.contentRoot ?? undefined,
       })
     }
     clearSelection()
@@ -1044,9 +1176,9 @@ export function EditorDock(props: {
                 role="button"
                 tabIndex={0}
                 title={f.rel}
-                onClick={() => { setModel(m => setActive(m, f.rel)); setMode("edit"); clearSelection(); void mountActive() }}
+                onClick={() => { rememberActiveScroll(); setModel(m => setActive(m, f.rel)); setMode("edit"); clearSelection(); void mountActive() }}
                 onContextMenu={(event) => requestTabMenu(f.rel, model().files.findIndex(x => x.rel === f.rel), event)}
-                onKeyDown={(e: KeyboardEvent) => { openMenuOnKey(e); if (e.key === "Enter") { setModel(m => setActive(m, f.rel)); setMode("edit"); clearSelection(); void mountActive() } }}
+                onKeyDown={(e: KeyboardEvent) => { openMenuOnKey(e); if (e.key === "Enter") { rememberActiveScroll(); setModel(m => setActive(m, f.rel)); setMode("edit"); clearSelection(); void mountActive() } }}
               >
                 <span class="mafw-editor-tab-name">{f.rel.split("/").pop()}</span>
                 <Show when={f.dirty}><span class="mafw-editor-tab-dot" title="未保存">●</span></Show>

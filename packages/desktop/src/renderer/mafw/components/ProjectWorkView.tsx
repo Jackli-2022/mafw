@@ -5,6 +5,8 @@ import { WorkOverview } from "./WorkOverview"
 import { WorkPriorityList } from "./WorkPriorityList"
 import { GoalDetailPanel } from "./GoalDetailPanel"
 import { PodGoalComposer } from "./PodGoalComposer"
+import type { GoalWorktreeTarget } from "./PodResultView"
+import { StandingGoalsPanel } from "./StandingGoalsPanel"
 import { buildAttentionList, buildWorkPriority, type WorkFilter } from "../work-overview-model"
 import { goalRevisionOf, type GoalDetailFocus } from "../pod-model"
 import { isPodResultViewed } from "../pod-result-store"
@@ -33,7 +35,9 @@ export function ProjectWorkView(props: {
   detailFocus?: GoalDetailFocus | null
   podId?: string | null
   onOpenGoal: (goal: PodGoal, focus?: GoalDetailFocus) => void
-  onGoalCreated?: (goalId: string) => void
+  onGoalCreated?: (goalId: string, goal?: PodGoal) => void
+  onGoalAccepted?: () => void
+  onOpenGoalWorktree?: (target: GoalWorktreeTarget) => void
   onCloseGoal: () => void
   onOpenSession: (sessionId: string) => void
 }): JSX.Element {
@@ -153,7 +157,7 @@ export function ProjectWorkView(props: {
       })
       setComposerOpen(false)
       await load()
-      props.onGoalCreated?.(created.goalId)
+      props.onGoalCreated?.(created.goalId, created.goal)
       return true
     } catch (err) {
       setError(friendlyWorkError(err))
@@ -192,6 +196,15 @@ export function ProjectWorkView(props: {
           </section>
         </Show>
 
+        <StandingGoalsPanel
+          projectDir={props.projectDir}
+          active={props.active}
+          onOpenGoal={(goalId) => {
+            const goal = overviewGoals().find((item) => item.goalId === goalId)
+            if (goal) props.onOpenGoal(goal)
+          }}
+        />
+
         <WorkPriorityList
           items={priority()}
           attention={attention()}
@@ -218,6 +231,8 @@ export function ProjectWorkView(props: {
             focus={props.detailFocus ?? "timeline"}
             onClose={props.onCloseGoal}
             onOpenSession={props.onOpenSession}
+            onGoalAccepted={props.onGoalAccepted}
+            onOpenWorktree={props.onOpenGoalWorktree}
           />
         )}
       </Show>

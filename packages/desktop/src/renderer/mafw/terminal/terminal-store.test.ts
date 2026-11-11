@@ -118,10 +118,34 @@ describe("terminal-store", () => {
     store.setVisible(false)
     store.ensureLocal("C:\\B")
     assert.equal(fake.attachedLocal, 0)
-    assert.equal(store.sessions().find((s) => s.kind === "local")?.directory, "C:\\B")
+    assert.equal(store.sessions().find((s) => s.kind === "local" && s.directory === "C:\\B")?.directory, "C:\\B")
     store.setVisible(true)
     await tick()
     assert.equal(fake.attachedLocal, 1)
+  })
+
+  test("switching content roots keeps one local session per scope", async () => {
+    const fake = fakeApi()
+    const store = createTerminalStore({ api: fake.api as any, storage: memStorage(), localDirectory: () => "C:\\A" })
+    await store.init()
+    store.setVisible(true)
+    await tick()
+    const a = store.sessions().find((s) => s.kind === "local" && s.directory === "C:\\A")
+    assert.ok(a)
+
+    store.ensureLocal("C:\\B")
+    await tick()
+    const b = store.sessions().find((s) => s.kind === "local" && s.directory === "C:\\B")
+    assert.ok(b)
+    assert.notEqual(a.id, b.id)
+    assert.equal(store.activeId(), b.id)
+    assert.equal(fake.closed, 0)
+
+    store.ensureLocal("C:\\A")
+    await tick()
+    assert.equal(store.activeId(), a.id)
+    assert.equal(store.sessions().filter((s) => s.kind === "local").length, 2)
+    assert.equal(fake.closed, 0)
   })
 
   test("closing local tab stays closed until openLocal", async () => {

@@ -273,13 +273,13 @@ export function createTerminalStore(deps: TerminalStoreDeps): TerminalStore {
         autoConnected.add(session.id)
         void deps.api.sessions.reconnect(session.id)
       }
-      const local = list.find((s) => s.kind === "local")
-      if (
-        local &&
-        (activeId() === local.id || activeId() === null) &&
-        local.status !== "connected" &&
-        local.status !== "connecting"
-      ) {
+      const active = list.find((s) => s.id === activeId())
+      const local = active?.kind === "local"
+        ? active
+        : activeId() === null
+          ? list.find((s) => s.kind === "local")
+          : null
+      if (local && local.status !== "connected" && local.status !== "connecting") {
         void attachLocal(local)
       }
     },
@@ -296,44 +296,29 @@ export function createTerminalStore(deps: TerminalStoreDeps): TerminalStore {
     ensureLocal(directory) {
       if (!directory) return
       lastDirectory = directory
-      const existing = sessions().find((s) => s.kind === "local")
-      if (localClosed && !existing) return
-      if (!existing) {
-        const info = localInfo(directory)
-        setSessions((prev) => [...prev, info])
-        if (!activeId()) setActiveId(info.id)
-        persist()
-        if (visible && activeId() === info.id) void attachLocal(info)
+      const locals = sessions().filter((s) => s.kind === "local")
+      const match = locals.find((s) => s.directory === directory)
+      const active = sessions().find((s) => s.id === activeId())
+      const shouldActivate = !active || active.kind === "local"
+      // 每个内容 scope 保留自己的本地终端；切 scope 不关闭旧会话。
+      if (match) {
+        if (shouldActivate) activate(match.id)
         return
       }
-      const nextId = localSessionId(directory, platform)
-      if (existing.directory !== directory || existing.id !== nextId) {
-        const updated: TerminalSessionInfo = {
-          ...existing,
-          id: nextId,
-          title: titleFor(directory),
-          directory,
-          status: "disconnected",
-          error: undefined,
-          connectedAt: undefined,
-        }
-        setSessions((prev) => prev.map((s) => (s.id === existing.id ? updated : s)))
-        if (activeId() === existing.id) setActiveId(nextId)
-        if (existing.id !== nextId) void deps.api.sessions.close(existing.id)
-        persist()
-        if (visible && activeId() === nextId) void attachLocal(updated)
-        return
-      }
-      if (visible && activeId() === existing.id && existing.status !== "connected" && existing.status !== "connecting") {
-        void attachLocal(existing)
-      }
+      // 用户显式关闭了所有本地终端后，不自动重开（openLocal 才恢复）。
+      if (localClosed && locals.length === 0) return
+      const info = localInfo(directory)
+      setSessions((prev) => [...prev, info])
+      if (shouldActivate) setActiveId(info.id)
+      persist()
+      if (visible && shouldActivate) void attachLocal(info)
     },
 
     openLocal() {
       localClosed = false
       const directory = lastDirectory ?? deps.localDirectory()
       if (!directory) return
-      const existing = sessions().find((s) => s.kind === "local")
+      const existing = sessions().find((s) => s.kind === "local" && s.directory === directory)
       if (existing) {
         activate(existing.id)
         return

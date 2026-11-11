@@ -17,7 +17,6 @@ import { randomUUID } from 'crypto';
 import * as http from 'http';
 import * as https from 'https';
 import { spawn, execSync } from 'child_process';
-// import { DashboardServer } from './dashboard/server';
 import { config } from "./config";
 import { MutexQueue } from './concurrency/mutex-queue';
 import { TtlMap } from './concurrency/ttl-map';
@@ -41,6 +40,7 @@ import { handleDashboardAPI, type DashboardLegacyDeps } from './subsystems/dashb
 // D3 Task 6：43 条 attach*（lead/pod cargo 在内）整体搬入 subsystems/（顺序即优先级）。
 import { attachAllRoutes, type ApiRouteDeps } from './subsystems/api-routes';
 import { normalizeDir, isPortHealthy } from './core/http/http-util';
+import { errorBody, API_ERROR_CODES } from './core/http/api-error';
 import { NodeDriver } from './core/goal/driver';
 import { parseReviewRubric, taskIdsFromWavePlan } from './core/goal/review-rubric';
 import { ensureGoalState, effectiveRevision, isTerminalState, loadGoalState } from './core/goal/state-v3';
@@ -58,7 +58,6 @@ import { recordSessionInDb } from './core/engine/phase-orchestrator';
 
 import { McpSSEEndpoint } from "./mcp/sse-transport";
 import { McpStreamableEndpoint } from "./mcp/streamable-endpoint";
-import { ChatSessionManager } from "./chat/chat-sessions";
 import { SdkSessionResource } from "./resources/sdk-session";
 import { structuredOutput } from './runtime/structured-output';
 import { SubagentService } from './runtime/subagent-service';
@@ -70,7 +69,7 @@ import {
   type GatewayDiscoveryHandle,
 } from './runtime/gateway-discovery';
 import { mafwRuntimeDir } from './runtime/runtime-paths';
-import type { InstanceLock } from './runtime/instance-lock';
+import type { InstanceLock, InstanceLockHeartbeatHandle } from './runtime/instance-lock';
 import {
   BackgroundJobError,
   BackgroundJobRegistry,
@@ -94,6 +93,7 @@ import { PodTaskService } from './core/pod/pod-task-service';
 import { PodMessageService } from './core/pod/pod-message-service';
 import { PodMemoryService } from './core/pod/pod-memory-service';
 import { PodGoalService } from './core/pod/pod-goal-service';
+import { PodReviewService } from './core/pod/pod-review-service';
 import { PodGoalRevisionService } from './core/pod/pod-goal-revision-service';
 import { PodSessionSupervisor } from './core/pod/pod-session-supervisor';
 import { PodSessionLifecycle } from './core/pod/pod-session-lifecycle';
@@ -162,6 +162,9 @@ import { setRouteWriteDeps, getRouteWriteDeps, routeAndWrite } from "./memory/ro
 import { buildSchemaClusters, Cluster } from "./memory/schema-clusters";
 import { getReconsolidationQueue } from "./recall/reconsolidation";
 import { HarmonicUnitFileStore } from "./memory/harmonic-file-store";
+import { deoptSkill as deoptInstalledSkill } from './memory/skill-install';
+import { observeSkillInvocation } from './core/skills/skill-invocation';
+import { shouldDeoptSkill } from './memory/skill-health';
 import { L5Store } from "./core/memory/l5-store";
 import { CostService } from "./cost/service";
 import { MediaService } from "./media/media-service";
@@ -272,6 +275,10 @@ import { DEFAULT_BUILTIN_RUNTIME, builtinDiscoveryRoots } from './runtime/builti
 // P2.4 event layer: domain ingress / threads / decisions / delivery.
 import { EventLayerService } from './core/events/event-layer-service';
 import { EventStore as EventLayerStore } from './core/events/event-store';
+import { StandingGoalService as StandingGoals } from './core/standing/standing-service';
+import { StandingGoalStore } from './core/standing/standing-store';
+import { StandingActionExecutor } from './core/standing/standing-actions';
+import { buildStandingTriagePrompt } from './core/standing/standing-triage';
 import {
   normalizeCronTick,
   normalizeGitHubEvent,
@@ -634,7 +641,6 @@ class MafwScheduler {
     getMilestonePush: () => this.getMilestonePush(),
     ingestInternalEvent: (kind, data) => this.ingestInternalEvent(kind, data),
   });
-  private chatSessions: ChatSessionManager;
   private sdkSession!: SdkSessionResource;
   private instructionSync?: InstructionSyncService;
   private discovery?: DiscoveryService;
@@ -646,6 +652,7 @@ class MafwScheduler {
   private podMessageService!: PodMessageService;
   private podMemoryService!: PodMemoryService;
   private podGoalService!: PodGoalService;
+  private podReviewService!: PodReviewService;
   private podGoalRevisionService!: PodGoalRevisionService;
   private podSessionSupervisor!: PodSessionSupervisor;
   private podSessionLifecycle!: PodSessionLifecycle;
@@ -715,12 +722,15 @@ class MafwScheduler {
   private automationEngine?: AutomationEngine;
   private eventLayerStore?: EventLayerStore;
   private eventLayer?: EventLayerService;
+  private standingGoals?: StandingGoals;
+  private standingGoalStore?: StandingGoalStore;
   private ledger?: SchedulerLedger;
   private pushGateway?: PushGateway;
   private pairingService?: PairingService;
   private mdnsAdvertiser?: any; // MdnsAdvertiser
   private mafwDir!: string;
   private instanceLock: InstanceLock | null = null;
+  private instanceLockHeartbeat: InstanceLockHeartbeatHandle | null = null;
   private instanceDiscovery: GatewayDiscoveryHandle | null = null;
   private discoveryHeartbeatTimer: NodeJS.Timeout | null = null;
   private podEventService?: PodEventService;
@@ -740,7 +750,6 @@ class MafwScheduler {
     this.apiPort = config.server.apiPort;
     this.pollInterval = config.timeouts.backupPollInterval;
     this.registryPath = config.paths.registryFile;
-    this.chatSessions = new ChatSessionManager();
     this.serveSupervisor = createServeSupervisor({
       // 全部经组合根 RuntimeHost（facade 不再暴露进程原语）且 late-bound（runtime 可热切换）：
       // managed = runtime 是否持有启停原语；health = 契约 healthCheck；
@@ -1053,8 +1062,12 @@ class MafwScheduler {
 
   private handleRuntimeEvent(evt: any): void {
     const f = normalizeRuntimeEvent(evt);
-    // Phase D2：24 段有序 stage 表（src/runtime/event-dispatch.ts）。数组位置即执行顺序；
-    // 仅 nativeDrop / toolPrimitiveDrop / internalFilter 三段可 HALT（legacy early return）。
+    // Skill v1 6B: trusted activation signal (runtime `tool.call` with tool=skill).
+    // Reading/listing a skill never reaches this path; failure is mechanical only.
+    try { observeSkillInvocation(this.getGatewayDb(), f); } catch { /* fail-open */ }
+    // Phase D2：23 段有序 stage 表（src/runtime/event-dispatch.ts；E3-2 删 Mode B 后
+    // 由 24 段降为 23）。数组位置即执行顺序；仅 nativeDrop / toolPrimitiveDrop /
+    // internalFilter 三段可 HALT（legacy early return）。
     runEventPipeline(f, evt, this.buildDispatchCtx());
   }
 
@@ -1089,7 +1102,6 @@ class MafwScheduler {
       scheduler: () => this.scheduler,
       getTurnPipeline: () => this.getTurnPipeline(),
       scanService: () => this.scanService,
-      chatSessions: () => this.chatSessions,
     };
   }
 
@@ -1097,7 +1109,10 @@ class MafwScheduler {
   private capGuard(res: http.ServerResponse, surface: string): boolean {
     if (this.runtime?.access.can(surface)) return false;
     res.writeHead(503);
-    res.end(JSON.stringify({ error: `runtime surface '${surface}' is not available` }));
+    res.end(JSON.stringify(errorBody(
+      `runtime surface '${surface}' is not available`,
+      API_ERROR_CODES.capability_unavailable,
+    )));
     return true;
   }
 
@@ -1106,7 +1121,10 @@ class MafwScheduler {
     const legacyQuestion = this.runtimeCaps.questionApi === undefined && !!this.runtimeCaps.nativeApprovals;
     if (this.runtime?.access.can('approval.question.list') || legacyQuestion) return false;
     res.writeHead(503);
-    res.end(JSON.stringify({ error: "runtime surface 'approval.question.list' is not available" }));
+    res.end(JSON.stringify(errorBody(
+      "runtime surface 'approval.question.list' is not available",
+      API_ERROR_CODES.capability_unavailable,
+    )));
     return true;
   }
 
@@ -2838,7 +2856,15 @@ class MafwScheduler {
             getIndex: () => this.memoryService!.harmonicIndex.getIndex(),
             readUnit: async (id: string) => {
               const u = await store.read(id);
-              return u ? { id: u.id, memory_value: u.memory_value, cue_anchors: u.cue_anchors } : null;
+              return u
+                ? {
+                    id: u.id,
+                    memory_value: u.memory_value,
+                    cue_anchors: u.cue_anchors,
+                    source_session_id: u.source_session_id,
+                    source_trace_ids: u.source_trace_ids,
+                  }
+                : null;
             },
             needFor: (id: string) => getRetrievalEventBuffer().needFor(id),
             existingSkillCount: () => this.installedSkillCount(),
@@ -2865,14 +2891,155 @@ class MafwScheduler {
             },
             now: new Date(),
           });
-          this.heartbeat?.record('memory:skillPromotion', { ok: true, counts: { promoted } });
+          // 6B health pass: deopt only on concrete evidence (sources gone or
+          // repeated mechanical failures without a known success).
+          let deopted = 0;
+          try {
+            const db = this.getGatewayDb();
+            const records = db.listSkillRecords('active');
+            const stats = db.listSkillInvocationStats();
+            const emptyStats = { total: 0, success: 0, failure: 0, unknown: 0, lastAt: null };
+            for (const record of records) {
+              const sources: Array<{ id: string; exists: boolean; superseded: boolean }> = [];
+              for (const id of record.sourceMemoryIds) {
+                let unit: any = null;
+                try { unit = await store.read(id); } catch { /* missing */ }
+                const entry = this.memoryService!.harmonicIndex.getIndex().entries.find((e) => e.id === id);
+                sources.push({
+                  id,
+                  exists: Boolean(unit),
+                  superseded: Boolean(unit?.superseded_by || entry?.superseded_by),
+                });
+              }
+              const decision = shouldDeoptSkill({
+                sources,
+                stats: stats[record.name] ?? emptyStats,
+              });
+              if (decision.deopt) {
+                const r = this.deoptInstalledSkill(record.name, decision.reason!);
+                if (r.deopted) deopted++;
+              }
+            }
+          } catch { /* fail-open: health pass never blocks promotion */ }
+          this.heartbeat?.record('memory:skillPromotion', { ok: true, counts: { promoted, deopted } });
           if (promoted > 0) log.info(`[SkillPromotion] staged ${promoted} skill draft(s)`);
+          if (deopted > 0) log.info(`[SkillPromotion] deopted ${deopted} unhealthy skill(s)`);
         } catch (err: any) {
           this.heartbeat?.record('memory:skillPromotion', { ok: false, error: err.message });
           log.warn(`[SkillPromotion] run failed: ${err.message}`);
         }
       });
+      // Host actions must be registered through the provider too: start() and
+      // reloadRules() clear bare registerAction() entries before rebuilding.
+      this.registerHostAutomationActions(engine);
     });
+  }
+
+  /** Event-layer + Standing Goal host actions (survive automation reloads). */
+  private registerHostAutomationActions(engine: AutomationEngine): void {
+    engine.registerAction('event:github_poll', async (rule) => {
+      if (process.env.MAFW_EVENT_LAYER !== '1') return;
+      const sourceId = String(rule.args?.sourceId ?? '');
+      const store = this.eventLayerStore;
+      const layer = this.eventLayer;
+      if (!store || !layer) return;
+      const source = sourceId ? store.getSource(sourceId) : null;
+      if (!source || !source.enabled) return;
+      try {
+        const polled = await pollGitHubSource({
+          projectDir: source.projectDir,
+          sourceId: source.id,
+          config: {
+            repo: String(source.config.repo ?? ''),
+            token: typeof source.config.token === 'string' ? source.config.token : undefined,
+            labels: Array.isArray(source.config.labels) ? source.config.labels.map(String) : undefined,
+            branches: Array.isArray(source.config.branches) ? source.config.branches.map(String) : undefined,
+            authors: Array.isArray(source.config.authors) ? source.config.authors.map(String) : undefined,
+            cursor: source.cursor as any,
+          },
+          now: () => new Date().toISOString(),
+        });
+        for (const envelope of polled.envelopes) {
+          const ingested = layer.ingest(envelope);
+          void this.processEventThread(ingested.thread.id);
+        }
+        store.updateSourceCursor(source.id, polled.cursor, new Date().toISOString());
+      } catch (err: any) {
+        this.broadcast({
+          type: 'event.source.error',
+          properties: { sourceId, error: String(err?.message ?? err) },
+        });
+      }
+    });
+
+    engine.registerAction('event:cron_tick', async (rule) => {
+      if (process.env.MAFW_EVENT_LAYER !== '1' || !this.eventLayer) return;
+      const standingGoalId = String(rule.args?.standingGoalId ?? '');
+      const projectDir = String(rule.args?.projectDir ?? '');
+      if (!standingGoalId || !projectDir) return;
+      const now = new Date().toISOString();
+      const ingested = this.eventLayer.ingest(normalizeCronTick({
+        projectDir,
+        sourceId: 'cron',
+        standingGoalId,
+        scheduledAt: String(rule.args?.scheduledAt ?? now),
+        actualAt: now,
+      }));
+      void this.processEventThread(ingested.thread.id);
+    });
+
+    engine.registerAction('standing_goal:tick', async (rule) => {
+      if (process.env.MAFW_STANDING_GOALS !== '1') return;
+      const standingGoalId = String(rule.args?.standingGoalId ?? '');
+      if (!standingGoalId) return;
+      await this.standingGoals?.handleCronTick(
+        standingGoalId,
+        String(rule.args?.scheduledAt ?? new Date().toISOString()),
+        String(rule.args?.triggerId ?? ''),
+      );
+    });
+  }
+
+  private async runStandingTriage(input: {
+    standingGoal: import('./core/standing/standing-types').StandingGoal;
+    trigger: import('./core/standing/standing-types').StandingTrigger;
+    payload: Record<string, unknown>;
+    recentRuns: import('./core/standing/standing-types').GoalRun[];
+  }): Promise<{ sessionId: string; output: unknown; costUsd?: number; tokens?: number }> {
+    const runtime = this.runtime;
+    if (!runtime) throw new Error('runtime not available');
+    const created: any = await runtime.session.create({
+      directory: input.standingGoal.projectDir,
+    });
+    const sessionId = String(created?.id ?? created?.sessionID ?? '');
+    if (!sessionId) throw new Error('failed to create standing triage session');
+    try {
+      const result: any = await runtime.session.prompt({
+        sessionID: sessionId,
+        agent: 'plan',
+        maxTurns: 2,
+        parts: [{ type: 'text', text: buildStandingTriagePrompt(input) }],
+      });
+      if (result?.error) throw new Error(String(result.error.message ?? result.error));
+      const text = (Array.isArray(result?.parts) ? result.parts : [])
+        .filter((part: any) => part?.type === 'text' && typeof part.text === 'string')
+        .map((part: any) => String(part.text))
+        .join('\n');
+      const start = text.lastIndexOf('{');
+      const end = text.lastIndexOf('}');
+      if (start < 0 || end <= start) throw new Error('standing triage returned no JSON object');
+      const usage = result?.usage;
+      return {
+        sessionId,
+        output: JSON.parse(text.slice(start, end + 1)),
+        ...(typeof usage?.costUsd === 'number' ? { costUsd: usage.costUsd } : {}),
+        ...(usage ? {
+          tokens: Number(usage.input ?? 0) + Number(usage.output ?? 0) + Number(usage.reasoning ?? 0),
+        } : {}),
+      };
+    } finally {
+      try { await runtime.session.delete({ sessionID: sessionId }); } catch { /* fail-open */ }
+    }
   }
 
   /** 用户级 skills 目录（W2 安装目标）。P2.4：目标目录由 active/builtin adapter 声明。 */
@@ -2891,7 +3058,8 @@ class MafwScheduler {
   private installedSkillCount(): number {
     try {
       return fs.readdirSync(this.skillsDir(), { withFileTypes: true })
-        .filter((d) => d.isDirectory()).length;
+        .filter((d) => d.isDirectory() && !d.name.startsWith('.'))
+        .length;
     } catch {
       return 0;
     }
@@ -2900,10 +3068,16 @@ class MafwScheduler {
   /** W2 安装器 deps：staging→用户级 skills 目录 + 源记忆指针改写。 */
   private skillInstallDeps(): {
     copyDir(src: string, dst: string): void;
-    readMemory(id: string): Promise<{ id: string; memory_value: string; cue_anchors?: string[] } | null>;
-    writeMemory(unit: { id: string; memory_value: string; cue_anchors?: string[] }): Promise<unknown>;
+    readMemory(id: string): Promise<Record<string, any> | null>;
+    writeMemory(unit: Record<string, any>): Promise<unknown>;
     stagingDir: string;
     skillsDir: string;
+    recordInstall(record: {
+      name: string;
+      version: number;
+      sourceMemoryIds: string[];
+      sourceTraceIds: string[];
+    }): void;
   } {
     const mafwDir = this.mafwDir;
     const store = this.memoryService
@@ -2911,17 +3085,41 @@ class MafwScheduler {
       : null;
     return {
       copyDir: (src, dst) => fs.cpSync(src, dst, { recursive: true }),
+      // Return the FULL unit: installSkillDraft spreads it when writing the
+      // pointer back, so truncating to {id,memory_value,cue_anchors} drops
+      // type/primary_abstraction and makes the write fail silently.
       readMemory: async (id) => {
         if (!store) return null;
         const u = await store.read(id);
-        return u ? { id: u.id, memory_value: u.memory_value, cue_anchors: u.cue_anchors } : null;
+        return u ? (u as unknown as Record<string, any>) : null;
       },
       writeMemory: async (unit) => {
         if (store) await store.write(unit as any);
       },
       stagingDir: path.join(mafwDir, 'skill-staging'),
       skillsDir: this.skillsDir(),
+      recordInstall: (record) => this.getGatewayDb().recordSkillInstall(record),
     };
+  }
+
+  /** Skill v1: move an installed playbook out of discovery scope. */
+  private deoptInstalledSkill(name: string, reason: string): { deopted: boolean; archivedTo?: string; error?: string } {
+    return deoptInstalledSkill(name, reason, {
+      skillsDir: this.skillsDir(),
+      ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true }),
+      renameDir: (src, dst) => fs.renameSync(src, dst),
+      recordStatus: (skillName, status, why) => this.getGatewayDb().setSkillStatus(skillName, status, why),
+    });
+  }
+
+  /** Skill v1 6B: registry rows joined with trusted invocation stats. */
+  private listInstalledSkills(): Array<Record<string, unknown>> {
+    const stats = this.getGatewayDb().listSkillInvocationStats();
+    const empty = { total: 0, success: 0, failure: 0, unknown: 0, lastAt: null };
+    return this.getGatewayDb().listSkillRecords().map((record) => ({
+      ...record,
+      stats: stats[record.name] ?? empty,
+    }));
   }
 
   private getStaleVerifyPipeline(): StaleVerifyPipeline {
@@ -3105,6 +3303,16 @@ class MafwScheduler {
         ws.send(JSON.stringify({ type: 'ws_error', error: 'session is suspended; resume or discard the run first' }));
         return;
       }
+      // E1-3: without a sessionID the send starts a session in the CURRENT
+      // project (same source as promptAsync). No registered project means there
+      // is no such project — report it instead of silently picking one.
+      if (!sessionID && this.registeredProjects.size === 0) {
+        ws.send(JSON.stringify({
+          type: 'ws_error',
+          error: 'no registered project: register a project before sending without a sessionID',
+        }));
+        return;
+      }
       try {
         const result = await this.sendEnrichedInternal(message, sessionID, parts, agent, model);
         ws.send(JSON.stringify({ type: 'send_ack', sessionID: result.sessionID }));
@@ -3128,8 +3336,9 @@ class MafwScheduler {
     agent?: string,
     model?: any,
   ): Promise<{ sessionID: string }> {
-    const firstProject = this.registeredProjects.values().next().value;
-    const projectDir = firstProject?.projectDir || this.projectDir;
+    // E1-3: the current project (resolvedProjectDir), never "the first
+    // registered project" — that put multi-project sends in the wrong project.
+    const projectDir = this.resolvedProjectDir();
     if (!this.runtime) throw new Error('LLM client not available');
 
     let enrichedMessage = message;
@@ -3641,6 +3850,16 @@ class MafwScheduler {
       }),
       log: (message) => log.info(message),
     });
+    this.podReviewService = new PodReviewService({
+      store: this.podStore,
+      now: () => new Date().toISOString(),
+      notify: (podId, kind = 'review', goalId) => this.broadcast({
+        type: 'pod.updated',
+        properties: { podId, kind, ...(goalId ? { goalId } : {}) },
+      }),
+      // Tech Lead service is constructed later; resolve lazily at call time.
+      assertTechLeadSession: (goalId, sessionID) => this.podTechLeadService.assertTechLeadSession(goalId, sessionID),
+    });
     this.podGoalService = new PodGoalService({
       store: this.podStore,
       pods: this.podService,
@@ -3656,8 +3875,30 @@ class MafwScheduler {
         type: 'pod.updated',
         properties: { podId, kind, ...(goalId ? { goalId } : {}) },
       }),
-      onGoalCompleted: (goalId) => {
+      onGoalCompleted: (goalId, outcome) => {
         void this.topicMemory?.promoteForGoal(goalId);
+        const failed = outcome?.verdict === 'CANCELLED'
+          || outcome?.verdict === 'ERROR'
+          || outcome?.verdict === 'FAIL'
+          || outcome?.verdict === 'MAX_RETRIES';
+        let costUsd = 0;
+        let tokens = 0;
+        try {
+          for (const session of this.getGatewayDb().listGoalSessions(goalId)) {
+            const summary = this.trajectoryStore?.getSessionTokenSummary(session.session_id);
+            if (!summary) continue;
+            costUsd += summary.totalCost;
+            tokens += summary.totalTokens.input + summary.totalTokens.output + summary.totalTokens.reasoning;
+          }
+        } catch (err: any) {
+          log.warn(`[StandingGoals] cost lookup failed for ${goalId}: ${err?.message ?? err}`);
+        }
+        void this.standingGoals?.onGoalFinished(goalId, {
+          status: failed ? 'failed' : 'done',
+          costUsd,
+          tokens,
+          result: outcome?.verdict ? { verdict: outcome.verdict } : undefined,
+        }).catch((err: any) => log.warn(`[StandingGoals] finish hook failed: ${err?.message ?? err}`));
       },
       budget: this.podBudget,
       maxConcurrentGoals: () => {
@@ -3667,6 +3908,7 @@ class MafwScheduler {
       },
       revisions: this.podGoalRevisionService,
       worktrees: this.podWorktreeService,
+      reviews: this.podReviewService,
       sessions: { retireRevision: (goalId, revision) => this.podSessionLifecycle.retireRevision(goalId, revision) },
       // 打回需要立刻恢复 Tech Lead 讨论、并把反馈记进方向输入：这两者在本函数稍后
       // 才构造，因此用惰性适配器（调用时才解析到真实服务）。
@@ -4144,10 +4386,29 @@ class MafwScheduler {
       newId: (prefix) => `${prefix}_${randomUUID()}`,
       broadcast: (event) => this.broadcast(event as any),
       enabled: () => process.env.MAFW_EVENT_LAYER === '1',
-      evaluate: async ({ subscriptions }) => (subscriptions.some((subscription) => subscription.mode === 'work')
-        ? { decision: 'accept', mode: 'full', rationale: 'work subscription' }
-        : { decision: 'ignore', rationale: 'no work subscription' }),
+      evaluate: async ({ thread, subscriptions }) => {
+        const relevant = subscriptions.filter((subscription) => {
+          if (subscription.subscriberType !== 'standing_goal') return true;
+          if (process.env.MAFW_STANDING_GOALS !== '1') return false;
+          const goal = this.standingGoalStore?.getGoal(subscription.subscriberId);
+          if (!goal || goal.state !== 'active') return false;
+          return canonicalProjectDir(goal.projectDir) === canonicalProjectDir(thread.projectDir);
+        });
+        return relevant.some((subscription) => subscription.mode === 'work')
+          ? { decision: 'accept', mode: 'full', rationale: 'work subscription' }
+          : { decision: 'ignore', rationale: 'no work subscription' };
+      },
       deliverWork: async ({ thread, trigger, subscription, decision }) => {
+        if (subscription.subscriberType === 'standing_goal'
+          && this.standingGoals
+          && process.env.MAFW_STANDING_GOALS === '1') {
+          await this.standingGoals.handleEventTrigger(subscription.subscriberId, {
+            eventId: trigger.id,
+            payload: trigger.payload,
+            kind: trigger.kind,
+            projectDir: thread.projectDir,
+          });
+        }
         // P2.4 has no Standing Goal executor; surface the work handoff so the
         // P2.5 consumer can attach without changing the delivery path.
         this.broadcast({
@@ -4163,52 +4424,79 @@ class MafwScheduler {
       log: (message) => log.warn(message),
     });
 
-    this.automationEngine.registerAction('event:github_poll', async (rule) => {
-      if (process.env.MAFW_EVENT_LAYER !== '1') return;
-      const sourceId = String(rule.args?.sourceId ?? '');
-      const source = sourceId ? eventStore.getSource(sourceId) : null;
-      if (!source || !source.enabled) return;
-      try {
-        const polled = await pollGitHubSource({
-          projectDir: source.projectDir,
-          sourceId: source.id,
-          config: {
-            repo: String(source.config.repo ?? ''),
-            token: typeof source.config.token === 'string' ? source.config.token : undefined,
-            labels: Array.isArray(source.config.labels) ? source.config.labels.map(String) : undefined,
-            branches: Array.isArray(source.config.branches) ? source.config.branches.map(String) : undefined,
-            authors: Array.isArray(source.config.authors) ? source.config.authors.map(String) : undefined,
-            cursor: source.cursor as any,
-          },
-          now: () => new Date().toISOString(),
-        });
-        for (const envelope of polled.envelopes) {
-          const ingested = this.eventLayer!.ingest(envelope);
-          void this.processEventThread(ingested.thread.id);
-        }
-        eventStore.updateSourceCursor(source.id, polled.cursor, new Date().toISOString());
-      } catch (err: any) {
-        this.broadcast({
-          type: 'event.source.error',
-          properties: { sourceId, error: String(err?.message ?? err) },
-        });
-      }
+    // P2.5 Standing Goals: lifecycle + GoalRun triage. Default off.
+    const standingStore = new StandingGoalStore(this.getGatewayDb().getStore());
+    this.standingGoalStore = standingStore;
+    const actionExecutor = new StandingActionExecutor({
+      notify: (input) => this.broadcast({ type: 'standing_goal.notification', properties: input }),
+      comment: async () => { throw new Error('comment action is not available in v1 (notify only)'); },
+      label: async () => { throw new Error('label action is not available in v1 (notify only)'); },
+      enabled: () => process.env.MAFW_STANDING_GOALS === '1',
     });
-
-    this.automationEngine.registerAction('event:cron_tick', async (rule) => {
-      if (process.env.MAFW_EVENT_LAYER !== '1') return;
-      const standingGoalId = String(rule.args?.standingGoalId ?? '');
-      const projectDir = String(rule.args?.projectDir ?? '');
-      if (!standingGoalId || !projectDir) return;
-      const now = new Date().toISOString();
-      const ingested = this.eventLayer!.ingest(normalizeCronTick({
-        projectDir,
-        sourceId: 'cron',
-        standingGoalId,
-        scheduledAt: String(rule.args?.scheduledAt ?? now),
-        actualAt: now,
-      }));
-      void this.processEventThread(ingested.thread.id);
+    const standingGoals = new StandingGoals({
+      store: standingStore,
+      now: () => new Date().toISOString(),
+      newId: (prefix) => `${prefix}_${randomUUID()}`,
+      registerCron: (input) => this.automationEngine!.registerStandingCron(input),
+      unregisterCron: (key) => this.automationEngine!.unregisterStandingCron(key),
+      nextCronRun: (key) => this.automationEngine!.nextStandingCronRun(key),
+      enabled: () => process.env.MAFW_STANDING_GOALS === '1',
+      broadcast: (event) => this.broadcast(event as any),
+      log: (message) => log.warn(message),
+      createTriage: (input) => this.runStandingTriage(input),
+      createGoal: async ({ standingGoal, mode, triage }) => {
+        const canonical = canonicalProjectDir(standingGoal.projectDir);
+        const detail = await this.podService.ensure(canonical);
+        const created = await this.podTechLeadService.createGoal({
+          podId: detail.pod.id,
+          projectDir: canonical,
+          title: standingGoal.title,
+          objective: standingGoal.objective,
+          acceptance: standingGoal.template.acceptance,
+          boundaries: standingGoal.template.boundaries,
+          taskType: mode === 'report'
+            ? 'research'
+            : (standingGoal.template.taskType === 'bug'
+              ? 'bugfix'
+              : standingGoal.template.taskType === 'ops'
+                ? 'other'
+                : standingGoal.template.taskType),
+          planReview: mode === 'goal' && standingGoal.approval === 'plan'
+            ? 'manual'
+            : standingGoal.template.planReview,
+          handoff: 'none',
+          budget: {
+            ...(standingGoal.budget.perRunTurns !== undefined ? { maxTurns: standingGoal.budget.perRunTurns } : {}),
+            ...(standingGoal.budget.perRunCostUsd !== undefined ? { maxCostUsd: standingGoal.budget.perRunCostUsd } : {}),
+          },
+        });
+        this.podStore.setGoalRevisionStatus({
+          podId: created.podId,
+          goalId: created.goalId,
+          revision: created.revision,
+          status: 'planning',
+          now: new Date().toISOString(),
+        });
+        await this.podGoalService.admitReadyGoal(created.goalId, canonical);
+        return { goalId: created.goalId };
+      },
+      executeAction: (action) => actionExecutor.execute(action),
+      subscribeEvents: ({ standingGoal }) => {
+        this.eventLayer?.subscribe({
+          threadId: '*',
+          subscriberType: 'standing_goal',
+          subscriberId: standingGoal.id,
+          mode: 'work',
+        });
+      },
+      unsubscribeEvents: (standingGoalId) => {
+        this.eventLayer?.unsubscribeSubscriber(standingGoalId);
+      },
+      eventLayerEnabled: () => process.env.MAFW_EVENT_LAYER === '1',
+    });
+    this.standingGoals = standingGoals;
+    void this.standingGoals.reconcile().catch((err: any) => {
+      log.warn(`[StandingGoals] reconcile failed: ${err?.message ?? err}`);
     });
     // Pipeline heartbeat (arXiv:2609.05510): background pipelines fail silently
     // by default — record last-run/last-success/counts and flag stalled ones.
@@ -4306,6 +4594,8 @@ class MafwScheduler {
       automation: this.automationEngine,
       ledger: this.ledger,
       mafwDir,
+      projectDir: () => this.resolvedProjectDir(),
+      standingGoals: this.standingGoals,
       listProjects: () => Array.from(this.registeredProjects.entries()).map(([projectDir, info]) => ({ projectDir, mafwDir: info.mafwDir })),
       podTechLead: this.podTechLeadService,
       podDirection: this.podDirectionService,
@@ -4822,10 +5112,14 @@ class MafwScheduler {
       get recallCalledBySession() { return self.recallCalledBySession; },
       get goalDriverMafwDirCache() { return self.goalDriverMafwDirCache; },
       get sseClients() { return self.eventHub.sseClients; },
+      get releaseIdentity() {
+        return () => (self.releaseMetadata && self.runtimeIdentity
+          ? { instanceId: self.runtimeIdentity.instanceId, schemaEpoch: self.releaseMetadata.schemaEpoch }
+          : null);
+      },
       get allowlistStore() { return self.allowlistStore; },
       get permissionRules() { return self.permissionRules; },
       get approvalPolicy() { return self.approvalPolicy; },
-      get chatSessions() { return self.chatSessions; },
       get coactivationGraphStore() { return self.coactivationGraphStore; },
       get consolidationService() { return self.consolidationService; },
       get eventStore() { return self.eventStore; },
@@ -4847,6 +5141,7 @@ class MafwScheduler {
       get podMessageDelivery() { return self.podMessageDelivery; },
       get podMessageService() { return self.podMessageService; },
       get podProbeService() { return self.podProbeService; },
+      get podReviewService() { return self.podReviewService; },
       get podService() { return self.podService; },
       get podStore() { return self.podStore; },
       get podTaskService() { return self.podTaskService; },
@@ -4905,8 +5200,12 @@ class MafwScheduler {
       get handleRuntimeEvent() { return (...a: any[]) => (self.handleRuntimeEvent as any)(...a); },
       get listSessions() { return (...a: any[]) => (self.listSessions as any)(...a); },
       get skillInstallDeps() { return (...a: any[]) => (self.skillInstallDeps as any)(...a); },
+      get deoptSkill() { return (...a: any[]) => (self.deoptInstalledSkill as any)(...a); },
+      get listSkills() { return (...a: any[]) => (self.listInstalledSkills as any)(...a); },
       get eventLayer() { return self.eventLayer; },
       get eventLayerStore() { return self.eventLayerStore; },
+      get standingGoals() { return self.standingGoals; },
+      get standingGoalStore() { return self.standingGoalStore; },
       get processEventThread() { return (...a: any[]) => (self.processEventThread as any)(...a); },
     };
   }
@@ -4919,6 +5218,8 @@ class MafwScheduler {
     return {
       cors: () => config.server.cors,
       apiToken: () => (config.raw as any)?.server?.apiToken || '',
+      // E3-5：live 读取（release metadata 在 boot 阶段加载，attach 早于它就是 null）。
+      schemaEpoch: () => this.releaseMetadata?.schemaEpoch ?? null,
       dispatchAuthorized: (req, res, apiToken) =>
         dispatchAuthorized({ registry: this.routeRegistry, apiToken }, req, res),
       pluginWebWildcard: (req, res) => this.handlePluginWebWildcard(req, res),
@@ -5025,6 +5326,9 @@ class MafwScheduler {
           getVoiceRuntime: () => this.getVoiceRuntime(),
           getTerminalService: () => this.getTerminalService(),
           pluginWebDeps: () => this.pluginWebDeps(),
+          // E2-4: WS is live-only; connected.headSeq is informational and the
+          // reconnect path is SSE cursor / REST snapshot (never WS replay).
+          headSeq: () => this.eventStore?.headSeq() ?? null,
         });
         this.wsHub = hub;
         resolve(true);
