@@ -278,8 +278,8 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
         <ContentScopeHeader
           label={props.contentScopeLabel}
           isGoalScope={props.contentScopeIsGoal}
-          intent={props.contentIntent}
-          onIntent={props.onContentIntent}
+          intent={props.surface === "code" ? props.contentIntent : undefined}
+          onIntent={props.surface === "code" ? props.onContentIntent : undefined}
           canReview={props.canReview}
           onReview={props.onContentReview}
           canGoBack={props.canGoBack}

@@ -262,7 +262,7 @@ spec §5.1/§5.3/§8.2，plan `docs/superpowers/plans/2026-11-11-project-agent-w
 - **审阅**：`ChangesDock` 是会话变更上下文；Goal 评审项仍在 Goal 结果内，不另造空间。
 - **执行**：`ExecutionView` 收进 `mafw-rw-exec-drawer`（可开合、带分区下拉与关闭），不再占一级目的地。
 - 焦点快照包含 `context / surface / executionOpen / executionSection`；旧 `mafw-workbench-view` 迁移到 `mafw-workbench-context`，`execution` 回落项目且不自动打开抽屉。
-- 已知后续（Plan D2/D3）：项目首页文件树/最近内容、Pod 降为项目属性、按验收/阅读/修改三种意图重排内容面、Goal 阶段 Tab 清理。
+- 已知后续（Plan D2/D3）：项目首页文件树/最近内容、Pod 降为项目属性、三种内容意图、Goal 详情注意力顺序。
 
 #### 项目首页与团队属性（2026-11-11 Plan D2）
 
@@ -274,7 +274,19 @@ spec §5.1/§5.2/§5.3/§6.1/§7.5，plan `docs/superpowers/plans/2026-11-11-pro
 - **双文件树 watcher**：`dir-watch-pool.ts` 对 `(root, rel)` 做 renderer 侧引用计数；项目首页树与内容树同时挂载时，任一方卸载不会误关另一方的目录监听。
 - **团队属性**：左栏删除 `pod` face；`IconRail` 的 Pod 目的地改为「团队」快捷入口，点击打开项目首页并定位团队条（attention badge / result dot 保留）。Lead / Tech Lead / 团队 / 邮箱 / 记忆入口进入项目首页团队条；`ProjectResources` 退役，`PodDock` 仍保留在执行抽屉。
 - 旧 `mafw-left-dock-face=pod` 启动时回落 `sessions` 并重写键。
-- 已知后续（Plan D3）：跨重启的树展开/滚动/草稿持久化、Goal revision 最近项、按验收/阅读/修改意图重排内容面、Goal 详情注意力顺序与阶段 Tab 清理。
+- 已知后续（Plan D3）：跨重启的树展开/滚动/草稿持久化、Goal revision 最近项、Goal 详情注意力顺序。当前 Goal 详情没有阶段页面 Tab；时间线只是只读投影，不存在待清理的阶段 Tab。
+
+#### 内容意图：阅读 / 修改（2026-11-11 Plan D3a）
+
+spec §7.1/§7.2/§7.4，核心模块 `content-intent.ts`、`editor-state.ts`、`ContentScopeHeader`、`EditorDock`。
+
+- 内容头在作用域标签后提供 `阅读 / 修改`；Goal revision scope 额外提供 `验收`，点击回到该 Goal 的结果上下文。验收仍不是内容 surface，也不改变人类专属验收权限。
+- **阅读是默认入口**：项目首页文件树/最近内容、Chat 文件链接、Goal「查看本版文件」后的普通文件点击都以 `reading` 打开。文件树在内容上下文内点击时保留当前意图。
+- **阅读用临时预览 Tab**：`openPreviewFile` 只保留一个干净预览，下一次普通打开替换它；持久 Tab、dirty Tab 和只读预览不会被替换。预览 Tab 名称以斜体区分。
+- **修改是显式动作**：点击 `修改` 把当前预览钉成持久 Tab（`promotePreview`）；首次输入也会自动把预览转持久并切到 `editing`。修改意图下新打开的文件直接进入持久 Tab。
+- 阅读/修改只影响 Tab 生命周期与意图状态，不改变文件内容、保存、冲突、草稿或批注语义；图片/Office 的只读预览、SVG/Markdown/JSON/表格的预览切换保持原行为。
+- `验收` 入口只在 `contentScope.kind === "goal"` 时出现；项目主目录不显示，避免把会话变更审阅伪装成 Goal 验收。
+- 已知后续（Plan D3b）：显式分屏/并行工作区、Goal 详情注意力顺序、跨重启的树/滚动/草稿持久化、Goal revision 最近项。
 
 ### Composer 会话配置菜单 + switchAgent 门 + rail 视觉精修（2026-11-04）
 

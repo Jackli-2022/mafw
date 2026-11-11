@@ -48,6 +48,7 @@ test("intent flows through WorkbenchShell into EditorDock", () => {
   assert.match(workbench, /contentIntent:\s*ContentIntent/)
   assert.match(workbench, /onContentIntent:\s*\(intent:\s*ContentIntent\)/)
   assert.match(workbench, /onContentReview/)
+  assert.match(workbench, /props\.surface === "code" \? props\.contentIntent : undefined/)
   assert.match(codeView, /intent:\s*ContentIntent/)
   assert.match(codeView, /onIntent:\s*\(intent:\s*ContentIntent\)/)
 })
