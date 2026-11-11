@@ -57,7 +57,6 @@ import { recordSessionInDb } from './core/engine/phase-orchestrator';
 
 import { McpSSEEndpoint } from "./mcp/sse-transport";
 import { McpStreamableEndpoint } from "./mcp/streamable-endpoint";
-import { ChatSessionManager } from "./chat/chat-sessions";
 import { SdkSessionResource } from "./resources/sdk-session";
 import { structuredOutput } from './runtime/structured-output';
 import { SubagentService } from './runtime/subagent-service';
@@ -640,7 +639,6 @@ class MafwScheduler {
     getMilestonePush: () => this.getMilestonePush(),
     ingestInternalEvent: (kind, data) => this.ingestInternalEvent(kind, data),
   });
-  private chatSessions: ChatSessionManager;
   private sdkSession!: SdkSessionResource;
   private instructionSync?: InstructionSyncService;
   private discovery?: DiscoveryService;
@@ -749,7 +747,6 @@ class MafwScheduler {
     this.apiPort = config.server.apiPort;
     this.pollInterval = config.timeouts.backupPollInterval;
     this.registryPath = config.paths.registryFile;
-    this.chatSessions = new ChatSessionManager();
     this.serveSupervisor = createServeSupervisor({
       // 全部经组合根 RuntimeHost（facade 不再暴露进程原语）且 late-bound（runtime 可热切换）：
       // managed = runtime 是否持有启停原语；health = 契约 healthCheck；
@@ -1101,7 +1098,6 @@ class MafwScheduler {
       scheduler: () => this.scheduler,
       getTurnPipeline: () => this.getTurnPipeline(),
       scanService: () => this.scanService,
-      chatSessions: () => this.chatSessions,
     };
   }
 
@@ -5103,7 +5099,6 @@ class MafwScheduler {
       get allowlistStore() { return self.allowlistStore; },
       get permissionRules() { return self.permissionRules; },
       get approvalPolicy() { return self.approvalPolicy; },
-      get chatSessions() { return self.chatSessions; },
       get coactivationGraphStore() { return self.coactivationGraphStore; },
       get consolidationService() { return self.consolidationService; },
       get eventStore() { return self.eventStore; },

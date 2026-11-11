@@ -26,7 +26,7 @@ test('chatSignal: delta 双路径（part.text 优先于 delta；空串不算）'
   expect(ev('part.updated', { part: {} }, undefined).chatSignal).toBeNull();
 });
 
-test('chatSignal: part.delta（opencode ≥1.18 / pi 流式增量）→ delta 信号（Mode B）', () => {
+test('chatSignal: part.delta（opencode ≥1.18 / pi 流式增量）→ delta 信号（流式增量切面）', () => {
   const r = ev('part.delta', { messageID: 'm1', partID: 'm1_t1', field: 'text', delta: 'he' }, 's1');
   expect(r.chatSignal).toBe('delta');
   expect(r.deltaText).toBe('he');

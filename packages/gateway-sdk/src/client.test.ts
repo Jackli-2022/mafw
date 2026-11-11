@@ -826,20 +826,6 @@ test("event.subscribe connects SSE", async () => {
   }
 })
 
-test("event.subscribeToSession connects SSE with sessionID", async () => {
-  const connectSpy = mock()
-  const orig = SSEConnection.prototype.connectToSession
-  SSEConnection.prototype.connectToSession = connectSpy as any
-  try {
-    const c = new MafwClient("http://gw:3000")
-    const sub = await c.event.subscribeToSession("s1")
-    expect(connectSpy).toHaveBeenCalledWith("http://gw:3000", "s1")
-    expect(typeof sub.on).toBe("function")
-  } finally {
-    SSEConnection.prototype.connectToSession = orig
-  }
-})
-
 // ── Runtime & Media switch ──
 
 test("runtime.get + runtime.switch hit their routes", async () => {

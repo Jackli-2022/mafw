@@ -712,7 +712,7 @@ describe('runtime isolation architecture boundaries', () => {
 describe('event dispatch extraction (D2: the chain body lives outside the composition root)', () => {
   it('kernel.ts no longer carries the dispatch chain body — wiring only', () => {
     const code = stripComments(readSource('src/kernel.ts')).code;
-    // D2 把 24 段 if 链整段搬进 src/runtime/event-dispatch.ts：enrich / 审批 /
+    // D2 把 if 链整段搬进 src/runtime/event-dispatch.ts：enrich / 审批 /
     // 权限投影 / 两个早期丢弃门都不再出现在组合根（注释里的历史说明不算，
     // stripComments 已剥离）。
     expect(code).not.toContain('enrichToolIdentity(');

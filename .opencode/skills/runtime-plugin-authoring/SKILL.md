@@ -342,7 +342,7 @@ async createRuntime(ctx) {
 | 任意 type+props+directory | TrajectoryCollector | 累积 SQLite；产出 `trajectory.event` / `trajectory.turn` 广播 |
 | `step` 切面 | BudgetGuard | 已结算 step → goal 会话回合/成本计数，超限 abort |
 | `compaction` 切面 | TurnPipeline | 压缩发生 → 该 session pending T1 回合立即 flush |
-| `chatSignal` | Mode B chatSessions | delta/complete/error 推给订阅该 session 的 SSE 客户端 |
+| `chatSignal` | 流式增量切面（Mode B 已删） | delta/complete/error 推给订阅该 session 的 SSE 客户端 |
 | `turn.completed`（type） | Mode A + Trajectory | 回合聚合（trajectory.turn + usage.updated 合成）→ mafw_event 信封 passthrough 广播（v2：Mode A 改写已删除） |
 | `toolCommand` | 自更新定位 | 含 `pending-restart` 的命令钉住写令牌的会话 |
 

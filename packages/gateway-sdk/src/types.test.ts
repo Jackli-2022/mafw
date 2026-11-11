@@ -78,7 +78,8 @@ test("all MAFW namespaces exist on MafwClient", () => {
   expect(typeof c.project.current).toBe("function")
   expect(typeof c.project.setCurrent).toBe("function")
   expect(typeof c.event.subscribe).toBe("function")
-  expect(typeof c.event.subscribeToSession).toBe("function")
+  // E3-2: Mode B 删除后 SDK 不再暴露 per-session 订阅方法。
+  expect("subscribeToSession" in c.event).toBe(false)
   expect(typeof c.config.get).toBe("function")
   expect(typeof c.config.set).toBe("function")
   expect(typeof c.chat.send).toBe("function")

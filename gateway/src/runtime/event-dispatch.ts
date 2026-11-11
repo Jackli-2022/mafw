@@ -45,7 +45,6 @@ import type { NodeDriver } from '../core/goal/driver';
 import type { RunCoordinator } from '../core/run/run-coordinator';
 import type { BackgroundJobRegistry } from '../core/background/background-jobs';
 import type { IdentityState } from './identity-state';
-import type { ChatSessionManager } from '../chat/chat-sessions';
 import type { IndexScanService } from '../recall/index-scan';
 import type { Scheduler } from '../scheduler';
 import type { TurnPipeline } from '../recall/turn-pipeline';
@@ -111,8 +110,6 @@ export interface DispatchCtx {
   getTurnPipeline(): TurnPipeline;
   /** index-scan 服务（compaction flush 后刷新缓存）。 */
   scanService(): IndexScanService | null;
-  /** per-session SSE（Mode B）管理器。 */
-  chatSessions(): ChatSessionManager;
 }
 
 /** 段执行结果：`'halt'` = legacy 的 `return`（停掉全部下游 stage）。 */
@@ -514,24 +511,7 @@ const budgetStep: DispatchStage = {
   },
 };
 
-// ── 22. Per-session SSE（Mode B）转发 ─────────────────────────────────────
-const modeBDelta: DispatchStage = {
-  name: 'modeBDelta',
-  matches: (f, _evt, ctx) => !!f.sessionID && ctx.chatSessions().hasListeners(f.sessionID),
-  // Per-session SSE (Mode B) forwarding
-  run: (f, _evt, ctx) => {
-    const sessionID = f.sessionID as string;
-    if (f.chatSignal === 'delta' && f.deltaText) {
-      ctx.chatSessions().pushDelta(sessionID, f.deltaText);
-    } else if (f.chatSignal === 'complete') {
-      ctx.chatSessions().pushComplete(sessionID);
-    } else if (f.chatSignal === 'error') {
-      ctx.chatSessions().pushError(sessionID, String(f.chatError || 'Unknown error'));
-    }
-  },
-};
-
-// ── 23. 回合聚合 + usage 合成（派生广播，先于 passthrough） ────────────────
+// ── 22. 回合聚合 + usage 合成（派生广播，先于 passthrough） ────────────────
 const turnIdleAggregate: DispatchStage = {
   name: 'turnIdleAggregate',
   matches: (f) => f.type === MAFW.turnCompleted && !!f.sessionID,
@@ -565,7 +545,7 @@ const turnIdleAggregate: DispatchStage = {
   },
 };
 
-// ── 24. 统一 passthrough 广播（恒为最后一段） ─────────────────────────────
+// ── 23. 统一 passthrough 广播（恒为最后一段） ─────────────────────────────
 const finalBroadcast: DispatchStage = {
   name: 'finalBroadcast',
   matches: () => true,
@@ -587,7 +567,8 @@ const finalBroadcast: DispatchStage = {
 
 /**
  * 有序 stage 表 —— **数组位置就是执行顺序**（Ruling D2-R1）。
- * 24 段与 legacy `handleRuntimeEvent` 的块一一对应，顺序逐字保持。
+ * 23 段与 legacy `handleRuntimeEvent` 的块一一对应，顺序逐字保持
+ * （E3-2 删除了 Mode B 转发段）。
  */
 export const DISPATCH_STAGES: DispatchStage[] = [
   nativeDrop,          //  1
@@ -611,9 +592,8 @@ export const DISPATCH_STAGES: DispatchStage[] = [
   trajectoryHandle,    // 19
   compactionFlush,     // 20
   budgetStep,          // 21
-  modeBDelta,          // 22
-  turnIdleAggregate,   // 23
-  finalBroadcast,      // 24
+  turnIdleAggregate,   // 22
+  finalBroadcast,      // 23
 ];
 
 /** stage 名 → 位置（拓扑断言用；未知名抛错，不返回 -1 静默通过）。 */

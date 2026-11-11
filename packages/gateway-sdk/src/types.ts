@@ -725,7 +725,6 @@ export interface ProjectNamespace {
 export interface EventNamespace {
   /** E2-2: cursor/onReplayInfo 可选——不传时行为与旧版一致。 */
   subscribe(opts?: SseSubscribeOptions): Promise<{ on(event: string, cb: (data: any) => void): void }>
-  subscribeToSession(sessionID: string): Promise<{ on(event: string, cb: (data: any) => void): void }>
   /** SSE 连接状态（onopen/onerror 维护；供监督器健康轮询）。 */
   connected(): boolean
   /** SSE 端点 URL（契约归 SDK：renderer 直连 EventSource 时用此构造，不自己拼字符串）。 */
