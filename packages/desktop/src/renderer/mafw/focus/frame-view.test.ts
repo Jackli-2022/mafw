@@ -64,6 +64,18 @@ test("revision and unresolved labels are stable", () => {
   )
 })
 
+test("version badge is neutral and visible for clean project files", () => {
+  const view = frameView({
+    worldName: "MAFW",
+    scopeLabel: "项目文件",
+    subjectLabel: "AGENTS.md",
+    version: "HEAD",
+  })
+  assert.deepEqual(view.badges.map((badge) => badge.id), ["version"])
+  assert.equal(view.badges[0]?.label, "HEAD")
+  assert.equal(view.badges[0]?.tone, "neutral")
+})
+
 test("verdict tone maps PASS to green and FAIL to red", () => {
   const pass = frameView({
     worldName: "MAFW",

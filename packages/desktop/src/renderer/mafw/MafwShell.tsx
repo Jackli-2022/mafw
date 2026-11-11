@@ -2551,6 +2551,7 @@ export function MafwShell() {
       scopeStartIndex: 0,
       subjectIndex: focusState().stack.length - 1,
       revision: focus.scope.kind === "goal" ? focus.scope.revision : undefined,
+      version: focus.scope.kind === "world" ? "HEAD" : undefined,
       external: subject.kind === "web" || subject.kind === "terminal" || subject.kind === "plugin",
     })
   })
@@ -2575,21 +2576,6 @@ export function MafwShell() {
     setPickerOpen(true)
     void window.api.mafw.files.list().then(setPickerFiles).catch(() => {})
   }
-  const pickerItems = createMemo<PickerItem[]>(() => {
-    const project = currentProject()
-    const worldId = project ?? "unscoped"
-    const scope = focusScope()
-    const projectScope: Scope = { kind: "world", worldId }
-    const items = buildFilePickerItems({
-      worldId,
-      files: pickerFiles(),
-      recent: recentContent(),
-      root: contentRoot() ?? project ?? "",
-      scope,
-      projectScope,
-    })
-    return [...items, ...buildCommandPickerItems(scope)]
-  })
   const pickSubject = (item: PickerItem) => {
     setPickerOpen(false)
     if (item.subject.kind === "file") {
@@ -2697,6 +2683,21 @@ export function MafwShell() {
   const [recentContent, setRecentContent] = createSignal<RecentContentEntry[]>([])
   createEffect(() => {
     setRecentContent(readRecentContent(currentProject(), window.localStorage))
+  })
+  const pickerItems = createMemo<PickerItem[]>(() => {
+    const project = currentProject()
+    const worldId = project ?? "unscoped"
+    const scope = focusScope()
+    const projectScope: Scope = { kind: "world", worldId }
+    const items = buildFilePickerItems({
+      worldId,
+      files: pickerFiles(),
+      recent: recentContent(),
+      root: contentRoot() ?? project ?? "",
+      scope,
+      projectScope,
+    })
+    return [...items, ...buildCommandPickerItems(scope)]
   })
   const contentBackLabel = createMemo(() => {
     const top = contentHistory().at(-1)
