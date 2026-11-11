@@ -36,8 +36,8 @@ export const DEFAULT_DISK_THRESHOLDS: DiskThresholds = {
 };
 
 function classifyDisk(freeBytes: number, thresholds: DiskThresholds): DiskState {
-  if (freeBytes < thresholds.criticalFreeBytes) return 'critical';
-  if (freeBytes < thresholds.warnFreeBytes) return 'warn';
+  if (freeBytes <= thresholds.criticalFreeBytes) return 'critical';
+  if (freeBytes <= thresholds.warnFreeBytes) return 'warn';
   return 'ok';
 }
 
@@ -64,9 +64,8 @@ export async function sampleDisk(
 ): Promise<DiskSample> {
   try {
     const stats = await statfsFn(target);
-    const totalBytes = stats.blocks * stats.bsize;
-    const freeBytes = stats.bavail * stats.bsize;
-    if (!Number.isFinite(totalBytes) || !Number.isFinite(freeBytes)) {
+    const fields = [stats.bsize, stats.blocks, stats.bavail];
+    if (fields.some((value) => typeof value !== 'number' || !Number.isFinite(value))) {
       return {
         totalBytes: 0,
         freeBytes: 0,
@@ -74,8 +73,12 @@ export async function sampleDisk(
         error: 'statfs returned non-finite values',
       };
     }
-    const total = Math.max(0, totalBytes);
-    const free = Math.max(0, freeBytes);
+    // 负数字段是 statfs 契约破坏，不是"磁盘满了"：归零会误判成 critical。
+    if (fields.some((value) => value < 0)) {
+      return { totalBytes: 0, freeBytes: 0, state: 'unknown', error: 'invalid statfs values' };
+    }
+    const total = stats.blocks * stats.bsize;
+    const free = stats.bavail * stats.bsize;
     return { totalBytes: total, freeBytes: free, state: classifyDisk(free, thresholds) };
   } catch (err) {
     return { totalBytes: 0, freeBytes: 0, state: 'unknown', error: errorMessage(err) };

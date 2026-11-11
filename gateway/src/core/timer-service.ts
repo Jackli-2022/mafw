@@ -14,6 +14,8 @@
  */
 export interface TimerHandle {
   readonly name: string;
+  /** 定时器是否仍在台账里（clear / disposeAll / 一次性触发后为 false）。 */
+  readonly active: boolean;
   /** 幂等；只会清掉本 handle 对应的定时器，不会误伤同名重注册的新定时器。 */
   clear(): void;
 }
@@ -88,7 +90,11 @@ export class TimerService {
     }
 
     const entry = { name } as TimerEntry;
-    const handle: TimerHandle = { name, clear: () => this.clear(handle) };
+    const handle: TimerHandle = {
+      name,
+      get active() { return entry.timer !== null; },
+      clear: () => this.clear(handle),
+    };
     entry.handle = handle;
     entry.timer = null;
 

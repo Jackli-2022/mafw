@@ -2,7 +2,8 @@ import * as v8 from 'v8';
 import type { GatewayConfig } from '../config';
 import { TimerHandle, TimerService } from '../core/timer-service';
 import { DiskSample, DiskState, DiskThresholds, StatfsFn, classifyDisk, defaultStatfs, sampleDisk } from './disk';
-import { HeapSample, HeapState, HeapThresholds, classifyHeap, sampleHeap } from './heap';
+import { HeapSample, HeapState, HeapThresholds, DEFAULT_HEAP_THRESHOLDS, classifyHeap, sampleHeap } from './heap';
+import { clampRatio, resolveSampleIntervalMs } from './settings';
 
 /**
  * E4-2/E4-3 资源压力状态机。
@@ -16,11 +17,13 @@ import { HeapSample, HeapState, HeapThresholds, classifyHeap, sampleHeap } from 
  * `unknown`（statfs 失败）只进快照，不进 `degraded` —— fail-open。
  * 只有 critical 进 `degraded`；warn 只用于观测。
  */
+export type DegradedCode = 'disk_critical' | 'heap_critical';
+
 export interface Pressure {
   disk: DiskState;
   heap: HeapState;
-  /** 机器码：`disk_critical` / `heap_critical`（只有 critical 才出现）。 */
-  degraded: string[];
+  /** 机器码：只有 critical 才出现；warn/unknown 不进降级集合。 */
+  degraded: DegradedCode[];
 }
 
 export interface GovernorSnapshot {
@@ -65,7 +68,7 @@ export function diskStateAfter(prev: DiskState, sample: DiskSample, thresholds: 
       // 升档无回滞：ok 直接按阈值分类（ok→warn 或 ok→critical 都立即）。
       return classifyDisk(free, thresholds);
     case 'warn':
-      if (free < thresholds.criticalFreeBytes) return 'critical';
+      if (free <= thresholds.criticalFreeBytes) return 'critical';
       if (free >= thresholds.warnFreeBytes * DISK_WARN_RECOVERY) return 'ok';
       return 'warn';
     case 'critical':
@@ -94,8 +97,8 @@ export function heapStateAfter(prev: HeapState, sample: HeapSample | null, thres
   }
 }
 
-function degradedFor(disk: DiskState, heap: HeapState): string[] {
-  const degraded: string[] = [];
+function degradedFor(disk: DiskState, heap: HeapState): DegradedCode[] {
+  const degraded: DegradedCode[] = [];
   if (disk === 'critical') degraded.push('disk_critical');
   if (heap === 'critical') degraded.push('heap_critical');
   return degraded;
@@ -124,22 +127,24 @@ export class ResourceGovernor {
     this.deps = deps;
   }
 
-  /** 立即采样一次并按 `resources.sampleIntervalMs` 注册 `governor:sample`。幂等。 */
-  start(): Promise<void> {
-    if (this.started) return Promise.resolve();
-    this.started = true;
+  /**
+   * 先注册定时器再置 `started`：注册失败（同名活 timer 已存在）时保持
+   * 未启动状态，调用方修掉冲突后还能重新 start。
+   */
+  async start(): Promise<void> {
+    if (this.started) return;
     this.ensureTimer(this.deps.config().sampleIntervalMs);
-    return this.sampleNow().then(() => undefined);
+    this.started = true;
+    await this.sampleNow();
   }
 
-  /** 停采样并清掉定时器；已采到的快照保留（供 shutdown 前读取）。 */
+  /** 停采样并清掉定时器；已采到的快照保留（供 shutdown 前读取）。幂等。 */
   stop(): void {
     this.started = false;
-    if (this.handle) {
-      this.handle.clear();
-      this.handle = null;
-    }
+    const handle = this.handle;
+    this.handle = null;
     this.registeredIntervalMs = 0;
+    handle?.clear();
   }
 
   /** 手动采样（也由定时器调用）。并发调用合并为同一次采样。 */
@@ -180,16 +185,17 @@ export class ResourceGovernor {
   private async doSample(): Promise<Pressure> {
     const cfg = this.deps.config();
     const prev = this.current;
+    const heapThresholds = this.heapThresholds(cfg.heap);
 
     const diskSample = await sampleDisk(
       this.deps.dataDir,
       this.deps.statfs ?? defaultStatfs,
       cfg.disk,
     );
-    const heapSample = this.readHeap(cfg);
+    const heapSample = this.readHeap(heapThresholds);
 
     const diskState = diskStateAfter(prev.disk, diskSample, cfg.disk);
-    const heapState = heapStateAfter(prev.heap, heapSample, cfg.heap);
+    const heapState = heapStateAfter(prev.heap, heapSample, heapThresholds);
     const pressure: Pressure = { disk: diskState, heap: heapState, degraded: degradedFor(diskState, heapState) };
 
     this.disk = diskSample.state === diskState ? diskSample : { ...diskSample, state: diskState };
@@ -205,24 +211,34 @@ export class ResourceGovernor {
     return pressure;
   }
 
-  private readHeap(cfg: GatewayConfig['resources']): HeapSample | null {
+  /** 越界比例夹到 (0,1)；critical 必须严格高于 warn（否则永远升不到 critical）。 */
+  private heapThresholds(configured: GatewayConfig['resources']['heap']): HeapThresholds {
+    const warnRatio = clampRatio(configured?.warnRatio, DEFAULT_HEAP_THRESHOLDS.warnRatio);
+    let criticalRatio = clampRatio(configured?.criticalRatio, DEFAULT_HEAP_THRESHOLDS.criticalRatio);
+    if (criticalRatio <= warnRatio) criticalRatio = Math.min(0.99, warnRatio + 0.05);
+    return { warnRatio, criticalRatio };
+  }
+
+  private readHeap(thresholds: HeapThresholds): HeapSample | null {
     try {
       const usage = this.deps.memoryUsage ? this.deps.memoryUsage() : process.memoryUsage();
       const limit = this.deps.heapLimit ? this.deps.heapLimit() : defaultHeapLimit();
-      return sampleHeap(usage, limit, cfg.heap);
+      return sampleHeap(usage, limit, thresholds);
     } catch {
       // 采样失败 fail-open：保留上一次 heap 样本/状态，不升级压力。
       return this.heap;
     }
   }
 
-  private ensureTimer(ms: number): void {
-    if (this.handle && this.registeredIntervalMs === ms) return;
+  private ensureTimer(ms: unknown): void {
+    const interval = resolveSampleIntervalMs(ms);
+    // 外部 disposeAll 或 handle 自己触发完时 active=false —— 自愈重注册。
+    if (this.handle?.active && this.registeredIntervalMs === interval) return;
     if (this.handle) this.handle.clear();
-    this.handle = this.deps.timers.every('governor:sample', ms, () => {
+    this.handle = this.deps.timers.every('governor:sample', interval, () => {
       void this.sampleNow();
     });
-    this.registeredIntervalMs = ms;
+    this.registeredIntervalMs = interval;
   }
 
   private emitIfChanged(prev: Pressure, next: Pressure): void {
@@ -230,8 +246,9 @@ export class ResourceGovernor {
     for (const listener of Array.from(this.listeners)) {
       try {
         listener(prev, { ...next, degraded: [...next.degraded] });
-      } catch {
-        // 监听器错误不得影响采样/降级状态。
+      } catch (err) {
+        // 监听器错误不得影响采样/降级状态，也不能吞掉其他监听器。
+        console.warn('[ResourceGovernor] onChange listener failed:', err);
       }
     }
   }

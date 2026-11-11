@@ -8,30 +8,32 @@ import * as path from 'path';
 import * as yaml from 'js-yaml';
 import { Config, GatewayConfig } from '../../src/config';
 
-const RESOURCE_DEFAULTS: GatewayConfig['resources'] = {
-  sampleIntervalMs: 30000,
-  disk: { warnFreeBytes: 2147483648, criticalFreeBytes: 536870912 },
-  heap: { warnRatio: 0.75, criticalRatio: 0.9 },
-  limits: {
-    httpConnections: 256,
-    sseClients: 64,
-    wsClients: 64,
-    voiceClients: 16,
-    terminalClients: 16,
-    pythonKernels: 4,
-    projects: 128,
-    sessions: 1000,
-    sessionRecordsPerProject: 200,
-  },
-  buffers: {
-    sseMaxFrames: 256,
-    sseMaxBytes: 1048576,
-    wsMaxBufferedBytes: 1048576,
-  },
-};
-
 function writeConfig(dataDir: string, body: unknown): void {
   fs.writeFileSync(path.join(dataDir, 'config.yaml'), yaml.dump(body), 'utf-8');
+}
+
+/**
+ * Per-leaf assertion (not whole-object) so a machine-level global config that
+ * happens to set one resource key cannot turn the defaults test red.
+ */
+function expectResourceDefaults(resources: GatewayConfig['resources']): void {
+  expect(resources.sampleIntervalMs).toBe(30000);
+  expect(resources.disk.warnFreeBytes).toBe(2147483648);
+  expect(resources.disk.criticalFreeBytes).toBe(536870912);
+  expect(resources.heap.warnRatio).toBe(0.75);
+  expect(resources.heap.criticalRatio).toBe(0.9);
+  expect(resources.limits.httpConnections).toBe(256);
+  expect(resources.limits.sseClients).toBe(64);
+  expect(resources.limits.wsClients).toBe(64);
+  expect(resources.limits.voiceClients).toBe(16);
+  expect(resources.limits.terminalClients).toBe(16);
+  expect(resources.limits.pythonKernels).toBe(4);
+  expect(resources.limits.projects).toBe(128);
+  expect(resources.limits.sessions).toBe(1000);
+  expect(resources.limits.sessionRecordsPerProject).toBe(200);
+  expect(resources.buffers.sseMaxFrames).toBe(256);
+  expect(resources.buffers.sseMaxBytes).toBe(1048576);
+  expect(resources.buffers.wsMaxBufferedBytes).toBe(1048576);
 }
 
 describe('config.resources', () => {
@@ -50,8 +52,8 @@ describe('config.resources', () => {
 
   test('defaults match spec §5', () => {
     const cfg = new Config(projectDir, dataDir);
-    expect(cfg.resources).toEqual(RESOURCE_DEFAULTS);
-    expect(cfg.raw.resources).toEqual(RESOURCE_DEFAULTS);
+    expectResourceDefaults(cfg.resources);
+    expectResourceDefaults(cfg.raw.resources);
   });
 
   test('partial user config deep-merges over defaults', () => {
@@ -109,7 +111,7 @@ describe('config.resources', () => {
     writeConfig(dataDir, { logging: { logLevel: 'info' } });
     cfg.reload();
 
-    expect(cfg.resources).toEqual(RESOURCE_DEFAULTS);
+    expectResourceDefaults(cfg.resources);
   });
 
   test('persistOverrides can update a single resource leaf', () => {

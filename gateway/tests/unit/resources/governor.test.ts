@@ -140,10 +140,12 @@ describe('ResourceGovernor', () => {
     const h = harness();
     await h.governor.start();
 
-    expect((await h.sample({ freeBytes: 2 * GiB })).disk).toBe('ok');
-    expect((await h.sample({ freeBytes: 2 * GiB - 1 })).disk).toBe('warn');
-    expect((await h.sample({ freeBytes: 512 * MiB })).disk).toBe('warn');
-    expect((await h.sample({ freeBytes: 512 * MiB - 1 })).disk).toBe('critical');
+    // ok → warn at free <= warn (spec §8: freeBytes <= warn)
+    expect((await h.sample({ freeBytes: 2 * GiB + 1 })).disk).toBe('ok');
+    expect((await h.sample({ freeBytes: 2 * GiB })).disk).toBe('warn');
+    // warn → critical at free <= critical
+    expect((await h.sample({ freeBytes: 512 * MiB + 1 })).disk).toBe('warn');
+    expect((await h.sample({ freeBytes: 512 * MiB })).disk).toBe('critical');
 
     // critical → warn only at critical * 1.5 (768 MiB)
     expect((await h.sample({ freeBytes: 700 * MiB })).disk).toBe('critical');
@@ -189,6 +191,19 @@ describe('ResourceGovernor', () => {
     const snap = h.governor.snapshot();
     expect(snap.disk.state).toBe('unknown');
     expect(snap.disk.error).toContain('statfs unavailable');
+  });
+
+  test('statfs failure while previously critical drops disk_critical (fail-open)', async () => {
+    const h = harness();
+    const critical = await h.sample({ freeBytes: 100 * MiB });
+    expect(critical.disk).toBe('critical');
+    expect(critical.degraded).toEqual(['disk_critical']);
+
+    h.state.diskFailure = new Error('statfs gone');
+    const degraded = await h.governor.sampleNow();
+    expect(degraded.disk).toBe('unknown');
+    expect(degraded.degraded).toEqual([]);
+    expect(h.governor.isDegraded()).toBe(false);
   });
 
   test('degraded lists only critical states', async () => {
@@ -269,5 +284,88 @@ describe('ResourceGovernor', () => {
     const [a, b] = await Promise.all([h.governor.sampleNow(), h.governor.sampleNow()]);
     expect(a).toBe(b);
     expect(h.state.statfsCalls).toBe(1);
+  });
+
+  test('clamps invalid heap ratios and keeps critical above warn', async () => {
+    const h = harness();
+    // critical below warn is invalid: normalized to warn=0.6 / critical=0.65
+    h.config.heap.warnRatio = 0.6;
+    h.config.heap.criticalRatio = 0.5;
+
+    expect((await h.sample({ heapUsed: 620 })).heap).toBe('warn');
+    expect((await h.sample({ heapUsed: 660 })).heap).toBe('critical');
+
+    // out-of-range ratios are clamped, never NaN/undefined
+    h.config.heap.warnRatio = 1.5;
+    h.config.heap.criticalRatio = NaN;
+    expect((await h.sample({ heapUsed: 990 })).heap).toBe('critical');
+  });
+
+  test('a throwing listener does not break sampling or other listeners', async () => {
+    const h = harness();
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const seen: Array<Pressure['disk']> = [];
+    h.governor.onChange(() => { throw new Error('listener boom'); });
+    h.governor.onChange((_prev, next) => seen.push(next.disk));
+
+    const first = await h.sample({ freeBytes: 1 * GiB });
+    expect(first.disk).toBe('warn');
+    expect(seen).toEqual(['warn']);
+
+    const second = await h.sample({ freeBytes: 3 * GiB });
+    expect(second.disk).toBe('ok');
+    expect(seen).toEqual(['warn', 'ok']);
+    expect(warnSpy).toHaveBeenCalled();
+
+    warnSpy.mockRestore();
+  });
+
+  test('stop() is idempotent and start() restarts sampling', async () => {
+    const h = harness();
+    await h.governor.start();
+    expect(h.state.statfsCalls).toBe(1);
+
+    h.governor.stop();
+    h.governor.stop();
+    expect(h.timers.stats().active).toBe(0);
+    await jest.advanceTimersByTimeAsync(60000);
+    expect(h.state.statfsCalls).toBe(1);
+
+    await h.governor.start();
+    expect(h.state.statfsCalls).toBe(2);
+    expect(h.timers.stats().byName['governor:sample']).toBe(1);
+    await jest.advanceTimersByTimeAsync(30000);
+    expect(h.state.statfsCalls).toBe(3);
+    h.governor.stop();
+  });
+
+  test('self-heals the governor:sample timer after an external disposeAll', async () => {
+    const h = harness();
+    await h.governor.start();
+    expect(h.timers.stats().byName['governor:sample']).toBe(1);
+
+    h.timers.disposeAll();
+    expect(h.timers.stats().active).toBe(0);
+
+    await h.governor.sampleNow();
+    expect(h.timers.stats().byName['governor:sample']).toBe(1);
+    await jest.advanceTimersByTimeAsync(30000);
+    expect(h.state.statfsCalls).toBe(3); // initial + manual + tick
+    h.governor.stop();
+  });
+
+  test('a failed start (duplicate timer) leaves the governor re-startable', async () => {
+    const h = harness();
+    const blocker = h.timers.every('governor:sample', 60000, () => {});
+
+    await expect(h.governor.start()).rejects.toThrow(/already registered/);
+    expect(h.state.statfsCalls).toBe(0);
+    expect(h.timers.stats().byName['governor:sample']).toBe(1);
+
+    h.timers.clear(blocker);
+    await h.governor.start();
+    expect(h.state.statfsCalls).toBe(1);
+    expect(h.timers.stats().byName['governor:sample']).toBe(1);
+    h.governor.stop();
   });
 });

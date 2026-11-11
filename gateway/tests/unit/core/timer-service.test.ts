@@ -153,4 +153,22 @@ describe('TimerService', () => {
     expect(svc.every('named', 1000, () => {}).name).toBe('named');
     expect(svc.after('once', 1000, () => {}).name).toBe('once');
   });
+
+  test('handle.active reflects clear / disposeAll / one-shot firing', () => {
+    const svc = new TimerService();
+
+    const every = svc.every('every', 1000, () => {});
+    expect(every.active).toBe(true);
+    every.clear();
+    expect(every.active).toBe(false);
+
+    const after = svc.after('after', 1000, () => {});
+    expect(after.active).toBe(true);
+    jest.advanceTimersByTime(1000);
+    expect(after.active).toBe(false);
+
+    const disposed = svc.every('disposed', 1000, () => {});
+    svc.disposeAll();
+    expect(disposed.active).toBe(false);
+  });
 });
