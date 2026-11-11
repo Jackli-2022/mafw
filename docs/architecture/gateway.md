@@ -810,9 +810,9 @@ D3 承诺内）：`initServices()`（1104 行）拆分到 `subsystems/*`、kerne
 | E4-1 | `config.resources`（采样间隔 / 磁盘·堆阈值 / 连接·进程·配额上限 / 缓冲上限）深合并进默认配置；`core/timer-service.ts` 提供命名 timer 台账（同名 `every` 抛错、默认 unref、`clear` 幂等、`disposeAll`）。`resources/` 只放台账（`sdk-session.ts` 移到 `runtime/`）。长驻 interval 迁入：`governor:sample`、`ws:ping`、`ws:device-cleanup`、`sse:ping:<uuid>`、`python:sweep`。 | **不是全进程 inventory**：`serveWatchdog` / `heartbeat` / `queueSweep` / `sessionSweep` / `discoveryHeartbeat` 等 kernel 自有 interval 与短命 retry/超时仍在本地；插件 loader 的 interval 留给后续波次。 |
 | E4-2 | `resources/disk.ts` 异步 `fs.statfs` 采样数据根（`config.resolvePath()`）：默认 warn 2 GiB / critical 512 MiB，30s 一次且启动立即采一次。回滞：critical→warn 需回到 **1.5× critical**（768 MiB），warn→ok 需回到 **1.1× warn**（2.2 GiB）；升级按阈值立即。`statfs` 失败 → `unknown` 且不降级（fail-open）。 | critical 动作见「降级矩阵」；media artifact 已有内存回退，不额外拦截。 |
 | E4-3 | `resources/heap.ts`：`memoryUsage()` + `v8.getHeapStatistics().heap_size_limit`，默认 warn 0.75 / critical 0.9，回滞 **0.05**（critical <0.85 才回 warn，warn <0.70 才回 ok）。与磁盘共用 `governor:sample`；采样抛错保留上一份样本/状态（fail-open）。 | 不在 E4 强制 GC；堆压力不阻断 `memory.add`（与写盘危险无关）。 |
-| E4-4 | `ConnectionTable`：HTTP socket 计数（`httpOpen`，仅观测）+ SSE/WS/voice/terminal 逻辑连接 lease（`release` 幂等）。HTTP **256** 走 `server.maxConnections` 硬帽；软帽 SSE/WS 各 64、voice/terminal 各 16；超限 SSE 503 `{code:'connection_limit'}`，WS/voice/terminal 在 upgrade 阶段 503（不升级）；`refused` 按 kind 计数；连接上限 `0`/负数 = 不限。 | HTTP 无软拒绝路径；FD 不设硬上限（`handles.fdCount` 仅 Linux 观测）。 |
+| E4-4 | `ConnectionTable`：HTTP socket 计数（`httpOpen`，仅观测）+ SSE/WS/voice/terminal 逻辑连接 lease（`release` 幂等）。HTTP **256** 走 `server.maxConnections` 硬帽；软帽 SSE/WS 各 64、voice/terminal 各 16；超限 SSE 503 `{code:'connection_limit'}`，WS/voice/terminal 在 upgrade 阶段 503（不升级）；`refused` 按 kind 计数；连接上限 `0`/负数 = 不限。`connections.sse` 只覆盖 `/api/events` 与 plugin-web SSE（`/api/plugins/:name/events`）；**TTS `/api/tts/stream` 与 MCP SSE keepalive 不在连接表内**。 | HTTP 无软拒绝路径；FD 不设硬上限（`handles.fdCount` 仅 Linux 观测）。 |
 | E4-5 | `SseBoundedWriter`：`res.write` 返回 false → paused 入队，`drain` 按序 flush；队列超 `sseMaxFrames`（256）或 `sseMaxBytes`（1 MiB）→ `destroy()` + overflow 计数。WS 广播前 `bufferedAmount > wsMaxBufferedBytes`（1 MiB）→ `terminate()` + 移出广播集。计数聚合为**平铺** `buffers`（含 `sseWriteErrors`）。 | 断开慢客户端是安全动作：SSE 用 `since`/Last-Event-ID 回放，WS live-only 重连走 REST 快照（E2 裁决）。缓冲上限的 `0` = 回退默认值，不是不限。 |
-| E4-6 | `ProcessLedger`：python / llamacpp / serve 三类条目，`release` 幂等，`disposeAll` 走 close 钩子（best-effort）。Python 槽位是**会话作用域逻辑条目**，并发帽默认 4：满帽先驱逐超过 10 分钟未用且非 busy 的内核，仍满抛 `QuotaExceededError('python_kernels')` → 429；busy 内核永不驱逐，崩溃条目留到 sweep/TTL 1h。llamacpp 记录真实 child pid。serve 只在 `serveInstance` 真存在时登记一条 `owned:false` 逻辑条目。 | 条目数 ≠ 子进程数（python 可能无 pid）；serve 无 close 钩子，gateway **不声称**能 kill adapter 的进程；真实状态以 `serve.running` 为准。 |
+| E4-6 | `ProcessLedger`：python / llamacpp / serve 三类条目，`release` 幂等，`disposeAll` 走 close 钩子（best-effort）。Python 槽位是**会话作用域逻辑条目**（`owned:true`，gateway 托管内核），并发帽默认 4：满帽先驱逐超过 10 分钟未用且非 busy 的内核，仍满抛 `QuotaExceededError('python_kernels')` → 429；busy 内核永不驱逐，崩溃条目留到 sweep/TTL 1h。llamacpp 记录真实 child pid 且 `owned:true`。serve 只在 `serveInstance` 真存在时登记一条 `owned:false` 逻辑条目。 | 条目数 ≠ 子进程数（python 可能无 pid）；serve 无 close 钩子，gateway **不声称**能 kill adapter 的进程；`serve.running` 就是 `!!serveInstance`（不额外探测进程存活）。 |
 | E4-7 | `QuotaService`：projects 128（`/register`，同目录重复注册放行）、sessions 1000 与 `sessionRecordsPerProject` 200（`SdkSessionResource.create` / `registerExternal`，按 `projectID` / `directory` 分组）。超限统一 429 `{code:'quota_exceeded', resource, limit, current}`；watcher 自动注册超限只 log + skip。 | **worktree-before-quota**：带 worktree 的 `POST /api/session` 先建 worktree/branch 再进 quota 检查，被拒会留下空 worktree；内部 manager/lead 会话失败按既有 catch 语义降级为 log。`activeGoals` 不进配额。 |
 | E4-8 | `GET /api/kernel/stats`（catalog `kernel.stats`，internal、带 200 schema）：pressure/disk/heap/connections/buffers/timers/processes/quotas/handles/scheduler/events/serve。provider 缺席时 fail-open（`heap:null`、disk `unknown`、events 零值、handles 空表），只有 provider 自身抛错才 500。 | 新的 wire 契约：`buffers` 平铺、quotas 三键必填、`limit 0 = 不限`、`fdCount` Linux-only、`serve.owned` 与 entries 的 `owned` 两个口径；其余 op 仍无 response schema。 |
 | E4-9 | 收口：本节 + release 记录 + 全量门禁（gateway / SDK / desktop / TUI / analyzer / kernel-split / 契约产物新鲜度）。 | deferred：见下「已知延后」。 |
@@ -839,7 +839,7 @@ resources:
 
 - 归一化单点在 `resources/settings.ts`：`limitOf`（连接/配额，`0`/负数/非有限 = 不限）、
   `resolveCap`（缓冲区，`0` = 回退默认，绝不无界）、`resolveSampleIntervalMs`、`clampRatio`；
-  配额出口另走 `sanitizeLimit`（负数/非有限 → `0`，wire 上统一表达"不限"）。
+  配额出口另走 `sanitizeLimit`（有限正值向下取整、负数/非有限 → `0`，wire 上统一表达"不限"）。
 - 所有组件通过 **live getter** 读配置，不缓存配置对象；`config.reload()` 后下一次检查/采样即生效。
   唯一延迟是 governor 的采样间隔：新 `sampleIntervalMs` 在**下一次采样**时才重注册 timer，
   因此最长滞后一个旧间隔（默认 30s）。
@@ -884,8 +884,10 @@ kernel 的 watchdog/heartbeat/queue-sweep/session-sweep 等自有 interval 与�
   `buffers`（平铺：`sseOverflows/sseDropped/sseWriteErrors/sseQueuedFrames/sseQueuedBytes/wsDropped`）、
   `timers{active,byName}`、`processes{total,byKind,entries}`、`quotas`、`handles{total,byType,fdCount?}`、
   `scheduler{queued,running,byPriority}`、`events{headSeq,appendFailures}`、`serve{running,owned}`。
+- `disk.error` 是**机器码**（有 `err.code` 用 `err.code`，如 `ENOENT`；否则 `'statfs_failed'`），
+  不是原始 message——后者带数据根路径，不得出现在 stats wire 上。
 - `quotas` **三键必填**（`projects` / `sessions` / `sessionRecordsPerProject`），builder 为缺键 provider 补齐；
-  `limit` 只输出有限非负值，`0` = 不限（`Infinity`/`NaN`/负数在 JSON 里不可用，出口统一归一化）。
+  `limit` 只输出有限非负整数（正值向下取整），`0` = 不限（`Infinity`/`NaN`/负数在 JSON 里不可用，出口统一归一化）。
 - `buffers` 未来只许加键，客户端必须忽略未知键；`handles.fdCount` 只在 Linux 出现（读 `/proc/self/fd` 失败静默）。
 - `serve.owned` 回答"gateway 是否拥有 serve 进程"（`serveOwned`，取决于本进程是否 spawn 了 serve），
   `processes.entries[].owned` 回答"该台账条目是否由 gateway 托管关闭"（python/llamacpp `true`，serve 逻辑条目 `false`）；

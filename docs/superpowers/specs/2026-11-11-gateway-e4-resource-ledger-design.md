@@ -75,6 +75,8 @@ class TimerService {
 `resources/disk.ts`：`sampleDisk(path, statfsFn)` → `{ totalBytes, freeBytes, state: 'ok'|'warn'|'critical'|'unknown', error? }`。
 
 - 采样 `config.resolvePath()`（`~/.mafw` 数据根），异步 `fs.statfs`；失败 → `unknown`，**不降级**（fail-open）。
+  `error` 只放机器码（有 `err.code` 用 `err.code`，否则 `'statfs_failed'`），**不得转发原始 message**
+  （带数据根路径，会经 `/api/kernel/stats` 泄露）。
 - 默认阈值：warn **2 GiB** 可用、critical **512 MiB** 可用；每 **30s** 采样一次，启动时立即采一次。
 - 带回滞：critical 需回到 `critical × 1.5`（768 MiB）才降级为 warn；warn 需回到 `warn × 1.1`（2.2 GiB）才回 ok；ok→warn→critical 按阈值立即升级。
 - critical 动作：
@@ -136,14 +138,14 @@ class ProcessLedger {
 
 - Python：`SessionKernels` 注入 ledger + `maxKernels`（默认 4）。
   - 新建内核前若已达上限：先驱逐 `lastUsed` 超过 10 分钟的空闲内核；仍满 → 抛 `QuotaExceededError('python_kernels', limit, current)`，`POST /api/python/execute` 映射 429。
-  - 台账条目是**会话作用域的逻辑槽位**（`kind:'python'` + `sessionId`），不代表"此刻有活 pid"：
+  - 台账条目是**会话作用域的逻辑槽位**（`kind:'python'` + `sessionId` + `owned:true`），不代表"此刻有活 pid"：
     内核进程崩溃/退出后条目仍保留到下一次 `sweep`（TTL 1h）或 `disposeAll`，期间 `pid` 可能缺省
     （`KernelManager.getPid()` 未启动/已退出时为 `undefined`）。客户端不得把条目数当作子进程数。
   - `disposeAll` 释放全部并清 `python:sweep`（E4-1 命名 timer）。
-- LlamaCpp：spawn 时 register（`pid` 可取），exit/stop 时 release；不设并发帽（单例）。
+- LlamaCpp：spawn 时 register（`pid` 可取，`owned:true`），exit/stop 时 release；不设并发帽（单例）。
 - Runtime serve：adapter 拥有进程，E4 只在 gateway 侧记录逻辑条目（`serve`，最多 1 条），不假装能 kill 它；
   条目 `owned:false`，**只在 `serveInstance` 真的存在时**登记（能力存在 ≠ 进程存在，见 §4.8 `serve` 与
-  `processes.entries[].owned` 的口径区分）。进程是否在跑以 `/api/kernel/stats` 的 `serve.running` 为准。
+  `processes.entries[].owned` 的口径区分）。`serve.running` 就是 `!!serveInstance`（不额外探测进程存活）。
 - `disposeAll` 在 kernel shutdown 调用（先 `serveLedger.release()`），确保测试不留子进程。
 
 ### E4-7 项目/会话配额
@@ -204,13 +206,14 @@ class QuotaService {
 
 - `buffers` 曾在本节画成嵌套 `{ sse: { queuedFrames, ... } }` 示意；实现以 `BufferCounters.snapshot()` 的
   平铺口径为准（该聚合在 E4-5 已定稿，嵌套形状会丢掉 `sseWriteErrors`）。这是 wire 现状，不再回退。
-- `limit` / `limits.*` 的 **0（含负数）= 不限**，不是"配额为 0"；`limit` 只输出有限数
-  （`Infinity`/`NaN` 在 JSON 里会变 `null`，出口统一归一化为 0）。
+- `limit` / `limits.*` 的 **0（含负数）= 不限**，不是"配额为 0"；`limit` 只输出有限整数
+  （有限正值向下取整，与 `limitOf` 的执行值一致；`Infinity`/`NaN` 在 JSON 里会变 `null`，出口统一归一化为 0）。
 - `handles.fdCount` 只在 Linux 读 `/proc/self/fd` 时出现（schema Optional，读失败静默）；
   Windows/macOS 客户端不得假设该键存在。
 - `serve.owned` 与 `processes.entries[].owned` 是两个口径：
-  - `serve.owned` 回答"gateway 是否拥有 runtime serve 进程"（当前恒 `false`——adapter 拥有进程，
-    gateway 只做 bookkeeping；`running` 表示此刻是否真的有一个 serve 实例）；
+  - `serve.owned` 回答"gateway 是否亲手 spawn 了 runtime serve 进程"（`serveOwned`）：
+    gateway 受管启动 / 重启时为 `true`（示例 `true` 即受管启动），external / adopted serve 为 `false`；
+    `running` 表示此刻是否存在 serve 实例（`!!serveInstance`，不额外探测进程存活）；
   - `processes.entries[].owned` 回答"台账条目对应的进程是否由 gateway 托管关闭"（python/llamacpp 为
     `true`，serve 逻辑条目为 `false`）。两者不得互相推导。
 - `processes.byKind.serve` 只在 serve 实例存在时出现（能力-only 不登记）。
