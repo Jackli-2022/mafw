@@ -7,6 +7,7 @@ import {
   type ExperienceActionId,
 } from '../../../src/experience/experience-contract';
 import {
+  EXPERIENCE_ACTION_OPERATIONS,
   EXPERIENCE_ACTION_SURFACES,
   projectExperienceActions,
 } from '../../../src/experience/experience-projector';
@@ -105,10 +106,10 @@ describe('Experience contract', () => {
 
   it('unsupported and busy are distinct', () => {
     const noAccess = projectExperienceActions(null, { busy: false });
-    expect(noAccess['branch.fork']).toEqual({ supported: false, enabled: false, reason: 'unsupported' });
+    expect(noAccess['branch.fork']).toEqual({ supported: false, enabled: false, reason: 'unsupported', operationId: 'session.fork' });
 
     const busy = projectExperienceActions(fakeAccessAll(), { busy: true });
-    expect(busy['branch.fork']).toEqual({ supported: true, enabled: false, reason: 'busy' });
+    expect(busy['branch.fork']).toEqual({ supported: true, enabled: false, reason: 'busy', operationId: 'session.fork' });
   });
 
   it('projects unsupported actions explicitly, never as silently enabled', () => {
@@ -116,7 +117,12 @@ describe('Experience contract', () => {
     for (const id of EXPERIENCE_ACTION_IDS) {
       // 纯本地动作没有 runtime surface 依赖，不受「无能力」影响。
       if (EXPERIENCE_ACTION_SURFACES[id].length === 0) continue;
-      expect(actions[id]).toEqual<ActionDescriptor>({ supported: false, enabled: false, reason: 'unsupported' });
+      expect(actions[id]).toEqual<ActionDescriptor>({
+        supported: false,
+        enabled: false,
+        reason: 'unsupported',
+        ...(EXPERIENCE_ACTION_OPERATIONS[id] ? { operationId: EXPERIENCE_ACTION_OPERATIONS[id] } : {}),
+      });
     }
     expect(actions['background.jobs']).toMatchObject({ supported: true, enabled: true });
   });
@@ -177,6 +183,7 @@ describe('Experience contract', () => {
     expect(actions['branch.revert']).toEqual({
       supported: true,
       enabled: true,
+      operationId: 'session.revert',
       semantics: { files: false, undo: true },
     });
   });
@@ -187,6 +194,7 @@ describe('Experience contract', () => {
     expect(idle).toEqual({
       supported: true,
       enabled: true,
+      operationId: 'session.suspend',
       semantics: { suspend: true, resume: true, discard: true },
     });
     // 适配器没声明 requireBusy 时不得凭空注入（opencode 不声明，行程由服务端 409 兜底）。
@@ -201,6 +209,7 @@ describe('Experience contract', () => {
     expect(projectExperienceActions(pi, { busy: true })['run.control']).toEqual({
       supported: true,
       enabled: true,
+      operationId: 'session.suspend',
       semantics: { suspend: true, resume: true, discard: true, requireBusy: true },
     });
 
@@ -219,16 +228,16 @@ describe('Experience contract', () => {
   it('reflects directory-level worktree availability from git facts', () => {
     const access = fakeAccess({ 'session.worktree': true });
     expect(projectExperienceActions(access, { worktree: { supported: true } })['session.worktree'])
-      .toEqual({ supported: true, enabled: true });
+      .toEqual({ supported: true, enabled: true, operationId: 'session.create' });
     // 目录不是 git 工作区：功能面仍在（换项目可用），当前不可执行。
     expect(projectExperienceActions(access, { worktree: { supported: false, reason: 'missing-data' } })['session.worktree'])
-      .toEqual({ supported: true, enabled: false, reason: 'missing-data' });
+      .toEqual({ supported: true, enabled: false, reason: 'missing-data', operationId: 'session.create' });
     // runtime 不满足目录会话契约：功能面不存在。
     expect(projectExperienceActions(access, { worktree: { supported: false, reason: 'unsupported' } })['session.worktree'])
-      .toEqual({ supported: false, enabled: false, reason: 'unsupported' });
+      .toEqual({ supported: false, enabled: false, reason: 'unsupported', operationId: 'session.create' });
     // 未解析目录 / 无 session.create surface 时不伪造支持。
     expect(projectExperienceActions(fakeAccess(), { worktree: { supported: true } })['session.worktree'])
-      .toEqual({ supported: false, enabled: false, reason: 'unsupported' });
+      .toEqual({ supported: false, enabled: false, reason: 'unsupported', operationId: 'session.create' });
   });
 
   it('does not turn worktree availability into a busy reason', () => {
@@ -272,7 +281,7 @@ describe('Experience contract', () => {
 
   it('lights up terminal attach only from the neutral PTY surface', () => {
     const actions = projectExperienceActions(fakeAccessAll(), {});
-    expect(actions['terminal.attach']).toEqual({ supported: true, enabled: true });
+    expect(actions['terminal.attach']).toEqual({ supported: true, enabled: true, operationId: 'terminal.connectTicket' });
 
     const withSemantics = {
       can: (id: string) => id === 'terminal.pty',
@@ -282,10 +291,11 @@ describe('Experience contract', () => {
     expect(projectExperienceActions(withSemantics, {})['terminal.attach']).toEqual({
       supported: true,
       enabled: true,
+      operationId: 'terminal.connectTicket',
       semantics: { persistent: true, protocol: 'mafw-terminal/1' },
     });
     expect(projectExperienceActions(fakeAccess({ 'terminal.pty': false }), {})['terminal.attach'])
-      .toEqual({ supported: false, enabled: false, reason: 'unsupported' });
+      .toEqual({ supported: false, enabled: false, reason: 'unsupported', operationId: 'terminal.connectTicket' });
   });
 
   it('only references declared runtime surfaces (pending protocol excepted)', () => {
@@ -313,7 +323,7 @@ describe('Experience contract', () => {
     expect(actions['mcp.config.write']).toMatchObject({ supported: true, enabled: true });
     // 缺一个 surface 就整体不支持，避免半可用配置面。
     const partial = projectExperienceActions({ can: (id: string) => id !== 'mcp.config.restore', semantics: () => ({}) } as any, {});
-    expect(partial['mcp.config.write']).toEqual({ supported: false, enabled: false, reason: 'unsupported' });
+    expect(partial['mcp.config.write']).toEqual({ supported: false, enabled: false, reason: 'unsupported', operationId: 'mcp.configApply' });
   });
 
   it('projects background only when the neutral surface exists', () => {
@@ -322,7 +332,7 @@ describe('Experience contract', () => {
       semantics: () => ({}),
     } as any;
     expect(projectExperienceActions(access, { sessionID: 's1' })['session.background'])
-      .toEqual({ supported: true, enabled: true });
+      .toEqual({ supported: true, enabled: true, operationId: 'session.background' });
   });
 
   it('projects steer boundary from adapter semantics', () => {
@@ -334,6 +344,7 @@ describe('Experience contract', () => {
     expect(actions['prompt.steer']).toEqual({
       supported: true,
       enabled: true,
+      operationId: 'session.prompt',
       semantics: { boundary: 'tool', queue: true },
     });
   });
@@ -389,6 +400,7 @@ describe('GET /api/experience/actions', () => {
       supported: true,
       enabled: false,
       reason: 'missing-data',
+      operationId: 'session.create',
     });
   });
 
