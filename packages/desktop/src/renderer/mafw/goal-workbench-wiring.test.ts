@@ -8,6 +8,8 @@ const prioritySrc = readFileSync(join(import.meta.dirname, "components/WorkPrior
 const goalDetailSrc = readFileSync(join(import.meta.dirname, "components/GoalDetailPanel.tsx"), "utf8")
 const mafwShellSrc = readFileSync(join(import.meta.dirname, "MafwShell.tsx"), "utf8")
 const chatPaneSrc = readFileSync(join(import.meta.dirname, "components/ChatPane.tsx"), "utf8")
+const goalUserHeroSrc = readFileSync(join(import.meta.dirname, "components/GoalUserHero.tsx"), "utf8")
+const mafwCssSrc = readFileSync(join(import.meta.dirname, "mafw.css"), "utf8")
 
 test("project Goal list uses the user-facing summary projection", () => {
   assert.match(workOverviewSrc, /summarizeGoalForUser/)
@@ -81,4 +83,19 @@ test("ChatPane exposes Return to Lead only through the shared context rule", () 
   assert.match(chatPaneSrc, /返回项目 Lead/)
   assert.match(chatPaneSrc, /class="mafw-return-lead"/)
   assert.doesNotMatch(chatPaneSrc, /<button\b/)
+})
+
+test("Goal user-view styles use theme tokens and no mounted display:none", () => {
+  for (const className of [
+    "mafw-goal-user-hero",
+    "mafw-goal-user-status",
+    "mafw-goal-user-progress",
+    "mafw-goal-user-next",
+    "mafw-goal-technical",
+    "mafw-return-lead",
+  ]) {
+    assert.match(mafwCssSrc, new RegExp(`\\.${className}\\s*\\{[^}]*var\\(--`), `${className} must use theme tokens`)
+  }
+  assert.doesNotMatch(mafwCssSrc, /\.mafw-goal-technical\s*\{[^}]*display\s*:\s*none/)
+  assert.doesNotMatch(goalUserHeroSrc, /<(button|input)\b/)
 })

@@ -7622,6 +7622,78 @@ html[data-theme="light"] body {
 .mafw-goal-head-main .mafw-card-title { margin-top: 3px; font-size: 22px; font-weight: 650; letter-spacing: -0.02em; }
 .mafw-goal-id { margin-top: 4px; color: var(--text-4); font-family: var(--font-data); font-size: 10.5px; }
 .mafw-goal-meta { gap: 6px; margin-bottom: 14px; }
+.mafw-goal-user-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 14px;
+  border: 1px solid var(--accent-border);
+  border-left-width: 3px;
+  border-radius: var(--r-lg);
+  background: var(--bg-raised);
+}
+.mafw-goal-user-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--text-3);
+  font-size: 11px;
+}
+.mafw-goal-user-state {
+  padding: 2px 8px;
+  border: 1px solid var(--accent-border);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.mafw-goal-user-owner,
+.mafw-goal-user-revision { color: var(--text-3); }
+.mafw-goal-user-progress {
+  display: grid;
+  grid-template-columns: auto auto minmax(80px, 1fr);
+  align-items: center;
+  gap: 8px;
+  color: var(--text-2);
+  font-size: 11px;
+}
+.mafw-goal-user-percent { color: var(--text-3); font-variant-numeric: tabular-nums; }
+.mafw-goal-user-progress-track {
+  display: block;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--bg-inset);
+}
+.mafw-goal-user-progress-value {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+.mafw-goal-user-next {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--text-3);
+}
+.mafw-goal-user-actions { margin-top: -4px; }
+.mafw-goal-technical {
+  margin: 14px 0;
+  padding: 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--bg-inset);
+}
+.mafw-return-lead {
+  flex: none;
+  white-space: nowrap;
+  color: var(--text-2);
+}
 .mafw-goal-chip {
   display: inline-flex;
   align-items: center;
