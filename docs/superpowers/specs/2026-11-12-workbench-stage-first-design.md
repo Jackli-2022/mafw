@@ -37,9 +37,13 @@ MAFW Desktop 已经具备 Project、Lead / Tech Lead、Goal、Pod、文件预览
 以下为本文推荐、但尚未被用户逐条确认的决定，builder 可以按此规划，但应在实现前标注为“推荐默认”：
 
 - 新 Goal 默认授权级别 **3（批准后执行）**；可逆、低风险、范围明确的工作可显式升到 **4（授权内自主）**；**5（自决）永远不允许**。
+- 现有 Goal 形态映射：`standard → 3`，`quick → 4`（窄范围、可逆、跳过独立 Reviewer），`standing → 4`（预批准 standing mandate；当前 gateway 仍返回 501，设计先保留映射）。高风险（merge / delete / schema / 安全 / 保护分支）始终升级给人。
 - 世界身份使用稳定 id（仓库内 marker 或 remote + 初始 commit 派生），路径只是位置。
 - 保留一个**可打开的世界总览**作为兜底 subject，但默认不打开；没有焦点时优先进入取景器。
 - 正式决定只给不可逆、高成本、歧义或阻塞的事项做卡片；其余走“带假设的委托”。
+- `discussing` Goal 草稿可以按现有 P0 流程直接创建；**进入执行前**必须看到委托单预览。这样既不回退“无创建前确认”，也不让 Agent 在未确认的情况下开始工作。
+- 工作台焦点变化**不静默切换 Chat 线程**；Lead → Tech Lead 的 handoff、或用户显式点“与 Tech Lead 讨论”才切换。检查 Goal 变更集时，Chat 保持原线程，composer 显示当前 scope chip 和切换入口。
+- 用户模式（导演 / 协作者 / 审阅者 / 操作者 / 所有者）从表面与意图派生，不是持久全局状态；模式改变 Agent 行为与可用动作，不改变底层权限。
 
 ## 3. 目标
 
@@ -170,7 +174,8 @@ UI 不拥有独立状态；框、台、械都是焦点栈的投影。任何面�
 | World 总览 | worldId | orient | world · state | 继续 / 需要你 / 浏览 |
 | Goal 总览 | goalId | orient | world / goal | 提问 / 计划 / 结果 |
 | 文件 | root + rel + version | read | world / scope / version | 编辑 / 批注 / 变更 / 引用 |
-| 变更集 | goalId + revision | changes | world / goal / rev | 队列 / 证据 / 审阅 / 决定 |
+| 变更集（项目） | worldId + baseline（HEAD） | changes | world / project / baseline | diff / 批注 / 引用 |
+| 变更集（Goal） | goalId + revision | changes | world / goal / rev | 队列 / 证据 / 审阅 / 决定 |
 | 评审项 | id + anchor | decide | world / goal / rev / file | 解决 / 重开 / 回应 |
 | 证据 | id | evidence | world / goal / rev | 打开 / 对照 |
 | 网页 | url | interact | world / external | 导航 / 截取 / 引用 |
@@ -178,6 +183,8 @@ UI 不拥有独立状态；框、台、械都是焦点栈的投影。任何面�
 | 插件 | pluginId + surface | interact | world / plugin | 插件动作 |
 
 **项目不在这个表里。** 项目不是 subject，它是 frame。世界总览是 subject，但它是兜底取景器，不是项目页面。
+
+项目主目录的直接编辑产生“项目变更集” subject，baseline 为 HEAD。它没有 Goal 归属，不进入 Goal 评审项状态机；只有人显式交给 Lead / Goal 时才进入委托与验收闭环。这延续 `2026-11-11-project-agent-workbench-experience-design.md` §7.6。
 
 ### 9.2 框
 
@@ -286,6 +293,8 @@ MAFW / Goal X · rev 3 / 变更集 · 12 files · PASS
 
 ## 10. Chat：决定面
 
+**Thread 与 Episode 的既有映射。** 本文的 thread 就是现有模型：Lead thread（每个项目一条）+ Tech Lead thread（每个 Goal / revision 一条）。`lead_topic` 仍是 handoff provenance，不是新的用户可见话题系统。本文的 episode 是**视图分组**：由用户显式标记或 Agent 提议、人确认的一组消息 / 决定，用来把“围绕一个问题的讨论”折叠成决定记录；它不是 topic 的替代，也不改变 session / ContextManifest。参见 `2026-11-10-lead-techlead-thread-handoff-design.md`。
+
 ### 10.1 决定的定义
 
 一个决定 = 在不确定性下，从多个可能未来里承诺一个。至少包含：
@@ -334,6 +343,8 @@ MAFW / Goal X · rev 3 / 变更集 · 12 files · PASS
 - **Episode 按问题分组**，不按时间分组；关闭的 episode 折叠成一行决定记录。
 - 每条决定记录链接回产生它的消息、引用、变更和 Goal。
 
+**决定板的数据来源。** 决定板不是新的真相库，而是现有 attention / approval / review / acceptance 记录的聚合投影：`/api/attention` 的 review / failed / pending 项、plan 批准、风险确认、Goal accept、评审项状态、direction 决定。rail 的 attention badge 仍是全局入口；决定板是 Chat 内的同源投影。两者必须读同一个聚合，不允许出现两套“需要你”计数。历史 Goal 不需要回填；能从现有记录派生的就派生，不能派生的只显示当前状态。
+
 ### 10.5 Composer
 
 - **讨论**：默认；不承诺，允许发散。
@@ -341,7 +352,7 @@ MAFW / Goal X · rev 3 / 变更集 · 12 files · PASS
 - **委托**：人确认后创建 / 绑定 Goal，带 scope、预期、验收、授权、证据计划。
 - **解决**：人解决评审项 / 决定；Agent 不能代做。
 
-“发送”和“委托”必须是两个动作。委托前必须看到委托单预览。
+“发送”和“委托”必须是两个动作。`discussing` Goal 草稿可以按 P0 直接创建；“进入执行”（NodeDriver 启动 / 工作开始）前必须看到委托单预览并获得人确认。这样既不回退“无创建前确认”，也不让 Agent 在未确认的情况下开始工作。
 
 ### 10.6 委托单
 
@@ -422,6 +433,18 @@ Agency = Mandate × Discretion × Escalation × Audit
 
 推荐默认：新 Goal 从 3 开始；可逆、低风险、范围明确的工作显式升到 4；5 永远保留给人。
 
+与现有 Goal 形态的映射：
+
+| Goal 形态 | 授权级别 | 含义 |
+|---|---|---|
+| `standard` | 3 | 先批准计划，再在计划内执行；Reviewer / Goal Eval 按现有流程。 |
+| `quick` | 4 | 窄范围、可逆、单 task；跳过独立 Reviewer，结果 `UNREVIEWED`；人仍验收。 |
+| `standing` | 4 | 预批准 standing mandate；高风险动作升级；当前 gateway 仍返回 501，设计先保留映射。 |
+
+`quick` 仍受现有 gateway 约束：`requiresApproval` 高风险拒绝 quick、`planReview: 'manual'` 拒绝 quick、`MAFW_GOAL_MODES=0` 只允许 standard。
+
+执行层：本轮不新增 runtime policy engine；授权级别通过现有 `goalMode` + plan 批准 + 评审 / 验收门 + 工具权限表达。UI / prompt 负责显示级别、升级与 human-only 边界。若需要强制拦截“计划外写 / 删除 / 网络”，作为单独工作流，不在本设计里假装已实现。
+
 ### 11.5 用户的五种模式
 
 | 模式 | 问题 | 表面 | 权力 |
@@ -435,6 +458,8 @@ Agency = Mandate × Discretion × Escalation × Audit
 同一个人，不同模式，权力不同。UI 应显示当前模式，Agent 应随之改变行为。
 
 协作是对称的，产出理解；委托是不对称的，产出工作。Chat 必须支持两种模式，并显示当前模式。
+
+模式从表面与意图派生，不是持久全局状态：Chat 的讨论 / 提议对应导演 / 协作者，Workbench 的审阅 / 操作镜头对应审阅者 / 操作者，Decision 镜头对应所有者。模式改变 Agent 的 prompt / 可用动作，不改变 mandate 或权限；权限仍由角色、授权级别和 human-only 边界决定。
 
 ### 11.6 一个负责人
 
@@ -519,12 +544,12 @@ Agent 失败模式与对策：
 
 ## 12. 交互场景
 
-1. **打开世界**：恢复上次焦点；没有焦点时进取景器 / 世界总览。项目首页不是默认目的地。
+1. **打开世界**：恢复上次焦点；没有焦点时进取景器 / 世界总览。世界总览包含继续 / 需要你 / 全部 Goal / standing / 团队属性 / New Goal；文件与最近内容在取景器。项目首页不是默认目的地。
 2. **读文件**：框显示 world / scope / file / version / state；台是内容；械是批注与动作；无 context 标题栏。
 3. **换镜**：读文件 → 变更 / 审阅 / 决定；对象不变，台和械变化；栈不增加。
 4. **跟随对象**：变更集点文件、评审项点锚点；push；框更新；返回恢复。
 5. **Goal 审阅**：Goal 总览 → 变更集 → 审阅镜头 → 评审项 → 解决 / 重开；队列在械；返回逐层恢复。
-6. **决定**：Chat 决定板 → 提议 → 委托单 → 人确认 → Goal；Agent 不能自己验收。
+6. **决定 / 检查**：Chat 决定板 → 提议 → 委托单 → 人确认 → Goal；Agent 不能自己验收。打开 Goal 变更集不静默切换 Chat；Chat 保持当前线程，composer 显示 scope chip 和显式“与 Tech Lead 讨论”入口。
 7. **执行**：Goal 框显示 running / 3 of 7；Goal 总览展开进度；执行不覆盖框。
 8. **分屏**：同一框，两个 subject；副对象默认只读；关闭分屏不影响主对象。
 9. **浏览器 / 终端**：瞬态 subject；框标 external / terminal；不进项目树；可保留但不参与验收。
@@ -545,6 +570,11 @@ Agent 失败模式与对策：
 - `packages/desktop/src/renderer/mafw/editor-drafts.ts`：草稿 / mtime / EOL。
 - `packages/desktop/src/renderer/mafw/recent-content.ts`：最近内容。
 - `packages/desktop/src/renderer/mafw/MafwShell.tsx`：context、scope、intent、split、返回、插件 surface 的编排。
+
+映射约束：
+
+- Lead thread / Tech Lead thread / `lead_topic` / `ChatPane` 的现有模型保留；episode 只是在消息与决定上做视图分组，不新建会话模型。Tech Lead thread 仍按 Goal / revision 一条。
+- `ProjectWorkView` 的非文件部分（New Goal、standing、团队属性、审批、全部 Goal）迁入世界总览 subject 或 rail；文件与最近内容迁入取景器。世界总览是可选 subject，不是默认页。
 
 复用要求：
 
@@ -609,10 +639,14 @@ builder 可以调整顺序，但不得改变 §6 的硬约束与 §15 的验收�
 - 框的一行 / 两行布局、状态徽标优先级、窄窗降级。
 - 取景器的查询、排序、分组、键盘交互。
 - 决定记录的存储位置：新表、Goal 字段、现有 approval / review 模型扩展，或组合。
+- 决定板 / rail badge 的聚合实现：扩展现有 `/api/attention`，还是新增聚合端点；必须保持单一计数来源。
+- `discussing` 草稿与“进入执行”在 Goal 状态机中的表达；不得回退“无创建前确认”，也不得让未确认的 NodeDriver 启动。
 - Chat episode 的识别是 Agent 提议、显式标记，还是混合。
 - 委托单是 Goal 的投影视图，还是新建轻量对象；不得改变权限语义。
 - 世界稳定 id 的 marker 格式与迁移策略。
 - 旧 `content-scope-state` / `editor-drafts` key 的迁移与回退。
+- 项目变更集的 baseline、diff 聚合与 UI；与 Goal 变更集共用 viewer。
+- 世界总览 subject 的具体内容与排序；文件与最近内容必须在取景器可达。
 - 分屏是否限制同世界（推荐限制；跨世界对照另做）。
 - 大变更集的虚拟化、diff 加载与性能策略。
 - 视觉 token、间距、动效；遵循 `docs/superpowers/specs/2026-11-12-desktop-visual-language-design.md` 与现有主题约束。
@@ -621,6 +655,8 @@ builder 可以调整顺序，但不得改变 §6 的硬约束与 §15 的验收�
 
 - `docs/superpowers/specs/2026-11-11-project-agent-workbench-experience-design.md`
 - `docs/superpowers/specs/2026-11-12-desktop-visual-language-design.md`
+- `docs/superpowers/specs/2026-11-10-lead-techlead-thread-handoff-design.md`
+- `docs/superpowers/specs/2026-11-10-goal-shapes-quick-goals-design.md`
 - `docs/architecture/desktop.md`
 - `docs/architecture/goal.md`
 - `docs/architecture/pod.md`
