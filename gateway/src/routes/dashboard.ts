@@ -41,6 +41,11 @@ export interface DashboardRouteDeps {
   serveRunning: () => boolean;
   trajectoryStore: () => TrajectoryStore | null;
   memoryService: () => MemoryService | null | undefined;
+  /**
+   * E2-5: event_log append 失败累计（EventStore.appendFailures()）。
+   * null / undefined = 无持久 event store（纯直播部署）→ 字段省略，保持旧形状。
+   */
+  eventAppendFailures?: () => number | null;
 }
 
 export function attachDashboardRoutes(registry: RouteRegistry, deps: DashboardRouteDeps): void {
@@ -60,11 +65,14 @@ export function attachDashboardRoutes(registry: RouteRegistry, deps: DashboardRo
 
   // GET /api/stats — runtime counters (+ optional global token summary)
   registry.attachHandler('dashboard.stats', async (_req: IncomingMessage, res: ServerResponse) => {
+    const appendFailures = deps.eventAppendFailures?.() ?? null;
     const base = {
       activeGoals: deps.activeGoals().size,
       registeredProjects: deps.registeredProjectsSize(),
       sseClients: deps.sseClientsSize(),
       serveRunning: deps.serveRunning(),
+      // E2-5: 只在有持久 event store 时出现（纯直播部署保持旧 payload 形状）。
+      ...(appendFailures !== null ? { eventAppendFailures: appendFailures } : {}),
     };
     try {
       const store = deps.trajectoryStore();

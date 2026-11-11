@@ -30,6 +30,7 @@ import {
   MethodNotSupportedError,
 } from './types'
 import { SSEConnection } from './sse'
+import type { SseSubscribeOptions } from './sse'
 import type { ApiPath } from './api-path'
 import type { MafwBackgroundJob, MafwMessage } from './view-dto'
 
@@ -647,8 +648,10 @@ export class MafwClient implements IMafwClient {
   // 鈹€鈹€ Event 鈹€鈹€
 
   event = {
-    subscribe: async (): Promise<{ on(event: string, cb: (data: any) => void): void }> => {
-      this._sse.connect(this.baseUrl)
+    subscribe: async (opts?: SseSubscribeOptions): Promise<{ on(event: string, cb: (data: any) => void): void }> => {
+      // E2-2: 带 cursor/onReplayInfo 时走可恢复订阅；缺省路径逐字保持旧行为。
+      if (opts) this._sse.subscribe(this.baseUrl, opts)
+      else this._sse.connect(this.baseUrl)
       return {
         on: (event: string, cb: (data: any) => void) => {
           if (event === 'data') {

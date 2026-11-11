@@ -1,5 +1,6 @@
 export { MafwClient } from './client'
 export { SSEConnection } from './sse'
+export type { SseCursor, SseReplayInfo, SseSubscribeOptions } from './sse'
 export * from './types'
 export * from './events'
 export * from './experience-contract'

@@ -5096,6 +5096,11 @@ class MafwScheduler {
       get recallCalledBySession() { return self.recallCalledBySession; },
       get goalDriverMafwDirCache() { return self.goalDriverMafwDirCache; },
       get sseClients() { return self.eventHub.sseClients; },
+      get releaseIdentity() {
+        return () => (self.releaseMetadata && self.runtimeIdentity
+          ? { instanceId: self.runtimeIdentity.instanceId, schemaEpoch: self.releaseMetadata.schemaEpoch }
+          : null);
+      },
       get allowlistStore() { return self.allowlistStore; },
       get permissionRules() { return self.permissionRules; },
       get approvalPolicy() { return self.approvalPolicy; },
@@ -5303,6 +5308,9 @@ class MafwScheduler {
           getVoiceRuntime: () => this.getVoiceRuntime(),
           getTerminalService: () => this.getTerminalService(),
           pluginWebDeps: () => this.pluginWebDeps(),
+          // E2-4: WS is live-only; connected.headSeq is informational and the
+          // reconnect path is SSE cursor / REST snapshot (never WS replay).
+          headSeq: () => this.eventStore?.headSeq() ?? null,
         });
         this.wsHub = hub;
         resolve(true);

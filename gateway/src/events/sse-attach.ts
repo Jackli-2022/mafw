@@ -30,6 +30,10 @@ export interface SseAttachDeps {
   replayLimit: number;
   writeFrame: (res: http.ServerResponse, frame: string) => void;
   since?: number | null;             // 路由层 parseSince 后传入
+  /** E2-1: 网关实例身份（releaseMetadata/runtimeIdentity 现有字段）。 */
+  instanceId?: string;
+  /** E2-1: 进程纪元（release-policy schemaEpoch）；客户端据此判"旧纪元"。 */
+  schemaEpoch?: number;
 }
 
 /**
@@ -105,29 +109,48 @@ export function attachGlobalSse(deps: SseAttachDeps): SseConnection {
   };
 
   // 2. 重放查询（同步 better-sqlite3）
-  const replay = (since !== null && store)
+  // E2-1: 游标超前（DB 重置 / 旧纪元）→ 显式 reset，绝不静默"回放 0 条"。
+  // reset 与 truncated 互斥且优先（truncated 描述起点有洞，reset 描述游标无效）。
+  const headSeq = store ? store.headSeq() : 0;
+  const reset = since !== null && since > headSeq;
+  const replay = (!reset && since !== null && store)
     ? store.replaySince(since, replayLimit)
     : { rows: [], firstReplayedSeq: null as number | null };
 
-  // 3. SSE 头 + greeting（headSeq / firstReplayedSeq / truncated——additive）
+  // 3. SSE 头 + greeting（headSeq / firstReplayedSeq / truncated / reset /
+  //    instanceId / schemaEpoch——全部 additive）
   res.writeHead(200, SSE_HEADERS);
-  const headSeq = store ? store.headSeq() : 0;
-  const greeting: { type: string; timestamp: string; vocab: string; headSeq: number; firstReplayedSeq?: number; truncated?: boolean } = {
+  const greeting: {
+    type: string;
+    timestamp: string;
+    vocab: string;
+    headSeq: number;
+    firstReplayedSeq?: number;
+    truncated?: boolean;
+    reset?: boolean;
+    instanceId?: string;
+    schemaEpoch?: number;
+  } = {
     type: 'connected',
     timestamp: new Date().toISOString(),
     vocab: 'v2',
     headSeq,
   };
-  if (replay.firstReplayedSeq !== null) {
+  if (reset) {
+    greeting.reset = true;
+  } else if (replay.firstReplayedSeq !== null) {
     greeting.firstReplayedSeq = replay.firstReplayedSeq;
     if (replay.firstReplayedSeq > since! + 1) greeting.truncated = true; // limit 截断或留存淘汰：起点有洞
   }
+  if (deps.instanceId !== undefined) greeting.instanceId = deps.instanceId;
+  if (deps.schemaEpoch !== undefined) greeting.schemaEpoch = deps.schemaEpoch;
   // `retry:` rides in the greeting block so the reconnect delay is known before
   // the first reconnect; it does not add a frame (SSE parsers share one block).
   writeFrame(res, `retry: ${SSE_RETRY_MS}\ndata: ${JSON.stringify(greeting)}\n\n`);
 
   // 4. 重放行写出（envelope 补 timestamp + 双层 seq，与直播帧逐字节同形）
-  let maxReplayed = since !== null ? since : 0;
+  // reset 时 maxReplayed 归零：新纪元的直播 seq 从低处重来，不能被陈旧 since 过滤。
+  let maxReplayed = reset ? 0 : (since !== null ? since : 0);
   for (const row of replay.rows) {
     const enriched = enrichBroadcastFrame(row.envelope as { type: string; [k: string]: any }, row.seq, row.ts);
     writeFrame(res, `id: ${row.seq}\ndata: ${JSON.stringify(enriched)}\n\n`);

@@ -692,6 +692,8 @@ D3 Task 3 的 5 → Task 4 的 0）。D3-R2 把 `.match` / `.startsWith` 纪律�
 （exact 12 + prefix 6 + artifact slot 1），dashboard 的 5 个在 `subsystems/dashboard-legacy.ts`
 钉扎；`/api/ws` 不在 HTTP 链上（`http/ws-upgrade.ts`）。
 
+**WS 是 live-only 通道（E2-4）**：`connected` 帧携带 `headSeq`（event store 缺失时为 `null`），仅用于标识实时流的衔接位置；WS **不回放**，重连恢复必须走 SSE 游标（`?since` / `Last-Event-ID`）或 REST 快照，移动端"重连即全量"路径保持不变。
+
 **D3 验收（spec §7 字面）**：
 
 | 条件 | 状态 |
@@ -754,6 +756,23 @@ D3 承诺内）：`initServices()`（1104 行）拆分到 `subsystems/*`、kerne
 | E1-12 | `SessionRegistry.register` 的 TTL 三态：`undefined` = 保持现有 TTL（重注册 = 续租，从当刻重新计时）；`null` = 显式永久；数字 = 覆盖（0 / 负数仍为永久，既有语义）。 | 结束/退休记录重建 generation 时按首次注册语义（`undefined` = 永久）。 |
 | E1-13 | Mode A 全局 SSE 卫生：响应头 `X-Accel-Buffering: no`；首帧同一事件块带 `retry: 3000`（不新增帧，既有帧数契约不变）；15s `: ping` 注释帧（unref，`res close` / 写失败清理）。CORS 默认值补 `PUT/PATCH/DELETE` 与 `Authorization` / `X-API-Token`。 | **显式 `server.cors` 优先**（深合并）：`~/.mafw/config.yaml` 里钉死旧 methods/headers 的部署必须手动更新，否则预检仍按旧值。 |
 | E1-14 | 收口：本节 + release 记录 + 全量门禁（gateway / TUI / desktop / SDK contract / route analyzer）。 | deferred 清单见 release 记录（A2 → E5、A7 → E3、A13 完整 → E5、B15 → E2、SDK directory 类型）。 |
+
+## E2 恢复闭环（2026-11-11）
+
+> 「重连后状态可恢复」从网关单方能力变成端到端协议：greeting 纪元 + 显式 reset →
+> SDK/desktop 游标持久化与 `?since` → 按 truncated/reset 分级重同步 → WS 正式降级为
+> live-only → append 失败可观测。不动回放机制本身（`event_log` / seq / 保留策略）。
+> spec：`docs/superpowers/specs/2026-11-11-gateway-e2-recovery-design.md`；
+> 交付记录：`docs/releases/2026-11-11-gateway-e2-recovery.md`。
+
+| # | 现状 | 边界 / 后续 |
+|---|---|---|
+| E2-1 | Mode A SSE greeting 增加 `instanceId` / `schemaEpoch`（来自 `releaseMetadata` / `runtimeIdentity`，`releaseIdentity` live getter 注入）与显式 `reset`。`since > headSeq`（DB 重置 / 旧纪元）→ `reset:true` 且**零回放帧**（此前静默回放 0 条）；reset 与 truncated 互斥且优先。reset 时 `maxReplayed` 归零，新纪元直播 seq 不被陈旧 since 过滤。 | 客户端对 reset 的处理在 E2-2/E2-3；网关不做自动重放。 |
+| E2-2 | SDK `SSEConnection.subscribe(baseUrl, opts?)` / `MafwClient.event.subscribe(opts?)` 支持可选 `cursor { get/set }` 与 `onReplayInfo(info)`：`cursor.get()` 非空 → URL `?since=N`；仅带 SSE `id:` 的帧写回 cursor；connected greeting 回调 `headSeq/firstReplayedSeq/truncated/reset/instanceId/schemaEpoch`。不传 opts 时行为逐字不变。类型 `SseCursor/SseReplayInfo/SseSubscribeOptions` 从 `@mafw/sdk` 导出。 | TUI 启用游标属后续接线；mobile（Dart）游标 deferred。 |
+| E2-3 | desktop SSE 持久化游标：`localStorage['mafw-sse-seq']` + `['mafw-sse-instance']`；重连带 `?since=`。greeting 分级：`reset` / `truncated` / `instanceId` 变化（含旧网关缺失 instanceId）→ 全量重同步（列表 + experience invalidate 及既有 onOpen 块）；干净 resume → **不 invalidate**。每次非首次连接强制补拉活跃会话消息并按 REST 对账状态（`part.delta` 不入 journal，游标回放无法恢复实时文本）。无 localStorage → 退化为每次 open 全量同步。 | reset/instance 变化清游标但保留当前 EventSource；浏览器内部自动重连可能用旧 URL 再次触发（幂等）。 |
+| E2-4 | WS 正式**降级为 live-only**：`connected` 帧携带 `headSeq`（deps getter，无 event store 时 `null`），既有 `type/timestamp/vocab` 不变；WS 不回放，重连恢复必须走 SSE 游标（`?since` / `Last-Event-ID`）或 REST 快照；mobile「重连即全量」路径保持。 | WS 总线化（cursor+replay）正式放弃。 |
+| E2-5 | `EventStore.append` 失败保持 fail-open（返回 null），但失败计数进程级累计（`appendFailures()`），日志限频 30s 一条 `[Events] append failed (total=N): …`；`/api/stats` 在有持久 event store 时暴露 `eventAppendFailures`（无 store 时字段省略，旧 payload 形状不变）。 | 计数随进程重启归零；无独立指标端点。 |
+| E2-6 | 收口：本节 + release 记录 + 全量门禁（gateway / SDK / desktop / TUI / analyzer / kernel-split）。 | deferred：mobile Dart cursor、event_log 作为恢复源与消费者幂等（C1 → E5）、定时器注册表（E4）。 |
 
 ---
 

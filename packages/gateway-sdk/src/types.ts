@@ -6,6 +6,8 @@
 import type { MafwBackgroundJob, MafwMessage } from './view-dto'
 // Task 6：unified plugin package DTOs come from the shared contract package.
 import type { PluginClientDescriptor } from '@mafw/plugin-contract'
+// E2-2：SSE 可恢复订阅选项（cursor / onReplayInfo）。
+import type { SseSubscribeOptions } from './sse'
 
 /**
  * 会话列表/详情条目。
@@ -721,7 +723,8 @@ export interface ProjectNamespace {
 }
 
 export interface EventNamespace {
-  subscribe(): Promise<{ on(event: string, cb: (data: any) => void): void }>
+  /** E2-2: cursor/onReplayInfo 可选——不传时行为与旧版一致。 */
+  subscribe(opts?: SseSubscribeOptions): Promise<{ on(event: string, cb: (data: any) => void): void }>
   subscribeToSession(sessionID: string): Promise<{ on(event: string, cb: (data: any) => void): void }>
   /** SSE 连接状态（onopen/onerror 维护；供监督器健康轮询）。 */
   connected(): boolean

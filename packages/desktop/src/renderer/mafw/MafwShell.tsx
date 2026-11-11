@@ -27,7 +27,7 @@ import { agentKey, isAgentKey, resolveSessionAgent } from "./agent-identity"
 import { mergeHiddenTodos } from "./todo-presenter"
   import { traceEvent } from "./event-trace"
 import { dispatchShellEvent, type ShellEventDeps } from "./sse/dispatcher"
-import { SseConnection } from "./sse/sse-connection"
+import { SseConnection, withSince } from "./sse/sse-connection"
 import { applyPartUpsert } from "./sse/chat-reducers"
 import { createToolPartScheduler } from "./sse/tool-part-scheduler"
 import { bumpGoalsRev, goalsRev } from "./goals-rev"
@@ -1341,7 +1341,7 @@ export function MafwShell() {
   // E1-9: connection lifecycle lives in `sse/sse-connection.ts` (unit-tested
   // singleton guard). The component only supplies gateway info + event routing.
   const sse = new SseConnection({
-    open: async () => {
+    open: async (since) => {
       const info = await window.api.mafw.gateway.info()
       if (!info?.url) {
         console.log("[mafw] SSE: no gateway URL yet, will retry")
@@ -1349,11 +1349,16 @@ export function MafwShell() {
       }
       console.log("[mafw] SSE connecting to", info.url)
       // URL 契约归 SDK（event.url）；EventSource 传输保持 renderer 直连。
-      return new EventSource(await window.api.mafw.event.url())
+      // E2-3：持久化游标以 ?since= 追加重连恢复点。
+      return new EventSource(withSince(await window.api.mafw.event.url(), since))
     },
     onOpen: () => {
       console.log("[mafw] SSE connected")
       conn.report("sse-open")
+    },
+    // E2-3：只有 initial / truncated / reset / 实例变更才整表重同步。干净 resume
+    // 由游标回放覆盖实体事件，不得清空列表（否则每次重连都是全量风暴）。
+    onFullResync: (_reason, _info) => {
       // Gateway restarts keep the same port; reconnect is the only reliable
       // signal that the cached session list is stale.
       sessionStore.invalidate()
@@ -1369,6 +1374,13 @@ export function MafwShell() {
       // Seed flow cards that arrived before the SSE connection (native APIs
       // return pending only). Idempotent, so per-open is safe.
       seedFlowCards()
+    },
+    // E2-3 / B2：part.delta 从不入 journal，游标回放无法恢复实时文本——
+    // 每次重连都强制补拉活跃会话消息，并从 REST 对账其状态（不依赖空桶假设）。
+    onReconnect: () => {
+      const sid = activeSessionId()
+      if (!sid) return
+      void loadSessionHistory(sid, { force: true })
     },
     onError: () => {
       console.log("[mafw] SSE error (will auto-reconnect)")
@@ -1466,7 +1478,8 @@ export function MafwShell() {
   })
 
   // Load session message history from the gateway
-  async function loadSessionHistory(sessionID: string) {
+  // E2-3: `force` = 重连补拉——覆盖已存在的消息/部件并按 REST 对账状态。
+  async function loadSessionHistory(sessionID: string, opts?: { force?: boolean }) {
     console.log("[mafw] loadSessionHistory", sessionID)
     try {
       const [data, sessionData] = await Promise.all([
@@ -1500,9 +1513,20 @@ export function MafwShell() {
         const parts: Record<string, any[]> = {}
         for (const message of page.messages) {
           const msgId = message.id
-          if (!msgId || existingById.has(msgId)) continue
-          msgs.push(message)
+          if (!msgId) continue
           const itemParts = page.parts[msgId]
+          if (existingById.has(msgId)) {
+            // E2-3 force（重连补拉）：就地刷新已有消息的字段（保留对象 identity，
+            // 避免 <For> 全量重挂），并用服务端部件覆盖 live 期间缺失的 delta。
+            if (!opts?.force) continue
+            const current = existingById.get(msgId)
+            Object.assign(current, message)
+            if (Array.isArray(itemParts) && itemParts.length > 0) {
+              parts[msgId] = mergeLocalParts(store.part[msgId], itemParts)
+            }
+            continue
+          }
+          msgs.push(message)
           if (Array.isArray(itemParts) && itemParts.length > 0) {
             parts[msgId] = mergeLocalParts(store.part[msgId], itemParts)
           }
@@ -1527,7 +1551,13 @@ export function MafwShell() {
             part: { ...prev.part, ...parts },
             // 中途进入运行中的会话：规范 status（gateway 已按 time.busy > time.idle 投影）
             // → busy/retry；本地已存状态优先（live SSE 比取回的快照新），不无条件写 idle。
-            session_status: { ...prev.session_status, [sessionID]: sessionStatusFromInfo(sessionData, prev.session_status[sessionID]) },
+            // E2-3 force：重连对账以 REST 快照为准（修正重连期间漏掉的 idle/busy）。
+            session_status: {
+              ...prev.session_status,
+              [sessionID]: opts?.force
+                ? sessionStatusFromInfo(sessionData)
+                : sessionStatusFromInfo(sessionData, prev.session_status[sessionID]),
+            },
           }))
         }
         return msgs
