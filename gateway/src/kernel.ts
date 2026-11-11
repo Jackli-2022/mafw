@@ -163,6 +163,8 @@ import { buildSchemaClusters, Cluster } from "./memory/schema-clusters";
 import { getReconsolidationQueue } from "./recall/reconsolidation";
 import { HarmonicUnitFileStore } from "./memory/harmonic-file-store";
 import { deoptSkill as deoptInstalledSkill } from './memory/skill-install';
+import { observeSkillInvocation } from './core/skills/skill-invocation';
+import { shouldDeoptSkill } from './memory/skill-health';
 import { L5Store } from "./core/memory/l5-store";
 import { CostService } from "./cost/service";
 import { MediaService } from "./media/media-service";
@@ -1060,6 +1062,9 @@ class MafwScheduler {
 
   private handleRuntimeEvent(evt: any): void {
     const f = normalizeRuntimeEvent(evt);
+    // Skill v1 6B: trusted activation signal (runtime `tool.call` with tool=skill).
+    // Reading/listing a skill never reaches this path; failure is mechanical only.
+    try { observeSkillInvocation(this.getGatewayDb(), f); } catch { /* fail-open */ }
     // Phase D2：24 段有序 stage 表（src/runtime/event-dispatch.ts）。数组位置即执行顺序；
     // 仅 nativeDrop / toolPrimitiveDrop / internalFilter 三段可 HALT（legacy early return）。
     runEventPipeline(f, evt, this.buildDispatchCtx());
@@ -2880,8 +2885,39 @@ class MafwScheduler {
             },
             now: new Date(),
           });
-          this.heartbeat?.record('memory:skillPromotion', { ok: true, counts: { promoted } });
+          // 6B health pass: deopt only on concrete evidence (sources gone or
+          // repeated mechanical failures without a known success).
+          let deopted = 0;
+          try {
+            const db = this.getGatewayDb();
+            const records = db.listSkillRecords('active');
+            const stats = db.listSkillInvocationStats();
+            const emptyStats = { total: 0, success: 0, failure: 0, unknown: 0, lastAt: null };
+            for (const record of records) {
+              const sources: Array<{ id: string; exists: boolean; superseded: boolean }> = [];
+              for (const id of record.sourceMemoryIds) {
+                let unit: any = null;
+                try { unit = await store.read(id); } catch { /* missing */ }
+                const entry = this.memoryService!.harmonicIndex.getIndex().entries.find((e) => e.id === id);
+                sources.push({
+                  id,
+                  exists: Boolean(unit),
+                  superseded: Boolean(unit?.superseded_by || entry?.superseded_by),
+                });
+              }
+              const decision = shouldDeoptSkill({
+                sources,
+                stats: stats[record.name] ?? emptyStats,
+              });
+              if (decision.deopt) {
+                const r = this.deoptInstalledSkill(record.name, decision.reason!);
+                if (r.deopted) deopted++;
+              }
+            }
+          } catch { /* fail-open: health pass never blocks promotion */ }
+          this.heartbeat?.record('memory:skillPromotion', { ok: true, counts: { promoted, deopted } });
           if (promoted > 0) log.info(`[SkillPromotion] staged ${promoted} skill draft(s)`);
+          if (deopted > 0) log.info(`[SkillPromotion] deopted ${deopted} unhealthy skill(s)`);
         } catch (err: any) {
           this.heartbeat?.record('memory:skillPromotion', { ok: false, error: err.message });
           log.warn(`[SkillPromotion] run failed: ${err.message}`);
@@ -3065,6 +3101,16 @@ class MafwScheduler {
       renameDir: (src, dst) => fs.renameSync(src, dst),
       recordStatus: (skillName, status, why) => this.getGatewayDb().setSkillStatus(skillName, status, why),
     });
+  }
+
+  /** Skill v1 6B: registry rows joined with trusted invocation stats. */
+  private listInstalledSkills(): Array<Record<string, unknown>> {
+    const stats = this.getGatewayDb().listSkillInvocationStats();
+    const empty = { total: 0, success: 0, failure: 0, unknown: 0, lastAt: null };
+    return this.getGatewayDb().listSkillRecords().map((record) => ({
+      ...record,
+      stats: stats[record.name] ?? empty,
+    }));
   }
 
   private getStaleVerifyPipeline(): StaleVerifyPipeline {
@@ -5119,6 +5165,7 @@ class MafwScheduler {
       get listSessions() { return (...a: any[]) => (self.listSessions as any)(...a); },
       get skillInstallDeps() { return (...a: any[]) => (self.skillInstallDeps as any)(...a); },
       get deoptSkill() { return (...a: any[]) => (self.deoptInstalledSkill as any)(...a); },
+      get listSkills() { return (...a: any[]) => (self.listInstalledSkills as any)(...a); },
       get eventLayer() { return self.eventLayer; },
       get eventLayerStore() { return self.eventLayerStore; },
       get standingGoals() { return self.standingGoals; },

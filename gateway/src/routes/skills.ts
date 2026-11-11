@@ -10,6 +10,8 @@ import type { RouteRegistry } from './registry';
 
 export interface SkillRouteDeps {
   deopt(name: string, reason: string): { deopted: boolean; archivedTo?: string; error?: string };
+  /** Registry rows joined with invocation stats (6B). */
+  list?(): Array<Record<string, unknown>>;
 }
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -21,6 +23,16 @@ function readBody(req: IncomingMessage): Promise<string> {
 }
 
 export function attachSkillRoutes(registry: RouteRegistry, deps: SkillRouteDeps): void {
+  registry.attachHandler('skills.list', async (_req: IncomingMessage, res: ServerResponse) => {
+    try {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ skills: deps.list?.() ?? [] }));
+    } catch (err: any) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ skills: [], error: err?.message || String(err) }));
+    }
+  });
+
   registry.attachHandler('skills.deopt', async (req: IncomingMessage, res: ServerResponse, params: Record<string, string>) => {
     try {
       let reason = 'manual';

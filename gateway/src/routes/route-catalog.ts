@@ -216,6 +216,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/triage/:id/reject', operationId: 'triage.reject', tags: ['triage'] },
   { method: 'POST', path: '/api/triage/:id/propose', operationId: 'triage.propose', tags: ['triage'] },
   { method: 'POST', path: '/api/skills/:name/deopt', operationId: 'skills.deopt', tags: ['internal'] },
+  { method: 'GET', path: '/api/skills', operationId: 'skills.list', tags: ['internal'] },
   { method: 'GET', path: '/api/questions', operationId: 'questions.list', tags: ['questions'] },
   { method: 'POST', path: '/api/questions/:id/reply', operationId: 'questions.reply', tags: ['questions'] },
   { method: 'POST', path: '/api/questions/:id/reject', operationId: 'questions.reject', tags: ['questions'] },
