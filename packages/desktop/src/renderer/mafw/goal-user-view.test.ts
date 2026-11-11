@@ -192,13 +192,31 @@ test("discussion direction stays readable without inventing a next action", () =
   assert.equal(summary.needsPerson, false)
 })
 
-test("user-facing summary never exposes runtime or internal Goal identity", () => {
+test("user-facing labels never expose runtime or internal Goal identity", () => {
   const summary = summarizeGoalForUser(goal({
-    goalId: "visible-goal",
+    goalId: "goal-20261111-internal",
     stage: { owner: "team", kind: "working" },
   }))
-  const payload = JSON.stringify(summary)
-  assert.doesNotMatch(payload, /ses_|goal-2026|runtime/i)
+  const visible = [
+    summary.statusLabel,
+    summary.ownerLabel,
+    summary.nextActionLabel,
+    summary.progressText,
+  ].filter(Boolean).join(" ")
+  assert.doesNotMatch(visible, /ses_|goal-2026|runtime/i)
+  // goalId is a routing identity and may stay on the model, but it must not
+  // become user-visible copy.
+  assert.equal(summary.goalId, "goal-20261111-internal")
+})
+
+test("unknown revision stays unknown instead of fabricating revision 1", () => {
+  const summary = summarizeGoalForUser(goal({
+    goalId: "no-revision",
+    activeRevision: undefined as any,
+    revision: undefined as any,
+    stage: { owner: "team", kind: "working" },
+  }))
+  assert.equal(summary.revision, null)
 })
 
 test("primary Goal action intent never falls through to technical details", () => {

@@ -18,7 +18,7 @@ export function GoalUserHero(props: {
       <div class="mafw-goal-user-status">
         <span class="mafw-goal-user-state">{props.summary.statusLabel}</span>
         <span class="mafw-goal-user-owner">{props.summary.ownerLabel}</span>
-        <span class="mafw-goal-user-revision">revision {props.summary.revision}</span>
+        <span class="mafw-goal-user-revision">revision {props.summary.revision ?? "—"}</span>
       </div>
 
       <Show when={props.summary.progressText}>
@@ -32,6 +32,7 @@ export function GoalUserHero(props: {
               <span
                 class="mafw-goal-user-progress-track"
                 role="progressbar"
+                aria-label={`${text()} 完成度`}
                 aria-valuemin={0}
                 aria-valuemax={100}
                 aria-valuenow={props.summary.progressPercent ?? 0}
@@ -57,6 +58,7 @@ export function GoalUserHero(props: {
           size="small"
           class="mafw-goal-technical-toggle"
           aria-expanded={props.technicalOpen}
+          aria-controls={props.technicalOpen ? "mafw-goal-technical" : undefined}
           onClick={props.onToggleTechnical}
         >
           {props.technicalOpen ? "收起技术详情" : "技术详情"}

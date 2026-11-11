@@ -77,7 +77,7 @@ export function WorkOverview(props: {
                   variant="ghost"
                   size="small"
                   class="mafw-work-item"
-                  onClick={() => props.onOpenGoal(goal, attentionTarget(goal.stage.action))}
+                  onClick={() => props.onOpenGoal(goal, attentionTarget(goal.stage?.action))}
                 >
                   <span class="mafw-work-item-main">
                     <span class="mafw-work-item-title">{goal.title || "未命名目标"}</span>
@@ -86,6 +86,7 @@ export function WorkOverview(props: {
                         <span class="mafw-work-chip is-unviewed">未查看</span>
                       </Show>
                       <span class="mafw-work-item-stage">{summary.statusLabel}</span>
+                      <span class="mafw-work-item-owner">{summary.ownerLabel}</span>
                       <Show when={summary.nextActionLabel}>
                         {(label) => <span class="mafw-work-chip">{label()}</span>}
                       </Show>

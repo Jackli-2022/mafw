@@ -12,7 +12,7 @@ export type GoalUserSummary = {
   needsPerson: boolean
   progressText: string | null
   progressPercent: number | null
-  revision: number
+  revision: number | null
   resultReady: boolean
   ended: boolean
 }
@@ -143,11 +143,11 @@ export function summarizeGoalForUser(goal: PodGoal): GoalUserSummary {
   const hasError = !!goal.lastError
   const progress = progressOf(goal)
   const face = goalUserFace(goal)
-  const revision = Number.isFinite(goal.activeRevision)
+  const revision = Number.isFinite(goal.activeRevision) && Number(goal.activeRevision) > 0
     ? Number(goal.activeRevision)
-    : Number.isFinite(goal.revision)
+    : Number.isFinite(goal.revision) && Number(goal.revision) > 0
       ? Number(goal.revision)
-      : 1
+      : null
   return {
     goalId: goal.goalId,
     face,

@@ -16,6 +16,8 @@ test("project Goal list uses the user-facing summary projection", () => {
   assert.match(workOverviewSrc, /summary\.statusLabel/)
   assert.match(workOverviewSrc, /summary\.nextActionLabel/)
   assert.match(workOverviewSrc, /summary\.progressText/)
+  assert.match(workOverviewSrc, /summary\.ownerLabel/)
+  assert.match(workOverviewSrc, /goal\.stage\?\.action/)
   assert.doesNotMatch(workOverviewSrc, /goalModeLabel/)
   assert.match(workOverviewSrc, /props\.onOpenGoal\(goal,/)
 })
@@ -117,9 +119,20 @@ test("Goal user-view styles use theme tokens and no mounted display:none", () =>
     "mafw-goal-user-next",
     "mafw-goal-technical",
     "mafw-return-lead",
+    "mafw-work-item-owner",
   ]) {
     assert.match(mafwCssSrc, new RegExp(`\\.${className}\\s*\\{[^}]*var\\(--`), `${className} must use theme tokens`)
   }
   assert.doesNotMatch(mafwCssSrc, /\.mafw-goal-technical\s*\{[^}]*display\s*:\s*none/)
   assert.doesNotMatch(goalUserHeroSrc, /<(button|input)\b/)
+})
+
+test("Goal user hero is accessible and never renders the internal Goal id", () => {
+  assert.match(goalUserHeroSrc, /role="progressbar"/)
+  assert.match(goalUserHeroSrc, /aria-label=/)
+  assert.match(goalUserHeroSrc, /完成度/)
+  assert.match(goalUserHeroSrc, /aria-controls=/)
+  assert.doesNotMatch(goalUserHeroSrc, /summary\.goalId/)
+  assert.match(goalDetailSrc, /id="mafw-goal-technical"/)
+  assert.match(goalUserHeroSrc, /summary\.revision \?\? "—"/)
 })

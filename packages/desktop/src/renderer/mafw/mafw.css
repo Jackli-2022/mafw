@@ -7945,6 +7945,7 @@ html[data-theme="light"] body {
   white-space: nowrap;
 }
 .mafw-work-item-progress { font-family: var(--font-data); color: var(--text-2); }
+.mafw-work-item-owner { color: var(--text-3); font-size: 9.5px; white-space: nowrap; }
 
 .mafw-goal-inline {
   width: 100%;

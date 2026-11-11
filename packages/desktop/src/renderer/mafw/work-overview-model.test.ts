@@ -135,6 +135,19 @@ test("attention labels follow the action type", () => {
   }
 })
 
+test("legacy goals without stage or bucket stay renderable", () => {
+  const legacy = goal({ goalId: "legacy", stage: undefined as any, bucket: undefined as any })
+  assert.deepEqual(
+    buildWorkPriority({ goals: [legacy], events: [], isResultViewed: () => false }),
+    [],
+  )
+  assert.equal(goalProgressText(goal({
+    goalId: "legacy-progress",
+    stage: undefined as any,
+    progress: { total: 4, done: 2, inProgress: 1, review: 0, failed: 0, skipped: 0 },
+  })), "任务 2/4")
+})
+
 test("goalModeLabel keeps Quick/Standard readable and falls back to the raw mode", () => {
   assert.equal(goalModeLabel("quick"), "Quick")
   assert.equal(goalModeLabel("standard"), "Standard")

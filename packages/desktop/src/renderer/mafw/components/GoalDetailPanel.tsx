@@ -875,7 +875,7 @@ export function GoalDetailPanel(props: {
             </Show>
 
             <Show when={technicalVisible()}>
-              <div class="mafw-goal-technical">
+              <div class="mafw-goal-technical" id="mafw-goal-technical">
                 <div class="mafw-pod-section-head">
                   <span>技术详情</span>
                 </div>
