@@ -4,7 +4,8 @@
  *
  * 业界语义（调研 2026-09-16）：SSE 事件是通知语义（JSON-RPC 通知分支），
  * 消费方对未知 type 静默忽略/打日志——发送方随时可加新类型，无注册制。
- * 双形态：opencode_event 信封（复用形状守卫）或顶层扁平广播。
+ * 形态：顶层扁平广播（`plugin:*` 命名空间）；E1-2 起 `mafw_event` 信封与
+ * gateway/runtime 保留事件名一律 400（外部不可伪造 canonical 事件）。
  */
 import * as http from 'http';
 import { handleEventPublish } from '../../../src/routes/event-publish';
@@ -60,20 +61,19 @@ describe('POST /api/events (publish)', () => {
     expect(broadcasted[0]).toMatchObject({ type: 'plugin:acme:quota', level: 'warn' });
   });
 
-  it('opencode_event 信封旁路（data 内层透传）', async () => {
+  it('mafw_event 信封（E1-2 保留名）→ 400，不广播', async () => {
     await start();
     const res = await post(server, { type: 'mafw_event', data: { type: 'turn.completed', sessionID: 's1' } });
-    expect(res.status).toBe(200);
-    expect(broadcasted).toHaveLength(1);
-    expect(broadcasted[0].type).toBe('mafw_event');
-    expect(broadcasted[0].data).toMatchObject({ type: 'turn.completed', sessionID: 's1' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/reserved/i);
+    expect(broadcasted).toHaveLength(0);
   });
 
-  it('信封 data.type 缺失 → 400（形状守卫）', async () => {
+  it('信封 data.type 缺失也走保留名 400（信封整体被拒）', async () => {
     await start();
     const res = await post(server, { type: 'mafw_event', data: { sessionID: 's1' } });
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/data\.type/i);
+    expect(res.body.error).toMatch(/reserved/i);
     expect(broadcasted).toHaveLength(0);
   });
 
@@ -132,7 +132,7 @@ describe('POST /api/events (unknown type telemetry)', () => {
     expect(recorded).toEqual([]);
   });
 
-  it('does not record envelope passthrough (mafw_event data)', async () => {
+  it('does not record reserved envelope publishes (rejected before telemetry)', async () => {
     await startTelemetry();
     await post(server, { type: 'mafw_event', data: { type: 'turn.completed', sessionID: 's1' } });
     expect(recorded).toEqual([]);
