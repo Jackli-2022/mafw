@@ -10,7 +10,7 @@ const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8"
 const css = read("../src/renderer/mafw/mafw.css")
 const work = read("../src/renderer/mafw/components/ProjectWorkView.tsx")
 const overview = read("../src/renderer/mafw/components/WorkOverview.tsx")
-const resources = read("../src/renderer/mafw/components/ProjectResources.tsx")
+const resources = read("../src/renderer/mafw/components/ProjectTeamStrip.tsx")
 const detail = read("../src/renderer/mafw/components/GoalDetailPanel.tsx")
 
 test("工作列表先给阶段与真实进度，而不是工程 chips", () => {
@@ -31,12 +31,12 @@ test("工作项是内容撑高的多行行，不被 ButtonV2 small 的 24px 固�
   assert.match(item, /min-height: 30px/)
 })
 
-test("Pod 联系人：头像/状态/chevron，资源行只在展开后出现", () => {
+test("团队条：头像/状态/资源动作，团队细节进执行抽屉", () => {
   assert.match(resources, /mafw-pod-contact-avatar/)
   assert.match(resources, /name="team-three"/)
-  assert.match(resources, /mafw-resources-chevron/)
-  assert.match(resources, /mafw-resources-row/)
-  assert.match(css, /\.mafw-resources-chevron \{[^}]*opacity: 0;[^}]*var\(--dur-fast\)/)
+  assert.match(resources, /mafw-project-team-actions/)
+  assert.match(resources, /mafw-project-team-chip/)
+  assert.match(resources, /创建团队/)
 })
 
 test("Goal 详情：头部/状态/区块统一为卡片层级", () => {

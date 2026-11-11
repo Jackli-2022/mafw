@@ -40,17 +40,15 @@ describe("dead code 清理", () => {
     expect(dock).not.toContain("PodAttentionList")
   })
 
-  test("Pod 首屏只保留双会话入口，团队资源降到次级区域", () => {
-    const resources = read("src/renderer/mafw/components/ProjectResources.tsx")
-    expect(resources).toContain(">Pod</span>")
-    expect(resources).toContain("团队、邮箱与共享记忆")
-    expect(resources).toContain("团队")
-    expect(resources).toContain("邮箱")
-    expect(resources).toContain("Pod 记忆")
-    expect(resources).toContain("便签")
-    expect(resources).toContain("onOpenPanel")
-    expect(resources).not.toContain("PAGE_LINKS")
-    expect(resources).not.toMatch(/>工具</)
+  test("项目团队条取代左栏 Pod 资源面", () => {
+    expect(existsSync(join(root, "src/renderer/mafw/components/ProjectResources.tsx"))).toBe(false)
+    const team = read("src/renderer/mafw/components/ProjectTeamStrip.tsx")
+    expect(team).toContain("mafw-project-team-strip")
+    expect(team).toContain("团队")
+    expect(team).toContain("邮箱")
+    expect(team).toContain("记忆")
+    expect(team).toContain("onOpenPanel")
+    expect(team).not.toContain("PAGE_LINKS")
   })
 
   test("ProjectWorkView 承载 New Goal composer，不再从 PodDock 或全页工作空间创建", () => {

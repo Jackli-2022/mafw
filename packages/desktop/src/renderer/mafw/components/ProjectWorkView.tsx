@@ -7,11 +7,13 @@ import { PodGoalComposer } from "./PodGoalComposer"
 import { StandingGoalsPanel } from "./StandingGoalsPanel"
 import { ProjectFilesCard } from "./ProjectFilesCard"
 import { RecentContentList } from "./RecentContentList"
+import { ProjectTeamStrip } from "./ProjectTeamStrip"
 import { buildAttentionList, buildWorkPriority, type WorkFilter } from "../work-overview-model"
 import { goalRevisionOf, type GoalDetailFocus } from "../pod-model"
 import { isPodResultViewed } from "../pod-result-store"
 import { podEvents } from "../pod-events"
 import type { RecentContentEntry } from "../recent-content"
+import type { PodDetail } from "@mafw/sdk"
 
 /** Composer 请求序列的会话级消费游标：remount 不重放已处理请求。 */
 let lastConsumedComposerRequest = 0
@@ -44,6 +46,19 @@ export function ProjectWorkView(props: {
     items: readonly RecentContentEntry[]
     onOpen: (entry: RecentContentEntry) => void
   }
+  team?: {
+    detail: PodDetail | null
+    loading: boolean
+    error: string | null
+    unsupported: boolean
+    isWorktree: boolean
+    onRefresh: () => void
+    onOpenLead: () => void
+    onOpenTechLead: (goalId: string) => void
+    onOpenPanel: (tab: "team" | "memory", target?: "members" | "inbox") => void
+    onCreate: () => void
+  }
+  teamFocusRequest?: number
   onOpenGoal: (goal: PodGoal, focus?: GoalDetailFocus) => void
   onGoalCreated?: (goalId: string, goal?: PodGoal) => void
 }): JSX.Element {
@@ -152,6 +167,13 @@ export function ProjectWorkView(props: {
     }
   }
 
+  let teamRef: HTMLDivElement | undefined
+  createEffect(() => {
+    const request = props.teamFocusRequest ?? 0
+    if (request <= 0 || !props.active) return
+    queueMicrotask(() => teamRef?.scrollIntoView({ block: "nearest", behavior: "smooth" }))
+  })
+
   return (
     <div class="mafw-project-work" aria-label="项目工作">
       <div class="mafw-project-work-overview">
@@ -171,6 +193,12 @@ export function ProjectWorkView(props: {
             新建 Goal
           </ButtonV2>
         </div>
+
+        <Show when={props.team}>
+          <div class="mafw-project-team-slot" ref={teamRef}>
+            <ProjectTeamStrip {...props.team!} />
+          </div>
+        </Show>
 
         <Show when={composerOpen()}>
           <section class="mafw-project-work-composer" aria-label="新建 Goal">

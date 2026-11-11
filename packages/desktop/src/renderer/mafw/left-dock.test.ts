@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { closeLeftDockState, connDotState, effectiveLeftDockWidth, leftDockPushBudget, leftDockPushDragMax, railAriaLabel, resolveLeftDockWidth, resolveMode, restoreLeftDockOpen, shouldAutoRestoreLeftDock, shouldCloseOnSelect, toggleFace, toggleLeftDockState } from "./left-dock"
+import { closeLeftDockState, connDotState, effectiveLeftDockWidth, leftDockPushBudget, leftDockPushDragMax, normalizeLeftDockFace, railAriaLabel, resolveLeftDockWidth, resolveMode, restoreLeftDockOpen, shouldAutoRestoreLeftDock, shouldCloseOnSelect, toggleFace, toggleLeftDockState } from "./left-dock"
 
 describe("left-dock 状态模型", () => {
   describe("toggleFace（VS Code toggle 语义）", () => {
@@ -12,9 +12,19 @@ describe("left-dock 状态模型", () => {
     test("收起态点任一 face → 打开该 face", () => {
       expect(toggleFace({ face: "sessions", open: false }, "search")).toEqual({ face: "search", open: true })
     })
-    test("pod face 与其它目的地同一 toggle 语义", () => {
-      expect(toggleFace({ face: "sessions", open: false }, "pod")).toEqual({ face: "pod", open: true })
-      expect(toggleFace({ face: "pod", open: true }, "pod")).toEqual({ face: "pod", open: false })
+    test("团队迁入项目首页后 left dock 只剩会话/搜索/便签 face", () => {
+      expect(toggleFace({ face: "sessions", open: false }, "notes")).toEqual({ face: "notes", open: true })
+      expect(toggleFace({ face: "notes", open: true }, "notes")).toEqual({ face: "notes", open: false })
+    })
+  })
+
+  describe("旧 Pod face 迁移", () => {
+    test("pod/未知值回落 sessions，搜索与便签保留", () => {
+      expect(normalizeLeftDockFace("pod")).toBe("sessions")
+      expect(normalizeLeftDockFace("bogus")).toBe("sessions")
+      expect(normalizeLeftDockFace(null)).toBe("sessions")
+      expect(normalizeLeftDockFace("search")).toBe("search")
+      expect(normalizeLeftDockFace("notes")).toBe("notes")
     })
   })
 

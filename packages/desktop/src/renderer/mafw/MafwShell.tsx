@@ -19,7 +19,7 @@ import { TextMenuBridge } from "./context-menu/TextMenuBridge"
 import { menuController } from "./context-menu/controller"
 import { experienceStore } from "./experience-store"
 import { formatRailTitle, railProjectName } from "./components/rail-display"
-import { clampLeftDockWidth, closeLeftDockState, effectiveLeftDockWidth, leftDockPushDragMax, resolveLeftDockWidth, resolveMode, restoreLeftDockOpen, shouldAutoRestoreLeftDock, shouldCloseOnSelect, toggleLeftDockState, type LeftDockFace } from "./left-dock"
+import { clampLeftDockWidth, closeLeftDockState, effectiveLeftDockWidth, leftDockPushDragMax, normalizeLeftDockFace, resolveLeftDockWidth, resolveMode, restoreLeftDockOpen, shouldAutoRestoreLeftDock, shouldCloseOnSelect, toggleLeftDockState, type LeftDockFace } from "./left-dock"
 import { SessionStrip } from "./components/SessionStrip"
 import { sessionStore } from "./session-store"
 import { needsSessionInfoHydration } from "./session-info"
@@ -527,6 +527,11 @@ export function MafwShell() {
     setActiveTab("chat")
     applyRightDock(true)
     openWorkbenchContext("project")
+  }
+  const [teamFocusRequest, setTeamFocusRequest] = createSignal(0)
+  const openProjectTeam = (): void => {
+    openProjectWork()
+    setTeamFocusRequest((seq) => seq + 1)
   }
   const openNewGoalComposer = (): void => {
     openProjectWork()
@@ -2733,9 +2738,15 @@ export function MafwShell() {
     } catch { /* ignore */ }
   }
   const [leftDock, setLeftDock] = createSignal<{ face: LeftDockFace; open: boolean }>({
-    face: (localStorage.getItem("mafw-left-dock-face") as LeftDockFace | null) ?? "sessions",
+    face: normalizeLeftDockFace(localStorage.getItem("mafw-left-dock-face")),
     open: restoreLeftDockOpen(localStorage.getItem("mafw-left-dock-open"), window.innerWidth, initialLeftDockWidth.width),
   })
+  try {
+    const storedFace = localStorage.getItem("mafw-left-dock-face")
+    if (storedFace && storedFace !== leftDock().face) {
+      localStorage.setItem("mafw-left-dock-face", leftDock().face)
+    }
+  } catch { /* ignore */ }
   const leftDockMode = () => resolveMode(leftDock().open, viewportWidth(), leftDockWidth())
   const openLeftDockFace = (face: LeftDockFace) => {
     // Persist before state, same ordering rule as toggle/close.
@@ -3085,6 +3096,7 @@ export function MafwShell() {
         <IconRail
           face={leftDock().open ? leftDock().face : null}
           onToggleFace={toggleLeftDock}
+          onTeam={() => openProjectTeam()}
           onApprovals={() => { closeLeftDockIfOverlay(); setShowConfig(false); setActiveTab("approvals") }}
           onConfig={() => { closeLeftDockIfOverlay(); setConfigSection(undefined); setShowConfig(true) }}
           onNewSession={() => { closeLeftDockIfOverlay(); void createSession().then((sid: any) => { if (sid) openSessionTab(sid) }) }}
@@ -3195,19 +3207,6 @@ export function MafwShell() {
             forkEnabled={experienceStore.supported("branch.fork")}
             onForkSession={(id) => void forkSessionFromMenu(id)}
             onExportSession={(id) => void exportSession(id)}
-            podDetail={podStore.detail()}
-            podLoading={podStore.loading()}
-            podError={podStore.error()}
-            podUnsupported={podStore.unsupported()}
-            podIsWorktree={benchRoot() !== currentProject()}
-            podAttention={podBadgeCount()}
-            onPodRefresh={() => { void podStore.refresh() }}
-            onPodOpenLead={() => { void openLeadEntry() }}
-            onPodOpenTechLead={(goalId) => { void openTechLead(goalId) }}
-            onPodOpenWork={openProjectWork}
-            onPodOpenPanel={(tab, target) => openPodPanelTab(tab, target)}
-            onPodOpenNotes={() => openLeftDockFace("notes")}
-            onPodCreate={() => { void podStore.create() }}
           />
         </Show>
         <div class="mafw-main" classList={{ "mafw-narrow-chat": narrowChat() }}>
@@ -3469,6 +3468,19 @@ export function MafwShell() {
                         items: recentContent().filter((entry) => entry.scopeKind === "project"),
                         onOpen: (entry) => openProjectFile(entry.rel),
                       }}
+                      team={{
+                        detail: podStore.detail(),
+                        loading: podStore.loading(),
+                        error: podStore.error(),
+                        unsupported: podStore.unsupported(),
+                        isWorktree: benchRoot() !== currentProject(),
+                        onRefresh: () => { void podStore.refresh() },
+                        onOpenLead: () => { void openLeadEntry() },
+                        onOpenTechLead: (goalId) => { void openTechLead(goalId) },
+                        onOpenPanel: (tab, target) => openPodPanelTab(tab, target),
+                        onCreate: () => { void podStore.create() },
+                      }}
+                      teamFocusRequest={teamFocusRequest()}
                       onOpenGoal={(goal, focus) => { void openGoalAndDiscuss(goal.goalId, focus, goal) }}
                       onGoalCreated={(goalId, goal) => { void openGoalAndDiscuss(goalId, "timeline", goal) }}
                     />

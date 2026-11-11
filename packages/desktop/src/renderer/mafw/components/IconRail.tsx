@@ -16,6 +16,8 @@ type IconName = ComponentProps<typeof Icon>["name"]
 export type IconRailProps = {
   face: LeftDockFace | null
   onToggleFace: (face: LeftDockFace) => void
+  /** 团队是项目属性：打开项目首页并定位团队条，不再切换左 dock face。 */
+  onTeam: () => void
   onApprovals: () => void
   onConfig: () => void
   /** 顶部动作：新建会话（单击）；右键菜单含「并行 worktree」 */
@@ -57,8 +59,8 @@ type RailItem = {
 }
 
 // 左栏图标轨（spec 2026-11-04-agent-workbench-right-primary）：
-// 顶部动作（新建）→ 目的地组连排（讨论/搜索/Pod/便签）→ spacer → meta 组（审批/Config）。
-// 主题切换已迁 Config；项目工作由右侧工作台「工作」主面承担。
+// 顶部动作（新建）→ 目的地组连排（讨论/搜索/便签/团队）→ spacer → meta 组（审批/Config）。
+// 团队是项目属性：图标只是项目首页团队条的快捷入口，不再有独立 Pod 面。
 export function IconRail(props: IconRailProps) {
   const connClass = () => connDotState(props.connPhase, props.gatewayState)
 
@@ -67,11 +69,10 @@ export function IconRail(props: IconRailProps) {
     { key: "search", icon: "magnifying-glass", label: props.face === "search" ? "收起搜索" : "搜索", onClick: () => props.onToggleFace("search"), active: props.face === "search" },
     { key: "notes", icon: "sticky-note", label: props.face === "notes" ? "收起便签" : "便签", onClick: () => props.onToggleFace("notes"), active: props.face === "notes" },
     {
-      key: "pod",
+      key: "team",
       icon: "team-three",
-      label: props.face === "pod" ? "收起 Pod" : "Pod",
-      onClick: () => props.onToggleFace("pod"),
-      active: props.face === "pod",
+      label: "团队",
+      onClick: () => props.onTeam(),
       badge: props.podBadge,
       badgeLabel: formatRailBadge(props.podBadge ?? 0) || undefined,
       resultDot: !!props.podResultDot,
