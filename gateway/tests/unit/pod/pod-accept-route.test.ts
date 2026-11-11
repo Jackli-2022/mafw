@@ -69,7 +69,11 @@ describe('POST /api/pods/:podId/goals/:goalId/accept', () => {
     expect(out.handled).toBe(true);
     expect(out.res.status).toBe(200);
     expect(out.json).toMatchObject({ revision: 1, branch: 'mafw/g1-r1', mergeCommit: 'abc123' });
-    expect(deps.goals.acceptResult).toHaveBeenCalledWith('pod_1', 'g1', { revision: 1 });
+    expect(deps.goals.acceptResult).toHaveBeenCalledWith('pod_1', 'g1', {
+      revision: 1,
+      force: false,
+      riskAcknowledged: false,
+    });
   });
 
   it('requires confirm:true', async () => {
