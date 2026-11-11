@@ -37,7 +37,12 @@ export async function createSessionWithWorktree(
     const session = await deps.createSession(opts.directory, opts.metadata);
     return { session };
   }
-  const projectDir = path.resolve(opts.directory ?? '.');
+  // E1-5: no `?? '.'` fallback — a worktree is created from an explicit absolute
+  // project directory (the route validates it; direct callers get a hard error).
+  if (typeof opts.directory !== 'string' || !path.isAbsolute(opts.directory)) {
+    throw new Error('directory must be an absolute path');
+  }
+  const projectDir = path.resolve(opts.directory);
   // 归属门：worktree 是 gateway 的 git 能力，不受 runtime 私有能力位限制。
   if (deps.worktreeAvailability) {
     const availability = await deps.worktreeAvailability(projectDir);

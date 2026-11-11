@@ -70,7 +70,7 @@ import {
   type GatewayDiscoveryHandle,
 } from './runtime/gateway-discovery';
 import { mafwRuntimeDir } from './runtime/runtime-paths';
-import type { InstanceLock } from './runtime/instance-lock';
+import type { InstanceLock, InstanceLockHeartbeatHandle } from './runtime/instance-lock';
 import {
   BackgroundJobError,
   BackgroundJobRegistry,
@@ -730,6 +730,7 @@ class MafwScheduler {
   private mdnsAdvertiser?: any; // MdnsAdvertiser
   private mafwDir!: string;
   private instanceLock: InstanceLock | null = null;
+  private instanceLockHeartbeat: InstanceLockHeartbeatHandle | null = null;
   private instanceDiscovery: GatewayDiscoveryHandle | null = null;
   private discoveryHeartbeatTimer: NodeJS.Timeout | null = null;
   private podEventService?: PodEventService;
@@ -3297,6 +3298,16 @@ class MafwScheduler {
         ws.send(JSON.stringify({ type: 'ws_error', error: 'session is suspended; resume or discard the run first' }));
         return;
       }
+      // E1-3: without a sessionID the send starts a session in the CURRENT
+      // project (same source as promptAsync). No registered project means there
+      // is no such project — report it instead of silently picking one.
+      if (!sessionID && this.registeredProjects.size === 0) {
+        ws.send(JSON.stringify({
+          type: 'ws_error',
+          error: 'no registered project: register a project before sending without a sessionID',
+        }));
+        return;
+      }
       try {
         const result = await this.sendEnrichedInternal(message, sessionID, parts, agent, model);
         ws.send(JSON.stringify({ type: 'send_ack', sessionID: result.sessionID }));
@@ -3320,8 +3331,9 @@ class MafwScheduler {
     agent?: string,
     model?: any,
   ): Promise<{ sessionID: string }> {
-    const firstProject = this.registeredProjects.values().next().value;
-    const projectDir = firstProject?.projectDir || this.projectDir;
+    // E1-3: the current project (resolvedProjectDir), never "the first
+    // registered project" — that put multi-project sends in the wrong project.
+    const projectDir = this.resolvedProjectDir();
     if (!this.runtime) throw new Error('LLM client not available');
 
     let enrichedMessage = message;

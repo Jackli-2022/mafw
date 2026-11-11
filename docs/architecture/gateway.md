@@ -5,6 +5,8 @@
 >
 > 时效：2026-11-05 对照源码更新（Pod 协作 Goal Loop、Plan Package / Goal Eval、事件层与 presence、
 > Mobile P0、idle 归属与复用会话 grace）。NodeDriver 自 LangGraph 迁移与事件词汇 v2 见 2026-10-16 版。
+> 2026-11-11 E1 止血波（14 项确定性缺陷修复）见「E1 止血（2026-11-11）」节；
+> 交付记录 `docs/releases/2026-11-11-gateway-e1-stabilization.md`。
 > 更细的子系统说明见 `docs/architecture/*` 与 `docs/guides/*`（2026-11-10 起根 `AGENTS.md` 只保留索引；
 > 本文末尾的「AGENTS.md 归档」是迁移前的原文）。
 
@@ -24,6 +26,7 @@
 - [插件系统（四类型 loader + 统一包宿主）](#插件系统四类型-loader--统一包宿主)
 - [HTTP 路由分发（内核重构 Phase D1 现状）](#http-路由分发内核重构-phase-d1-现状)
 - [内核拆分（Phase D3 现状：entry / boot / kernel / HTTP）](#内核拆分phase-d3-现状entry--boot--kernel--http)
+- [E1 止血（2026-11-11）](#e1-止血2026-11-11)
 - [API 端点](#api-端点)
 - [UI 服务](#ui-服务)
 - [数据流全景](#数据流全景)
@@ -570,7 +573,7 @@ promise：`return handleX(req, res, req.url!, deps)`。`dispatchAuthorized` 把 
 |---|---|---|
 | transport / 静态 / MCP / 根路径 | `/a2a`、`/.well-known`、`/a`、`/assets`、`/static`、`/`、`/index.html`、`/mcp`、`/register`、`/control`、`/health` | **D3**（`http-router.ts`：auth → registry → 404；不进 RouteRegistry） |
 | dashboard 兜底（R5） | `/api/goals`、`/api/stats`、`/api/memory` 联合 `startsWith` + `handleDashboardAPI` | 保留：四个明确影子条目已 registry-first（`goals.list` / `dashboard.stats` / `memory.add` / `memory.setSticky`），其余路径行为不变 |
-| `/api/goals/control` 等价臂（R6） | 与 `/control` 共享的 POST 分支 | 死代码（自 cdf678db2 起被 dashboard 兜底遮蔽）；D1 不修，合并时按潜在 bug 处理 |
+| `/api/goals/control`（原 R6 死臂） | `POST /api/goals/control` | **E1-4 已修复**：registry 的 `goals.control` handler 在 dispatch 阶段接管（与 `/control` 共用 `handleGoalControlCommand`）；dashboard 兜底只服务其余未实现形状（`/api/goals/:id/loops` 等，R5 保留） |
 | runtime-config | `GET/PATCH /api/runtime-config` | **D3 Task 2 已迁**：`routes/runtime-config.ts` 挂 `runtime.config.get` / `runtime.config.update`（原幻影条目转实）；GET `{ config }` / PATCH `{ status:'ok', config }` 包络、`provider.config(.update)` 门与 503/500 语义逐字随迁，runtime / runtimeHost 走 live getter。analyzer 从不计数这段 helper 分发（R9 盲区），故 24 基线不变；`/api/ws` upgrade 仍归 D3 Task 3 |
 
 `index.ts` 从 **10098 行（D1 起点 `ed2e998e`）降到 8204 行**（−1894 / −18.8%），减掉的
@@ -657,11 +660,11 @@ spec —— 它需要幂等设计与不受 retention 裁剪的影子流（`event
 
 | 文件 | 行数 | 职责 |
 |---|---|---|
-| `index.ts` | 33 | 日志 + `import { MafwScheduler } from './kernel'`；`export { MafwScheduler }`；`require.main === module` 时 `new MafwScheduler().start()` |
+| `index.ts` | 39 | 日志 + `import { MafwScheduler } from './kernel'`；`export { MafwScheduler }`；`require.main === module` 时先 `registerCrashHandlers()`（E1-11）再 `new MafwScheduler().start()` |
 | `kernel.ts` | 6345 | `class MafwScheduler`（组合根）：字段 / `initServices()` / 子系统方法；不再内联 HTTP 分发 |
 | `boot.ts` | 1027 | `bootKernel(kernel)` = 原 `start()` 逐字（83 成员 `BootKernel` 视图）+ `BOOT_STEPS` 27 步有序声明（D3-R6：DB-open-before-migration 气味只记录不修） |
 | `http-router.ts` | 42 | spec §5.1 HTTP facade：re-export `createRequestListener` / `TransportDeps` / `createWsHub` / `WsHub`（无逻辑、无分发） |
-| `http/transport.ts` | 524 | `createRequestListener(deps)`：CORS/OPTIONS → auth → registry → plugin web → file history → transport 分支 → dashboard 兜底（R6 顺序保留）→ `/register` → `/control` → `/health` → 反代 → 500 |
+| `http/transport.ts` | 478 | `createRequestListener(deps)`：CORS/OPTIONS → auth → registry → plugin web → file history → transport 分支 → dashboard 兜底（顺序保留；`/api/goals/control` 自 E1-4 起由 registry 接管）→ `/register` → `/control` → `/health` → 反代 → 500 |
 | `http/ws-upgrade.ts` | 203 | `createWsHub(server, deps)`：`/api/ws` / voice / terminal / plugin WS 上行 + 30s 心跳 + 60s push 维护；`dispose()` 由 `shutdown()` 收口 |
 | `server/event-hub.ts` | 145 | `EventHub`：`broadcast()` / `setupEventBus()` / `sseClients` / `wsClients`（D3-R4；kernel 保留同名委托方法，70+ 闭包调用点未动） |
 | `subsystems/api-routes.ts` | 820 | `attachAllRoutes(deps)`：47 条 attach（46 个 `attach*` + 1 条 typed route），顺序 46/46 原样；lead/pod 外来货物逐字 |
@@ -728,13 +731,39 @@ D3 承诺内）：`initServices()`（1104 行）拆分到 `subsystems/*`、kerne
 
 ---
 
+## E1 止血（2026-11-11）
+
+> 14 项确定性缺陷（三份评估合并清单的 A 类 + C7/B17），只修「行为与既定契约不符」，
+> 不动路由契约 / 响应信封 / 协议；每项 = 一个 RED 测试 → 最小修复 → 一个 commit。
+> spec：`docs/superpowers/specs/2026-11-11-gateway-e1-stabilization-design.md`；
+> 交付记录：`docs/releases/2026-11-11-gateway-e1-stabilization.md`。
+
+| # | 现状 | 边界 / 后续 |
+|---|---|---|
+| E1-1 | 实例锁有心跳：`boot.ts` 拿到 `gateway.lock` 后起 10s `setInterval` 调 `InstanceLock.heartbeat()`（unref），`releaseInstanceOwnership()` 先停心跳再释放锁。活进程不再因 >30s 未写被判定可回收。 | **无 fencing**：仍是协作租约，被抢占后旧 owner 的心跳按 nonce 失败→`log.warn`，不中止在飞写入；per-owner fencing 属 E5（身份闭环）。stale 判定本身（pid 存活 + heartbeat>30s）未改。 |
+| E1-2 | `POST /api/events` 只服务**外部发布**：`mafw_event`（含 `mafw_event.*` 前缀）、`EVENT_FLOW_MATRIX` canonical/扁平事件、`MAFW_FLAT_EVENT_NAMES`、runtime 原生 `sync` 一律 400（不广播、不落库、不计遥测）；外部只允许自定义命名空间（推荐 `plugin:<name>:<event>`）。`mafw_event` HTTP 信封——伪造 canonical 事件的入口——已关闭。 | 内部发布走 `EventHub.broadcast()`（不经此路由）；统一插件的 `ctx.emit` 同样直连 hub。 |
+| E1-3 | WS `send` 帧省略 `sessionID` 时在**当前项目**（`resolvedProjectDir()`，与 promptAsync 同源）建会话；没有注册项目 → `ws_error`，不再落"第一个注册项目"或默认目录。 | delivery/idempotencyKey 对齐属 E2（B15）。 |
+| E1-4 | `GET /api/goals/:id` 返回**单个 Goal**（`goalId/phase/loop/currentWave/totalWaves/nextAction/error/updatedAt`；未知 → 404），不再落 dashboard 兜底返回列表。`POST /api/goals/control` 由 registry `goals.control` 接管，与 `/control` 旧路径共用 `handleGoalControlCommand`（PAUSE / ABORT / FORCE_PHASE / RESET_PARAMETRIC）。**R6 死臂已修复**（自 cdf678db2 起被 dashboard 前缀兜底遮蔽）。 | `/api/goals/:id/loops` 等未实现形状仍由 dashboard 兜底（R5 保留）。 |
+| E1-5 | `POST /api/session` 的 `directory` **必填绝对路径**（缺失 / 相对 → 400 `{error:'directory must be an absolute path'}`）；worktree 分支不再回退 `'.'`；不再用 `resolvedProjectDir` 猜项目。desktop 新会话入口随本项改为传当前项目。 | SDK `session.create(params.directory)` 仍是 optional（类型层随后收紧）；runtime-core 的适配器兜底不动（E2）。 |
+| E1-6 | `memory.maxMemoriesPerTier` 死配置已从 `core/types/config.d.ts` 与 config-loader 默认值删除（零消费者）；旧配置带该键仍能加载（忽略、不报错）。 | 归档文档保留历史原文。 |
+| E1-7 | 移动端广播单投：WS 为主通道。`EventHub.broadcast` 只把**发送成功**的 `deviceId` 集合传给 `PushGateway.onBroadcast(event, { excludeDeviceIds })`；WS 写失败会移除 socket 且不进入排除集，push 仍兜底该设备。1 msg/s 全局 + 每设备限流不变。 | gateway 仍无 FCM 发送器：注册但离线的设备实际收不到；`onBroadcast` 是将来接 FCM 的单点。 |
+| E1-8 | TUI `ConnectionStore` 状态**边沿触发**：health tick 仍每秒执行并调度心跳，但 `onState` 只在 ok / reconnecting / down 真正变化时回调；稳定连接不再每秒重载 Experience + gateway queue。 | — |
+| E1-9 | desktop SSE 连接管理抽到 `renderer/mafw/sse/sse-connection.ts`（deps 注入，可单测）：in-flight promise 守卫让并发 `connect()` 共享同一次打开；`dispose()` 关闭并清空、之后可重建。onMount + gateway-ready 竞态不再双开 EventSource。 | `dispose()` 非终态（重挂载 / 致命关闭需要重建）。 |
+| E1-10 | 设备库持久化的是客户端上报的 **FCM push token**（`mobile/lib/src/services/push_service.dart` 把它放在 `body.token`），`apiTokenHash` 由服务端从该 token 派生；网关 bearer token 只走 `Authorization` 头，从不进入设备记录、也没有任何"校验 body.token == 网关 token"的门禁。**2026-11-11 review 更正**：原「网关 token 被明文写进 fcmToken」前提不成立，初版修复引入的 401 门槛与 fcmToken 置空已回退。旧格式记录（无 `apiTokenHash`）仍可读。 | 真正的 per-device 凭据（设备级 token + 校验）属 E5（A13 完整形态）。 |
+| E1-11 | 进程级 `uncaughtException` / `unhandledRejection` 兜底：`runtime/crash-handlers.ts` 写 `[FATAL] <kind>: <stack>`（`log.error` + 同步 fd 2，`fs.writeSync` 保证 exit 前不丢）后 `process.exitCode = 1; process.exit(1)`；`index.ts` 在构造 scheduler 之前注册。 | 退出码 **1**，与自更新约定 **75** 严格区分；不吞异常、不"继续运行"（supervisor 重启）。 |
+| E1-12 | `SessionRegistry.register` 的 TTL 三态：`undefined` = 保持现有 TTL（重注册 = 续租，从当刻重新计时）；`null` = 显式永久；数字 = 覆盖（0 / 负数仍为永久，既有语义）。 | 结束/退休记录重建 generation 时按首次注册语义（`undefined` = 永久）。 |
+| E1-13 | Mode A 全局 SSE 卫生：响应头 `X-Accel-Buffering: no`；首帧同一事件块带 `retry: 3000`（不新增帧，既有帧数契约不变）；15s `: ping` 注释帧（unref，`res close` / 写失败清理）。CORS 默认值补 `PUT/PATCH/DELETE` 与 `Authorization` / `X-API-Token`。 | **显式 `server.cors` 优先**（深合并）：`~/.mafw/config.yaml` 里钉死旧 methods/headers 的部署必须手动更新，否则预检仍按旧值。 |
+| E1-14 | 收口：本节 + release 记录 + 全量门禁（gateway / TUI / desktop / SDK contract / route analyzer）。 | deferred 清单见 release 记录（A2 → E5、A7 → E3、A13 完整 → E5、B15 → E2、SDK directory 类型）。 |
+
+---
+
 ## API 端点
 
 全部挂在 **:3000**（单端口；桌面/TUI/插件同源）。按组列举（完整清单见 `docs/reference/tools.md`）：
 
 | 组 | 代表端点 |
 |---|---|
-| 健康/事件 | `GET /health`、`GET /api/events`（SSE 订阅）、`POST /api/events`（发布：顶层扁平或 `mafw_event` 信封，全 UI 通道） |
+| 健康/事件 | `GET /health`、`GET /api/events`（SSE 订阅）、`POST /api/events`（**外部发布**：只接受自定义命名空间，推荐 `plugin:<pkg>:<event>`；`mafw_event`/canonical/扁平保留名/`sync` 一律 400，见 E1-2，全 UI 通道） |
 | 项目/会话 | `POST /register`、`GET /api/projects`、`GET /api/sessions`、`GET /api/manager/session`、`POST /api/manager/session/rotate` |
 | Pod / 工作 | `GET /api/projects/:id/work`（五桶 overview）、`GET/POST /api/pods/:id/goals`、`/tech-lead`、`/direction-decision`、`/probes`、`/revisions`、`/result`、`/reject`、`POST /api/pods/:id/goals/handoff` |
 | 事件/存在感 | `GET /api/presence`、`GET /api/pods/:id/events`、`POST /api/pods/:id/events/:eventId/seen`（单条）、`POST /api/pods/:id/events/seen`（body `{goalId, revision}` 清当前 revision） |

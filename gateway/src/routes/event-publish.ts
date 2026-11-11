@@ -5,14 +5,30 @@
  * 消费方（desktop/TUI）对未知 type 静默忽略——发送方随时可加新类型，
  * 无类型注册制（对齐 SSE 原生分发 / Stripe webhook else 分支 / K8s BOOKMARK 先例）。
  *
- * 双发布形态：
- * - 顶层扁平：{ type: 'plugin:<name>:<event>', ...payload } → 原样广播
- *   （与 runtime_switched / project_registered 同信封约定，桌面剥壳 raw?.data || raw）
- * - mafw_event 信封：{ type: 'mafw_event', data: { type, ... } } → data
- *   经 mafwBroadcast 形状守卫（畸形 data.type 打诊断日志后照发）
+ * **保留名守卫（E1-2）**：这个路由是**外部发布**通道，只接受自定义命名空间
+ * （推荐 `plugin:<name>:<event>`）。gateway/runtime 自己的事件名（EVENT_FLOW_MATRIX
+ * canonical/扁平事件、MAFW_FLAT_EVENT_NAMES、runtime 原生 `sync`、`mafw_event`
+ * 信封）一律 400：否则外部进程可以伪造 `turn.completed` / `session.created` 写进
+ * event_log 并被所有客户端回放。内部发布走 `EventHub.broadcast()`，不经此路由。
+ *
+ * 形态：顶层扁平 `{ type: 'plugin:<name>:<event>', ...payload }` → 原样广播
+ * （与 runtime_switched / project_registered 同信封约定，桌面剥壳 raw?.data || raw）。
  */
 import * as http from 'http';
-import { mafwBroadcast } from '../runtime/event-broadcast';
+import { EVENT_FLOW_MATRIX, RUNTIME_NATIVE_DROPPED } from '../runtime/event-flow-matrix';
+import { MAFW_FLAT_EVENT_NAMES } from '../runtime/mafw-vocabulary';
+
+/** 保留事件名（gateway / runtime 自有，外部发布一律拒绝）。 */
+const RESERVED_EVENT_TYPES: ReadonlySet<string> = new Set<string>([
+  ...Object.keys(EVENT_FLOW_MATRIX),
+  ...MAFW_FLAT_EVENT_NAMES,
+  ...RUNTIME_NATIVE_DROPPED,
+]);
+
+/** 保留命名空间（`mafw_event` 信封本身即伪造面）。 */
+export function isReservedEventType(type: string): boolean {
+  return type === 'mafw_event' || type.startsWith('mafw_event.') || RESERVED_EVENT_TYPES.has(type);
+}
 
 function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -49,14 +65,11 @@ export async function handleEventPublish(
       send(400, { error: "body.type must be a non-empty string (recommended namespace: 'plugin:<name>:<event>')" });
       return;
     }
-    if (body.type === 'mafw_event') {
-      // 信封旁路：data 形状守卫（data.type 缺失 → 400，不发半成品事件）
-      if (!body.data || typeof body.data !== 'object' || typeof body.data.type !== 'string' || !body.data.type) {
-        send(400, { error: 'mafw_event envelope requires data.type (non-empty string)' });
-        return;
-      }
-      deps.broadcast(mafwBroadcast(body.data, body.data.internal === true) as any);
-      send(200, { ok: true });
+    if (isReservedEventType(body.type)) {
+      // E1-2：保留名拒绝，先于任何广播/append/遥测。
+      send(400, {
+        error: `reserved event type: '${body.type}' (publish custom events as 'plugin:<name>:<event>')`,
+      });
       return;
     }
     if (!body.type.startsWith('plugin:')) {

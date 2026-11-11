@@ -71,6 +71,16 @@ const handlerFor = (registry: RouteRegistry, url: string) => {
   return (req: IncomingMessage, res: ServerResponse) => handler(req, res, m.params);
 };
 
+/**
+ * SSE 事件块的 data 行。E1-13 起 greeting 块带 `retry: 3000`（重连提示），
+ * 所以不能再假设帧以 `data: ` 开头——按 SSE 语义取 data 行。
+ */
+function dataOf(frame: string): any {
+  const m = /(?:^|\n)data: (.*)$/s.exec(frame);
+  if (!m) throw new Error(`frame has no data line: ${JSON.stringify(frame)}`);
+  return JSON.parse(m[1]);
+}
+
 describe('events SSE registry wiring (D1 Task H2)', () => {
   it('binds event.subscribe (GET /api/events) while POST stays with wave1', () => {
     const { registry } = setup();
@@ -100,7 +110,7 @@ describe('events SSE registry wiring (D1 Task H2)', () => {
     expect(r.status).toBe(200);
     expect(r.headers['Content-Type']).toBe('text/event-stream');
     expect(r.frames).toHaveLength(1);
-    const greeting = JSON.parse(r.frames[0].replace(/^data: /, '').trim());
+    const greeting = dataOf(r.frames[0]);
     expect(greeting).toMatchObject({ type: 'connected', vocab: 'v2', headSeq: 0 });
     expect(typeof sseClients.get(r.res)).toBe('function');
   });
@@ -127,7 +137,7 @@ describe('events SSE registry wiring (D1 Task H2)', () => {
     const r = fakeRes();
     const { req } = fakeReq({ url: '/api/events?since=2' });
     await handlerFor(registry, '/api/events')!(req, r.res);
-    const greeting = JSON.parse(r.frames[0].replace(/^data: /, '').trim());
+    const greeting = dataOf(r.frames[0]);
     expect(greeting.firstReplayedSeq).toBe(5);
     expect(greeting.truncated).toBe(true); // 5 > since + 1 → hole at the start
   });

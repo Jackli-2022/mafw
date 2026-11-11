@@ -34,7 +34,6 @@ export class ConfigLoader {
         cleanupThreshold: 0.3,
         criticalThreshold: 0.8,
       },
-      maxMemoriesPerTier: 1000,
       mergeSimilarityThreshold: 0.85,
     },
     hooks: {

@@ -39,8 +39,9 @@ import { attachLeadTopicRoutes } from '../routes/lead-topics';
 import { attachAttentionRoutes } from '../routes/attention';
 import { attachSchedulerRoutes } from '../routes/scheduler';
 import { attachLeadBoundaryRoutes } from '../routes/lead-boundaries';
-import { attachGoalControlRoutes } from '../routes/goal-control';
+import { attachGoalControlRoutes, attachGoalControlCommandRoute } from '../routes/goal-control';
 import { attachGoalRoutes } from '../routes/goals-inline';
+import { attachGoalGetRoute } from '../routes/goal-get';
 import { attachBackgroundJobHandlers } from '../routes/background-jobs';
 import { attachCognitionRoutes } from '../routes/cognition';
 import { attachPythonRoutes } from '../routes/python';
@@ -793,6 +794,22 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
     getGatewayDb: () => deps.getGatewayDb(),
     handleValidate: (goalId, data) => deps.handleValidate(goalId, data),
     handleComplete: (goalId, data) => deps.handleComplete(goalId, data),
+  });
+  // E1-4：goals.get 单对象（此前落 dashboard `/api/goals` 前缀兜底返回列表）。
+  attachGoalGetRoute(deps.routeRegistry, {
+    findGoalStatePath: (goalId) => deps.findGoalStatePath(goalId),
+    goalDriverMafwDirCache: () => deps.goalDriverMafwDirCache,
+    activeGoals: () => deps.activeGoals,
+  });
+  // E1-4：SDK `goals.control`（此前被 dashboard 兜底吞掉）。与 transport 的
+  // `/control` 旧路径共用 handleGoalControlCommand（大写动作族）。
+  attachGoalControlCommandRoute(deps.routeRegistry, {
+    patchState: (goalId, patch) => deps.patchState(goalId, patch as any),
+    destroyAllSessions: (goalId) => deps.destroyAllSessions(goalId),
+    getActiveGoal: (goalId) => deps.activeGoals.get(goalId),
+    registeredProjects: () => deps.registeredProjects,
+    getGatewayDb: () => deps.getGatewayDb(),
+    archiveGoal: (goalId, outcome) => deps.archiveGoal(goalId, outcome as any),
   });
   // Phase D1 Task G：dashboard 影子条（goals.list / dashboard.stats /
   // memory.add / memory.setSticky）挂 registry dispatch；handleDashboardAPI

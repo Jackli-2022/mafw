@@ -27,6 +27,7 @@ import { agentKey, isAgentKey, resolveSessionAgent } from "./agent-identity"
 import { mergeHiddenTodos } from "./todo-presenter"
   import { traceEvent } from "./event-trace"
 import { dispatchShellEvent, type ShellEventDeps } from "./sse/dispatcher"
+import { SseConnection } from "./sse/sse-connection"
 import { applyPartUpsert } from "./sse/chat-reducers"
 import { createToolPartScheduler } from "./sse/tool-part-scheduler"
 import { bumpGoalsRev, goalsRev } from "./goals-rev"
@@ -1183,12 +1184,7 @@ export function MafwShell() {
       })
       .catch((e: any) => showToastV2({ description: `创建失败：${String(e?.message ?? e).slice(0, 80)}`, duration: 4000 }))
   }
-  let es: EventSource | null = null
-  let esRetry: ReturnType<typeof setTimeout> | null = null
-  const scheduleEsRetry = (delayMs = 5000) => {
-    if (esRetry) return
-    esRetry = setTimeout(() => { esRetry = null; void connectSse() }, delayMs)
-  }
+  // E1-9: SSE lifecycle owned by the tested manager (see below).
 
   onMount(() => {
     const unsubConn = conn.subscribe((ev) => {
@@ -1330,22 +1326,20 @@ export function MafwShell() {
     },
   }
 
-  async function connectSse() {
-    if (es) return
-    const info = await window.api.mafw.gateway.info()
-    if (!info?.url) {
-      console.log("[mafw] SSE: no gateway URL yet, will retry")
-      scheduleEsRetry()
-      return
-    }
-    console.log("[mafw] SSE connecting to", info.url)
-    // URL 契约归 SDK（event.url）；EventSource 传输保持 renderer 直连。
-    const source = new EventSource(await window.api.mafw.event.url())
-    es = source
-    // onopen fires on initial connect AND after every EventSource auto-reconnect:
-    // a gateway restart breaks SSE but keeps the same port, so the reconnect is
-    // the only reliable signal that in-memory lists (session history) are stale.
-    source.onopen = () => {
+  // E1-9: connection lifecycle lives in `sse/sse-connection.ts` (unit-tested
+  // singleton guard). The component only supplies gateway info + event routing.
+  const sse = new SseConnection({
+    open: async () => {
+      const info = await window.api.mafw.gateway.info()
+      if (!info?.url) {
+        console.log("[mafw] SSE: no gateway URL yet, will retry")
+        return null
+      }
+      console.log("[mafw] SSE connecting to", info.url)
+      // URL 契约归 SDK（event.url）；EventSource 传输保持 renderer 直连。
+      return new EventSource(await window.api.mafw.event.url())
+    },
+    onOpen: () => {
       console.log("[mafw] SSE connected")
       conn.report("sse-open")
       // Gateway restarts keep the same port; reconnect is the only reliable
@@ -1360,32 +1354,32 @@ export function MafwShell() {
       // Task 7：重连是唯一可靠的「gateway 可能重启过」信号（同一端口），
       // client revision 的 bootId 会变化 → 必须重拉 committed descriptors。
       void refreshPluginClient()
-    }
-    source.onerror = () => {
+      // Seed flow cards that arrived before the SSE connection (native APIs
+      // return pending only). Idempotent, so per-open is safe.
+      seedFlowCards()
+    },
+    onError: () => {
       console.log("[mafw] SSE error (will auto-reconnect)")
       conn.report("sse-error")
-      if (source.readyState === EventSource.CLOSED) {
-        // Fatal close (server gone / non-SSE response): EventSource won't
-        // retry on its own — recreate on a short delay.
-        es = null
-        source.close()
-        scheduleEsRetry()
-      }
-    }
-    // Seed flow cards that arrived before the SSE connection (native APIs return pending only).
+    },
+    onMessage: (data) => {
+      let raw: any
+      try { raw = JSON.parse(data) } catch { return }
+      // 全部事件经 dispatcher 纯路由分发（sse/dispatcher.ts + sse/handlers/*，
+      // 分支语义见各 handler 注释；漏接线检测在 dispatcher 尾部 missTrace）。
+      dispatchShellEvent(raw?.data || raw, sseDeps)
+    },
+  })
+  const connectSse = () => sse.connect()
+
+  // Seed flow cards that arrived before the SSE connection (native APIs return pending only).
+  const seedFlowCards = () => {
     window.api.mafw.permissions.list().then((items: any[]) => {
       for (const req of items || []) upsertCard(req.sessionID, { kind: "permission", data: mapPermissionCard(req, Date.now()) })
     }).catch(e => console.warn("[mafw] permissions.list seed:", e))
     window.api.mafw.questions.list(questionsDirectory()).then((items: any[]) => {
       for (const req of items || []) upsertCard(req.sessionID, { kind: "ask", data: mapAskCard(req, Date.now()) })
     }).catch(e => console.warn("[mafw] questions.list seed:", e))
-    es.onmessage = (e: MessageEvent) => {
-      let raw: any
-      try { raw = JSON.parse(e.data) } catch { return }
-      // 全部事件经 dispatcher 纯路由分发（sse/dispatcher.ts + sse/handlers/*，
-      // 分支语义见各 handler 注释；漏接线检测在 dispatcher 尾部 missTrace）。
-      dispatchShellEvent(raw?.data || raw, sseDeps)
-    }
   }
 
   // SSE lifecycle: connect now, close on unmount, reconnect if the gateway
@@ -1438,8 +1432,8 @@ export function MafwShell() {
       clearInterval(backgroundTimer)
       offSubagentNotify()
       offBackgroundNotify()
-      if (esRetry) { clearTimeout(esRetry); esRetry = null }
-      if (es) { console.log("[mafw] SSE closing"); es.close(); es = null }
+      if (sse.source) { console.log("[mafw] SSE closing") }
+      sse.dispose()
     })
     void connectSse()
   })
@@ -1568,7 +1562,11 @@ export function MafwShell() {
     // `local-` Session and without silently closing Config.
     if (!opts?.requirePersisted) enterChat()
     try {
-      const result = await window.api.mafw.sessions.create() as any
+      // E1-5: the gateway now requires an absolute `directory` on session
+      // create. Send the current project; without one the call fails and falls
+      // into the existing degraded path below.
+      const projectDir = currentProject()
+      const result = await window.api.mafw.sessions.create(projectDir ? { directory: projectDir } : {}) as any
       const id = result.id || result.sessionID || `sess-${Date.now()}`
       console.log("[mafw] createSession result id:", id)
       if (opts?.requirePersisted) enterChat()
@@ -2751,7 +2749,7 @@ export function MafwShell() {
       // loaded — e.g. self-update relay restarts.
       if (s?.state === "failed") conn.report("gateway-failed")
       else if (s?.state === "ready") conn.report("gateway-ready")
-      if (s?.state === "ready" && !es) void connectSse()
+      if (s?.state === "ready" && !sse.source) void connectSse()
     })
     onCleanup(unsub)
     // Optional chain: a stale preload (renderer HMR outpaces preload rebuild)

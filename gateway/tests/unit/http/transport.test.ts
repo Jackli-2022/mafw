@@ -10,8 +10,9 @@
  *      needs a token, an unauthorized request never reaches the registry, and a
  *      registry hit short-circuits the rest of the chain.
  *   2. the dashboard joint catch-all (`/api/goals|stats|memory`) runs BEFORE
- *      `/control` — ruling R6: `/api/goals/control` is shadowed since cdf678db2
- *      and MUST stay shadowed (the dead arm is preserved verbatim, not fixed).
+ *      `/control` in this chain. Since E1-4 the registry claims
+ *      `POST /api/goals/control` (`goals.control`) before this chain, so the
+ *      dashboard joint is now a backstop for *missed* dispatch only.
  *
  * Plus the transport-level matchers that D3-R2 rewrote (no `req.url?.match`):
  * `/a2a`, `/mcp`, the SPA, and the `/a2a/artifacts/<id>` prefix+slot.
@@ -188,14 +189,18 @@ describe('createRequestListener: OPTIONS → auth → registry order', () => {
   });
 });
 
-describe('createRequestListener: dashboard joint is ordered before /control (R6)', () => {
-  it('POST /api/goals/control is swallowed by the dashboard catch-all', async () => {
+describe('createRequestListener: dashboard joint stays behind registry dispatch (R6 superseded by E1-4)', () => {
+  it('a MISSED registry dispatch still falls back to the dashboard catch-all', async () => {
     const { deps, spies } = makeDeps();
+    // E1-4: `POST /api/goals/control` is now owned by the registry
+    // (`goals.control` handler) and never reaches this chain in production —
+    // see tests/unit/routes/goals-dispatch-fixes.test.ts for the reachability
+    // pin. This test keeps the transport-level backstop honest: if dispatch
+    // misses (no handler / unmatched), the dashboard joint still answers.
     spies.dispatchAuthorized.mockResolvedValue(false);
     const listener = createRequestListener(deps);
     const { res, rec } = fakeRes();
     await listener(fakeReq({ method: 'POST', url: '/api/goals/control' }), res);
-    // The dead alias arm behind the joint branch must stay unreachable.
     expect(spies.dashboardDispatch).toHaveBeenCalledTimes(1);
     expect(spies.controlPatchState).not.toHaveBeenCalled();
     expect(rec.status).toBe(200);
