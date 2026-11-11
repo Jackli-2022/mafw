@@ -17,7 +17,8 @@ import { openMenuOnKey } from "../context-menu/menu-key"
 import { DockBanner, DockEmpty, DockPanelHeader } from "./dock-panel"
 
 export function FilesDock(props: {
-  sessionDirectory: string | null
+  contentRoot: string | null
+  scopeKey?: string | null
   sessionID?: string | null
   onOpenFile: (rel: string) => void
 }) {
@@ -30,7 +31,7 @@ export function FilesDock(props: {
   let loadToken = 0
 
   const loadRoot = () => {
-    const root = props.sessionDirectory
+    const root = props.contentRoot
     const token = ++loadToken
     setExpanded(new Set<string>())
     setChildren({})
@@ -48,7 +49,7 @@ export function FilesDock(props: {
 
   // root 变化（切会话/切 worktree）→ 整树重置（Review Focus #4）
   createEffect(() => {
-    props.sessionDirectory
+    props.contentRoot
     releaseWatches()
     loadRoot()
   })
@@ -65,7 +66,7 @@ export function FilesDock(props: {
   }
 
   function syncWatches() {
-    const root = props.sessionDirectory
+    const root = props.contentRoot
     // 换 root 后旧 watch 一律退订（按注册时的 root，不按新 root）
     for (const [rel, r] of [...watched]) {
       if (!root || r !== root) {
@@ -89,16 +90,16 @@ export function FilesDock(props: {
   }
 
   createEffect(() => {
-    props.sessionDirectory
+    props.contentRoot
     expanded()
     syncWatches()
   })
 
   async function refreshDir(rel: string) {
-    const root = props.sessionDirectory
+    const root = props.contentRoot
     if (!root) return
     const entries = await window.api.fs.listDir(root, rel)
-    if (root !== props.sessionDirectory) return
+    if (root !== props.contentRoot) return
     if (rel === "") {
       if (entries) setRootEntries(prev => sameDirEntries(prev, entries) ? prev : entries)
       return
@@ -127,7 +128,7 @@ export function FilesDock(props: {
   onMount(() => {
     // 旧 preload（未重启 Electron）没有 onDirChanged：静默降级为手动刷新。
     const off = window.api.fs.onDirChanged?.(({ root, rel }) => {
-      if (root !== props.sessionDirectory) return
+      if (root !== props.contentRoot) return
       void refreshDir(rel)
     })
     onCleanup(() => {
@@ -139,7 +140,7 @@ export function FilesDock(props: {
   const rows = () => visibleRows(rootEntries(), expanded(), children())
 
   const toggleDir = async (row: TreeRow) => {
-    const root = props.sessionDirectory
+    const root = props.contentRoot
     if (!root) return
     const exp = expanded()
     if (exp.has(row.rel)) {
@@ -152,14 +153,14 @@ export function FilesDock(props: {
       try {
         const entries = await window.api.fs.listDir(root, row.rel)
         // root 已切换：丢弃迟到结果（终审 Important 2 同类）
-        if (root !== props.sessionDirectory) return
+        if (root !== props.contentRoot) return
         if (entries === null) {
           setError("无法读取该目录")
           return
         }
         setChildren(prev => ({ ...prev, [row.rel]: entries }))
       } catch (e: any) {
-        if (root !== props.sessionDirectory) return
+        if (root !== props.contentRoot) return
         setError(`读取目录失败：${String(e?.message ?? e).slice(0, 60)}`)
         return
       }
@@ -173,7 +174,7 @@ export function FilesDock(props: {
   }
 
   const absPath = (rel: string) => {
-    const root = (props.sessionDirectory ?? "").replace(/[\\/]+$/, "")
+    const root = (props.contentRoot ?? "").replace(/[\\/]+$/, "")
     return `${root}/${rel.replace(/^[\\/]+/, "")}`
   }
 
@@ -205,7 +206,7 @@ export function FilesDock(props: {
             variant="ghost"
             size="small"
             aria-label="刷新文件树"
-            disabled={!props.sessionDirectory || loading()}
+            disabled={!props.contentRoot || loading()}
             onClick={() => loadRoot()}
           >
             <Icon name="refresh" size="small" />
@@ -217,7 +218,7 @@ export function FilesDock(props: {
       </Show>
       <div class="mafw-file-tree">
         <Show
-          when={props.sessionDirectory}
+          when={props.contentRoot}
           fallback={<DockEmpty icon="file-tree" text="没有打开的会话" hint="打开会话后此处显示项目文件" />}
         >
           <Show when={loading()}>

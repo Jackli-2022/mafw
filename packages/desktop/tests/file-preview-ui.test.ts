@@ -75,9 +75,9 @@ test("Office preview: lazy libs + read-only tabs", () => {
   assert.match(editor, /isReadOnlyPreview/)
 })
 
-// 闪帧回归（2026-10-31）：回合开始/结束会替换 sessions 数组，benchRoot 若是裸函数，
+// 闪帧回归（2026-10-31）：回合开始/结束会替换 sessions 数组，内容根若是裸函数，
 // 其下游 prop getter 会把 OfficePreview 的解析 effect 拖起来 —— host.innerHTML 被清空，
-// 肉眼就是 pptx 白/黑一帧。三层锁：benchRoot 是 memo（按值去抖）→ 预览 URL 是 memo →
+// 肉眼就是 pptx 白/黑一帧。三层锁：contentRoot 是 memo（按值去抖）→ 预览 URL 是 memo →
 // OfficePreview 用 kind+url 键在同键时早退。
 test("Office preview reload is keyed (no reparse on unrelated session churn)", () => {
   const office = read("src/renderer/mafw/components/OfficePreview.tsx")
@@ -93,6 +93,6 @@ test("Office preview reload is keyed (no reparse on unrelated session churn)", (
   assert.match(editor, /url=\{activePreviewUrl\(\)\}/)
 
   const shell = read("src/renderer/mafw/MafwShell.tsx")
-  assert.match(shell, /const benchRoot = createMemo\(\(\) =>/)
+  assert.match(shell, /const contentRoot = createMemo\(\(\) =>/)
 })
 

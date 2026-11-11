@@ -58,7 +58,8 @@ interface SelectionState {
 
 export function EditorDock(props: {
   sessionID: string | null
-  sessionDirectory: string | null
+  contentRoot: string | null
+  scopeKey?: string | null
   diffs?: FileDiffEntry[]
   onSendAnnotation?: (text: string, opts?: { imageDataUrl?: string }) => void
   /** 加入批注草稿（v2：草稿优先，发送时随消息打包） */
@@ -123,11 +124,11 @@ export function EditorDock(props: {
 
   /** mafw-file:// URL（带版本号破缓存）；token 未就绪 → 空串（<img> 不渲染）。 */
   const previewUrl = (rel: string): string => {
-    const root = props.sessionDirectory
+    const root = props.contentRoot
     return (root && fileProtocol.urlFor(root, rel, fileVersion()[rel])) ?? ""
   }
 
-  /** 活动文件的预览 URL。按值去抖：props.sessionDirectory 上游会随 sessions 信号抖动，
+  /** 活动文件的预览 URL。按值去抖：props.contentRoot 上游会随 sessions 信号抖动，
    *  裸 getter 会让 OfficePreview 的解析 effect 重跑（清空宿主 → 白帧，2026-10-31）。 */
   const activePreviewUrl = createMemo(() => {
     const f = activeFile()
@@ -205,7 +206,7 @@ export function EditorDock(props: {
   const tableData = createMemo(() => {
     const f = activeFile()
     if (!f || f.kind !== "table") return null
-    const root = props.sessionDirectory
+    const root = props.contentRoot
     const text = (root ? getDraft(root, f.rel) : undefined) ?? f.savedContent
     return parseCsv(text)
   })
@@ -214,7 +215,7 @@ export function EditorDock(props: {
   const activeSourceText = createMemo(() => {
     const f = activeFile()
     if (!f) return ""
-    const root = props.sessionDirectory
+    const root = props.contentRoot
     return (root ? getDraft(root, f.rel) : undefined) ?? f.savedContent
   })
 
@@ -260,7 +261,7 @@ export function EditorDock(props: {
 
   // ── root 跟随（切会话/worktree）：模型清空、退订旧 watch、清选区 ─────
   createEffect(() => {
-    const root = props.sessionDirectory
+    const root = props.contentRoot
     if (root === model().root) return
     setModel(m => onRootChange(m, root))
     setReadNotes({})
@@ -286,12 +287,12 @@ export function EditorDock(props: {
     const req = pendingEditorOpen()
     if (!req) return
     consumeEditorOpen()
-    if (req.root !== props.sessionDirectory) return
+    if (req.root !== props.contentRoot) return
     void openRel(req.rel)
   })
 
   async function openRel(rel: string) {
-    const root = props.sessionDirectory
+    const root = props.contentRoot
     if (!root) return
     if (model().files.some(f => f.rel === rel)) {
       setModel(m => setActive(m, rel))
@@ -303,7 +304,7 @@ export function EditorDock(props: {
     const kind = fileKindFor(rel)
     // 图片：不走 readFile（二进制闸），只需 root token + stat（元数据/版本）。
     if (kind === "image") {      const token = await fileProtocol.ensureRootToken(root)
-      if (root !== props.sessionDirectory) return // root 已切换：丢弃迟到的结果
+      if (root !== props.contentRoot) return // root 已切换：丢弃迟到的结果
       if (!token) {
         setIoError("图片预览不可用（文件协议注册失败）")
         return
@@ -312,7 +313,7 @@ export function EditorDock(props: {
       let size: number | undefined
       try {
         const st = await window.api.fs.statFile(root, rel)
-        if (root !== props.sessionDirectory) return
+        if (root !== props.contentRoot) return
         if (st.ok) {
           version = st.mtimeMs
           size = st.size
@@ -331,7 +332,7 @@ export function EditorDock(props: {
     // Office（xlsx/docx/pptx）：只读预览 tab；数据集走 mafw-file:// + fetch，不读文本。
     if (kind === "xlsx" || kind === "docx" || kind === "pptx") {
       const token = await fileProtocol.ensureRootToken(root)
-      if (root !== props.sessionDirectory) return
+      if (root !== props.contentRoot) return
       if (!token) {
         setIoError("Office 预览不可用（文件协议注册失败）")
         return
@@ -339,7 +340,7 @@ export function EditorDock(props: {
       // 记录打开时 mtime：切回 tab 时 stat 比对，未变则不重解析（防白帧）
       try {
         const st = await window.api.fs.statFile(root, rel)
-        if (root !== props.sessionDirectory) return
+        if (root !== props.contentRoot) return
         if (st.ok) setMtime(root, rel, st.mtimeMs)
       } catch { /* 可选元数据 */ }
       setFileVersion(prev => ({ ...prev, [rel]: Date.now() }))
@@ -353,12 +354,12 @@ export function EditorDock(props: {
     // SVG 默认预览需要协议 token（首次打开即渲染）；注册失败退回源码态。
     if (kind === "svg") {
       const token = await fileProtocol.ensureRootToken(root)
-      if (root !== props.sessionDirectory) return
+      if (root !== props.contentRoot) return
       if (!token) setSourceMode(prev => ({ ...prev, [rel]: true }))
     }
     try {
       const res = await window.api.fs.readFile(root, rel)
-      if (root !== props.sessionDirectory) return // root 已切换：丢弃迟到的结果（Important 2）
+      if (root !== props.contentRoot) return // root 已切换：丢弃迟到的结果（Important 2）
       const editorKind = kind === "svg" ? "svg" : kind === "table" ? "table" : kind === "markdown" ? "markdown" : kind === "json" ? "json" : "text"
       if (res.ok) {
         setMtime(root, rel, res.mtimeMs)
@@ -388,7 +389,7 @@ export function EditorDock(props: {
   // 只读预览 → stat 比对 mtime，未变不 bump（防无谓重解析）；文本 → 读盘，
   // 干净时静默换基准，dirty 时只标冲突、绝不覆盖（沿用 canApplyCleanReload 语义）。
   async function refreshActiveFromDisk(rel: string) {
-    const root = props.sessionDirectory
+    const root = props.contentRoot
     if (!root) return
     const file = model().files.find((x) => x.rel === rel)
     if (!file) return
@@ -397,7 +398,7 @@ export function EditorDock(props: {
     if (action === "stat-preview") {
       try {
         const st = await window.api.fs.statFile(root, rel)
-        if (root !== props.sessionDirectory || !st.ok) return
+        if (root !== props.contentRoot || !st.ok) return
         if (getMtime(root, rel) === st.mtimeMs) return // 未变更：不重解析（否则切 tab 白一帧）
         setMtime(root, rel, st.mtimeMs)
         setFileVersion(prev => ({ ...prev, [rel]: Date.now() }))
@@ -409,7 +410,7 @@ export function EditorDock(props: {
     }
     try {
       const res = await window.api.fs.readFile(root, rel)
-      if (root !== props.sessionDirectory || !res.ok) return
+      if (root !== props.contentRoot || !res.ok) return
       const now = model().files.find((x) => x.rel === rel)
       if (!now) return
       if (now.dirty) {
@@ -432,12 +433,12 @@ export function EditorDock(props: {
   // 默认先按磁盘刷新活动文件（切 tab / 关 tab 后接棒 / 从 diff 返回）；
   // 刚读盘打开的路径传 fresh:true 跳过重复读。
   async function mountActive(opts?: { fresh?: boolean }) {
-    const rootAtStart = props.sessionDirectory
+    const rootAtStart = props.contentRoot
     const current = activeFile()
     if (current && !opts?.fresh) {
       await refreshActiveFromDisk(current.rel)
       // await 期间切了文件/会话：放弃本次挂载（目标路径自己会挂）
-      if (rootAtStart !== props.sessionDirectory || model().active !== current.rel) return
+      if (rootAtStart !== props.contentRoot || model().active !== current.rel) return
     }
     const f = activeFile()
     const el = host
@@ -461,7 +462,7 @@ export function EditorDock(props: {
     editor = null
     await unwatchAll() // 先退订（含 f=null 的情形，防旧 watch 泄漏）
     if (!f) return
-    const root = props.sessionDirectory
+    const root = props.contentRoot
     if (!root) return
     // 图片/Office 没有 CodeMirror：只挂外部变更 watch（变更 → 版本号刷新）。
     if (isReadOnlyPreview(f.kind)) {
@@ -502,7 +503,7 @@ export function EditorDock(props: {
 
   onMount(() => {
     const off = window.api.fs.onChanged(({ root, rel }) => {
-      if (root !== props.sessionDirectory) return
+      if (root !== props.contentRoot) return
       const f = model().files.find(x => x.rel === rel)
       if (!f) return
       // 版本号对所有 kind 生效（图片/SVG 预览的缓存破坏；文本也会顺带更新预览图）
@@ -510,7 +511,7 @@ export function EditorDock(props: {
       if (isReadOnlyPreview(f.kind)) {
         // 图片/Office 只读：版本号触发重解析；stat 同步 mtime（切 tab 的激活比对用）
         void window.api.fs.statFile(root, rel).then((st) => {
-          if (root !== props.sessionDirectory || !st.ok) return
+          if (root !== props.contentRoot || !st.ok) return
           setMtime(root, rel, st.mtimeMs)
           if (f.kind === "image") {
             setImageMeta(prev => ({ ...prev, [rel]: { ...prev[rel], size: st.size } }))
@@ -531,11 +532,11 @@ export function EditorDock(props: {
   })
 
   async function reloadClean(rel: string) {
-    const root = props.sessionDirectory
+    const root = props.contentRoot
     if (!root) return
     try {
       const res = await window.api.fs.readFile(root, rel)
-      if (root !== props.sessionDirectory || !res.ok) return
+      if (root !== props.contentRoot || !res.ok) return
       // await 期间用户可能开始输入 → 禁止静默覆盖（Critical 1）
       if (!canApplyCleanReload(model(), rel)) return
       setMtime(root, rel, res.mtimeMs)
@@ -559,7 +560,7 @@ export function EditorDock(props: {
   // ── 保存（显式 + mtime 版本校验 + EOL 保真）─────────────────────────
   async function saveActive(force = false) {
     const f = activeFile()
-    const root = props.sessionDirectory
+    const root = props.contentRoot
     if (!f || !root || f.readOnly || saving()) return
     const content = getDraft(root, f.rel) ?? editor?.getDoc() ?? f.savedContent
     setSaving(true)
@@ -568,7 +569,7 @@ export function EditorDock(props: {
         ...(force ? {} : { ifMtimeMs: getMtime(root, f.rel) }),
         eol: getEol(root, f.rel) ?? "\n",
       })
-      if (root !== props.sessionDirectory) return
+      if (root !== props.contentRoot) return
       if (res.ok) {
         clearDraft(root, f.rel)
         setModel(m => markSaved(m, f.rel, content))
@@ -594,10 +595,10 @@ export function EditorDock(props: {
   }
 
   async function reloadFromDisk(rel: string) {
-    const root = props.sessionDirectory
+    const root = props.contentRoot
     if (!root) return
     const res = await window.api.fs.readFile(root, rel)
-    if (root !== props.sessionDirectory) return
+    if (root !== props.contentRoot) return
     if (!res.ok) {
       setIoError(res.reason === "not-found" ? "文件已被删除" : "读取失败")
       return
@@ -614,7 +615,7 @@ export function EditorDock(props: {
   }
 
   function closeRel(rel: string) {
-    const root = props.sessionDirectory
+    const root = props.contentRoot
     if (root) clearDraft(root, rel)
     setModel(m => closeFile(m, rel))
     setSourceMode(prev => { const next = { ...prev }; delete next[rel]; return next })
@@ -649,7 +650,7 @@ export function EditorDock(props: {
   const requestTabMenu = (rel: string, index: number, event: MouseEvent) => {
     if (shouldUseNativeMenu(guardFactsFromEvent(event))) return
     event.preventDefault()
-    const root = props.sessionDirectory
+    const root = props.contentRoot
     if (!root) return
     const abs = `${root.replace(/[\\/]+$/, "")}/${rel.replace(/^[\\/]+/, "")}`
     menuController.request(
@@ -667,7 +668,7 @@ export function EditorDock(props: {
   }
 
   async function openExternal(rel: string) {
-    const root = props.sessionDirectory
+    const root = props.contentRoot
     if (!root) return
     const res = await window.api.fs.openExternal(root, rel)
     if (!res.ok) setIoError("无法在外部编辑器打开")

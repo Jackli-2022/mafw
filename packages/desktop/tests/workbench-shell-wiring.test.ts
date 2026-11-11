@@ -26,6 +26,10 @@ test("right workbench owns L1/L2 and the terminal surface", () => {
   assert.match(shell, /DropdownMenu\.Trigger as=\{ButtonV2\}/)
   assert.doesNotMatch(shell, /SessionRail/)
 
+  assert.match(shell, /ContentScopeHeader/)
+  assert.match(shell, /contentScopeLabel/)
+  assert.match(shell, /contentScopeIsGoal/)
+  assert.match(code, /contentRoot/)
   assert.match(code, /FilesDock/)
   assert.match(code, /setFilesOpen\(false\)/)
   assert.match(code, /EditorDock/)

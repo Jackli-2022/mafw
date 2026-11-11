@@ -3070,6 +3070,30 @@ html[data-theme="light"] body {
 .mafw-rw-exec-trigger:hover { background: var(--bg-hover); }
 .mafw-rw-check { margin-left: auto; color: var(--accent); }
 .mafw-rw-content { flex: 1; min-height: 0; min-width: 0; display: flex; position: relative; }
+.mafw-content-scope {
+  flex: none;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-raised);
+  color: var(--text-3);
+  font-size: 11px;
+}
+.mafw-content-scope-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+  font-weight: 600;
+}
+.mafw-content-scope-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+.mafw-content-scope-back,
+.mafw-content-scope-return { color: var(--text-3); }
 .mafw-rw-pane { display: none; flex: 1; min-width: 0; min-height: 0; flex-direction: column; }
 .mafw-rw-pane.is-active { display: flex; }
 .mafw-rw-code { flex: 1; min-width: 0; min-height: 0; display: flex; position: relative; }

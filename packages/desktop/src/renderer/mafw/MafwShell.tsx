@@ -123,6 +123,16 @@ import { CHAT_PX_CEIL, CHAT_PX_FLOOR, WORKBENCH_DEFAULT_DETENT, WORKBENCH_MIN_WI
 import { captureWorkbenchFocusSnapshot, restoreWorkbenchFocusSnapshot, type WorkbenchFocusSnapshot } from "./workbench-focus"
 import { migrateDockKeys, workbenchColumns, workbenchFocusActive, workbenchShellHidden, workbenchSplit, formatResizePreview, type WorkbenchContentMode } from "./workbench-layout"
 import { resolveWorkbenchRoot } from "./workbench-root"
+import {
+  contentScopeKey,
+  contentScopeLabel,
+  contentScopeRoot,
+  diffsForContentScope,
+  goalContentScope,
+  projectContentScope,
+  scopeAfterProjectChange,
+  type ContentScope,
+} from "./content-scope"
 import { PopoverShell } from "./components/pickers/PopoverShell"
 import { type NavTab } from "./components/nav-tab"
 import { WindowControls } from "./components/WindowControls"
@@ -2095,6 +2105,24 @@ export function MafwShell() {
     setRightDockOpen(true)
     try { localStorage.setItem("mafw-right-dock-open", "1") } catch { /* ignore */ }
   }
+  const openGoalContent = (input: {
+    goalId: string
+    revision: number
+    worktreeDir: string
+    title?: string | null
+  }): void => {
+    const scope = goalContentScope({ projectDir: currentProject(), ...input })
+    if (!scope) {
+      showToastV2({ description: "无法打开该 Goal 版本的文件", variant: "error", duration: 3500 } as any)
+      return
+    }
+    setContentScope(scope)
+    openWorkbench("workbench")
+    applyWorkbenchSurface("code")
+  }
+  const returnToProjectContent = (): void => {
+    setContentScope(projectContentScope(currentProject()))
+  }
   /** 左栏插件入口：切到「工作台」并激活该 surface（spec 2026-11-09 §6.4）。 */
   const openPluginSurface = (surfaceId: PluginSurfaceId) => {
     closeLeftDockIfOverlay()
@@ -2150,6 +2178,21 @@ export function MafwShell() {
   // 裸函数会让每个读它的消费者重跑（文件树清空重载、Office 预览重解析白帧）。
   const benchRoot = createMemo(() =>
     resolveWorkbenchRoot(currentProject(), store.session.find((s: any) => s.id === currentSessionID())?.directory ?? null))
+
+  // 内容工作台 scope：项目根是默认值；Goal revision 只能由显式动作进入。
+  // 与会话目录解耦，Chat 角色切换不会改变这里。
+  const [contentScope, setContentScope] = createSignal<ContentScope | null>(projectContentScope(currentProject()))
+  const contentRoot = createMemo(() => contentScopeRoot(contentScope()) ?? currentProject())
+  const currentContentScopeKey = createMemo(() => contentScopeKey(contentScope()))
+  const contentScopeIsGoal = createMemo(() => contentScope()?.kind === "goal")
+  createEffect(() => {
+    setContentScope((scope) => scopeAfterProjectChange(scope, currentProject()))
+  })
+  const contentDiffEntries = createMemo(() => diffsForContentScope({
+    contentRoot: contentRoot(),
+    sessionDirectory: store.session.find((s: any) => s.id === currentSessionID())?.directory ?? null,
+    diffs: mergedSessionDiffs(),
+  }))
 
   // 鲸群左栏：shell 持有常驻订阅，左右两栏共用同一个 pod-store
   // （spec 2026-10-30-pod-left-rail §4.1）。目录口径与右栏一致。
@@ -3122,10 +3165,16 @@ export function MafwShell() {
                   onSurface={applyWorkbenchSurface}
                   onExecutionSection={applyExecutionSection}
                   sessionID={currentSessionID() || null}
-                  sessionDirectory={benchRoot()}
-                  diffs={mergedSessionDiffs()}
+                  contentRoot={contentRoot()}
+                  contentScopeKey={currentContentScopeKey()}
+                  contentScopeLabel={contentScopeLabel(contentScope())}
+                  contentScopeIsGoal={contentScopeIsGoal()}
+                  canGoBack={false}
+                  onBack={() => {}}
+                  onReturnToProjectContent={returnToProjectContent}
+                  diffs={contentDiffEntries()}
                   onOpenFile={(rel) => {
-                    const root = benchRoot()
+                    const root = contentRoot()
                     if (!root) return
                     // 分流（2026-10-27 文件预览）：html → 浏览器 surface（mafw-file:// 单 webview 导航）；
                     // 图片/SVG/文本 → 文件 surface（编辑器内部按 kind 渲染）。
@@ -3136,7 +3185,7 @@ export function MafwShell() {
                           showToastV2({ description: "无法打开本地文件（文件协议注册失败）", variant: "error", duration: 4000 } as any)
                           return
                         }
-                        if (root !== benchRoot()) return // 根已切换：丢弃迟到结果
+                        if (root !== contentRoot()) return // 根已切换：丢弃迟到结果
                         try {
                           requestBrowserNavigate(buildMafwFileUrl(token, rel))
                           openWorkbenchSurface("browser")

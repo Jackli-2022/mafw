@@ -20,7 +20,8 @@ export function WorkbenchCodeView(props: {
   active: boolean
   surface: WorkbenchSurface
   sessionID: string | null
-  sessionDirectory: string | null
+  contentRoot: string | null
+  contentScopeKey: string | null
   diffs: FileDiffEntry[]
   onOpenFile: (rel: string) => void
   onSendAnnotation?: (text: string, opts?: { imageDataUrl?: string }) => void
@@ -80,14 +81,20 @@ export function WorkbenchCodeView(props: {
           </ButtonV2>
         </TooltipV2>
         <div class="mafw-rw-files">
-          <FilesDock sessionID={props.sessionID} sessionDirectory={props.sessionDirectory} onOpenFile={openFile} />
+          <FilesDock
+            sessionID={props.sessionID}
+            contentRoot={props.contentRoot}
+            scopeKey={props.contentScopeKey}
+            onOpenFile={openFile}
+          />
         </div>
       </Show>
       <div class="mafw-rw-code-main">
         <div class="mafw-rw-code-pane" style={{ display: props.surface === "code" ? "contents" : "none" }}>
           <EditorDock
             sessionID={props.sessionID}
-            sessionDirectory={props.sessionDirectory}
+            contentRoot={props.contentRoot}
+            scopeKey={props.contentScopeKey}
             diffs={props.diffs}
             onSendAnnotation={props.onSendAnnotation}
             onAddAnnotation={props.onAddAnnotation}
@@ -100,7 +107,7 @@ export function WorkbenchCodeView(props: {
         </div>
         <div class="mafw-rw-code-pane" style={{ display: props.surface === "terminal" ? "contents" : "none" }}>
           <TerminalSurface
-            directory={props.sessionDirectory}
+            directory={props.contentRoot}
             active={props.active && props.surface === "terminal"}
           />
         </div>
@@ -120,7 +127,7 @@ export function WorkbenchCodeView(props: {
                   view={view}
                   gatewayUrl={props.gatewayUrl ?? ""}
                   sessionID={props.sessionID}
-                  projectDir={props.sessionDirectory ?? ""}
+                  projectDir={props.contentRoot ?? ""}
                   onBadge={(count) => props.onWebBadge?.(view.surfaceId, count)}
                   onTitle={(title) => props.onWebTitle?.(view.surfaceId, title)}
                   onError={(message) => props.onWebError?.(view.surfaceId, message)}
