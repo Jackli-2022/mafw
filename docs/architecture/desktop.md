@@ -251,6 +251,19 @@ Project Agent Workbench 的 Plan A 已完成（Goal / Chat 垂直切片）：
 - 内容工作台（文件树 / 阅读 / 审阅 / 修改）由 Plan B 完成；评审项与强制验收由 Plan C 完成。
 - Plan C：结果页新增「评审意见」区，按未解决优先展示状态（待处理 / 已回应 / 已解决）、文件/行号、Tech Lead 回应与源 revision；只有人类能确认解决或重新打开。有未解决意见时验收主按钮改为「先处理意见」，次级动作「确认风险并强制验收」需勾选风险确认并展示剩余意见；验收后记录 `acceptanceRecord`（forced / 时间 / 未解决项快照），评审项冻结。批注在发送给 Goal 绑定的 Tech Lead 时才落成评审项；落库失败会中止发送并保留草稿。
 
+#### 右工作台 Context Shell（2026-11-11 Plan D1）
+
+spec §5.1/§5.3/§8.2，plan `docs/superpowers/plans/2026-11-11-project-agent-workbench-shell-ia.md`。
+
+- 右工作台不再有「工作 / 工作台 / 执行 / 审阅」四个平级 L1 Tab；改为 **项目 / Goal / 内容 / 审阅** 四种上下文，由 `mafw-rw-head` 面包屑 + 返回 + 执行抽屉构成。
+- **项目**：`ProjectWorkView` 只保留优先级、全部 Goal、长效目标与新建 Goal；Goal 详情不再内嵌在项目列表里。
+- **Goal**：`GoalDetailPanel` 作为独立上下文面板，按 `podGoalId` keyed 重挂；打开 Goal 不丢 Chat/内容状态。Goal 结果进入本版文件时记录 `contentReturnGoalId`，内容头返回会回到该 Goal。
+- **内容**：`WorkbenchCodeView` + `ContentScopeHeader` + 二级 `文件 / 浏览器 / 终端 / 插件`；项目上下文头提供「文件」入口，普通打开不创建持久 Tab。
+- **审阅**：`ChangesDock` 是会话变更上下文；Goal 评审项仍在 Goal 结果内，不另造空间。
+- **执行**：`ExecutionView` 收进 `mafw-rw-exec-drawer`（可开合、带分区下拉与关闭），不再占一级目的地。
+- 焦点快照包含 `context / surface / executionOpen / executionSection`；旧 `mafw-workbench-view` 迁移到 `mafw-workbench-context`，`execution` 回落项目且不自动打开抽屉。
+- 已知后续（Plan D2/D3）：项目首页文件树/最近内容、Pod 降为项目属性、按验收/阅读/修改三种意图重排内容面、Goal 阶段 Tab 清理。
+
 ### Composer 会话配置菜单 + switchAgent 门 + rail 视觉精修（2026-11-04）
 
 spec `docs/superpowers/specs/2026-11-04-inputbar-rail-attention-redesign-design.md`，plan
