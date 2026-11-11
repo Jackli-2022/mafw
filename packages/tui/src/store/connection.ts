@@ -53,6 +53,12 @@ export class ConnectionStore {
   private unsubs: (() => void)[] = []
   private schedule: (fn: () => void, ms: number) => void
   private deps: ConnectionDeps
+  /**
+   * E1-8: last state reported to `onState`. Callbacks are edge-triggered — the
+   * 1s health tick used to re-emit 'ok' every second, which made the TUI reload
+   * Experience + gateway queue once per second while connected.
+   */
+  private lastState: ConnState | null = null
 
   constructor(deps: ConnectionDeps) {
     this.deps = deps
@@ -61,6 +67,7 @@ export class ConnectionStore {
 
   start(): void {
     this.stopped = false
+    this.lastState = null
     void this.subscribe()
     this.schedule(() => this.healthTick(), HEALTH_TICK_MS)
   }
@@ -87,19 +94,26 @@ export class ConnectionStore {
       for (const e of KNOWN_EVENTS) track(sub.on(e, (d) => this.deps.onEvent(e, d)))
       this.unsubs = unsubs
     } catch {
-      this.deps.onState('down')
+      this.emitState('down')
     }
+  }
+
+  /** Edge-triggered state reporting: only changes reach `onState` (E1-8). */
+  private emitState(state: ConnState): void {
+    if (this.lastState === state) return
+    this.lastState = state
+    this.deps.onState(state)
   }
 
   private healthTick(): void {
     if (this.stopped) return
     if (this.deps.isConnected()) {
       this.backoffIdx = 0
-      this.deps.onState('ok')
+      this.emitState('ok')
       this.schedule(() => this.healthTick(), HEALTH_TICK_MS)
       return
     }
-    this.deps.onState('reconnecting')
+    this.emitState('reconnecting')
     const delay = BACKOFF[Math.min(this.backoffIdx, BACKOFF.length - 1)]
     this.backoffIdx++
     this.schedule(() => { void this.resubscribe() }, delay)
