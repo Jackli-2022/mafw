@@ -7838,6 +7838,25 @@ html[data-theme="light"] body {
 .mafw-pod-result-accept.is-accepted .mafw-pod-result-accept-state { color: var(--accent-success); }
 .mafw-pod-result-accept-note { color: var(--text-3); font-size: 11px; }
 .mafw-pod-result-accept-note code { color: var(--text-2); font-family: var(--font-data); }
+.mafw-pod-result-accept-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.mafw-pod-result-force {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--danger-border, var(--border-subtle));
+  border-radius: var(--r-sm);
+  background: var(--bg-inset);
+}
+.mafw-pod-result-force-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-2);
+  font-size: 11px;
+}
+.mafw-pod-result-force-list code { color: var(--accent); font-family: var(--font-data); }
+.mafw-pod-result-forced-note { color: var(--warning); font-size: 11px; }
 .mafw-pod-result-worktree-note { margin-top: 4px; padding-top: 6px; border-top: 1px solid var(--border-subtle); color: var(--text-3); font-size: 10.5px; line-height: 1.5; }
 .mafw-pod-result-failure { display: flex; flex-direction: column; gap: 3px; padding: 9px 10px; border: 1px solid color-mix(in srgb, var(--danger-text) 28%, var(--border-subtle)); border-radius: var(--r-sm); background: color-mix(in srgb, var(--danger-text) 7%, transparent); }
 .mafw-pod-result-failure strong { color: var(--danger-text); font-size: 11px; }
@@ -8021,7 +8040,7 @@ html[data-theme="light"] body {
   }
 }
 
-/* ©¤©¤ Goal review items£¨Plan C£© ©¤©¤ */
+/* ï¿½ï¿½ï¿½ï¿½ Goal review itemsï¿½ï¿½Plan Cï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ */
 .mafw-pod-review {
   display: flex;
   flex-direction: column;

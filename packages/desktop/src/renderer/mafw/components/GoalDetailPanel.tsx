@@ -482,7 +482,7 @@ export function GoalDetailPanel(props: {
     return true
   })
 
-  const acceptGoal = async (): Promise<PodGoalAcceptResult | null> => {
+  const acceptGoal = async (opts?: { force?: boolean; riskAcknowledged?: boolean }): Promise<PodGoalAcceptResult | null> => {
     const podId = await resolvePodIdForGoal()
     const id = props.goalId
     if (!podId || !id) {
@@ -491,7 +491,7 @@ export function GoalDetailPanel(props: {
     }
     let accepted: PodGoalAcceptResult
     try {
-      accepted = await window.api.mafw.pod.acceptResult(podId, id, { confirm: true })
+      accepted = await window.api.mafw.pod.acceptResult(podId, id, { confirm: true, ...opts })
     } catch (err: any) {
       const status = podHttpStatus(err)
       const description = status === 403
