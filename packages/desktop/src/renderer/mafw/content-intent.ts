@@ -17,3 +17,9 @@ export function contentIntentLabel(value: string | null | undefined): string {
   const intent = normalizeContentIntent(value)
   return CONTENT_INTENTS.find((item) => item.id === intent)?.label ?? "阅读"
 }
+
+/** 内容 surface 的标签：打开文档后直接显示文档名，而不是泛化的「文件」。 */
+export function contentDocumentLabel(rel: string | null | undefined): string {
+  const name = (rel ?? "").split(/[/\\]/).pop()?.trim()
+  return name || "文件"
+}

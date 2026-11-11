@@ -2398,6 +2398,7 @@ export function MafwShell() {
   // 与会话目录解耦，Chat 角色切换不会改变这里。
   const [contentScope, setContentScope] = createSignal<ContentScope | null>(projectContentScope(currentProject()))
   const [contentIntent, setContentIntent] = createSignal<ContentIntent>("reading")
+  const [activeContentDocument, setActiveContentDocument] = createSignal<string | null>(null)
   const contentRoot = createMemo(() => contentScopeRoot(contentScope()) ?? currentProject())
   const currentContentScopeKey = createMemo(() => contentScopeKey(contentScope()))
   const contentScopeIsGoal = createMemo(() => contentScope()?.kind === "goal")
@@ -3425,6 +3426,8 @@ export function MafwShell() {
                   contentScopeIsGoal={contentScopeIsGoal()}
                   contentIntent={contentIntent()}
                   onContentIntent={setContentIntent}
+                  contentDocument={activeContentDocument()}
+                  onContentDocument={setActiveContentDocument}
                   canReview={contentScopeIsGoal()}
                   onContentReview={() => {
                     const scope = contentScope()

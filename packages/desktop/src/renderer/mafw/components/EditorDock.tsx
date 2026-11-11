@@ -74,6 +74,8 @@ export function EditorDock(props: {
   /** 阅读意图用临时预览 tab；修改意图保留持久 tab。 */
   intent: ContentIntent
   onIntent?: (intent: ContentIntent) => void
+  /** 活动文档 → 内容 surface 标签直接显示文档名。 */
+  onActiveFileChange?: (rel: string | null) => void
   diffs?: FileDiffEntry[]
   onSendAnnotation?: (text: string, opts?: { imageDataUrl?: string }) => void
   /** 加入批注草稿（v2：草稿优先，发送时随消息打包） */
@@ -147,6 +149,11 @@ export function EditorDock(props: {
 
   const activeFile = (): OpenFile | null =>
     model().files.find(f => f.rel === model().active) ?? null
+
+  // 通知 shell：内容 surface 的标签用当前文档名，而不是泛化的「文件」。
+  createEffect(() => {
+    props.onActiveFileChange?.(activeFile()?.rel ?? null)
+  })
 
   // 显式「修改」：把当前阅读预览钉成持久 tab；首次输入也会自动转持久。
   createEffect(() => {
@@ -1192,7 +1199,8 @@ export function EditorDock(props: {
         when={model().files.length > 0}
         fallback={<DockEmpty icon="file-tree" text="从「文件」面板选择文件打开" hint="单击文件即可在此编辑" />}
       >
-        <div class="mafw-editor-tabs">
+        <Show when={model().files.length > 1 || props.intent === "editing"}>
+          <div class="mafw-editor-tabs">
           <For each={model().files}>
             {(f) => (
               <div
@@ -1222,7 +1230,8 @@ export function EditorDock(props: {
               </div>
             )}
           </For>
-        </div>
+          </div>
+        </Show>
 
         {/* 冲突横幅：dirty + 磁盘已变（watch 或保存校验）→ 绝不静默覆盖 */}
         <Show when={activeFile()?.conflict}>

@@ -30,7 +30,16 @@ test("editor opens preview tabs while reading and promotes on first edit", () =>
   assert.match(editor, /:\s*openFile\(m, rel, content, readOnly, kind\)/)
   assert.match(editor, /props\.intent === "reading"\) props\.onIntent\?\.\("editing"\)/)
   assert.match(editor, /mafw-editor-tab-preview/)
+  assert.match(editor, /model\(\)\.files\.length > 1 \|\| props\.intent === "editing"/)
+  assert.match(editor, /onActiveFileChange/)
   assert.match(css, /\.mafw-editor-tab-preview/)
+})
+
+test("open documents label the content tab with the document name", () => {
+  assert.match(workbench, /contentDocumentLabel/)
+  assert.match(workbench, /surface\.id === "code" \? contentDocumentLabel\(props\.contentDocument\)/)
+  assert.match(shell, /activeContentDocument/)
+  assert.match(shell, /onContentDocument=\{setActiveContentDocument\}/)
 })
 
 test("shell owns the content intent and resets project opens to reading", () => {

@@ -17,7 +17,7 @@ import { observePluginTabCapacity, planPluginTabs, type PluginTabSurface } from 
 import type { PluginWebSurfaceView } from "../plugins/plugin-web-surface"
 import { WorkbenchCodeView } from "./WorkbenchCodeView"
 import { ContentScopeHeader } from "./ContentScopeHeader"
-import type { ContentIntent } from "../content-intent"
+import { contentDocumentLabel, type ContentIntent } from "../content-intent"
 import type { FileDiffEntry } from "./DiffReviewPanel"
 import type { AnnotationAnchor } from "../../../shared/annotation-types"
 
@@ -42,6 +42,8 @@ export type WorkbenchShellProps = {
   contentScopeIsGoal: boolean
   contentIntent: ContentIntent
   onContentIntent: (intent: ContentIntent) => void
+  contentDocument: string | null
+  onContentDocument: (rel: string | null) => void
   canReview: boolean
   onContentReview: () => void
   canGoBack: boolean
@@ -221,7 +223,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
                 aria-selected={props.surface === surface.id}
                 onClick={() => props.onSurface(surface.id)}
               >
-                {surface.label}
+                {surface.id === "code" ? contentDocumentLabel(props.contentDocument) : surface.label}
               </ButtonV2>
             )}
           </For>
@@ -305,6 +307,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
             contentScopeKey={props.contentScopeKey}
             intent={props.contentIntent}
             onIntent={props.onContentIntent}
+            onActiveFileChange={props.onContentDocument}
             pluginProjectDir={props.pluginProjectDir}
             diffs={props.diffs}
             onOpenFile={props.onOpenFile}

@@ -25,6 +25,7 @@ export function WorkbenchCodeView(props: {
   contentScopeKey: string | null
   intent: ContentIntent
   onIntent: (intent: ContentIntent) => void
+  onActiveFileChange?: (rel: string | null) => void
   pluginProjectDir: string | null
   diffs: FileDiffEntry[]
   onOpenFile: (rel: string) => void
@@ -111,6 +112,7 @@ export function WorkbenchCodeView(props: {
             scopeKey={props.contentScopeKey}
             intent={props.intent}
             onIntent={props.onIntent}
+            onActiveFileChange={props.onActiveFileChange}
             diffs={props.diffs}
             onSendAnnotation={props.onSendAnnotation}
             onAddAnnotation={props.onAddAnnotation}

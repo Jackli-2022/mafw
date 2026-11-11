@@ -16,6 +16,7 @@
 ## 行为变化
 
 - 内容头作用域标签后新增 `阅读 / 修改`。项目首页打开文件默认 `阅读`；内容树内点击保持当前意图。
+- 打开文档后，内容二级条第一项直接显示文档名（如 `AGENTS.md`），阅读态且只有一个文档时不显示编辑器标签条；正文直接占据内容区。不再先落到泛化的 `文件` tab。
 - `阅读` 使用临时预览 Tab：
   - 新的干净预览替换上一个干净预览；
   - 持久 Tab、dirty Tab、只读预览不会被替换；
@@ -31,8 +32,9 @@
 - desktop 全量 **3353 / 3353**，691 suites
 - `npx tsgo --noEmit -p tsconfig.json` rc=0
 - `electron-vite build` rc=0
-- 实机 dev 冒烟（DOM + `.mafw/qa/plan-d3-reading.png`）：
-  - 项目文件打开后内容头显示 `项目文件 · 阅读 / 修改`，无 `验收`；
+- 实机 dev 冒烟（DOM + `.mafw/qa/plan-d3-document.png`）：
+  - 点项目文件 `AGENTS.md` 后内容二级条直接显示 `AGENTS.md`，不再是泛化的 `文件`；阅读态单文档无编辑器标签条；
+  - 内容头显示 `项目文件 · 阅读 / 修改`，无 `验收`；
   - 阅读态打开 `CONTEXT.md` 生成 1 个预览 Tab，再打开 `config.json` 仍只有 1 个预览 Tab；
   - 点击 `修改` 后预览转持久（`previewTabs=0`），再打开文件追加持久 Tab；
   - 预览 Tab 斜体样式生效。
