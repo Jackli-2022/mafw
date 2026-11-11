@@ -1,6 +1,10 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import type { RouteRegistry } from './registry';
 import { readRouteBody } from './cognition';
+import {
+  handleGoalControlCommand,
+  type GoalControlCommandDeps,
+} from '../core/goal/control-command';
 
 export type GoalControlActionKind = 'pause' | 'resume' | 'stop' | 'retry';
 
@@ -162,4 +166,32 @@ export function attachGoalControlRoutes(registry: RouteRegistry, deps: GoalContr
   registry.attachHandler('goals.resume', handler('resume'));
   registry.attachHandler('goals.stop', handler('stop'));
   registry.attachHandler('goals.retry', handler('retry'));
+}
+
+/**
+ * POST /api/goals/control（E1-4）—— SDK `goals.control` 契约路径。
+ *
+ * catalog 里一直是 shadow 条目（无 handler）→ 被 transport 的 dashboard
+ * `/api/goals*` 前缀兜底吞掉（R6 死臂）。registry dispatch 先于 legacy 链，
+ * 挂上 handler 后该路径由这里接管；transport 的 `/control` 分支继续服务旧
+ * 路径，二者共用 `handleGoalControlCommand`（大写动作族：PAUSE/ABORT/
+ * FORCE_PHASE/RESET_PARAMETRIC）。
+ */
+export function attachGoalControlCommandRoute(
+  registry: RouteRegistry,
+  deps: GoalControlCommandDeps,
+): void {
+  registry.attachHandler('goals.control', async (req: IncomingMessage, res: ServerResponse) => {
+    let control: any;
+    try {
+      control = JSON.parse(await readRouteBody(req) || '{}');
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid JSON' }));
+      return;
+    }
+    const out = await handleGoalControlCommand(control, deps);
+    res.writeHead(out.status, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(out.body));
+  });
 }

@@ -11,10 +11,12 @@
  *   OPTIONS(204) → apiToken auth(401) → registry dispatch → plugin web →
  *   file history → transport branches → dashboard joint catch-all →
  *   /register → /control → /health → reverse proxy → 500.
- * The dashboard joint MUST stay before `/control`: it shadows the
- * `/api/goals/control` arm (ruling R6, latent since cdf678db2 — deliberately
- * not fixed here). `/health` is two branches: the rich 200 (GET) and the dead
- * plain arm that can only be reached by non-GET methods.
+ * The dashboard joint still sits before the transport-level `/control` branch.
+ * Since E1-4, `POST /api/goals/control` is claimed by the registry
+ * (`goals.control` handler) during dispatch, so only `/control` (and a missed
+ * dispatch) reaches the branch below — both run the same
+ * `handleGoalControlCommand`. `/health` is two branches: the rich 200 (GET) and
+ * the dead plain arm that can only be reached by non-GET methods.
  *
  * URL parsing (ruling D3-R2): the raw url and pathname are computed once at the
  * top; every downstream branch compares explicitly. No `req.url`-anchored
@@ -29,6 +31,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
 import { authorizeRequest, isLoopbackAddr } from '../core/auth';
+import { handleGoalControlCommand } from '../core/goal/control-command';
 import { readBody } from '../core/http/http-util';
 import { log } from '../core/utils/logger';
 import { injectServeAuth } from '../runtime/proxy-auth';
@@ -394,7 +397,10 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
       return;
     }
 
-    // 控制指令（/control 为 MCP handler 兼容路径；/api/goals/control 为 SDK goals.control 契约路径，两者等价）
+    // 控制指令（/control 为 MCP handler 兼容路径；/api/goals/control 为 SDK
+    // goals.control 契约路径）。**E1-4 起 `/api/goals/control` 由 registry 的
+    // `goals.control` handler 在 dispatch 阶段接管**，只有 `/control`（以及
+    // registry 漏接时的兜底）会到这里；两条路径共用 handleGoalControlCommand。
     if ((url === '/control' || url === '/api/goals/control') && req.method === 'POST') {
       let body = '';
       req.on('data', chunk => body += chunk);
@@ -402,61 +408,9 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
         try {
           const control = JSON.parse(body);
           log.info(`[Scheduler] HTTP control: ${control.action} ${control.goalId || ''}`);
-
-          // 直接处理控制指令（同 processControlFile 逻辑）
-          switch (control.action) {
-            case 'PAUSE':
-              if (control.goalId) await deps.control.patchState(control.goalId, { nextAction: 'PAUSED' });
-              break;
-            case 'ABORT':
-              if (control.goalId) {
-                await deps.control.destroyAllSessions(control.goalId);
-                // W1：取消语义 = 批准门也取消（防 terminal state 下 UI 残留 pending）
-                await deps.control.patchState(control.goalId, { nextAction: 'FAILED', planApproval: null });
-                const state = deps.control.getActiveGoal(control.goalId);
-                // Find projectDir for this goal
-                let projectDir: string | null = null;
-                for (const [pDir, info] of deps.control.registeredProjects()) {
-                  if (fs.existsSync(path.join(info.mafwDir, 'state', `${control.goalId}.json`))) {
-                    projectDir = pDir;
-                    break;
-                  }
-                }
-                if (projectDir) {
-                  const { recordGoalOutcome } = await import('../orchestration/outcome-recorder.js');
-                  recordGoalOutcome(deps.control.getGatewayDb(), {
-                    goalId: control.goalId,
-                    verdict: 'CANCELLED',
-                    rounds: state?.loop ?? 0,
-                    lastError: 'User cancelled',
-                    reviewFeedback: null,
-                    projectDir,
-                    mafwDir: path.join(projectDir, '.mafw'),
-                    projectId: projectDir,
-                  });
-                }
-                await deps.control.archiveGoal(control.goalId, {
-                  verdict: 'CANCELLED',
-                  rounds: state?.loop ?? 0,
-                  lastError: 'User cancelled',
-                });
-              }
-              break;
-            case 'FORCE_PHASE':
-              if (control.goalId && control.targetPhase) {
-                await deps.control.destroyAllSessions(control.goalId);
-                await deps.control.patchState(control.goalId, {
-                  nextAction: `CREATE_${control.targetPhase.toUpperCase()}_SESSION`
-                });
-              }
-              break;
-            case 'RESET_PARAMETRIC':
-              log.info('[Scheduler] Resetting parametric cache...');
-              break;
-          }
-
-          res.writeHead(200);
-          res.end(JSON.stringify({ status: 'ok' }));
+          const out = await handleGoalControlCommand(control, deps.control);
+          res.writeHead(out.status);
+          res.end(JSON.stringify(out.body));
         } catch (err) {
           res.writeHead(400);
           res.end(JSON.stringify({ error: 'Invalid JSON' }));
