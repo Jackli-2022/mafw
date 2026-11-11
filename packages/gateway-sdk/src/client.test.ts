@@ -359,6 +359,16 @@ test("error responses surface the gateway's JSON error message (not just the sta
   ).rejects.toThrow(/HTTP 400.*confirm:true required/)
 })
 
+test("error responses keep a machine-readable code suffix", async () => {
+  fetchMock.mockResolvedValue(notOkWithBody(409, {
+    error: "unresolved review items: 2; handle them or confirm the risk to force acceptance",
+    code: "review_gate",
+  }))
+  const c = new MafwClient()
+  await expect(c.pod.acceptResult("pod_1", "g1", { confirm: true }))
+    .rejects.toThrow(/\[review_gate\]/)
+})
+
 test("error responses with plain-text bodies are surfaced too", async () => {
   fetchMock.mockResolvedValue(Promise.resolve({
     ok: false, status: 502, statusText: "Bad Gateway",

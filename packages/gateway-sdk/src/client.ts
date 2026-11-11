@@ -39,6 +39,7 @@ import type { MafwBackgroundJob, MafwMessage } from './view-dto'
  *  的可操作文案），读不到 body 时回退 statusText。 */
 async function httpError(res: Response): Promise<Error> {
   let detail = ''
+  let code = ''
   try {
     if (typeof (res as any).text === 'function') {
       const raw = await res.text()
@@ -46,6 +47,7 @@ async function httpError(res: Response): Promise<Error> {
         try {
           const parsed = JSON.parse(raw)
           detail = String((parsed as any)?.error ?? (parsed as any)?.message ?? raw)
+          code = typeof (parsed as any)?.code === 'string' ? ` [${(parsed as any).code}]` : ''
         } catch {
           detail = raw
         }
@@ -53,7 +55,7 @@ async function httpError(res: Response): Promise<Error> {
     }
   } catch { /* body unreadable → status only */ }
   const suffix = detail ? `: ${detail}` : `: ${res.statusText}`
-  return new Error(`HTTP ${res.status}${suffix}`.slice(0, 500))
+  return new Error(`HTTP ${res.status}${suffix}${code}`.slice(0, 500))
 }
 
 export class MafwClient implements IMafwClient {
