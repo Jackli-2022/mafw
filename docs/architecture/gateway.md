@@ -774,6 +774,24 @@ D3 承诺内）：`initServices()`（1104 行）拆分到 `subsystems/*`、kerne
 | E2-5 | `EventStore.append` 失败保持 fail-open（返回 null），但失败计数进程级累计（`appendFailures()`），日志限频 30s 一条 `[Events] append failed (total=N): …`；`/api/stats` 在有持久 event store 时暴露 `eventAppendFailures`（无 store 时字段省略，旧 payload 形状不变）。 | 计数随进程重启归零；无独立指标端点。 |
 | E2-6 | 收口：本节 + release 记录 + 全量门禁（gateway / SDK / desktop / TUI / analyzer / kernel-split）。 | deferred：mobile Dart cursor、event_log 作为恢复源与消费者幂等（C1 → E5）、定时器注册表（E4）。 |
 
+## E3 契约硬化（2026-11-11）
+
+> 修「契约层不一致」：catalog 里的不可达 op、幽灵测试、已死的 Mode B、六种错误方言、
+> 动作描述符无绑定、318 ops 仅 11 个有 response schema。**不改变正常路径的响应形状**
+> （错误仅增加字段；删除的都是不可达/已死面）。
+> spec：`docs/superpowers/specs/2026-11-11-gateway-e3-contract-hardening-design.md`；
+> 交付记录：`docs/releases/2026-11-11-gateway-e3-contract.md`。
+
+| # | 现状 | 边界 / 后续 |
+|---|---|---|
+| E3-1 | `tests/unit/api-contract.test.ts` 的幻影源码字符串断言换成**可达性守卫**：catalog 每个 op 必须 attached（字面 / 动态循环数组 / typed attach）或在三类 allowlist（`TRANSPORT_ALLOWLIST` 9 项、`DASHBOARD_RESIDUE_ALLOWLIST` 2 项、`RUNTIME_PROXY_ALLOWLIST` 1 项，每项带 reason）；allowlist 只减不增。删除 **12 个幽灵 op**（spec 的 11 个 + `memory.getL5Heuristics`，后者的唯一实现只在死模块）。死模块 `gateway/src/dashboard/{api,server,types}.ts` 删除（SPA `public/` 保留，仍由 transport 服务）；catalog 318 → 306 ops。 | `DASHBOARD_RESIDUE`（`goals.loops` / `goals.loopsAt`）仍由 dashboard 兜底，属后续迁移；spec 的 307/296 计数与实际基线（318）不符。 |
+| E3-2 | **Mode B 删除**：`?sessionID=` 的 per-session SSE 分支与 `ChatSessionManager` 移除；`event.subscribe` 现在忽略该参数、一律走 Mode A 全局流（SSE 头 + greeting + 回放 + `sseClients`）。`event-dispatch` 24 → 23 段（删 `modeBDelta`），kernel/api-routes 的 `chatSessions` 接线删除。**Breaking**：SDK `event.subscribeToSession` 删除（`?sessionID` 仍被接受并降级为 Mode A）。 | SDK `sessions.events()` 与 `event.url(sessionID?)` 仍构造 `?sessionID`（现降级到全局流），死面清理留后续。 |
+| E3-3 | 框架边界错误带机器码：`core/http/api-error.ts` 的 `API_ERROR_CODES` / `errorBody()`（`unauthorized` / `forbidden` / `capability_unavailable` / `internal`，预留 `schema_epoch_mismatch` / `not_found`）。应用点：transport 401/403/outer 500、registry-dispatch 401、kernel `capGuard`/`capGuardQuestion` 503。既有 `error` 字符串逐字保留。 | 路由内业务错误继续用原信封（错误格式按层）；客户端必须容忍可选 `code`。A2A/MCP 分支内 500 未迁移。 |
+| E3-4 | Experience `ActionDescriptor` 新增可选 `operationId`；projector 用 `EXPERIENCE_ACTION_OPERATIONS` 把 20 个动作绑定到 catalog op（复合动作取入口路由，如 `run.control → session.suspend`）。无路由动作省略该字段。 | 单 operationId 不是完整 verb 集合（run.control 也含 resume/discardRun）；路由改名时绑定测试会红。 |
+| E3-5 | **opt-in schema epoch**：所有响应带 `X-MAFW-Schema-Epoch`（`releaseMetadata.schemaEpoch`，未加载时省略）；客户端**主动携带**且不匹配 → 409 `{error, code:'schema_epoch_mismatch'}`（auth 之后、registry 之前）。不携带 / 匹配 / 服务端未知 → 正常放行。 | 不引入强制拒绝；SDK 尚未主动发送该头。 |
+| E3-6 | 四个读 op 的 200 response schema（`routes/schemas/read-models.ts`，只加 OpenAPI 元数据，不改 handler）：`goals.get`、`project.list`、`presence.get`、`session.usageSummary`。`emit:openapi` 后 274 paths / 306 operations。 | 其余 ~300 ops 仍无 response schema（渐进补齐）。 |
+| E3-7 | 收口：本节 + release 记录 + 全量门禁（gateway / SDK / desktop / TUI / analyzer / kernel-split）。 | deferred：dashboard residue 两 op、SDK `sessions.events()`/`event.url(sessionID?)` 清理、剩余 op 的 schema 覆盖。 |
+
 ---
 
 ## API 端点
