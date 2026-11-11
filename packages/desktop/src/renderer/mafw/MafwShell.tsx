@@ -18,7 +18,7 @@ import { MenuHost } from "./context-menu/MenuHost"
 import { TextMenuBridge } from "./context-menu/TextMenuBridge"
 import { menuController } from "./context-menu/controller"
 import { experienceStore } from "./experience-store"
-import { formatRailTitle } from "./components/rail-display"
+import { formatRailTitle, railProjectName } from "./components/rail-display"
 import { clampLeftDockWidth, closeLeftDockState, effectiveLeftDockWidth, leftDockPushDragMax, resolveLeftDockWidth, resolveMode, restoreLeftDockOpen, shouldAutoRestoreLeftDock, shouldCloseOnSelect, toggleLeftDockState, type LeftDockFace } from "./left-dock"
 import { SessionStrip } from "./components/SessionStrip"
 import { sessionStore } from "./session-store"
@@ -145,6 +145,7 @@ import {
 } from "./content-scope-state"
 import { persistContentScope, readPersistedContentScope } from "./content-scope-persistence"
 import { popContentHistory, pushContentHistory, type ContentHistoryEntry } from "./content-history"
+import { readRecentContent, recordRecentContent, type RecentContentEntry } from "./recent-content"
 import { PopoverShell } from "./components/pickers/PopoverShell"
 import { type NavTab } from "./components/nav-tab"
 import { WindowControls } from "./components/WindowControls"
@@ -2258,6 +2259,75 @@ export function MafwShell() {
     setContentScope(projectContentScope(currentProject()))
     applyWorkbenchContext("project")
   }
+  const recordRecentFile = (rel: string, scope: ContentScope | null): void => {
+    const project = currentProject()
+    const key = contentScopeKey(scope)
+    if (!project || !scope || !key) return
+    setRecentContent(recordRecentContent(project, {
+      rel,
+      scopeKey: key,
+      scopeKind: scope.kind,
+      scopeLabel: contentScopeLabel(scope),
+      at: Date.now(),
+    }, window.localStorage))
+  }
+  /** 内容面统一打开入口：分流浏览器/编辑器，并在成功路由后记录最近内容。 */
+  const openContentFile = (
+    rel: string,
+    root: string | null = contentRoot(),
+    rememberLocation = true,
+  ): void => {
+    if (!root) return
+    const scope = contentScope()
+    // 分流（2026-10-27 文件预览）：html → 浏览器 surface（mafw-file:// 单 webview 导航）；
+    // 图片/SVG/文本 → 文件 surface（编辑器内部按 kind 渲染）。
+    if (fileOpenPlan(rel) === "browser") {
+      void (async () => {
+        const token = await fileProtocol.ensureRootToken(root)
+        if (!token) {
+          showToastV2({ description: "无法打开本地文件（文件协议注册失败）", variant: "error", duration: 4000 } as any)
+          return
+        }
+        if (root !== contentRoot()) return // 根已切换：丢弃迟到结果
+        try {
+          requestBrowserNavigate(buildMafwFileUrl(token, rel))
+          openWorkbenchSurface("browser")
+          recordRecentFile(rel, scope)
+        } catch {
+          showToastV2({ description: "无法打开该文件路径", variant: "error", duration: 4000 } as any)
+        }
+      })()
+      return
+    }
+    if (rememberLocation) rememberContentLocation()
+    requestOpenEditor(root, rel)
+    openWorkbenchSurface("code")
+    recordRecentFile(rel, scope)
+  }
+  /** 项目首页 › 项目文件：始终回到项目主目录，不继承当前 Goal revision scope。 */
+  const openProjectContent = (): void => {
+    const project = currentProject()
+    const scope = projectContentScope(project)
+    if (!scope) return
+    if (currentContentScopeKey() !== contentScopeKey(scope)) {
+      rememberContentLocation()
+      setContentReturnGoalId(null)
+      setContentScope(scope)
+    }
+    applyWorkbenchSurface("code")
+  }
+  const openProjectFile = (rel: string): void => {
+    const project = currentProject()
+    const scope = projectContentScope(project)
+    if (!scope) return
+    const switched = currentContentScopeKey() !== contentScopeKey(scope)
+    if (switched) {
+      rememberContentLocation()
+      setContentReturnGoalId(null)
+      setContentScope(scope)
+    }
+    openContentFile(rel, contentScopeRoot(scope), !switched)
+  }
   /** 左栏插件入口：切到「工作台」并激活该 surface（spec 2026-11-09 §6.4）。 */
   const openPluginSurface = (surfaceId: PluginSurfaceId) => {
     closeLeftDockIfOverlay()
@@ -2349,6 +2419,12 @@ export function MafwShell() {
     const project = currentProject()
     if (!scope || !project || !contentScopeBelongsToProject(scope, project)) return
     persistContentScope(scope, window.localStorage)
+  })
+  // 项目首页：项目主目录 scope 与最近内容（按项目持久化）。
+  const projectScopeKey = createMemo(() => contentScopeKey(projectContentScope(currentProject())))
+  const [recentContent, setRecentContent] = createSignal<RecentContentEntry[]>([])
+  createEffect(() => {
+    setRecentContent(readRecentContent(currentProject(), window.localStorage))
   })
   const contentBackLabel = createMemo(() => {
     const top = contentHistory().at(-1)
@@ -3347,32 +3423,7 @@ export function MafwShell() {
                   onBack={() => backContent()}
                   onReturnToProjectContent={returnToProjectContent}
                   diffs={contentDiffEntries()}
-                  onOpenFile={(rel) => {
-                    const root = contentRoot()
-                    if (!root) return
-                    // 分流（2026-10-27 文件预览）：html → 浏览器 surface（mafw-file:// 单 webview 导航）；
-                    // 图片/SVG/文本 → 文件 surface（编辑器内部按 kind 渲染）。
-                    if (fileOpenPlan(rel) === "browser") {
-                      void (async () => {
-                        const token = await fileProtocol.ensureRootToken(root)
-                        if (!token) {
-                          showToastV2({ description: "无法打开本地文件（文件协议注册失败）", variant: "error", duration: 4000 } as any)
-                          return
-                        }
-                        if (root !== contentRoot()) return // 根已切换：丢弃迟到结果
-                        try {
-                          requestBrowserNavigate(buildMafwFileUrl(token, rel))
-                          openWorkbenchSurface("browser")
-                        } catch {
-                          showToastV2({ description: "无法打开该文件路径", variant: "error", duration: 4000 } as any)
-                        }
-                      })()
-                      return
-                    }
-                    rememberContentLocation()
-                    requestOpenEditor(root, rel)
-                    openWorkbenchSurface("code")
-                  }}
+                  onOpenFile={(rel) => openContentFile(rel)}
                   onSendAnnotation={(text, opts) => {
                     const sid = currentSessionID()
                     if (!sid) return
@@ -3403,9 +3454,21 @@ export function MafwShell() {
                   workView={
                     <ProjectWorkView
                       projectDir={currentProject()}
+                      projectName={railProjectName(currentProject(), true)}
                       refreshTick={() => Math.max(goalsRev(), podStore.revision())}
                       composerRequest={goalComposerRequest()}
                       active={workbenchContent() === "project" && dockPresent() && workbenchContext() === "project"}
+                      files={{
+                        root: currentProject(),
+                        scopeKey: projectScopeKey(),
+                        sessionID: currentSessionID() || null,
+                        onOpenFile: openProjectFile,
+                        onBrowse: openProjectContent,
+                      }}
+                      recents={{
+                        items: recentContent().filter((entry) => entry.scopeKind === "project"),
+                        onOpen: (entry) => openProjectFile(entry.rel),
+                      }}
                       onOpenGoal={(goal, focus) => { void openGoalAndDiscuss(goal.goalId, focus, goal) }}
                       onGoalCreated={(goalId, goal) => { void openGoalAndDiscuss(goalId, "timeline", goal) }}
                     />

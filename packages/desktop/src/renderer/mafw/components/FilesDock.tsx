@@ -3,7 +3,7 @@
 // 文件点击 → 交给编辑器打开（onOpenFile）。root 跟随活动会话 directory。
 // 骨架（spec 2026-10-26）：DockPanelHeader 统一头 + DockEmpty/DockBanner 空/错态，
 // 图标走 @mafw/ui/icon（禁 emoji/几何字形）。
-import { createSignal, createEffect, onMount, onCleanup, For, Show } from "solid-js"
+import { createSignal, createEffect, onMount, onCleanup, For, Show, type JSX } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { Icon } from "@mafw/ui/icon"
@@ -29,6 +29,8 @@ export function FilesDock(props: {
   contentRoot: string | null
   scopeKey?: string | null
   sessionID?: string | null
+  title?: string
+  headerAction?: JSX.Element
   onOpenFile: (rel: string) => void
 }) {
   const [rootEntries, setRootEntries] = createSignal<FsEntry[]>([])
@@ -254,7 +256,8 @@ export function FilesDock(props: {
 
   return (
     <div class="mafw-files-panel">
-      <DockPanelHeader title="文件">
+      <DockPanelHeader title={props.title ?? "文件"}>
+        {props.headerAction}
         <TooltipV2 value="刷新" openDelay={300}>
           <ButtonV2
             variant="ghost"

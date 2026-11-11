@@ -5,10 +5,13 @@ import { WorkOverview } from "./WorkOverview"
 import { WorkPriorityList } from "./WorkPriorityList"
 import { PodGoalComposer } from "./PodGoalComposer"
 import { StandingGoalsPanel } from "./StandingGoalsPanel"
+import { ProjectFilesCard } from "./ProjectFilesCard"
+import { RecentContentList } from "./RecentContentList"
 import { buildAttentionList, buildWorkPriority, type WorkFilter } from "../work-overview-model"
 import { goalRevisionOf, type GoalDetailFocus } from "../pod-model"
 import { isPodResultViewed } from "../pod-result-store"
 import { podEvents } from "../pod-events"
+import type { RecentContentEntry } from "../recent-content"
 
 /** Composer 请求序列的会话级消费游标：remount 不重放已处理请求。 */
 let lastConsumedComposerRequest = 0
@@ -29,6 +32,18 @@ export function ProjectWorkView(props: {
   refreshTick: () => number
   composerRequest?: number
   active: boolean
+  projectName?: string | null
+  files?: {
+    root: string | null
+    scopeKey: string | null
+    sessionID?: string | null
+    onOpenFile: (rel: string) => void
+    onBrowse: () => void
+  }
+  recents?: {
+    items: readonly RecentContentEntry[]
+    onOpen: (entry: RecentContentEntry) => void
+  }
   onOpenGoal: (goal: PodGoal, focus?: GoalDetailFocus) => void
   onGoalCreated?: (goalId: string, goal?: PodGoal) => void
 }): JSX.Element {
@@ -142,7 +157,9 @@ export function ProjectWorkView(props: {
       <div class="mafw-project-work-overview">
         <div class="mafw-project-work-head">
           <div>
-            <div class="mafw-work-kicker">工作</div>
+            <div class="mafw-work-kicker mafw-project-home-title">
+              {props.projectName?.trim() || "项目"}
+            </div>
             <div class="mafw-project-work-hint">先处理重要事项，全部 Goal 都保留在下方</div>
           </div>
           <ButtonV2
@@ -180,6 +197,28 @@ export function ProjectWorkView(props: {
           attention={attention()}
           onOpen={(goal, focus) => props.onOpenGoal(goal, focus)}
         />
+
+        <section
+          class="mafw-project-home-content"
+          classList={{ "is-single": !props.files || !props.recents }}
+          aria-label="项目内容"
+        >
+          <Show when={props.files}>
+            <ProjectFilesCard
+              root={props.files!.root}
+              scopeKey={props.files!.scopeKey}
+              sessionID={props.files!.sessionID ?? null}
+              onOpenFile={props.files!.onOpenFile}
+              onBrowse={props.files!.onBrowse}
+            />
+          </Show>
+          <Show when={props.recents}>
+            <RecentContentList
+              items={props.recents!.items}
+              onOpen={props.recents!.onOpen}
+            />
+          </Show>
+        </section>
 
         <WorkOverview
           goals={overviewGoals()}
