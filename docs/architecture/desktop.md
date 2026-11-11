@@ -35,6 +35,11 @@
   编辑器 tabs/活动文件/阅读位置/选区按 scope 恢复；批注草稿携带 `scopeKey`/`root`，草稿内容仍按 root 隔离。
   最后 scope 按项目持久化（重启/切项目后恢复，worktree 不可用则回退项目根）；终端为每个 scope 保留独立本地会话；
   返回会同步树选中并恢复编辑器选区。内联 diff 只在活动会话目录与内容根一致时显示；持久化评审项留给后续。
+- **Stage-first 焦点基础（2026-11-12 Plan 1）**：content context 走 `FrameBar / LensBar / FocusStage /
+  SubjectPicker`；焦点 = `scope + subject + lens + place`，按世界持久化到 `mafw-focus:v1:<worldId>`。
+  `⌘P` / `Ctrl+P` 取景器打开文件、最近内容、浏览器、终端；返回 / 面包屑通过 `syncStageToFocus` 同步舞台。
+  `project` / `goal` / `review` 仍是 legacy context；旧 `ContentScopeState` 在首次启动时迁移。详见
+  `docs/releases/2026-11-12-workbench-focus-foundation.md`。
 - **编辑器**：默认 **Monaco**（VS Code 内核；`mafw-editor-engine=codemirror` 回退，挂载失败自动回退），
   行内 diff 装饰、Ctrl/Cmd+S、MAFW 主题 token 映射、minimap ≥720px。详情见本文件 Monaco 段。
 - **文件预览**：md（session-ui markdown）、json 折叠树、csv/tsv 表格、svg 预览/源码、图片、pdf（Chromium
