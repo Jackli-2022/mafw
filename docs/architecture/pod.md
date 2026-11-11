@@ -211,6 +211,29 @@ workspace，结束后销毁）。
   `result_ready` 优先于归档→row 更新的瞬时窗口（bucket 不再闪到 ended）。`.mafw` 产物按 spec
   不进分支（验收为 no-op，worktree 仍移除）。
 
+#### 评审项与风险强制验收（2026-11-11 Plan C）
+
+spec `docs/superpowers/specs/2026-11-11-project-agent-workbench-experience-design.md` §9，plan
+`docs/superpowers/plans/2026-11-11-project-agent-workbench-review-items.md`。
+
+- **持久化**：`pod_goal_review_items`（Goal/revision、rel/行号/代码/评论、anchor_json、状态、
+  回应、origin）+ `pod_goal_review_item_events`（created/responded/resolved/reopened/carried，
+  append-only）+ `pod_goal_acceptances`（forced、未解决项快照、riskAcknowledged、mergeCommit）。
+- **状态机**：`pending → responded → resolved`；`reopen` 把 responded/resolved 退回 pending。
+  Tech Lead 只能通过 MCP `mafw_pod_review_respond` 标记 responded；resolve/reopen 与创建都是
+  人类专属（带 `actorSessionID` 的 HTTP 请求 403）。已验收 revision 的评审项冻结，任何变更 409。
+- **revision 延续**：打回开新 revision 时只克隆未解决项（新行、`origin_item_id`/`origin_revision`，
+  状态重置 pending）；已解决项留在旧 revision，旧行永不改写；`expectedRevision` 已保证重放不重复克隆。
+- **验收门**：`POST .../accept` 由服务端重新计算当前 revision 未解决项；有未解决项时普通验收 409，
+  必须 `force:true` + `riskAcknowledged:true` 才合并。强制验收记录未解决项快照，但**不**把这些项
+  标成已解决；PASS 仍不自动合并，验收仍是人类专属。
+- **结果 DTO/UI**：`PodGoalResult.acceptanceRecord -> {forced, acceptedAt, unresolvedReviewItemIds}`；
+  结果页评审区未解决优先，强制验收是内联风险确认面板；`PodGoalAcceptResult` 回传 forced 与快照。
+- **测试**：gateway `pod-review-store`/`pod-review-service`/`pod-review-routes`/
+  `pod-accept-review-gate`/`pod-revision-review-carry`/`pod-review-respond-tool`/`api-contract`；
+  desktop `pod-review-model`/`pod-review-wiring`/`pod-result-review-wiring`/`review-item-input`/
+  `use-send-message`/`preload-pod-review`。
+
 #### Lead 当前话题 Handoff 与 Goal 状态投影（2026-11-10）
 
 spec/plan：`docs/superpowers/specs/2026-11-10-lead-techlead-thread-handoff-design.md`、

@@ -28,6 +28,7 @@
 | `mafw_lead_goal_status` | Lead 的 Goal 状态投影（阶段 / 进度 / 阻塞 / 待处理 attention）；只读，不读 Tech Lead 原始 transcript |
 | `mafw_pod_goal_direction` | Tech Lead 方向裁定（`clear` / `needs_user` / `decided`；`goalMode` 选 quick/standard） |
 | `mafw_pod_goal_context` | Lead 为 Goal 选择上下文（可选文件 / 跨 Goal allowlist） |
+| `mafw_pod_review_respond` | Tech Lead 回应人类的评审项（只能标记「已回应」；解决/重开是人类专属） |
 | `mafw_set_goal` | 设置活跃 Goal |
 | `mafw_get_goal_status` | 查询 Goal 状态 |
 | `mafw_list_goals` | 列出 Goal |

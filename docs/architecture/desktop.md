@@ -248,7 +248,8 @@ Project Agent Workbench 的 Plan A 已完成（Goal / Chat 垂直切片）：
 - Goal 详情头部只展示当前状态、负责人、revision、真实进度与下一动作；技术详情默认折叠。
 - 进入非终态 Goal 走 `openGoalAndDiscuss`：先打开右侧 Goal，再恢复 Tech Lead 讨论；终态 Goal 不 ensure live Tech Lead。
 - 从 Goal 打开 Tech Lead 讨论、打回、打开 timeline 会话不再关闭右侧 Goal；「返回项目 Lead」只切 Chat，不清空当前 Goal。
-- 内容工作台（文件树 / 阅读 / 审阅 / 修改）与可追踪评审项仍属于后续 Plan B / Plan C。
+- 内容工作台（文件树 / 阅读 / 审阅 / 修改）由 Plan B 完成；评审项与强制验收由 Plan C 完成。
+- Plan C：结果页新增「评审意见」区，按未解决优先展示状态（待处理 / 已回应 / 已解决）、文件/行号、Tech Lead 回应与源 revision；只有人类能确认解决或重新打开。有未解决意见时验收主按钮改为「先处理意见」，次级动作「确认风险并强制验收」需勾选风险确认并展示剩余意见；验收后记录 `acceptanceRecord`（forced / 时间 / 未解决项快照），评审项冻结。批注在发送给 Goal 绑定的 Tech Lead 时才落成评审项；落库失败会中止发送并保留草稿。
 
 ### Composer 会话配置菜单 + switchAgent 门 + rail 视觉精修（2026-11-04）
 
