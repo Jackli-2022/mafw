@@ -1544,7 +1544,11 @@ export function MafwShell() {
     // `local-` Session and without silently closing Config.
     if (!opts?.requirePersisted) enterChat()
     try {
-      const result = await window.api.mafw.sessions.create() as any
+      // E1-5: the gateway now requires an absolute `directory` on session
+      // create. Send the current project; without one the call fails and falls
+      // into the existing degraded path below.
+      const projectDir = currentProject()
+      const result = await window.api.mafw.sessions.create(projectDir ? { directory: projectDir } : {}) as any
       const id = result.id || result.sessionID || `sess-${Date.now()}`
       console.log("[mafw] createSession result id:", id)
       if (opts?.requirePersisted) enterChat()

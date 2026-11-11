@@ -5,6 +5,7 @@
 // 404 miss, deleteLegacy's own cleanup set (R4 — NOT session.delete's), and the
 // background delegation into routes/session-background.ts.
 import type { IncomingMessage, ServerResponse } from 'http';
+import * as path from 'path';
 import { RouteRegistry } from '../../../src/routes/registry';
 import { buildRouteCatalog } from '../../../src/routes/route-catalog';
 import { attachSessionsCoreRoutes } from '../../../src/routes/sessions-core';
@@ -151,21 +152,24 @@ describe('sessions core registry wiring (D1 Task D1)', () => {
     expect(registry.match('DELETE', '/api/session/s%201/queue/q%201')!.params).toEqual({ id: 's 1', itemId: 'q 1' });
   });
 
-  it('create delegates to handleSessionCreate with the resolved project dir fallback', async () => {
+  it('create delegates to handleSessionCreate with the absolute directory (E1-5: no fallback)', async () => {
     const { registry, calls } = setup();
     let r = fakeRes();
     await handlerFor(registry, 'POST', '/api/session')!(
-      fakeReq({ url: '/api/session', method: 'POST', body: JSON.stringify({ directory: 'C:/x' }) }), r.res,
+      fakeReq({ url: '/api/session', method: 'POST', body: JSON.stringify({ directory: path.resolve('x') }) }), r.res,
     );
     expect(r.status).toBe(200);
-    expect(JSON.parse(r.body)).toEqual({ id: 'new1', directory: 'C:/x' });
-    expect(calls).toEqual(['create:C:/x']);
+    expect(JSON.parse(r.body)).toEqual({ id: 'new1', directory: path.resolve('x') });
+    expect(calls).toEqual([`create:${path.resolve('x')}`]);
 
+    // E1-5：缺 directory 不再回退到 resolvedProjectDir —— 400 且不调 runtime。
     r = fakeRes();
     await handlerFor(registry, 'POST', '/api/session')!(
       fakeReq({ url: '/api/session', method: 'POST', body: JSON.stringify({}) }), r.res,
     );
-    expect(calls.at(-1)).toBe('create:C:/proj');
+    expect(r.status).toBe(400);
+    expect(JSON.parse(r.body)).toEqual({ error: 'directory must be an absolute path' });
+    expect(calls).toEqual([`create:${path.resolve('x')}`]);
   });
 
   it('get: runtime projection first, then SDK fallback', async () => {

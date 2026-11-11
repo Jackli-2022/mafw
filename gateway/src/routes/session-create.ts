@@ -4,6 +4,7 @@
 // 可用性 = 本地 git + runtime 的 session.create({directory}) 契约。不可用时在任何
 // 会话 / worktree / kv 写入之前返回 409（reason = unsupported | missing-data）。
 import * as http from 'http';
+import * as path from 'path';
 import type { WorktreeAvailability } from '../core/worktree/worktree-availability';
 import { WorktreeUnavailableError } from '../core/worktree/worktree-availability';
 import { createSessionWithWorktree, type WorktreeSessionDeps } from './session-worktree';
@@ -35,6 +36,14 @@ export async function handleSessionCreate(
   try {
     const body = await readBody(req);
     const opts = body ? JSON.parse(body) : {};
+    // E1-5: `directory` is REQUIRED and must be absolute (AGENTS invariant:
+    // SessionCreateOpts.directory = absolute path). The old resolvedProjectDir
+    // fallback hid漏传 callers and guessed a project — reject instead.
+    const directory = opts?.directory;
+    if (typeof directory !== 'string' || !directory.trim() || !path.isAbsolute(directory)) {
+      json(res, 400, { error: 'directory must be an absolute path' });
+      return;
+    }
     // 返回形状保持向后兼容：SessionRecord 平铺（顶层 id），可选 worktree 字段——
     // desktop createSession() 读 r.id，包信封会破坏所有既有创建入口。
     const result = await createSessionWithWorktree(deps, opts);
