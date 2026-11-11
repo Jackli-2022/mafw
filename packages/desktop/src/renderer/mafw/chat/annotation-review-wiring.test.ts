@@ -20,6 +20,7 @@ test('send pipeline persists before clearing drafts and aborts on failure', () =
   assert.match(send, /persistAnnotations/);
   assert.match(send, /评审项保存失败/);
   const failure = send.indexOf('评审项保存失败');
-  const clear = send.indexOf('takeAnnotations(sid)', failure);
-  assert.ok(failure >= 0 && clear > failure, 'annotation persistence must run before takeAnnotations');
+  const persist = send.indexOf('persistAnnotations(items)');
+  const clear = send.indexOf('takeAnnotations(sid)', persist);
+  assert.ok(failure >= 0 && persist >= 0 && clear > persist, 'annotation persistence must run before takeAnnotations');
 });

@@ -153,17 +153,26 @@ export function useSendMessage(deps: SendMessageDeps) {
   const persistAnnotations = deps.persistAnnotations
 
   /** Persist before clearing drafts; null means "abort this send" (drafts stay). */
-  const stageAnnotations = async (sid: string): Promise<string | null> => {
+  let staging = false
+  const stageAnnotations = async (sid: string): Promise<{ block: string; annotations: any[] } | null> => {
+    // A double Enter during persistence must not persist the same drafts twice.
+    if (staging) return null
     const items = peekAnnotations(sid)
-    if (items.length === 0 || !persistAnnotations) return ""
+    if (items.length === 0 || !persistAnnotations) {
+      return { block: "", annotations: takeAnnotations(sid) }
+    }
+    staging = true
     try {
-      return await persistAnnotations(items)
+      const block = await persistAnnotations(items)
+      return { block, annotations: takeAnnotations(sid) }
     } catch (err: any) {
       showToastV2({
         description: `评审项保存失败，消息未发送：${String(err?.message ?? err).slice(0, 120)}`,
         duration: 4200,
       })
       return null
+    } finally {
+      staging = false
     }
   }
   const pendingCaptureCount = deps.pendingCaptureCount ?? (() => 0)
@@ -198,10 +207,11 @@ export function useSendMessage(deps: SendMessageDeps) {
       // messages queue for the next idle boundary instead of being dropped.
       if (!hasVoice) {
         // Plan C：先落评审项；失败则整条消息不发送（草稿原样保留）。
-        const reviewBlock = await stageAnnotations(sid)
-        if (reviewBlock === null) return
+        const staged = await stageAnnotations(sid)
+        if (!staged) return
+        const reviewBlock = staged.block
         // Review Focus 4：入队时打包批注快照；入队后新增的批注不跟这条。
-        const queuedAnnotations = takeAnnotations(sid)
+        const queuedAnnotations = staged.annotations
         const queuedCaptures = takeCaptures ? takeCaptures(sid) : []
         const queuedCaptureBlock = queuedCaptures.length > 0 && formatCaptures ? formatCaptures(queuedCaptures) : ""
         const queuedText = [text.trim(), queuedAnnotations.length > 0 ? formatAnnotations(queuedAnnotations) : "", reviewBlock, queuedCaptureBlock]
@@ -293,10 +303,16 @@ export function useSendMessage(deps: SendMessageDeps) {
     }
 
     // Plan C：先落评审项；失败则消息不发送、输入与批注草稿都保留。
-    const reviewBlock = await stageAnnotations(sid)
-    if (reviewBlock === null) return
+    // Set sending before the await so a double-submit cannot start a second stage.
     setSending(true)
     setPhase('searching')
+    const staged = await stageAnnotations(sid)
+    if (!staged) {
+      setSending(false)
+      setPhase('idle')
+      return
+    }
+    const reviewBlock = staged.block
     history.push(text)
     clearDraft(sidProp())
     setInput("")
@@ -304,7 +320,7 @@ export function useSendMessage(deps: SendMessageDeps) {
     setMentionedAgents(() => [])
     setMentionedFiles([])
     // 批注草稿随本条消息打包（slash 命令不消耗批注；纯批注消息 text 为空）
-    const pendingAnnotations = takeAnnotations(sid)
+    const pendingAnnotations = staged.annotations
     const annotationBlock = pendingAnnotations.length > 0 ? formatAnnotations(pendingAnnotations) : ""
     // 截屏/元素点选草稿同批打包（G1/G2）
     const pendingCaptures = takeCaptures ? takeCaptures(sid) : []

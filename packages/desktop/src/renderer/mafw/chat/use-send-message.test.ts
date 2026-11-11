@@ -232,6 +232,39 @@ describe("sendMessage busy 排队路径", () => {
     } finally { delete (globalThis as any).window }
   })
 
+  test("并发双击只落库并发送一次（批注不被重复持久化）", async () => {
+    const sent: any[] = []
+    ;(globalThis as any).window = { api: { mafw: { chat: { sendEnriched: async (req: any) => { sent.push(req); return { sessionID: "s_test_session" } } } } } }
+    try {
+      let sending = false
+      let persistCalls = 0
+      let release!: () => void
+      const gate = new Promise<void>((resolve) => { release = resolve })
+      const f = baseDeps({
+        input: () => "要发的话",
+        sending: () => sending,
+        setSending: (v: boolean) => { sending = v },
+        pendingAnnotationCount: () => 1,
+        peekAnnotations: () => [{ id: "a1", comment: "改这里" }],
+        persistAnnotations: async () => {
+          persistCalls++
+          await gate
+          return "已登记 1 条评审项：review_1"
+        },
+        takeAnnotations: () => [{ id: "a1" }],
+        formatAnnotations: () => "BLOCK",
+      })
+      const { sendMessage } = useSendMessage(f.deps)
+      const first = sendMessage()
+      const second = sendMessage()
+      await settle()
+      release()
+      await Promise.all([first, second])
+      expect(persistCalls).toBe(1)
+      expect(sent).toHaveLength(1)
+    } finally { delete (globalThis as any).window }
+  })
+
   // W5a：忙时 Enter=steer（delivery:'steer'）/ Ctrl+Enter=网关队列（delivery:'queue'）
   const mockPromptAsync = () => {
     const calls: any[] = []

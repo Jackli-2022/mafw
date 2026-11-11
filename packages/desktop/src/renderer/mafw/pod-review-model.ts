@@ -38,7 +38,6 @@ export function canReopenReviewItem(item: PodReviewItem): boolean {
 }
 
 export function reviewAcceptAction(input: {
-  actionable: boolean
   unresolved: number
 }):
   | { kind: "accept"; label: "验收并合并到主分支" }

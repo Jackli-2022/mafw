@@ -61,6 +61,8 @@ export function PodResultView(props: {
   onAccept?: (opts?: { force?: boolean; riskAcknowledged?: boolean }) => Promise<PodGoalAcceptResult | null>
   /** 显式进入当前 revision 的 worktree 内容；不会自动切换 scope。 */
   onOpenWorktree?: (target: Omit<GoalWorktreeTarget, "title">) => void
+  /** 外部 Pod 事实变化时刷新评审项（如 Tech Lead 回应/新批注落库）。 */
+  reviewRefreshKey?: () => unknown
 }) {
   const [result, setResult] = createSignal<PodGoalResult | null>(null)
   const [revisions, setRevisions] = createSignal<PodGoalRevision[]>([])
@@ -99,20 +101,16 @@ export function PodResultView(props: {
     setReviewItems([])
     setForceOpen(false)
     setRiskAck(false)
-    // revisions/review items 失败（旧 gateway / 无权限）不影响结果本身：fail-open 空历史。
+    // revisions 失败（旧 gateway / 无权限）不影响结果本身：fail-open 空历史。
     void Promise.allSettled([
       window.api.mafw.pod.result(podId, goalId),
       window.api.mafw.pod.revisions(podId, goalId),
-      window.api.mafw.pod.reviewItems(podId, goalId),
     ])
-      .then(([resultRes, revisionRes, reviewRes]) => {
+      .then(([resultRes, revisionRes]) => {
         if (my !== loadSeq) return
         const revisionItems = revisionRes.status === "fulfilled" && Array.isArray(revisionRes.value?.items)
           ? revisionRes.value.items
           : []
-        if (reviewRes.status === "fulfilled" && Array.isArray(reviewRes.value?.items)) {
-          setReviewItems(reviewRes.value.items)
-        }
         if (resultRes.status === "fulfilled") {
           setResult(resultRes.value)
           // 已查看只在**结果数据真的加载成功**后标记（打开面板本身不算）：
@@ -189,15 +187,35 @@ export function PodResultView(props: {
       || Boolean(value?.acceptanceRecord)
   }
   const acceptAction = () => reviewAcceptAction({
-    actionable: acceptance()?.actionable === true,
     unresolved: reviewCount().unresolved,
   })
+  let reviewSeq = 0
   const refreshReviewItems = async () => {
+    const podId = props.podId
+    const goalId = props.goalId
+    const revision = worktreeRevision()
+    const my = ++reviewSeq
     try {
-      const listed = await window.api.mafw.pod.reviewItems(props.podId, props.goalId)
+      const listed = await window.api.mafw.pod.reviewItems(
+        podId,
+        goalId,
+        revision == null ? undefined : { revision },
+      )
+      if (my !== reviewSeq) return
       setReviewItems(Array.isArray(listed?.items) ? listed.items : [])
     } catch { /* fail-open: keep the last projected list */ }
   }
+  // Review items are revision facts: reload on goal/revision changes and on
+  // external pod updates (Tech Lead respond / annotation persistence).
+  createEffect(() => {
+    const podId = props.podId
+    const goalId = props.goalId
+    void props.reviewRefreshKey?.()
+    void podId
+    void goalId
+    void worktreeRevision()
+    void refreshReviewItems()
+  })
   const resolveReviewItem = async (item: PodReviewItem) => {
     if (reviewBusy()) return
     setReviewBusy(true)
@@ -205,6 +223,7 @@ export function PodResultView(props: {
       await window.api.mafw.pod.resolveReviewItem(props.podId, props.goalId, item.id)
       await refreshReviewItems()
     } catch (err: any) {
+      void refreshReviewItems()
       showToastV2({ description: `确认解决失败：${String(err?.message ?? err).slice(0, 120)}`, duration: 3200 })
     } finally {
       setReviewBusy(false)
@@ -217,6 +236,7 @@ export function PodResultView(props: {
       await window.api.mafw.pod.reopenReviewItem(props.podId, props.goalId, item.id)
       await refreshReviewItems()
     } catch (err: any) {
+      void refreshReviewItems()
       showToastV2({ description: `重新打开失败：${String(err?.message ?? err).slice(0, 120)}`, duration: 3200 })
     } finally {
       setReviewBusy(false)

@@ -53,8 +53,8 @@ test('forced acceptance note survives the accepted (non-actionable) state', () =
 });
 
 test('unresolved items steer acceptance to handling first', () => {
-  assert.deepEqual(reviewAcceptAction({ actionable: true, unresolved: 2 }), { kind: 'handle', label: '先处理意见' });
-  assert.deepEqual(reviewAcceptAction({ actionable: true, unresolved: 0 }), { kind: 'accept', label: '验收并合并到主分支' });
+  assert.deepEqual(reviewAcceptAction({ unresolved: 2 }), { kind: 'handle', label: '先处理意见' });
+  assert.deepEqual(reviewAcceptAction({ unresolved: 0 }), { kind: 'accept', label: '验收并合并到主分支' });
   assert.equal(forcedAcceptReady({ acknowledged: false, unresolved: 2 }), false);
   assert.equal(forcedAcceptReady({ acknowledged: true, unresolved: 2 }), true);
 });

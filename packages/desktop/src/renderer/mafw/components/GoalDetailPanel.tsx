@@ -494,13 +494,13 @@ export function GoalDetailPanel(props: {
       accepted = await window.api.mafw.pod.acceptResult(podId, id, { confirm: true, ...opts })
     } catch (err: any) {
       const status = podHttpStatus(err)
+      // 409 = stale unresolved list; PodResultView owns refresh + forced panel.
+      if (status === 409) throw err
       const description = status === 403
         ? "只有人类可以验收；agent 会话不能合并"
-        : status === 409
-          ? `当前无法合并：${String(err?.message ?? err).slice(0, 160)}`
-          : status === 503
-            ? "当前 gateway 不支持验收，请升级"
-            : `验收失败：${String(err?.message ?? err).slice(0, 120)}`
+        : status === 503
+          ? "当前 gateway 不支持验收，请升级"
+          : `验收失败：${String(err?.message ?? err).slice(0, 120)}`
       showToastV2({ description, duration: 3800 })
       return null
     }
@@ -833,6 +833,7 @@ export function GoalDetailPanel(props: {
                     <PodResultView
                       podId={podId()}
                       goalId={props.goalId!}
+                      reviewRefreshKey={() => podStore.detail()}
                       onResubmit={() => {
                         showToastV2({ description: "在鲸群「工作」页基于失败反馈重新提交", duration: 3200 })
                       }}
