@@ -92,8 +92,21 @@ export class PushGateway {
     }
   }
 
-  async onBroadcast(event: BroadcastEvent): Promise<void> {
+  /**
+   * Fan out one broadcast to push-managed devices.
+   *
+   * E1-7: the mobile transport registers the same socket in `eventHub.wsClients`
+   * (primary channel) and here (`onlineDevices`). Callers pass
+   * `excludeDeviceIds` = devices already delivered over WS so a device never
+   * receives the same event twice (with different timestamps). Omitted ⇒ legacy
+   * behaviour (send to every online device). Rate limits are unchanged.
+   */
+  async onBroadcast(
+    event: BroadcastEvent,
+    opts?: { excludeDeviceIds?: ReadonlySet<string> },
+  ): Promise<void> {
     const now = Date.now();
+    const exclude = opts?.excludeDeviceIds;
 
     // Global leaky bucket: block entire broadcast if last send was <1s ago
     if (now - this.lastGlobalSend < this.globalMinIntervalMs) {
@@ -104,6 +117,8 @@ export class PushGateway {
     let sent = false;
 
     for (const [deviceId, entry] of this.onlineDevices) {
+      // E1-7: WS is the primary channel for connected devices — push is fallback only.
+      if (exclude?.has(deviceId)) continue;
       // Per-device rate limit
       const lastSend = this.deviceLastSend.get(deviceId) || 0;
       if (now - lastSend < this.perDeviceMinIntervalMs) {
