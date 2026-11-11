@@ -35,17 +35,20 @@ describe('DeviceStore', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  test('register persists device', () => {
+  test('register persists device (E1-10: the bearer token is never stored)', () => {
     const input = makeDevice();
     const entry = store.register(input);
     expect(entry.id).toBe(input.id);
-    expect(entry.fcmToken).toBe(input.fcmToken);
+    // E1-10: fcmToken 字段保留兼容但不再写入（网关 bearer token 原文绝不落盘）。
+    expect(entry.fcmToken).toBe('');
+    expect(entry.apiTokenHash).toBe(input.apiTokenHash);
     expect(entry.lastSeen).toBeTruthy();
 
     // Reload from disk
     const store2 = new DeviceStore(path.join(dir, 'devices.json'));
     expect(store2.get(input.id)).toBeDefined();
-    expect(store2.get(input.id)!.fcmToken).toBe(input.fcmToken);
+    expect(store2.get(input.id)!.fcmToken).toBe('');
+    expect(fs.readFileSync(path.join(dir, 'devices.json'), 'utf8')).not.toContain(input.fcmToken);
   });
 
   test('register enforces MAX_DEVICES limit', () => {
