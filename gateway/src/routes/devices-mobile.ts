@@ -11,8 +11,9 @@
  *   POST   /api/mobile/pairing/verify      — mobile.pairingVerify（消费 nonce）
  *
  * handler 体从 index.ts legacy 分支逐字迁移：apiTokenHash 仍服务端算
- * （createHash sha256 → 16 hex），mobile 注册仍把 token 同时当 fcmToken 与
- * apiTokenHash（32/16 前缀），配对 503/400/429 语义与错误文案原样保留。
+ * （createHash sha256 → 16 hex）。**E1-10 起不再持久化网关 token**：
+ * `fcmToken` 字段保留兼容但写空值，且注册时校验提交的 token 是否等于配置的
+ * `server.apiToken`（不一致 → 401）。配对 503/400/429 语义与错误文案原样保留。
  * id/路径参数由 registry 预先 decode（legacy 自行 decodeURIComponent）。
  * Spec: 2026-11-09-gateway-kernel-microkernel-design.md §5.2.
  */
@@ -25,6 +26,23 @@ import type { RouteRegistry } from './registry';
 export interface DevicesMobileRouteDeps {
   pushGateway: () => PushGateway | undefined;
   pairingService: () => PairingService | undefined;
+  /** Configured gateway bearer token (live; empty = no token configured). */
+  apiToken?: () => string;
+}
+
+/**
+ * E1-10: hash a presented device token the same way registration stores it
+ * (sha256 → 16 hex). A device may only register with the gateway's token.
+ */
+function hashDeviceToken(token: string): string {
+  const { createHash } = require('crypto');
+  return createHash('sha256').update(token).digest('hex').slice(0, 16);
+}
+
+/** `true` when the presented token matches the configured gateway token. */
+function deviceTokenAccepted(presented: string, configured: string): boolean {
+  if (!configured) return true; // no gateway token configured — nothing to verify
+  return hashDeviceToken(presented) === hashDeviceToken(configured);
 }
 
 export function attachDevicesMobileRoutes(registry: RouteRegistry, deps: DevicesMobileRouteDeps): void {
@@ -38,10 +56,16 @@ export function attachDevicesMobileRoutes(registry: RouteRegistry, deps: Devices
         res.end(JSON.stringify({ error: 'id, fcmToken, platform, token required' }));
         return;
       }
-      // SECURITY: Compute apiTokenHash server-side from the token
-      const { createHash } = require('crypto');
-      const apiTokenHash = createHash('sha256').update(token).digest('hex').slice(0, 16);
-      const entry = deps.pushGateway()?.registerDevice({ id, fcmToken, platform, apiTokenHash });
+      // E1-10: verify the presented token against the configured gateway token.
+      if (!deviceTokenAccepted(String(token), deps.apiToken?.() ?? '')) {
+        res.writeHead(401);
+        res.end(JSON.stringify({ error: 'invalid device token' }));
+        return;
+      }
+      // SECURITY: Compute apiTokenHash server-side from the token; never store
+      // the token itself (E1-10 — `fcmToken` is no longer populated).
+      const apiTokenHash = hashDeviceToken(String(token));
+      const entry = deps.pushGateway()?.registerDevice({ id, fcmToken: '', platform, apiTokenHash });
       res.writeHead(200);
       res.end(JSON.stringify({ ok: true, device: entry }));
     } catch (err: any) {
@@ -89,10 +113,18 @@ export function attachDevicesMobileRoutes(registry: RouteRegistry, deps: Devices
         res.end(JSON.stringify({ error: 'token and platform required' }));
         return;
       }
+      // E1-10: only the gateway's own token may register a device.
+      if (!deviceTokenAccepted(String(token), deps.apiToken?.() ?? '')) {
+        res.writeHead(401);
+        res.end(JSON.stringify({ error: 'invalid device token' }));
+        return;
+      }
       const { createHash } = require('crypto');
       const id = createHash('sha256').update(token).digest('hex').slice(0, 32);
-      const apiTokenHash = createHash('sha256').update(token).digest('hex').slice(0, 16);
-      const entry = deps.pushGateway()?.registerDevice({ id, fcmToken: token, platform, apiTokenHash });
+      const apiTokenHash = hashDeviceToken(String(token));
+      // E1-10: the gateway bearer token is NEVER persisted (old code passed it as
+      // `fcmToken` and wrote it to mobile-devices.json in plain text).
+      const entry = deps.pushGateway()?.registerDevice({ id, fcmToken: '', platform, apiTokenHash });
       res.writeHead(200);
       res.end(JSON.stringify({ ok: true, device: entry }));
     } catch (err: any) {

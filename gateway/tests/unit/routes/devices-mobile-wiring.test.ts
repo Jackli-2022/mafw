@@ -1,9 +1,9 @@
 // Phase D1 Task H2: devices + mobile registry wiring — eight legacy branches.
 // Legacy used one regex per arm with `req.method === '…'` arming; the registry
 // splits methods structurally. Assertions pin the SECURITY-relevant quirks:
-// apiTokenHash is always computed server-side (sha256 → 16 hex), mobile
-// registration reuses the token as fcmToken, and the pairing gates keep their
-// exact 503 / 400 / 429 status + message shapes.
+// apiTokenHash is always computed server-side (sha256 → 16 hex), E1-10 stopped
+// persisting the gateway token as fcmToken (field kept, value empty), and the
+// pairing gates keep their exact 503 / 400 / 429 status + message shapes.
 import type { IncomingMessage, ServerResponse } from 'http';
 import { createHash } from 'crypto';
 import { RouteRegistry } from '../../../src/routes/registry';
@@ -112,7 +112,7 @@ describe('devices + mobile registry wiring (D1 Task H2)', () => {
       r.res,
     );
     expect(r.status).toBe(200);
-    expect(pg.registered[0]).toEqual({ id: 'dev-9', fcmToken: 'fcm', platform: 'android', apiTokenHash: sha('secret', 16) });
+    expect(pg.registered[0]).toEqual({ id: 'dev-9', fcmToken: '', platform: 'android', apiTokenHash: sha('secret', 16) });
     expect(JSON.parse(r.body)).toMatchObject({ ok: true, device: { id: 'dev-9' } });
   });
 
@@ -161,7 +161,7 @@ describe('devices + mobile registry wiring (D1 Task H2)', () => {
     expect(pg.removed).toEqual(['dev-1', 'dev-2']);
   });
 
-  it('mobile registration maps {token,platform,deviceName} onto the push shape (32/16 hex)', async () => {
+  it('mobile registration maps {token,platform,deviceName} onto the push shape (32/16 hex, no token persisted)', async () => {
     const pg = pushGateway();
     const registry = setup({ pushGateway: () => pg.gw });
     const r = fakeRes();
@@ -172,7 +172,7 @@ describe('devices + mobile registry wiring (D1 Task H2)', () => {
     expect(r.status).toBe(200);
     expect(pg.registered[0]).toEqual({
       id: sha('tok', 32),
-      fcmToken: 'tok',
+      fcmToken: '', // E1-10: the bearer token is never persisted
       platform: 'android',
       apiTokenHash: sha('tok', 16),
     });
