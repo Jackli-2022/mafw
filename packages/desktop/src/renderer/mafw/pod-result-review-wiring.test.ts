@@ -25,5 +25,5 @@ test('goal detail forwards forced acceptance flags and rethrows only the review 
   assert.match(src, /acceptGoal = async \(opts\?: \{ revision\?: number; force\?: boolean; riskAcknowledged\?: boolean \}\)/);
   assert.match(src, /confirm: true, \.\.\.opts/);
   assert.match(src, /status === 409 && isReviewGateConflict\(err\)\) throw err/);
-  assert.match(src, /reviewRefreshKey=\{\(\) => podStore\.detail\(\)\}/);
+  assert.match(src, /reviewRefreshKey=\{\(\) => podStore\.reviewRevision\(\)\}/);
 });

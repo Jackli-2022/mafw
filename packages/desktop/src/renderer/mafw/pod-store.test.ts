@@ -229,6 +229,23 @@ describe("pod-store", () => {
     assert.deepEqual(calls, ["get:pod_1"])
   })
 
+  test("reviewRevision only bumps for review broadcasts", async () => {
+    const store = createPodStore({
+      lookup: async () => detail("pod_1"),
+      ensure: async () => detail("pod_1"),
+      get: async (id) => detail(id),
+      update: async (id) => detail(id),
+      cost: async () => ({ spentUsd: 0, limitUsd: 0 }),
+      listMessages: async () => ({ items: [] }),
+    }, { debounceMs: 200, timers: { setTimeout: (fn) => { fn(); return 0 }, clearTimeout: () => {} } })
+    await store.open("/p")
+    const before = store.reviewRevision()
+    store.ingest({ type: "pod.updated", properties: { podId: "pod_1", kind: "message" } })
+    assert.equal(store.reviewRevision(), before)
+    store.ingest({ type: "pod.updated", properties: { podId: "pod_1", kind: "review" } })
+    assert.equal(store.reviewRevision(), before + 1)
+  })
+
   test("unknown pod with no detail triggers lookup", async () => {
     const calls: string[] = []
     const store = createPodStore({

@@ -835,7 +835,7 @@ export function GoalDetailPanel(props: {
                     <PodResultView
                       podId={podId()}
                       goalId={props.goalId!}
-                      reviewRefreshKey={() => podStore.detail()}
+                      reviewRefreshKey={() => podStore.reviewRevision()}
                       onResubmit={() => {
                         showToastV2({ description: "在鲸群「工作」页基于失败反馈重新提交", duration: 3200 })
                       }}

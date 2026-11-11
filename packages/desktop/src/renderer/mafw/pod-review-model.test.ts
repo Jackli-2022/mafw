@@ -46,6 +46,7 @@ test('action transitions are human-only projections', () => {
 
 test('only the review gate 409 is treated as stale unresolved items', () => {
   assert.equal(isReviewGateConflict(new Error('HTTP 409: unresolved review items: 2; handle them')), true);
+  assert.equal(isReviewGateConflict(new Error('HTTP 409: 还有未解决意见 [review_gate]')), true);
   assert.equal(isReviewGateConflict(new Error('HTTP 409: revision 2 is not the active revision (3)')), false);
   assert.equal(isReviewGateConflict(new Error('HTTP 409: merge conflict in src/a.ts')), false);
 });

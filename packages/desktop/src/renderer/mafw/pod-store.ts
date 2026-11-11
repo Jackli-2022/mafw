@@ -272,6 +272,8 @@ export function createPodStore(
   const timers = opts.timers ?? DEFAULT_TIMERS
 
   const [detail, setDetail] = createSignal<PodDetail | null>(null)
+  /** Increments only for review-item broadcasts; message/task updates don't refetch reviews. */
+  const [reviewRevision, setReviewRevision] = createSignal(0)
   const [cost, setCost] = createSignal<{ spentUsd: number; limitUsd: number } | null>(null)
   const [messages, setMessages] = createSignal<PodMessage[]>([])
   const [loading, setLoading] = createSignal(false)
@@ -544,6 +546,10 @@ export function createPodStore(
 
   function ingest(event: unknown): void {
     if (disposed) return
+    const props = (event as any)?.properties ?? (event as any)
+    if ((event as any)?.type === "pod.updated" && props?.kind === "review") {
+      setReviewRevision((value) => value + 1)
+    }
     const action = podEventAction({
       currentPodId: detail()?.pod.id ?? null,
       projectDir: projectDir(),
@@ -590,6 +596,8 @@ export function createPodStore(
     projectDir,
     /** Pod detail 变化计数（发送路径的缓存失效键；Pod 重建后旧 id 不得复用）。 */
     revision: () => revision,
+    /** Review-item broadcast counter; review lists subscribe to this only. */
+    reviewRevision,
   }
 }
 
