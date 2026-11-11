@@ -3,8 +3,8 @@
  *
  * 配额是"机制 + 可观测"，不是激进阻断：默认值偏高，`0`/负数/NaN = 不限。
  * 语义统一为 `current < limit`（新增第 `limit` 个即拒绝）。`check().limit` 与
- * `snapshot().limit` 都是**归一化值**（有限且 >= 0 时原样、否则 0；`0` = 不限），
- * 不是原始配置；内部判定用 `limitOf()`（`Infinity` 永不命中）。
+ * `snapshot().limit` 都是**归一化值**（有限正值向下取整，0/负数/非有限 → 0；
+ * `0` = 不限），不是原始配置；内部判定用 `limitOf()`（`Infinity` 永不命中）。
  *
  * 拒绝路径（429）：
  *  - `POST /register` → projects
@@ -20,7 +20,7 @@ const RESOURCE_ORDER: QuotaResource[] = ['projects', 'sessions', 'sessionRecords
 
 export interface QuotaCheck {
   ok: boolean;
-  /** 归一化 limit（有限且 >= 0 原样，否则 0；`0` = 不限）。 */
+  /** 归一化 limit（有限正值向下取整，0/负数/非有限 → 0；`0` = 不限）。 */
   limit: number;
   current: number;
 }
@@ -62,7 +62,7 @@ export class QuotaService {
   constructor(private readonly deps: QuotaServiceDeps) {}
 
   private rawLimit(resource: QuotaResource): number {
-    // 缺键 / 非有限 / 负数 → 0（不限）；有限非负值原样保留（由 limitOf 解释）。
+    // 缺键 / 非有限 / 负数 → 0（不限）；有限正值向下取整（与 limitOf 判定一致）。
     return sanitizeLimit(this.deps.limits()?.[resource]);
   }
 

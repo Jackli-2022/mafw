@@ -27,8 +27,9 @@
 | `9603b25f` | E4-6a | 长驻 timer 迁移（ws/sse/python）+ stats 契约硬化 + SDK 死契约 TODO（review-items） |
 | `c6e1cf3f` | E4-6b | 压力降级接线：scheduler / `memory.add` 200 `disk_low` / backfill 503 / event_log 边沿裁剪 |
 | `d768d4b1` | batch6 review | universal admission seam（`admissionChecker`，submit-time）+ `shouldPruneEventLog` 边沿修正 |
+| `03021748` | E4-9 | 架构/release 收口 + 全量门禁 |
 | `b8e664c1` | final review | `disk.error` 只留机器码、python/llamacpp 台账 `owned:true`、quota limit 取整、plugin-web writer 异常释放连接租约 |
-| 本 commit | E4-9 docs sync | final review 后的架构/spec/release 同步 |
+| `74d50b4b` | E4-9 docs sync | final review 后的架构/spec/release 同步 |
 
 ## 交付项
 
@@ -74,11 +75,11 @@
    （含"仍存在于 contract"的陈旧守卫），**不新增 SDK 方法、不改这些 op 的 catalog 语义**。
    契约产物：E3 304 ops → **276 paths / 309 operations**（+`kernel.stats` +4 review-items），
    `emit:openapi` / `merge-contract.mjs` 重跑无 diff。
-4. **serve 台账口径**：serve 逻辑条目只在 `serveInstance` 真存在时登记（能力存在 ≠ 进程存在），
+6. **serve 台账口径**：serve 逻辑条目只在 `serveInstance` 真存在时登记（能力存在 ≠ 进程存在），
    `owned:false` 且无 close 钩子；`serve.running` 就是 `!!serveInstance`（不额外探测进程存活），
    `serve.owned` 表示 gateway 是否亲手 spawn 了该 serve（`serveOwned`；受管启动为 `true`，
    external/adopted 为 `false`），不得用 `processes.entries[].owned` 推导。
-5. **Additive**：`config.resources`、`GET /api/kernel/stats`、连接/缓冲/配额计数、可选错误 `code`。
+7. **Additive**：`config.resources`、`GET /api/kernel/stats`、连接/缓冲/配额计数、可选错误 `code`。
    `/api/stats` 原样保留；无数据库 schema 变更（event_log 只新增 `pruneNow`，不改表）。
 
 ## 验证（worktree @ E4-9 文档改动后）
@@ -99,7 +100,7 @@
 新增 gateway 测试：**净增 +271**（E3 收口基线 6303 → 本波终值 **6574**，+32 suites；终审修复轮
 +1 plugin-web 租约用例，其余为断言替换/收紧）。
 其中包含 main 在 E3 之后带入的 pod/review-items 波次测试；E4 自身新增 37 个测试文件的改动
-（+4857 行）覆盖：config/TimerService、disk/heap/governor、连接表、有界缓冲、进程台账/配额、
+（+4894 行）覆盖：config/TimerService、disk/heap/governor、连接表、有界缓冲、进程台账/配额、
 stats + route schema、`admissionChecker` 与降级/prune 接线。desktop/TUI 本波零代码改动，
 数字为当前基线（desktop 较 E3 的 3289 增长来自其它波次，非 E4）。
 
