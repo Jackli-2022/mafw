@@ -6,9 +6,7 @@ import { Icon } from "@mafw/ui/icon"
 import { DropdownMenu } from "@mafw/ui/dropdown-menu"
 import {
   EXECUTION_SECTIONS,
-  WORKBENCH_SURFACES,
   executionSectionLabel,
-  nextWorkbenchSurface,
   type ExecutionSection,
   type WorkbenchSurface,
 } from "../workbench-views"
@@ -17,7 +15,7 @@ import { observePluginTabCapacity, planPluginTabs, type PluginTabSurface } from 
 import type { PluginWebSurfaceView } from "../plugins/plugin-web-surface"
 import { WorkbenchCodeView } from "./WorkbenchCodeView"
 import { ContentScopeHeader } from "./ContentScopeHeader"
-import { contentDocumentLabel, type ContentIntent } from "../content-intent"
+import type { ContentIntent } from "../content-intent"
 import type { FileDiffEntry } from "./DiffReviewPanel"
 import type { AnnotationAnchor } from "../../../shared/annotation-types"
 
@@ -130,7 +128,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
     const pluginIds = props.pluginSurfaces.map((entry) => entry.id)
     queueMicrotask(() => {
       if (context !== "content") return
-      for (const id of [...WORKBENCH_SURFACES.map((entry) => entry.id), ...pluginIds]) {
+      for (const id of pluginIds) {
         const el = document.querySelector<HTMLButtonElement>(`.${surfaceTabClass(id)}`)
         if (el) el.tabIndex = surface === id ? 0 : -1
       }
@@ -138,10 +136,17 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
   })
 
   const onL2KeyDown = (e: KeyboardEvent) => {
-    const next = nextWorkbenchSurface(props.surface, e.key, pluginSurfaceIds())
+    const ids = pluginSurfaceIds()
+    const index = ids.findIndex((id) => id === props.surface)
+    if (index < 0) return
+    const next = e.key === "ArrowRight" ? ids[index + 1]
+      : e.key === "ArrowLeft" ? ids[index - 1]
+      : e.key === "Home" ? ids[0]
+      : e.key === "End" ? ids[ids.length - 1]
+      : undefined
     if (!next) return
     e.preventDefault()
-    props.onSurface(next)
+    props.onSurface(next as WorkbenchSurface)
     queueMicrotask(() => {
       document.querySelector<HTMLElement>(`.${surfaceTabClass(next)}`)?.focus()
     })
@@ -203,30 +208,16 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
         </div>
       </div>
 
-      <Show when={props.context === "content"}>
+      <Show when={props.context === "content" && props.pluginSurfaces.length > 0}>
         <div
           class="mafw-rw-l2"
           ref={(element) => {
             attachCapacityObserver(element)
           }}
           role="tablist"
-          aria-label="内容视图"
+          aria-label="插件视图"
           onKeyDown={onL2KeyDown}
         >
-          <For each={WORKBENCH_SURFACES}>
-            {(surface) => (
-              <ButtonV2
-                variant="ghost"
-                size="small"
-                class={`mafw-rw-l2-tab ${surfaceTabClass(surface.id)}`}
-                role="tab"
-                aria-selected={props.surface === surface.id}
-                onClick={() => props.onSurface(surface.id)}
-              >
-                {surface.id === "code" ? contentDocumentLabel(props.contentDocument) : surface.label}
-              </ButtonV2>
-            )}
-          </For>
           <For each={pluginTabs().visible}>
             {(surface) => (
               <ButtonV2
@@ -282,6 +273,8 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
           isGoalScope={props.contentScopeIsGoal}
           intent={props.surface === "code" ? props.contentIntent : undefined}
           onIntent={props.surface === "code" ? props.onContentIntent : undefined}
+          surface={props.surface}
+          onSurface={props.onSurface}
           canReview={props.canReview}
           onReview={props.onContentReview}
           canGoBack={props.canGoBack}

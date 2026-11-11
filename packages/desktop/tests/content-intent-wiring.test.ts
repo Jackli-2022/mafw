@@ -35,11 +35,19 @@ test("editor opens preview tabs while reading and promotes on first edit", () =>
   assert.match(css, /\.mafw-editor-tab-preview/)
 })
 
-test("open documents label the content tab with the document name", () => {
-  assert.match(workbench, /contentDocumentLabel/)
-  assert.match(workbench, /surface\.id === "code" \? contentDocumentLabel\(props\.contentDocument\)/)
+test("open documents label the content header with the document name", () => {
+  assert.match(shell, /contentDocumentLabel\(activeContentDocument\(\)\)/)
   assert.match(shell, /activeContentDocument/)
   assert.match(shell, /onContentDocument=\{setActiveContentDocument\}/)
+})
+
+test("built-in viewers move out of the peer L2 tabs", () => {
+  assert.doesNotMatch(workbench, /<For each=\{WORKBENCH_SURFACES\}>/)
+  assert.match(header, /返回文档/)
+  assert.match(header, /mafw-content-scope-browser/)
+  assert.match(header, /mafw-content-scope-terminal/)
+  assert.match(header, /surface:\s*WorkbenchSurface/)
+  assert.match(header, /onSurface:\s*\(surface:\s*WorkbenchSurface\)/)
 })
 
 test("shell owns the content intent and resets project opens to reading", () => {

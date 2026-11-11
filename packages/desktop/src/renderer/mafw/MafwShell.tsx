@@ -147,6 +147,7 @@ import { persistContentScope, readPersistedContentScope } from "./content-scope-
 import { popContentHistory, pushContentHistory, type ContentHistoryEntry } from "./content-history"
 import { readRecentContent, recordRecentContent, type RecentContentEntry } from "./recent-content"
 import type { ContentIntent } from "./content-intent"
+import { contentDocumentLabel } from "./content-intent"
 import { PopoverShell } from "./components/pickers/PopoverShell"
 import { type NavTab } from "./components/nav-tab"
 import { WindowControls } from "./components/WindowControls"
@@ -1998,7 +1999,13 @@ export function MafwShell() {
   const workbenchContent = (): WorkbenchContentMode => (showConfig() ? "config" : "project")
   const workbenchContextLabel = (): string => {
     const context = workbenchContext()
-    if (context === "content") return "内容"
+    if (context === "content") {
+      const surface = workbenchSurface()
+      if (surface === "browser") return "浏览器"
+      if (surface === "terminal") return "终端"
+      if (String(surface).startsWith("plugin:")) return "插件"
+      return contentDocumentLabel(activeContentDocument())
+    }
     if (context === "goal") {
       const goalId = podGoalId()
       const goal = goalId
