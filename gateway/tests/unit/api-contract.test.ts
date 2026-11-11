@@ -244,6 +244,24 @@ describe('api-contract: response schemas（E3-6 四个读接口）', () => {
     }
     expect(problems).toEqual([]);
   });
+
+  test('E4-8 kernel.stats 的 200 响应带资源账本 schema', () => {
+    let op: any = null;
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const candidate of Object.values<any>(methods)) {
+        if (candidate?.operationId === 'kernel.stats') op = candidate;
+      }
+    }
+    expect(op).not.toBeNull();
+    expect(op.tags).toContain('internal');
+    const schema = op.responses?.['200']?.content?.['application/json']?.schema;
+    expect(schema).toBeDefined();
+    // 账本的承重字段（少一个客户端就无法判断降级/进程/配额）。
+    for (const field of ['pressure', 'disk', 'connections', 'buffers', 'timers', 'processes', 'quotas', 'handles', 'scheduler', 'events', 'serve']) {
+      expect({ field, present: Object.prototype.hasOwnProperty.call(schema.properties ?? {}, field) })
+        .toEqual({ field, present: true });
+    }
+  });
 });
 
 describe('api-contract: contract 产物新鲜度', () => {

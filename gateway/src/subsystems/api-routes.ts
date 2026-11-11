@@ -83,6 +83,10 @@ import { attachPodsEventsRoutes } from '../routes/pods-events-dispatch';
 import { attachMcpMgmtRoutes } from '../routes/mcp-mgmt';
 import { attachManagerSessionRoutes } from '../routes/manager-session';
 import { attachEventsSseRoutes } from '../routes/events-sse';
+import { attachKernelStatsRoute } from '../routes/kernel-stats';
+import type { ConnectionTable } from '../resources/connections';
+import type { BufferCounters } from '../resources/outbound-buffer';
+import type { KernelStatsSnapshot } from '../resources/stats';
 import type { RouteRegistry } from '../routes/registry';
 import type { BackgroundJobService } from '../core/background/background-jobs';
 import type { LeadBoundaryService } from '../core/lead/lead-boundary-service';
@@ -192,6 +196,14 @@ export interface ApiRouteDeps {
   sseClients: ReturnType<EventsSseDeps['sseClients']>;
   /** E2-1: release identity for the SSE greeting epoch fence (null before boot). */
   releaseIdentity: () => { instanceId: string; schemaEpoch: number } | null;
+
+  // ── E4 resource ledger (live providers owned by the kernel) ─────────────
+  /** E4-4: shared connection table (HTTP/SSE/WS/voice/terminal). */
+  connections: ConnectionTable;
+  /** E4-5: aggregate outbound-buffer counters (SSE writers + WS broadcast). */
+  bufferCounters: BufferCounters;
+  /** E4-8: kernel resource snapshot for `GET /api/kernel/stats` (rebuilt per request). */
+  kernelStats: () => KernelStatsSnapshot;
 
   // ── services ───────────────────────────────────────────────────────────
   allowlistStore: ReturnType<ApprovalsDeps['allowlistStore']>;
@@ -830,6 +842,9 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
       return store ? store.appendFailures() : null;
     },
   });
+  // E4-8：内核资源账本快照（internal；可达性守卫要求字面 attach）。紧挨 dashboard
+  // 影子条：`/api/stats` 保持不动，两者是不同 op（dashboard.stats / kernel.stats）。
+  attachKernelStatsRoute(deps.routeRegistry, { snapshot: () => deps.kernelStats() });
   // Phase D1 Task H1：long-tail singles 迁 registry dispatch（voice/presence/
   // eval/orchestration/provider/agents + config GET/PUT + llm/compress +
   // media plugins 对；私有 handleCompress 经 compress 依赖桥接）。
@@ -880,6 +895,14 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
     eventStore: () => deps.eventStore,
     sseClients: () => deps.sseClients,
     releaseIdentity: () => deps.releaseIdentity(),
+    // E4-4/E4-5：SSE 名额与有界写在每次连接时现读 config（hot reload 生效）；
+    // counters 与 WS 广播共享同一份聚合台账（BufferCounters）。
+    connections: () => deps.connections,
+    buffers: () => ({
+      maxFrames: config.resources.buffers.sseMaxFrames,
+      maxBytes: config.resources.buffers.sseMaxBytes,
+      counters: deps.bufferCounters,
+    }),
   });
   // code-first P0 试点：schema 是响应事实源，handler 返回数据（不写 res）。
   attachTypedRoute(deps.routeRegistry, {

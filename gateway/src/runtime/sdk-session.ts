@@ -95,6 +95,26 @@ export class SdkSessionResource {
   }
 
   /**
+   * 单个项目当前最大的会话记录数（E4-8 stats 的 `sessionRecordsPerProject.current`）。
+   *
+   * 配额语义是"每个项目各自 < limit"，没有单一"当前值"；stats 报最大的那个桶，
+   * 这样与 `QuotaService.assert('sessionRecordsPerProject', …)` 的拒绝口径一致
+   * （任意项目触顶即可从这里看出）。
+   */
+  maxDirectoryCount(): number {
+    const byDirectory = new Map<string, number>();
+    for (const session of this.sessions.values()) {
+      const key = this.directoryKey(session.directory);
+      byDirectory.set(key, (byDirectory.get(key) ?? 0) + 1);
+    }
+    let max = 0;
+    for (const count of byDirectory.values()) {
+      if (count > max) max = count;
+    }
+    return max;
+  }
+
+  /**
    * 目录归一化键：绝对路径 + Windows 大小写不敏感。
    * `C:\p\x`、`C:\p\x\`、`c:\p\x` 必须是同一个配额桶，否则配额可被
    * 尾斜杠/大小写变体绕过。

@@ -5980,6 +5980,144 @@
         }
       }
     },
+    "/api/pods/{podId}/goals/{goalId}/review-items": {
+      "get": {
+        "operationId": "pods.goals.reviewItems",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "goalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "pods.goals.reviewItems.create",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "goalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/pods/{podId}/goals/{goalId}/review-items/{itemId}/resolve": {
+      "post": {
+        "operationId": "pods.goals.reviewItems.resolve",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "goalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "itemId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/pods/{podId}/goals/{goalId}/review-items/{itemId}/reopen": {
+      "post": {
+        "operationId": "pods.goals.reviewItems.reopen",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "goalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "itemId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/pods/{podId}/goals/{goalId}/accept": {
       "post": {
         "operationId": "pods.goals.accept",
@@ -6686,6 +6824,536 @@
         "responses": {
           "200": {
             "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/kernel/stats": {
+      "get": {
+        "operationId": "kernel.stats",
+        "tags": [
+          "internal"
+        ],
+        "summary": "resource ledger snapshot",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "timestamp",
+                    "uptimeSec",
+                    "pressure",
+                    "disk",
+                    "heap",
+                    "connections",
+                    "buffers",
+                    "timers",
+                    "processes",
+                    "quotas",
+                    "handles",
+                    "scheduler",
+                    "events",
+                    "serve"
+                  ],
+                  "properties": {
+                    "timestamp": {
+                      "type": "string"
+                    },
+                    "uptimeSec": {
+                      "type": "number"
+                    },
+                    "pressure": {
+                      "type": "object",
+                      "required": [
+                        "disk",
+                        "heap",
+                        "degraded"
+                      ],
+                      "properties": {
+                        "disk": {
+                          "anyOf": [
+                            {
+                              "const": "ok",
+                              "type": "string"
+                            },
+                            {
+                              "const": "warn",
+                              "type": "string"
+                            },
+                            {
+                              "const": "critical",
+                              "type": "string"
+                            },
+                            {
+                              "const": "unknown",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "heap": {
+                          "anyOf": [
+                            {
+                              "const": "ok",
+                              "type": "string"
+                            },
+                            {
+                              "const": "warn",
+                              "type": "string"
+                            },
+                            {
+                              "const": "critical",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "degraded": {
+                          "type": "array",
+                          "items": {
+                            "anyOf": [
+                              {
+                                "const": "disk_critical",
+                                "type": "string"
+                              },
+                              {
+                                "const": "heap_critical",
+                                "type": "string"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "disk": {
+                      "type": "object",
+                      "required": [
+                        "totalBytes",
+                        "freeBytes",
+                        "state",
+                        "error"
+                      ],
+                      "properties": {
+                        "totalBytes": {
+                          "type": "number"
+                        },
+                        "freeBytes": {
+                          "type": "number"
+                        },
+                        "state": {
+                          "anyOf": [
+                            {
+                              "const": "ok",
+                              "type": "string"
+                            },
+                            {
+                              "const": "warn",
+                              "type": "string"
+                            },
+                            {
+                              "const": "critical",
+                              "type": "string"
+                            },
+                            {
+                              "const": "unknown",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "heap": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "required": [
+                            "heapUsed",
+                            "heapTotal",
+                            "rss",
+                            "external",
+                            "arrayBuffers",
+                            "heapLimit",
+                            "ratio",
+                            "state"
+                          ],
+                          "properties": {
+                            "heapUsed": {
+                              "type": "number"
+                            },
+                            "heapTotal": {
+                              "type": "number"
+                            },
+                            "rss": {
+                              "type": "number"
+                            },
+                            "external": {
+                              "type": "number"
+                            },
+                            "arrayBuffers": {
+                              "type": "number"
+                            },
+                            "heapLimit": {
+                              "type": "number"
+                            },
+                            "ratio": {
+                              "type": "number"
+                            },
+                            "state": {
+                              "anyOf": [
+                                {
+                                  "const": "ok",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "warn",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "critical",
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "connections": {
+                      "type": "object",
+                      "required": [
+                        "httpOpen",
+                        "sse",
+                        "ws",
+                        "voice",
+                        "terminal",
+                        "limits",
+                        "refused"
+                      ],
+                      "properties": {
+                        "httpOpen": {
+                          "type": "number"
+                        },
+                        "sse": {
+                          "type": "number"
+                        },
+                        "ws": {
+                          "type": "number"
+                        },
+                        "voice": {
+                          "type": "number"
+                        },
+                        "terminal": {
+                          "type": "number"
+                        },
+                        "limits": {
+                          "additionalProperties": true,
+                          "type": "object",
+                          "required": [
+                            "httpConnections",
+                            "sseClients",
+                            "wsClients",
+                            "voiceClients",
+                            "terminalClients"
+                          ],
+                          "properties": {
+                            "httpConnections": {
+                              "type": "number"
+                            },
+                            "sseClients": {
+                              "type": "number"
+                            },
+                            "wsClients": {
+                              "type": "number"
+                            },
+                            "voiceClients": {
+                              "type": "number"
+                            },
+                            "terminalClients": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        "refused": {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(.*)$": {
+                              "type": "number"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "buffers": {
+                      "type": "object",
+                      "required": [
+                        "sseOverflows",
+                        "sseDropped",
+                        "sseWriteErrors",
+                        "sseQueuedFrames",
+                        "sseQueuedBytes",
+                        "wsDropped"
+                      ],
+                      "properties": {
+                        "sseOverflows": {
+                          "type": "number"
+                        },
+                        "sseDropped": {
+                          "type": "number"
+                        },
+                        "sseWriteErrors": {
+                          "type": "number"
+                        },
+                        "sseQueuedFrames": {
+                          "type": "number"
+                        },
+                        "sseQueuedBytes": {
+                          "type": "number"
+                        },
+                        "wsDropped": {
+                          "type": "number"
+                        }
+                      }
+                    },
+                    "timers": {
+                      "type": "object",
+                      "required": [
+                        "active",
+                        "byName"
+                      ],
+                      "properties": {
+                        "active": {
+                          "type": "number"
+                        },
+                        "byName": {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(.*)$": {
+                              "type": "number"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "processes": {
+                      "type": "object",
+                      "required": [
+                        "total",
+                        "byKind",
+                        "entries"
+                      ],
+                      "properties": {
+                        "total": {
+                          "type": "number"
+                        },
+                        "byKind": {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(.*)$": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        "entries": {
+                          "type": "array",
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object",
+                            "required": [
+                              "id",
+                              "kind",
+                              "startedAt"
+                            ],
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "kind": {
+                                "anyOf": [
+                                  {
+                                    "const": "python",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "llamacpp",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "serve",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "pid": {
+                                "type": "number"
+                              },
+                              "sessionId": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "owned": {
+                                "type": "boolean"
+                              },
+                              "startedAt": {
+                                "type": "number"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "quotas": {
+                      "additionalProperties": true,
+                      "type": "object",
+                      "required": [
+                        "projects",
+                        "sessions",
+                        "sessionRecordsPerProject"
+                      ],
+                      "properties": {
+                        "projects": {
+                          "type": "object",
+                          "required": [
+                            "current",
+                            "limit"
+                          ],
+                          "properties": {
+                            "current": {
+                              "type": "number"
+                            },
+                            "limit": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        "sessions": {
+                          "type": "object",
+                          "required": [
+                            "current",
+                            "limit"
+                          ],
+                          "properties": {
+                            "current": {
+                              "type": "number"
+                            },
+                            "limit": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        "sessionRecordsPerProject": {
+                          "type": "object",
+                          "required": [
+                            "current",
+                            "limit"
+                          ],
+                          "properties": {
+                            "current": {
+                              "type": "number"
+                            },
+                            "limit": {
+                              "type": "number"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "handles": {
+                      "type": "object",
+                      "required": [
+                        "total",
+                        "byType"
+                      ],
+                      "properties": {
+                        "total": {
+                          "type": "number"
+                        },
+                        "byType": {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(.*)$": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        "fdCount": {
+                          "type": "number"
+                        }
+                      }
+                    },
+                    "scheduler": {
+                      "type": "object",
+                      "required": [
+                        "queued",
+                        "running",
+                        "byPriority"
+                      ],
+                      "properties": {
+                        "queued": {
+                          "type": "number"
+                        },
+                        "running": {
+                          "type": "number"
+                        },
+                        "byPriority": {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(.*)$": {
+                              "type": "number"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "events": {
+                      "type": "object",
+                      "required": [
+                        "headSeq",
+                        "appendFailures"
+                      ],
+                      "properties": {
+                        "headSeq": {
+                          "type": "number"
+                        },
+                        "appendFailures": {
+                          "type": "number"
+                        }
+                      }
+                    },
+                    "serve": {
+                      "type": "object",
+                      "required": [
+                        "running",
+                        "owned"
+                      ],
+                      "properties": {
+                        "running": {
+                          "type": "boolean"
+                        },
+                        "owned": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }

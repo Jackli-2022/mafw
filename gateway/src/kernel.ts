@@ -187,7 +187,14 @@ import { resolveVoiceConfig } from './voice/config';
 import { VoiceRuntime } from './voice/runtime';
 import { SessionKernels } from "./python/kernel-service";
 import { ProcessLedger } from './resources/process-ledger';
+import type { ProcessHandle } from './resources/process-ledger';
 import { QuotaExceededError, QuotaService, projectAdmission } from './resources/quotas';
+import { ConnectionTable } from './resources/connections';
+import { BufferCounters } from './resources/outbound-buffer';
+import { ResourceGovernor } from './resources/governor';
+import { buildHandlesSnapshot, buildKernelStatsSnapshot, type KernelStatsSnapshot } from './resources/stats';
+import { limitOf } from './resources/settings';
+import { TimerService } from './core/timer-service';
 import { setLlamaCppProcessLedger } from './memory/llamacpp-provider';
 import { eventBus } from "./event-bus";
 import { AutomationEngine } from "./automation-engine";
@@ -628,6 +635,19 @@ class MafwScheduler {
   private eventStreamAbort: AbortController | null = null;
   /** 持久事件日志（spec 2026-10-22；null = 纯直播 fail-open）。惰性初始化见 getGatewayDb。 */
   private eventStore: EventStore | null = null;
+  // ── E4 resource ledger providers ──
+  // 必须声明在 `eventHub` **之前**：hub 的字段初始化器会按值读 `bufferCounters`
+  // （类字段按声明顺序初始化，放到后面就是 TDZ/undefined）。
+  /** E4-1: kernel 自有长驻 timer 的命名台账（governor 采样也在其中）。 */
+  private readonly timers = new TimerService();
+  /** E4-4: 连接表（HTTP socket 观测 + SSE/WS/voice/terminal 名额）。 */
+  private readonly connections = new ConnectionTable({ limits: () => config.resources.limits });
+  /** E4-5: 出站缓冲聚合计数（EventHub 广播 / ws hub greeting / SSE writer 共享）。 */
+  private readonly bufferCounters = new BufferCounters();
+  /** E4-2/E4-3: disk/heap 采样 + 压力状态机（API listen 后启动，stop 时关采样）。 */
+  private governor?: ResourceGovernor;
+  /** E4-6: runtime serve 的逻辑台账条目（adapter 拥有进程 → owned:false，无 close 钩子）。 */
+  private serveLedger?: ProcessHandle;
   /**
    * D3 Task 7：broadcast / SSE / WS fan-out + eventBus 接线整体在
    * `server/event-hub.ts`。sseClients / wsClients 归 hub 所有（identity 承重：
@@ -643,6 +663,9 @@ class MafwScheduler {
     getGoalDriver: () => this.goalDriver,
     getMilestonePush: () => this.getMilestonePush(),
     ingestInternalEvent: (kind, data) => this.ingestInternalEvent(kind, data),
+    // E4-5: WS 广播背压 + 聚合计数（与 SSE writer 同一份台账）。
+    buffers: this.bufferCounters,
+    wsMaxBufferedBytes: () => config.resources.buffers.wsMaxBufferedBytes,
   });
   private sdkSession!: SdkSessionResource;
   private instructionSync?: InstructionSyncService;
@@ -2078,6 +2101,13 @@ class MafwScheduler {
         this.eventHub.sseClients.set(res, write);
         return () => { this.eventHub.sseClients.delete(res); };
       },
+      // E4-4/E4-5：插件 events 流与 /api/events 共用连接名额与有界写。
+      connections: () => this.connections,
+      buffers: () => ({
+        maxFrames: config.resources.buffers.sseMaxFrames,
+        maxBytes: config.resources.buffers.sseMaxBytes,
+        counters: this.bufferCounters,
+      }),
     };
   }
 
@@ -3389,7 +3419,12 @@ class MafwScheduler {
     this.running = false;
     this.taskService?.dispose();
     this.kernels?.disposeAll();
-    // E4-6: 兜底释放其余子进程（llamacpp sidecar 等），并清空台账。
+    // E4: governor 先停采样（否则 timers.disposeAll 看着像泄漏），再清本组 timer，
+    // 最后释放 serve 逻辑条目与其余子进程（llamacpp sidecar 等）。
+    this.governor?.stop();
+    this.timers.disposeAll();
+    this.serveLedger?.release();
+    this.serveLedger = undefined;
     this.processLedger.disposeAll();
     try { this.layaSidecar?.kill(); } catch { /* best effort */ }
     try { this.voiceSidecar?.stopSync(); } catch { /* best effort */ }
@@ -5083,6 +5118,67 @@ class MafwScheduler {
   // 鈹€鈹€ 2. HTTP API 鈹€鈹€
 
   /**
+   * E4-8: 资源账本快照（`GET /api/kernel/stats` 的唯一数据源）。
+   *
+   * providers 全是 kernel 自有字段；governor 未启动（listen 前 / start 失败）时
+   * builder 的 fail-open 分支接管——stats 接口不为采样失败而 500。handles 用
+   * `process.getActiveResourcesInfo()`（跨平台），Linux 额外报 `/proc/self/fd` 数
+   * （读失败静默：容器/受限 fs 下读不到不等于泄漏）。
+   */
+  private buildKernelStats(): KernelStatsSnapshot {
+    // serve 条目在 runtimeHost 出现后才可见（boot 顺序晚于 startApiServer）→ 幂等补登。
+    this.syncServeLedger();
+
+    let fdCount: number | undefined;
+    if (process.platform === 'linux') {
+      try {
+        fdCount = fs.readdirSync('/proc/self/fd').length;
+      } catch {
+        fdCount = undefined;
+      }
+    }
+
+    const store = this.eventStore;
+    return buildKernelStatsSnapshot({
+      uptimeSec: process.uptime(),
+      governor: this.governor,
+      connections: this.connections,
+      buffers: this.bufferCounters,
+      timers: this.timers,
+      processes: this.processLedger,
+      quotas: this.quotas,
+      scheduler: this.scheduler,
+      events: store
+        ? { headSeq: () => store.headSeq(), appendFailures: () => store.appendFailures() }
+        : null,
+      serve: { running: !!this.serveInstance, owned: this.serveOwned },
+      handles: buildHandlesSnapshot(process.getActiveResourcesInfo(), fdCount),
+      quotaCurrents: {
+        projects: this.registeredProjects.size,
+        sessions: this.sdkSession?.count() ?? 0,
+        sessionRecordsPerProject: this.sdkSession?.maxDirectoryCount() ?? 0,
+      },
+    });
+  }
+
+  /**
+   * E4-6: runtime serve 由 adapter 拥有进程，gateway 只记一条逻辑条目
+   * （`owned:false`，无 close 钩子——E4 不假装能 kill 它）。`disposeAll` 只清台账。
+   *
+   * 幂等；`startApiServer` 与每次 stats 构建都会调用：boot 顺序里 runtimeHost 在
+   * startApiServer **之后**才创建（boot.ts step 3），单点注册会永远为空。
+   */
+  private syncServeLedger(): void {
+    if (this.serveLedger) return;
+    if (!this.runtimeHost?.agentProcess?.spawnServe) return;
+    this.serveLedger = this.processLedger.register({
+      kind: 'serve',
+      label: 'runtime serve',
+      owned: false,
+    });
+  }
+
+  /**
    * D3 Task 6: the attach block's dependency surface, built as **live getters**.
    *
    * attach 发生在 startApiServer（早于 runtime 初始化 / 热切换重赋值），闭包又会
@@ -5133,6 +5229,10 @@ class MafwScheduler {
       get recallCalledBySession() { return self.recallCalledBySession; },
       get goalDriverMafwDirCache() { return self.goalDriverMafwDirCache; },
       get sseClients() { return self.eventHub.sseClients; },
+      // E4：资源账本 provider + 快照（live getter；governor 在 listen 后才存在）。
+      get connections() { return self.connections; },
+      get bufferCounters() { return self.bufferCounters; },
+      get kernelStats() { return (...a: any[]) => (self.buildKernelStats as any)(...a); },
       get releaseIdentity() {
         return () => (self.releaseMetadata && self.runtimeIdentity
           ? { instanceId: self.runtimeIdentity.instanceId, schemaEpoch: self.releaseMetadata.schemaEpoch }
@@ -5315,6 +5415,15 @@ class MafwScheduler {
       // /register → /control → /health → 反代 → 500）。deploy/attach 时序不变。
       const server = http.createServer(createRequestListener(this.httpTransportDeps()));
 
+      // E4-4：HTTP socket 硬帽交给 `server.maxConnections`（Node 自己拒绝超额连接），
+      // 连接表只做观测计数（`httpOpen`）——没有软拒绝路径，正常请求形状不变。
+      const httpLimit = limitOf(config.resources.limits.httpConnections);
+      if (Number.isFinite(httpLimit)) server.maxConnections = httpLimit;
+      server.on('connection', (socket) => {
+        this.connections.noteHttpOpen();
+        socket.on('close', () => this.connections.noteHttpClose());
+      });
+
       server.on('error', async (err: any) => {
         if (err.code === 'EADDRINUSE') {
           const alreadyRunning = await isPortHealthy(this.apiPort);
@@ -5357,8 +5466,26 @@ class MafwScheduler {
           // E2-4: WS is live-only; connected.headSeq is informational and the
           // reconnect path is SSE cursor / REST snapshot (never WS replay).
           headSeq: () => this.eventStore?.headSeq() ?? null,
+          // E4-4/E4-5：upgrade 准入（ws/voice/terminal 名额）+ greeting 背压 +
+          // 与 EventHub 共享的出站缓冲台账。
+          connections: () => this.connections,
+          counters: this.bufferCounters,
+          wsMaxBufferedBytes: () => config.resources.buffers.wsMaxBufferedBytes,
         });
         this.wsHub = hub;
+
+        // E4-2/E4-3：API 就绪后启动 disk/heap 采样（首采异步）。启动失败只 warn：
+        // 采样不可用 → snapshot 走 governor 缺席的 fail-open 分支，stats 仍可用。
+        this.governor = new ResourceGovernor({
+          dataDir: config.resolvePath(),
+          config: () => config.resources,
+          timers: this.timers,
+        });
+        void this.governor.start().catch((err: any) => {
+          log.warn(`[Resources] governor start failed (stats report unknown): ${err?.message ?? err}`);
+        });
+        // E4-6：runtimeHost 此时通常还没创建，这里只是尽力登记；stats 构建时幂等补登。
+        this.syncServeLedger();
         resolve(true);
       });
     });
