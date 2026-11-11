@@ -1,6 +1,6 @@
 # Project Agent Workbench — Project Home (Plan D2) Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 让“项目”上下文成为真正的项目首页：直接看到项目文件、最近内容和团队，而不是只有 Goal 工作列表；同时把 Pod 从平行工作区降为项目属性。
 
@@ -72,24 +72,24 @@
 - Key: `mafw-recent-content:<normalized projectDir>` with backslashes → `/`, trailing slashes removed, lowercased.
 - `recordRecentContent` reads current list, pushes, writes JSON, returns the new list.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Cover: dedupe/order/cap; invalid parse; per-project key normalization; record round-trip; `splitRelPath("src/a/b.ts")` → `{ dir: "src/a", name: "b.ts" }` and `"README.md"` → `{ dir: "", name: "README.md" }`.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `node --conditions=browser --import tsx --import ../../packages/test-shim/register.mjs --test src/renderer/mafw/recent-content.test.ts`
 Expected: FAIL because `recent-content.ts` does not exist.
 
-- [ ] **Step 3: Implement `recent-content.ts`**
+- [x] **Step 3: Implement `recent-content.ts`**
 
 Pure functions plus a `RecentContentStorage = { getItem; setItem }` adapter. Never throw on storage or JSON errors.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Same command; expected PASS.
 
-- [ ] **Step 5: Commit** `feat(desktop): add recent content model`
+- [x] **Step 5: Commit** `feat(desktop): add recent content model`
 
 ---
 
@@ -119,23 +119,23 @@ Same command; expected PASS.
 - Key normalizes backslashes to `/` for root and rel.
 - `acquireDirWatch` lazily resolves `window.api.fs`; if unavailable it returns a no-op release.
 
-- [ ] **Step 1: Write the failing pool test**
+- [x] **Step 1: Write the failing pool test**
 
 Fake API records calls: two acquires → one watch; one release → no unwatch; last release → one unwatch; double release → still one; re-acquire → second watch; different roots separate counts.
 
-- [ ] **Step 2: Run RED** on `dir-watch-pool.test.ts`.
+- [x] **Step 2: Run RED** on `dir-watch-pool.test.ts`.
 
-- [ ] **Step 3: Implement `dir-watch-pool.ts`.**
+- [x] **Step 3: Implement `dir-watch-pool.ts`.**
 
-- [ ] **Step 4: Update `FilesDock` to use the pool**
+- [x] **Step 4: Update `FilesDock` to use the pool**
 
 Replace `watched: Map<rel, root>` with `Map<rel, { root, release }>`; every `window.api.fs.watchDir?.(root, rel)` becomes `acquireDirWatch(root, rel)`; every `unwatchDir` becomes `release()`. Keep the existing watch planning / refresh behavior unchanged.
 
-- [ ] **Step 5: Update `files-dock-scope.test.ts`**
+- [x] **Step 5: Update `files-dock-scope.test.ts`**
 
 Pin `acquireDirWatch` usage and forbid direct `window.api.fs.watchDir?.` / `unwatchDir?.` calls in `FilesDock`.
 
-- [ ] **Step 6: Run focused tests and commit** `fix(desktop): share directory watches across file trees`
+- [x] **Step 6: Run focused tests and commit** `fix(desktop): share directory watches across file trees`
 
 ---
 
@@ -187,17 +187,17 @@ Pin `acquireDirWatch` usage and forbid direct `window.api.fs.watchDir?.` / `unwa
   - `recentContent` signal loaded per project; `openContentFile(rel, root)` records opens; `openProjectFile(rel)` forces project scope before opening.
   - `onBrowse` opens content context with project scope and `code` surface.
 
-- [ ] **Step 1: Write failing wiring test**
+- [x] **Step 1: Write failing wiring test**
 
 Assert `ProjectWorkView` renders `ProjectFilesCard` and `RecentContentList`; shell has `openProjectFile`, `readRecentContent`, `recordRecentContent`, and passes `files={{`/`recents={{`; `openProjectFile` resets `contentReturnGoalId` and `setContentScope(projectContentScope(...))`.
 
-- [ ] **Step 2: Run RED.**
+- [x] **Step 2: Run RED.**
 
-- [ ] **Step 3: Implement components and shell wiring.**
+- [x] **Step 3: Implement components and shell wiring.**
 
 `openContentFile` carries the existing browser/editor routing and records `{ rel, scopeKey, scopeKind, scopeLabel, at: Date.now() }` only after a successful route. `openProjectFile` calls it with the project scope root.
 
-- [ ] **Step 4: Run focused tests and commit** `feat(desktop): add project files and recent content`
+- [x] **Step 4: Run focused tests and commit** `feat(desktop): add project files and recent content`
 
 ---
 
@@ -240,17 +240,17 @@ Assert `ProjectWorkView` renders `ProjectFilesCard` and `RecentContentList`; she
 - `IconRail` destination `pod` becomes `team`: label `团队`, same badge/result dot, `onClick: props.onTeam`, no `onToggleFace("pod")`.
 - Shell: `openProjectTeam()` opens project context and bumps `teamFocusRequest`; ProjectWorkView scrolls the strip into view on that request.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 `ProjectTeamStrip` renders contacts/actions/empty states. `LeftDock` has no `face === "pod"` and no `ProjectResources`. `IconRail` has `key: "team"`, `onTeam`, label `团队`, no `onToggleFace("pod")`. `normalizeLeftDockFace("pod") === "sessions"`.
 
-- [ ] **Step 2: Run RED.**
+- [x] **Step 2: Run RED.**
 
-- [ ] **Step 3: Implement component, remove left Pod face, wire rail shortcut and shell.**
+- [x] **Step 3: Implement component, remove left Pod face, wire rail shortcut and shell.**
 
 Remove `pod*` props from `LeftDock` and the shell call site. `openPodPanelTab` remains the opener for team/inbox/memory inside the execution drawer.
 
-- [ ] **Step 4: Run focused tests and commit** `refactor(desktop): make team a project attribute`
+- [x] **Step 4: Run focused tests and commit** `refactor(desktop): make team a project attribute`
 
 ---
 
@@ -267,25 +267,25 @@ Remove `pod*` props from `LeftDock` and the shell call site. `openPodPanelTab` r
 - CSS: `.mafw-project-home-head`, `.mafw-project-home-title`, `.mafw-project-home-sub`, `.mafw-project-team-strip`, `.mafw-project-team-chip`, `.mafw-project-home-content`, `.mafw-project-files-card`, `.mafw-project-recent-card`, `.mafw-project-recent-list`, `.mafw-project-recent-row`, `.mafw-project-recent-empty`; container query `@container (max-width: 760px)` stacks the two-column content section.
 - All colors use existing tokens; no raw hex.
 
-- [ ] **Step 1: Write failing CSS/design test**
+- [x] **Step 1: Write failing CSS/design test**
 
 Pin the new classes, two-column grid, narrow stack, no raw hex in new rules, and that the project home still has no L1 tabs.
 
-- [ ] **Step 2: Run RED.**
+- [x] **Step 2: Run RED.**
 
-- [ ] **Step 3: Implement CSS and home header.**
+- [x] **Step 3: Implement CSS and home header.**
 
 Home head shows project name (fallback `项目`) + hint + `新建 Goal`; keep `工作` kicker semantics.
 
-- [ ] **Step 4: Run full desktop tests**
+- [x] **Step 4: Run full desktop tests**
 
 Run: `npm test` in `packages/desktop`; expected 0 failures.
 
-- [ ] **Step 5: Type/build gates**
+- [x] **Step 5: Type/build gates**
 
 Run: `npx tsgo --noEmit -p tsconfig.json`, then `node ../../node_modules/electron-vite/bin/electron-vite.js build`. Expected rc=0.
 
-- [ ] **Step 6: Dev smoke + docs + commit**
+- [x] **Step 6: Dev smoke + docs + commit**
 
 Capture project home with files/recents/team, click a recent file, confirm content context opens on project scope. Update architecture + release docs. Commit `docs: record project home and team attribute`.
 

@@ -264,6 +264,18 @@ spec §5.1/§5.3/§8.2，plan `docs/superpowers/plans/2026-11-11-project-agent-w
 - 焦点快照包含 `context / surface / executionOpen / executionSection`；旧 `mafw-workbench-view` 迁移到 `mafw-workbench-context`，`execution` 回落项目且不自动打开抽屉。
 - 已知后续（Plan D2/D3）：项目首页文件树/最近内容、Pod 降为项目属性、按验收/阅读/修改三种意图重排内容面、Goal 阶段 Tab 清理。
 
+#### 项目首页与团队属性（2026-11-11 Plan D2）
+
+spec §5.1/§5.2/§5.3/§6.1/§7.5，plan `docs/superpowers/plans/2026-11-11-project-agent-workbench-project-home.md`。
+
+- **项目首页**：项目名 + 团队条 + 工作优先级/全部 Goal + 「项目文件 / 最近内容」双列。项目首页不是执行 Dashboard；文件与最近内容直接可达，但不抢工作主视觉。
+- **项目文件**：`ProjectFilesCard` 复用 `FilesDock`，固定在项目主目录 scope；从项目首页打开文件会先清 `contentReturnGoalId` 并把 `contentScope` 重置为项目 scope，不继承当前 Goal revision。普通点击仍在内容上下文打开，不创建持久 Tab。
+- **最近内容**：`recent-content.ts` 按项目持久化 `mafw-recent-content:<normalized projectDir>`，最多 8 条、同 scope+rel 去重并置顶；D2 只展示项目主目录条目，Goal revision 条目留给 D3 意图视图。
+- **双文件树 watcher**：`dir-watch-pool.ts` 对 `(root, rel)` 做 renderer 侧引用计数；项目首页树与内容树同时挂载时，任一方卸载不会误关另一方的目录监听。
+- **团队属性**：左栏删除 `pod` face；`IconRail` 的 Pod 目的地改为「团队」快捷入口，点击打开项目首页并定位团队条（attention badge / result dot 保留）。Lead / Tech Lead / 团队 / 邮箱 / 记忆入口进入项目首页团队条；`ProjectResources` 退役，`PodDock` 仍保留在执行抽屉。
+- 旧 `mafw-left-dock-face=pod` 启动时回落 `sessions` 并重写键。
+- 已知后续（Plan D3）：跨重启的树展开/滚动/草稿持久化、Goal revision 最近项、按验收/阅读/修改意图重排内容面、Goal 详情注意力顺序与阶段 Tab 清理。
+
 ### Composer 会话配置菜单 + switchAgent 门 + rail 视觉精修（2026-11-04）
 
 spec `docs/superpowers/specs/2026-11-04-inputbar-rail-attention-redesign-design.md`，plan

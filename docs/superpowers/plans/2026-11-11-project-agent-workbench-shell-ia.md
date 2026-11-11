@@ -1,6 +1,6 @@
 # Project Agent Workbench — Shell IA (Plan D1) Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 把右工作台从「工作 / 工作台 / 执行 / 审阅」四个平级工具 Tab，改成以项目、Goal、内容、审阅为上下文的单一工作台面，让 Chat 与右侧内容成为同一条工作闭环。
 
@@ -54,7 +54,7 @@
 - Legacy mapping: `work → project`, `workbench → content`, `execution → project`, `review → review`, unknown → `project`.
 - `persistedWorkbenchContext("goal") === "project"`; other values unchanged.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 test("normalizes only the four contexts", () => {
@@ -76,20 +76,20 @@ test("goal context is transient and persists as project", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `node --conditions=browser --import tsx --import ../../packages/test-shim/register.mjs --test src/renderer/mafw/workbench-context.test.ts`
 Expected: FAIL because `workbench-context.ts` does not exist.
 
-- [ ] **Step 3: Implement `workbench-context.ts`**
+- [x] **Step 3: Implement `workbench-context.ts`**
 
 Use `WORKBENCH_CONTEXTS = ["project", "goal", "content", "review"] as const`, a Set for normalization, and a legacy map.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run the same command; expected PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/desktop/src/renderer/mafw/workbench-context.ts packages/desktop/src/renderer/mafw/workbench-context.test.ts
@@ -118,11 +118,11 @@ git commit -m "feat(desktop): add workbench context model"
   ```
 - `captureWorkbenchFocusSnapshot` / `restoreWorkbenchFocusSnapshot` unchanged in behavior.
 
-- [ ] **Step 1: Rewrite the focus test fixture with `context` and `executionOpen` and assert a full round-trip.**
-- [ ] **Step 2: Run test to verify RED** (`workbench-focus.test.ts`).
-- [ ] **Step 3: Update the type and capture/restore implementation.**
-- [ ] **Step 4: Run test to verify GREEN.**
-- [ ] **Step 5: Commit** `feat(desktop): include context and execution drawer in focus snapshot`.
+- [x] **Step 1: Rewrite the focus test fixture with `context` and `executionOpen` and assert a full round-trip.**
+- [x] **Step 2: Run test to verify RED** (`workbench-focus.test.ts`).
+- [x] **Step 3: Update the type and capture/restore implementation.**
+- [x] **Step 4: Run test to verify GREEN.**
+- [x] **Step 5: Commit** `feat(desktop): include context and execution drawer in focus snapshot`.
 
 ---
 
@@ -146,12 +146,12 @@ git commit -m "feat(desktop): add workbench context model"
 - `openWorkbench("review")` becomes `openWorkbenchContext("review")`.
 - Remove `workbenchView` from `WorkbenchState`; add `context`.
 
-- [ ] **Step 1: Write source-contract tests**
+- [x] **Step 1: Write source-contract tests**
 
 Assert `MafwShell.tsx` contains `workbenchContext`, `openWorkbenchContext`, `executionOpen`, and no `WORKBENCH_VIEWS` / `applyWorkbenchView("work")`.
 
-- [ ] **Step 2: Run test to verify RED.**
-- [ ] **Step 3: Refactor state and all call sites.**
+- [x] **Step 2: Run test to verify RED.**
+- [x] **Step 3: Refactor state and all call sites.**
 
 Specific call-site changes:
 - `openProjectWork()` → `openWorkbenchContext("project")` + `setActiveTab("chat")`.
@@ -163,11 +163,11 @@ Specific call-site changes:
 - Ctrl+`` → context `content` + terminal surface.
 - Deep link/legacy `goals` → project context.
 
-- [ ] **Step 4: Update `workbench-views.ts`**
+- [x] **Step 4: Update `workbench-views.ts`**
 
 Remove `WorkbenchView`, `WORKBENCH_VIEWS`, `nextWorkbenchView`. Keep `WorkbenchSurface`, `ExecutionSection`, migrations. `WorkbenchState` = `{ context, surface, executionSection }`. `migrateWorkbenchStorage` maps old view via `workbenchContextFromLegacyView`.
 
-- [ ] **Step 5: Run focused tests and commit** `refactor(desktop): switch right workbench to context state`.
+- [x] **Step 5: Run focused tests and commit** `refactor(desktop): switch right workbench to context state`.
 
 ---
 
@@ -198,10 +198,10 @@ Remove `WorkbenchView`, `WORKBENCH_VIEWS`, `nextWorkbenchView`. Keep `WorkbenchS
 - `ContentScopeHeader` only when content.
 - Execution drawer rendered when `executionOpen`, with section dropdown and close button.
 
-- [ ] **Step 1: Update the wiring test to require `.mafw-rw-head`, `context`, `executionOpen`, `onExecutionOpen`, and to forbid `WORKBENCH_VIEWS` / `.mafw-rw-tabs`.**
-- [ ] **Step 2: Run test to verify RED.**
-- [ ] **Step 3: Implement header, panes, conditional L2/ContentScopeHeader, drawer shell.**
-- [ ] **Step 4: Run focused tests and commit** `refactor(desktop): replace right dock L1 tabs with context header`.
+- [x] **Step 1: Update the wiring test to require `.mafw-rw-head`, `context`, `executionOpen`, `onExecutionOpen`, and to forbid `WORKBENCH_VIEWS` / `.mafw-rw-tabs`.**
+- [x] **Step 2: Run test to verify RED.**
+- [x] **Step 3: Implement header, panes, conditional L2/ContentScopeHeader, drawer shell.**
+- [x] **Step 4: Run focused tests and commit** `refactor(desktop): replace right dock L1 tabs with context header`.
 
 ---
 
@@ -219,11 +219,11 @@ Remove `WorkbenchView`, `WORKBENCH_VIEWS`, `nextWorkbenchView`. Keep `WorkbenchS
 - New `goalView` JSX in `MafwShell`: `<GoalDetailPanel goalId={podGoalId()} podId={podIdForCurrentProject()} ... onClose={() => setPodGoalId(null); applyWorkbenchContext("project")} />`.
 - `openGoalDetail` sets context goal; `onGoalAccepted` still returns Chat to Lead.
 
-- [ ] **Step 1: Update tests to assert project view has no inline Goal detail and shell passes a `goalView`.**
-- [ ] **Step 2: Run RED.**
-- [ ] **Step 3: Remove inline detail logic from ProjectWorkView; add goal pane wiring.**
-- [ ] **Step 4: Update focus restore to return to the project list (no old row focus assumptions).**
-- [ ] **Step 5: Run focused tests and commit** `refactor(desktop): separate project home and goal context`.
+- [x] **Step 1: Update tests to assert project view has no inline Goal detail and shell passes a `goalView`.**
+- [x] **Step 2: Run RED.**
+- [x] **Step 3: Remove inline detail logic from ProjectWorkView; add goal pane wiring.**
+- [x] **Step 4: Update focus restore to return to the project list (no old row focus assumptions).**
+- [x] **Step 5: Run focused tests and commit** `refactor(desktop): separate project home and goal context`.
 
 ---
 
@@ -241,10 +241,10 @@ Remove `WorkbenchView`, `WORKBENCH_VIEWS`, `nextWorkbenchView`. Keep `WorkbenchS
 - Review context owns `ChangesDock`; Chat diff command, editor annotation feedback, and `onOpenReview` switch to `review`.
 - Goal review items remain inside `GoalDetailPanel`/`PodResultView`, not a separate context.
 
-- [ ] **Step 1: Update source tests to pin `context === "content"` for L2/terminal/ContentScopeHeader and `context === "review"` for ChangesDock.**
-- [ ] **Step 2: Run RED.**
-- [ ] **Step 3: Move wiring accordingly; keep all panes mounted.**
-- [ ] **Step 4: Run content/review focused tests and commit** `refactor(desktop): rehome content and review surfaces`.
+- [x] **Step 1: Update source tests to pin `context === "content"` for L2/terminal/ContentScopeHeader and `context === "review"` for ChangesDock.**
+- [x] **Step 2: Run RED.**
+- [x] **Step 3: Move wiring accordingly; keep all panes mounted.**
+- [x] **Step 4: Run content/review focused tests and commit** `refactor(desktop): rehome content and review surfaces`.
 
 ---
 
@@ -262,10 +262,10 @@ Remove `WorkbenchView`, `WORKBENCH_VIEWS`, `nextWorkbenchView`. Keep `WorkbenchS
 - `openExecutionSection(section)` sets `executionOpen=true` and section, preserving context.
 - `PodDock` remains an execution section; LeftDock/Pod/usage/background/todos all open the drawer.
 
-- [ ] **Step 1: Write a source test for `ExecutionDrawer` and for openers not changing context.**
-- [ ] **Step 2: Run RED.**
-- [ ] **Step 3: Implement drawer and wire openers.**
-- [ ] **Step 4: Run focused tests and commit** `feat(desktop): move execution details into a drawer`.
+- [x] **Step 1: Write a source test for `ExecutionDrawer` and for openers not changing context.**
+- [x] **Step 2: Run RED.**
+- [x] **Step 3: Implement drawer and wire openers.**
+- [x] **Step 4: Run focused tests and commit** `feat(desktop): move execution details into a drawer`.
 
 ---
 
@@ -284,18 +284,18 @@ Remove `WorkbenchView`, `WORKBENCH_VIEWS`, `nextWorkbenchView`. Keep `WorkbenchS
 - New CSS: `.mafw-rw-head`, `.mafw-rw-context`, `.mafw-rw-actions`, `.mafw-rw-exec-drawer`, `.mafw-rw-exec-head`; remove dead `.mafw-rw-l1` / `.mafw-rw-tabs` / `.mafw-rw-tab`.
 - Narrow switch still only toggles Chat/Workbench visibility.
 
-- [ ] **Step 1: Update CSS/design-contract tests for the new header and drawer; forbid L1 tabs.**
-- [ ] **Step 2: Run RED.**
-- [ ] **Step 3: Implement CSS and focus/restore changes.**
-- [ ] **Step 4: Run full desktop tests**
+- [x] **Step 1: Update CSS/design-contract tests for the new header and drawer; forbid L1 tabs.**
+- [x] **Step 2: Run RED.**
+- [x] **Step 3: Implement CSS and focus/restore changes.**
+- [x] **Step 4: Run full desktop tests**
 
 Run: `npm test` (desktop). Expected: 0 failures.
 
-- [ ] **Step 5: Type/build gates**
+- [x] **Step 5: Type/build gates**
 
 Run: `npx tsgo --noEmit -p tsconfig.json`, then `node ../../node_modules/electron-vite/bin/electron-vite.js build`. Expected rc=0.
 
-- [ ] **Step 6: Commit** `refactor(desktop): finish right workbench shell ia`.
+- [x] **Step 6: Commit** `refactor(desktop): finish right workbench shell ia`.
 
 ---
 

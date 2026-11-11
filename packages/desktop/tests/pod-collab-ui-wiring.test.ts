@@ -292,10 +292,10 @@ const POD_DETAIL = {
 
 test("所有 Pod 会话入口都经普通 Lead / Tech Lead 会话", () => {
   assert.match(shell, /const openPodSession = async \(sid: string, title\?: string\)/)
-  assert.match(shell, /onPodOpenLead=\{\(\) => \{ void openLeadEntry\(\) \}\}/)
-  assert.match(shell, /onPodOpenTechLead=\{\(goalId\) => \{ void openTechLead\(goalId\) \}\}/)
+  assert.match(shell, /onOpenLead: \(\) => \{ void openLeadEntry\(\) \}/)
+  assert.match(shell, /onOpenTechLead: \(goalId\) => \{ void openTechLead\(goalId\) \}/)
   assert.match(shell, /onOpenPodSession=\{\(sid, title\) => \{ void openPodSession\(sid, title\) \}\}/)
-  assert.match(shell, /<ProjectWorkView[\s\S]{0,900}onOpenGoal=/)
+  assert.match(shell, /<ProjectWorkView[\s\S]{0,2400}onOpenGoal=/)
   assert.match(shell, /onOpenSession=\{\(sid\) => \{ void openPodSession\(sid\) \}\}/)
   assert.match(shell, /activeTechLeadBlocked/)
   assert.match(shell, /sendBlocked=\{activeTechLeadBlocked\}/)

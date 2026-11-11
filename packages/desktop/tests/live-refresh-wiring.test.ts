@@ -46,8 +46,8 @@ test("文件树自动刷新：展开目录被 watch，事件只重列受影响�
   assert.match(dock, /planDirWatches/)
   assert.match(dock, /onDirChanged/)
   assert.match(dock, /nextChildrenAfterRefresh/)
-  assert.match(dock, /watchDir/)
-  assert.match(dock, /unwatchDir/)
+  assert.match(dock, /acquireDirWatch/)
+  assert.match(dock, /entry\.release\(\)/)
   // 根目录始终 watch（rel=""）
   assert.match(dock, /wanted\.add\(""\)/)
   // 不整树重置：事件路径不调用 loadRoot
