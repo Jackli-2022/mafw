@@ -41,6 +41,13 @@ export interface WsHubDeps {
   getVoiceRuntime(): Promise<VoiceRuntime>;
   getTerminalService(): TerminalService;
   pluginWebDeps(): PluginWebRouteDeps;
+  /**
+   * E2-4: live event-log head seq for the `connected` greeting. WS is live-only
+   * (no replay): clients use this to know where the live stream resumes and
+   * must reconcile via the SSE cursor or a REST snapshot after reconnect.
+   * null = no persistent event store (live-only deployment).
+   */
+  headSeq?: () => number | null;
 }
 
 export interface WsHub {
@@ -60,7 +67,14 @@ export function createWsHub(server: http.Server, deps: WsHubDeps): WsHub {
     (ws as any).isAlive = true;
     (ws as any).missedPongs = 0;
     ws.on('pong', () => { (ws as any).isAlive = true; (ws as any).missedPongs = 0; });
-    ws.send(JSON.stringify({ type: 'connected', timestamp: new Date().toISOString(), vocab: 'v2' }));
+    ws.send(JSON.stringify({
+      type: 'connected',
+      timestamp: new Date().toISOString(),
+      vocab: 'v2',
+      // E2-4: live-only channel — headSeq marks where live delivery resumes;
+      // replay/reconnect is the SSE cursor's or REST snapshot's job.
+      headSeq: deps.headSeq?.() ?? null,
+    }));
     ws.on('message', (raw) => {
       void deps.handleWsMessage(ws, raw);
     });

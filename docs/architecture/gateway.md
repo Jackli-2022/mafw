@@ -692,6 +692,8 @@ D3 Task 3 的 5 → Task 4 的 0）。D3-R2 把 `.match` / `.startsWith` 纪律�
 （exact 12 + prefix 6 + artifact slot 1），dashboard 的 5 个在 `subsystems/dashboard-legacy.ts`
 钉扎；`/api/ws` 不在 HTTP 链上（`http/ws-upgrade.ts`）。
 
+**WS 是 live-only 通道（E2-4）**：`connected` 帧携带 `headSeq`（event store 缺失时为 `null`），仅用于标识实时流的衔接位置；WS **不回放**，重连恢复必须走 SSE 游标（`?since` / `Last-Event-ID`）或 REST 快照，移动端"重连即全量"路径保持不变。
+
 **D3 验收（spec §7 字面）**：
 
 | 条件 | 状态 |

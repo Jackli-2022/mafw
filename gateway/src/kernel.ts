@@ -5308,6 +5308,9 @@ class MafwScheduler {
           getVoiceRuntime: () => this.getVoiceRuntime(),
           getTerminalService: () => this.getTerminalService(),
           pluginWebDeps: () => this.pluginWebDeps(),
+          // E2-4: WS is live-only; connected.headSeq is informational and the
+          // reconnect path is SSE cursor / REST snapshot (never WS replay).
+          headSeq: () => this.eventStore?.headSeq() ?? null,
         });
         this.wsHub = hub;
         resolve(true);
