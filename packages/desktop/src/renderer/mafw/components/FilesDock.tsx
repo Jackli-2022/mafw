@@ -23,6 +23,7 @@ import {
   type ContentScopeState,
 } from "../content-scope-state"
 import { DockBanner, DockEmpty, DockPanelHeader } from "./dock-panel"
+import { acquireDirWatch } from "../dir-watch-pool"
 
 export function FilesDock(props: {
   contentRoot: string | null
@@ -95,22 +96,22 @@ export function FilesDock(props: {
 
   // ── 目录自动刷新（2026-10-31）：watch 根 + 当前展开目录 ─────────────
   // 折叠子树不显示，不监听；事件只重列受影响目录，不整树重置（防闪烁/丢展开态）。
-  const watched = new Map<string, string>() // rel → root（root 切换时按记录退订）
+  const watched = new Map<string, { root: string; release: () => void }>()
 
   function releaseWatches() {
-    for (const [rel, root] of [...watched]) {
+    for (const [rel, entry] of [...watched]) {
       watched.delete(rel)
-      void window.api.fs.unwatchDir?.(root, rel)
+      entry.release()
     }
   }
 
   function syncWatches() {
     const root = props.contentRoot
     // 换 root 后旧 watch 一律退订（按注册时的 root，不按新 root）
-    for (const [rel, r] of [...watched]) {
-      if (!root || r !== root) {
+    for (const [rel, entry] of [...watched]) {
+      if (!root || entry.root !== root) {
         watched.delete(rel)
-        void window.api.fs.unwatchDir?.(r, rel)
+        entry.release()
       }
     }
     const wanted = new Set<string>()
@@ -119,12 +120,13 @@ export function FilesDock(props: {
     for (const rel of expanded()) wanted.add(rel)
     const plan = planDirWatches(new Set(watched.keys()), wanted)
     for (const rel of plan.remove) {
+      const entry = watched.get(rel)
+      if (!entry) continue
       watched.delete(rel)
-      void window.api.fs.unwatchDir?.(root, rel)
+      entry.release()
     }
     for (const rel of plan.add) {
-      watched.set(rel, root)
-      void window.api.fs.watchDir?.(root, rel)
+      watched.set(rel, { root, release: acquireDirWatch(root, rel) })
     }
   }
 
@@ -156,10 +158,10 @@ export function FilesDock(props: {
         next.delete(rel)
         return next
       })
-      const watchedRoot = watched.get(rel)
-      if (watchedRoot) {
+      const watchedEntry = watched.get(rel)
+      if (watchedEntry) {
         watched.delete(rel)
-        void window.api.fs.unwatchDir?.(watchedRoot, rel)
+        watchedEntry.release()
       }
     }
   }

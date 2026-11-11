@@ -31,3 +31,11 @@ test("expanding a directory does not re-run the scope reset effect", () => {
   assert.match(scopeEffect, /loadRoot\(saved\.treeExpanded\)/)
   assert.doesNotMatch(scopeEffect, /loadRoot\(\)/)
 })
+
+test("directory watches go through the shared ref-counted pool", () => {
+  assert.match(dock, /acquireDirWatch\(/)
+  assert.doesNotMatch(dock, /window\.api\.fs\.watchDir/)
+  assert.doesNotMatch(dock, /window\.api\.fs\.unwatchDir/)
+  assert.match(dock, /releaseWatches/)
+  assert.match(dock, /entry\.release\(\)/)
+})
