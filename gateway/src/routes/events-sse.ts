@@ -7,6 +7,10 @@
  * newest-window 回放 + 直播），per-connection write 收进 sseClients，req close
  * 时移除。
  *
+ * E4-4/E4-5：连接上限在 attach **之前**判定（超限直接 503，不写 greeting，
+ * 不建立流）；写路径包一层 `SseBoundedWriter`（慢客户端队列越界即断开）。
+ * 两者都是可选依赖：kernel 未接线时行为与之前完全一致。
+ *
  * 迁移评估（brief 要求先评估）：legacy 是单个 `req.url && req.url.startsWith
  * ('/api/events') && method === 'GET'` 盲点分支，全部连接生命周期动作（注册 /
  * 移除）都在分支内，闭包（conn.write / buffer / replay 游标）由 attachGlobalSse
@@ -20,7 +24,15 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import { config } from '../config';
 import type { EventStore } from '../events/event-store';
 import { parseSince, attachGlobalSse } from '../events/sse-attach';
+import type { ConnectionTable } from '../resources/connections';
+import { BufferCounters, SseBoundedWriter } from '../resources/outbound-buffer';
 import type { RouteRegistry } from './registry';
+
+export interface SseBufferOptions {
+  maxFrames: number;
+  maxBytes: number;
+  counters?: BufferCounters;
+}
 
 export interface EventsSseRouteDeps {
   /** null = 纯直播（EventStore 初始化失败的降级语义）。 */
@@ -32,11 +44,36 @@ export interface EventsSseRouteDeps {
    * metadata 在 boot 阶段加载，attach 时才取；null = 未就绪（字段省略）。
    */
   releaseIdentity?: () => { instanceId: string; schemaEpoch: number } | null;
+  /** E4-4: live 连接表；null/缺省 = 不限制（向后兼容）。 */
+  connections?: () => ConnectionTable | null;
+  /** E4-5: 有界写配置；null/缺省 = 直接 `res.write`（旧行为）。 */
+  buffers?: () => SseBufferOptions | null;
 }
 
 export function attachEventsSseRoutes(registry: RouteRegistry, deps: EventsSseRouteDeps): void {
   registry.attachHandler('event.subscribe', async (req: IncomingMessage, res: ServerResponse) => {
     const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
+
+    // E4-4：超限在写任何 SSE 字节之前拒绝——客户端看到的是一个普通 JSON 503，
+    // 而不是一个"连上了但永远没有 greeting"的流。
+    const connections = deps.connections?.() ?? null;
+    const lease = connections ? connections.tryAcquire('sse') : null;
+    if (connections && !lease) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'too many sse connections', code: 'connection_limit' }));
+      return;
+    }
+
+    // E4-5：writer 只改变写路径（队列/溢出断开），greeting/回放字节不变。
+    const bufferOpts = deps.buffers?.() ?? null;
+    const writer = bufferOpts
+      ? new SseBoundedWriter({
+        res,
+        maxFrames: bufferOpts.maxFrames,
+        maxBytes: bufferOpts.maxBytes,
+        counters: bufferOpts.counters,
+      })
+      : null;
 
     // Mode A（唯一模式）：`?sessionID` 历史参数被忽略，保持向后兼容（旧客户端仍拿到
     // 全局流，而不是 404/挂起）。2026-10-22 持久回放：Last-Event-ID 头（原生
@@ -48,12 +85,28 @@ export function attachEventsSseRoutes(registry: RouteRegistry, deps: EventsSseRo
       res,
       store: deps.eventStore(),
       replayLimit: config.events.replayLimit,
-      writeFrame: (r, frame) => { if (frame) r.write(frame); },
+      writeFrame: writer
+        ? (_r, frame) => { if (frame) writer.write(frame); }
+        : (r, frame) => { if (frame) r.write(frame); },
       since,
       instanceId: release?.instanceId,
       schemaEpoch: release?.schemaEpoch,
     });
     deps.sseClients().set(res, conn.write);
-    req.on('close', () => { deps.sseClients().delete(res); });
+
+    // req.close（客户端断开）与 res.close（socket/响应被销毁，含 writer 溢出）
+    // 都可能先到；release/dispose 都幂等。
+    let cleaned = false;
+    const cleanup = (): void => {
+      if (cleaned) return;
+      cleaned = true;
+      deps.sseClients().delete(res);
+      writer?.dispose();
+      lease?.release();
+    };
+    req.on('close', cleanup);
+    try {
+      res.on?.('close', cleanup);
+    } catch { /* not an emitter (tests / mock) */ }
   });
 }
