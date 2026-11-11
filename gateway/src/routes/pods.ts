@@ -7,6 +7,7 @@ import type { PodMessageService } from '../core/pod/pod-message-service';
 import type { PodService } from '../core/pod/pod-service';
 import type { PodTaskService } from '../core/pod/pod-task-service';
 import type { PodTechLeadService } from '../core/pod/pod-tech-lead-service';
+import type { PodReviewService } from '../core/pod/pod-review-service';
 import type { GoalAuthorization, GoalIntakeInput, GoalIntakeResult } from '../core/goal/goal-intake';
 import {
   GoalConflictError,
@@ -35,6 +36,8 @@ export interface PodRouteDeps {
   intake?: { create(input: GoalIntakeInput): GoalIntakeResult };
   /** Task 18: POST /goals creates a direct discussion Goal (Tech Lead session + revision 1 discussing). */
   techLead?: Pick<PodTechLeadService, 'createGoal'>;
+  /** Plan C: human review items for the active/current revision. */
+  reviews?: Pick<PodReviewService, 'list' | 'createItems' | 'resolve' | 'reopen'>;
   newGoalId?(): string;
   cost(podId: string): Promise<{ spentUsd: number; limitUsd: number }>;
   transcript(podId: string, sessionId: string): Promise<unknown>;
@@ -300,6 +303,67 @@ export async function handlePods(
       return true;
     }
 
+    const goalReview = pathname.match(/^\/api\/pods\/([^/]+)\/goals\/([^/]+)\/review-items$/);
+    if (goalReview) {
+      if (method === 'GET') {
+        const podId = decode(goalReview[1]);
+        const goalId = decode(goalReview[2]);
+        requirePod(deps, podId);
+        if (!deps.reviews) throw new PodError(503, 'review items unavailable');
+        const raw = new URL(url, 'http://localhost').searchParams.get('revision');
+        let revision: number | undefined;
+        if (raw !== null) {
+          revision = positiveInteger(Number(raw));
+          if (revision === undefined) throw new PodError(400, 'revision must be a positive integer');
+        }
+        sendJson(res, 200, deps.reviews.list(podId, goalId, { revision }));
+        return true;
+      }
+      if (method === 'POST') {
+        const podId = decode(goalReview[1]);
+        const goalId = decode(goalReview[2]);
+        requirePod(deps, podId);
+        const body = await readJson(req);
+        if (typeof body?.actorSessionID === 'string' && body.actorSessionID) {
+          throw new PodError(403, 'review items are human-only');
+        }
+        if (!deps.reviews) throw new PodError(503, 'review items unavailable');
+        const items = Array.isArray(body?.items) ? body.items : [];
+        let revision: number | undefined;
+        if (body?.revision !== undefined) {
+          revision = positiveInteger(body.revision);
+          if (revision === undefined) throw new PodError(400, 'revision must be a positive integer');
+        }
+        sendJson(res, 200, {
+          items: deps.reviews.createItems(podId, goalId, { revision, items }),
+        });
+        return true;
+      }
+      return false;
+    }
+
+    const goalReviewAction = pathname.match(
+      /^\/api\/pods\/([^/]+)\/goals\/([^/]+)\/review-items\/([^/]+)\/(resolve|reopen)$/,
+    );
+    if (goalReviewAction) {
+      if (method !== 'POST') return false;
+      const podId = decode(goalReviewAction[1]);
+      const goalId = decode(goalReviewAction[2]);
+      const itemId = decode(goalReviewAction[3]);
+      requirePod(deps, podId);
+      const body = await readJson(req);
+      if (typeof body?.actorSessionID === 'string' && body.actorSessionID) {
+        throw new PodError(403, 'review items are human-only');
+      }
+      if (!deps.reviews) throw new PodError(503, 'review items unavailable');
+      const note = typeof body?.note === 'string' ? body.note : undefined;
+      const item = goalReviewAction[4] === 'resolve'
+        ? deps.reviews.resolve(podId, goalId, itemId, { note })
+        : deps.reviews.reopen(podId, goalId, itemId, { note });
+      sendJson(res, 200, { item });
+      return true;
+    }
+
     const goalResult = pathname.match(/^\/api\/pods\/([^/]+)\/goals\/([^/]+)\/result$/);
     if (goalResult) {
       if (method !== 'GET') return false;
@@ -349,7 +413,17 @@ export async function handlePods(
       if (revision !== undefined && (!Number.isInteger(revision) || revision < 1)) {
         throw new PodError(400, 'revision must be a positive integer');
       }
-      sendJson(res, 200, await deps.goals.acceptResult(podId, goalId, { revision }));
+      if (body.force !== undefined && typeof body.force !== 'boolean') {
+        throw new PodError(400, 'force must be a boolean');
+      }
+      if (body.riskAcknowledged !== undefined && typeof body.riskAcknowledged !== 'boolean') {
+        throw new PodError(400, 'riskAcknowledged must be a boolean');
+      }
+      sendJson(res, 200, await deps.goals.acceptResult(podId, goalId, {
+        revision,
+        force: body.force === true,
+        riskAcknowledged: body.riskAcknowledged === true,
+      }));
       return true;
     }
 

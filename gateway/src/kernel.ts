@@ -93,6 +93,7 @@ import { PodTaskService } from './core/pod/pod-task-service';
 import { PodMessageService } from './core/pod/pod-message-service';
 import { PodMemoryService } from './core/pod/pod-memory-service';
 import { PodGoalService } from './core/pod/pod-goal-service';
+import { PodReviewService } from './core/pod/pod-review-service';
 import { PodGoalRevisionService } from './core/pod/pod-goal-revision-service';
 import { PodSessionSupervisor } from './core/pod/pod-session-supervisor';
 import { PodSessionLifecycle } from './core/pod/pod-session-lifecycle';
@@ -651,6 +652,7 @@ class MafwScheduler {
   private podMessageService!: PodMessageService;
   private podMemoryService!: PodMemoryService;
   private podGoalService!: PodGoalService;
+  private podReviewService!: PodReviewService;
   private podGoalRevisionService!: PodGoalRevisionService;
   private podSessionSupervisor!: PodSessionSupervisor;
   private podSessionLifecycle!: PodSessionLifecycle;
@@ -3848,6 +3850,16 @@ class MafwScheduler {
       }),
       log: (message) => log.info(message),
     });
+    this.podReviewService = new PodReviewService({
+      store: this.podStore,
+      now: () => new Date().toISOString(),
+      notify: (podId, kind = 'review', goalId) => this.broadcast({
+        type: 'pod.updated',
+        properties: { podId, kind, ...(goalId ? { goalId } : {}) },
+      }),
+      // Tech Lead service is constructed later; resolve lazily at call time.
+      assertTechLeadSession: (goalId, sessionID) => this.podTechLeadService.assertTechLeadSession(goalId, sessionID),
+    });
     this.podGoalService = new PodGoalService({
       store: this.podStore,
       pods: this.podService,
@@ -3896,6 +3908,7 @@ class MafwScheduler {
       },
       revisions: this.podGoalRevisionService,
       worktrees: this.podWorktreeService,
+      reviews: this.podReviewService,
       sessions: { retireRevision: (goalId, revision) => this.podSessionLifecycle.retireRevision(goalId, revision) },
       // 打回需要立刻恢复 Tech Lead 讨论、并把反馈记进方向输入：这两者在本函数稍后
       // 才构造，因此用惰性适配器（调用时才解析到真实服务）。
@@ -5128,6 +5141,7 @@ class MafwScheduler {
       get podMessageDelivery() { return self.podMessageDelivery; },
       get podMessageService() { return self.podMessageService; },
       get podProbeService() { return self.podProbeService; },
+      get podReviewService() { return self.podReviewService; },
       get podService() { return self.podService; },
       get podStore() { return self.podStore; },
       get podTaskService() { return self.podTaskService; },

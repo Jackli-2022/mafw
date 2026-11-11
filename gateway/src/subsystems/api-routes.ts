@@ -92,6 +92,7 @@ import type { LeadTopicResumeService } from '../core/lead/lead-topic-resume-serv
 import type { PodAccess } from '../core/pod/pod-access';
 import type { PodDirectionService } from '../core/pod/pod-direction-service';
 import type { PodGoalService } from '../core/pod/pod-goal-service';
+import type { PodReviewService } from '../core/pod/pod-review-service';
 import type { PodMemoryService } from '../core/pod/pod-memory-service';
 import type { PodMessageDelivery } from '../core/pod/pod-message-delivery';
 import type { PodMessageService } from '../core/pod/pod-message-service';
@@ -217,6 +218,7 @@ export interface ApiRouteDeps {
   podMessageDelivery: PodMessageDelivery;
   podMessageService: PodMessageService;
   podProbeService: PodProbeService;
+  podReviewService: PodReviewService;
   podService: PodService;
   podStore: PodStore;
   podTaskService: PodTaskService;
@@ -573,6 +575,7 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
     techLead: deps.podTechLeadService,
     cost: async (podId) => deps.podCost(podId),
     transcript: async (podId, sessionId) => deps.podTranscript(podId, sessionId),
+    reviews: deps.podReviewService,
   }, {
     // Task 18: collaboration surface (Tech Lead discussion / direction / probes /
     // reject / revisions). Services are constructed above, so plain references.
