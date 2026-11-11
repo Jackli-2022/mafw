@@ -84,6 +84,7 @@ import { attachMcpMgmtRoutes } from '../routes/mcp-mgmt';
 import { attachManagerSessionRoutes } from '../routes/manager-session';
 import { attachEventsSseRoutes } from '../routes/events-sse';
 import { attachKernelStatsRoute } from '../routes/kernel-stats';
+import type { TimerService } from '../core/timer-service';
 import type { ConnectionTable } from '../resources/connections';
 import type { BufferCounters } from '../resources/outbound-buffer';
 import type { KernelStatsSnapshot } from '../resources/stats';
@@ -202,6 +203,8 @@ export interface ApiRouteDeps {
   connections: ConnectionTable;
   /** E4-5: aggregate outbound-buffer counters (SSE writers + WS broadcast). */
   bufferCounters: BufferCounters;
+  /** E4-1: named timer ledger (SSE keepalive registers `sse:ping:<connectionId>`). */
+  timers: TimerService;
   /** E4-8: kernel resource snapshot for `GET /api/kernel/stats` (rebuilt per request). */
   kernelStats: () => KernelStatsSnapshot;
 
@@ -903,6 +906,8 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
       maxBytes: config.resources.buffers.sseMaxBytes,
       counters: deps.bufferCounters,
     }),
+    // E4-1: 保活登记到命名台账（每连接 sse:ping:<id>），关流即清。
+    timers: () => deps.timers,
   });
   // code-first P0 试点：schema 是响应事实源，handler 返回数据（不写 res）。
   attachTypedRoute(deps.routeRegistry, {

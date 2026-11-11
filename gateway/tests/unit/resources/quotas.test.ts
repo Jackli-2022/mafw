@@ -3,6 +3,7 @@
  *
  * 配额只提供机制与可观测：默认值偏高、`0` = 不限，拒绝路径由各入口映射 429。
  * 判定 `current < limit`（达到上限即拒绝）：limit=2 时第 2 个新增被拒。
+ * snapshot 出口把非有限 limit 归一化为 0（JSON 里 `Infinity`/`NaN` 会变成 null）。
  */
 import { QuotaExceededError, QuotaService, projectAdmission, type QuotaResource } from '../../../src/resources/quotas';
 
@@ -86,6 +87,17 @@ describe('QuotaService: snapshot', () => {
 
   it('returns an empty object for an empty request', () => {
     expect(service().snapshot({})).toEqual({});
+  });
+
+  it('sanitizes non-finite limits to 0 (unlimited) on the wire; finite values pass through', () => {
+    const quotas = new QuotaService({
+      limits: () => ({ projects: Infinity, sessions: Number.NaN, sessionRecordsPerProject: -1 }) as never,
+    });
+    expect(quotas.snapshot({ projects: 1, sessions: 2, sessionRecordsPerProject: 3 })).toEqual({
+      projects: { current: 1, limit: 0 },
+      sessions: { current: 2, limit: 0 },
+      sessionRecordsPerProject: { current: 3, limit: -1 },
+    });
   });
 });
 

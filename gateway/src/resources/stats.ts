@@ -22,10 +22,21 @@ import type { HeapSample } from './heap';
 import type { DiskState } from './disk';
 import type { ProcessLedgerSnapshot } from './process-ledger';
 import type { QuotaSnapshot } from './quotas';
+import { sanitizeLimit } from './quotas';
 import type { SchedulerStats } from '../scheduler/task-descriptor';
 
 type BufferSnapshot = ReturnType<BufferCounters['snapshot']>;
 type TimerStats = { active: number; byName: Record<string, number> };
+
+/** 配额资源键（与 `QuotaResource` 同集；这里显式列出是为了 wire 三键必填）。 */
+export const KERNEL_STATS_QUOTA_RESOURCES = ['projects', 'sessions', 'sessionRecordsPerProject'] as const;
+export type KernelStatsQuotaResource = (typeof KERNEL_STATS_QUOTA_RESOURCES)[number];
+/**
+ * wire 上的配额表：**三键全有**（`KernelStatsResponse.quotas.required`）。
+ * provider 少给某个键时由 builder 补齐（current 取注入值、limit 0 = 不限），
+ * 客户端因此永远不需要为"半张表"写分支。
+ */
+export type KernelStatsQuotas = Record<KernelStatsQuotaResource, { current: number; limit: number }>;
 
 /** `process.getActiveResourcesInfo()` 的类型计数（Linux 附带 `/proc/self/fd` 数）。 */
 export interface KernelStatsHandles {
@@ -44,7 +55,7 @@ export interface KernelStatsSnapshot {
   buffers: BufferSnapshot;
   timers: TimerStats;
   processes: ProcessLedgerSnapshot;
-  quotas: QuotaSnapshot;
+  quotas: KernelStatsQuotas;
   handles: KernelStatsHandles;
   scheduler: SchedulerStats;
   events: { headSeq: number; appendFailures: number };
@@ -109,6 +120,28 @@ function aggregateTimers(stats: TimerStats): TimerStats {
   return { active, byName };
 }
 
+/**
+ * 补齐 wire 要求的三键（provider 返回 Partial）。缺键 = 该资源没有注册路径的
+ * current（退回注入值）且 limit 未配置（0 = 不限）；顺带把非有限值归一化。
+ */
+function normalizeQuotas(
+  raw: QuotaSnapshot | undefined,
+  currents: Partial<Record<KernelStatsQuotaResource, number>>,
+): KernelStatsQuotas {
+  const out = {} as KernelStatsQuotas;
+  for (const resource of KERNEL_STATS_QUOTA_RESOURCES) {
+    const entry = raw?.[resource];
+    const current = typeof entry?.current === 'number' && Number.isFinite(entry.current)
+      ? entry.current
+      : currents[resource];
+    out[resource] = {
+      current: typeof current === 'number' && Number.isFinite(current) ? current : 0,
+      limit: sanitizeLimit(entry?.limit),
+    };
+  }
+  return out;
+}
+
 /** `process.getActiveResourcesInfo()` → 按类型计数；`fdCount` 仅在有采样时出现。 */
 export function buildHandlesSnapshot(activeResources: string[], fdCount?: number): KernelStatsHandles {
   const list = Array.isArray(activeResources) ? activeResources : [];
@@ -150,7 +183,7 @@ export function buildKernelStatsSnapshot(input: KernelStatsInput): KernelStatsSn
     buffers: input.buffers.snapshot(),
     timers: aggregateTimers(input.timers.stats()),
     processes: input.processes.snapshot(),
-    quotas: input.quotas.snapshot(input.quotaCurrents),
+    quotas: normalizeQuotas(input.quotas.snapshot(input.quotaCurrents), input.quotaCurrents),
     handles: input.handles ?? { total: 0, byType: {} },
     scheduler: input.scheduler.stats(),
     events: input.events

@@ -54,7 +54,11 @@ const MINIMAL_SNAPSHOT: KernelStatsSnapshot = {
   buffers: { sseOverflows: 0, sseDropped: 0, sseWriteErrors: 0, sseQueuedFrames: 0, sseQueuedBytes: 0, wsDropped: 0 },
   timers: { active: 1, byName: { 'governor:sample': 1 } },
   processes: { total: 0, byKind: { python: 0, llamacpp: 0, serve: 0 }, entries: [] },
-  quotas: { projects: { current: 0, limit: 128 } },
+  quotas: {
+    projects: { current: 0, limit: 128 },
+    sessions: { current: 0, limit: 1000 },
+    sessionRecordsPerProject: { current: 0, limit: 200 },
+  },
   handles: { total: 2, byType: { Timeout: 2 } },
   scheduler: { queued: 0, running: 0, byPriority: {} },
   events: { headSeq: 0, appendFailures: 0 },

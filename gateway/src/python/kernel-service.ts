@@ -5,6 +5,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { Dealer, Subscriber } from 'zeromq';
 import { log } from '../core/utils/logger';
+import type { TimerHandle, TimerService } from '../core/timer-service';
 import type { ProcessHandle, ProcessLedger } from '../resources/process-ledger';
 import { QuotaExceededError } from '../resources/quotas';
 import { limitOf } from '../resources/settings';
@@ -776,6 +777,11 @@ export interface SessionKernelsDeps {
   idleEvictMs?: number;
   /** 可注入时钟（测试驱逐）。 */
   now?: () => number;
+  /**
+   * E4-1: kernel timer 台账。提供时 TTL 扫描以 `python:sweep`（5min）登记，
+   * `disposeAll()` 经台账清理；缺省退回本地 setInterval（旧行为）。
+   */
+  timers?: TimerService;
 }
 
 export interface SessionKernelInfo {
@@ -793,12 +799,18 @@ interface KernelEntry {
 export class SessionKernels {
   private kernels = new Map<string, KernelEntry>();
   private cleanupTimer?: ReturnType<typeof setInterval>;
+  private cleanupHandle?: TimerHandle;
   private readonly now: () => number;
 
   constructor(private readonly pythonBin: string, private readonly opts: SessionKernelsDeps = {}) {
     this.now = opts.now ?? (() => Date.now());
-    this.cleanupTimer = setInterval(() => this.sweep(), 5 * 60 * 1000);
-    if (this.cleanupTimer && typeof this.cleanupTimer === 'object' && 'unref' in this.cleanupTimer) this.cleanupTimer.unref();
+    if (opts.timers) {
+      // E4-1: 名字是 stats 聚合契约（spec §4.1），不得重命名。
+      this.cleanupHandle = opts.timers.every('python:sweep', 5 * 60 * 1000, () => this.sweep());
+    } else {
+      this.cleanupTimer = setInterval(() => this.sweep(), 5 * 60 * 1000);
+      if (this.cleanupTimer && typeof this.cleanupTimer === 'object' && 'unref' in this.cleanupTimer) this.cleanupTimer.unref();
+    }
   }
 
   get(sessionId: string): KernelManager {
@@ -880,6 +892,8 @@ export class SessionKernels {
   disposeAll(): void {
     if (this.cleanupTimer) clearInterval(this.cleanupTimer);
     this.cleanupTimer = undefined;
+    this.opts.timers?.clear(this.cleanupHandle);
+    this.cleanupHandle = undefined;
     for (const entry of this.kernels.values()) {
       entry.kernel.dispose();
       entry.handle?.release();

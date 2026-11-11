@@ -22,8 +22,10 @@
  */
 import type { IncomingMessage, ServerResponse } from 'http';
 import { config } from '../config';
+import type { TimerService } from '../core/timer-service';
 import type { EventStore } from '../events/event-store';
 import { parseSince, attachGlobalSse } from '../events/sse-attach';
+import type { SseConnection } from '../events/sse-attach';
 import type { ConnectionTable } from '../resources/connections';
 import { BufferCounters, SseBoundedWriter } from '../resources/outbound-buffer';
 import type { RouteRegistry } from './registry';
@@ -48,6 +50,8 @@ export interface EventsSseRouteDeps {
   connections?: () => ConnectionTable | null;
   /** E4-5: 有界写配置；null/缺省 = 直接 `res.write`（旧行为）。 */
   buffers?: () => SseBufferOptions | null;
+  /** E4-1: kernel timer 台账（保活命名 `sse:ping:<id>`）；缺省 = 本地 interval。 */
+  timers?: () => TimerService;
 }
 
 export function attachEventsSseRoutes(registry: RouteRegistry, deps: EventsSseRouteDeps): void {
@@ -68,11 +72,15 @@ export function attachEventsSseRoutes(registry: RouteRegistry, deps: EventsSseRo
     // 都可能先到；release/dispose 都幂等。attach 抛错时也走同一条清理路径，
     // 否则失败的 attach 会永久占用一个 SSE 名额。
     let writer: SseBoundedWriter | null = null;
+    let conn: SseConnection | null = null;
     let cleaned = false;
     const cleanup = (): void => {
       if (cleaned) return;
       cleaned = true;
       deps.sseClients().delete(res);
+      // E4-1：连接级保活 timer（sse:ping:<id>）也在这里收口——req close 与 res close
+      // 谁先到都行，dispose 幂等。
+      conn?.dispose();
       writer?.dispose();
       lease?.release();
     };
@@ -95,7 +103,7 @@ export function attachEventsSseRoutes(registry: RouteRegistry, deps: EventsSseRo
       // firstReplayedSeq 截断信号）。
       const since = parseSince(parsedUrl.searchParams, req.headers['last-event-id'] as string | undefined);
       const release = deps.releaseIdentity?.() ?? null;
-      const conn = attachGlobalSse({
+      conn = attachGlobalSse({
         res,
         store: deps.eventStore(),
         replayLimit: config.events.replayLimit,
@@ -105,6 +113,7 @@ export function attachEventsSseRoutes(registry: RouteRegistry, deps: EventsSseRo
         since,
         instanceId: release?.instanceId,
         schemaEpoch: release?.schemaEpoch,
+        timers: deps.timers?.(),
       });
       deps.sseClients().set(res, conn.write);
     } catch (err) {

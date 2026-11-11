@@ -14,6 +14,11 @@
  * cleared (the process owns them). `dispose()` exposes the clear for the
  * kernel's graceful shutdown path; it is not wired into `stop()` because the
  * class never tore the hub down before.
+ *
+ * E4-1: when the kernel injects its `TimerService`, the two intervals register
+ * as `ws:ping` / `ws:device-cleanup` (stats aggregates by those exact names)
+ * and `dispose()` clears them through the service. Without `timers` the local
+ * `setInterval` fallback keeps the old behaviour byte-for-byte.
  */
 
 import * as http from 'http';
@@ -21,6 +26,7 @@ import { WebSocketServer } from 'ws';
 import type { WebSocket } from 'ws';
 import { authorizeWsUpgrade, isLoopbackAddr } from '../core/auth';
 import { log } from '../core/utils/logger';
+import type { TimerHandle, TimerService } from '../core/timer-service';
 import type { ConnectionKind, ConnectionLease, ConnectionTable } from '../resources/connections';
 import { BufferCounters, sendWsBounded } from '../resources/outbound-buffer';
 import { matchTerminalConnectUrl } from '../terminal/terminal-protocol';
@@ -56,6 +62,12 @@ export interface WsHubDeps {
   counters?: BufferCounters;
   /** E4-5: greeting 帧的背压上限；缺省 = 不检查（旧行为）。 */
   wsMaxBufferedBytes?: () => number;
+  /**
+   * E4-1: kernel 命名 timer 台账。提供时心跳/设备维护以 `ws:ping`（30s）与
+   * `ws:device-cleanup`（60s）登记，`dispose()` 经台账清理；缺省退回本地
+   * setInterval（名字不在 stats 里，行为与迁移前一致）。
+   */
+  timers?: TimerService;
 }
 
 export interface WsHub {
@@ -196,7 +208,7 @@ export function createWsHub(server: http.Server, deps: WsHubDeps): WsHub {
   });
 
   // WS heartbeat: ping every 30s, prune dead connections after 2 missed pongs (60s).
-  const wsPingInterval = setInterval(() => {
+  const pingSweep = (): void => {
     for (const ws of deps.wsClients) {
       if ((ws as any).isAlive === false) {
         (ws as any).missedPongs = ((ws as any).missedPongs || 0) + 1;
@@ -215,12 +227,10 @@ export function createWsHub(server: http.Server, deps: WsHubDeps): WsHub {
         if (deviceId) deps.pushGateway()?.removeOnlineWs(deviceId);
       }
     }
-  }, 30_000);
-  // Allow the process to exit without waiting for the ping timer.
-  if (wsPingInterval.unref) wsPingInterval.unref();
+  };
 
   // Periodic PushGateway maintenance: sync lastSeen, prune stale online WS + expired device registrations.
-  const deviceCleanupInterval = setInterval(() => {
+  const deviceCleanup = (): void => {
     // 1. Remove WS entries with no activity for 2 minutes.
     deps.pushGateway()?.cleanupStale(120_000);
     // 2. Sync in-memory lastSeen to DeviceStore so active devices aren't pruned.
@@ -233,8 +243,23 @@ export function createWsHub(server: http.Server, deps: WsHubDeps): WsHub {
     if (pruned && pruned.length > 0) {
       log.info(`[PushGateway] pruned ${pruned.length} stale device(s) from store`);
     }
-  }, 60_000);
-  if (deviceCleanupInterval.unref) deviceCleanupInterval.unref();
+  };
+
+  // E4-1: names are the stats aggregation contract — do not rename.
+  let pingHandle: TimerHandle | null = null;
+  let cleanupHandle: TimerHandle | null = null;
+  let wsPingInterval: ReturnType<typeof setInterval> | null = null;
+  let deviceCleanupInterval: ReturnType<typeof setInterval> | null = null;
+  if (deps.timers) {
+    pingHandle = deps.timers.every('ws:ping', 30_000, pingSweep);
+    cleanupHandle = deps.timers.every('ws:device-cleanup', 60_000, deviceCleanup);
+  } else {
+    wsPingInterval = setInterval(pingSweep, 30_000);
+    // Allow the process to exit without waiting for the ping timer.
+    if (wsPingInterval.unref) wsPingInterval.unref();
+    deviceCleanupInterval = setInterval(deviceCleanup, 60_000);
+    if (deviceCleanupInterval.unref) deviceCleanupInterval.unref();
+  }
 
   server.on('upgrade', (req, socket, head) => {
     const url = req.url || '';
@@ -366,8 +391,15 @@ export function createWsHub(server: http.Server, deps: WsHubDeps): WsHub {
     voiceWss,
     terminalWss,
     dispose: () => {
-      clearInterval(wsPingInterval);
-      clearInterval(deviceCleanupInterval);
+      // E4-1: service handles (idempotent) + local fallback intervals.
+      deps.timers?.clear(pingHandle);
+      deps.timers?.clear(cleanupHandle);
+      if (wsPingInterval) clearInterval(wsPingInterval);
+      if (deviceCleanupInterval) clearInterval(deviceCleanupInterval);
+      wsPingInterval = null;
+      deviceCleanupInterval = null;
+      pingHandle = null;
+      cleanupHandle = null;
     },
   };
 }

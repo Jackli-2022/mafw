@@ -28,6 +28,15 @@ export interface QuotaCheck {
 /** `snapshot()` 形状：按资源键控，limit 保留原始配置值（`0` = 不限）。 */
 export type QuotaSnapshot = Partial<Record<QuotaResource, { current: number; limit: number }>>;
 
+/**
+ * wire 归一化：JSON 里 `Infinity` / `NaN` 会变成 `null`（客户端无法判断"不限"），
+ * 所以 snapshot 出口把非有限值统一成 `0`（= 不限）；有限值原样保留（含 0 / 负数，
+ * 由 `limitOf()` 解释）。
+ */
+export function sanitizeLimit(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
 export class QuotaExceededError extends Error {
   readonly code = 'quota_exceeded';
 
@@ -74,7 +83,8 @@ export class QuotaService {
       const current = currents[resource];
       out[resource] = {
         current: typeof current === 'number' && Number.isFinite(current) ? current : 0,
-        limit: this.rawLimit(resource),
+        // 非有限值在 JSON 里是 null → wire 上统一按 0（不限）表达。
+        limit: sanitizeLimit(this.rawLimit(resource)),
       };
     }
     return out;

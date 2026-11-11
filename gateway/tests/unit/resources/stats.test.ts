@@ -5,11 +5,19 @@
  * fail-open ones) is exercised without a live kernel. Wire shape is spec §4.8;
  * `buffers` stays the `BufferCounters.snapshot()` ledgers (E4-5 单一记账源).
  */
+import { Value } from '@sinclair/typebox/value';
 import {
   buildHandlesSnapshot,
   buildKernelStatsSnapshot,
   type KernelStatsInput,
 } from '../../../src/resources/stats';
+import { KernelStatsResponse } from '../../../src/routes/schemas/resources';
+
+const QUOTAS = {
+  projects: { current: 0, limit: 128 },
+  sessions: { current: 0, limit: 1000 },
+  sessionRecordsPerProject: { current: 0, limit: 200 },
+};
 
 const HEAP_SAMPLE = {
   heapUsed: 10,
@@ -57,7 +65,7 @@ function minimal(over: Partial<KernelStatsInput> = {}): KernelStatsInput {
     buffers: { snapshot: () => ZERO_BUFFERS },
     timers: { stats: () => ({ active: 0, byName: {} }) },
     processes: { snapshot: () => EMPTY_PROCESSES },
-    quotas: { snapshot: () => ({}) },
+    quotas: { snapshot: () => QUOTAS },
     scheduler: { stats: () => ({ queued: 0, running: 0, byPriority: {} }) },
     events: null,
     serve: { running: false, owned: true },
@@ -276,9 +284,11 @@ describe('quota object mapping', () => {
       },
       quotaCurrents: { projects: 4, sessions: 7, sessionRecordsPerProject: 1 },
     }));
+    // 缺键也补齐（wire 契约要求三键齐全）；current 退回注入值，limit 0 = 不限。
     expect(snapshot.quotas).toEqual({
       projects: { current: 4, limit: 0 },
       sessions: { current: 7, limit: 1000 },
+      sessionRecordsPerProject: { current: 1, limit: 0 },
     });
   });
 
@@ -294,5 +304,34 @@ describe('quota object mapping', () => {
       quotaCurrents: { projects: 1, sessions: 2, sessionRecordsPerProject: 3 },
     }));
     expect(seen).toEqual([{ projects: 1, sessions: 2, sessionRecordsPerProject: 3 }]);
+  });
+
+  it('always produces the three required quota keys (never a partial map)', () => {
+    const snapshot = buildKernelStatsSnapshot(minimal({
+      quotas: { snapshot: () => ({}) },
+      quotaCurrents: { projects: 5, sessions: 6, sessionRecordsPerProject: 7 },
+    }));
+    expect(Object.keys(snapshot.quotas).sort()).toEqual(['projects', 'sessionRecordsPerProject', 'sessions']);
+    expect(snapshot.quotas).toEqual({
+      projects: { current: 5, limit: 0 },
+      sessions: { current: 6, limit: 0 },
+      sessionRecordsPerProject: { current: 7, limit: 0 },
+    });
+  });
+});
+
+describe('wire schema: KernelStatsResponse', () => {
+  it('accepts the builder snapshot', () => {
+    expect(Value.Check(KernelStatsResponse, buildKernelStatsSnapshot(minimal()))).toBe(true);
+  });
+
+  it('rejects a snapshot missing a quota key (required 三键)', () => {
+    const snapshot = buildKernelStatsSnapshot(minimal());
+    const partial = {
+      ...snapshot,
+      quotas: { projects: { current: 0, limit: 128 }, sessions: { current: 0, limit: 1000 } },
+    };
+    expect(Value.Check(KernelStatsResponse, snapshot)).toBe(true);
+    expect(Value.Check(KernelStatsResponse, partial)).toBe(false);
   });
 });

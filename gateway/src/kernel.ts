@@ -4424,6 +4424,7 @@ class MafwScheduler {
     this.kernels = new SessionKernels(pyBin, {
       ledger: this.processLedger,
       maxKernels: () => config.resources.limits.pythonKernels,
+      timers: this.timers,
     });
     setLlamaCppProcessLedger(this.processLedger);
     const cost = new CostService();
@@ -5165,12 +5166,16 @@ class MafwScheduler {
    * E4-6: runtime serve 由 adapter 拥有进程，gateway 只记一条逻辑条目
    * （`owned:false`，无 close 钩子——E4 不假装能 kill 它）。`disposeAll` 只清台账。
    *
-   * 幂等；`startApiServer` 与每次 stats 构建都会调用：boot 顺序里 runtimeHost 在
-   * startApiServer **之后**才创建（boot.ts step 3），单点注册会永远为空。
+   * 幂等；`startApiServer` 与每次 stats 构建都会调用：boot 顺序里 serve 实例
+   * （runtimeHost.spawnServe 的产物）晚于 `startApiServer` 创建，单点注册会永远为空。
+   * 但**能力存在 ≠ 进程存在**：只有 `serveInstance` 真的在跑时才登记
+   * （batch 4 复审：能力-only 条目会让 `processes.byKind.serve` 撒谎）。
    */
   private syncServeLedger(): void {
     if (this.serveLedger) return;
-    if (!this.runtimeHost?.agentProcess?.spawnServe) return;
+    // 只有真的持有 serve 实例时才登记：runtimeHost 具备 spawnServe 只说明"能力存在"，
+    // 没起进程就记账会让 `processes.byKind.serve` 长期撒谎（batch 4 复审）。
+    if (!this.serveInstance) return;
     this.serveLedger = this.processLedger.register({
       kind: 'serve',
       label: 'runtime serve',
@@ -5232,6 +5237,7 @@ class MafwScheduler {
       // E4：资源账本 provider + 快照（live getter；governor 在 listen 后才存在）。
       get connections() { return self.connections; },
       get bufferCounters() { return self.bufferCounters; },
+      get timers() { return self.timers; },
       get kernelStats() { return (...a: any[]) => (self.buildKernelStats as any)(...a); },
       get releaseIdentity() {
         return () => (self.releaseMetadata && self.runtimeIdentity
@@ -5471,6 +5477,8 @@ class MafwScheduler {
           connections: () => this.connections,
           counters: this.bufferCounters,
           wsMaxBufferedBytes: () => config.resources.buffers.wsMaxBufferedBytes,
+          // E4-1: 长驻 interval 收进命名台账（ws:ping / ws:device-cleanup）。
+          timers: this.timers,
         });
         this.wsHub = hub;
 
@@ -5484,7 +5492,7 @@ class MafwScheduler {
         void this.governor.start().catch((err: any) => {
           log.warn(`[Resources] governor start failed (stats report unknown): ${err?.message ?? err}`);
         });
-        // E4-6：runtimeHost 此时通常还没创建，这里只是尽力登记；stats 构建时幂等补登。
+        // E4-6：serve 实例通常在 boot 稍后拉起，这里只是尽力登记；stats 构建时幂等补登。
         this.syncServeLedger();
         resolve(true);
       });
