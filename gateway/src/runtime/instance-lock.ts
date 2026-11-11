@@ -43,6 +43,54 @@ export type AcquireInstanceLockResult =
   | { ok: false; reason: "held"; holder: InstanceLockRecord }
   | { ok: false; reason: "error"; error: Error }
 
+/**
+ * Lease heartbeat (E1-1). `InstanceLock.heartbeat()` shipped with no production
+ * caller: a live owner's record aged past `heartbeatStaleMs` (30s) and a
+ * contender reaped the lock out from under it. Boot owns exactly one loop per
+ * process (see `boot.ts`), unref'd so it never keeps the process alive, and
+ * stopped by `releaseInstanceOwnership()`.
+ *
+ * FENCING IS DELIBERATELY OUT OF SCOPE (E5): this is a cooperative lease, not a
+ * fencing token. After a contested takeover the displaced owner's heartbeat
+ * rejects on the nonce mismatch and is reported through `onError` — it does not
+ * abort in-flight session writes. Per-owner fencing belongs to the E5 identity
+ * closure.
+ */
+export const INSTANCE_LOCK_HEARTBEAT_MS = 10_000
+
+export interface InstanceLockHeartbeatOptions {
+  /** Defaults to `INSTANCE_LOCK_HEARTBEAT_MS` (10s). */
+  intervalMs?: number
+  /** A rejected heartbeat (nonce mismatch / fs error) — never thrown. */
+  onError?: (err: unknown) => void
+}
+
+export interface InstanceLockHeartbeatHandle {
+  readonly timer: NodeJS.Timeout
+  stop(): void
+}
+
+/** Start the lease heartbeat loop; `stop()` is idempotent. */
+export function startInstanceLockHeartbeat(
+  lock: InstanceLock,
+  options: InstanceLockHeartbeatOptions = {},
+): InstanceLockHeartbeatHandle {
+  const intervalMs = options.intervalMs ?? INSTANCE_LOCK_HEARTBEAT_MS
+  const timer = setInterval(() => {
+    void lock.heartbeat().catch((err: unknown) => options.onError?.(err))
+  }, intervalMs)
+  timer.unref?.()
+  let stopped = false
+  return {
+    timer,
+    stop(): void {
+      if (stopped) return
+      stopped = true
+      clearInterval(timer)
+    },
+  }
+}
+
 export function instanceLockPath(dir: string): string {
   return join(dir, INSTANCE_LOCK_FILE)
 }

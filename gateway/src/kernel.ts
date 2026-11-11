@@ -70,7 +70,7 @@ import {
   type GatewayDiscoveryHandle,
 } from './runtime/gateway-discovery';
 import { mafwRuntimeDir } from './runtime/runtime-paths';
-import type { InstanceLock } from './runtime/instance-lock';
+import type { InstanceLock, InstanceLockHeartbeatHandle } from './runtime/instance-lock';
 import {
   BackgroundJobError,
   BackgroundJobRegistry,
@@ -730,6 +730,7 @@ class MafwScheduler {
   private mdnsAdvertiser?: any; // MdnsAdvertiser
   private mafwDir!: string;
   private instanceLock: InstanceLock | null = null;
+  private instanceLockHeartbeat: InstanceLockHeartbeatHandle | null = null;
   private instanceDiscovery: GatewayDiscoveryHandle | null = null;
   private discoveryHeartbeatTimer: NodeJS.Timeout | null = null;
   private podEventService?: PodEventService;
