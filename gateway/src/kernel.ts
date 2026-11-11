@@ -5203,6 +5203,8 @@ class MafwScheduler {
     return {
       cors: () => config.server.cors,
       apiToken: () => (config.raw as any)?.server?.apiToken || '',
+      // E3-5：live 读取（release metadata 在 boot 阶段加载，attach 早于它就是 null）。
+      schemaEpoch: () => this.releaseMetadata?.schemaEpoch ?? null,
       dispatchAuthorized: (req, res, apiToken) =>
         dispatchAuthorized({ registry: this.routeRegistry, apiToken }, req, res),
       pluginWebWildcard: (req, res) => this.handlePluginWebWildcard(req, res),

@@ -98,6 +98,11 @@ export interface TransportDeps {
   cors(): TransportCorsHeaders;
   /** `(config.raw as any)?.server?.apiToken || ''` — live (config is reloadable). */
   apiToken(): string;
+  /**
+   * E3-5: schema epoch from release metadata (`releaseMetadata.schemaEpoch`).
+   * null = release metadata not loaded yet → no response header, no enforcement.
+   */
+  schemaEpoch?: () => number | null;
   /** Registry-first dispatch (`routes/registry-dispatch`); auth already passed. */
   dispatchAuthorized(req: http.IncomingMessage, res: http.ServerResponse, apiToken: string): Promise<boolean>;
   /** `Scheduler.handlePluginWebWildcard` — `ui/*` / `api/*` plugin surfaces. */
@@ -151,6 +156,11 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
       res.setHeader("Access-Control-Allow-Methods", cors.methods);
       res.setHeader("Access-Control-Allow-Headers", cors.headers);
 
+      // E3-5：schema epoch 握手（opt-in）。header 尽早写出（auth 前），
+      // 客户端可据此判断服务端契约版本；metadata 未就绪（null）时省略。
+      const schemaEpoch = deps.schemaEpoch?.() ?? null;
+      if (schemaEpoch !== null) res.setHeader('X-MAFW-Schema-Epoch', String(schemaEpoch));
+
       if (req.method === "OPTIONS") {
       res.writeHead(204);
       res.end();
@@ -167,6 +177,18 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(errorBody('unauthorized', API_ERROR_CODES.unauthorized)));
       return;
+    }
+
+    // E3-5：auth 之后、registry 之前校验客户端主动携带的 epoch。只有**携带**且
+    // 不匹配才拒绝（409）；不携带 / 匹配 / 服务端 epoch 未知 → 照旧放行。
+    const requestedEpochHeader = req.headers['x-mafw-schema-epoch'];
+    if (schemaEpoch !== null && requestedEpochHeader !== undefined) {
+      const requestedEpoch = Array.isArray(requestedEpochHeader) ? requestedEpochHeader[0] : requestedEpochHeader;
+      if (String(requestedEpoch).trim() !== '' && Number(requestedEpoch) !== schemaEpoch) {
+        res.writeHead(409, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(errorBody('schema epoch mismatch', API_ERROR_CODES.schema_epoch_mismatch)));
+        return;
+      }
     }
 
     // P5 Wave 1: registry dispatch —— attach 过 handler 的路由在 legacy 链之前
