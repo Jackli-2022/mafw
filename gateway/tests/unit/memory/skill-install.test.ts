@@ -9,7 +9,10 @@ describe('installSkillDraft', () => {
       { name: 'ms-abcdef', memoryId: 'mem_1_abcdef' },
       {
         copyDir: (src, dst) => copied.push({ src, dst }),
-        readMemory: async () => ({ id: 'mem_1_abcdef', memory_value: '1. a\n2. b', cue_anchors: ['serve'] }),
+        readMemory: async () => ({
+          id: 'mem_1_abcdef', type: 'procedural', primary_abstraction: 'serve playbook',
+          memory_value: '1. a\n2. b', cue_anchors: ['serve'], energy: 0.8,
+        }),
         writeMemory: async (u) => { written = u; },
         stagingDir: '/stg',
         skillsDir: '/skills',
@@ -20,6 +23,10 @@ describe('installSkillDraft', () => {
     expect(written.memory_value).toContain('已物化为 skill:ms-abcdef');
     expect(written.cue_anchors).toContain('skill:ms-abcdef');
     expect(written.cue_anchors).toContain('serve');
+    // The full unit must survive the pointer rewrite (type/abstraction are
+    // required by the OKF writer; truncating them made the write fail silently).
+    expect(written.type).toBe('procedural');
+    expect(written.primary_abstraction).toBe('serve playbook');
   });
 
   it('missing memory still copies the skill (fail-open on pointer rewrite)', async () => {
