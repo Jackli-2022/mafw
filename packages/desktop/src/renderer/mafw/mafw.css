@@ -4626,6 +4626,8 @@ html[data-theme="light"] body {
   white-space: nowrap;
 }
 .mafw-file-tree-row-dir .mafw-file-tree-name { color: var(--text-1); }
+.mafw-file-tree-row.is-selected { background: var(--bg-hover); }
+.mafw-file-tree-row.is-selected .mafw-file-tree-name { color: var(--text-1); }
 
 /* ── Editor dock（协同编辑器，spec 2026-10-22 §5.2） ── */
 .mafw-editor-dock { display: flex; flex-direction: column; height: 100%; min-height: 0; position: relative; }

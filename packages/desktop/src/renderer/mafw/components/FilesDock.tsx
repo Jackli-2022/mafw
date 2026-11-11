@@ -14,6 +14,13 @@ import { buildFileTreeMenu } from "../context-menu/builders/file-tree"
 import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
 import { pushComposerInsert } from "../composer-insert"
 import { openMenuOnKey } from "../context-menu/menu-key"
+import {
+  contentScopeStateFor,
+  saveContentScopeState,
+  selectTreeFile,
+  setTreeExpanded,
+  type ContentScopeState,
+} from "../content-scope-state"
 import { DockBanner, DockEmpty, DockPanelHeader } from "./dock-panel"
 
 export function FilesDock(props: {
@@ -24,33 +31,55 @@ export function FilesDock(props: {
 }) {
   const [rootEntries, setRootEntries] = createSignal<FsEntry[]>([])
   const [expanded, setExpanded] = createSignal<Set<string>>(new Set())
+  const [selectedRel, setSelectedRel] = createSignal<string | null>(null)
   const [children, setChildren] = createSignal<Record<string, FsEntry[]>>({})
   const [loading, setLoading] = createSignal(false)
   const [error, setError] = createSignal<string | null>(null)
   /** root 加载代际：重试/切目录时丢弃迟到结果。 */
   let loadToken = 0
 
+  const persistScope = (update: (state: ContentScopeState) => ContentScopeState): void => {
+    const key = props.scopeKey ?? null
+    saveContentScopeState(key, update(contentScopeStateFor(key)))
+  }
+
   const loadRoot = () => {
     const root = props.contentRoot
     const token = ++loadToken
-    setExpanded(new Set<string>())
+    const expandedRels = [...expanded()]
     setChildren({})
     setRootEntries([])
     setError(null)
     if (!root) { setLoading(false); return }
     setLoading(true)
-    window.api.fs.listDir(root, "")
-      .then(entries => { if (token === loadToken) setRootEntries(entries ?? []) })
-      .catch((e: any) => {
-        if (token === loadToken) setError(`读取目录失败：${String(e?.message ?? e).slice(0, 60)}`)
-      })
-      .finally(() => { if (token === loadToken) setLoading(false) })
+    void (async () => {
+      try {
+        const entries = await window.api.fs.listDir(root, "")
+        if (token !== loadToken || root !== props.contentRoot) return
+        setRootEntries(entries ?? [])
+        for (const rel of expandedRels) {
+          const childEntries = await window.api.fs.listDir(root, rel)
+          if (token !== loadToken || root !== props.contentRoot) return
+          if (childEntries) setChildren(prev => ({ ...prev, [rel]: childEntries }))
+        }
+      } catch (e: any) {
+        if (token === loadToken && root === props.contentRoot) {
+          setError(`读取目录失败：${String(e?.message ?? e).slice(0, 60)}`)
+        }
+      } finally {
+        if (token === loadToken) setLoading(false)
+      }
+    })()
   }
 
-  // root 变化（切会话/切 worktree）→ 整树重置（Review Focus #4）
+  // root/scope 变化（项目 ↔ Goal revision）→ 从 scope 状态恢复展开与选中。
   createEffect(() => {
+    const scopeKey = props.scopeKey ?? null
+    const saved = contentScopeStateFor(scopeKey)
     props.contentRoot
     releaseWatches()
+    setExpanded(new Set(saved.treeExpanded))
+    setSelectedRel(saved.treeSelected)
     loadRoot()
   })
 
@@ -147,6 +176,7 @@ export function FilesDock(props: {
       const next = new Set(exp)
       next.delete(row.rel)
       setExpanded(next)
+      persistScope((state) => setTreeExpanded(state, row.rel, false))
       return
     }
     if (!children()[row.rel]) {
@@ -166,11 +196,17 @@ export function FilesDock(props: {
       }
     }
     setExpanded(new Set([...expanded(), row.rel]))
+    persistScope((state) => setTreeExpanded(state, row.rel, true))
   }
 
   const activate = (row: TreeRow) => {
-    if (row.kind === "dir") void toggleDir(row)
-    else props.onOpenFile(row.rel)
+    if (row.kind === "dir") {
+      void toggleDir(row)
+      return
+    }
+    setSelectedRel(row.rel)
+    persistScope((state) => selectTreeFile(state, row.rel))
+    props.onOpenFile(row.rel)
   }
 
   const absPath = (rel: string) => {
@@ -231,7 +267,11 @@ export function FilesDock(props: {
             {(row) => (
               <div
                 class="mafw-file-tree-row"
-                classList={{ "mafw-file-tree-row-dir": row.kind === "dir" }}
+                classList={{
+                  "mafw-file-tree-row-dir": row.kind === "dir",
+                  "is-selected": row.kind === "file" && selectedRel() === row.rel,
+                }}
+                aria-current={row.kind === "file" && selectedRel() === row.rel ? "true" : undefined}
                 style={{ "padding-left": `${8 + row.depth * 14}px` }}
                 role="button"
                 tabIndex={0}
