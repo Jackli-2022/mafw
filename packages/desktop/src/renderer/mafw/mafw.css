@@ -8020,3 +8020,60 @@ html[data-theme="light"] body {
     transition: none !important;
   }
 }
+
+/* ©¤©¤ Goal review items£¨Plan C£© ©¤©¤ */
+.mafw-pod-review {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--bg-raised);
+  color: var(--text-2);
+}
+.mafw-pod-review-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.mafw-pod-review-title { font-size: 12px; font-weight: 600; color: var(--text-1); }
+.mafw-pod-review-count { font-size: 10px; color: var(--text-3); font-family: var(--font-data); }
+.mafw-pod-review-empty { font-size: 11px; color: var(--text-4); }
+.mafw-pod-review-item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  background: var(--bg-inset);
+}
+.mafw-pod-review-item[data-status="resolved"] { opacity: 0.72; }
+.mafw-pod-review-item-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.mafw-pod-review-status {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-overlay);
+  color: var(--text-2);
+  font-size: 9.5px;
+}
+.mafw-pod-review-item[data-status="pending"] .mafw-pod-review-status { color: var(--warning); }
+.mafw-pod-review-item[data-status="responded"] .mafw-pod-review-status { color: var(--accent); }
+.mafw-pod-review-where { font-size: 10.5px; color: var(--accent); font-family: var(--font-data); }
+.mafw-pod-review-origin { font-size: 9.5px; color: var(--text-4); }
+.mafw-pod-review-comment { font-size: 11.5px; color: var(--text-1); white-space: pre-wrap; }
+.mafw-pod-review-response {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border-left: 2px solid var(--accent-border);
+  background: var(--bg-overlay);
+  font-size: 10.5px;
+  color: var(--text-2);
+}
+.mafw-pod-review-response-label { font-size: 9.5px; color: var(--text-4); }
+.mafw-pod-review-actions { display: flex; gap: 6px; padding-top: 2px; }
