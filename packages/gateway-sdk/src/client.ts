@@ -23,6 +23,7 @@ import {
   PodEventItem, PresenceSummary,
   PodTechLeadHistory, PodTechLeadPrompt, PodDirectionDecisionInput, PodDirectionResult,
   PodProbe, PodProbeInput, PodProbeStatus, PodRejectResult, PodGoalRevision, PodGoalAcceptResult, PodWorktreeDiff,
+  PodReviewItem, PodReviewItemInput, PodReviewItemList,
   SessionConfigState, SessionConfigCategory, SessionNamespace,
   VoiceStatusResponse,
   PluginClientSnapshot, PluginsListResult, PluginPackageInstallResult, PluginPackageUpdateResult,
@@ -1641,11 +1642,51 @@ export class MafwClient implements IMafwClient {
     acceptResult: async (
       podID: string,
       goalID: string,
-      body: { revision?: number; confirm: true },
+      body: { revision?: number; confirm: true; force?: boolean; riskAcknowledged?: boolean },
     ): Promise<PodGoalAcceptResult> =>
       this.request<PodGoalAcceptResult>(`/api/pods/${encodeURIComponent(podID)}/goals/${encodeURIComponent(goalID)}/accept`, {
         method: 'POST',
         body: JSON.stringify(body),
+      }),
+
+    reviewItems: async (
+      podID: string,
+      goalID: string,
+      opts?: { revision?: number },
+    ): Promise<PodReviewItemList> => {
+      if (opts?.revision !== undefined) {
+        return this.request<PodReviewItemList>(`/api/pods/${encodeURIComponent(podID)}/goals/${encodeURIComponent(goalID)}/review-items?revision=${encodeURIComponent(String(opts.revision))}`)
+      }
+      return this.request<PodReviewItemList>(`/api/pods/${encodeURIComponent(podID)}/goals/${encodeURIComponent(goalID)}/review-items`)
+    },
+
+    createReviewItems: async (
+      podID: string,
+      goalID: string,
+      body: { revision?: number; items: PodReviewItemInput[] },
+    ): Promise<{ items: PodReviewItem[] }> =>
+      this.request<{ items: PodReviewItem[] }>(`/api/pods/${encodeURIComponent(podID)}/goals/${encodeURIComponent(goalID)}/review-items`, {
+        method: 'POST', body: JSON.stringify(body),
+      }),
+
+    resolveReviewItem: async (
+      podID: string,
+      goalID: string,
+      itemID: string,
+      body: { note?: string } = {},
+    ): Promise<{ item: PodReviewItem }> =>
+      this.request<{ item: PodReviewItem }>(`/api/pods/${encodeURIComponent(podID)}/goals/${encodeURIComponent(goalID)}/review-items/${encodeURIComponent(itemID)}/resolve`, {
+        method: 'POST', body: JSON.stringify(body),
+      }),
+
+    reopenReviewItem: async (
+      podID: string,
+      goalID: string,
+      itemID: string,
+      body: { note?: string } = {},
+    ): Promise<{ item: PodReviewItem }> =>
+      this.request<{ item: PodReviewItem }>(`/api/pods/${encodeURIComponent(podID)}/goals/${encodeURIComponent(goalID)}/review-items/${encodeURIComponent(itemID)}/reopen`, {
+        method: 'POST', body: JSON.stringify(body),
       }),
 
     worktreeDiff: async (

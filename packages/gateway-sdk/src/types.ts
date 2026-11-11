@@ -1397,6 +1397,8 @@ export interface PodGoalResult {
   worktree?: PodGoalResultWorktree | null
   /** User acceptance state; absent on old gateways. */
   acceptance?: 'pending' | 'accepted' | 'unavailable'
+  /** Durable acceptance audit (forced state + unresolved snapshot); absent before acceptance. */
+  acceptanceRecord?: PodGoalAcceptanceRecord | null
 }
 
 export interface PodGoalResultWorktree {
@@ -1415,6 +1417,59 @@ export interface PodGoalAcceptResult {
   branch: string
   mergeCommit: string
   mergedAt: string
+  /** True when unresolved review items were explicitly accepted with risk. */
+  forced?: boolean
+  /** Snapshot of items unresolved at acceptance time. */
+  unresolvedReviewItemIds?: string[]
+}
+
+export type PodReviewItemStatus = 'pending' | 'responded' | 'resolved'
+
+export type PodReviewAnchor =
+  | { kind: 'quote'; quote: string }
+  | { kind: 'jsonPath'; path: string; valueSummary: string }
+  | { kind: 'cell'; sheet?: string; ref: string; value: string }
+  | { kind: 'region'; x: number; y: number; w: number; h: number; slide?: number }
+
+export interface PodReviewItem {
+  id: string
+  podId: string
+  goalId: string
+  revision: number
+  status: PodReviewItemStatus
+  rel: string
+  startLine: number | null
+  endLine: number | null
+  code: string
+  comment: string
+  anchor: PodReviewAnchor | null
+  response: string | null
+  originItemId: string | null
+  originRevision: number | null
+  createdAt: string
+  updatedAt: string
+  respondedAt: string | null
+  resolvedAt: string | null
+}
+
+export interface PodReviewItemInput {
+  rel: string
+  startLine?: number | null
+  endLine?: number | null
+  code?: string
+  comment: string
+  anchor?: PodReviewAnchor
+}
+
+export interface PodReviewItemList {
+  revision: number
+  items: PodReviewItem[]
+}
+
+export interface PodGoalAcceptanceRecord {
+  forced: boolean
+  acceptedAt: string
+  unresolvedReviewItemIds: string[]
 }
 
 export interface PodWorktreeDiffFile {
@@ -1806,10 +1861,28 @@ export interface PodNamespace {
   createProbe(podID: string, goalID: string, body: PodProbeInput | PodProbeInput[]): Promise<{ items: PodProbe[] }>
   rejectResult(podID: string, goalID: string, feedback: string, body?: { actorSessionID?: string }): Promise<PodRejectResult>
   /** Explicit human acceptance: merge the active revision worktree into its base branch. */
-  acceptResult(podID: string, goalID: string, body: { revision?: number; confirm: true }): Promise<PodGoalAcceptResult>
+  acceptResult(podID: string, goalID: string, body: {
+    revision?: number
+    confirm: true
+    /** Required when unresolved review items exist. */
+    force?: boolean
+    /** Required with force; records the explicit risk acknowledgement. */
+    riskAcknowledged?: boolean
+  }): Promise<PodGoalAcceptResult>
   /** Read-only merge-base diff for a revision branch (survives the worktree checkout). */
   worktreeDiff(podID: string, goalID: string, revision?: number): Promise<PodWorktreeDiff>
   revisions(podID: string, goalID: string): Promise<{ items: PodGoalRevision[] }>
+  /** Human review items for a Goal revision (default: active revision). */
+  reviewItems(podID: string, goalID: string, opts?: { revision?: number }): Promise<PodReviewItemList>
+  /** Create review items from human annotations (default: active revision). */
+  createReviewItems(podID: string, goalID: string, body: {
+    revision?: number
+    items: PodReviewItemInput[]
+  }): Promise<{ items: PodReviewItem[] }>
+  /** Human-only: mark an item resolved. */
+  resolveReviewItem(podID: string, goalID: string, itemID: string, body?: { note?: string }): Promise<{ item: PodReviewItem }>
+  /** Human-only: reopen a responded/resolved item. */
+  reopenReviewItem(podID: string, goalID: string, itemID: string, body?: { note?: string }): Promise<{ item: PodReviewItem }>
 }
 
 /** 持久审批规则（切片 1：~/.mafw/permission-rules.json）。 */

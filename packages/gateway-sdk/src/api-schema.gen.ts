@@ -3388,6 +3388,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/pods/{podId}/goals/{goalId}/review-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["pods.goals.reviewItems"];
+        put?: never;
+        post: operations["pods.goals.reviewItems.create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pods/{podId}/goals/{goalId}/review-items/{itemId}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["pods.goals.reviewItems.resolve"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pods/{podId}/goals/{goalId}/review-items/{itemId}/reopen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["pods.goals.reviewItems.reopen"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/pods/{podId}/goals/{goalId}/accept": {
         parameters: {
             query?: never;
@@ -9274,6 +9322,92 @@ export interface operations {
             path: {
                 podId: string;
                 goalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "pods.goals.reviewItems": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                podId: string;
+                goalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "pods.goals.reviewItems.create": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                podId: string;
+                goalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "pods.goals.reviewItems.resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                podId: string;
+                goalId: string;
+                itemId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "pods.goals.reviewItems.reopen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                podId: string;
+                goalId: string;
+                itemId: string;
             };
             cookie?: never;
         };
