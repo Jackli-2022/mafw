@@ -289,7 +289,10 @@ spec §7.1/§7.2/§7.4，核心模块 `content-intent.ts`、`editor-state.ts`、
 - 阅读/修改只影响 Tab 生命周期与意图状态，不改变文件内容、保存、冲突、草稿或批注语义；图片/Office 的只读预览、SVG/Markdown/JSON/表格的预览切换保持原行为。
 - `验收` 入口只在 `contentScope.kind === "goal"` 时出现；项目主目录不显示，避免把会话变更审阅伪装成 Goal 验收。
 - **Goal 详情注意力顺序**：Goal 标题与主行动 → 阻塞/错误 → 需要你回答 → 方向 → 计划 → 上下文来源 → 结果 → 探针/证据 → 技术详情。结果与证据先于技术诊断；技术详情默认折叠，没有用户摘要时也提供显式「技术详情」开关，不再因缺少摘要自动展开。
-- 已知后续（Plan D3d）：显式分屏/并行工作区、跨重启的树/滚动/草稿持久化、Goal revision 最近项。
+- **内容状态跨重启**：`content-scope-state` 按 `mafw-content-state:<scopeKey>` 持久化树展开/选中、打开文件/活动文件、阅读位置、选区、文件树抽屉偏好；`editor-drafts` 按 `mafw-editor-drafts:<root>` 持久化草稿/mtime/EOL。两者 300ms 去抖、fail-open；重启后打开同一 scope 会恢复活动文档，带草稿的文件自动标 dirty 并转持久 Tab。
+- **显式分屏对照**：内容头在文档 surface 提供 `分屏对照`；开启后文件树点击进入第二只读文档面板（`SplitDocumentPane`），主文档保持不变；关闭分屏不影响主文档。宽容器左右并排，窄容器上下堆叠。
+- **Goal revision 最近项**：最近内容条目携带 `goalId / revision / worktreeDir`，项目首页以 scope badge 展示；点击时校验 worktree 是否仍存在，成功则恢复该 revision scope 并打开文件，失败给出明确 toast。
+- 已知后续（Plan D3d）：无内容域剩余项；Goal 选中态仍按 D1 设计为瞬态，不跨重启恢复。
 
 ### Composer 会话配置菜单 + switchAgent 门 + rail 视觉精修（2026-11-04）
 
