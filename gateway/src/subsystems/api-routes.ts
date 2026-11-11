@@ -857,8 +857,6 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
   attachDevicesMobileRoutes(deps.routeRegistry, {
     pushGateway: () => deps.pushGateway,
     pairingService: () => deps.pairingService,
-    // E1-10: live gateway token for device-registration verification.
-    apiToken: () => String((config.raw as any)?.server?.apiToken || ''),
   });
   attachPodsEventsRoutes(deps.routeRegistry, {
     podEventService: () => deps.podEventService,

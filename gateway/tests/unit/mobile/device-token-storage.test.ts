@@ -1,13 +1,17 @@
 /**
- * E1-10 设备 token 存储止血（spec §E1-10 / A13 部分）。
+ * E1-10（修正后契约）：设备注册持久化的是 **FCM push token**，不是网关凭据。
  *
- * 缺陷：`POST /api/mobile/devices/register` 把网关 bearer token 当 `fcmToken`
- * 明文写进 `~/.mafw/mobile-devices.json`；`apiTokenHash` 写了但从不校验。
+ * 背景（2026-11-11 review 更正）：`mobile/lib/src/services/push_service.dart`
+ * 把 FCM token 放在 `body.token`，网关 bearer token 只放 `Authorization` 头。
+ * 因此设备库里的 `fcmToken` 就是推送 token（必须保留，否则真实推送丢失），
+ * 而「网关 token 被明文写库」的原始前提不成立 —— 原始实现从未持久化 bearer token。
  *
- * 契约：
- *  (a) 注册成功后磁盘 JSON 不出现原始 token（字段仍在、值为空）；有 apiTokenHash；
- *  (b) 提交的 token 与已配置网关 token 不一致 → 401 且不落盘；
- *  (c) 旧格式记录（只有 fcmToken、无 hash）仍能加载/列出，不崩。
+ * 本文件钉住：
+ *  (a) 注册后磁盘上 fcmToken === 客户端给的 FCM token；apiTokenHash 存在且为
+ *      sha256(FCM token)[0..16]；请求头里的网关 bearer token 不出现在文件里；
+ *  (b) legacy `/api/devices` 同样持久化 body.fcmToken；
+ *  (c) 旧格式记录（无 apiTokenHash）仍能加载/列出，不崩；
+ *  (d) `DeviceStore.register` 单点：输入什么 fcmToken 就存什么。
  */
 import * as fs from 'fs';
 import * as os from 'os';
@@ -20,16 +24,17 @@ import { attachDevicesMobileRoutes } from '../../../src/routes/devices-mobile';
 import { DeviceStore } from '../../../src/mobile/device-store';
 import { PushGateway } from '../../../src/mobile/push-gateway';
 
-const GW_TOKEN = 'gw-secret-token-abc123';
+const FCM_TOKEN = 'fcm_push_token_xyz';
+const GW_TOKEN = 'gw-bearer-token-should-never-be-stored';
 const sha = (value: string, len: number) => createHash('sha256').update(value).digest('hex').slice(0, len);
 
-function fakeReq(opts: { method: string; url: string; body?: string }): IncomingMessage {
+function fakeReq(opts: { method: string; url: string; body?: string; headers?: Record<string, string> }): IncomingMessage {
   const listeners: Record<string, Array<(c?: unknown) => void>> = {};
   const req = {
     method: opts.method,
     url: opts.url,
     socket: { remoteAddress: '127.0.0.1' },
-    headers: {},
+    headers: opts.headers ?? {},
     on(ev: string, fn: (c?: unknown) => void) {
       (listeners[ev] = listeners[ev] || []).push(fn);
       return req;
@@ -52,14 +57,13 @@ function fakeRes(): { res: ServerResponse; status: number; body: string } {
   return out as any;
 }
 
-function setup(opts: { file: string; apiToken?: () => string }) {
+function setup(opts: { file: string }) {
   const store = new DeviceStore(opts.file);
   const gateway = new PushGateway(store);
   const registry = new RouteRegistry().register(...buildRouteCatalog());
   attachDevicesMobileRoutes(registry, {
     pushGateway: () => gateway,
     pairingService: () => undefined,
-    apiToken: opts.apiToken ?? (() => GW_TOKEN),
   });
   const handlerFor = (method: string, url: string) => {
     const m = registry.match(method as never, url)!;
@@ -73,8 +77,8 @@ function tmpStoreFile(): string {
   return path.join(dir, 'mobile-devices.json');
 }
 
-describe('设备注册不持久化网关 token（E1-10 a/b）', () => {
-  it('mobile 注册成功后磁盘 JSON 不含原始 token，且有 apiTokenHash', async () => {
+describe('设备注册：FCM token 持久化 / 网关 token 不落库（E1-10 修正）', () => {
+  it('mobile 注册：FCM token 持久化 + hash；Authorization 里的网关 token 不出现在文件', async () => {
     const file = tmpStoreFile();
     const { gateway, handlerFor } = setup({ file });
     const r = fakeRes();
@@ -83,27 +87,27 @@ describe('设备注册不持久化网关 token（E1-10 a/b）', () => {
       fakeReq({
         method: 'POST',
         url: '/api/mobile/devices/register',
-        body: JSON.stringify({ token: GW_TOKEN, platform: 'android', deviceName: 'pixel' }),
+        headers: { authorization: `Bearer ${GW_TOKEN}` },
+        body: JSON.stringify({ token: FCM_TOKEN, platform: 'android', deviceName: 'pixel' }),
       }),
       r.res,
     );
 
     expect(r.status).toBe(200);
     const raw = fs.readFileSync(file, 'utf8');
+    // FCM token 必须保留（唯一的推送 token）。
+    expect(raw).toContain(FCM_TOKEN);
+    // 网关 bearer token 从不进入设备记录。
     expect(raw).not.toContain(GW_TOKEN);
 
     const stored = JSON.parse(raw).devices[0];
-    expect(stored.id).toBe(sha(GW_TOKEN, 32));
-    expect(stored.apiTokenHash).toBe(sha(GW_TOKEN, 16));
-    expect(stored.fcmToken).not.toBe(GW_TOKEN);
-    expect(stored.fcmToken).toBe('');
-
-    // 返回体（含 device）也不得回显原始 token。
-    expect(r.body).not.toContain(GW_TOKEN);
+    expect(stored.id).toBe(sha(FCM_TOKEN, 32));
+    expect(stored.fcmToken).toBe(FCM_TOKEN);
+    expect(stored.apiTokenHash).toBe(sha(FCM_TOKEN, 16));
     expect(gateway.listDevices()).toHaveLength(1);
   });
 
-  it('legacy /api/devices 同样不持久化 body 里的 fcmToken/token 原文', async () => {
+  it('legacy /api/devices：持久化 body.fcmToken（body.token 只用于派生 hash）', async () => {
     const file = tmpStoreFile();
     const { handlerFor } = setup({ file });
     const r = fakeRes();
@@ -112,19 +116,24 @@ describe('设备注册不持久化网关 token（E1-10 a/b）', () => {
       fakeReq({
         method: 'POST',
         url: '/api/devices',
-        body: JSON.stringify({ id: 'dev-1', fcmToken: 'fcm-raw-value', platform: 'android', token: GW_TOKEN }),
+        headers: { authorization: `Bearer ${GW_TOKEN}` },
+        body: JSON.stringify({ id: 'dev-1', fcmToken: 'fcm-raw-value', platform: 'android', token: 'legacy-hash-seed' }),
       }),
       r.res,
     );
 
     expect(r.status).toBe(200);
     const raw = fs.readFileSync(file, 'utf8');
+    expect(raw).toContain('fcm-raw-value');
     expect(raw).not.toContain(GW_TOKEN);
-    expect(raw).not.toContain('fcm-raw-value');
-    expect(JSON.parse(raw).devices[0].apiTokenHash).toBe(sha(GW_TOKEN, 16));
+    expect(JSON.parse(raw).devices[0]).toMatchObject({
+      id: 'dev-1',
+      fcmToken: 'fcm-raw-value',
+      apiTokenHash: sha('legacy-hash-seed', 16),
+    });
   });
 
-  it('token 与配置的网关 token 不一致 → 401，且不落盘', async () => {
+  it('body.token 与网关配置无关：不匹配也不 401（真实客户端发的是 FCM token）', async () => {
     const file = tmpStoreFile();
     const { gateway, handlerFor } = setup({ file });
     const r = fakeRes();
@@ -133,27 +142,7 @@ describe('设备注册不持久化网关 token（E1-10 a/b）', () => {
       fakeReq({
         method: 'POST',
         url: '/api/mobile/devices/register',
-        body: JSON.stringify({ token: 'wrong-token', platform: 'android', deviceName: 'pixel' }),
-      }),
-      r.res,
-    );
-
-    expect(r.status).toBe(401);
-    expect(JSON.parse(r.body).error).toMatch(/token/i);
-    expect(gateway.listDevices()).toHaveLength(0);
-    expect(fs.existsSync(file)).toBe(false);
-  });
-
-  it('未配置网关 token（空）时保持旧行为（不做比对）', async () => {
-    const file = tmpStoreFile();
-    const { gateway, handlerFor } = setup({ file, apiToken: () => '' });
-    const r = fakeRes();
-
-    await handlerFor('POST', '/api/mobile/devices/register')(
-      fakeReq({
-        method: 'POST',
-        url: '/api/mobile/devices/register',
-        body: JSON.stringify({ token: 'any-device-token', platform: 'android' }),
+        body: JSON.stringify({ token: 'some-fcm-token', platform: 'android' }),
       }),
       r.res,
     );
@@ -177,6 +166,7 @@ describe('旧格式设备记录兼容（E1-10 c）', () => {
     const devices = store.list();
     expect(devices).toHaveLength(1);
     expect(devices[0].id).toBe('legacy-1');
+    expect(devices[0].fcmToken).toBe('legacy-token');
     expect(devices[0].apiTokenHash).toBe('');
 
     // 列表路由同样不崩。
@@ -190,13 +180,13 @@ describe('旧格式设备记录兼容（E1-10 c）', () => {
   });
 });
 
-describe('DeviceStore.register 单点防御（E1-10）', () => {
-  it('任何调用方传入的 fcmToken 都不会落盘', () => {
+describe('DeviceStore.register 单点契约（E1-10 修正）', () => {
+  it('输入什么 fcmToken 就持久化什么', () => {
     const file = tmpStoreFile();
     const store = new DeviceStore(file);
-    store.register({ id: 'd1', fcmToken: 'raw-secret', platform: 'ios', apiTokenHash: 'h1' });
+    store.register({ id: 'd1', fcmToken: 'fcm-token-value', platform: 'ios', apiTokenHash: 'h1' });
     const raw = fs.readFileSync(file, 'utf8');
-    expect(raw).not.toContain('raw-secret');
-    expect(JSON.parse(raw).devices[0]).toMatchObject({ id: 'd1', fcmToken: '', apiTokenHash: 'h1' });
+    expect(raw).toContain('fcm-token-value');
+    expect(JSON.parse(raw).devices[0]).toMatchObject({ id: 'd1', fcmToken: 'fcm-token-value', apiTokenHash: 'h1' });
   });
 });

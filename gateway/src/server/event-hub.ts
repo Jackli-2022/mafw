@@ -110,7 +110,14 @@ export class EventHub {
     const wsDeviceIds = new Set<string>();
     for (const ws of this.wsClients) {
       if (ws.readyState === WebSocket.OPEN) {
-        try { ws.send(frame); } catch { this.wsClients.delete(ws); }
+        try {
+          ws.send(frame);
+        } catch {
+          // E1-7: a failed write means the device was NOT served — drop the
+          // socket but let push deliver the event as the fallback channel.
+          this.wsClients.delete(ws);
+          continue;
+        }
         const deviceId = (ws as any).deviceId;
         if (typeof deviceId === 'string' && deviceId) wsDeviceIds.add(deviceId);
       }

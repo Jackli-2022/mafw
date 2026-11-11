@@ -11,9 +11,10 @@
  *   POST   /api/mobile/pairing/verify      — mobile.pairingVerify（消费 nonce）
  *
  * handler 体从 index.ts legacy 分支逐字迁移：apiTokenHash 仍服务端算
- * （createHash sha256 → 16 hex）。**E1-10 起不再持久化网关 token**：
- * `fcmToken` 字段保留兼容但写空值，且注册时校验提交的 token 是否等于配置的
- * `server.apiToken`（不一致 → 401）。配对 503/400/429 语义与错误文案原样保留。
+ * （createHash sha256 → 16 hex）。`body.token` 是客户端上报的 **FCM push token**
+ * （`mobile/lib/src/services/push_service.dart`），网关 bearer token 只走
+ * Authorization 头、从不进入设备记录；`fcmToken` 字段按原样持久化。
+ * 配对 503/400/429 语义与错误文案原样保留。
  * id/路径参数由 registry 预先 decode（legacy 自行 decodeURIComponent）。
  * Spec: 2026-11-09-gateway-kernel-microkernel-design.md §5.2.
  */
@@ -26,23 +27,18 @@ import type { RouteRegistry } from './registry';
 export interface DevicesMobileRouteDeps {
   pushGateway: () => PushGateway | undefined;
   pairingService: () => PairingService | undefined;
-  /** Configured gateway bearer token (live; empty = no token configured). */
-  apiToken?: () => string;
 }
 
 /**
- * E1-10: hash a presented device token the same way registration stores it
- * (sha256 → 16 hex). A device may only register with the gateway's token.
+ * `apiTokenHash` = sha256(the token the device presents) → 16 hex, computed
+ * server-side so the client cannot choose it. For mobile registration the
+ * presented token is the **FCM push token** (`push_service.dart` sends it in
+ * `body.token`); the gateway bearer token travels only in the Authorization
+ * header and is never part of the device record.
  */
-function hashDeviceToken(token: string): string {
+function apiTokenHashOf(token: string): string {
   const { createHash } = require('crypto');
   return createHash('sha256').update(token).digest('hex').slice(0, 16);
-}
-
-/** `true` when the presented token matches the configured gateway token. */
-function deviceTokenAccepted(presented: string, configured: string): boolean {
-  if (!configured) return true; // no gateway token configured — nothing to verify
-  return hashDeviceToken(presented) === hashDeviceToken(configured);
 }
 
 export function attachDevicesMobileRoutes(registry: RouteRegistry, deps: DevicesMobileRouteDeps): void {
@@ -56,16 +52,10 @@ export function attachDevicesMobileRoutes(registry: RouteRegistry, deps: Devices
         res.end(JSON.stringify({ error: 'id, fcmToken, platform, token required' }));
         return;
       }
-      // E1-10: verify the presented token against the configured gateway token.
-      if (!deviceTokenAccepted(String(token), deps.apiToken?.() ?? '')) {
-        res.writeHead(401);
-        res.end(JSON.stringify({ error: 'invalid device token' }));
-        return;
-      }
-      // SECURITY: Compute apiTokenHash server-side from the token; never store
-      // the token itself (E1-10 — `fcmToken` is no longer populated).
-      const apiTokenHash = hashDeviceToken(String(token));
-      const entry = deps.pushGateway()?.registerDevice({ id, fcmToken: '', platform, apiTokenHash });
+      // SECURITY: Compute apiTokenHash server-side from the presented token.
+      const apiTokenHash = apiTokenHashOf(String(token));
+      // `fcmToken` is the FCM push token sent by the client (not a credential).
+      const entry = deps.pushGateway()?.registerDevice({ id, fcmToken, platform, apiTokenHash });
       res.writeHead(200);
       res.end(JSON.stringify({ ok: true, device: entry }));
     } catch (err: any) {
@@ -113,18 +103,12 @@ export function attachDevicesMobileRoutes(registry: RouteRegistry, deps: Devices
         res.end(JSON.stringify({ error: 'token and platform required' }));
         return;
       }
-      // E1-10: only the gateway's own token may register a device.
-      if (!deviceTokenAccepted(String(token), deps.apiToken?.() ?? '')) {
-        res.writeHead(401);
-        res.end(JSON.stringify({ error: 'invalid device token' }));
-        return;
-      }
+      // `token` 是客户端上报的 FCM push token（push_service.dart body.token），
+      // 不是网关 bearer token；id/hash 都由服务端从它派生并持久化。
       const { createHash } = require('crypto');
       const id = createHash('sha256').update(token).digest('hex').slice(0, 32);
-      const apiTokenHash = hashDeviceToken(String(token));
-      // E1-10: the gateway bearer token is NEVER persisted (old code passed it as
-      // `fcmToken` and wrote it to mobile-devices.json in plain text).
-      const entry = deps.pushGateway()?.registerDevice({ id, fcmToken: '', platform, apiTokenHash });
+      const apiTokenHash = apiTokenHashOf(String(token));
+      const entry = deps.pushGateway()?.registerDevice({ id, fcmToken: token, platform, apiTokenHash });
       res.writeHead(200);
       res.end(JSON.stringify({ ok: true, device: entry }));
     } catch (err: any) {

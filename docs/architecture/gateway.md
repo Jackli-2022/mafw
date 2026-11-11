@@ -746,10 +746,10 @@ D3 承诺内）：`initServices()`（1104 行）拆分到 `subsystems/*`、kerne
 | E1-4 | `GET /api/goals/:id` 返回**单个 Goal**（`goalId/phase/loop/currentWave/totalWaves/nextAction/error/updatedAt`；未知 → 404），不再落 dashboard 兜底返回列表。`POST /api/goals/control` 由 registry `goals.control` 接管，与 `/control` 旧路径共用 `handleGoalControlCommand`（PAUSE / ABORT / FORCE_PHASE / RESET_PARAMETRIC）。**R6 死臂已修复**（自 cdf678db2 起被 dashboard 前缀兜底遮蔽）。 | `/api/goals/:id/loops` 等未实现形状仍由 dashboard 兜底（R5 保留）。 |
 | E1-5 | `POST /api/session` 的 `directory` **必填绝对路径**（缺失 / 相对 → 400 `{error:'directory must be an absolute path'}`）；worktree 分支不再回退 `'.'`；不再用 `resolvedProjectDir` 猜项目。desktop 新会话入口随本项改为传当前项目。 | SDK `session.create(params.directory)` 仍是 optional（类型层随后收紧）；runtime-core 的适配器兜底不动（E2）。 |
 | E1-6 | `memory.maxMemoriesPerTier` 死配置已从 `core/types/config.d.ts` 与 config-loader 默认值删除（零消费者）；旧配置带该键仍能加载（忽略、不报错）。 | 归档文档保留历史原文。 |
-| E1-7 | 移动端广播单投：WS 为主通道。`EventHub.broadcast` 把已成功写出的 `deviceId` 集合传给 `PushGateway.onBroadcast(event, { excludeDeviceIds })`，push 只兜底未由 WS 送达的设备；1 msg/s 全局 + 每设备限流不变。 | gateway 仍无 FCM 发送器：注册但离线的设备实际收不到；`onBroadcast` 是将来接 FCM 的单点。 |
+| E1-7 | 移动端广播单投：WS 为主通道。`EventHub.broadcast` 只把**发送成功**的 `deviceId` 集合传给 `PushGateway.onBroadcast(event, { excludeDeviceIds })`；WS 写失败会移除 socket 且不进入排除集，push 仍兜底该设备。1 msg/s 全局 + 每设备限流不变。 | gateway 仍无 FCM 发送器：注册但离线的设备实际收不到；`onBroadcast` 是将来接 FCM 的单点。 |
 | E1-8 | TUI `ConnectionStore` 状态**边沿触发**：health tick 仍每秒执行并调度心跳，但 `onState` 只在 ok / reconnecting / down 真正变化时回调；稳定连接不再每秒重载 Experience + gateway queue。 | — |
 | E1-9 | desktop SSE 连接管理抽到 `renderer/mafw/sse/sse-connection.ts`（deps 注入，可单测）：in-flight promise 守卫让并发 `connect()` 共享同一次打开；`dispose()` 关闭并清空、之后可重建。onMount + gateway-ready 竞态不再双开 EventSource。 | `dispose()` 非终态（重挂载 / 致命关闭需要重建）。 |
-| E1-10 | 设备注册不再持久化网关 token：`DeviceStore.register` 只写 `apiTokenHash`（`fcmToken` 字段保留兼容、写空值）；注册时提交的 token 必须与 `server.apiToken` 的 sha256(16) 一致，否则 401 且不落盘；旧格式记录（无 hash）仍可读。 | 既有 `mobile-devices.json` 里的旧 token 不会被自动擦除（重注册后覆盖）；per-device 凭据属 E5（A13 完整形态）。 |
+| E1-10 | 设备库持久化的是客户端上报的 **FCM push token**（`mobile/lib/src/services/push_service.dart` 把它放在 `body.token`），`apiTokenHash` 由服务端从该 token 派生；网关 bearer token 只走 `Authorization` 头，从不进入设备记录、也没有任何"校验 body.token == 网关 token"的门禁。**2026-11-11 review 更正**：原「网关 token 被明文写进 fcmToken」前提不成立，初版修复引入的 401 门槛与 fcmToken 置空已回退。旧格式记录（无 `apiTokenHash`）仍可读。 | 真正的 per-device 凭据（设备级 token + 校验）属 E5（A13 完整形态）。 |
 | E1-11 | 进程级 `uncaughtException` / `unhandledRejection` 兜底：`runtime/crash-handlers.ts` 写 `[FATAL] <kind>: <stack>`（`log.error` + 同步 fd 2，`fs.writeSync` 保证 exit 前不丢）后 `process.exitCode = 1; process.exit(1)`；`index.ts` 在构造 scheduler 之前注册。 | 退出码 **1**，与自更新约定 **75** 严格区分；不吞异常、不"继续运行"（supervisor 重启）。 |
 | E1-12 | `SessionRegistry.register` 的 TTL 三态：`undefined` = 保持现有 TTL（重注册 = 续租，从当刻重新计时）；`null` = 显式永久；数字 = 覆盖（0 / 负数仍为永久，既有语义）。 | 结束/退休记录重建 generation 时按首次注册语义（`undefined` = 永久）。 |
 | E1-13 | Mode A 全局 SSE 卫生：响应头 `X-Accel-Buffering: no`；首帧同一事件块带 `retry: 3000`（不新增帧，既有帧数契约不变）；15s `: ping` 注释帧（unref，`res close` / 写失败清理）。CORS 默认值补 `PUT/PATCH/DELETE` 与 `Authorization` / `X-API-Token`。 | **显式 `server.cors` 优先**（深合并）：`~/.mafw/config.yaml` 里钉死旧 methods/headers 的部署必须手动更新，否则预检仍按旧值。 |
@@ -763,7 +763,7 @@ D3 承诺内）：`initServices()`（1104 行）拆分到 `subsystems/*`、kerne
 
 | 组 | 代表端点 |
 |---|---|
-| 健康/事件 | `GET /health`、`GET /api/events`（SSE 订阅）、`POST /api/events`（发布：顶层扁平或 `mafw_event` 信封，全 UI 通道） |
+| 健康/事件 | `GET /health`、`GET /api/events`（SSE 订阅）、`POST /api/events`（**外部发布**：只接受自定义命名空间，推荐 `plugin:<pkg>:<event>`；`mafw_event`/canonical/扁平保留名/`sync` 一律 400，见 E1-2，全 UI 通道） |
 | 项目/会话 | `POST /register`、`GET /api/projects`、`GET /api/sessions`、`GET /api/manager/session`、`POST /api/manager/session/rotate` |
 | Pod / 工作 | `GET /api/projects/:id/work`（五桶 overview）、`GET/POST /api/pods/:id/goals`、`/tech-lead`、`/direction-decision`、`/probes`、`/revisions`、`/result`、`/reject`、`POST /api/pods/:id/goals/handoff` |
 | 事件/存在感 | `GET /api/presence`、`GET /api/pods/:id/events`、`POST /api/pods/:id/events/:eventId/seen`（单条）、`POST /api/pods/:id/events/seen`（body `{goalId, revision}` 清当前 revision） |

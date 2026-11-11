@@ -32,6 +32,17 @@ function fakeWs(deviceId?: string): FakeWs {
   return ws;
 }
 
+/** WS whose send throws (socket died between readyState check and write). */
+function failingWs(deviceId?: string): FakeWs {
+  const ws: FakeWs = {
+    deviceId,
+    readyState: WebSocket.OPEN,
+    sent: [],
+    send: () => { throw new Error('socket hang up'); },
+  };
+  return ws;
+}
+
 /** 记录型 pushGateway：模拟"注册设备 − 已由 WS 投递的设备"的兜底投递。 */
 function recordingPush(registeredDeviceIds: string[]) {
   const deliveries: Array<{ deviceId: string; type: string }> = [];
@@ -102,6 +113,19 @@ describe('EventHub.broadcast 移动端去重（E1-7）', () => {
     expect(desktop.sent).toHaveLength(1);
     expect(push.deliveries).toEqual([{ deviceId: 'dev-offline', type: 'goal_created' }]);
     expect(push.calls[0]?.exclude?.size).toBe(0);
+  });
+
+  it('WS 发送失败：socket 被移除，设备仍走 push 兜底（不丢投递）', () => {
+    const broken = failingWs('dev-broken');
+    const push = recordingPush(['dev-broken']);
+    const hub = makeHub(push);
+    hub.wsClients.add(broken as unknown as WebSocket);
+
+    hub.broadcast({ type: 'turn.completed', sessionID: 's1' });
+
+    // 发送失败 = 未送达 → 不能进入 WS-served 排除集，push 必须兜底。
+    expect(push.deliveries).toEqual([{ deviceId: 'dev-broken', type: 'turn.completed' }]);
+    expect(hub.wsClients.has(broken as unknown as WebSocket)).toBe(false);
   });
 });
 

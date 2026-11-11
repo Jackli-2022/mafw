@@ -20,10 +20,10 @@
 | `6c3bd034` | E1-4 | `goals.get` 单对象（404 语义）+ `goals.control` registry 可达（R6 死臂修复）；共用 `handleGoalControlCommand` |
 | `3aaa999d` | E1-5 | `POST /api/session` 必填绝对目录（400），worktree 不回退 `'.'`；desktop 入口随迁 |
 | `911407ca` | E1-6 | 删除死配置 `memory.maxMemoriesPerTier`（类型 + loader 默认值）；旧配置容忍 |
-| `5e823505` | E1-7 | 移动端广播单投：WS 主通道，`excludeDeviceIds` 让 push 只兜底 |
+| `5e823505` | E1-7 | 移动端广播单投：WS 主通道，`excludeDeviceIds` 让 push 只兜底；WS 写失败不排除该设备（仍走 push） |
 | `74b1f5f2` | E1-8 | TUI 连接状态边沿触发（稳定连接不再每秒重载 Experience/queue） |
 | `ea87a378` | E1-9 | desktop SSE 单例：`sse/sse-connection.ts` in-flight 守卫，并发只开一条流 |
-| `b1e6fd8f` | E1-10 | 设备库不再持久化网关 token（只存 hash）；注册校验 token，不匹配 401 |
+| `b1e6fd8f` | E1-10 | **前提更正**（2026-11-11 review）：设备库存 FCM push token 是正确的；「网关 token 被明文写库」不成立，初版 401 门槛/fcmToken 置空已在 `fix(mobile)` 回退 |
 | `71ee746b` | E1-11 | 全局 `uncaughtException`/`unhandledRejection` → `[FATAL]` + 受控 `exit(1)` |
 | `df0739c1` | E1-12 | 注册表 TTL 三态：`undefined` 保持 / `null` 永久 / 数字覆盖 |
 | `48449317` | E1-13 | SSE 卫生：`X-Accel-Buffering: no`、首帧 `retry: 3000`、15s `: ping`；CORS 默认方法与头补全 |
@@ -45,12 +45,15 @@
 - **E1-6**：`gateway/src/core/types/config.d.ts`、`core/utils/config-loader.ts`、根 `src/types/config.d.ts`
   三处代码 0 命中；归档文档保留历史原文。
 - **E1-7**：`PushGateway.onBroadcast(event, { excludeDeviceIds })` 跳过已由 WS 送达的设备；限流不变。
+  只有**发送成功**的 WS 才把 `deviceId` 放进排除集——写失败会移除 socket 并让 push 兜底（不丢投递）。
   离线设备的真实推送仍缺 FCM sender（dispatch 契约已就位）。
 - **E1-8**：`ConnectionStore.emitState()` 去重；`start()` 重置 `lastState`。
 - **E1-9**：`SseConnection` deps = `{open,onOpen,onError,onMessage,onRetry?,retryDelayMs?}`；MafwShell 仅提供
   gateway 信息与事件路由；flow-card seed 移入 `onOpen`（幂等）。
-- **E1-10**：`DeviceStore.register` 单点写空 `fcmToken`；`load()` 归一化缺失 `apiTokenHash` 为 `''`；
-  route 层用 sha256(16) 对比 `config.server.apiToken`（空 token = 跳过校验，保持 loopback dev 行为）。
+- **E1-10**（review 更正）：`mobile/lib/src/services/push_service.dart` 把 FCM token 放在 `body.token`，
+  网关 bearer token 只在 `Authorization` 头 —— 原始实现并未持久化 bearer token，`fcmToken` 存的就是推送
+  token，必须保留。初版修复的 401 门槛与 `fcmToken` 置空已回退；`apiTokenHash` 仍由服务端从上报 token
+  派生，`load()` 对旧记录缺失的 `apiTokenHash` 归一化为 `''`。per-device 凭据属 E5。
 - **E1-11**：`registerCrashHandlers({emitter,log,stderr,exit})` 可注入；默认同步写 fd 2；每 emitter 幂等。
 - **E1-12**：active 记录重注册 = 续租（保留 TTL、从当刻重算 `expiresAt`）；ended 记录重建按首次注册语义。
 - **E1-13**：`retry` 与 greeting 同帧（帧数契约不变）；`: ping` 用 `writeFrame`，写失败即 dispose。
