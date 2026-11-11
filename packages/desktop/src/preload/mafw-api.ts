@@ -324,6 +324,10 @@ export function createMafwApi(): MafwAPI {
       acceptResult: (podID, goalID, body) => invoke("pod", "acceptResult", podID, goalID, body),
       worktreeDiff: (podID, goalID, revision) => invoke("pod", "worktreeDiff", podID, goalID, revision),
       revisions: (podID, goalID) => invoke("pod", "revisions", podID, goalID),
+      reviewItems: (podID, goalID, opts) => invoke("pod", "reviewItems", podID, goalID, opts),
+      createReviewItems: (podID, goalID, body) => invoke("pod", "createReviewItems", podID, goalID, body),
+      resolveReviewItem: (podID, goalID, itemID, body) => invoke("pod", "resolveReviewItem", podID, goalID, itemID, body),
+      reopenReviewItem: (podID, goalID, itemID, body) => invoke("pod", "reopenReviewItem", podID, goalID, itemID, body),
     },
 
     navigate: {
