@@ -564,7 +564,7 @@ Expected: FAIL on the missing scope-state calls.
 
 - Add `scopeKey` to `FilesDock` props and a `selectedRel` signal.
 - On `contentRoot`/`scopeKey` change: read `contentScopeStateFor(props.scopeKey)`, set `expanded` and `selectedRel`, reset the load token, load the root, and then load children for each saved expanded directory. Discard every result if the token or `props.contentRoot` changed.
-- On expand/collapse: update the signal and `saveContentScopeState(props.scopeKey, (state) => setTreeExpanded(state, row.rel, expandedNow))`.
+- On expand/collapse: update the signal and persist via `saveContentScopeState(props.scopeKey, setTreeExpanded(contentScopeStateFor(props.scopeKey), row.rel, expandedNow))` (or a small `persistScope(update)` helper).
 - On file activation: set `selectedRel`, save `selectTreeFile`, then call `props.onOpenFile(row.rel)`.
 - Render `aria-current={selectedRel() === row.rel ? "true" : undefined}` and `classList={{ "is-selected": selectedRel() === row.rel }}`; keep the existing `role="button"` and keyboard behavior.
 - Add the token-only selected-row CSS; do not change the existing directory-watch behavior or the `onDirChanged` path.

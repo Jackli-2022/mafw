@@ -29,6 +29,11 @@
   统一走 `openPodSession`，不展示 session id。
 - **工作台**：L2 `文件 / 浏览器 / 终端`。文件树 + 编辑器 + 预览；浏览器多 tab（`persist:workbench-browser`，
   本地文件走 `mafw-file://`）；终端本地 + 多 SSH（xterm.js + ssh2，`mafw-terminal/1` 契约）。
+- **内容工作台 scope（2026-11-11 Plan B）**：文件/编辑器/终端的根由显式 `ContentScope` 决定：默认项目
+  主目录，Goal revision worktree 只能从结果「查看本版文件」进入；Chat 角色切换不改变根。工作台标题栏
+  显示「项目文件」或 `Goal · 标题 · revision N`，Goal scope 提供「返回项目文件」。文件树展开/选中、
+  编辑器 tabs/活动文件、阅读位置按 scope 恢复；批注草稿携带 `scopeKey`/`root`，草稿内容仍按 root 隔离。
+  内联 diff 只在活动会话目录与内容根一致时显示；跨重启/跨项目最后 scope 恢复与持久化评审项留给后续。
 - **编辑器**：默认 **Monaco**（VS Code 内核；`mafw-editor-engine=codemirror` 回退，挂载失败自动回退），
   行内 diff 装饰、Ctrl/Cmd+S、MAFW 主题 token 映射、minimap ≥720px。详情见本文件 Monaco 段。
 - **文件预览**：md（session-ui markdown）、json 折叠树、csv/tsv 表格、svg 预览/源码、图片、pdf（Chromium
