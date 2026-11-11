@@ -99,6 +99,10 @@ export class SseConnection {
   private resumeFromSeq: number | null = null
   /** 成功建立的连接数（跨 dispose 保留：组件重挂载也算 reconnect 语义）。 */
   private successfulConnects = 0
+  /** E2 fix F2b：已应用的最大 seq（回放去重；无 seq 帧不受限）。 */
+  private lastAppliedSeq: number | null = null
+  /** 当前持久化游标（单调前进；防止 sticky lastEventId 回写旧值）。 */
+  private cursorSeq: number | null = null
 
   constructor(private readonly deps: SseConnectionDeps) {
     this.storage = deps.storage === undefined ? defaultStorage() : deps.storage
@@ -132,11 +136,15 @@ export class SseConnection {
     }
     this.es = source
     this.resumeFromSeq = since
+    this.cursorSeq = since
     source.onopen = () => {
       this.deps.onOpen(source)
       const isResume = this.resumeFromSeq !== null
       // E2-3: 无游标 → 保持旧行为（每次 open 全量同步）；带游标 → 等 greeting 分级。
-      if (!isResume) this.deps.onFullResync?.("initial", null)
+      if (!isResume) {
+        this.lastAppliedSeq = null // 新纪元/无游标：seq 可能从头开始
+        this.deps.onFullResync?.("initial", null)
+      }
       // B2: 非首次连接必须补拉活跃会话（part.delta 不入 journal）。
       const isReconnect = this.successfulConnects > 0 || isResume
       this.successfulConnects++
@@ -144,34 +152,57 @@ export class SseConnection {
     }
     source.onerror = () => {
       this.deps.onError(source)
-      if (source.readyState === EventSource.CLOSED) {
-        // Fatal close (server gone / non-SSE response): EventSource won't
-        // retry on its own — recreate on a short delay.
-        this.es = null
-        try { source.close() } catch { /* already closed */ }
-        this.scheduleRetry()
-      }
+      // E2 fix F2a：接管重连。Chromium 原生重连复用 open 时的 URL，`?since=`
+      // 会一直回放到旧游标（最多 2000 帧）；关掉它，由本类按当前持久化游标重建。
+      if (this.es === source) this.es = null
+      try { source.close() } catch { /* already closed */ }
+      this.scheduleRetry()
     }
     source.onmessage = (e: MessageEvent) => {
-      this.observeFrame(e)
+      // E2 fix F1：真 EventSource 的 lastEventId 是 sticky 的——greeting（无 id:）
+      // 会继承上一帧的 id。必须先解析再判定 greeting，不能让数字 lastEventId 短路。
+      let data: any = null
+      try { data = JSON.parse(String(e.data)) } catch { /* 保留旧行为：非 JSON 也透传 */ }
+      const isGreeting = !!data && data.type === "connected"
+      if (isGreeting) this.handleGreeting(data)
+      this.advanceCursor(data, isGreeting, e.lastEventId)
+      if (!this.shouldApply(data)) return // E2 fix F2b：按 data seq 去重回放
       this.deps.onMessage(String(e.data), e.lastEventId)
     }
   }
 
+  /** 帧内 seq（envelope 顶层或 mafw_event.data 内层）；无 seq（part.delta）= null。 */
+  private static seqOf(data: any): number | null {
+    const raw = data?.seq ?? data?.data?.seq
+    return typeof raw === "number" && Number.isFinite(raw) ? raw : null
+  }
+
   /**
-   * E2-3: 只从带 `id:` 的帧推进游标；connected greeting 参与 epoch/truncated
-   * 分级（不写游标）。
+   * E2 fix F1/F2a：游标只由真实数据帧推进（greeting 的 sticky id 不算），
+   * 且单调前进（sticky 旧 id 不得把已持久化的游标写回退）。
    */
-  private observeFrame(e: MessageEvent): void {
-    const rawId = e.lastEventId
-    if (typeof rawId === "string" && /^\d+$/.test(rawId)) {
-      this.writeSeq(Number(rawId))
+  private advanceCursor(data: any, isGreeting: boolean, lastEventId: string | undefined): void {
+    if (isGreeting) return
+    const seq = SseConnection.seqOf(data)
+    if (seq !== null) {
+      this.writeSeq(seq)
       return
     }
-    let data: any
-    try { data = JSON.parse(String(e.data)) } catch { return }
-    if (!data || data.type !== "connected") return
-    this.handleGreeting(data)
+    if (typeof lastEventId === "string" && /^\d+$/.test(lastEventId)) {
+      this.writeSeq(Number(lastEventId))
+    }
+  }
+
+  /**
+   * E2 fix F2b：seq ≤ lastAppliedSeq 的回放帧不再分发（真实副作用不重复），
+   * 无 seq 帧（part.delta / 非持久化）永远应用；全量重同步时闸门重置。
+   */
+  private shouldApply(data: any): boolean {
+    const seq = SseConnection.seqOf(data)
+    if (seq === null) return true
+    if (this.lastAppliedSeq !== null && seq <= this.lastAppliedSeq) return false
+    this.lastAppliedSeq = seq
+    return true
   }
 
   private handleGreeting(data: any): void {
@@ -195,9 +226,16 @@ export class SseConnection {
 
     if (reset || instanceChanged) this.clearSeq()
     if (this.resumeFromSeq === null) return // 首次连接已在 open 时全量同步
-    if (reset) this.deps.onFullResync?.("reset", info)
-    else if (truncated) this.deps.onFullResync?.("truncated", info)
-    else if (instanceChanged) this.deps.onFullResync?.("instance", info)
+    if (reset) {
+      this.lastAppliedSeq = null
+      this.deps.onFullResync?.("reset", info)
+    } else if (truncated) {
+      this.lastAppliedSeq = null
+      this.deps.onFullResync?.("truncated", info)
+    } else if (instanceChanged) {
+      this.lastAppliedSeq = null
+      this.deps.onFullResync?.("instance", info)
+    }
   }
 
   private readSeq(): number | null {
@@ -210,10 +248,14 @@ export class SseConnection {
   }
 
   private writeSeq(seq: number): void {
+    // 单调前进：sticky lastEventId 可能携带旧值，不能把游标写回退。
+    if (this.cursorSeq !== null && seq < this.cursorSeq) return
+    this.cursorSeq = seq
     try { this.storage?.setItem(SSE_SEQ_KEY, String(seq)) } catch { /* storage unavailable */ }
   }
 
   private clearSeq(): void {
+    this.cursorSeq = null
     try { this.storage?.removeItem(SSE_SEQ_KEY) } catch { /* storage unavailable */ }
   }
 

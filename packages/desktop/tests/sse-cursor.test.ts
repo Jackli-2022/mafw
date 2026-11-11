@@ -74,6 +74,7 @@ function makeConn(over: { storage?: any } = {}) {
   const storage = over.storage === undefined ? fakeStorage() : over.storage
   const opens: Array<number | null> = []
   const resync: string[] = []
+  const messages: string[] = []
   let reconnects = 0
   const conn = new SseConnection({
     open: async (since) => {
@@ -82,13 +83,13 @@ function makeConn(over: { storage?: any } = {}) {
     },
     onOpen: () => {},
     onError: () => {},
-    onMessage: () => {},
+    onMessage: (data) => { messages.push(data) },
     onFullResync: (reason) => resync.push(reason),
     onReconnect: () => { reconnects++ },
     storage,
     retryDelayMs: 1,
   })
-  return { conn, storage, opens, resync, reconnects: () => reconnects }
+  return { conn, storage, opens, resync, messages, reconnects: () => reconnects }
 }
 
 const GREETING = (over: Record<string, unknown> = {}) =>
@@ -215,6 +216,116 @@ describe("E2-3 重连会话补拉（d/e）", () => {
     conn.source!.fireMessage({ type: "chat" }, "9") // 无 storage：静默忽略
     expect(opens).toEqual([null])
     expect(conn.source!.url).toBe(BASE)
+    conn.dispose()
+  })
+})
+
+const SEEDED = () => fakeStorage({ [SSE_SEQ_KEY]: "42", [SSE_INSTANCE_KEY]: "inst-A" })
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+describe("E2 终审修复 F1：sticky lastEventId 不得吞掉 greeting", () => {
+  test("greeting(reset) 带 sticky id 仍触发全量重同步", async () => {
+    const { conn, resync, storage } = makeConn({ storage: SEEDED() })
+    await conn.connect()
+    conn.source!.fireOpen()
+    // 真 EventSource：greeting 没有 id:，会继承上一帧的 lastEventId（sticky）。
+    conn.source!.fireMessage(GREETING({ instanceId: "inst-A", reset: true }), "42")
+    expect(resync).toEqual(["reset"])
+    expect(storage.getItem(SSE_SEQ_KEY)).toBeNull()
+    conn.dispose()
+  })
+
+  test("greeting(truncated) 带 sticky id 仍触发全量重同步", async () => {
+    const { conn, resync } = makeConn({ storage: SEEDED() })
+    await conn.connect()
+    conn.source!.fireOpen()
+    conn.source!.fireMessage(GREETING({ instanceId: "inst-A", truncated: true }), "42")
+    expect(resync).toEqual(["truncated"])
+    conn.dispose()
+  })
+})
+
+describe("E2 终审修复 F2a：自管重连使用当前游标", () => {
+  test("瞬时错误后重建连接，URL 用当前持久化序（不是 open 时的旧 since）", async () => {
+    const { conn } = makeConn({ storage: SEEDED() })
+    await conn.connect()
+    const first = FakeEventSource.instances[0]
+    expect(first.url).toBe(`${BASE}?since=42`)
+    first.fireOpen()
+    first.fireMessage({ type: "chat", seq: 50 }, "50")
+
+    first.onerror!() // 瞬时错误：Chromium 本会复用旧 URL 自动重连
+    await sleep(20)
+
+    expect(first.closed).toBe(true)
+    expect(FakeEventSource.instances).toHaveLength(2)
+    expect(FakeEventSource.instances[1].url).toBe(`${BASE}?since=50`)
+    conn.dispose()
+  })
+
+  test("reset 清游标后，重连 URL 丢弃 since", async () => {
+    const { conn, storage } = makeConn({ storage: SEEDED() })
+    await conn.connect()
+    const first = FakeEventSource.instances[0]
+    first.fireOpen()
+    first.fireMessage(GREETING({ instanceId: "inst-A", reset: true }))
+    expect(storage.getItem(SSE_SEQ_KEY)).toBeNull()
+
+    first.onerror!()
+    await sleep(20)
+
+    expect(FakeEventSource.instances).toHaveLength(2)
+    expect(FakeEventSource.instances[1].url).toBe(BASE)
+    conn.dispose()
+  })
+})
+
+describe("E2 终审修复 F2b：按 seq 去重回放", () => {
+  test("同一 seq 帧重复投递 → 只分发一次", async () => {
+    const { conn, messages } = makeConn()
+    await conn.connect()
+    const es = conn.source!
+    es.fireOpen()
+    es.fireMessage({ type: "chat", content: "once", seq: 43 }, "43")
+    es.fireMessage({ type: "chat", content: "once", seq: 43 }, "43")
+    expect(messages).toHaveLength(1)
+    conn.dispose()
+  })
+
+  test("更大的 seq 正常分发（44 after 43）", async () => {
+    const { conn, messages } = makeConn()
+    await conn.connect()
+    const es = conn.source!
+    es.fireOpen()
+    es.fireMessage({ type: "chat", seq: 43 }, "43")
+    es.fireMessage({ type: "chat", seq: 44 }, "44")
+    expect(messages).toHaveLength(2)
+    conn.dispose()
+  })
+
+  test("无 seq 的 part.delta 永远分发（即使 lastEventId 是 sticky）", async () => {
+    const { conn, messages } = makeConn()
+    await conn.connect()
+    const es = conn.source!
+    es.fireOpen()
+    es.fireMessage({ type: "part.delta", properties: { part: { id: "p1" } } }, "43")
+    es.fireMessage({ type: "part.delta", properties: { part: { id: "p1" } } }, "43")
+    expect(messages).toHaveLength(2)
+    conn.dispose()
+  })
+
+  test("全量重同步后重置去重闸（truncated 回放重新应用）", async () => {
+    const { conn, messages } = makeConn({ storage: SEEDED() })
+    await conn.connect()
+    const es = conn.source!
+    es.fireOpen()
+    es.fireMessage({ type: "chat", seq: 43 }, "43")
+    es.fireMessage({ type: "chat", seq: 43 }, "43")
+    expect(messages).toHaveLength(1)
+    es.fireMessage(GREETING({ instanceId: "inst-A", truncated: true }), "43")
+    es.fireMessage({ type: "chat", seq: 43 }, "43")
+    // greeting 本身也分发 → messages: 1 chat + 1 greeting + 1 replayed chat
+    expect(messages).toHaveLength(3)
     conn.dispose()
   })
 })
