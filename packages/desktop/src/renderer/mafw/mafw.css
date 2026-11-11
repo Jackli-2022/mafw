@@ -8486,3 +8486,41 @@ html[data-theme="light"] body {
   padding: 1px 4px;
 }
 /* ── end frame bar ─────────────────────────────────────────── */
+
+/* ── lens bar ──────────────────────────────────────────────── */
+.mafw-lens-bar {
+  flex: none;
+  height: 36px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-base);
+  overflow-x: auto;
+}
+.mafw-lens-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-3);
+  font-size: 11px;
+}
+.mafw-lens-btn[aria-pressed="true"],
+.mafw-lens-btn.is-active {
+  color: var(--text-1);
+  background: var(--bg-overlay);
+  box-shadow: inset 0 0 0 1px var(--border-subtle);
+}
+.mafw-lens-count {
+  font-family: var(--font-data);
+  font-size: 9px;
+  color: var(--text-4);
+}
+.mafw-lens-btn[aria-pressed="true"] .mafw-lens-count { color: var(--text-3); }
+.mafw-lens-spacer { flex: 1; min-width: 8px; }
+.mafw-lens-split { flex: none; color: var(--text-3); }
+.mafw-lens-split[aria-pressed="true"] { color: var(--accent-text); }
+/* ── end lens bar ──────────────────────────────────────────── */
