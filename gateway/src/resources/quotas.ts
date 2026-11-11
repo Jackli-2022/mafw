@@ -2,9 +2,9 @@
  * E4-7 项目/会话配额（spec §4.7）。
  *
  * 配额是"机制 + 可观测"，不是激进阻断：默认值偏高，`0`/负数/NaN = 不限。
- * 语义统一为 `current < limit`（新增第 `limit` 个即拒绝），`check()` 返回
- * **原始配置值**（`0` 原样保留，供 stats 显示"不限"）；内部判定用
- * `limitOf()`（`Infinity` 永不命中）。
+ * 语义统一为 `current < limit`（新增第 `limit` 个即拒绝）。`check().limit` 与
+ * `snapshot().limit` 都是**归一化值**（有限且 >= 0 时原样、否则 0；`0` = 不限），
+ * 不是原始配置；内部判定用 `limitOf()`（`Infinity` 永不命中）。
  *
  * 拒绝路径（429）：
  *  - `POST /register` → projects
@@ -20,12 +20,12 @@ const RESOURCE_ORDER: QuotaResource[] = ['projects', 'sessions', 'sessionRecords
 
 export interface QuotaCheck {
   ok: boolean;
-  /** 原始配置值（`0` = 不限） */
+  /** 归一化 limit（有限且 >= 0 原样，否则 0；`0` = 不限）。 */
   limit: number;
   current: number;
 }
 
-/** `snapshot()` 形状：按资源键控，limit 保留原始配置值（`0` = 不限）。 */
+/** `snapshot()` 形状：按资源键控，limit 为归一化值（`0` = 不限）。 */
 export type QuotaSnapshot = Partial<Record<QuotaResource, { current: number; limit: number }>>;
 
 /**

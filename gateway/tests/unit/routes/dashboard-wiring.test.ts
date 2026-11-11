@@ -350,6 +350,37 @@ describe('dashboard registry wiring (D1 Task G)', () => {
     expect(JSON.parse(r.body)).toEqual({ success: false, error: 'content and valid memoryType required' });
   });
 
+  it('memory.add invalid authority wins over the pressure gate', async () => {
+    const { registry } = setup({
+      pressure: () => ({ disk: 'critical', degraded: ['disk_critical'] }),
+    });
+    const r = fakeRes();
+    await handlerFor(registry, 'POST', '/api/memory/add')!(
+      fakeReq({
+        method: 'POST',
+        url: '/api/memory/add',
+        body: JSON.stringify({ content: 'authority probe', memoryType: 'semantic', authority: 'bogus' }),
+      }),
+      r.res,
+    );
+    expect(JSON.parse(r.body)).toEqual({
+      success: false,
+      error: 'invalid authority: bogus (user|agent|tool|pipeline)',
+    });
+  });
+
+  it('memory.add only gates on disk (heap critical alone still writes)', async () => {
+    const { registry } = setup({
+      pressure: () => ({ disk: 'ok', degraded: ['heap_critical'] }),
+    });
+    const r = fakeRes();
+    await handlerFor(registry, 'POST', '/api/memory/add')!(
+      fakeReq({ method: 'POST', url: '/api/memory/add', body: JSON.stringify({ content: 'heap pressure only', memoryType: 'semantic' }) }),
+      r.res,
+    );
+    expect(JSON.parse(r.body)).toEqual({ success: false, error: 'memoryService not ready' });
+  });
+
   it('memory.add keeps existing behavior when pressure is ok or unknown', async () => {
     const pressures = [
       () => ({ disk: 'ok', degraded: [] as string[] }),

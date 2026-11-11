@@ -54,4 +54,27 @@ describe('EventStore.pruneNow', () => {
     const store = new EventStore(brokenDb());
     expect(() => store.pruneNow(100)).not.toThrow();
   });
+
+  it('retention 非有限或负数时 no-op（NaN / -1 / Infinity）', () => {
+    const store = seeded(5);
+    store.pruneNow(Number.NaN);
+    store.pruneNow(-1);
+    store.pruneNow(Infinity);
+    expect(rowCount(store)).toBe(5);
+  });
+
+  it('retention 0 清空全表，且 seq 不重用（AUTOINCREMENT）', () => {
+    const store = seeded(8);
+    const head = store.headSeq();
+    store.pruneNow(0);
+    expect(rowCount(store)).toBe(0);
+    // headSeq() derives from rows; monotonic seq is proven by the next insert.
+    expect(store.append({ type: 'tick' })!).toBe(head + 1);
+  });
+
+  it('小数 retention 向下取整（3.9 → 保留 3 行）', () => {
+    const store = seeded(10);
+    store.pruneNow(3.9);
+    expect(rowCount(store)).toBe(3);
+  });
 });

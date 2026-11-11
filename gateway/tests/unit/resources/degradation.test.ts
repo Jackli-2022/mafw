@@ -6,8 +6,9 @@
  * （chat / health / SSE 不被压力阻断）；governor 缺席或未降级时逐字委托
  * 既有 pipeline budget 逻辑（既有行为不得改变）。
  */
-import { createResourceBudgetChecker } from '../../../src/resources/degradation';
+import { createResourceBudgetChecker, shouldPruneEventLog } from '../../../src/resources/degradation';
 import type { TaskDescriptor, TaskPriority } from '../../../src/scheduler/task-descriptor';
+import type { Pressure } from '../../../src/resources/governor';
 
 function task(priority: TaskPriority): TaskDescriptor<any> {
   return { priority, strategy: 'queue' };
@@ -72,5 +73,37 @@ describe('createResourceBudgetChecker: 无压力时逐字委托', () => {
     expect(check(task('background'))).toEqual({ ok: false, reason: 'resource pressure' });
     degraded = false;
     expect(check(task('background'))).toEqual(FALLBACK_OK);
+  });
+});
+
+describe('shouldPruneEventLog: disk critical 边沿', () => {
+  const pressure = (disk: Pressure['disk'], heap: Pressure['heap'] = 'ok'): Pressure => ({
+    disk,
+    heap,
+    degraded: [
+      ...(disk === 'critical' ? (['disk_critical'] as const) : []),
+      ...(heap === 'critical' ? (['heap_critical'] as const) : []),
+    ],
+  });
+
+  it('进入 disk critical：ok→critical / warn→critical / unknown→critical 都触发', () => {
+    expect(shouldPruneEventLog(pressure('ok'), pressure('critical'))).toBe(true);
+    expect(shouldPruneEventLog(pressure('warn'), pressure('critical'))).toBe(true);
+    expect(shouldPruneEventLog(pressure('unknown'), pressure('critical'))).toBe(true);
+  });
+
+  it('critical 状态下压力组合变化不重复裁剪（heap 升级 / 回落 warn 均为 false）', () => {
+    expect(shouldPruneEventLog(pressure('critical'), pressure('critical', 'critical'))).toBe(false);
+    expect(shouldPruneEventLog(pressure('critical'), pressure('warn'))).toBe(false);
+    expect(shouldPruneEventLog(pressure('critical'), pressure('ok'))).toBe(false);
+  });
+
+  it('heap 单独 critical 不裁剪 event_log（磁盘不是瓶颈）', () => {
+    expect(shouldPruneEventLog(pressure('ok'), pressure('ok', 'critical'))).toBe(false);
+  });
+
+  it('恢复路径不触发（warn→ok / critical→unknown 非进入边沿）', () => {
+    expect(shouldPruneEventLog(pressure('warn'), pressure('ok'))).toBe(false);
+    expect(shouldPruneEventLog(pressure('critical'), pressure('unknown'))).toBe(false);
   });
 });

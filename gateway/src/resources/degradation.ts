@@ -9,6 +9,7 @@
  * 既有 pipeline budget 行为不变（字节级保持）。
  */
 import type { BudgetCheckResult, TaskDescriptor } from '../scheduler/task-descriptor';
+import type { Pressure } from './governor';
 
 export type ResourceBudgetChecker = (task: TaskDescriptor<any>) => BudgetCheckResult;
 
@@ -25,4 +26,15 @@ export function createResourceBudgetChecker(
     }
     return fallback(task);
   };
+}
+
+/**
+ * event_log 边沿裁剪判定：只看 **disk 状态进入 critical** 的那一次变化
+ * （`next.disk === 'critical' && prev.disk !== 'critical'`）。
+ *
+ * 不用 `degraded` 列表：heap critical 也会进 degraded，但满堆与磁盘写放大无关，
+ * 不应触发 event_log 裁剪；critical 期间 heap 升级/回落也不得重复裁剪。
+ */
+export function shouldPruneEventLog(prev: Pressure, next: Pressure): boolean {
+  return next.disk === 'critical' && prev.disk !== 'critical';
 }

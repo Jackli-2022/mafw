@@ -138,12 +138,15 @@ export class EventStore {
    *
    * 与 `maybePrune` 同一 SQL；不重置 `appendCount`（摊销节奏不变）。异常吞掉：
    * 裁剪失败不得影响采样/降级状态机（fail-open）。
+   * retention 必须是有限非负数：NaN/Infinity/负数一律 no-op（`0` = 清空）。
    */
   pruneNow(retention: number): void {
+    if (!Number.isFinite(retention) || retention < 0) return;
+    const n = Math.floor(retention);
     try {
       this.db
         .prepare('DELETE FROM event_log WHERE seq <= (SELECT COALESCE(MAX(seq), 0) FROM event_log) - ?')
-        .run(retention);
+        .run(n);
     } catch {
       /* fail-open */
     }

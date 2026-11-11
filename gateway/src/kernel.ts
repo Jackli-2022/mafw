@@ -192,7 +192,7 @@ import { QuotaExceededError, QuotaService, projectAdmission } from './resources/
 import { ConnectionTable } from './resources/connections';
 import { BufferCounters } from './resources/outbound-buffer';
 import { ResourceGovernor } from './resources/governor';
-import { createResourceBudgetChecker } from './resources/degradation';
+import { createResourceBudgetChecker, shouldPruneEventLog } from './resources/degradation';
 import { buildHandlesSnapshot, buildKernelStatsSnapshot, type KernelStatsSnapshot } from './resources/stats';
 import { limitOf } from './resources/settings';
 import { TimerService } from './core/timer-service';
@@ -538,12 +538,21 @@ class MafwScheduler {
     return new ReflectCursor(this.getGatewayDb());
   }
   /**
-   * E4-6b: 资源预算准入（在既有 pipeline budget 之前）。降级时只拒非前台；
+   * E4-6b: 资源准入（universal admission）——每次 submit 都问，降级时只拒非前台；
    * `getGovernor` 是 live 读（governor 在 listen 后才创建）。
    */
-  private readonly resourceBudget = createResourceBudgetChecker(
+  private readonly resourceAdmission = createResourceBudgetChecker(
     () => this.governor,
-    (task) => {
+    () => ({ ok: true }),
+  );
+  /**
+   * Unified priority scheduler (Phase B). AutomationEngine actions and
+   * snapshot builds submit through it; budget admission consults the
+   * pipeline daily USD cap using the pipelines' own allow() names.
+   */
+  private scheduler = new Scheduler({
+    admissionChecker: (task) => this.resourceAdmission(task),
+    budgetChecker: (task) => {
       const b = task.budget;
       if (b?.kind === 'pipeline' && b.pipeline) {
         try {
@@ -554,14 +563,6 @@ class MafwScheduler {
       }
       return { ok: true };
     },
-  );
-  /**
-   * Unified priority scheduler (Phase B). AutomationEngine actions and
-   * snapshot builds submit through it; budget admission consults the
-   * pipeline daily USD cap using the pipelines' own allow() names.
-   */
-  private scheduler = new Scheduler({
-    budgetChecker: (task) => this.resourceBudget(task),
   });
   private budgetGuards = new Map<string, BudgetGuard>(); // per-goal-session turn/cost hard stop
   private promptBudgetSessions = new Set<string>();
@@ -5515,9 +5516,10 @@ class MafwScheduler {
         void this.governor.start().catch((err: any) => {
           log.warn(`[Resources] governor start failed (stats report unknown): ${err?.message ?? err}`);
         });
-        // E4-6b：disk **进入** critical 的边沿一次性裁剪 event_log（不随采样重复裁）。
+        // E4-6b：disk **进入** critical 的边沿一次性裁剪 event_log（不随采样重复裁；
+        // heap critical 不进这条边沿）。
         this.governorUnsub = this.governor.onChange((prev, next) => {
-          if (next.degraded.includes('disk_critical') && !prev.degraded.includes('disk_critical')) {
+          if (shouldPruneEventLog(prev, next)) {
             const store = this.eventStore;
             if (store) {
               const retention = Math.max(100, Math.floor(config.events.logRetention * 0.1));

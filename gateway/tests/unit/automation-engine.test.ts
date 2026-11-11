@@ -242,6 +242,20 @@ describe('AutomationEngine scheduler submission', () => {
       ),
     ).rejects.toBeInstanceOf(BudgetExceededError);
   });
+
+  it('budgetless action denied by admission: handler never runs, executeAction resolves denied', async () => {
+    const dir = tmp();
+    const s = new Scheduler({ admissionChecker: () => ({ ok: false, reason: 'resource pressure' }) });
+    const engine = new AutomationEngine(dir);
+    engine.setScheduler(s);
+    let ran = false;
+    engine.registerAction('test:admission', async () => {
+      ran = true;
+    });
+    const status = await (engine as any).executeAction('test:admission', rule, 'cron');
+    expect(status).toBe('denied');
+    expect(ran).toBe(false);
+  });
 });
 
 describe('AutomationEngine live-instance discipline', () => {
