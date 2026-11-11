@@ -186,6 +186,9 @@ import { Qwen3AsrEngine } from './voice/engines/asr/qwen3-vllm';
 import { resolveVoiceConfig } from './voice/config';
 import { VoiceRuntime } from './voice/runtime';
 import { SessionKernels } from "./python/kernel-service";
+import { ProcessLedger } from './resources/process-ledger';
+import { QuotaExceededError, QuotaService, projectAdmission } from './resources/quotas';
+import { setLlamaCppProcessLedger } from './memory/llamacpp-provider';
 import { eventBus } from "./event-bus";
 import { AutomationEngine } from "./automation-engine";
 import { SchedulerLedger } from "./ledger";
@@ -719,6 +722,10 @@ class MafwScheduler {
   /** D3 Task 3：WS 上行枢纽（wss / voiceWss / terminalWss + 心跳 interval 的归属）。 */
   private wsHub?: WsHub;
   private kernels?: SessionKernels;
+  /** E4-6: 子进程台账（python kernel / llamacpp sidecar / runtime serve 逻辑条目）。 */
+  private readonly processLedger = new ProcessLedger();
+  /** E4-7: 项目/会话配额（live getter，config hot reload 生效）。 */
+  private readonly quotas = new QuotaService({ limits: () => config.resources.limits });
   private automationEngine?: AutomationEngine;
   private eventLayerStore?: EventLayerStore;
   private eventLayer?: EventLayerService;
@@ -948,6 +955,14 @@ class MafwScheduler {
           const data = JSON.parse(content);
           const { projectDir, mafwDir } = data;
           if (!projectDir || !mafwDir) return;
+          // E4-7: watcher 自动注册超限只 log + skip（不得抛，否则 watch 回调崩）。
+          if (!this.registeredProjects.has(projectDir)) {
+            const admission = projectAdmission(this.quotas, true, this.registeredProjects.size);
+            if (!admission.ok) {
+              log.warn(`[Scheduler] Project quota reached (limit ${admission.limit}); skipping filesystem registration of ${projectDir}`);
+              return;
+            }
+          }
           this.registeredProjects.set(projectDir, {
             projectDir,
             mafwDir,
@@ -3374,6 +3389,8 @@ class MafwScheduler {
     this.running = false;
     this.taskService?.dispose();
     this.kernels?.disposeAll();
+    // E4-6: 兜底释放其余子进程（llamacpp sidecar 等），并清空台账。
+    this.processLedger.disposeAll();
     try { this.layaSidecar?.kill(); } catch { /* best effort */ }
     try { this.voiceSidecar?.stopSync(); } catch { /* best effort */ }
     this.voiceSidecar = undefined;
@@ -3491,7 +3508,7 @@ class MafwScheduler {
       getProbeScope: (sid) => this.probeScopes.get(sid),
     });
 
-    this.sdkSession = new SdkSessionResource(undefined, mafwDir);
+    this.sdkSession = new SdkSessionResource(undefined, mafwDir, { quotas: this.quotas });
     this.sessionConfigService = new SessionConfigService({
       load: (sid) => this.getGatewayDb().kvGet('session-config', sid) ?? undefined,
       save: (sid, state) => { this.getGatewayDb().kvSet('session-config', sid, state); },
@@ -4369,7 +4386,11 @@ class MafwScheduler {
       : path.join(os.homedir(), '.local', 'share', 'agent-vision-toolkit', '.venv-pykernel', 'bin', 'python');
     const pyBin = process.env.MAFW_PYTHON_BIN
       || (fs.existsSync(pykernelDefault) ? pykernelDefault : legacyVision);
-    this.kernels = new SessionKernels(pyBin);
+    this.kernels = new SessionKernels(pyBin, {
+      ledger: this.processLedger,
+      maxKernels: () => config.resources.limits.pythonKernels,
+    });
+    setLlamaCppProcessLedger(this.processLedger);
     const cost = new CostService();
     this.ledger = new SchedulerLedger(projectDir);
     this.automationEngine = new AutomationEngine(mafwDir);
@@ -5243,7 +5264,14 @@ class MafwScheduler {
         isUserDataDir: (dir) => this.isUserDataDir(dir),
         isSelectableProject: (dir) => isSelectableProject(dir, resolveRuntimeRoot()),
         registeredProject: (dir) => this.registeredProjects.get(dir),
-        registerProject: (dir, entry) => { this.registeredProjects.set(dir, entry); },
+        registerProject: (dir, entry) => {
+          // E4-7: 已登记目录的重复注册放行（幂等）；只有新增才检查 projects 配额。
+          const admission = projectAdmission(this.quotas, !this.registeredProjects.has(dir), this.registeredProjects.size);
+          if (!admission.ok) {
+            throw new QuotaExceededError('projects', admission.limit, admission.current);
+          }
+          this.registeredProjects.set(dir, entry);
+        },
         setCurrentProject: (dir) => {
           this.currentProjectDir = dir;
           this.getGatewayDb().kvSet('current-project', 'default', dir);

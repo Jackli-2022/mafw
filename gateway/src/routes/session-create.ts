@@ -7,6 +7,7 @@ import * as http from 'http';
 import * as path from 'path';
 import type { WorktreeAvailability } from '../core/worktree/worktree-availability';
 import { WorktreeUnavailableError } from '../core/worktree/worktree-availability';
+import { QuotaExceededError } from '../resources/quotas';
 import { createSessionWithWorktree, type WorktreeSessionDeps } from './session-worktree';
 
 function readBody(req: http.IncomingMessage): Promise<string> {
@@ -49,6 +50,17 @@ export async function handleSessionCreate(
     const result = await createSessionWithWorktree(deps, opts);
     json(res, 200, { ...result.session, worktree: result.worktree });
   } catch (err: any) {
+    // E4-7: 容量拒绝优先于 worktree/通用错误——客户端需要机器码区分。
+    if (err instanceof QuotaExceededError) {
+      json(res, 429, {
+        error: err.message,
+        code: 'quota_exceeded',
+        resource: err.resource,
+        limit: err.limit,
+        current: err.current,
+      });
+      return;
+    }
     if (err instanceof WorktreeUnavailableError) {
       json(res, 409, { error: 'worktree sessions are not available', reason: err.reason });
       return;

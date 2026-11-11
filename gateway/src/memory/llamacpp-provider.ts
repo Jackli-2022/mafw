@@ -21,7 +21,18 @@ import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
 import { log } from '../core/utils/logger';
+import type { ProcessHandle, ProcessLedger } from '../resources/process-ledger';
 import { buildQueryInput, EmbeddingKind, EmbeddingProvider } from './embedding-provider';
+
+/**
+ * E4-6: 让组合根（kernel）把 llama-server 子进程计入全局进程台账。
+ * 未注入时完全 no-op（单测/独立使用不依赖 gateway）。
+ */
+let processLedger: ProcessLedger | undefined;
+
+export function setLlamaCppProcessLedger(ledger: ProcessLedger | undefined): void {
+  processLedger = ledger;
+}
 
 export interface LlamaCppConfig {
   /** Server port. 0 = pick a free loopback port (default). */
@@ -120,6 +131,8 @@ export class LlamaCppServerProvider implements EmbeddingProvider {
   private queryCache = new Map<string, number[][]>();
   private consecutiveFailures = 0;
   private exitHookRegistered = false;
+  /** E4-6: 侧车子进程的台账句柄（exit/kill 两条路径都释放，幂等）。 */
+  private processHandle?: ProcessHandle;
 
   constructor(opts: { model?: string; dimensions?: number; llamacpp?: LlamaCppConfig }) {
     this.cfg = opts.llamacpp ?? {};
@@ -256,8 +269,17 @@ export class LlamaCppServerProvider implements EmbeddingProvider {
         '--embeddings',
         '--log-disable',
       ], { windowsHide: true, stdio: 'ignore' });
+      this.processHandle?.release();
+      this.processHandle = processLedger?.register({
+        kind: 'llamacpp',
+        pid: this.child.pid ?? undefined,
+        label: 'llama-server',
+        close: () => this.killServer(),
+      });
       this.child.on('exit', code => {
         log.warn(`[LlamaCpp] server exited (code ${code}) — next embed restarts it`);
+        this.processHandle?.release();
+        this.processHandle = undefined;
         this.child = null;
         this.baseUrl = null;
         this.starting = null;
@@ -291,6 +313,8 @@ export class LlamaCppServerProvider implements EmbeddingProvider {
     const child = this.child;
     this.child = null;
     this.baseUrl = null;
+    this.processHandle?.release();
+    this.processHandle = undefined;
     if (!child || child.killed || child.pid == null) return;
     try {
       if (process.platform === 'win32') {

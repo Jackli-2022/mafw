@@ -8,6 +8,8 @@ import * as os from 'os';
 import * as path from 'path';
 
 import { createEmbeddingProvider, EmbeddingProvider } from '../../src/memory/embedding-provider';
+import { setLlamaCppProcessLedger } from '../../src/memory/llamacpp-provider';
+import { ProcessLedger } from '../../src/resources/process-ledger';
 
 function makeDeps() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-llamacpp-'));
@@ -156,5 +158,52 @@ describe('LlamaCppServerProvider batch sizing', () => {
     expect(flag(args, '-c')).toBe('512');
     expect(flag(args, '-b')).toBe('512');
     expect(flag(args, '-ub')).toBe('512');
+  });
+});
+
+describe('LlamaCppServerProvider process ledger (E4-6)', () => {
+  afterEach(() => setLlamaCppProcessLedger(undefined));
+
+  function makeLedgerProvider(d: ReturnType<typeof makeDeps>): EmbeddingProvider {
+    return createEmbeddingProvider({
+      provider: 'local',
+      engine: 'llamacpp',
+      llamacpp: { modelFile: d.model, deps: d.deps, threads: 2 },
+    }) as EmbeddingProvider;
+  }
+
+  test('registers the sidecar on spawn and releases it on child exit', async () => {
+    const ledger = new ProcessLedger();
+    setLlamaCppProcessLedger(ledger);
+    const d = makeDeps();
+
+    await makeLedgerProvider(d).embed(['x'], 'document');
+    expect(ledger.count('llamacpp')).toBe(1);
+    expect(ledger.list()[0].pid).toBe(4242);
+    expect(ledger.list()[0].label).toBe('llama-server');
+
+    d.child.emit('exit', 0);
+    expect(ledger.count('llamacpp')).toBe(0);
+  });
+
+  test('releases on killServer and stays idempotent with the exit hook', async () => {
+    const ledger = new ProcessLedger();
+    setLlamaCppProcessLedger(ledger);
+    const d = makeDeps();
+    d.child.killed = true; // no real taskkill in the test
+    const provider = makeLedgerProvider(d);
+
+    await provider.embed(['x'], 'document');
+    expect(ledger.count('llamacpp')).toBe(1);
+
+    (provider as any).killServer();
+    expect(ledger.count('llamacpp')).toBe(0);
+    d.child.emit('exit', 0);
+    expect(ledger.count('llamacpp')).toBe(0);
+  });
+
+  test('works with no ledger configured', async () => {
+    const d = makeDeps();
+    await expect(makeLedgerProvider(d).embed(['x'], 'document')).resolves.toHaveLength(1);
   });
 });

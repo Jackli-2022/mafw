@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { MemoryFact, withMemoryInjection } from '../interceptors/memory-injector';
+import type { QuotaService } from '../resources/quotas';
 import {
   structuredOutput,
   structuredInstruction,
@@ -30,16 +31,23 @@ function parseLooseJson(text: string): unknown | undefined {
   }
 }
 
+export interface SdkSessionResourceOpts {
+  /** E4-7 会话配额（缺省不检查，保持旧构造兼容）。 */
+  quotas?: QuotaService;
+}
+
 export class SdkSessionResource {
   private client: any;
   private sessions: Map<string, SessionRecord> = new Map();
   private sessionsDir: string;
+  private quotas?: QuotaService;
   public promptAsync: (sessionID: string, message: string, parts?: Array<{ type: string; [key: string]: any }>, agent?: string, model?: { providerID: string; modelID: string }, outputSchema?: OutputSchemaSpec, opts?: { delivery?: 'steer' | 'followup' | 'queue'; idempotencyKey?: string; expectReply?: boolean; thinkingLevel?: ThinkingLevel; variant?: string }) => Promise<void>;
   public prompt: (sessionID: string, parts: Array<{ type: string; text: string }>, system?: string, outputSchema?: OutputSchemaSpec, opts?: { thinkingLevel?: ThinkingLevel; variant?: string }) => Promise<{ parts: Array<{ id: string; sessionID: string; messageID: string; type: string; text: string }>; structured?: unknown; structuredError?: string }>;
 
-  constructor(client?: any, mafwDir?: string) {
+  constructor(client?: any, mafwDir?: string, opts: SdkSessionResourceOpts = {}) {
     this.client = client;
     this.sessionsDir = mafwDir ? path.join(mafwDir, 'sessions') : '';
+    this.quotas = opts.quotas;
     this.promptAsync = this._rawPromptAsync.bind(this);
     this.prompt = this._rawPrompt.bind(this);
     this.loadFromDisk();
@@ -61,6 +69,28 @@ export class SdkSessionResource {
     fs.writeFileSync(path.join(this.sessionsDir, `${record.id}.json`), JSON.stringify(record, null, 2), 'utf-8');
   }
 
+  /**
+   * E4-7: 会话总配额 + 单项目记录配额（按 `directory` 分组）。
+   * 抛 QuotaExceededError（路由映射 429）；未注入 quotas 时放行（旧行为）。
+   */
+  private assertSessionQuota(directory: string): void {
+    if (!this.quotas) return;
+    this.quotas.assert('sessions', this.sessions.size);
+    this.quotas.assert('sessionRecordsPerProject', this.countByDirectory(directory));
+  }
+
+  /** 会话总数（stats/测试）。 */
+  count(): number {
+    return this.sessions.size;
+  }
+
+  /** 单目录（项目）会话数（stats/配额）。 */
+  countByDirectory(directory: string): number {
+    let n = 0;
+    for (const session of this.sessions.values()) if (session.directory === directory) n++;
+    return n;
+  }
+
   setClient(client: any) { this.client = client; }
   isReady(): boolean { return !!this.client; }
 
@@ -76,6 +106,8 @@ export class SdkSessionResource {
   async create(directory: string, metadata?: Record<string, unknown>): Promise<SessionRecord> {
     // 目录必填且不得静默替换为 '.'（spec 2026-10-20-session-directory-contract-design）。
     if (!directory) throw new Error('SdkSessionResource.create: directory is required');
+    // E4-7: 配额在 runtime 调用之前检查——被拒的请求不能留下半状态。
+    this.assertSessionQuota(directory);
     let id: string;
     let projectID: string;
     let title: string;
@@ -110,6 +142,8 @@ export class SdkSessionResource {
   }
 
   async registerExternal(id: string, directory: string, metadata?: Record<string, unknown>): Promise<SessionRecord> {
+    // 已存在同 id = 替换（幂等），不占新名额；新 id 才检查配额。
+    if (!this.sessions.has(id)) this.assertSessionQuota(directory);
     const record: SessionRecord = {
       id,
       projectID: directory,
