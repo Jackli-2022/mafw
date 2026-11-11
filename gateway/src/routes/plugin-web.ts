@@ -33,6 +33,9 @@ import {
 } from '../plugins/plugin-web-assets';
 import type { PluginHttpRegistry } from '../plugins/plugin-http';
 import type { PluginWebTicketBinding, PluginWebTicketStore } from '../plugins/plugin-web-ticket';
+import type { ConnectionTable } from '../resources/connections';
+import { SseBoundedWriter } from '../resources/outbound-buffer';
+import type { BufferCounters } from '../resources/outbound-buffer';
 
 /** Name of the path-scoped ticket cookie (spec §5.5). */
 export const PLUGIN_WEB_TICKET_COOKIE = 'mafw_plugin_ticket';
@@ -92,6 +95,10 @@ export interface PluginWebRouteDeps {
     res: http.ServerResponse,
     write: (frame: string, seq: number | null) => void,
   ): () => void;
+  /** E4-4：live 连接表；缺省 = 不限制（与 /api/events 一致）。 */
+  connections?: () => ConnectionTable | null;
+  /** E4-5：有界写配置；缺省 = 直接 `res.write`（旧行为）。 */
+  buffers?: () => { maxFrames: number; maxBytes: number; counters?: BufferCounters } | null;
 }
 
 interface PluginWebContext extends PluginWebTicketBinding {}
@@ -629,6 +636,47 @@ export async function handlePluginWebEvents(
     sessionID = undefined;
   }
 
+  // E4-4：与 /api/events 共用连接表；超限在写任何 SSE 字节之前拒绝（不建流、
+  // 不写 greeting），格式与主事件流一致。
+  const connections = deps.connections?.() ?? null;
+  const lease = connections ? connections.tryAcquire('sse') : null;
+  if (connections && !lease) {
+    return sendJson(res, 503, { error: 'too many sse connections', code: 'connection_limit' });
+  }
+
+  // E4-5：writer 只改变写路径；greeting / 过滤后的广播帧 / 心跳统一走它。
+  const bufferOpts = deps.buffers?.() ?? null;
+  const writer = bufferOpts
+    ? new SseBoundedWriter({
+      res,
+      maxFrames: bufferOpts.maxFrames,
+      maxBytes: bufferOpts.maxBytes,
+      counters: bufferOpts.counters,
+    })
+    : null;
+  const write = (frame: string): void => {
+    if (!frame) return;
+    if (writer) writer.write(frame);
+    else res.write(frame);
+  };
+
+  let cleanupStream: (() => void) | null = null;
+  let heartbeat: NodeJS.Timeout | null = null;
+  let closed = false;
+  const close = (): void => {
+    if (closed) return;
+    closed = true;
+    if (heartbeat) {
+      clearInterval(heartbeat);
+      heartbeat = null;
+    }
+    const streamCleanup = cleanupStream;
+    cleanupStream = null;
+    try { streamCleanup?.(); } catch { /* best effort */ }
+    writer?.dispose();
+    lease?.release();
+  };
+
   try {
     // No hardcoded `*`: the gateway-level CORS middleware already applied the
     // configured origin (`config.server.cors.origin`) to this response.
@@ -639,28 +687,27 @@ export async function handlePluginWebEvents(
       'X-Accel-Buffering': 'no',
     });
   } catch {
+    close();
     return;
   }
 
   const greeting = { type: 'connected', package: name, ...(sessionID ? { sessionID } : {}) };
-  res.write(`data: ${JSON.stringify(greeting)}\n\n`);
+  write(`data: ${JSON.stringify(greeting)}\n\n`);
 
   const matches = pluginWebEventFilter(name, sessionID);
-  const cleanup = deps.attachEventStream(res, (frame) => {
-    if (matches(frame)) res.write(frame);
-  });
-  const heartbeat = setInterval(() => {
-    try { res.write(': ping\n\n'); } catch { /* closed; close handler cleans up */ }
+  try {
+    cleanupStream = deps.attachEventStream(res, (frame) => {
+      if (matches(frame)) write(frame);
+    });
+  } catch (err) {
+    close();
+    throw err;
+  }
+  heartbeat = setInterval(() => {
+    try { write(': ping\n\n'); } catch { /* closed; close handler cleans up */ }
   }, SSE_HEARTBEAT_MS);
   heartbeat.unref?.();
 
-  let closed = false;
-  const close = (): void => {
-    if (closed) return;
-    closed = true;
-    clearInterval(heartbeat);
-    cleanup();
-  };
   res.on('close', close);
   res.on('error', close);
 }

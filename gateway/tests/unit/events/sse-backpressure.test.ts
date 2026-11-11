@@ -170,7 +170,14 @@ describe('events SSE: bounded writer (E4-5)', () => {
 
     sseClients.get(res as unknown as ServerResponse)!('data: {"type":"live"}\n\n', 3);
     expect(res.frames.at(-1)).toBe('data: {"type":"live"}\n\n');
-    expect(counters.snapshot()).toEqual({ sseOverflows: 0, sseDropped: 0, wsDropped: 0 });
+    expect(counters.snapshot()).toEqual({
+      sseOverflows: 0,
+      sseDropped: 0,
+      sseWriteErrors: 0,
+      sseQueuedFrames: 0,
+      sseQueuedBytes: 0,
+      wsDropped: 0,
+    });
     req.emit('close');
   });
 
@@ -195,6 +202,24 @@ describe('events SSE: bounded writer (E4-5)', () => {
 
     res.emit('close');
     expect(sseClients.size).toBe(0);
+  });
+
+  it('releases the lease and disposes the writer when attach throws', async () => {
+    const table = tableWith(2);
+    const counters = new BufferCounters();
+    const { call } = setup({
+      connections: () => table,
+      buffers: () => ({ maxFrames: 16, maxBytes: 4096, counters }),
+      eventStore: (() => ({ headSeq: () => { throw new Error('boom'); } })) as never,
+    });
+    const req = new FakeReq('/api/events');
+    const res = new FakeRes();
+
+    await expect(call(req, res)).rejects.toThrow('boom');
+
+    expect(res.frames).toEqual([]);
+    expect(table.snapshot().sse).toBe(0); // lease released
+    expect(res.listenerCount('drain')).toBe(0); // writer disposed
   });
 
   it('does not write replay/live frames after the writer disposed', async () => {

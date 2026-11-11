@@ -78,29 +78,63 @@ export function admitUpgrade(
   kind: ConnectionKind,
   connections: (() => ConnectionTable | null) | undefined,
 ): UpgradeAdmission {
-  const table = connections?.() ?? null;
+  let table: ConnectionTable | null;
+  try {
+    table = connections?.() ?? null;
+  } catch {
+    // 连接表读取失败按拒绝处理（fail-closed）：宁可 503，也不放一个未记账的
+    // 长连接进来。绝不把异常抛进 upgrade handler（会打挂 server）。
+    return { ok: false };
+  }
   if (!table) return { ok: true, lease: null };
-  const lease = table.tryAcquire(kind);
-  return lease ? { ok: true, lease } : { ok: false };
+  try {
+    const lease = table.tryAcquire(kind);
+    return lease ? { ok: true, lease } : { ok: false };
+  } catch {
+    return { ok: false };
+  }
+}
+
+export interface UpgradeSocketLike {
+  write(chunk: string): unknown;
+  end?(chunk?: string): unknown;
+  destroy?(): void;
+  once?(event: string, listener: () => void): unknown;
+  on?(event: string, listener: () => void): unknown;
 }
 
 /** E4-4: 拒绝 upgrade —— 在 socket 上手写 503（此时还没有 HTTP 响应对象）。 */
-export function refuseUpgrade(
-  socket: { write(chunk: string): unknown; destroy(): void },
-  kind: ConnectionKind,
-): void {
+export function refuseUpgrade(socket: UpgradeSocketLike, kind: ConnectionKind): void {
   const body = JSON.stringify({
     error: `too many ${kind} connections`,
     code: 'connection_limit',
   });
-  socket.write(
-    'HTTP/1.1 503 Service Unavailable\r\n'
+  const payload = 'HTTP/1.1 503 Service Unavailable\r\n'
     + 'Content-Type: application/json\r\n'
     + `Content-Length: ${Buffer.byteLength(body)}\r\n`
     + 'Connection: close\r\n\r\n'
-    + body,
-  );
-  socket.destroy();
+    + body;
+
+  if (typeof socket.end === 'function') {
+    // 先 end 把响应写进内核缓冲，'finish' 后再 destroy；立即 destroy 会丢掉
+    // 尚未 flush 的 503 body（客户端只看到连接重置）。
+    let done = false;
+    const finish = (): void => {
+      if (done) return;
+      done = true;
+      try { socket.destroy?.(); } catch { /* already gone */ }
+    };
+    try {
+      (socket.once ?? socket.on)?.('finish', finish);
+      socket.end(payload);
+    } catch {
+      finish();
+    }
+    return;
+  }
+
+  socket.write(payload);
+  socket.destroy?.();
 }
 
 /**
@@ -222,6 +256,8 @@ export function createWsHub(server: http.Server, deps: WsHubDeps): WsHub {
         refuseUpgrade(socket, 'voice');
         return;
       }
+      // abortHandshake 可能既不回调也不抛错 —— lease 同时绑 socket，close 时必释放。
+      bindLease(socket as any, admitted.lease);
       try {
         voiceWss.handleUpgrade(req, socket, head, (ws) => {
           bindLease(ws as any, admitted.lease);
@@ -251,6 +287,7 @@ export function createWsHub(server: http.Server, deps: WsHubDeps): WsHub {
         refuseUpgrade(socket, 'terminal');
         return;
       }
+      bindLease(socket as any, admitted.lease);
       try {
         terminalWss.handleUpgrade(req, socket, head, (ws) => {
           bindLease(ws as any, admitted.lease);
@@ -303,6 +340,7 @@ export function createWsHub(server: http.Server, deps: WsHubDeps): WsHub {
       refuseUpgrade(socket, 'ws');
       return;
     }
+    bindLease(socket as any, admitted.lease);
     try {
       wss.handleUpgrade(req, socket, head, (ws) => {
         bindLease(ws as any, admitted.lease);

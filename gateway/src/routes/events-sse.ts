@@ -64,38 +64,10 @@ export function attachEventsSseRoutes(registry: RouteRegistry, deps: EventsSseRo
       return;
     }
 
-    // E4-5：writer 只改变写路径（队列/溢出断开），greeting/回放字节不变。
-    const bufferOpts = deps.buffers?.() ?? null;
-    const writer = bufferOpts
-      ? new SseBoundedWriter({
-        res,
-        maxFrames: bufferOpts.maxFrames,
-        maxBytes: bufferOpts.maxBytes,
-        counters: bufferOpts.counters,
-      })
-      : null;
-
-    // Mode A（唯一模式）：`?sessionID` 历史参数被忽略，保持向后兼容（旧客户端仍拿到
-    // 全局流，而不是 404/挂起）。2026-10-22 持久回放：Last-Event-ID 头（原生
-    // EventSource 重连自动携带）/ ?since 参数 → 重放后直播（newest-window +
-    // firstReplayedSeq 截断信号）。
-    const since = parseSince(parsedUrl.searchParams, req.headers['last-event-id'] as string | undefined);
-    const release = deps.releaseIdentity?.() ?? null;
-    const conn = attachGlobalSse({
-      res,
-      store: deps.eventStore(),
-      replayLimit: config.events.replayLimit,
-      writeFrame: writer
-        ? (_r, frame) => { if (frame) writer.write(frame); }
-        : (r, frame) => { if (frame) r.write(frame); },
-      since,
-      instanceId: release?.instanceId,
-      schemaEpoch: release?.schemaEpoch,
-    });
-    deps.sseClients().set(res, conn.write);
-
     // req.close（客户端断开）与 res.close（socket/响应被销毁，含 writer 溢出）
-    // 都可能先到；release/dispose 都幂等。
+    // 都可能先到；release/dispose 都幂等。attach 抛错时也走同一条清理路径，
+    // 否则失败的 attach 会永久占用一个 SSE 名额。
+    let writer: SseBoundedWriter | null = null;
     let cleaned = false;
     const cleanup = (): void => {
       if (cleaned) return;
@@ -104,6 +76,42 @@ export function attachEventsSseRoutes(registry: RouteRegistry, deps: EventsSseRo
       writer?.dispose();
       lease?.release();
     };
+
+    try {
+      // E4-5：writer 只改变写路径（队列/溢出断开），greeting/回放字节不变。
+      const bufferOpts = deps.buffers?.() ?? null;
+      writer = bufferOpts
+        ? new SseBoundedWriter({
+          res,
+          maxFrames: bufferOpts.maxFrames,
+          maxBytes: bufferOpts.maxBytes,
+          counters: bufferOpts.counters,
+        })
+        : null;
+
+      // Mode A（唯一模式）：`?sessionID` 历史参数被忽略，保持向后兼容（旧客户端仍拿到
+      // 全局流，而不是 404/挂起）。2026-10-22 持久回放：Last-Event-ID 头（原生
+      // EventSource 重连自动携带）/ ?since 参数 → 重放后直播（newest-window +
+      // firstReplayedSeq 截断信号）。
+      const since = parseSince(parsedUrl.searchParams, req.headers['last-event-id'] as string | undefined);
+      const release = deps.releaseIdentity?.() ?? null;
+      const conn = attachGlobalSse({
+        res,
+        store: deps.eventStore(),
+        replayLimit: config.events.replayLimit,
+        writeFrame: writer
+          ? (_r, frame) => { if (frame) writer!.write(frame); }
+          : (r, frame) => { if (frame) r.write(frame); },
+        since,
+        instanceId: release?.instanceId,
+        schemaEpoch: release?.schemaEpoch,
+      });
+      deps.sseClients().set(res, conn.write);
+    } catch (err) {
+      cleanup();
+      throw err;
+    }
+
     req.on('close', cleanup);
     try {
       res.on?.('close', cleanup);

@@ -5,6 +5,10 @@
  * 按序冲刷；队列越界（帧数或字节）就断开连接——SSE 客户端靠 `since` /
  * Last-Event-ID 重连回放，断开是安全动作。测试用 EventEmitter 假 res，
  * 不碰真实 socket。
+ *
+ * Batch-2 review: 写错误同样要断开 + 记账（direct frame + queue），聚合队列
+ * 计数进 `BufferCounters` 供 `/api/kernel/stats`；缓冲上限的 0 是"回退默认值"
+ * 而非无限（与连接/配额上限的 0=不限 语义不同）。
  */
 import { EventEmitter } from 'events';
 import type * as http from 'http';
@@ -51,6 +55,21 @@ function makeWriter(over: { maxFrames?: number; maxBytes?: number; counters?: Bu
   return { res, writer, counters, overflows };
 }
 
+function expectCounters(
+  counters: BufferCounters,
+  expected: Partial<ReturnType<BufferCounters['snapshot']>>,
+) {
+  expect(counters.snapshot()).toEqual({
+    sseOverflows: 0,
+    sseDropped: 0,
+    sseWriteErrors: 0,
+    sseQueuedFrames: 0,
+    sseQueuedBytes: 0,
+    wsDropped: 0,
+    ...expected,
+  });
+}
+
 describe('SseBoundedWriter: fast path', () => {
   it('writes straight through while the socket accepts', () => {
     const { res, writer } = makeWriter();
@@ -58,7 +77,7 @@ describe('SseBoundedWriter: fast path', () => {
     writer.write('b');
 
     expect(res.frames).toEqual(['a', 'b']);
-    expect(writer.stats()).toEqual({ queuedFrames: 0, queuedBytes: 0, overflows: 0 });
+    expect(writer.stats()).toEqual({ queuedFrames: 0, queuedBytes: 0, overflows: 0, writeErrors: 0 });
     writer.dispose();
   });
 
@@ -74,13 +93,17 @@ describe('SseBoundedWriter: fast path', () => {
       queuedFrames: 2,
       queuedBytes: Buffer.byteLength('b') + Buffer.byteLength('c'),
       overflows: 0,
+      writeErrors: 0,
     });
-    expect(counters.snapshot()).toEqual({ sseOverflows: 0, sseDropped: 0, wsDropped: 0 });
+    expectCounters(counters, {
+      sseQueuedFrames: 2,
+      sseQueuedBytes: Buffer.byteLength('b') + Buffer.byteLength('c'),
+    });
     writer.dispose();
   });
 
-  it('flushes the queue in order on drain', () => {
-    const { res, writer } = makeWriter();
+  it('flushes the queue in order on drain and returns the aggregate queue to 0', () => {
+    const { res, writer, counters } = makeWriter();
     res.writeReturns = false;
     writer.write('a');
     writer.write('b');
@@ -90,7 +113,8 @@ describe('SseBoundedWriter: fast path', () => {
     res.emit('drain');
 
     expect(res.frames).toEqual(['a', 'b', 'c']);
-    expect(writer.stats()).toEqual({ queuedFrames: 0, queuedBytes: 0, overflows: 0 });
+    expect(writer.stats()).toEqual({ queuedFrames: 0, queuedBytes: 0, overflows: 0, writeErrors: 0 });
+    expectCounters(counters);
     writer.dispose();
   });
 
@@ -121,13 +145,14 @@ describe('SseBoundedWriter: overflow (disconnect slow client)', () => {
     writer.write('q1');
     writer.write('q2');
     expect(res.destroyed).toBe(false);
+    expectCounters(counters, { sseQueuedFrames: 2, sseQueuedBytes: Buffer.byteLength('q1') + Buffer.byteLength('q2') });
 
     writer.write('q3'); // queue would be 3 > 2 → overflow
 
     expect(res.destroyed).toBe(true);
     expect(overflows).toEqual(['limit']);
-    expect(writer.stats()).toEqual({ queuedFrames: 0, queuedBytes: 0, overflows: 1 });
-    expect(counters.snapshot()).toEqual({ sseOverflows: 1, sseDropped: 3, wsDropped: 0 });
+    expect(writer.stats()).toEqual({ queuedFrames: 0, queuedBytes: 0, overflows: 1, writeErrors: 0 });
+    expectCounters(counters, { sseOverflows: 1, sseDropped: 3 });
     writer.dispose();
   });
 
@@ -143,7 +168,7 @@ describe('SseBoundedWriter: overflow (disconnect slow client)', () => {
 
     expect(res.destroyed).toBe(true);
     expect(overflows).toEqual(['limit']);
-    expect(counters.snapshot()).toEqual({ sseOverflows: 1, sseDropped: 3, wsDropped: 0 });
+    expectCounters(counters, { sseOverflows: 1, sseDropped: 3 });
     writer.dispose();
   });
 
@@ -181,37 +206,62 @@ describe('SseBoundedWriter: overflow (disconnect slow client)', () => {
     expect(res.frames).toEqual(['first']);
     expect(res.frames.length).toBe(framesAfterOverflow);
     expect(counters.sseDropped).toBe(2);
+    expectCounters(counters, { sseOverflows: 1, sseDropped: 2 });
     writer.dispose();
   });
+});
 
-  it('treats a throwing write() as a dead socket: dispose + count dropped', () => {
-    const { res, writer, counters } = makeWriter();
+describe('SseBoundedWriter: write error (dead socket)', () => {
+  it('destroys, drops the direct frame + queued frames, and counts a write error', () => {
+    const { res, writer, counters } = makeWriter({ maxFrames: 16 });
+    res.writeReturns = false;
+    writer.write('first');
+    writer.write('q1');
+    writer.write('q2');
+    writer.write('q3');
+    expectCounters(counters, { sseQueuedFrames: 3, sseQueuedBytes: Buffer.byteLength('q1q2q3') });
+
     res.throwOnWrite = true;
+    res.emit('drain'); // shifts 'q1' (direct frame), write throws; q2/q3 remain queued
 
-    expect(() => writer.write('a')).not.toThrow();
-    expect(counters.sseDropped).toBe(1);
-    expect(writer.stats().overflows).toBe(0);
+    expect(res.destroyed).toBe(true);
+    expect(writer.stats()).toEqual({ queuedFrames: 0, queuedBytes: 0, overflows: 0, writeErrors: 1 });
+    expectCounters(counters, { sseDropped: 3, sseWriteErrors: 1 });
+    expect(counters.sseDropped).toBe(3);
 
     // disposed: later writes do not reach the response or the counters
     res.throwOnWrite = false;
     writer.write('b');
-    expect(res.frames).toEqual([]);
-    expect(counters.sseDropped).toBe(1);
+    expect(res.frames).toEqual(['first']);
+    expectCounters(counters, { sseDropped: 3, sseWriteErrors: 1 });
+    writer.dispose();
+  });
+
+  it('handles a direct write() throw (no queue): dropped 1, destroy called', () => {
+    const { res, writer, counters } = makeWriter();
+    res.throwOnWrite = true;
+
+    expect(() => writer.write('a')).not.toThrow();
+    expect(res.destroyed).toBe(true);
+    expect(writer.stats()).toEqual({ queuedFrames: 0, queuedBytes: 0, overflows: 0, writeErrors: 1 });
+    expectCounters(counters, { sseDropped: 1, sseWriteErrors: 1 });
     writer.dispose();
   });
 });
 
 describe('SseBoundedWriter: dispose', () => {
-  it('removes the drain listener and clears the queue', () => {
-    const { res, writer } = makeWriter();
+  it('removes the drain listener, clears the queue and resets aggregate queue counters', () => {
+    const { res, writer, counters } = makeWriter();
     res.writeReturns = false;
     writer.write('first');
     writer.write('queued');
     expect(res.listenerCount('drain')).toBe(1);
+    expectCounters(counters, { sseQueuedFrames: 1, sseQueuedBytes: Buffer.byteLength('queued') });
 
     writer.dispose();
     expect(res.listenerCount('drain')).toBe(0);
     expect(writer.stats().queuedFrames).toBe(0);
+    expectCounters(counters);
 
     res.writeReturns = true;
     res.emit('drain');
@@ -224,6 +274,35 @@ describe('SseBoundedWriter: dispose', () => {
     writer.dispose();
     writer.write('late');
     expect(res.frames).toEqual([]);
+  });
+});
+
+describe('SseBoundedWriter: cap normalization (0 = fallback, not unlimited)', () => {
+  it('falls back to 256 frames when maxFrames is 0/negative/NaN', () => {
+    for (const bad of [0, -1, Number.NaN]) {
+      const { res, writer, counters } = makeWriter({ maxFrames: bad as number, maxBytes: 1 << 20 });
+      res.writeReturns = false;
+      writer.write('first');
+      for (let i = 0; i < 256; i += 1) writer.write(`q${i}`);
+      expect(res.destroyed).toBe(false); // 256 queued is still within the fallback cap
+
+      writer.write('q257'); // 257 > 256 → overflow
+      expect(res.destroyed).toBe(true);
+      expect(counters.sseOverflows).toBe(1);
+      writer.dispose();
+    }
+  });
+
+  it('falls back to 1 MiB when maxBytes is 0', () => {
+    const { res, writer } = makeWriter({ maxFrames: 10_000, maxBytes: 0 });
+    res.writeReturns = false;
+    writer.write('first');
+    writer.write('x'.repeat(1024 * 1024)); // exactly 1 MiB is still allowed
+    expect(res.destroyed).toBe(false);
+
+    writer.write('y'); // 1 MiB + 1 → overflow
+    expect(res.destroyed).toBe(true);
+    writer.dispose();
   });
 });
 
@@ -256,12 +335,18 @@ describe('sendWsBounded', () => {
     expect(counters.wsDropped).toBe(1);
   });
 
-  it('never drops when the cap is unlimited (0)', () => {
+  it('treats cap 0/negative/NaN as the 1 MiB fallback (not unlimited)', () => {
     const counters = new BufferCounters();
-    const ws = fakeWs(10 * 1024 * 1024);
-    expect(sendWsBounded(ws, 'frame', 0, counters)).toBe(true);
-    expect(ws.sent).toEqual(['frame']);
-    expect(counters.wsDropped).toBe(0);
+    for (const cap of [0, -1, Number.NaN]) {
+      const under = fakeWs(5000);
+      expect(sendWsBounded(under, 'frame', cap, counters)).toBe(true);
+      expect(under.sent).toEqual(['frame']);
+
+      const over = fakeWs(2 * 1024 * 1024);
+      expect(sendWsBounded(over, 'frame', cap, counters)).toBe(false);
+      expect(over.terminated).toBe(true);
+    }
+    expect(counters.wsDropped).toBe(3);
   });
 
   it('terminates and counts when send() throws (socket died mid-broadcast)', () => {
@@ -285,11 +370,34 @@ describe('sendWsBounded', () => {
 });
 
 describe('BufferCounters', () => {
-  it('snapshots the three E4 counters independently', () => {
+  it('snapshots every counter independently', () => {
     const counters = new BufferCounters();
     counters.sseOverflows = 2;
     counters.sseDropped = 7;
+    counters.sseWriteErrors = 1;
+    counters.sseQueuedFrames = 3;
+    counters.sseQueuedBytes = 42;
     counters.wsDropped = 3;
-    expect(counters.snapshot()).toEqual({ sseOverflows: 2, sseDropped: 7, wsDropped: 3 });
+    expect(counters.snapshot()).toEqual({
+      sseOverflows: 2,
+      sseDropped: 7,
+      sseWriteErrors: 1,
+      sseQueuedFrames: 3,
+      sseQueuedBytes: 42,
+      wsDropped: 3,
+    });
+  });
+
+  it('bumpQueue applies deltas and clamps the aggregate at 0', () => {
+    const counters = new BufferCounters();
+    counters.bumpQueue(2, 30);
+    counters.bumpQueue(1, 12);
+    expect(counters.snapshot()).toMatchObject({ sseQueuedFrames: 3, sseQueuedBytes: 42 });
+
+    counters.bumpQueue(-1, -12);
+    expect(counters.snapshot()).toMatchObject({ sseQueuedFrames: 2, sseQueuedBytes: 30 });
+
+    counters.bumpQueue(-99, -999);
+    expect(counters.snapshot()).toMatchObject({ sseQueuedFrames: 0, sseQueuedBytes: 0 });
   });
 });

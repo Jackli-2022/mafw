@@ -6,7 +6,7 @@
  * socket / ws 的 close+error（二者都可能先到），必须只释放一次。
  */
 import * as http from 'http';
-import { admitUpgrade, createWsHub, type WsHubDeps } from '../../../src/http/ws-upgrade';
+import { admitUpgrade, createWsHub, refuseUpgrade, type WsHubDeps } from '../../../src/http/ws-upgrade';
 import { ConnectionTable } from '../../../src/resources/connections';
 import * as pluginWeb from '../../../src/routes/plugin-web';
 
@@ -256,5 +256,89 @@ describe('createWsHub: connection limits at upgrade time', () => {
     const socket = fire('/api/ws');
     expect(upgrade.ws).toHaveBeenCalledTimes(1);
     expect(socket.written).toBe('');
+  });
+});
+
+describe('createWsHub: aborted handshakes (E4 batch2 review)', () => {
+  it('releases the lease when handleUpgrade aborts without a callback', () => {
+    const table = tableWith({ wsClients: 2 });
+    const { upgrade, fire } = setup(() => table);
+    // abortHandshake: no throw, callback never invoked.
+    upgrade.ws.mockImplementation((() => undefined) as never);
+
+    const socket = fire('/api/ws');
+    expect(table.snapshot().ws).toBe(1);
+
+    socket.emit('close');
+    expect(table.snapshot().ws).toBe(0);
+  });
+
+  it('releases once when both the socket and the ws emit close', () => {
+    const table = tableWith({ wsClients: 1 });
+    const { upgrade, fire } = setup(() => table);
+    const ws = fakeWs();
+    upgrade.ws.mockImplementation(((_req, _socket, _head, cb) => cb(ws as never)) as never);
+
+    const socket = fire('/api/ws');
+    expect(table.snapshot().ws).toBe(1);
+
+    ws.emit('error');
+    ws.emit('close');
+    socket.emit('close');
+    expect(table.snapshot().ws).toBe(0);
+
+    // A double release would clamp at 0 and silently free an extra slot —
+    // with limit 1 the first acquire must succeed and the next must be refused.
+    expect(table.tryAcquire('ws')).not.toBeNull();
+    expect(table.tryAcquire('ws')).toBeNull();
+  });
+
+  it('refuses with 503 when the connections getter throws', () => {
+    const { upgrade, fire } = setup(() => { throw new Error('table boom'); });
+
+    const socket = fire('/api/ws');
+
+    expect(upgrade.ws).not.toHaveBeenCalled();
+    expect(httpBody(socket.written)).toEqual({ error: 'too many ws connections', code: 'connection_limit' });
+    expect(socket.destroyed).toBe(true);
+  });
+});
+
+describe('refuseUpgrade: response flush', () => {
+  function fakeEndingSocket() {
+    const events: string[] = [];
+    const socket = {
+      written: '',
+      events,
+      listeners: {} as Record<string, Array<() => void>>,
+      write(chunk: string) { socket.written += chunk; return true; },
+      end(chunk?: string) {
+        events.push('end');
+        if (chunk !== undefined) socket.written += chunk;
+        for (const fn of socket.listeners.finish ?? []) fn();
+      },
+      once(ev: string, fn: () => void) {
+        (socket.listeners[ev] = socket.listeners[ev] ?? []).push(fn);
+        return socket;
+      },
+      destroy() { events.push('destroy'); },
+    };
+    return socket;
+  }
+
+  it('calls end(payload) then destroys on finish (body preserved)', () => {
+    const socket = fakeEndingSocket();
+    refuseUpgrade(socket as never, 'sse');
+
+    expect(socket.events).toEqual(['end', 'destroy']);
+    expect(socket.written).toMatch(/^HTTP\/1\.1 503 Service Unavailable\r\n/);
+    expect(httpBody(socket.written)).toEqual({ error: 'too many sse connections', code: 'connection_limit' });
+  });
+
+  it('falls back to write+destroy when the socket has no end()', () => {
+    const socket = fakeSocket();
+    refuseUpgrade(socket as never, 'ws');
+    expect(socket.destroyed).toBe(true);
+    expect(httpBody(socket.written).code).toBe('connection_limit');
   });
 });

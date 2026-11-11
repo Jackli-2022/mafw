@@ -32,3 +32,15 @@ export function limitOf(n: unknown): number {
   if (typeof n !== 'number' || !Number.isFinite(n) || n <= 0) return Infinity;
   return Math.floor(n);
 }
+
+/**
+ * 缓冲/队列容量：finite 且 > 0 时向下取整；0/负数/NaN/缺失 = 回退默认值。
+ *
+ * 与 `limitOf` 的语义**不同**：连接/配额上限的 `0` 表示"不限"，而缓冲区
+ * 的 `0` 不能退化成无界（那正是 E4-5 要修的问题），所以回退到一个明确的
+ * 默认容量。
+ */
+export function resolveCap(n: unknown, fallback: number): number {
+  if (typeof n !== 'number' || !Number.isFinite(n) || n <= 0) return fallback;
+  return Math.floor(n);
+}

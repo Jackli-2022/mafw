@@ -3,7 +3,7 @@
  * clamped-ratio / sane-interval rules so every provider agrees.
  * Spec: docs/superpowers/specs/2026-11-11-gateway-e4-resource-ledger-design.md §5
  */
-import { clampRatio, limitOf, resolveSampleIntervalMs } from '../../../src/resources/settings';
+import { clampRatio, limitOf, resolveCap, resolveSampleIntervalMs } from '../../../src/resources/settings';
 
 describe('resolveSampleIntervalMs', () => {
   test('keeps configured values >= 1000ms, floored', () => {
@@ -53,5 +53,20 @@ describe('limitOf', () => {
     for (const unlimited of [0, -1, -0.5, NaN, Infinity, undefined, null, '5']) {
       expect(limitOf(unlimited)).toBe(Infinity);
     }
+  });
+});
+
+describe('resolveCap', () => {
+  test('positive values are floored', () => {
+    expect(resolveCap(256, 99)).toBe(256);
+    expect(resolveCap(256.9, 99)).toBe(256);
+    expect(resolveCap(1, 99)).toBe(1);
+  });
+
+  test('0 / negative / non-finite / missing fall back instead of meaning unlimited', () => {
+    for (const bad of [0, -1, -0.5, NaN, Infinity, -Infinity, undefined, null, '256']) {
+      expect(resolveCap(bad, 256)).toBe(256);
+    }
+    expect(resolveCap(0, 1048576)).toBe(1048576);
   });
 });

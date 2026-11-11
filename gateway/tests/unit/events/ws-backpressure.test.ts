@@ -69,7 +69,14 @@ describe('EventHub: WS broadcast backpressure (E4-5)', () => {
     expect(slow.sent).toEqual([]);
     expect(slow.terminated).toBe(true);
     expect(hub.wsClients.has(slow as unknown as WebSocket)).toBe(false);
-    expect(counters.snapshot()).toEqual({ sseOverflows: 0, sseDropped: 0, wsDropped: 1 });
+    expect(counters.snapshot()).toEqual({
+      sseOverflows: 0,
+      sseDropped: 0,
+      sseWriteErrors: 0,
+      sseQueuedFrames: 0,
+      sseQueuedBytes: 0,
+      wsDropped: 1,
+    });
     // Slow device was not served → it must not be excluded from push fallback.
     expect(deliveries.map((d) => d.deviceId)).toEqual(['dev-ok', 'dev-slow', 'dev-offline']);
     expect(deliveries.some((d) => d.deviceId === 'dev-slow')).toBe(true);
@@ -95,17 +102,21 @@ describe('EventHub: WS broadcast backpressure (E4-5)', () => {
     expect(deliveries.map((d) => d.deviceId)).toEqual(['dev-slow', 'dev-offline']);
   });
 
-  it('leaves WS untouched when no cap is configured (existing behavior)', () => {
+  it('treats a 0 cap as the 1 MiB fallback (not unlimited)', () => {
     const counters = new BufferCounters();
-    const { hub } = makeHub(counters, 0); // 0 = unlimited
-    const ws = fakeWs(undefined, 50 * 1024 * 1024);
-    hub.wsClients.add(ws as unknown as WebSocket);
+    const { hub } = makeHub(counters, 0);
+    const small = fakeWs(undefined, 5000);
+    const huge = fakeWs(undefined, 50 * 1024 * 1024);
+    hub.wsClients.add(small as unknown as WebSocket);
+    hub.wsClients.add(huge as unknown as WebSocket);
 
     hub.broadcast({ type: 'turn.completed' });
 
-    expect(ws.sent).toHaveLength(1);
-    expect(ws.terminated).toBe(false);
-    expect(counters.wsDropped).toBe(0);
+    expect(small.sent).toHaveLength(1);
+    expect(small.terminated).toBe(false);
+    expect(huge.sent).toEqual([]);
+    expect(huge.terminated).toBe(true);
+    expect(counters.wsDropped).toBe(1);
   });
 
   it('keeps the SSE loop unchanged (writer owns SSE backpressure)', () => {
