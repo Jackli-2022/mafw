@@ -157,7 +157,7 @@ describe('createRequestListener: OPTIONS → auth → registry order', () => {
     const { res, rec } = fakeRes();
     await listener(fakeReq({ method: 'GET', url: '/api/goals', remoteAddress: REMOTE }), res);
     expect(rec.status).toBe(401);
-    expect(JSON.parse(rec.body)).toEqual({ error: 'unauthorized' });
+    expect(JSON.parse(rec.body)).toEqual({ error: 'unauthorized', code: 'unauthorized' });
     expect(spies.dispatchAuthorized).not.toHaveBeenCalled();
     expect(spies.dashboardDispatch).not.toHaveBeenCalled();
   });

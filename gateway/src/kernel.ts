@@ -40,6 +40,7 @@ import { handleDashboardAPI, type DashboardLegacyDeps } from './subsystems/dashb
 // D3 Task 6：43 条 attach*（lead/pod cargo 在内）整体搬入 subsystems/（顺序即优先级）。
 import { attachAllRoutes, type ApiRouteDeps } from './subsystems/api-routes';
 import { normalizeDir, isPortHealthy } from './core/http/http-util';
+import { errorBody, API_ERROR_CODES } from './core/http/api-error';
 import { NodeDriver } from './core/goal/driver';
 import { parseReviewRubric, taskIdsFromWavePlan } from './core/goal/review-rubric';
 import { ensureGoalState, effectiveRevision, isTerminalState, loadGoalState } from './core/goal/state-v3';
@@ -1105,7 +1106,10 @@ class MafwScheduler {
   private capGuard(res: http.ServerResponse, surface: string): boolean {
     if (this.runtime?.access.can(surface)) return false;
     res.writeHead(503);
-    res.end(JSON.stringify({ error: `runtime surface '${surface}' is not available` }));
+    res.end(JSON.stringify(errorBody(
+      `runtime surface '${surface}' is not available`,
+      API_ERROR_CODES.capability_unavailable,
+    )));
     return true;
   }
 
@@ -1114,7 +1118,10 @@ class MafwScheduler {
     const legacyQuestion = this.runtimeCaps.questionApi === undefined && !!this.runtimeCaps.nativeApprovals;
     if (this.runtime?.access.can('approval.question.list') || legacyQuestion) return false;
     res.writeHead(503);
-    res.end(JSON.stringify({ error: "runtime surface 'approval.question.list' is not available" }));
+    res.end(JSON.stringify(errorBody(
+      "runtime surface 'approval.question.list' is not available",
+      API_ERROR_CODES.capability_unavailable,
+    )));
     return true;
   }
 

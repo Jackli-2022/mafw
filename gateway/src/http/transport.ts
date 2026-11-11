@@ -31,6 +31,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
 import { authorizeRequest, isLoopbackAddr } from '../core/auth';
+import { errorBody, API_ERROR_CODES } from '../core/http/api-error';
 import { handleGoalControlCommand } from '../core/goal/control-command';
 import { readBody } from '../core/http/http-util';
 import { log } from '../core/utils/logger';
@@ -164,7 +165,7 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
     const apiToken = deps.apiToken();
     if (!authorizeRequest({ remoteAddress: req.socket.remoteAddress || '', headers: req.headers as any, url: req.url, host: String(req.headers.host || '') }, apiToken)) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'unauthorized' }));
+      res.end(JSON.stringify(errorBody('unauthorized', API_ERROR_CODES.unauthorized)));
       return;
     }
 
@@ -184,7 +185,7 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
 
     // POST /a2a — A2A JSON-RPC (standard protocol methods)
     if (url === "/a2a" && req.method === "POST") {
-      if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
+      if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify(errorBody('forbidden', API_ERROR_CODES.forbidden))); return; }
       try {
         if (!deps.mediaAgent()) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaAgent not initialized' })); return; }
         const rawBody = await readBody(req);
@@ -205,7 +206,7 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
 
     // GET /.well-known/agent-card.json — A2A agent discovery
     if (url === '/.well-known/agent-card.json' && req.method === 'GET') {
-      if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
+      if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify(errorBody('forbidden', API_ERROR_CODES.forbidden))); return; }
       try {
         if (!deps.mediaAgent()) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaAgent not initialized' })); return; }
         res.setHeader('Content-Type', 'application/a2a+json');
@@ -220,7 +221,7 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
     // GET /a2a/artifacts/<id> — task artifact download (spec §6.7 output reference)
     const artifactId = matchArtifactId(url);
     if (artifactId && req.method === 'GET') {
-      if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
+      if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify(errorBody('forbidden', API_ERROR_CODES.forbidden))); return; }
       try {
         if (!deps.mediaAgent()) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaAgent not initialized' })); return; }
         const artifact = deps.mediaAgent()!.getArtifact(artifactId);
@@ -469,7 +470,7 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
     } catch (err: any) {
       log.error('[Scheduler] Unhandled request error:', err.message);
       if (!res.headersSent) {
-        try { res.writeHead(500); res.end(JSON.stringify({ error: err.message }));
+        try { res.writeHead(500); res.end(JSON.stringify(errorBody(err.message, API_ERROR_CODES.internal)));
         } catch { /* response already ended */ }
       }
     }
