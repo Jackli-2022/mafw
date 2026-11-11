@@ -86,9 +86,22 @@ export class SdkSessionResource {
 
   /** 单目录（项目）会话数（stats/配额）。 */
   countByDirectory(directory: string): number {
+    const key = this.directoryKey(directory);
     let n = 0;
-    for (const session of this.sessions.values()) if (session.directory === directory) n++;
+    for (const session of this.sessions.values()) {
+      if (this.directoryKey(session.directory) === key) n++;
+    }
     return n;
+  }
+
+  /**
+   * 目录归一化键：绝对路径 + Windows 大小写不敏感。
+   * `C:\p\x`、`C:\p\x\`、`c:\p\x` 必须是同一个配额桶，否则配额可被
+   * 尾斜杠/大小写变体绕过。
+   */
+  private directoryKey(directory: string): string {
+    const resolved = path.resolve(directory);
+    return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
   }
 
   setClient(client: any) { this.client = client; }

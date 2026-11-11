@@ -133,6 +133,8 @@ export class LlamaCppServerProvider implements EmbeddingProvider {
   private exitHookRegistered = false;
   /** E4-6: 侧车子进程的台账句柄（exit/kill 两条路径都释放，幂等）。 */
   private processHandle?: ProcessHandle;
+  /** 该句柄归属的子进程；旧 child 的迟到 exit 事件不得释放新 child 的句柄。 */
+  private processChild?: ChildProcess;
 
   constructor(opts: { model?: string; dimensions?: number; llamacpp?: LlamaCppConfig }) {
     this.cfg = opts.llamacpp ?? {};
@@ -270,16 +272,21 @@ export class LlamaCppServerProvider implements EmbeddingProvider {
         '--log-disable',
       ], { windowsHide: true, stdio: 'ignore' });
       this.processHandle?.release();
+      this.processHandle = undefined;
+      this.processChild = undefined;
       this.processHandle = processLedger?.register({
         kind: 'llamacpp',
         pid: this.child.pid ?? undefined,
         label: 'llama-server',
         close: () => this.killServer(),
       });
-      this.child.on('exit', code => {
+      this.processChild = this.child;
+      const spawned = this.child;
+      spawned.on('exit', code => {
         log.warn(`[LlamaCpp] server exited (code ${code}) — next embed restarts it`);
-        this.processHandle?.release();
-        this.processHandle = undefined;
+        // 迟到的 exit 事件：旧 child 已不是当前侧车，禁止动新 child 的句柄/状态。
+        if (spawned !== this.child) return;
+        this.releaseProcessHandle(spawned);
         this.child = null;
         this.baseUrl = null;
         this.starting = null;
@@ -313,8 +320,8 @@ export class LlamaCppServerProvider implements EmbeddingProvider {
     const child = this.child;
     this.child = null;
     this.baseUrl = null;
-    this.processHandle?.release();
-    this.processHandle = undefined;
+    // 只释放「被杀的这个 child」的句柄；旧 child 的延迟清理不得误伤新侧车。
+    this.releaseProcessHandle(child);
     if (!child || child.killed || child.pid == null) return;
     try {
       if (process.platform === 'win32') {
@@ -324,6 +331,14 @@ export class LlamaCppServerProvider implements EmbeddingProvider {
         child.kill('SIGTERM');
       }
     } catch { /* best effort */ }
+  }
+
+  /** 释放属于 `child` 的台账句柄（不是它的 → no-op，保护新侧车）。 */
+  private releaseProcessHandle(child: ChildProcess | null): void {
+    if (!child || this.processChild !== child) return;
+    this.processHandle?.release();
+    this.processHandle = undefined;
+    this.processChild = undefined;
   }
 
   private async postEmbeddings(fetchFn: typeof fetch, baseUrl: string, inputs: string[]): Promise<any> {

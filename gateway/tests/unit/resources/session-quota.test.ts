@@ -4,6 +4,7 @@
  */
 import { QuotaExceededError, QuotaService } from '../../../src/resources/quotas';
 import { SdkSessionResource } from '../../../src/runtime/sdk-session';
+import * as path from 'path';
 
 type Limits = { projects: number; sessions: number; sessionRecordsPerProject: number };
 
@@ -92,5 +93,39 @@ describe('SdkSessionResource: session quotas', () => {
     const sessions = resource(quotas({ sessionRecordsPerProject: 1 }));
     await sessions.registerExternal('ext-1', '/proj/a');
     await expect(sessions.registerExternal('ext-2', '/proj/a')).rejects.toBeInstanceOf(QuotaExceededError);
+  });
+
+  it('shares one per-directory bucket across trailing separators', async () => {
+    const sessions = resource(quotas({ sessionRecordsPerProject: 1 }));
+    const dir = path.resolve(__dirname, 'proj-trailing');
+    await sessions.create(dir);
+    await expect(sessions.create(dir + path.sep)).rejects.toBeInstanceOf(QuotaExceededError);
+    expect(sessions.countByDirectory(dir + path.sep)).toBe(1);
+    expect(sessions.countByDirectory(dir)).toBe(1);
+  });
+
+  it('normalizes Windows directory casing for the per-directory bucket', async () => {
+    if (process.platform !== 'win32') return;
+    const sessions = resource(quotas({ sessionRecordsPerProject: 1 }));
+    const dir = path.resolve(__dirname, 'proj-case');
+    await sessions.create(dir.toLowerCase());
+    await expect(sessions.create(dir.toUpperCase())).rejects.toBeInstanceOf(QuotaExceededError);
+    expect(sessions.countByDirectory(dir.toUpperCase())).toBe(1);
+  });
+
+  it('rejects BEFORE calling the runtime (no SDK session without a local record)', async () => {
+    const client = {
+      session: {
+        create: jest.fn(async () => ({ id: 'sdk-1', projectID: 'p', title: 't' })),
+        delete: jest.fn(async () => undefined),
+      },
+    };
+    const sessions = new SdkSessionResource(client as any, undefined, { quotas: quotas({ sessions: 1 }) });
+    await sessions.create('/proj/a');
+    expect(client.session.create).toHaveBeenCalledTimes(1);
+
+    await expect(sessions.create('/proj/b')).rejects.toBeInstanceOf(QuotaExceededError);
+    expect(client.session.create).toHaveBeenCalledTimes(1);
+    expect(sessions.count()).toBe(1);
   });
 });

@@ -143,3 +143,90 @@ describe('SessionKernels: process ledger', () => {
     expect(typeof entries[0].lastUsed).toBe('number');
   });
 });
+
+describe('KernelManager.isBusy', () => {
+  it('is idle after construction and busy with pending / queued / draining work', () => {
+    const km = new KernelManager('s', 'python');
+    try {
+      expect(km.isBusy()).toBe(false);
+
+      (km as any).pending.set('m1', {});
+      expect(km.isBusy()).toBe(true);
+      (km as any).pending.clear();
+
+      (km as any).queue.push(async () => undefined);
+      expect(km.isBusy()).toBe(true);
+      (km as any).queue.length = 0;
+
+      (km as any).draining = true;
+      expect(km.isBusy()).toBe(true);
+      (km as any).draining = false;
+
+      expect(km.isBusy()).toBe(false);
+    } finally {
+      km.dispose();
+    }
+  });
+});
+
+describe('SessionKernels: busy kernels are never evicted', () => {
+  let kernels: SessionKernels | undefined;
+
+  afterEach(() => {
+    kernels?.disposeAll();
+    kernels = undefined;
+  });
+
+  it('does not evict a busy kernel even when it is older than idleEvictMs', () => {
+    let now = 0;
+    kernels = new SessionKernels('python', {
+      maxKernels: () => 1,
+      idleEvictMs: IDLE_MS,
+      now: () => now,
+    });
+    const a = kernels.get('a');
+    const isBusy = jest.spyOn(a, 'isBusy').mockReturnValue(true);
+    now += IDLE_MS + 1;
+
+    expect(() => kernels!.get('b')).toThrow(QuotaExceededError);
+    expect(kernels.count()).toBe(1);
+
+    // Once the kernel drains, the next attempt may evict it.
+    isBusy.mockReturnValue(false);
+    expect(kernels.get('b')).toBeInstanceOf(KernelManager);
+    expect(kernels.count()).toBe(1);
+    expect(kernels.entries()[0].sessionId).toBe('b');
+  });
+
+  it('sweep skips busy kernels and evicts + releases them once idle', () => {
+    const release = jest.fn();
+    const ledger = { register: jest.fn(() => ({ id: 'h1', release })) } as unknown as ProcessLedger;
+    let now = 0;
+    kernels = new SessionKernels('python', { ledger, maxKernels: () => 4, now: () => now });
+    const a = kernels.get('a');
+    const isBusy = jest.spyOn(a, 'isBusy').mockReturnValue(true);
+
+    now = 60 * 60 * 1000 + 1;
+    (kernels as any).sweep();
+    expect(kernels.count()).toBe(1);
+    expect(release).not.toHaveBeenCalled();
+
+    isBusy.mockReturnValue(false);
+    (kernels as any).sweep();
+    expect(kernels.count()).toBe(0);
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('sweep releases ledger handles for idle kernels', () => {
+    const release = jest.fn();
+    const ledger = { register: jest.fn(() => ({ id: 'h1', release })) } as unknown as ProcessLedger;
+    let now = 0;
+    kernels = new SessionKernels('python', { ledger, maxKernels: () => 4, now: () => now });
+    kernels.get('a');
+
+    now = 60 * 60 * 1000 + 1;
+    (kernels as any).sweep();
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(kernels.count()).toBe(0);
+  });
+});

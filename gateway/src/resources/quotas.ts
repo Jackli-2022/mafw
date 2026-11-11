@@ -25,6 +25,9 @@ export interface QuotaCheck {
   current: number;
 }
 
+/** `snapshot()` 形状：按资源键控，limit 保留原始配置值（`0` = 不限）。 */
+export type QuotaSnapshot = Partial<Record<QuotaResource, { current: number; limit: number }>>;
+
 export class QuotaExceededError extends Error {
   readonly code = 'quota_exceeded';
 
@@ -64,16 +67,15 @@ export class QuotaService {
   }
 
   /** 只报告调用方显式给出 current 的资源（顺序固定，limit 保留原始值）。 */
-  snapshot(currents: Partial<Record<QuotaResource, number>>): Array<{ resource: QuotaResource; current: number; limit: number }> {
-    const out: Array<{ resource: QuotaResource; current: number; limit: number }> = [];
+  snapshot(currents: Partial<Record<QuotaResource, number>>): QuotaSnapshot {
+    const out: QuotaSnapshot = {};
     for (const resource of RESOURCE_ORDER) {
       if (!(resource in currents)) continue;
       const current = currents[resource];
-      out.push({
-        resource,
+      out[resource] = {
         current: typeof current === 'number' && Number.isFinite(current) ? current : 0,
         limit: this.rawLimit(resource),
-      });
+      };
     }
     return out;
   }

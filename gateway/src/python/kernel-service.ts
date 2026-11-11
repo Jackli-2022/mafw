@@ -191,6 +191,14 @@ export class KernelManager {
     return this.kernel?.pid ?? undefined;
   }
 
+  /**
+   * 是否有在途/排队的用户代码。驱逐必须避开忙碌内核：dispose() 会杀掉
+   * 正在执行的单元（用户数据丢失），宁可拒绝新会话也不要中断执行。
+   */
+  isBusy(): boolean {
+    return this.pending.size > 0 || this.queue.length > 0 || this.draining;
+  }
+
   private async start(): Promise<void> {
     if (this.kernel && !this.dead) return;
     // Fresh connection file per start: dead kernels may still hold old ports.
@@ -824,7 +832,7 @@ export class SessionKernels {
     const idleMs = this.opts.idleEvictMs ?? DEFAULT_IDLE_EVICT_MS;
     const now = this.now();
     const idle = Array.from(this.kernels.entries())
-      .filter(([, entry]) => now - entry.lastUsed > idleMs)
+      .filter(([, entry]) => !entry.kernel.isBusy() && now - entry.lastUsed > idleMs)
       .sort((a, b) => a[1].lastUsed - b[1].lastUsed);
 
     for (const [id, entry] of idle) {
@@ -882,7 +890,8 @@ export class SessionKernels {
   private sweep(): void {
     const now = this.now();
     for (const [id, entry] of this.kernels) {
-      if (now - entry.lastUsed > TTL_MS) this.evict(id, entry);
+      // 忙碌内核不回收：dispose() 会中断正在执行的单元，留给下一次扫描。
+      if (!entry.kernel.isBusy() && now - entry.lastUsed > TTL_MS) this.evict(id, entry);
     }
   }
 }

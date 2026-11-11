@@ -66,24 +66,26 @@ describe('QuotaService: assert', () => {
 });
 
 describe('QuotaService: snapshot', () => {
-  it('reports current + raw limit for the requested resources (0 = unlimited)', () => {
+  it('reports an object keyed by resource with current + raw limit (0 = unlimited)', () => {
     const quotas = service({ projects: 128, sessions: 0 });
-    expect(quotas.snapshot({ projects: 3, sessions: 7 })).toEqual([
-      { resource: 'projects', current: 3, limit: 128 },
-      { resource: 'sessions', current: 7, limit: 0 },
-    ]);
+    expect(quotas.snapshot({ projects: 3, sessions: 7 })).toEqual({
+      projects: { current: 3, limit: 128 },
+      sessions: { current: 7, limit: 0 },
+    });
   });
 
-  it('fills unknown currents with 0 and defaults missing limits to 0', () => {
+  it('includes every requested resource in canonical order, defaulting missing values', () => {
     const quotas = new QuotaService({ limits: () => ({ projects: 10 }) as never });
-    expect(quotas.snapshot({ projects: 1, sessionRecordsPerProject: undefined })).toEqual([
-      { resource: 'projects', current: 1, limit: 10 },
-      { resource: 'sessionRecordsPerProject', current: 0, limit: 0 },
-    ]);
+    const snap = quotas.snapshot({ sessionRecordsPerProject: 4, projects: 1 });
+    expect(snap).toEqual({
+      projects: { current: 1, limit: 10 },
+      sessionRecordsPerProject: { current: 4, limit: 0 },
+    });
+    expect(Object.keys(snap)).toEqual(['projects', 'sessionRecordsPerProject']);
   });
 
-  it('returns an empty list for an empty request', () => {
-    expect(service().snapshot({})).toEqual([]);
+  it('returns an empty object for an empty request', () => {
+    expect(service().snapshot({})).toEqual({});
   });
 });
 
