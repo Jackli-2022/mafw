@@ -8524,3 +8524,13 @@ html[data-theme="light"] body {
 .mafw-lens-split { flex: none; color: var(--text-3); }
 .mafw-lens-split[aria-pressed="true"] { color: var(--accent-text); }
 /* ── end lens bar ──────────────────────────────────────────── */
+
+/* ── focus stage ───────────────────────────────────────────── */
+.mafw-focus-stage {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* ── end focus stage ───────────────────────────────────────── */
