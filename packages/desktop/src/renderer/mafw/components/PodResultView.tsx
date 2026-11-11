@@ -22,7 +22,7 @@ import {
 } from "../pod-result-view-model"
 import { DiffReviewPanel, type FileDiffEntry } from "./DiffReviewPanel"
 import { PodReviewItems } from "./PodReviewItems"
-import { forcedAcceptReady, reviewAcceptAction, reviewCounts } from "../pod-review-model"
+import { forcedAcceptanceNote, forcedAcceptReady, reviewAcceptAction, reviewCounts } from "../pod-review-model"
 import { markResultViewedAfterLoad } from "../pod-result-store"
 
 export type GoalWorktreeTarget = {
@@ -617,11 +617,9 @@ export function PodResultView(props: {
                     <Show when={acceptError()}>
                       <div class="mafw-pod-result-error">{acceptError()}</div>
                     </Show>
-                    <Show when={value().acceptanceRecord?.forced}>
-                      <div class="mafw-pod-result-forced-note">
-                        已强制验收（{value().acceptanceRecord?.unresolvedReviewItemIds.length ?? 0} 条未解决意见）
-                      </div>
-                    </Show>
+                  </Show>
+                  <Show when={forcedAcceptanceNote(value().acceptanceRecord)}>
+                    {(note) => <div class="mafw-pod-result-forced-note">{note()}</div>}
                   </Show>
                 </div>
               )}

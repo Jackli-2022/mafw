@@ -51,3 +51,11 @@ export function reviewAcceptAction(input: {
 export function forcedAcceptReady(input: { acknowledged: boolean; unresolved: number }): boolean {
   return input.acknowledged && input.unresolved > 0
 }
+
+/** Rendered outside the actionable accept block so it survives after acceptance. */
+export function forcedAcceptanceNote(
+  record: { forced: boolean; unresolvedReviewItemIds: string[] } | null | undefined,
+): string | null {
+  if (!record?.forced) return null
+  return `已强制验收（${record.unresolvedReviewItemIds.length} 条未解决意见）`
+}

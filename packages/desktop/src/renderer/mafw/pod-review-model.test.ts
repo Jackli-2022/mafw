@@ -4,6 +4,7 @@ import type { PodReviewItem } from '@mafw/sdk';
 import {
   canReopenReviewItem,
   canResolveReviewItem,
+  forcedAcceptanceNote,
   forcedAcceptReady,
   orderReviewItems,
   reviewAcceptAction,
@@ -40,6 +41,15 @@ test('action transitions are human-only projections', () => {
   assert.equal(canResolveReviewItem(item({ status: 'resolved' })), false);
   assert.equal(canReopenReviewItem(item({ status: 'resolved' })), true);
   assert.equal(canReopenReviewItem(item({ status: 'pending' })), false);
+});
+
+test('forced acceptance note survives the accepted (non-actionable) state', () => {
+  assert.equal(forcedAcceptanceNote(null), null);
+  assert.equal(forcedAcceptanceNote({ forced: false, unresolvedReviewItemIds: [] }), null);
+  assert.equal(
+    forcedAcceptanceNote({ forced: true, unresolvedReviewItemIds: ['a', 'b'] }),
+    '已强制验收（2 条未解决意见）',
+  );
 });
 
 test('unresolved items steer acceptance to handling first', () => {
