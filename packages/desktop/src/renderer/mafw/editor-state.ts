@@ -25,6 +25,8 @@ export interface OpenFile {
   staleClean: boolean
   /** 文件预览 kind（2026-10-27）：image=只读预览 tab；svg=文本默认+预览切换 */
   kind: OpenFileKind
+  /** 阅读意图下打开的临时预览；下次普通打开替换，首次编辑/变脏转持久 tab。 */
+  preview: boolean
 }
 
 export interface EditorModel {
@@ -54,7 +56,27 @@ export function openFile(
   return {
     ...m,
     active: rel,
-    files: [...m.files, { rel, savedContent: content, dirty: false, readOnly, conflict: false, staleClean: false, kind }],
+    files: [...m.files, { rel, savedContent: content, dirty: false, readOnly, conflict: false, staleClean: false, kind, preview: false }],
+  }
+}
+
+/**
+ * 阅读意图的临时预览：同一时刻只保留一个干净预览。
+ * 已存在的 tab 只激活；持久 tab 与 dirty 预览都不会被替换。
+ */
+export function openPreviewFile(
+  m: EditorModel,
+  rel: string,
+  content: string,
+  readOnly = false,
+  kind: OpenFileKind = "text",
+): EditorModel {
+  if (m.files.some(f => f.rel === rel)) return { ...m, active: rel }
+  const files = m.files.filter(f => !f.preview)
+  return {
+    ...m,
+    active: rel,
+    files: [...files, { rel, savedContent: content, dirty: false, readOnly, conflict: false, staleClean: false, kind, preview: true }],
   }
 }
 
@@ -71,7 +93,9 @@ export function setActive(m: EditorModel, rel: string): EditorModel {
 }
 
 export function markDirty(m: EditorModel, rel: string): EditorModel {
-  return update(m, rel, f => isReadOnlyPreview(f.kind) || f.dirty ? f : { ...f, dirty: true })
+  return update(m, rel, f => isReadOnlyPreview(f.kind) || f.dirty
+    ? f
+    : { ...f, dirty: true, preview: false })
 }
 
 export function markSaved(m: EditorModel, rel: string, content: string): EditorModel {

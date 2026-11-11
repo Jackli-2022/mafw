@@ -1,5 +1,5 @@
 ﻿import { describe, expect, test } from "bun:test"
-import { createEditorModel as create, onRootChange, openFile, closeFile, markDirty, markSaved, onExternalChange, resolveConflict, applyCleanReload, canApplyCleanReload, isReadOnlyPreview, editorSaveContent } from "./editor-state"
+import { createEditorModel as create, onRootChange, openFile, openPreviewFile, closeFile, markDirty, markSaved, onExternalChange, resolveConflict, applyCleanReload, canApplyCleanReload, isReadOnlyPreview, editorSaveContent } from "./editor-state"
 
 describe("editor-state", () => {
   test("openFile 建行并激活；重复打开仅激活不重置内容", () => {
@@ -42,6 +42,29 @@ describe("editor-state", () => {
     m = closeFile(m, "b.ts")
     expect(m.active).toBe("a.ts")
     expect(closeFile(m, "a.ts").active).toBeNull()
+  })
+  test("openPreviewFile 用新的干净预览替换旧预览，不堆 tab", () => {
+    let m = openPreviewFile(create(), "a.ts", "A")
+    expect(m.files.map(f => f.rel)).toEqual(["a.ts"])
+    expect(m.files[0]).toMatchObject({ preview: true })
+    m = openPreviewFile(m, "b.ts", "B")
+    expect(m.files.map(f => f.rel)).toEqual(["b.ts"])
+    expect(m.active).toBe("b.ts")
+  })
+  test("openPreviewFile 不动持久 tab；持久 tab 仍按打开顺序保留", () => {
+    let m = openFile(create(), "keep.ts", "K")
+    m = openPreviewFile(m, "preview.ts", "P")
+    expect(m.files.map(f => f.rel)).toEqual(["keep.ts", "preview.ts"])
+    expect(m.files.find(f => f.rel === "keep.ts")!.preview).toBe(false)
+    m = openPreviewFile(m, "next.ts", "N")
+    expect(m.files.map(f => f.rel)).toEqual(["keep.ts", "next.ts"])
+  })
+  test("dirty 预览自动转持久 tab，绝不会被下一次预览替换", () => {
+    let m = openPreviewFile(create(), "a.ts", "A")
+    m = markDirty(m, "a.ts")
+    expect(m.files[0]).toMatchObject({ preview: false, dirty: true })
+    m = openPreviewFile(m, "b.ts", "B")
+    expect(m.files.map(f => f.rel)).toEqual(["a.ts", "b.ts"])
   })
   test("canApplyCleanReload：仅干净且存在的文件可静默刷新（防 await 期间用户输入被覆盖）", () => {
     let m = openFile(create(), "a.ts", "v1")
