@@ -5,12 +5,11 @@ import type { PodGoal } from "@mafw/sdk"
 import {
   WORK_FILTERS,
   filterWorkGoals,
-  goalModeLabel,
-  goalProgressText,
   workFilterCounts,
   type WorkFilter,
 } from "../work-overview-model"
-import { attentionTarget, podStageLabel, type GoalDetailFocus } from "../pod-model"
+import { attentionTarget, type GoalDetailFocus } from "../pod-model"
+import { summarizeGoalForUser } from "../goal-user-view"
 
 /** Complete Goal list: filtering never changes the underlying collection. */
 export function WorkOverview(props: {
@@ -70,33 +69,36 @@ export function WorkOverview(props: {
 
       <div class="mafw-work-list">
         <For each={visibleGoals()}>
-          {(goal) => (
-            <div class="mafw-work-row" data-goal-id={goal.goalId}>
-              <ButtonV2
-                variant="ghost"
-                size="small"
-                class="mafw-work-item"
-                onClick={() => props.onOpenGoal(goal, attentionTarget(goal.stage.action))}
-              >
-                <span class="mafw-work-item-main">
-                  <span class="mafw-work-item-title">{goal.title || "未命名目标"}</span>
-                  <span class="mafw-work-item-meta">
-                    <Show when={goal.bucket === "result_ready" && props.isViewed && !props.isViewed(goal)}>
-                      <span class="mafw-work-chip is-unviewed">未查看</span>
-                    </Show>
-                    <Show when={goal.goalMode !== "standard" ? goalModeLabel(goal.goalMode) : null}>
-                      {(label) => <span class="mafw-work-chip">{label()}</span>}
-                    </Show>
-                    <span class="mafw-work-item-stage">{podStageLabel(goal.stage)}</span>
-                    <Show when={goalProgressText(goal)}>
-                      {(text) => <span class="mafw-work-item-progress">{text()}</span>}
-                    </Show>
+          {(goal) => {
+            const summary = summarizeGoalForUser(goal)
+            return (
+              <div class="mafw-work-row" data-goal-id={goal.goalId}>
+                <ButtonV2
+                  variant="ghost"
+                  size="small"
+                  class="mafw-work-item"
+                  onClick={() => props.onOpenGoal(goal, attentionTarget(goal.stage.action))}
+                >
+                  <span class="mafw-work-item-main">
+                    <span class="mafw-work-item-title">{goal.title || "未命名目标"}</span>
+                    <span class="mafw-work-item-meta">
+                      <Show when={goal.bucket === "result_ready" && props.isViewed && !props.isViewed(goal)}>
+                        <span class="mafw-work-chip is-unviewed">未查看</span>
+                      </Show>
+                      <span class="mafw-work-item-stage">{summary.statusLabel}</span>
+                      <Show when={summary.nextActionLabel}>
+                        {(label) => <span class="mafw-work-chip">{label()}</span>}
+                      </Show>
+                      <Show when={summary.progressText}>
+                        {(text) => <span class="mafw-work-item-progress">{text()}</span>}
+                      </Show>
+                    </span>
                   </span>
-                </span>
-                <Icon name="chevron-right" size="small" class="mafw-work-item-chevron" />
-              </ButtonV2>
-            </div>
-          )}
+                  <Icon name="chevron-right" size="small" class="mafw-work-item-chevron" />
+                </ButtonV2>
+              </div>
+            )
+          }}
         </For>
       </div>
     </section>
