@@ -22,7 +22,7 @@ import {
 } from "../pod-result-view-model"
 import { DiffReviewPanel, type FileDiffEntry } from "./DiffReviewPanel"
 import { PodReviewItems } from "./PodReviewItems"
-import { forcedAcceptanceNote, forcedAcceptReady, reviewAcceptAction, reviewCounts } from "../pod-review-model"
+import { forcedAcceptanceNote, forcedAcceptReady, isReviewGateConflict, reviewAcceptAction, reviewCounts } from "../pod-review-model"
 import { markResultViewedAfterLoad } from "../pod-result-store"
 
 export type GoalWorktreeTarget = {
@@ -58,7 +58,7 @@ export function PodResultView(props: {
   onResubmit?: (result: PodGoalResult) => void
   onReject: (feedback: string) => Promise<boolean>
   /** 单次点击验收：父组件负责调用 gateway 并刷新鲸群。 */
-  onAccept?: (opts?: { force?: boolean; riskAcknowledged?: boolean }) => Promise<PodGoalAcceptResult | null>
+  onAccept?: (opts?: { revision?: number; force?: boolean; riskAcknowledged?: boolean }) => Promise<PodGoalAcceptResult | null>
   /** 显式进入当前 revision 的 worktree 内容；不会自动切换 scope。 */
   onOpenWorktree?: (target: Omit<GoalWorktreeTarget, "title">) => void
   /** 外部 Pod 事实变化时刷新评审项（如 Tech Lead 回应/新批注落库）。 */
@@ -303,7 +303,11 @@ export function PodResultView(props: {
     }
   }
 
-  const acceptForced = async () => props.onAccept?.({ force: true, riskAcknowledged: true }) ?? null
+  const acceptForced = async () => props.onAccept?.({
+    revision: worktreeRevision() ?? undefined,
+    force: true,
+    riskAcknowledged: true,
+  }) ?? null
 
   const submitAccept = async (opts?: { force?: boolean; riskAcknowledged?: boolean }) => {
     const value = result()
@@ -311,7 +315,9 @@ export function PodResultView(props: {
     setAccepting(true)
     setAcceptError(null)
     try {
-      const accepted = opts?.force ? await acceptForced() : await props.onAccept(opts)
+      const accepted = opts?.force
+        ? await acceptForced()
+        : await props.onAccept({ ...opts, revision: worktreeRevision() ?? undefined })
       // 父组件已 toast/刷新；这里只就地更新合并事实，避免整页重新拉取闪烁。
       if (accepted) {
         setResult((prev) => (prev
@@ -339,7 +345,7 @@ export function PodResultView(props: {
       }
     } catch (err: any) {
       const status = podHttpStatus(err)
-      if (status === 409 && !opts?.force) {
+      if (status === 409 && isReviewGateConflict(err) && !opts?.force) {
         void refreshReviewItems()
         setForceOpen(true)
         showToastV2({

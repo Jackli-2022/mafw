@@ -6,6 +6,7 @@ import {
   canResolveReviewItem,
   forcedAcceptanceNote,
   forcedAcceptReady,
+  isReviewGateConflict,
   orderReviewItems,
   reviewAcceptAction,
   reviewCounts,
@@ -41,6 +42,12 @@ test('action transitions are human-only projections', () => {
   assert.equal(canResolveReviewItem(item({ status: 'resolved' })), false);
   assert.equal(canReopenReviewItem(item({ status: 'resolved' })), true);
   assert.equal(canReopenReviewItem(item({ status: 'pending' })), false);
+});
+
+test('only the review gate 409 is treated as stale unresolved items', () => {
+  assert.equal(isReviewGateConflict(new Error('HTTP 409: unresolved review items: 2; handle them')), true);
+  assert.equal(isReviewGateConflict(new Error('HTTP 409: revision 2 is not the active revision (3)')), false);
+  assert.equal(isReviewGateConflict(new Error('HTTP 409: merge conflict in src/a.ts')), false);
 });
 
 test('forced acceptance note survives the accepted (non-actionable) state', () => {

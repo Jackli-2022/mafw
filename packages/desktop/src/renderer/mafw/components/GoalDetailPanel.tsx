@@ -26,6 +26,7 @@ import {
   type GoalDetailFocus,
 } from "../pod-model"
 import { requestPodTechLeadOpen } from "../pod-result-store"
+import { isReviewGateConflict } from "../pod-review-model"
 import { goalsRev } from "../goals-rev"
 import { goalModeLabel } from "../work-overview-model"
 import { goalUserActionIntent, summarizeGoalForUser } from "../goal-user-view"
@@ -482,7 +483,7 @@ export function GoalDetailPanel(props: {
     return true
   })
 
-  const acceptGoal = async (opts?: { force?: boolean; riskAcknowledged?: boolean }): Promise<PodGoalAcceptResult | null> => {
+  const acceptGoal = async (opts?: { revision?: number; force?: boolean; riskAcknowledged?: boolean }): Promise<PodGoalAcceptResult | null> => {
     const podId = await resolvePodIdForGoal()
     const id = props.goalId
     if (!podId || !id) {
@@ -494,8 +495,9 @@ export function GoalDetailPanel(props: {
       accepted = await window.api.mafw.pod.acceptResult(podId, id, { confirm: true, ...opts })
     } catch (err: any) {
       const status = podHttpStatus(err)
-      // 409 = stale unresolved list; PodResultView owns refresh + forced panel.
-      if (status === 409) throw err
+      // Only the review gate owns refresh + forced recovery; other 409s
+      // (stale revision, merge conflict, no worktree) keep the generic toast.
+      if (status === 409 && isReviewGateConflict(err)) throw err
       const description = status === 403
         ? "只有人类可以验收；agent 会话不能合并"
         : status === 503

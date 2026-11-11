@@ -153,27 +153,36 @@ export function useSendMessage(deps: SendMessageDeps) {
   const persistAnnotations = deps.persistAnnotations
 
   /** Persist before clearing drafts; null means "abort this send" (drafts stay). */
-  let staging = false
-  const stageAnnotations = async (sid: string): Promise<{ block: string; annotations: any[] } | null> => {
-    // A double Enter during persistence must not persist the same drafts twice.
-    if (staging) return null
+  type StageResult = { block: string; annotations: any[] } | null
+  let staging: { key: string; promise: Promise<StageResult> } | null = null
+  const stageAnnotations = async (sid: string, key: string): Promise<StageResult> => {
+    if (staging) {
+      // Same message (double Enter): coalesce. A different message waits for the
+      // in-flight persistence instead of being silently dropped.
+      if (staging.key === key) return null
+      await staging.promise.catch(() => undefined)
+    }
     const items = peekAnnotations(sid)
     if (items.length === 0 || !persistAnnotations) {
       return { block: "", annotations: takeAnnotations(sid) }
     }
-    staging = true
-    try {
-      const block = await persistAnnotations(items)
-      return { block, annotations: takeAnnotations(sid) }
-    } catch (err: any) {
-      showToastV2({
-        description: `评审项保存失败，消息未发送：${String(err?.message ?? err).slice(0, 120)}`,
-        duration: 4200,
-      })
-      return null
-    } finally {
-      staging = false
-    }
+    const entry: { key: string; promise: Promise<StageResult> } = { key, promise: Promise.resolve(null) }
+    entry.promise = (async () => {
+      try {
+        const block = await persistAnnotations(items)
+        return { block, annotations: takeAnnotations(sid) }
+      } catch (err: any) {
+        showToastV2({
+          description: `评审项保存失败，消息未发送：${String(err?.message ?? err).slice(0, 120)}`,
+          duration: 4200,
+        })
+        return null
+      } finally {
+        if (staging === entry) staging = null
+      }
+    })()
+    staging = entry
+    return entry.promise
   }
   const pendingCaptureCount = deps.pendingCaptureCount ?? (() => 0)
   const takeCaptures = deps.takeCaptures ?? (() => [])
@@ -200,6 +209,12 @@ export function useSendMessage(deps: SendMessageDeps) {
     }
     let sid: string | null = sidProp()
     if (!sid) { sid = await deps.onCreateSession(); if (!sid) return }
+    const stageKey = [
+      sid,
+      text,
+      atts.map((a) => `${a.name}:${a.mime ?? ""}`).join("|"),
+      peekAnnotations(sid).map((a) => a.id).join("|"),
+    ].join("\u0000")
     const hasVoice = atts.some(a => a.name?.startsWith("voice-"))
     console.log("[mafw] sendMessage", sid.slice(-8), "| text:", text.trim().length, "chars | atts:", atts.length, "| sending:", sending(), "| voice:", hasVoice, "| mode:", mode)
     if (sending()) {
@@ -207,7 +222,7 @@ export function useSendMessage(deps: SendMessageDeps) {
       // messages queue for the next idle boundary instead of being dropped.
       if (!hasVoice) {
         // Plan C：先落评审项；失败则整条消息不发送（草稿原样保留）。
-        const staged = await stageAnnotations(sid)
+        const staged = await stageAnnotations(sid, stageKey)
         if (!staged) return
         const reviewBlock = staged.block
         // Review Focus 4：入队时打包批注快照；入队后新增的批注不跟这条。
@@ -306,7 +321,7 @@ export function useSendMessage(deps: SendMessageDeps) {
     // Set sending before the await so a double-submit cannot start a second stage.
     setSending(true)
     setPhase('searching')
-    const staged = await stageAnnotations(sid)
+    const staged = await stageAnnotations(sid, stageKey)
     if (!staged) {
       setSending(false)
       setPhase('idle')

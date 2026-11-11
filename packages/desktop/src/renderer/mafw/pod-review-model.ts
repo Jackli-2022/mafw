@@ -51,6 +51,11 @@ export function forcedAcceptReady(input: { acknowledged: boolean; unresolved: nu
   return input.acknowledged && input.unresolved > 0
 }
 
+/** Distinguish the review gate's 409 from other accept conflicts (revision/merge/etc). */
+export function isReviewGateConflict(error: unknown): boolean {
+  return /unresolved review items/i.test(String((error as any)?.message ?? error))
+}
+
 /** Rendered outside the actionable accept block so it survives after acceptance. */
 export function forcedAcceptanceNote(
   record: { forced: boolean; unresolvedReviewItemIds: string[] } | null | undefined,

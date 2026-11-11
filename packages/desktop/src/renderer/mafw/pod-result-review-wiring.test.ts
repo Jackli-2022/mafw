@@ -16,13 +16,14 @@ test('result view loads review items and gates acceptance on unresolved items', 
   assert.match(src, /force: true/);
   assert.match(src, /先处理意见/);
   assert.match(src, /确认风险并强制验收/);
-  assert.match(src, /onAccept\?\.\(\{ force: true, riskAcknowledged: true \}\)/);
+  assert.match(src, /isReviewGateConflict/);
+  assert.match(src, /revision: worktreeRevision\(\) \?\? undefined/);
 });
 
-test('goal detail forwards forced acceptance flags and rethrows 409 for stale review recovery', () => {
+test('goal detail forwards forced acceptance flags and rethrows only the review gate 409', () => {
   const src = read('components/GoalDetailPanel.tsx');
-  assert.match(src, /acceptGoal = async \(opts\?: \{ force\?: boolean; riskAcknowledged\?: boolean \}\)/);
+  assert.match(src, /acceptGoal = async \(opts\?: \{ revision\?: number; force\?: boolean; riskAcknowledged\?: boolean \}\)/);
   assert.match(src, /confirm: true, \.\.\.opts/);
-  assert.match(src, /status === 409\) throw err/);
+  assert.match(src, /status === 409 && isReviewGateConflict\(err\)\) throw err/);
   assert.match(src, /reviewRefreshKey=\{\(\) => podStore\.detail\(\)\}/);
 });

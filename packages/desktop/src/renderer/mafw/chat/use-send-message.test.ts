@@ -265,6 +265,49 @@ describe("sendMessage busy 排队路径", () => {
     } finally { delete (globalThis as any).window }
   })
 
+  test("并发不同消息：等待落库后排队，不静默丢弃", async () => {
+    const sent: any[] = []
+    ;(globalThis as any).window = { api: { mafw: { chat: { sendEnriched: async (req: any) => { sent.push(req); return { sessionID: "s_test_session" } } } } } }
+    try {
+      let sending = false
+      let persistCalls = 0
+      let release!: () => void
+      const gate = new Promise<void>((resolve) => { release = resolve })
+      let inputValue = "第一条"
+      let annotations = [{ id: "a1", comment: "改这里" }]
+      const f = baseDeps({
+        input: () => inputValue,
+        setInput: (v: string) => { inputValue = v },
+        sending: () => sending,
+        setSending: (v: boolean) => { sending = v },
+        pendingAnnotationCount: () => annotations.length,
+        peekAnnotations: () => annotations,
+        persistAnnotations: async () => {
+          persistCalls++
+          await gate
+          return "已登记 1 条评审项：review_1"
+        },
+        takeAnnotations: () => {
+          const taken = annotations
+          annotations = []
+          return taken
+        },
+        formatAnnotations: () => "BLOCK",
+      })
+      const { sendMessage } = useSendMessage(f.deps)
+      const first = sendMessage()
+      inputValue = "第二条"
+      const second = sendMessage()
+      await settle()
+      release()
+      await Promise.all([first, second])
+      expect(persistCalls).toBe(1)
+      expect(sent).toHaveLength(1)
+      expect(f.queued()).toHaveLength(1)
+      expect(f.queued()[0].text).toContain("第二条")
+    } finally { delete (globalThis as any).window }
+  })
+
   // W5a：忙时 Enter=steer（delivery:'steer'）/ Ctrl+Enter=网关队列（delivery:'queue'）
   const mockPromptAsync = () => {
     const calls: any[] = []
