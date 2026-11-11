@@ -131,10 +131,14 @@ import {
   diffsForContentScope,
   goalContentScope,
   projectContentScope,
-  scopeAfterProjectChange,
   type ContentScope,
 } from "./content-scope"
-import { contentScopeStateFor } from "./content-scope-state"
+import {
+  contentScopeStateFor,
+  saveContentScopeState,
+  selectTreeFile,
+} from "./content-scope-state"
+import { persistContentScope, readPersistedContentScope } from "./content-scope-persistence"
 import { popContentHistory, pushContentHistory, type ContentHistoryEntry } from "./content-history"
 import { PopoverShell } from "./components/pickers/PopoverShell"
 import { type NavTab } from "./components/nav-tab"
@@ -2154,6 +2158,12 @@ export function MafwShell() {
     if (!popped.entry) return
     setContentHistory(popped.rest)
     if (!contentScopeBelongsToProject(popped.entry.scope, currentProject())) return
+    if (popped.entry.rel) {
+      const key = contentScopeKey(popped.entry.scope)
+      if (key) {
+        saveContentScopeState(key, selectTreeFile(contentScopeStateFor(key), popped.entry.rel))
+      }
+    }
     setContentScope(popped.entry.scope)
     openWorkbench("workbench")
     applyWorkbenchSurface("code")
@@ -2255,12 +2265,39 @@ export function MafwShell() {
   const currentContentScopeKey = createMemo(() => contentScopeKey(contentScope()))
   const contentScopeIsGoal = createMemo(() => contentScope()?.kind === "goal")
   const [contentHistory, setContentHistory] = createSignal<ContentHistoryEntry[]>([])
+  // 项目切换/重启：恢复该项目上次的内容 scope；Goal worktree 不可用时回退项目根。
   createEffect(() => {
-    setContentScope((scope) => scopeAfterProjectChange(scope, currentProject()))
+    const project = currentProject()
+    setContentHistory([])
+    if (!project) {
+      setContentScope(null)
+      return
+    }
+    const restored = readPersistedContentScope(project, window.localStorage)
+    const fallback = projectContentScope(project)
+    if (!restored || restored.kind === "project") {
+      setContentScope(restored ?? fallback)
+      return
+    }
+    setContentScope(fallback)
+    void (async () => {
+      try {
+        const entries = await window.api.fs.listDir(restored.worktreeDir, "")
+        if (currentProject() !== project || entries === null) return
+        setContentScope(restored)
+      } catch { /* worktree 已不可用：保持项目 scope */ }
+    })()
   })
   createEffect(() => {
-    currentProject()
-    setContentHistory([])
+    const scope = contentScope()
+    const project = currentProject()
+    if (!scope || !project || !contentScopeBelongsToProject(scope, project)) return
+    persistContentScope(scope, window.localStorage)
+  })
+  const contentBackLabel = createMemo(() => {
+    const top = contentHistory().at(-1)
+    if (!top) return null
+    return top.rel ? `${top.label} · ${top.rel}` : top.label
   })
   const contentDiffEntries = createMemo(() => diffsForContentScope({
     contentRoot: contentRoot(),
@@ -3245,6 +3282,7 @@ export function MafwShell() {
                   contentScopeLabel={contentScopeLabel(contentScope())}
                   contentScopeIsGoal={contentScopeIsGoal()}
                   canGoBack={contentHistory().length > 0}
+                  backLabel={contentBackLabel()}
                   onBack={() => backContent()}
                   onReturnToProjectContent={returnToProjectContent}
                   diffs={contentDiffEntries()}

@@ -4,12 +4,15 @@ import {
   clearContentScopeStates,
   contentScopeStateFor,
   emptyContentScopeState,
+  onContentScopeStateChange,
   readingPositionFor,
   rememberActiveFile,
   rememberOpenFile,
   rememberReadingPosition,
+  rememberSelection,
   saveContentScopeState,
   selectTreeFile,
+  selectionFor,
   setTreeExpanded,
   toggleTreeExpanded,
   updateContentScopeState,
@@ -55,4 +58,23 @@ test("saving null key is a no-op and returns empty", () => {
   clearContentScopeStates()
   saveContentScopeState(null, rememberOpenFile(emptyContentScopeState(), "a.ts"))
   assert.deepEqual(contentScopeStateFor(null).openFiles, [])
+})
+
+test("editor selection is stored per file and can be cleared", () => {
+  let state = rememberSelection(emptyContentScopeState(), "src/a.ts", { anchor: 10, head: 12 })
+  assert.deepEqual(selectionFor(state, "src/a.ts"), { anchor: 10, head: 12 })
+  state = rememberSelection(state, "src/a.ts", { anchor: -3, head: 5.4 })
+  assert.deepEqual(selectionFor(state, "src/a.ts"), { anchor: 0, head: 5 })
+  state = rememberSelection(state, "src/a.ts", null)
+  assert.equal(selectionFor(state, "src/a.ts"), null)
+})
+
+test("scope listeners fire on save and stop after unsubscribe", () => {
+  clearContentScopeStates()
+  const seen: string[] = []
+  const off = onContentScopeStateChange((key) => seen.push(key))
+  saveContentScopeState("project:c:/a", emptyContentScopeState())
+  off()
+  saveContentScopeState("project:d:/b", emptyContentScopeState())
+  assert.deepEqual(seen, ["project:c:/a"])
 })

@@ -38,6 +38,7 @@ export type WorkbenchShellProps = {
   contentScopeLabel: string
   contentScopeIsGoal: boolean
   canGoBack: boolean
+  backLabel: string | null
   onBack: () => void
   onReturnToProjectContent: () => void
   diffs: FileDiffEntry[]
@@ -307,6 +308,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
           label={props.contentScopeLabel}
           isGoalScope={props.contentScopeIsGoal}
           canGoBack={props.canGoBack}
+          backLabel={props.backLabel}
           onBack={props.onBack}
           onReturnToProject={props.onReturnToProjectContent}
         />

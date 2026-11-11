@@ -16,6 +16,7 @@ import { pushComposerInsert } from "../composer-insert"
 import { openMenuOnKey } from "../context-menu/menu-key"
 import {
   contentScopeStateFor,
+  onContentScopeStateChange,
   saveContentScopeState,
   selectTreeFile,
   setTreeExpanded,
@@ -169,8 +170,14 @@ export function FilesDock(props: {
       if (root !== props.contentRoot) return
       void refreshDir(rel)
     })
+    // 返回/编辑器切 tab 会改写 scope 状态：同步选中行，不重载树。
+    const offScope = onContentScopeStateChange((key, state) => {
+      if (key !== (props.scopeKey ?? null)) return
+      if (selectedRel() !== state.treeSelected) setSelectedRel(state.treeSelected)
+    })
     onCleanup(() => {
       off?.()
+      offScope()
       releaseWatches()
     })
   })

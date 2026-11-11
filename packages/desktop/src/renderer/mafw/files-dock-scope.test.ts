@@ -16,6 +16,7 @@ test("FilesDock restores and persists tree state per content scope", () => {
   assert.match(dock, /is-selected/)
   assert.match(dock, /loadToken/)
   assert.match(dock, /root !== props\.contentRoot/)
+  assert.match(dock, /onContentScopeStateChange\(\(key, state\)/)
 })
 
 test("selected file rows use theme tokens", () => {

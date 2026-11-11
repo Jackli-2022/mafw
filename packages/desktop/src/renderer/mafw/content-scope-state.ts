@@ -1,14 +1,23 @@
-// 每个内容 scope 的恢复状态：树展开/选中、编辑器 tabs/活动文件、阅读位置。
+// 每个内容 scope 的恢复状态：树展开/选中、编辑器 tabs/活动文件、阅读位置、选区。
 // 模块单例只在 renderer 内使用；scopeKey 由 contentScopeKey 生成。
+export type EditorSelectionRange = {
+  anchor: number
+  head: number
+}
+
 export type ContentScopeState = {
   treeExpanded: string[]
   treeSelected: string | null
   openFiles: string[]
   activeFile: string | null
   readingPositions: Record<string, number>
+  selections: Record<string, EditorSelectionRange>
 }
 
+export type ContentScopeStateListener = (scopeKey: string, state: ContentScopeState) => void
+
 const states = new Map<string, ContentScopeState>()
+const listeners = new Set<ContentScopeStateListener>()
 
 export function emptyContentScopeState(): ContentScopeState {
   return {
@@ -17,6 +26,7 @@ export function emptyContentScopeState(): ContentScopeState {
     openFiles: [],
     activeFile: null,
     readingPositions: {},
+    selections: {},
   }
 }
 
@@ -27,6 +37,7 @@ function clone(state: ContentScopeState): ContentScopeState {
     openFiles: [...state.openFiles],
     activeFile: state.activeFile,
     readingPositions: { ...state.readingPositions },
+    selections: { ...(state.selections ?? {}) },
   }
 }
 
@@ -39,6 +50,13 @@ export function contentScopeStateFor(scopeKey: string | null): ContentScopeState
 export function saveContentScopeState(scopeKey: string | null, state: ContentScopeState): void {
   if (!scopeKey) return
   states.set(scopeKey, clone(state))
+  for (const listener of [...listeners]) listener(scopeKey, clone(state))
+}
+
+/** 外部状态写入（返回/标签切换）后让挂载中的面板同步，无需整树重载。 */
+export function onContentScopeStateChange(listener: ContentScopeStateListener): () => void {
+  listeners.add(listener)
+  return () => { listeners.delete(listener) }
 }
 
 export function updateContentScopeState(
@@ -103,6 +121,36 @@ export function readingPositionFor(state: ContentScopeState, rel: string): numbe
     : null
 }
 
+function clampOffset(value: number): number {
+  return Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0
+}
+
+export function rememberSelection(
+  state: ContentScopeState,
+  rel: string,
+  selection: EditorSelectionRange | null,
+): ContentScopeState {
+  if (!selection) {
+    if (!state.selections[rel]) return state
+    const next = { ...state.selections }
+    delete next[rel]
+    return { ...state, selections: next }
+  }
+  const next = { anchor: clampOffset(selection.anchor), head: clampOffset(selection.head) }
+  const prev = state.selections[rel]
+  if (prev && prev.anchor === next.anchor && prev.head === next.head) return state
+  return { ...state, selections: { ...state.selections, [rel]: next } }
+}
+
+export function selectionFor(
+  state: ContentScopeState,
+  rel: string,
+): EditorSelectionRange | null {
+  const selection = state.selections[rel]
+  return selection ? { ...selection } : null
+}
+
 export function clearContentScopeStates(): void {
   states.clear()
+  listeners.clear()
 }

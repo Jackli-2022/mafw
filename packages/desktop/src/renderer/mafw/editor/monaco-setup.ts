@@ -1,4 +1,4 @@
-import type { MountedEditor } from "./cm-setup"
+import type { EditorSelection, MountedEditor } from "./cm-setup"
 import type { InlineDiffRange } from "./inline-diff"
 import { monacoLanguage } from "./monaco-lang"
 
@@ -213,6 +213,23 @@ export async function mountMonacoEditor(host: HTMLElement, opts: {
     getScroll: () => editor.getScrollTop(),
     setScroll(top: number) {
       try { editor.setScrollTop(Math.max(0, top)) } catch { /* disposed */ }
+    },
+    getSelection(): EditorSelection | null {
+      const selection = editor.getSelection()
+      if (!selection) return null
+      return {
+        anchor: model.getOffsetAt(selection.getStartPosition()),
+        head: model.getOffsetAt(selection.getEndPosition()),
+      }
+    },
+    setSelection(anchor: number, head: number) {
+      try {
+        const length = model.getValueLength()
+        const clamp = (value: number) => Math.max(0, Math.min(Math.round(value), length))
+        const start = model.getPositionAt(clamp(anchor))
+        const end = model.getPositionAt(clamp(head))
+        editor.setSelection(new monaco.Selection(start.lineNumber, start.column, end.lineNumber, end.column))
+      } catch { /* disposed */ }
     },
     destroy() {
       contentSub.dispose();

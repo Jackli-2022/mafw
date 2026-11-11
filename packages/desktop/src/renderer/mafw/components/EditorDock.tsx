@@ -25,7 +25,10 @@ import {
   contentScopeStateFor,
   readingPositionFor,
   rememberReadingPosition,
+  rememberSelection,
   saveContentScopeState,
+  selectTreeFile,
+  selectionFor,
 } from "../content-scope-state"
 import {
   clearDraft, getDraft, getEol, getMtime, setDraft, setEol, setMtime,
@@ -153,9 +156,10 @@ export function EditorDock(props: {
     if (!file) return
     const top = previewing() ? previewScrollPort()?.scrollTop : editor?.getScroll()
     if (top === undefined) return
+    const withPosition = rememberReadingPosition(contentScopeStateFor(key), file.rel, top)
     saveContentScopeState(
       key,
-      rememberReadingPosition(contentScopeStateFor(key), file.rel, top),
+      rememberSelection(withPosition, file.rel, editor?.getSelection() ?? null),
     )
   }
 
@@ -334,7 +338,7 @@ export function EditorDock(props: {
     if (!key) return
     const scopeState = contentScopeStateFor(key)
     saveContentScopeState(key, {
-      ...scopeState,
+      ...selectTreeFile(scopeState, current.active),
       openFiles: current.files.map((file) => file.rel),
       activeFile: current.active,
     })
@@ -585,7 +589,10 @@ export function EditorDock(props: {
       editor = h
       mountedRoot = root
       mountedRel = f.rel
-      h.setScroll(readingPositionFor(contentScopeStateFor(props.scopeKey ?? null), f.rel) ?? 0)
+      const scopeState = contentScopeStateFor(props.scopeKey ?? null)
+      const savedSelection = selectionFor(scopeState, f.rel)
+      if (savedSelection) h.setSelection(savedSelection.anchor, savedSelection.head)
+      h.setScroll(readingPositionFor(scopeState, f.rel) ?? 0)
       h.setInlineDiff(mode() === "edit" && !previewing() ? inlineRanges() : [])
       if (!f.readOnly) {
         const key = `${root}\u0000${f.rel}`

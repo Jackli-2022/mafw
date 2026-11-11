@@ -23,4 +23,15 @@ test("the scope header exposes a real back action", () => {
   assert.match(header, /canGoBack/)
   assert.match(header, /onBack/)
   assert.match(header, /返回/)
+  assert.match(header, /TooltipV2/)
+  assert.match(header, /openDelay=\{300\}/)
+  assert.match(header, /backLabel/)
+})
+
+test("back restores the tree selection and names its destination", () => {
+  assert.match(shell, /contentBackLabel/)
+  assert.match(shell, /backLabel=\{contentBackLabel\(\)\}/)
+  const back = shell.slice(shell.indexOf("const backContent"), shell.indexOf("const openGoalContent"))
+  assert.match(back, /selectTreeFile\(/)
+  assert.match(back, /saveContentScopeState\(/)
 })
