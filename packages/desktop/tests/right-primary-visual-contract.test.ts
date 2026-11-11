@@ -14,8 +14,8 @@ const resources = read("../src/renderer/mafw/components/ProjectResources.tsx")
 const detail = read("../src/renderer/mafw/components/GoalDetailPanel.tsx")
 
 test("工作列表先给阶段与真实进度，而不是工程 chips", () => {
-  assert.match(overview, /podStageLabel\(goal\.stage\)/)
-  assert.match(overview, /goalProgressText\(goal\)/)
+  assert.match(overview, /summary\.statusLabel/)
+  assert.match(overview, /summary\.progressText/)
   assert.match(overview, /mafw-work-item-progress/)
   assert.doesNotMatch(overview, /mafw-work-status-dot/)
   assert.doesNotMatch(overview, /goalChips/)

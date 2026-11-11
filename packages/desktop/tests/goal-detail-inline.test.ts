@@ -43,7 +43,7 @@ test("every Goal open path goes through the right work panel", () => {
   assert.match(block, /setGoalDetailFocus\(focus\)/)
   assert.match(block, /setPodGoalId\(goalId\)/)
   assert.ok(block.indexOf("openProjectWork()") < block.indexOf("setPodGoalId(goalId)"))
-  assert.match(shell, /openGoalDetail\(goalId, "result"\)/)
+  assert.match(shell, /openGoalAndDiscuss\(goalId, "result"\)/)
 })
 
 test("ProjectWorkView receives one shell-owned inline selection", () => {

@@ -9,12 +9,12 @@ const overview = read("src/renderer/mafw/components/WorkOverview.tsx")
 test("priority cards appear only when there is something to show", () => {
   assert.match(priority, /Show when=\{props\.items\.length > 0\}/)
   assert.match(priority, /现在需要关注/)
-  assert.match(priority, /新结果/)
-  assert.match(priority, /等待你处理/)
+  assert.match(priority, /summary\.statusLabel/)
+  assert.match(priority, /summary\.nextActionLabel/)
 })
 
 test("each priority card has one direct human action", () => {
-  assert.match(priority, /item\.kind === "attention" \? item\.label : "查看结果"/)
+  assert.match(priority, /summary\.nextActionLabel/)
   assert.match(priority, /props\.onOpen\(item\.goal, priorityFocus\(item\)\)/)
   assert.match(priority, /item\.kind === "result" \? "result"/)
   assert.match(priority, /attentionTarget\(item\.kind === "attention" && item\.actionType \? \{ type: item\.actionType \} : undefined\)/)
@@ -28,9 +28,9 @@ test("the full Goal list owns the four filters and stable row identity", () => {
   assert.match(overview, /workFilterCounts\(props\.goals\)/)
 })
 
-test("Goal rows lead with stage and real progress instead of engineering metadata", () => {
-  assert.match(overview, /podStageLabel\(goal\.stage\)/)
-  assert.match(overview, /goalProgressText\(goal\)/)
+test("Goal rows lead with user status and real progress instead of engineering metadata", () => {
+  assert.match(overview, /summary\.statusLabel/)
+  assert.match(overview, /summary\.progressText/)
   assert.match(overview, /goal\.bucket === "result_ready" && props\.isViewed && !props\.isViewed\(goal\)/)
   assert.doesNotMatch(overview, /工作概览/)
   assert.doesNotMatch(overview, /全部历史/)
@@ -39,7 +39,7 @@ test("Goal rows lead with stage and real progress instead of engineering metadat
   assert.doesNotMatch(overview, /onOpenAll/)
 })
 
-test("non-standard Goal mode is visible in the list", () => {
-  assert.match(overview, /goalModeLabel\(goal\.goalMode\)/)
-  assert.match(overview, /goal\.goalMode !== "standard"/)
+test("engineering Goal mode is not part of the user-facing project list", () => {
+  assert.doesNotMatch(overview, /goalModeLabel/)
+  assert.doesNotMatch(overview, /goal\.goalMode !== "standard"/)
 })
