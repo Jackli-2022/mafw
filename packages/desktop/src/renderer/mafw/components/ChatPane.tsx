@@ -58,6 +58,7 @@ import { getSessionTurnDiffs } from "../session-turn-diffs"
 import { PendingAnnotations } from "./PendingAnnotations"
 import { PendingCaptures } from "./PendingCaptures"
 import { buildAnnotationBatch } from "../editor-annotation"
+import { reviewInputsFromAnnotations, reviewItemPromptBlock } from "../review-item-input"
 import { hydrateAnnotations, pendingFor, takeForSend } from "../annotation-store"
 import { formatCaptureBatch, captureAttachmentName, getPendingCaptures } from "../chat/pending-captures"
 
@@ -994,8 +995,17 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     techLeadTarget: () => props.techLeadTarget?.() ?? null,
     sendBlocked: () => props.sendBlocked?.() ?? null,
     pendingAnnotationCount: (sid) => pendingFor(sid).length,
+    peekAnnotations: (sid) => pendingFor(sid),
     takeAnnotations: (sid) => takeForSend(sid),
     formatAnnotations: (items) => buildAnnotationBatch(items),
+    persistAnnotations: async (items) => {
+      const target = await Promise.resolve(props.techLeadTarget?.() ?? null)
+      if (!target) return ""
+      const inputs = reviewInputsFromAnnotations(items)
+      if (inputs.length === 0) return ""
+      const created = await window.api.mafw.pod.createReviewItems(target.podId, target.goalId, { items: inputs })
+      return reviewItemPromptBlock(created.items)
+    },
     pendingCaptureCount: (sid) => getPendingCaptures().pendingFor(sid).length,
     takeCaptures: (sid) => getPendingCaptures().take(sid),
     formatCaptures: (items) => formatCaptureBatch(items),

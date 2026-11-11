@@ -169,6 +169,69 @@ describe("sendMessage busy 排队路径", () => {
     }
   })
 
+  test("批注落库失败：不发送、不清草稿、不取走批注", async () => {
+    const sent: any[] = []
+    ;(globalThis as any).window = { api: { mafw: { chat: { sendEnriched: async (req: any) => { sent.push(req); return { sessionID: "s_test_session" } } } } } }
+    try {
+      let taken = 0
+      let inputValue = "要发的话"
+      const f = baseDeps({
+        input: () => inputValue,
+        setInput: (v: string) => { inputValue = v },
+        sending: () => false,
+        pendingAnnotationCount: () => 1,
+        peekAnnotations: () => [{ id: "a1", comment: "改这里" }],
+        persistAnnotations: async () => { throw new Error("db down") },
+        takeAnnotations: () => { taken++; return [{ id: "a1" }] },
+        formatAnnotations: () => "BLOCK",
+      })
+      const { sendMessage } = useSendMessage(f.deps)
+      await sendMessage()
+      expect(sent).toHaveLength(0)
+      expect(taken).toBe(0)
+      expect(inputValue).toBe("要发的话")
+    } finally { delete (globalThis as any).window }
+  })
+
+  test("忙时批注落库失败：不进队列、不取走批注、不清输入", async () => {
+    let taken = 0
+    const f = baseDeps({
+      pendingAnnotationCount: () => 1,
+      peekAnnotations: () => [{ id: "a1", comment: "改这里" }],
+      persistAnnotations: async () => { throw new Error("db down") },
+      takeAnnotations: () => { taken++; return [{ id: "a1" }] },
+      formatAnnotations: () => "BLOCK",
+    })
+    const { sendMessage } = useSendMessage(f.deps)
+    await sendMessage()
+    expect(f.queued()).toHaveLength(0)
+    expect(taken).toBe(0)
+    expect(f.input()).toBe("排队的消息")
+  })
+
+  test("批注落库成功：评审项块随消息发出，然后才清空草稿", async () => {
+    const sent: any[] = []
+    ;(globalThis as any).window = { api: { mafw: { chat: { sendEnriched: async (req: any) => { sent.push(req); return { sessionID: "s_test_session" } } } } } }
+    try {
+      let taken = 0
+      const f = baseDeps({
+        input: () => "要发的话",
+        sending: () => false,
+        pendingAnnotationCount: () => 1,
+        peekAnnotations: () => [{ id: "a1", comment: "改这里" }],
+        persistAnnotations: async () => "已登记 1 条评审项：review_1",
+        takeAnnotations: () => { taken++; return [{ id: "a1" }] },
+        formatAnnotations: () => "BLOCK",
+      })
+      const { sendMessage } = useSendMessage(f.deps)
+      await sendMessage()
+      expect(taken).toBe(1)
+      expect(sent).toHaveLength(1)
+      expect(sent[0].message).toContain("review_1")
+      expect(sent[0].message).toContain("BLOCK")
+    } finally { delete (globalThis as any).window }
+  })
+
   // W5a：忙时 Enter=steer（delivery:'steer'）/ Ctrl+Enter=网关队列（delivery:'queue'）
   const mockPromptAsync = () => {
     const calls: any[] = []
