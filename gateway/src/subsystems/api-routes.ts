@@ -189,6 +189,8 @@ export interface ApiRouteDeps {
   recallCalledBySession: ReturnType<RecallDeps['recallCalledBySession']>;
   goalDriverMafwDirCache: ReturnType<GoalsInlineDeps['goalDriverMafwDirCache']>;
   sseClients: ReturnType<EventsSseDeps['sseClients']>;
+  /** E2-1: release identity for the SSE greeting epoch fence (null before boot). */
+  releaseIdentity: () => { instanceId: string; schemaEpoch: number } | null;
 
   // ── services ───────────────────────────────────────────────────────────
   allowlistStore: ReturnType<ApprovalsDeps['allowlistStore']>;
@@ -872,6 +874,7 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
     chatSessions: () => deps.chatSessions,
     eventStore: () => deps.eventStore,
     sseClients: () => deps.sseClients,
+    releaseIdentity: () => deps.releaseIdentity(),
   });
   // code-first P0 试点：schema 是响应事实源，handler 返回数据（不写 res）。
   attachTypedRoute(deps.routeRegistry, {

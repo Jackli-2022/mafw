@@ -5096,6 +5096,11 @@ class MafwScheduler {
       get recallCalledBySession() { return self.recallCalledBySession; },
       get goalDriverMafwDirCache() { return self.goalDriverMafwDirCache; },
       get sseClients() { return self.eventHub.sseClients; },
+      get releaseIdentity() {
+        return () => (self.releaseMetadata && self.runtimeIdentity
+          ? { instanceId: self.runtimeIdentity.instanceId, schemaEpoch: self.releaseMetadata.schemaEpoch }
+          : null);
+      },
       get allowlistStore() { return self.allowlistStore; },
       get permissionRules() { return self.permissionRules; },
       get approvalPolicy() { return self.approvalPolicy; },

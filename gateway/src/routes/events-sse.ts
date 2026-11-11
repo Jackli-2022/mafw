@@ -27,6 +27,11 @@ export interface EventsSseRouteDeps {
   eventStore: () => EventStore | null;
   /** Mode A per-connection write 表（broadcast / dashboard 统计共读）。 */
   sseClients: () => Map<ServerResponse, (frame: string, seq: number | null) => void>;
+  /**
+   * E2-1: greeting 纪元（instanceId / schemaEpoch）。live getter——release
+   * metadata 在 boot 阶段加载，attach 时才取；null = 未就绪（字段省略）。
+   */
+  releaseIdentity?: () => { instanceId: string; schemaEpoch: number } | null;
 }
 
 export function attachEventsSseRoutes(registry: RouteRegistry, deps: EventsSseRouteDeps): void {
@@ -43,12 +48,15 @@ export function attachEventsSseRoutes(registry: RouteRegistry, deps: EventsSseRo
       // Last-Event-ID 头（原生 EventSource 重连自动携带）/ ?since 参数 → 重放后直播
       // （newest-window + firstReplayedSeq 截断信号）。
       const since = parseSince(parsedUrl.searchParams, req.headers['last-event-id'] as string | undefined);
+      const release = deps.releaseIdentity?.() ?? null;
       const conn = attachGlobalSse({
         res,
         store: deps.eventStore(),
         replayLimit: config.events.replayLimit,
         writeFrame: (r, frame) => { if (frame) r.write(frame); },
         since,
+        instanceId: release?.instanceId,
+        schemaEpoch: release?.schemaEpoch,
       });
       deps.sseClients().set(res, conn.write);
       req.on('close', () => { deps.sseClients().delete(res); });
