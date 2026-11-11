@@ -3126,6 +3126,23 @@ html[data-theme="light"] body {
   color: var(--text-3);
   font-size: 11px;
 }
+.mafw-content-scope-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.mafw-content-intents {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+.mafw-content-intent[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
 .mafw-content-scope-label {
   min-width: 0;
   overflow: hidden;
@@ -4726,6 +4743,9 @@ html[data-theme="light"] body {
 .mafw-editor-tab-active { background: var(--bg-overlay, transparent); }
 .mafw-editor-tab-name { font-size: 11px; color: var(--text-2); }
 .mafw-editor-tab-active .mafw-editor-tab-name { color: var(--text-1); }
+/* 阅读意图的临时预览：下次普通打开会被替换；首次编辑自动转持久 tab。 */
+.mafw-editor-tab-preview .mafw-editor-tab-name { font-style: italic; color: var(--text-3); }
+.mafw-editor-tab-preview.mafw-editor-tab-active .mafw-editor-tab-name { color: var(--text-2); }
 .mafw-editor-tab-dot { font-size: 8px; color: var(--accent); }
 .mafw-editor-tab-ro { font-size: 9px; color: var(--text-4); border: 1px solid var(--border); border-radius: 3px; padding: 0 3px; }
 .mafw-editor-tab-close { font-size: 11px; color: var(--text-4); padding: 0 2px; cursor: pointer; display: inline-flex; align-items: center; }

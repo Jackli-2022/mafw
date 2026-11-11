@@ -15,9 +15,9 @@ import { openMenuOnKey } from "../context-menu/menu-key"
 import { Icon } from "@mafw/ui/icon"
 import { DockBanner, DockEmpty, DockPanelHeader } from "./dock-panel"
 import {
-  createEditorModel, openFile, closeFile, setActive,
+  createEditorModel, openFile, openPreviewFile, closeFile, setActive,
   markDirty, markSaved, onExternalChange, resolveConflict, applyCleanReload, canApplyCleanReload,
-  editorSaveContent, isReadOnlyPreview,
+  editorSaveContent, isReadOnlyPreview, promotePreview,
   type EditorModel, type OpenFile,
 } from "../editor-state"
 import { editorModelFor, saveEditorModel } from "../editor-model-store"
@@ -56,6 +56,7 @@ import { addMark, clearMarks, marksFor, type MarkVisual } from "../annotation-ma
 import { isAnnotationHotkey } from "../annotation-hotkey"
 import type { AnnotationAnchor } from "../../../shared/annotation-types"
 import { DiffReviewPanel, type FileDiffEntry } from "./DiffReviewPanel"
+import type { ContentIntent } from "../content-intent"
 
 interface SelectionState {
   rel: string
@@ -70,6 +71,9 @@ export function EditorDock(props: {
   sessionID: string | null
   contentRoot: string | null
   scopeKey?: string | null
+  /** 阅读意图用临时预览 tab；修改意图保留持久 tab。 */
+  intent: ContentIntent
+  onIntent?: (intent: ContentIntent) => void
   diffs?: FileDiffEntry[]
   onSendAnnotation?: (text: string, opts?: { imageDataUrl?: string }) => void
   /** 加入批注草稿（v2：草稿优先，发送时随消息打包） */
@@ -143,6 +147,14 @@ export function EditorDock(props: {
 
   const activeFile = (): OpenFile | null =>
     model().files.find(f => f.rel === model().active) ?? null
+
+  // 显式「修改」：把当前阅读预览钉成持久 tab；首次输入也会自动转持久。
+  createEffect(() => {
+    if (props.intent !== "editing") return
+    const file = activeFile()
+    if (!file?.preview) return
+    setModel(m => promotePreview(m, file.rel))
+  })
 
   const previewScrollPort = (): HTMLElement | null => {
     if (!bodyEl) return null
@@ -381,6 +393,18 @@ export function EditorDock(props: {
     void openRel(req.rel)
   })
 
+  /** 阅读 → 临时预览（不堆 tab）；修改 → 持久 tab。 */
+  const openModelFile = (
+    m: EditorModel,
+    rel: string,
+    content: string,
+    readOnly: boolean,
+    kind: OpenFile["kind"],
+  ): EditorModel =>
+    props.intent === "reading"
+      ? openPreviewFile(m, rel, content, readOnly, kind)
+      : openFile(m, rel, content, readOnly, kind)
+
   async function openRel(rel: string) {
     const root = props.contentRoot
     if (!root) return
@@ -413,7 +437,7 @@ export function EditorDock(props: {
       } catch { /* 元数据可选，失败仍可预览 */ }
       setFileVersion(prev => ({ ...prev, [rel]: version }))
       setImageMeta(prev => ({ ...prev, [rel]: { w: 0, h: 0, size } }))
-      setModel(m => openFile(m, rel, "", true, "image"))
+      setModel(m => openModelFile(m, rel, "", true, "image"))
       setMode("edit")
       clearSelection()
       setIoError(null)
@@ -435,7 +459,7 @@ export function EditorDock(props: {
         if (st.ok) setMtime(root, rel, st.mtimeMs)
       } catch { /* 可选元数据 */ }
       setFileVersion(prev => ({ ...prev, [rel]: Date.now() }))
-      setModel(m => openFile(m, rel, "", true, kind))
+      setModel(m => openModelFile(m, rel, "", true, kind))
       setMode("edit")
       clearSelection()
       setIoError(null)
@@ -456,13 +480,13 @@ export function EditorDock(props: {
         setMtime(root, rel, res.mtimeMs)
         setEol(root, rel, res.eol)
         setFileVersion(prev => ({ ...prev, [rel]: res.mtimeMs }))
-        setModel(m => openFile(m, rel, res.content, false, editorKind))
+        setModel(m => openModelFile(m, rel, res.content, false, editorKind))
       } else if (res.reason === "too-large" || res.reason === "binary" || res.reason === "encoding") {
         const note = res.reason === "binary" ? "二进制文件（只读）"
           : res.reason === "too-large" ? "文件超过 1MB（只读）"
             : "非 UTF-8 编码（只读，防保存损坏）"
         setReadNotes(prev => ({ ...prev, [rel]: note }))
-        setModel(m => openFile(m, rel, "", true, editorKind))
+        setModel(m => openModelFile(m, rel, "", true, editorKind))
       } else {
         setIoError(res.reason === "not-found" ? "文件不存在（可能已被移动/删除）" : "读取文件失败")
         return
@@ -572,6 +596,7 @@ export function EditorDock(props: {
         onDocChanged: () => {
           if (applyingExternal) return // 程序化 setDoc 不算用户编辑（Critical 1）
           if (root !== props.contentRoot || mountedRoot !== root || mountedRel !== f.rel) return
+          if (props.intent === "reading") props.onIntent?.("editing")
           setDraft(root, f.rel, h.getDoc())
           setModel(m => markDirty(m, f.rel))
         },
@@ -1172,7 +1197,10 @@ export function EditorDock(props: {
             {(f) => (
               <div
                 class="mafw-editor-tab"
-                classList={{ "mafw-editor-tab-active": model().active === f.rel }}
+                classList={{
+                  "mafw-editor-tab-active": model().active === f.rel,
+                  "mafw-editor-tab-preview": f.preview,
+                }}
                 role="button"
                 tabIndex={0}
                 title={f.rel}

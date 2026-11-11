@@ -11,6 +11,7 @@ import { EditorDock } from "./EditorDock"
 import { BrowserDock } from "./BrowserDock"
 import { TerminalSurface } from "./TerminalSurface"
 import type { FileDiffEntry } from "./DiffReviewPanel"
+import type { ContentIntent } from "../content-intent"
 import { isPluginSurfaceId, type WorkbenchSurface } from "../workbench-views"
 import { PluginWebSurfaceHost } from "../plugins/PluginWebSurfaceHost"
 import type { PluginWebSurfaceView } from "../plugins/plugin-web-surface"
@@ -22,6 +23,8 @@ export function WorkbenchCodeView(props: {
   sessionID: string | null
   contentRoot: string | null
   contentScopeKey: string | null
+  intent: ContentIntent
+  onIntent: (intent: ContentIntent) => void
   pluginProjectDir: string | null
   diffs: FileDiffEntry[]
   onOpenFile: (rel: string) => void
@@ -106,6 +109,8 @@ export function WorkbenchCodeView(props: {
             sessionID={props.sessionID}
             contentRoot={props.contentRoot}
             scopeKey={props.contentScopeKey}
+            intent={props.intent}
+            onIntent={props.onIntent}
             diffs={props.diffs}
             onSendAnnotation={props.onSendAnnotation}
             onAddAnnotation={props.onAddAnnotation}

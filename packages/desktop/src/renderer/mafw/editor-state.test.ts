@@ -1,5 +1,5 @@
 ﻿import { describe, expect, test } from "bun:test"
-import { createEditorModel as create, onRootChange, openFile, openPreviewFile, closeFile, markDirty, markSaved, onExternalChange, resolveConflict, applyCleanReload, canApplyCleanReload, isReadOnlyPreview, editorSaveContent } from "./editor-state"
+import { createEditorModel as create, onRootChange, openFile, openPreviewFile, promotePreview, closeFile, markDirty, markSaved, onExternalChange, resolveConflict, applyCleanReload, canApplyCleanReload, isReadOnlyPreview, editorSaveContent } from "./editor-state"
 
 describe("editor-state", () => {
   test("openFile 建行并激活；重复打开仅激活不重置内容", () => {
@@ -65,6 +65,12 @@ describe("editor-state", () => {
     expect(m.files[0]).toMatchObject({ preview: false, dirty: true })
     m = openPreviewFile(m, "b.ts", "B")
     expect(m.files.map(f => f.rel)).toEqual(["a.ts", "b.ts"])
+  })
+  test("显式修改把预览钉成持久 tab", () => {
+    let m = openPreviewFile(create(), "a.ts", "A")
+    m = promotePreview(m, "a.ts")
+    expect(m.files[0]).toMatchObject({ preview: false })
+    expect(promotePreview(m, "missing.ts")).toBe(m)
   })
   test("canApplyCleanReload：仅干净且存在的文件可静默刷新（防 await 期间用户输入被覆盖）", () => {
     let m = openFile(create(), "a.ts", "v1")

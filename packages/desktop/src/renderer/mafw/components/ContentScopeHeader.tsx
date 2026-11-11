@@ -1,22 +1,56 @@
-import { Show, type JSX } from "solid-js"
+import { For, Show, type JSX } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { Icon } from "@mafw/ui/icon"
+import { CONTENT_INTENTS, type ContentIntent } from "../content-intent"
 
-/** 内容工作台头部：当前内容根 + 显式返回动作。 */
+/** 内容工作台头部：当前内容根 + 意图（阅读 / 修改）+ 显式返回动作。 */
 export function ContentScopeHeader(props: {
   label: string
   isGoalScope: boolean
   canGoBack: boolean
   /** 返回目标（scope 标签 + 文件）；缺省时只显示「返回」。 */
   backLabel?: string | null
+  intent?: ContentIntent
+  onIntent?: (intent: ContentIntent) => void
+  canReview?: boolean
+  onReview?: () => void
   onBack: () => void
   onReturnToProject: () => void
 }): JSX.Element {
   return (
     <div class="mafw-content-scope">
-      <span class="mafw-content-scope-label" aria-live="polite">{props.label}</span>
+      <div class="mafw-content-scope-main">
+        <span class="mafw-content-scope-label" aria-live="polite">{props.label}</span>
+        <Show when={props.intent}>
+          <div class="mafw-content-intents" role="group" aria-label="内容意图">
+            <For each={CONTENT_INTENTS}>
+              {(item) => (
+                <ButtonV2
+                  variant="ghost"
+                  size="small"
+                  class="mafw-content-intent"
+                  aria-pressed={props.intent === item.id}
+                  onClick={() => props.onIntent?.(item.id)}
+                >
+                  {item.label}
+                </ButtonV2>
+              )}
+            </For>
+          </div>
+        </Show>
+      </div>
       <div class="mafw-content-scope-actions">
+        <Show when={props.canReview}>
+          <ButtonV2
+            variant="outline"
+            size="small"
+            class="mafw-content-scope-review"
+            onClick={props.onReview}
+          >
+            验收
+          </ButtonV2>
+        </Show>
         <Show when={props.canGoBack}>
           <TooltipV2 value={props.backLabel ?? "返回"} openDelay={300}>
             <ButtonV2

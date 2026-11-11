@@ -17,6 +17,7 @@ import { observePluginTabCapacity, planPluginTabs, type PluginTabSurface } from 
 import type { PluginWebSurfaceView } from "../plugins/plugin-web-surface"
 import { WorkbenchCodeView } from "./WorkbenchCodeView"
 import { ContentScopeHeader } from "./ContentScopeHeader"
+import type { ContentIntent } from "../content-intent"
 import type { FileDiffEntry } from "./DiffReviewPanel"
 import type { AnnotationAnchor } from "../../../shared/annotation-types"
 
@@ -39,6 +40,10 @@ export type WorkbenchShellProps = {
   pluginProjectDir: string | null
   contentScopeLabel: string
   contentScopeIsGoal: boolean
+  contentIntent: ContentIntent
+  onContentIntent: (intent: ContentIntent) => void
+  canReview: boolean
+  onContentReview: () => void
   canGoBack: boolean
   backLabel: string | null
   onBack: () => void
@@ -273,6 +278,10 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
         <ContentScopeHeader
           label={props.contentScopeLabel}
           isGoalScope={props.contentScopeIsGoal}
+          intent={props.contentIntent}
+          onIntent={props.onContentIntent}
+          canReview={props.canReview}
+          onReview={props.onContentReview}
           canGoBack={props.canGoBack}
           backLabel={props.backLabel}
           onBack={props.onBack}
@@ -294,6 +303,8 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
             sessionID={props.sessionID}
             contentRoot={props.contentRoot}
             contentScopeKey={props.contentScopeKey}
+            intent={props.contentIntent}
+            onIntent={props.onContentIntent}
             pluginProjectDir={props.pluginProjectDir}
             diffs={props.diffs}
             onOpenFile={props.onOpenFile}

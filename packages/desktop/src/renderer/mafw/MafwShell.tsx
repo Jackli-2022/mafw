@@ -146,6 +146,7 @@ import {
 import { persistContentScope, readPersistedContentScope } from "./content-scope-persistence"
 import { popContentHistory, pushContentHistory, type ContentHistoryEntry } from "./content-history"
 import { readRecentContent, recordRecentContent, type RecentContentEntry } from "./recent-content"
+import type { ContentIntent } from "./content-intent"
 import { PopoverShell } from "./components/pickers/PopoverShell"
 import { type NavTab } from "./components/nav-tab"
 import { WindowControls } from "./components/WindowControls"
@@ -2254,6 +2255,7 @@ export function MafwShell() {
       rememberContentLocation()
       setContentReturnGoalId(returnGoal)
       setContentScope(scope)
+      setContentIntent("reading")
       openWorkbenchContext("content")
       applyWorkbenchSurface("code")
     })()
@@ -2281,8 +2283,10 @@ export function MafwShell() {
     rel: string,
     root: string | null = contentRoot(),
     rememberLocation = true,
+    intent?: ContentIntent,
   ): void => {
     if (!root) return
+    if (intent) setContentIntent(intent)
     const scope = contentScope()
     // 分流（2026-10-27 文件预览）：html → 浏览器 surface（mafw-file:// 单 webview 导航）；
     // 图片/SVG/文本 → 文件 surface（编辑器内部按 kind 渲染）。
@@ -2319,6 +2323,7 @@ export function MafwShell() {
       setContentReturnGoalId(null)
       setContentScope(scope)
     }
+    setContentIntent("reading")
     applyWorkbenchSurface("code")
   }
   const openProjectFile = (rel: string): void => {
@@ -2331,7 +2336,7 @@ export function MafwShell() {
       setContentReturnGoalId(null)
       setContentScope(scope)
     }
-    openContentFile(rel, contentScopeRoot(scope), !switched)
+    openContentFile(rel, contentScopeRoot(scope), !switched, "reading")
   }
   /** 左栏插件入口：切到「工作台」并激活该 surface（spec 2026-11-09 §6.4）。 */
   const openPluginSurface = (surfaceId: PluginSurfaceId) => {
@@ -2392,6 +2397,7 @@ export function MafwShell() {
   // 内容工作台 scope：项目根是默认值；Goal revision 只能由显式动作进入。
   // 与会话目录解耦，Chat 角色切换不会改变这里。
   const [contentScope, setContentScope] = createSignal<ContentScope | null>(projectContentScope(currentProject()))
+  const [contentIntent, setContentIntent] = createSignal<ContentIntent>("reading")
   const contentRoot = createMemo(() => contentScopeRoot(contentScope()) ?? currentProject())
   const currentContentScopeKey = createMemo(() => contentScopeKey(contentScope()))
   const contentScopeIsGoal = createMemo(() => contentScope()?.kind === "goal")
@@ -3417,6 +3423,14 @@ export function MafwShell() {
                   pluginProjectDir={benchRoot() ?? currentProject()}
                   contentScopeLabel={contentScopeLabel(contentScope())}
                   contentScopeIsGoal={contentScopeIsGoal()}
+                  contentIntent={contentIntent()}
+                  onContentIntent={setContentIntent}
+                  canReview={contentScopeIsGoal()}
+                  onContentReview={() => {
+                    const scope = contentScope()
+                    if (scope?.kind === "goal") openGoalDetail(scope.goalId, "result")
+                    else openWorkbenchContext("review")
+                  }}
                   canGoBack={contentHistory().length > 0}
                   backLabel={contentBackLabel()}
                   onBack={() => backContent()}

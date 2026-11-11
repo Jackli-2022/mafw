@@ -98,6 +98,13 @@ export function markDirty(m: EditorModel, rel: string): EditorModel {
     : { ...f, dirty: true, preview: false })
 }
 
+/** 显式「修改」：把当前预览转为持久 tab；无预览时 no-op。 */
+export function promotePreview(m: EditorModel, rel: string): EditorModel {
+  const file = m.files.find(f => f.rel === rel)
+  if (!file?.preview) return m
+  return update(m, rel, f => ({ ...f, preview: false }))
+}
+
 export function markSaved(m: EditorModel, rel: string, content: string): EditorModel {
   return update(m, rel, f => isReadOnlyPreview(f.kind) ? f : ({ ...f, savedContent: content, dirty: false, conflict: false, staleClean: false }))
 }
