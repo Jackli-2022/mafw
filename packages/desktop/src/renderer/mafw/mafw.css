@@ -8534,3 +8534,88 @@ html[data-theme="light"] body {
   flex-direction: column;
 }
 /* ── end focus stage ───────────────────────────────────────── */
+
+/* ── subject picker ────────────────────────────────────────── */
+.mafw-subject-picker {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 12vh;
+  background: color-mix(in srgb, var(--bg-base) 62%, transparent);
+}
+.mafw-subject-picker-panel {
+  width: min(720px, calc(100vw - 32px));
+  max-height: 62vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--bg-overlay);
+  box-shadow: 0 24px 80px color-mix(in srgb, var(--bg-base) 70%, transparent);
+}
+.mafw-subject-picker-input {
+  flex: none;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.mafw-subject-picker-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px;
+}
+.mafw-subject-picker-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  color: var(--text-2);
+  text-align: left;
+}
+.mafw-subject-picker-item[aria-selected="true"] {
+  background: var(--accent-dim);
+  color: var(--text-1);
+}
+.mafw-subject-picker-kind {
+  flex: none;
+  width: 34px;
+  font-size: 9px;
+  color: var(--text-4);
+}
+.mafw-subject-picker-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+.mafw-subject-picker-detail {
+  flex: none;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 9px;
+  color: var(--text-4);
+}
+.mafw-subject-picker-empty {
+  padding: 18px 12px;
+  color: var(--text-3);
+  font-size: 11px;
+}
+.mafw-subject-picker-hint {
+  flex: none;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 9px;
+  color: var(--text-4);
+  text-align: right;
+}
+/* ── end subject picker ────────────────────────────────────── */
