@@ -43,7 +43,7 @@ test("right workbench owns context header, L2 surfaces and the terminal surface"
   assert.match(shell, /contentScopeIsGoal/)
   assert.match(code, /contentRoot/)
   assert.match(code, /FilesDock/)
-  assert.match(code, /setFilesOpen\(false\)/)
+  assert.match(code, /persistFilesOpen\(false\)/)
   assert.match(code, /EditorDock/)
   assert.match(code, /BrowserDock/)
   assert.match(code, /TerminalSurface/)

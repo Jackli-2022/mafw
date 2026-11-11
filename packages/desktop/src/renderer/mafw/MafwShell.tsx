@@ -139,10 +139,12 @@ import {
   type ContentScope,
 } from "./content-scope"
 import {
+  configureContentScopeStateStorage,
   contentScopeStateFor,
   saveContentScopeState,
   selectTreeFile,
 } from "./content-scope-state"
+import { configureEditorDraftStorage } from "./editor-drafts"
 import { persistContentScope, readPersistedContentScope } from "./content-scope-persistence"
 import { popContentHistory, pushContentHistory, type ContentHistoryEntry } from "./content-history"
 import { readRecentContent, recordRecentContent, type RecentContentEntry } from "./recent-content"
@@ -192,6 +194,13 @@ type ProvidersEnvelope = {
   connected?: string[]
 }
 import "./mafw.css"
+
+if (typeof window !== "undefined") {
+  try {
+    configureContentScopeStateStorage(window.localStorage)
+    configureEditorDraftStorage(window.localStorage)
+  } catch { /* storage blocked — keep in-memory */ }
+}
 
 export function MafwShell() {
   const [activeTab, setActiveTab] = createSignal<NavTab>("chat")
@@ -2283,6 +2292,9 @@ export function MafwShell() {
       scopeKind: scope.kind,
       scopeLabel: contentScopeLabel(scope),
       at: Date.now(),
+      ...(scope.kind === "goal"
+        ? { goalId: scope.goalId, revision: scope.revision, worktreeDir: scope.worktreeDir }
+        : {}),
     }, window.localStorage))
   }
   /** 内容面统一打开入口：分流浏览器/编辑器，并在成功路由后记录最近内容。 */
@@ -2345,6 +2357,42 @@ export function MafwShell() {
     }
     openContentFile(rel, contentScopeRoot(scope), !switched, "reading")
   }
+  /** 最近内容：项目条目直接打开；Goal revision 条目校验 worktree 后恢复该 scope。 */
+  const openRecentContent = (entry: RecentContentEntry): void => {
+    if (entry.scopeKind === "project") {
+      openProjectFile(entry.rel)
+      return
+    }
+    const goalId = entry.goalId
+    const revision = entry.revision
+    const worktreeDir = entry.worktreeDir
+    if (!goalId || !revision || !worktreeDir) return
+    const project = currentProject()
+    const scope = goalContentScope({
+      projectDir: project,
+      goalId,
+      revision,
+      worktreeDir,
+      title: entry.scopeLabel,
+    })
+    if (!scope) {
+      showToastV2({ description: "该 Goal 版本的文件已不可用", variant: "error", duration: 3500 } as any)
+      return
+    }
+    void (async () => {
+      try {
+        const entries = await window.api.fs.listDir(scope.worktreeDir, "")
+        if (entries === null) throw new Error("missing worktree")
+        if (currentProject() !== project) return
+        rememberContentLocation()
+        setContentReturnGoalId(scope.goalId)
+        setContentScope(scope)
+        openContentFile(entry.rel, scope.worktreeDir, false, "reading")
+      } catch {
+        showToastV2({ description: "该 Goal 版本的文件已不可用", variant: "error", duration: 3500 } as any)
+      }
+    })()
+  }
   /** 左栏插件入口：切到「工作台」并激活该 surface（spec 2026-11-09 §6.4）。 */
   const openPluginSurface = (surfaceId: PluginSurfaceId) => {
     closeLeftDockIfOverlay()
@@ -2406,6 +2454,7 @@ export function MafwShell() {
   const [contentScope, setContentScope] = createSignal<ContentScope | null>(projectContentScope(currentProject()))
   const [contentIntent, setContentIntent] = createSignal<ContentIntent>("reading")
   const [activeContentDocument, setActiveContentDocument] = createSignal<string | null>(null)
+  const [contentSplit, setContentSplit] = createSignal(false)
   const contentRoot = createMemo(() => contentScopeRoot(contentScope()) ?? currentProject())
   const currentContentScopeKey = createMemo(() => contentScopeKey(contentScope()))
   const contentScopeIsGoal = createMemo(() => contentScope()?.kind === "goal")
@@ -3435,6 +3484,8 @@ export function MafwShell() {
                   onContentIntent={setContentIntent}
                   contentDocument={activeContentDocument()}
                   onContentDocument={setActiveContentDocument}
+                  contentSplit={contentSplit()}
+                  onContentSplit={setContentSplit}
                   canReview={contentScopeIsGoal()}
                   onContentReview={() => {
                     const scope = contentScope()
@@ -3489,8 +3540,8 @@ export function MafwShell() {
                         onBrowse: openProjectContent,
                       }}
                       recents={{
-                        items: recentContent().filter((entry) => entry.scopeKind === "project"),
-                        onOpen: (entry) => openProjectFile(entry.rel),
+                        items: recentContent(),
+                        onOpen: openRecentContent,
                       }}
                       team={{
                         detail: podStore.detail(),

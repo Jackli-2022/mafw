@@ -12,6 +12,8 @@ import { BrowserDock } from "./BrowserDock"
 import { TerminalSurface } from "./TerminalSurface"
 import type { FileDiffEntry } from "./DiffReviewPanel"
 import type { ContentIntent } from "../content-intent"
+import { contentScopeStateFor, saveContentScopeState } from "../content-scope-state"
+import { SplitDocumentPane } from "./SplitDocumentPane"
 import { isPluginSurfaceId, type WorkbenchSurface } from "../workbench-views"
 import { PluginWebSurfaceHost } from "../plugins/PluginWebSurfaceHost"
 import type { PluginWebSurfaceView } from "../plugins/plugin-web-surface"
@@ -26,6 +28,8 @@ export function WorkbenchCodeView(props: {
   intent: ContentIntent
   onIntent: (intent: ContentIntent) => void
   onActiveFileChange?: (rel: string | null) => void
+  splitOpen: boolean
+  onSplitOpen: (open: boolean) => void
   pluginProjectDir: string | null
   diffs: FileDiffEntry[]
   onOpenFile: (rel: string) => void
@@ -56,9 +60,34 @@ export function WorkbenchCodeView(props: {
   /** Bridge protocol/security failure or a terminal load failure. */
   onWebError?: (surfaceId: string, message: string) => void
 }) {
-  const [filesOpen, setFilesOpen] = createSignal(false)
+  const [filesOpen, setFilesOpen] = createSignal(contentScopeStateFor(props.contentScopeKey).filesOpen)
+  const [splitRel, setSplitRel] = createSignal<string | null>(null)
+  createEffect(() => {
+    if (!props.splitOpen) setSplitRel(null)
+  })
+  createEffect(() => {
+    props.contentRoot
+    props.contentScopeKey
+    setSplitRel(null)
+  })
+  const persistFilesOpen = (open: boolean) => {
+    setFilesOpen(open)
+    if (props.contentScopeKey) {
+      saveContentScopeState(props.contentScopeKey, {
+        ...contentScopeStateFor(props.contentScopeKey),
+        filesOpen: open,
+      })
+    }
+  }
+  createEffect(() => {
+    setFilesOpen(contentScopeStateFor(props.contentScopeKey).filesOpen)
+  })
   const openFile = (rel: string) => {
-    setFilesOpen(false)
+    persistFilesOpen(false)
+    if (props.splitOpen) {
+      setSplitRel(rel)
+      return
+    }
     props.onOpenFile(rel)
   }
 
@@ -90,7 +119,7 @@ export function WorkbenchCodeView(props: {
             class="mafw-rw-files-toggle"
             aria-label={filesOpen() ? "收起文件树" : "打开文件树"}
             aria-expanded={filesOpen()}
-            onClick={() => setFilesOpen((v) => !v)}
+            onClick={() => persistFilesOpen(!filesOpen())}
           >
             <Icon name="folder" size="small" />
           </ButtonV2>
@@ -104,7 +133,7 @@ export function WorkbenchCodeView(props: {
           />
         </div>
       </Show>
-      <div class="mafw-rw-code-main">
+      <div class="mafw-rw-code-main" classList={{ "is-split": props.splitOpen }}>
         <div class="mafw-rw-code-pane" style={{ display: props.surface === "code" ? "contents" : "none" }}>
           <EditorDock
             sessionID={props.sessionID}
@@ -153,6 +182,13 @@ export function WorkbenchCodeView(props: {
               </div>
             )}
           </For>
+        </Show>
+        <Show when={props.splitOpen && props.surface === "code"}>
+          <SplitDocumentPane
+            root={props.contentRoot}
+            rel={splitRel()}
+            onClose={() => props.onSplitOpen(false)}
+          />
         </Show>
       </div>
     </div>

@@ -12,12 +12,113 @@ export type ContentScopeState = {
   activeFile: string | null
   readingPositions: Record<string, number>
   selections: Record<string, EditorSelectionRange>
+  /** 窄容器下文件树抽屉的用户偏好；按 scope 恢复。 */
+  filesOpen: boolean
+}
+
+export type ContentScopeStateStorage = {
+  getItem(key: string): string | null
+  setItem(key: string, value: string): void
+  removeItem?(key: string): void
 }
 
 export type ContentScopeStateListener = (scopeKey: string, state: ContentScopeState) => void
 
 const states = new Map<string, ContentScopeState>()
 const listeners = new Set<ContentScopeStateListener>()
+const persistTimers = new Map<string, ReturnType<typeof setTimeout>>()
+let storage: ContentScopeStateStorage | null = null
+const PERSIST_DELAY_MS = 300
+const STORAGE_PREFIX = "mafw-content-state:"
+
+function storageKey(scopeKey: string): string {
+  return `${STORAGE_PREFIX}${scopeKey}`
+}
+
+function parseState(raw: string | null): ContentScopeState | null {
+  if (!raw) return null
+  let parsed: any
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  if (!parsed || typeof parsed !== "object") return null
+  const positions: Record<string, number> = {}
+  if (parsed.readingPositions && typeof parsed.readingPositions === "object") {
+    for (const [key, value] of Object.entries(parsed.readingPositions)) {
+      if (typeof value === "number" && Number.isFinite(value)) positions[key] = value
+    }
+  }
+  const selections: Record<string, EditorSelectionRange> = {}
+  if (parsed.selections && typeof parsed.selections === "object") {
+    for (const [key, value] of Object.entries(parsed.selections)) {
+      const range = value as any
+      if (range && typeof range.anchor === "number" && typeof range.head === "number") {
+        selections[key] = { anchor: range.anchor, head: range.head }
+      }
+    }
+  }
+  return {
+    treeExpanded: Array.isArray(parsed.treeExpanded) ? parsed.treeExpanded.filter((item: unknown) => typeof item === "string") : [],
+    treeSelected: typeof parsed.treeSelected === "string" ? parsed.treeSelected : null,
+    openFiles: Array.isArray(parsed.openFiles) ? parsed.openFiles.filter((item: unknown) => typeof item === "string") : [],
+    activeFile: typeof parsed.activeFile === "string" ? parsed.activeFile : null,
+    readingPositions: positions,
+    selections,
+    filesOpen: parsed.filesOpen === true,
+  }
+}
+
+function loadPersisted(scopeKey: string): void {
+  if (states.has(scopeKey) || !storage) return
+  try {
+    const restored = parseState(storage.getItem(storageKey(scopeKey)))
+    if (restored) states.set(scopeKey, restored)
+  } catch { /* storage blocked — keep empty */ }
+}
+
+function persistNow(scopeKey: string): void {
+  if (!storage) return
+  const state = states.get(scopeKey)
+  if (!state) return
+  try {
+    storage.setItem(storageKey(scopeKey), JSON.stringify(state))
+  } catch { /* quota/blocked — fail-open */ }
+}
+
+function schedulePersist(scopeKey: string): void {
+  if (!storage) return
+  const previous = persistTimers.get(scopeKey)
+  if (previous) clearTimeout(previous)
+  const timer = setTimeout(() => {
+    persistTimers.delete(scopeKey)
+    persistNow(scopeKey)
+  }, PERSIST_DELAY_MS)
+  ;(timer as any).unref?.()
+  persistTimers.set(scopeKey, timer)
+}
+
+/** renderer 启动时注入 localStorage；测试可注入 fake。 */
+export function configureContentScopeStateStorage(next: ContentScopeStateStorage | null): void {
+  storage = next
+}
+
+/** 立即落盘（测试 / 卸载 / 关键动作后）。 */
+export function flushContentScopeStatePersistence(scopeKey?: string | null): void {
+  if (scopeKey) {
+    const timer = persistTimers.get(scopeKey)
+    if (timer) clearTimeout(timer)
+    persistTimers.delete(scopeKey)
+    persistNow(scopeKey)
+    return
+  }
+  for (const [key, timer] of [...persistTimers]) {
+    clearTimeout(timer)
+    persistTimers.delete(key)
+    persistNow(key)
+  }
+}
 
 export function emptyContentScopeState(): ContentScopeState {
   return {
@@ -27,6 +128,7 @@ export function emptyContentScopeState(): ContentScopeState {
     activeFile: null,
     readingPositions: {},
     selections: {},
+    filesOpen: false,
   }
 }
 
@@ -38,11 +140,13 @@ function clone(state: ContentScopeState): ContentScopeState {
     activeFile: state.activeFile,
     readingPositions: { ...state.readingPositions },
     selections: { ...(state.selections ?? {}) },
+    filesOpen: state.filesOpen === true,
   }
 }
 
 export function contentScopeStateFor(scopeKey: string | null): ContentScopeState {
   if (!scopeKey) return emptyContentScopeState()
+  loadPersisted(scopeKey)
   const state = states.get(scopeKey)
   return state ? clone(state) : emptyContentScopeState()
 }
@@ -50,6 +154,7 @@ export function contentScopeStateFor(scopeKey: string | null): ContentScopeState
 export function saveContentScopeState(scopeKey: string | null, state: ContentScopeState): void {
   if (!scopeKey) return
   states.set(scopeKey, clone(state))
+  schedulePersist(scopeKey)
   for (const listener of [...listeners]) listener(scopeKey, clone(state))
 }
 
@@ -151,6 +256,8 @@ export function selectionFor(
 }
 
 export function clearContentScopeStates(): void {
+  for (const timer of persistTimers.values()) clearTimeout(timer)
+  persistTimers.clear()
   states.clear()
   listeners.clear()
 }

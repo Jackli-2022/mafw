@@ -6,6 +6,10 @@ export type RecentContentEntry = {
   scopeKind: "project" | "goal"
   scopeLabel: string
   at: number
+  /** Goal revision 最近项：重新打开时校验 worktree 并恢复该 revision scope。 */
+  goalId?: string
+  revision?: number
+  worktreeDir?: string
 }
 
 export type RecentContentStorage = {
@@ -28,13 +32,18 @@ export function recentContentStorageKey(projectDir: string): string {
 function isEntry(value: unknown): value is RecentContentEntry {
   if (!value || typeof value !== "object") return false
   const entry = value as Record<string, unknown>
-  return (
+  const base = (
     typeof entry.rel === "string" && entry.rel.length > 0
     && typeof entry.scopeKey === "string" && entry.scopeKey.length > 0
     && (entry.scopeKind === "project" || entry.scopeKind === "goal")
     && typeof entry.scopeLabel === "string"
     && typeof entry.at === "number" && Number.isFinite(entry.at)
   )
+  if (!base) return false
+  if (entry.goalId !== undefined && typeof entry.goalId !== "string") return false
+  if (entry.revision !== undefined && (typeof entry.revision !== "number" || !Number.isFinite(entry.revision))) return false
+  if (entry.worktreeDir !== undefined && typeof entry.worktreeDir !== "string") return false
+  return true
 }
 
 export function parseRecentContent(raw: string | null): RecentContentEntry[] {

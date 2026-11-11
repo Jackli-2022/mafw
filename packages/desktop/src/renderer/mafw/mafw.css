@@ -3167,6 +3167,79 @@ html[data-theme="light"] body {
   background: var(--bg-base);
 }
 .mafw-rw-code-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.mafw-rw-code-main.is-split { flex-direction: row; }
+.mafw-rw-split {
+  flex: 0 0 42%;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border-subtle);
+  background: var(--bg-base);
+}
+.mafw-rw-split-head {
+  flex: none;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-inset);
+}
+.mafw-rw-split-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+  font-size: 11px;
+}
+.mafw-rw-split-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  margin: 0;
+  padding: 10px;
+  color: var(--text-2);
+  font-family: var(--font-data);
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre;
+}
+.mafw-rw-split-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  color: var(--text-4);
+  font-size: 11px;
+  text-align: center;
+}
+.mafw-rw-split-image {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 10px;
+}
+.mafw-rw-split-image img { max-width: 100%; height: auto; }
+.mafw-content-scope-split[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+@container (max-width: 980px) {
+  .mafw-rw-code-main.is-split { flex-direction: column; }
+  .mafw-rw-split {
+    flex: 0 0 45%;
+    border-left: 0;
+    border-top: 1px solid var(--border-subtle);
+  }
+}
 .mafw-rw-code-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .mafw-rw-files-toggle { display: none; }
 .mafw-rw-execution { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
@@ -7551,6 +7624,14 @@ html[data-theme="light"] body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.mafw-project-recent-scope {
+  flex: none;
+  color: var(--accent);
+  font-size: 9px;
+  border: 1px solid var(--accent-border);
+  border-radius: 999px;
+  padding: 0 4px;
 }
 .mafw-project-recent-dir {
   margin-left: auto;

@@ -44,8 +44,13 @@ test("push keeps newest first, dedupes by scope and rel, and caps the list", () 
     ...entry("src/a.ts", 4),
     scopeKey: "goal:C:/work/demo:g1:r1",
     scopeKind: "goal",
+    goalId: "g1",
+    revision: 1,
+    worktreeDir: "C:/work/demo-wt",
   })
   assert.equal(sameRelOtherScope.length, 3)
+  assert.equal(sameRelOtherScope[0]!.goalId, "g1")
+  assert.equal(sameRelOtherScope[0]!.revision, 1)
 
   const many = Array.from({ length: MAX_RECENT_CONTENT + 3 }, (_, index) =>
     pushRecentContent([], entry(`src/${index}.ts`, index)),
@@ -62,11 +67,29 @@ test("parse rejects malformed payloads and entries", () => {
   assert.deepEqual(
     parseRecentContent(JSON.stringify([
       entry("ok.ts", 5),
+      {
+        ...entry("goal.ts", 6),
+        scopeKey: "goal:C:/work/demo:g1:r2",
+        scopeKind: "goal",
+        goalId: "g1",
+        revision: 2,
+        worktreeDir: "C:/work/demo-wt",
+      },
       { rel: 1, scopeKey: "s", scopeKind: "project", scopeLabel: "x", at: 1 },
       { rel: "bad.ts", scopeKey: "s", scopeKind: "other", scopeLabel: "x", at: 1 },
       { rel: "bad2.ts", scopeKey: "s", scopeKind: "project", scopeLabel: "x", at: "now" },
     ])),
-    [entry("ok.ts", 5)],
+    [
+      entry("ok.ts", 5),
+      {
+        ...entry("goal.ts", 6),
+        scopeKey: "goal:C:/work/demo:g1:r2",
+        scopeKind: "goal",
+        goalId: "g1",
+        revision: 2,
+        worktreeDir: "C:/work/demo-wt",
+      },
+    ],
   )
 })
 

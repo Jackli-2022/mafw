@@ -338,7 +338,8 @@ export function EditorDock(props: {
     mountedRel = null
     previewRestoredKey = null
     lastScopeKey = scopeKey
-    setModel(editorModelFor(root))
+    const restored = editorModelFor(root)
+    setModel(restored)
     setReadNotes({})
     setFileVersion({})
     setImageMeta({})
@@ -347,7 +348,12 @@ export function EditorDock(props: {
     clearSelection()
     setMode("edit")
     void unwatchAll()
-    untrack(() => { void mountActive() })
+    const activeRel = scopeKey ? contentScopeStateFor(scopeKey).activeFile : null
+    if (root && restored.files.length === 0 && activeRel) {
+      void openRel(activeRel)
+    } else {
+      untrack(() => { void mountActive() })
+    }
   })
 
   createEffect(() => {
@@ -407,10 +413,14 @@ export function EditorDock(props: {
     content: string,
     readOnly: boolean,
     kind: OpenFile["kind"],
-  ): EditorModel =>
-    props.intent === "reading"
+  ): EditorModel => {
+    const next = props.intent === "reading"
       ? openPreviewFile(m, rel, content, readOnly, kind)
       : openFile(m, rel, content, readOnly, kind)
+    // 跨重启草稿：有草稿的文件恢复后必须标 dirty 并转持久 Tab，避免下一次预览替换掉。
+    const root = props.contentRoot
+    return root && getDraft(root, rel) !== undefined ? markDirty(next, rel) : next
+  }
 
   async function openRel(rel: string) {
     const root = props.contentRoot

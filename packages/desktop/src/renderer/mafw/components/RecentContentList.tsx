@@ -30,6 +30,9 @@ export function RecentContentList(props: {
                 >
                   <Icon name="file" size="small" />
                   <span class="mafw-project-recent-name">{parts.name}</span>
+                  <Show when={entry.scopeKind === "goal"}>
+                    <span class="mafw-project-recent-scope">{entry.scopeLabel}</span>
+                  </Show>
                   <Show when={parts.dir}>
                     <span class="mafw-project-recent-dir">{parts.dir}</span>
                   </Show>
