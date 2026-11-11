@@ -211,6 +211,35 @@ describe('api-contract: catalog 可达性守卫', () => {
   });
 });
 
+describe('api-contract: response schemas（E3-6 四个读接口）', () => {
+  test('goals.get / project.list / presence.get / session.usageSummary 的 200 响应带 JSON schema', () => {
+    const required: Record<string, string> = {
+      'goals.get': 'GET /api/goals/{id}',
+      'project.list': 'GET /api/projects',
+      'presence.get': 'GET /api/presence',
+      'session.usageSummary': 'GET /api/usage/summary',
+    };
+    const problems: string[] = [];
+    for (const [operationId, label] of Object.entries(required)) {
+      let op: any = null;
+      for (const methods of Object.values<any>(contract.paths)) {
+        for (const candidate of Object.values<any>(methods)) {
+          if (candidate?.operationId === operationId) op = candidate;
+        }
+      }
+      if (!op) { problems.push(`${operationId}: 未出现在 openapi.json（${label}）`); continue; }
+      const schema = op.responses?.['200']?.content?.['application/json']?.schema;
+      if (!schema) { problems.push(`${operationId}: responses.200 缺 application/json schema`); continue; }
+      const propertyCount = Object.keys(schema.properties ?? {}).length;
+      if (propertyCount < 1) problems.push(`${operationId}: schema 不含任何 property`);
+    }
+    if (problems.length) {
+      console.error('[api-contract] 读接口 response schema 缺失 —— 先跑 emit:openapi + merge-contract:\n' + problems.join('\n'));
+    }
+    expect(problems).toEqual([]);
+  });
+});
+
 describe('api-contract: contract 产物新鲜度', () => {
   test('openapi.json paths/operationId ≡ catalog 当前生成结果', () => {
     const expected = registry.toOpenApiPaths();

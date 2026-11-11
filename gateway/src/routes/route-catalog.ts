@@ -24,13 +24,19 @@
 
 import type { RouteDef } from './registry';
 import { SessionListResponse } from './schemas/session';
+import {
+  GoalViewSchema,
+  PresenceResponse,
+  ProjectListResponse,
+  UsageSummaryResponse,
+} from './schemas/read-models';
 
 /**
  * SDK-facing 端点（catalog → gateway-paths → openapi 单向生成；**在此新增**后必须重跑
  * `emit:openapi` + `gen:api`，不要反向手改 openapi.json）。
  */
 const SDK_FACING_ROUTES: RouteDef[] = [
-  { method: 'GET', path: '/api/presence', operationId: 'presence.get', tags: ['presence'] },
+  { method: 'GET', path: '/api/presence', operationId: 'presence.get', tags: ['presence'], response: PresenceResponse },
   { method: 'GET', path: '/api/pods/:podId/events', operationId: 'pod.events.list', tags: ['pod'] },
   { method: 'POST', path: '/api/pods/:podId/events/:id/seen', operationId: 'pod.events.seen', tags: ['pod'] },
   { method: 'POST', path: '/api/pods/:podId/events/seen', operationId: 'pod.events.seenAll', tags: ['pod'] },
@@ -98,7 +104,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'DELETE', path: '/api/terminal/sessions/:id', operationId: 'terminal.remove', tags: ['terminal'] },
   { method: 'POST', path: '/api/terminal/sessions/:id/connect-ticket', operationId: 'terminal.connectTicket', tags: ['terminal'] },
   { method: 'GET', path: '/api/usage', operationId: 'session.usage', tags: ['session'] },
-  { method: 'GET', path: '/api/usage/summary', operationId: 'session.usageSummary', tags: ['session'] },
+  { method: 'GET', path: '/api/usage/summary', operationId: 'session.usageSummary', tags: ['session'], response: UsageSummaryResponse },
   { method: 'GET', path: '/api/usage/plugins', operationId: 'session.usagePluginsList', tags: ['session'] },
   { method: 'POST', path: '/api/usage/plugins/reload', operationId: 'session.usagePluginsReload', tags: ['session'] },
   { method: 'POST', path: '/api/usage/plugins/create', operationId: 'session.usagePluginsCreate', tags: ['session'] },
@@ -118,7 +124,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/mafw-commands', operationId: 'mafwCommands.list', tags: ['mafwCommands'] },
   { method: 'GET', path: '/api/manager/session', operationId: 'manager.session', tags: ['manager'] },
   { method: 'POST', path: '/api/manager/session/rotate', operationId: 'manager.rotate', tags: ['manager'] },
-  { method: 'GET', path: '/api/projects', operationId: 'project.list', tags: ['project'] },
+  { method: 'GET', path: '/api/projects', operationId: 'project.list', tags: ['project'], response: ProjectListResponse },
   { method: 'GET', path: '/api/projects/current', operationId: 'project.current', tags: ['project'] },
   { method: 'POST', path: '/register', operationId: 'project.setCurrent', tags: ['project'] },
   { method: 'POST', path: '/api/file-history/snapshot', operationId: 'fileHistory.snapshot', tags: ['internal'] },
@@ -151,7 +157,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/runtime-config', operationId: 'runtime.config.get', tags: ['runtime'] },
   { method: 'PATCH', path: '/api/runtime-config', operationId: 'runtime.config.update', tags: ['runtime'] },
   { method: 'GET', path: '/api/goals', operationId: 'goals.list', tags: ['goals'] },
-  { method: 'GET', path: '/api/goals/:id', operationId: 'goals.get', tags: ['goals'] },
+  { method: 'GET', path: '/api/goals/:id', operationId: 'goals.get', tags: ['goals'], response: GoalViewSchema },
   { method: 'GET', path: '/api/goals/:id/plan', operationId: 'goals.plan', tags: ['goals'] },
   { method: 'POST', path: '/api/goals/:id/plan-approval', operationId: 'goals.planApproval', tags: ['goals'] },
   { method: 'GET', path: '/api/goals/:id/sessions', operationId: 'goals.sessions', tags: ['goals'] },

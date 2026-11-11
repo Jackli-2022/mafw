@@ -4455,7 +4455,59 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        running: {
+                            podId: string;
+                            projectId: string;
+                            projectName: string;
+                            goalId: string;
+                            title: string;
+                            phase: string | null;
+                            node: string | null;
+                            revision: number;
+                            progress: {
+                                current: number;
+                                total: number;
+                            } | null;
+                            startedAt: string;
+                            updatedAt: string;
+                        }[];
+                        attention: {
+                            count: number;
+                            items: ({
+                                id: string;
+                                goalId: string;
+                                revision: number;
+                                kind: string;
+                                title: string;
+                                podId?: string;
+                                projectId?: string;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                        };
+                        unreadResults: {
+                            count: number;
+                            latest: {
+                                podId: string;
+                                projectId: string;
+                                projectName: string;
+                                goalId: string;
+                                title: string;
+                                phase: string | null;
+                                node: string | null;
+                                revision: number;
+                                progress: {
+                                    current: number;
+                                    total: number;
+                                } | null;
+                                startedAt: string;
+                                updatedAt: string;
+                            } | null;
+                        };
+                    };
+                };
             };
         };
     };
@@ -5767,7 +5819,91 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        session: {
+                            totalTokens: {
+                                input: number;
+                                output: number;
+                                reasoning: number;
+                                cache: {
+                                    read: number;
+                                    write: number;
+                                };
+                            };
+                            totalCost: number;
+                            turnCount: number;
+                            sessionCount?: number;
+                            avgTokensPerTurn: {
+                                input: number;
+                                output: number;
+                                reasoning: number;
+                                cache: {
+                                    read: number;
+                                    write: number;
+                                };
+                            };
+                        } | null;
+                        project: {
+                            totalTokens: {
+                                input: number;
+                                output: number;
+                                reasoning: number;
+                                cache: {
+                                    read: number;
+                                    write: number;
+                                };
+                            };
+                            totalCost: number;
+                            turnCount: number;
+                            sessionCount: number;
+                        } | null;
+                        global: {
+                            totalTokens: {
+                                input: number;
+                                output: number;
+                                reasoning: number;
+                                cache: {
+                                    read: number;
+                                    write: number;
+                                };
+                            };
+                            totalCost: number;
+                            turnCount: number;
+                            sessionCount: number;
+                        } | null;
+                        memory?: {
+                            totalTokens: {
+                                input: number;
+                                output: number;
+                                reasoning: number;
+                                cache: {
+                                    read: number;
+                                    write: number;
+                                };
+                            };
+                            totalCost: number;
+                            turnCount: number;
+                            sessionCount: number;
+                            byRole: {
+                                [key: string]: {
+                                    totalTokens: {
+                                        input: number;
+                                        output: number;
+                                        reasoning: number;
+                                        cache: {
+                                            read: number;
+                                            write: number;
+                                        };
+                                    };
+                                    totalCost: number;
+                                    turnCount: number;
+                                    sessionCount: number;
+                                };
+                            };
+                        } | null;
+                    };
+                };
             };
         };
     };
@@ -6141,7 +6277,14 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        projects: {
+                            id: string;
+                            worktree: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -6689,12 +6832,13 @@ export interface operations {
                 content: {
                     "application/json": {
                         goalId: string;
-                        phase: string;
+                        phase: string | null;
                         loop: number;
                         currentWave: number;
                         totalWaves: number;
                         nextAction?: string;
-                        updatedAt?: string;
+                        error: string | null;
+                        updatedAt: string | null;
                     };
                 };
             };

@@ -9,7 +9,260 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "running",
+                    "attention",
+                    "unreadResults"
+                  ],
+                  "properties": {
+                    "running": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "podId",
+                          "projectId",
+                          "projectName",
+                          "goalId",
+                          "title",
+                          "phase",
+                          "node",
+                          "revision",
+                          "progress",
+                          "startedAt",
+                          "updatedAt"
+                        ],
+                        "properties": {
+                          "podId": {
+                            "type": "string"
+                          },
+                          "projectId": {
+                            "type": "string"
+                          },
+                          "projectName": {
+                            "type": "string"
+                          },
+                          "goalId": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "phase": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "node": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "revision": {
+                            "type": "number"
+                          },
+                          "progress": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "required": [
+                                  "current",
+                                  "total"
+                                ],
+                                "properties": {
+                                  "current": {
+                                    "type": "number"
+                                  },
+                                  "total": {
+                                    "type": "number"
+                                  }
+                                }
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "startedAt": {
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "attention": {
+                      "type": "object",
+                      "required": [
+                        "count",
+                        "items"
+                      ],
+                      "properties": {
+                        "count": {
+                          "type": "number"
+                        },
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object",
+                            "required": [
+                              "id",
+                              "goalId",
+                              "revision",
+                              "kind",
+                              "title"
+                            ],
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "goalId": {
+                                "type": "string"
+                              },
+                              "revision": {
+                                "type": "number"
+                              },
+                              "kind": {
+                                "type": "string"
+                              },
+                              "title": {
+                                "type": "string"
+                              },
+                              "podId": {
+                                "type": "string"
+                              },
+                              "projectId": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "unreadResults": {
+                      "type": "object",
+                      "required": [
+                        "count",
+                        "latest"
+                      ],
+                      "properties": {
+                        "count": {
+                          "type": "number"
+                        },
+                        "latest": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "required": [
+                                "podId",
+                                "projectId",
+                                "projectName",
+                                "goalId",
+                                "title",
+                                "phase",
+                                "node",
+                                "revision",
+                                "progress",
+                                "startedAt",
+                                "updatedAt"
+                              ],
+                              "properties": {
+                                "podId": {
+                                  "type": "string"
+                                },
+                                "projectId": {
+                                  "type": "string"
+                                },
+                                "projectName": {
+                                  "type": "string"
+                                },
+                                "goalId": {
+                                  "type": "string"
+                                },
+                                "title": {
+                                  "type": "string"
+                                },
+                                "phase": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "node": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "revision": {
+                                  "type": "number"
+                                },
+                                "progress": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "required": [
+                                        "current",
+                                        "total"
+                                      ],
+                                      "properties": {
+                                        "current": {
+                                          "type": "number"
+                                        },
+                                        "total": {
+                                          "type": "number"
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "startedAt": {
+                                  "type": "string"
+                                },
+                                "updatedAt": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -1498,7 +1751,365 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "session",
+                    "project",
+                    "global"
+                  ],
+                  "properties": {
+                    "session": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "required": [
+                            "totalTokens",
+                            "totalCost",
+                            "turnCount",
+                            "avgTokensPerTurn"
+                          ],
+                          "properties": {
+                            "totalTokens": {
+                              "type": "object",
+                              "required": [
+                                "input",
+                                "output",
+                                "reasoning",
+                                "cache"
+                              ],
+                              "properties": {
+                                "input": {
+                                  "type": "number"
+                                },
+                                "output": {
+                                  "type": "number"
+                                },
+                                "reasoning": {
+                                  "type": "number"
+                                },
+                                "cache": {
+                                  "type": "object",
+                                  "required": [
+                                    "read",
+                                    "write"
+                                  ],
+                                  "properties": {
+                                    "read": {
+                                      "type": "number"
+                                    },
+                                    "write": {
+                                      "type": "number"
+                                    }
+                                  }
+                                }
+                              }
+                            },
+                            "totalCost": {
+                              "type": "number"
+                            },
+                            "turnCount": {
+                              "type": "number"
+                            },
+                            "sessionCount": {
+                              "type": "number"
+                            },
+                            "avgTokensPerTurn": {
+                              "type": "object",
+                              "required": [
+                                "input",
+                                "output",
+                                "reasoning",
+                                "cache"
+                              ],
+                              "properties": {
+                                "input": {
+                                  "type": "number"
+                                },
+                                "output": {
+                                  "type": "number"
+                                },
+                                "reasoning": {
+                                  "type": "number"
+                                },
+                                "cache": {
+                                  "type": "object",
+                                  "required": [
+                                    "read",
+                                    "write"
+                                  ],
+                                  "properties": {
+                                    "read": {
+                                      "type": "number"
+                                    },
+                                    "write": {
+                                      "type": "number"
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "project": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "required": [
+                            "totalTokens",
+                            "totalCost",
+                            "turnCount",
+                            "sessionCount"
+                          ],
+                          "properties": {
+                            "totalTokens": {
+                              "type": "object",
+                              "required": [
+                                "input",
+                                "output",
+                                "reasoning",
+                                "cache"
+                              ],
+                              "properties": {
+                                "input": {
+                                  "type": "number"
+                                },
+                                "output": {
+                                  "type": "number"
+                                },
+                                "reasoning": {
+                                  "type": "number"
+                                },
+                                "cache": {
+                                  "type": "object",
+                                  "required": [
+                                    "read",
+                                    "write"
+                                  ],
+                                  "properties": {
+                                    "read": {
+                                      "type": "number"
+                                    },
+                                    "write": {
+                                      "type": "number"
+                                    }
+                                  }
+                                }
+                              }
+                            },
+                            "totalCost": {
+                              "type": "number"
+                            },
+                            "turnCount": {
+                              "type": "number"
+                            },
+                            "sessionCount": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "global": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "required": [
+                            "totalTokens",
+                            "totalCost",
+                            "turnCount",
+                            "sessionCount"
+                          ],
+                          "properties": {
+                            "totalTokens": {
+                              "type": "object",
+                              "required": [
+                                "input",
+                                "output",
+                                "reasoning",
+                                "cache"
+                              ],
+                              "properties": {
+                                "input": {
+                                  "type": "number"
+                                },
+                                "output": {
+                                  "type": "number"
+                                },
+                                "reasoning": {
+                                  "type": "number"
+                                },
+                                "cache": {
+                                  "type": "object",
+                                  "required": [
+                                    "read",
+                                    "write"
+                                  ],
+                                  "properties": {
+                                    "read": {
+                                      "type": "number"
+                                    },
+                                    "write": {
+                                      "type": "number"
+                                    }
+                                  }
+                                }
+                              }
+                            },
+                            "totalCost": {
+                              "type": "number"
+                            },
+                            "turnCount": {
+                              "type": "number"
+                            },
+                            "sessionCount": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "memory": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "required": [
+                            "totalTokens",
+                            "totalCost",
+                            "turnCount",
+                            "sessionCount",
+                            "byRole"
+                          ],
+                          "properties": {
+                            "totalTokens": {
+                              "type": "object",
+                              "required": [
+                                "input",
+                                "output",
+                                "reasoning",
+                                "cache"
+                              ],
+                              "properties": {
+                                "input": {
+                                  "type": "number"
+                                },
+                                "output": {
+                                  "type": "number"
+                                },
+                                "reasoning": {
+                                  "type": "number"
+                                },
+                                "cache": {
+                                  "type": "object",
+                                  "required": [
+                                    "read",
+                                    "write"
+                                  ],
+                                  "properties": {
+                                    "read": {
+                                      "type": "number"
+                                    },
+                                    "write": {
+                                      "type": "number"
+                                    }
+                                  }
+                                }
+                              }
+                            },
+                            "totalCost": {
+                              "type": "number"
+                            },
+                            "turnCount": {
+                              "type": "number"
+                            },
+                            "sessionCount": {
+                              "type": "number"
+                            },
+                            "byRole": {
+                              "type": "object",
+                              "patternProperties": {
+                                "^(.*)$": {
+                                  "type": "object",
+                                  "required": [
+                                    "totalTokens",
+                                    "totalCost",
+                                    "turnCount",
+                                    "sessionCount"
+                                  ],
+                                  "properties": {
+                                    "totalTokens": {
+                                      "type": "object",
+                                      "required": [
+                                        "input",
+                                        "output",
+                                        "reasoning",
+                                        "cache"
+                                      ],
+                                      "properties": {
+                                        "input": {
+                                          "type": "number"
+                                        },
+                                        "output": {
+                                          "type": "number"
+                                        },
+                                        "reasoning": {
+                                          "type": "number"
+                                        },
+                                        "cache": {
+                                          "type": "object",
+                                          "required": [
+                                            "read",
+                                            "write"
+                                          ],
+                                          "properties": {
+                                            "read": {
+                                              "type": "number"
+                                            },
+                                            "write": {
+                                              "type": "number"
+                                            }
+                                          }
+                                        }
+                                      }
+                                    },
+                                    "totalCost": {
+                                      "type": "number"
+                                    },
+                                    "turnCount": {
+                                      "type": "number"
+                                    },
+                                    "sessionCount": {
+                                      "type": "number"
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -1826,7 +2437,37 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "projects"
+                  ],
+                  "properties": {
+                    "projects": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "worktree"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "worktree": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -2255,7 +2896,70 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "goalId",
+                    "phase",
+                    "loop",
+                    "currentWave",
+                    "totalWaves",
+                    "error",
+                    "updatedAt"
+                  ],
+                  "properties": {
+                    "goalId": {
+                      "type": "string"
+                    },
+                    "phase": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "loop": {
+                      "type": "number"
+                    },
+                    "currentWave": {
+                      "type": "number"
+                    },
+                    "totalWaves": {
+                      "type": "number"
+                    },
+                    "nextAction": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "updatedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
