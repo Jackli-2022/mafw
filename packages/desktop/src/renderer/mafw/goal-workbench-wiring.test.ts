@@ -6,6 +6,8 @@ import { join } from "node:path"
 const workOverviewSrc = readFileSync(join(import.meta.dirname, "components/WorkOverview.tsx"), "utf8")
 const prioritySrc = readFileSync(join(import.meta.dirname, "components/WorkPriorityList.tsx"), "utf8")
 const goalDetailSrc = readFileSync(join(import.meta.dirname, "components/GoalDetailPanel.tsx"), "utf8")
+const mafwShellSrc = readFileSync(join(import.meta.dirname, "MafwShell.tsx"), "utf8")
+const chatPaneSrc = readFileSync(join(import.meta.dirname, "components/ChatPane.tsx"), "utf8")
 
 test("project Goal list uses the user-facing summary projection", () => {
   assert.match(workOverviewSrc, /summarizeGoalForUser/)
@@ -46,4 +48,37 @@ test("the primary Goal header does not expose the internal Goal id", () => {
   const metaStart = goalDetailSrc.indexOf('class="mafw-goal-meta"')
   assert.ok(headerStart >= 0 && metaStart > headerStart)
   assert.doesNotMatch(goalDetailSrc.slice(headerStart, metaStart), /mafw-goal-id/)
+})
+
+function between(source: string, startMarker: string, endMarker: string): string {
+  const start = source.indexOf(startMarker)
+  const end = source.indexOf(endMarker, start + startMarker.length)
+  assert.ok(start >= 0, `missing start marker: ${startMarker}`)
+  assert.ok(end > start, `missing end marker: ${endMarker}`)
+  return source.slice(start, end)
+}
+
+test("Goal actions keep the right Goal detail open", () => {
+  assert.doesNotMatch(between(goalDetailSrc, "const techLeadEntry", "// Task 21"), /props\.onClose\(\)/)
+  assert.doesNotMatch(between(goalDetailSrc, "const rejectGoal", "async function answerQuestion"), /props\.onClose\(\)/)
+  assert.doesNotMatch(between(goalDetailSrc, "onOpenSession={(sid) => {", "onRetry={"), /props\.onClose\(\)/)
+})
+
+test("opening a Goal enters its Tech Lead discussion without losing the Goal", () => {
+  assert.match(mafwShellSrc, /openGoalAndDiscuss/)
+  assert.match(mafwShellSrc, /shouldOpenTechLeadForGoal/)
+  assert.match(mafwShellSrc, /goalDiscussionTarget/)
+  assert.match(mafwShellSrc, /onOpenGoal=\{\(goal, focus\) => \{ void openGoalAndDiscuss\(goal\.goalId, focus\) \}\}/)
+  assert.match(mafwShellSrc, /onGoalCreated=\{\(goalId\) => \{ void openGoalAndDiscuss\(goalId\) \}\}/)
+  assert.doesNotMatch(mafwShellSrc, /onOpenGoal=\{\(goal, focus\) => openGoalDetail\(/)
+  assert.doesNotMatch(mafwShellSrc, /onGoalCreated=\{\(goalId\) => openGoalDetail\(/)
+})
+
+test("ChatPane exposes Return to Lead only through the shared context rule", () => {
+  assert.match(chatPaneSrc, /showReturnLead\?: \(\) => boolean/)
+  assert.match(chatPaneSrc, /onReturnLead\?: \(\) => void/)
+  assert.match(chatPaneSrc, /props\.showReturnLead\?\.\(\)/)
+  assert.match(chatPaneSrc, /返回项目 Lead/)
+  assert.match(chatPaneSrc, /class="mafw-return-lead"/)
+  assert.doesNotMatch(chatPaneSrc, /<button\b/)
 })

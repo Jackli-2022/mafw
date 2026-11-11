@@ -75,6 +75,7 @@ import {
   techLeadSendGate,
   type GoalDetailFocus,
 } from "./pod-model"
+import { goalDiscussionTarget, shouldOpenTechLeadForGoal, shouldShowReturnLead } from "./goal-chat-context"
 import { ingestPluginEvent, ingestPluginsChanged, pluginClientRevision, pluginDescriptors, refreshPluginClient } from "./plugins/plugin-store"
 import { pluginSurfaceIssues, pluginSurfaces, pluginConfigSurfaces, resolveActiveSurface } from "./plugins/plugin-view-model"
 import { railItemsFromWebSurfaces, webSurfaceTabs, webSurfaceViews } from "./plugins/plugin-web-surface"
@@ -228,6 +229,18 @@ export function MafwShell() {
     openProjectWork()
     setGoalDetailFocus(focus)
     setPodGoalId(goalId)
+  }
+  // 进入非终态 Goal 时把 Chat 切到 Tech Lead，但右侧 Goal 先同步打开，
+  // 即使 Tech Lead 会话恢复失败也不丢当前 Goal。
+  const openGoalAndDiscuss = async (goalId: string, focus: GoalDetailFocus = "timeline"): Promise<void> => {
+    openGoalDetail(goalId, focus)
+    const goal = goalDiscussionTarget(podStore.detail(), goalId)
+    if (!shouldOpenTechLeadForGoal(goal)) return
+    try {
+      await openTechLead(goalId)
+    } catch (err: any) {
+      showToastV2({ description: `打开 Tech Lead 失败: ${err?.message || err}`, duration: 4000 } as any)
+    }
   }
 
   // store.session 的 tab 占位只有 directory "."；权威信息（directory/parentID）来自
@@ -528,7 +541,7 @@ export function MafwShell() {
         sourceRef: handoff.sourceRef,
       })
       await podStore.refresh()
-      openGoalDetail(created.goalId)
+      void openGoalAndDiscuss(created.goalId)
       showToastV2({ description: "已交给 Lead，Goal 已创建", duration: 3000 } as any)
     } catch (err: any) {
       showToastV2({ description: `交给 Lead 失败: ${err?.message || err}`, duration: 4500 } as any)
@@ -2101,7 +2114,7 @@ export function MafwShell() {
         if (projectDir && projectDir !== currentProject()) {
           await handleSelectProject(projectDir).catch(() => {})
         }
-        openGoalDetail(goalId, "result")
+        await openGoalAndDiscuss(goalId, "result")
       })()
     })
     onCleanup(() => {
@@ -2964,6 +2977,12 @@ export function MafwShell() {
                           onBoundaryAction={(id, action) => void boundaryAction(id, action)}
                           onCloseTopics={() => setShowTopics(false)}
                           onOpenTechLead={(goalId) => void openTechLead(goalId)}
+                          showReturnLead={() => shouldShowReturnLead({
+                            detail: podStore.detail(),
+                            selectedGoalId: podGoalId(),
+                            activeSessionId: activeSessionId(),
+                          })}
+                          onReturnLead={() => { void openLeadEntry() }}
                           techLeadTarget={activeTechLeadTarget}
                           sendBlocked={activeTechLeadBlocked}
                           onOpenDiffReview={() => openWorkbench("review")}
@@ -3143,8 +3162,8 @@ export function MafwShell() {
                       selectedGoalId={podGoalId()}
                       detailFocus={goalDetailFocus()}
                       podId={podIdForCurrentProject()}
-                      onOpenGoal={(goal, focus) => openGoalDetail(goal.goalId, focus)}
-                      onGoalCreated={(goalId) => openGoalDetail(goalId)}
+                      onOpenGoal={(goal, focus) => { void openGoalAndDiscuss(goal.goalId, focus) }}
+                      onGoalCreated={(goalId) => { void openGoalAndDiscuss(goalId) }}
                       onCloseGoal={() => setPodGoalId(null)}
                       onOpenSession={(sid) => { void openPodSession(sid) }}
                     />

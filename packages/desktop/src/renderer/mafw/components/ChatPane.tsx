@@ -222,6 +222,9 @@ export type ChatPaneProps = {
   onCloseTopics?: () => void
   /** 打开 Goal 的 Tech Lead 隐藏会话（Goal 标题作用域的 tab）。 */
   onOpenTechLead?: (goalId: string) => void
+  /** 当前 Goal 的 Tech Lead 讨论中显示；规则由 shell 的 goal-chat-context 决定。 */
+  showReturnLead?: () => boolean
+  onReturnLead?: () => void
   /** Task 20：当前 tab 是某个 Goal 的 Tech Lead 讨论时，发送走 sendTechLeadMessage。 */
   techLeadTarget?: () => { podId: string; goalId: string } | null | Promise<{ podId: string; goalId: string } | null>
   /** Task 20 review：非讨论的 Tech Lead 节点会话禁止直接发送，返回原因（保留草稿）。 */
@@ -1880,6 +1883,16 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                       状态
                     </ButtonV2>
                   </TooltipV2>
+                </Show>
+                <Show when={props.showReturnLead?.()}>
+                  <ButtonV2
+                    variant="outline"
+                    size="small"
+                    class="mafw-return-lead"
+                    onClick={(e: MouseEvent) => { e.stopPropagation(); props.onReturnLead?.() }}
+                  >
+                    返回项目 Lead
+                  </ButtonV2>
                 </Show>
                 <Show when={props.onHandoffToLead && (props.handoffEligible?.() ?? true)}>
                   <TooltipV2 value="把当前讨论作为来源，交给 Lead 创建 Goal 执行" openDelay={300}>

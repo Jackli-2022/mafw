@@ -345,11 +345,9 @@ export function GoalDetailPanel(props: {
             return
           }
           props.onOpenSession(sessionId)
-          props.onClose()
           return
         }
         requestPodTechLeadOpen(id, activeRevision())
-        props.onClose()
       },
     }
   }
@@ -534,7 +532,6 @@ export function GoalDetailPanel(props: {
     } as any)
     await podStore.refresh()
     requestPodTechLeadOpen(id, typeof result?.revision === "number" ? result.revision : null)
-    props.onClose()
     return true
   }
 
@@ -902,7 +899,7 @@ export function GoalDetailPanel(props: {
                     lanes={lanes().lanes}
                     artifacts={timeline()?.artifacts}
                     plan={planEntry() ?? undefined}
-                    onOpenSession={(sid) => { props.onClose(); props.onOpenSession(sid) }}
+                    onOpenSession={(sid) => { props.onOpenSession(sid) }}
                     onRetry={retry}
                     retrying={retrying()}
                   />

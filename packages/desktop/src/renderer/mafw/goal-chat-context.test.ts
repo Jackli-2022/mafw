@@ -80,6 +80,7 @@ const detail: PodDetail = {
     session({ id: "s-builder", memberId: "builder-1", goalId: "g1", node: "execute" }),
     session({ id: "s-other", memberId: "tech-1", goalId: "g2", node: "discussion", scopeKind: "discussion" }),
     session({ id: "s-tech-ended", memberId: "tech-1", goalId: "g-ended", node: "discussion", scopeKind: "discussion", endedAt: "2026-11-11T01:00:00.000Z" }),
+    session({ id: "s-tech-ended-live", memberId: "tech-1", goalId: "g-ended", node: "discussion", scopeKind: "discussion" }),
   ],
 }
 
@@ -110,5 +111,6 @@ test("return Lead is visible only for the selected live nonterminal Goal", () =>
   assert.equal(shouldShowReturnLead({ detail, selectedGoalId: null, activeSessionId: "s-tech" }), false)
   assert.equal(shouldShowReturnLead({ detail, selectedGoalId: "g2", activeSessionId: "s-tech" }), false)
   assert.equal(shouldShowReturnLead({ detail, selectedGoalId: "g-ended", activeSessionId: "s-tech-ended" }), false)
+  assert.equal(shouldShowReturnLead({ detail, selectedGoalId: "g-ended", activeSessionId: "s-tech-ended-live" }), false)
   assert.equal(shouldShowReturnLead({ detail, selectedGoalId: "missing", activeSessionId: "s-tech" }), false)
 })
