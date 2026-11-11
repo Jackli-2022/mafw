@@ -132,4 +132,20 @@ export class EventStore {
       /* fail-open */
     }
   }
+
+  /**
+   * E4-6b：立即裁剪到最新 retention 行（disk critical 边沿专用，不等摊销计数）。
+   *
+   * 与 `maybePrune` 同一 SQL；不重置 `appendCount`（摊销节奏不变）。异常吞掉：
+   * 裁剪失败不得影响采样/降级状态机（fail-open）。
+   */
+  pruneNow(retention: number): void {
+    try {
+      this.db
+        .prepare('DELETE FROM event_log WHERE seq <= (SELECT COALESCE(MAX(seq), 0) FROM event_log) - ?')
+        .run(retention);
+    } catch {
+      /* fail-open */
+    }
+  }
 }

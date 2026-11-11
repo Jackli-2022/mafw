@@ -150,6 +150,56 @@ describe('memory registry wiring (D1 Task F1)', () => {
     expect(limits).toEqual([25, undefined]);
   });
 
+  // ── E4-6b: disk critical → backfill 503（spec §4.2 / §6）────────────────
+  it('embeddings backfill answers 503 disk_low on disk critical without starting work', async () => {
+    const calls: Array<number | undefined> = [];
+    const { registry } = setup({
+      backfillEmbeddings: async (limit?: number) => { calls.push(limit); return { indexed: 1 }; },
+      pressure: () => ({ disk: 'critical', degraded: ['disk_critical'] }),
+    });
+    const r = fakeRes();
+    await handlerFor(registry, 'POST', '/api/memory/embeddings/backfill?limit=25')!(
+      fakeReq({ method: 'POST', url: '/api/memory/embeddings/backfill?limit=25' }), r.res,
+    );
+    expect(r.status).toBe(503);
+    expect(JSON.parse(r.body)).toEqual({ error: 'disk space critical', code: 'disk_low' });
+    expect(calls).toEqual([]);
+  });
+
+  it('embeddings backfill also gates on degraded containing disk_critical', async () => {
+    const calls: Array<number | undefined> = [];
+    const { registry } = setup({
+      backfillEmbeddings: async (limit?: number) => { calls.push(limit); return { indexed: 2 }; },
+      pressure: () => ({ disk: 'ok', degraded: ['disk_critical'] }),
+    });
+    const r = fakeRes();
+    await handlerFor(registry, 'POST', '/api/memory/embeddings/backfill')!(
+      fakeReq({ method: 'POST', url: '/api/memory/embeddings/backfill' }), r.res,
+    );
+    expect(r.status).toBe(503);
+    expect(calls).toEqual([]);
+  });
+
+  it('embeddings backfill runs normally when pressure is ok or unknown', async () => {
+    for (const pressure of [
+      () => ({ disk: 'ok', degraded: [] as string[] }),
+      () => null,
+    ]) {
+      const calls: Array<number | undefined> = [];
+      const { registry } = setup({
+        backfillEmbeddings: async (limit?: number) => { calls.push(limit); return { indexed: 3 }; },
+        pressure,
+      });
+      const r = fakeRes();
+      await handlerFor(registry, 'POST', '/api/memory/embeddings/backfill?limit=5')!(
+        fakeReq({ method: 'POST', url: '/api/memory/embeddings/backfill?limit=5' }), r.res,
+      );
+      expect(r.status).toBe(200);
+      expect(JSON.parse(r.body)).toEqual({ indexed: 3 });
+      expect(calls).toEqual([5]);
+    }
+  });
+
   it('stats assembles consolidation/pipelines/coactivation/abstraction buckets + fok cache', async () => {
     let cache: any = null;
     const { registry } = setup({

@@ -30,11 +30,12 @@ export type QuotaSnapshot = Partial<Record<QuotaResource, { current: number; lim
 
 /**
  * wire 归一化：JSON 里 `Infinity` / `NaN` 会变成 `null`（客户端无法判断"不限"），
- * 所以 snapshot 出口把非有限值统一成 `0`（= 不限）；有限值原样保留（含 0 / 负数，
- * 由 `limitOf()` 解释）。
+ * 所以出口把非有限值与负数统一成 `0`（= 不限）；有限非负值原样保留
+ * （含 0，由 `limitOf()` 解释）。`check()` 与 `snapshot()` 共用同一归一化，
+ * 原始负配置不会从 API 漏出去。
  */
 export function sanitizeLimit(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
 }
 
 export class QuotaExceededError extends Error {
@@ -59,9 +60,8 @@ export class QuotaService {
   constructor(private readonly deps: QuotaServiceDeps) {}
 
   private rawLimit(resource: QuotaResource): number {
-    const raw = this.deps.limits()?.[resource];
-    // 缺键 → 0（不限）；其余原样保留（含 0/负数/NaN，由 limitOf 解释）。
-    return typeof raw === 'number' ? raw : 0;
+    // 缺键 / 非有限 / 负数 → 0（不限）；有限非负值原样保留（由 limitOf 解释）。
+    return sanitizeLimit(this.deps.limits()?.[resource]);
   }
 
   check(resource: QuotaResource, current: number): QuotaCheck {
@@ -83,7 +83,7 @@ export class QuotaService {
       const current = currents[resource];
       out[resource] = {
         current: typeof current === 'number' && Number.isFinite(current) ? current : 0,
-        // 非有限值在 JSON 里是 null → wire 上统一按 0（不限）表达。
+        // 非有限/负数在 wire 上统一按 0（不限）表达。
         limit: sanitizeLimit(this.rawLimit(resource)),
       };
     }

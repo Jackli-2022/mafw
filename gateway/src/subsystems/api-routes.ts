@@ -207,6 +207,12 @@ export interface ApiRouteDeps {
   timers: TimerService;
   /** E4-8: kernel resource snapshot for `GET /api/kernel/stats` (rebuilt per request). */
   kernelStats: () => KernelStatsSnapshot;
+  /**
+   * E4-6b: live 资源压力窄面（`governor.pressure()` 的 disk/degraded）。
+   * governor 未启动 → null（fail-open）。dashboard memory.add 与 embeddings
+   * backfill 共用这一个 getter，不各自读 governor。
+   */
+  resourcePressure: () => { disk: string; degraded: string[] } | null;
 
   // ── services ───────────────────────────────────────────────────────────
   allowlistStore: ReturnType<ApprovalsDeps['allowlistStore']>;
@@ -800,6 +806,7 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
     mafwDir: () => deps.mafwDir,
     getGatewayDb: () => deps.getGatewayDb(),
     backfillEmbeddings: (limit) => deps.backfillEmbeddings(limit),
+    pressure: () => deps.resourcePressure(),
     searchT1: require('../recall/t1-search').createGatewayT1Search(deps.getGatewayDb()),
   });
   // Phase D1 Task F2：goals inline 面迁 registry dispatch（6 分支 → 7 op；plan /
@@ -844,6 +851,7 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
       const store = deps.eventStore;
       return store ? store.appendFailures() : null;
     },
+    pressure: () => deps.resourcePressure(),
   });
   // E4-8：内核资源账本快照（internal；可达性守卫要求字面 attach）。紧挨 dashboard
   // 影子条：`/api/stats` 保持不动，两者是不同 op（dashboard.stats / kernel.stats）。

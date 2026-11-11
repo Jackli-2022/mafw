@@ -24,12 +24,25 @@ describe('QuotaService: check boundaries', () => {
     expect(quotas.check('projects', 3)).toEqual({ ok: false, limit: 2, current: 3 });
   });
 
-  it('treats 0 / negative / NaN as unlimited (raw limit preserved)', () => {
+  it('treats 0 / negative / NaN as unlimited, normalizing the raw limit to 0', () => {
     for (const raw of [0, -1, NaN]) {
       const quotas = service({ sessions: raw });
-      expect(quotas.check('sessions', 1_000_000)).toEqual({ ok: true, limit: raw, current: 1_000_000 });
+      expect(quotas.check('sessions', 1_000_000)).toEqual({ ok: true, limit: 0, current: 1_000_000 });
       expect(() => quotas.assert('sessions', 1_000_000)).not.toThrow();
     }
+  });
+
+  it('normalizes Infinity / non-number raw limits to 0 on check too', () => {
+    for (const raw of [Infinity, -Infinity, '10' as never, undefined as never]) {
+      const quotas = service({ sessions: raw });
+      expect(quotas.check('sessions', 1_000_000)).toEqual({ ok: true, limit: 0, current: 1_000_000 });
+    }
+  });
+
+  it('keeps positive finite limits (fractional) as the raw reporting value', () => {
+    const quotas = service({ sessions: -1, projects: 3 });
+    expect(quotas.check('sessions', 0).limit).toBe(0);
+    expect(quotas.check('projects', 0).limit).toBe(3);
   });
 
   it('re-reads limits on every call (hot reload)', () => {
@@ -89,14 +102,14 @@ describe('QuotaService: snapshot', () => {
     expect(service().snapshot({})).toEqual({});
   });
 
-  it('sanitizes non-finite limits to 0 (unlimited) on the wire; finite values pass through', () => {
+  it('sanitizes non-finite and negative limits to 0 (unlimited) on the wire', () => {
     const quotas = new QuotaService({
       limits: () => ({ projects: Infinity, sessions: Number.NaN, sessionRecordsPerProject: -1 }) as never,
     });
     expect(quotas.snapshot({ projects: 1, sessions: 2, sessionRecordsPerProject: 3 })).toEqual({
       projects: { current: 1, limit: 0 },
       sessions: { current: 2, limit: 0 },
-      sessionRecordsPerProject: { current: 3, limit: -1 },
+      sessionRecordsPerProject: { current: 3, limit: 0 },
     });
   });
 });

@@ -192,6 +192,7 @@ import { QuotaExceededError, QuotaService, projectAdmission } from './resources/
 import { ConnectionTable } from './resources/connections';
 import { BufferCounters } from './resources/outbound-buffer';
 import { ResourceGovernor } from './resources/governor';
+import { createResourceBudgetChecker } from './resources/degradation';
 import { buildHandlesSnapshot, buildKernelStatsSnapshot, type KernelStatsSnapshot } from './resources/stats';
 import { limitOf } from './resources/settings';
 import { TimerService } from './core/timer-service';
@@ -537,12 +538,12 @@ class MafwScheduler {
     return new ReflectCursor(this.getGatewayDb());
   }
   /**
-   * Unified priority scheduler (Phase B). AutomationEngine actions and
-   * snapshot builds submit through it; budget admission consults the
-   * pipeline daily USD cap using the pipelines' own allow() names.
+   * E4-6b: 资源预算准入（在既有 pipeline budget 之前）。降级时只拒非前台；
+   * `getGovernor` 是 live 读（governor 在 listen 后才创建）。
    */
-  private scheduler = new Scheduler({
-    budgetChecker: (task) => {
+  private readonly resourceBudget = createResourceBudgetChecker(
+    () => this.governor,
+    (task) => {
       const b = task.budget;
       if (b?.kind === 'pipeline' && b.pipeline) {
         try {
@@ -553,6 +554,14 @@ class MafwScheduler {
       }
       return { ok: true };
     },
+  );
+  /**
+   * Unified priority scheduler (Phase B). AutomationEngine actions and
+   * snapshot builds submit through it; budget admission consults the
+   * pipeline daily USD cap using the pipelines' own allow() names.
+   */
+  private scheduler = new Scheduler({
+    budgetChecker: (task) => this.resourceBudget(task),
   });
   private budgetGuards = new Map<string, BudgetGuard>(); // per-goal-session turn/cost hard stop
   private promptBudgetSessions = new Set<string>();
@@ -646,6 +655,8 @@ class MafwScheduler {
   private readonly bufferCounters = new BufferCounters();
   /** E4-2/E4-3: disk/heap 采样 + 压力状态机（API listen 后启动，stop 时关采样）。 */
   private governor?: ResourceGovernor;
+  /** E4-6b: `governor.onChange` 订阅句柄（stop 时先退订再停采样）。 */
+  private governorUnsub?: () => void;
   /** E4-6: runtime serve 的逻辑台账条目（adapter 拥有进程 → owned:false，无 close 钩子）。 */
   private serveLedger?: ProcessHandle;
   /**
@@ -3419,9 +3430,12 @@ class MafwScheduler {
     this.running = false;
     this.taskService?.dispose();
     this.kernels?.disposeAll();
-    // E4: governor 先停采样（否则 timers.disposeAll 看着像泄漏），再清本组 timer，
+    // E4: governor 先退订再停采样（否则 timers.disposeAll 看着像泄漏），再清本组 timer，
     // 最后释放 serve 逻辑条目与其余子进程（llamacpp sidecar 等）。
+    this.governorUnsub?.();
+    this.governorUnsub = undefined;
     this.governor?.stop();
+    this.governor = undefined;
     this.timers.disposeAll();
     this.serveLedger?.release();
     this.serveLedger = undefined;
@@ -5239,6 +5253,15 @@ class MafwScheduler {
       get bufferCounters() { return self.bufferCounters; },
       get timers() { return self.timers; },
       get kernelStats() { return (...a: any[]) => (self.buildKernelStats as any)(...a); },
+      // E4-6b：governor 压力的窄面（dashboard memory.add / backfill 共用）。
+      get resourcePressure() {
+        return () => {
+          const governor = self.governor;
+          if (!governor) return null;
+          const pressure = governor.pressure();
+          return { disk: pressure.disk, degraded: pressure.degraded };
+        };
+      },
       get releaseIdentity() {
         return () => (self.releaseMetadata && self.runtimeIdentity
           ? { instanceId: self.runtimeIdentity.instanceId, schemaEpoch: self.releaseMetadata.schemaEpoch }
@@ -5491,6 +5514,17 @@ class MafwScheduler {
         });
         void this.governor.start().catch((err: any) => {
           log.warn(`[Resources] governor start failed (stats report unknown): ${err?.message ?? err}`);
+        });
+        // E4-6b：disk **进入** critical 的边沿一次性裁剪 event_log（不随采样重复裁）。
+        this.governorUnsub = this.governor.onChange((prev, next) => {
+          if (next.degraded.includes('disk_critical') && !prev.degraded.includes('disk_critical')) {
+            const store = this.eventStore;
+            if (store) {
+              const retention = Math.max(100, Math.floor(config.events.logRetention * 0.1));
+              store.pruneNow(retention);
+              log.warn(`[Resources] disk critical — pruned event_log to ${retention} rows`);
+            }
+          }
         });
         // E4-6：serve 实例通常在 boot 稍后拉起，这里只是尽力登记；stats 构建时幂等补登。
         this.syncServeLedger();

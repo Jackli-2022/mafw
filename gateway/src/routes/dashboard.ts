@@ -47,6 +47,12 @@ export interface DashboardRouteDeps {
    * null / undefined = 无持久 event store（纯直播部署）→ 字段省略，保持旧形状。
    */
   eventAppendFailures?: () => number | null;
+  /**
+   * E4-6b: live 资源压力（governor.pressure() 的窄面）。
+   * `disk === 'critical'` 或 `degraded` 含 `disk_critical` → memory.add 拒写
+   * （200 壳 + `code:'disk_low'`，不落盘）。null = 无 governor（fail-open）。
+   */
+  pressure?: () => { disk: string; degraded: string[] } | null;
 }
 
 export function attachDashboardRoutes(registry: RouteRegistry, deps: DashboardRouteDeps): void {
@@ -100,6 +106,13 @@ export function attachDashboardRoutes(registry: RouteRegistry, deps: DashboardRo
       const memoryType = String(data?.memoryType || 'semantic');
       if (!content || !['episodic', 'semantic', 'procedural', 'global'].includes(memoryType)) {
         res.end(JSON.stringify({ success: false, error: 'content and valid memoryType required' }));
+        return;
+      }
+      // E4-6b: disk critical → 拒写（在输入校验之后、dedup/写之前：无效输入
+      // 仍回既有错误；合法输入不落盘也不推进 exact-hash 状态）。
+      const pressure = deps.pressure?.() ?? null;
+      if (pressure && (pressure.disk === 'critical' || pressure.degraded.includes('disk_critical'))) {
+        res.end(JSON.stringify({ success: false, error: 'disk space critical', code: 'disk_low' }));
         return;
       }
       // V2 ①b L1: exact-content guard — skip verbatim re-submits (worker

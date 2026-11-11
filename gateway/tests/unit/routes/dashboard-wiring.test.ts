@@ -304,4 +304,65 @@ describe('dashboard registry wiring (D1 Task G)', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringMatching(/^\[Scheduler\] \/api\/memory\/pin failed: /));
     warn.mockRestore();
   });
+
+  // ── E4-6b: disk critical → memory.add 拒写（spec §4.2 / §6）─────────────
+  it('memory.add returns the disk_low body without touching memoryService when disk is critical', async () => {
+    const memoryService = jest.fn(() => ({}) as any);
+    const { registry } = setup({
+      memoryService,
+      pressure: () => ({ disk: 'critical', degraded: ['disk_critical'] }),
+    });
+    const r = fakeRes();
+    await handlerFor(registry, 'POST', '/api/memory/add')!(
+      fakeReq({ method: 'POST', url: '/api/memory/add', body: JSON.stringify({ content: 'held back', memoryType: 'semantic' }) }),
+      r.res,
+    );
+    expect(r.status).toBe(200);
+    expect(r.writeHeadCalls()).toBe(0);
+    expect(JSON.parse(r.body)).toEqual({ success: false, error: 'disk space critical', code: 'disk_low' });
+    expect(memoryService).not.toHaveBeenCalled();
+  });
+
+  it('memory.add also gates on degraded containing disk_critical (even if disk reads ok)', async () => {
+    const memoryService = jest.fn(() => null);
+    const { registry } = setup({
+      memoryService,
+      pressure: () => ({ disk: 'ok', degraded: ['disk_critical'] }),
+    });
+    const r = fakeRes();
+    await handlerFor(registry, 'POST', '/api/memory/add')!(
+      fakeReq({ method: 'POST', url: '/api/memory/add', body: JSON.stringify({ content: 'held back', memoryType: 'semantic' }) }),
+      r.res,
+    );
+    expect(JSON.parse(r.body)).toEqual({ success: false, error: 'disk space critical', code: 'disk_low' });
+    expect(memoryService).not.toHaveBeenCalled();
+  });
+
+  it('memory.add validation still wins over the pressure gate (invalid input keeps its error)', async () => {
+    const { registry } = setup({
+      pressure: () => ({ disk: 'critical', degraded: ['disk_critical'] }),
+    });
+    const r = fakeRes();
+    await handlerFor(registry, 'POST', '/api/memory/add')!(
+      fakeReq({ method: 'POST', url: '/api/memory/add', body: JSON.stringify({ memoryType: 'semantic' }) }),
+      r.res,
+    );
+    expect(JSON.parse(r.body)).toEqual({ success: false, error: 'content and valid memoryType required' });
+  });
+
+  it('memory.add keeps existing behavior when pressure is ok or unknown', async () => {
+    const pressures = [
+      () => ({ disk: 'ok', degraded: [] as string[] }),
+      () => null,
+    ];
+    for (const [i, pressure] of pressures.entries()) {
+      const { registry } = setup({ pressure });
+      const r = fakeRes();
+      await handlerFor(registry, 'POST', '/api/memory/add')!(
+        fakeReq({ method: 'POST', url: '/api/memory/add', body: JSON.stringify({ content: `write freely ${i}`, memoryType: 'semantic' }) }),
+        r.res,
+      );
+      expect(JSON.parse(r.body)).toEqual({ success: false, error: 'memoryService not ready' });
+    }
+  });
 });
