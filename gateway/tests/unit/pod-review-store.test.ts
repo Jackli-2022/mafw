@@ -52,12 +52,17 @@ describe('pod review item store', () => {
     expect(s.carryForwardReviewItems({
       podId: 'pod_1', goalId: 'g1', fromRevision: 1, toRevision: 2, now,
     })).toBe(1);
+    // A mid-flight retry must not duplicate clones or events for the same origin.
+    expect(s.carryForwardReviewItems({
+      podId: 'pod_1', goalId: 'g1', fromRevision: 1, toRevision: 2, now,
+    })).toBe(0);
 
     const rev2 = s.listReviewItems('pod_1', 'g1', 2);
     expect(rev2).toHaveLength(1);
     expect(rev2[0]).toMatchObject({
       status: 'pending', comment: '未解决', originItemId: open.id, originRevision: 1,
     });
+    expect(s.listReviewItemEvents(rev2[0].id).map((event) => event.kind)).toEqual(['carried']);
     expect(s.listReviewItems('pod_1', 'g1', 1)).toHaveLength(2);
   });
 

@@ -3859,6 +3859,9 @@ class MafwScheduler {
       }),
       // Tech Lead service is constructed later; resolve lazily at call time.
       assertTechLeadSession: (goalId, sessionID) => this.podTechLeadService.assertTechLeadSession(goalId, sessionID),
+      // Accept/reject run inside PodGoalService's per-goal mutation lock; review
+      // writes must not land between the unresolved snapshot and the merge.
+      isGoalMutating: (podId, goalId) => this.podGoalService.isMutating(podId, goalId),
     });
     this.podGoalService = new PodGoalService({
       store: this.podStore,
@@ -4600,6 +4603,8 @@ class MafwScheduler {
       podTechLead: this.podTechLeadService,
       podDirection: this.podDirectionService,
       podContextSelect: this.podContextSelectionService,
+      podReview: this.podReviewService,
+      podStore: this.podStore,
       podGoalDirection: {
         techLead: this.podTechLeadService,
         direction: this.podDirectionService,

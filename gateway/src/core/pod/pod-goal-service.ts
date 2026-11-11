@@ -152,6 +152,11 @@ export class PodGoalService {
     return result;
   }
 
+  /** True while accept/reject is in flight for this Goal; review writes stay read-only. */
+  isMutating(podId: string, goalId: string): boolean {
+    return this.goalMutations.has(`${podId}\u0000${goalId}`);
+  }
+
   async enqueueGoal(
     goalId: string,
     projectDirHint?: string,

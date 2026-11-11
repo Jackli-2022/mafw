@@ -11,6 +11,8 @@ describe('Pod collaboration MCP wiring gate', () => {
   test('MCP services expose the Tech Lead and direction services', () => {
     expect(source).toContain('podTechLead: this.podTechLeadService');
     expect(source).toContain('podDirection: this.podDirectionService');
+    expect(source).toContain('podReview: this.podReviewService');
+    expect(source).toContain('podStore: this.podStore');
     expect(source).toContain('podGoalDirection: {');
     expect(source).toContain('techLead: this.podTechLeadService');
     expect(source).toContain('direction: this.podDirectionService');

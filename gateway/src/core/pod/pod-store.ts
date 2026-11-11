@@ -1351,6 +1351,11 @@ export class PodStore {
 
   // ── Goal review items（Plan C） ──────────────────────────────────────────
 
+  /** Run related store writes atomically on the shared connection. */
+  transaction<T>(fn: () => T): T {
+    return this.db.transaction(fn)();
+  }
+
   createReviewItem(input: {
     podId: string;
     goalId: string;
@@ -1464,7 +1469,7 @@ export class PodStore {
 
   listReviewItemEvents(itemId: string): PodReviewItemEventRow[] {
     return (this.db.prepare(
-      'SELECT * FROM pod_goal_review_item_events WHERE item_id = ? ORDER BY created_at ASC, id ASC',
+      'SELECT * FROM pod_goal_review_item_events WHERE item_id = ? ORDER BY created_at ASC, rowid ASC',
     ).all(itemId) as any[]).map(reviewItemEventFromRow);
   }
 
@@ -1482,7 +1487,13 @@ export class PodStore {
     const source = this.listUnresolvedReviewItems(input.podId, input.goalId, input.fromRevision);
     if (source.length === 0) return 0;
     const insert = this.db.transaction(() => {
+      let cloned = 0;
       for (const item of source) {
+        const existing = this.db.prepare(
+          `SELECT 1 FROM pod_goal_review_items
+           WHERE pod_id = ? AND goal_id = ? AND revision = ? AND origin_item_id = ?`,
+        ).get(input.podId, input.goalId, input.toRevision, item.id);
+        if (existing) continue;
         const clone = this.createReviewItem({
           podId: input.podId,
           goalId: input.goalId,
@@ -1509,10 +1520,11 @@ export class PodStore {
           }),
           now: input.now,
         });
+        cloned++;
       }
+      return cloned;
     });
-    insert();
-    return source.length;
+    return insert();
   }
 
   recordGoalAcceptance(input: {

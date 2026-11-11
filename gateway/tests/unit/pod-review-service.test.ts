@@ -1,8 +1,10 @@
 import Database from 'better-sqlite3';
 import { PodError, PodStore } from '../../src/core/pod/pod-store';
-import { PodReviewService } from '../../src/core/pod/pod-review-service';
+import { PodReviewService, type PodReviewServiceDeps } from '../../src/core/pod/pod-review-service';
 
-function setup() {
+const now = '2026-11-11T00:00:00.000Z';
+
+function setup(overrides: Partial<PodReviewServiceDeps> = {}) {
   const store = new PodStore(new Database(':memory:'));
   store.enqueueGoal({
     id: 'podgoal_1',
@@ -19,6 +21,7 @@ function setup() {
       if (sessionID !== 'ses_tl') throw new PodError(403, 'not the tech lead session');
       techLeadGoals.push(goalId);
     },
+    ...overrides,
   });
   return { store, service, techLeadGoals };
 }
@@ -35,6 +38,47 @@ describe('PodReviewService', () => {
       revision: 2,
       items: [{ rel: 'src/a.ts', comment: '旧版' }],
     })).toThrow(PodError);
+  });
+
+  test('an invalid item in a batch leaves no partial rows', () => {
+    const { service, store } = setup();
+    expect(() => service.createItems('pod_1', 'g1', {
+      items: [
+        { rel: 'src/a.ts', comment: '先写进去的' },
+        { rel: 'src/b.ts', startLine: 9, endLine: 2, comment: '非法行号' },
+      ],
+    })).toThrow(PodError);
+    expect(store.listReviewItems('pod_1', 'g1', 1)).toHaveLength(0);
+  });
+
+  test('review writes are blocked while an accept/reject mutation is in flight', () => {
+    const { service } = setup({ isGoalMutating: () => true });
+    try {
+      service.createItems('pod_1', 'g1', {
+        items: [{ rel: 'src/a.ts', comment: '晚到的意见' }],
+      });
+      throw new Error('expected 409');
+    } catch (error) {
+      expect(error).toBeInstanceOf(PodError);
+      expect((error as PodError).status).toBe(409);
+    }
+  });
+
+  test('legacy merged revisions freeze their review items without an acceptance row', () => {
+    const { service, store } = setup();
+    store.insertGoalWorktree({
+      podId: 'pod_1', goalId: 'g1', revision: 1, dir: '/tmp/wt',
+      branch: 'b', baseRef: 'main', baseBranch: 'main', status: 'merged', now,
+    });
+    try {
+      service.createItems('pod_1', 'g1', {
+        items: [{ rel: 'src/a.ts', comment: '验收后补意见' }],
+      });
+      throw new Error('expected 409');
+    } catch (error) {
+      expect(error).toBeInstanceOf(PodError);
+      expect((error as PodError).status).toBe(409);
+    }
   });
 
   test('Tech Lead can respond, only human transitions resolve/reopen', () => {

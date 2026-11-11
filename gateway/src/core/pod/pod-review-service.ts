@@ -57,6 +57,8 @@ export interface PodReviewServiceDeps {
   now(): string;
   notify?(podId: string, kind?: string, goalId?: string): void;
   assertTechLeadSession(goalId: string, sessionID: string): void;
+  /** True while accept/reject holds the Goal mutation lock. */
+  isGoalMutating?(podId: string, goalId: string): boolean;
 }
 
 function clean(value: unknown): string {
@@ -134,8 +136,7 @@ export class PodReviewService {
       throw new PodError(400, `at most ${MAX_REVIEW_ITEMS} review items per request`);
     }
 
-    const created: PodReviewItem[] = [];
-    for (const item of input.items) {
+    const prepared = input.items.map((item) => {
       const rel = requireText(item?.rel, 'rel', MAX_REL);
       const comment = requireText(item?.comment, 'comment', MAX_COMMENT);
       const code = optionalText(item?.code, 'code', MAX_CODE) ?? '';
@@ -148,17 +149,28 @@ export class PodReviewService {
       if (anchorJson && anchorJson.length > MAX_ANCHOR) {
         throw new PodError(400, 'anchor is too large');
       }
-      const row = this.deps.store.createReviewItem({
-        podId, goalId, revision, rel, startLine, endLine, code, comment, anchorJson,
-        now: this.deps.now(),
-      });
-      this.deps.store.appendReviewItemEvent({
-        podId, goalId, revision, itemId: row.id, kind: 'created',
-        payloadJson: row.originItemId ? JSON.stringify({ originItemId: row.originItemId }) : null,
-        now: this.deps.now(),
-      });
-      created.push(toItem(row));
-    }
+      return { rel, comment, code, startLine, endLine, anchorJson };
+    });
+
+    // Validate the whole batch before writing: a later invalid item must not
+    // leave earlier rows/events behind (annotation send retries would duplicate).
+    const created = this.deps.store.transaction(() => {
+      const rows: PodReviewItem[] = [];
+      for (const item of prepared) {
+        const row = this.deps.store.createReviewItem({
+          podId, goalId, revision, rel: item.rel, startLine: item.startLine,
+          endLine: item.endLine, code: item.code, comment: item.comment,
+          anchorJson: item.anchorJson, now: this.deps.now(),
+        });
+        this.deps.store.appendReviewItemEvent({
+          podId, goalId, revision, itemId: row.id, kind: 'created',
+          payloadJson: row.originItemId ? JSON.stringify({ originItemId: row.originItemId }) : null,
+          now: this.deps.now(),
+        });
+        rows.push(toItem(row));
+      }
+      return rows;
+    });
     this.deps.notify?.(podId, 'review', goalId);
     return created;
   }
@@ -191,16 +203,20 @@ export class PodReviewService {
     const response = requireText(input?.response, 'response', MAX_RESPONSE);
     const item = this.requireActiveItem(podId, goalId, itemId);
     this.ensureMutable(podId, goalId, item.revision);
-    const applied = this.deps.store.setReviewItemStatus({
-      podId, goalId, itemId,
-      from: ['pending', 'responded'], to: 'responded',
-      response, now: this.deps.now(),
+    const applied = this.deps.store.transaction(() => {
+      const ok = this.deps.store.setReviewItemStatus({
+        podId, goalId, itemId,
+        from: ['pending', 'responded'], to: 'responded',
+        response, now: this.deps.now(),
+      });
+      if (!ok) return false;
+      this.deps.store.appendReviewItemEvent({
+        podId, goalId, revision: item.revision, itemId, kind: 'responded',
+        payloadJson: JSON.stringify({ response }), now: this.deps.now(),
+      });
+      return true;
     });
     if (!applied) throw new PodError(409, 'review item is already resolved');
-    this.deps.store.appendReviewItemEvent({
-      podId, goalId, revision: item.revision, itemId, kind: 'responded',
-      payloadJson: JSON.stringify({ response }), now: this.deps.now(),
-    });
     this.deps.notify?.(podId, 'review', goalId);
     return this.requireItem(podId, goalId, itemId);
   }
@@ -208,13 +224,17 @@ export class PodReviewService {
   resolve(podId: string, goalId: string, itemId: string, opts: { note?: string } = {}): PodReviewItem {
     const item = this.requireActiveItem(podId, goalId, itemId);
     this.ensureMutable(podId, goalId, item.revision);
-    const applied = this.deps.store.setReviewItemStatus({
-      podId, goalId, itemId,
-      from: ['pending', 'responded'], to: 'resolved',
-      now: this.deps.now(),
+    const applied = this.deps.store.transaction(() => {
+      const ok = this.deps.store.setReviewItemStatus({
+        podId, goalId, itemId,
+        from: ['pending', 'responded'], to: 'resolved',
+        now: this.deps.now(),
+      });
+      if (!ok) return false;
+      this.appendNoteEvent(podId, goalId, item.revision, itemId, 'resolved', opts.note);
+      return true;
     });
     if (!applied) throw new PodError(409, 'review item is already resolved');
-    this.appendNoteEvent(podId, goalId, item.revision, itemId, 'resolved', opts.note);
     this.deps.notify?.(podId, 'review', goalId);
     return this.requireItem(podId, goalId, itemId);
   }
@@ -222,13 +242,17 @@ export class PodReviewService {
   reopen(podId: string, goalId: string, itemId: string, opts: { note?: string } = {}): PodReviewItem {
     const item = this.requireActiveItem(podId, goalId, itemId);
     this.ensureMutable(podId, goalId, item.revision);
-    const applied = this.deps.store.setReviewItemStatus({
-      podId, goalId, itemId,
-      from: ['responded', 'resolved'], to: 'pending',
-      now: this.deps.now(),
+    const applied = this.deps.store.transaction(() => {
+      const ok = this.deps.store.setReviewItemStatus({
+        podId, goalId, itemId,
+        from: ['responded', 'resolved'], to: 'pending',
+        now: this.deps.now(),
+      });
+      if (!ok) return false;
+      this.appendNoteEvent(podId, goalId, item.revision, itemId, 'reopened', opts.note);
+      return true;
     });
     if (!applied) throw new PodError(409, 'review item is already pending');
-    this.appendNoteEvent(podId, goalId, item.revision, itemId, 'reopened', opts.note);
     this.deps.notify?.(podId, 'review', goalId);
     return this.requireItem(podId, goalId, itemId);
   }
@@ -280,7 +304,15 @@ export class PodReviewService {
   }
 
   private ensureMutable(podId: string, goalId: string, revision: number): void {
+    if (this.deps.isGoalMutating?.(podId, goalId)) {
+      throw new PodError(409, 'goal acceptance/rejection is in progress; review items are temporarily read-only');
+    }
     if (this.deps.store.getGoalAcceptance(podId, goalId, revision)) {
+      throw new PodError(409, 'review items are frozen after acceptance');
+    }
+    // Legacy revisions accepted before Plan C have no acceptance row; the
+    // merged worktree is the durable truth that the revision is closed.
+    if (this.deps.store.getGoalWorktree(podId, goalId, revision)?.status === 'merged') {
       throw new PodError(409, 'review items are frozen after acceptance');
     }
   }

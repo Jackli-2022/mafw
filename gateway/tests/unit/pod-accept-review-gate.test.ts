@@ -5,7 +5,10 @@ import type { PodGoalResult } from '../../src/core/pod/pod-result';
 
 const now = '2026-11-11T00:00:00.000Z';
 
-function createHarness(unresolved: Array<{ id: string }>) {
+function createHarness(
+  unresolved: Array<{ id: string }>,
+  opts: { merge?: () => Promise<{ branch: string; mergeCommit: string; mergedAt: string }> } = {},
+) {
   const store = new PodStore(new Database(':memory:'));
   store.ensurePod({ id: 'pod_1', projectDir: '/tmp/project', name: 'Project', now });
   store.enqueueGoal({ id: 'podgoal_1', podId: 'pod_1', goalId: 'g1', now });
@@ -39,7 +42,7 @@ function createHarness(unresolved: Array<{ id: string }>) {
     resultForGoal: () => result,
     worktrees: {
       get: () => ({ status: 'active' }),
-      mergeForAcceptance: async () => ({ branch: 'b', mergeCommit: 'abc1234', mergedAt: now }),
+      mergeForAcceptance: opts.merge ?? (async () => ({ branch: 'b', mergeCommit: 'abc1234', mergedAt: now })),
     } as any,
     reviews: {
       unresolved: () => unresolved,
@@ -91,7 +94,24 @@ describe('goal acceptance review gate', () => {
     });
   });
 
-  test('the agent-only refusal still applies before the review gate', async () => {
+  test('review writes are blocked while acceptance is merging', async () => {
+    let release!: () => void;
+    const mergeGate = new Promise<void>((resolve) => { release = resolve; });
+    const { service } = createHarness([], {
+      merge: async () => {
+        await mergeGate;
+        return { branch: 'b', mergeCommit: 'abc1234', mergedAt: now };
+      },
+    });
+    const pending = service.acceptResult('pod_1', 'g1', { revision: 1 });
+    await Promise.resolve();
+    expect(service.isMutating('pod_1', 'g1')).toBe(true);
+    release();
+    await pending;
+    expect(service.isMutating('pod_1', 'g1')).toBe(false);
+  });
+
+  test('service acceptance has no actor gate; the route enforces human-only', async () => {
     const { service } = createHarness([{ id: 'review_1' }]);
     // acceptResult has no actor parameter; the route guard is covered separately.
     await expect(service.acceptResult('pod_1', 'g1', { force: true, riskAcknowledged: true }))

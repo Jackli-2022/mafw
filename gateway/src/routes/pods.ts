@@ -309,6 +309,7 @@ export async function handlePods(
         const podId = decode(goalReview[1]);
         const goalId = decode(goalReview[2]);
         requirePod(deps, podId);
+        readMember(deps, url, podId);
         if (!deps.reviews) throw new PodError(503, 'review items unavailable');
         const raw = new URL(url, 'http://localhost').searchParams.get('revision');
         let revision: number | undefined;

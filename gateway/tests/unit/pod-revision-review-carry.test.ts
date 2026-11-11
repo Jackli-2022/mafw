@@ -61,4 +61,27 @@ describe('review item revision carry-over', () => {
     expect(replay.opened).toBe(false);
     expect(store.listReviewItems('pod_1', 'g1', 2)).toHaveLength(1);
   });
+
+  test('a retry after a partial open reuses the same target and does not clone twice', async () => {
+    const { store, revisions } = setup();
+    const open = store.createReviewItem({
+      podId: 'pod_1', goalId: 'g1', revision: 1,
+      rel: 'src/a.ts', comment: '未解决', now,
+    });
+    // Simulate a crash after create+carry but before setActiveRevision.
+    store.createGoalRevision({
+      podId: 'pod_1', goalId: 'g1', revision: 2,
+      status: 'discussing', enqueuedAt: now,
+    });
+    expect(store.carryForwardReviewItems({
+      podId: 'pod_1', goalId: 'g1', fromRevision: 1, toRevision: 2, now,
+    })).toBe(1);
+
+    const retry = await revisions.openNextRevision('g1', '请继续', { expectedRevision: 1 });
+    expect(retry.opened).toBe(true);
+    expect(retry.revision).toBe(2);
+    const rev2 = store.listReviewItems('pod_1', 'g1', 2);
+    expect(rev2).toHaveLength(1);
+    expect(rev2[0].originItemId).toBe(open.id);
+  });
 });
