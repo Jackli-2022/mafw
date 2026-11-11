@@ -6,8 +6,8 @@ import {
   structuredOutput,
   structuredInstruction,
   type OutputSchemaSpec,
-} from '../runtime/structured-output';
-import type { ThinkingLevel } from '../runtime/contract';
+} from './structured-output';
+import type { ThinkingLevel } from './contract';
 
 export interface SessionRecord {
   id: string;

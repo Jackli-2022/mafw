@@ -58,7 +58,7 @@ import { recordSessionInDb } from './core/engine/phase-orchestrator';
 
 import { McpSSEEndpoint } from "./mcp/sse-transport";
 import { McpStreamableEndpoint } from "./mcp/streamable-endpoint";
-import { SdkSessionResource } from "./resources/sdk-session";
+import { SdkSessionResource } from "./runtime/sdk-session";
 import { structuredOutput } from './runtime/structured-output';
 import { SubagentService } from './runtime/subagent-service';
 import { TaskService, TaskError } from './runtime/task-service';

@@ -1,4 +1,4 @@
-import { SdkSessionResource } from '../../../src/resources/sdk-session';
+import { SdkSessionResource } from '../../../src/runtime/sdk-session';
 import { structuredOutput } from '../../../src/runtime/structured-output';
 
 const schema = {
