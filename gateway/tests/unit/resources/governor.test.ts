@@ -190,7 +190,7 @@ describe('ResourceGovernor', () => {
 
     const snap = h.governor.snapshot();
     expect(snap.disk.state).toBe('unknown');
-    expect(snap.disk.error).toContain('statfs unavailable');
+    expect(snap.disk.error).toBe('statfs_failed');
   });
 
   test('statfs failure while previously critical drops disk_critical (fail-open)', async () => {

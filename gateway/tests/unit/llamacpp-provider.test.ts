@@ -194,6 +194,8 @@ describe('LlamaCppServerProvider process ledger (E4-6)', () => {
     expect(ledger.count('llamacpp')).toBe(1);
     expect(ledger.list()[0].pid).toBe(4242);
     expect(ledger.list()[0].label).toBe('llama-server');
+    // gateway spawn 的 sidecar 由 gateway 托管关闭。
+    expect(ledger.list()[0].owned).toBe(true);
 
     d.child.emit('exit', 0);
     expect(ledger.count('llamacpp')).toBe(0);

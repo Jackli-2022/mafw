@@ -278,6 +278,8 @@ export class LlamaCppServerProvider implements EmbeddingProvider {
         kind: 'llamacpp',
         pid: this.child.pid ?? undefined,
         label: 'llama-server',
+        // gateway 亲手 spawn 的 sidecar：由它托管关闭。
+        owned: true,
         close: () => this.killServer(),
       });
       this.processChild = this.child;

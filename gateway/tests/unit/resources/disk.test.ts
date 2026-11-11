@@ -48,24 +48,33 @@ describe('sampleDisk', () => {
     expect((await sampleDisk('/d', statfs(10), custom)).state).toBe('critical');
   });
 
-  test('statfs failure → unknown with error message, never throws', async () => {
+  test('statfs failure → unknown with a path-free error code, never the raw message', async () => {
+    const dataDir = 'C:\\Users\\alice\\.mafw';
     const failing: StatfsFn = async () => {
-      throw new Error('ENOENT: no such file or directory');
+      // 真实 statfs 错误消息会带上采样路径；wire 上只允许 code。
+      throw Object.assign(
+        new Error(`ENOENT: no such file or directory, statfs '${dataDir}'`),
+        { code: 'ENOENT' },
+      );
     };
-    const sample = await sampleDisk('/missing', failing);
+    const sample = await sampleDisk(dataDir, failing);
     expect(sample.state).toBe('unknown');
-    expect(sample.error).toContain('ENOENT');
+    expect(sample.error).toBe('ENOENT');
+    expect(sample.error).not.toContain(dataDir);
+    expect(sample.error).not.toContain('\\');
+    expect(sample.error).not.toContain('/');
     expect(sample.totalBytes).toBe(0);
     expect(sample.freeBytes).toBe(0);
   });
 
-  test('non-Error rejection still yields unknown with a message', async () => {
+  test('statfs failure without a code → generic path-free statfs_failed', async () => {
     const failing: StatfsFn = async () => {
-      throw 'statfs exploded';
+      throw 'statfs exploded at /home/alice/.mafw';
     };
     const sample = await sampleDisk('/missing', failing);
     expect(sample.state).toBe('unknown');
-    expect(sample.error).toBe('statfs exploded');
+    expect(sample.error).toBe('statfs_failed');
+    expect(sample.error).not.toContain('/');
   });
 
   test('negative bsize/blocks/bavail → unknown, never clamped into critical', async () => {

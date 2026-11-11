@@ -827,6 +827,8 @@ export class SessionKernels {
       kind: 'python',
       sessionId,
       label: 'python kernel',
+      // gateway 亲手 spawn 的内核：由它托管关闭（processes.entries[].owned）。
+      owned: true,
       startedAt: this.now(),
     });
     this.kernels.set(sessionId, { kernel, lastUsed: this.now(), handle });

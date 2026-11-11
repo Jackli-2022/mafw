@@ -30,12 +30,14 @@ export type QuotaSnapshot = Partial<Record<QuotaResource, { current: number; lim
 
 /**
  * wire 归一化：JSON 里 `Infinity` / `NaN` 会变成 `null`（客户端无法判断"不限"），
- * 所以出口把非有限值与负数统一成 `0`（= 不限）；有限非负值原样保留
- * （含 0，由 `limitOf()` 解释）。`check()` 与 `snapshot()` 共用同一归一化，
- * 原始负配置不会从 API 漏出去。
+ * 所以出口把非有限值与负数统一成 `0`（= 不限）；有限正值向下取整，保证 wire
+ * 上的 `limit` 与 `limitOf()` 的判定值一致（12.5 实际按 12 执行，不能报告 12.5；
+ * 0.5 取整为 0 = 不限，否则判定侧 floor 成 0 会拒绝一切）。
+ * `check()` 与 `snapshot()` 共用同一归一化，原始配置不会从 API 漏出去。
  */
 export function sanitizeLimit(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return 0;
+  return Math.floor(value);
 }
 
 export class QuotaExceededError extends Error {

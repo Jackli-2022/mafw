@@ -111,6 +111,8 @@ describe('SessionKernels: process ledger', () => {
     kernels.get('b');
     expect(ledger.count('python')).toBe(2);
     expect(ledger.list().map((e) => e.sessionId).sort()).toEqual(['a', 'b']);
+    // gateway 亲手 spawn 的内核由它托管关闭。
+    expect(ledger.list().every((e) => e.owned === true)).toBe(true);
 
     kernels.disposeAll();
     expect(ledger.count('python')).toBe(0);

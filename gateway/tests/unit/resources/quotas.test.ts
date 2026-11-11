@@ -39,10 +39,15 @@ describe('QuotaService: check boundaries', () => {
     }
   });
 
-  it('keeps positive finite limits (fractional) as the raw reporting value', () => {
-    const quotas = service({ sessions: -1, projects: 3 });
-    expect(quotas.check('sessions', 0).limit).toBe(0);
-    expect(quotas.check('projects', 0).limit).toBe(3);
+  it('floors positive finite limits so the wire value matches enforcement', () => {
+    const quotas = service({ projects: 12.5, sessions: 0.5 });
+    // 12.5 → 12：snapshot 与 limitOf 判定同值。
+    expect(quotas.check('projects', 0)).toEqual({ ok: true, limit: 12, current: 0 });
+    expect(quotas.check('projects', 11)).toEqual({ ok: true, limit: 12, current: 11 });
+    expect(quotas.check('projects', 12)).toEqual({ ok: false, limit: 12, current: 12 });
+    expect(quotas.snapshot({ projects: 1 }).projects).toEqual({ current: 1, limit: 12 });
+    // 0.5 → 0：不足 1 的上限按"不限"处理（若原样保留，limitOf 会 floor 成 0 并拒绝一切）。
+    expect(quotas.check('sessions', 1_000_000)).toEqual({ ok: true, limit: 0, current: 1_000_000 });
   });
 
   it('re-reads limits on every call (hot reload)', () => {

@@ -41,9 +41,13 @@ function classifyDisk(freeBytes: number, thresholds: DiskThresholds): DiskState 
   return 'ok';
 }
 
-function errorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  return String(err);
+/**
+ * statfs 失败只上报机器码：原始 message 带采样路径（数据根），
+ * `disk.error` 会进 `/api/kernel/stats`，不得泄露路径。
+ */
+function statfsErrorCode(err: unknown): string {
+  const code = (err as { code?: unknown } | null | undefined)?.code;
+  return typeof code === 'string' && code.length > 0 ? code : 'statfs_failed';
 }
 
 export const defaultStatfs: StatfsFn = async (target: string) => {
@@ -81,7 +85,7 @@ export async function sampleDisk(
     const free = stats.bavail * stats.bsize;
     return { totalBytes: total, freeBytes: free, state: classifyDisk(free, thresholds) };
   } catch (err) {
-    return { totalBytes: 0, freeBytes: 0, state: 'unknown', error: errorMessage(err) };
+    return { totalBytes: 0, freeBytes: 0, state: 'unknown', error: statfsErrorCode(err) };
   }
 }
 

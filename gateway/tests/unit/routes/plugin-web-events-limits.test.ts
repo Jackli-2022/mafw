@@ -161,6 +161,25 @@ describe('plugin web events: connection limit (E4-4)', () => {
     expect(JSON.parse(res.frames[0].replace(/^data: /, '')).package).toBe('demo');
     res.emit('close');
   });
+
+  it('releases the SSE lease when the buffer config throws', async () => {
+    const table = tableWith(2);
+    table.tryAcquire('sse'); // pre-existing stream: the count must return here
+    const before = table.snapshot().sse;
+    let attached = 0;
+    const { deps, tickets } = makeDeps({
+      connections: () => table,
+      buffers: () => { throw new Error('buffer config broken'); },
+      attachEventStream: () => { attached += 1; return () => undefined; },
+    });
+    const res = new FakeRes();
+
+    await callWith(deps, tickets, res);
+
+    expect(res.status).toBe(500);
+    expect(attached).toBe(0);
+    expect(table.snapshot().sse).toBe(before);
+  });
 });
 
 describe('plugin web events: bounded writer (E4-5)', () => {

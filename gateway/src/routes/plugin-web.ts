@@ -645,15 +645,23 @@ export async function handlePluginWebEvents(
   }
 
   // E4-5：writer 只改变写路径；greeting / 过滤后的广播帧 / 心跳统一走它。
-  const bufferOpts = deps.buffers?.() ?? null;
-  const writer = bufferOpts
-    ? new SseBoundedWriter({
-      res,
-      maxFrames: bufferOpts.maxFrames,
-      maxBytes: bufferOpts.maxBytes,
-      counters: bufferOpts.counters,
-    })
-    : null;
+  // 配置 getter / writer 构造失败必须释放刚拿到的连接租约，否则名额永久泄漏。
+  let bufferOpts: { maxFrames: number; maxBytes: number; counters?: BufferCounters } | null = null;
+  let writer: SseBoundedWriter | null = null;
+  try {
+    bufferOpts = deps.buffers?.() ?? null;
+    writer = bufferOpts
+      ? new SseBoundedWriter({
+        res,
+        maxFrames: bufferOpts.maxFrames,
+        maxBytes: bufferOpts.maxBytes,
+        counters: bufferOpts.counters,
+      })
+      : null;
+  } catch {
+    lease?.release();
+    return sendJson(res, 500, { error: 'sse buffer unavailable' });
+  }
   const write = (frame: string): void => {
     if (!frame) return;
     if (writer) writer.write(frame);
