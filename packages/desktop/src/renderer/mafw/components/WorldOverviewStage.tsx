@@ -5,14 +5,11 @@ import { WorkOverview } from "./WorkOverview"
 import { WorkPriorityList } from "./WorkPriorityList"
 import { PodGoalComposer } from "./PodGoalComposer"
 import { StandingGoalsPanel } from "./StandingGoalsPanel"
-import { ProjectFilesCard } from "./ProjectFilesCard"
-import { RecentContentList } from "./RecentContentList"
 import { ProjectTeamStrip } from "./ProjectTeamStrip"
 import { buildAttentionList, buildWorkPriority, type WorkFilter } from "../work-overview-model"
 import { goalRevisionOf, type GoalDetailFocus } from "../pod-model"
 import { isPodResultViewed } from "../pod-result-store"
 import { podEvents } from "../pod-events"
-import type { RecentContentEntry } from "../recent-content"
 import type { PodDetail } from "@mafw/sdk"
 
 /** Composer 请求序列的会话级消费游标：remount 不重放已处理请求。 */
@@ -28,39 +25,29 @@ function friendlyWorkError(error: unknown): string {
   return text || "工作概览加载失败"
 }
 
-/** Right-workbench `工作` face: priority first, then the complete Goal list. */
-export function ProjectWorkView(props: {
+export type WorldTeamProps = {
+  detail: PodDetail | null
+  loading: boolean
+  error: string | null
+  unsupported: boolean
+  isWorktree: boolean
+  onRefresh: () => void
+  onOpenLead: () => void
+  onOpenTechLead: (goalId: string) => void
+  onOpenPanel: (tab: "team" | "memory", target?: "members" | "inbox") => void
+  onCreate: () => void
+}
+
+/** 世界总览：继续 / 需要你 / 全部 Goal / standing / 团队 / New Goal。 */
+export function WorldOverviewStage(props: {
   projectDir: string | null
+  projectName?: string | null
   refreshTick: () => number
   composerRequest?: number
   composerInitial?: { title: string; objective?: string } | null
-  /** 用户从项目页手动打开/关闭 Composer 时通知外壳清掉一次性的委托草稿。 */
   onComposerToggle?: () => void
   active: boolean
-  projectName?: string | null
-  files?: {
-    root: string | null
-    scopeKey: string | null
-    sessionID?: string | null
-    onOpenFile: (rel: string) => void
-    onBrowse: () => void
-  }
-  recents?: {
-    items: readonly RecentContentEntry[]
-    onOpen: (entry: RecentContentEntry) => void
-  }
-  team?: {
-    detail: PodDetail | null
-    loading: boolean
-    error: string | null
-    unsupported: boolean
-    isWorktree: boolean
-    onRefresh: () => void
-    onOpenLead: () => void
-    onOpenTechLead: (goalId: string) => void
-    onOpenPanel: (tab: "team" | "memory", target?: "members" | "inbox") => void
-    onCreate: () => void
-  }
+  team?: WorldTeamProps
   teamFocusRequest?: number
   onOpenGoal: (goal: PodGoal, focus?: GoalDetailFocus) => void
   onGoalCreated?: (goalId: string, goal?: PodGoal) => void
@@ -183,14 +170,15 @@ export function ProjectWorkView(props: {
   })
 
   return (
-    <div class="mafw-project-work" aria-label="项目工作">
+    <div class="mafw-project-work" aria-label="世界总览">
       <div class="mafw-project-work-overview">
         <div class="mafw-project-work-head">
           <div>
-            <div class="mafw-work-kicker mafw-project-home-title">
-              {props.projectName?.trim() || "项目"}
-            </div>
-            <div class="mafw-project-work-hint">先处理重要事项，全部 Goal 都保留在下方</div>
+            <div class="mafw-work-kicker mafw-project-home-title">世界总览</div>
+            <Show when={props.projectName?.trim()}>
+              <div class="mafw-project-work-hint">{props.projectName}</div>
+            </Show>
+            <div class="mafw-project-work-hint">继续 / 需要你 / 全部 Goal / 团队都在这里</div>
           </div>
           <ButtonV2
             variant="outline"
@@ -239,42 +227,15 @@ export function ProjectWorkView(props: {
           onOpen={(goal, focus) => props.onOpenGoal(goal, focus)}
         />
 
-        <div
-          class="mafw-project-home-grid"
-          classList={{ "is-single": !props.files && !props.recents }}
-        >
-          <Show when={props.files || props.recents}>
-            <section class="mafw-project-home-content" aria-label="项目内容">
-              <Show when={props.files}>
-                <ProjectFilesCard
-                  root={props.files!.root}
-                  scopeKey={props.files!.scopeKey}
-                  sessionID={props.files!.sessionID ?? null}
-                  onOpenFile={props.files!.onOpenFile}
-                  onBrowse={props.files!.onBrowse}
-                />
-              </Show>
-              <Show when={props.recents}>
-                <RecentContentList
-                  items={props.recents!.items}
-                  onOpen={props.recents!.onOpen}
-                />
-              </Show>
-            </section>
-          </Show>
-
-          <div class="mafw-project-home-goals">
-            <WorkOverview
-              goals={overviewGoals()}
-              loading={loading()}
-              error={error()}
-              filter={filter()}
-              onFilter={setFilter}
-              onOpenGoal={(goal, focus) => props.onOpenGoal(goal, focus)}
-              isViewed={isViewed}
-            />
-          </div>
-        </div>
+        <WorkOverview
+          goals={overviewGoals()}
+          loading={loading()}
+          error={error()}
+          filter={filter()}
+          onFilter={setFilter}
+          onOpenGoal={(goal, focus) => props.onOpenGoal(goal, focus)}
+          isViewed={isViewed}
+        />
       </div>
     </div>
   )

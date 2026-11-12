@@ -54,7 +54,7 @@ import { UpdaterBanner } from "./components/UpdaterBanner"
 import { ChatPane, mergeLocalParts, type FlowCardRecord } from "./components/ChatPane"
 import { TaskList } from "./components/TaskList"
 import { WorkbenchShell } from "./components/WorkbenchShell"
-import { ProjectWorkView } from "./components/ProjectWorkView"
+import { WorldOverviewStage } from "./components/WorldOverviewStage"
 import { GoalDetailPanel } from "./components/GoalDetailPanel"
 import { ExecutionView } from "./components/ExecutionView"
 import { PodTranscriptOverlay } from "./components/PodTranscriptOverlay"
@@ -2462,67 +2462,6 @@ export function MafwShell() {
     )
     recordRecentFile(rel, scope)
   }
-  /** 项目首页 › 项目文件：始终回到项目主目录，不继承当前 Goal revision scope。 */
-  const openProjectContent = (): void => {
-    const project = currentProject()
-    const scope = projectContentScope(project)
-    if (!scope) return
-    if (currentContentScopeKey() !== contentScopeKey(scope)) {
-      rememberContentLocation()
-      setContentReturnGoalId(null)
-      setContentScope(scope)
-    }
-    setContentIntent("reading")
-    applyWorkbenchSurface("code")
-  }
-  const openProjectFile = (rel: string): void => {
-    const project = currentProject()
-    const scope = projectContentScope(project)
-    if (!scope) return
-    const switched = currentContentScopeKey() !== contentScopeKey(scope)
-    if (switched) {
-      rememberContentLocation()
-      setContentReturnGoalId(null)
-      setContentScope(scope)
-    }
-    openContentFile(rel, contentScopeRoot(scope), !switched, "reading")
-  }
-  /** 最近内容：项目条目直接打开；Goal revision 条目校验 worktree 后恢复该 scope。 */
-  const openRecentContent = (entry: RecentContentEntry): void => {
-    if (entry.scopeKind === "project") {
-      openProjectFile(entry.rel)
-      return
-    }
-    const goalId = entry.goalId
-    const revision = entry.revision
-    const worktreeDir = entry.worktreeDir
-    if (!goalId || !revision || !worktreeDir) return
-    const project = currentProject()
-    const scope = goalContentScope({
-      projectDir: project,
-      goalId,
-      revision,
-      worktreeDir,
-      title: entry.scopeLabel,
-    })
-    if (!scope) {
-      showToastV2({ description: "该 Goal 版本的文件已不可用", variant: "error", duration: 3500 } as any)
-      return
-    }
-    void (async () => {
-      try {
-        const entries = await window.api.fs.listDir(scope.worktreeDir, "")
-        if (entries === null) throw new Error("missing worktree")
-        if (currentProject() !== project) return
-        rememberContentLocation()
-        setContentReturnGoalId(scope.goalId)
-        setContentScope(scope)
-        openContentFile(entry.rel, scope.worktreeDir, false, "reading")
-      } catch {
-        showToastV2({ description: "该 Goal 版本的文件已不可用", variant: "error", duration: 3500 } as any)
-      }
-    })()
-  }
   /** 左栏插件入口：切到「工作台」并激活该 surface（spec 2026-11-09 §6.4）。 */
   const openPluginSurface = (surfaceId: PluginSurfaceId) => {
     closeLeftDockIfOverlay()
@@ -2981,8 +2920,7 @@ export function MafwShell() {
     if (!scope || !project || !contentScopeBelongsToProject(scope, project)) return
     persistContentScope(scope, window.localStorage)
   })
-  // 项目首页：项目主目录 scope 与最近内容（按项目持久化）。
-  const projectScopeKey = createMemo(() => contentScopeKey(projectContentScope(currentProject())))
+  // 项目主目录 scope 与最近内容（按项目持久化）。
   const [recentContent, setRecentContent] = createSignal<RecentContentEntry[]>([])
   createEffect(() => {
     setRecentContent(readRecentContent(currentProject(), window.localStorage))
@@ -4174,25 +4112,14 @@ export function MafwShell() {
                   }}
                   onOpenReview={() => openWorkbenchContext("review")}
                   workView={
-                    <ProjectWorkView
+                    <WorldOverviewStage
                       projectDir={currentProject()}
                       projectName={railProjectName(currentProject(), true)}
                       refreshTick={() => Math.max(goalsRev(), podStore.revision())}
                       composerRequest={goalComposerRequest()}
                       composerInitial={goalComposerInitial()}
                       onComposerToggle={() => setGoalComposerInitial(null)}
-                      active={workbenchContent() === "project" && dockPresent() && workbenchContext() === "project"}
-                      files={{
-                        root: currentProject(),
-                        scopeKey: projectScopeKey(),
-                        sessionID: currentSessionID() || null,
-                        onOpenFile: openProjectFile,
-                        onBrowse: openProjectContent,
-                      }}
-                      recents={{
-                        items: recentContent(),
-                        onOpen: openRecentContent,
-                      }}
+                      active={dockPresent() && (activeFocus()?.subject.kind === "world" || workbenchContext() === "project")}
                       team={{
                         detail: podStore.detail(),
                         loading: podStore.loading(),
