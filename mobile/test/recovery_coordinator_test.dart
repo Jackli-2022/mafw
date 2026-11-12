@@ -289,6 +289,33 @@ void main() {
       expect(result.epochChanged, isTrue);
     });
 
+    test('an epoch change while a replay is in flight still reloads', () async {
+      final gate = Completer<EventReplayPage?>();
+      final h = _Harness(
+        cursor: 10,
+        instanceId: 'inst-old',
+        fetch: (_, _) => gate.future,
+      );
+      await h.init();
+
+      final inFlight = h.recovery.recover();
+      await Future<void>.delayed(Duration.zero);
+
+      final result = await h.coordinator.handle(
+        _greeting(headSeq: 3, instanceId: 'inst-new'),
+        isReconnect: true,
+      );
+
+      expect(result.epochChanged, isTrue);
+      expect(result.busy, isFalse);
+      expect(result.refreshed, isTrue);
+      expect(result.fullReload, isTrue);
+      expect(h.log, ['refresh', 'reload']);
+
+      gate.complete(_page(headSeq: 3, nextSince: 3));
+      await inFlight;
+    });
+
     test('a busy replay does not refresh or reload (F3)', () async {
       final gate = Completer<EventReplayPage?>();
       final h = _Harness(

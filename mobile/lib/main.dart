@@ -61,7 +61,12 @@ Future<void> main() async {
 
 class MafwMobileApp extends StatefulWidget {
   final ConnectionConfig? initialConfig;
-  const MafwMobileApp({super.key, this.initialConfig});
+
+  /// Test seam: production uses [SharedPrefsEventCursorStore]. A delayed store
+  /// lets the widget test cover disposal while `recovery.init()` is in flight.
+  final EventCursorStore? cursorStore;
+
+  const MafwMobileApp({super.key, this.initialConfig, this.cursorStore});
 
   @override
   State<MafwMobileApp> createState() => _MafwMobileAppState();
@@ -218,7 +223,7 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
     final recovery = EventRecoveryService(
       fetch: (since, limit) =>
           client.replayEvents(since: since, limit: limit),
-      cursorStore: SharedPrefsEventCursorStore(),
+      cursorStore: widget.cursorStore ?? SharedPrefsEventCursorStore(),
       emit: ws.emitRecovered,
       onFallback: (reason) => debugPrint(
         '[MAFW] event replay fell back (${reason.name}) — full reload follows',
@@ -229,6 +234,14 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
     } catch (e) {
       // No persisted cursor: behave like a first connect (fresh baseline).
       debugPrint('[MAFW] event cursor load failed (offlineable): $e');
+    }
+    // `recovery.init()` awaits SharedPreferences; the widget may be gone (or a
+    // newer config may have taken over) by now. Never touch state or start
+    // observers from a stale attempt.
+    if (!mounted) {
+      ws.dispose();
+      client.dispose();
+      return;
     }
     coordinator = RecoveryCoordinator(
       recovery: recovery,

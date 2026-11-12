@@ -250,10 +250,14 @@ class _TechLeadDiscussionPageState extends State<TechLeadDiscussionPage> {
 
     // 事件语义查表（`models/event_effects.dart`，与 chat 同源）。
     final effects = chatEventEffects(ev.innerType);
-    if (effects.writing && _phase != GenPhase.writing) {
-      setState(() => _phase = GenPhase.writing);
-    } else if (effects.turnEnd && _phase != GenPhase.idle) {
-      setState(() => _phase = GenPhase.idle);
+    // Recovered frames may predate the send in flight; they refresh history but
+    // never mutate the live phase (same contract as ChatPage).
+    if (drivesLiveTurn(ev)) {
+      if (effects.writing && _phase != GenPhase.writing) {
+        setState(() => _phase = GenPhase.writing);
+      } else if (effects.turnEnd && _phase != GenPhase.idle) {
+        setState(() => _phase = GenPhase.idle);
+      }
     }
 
     if (effects.refresh) {

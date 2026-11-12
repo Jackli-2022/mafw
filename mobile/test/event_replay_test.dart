@@ -139,6 +139,32 @@ void main() {
     });
   });
 
+  group('MafwEvent recovery provenance', () {
+    test('wire frames are live, not recovered', () {
+      final ev = MafwEvent.fromJson({
+        ..._canonicalEnvelope(),
+        'seq': 11,
+      });
+
+      expect(ev.recovered, isFalse);
+    });
+
+    test('asRecovered keeps the frame identity and marks provenance', () {
+      final live = MafwEvent.fromJson({
+        ..._canonicalEnvelope(),
+        'seq': 11,
+      });
+
+      final recovered = live.asRecovered();
+
+      expect(recovered.recovered, isTrue);
+      expect(recovered.type, live.type);
+      expect(recovered.innerType, live.innerType);
+      expect(recovered.sessionID, live.sessionID);
+      expect(recovered.seq, 11);
+    });
+  });
+
   group('EventReplayPage.fromJson', () {
     test('parses the page and merges column seq into each envelope', () {
       final page = EventReplayPage.fromJson({

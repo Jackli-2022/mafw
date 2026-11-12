@@ -229,6 +229,7 @@ void main() {
 
       expect(seen.single.seq, 11);
       expect(seen.single.innerType, 'message.updated');
+      expect(seen.single.recovered, isTrue);
       await sub.cancel();
     });
 

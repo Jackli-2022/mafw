@@ -317,6 +317,11 @@ class MafwEvent {
   /// replay cursor.
   final int? seq;
 
+  /// True when this frame was replayed from the event log rather than received
+  /// live. Recovered frames may refresh content, but must not drive a live
+  /// turn's phase / sending state (E5b review F2).
+  final bool recovered;
+
   MafwEvent({
     required this.type,
     this.innerType = '',
@@ -324,7 +329,19 @@ class MafwEvent {
     this.properties,
     this.sessionID,
     this.seq,
+    this.recovered = false,
   });
+
+  /// Mark this frame as replay-recovered without changing its wire identity.
+  MafwEvent asRecovered() => MafwEvent(
+        type: type,
+        innerType: innerType,
+        data: data,
+        properties: properties,
+        sessionID: sessionID,
+        seq: seq,
+        recovered: true,
+      );
 
   bool get isCanonical => innerType.isNotEmpty;
 

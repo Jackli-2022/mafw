@@ -97,6 +97,18 @@ void main() {
     });
   });
 
+  group('drivesLiveTurn', () {
+    test('live frames drive the turn; recovered frames only refresh', () {
+      final live = MafwEvent(
+        type: 'mafw_event',
+        innerType: 'turn.completed',
+      );
+
+      expect(drivesLiveTurn(live), isTrue);
+      expect(drivesLiveTurn(live.asRecovered()), isFalse);
+    });
+  });
+
   group('shouldRefreshSessions', () {
     test('refreshes for session list and message/turn activity', () {
       for (final type in const [

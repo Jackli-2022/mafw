@@ -289,7 +289,7 @@ class WsClientV2 implements MafwWsClient {
   /// frames, so `seq`-based dedupe on the consumer side covers both orders.
   void emitRecovered(MafwEvent event) {
     if (_disposed || _events.isClosed) return;
-    _events.add(event);
+    _events.add(event.asRecovered());
   }
 
   /// Hand the `connected` greeting to [onGatewayReady] without blocking frame
