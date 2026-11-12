@@ -10,6 +10,7 @@ import type { PluginWebSurfaceView } from "../plugins/plugin-web-surface"
 import type { Focus } from "../focus/focus-model"
 import type { FocusOpenRequest } from "../focus/focus-open"
 import { stageKindFor } from "../focus/stage-dispatch"
+import "../focus-goal-stage.css"
 
 /** 工作台的「台」：只放当前对象；文件 / 浏览器 / 终端 / 插件 / 变更集 / Goal / 世界。 */
 export function FocusStage(props: {
@@ -96,7 +97,9 @@ export function FocusStage(props: {
         </Match>
 
         <Match when={kind() === "goal"}>
-          {props.renderGoal?.() ?? <DockEmpty icon="dot-grid" text="Goal 总览待接入" />}
+          <div class="mafw-focus-goal-stage">
+            {props.renderGoal?.() ?? <DockEmpty icon="dot-grid" text="Goal 总览待接入" />}
+          </div>
         </Match>
 
         <Match when={kind() === "world"}>
