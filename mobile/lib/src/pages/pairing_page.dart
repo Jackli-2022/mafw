@@ -161,7 +161,6 @@ class _PairingPageState extends State<PairingPage> {
       final deviceId = nonce == kManualPairingNonce ? '' : await _deviceId();
       final rotate = shouldRotateForPairing(
         existing: await _existingConfig(),
-        baseUrl: url,
         nonce: nonce,
       );
 
@@ -185,16 +184,12 @@ class _PairingPageState extends State<PairingPage> {
       } catch (_) {}
       if (!mounted) return;
       Navigator.of(context).pop<ConnectionConfig>(result.config);
-    } on PairingException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = e.message;
-        _processing = false;
-      });
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = '保存配对信息失败: $e';
+        // Gateway failures keep their status message; transport/timeouts are
+        // labelled neutrally (never a raw exception string).
+        _error = pairingErrorMessage(e);
         _processing = false;
       });
     }

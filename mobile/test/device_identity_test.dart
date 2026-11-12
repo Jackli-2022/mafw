@@ -46,11 +46,11 @@ void main() {
     });
 
     test('generated ids satisfy the gateway device-id charset', () async {
-      // gateway/src/mobile/device-store.ts DEVICE_ID_RE
+      // gateway/src/mobile/device-store.ts DEVICE_ID_RE / DEVICE_ID_MAX_LENGTH
       final id = await getOrCreateDeviceId();
 
       expect(RegExp(r'^[A-Za-z0-9._:-]+$').hasMatch(id), isTrue);
-      expect(id.length <= 64, isTrue);
+      expect(id.length <= 128, isTrue);
     });
   });
 }

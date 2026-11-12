@@ -21,6 +21,9 @@ const String kManualPairingNonce = '__manual__';
 /// Prefix of device tokens issued by pairing v2 gateways.
 const String kDeviceTokenPrefix = 'dev_';
 
+/// Default budget for one `/api/mobile/pairing/verify` round-trip.
+const Duration kPairingRequestTimeout = Duration(seconds: 15);
+
 /// Outcome of a pairing redemption.
 class PairingResult {
   /// Credentials to save (`baseUrl` as shown in the link/form, token = device
@@ -31,14 +34,7 @@ class PairingResult {
   /// manual entry (no pairing round-trip happened).
   final String deviceId;
 
-  /// True when the gateway issued a device token (`dev_…`) for this call.
-  final bool verified;
-
-  const PairingResult({
-    required this.config,
-    required this.deviceId,
-    required this.verified,
-  });
+  const PairingResult({required this.config, required this.deviceId});
 }
 
 /// Pairing failed (non-200 from `/api/mobile/pairing/verify`, or transport).
@@ -52,22 +48,30 @@ class PairingException implements Exception {
   String toString() => 'PairingException: $message';
 }
 
+/// User-facing message for a failed pairing attempt.
+///
+/// Gateway failures keep their own message (it carries the HTTP status);
+/// transport/timeout/decoding failures collapse to a neutral label so the UI
+/// never shows a raw exception string.
+String pairingErrorMessage(Object error) {
+  if (error is PairingException) return error.message;
+  return '配对请求失败';
+}
+
 /// Whether this attempt should ask the gateway to rotate an existing device
 /// credential (`rotate:true` on verify).
 ///
-/// True only when pairing actually redeems a nonce **and** this install
-/// already holds a token for the same gateway base URL — a fresh device would
-/// otherwise be rejected by v2 gateways with 409 `device_already_paired`, and
-/// sending `rotate` for a brand-new device would be a needless re-issue.
+/// Deliberately **URL-agnostic**: the gateway's 409 `device_already_paired` is
+/// keyed on the `deviceId` hash only, so an install that re-pairs the same
+/// device through a different route (Tailscale ↔ LAN ↔ changed port) must
+/// still rotate. A gateway with no record for this device ignores the flag.
 bool shouldRotateForPairing({
   required ConnectionConfig? existing,
-  required String baseUrl,
   required String nonce,
 }) {
   if (nonce == kManualPairingNonce) return false;
   if (existing == null || existing.apiToken.isEmpty) return false;
-  final target = baseUrl.replaceAll(RegExp(r'/+$'), '');
-  return existing.normalizedBaseUrl == target;
+  return true;
 }
 
 /// Redeem [nonce] against [baseUrl] and return the credentials to persist.
@@ -76,11 +80,18 @@ bool shouldRotateForPairing({
 ///   is sent as `Authorization` when present (old gateways may still require
 ///   it) and is the fallback credential when the gateway issues no device
 ///   token.
-/// - [rotate] asks the gateway to rotate an existing credential for the same
-///   [deviceId] (re-pair); v1 gateways ignore it.
+/// - [rotate] asks the gateway to rotate an existing credential for this
+///   [deviceId] (re-pair); v1 gateways ignore it. A 409
+///   `device_already_paired` is retried once with `rotate:true` — the gateway
+///   preserves the nonce on 409, so the retry is free.
 /// - [kManualPairingNonce] skips the network entirely.
 ///
-/// Throws [PairingException] on non-200 so the caller can show the status.
+/// A 200 that yields neither a device token nor a legacy link token fails
+/// closed ([PairingException] `missing device credential`) rather than storing
+/// an unusable empty credential.
+///
+/// Throws [PairingException] on non-200 / missing credential and
+/// `TimeoutException` when the [requestTimeout] budget is exceeded.
 Future<PairingResult> redeemPairing({
   required String baseUrl,
   required String linkToken,
@@ -90,12 +101,12 @@ Future<PairingResult> redeemPairing({
   String platform = 'unknown',
   String deviceName = 'Orcalore',
   bool rotate = false,
+  Duration requestTimeout = kPairingRequestTimeout,
 }) async {
   if (nonce == kManualPairingNonce) {
     return PairingResult(
       config: ConnectionConfig(baseUrl: baseUrl, apiToken: linkToken),
       deviceId: '',
-      verified: false,
     );
   }
 
@@ -106,19 +117,30 @@ Future<PairingResult> redeemPairing({
     // Legacy v1 gateways may still enforce the shared token.
     if (linkToken.isNotEmpty) 'Authorization': 'Bearer $linkToken',
   };
-  final body = <String, dynamic>{
-    'nonce': nonce,
-    if (deviceId.isNotEmpty) 'deviceId': deviceId,
-    'platform': platform,
-    'deviceName': deviceName,
-    if (rotate) 'rotate': true,
-  };
 
-  final res = await client.post(
-    Uri.parse('$root/api/mobile/pairing/verify'),
-    headers: headers,
-    body: jsonEncode(body),
-  );
+  Future<http.Response> post({required bool withRotate}) {
+    final body = <String, dynamic>{
+      'nonce': nonce,
+      if (deviceId.isNotEmpty) 'deviceId': deviceId,
+      'platform': platform,
+      'deviceName': deviceName,
+      if (withRotate) 'rotate': true,
+    };
+    return client
+        .post(
+          Uri.parse('$root/api/mobile/pairing/verify'),
+          headers: headers,
+          body: jsonEncode(body),
+        )
+        .timeout(requestTimeout);
+  }
+
+  var res = await post(withRotate: rotate);
+  // Re-pair after a wiped local store: the gateway rejects the first attempt
+  // with 409 and keeps the nonce valid, so one rotate retry is enough.
+  if (res.statusCode == 409 && !rotate) {
+    res = await post(withRotate: true);
+  }
 
   if (res.statusCode != 200) {
     throw PairingException(
@@ -149,12 +171,11 @@ Future<PairingResult> redeemPairing({
   } else if (linkToken.isNotEmpty) {
     token = linkToken;
   } else {
-    token = '';
+    throw const PairingException('missing device credential');
   }
 
   return PairingResult(
     config: ConnectionConfig(baseUrl: baseUrl, apiToken: token),
     deviceId: gatewayDeviceId ?? deviceId,
-    verified: isDeviceToken,
   );
 }
