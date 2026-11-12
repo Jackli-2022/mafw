@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { buildCommandPickerItems, buildFilePickerItems, filterPickerItems, withCommandItems } from "./picker-model"
+import { buildCommandPickerItems, buildFilePickerItems, buildGoalPickerItems, filterPickerItems, withCommandItems } from "./picker-model"
 import { subjectKey, type Scope } from "./focus-model"
 import type { RecentContentEntry } from "../recent-content"
 
@@ -151,6 +151,27 @@ test("commands stay inside the picker cap", () => {
   assert.equal(merged.length, 50)
   assert.equal(merged.at(-2)?.kind, "command")
   assert.equal(merged.at(-1)?.kind, "command")
+})
+
+test("goal picker items carry a goal scope and orient lens", () => {
+  const items = buildGoalPickerItems(
+    [
+      { goalId: "g1", title: "工作台重构", activeRevision: 3, revision: 2 },
+      { goalId: "g2", title: "另一个 Goal", revision: 1 },
+    ],
+    "C:/repo",
+    "C:/repo-goal-g1",
+  )
+  assert.equal(items.length, 2)
+  assert.equal(items[0]!.kind, "goal")
+  assert.equal(items[0]!.label, "工作台重构")
+  assert.equal(items[0]!.subject.kind, "goal")
+  assert.equal((items[0]!.subject as { goalId: string }).goalId, "g1")
+  assert.equal(items[0]!.lens, "orient")
+  assert.equal(items[0]!.scope.kind, "goal")
+  assert.equal((items[0]!.scope as { revision: number }).revision, 3)
+  assert.equal((items[0]!.scope as { worldId: string }).worldId, "C:/repo")
+  assert.equal((items[1]!.scope as { revision: number }).revision, 1)
 })
 
 test("picker item identities are stable", () => {

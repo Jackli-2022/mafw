@@ -1,5 +1,6 @@
 import { subjectKey, type Lens, type Scope, type SubjectRef, type WorldId } from "./focus-model"
 import type { RecentContentEntry } from "../recent-content"
+import type { PodGoal } from "@mafw/sdk"
 
 export type PickerKind = "file" | "recent" | "goal" | "change" | "review" | "command"
 
@@ -73,6 +74,36 @@ export function buildFilePickerItems(input: {
     out.push(item)
   }
 
+  return out
+}
+
+export function buildGoalPickerItems(
+  goals: readonly Pick<PodGoal, "goalId" | "title" | "activeRevision" | "revision">[],
+  projectDir: string,
+  worktreeDir: string,
+): PickerItem[] {
+  const out: PickerItem[] = []
+  const seen = new Set<string>()
+  for (const goal of goals) {
+    if (!goal.goalId || seen.has(goal.goalId)) continue
+    seen.add(goal.goalId)
+    const revision = goal.activeRevision ?? goal.revision ?? 1
+    out.push({
+      id: `goal:${goal.goalId}`,
+      kind: "goal",
+      label: goal.title || goal.goalId,
+      detail: `rev ${revision}`,
+      scope: {
+        kind: "goal",
+        worldId: projectDir,
+        goalId: goal.goalId,
+        revision,
+        worktreeDir,
+      },
+      subject: { kind: "goal", goalId: goal.goalId },
+      lens: "orient",
+    })
+  }
   return out
 }
 

@@ -133,8 +133,9 @@ import {
   type WorkbenchState,
 } from "./focus/focus-model"
 import { frameView, type FrameView } from "./focus/frame-view"
-import { buildCommandPickerItems, buildFilePickerItems, withCommandItems, type PickerItem } from "./focus/picker-model"
+import { buildCommandPickerItems, buildFilePickerItems, buildGoalPickerItems, withCommandItems, type PickerItem } from "./focus/picker-model"
 import { stageActionFor } from "./focus/stage-dispatch"
+import { openGoalFocus as applyGoalFocus } from "./focus/goal-focus"
 import {
   configureFocusStorage,
   flushFocusPersistence,
@@ -2544,11 +2545,14 @@ export function MafwShell() {
     const focus = activeFocus()
     if (!focus) return null
     const subject = focus.subject
+    const goalTitle = subject.kind === "goal"
+      ? podStore.detail()?.goals.find((goal) => goal.goalId === subject.goalId)?.title
+      : null
     const subjectLabel =
       subject.kind === "file" ? subject.rel
       : subject.kind === "reviewItem" ? (subject.anchor?.rel ?? "评审项")
       : subject.kind === "changeSet" ? "变更集"
-      : subject.kind === "goal" ? "Goal"
+      : subject.kind === "goal" ? (goalTitle || "Goal")
       : subject.kind === "world" ? "世界"
       : subject.kind === "web" ? "浏览器"
       : subject.kind === "terminal" ? "终端"
@@ -2603,12 +2607,37 @@ export function MafwShell() {
     setFocusState(next)
     syncStageToFocus(next)
   }
+  const openGoalFocus = (goalId: string, focus: GoalDetailFocus = "timeline") => {
+    const project = currentProject()
+    if (!project) return
+    const goal = podStore.detail()?.goals.find((item) => item.goalId === goalId)
+    const revision = goal ? (goalRevisionOf(goal) ?? goal.activeRevision ?? goal.revision ?? 1) : 1
+    setPodGoalId(goalId)
+    setGoalDetailFocus(focus)
+    setFocusState((state) =>
+      applyGoalFocus(
+        state,
+        {
+          projectDir: project,
+          goalId,
+          revision,
+          worktreeDir: project,
+          title: goal?.title ?? null,
+        },
+        "orient",
+      ),
+    )
+  }
   const openSubjectPicker = () => {
     setPickerOpen(true)
     void window.api.mafw.files.list().then(setPickerFiles).catch(() => {})
   }
   const pickSubject = (item: PickerItem) => {
     setPickerOpen(false)
+    if (item.subject.kind === "goal") {
+      openGoalFocus(item.subject.goalId, "timeline")
+      return
+    }
     if (item.subject.kind === "file") {
       setContentScope(contentScopeFromFocus(item.scope))
       openContentFile(item.subject.rel, item.subject.root, true, item.lens === "edit" ? "editing" : "reading")
@@ -2737,7 +2766,12 @@ export function MafwShell() {
       scope,
       projectScope,
     })
-    return withCommandItems(items, buildCommandPickerItems(scope))
+    const goalItems = buildGoalPickerItems(
+      podStore.detail()?.goals ?? [],
+      project ?? "",
+      contentRoot() ?? project ?? "",
+    )
+    return withCommandItems([...items, ...goalItems], buildCommandPickerItems(scope))
   })
   const contentBackLabel = createMemo(() => {
     const top = contentHistory().at(-1)
@@ -3813,8 +3847,8 @@ export function MafwShell() {
                         onCreate: () => { void podStore.create() },
                       }}
                       teamFocusRequest={teamFocusRequest()}
-                      onOpenGoal={(goal, focus) => { void openGoalAndDiscuss(goal.goalId, focus, goal) }}
-                      onGoalCreated={(goalId, goal) => { void openGoalAndDiscuss(goalId, "timeline", goal) }}
+                      onOpenGoal={(goal, focus) => { openGoalFocus(goal.goalId, focus) }}
+                      onGoalCreated={(goalId) => { openGoalFocus(goalId, "timeline") }}
                     />
                   }
                   goalView={
