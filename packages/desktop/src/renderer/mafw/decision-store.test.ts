@@ -149,6 +149,30 @@ test("confirm refreshes the record list", async () => {
   assert.equal(store.records()[0]!.status, "decided")
 })
 
+test("reopen moves a decided record back to pending", async () => {
+  let status = "decided"
+  let updatedAt = "2026-11-12T00:00:00.000Z"
+  const store = createDecisionStore({
+    api: {
+      attention: async () => ({ items: [] }),
+      decisions: async () => ({ items: [record({ status, updatedAt })] }),
+      reopen: async () => {
+        status = "draft"
+        updatedAt = "2026-11-13T00:00:00.000Z"
+        return { record: record({ status, updatedAt }) }
+      },
+    },
+    projectDir: () => "C:/repo",
+  })
+
+  await store.refresh()
+  assert.equal(store.counts().decided, 1)
+  await store.reopen("dec_1")
+  assert.equal(store.records()[0]!.status, "draft")
+  assert.equal(store.counts().pending, 1)
+  assert.equal(store.counts().decided, 0)
+})
+
 test("refresh failure keeps previous records", async () => {
   let fail = false
   const store = createDecisionStore({
