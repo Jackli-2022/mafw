@@ -40,8 +40,15 @@ const FORBIDDEN_ABSOLUTE = new Set(
     'src/tts/registry.ts',
     'src/usage/plugin-loader.ts',
     'src/plugins/package-host.ts',
+    'src/voice/registry.ts',
+    'src/media/media-plugin-loader.ts',
+    'src/commands/custom-exec.ts',
   ].map((p) => resolve(ROOT, p)),
 );
+
+const PROVIDERS_DIR = join(KERNEL_V2, 'providers');
+const PROBES_DIR = join(KERNEL_V2, 'probes');
+const COMPOSITION_ENTRIES = new Set(['main.ts', 'facade.ts']);
 
 describe('kernel-v2 boundaries', () => {
   test('kernel-v2 has at least one source file', () => {
@@ -68,6 +75,24 @@ describe('kernel-v2 boundaries', () => {
       const source = readFileSync(resolve(ROOT, file), 'utf8');
       expect(source).not.toMatch(/kernel-v2/);
     }
+  });
+
+  test('kernel-v2 core files do not import providers or probes', () => {
+    const violations: string[] = [];
+    for (const file of filesUnder(KERNEL_V2)) {
+      const rel = relative(KERNEL_V2, file).replace(/\\/g, '/');
+      if (COMPOSITION_ENTRIES.has(rel)) continue;
+      if (rel.startsWith('providers/') || rel.startsWith('probes/')) continue;
+      const source = readFileSync(file, 'utf8');
+      for (const specifier of importSpecifiers(source)) {
+        if (!specifier.startsWith('.')) continue;
+        const target = resolve(join(file, '..'), specifier);
+        if (target.startsWith(PROVIDERS_DIR) || target.startsWith(PROBES_DIR)) {
+          violations.push(`${rel} imports ${specifier}`);
+        }
+      }
+    }
+    expect(violations).toEqual([]);
   });
 
   test('isolated entrypoint has no ambient home or network access', () => {
