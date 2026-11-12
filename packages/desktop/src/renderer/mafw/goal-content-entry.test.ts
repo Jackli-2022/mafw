@@ -19,7 +19,7 @@ test("the Goal entry carries revision and title, and never auto-switches scope",
   assert.match(detail, /title: podGoal\(\)\?\.title/)
   assert.match(shell, /openGoalContent/)
   assert.match(shell, /onOpenWorktree/)
-  assert.match(shell, /rememberContentLocation\(\)/)
+  assert.match(shell, /openSubject\(/)
 })
 
 test("Goal revision content keeps a return path through the focus stack", () => {

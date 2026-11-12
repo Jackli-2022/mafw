@@ -146,7 +146,7 @@ import {
   loadFocusState,
   saveFocusState,
 } from "./focus/focus-persistence"
-import { migrateContentScopeState } from "./focus/legacy-migration"
+import { migrateLegacyContentScope, retiredContentScopeKey } from "./focus/legacy-migration"
 import { fileOpenPlan } from "./file-kind"
 import { fileProtocol } from "./file-protocol-client"
 import { requestBrowserNavigate } from "./browser-nav"
@@ -156,7 +156,6 @@ import { captureWorkbenchFocusSnapshot, restoreWorkbenchFocusSnapshot, type Work
 import { migrateDockKeys, workbenchColumns, workbenchFocusActive, workbenchShellHidden, workbenchSplit, formatResizePreview, type WorkbenchContentMode } from "./workbench-layout"
 import { resolveWorkbenchRoot } from "./workbench-root"
 import {
-  contentScopeBelongsToProject,
   contentScopeKey,
   contentScopeLabel,
   contentScopeRoot,
@@ -168,12 +167,8 @@ import {
 import {
   configureContentScopeStateStorage,
   contentScopeStateFor,
-  saveContentScopeState,
-  selectTreeFile,
 } from "./content-scope-state"
 import { configureEditorDraftStorage } from "./editor-drafts"
-import { persistContentScope, readPersistedContentScope } from "./content-scope-persistence"
-import { popContentHistory, pushContentHistory, type ContentHistoryEntry } from "./content-history"
 import { readRecentContent, recordRecentContent, type RecentContentEntry } from "./recent-content"
 import type { ContentIntent } from "./content-intent"
 import { PopoverShell } from "./components/pickers/PopoverShell"
@@ -285,7 +280,6 @@ export function MafwShell() {
   const [subagentStack, setSubagentStack] = createStore<Record<string, string>>({})
   const [podGoalId, setPodGoalId] = createSignal<string | null>(null)
   const [goalPlanOpenRequest, setGoalPlanOpenRequest] = createSignal<PlanOpenRequest | null>(null)
-  const [contentReturnGoalId, setContentReturnGoalId] = createSignal<string | null>(null)
   const [goalDetailFocus, setGoalDetailFocus] = createSignal<GoalDetailFocus>("timeline")
   let goalDiscussSeq = 0
   const [goalComposerRequest, setGoalComposerRequest] = createSignal(0)
@@ -295,7 +289,6 @@ export function MafwShell() {
   } | null>(null)
   /** 打开统一 Goal 详情，并按 attention action 指定落点（计划/问题/方向/结果）。 */
   const openGoalDetail = (goalId: string, focus: GoalDetailFocus = "timeline"): void => {
-    setContentReturnGoalId(null)
     setGoalDetailFocus(focus)
     setPodGoalId(goalId)
     openGoalFocus(goalId, focus)
@@ -2221,20 +2214,6 @@ export function MafwShell() {
     if (pluginSurfaceIdList().includes(active)) return
     focusBack()
   })
-  const rememberContentLocation = (): void => {
-    const scope = contentScope()
-    if (!scope) return
-    const key = currentContentScopeKey()
-    if (!key) return
-    setContentHistory((history) => pushContentHistory(history, {
-      scope,
-      rel: contentScopeStateFor(key).activeFile,
-      label: contentScopeLabel(scope),
-    }))
-  }
-  const backContent = (): void => {
-    focusBack()
-  }
   const openGoalContent = (input: {
     goalId: string
     revision: number
@@ -2297,12 +2276,11 @@ export function MafwShell() {
   const openContentFile = (
     rel: string,
     root: string | null = contentRoot(),
-    rememberLocation = true,
+    _rememberLocation = true,
     intent?: ContentIntent,
   ): void => {
     if (!root) return
     revealWorkbench()
-    if (intent) setContentIntent(intent)
     const scope = contentScope()
     const nextScope = focusScopeFromContent(scope)
     const nextLens = focusLensForIntent(intent ?? contentIntent())
@@ -2334,7 +2312,6 @@ export function MafwShell() {
       })()
       return
     }
-    if (rememberLocation) rememberContentLocation()
     requestFocusOpen(root, rel)
     applyWorkbenchSurface("code")
     setFocusState((state) =>
@@ -2396,8 +2373,12 @@ export function MafwShell() {
 
   // 内容工作台 scope：项目根是默认值；Goal revision 只能由显式动作进入。
   // 与会话目录解耦，Chat 角色切换不会改变这里。
-  const [contentScope, setContentScope] = createSignal<ContentScope | null>(projectContentScope(currentProject()))
-  const [contentIntent, setContentIntent] = createSignal<ContentIntent>("reading")
+  const contentScope = createMemo<ContentScope | null>(() => {
+    const focus = activeFocus()
+    return focus ? contentScopeFromFocus(focus.scope) : projectContentScope(currentProject())
+  })
+  const contentIntent = (): ContentIntent =>
+    activeFocus()?.lens === "edit" ? "editing" : "reading"
   const [activeContentDocument, setActiveContentDocument] = createSignal<string | null>(null)
   const contentRoot = createMemo(() => contentScopeRoot(contentScope()) ?? currentProject())
   const currentContentScopeKey = createMemo(() => contentScopeKey(contentScope()))
@@ -2537,17 +2518,12 @@ export function MafwShell() {
   }
   const applyFocusLens = (lens: Lens) => {
     setFocusState((state) => replaceLens(state, lens))
-    if (lens === "read") setContentIntent("reading")
-    else if (lens === "edit") setContentIntent("editing")
   }
   const syncStageToFocus = (state: WorkbenchState) => {
     const focus = state.stack[state.stack.length - 1]
     if (!focus) return
     const action = stageActionFor(focus)
     if (action.kind === "editor") {
-      const scope = contentScopeFromFocus(focus.scope)
-      if (currentContentScopeKey() !== contentScopeKey(scope)) setContentScope(scope)
-      setContentIntent(action.intent)
       requestFocusOpen(action.root, action.rel, action.line)
       return
     }
@@ -2752,8 +2728,12 @@ export function MafwShell() {
       return
     }
     if (item.subject.kind === "file") {
-      setContentScope(contentScopeFromFocus(item.scope))
-      openContentFile(item.subject.rel, item.subject.root, true, item.lens === "edit" ? "editing" : "reading")
+      revealWorkbench()
+      requestFocusOpen(item.subject.root, item.subject.rel)
+      setFocusState((state) =>
+        openSubject({ ...state, worldId: item.scope.worldId }, item.scope, item.subject, item.lens),
+      )
+      recordRecentFile(item.subject.rel, contentScopeFromFocus(item.scope))
       return
     }
     const next = openSubject(
@@ -2791,17 +2771,21 @@ export function MafwShell() {
     let next = loaded
     if (!next) {
       const project = currentProject()
-      const restored = project ? readPersistedContentScope(project, window.localStorage) : null
-      const scope = focusScopeFromContent(restored ?? contentScope())
-      const root = restored
-        ? (contentScopeRoot(restored) ?? project ?? "")
-        : (contentRoot() ?? project ?? "")
-      next = migrateContentScopeState({
-        worldId,
-        root,
-        scope,
-        state: contentScopeStateFor(contentScopeKey(restored ?? contentScope())),
-      })
+      const rawScope = project
+        ? (() => { try { return localStorage.getItem(retiredContentScopeKey(project)) } catch { return null } })()
+        : null
+      const migrated = project
+        ? migrateLegacyContentScope({
+            worldId,
+            projectDir: project,
+            rawScope,
+            readState: (key) => contentScopeStateFor(key),
+          })
+        : null
+      next = migrated ?? createWorkbenchState(worldId)
+      if (project) {
+        try { localStorage.removeItem(retiredContentScopeKey(project)) } catch { /* ignore */ }
+      }
       saveFocusState(next)
     }
     const state = next
@@ -2829,36 +2813,6 @@ export function MafwShell() {
     onCleanup(() => window.removeEventListener("keydown", onKeyDown))
   })
   const contentScopeIsGoal = createMemo(() => contentScope()?.kind === "goal")
-  const [contentHistory, setContentHistory] = createSignal<ContentHistoryEntry[]>([])
-  // 项目切换/重启：恢复该项目上次的内容 scope；Goal worktree 不可用时回退项目根。
-  createEffect(() => {
-    const project = currentProject()
-    setContentHistory([])
-    if (!project) {
-      setContentScope(null)
-      return
-    }
-    const restored = readPersistedContentScope(project, window.localStorage)
-    const fallback = projectContentScope(project)
-    if (!restored || restored.kind === "project") {
-      setContentScope(restored ?? fallback)
-      return
-    }
-    setContentScope(fallback)
-    void (async () => {
-      try {
-        const entries = await window.api.fs.listDir(restored.worktreeDir, "")
-        if (currentProject() !== project || entries === null) return
-        setContentScope(restored)
-      } catch { /* worktree 已不可用：保持项目 scope */ }
-    })()
-  })
-  createEffect(() => {
-    const scope = contentScope()
-    const project = currentProject()
-    if (!scope || !project || !contentScopeBelongsToProject(scope, project)) return
-    persistContentScope(scope, window.localStorage)
-  })
   // 项目主目录 scope 与最近内容（按项目持久化）。
   const [recentContent, setRecentContent] = createSignal<RecentContentEntry[]>([])
   createEffect(() => {
@@ -2884,11 +2838,6 @@ export function MafwShell() {
       project ?? "",
     )
     return withCommandItems([...items, ...goalItems], buildCommandPickerItems(scope))
-  })
-  const contentBackLabel = createMemo(() => {
-    const top = contentHistory().at(-1)
-    if (!top) return null
-    return top.rel ? `${top.label} · ${top.rel}` : top.label
   })
   const contentDiffEntries = createMemo(() => diffsForContentScope({
     contentRoot: contentRoot(),

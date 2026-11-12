@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { migrateContentScopeState } from "./legacy-migration"
+import { migrateContentScopeState, migrateLegacyContentScope } from "./legacy-migration"
 import type { ContentScopeState } from "../content-scope-state"
 import type { Scope } from "./focus-model"
 
@@ -64,4 +64,27 @@ test("migration does not mutate the source", () => {
   const before = JSON.stringify(source)
   migrateContentScopeState({ worldId: "w1", root: "C:/repo", scope, state: source })
   assert.equal(JSON.stringify(source), before)
+})
+
+test("migrates the retired content-scope key once", () => {
+  const raw = JSON.stringify({ kind: "project", projectDir: "C:/repo" })
+  const migrated = migrateLegacyContentScope({
+    worldId: "C:/repo",
+    projectDir: "C:/repo",
+    rawScope: raw,
+    readState: () => state(),
+  })
+  assert.ok(migrated)
+  assert.equal(migrated.stack.length, 1)
+  assert.equal((migrated.stack[0]!.subject as { rel: string }).rel, "src/a.ts")
+  assert.equal(migrated.stack[0]!.place.scroll, 120)
+})
+
+test("ignores a malformed retired content scope", () => {
+  assert.equal(migrateLegacyContentScope({
+    worldId: "w1",
+    projectDir: "C:/repo",
+    rawScope: "{bad",
+    readState: () => ({} as any),
+  }), null)
 })
