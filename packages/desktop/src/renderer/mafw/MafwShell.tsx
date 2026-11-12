@@ -112,7 +112,7 @@ import { resolveEpisodeGoalReference } from "./chat/episode-decision"
 import {
   clearLegacyWorkbenchKeys,
   migrateWorkbenchStorage,
-  terminalSurfaceHotkeyAction,
+  parsePluginSurfaceId,
   type PluginSurfaceId,
   type WorkbenchSurface,
 } from "./workbench-views"
@@ -298,11 +298,10 @@ export function MafwShell() {
   } | null>(null)
   /** 打开统一 Goal 详情，并按 attention action 指定落点（计划/问题/方向/结果）。 */
   const openGoalDetail = (goalId: string, focus: GoalDetailFocus = "timeline"): void => {
-    openProjectWork()
     setContentReturnGoalId(null)
     setGoalDetailFocus(focus)
     setPodGoalId(goalId)
-    openWorkbenchContext("goal")
+    openGoalFocus(goalId, focus)
   }
   // 进入非终态 Goal 时把 Chat 切到 Tech Lead，但右侧 Goal 先同步打开。
   // snapshot 让“刚创建、SSE/刷新尚未到达”的 Goal 也能进入讨论；seq 防止快速切换
@@ -622,11 +621,7 @@ export function MafwShell() {
     }
   }
   const openProjectWork = () => {
-    closeLeftDockIfOverlay()
-    setShowConfig(false)
-    setActiveTab("chat")
-    applyRightDock(true)
-    openWorkbenchContext("project")
+    openWorldOverview()
   }
   const [teamFocusRequest, setTeamFocusRequest] = createSignal(0)
   const openProjectTeam = (): void => {
@@ -2156,34 +2151,18 @@ export function MafwShell() {
     setNarrowView(view)
   }
   createEffect(() => { if (!narrowZone()) setNarrowView("chat") })
-  const persistWorkbenchContext = (context: WorkbenchContext) => {
-    try {
-      localStorage.setItem("mafw-workbench-context", persistedWorkbenchContext(context))
-    } catch { /* ignore */ }
-  }
-  const applyWorkbenchContext = (context: WorkbenchContext) => {
-    const next = normalizeWorkbenchContext(context)
-    if (next !== "content" && focusState().stack.length > 0) {
-      setFocusState(createWorkbenchState(currentProject() ?? "unscoped"))
-    }
-    setWorkbenchContext(next)
-    persistWorkbenchContext(next)
-    if (next !== "goal") setPodGoalId(null)
-    if (next === "project") setContentReturnGoalId(null)
-  }
   const backWorkbenchContext = () => {
-    if (workbenchContext() === "content" && contentReturnGoalId()) {
-      const goalId = contentReturnGoalId()
+    const goalId = contentReturnGoalId()
+    if (workbenchContext() === "content" && goalId) {
       setPodGoalId(goalId)
-      applyWorkbenchContext("goal")
+      openGoalFocus(goalId, "timeline")
       return
     }
-    applyWorkbenchContext("project")
+    showWorkbenchLanding()
   }
   const applyWorkbenchSurface = (surface: WorkbenchSurface) => {
     if (surface === "code" || surface === "browser") setPreviousSurface(surface)
     setWorkbenchSurface(surface)
-    applyWorkbenchContext("content")
     try { localStorage.setItem("mafw-workbench-surface", surface) } catch { /* ignore */ }
   }
 
@@ -2287,19 +2266,6 @@ export function MafwShell() {
     setWorkbenchSurface(resolved)
     try { localStorage.setItem("mafw-workbench-surface", resolved) } catch { /* ignore */ }
   })
-  const openWorkbenchContext = (context: WorkbenchContext, opts: { surface?: WorkbenchSurface } = {}) => {
-    if (opts.surface) applyWorkbenchSurface(opts.surface)
-    else applyWorkbenchContext(context)
-    if (narrowZone()) setNarrowView("workbench")
-    setRightDockOpen(true)
-    try { localStorage.setItem("mafw-right-dock-open", "1") } catch { /* ignore */ }
-  }
-  const openWorkbenchSurface = (surface: WorkbenchSurface) => {
-    applyWorkbenchSurface(surface)
-    if (narrowZone()) setNarrowView("workbench")
-    setRightDockOpen(true)
-    try { localStorage.setItem("mafw-right-dock-open", "1") } catch { /* ignore */ }
-  }
   const rememberContentLocation = (): void => {
     const scope = contentScope()
     if (!scope) return
@@ -2312,21 +2278,7 @@ export function MafwShell() {
     }))
   }
   const backContent = (): void => {
-    const popped = popContentHistory(contentHistory())
-    if (!popped.entry) return
-    setContentHistory(popped.rest)
-    if (!contentScopeBelongsToProject(popped.entry.scope, currentProject())) return
-    if (popped.entry.rel) {
-      const key = contentScopeKey(popped.entry.scope)
-      if (key) {
-        saveContentScopeState(key, selectTreeFile(contentScopeStateFor(key), popped.entry.rel))
-      }
-    }
-    setContentScope(popped.entry.scope)
-    openWorkbenchContext("content")
-    applyWorkbenchSurface("code")
-    const root = contentScopeRoot(popped.entry.scope)
-    if (root && popped.entry.rel) requestOpenEditor(root, popped.entry.rel)
+    focusBack()
   }
   const openGoalContent = (input: {
     goalId: string
@@ -2334,7 +2286,6 @@ export function MafwShell() {
     worktreeDir: string
     title?: string | null
   }): void => {
-    const returnGoal = podGoalId()
     void (async () => {
       const scope = goalContentScope({ projectDir: currentProject(), ...input })
       if (!scope) {
@@ -2351,19 +2302,26 @@ export function MafwShell() {
         showToastV2({ description: "该 Goal 版本的文件已不可用", variant: "error", duration: 3500 } as any)
         return
       }
-      rememberContentLocation()
-      setContentReturnGoalId(returnGoal)
-      setContentScope(scope)
-      setContentIntent("reading")
-      openWorkbenchContext("content")
-      applyWorkbenchSurface("code")
+      revealWorkbench()
+      const goalScope: Scope = {
+        kind: "goal",
+        worldId: scope.projectDir,
+        goalId: scope.goalId,
+        revision: scope.revision,
+        worktreeDir: scope.worktreeDir,
+      }
+      setFocusState((state) =>
+        openSubject(
+          state,
+          goalScope,
+          { kind: "changeSet", scope: "goal", goalId: scope.goalId, revision: scope.revision },
+          "changes",
+        ),
+      )
     })()
   }
   const returnToProjectContent = (): void => {
-    rememberContentLocation()
-    setContentReturnGoalId(null)
-    setContentScope(projectContentScope(currentProject()))
-    applyWorkbenchContext("project")
+    openWorldOverview()
   }
   const recordRecentFile = (rel: string, scope: ContentScope | null): void => {
     const project = currentProject()
@@ -2388,6 +2346,7 @@ export function MafwShell() {
     intent?: ContentIntent,
   ): void => {
     if (!root) return
+    revealWorkbench()
     if (intent) setContentIntent(intent)
     const scope = contentScope()
     const nextScope = focusScopeFromContent(scope)
@@ -2404,7 +2363,7 @@ export function MafwShell() {
         if (root !== contentRoot()) return // 根已切换：丢弃迟到结果
         try {
           requestBrowserNavigate(buildMafwFileUrl(token, rel))
-          openWorkbenchSurface("browser")
+          applyWorkbenchSurface("browser")
           setFocusState((state) =>
             openSubject(
               { ...state, worldId: nextScope.worldId },
@@ -2422,18 +2381,15 @@ export function MafwShell() {
     }
     if (rememberLocation) rememberContentLocation()
     requestFocusOpen(root, rel)
-    openWorkbenchSurface("code")
+    applyWorkbenchSurface("code")
     setFocusState((state) =>
       openSubject({ ...state, worldId: nextScope.worldId }, nextScope, { kind: "file", root, rel }, nextLens),
     )
     recordRecentFile(rel, scope)
   }
-  /** 左栏插件入口：切到「工作台」并激活该 surface（spec 2026-11-09 §6.4）。 */
+  /** 左栏插件入口：把插件 surface 作为焦点对象打开（spec 2026-11-09 §6.4）。 */
   const openPluginSurface = (surfaceId: PluginSurfaceId) => {
-    closeLeftDockIfOverlay()
-    setShowConfig(false)
-    openWorkbenchContext("content")
-    applyWorkbenchSurface(surfaceId)
+    openPluginFocus(surfaceId)
   }
 
   /** 审批三档直选（composer 图标循环 + 会话菜单共用；乐观更新失败回滚）。 */
@@ -2457,8 +2413,7 @@ export function MafwShell() {
         void window.api.browser.openExternal(req.url)
         return
       }
-      requestBrowserNavigate(req.url, { newTab: true })
-      openWorkbenchSurface("browser")
+      openBrowserFocus(req.url, { newTab: true })
     })
     // 托盘菜单 / OS 通知点击 → 打开 Goal（跨项目先切项目）。
     const offNavigate = window.api.mafw.navigate.onGoal((target) => {
@@ -2562,6 +2517,63 @@ export function MafwShell() {
       external: subject.kind === "web" || subject.kind === "terminal" || subject.kind === "plugin",
     })
   })
+  const revealWorkbench = () => {
+    closeLeftDockIfOverlay()
+    setShowConfig(false)
+    setActiveTab("chat")
+    applyRightDock(true)
+    if (narrowZone()) setNarrowView("workbench")
+  }
+  const openWorldOverview = () => {
+    revealWorkbench()
+    const worldId = currentProject() ?? "unscoped"
+    setFocusState((state) =>
+      openSubject({ ...state, worldId }, { kind: "world", worldId }, { kind: "world" }, "orient"),
+    )
+  }
+  const openBrowserFocus = (url: string, opts?: { newTab?: boolean }) => {
+    revealWorkbench()
+    requestBrowserNavigate(url, opts)
+    setFocusState((state) =>
+      openSubject(state, focusScope(), { kind: "web", url }, "interact"),
+    )
+  }
+  const openTerminalFocus = () => {
+    revealWorkbench()
+    setFocusState((state) =>
+      openSubject(state, focusScope(), { kind: "terminal", id: "local" }, "interact"),
+    )
+  }
+  const openPluginFocus = (surfaceId: string) => {
+    const parsed = parsePluginSurfaceId(surfaceId)
+    if (!parsed) return
+    revealWorkbench()
+    setFocusState((state) =>
+      openSubject(
+        state,
+        focusScope(),
+        { kind: "plugin", package: parsed.package, panel: parsed.panel },
+        "interact",
+      ),
+    )
+  }
+  const openProjectChangeSetFocus = (lens: "changes" | "review" | "decide" = "changes") => {
+    revealWorkbench()
+    const worldId = currentProject() ?? "unscoped"
+    setFocusState((state) =>
+      openSubject(
+        state,
+        { kind: "world", worldId },
+        { kind: "changeSet", scope: "project", baseline: "HEAD" },
+        lens,
+      ),
+    )
+  }
+  const showWorkbenchLanding = () => {
+    setFocusState(createWorkbenchState(currentProject() ?? "unscoped"))
+    setPickerOpen(true)
+    revealWorkbench()
+  }
   const applyFocusLens = (lens: Lens) => {
     setFocusState((state) => replaceLens(state, lens))
     if (lens === "read") setContentIntent("reading")
@@ -2591,8 +2603,7 @@ export function MafwShell() {
       return
     }
     if (focusState().stack.length === 1) {
-      setFocusState(createWorkbenchState(currentProject() ?? "unscoped"))
-      applyWorkbenchContext("project")
+      showWorkbenchLanding()
     }
   }
   const focusCrumb = (index: number) => {
@@ -2616,6 +2627,7 @@ export function MafwShell() {
     decisionFocusSeq += 1
     const project = currentProject()
     if (!project) return
+    revealWorkbench()
     const goal = podStore.detail()?.goals.find((item) => item.goalId === goalId)
     const revision = goal ? (goalRevisionOf(goal) ?? goal.activeRevision ?? goal.revision ?? 1) : 1
     setPodGoalId(goalId)
@@ -2807,7 +2819,7 @@ export function MafwShell() {
     if (focusState() !== state) return
     if ((currentProject() ?? "unscoped") !== worldId) return
     setFocusState({ ...state, stack: valid })
-    if (valid.length === 0) applyWorkbenchContext("project")
+    if (valid.length === 0) showWorkbenchLanding()
   }
   createEffect(() => {
     const worldId = currentProject() ?? "unscoped"
@@ -3141,7 +3153,7 @@ export function MafwShell() {
       openGoalDetail(scope.goalId, "result")
       return
     }
-    openWorkbenchContext("review")
+    openProjectChangeSetFocus("review")
   }
   /** Episode 关闭时用的 Goal 身份：Pod 会话身份优先，其次 Tech Lead 映射/工作台焦点。 */
   const episodeGoalReference = (sessionID: string) => {
@@ -3475,15 +3487,8 @@ export function MafwShell() {
       if (!matchesCombo(e, keybindingFor("toggle-terminal"))) return
       e.preventDefault()
       e.stopPropagation()
-      const action = terminalSurfaceHotkeyAction({
-        dockOpen: rightDockOpen(),
-        context: workbenchContext(),
-        surface: workbenchSurface(),
-        previousSurface: previousSurface(),
-      })
-      if (action.openDock) applyRightDock(true)
-      applyWorkbenchContext(action.context)
-      applyWorkbenchSurface(action.surface)
+      if (activeFocus()?.subject.kind === "terminal") focusBack()
+      else openTerminalFocus()
     }
     window.addEventListener("keydown", onKey, true)
     onCleanup(() => window.removeEventListener("keydown", onKey, true))
@@ -3896,7 +3901,7 @@ export function MafwShell() {
                           onCloseEpisode={closeEpisodeToDecision}
                           techLeadTarget={activeTechLeadTarget}
                           sendBlocked={activeTechLeadBlocked}
-                          onOpenDiffReview={() => openWorkbenchContext("review")}
+                          onOpenDiffReview={() => openProjectChangeSetFocus("review")}
                           worktreeEnabled={worktreeEnabled()}
                           revertUndoEnabled={revertUndoEnabled()}
                           onCreateWorktreeSession={createWorktreeSession}
@@ -4018,7 +4023,7 @@ export function MafwShell() {
                   onOpenPicker={openSubjectPicker}
                   onClosePicker={() => setPickerOpen(false)}
                   onPick={pickSubject}
-                  onContext={applyWorkbenchContext}
+                  onContext={(context) => setWorkbenchContext(context)}
                   onBackToProject={backWorkbenchContext}
                   onSurface={applyWorkbenchSurface}
                   sessionID={currentSessionID() || null}
@@ -4036,7 +4041,7 @@ export function MafwShell() {
                   onContentReview={() => {
                     const scope = contentScope()
                     if (scope?.kind === "goal") openGoalDetail(scope.goalId, "result")
-                    else openWorkbenchContext("review")
+                    else openProjectChangeSetFocus("review")
                   }}
                   canGoBack={contentHistory().length > 0}
                   backLabel={contentBackLabel()}
@@ -4070,7 +4075,7 @@ export function MafwShell() {
                     addPending({ sessionID: sid, ...a })
                     showToastV2({ description: "已加入批注", duration: 1600 } as any)
                   }}
-                  onOpenReview={() => openWorkbenchContext("review")}
+                  onOpenReview={() => openProjectChangeSetFocus("review")}
                   workView={
                     <WorldOverviewStage
                       projectDir={currentProject()}
@@ -4108,7 +4113,7 @@ export function MafwShell() {
                           podId={podIdForCurrentProject()}
                           focus={goalDetailFocus()}
                           planOpenRequest={goalPlanOpenRequest()}
-                          onClose={() => { setPodGoalId(null); applyWorkbenchContext("project") }}
+                          onClose={() => { setPodGoalId(null); focusBack() }}
                           onOpenSession={(sid) => { void openPodSession(sid) }}
                           onGoalAccepted={() => { void openLeadEntry() }}
                           onOpenWorktree={(target) => openGoalContent(target)}

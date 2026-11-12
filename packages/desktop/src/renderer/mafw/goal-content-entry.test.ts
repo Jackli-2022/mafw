@@ -22,9 +22,9 @@ test("the Goal entry carries revision and title, and never auto-switches scope",
   assert.match(shell, /rememberContentLocation\(\)/)
 })
 
-test("Goal revision content keeps a return path to the Goal", () => {
-  assert.match(shell, /contentReturnGoalId/)
-  assert.match(shell, /backWorkbenchContext/)
-  assert.match(shell, /setContentReturnGoalId\(returnGoal\)/)
-  assert.match(shell, /workbenchContext\(\) === "content" && contentReturnGoalId\(\)/)
+test("Goal revision content keeps a return path through the focus stack", () => {
+  assert.match(shell, /openGoalContent/)
+  assert.match(shell, /openSubject\(/)
+  assert.match(shell, /kind: "changeSet", scope: "goal"/)
+  assert.match(shell, /focusBack|showWorkbenchLanding/)
 })
