@@ -7,6 +7,7 @@ import type {
   DecisionDraftInput,
   DecisionKind,
   DecisionRecord,
+  DecisionRecordEvent,
   DecisionRecordEvidence,
   DecisionRecordOption,
   DecisionReopenInput,
@@ -36,6 +37,7 @@ export interface DecisionRecordServiceDeps {
   now?: () => string;
   id?: () => string;
   warn?: (message: string) => void;
+  notify?: (event: DecisionRecordEvent) => void;
 }
 
 /** Registry keys are stored raw; compare canonically so case/trailing-separator
@@ -185,6 +187,16 @@ export class DecisionRecordService {
     return record;
   }
 
+  private emit(action: DecisionRecordEvent['action'], record: DecisionRecord): void {
+    this.deps.notify?.({
+      action,
+      projectDir: record.projectDir,
+      goalId: record.goalId,
+      revision: record.revision,
+      recordId: record.id,
+    });
+  }
+
   list(projectDir: string, goalId?: string, opts: { limit?: number } = {}): DecisionRecord[] {
     let dir: string;
     try {
@@ -235,7 +247,9 @@ export class DecisionRecordService {
       updatedAt: at,
       history: [{ action: 'drafted', by: input.source === 'user' ? 'user' : 'agent', at }],
     };
-    return this.write(projectDir, record);
+    const saved = this.write(projectDir, record);
+    this.emit('drafted', saved);
+    return saved;
   }
 
   confirm(id: string, input: DecisionConfirmInput): DecisionRecord {
@@ -260,7 +274,9 @@ export class DecisionRecordService {
       updatedAt: at,
       history: [...record.history, { action: 'confirmed', by: 'user', at }],
     };
-    return this.write(projectDir, next);
+    const saved = this.write(projectDir, next);
+    this.emit('confirmed', saved);
+    return saved;
   }
 
   shelve(id: string, input: DecisionShelveInput): DecisionRecord {
@@ -279,7 +295,9 @@ export class DecisionRecordService {
       updatedAt: at,
       history: [...record.history, { action: 'shelved', by: 'user', at, ...(note ? { note } : {}) }],
     };
-    return this.write(projectDir, next);
+    const saved = this.write(projectDir, next);
+    this.emit('shelved', saved);
+    return saved;
   }
 
   reopen(id: string, input: DecisionReopenInput): DecisionRecord {
@@ -298,6 +316,8 @@ export class DecisionRecordService {
       updatedAt: at,
       history: [...record.history, { action: 'reopened', by: 'user', at, ...(note ? { note } : {}) }],
     };
-    return this.write(projectDir, next);
+    const saved = this.write(projectDir, next);
+    this.emit('reopened', saved);
+    return saved;
   }
 }

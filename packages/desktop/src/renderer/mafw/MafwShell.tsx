@@ -460,12 +460,17 @@ export function MafwShell() {
     const timer = setTimeout(() => { void decisionStore.refresh() }, 250)
     onCleanup(() => clearTimeout(timer))
   })
-  // 决定记录可能由 MCP 在 Pod 静默时写入；15s 兜底刷新，不依赖 Pod 事件。
-  createEffect(() => {
-    const dir = currentProject()
-    if (!dir) return
-    const timer = setInterval(() => { void decisionStore.refresh() }, 15000)
-    onCleanup(() => clearInterval(timer))
+  // 决定记录写入由 gateway `decision.updated` 推送；200ms 合并多次写入。
+  let decisionRefreshTimer: ReturnType<typeof setTimeout> | null = null
+  const scheduleDecisionRefresh = () => {
+    if (decisionRefreshTimer) return
+    decisionRefreshTimer = setTimeout(() => {
+      decisionRefreshTimer = null
+      void decisionStore.refresh()
+    }, 200)
+  }
+  onCleanup(() => {
+    if (decisionRefreshTimer) clearTimeout(decisionRefreshTimer)
   })
 
   // Lead UI authority is the current Pod's active coordination binding. The
@@ -1439,6 +1444,7 @@ export function MafwShell() {
     },
     // 统一插件包（Task 7）：修订通知 → 重拉 committed descriptors；
     // 已注册包事件 → 事件 hub（只做数据投递，绝不执行插件代码）。
+    decisions: { onEvent: scheduleDecisionRefresh },
     plugins: {
       onChanged: (event) => { void ingestPluginsChanged(event) },
       onEvent: (event) => { ingestPluginEvent(event) },

@@ -4050,6 +4050,7 @@ class MafwScheduler {
     this.decisionRecords = new DecisionRecordService({
       mafwDir: (projectDir) => findMafwDirForProject(this.registeredProjects, projectDir, canonicalProjectDir),
       warn: (message) => log.warn(message),
+      notify: (event) => this.broadcast({ type: 'decision.updated', properties: event }),
     });
     const leadTopicIndex = new TopicMessageIndexStore(this.getGatewayDb().getStore());
     const topicForks = new TopicForkStore(this.getGatewayDb().getStore());

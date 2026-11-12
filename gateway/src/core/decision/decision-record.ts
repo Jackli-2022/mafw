@@ -50,6 +50,14 @@ export interface DecisionRecord {
   history: DecisionRecordHistoryEntry[];
 }
 
+export interface DecisionRecordEvent {
+  action: 'drafted' | 'confirmed' | 'shelved' | 'reopened';
+  projectDir: string;
+  goalId: string | null;
+  revision: number | null;
+  recordId: string;
+}
+
 export interface DecisionDraftInput {
   projectDir: string;
   goalId?: string | null;

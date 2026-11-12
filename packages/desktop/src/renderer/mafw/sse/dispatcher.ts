@@ -67,6 +67,11 @@ export interface PodDeps {
   onPodEvent(event: unknown): void
 }
 
+/** `decision.updated`：决定记录写入后定向刷新决定板。 */
+export interface DecisionDeps {
+  onEvent(event: unknown): void
+}
+
 /** Task 7: unified plugin package revision + registered package events. */
 export interface PluginDeps {
   /** `plugins.changed` → refresh the committed client snapshot once. */
@@ -88,6 +93,7 @@ export interface ShellEventDeps {
   queue: QueueDeps
   run: RunDeps
   pod: PodDeps
+  decisions: DecisionDeps
   plugins: PluginDeps
 }
 
@@ -173,6 +179,12 @@ export function dispatchShellEvent(event: any, deps: ShellEventDeps): void {
   if (event.type === "pod.event") {
     deps.core.trace(event, "pod:event")
     deps.pod.onPodEvent(event)
+    return
+  }
+
+  if (event.type === "decision.updated") {
+    deps.core.trace(event, "decisions:updated")
+    deps.decisions.onEvent(event)
     return
   }
 

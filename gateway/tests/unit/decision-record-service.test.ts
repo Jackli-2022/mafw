@@ -179,6 +179,40 @@ test('confirm can clear agent-drafted fields', () => {
   }
 });
 
+test('writes notify the decision event stream', () => {
+  const { root, cleanup } = setup();
+  try {
+    const notify = jest.fn();
+    const service = new DecisionRecordService({
+      mafwDir: () => root,
+      now: () => new Date(2026, 10, 12, 0, 0, 0).toISOString(),
+      id: () => 'dec_notify',
+      notify,
+    });
+    const record = service.draft({
+      projectDir: 'C:/repo',
+      goalId: 'g1',
+      revision: 1,
+      kind: 'plan',
+      question: 'Q',
+    } as any);
+    expect(notify).toHaveBeenLastCalledWith({
+      action: 'drafted',
+      projectDir: 'C:/repo',
+      goalId: 'g1',
+      revision: 1,
+      recordId: record.id,
+    });
+    service.confirm(record.id, { projectDir: 'C:/repo', rationale: 'R', consequences: 'C' });
+    expect(notify).toHaveBeenLastCalledWith(expect.objectContaining({
+      action: 'confirmed',
+      recordId: record.id,
+    }));
+  } finally {
+    cleanup();
+  }
+});
+
 test('mafwDir lookup tolerates non-canonical registered keys', () => {
   const entries = new Map([
     ['C:\\Repo\\', { mafwDir: 'C:/repo/.mafw' }],
