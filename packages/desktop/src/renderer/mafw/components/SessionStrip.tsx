@@ -185,7 +185,7 @@ export function SessionStrip(props: {
                 </TooltipV2>
               )}
             </Show>
-            <ButtonV2 variant="ghost" size="small" class="mafw-session-close" onClick={(e: MouseEvent) => { e.stopPropagation(); handleClose(s.id) }}>✕</ButtonV2>
+            <ButtonV2 variant="ghost" size="small" class="mafw-session-close" icon="close" aria-label="关闭会话" onClick={(e: MouseEvent) => { e.stopPropagation(); handleClose(s.id) }} />
           </div>
         ))}
       </div>
@@ -216,7 +216,7 @@ export function SessionStrip(props: {
           </DropdownMenu.Portal>
         </DropdownMenu>
       </Show>
-      <ButtonV2 variant="ghost" size="small" class="mafw-session-new" onClick={() => props.onNew()}>+</ButtonV2>
+      <ButtonV2 variant="ghost" size="small" class="mafw-session-new" icon="plus" aria-label="新建会话" onClick={() => props.onNew()} />
     </div>
   )
 }

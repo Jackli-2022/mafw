@@ -312,7 +312,7 @@ body[data-new-layout] [data-component="markdown"] {
     box-shadow: var(--v2-elevation-floating);
     color: var(--v2-text-text-base);
     user-select: none;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 530;
     line-height: 12px;
     letter-spacing: 0.05px;

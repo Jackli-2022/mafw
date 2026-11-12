@@ -153,3 +153,48 @@ describe("semantic color roles", () => {
     }
   })
 })
+
+const CORE_META = [
+  ".mafw-data-part-badge {",
+  ".mafw-data-part-name {",
+  ".mafw-card-meta {",
+  ".mafw-tool-meta-label {",
+  ".mafw-execute-count {",
+  ".mafw-work-chip {",
+  ".mafw-work-filter-count {",
+  ".mafw-rw-overview-meta {",
+  ".mafw-rw-overview-label {",
+]
+
+describe("readable metadata and session icons", () => {
+  test("core metadata is at least 12px", () => {
+    for (const selector of CORE_META) {
+      const b = block(selector)
+      expect(b).not.toBe("")
+      expect(b).not.toMatch(/font-size:\s*(?:9|9\.5|10|10\.5|11|11\.5)px/)
+    }
+  })
+
+  test("session chrome uses registered icons", () => {
+    const src = readFileSync(join(import.meta.dirname, "components", "SessionStrip.tsx"), "utf8")
+    expect(src).not.toContain(">✕<")
+    expect(src).not.toContain(">+<")
+    expect(src).toContain('icon="close"')
+    expect(src).toContain('icon="plus"')
+  })
+
+  test("session-ui metadata is at least 12px", () => {
+    const files = [
+      "../../../../session-ui/src/v2/components/attachment-card-v2.css",
+      "../../../../session-ui/src/v2/components/session-review-v2.css",
+      "../../../../session-ui/src/v2/components/basic-tool-v2.css",
+      "../../../../session-ui/src/v2/components/tool-error-card-v2.css",
+      "../../../../session-ui/src/components/markdown.css",
+    ]
+    for (const file of files) {
+      expect(readFileSync(join(import.meta.dirname, file), "utf8")).not.toMatch(
+        /font-size:\s*(?:9|9\.5|10|10\.5|11|11\.5)px/,
+      )
+    }
+  })
+})
