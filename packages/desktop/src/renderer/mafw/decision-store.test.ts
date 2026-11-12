@@ -16,6 +16,29 @@ function attention(overrides: Record<string, unknown> = {}) {
   } as any
 }
 
+function record(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "dec_1",
+    projectDir: "C:/repo",
+    goalId: "g1",
+    revision: 1,
+    kind: "plan",
+    status: "draft",
+    question: "采用哪个方案？",
+    options: [],
+    evidence: [],
+    rationale: null,
+    consequences: null,
+    reviewAt: null,
+    decidedBy: null,
+    decidedAt: null,
+    createdAt: "2026-11-12T00:00:00.000Z",
+    updatedAt: "2026-11-12T00:00:00.000Z",
+    history: [],
+    ...overrides,
+  } as any
+}
+
 test("decision store exposes attention items and counts", async () => {
   const store = createDecisionStore({
     api: {
@@ -87,4 +110,58 @@ test("decision store does nothing without a project", async () => {
   await store.refresh()
   assert.equal(calls, 0)
   assert.equal(store.items().length, 0)
+})
+
+test("decision store fetches attention and records together", async () => {
+  const store = createDecisionStore({
+    api: {
+      attention: async () => ({ items: [attention()] }),
+      decisions: async () => ({ items: [record({ status: "decided" })] }),
+    },
+    projectDir: () => "C:/repo",
+  })
+
+  await store.refresh()
+  assert.equal(store.records().length, 1)
+  assert.equal(store.board().counts.needsYou, 1)
+  assert.equal(store.board().counts.decided, 1)
+})
+
+test("confirm refreshes the record list", async () => {
+  let status = "draft"
+  const store = createDecisionStore({
+    api: {
+      attention: async () => ({ items: [] }),
+      decisions: async () => ({ items: [record({ status })] }),
+      confirm: async () => {
+        status = "decided"
+        return { record: record({ status }) }
+      },
+    },
+    projectDir: () => "C:/repo",
+  })
+
+  await store.refresh()
+  assert.equal(store.records()[0]!.status, "draft")
+  await store.confirm("dec_1", { rationale: "方案 A 更稳", consequences: "放弃 B" })
+  assert.equal(store.records()[0]!.status, "decided")
+})
+
+test("refresh failure keeps previous records", async () => {
+  let fail = false
+  const store = createDecisionStore({
+    api: {
+      attention: async () => ({ items: [] }),
+      decisions: async () => {
+        if (fail) throw new Error("offline")
+        return { items: [record()] }
+      },
+    },
+    projectDir: () => "C:/repo",
+  })
+
+  await store.refresh()
+  fail = true
+  await store.refresh()
+  assert.equal(store.records().length, 1)
 })

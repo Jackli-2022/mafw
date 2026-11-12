@@ -1,8 +1,10 @@
-import { For, Show, type JSX } from "solid-js"
+import { For, Show, createSignal, type JSX } from "solid-js"
+import type { DecisionRecord } from "@mafw/sdk"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { Icon } from "@mafw/ui/icon"
 import type { DecisionBoardView, DecisionItem } from "../focus/decision-model"
+import { DecisionRecordCard } from "./DecisionRecordCard"
 import "./decision-board.css"
 
 function sourceLabel(item: DecisionItem): string {
@@ -17,8 +19,17 @@ export function DecisionBoard(props: {
   collapsed: boolean
   onToggle: (collapsed: boolean) => void
   onAction: (item: DecisionItem) => void
+  records?: readonly DecisionRecord[]
+  recordBusy?: string | null
+  onDecisionConfirm?: (id: string, input: { rationale: string; consequences: string; reviewAt?: string }) => void
+  onDecisionShelve?: (id: string, input: { reviewAt: string; note?: string }) => void
+  onDecisionReopen?: (id: string) => void
 }): JSX.Element {
+  const [expandedRecordId, setExpandedRecordId] = createSignal<string | null>(null)
   const hasItems = () => props.board.groups.some((group) => group.items.length > 0)
+  const recordIdOf = (item: DecisionItem): string | null =>
+    item.action.kind === "record" ? item.action.recordId : null
+  const recordFor = (id: string) => props.records?.find((record) => record.id === id)
 
   return (
     <Show when={hasItems()}>
@@ -56,20 +67,56 @@ export function DecisionBoard(props: {
                   <div class="mafw-decision-group" data-status={group.status}>
                     <div class="mafw-decision-group-label">{group.label}</div>
                     <For each={group.items}>
-                      {(item) => (
-                        <ButtonV2
-                          variant="ghost"
-                          size="small"
-                          class="mafw-decision-item"
-                          onClick={() => props.onAction(item)}
-                        >
-                          <span class="mafw-decision-item-title">{item.title}</span>
-                          <Show when={item.detail}>
-                            <span class="mafw-decision-item-detail">{item.detail}</span>
-                          </Show>
-                          <span class="mafw-decision-item-source">{sourceLabel(item)}</span>
-                        </ButtonV2>
-                      )}
+                      {(item) => {
+                        const recordId = recordIdOf(item)
+                        if (recordId) {
+                          const record = () => recordFor(recordId)
+                          return (
+                            <Show when={record()}>
+                              {(entry) => (
+                                <div class="mafw-decision-record-row">
+                                  <ButtonV2
+                                    variant="ghost"
+                                    size="small"
+                                    class="mafw-decision-item"
+                                    aria-expanded={expandedRecordId() === recordId}
+                                    onClick={() => setExpandedRecordId(expandedRecordId() === recordId ? null : recordId)}
+                                  >
+                                    <span class="mafw-decision-item-title">{item.title}</span>
+                                    <Show when={item.detail}>
+                                      <span class="mafw-decision-item-detail">{item.detail}</span>
+                                    </Show>
+                                    <span class="mafw-decision-item-source">{sourceLabel(item)}</span>
+                                  </ButtonV2>
+                                  <Show when={expandedRecordId() === recordId}>
+                                    <DecisionRecordCard
+                                      record={entry()}
+                                      busy={props.recordBusy === recordId}
+                                      onConfirm={(input) => props.onDecisionConfirm?.(recordId, input)}
+                                      onShelve={(input) => props.onDecisionShelve?.(recordId, input)}
+                                      onReopen={() => props.onDecisionReopen?.(recordId)}
+                                    />
+                                  </Show>
+                                </div>
+                              )}
+                            </Show>
+                          )
+                        }
+                        return (
+                          <ButtonV2
+                            variant="ghost"
+                            size="small"
+                            class="mafw-decision-item"
+                            onClick={() => props.onAction(item)}
+                          >
+                            <span class="mafw-decision-item-title">{item.title}</span>
+                            <Show when={item.detail}>
+                              <span class="mafw-decision-item-detail">{item.detail}</span>
+                            </Show>
+                            <span class="mafw-decision-item-source">{sourceLabel(item)}</span>
+                          </ButtonV2>
+                        )
+                      }}
                     </For>
                   </div>
                 </Show>

@@ -430,10 +430,41 @@ export function MafwShell() {
 
   // 决定板 / rail badge 的唯一数据源：attention 投影 + 后续 decision records。
   const decisionStore = createDecisionStore({
-    api: { attention: (dir) => window.api.mafw.attention.list(dir) },
+    api: {
+      attention: (dir) => window.api.mafw.attention.list(dir),
+      decisions: (dir) => window.api.mafw.decisions.list({ projectDir: dir }),
+      confirm: (id, input) => window.api.mafw.decisions.confirm(id, input),
+      shelve: (id, input) => window.api.mafw.decisions.shelve(id, input),
+      reopen: (id, input) => window.api.mafw.decisions.reopen(id, input),
+    },
     projectDir: () => currentProject(),
   })
   const [decisionBoardCollapsed, setDecisionBoardCollapsed] = createSignal(false)
+  const [decisionRecordBusy, setDecisionRecordBusy] = createSignal<string | null>(null)
+  const runDecisionRecord = async (id: string, action: () => Promise<void>) => {
+    setDecisionRecordBusy(id)
+    try {
+      await action()
+    } catch (err: any) {
+      showToastV2({
+        description: `决定记录失败：${String(err?.message ?? err).slice(0, 120)}`,
+        duration: 3600,
+      })
+    } finally {
+      setDecisionRecordBusy(null)
+    }
+  }
+  const confirmDecisionRecord = (
+    id: string,
+    input: { rationale: string; consequences: string; reviewAt?: string },
+  ) => { void runDecisionRecord(id, () => decisionStore.confirm(id, input)) }
+  const shelveDecisionRecord = (
+    id: string,
+    input: { reviewAt: string; note?: string },
+  ) => { void runDecisionRecord(id, () => decisionStore.shelve(id, input)) }
+  const reopenDecisionRecord = (id: string) => {
+    void runDecisionRecord(id, () => decisionStore.reopen(id))
+  }
   createEffect(() => {
     const dir = currentProject()
     const detail = podStore.detail()
@@ -3833,6 +3864,11 @@ export function MafwShell() {
                           decisionBoardCollapsed={() => decisionBoardCollapsed()}
                           onToggleDecisionBoard={setDecisionBoardCollapsed}
                           onDecisionAction={handleDecisionAction}
+                          decisionRecords={() => decisionStore.records()}
+                          decisionRecordBusy={() => decisionRecordBusy()}
+                          onDecisionConfirm={confirmDecisionRecord}
+                          onDecisionShelve={shelveDecisionRecord}
+                          onDecisionReopen={reopenDecisionRecord}
                           techLeadTarget={activeTechLeadTarget}
                           sendBlocked={activeTechLeadBlocked}
                           onOpenDiffReview={() => openWorkbenchContext("review")}
@@ -4065,6 +4101,11 @@ export function MafwShell() {
                           onOpenSession={(sid) => { void openPodSession(sid) }}
                           onGoalAccepted={() => { void openLeadEntry() }}
                           onOpenWorktree={(target) => openGoalContent(target)}
+                          decisionRecords={() => decisionStore.records().filter((record) => record.goalId === goalId)}
+                          decisionRecordBusy={() => decisionRecordBusy()}
+                          onDecisionConfirm={confirmDecisionRecord}
+                          onDecisionShelve={shelveDecisionRecord}
+                          onDecisionReopen={reopenDecisionRecord}
                         />
                       )}
                     </Show>

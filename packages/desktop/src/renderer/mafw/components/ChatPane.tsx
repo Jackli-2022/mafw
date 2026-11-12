@@ -54,6 +54,7 @@ import { worktreeBadge } from "./worktree-label"
 import { ApprovalSummaryLine } from "./ApprovalSummaryLine"
 import { DecisionBoard } from "./DecisionBoard"
 import type { DecisionBoardView, DecisionItem } from "../focus/decision-model"
+import type { DecisionRecord } from "@mafw/sdk"
 import { permissionAriaLabel, permissionPresentation } from "./composer-permission"
 import { type PermissionMode } from "./permission-card-mapping"
 import { getSessionTurnDiffs } from "../session-turn-diffs"
@@ -233,6 +234,11 @@ export type ChatPaneProps = {
   decisionBoardCollapsed?: () => boolean
   onToggleDecisionBoard?: (collapsed: boolean) => void
   onDecisionAction?: (item: DecisionItem) => void
+  decisionRecords?: () => readonly DecisionRecord[]
+  decisionRecordBusy?: () => string | null
+  onDecisionConfirm?: (id: string, input: { rationale: string; consequences: string; reviewAt?: string }) => void
+  onDecisionShelve?: (id: string, input: { reviewAt: string; note?: string }) => void
+  onDecisionReopen?: (id: string) => void
   /** Task 20：当前 tab 是某个 Goal 的 Tech Lead 讨论时，发送走 sendTechLeadMessage。 */
   techLeadTarget?: () => { podId: string; goalId: string } | null | Promise<{ podId: string; goalId: string } | null>
   /** Task 20 review：非讨论的 Tech Lead 节点会话禁止直接发送，返回原因（保留草稿）。 */
@@ -1958,6 +1964,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 collapsed={props.decisionBoardCollapsed?.() ?? false}
                 onToggle={(collapsed) => props.onToggleDecisionBoard?.(collapsed)}
                 onAction={(item) => props.onDecisionAction?.(item)}
+                records={props.decisionRecords?.() ?? []}
+                recordBusy={props.decisionRecordBusy?.() ?? null}
+                onDecisionConfirm={(id, input) => props.onDecisionConfirm?.(id, input)}
+                onDecisionShelve={(id, input) => props.onDecisionShelve?.(id, input)}
+                onDecisionReopen={(id) => props.onDecisionReopen?.(id)}
               />
             </Show>
             <Show when={hiddenTurnCount() > 0 || props.pageState[sidProp()]?.hasMore}>

@@ -8,6 +8,8 @@ import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import type { PodDirectionState, PodGoalAcceptResult, PodGoalRevision, PodMember, PodProbe, PodTask } from "@mafw/sdk"
 import { GoalTimelineLane } from "./GoalTimelineLane"
 import { GoalUserHero } from "./GoalUserHero"
+import { DecisionRecordCard } from "./DecisionRecordCard"
+import type { DecisionRecord } from "@mafw/sdk"
 import { PlanReviewOverlay } from "./PlanReviewOverlay"
 import { PodDirectionPanel } from "./PodDirectionPanel"
 import { PodProbePanel } from "./PodProbePanel"
@@ -72,6 +74,12 @@ export function GoalDetailPanel(props: {
   onGoalAccepted?: () => void
   /** 显式进入当前 revision 的 worktree 内容；右侧 Goal 保持不变。 */
   onOpenWorktree?: (target: GoalWorktreeTarget) => void
+  /** Goal 作用域的决定记录；由 shell 的 decisionStore 提供。 */
+  decisionRecords?: () => readonly DecisionRecord[]
+  decisionRecordBusy?: () => string | null
+  onDecisionConfirm?: (id: string, input: { rationale: string; consequences: string; reviewAt?: string }) => void
+  onDecisionShelve?: (id: string, input: { reviewAt: string; note?: string }) => void
+  onDecisionReopen?: (id: string) => void
 }) {
   const [timeline, setTimeline] = createSignal<any>(null)
   const [podDetail, setPodDetail] = createSignal<any>(null)
@@ -699,6 +707,26 @@ export function GoalDetailPanel(props: {
                 />
               </div>
             )}
+          </Show>
+
+          <Show when={(props.decisionRecords?.() ?? []).length > 0}>
+            <div class="mafw-goal-section mafw-goal-decision-records" data-section="decisions">
+              <div class="mafw-pod-section-head">
+                <span>决定记录</span>
+                <span class="mafw-pod-section-count">{(props.decisionRecords?.() ?? []).length}</span>
+              </div>
+              <For each={props.decisionRecords?.() ?? []}>
+                {(record) => (
+                  <DecisionRecordCard
+                    record={record}
+                    busy={props.decisionRecordBusy?.() === record.id}
+                    onConfirm={(input) => props.onDecisionConfirm?.(record.id, input)}
+                    onShelve={(input) => props.onDecisionShelve?.(record.id, input)}
+                    onReopen={() => props.onDecisionReopen?.(record.id)}
+                  />
+                )}
+              </For>
+            </div>
           </Show>
 
           <Show when={!loading() && !error()} fallback={
