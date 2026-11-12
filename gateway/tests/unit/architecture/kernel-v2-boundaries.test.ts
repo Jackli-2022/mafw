@@ -76,10 +76,13 @@ describe('kernel-v2 boundaries', () => {
     expect(violations).toEqual([]);
   });
 
-  test('v1 entry files do not import kernel-v2', () => {
+  test('v1 entry files do not import kernel-v2 directly', () => {
     for (const file of ['src/kernel.ts', 'src/boot.ts']) {
       const source = readFileSync(resolve(ROOT, file), 'utf8');
-      expect(source).not.toMatch(/kernel-v2/);
+      const direct = importSpecifiers(source).filter((specifier) =>
+        specifier.includes('kernel-v2'),
+      );
+      expect(direct).toEqual([]);
     }
   });
 
@@ -95,6 +98,22 @@ describe('kernel-v2 boundaries', () => {
         const target = resolve(join(file, '..'), specifier);
         if (target.startsWith(PROVIDERS_DIR) || target.startsWith(PROBES_DIR)) {
           violations.push(`${rel} imports ${specifier}`);
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  test('only runtime/v2-live.ts imports kernel-v2 from live code', () => {
+    const src = resolve(ROOT, 'src');
+    const bridge = resolve(src, 'runtime/v2-live.ts');
+    const violations: string[] = [];
+    for (const file of filesUnder(src)) {
+      if (file.startsWith(KERNEL_V2) || file === bridge) continue;
+      const source = readFileSync(file, 'utf8');
+      for (const specifier of importSpecifiers(source)) {
+        if (specifier.includes('kernel-v2')) {
+          violations.push(`${relative(ROOT, file)} imports ${specifier}`);
         }
       }
     }

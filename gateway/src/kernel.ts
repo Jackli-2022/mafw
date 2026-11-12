@@ -306,6 +306,12 @@ import { createRuntimeFacade, type RuntimeFacade, type RuntimeHost } from './run
 import { buildRuntimeDiagnostics, type RuntimeDiagnosticsView } from './runtime/runtime-diagnostics';
 import { TOOL_PRIMITIVE_TYPES } from './runtime/tool-part-assembler';
 import { runEventPipeline, type DispatchCtx } from './runtime/event-dispatch';
+import {
+  createKernelV2Live,
+  type CanonicalObserver,
+  type KernelV2Live,
+  type ToolContribution,
+} from './runtime/v2-live';
 
 /** canonical 词汇表全集（事件映射加载期校验 + 插件流包装用）。
  *  三原语是 assembler 内部入口类型：可校验、可映射，但不广播（有 handleRuntimeEvent 底线）。
@@ -641,6 +647,8 @@ class MafwScheduler {
   private translationDrops = new Map<string, { unmatched: Record<string, number>; suppressed: Record<string, number> }>();
   /** Conformance event tap：per-session 临时观察者（POST /api/runtime/conformance 用）。 */
   private eventTaps = new TtlMap<string, Set<(e: { type: string; sessionID?: string; at: number }) => void>>(5 * 60_000); // 5min TTL (conformance observers)
+  /** Phase 3.5: opt-in live bridge (MAFW_KERNEL_V2_OBSERVERS / _TOOLS). */
+  private kernelV2Live: KernelV2Live | null = null;
   private serveSupervisor: ServeSupervisor;
   private switchingRuntime = false;
   /** Abort controller for the active event stream subscription. Cancelled
@@ -1140,6 +1148,7 @@ class MafwScheduler {
       malformedEventWarnAt: () => this.malformedEventWarnAt,
       unknownEventTracker: () => this.unknownEventTracker,
       eventTaps: () => this.eventTaps,
+      canonicalObserverTap: (f) => this.kernelV2Live?.observe(f),
       goalDriver: () => this.goalDriver,
       busySessions: () => this.busySessions,
       runCoordinator: () => this.runCoordinator,
@@ -1339,7 +1348,10 @@ class MafwScheduler {
         declaredCapabilityKeys: plugin.declaredCapabilityKeys,
       });
       // 工具注册通道接线（Tier-0）：推送六件套 factory + nativeTools → 类别 overlay
-      await activateRuntimeTools(rawRuntime, name, { baseUrl: `http://127.0.0.1:${config.server.apiPort}` });
+      await activateRuntimeTools(rawRuntime, name, {
+        baseUrl: `http://127.0.0.1:${config.server.apiPort}`,
+        extraTools: this.kernelV2Live?.toolFactory(),
+      });
       log.info(`[Runtime] using runtime '${rawRuntime.name}' (${name}, capabilities: ${JSON.stringify(rawRuntime.capabilities)})`);
       const wrapped = this.wrapRuntimeIdentity(rawRuntime);
       // Runtime Ingress：翻译、合帧与 RawRuntime 全部留在 facade 闭包内；
@@ -1403,7 +1415,10 @@ class MafwScheduler {
         source: 'active',
         declaredCapabilityKeys: Object.keys(rawRuntime.capabilities),
       });
-      await activateRuntimeTools(rawRuntime, name, { baseUrl: `http://127.0.0.1:${config.server.apiPort}` });
+      await activateRuntimeTools(rawRuntime, name, {
+        baseUrl: `http://127.0.0.1:${config.server.apiPort}`,
+        extraTools: this.kernelV2Live?.toolFactory(),
+      });
       log.info(`[Runtime] using neutral runtime '${definition.name}' (${name})`);
       const wrapped = this.wrapRuntimeIdentity(rawRuntime);
       const facade = await createRuntimeFacade(wrapped, {
@@ -1922,6 +1937,30 @@ class MafwScheduler {
     if (!set) { set = new Set(); this.eventTaps.set(sessionID, set); }
     set.add(cb);
     return () => { set!.delete(cb); if (set!.size === 0) this.eventTaps.delete(sessionID); };
+  }
+
+  /**
+   * Phase 3.5: register a read-only canonical observer. Requires
+   * `MAFW_KERNEL_V2_OBSERVERS=1`; returns an unsubscribe function.
+   */
+  registerCanonicalObserver(observer: CanonicalObserver): () => void {
+    if (!this.kernelV2Live) {
+      throw new Error(
+        'kernel-v2 observers are disabled (set MAFW_KERNEL_V2_OBSERVERS=1)',
+      );
+    }
+    return this.kernelV2Live.registerObserver(observer);
+  }
+
+  /**
+   * Phase 3.5: register a plugin agent tool. Requires
+   * `MAFW_KERNEL_V2_TOOLS=1`; returns an unregister function.
+   */
+  registerPluginTool(tool: ToolContribution): () => void {
+    if (!this.kernelV2Live) {
+      throw new Error('kernel-v2 tools are disabled (set MAFW_KERNEL_V2_TOOLS=1)');
+    }
+    return this.kernelV2Live.registerTool(tool);
   }
 
   /** POST /api/runtime/conformance deps。 */
@@ -3457,6 +3496,8 @@ class MafwScheduler {
     this.budgetGuards.clear();
     this.customCommandWatcherDispose?.();
     this.customCommandWatcherDispose = null;
+    void this.kernelV2Live?.dispose();
+    this.kernelV2Live = null;
     // Give an in-flight pipeline a short window to settle before closing the
     // T1 store (closing mid-run would leave turns un-deleted → duplicate
     // extraction on next start), then dispose workers best-effort.
@@ -3536,6 +3577,7 @@ class MafwScheduler {
     const projectDir = this.projectDir;
     const mafwDir = config.resolvePath();
     this.mafwDir = mafwDir;
+    this.kernelV2Live = createKernelV2Live({ log });
 
     // E5a: load (or create) the human token before the API server starts.
     // Failure is non-fatal for ordinary API traffic: human-only routes stay
