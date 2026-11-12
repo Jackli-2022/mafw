@@ -107,6 +107,71 @@ async function verifyPairing(
   return r;
 }
 
+async function requestPairingCode(
+  h: ReturnType<typeof harness>,
+  principal?: unknown,
+) {
+  const r = fakeRes();
+  await h.handlerFor('GET', '/api/mobile/pairing-code')(
+    fakeReq({ method: 'GET', url: '/api/mobile/pairing-code', principal }),
+    r.res,
+  );
+  return r;
+}
+
+const HUMAN_PRINCIPAL = { kind: 'human', method: 'human-token' };
+
+describe('pairing-code is human-only (F1 security)', () => {
+  const denied: Array<[string, unknown]> = [
+    ['no principal', undefined],
+    ['service', { kind: 'service', method: 'api-token' }],
+    ['local', { kind: 'local', method: 'loopback' }],
+    ['anonymous', { kind: 'anonymous', method: 'none' }],
+  ];
+
+  it.each(denied)('denies %s before generating a nonce', async (_label, principal) => {
+    const h = harness();
+    const generate = jest.spyOn(h.pairing, 'generatePairingCode');
+
+    const r = await requestPairingCode(h, principal);
+
+    expect(r.status).toBe(403);
+    expect(JSON.parse(r.body)).toEqual({
+      error: 'human principal required',
+      code: 'human_principal_required',
+    });
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it('issues a v2 URL (no token) to a human principal', async () => {
+    const h = harness();
+
+    const r = await requestPairingCode(h, HUMAN_PRINCIPAL);
+
+    expect(r.status).toBe(200);
+    const url = JSON.parse(r.body).url as string;
+    expect(url.startsWith('orcalore://pair?')).toBe(true);
+    const params = new URL(url).searchParams;
+    expect(params.get('v')).toBe('2');
+    expect(params.get('nonce')).toMatch(/^[0-9a-f]{32}$/);
+    expect(params.get('url')).toBe('http://pc.tailnet.ts.net:3000');
+    expect(params.get('token')).toBeNull();
+  });
+
+  it('accepts a device principal (a paired phone can re-open pairing)', async () => {
+    const h = harness();
+
+    const r = await requestPairingCode(h, {
+      kind: 'human',
+      method: 'device-token',
+      deviceId: 'phone-1',
+    });
+
+    expect(r.status).toBe(200);
+    expect(JSON.parse(r.body).url).toContain('nonce=');
+  });
+});
+
 describe('pairing v2 issues a per-device token (routes)', () => {
   it('consumes the nonce, stores sha256(token) and returns {ok,token,deviceId}', async () => {
     const h = harness();
@@ -436,11 +501,11 @@ describe('registry dispatch requires the transport pairing flag (F6)', () => {
 // Transport integration: the pairing-verify exemption + device → human mapping
 // ---------------------------------------------------------------------------
 
-function makeTransportDeps(registry: RouteRegistry): TransportDeps {
+function makeTransportDeps(registry: RouteRegistry, humanToken = ''): TransportDeps {
   return {
     cors: () => ({ origin: '*', methods: 'GET,POST', headers: 'content-type' }),
     apiToken: () => SERVICE,
-    humanToken: () => '',
+    humanToken: () => humanToken,
     verifyDeviceToken: (token: string) => depsRef.pushGateway?.verifyDeviceToken(token) ?? null,
     dispatchAuthorized: (req, res, apiToken) => dispatchAuthorized({ registry, apiToken }, req, res),
     pluginWebWildcard: async () => false,
@@ -491,7 +556,7 @@ async function transportRequest(deps: TransportDeps, req: IncomingMessage) {
   return r;
 }
 
-function integrationHarness() {
+function integrationHarness(opts: { humanToken?: string } = {}) {
   const file = tmpFile();
   const store = new DeviceStore(file);
   const gateway = new PushGateway(store);
@@ -523,10 +588,74 @@ function integrationHarness() {
       res.end(JSON.stringify({ ok: true }));
     },
   });
-  return { file, store, gateway, pairing, registry, deps: makeTransportDeps(registry) };
+  return { file, store, gateway, pairing, registry, deps: makeTransportDeps(registry, opts.humanToken) };
 }
 
 describe('transport integration: pairing verify exemption + device auth', () => {
+  it('service cannot mint a pairing nonce; human can, and the resulting device token passes human-only', async () => {
+    const humanToken = 'h'.repeat(64);
+    const h = integrationHarness({ humanToken });
+
+    // 1) service (shared apiToken, agent/MCP) can reach the route but is denied.
+    const serviceCode = await transportRequest(h.deps, fakeReq({
+      method: 'GET',
+      url: '/api/mobile/pairing-code',
+      socket: REMOTE,
+      headers: { authorization: `Bearer ${SERVICE}` },
+    }));
+    expect(serviceCode.status).toBe(403);
+    expect(JSON.parse(serviceCode.body)).toEqual({
+      error: 'human principal required',
+      code: 'human_principal_required',
+    });
+
+    // 2) loopback/local without a human token is denied too (old desktop/TUI).
+    const localCode = await transportRequest(h.deps, fakeReq({
+      method: 'GET',
+      url: '/api/mobile/pairing-code',
+      socket: '127.0.0.1',
+    }));
+    expect(localCode.status).toBe(403);
+    expect(JSON.parse(localCode.body).code).toBe('human_principal_required');
+
+    // 3) a human token mints a v2 pairing URL.
+    const humanCode = await transportRequest(h.deps, fakeReq({
+      method: 'GET',
+      url: '/api/mobile/pairing-code',
+      socket: REMOTE,
+      headers: { 'x-mafw-human-token': humanToken },
+    }));
+    expect(humanCode.status).toBe(200);
+    const pairingUrl = JSON.parse(humanCode.body).url as string;
+    const nonce = new URL(pairingUrl).searchParams.get('nonce')!;
+
+    // 4) unauthenticated verify exchanges the nonce for a device token.
+    const verified = await transportRequest(h.deps, fakeReq({
+      method: 'POST',
+      url: '/api/mobile/pairing/verify',
+      socket: REMOTE,
+      body: JSON.stringify({ nonce, deviceId: 'phone-e2e', platform: 'android' }),
+    }));
+    expect(verified.status).toBe(200);
+    const deviceToken = JSON.parse(verified.body).token as string;
+    expect(deviceToken).toMatch(/^dev_/);
+
+    // 5) the device token is a human principal for human-only routes.
+    const humanOnly = await transportRequest(h.deps, fakeReq({
+      method: 'POST',
+      url: '/api/__test/human-only',
+      socket: REMOTE,
+      headers: { authorization: `Bearer ${deviceToken}` },
+      body: '{}',
+    }));
+    expect(humanOnly.status).toBe(200);
+    expect(JSON.parse(humanOnly.body).principal).toEqual({
+      kind: 'human',
+      method: 'device-token',
+      deviceId: 'phone-e2e',
+    });
+  });
+
   it('lets a remote unauthenticated client exchange a valid nonce for a token', async () => {
     const h = integrationHarness();
     const nonce = new URL(h.pairing.generatePairingCode('127.0.0.1').url).searchParams.get('nonce')!;

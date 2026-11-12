@@ -25,6 +25,8 @@
  *     无 principal 时保留旧的 FCM-hash 派生（legacy 兼容）。
  *   - 列表一律走 `listPublicDevices()`（去掉 deviceTokenHash / apiTokenHash）。
  *   - token 不落日志（redactLog 已覆盖 `dev_…`）。
+ *   - `mobile.pairingCode` 是 human-only（final review F1）：否则 service/local 可
+ *     铸 nonce → 未认证 verify 换设备 token → 越权 human-only，必须 human/device 凭据。
  */
 import * as crypto from 'crypto';
 import type { IncomingMessage, ServerResponse } from 'http';
@@ -34,6 +36,7 @@ import { PAIRING_VERIFY_MAX_BODY_BYTES } from '../core/http/http-util';
 import type { PushGateway } from '../mobile/push-gateway';
 import type { PairingService } from '../mobile/pairing';
 import type { RouteRegistry } from './registry';
+import { humanOnlyDenied, isHumanPrincipal } from '../core/auth';
 
 export interface DevicesMobileRouteDeps {
   pushGateway: () => PushGateway | undefined;
@@ -155,6 +158,17 @@ export function attachDevicesMobileRoutes(registry: RouteRegistry, deps: Devices
   // GET /api/mobile/pairing-code — generate a single-use pairing URL for mobile scan
   registry.attachHandler('mobile.pairingCode', async (req: IncomingMessage, res: ServerResponse) => {
     try {
+      // E5a (final review F1): pairing-code is human-only. The nonce it mints is
+      // exchanged for a device token at the unauthenticated verify endpoint, so
+      // letting a service/local caller mint one would be a privilege escalation
+      // (service → nonce → device token → human-only actions). Check before
+      // touching the pairing service so a denied call never burns rate limit.
+      if (!isHumanPrincipal((req as any).mafwPrincipal)) {
+        const denied = humanOnlyDenied();
+        res.writeHead(denied.status, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(denied.body));
+        return;
+      }
       if (!deps.pairingService()) {
         res.writeHead(503);
         res.end(JSON.stringify({ error: 'Pairing service not available' }));
