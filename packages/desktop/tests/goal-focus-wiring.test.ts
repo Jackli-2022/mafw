@@ -32,3 +32,9 @@ test("Goal rail can open the change set subject", () => {
   assert.match(shell, /openChangeSetFromFocus/)
   assert.match(shell, /查看变更集/)
 })
+
+test("Goal focus resolves the revision worktree before opening content", () => {
+  assert.match(shell, /resolveGoalWorktreeDir/)
+  assert.match(shell, /window\.api\.mafw\.pod\.result/)
+  assert.match(shell, /record\?\.worktree\?\.dir|result\?\.worktree\?\.dir/)
+})

@@ -21,6 +21,7 @@ import { FocusStage } from "./FocusStage"
 import { SubjectPicker } from "./SubjectPicker"
 import type { Focus, Lens } from "../focus/focus-model"
 import type { FrameView } from "../focus/frame-view"
+import type { FocusOpenRequest } from "../focus/focus-open"
 import type { PickerItem } from "../focus/picker-model"
 import type { ContentIntent } from "../content-intent"
 import type { FileDiffEntry } from "./DiffReviewPanel"
@@ -85,7 +86,7 @@ export type WorkbenchShellProps = {
   onFocusLens: (lens: Lens) => void
   onFocusBack: () => void
   onFocusCrumb: (index: number) => void
-  focusOpenRequest?: { root: string; rel: string; nonce: number } | null
+  focusOpenRequest?: FocusOpenRequest | null
   /** 器械栏（评审队列 / 决定）；由 MafwShell 按当前 focus 生成。 */
   instrumentRail?: JSX.Element | null
   pickerOpen: boolean

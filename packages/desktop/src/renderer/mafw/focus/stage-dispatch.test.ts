@@ -34,7 +34,7 @@ test("changeSet/goal/world dispatch to their stage", () => {
 test("unknown subject/lens combination falls back to world", () => {
   assert.equal(stageKindFor(focus(file, "interact")), "world")
   assert.equal(stageKindFor(focus({ kind: "evidence", id: "e1" }, "evidence")), "world")
-  assert.equal(stageKindFor(focus({ kind: "reviewItem", id: "r1" }, "decide")), "world")
+  assert.equal(stageKindFor(focus({ kind: "reviewItem", id: "r1", anchor: { rel: "src/a.ts", line: 4 } }, "decide")), "editor")
 })
 
 test("stageActionFor drives the editor for file subjects", () => {
@@ -65,4 +65,27 @@ test("stageActionFor leaves non-file stages alone", () => {
   assert.deepEqual(stageActionFor(focus({ kind: "terminal", id: "t1" }, "interact")), { kind: "none" })
   assert.deepEqual(stageActionFor(focus({ kind: "goal", goalId: "g1" }, "orient")), { kind: "none" })
   assert.deepEqual(stageActionFor(focus(file, "interact")), { kind: "none" })
+})
+
+test("stageActionFor opens a review item at its anchor", () => {
+  const goalScope = {
+    kind: "goal",
+    worldId: "C:/repo",
+    goalId: "g1",
+    revision: 3,
+    worktreeDir: "C:/repo-wt",
+  } as const
+  const reviewFocus: Focus = {
+    scope: goalScope,
+    subject: { kind: "reviewItem", id: "r1", anchor: { rel: "src/a.ts", line: 12 } },
+    lens: "decide",
+    place: {},
+  }
+  assert.deepEqual(stageActionFor(reviewFocus), {
+    kind: "editor",
+    root: "C:/repo-wt",
+    rel: "src/a.ts",
+    intent: "reading",
+    line: 12,
+  })
 })

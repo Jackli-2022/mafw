@@ -57,6 +57,7 @@ import { isAnnotationHotkey } from "../annotation-hotkey"
 import type { AnnotationAnchor } from "../../../shared/annotation-types"
 import { DiffReviewPanel, type FileDiffEntry } from "./DiffReviewPanel"
 import type { ContentIntent } from "../content-intent"
+import type { FocusOpenRequest } from "../focus/focus-open"
 
 interface SelectionState {
   rel: string
@@ -77,7 +78,7 @@ export function EditorDock(props: {
   /** 活动文档 → 内容 surface 标签直接显示文档名。 */
   onActiveFileChange?: (rel: string | null) => void
   /** 焦点栈驱动的显式打开请求；与全局 pendingEditorOpen 分开，避免双编辑器抢消费。 */
-  openRequest?: { root: string; rel: string; nonce: number; line?: number } | null
+  openRequest?: FocusOpenRequest | null
   diffs?: FileDiffEntry[]
   onSendAnnotation?: (text: string, opts?: { imageDataUrl?: string }) => void
   /** 加入批注草稿（v2：草稿优先，发送时随消息打包） */

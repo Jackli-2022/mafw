@@ -136,6 +136,7 @@ import { frameView, type FrameView } from "./focus/frame-view"
 import { buildCommandPickerItems, buildFilePickerItems, buildGoalPickerItems, withCommandItems, type PickerItem } from "./focus/picker-model"
 import { stageActionFor } from "./focus/stage-dispatch"
 import { openGoalFocus as applyGoalFocus, openReviewItemFocus as applyReviewFocus, openChangeSetFocus as applyChangeSetFocus } from "./focus/goal-focus"
+import type { FocusOpenRequest } from "./focus/focus-open"
 import { InstrumentRail } from "./components/InstrumentRail"
 import { GoalReviewQueue } from "./components/GoalReviewQueue"
 import type { PodReviewItem } from "@mafw/sdk"
@@ -1962,7 +1963,7 @@ export function MafwShell() {
   const [focusState, setFocusState] = createSignal<WorkbenchState>(
     createWorkbenchState(currentProject() ?? "unscoped"),
   )
-  const [focusOpenRequest, setFocusOpenRequest] = createSignal<{ root: string; rel: string; nonce: number; line?: number } | null>(null)
+  const [focusOpenRequest, setFocusOpenRequest] = createSignal<FocusOpenRequest | null>(null)
   const [instrumentRailOpen, setInstrumentRailOpen] = createSignal(true)
   let focusOpenNonce = 0
   const requestFocusOpen = (root: string, rel: string, line?: number) => {
@@ -2589,7 +2590,7 @@ export function MafwShell() {
       const scope = contentScopeFromFocus(focus.scope)
       if (currentContentScopeKey() !== contentScopeKey(scope)) setContentScope(scope)
       setContentIntent(action.intent)
-      requestFocusOpen(action.root, action.rel)
+      requestFocusOpen(action.root, action.rel, action.line)
       return
     }
     if (action.kind === "browser" && /^(mafw-file|https?):\/\//.test(action.url)) {
@@ -2614,6 +2615,18 @@ export function MafwShell() {
     setFocusState(next)
     syncStageToFocus(next)
   }
+  const resolveGoalWorktreeDir = async (podId: string | null, goalId: string, project: string): Promise<string> => {
+    if (!podId) return project
+    try {
+      const result = await window.api.mafw.pod.result(podId, goalId)
+      const dir = result?.worktree?.dir
+      if (!dir) return project
+      const entries = await window.api.fs.listDir(dir, "").catch(() => null)
+      return entries === null ? project : dir
+    } catch {
+      return project
+    }
+  }
   const openGoalFocus = (goalId: string, focus: GoalDetailFocus = "timeline") => {
     const project = currentProject()
     if (!project) return
@@ -2634,48 +2647,73 @@ export function MafwShell() {
         "orient",
       ),
     )
+    void resolveGoalWorktreeDir(podIdForCurrentProject(), goalId, project).then((worktreeDir) => {
+      if (worktreeDir === project || currentProject() !== project) return
+      setFocusState((state) => {
+        const top = state.stack[state.stack.length - 1]
+        if (!top || top.subject.kind !== "goal" || top.subject.goalId !== goalId) return state
+        return applyGoalFocus(
+          state,
+          {
+            projectDir: project,
+            goalId,
+            revision,
+            worktreeDir,
+            title: goal?.title ?? null,
+          },
+          top.lens,
+        )
+      })
+    })
   }
 
   const openChangeSetFromFocus = () => {
     const focus = activeFocus()
     if (!focus || focus.scope.kind !== "goal") return
     const scope = focus.scope
-    setFocusState((state) =>
-      applyChangeSetFocus(
-        state,
-        {
-          projectDir: scope.worldId,
-          goalId: scope.goalId,
-          revision: scope.revision,
-          worktreeDir: scope.worktreeDir,
-        },
-        "changes",
-      ),
-    )
+    const project = scope.worldId
+    void resolveGoalWorktreeDir(podIdForCurrentProject(), scope.goalId, project).then((worktreeDir) => {
+      if (currentProject() !== project) return
+      setFocusState((state) =>
+        applyChangeSetFocus(
+          state,
+          {
+            projectDir: project,
+            goalId: scope.goalId,
+            revision: scope.revision,
+            worktreeDir,
+          },
+          "changes",
+        ),
+      )
+    })
   }
 
   const openReviewItemToFocus = (item: PodReviewItem) => {
     const focus = activeFocus()
     if (!focus || focus.scope.kind !== "goal") return
     const scope = focus.scope
+    const project = scope.worldId
     const line = item.startLine ?? undefined
-    setFocusState((state) =>
-      applyReviewFocus(
-        state,
+    void resolveGoalWorktreeDir(podIdForCurrentProject(), scope.goalId, project).then((worktreeDir) => {
+      if (currentProject() !== project) return
+      const next = applyReviewFocus(
+        focusState(),
         {
-          projectDir: scope.worldId,
+          projectDir: project,
           goalId: scope.goalId,
           revision: scope.revision,
-          worktreeDir: scope.worktreeDir,
+          worktreeDir,
           title: null,
           itemId: item.id,
           rel: item.rel,
           line,
         },
         "decide",
-      ),
-    )
-    requestFocusOpen(scope.worktreeDir, item.rel, line)
+      )
+      setFocusState(next)
+      syncStageToFocus(next)
+    })
   }
 
   const instrumentRail = createMemo<JSX.Element | null>(() => {
@@ -2866,7 +2904,7 @@ export function MafwShell() {
     const goalItems = buildGoalPickerItems(
       podStore.detail()?.goals ?? [],
       project ?? "",
-      contentRoot() ?? project ?? "",
+      project ?? "",
     )
     return withCommandItems([...items, ...goalItems], buildCommandPickerItems(scope))
   })

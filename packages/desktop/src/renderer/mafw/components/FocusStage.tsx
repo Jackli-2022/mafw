@@ -8,6 +8,7 @@ import type { FileDiffEntry } from "./DiffReviewPanel"
 import type { AnnotationAnchor } from "../../../shared/annotation-types"
 import type { PluginWebSurfaceView } from "../plugins/plugin-web-surface"
 import type { Focus } from "../focus/focus-model"
+import type { FocusOpenRequest } from "../focus/focus-open"
 import { stageKindFor } from "../focus/stage-dispatch"
 
 /** 工作台的「台」：只放当前对象；文件 / 浏览器 / 终端 / 插件 / 变更集 / Goal / 世界。 */
@@ -20,7 +21,7 @@ export function FocusStage(props: {
   sessionDirectory?: string | null
   diffs: FileDiffEntry[]
   onActiveFileChange?: (rel: string | null) => void
-  openRequest?: { root: string; rel: string; nonce: number } | null
+  openRequest?: FocusOpenRequest | null
   onSendAnnotation?: (text: string, opts?: { imageDataUrl?: string }) => void
   onAddAnnotation?: (a: {
     rel: string
