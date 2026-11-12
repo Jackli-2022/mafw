@@ -734,25 +734,38 @@ D3 承诺内）：`initServices()`（1104 行）拆分到 `subsystems/*`、kerne
 `subsystems/` 粒度、`EventTapCallback` 类型化、三个 entry 负向 pin（`core-runtime-neutrality`
 的剥离器样本等）。
 
-### kernel-v2（2026-11-12，Phase 0/1 已交付）
+### kernel-v2（2026-11-12，Phase 0/1/2 已交付）
 
 路线 B：`gateway/src/kernel-v2/` **进程内并行模块**，不接 live gateway、不碰 `~/.mafw`；独立 v2 入口（`MAFW_KERNEL_V2_PORT` + `MAFW_KERNEL_V2_DATA_DIR`）只提供 `/health`、`/api/tts/voices`、`/api/usage` 的只读 shadow。v1 `MafwScheduler` 仍是默认/fallback，直到 cutover gate 通过。
 
-已交付：
+Phase 0/1 已交付：
 
 - `manifest.ts`：纯 manifest 校验（plane/kind/provides/integrity）。
-- `capability-registry.ts`：scope（global/project/session）、tier、priority、health、cache、diagnostics、LIFO dispose。
+- `capability-registry.ts`：scope（global/project/session）、tier、priority、health、cache、diagnostics、LIFO dispose、单条 remove。
 - `provider-lifecycle.ts`：load → validate → resolve → activate → drain → dispose；safe mode/degraded；untrusted fail-closed。
 - `providers/tts.ts`、`providers/usage.ts`：只读 adapter。
 - `main.ts` / `facade.ts`：独立 v2 入口，缺失 env 拒绝启动；`usage.json` record/replay，不 live fetch。
 - `scripts/kernel-v2-shadow.mjs`：v1/v2 normalized JSON 对比。
 
-门禁：kernel-v2 + architecture + shadow **71 tests**；gateway 全量 **6660/6660**；typecheck 通过。runbook 见 `docs/guides/kernel-v2-cutover.md`，交付记录见 `docs/releases/2026-11-12-capability-kernel-phase1.md`。
+Phase 2 叶子 provider（S3 → media → ASR → commands → notifications → automation action）：
+
+- `subprocess-ledger.ts`：子进程所有权（provider/external）、状态、LIFO dispose、失败隔离。
+- `probes/asr-subprocess.ts`：S3 证明 provider 可以拥有 sidecar；失败启动无 orphan、adopted 进程不 kill、health 缓存。
+- `providers/media.ts`：media engine 解析；unknown/unsupported/unhealthy fallback 与 v1 `resolveMediaPrompt` 一致。
+- `providers/asr.ts` / `providers/asr-sidecar.ts`：ASR engine registry + sidecar provider 绑定；health 失败自动回退 package tier。
+- `providers/commands.ts`：command source 合并（builtin → legacy → package），坏 source fail-open。
+- `providers/notifications.ts`：出站通知 fan-out；核心 `broadcast()` 不变，单 channel 失败隔离。
+- `providers/automation.ts`：automation action provider；cron/规则校验仍在核心 `AutomationEngine`。
+- 5 个 conformance kit + 5 个测试包 fixture：`gateway/tests/helpers/kernel-v2/*`、`gateway/tests/fixtures/kernel-v2/*`。
+
+门禁：kernel-v2 + architecture + shadow + G2 **146 tests**；typecheck 通过；gateway 全量结果见 Phase 2 交付记录。runbook 见 `docs/guides/kernel-v2-cutover.md`。
 
 - 架构 spec：`docs/superpowers/specs/2026-11-12-fixed-core-capability-architecture-design.md`
 - 路线图：`docs/superpowers/plans/2026-11-12-fixed-core-capability-roadmap.md`
 - Phase 0/1 详细 plan：`docs/superpowers/plans/2026-11-12-kernel-v2-phase0-1.md`
+- Phase 2 详细 plan：`docs/superpowers/plans/2026-11-12-kernel-v2-phase2-leaf-providers.md`
 - 不变量 → 守卫：`docs/research/2026-11-12-kernel-v2-invariant-map.md`
+- 交付记录：`docs/releases/2026-11-12-capability-kernel-phase1.md`、`docs/releases/2026-11-12-capability-kernel-phase2.md`
 
 ---
 

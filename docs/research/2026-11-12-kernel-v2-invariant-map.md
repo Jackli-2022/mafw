@@ -28,6 +28,12 @@
 | capability manifest / plane | 本 phase Task 0.2/0.4 新增 | GAP→新增 |  |
 | provider lifecycle / dispose | 本 phase Task 1.2 新增 | GAP→新增 |  |
 | diagnostics / versioning | 本 phase Task 0.6 新增 | GAP→新增 |  |
+| 核心不 import provider；provider 不 import v1 组合根 | `gateway/tests/unit/architecture/kernel-v2-boundaries.test.ts`（Phase 2 Task 2.11） | OK | 静态 import 扫描 |
+| 子进程 provider 无 orphan / adopted 不 kill | `gateway/tests/unit/kernel-v2/subprocess-ledger.test.ts`、`asr-subprocess-probe.test.ts`（S3） | OK | ledger + probe |
+| media fallback 语义 | `gateway/tests/unit/kernel-v2/media-provider.test.ts`、`media-conformance.test.ts` | OK | conformance kit |
+| ASR sidecar fallback | `gateway/tests/unit/kernel-v2/asr-sidecar-provider.test.ts` | OK | builtin health → package tier |
+| notification fan-out 失败隔离 | `gateway/tests/unit/kernel-v2/notifications-provider.test.ts` | OK | 单 channel 失败不影响其他 |
+| automation action missing/unhealthy fail-closed | `gateway/tests/unit/kernel-v2/automation-provider.test.ts` | OK | 规则调度仍为核心 |
 
 ## Desktop
 

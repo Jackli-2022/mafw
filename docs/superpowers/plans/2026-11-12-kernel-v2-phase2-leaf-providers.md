@@ -12,6 +12,16 @@
 
 **Roadmap:** `docs/superpowers/plans/2026-11-12-fixed-core-capability-roadmap.md`
 
+## Progress（2026-11-12）
+
+- Milestone 2A–2G 全部完成。
+- 定向门禁：kernel-v2 + architecture + G2 + shadow **146 tests / 146 pass**。
+- gateway 全量：**6768 / 6768**；run 1 clean，run 2 出现既存 `instance-ownership` 时序 flake（单文件重跑通过），run 3/4 连续 clean。
+- typecheck：`npx tsc --noEmit -p tsconfig.json` 通过。
+- 新增测试：Phase 1 基线 6693 → 6768，**+75**。
+- 交付记录：`docs/releases/2026-11-12-capability-kernel-phase2.md`。
+- S3 结论：`docs/research/2026-11-12-s3-asr-subprocess-probe.md`。
+
 ## Global Constraints
 
 - 路线 B：Phase 2 仍只在 `gateway/src/kernel-v2/` 做进程内并行模块，**不接 live gateway、不碰 `~/.mafw` 数据、不写 live DB**。

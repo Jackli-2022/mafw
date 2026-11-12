@@ -247,9 +247,11 @@ Probe 的作用是让 tech lead 在看详细计划前先看清关键未知；每
 
 **Gate G1**：kernel-v2 模块 + 独立 v2 只读 shadow 通过；v1 全量绿；无 v1 HTTP/DTO 变化；rollback = 不启动 v2。
 
-## Phase 2：Gateway 叶子 provider（6–8 周）
+## Phase 2：Gateway 叶子 provider（6–8 周，2026-11-12 已交付 G2）
 
 **目标**：把叶子能力逐个搬出内核，每个 provider 独立可替换。每个 provider 单独写详细计划。
+
+**状态**：S3 子进程 probe 与 media/ASR/commands/notifications/automation action 已落地；G2 测试包替换证明通过。交付记录：`docs/releases/2026-11-12-capability-kernel-phase2.md`。
 
 **顺序**：S3 → media → ASR → commands → notifications → automation action/trigger。
 
