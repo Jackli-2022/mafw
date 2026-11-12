@@ -3766,6 +3766,7 @@ export function MafwShell() {
                   onExecutionSection={applyExecutionSection}
                   onExecutionOpen={applyExecutionOpen}
                   sessionID={currentSessionID() || null}
+                  sessionDirectory={store.session.find((s: any) => s.id === currentSessionID())?.directory ?? null}
                   contentRoot={contentRoot()}
                   contentScopeKey={currentContentScopeKey()}
                   pluginProjectDir={benchRoot() ?? currentProject()}

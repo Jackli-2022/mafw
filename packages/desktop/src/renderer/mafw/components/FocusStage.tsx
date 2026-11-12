@@ -3,6 +3,7 @@ import { EditorDock } from "./EditorDock"
 import { BrowserDock } from "./BrowserDock"
 import { TerminalSurface } from "./TerminalSurface"
 import { DockEmpty } from "./dock-panel"
+import { ChangeSetStage } from "./ChangeSetStage"
 import type { FileDiffEntry } from "./DiffReviewPanel"
 import type { AnnotationAnchor } from "../../../shared/annotation-types"
 import type { PluginWebSurfaceView } from "../plugins/plugin-web-surface"
@@ -16,6 +17,7 @@ export function FocusStage(props: {
   sessionID: string | null
   contentRoot: string | null
   contentScopeKey: string | null
+  sessionDirectory?: string | null
   diffs: FileDiffEntry[]
   onActiveFileChange?: (rel: string | null) => void
   openRequest?: { root: string; rel: string; nonce: number } | null
@@ -81,7 +83,15 @@ export function FocusStage(props: {
         </Match>
 
         <Match when={kind() === "changeSet"}>
-          {props.renderChangeSet?.() ?? <DockEmpty icon="code-lines" text="变更集舞台待接入" />}
+          {props.renderChangeSet?.() ?? (
+            <ChangeSetStage
+              sessionID={props.sessionID}
+              sessionDirectory={props.sessionDirectory ?? null}
+              diffs={props.diffs}
+              onSendComment={props.onSendComment}
+              onAddAnnotation={props.onAddAnnotation}
+            />
+          )}
         </Match>
 
         <Match when={kind() === "goal"}>

@@ -39,6 +39,7 @@ export type WorkbenchShellProps = {
   onExecutionSection: (section: ExecutionSection) => void
   onExecutionOpen: (open: boolean) => void
   sessionID: string | null
+  sessionDirectory?: string | null
   contentRoot: string | null
   contentScopeKey: string | null
   /** Plugin Web surfaces stay session/project-bound; they are not project files. */
@@ -336,6 +337,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
             focus={focus}
             active={props.open}
             sessionID={props.sessionID}
+            sessionDirectory={props.sessionDirectory}
             contentRoot={props.contentRoot}
             contentScopeKey={props.contentScopeKey}
             diffs={props.diffs}
