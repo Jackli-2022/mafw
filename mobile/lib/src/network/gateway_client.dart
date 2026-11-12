@@ -854,10 +854,16 @@ class GatewayClient {
   /// an HTML 200 from a reverse proxy/SPA fallback, or 503 when the event store
   /// is unavailable): the caller falls back to a full reload. A 400 is a client
   /// bug (bad `since`/`limit`) and is thrown instead of retried. Any other
-  /// non-2xx status also throws.
-  Future<EventReplayPage?> replayEvents({required int since, int limit = 500}) async {
+  /// non-2xx status also throws. The request times out after [timeout] (10s by
+  /// default) so a stalled gateway cannot block reconnect recovery forever.
+  Future<EventReplayPage?> replayEvents({
+    required int since,
+    int limit = 500,
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
     final res = await _get(
       _uri('/api/events/replay', {'since': '$since', 'limit': '$limit'}),
+      timeout: timeout,
     );
     if (res.statusCode == 404 || res.statusCode == 503) return null;
     if (res.statusCode == 400) {

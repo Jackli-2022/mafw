@@ -7,6 +7,8 @@
 /// retries the same range.
 library;
 
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -188,6 +190,26 @@ void main() {
       expect(h.store.seq, 3);
     });
 
+    test('flush persists a below-threshold advance immediately', () async {
+      final clock = _Clock();
+      final h = _Harness(fetch: (_, _) async => null, clock: clock);
+      await h.service.init();
+
+      h.service.observe(_event(1));
+      await _settle();
+      expect(h.store.saves, 1);
+
+      clock.advance(10);
+      h.service.observe(_event(2));
+      await _settle();
+      expect(h.store.saves, 1, reason: 'throttled until flush or 250ms');
+      expect(h.store.seq, 1);
+
+      await h.service.flush();
+      expect(h.store.saves, 2);
+      expect(h.store.seq, 2);
+    });
+
     test('observeHeadSeq baselines a first connect without replay', () async {
       final h = _Harness(fetch: (_, _) async => fail('must not fetch'));
 
@@ -360,6 +382,36 @@ void main() {
       expect(h.fallbacks, [RecoveryFallback.truncated]);
     });
 
+    test('reset on page 2 falls back to headSeq, not the page-1 nextSince',
+        () async {
+      final calls = <int>[];
+      final h = _Harness(cursor: 5, fetch: (since, _) async {
+        calls.add(since);
+        if (since == 5) {
+          return _page(
+            events: [_event(6), _event(7)],
+            headSeq: 50,
+            hasMore: true,
+            nextSince: 7,
+          );
+        }
+        return _page(headSeq: 50, nextSince: 50, reset: true);
+      });
+      await h.service.init();
+
+      final outcome = await h.service.recover();
+
+      expect(calls, [5, 7]);
+      expect(outcome.kind, RecoveryOutcomeKind.fellBack);
+      expect(outcome.reason, RecoveryFallback.reset);
+      expect(outcome.applied, 2);
+      expect(h.emitted.map((e) => e.seq), [6, 7]);
+      expect(h.service.cursor, 50);
+      expect(h.store.seq, 50);
+      expect(h.store.seq, isNot(7));
+      expect(h.fallbacks, [RecoveryFallback.reset]);
+    });
+
     test('unsupported replay keeps the cursor and asks for a full reload',
         () async {
       final h = _Harness(cursor: 5, fetch: (_, _) async => null);
@@ -386,6 +438,68 @@ void main() {
       expect(h.service.cursor, 5);
       expect(h.store.seq, 5);
       expect(h.fallbacks, [RecoveryFallback.error]);
+    });
+
+    test('a live frame observed during recover never rolls the cursor back',
+        () async {
+      final calls = <int>[];
+      late EventRecoveryService service;
+      var first = true;
+      final h = _Harness(cursor: 5, fetch: (since, _) async {
+        calls.add(since);
+        if (first) {
+          first = false;
+          service.observe(_event(900)); // live frame while the page is in flight
+          throw StateError('offline mid-recover');
+        }
+        return _page(
+          events: [_event(900), _event(901)],
+          headSeq: 901,
+          nextSince: 901,
+        );
+      });
+      service = h.service;
+      await service.init();
+
+      final firstOutcome = await service.recover();
+
+      expect(firstOutcome.kind, RecoveryOutcomeKind.fellBack);
+      expect(firstOutcome.reason, RecoveryFallback.error);
+      expect(service.cursor, 900, reason: 'error must not reset a live advance');
+      expect(h.store.seq, 900);
+
+      final secondOutcome = await service.recover();
+
+      expect(calls, [5, 900], reason: 'next run starts at the live cursor');
+      expect(secondOutcome.kind, RecoveryOutcomeKind.recovered);
+      expect(h.emitted.map((e) => e.seq), [901],
+          reason: 'seq <= cursor is dropped, never re-emitted');
+      expect(h.store.seq, 901);
+    });
+
+    test('a concurrent recover returns busy without running a second loop',
+        () async {
+      final gate = Completer<EventReplayPage?>();
+      var calls = 0;
+      final h = _Harness(cursor: 5, fetch: (_, _) {
+        calls++;
+        return gate.future;
+      });
+      await h.service.init();
+
+      final first = h.service.recover();
+      await _settle();
+      final second = await h.service.recover();
+
+      expect(second.kind, RecoveryOutcomeKind.busy);
+      expect(calls, 1);
+
+      gate.complete(_page(events: [_event(6)], headSeq: 6, nextSince: 6));
+      final firstOutcome = await first;
+
+      expect(firstOutcome.kind, RecoveryOutcomeKind.recovered);
+      expect(h.emitted.map((e) => e.seq), [6]);
+      expect(h.store.seq, 6);
     });
 
     test('an empty page is a successful no-op', () async {
@@ -421,7 +535,7 @@ void main() {
       expect(h.service.cursor, 5);
     });
 
-    test('stops after 100 pages even if the gateway keeps claiming hasMore',
+    test('hitting the 100-page cap is a fallback, never a fake success',
         () async {
       var seq = 5;
       var fetches = 0;
@@ -440,8 +554,13 @@ void main() {
       final outcome = await h.service.recover();
 
       expect(fetches, 100);
+      expect(outcome.kind, RecoveryOutcomeKind.fellBack);
+      expect(outcome.reason, RecoveryFallback.pageCap);
       expect(outcome.applied, 100);
+      expect(outcome.didRecover, isFalse);
       expect(h.service.cursor, 105);
+      expect(h.store.seq, 105);
+      expect(h.fallbacks, [RecoveryFallback.pageCap]);
     });
   });
 }

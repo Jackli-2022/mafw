@@ -33,10 +33,15 @@ enum RecoveryFallback {
 
   /// The replay request itself failed — keep the cursor and retry later.
   error,
+
+  /// The 100-page bound was reached while `hasMore` was still true. The cursor
+  /// is at the last applied seq, but the gap is not fully bridged: the caller
+  /// must finish with a full reload instead of treating this as success.
+  pageCap,
 }
 
 /// Which branch [EventRecoveryService.recover] took.
-enum RecoveryOutcomeKind { noCursor, recovered, fellBack }
+enum RecoveryOutcomeKind { noCursor, recovered, fellBack, busy }
 
 class RecoveryOutcome {
   final RecoveryOutcomeKind kind;
@@ -57,11 +62,16 @@ class RecoveryOutcome {
   const RecoveryOutcome.fellBack(RecoveryFallback reason, {int applied = 0})
       : this._(RecoveryOutcomeKind.fellBack, reason: reason, applied: applied);
 
+  /// A recover is already in flight; this call did nothing.
+  const RecoveryOutcome.busy() : this._(RecoveryOutcomeKind.busy);
+
   bool get isNoCursor => kind == RecoveryOutcomeKind.noCursor;
 
   bool get didRecover => kind == RecoveryOutcomeKind.recovered;
 
   bool get fellBack => kind == RecoveryOutcomeKind.fellBack;
+
+  bool get isBusy => kind == RecoveryOutcomeKind.busy;
 }
 
 /// Persisted replay cursor (`lastSeq`) plus the gateway instance that produced
@@ -169,6 +179,7 @@ class EventRecoveryService {
   String? _instanceId;
   int _unpersisted = 0;
   DateTime? _lastPersist;
+  bool _recovering = false;
 
   EventRecoveryService({
     required this._fetch,
@@ -241,13 +252,33 @@ class EventRecoveryService {
     }
   }
 
+  /// Persist the current cursor immediately, bypassing the observe throttle.
+  ///
+  /// Task 3 calls this on disconnect / app background so the last few live
+  /// seqs are not lost when the process dies inside the 250ms window.
+  Future<void> flush() => _persistCursor();
+
   /// Page `since=cursor` forward, emitting each new event exactly once.
+  ///
+  /// Only one recover loop may run at a time; a concurrent call returns
+  /// [RecoveryOutcome.busy] and touches nothing.
   Future<RecoveryOutcome> recover() async {
+    if (_recovering) return const RecoveryOutcome.busy();
+    _recovering = true;
+    try {
+      return await _recoverOnce();
+    } finally {
+      _recovering = false;
+    }
+  }
+
+  Future<RecoveryOutcome> _recoverOnce() async {
     final start = _cursor;
     if (start == null) return const RecoveryOutcome.noCursor();
 
-    var cursor = start;
+    var cursor = start; // local pagination cursor (`since` for the next fetch)
     var applied = 0;
+    var reachedPageCap = false;
     try {
       for (var pageIndex = 0; pageIndex < maxPages; pageIndex++) {
         final since = cursor;
@@ -264,8 +295,11 @@ class EventRecoveryService {
           final reason =
               page.reset ? RecoveryFallback.reset : RecoveryFallback.truncated;
           // Gap cannot be bridged. Pin the cursor to headSeq (never persist
-          // nextSince — that could reset-loop against the same epoch).
-          _cursor = page.headSeq;
+          // nextSince — that could reset-loop against the same epoch), but
+          // never roll back a newer live observe.
+          if (_cursor == null || page.headSeq > _cursor!) {
+            _cursor = page.headSeq;
+          }
           await _persistCursor();
           _onFallback(reason);
           return RecoveryOutcome.fellBack(reason, applied: applied);
@@ -275,7 +309,9 @@ class EventRecoveryService {
           final seq = event.seq;
           if (seq == null || seq <= cursor) continue; // idempotent consume
           cursor = seq;
-          _cursor = seq;
+          // A live frame may have moved ahead while this page was in flight;
+          // the persisted cursor only ever moves forward.
+          if (_cursor == null || seq > _cursor!) _cursor = seq;
           applied++;
           _emit(event);
         }
@@ -283,15 +319,23 @@ class EventRecoveryService {
         if (!page.hasMore) break;
         // Contract guard: a page that does not move nextSince would loop.
         if (page.nextSince <= since) break;
+        if (pageIndex == maxPages - 1) reachedPageCap = true;
       }
     } catch (_) {
-      // Preserve the pre-call cursor so the next reconnect retries the range.
-      _cursor = start;
+      // Keep the live advance; otherwise keep the pre-call cursor so the next
+      // reconnect retries the same range.
+      _cursor = (_cursor != null && _cursor! > start) ? _cursor : start;
       _onFallback(RecoveryFallback.error);
       return RecoveryOutcome.fellBack(RecoveryFallback.error, applied: applied);
     }
 
     await _persistCursor();
+    if (reachedPageCap) {
+      // The 100-page bound stopped short of head: never report this as success.
+      _onFallback(RecoveryFallback.pageCap);
+      return RecoveryOutcome.fellBack(RecoveryFallback.pageCap,
+          applied: applied);
+    }
     return RecoveryOutcome.recovered(applied);
   }
 

@@ -9,6 +9,7 @@
 /// when the original event object had no `seq` (flat broadcasts).
 library;
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -287,6 +288,20 @@ void main() {
         throwsA(
           isA<GatewayException>().having((e) => e.statusCode, 'statusCode', 500),
         ),
+      );
+    });
+
+    test('throws when the gateway stalls past the replay timeout', () async {
+      final client = _client(
+        http_testing.MockClient((_) => Completer<http.Response>().future),
+      );
+
+      await expectLater(
+        client.replayEvents(
+          since: 1,
+          timeout: const Duration(milliseconds: 20),
+        ),
+        throwsA(isA<TimeoutException>()),
       );
     });
   });
