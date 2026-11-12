@@ -8,8 +8,6 @@ const css = read("src/renderer/mafw/mafw.css")
 
 test("LensBar renders only the provided lenses with pressed state", () => {
   assert.match(lens, /ButtonV2/)
-  assert.match(lens, /TooltipV2/)
-  assert.match(lens, /Icon/)
   assert.match(lens, /mafw-lens-bar/)
   assert.match(lens, /mafw-lens-btn/)
   assert.match(lens, /mafw-lens-count/)
@@ -20,12 +18,8 @@ test("LensBar renders only the provided lenses with pressed state", () => {
   assert.doesNotMatch(lens, /onContext/)
 })
 
-test("LensBar offers an optional split toggle", () => {
-  assert.match(lens, /onToggleSplit/)
-  assert.match(lens, /mafw-lens-split/)
-  assert.match(lens, /aria-pressed=\{!!props\.splitOpen\}/)
-  assert.match(lens, /分屏对照/)
-  assert.match(lens, /关闭分屏/)
+test("LensBar has no split toggle", () => {
+  assert.doesNotMatch(lens, /onToggleSplit|mafw-lens-split|splitOpen|分屏/)
 })
 
 test("lens bar CSS uses tokens and pressed state", () => {

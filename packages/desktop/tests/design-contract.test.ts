@@ -618,7 +618,7 @@ describe("token v5.2 — 组件接线", () => {
   test("Dashboard 与全页工作空间退役，右工作台「工作」接管列表与概览", () => {
     expect(() => read("src/renderer/mafw/pages/Dashboard.tsx")).toThrow()
     expect(() => read("src/renderer/mafw/components/WorkspaceHome.tsx")).toThrow()
-    expect(read("src/renderer/mafw/components/ProjectWorkView.tsx")).toContain("mafw-project-work")
+    expect(read("src/renderer/mafw/components/WorldOverviewStage.tsx")).toContain("mafw-project-work")
     expect(read("src/renderer/mafw/components/WorkOverview.tsx")).toContain("mafw-work-overview")
   })
   test("ChatPane 主区带双栏 hook 属性", () =>
@@ -647,9 +647,9 @@ describe("DiffReviewPanel 抽屉化（业界对齐：无全屏遮罩）", () => 
 
 describe("DiffReviewPanel 接线", () => {
   const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
-  test("MafwShell：审阅改动打开 review 一级", () => {
+  test("MafwShell：审阅改动打开 project change set", () => {
     const src = read("src/renderer/mafw/MafwShell.tsx")
-    expect(src).toContain('openWorkbenchContext("review")')
+    expect(src).toContain('openProjectChangeSetFocus("review")')
   })
   test("审阅改动已移出 composer（归回合动作 + 工作台）", () => {
     const src = read("src/renderer/mafw/components/ChatPane.tsx")
@@ -662,11 +662,11 @@ describe("DiffReviewPanel 接线", () => {
 
 describe("Dock changes tab（改动列表常驻入口）", () => {
   const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
-  test("审阅一级渲染 ChangesDock", () => {
+  test("变更集舞台渲染 ChangesDock", () => {
     const src = read("src/renderer/mafw/MafwShell.tsx")
-    expect(src).toContain("ChangesDock")
-    expect(src).toContain("reviewView=")
-    expect(src).toContain('openWorkbenchContext("review")')
+    expect(read("src/renderer/mafw/components/ChangeSetStage.tsx")).toContain("ChangesDock")
+    expect(src).toContain('openProjectChangeSetFocus("review")')
+    expect(src).not.toContain("reviewView=")
   })
   test("两级视图：审阅内嵌 DiffReviewPanel（无 shell 级抽屉）", () => {
     const src = read("src/renderer/mafw/MafwShell.tsx")
@@ -800,18 +800,15 @@ describe("topframe — 顶行框架", () => {
     expect(shell.indexOf("<SessionStrip", stripIdx)).toBeGreaterThan(stripIdx)
     expect(shell).not.toContain("DockTabButtons")
   })
-  test("D1 右工作台上下文头/二级结构（无 L1 工具 Tab）", () => {
+  test("D1 右工作台是焦点壳（无 L1 工具 Tab / 执行抽屉）", () => {
     const shell = read("src/renderer/mafw/components/WorkbenchShell.tsx")
-    const views = read("src/renderer/mafw/workbench-views.ts")
-    for (const t of ["overview", "todos", "subagents", "background", "trajectory"]) {
-      expect(views).toContain(`id: "${t}"`)
-    }
-    // Task 15：鲸群从日常执行分区退役，`pod` 只作为内部团队资源面存在。
-    expect(views).not.toContain('{ id: "pod", label: "鲸群" }')
-    expect(shell).toContain("mafw-rw-head")
-    expect(shell).toContain("contextLabel")
+    expect(shell).toContain("FrameBar")
+    expect(shell).toContain("LensBar")
+    expect(shell).toContain("FocusStage")
+    expect(shell).toContain("SubjectPicker")
     expect(shell).not.toContain("WORKBENCH_VIEWS")
-    expect(shell).toContain("DropdownMenu")
+    expect(shell).not.toContain("mafw-rw-head")
+    expect(shell).not.toContain("mafw-rw-exec-drawer")
     expect(shell).not.toContain("mafw-session-float")
   })
   test("CSS：topstrip 拖拽契约", () => {
@@ -845,9 +842,9 @@ describe("topframe — 左栏从 Rail 品牌行收为 IconRail", () => {
 
 describe("layout-toggles — workbench + session rail", () => {
   const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
-  test("Workbench 四件套同屏（树/编辑器/浏览器/终端）", () => {
-    const code = read("src/renderer/mafw/components/WorkbenchCodeView.tsx")
-    for (const c of ["FilesDock", "EditorDock", "BrowserDock", "TerminalSurface"]) expect(code).toContain(c)
+  test("FocusStage dispatches editor / browser / terminal", () => {
+    const code = read("src/renderer/mafw/components/FocusStage.tsx")
+    for (const c of ["EditorDock", "BrowserDock", "TerminalSurface"]) expect(code).toContain(c)
     expect(read("src/renderer/mafw/components/WorkbenchShell.tsx")).not.toContain("TerminalDock")
   })
   test("MafwShell 不再挂 RightDock；SessionRail 删除", () => {
@@ -876,8 +873,8 @@ describe("workbench merge — 档位与尺寸", () => {
     expect(src).toContain("migrateDockKeys")
     expect(src).toContain("onDblClick")
   })
-  test("CSS：树 200px / 终端 surface 满高 / 无第二右轨", () => {
-    expect(cssBlock(".mafw-rw-files {")).toContain("width: 200px")
+  test("CSS：焦点 stage / 终端 surface 满高 / 无第二右轨", () => {
+    expect(cssBlock(".mafw-focus-stage {")).toContain("flex")
     expect(cssBlock(".mafw-terminal-surface {")).toContain("height: 100%")
     expect(css).not.toContain(".mafw-session-rail {")
   })
@@ -914,25 +911,14 @@ describe("layout-toggles — 顶行右端面板开关（左端由 IconRail 接�
     expect(shell).toMatch(/workbenchShellHidden\(\{ content: workbenchContent\(\), open: rightDockOpen\(\) \}\)/)
     expect(shell).toMatch(/<Show when=\{!showConfig\(\)\}>/)
   })
-  test("Focus 全宽：快照恢复 + resize 隐藏 + 不持久化", () => {
+  test("Focus 全宽：detent 快照恢复 + 不持久化", () => {
     const shell = read("src/renderer/mafw/MafwShell.tsx")
     const workbench = read("src/renderer/mafw/components/WorkbenchShell.tsx")
-    expect(workbench).toMatch(/focus\?: boolean/)
-    expect(workbench).toMatch(/onToggleFocus\?: \(\) => void/)
-    expect(workbench).toMatch(/aria-label=\{props\.focus \? "退出工作台全宽" : "工作台全宽"\}/)
+    expect(workbench).not.toMatch(/onToggleFocus/)
     expect(shell).toMatch(/keybindingFor\("toggle-workbench-focus"\)/)
-    expect(shell).toMatch(/focus=\{workbenchFocus\(\)\}/)
-    expect(shell).toMatch(/onToggleFocus=\{toggleWorkbenchFocus\}/)
-    expect(shell).toMatch(/captureWorkbenchFocusSnapshot\(currentWorkbenchSnapshot\(\)\)/)
-    expect(shell).toMatch(/previousSurface: previousSurface\(\)/)
-    expect(shell).toMatch(/restoreWorkbenchFocusSnapshot\(workbenchFocusSnapshot,/)
-    expect(shell).toMatch(/setPreviousSurface\(snapshot\.previousSurface\)/)
-    expect(shell).toMatch(/const restoreFocusSnapshot = \(\) =>/)
-    expect(shell).toMatch(/if \(!open\) \{\s*restoreFocusSnapshot\(\)\s*setWorkbenchFocus\(false\)/)
-    expect(shell).toMatch(/dir !== previous\) \{\s*restoreFocusSnapshot\(\)\s*setWorkbenchFocus\(false\)/)
-    expect(shell).toMatch(/const focusActive = \(\) => workbenchFocusActive\(\{ focus: workbenchFocus\(\), content: workbenchContent\(\), open: rightDockOpen\(\) \}\)/)
+    expect(shell).toMatch(/focusDetentSnapshot/)
+    expect(shell).toMatch(/toggleWorkbenchFocus/)
     expect(shell).toMatch(/focus: focusActive\(\)/)
-    expect(shell).toMatch(/<Show when=\{chatSplit\(\) && !focusActive\(\) && !narrowZone\(\)\}>/)
     expect(shell).not.toMatch(/mafw-workbench-focus/)
   })
   test("CSS：布局开关样式存在，no-drag 由 topstrip button 规则覆盖", () => {
@@ -1019,7 +1005,7 @@ describe("工作台面板骨架统一（workbench merge spec 2026-10-26）", () 
     expect(dock).toContain("capture.windowRegion")
     expect(dock).not.toContain("view.capturePage")
     expect(dock).toContain('kind: "element"')
-    expect(read("src/renderer/mafw/components/WorkbenchCodeView.tsx")).toContain("<BrowserDock sessionID={props.sessionID}")
+    expect(read("src/renderer/mafw/components/FocusStage.tsx")).toContain("<BrowserDock sessionID={props.sessionID}")
     expect(read("src/preload/index.ts")).toContain('ipcRenderer.invoke("mafw-capture-window-region"')
     expect(read("src/main/capture/screenshot-capture.ts")).toContain("captureWindowRegion")
   })
@@ -1027,7 +1013,8 @@ describe("工作台面板骨架统一（workbench merge spec 2026-10-26）", () 
     const shell = read("src/renderer/mafw/MafwShell.tsx")
     expect(shell).toContain("is-hidden")
     expect(shell).toContain("migrateDockKeys")
-    expect(read("src/renderer/mafw/components/ExecutionView.tsx")).toContain('placement="dock"')
+    expect(read("src/renderer/mafw/components/ChatPane.tsx")).toContain("<BackgroundDock")
+    expect(() => read("src/renderer/mafw/components/ExecutionView.tsx")).toThrow()
     expect(read("src/renderer/mafw/components/WorkbenchShell.tsx")).not.toContain("when={props.terminalOpen}")
     expect(read("src/renderer/mafw/components/PendingCaptures.tsx")).toContain("<Index")
     expect(read("src/renderer/mafw/components/PendingCaptures.tsx")).toContain("onRemove")

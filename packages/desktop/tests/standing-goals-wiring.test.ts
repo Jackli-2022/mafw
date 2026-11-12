@@ -15,7 +15,7 @@ test("standing goals panel shows goal rows and run history without session ids",
 })
 
 test("project work view mounts the standing goals panel above priorities", () => {
-  const source = read("../src/renderer/mafw/components/ProjectWorkView.tsx")
+  const source = read("../src/renderer/mafw/components/WorldOverviewStage.tsx")
   assert.match(source, /<StandingGoalsPanel/)
   assert.match(source, /projectDir=\{props\.projectDir\}/)
   assert.ok(source.indexOf("<StandingGoalsPanel") < source.indexOf("<WorkPriorityList"))

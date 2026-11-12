@@ -26,8 +26,8 @@ test("WorkbenchShell renders the focus shell when focusView is set", () => {
   assert.match(workbench, /when=\{props\.focusView\}/)
 })
 
-test("focus branch bypasses the legacy content header", () => {
-  assert.match(workbench, /when=\{!props\.focusView\}[\s\S]*ContentScopeHeader/)
+test("WorkbenchShell has no legacy context branch", () => {
+  assert.doesNotMatch(workbench, /ContentScopeHeader|WorkbenchCodeView|WorkbenchContext/)
   assert.match(workbench, /when=\{props\.focusView\}[\s\S]*FocusStage/)
 })
 
@@ -35,19 +35,10 @@ test("reading and editing map to focus lenses", () => {
   assert.match(shell, /intent === "editing" \? "edit" : "read"/)
 })
 
-test("legacy contexts remain for the strangler slice", () => {
-  assert.match(shell, /WorkbenchContext/)
-  assert.match(workbench, /WorkbenchContext/)
-  assert.match(workbench, /props\.context === "project"/)
-  assert.match(workbench, /props\.context === "goal"/)
-  assert.match(workbench, /props\.context === "review"/)
-})
-
-test("focus changes drive the stage and guard the legacy editor", () => {
+test("focus changes drive the stage and plugin cache", () => {
   assert.match(shell, /stageActionFor/)
   assert.match(shell, /syncStageToFocus/)
-  assert.match(shell, /next !== "content" && focusState\(\)\.stack\.length > 0/)
-  assert.match(workbench, /when=\{!props\.focusView\}[\s\S]*WorkbenchCodeView/)
+  assert.match(workbench, /PluginSurfaceStage/)
 })
 
 test("focus opens use an explicit request instead of the global pending channel", () => {

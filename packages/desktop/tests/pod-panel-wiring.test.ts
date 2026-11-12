@@ -71,19 +71,18 @@ test("shell routes pod.updated, pod.event, project scope, sessions, goals, and b
   assert.match(shell, /pod:\s*\{[\s\S]{0,600}?ingestPodEvent\(event\)/)
   assert.match(shell, /onPodEvent:[\s\S]{0,240}?podEvents\.ingest\(event\)/)
   assert.doesNotMatch(shell, /podResultEvent\(event\)/)
-  assert.match(shell, /projectDir=\{benchRoot\(\)/)
+  assert.match(shell, /pluginProjectDir=\{benchRoot\(\)/)
   assert.match(shell, /onOpenPodSession=\{\(sid, title\) => \{ void openPodSession\(sid, title\) \}\}/)
   assert.match(shell, /podRoleOf=\{/)
-  assert.match(shell, /<Show when=\{podGoalId\(\)\} keyed>/)
+  assert.match(shell, /renderGoal=\{/)
   assert.match(shell, /setPodGoalId/)
 })
 
-test("execution view renders PodDock in its own section", () => {
-  const src = read("src/renderer/mafw/components/ExecutionView.tsx")
+test("world overview hosts the PodDock panel", () => {
+  const src = read("src/renderer/mafw/components/WorldOverviewStage.tsx")
   assert.match(src, /<PodDock/)
-  assert.match(src, /section === "pod"/)
-  assert.match(src, /active=\{props\.section === "pod"\}/)
-  assert.match(src, /onOpenPodSession: \(id: string, title\?: string\) => void/)
+  assert.match(src, /panelRequest=\{props\.podPanelRequest\}/)
+  assert.match(src, /onOpenPodSession/)
 })
 
 test("SessionStrip accepts a pod role accessor and renders a badge", () => {

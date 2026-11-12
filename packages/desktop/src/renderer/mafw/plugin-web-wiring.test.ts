@@ -204,19 +204,16 @@ describe("rail sources", () => {
 describe("shell wiring pins", () => {
   const shell = read("MafwShell.tsx")
 
-  test("the shell derives rail items and tabs from the committed descriptors", () => {
+  test("the shell derives rail items and live surface ids from descriptors", () => {
     expect(shell).toContain("webSurfaceViews(pluginDescriptors())")
     expect(shell).toContain("pluginRailItems")
     expect(shell).toContain("railItemsFromWebSurfaces(")
-    expect(shell).toContain("webSurfaceTabs(")
-    // Web tabs join the L2 list, so `resolveActiveSurface` knows their ids and a
-    // persisted `plugin:<pkg>:<surface>` survives a reload.
-    expect(shell).toContain("...pluginWebSurfaceTabs(),")
+    expect(shell).toContain("pluginSurfaceIdList")
+    expect(shell).toContain("pluginWebSurfaces().map((surface) => surface.surfaceId)")
   })
 
-  test("a rail click opens the workbench on that surface", () => {
-    expect(shell).toContain('openWorkbenchContext("content"')
-    expect(shell).toContain("applyWorkbenchSurface(surfaceId)")
+  test("a rail click opens the plugin surface as a focus subject", () => {
+    expect(shell).toContain("openPluginFocus(surfaceId)")
     expect(shell).toContain("onPluginItem={openPluginSurface}")
     expect(shell).toContain("pluginItems={pluginRailItems()}")
     expect(shell).toContain("pluginActiveSurface=")

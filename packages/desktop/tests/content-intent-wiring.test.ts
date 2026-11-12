@@ -5,22 +5,9 @@ import { readFileSync } from "node:fs"
 const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8")
 
 const shell = read("src/renderer/mafw/MafwShell.tsx")
-const workbench = read("src/renderer/mafw/components/WorkbenchShell.tsx")
-const codeView = read("src/renderer/mafw/components/WorkbenchCodeView.tsx")
+const stage = read("src/renderer/mafw/components/FocusStage.tsx")
 const editor = read("src/renderer/mafw/components/EditorDock.tsx")
-const header = read("src/renderer/mafw/components/ContentScopeHeader.tsx")
 const css = read("src/renderer/mafw/mafw.css")
-
-test("content header exposes reading / editing and a Goal review shortcut", () => {
-  assert.match(header, /mafw-content-intents/)
-  assert.match(header, /阅读/)
-  assert.match(header, /修改/)
-  assert.match(header, /验收/)
-  assert.match(header, /onIntent/)
-  assert.match(header, /canReview/)
-  assert.match(header, /onReview/)
-  assert.match(css, /\.mafw-content-intent\[aria-pressed="true"\]/)
-})
 
 test("editor opens preview tabs while reading and promotes on first edit", () => {
   assert.match(editor, /openPreviewFile/)
@@ -35,37 +22,8 @@ test("editor opens preview tabs while reading and promotes on first edit", () =>
   assert.match(css, /\.mafw-editor-tab-preview/)
 })
 
-test("open documents label the content header with the document name", () => {
-  assert.match(shell, /contentDocumentLabel\(activeContentDocument\(\)\)/)
-  assert.match(shell, /activeContentDocument/)
-  assert.match(shell, /onContentDocument=\{setActiveContentDocument\}/)
-})
-
-test("built-in viewers move out of the peer L2 tabs", () => {
-  assert.doesNotMatch(workbench, /<For each=\{WORKBENCH_SURFACES\}>/)
-  assert.match(header, /返回文档/)
-  assert.match(header, /mafw-content-scope-browser/)
-  assert.match(header, /mafw-content-scope-terminal/)
-  assert.match(header, /surface:\s*WorkbenchSurface/)
-  assert.match(header, /onSurface:\s*\(surface:\s*WorkbenchSurface\)/)
-})
-
-test("shell owns the content intent and resets project opens to reading", () => {
-  assert.match(shell, /contentIntent/)
-  assert.match(shell, /setContentIntent/)
-  assert.match(shell, /openProjectFile[\s\S]{0,500}"reading"/)
-  assert.match(shell, /contentIntent=\{contentIntent\(\)\}/)
-  assert.match(shell, /onContentIntent=\{setContentIntent\}/)
-  assert.match(shell, /canReview=\{contentScopeIsGoal\(\)\}/)
-  assert.match(shell, /onContentReview=/)
-  assert.match(shell, /openGoalDetail\(scope\.goalId, "result"\)/)
-})
-
-test("intent flows through WorkbenchShell into EditorDock", () => {
-  assert.match(workbench, /contentIntent:\s*ContentIntent/)
-  assert.match(workbench, /onContentIntent:\s*\(intent:\s*ContentIntent\)/)
-  assert.match(workbench, /onContentReview/)
-  assert.match(workbench, /props\.surface === "code" \? props\.contentIntent : undefined/)
-  assert.match(codeView, /intent:\s*ContentIntent/)
-  assert.match(codeView, /onIntent:\s*\(intent:\s*ContentIntent\)/)
+test("focus lens drives the editor intent", () => {
+  assert.match(shell, /activeFocus\(\)\?\.lens === "edit" \? "editing" : "reading"/)
+  assert.match(stage, /intent=\{props\.focus\.lens === "edit" \? "editing" : "reading"\}/)
+  assert.doesNotMatch(shell, /setContentIntent/)
 })

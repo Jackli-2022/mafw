@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs"
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8")
 const composer = read("src/renderer/mafw/components/PodGoalComposer.tsx")
 const preview = read("src/renderer/mafw/components/DelegationPreview.tsx")
-const work = read("src/renderer/mafw/components/ProjectWorkView.tsx")
+const work = read("src/renderer/mafw/components/WorldOverviewStage.tsx")
 const css = read("src/renderer/mafw/delegation-preview.css")
 
 test("composer previews before creating", () => {
@@ -30,7 +30,7 @@ test("preview renders the contract and human-only note", () => {
   assert.doesNotMatch(preview, /<button/)
 })
 
-test("ProjectWorkView passes the project name", () => {
+test("WorldOverviewStage passes the project name", () => {
   assert.match(work, /projectName=\{props\.projectName/)
 })
 

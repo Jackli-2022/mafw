@@ -9,7 +9,7 @@ const chat = read("src/renderer/mafw/components/ChatPane.tsx")
 test("MafwShell routes resolve mode to the existing review surfaces", () => {
   assert.match(shell, /openReviewFromChat/)
   assert.match(shell, /applyFocusLens\("review"\)/)
-  assert.match(shell, /openWorkbenchContext\("review"\)/)
+  assert.match(shell, /openProjectChangeSetFocus\("review"\)/)
   assert.match(shell, /onResolveRequest=\{openReviewFromChat\}/)
 })
 

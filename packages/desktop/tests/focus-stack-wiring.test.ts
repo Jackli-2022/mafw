@@ -19,9 +19,9 @@ test("MafwShell restores and validates per-world focus", () => {
   assert.match(shell, /jumpTo\(/)
 })
 
-test("focus back closes the last focus and returns to project", () => {
+test("focus back closes the last focus and lands on the picker", () => {
   assert.match(shell, /focusState\(\)\.stack\.length === 1/)
-  assert.match(shell, /applyWorkbenchContext\("project"\)/)
+  assert.match(shell, /showWorkbenchLanding\(\)/)
   assert.match(shell, /onFocusBack=\{focusBack\}/)
   assert.match(shell, /syncStageToFocus\(next\)/)
   assert.match(shell, /const focusCrumb = \(index: number\) => \{/)

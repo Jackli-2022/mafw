@@ -8,7 +8,7 @@ const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), "u
 const strip = read("src/renderer/mafw/components/ProjectTeamStrip.tsx")
 const leftDock = read("src/renderer/mafw/components/LeftDock.tsx")
 const rail = read("src/renderer/mafw/components/IconRail.tsx")
-const work = read("src/renderer/mafw/components/ProjectWorkView.tsx")
+const work = read("src/renderer/mafw/components/WorldOverviewStage.tsx")
 const shell = read("src/renderer/mafw/MafwShell.tsx")
 
 test("project team strip exposes contacts, team resources and empty states", () => {

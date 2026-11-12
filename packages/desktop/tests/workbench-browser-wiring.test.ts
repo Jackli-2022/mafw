@@ -7,15 +7,14 @@ const root = join(import.meta.dirname, "..")
 const read = (p: string) => readFileSync(join(root, p), "utf8")
 
 describe("浏览器 tab 接线（2026-10-26 工作台合并后）", () => {
-  test("浏览器是工作台二级视图", () => {
-    const wb = read("src/renderer/mafw/components/WorkbenchCodeView.tsx")
-    expect(wb).toContain("BrowserDock")
-    expect(read("src/renderer/mafw/workbench-views.ts")).toContain('id: "browser", label: "浏览器"')
+  test("浏览器是焦点 stage 的 surface", () => {
+    const stage = read("src/renderer/mafw/components/FocusStage.tsx")
+    expect(stage).toContain("BrowserDock")
   })
-  test("MafwShell 经 WorkbenchShell 渲染 BrowserDock", () => {
+  test("MafwShell 经 WorkbenchShell 渲染 FocusStage", () => {
     const shell = read("src/renderer/mafw/MafwShell.tsx")
     expect(shell).toContain("<WorkbenchShell")
-    expect(read("src/renderer/mafw/components/WorkbenchShell.tsx")).toContain("WorkbenchCodeView")
+    expect(read("src/renderer/mafw/components/WorkbenchShell.tsx")).toContain("FocusStage")
   })
   test("BrowserDock 使用独立 partition 且无 preload/allowpopups", () => {
     const dock = read("src/renderer/mafw/components/BrowserDock.tsx")
@@ -50,8 +49,8 @@ describe("浏览器 tab 接线（2026-10-26 工作台合并后）", () => {
   test("shell owns browser-open-url and requests a new tab", () => {
     const shell = read("src/renderer/mafw/MafwShell.tsx")
     expect(shell).toContain("browser.onOpenUrl")
-    expect(shell).toMatch(/requestBrowserNavigate\([^)]*newTab:\s*true/)
-    expect(shell).toContain('openWorkbenchSurface("browser")')
+    expect(shell).toContain('openBrowserFocus(req.url, { newTab: true })')
+    expect(shell).toContain("openBrowserFocus")
     expect(read("src/renderer/mafw/components/BrowserDock.tsx")).not.toContain("browser.onOpenUrl")
   })
 })

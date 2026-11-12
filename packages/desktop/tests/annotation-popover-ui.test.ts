@@ -104,7 +104,7 @@ test("批注反馈态：发送登记 mark + 会话回合结束翻已回应 + 本
 })
 
 test("review 修复：C1 接线 / I1 键盘路径 / I2 媒体管道 / I3 只在 completed 翻转", () => {
-  const code = read("src/renderer/mafw/components/WorkbenchCodeView.tsx")
+  const code = read("src/renderer/mafw/components/FocusStage.tsx")
   assert.match(code, /onOpenReview/)
   const shell = read("src/renderer/mafw/components/WorkbenchShell.tsx")
   assert.match(shell, /onOpenReview=\{props\.onOpenReview\}/)

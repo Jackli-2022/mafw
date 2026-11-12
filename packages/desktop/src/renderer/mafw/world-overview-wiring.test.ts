@@ -18,5 +18,5 @@ test("WorldOverviewStage keeps world actions and drops file cards", () => {
 
 test("MafwShell renders the world stage for world focus", () => {
   assert.match(shell, /WorldOverviewStage/)
-  assert.match(shell, /workView=/)
+  assert.match(shell, /renderWorld=/)
 })

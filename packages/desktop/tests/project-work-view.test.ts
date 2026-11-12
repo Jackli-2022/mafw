@@ -3,13 +3,13 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 
 const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8")
-const view = read("src/renderer/mafw/components/ProjectWorkView.tsx")
+const view = read("src/renderer/mafw/components/WorldOverviewStage.tsx")
 const overview = read("src/renderer/mafw/components/WorkOverview.tsx")
 const pane = read("src/renderer/mafw/components/ChatPane.tsx")
 const podDock = read("src/renderer/mafw/components/PodDock.tsx")
 const shell = read("src/renderer/mafw/MafwShell.tsx")
 
-test("ProjectWorkView owns the project work overview and Goal composer", () => {
+test("WorldOverviewStage owns the project work overview and Goal composer", () => {
   assert.match(view, /import \{ WorkPriorityList \} from "\.\/WorkPriorityList"/)
   assert.match(view, /import \{ WorkOverview \} from "\.\/WorkOverview"/)
   assert.match(view, /import \{ PodGoalComposer \} from "\.\/PodGoalComposer"/)
@@ -21,7 +21,7 @@ test("ProjectWorkView owns the project work overview and Goal composer", () => {
   assert.doesNotMatch(view, /WorkspaceHome/)
 })
 
-test("ProjectWorkView builds one Goal projection for priority and the full list", () => {
+test("WorldOverviewStage builds one Goal projection for priority and the full list", () => {
   assert.match(view, /import \{ (?:buildAttentionList, )?buildWorkPriority, type WorkFilter \} from "\.\.\/work-overview-model"/)
   assert.match(view, /const overviewGoals = createMemo/)
   assert.match(view, /buildWorkPriority\(\{/)
@@ -39,18 +39,18 @@ test("WorkOverview owns filtering and progress rendering", () => {
   assert.match(overview, /summary\.progressText/)
 })
 
-test("ProjectWorkView polls only while active and consumes each composer request once", () => {
+test("WorldOverviewStage polls only while active and consumes each composer request once", () => {
   assert.match(view, /active: boolean/)
   assert.match(view, /let lastConsumedComposerRequest = 0/)
   assert.match(view, /if \(!props\.active\) return\r?\n\s*void load\(\)\r?\n\s*const timer = setInterval/)
   assert.match(view, /if \(request > lastConsumedComposerRequest && props\.active\) \{/)
   assert.match(view, /lastConsumedComposerRequest = request/)
-  assert.match(shell, /active=\{workbenchContent\(\) === "project" && dockPresent\(\) && workbenchContext\(\) === "project"\}/)
+  assert.match(shell, /active=\{dockPresent\(\) && activeFocus\(\)\?\.subject\.kind === "world"\}/)
 })
 
-test("the shell mounts ProjectWorkView in the work L1 pane", () => {
-  assert.match(shell, /import \{ ProjectWorkView \} from "\.\/components\/ProjectWorkView"/)
-  assert.match(shell, /workView=\{\s*<ProjectWorkView/)
+test("the shell mounts WorldOverviewStage in the work L1 pane", () => {
+  assert.match(shell, /import \{ WorldOverviewStage \} from "\.\/components\/WorldOverviewStage"/)
+  assert.match(shell, /renderWorld=\{\(\) => \(\s*<WorldOverviewStage/)
   assert.match(shell, /refreshTick=\{\(\) => Math\.max\(goalsRev\(\), podStore\.revision\(\)\)\}/)
   assert.match(shell, /composerRequest=\{goalComposerRequest\(\)\}/)
 })

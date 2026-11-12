@@ -4,15 +4,12 @@ import { readFileSync } from "node:fs"
 
 const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8")
 
-test("D1 shell owns the right dock, context header and narrow file drawer", () => {
+test("focus shell keeps the right dock and has no legacy drawer", () => {
   const css = read("src/renderer/mafw/mafw.css")
   assert.match(css, /\.mafw-rw-shell\s*\{[^}]*container-type:\s*inline-size/)
-  assert.match(css, /\.mafw-rw-head\s*\{[^}]*height:\s*38px/)
-  assert.match(css, /\.mafw-rw-exec-drawer\s*\{[^}]*position:\s*absolute/)
-  assert.match(css, /\.mafw-rw-exec-body\s*\{[^}]*overflow:\s*auto/)
-  assert.match(css, /\.mafw-rw-l2\s*\{[^}]*height:\s*32px/)
-  assert.match(css, /@container \(max-width:\s*599px\)[\s\S]*?mafw-rw-files/)
-  assert.match(css, /\.mafw-rw-exec-section\s*\{[^}]*overflow-y:\s*auto/)
+  assert.doesNotMatch(css, /\.mafw-rw-head\s*\{/)
+  assert.doesNotMatch(css, /\.mafw-rw-exec-drawer\s*\{/)
+  assert.doesNotMatch(css, /\.mafw-rw-l2\s*\{/)
   assert.match(css, /\.mafw-subagent-dock[^{]*\{[^}]*overflow-y:\s*auto/)
   assert.match(css, /\.mafw-bg-dock[^{]*\{[^}]*overflow-y:\s*auto/)
   assert.doesNotMatch(css, /\.mafw-session-rail\s*\{/)

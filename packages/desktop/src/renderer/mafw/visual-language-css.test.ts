@@ -211,8 +211,6 @@ const CORE_META = [
   ".mafw-work-chip {",
   ".mafw-work-filter-count {",
   ".mafw-work-all-count {",
-  ".mafw-rw-overview-meta {",
-  ".mafw-rw-overview-label {",
   ".mafw-goal-chip {",
   ".mafw-goal-id {",
   ".mafw-resources-subtitle {",

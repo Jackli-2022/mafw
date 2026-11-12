@@ -51,8 +51,8 @@ describe("dead code 清理", () => {
     expect(team).not.toContain("PAGE_LINKS")
   })
 
-  test("ProjectWorkView 承载 New Goal composer，不再从 PodDock 或全页工作空间创建", () => {
-    const work = read("src/renderer/mafw/components/ProjectWorkView.tsx")
+  test("WorldOverviewStage 承载 New Goal composer，不再从 PodDock 或全页工作空间创建", () => {
+    const work = read("src/renderer/mafw/components/WorldOverviewStage.tsx")
     expect(work).toContain("PodGoalComposer")
     expect(work).toContain("pod.createGoal")
     expect(existsSync(join(root, "src/renderer/mafw/components/WorkspaceHome.tsx"))).toBe(false)

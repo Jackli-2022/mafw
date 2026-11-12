@@ -4,13 +4,11 @@ import { readFileSync } from "node:fs"
 
 const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8")
 
-test("MafwShell renders the B1 shell and no SessionRail", () => {
+test("MafwShell renders the focus shell and no legacy SessionRail", () => {
   const src = read("src/renderer/mafw/MafwShell.tsx")
   assert.match(src, /WorkbenchShell/)
-  assert.match(src, /ExecutionView/)
-  assert.match(src, /migrateWorkbenchStorage/)
+  assert.match(src, /openProjectChangeSetFocus\("review"\)/)
   assert.doesNotMatch(src, /SessionRail/)
   assert.doesNotMatch(src, /rightDockTab/)
-  assert.match(src, /openExecutionDrawer\("background"\)/)
-  assert.match(src, /openWorkbenchContext\("review"\)/)
+  assert.doesNotMatch(src, /ExecutionView|openExecutionDrawer|openWorkbenchContext|migrateWorkbenchStorage/)
 })

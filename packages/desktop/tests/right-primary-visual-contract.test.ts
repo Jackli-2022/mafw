@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs"
 const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8")
 
 const css = read("../src/renderer/mafw/mafw.css")
-const work = read("../src/renderer/mafw/components/ProjectWorkView.tsx")
+const work = read("../src/renderer/mafw/components/WorldOverviewStage.tsx")
 const overview = read("../src/renderer/mafw/components/WorkOverview.tsx")
 const resources = read("../src/renderer/mafw/components/ProjectTeamStrip.tsx")
 const detail = read("../src/renderer/mafw/components/GoalDetailPanel.tsx")

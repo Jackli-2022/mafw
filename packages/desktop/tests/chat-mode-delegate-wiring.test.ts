@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs"
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8")
 const shell = read("src/renderer/mafw/MafwShell.tsx")
-const work = read("src/renderer/mafw/components/ProjectWorkView.tsx")
+const work = read("src/renderer/mafw/components/WorldOverviewStage.tsx")
 const chat = read("src/renderer/mafw/components/ChatPane.tsx")
 
 test("MafwShell opens the Goal composer with the chat draft", () => {
@@ -15,7 +15,7 @@ test("MafwShell opens the Goal composer with the chat draft", () => {
   assert.match(shell, /composerInitial=\{goalComposerInitial\(\)\}/)
 })
 
-test("ProjectWorkView passes the draft into PodGoalComposer", () => {
+test("WorldOverviewStage passes the draft into PodGoalComposer", () => {
   assert.match(work, /composerInitial\?:/)
   assert.match(work, /initial=\{props\.composerInitial \?\? undefined\}/)
 })

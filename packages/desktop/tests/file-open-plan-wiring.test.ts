@@ -9,7 +9,7 @@ test("MafwShell dispatches file opens by fileOpenPlan (html → browser)", () =>
   assert.match(src, /fileOpenPlan\(rel\)/)
   assert.match(src, /ensureRootToken\(/)
   assert.match(src, /requestBrowserNavigate\(/)
-  assert.match(src, /openWorkbenchSurface\("browser"\)/)
+  assert.match(src, /openBrowserFocus/)
 })
 
 test("BrowserDock consumes the browser nav store", () => {

@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from "node:fs"
 
 const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8")
 const panel = read("../src/renderer/mafw/components/GoalDetailPanel.tsx")
-const work = read("../src/renderer/mafw/components/ProjectWorkView.tsx")
+const work = read("../src/renderer/mafw/components/WorldOverviewStage.tsx")
 const shell = read("../src/renderer/mafw/MafwShell.tsx")
 
 test("Goal detail is an inline panel, not a modal overlay", () => {
@@ -26,9 +26,9 @@ test("the right work panel is the project home; Goal detail is a separate contex
   assert.match(work, /class="mafw-project-work-overview"/)
   assert.match(work, /WorkPriorityList/)
   assert.match(work, /WorkOverview/)
-  assert.match(shell, /goalView=\{\s*<Show when=\{podGoalId\(\)\} keyed>/)
+  assert.match(shell, /renderGoal=\{\(\) =>/)
   assert.match(shell, /<GoalDetailPanel/)
-  assert.match(shell, /onClose=\{\(\) => \{ setPodGoalId\(null\); applyWorkbenchContext\("project"\) \}\}/)
+  assert.match(shell, /onClose=\{\(\) => \{ setPodGoalId\(null\); focusBack\(\) \}\}/)
 })
 
 test("every Goal open path goes into the Goal context", () => {
@@ -37,11 +37,10 @@ test("every Goal open path goes into the Goal context", () => {
   const start = shell.indexOf("const openGoalDetail =")
   const end = shell.indexOf("};", start)
   const block = shell.slice(start, end)
-  assert.match(block, /openProjectWork\(\)/)
   assert.match(block, /setGoalDetailFocus\(focus\)/)
   assert.match(block, /setPodGoalId\(goalId\)/)
-  assert.match(block, /openWorkbenchContext\("goal"\)/)
-  assert.ok(block.indexOf("setPodGoalId(goalId)") < block.indexOf('openWorkbenchContext("goal")'))
+  assert.match(block, /openGoalFocus\(goalId, focus\)/)
+  assert.ok(block.indexOf("setPodGoalId(goalId)") < block.indexOf("openGoalFocus(goalId, focus)"))
   assert.match(shell, /openGoalAndDiscuss\(goalId, "result"\)/)
 })
 
@@ -49,7 +48,7 @@ test("ProjectWorkView receives one shell-owned Goal context", () => {
   assert.doesNotMatch(shell, /selectedGoalId=\{podGoalId\(\)\}/)
   assert.doesNotMatch(shell, /detailFocus=\{goalDetailFocus\(\)\}/)
   assert.match(shell, /const podIdForCurrentProject = \(\): string \| null => \{[\s\S]{0,220}podStore\.detail\(\)/)
-  assert.match(shell, /goalView=\{\s*<Show when=\{podGoalId\(\)\} keyed>/)
+  assert.match(shell, /renderGoal=\{\(\) =>/)
   assert.match(shell, /onOpenSession=\{\(sid\) => \{ void openPodSession\(sid\) \}\}/)
 })
 
