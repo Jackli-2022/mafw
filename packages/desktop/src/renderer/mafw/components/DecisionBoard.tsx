@@ -3,7 +3,14 @@ import type { DecisionRecord } from "@mafw/sdk"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { Icon } from "@mafw/ui/icon"
-import type { DecisionBoardView, DecisionItem } from "../focus/decision-model"
+import {
+  DECISION_PAGE_SIZE,
+  decisionLimitToInclude,
+  visibleDecisionItems,
+  type DecisionBoardView,
+  type DecisionItem,
+  type DecisionStatus,
+} from "../focus/decision-model"
 import { DecisionRecordCard } from "./DecisionRecordCard"
 import "../decision-board.css"
 
@@ -28,9 +35,28 @@ export function DecisionBoard(props: {
   onDecisionReopen?: (id: string) => void
 }): JSX.Element {
   const [expandedRecordId, setExpandedRecordId] = createSignal<string | null>(null)
+  const [limits, setLimits] = createSignal<Record<DecisionStatus, number>>({
+    needs_you: DECISION_PAGE_SIZE,
+    pending: DECISION_PAGE_SIZE,
+    decided: DECISION_PAGE_SIZE,
+    shelved: DECISION_PAGE_SIZE,
+  })
+  const shown = (group: DecisionBoardView["groups"][number]) =>
+    visibleDecisionItems(group.items, limits()[group.status])
+  const showMore = (status: DecisionStatus) => {
+    setLimits((prev) => ({ ...prev, [status]: prev[status] + DECISION_PAGE_SIZE }))
+  }
   createEffect(() => {
     const focus = props.focusRecord
-    if (focus) setExpandedRecordId(focus.id)
+    if (!focus) return
+    setExpandedRecordId(focus.id)
+    const group = props.board.groups.find((entry) => entry.items.some((item) => item.id === focus.id))
+    if (!group) return
+    const next = decisionLimitToInclude(group.items, focus.id)
+    setLimits((prev) => ({
+      ...prev,
+      [group.status]: Math.max(prev[group.status], next),
+    }))
   })
   const hasItems = () => props.board.groups.some((group) => group.items.length > 0)
   const recordIdOf = (item: DecisionItem): string | null =>
@@ -72,7 +98,7 @@ export function DecisionBoard(props: {
                 <Show when={group.items.length > 0}>
                   <div class="mafw-decision-group" data-status={group.status}>
                     <div class="mafw-decision-group-label">{group.label}</div>
-                    <For each={group.items}>
+                    <For each={shown(group)}>
                       {(item) => {
                         const recordId = recordIdOf(item)
                         if (recordId) {
@@ -124,6 +150,16 @@ export function DecisionBoard(props: {
                         )
                       }}
                     </For>
+                    <Show when={group.items.length > shown(group).length}>
+                      <ButtonV2
+                        variant="ghost"
+                        size="small"
+                        class="mafw-decision-more"
+                        onClick={() => showMore(group.status)}
+                      >
+                        显示更多（剩余 {group.items.length - shown(group).length}）
+                      </ButtonV2>
+                    </Show>
                   </div>
                 </Show>
               )}

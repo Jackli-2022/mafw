@@ -1,6 +1,12 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { buildDecisionBoard, decisionActionForAttention, decisionGoalFocus } from "./decision-model"
+import {
+  buildDecisionBoard,
+  decisionActionForAttention,
+  decisionGoalFocus,
+  decisionLimitToInclude,
+  visibleDecisionItems,
+} from "./decision-model"
 
 function attention(overrides: Record<string, unknown> = {}) {
   return {
@@ -130,6 +136,19 @@ test("review item without itemId has no action", () => {
     attention({ kind: "review_item", action: { type: "open_review_item", goalId: "g1" } }),
   )
   assert.equal(action.kind, "none")
+})
+
+test("visibleDecisionItems caps a group and keeps the remainder countable", () => {
+  const items = Array.from({ length: 60 }, (_, i) => ({ id: `d${i}` } as any))
+  assert.equal(visibleDecisionItems(items, 25).length, 25)
+  assert.equal(visibleDecisionItems(items, 0).length, 0)
+  assert.equal(visibleDecisionItems(items, 100).length, 60)
+})
+
+test("decisionLimitToInclude expands to the focused record", () => {
+  const items = Array.from({ length: 60 }, (_, i) => ({ id: `d${i}` } as any))
+  assert.equal(decisionLimitToInclude(items, "d40"), 50)
+  assert.equal(decisionLimitToInclude(items, "missing"), 25)
 })
 
 test("decisionGoalFocus maps plan and review actions", () => {

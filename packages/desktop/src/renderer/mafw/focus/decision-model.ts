@@ -33,6 +33,27 @@ export type DecisionBoardView = {
   counts: { needsYou: number; pending: number; decided: number; shelved: number }
 }
 
+export const DECISION_PAGE_SIZE = 25
+
+export function visibleDecisionItems(
+  items: readonly DecisionItem[],
+  limit: number,
+): readonly DecisionItem[] {
+  if (!Number.isFinite(limit) || limit <= 0) return []
+  return items.slice(0, Math.floor(limit))
+}
+
+export function decisionLimitToInclude(
+  items: readonly DecisionItem[],
+  itemId: string,
+  page = DECISION_PAGE_SIZE,
+): number {
+  const size = page > 0 ? page : DECISION_PAGE_SIZE
+  const index = items.findIndex((item) => item.id === itemId)
+  if (index < 0) return size
+  return Math.ceil((index + 1) / size) * size
+}
+
 const GROUPS: readonly { status: DecisionStatus; label: string }[] = [
   { status: "needs_you", label: "需要你定" },
   { status: "pending", label: "待确认" },
