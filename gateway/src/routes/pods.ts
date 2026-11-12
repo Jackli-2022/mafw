@@ -16,6 +16,7 @@ import {
 } from '../core/goal/goal-intake';
 import type { PodEnqueueResult } from '../core/pod/pod-goal-service';
 import type { PodAttentionItem, PodGoalView } from '../core/pod/pod-view';
+import { isHumanPrincipal } from '../core/auth';
 
 export interface PodRouteDeps {
   pods: Pick<PodService, 'ensure' | 'get' | 'updateStatus' | 'lookup' | 'ensureLead'>;
@@ -324,6 +325,9 @@ export async function handlePods(
         const podId = decode(goalReview[1]);
         const goalId = decode(goalReview[2]);
         requirePod(deps, podId);
+        // E5a-2: creating review items is a human action — no principal (or a
+        // service/local/agent principal) is no longer treated as a human.
+        requireHumanPrincipal(req);
         const body = await readJson(req, REVIEW_ITEMS_BODY_LIMIT);
         if (typeof body?.actorSessionID === 'string' && body.actorSessionID) {
           throw new PodError(403, 'review items are human-only');
@@ -352,6 +356,7 @@ export async function handlePods(
       const goalId = decode(goalReviewAction[2]);
       const itemId = decode(goalReviewAction[3]);
       requirePod(deps, podId);
+      requireHumanPrincipal(req);
       const body = await readJson(req);
       if (typeof body?.actorSessionID === 'string' && body.actorSessionID) {
         throw new PodError(403, 'review items are human-only');
@@ -402,6 +407,7 @@ export async function handlePods(
       const podId = decode(goalAccept[1]);
       const goalId = decode(goalAccept[2]);
       requirePod(deps, podId);
+      requireHumanPrincipal(req);
       const body = await readJson(req);
       if (typeof body?.actorSessionID === 'string' && body.actorSessionID) {
         throw new PodError(403, 'goal acceptance is human-only; agent sessions cannot merge');
@@ -756,6 +762,16 @@ function positiveInteger(value: unknown): number | undefined {
 
 function requirePod(deps: PodRouteDeps, podId: string): void {
   if (!deps.pods.get(podId)) throw new PodError(404, `pod not found: ${podId}`);
+}
+
+/**
+ * E5a-2: human-only gate. Fail-closed: a missing principal (direct handler
+ * call without the transport) is denied exactly like service/local/anonymous.
+ */
+function requireHumanPrincipal(req: http.IncomingMessage): void {
+  if (!isHumanPrincipal((req as any).mafwPrincipal)) {
+    throw new PodError(403, 'human principal required', 'human_principal_required');
+  }
 }
 
 function assertAccess(

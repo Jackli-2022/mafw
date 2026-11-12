@@ -62,9 +62,15 @@ test('confirm rejects an agent actor', () => {
   const out = handleDecisionMutation('confirm', 'd1', {
     projectDir: 'C:/repo',
     actorSessionID: 'ses_agent',
-  }, deps());
+  }, deps(), true);
   expect(out.status).toBe(403);
   expect(out.body.error).toContain('human-only');
+});
+
+test('confirm rejects a non-human principal even without an actor', () => {
+  const out = handleDecisionMutation('confirm', 'd1', { projectDir: 'C:/repo' }, deps(), false);
+  expect(out.status).toBe(403);
+  expect(out.body).toMatchObject({ code: 'human_principal_required' });
 });
 
 test('confirm rejects a non-empty actor even for a shelve/reopen action', () => {
@@ -72,16 +78,16 @@ test('confirm rejects a non-empty actor even for a shelve/reopen action', () => 
     projectDir: 'C:/repo',
     reviewAt: '2026-12-01T00:00:00.000Z',
     actorSessionID: 'ses_agent',
-  }, deps()).status).toBe(403);
+  }, deps(), true).status).toBe(403);
   expect(handleDecisionMutation('reopen', 'd1', {
     projectDir: 'C:/repo',
     actorSessionID: 'ses_agent',
-  }, deps()).status).toBe(403);
+  }, deps(), true).status).toBe(403);
 });
 
 test('confirm calls the service for a human', () => {
   const d = deps();
-  const out = handleDecisionMutation('confirm', 'd1', { projectDir: 'C:/repo' }, d);
+  const out = handleDecisionMutation('confirm', 'd1', { projectDir: 'C:/repo' }, d, true);
   expect(out.status).toBe(200);
   expect(d.service.confirm).toHaveBeenCalledWith('d1', { projectDir: 'C:/repo' });
 });

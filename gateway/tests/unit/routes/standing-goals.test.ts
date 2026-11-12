@@ -58,11 +58,17 @@ describe('standing goal routes', () => {
   });
 
   test('approve rejects a run that is not waiting_person', async () => {
-    expect((await handleApproveRun({ id: 'r1' }, deps({ getRun: () => ({ id: 'r1', status: 'running' }) }))).status).toBe(409);
+    expect((await handleApproveRun({ id: 'r1', human: true }, deps({ getRun: () => ({ id: 'r1', status: 'running' }) }))).status).toBe(409);
   });
 
   test('approve rejects agent actor sessions (human-only)', async () => {
-    expect((await handleApproveRun({ id: 'r1', actorSessionID: 'ses_agent' }, deps())).status).toBe(403);
+    expect((await handleApproveRun({ id: 'r1', human: true, actorSessionID: 'ses_agent' }, deps())).status).toBe(403);
+  });
+
+  test('approve rejects non-human principals (human-only)', async () => {
+    const out = await handleApproveRun({ id: 'r1', human: false }, deps());
+    expect(out.status).toBe(403);
+    expect(out.body).toMatchObject({ code: 'human_principal_required' });
   });
 
   test('runs returns 404 for an unknown standing goal', () => {

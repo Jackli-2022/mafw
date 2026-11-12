@@ -11,9 +11,10 @@ function mockRes() {
   return res as http.ServerResponse & { status: number; body: string };
 }
 
-function mockReq(method: string, body?: any): http.IncomingMessage {
+function mockReq(method: string, body?: any, principal?: any): http.IncomingMessage {
   const listeners: Record<string, Function[]> = {};
   const req: any = { method, on(ev: string, fn: Function) { (listeners[ev] ??= []).push(fn); } };
+  if (principal) req.mafwPrincipal = principal;
   setImmediate(() => {
     if (body !== undefined) for (const fn of listeners['data'] ?? []) fn(JSON.stringify(body));
     for (const fn of listeners['end'] ?? []) fn();
@@ -21,9 +22,12 @@ function mockReq(method: string, body?: any): http.IncomingMessage {
   return req as http.IncomingMessage;
 }
 
-async function call(deps: PodRouteDeps, method: string, url: string, body?: any) {
+/** Human-only review mutations: inject a human principal explicitly. */
+const HUMAN = { kind: 'human', method: 'human-token' };
+
+async function call(deps: PodRouteDeps, method: string, url: string, body?: any, principal: any = HUMAN) {
   const res = mockRes();
-  const handled = await handlePods(mockReq(method, body), res, url, deps);
+  const handled = await handlePods(mockReq(method, body, principal), res, url, deps);
   return { handled, status: res.status, json: res.body ? JSON.parse(res.body) : null };
 }
 
