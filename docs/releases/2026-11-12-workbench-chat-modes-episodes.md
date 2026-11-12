@@ -89,8 +89,9 @@ assistant 文本不受影响。服务端原始消息保留给模型，不改写�
 
 Gateway 的 6653 构成：Plan 3 baseline 6608 + `98c8c232` / `967917c0`（events / standing-goals）7 +
 Plan 4 6 + 外部 kernel-v2 交付 32。`98c8c232` / `967917c0` 是 Plan 4 base 的祖先；`24dc3f10` /
-`517cf541` / `a1a292e7` / `105c8bd6` / `fa84bfca` 是在 Plan 4 文档提交之后落地的外部 kernel-v2 /
-plugin-contract 交付。以上外部 commit **均不属于 Plan 4**，本记录只按 Plan 4 自己的 11 个 commit 归属。
+`517cf541` / `a1a292e7` / `105c8bd6` / `fa84bfca` / `1b84ae11` / `0f37169d` 是在 Plan 4 期间/之后
+落地的外部 kernel-v2 / plugin-contract 交付。以上外部 commit **均不属于 Plan 4**，本记录只按 Plan 4
+自己的 11 个 commit 归属；上述全量数字是 Plan 4 验证时点，后续外部 commit 的测试增量不计入。
 
 ### 真机 smoke
 
