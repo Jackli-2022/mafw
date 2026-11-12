@@ -24,6 +24,7 @@ import {
   PodTechLeadHistory, PodTechLeadPrompt, PodDirectionDecisionInput, PodDirectionResult,
   PodProbe, PodProbeInput, PodProbeStatus, PodRejectResult, PodGoalRevision, PodGoalAcceptResult, PodWorktreeDiff,
   PodReviewItem, PodReviewItemInput, PodReviewItemList,
+  AttentionList, AttentionNamespace,
   SessionConfigState, SessionConfigCategory, SessionNamespace,
   VoiceStatusResponse,
   PluginClientSnapshot, PluginsListResult, PluginPackageInstallResult, PluginPackageUpdateResult,
@@ -1296,6 +1297,13 @@ export class MafwClient implements IMafwClient {
   }
 
   // ── Lead working set ─────────────────────────────────────────────────────
+
+  attention: AttentionNamespace = {
+    list: async (projectDir?: string): Promise<AttentionList> => {
+      const query = projectDir ? `?projectDir=${encodeURIComponent(projectDir)}` : ''
+      return this.request<AttentionList>(`/api/attention${query}`)
+    },
+  }
 
   lead: LeadNamespace = {
     topics: {

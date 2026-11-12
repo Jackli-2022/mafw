@@ -18,6 +18,8 @@ export function countUnread(messages: PodUnreadMessage[], selfMemberId: string |
 
 export function podRailBadge(input: {
   attention: Array<unknown>
+  /** 决定板聚合后的“需要你”计数；缺省时回退 attention.length。 */
+  needsYou?: number
   /** 显式声明不参与：未读不是人类阻塞点（Task 21）。 */
   unread?: number
   /** 显式声明不参与：有新结果也不是人类阻塞点（Task 21）。 */
@@ -26,6 +28,9 @@ export function podRailBadge(input: {
   // Unread is deliberately not added: the badge means "the team cannot move
   // without you", not "something happened". Result-ready is a separate dot
   // (`podResultBadge`) because a finished Goal needs no blocking action.
+  if (typeof input.needsYou === "number" && Number.isFinite(input.needsYou)) {
+    return Math.max(0, Math.floor(input.needsYou))
+  }
   return input.attention.length
 }
 

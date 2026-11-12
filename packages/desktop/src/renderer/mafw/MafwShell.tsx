@@ -60,6 +60,7 @@ import { ExecutionView } from "./components/ExecutionView"
 import { PodTranscriptOverlay } from "./components/PodTranscriptOverlay"
 import { ingestPodEvent, podStore, pickTechLeadInviteGoal, resolvePodDetailCached, techLeadTabTitle } from "./pod-store"
 import { podRailBadge, podResultBadge } from "./pod-rail-badge"
+import { createDecisionStore } from "./decision-store"
 import {
   isPodResultViewed,
   podTechLeadOpenRequest,
@@ -424,6 +425,19 @@ export function MafwShell() {
   // Bumped by gateway project_registered broadcasts so once-only project
   // fetches (here + Rail) refetch when a new project registers.
   const [projectsRev, setProjectsRev] = createSignal(0)
+
+  // 决定板 / rail badge 的唯一数据源：attention 投影 + 后续 decision records。
+  const decisionStore = createDecisionStore({
+    api: { attention: (dir) => window.api.mafw.attention.list(dir) },
+    projectDir: () => currentProject(),
+  })
+  createEffect(() => {
+    const dir = currentProject()
+    const detail = podStore.detail()
+    void podStore.reviewRevision()
+    if (!dir || !detail) return
+    void decisionStore.refresh()
+  })
 
   // Lead UI authority is the current Pod's active coordination binding. The
   // legacy manager-session kv is a gateway recovery detail, never a desktop
@@ -2923,6 +2937,7 @@ export function MafwShell() {
   // （spec 2026-10-30-pod-left-rail §4.1）。目录口径与右栏一致。
   const podBadgeCount = () => podRailBadge({
     attention: podStore.detail()?.attention ?? [],
+    needsYou: decisionStore.loaded() ? decisionStore.counts().needsYou : undefined,
   })
   // Task 21：未查看结果 + 隐藏时 OS 通知。结果不是人类阻塞点（不进 podBadgeCount）。
   // Task 9：`isPodResultViewed` 已是事件 + legacy 双读，结果点随 `pod.events` 自动收敛。

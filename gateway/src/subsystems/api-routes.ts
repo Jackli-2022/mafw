@@ -386,6 +386,22 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
       const pod = deps.podStore?.getPodByProject(canonicalProjectDir(projectDir));
       return pod ? deps.podGoalService.views(pod.id) : [];
     },
+    reviews: (projectDir, views) => {
+      const pod = deps.podStore?.getPodByProject(canonicalProjectDir(projectDir));
+      if (!pod) return [];
+      return views.flatMap((view) => {
+        const revision = view.revision ?? view.activeRevision ?? 1;
+        return deps.podReviewService.unresolved(pod.id, view.goalId, revision).map((item) => ({
+          id: item.id,
+          goalId: view.goalId,
+          revision,
+          title: `${item.rel}${item.startLine != null ? `:${item.startLine}` : ''}`,
+          rel: item.rel,
+          line: item.startLine ?? undefined,
+          comment: item.comment,
+        }));
+      });
+    },
   });
   attachSchedulerRoutes(deps.routeRegistry, {
     status: (projectDir) => {

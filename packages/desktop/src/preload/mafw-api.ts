@@ -210,6 +210,10 @@ export function createMafwApi(): MafwAPI {
       respond: (id, decision) => invoke("approvals", "respond", id, decision),
     },
 
+    attention: {
+      list: (projectDir) => invoke("attention", "list", projectDir),
+    },
+
     questions: {
       list: (directory?: string) => invoke("questions", "list", directory),
       reply: (id, answers) => invoke("questions", "reply", id, answers),

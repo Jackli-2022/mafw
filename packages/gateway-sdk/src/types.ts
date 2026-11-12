@@ -1550,6 +1550,10 @@ export interface AttentionList {
   items: AttentionItem[]
 }
 
+export interface AttentionNamespace {
+  list(projectDir?: string): Promise<AttentionList>
+}
+
 export interface DecisionList {
   items: DecisionRecord[]
 }
@@ -2265,6 +2269,7 @@ export interface MafwClient {
   background: BackgroundNamespace
   terminal: TerminalNamespace
   pod: PodNamespace
+  attention: AttentionNamespace
   lead: LeadNamespace
   events: EventsNamespace
   work: WorkNamespace

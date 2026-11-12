@@ -4,6 +4,7 @@ import type {
   EnergyDistribution, Axiom, L5Heuristic, StickyNote, ModelUsageWindows, MemoryStats,
   Approval, TriageItem, AutomationRule, GatewayStatus,
   QuestionRequest, PermissionRequest,
+  AttentionList,
   TaskEntity, TaskSubmitInput, TaskOutput, QueueItem, SessionConfigState, SessionConfigCategory,
   MafwBackgroundJob, MafwBackgroundOutput,
   PodNamespace, WorkNamespace,
@@ -224,6 +225,10 @@ export type MafwAPI = {
   approvals: {
     list: () => Promise<Approval[]>
     respond: (id: string, input: 'approve' | 'reject' | { answer: string }) => Promise<void>
+  }
+
+  attention: {
+    list: (projectDir?: string) => Promise<AttentionList>
   }
 
   questions: {

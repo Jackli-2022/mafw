@@ -1,7 +1,7 @@
 import type { PodGoalView } from '../pod/pod-view';
 
 export type AttentionKind =
-  | 'answer' | 'plan_approval' | 'review' | 'blocked' | 'failed' | 'direction_review';
+  | 'answer' | 'plan_approval' | 'review' | 'review_item' | 'blocked' | 'failed' | 'direction_review';
 
 export interface AttentionItem {
   id: string;
@@ -11,13 +11,32 @@ export interface AttentionItem {
   priority: number;
   coalesceKey: string;
   title: string;
-  action: { type: string; goalId: string; questionId?: string };
+  detail?: string;
+  action: {
+    type: string;
+    goalId: string;
+    questionId?: string;
+    itemId?: string;
+    rel?: string;
+    line?: number;
+  };
+}
+
+export interface ReviewAttentionInput {
+  id: string;
+  goalId: string;
+  revision: number;
+  title: string;
+  rel: string;
+  line?: number;
+  comment: string;
 }
 
 const PRIORITY: Record<AttentionKind, number> = {
   plan_approval: 100,
   direction_review: 90,
   answer: 80,
+  review_item: 75,
   review: 70,
   failed: 60,
   blocked: 50,
@@ -89,4 +108,41 @@ export function deriveAttention(views: PodGoalView[]): AttentionItem[] {
   return [...byKey.values()].sort((a, b) =>
     b.priority - a.priority
     || a.goalId.localeCompare(b.goalId));
+}
+
+/**
+ * Project unresolved review items into the same person-first attention list.
+ * Review items are appended, not merged into deriveAttention, so historical
+ * Goal-stage behavior stays unchanged.
+ */
+export function appendReviewAttention(
+  items: readonly AttentionItem[],
+  reviews: readonly ReviewAttentionInput[],
+): AttentionItem[] {
+  const byKey = new Map(items.map((item) => [item.coalesceKey, item]));
+  for (const review of reviews) {
+    const coalesceKey = `review_item:${review.goalId}:r${review.revision}:${review.id}`;
+    if (byKey.has(coalesceKey)) continue;
+    byKey.set(coalesceKey, {
+      id: coalesceKey,
+      goalId: review.goalId,
+      revision: review.revision,
+      kind: 'review_item',
+      priority: PRIORITY.review_item,
+      coalesceKey,
+      title: review.title || review.rel,
+      detail: review.comment,
+      action: {
+        type: 'open_review_item',
+        goalId: review.goalId,
+        itemId: review.id,
+        rel: review.rel,
+        ...(review.line !== undefined ? { line: review.line } : {}),
+      },
+    });
+  }
+  return [...byKey.values()].sort((a, b) =>
+    b.priority - a.priority
+    || a.goalId.localeCompare(b.goalId)
+    || a.id.localeCompare(b.id));
 }

@@ -30,6 +30,13 @@ test("badge = human attention only, never unread or result-ready", () => {
   assert.equal(podRailBadge({ attention, unread: 7, resultReady: true }), 2)
 })
 
+test("decision count wins over the legacy attention length", () => {
+  const attention = [{ id: "a", goalId: "g1", kind: "plan_approval" as const, title: "Plan", action: { type: "open_plan_review" as const, goalId: "g1" } }]
+  assert.equal(podRailBadge({ attention, needsYou: 3 }), 3)
+  assert.equal(podRailBadge({ attention: [], needsYou: 0 }), 0)
+  assert.equal(podRailBadge({ attention, needsYou: -2 }), 0)
+})
+
 test("badge caps rendering at 9+", () => {
   assert.equal(formatRailBadge(0), "")
   assert.equal(formatRailBadge(3), "3")
