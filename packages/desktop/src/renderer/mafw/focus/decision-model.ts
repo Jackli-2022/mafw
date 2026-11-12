@@ -51,6 +51,14 @@ const KIND_PRIORITY: Record<DecisionKind, number> = {
   other: 10,
 }
 
+export function decisionGoalFocus(
+  action: DecisionAction,
+): "timeline" | "plan" | "question" | "direction" | "result" | null {
+  if (action.kind === "goal") return action.target
+  if (action.kind === "reviewItem") return "timeline"
+  return null
+}
+
 function attentionKind(item: AttentionItem): DecisionKind {
   switch (item.kind) {
     case "plan_approval": return "plan"

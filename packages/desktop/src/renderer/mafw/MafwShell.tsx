@@ -287,6 +287,7 @@ export function MafwShell() {
   // switches the content pane (no tab change); this map powers the back button.
   const [subagentStack, setSubagentStack] = createStore<Record<string, string>>({})
   const [podGoalId, setPodGoalId] = createSignal<string | null>(null)
+  const [goalPlanOpenRequest, setGoalPlanOpenRequest] = createSignal(0)
   const [contentReturnGoalId, setContentReturnGoalId] = createSignal<string | null>(null)
   const [goalDetailFocus, setGoalDetailFocus] = createSignal<GoalDetailFocus>("timeline")
   let goalDiscussSeq = 0
@@ -2705,30 +2706,45 @@ export function MafwShell() {
     })
   }
 
-  const openReviewItemToFocus = (item: PodReviewItem) => {
-    const focus = activeFocus()
-    if (!focus || focus.scope.kind !== "goal") return
-    const scope = focus.scope
-    const project = scope.worldId
-    const line = item.startLine ?? undefined
-    void resolveGoalWorktreeDir(podIdForCurrentProject(), scope.goalId, project).then((worktreeDir) => {
+  const openReviewAnchorToFocus = (input: {
+    goalId: string
+    revision?: number
+    itemId: string
+    rel: string
+    line?: number
+  }) => {
+    const project = currentProject()
+    if (!project) return
+    const goal = podStore.detail()?.goals.find((item) => item.goalId === input.goalId)
+    const revision = input.revision ?? (goal ? (goalRevisionOf(goal) ?? goal.activeRevision ?? goal.revision ?? 1) : 1)
+    void resolveGoalWorktreeDir(podIdForCurrentProject(), input.goalId, project).then((worktreeDir) => {
       if (currentProject() !== project) return
       const next = applyReviewFocus(
         focusState(),
         {
           projectDir: project,
-          goalId: scope.goalId,
-          revision: scope.revision,
+          goalId: input.goalId,
+          revision,
           worktreeDir,
-          title: null,
-          itemId: item.id,
-          rel: item.rel,
-          line,
+          title: goal?.title ?? null,
+          itemId: input.itemId,
+          rel: input.rel,
+          line: input.line,
         },
         "decide",
       )
       setFocusState(next)
       syncStageToFocus(next)
+    })
+  }
+
+  const openReviewItemToFocus = (item: PodReviewItem) => {
+    openReviewAnchorToFocus({
+      goalId: item.goalId,
+      revision: item.revision,
+      itemId: item.id,
+      rel: item.rel,
+      line: item.startLine ?? undefined,
     })
   }
 
@@ -3127,9 +3143,27 @@ export function MafwShell() {
     const sid = activeSessionId()
     return sid ? techLeadGoalBySession[sid] ?? null : null
   }
+  const openDecisionGoal = (goalId: string, target: GoalDetailFocus) => {
+    setShowConfig(false)
+    applyRightDock(true)
+    if (narrowZone()) applyNarrowView("workbench")
+    openGoalFocus(goalId, target)
+    if (target === "plan") setGoalPlanOpenRequest((n) => n + 1)
+  }
   const handleDecisionAction = (item: DecisionItem) => {
-    if (item.action.kind !== "goal") return
-    openGoalFocus(item.action.goalId, item.action.target)
+    const action = item.action
+    if (action.kind === "goal") {
+      openDecisionGoal(action.goalId, action.target)
+      return
+    }
+    if (action.kind === "reviewItem") {
+      openReviewAnchorToFocus({
+        goalId: action.goalId,
+        itemId: action.itemId,
+        rel: action.rel,
+        line: action.line,
+      })
+    }
   }
   /** 非讨论的 Tech Lead 节点会话 / Pod 不可解析：发送必须被拦住并给出指引。 */
   const activeTechLeadBlocked = async (): Promise<string | null> => {
@@ -4026,6 +4060,7 @@ export function MafwShell() {
                           projectDir={currentProject()}
                           podId={podIdForCurrentProject()}
                           focus={goalDetailFocus()}
+                          planOpenRequest={goalPlanOpenRequest()}
                           onClose={() => { setPodGoalId(null); applyWorkbenchContext("project") }}
                           onOpenSession={(sid) => { void openPodSession(sid) }}
                           onGoalAccepted={() => { void openLeadEntry() }}

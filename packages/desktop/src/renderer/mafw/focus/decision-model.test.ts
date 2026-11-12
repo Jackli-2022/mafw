@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { buildDecisionBoard, decisionActionForAttention } from "./decision-model"
+import { buildDecisionBoard, decisionActionForAttention, decisionGoalFocus } from "./decision-model"
 
 function attention(overrides: Record<string, unknown> = {}) {
   return {
@@ -130,4 +130,14 @@ test("review item without itemId has no action", () => {
     attention({ kind: "review_item", action: { type: "open_review_item", goalId: "g1" } }),
   )
   assert.equal(action.kind, "none")
+})
+
+test("decisionGoalFocus maps plan and review actions", () => {
+  assert.equal(decisionGoalFocus({ kind: "goal", goalId: "g1", target: "plan" }), "plan")
+  assert.equal(decisionGoalFocus({ kind: "goal", goalId: "g1", target: "direction" }), "direction")
+  assert.equal(decisionGoalFocus({ kind: "goal", goalId: "g1", target: "question" }), "question")
+  assert.equal(decisionGoalFocus({ kind: "goal", goalId: "g1", target: "result" }), "result")
+  assert.equal(decisionGoalFocus({ kind: "reviewItem", goalId: "g1", itemId: "i1", rel: "src/a.ts" }), "timeline")
+  assert.equal(decisionGoalFocus({ kind: "record", recordId: "d1" }), null)
+  assert.equal(decisionGoalFocus({ kind: "none" }), null)
 })

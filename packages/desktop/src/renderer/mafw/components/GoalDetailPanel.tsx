@@ -64,6 +64,8 @@ export function GoalDetailPanel(props: {
   podId?: string | null
   /** shell 打开 attention 时指定要展开/滚动到的区域。 */
   focus?: GoalDetailFocus | null
+  /** 决定板请求直接打开计划审阅浮层；非零 nonce。 */
+  planOpenRequest?: number
   onClose: () => void
   onOpenSession: (sid: string) => void
   /** 验收成功后把 Chat 显式切回项目 Lead；右侧 Goal 保持不变。 */
@@ -650,6 +652,16 @@ export function GoalDetailPanel(props: {
       target?.scrollIntoView({ block: "start", behavior: "smooth" })
     }, 30)
     onCleanup(() => clearTimeout(timer))
+  })
+
+  // 决定板「批准计划」：nonce 变化时直接打开审阅浮层；等计划加载完成再开。
+  let lastPlanOpenRequest = 0
+  createEffect(() => {
+    const request = props.planOpenRequest ?? 0
+    if (!request || request === lastPlanOpenRequest) return
+    if (!timeline() || !planEntry()) return
+    lastPlanOpenRequest = request
+    setPlanOpen(true)
   })
 
   return (

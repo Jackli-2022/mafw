@@ -29,6 +29,15 @@ test("MafwShell feeds the active thread's decision board", () => {
   assert.match(shell, /onDecisionAction=\{handleDecisionAction\}/)
 })
 
+test("decision actions open the goal and the plan overlay", () => {
+  assert.match(shell, /openDecisionGoal/)
+  assert.match(shell, /openReviewAnchorToFocus/)
+  assert.match(shell, /setGoalPlanOpenRequest/)
+  assert.match(shell, /planOpenRequest=\{goalPlanOpenRequest\(\)\}/)
+  assert.match(read("src/renderer/mafw/components/GoalDetailPanel.tsx"), /planOpenRequest\?: number/)
+  assert.match(read("src/renderer/mafw/components/GoalDetailPanel.tsx"), /setPlanOpen\(true\)/)
+})
+
 test("decision board CSS uses tokens and never floats over the frame", () => {
   assert.match(css, /\.mafw-decision-board/)
   assert.match(css, /var\(--/)
