@@ -118,3 +118,38 @@ describe("visual surfaces", () => {
     expect(block(".mafw-usage-model-bar-fill {")).not.toContain("linear-gradient")
   })
 })
+
+describe("semantic color roles", () => {
+  test("desktop contrast buttons use action tokens without gradient", () => {
+    const b = block('.mafw-shell [data-component="button-v2"][data-variant="contrast"] {')
+    expect(b).toContain("background: var(--action-primary-bg)")
+    expect(b).toContain("color: var(--action-primary-fg)")
+    expect(b).not.toContain("linear-gradient")
+    expect(b).not.toMatch(/text-shadow:\s*0/)
+  })
+
+  test("send and success semantics are distinct", () => {
+    expect(block('.mafw-composer [data-component="button-v2"].mafw-send {')).toContain(
+      "background: var(--action-primary-bg)",
+    )
+    expect(block(".mafw-phase-badge-ok {")).toContain("background: var(--success-soft)")
+    expect(css).not.toMatch(/(?:color|background|border-color):\s*var\(--accent-success/)
+  })
+
+  test("desktop maps every v2 state surface to MAFW semantics", () => {
+    for (const [, b] of themes) {
+      for (const key of [
+        "--v2-background-bg-contrast",
+        "--v2-text-text-contrast",
+        "--v2-border-border-base",
+        "--v2-border-border-focus",
+        "--v2-state-fg-success",
+        "--v2-state-fg-danger",
+        "--v2-icon-icon-base",
+        "--v2-icon-icon-muted",
+      ]) {
+        expect(token(b, key)).not.toBe("")
+      }
+    }
+  })
+})

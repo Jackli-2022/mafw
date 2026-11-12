@@ -287,9 +287,9 @@ describe("Composer v4", () => {
   })
   test("composer 圆角 r-xl", () => expect(cssBlock(".mafw-composer {")).toContain("border-radius: var(--r-xl)"))
   test("chat 面板 flush（C 案：无圆角/无阴影）", () => { const b = cssBlock(".mafw-chat {"); expect(b).toContain("border-radius: 0"); expect(b).toContain("box-shadow: none") })
-  test("发送钮 hover 上移 + accent-strong", () => {
+  test("发送钮 hover 上移 + action hover", () => {
     const b = cssBlock('.mafw-composer [data-component="button-v2"].mafw-send:hover:not(.mafw-send-disabled)')
-    expect(b).toContain("background: var(--accent-strong)")
+    expect(b).toContain("background: var(--action-primary-bg-hover)")
     expect(b).toContain("transform: translateY(-1px)")
   })
   test("附件缩略图 20px", () => expect(cssBlock(".mafw-chip-thumb {")).toContain("width: 20px"))
@@ -388,7 +388,7 @@ describe("卡片 v4 配方", () => {
   test("KPI value tabular", () =>
     expect(cssBlock(".mafw-kpi-card .mafw-kpi-value {")).toContain("font-variant-numeric: tabular-nums"))
   test("phase 徽标语义 class", () => {
-    expect(cssBlock(".mafw-phase-badge-ok {")).toContain("background: var(--accent-soft)")
+    expect(cssBlock(".mafw-phase-badge-ok {")).toContain("background: var(--success-soft)")
     expect(cssBlock(".mafw-phase-badge-fail {")).toContain("background: var(--danger-dim)")
     expect(cssBlock(".mafw-phase-badge-run {")).toContain("background: var(--bg-overlay)")
   })

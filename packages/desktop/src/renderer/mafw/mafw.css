@@ -824,13 +824,13 @@ html[data-theme="light"] body {
 .mafw-usage-wb-ovw-label { font-size: 12px; font-weight: 600; color: var(--text-2); }
 .mafw-usage-wb-ovw-val { font-size: 12px; color: var(--text-1); font-family: var(--font-data); }
 .mafw-usage-wb-ovw-bar { height: 6px; border-radius: 3px; background: var(--hover); overflow: hidden; }
-.mafw-usage-wb-ovw-fill { height: 100%; border-radius: 3px; background: var(--accent); transition: width var(--dur-3) var(--ease); }
+.mafw-usage-wb-ovw-fill { height: 100%; border-radius: 3px; background: var(--success); transition: width var(--dur-3) var(--ease); }
 .mafw-usage-wb-ovw-meta { display: flex; gap: 12px; font-size: 11px; color: var(--text-4); }
 .mafw-usage-wb-row { display: flex; flex-direction: column; gap: 4px; }
 .mafw-usage-wb-row label, .mafw-usage-wb-row > .mafw-config-label { font-size: 11px; color: var(--text-3); }
 .mafw-usage-wb-row3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .mafw-usage-wb-btnrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-top: 2px; }
-.mafw-usage-wb-badge.ok { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent-text, var(--accent)); }
+.mafw-usage-wb-badge.ok { background: var(--success-soft); color: var(--success); }
 .mafw-usage-wb-badge.error { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
 .mafw-usage-wb-badge.disabled { background: var(--hover); color: var(--text-4); }
 .mafw-usage-wb-error {
@@ -1295,7 +1295,7 @@ html[data-theme="light"] body {
 .mafw-execute-call[role="button"]:hover { background: var(--hover); }
 .mafw-execute-call[data-status="error"] { color: var(--danger-text, #e8636b); }
 .mafw-execute-call-status { width: 12px; flex: 0 0 12px; text-align: center; color: var(--text-4); font-size: 11px; }
-.mafw-execute-call[data-status="completed"] .mafw-execute-call-status { color: var(--accent-success, #22c55e); }
+.mafw-execute-call[data-status="completed"] .mafw-execute-call-status { color: var(--success); }
 .mafw-execute-call[data-status="error"] .mafw-execute-call-status { color: var(--danger-text, #e8636b); }
 .mafw-execute-call-icon { flex: 0 0 auto; display: inline-flex; color: var(--text-4); }
 .mafw-execute-call-name { flex: 0 0 auto; min-width: 0; }
@@ -1407,7 +1407,7 @@ html[data-theme="light"] body {
   animation: mafw-phase-pulse 1.2s var(--ease) infinite;
 }
 .mafw-phase-writing .mafw-phase-dot {
-  background: var(--accent-success, #22c55e);
+  background: var(--success);
   animation: mafw-phase-pulse 0.8s ease-in-out infinite;
 }
 .mafw-phase-writing .mafw-phase-text {
@@ -1626,26 +1626,48 @@ html[data-theme="light"] body {
 .mafw-context-ring [data-slot="progress-circle-v2-progress"] { stroke: currentColor; }
 .mafw-context-ring.is-warn { color: var(--warning); }
 .mafw-context-ring.is-danger { color: var(--danger-text); }
+.mafw-shell [data-component="button-v2"][data-variant="contrast"] {
+  background: var(--action-primary-bg);
+  color: var(--action-primary-fg);
+  background-image: none;
+  box-shadow: none;
+  text-shadow: none;
+}
+.mafw-shell [data-component="button-v2"][data-variant="contrast"]:hover:not(:disabled):not([data-state="disabled"]) {
+  background: var(--action-primary-bg-hover);
+}
+.mafw-shell [data-component="button-v2"][data-variant="contrast"]:active:not(:disabled):not([data-state="disabled"]) {
+  background: var(--action-primary-bg-active);
+}
+.mafw-shell [data-component="button-v2"][data-variant="contrast"]:disabled,
+.mafw-shell [data-component="button-v2"][data-variant="contrast"][data-state="disabled"] {
+  background: var(--bg-inset);
+  color: var(--text-5);
+  opacity: .7;
+}
 .mafw-composer [data-component="button-v2"].mafw-send {
   width: 32px;
   height: 32px;
   flex: none;
   padding: 0;
   border-radius: var(--r-md);
-  background: var(--accent);
-  color: var(--on-accent);
+  background: var(--action-primary-bg);
+  color: var(--action-primary-fg);
   border-color: transparent;
   transition: background var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
 }
 .mafw-composer [data-component="button-v2"].mafw-send:hover:not(.mafw-send-disabled) {
-  background: var(--accent-strong);
+  background: var(--action-primary-bg-hover);
   transform: translateY(-1px);
 }
 .mafw-composer [data-component="button-v2"].mafw-send:active:not(.mafw-send-disabled) {
+  background: var(--action-primary-bg-active);
   transform: translateY(0) scale(.94);
 }
 .mafw-composer [data-component="button-v2"].mafw-send.mafw-send-disabled {
-  opacity: 0.4;
+  background: var(--bg-inset);
+  color: var(--text-5);
+  opacity: .7;
   cursor: default;
 }
 .mafw-stop-icon {
@@ -1944,7 +1966,7 @@ html[data-theme="light"] body {
 .mafw-confirm-title { font-size: 14px; font-weight: 600; color: var(--text-1); margin-bottom: 8px; }
 .mafw-confirm-text { font-size: 13px; color: var(--text-3); line-height: 1.5; margin-bottom: 14px; }
 .mafw-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
-.mafw-confirm-ok { background: var(--accent); color: var(--on-accent); }
+.mafw-confirm-ok { background: var(--action-primary-bg); color: var(--action-primary-fg); }
 .mafw-confirm-backdrop.mafw-confirm-out .mafw-confirm {
   opacity: 0;
   transform: scale(.98);
@@ -2146,7 +2168,7 @@ html[data-theme="light"] body {
 }
 .mafw-badge { padding: 1px 7px; border-radius: 4px; font-size: 11px; }
 .mafw-phase-badge { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.mafw-phase-badge-ok { background: var(--accent-soft); color: var(--accent-text); }
+.mafw-phase-badge-ok { background: var(--success-soft); color: var(--success); }
 .mafw-phase-badge-fail { background: var(--danger-dim); color: var(--danger-text); }
 .mafw-phase-badge-run { background: var(--bg-overlay); color: var(--text-2); border: 1px solid var(--border-subtle); }
 .mafw-btn {
@@ -2172,7 +2194,7 @@ html[data-theme="light"] body {
 .mafw-tool-empty { color: var(--text-weak); padding: 8px; font-size: 13px; }
 .mafw-tool-tag { padding: 1px 6px; border-radius: 3px; flex-shrink: 0; text-transform: uppercase; font-size: 10px; }
 .mafw-tool-badge { flex-shrink: 0; padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 600; line-height: 16px; font-variant-numeric: tabular-nums; border: 1px solid var(--border-subtle); color: var(--text-3); }
-.mafw-tool-badge[data-tone="ok"] { color: var(--accent-text); background: var(--accent-dim); border-color: var(--accent-border); }
+.mafw-tool-badge[data-tone="ok"] { color: var(--success); background: var(--success-soft); border-color: color-mix(in srgb, var(--success) 26%, transparent); }
 .mafw-tool-badge[data-tone="warn"] { color: var(--warning); background: color-mix(in srgb, var(--warning) 10%, transparent); border-color: color-mix(in srgb, var(--warning) 30%, transparent); }
 .mafw-tool-badge[data-tone="err"] { color: var(--danger-text); background: var(--danger-dim); border-color: color-mix(in srgb, var(--danger) 30%, transparent); }
 .mafw-tool-badge[data-tone="muted"] { color: var(--text-4); background: transparent; }
@@ -2202,7 +2224,7 @@ html[data-theme="light"] body {
 .mafw-plugin-markdown a { color: var(--accent-text); }
 .mafw-plugin-progress { display: flex; align-items: center; gap: 8px; }
 .mafw-plugin-progress-track { flex: 1; height: 6px; border-radius: 999px; background: var(--surface-base-hover); overflow: hidden; }
-.mafw-plugin-progress-fill { height: 100%; border-radius: 999px; background: var(--accent-text); transition: width var(--dur-4) var(--ease); }
+.mafw-plugin-progress-fill { height: 100%; border-radius: 999px; background: var(--success); transition: width var(--dur-4) var(--ease); }
 .mafw-plugin-progress-label { font-size: 11px; color: var(--text-base); white-space: nowrap; }
 
 /* ── Declarative plugin message windows (Task 11) ──
@@ -2588,7 +2610,7 @@ html[data-theme="light"] body {
   white-space: nowrap;
 }
 .mafw-flow-badge-wait { background: color-mix(in srgb, var(--warning) 12%, transparent); color: var(--warning); }
-.mafw-flow-badge-ok { background: var(--accent-dim); color: var(--accent-text); }
+.mafw-flow-badge-ok { background: var(--success-soft); color: var(--success); }
 .mafw-flow-badge-danger { background: var(--danger-dim); color: var(--danger-text); }
 .mafw-flow-badge-muted { background: var(--bg-float); color: var(--text-4); }
 .mafw-flow-pulse {
@@ -2945,7 +2967,7 @@ html[data-theme="light"] body {
   border-top-color: var(--accent);
   animation: mafw-spin 1s linear infinite;
 }
-.mafw-task-status.done { color: var(--accent); }
+.mafw-task-status.done { color: var(--success); }
 .mafw-task-status.failed { color: var(--danger); }
 /* 已移出计划（未完成）——整表重写提示区 */
 .mafw-task-hidden {
@@ -4702,7 +4724,7 @@ html[data-theme="light"] body {
 .mafw-bg-bar-chevron { color: var(--text-4); font-size: 12px; }
 .mafw-bg-bar-blocking { cursor: default; }
 .mafw-bg-bar-flash { border-color: transparent; background: transparent; cursor: default; }
-.mafw-bg-bar-flash .mafw-bg-bar-label { color: var(--accent-success, var(--text-2)); }
+.mafw-bg-bar-flash .mafw-bg-bar-label { color: var(--success); }
 .mafw-bg-dock { display: flex; flex-direction: column; gap: 6px; padding: 10px; min-height: 0; overflow-y: auto; }
 .mafw-bg-dock-hint { font-size: 10px; color: var(--text-4); line-height: 1.5; }
 .mafw-bg-dock-rest-hint { font-size: 10px; color: var(--text-4); line-height: 1.5; }
@@ -5637,7 +5659,7 @@ html[data-theme="light"] body {
 .mafw-change-dir:hover { background: var(--hover); color: var(--text-1); }
 .mafw-change-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-data); }
 .mafw-change-status { flex: 0 0 auto; padding: 1px 4px; border-radius: 3px; background: var(--pill); font-size: 9px; line-height: 1.2; color: var(--text-3); }
-.mafw-change-status[data-status="added"] { color: var(--accent); }
+.mafw-change-status[data-status="added"] { color: var(--success); }
 .mafw-change-status[data-status="deleted"] { color: var(--danger); }
 .mafw-change-status[data-status="modified"] { color: var(--warning); }
 .mafw-change-file { position: relative; }
@@ -5686,14 +5708,14 @@ html[data-theme="light"] body {
 .mafw-diff-file-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .mafw-diff-file-name { font-family: var(--font-data); font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mafw-diff-stat { font-size: 11px; font-variant-numeric: tabular-nums; }
-.mafw-diff-stat.add { color: var(--accent); }
+.mafw-diff-stat.add { color: var(--success); }
 .mafw-diff-stat.del { color: var(--danger); }
 .mafw-diff-hunk { display: block; padding: 8px; border: 1px solid var(--border-base); border-radius: 8px; margin-bottom: 8px; cursor: pointer; }
 .mafw-diff-hunk.checked { border-color: var(--accent); }
 .mafw-diff-hunk-header { display: inline-block; font-family: var(--font-data); font-size: 11px; color: var(--text-4); margin: 0 8px 6px 0; }
 .mafw-diff-hunk-body { margin: 6px 0 0; padding: 8px; border-radius: 6px; background: var(--hover-strong); overflow-x: auto; }
 .mafw-diff-line { display: block; font-family: var(--font-data); font-size: 11px; line-height: 1.5; white-space: pre; color: var(--text-2); }
-.mafw-diff-line.add { color: var(--accent); background: var(--accent-dim); }
+.mafw-diff-line.add { color: var(--success); background: var(--success-soft); }
 .mafw-diff-line.del { color: var(--danger); background: var(--danger-dim); }
 .mafw-diff-panel-footer { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-top: 1px solid var(--border-base); }
 .mafw-diff-panel-count { font-size: 12px; color: var(--text-4); font-variant-numeric: tabular-nums; }
@@ -5797,7 +5819,7 @@ html[data-theme="light"] body {
 .mafw-pod-direction .mafw-pod-section-head, .mafw-pod-probes .mafw-pod-section-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .mafw-pod-direction-badge { font-size: 11px; line-height: 18px; padding: 0 8px; border-radius: 999px; background: var(--bg-inset); color: var(--text-3); }
 .mafw-pod-direction-badge.is-attention { color: var(--warning); background: color-mix(in srgb, var(--warning) 16%, transparent); }
-.mafw-pod-direction-badge.is-done { color: var(--accent-text); background: var(--accent-soft); }
+.mafw-pod-direction-badge.is-done { color: var(--success); background: var(--success-soft); }
 .mafw-pod-direction-reason { font-size: 12px; color: var(--text-3); }
 .mafw-pod-direction-options { display: flex; flex-direction: column; gap: 6px; }
 .mafw-pod-direction .mafw-pod-direction-option { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; height: auto; padding: 8px 10px; text-align: left; background: var(--bg-inset); border: 1px solid var(--border-subtle); border-radius: var(--r-md); }
@@ -5953,7 +5975,7 @@ html[data-theme="light"] body {
 .mafw-terminal-tab-dot,
 .mafw-terminal-status-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--text-5); }
 .mafw-terminal-tab-dot.is-ok,
-.mafw-terminal-status-dot.is-ok { background: var(--accent); }
+.mafw-terminal-status-dot.is-ok { background: var(--success); }
 .mafw-terminal-tab-dot.is-warn,
 .mafw-terminal-status-dot.is-warn { background: var(--warning); }
 .mafw-terminal-tab-dot.is-bad,
@@ -6102,7 +6124,7 @@ html[data-theme="light"] body {
 .mafw-host-toggle { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--text-2); }
 .mafw-host-form-error { border: 1px solid var(--danger); background: var(--danger-dim); color: var(--danger-text); border-radius: var(--r-sm); padding: 7px 9px; font-size: 11px; line-height: 1.5; }
 .mafw-host-test-result { border-radius: var(--r-sm); padding: 7px 9px; font-size: 11px; line-height: 1.5; }
-.mafw-host-test-result.is-ok { border: 1px solid var(--accent-border); background: var(--accent-soft); color: var(--accent-text); }
+.mafw-host-test-result.is-ok { border: 1px solid color-mix(in srgb, var(--success) 26%, transparent); background: var(--success-soft); color: var(--success); }
 .mafw-host-test-result.is-error { border: 1px solid var(--danger); background: var(--danger-dim); color: var(--danger-text); }
 .mafw-host-dialog-foot,
 .mafw-hostkey-foot,
@@ -6713,12 +6735,12 @@ html[data-theme="light"] body {
   flex-direction: column;
   gap: 8px;
 }
-.mafw-pod-result-verdict { font-size: 15px; font-weight: 700; color: var(--accent); }
+.mafw-pod-result-verdict { font-size: 15px; font-weight: 700; color: var(--success); }
 .mafw-pod-result-verdict.failed { color: var(--red-9); }
 .mafw-pod-result-label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-4); margin-top: 4px; }
 .mafw-pod-result-list { margin: 0; padding-left: 18px; font-size: 12px; color: var(--text-2); }
 .mafw-pod-result-task { display: grid; grid-template-columns: 54px 74px 1fr; gap: 6px; font-size: 12px; padding: 3px 0; }
-.mafw-pod-result-task-state.is-pass { color: var(--accent); }
+.mafw-pod-result-task-state.is-pass { color: var(--success); }
 .mafw-pod-result-task-state.is-fail { color: var(--red-9); }
 .mafw-pod-result-task-id { font-family: var(--font-data); color: var(--text-4); }
 .mafw-pod-result-task-evidence { color: var(--text-2); overflow-wrap: anywhere; }
@@ -6738,7 +6760,7 @@ html[data-theme="light"] body {
 .mafw-pod-result-revision.is-current { color: var(--text-1); }
 .mafw-pod-result-revision-id { font-family: var(--font-data); color: var(--text-4); }
 .mafw-pod-result-revision.is-current .mafw-pod-result-revision-id { color: var(--accent-text); }
-.mafw-pod-result-revision-verdict { color: var(--accent-text); }
+.mafw-pod-result-revision-verdict { color: var(--success); }
 .mafw-pod-result-revision-feedback { grid-column: 1 / -1; color: var(--text-3); overflow-wrap: anywhere; }
 .mafw-pod-result-reject {
   display: flex;
@@ -7762,7 +7784,7 @@ html[data-theme="light"] body {
   font-size: 11px;
 }
 .mafw-standing-goal-run-mode { font-family: var(--font-data); color: var(--text-2); }
-.mafw-standing-goal-run-status.is-done { color: var(--accent); }
+.mafw-standing-goal-run-status.is-done { color: var(--success); }
 .mafw-standing-goal-run-status.is-failed { color: var(--red-9); }
 .mafw-standing-goal-run-status.is-waiting_person { color: var(--warning); }
 .mafw-standing-goal-run-rationale {
@@ -8171,7 +8193,7 @@ html[data-theme="light"] body {
 .mafw-pod-result-condition-statement { display: flex; align-items: center; gap: 6px; color: var(--text-2); }
 .mafw-pod-result-condition-required { padding: 0 5px; border: 1px solid var(--border-strong, var(--border-subtle)); border-radius: 999px; color: var(--text-4); font-size: 9px; letter-spacing: 0.04em; }
 .mafw-pod-result-condition-result { font-weight: 600; }
-.mafw-pod-result-condition-result.is-pass { color: var(--accent-success); }
+.mafw-pod-result-condition-result.is-pass { color: var(--success); }
 .mafw-pod-result-condition-result.is-fail { color: var(--danger-text); }
 .mafw-pod-result-condition-result.is-skipped { color: var(--text-4); }
 .mafw-pod-result-condition-result.is-unknown { color: var(--warning); }
@@ -8180,7 +8202,7 @@ html[data-theme="light"] body {
 .mafw-pod-result-accept { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--border-subtle); }
 .mafw-pod-result-accept-state { color: var(--text-3); font-size: 12px; font-weight: 600; }
 .mafw-pod-result-accept.is-failure .mafw-pod-result-accept-state { color: var(--danger-text); }
-.mafw-pod-result-accept.is-accepted .mafw-pod-result-accept-state { color: var(--accent-success); }
+.mafw-pod-result-accept.is-accepted .mafw-pod-result-accept-state { color: var(--success); }
 .mafw-pod-result-accept-note { color: var(--text-3); font-size: 11px; }
 .mafw-pod-result-accept-note code { color: var(--text-2); font-family: var(--font-data); }
 .mafw-pod-result-accept-actions { display: flex; flex-wrap: wrap; gap: 6px; }
