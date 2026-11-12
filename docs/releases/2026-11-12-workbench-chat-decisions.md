@@ -25,6 +25,7 @@
 | `3d9e0bf6` | 最终 review 修复：记录身份保持、计划 nonce 绑定 Goal、切项目清空、注册表 canonical 查找、15s 兜底刷新 |
 | `8fb09920` | 决定记录 reopen 回归测试 |
 | `2b634919` | 补 `mafw_decision_draft` 工具注解（MCP registry 覆盖门） |
+| `4737fba3` | 修复 deferred minors：本地化阶段、清空字段、limit、debounce、错误态、revision 单显、异步 latest-wins |
 
 范围说明：`0992909c` / `9f6e79dd` 等视觉语言提交在 Plan 3 基线 `911e7ea4` 之前，不属于本轮；本轮 12 个提交全部属于 Plan 3。
 
@@ -43,9 +44,9 @@
 
 - 新增测试：**69 个**（决定模型、store、决定板、记录服务/路由/MCP、委托预览、代理契约、执行 badge、计划 nonce）。
 - desktop 聚焦：**59 / 59**；修复后新增回归 10 / 10。
-- desktop 全量：**3526 / 3526**，696 suites。
+- desktop 全量：**3528 / 3528**，696 suites。
 - gateway 聚焦：**29 / 29**；决定记录修复聚焦 **12 / 12**。
-- gateway 全量：**6605 / 6605**，852 suites。
+- gateway 全量：**6608 / 6608**，852 suites。
 - `npx tsgo --noEmit -p tsconfig.json` rc=0
 - `electron-vite build` rc=0
 - 实机冒烟（dev app + 新 preload）：
@@ -70,13 +71,20 @@
 - **Important：交付文档缺失** → 本文件 + `docs/architecture/desktop.md`。
 - **门禁：MCP registry 覆盖门发现 `mafw_decision_draft` 漏注解** → 补 `MAFW_TOOL_ANNOTATIONS`；gateway 全量 6605/6605。
 
-Deferred minor：
+## Deferred minor 修复（`4737fba3`）
 
-- 框执行 badge 的未知阶段仍显示英文 `stage.kind`，未复用 `STAGE_STATUS` 中文标签。
-- 确认时把 `consequences` 清空会回退到 Agent 起草文本，不能显式清空。
-- 决定记录目录全量读取、决定板不做虚拟化；当前量级可接受。
-- 每次 Pod 事件仍会立即刷新 attention + decisions，没有 trailing debounce。
-- `list` 对未注册项目静默返回 `[]`，未打日志。
+- 框执行 badge 的未知阶段改用 `STAGE_STATUS` 中文标签，未知值仍回退原文。
+- 确认决定时显式清空 `consequences` / `rationale` 会真正写回 `null`，不再回退 Agent 草稿。
+- 决定记录 `list` 默认上限 200、最大 500；desktop 请求固定 `limit: 200`。
+- Pod 事件触发的决定刷新改为 250ms trailing debounce；15s 兜底与记录动作仍立即刷新。
+- 未注册项目的 `list` 通过 `warn` 输出日志，不再静默。
+- `GoalReviewQueue` 首次加载失败显示“评审意见加载失败 + 重试”，不再伪装成空队列。
+- Goal 框的 revision 只在 badge 显示一次，scope label 改为 `Goal`。
+- 同项目快速切换时，异步 worktree 解析用 `decisionFocusSeq` 做 latest-wins 守卫。
+
+Deferred minor（仍保留）：
+
+- 决定板仍未虚拟化；记录读取已限 200 条，渲染仍是一次性。
 - 工具审批 / permission card 未并入决定板（按计划保持独立）。
 - 计划浮层与评审项锚点的实机路径因当前项目没有对应条目未触发；由 `shouldOpenPlan` / `stageActionFor` 与 wiring 测试覆盖。
 
@@ -89,4 +97,4 @@ Deferred minor：
 
 ## 下一步
 
-Plan 4：Chat 四模式与 episode、分屏、世界总览 subject、legacy context 清理、决定板 debounce / SSE 失效与记录虚拟化。
+Plan 4：Chat 四模式与 episode、分屏、世界总览 subject、legacy context 清理、决定板 SSE 失效与记录虚拟化。
