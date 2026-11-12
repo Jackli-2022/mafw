@@ -3,7 +3,7 @@ import type { DecisionRecord } from "@mafw/sdk"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { TextareaV2 } from "@mafw/ui/v2/textarea-v2"
-import "./decision-record.css"
+import "../decision-record.css"
 
 const STATUS_LABEL: Record<DecisionRecord["status"], string> = {
   draft: "待确认",

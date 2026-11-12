@@ -5,7 +5,7 @@ import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { Icon } from "@mafw/ui/icon"
 import type { DecisionBoardView, DecisionItem } from "../focus/decision-model"
 import { DecisionRecordCard } from "./DecisionRecordCard"
-import "./decision-board.css"
+import "../decision-board.css"
 
 function sourceLabel(item: DecisionItem): string {
   if (item.source === "review") return "评审"

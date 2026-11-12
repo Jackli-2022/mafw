@@ -1,7 +1,7 @@
 import { For, type JSX } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import type { DelegationPreview as DelegationPreviewView } from "../delegation-preview"
-import "./delegation-preview.css"
+import "../delegation-preview.css"
 
 const FIELDS: readonly { key: keyof DelegationPreviewView; label: string }[] = [
   { key: "principal", label: "委托人" },

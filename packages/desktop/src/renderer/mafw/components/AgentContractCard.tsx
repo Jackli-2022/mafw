@@ -2,12 +2,11 @@ import { For, Show, createSignal, type JSX } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { Icon } from "@mafw/ui/icon"
 import type { AgentContract } from "../agent-contract"
-import "./agent-contract.css"
+import "../agent-contract.css"
 
 /** Goal 总览里的代理契约：授权级别、裁量、升级、审计与人类专属边界。 */
 export function AgentContractCard(props: {
   contract: AgentContract
-  title?: string | null
 }): JSX.Element {
   const [open, setOpen] = createSignal(false)
 

@@ -715,7 +715,6 @@ export function GoalDetailPanel(props: {
             {(goal) => (
               <AgentContractCard
                 contract={agentContractFor(goal())}
-                title={goal().title}
               />
             )}
           </Show>
