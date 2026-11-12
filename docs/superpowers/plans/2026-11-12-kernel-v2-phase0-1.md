@@ -10,6 +10,16 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-12-fixed-core-capability-architecture-design.md`
 
+## Progress（2026-11-12）
+
+- Phase 0 完成：Task 0.1–0.6。
+- Phase 1 完成：Task 1.1–1.6。
+- 定向门禁：kernel-v2 + architecture + shadow **72 tests / 72 pass**；plugin-contract **38 / 38**。
+- gateway 全量：**6693 / 6693**，连续两次 clean（Phase 1 收尾）。
+- typecheck：`npx tsc --noEmit -p tsconfig.json` 通过。
+- 已知既存 flake：Phase 0 全量 run 2 出现过一次 `instance-ownership` 时序失败（`takeover waits for the old owner to release`），单文件重跑通过；后续 run 3/4 连续 clean。未归因于 kernel-v2。
+- 交付记录：`docs/releases/2026-11-12-capability-kernel-phase1.md`。
+
 ## Global Constraints
 
 - Phase 0/1 不修改 v1 `gateway/src/kernel.ts`、`boot.ts`、`http/transport.ts`、`tts/registry.ts`、`usage/plugin-loader.ts`。
