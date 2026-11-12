@@ -1,4 +1,4 @@
-import { createSignal, createEffect, createMemo, onMount, onCleanup, untrack, on, Show, For, batch } from "solid-js"
+import { createSignal, createEffect, createMemo, onMount, onCleanup, untrack, on, Show, For, batch, type JSX } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 
 
@@ -135,7 +135,10 @@ import {
 import { frameView, type FrameView } from "./focus/frame-view"
 import { buildCommandPickerItems, buildFilePickerItems, buildGoalPickerItems, withCommandItems, type PickerItem } from "./focus/picker-model"
 import { stageActionFor } from "./focus/stage-dispatch"
-import { openGoalFocus as applyGoalFocus } from "./focus/goal-focus"
+import { openGoalFocus as applyGoalFocus, openReviewItemFocus as applyReviewFocus } from "./focus/goal-focus"
+import { InstrumentRail } from "./components/InstrumentRail"
+import { GoalReviewQueue } from "./components/GoalReviewQueue"
+import type { PodReviewItem } from "@mafw/sdk"
 import {
   configureFocusStorage,
   flushFocusPersistence,
@@ -1960,6 +1963,7 @@ export function MafwShell() {
     createWorkbenchState(currentProject() ?? "unscoped"),
   )
   const [focusOpenRequest, setFocusOpenRequest] = createSignal<{ root: string; rel: string; nonce: number } | null>(null)
+  const [instrumentRailOpen, setInstrumentRailOpen] = createSignal(true)
   let focusOpenNonce = 0
   const requestFocusOpen = (root: string, rel: string) => {
     focusOpenNonce += 1
@@ -2628,6 +2632,64 @@ export function MafwShell() {
       ),
     )
   }
+
+  const openReviewItemToFocus = (item: PodReviewItem) => {
+    const focus = activeFocus()
+    if (!focus || focus.scope.kind !== "goal") return
+    const scope = focus.scope
+    const line = item.startLine ?? undefined
+    setFocusState((state) =>
+      applyReviewFocus(
+        state,
+        {
+          projectDir: scope.worldId,
+          goalId: scope.goalId,
+          revision: scope.revision,
+          worktreeDir: scope.worktreeDir,
+          title: null,
+          itemId: item.id,
+          rel: item.rel,
+          line,
+        },
+        "decide",
+      ),
+    )
+    requestFocusOpen(scope.worktreeDir, item.rel)
+  }
+
+  const instrumentRail = createMemo<JSX.Element | null>(() => {
+    const focus = activeFocus()
+    if (!focus || focus.scope.kind !== "goal") return null
+    const scope = focus.scope
+    if (focus.lens !== "review" && focus.subject.kind !== "goal") return null
+    const podId = podIdForCurrentProject()
+    if (!podId) return null
+    const goal = podStore.detail()?.goals.find((item) => item.goalId === scope.goalId)
+    return (
+      <InstrumentRail
+        title="评审"
+        open={instrumentRailOpen()}
+        onToggle={setInstrumentRailOpen}
+        sections={[
+          {
+            id: "review",
+            label: "评审意见",
+            content: (
+              <GoalReviewQueue
+                podId={podId}
+                goalId={scope.goalId}
+                revision={scope.revision}
+                accepted={!!goal?.accepted}
+                refreshKey={() => podStore.reviewRevision()}
+                onFocusItem={openReviewItemToFocus}
+                onResolved={() => { void podStore.refresh() }}
+              />
+            ),
+          },
+        ]}
+      />
+    )
+  })
   const openSubjectPicker = () => {
     setPickerOpen(true)
     void window.api.mafw.files.list().then(setPickerFiles).catch(() => {})
@@ -3755,6 +3817,7 @@ export function MafwShell() {
                   onFocusBack={focusBack}
                   onFocusCrumb={focusCrumb}
                   focusOpenRequest={focusOpenRequest()}
+                  instrumentRail={instrumentRail()}
                   pickerOpen={pickerOpen()}
                   pickerItems={pickerItems()}
                   onOpenPicker={openSubjectPicker}

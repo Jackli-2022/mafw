@@ -16,6 +16,7 @@ export function PodReviewItems(props: {
   accepted: boolean
   onResolve(item: PodReviewItem): void
   onReopen(item: PodReviewItem): void
+  onFocus?(item: PodReviewItem): void
 }) {
   const ordered = () => orderReviewItems(props.items)
   const counts = () => reviewCounts(props.items)
@@ -44,7 +45,19 @@ export function PodReviewItems(props: {
           <article class="mafw-pod-review-item" data-status={item.status}>
             <div class="mafw-pod-review-item-head">
               <span class="mafw-pod-review-status">{reviewStatusLabel(item.status)}</span>
-              <span class="mafw-pod-review-where">{where(item)}</span>
+              <Show
+                when={props.onFocus}
+                fallback={<span class="mafw-pod-review-where">{where(item)}</span>}
+              >
+                <ButtonV2
+                  variant="ghost"
+                  size="small"
+                  class="mafw-pod-review-where"
+                  onClick={() => props.onFocus?.(item)}
+                >
+                  {where(item)}
+                </ButtonV2>
+              </Show>
               <Show when={item.originRevision != null}>
                 <span class="mafw-pod-review-origin">来自 revision {item.originRevision}</span>
               </Show>

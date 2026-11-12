@@ -86,6 +86,8 @@ export type WorkbenchShellProps = {
   onFocusBack: () => void
   onFocusCrumb: (index: number) => void
   focusOpenRequest?: { root: string; rel: string; nonce: number } | null
+  /** 器械栏（评审队列 / 决定）；由 MafwShell 按当前 focus 生成。 */
+  instrumentRail?: JSX.Element | null
   pickerOpen: boolean
   pickerItems: readonly PickerItem[]
   onOpenPicker: () => void
@@ -333,29 +335,34 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
 
       <Show when={props.focusView} keyed>
         {(focus) => (
-          <FocusStage
-            focus={focus}
-            active={props.open}
-            sessionID={props.sessionID}
-            sessionDirectory={props.sessionDirectory}
-            contentRoot={props.contentRoot}
-            contentScopeKey={props.contentScopeKey}
-            diffs={props.diffs}
-            onActiveFileChange={props.onContentDocument}
-            openRequest={props.focusOpenRequest}
-            onSendAnnotation={props.onSendAnnotation}
-            onAddAnnotation={props.onAddAnnotation}
-            onSendComment={props.onSendComment}
-            onOpenReview={props.onOpenReview}
-            renderPluginSurface={props.renderPluginSurface}
-            webSurfaces={props.webSurfaces}
-            gatewayUrl={props.gatewayUrl}
-            onWebBadge={props.onWebBadge}
-            onWebTitle={props.onWebTitle}
-            onWebError={props.onWebError}
-            renderGoal={() => props.goalView}
-            renderWorld={() => props.workView}
-          />
+          <div class="mafw-focus-body">
+            <FocusStage
+              focus={focus}
+              active={props.open}
+              sessionID={props.sessionID}
+              sessionDirectory={props.sessionDirectory}
+              contentRoot={props.contentRoot}
+              contentScopeKey={props.contentScopeKey}
+              diffs={props.diffs}
+              onActiveFileChange={props.onContentDocument}
+              openRequest={props.focusOpenRequest}
+              onSendAnnotation={props.onSendAnnotation}
+              onAddAnnotation={props.onAddAnnotation}
+              onSendComment={props.onSendComment}
+              onOpenReview={props.onOpenReview}
+              renderPluginSurface={props.renderPluginSurface}
+              webSurfaces={props.webSurfaces}
+              gatewayUrl={props.gatewayUrl}
+              onWebBadge={props.onWebBadge}
+              onWebTitle={props.onWebTitle}
+              onWebError={props.onWebError}
+              renderGoal={() => props.goalView}
+              renderWorld={() => props.workView}
+            />
+            <Show when={props.instrumentRail}>
+              <div class="mafw-focus-rail-slot">{props.instrumentRail}</div>
+            </Show>
+          </div>
         )}
       </Show>
 
