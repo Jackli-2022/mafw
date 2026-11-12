@@ -26,6 +26,7 @@
 | `8fb09920` | 决定记录 reopen 回归测试 |
 | `2b634919` | 补 `mafw_decision_draft` 工具注解（MCP registry 覆盖门） |
 | `4737fba3` | 修复 deferred minors：本地化阶段、清空字段、limit、debounce、错误态、revision 单显、异步 latest-wins |
+| `782b4d5a` | 修复 Goal 结果页溢出：焦点舞台内部滚动 + sticky 返回 |
 
 范围说明：`0992909c` / `9f6e79dd` 等视觉语言提交在 Plan 3 基线 `911e7ea4` 之前，不属于本轮；本轮 12 个提交全部属于 Plan 3。
 
@@ -42,9 +43,9 @@
 
 ## 验证
 
-- 新增测试：**69 个**（决定模型、store、决定板、记录服务/路由/MCP、委托预览、代理契约、执行 badge、计划 nonce）。
+- 新增测试：**76 个**（决定模型、store、决定板、记录服务/路由/MCP、委托预览、代理契约、执行 badge、计划 nonce、Goal 舞台滚动）。
 - desktop 聚焦：**59 / 59**；修复后新增回归 10 / 10。
-- desktop 全量：**3528 / 3528**，696 suites。
+- desktop 全量：**3532 / 3532**，696 suites。
 - gateway 聚焦：**29 / 29**；决定记录修复聚焦 **12 / 12**。
 - gateway 全量：**6608 / 6608**，852 suites。
 - `npx tsgo --noEmit -p tsconfig.json` rc=0
@@ -81,6 +82,12 @@
 - `GoalReviewQueue` 首次加载失败显示“评审意见加载失败 + 重试”，不再伪装成空队列。
 - Goal 框的 revision 只在 badge 显示一次，scope label 改为 `Goal`。
 - 同项目快速切换时，异步 worktree 解析用 `decisionFocusSeq` 做 latest-wins 守卫。
+
+## Goal 结果页滚动修复（`782b4d5a`）
+
+用户反馈：Goal 页面进入结果后动不了、退不出来。根因是 Goal 焦点舞台没有滚动容器：`.mafw-goal-inline` 继承 `overflow: visible; max-height: none`，而 `.mafw-focus-stage` 也不滚动；结果页高度远超视口时内容被裁切，返回控件会随内容滚出可视区。
+
+修复：`FocusStage` 的 goal 分支包一层 `.mafw-focus-goal-stage`（`flex: 1; min-height: 0; overflow-y: auto`），Goal 面板 `flex: none` 保持内容高度；`.mafw-goal-inline-back` 改为 sticky，FrameBar 的返回始终留在舞台外。实机验证：滚动到 900px 后 frame back 仍在 y=45，Goal 自身返回固定在顶部，点击 frame back 正常退出。
 
 Deferred minor（仍保留）：
 
