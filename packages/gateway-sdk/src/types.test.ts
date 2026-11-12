@@ -37,7 +37,6 @@ import {
   TriageNamespace,
   AutomationsNamespace,
   MafwClient as MafwClientInterface,
-  MafwClientOptions,
 } from "./index"
 
 test("exports MafwClient class", () => {
@@ -115,17 +114,6 @@ test("all MAFW namespaces exist on MafwClient", () => {
   expect(typeof c.media.artifactUrl).toBe("function")
   expect(typeof c.event.url).toBe("function")
   expect(typeof c.tts.streamUrl).toBe("function")
-})
-
-// E5a-4: client credential options are part of the exported contract.
-test("MafwClientOptions accepts clientToken and headers", () => {
-  const opts: MafwClientOptions = {
-    baseUrl: "http://gw:3000",
-    clientToken: "a".repeat(64),
-    headers: { "X-Tenant": "acme" },
-  }
-  expect(opts.clientToken).toBe("a".repeat(64))
-  expect(opts.headers?.["X-Tenant"]).toBe("acme")
 })
 
 test("SSEConnection has all SSE methods", () => {

@@ -1,4 +1,3 @@
-import { MafwClient } from "@mafw/sdk"
 import { BrowserWindow, Notification, app, ipcMain, safeStorage, session } from "electron"
 import type { IpcMainInvokeEvent } from "electron"
 import { join } from "path"
@@ -26,7 +25,7 @@ import { UiPluginManager } from "./ui-plugins"
 import { createPluginWebSessionPreparer } from "./plugin-web-session"
 import type { RenderRequest } from "../shared/ui-plugins"
 import { write as writeLog } from "./logging"
-import { readHumanToken } from "./human-token"
+import { createGatewayClient } from "./human-token"
 import { createGatewayHealthMonitor, createRestartScheduler } from "./gateway-health"
 
 let mafwClient: import("@mafw/sdk").MafwClient | null = null
@@ -153,7 +152,7 @@ export function registerMafwIpcHandlers() {
     if (state === "ready") {
       restartScheduler.reset()
       const port = getGatewayPort()
-      if (port) mafwClient = new MafwClient({ baseUrl: `http://127.0.0.1:${port}`, clientToken: readHumanToken() })
+      if (port) mafwClient = createGatewayClient(`http://127.0.0.1:${port}`)
       startHealthMonitor()
     } else {
       mafwClient = null

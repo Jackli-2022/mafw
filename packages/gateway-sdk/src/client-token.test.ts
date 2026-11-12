@@ -102,10 +102,17 @@ test("per-call headers accept Headers and tuple-array forms", async () => {
 
 test("clientToken is NOT attached to fetchPath (SSE / binary / raw Response)", async () => {
   fetchMock.mockResolvedValue(okJson({ ok: true }))
-  const c = new MafwClient({ baseUrl: "http://gw:3000", clientToken: TOKEN })
+  const c = new MafwClient({
+    baseUrl: "http://gw:3000",
+    clientToken: TOKEN,
+    headers: { "X-Tenant": "acme" },
+  })
 
   await (c as any).fetchPath("/api/events")
+  // fetchPath is a raw transport seam: neither the human token nor the generic
+  // options.headers may be injected (callers own their headers there).
   expect(headersOf(0).get("x-mafw-human-token")).toBe(null)
+  expect(headersOf(0).get("x-tenant")).toBe(null)
 })
 
 test("clientToken is NOT attached to binary media upload", async () => {
@@ -125,3 +132,40 @@ test("existing per-call Content-Type survives the merge", async () => {
   expect(headersOf(0).get("content-type")).toBe("application/json")
   expect(headersOf(0).get("x-mafw-human-token")).toBe(TOKEN)
 })
+
+// ── normalization: surrounding whitespace is never sent ──
+
+test("clientToken is trimmed before it is sent", async () => {
+  fetchMock.mockResolvedValue(okJson({ sessions: [] }))
+  const c = new MafwClient({ baseUrl: "http://gw:3000", clientToken: `  ${TOKEN}\n` })
+  await c.session.list()
+  expect(headersOf(0).get("x-mafw-human-token")).toBe(TOKEN)
+})
+
+test("empty or whitespace-only clientToken sends no header", async () => {
+  fetchMock.mockResolvedValue(okJson({ sessions: [] }))
+  for (const token of ["", "   ", "\n\t "]) {
+    const c = new MafwClient({ baseUrl: "http://gw:3000", clientToken: token })
+    await c.session.list()
+    expect(headersOf((fetchMock as any).mock.calls.length - 1).get("x-mafw-human-token")).toBe(null)
+  }
+})
+
+// ── (url, options) constructor form used by desktop/TUI helpers ──
+
+test("second-argument constructor form carries baseUrl + clientToken", async () => {
+  fetchMock.mockResolvedValue(okJson({ sessions: [] }))
+  const c = new MafwClient("http://gw:4321", { clientToken: TOKEN })
+  await c.session.list()
+  expect((fetchMock as any).mock.calls[0][0]).toBe("http://gw:4321/api/sessions")
+  expect(headersOf(0).get("x-mafw-human-token")).toBe(TOKEN)
+})
+
+test("second-argument fetchImpl overrides global fetch", async () => {
+  const local = mock(() => okJson({ sessions: [] }))
+  const c = new MafwClient("http://gw:3000", { fetchImpl: local as any })
+  await c.session.list()
+  expect((local as any).mock.calls.length).toBe(1)
+  expect((fetchMock as any).mock.calls.length).toBe(0)
+})
+

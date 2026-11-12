@@ -73,14 +73,15 @@ export class MafwClient implements IMafwClient {
   /** Extra headers applied beneath the token and per-call headers. */
   private baseHeaders: Record<string, string>
 
-  constructor(opts?: string | MafwClientOptions) {
-    const options = typeof opts === 'object' && opts ? opts : undefined
-    this.baseUrl = typeof opts === 'string'
-      ? opts
-      : opts?.baseUrl || 'http://localhost:3000'
-    this.fetchImpl = options?.fetchImpl ? options.fetchImpl : fetch.bind(globalThis)
-    this.clientToken = options?.clientToken ?? ''
-    this.baseHeaders = options?.headers ?? {}
+  constructor(opts?: string | MafwClientOptions, overrides?: Omit<MafwClientOptions, 'baseUrl'>) {
+    // Two accepted forms: `new MafwClient(options)` and the ergonomic
+    // `new MafwClient(baseUrl, { clientToken, fetchImpl })` used by desktop/TUI.
+    const base = typeof opts === 'string' ? { baseUrl: opts } : opts
+    this.baseUrl = base?.baseUrl || 'http://localhost:3000'
+    this.fetchImpl = overrides?.fetchImpl ?? base?.fetchImpl ?? fetch.bind(globalThis)
+    // Never send a padded credential: gateway compares the raw header value.
+    this.clientToken = (overrides?.clientToken ?? base?.clientToken ?? '').trim()
+    this.baseHeaders = { ...(base?.headers ?? {}), ...(overrides?.headers ?? {}) }
     this._sse = new SSEConnection()
   }
 
