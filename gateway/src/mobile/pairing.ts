@@ -16,6 +16,11 @@ interface RateLimitBucket {
 }
 
 export interface PairingConfig {
+  /**
+   * @deprecated E5a-3: pairing v2 links no longer embed the shared gateway
+   * token. Kept in the signature so existing callers/tests keep compiling;
+   * the value is not persisted or serialized anywhere.
+   */
   apiToken: string;
   tailscaleUrl: string;
   /** TTL in ms (default 5 min) */
@@ -27,14 +32,14 @@ export interface PairingConfig {
 export class PairingService {
   private nonces: Map<string, PairingNonce> = new Map();
   private rateLimits: Map<string, RateLimitBucket> = new Map();
-  private apiToken: string;
   private tailscaleUrl: string;
   private readonly ttlMs: number;
   private readonly rateLimit: number;
   private cleanupTimer: NodeJS.Timeout | null = null;
 
   constructor(config: PairingConfig) {
-    this.apiToken = config.apiToken;
+    // `config.apiToken` is intentionally ignored (v2 pairs a device token via
+    // `/api/mobile/pairing/verify`); the parameter stays for compatibility.
     this.tailscaleUrl = config.tailscaleUrl;
     this.ttlMs = config.ttlMs ?? 5 * 60 * 1000;
     this.rateLimit = config.rateLimit ?? 5;
@@ -45,9 +50,13 @@ export class PairingService {
   }
 
   /**
-   * Generate a one-time pairing URL. Rate-limit applies to non-loopback only;
-   * loopback is exempt because the operator is local and trusted (spec §6.1
-   * allows local generation without throttling). Documented here for audit.
+   * Generate a one-time pairing URL (v2). Rate-limit applies to non-loopback
+   * only; loopback is exempt because the operator is local and trusted (spec
+   * §6.1 allows local generation without throttling). Documented here for audit.
+   *
+   * E5a-3: the URL carries `url` / `v=2` / `exp` / `nonce` — never a gateway
+   * credential. The nonce is exchanged at `POST /api/mobile/pairing/verify`
+   * for a revocable per-device token.
    */
   generatePairingCode(ip: string): { url: string } {
     const isLoopback = ip === '127.0.0.1' || ip.startsWith('127.') || ip === '::1' || ip === '::ffff:127.0.0.1';
@@ -63,8 +72,7 @@ export class PairingService {
 
     const params = new URLSearchParams({
       url: this.tailscaleUrl,
-      token: this.apiToken,
-      v: '1',
+      v: '2',
       exp: String(exp),
       nonce,
     });
@@ -115,9 +123,11 @@ export class PairingService {
     }
   }
 
-  /** Hot-update credentials after config token tailnet url change (no restart). */
+  /**
+   * Hot-update the tailnet base after config changes (no restart).
+   * `apiToken` is accepted for compatibility but no longer embedded in links.
+   */
   updateConfig(opts: { apiToken?: string; tailscaleUrl?: string }): void {
-    if (opts.apiToken !== undefined) this.apiToken = opts.apiToken;
     if (opts.tailscaleUrl !== undefined) this.tailscaleUrl = opts.tailscaleUrl;
   }
 

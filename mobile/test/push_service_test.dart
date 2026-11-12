@@ -3,8 +3,10 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart' as http_testing;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:orcalore_mobile/src/config/connection_config.dart';
+import 'package:orcalore_mobile/src/services/background_credentials.dart';
 import 'package:orcalore_mobile/src/services/push_service.dart';
 
 void main() {
@@ -273,6 +275,57 @@ void main() {
 
     test('kLastFcmAtKey is stable', () {
       expect(kLastFcmAtKey, 'mafw_last_fcm_at');
+    });
+  });
+
+  group('background credentials (device token mirror)', () {
+    test('writeBackgroundCredentials stores base URL + the current device token', () async {
+      SharedPreferences.setMockInitialValues({});
+
+      await writeBackgroundCredentials(
+        const ConnectionConfig(
+          baseUrl: 'https://my-tailnet.ts.net:3000',
+          apiToken: 'dev_fresh',
+        ),
+      );
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(kBgBaseUrlKey, 'mafw_bg_base_url');
+      expect(kBgApiTokenKey, 'mafw_bg_api_token');
+      expect(prefs.getString(kBgBaseUrlKey), 'https://my-tailnet.ts.net:3000');
+      expect(prefs.getString(kBgApiTokenKey), 'dev_fresh');
+    });
+
+    test('syncBackgroundCredentials replaces a stale token (re-pair)', () async {
+      SharedPreferences.setMockInitialValues({
+        kBgBaseUrlKey: 'https://my-tailnet.ts.net:3000',
+        kBgApiTokenKey: 'shared-stale',
+      });
+
+      final changed = await syncBackgroundCredentials(
+        const ConnectionConfig(
+          baseUrl: 'https://my-tailnet.ts.net:3000',
+          apiToken: 'dev_fresh',
+        ),
+      );
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(changed, isTrue);
+      expect(prefs.getString(kBgApiTokenKey), 'dev_fresh');
+      expect(prefs.getString(kBgBaseUrlKey), 'https://my-tailnet.ts.net:3000');
+    });
+
+    test('syncBackgroundCredentials does not create the background copy', () async {
+      SharedPreferences.setMockInitialValues({});
+
+      final changed = await syncBackgroundCredentials(
+        const ConnectionConfig(baseUrl: 'http://localhost:3000', apiToken: 'dev_fresh'),
+      );
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(changed, isFalse);
+      expect(prefs.getString(kBgApiTokenKey), isNull);
+      expect(prefs.getString(kBgBaseUrlKey), isNull);
     });
   });
 }

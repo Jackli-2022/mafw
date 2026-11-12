@@ -1,24 +1,49 @@
 import 'dart:async';
-import 'dart:convert';
+import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/connection_config.dart';
+import '../config/device_identity.dart';
+import '../config/pairing_flow.dart';
 import '../config/pairing_link.dart';
+import '../services/background_credentials.dart';
 import '../services/mdns_discovery.dart';
+import '../services/secure_config_store.dart';
 
 /// QR code scanner page for gateway pairing.
 ///
-/// Scans an `orcalore://pair?url=...&token=...&v=1&exp=...&nonce=...` deep link,
-/// verifies the nonce with the gateway, writes credentials to SecureStorage,
-/// and returns [ConnectionConfig] on success. The legacy `mafw://pair` scheme
-/// is rejected (see `pairing_link.dart`).
+/// Scans an `orcalore://pair?...` deep link (`v=2` device-token links or legacy
+/// `v=1` links that still embed a shared token), redeems the nonce at
+/// `POST /api/mobile/pairing/verify`, writes credentials to SecureStorage, and
+/// returns [ConnectionConfig] on success. The legacy `mafw://pair` scheme is
+/// rejected (see `pairing_link.dart`).
 ///
 /// P1: Auto-discovers gateways on LAN via mDNS before showing the scanner.
 class PairingPage extends StatefulWidget {
-  const PairingPage({super.key});
+  /// Injected HTTP client (tests); production creates its own.
+  final http.Client? httpClient;
+
+  /// Injected device-id provider (tests); defaults to [getOrCreateDeviceId].
+  final Future<String> Function()? deviceIdProvider;
+
+  /// Injected credential store (tests); defaults to [SecureConfigStore].
+  final SecureConfigStore? configStore;
+
+  /// Test overrides for [Platform.operatingSystem] / [Platform.localHostname].
+  final String? platform;
+  final String? deviceName;
+
+  const PairingPage({
+    super.key,
+    this.httpClient,
+    this.deviceIdProvider,
+    this.configStore,
+    this.platform,
+    this.deviceName,
+  });
 
   @override
   State<PairingPage> createState() => _PairingPageState();
@@ -32,6 +57,9 @@ class _PairingPageState extends State<PairingPage> {
   bool _showManual = false;
   final _manualUrlCtrl = TextEditingController();
   final _manualTokenCtrl = TextEditingController();
+
+  late final http.Client _http = widget.httpClient ?? http.Client();
+  late final SecureConfigStore _store = widget.configStore ?? SecureConfigStore();
 
   // mDNS auto-discovery (P1: zero-config LAN)
   List<DiscoveredGateway> _discovered = [];
@@ -76,6 +104,7 @@ class _PairingPageState extends State<PairingPage> {
     _manualUrlCtrl.dispose();
     _manualTokenCtrl.dispose();
     _controller?.dispose();
+    if (widget.httpClient == null) _http.close();
     super.dispose();
   }
 
@@ -127,40 +156,86 @@ class _PairingPageState extends State<PairingPage> {
     }
 
     try {
-      // Manual fallback skips nonce verification (no nonce to redeem)
-      if (nonce != '__manual__') {
-        final verifyUri = Uri.parse('$url/api/mobile/pairing/verify');
-        final verifyRes = await http.post(
-          verifyUri,
-          headers: {
-            'Content-Type': 'application/json',
-            if (token.isNotEmpty) 'Authorization': 'Bearer $token',
-          },
-          body: jsonEncode({'nonce': nonce}),
-        );
+      // Pairing v2: the nonce is the credential and the gateway mints a
+      // revocable device token. Manual entry has nothing to redeem.
+      final deviceId = nonce == kManualPairingNonce ? '' : await _deviceId();
+      final rotate = shouldRotateForPairing(
+        existing: await _existingConfig(),
+        nonce: nonce,
+      );
 
-        if (verifyRes.statusCode != 200) {
-          if (!mounted) return;
-          setState(() {
-            _error = '配对验证失败: ${verifyRes.statusCode}';
-            _processing = false;
-          });
-          return;
-        }
-      }
+      final result = await redeemPairing(
+        baseUrl: url,
+        linkToken: token,
+        nonce: nonce,
+        client: _http,
+        deviceId: deviceId,
+        platform: _platformName(),
+        deviceName: _deviceName(),
+        rotate: rotate,
+      );
 
       // Save credentials via SecureConfigStore (token → flutter_secure_storage)
-      final config = ConnectionConfig(baseUrl: url, apiToken: token);
-      await config.save();
+      await _store.save(result.config);
+      // Keep the WorkManager background copy on the same (device) credential.
+      // Best-effort: a background mirror failure must not lose a good pairing.
+      try {
+        await syncBackgroundCredentials(result.config);
+      } catch (_) {}
       if (!mounted) return;
-      Navigator.of(context).pop<ConnectionConfig>(config);
+      Navigator.of(context).pop<ConnectionConfig>(result.config);
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = '保存配对信息失败: $e';
+        // Gateway failures keep their status message; transport/timeouts are
+        // labelled neutrally (never a raw exception string).
+        _error = pairingErrorMessage(e);
         _processing = false;
       });
     }
+  }
+
+  /// Stable device identity; falling back to empty lets the gateway mint one
+  /// (older gateways ignore unknown fields) rather than blocking pairing.
+  Future<String> _deviceId() async {
+    try {
+      final provider = widget.deviceIdProvider;
+      return provider != null ? await provider() : await getOrCreateDeviceId();
+    } catch (_) {
+      return '';
+    }
+  }
+
+  /// Locally stored credentials, if any (used to decide re-pair rotation).
+  Future<ConnectionConfig?> _existingConfig() async {
+    try {
+      return await _store.load();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _platformName() {
+    final override = widget.platform;
+    if (override != null && override.isNotEmpty) return override;
+    try {
+      return Platform.operatingSystem;
+    } catch (_) {
+      return 'unknown';
+    }
+  }
+
+  String _deviceName() {
+    final override = widget.deviceName;
+    if (override != null && override.isNotEmpty) return override;
+    try {
+      final host = Platform.localHostname;
+      if (host.isNotEmpty) {
+        // Gateway bound: DEVICE_NAME_MAX_LENGTH = 100.
+        return host.length > 100 ? host.substring(0, 100) : host;
+      }
+    } catch (_) {}
+    return 'Orcalore';
   }
 
   void _onManualSubmit() {
@@ -188,7 +263,7 @@ class _PairingPageState extends State<PairingPage> {
     }
 
     // Raw URL/token fallback: allow plain url+token without the orcalore:// wrapper.
-    _verifyAndConnect(raw, _manualTokenCtrl.text.trim(), '__manual__');
+    _verifyAndConnect(raw, _manualTokenCtrl.text.trim(), kManualPairingNonce);
   }
 
   @override

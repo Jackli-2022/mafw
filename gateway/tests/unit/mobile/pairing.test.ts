@@ -18,7 +18,7 @@ describe('PairingService deep link (Orcalore)', () => {
     service.destroy();
   });
 
-  it('generates an orcalore://pair URL carrying url/token/nonce/exp', () => {
+  it('generates an orcalore://pair v2 URL carrying url/nonce/exp and NO token', () => {
     const { url } = service.generatePairingCode('127.0.0.1');
 
     expect(url.startsWith('orcalore://pair?')).toBe(true);
@@ -27,8 +27,10 @@ describe('PairingService deep link (Orcalore)', () => {
     const parsed = new URL(url);
     expect(parsed.host).toBe('pair');
     expect(parsed.searchParams.get('url')).toBe('http://pc.tailnet.ts.net:3000');
-    expect(parsed.searchParams.get('token')).toBe('api-token-abc');
-    expect(parsed.searchParams.get('v')).toBe('1');
+    expect(parsed.searchParams.has('token')).toBe(false);
+    expect(url).not.toMatch(/[?&]token=/);
+    expect(url).not.toContain('api-token-abc');
+    expect(parsed.searchParams.get('v')).toBe('2');
     expect(parsed.searchParams.get('nonce')).toMatch(/^[0-9a-f]{32}$/);
     expect(Number(parsed.searchParams.get('exp'))).toBeGreaterThan(Date.now());
   });

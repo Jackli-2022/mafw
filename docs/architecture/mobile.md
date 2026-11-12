@@ -80,8 +80,8 @@ Firebase Test Lab / BrowserStack / AWS Device Farm 上传 APK 跑真机矩阵；
 [Gateway 3000] — /api/mobile/* + mDNS(_mafw._tcp) + WS /api/ws
 ```
 
-- **配对**：`orcalore://pair?url&token&v&exp&nonce` 一次性、TTL 300s、5/min/IP 限频、nonce 哈希存储（2026-11-06 改名；旧 `mafw://pair` 仅历史）
-- **连接**：Tailscale 优先（https/wss）> LAN http（仅 192.168/10.x 放行）> 手动；`MAFW_SERVER_API_TOKEN` 三通道鉴权（Bearer/x-api-token/?token）
+- **配对**：`v=2` 链接为 `orcalore://pair?url&v=2&exp&nonce`（无凭据）；App 以稳定 `deviceId`（SharedPreferences `mafw_device_id`，32 hex）调 `POST /api/mobile/pairing/verify` 换可撤销设备 token（`dev_…`）并存 `ConnectionConfig`；`v=1` 旧链接仍解析并要求内嵌 `token`（手动 url+token 回退同样保留）。一次性、TTL 300s、5/min/IP 限频、nonce 哈希存储（2026-11-06 改名；旧 `mafw://pair` 仅历史）。重配对（本地已有任一 token，与 baseUrl 无关）带 `rotate:true`；WorkManager 后台明文副本（`mafw_bg_*`）在保存时同步为同一设备 token。`GET /api/mobile/pairing-code` 是 **human-only**（desktop/TUI 带 human token；service/local → 403），否则可铸 nonce 再换设备 token 越权。
+- **连接**：Tailscale 优先（https/wss）> LAN http（仅 192.168/10.x 放行）> 手动；`MAFW_SERVER_API_TOKEN` 三通道鉴权（Bearer/x-api-token/?token）；human-only 动作需设备/人类凭据，旧共享 token 仅能普通 API（E5a）
 - **发现（P1）**：网关 `bonjour-service` 广播 `_mafw._tcp`（TXT 含 port/auth）；App `multicast_dns` 扫描，配对页自动列出同网网关
 - **配对 URL 自动探测**：网关按 环境变量 `MAFW_MOBILE_TAILSCALE_URL` > Tailscale IP > LAN IP > 127.0.0.1 生成，杜绝“手机连自己 localhost”
 
@@ -117,7 +117,8 @@ adb reverse --list                   # reverse 是否建立
 netstat -ano | findstr ":3000"
 # 网关 API 是否正常
 Invoke-WebRequest http://127.0.0.1:3000/health
-Invoke-WebRequest http://127.0.0.1:3000/api/mobile/pairing-code
+# pairing-code 是 human-only：带上 human token（desktop/TUI 自动带）
+Invoke-WebRequest -Headers @{'X-MAFW-Human-Token'=(Get-Content "$env:USERPROFILE\.mafw\human.token")} http://127.0.0.1:3000/api/mobile/pairing-code
 ```
 
 ---
@@ -150,7 +151,7 @@ adb shell am start -n ai.orcalore.mobile/.MainActivity
 adb exec-out screencap -p > screen.png
 ```
 
-> token 值：`MAFW_SERVER_API_TOKEN`（网关 config）或 `GET /api/mobile/pairing-code` 返回的 `token` 字段。
+> token 值：`MAFW_SERVER_API_TOKEN`（网关 config，旧共享 token）。E5a 起 `GET /api/mobile/pairing-code` 只返回 `orcalore://pair?url&v=2&exp&nonce`（不再带 token）——扫码后由 `/api/mobile/pairing/verify` 发放设备 token；手工注入时也可填一个已签发的 `dev_…` token。
 
 ---
 
@@ -235,13 +236,13 @@ mafw logs
 ```
 
 - **事件回放**：SSE 支持 `Last-Event-ID`/`?since`；**移动端 WS 无回放**——重连后必须 refetch（Plan B Task 5 的 `onReconnected` 信号，缺失即「事件凭空丢失」类 bug 的根因）；
-- **配对**：`GET /api/mobile/pairing-code` 生成的 URL 必须含 `orcalore://pair`（改名后）且 host 不是 `127.0.0.1`；`POST /api/mobile/pairing/verify` 404/400 = nonce 过期或已消费。
+- **配对**：`GET /api/mobile/pairing-code` 是 **human-only**（需 desktop/TUI 的 human token；service/local/旧客户端 → 403 `human_principal_required`），生成的 URL 必须含 `orcalore://pair`（改名后）且 host 不是 `127.0.0.1`；`POST /api/mobile/pairing/verify` 400 = nonce 过期/已消费或 deviceId 越界，404 = 老网关没有该路由（v1 链接 + 手动回退），**409 `device_already_paired`** = 该 `deviceId` 已有凭据但未带 `rotate:true`（重新配对必须显式轮换）。
 
 ### 7.6 故障速查（v1 场景补充）
 
 | 现象 | 排查 |
 |---|---|
-| `401 unauthorized`（远端） | `server.apiToken` 未设（空 token 远端全拒）或 App token 不匹配；配对码 token 取自生成时刻配置——改 token 后必须重新配对 |
+| `401 unauthorized`（远端） | `server.apiToken` 未设（空 token 远端全拒）或只带共享 token；v2 配对后的 App 应改用 `dev_…` 设备 token（`ConnectionConfig.apiToken` 存的就是它）。设备 token 被删除/轮换后旧值立即 401 → 重新扫码配对（带 `rotate:true`） |
 | `CLEARTEXT communication not permitted` | 原生网络栈（TTS/ExoPlayer 等）受 NSC 约束：`network_security_config.xml` 的 ts.net 域必须带 `includeSubdomains="true"`（否则子域回落到 base-config），或用的是裸 `100.x` IP（域条目只匹配主机名 → 改用 MagicDNS 主机名）；Dart/`package:http` 请求不走 NSC，公网明文由应用层 `UrlCheck.publicPlaintext` 拒绝 |
 | `SocketException` / 连接拒绝 | 手机 Tailscale 未连/被省电杀掉；MagicDNS 解析失败（「Use Tailscale DNS」关闭）；gateway 未启动（`mafw status`） |
 | 扫码无反应 | 深链 scheme 不匹配（`orcalore://` vs 旧 `mafw://`）；nonce 过期（5min）或已被消费 |

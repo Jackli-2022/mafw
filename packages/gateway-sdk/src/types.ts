@@ -2335,6 +2335,16 @@ export interface MafwClientOptions {
   baseUrl?: string
   /** Injectable fetch for tests / custom transports (defaults to global fetch). */
   fetchImpl?: typeof fetch
+  /**
+   * E5a: human credential. Sent as `X-MAFW-Human-Token` on every JSON request so
+   * the gateway can tell a human-initiated action from an agent/service one.
+   * Never attached to raw `fetchPath` responses (SSE / binary / media streams).
+   */
+  clientToken?: string
+  /** Extra headers merged beneath `clientToken` and per-call headers. They are
+   *  applied to `request()` JSON calls only — `fetchPath` (SSE / binary / raw
+   *  Response) requests keep exactly the caller's headers. */
+  headers?: Record<string, string>
 }
 
 // ============================================================

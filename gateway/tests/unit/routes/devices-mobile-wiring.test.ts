@@ -11,9 +11,9 @@ import { RouteRegistry } from '../../../src/routes/registry';
 import { buildRouteCatalog } from '../../../src/routes/route-catalog';
 import { attachDevicesMobileRoutes, type DevicesMobileRouteDeps } from '../../../src/routes/devices-mobile';
 
-function fakeReq(opts: { method: string; url: string; body?: string; socket?: string }): IncomingMessage {
+function fakeReq(opts: { method: string; url: string; body?: string; socket?: string; principal?: unknown }): IncomingMessage {
   const listeners: Record<string, Array<(c?: unknown) => void>> = {};
-  const req = {
+  const req: any = {
     method: opts.method,
     url: opts.url,
     socket: { remoteAddress: opts.socket ?? '127.0.0.1' },
@@ -23,6 +23,7 @@ function fakeReq(opts: { method: string; url: string; body?: string; socket?: st
       return req;
     },
   };
+  if (opts.principal !== undefined) req.mafwPrincipal = opts.principal;
   process.nextTick(() => {
     for (const fn of listeners['data'] ?? []) fn(opts.body ?? '');
     for (const fn of listeners['end'] ?? []) fn();
@@ -48,13 +49,21 @@ const sha = (token: string, len: number) => createHash('sha256').update(token).d
 function pushGateway() {
   const registered: any[] = [];
   const removed: string[] = [];
+  const issued: any[] = [];
   return {
     registered,
     removed,
+    issued,
     gw: {
       registerDevice: (input: any) => { registered.push(input); return { ...input, lastSeen: '2026-11-10T00:00:00Z' }; },
       listDevices: () => [{ id: 'dev-1' }, { id: 'dev-2' }],
+      listPublicDevices: () => [{ id: 'dev-1' }, { id: 'dev-2' }],
       removeDevice: (id: string) => { removed.push(id); return id === 'dev-1'; },
+      getDevice: () => undefined,
+      issueDeviceToken: (deviceId: string, token: string, opts: any) => {
+        issued.push({ deviceId, token, opts });
+        return { id: deviceId, deviceTokenHash: 'hash', tokenIssuedAt: '2026-11-12T00:00:00Z' };
+      },
     } as any,
   };
 }
@@ -180,15 +189,18 @@ describe('devices + mobile registry wiring (D1 Task H2)', () => {
   });
 
   it('pairing-code is 503 without a service, 200 with the code, 429 on rate limit', async () => {
+    const human = { kind: 'human', method: 'human-token' };
     let r = fakeRes();
-    await handlerFor(setup(), 'GET', '/api/mobile/pairing-code')!(fakeReq({ method: 'GET', url: '/api/mobile/pairing-code' }), r.res);
+    await handlerFor(setup(), 'GET', '/api/mobile/pairing-code')!(
+      fakeReq({ method: 'GET', url: '/api/mobile/pairing-code', principal: human }), r.res,
+    );
     expect(r.status).toBe(503);
     expect(JSON.parse(r.body).error).toBe('Pairing service not available');
 
     const ps = pairingService();
     r = fakeRes();
     await handlerFor(setup({ pairingService: () => ps.svc }), 'GET', '/api/mobile/pairing-code')!(
-      fakeReq({ method: 'GET', url: '/api/mobile/pairing-code', socket: '192.168.1.9' }), r.res,
+      fakeReq({ method: 'GET', url: '/api/mobile/pairing-code', socket: '192.168.1.9', principal: human }), r.res,
     );
     expect(r.status).toBe(200);
     expect(JSON.parse(r.body)).toEqual({ url: 'http://127.0.0.1:3000/pair?n=192.168.1.9' });
@@ -197,15 +209,32 @@ describe('devices + mobile registry wiring (D1 Task H2)', () => {
     const limited = { generatePairingCode: () => { throw new Error('rate limit exceeded'); } } as any;
     r = fakeRes();
     await handlerFor(setup({ pairingService: () => limited }), 'GET', '/api/mobile/pairing-code')!(
-      fakeReq({ method: 'GET', url: '/api/mobile/pairing-code' }), r.res,
+      fakeReq({ method: 'GET', url: '/api/mobile/pairing-code', principal: human }), r.res,
     );
     expect(r.status).toBe(429);
     expect(JSON.parse(r.body).error).toBe('rate limit exceeded');
   });
 
-  it('pairing/verify consumes the nonce with the 400 gates intact', async () => {
+  it('pairing-code denies service/local callers before touching the pairing service (F1)', async () => {
     const ps = pairingService();
-    const registry = setup({ pairingService: () => ps.svc });
+    for (const principal of [
+      { kind: 'service', method: 'api-token' },
+      { kind: 'local', method: 'loopback' },
+    ]) {
+      const r = fakeRes();
+      await handlerFor(setup({ pairingService: () => ps.svc }), 'GET', '/api/mobile/pairing-code')!(
+        fakeReq({ method: 'GET', url: '/api/mobile/pairing-code', principal }), r.res,
+      );
+      expect(r.status).toBe(403);
+      expect(JSON.parse(r.body)).toEqual({ error: 'human principal required', code: 'human_principal_required' });
+    }
+    expect(ps.codes).toEqual([]);
+  });
+
+  it('pairing/verify consumes the nonce and issues a device credential (v2)', async () => {
+    const ps = pairingService();
+    const pg = pushGateway();
+    const registry = setup({ pairingService: () => ps.svc, pushGateway: () => pg.gw });
     let r = fakeRes();
     await handlerFor(registry, 'POST', '/api/mobile/pairing/verify')!(
       fakeReq({ method: 'POST', url: '/api/mobile/pairing/verify', body: JSON.stringify({}) }), r.res,
@@ -222,10 +251,22 @@ describe('devices + mobile registry wiring (D1 Task H2)', () => {
 
     r = fakeRes();
     await handlerFor(registry, 'POST', '/api/mobile/pairing/verify')!(
-      fakeReq({ method: 'POST', url: '/api/mobile/pairing/verify', body: JSON.stringify({ nonce: 'good' }) }), r.res,
+      fakeReq({
+        method: 'POST',
+        url: '/api/mobile/pairing/verify',
+        body: JSON.stringify({ nonce: 'good', deviceId: 'phone-1', platform: 'android' }),
+      }), r.res,
     );
     expect(r.status).toBe(200);
-    expect(JSON.parse(r.body)).toEqual({ ok: true });
+    const body = JSON.parse(r.body);
+    expect(body.ok).toBe(true);
+    expect(body.deviceId).toBe('phone-1');
+    expect(body.token).toMatch(/^dev_/);
+    expect(pg.issued[0]).toEqual({
+      deviceId: 'phone-1',
+      token: body.token,
+      opts: { platform: 'android', deviceName: undefined },
+    });
     expect(ps.nonces).toEqual(['stale', 'good']);
   });
 });

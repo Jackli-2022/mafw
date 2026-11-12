@@ -14,6 +14,7 @@ export const API_ERROR_CODES = {
   schema_epoch_mismatch: 'schema_epoch_mismatch',
   not_found: 'not_found',
   quota_exceeded: 'quota_exceeded',
+  payload_too_large: 'payload_too_large',
   internal: 'internal',
 } as const;
 

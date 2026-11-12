@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import type { RouteRegistry } from './registry';
+import { humanOnlyDenied, isHumanPrincipal } from '../core/auth';
 import { readRouteBody } from './cognition';
 import type { GoalRun, StandingGoal } from '../core/standing/standing-types';
 
@@ -134,9 +135,12 @@ export async function handleRunStandingGoal(
 }
 
 export async function handleApproveRun(
-  args: { id?: string; actorSessionID?: string },
+  args: { id?: string; actorSessionID?: string; human: boolean },
   deps: StandingGoalRouteDeps,
 ): Promise<{ status: number; body: any }> {
+  // E5a-2: approval is human-only. Fail-closed: `human` comes from the resolved
+  // principal, never from the mere absence of actorSessionID.
+  if (!args?.human) return humanOnlyDenied();
   const off = gate(deps);
   if (off) return off;
   if (args?.actorSessionID) {
@@ -193,6 +197,10 @@ export function attachStandingGoalRoutes(registry: RouteRegistry, deps: Standing
   });
   registry.attachHandler('goalRuns.approve', async (req, res, params) => {
     const body = await bodyOf(req);
-    send(res, await handleApproveRun({ id: params.id, actorSessionID: body?.actorSessionID }, deps));
+    send(res, await handleApproveRun({
+      id: params.id,
+      actorSessionID: body?.actorSessionID,
+      human: isHumanPrincipal((req as any).mafwPrincipal),
+    }, deps));
   });
 }

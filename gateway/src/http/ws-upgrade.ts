@@ -6,8 +6,9 @@
  * single `server.on('upgrade')` fan-out, in the original order:
  *   voice (isVoiceUpgradePath) → terminal (matchTerminalConnectUrl) →
  *   plugin (parsePluginWsUrl) → /api/ws (mobile events + send).
- * Auth stays per-route: voice//api/ws use authorizeWsUpgrade (loopback bypass),
- * terminal is loopback-only, plugin auth lives in the handler.
+ * Auth stays per-route: voice//api/ws use `resolvePrincipal`
+ * (human/device/service/local; anonymous → raw 401), terminal is loopback-only,
+ * plugin auth lives in the handler.
  *
  * Timers: the 30s heartbeat (2 missed pongs → terminate) and the 60s
  * PushGateway maintenance are unref'ed and — before this extraction — never
@@ -24,7 +25,7 @@
 import * as http from 'http';
 import { WebSocketServer } from 'ws';
 import type { WebSocket } from 'ws';
-import { authorizeWsUpgrade, isLoopbackAddr } from '../core/auth';
+import { isLoopbackAddr, resolvePrincipal, WS_UNAUTHORIZED_RESPONSE } from '../core/auth';
 import { log } from '../core/utils/logger';
 import type { TimerHandle, TimerService } from '../core/timer-service';
 import type { ConnectionKind, ConnectionLease, ConnectionTable } from '../resources/connections';
@@ -44,6 +45,10 @@ export interface WsHubDeps {
   /** The kernel's `wsClients` set (broadcast() writes through the same set). */
   wsClients: Set<WebSocket>;
   apiToken(): string;
+  /** E5a: human token getter (empty = fail-closed for human-only actions). */
+  humanToken?(): string;
+  /** E5a: device-token verifier (missing = every device token invalid). */
+  verifyDeviceToken?: (token: string) => { deviceId: string } | null;
   pushGateway(): PushGateway | undefined;
   handleWsMessage(ws: WebSocket, raw: Buffer | ArrayBuffer | Buffer[]): void;
   getVoiceRuntime(): Promise<VoiceRuntime>;
@@ -164,12 +169,48 @@ function bindLease(emitter: { on?(event: string, listener: () => void): unknown 
   }
 }
 
+function resolveUpgradePrincipal(
+  deps: WsHubDeps,
+  req: http.IncomingMessage,
+  rawAddr: string,
+  url: string,
+) {
+  return resolvePrincipal(
+    {
+      remoteAddress: rawAddr,
+      headers: req.headers as any,
+      url,
+      host: String(req.headers.host || ''),
+    },
+    {
+      apiToken: deps.apiToken(),
+      humanToken: deps.humanToken?.() ?? '',
+      verifyDeviceToken: deps.verifyDeviceToken,
+    },
+  );
+}
+
 export function createWsHub(server: http.Server, deps: WsHubDeps): WsHub {
   const wss = new WebSocketServer({ noServer: true });
   const voiceWss = new WebSocketServer({ noServer: true });
   const terminalWss = new WebSocketServer({ noServer: true });
-  wss.on('connection', (ws) => {
+  wss.on('connection', (ws, req) => {
     deps.wsClients.add(ws);
+    // E5a: the upgrade handler resolved the principal; expose it on the socket and
+    // prefer the credential's deviceId over the legacy ?deviceId= query string.
+    const principal = (req as any)?.mafwPrincipal;
+    if (principal) (ws as any).principal = principal;
+    let deviceId: string | undefined = principal?.deviceId;
+    if (!deviceId) {
+      try {
+        const q = new URL(req?.url || '', `http://${req?.headers.host || 'localhost'}`);
+        deviceId = q.searchParams.get('deviceId') || undefined;
+      } catch { /* non-fatal */ }
+    }
+    if (deviceId) {
+      (ws as any).deviceId = deviceId;
+      deps.pushGateway()?.addOnlineWs(deviceId, ws);
+    }
     (ws as any).isAlive = true;
     (ws as any).missedPongs = 0;
     ws.on('pong', () => { (ws as any).isAlive = true; (ws as any).missedPongs = 0; });
@@ -265,16 +306,13 @@ export function createWsHub(server: http.Server, deps: WsHubDeps): WsHub {
     const url = req.url || '';
     // Token auth on upgrade: delegated to core/auth.ts
     const rawAddr = (req.socket as any)?.remoteAddress || (socket as any).remoteAddress || '';
-    const wsToken = deps.apiToken();
 
     if (isVoiceUpgradePath(url)) {
-      if (!isLoopbackAddr(rawAddr)) {
-        const wsAuth = authorizeWsUpgrade({ remoteAddress: rawAddr, headers: req.headers as any, url, host: String(req.headers.host || '') }, wsToken);
-        if (!wsAuth.ok) {
-          socket.write(wsAuth.rejectResponse!);
-          socket.destroy();
-          return;
-        }
+      const voicePrincipal = resolveUpgradePrincipal(deps, req, rawAddr, url);
+      if (voicePrincipal.kind === 'anonymous') {
+        socket.write(WS_UNAUTHORIZED_RESPONSE);
+        socket.destroy();
+        return;
       }
       const admitted = admitUpgrade('voice', deps.connections);
       if (!admitted.ok) {
@@ -354,12 +392,13 @@ export function createWsHub(server: http.Server, deps: WsHubDeps): WsHub {
       socket.destroy();
       return;
     }
-    const wsAuth = authorizeWsUpgrade({ remoteAddress: rawAddr, headers: req.headers as any, url, host: String(req.headers.host || '') }, wsToken);
-    if (!wsAuth.ok) {
-      socket.write(wsAuth.rejectResponse!);
+    const principal = resolveUpgradePrincipal(deps, req, rawAddr, url);
+    if (principal.kind === 'anonymous') {
+      socket.write(WS_UNAUTHORIZED_RESPONSE);
       socket.destroy();
       return;
     }
+    (req as any).mafwPrincipal = principal;
     const admitted = admitUpgrade('ws', deps.connections);
     if (!admitted.ok) {
       refuseUpgrade(socket, 'ws');
@@ -369,15 +408,8 @@ export function createWsHub(server: http.Server, deps: WsHubDeps): WsHub {
     try {
       wss.handleUpgrade(req, socket, head, (ws) => {
         bindLease(ws as any, admitted.lease);
-        // Extract deviceId from query string for PushGateway tracking
-        try {
-          const q = new URL(url, `http://${req.headers.host || 'localhost'}`);
-          const deviceId = q.searchParams.get('deviceId');
-          if (deviceId) {
-            (ws as any).deviceId = deviceId;
-            deps.pushGateway()?.addOnlineWs(deviceId, ws);
-          }
-        } catch { /* non-fatal */ }
+        // Device tracking + principal export happen in the 'connection' handler
+        // (which reads req.mafwPrincipal / req.url).
         wss.emit('connection', ws, req);
       });
     } catch (err) {

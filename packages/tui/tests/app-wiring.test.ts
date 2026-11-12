@@ -17,6 +17,13 @@ test('wiring: /agent picker 传入 client.agents.list() 的数组（不读 .item
   assert.doesNotMatch(appSource, /agents\.list\(\)[\s\S]{0,80}?\.items \?\? \[\]/)
 })
 
+test('wiring: app 用 createTuiClient 注入 human token（E5a-4）', () => {
+  assert.match(appSource, /from '\.\.\/store\/human-token\.ts'/)
+  assert.match(appSource, /const client = createTuiClient\(opts\.baseUrl\)/)
+  // 凭据只经 helper 注入，app 不再直接构造 SDK client
+  assert.doesNotMatch(appSource, /new MafwClient\(/)
+})
+
 test('wiring: permission.asked 不因 approval.permission（含 list surface）被门控', () => {
   assert.doesNotMatch(
     appSource,

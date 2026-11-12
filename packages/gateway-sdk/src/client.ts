@@ -61,24 +61,38 @@ async function httpError(res: Response): Promise<Error> {
   return new Error(`HTTP ${res.status}${suffix}${code}`.slice(0, 500))
 }
 
+/** E5a: header carrying the human credential (spec §5.1). */
+const HUMAN_TOKEN_HEADER = 'X-MAFW-Human-Token'
+
 export class MafwClient implements IMafwClient {
   private baseUrl: string
   private _sse: SSEConnection
   private fetchImpl: typeof fetch
+  /** E5a: human token ('' = none) — only ever attached by `request()`. */
+  private clientToken: string
+  /** Extra headers applied beneath the token and per-call headers. */
+  private baseHeaders: Record<string, string>
 
-  constructor(opts?: string | MafwClientOptions) {
-    this.baseUrl = typeof opts === 'string'
-      ? opts
-      : opts?.baseUrl || 'http://localhost:3000'
-    this.fetchImpl = (typeof opts === 'object' && opts?.fetchImpl) ? opts.fetchImpl : fetch.bind(globalThis)
+  constructor(opts?: string | MafwClientOptions, overrides?: Omit<MafwClientOptions, 'baseUrl'>) {
+    // Two accepted forms: `new MafwClient(options)` and the ergonomic
+    // `new MafwClient(baseUrl, { clientToken, fetchImpl })` used by desktop/TUI.
+    const base = typeof opts === 'string' ? { baseUrl: opts } : opts
+    this.baseUrl = base?.baseUrl || 'http://localhost:3000'
+    this.fetchImpl = overrides?.fetchImpl ?? base?.fetchImpl ?? fetch.bind(globalThis)
+    // Never send a padded credential: gateway compares the raw header value.
+    this.clientToken = (overrides?.clientToken ?? base?.clientToken ?? '').trim()
+    this.baseHeaders = { ...(base?.headers ?? {}), ...(overrides?.headers ?? {}) }
     this._sse = new SSEConnection()
   }
 
   private async request<T>(path: ApiPath, init?: RequestInit): Promise<T> {
-    const res = await this.fetchImpl(`${this.baseUrl}${path}`, {
-      headers: { 'Content-Type': 'application/json' },
-      ...init,
-    })
+    // Merge order (spec §5.1): default Content-Type → options.headers →
+    // clientToken → per-call headers (call site wins).
+    const headers = new Headers({ 'Content-Type': 'application/json' })
+    for (const [name, value] of Object.entries(this.baseHeaders)) headers.set(name, value)
+    if (this.clientToken) headers.set(HUMAN_TOKEN_HEADER, this.clientToken)
+    if (init?.headers) new Headers(init.headers).forEach((value, name) => headers.set(name, value))
+    const res = await this.fetchImpl(`${this.baseUrl}${path}`, { ...init, headers })
     if (!res.ok) throw await httpError(res)
     // Old gateways serve dashboard HTML for unknown routes (SPA fallback).
     // Surface a clean, actionable error instead of a JSON parse SyntaxError.

@@ -30,7 +30,27 @@ export async function dispatchAuthorized(
   // Webhook senders authenticate with HMAC inside the handler, not the
   // gateway apiToken (GitHub/Slack cannot send a MAFW bearer token).
   const hmacAuthenticated = matched.def.operationId === 'events.webhook.receive';
-  const allowed = hmacAuthenticated || authorizeRequest(
+  // E5a-3: pairing verify is credential-less by design (the single-use nonce is
+  // the credential) — but ONLY through the transport, which sets
+  // `mafwPairingVerify` after applying its body cap. A direct dispatcher cannot
+  // self-authorize by operation id (F6).
+  const pairingVerify = matched.def.operationId === 'mobile.pairingVerify'
+    && (req as any).mafwPairingVerify === true;
+  // E5a: the transport already resolved a principal for every request; a
+  // human/device credential must reach registry routes too (it is not a
+  // shared apiToken). `authorizeRequest` stays for callers that dispatch
+  // without going through the transport (older tests / internal wiring).
+  const principal = (req as any).mafwPrincipal as { kind?: unknown } | undefined;
+  // F3: explicit allowlist — a malformed / unknown principal must not silently
+  // pass just because it isn't `anonymous`. `authorizeRequest` is still the
+  // fallback for dispatchers that never resolved a principal.
+  const kind = principal?.kind;
+  const principalAllowed = typeof kind === 'string'
+    && (kind === 'human' || kind === 'service' || kind === 'local');
+  const allowed = hmacAuthenticated
+    || pairingVerify
+    || principalAllowed
+    || authorizeRequest(
     {
       remoteAddress,
       headers: req.headers as any,

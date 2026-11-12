@@ -3,6 +3,11 @@
 /// Lockstep with the gateway generator (`gateway/src/mobile/pairing.ts`) and
 /// the Android intent-filter (`AndroidManifest.xml`). The legacy `mafw://pair`
 /// scheme is **rejected** — only [kPairingScheme] is accepted.
+///
+/// Two link formats coexist (E5a):
+/// - `v=1` — legacy: embeds the shared gateway `token`.
+/// - `v=2` — device credentials: `url` / `exp` / `nonce` only; the nonce is
+///   exchanged for a revocable `dev_…` token at `/api/mobile/pairing/verify`.
 library;
 
 import 'connection_config.dart';
@@ -25,13 +30,25 @@ class PairingLink {
   /// Gateway base URL carried by the QR code.
   final String url;
 
-  /// Gateway API token (may be empty when the gateway has no token configured).
+  /// Gateway credential carried by **v1** links (shared `apiToken`).
+  ///
+  /// v2 links never embed a credential — pairing mints a revocable per-device
+  /// token from the nonce — so this is the empty string for v2. Callers must
+  /// treat it as "legacy token, if any" rather than "the credential".
   final String token;
 
   /// Single-use pairing nonce, redeemed at `POST /api/mobile/pairing/verify`.
   final String nonce;
 
-  const PairingLink({required this.url, required this.token, required this.nonce});
+  /// Link format version (`1` = legacy shared token, `2` = device token).
+  final int version;
+
+  const PairingLink({
+    required this.url,
+    required this.token,
+    required this.nonce,
+    this.version = 2,
+  });
 }
 
 /// Result of [parsePairingLink] — exactly one of [link] / [error] is meaningful.
@@ -65,7 +82,14 @@ bool canPairWithUrl(String url) {
 
 /// Parse and validate a pairing deep link.
 ///
-/// Accepts only `orcalore://pair?url=...&token=...&v=1&exp=...&nonce=...`.
+/// Accepts only `orcalore://pair?...` (scheme [kPairingScheme], host
+/// [kPairingHost] — unchanged since v1):
+///
+/// - `v=2`: `url` / `exp` / `nonce` required, `token` optional (v2 gateways
+///   mint a device token from the nonce, so the link carries no credential).
+/// - `v=1`: `token` still required — legacy gateways embed the shared API
+///   token in the link.
+///
 /// Returns [PairingLinkError.expired] when `exp` is in the past (relative to
 /// [now], injectable for tests).
 PairingLinkResult parsePairingLink(String raw, {DateTime? now}) {
@@ -78,18 +102,23 @@ PairingLinkResult parsePairingLink(String raw, {DateTime? now}) {
 
     final params = uri.queryParameters;
     final url = params['url'];
-    final token = params['token'];
+    final token = params['token'] ?? '';
     final v = params['v'];
     final exp = params['exp'];
     final nonce = params['nonce'];
 
-    if (url == null ||
-        url.isEmpty ||
-        token == null ||
-        v != '1' ||
-        exp == null ||
-        nonce == null ||
-        nonce.isEmpty) {
+    if (url == null || url.isEmpty || exp == null || nonce == null || nonce.isEmpty) {
+      return PairingLinkResult.malformed;
+    }
+
+    final int version;
+    if (v == '2') {
+      version = 2;
+    } else if (v == '1') {
+      // Legacy links are only meaningful with the embedded shared token.
+      if (token.isEmpty) return PairingLinkResult.malformed;
+      version = 1;
+    } else {
       return PairingLinkResult.malformed;
     }
 
@@ -99,7 +128,9 @@ PairingLinkResult parsePairingLink(String raw, {DateTime? now}) {
     final nowMs = (now ?? DateTime.now()).millisecondsSinceEpoch;
     if (nowMs > expMs) return PairingLinkResult.expired;
 
-    return PairingLinkResult.success(PairingLink(url: url, token: token, nonce: nonce));
+    return PairingLinkResult.success(
+      PairingLink(url: url, token: token, nonce: nonce, version: version),
+    );
   } catch (_) {
     return PairingLinkResult.malformed;
   }

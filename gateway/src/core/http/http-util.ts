@@ -17,6 +17,13 @@
  */
 import * as http from 'http';
 
+/**
+ * E5a-3 (F2): hard cap for the only unauthenticated request body
+ * (`POST /api/mobile/pairing/verify`). Shared by the transport's
+ * `content-length` pre-check and the route's capped reader.
+ */
+export const PAIRING_VERIFY_MAX_BODY_BYTES = 8192;
+
 export function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     let body = '';

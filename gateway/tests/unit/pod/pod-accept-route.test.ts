@@ -18,18 +18,22 @@ function mockRes() {
   return res as http.ServerResponse & { status: number; body: string };
 }
 
-function mockReq(method: string, body?: any): http.IncomingMessage {
+function mockReq(method: string, body?: any, principal?: any): http.IncomingMessage {
   const listeners: Record<string, Function[]> = {};
   const req: any = {
     method,
     on(ev: string, fn: Function) { (listeners[ev] ??= []).push(fn); },
   };
+  if (principal) req.mafwPrincipal = principal;
   setImmediate(() => {
     if (body !== undefined) for (const fn of listeners['data'] ?? []) fn(JSON.stringify(body));
     for (const fn of listeners['end'] ?? []) fn();
   });
   return req as http.IncomingMessage;
 }
+
+/** Human-only accept: the route now requires an explicit human principal. */
+const HUMAN = { kind: 'human', method: 'human-token' };
 
 function makeDeps(overrides: Record<string, any> = {}) {
   const deps: any = {
@@ -56,9 +60,9 @@ function makeDeps(overrides: Record<string, any> = {}) {
   return { ...deps, ...overrides };
 }
 
-async function call(deps: any, body: any, method = 'POST') {
+async function call(deps: any, body: any, method = 'POST', principal: any = HUMAN) {
   const res = mockRes();
-  const handled = await handlePods(mockReq(method, body), res, '/api/pods/pod_1/goals/g1/accept', deps);
+  const handled = await handlePods(mockReq(method, body, principal), res, '/api/pods/pod_1/goals/g1/accept', deps);
   return { handled, res, json: res.body ? JSON.parse(res.body) : null };
 }
 
@@ -99,8 +103,16 @@ describe('POST /api/pods/:podId/goals/:goalId/accept', () => {
 
   it('rejects an agent actor instead of letting it merge', async () => {
     const deps = makeDeps();
-    const out = await call(deps, { revision: 1, confirm: true, actorSessionID: 'ses_agent' });
+    const out = await call(deps, { revision: 1, confirm: true, actorSessionID: 'ses_agent' }, 'POST', HUMAN);
     expect(out.res.status).toBe(403);
+    expect(deps.goals.acceptResult).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-human principal (service tolerance is gone)', async () => {
+    const deps = makeDeps();
+    const out = await call(deps, { revision: 1, confirm: true }, 'POST', { kind: 'service', method: 'api-token' });
+    expect(out.res.status).toBe(403);
+    expect(out.json).toMatchObject({ code: 'human_principal_required' });
     expect(deps.goals.acceptResult).not.toHaveBeenCalled();
   });
 

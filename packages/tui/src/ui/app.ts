@@ -2,13 +2,13 @@ import {
   ProcessTerminal, TuiAltScreen, VStack, Container, Text, SelectList, matchesKey, Key,
   type Component, type OverlayHandle, type TUI, type SelectItem,
 } from '@earendil-works/pi-tui'
-import { MafwClient } from '@mafw/sdk'
 import { basename } from 'node:path'
 import { TabStrip, TABS, type TabId } from './tab-strip.ts'
 import { StatusBar, type StatusState } from './status-bar.ts'
 import { AppModel } from './app-model.ts'
 import { showAgentPickerWith } from './agent-items.ts'
 import { ConnectionStore, type ConnState } from '../store/connection.ts'
+import { createTuiClient } from '../store/human-token.ts'
 import { ChatStore } from '../store/chat-store.ts'
 import { ChatTab, selectListTheme } from './chat-tab.ts'
 import { createSlashHandler } from './slash-commands.ts'
@@ -59,7 +59,7 @@ export interface AppOptions {
 }
 
 export async function runApp(opts: AppOptions): Promise<void> {
-  const client = new MafwClient(opts.baseUrl)
+  const client = createTuiClient(opts.baseUrl)
   const model = new AppModel()
   const terminal = new ProcessTerminal()
   const tui = new TuiAltScreen(terminal)

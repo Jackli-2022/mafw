@@ -37,7 +37,6 @@ import {
   TriageNamespace,
   AutomationsNamespace,
   MafwClient as MafwClientInterface,
-  MafwClientOptions,
 } from "./index"
 
 test("exports MafwClient class", () => {

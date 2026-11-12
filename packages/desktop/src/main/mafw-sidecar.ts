@@ -4,8 +4,8 @@ import { randomUUID } from "node:crypto"
 import { dirname, join } from "node:path"
 import { connect } from "node:net"
 import { app } from "electron"
-import { MafwClient } from "@mafw/sdk"
 import { write as writeLog } from "./logging"
+import { createGatewayClient } from "./human-token"
 import { probeMafwCli } from "./mafw-cli-probe"
 import { planGatewayStart, type GatewayStartPlan } from "./mafw-gateway-plan"
 import { planManagedGatewaySpawn } from "./managed-gateway-spawn"
@@ -145,7 +145,7 @@ function notifyState(next: GatewayState) {
 
 async function checkHealth(url: string): Promise<boolean> {
   try {
-    const client = new MafwClient(url)
+    const client = createGatewayClient(url)
     await client.project.current()
     return true
   } catch {
@@ -182,7 +182,7 @@ async function readGatewayHealth(
     // same process, otherwise this is a different server on a reused port.
     if (discovery && !healthMatchesDiscovery(health, discovery)) return null
     try {
-      await new MafwClient(url).project.current()
+      await createGatewayClient(url).project.current()
     } catch {
       return null
     }

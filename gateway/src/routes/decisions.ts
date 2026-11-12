@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import type { RouteRegistry } from './registry';
+import { humanOnlyDenied, isHumanPrincipal } from '../core/auth';
 import {
   DecisionRecordError,
   type DecisionRecordService,
@@ -62,7 +63,10 @@ export function handleDecisionMutation(
   id: string,
   body: Record<string, unknown>,
   deps: DecisionRouteDeps,
-): { status: number; body: { record: unknown } | { error: string } } {
+  /** E5a-2: resolved human principal (route passes `isHumanPrincipal(req.mafwPrincipal)`). */
+  human: boolean,
+): { status: number; body: { record: unknown } | { error: string; code?: string } } {
+  if (!human) return humanOnlyDenied();
   if (actorOf(body)) {
     return { status: 403, body: { error: 'decision confirmation is human-only' } };
   }
@@ -120,7 +124,13 @@ export function attachDecisionRoutes(registry: RouteRegistry, deps: DecisionRout
   ) => {
     try {
       const body = JSON.parse(await readBody(req) || '{}');
-      send(res, handleDecisionMutation(action, params.id ?? '', body, deps));
+      send(res, handleDecisionMutation(
+        action,
+        params.id ?? '',
+        body,
+        deps,
+        isHumanPrincipal((req as IncomingMessage & { mafwPrincipal?: any }).mafwPrincipal),
+      ));
     } catch {
       send(res, { status: 400, body: { error: 'invalid JSON body' } });
     }

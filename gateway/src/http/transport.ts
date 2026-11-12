@@ -2,13 +2,14 @@
  * HTTP transport — the gateway request listener (D3 Task 3, ruling D3-R3).
  *
  * This is the body of the callback that used to live inline in
- * `MafwScheduler.startApiServer()`: CORS + OPTIONS, apiToken auth, registry
- * dispatch, plugin-web wildcard, file-history, the A2A endpoints, MCP (legacy
+ * `MafwScheduler.startApiServer()`: CORS + OPTIONS, principal auth (human /
+ * device / service / local), registry dispatch, plugin-web wildcard,
+ * file-history, the A2A endpoints, MCP (legacy
  * SSE + StreamableHTTP), the dashboard SPA, the dashboard joint catch-all,
  * /register, /control, /health, the reverse proxy and the outer 500 catch.
  *
  * Ordering is load-bearing and preserved EXACTLY (spec §4 / AGENTS.md §6.5):
- *   OPTIONS(204) → apiToken auth(401) → registry dispatch → plugin web →
+ *   OPTIONS(204) → principal auth(401 for anonymous) → registry dispatch → plugin web →
  *   file history → transport branches → dashboard joint catch-all →
  *   /register → /control → /health → reverse proxy → 500.
  * The dashboard joint still sits before the transport-level `/control` branch.
@@ -30,10 +31,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
-import { authorizeRequest, isLoopbackAddr } from '../core/auth';
+import { isLoopbackAddr, resolvePrincipal } from '../core/auth';
 import { errorBody, API_ERROR_CODES } from '../core/http/api-error';
 import { handleGoalControlCommand } from '../core/goal/control-command';
-import { readBody } from '../core/http/http-util';
+import { readBody, PAIRING_VERIFY_MAX_BODY_BYTES } from '../core/http/http-util';
 import { log } from '../core/utils/logger';
 import { injectServeAuth } from '../runtime/proxy-auth';
 import { QuotaExceededError } from '../resources/quotas';
@@ -100,6 +101,13 @@ export interface TransportDeps {
   /** `(config.raw as any)?.server?.apiToken || ''` — live (config is reloadable). */
   apiToken(): string;
   /**
+   * E5a: `~/.mafw/human.token` — live getter (empty when the file is missing /
+   * unreadable → human-only actions fail closed).
+   */
+  humanToken?: () => string;
+  /** E5a: device-token verifier (Task 3 wires this to the DeviceStore). */
+  verifyDeviceToken?: (token: string) => { deviceId: string } | null;
+  /**
    * E3-5: schema epoch from release metadata (`releaseMetadata.schemaEpoch`).
    * null = release metadata not loaded yet → no response header, no enforcement.
    */
@@ -133,6 +141,22 @@ export interface TransportDeps {
  * `GET /a2a/artifacts/<id>` — the prefix + single-segment form of the former
  * `^/a2a/artifacts/([^/]+)$` (same anchoring: non-empty id, no further slash).
  */
+/**
+ * E5a (F6): the reverse proxy forwards to the agent backend, which must never
+ * receive gateway human/device credentials. Header names are matched
+ * case-insensitively because callers/tests may not pre-lowercase them.
+ */
+function withoutCredentialHeaders(headers: http.IncomingHttpHeaders): http.IncomingHttpHeaders {
+  const out: http.IncomingHttpHeaders = { ...headers };
+  for (const key of Object.keys(out)) {
+    const lower = key.toLowerCase();
+    if (lower === 'x-mafw-human-token' || lower === 'x-mafw-device-token') {
+      delete (out as Record<string, unknown>)[key];
+    }
+  }
+  return out;
+}
+
 export function matchArtifactId(url: string): string | null {
   // 字面量前缀保留在 startsWith 里：api-contract 的源码路由面扫描靠它覆盖
   // catalog 的 `GET /a2a/artifacts/:id`（media.artifact）。
@@ -171,10 +195,44 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
     // Loopback detection (delegated to core/auth.ts)
     const isLoopback = isLoopbackAddr(req.socket.remoteAddress || '');
 
-    // API token auth: required for non-loopback connections when a token
-    // is configured (MAFW_SERVER_API_TOKEN). Loopback connections bypass.
+    // E5a principal auth: human token → device token → shared apiToken →
+    // loopback → anonymous. human/service/local pass ordinary routes; only
+    // `anonymous` is rejected here (human-only checks live in the routes).
     const apiToken = deps.apiToken();
-    if (!authorizeRequest({ remoteAddress: req.socket.remoteAddress || '', headers: req.headers as any, url: req.url, host: String(req.headers.host || '') }, apiToken)) {
+    const principal = resolvePrincipal(
+      {
+        remoteAddress: req.socket.remoteAddress || '',
+        headers: req.headers as any,
+        url: req.url,
+        host: String(req.headers.host || ''),
+      },
+      {
+        apiToken,
+        humanToken: deps.humanToken?.() ?? '',
+        verifyDeviceToken: deps.verifyDeviceToken,
+      },
+    );
+    (req as any).mafwPrincipal = principal;
+    // E5a-3: `POST /api/mobile/pairing/verify` is credential-less by design —
+    // the single-use nonce is the credential. Only this exact route skips the
+    // 401; no human/service principal is granted and every other anonymous
+    // request still 401s.
+    const pairingVerifyRequest = req.method === 'POST'
+      && pathname.replace(/\/+$/, '') === '/api/mobile/pairing/verify';
+    if (pairingVerifyRequest) {
+      // F6: transport-owned marker — registry dispatch refuses this operation
+      // without it, so a direct dispatcher cannot bypass the transport.
+      (req as any).mafwPairingVerify = true;
+      // F2: cap the unauthenticated body before dispatch. Chunked requests
+      // (no content-length) are capped again by the route's reader.
+      const declaredLength = Number(req.headers['content-length']);
+      if (Number.isFinite(declaredLength) && declaredLength > PAIRING_VERIFY_MAX_BODY_BYTES) {
+        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(errorBody('payload too large', API_ERROR_CODES.payload_too_large)));
+        return;
+      }
+    }
+    if (principal.kind === 'anonymous' && !pairingVerifyRequest) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(errorBody('unauthorized', API_ERROR_CODES.unauthorized)));
       return;
@@ -483,8 +541,9 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
       const proxyUrl = new URL(url || '/', serveUrl);
       const proxyReq = http.request(proxyUrl, {
         method: req.method,
-        // 2.1.0：serve 强制 Basic——剔除入站 Authorization 后注入 serve 凭证
-        headers: { ...injectServeAuth(req.headers, deps.proxyHeaders()), host: proxyUrl.host },
+        // 2.1.0：serve 强制 Basic——剔除入站 Authorization 后注入 serve 凭证。
+        // E5a：human/device 凭据也不转发给后端。
+        headers: { ...injectServeAuth(withoutCredentialHeaders(req.headers), deps.proxyHeaders()), host: proxyUrl.host },
       }, (proxyRes) => {
         res.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
         proxyRes.pipe(res);
