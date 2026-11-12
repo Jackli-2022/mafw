@@ -922,6 +922,88 @@ kernel 的 watchdog/heartbeat/queue-sweep/session-sweep 等自有 interval 与�
 - 插件/manager 会话的配额副作用（内部会话失败当前降级为 log；未给 UI 明确 429 文案）。
 - review-items 的 SDK 债务：4 个 `pods.goals.reviewItems*` op 仍只在 `DEAD_CONTRACT_TODO` 里（见 release 记录）。
 
+## E5a 身份闭环（2026-11-12）
+
+> 把「人类专属动作」从隐式约定（**没带 `actorSessionID` 就算人类**）升级为**显式 human/device 凭据**；
+> 移动端从共享网关 token 升级为**可撤销的 per-device token**；desktop/TUI 在主进程读
+> `~/.mafw/human.token` 并以 `X-MAFW-Human-Token` 注入。普通 API 的 loopback / 共享 token
+> 行为逐字不变，只有 human-only 判定收紧（**breaking**，按安全修复记录）。
+> spec：`docs/superpowers/specs/2026-11-12-gateway-e5a-identity-closure-design.md`；
+> 交付记录：`docs/releases/2026-11-12-gateway-e5a-identity.md`。
+
+### Principal 矩阵
+
+| principal | 凭据 | 普通 API | human-only |
+|---|---|---|---|
+| `human` | `X-MAFW-Human-Token: <64 hex>`（`~/.mafw/human.token`） | 放行（method `human-token`） | **放行** |
+| `human` | `X-MAFW-Device-Token: dev_…` 或 `Authorization: Bearer dev_…` | 放行（method `device-token`，带 `deviceId`） | **放行**（`deviceId` 同时供 push presence 用） |
+| `service` | 共享 `server.apiToken`：`Authorization: Bearer` / `X-API-Token` / `?token=` | 放行 | 403 |
+| `local` | loopback（127.0.0.0/8、`::1`）且无凭据 | 放行 | 403 |
+| `anonymous` | 非 loopback 且无有效凭据 | 401 | 401 |
+
+解析顺序（`core/auth.ts` 的 `resolvePrincipal`，顺序本身是契约）：
+
+1. human token 命中 → `human`（长度相等后 `crypto.timingSafeEqual`；空 token / 文件不可读永不匹配）；
+2. device token（显式头优先，其次 `Bearer dev_…`）命中 DeviceStore → `human`；**验证失败不中止**，继续往下走——过期/已撤销的设备头不会压掉合法共享 token（只是不再授予 human）；
+3. 共享 apiToken 命中 → `service`；
+4. loopback → `local`；其余 → `anonymous`（transport / WS upgrade 直接 401）。
+
+- principal 由 transport / WS upgrade 挂在 `req.mafwPrincipal`（`core/auth.ts` 的 `http.IncomingMessage` module augmentation）；WS 连接在 socket 上暴露 principal，且**凭据里的 `deviceId` 覆盖 `?deviceId=` 查询串**（query 仅兼容保留）。
+- 反向代理（`/api/*` → agent backend）**剥掉** `x-mafw-human-token` / `x-mafw-device-token`，凭据不外溢给 runtime。
+- `redactLog` 覆盖 `Bearer` / `?token=` / 两个新头（header 与 JSON 两种形状）与任意 `dev_…`；64 hex **不**做泛化脱敏（hash/commit 常见），human token 只经具名头泄漏。
+- `registry-dispatch` 只接受 transport 已解析的 principal kind（`human|service|local`）；畸形/未知 kind fail-closed 回既有 `authorizeRequest`。`POST /api/mobile/pairing/verify` 是唯一免凭据路由，且必须由 transport 打上 `mafwPairingVerify` 标记（nonce 即凭据，直调 dispatcher 不能自我授权）。
+- `authorizeWsUpgrade` **已废弃**（`@deprecated`，无生产调用）；`authorizeRequest` 仍服务只需 service/local 判定的既有调用。
+
+### human token
+
+- 固定 `~/.mafw/human.token`（数据根，不随 cwd）；**32 字节随机 = 64 位小写 hex**。不存在则生成；格式不合法则重生成；合法则**稳定复用**。
+- 原子写：`.tmp`（`open(w, 0o600)`）→ `write` → `fsync` → `rename` → `chmod 0600`（POSIX 尽力）；Windows 依赖用户目录 ACL。写失败抛错，kernel `initServices` `log.warn` 后以**空 token** 继续——human-only fail-closed（403），普通 API 不受影响。
+- desktop：`packages/desktop/src/main/human-token.ts` 的 `readHumanToken()`（trim + 64 hex 校验，失败返回 `''`，不抛不日志）+ `createGatewayClient()` 统一构造 `MafwClient({ clientToken })`；token **不进入 renderer / preload / 插件 web / 日志**。`MAFW_HUMAN_TOKEN_FILE` 只是测试/隔离 dev 的路径覆盖。
+- TUI：`packages/tui/src/store/human-token.ts` 同语义 + `createTuiClient()`；human-only 动作失败时直接显示 gateway 403。
+- SDK：`MafwClientOptions.clientToken?` / `headers?`；`request()` 合并顺序 `Content-Type` → `options.headers` → `clientToken` → 调用点 headers；空/空白 `clientToken` 不发头；`fetchPath`（SSE / 二进制 / 媒体流）**不带** token 与 base headers。
+
+### 设备凭据（A13）
+
+- 配对码 v2：`orcalore://pair?url=<base>&v=2&exp=<ms>&nonce=<hex>`，**不含任何网关凭据**；nonce 一次性、TTL 5min、5/min/IP（loopback 免限频），只存 sha256。`PairingConfig.apiToken` 保留为 deprecated 参数，不再出现在链接/响应里。
+- `POST /api/mobile/pairing/verify` body `{ nonce, deviceId?, platform?, deviceName?, rotate? }`：
+  - 先校验 deviceId / platform / deviceName 边界（128 / 40 / 100 字符，deviceId `[A-Za-z0-9._:-]`）→ 400；body 上限 **8192 B** → 413 `payload_too_large`；pairing/push 服务不可用 → 503（nonce 未消费，可重试）；
+  - `deviceId` 已持有凭据且 `rotate !== true` → **409** `{ code:'device_already_paired' }`，nonce **不消费**；
+  - 消费 nonce → 生成 `dev_` + 32 字节 base64url → DeviceStore 只写 `sha256(token)` 与 `tokenIssuedAt` → `200 { ok:true, token, deviceId }`。
+- 认证：`Authorization: Bearer dev_…` 或 `X-MAFW-Device-Token: dev_…`；验证成功 principal 为 `human` + `deviceId`（`X-MAFW-Device-Token` 不是网关共享 token 的别名）。
+- 设备记录：`deviceTokenHash` / `tokenIssuedAt` / `deviceName` 均可选；列表与注册响应一律走 `listPublicDevices()`（`deviceTokenHash`、`apiTokenHash` 不出网关，含 legacy `GET /api/devices`）；`MAX_DEVICES` 600。
+- 轮换 / 撤销：同 `deviceId` 再签发即轮换（旧 token 立即失效）；`DELETE /api/mobile/devices/:id` 与 legacy `DELETE /api/devices/:id` 删条目即撤销，并 **terminate 该设备的在线 WS**（`PushGateway.removeOnlineWs`）；`revokeDeviceToken` 只清凭据、保留推送注册。
+- 推送注册不吊销凭据（`DeviceStore.register` 保留 `deviceTokenHash` / `tokenIssuedAt` / `deviceName`）；凭据使用会刷新 `lastSeen`，落盘 ≤1 次/小时（避免每请求重写，同时让 REST-only 设备不被 stale 清理误删）。
+- 旧记录（无 `deviceTokenHash`）仍可列出/推送，但**不能**作为 human 凭据；重新配对补齐。`deviceId` 已存在但无凭据（push-only）的条目可免 `rotate` 直接配对。
+
+### human-only 路由
+
+统一 helper：`isHumanPrincipal(p)` / `humanOnlyDenied()`；403 body `{ error:'human principal required', code:'human_principal_required' }`。
+
+| 路由 | 动作 |
+|---|---|
+| `POST /api/pods/:podId/goals/:goalId/accept` | 验收（merge） |
+| `POST /api/pods/:podId/goals/:goalId/review-items`（create / resolve / reopen） | review item 写 |
+| `POST /api/decisions/:id/confirm` / `shelve` / `reopen` | decision 状态变更 |
+| `POST /api/goal-runs/:id/approve` | 长效目标 run 批准 |
+
+- 判定 **fail-closed**：缺失 principal（直调 handler 的测试路径）、`service`、`local`、`anonymous` 一律 403；`human` + `actorSessionID` 仍 403（既有审计检查保留，防人类 UI 误用 agent 上下文）。
+- 普通写路径（goal create / task / memory / …）**不要求** human，继续使用 service/local。
+
+### 兼容 / 威胁模型
+
+- **普通 API 不变**：loopback 与共享 apiToken 的既有三通道、401/403 语义逐字保留；新增的只有 human-only 的收紧与 403 的 `code` 字段。
+- **Breaking（安全修复）**：human-only 从「缺省即人类」变为「必须 human/device 凭据」。旧 desktop/TUI 不读 token → 这些动作 403；旧 mobile 用共享 token → 普通 API 可用，human-only 需重新配对。
+- **发布顺序**：v2 gateway 必须与支持 v2 的 mobile 同批发布（旧 app 解析不了无 token 的 v2 链接）。网关先上时，已配对设备要在下一次重配对拿到 device token 后才能做 human-only；删除设备会立即断开其在线 WS，客户端按断线退避重连，但不会自动重配对。
+- **威胁模型**：human token 与 gateway 同一 OS 用户，本机恶意进程可读；E5a 防的是 **agent/自动化误调用、误审批被当成人类**，不是本机隔离。device token 可撤销；共享 apiToken 仍是全权 service 凭据（本波不轮换）。
+
+### 已知延后（不在 E5a 范围）
+
+- 计划批准（plan-approval）、triage、Lead 边界、permission approvals 仍是 service/local 可调，**尚未** human-gated。
+- MCP 工具集**没有** human 工具（也不提供验收/批准工具）；human-only 动作只走 HTTP（desktop/TUI/移动）。
+- `authorizeWsUpgrade` 仅标记 deprecated，未删除（测试与旧调用方仍引用）。
+- human token 的 OS keychain / 进程签名、per-owner fencing 留给后续。
+- E5b（C1 event_log 恢复源 / mobile 游标）与 E6（单点扇出 / 实体缓存 / 事件增量）不在本波。
+
 ---
 
 ## API 端点

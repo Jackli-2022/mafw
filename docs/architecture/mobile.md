@@ -235,13 +235,13 @@ mafw logs
 ```
 
 - **事件回放**：SSE 支持 `Last-Event-ID`/`?since`；**移动端 WS 无回放**——重连后必须 refetch（Plan B Task 5 的 `onReconnected` 信号，缺失即「事件凭空丢失」类 bug 的根因）；
-- **配对**：`GET /api/mobile/pairing-code` 生成的 URL 必须含 `orcalore://pair`（改名后）且 host 不是 `127.0.0.1`；`POST /api/mobile/pairing/verify` 404/400 = nonce 过期或已消费。
+- **配对**：`GET /api/mobile/pairing-code` 生成的 URL 必须含 `orcalore://pair`（改名后）且 host 不是 `127.0.0.1`；`POST /api/mobile/pairing/verify` 400 = nonce 过期/已消费或 deviceId 越界，404 = 老网关没有该路由（v1 链接 + 手动回退），**409 `device_already_paired`** = 该 `deviceId` 已有凭据但未带 `rotate:true`（重新配对必须显式轮换）。
 
 ### 7.6 故障速查（v1 场景补充）
 
 | 现象 | 排查 |
 |---|---|
-| `401 unauthorized`（远端） | `server.apiToken` 未设（空 token 远端全拒）或 App token 不匹配；配对码 token 取自生成时刻配置——改 token 后必须重新配对 |
+| `401 unauthorized`（远端） | `server.apiToken` 未设（空 token 远端全拒）或只带共享 token；v2 配对后的 App 应改用 `dev_…` 设备 token（`ConnectionConfig.apiToken` 存的就是它）。设备 token 被删除/轮换后旧值立即 401 → 重新扫码配对（带 `rotate:true`） |
 | `CLEARTEXT communication not permitted` | 原生网络栈（TTS/ExoPlayer 等）受 NSC 约束：`network_security_config.xml` 的 ts.net 域必须带 `includeSubdomains="true"`（否则子域回落到 base-config），或用的是裸 `100.x` IP（域条目只匹配主机名 → 改用 MagicDNS 主机名）；Dart/`package:http` 请求不走 NSC，公网明文由应用层 `UrlCheck.publicPlaintext` 拒绝 |
 | `SocketException` / 连接拒绝 | 手机 Tailscale 未连/被省电杀掉；MagicDNS 解析失败（「Use Tailscale DNS」关闭）；gateway 未启动（`mafw status`） |
 | 扫码无反应 | 深链 scheme 不匹配（`orcalore://` vs 旧 `mafw://`）；nonce 过期（5min）或已被消费 |
