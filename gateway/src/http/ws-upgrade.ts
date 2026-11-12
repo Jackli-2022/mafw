@@ -6,8 +6,9 @@
  * single `server.on('upgrade')` fan-out, in the original order:
  *   voice (isVoiceUpgradePath) → terminal (matchTerminalConnectUrl) →
  *   plugin (parsePluginWsUrl) → /api/ws (mobile events + send).
- * Auth stays per-route: voice//api/ws use authorizeWsUpgrade (loopback bypass),
- * terminal is loopback-only, plugin auth lives in the handler.
+ * Auth stays per-route: voice//api/ws use `resolvePrincipal`
+ * (human/device/service/local; anonymous → raw 401), terminal is loopback-only,
+ * plugin auth lives in the handler.
  *
  * Timers: the 30s heartbeat (2 missed pongs → terminate) and the 60s
  * PushGateway maintenance are unref'ed and — before this extraction — never

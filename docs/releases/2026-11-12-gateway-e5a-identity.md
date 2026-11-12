@@ -24,7 +24,10 @@
 | `48a5b2f1` | batch3a review | `createGatewayClient`/`createTuiClient` 单入口；fake-fetch 断言真实注入；`clientToken` trim；`fetchPath` 不带 token/base headers |
 | `b8dbf228` | E5a-5 | mobile `pairing_link` v2/v1、`device_identity` 稳定 deviceId、`pairing_flow` verify 换 token、后台 WorkManager 凭据镜像 |
 | `38f2b525` | batch3b review | 重配对 rotate 与 baseUrl 解耦 + 409 重试；PairingPage 编排测试；缺凭据 fail-closed；15s 超时 + 错误文案；deviceId 128 边界 |
-| 本次收口 | E5a-6 | 架构/release 收口 + 全量门禁（commit 见 ledger `progress.md`） |
+| `458b4bf4` | E5a-6 | 架构/release 收口（docs-only） |
+| `71df4462` | E5a-6 | 修正 gateway tsc 门禁口径（docs-only） |
+| `2c416a95` | final review | `GET /api/mobile/pairing-code` 要求 human principal（堵住 service/local → nonce → device token 越权）；路由矩阵 + transport 端到端 |
+| 本次 docs 同步 | final review | release / 架构 / ledger 同步（docs-only） |
 
 ## 交付项
 
@@ -32,7 +35,7 @@
   `human`（human token / device token）、`service`（共享 `server.apiToken`）、`local`（loopback 无凭据）、
   `anonymous`。解析顺序 human → device → apiToken → loopback → anonymous，全部常数时间比较；
   失败/畸形一律 fail-closed。human-only 路由（accept、review-items create/resolve/reopen、
-  decision confirm/shelve/reopen、goal-runs approve）只认 `kind === 'human'`，
+  decision confirm/shelve/reopen、goal-runs approve、mobile pairing-code）只认 `kind === 'human'`，
   403 `{ error:'human principal required', code:'human_principal_required' }`；
   `actorSessionID` 仍作为审计字段并继续 403。
 - **A13（per-device 凭据）**：配对码 v2 `orcalore://pair?url&v=2&exp&nonce` 不含网关凭据；
@@ -63,9 +66,15 @@
 6. **新增错误 `code` / 413**：human-only 403 增加 `code`；pairing-verify body > 8192 B → 413
    `payload_too_large`（其余路由不变）。
 7. **Additive**：`MafwClientOptions.clientToken/headers`、设备记录 `deviceName`、human-only 403 `code`；
-   反向代理剥离两个凭据头（不对 agent backend 外溢）。
+   反向代理剥离两个凭据头（不对 agent backend 外溢）；`MAFW_HUMAN_TOKEN_FILE`（desktop/TUI 仅读取端的
+   路径覆盖，供测试/隔离 dev 使用，不是网关配置键，生产仍固定 `~/.mafw/human.token`）。
 8. **契约面无变更**：无 catalog 增删；重生成 `emit:openapi`（315 routes → 281 paths / 315 operations）
    与 `merge-contract.mjs` 内容无 diff（工作区仅 CRLF→LF 归一化，已还原）。
+9. **配对码生成 human-only（安全修复，final review F1）**：`GET /api/mobile/pairing-code` 需要
+   human token（desktop/TUI 已带）或 device token；`service`（共享 apiToken / agent / MCP）、`local`
+   （旧 desktop/TUI 未升级、未读 human token）与 anonymous 一律 403 `human_principal_required`，
+   且拒绝发生在调用 pairing service 之前（不耗限频）。这堵死「service 铸 nonce → 未认证 verify
+   → device token → human-only」的提权链。旧客户端只影响配对，普通 API 不受影响。
 
 ## 安全说明
 
@@ -78,7 +87,7 @@
   **agent/自动化误调用、误审批被当成人类**，不是本机隔离。共享 apiToken 仍是全权 service 凭据（未轮换）。
 - **失败模式**：human token 不可读 → human-only 403（普通 API 正常）；DeviceStore 损坏 → 设备凭据全部失效（重新配对）。
 
-## 验证（worktree @ E5a-6 文档改动后）
+## 验证（worktree @ E5a-6 文档改动后；final review 复验见末行）
 
 | 门 | 命令 | 结果 |
 |---|---|---|
@@ -98,12 +107,14 @@
 | 路由扫描 | `node scripts/analyze-routes.cjs`（`gateway/`） | **TOTAL 0 (match 0, equals 0)** |
 | kernel-split 守卫 | `jest tests/unit/architecture/kernel-split-guards.test.ts` | **7/7 passed** |
 | 契约产物新鲜度 | `npm run emit:openapi`（`gateway/`）+ `node scripts/merge-contract.mjs`（SDK） | **内容无 diff**（281 paths / 315 operations；仅 CRLF→LF 工作区归一化） |
+| final review 定向复验 | `node node_modules/jest/bin/jest.js tests/unit/routes/devices-credentials.test.ts tests/unit/routes/devices-mobile-wiring.test.ts tests/unit/core/ tests/unit/http/ --no-coverage --runInBand --forceExit`（`gateway/`） | **42 suites / 372 passed / 1 skipped / 0 failed**（exit 0） |
+| final review 类型 | `node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json`（`gateway/`，gateway-local TS 5.9.3） | **0 errors**（与上表同口径，未变） |
 
 ## 新增测试（对基线 `54f8e78d` 的增量）
 
 | 面 | 新增 | 依据 |
 |---|---|---|
-| gateway | **+155** | 15 个改动测试文件：HEAD 224 例 vs 基线 69 例（7 个新文件 146 例 + 既有文件 +9 例；新文件：`human-token` 9、`principal` 28、`principal-auth` 23、`human-only-guards` 36、`device-store-credentials` 18、`pairing-v2` 5、`devices-credentials` 27） |
+| gateway | **+163** | 15 个改动测试文件：HEAD 232 例 vs 基线 69 例（7 个新文件 146 例 + 既有文件 +17 例；新文件：`human-token` 9、`principal` 28、`principal-auth` 23、`human-only-guards` 36、`device-store-credentials` 18、`pairing-v2` 5、`devices-credentials` 34；final review 新增 `pairing-code` 矩阵 6 + 端到端 1 + wiring 1） |
 | SDK | **+12** | 217 → 229（`client-token.test.ts` + types） |
 | desktop | **+14** | 3503 → 3517（`human-token.test.ts`、`human-token-wiring.test.ts`） |
 | TUI | **+9** | `app-wiring` 4 → 5，新增 `human-token.test.ts` 8 |

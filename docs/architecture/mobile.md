@@ -80,7 +80,7 @@ Firebase Test Lab / BrowserStack / AWS Device Farm 上传 APK 跑真机矩阵；
 [Gateway 3000] — /api/mobile/* + mDNS(_mafw._tcp) + WS /api/ws
 ```
 
-- **配对**：`v=2` 链接为 `orcalore://pair?url&v=2&exp&nonce`（无凭据）；App 以稳定 `deviceId`（SharedPreferences `mafw_device_id`，32 hex）调 `POST /api/mobile/pairing/verify` 换可撤销设备 token（`dev_…`）并存 `ConnectionConfig`；`v=1` 旧链接仍解析并要求内嵌 `token`（手动 url+token 回退同样保留）。一次性、TTL 300s、5/min/IP 限频、nonce 哈希存储（2026-11-06 改名；旧 `mafw://pair` 仅历史）。重配对（同 baseUrl 已有本地 token）带 `rotate:true`；WorkManager 后台明文副本（`mafw_bg_*`）在保存时同步为同一设备 token。
+- **配对**：`v=2` 链接为 `orcalore://pair?url&v=2&exp&nonce`（无凭据）；App 以稳定 `deviceId`（SharedPreferences `mafw_device_id`，32 hex）调 `POST /api/mobile/pairing/verify` 换可撤销设备 token（`dev_…`）并存 `ConnectionConfig`；`v=1` 旧链接仍解析并要求内嵌 `token`（手动 url+token 回退同样保留）。一次性、TTL 300s、5/min/IP 限频、nonce 哈希存储（2026-11-06 改名；旧 `mafw://pair` 仅历史）。重配对（本地已有任一 token，与 baseUrl 无关）带 `rotate:true`；WorkManager 后台明文副本（`mafw_bg_*`）在保存时同步为同一设备 token。`GET /api/mobile/pairing-code` 是 **human-only**（desktop/TUI 带 human token；service/local → 403），否则可铸 nonce 再换设备 token 越权。
 - **连接**：Tailscale 优先（https/wss）> LAN http（仅 192.168/10.x 放行）> 手动；`MAFW_SERVER_API_TOKEN` 三通道鉴权（Bearer/x-api-token/?token）；human-only 动作需设备/人类凭据，旧共享 token 仅能普通 API（E5a）
 - **发现（P1）**：网关 `bonjour-service` 广播 `_mafw._tcp`（TXT 含 port/auth）；App `multicast_dns` 扫描，配对页自动列出同网网关
 - **配对 URL 自动探测**：网关按 环境变量 `MAFW_MOBILE_TAILSCALE_URL` > Tailscale IP > LAN IP > 127.0.0.1 生成，杜绝“手机连自己 localhost”
@@ -235,7 +235,7 @@ mafw logs
 ```
 
 - **事件回放**：SSE 支持 `Last-Event-ID`/`?since`；**移动端 WS 无回放**——重连后必须 refetch（Plan B Task 5 的 `onReconnected` 信号，缺失即「事件凭空丢失」类 bug 的根因）；
-- **配对**：`GET /api/mobile/pairing-code` 生成的 URL 必须含 `orcalore://pair`（改名后）且 host 不是 `127.0.0.1`；`POST /api/mobile/pairing/verify` 400 = nonce 过期/已消费或 deviceId 越界，404 = 老网关没有该路由（v1 链接 + 手动回退），**409 `device_already_paired`** = 该 `deviceId` 已有凭据但未带 `rotate:true`（重新配对必须显式轮换）。
+- **配对**：`GET /api/mobile/pairing-code` 是 **human-only**（需 desktop/TUI 的 human token；service/local/旧客户端 → 403 `human_principal_required`），生成的 URL 必须含 `orcalore://pair`（改名后）且 host 不是 `127.0.0.1`；`POST /api/mobile/pairing/verify` 400 = nonce 过期/已消费或 deviceId 越界，404 = 老网关没有该路由（v1 链接 + 手动回退），**409 `device_already_paired`** = 该 `deviceId` 已有凭据但未带 `rotate:true`（重新配对必须显式轮换）。
 
 ### 7.6 故障速查（v1 场景补充）
 

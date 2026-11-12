@@ -985,8 +985,10 @@ kernel 的 watchdog/heartbeat/queue-sweep/session-sweep 等自有 interval 与�
 | `POST /api/pods/:podId/goals/:goalId/review-items`（create / resolve / reopen） | review item 写 |
 | `POST /api/decisions/:id/confirm` / `shelve` / `reopen` | decision 状态变更 |
 | `POST /api/goal-runs/:id/approve` | 长效目标 run 批准 |
+| `GET /api/mobile/pairing-code` | 生成配对 nonce（否则 service/local 可铸 nonce → 未认证 verify 换 device token 越权） |
 
 - 判定 **fail-closed**：缺失 principal（直调 handler 的测试路径）、`service`、`local`、`anonymous` 一律 403；`human` + `actorSessionID` 仍 403（既有审计检查保留，防人类 UI 误用 agent 上下文）。
+- `pairing-code` 的 human 检查在调用 pairing service **之前**，被拒请求不消耗限频额度；`POST /api/mobile/pairing/verify` 仍是唯一免凭据路由（nonce 即凭据，见上）。
 - 普通写路径（goal create / task / memory / …）**不要求** human，继续使用 service/local。
 
 ### 兼容 / 威胁模型

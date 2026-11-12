@@ -2,13 +2,14 @@
  * HTTP transport — the gateway request listener (D3 Task 3, ruling D3-R3).
  *
  * This is the body of the callback that used to live inline in
- * `MafwScheduler.startApiServer()`: CORS + OPTIONS, apiToken auth, registry
- * dispatch, plugin-web wildcard, file-history, the A2A endpoints, MCP (legacy
+ * `MafwScheduler.startApiServer()`: CORS + OPTIONS, principal auth (human /
+ * device / service / local), registry dispatch, plugin-web wildcard,
+ * file-history, the A2A endpoints, MCP (legacy
  * SSE + StreamableHTTP), the dashboard SPA, the dashboard joint catch-all,
  * /register, /control, /health, the reverse proxy and the outer 500 catch.
  *
  * Ordering is load-bearing and preserved EXACTLY (spec §4 / AGENTS.md §6.5):
- *   OPTIONS(204) → apiToken auth(401) → registry dispatch → plugin web →
+ *   OPTIONS(204) → principal auth(401 for anonymous) → registry dispatch → plugin web →
  *   file history → transport branches → dashboard joint catch-all →
  *   /register → /control → /health → reverse proxy → 500.
  * The dashboard joint still sits before the transport-level `/control` branch.
