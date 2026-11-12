@@ -4,8 +4,9 @@
 /// 重拉」由 WS 决定。总线把三个可测的触发点收敛成一个信号：
 ///
 /// 1. **15s 轮询** —— 订阅方自己发起的权威全量刷新（兜底，spec §7.3）；
-/// 2. **重连** —— `WsClientV2.onReconnected`（断线期间的事件不会重放，
-///    所以必须重拉，见 Task 5）；
+/// 2. **重连** —— E5b 起由 `RecoveryCoordinator` 先 replay 补页，再调用本信号做
+///    REST 对账（`part.delta` / 状态帧不重放，仍需重拉；旧 `onReconnected`
+///    钩子保留但 `main.dart` 不再使用）；
 /// 3. **事件** —— [onEvent] 只放行 [shouldRefreshWork] 命中的帧
 ///    （`pod.updated` / `pod.event` / `run.updated` + flat `goal_node` /
 ///    `phase_transition` / `state_change` / `user_question`）。
@@ -45,7 +46,8 @@ class WorkRefreshBus extends ChangeNotifier {
     return event;
   }
 
-  /// WS 重连成功：断线期间的事件不会重放，必须重拉数据。
+  /// WS 重连成功（E5b replay 补页之后）：seq 缺失的瞬态帧不会重放，仍需 REST
+  /// 重拉对账。
   void onReconnected() => refreshWork();
 
   /// WS 事件入口：只有会改变工作面的帧才触发刷新（其余静默丢弃）。

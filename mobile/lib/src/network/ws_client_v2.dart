@@ -9,8 +9,10 @@
 /// - Maximum retry attempts (10), exponential backoff with jitter
 /// - Reset after a successful handshake
 /// - [onReconnected] hook: fires once per successful **re**-handshake (never on
-///   the first connect) so consumers can refetch events missed while offline —
-///   the gateway does not replay them.
+///   the first connect). **Superseded by [onGatewayReady]** (E5b): the greeting
+///   carries `headSeq`/`instanceId`, so the consumer replays missed events via
+///   `GET /api/events/replay` and only then refreshes; the legacy hook is
+///   suppressed whenever `onGatewayReady` is configured.
 /// - Structured [errors] stream + [onRawFrame] tap for the dev diagnostics panel
 library;
 

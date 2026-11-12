@@ -235,7 +235,12 @@ curl.exe -s -o NUL -w "%{http_code}" -H "Authorization: Bearer <token>" http://<
 mafw logs
 ```
 
-- **事件回放**：SSE 支持 `Last-Event-ID`/`?since`；**移动端 WS 无回放**——重连后必须 refetch（Plan B Task 5 的 `onReconnected` 信号，缺失即「事件凭空丢失」类 bug 的根因）；
+- **事件回放（E5b，移动端默认恢复路径）**：gateway 的 `GET /api/events/replay?since=&limit=` 按 seq **升序分页**返回 `events` 与 `headSeq/oldestSeq/hasMore/nextSince/reset/truncated`（internal，普通 API 鉴权，不要求 human）。App 用 SharedPreferences 持久化 `mafw_event_seq` + `mafw_event_instance`：
+  - **首次连接**：用 `connected` greeting 的 `headSeq` 建立 baseline（不 replay；`instanceId` 一并落盘）；
+  - **重连 / 冷启动**：`RecoveryCoordinator` 先 `await EventRecoveryService.recover()` 从持久游标逐页补齐（每页 500，上限 100 页），按 `seq` 去重（`seq <= 游标` 丢弃；recovered 帧经 `WsClientV2.emitRecovered` 回到与 live 相同的 stream），**补完之后**才刷新工作 tab 与已打开页面；
+  - **缺口无法补齐**：`reset` / `truncated` / replay 请求失败 / 旧网关 404·503 → 全量重拉（reset/truncated 把游标钉到 `headSeq`，临时失败保留旧游标下次重试）；greeting 的 `instanceId` 与存档不同 = 事件日志换纪元 → 丢弃游标、按新 head 重建 baseline 并全量重拉；
+  - `part.delta` 等 seq 缺失帧不持久、不推进游标，其丢失仍靠 REST 对账；`onReconnected` 钩子保留但 `main.dart` 已不用（配置 `onGatewayReady` 时被抑制，避免与 `RecoveryCoordinator` 重复恢复）。
+  - **已知残留**（E5b 接受）：同实例 `reset` 且新 `headSeq` **更低**时游标只抬不降 → 该次重连会重复 reset + 全量重拉（有界、不丢数据）；`hasMore` 页出现 `nextSince <= since`（契约违约）会静默结束循环，尾部小缺口被跳过且不报 fallback；busy / 后台竞态下 greeting 可能被丢弃或不做刷新（在途 replay 接管刷新）；桌面接入 replay 推迟到 E6。
 - **配对**：`GET /api/mobile/pairing-code` 是 **human-only**（需 desktop/TUI 的 human token；service/local/旧客户端 → 403 `human_principal_required`），生成的 URL 必须含 `orcalore://pair`（改名后）且 host 不是 `127.0.0.1`；`POST /api/mobile/pairing/verify` 400 = nonce 过期/已消费或 deviceId 越界，404 = 老网关没有该路由（v1 链接 + 手动回退），**409 `device_already_paired`** = 该 `deviceId` 已有凭据但未带 `rotate:true`（重新配对必须显式轮换）。
 
 ### 7.6 故障速查（v1 场景补充）
@@ -246,7 +251,7 @@ mafw logs
 | `CLEARTEXT communication not permitted` | 原生网络栈（TTS/ExoPlayer 等）受 NSC 约束：`network_security_config.xml` 的 ts.net 域必须带 `includeSubdomains="true"`（否则子域回落到 base-config），或用的是裸 `100.x` IP（域条目只匹配主机名 → 改用 MagicDNS 主机名）；Dart/`package:http` 请求不走 NSC，公网明文由应用层 `UrlCheck.publicPlaintext` 拒绝 |
 | `SocketException` / 连接拒绝 | 手机 Tailscale 未连/被省电杀掉；MagicDNS 解析失败（「Use Tailscale DNS」关闭）；gateway 未启动（`mafw status`） |
 | 扫码无反应 | 深链 scheme 不匹配（`orcalore://` vs 旧 `mafw://`）；nonce 过期（5min）或已被消费 |
-| 事件不驱动 UI | 调试面板看帧是否到达 + 解析判定；seq gap（重连）→ refetch；`pod.event` 无 projectId → 按当前项目反查归属 |
+| 事件不驱动 UI | 调试面板看帧是否到达 + 解析判定；seq gap（重连）→ E5b 先 `replay` 补页，`reset`/`truncated`/失败才 refetch；`pod.event` 无 projectId → 按当前项目反查归属 |
 | 「upgrade gateway」错误 | 历史 flat DTO 全解析失败——gateway 版本过旧或中间代理改写了响应 |
 | WS 反复断 | Tailscale 网络抖动（退避表 1/2/5/10/15/30s）；v1 明确不做后台常驻，息屏断连是预期 |
 | 讨论页 409 | revision 已终态（预期）→ 显示归档 transcript；plan-approval 409 `stale_plan` → 重拉计划 |
