@@ -68,8 +68,8 @@ test("Goal opening carries a snapshot and guards stale async requests", () => {
   assert.match(mafwShellSrc, /goalDiscussSeq/)
   assert.match(mafwShellSrc, /goalDiscussionRequestCurrent/)
   assert.match(mafwShellSrc, /openTechLead\(goalId, isCurrent\)/)
-  assert.match(mafwShellSrc, /onOpenGoal=\{\(goal, focus\) => \{ void openGoalAndDiscuss\(goal\.goalId, focus, goal\) \}\}/)
-  assert.match(mafwShellSrc, /onGoalCreated=\{\(goalId, goal\) => \{ void openGoalAndDiscuss\(goalId, "timeline", goal\) \}\}/)
+  assert.match(mafwShellSrc, /onOpenGoal=\{\(goal, focus\) => \{ openGoalFocus\(goal\.goalId, focus\) \}\}/)
+  assert.match(mafwShellSrc, /onGoalCreated=\{\(goalId\) => \{ openGoalFocus\(goalId, "timeline"\) \}\}/)
 })
 
 test("accepting a Goal explicitly returns Chat to the project Lead", () => {
@@ -92,12 +92,12 @@ test("Goal actions keep the right Goal detail open", () => {
   assert.doesNotMatch(between(goalDetailSrc, "onOpenSession={(sid) => {", "onRetry={"), /props\.onClose\(\)/)
 })
 
-test("opening a Goal enters its Tech Lead discussion without losing the Goal", () => {
+test("opening a Goal enters its focus without losing the Goal", () => {
   assert.match(mafwShellSrc, /openGoalAndDiscuss/)
   assert.match(mafwShellSrc, /shouldOpenTechLeadForGoal/)
   assert.match(mafwShellSrc, /goalDiscussionTarget/)
-  assert.match(mafwShellSrc, /onOpenGoal=\{\(goal, focus\) => \{ void openGoalAndDiscuss\(goal\.goalId, focus, goal\) \}\}/)
-  assert.match(mafwShellSrc, /onGoalCreated=\{\(goalId, goal\) => \{ void openGoalAndDiscuss\(goalId, "timeline", goal\) \}\}/)
+  assert.match(mafwShellSrc, /onOpenGoal=\{\(goal, focus\) => \{ openGoalFocus\(goal\.goalId, focus\) \}\}/)
+  assert.match(mafwShellSrc, /onGoalCreated=\{\(goalId\) => \{ openGoalFocus\(goalId, "timeline"\) \}\}/)
   assert.doesNotMatch(mafwShellSrc, /onOpenGoal=\{\(goal, focus\) => openGoalDetail\(/)
   assert.doesNotMatch(mafwShellSrc, /onGoalCreated=\{\(goalId\) => openGoalDetail\(/)
 })

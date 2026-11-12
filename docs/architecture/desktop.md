@@ -49,8 +49,18 @@
 - **检查点**：`CheckpointOverlay` 时间线（会话回滚 / 文件回滚 / both）；服务端检查点支持只读预览。
 - **托盘与存在感**：15s 轮询 `/api/presence` → tooltip / 菜单状态 / 任务栏进度；attention 差集通知
   持久化防重发；点击通知 `navigateToGoal` 跨项目打开。
-- **主题/动效**：单一 token 集（`.mafw-shell, body` 三个主题块键集一致）；`--dur-fast` 140ms /
-  `--dur-surface` 280ms；`createPresence` 折叠面过渡期挂载；reduced-motion 降级。
+- **视觉语言**：单一 token 集（`.mafw-shell, body` 三个主题块键集一致），按 primitive →
+  semantic → component 三层消费。石墨中性表面；`--action-primary-*` 独立承担实心主操作，
+  `--accent` 只负责选中/链接/focus/运行，`--success` 只负责通过/完成；禁止把三者混用。
+  边框统一 1px（普通分隔用 subtle，输入与关键控件用 strong），内容卡片不叠加装饰阴影/渐变，
+  阴影只用于浮层；圆角收敛为控件 6px、容器 10px、浮层 12px。
+- **排印/图标**：核心元信息最低 12px，正文 14px，对话 16px/1.7；路径、命令、hash、计数使用
+  mono + tabular-nums；会话关闭/新建等 chrome 控件使用已注册 SVG 图标，不再用文本字形。
+- **动效**：`--dur-press` 80ms / `--dur-fast` 120ms / `--dur-select` 180ms /
+  `--dur-enter` 220ms / `--dur-surface` 240ms / `--dur-progress` 320ms；标准曲线
+  `cubic-bezier(.2,.8,.2,1)`。循环只用于真实 running/recording/streaming/voice/waiting
+  状态，同一区域最多一个，在线/空闲不加环境呼吸或 glow；`prefers-reduced-motion` 直达终态并保留
+  状态文字。`createPresence` 折叠面过渡期挂载，规则相同。
 - **语音**：duplex v1（`/ws/voice` 持续 PCM + partial/final）、自动发送静默窗、TTS 流式 + 打断 +
   播放端背压；语音回复走 `mafw_media_speak` 标记与去重。
 - **测试**：`npm test`（node --test + `@mafw/test-shim`）；必须 `--conditions=browser`，否则 solid effect 是 no-op。

@@ -21,7 +21,7 @@ test("FocusStage dispatches through the existing surfaces", () => {
 
 test("FocusStage uses DockEmpty fallbacks and no raw controls", () => {
   assert.match(stage, /DockEmpty/)
-  assert.match(stage, /变更集舞台待接入/)
+  assert.match(stage, /ChangeSetStage/)
   assert.match(stage, /Goal 总览待接入/)
   assert.match(stage, /世界总览待接入/)
   assert.doesNotMatch(stage, /<button/)
