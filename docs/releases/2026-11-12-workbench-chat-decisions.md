@@ -43,7 +43,7 @@
 
 - 新增测试：**69 个**（决定模型、store、决定板、记录服务/路由/MCP、委托预览、代理契约、执行 badge、计划 nonce）。
 - desktop 聚焦：**59 / 59**；修复后新增回归 10 / 10。
-- desktop 全量：**3525 / 3525**，696 suites。
+- desktop 全量：**3526 / 3526**，696 suites。
 - gateway 聚焦：**29 / 29**；决定记录修复聚焦 **12 / 12**。
 - gateway 全量：**6605 / 6605**，852 suites。
 - `npx tsgo --noEmit -p tsconfig.json` rc=0
