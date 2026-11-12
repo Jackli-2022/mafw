@@ -77,7 +77,7 @@ export function EditorDock(props: {
   /** 活动文档 → 内容 surface 标签直接显示文档名。 */
   onActiveFileChange?: (rel: string | null) => void
   /** 焦点栈驱动的显式打开请求；与全局 pendingEditorOpen 分开，避免双编辑器抢消费。 */
-  openRequest?: { root: string; rel: string; nonce: number } | null
+  openRequest?: { root: string; rel: string; nonce: number; line?: number } | null
   diffs?: FileDiffEntry[]
   onSendAnnotation?: (text: string, opts?: { imageDataUrl?: string }) => void
   /** 加入批注草稿（v2：草稿优先，发送时随消息打包） */
@@ -427,7 +427,12 @@ export function EditorDock(props: {
     if (req.root !== props.contentRoot) return
     if (req.nonce === lastExplicitOpen) return
     lastExplicitOpen = req.nonce
-    void openRel(req.rel)
+    void openRel(req.rel).then(() => {
+      if (req.line === undefined) return
+      requestAnimationFrame(() => {
+        if (req.nonce === props.openRequest?.nonce) editor?.gotoLine(req.line!)
+      })
+    })
   })
 
   /** 阅读 → 临时预览（不堆 tab）；修改 → 持久 tab。 */

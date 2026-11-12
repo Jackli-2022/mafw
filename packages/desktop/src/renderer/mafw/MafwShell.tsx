@@ -1962,12 +1962,12 @@ export function MafwShell() {
   const [focusState, setFocusState] = createSignal<WorkbenchState>(
     createWorkbenchState(currentProject() ?? "unscoped"),
   )
-  const [focusOpenRequest, setFocusOpenRequest] = createSignal<{ root: string; rel: string; nonce: number } | null>(null)
+  const [focusOpenRequest, setFocusOpenRequest] = createSignal<{ root: string; rel: string; nonce: number; line?: number } | null>(null)
   const [instrumentRailOpen, setInstrumentRailOpen] = createSignal(true)
   let focusOpenNonce = 0
-  const requestFocusOpen = (root: string, rel: string) => {
+  const requestFocusOpen = (root: string, rel: string, line?: number) => {
     focusOpenNonce += 1
-    setFocusOpenRequest({ root, rel, nonce: focusOpenNonce })
+    setFocusOpenRequest({ root, rel, nonce: focusOpenNonce, line })
   }
   let workbenchFocusSnapshot: WorkbenchFocusSnapshot | null = null
   const bootWorkbench = migrateWorkbenchStorage((k) => {
@@ -2554,14 +2554,17 @@ export function MafwShell() {
       : null
     const subjectLabel =
       subject.kind === "file" ? subject.rel
-      : subject.kind === "reviewItem" ? (subject.anchor?.rel ?? "评审项")
-      : subject.kind === "changeSet" ? "变更集"
-      : subject.kind === "goal" ? (goalTitle || "Goal")
-      : subject.kind === "world" ? "世界"
-      : subject.kind === "web" ? "浏览器"
-      : subject.kind === "terminal" ? "终端"
-      : subject.kind === "plugin" ? "插件"
-      : "证据"
+      : subject.kind === "reviewItem"
+        ? subject.anchor
+          ? `${subject.anchor.rel}${subject.anchor.line !== undefined ? `:L${subject.anchor.line}` : ""}`
+          : "评审项"
+        : subject.kind === "changeSet" ? "变更集"
+        : subject.kind === "goal" ? (goalTitle || "Goal")
+        : subject.kind === "world" ? "世界"
+        : subject.kind === "web" ? "浏览器"
+        : subject.kind === "terminal" ? "终端"
+        : subject.kind === "plugin" ? "插件"
+        : "证据"
     return frameView({
       worldName: railProjectName(currentProject(), true),
       scopeLabel: focusScopeLabel(focus.scope),
@@ -2654,7 +2657,7 @@ export function MafwShell() {
         "decide",
       ),
     )
-    requestFocusOpen(scope.worktreeDir, item.rel)
+    requestFocusOpen(scope.worktreeDir, item.rel, line)
   }
 
   const instrumentRail = createMemo<JSX.Element | null>(() => {
