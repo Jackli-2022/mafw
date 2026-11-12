@@ -165,6 +165,15 @@ O(n²) 传输）。启动扫描 + fs.watch 热重载，fail-open（坏插件跳�
 `renderer/mafw/components/UserPluginCards.tsx`（代理+解释器）。示例：
 `docs/examples/ui-plugins/example-tool-cards.js`。
 
+#### 插件平面与 kernel-v2（2026-11-12，规划中）
+
+统一插件包按 **contributes 平面**区分，而不是按目录/包名：`gateway`（进程内 driver）、`desktop.ui`（声明式数据）、`desktop.web`（sandboxed webview）、`desktop.main`（legacy `~/.mafw/ui-plugins`，迁移期默认关闭/显式同意）。一个包可以同时有多个平面，gateway 与 desktop 各自只加载自己的部分；跨平面只走 action/event bridge，webview 永不接收 gateway apiToken。
+
+Phase 0/1 只做契约与 `gateway/src/kernel-v2/` 并行模块，不改变 desktop 现有行为。详见：
+
+- `docs/superpowers/specs/2026-11-12-fixed-core-capability-architecture-design.md` §4.6
+- `docs/superpowers/plans/2026-11-12-kernel-v2-phase0-1.md` Task 0.4
+
 ### 项目工作空间与自适应 Goal（2026-11-03）
 
 > **2026-11-04 supersession note**：本节的 Goal 领域语义、`work.overview` 读模型与 Lead handoff 仍有效；

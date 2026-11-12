@@ -734,6 +734,15 @@ D3 承诺内）：`initServices()`（1104 行）拆分到 `subsystems/*`、kerne
 `subsystems/` 粒度、`EventTapCallback` 类型化、三个 entry 负向 pin（`core-runtime-neutrality`
 的剥离器样本等）。
 
+### kernel-v2（2026-11-12，Phase 0/1 规划中）
+
+路线 B 已选：在 `gateway/src/kernel-v2/` 先做**进程内并行模块**，不接 live gateway、不碰 `~/.mafw`；Phase 1.5 才加独立 v2 入口（`MAFW_KERNEL_V2_PORT` + `MAFW_KERNEL_V2_DATA_DIR`）和只读 shadow。v1 `MafwScheduler` 保持默认/fallback，直到 cutover gate 通过。
+
+- 架构 spec：`docs/superpowers/specs/2026-11-12-fixed-core-capability-architecture-design.md`
+- 路线图：`docs/superpowers/plans/2026-11-12-fixed-core-capability-roadmap.md`
+- Phase 0/1 详细 plan：`docs/superpowers/plans/2026-11-12-kernel-v2-phase0-1.md`
+- 不变量 → 守卫：`docs/research/2026-11-12-kernel-v2-invariant-map.md`
+
 ---
 
 ## E1 止血（2026-11-11）

@@ -503,3 +503,14 @@ Shadow compare 基础设施是 Phase 1 的 gate deliverable，不是“以后再
 实施路线图见：
 
 `docs/superpowers/plans/2026-11-12-fixed-core-capability-roadmap.md`
+
+Phase 0/1 详细 plan：
+
+`docs/superpowers/plans/2026-11-12-kernel-v2-phase0-1.md`
+
+## 10. 评审签核
+
+- 2026-11-12：`gateway/glm-5.3` 独立审查，结论 **With fixes**；C1–C5、I1–I10、M1–M6 已修。
+- 审查记录与 Resolution 表：`docs/research/2026-11-12-glm53-architecture-spec-review.md`
+- 不变量守卫清单：`docs/research/2026-11-12-kernel-v2-invariant-map.md`
+- Phase 0/1 开工前未决项：无。新增决策必须先更新本 spec 与 invariant map。
