@@ -197,7 +197,7 @@ function dispatch(world: World, type: string, properties: any = {}, extra: any =
 describe('D2 dispatch stage table', () => {
   it('is a non-empty ordered array with unique stage names', () => {
     expect(Array.isArray(DISPATCH_STAGES)).toBe(true);
-    expect(DISPATCH_STAGES.length).toBe(23);
+    expect(DISPATCH_STAGES.length).toBe(24);
     const names = DISPATCH_STAGES.map((s) => s.name);
     expect(names.every((name) => typeof name === 'string' && name.length > 0)).toBe(true);
     expect(new Set(names).size).toBe(names.length);
@@ -218,6 +218,26 @@ describe('D2 dispatch stage table', () => {
 
   it('conformance tap runs before the internal-session drop', () => {
     expect(stageIndex('conformanceTap')).toBeLessThan(stageIndex('internalFilter'));
+  });
+
+  it('canonical observer tap runs after conformance tap and before the internal-session drop', () => {
+    expect(stageIndex('canonicalObserverTap')).toBeGreaterThan(stageIndex('conformanceTap'));
+    expect(stageIndex('canonicalObserverTap')).toBeLessThan(stageIndex('internalFilter'));
+  });
+
+  it('canonical observer tap receives normalized facets and failures are fail-open', () => {
+    const world = makeWorld();
+    const seen: string[] = [];
+    world.ctx.canonicalObserverTap = (f) => {
+      seen.push(f.type);
+      throw new Error('boom');
+    };
+    dispatch(world, MAFW.partUpdated, {
+      sessionID: 's1',
+      part: { type: 'tool', tool: 'plugin:demo:echo' },
+    });
+    expect(seen).toEqual([MAFW.partUpdated]);
+    expect(world.broadcasts.some((b) => b.data.type === MAFW.partUpdated)).toBe(true);
   });
 
   it('auto-checkpoint runs before the memoryWorker early return', () => {

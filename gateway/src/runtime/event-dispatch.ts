@@ -69,6 +69,8 @@ export interface DispatchCtx {
   unknownEventTracker(): UnknownEventTracker;
   /** Conformance event tap 表（live TtlMap，5min TTL）。 */
   eventTaps(): TtlMap<string, Set<EventTapCallback>>;
+  /** Phase 3.5: optional live canonical observer ingress (feature-flagged). */
+  canonicalObserverTap?(f: EventFacets): void;
   /** Goal 编排驱动（NodeDriver 事件侧）。 */
   goalDriver(): NodeDriver | null;
   /** busy 追踪（turn.started 置位 / 终态清除 / 事件刷新时间戳）。 */
@@ -229,7 +231,24 @@ const conformanceTap: DispatchStage = {
   },
 };
 
-// ── 7. Goal 节点监听（回合归属水位 / idle / error） ────────────────────────
+// ── 7. Phase 3.5: canonical observer ingress（feature-flagged，fail-open） ──
+const canonicalObserverTap: DispatchStage = {
+  name: 'canonicalObserverTap',
+  matches: () => true,
+  // Live bridge only exists when MAFW_KERNEL_V2_OBSERVERS=1. The bridge
+  // sanitizes the facet snapshot and enqueues it; a broken observer can never
+  // halt the pipeline. Placed after conformanceTap and before internalFilter
+  // so observers see the same pre-drop canonical surface as conformance.
+  run: (f, _evt, ctx) => {
+    try {
+      ctx.canonicalObserverTap?.(f);
+    } catch {
+      /* observer ingress is fail-open */
+    }
+  },
+};
+
+// ── 9. Goal 节点监听（回合归属水位 / idle / error） ────────────────────────
 const goalActivity: DispatchStage = {
   name: 'goalActivity',
   matches: (f) => !!f.sessionID,
@@ -262,7 +281,7 @@ const goalActivity: DispatchStage = {
   },
 };
 
-// ── 8. 回合开始置 busy（spec 2026-10-22-session-queue-inbox §5.1 v2） ─────
+// ── 9. 回合开始置 busy（spec 2026-10-22-session-queue-inbox §5.1 v2） ─────
 const turnStartedBusy: DispatchStage = {
   name: 'turnStartedBusy',
   matches: (f) => !!f.sessionID && f.type === MAFW.turnStarted,
@@ -275,7 +294,7 @@ const turnStartedBusy: DispatchStage = {
   },
 };
 
-// ── 9. runtime shell 台账 ─────────────────────────────────────────────────
+// ── 10. runtime shell 台账 ─────────────────────────────────────────────────
 const backgroundJob: DispatchStage = {
   name: 'backgroundJob',
   matches: (f) => f.type === MAFW.backgroundJobUpdated,
@@ -289,7 +308,7 @@ const backgroundJob: DispatchStage = {
   },
 };
 
-// ── 10. Approval policy（同步评估，必须先于 internal 过滤） ────────────────
+// ── 11. Approval policy（同步评估，必须先于 internal 过滤） ────────────────
 const approvalPolicy: DispatchStage = {
   name: 'approvalPolicy',
   matches: (f) => !!f.approval && !!f.sessionID,
@@ -303,7 +322,7 @@ const approvalPolicy: DispatchStage = {
   },
 };
 
-// ── 11. 规范权限字段投影（asked/replied 同一投影） ────────────────────────
+// ── 12. 规范权限字段投影（asked/replied 同一投影） ────────────────────────
 const permissionEnrich: DispatchStage = {
   name: 'permissionEnrich',
   matches: (f) =>
@@ -319,7 +338,7 @@ const permissionEnrich: DispatchStage = {
   },
 };
 
-// ── 12. 问题载荷投影 ──────────────────────────────────────────────────────
+// ── 13. 问题载荷投影 ──────────────────────────────────────────────────────
 const questionRequest: DispatchStage = {
   name: 'questionRequest',
   matches: (f) => f.type === 'question.asked' && !!f.sessionID,
@@ -332,7 +351,7 @@ const questionRequest: DispatchStage = {
   },
 };
 
-// ── 13. Turn 级身份绑定清理 ────────────────────────────────────────────────
+// ── 14. Turn 级身份绑定清理 ────────────────────────────────────────────────
 const identityClearTurn: DispatchStage = {
   name: 'identityClearTurn',
   matches: (f) => f.type === MAFW.turnCompleted && !!f.sessionID,
@@ -342,7 +361,7 @@ const identityClearTurn: DispatchStage = {
   },
 };
 
-// ── 14. 自动检查点（fire-and-forget，先于 memoryWorker 早退） ─────────────
+// ── 15. 自动检查点（fire-and-forget，先于 memoryWorker 早退） ─────────────
 const autoCheckpoint: DispatchStage = {
   name: 'autoCheckpoint',
   matches: (f) => f.type === MAFW.turnCompleted && !!f.sessionID,
@@ -356,7 +375,7 @@ const autoCheckpoint: DispatchStage = {
   },
 };
 
-// ── 15. 回合终态清理（预算 → busy → run 收尾 → 队列续发） ─────────────────
+// ── 16. 回合终态清理（预算 → busy → run 收尾 → 队列续发） ─────────────────
 const terminalCleanup: DispatchStage = {
   name: 'terminalCleanup',
   matches: (f) => TURN_TERMINALS.has(f.type) && !!f.sessionID,
@@ -381,7 +400,7 @@ const terminalCleanup: DispatchStage = {
   },
 };
 
-// ── 16. 内部会话链中丢弃（HALT；仅 turn 终态放行） ────────────────────────
+// ── 17. 内部会话链中丢弃（HALT；仅 turn 终态放行） ────────────────────────
 const internalFilter: DispatchStage = {
   name: 'internalFilter',
   matches: (f, _evt, ctx) => isMemoryWorker(f.sessionID, ctx) && !TURN_TERMINALS.has(f.type),
@@ -394,7 +413,7 @@ const internalFilter: DispatchStage = {
   run: () => 'halt',
 };
 
-// ── 17. delta 日志抑制 ────────────────────────────────────────────────────
+// ── 18. delta 日志抑制 ────────────────────────────────────────────────────
 const partDeltaLog: DispatchStage = {
   name: 'partDeltaLog',
   matches: () => true,
@@ -404,7 +423,7 @@ const partDeltaLog: DispatchStage = {
   },
 };
 
-// ── 18. 会话活跃水位 + 自更新调用者定位 ───────────────────────────────────
+// ── 19. 会话活跃水位 + 自更新调用者定位 ───────────────────────────────────
 const sessionActivity: DispatchStage = {
   name: 'sessionActivity',
   matches: (f) => !!f.sessionID,
@@ -425,7 +444,7 @@ const sessionActivity: DispatchStage = {
   },
 };
 
-// ── 19. Path T：trajectory 累加 + trajectory.event 派生广播 ───────────────
+// ── 20. Path T：trajectory 累加 + trajectory.event 派生广播 ───────────────
 const trajectoryHandle: DispatchStage = {
   name: 'trajectoryHandle',
   matches: () => true,
@@ -449,7 +468,7 @@ const trajectoryHandle: DispatchStage = {
   },
 };
 
-// ── 20. 会话压缩 flush（fire-and-forget，skip 策略） ──────────────────────
+// ── 21. 会话压缩 flush（fire-and-forget，skip 策略） ──────────────────────
 const compactionFlush: DispatchStage = {
   name: 'compactionFlush',
   matches: (f, _evt, ctx) => !!f.compaction && !!f.sessionID && !isMemoryWorker(f.sessionID, ctx),
@@ -495,7 +514,7 @@ const compactionFlush: DispatchStage = {
   },
 };
 
-// ── 21. BudgetGuard step（goal-session 硬停） ──────────────────────────────
+// ── 22. BudgetGuard step（goal-session 硬停） ──────────────────────────────
 const budgetStep: DispatchStage = {
   name: 'budgetStep',
   matches: (f) => !!f.step && !!f.sessionID,
@@ -511,7 +530,7 @@ const budgetStep: DispatchStage = {
   },
 };
 
-// ── 22. 回合聚合 + usage 合成（派生广播，先于 passthrough） ────────────────
+// ── 23. 回合聚合 + usage 合成（派生广播，先于 passthrough） ────────────────
 const turnIdleAggregate: DispatchStage = {
   name: 'turnIdleAggregate',
   matches: (f) => f.type === MAFW.turnCompleted && !!f.sessionID,
@@ -545,7 +564,7 @@ const turnIdleAggregate: DispatchStage = {
   },
 };
 
-// ── 23. 统一 passthrough 广播（恒为最后一段） ─────────────────────────────
+// ── 24. 统一 passthrough 广播（恒为最后一段） ─────────────────────────────
 const finalBroadcast: DispatchStage = {
   name: 'finalBroadcast',
   matches: () => true,
@@ -567,8 +586,8 @@ const finalBroadcast: DispatchStage = {
 
 /**
  * 有序 stage 表 —— **数组位置就是执行顺序**（Ruling D2-R1）。
- * 23 段与 legacy `handleRuntimeEvent` 的块一一对应，顺序逐字保持
- * （E3-2 删除了 Mode B 转发段）。
+ * 24 段与 legacy `handleRuntimeEvent` 的块一一对应，顺序逐字保持
+ * （E3-2 删除了 Mode B 转发段；Phase 3.5 增加 canonicalObserverTap）。
  */
 export const DISPATCH_STAGES: DispatchStage[] = [
   nativeDrop,          //  1
@@ -577,23 +596,24 @@ export const DISPATCH_STAGES: DispatchStage[] = [
   unknownTypeTelemetry,//  4
   enrichToolIdentityStage, // 5
   conformanceTap,      //  6
-  goalActivity,        //  7
-  turnStartedBusy,     //  8
-  backgroundJob,       //  9
-  approvalPolicy,      // 10
-  permissionEnrich,    // 11
-  questionRequest,     // 12
-  identityClearTurn,   // 13
-  autoCheckpoint,      // 14
-  terminalCleanup,     // 15
-  internalFilter,      // 16
-  partDeltaLog,        // 17
-  sessionActivity,     // 18
-  trajectoryHandle,    // 19
-  compactionFlush,     // 20
-  budgetStep,          // 21
-  turnIdleAggregate,   // 22
-  finalBroadcast,      // 23
+  canonicalObserverTap,//  7
+  goalActivity,        //  8
+  turnStartedBusy,     //  9
+  backgroundJob,       // 10
+  approvalPolicy,      // 11
+  permissionEnrich,    // 12
+  questionRequest,     // 13
+  identityClearTurn,   // 14
+  autoCheckpoint,      // 15
+  terminalCleanup,     // 16
+  internalFilter,      // 17
+  partDeltaLog,        // 18
+  sessionActivity,     // 19
+  trajectoryHandle,    // 20
+  compactionFlush,     // 21
+  budgetStep,          // 22
+  turnIdleAggregate,   // 23
+  finalBroadcast,      // 24
 ];
 
 /** stage 名 → 位置（拓扑断言用；未知名抛错，不返回 -1 静默通过）。 */
