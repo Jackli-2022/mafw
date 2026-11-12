@@ -117,7 +117,8 @@ adb reverse --list                   # reverse 是否建立
 netstat -ano | findstr ":3000"
 # 网关 API 是否正常
 Invoke-WebRequest http://127.0.0.1:3000/health
-Invoke-WebRequest http://127.0.0.1:3000/api/mobile/pairing-code
+# pairing-code 是 human-only：带上 human token（desktop/TUI 自动带）
+Invoke-WebRequest -Headers @{'X-MAFW-Human-Token'=(Get-Content "$env:USERPROFILE\.mafw\human.token")} http://127.0.0.1:3000/api/mobile/pairing-code
 ```
 
 ---
