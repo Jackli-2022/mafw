@@ -56,7 +56,7 @@ Probe 的作用是让 tech lead 在看详细计划前先看清关键未知；每
 |---|---|---|---|---|
 | 0 | 冻边界与契约 | spec、ADR、manifest 草案、插件平面契约、diagnostics/versioning 契约、S1 port、架构守卫 | G0：核心边界评审通过，零行为变化 | 1–2 周 |
 | 1 | 内核 MVP + 叶子生产化 | kernel-v2 registry/lifecycle、TTS/usage adapter、独立 v2 只读 shadow | G1：v2 只读 shadow 通过；v1 全量绿 | 3–4 周 |
-| 2 | Gateway 叶子 provider | media、ASR、commands、notifications、embedding、automation action | G2：测试包调整内置 provider，核心零改动 | 6–8 周 |
+| 2 | Gateway 叶子 provider | media、ASR、commands、notifications、automation action（embedding 移到 Phase 5） | G2：测试包调整内置 provider，核心零改动 | 6–8 周 |
 | 3 | Agent tools + event observer | `tools` contribution、只读 canonical 事件订阅 | G3：插件加工具 + 观察事件，闭环可用 | 4–6 周 |
 | 4 | Desktop UI 槽位 | menuItems、composer action、panel rail、chat part 评估 | G4：插件贡献 menu + composer 端到端 | 4–6 周 |
 | 5 | 有状态能力 | memory store/retrieval/embedding、automation、goal node/eval、storage | G5：有状态 provider 可安装时替换/重启生效 | 6–8 周 |
@@ -251,7 +251,10 @@ Probe 的作用是让 tech lead 在看详细计划前先看清关键未知；每
 
 **目标**：把叶子能力逐个搬出内核，每个 provider 独立可替换。每个 provider 单独写详细计划。
 
-**顺序**：media → ASR（先做 S3）→ commands → notifications → embedding → automation action/trigger。
+**顺序**：S3 → media → ASR → commands → notifications → automation action/trigger。
+
+> `embedding` / `reranker` 移到 Phase 5：它们是 memory 的有状态部分，会提前触碰进程级单例和回填。
+> Phase 2 详细计划：`docs/superpowers/plans/2026-11-12-kernel-v2-phase2-leaf-providers.md`
 
 每个 provider 的完成定义：
 
