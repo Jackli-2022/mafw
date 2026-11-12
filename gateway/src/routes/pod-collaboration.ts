@@ -9,6 +9,7 @@ import { PodError, type PodGoalRevisionRow, type PodGoalRevisionStatus, type Pod
 import type { PodGoalService } from '../core/pod/pod-goal-service';
 import type { PodService } from '../core/pod/pod-service';
 import type { PodTechLeadService } from '../core/pod/pod-tech-lead-service';
+import { normalizeTechLeadParts } from '../core/pod/pod-tech-lead-service';
 import type { PodDirectionService, PodDirectionResult } from '../core/pod/pod-direction-service';
 import type { PodProbeService, ProbeRequestInput } from '../core/pod/pod-probe-service';
 import type { DirectionOptionInput } from '../core/goal/direction-decision';
@@ -55,7 +56,9 @@ export async function handlePodCollaboration(
         ? body.text
         : typeof body?.message === 'string' ? body.message : '';
       if (!text.trim()) throw new PodError(400, 'text is required');
-      sendJson(res, 200, await deps.techLead.prompt(goalId, text));
+      sendJson(res, 200, await deps.techLead.prompt(goalId, text, {
+        parts: normalizeTechLeadParts(body?.parts),
+      }));
       return true;
     }
 

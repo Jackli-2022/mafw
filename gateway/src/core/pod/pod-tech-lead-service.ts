@@ -153,6 +153,40 @@ function clean(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+const MAX_TECH_LEAD_PARTS = 8;
+
+export type TechLeadPromptPart = {
+  type: string;
+  text: string;
+  synthetic?: boolean;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** Validate optional caller parts; only text parts are forwarded, capped at 8. */
+export function normalizeTechLeadParts(value: unknown): TechLeadPromptPart[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry): entry is Record<string, unknown> => isRecord(entry))
+    .filter((entry) => entry.type === 'text' && typeof entry.text === 'string')
+    .slice(0, MAX_TECH_LEAD_PARTS)
+    .map((entry) => ({
+      type: 'text',
+      text: String(entry.text),
+      ...(entry.synthetic === true ? { synthetic: true } : {}),
+    }));
+}
+
+/** Synthetic mode part comes before the visible content part. */
+export function buildTechLeadPromptParts(
+  parts: readonly TechLeadPromptPart[] | undefined,
+  content: string,
+): TechLeadPromptPart[] {
+  return [...(parts ?? []), { type: 'text', text: content }];
+}
+
 export class PodTechLeadService {
   constructor(private readonly deps: PodTechLeadServiceDeps) {}
 
@@ -400,7 +434,11 @@ export class PodTechLeadService {
   }
 
   /** 发送一条 Tech Lead 消息；正文前永远拼上当前 revision 的 ContextManifest。 */
-  async prompt(goalId: string, text: string): Promise<PodTechLeadPromptResult> {
+  async prompt(
+    goalId: string,
+    text: string,
+    opts: { parts?: readonly TechLeadPromptPart[] } = {},
+  ): Promise<PodTechLeadPromptResult> {
     const goal = this.requireGoal(goalId);
     const revision = this.requireActiveRevision(goal);
     const sessionID = await this.ensureSession(goalId);
@@ -409,7 +447,7 @@ export class PodTechLeadService {
     await this.deps.runtime.promptAsync({
       sessionID,
       agent: TECH_LEAD_AGENT,
-      parts: [{ type: 'text', text: content }],
+      parts: buildTechLeadPromptParts(normalizeTechLeadParts(opts.parts), content),
     });
     return { goalId: goal.goalId, revision, sessionID, text: content };
   }

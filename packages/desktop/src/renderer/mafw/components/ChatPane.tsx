@@ -54,7 +54,7 @@ import { worktreeBadge } from "./worktree-label"
 import { ApprovalSummaryLine } from "./ApprovalSummaryLine"
 import { DecisionBoard } from "./DecisionBoard"
 import { ChatModeBar } from "./ChatModeBar"
-import { modeAvailability, type ChatMode } from "../chat/composer-mode"
+import { modeAvailability, modeSendsMessage, type ChatMode } from "../chat/composer-mode"
 import type { DecisionBoardView, DecisionItem } from "../focus/decision-model"
 import type { DecisionRecord } from "@mafw/sdk"
 import { permissionAriaLabel, permissionPresentation } from "./composer-permission"
@@ -1033,6 +1033,16 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     formatCaptures: (items) => formatCaptureBatch(items),
   })
 
+  const submitComposer = (mode: "send" | "queue" = "send", opts?: { voiceOrigin?: boolean }) => {
+    const chatMode = composerMode()
+    if (!modeSendsMessage(chatMode)) {
+      if (chatMode === "delegate") props.onDelegateDraft?.({ text: input() })
+      else props.onResolveRequest?.()
+      return
+    }
+    void sendMessage(mode, { ...opts, chatMode })
+  }
+
   // ── Plan 2：duplex final → 输入栏 → 自动发送（语音来源标记随行）──
   const [voicePendingSend, setVoicePendingSend] = createSignal(false)
   // 配置解析完成前以 false 起步（关闭启动竞态：final 早于 resolve 时只填输入栏，不误发）。
@@ -1042,7 +1052,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     // 回声防线输入：TTS 播放中的 ASR final 大概率是 agent 自己的声音。
     isSpeaking: () => ttsSpeaking(),
     appendFinal: (text) => setInput(prev => prev ? `${prev}\n${text}` : text),
-    send: () => { duplexVoice.clearFinal(); void sendMessage("send", { voiceOrigin: true }) },
+    send: () => { duplexVoice.clearFinal(); submitComposer("send", { voiceOrigin: true }) },
     onArmedChange: setVoicePendingSend,
   })
   // 控制器就绪后开始接收 final（此前到达的 final 已被抑制，不会误发）。
@@ -2365,9 +2375,9 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
               else if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
                 // W5a：Ctrl+Enter = 排队（gateway 服务端队列），忙时也可用；空闲时等同发送。
                 e.preventDefault()
-                sendMessage("queue")
+                submitComposer("queue")
               }
-              else if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (pickerOpen() === "command") { closeCommandPicker(); return } sendMessage() }
+              else if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (pickerOpen() === "command") { closeCommandPicker(); return } submitComposer() }
               // readline 编辑键（Ctrl+A/E/B/F/K/U/W/T、Alt+B/F）；命中即消费，
               // 不落入下方 ↑/↓ 历史分支。
               else if (readlineEdit) {
@@ -2498,7 +2508,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 <ButtonV2
                   variant="contrast"
                   size="small"
-                  onClick={sendMessage}
+                  onClick={() => submitComposer("send")}
                   disabled={connPhase() === "down" || !hasSendableContent()}
                   class="mafw-send"
                   classList={{ "mafw-send-disabled": !hasSendableContent() }}

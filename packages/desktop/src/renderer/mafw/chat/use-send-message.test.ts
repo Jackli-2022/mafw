@@ -136,6 +136,80 @@ describe("sendMessage busy 排队路径", () => {
     expect(f.history().up("")).toBe("排队的消息")
   })
 
+  test("propose adds one synthetic mode part and leaves message text clean", async () => {
+    const sent: any[] = []
+    ;(globalThis as any).window = {
+      api: { mafw: { chat: { sendEnriched: async (req: any) => { sent.push(req); return { sessionID: "s_test_session" } } } } },
+    }
+    try {
+      const f = baseDeps({ sending: () => false, input: () => "hello" })
+      const { sendMessage } = useSendMessage(f.deps)
+      await sendMessage("send", { chatMode: "propose" })
+      expect(sent).toHaveLength(1)
+      expect(sent[0].message).toBe("hello")
+      const mode = (sent[0].parts ?? []).find((part: any) => part?.synthetic === true)
+      expect(mode).toMatchObject({ type: "text", synthetic: true })
+      expect(String(mode.text)).toContain("[[mode:propose]]")
+    } finally {
+      delete (globalThis as any).window
+    }
+  })
+
+  test("discuss adds no mode part", async () => {
+    const sent: any[] = []
+    ;(globalThis as any).window = {
+      api: { mafw: { chat: { sendEnriched: async (req: any) => { sent.push(req); return { sessionID: "s_test_session" } } } } },
+    }
+    try {
+      const f = baseDeps({ sending: () => false, input: () => "hello" })
+      const { sendMessage } = useSendMessage(f.deps)
+      await sendMessage("send", { chatMode: "discuss" })
+      expect(sent).toHaveLength(1)
+      expect((sent[0].parts ?? []).some((part: any) => String(part?.text ?? "").includes("[[mode:"))).toBe(false)
+    } finally {
+      delete (globalThis as any).window
+    }
+  })
+
+  test("delegate and resolve bypass send", async () => {
+    const sent: any[] = []
+    ;(globalThis as any).window = {
+      api: { mafw: { chat: { sendEnriched: async (req: any) => { sent.push(req); return { sessionID: "s_test_session" } } } } },
+    }
+    try {
+      const f = baseDeps({ sending: () => false, input: () => "hello" })
+      const { sendMessage } = useSendMessage(f.deps)
+      await sendMessage("send", { chatMode: "delegate" })
+      await sendMessage("send", { chatMode: "resolve" })
+      expect(sent).toHaveLength(0)
+    } finally {
+      delete (globalThis as any).window
+    }
+  })
+
+  test("tech lead send forwards the mode part", async () => {
+    const calls: any[] = []
+    ;(globalThis as any).window = {
+      api: { mafw: { pod: { sendTechLeadMessage: async (...args: any[]) => { calls.push(args); return { revision: 1 } } } } },
+    }
+    try {
+      const f = baseDeps({
+        sending: () => false,
+        input: () => "hello",
+        techLeadTarget: async () => ({ podId: "pod_1", goalId: "g1" }),
+      })
+      const { sendMessage } = useSendMessage(f.deps)
+      await sendMessage("send", { chatMode: "propose" })
+      expect(calls).toHaveLength(1)
+      const body = calls[0][3]
+      const mode = (body?.parts ?? []).find((part: any) => part?.synthetic === true)
+      expect(mode).toMatchObject({ type: "text", synthetic: true })
+      expect(String(mode.text)).toContain("[[mode:propose]]")
+    } finally {
+      delete (globalThis as any).window
+    }
+  })
+
   test("入队时打包批注（Review Focus 4：入队后新增不跟这条）", async () => {
     let taken = 0
     const f = baseDeps({

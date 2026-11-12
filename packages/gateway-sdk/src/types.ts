@@ -1986,7 +1986,10 @@ export interface PodNamespace {
   writeMemory(podID: string, body: { file: 'POD' | 'MEMORY' | 'GLOSSARY'; content: string; actorSessionID?: string }): Promise<{ path: string }>
   /** Tech Lead discussion for the active revision (GET ensures the hidden session exists). */
   techLead(podID: string, goalID: string, limit?: number): Promise<PodTechLeadHistory>
-  sendTechLeadMessage(podID: string, goalID: string, text: string, body?: { actorSessionID?: string }): Promise<PodTechLeadPrompt>
+  sendTechLeadMessage(podID: string, goalID: string, text: string, body?: {
+    actorSessionID?: string
+    parts?: Array<{ type: string; text: string; synthetic?: boolean }>
+  }): Promise<PodTechLeadPrompt>
   directionDecision(podID: string, goalID: string, body: PodDirectionDecisionInput): Promise<PodDirectionResult>
   probes(podID: string, goalID: string, filter?: { revision?: number; status?: PodProbeStatus }): Promise<{ items: PodProbe[] }>
   createProbe(podID: string, goalID: string, body: PodProbeInput | PodProbeInput[]): Promise<{ items: PodProbe[] }>

@@ -1627,7 +1627,10 @@ export class MafwClient implements IMafwClient {
       podID: string,
       goalID: string,
       text: string,
-      body: { actorSessionID?: string } = {},
+      body: {
+        actorSessionID?: string
+        parts?: Array<{ type: string; text: string; synthetic?: boolean }>
+      } = {},
     ): Promise<PodTechLeadPrompt> =>
       this.request<PodTechLeadPrompt>(`/api/pods/${encodeURIComponent(podID)}/goals/${encodeURIComponent(goalID)}/tech-lead/messages`, {
         method: 'POST',

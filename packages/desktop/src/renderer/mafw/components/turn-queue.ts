@@ -3,7 +3,14 @@
 // has no component test framework; this module is the testable core).
 // `voiceOrigin`（Plan 2 D3）：本地队列的语音来源 flag——存干净文本，flushQueue
 // 重放时重新附标记。
-export type QueuedTurn = { text: string; atts: unknown[]; agents: { name: string }[]; voiceOrigin?: boolean }
+import type { ChatMode } from "../chat/composer-mode"
+export type QueuedTurn = {
+  text: string
+  atts: unknown[]
+  agents: { name: string }[]
+  voiceOrigin?: boolean
+  chatMode?: ChatMode
+}
 
 export function enqueueTurn(list: QueuedTurn[], turn: QueuedTurn): QueuedTurn[] {
   return [...list, turn]
