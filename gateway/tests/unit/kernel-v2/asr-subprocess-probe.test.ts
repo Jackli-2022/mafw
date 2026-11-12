@@ -96,6 +96,21 @@ describe('S3 ASR sidecar provider', () => {
     expect(calls.stopSync).toBe(0);
   });
 
+  test('startup timeout fails the provider and records the failure', async () => {
+    const { value } = sidecar({ start: () => new Promise<void>(() => {}) });
+    const ledger = new SubprocessLedger();
+    const provider = createAsrSidecarProvider({
+      id: 'qwen3',
+      sidecar: value,
+      engine: engine(),
+      ledger,
+      startupTimeoutMs: 10,
+    });
+    await expect(provider.activate()).rejects.toThrow(/timed out/);
+    expect(ledger.active()).toEqual([]);
+    expect(ledger.snapshot()[0]).toMatchObject({ id: 'qwen3', state: 'failed' });
+  });
+
   test('unhealthy sidecar reports failed health', async () => {
     const { value } = sidecar({ isReady: async () => false });
     const ledger = new SubprocessLedger();
