@@ -94,9 +94,9 @@ describe('CapabilityRegistry', () => {
     reg.register('legacy', entry('c', 'c-legacy'));
     reg.register('package', entry('a', 'a-package'));
     expect(reg.list()).toEqual([
-      { id: 'a', value: { label: 'a-package' }, tier: 'package' },
-      { id: 'b', value: { label: 'b-legacy' }, tier: 'legacy' },
-      { id: 'c', value: { label: 'c-legacy' }, tier: 'legacy' },
+      { id: 'a', value: { label: 'a-package' }, tier: 'package', scope: { kind: 'global' } },
+      { id: 'b', value: { label: 'b-legacy' }, tier: 'legacy', scope: { kind: 'global' } },
+      { id: 'c', value: { label: 'c-legacy' }, tier: 'legacy', scope: { kind: 'global' } },
     ]);
   });
 
