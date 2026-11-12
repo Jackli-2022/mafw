@@ -40,6 +40,7 @@ export type WorkbenchShellProps = {
   /** Plugin Web surfaces stay session/project-bound; they are not project files. */
   pluginProjectDir: string | null
   diffs: FileDiffEntry[]
+  liveDiffs?: unknown
   onActiveFileChange?: (rel: string | null) => void
   onSendAnnotation?: (text: string, opts?: { imageDataUrl?: string }) => void
   onAddAnnotation?: (a: {
@@ -115,6 +116,7 @@ export function WorkbenchShell(props: WorkbenchShellProps): JSX.Element {
                 contentRoot={props.contentRoot}
                 contentScopeKey={props.contentScopeKey}
                 diffs={props.diffs}
+                liveDiffs={props.liveDiffs}
                 onActiveFileChange={props.onActiveFileChange}
                 openRequest={props.focusOpenRequest}
                 onSendAnnotation={props.onSendAnnotation}

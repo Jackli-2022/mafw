@@ -21,6 +21,7 @@ export function FocusStage(props: {
   contentScopeKey: string | null
   sessionDirectory?: string | null
   diffs: FileDiffEntry[]
+  liveDiffs?: unknown
   onActiveFileChange?: (rel: string | null) => void
   openRequest?: FocusOpenRequest | null
   onSendAnnotation?: (text: string, opts?: { imageDataUrl?: string }) => void
@@ -96,6 +97,7 @@ export function FocusStage(props: {
               sessionID={props.sessionID}
               sessionDirectory={props.sessionDirectory ?? null}
               diffs={props.diffs}
+              liveDiffs={props.liveDiffs}
               onSendComment={props.onSendComment}
               onAddAnnotation={props.onAddAnnotation}
             />

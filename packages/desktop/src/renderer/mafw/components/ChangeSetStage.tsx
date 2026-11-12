@@ -8,6 +8,7 @@ export function ChangeSetStage(props: {
   sessionID: string | null
   sessionDirectory: string | null
   diffs: FileDiffEntry[]
+  liveDiffs?: unknown
   onSendComment?: (sid: string, text: string) => void
   onAddAnnotation?: (a: {
     rel: string
@@ -33,6 +34,7 @@ export function ChangeSetStage(props: {
           sessionID={props.sessionID}
           sessionDirectory={props.sessionDirectory}
           diffs={props.diffs}
+          liveDiffs={props.liveDiffs as any}
           onSendComment={props.onSendComment}
           onAddAnnotation={props.onAddAnnotation}
         />

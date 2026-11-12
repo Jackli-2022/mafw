@@ -5,6 +5,7 @@ import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { filterPickerItems, type PickerItem } from "../focus/picker-model"
 
 const KIND_LABELS: Record<PickerItem["kind"], string> = {
+  world: "世界",
   file: "文件",
   recent: "最近",
   goal: "Goal",
