@@ -69,4 +69,12 @@ describe('kernel-v2 boundaries', () => {
       expect(source).not.toMatch(/kernel-v2/);
     }
   });
+
+  test('isolated entrypoint has no ambient home or network access', () => {
+    const main = readFileSync(resolve(KERNEL_V2, 'main.ts'), 'utf8');
+    const facade = readFileSync(resolve(KERNEL_V2, 'facade.ts'), 'utf8');
+    expect(main).not.toMatch(/from ['"]node:os['"]/);
+    expect(main).not.toMatch(/\bfetch\s*\(/);
+    expect(facade).not.toMatch(/\bfetch\s*\(/);
+  });
 });

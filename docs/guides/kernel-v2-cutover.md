@@ -1,7 +1,7 @@
 # Kernel v2 Cutover Runbook
 
 - 日期：2026-11-12
-- 状态：Phase 0/1 规划；**不适用于当前生产**
+- 状态：Phase 0/1 已交付；**生产未切换，仍不适用于当前生产**
 - 关联：
   - `docs/superpowers/specs/2026-11-12-fixed-core-capability-architecture-design.md` §6
   - `docs/superpowers/plans/2026-11-12-kernel-v2-phase0-1.md`

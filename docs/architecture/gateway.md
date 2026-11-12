@@ -734,9 +734,20 @@ D3 承诺内）：`initServices()`（1104 行）拆分到 `subsystems/*`、kerne
 `subsystems/` 粒度、`EventTapCallback` 类型化、三个 entry 负向 pin（`core-runtime-neutrality`
 的剥离器样本等）。
 
-### kernel-v2（2026-11-12，Phase 0/1 规划中）
+### kernel-v2（2026-11-12，Phase 0/1 已交付）
 
-路线 B 已选：在 `gateway/src/kernel-v2/` 先做**进程内并行模块**，不接 live gateway、不碰 `~/.mafw`；Phase 1.5 才加独立 v2 入口（`MAFW_KERNEL_V2_PORT` + `MAFW_KERNEL_V2_DATA_DIR`）和只读 shadow。v1 `MafwScheduler` 保持默认/fallback，直到 cutover gate 通过。
+路线 B：`gateway/src/kernel-v2/` **进程内并行模块**，不接 live gateway、不碰 `~/.mafw`；独立 v2 入口（`MAFW_KERNEL_V2_PORT` + `MAFW_KERNEL_V2_DATA_DIR`）只提供 `/health`、`/api/tts/voices`、`/api/usage` 的只读 shadow。v1 `MafwScheduler` 仍是默认/fallback，直到 cutover gate 通过。
+
+已交付：
+
+- `manifest.ts`：纯 manifest 校验（plane/kind/provides/integrity）。
+- `capability-registry.ts`：scope（global/project/session）、tier、priority、health、cache、diagnostics、LIFO dispose。
+- `provider-lifecycle.ts`：load → validate → resolve → activate → drain → dispose；safe mode/degraded；untrusted fail-closed。
+- `providers/tts.ts`、`providers/usage.ts`：只读 adapter。
+- `main.ts` / `facade.ts`：独立 v2 入口，缺失 env 拒绝启动；`usage.json` record/replay，不 live fetch。
+- `scripts/kernel-v2-shadow.mjs`：v1/v2 normalized JSON 对比。
+
+门禁：kernel-v2 + architecture + shadow **71 tests**；gateway 全量 **6660/6660**；typecheck 通过。runbook 见 `docs/guides/kernel-v2-cutover.md`，交付记录见 `docs/releases/2026-11-12-capability-kernel-phase1.md`。
 
 - 架构 spec：`docs/superpowers/specs/2026-11-12-fixed-core-capability-architecture-design.md`
 - 路线图：`docs/superpowers/plans/2026-11-12-fixed-core-capability-roadmap.md`
