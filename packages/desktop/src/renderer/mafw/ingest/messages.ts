@@ -7,12 +7,15 @@ import { canonicalMessageError, type CanonicalMessageError } from "./errors"
 import { canonicalToolPart } from "./parts"
 import { stripVoiceOriginMarker } from "../chat/voice-origin-marker"
 
-/** 记忆注入的 `<facts>` 块只服务模型；桌面展示层在摄取时剥离。 */
-export function stripInjectedFacts(text: string): string {
-  if (!text.startsWith("<facts>")) return text
-  const end = text.indexOf("</facts>")
-  if (end < 0) return text
-  return text.slice(end + "</facts>".length).replace(/^\s+/, "")
+/** 记忆注入的 XML 块（deltas/patterns/facts/history）只服务模型；展示层剥离。 */
+const INJECTED_BLOCK = /^<(deltas|patterns|facts|history)>[\s\S]*?<\/\1>\s*/i
+
+export function stripInjectedMemoryBlocks(text: string): string {
+  let next = text
+  while (INJECTED_BLOCK.test(next)) {
+    next = next.replace(INJECTED_BLOCK, "")
+  }
+  return next
 }
 
 /** Composer 模式指令（synthetic part）在适配器合并后可能落进正文；展示层剥离整行。 */
@@ -24,7 +27,7 @@ export function stripChatModeDirective(text: string): string {
 
 /** 用户消息展示文本：剥离事实注入、语音来源标记与模式指令。 */
 export function stripInjectedUserText(text: string): string {
-  return stripChatModeDirective(stripVoiceOriginMarker(stripInjectedFacts(text)))
+  return stripChatModeDirective(stripVoiceOriginMarker(stripInjectedMemoryBlocks(text)))
 }
 
 export interface IngestedHistoryPage {

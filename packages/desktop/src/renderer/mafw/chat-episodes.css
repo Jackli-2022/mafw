@@ -19,6 +19,7 @@
 }
 .mafw-episode-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   margin: 10px 0 6px;
@@ -64,6 +65,7 @@
   font-size: 10px;
 }
 .mafw-episode-close {
+  flex: 1 0 100%;
   display: flex;
   flex-direction: column;
   gap: 6px;

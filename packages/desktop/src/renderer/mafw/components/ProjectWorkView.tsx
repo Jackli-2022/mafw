@@ -34,6 +34,8 @@ export function ProjectWorkView(props: {
   refreshTick: () => number
   composerRequest?: number
   composerInitial?: { title: string; objective?: string } | null
+  /** 用户从项目页手动打开/关闭 Composer 时通知外壳清掉一次性的委托草稿。 */
+  onComposerToggle?: () => void
   active: boolean
   projectName?: string | null
   files?: {
@@ -189,7 +191,10 @@ export function ProjectWorkView(props: {
             variant="outline"
             size="small"
             icon="target"
-            onClick={() => setComposerOpen((open) => !open)}
+            onClick={() => {
+              setComposerOpen((open) => !open)
+              props.onComposerToggle?.()
+            }}
           >
             新建 Goal
           </ButtonV2>

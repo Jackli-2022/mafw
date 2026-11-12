@@ -122,6 +122,41 @@ describe('message ingestion', () => {
     expect(parts.u1[0].text).toBe('真实问题')
   })
 
+  test('strips every memory block tag in any order, not just facts-first', () => {
+    const raw = [
+      '<deltas>',
+      '[Δ constraint] delta one',
+      '</deltas>',
+      '',
+      '<patterns>',
+      '[80%] pattern one',
+      '</patterns>',
+      '',
+      '<facts>',
+      '☑ fact one',
+      '</facts>',
+      '',
+      '<history>',
+      'Loop 1: PASS ☑ prior work',
+      '</history>',
+      '',
+      '真实问题',
+    ].join('\n')
+    const { messages, parts } = ingestHistoryPage(
+      [{
+        id: 'u2',
+        sessionID: 's1',
+        role: 'user',
+        text: raw,
+        time: { created: 2 },
+        content: [{ id: 'p2', type: 'text', text: raw }],
+      }],
+      { sessionID: 's1' },
+    )
+    expect(messages[0].text).toBe('真实问题')
+    expect(parts.u2[0].text).toBe('真实问题')
+  })
+
   test('leaves assistant text untouched when it mentions facts or mode tokens', () => {
     const raw = '<facts>not injected</facts>\n[[mode:propose]] agent output'
     const { messages, parts } = ingestHistoryPage(

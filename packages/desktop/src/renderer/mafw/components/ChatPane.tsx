@@ -55,7 +55,7 @@ import { ApprovalSummaryLine } from "./ApprovalSummaryLine"
 import { DecisionBoard } from "./DecisionBoard"
 import { ChatModeBar } from "./ChatModeBar"
 import { EpisodeHeader } from "./EpisodeHeader"
-import { closeEpisode, createEpisode, groupTurnsByEpisode, reopenEpisode, type ChatEpisode } from "../chat/episode-model"
+import { closeEpisode, createEpisode, episodeStartingAt, groupTurnsByEpisode, reopenEpisode, type ChatEpisode } from "../chat/episode-model"
 import { createEpisodeStore } from "../chat/episode-store"
 import { modeActionLabel, modeAvailability, modeSendsMessage, type ChatMode } from "../chat/composer-mode"
 import type { DecisionBoardView, DecisionItem } from "../focus/decision-model"
@@ -344,15 +344,24 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     setEpisodes(next)
     episodeStore().save(next)
   }
-  const episodeGroups = () => groupTurnsByEpisode(visibleTurns(), episodes())
+  const episodeGroups = () => groupTurnsByEpisode(allTurns(), episodes())
   const episodeForMessage = (id: string): ChatEpisode | null => {
     for (const group of episodeGroups()) {
       if (group.turns.some((turn) => turn.id === id)) return group.episode
     }
     return null
   }
-  const episodeStartFor = (id: string): ChatEpisode | null =>
-    episodes().find((episode) => episode.startMessageId === id) ?? null
+  /** 组首可见时在组首渲染；组首被分页裁掉时，在首个可见 turn 渲染。 */
+  const episodeStartFor = (id: string): ChatEpisode | null => {
+    const groups = episodeGroups()
+    const direct = episodeStartingAt(groups, id)
+    if (direct) return direct
+    const group = groups.find((item) => item.episode && item.turns.some((turn) => turn.id === id))
+    if (!group?.episode) return null
+    const visibleIds = new Set(visibleTurns().map((turn) => turn.id))
+    const firstVisible = group.turns.find((turn) => visibleIds.has(turn.id))
+    return firstVisible?.id === id ? group.episode : null
+  }
   const episodeTurnCount = (id: string): number =>
     episodeGroups().find((group) => group.episode?.id === id)?.turns.length ?? 0
   const isEpisodeCollapsed = (episode: ChatEpisode | null): boolean =>
@@ -374,11 +383,21 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const startEpisode = () => {
     const anchor = visibleTurns().at(-1)
     if (!anchor) return
+    const startAt = anchor.time?.created
+    const duplicate = episodes().some((episode) =>
+      episode.startMessageId === anchor.id
+      || (typeof startAt === "number"
+        && typeof episode.startAt === "number"
+        && Math.abs(episode.startAt - startAt) < 1_000))
+    if (duplicate) {
+      showToastV2({ description: "这个回合已经在 Episode 中", duration: 2200 })
+      return
+    }
     const episode = createEpisode({
       sessionID: sidProp(),
       title: `讨论 ${episodes().length + 1}`,
       startMessageId: anchor.id,
-      startAt: anchor.time?.created,
+      startAt,
     })
     persistEpisodes(episodeStore().upsert(episode))
   }
@@ -391,9 +410,10 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     const episode = episodes().find((item) => item.id === id)
     if (!episode) return
     const group = episodeGroups().find((item) => item.episode?.id === id)
+    const startId = group?.turns[0]?.id ?? episode.startMessageId
     const end = group?.turns.at(-1) ?? null
     persistEpisodes(episodes().map((item) => item.id === id
-      ? closeEpisode(item, end?.id ?? episode.startMessageId, null, end?.time?.created)
+      ? closeEpisode({ ...item, startMessageId: startId }, end?.id ?? startId, null, end?.time?.created)
       : item))
     resetEpisodeCollapse(id)
   }
@@ -405,12 +425,14 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     episode: ChatEpisode,
     summary: string,
   ): Promise<string | null> => {
-    const recordId = await props.onCloseEpisode?.({ episode, summary })
-    if (!recordId) return null
     const group = episodeGroups().find((item) => item.episode?.id === episode.id)
+    const startId = group?.turns[0]?.id ?? episode.startMessageId
+    const resolved = { ...episode, startMessageId: startId }
+    const recordId = await props.onCloseEpisode?.({ episode: resolved, summary })
+    if (!recordId) return null
     const end = group?.turns.at(-1) ?? null
     persistEpisodes(episodes().map((item) => item.id === episode.id
-      ? closeEpisode(item, end?.id ?? episode.startMessageId, recordId, end?.time?.created)
+      ? closeEpisode({ ...item, startMessageId: startId }, end?.id ?? startId, recordId, end?.time?.created)
       : item))
     resetEpisodeCollapse(episode.id)
     showToastV2({ description: "已起草决定记录，去决定板确认", duration: 3200 })
@@ -1131,13 +1153,14 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     const chatMode = composerMode()
     if (!modeSendsMessage(chatMode)) {
       if (chatMode === "delegate") {
-        if (!input().trim()) return
+        if (!(props.canDelegate?.() ?? false) || !input().trim()) return
         props.onDelegateDraft?.({ text: input() })
         setInput("")
         clearDraft(sidProp())
         return
       }
       if (chatMode === "resolve") {
+        if (!(props.canResolve?.() ?? false)) return
         props.onResolveRequest?.()
         return
       }
@@ -1234,9 +1257,15 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     if (!sid) return false
     return pendingFor(sid).length > 0 || getPendingCaptures().pendingFor(sid).length > 0
   }
-  /** resolve 是导航动作，不需要正文；delegate 仍需要标题/目标文本。 */
-  const composerActionEnabled = () =>
-    connPhase() !== "down" && (composerMode() === "resolve" || hasSendableContent())
+  /** resolve 是导航动作，不需要正文；delegate 需要可用的 Goal 目标和正文。 */
+  const composerActionEnabled = () => {
+    if (connPhase() === "down") return false
+    if (composerMode() === "resolve") return props.canResolve?.() ?? false
+    if (composerMode() === "delegate") {
+      return (props.canDelegate?.() ?? false) && input().trim().length > 0
+    }
+    return hasSendableContent()
+  }
   // G2：BrowserDock 的元素截图经 sink 进 attachments（与 G1 同一媒体管道）
   onMount(() => {
     const off = registerCaptureSink((f) => void addPastedFile(f))
@@ -1524,15 +1553,17 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
   // DeepSeek-style node nav: one node per user turn, preview from text parts.
   const navTurns = createMemo(() =>
-    userMessages().map(m => {
-      const parts = store.part[m.id] || []
-      const text = parts
-        .filter(p => p?.type === "text" && typeof p.text === "string")
-        .map(p => p.text)
-        .join(" ")
-        .trim()
-      return { id: m.id, text }
-    }),
+    userMessages()
+      .filter((m) => !isTurnHidden(m.id))
+      .map(m => {
+        const parts = store.part[m.id] || []
+        const text = parts
+          .filter(p => p?.type === "text" && typeof p.text === "string")
+          .map(p => p.text)
+          .join(" ")
+          .trim()
+        return { id: m.id, text }
+      }),
   )
 
   // 语音回复：扫描本会话所有 assistant 消息的 text parts，提取 [语音回复 art:<id>]
@@ -1794,11 +1825,13 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
   // Transcript search source: every visible turn (user + assistant) with
   // its full text (message.text + text parts) flattened for matching.
-  const searchableTurns = createMemo(() => visibleTurns().map((m: any) => ({
-    id: m.id,
-    role: m.role || "user",
-    text: [m.text, ...(store.part[m.id] || []).map((p: any) => (typeof p.text === "string" ? p.text : ""))].join(" "),
-  })))
+  const searchableTurns = createMemo(() => visibleTurns()
+    .filter((m: any) => !isTurnHidden(m.id))
+    .map((m: any) => ({
+      id: m.id,
+      role: m.role || "user",
+      text: [m.text, ...(store.part[m.id] || []).map((p: any) => (typeof p.text === "string" ? p.text : ""))].join(" "),
+    })))
   const hiddenTurnCount = () => Math.max(0, allTurns().length - renderLimit())
   const expandRendered = () => {
     const el = containerRef()
@@ -2655,6 +2688,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   data-action-label={modeActionLabel(composerMode())}
                   aria-label={connPhase() === "down" ? "Gateway 已断开" : modeActionLabel(composerMode())}
                 >
+                  <span class="mafw-send-label">{modeActionLabel(composerMode())}</span>
                   <Icon name="arrow-up" size="small" />
                 </ButtonV2>
               }>

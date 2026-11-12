@@ -1663,15 +1663,22 @@ html[data-theme="light"] body {
   opacity: .7;
 }
 .mafw-composer [data-component="button-v2"].mafw-send {
-  width: 32px;
+  width: auto;
+  min-width: 32px;
   height: 32px;
   flex: none;
-  padding: 0;
+  gap: 4px;
+  padding: 0 10px;
   border-radius: var(--r-md);
   background: var(--action-primary-bg);
   color: var(--action-primary-fg);
   border-color: transparent;
   transition: background var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
+}
+.mafw-send-label {
+  font-size: 10px;
+  line-height: 1;
+  white-space: nowrap;
 }
 .mafw-composer [data-component="button-v2"].mafw-send:hover:not(.mafw-send-disabled) {
   background: var(--action-primary-bg-hover);

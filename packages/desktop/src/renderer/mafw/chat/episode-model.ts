@@ -168,3 +168,11 @@ export function groupTurnsByEpisode<T extends { id: string; time?: { created?: n
   flush()
   return groups
 }
+
+/** 分组结果的组首 id → Episode；用于乐观 id 对账后仍能在正确的 turn 上渲染头。 */
+export function episodeStartingAt<T extends { id: string }>(
+  groups: ReadonlyArray<{ episode: ChatEpisode | null; turns: readonly T[] }>,
+  id: string,
+): ChatEpisode | null {
+  return groups.find((group) => group.episode && group.turns[0]?.id === id)?.episode ?? null
+}

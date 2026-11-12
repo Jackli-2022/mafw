@@ -50,7 +50,7 @@ export function PodGoalComposer(props: {
 
   const canSubmit = () =>
     title().trim().length > 0
-    && (objective().trim().length > 0 || !props.initial)
+    && objective().trim().length > 0
     && !submitting()
     && !props.busy
 

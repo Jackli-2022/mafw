@@ -9,6 +9,7 @@ const header = read("src/renderer/mafw/components/EpisodeHeader.tsx")
 
 test("MafwShell drafts a user-sourced decision when an episode closes", () => {
   assert.match(shell, /closeEpisodeToDecision/)
+  assert.match(shell, /resolveEpisodeGoalReference/)
   assert.match(shell, /decisions\.draft/)
   assert.match(shell, /source: "user"/)
   assert.match(shell, /goalId: goal\?\.goalId \?\? null/)

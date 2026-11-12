@@ -3,6 +3,7 @@ import assert from "node:assert/strict"
 import {
   closeEpisode,
   createEpisode,
+  episodeStartingAt,
   groupTurnsByEpisode,
   reopenEpisode,
   type ChatEpisode,
@@ -104,4 +105,6 @@ test("startAt and endAt survive optimistic id reconciliation", () => {
     { episode: "ep_time", turns: ["msg_u2", "msg_u3"] },
     { episode: null, turns: ["msg_u4"] },
   ])
+  assert.equal(episodeStartingAt(groups, "msg_u2")?.id, "ep_time")
+  assert.equal(episodeStartingAt(groups, "msg_u1"), null)
 })

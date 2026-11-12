@@ -1,4 +1,4 @@
-import { Show, createEffect, createSignal, type JSX } from "solid-js"
+import { Show, createEffect, createSignal, on, type JSX } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { TextareaV2 } from "@mafw/ui/v2/textarea-v2"
@@ -21,11 +21,10 @@ export function EpisodeHeader(props: {
   const [summary, setSummary] = createSignal("")
   const [busy, setBusy] = createSignal(false)
 
-  createEffect(() => {
-    props.episode.id
+  createEffect(on(() => props.episode.id, () => {
     setSummary("")
     setClosing(false)
-  })
+  }, { defer: true }))
 
   const closeWithRecord = async () => {
     if (busy()) return

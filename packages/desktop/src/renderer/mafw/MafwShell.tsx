@@ -111,6 +111,7 @@ import { UsageDock } from "./components/UsageDock"
 import { openExecutionUsage } from "./execution-usage"
 import { defaultDockOpen } from "./workbench-defaults"
 import type { ChatEpisode } from "./chat/episode-model"
+import { resolveEpisodeGoalReference } from "./chat/episode-decision"
 import {
   clearLegacyWorkbenchKeys,
   migrateWorkbenchStorage,
@@ -427,6 +428,7 @@ export function MafwShell() {
   // Registered projects + current selection (welcome pane project switcher).
   const [projects, setProjects] = createSignal<{ id: string; worktree: string }[]>([])
   const [currentProject, setCurrentProject] = createSignal<string | null>(null)
+  createEffect(on(() => currentProject(), () => setGoalComposerInitial(null), { defer: true }))
   // Tabs are project-scoped: layoutProject is the project whose tab strip is
   // currently loaded/safe to persist; null while switching/restoring.
   const [layoutProject, setLayoutProject] = createSignal<string | null>(null)
@@ -3222,6 +3224,9 @@ export function MafwShell() {
   const openReviewFromChat = (): void => {
     const focus = activeFocus()
     if (focus?.scope.kind === "goal") {
+      setShowConfig(false)
+      applyRightDock(true)
+      if (narrowZone()) applyNarrowView("workbench")
       applyFocusLens("review")
       return
     }
@@ -3232,17 +3237,21 @@ export function MafwShell() {
     }
     openWorkbenchContext("review")
   }
-  /** Episode 关闭时用的 Goal 身份：focus 优先，其次内容工作台 scope。 */
-  const activeGoalReference = (): { goalId: string; revision: number } | null => {
-    const focus = activeFocus()
-    if (focus?.scope.kind === "goal") {
-      return { goalId: focus.scope.goalId, revision: focus.scope.revision }
-    }
+  /** Episode 关闭时用的 Goal 身份：Tech Lead 线程优先，其次工作台焦点/内容 scope。 */
+  const episodeGoalReference = (sessionID: string) => {
+    const focusScope = activeFocus()?.scope
     const scope = contentScope()
-    if (scope?.kind === "goal") {
-      return { goalId: scope.goalId, revision: scope.revision }
-    }
-    return null
+    return resolveEpisodeGoalReference({
+      sessionID,
+      techLeadGoalBySession,
+      podGoals: podStore.detail()?.goals ?? [],
+      focusGoal: focusScope?.kind === "goal"
+        ? { goalId: focusScope.goalId, revision: focusScope.revision }
+        : null,
+      contentGoal: scope?.kind === "goal"
+        ? { goalId: scope.goalId, revision: scope.revision }
+        : null,
+    })
   }
   /** 关闭 Episode → 起草一条用户来源的决定记录；确认仍由决定板里的人类完成。 */
   const closeEpisodeToDecision = async (input: {
@@ -3254,19 +3263,20 @@ export function MafwShell() {
       showToastV2({ description: "当前没有项目，无法起草决定记录", duration: 3200 } as any)
       return null
     }
-    const goal = activeGoalReference()
+    const goal = episodeGoalReference(input.episode.sessionID)
+    const title = input.episode.title.trim() || "未命名讨论"
     try {
       const result = await window.api.mafw.decisions.draft({
         projectDir,
         goalId: goal?.goalId ?? null,
         revision: goal?.revision ?? null,
         kind: "other",
-        question: input.episode.title,
+        question: title,
         rationale: input.summary.trim() || null,
         evidence: [{
           kind: "message",
           ref: input.episode.startMessageId,
-          label: input.episode.title,
+          label: title,
         }],
         source: "user",
       })
@@ -4164,6 +4174,7 @@ export function MafwShell() {
                       refreshTick={() => Math.max(goalsRev(), podStore.revision())}
                       composerRequest={goalComposerRequest()}
                       composerInitial={goalComposerInitial()}
+                      onComposerToggle={() => setGoalComposerInitial(null)}
                       active={workbenchContent() === "project" && dockPresent() && workbenchContext() === "project"}
                       files={{
                         root: currentProject(),
@@ -4190,7 +4201,7 @@ export function MafwShell() {
                       }}
                       teamFocusRequest={teamFocusRequest()}
                       onOpenGoal={(goal, focus) => { openGoalFocus(goal.goalId, focus) }}
-                      onGoalCreated={(goalId) => { openGoalFocus(goalId, "timeline") }}
+                      onGoalCreated={(goalId) => { setGoalComposerInitial(null); openGoalFocus(goalId, "timeline") }}
                     />
                   }
                   goalView={
