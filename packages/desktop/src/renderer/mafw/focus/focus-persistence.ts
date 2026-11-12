@@ -135,7 +135,6 @@ function isPlace(value: unknown): value is Place {
     if (typeof value.selection.anchor !== "number" || !Number.isFinite(value.selection.anchor)) return false
     if (typeof value.selection.head !== "number" || !Number.isFinite(value.selection.head)) return false
   }
-  if (value.split !== undefined && !isSubject(value.split)) return false
   return true
 }
 
@@ -160,9 +159,9 @@ function cloneFocus(focus: Focus): Focus {
     subject: cloneSubject(focus.subject),
     lens: focus.lens,
     place: {
-      ...focus.place,
+      ...(focus.place.scroll !== undefined ? { scroll: focus.place.scroll } : {}),
       ...(focus.place.selection ? { selection: { ...focus.place.selection } } : {}),
-      ...(focus.place.split ? { split: cloneSubject(focus.place.split) } : {}),
+      ...(focus.place.filter !== undefined ? { filter: focus.place.filter } : {}),
     },
   }
 }

@@ -1,7 +1,5 @@
 import { For, Show, type JSX } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
-import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
-import { Icon } from "@mafw/ui/icon"
 import type { Lens } from "../focus/focus-model"
 
 const LENS_LABELS: Record<Lens, string> = {
@@ -21,8 +19,6 @@ export function LensBar(props: {
   active: Lens
   counts?: Partial<Record<Lens, number>>
   onLens: (lens: Lens) => void
-  splitOpen?: boolean
-  onToggleSplit?: () => void
 }): JSX.Element {
   return (
     <div class="mafw-lens-bar">
@@ -47,21 +43,6 @@ export function LensBar(props: {
       </For>
 
       <span class="mafw-lens-spacer" />
-
-      <Show when={props.onToggleSplit}>
-        <TooltipV2 value={props.splitOpen ? "关闭分屏" : "分屏对照"} openDelay={300}>
-          <ButtonV2
-            variant="ghost"
-            size="small"
-            class="mafw-lens-split"
-            aria-label={props.splitOpen ? "关闭分屏" : "分屏对照"}
-            aria-pressed={!!props.splitOpen}
-            onClick={() => props.onToggleSplit?.()}
-          >
-            <Icon name="layout-right-partial" size="small" />
-          </ButtonV2>
-        </TooltipV2>
-      </Show>
     </div>
   )
 }

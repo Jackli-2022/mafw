@@ -2584,7 +2584,6 @@ export function MafwShell() {
   const [contentScope, setContentScope] = createSignal<ContentScope | null>(projectContentScope(currentProject()))
   const [contentIntent, setContentIntent] = createSignal<ContentIntent>("reading")
   const [activeContentDocument, setActiveContentDocument] = createSignal<string | null>(null)
-  const [contentSplit, setContentSplit] = createSignal(false)
   const contentRoot = createMemo(() => contentScopeRoot(contentScope()) ?? currentProject())
   const currentContentScopeKey = createMemo(() => contentScopeKey(contentScope()))
   const [pickerOpen, setPickerOpen] = createSignal(false)
@@ -4135,8 +4134,6 @@ export function MafwShell() {
                   onContentIntent={setContentIntent}
                   contentDocument={activeContentDocument()}
                   onContentDocument={setActiveContentDocument}
-                  contentSplit={contentSplit()}
-                  onContentSplit={setContentSplit}
                   canReview={contentScopeIsGoal()}
                   onContentReview={() => {
                     const scope = contentScope()

@@ -13,7 +13,6 @@ import { TerminalSurface } from "./TerminalSurface"
 import type { FileDiffEntry } from "./DiffReviewPanel"
 import type { ContentIntent } from "../content-intent"
 import { contentScopeStateFor, saveContentScopeState } from "../content-scope-state"
-import { SplitDocumentPane } from "./SplitDocumentPane"
 import { isPluginSurfaceId, type WorkbenchSurface } from "../workbench-views"
 import { PluginWebSurfaceHost } from "../plugins/PluginWebSurfaceHost"
 import type { PluginWebSurfaceView } from "../plugins/plugin-web-surface"
@@ -28,8 +27,6 @@ export function WorkbenchCodeView(props: {
   intent: ContentIntent
   onIntent: (intent: ContentIntent) => void
   onActiveFileChange?: (rel: string | null) => void
-  splitOpen: boolean
-  onSplitOpen: (open: boolean) => void
   pluginProjectDir: string | null
   diffs: FileDiffEntry[]
   onOpenFile: (rel: string) => void
@@ -61,15 +58,6 @@ export function WorkbenchCodeView(props: {
   onWebError?: (surfaceId: string, message: string) => void
 }) {
   const [filesOpen, setFilesOpen] = createSignal(contentScopeStateFor(props.contentScopeKey).filesOpen)
-  const [splitRel, setSplitRel] = createSignal<string | null>(null)
-  createEffect(() => {
-    if (!props.splitOpen) setSplitRel(null)
-  })
-  createEffect(() => {
-    props.contentRoot
-    props.contentScopeKey
-    setSplitRel(null)
-  })
   const persistFilesOpen = (open: boolean) => {
     setFilesOpen(open)
     if (props.contentScopeKey) {
@@ -84,10 +72,6 @@ export function WorkbenchCodeView(props: {
   })
   const openFile = (rel: string) => {
     persistFilesOpen(false)
-    if (props.splitOpen) {
-      setSplitRel(rel)
-      return
-    }
     props.onOpenFile(rel)
   }
 
@@ -133,7 +117,7 @@ export function WorkbenchCodeView(props: {
           />
         </div>
       </Show>
-      <div class="mafw-rw-code-main" classList={{ "is-split": props.splitOpen }}>
+      <div class="mafw-rw-code-main">
         <div class="mafw-rw-code-pane" style={{ display: props.surface === "code" ? "contents" : "none" }}>
           <EditorDock
             sessionID={props.sessionID}
@@ -182,13 +166,6 @@ export function WorkbenchCodeView(props: {
               </div>
             )}
           </For>
-        </Show>
-        <Show when={props.splitOpen && props.surface === "code"}>
-          <SplitDocumentPane
-            root={props.contentRoot}
-            rel={splitRel()}
-            onClose={() => props.onSplitOpen(false)}
-          />
         </Show>
       </div>
     </div>

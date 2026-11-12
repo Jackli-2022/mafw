@@ -16,8 +16,6 @@ export function ContentScopeHeader(props: {
   onIntent?: (intent: ContentIntent) => void
   surface: WorkbenchSurface
   onSurface: (surface: WorkbenchSurface) => void
-  splitOpen?: boolean
-  onToggleSplit?: () => void
   canReview?: boolean
   onReview?: () => void
   onBack: () => void
@@ -46,20 +44,6 @@ export function ContentScopeHeader(props: {
         </Show>
       </div>
       <div class="mafw-content-scope-actions">
-        <Show when={props.surface === "code" && props.onToggleSplit}>
-          <TooltipV2 value={props.splitOpen ? "关闭分屏" : "分屏对照"} openDelay={300}>
-            <ButtonV2
-              variant="ghost"
-              size="small"
-              class="mafw-content-scope-split"
-              aria-label={props.splitOpen ? "关闭分屏" : "分屏对照"}
-              aria-pressed={!!props.splitOpen}
-              onClick={() => props.onToggleSplit?.()}
-            >
-              <Icon name="layout-right-partial" size="small" />
-            </ButtonV2>
-          </TooltipV2>
-        </Show>
         <Show when={props.surface !== "code"}>
           <ButtonV2
             variant="ghost"

@@ -51,8 +51,6 @@ export type WorkbenchShellProps = {
   onContentIntent: (intent: ContentIntent) => void
   contentDocument: string | null
   onContentDocument: (rel: string | null) => void
-  contentSplit: boolean
-  onContentSplit: (open: boolean) => void
   canReview: boolean
   onContentReview: () => void
   canGoBack: boolean
@@ -322,8 +320,6 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
           onIntent={props.surface === "code" ? props.onContentIntent : undefined}
           surface={props.surface}
           onSurface={props.onSurface}
-          splitOpen={props.contentSplit}
-          onToggleSplit={() => props.onContentSplit(!props.contentSplit)}
           canReview={props.canReview}
           onReview={props.onContentReview}
           canGoBack={props.canGoBack}
@@ -385,8 +381,6 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
               intent={props.contentIntent}
               onIntent={props.onContentIntent}
               onActiveFileChange={props.onContentDocument}
-              splitOpen={props.contentSplit}
-              onSplitOpen={props.onContentSplit}
               pluginProjectDir={props.pluginProjectDir}
               diffs={props.diffs}
               onOpenFile={props.onOpenFile}

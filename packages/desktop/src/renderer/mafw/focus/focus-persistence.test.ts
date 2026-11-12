@@ -169,3 +169,26 @@ test("worlds do not share stacks", () => {
   assert.equal((loadFocusState("w1")?.stack[0]!.subject as { rel: string }).rel, "src/a.ts")
   assert.equal((loadFocusState("w2")?.stack[0]!.subject as { rel: string }).rel, "src/b.ts")
 })
+
+test("drops the retired split subject from loaded places", () => {
+  const io = fakeStorage()
+  io.data.set("mafw-focus:v1:w1", JSON.stringify({
+    v: 1,
+    stack: [{
+      scope: { kind: "world", worldId: "w1" },
+      subject: { kind: "file", root: "C:/repo", rel: "src/a.ts" },
+      lens: "read",
+      place: {
+        scroll: 10,
+        split: { kind: "file", root: "C:/repo", rel: "src/b.ts" },
+      },
+    }],
+    kept: [],
+  }))
+  resetFocusPersistence()
+  configureFocusStorage(io)
+  const loaded = loadFocusState("w1")
+  assert.ok(loaded)
+  assert.equal(loaded.stack[0]!.place.scroll, 10)
+  assert.equal("split" in loaded.stack[0]!.place, false)
+})

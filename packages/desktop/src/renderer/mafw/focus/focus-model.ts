@@ -22,7 +22,6 @@ export type Lens = "orient" | "read" | "edit" | "changes" | "evidence" | "review
 export type Place = {
   scroll?: number
   selection?: { anchor: number; head: number }
-  split?: SubjectRef
   filter?: string
 }
 
