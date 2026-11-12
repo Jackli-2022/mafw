@@ -5,6 +5,7 @@ import type {
   Approval, TriageItem, AutomationRule, GatewayStatus,
   QuestionRequest, PermissionRequest,
   AttentionList,
+  DecisionList, DecisionRecord, DecisionDraftInput, DecisionConfirmInput, DecisionShelveInput, DecisionReopenInput,
   TaskEntity, TaskSubmitInput, TaskOutput, QueueItem, SessionConfigState, SessionConfigCategory,
   MafwBackgroundJob, MafwBackgroundOutput,
   PodNamespace, WorkNamespace,
@@ -229,6 +230,14 @@ export type MafwAPI = {
 
   attention: {
     list: (projectDir?: string) => Promise<AttentionList>
+  }
+
+  decisions: {
+    list: (query?: { projectDir?: string; goalId?: string }) => Promise<DecisionList>
+    draft: (body: DecisionDraftInput) => Promise<{ record: DecisionRecord }>
+    confirm: (id: string, body: DecisionConfirmInput & { actorSessionID?: string }) => Promise<{ record: DecisionRecord }>
+    shelve: (id: string, body: DecisionShelveInput & { actorSessionID?: string }) => Promise<{ record: DecisionRecord }>
+    reopen: (id: string, body: DecisionReopenInput & { actorSessionID?: string }) => Promise<{ record: DecisionRecord }>
   }
 
   questions: {

@@ -25,6 +25,8 @@ import {
   PodProbe, PodProbeInput, PodProbeStatus, PodRejectResult, PodGoalRevision, PodGoalAcceptResult, PodWorktreeDiff,
   PodReviewItem, PodReviewItemInput, PodReviewItemList,
   AttentionList, AttentionNamespace,
+  DecisionsNamespace, DecisionList, DecisionRecord,
+  DecisionDraftInput, DecisionConfirmInput, DecisionShelveInput, DecisionReopenInput,
   SessionConfigState, SessionConfigCategory, SessionNamespace,
   VoiceStatusResponse,
   PluginClientSnapshot, PluginsListResult, PluginPackageInstallResult, PluginPackageUpdateResult,
@@ -1303,6 +1305,32 @@ export class MafwClient implements IMafwClient {
       const query = projectDir ? `?projectDir=${encodeURIComponent(projectDir)}` : ''
       return this.request<AttentionList>(`/api/attention${query}`)
     },
+  }
+
+  decisions: DecisionsNamespace = {
+    list: async (query = {}): Promise<DecisionList> => {
+      const search = new URLSearchParams()
+      if (query.projectDir) search.set('projectDir', query.projectDir)
+      if (query.goalId) search.set('goalId', query.goalId)
+      const suffix = search.toString()
+      return this.request<DecisionList>(`/api/decisions${suffix ? `?${suffix}` : ''}`)
+    },
+    draft: async (body: DecisionDraftInput): Promise<{ record: DecisionRecord }> =>
+      this.request<{ record: DecisionRecord }>('/api/decisions', {
+        method: 'POST', body: JSON.stringify(body),
+      }),
+    confirm: async (id: string, body: DecisionConfirmInput & { actorSessionID?: string }): Promise<{ record: DecisionRecord }> =>
+      this.request<{ record: DecisionRecord }>(`/api/decisions/${encodeURIComponent(id)}/confirm`, {
+        method: 'POST', body: JSON.stringify(body),
+      }),
+    shelve: async (id: string, body: DecisionShelveInput & { actorSessionID?: string }): Promise<{ record: DecisionRecord }> =>
+      this.request<{ record: DecisionRecord }>(`/api/decisions/${encodeURIComponent(id)}/shelve`, {
+        method: 'POST', body: JSON.stringify(body),
+      }),
+    reopen: async (id: string, body: DecisionReopenInput & { actorSessionID?: string }): Promise<{ record: DecisionRecord }> =>
+      this.request<{ record: DecisionRecord }>(`/api/decisions/${encodeURIComponent(id)}/reopen`, {
+        method: 'POST', body: JSON.stringify(body),
+      }),
   }
 
   lead: LeadNamespace = {

@@ -101,6 +101,7 @@ import { PodSessionLifecycle } from './core/pod/pod-session-lifecycle';
 import { PodDirectionService } from './core/pod/pod-direction-service';
 import { PodTechLeadService, TECH_LEAD_AGENT } from './core/pod/pod-tech-lead-service';
 import { LeadTopicStore } from './core/lead/lead-topic-store';
+import { DecisionRecordService } from './core/decision/decision-record-service';
 import { LeadHandoffService } from './core/lead/lead-handoff-service';
 import { TopicMessageIndexStore } from './core/lead/topic-message-index';
 import { LeadTopicSummaryService } from './core/lead/lead-topic-summary-service';
@@ -698,6 +699,7 @@ class MafwScheduler {
   private podDirectionService!: PodDirectionService;
   private podTechLeadService!: PodTechLeadService;
   private leadTopics!: LeadTopicStore;
+  private decisionRecords!: DecisionRecordService;
   private leadTopicIndex!: TopicMessageIndexStore;
   private leadTopicSummary!: LeadTopicSummaryService;
   private leadTopicResume!: LeadTopicResumeService;
@@ -4045,6 +4047,9 @@ class MafwScheduler {
       log: (message) => log.info(message),
     });
     const leadTopics = new LeadTopicStore(this.getGatewayDb().getStore());
+    this.decisionRecords = new DecisionRecordService({
+      mafwDir: (projectDir) => this.registeredProjects.get(canonicalProjectDir(projectDir))?.mafwDir ?? null,
+    });
     const leadTopicIndex = new TopicMessageIndexStore(this.getGatewayDb().getStore());
     const topicForks = new TopicForkStore(this.getGatewayDb().getStore());
     const leadTopicSummary = new LeadTopicSummaryService({
@@ -4677,6 +4682,7 @@ class MafwScheduler {
       podDirection: this.podDirectionService,
       podContextSelect: this.podContextSelectionService,
       podReview: this.podReviewService,
+      decisionRecords: this.decisionRecords,
       podStore: this.podStore,
       podGoalDirection: {
         techLead: this.podTechLeadService,
@@ -5299,6 +5305,7 @@ class MafwScheduler {
       get podMessageService() { return self.podMessageService; },
       get podProbeService() { return self.podProbeService; },
       get podReviewService() { return self.podReviewService; },
+      get decisionRecords() { return self.decisionRecords; },
       get podService() { return self.podService; },
       get podStore() { return self.podStore; },
       get podTaskService() { return self.podTaskService; },

@@ -37,6 +37,7 @@ import { attachPodHandlers } from '../routes/pod-handlers';
 import { attachPodA2ARoutes } from '../routes/pod-a2a';
 import { attachLeadTopicRoutes } from '../routes/lead-topics';
 import { attachAttentionRoutes } from '../routes/attention';
+import { attachDecisionRoutes } from '../routes/decisions';
 import { attachSchedulerRoutes } from '../routes/scheduler';
 import { attachLeadBoundaryRoutes } from '../routes/lead-boundaries';
 import { attachGoalControlRoutes, attachGoalControlCommandRoute } from '../routes/goal-control';
@@ -98,7 +99,7 @@ import type { PodAccess } from '../core/pod/pod-access';
 import type { PodDirectionService } from '../core/pod/pod-direction-service';
 import type { PodGoalService } from '../core/pod/pod-goal-service';
 import type { PodReviewService } from '../core/pod/pod-review-service';
-import type { PodMemoryService } from '../core/pod/pod-memory-service';
+import type { DecisionRecordService } from '../core/decision/decision-record-service';import type { PodMemoryService } from '../core/pod/pod-memory-service';
 import type { PodMessageDelivery } from '../core/pod/pod-message-delivery';
 import type { PodMessageService } from '../core/pod/pod-message-service';
 import type { PodProbeService } from '../core/pod/pod-probe-service';
@@ -240,6 +241,7 @@ export interface ApiRouteDeps {
   podMessageService: PodMessageService;
   podProbeService: PodProbeService;
   podReviewService: PodReviewService;
+  decisionRecords: DecisionRecordService;
   podService: PodService;
   podStore: PodStore;
   podTaskService: PodTaskService;
@@ -403,6 +405,7 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
       });
     },
   });
+  attachDecisionRoutes(deps.routeRegistry, { service: deps.decisionRecords });
   attachSchedulerRoutes(deps.routeRegistry, {
     status: (projectDir) => {
       const pod = deps.podStore?.getPodByProject(canonicalProjectDir(projectDir));

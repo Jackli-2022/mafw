@@ -1558,6 +1558,45 @@ export interface DecisionList {
   items: DecisionRecord[]
 }
 
+export interface DecisionDraftInput {
+  projectDir: string
+  goalId?: string | null
+  revision?: number | null
+  kind: DecisionKind
+  question: string
+  options?: DecisionRecordOption[]
+  evidence?: DecisionRecordEvidence[]
+  rationale?: string | null
+  consequences?: string | null
+  reviewAt?: string | null
+}
+
+export interface DecisionConfirmInput {
+  projectDir: string
+  rationale?: string
+  consequences?: string
+  reviewAt?: string
+}
+
+export interface DecisionShelveInput {
+  projectDir: string
+  reviewAt: string
+  note?: string
+}
+
+export interface DecisionReopenInput {
+  projectDir: string
+  note?: string
+}
+
+export interface DecisionsNamespace {
+  list(query?: { projectDir?: string; goalId?: string }): Promise<DecisionList>
+  draft(body: DecisionDraftInput): Promise<{ record: DecisionRecord }>
+  confirm(id: string, body: DecisionConfirmInput & { actorSessionID?: string }): Promise<{ record: DecisionRecord }>
+  shelve(id: string, body: DecisionShelveInput & { actorSessionID?: string }): Promise<{ record: DecisionRecord }>
+  reopen(id: string, body: DecisionReopenInput & { actorSessionID?: string }): Promise<{ record: DecisionRecord }>
+}
+
 export interface PodGoalAcceptanceRecord {
   forced: boolean
   acceptedAt: string
@@ -2270,6 +2309,7 @@ export interface MafwClient {
   terminal: TerminalNamespace
   pod: PodNamespace
   attention: AttentionNamespace
+  decisions: DecisionsNamespace
   lead: LeadNamespace
   events: EventsNamespace
   work: WorkNamespace

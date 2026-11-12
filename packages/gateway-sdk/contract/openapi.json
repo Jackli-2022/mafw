@@ -3406,6 +3406,99 @@
         }
       }
     },
+    "/api/decisions": {
+      "get": {
+        "operationId": "decisions.list",
+        "tags": [
+          "internal"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "decisions.draft",
+        "tags": [
+          "internal"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/decisions/{id}/confirm": {
+      "post": {
+        "operationId": "decisions.confirm",
+        "tags": [
+          "internal"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/decisions/{id}/shelve": {
+      "post": {
+        "operationId": "decisions.shelve",
+        "tags": [
+          "internal"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/decisions/{id}/reopen": {
+      "post": {
+        "operationId": "decisions.reopen",
+        "tags": [
+          "internal"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/scheduler/status": {
       "get": {
         "operationId": "scheduler.status",

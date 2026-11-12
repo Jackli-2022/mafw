@@ -214,6 +214,14 @@ export function createMafwApi(): MafwAPI {
       list: (projectDir) => invoke("attention", "list", projectDir),
     },
 
+    decisions: {
+      list: (query) => invoke("decisions", "list", query),
+      draft: (body) => invoke("decisions", "draft", body),
+      confirm: (id, body) => invoke("decisions", "confirm", id, body),
+      shelve: (id, body) => invoke("decisions", "shelve", id, body),
+      reopen: (id, body) => invoke("decisions", "reopen", id, body),
+    },
+
     questions: {
       list: (directory?: string) => invoke("questions", "list", directory),
       reply: (id, answers) => invoke("questions", "reply", id, answers),
