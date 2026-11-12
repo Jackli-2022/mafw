@@ -2,9 +2,9 @@
  * E5a-1 — principal resolution matrix (spec §3.3).
  *
  * Order is load-bearing: human token → device token → shared apiToken →
- * loopback → anonymous. A wrong device token must NOT fall through to the
- * shared apiToken (credential confusion), and a wrong human token on loopback
- * degrades to `local` — never `human`.
+ * loopback → anonymous. A wrong device token never grants human and (F4) falls
+ * through to the remaining credentials — a stale device header must not shadow
+ * a valid shared apiToken. A wrong human token on loopback degrades to `local`.
  */
 import {
   humanOnlyDenied,
@@ -126,11 +126,36 @@ describe('resolvePrincipal — device token', () => {
     });
   });
 
-  it('treats an invalid device token from remote as anonymous and never falls through to apiToken', () => {
+  it('lets an invalid device token fall through to a valid shared apiToken (F4)', () => {
     expect(resolve(req({ remoteAddress: REMOTE, headers: {
       authorization: 'Bearer dev_revoked',
       'x-api-token': SERVICE,
-    } }))).toEqual({ kind: 'anonymous', method: 'none' });
+    } }))).toEqual({ kind: 'service', method: 'api-token' });
+  });
+
+  it('lets a stale device header fall through to a valid Bearer apiToken (F4)', () => {
+    expect(resolve(req({ remoteAddress: REMOTE, headers: {
+      'x-mafw-device-token': 'dev_revoked',
+      authorization: `Bearer ${SERVICE}`,
+    } }))).toEqual({ kind: 'service', method: 'api-token' });
+  });
+
+  it('resolves an apiToken that itself starts with dev_ via Authorization as service (F4)', () => {
+    const devPrefixedService = 'dev_shared_service_token';
+    expect(resolve(req({ remoteAddress: REMOTE, headers: {
+      authorization: `Bearer ${devPrefixedService}`,
+    } }), { apiToken: devPrefixedService })).toEqual({ kind: 'service', method: 'api-token' });
+  });
+
+  it('leaves an invalid device token without other credentials as local on loopback / anonymous remotely', () => {
+    expect(resolve(req({ headers: { 'x-mafw-device-token': 'dev_revoked' } }))).toEqual({
+      kind: 'local',
+      method: 'loopback',
+    });
+    expect(resolve(req({ remoteAddress: REMOTE, headers: { 'x-mafw-device-token': 'dev_revoked' } }))).toEqual({
+      kind: 'anonymous',
+      method: 'none',
+    });
   });
 
   it('treats a device token as anonymous when no verifier is wired (fail-closed)', () => {

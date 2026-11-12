@@ -34,7 +34,7 @@ export class PushGateway {
   issueDeviceToken(
     deviceId: string,
     token: string,
-    opts: { platform: string; deviceName?: string; fcmToken?: string },
+    opts: { platform?: string; deviceName?: string; fcmToken?: string },
   ): DeviceEntry {
     return this.store.issueCredential({
       id: deviceId,
@@ -65,7 +65,6 @@ export class PushGateway {
     return this.store.listPublic();
   }
 
-
   removeDevice(id: string): boolean {
     const ok = this.store.remove(id);
     if (ok) this.removeOnlineWs(id);
@@ -82,8 +81,22 @@ export class PushGateway {
     this.store.touch(deviceId);
   }
 
+  /**
+   * Stop delivering to a device. Terminate the tracked socket (best-effort) so
+   * DELETE / rotation actually disconnects a live client; the event hub removes
+   * its own registration on close. The online map entry is always cleared.
+   */
   removeOnlineWs(deviceId: string): void {
+    const entry = this.onlineDevices.get(deviceId);
+    if (entry) {
+      try {
+        entry.ws.terminate();
+      } catch {
+        try { (entry.ws as any).close?.(); } catch { /* already dead */ }
+      }
+    }
     this.onlineDevices.delete(deviceId);
+    this.deviceLastSend.delete(deviceId);
   }
 
   isOnline(deviceId: string): boolean {

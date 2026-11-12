@@ -28,8 +28,9 @@
  */
 import * as crypto from 'crypto';
 import type { IncomingMessage, ServerResponse } from 'http';
-import { readRouteBody } from './cognition';
-import { toPublicDevice } from '../mobile/device-store';
+import { readRouteBody, PayloadTooLargeError } from './cognition';
+import { toPublicDevice, validateDeviceCredentialInput } from '../mobile/device-store';
+import { PAIRING_VERIFY_MAX_BODY_BYTES } from '../core/http/http-util';
 import type { PushGateway } from '../mobile/push-gateway';
 import type { PairingService } from '../mobile/pairing';
 import type { RouteRegistry } from './registry';
@@ -191,17 +192,21 @@ export function attachDevicesMobileRoutes(registry: RouteRegistry, deps: Devices
         res.end(JSON.stringify({ error: 'Push gateway not available' }));
         return;
       }
-      const body = JSON.parse(await readRouteBody(req));
-      const { nonce, deviceId, platform, deviceName } = body;
+      let body: any;
+      try {
+        body = JSON.parse(await readRouteBody(req, { maxBytes: PAIRING_VERIFY_MAX_BODY_BYTES }));
+      } catch (err: any) {
+        if (err instanceof PayloadTooLargeError || err?.code === 'payload_too_large') {
+          res.writeHead(413, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'payload too large', code: 'payload_too_large' }));
+          return;
+        }
+        throw err;
+      }
+      const { nonce, deviceId, platform, deviceName, rotate } = body;
       if (!nonce) {
         res.writeHead(400);
         res.end(JSON.stringify({ error: 'nonce required' }));
-        return;
-      }
-      const consumed = deps.pairingService()!.consumeNonce(nonce);
-      if (!consumed) {
-        res.writeHead(400);
-        res.end(JSON.stringify({ error: 'Invalid or expired pairing nonce' }));
         return;
       }
 
@@ -210,11 +215,44 @@ export function attachDevicesMobileRoutes(registry: RouteRegistry, deps: Devices
         : generateDeviceId();
       const resolvedPlatform = typeof platform === 'string' && platform.length > 0
         ? platform
-        : 'unknown';
+        : undefined;
+      const resolvedDeviceName = typeof deviceName === 'string' && deviceName.length > 0
+        ? deviceName
+        : undefined;
+
+      // F8: validate before consuming the nonce so the client can retry.
+      const invalid = validateDeviceCredentialInput({
+        id: resolvedDeviceId,
+        platform: resolvedPlatform,
+        deviceName: resolvedDeviceName,
+      });
+      if (invalid) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: invalid }));
+        return;
+      }
+
+      // F5: re-pairing an already-credentialed device requires an explicit
+      // rotate (Task 5 mobile sends `rotate:true` only when it holds a prior
+      // token for this gateway). Nonce stays valid on 409.
+      const existing = deps.pushGateway()!.getDevice(resolvedDeviceId);
+      if (existing?.deviceTokenHash && rotate !== true) {
+        res.writeHead(409, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'device already paired', code: 'device_already_paired' }));
+        return;
+      }
+
+      const consumed = deps.pairingService()!.consumeNonce(nonce);
+      if (!consumed) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ error: 'Invalid or expired pairing nonce' }));
+        return;
+      }
+
       const token = generateDeviceToken();
       deps.pushGateway()!.issueDeviceToken(resolvedDeviceId, token, {
         platform: resolvedPlatform,
-        deviceName: typeof deviceName === 'string' && deviceName.length > 0 ? deviceName : undefined,
+        deviceName: resolvedDeviceName,
       });
 
       res.writeHead(200, { 'Content-Type': 'application/json' });

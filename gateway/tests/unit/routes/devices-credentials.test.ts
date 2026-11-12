@@ -297,6 +297,141 @@ describe('deleting a device revokes its credential (routes)', () => {
   });
 });
 
+describe('pairing verify hardening (F5/F8 routes)', () => {
+  function freshNonce(h: ReturnType<typeof harness>): string {
+    return new URL(h.pairing.generatePairingCode('127.0.0.1').url).searchParams.get('nonce')!;
+  }
+
+  it('409 device_already_paired without rotate:true; nonce is not consumed (F5)', async () => {
+    const h = harness();
+    const first = JSON.parse((await verifyPairing(h, {
+      nonce: freshNonce(h), deviceId: 'phone-1', platform: 'android',
+    })).body);
+
+    const nonce = freshNonce(h);
+    const r = await verifyPairing(h, { nonce, deviceId: 'phone-1', platform: 'android' });
+
+    expect(r.status).toBe(409);
+    expect(JSON.parse(r.body)).toEqual({ error: 'device already paired', code: 'device_already_paired' });
+    // Old credential untouched, nonce retryable.
+    expect(h.store.verifyCredential(first.token)).not.toBeNull();
+    expect(h.pairing.consumeNonce(nonce)).toBe(true);
+  });
+
+  it('rotate:true replaces the credential and invalidates the old token (F5)', async () => {
+    const h = harness();
+    const first = JSON.parse((await verifyPairing(h, {
+      nonce: freshNonce(h), deviceId: 'phone-1', platform: 'android',
+    })).body);
+
+    const r = await verifyPairing(h, {
+      nonce: freshNonce(h), deviceId: 'phone-1', platform: 'android', rotate: true,
+    });
+
+    expect(r.status).toBe(200);
+    const rotated = JSON.parse(r.body);
+    expect(rotated.token).not.toBe(first.token);
+    expect(h.store.verifyCredential(first.token)).toBeNull();
+    expect(h.store.verifyCredential(rotated.token)?.id).toBe('phone-1');
+  });
+
+  it('allows pairing a push-only device that has no credential yet (F5)', async () => {
+    const h = harness();
+    h.gateway.registerDevice({ id: 'phone-1', fcmToken: 'fcm', platform: 'android', apiTokenHash: 'h' });
+
+    const r = await verifyPairing(h, { nonce: freshNonce(h), deviceId: 'phone-1', platform: 'android' });
+
+    expect(r.status).toBe(200);
+    expect(h.store.get('phone-1')!.fcmToken).toBe('fcm');
+    expect(h.store.get('phone-1')!.deviceTokenHash).toBeTruthy();
+  });
+
+  it('rejects invalid / overlong device ids with 400 before consuming the nonce (F8)', async () => {
+    const h = harness();
+
+    for (const deviceId of ['a'.repeat(129), 'bad id', 'x/y']) {
+      const nonce = freshNonce(h);
+      const r = await verifyPairing(h, { nonce, deviceId, platform: 'android' });
+      expect(r.status).toBe(400);
+      expect(JSON.parse(r.body).error).toMatch(/deviceId/i);
+      expect(h.pairing.consumeNonce(nonce)).toBe(true);
+    }
+  });
+
+  it('rejects overlong deviceName / platform with 400 (F8)', async () => {
+    const h = harness();
+
+    let r = await verifyPairing(h, {
+      nonce: freshNonce(h), deviceId: 'phone-1', platform: 'android', deviceName: 'n'.repeat(101),
+    });
+    expect(r.status).toBe(400);
+    expect(JSON.parse(r.body).error).toMatch(/deviceName/i);
+
+    r = await verifyPairing(h, {
+      nonce: freshNonce(h), deviceId: 'phone-1', platform: 'p'.repeat(41),
+    });
+    expect(r.status).toBe(400);
+    expect(JSON.parse(r.body).error).toMatch(/platform/i);
+  });
+
+  it('preserves the existing platform when rotation omits it (F8)', async () => {
+    const h = harness();
+    await verifyPairing(h, { nonce: freshNonce(h), deviceId: 'phone-1', platform: 'android' });
+
+    const r = await verifyPairing(h, { nonce: freshNonce(h), deviceId: 'phone-1', rotate: true });
+
+    expect(r.status).toBe(200);
+    expect(h.store.get('phone-1')!.platform).toBe('android');
+  });
+
+  it('defaults a first-time pairing without platform to unknown (F8)', async () => {
+    const h = harness();
+    const r = await verifyPairing(h, { nonce: freshNonce(h), deviceId: 'phone-1' });
+
+    expect(r.status).toBe(200);
+    expect(h.store.get('phone-1')!.platform).toBe('unknown');
+  });
+});
+
+describe('registry dispatch requires the transport pairing flag (F6)', () => {
+  it('401s a direct dispatch without mafwPairingVerify', async () => {
+    const h = harness();
+    const nonce = new URL(h.pairing.generatePairingCode('127.0.0.1').url).searchParams.get('nonce')!;
+    const req = fakeReq({
+      method: 'POST',
+      url: '/api/mobile/pairing/verify',
+      socket: REMOTE,
+      body: JSON.stringify({ nonce }),
+    });
+    const r = fakeRes();
+
+    const handled = await dispatchAuthorized({ registry: h.registry, apiToken: SERVICE }, req, r.res);
+
+    expect(handled).toBe(true);
+    expect(r.status).toBe(401);
+    expect(h.pairing.consumeNonce(nonce)).toBe(true);
+  });
+
+  it('proceeds when the transport marked the request', async () => {
+    const h = harness();
+    const nonce = new URL(h.pairing.generatePairingCode('127.0.0.1').url).searchParams.get('nonce')!;
+    const req: any = fakeReq({
+      method: 'POST',
+      url: '/api/mobile/pairing/verify',
+      socket: REMOTE,
+      body: JSON.stringify({ nonce, deviceId: 'phone-1', platform: 'android' }),
+    });
+    req.mafwPairingVerify = true;
+    const r = fakeRes();
+
+    const handled = await dispatchAuthorized({ registry: h.registry, apiToken: SERVICE }, req, r.res);
+
+    expect(handled).toBe(true);
+    expect(r.status).toBe(200);
+    expect(h.store.verifyCredential(JSON.parse(r.body).token)).not.toBeNull();
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Transport integration: the pairing-verify exemption + device → human mapping
 // ---------------------------------------------------------------------------
@@ -377,6 +512,15 @@ function integrationHarness() {
       }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true, principal: (req as any).mafwPrincipal }));
+    },
+  });
+  registry.register({
+    method: 'POST',
+    path: '/api/__test/service-ok',
+    operationId: 'test.serviceOk',
+    handler: async (_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
     },
   });
   return { file, store, gateway, pairing, registry, deps: makeTransportDeps(registry) };
@@ -463,8 +607,51 @@ describe('transport integration: pairing verify exemption + device auth', () => 
     expect(JSON.parse(serviceCall.body).code).toBe('human_principal_required');
   });
 
-  it('rotation and deletion both invalidate the previous device token at the transport', async () => {
+  it('rejects an oversized content-length before dispatch with 413 (F2)', async () => {
     const h = integrationHarness();
+
+    const r = await transportRequest(h.deps, fakeReq({
+      method: 'POST',
+      url: '/api/mobile/pairing/verify',
+      socket: REMOTE,
+      headers: { 'content-length': '9000' },
+      body: '',
+    }));
+
+    expect(r.status).toBe(413);
+    expect(JSON.parse(r.body)).toEqual({ error: 'payload too large', code: 'payload_too_large' });
+  });
+
+  it('rejects an oversized chunked body at the route reader with 413 (F2)', async () => {
+    const h = integrationHarness();
+
+    const r = await transportRequest(h.deps, fakeReq({
+      method: 'POST',
+      url: '/api/mobile/pairing/verify',
+      socket: REMOTE,
+      // No content-length: the capped reader must reject the streamed body.
+      body: `{"nonce":"${'x'.repeat(9000)}"}`,
+    }));
+
+    expect(r.status).toBe(413);
+    expect(JSON.parse(r.body)).toEqual({ error: 'payload too large', code: 'payload_too_large' });
+  });
+
+  it('does not apply the pairing body cap to other routes (F2)', async () => {
+    const h = integrationHarness();
+
+    const r = await transportRequest(h.deps, fakeReq({
+      method: 'POST',
+      url: '/api/__test/service-ok',
+      socket: REMOTE,
+      headers: { 'content-length': '9000', authorization: `Bearer ${SERVICE}` },
+      body: '{}',
+    }));
+
+    expect(r.status).toBe(200);
+  });
+
+  it('rotation and deletion both invalidate the previous device token at the transport', async () => {    const h = integrationHarness();
     const firstNonce = new URL(h.pairing.generatePairingCode('127.0.0.1').url).searchParams.get('nonce')!;
     const first = JSON.parse((await transportRequest(h.deps, fakeReq({
       method: 'POST',
@@ -479,7 +666,7 @@ describe('transport integration: pairing verify exemption + device auth', () => 
       method: 'POST',
       url: '/api/mobile/pairing/verify',
       socket: REMOTE,
-      body: JSON.stringify({ nonce: secondNonce, deviceId: 'phone-1', platform: 'android' }),
+      body: JSON.stringify({ nonce: secondNonce, deviceId: 'phone-1', platform: 'android', rotate: true }),
     }))).body);
     expect(second.token).not.toBe(first.token);
 

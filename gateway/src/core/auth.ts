@@ -77,8 +77,10 @@ export interface PrincipalResolveOpts {
 /**
  * Resolve the request principal. Order is load-bearing (spec §3.3):
  *   human token → device token → shared apiToken → loopback → anonymous.
- * A presented-but-invalid device token must NOT fall through to the shared
- * apiToken (credential confusion: a revoked device would regain service access).
+ * A presented-but-invalid device token never grants human and (F4) falls
+ * through to the remaining credentials: a stale `X-MAFW-Device-Token` header
+ * must not suppress a valid shared apiToken. Device verification itself is
+ * fail-closed (a throwing verifier just falls through).
  */
 export function resolvePrincipal(req: AuthRequest, opts: PrincipalResolveOpts): Principal {
   const humanHeader = String(req.headers[HUMAN_TOKEN_HEADER] || '').trim();
@@ -97,7 +99,9 @@ export function resolvePrincipal(req: AuthRequest, opts: PrincipalResolveOpts): 
     if (verified && verified.deviceId) {
       return { kind: 'human', method: 'device-token', deviceId: verified.deviceId };
     }
-    return fallbackPrincipal(req);
+    // F4: fall through instead of aborting. Possession of a valid shared
+    // apiToken is still a (service) credential; a revoked device token simply
+    // does not grant human rights.
   }
 
   const apiToken = opts.apiToken || '';

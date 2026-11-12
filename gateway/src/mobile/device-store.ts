@@ -28,6 +28,36 @@ export interface DeviceStoreFile {
 
 export const MAX_DEVICES = 600;
 
+/** F8 input bounds for per-device credentials (route pre-validates → 400). */
+export const DEVICE_ID_MAX_LENGTH = 128;
+export const DEVICE_NAME_MAX_LENGTH = 100;
+export const PLATFORM_MAX_LENGTH = 40;
+const DEVICE_ID_RE = /^[A-Za-z0-9._:-]+$/;
+
+/** Persist credential-use lastSeen at most once per hour (F7). */
+const CREDENTIAL_TOUCH_PERSIST_MS = 60 * 60 * 1000;
+
+/**
+ * Validate credential input before any nonce consumption / store write.
+ * Returns a human-readable error (route → 400) or null when valid.
+ */
+export function validateDeviceCredentialInput(input: {
+  id: string;
+  platform?: string;
+  deviceName?: string;
+}): string | null {
+  if (!input.id || input.id.length > DEVICE_ID_MAX_LENGTH || !DEVICE_ID_RE.test(input.id)) {
+    return `invalid deviceId (max ${DEVICE_ID_MAX_LENGTH} chars of A-Z a-z 0-9 . _ : -)`;
+  }
+  if (input.platform !== undefined && input.platform.length > PLATFORM_MAX_LENGTH) {
+    return `platform too long (max ${PLATFORM_MAX_LENGTH} chars)`;
+  }
+  if (input.deviceName !== undefined && input.deviceName.length > DEVICE_NAME_MAX_LENGTH) {
+    return `deviceName too long (max ${DEVICE_NAME_MAX_LENGTH} chars)`;
+  }
+  return null;
+}
+
 function sha256Hex(value: string): string {
   return crypto.createHash('sha256').update(value).digest('hex');
 }
@@ -133,27 +163,30 @@ export class DeviceStore {
   issueCredential(input: {
     id: string;
     token: string;
-    platform: string;
+    platform?: string;
     deviceName?: string;
     fcmToken?: string;
   }): DeviceEntry {
-    if (!input.id) throw new Error('Device id required');
+    const invalid = validateDeviceCredentialInput(input);
+    if (invalid) throw new Error(invalid);
     if (!input.token) throw new Error('Device token required');
     const existing = this.devices.get(input.id);
     if (!existing && this.devices.size >= MAX_DEVICES) {
       throw new Error(`Device limit reached (${MAX_DEVICES})`);
     }
+    // F8: an omitted platform keeps the existing one (no clobber to 'unknown').
+    const platform = input.platform || existing?.platform || 'unknown';
     const now = new Date().toISOString();
     const entry: DeviceEntry = {
       ...(existing ?? {
         id: input.id,
         fcmToken: '',
-        platform: input.platform,
+        platform,
         apiTokenHash: '',
         lastSeen: now,
       }),
       id: input.id,
-      platform: input.platform,
+      platform,
       lastSeen: now,
       deviceTokenHash: sha256Hex(input.token),
       tokenIssuedAt: now,
@@ -171,10 +204,25 @@ export class DeviceStore {
     const hash = sha256Hex(token);
     for (const entry of this.devices.values()) {
       if (entry.deviceTokenHash && hashEquals(entry.deviceTokenHash, hash)) {
+        this.touchCredentialUse(entry);
         return entry;
       }
     }
     return null;
+  }
+
+  /**
+   * F7: credential use counts as activity (REST-only devices must not be pruned
+   * after 7 days), but the file write is throttled to once per hour so a busy
+   * client does not rewrite the store on every request.
+   */
+  private touchCredentialUse(entry: DeviceEntry): void {
+    const now = Date.now();
+    const lastMs = Date.parse(entry.lastSeen);
+    entry.lastSeen = new Date(now).toISOString();
+    if (!Number.isFinite(lastMs) || now - lastMs > CREDENTIAL_TOUCH_PERSIST_MS) {
+      this.save();
+    }
   }
 
   /**

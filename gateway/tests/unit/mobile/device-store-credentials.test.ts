@@ -176,6 +176,64 @@ describe('DeviceStore credentials (E5a-3)', () => {
       expect(entry).not.toHaveProperty('apiTokenHash');
     }
   });
+
+  // F7: REST-only devices stay alive; credential use refreshes lastSeen and
+  // persists at most once per hour (no file write per request).
+  it('verifyCredential refreshes lastSeen and persists at most hourly (F7)', () => {
+    const token = 'dev_lastseen_token_abcdefghijklmn';
+    store.issueCredential({ id: 'phone-1', token, platform: 'android' });
+    const issuedSeen = store.get('phone-1')!.lastSeen;
+    const diskLastSeen = () => JSON.parse(fs.readFileSync(file, 'utf8')).devices[0].lastSeen;
+
+    const start = Date.now();
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(start + 30 * 60_000);
+    expect(store.verifyCredential(token)).not.toBeNull();
+    expect(store.get('phone-1')!.lastSeen > issuedSeen).toBe(true);
+    // In-memory refresh only — the file is untouched inside the hour.
+    expect(diskLastSeen()).toBe(issuedSeen);
+
+    // Same hour: still no persist.
+    nowSpy.mockReturnValue(start + 45 * 60_000);
+    store.verifyCredential(token);
+    expect(diskLastSeen()).toBe(issuedSeen);
+
+    // More than an hour since the last persisted lastSeen → persist once.
+    const persistedAt = start + 2 * 60 * 60_000;
+    nowSpy.mockReturnValue(persistedAt);
+    store.verifyCredential(token);
+    expect(diskLastSeen()).toBe(new Date(persistedAt).toISOString());
+
+    // Immediate repeat after the write → no second write (disk unchanged).
+    nowSpy.mockReturnValue(persistedAt + 1_000);
+    store.verifyCredential(token);
+    expect(diskLastSeen()).toBe(new Date(persistedAt).toISOString());
+    nowSpy.mockRestore();
+  });
+
+  // F8: input bounds live in the store too (route pre-validates for 400).
+  it('rejects invalid / overlong device ids (F8)', () => {
+    const token = 'dev_bounds_token_abcdefghijklmno';
+    expect(() => store.issueCredential({ id: 'a'.repeat(129), token, platform: 'android' }))
+      .toThrow(/deviceId/i);
+    expect(() => store.issueCredential({ id: 'bad id', token, platform: 'android' }))
+      .toThrow(/deviceId/i);
+    expect(() => store.issueCredential({ id: '', token, platform: 'android' }))
+      .toThrow(/deviceId/i);
+    expect(() => store.issueCredential({ id: 'ok-1', token, platform: 'x'.repeat(41) }))
+      .toThrow(/platform/i);
+    expect(() => store.issueCredential({ id: 'ok-1', token, platform: 'android', deviceName: 'n'.repeat(101) }))
+      .toThrow(/deviceName/i);
+  });
+
+  it('keeps the existing platform when the rotation omits it (F8)', () => {
+    const first = 'dev_platform_first_abcdefghijkl';
+    store.issueCredential({ id: 'phone-1', token: first, platform: 'android', deviceName: 'Pixel' });
+
+    store.issueCredential({ id: 'phone-1', token: 'dev_platform_second_abcdefghijk', platform: undefined });
+
+    expect(store.get('phone-1')!.platform).toBe('android');
+    expect(store.get('phone-1')!.deviceName).toBe('Pixel');
+  });
 });
 
 describe('PushGateway device credentials (E5a-3)', () => {
@@ -209,14 +267,31 @@ describe('PushGateway device credentials (E5a-3)', () => {
     }
   });
 
-  it('removeDevice revokes the credential and clears online state', () => {
+  it('removeDevice revokes the credential, terminates the live socket and clears online state (F1)', () => {
     const token = 'dev_pg_remove_abcdefghijklmnop';
     gateway.issueDeviceToken('phone-1', token, { platform: 'android' });
-    gateway.addOnlineWs('phone-1', { readyState: 1, send: jest.fn() } as never);
+    const ws = { readyState: 1, send: jest.fn(), terminate: jest.fn(), close: jest.fn() };
+    gateway.addOnlineWs('phone-1', ws as never);
+    expect(gateway.isOnline('phone-1')).toBe(true);
 
     expect(gateway.removeDevice('phone-1')).toBe(true);
-    expect(gateway.verifyDeviceToken(token)).toBeNull();
+    expect(ws.terminate).toHaveBeenCalledTimes(1);
     expect(gateway.isOnline('phone-1')).toBe(false);
+    expect(gateway.verifyDeviceToken(token)).toBeNull();
+  });
+
+  it('removeOnlineWs terminates only the tracked socket, best-effort (F1)', () => {
+    const hero = { readyState: 1, send: jest.fn(), terminate: jest.fn(), close: jest.fn() };
+    const survivor = { readyState: 1, send: jest.fn(), terminate: jest.fn(), close: jest.fn() };
+    gateway.addOnlineWs('phone-1', hero as never);
+    gateway.addOnlineWs('phone-2', survivor as never);
+
+    gateway.removeOnlineWs('phone-1');
+
+    expect(hero.terminate).toHaveBeenCalledTimes(1);
+    expect(survivor.terminate).not.toHaveBeenCalled();
+    expect(gateway.isOnline('phone-1')).toBe(false);
+    expect(gateway.isOnline('phone-2')).toBe(true);
   });
 
   it('revokeDeviceToken clears the credential without deleting the push registration', () => {

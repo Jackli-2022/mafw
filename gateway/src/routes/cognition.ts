@@ -86,14 +86,41 @@ import { config } from '../config';
 import { validateRules } from '../core/cognition/rules';
 import type { RouteRegistry } from './registry';
 
-/** Shared body reader for migrated route modules (index.ts keeps its own until
- *  the remaining legacy branches migrate). */
-export function readRouteBody(req: IncomingMessage): Promise<string> {
+/** Raised by `readRouteBody` when a capped reader exceeds its byte budget. */
+export class PayloadTooLargeError extends Error {
+  readonly code = 'payload_too_large';
+  constructor(readonly maxBytes: number) {
+    super(`payload too large (max ${maxBytes} bytes)`);
+    this.name = 'PayloadTooLargeError';
+  }
+}
+
+/**
+ * Shared body reader for migrated route modules (index.ts keeps its own until
+ * the remaining legacy branches migrate).
+ *
+ * `maxBytes` is opt-in (default: unlimited — existing callers unchanged). When
+ * set, the stream is rejected as soon as the accumulated size exceeds the cap,
+ * so chunked requests without a `content-length` header cannot stream forever.
+ */
+export function readRouteBody(req: IncomingMessage, opts?: { maxBytes?: number }): Promise<string> {
+  const maxBytes = opts?.maxBytes;
   return new Promise((resolve, reject) => {
     let body = '';
-    req.on('data', (chunk: string) => { body += chunk; });
-    req.on('end', () => resolve(body));
-    req.on('error', reject);
+    let size = 0;
+    let settled = false;
+    req.on('data', (chunk: string) => {
+      if (settled) return;
+      size += Buffer.byteLength(String(chunk));
+      if (maxBytes !== undefined && size > maxBytes) {
+        settled = true;
+        reject(new PayloadTooLargeError(maxBytes));
+        return;
+      }
+      body += chunk;
+    });
+    req.on('end', () => { if (!settled) { settled = true; resolve(body); } });
+    req.on('error', (err) => { if (!settled) { settled = true; reject(err); } });
   });
 }
 

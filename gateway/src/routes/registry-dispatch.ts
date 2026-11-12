@@ -31,9 +31,11 @@ export async function dispatchAuthorized(
   // gateway apiToken (GitHub/Slack cannot send a MAFW bearer token).
   const hmacAuthenticated = matched.def.operationId === 'events.webhook.receive';
   // E5a-3: pairing verify is credential-less by design (the single-use nonce is
-  // the credential). The transport also marks the request, but the operation-id
-  // exemption keeps direct dispatchers (tests / internal wiring) consistent.
-  const pairingVerify = matched.def.operationId === 'mobile.pairingVerify';
+  // the credential) — but ONLY through the transport, which sets
+  // `mafwPairingVerify` after applying its body cap. A direct dispatcher cannot
+  // self-authorize by operation id (F6).
+  const pairingVerify = matched.def.operationId === 'mobile.pairingVerify'
+    && (req as any).mafwPairingVerify === true;
   // E5a: the transport already resolved a principal for every request; a
   // human/device credential must reach registry routes too (it is not a
   // shared apiToken). `authorizeRequest` stays for callers that dispatch

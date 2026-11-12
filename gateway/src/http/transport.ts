@@ -33,7 +33,7 @@ import * as http from 'http';
 import { isLoopbackAddr, resolvePrincipal } from '../core/auth';
 import { errorBody, API_ERROR_CODES } from '../core/http/api-error';
 import { handleGoalControlCommand } from '../core/goal/control-command';
-import { readBody } from '../core/http/http-util';
+import { readBody, PAIRING_VERIFY_MAX_BODY_BYTES } from '../core/http/http-util';
 import { log } from '../core/utils/logger';
 import { injectServeAuth } from '../runtime/proxy-auth';
 import { QuotaExceededError } from '../resources/quotas';
@@ -214,17 +214,27 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
     (req as any).mafwPrincipal = principal;
     // E5a-3: `POST /api/mobile/pairing/verify` is credential-less by design —
     // the single-use nonce is the credential. Only this exact route skips the
-    // 401; no human/service principal is granted (registry dispatch also
-    // exempts the operation id) and every other anonymous request still 401s.
+    // 401; no human/service principal is granted and every other anonymous
+    // request still 401s.
     const pairingVerifyRequest = req.method === 'POST'
       && pathname.replace(/\/+$/, '') === '/api/mobile/pairing/verify';
-    if (principal.kind === 'anonymous') {
-      if (!pairingVerifyRequest) {
-        res.writeHead(401, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(errorBody('unauthorized', API_ERROR_CODES.unauthorized)));
+    if (pairingVerifyRequest) {
+      // F6: transport-owned marker — registry dispatch refuses this operation
+      // without it, so a direct dispatcher cannot bypass the transport.
+      (req as any).mafwPairingVerify = true;
+      // F2: cap the unauthenticated body before dispatch. Chunked requests
+      // (no content-length) are capped again by the route's reader.
+      const declaredLength = Number(req.headers['content-length']);
+      if (Number.isFinite(declaredLength) && declaredLength > PAIRING_VERIFY_MAX_BODY_BYTES) {
+        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(errorBody('payload too large', API_ERROR_CODES.payload_too_large)));
         return;
       }
-      (req as any).mafwPairingVerify = true;
+    }
+    if (principal.kind === 'anonymous' && !pairingVerifyRequest) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(errorBody('unauthorized', API_ERROR_CODES.unauthorized)));
+      return;
     }
 
     // E3-5：auth 之后、registry 之前校验客户端主动携带的 epoch。只有**携带**且

@@ -58,6 +58,7 @@ function pushGateway() {
       listDevices: () => [{ id: 'dev-1' }, { id: 'dev-2' }],
       listPublicDevices: () => [{ id: 'dev-1' }, { id: 'dev-2' }],
       removeDevice: (id: string) => { removed.push(id); return id === 'dev-1'; },
+      getDevice: () => undefined,
       issueDeviceToken: (deviceId: string, token: string, opts: any) => {
         issued.push({ deviceId, token, opts });
         return { id: deviceId, deviceTokenHash: 'hash', tokenIssuedAt: '2026-11-12T00:00:00Z' };

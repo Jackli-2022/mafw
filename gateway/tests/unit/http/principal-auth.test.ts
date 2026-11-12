@@ -188,17 +188,17 @@ describe('transport principal auth', () => {
     });
   });
 
-  it('does not resurrect an invalid device token via the shared apiToken', async () => {
+  it('lets a stale device credential fall through to a valid shared apiToken (F4)', async () => {
     const { deps, dispatchAuthorized: dispatch } = makeTransportDeps();
     const req = fakeReq({ headers: {
       authorization: 'Bearer dev_revoked',
       'x-api-token': SERVICE,
     } });
 
-    const { rec } = await request(deps, req);
+    await request(deps, req);
 
-    expect(rec.status).toBe(401);
-    expect(dispatch).not.toHaveBeenCalled();
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect((req as any).mafwPrincipal).toEqual({ kind: 'service', method: 'api-token' });
   });
 });
 
@@ -417,17 +417,15 @@ describe('WS upgrade principal auth', () => {
     server.removeAllListeners();
   });
 
-  it('rejects a revoked device token even when ?token= carries the shared apiToken', () => {
+  it('lets a stale device token fall through to a valid ?token= apiToken on WS upgrade (F4)', () => {
     const { server, wsUpgrade, fire } = setupWs();
-    const socket = fakeSocket(REMOTE);
 
     fire(
       wsReq(`/api/ws?token=${SERVICE}`, { remoteAddress: REMOTE, headers: { 'x-mafw-device-token': 'dev_revoked' } }),
-      socket,
+      fakeSocket(REMOTE),
     );
 
-    expect(wsUpgrade).not.toHaveBeenCalled();
-    expect(socket.destroyed).toBe(true);
+    expect(wsUpgrade).toHaveBeenCalledTimes(1);
     server.removeAllListeners();
   });
 });
