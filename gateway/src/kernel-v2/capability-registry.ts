@@ -186,6 +186,28 @@ export class CapabilityRegistry<T> {
     this.invalidate();
   }
 
+  /**
+   * Removes one provider from a tier/scope. Returns false when nothing
+   * matched. The caller owns the removed provider and must dispose it.
+   */
+  remove(
+    tier: CapabilityTier,
+    id: string,
+    scope: CapabilityScope = GLOBAL_SCOPE,
+  ): boolean {
+    this.assertOpen();
+    if (!this.tierOrder.includes(tier)) throw new Error(`unknown capability tier: ${tier}`);
+    const key = scopeKey(scope);
+    const bucket = this.scopes.get(key)?.get(tier);
+    if (!bucket?.has(id)) return false;
+    bucket.delete(id);
+    this.sequence = this.sequence.filter(
+      (item) => !(item.scopeKey === key && item.tier === tier && item.entry.id === id),
+    );
+    this.invalidate();
+    return true;
+  }
+
   resolve(id?: string, scope: CapabilityScope = GLOBAL_SCOPE): T {
     this.assertOpen();
     const explicit = typeof id === 'string' && id.length > 0;

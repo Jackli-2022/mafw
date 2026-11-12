@@ -37,6 +37,8 @@ export interface AsrSidecarProviderOptions {
 export interface AsrSidecarProvider extends ProviderHandle {
   readonly engine: AsrEngine;
   readonly sidecar: SidecarLike;
+  /** Last health observed by activate()/health(); safe for sync registry callbacks. */
+  readonly cachedHealth: ProviderHealth | undefined;
   startOnce(): Promise<void>;
 }
 
@@ -149,6 +151,9 @@ export function createAsrSidecarProvider(
     id,
     engine,
     sidecar,
+    get cachedHealth() {
+      return lastHealth;
+    },
     startOnce,
     async load(): Promise<void> {
       if (!engine.name) throw new Error(`ASR engine for ${id} has no name`);

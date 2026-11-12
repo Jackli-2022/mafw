@@ -93,6 +93,25 @@ describe('CapabilityRegistry scopes and health', () => {
     ]);
   });
 
+  test('remove deletes one entry from a tier/scope and exposes the fallback', () => {
+    const reg = new CapabilityRegistry<Value>({ defaultId: 'a' });
+    reg.register('builtin', entry('a', 'builtin'), global);
+    reg.register('package', entry('a', 'package'), global);
+    expect(reg.resolve('a', global)).toBe('package');
+    expect(reg.remove('package', 'a', global)).toBe(true);
+    expect(reg.resolve('a', global)).toBe('builtin');
+    expect(reg.remove('package', 'a', global)).toBe(false);
+  });
+
+  test('remove is scoped and does not touch other scopes', () => {
+    const reg = new CapabilityRegistry<Value>({ defaultId: 'a' });
+    reg.register('builtin', entry('a', 'global-a'), global);
+    reg.register('builtin', entry('a', 'project-a'), p1);
+    expect(reg.remove('builtin', 'a', p1)).toBe(true);
+    expect(reg.resolve('a', p1)).toBe('global-a');
+    expect(reg.resolve('a', global)).toBe('global-a');
+  });
+
   test('replaceTier is scoped', () => {
     const reg = new CapabilityRegistry<Value>({ defaultId: 'a' });
     reg.register('builtin', entry('a', 'global-a'), global);
