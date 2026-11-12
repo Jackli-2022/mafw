@@ -101,7 +101,7 @@ import { PodSessionLifecycle } from './core/pod/pod-session-lifecycle';
 import { PodDirectionService } from './core/pod/pod-direction-service';
 import { PodTechLeadService, TECH_LEAD_AGENT } from './core/pod/pod-tech-lead-service';
 import { LeadTopicStore } from './core/lead/lead-topic-store';
-import { DecisionRecordService } from './core/decision/decision-record-service';
+import { DecisionRecordService, findMafwDirForProject } from './core/decision/decision-record-service';
 import { LeadHandoffService } from './core/lead/lead-handoff-service';
 import { TopicMessageIndexStore } from './core/lead/topic-message-index';
 import { LeadTopicSummaryService } from './core/lead/lead-topic-summary-service';
@@ -4048,7 +4048,7 @@ class MafwScheduler {
     });
     const leadTopics = new LeadTopicStore(this.getGatewayDb().getStore());
     this.decisionRecords = new DecisionRecordService({
-      mafwDir: (projectDir) => this.registeredProjects.get(canonicalProjectDir(projectDir))?.mafwDir ?? null,
+      mafwDir: (projectDir) => findMafwDirForProject(this.registeredProjects, projectDir, canonicalProjectDir),
     });
     const leadTopicIndex = new TopicMessageIndexStore(this.getGatewayDb().getStore());
     const topicForks = new TopicForkStore(this.getGatewayDb().getStore());

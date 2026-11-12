@@ -14,6 +14,12 @@ test("composer previews before creating", () => {
   assert.match(composer, /预览委托单/)
   assert.match(composer, /startPreview/)
   assert.match(composer, /projectName/)
+
+  const calls = composer.match(/props\.onCreate\(/g) ?? []
+  assert.equal(calls.length, 1, "onCreate must occur exactly once")
+  const submit = composer.indexOf("const submit = async")
+  const onCreate = composer.indexOf("props.onCreate(")
+  assert.ok(submit >= 0 && onCreate > submit, "onCreate must live inside submit")
 })
 
 test("preview renders the contract and human-only note", () => {

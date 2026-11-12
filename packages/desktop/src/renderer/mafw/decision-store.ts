@@ -23,6 +23,7 @@ export function createDecisionStore(deps: {
   const [revision, setRevision] = createSignal(0)
   const [loaded, setLoaded] = createSignal(false)
   let seq = 0
+  let dataDir: string | null = null
 
   const board = (goalId?: string | null): DecisionBoardView =>
     buildDecisionBoard({ attention: items(), records: records(), goalId })
@@ -33,6 +34,13 @@ export function createDecisionStore(deps: {
     const dir = deps.projectDir()
     if (!dir) return
     const my = ++seq
+    if (dataDir !== dir) {
+      dataDir = dir
+      setItems([])
+      setRecords([])
+      setLoaded(false)
+      setRevision((value) => value + 1)
+    }
     const attentionTask = deps.api.attention(dir)
       .then((next) => {
         if (my !== seq) return
@@ -40,14 +48,21 @@ export function createDecisionStore(deps: {
         setLoaded(true)
         setRevision((value) => value + 1)
       })
-      .catch(() => { /* fail-open: keep the last projected list */ })
+      .catch(() => { /* fail-open: keep the last projected list for this project */ })
     const recordsTask = deps.api.decisions
       ? deps.api.decisions(dir)
         .then((next) => {
           if (my !== seq) return
-          setRecords(Array.isArray(next?.items) ? next.items : [])
+          const nextItems = Array.isArray(next?.items) ? next.items : []
+          setRecords((previous) => {
+            const byId = new Map(previous.map((record) => [record.id, record]))
+            return nextItems.map((record) => {
+              const old = byId.get(record.id)
+              return old && old.updatedAt === record.updatedAt ? old : record
+            })
+          })
         })
-        .catch(() => { /* fail-open: keep the last records */ })
+        .catch(() => { /* fail-open: keep the last records for this project */ })
       : Promise.resolve()
     await Promise.all([attentionTask, recordsTask])
   }

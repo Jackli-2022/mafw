@@ -60,7 +60,7 @@ test("decision store exposes attention items and counts", async () => {
   await store.refresh()
   assert.equal(store.items().length, 2)
   assert.equal(store.counts().needsYou, 2)
-  assert.equal(store.revision(), 1)
+  assert.ok(store.revision() >= 1)
 })
 
 test("decision store keeps the last list on failure", async () => {
@@ -129,13 +129,15 @@ test("decision store fetches attention and records together", async () => {
 
 test("confirm refreshes the record list", async () => {
   let status = "draft"
+  let updatedAt = "2026-11-12T00:00:00.000Z"
   const store = createDecisionStore({
     api: {
       attention: async () => ({ items: [] }),
-      decisions: async () => ({ items: [record({ status })] }),
+      decisions: async () => ({ items: [record({ status, updatedAt })] }),
       confirm: async () => {
         status = "decided"
-        return { record: record({ status }) }
+        updatedAt = "2026-11-13T00:00:00.000Z"
+        return { record: record({ status, updatedAt }) }
       },
     },
     projectDir: () => "C:/repo",
@@ -164,4 +166,52 @@ test("refresh failure keeps previous records", async () => {
   fail = true
   await store.refresh()
   assert.equal(store.records().length, 1)
+})
+
+test("refresh preserves record identity when updatedAt is unchanged", async () => {
+  let updatedAt = "2026-11-12T00:00:00.000Z"
+  const store = createDecisionStore({
+    api: {
+      attention: async () => ({ items: [] }),
+      decisions: async () => ({ items: [record({ updatedAt })] }),
+    },
+    projectDir: () => "C:/repo",
+  })
+
+  await store.refresh()
+  const first = store.records()[0]!
+  await store.refresh()
+  assert.equal(store.records()[0], first)
+
+  updatedAt = "2026-11-13T00:00:00.000Z"
+  await store.refresh()
+  assert.notEqual(store.records()[0], first)
+})
+
+test("project switch clears previous decisions even if the new fetch fails", async () => {
+  let dir = "C:/a"
+  let fail = false
+  const store = createDecisionStore({
+    api: {
+      attention: async () => {
+        if (fail) throw new Error("offline")
+        return { items: [attention()] }
+      },
+      decisions: async () => {
+        if (fail) throw new Error("offline")
+        return { items: [record()] }
+      },
+    },
+    projectDir: () => dir,
+  })
+
+  await store.refresh()
+  assert.equal(store.items().length, 1)
+  assert.equal(store.records().length, 1)
+
+  dir = "C:/b"
+  fail = true
+  await store.refresh()
+  assert.equal(store.items().length, 0)
+  assert.equal(store.records().length, 0)
 })

@@ -35,6 +35,20 @@ export interface DecisionRecordServiceDeps {
   id?: () => string;
 }
 
+/** Registry keys are stored raw; compare canonically so case/trailing-separator
+ *  differences do not turn a registered project into a 503. */
+export function findMafwDirForProject(
+  entries: Iterable<readonly [string, { mafwDir: string }]>,
+  projectDir: string,
+  canonicalize: (value: string) => string,
+): string | null {
+  const canonical = canonicalize(projectDir);
+  for (const [registered, info] of entries) {
+    if (canonicalize(registered) === canonical) return info.mafwDir;
+  }
+  return null;
+}
+
 function requireText(value: unknown, field: string, max: number): string {
   const text = typeof value === 'string' ? value.trim() : '';
   if (!text) throw new DecisionRecordError(400, `${field} is required`);

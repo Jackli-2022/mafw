@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DecisionRecordService, DecisionRecordError } from '../../src/core/decision/decision-record-service';
+import { DecisionRecordService, DecisionRecordError, findMafwDirForProject } from '../../src/core/decision/decision-record-service';
 
 function setup() {
   const root = mkdtempSync(join(tmpdir(), 'mafw-decisions-'));
@@ -118,4 +118,15 @@ test('records survive a second service instance', () => {
   } finally {
     cleanup();
   }
+});
+
+test('mafwDir lookup tolerates non-canonical registered keys', () => {
+  const entries = new Map([
+    ['C:\\Repo\\', { mafwDir: 'C:/repo/.mafw' }],
+    ['C:\\Other', { mafwDir: 'C:/other/.mafw' }],
+  ]);
+  const canonical = (value: string) => value.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+  expect(findMafwDirForProject(entries, 'C:/repo', canonical)).toBe('C:/repo/.mafw');
+  expect(findMafwDirForProject(entries, 'c:/other/', canonical)).toBe('C:/other/.mafw');
+  expect(findMafwDirForProject(entries, 'C:/missing', canonical)).toBeNull();
 });

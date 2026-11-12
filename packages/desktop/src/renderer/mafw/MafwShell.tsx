@@ -79,6 +79,7 @@ import {
   type GoalDetailFocus,
 } from "./pod-model"
 import { executionBadgeFor } from "./goal-user-view"
+import type { PlanOpenRequest } from "./plan-open"
 import { goalDiscussionRequestCurrent, goalDiscussionTarget, shouldOpenTechLeadForGoal, shouldShowReturnLead } from "./goal-chat-context"
 import { ingestPluginEvent, ingestPluginsChanged, pluginClientRevision, pluginDescriptors, refreshPluginClient } from "./plugins/plugin-store"
 import { pluginSurfaceIssues, pluginSurfaces, pluginConfigSurfaces, resolveActiveSurface } from "./plugins/plugin-view-model"
@@ -288,7 +289,7 @@ export function MafwShell() {
   // switches the content pane (no tab change); this map powers the back button.
   const [subagentStack, setSubagentStack] = createStore<Record<string, string>>({})
   const [podGoalId, setPodGoalId] = createSignal<string | null>(null)
-  const [goalPlanOpenRequest, setGoalPlanOpenRequest] = createSignal(0)
+  const [goalPlanOpenRequest, setGoalPlanOpenRequest] = createSignal<PlanOpenRequest | null>(null)
   const [contentReturnGoalId, setContentReturnGoalId] = createSignal<string | null>(null)
   const [goalDetailFocus, setGoalDetailFocus] = createSignal<GoalDetailFocus>("timeline")
   let goalDiscussSeq = 0
@@ -472,6 +473,13 @@ export function MafwShell() {
     void podStore.reviewRevision()
     if (!dir || !detail) return
     void decisionStore.refresh()
+  })
+  // 决定记录可能由 MCP 在 Pod 静默时写入；15s 兜底刷新，不依赖 Pod 事件。
+  createEffect(() => {
+    const dir = currentProject()
+    if (!dir) return
+    const timer = setInterval(() => { void decisionStore.refresh() }, 15000)
+    onCleanup(() => clearInterval(timer))
   })
 
   // Lead UI authority is the current Pod's active coordination binding. The
@@ -3185,7 +3193,9 @@ export function MafwShell() {
     applyRightDock(true)
     if (narrowZone()) applyNarrowView("workbench")
     openGoalFocus(goalId, target)
-    if (target === "plan") setGoalPlanOpenRequest((n) => n + 1)
+    if (target === "plan") {
+      setGoalPlanOpenRequest({ nonce: (goalPlanOpenRequest()?.nonce ?? 0) + 1, goalId })
+    }
   }
   const handleDecisionAction = (item: DecisionItem) => {
     const action = item.action

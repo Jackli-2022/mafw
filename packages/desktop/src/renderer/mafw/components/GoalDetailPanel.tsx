@@ -34,6 +34,7 @@ import { isReviewGateConflict } from "../pod-review-model"
 import { goalsRev } from "../goals-rev"
 import { goalModeLabel } from "../work-overview-model"
 import { goalUserActionIntent, summarizeGoalForUser } from "../goal-user-view"
+import { shouldOpenPlan, type PlanOpenRequest } from "../plan-open"
 
 const TERMINAL_ACTIONS = new Set(["COMPLETED", "FAILED", "CANCELLED", "ARCHIVED"])
 
@@ -68,8 +69,8 @@ export function GoalDetailPanel(props: {
   podId?: string | null
   /** shell 打开 attention 时指定要展开/滚动到的区域。 */
   focus?: GoalDetailFocus | null
-  /** 决定板请求直接打开计划审阅浮层；非零 nonce。 */
-  planOpenRequest?: number
+  /** 决定板请求直接打开计划审阅浮层；带目标 Goal 的 nonce。 */
+  planOpenRequest?: PlanOpenRequest | null
   onClose: () => void
   onOpenSession: (sid: string) => void
   /** 验收成功后把 Chat 显式切回项目 Lead；右侧 Goal 保持不变。 */
@@ -667,10 +668,10 @@ export function GoalDetailPanel(props: {
   // 决定板「批准计划」：nonce 变化时直接打开审阅浮层；等计划加载完成再开。
   let lastPlanOpenRequest = 0
   createEffect(() => {
-    const request = props.planOpenRequest ?? 0
-    if (!request || request === lastPlanOpenRequest) return
+    const request = props.planOpenRequest
+    if (!shouldOpenPlan(request, props.goalId, lastPlanOpenRequest)) return
     if (!timeline() || !planEntry()) return
-    lastPlanOpenRequest = request
+    lastPlanOpenRequest = request!.nonce
     setPlanOpen(true)
   })
 

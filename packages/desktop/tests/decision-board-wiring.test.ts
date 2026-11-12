@@ -33,8 +33,10 @@ test("decision actions open the goal and the plan overlay", () => {
   assert.match(shell, /openDecisionGoal/)
   assert.match(shell, /openReviewAnchorToFocus/)
   assert.match(shell, /setGoalPlanOpenRequest/)
+  assert.match(shell, /setGoalPlanOpenRequest\(\{ nonce: \(goalPlanOpenRequest\(\)\?\.nonce \?\? 0\) \+ 1, goalId \}\)/)
   assert.match(shell, /planOpenRequest=\{goalPlanOpenRequest\(\)\}/)
-  assert.match(read("src/renderer/mafw/components/GoalDetailPanel.tsx"), /planOpenRequest\?: number/)
+  assert.match(read("src/renderer/mafw/components/GoalDetailPanel.tsx"), /planOpenRequest\?: PlanOpenRequest \| null/)
+  assert.match(read("src/renderer/mafw/components/GoalDetailPanel.tsx"), /shouldOpenPlan/)
   assert.match(read("src/renderer/mafw/components/GoalDetailPanel.tsx"), /setPlanOpen\(true\)/)
 })
 
