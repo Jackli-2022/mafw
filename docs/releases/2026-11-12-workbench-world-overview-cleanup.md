@@ -2,7 +2,7 @@
 
 - 版本：desktop 5.1.0 / gateway 4.16.1
 - Plan 5 base：`c3474871`（docs: plan workbench world overview and cleanup）
-- 代码交付 HEAD：`c2ccc78d`（test: align remaining suites with focus shell）
+- 代码交付 HEAD：`b6735e33`（fix: route files and goal changes through focus）
 - 计划：`docs/superpowers/plans/2026-11-12-workbench-world-overview-cleanup.md`
 - 设计：`docs/superpowers/specs/2026-11-12-workbench-stage-first-design.md`
 - 用户决定：**取消 split view**；spec §12.8 / §15.11 由本计划覆盖。
@@ -37,6 +37,7 @@ Plan 5 收口 stage-first 工作台：焦点栈成为唯一导航，世界总览
 | `10032cfa` | initialize content scope after focus helpers |
 | `4c3a4c1b` | preserve live diffs and world picker label |
 | `c2ccc78d` | align remaining suites with focus shell |
+| `b6735e33` | route files and goal changes through focus |
 
 ## 行为变化
 
@@ -54,7 +55,13 @@ Plan 5 收口 stage-first 工作台：焦点栈成为唯一导航，世界总览
 - `WorkbenchShell` 不再接收 `context` / `surface` / `execution*` / `workView` /
   `goalView` / `reviewView`；只接收焦点、框、镜、舞台渲染器、器械与取景器。
 - `FocusStage` 支持 world / goal / changeSet / file / plugin / web / terminal；
-  插件 Web 页面由 `PluginSurfaceStage` 首次访问后保持挂载。
+  插件 Web 页面由壳级 `PluginSurfaceStage` 按访问缓存：焦点之间切换不重载，退回
+  取景器空态时随壳卸载，再进入重新挂载。
+- 取景器文件项与 Chat 文件链接统一走 `openFileInScope`，按 `fileOpenPlan` 分流浏览器 /
+  编辑器并推入焦点栈；`editor-open` 不再是可用的 UI 路径。
+- Goal 变更集由 `GoalChangeSetStage` 直接读 Pod revision `worktreeDiff`，不再依赖
+  active session 目录；Pod 结果里的入口改名「查看本版变更」。Goal 作用域取景器列出
+  该 worktree 文件。
 - `contentScope` / `contentRoot` / `contentScopeKey` 从 active focus 派生；`contentIntent`
   从 lens 派生。`content-scope-persistence` 与 `content-history` 删除。
 - 旧 `mafw-workbench-context` / `-surface` / `-execution-section` / `-view` 与旧 tab 键
@@ -63,6 +70,8 @@ Plan 5 收口 stage-first 工作台：焦点栈成为唯一导航，世界总览
   composer 上方内联；用量入口改为 Config › Usage。
 - split view 删除：`Place.split`、LensBar 分屏按钮、`ContentScopeHeader` /
   `WorkbenchCodeView` 旧分屏、`SplitDocumentPane` 与相关 CSS 全部移除。
+- 框面包屑按焦点栈真实下标计算；旧持久化栈没有世界根时省略世界面包屑。取景器已打开
+  或关闭后不会被自动落地逻辑再次拉起；Pod 面板请求按 seq 只消费一次。
 
 ### 决定板
 
@@ -77,10 +86,11 @@ Plan 5 收口 stage-first 工作台：焦点栈成为唯一导航，世界总览
 
 | 门禁 | 结果 |
 |---|---|
-| Plan 5 新增测试 | **25**（desktop 24 + gateway 1） |
-| desktop focused suite | 72/72（13 files） |
+| Plan 5 新增测试 | **30**（desktop 29 + gateway 1） |
+| desktop focused suite（Plan 5 Task 10） | 72/72（13 files） |
+| desktop focused suite（review fixes） | 24/24（5 files） |
 | gateway focused suite | 13/13（decision-record-service） |
-| desktop full `npm test` | **3550/3550**（694 suites） |
+| desktop full `npm test` | **3555/3555**（694 suites） |
 | gateway full `jest --runInBand --forceExit` | **6768/6768**（878 suites） |
 | desktop `tsgo --noEmit -p tsconfig.json` | rc=0 |
 | gateway `tsc --noEmit -p tsconfig.json` | rc=0 |
@@ -88,7 +98,7 @@ Plan 5 收口 stage-first 工作台：焦点栈成为唯一导航，世界总览
 | gateway `npm run build`（tsc + manifest + copy） | rc=0 |
 
 Desktop 全量低于 Plan 4 的 3576，是因为 Plan 5 删除了约 50 个只覆盖已退役
-context / header / L2 / split / execution drawer 的旧断言；当前树的 3550 全绿。
+context / header / L2 / split / execution drawer 的旧断言；当前树的 3555 全绿。
 Gateway 的 6768 是当前树，包含并发落地的外部 kernel-v2 交付；Plan 5 自身只新增
 1 个 gateway 测试。外部 commit 不计入 Plan 5。
 
@@ -102,6 +112,9 @@ Gateway 的 6768 是当前树，包含并发落地的外部 kernel-v2 交付；P
 - 无 split 按钮、无执行抽屉；世界总览有独立滚动 owner。
 - 决定板 SSE 与分批渲染由单测覆盖（dispatcher / decision-model / DecisionBoard wiring）；
   真机未写入测试决定记录，避免污染项目 `.mafw/decisions/`。
+- 评审修复后复验：reload 无 error overlay；世界总览 / Goal 焦点 / Goal 变更集均能打开，
+  该 Goal 已无 worktree，变更集显示「这一版没有可预览的分支」空态；仍无 split 按钮与
+  执行抽屉。
 
 ## 已知问题与处理
 

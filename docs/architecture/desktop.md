@@ -59,13 +59,15 @@
   用户来源的决定记录，确认仍在决定板由人完成。详见
   `docs/releases/2026-11-12-workbench-chat-modes-episodes.md`。
 - **Workbench 焦点收口（2026-11-12 Plan 5）**：`WorkbenchShell` 只剩 `FrameBar` /
-  `LensBar` / `FocusStage` / `InstrumentRail` / `SubjectPicker`；`WorkbenchContext`、四
-  context 持久化、全局 L2、执行抽屉与 split view 删除。世界总览是兜底 subject，无
-  焦点时每个世界自动打开一次取景器；文件与最近内容只在取景器进入。`contentScope`
-  从 active focus 派生，旧 `mafw-content-scope` 一次性迁移。后台任务在 Chat 内联，
-  团队 / 记忆在世界总览的 Pod 面板。决定板由 `decision.updated` SSE 定向刷新，记录
-  每 25 条分批渲染。详见
-  `docs/releases/2026-11-12-workbench-world-overview-cleanup.md`。
+  `LensBar` / `FocusStage` / `InstrumentRail` / `SubjectPicker` + 壳级
+  `PluginSurfaceStage`；`WorkbenchContext`、四 context 持久化、全局 L2、执行抽屉与
+  split view 删除。世界总览是兜底 subject，无焦点时每个世界自动打开一次取景器；
+  文件与最近内容只在取景器进入，Chat 文件链接与取景器共用 `openFileInScope` 焦点
+  路由（`fileOpenPlan` 分流）。`FocusStage` 的 Goal 变更集由 `GoalChangeSetStage`
+  读 Pod revision worktree diff（「查看本版变更」）。`contentScope` 从 active focus
+  派生，旧 `mafw-content-scope` 一次性迁移。后台任务在 Chat 内联，团队 / 记忆在
+  世界总览的 Pod 面板。决定板由 `decision.updated` SSE 定向刷新，记录每 25 条分批
+  渲染。详见 `docs/releases/2026-11-12-workbench-world-overview-cleanup.md`。
 - **编辑器**：默认 **Monaco**（VS Code 内核；`mafw-editor-engine=codemirror` 回退，挂载失败自动回退），
   行内 diff 装饰、Ctrl/Cmd+S、MAFW 主题 token 映射、minimap ≥720px。详情见本文件 Monaco 段。
 - **文件预览**：md（session-ui markdown）、json 折叠树、csv/tsv 表格、svg 预览/源码、图片、pdf（Chromium
