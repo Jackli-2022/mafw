@@ -1,6 +1,7 @@
-import { Show, type JSX } from "solid-js"
+import { Show, createEffect, createSignal, type JSX } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
+import { TextareaV2 } from "@mafw/ui/v2/textarea-v2"
 import type { ChatEpisode } from "../chat/episode-model"
 import "../chat-episodes.css"
 
@@ -12,9 +13,31 @@ export function EpisodeHeader(props: {
   onTitle?: (title: string) => void
   onToggle: () => void
   onClose: () => void
+  onCloseWithRecord?: (input: { summary: string }) => Promise<string | null>
   onReopen: () => void
   onOpenRecord: () => void
 }): JSX.Element {
+  const [closing, setClosing] = createSignal(false)
+  const [summary, setSummary] = createSignal("")
+  const [busy, setBusy] = createSignal(false)
+
+  createEffect(() => {
+    props.episode.id
+    setSummary("")
+    setClosing(false)
+  })
+
+  const closeWithRecord = async () => {
+    if (busy()) return
+    setBusy(true)
+    try {
+      const id = await props.onCloseWithRecord?.({ summary: summary().trim() })
+      if (id) setClosing(false)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <section class="mafw-episode-header" data-status={props.episode.status}>
       <div class="mafw-episode-main">
@@ -43,7 +66,7 @@ export function EpisodeHeader(props: {
             </ButtonV2>
           }
         >
-          <ButtonV2 variant="outline" size="small" onClick={() => props.onClose()}>
+          <ButtonV2 variant="outline" size="small" onClick={() => setClosing(true)}>
             关闭
           </ButtonV2>
         </Show>
@@ -53,6 +76,41 @@ export function EpisodeHeader(props: {
           </ButtonV2>
         </Show>
       </div>
+
+      <Show when={closing() && props.episode.status === "open"}>
+        <div class="mafw-episode-close">
+          <TextInputV2
+            value={props.episode.title}
+            placeholder="Episode 标题"
+            onInput={(event) => props.onTitle?.(event.currentTarget.value)}
+          />
+          <TextareaV2
+            value={summary()}
+            placeholder="这段讨论决定了什么（可选）"
+            onInput={(event) => setSummary(event.currentTarget.value)}
+          />
+          <div class="mafw-episode-close-actions">
+            <ButtonV2 variant="ghost" size="small" onClick={() => setClosing(false)}>
+              取消
+            </ButtonV2>
+            <ButtonV2
+              variant="outline"
+              size="small"
+              onClick={() => { setClosing(false); props.onClose() }}
+            >
+              仅关闭
+            </ButtonV2>
+            <ButtonV2
+              variant="contrast"
+              size="small"
+              disabled={busy()}
+              onClick={() => void closeWithRecord()}
+            >
+              {busy() ? "记录中…" : "关闭并记录决定"}
+            </ButtonV2>
+          </div>
+        </div>
+      </Show>
     </section>
   )
 }

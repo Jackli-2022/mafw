@@ -110,6 +110,7 @@ import { getSessionTurnDiffs } from "./session-turn-diffs"
 import { UsageDock } from "./components/UsageDock"
 import { openExecutionUsage } from "./execution-usage"
 import { defaultDockOpen } from "./workbench-defaults"
+import type { ChatEpisode } from "./chat/episode-model"
 import {
   clearLegacyWorkbenchKeys,
   migrateWorkbenchStorage,
@@ -3231,6 +3232,54 @@ export function MafwShell() {
     }
     openWorkbenchContext("review")
   }
+  /** Episode 关闭时用的 Goal 身份：focus 优先，其次内容工作台 scope。 */
+  const activeGoalReference = (): { goalId: string; revision: number } | null => {
+    const focus = activeFocus()
+    if (focus?.scope.kind === "goal") {
+      return { goalId: focus.scope.goalId, revision: focus.scope.revision }
+    }
+    const scope = contentScope()
+    if (scope?.kind === "goal") {
+      return { goalId: scope.goalId, revision: scope.revision }
+    }
+    return null
+  }
+  /** 关闭 Episode → 起草一条用户来源的决定记录；确认仍由决定板里的人类完成。 */
+  const closeEpisodeToDecision = async (input: {
+    episode: ChatEpisode
+    summary: string
+  }): Promise<string | null> => {
+    const projectDir = currentProject()
+    if (!projectDir) {
+      showToastV2({ description: "当前没有项目，无法起草决定记录", duration: 3200 } as any)
+      return null
+    }
+    const goal = activeGoalReference()
+    try {
+      const result = await window.api.mafw.decisions.draft({
+        projectDir,
+        goalId: goal?.goalId ?? null,
+        revision: goal?.revision ?? null,
+        kind: "other",
+        question: input.episode.title,
+        rationale: input.summary.trim() || null,
+        evidence: [{
+          kind: "message",
+          ref: input.episode.startMessageId,
+          label: input.episode.title,
+        }],
+        source: "user",
+      })
+      await decisionStore.refresh()
+      return result.record.id
+    } catch (err: any) {
+      showToastV2({
+        description: `起草决定记录失败：${String(err?.message ?? err).slice(0, 120)}`,
+        duration: 3600,
+      } as any)
+      return null
+    }
+  }
   const handleDecisionAction = (item: DecisionItem) => {
     const action = item.action
     if (action.kind === "goal") {
@@ -3923,6 +3972,7 @@ export function MafwShell() {
                           canResolve={() => activeFocus()?.scope.kind === "goal" || contentScopeIsGoal()}
                           onDelegateDraft={openGoalComposerWithDraft}
                           onResolveRequest={openReviewFromChat}
+                          onCloseEpisode={closeEpisodeToDecision}
                           techLeadTarget={activeTechLeadTarget}
                           sendBlocked={activeTechLeadBlocked}
                           onOpenDiffReview={() => openWorkbenchContext("review")}

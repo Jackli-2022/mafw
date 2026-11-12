@@ -63,3 +63,16 @@
 .mafw-episode-actions button {
   font-size: 10px;
 }
+.mafw-episode-close {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+}
+.mafw-episode-close-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+}

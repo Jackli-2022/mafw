@@ -42,6 +42,26 @@ test('draft writes a draft record and lists it', () => {
   }
 });
 
+test('user-sourced draft records the user as author', () => {
+  const { service, cleanup } = setup();
+  try {
+    const record = draft(service, { source: 'user' });
+    expect(record.history[0]).toMatchObject({ action: 'drafted', by: 'user' });
+  } finally {
+    cleanup();
+  }
+});
+
+test('agent-sourced draft keeps the agent author', () => {
+  const { service, cleanup } = setup();
+  try {
+    const record = draft(service);
+    expect(record.history[0]).toMatchObject({ action: 'drafted', by: 'agent' });
+  } finally {
+    cleanup();
+  }
+});
+
 test('confirm sets decided and preserves the audit trail', () => {
   const { service, cleanup } = setup();
   try {

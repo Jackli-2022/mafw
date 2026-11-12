@@ -1,4 +1,4 @@
-import { For, Show, createSignal, type JSX } from "solid-js"
+import { For, Show, createEffect, createSignal, type JSX } from "solid-js"
 import type { DecisionRecord } from "@mafw/sdk"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
@@ -21,11 +21,17 @@ export function DecisionBoard(props: {
   onAction: (item: DecisionItem) => void
   records?: readonly DecisionRecord[]
   recordBusy?: string | null
+  /** 外部请求展开某条记录（新对象触发一次，重复点击也生效）。 */
+  focusRecord?: { id: string } | null
   onDecisionConfirm?: (id: string, input: { rationale: string; consequences: string; reviewAt?: string }) => void
   onDecisionShelve?: (id: string, input: { reviewAt: string; note?: string }) => void
   onDecisionReopen?: (id: string) => void
 }): JSX.Element {
   const [expandedRecordId, setExpandedRecordId] = createSignal<string | null>(null)
+  createEffect(() => {
+    const focus = props.focusRecord
+    if (focus) setExpandedRecordId(focus.id)
+  })
   const hasItems = () => props.board.groups.some((group) => group.items.length > 0)
   const recordIdOf = (item: DecisionItem): string | null =>
     item.action.kind === "record" ? item.action.recordId : null

@@ -233,7 +233,7 @@ export class DecisionRecordService {
       decidedAt: null,
       createdAt: at,
       updatedAt: at,
-      history: [{ action: 'drafted', by: 'agent', at }],
+      history: [{ action: 'drafted', by: input.source === 'user' ? 'user' : 'agent', at }],
     };
     return this.write(projectDir, record);
   }

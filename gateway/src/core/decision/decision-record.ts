@@ -61,6 +61,8 @@ export interface DecisionDraftInput {
   rationale?: string | null;
   consequences?: string | null;
   reviewAt?: string | null;
+  /** Who authored the draft; defaults to agent. */
+  source?: 'agent' | 'user';
 }
 
 export interface DecisionConfirmInput {

@@ -1569,6 +1569,7 @@ export interface DecisionDraftInput {
   rationale?: string | null
   consequences?: string | null
   reviewAt?: string | null
+  source?: 'agent' | 'user'
 }
 
 export interface DecisionConfirmInput {

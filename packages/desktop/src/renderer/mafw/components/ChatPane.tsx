@@ -249,6 +249,11 @@ export type ChatPaneProps = {
   canResolve?: () => boolean
   onDelegateDraft?: (draft: { text: string }) => void
   onResolveRequest?: () => void
+  /** Episode 关闭并记录决定：返回 draft record id；只起草，确认仍在决定板。 */
+  onCloseEpisode?: (input: {
+    episode: ChatEpisode
+    summary: string
+  }) => Promise<string | null>
   /** Task 20：当前 tab 是某个 Goal 的 Tech Lead 讨论时，发送走 sendTechLeadMessage。 */
   techLeadTarget?: () => { podId: string; goalId: string } | null | Promise<{ podId: string; goalId: string } | null>
   /** Task 20 review：非讨论的 Tech Lead 节点会话禁止直接发送，返回原因（保留草稿）。 */
@@ -333,6 +338,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const episodeStore = createMemo(() => createEpisodeStore(window.localStorage, sidProp()))
   const [episodes, setEpisodes] = createSignal<ChatEpisode[]>([])
   const [collapsedEpisodes, setCollapsedEpisodes] = createSignal<ReadonlySet<string>>(new Set())
+  const [decisionRecordFocus, setDecisionRecordFocus] = createSignal<{ id: string } | null>(null)
   onMount(() => setEpisodes(episodeStore().load()))
   const persistEpisodes = (next: ChatEpisode[]) => {
     setEpisodes(next)
@@ -382,6 +388,25 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   }
   const reopenEpisodeById = (id: string) => {
     persistEpisodes(episodes().map((item) => item.id === id ? reopenEpisode(item) : item))
+  }
+  const closeEpisodeWithRecord = async (
+    episode: ChatEpisode,
+    summary: string,
+  ): Promise<string | null> => {
+    const recordId = await props.onCloseEpisode?.({ episode, summary })
+    if (!recordId) return null
+    const group = episodeGroups().find((item) => item.episode?.id === episode.id)
+    const end = group?.turns.at(-1)?.id ?? episode.startMessageId
+    persistEpisodes(episodes().map((item) => item.id === episode.id
+      ? closeEpisode(item, end, recordId)
+      : item))
+    showToastV2({ description: "已起草决定记录，去决定板确认", duration: 3200 })
+    return recordId
+  }
+  /** 展开决定板并定位到记录；新对象保证重复点击也能重新展开。 */
+  const openDecisionRecord = (id: string) => {
+    props.onToggleDecisionBoard?.(false)
+    setDecisionRecordFocus({ id })
   }
   const {
     attachments, setAttachments, dragging, setDragging,
@@ -2049,6 +2074,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 onAction={(item) => props.onDecisionAction?.(item)}
                 records={props.decisionRecords?.() ?? []}
                 recordBusy={props.decisionRecordBusy?.() ?? null}
+                focusRecord={decisionRecordFocus()}
                 onDecisionConfirm={(id, input) => props.onDecisionConfirm?.(id, input)}
                 onDecisionShelve={(id, input) => props.onDecisionShelve?.(id, input)}
                 onDecisionReopen={(id) => props.onDecisionReopen?.(id)}
@@ -2076,8 +2102,12 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                         onTitle={(title) => updateEpisode(episode().id, { title })}
                         onToggle={() => toggleEpisode(episode().id)}
                         onClose={() => closeEpisodeById(episode().id)}
+                        onCloseWithRecord={(input) => closeEpisodeWithRecord(episode(), input.summary)}
                         onReopen={() => reopenEpisodeById(episode().id)}
-                        onOpenRecord={() => {}}
+                        onOpenRecord={() => {
+                          const id = episode().decisionRecordId
+                          if (id) openDecisionRecord(id)
+                        }}
                       />
                     )}
                   </Show>
