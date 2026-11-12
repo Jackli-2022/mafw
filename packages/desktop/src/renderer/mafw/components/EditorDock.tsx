@@ -11,9 +11,10 @@ import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { menuController } from "../context-menu/controller"
 import { buildEditorTabMenu } from "../context-menu/builders/editor-tab"
 import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
-import { openMenuOnKey } from "../context-menu/menu-key"
 import { Icon } from "@mafw/ui/icon"
-import { DockBanner, DockEmpty, DockPanelHeader } from "./dock-panel"
+import { DockBanner, DockEmpty } from "./dock-panel"
+import { DocumentFrame, DocumentTabs, DocumentToolbar } from "./document-frame"
+import { editorDocumentTabs } from "../document-frame-model"
 import {
   createEditorModel, openFile, openPreviewFile, closeFile, setActive,
   markDirty, markSaved, onExternalChange, resolveConflict, applyCleanReload, canApplyCleanReload,
@@ -187,6 +188,16 @@ export function EditorDock(props: {
       key,
       rememberSelection(withPosition, file.rel, editor?.getSelection() ?? null),
     )
+  }
+
+  const tabs = createMemo(() => editorDocumentTabs(model()))
+
+  const activateRel = (rel: string) => {
+    rememberActiveScroll()
+    setModel(m => setActive(m, rel))
+    setMode("edit")
+    clearSelection()
+    void mountActive()
   }
 
   const noteFor = (rel: string) => readNotes()[rel]
@@ -1167,114 +1178,101 @@ export function EditorDock(props: {
   }
 
   return (
-    <div class="mafw-editor-dock">
-      <DockPanelHeader title="编辑器">
-        <TooltipV2 value="保存（Ctrl+S）" openDelay={300}>
-          <ButtonV2
-            variant="ghost"
-            size="small"
-            aria-label="保存"
-            disabled={!activeFile() || !!activeFile()?.readOnly || saving()}
-            onClick={() => void saveActive()}
-          >
-            <Icon name="save" size="small" />
-          </ButtonV2>
-        </TooltipV2>
-        <TooltipV2 value="在外部编辑器打开" openDelay={300}>
-          <ButtonV2
-            variant="ghost"
-            size="small"
-            aria-label="外部编辑器"
-            disabled={!activeFile()}
-            onClick={() => { const f = activeFile(); if (f) void openExternal(f.rel) }}
-          >
-            <Icon name="square-arrow-top-right" size="small" />
-          </ButtonV2>
-        </TooltipV2>
-        <Show when={activeFile()?.kind === "svg" || activeFile()?.kind === "table" || activeFile()?.kind === "markdown" || activeFile()?.kind === "json"}>
-          <TooltipV2 value={previewing() ? "查看源码" : activeFile()?.kind === "table" ? "表格视图" : activeFile()?.kind === "markdown" ? "渲染 Markdown" : activeFile()?.kind === "json" ? "JSON 树视图" : "预览 SVG"} openDelay={300}>
-            <ButtonV2
-              variant={previewing() ? "contrast" : "ghost"}
-              size="small"
-              aria-label={activeFile()?.kind === "table" ? "表格预览" : activeFile()?.kind === "markdown" ? "Markdown 预览" : activeFile()?.kind === "json" ? "JSON 树" : "SVG 预览"}
-              aria-pressed={previewing()}
-              onClick={togglePreview}
-            >
-              {previewToggleLabel()}
-            </ButtonV2>
-          </TooltipV2>
-        </Show>
-        <Show when={mode() === "edit" && inlineRanges().length > 0}>
-          <div class="mafw-editor-inline-diff">
-            <span class="mafw-editor-inline-diff-count" aria-label={`${inlineRanges().length} 处 agent 改动`}>{inlineRanges().length}</span>
-            <TooltipV2 value="上一处改动" openDelay={300}>
-              <ButtonV2 variant="ghost" size="small" aria-label="上一处改动" onClick={() => gotoInlineChange(-1)}>
-                <Icon name="arrow-up" size="small" />
-              </ButtonV2>
-            </TooltipV2>
-            <TooltipV2 value="下一处改动" openDelay={300}>
-              <ButtonV2 variant="ghost" size="small" aria-label="下一处改动" onClick={() => gotoInlineChange(1)}>
-                <Icon name="chevron-down" size="small" />
-              </ButtonV2>
-            </TooltipV2>
-          </div>
-        </Show>
-        <Show when={activeFile() && diffEntryFor(props.diffs, activeFile()!.rel)}>
-          <TooltipV2 value={mode() === "diff" ? "返回编辑" : "查看改动"} openDelay={300}>
-            <ButtonV2
-              variant={mode() === "diff" ? "contrast" : "ghost"}
-              size="small"
-              aria-label="改动"
-              onClick={() => { setMode(mode() === "diff" ? "edit" : "diff"); clearSelection() }}
-            >
-              <Icon name="review" size="small" />
-            </ButtonV2>
-          </TooltipV2>
-        </Show>
-      </DockPanelHeader>
-
+    <DocumentFrame
+      tabs={tabs().length > 0 ? (
+        <DocumentTabs
+          items={tabs()}
+          ariaLabel="打开的文档"
+          onSelect={activateRel}
+          onClose={closeRel}
+          onContextMenu={(id, event) => requestTabMenu(id, model().files.findIndex(f => f.rel === id), event)}
+        />
+      ) : undefined}
+      toolbar={
+        <DocumentToolbar
+          ariaLabel="编辑器工具栏"
+          leading={
+            <>
+              <TooltipV2 value="保存（Ctrl+S）" openDelay={300}>
+                <ButtonV2
+                  variant="ghost"
+                  size="small"
+                  aria-label="保存"
+                  disabled={!activeFile() || !!activeFile()?.readOnly || saving()}
+                  onClick={() => void saveActive()}
+                >
+                  <Icon name="save" size="small" />
+                </ButtonV2>
+              </TooltipV2>
+              <TooltipV2 value="在外部编辑器打开" openDelay={300}>
+                <ButtonV2
+                  variant="ghost"
+                  size="small"
+                  aria-label="外部编辑器"
+                  disabled={!activeFile()}
+                  onClick={() => { const f = activeFile(); if (f) void openExternal(f.rel) }}
+                >
+                  <Icon name="square-arrow-top-right" size="small" />
+                </ButtonV2>
+              </TooltipV2>
+            </>
+          }
+          trailing={
+            <>
+              <Show when={activeFile()?.kind === "svg" || activeFile()?.kind === "table" || activeFile()?.kind === "markdown" || activeFile()?.kind === "json"}>
+                <TooltipV2 value={previewing() ? "查看源码" : activeFile()?.kind === "table" ? "表格视图" : activeFile()?.kind === "markdown" ? "渲染 Markdown" : activeFile()?.kind === "json" ? "JSON 树视图" : "预览 SVG"} openDelay={300}>
+                  <ButtonV2
+                    variant={previewing() ? "contrast" : "ghost"}
+                    size="small"
+                    aria-label={activeFile()?.kind === "table" ? "表格预览" : activeFile()?.kind === "markdown" ? "Markdown 预览" : activeFile()?.kind === "json" ? "JSON 树" : "SVG 预览"}
+                    aria-pressed={previewing()}
+                    onClick={togglePreview}
+                  >
+                    {previewToggleLabel()}
+                  </ButtonV2>
+                </TooltipV2>
+              </Show>
+              <Show when={mode() === "edit" && inlineRanges().length > 0}>
+                <div class="mafw-editor-inline-diff">
+                  <span class="mafw-editor-inline-diff-count" aria-label={`${inlineRanges().length} 处 agent 改动`}>{inlineRanges().length}</span>
+                  <TooltipV2 value="上一处改动" openDelay={300}>
+                    <ButtonV2 variant="ghost" size="small" aria-label="上一处改动" onClick={() => gotoInlineChange(-1)}>
+                      <Icon name="arrow-up" size="small" />
+                    </ButtonV2>
+                  </TooltipV2>
+                  <TooltipV2 value="下一处改动" openDelay={300}>
+                    <ButtonV2 variant="ghost" size="small" aria-label="下一处改动" onClick={() => gotoInlineChange(1)}>
+                      <Icon name="chevron-down" size="small" />
+                    </ButtonV2>
+                  </TooltipV2>
+                </div>
+              </Show>
+              <Show when={activeFile() && diffEntryFor(props.diffs, activeFile()!.rel)}>
+                <TooltipV2 value={mode() === "diff" ? "返回编辑" : "查看改动"} openDelay={300}>
+                  <ButtonV2
+                    variant={mode() === "diff" ? "contrast" : "ghost"}
+                    size="small"
+                    aria-label="改动"
+                    onClick={() => { setMode(mode() === "diff" ? "edit" : "diff"); clearSelection() }}
+                  >
+                    <Icon name="review" size="small" />
+                  </ButtonV2>
+                </TooltipV2>
+              </Show>
+            </>
+          }
+        />
+      }
+    >
+      <div class="mafw-editor-dock">
       <Show when={ioError()}>
         <DockBanner kind="error" text={ioError()!} action={{ label: "关闭", onClick: () => setIoError(null) }} />
       </Show>
 
       <Show
         when={model().files.length > 0}
-        fallback={<DockEmpty icon="file-tree" text="从取景器（Ctrl+P）选择文件打开" hint="单击文件即可在此编辑" />}
+        fallback={<DockEmpty icon="file-tree" text="从左侧文件树或取景器（Ctrl+P）选择文件" hint="单击文件即可在此编辑" />}
       >
-        <Show when={model().files.length > 1 || props.intent === "editing"}>
-          <div class="mafw-editor-tabs">
-          <For each={model().files}>
-            {(f) => (
-              <div
-                class="mafw-editor-tab"
-                classList={{
-                  "mafw-editor-tab-active": model().active === f.rel,
-                  "mafw-editor-tab-preview": f.preview,
-                }}
-                role="button"
-                tabIndex={0}
-                title={f.rel}
-                onClick={() => { rememberActiveScroll(); setModel(m => setActive(m, f.rel)); setMode("edit"); clearSelection(); void mountActive() }}
-                onContextMenu={(event) => requestTabMenu(f.rel, model().files.findIndex(x => x.rel === f.rel), event)}
-                onKeyDown={(e: KeyboardEvent) => { openMenuOnKey(e); if (e.key === "Enter") { rememberActiveScroll(); setModel(m => setActive(m, f.rel)); setMode("edit"); clearSelection(); void mountActive() } }}
-              >
-                <span class="mafw-editor-tab-name">{f.rel.split("/").pop()}</span>
-                <Show when={f.dirty}><span class="mafw-editor-tab-dot" title="未保存">●</span></Show>
-                <Show when={f.readOnly}><span class="mafw-editor-tab-ro">只读</span></Show>
-                <span
-                  class="mafw-editor-tab-close"
-                  role="button"
-                  tabIndex={0}
-                  title="关闭"
-                  onClick={(e) => { e.stopPropagation(); closeRel(f.rel) }}
-                  onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter") { e.stopPropagation(); closeRel(f.rel) } }}
-                ><Icon name="close-small" size="small" /></span>
-              </div>
-            )}
-          </For>
-          </div>
-        </Show>
-
         {/* 冲突横幅：dirty + 磁盘已变（watch 或保存校验）→ 绝不静默覆盖 */}
         <Show when={activeFile()?.conflict}>
           <DockBanner kind="warn" text="磁盘已被改动（可能被 agent 修改）">
@@ -1566,6 +1564,7 @@ export function EditorDock(props: {
           </Show>
         </div>
       </Show>
-    </div>
+      </div>
+    </DocumentFrame>
   )
 }

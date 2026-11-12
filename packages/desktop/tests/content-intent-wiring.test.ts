@@ -16,10 +16,10 @@ test("editor opens preview tabs while reading and promotes on first edit", () =>
   assert.match(editor, /props\.intent === "reading"[\s\S]{0,60}\? openPreviewFile/)
   assert.match(editor, /:\s*openFile\(m, rel, content, readOnly, kind\)/)
   assert.match(editor, /props\.intent === "reading"\) props\.onIntent\?\.\("editing"\)/)
-  assert.match(editor, /mafw-editor-tab-preview/)
-  assert.match(editor, /model\(\)\.files\.length > 1 \|\| props\.intent === "editing"/)
+  assert.match(editor, /editorDocumentTabs/)
+  assert.match(editor, /DocumentTabs/)
   assert.match(editor, /onActiveFileChange/)
-  assert.match(css, /\.mafw-editor-tab-preview/)
+  assert.match(css, /\.mafw-document-tab-preview/)
 })
 
 test("focus lens drives the editor intent", () => {

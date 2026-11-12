@@ -954,17 +954,19 @@ describe("工作台面板骨架统一（workbench merge spec 2026-10-26）", () 
   const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
   const panels = [
     "src/renderer/mafw/components/FilesDock.tsx",
-    "src/renderer/mafw/components/EditorDock.tsx",
     "src/renderer/mafw/components/ChangesDock.tsx",
   ]
   test("共享骨架面板都走 DockPanelHeader", () => {
     for (const f of panels) expect(read(f)).toContain("DockPanelHeader")
   })
-  test("浏览器多 tab 使用 pill TabsV2 + 自有 pane CSS", () => {
-    const src = read("src/renderer/mafw/components/BrowserDock.tsx")
-    expect(src).toContain("TabsV2")
-    expect(src).toContain('variant="pill"')
-    expect(css).toContain(".mafw-browser-tabbar")
+  test("编辑器/浏览器共享 DocumentFrame；浏览器保留自有 pane CSS", () => {
+    const browser = read("src/renderer/mafw/components/BrowserDock.tsx")
+    const editor = read("src/renderer/mafw/components/EditorDock.tsx")
+    expect(editor).toContain("DocumentFrame")
+    expect(browser).toContain("DocumentFrame")
+    expect(browser).toContain("DocumentTabs")
+    expect(browser).not.toContain("TabsV2")
+    expect(css).toContain(".mafw-document-tabs")
     expect(css).toContain(".mafw-browser-tab-pane")
   })
   test("面板内禁 emoji / 几何字形图标", () => {

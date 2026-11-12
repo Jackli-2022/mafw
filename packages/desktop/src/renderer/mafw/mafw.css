@@ -4632,36 +4632,75 @@ html[data-theme="light"] body {
   to { opacity: 1; transform: none; }
 }
 .mafw-editor-annot-pop { position: absolute; z-index: 6; width: 280px; max-width: calc(100% - 16px); }
-.mafw-editor-tabs {
+/* ── DocumentFrame（编辑器 / 浏览器共享的 tab + toolbar） ── */
+.mafw-document-frame { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.mafw-document-tabs {
+  flex: none;
+  min-width: 0;
+  height: 32px;
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 4px 6px;
-  border-bottom: 1px solid var(--border);
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-base);
   overflow-x: auto;
-  flex-shrink: 0;
+  overflow-y: hidden;
 }
-.mafw-editor-tab {
+.mafw-document-tab {
+  flex: none;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 7px;
+  border-radius: 5px;
+  color: var(--text-3);
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.mafw-document-tab:hover { background: var(--bg-hover); color: var(--text-1); }
+.mafw-document-tab.is-active {
+  background: var(--bg-overlay);
+  color: var(--text-1);
+  box-shadow: inset 0 0 0 1px var(--border-subtle);
+}
+.mafw-document-tab-icon { display: inline-flex; align-items: center; color: var(--text-4); }
+.mafw-document-tab.is-active .mafw-document-tab-icon { color: var(--text-3); }
+.mafw-document-tab-label { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.mafw-document-tab-preview .mafw-document-tab-label { font-style: italic; color: var(--text-3); }
+.mafw-document-tab-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--accent); flex: none; }
+.mafw-document-tab-ro {
+  font-size: 8px;
+  color: var(--text-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  padding: 0 2px;
+}
+.mafw-document-tab-close {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-4);
+  margin-left: 1px;
+  padding: 0 1px;
+}
+.mafw-document-tab-close:hover { color: var(--text-1); }
+.mafw-document-tabs-trailing { margin-left: auto; flex: none; display: flex; align-items: center; }
+.mafw-document-toolbar {
+  flex: none;
+  min-height: 32px;
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 3px 6px;
-  border-radius: 4px;
-  cursor: pointer;
-  white-space: nowrap;
-  flex-shrink: 0;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-base);
 }
-.mafw-editor-tab:hover { background: var(--bg-overlay, transparent); }
-.mafw-editor-tab-active { background: var(--bg-overlay, transparent); }
-.mafw-editor-tab-name { font-size: 11px; color: var(--text-2); }
-.mafw-editor-tab-active .mafw-editor-tab-name { color: var(--text-1); }
-/* 阅读意图的临时预览：下次普通打开会被替换；首次编辑自动转持久 tab。 */
-.mafw-editor-tab-preview .mafw-editor-tab-name { font-style: italic; color: var(--text-3); }
-.mafw-editor-tab-preview.mafw-editor-tab-active .mafw-editor-tab-name { color: var(--text-2); }
-.mafw-editor-tab-dot { font-size: 8px; color: var(--accent); }
-.mafw-editor-tab-ro { font-size: 9px; color: var(--text-4); border: 1px solid var(--border); border-radius: 3px; padding: 0 3px; }
-.mafw-editor-tab-close { font-size: 11px; color: var(--text-4); padding: 0 2px; cursor: pointer; display: inline-flex; align-items: center; }
-.mafw-editor-tab-close:hover { color: var(--text-1); }
+.mafw-document-toolbar-group { flex: none; display: flex; align-items: center; gap: 2px; }
+.mafw-document-toolbar-center { flex: 1; min-width: 0; display: flex; align-items: center; }
+.mafw-document-toolbar-trailing { margin-left: auto; }
+.mafw-document-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .mafw-editor-host { flex: 1; min-height: 0; overflow: hidden; }
 .mafw-editor-body { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
 .mafw-editor-diff { flex: 1; min-height: 0; overflow: auto; }
@@ -5672,14 +5711,7 @@ html[data-theme="light"] body {
 
 /* ── Browser dock（内嵌浏览器，spec 2026-10-22 §4） ── */
 .mafw-browser-dock { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.mafw-browser-tabbar { display: flex; align-items: center; gap: 2px; padding: 4px 6px; border-bottom: 1px solid var(--border); flex: none; min-width: 0; }
-.mafw-browser-tabbar [data-component="tabs-v2"] { flex: 1; min-width: 0; }
-.mafw-browser-tabs { display: flex; align-items: center; min-width: 0; overflow-x: auto; scrollbar-width: none; }
-.mafw-browser-tabs::-webkit-scrollbar { display: none; }
-.mafw-browser-tabs [data-slot="tabs-v2-trigger-content"] { max-width: 180px; min-width: 0; }
-.mafw-browser-tab-title { max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mafw-browser-new-tab { flex: none; }
-.mafw-browser-bar { display: flex; align-items: center; gap: 2px; padding: 4px 6px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .mafw-browser-address { flex: 1 1 auto; min-width: 0; }
 .mafw-browser-host { flex: 1 1 auto; min-height: 0; display: flex; }
 .mafw-browser-tab-pane { flex: 1; min-width: 0; min-height: 0; display: none; flex-direction: column; }
@@ -6451,7 +6483,8 @@ html[data-theme="light"] body {
 .mafw-notes-card:focus-visible,
 .mafw-bg-row:focus-visible,
 .mafw-file-tree-row:focus-visible,
-.mafw-editor-tab:focus-visible,
+.mafw-document-tab:focus-visible,
+.mafw-document-tab-close:focus-visible,
 .mafw-changes-row:focus-visible,
 .mafw-subagent-row:focus-visible {
   outline: 2px solid var(--accent);

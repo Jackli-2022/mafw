@@ -2,12 +2,11 @@
 // 安全基线全部在 main（browser-session.ts）：权限全拒、非 http(s) 导航拦截、
 // window.open 转 dock 内导航、will-attach-webview 加固。这里只做 UI + tab 状态。
 // 每个 tab 一个常挂载 webview；非活动 tab 只 display:none，不销毁页面状态。
-import { Index, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js"
+import { Show, createEffect, createSignal, onCleanup, onMount } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
-import { TabsV2 } from "@mafw/ui/v2/tabs-v2"
 import { Icon } from "@mafw/ui/icon"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { menuController } from "../context-menu/controller"
@@ -19,7 +18,6 @@ import { displayMafwFilePath } from "../../../shared/mafw-file"
 import { takeBrowserNavRequest } from "../browser-nav"
 import {
   activeBrowserTabId,
-  browserTabTitle,
   browserTabs,
   closeBrowserTab,
   openBrowserTab,
@@ -27,8 +25,10 @@ import {
   updateBrowserTab,
   type BrowserTab,
 } from "../browser-tabs"
+import { browserDocumentTabs } from "../document-frame-model"
 import { createBrowserViewRegistry, navigateExistingView } from "../browser-view"
 import { DockBanner, DockEmpty } from "./dock-panel"
+import { DocumentFrame, DocumentTabs, DocumentToolbar } from "./document-frame"
 import { buildPickCancelScript, buildPickScript, PICK_TIMEOUT_MS, type ElementPickPayload } from "../browser/element-pick"
 import { getPendingCaptures, captureAttachmentName } from "../chat/pending-captures"
 import { clampRect } from "../capture/crop-math"
@@ -346,132 +346,126 @@ export function BrowserDock(props: { sessionID: string | null }) {
     })
   })
 
+  const requestDockMenu = (event: MouseEvent) => {
+    if (shouldUseNativeMenu(guardFactsFromEvent(event))) return
+    event.preventDefault()
+    const tab = activeTab()
+    const url = tab?.url ?? ""
+    menuController.request(
+      buildBrowserMenu,
+      {
+        url,
+        canBack: tab?.canBack === true,
+        canForward: tab?.canForward === true,
+        started: !!activeView(),
+        canPick: !!activeView() && !picking(),
+      },
+      (id) => {
+        if (id === "browser.back") navigateBack()
+        else if (id === "browser.forward") navigateForward()
+        else if (id === "browser.reload") retry()
+        else if (id === "browser.copyLink") { if (url) void navigator.clipboard.writeText(url) }
+        else if (id === "browser.openExternal") { if (url) void window.api.browser.openExternal(url) }
+        else if (id === "browser.pick") void startPick()
+      },
+      { point: { x: event.clientX, y: event.clientY } },
+    )
+  }
+
   return (
-    <div
-      class="mafw-browser-dock"
-      onContextMenu={(event) => {
-        if (shouldUseNativeMenu(guardFactsFromEvent(event))) return
-        event.preventDefault()
-        const tab = activeTab()
-        const url = tab?.url ?? ""
-        menuController.request(
-          buildBrowserMenu,
-          {
-            url,
-            canBack: tab?.canBack === true,
-            canForward: tab?.canForward === true,
-            started: !!activeView(),
-            canPick: !!activeView() && !picking(),
-          },
-          (id) => {
-            if (id === "browser.back") navigateBack()
-            else if (id === "browser.forward") navigateForward()
-            else if (id === "browser.reload") retry()
-            else if (id === "browser.copyLink") { if (url) void navigator.clipboard.writeText(url) }
-            else if (id === "browser.openExternal") { if (url) void window.api.browser.openExternal(url) }
-            else if (id === "browser.pick") void startPick()
-          },
-          { point: { x: event.clientX, y: event.clientY } },
-        )
-      }}
-    >
-      <div class="mafw-browser-tabbar">
-        <Show when={tabs().length > 0}>
-          <TabsV2
-            variant="pill"
-            value={activeBrowserTabId() ?? ""}
-            onChange={(value: string) => { if (value) setActiveBrowserTab(String(value)) }}
-          >
-            <TabsV2.List class="mafw-browser-tabs" aria-label="浏览器标签">
-              <Index each={tabs()}>
-                {(tab) => (
-                  <TabsV2.Trigger value={tab().id} onMiddleClick={() => closeTab(tab().id)}>
-                    <Icon name="globe" size="small" />
-                    <span class="mafw-browser-tab-title">{browserTabTitle(tab())}</span>
-                    <TabsV2.CloseButton
-                      aria-label="关闭标签"
-                      onClick={() => closeTab(tab().id)}
-                      onPointerDown={(event: PointerEvent) => event.stopPropagation()}
-                      onKeyDown={(event: KeyboardEvent) => {
-                        if (event.key !== "Enter" && event.key !== " ") return
-                        event.preventDefault()
-                        event.stopPropagation()
-                        closeTab(tab().id)
-                      }}
-                    />
-                  </TabsV2.Trigger>
-                )}
-              </Index>
-            </TabsV2.List>
-          </TabsV2>
-        </Show>
-        <ButtonV2 variant="ghost" size="small" class="mafw-browser-new-tab" aria-label="新建浏览器标签" onClick={newBlankTab}>
-          <Icon name="plus" size="small" />
-        </ButtonV2>
-      </div>
-
-      <div class="mafw-browser-bar">
-        <TooltipV2 value="后退" openDelay={300}>
-          <ButtonV2 variant="ghost" size="small" disabled={activeTab()?.canBack !== true} aria-label="后退" onClick={navigateBack}>
-            <Icon name="arrow-left" size="small" />
-          </ButtonV2>
-        </TooltipV2>
-        <TooltipV2 value="前进" openDelay={300}>
-          <ButtonV2 variant="ghost" size="small" disabled={activeTab()?.canForward !== true} aria-label="前进" onClick={navigateForward}>
-            <Icon name="arrow-right" size="small" />
-          </ButtonV2>
-        </TooltipV2>
-        <TooltipV2 value="刷新" openDelay={300}>
-          <ButtonV2 variant="ghost" size="small" aria-label="刷新" disabled={!activeView()} onClick={retry}>
-            <Icon name="refresh" size="small" />
-          </ButtonV2>
-        </TooltipV2>
-        <Show when={activeTab()?.loading}>
-          <LoaderV2 width={14} height={14} />
-        </Show>
-        <TextInputV2
-          class="mafw-browser-address"
-          value={addressDraft()}
-          placeholder="输入网址（Enter 打开）"
-          onInput={(event) => setAddressDraft(event.currentTarget.value)}
-          onKeyDown={(event) => {
-            if (event.key !== "Enter") return
-            event.preventDefault()
-            submitAddress()
-          }}
+    <DocumentFrame
+      onContextMenu={requestDockMenu}
+      tabs={
+        <DocumentTabs
+          items={browserDocumentTabs(tabs(), activeBrowserTabId())}
+          ariaLabel="浏览器标签"
+          onSelect={(id) => setActiveBrowserTab(id)}
+          onClose={(id) => closeTab(id)}
+          onMiddleClick={(id) => closeTab(id)}
+          trailing={
+            <ButtonV2 variant="ghost" size="small" class="mafw-browser-new-tab" aria-label="新建浏览器标签" onClick={newBlankTab}>
+              <Icon name="plus" size="small" />
+            </ButtonV2>
+          }
         />
-        <TooltipV2 value="点选元素（点击后捕获元素信息 + 截图）" openDelay={300}>
-          <ButtonV2
-            variant="ghost"
-            size="small"
-            aria-label="点选元素"
-            aria-pressed={picking()}
-            disabled={!activeView() || picking()}
-            onClick={() => void startPick()}
-          >
-            <Icon name="selector" size="small" />
-          </ButtonV2>
-        </TooltipV2>
-        <TooltipV2 value="在系统浏览器打开" openDelay={300}>
-          <ButtonV2
-            variant="ghost"
-            size="small"
-            aria-label="在系统浏览器打开"
-            disabled={!isRemote()}
-            onClick={() => { const url = activeTab()?.url; if (url) void window.api.browser.openExternal(url) }}
-          >
-            <Icon name="square-arrow-top-right" size="small" />
-          </ButtonV2>
-        </TooltipV2>
+      }
+      toolbar={
+        <DocumentToolbar
+          ariaLabel="浏览器工具栏"
+          leading={
+            <>
+              <TooltipV2 value="后退" openDelay={300}>
+                <ButtonV2 variant="ghost" size="small" disabled={activeTab()?.canBack !== true} aria-label="后退" onClick={navigateBack}>
+                  <Icon name="arrow-left" size="small" />
+                </ButtonV2>
+              </TooltipV2>
+              <TooltipV2 value="前进" openDelay={300}>
+                <ButtonV2 variant="ghost" size="small" disabled={activeTab()?.canForward !== true} aria-label="前进" onClick={navigateForward}>
+                  <Icon name="arrow-right" size="small" />
+                </ButtonV2>
+              </TooltipV2>
+              <TooltipV2 value="刷新" openDelay={300}>
+                <ButtonV2 variant="ghost" size="small" aria-label="刷新" disabled={!activeView()} onClick={retry}>
+                  <Icon name="refresh" size="small" />
+                </ButtonV2>
+              </TooltipV2>
+              <Show when={activeTab()?.loading}>
+                <LoaderV2 width={14} height={14} />
+              </Show>
+            </>
+          }
+          center={
+            <TextInputV2
+              class="mafw-browser-address"
+              value={addressDraft()}
+              placeholder="输入网址（Enter 打开）"
+              onInput={(event) => setAddressDraft(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter") return
+                event.preventDefault()
+                submitAddress()
+              }}
+            />
+          }
+          trailing={
+            <>
+              <TooltipV2 value="点选元素（点击后捕获元素信息 + 截图）" openDelay={300}>
+                <ButtonV2
+                  variant="ghost"
+                  size="small"
+                  aria-label="点选元素"
+                  aria-pressed={picking()}
+                  disabled={!activeView() || picking()}
+                  onClick={() => void startPick()}
+                >
+                  <Icon name="selector" size="small" />
+                </ButtonV2>
+              </TooltipV2>
+              <TooltipV2 value="在系统浏览器打开" openDelay={300}>
+                <ButtonV2
+                  variant="ghost"
+                  size="small"
+                  aria-label="在系统浏览器打开"
+                  disabled={!isRemote()}
+                  onClick={() => { const url = activeTab()?.url; if (url) void window.api.browser.openExternal(url) }}
+                >
+                  <Icon name="square-arrow-top-right" size="small" />
+                </ButtonV2>
+              </TooltipV2>
+            </>
+          }
+        />
+      }
+    >
+      <div class="mafw-browser-dock">
+        <Show when={activeTab()?.failed}>
+          {(failed) => <DockBanner kind="error" text={failed()} action={{ label: "重试", onClick: retry }} />}
+        </Show>
+        <Show when={tabs().length === 0}>
+          <DockEmpty icon="globe" text="输入网址开始浏览" hint="Enter 打开；聊天里的链接会新开 tab" />
+        </Show>
+        <div class="mafw-browser-host" ref={(el) => { host = el }} />
       </div>
-
-      <Show when={activeTab()?.failed}>
-        {(failed) => <DockBanner kind="error" text={failed()} action={{ label: "重试", onClick: retry }} />}
-      </Show>
-      <Show when={tabs().length === 0}>
-        <DockEmpty icon="globe" text="输入网址开始浏览" hint="Enter 打开；聊天里的链接会新开 tab" />
-      </Show>
-      <div class="mafw-browser-host" ref={(el) => { host = el }} />
-    </div>
+    </DocumentFrame>
   )
 }
