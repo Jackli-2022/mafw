@@ -1048,8 +1048,7 @@ html[data-theme="light"] body {
   display: block;
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, var(--accent), var(--accent-text));
-  box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 55%, transparent);
+  background: var(--success);
   transition: width var(--dur-4) var(--ease);
 }
 .mafw-taskbar-time {
@@ -1273,7 +1272,7 @@ html[data-theme="light"] body {
   font-size: 11px;
 }
 /* v8 内容体 surface 盒（替代旧「左竖线 + margin-left 4px」缩进） */
-.mafw-tool-box { margin: 4px 0 8px; padding: 8px 10px; border: 0.5px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-inset); color: var(--text-base); }
+.mafw-tool-box { margin: 4px 0 8px; padding: 8px 10px; border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-inset); color: var(--text-base); }
 /* Code Mode execute：子调用行 + 最终输出 */
 .mafw-execute-trigger { min-width: 0; }
 .mafw-execute-count { color: var(--text-4); font-size: 11px; white-space: nowrap; }
@@ -1334,7 +1333,7 @@ html[data-theme="light"] body {
   color: var(--text-4);
   font-size: 11px;
 }
-.mafw-execute-output { margin-top: 8px; border-top: 0.5px solid var(--border-subtle); padding-top: 6px; }
+.mafw-execute-output { margin-top: 8px; border-top: 1px solid var(--border-subtle); padding-top: 6px; }
 .mafw-execute-output-label { color: var(--text-4); font-size: 11px; margin-bottom: 4px; }
 
 /* Thinking block (dsh-style collapsible reasoning) */
@@ -1448,12 +1447,12 @@ html[data-theme="light"] body {
   transition: border-color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
 }
 .mafw-composer:focus-within {
-  border-color: var(--accent-border);
-  box-shadow: 0 0 0 4px var(--accent-soft);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 .mafw-composer-dragging {
-  border-color: var(--accent-border);
-  box-shadow: 0 0 0 4px var(--accent-soft);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
   background: color-mix(in srgb, var(--accent-dim) 40%, var(--bg-float));
 }
 /* TextareaV2 puts `class` on its wrapper div — kill the v2 box (gradient bg,
@@ -1544,7 +1543,7 @@ html[data-theme="light"] body {
   align-items: center;
   gap: 8px;
   padding: 4px 8px 6px;
-  border-bottom: 0.5px solid var(--border-weak-base, rgba(255, 255, 255, 0.08));
+  border-bottom: 1px solid var(--border-weak-base, rgba(255, 255, 255, 0.08));
   font-size: 12px;
   color: var(--text-2);
 }
@@ -1657,7 +1656,7 @@ html[data-theme="light"] body {
 }
 
 /* Busy-turn queue bar (composer above-row, P0-1) */
-.mafw-queue-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 12px; margin-bottom: 6px; border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 10px; background: var(--surface-base-hover); }
+.mafw-queue-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 12px; margin-bottom: 6px; border: 1px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 10px; background: var(--surface-base-hover); }
 .mafw-queue-count { font-size: 11px; color: var(--text-base); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .mafw-run-bar { border-style: dashed; }
 .mafw-run-count { font-size: 11px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; max-width: 60ch; white-space: nowrap; }
@@ -1667,12 +1666,12 @@ html[data-theme="light"] body {
 .mafw-topic-index-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .mafw-topic-index-row { display: flex; align-items: center; }
 .mafw-topic-index-row .mafw-card-meta { margin-left: 8px; }
-.mafw-topic-index-boundaries { display: flex; flex-direction: column; gap: 4px; border-top: 0.5px solid var(--border-subtle); padding-top: 6px; }
-.mafw-goal-source-full { max-height: 240px; overflow: auto; white-space: pre-wrap; margin: 6px 0 0; padding: 8px; border: 0.5px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-inset); font-size: 12px; }
+.mafw-topic-index-boundaries { display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--border-subtle); padding-top: 6px; }
+.mafw-goal-source-full { max-height: 240px; overflow: auto; white-space: pre-wrap; margin: 6px 0 0; padding: 8px; border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-inset); font-size: 12px; }
 
 /* T2-3 data part 卡 */
-.mafw-data-part { margin: 6px 0; border: 0.5px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-inset); overflow: hidden; }
-.mafw-data-part-head { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-bottom: 0.5px solid var(--border-subtle); }
+.mafw-data-part { margin: 6px 0; border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-inset); overflow: hidden; }
+.mafw-data-part-head { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-bottom: 1px solid var(--border-subtle); }
 .mafw-data-part-badge { font-size: 9px; padding: 0 5px; border: 1px solid var(--accent-border); border-radius: 999px; color: var(--accent); }
 .mafw-data-part-name { font-size: 11px; color: var(--text-2); font-family: var(--font-data); }
 .mafw-data-part-transient { font-size: 9px; color: var(--text-4); border: 1px solid var(--border-subtle); border-radius: 999px; padding: 0 5px; }
@@ -2122,7 +2121,6 @@ html[data-theme="light"] body {
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-lg);
   background: var(--bg-overlay);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
   transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
 }
 .mafw-card:hover { background: var(--bg-overlay); border-color: var(--text-5); }
@@ -2134,7 +2132,6 @@ html[data-theme="light"] body {
   border-radius: var(--r-lg);
   padding: 12px;
   text-align: center;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
 }
 .mafw-kpi-card .mafw-kpi-value {
   font-size: 20px;
@@ -2155,7 +2152,7 @@ html[data-theme="light"] body {
 .mafw-btn {
   padding: 4px 12px;
   border-radius: 6px;
-  border: 0.5px solid var(--border-weak-base);
+  border: 1px solid var(--border-weak-base);
   background: transparent;
   color: var(--text-base);
   cursor: pointer;
@@ -2174,7 +2171,7 @@ html[data-theme="light"] body {
 .mafw-tool-energy { color: var(--text-weak); font-variant-numeric: tabular-nums; flex-shrink: 0; font-size: 11px; }
 .mafw-tool-empty { color: var(--text-weak); padding: 8px; font-size: 13px; }
 .mafw-tool-tag { padding: 1px 6px; border-radius: 3px; flex-shrink: 0; text-transform: uppercase; font-size: 10px; }
-.mafw-tool-badge { flex-shrink: 0; padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 600; line-height: 16px; font-variant-numeric: tabular-nums; border: 0.5px solid var(--border-subtle); color: var(--text-3); }
+.mafw-tool-badge { flex-shrink: 0; padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 600; line-height: 16px; font-variant-numeric: tabular-nums; border: 1px solid var(--border-subtle); color: var(--text-3); }
 .mafw-tool-badge[data-tone="ok"] { color: var(--accent-text); background: var(--accent-dim); border-color: var(--accent-border); }
 .mafw-tool-badge[data-tone="warn"] { color: var(--warning); background: color-mix(in srgb, var(--warning) 10%, transparent); border-color: color-mix(in srgb, var(--warning) 30%, transparent); }
 .mafw-tool-badge[data-tone="err"] { color: var(--danger-text); background: var(--danger-dim); border-color: color-mix(in srgb, var(--danger) 30%, transparent); }
@@ -2187,7 +2184,7 @@ html[data-theme="light"] body {
 .mafw-tool-meta { color: var(--text-base); }
 .mafw-tool-meta-label { display: block; color: var(--text-weak); margin-bottom: 2px; font-size: 11px; }
 .mafw-tool-anchors { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 0; align-items: center; }
-.mafw-tool-chip { padding: 1px 6px; border-radius: 3px; border: 0.5px solid var(--v2-border-border-base, var(--border-weak-base)); color: var(--text-base); font-size: 11px; }
+.mafw-tool-chip { padding: 1px 6px; border-radius: 3px; border: 1px solid var(--v2-border-border-base, var(--border-weak-base)); color: var(--text-base); font-size: 11px; }
 .mafw-delta-row { display: flex; gap: 8px; padding: 4px 8px; border-radius: 4px; align-items: flex-start; }
 .mafw-delta-row:hover { background: var(--surface-base-hover); }
 .mafw-delta-content { flex: 1; }
@@ -2490,7 +2487,7 @@ html[data-theme="light"] body {
 
 /* ── Handoff Card ── */
 .mafw-handoff-card {
-  border: 0.5px solid var(--border-weak-base);
+  border: 1px solid var(--border-weak-base);
   border-radius: 6px;
   margin: 8px 12px;
   background: var(--background-base);
@@ -2505,7 +2502,7 @@ html[data-theme="light"] body {
   color: var(--text-strong);
   font-size: 12px;
   font-weight: 500;
-  border-bottom: 0.5px solid var(--border-weak-base);
+  border-bottom: 1px solid var(--border-weak-base);
 }
 .mafw-handoff-card-body { padding: 8px 10px; }
 .mafw-handoff-field {
@@ -3652,30 +3649,30 @@ html[data-theme="light"] body {
 
 /* Goal detail overlay (P0-3) */
 .mafw-goal-overlay { position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; }
-.mafw-goal-panel { width: min(860px, 94vw); max-height: 86vh; overflow-y: auto; background: var(--surface-base); border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 12px; padding: 16px; }
+.mafw-goal-panel { width: min(860px, 94vw); max-height: 86vh; overflow-y: auto; background: var(--surface-base); border: 1px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 12px; padding: 16px; }
 .mafw-goal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .mafw-goal-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-.mafw-goal-charter { font-size: 12px; color: var(--text-base); white-space: pre-wrap; border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 8px; padding: 10px; margin-bottom: 12px; max-height: 200px; overflow-y: auto; }
+.mafw-goal-charter { font-size: 12px; color: var(--text-base); white-space: pre-wrap; border: 1px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 8px; padding: 10px; margin-bottom: 12px; max-height: 200px; overflow-y: auto; }
 .mafw-goal-sec-title { font-size: 11px; color: var(--text-base); margin-bottom: 6px; }
 .mafw-goal-session { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
 .mafw-goal-session:hover { background: var(--surface-base-hover); }
 .mafw-goal-session-title { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Task 13：统一 Goal 详情（当前行动 / 结果 / 计划任务 / 问题回答） */
-.mafw-goal-current-action { display: flex; align-items: center; gap: 10px; margin: 4px 0 12px; padding: 8px 10px; border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 8px; background: var(--surface-base-hover); }
-.mafw-goal-section { margin: 14px 0; padding-top: 12px; border-top: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); }
+.mafw-goal-current-action { display: flex; align-items: center; gap: 10px; margin: 4px 0 12px; padding: 8px 10px; border: 1px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 8px; background: var(--surface-base-hover); }
+.mafw-goal-section { margin: 14px 0; padding-top: 12px; border-top: 1px solid var(--border-base, rgba(255,255,255,0.12)); }
 .mafw-goal-hint { font-size: 11px; color: var(--text-4); margin-bottom: 6px; }
-.mafw-goal-question { display: flex; flex-direction: column; gap: 8px; padding: 10px; margin-bottom: 8px; border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 8px; }
+.mafw-goal-question { display: flex; flex-direction: column; gap: 8px; padding: 10px; margin-bottom: 8px; border: 1px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 8px; }
 .mafw-goal-question-text { font-size: 12px; line-height: 1.55; color: var(--text-2); white-space: pre-wrap; }
 .mafw-goal-question-actions { display: flex; gap: 8px; }
 .mafw-goal-artifacts { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
 .mafw-goal-artifact { font-family: var(--font-data); font-size: 11px; padding: 2px 6px; border-radius: 4px; background: var(--surface-base-active); color: var(--text-2); }
-.mafw-pod-result-assessment { margin-left: 8px; font-size: 10px; color: var(--text-4); border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 999px; padding: 1px 6px; }
+.mafw-pod-result-assessment { margin-left: 8px; font-size: 10px; color: var(--text-4); border: 1px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 999px; padding: 1px 6px; }
 
 /* Transcript search overlay (P1). Anchors inside the scroll container:
    keep position:relative there so the overlay floats with the pane. */
 .mafw-tsearch { position: sticky; top: 8px; z-index: 60; width: min(380px, 80%); margin-left: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 8px; }
 .mafw-tsearch-count { font-size: 10px; color: var(--text-base); padding-left: 4px; font-variant-numeric: tabular-nums; }
-.mafw-tsearch-hits { max-height: 260px; overflow-y: auto; background: var(--surface-base); border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 8px; }
+.mafw-tsearch-hits { max-height: 260px; overflow-y: auto; background: var(--surface-base); border: 1px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 8px; }
 .mafw-tsearch-hit { display: flex; gap: 8px; padding: 6px 10px; cursor: pointer; font-size: 11px; align-items: baseline; }
 .mafw-tsearch-hit.sel, .mafw-tsearch-hit:hover { background: var(--surface-base-hover); }
 .mafw-tsearch-role { flex-shrink: 0; font-size: 9px; padding: 1px 4px; border-radius: 3px; background: var(--surface-base-active); }
@@ -3683,7 +3680,7 @@ html[data-theme="light"] body {
 
 /* Global command palette (Ctrl+P, P2 batch) */
 .mafw-palette-backdrop { position: fixed; inset: 0; z-index: 300; background: rgba(0,0,0,.45); display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; }
-.mafw-palette { width: min(520px, 90vw); background: var(--surface-base); border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--elev-prominent); }
+.mafw-palette { width: min(520px, 90vw); background: var(--surface-base); border: 1px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--elev-prominent); }
 .mafw-palette-list { max-height: 380px; overflow-y: auto; }
 .mafw-palette-group { font-size: 10px; color: var(--text-4); padding: 8px 8px 4px; text-transform: uppercase; letter-spacing: .05em; }
 .mafw-palette-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; }
@@ -3701,12 +3698,12 @@ html[data-theme="light"] body {
 }
 .mafw-welcome-banner {
   display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-radius: 8px;
-  background: var(--danger-dim); border: 0.5px solid var(--danger-dim); color: var(--danger); font-size: 13px;
+  background: var(--danger-dim); border: 1px solid var(--danger-dim); color: var(--danger); font-size: 13px;
 }
 .mafw-welcome-projects { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; max-width: 100%; animation: mafw-fade-in var(--dur-3) var(--ease) both; }
 .mafw-welcome-project {
   padding: 4px 14px; border-radius: 999px; font-size: 12px; cursor: pointer;
-  border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); background: transparent; color: var(--text-base);
+  border: 1px solid var(--border-base, rgba(255,255,255,0.12)); background: transparent; color: var(--text-base);
   transition: background-color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
 }
 .mafw-welcome-project:hover { background: var(--surface-base-hover); }
@@ -3727,7 +3724,7 @@ html[data-theme="light"] body {
 .mafw-welcome-actions > *:nth-child(n+6) { animation-delay: 260ms; }
 .mafw-welcome-goal-input {
   display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 420px;
-  padding: 12px; border-radius: 10px; border: 0.5px solid var(--border-base, rgba(255,255,255,0.12));
+  padding: 12px; border-radius: 10px; border: 1px solid var(--border-base, rgba(255,255,255,0.12));
   background: var(--surface-raised-base, var(--background-stronger));
 }
 .mafw-welcome-goal-input-actions { display: flex; gap: 8px; justify-content: flex-end; }
@@ -3739,7 +3736,7 @@ html[data-theme="light"] body {
 .mafw-welcome-goals { display: flex; flex-direction: column; gap: 4px; }
 .mafw-welcome-goal {
   display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%;
-  padding: 8px 12px; border-radius: 8px; border: 0.5px solid var(--border-base, rgba(255,255,255,0.12));
+  padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-base, rgba(255,255,255,0.12));
   background: transparent; color: var(--text-strong); font-size: 13px; cursor: pointer; text-align: left;
 }
 .mafw-welcome-goal:hover { background: var(--surface-base-hover); }
@@ -3748,7 +3745,7 @@ html[data-theme="light"] body {
 .mafw-welcome-badges { display: flex; flex-wrap: wrap; gap: 8px; }
 .mafw-welcome-badge {
   padding: 4px 12px; border-radius: 999px; font-size: 12px; cursor: pointer;
-  border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); background: transparent; color: var(--text-base);
+  border: 1px solid var(--border-base, rgba(255,255,255,0.12)); background: transparent; color: var(--text-base);
 }
 .mafw-welcome-badge:hover { background: var(--surface-base-hover); }
 .mafw-welcome-badge-static { cursor: default; }
@@ -3781,7 +3778,7 @@ html[data-theme="light"] body {
 
 
 /* ── Command badge + TTS picker ── */
-.mafw-command-badge { font-size: 10px; padding: 1px 6px; border-radius: 3px; text-transform: uppercase; color: var(--text-4); border: 0.5px solid var(--border-subtle); background: var(--surface-base-hover); flex-shrink: 0; }
+.mafw-command-badge { font-size: 10px; padding: 1px 6px; border-radius: 3px; text-transform: uppercase; color: var(--text-4); border: 1px solid var(--border-subtle); background: var(--surface-base-hover); flex-shrink: 0; }
 .mafw-tts-picker { display: flex; flex-direction: column; height: 100%; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--text-5) transparent; }
 .mafw-tts-picker::-webkit-scrollbar { width: 5px; }
 .mafw-tts-picker::-webkit-scrollbar-thumb { background: var(--text-5); border-radius: 3px; }
@@ -3794,7 +3791,7 @@ html[data-theme="light"] body {
   margin: 0 6px 6px;
   border-radius: 8px;
   background: var(--bg-overlay);
-  border: 0.5px solid var(--border-subtle);
+  border: 1px solid var(--border-subtle);
 }
 .mafw-tts-speak-label { font-size: 12px; color: var(--text-2); white-space: nowrap; }
 .mafw-tts-speak-btn { flex-shrink: 0; font-size: 12px !important; }
@@ -3846,12 +3843,12 @@ html[data-theme="light"] body {
 .mafw-python-result { display: flex; flex-direction: column; gap: 2px; }
 .mafw-python-result-label { color: var(--text-weak); font-size: 11px; }
 .mafw-python-result-value { color: var(--text-interactive-base, var(--accent)); background: var(--surface-inset-base, var(--background-weak)); max-height: 160px; }
-.mafw-python-error { border-radius: 4px; padding: 8px; background: var(--danger-dim); border: 0.5px solid var(--danger-dim); }
+.mafw-python-error { border-radius: 4px; padding: 8px; background: var(--danger-dim); border: 1px solid var(--danger-dim); }
 .mafw-python-error-title { color: var(--danger); font-size: 12px; font-weight: 600; }
 .mafw-python-traceback { color: var(--danger); background: transparent; margin-top: 4px; max-height: 180px; }
 .mafw-python-warn { color: var(--icon-warning-base, #e8b84b); font-size: 12px; }
 .mafw-python-images { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
-.mafw-python-image { border-radius: 6px; overflow: hidden; border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); line-height: 0; }
+.mafw-python-image { border-radius: 6px; overflow: hidden; border: 1px solid var(--border-base, rgba(255,255,255,0.12)); line-height: 0; }
 .mafw-python-image img { max-width: 180px; max-height: 140px; object-fit: contain; display: block; }
 
 /* ══ 语音消息状态指示器（与用户消息位置一致） ══ */
@@ -3871,7 +3868,7 @@ html[data-theme="light"] body {
   padding: 10px 14px;
   border-radius: 12px;
   background: var(--v2-background-bg-layer-02, var(--bg-overlay));
-  border: 0.5px solid var(--v2-border-border-base, var(--border-subtle));
+  border: 1px solid var(--v2-border-border-base, var(--border-subtle));
   max-width: min(82%, 64ch);
   margin-left: auto;
   transition: opacity var(--dur-4) var(--ease);
@@ -3947,7 +3944,7 @@ html[data-theme="light"] body {
   max-width: 100%;
   max-height: 300px;
   border-radius: 8px;
-  border: 0.5px solid var(--v2-border-border-base, var(--border-subtle));
+  border: 1px solid var(--v2-border-border-base, var(--border-subtle));
   cursor: pointer;
   transition: border-color var(--dur-3) var(--ease);
 }
@@ -3960,7 +3957,7 @@ html[data-theme="light"] body {
   max-width: 100%;
   max-height: 300px;
   border-radius: 8px;
-  border: 0.5px solid var(--v2-border-border-base, var(--border-subtle));
+  border: 1px solid var(--v2-border-border-base, var(--border-subtle));
 }
 
 .mafw-media-history audio {
@@ -4043,15 +4040,14 @@ html[data-theme="light"] body {
 .mafw-usage-ctx-fill {
   height: 100%;
   border-radius: 4px;
-  background: linear-gradient(90deg, var(--accent), #60a5fa);
+  background: var(--success);
   transition: width var(--dur-4) var(--ease);
 }
 .mafw-usage-ctx-fill.mafw-usage-ctx-warn {
-  background: linear-gradient(90deg, var(--warning), #fbbf24);
+  background: var(--warning);
 }
 .mafw-usage-ctx-fill.mafw-usage-ctx-danger {
-  background: linear-gradient(90deg, var(--danger-text), #f87171);
-  box-shadow: 0 0 8px rgba(239, 68, 68, 0.3);
+  background: var(--danger);
 }
 
 .mafw-usage-stack-bar {
@@ -4488,7 +4484,7 @@ html[data-theme="light"] body {
 
 .mafw-usage-model-bar-fill {
   height: 100%;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 55%, transparent), var(--accent));
+  background: var(--success);
   border-radius: 2px;
   transition: width var(--dur-3) var(--ease);
 }
@@ -7389,9 +7385,7 @@ html[data-theme="light"] body {
 .mafw-workspace {
   gap: 18px;
   padding: clamp(24px, 3.4vw, 44px) clamp(20px, 4vw, 56px) 48px;
-  background:
-    radial-gradient(1100px 280px at 16% -60px, var(--accent-dim), transparent 68%),
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-base) 96%, var(--accent) 4%), var(--bg-base) 260px);
+  background: var(--bg-base);
 }
 .mafw-workspace-head {
   align-items: flex-start;
@@ -7432,17 +7426,14 @@ html[data-theme="light"] body {
   padding: 22px;
   border: 1px solid var(--border-base);
   border-radius: var(--r-xl);
-  background:
-    radial-gradient(420px 180px at 100% 0%, var(--accent-dim), transparent 72%),
-    var(--bg-raised);
-  box-shadow: var(--elev-soft);
+  background: var(--bg-raised);
 }
 .mafw-workspace-lead::before {
   content: "";
   position: absolute;
   inset: 0 auto 0 0;
   width: 3px;
-  background: linear-gradient(180deg, var(--accent), transparent 88%);
+  background: var(--accent);
 }
 .mafw-workspace-lead-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .mafw-workspace-lead-mark {
@@ -7481,7 +7472,6 @@ html[data-theme="light"] body {
   border: 1px solid var(--border-base);
   border-radius: var(--r-xl);
   background: var(--bg-raised);
-  box-shadow: var(--elev-soft);
 }
 .mafw-work-overview { padding: 20px; }
 
@@ -7931,8 +7921,7 @@ html[data-theme="light"] body {
 /* 新建 Goal：卡片与概览同一层级 */
 .mafw-workspace-composer {
   padding: 18px 20px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-raised) 92%, var(--accent) 8%), var(--bg-raised) 120px);
+  background: var(--bg-raised);
 }
 
 /* 项目资源：图标 + 头像 + 悬停 chevron */
@@ -8109,7 +8098,7 @@ html[data-theme="light"] body {
   border: 1px solid var(--accent-border);
   border-left-width: 3px;
   border-radius: var(--r-lg);
-  background: linear-gradient(90deg, var(--accent-soft), color-mix(in srgb, var(--bg-raised) 94%, var(--accent) 6%));
+  background: var(--accent-soft);
 }
 .mafw-goal-current-hint { margin-top: 3px; color: var(--text-3); font-size: 11px; }
 .mafw-goal-section {
@@ -8180,7 +8169,7 @@ html[data-theme="light"] body {
   font-size: 12px;
 }
 .mafw-pod-result-condition-statement { display: flex; align-items: center; gap: 6px; color: var(--text-2); }
-.mafw-pod-result-condition-required { padding: 0 5px; border: 0.5px solid var(--border-strong, var(--border-subtle)); border-radius: 999px; color: var(--text-4); font-size: 9px; letter-spacing: 0.04em; }
+.mafw-pod-result-condition-required { padding: 0 5px; border: 1px solid var(--border-strong, var(--border-subtle)); border-radius: 999px; color: var(--text-4); font-size: 9px; letter-spacing: 0.04em; }
 .mafw-pod-result-condition-result { font-weight: 600; }
 .mafw-pod-result-condition-result.is-pass { color: var(--accent-success); }
 .mafw-pod-result-condition-result.is-fail { color: var(--danger-text); }
@@ -8265,7 +8254,7 @@ html[data-theme="light"] body {
 .mafw-pod-contact.is-lead {
   border-color: var(--accent-border);
   box-shadow: inset 3px 0 0 var(--accent);
-  background: linear-gradient(90deg, var(--accent-soft), color-mix(in srgb, var(--bg-raised) 94%, var(--accent) 6%));
+  background: var(--accent-soft);
 }
 .mafw-pod-contact:disabled { opacity: .68; cursor: default; }
 .mafw-pod-contact-avatar {

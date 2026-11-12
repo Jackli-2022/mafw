@@ -98,3 +98,23 @@ describe("visual language tokens", () => {
     }
   })
 })
+
+describe("visual surfaces", () => {
+  test("no subpixel borders or ring shadows remain", () => {
+    expect(css).not.toMatch(/(?:border(?:-[a-z]+)?|outline(?:-[a-z]+)?)\s*:[^;{}]*0\.5px/)
+    expect(css).not.toMatch(/box-shadow:[^;{}]*0 0 0 (?:0\.5px|\.5px)/)
+  })
+
+  test("composer uses one focus ring and 12px radius", () => {
+    const base = block(".mafw-composer {")
+    const focus = block(".mafw-composer:focus-within")
+    expect(token(base, "border-radius")).toBe("var(--r-xl)")
+    expect(focus).toContain("box-shadow: 0 0 0 2px")
+    expect(focus).not.toContain("4px")
+  })
+
+  test("core content cards have no decorative gradient or inset highlight", () => {
+    expect(block(".mafw-card {")).not.toContain("inset 0 1px 0")
+    expect(block(".mafw-usage-model-bar-fill {")).not.toContain("linear-gradient")
+  })
+})

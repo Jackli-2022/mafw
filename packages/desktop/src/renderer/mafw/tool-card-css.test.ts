@@ -22,7 +22,7 @@ describe("tool card trigger (v8)", () => {
 
 describe("tool card body surface (v8)", () => {
   test("content box has hairline + radius + inset background", () => {
-    expect(css).toMatch(/\.mafw-tool-box\s*\{[^}]*border:\s*0\.5px solid var\(--border-subtle\)/)
+    expect(css).toMatch(/\.mafw-tool-box\s*\{[^}]*border:\s*1px solid var\(--border-subtle\)/)
     expect(css).toMatch(/\.mafw-tool-box\s*\{[^}]*border-radius:\s*var\(--r-md\)/)
     expect(css).toMatch(/\.mafw-tool-box\s*\{[^}]*background:\s*var\(--bg-inset\)/)
   })

@@ -274,16 +274,16 @@ describe("Tool part 卡片 v8（触发行结构化）", () => {
   test("折叠行 26px", () => expect(cssBlock(trig)).toContain("height: 26px"))
   test("折叠行文字 13px", () => expect(cssBlock(trig)).toContain("font-size: 13px"))
   test("内容体 surface 盒（v8）", () => {
-    expect(cssBlock(".mafw-tool-box {")).toContain("border: 0.5px solid var(--border-subtle)")
+    expect(cssBlock(".mafw-tool-box {")).toContain("border: 1px solid var(--border-subtle)")
     expect(cssBlock(".mafw-tool-box {")).toContain("background: var(--bg-inset)")
   })
 })
 
 describe("Composer v4", () => {
-  test("聚焦双层柔焦（1px accent-border + 4px accent-soft）", () => {
+  test("聚焦单一 2px ring（accent 边框 + accent-soft ring）", () => {
     const b = cssBlock(".mafw-composer:focus-within")
-    expect(b).toContain("border-color: var(--accent-border)")
-    expect(b).toContain("box-shadow: 0 0 0 4px var(--accent-soft)")
+    expect(b).toContain("border-color: var(--accent)")
+    expect(b).toContain("box-shadow: 0 0 0 2px var(--accent-soft)")
   })
   test("composer 圆角 r-xl", () => expect(cssBlock(".mafw-composer {")).toContain("border-radius: var(--r-xl)"))
   test("chat 面板 flush（C 案：无圆角/无阴影）", () => { const b = cssBlock(".mafw-chat {"); expect(b).toContain("border-radius: 0"); expect(b).toContain("box-shadow: none") })
@@ -315,8 +315,11 @@ describe("用量指标行 v4", () => {
     expect(cssBlock(".mafw-usage-value {")).toContain("font-size: 13px")
     expect(cssBlock(".mafw-usage-value {")).toContain("font-variant-numeric: tabular-nums")
   })
-  test("模型条形图绿渐变填充", () =>
-    expect(cssBlock(".mafw-usage-model-bar-fill {")).toContain("linear-gradient"))
+  test("模型条形图使用 solid success 填充", () => {
+    const b = cssBlock(".mafw-usage-model-bar-fill {")
+    expect(b).toContain("background: var(--success)")
+    expect(b).not.toContain("linear-gradient")
+  })
   test("模型条形图细轨圆角", () => {
     const b = cssBlock(".mafw-usage-model-bar {")
     expect(b).toContain("height: 4px")
@@ -375,9 +378,9 @@ describe("EmptyState v4", () => {
 })
 
 describe("卡片 v4 配方", () => {
-  test("mafw-card 顶部内侧高光 + r-lg", () => {
+  test("mafw-card 无装饰内高光 + r-lg", () => {
     const b = cssBlock(".mafw-card {")
-    expect(b).toContain("inset 0 1px 0 rgba(255,255,255,.03)")
+    expect(b).not.toContain("inset 0 1px 0")
     expect(b).toContain("border-radius: var(--r-lg)")
   })
   test("mafw-card hover 边框提亮", () =>
