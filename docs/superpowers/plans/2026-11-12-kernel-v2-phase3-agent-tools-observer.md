@@ -12,6 +12,17 @@
 
 **Roadmap:** `docs/superpowers/plans/2026-11-12-fixed-core-capability-roadmap.md`
 
+## Progress（2026-11-12）
+
+- Milestone 3A–3C 全部完成（conformance harness 级 G3）。
+- 定向门禁：kernel-v2 + architecture + G3 + G2 + shadow **178 / 178 pass**（Phase 2 基线 146 → 178，新增 32）。
+- plugin-contract：**40 / 40 pass**（+2）。
+- gateway 全量：**6962 passed / 1 skipped / 6963 total**，连续两次 clean；基线含其他会话的 E5a 测试。
+- typecheck（gateway + plugin-contract）：通过。
+- 交付记录：`docs/releases/2026-11-12-capability-kernel-phase3.md`。
+- S5 结论：`docs/research/2026-11-12-s5-canonical-event-observer-probe.md`。
+- 明确未做：live event-dispatch / RuntimeTools 接线、interceptor、worker 隔离。
+
 ## Global Constraints
 
 - 路线 B：Phase 3 仍只在 `gateway/src/kernel-v2/` 与独立测试中实现，**不接 live gateway 默认路径、不碰 `~/.mafw` 数据**。

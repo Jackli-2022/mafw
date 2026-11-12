@@ -269,9 +269,11 @@ Probe 的作用是让 tech lead 在看详细计划前先看清关键未知；每
 
 **Gate G2**：一个测试插件包可以在不改 gateway 核心的情况下替换内置 media/TTS/usage/ASR provider；全量绿；诊断可解释。
 
-## Phase 3：Agent tools + event observer（4–6 周，进行中）
+## Phase 3：Agent tools + event observer（4–6 周，2026-11-12 已交付 G3 harness）
 
 **目标**：插件真正能扩展 agent，而不只是 UI/provider。
+
+**状态**：S5 observer、plugin-contract tools 声明、ToolContributionRegistry、G3 fake-runtime/conformance harness 已落地。交付记录：`docs/releases/2026-11-12-capability-kernel-phase3.md`。
 
 > Phase 3 详细计划：`docs/superpowers/plans/2026-11-12-kernel-v2-phase3-agent-tools-observer.md`
 > 本 phase 先做 kernel-v2 registry + conformance harness；live 接线在 Phase 3.5/4 cutover；interceptor 仍未开放。

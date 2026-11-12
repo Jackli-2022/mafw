@@ -734,7 +734,7 @@ D3 承诺内）：`initServices()`（1104 行）拆分到 `subsystems/*`、kerne
 `subsystems/` 粒度、`EventTapCallback` 类型化、三个 entry 负向 pin（`core-runtime-neutrality`
 的剥离器样本等）。
 
-### kernel-v2（2026-11-12，Phase 0/1/2 已交付）
+### kernel-v2（2026-11-12，Phase 0/1/2/3 已交付）
 
 路线 B：`gateway/src/kernel-v2/` **进程内并行模块**，不接 live gateway、不碰 `~/.mafw`；独立 v2 入口（`MAFW_KERNEL_V2_PORT` + `MAFW_KERNEL_V2_DATA_DIR`）只提供 `/health`、`/api/tts/voices`、`/api/usage` 的只读 shadow。v1 `MafwScheduler` 仍是默认/fallback，直到 cutover gate 通过。
 
@@ -758,14 +758,26 @@ Phase 2 叶子 provider（S3 → media → ASR → commands → notifications �
 - `providers/automation.ts`：automation action provider；cron/规则校验仍在核心 `AutomationEngine`。
 - 5 个 conformance kit + 5 个测试包 fixture：`gateway/tests/helpers/kernel-v2/*`、`gateway/tests/fixtures/kernel-v2/*`。
 
-门禁：kernel-v2 + architecture + shadow + G2 **146 tests**；typecheck 通过；gateway 全量结果见 Phase 2 交付记录。runbook 见 `docs/guides/kernel-v2-cutover.md`。
+Phase 3 agent tools + observer（S5 → tools → G3 harness）：
+
+- `observer.ts`：只读 canonical observer registry；`dispatch()` 同步入队、`setImmediate` 调度、per-observer timeout、bounded queue、fail-open。
+- `canonical-event.ts`：EventFacets → 脱敏快照；剔除 token/secret/password/prompt/credential，深度/长度/数组上限。
+- `tools.ts`：`ToolContributionRegistry`；命名空间 `plugin:<package>:<tool>`、global/session scope、timeout、unknown/unhealthy/handler throw 全部转 tool error，输出 `MafwToolRegistration`。
+- `packages/plugin-contract`：`PluginGatewayContributes.tools` + `PluginToolDescriptor` 校验（additive）。
+- 2 个 conformance kit + 2 个测试包 fixture；G3 harness 用 fake runtime 证明工具可调用、observer 收到 tool 事件且坏 observer 不阻塞。
+
+Phase 3 仍未接 live `runtime/event-dispatch.ts` / `RuntimeTools.registerTools`；G3 是 conformance harness 级证明，live 接线留到 Phase 3.5/cutover。interceptor 仍未开放。
+
+门禁：Phase 2 的 kernel-v2 + architecture + shadow + G2 **146 tests**；Phase 3 定向结果见 `docs/releases/2026-11-12-capability-kernel-phase3.md`。typecheck 通过；gateway 全量结果见 Phase 2/3 交付记录。runbook 见 `docs/guides/kernel-v2-cutover.md`。
 
 - 架构 spec：`docs/superpowers/specs/2026-11-12-fixed-core-capability-architecture-design.md`
 - 路线图：`docs/superpowers/plans/2026-11-12-fixed-core-capability-roadmap.md`
 - Phase 0/1 详细 plan：`docs/superpowers/plans/2026-11-12-kernel-v2-phase0-1.md`
 - Phase 2 详细 plan：`docs/superpowers/plans/2026-11-12-kernel-v2-phase2-leaf-providers.md`
+- Phase 3 详细 plan：`docs/superpowers/plans/2026-11-12-kernel-v2-phase3-agent-tools-observer.md`
 - 不变量 → 守卫：`docs/research/2026-11-12-kernel-v2-invariant-map.md`
-- 交付记录：`docs/releases/2026-11-12-capability-kernel-phase1.md`、`docs/releases/2026-11-12-capability-kernel-phase2.md`
+- S5 结论：`docs/research/2026-11-12-s5-canonical-event-observer-probe.md`
+- 交付记录：`docs/releases/2026-11-12-capability-kernel-phase1.md`、`docs/releases/2026-11-12-capability-kernel-phase2.md`、`docs/releases/2026-11-12-capability-kernel-phase3.md`
 
 ---
 

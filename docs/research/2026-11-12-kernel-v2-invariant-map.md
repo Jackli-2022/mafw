@@ -34,6 +34,10 @@
 | ASR sidecar fallback | `gateway/tests/unit/kernel-v2/asr-sidecar-provider.test.ts` | OK | builtin health → package tier |
 | notification fan-out 失败隔离 | `gateway/tests/unit/kernel-v2/notifications-provider.test.ts` | OK | 单 channel 失败不影响其他 |
 | automation action missing/unhealthy fail-closed | `gateway/tests/unit/kernel-v2/automation-provider.test.ts` | OK | 规则调度仍为核心 |
+| observer 只读/fail-open/不阻塞 | `gateway/tests/unit/kernel-v2/observer.test.ts`、`observer-conformance.test.ts`（S5） | OK | 同步入队 + timeout + bounded queue |
+| observer 快照脱敏 | `gateway/tests/unit/kernel-v2/canonical-event.test.ts` | OK | token/secret/prompt/credential 剔除 |
+| plugin tool 命名空间/失败隔离/scope | `gateway/tests/unit/kernel-v2/tools.test.ts`、`tools-conformance.test.ts` | OK | `plugin:<package>:<tool>` |
+| G3 tools + observer 闭环 | `gateway/tests/integration/kernel-v2-g3.test.ts` | OK | fake runtime |
 
 ## Desktop
 

@@ -43,6 +43,12 @@ const FORBIDDEN_ABSOLUTE = new Set(
     'src/voice/registry.ts',
     'src/media/media-plugin-loader.ts',
     'src/commands/custom-exec.ts',
+    'src/runtime/event-dispatch.ts',
+    'src/runtime/mafw-tools.ts',
+    'src/server/event-hub.ts',
+    'src/event-bus.ts',
+    'src/mcp/tool-registry.ts',
+    'src/mcp/tools.ts',
   ].map((p) => resolve(ROOT, p)),
 );
 

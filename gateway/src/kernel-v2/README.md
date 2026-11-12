@@ -1,6 +1,6 @@
 # kernel-v2
 
-Phase 0/1/2 的并行内核模块。当前**不接 live gateway**，只被测试和独立 v2 入口使用。
+Phase 0/1/2/3 的并行内核模块。当前**不接 live gateway**，只被测试和独立 v2 入口使用。
 
 ## 来源
 
@@ -9,6 +9,8 @@ Phase 0/1/2 的并行内核模块。当前**不接 live gateway**，只被测试
 - `providers/tts-registry.ts`：从同一 spike 的 `gateway/src/tts/registry.ts` port，import 路径改为 kernel-v2。
 - `providers/media.ts`、`providers/asr.ts`、`providers/asr-sidecar.ts`、`providers/commands.ts`、`providers/notifications.ts`、`providers/automation.ts`：Phase 2 新增的叶子 adapter。
 - `subprocess-ledger.ts`、`probes/asr-subprocess.ts`：S3 子进程所有权/生命周期证明。
+- `observer.ts`、`canonical-event.ts`：只读 canonical observer + 脱敏快照（Phase 3 / S5）。
+- `tools.ts`：插件 tool contribution registry，输出 `MafwToolRegistration`（Phase 3）。
 
 ## port 差异
 
