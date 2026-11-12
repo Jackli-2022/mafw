@@ -483,11 +483,29 @@ export function buildMafwToolFactory(opts: { baseUrl: string; fetchImpl?: typeof
 export async function activateRuntimeTools(
   rt: AgentRuntime,
   source: string,
-  opts: { baseUrl: string },
+  opts: {
+    baseUrl: string;
+    /** Phase 3.5: plugin tools merged after the builtin six-piece factory. */
+    extraTools?: (sessionID: string) => MafwToolRegistration[];
+  },
   logger: { info(m: string): void; warn(m: string): void } = log,
 ): Promise<void> {
   try {
-    await rt.tools.registerTools(buildMafwToolFactory({ baseUrl: opts.baseUrl }));
+    const builtinFactory = buildMafwToolFactory({ baseUrl: opts.baseUrl });
+    const factory = opts.extraTools
+      ? (sessionID: string) => {
+          const builtin = builtinFactory(sessionID);
+          try {
+            return [...builtin, ...(opts.extraTools!(sessionID) ?? [])];
+          } catch (err: any) {
+            logger.warn(
+              `[RuntimeTools] extra tools failed for ${source} (non-fatal): ${err?.message ?? err}`,
+            );
+            return builtin;
+          }
+        }
+      : builtinFactory;
+    await rt.tools.registerTools(factory);
   } catch (err: any) {
     logger.warn(`[RuntimeTools] '${rt.name}' registerTools failed (non-fatal): ${err?.message ?? err}`);
   }

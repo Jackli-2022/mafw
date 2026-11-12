@@ -183,6 +183,39 @@ describe('activateRuntimeTools（激活期接线）', () => {
     expect(toolClassOf('bad')).toBe('other');
   });
 
+  it('extraTools are merged after the builtin factory', async () => {
+    const rt = makeRt();
+    await activateRuntimeTools(rt, 'test:rt', {
+      baseUrl: 'http://gw',
+      extraTools: () => [
+        {
+          name: 'plugin:demo:echo',
+          description: 'Echo',
+          parameters: {},
+          execute: async () => ({ text: 'ok' }),
+        },
+      ],
+    });
+    const factory = (rt.tools.registerTools as jest.Mock).mock.calls[0][0] as (sid: string) => any[];
+    const names = factory('s1').map((r) => r.name);
+    expect(names).toContain('plugin:demo:echo');
+    expect(names).toContain(TOOL_NAMES[0]);
+  });
+
+  it('extraTools failure falls back to builtin only (fail-open)', async () => {
+    const rt = makeRt();
+    await activateRuntimeTools(rt, 'test:rt', {
+      baseUrl: 'http://gw',
+      extraTools: () => {
+        throw new Error('boom');
+      },
+    });
+    const factory = (rt.tools.registerTools as jest.Mock).mock.calls[0][0] as (sid: string) => any[];
+    const names = factory('s1').map((r) => r.name);
+    expect(names.some((name) => name.startsWith('plugin:'))).toBe(false);
+    expect(names).toContain(TOOL_NAMES[0]);
+  });
+
   it('registerTools 抛错 → 不阻断（fail-open）；nativeTools 抛错 → 清 overlay', async () => {
     const rt = makeRt({ registerTools: jest.fn(async () => { throw new Error('nope'); }) });
     await expect(activateRuntimeTools(rt, 'test:rt', { baseUrl: 'http://gw' })).resolves.toBeUndefined();
