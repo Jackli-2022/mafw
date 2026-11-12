@@ -176,3 +176,22 @@ export function episodeStartingAt<T extends { id: string }>(
 ): ChatEpisode | null {
   return groups.find((group) => group.episode && group.turns[0]?.id === id)?.episode ?? null
 }
+
+/**
+ * 关闭时是否可以把组首 turn 写成新的 startMessageId。
+ * 只有 exact id 或与 startAt 足够接近（≤2s）时才写；避免把分页/近似匹配的邻居永久写成起点。
+ */
+export function resolvedCloseStartId(
+  episode: ChatEpisode,
+  firstTurn: { id: string; time?: { created?: number } } | null | undefined,
+): string {
+  if (!firstTurn) return episode.startMessageId
+  if (firstTurn.id === episode.startMessageId) return firstTurn.id
+  const created = firstTurn.time?.created
+  if (typeof episode.startAt === "number"
+    && typeof created === "number"
+    && Math.abs(created - episode.startAt) <= 2_000) {
+    return firstTurn.id
+  }
+  return episode.startMessageId
+}

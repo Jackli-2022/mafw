@@ -1,4 +1,4 @@
-import { Show, createEffect, createMemo, createSignal, onCleanup, type JSX } from "solid-js"
+import { Show, createEffect, createMemo, createSignal, on, onCleanup, type JSX } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import type { PodGoal, PodWorkOverview } from "@mafw/sdk"
 import { WorkOverview } from "./WorkOverview"
@@ -108,6 +108,11 @@ export function ProjectWorkView(props: {
       setComposerOpen(true)
     }
   })
+
+  createEffect(on(() => props.projectDir, () => {
+    setComposerOpen(false)
+    setCreating(false)
+  }, { defer: true }))
 
   const overviewGoals = createMemo<PodGoal[]>(() => {
     const current = overview()

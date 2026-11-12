@@ -6,6 +6,7 @@ import {
   episodeStartingAt,
   groupTurnsByEpisode,
   reopenEpisode,
+  resolvedCloseStartId,
   type ChatEpisode,
 } from "./episode-model"
 
@@ -79,6 +80,20 @@ test("reopenEpisode clears the end and decision link", () => {
   assert.equal(reopened.endAt, undefined)
   assert.equal(reopened.decisionRecordId, null)
   assert.notEqual(reopened.updatedAt, closed.updatedAt)
+})
+
+test("resolvedCloseStartId only rewrites exact or near-time starts", () => {
+  const open = createEpisode({
+    sessionID: "s1",
+    title: "起点",
+    startMessageId: "user-optimistic",
+    startAt: 5_000,
+    id: "ep_start",
+  })
+  assert.equal(resolvedCloseStartId(open, { id: "user-optimistic", time: { created: 9_000 } }), "user-optimistic")
+  assert.equal(resolvedCloseStartId(open, { id: "msg_real", time: { created: 5_500 } }), "msg_real")
+  assert.equal(resolvedCloseStartId(open, { id: "msg_neighbor", time: { created: 8_000 } }), "user-optimistic")
+  assert.equal(resolvedCloseStartId(open, null), "user-optimistic")
 })
 
 test("startAt and endAt survive optimistic id reconciliation", () => {

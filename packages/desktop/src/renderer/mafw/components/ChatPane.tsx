@@ -55,7 +55,7 @@ import { ApprovalSummaryLine } from "./ApprovalSummaryLine"
 import { DecisionBoard } from "./DecisionBoard"
 import { ChatModeBar } from "./ChatModeBar"
 import { EpisodeHeader } from "./EpisodeHeader"
-import { closeEpisode, createEpisode, episodeStartingAt, groupTurnsByEpisode, reopenEpisode, type ChatEpisode } from "../chat/episode-model"
+import { closeEpisode, createEpisode, groupTurnsByEpisode, reopenEpisode, resolvedCloseStartId, type ChatEpisode } from "../chat/episode-model"
 import { createEpisodeStore } from "../chat/episode-store"
 import { modeActionLabel, modeAvailability, modeSendsMessage, type ChatMode } from "../chat/composer-mode"
 import type { DecisionBoardView, DecisionItem } from "../focus/decision-model"
@@ -344,23 +344,70 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     setEpisodes(next)
     episodeStore().save(next)
   }
-  const episodeGroups = () => groupTurnsByEpisode(allTurns(), episodes())
-  const episodeForMessage = (id: string): ChatEpisode | null => {
-    for (const group of episodeGroups()) {
-      if (group.turns.some((turn) => turn.id === id)) return group.episode
+  let episodeGroupsCache: {
+    turns: readonly any[]
+    key: string
+    groups: Array<{ episode: ChatEpisode | null; turns: any[] }>
+  } | null = null
+  let episodeByMessageCache: {
+    groups: Array<{ episode: ChatEpisode | null; turns: any[] }>
+    map: Map<string, ChatEpisode>
+  } | null = null
+  let episodeHeaderCache: {
+    groups: Array<{ episode: ChatEpisode | null; turns: any[] }>
+    visible: readonly any[]
+    map: Map<string, ChatEpisode>
+  } | null = null
+
+  const episodeStructureKey = () => episodes()
+    .map((episode) => [
+      episode.id,
+      episode.startMessageId,
+      episode.startAt ?? "",
+      episode.endMessageId ?? "",
+      episode.endAt ?? "",
+      episode.status,
+    ].join(":"))
+    .join("|")
+  const episodeGroups = () => {
+    const turns = allTurns() as any[]
+    const key = episodeStructureKey()
+    if (episodeGroupsCache && episodeGroupsCache.turns === turns && episodeGroupsCache.key === key) {
+      return episodeGroupsCache.groups
     }
-    return null
+    const groups = groupTurnsByEpisode(turns, episodes())
+    episodeGroupsCache = { turns, key, groups }
+    return groups
+  }
+  const episodeForMessage = (id: string): ChatEpisode | null => {
+    const groups = episodeGroups()
+    if (!episodeByMessageCache || episodeByMessageCache.groups !== groups) {
+      const map = new Map<string, ChatEpisode>()
+      for (const group of groups) {
+        if (!group.episode) continue
+        for (const turn of group.turns) map.set(turn.id, group.episode)
+      }
+      episodeByMessageCache = { groups, map }
+    }
+    return episodeByMessageCache.map.get(id) ?? null
   }
   /** 组首可见时在组首渲染；组首被分页裁掉时，在首个可见 turn 渲染。 */
   const episodeStartFor = (id: string): ChatEpisode | null => {
     const groups = episodeGroups()
-    const direct = episodeStartingAt(groups, id)
-    if (direct) return direct
-    const group = groups.find((item) => item.episode && item.turns.some((turn) => turn.id === id))
-    if (!group?.episode) return null
-    const visibleIds = new Set(visibleTurns().map((turn) => turn.id))
-    const firstVisible = group.turns.find((turn) => visibleIds.has(turn.id))
-    return firstVisible?.id === id ? group.episode : null
+    const visible = visibleTurns()
+    if (!episodeHeaderCache
+      || episodeHeaderCache.groups !== groups
+      || episodeHeaderCache.visible !== visible) {
+      const visibleIds = new Set(visible.map((turn) => turn.id))
+      const map = new Map<string, ChatEpisode>()
+      for (const group of groups) {
+        if (!group.episode) continue
+        const firstVisible = group.turns.find((turn) => visibleIds.has(turn.id))
+        if (firstVisible) map.set(firstVisible.id, group.episode)
+      }
+      episodeHeaderCache = { groups, visible, map }
+    }
+    return episodeHeaderCache.map.get(id) ?? null
   }
   const episodeTurnCount = (id: string): number =>
     episodeGroups().find((group) => group.episode?.id === id)?.turns.length ?? 0
@@ -410,7 +457,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     const episode = episodes().find((item) => item.id === id)
     if (!episode) return
     const group = episodeGroups().find((item) => item.episode?.id === id)
-    const startId = group?.turns[0]?.id ?? episode.startMessageId
+    const startId = resolvedCloseStartId(episode, group?.turns[0])
     const end = group?.turns.at(-1) ?? null
     persistEpisodes(episodes().map((item) => item.id === id
       ? closeEpisode({ ...item, startMessageId: startId }, end?.id ?? startId, null, end?.time?.created)
@@ -426,7 +473,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     summary: string,
   ): Promise<string | null> => {
     const group = episodeGroups().find((item) => item.episode?.id === episode.id)
-    const startId = group?.turns[0]?.id ?? episode.startMessageId
+    const startId = resolvedCloseStartId(episode, group?.turns[0])
     const resolved = { ...episode, startMessageId: startId }
     const recordId = await props.onCloseEpisode?.({ episode: resolved, summary })
     if (!recordId) return null
@@ -1541,7 +1588,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
   // One user message = one turn. Sorted by time as insurance against any
   // reordering between SSE appends and the history merge.
-  const userMessages = () => {
+  const userMessages = createMemo(() => {
     const sid = sidProp()
     if (!sid) return []
     const msgs = store.message[sid]
@@ -1549,7 +1596,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     return msgs
       .filter(m => m.role === "user")
       .sort((a, b) => (a.time?.created || 0) - (b.time?.created || 0))
-  }
+  })
 
   // DeepSeek-style node nav: one node per user turn, preview from text parts.
   const navTurns = createMemo(() =>
@@ -1811,7 +1858,10 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   // loaded pages are exhausted. Bounds long-session DOM cost.
   const [renderLimit, setRenderLimit] = createSignal(10)
   const allTurns = () => userMessages()
-  const visibleTurns = () => { const all = allTurns(); return all.slice(Math.max(0, all.length - renderLimit())) }
+  const visibleTurns = createMemo(() => {
+    const all = allTurns()
+    return all.slice(Math.max(0, all.length - renderLimit()))
+  })
 
   // 进场去抖：仅「本会话加载后新追加的 tail」播 mafw-enter；历史水合/翻旧页不弹
   const [animateTurnId, setAnimateTurnId] = createSignal<string | null>(null)

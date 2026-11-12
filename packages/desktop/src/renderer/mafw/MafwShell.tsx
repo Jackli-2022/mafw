@@ -3210,7 +3210,10 @@ export function MafwShell() {
   /** Tech Lead thread → its Goal; Lead thread → whole project. */
   const activeTechLeadGoalId = (): string | null => {
     const sid = activeSessionId()
-    return sid ? techLeadGoalBySession[sid] ?? null : null
+    if (!sid) return null
+    const identity = goalSessionIdentity(podStore.detail(), sid)
+    if (identity?.role === "tech_lead" && identity.goalId) return identity.goalId
+    return techLeadGoalBySession[sid] ?? null
   }
   const openDecisionGoal = (goalId: string, target: GoalDetailFocus) => {
     setShowConfig(false)
@@ -3237,14 +3240,20 @@ export function MafwShell() {
     }
     openWorkbenchContext("review")
   }
-  /** Episode 关闭时用的 Goal 身份：Tech Lead 线程优先，其次工作台焦点/内容 scope。 */
+  /** Episode 关闭时用的 Goal 身份：Pod 会话身份优先，其次 Tech Lead 映射/工作台焦点。 */
   const episodeGoalReference = (sessionID: string) => {
+    const detail = podStore.detail()
+    const identity = goalSessionIdentity(detail, sessionID)
     const focusScope = activeFocus()?.scope
     const scope = contentScope()
     return resolveEpisodeGoalReference({
       sessionID,
       techLeadGoalBySession,
-      podGoals: podStore.detail()?.goals ?? [],
+      sessionGoal: identity?.goalId
+        ? { goalId: identity.goalId, revision: identity.revision }
+        : null,
+      podLoaded: !!detail,
+      podGoals: detail?.goals ?? [],
       focusGoal: focusScope?.kind === "goal"
         ? { goalId: focusScope.goalId, revision: focusScope.revision }
         : null,
