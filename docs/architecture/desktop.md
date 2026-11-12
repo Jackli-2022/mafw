@@ -51,6 +51,13 @@
   评审项锚点或计划审阅。决定记录由 MCP 起草、人确认 / 搁置 / 重开，落在 `<project>/.mafw/decisions/`；
   新 Goal 先看委托单预览（12 字段 + 授权级别），Goal 总览显示代理契约，框显示执行 badge。详见
   `docs/releases/2026-11-12-workbench-chat-decisions.md`。
+- **Chat 模式与 Episode（2026-11-12 Plan 4）**：composer 四模式（讨论 / 提议 / 委托 / 解决）是瞬态
+  意图，不改权限；提议把 `[[mode:propose]]` 作为 synthetic text part 发送，用户正文保持干净；委托
+  打开预填的 New Goal composer，解决打开 Goal 评审 lens / review 上下文，两者都不发消息。Episode
+  按会话存 `localStorage['mafw-episodes:v1:<sessionID>']`（仅分组视图，不新增 session/topic 模型），
+  关闭默认折叠，边界用 `startMessageId` + `startAt`/`endAt` 兼容乐观 id 对账；关闭并记录只起草
+  用户来源的决定记录，确认仍在决定板由人完成。详见
+  `docs/releases/2026-11-12-workbench-chat-modes-episodes.md`。
 - **编辑器**：默认 **Monaco**（VS Code 内核；`mafw-editor-engine=codemirror` 回退，挂载失败自动回退），
   行内 diff 装饰、Ctrl/Cmd+S、MAFW 主题 token 映射、minimap ≥720px。详情见本文件 Monaco 段。
 - **文件预览**：md（session-ui markdown）、json 折叠树、csv/tsv 表格、svg 预览/源码、图片、pdf（Chromium
