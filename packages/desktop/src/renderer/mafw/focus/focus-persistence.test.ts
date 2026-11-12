@@ -12,6 +12,7 @@ import {
   configureFocusStorage,
   flushFocusPersistence,
   loadFocusState,
+  resetFocusPersistence,
   saveFocusState,
 } from "./focus-persistence"
 
@@ -40,7 +41,7 @@ const file2: SubjectRef = { kind: "file", root: "C:/repo", rel: "src/b.ts" }
 
 test("focus state round-trips per world", () => {
   const io = fakeStorage()
-  clearFocusPersistence()
+  resetFocusPersistence()
   configureFocusStorage(io)
 
   let state = openSubject(createWorkbenchState("w1"), worldScope, file)
@@ -49,7 +50,7 @@ test("focus state round-trips per world", () => {
   saveFocusState(state)
   flushFocusPersistence("w1")
 
-  clearFocusPersistence()
+  resetFocusPersistence()
   configureFocusStorage(io)
   const loaded = loadFocusState("w1")
   assert.ok(loaded)
@@ -63,7 +64,7 @@ test("focus state round-trips per world", () => {
 test("invalid or partial payload falls back to null", () => {
   const io = fakeStorage()
   io.data.set("mafw-focus:v1:w1", "{not json")
-  clearFocusPersistence()
+  resetFocusPersistence()
   configureFocusStorage(io)
   assert.equal(loadFocusState("w1"), null)
 
@@ -91,7 +92,7 @@ test("invalid or partial payload falls back to null", () => {
 
 test("debounced writes flush on demand", () => {
   const io = fakeStorage()
-  clearFocusPersistence()
+  resetFocusPersistence()
   configureFocusStorage(io)
 
   const state = openSubject(createWorkbenchState("w1"), worldScope, file)
@@ -103,7 +104,7 @@ test("debounced writes flush on demand", () => {
 })
 
 test("no storage keeps the in-memory behavior", () => {
-  clearFocusPersistence()
+  resetFocusPersistence()
   configureFocusStorage(null)
   const state = openSubject(createWorkbenchState("w1"), worldScope, file)
   saveFocusState(state)
@@ -113,7 +114,7 @@ test("no storage keeps the in-memory behavior", () => {
 
 test("stack and kept lists are capped", () => {
   const io = fakeStorage()
-  clearFocusPersistence()
+  resetFocusPersistence()
   configureFocusStorage(io)
 
   let state = createWorkbenchState("w1")
@@ -127,7 +128,7 @@ test("stack and kept lists are capped", () => {
   saveFocusState(state)
   flushFocusPersistence("w1")
 
-  clearFocusPersistence()
+  resetFocusPersistence()
   configureFocusStorage(io)
   const loaded = loadFocusState("w1")
   assert.ok(loaded)
@@ -135,9 +136,25 @@ test("stack and kept lists are capped", () => {
   assert.equal(loaded.kept.length, 20)
 })
 
+test("clearing persistence removes loaded keys from storage", () => {
+  const io = fakeStorage()
+  resetFocusPersistence()
+  configureFocusStorage(io)
+  const state = openSubject(createWorkbenchState("w1"), worldScope, file)
+  saveFocusState(state)
+  flushFocusPersistence("w1")
+  assert.ok(io.data.has("mafw-focus:v1:w1"))
+
+  clearFocusPersistence()
+  assert.equal(io.data.has("mafw-focus:v1:w1"), false)
+
+  configureFocusStorage(io)
+  assert.equal(loadFocusState("w1"), null)
+})
+
 test("worlds do not share stacks", () => {
   const io = fakeStorage()
-  clearFocusPersistence()
+  resetFocusPersistence()
   configureFocusStorage(io)
 
   const w1 = openSubject(createWorkbenchState("w1"), worldScope, file)
@@ -147,7 +164,7 @@ test("worlds do not share stacks", () => {
   saveFocusState(w2)
   flushFocusPersistence()
 
-  clearFocusPersistence()
+  resetFocusPersistence()
   configureFocusStorage(io)
   assert.equal((loadFocusState("w1")?.stack[0]!.subject as { rel: string }).rel, "src/a.ts")
   assert.equal((loadFocusState("w2")?.stack[0]!.subject as { rel: string }).rel, "src/b.ts")

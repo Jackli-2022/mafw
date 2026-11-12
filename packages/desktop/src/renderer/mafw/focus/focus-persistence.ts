@@ -281,6 +281,20 @@ export function flushFocusPersistence(worldId?: WorldId): void {
 }
 
 export function clearFocusPersistence(): void {
+  if (storage?.removeItem) {
+    for (const worldId of states.keys()) {
+      try {
+        storage.removeItem(storageKey(worldId))
+      } catch {
+        /* blocked — fail-open */
+      }
+    }
+  }
+  resetFocusPersistence()
+}
+
+/** 只清内存缓存与定时器，不碰存储；用于项目切换 / 测试重新加载。 */
+export function resetFocusPersistence(): void {
   for (const timer of timers.values()) clearTimeout(timer)
   timers.clear()
   states.clear()

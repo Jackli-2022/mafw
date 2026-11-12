@@ -23,6 +23,7 @@ export function SubjectPicker(props: {
   const [query, setQuery] = createSignal("")
   const [active, setActive] = createSignal(0)
   const filtered = createMemo(() => filterPickerItems(props.items, query()))
+  let listRef: HTMLDivElement | undefined
 
   createEffect(() => {
     if (!props.open) return
@@ -35,12 +36,23 @@ export function SubjectPicker(props: {
     if (active() >= length) setActive(Math.max(0, length - 1))
   })
 
+  createEffect(() => {
+    active()
+    queueMicrotask(() => {
+      listRef?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" })
+    })
+  })
+
   const pick = () => {
     const item = filtered()[active()]
     if (item) props.onPick(item)
   }
 
   const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key === "Tab") {
+      event.preventDefault()
+      return
+    }
     if (event.key === "Escape") {
       event.preventDefault()
       props.onClose()
@@ -86,7 +98,7 @@ export function SubjectPicker(props: {
             />
           </div>
 
-          <div class="mafw-subject-picker-list" role="listbox" aria-label="结果">
+          <div class="mafw-subject-picker-list" role="listbox" aria-label="结果" ref={(el) => { listRef = el }}>
             <Show
               when={filtered().length > 0}
               fallback={<div class="mafw-subject-picker-empty">没有匹配的对象</div>}

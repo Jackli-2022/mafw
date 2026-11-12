@@ -57,4 +57,5 @@ test("focus opens use an explicit request instead of the global pending channel"
   assert.match(workbench, /focusOpenRequest/)
   assert.match(workbench, /openRequest=\{props\.focusOpenRequest\}/)
   assert.match(editor, /props\.openRequest/)
+  assert.doesNotMatch(workbench, /lensCounts/)
 })

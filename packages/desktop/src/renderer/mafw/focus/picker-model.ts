@@ -106,3 +106,13 @@ export function filterPickerItems(items: readonly PickerItem[], query: string): 
     : items
   return matched.slice(0, 50)
 }
+
+/** 把命令固定在 cap 内，避免文件结果把浏览器/终端挤出列表。 */
+export function withCommandItems(
+  items: readonly PickerItem[],
+  commands: readonly PickerItem[],
+  max = 50,
+): PickerItem[] {
+  const room = Math.max(0, max - commands.length)
+  return [...items.slice(0, room), ...commands]
+}

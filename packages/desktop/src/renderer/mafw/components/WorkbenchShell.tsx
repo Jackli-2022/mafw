@@ -81,7 +81,6 @@ export type WorkbenchShellProps = {
   focusView: Focus | null
   frame: FrameView | null
   lenses: readonly Lens[]
-  lensCounts?: Partial<Record<Lens, number>>
   onFocusLens: (lens: Lens) => void
   onFocusBack: () => void
   onFocusCrumb: (index: number) => void
@@ -191,7 +190,6 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
             <LensBar
               lenses={props.lenses}
               active={focus.lens}
-              counts={props.lensCounts}
               onLens={props.onFocusLens}
             />
           </>
@@ -341,7 +339,6 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
             contentRoot={props.contentRoot}
             contentScopeKey={props.contentScopeKey}
             diffs={props.diffs}
-            onOpenFile={props.onOpenFile}
             onActiveFileChange={props.onContentDocument}
             openRequest={props.focusOpenRequest}
             onSendAnnotation={props.onSendAnnotation}

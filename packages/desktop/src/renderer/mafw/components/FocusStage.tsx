@@ -17,7 +17,6 @@ export function FocusStage(props: {
   contentRoot: string | null
   contentScopeKey: string | null
   diffs: FileDiffEntry[]
-  onOpenFile: (rel: string) => void
   onActiveFileChange?: (rel: string | null) => void
   openRequest?: { root: string; rel: string; nonce: number } | null
   onSendAnnotation?: (text: string, opts?: { imageDataUrl?: string }) => void

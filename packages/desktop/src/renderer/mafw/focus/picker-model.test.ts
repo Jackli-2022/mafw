@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { buildCommandPickerItems, buildFilePickerItems, filterPickerItems } from "./picker-model"
+import { buildCommandPickerItems, buildFilePickerItems, filterPickerItems, withCommandItems } from "./picker-model"
 import { subjectKey, type Scope } from "./focus-model"
 import type { RecentContentEntry } from "../recent-content"
 
@@ -135,6 +135,22 @@ test("goal scope does not mix project-root files", () => {
   assert.equal(items[0]!.kind, "recent")
   assert.equal(items[0]!.scope.kind, "world")
   assert.equal((items[0]!.subject as { root: string }).root, "C:/repo")
+})
+
+test("commands stay inside the picker cap", () => {
+  const items = buildFilePickerItems({
+    worldId: "w1",
+    files: Array.from({ length: 60 }, (_, i) => `src/f-${i}.ts`),
+    filesRoot: "C:/repo",
+    recent: [],
+    root: "C:/repo",
+    scope: projectScope,
+    projectScope,
+  })
+  const merged = withCommandItems(items, buildCommandPickerItems(projectScope))
+  assert.equal(merged.length, 50)
+  assert.equal(merged.at(-2)?.kind, "command")
+  assert.equal(merged.at(-1)?.kind, "command")
 })
 
 test("picker item identities are stable", () => {

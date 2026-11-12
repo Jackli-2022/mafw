@@ -4,6 +4,14 @@ import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { Icon } from "@mafw/ui/icon"
 import type { FrameBadge, FrameCrumb } from "../focus/frame-view"
 
+function pickerHint(): string {
+  try {
+    return typeof navigator !== "undefined" && /Mac/i.test(navigator.platform) ? "⌘P" : "Ctrl+P"
+  } catch {
+    return "Ctrl+P"
+  }
+}
+
 /** 工作台的「框」：世界 / scope / 对象 / 版本 / 状态，只占一行。 */
 export function FrameBar(props: {
   crumbs: readonly FrameCrumb[]
@@ -71,7 +79,7 @@ export function FrameBar(props: {
           onClick={props.onOpenPicker}
         >
           <Icon name="magnifying-glass" size="small" />
-          <span class="mafw-frame-kbd">⌘P</span>
+          <span class="mafw-frame-kbd">{pickerHint()}</span>
         </ButtonV2>
       </TooltipV2>
     </div>

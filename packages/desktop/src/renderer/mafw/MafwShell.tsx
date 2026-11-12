@@ -133,7 +133,7 @@ import {
   type WorkbenchState,
 } from "./focus/focus-model"
 import { frameView, type FrameView } from "./focus/frame-view"
-import { buildCommandPickerItems, buildFilePickerItems, type PickerItem } from "./focus/picker-model"
+import { buildCommandPickerItems, buildFilePickerItems, withCommandItems, type PickerItem } from "./focus/picker-model"
 import { stageActionFor } from "./focus/stage-dispatch"
 import {
   configureFocusStorage,
@@ -2737,7 +2737,7 @@ export function MafwShell() {
       scope,
       projectScope,
     })
-    return [...items, ...buildCommandPickerItems(scope)]
+    return withCommandItems(items, buildCommandPickerItems(scope))
   })
   const contentBackLabel = createMemo(() => {
     const top = contentHistory().at(-1)
