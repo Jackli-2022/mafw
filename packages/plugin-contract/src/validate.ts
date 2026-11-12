@@ -20,6 +20,7 @@ import type {
   PluginManifestContributes,
   PluginPanelDescriptor,
   PluginToolCardDescriptor,
+  PluginToolDescriptor,
   PluginView,
   PluginWebSurfaceClientDescriptor,
   Widget,
@@ -1373,7 +1374,17 @@ export type PluginManifestContributesValidation =
   | { ok: false; error: string }
 
 const MANIFEST_CONTRIBUTES_KEYS = ["gateway", "desktop"] as const
-const GATEWAY_CONTRIBUTES_KEYS = ["actions", "events", "http"] as const
+const GATEWAY_CONTRIBUTES_KEYS = ["actions", "events", "tools", "http"] as const
+const TOOL_DESCRIPTOR_KEYS = [
+  "name",
+  "title",
+  "description",
+  "inputSchema",
+  "outputSchema",
+  "timeoutMs",
+  "scope",
+] as const
+const TOOL_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 const DESKTOP_CONTRIBUTES_KEYS = ["ui", "web", "main"] as const
 const DESKTOP_UI_PLANE_KEYS = ["panels", "toolCards", "configPages", "messageWindows"] as const
 const DESKTOP_WEB_PLANE_KEYS = ["webSurfaces"] as const
@@ -1395,6 +1406,80 @@ function readSlotArray(value: unknown, label: string, errors: string[]): unknown
     return undefined
   }
   return value
+}
+
+function readToolDescriptors(
+  value: unknown,
+  label: string,
+  errors: string[],
+): PluginToolDescriptor[] | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value)) {
+    addError(errors, `${label} must be an array`)
+    return undefined
+  }
+  const out: PluginToolDescriptor[] = []
+  value.forEach((item, index) => {
+    const itemLabel = `${label}[${index}]`
+    if (!isPlainObject(item)) {
+      addError(errors, `${itemLabel} must be an object`)
+      return
+    }
+    checkKnownFields(item, TOOL_DESCRIPTOR_KEYS, itemLabel, errors)
+    const name = requireString(item.name, `${itemLabel}.name`, 64, errors)
+    if (name !== undefined && !TOOL_NAME_PATTERN.test(name)) {
+      addError(errors, `${itemLabel}.name must match ${TOOL_NAME_PATTERN}`)
+    }
+    const description = requireString(item.description, `${itemLabel}.description`, 512, errors)
+    if (!isPlainObject(item.inputSchema)) {
+      addError(errors, `${itemLabel}.inputSchema must be an object`)
+    }
+    if (item.outputSchema !== undefined && !isPlainObject(item.outputSchema)) {
+      addError(errors, `${itemLabel}.outputSchema must be an object`)
+    }
+    if (item.title !== undefined && (typeof item.title !== "string" || item.title.trim().length === 0)) {
+      addError(errors, `${itemLabel}.title must be a non-empty string`)
+    }
+
+    let timeoutMs: number | undefined
+    if (item.timeoutMs !== undefined) {
+      if (
+        !Number.isInteger(item.timeoutMs) ||
+        (item.timeoutMs as number) <= 0 ||
+        (item.timeoutMs as number) > PLUGIN_UI_LIMITS.maxActionTimeoutMs
+      ) {
+        addError(
+          errors,
+          `${itemLabel}.timeoutMs must be an integer between 1 and ${PLUGIN_UI_LIMITS.maxActionTimeoutMs}`,
+        )
+      } else {
+        timeoutMs = item.timeoutMs as number
+      }
+    }
+
+    let scope: "global" | "session" | undefined
+    if (item.scope !== undefined) {
+      if (item.scope !== "global" && item.scope !== "session") {
+        addError(errors, `${itemLabel}.scope must be global or session`)
+      } else {
+        scope = item.scope
+      }
+    }
+
+    if (name !== undefined && description !== undefined && isPlainObject(item.inputSchema)) {
+      const tool: PluginToolDescriptor = {
+        name,
+        description,
+        inputSchema: item.inputSchema as PluginJsonSchema,
+      }
+      if (typeof item.title === "string" && item.title.trim().length > 0) tool.title = item.title
+      if (isPlainObject(item.outputSchema)) tool.outputSchema = item.outputSchema as PluginJsonSchema
+      if (timeoutMs !== undefined) tool.timeoutMs = timeoutMs
+      if (scope !== undefined) tool.scope = scope
+      out.push(tool)
+    }
+  })
+  return out
 }
 
 /**
@@ -1423,8 +1508,10 @@ export function validatePluginManifestContributes(
       const gateway: NonNullable<PluginManifestContributes["gateway"]> = {}
       const actions = readStringList(value.gateway.actions, "manifest contributes.gateway.actions", errors)
       const events = readStringList(value.gateway.events, "manifest contributes.gateway.events", errors)
+      const tools = readToolDescriptors(value.gateway.tools, "manifest contributes.gateway.tools", errors)
       if (actions !== undefined) gateway.actions = actions
       if (events !== undefined) gateway.events = events
+      if (tools !== undefined) gateway.tools = tools
       if (value.gateway.http !== undefined) {
         if (typeof value.gateway.http !== "boolean") {
           addError(errors, "manifest contributes.gateway.http must be a boolean")

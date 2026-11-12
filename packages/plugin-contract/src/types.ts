@@ -227,10 +227,25 @@ export interface PluginClientDescriptor {
  */
 export type PluginPlane = "gateway" | "desktop-ui" | "desktop-web" | "desktop-main"
 
+/**
+ * Agent tool declaration. The Host namespaces the local `name` as
+ * `plugin:<package>:<name>`; handlers still come from `activate()`.
+ */
+export interface PluginToolDescriptor {
+  name: string
+  title?: string
+  description: string
+  inputSchema: PluginJsonSchema
+  outputSchema?: PluginJsonSchema
+  timeoutMs?: number
+  scope?: "global" | "session"
+}
+
 /** Gateway-plane declarations. Handlers still come from `activate()`. */
 export interface PluginGatewayContributes {
   actions?: string[]
   events?: string[]
+  tools?: PluginToolDescriptor[]
   http?: boolean
 }
 

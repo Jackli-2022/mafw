@@ -458,6 +458,55 @@ test("manifest contributes: rejects non-object ui and invalid main", () => {
   assert.equal(main.ok, false)
 })
 
+test("manifest contributes: accepts gateway tools", () => {
+  const result = validatePluginManifestContributes({
+    gateway: {
+      tools: [
+        {
+          name: "echo",
+          title: "Echo",
+          description: "Echo input",
+          inputSchema: { type: "object", properties: { text: { type: "string" } } },
+          scope: "session",
+        },
+      ],
+    },
+  })
+  assert.equal(result.ok, true)
+  if (!result.ok) return
+  assert.equal(result.value.gateway?.tools?.[0].name, "echo")
+  assert.equal(result.value.gateway?.tools?.[0].scope, "session")
+})
+
+test("manifest contributes: rejects bad tool names, timeouts and unknown fields", () => {
+  for (const name of ["", "a:b", "bad name", " plugin"]) {
+    const result = validatePluginManifestContributes({
+      gateway: { tools: [{ name, description: "x", inputSchema: {} }] },
+    })
+    assert.equal(result.ok, false)
+  }
+
+  const timeout = validatePluginManifestContributes({
+    gateway: { tools: [{ name: "ok", description: "x", inputSchema: {}, timeoutMs: 0 }] },
+  })
+  assert.equal(timeout.ok, false)
+
+  const tooLong = validatePluginManifestContributes({
+    gateway: { tools: [{ name: "ok", description: "x", inputSchema: {}, timeoutMs: 60001 }] },
+  })
+  assert.equal(tooLong.ok, false)
+
+  const extra = validatePluginManifestContributes({
+    gateway: { tools: [{ name: "ok", description: "x", inputSchema: {}, handler: "nope" }] },
+  })
+  assert.equal(extra.ok, false)
+
+  const scope = validatePluginManifestContributes({
+    gateway: { tools: [{ name: "ok", description: "x", inputSchema: {}, scope: "global" }] },
+  })
+  assert.equal(scope.ok, true)
+})
+
 test("manifest contributes: existing client descriptor validation is unchanged", () => {
   const result = validateClientDescriptor(validDescriptor())
   assert.equal(result.ok, true)
