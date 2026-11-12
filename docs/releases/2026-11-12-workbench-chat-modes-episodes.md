@@ -2,7 +2,7 @@
 
 - 版本：desktop 5.1.0 / gateway 4.16.1
 - Plan 4 base：`b89aa7ab`（docs: plan chat modes and episodes）
-- 交付 HEAD：`e8acf682`（fix: harden episode reconciliation and goal linkage）
+- 交付 HEAD：`b7456f7e`（fix: recover thread goals and memoize episode groups）
 - 计划：`docs/superpowers/plans/2026-11-12-workbench-chat-modes-episodes.md`
 - 设计：`docs/superpowers/specs/2026-11-12-workbench-stage-first-design.md` §7.1 / §10.4 / §10.5 / §10.6 / §10.8
 
@@ -32,6 +32,7 @@ instruments / stack / picker），也不改变权限模型。
 | `b5f782cf` | close episodes into decision drafts |
 | `83582fae` | keep episode boundaries and hide mode context |
 | `e8acf682` | harden episode reconciliation and goal linkage |
+| `b7456f7e` | recover thread goals and memoize episode groups |
 
 ## 行为变化
 
@@ -53,11 +54,12 @@ instruments / stack / picker），也不改变权限模型。
   status / decisionRecordId / createdAt / updatedAt`。
 - 分组是视图层：`groupTurnsByEpisode` 保留未分组 turn；关闭且无 end 的 Episode 延伸到末尾；
   起始/结束 id 对账失败时用 `startAt` / `endAt` 在 ±10s 内找最近 turn。
-- 关闭默认折叠；展开/收起是会话内覆盖状态，重载后关闭 Episode 仍默认折叠。组首被分页裁掉时，
-  Episode 头渲染在首个可见 turn 上。
+- 关闭默认折叠；展开/收起是会话内覆盖状态，重载后关闭 Episode 仍默认折叠。渲染窗口分页裁掉组首时，
+  Episode 头渲染在首个可见 turn 上；历史页本身未加载组首时按计划契约忽略该 Episode（不猜边界）。
 - 关闭并记录：`DecisionRecordService.draft` 写 `history[0].by = 'user'`；桌面只保存返回的
-  `decisionRecordId` 并刷新决定板，不自动确认。决定归属优先取该 Episode 所属 Tech Lead 线程的
-  Goal，其次工作台焦点 / 内容 scope；证据 ref 使用对账后的真实起始消息 id。
+  `decisionRecordId` 并刷新决定板，不自动确认。决定归属优先取 Pod detail 中该会话的 Goal 身份
+  （重载后仍可用），其次 Tech Lead 内存映射 / 工作台焦点 / 内容 scope；只有 exact id 或与
+  `startAt` 相差 ≤2s 时才把组首写成新的 `startMessageId`，避免近似匹配永久污染边界与证据 ref。
 - 查看决定记录：展开决定板并定位到链接记录。
 
 ### 显示净化
@@ -75,18 +77,20 @@ assistant 文本不受影响。服务端原始消息保留给模型，不改写�
 
 | 门禁 | 结果 |
 |---|---|
-| Plan 4 新增测试 | **46**（desktop 40 + gateway 6） |
-| desktop focused suite | 59/59（5 suites） |
+| Plan 4 新增测试 | **50**（desktop 44 + gateway 6） |
+| desktop focused suite | 58/58（5 suites） |
 | gateway focused suite | 16/16（2 suites） |
-| desktop full `npm test` | **3572/3572**（696 suites；Plan 3 baseline 3532） |
-| gateway full `npm test -- --forceExit` | **6621/6621**（853 suites；Plan 3 baseline 6608） |
+| desktop full `npm test` | **3576/3576**（696 suites；Plan 3 baseline 3532 + Plan 4 44） |
+| gateway full `npm test -- --forceExit` | **6653/6653**（857 suites；当前树，含外部 kernel-v2 交付） |
 | desktop `tsgo --noEmit -p tsconfig.json` | rc=0 |
 | gateway `tsc --noEmit -p tsconfig.json` | rc=0 |
 | `electron-vite build` | rc=0 |
 | gateway `npm run build` | rc=0 |
 
-Gateway 的 6621 中包含 `98c8c232` / `967917c0`（events / standing-goals 外部交付）带来的 7 个测试；
-这两个 commit 是 Plan 4 base 的祖先，**不属于 Plan 4**，本记录只按 base..HEAD 的 10 个 commit 归属。
+Gateway 的 6653 构成：Plan 3 baseline 6608 + `98c8c232` / `967917c0`（events / standing-goals）7 +
+Plan 4 6 + 外部 kernel-v2 交付 32。`98c8c232` / `967917c0` 是 Plan 4 base 的祖先；`24dc3f10` /
+`517cf541` / `a1a292e7` / `105c8bd6` / `fa84bfca` 是在 Plan 4 文档提交之后落地的外部 kernel-v2 /
+plugin-contract 交付。以上外部 commit **均不属于 Plan 4**，本记录只按 Plan 4 自己的 11 个 commit 归属。
 
 ### 真机 smoke
 
@@ -98,30 +102,42 @@ Gateway 的 6621 中包含 `98c8c232` / `967917c0`（events / standing-goals 外
 - Episode：标记 → 第二回合 → 关闭并记录；Episode 折叠为 `已关闭 · 2 轮`；决定板 待确认 +1；
   展开后 2 个 turn 回来；重载后仍折叠且边界保留。
 - 决定：决定板确认后 已定 +1；Episode 的「查看决定记录」会展开决定板并展开对应记录。
+- 关闭表单：修改 Episode 标题后表单不关闭，摘要保留（Solid memo 修复的真机验证）。
 - 来源：gateway 重启后新起草记录 history 为 `drafted · user`；Tech Lead Goal 归属由
-  `resolveEpisodeGoalReference` 纯函数测试覆盖（线程 Goal 优先于工作台焦点）。
+  `resolveEpisodeGoalReference` 纯函数测试覆盖（Pod 会话身份 / 线程 Goal 优先于工作台焦点，
+  重载后仍可用）。
 
 ## 最终评审
 
-独立 reviewer 复核 `b89aa7ab..HEAD`，结论 `Ready to merge? No`（修复前）。已在本分支修复：
+独立 reviewer 复核 `b89aa7ab..HEAD`，结论 `Ready to merge? No`（修复前）；随后对
+`83582fae..b7456f7e` 做 delta review。已在本分支修复：
 
 1. **Critical**：乐观 `user-...` id 被服务端 id 替换后，Episode 头只按精确 id 查找会消失，关闭
-   Episode 的 turn 无法展开。改为按分组组首解析，并补分页时首个可见 turn 渲染；新增
+   Episode 的 turn 无法展开。改为按分组组首解析，并补渲染窗口分页时首个可见 turn 渲染；新增
    `episodeStartingAt` 与对账测试。
 2. **Critical**：Tech Lead 线程关闭 Episode 时只按工作台焦点取 Goal，可能把记录挂空或挂错 Goal，
-   决定板按线程 Goal 过滤后不可见。新增 `resolveEpisodeGoalReference`，线程 Goal 优先，并用
-   Pod goal 的 active revision；补 3 个纯函数测试。
+   决定板按线程 Goal 过滤后不可见；且内存映射在桌面重载后丢失。改为优先使用 Pod detail 的会话
+   身份（`goalSessionIdentity`），映射只作 Pod 未加载时的兜底；Pod 已加载但目标不存在时忽略旧映射。
+   决定板过滤同样先读 Pod 身份。补 session identity / stale mapping / focus / content 测试。
 3. **Critical**：记忆注入块不只 `<facts>`，`<deltas>` / `<patterns>` / `<history>` 会泄漏到用户气泡。
    展示层改为任意顺序、重复剥离四类块；补 mixed-tag 测试。
 4. **Important**：动作按钮只有图标，没有可见模式文案；已渲染 `mafw-send-label` 并调整 composer
    按钮宽度。
-5. **Important**：Episode 关闭表单在标题输入时被 effect 重置；改为只监听 `episode.id`。
+5. **Important**：Episode 关闭表单在标题输入时被 effect 重置。Solid 的 `on(() => props.episode.id)`
+   仍会随同 id 的新对象重跑；改为 `createMemo(() => props.episode.id)` 后再 `on`，并补一个
+   Solid 反应式回归测试（memo 不重跑 / 直接 getter 会重跑）。
 6. **Important**：委托草稿留在 `goalComposerInitial`，之后手动新建 Goal 会复用旧草稿；在手动
-   toggle、创建成功、项目切换时清理，并让空目标不能进入预览。
-7. **Important**：Task 9 文档缺失；本记录与 `desktop.md` 已补。
+   toggle、创建成功、项目切换时清理，项目切换关闭 composer，并让空目标不能进入预览。
+7. **Important**：关闭 Episode 时把时间近似匹配的邻居写成 `startMessageId` 会永久污染边界与证据。
+   新增 `resolvedCloseStartId`：只有 exact id 或与 `startAt` 相差 ≤2s 才重写，否则保留原 id +
+   `startAt` 继续对账。
+8. **Important**：`episodeGroups` 在每次渲染/标题输入时重复 O(turns × episodes) 计算。改为
+   `userMessages` / `visibleTurns` memo + 按 Episode 结构 key 缓存分组，并缓存 message→episode、
+   header→episode 映射。
+9. **Important**：Task 9 文档缺失；本记录与 `desktop.md` 已补。
 
-一并修复的 minor：对账后证据 ref、resolve 焦点下右侧 workbench 可见性、delegate 仅有附件时按钮
-仍可点、隐藏 Episode turn 出现在导航/搜索、关闭表单 flex 布局、重复 Episode 起点、空标题回退。
+一并修复的 minor：resolve 焦点下右侧 workbench 可见性、delegate 仅有附件时按钮仍可点、隐藏
+Episode turn 出现在导航/搜索、关闭表单 flex 布局、重复 Episode 起点、空标题回退。
 
 ### 延后 minor
 
@@ -129,7 +145,10 @@ Gateway 的 6621 中包含 `98c8c232` / `967917c0`（events / standing-goals 外
 - `window.localStorage` 属性访问仍在 `episodeStore` 的 fail-open 之外；Electron 正常环境不触发。
 - HTTP `decisions.draft` 允许本地调用方自报 `source: 'user'`；记录仍是非权威草稿，确认仍人类专属，
   属审计标签问题；后续可白名单路由字段。
-- 结构化 wiring 测试仍占一定比例；关键行为已由 episode / sanitizer / goal-resolution 纯函数测试覆盖。
+- 历史页本身未加载 Episode 组首（且中间隔了 >10s 的不同 user turn）时按计划 Task 6 契约忽略该
+  Episode；只覆盖渲染窗口分页，不做跨历史页边界猜测。
+- 结构化 wiring 测试仍占一定比例；关键行为已由 episode / sanitizer / goal-resolution / Solid
+  反应式测试覆盖。
 
 ## 不在本计划
 
