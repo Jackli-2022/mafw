@@ -206,6 +206,7 @@ export function ProjectWorkView(props: {
               busy={creating()}
               activeGoalId={activeGoalId()}
               autofocus
+              projectName={props.projectName ?? props.projectDir ?? "当前项目"}
               onCreate={createGoal}
             />
           </section>
