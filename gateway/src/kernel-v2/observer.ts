@@ -217,7 +217,6 @@ export class CanonicalObserverRegistry {
     } finally {
       if (timer !== undefined) clearTimeout(timer);
       this.inFlight -= 1;
-      if (this.queue.length === 0 && this.inFlight === 0) this.resolveDrainWaiters();
     }
   }
 
