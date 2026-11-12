@@ -50,6 +50,10 @@ export interface Services {
   /** Plan C: human review items and their store (MCP respond handler). */
   podReview: import('./core/pod/pod-review-service').PodReviewService;
   podStore: import('./core/pod/pod-store').PodStore;
+  /** Human-confirmed decision records (MCP draft handler only). */
+  decisionRecords?: import('./core/decision/decision-record-service').DecisionRecordService;
+  /** Current project directory for agent-scoped writes. */
+  projectDir?: () => string | null;
 }
 
 export type ToolHandler = (

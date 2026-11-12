@@ -29,6 +29,7 @@
 | `mafw_pod_goal_direction` | Tech Lead 方向裁定（`clear` / `needs_user` / `decided`；`goalMode` 选 quick/standard） |
 | `mafw_pod_goal_context` | Lead 为 Goal 选择上下文（可选文件 / 跨 Goal allowlist） |
 | `mafw_pod_review_respond` | Tech Lead 回应人类的评审项（只能标记「已回应」；解决/重开是人类专属） |
+| `mafw_decision_draft` | 起草决定记录（仅 draft；确认/搁置/重开由人在 UI 完成，Agent 不能自决） |
 | `mafw_set_goal` | 设置活跃 Goal |
 | `mafw_get_goal_status` | 查询 Goal 状态 |
 | `mafw_list_goals` | 列出 Goal |

@@ -94,6 +94,51 @@ export const DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
+    name: "mafw_decision_draft",
+    description: "Draft a decision record for human confirmation. Never marks it decided; only the human UI can confirm or shelve. Use for direction, plan, scope, authorization, acceptance, priority, disposition, or other decisions that should survive the chat.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        goalId: { type: "string", description: "Related Goal id (optional for world-level decisions)" },
+        revision: { type: "number", description: "Related Goal revision (optional)" },
+        kind: { type: "string", enum: ["direction", "plan", "scope", "authorization", "acceptance", "priority", "disposition", "other"] },
+        question: { type: "string", description: "The question being decided" },
+        options: {
+          type: "array",
+          description: "Options considered, including maintain/no-op",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              title: { type: "string" },
+              summary: { type: "string" },
+              risks: { type: "array", items: { type: "string" } },
+            },
+            required: ["id", "title"],
+          },
+        },
+        evidence: {
+          type: "array",
+          description: "Evidence links (message / file / change / review_item / goal)",
+          items: {
+            type: "object",
+            properties: {
+              kind: { type: "string", enum: ["message", "file", "change", "review_item", "goal"] },
+              ref: { type: "string" },
+              label: { type: "string" },
+            },
+            required: ["kind", "ref"],
+          },
+        },
+        rationale: { type: "string", description: "Proposed reason (the human may edit it before confirming)" },
+        consequences: { type: "string", description: "What becomes true / what is given up" },
+        reviewAt: { type: "string", description: "When the decision should be revisited (ISO date)" },
+        projectDir: { type: "string", description: "Project directory (defaults to the current project)" },
+      },
+      required: ["kind", "question"],
+    },
+  },
+  {
     name: "mafw_pod_goal_context",
     description: "Lead-only: set the optional and Cross-Goal context refs for the active Goal revision. The stage baseline (goal.md / request.json / direction.json / waves.json / goal-eval.json) is always included by code; every ref passed here must exist, be readable, be non-sensitive, and Cross-Goal refs must be allowlisted by the Goal request. The rendered ContextManifest is persisted with its path + hash and injected into every worker/probe prompt. Tech Lead, Builder and Reviewer cannot widen their own context.",
     inputSchema: {
@@ -806,6 +851,7 @@ import {
   handleRunStandingGoal,
 } from "./handlers/standing-goals";
 import { handlePodGoalDirection } from "./handlers/pod-goal-direction";
+import { handleDecisionDraft } from "./handlers/decision-draft";
 import { handlePodGoalContext } from "./handlers/pod-context-select";
 import { handlePodReviewRespond } from "./handlers/pod-review-respond";
 import { handleUpdateState } from "./handlers/update-state";
@@ -859,6 +905,7 @@ export function createToolRegistry(): ToolRegistry {
   mafw_run_standing_goal: handleRunStandingGoal,
       mafw_lead_goal_status: handleLeadGoalStatus,
       mafw_pod_goal_direction: handlePodGoalDirection,
+      mafw_decision_draft: handleDecisionDraft,
       mafw_pod_goal_context: handlePodGoalContext,
       mafw_pod_review_respond: handlePodReviewRespond,
       mafw_update_state: handleUpdateState,
