@@ -75,6 +75,33 @@ test("reopenEpisode clears the end and decision link", () => {
   const reopened = reopenEpisode(closed)
   assert.equal(reopened.status, "open")
   assert.equal(reopened.endMessageId, null)
+  assert.equal(reopened.endAt, undefined)
   assert.equal(reopened.decisionRecordId, null)
   assert.notEqual(reopened.updatedAt, closed.updatedAt)
+})
+
+test("startAt and endAt survive optimistic id reconciliation", () => {
+  const timed = [
+    { id: "msg_u1", time: { created: 1_000 } },
+    { id: "msg_u2", time: { created: 5_000 } },
+    { id: "msg_u3", time: { created: 9_000 } },
+    { id: "msg_u4", time: { created: 13_000 } },
+  ]
+  const open = createEpisode({
+    sessionID: "s1",
+    title: "重载后仍成组",
+    startMessageId: "user-optimistic",
+    startAt: 5_040,
+    id: "ep_time",
+  })
+  const closed = closeEpisode(open, "user-optimistic-end", "dec_time", 9_060)
+  const groups = groupTurnsByEpisode(timed, [closed])
+  assert.deepEqual(groups.map((group) => ({
+    episode: group.episode?.id ?? null,
+    turns: group.turns.map((turn) => turn.id),
+  })), [
+    { episode: null, turns: ["msg_u1"] },
+    { episode: "ep_time", turns: ["msg_u2", "msg_u3"] },
+    { episode: null, turns: ["msg_u4"] },
+  ])
 })

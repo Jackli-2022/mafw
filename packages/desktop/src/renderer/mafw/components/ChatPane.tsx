@@ -57,7 +57,7 @@ import { ChatModeBar } from "./ChatModeBar"
 import { EpisodeHeader } from "./EpisodeHeader"
 import { closeEpisode, createEpisode, groupTurnsByEpisode, reopenEpisode, type ChatEpisode } from "../chat/episode-model"
 import { createEpisodeStore } from "../chat/episode-store"
-import { modeAvailability, modeSendsMessage, type ChatMode } from "../chat/composer-mode"
+import { modeActionLabel, modeAvailability, modeSendsMessage, type ChatMode } from "../chat/composer-mode"
 import type { DecisionBoardView, DecisionItem } from "../focus/decision-model"
 import type { DecisionRecord } from "@mafw/sdk"
 import { permissionAriaLabel, permissionPresentation } from "./composer-permission"
@@ -337,7 +337,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const [composerMode, setComposerMode] = createSignal<ChatMode>("discuss")
   const episodeStore = createMemo(() => createEpisodeStore(window.localStorage, sidProp()))
   const [episodes, setEpisodes] = createSignal<ChatEpisode[]>([])
-  const [collapsedEpisodes, setCollapsedEpisodes] = createSignal<ReadonlySet<string>>(new Set())
+  const [episodeCollapseOverrides, setEpisodeCollapseOverrides] = createSignal<ReadonlyMap<string, boolean>>(new Map())
   const [decisionRecordFocus, setDecisionRecordFocus] = createSignal<{ id: string } | null>(null)
   onMount(() => setEpisodes(episodeStore().load()))
   const persistEpisodes = (next: ChatEpisode[]) => {
@@ -356,21 +356,29 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const episodeTurnCount = (id: string): number =>
     episodeGroups().find((group) => group.episode?.id === id)?.turns.length ?? 0
   const isEpisodeCollapsed = (episode: ChatEpisode | null): boolean =>
-    !!episode && episode.status === "closed" && collapsedEpisodes().has(episode.id)
+    !!episode && (episodeCollapseOverrides().get(episode.id) ?? episode.status === "closed")
   const isTurnHidden = (id: string): boolean => isEpisodeCollapsed(episodeForMessage(id))
   const toggleEpisode = (id: string) => {
-    const next = new Set(collapsedEpisodes())
-    if (next.has(id)) next.delete(id)
-    else next.add(id)
-    setCollapsedEpisodes(next)
+    const episode = episodes().find((item) => item.id === id)
+    if (!episode) return
+    const next = new Map(episodeCollapseOverrides())
+    next.set(id, !isEpisodeCollapsed(episode))
+    setEpisodeCollapseOverrides(next)
+  }
+  const resetEpisodeCollapse = (id: string) => {
+    if (!episodeCollapseOverrides().has(id)) return
+    const next = new Map(episodeCollapseOverrides())
+    next.delete(id)
+    setEpisodeCollapseOverrides(next)
   }
   const startEpisode = () => {
-    const start = visibleTurns().at(-1)?.id
-    if (!start) return
+    const anchor = visibleTurns().at(-1)
+    if (!anchor) return
     const episode = createEpisode({
       sessionID: sidProp(),
       title: `讨论 ${episodes().length + 1}`,
-      startMessageId: start,
+      startMessageId: anchor.id,
+      startAt: anchor.time?.created,
     })
     persistEpisodes(episodeStore().upsert(episode))
   }
@@ -383,11 +391,15 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     const episode = episodes().find((item) => item.id === id)
     if (!episode) return
     const group = episodeGroups().find((item) => item.episode?.id === id)
-    const end = group?.turns.at(-1)?.id ?? episode.startMessageId
-    persistEpisodes(episodes().map((item) => item.id === id ? closeEpisode(item, end) : item))
+    const end = group?.turns.at(-1) ?? null
+    persistEpisodes(episodes().map((item) => item.id === id
+      ? closeEpisode(item, end?.id ?? episode.startMessageId, null, end?.time?.created)
+      : item))
+    resetEpisodeCollapse(id)
   }
   const reopenEpisodeById = (id: string) => {
     persistEpisodes(episodes().map((item) => item.id === id ? reopenEpisode(item) : item))
+    resetEpisodeCollapse(id)
   }
   const closeEpisodeWithRecord = async (
     episode: ChatEpisode,
@@ -396,10 +408,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     const recordId = await props.onCloseEpisode?.({ episode, summary })
     if (!recordId) return null
     const group = episodeGroups().find((item) => item.episode?.id === episode.id)
-    const end = group?.turns.at(-1)?.id ?? episode.startMessageId
+    const end = group?.turns.at(-1) ?? null
     persistEpisodes(episodes().map((item) => item.id === episode.id
-      ? closeEpisode(item, end, recordId)
+      ? closeEpisode(item, end?.id ?? episode.startMessageId, recordId, end?.time?.created)
       : item))
+    resetEpisodeCollapse(episode.id)
     showToastV2({ description: "已起草决定记录，去决定板确认", duration: 3200 })
     return recordId
   }
@@ -1221,6 +1234,9 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     if (!sid) return false
     return pendingFor(sid).length > 0 || getPendingCaptures().pendingFor(sid).length > 0
   }
+  /** resolve 是导航动作，不需要正文；delegate 仍需要标题/目标文本。 */
+  const composerActionEnabled = () =>
+    connPhase() !== "down" && (composerMode() === "resolve" || hasSendableContent())
   // G2：BrowserDock 的元素截图经 sink 进 attachments（与 G1 同一媒体管道）
   onMount(() => {
     const off = registerCaptureSink((f) => void addPastedFile(f))
@@ -2633,10 +2649,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   variant="contrast"
                   size="small"
                   onClick={() => submitComposer("send")}
-                  disabled={connPhase() === "down" || !hasSendableContent()}
+                  disabled={!composerActionEnabled()}
                   class="mafw-send"
-                  classList={{ "mafw-send-disabled": !hasSendableContent() }}
-                  aria-label={connPhase() === "down" ? "Gateway 已断开" : "发送"}
+                  classList={{ "mafw-send-disabled": !composerActionEnabled() }}
+                  data-action-label={modeActionLabel(composerMode())}
+                  aria-label={connPhase() === "down" ? "Gateway 已断开" : modeActionLabel(composerMode())}
                 >
                   <Icon name="arrow-up" size="small" />
                 </ButtonV2>

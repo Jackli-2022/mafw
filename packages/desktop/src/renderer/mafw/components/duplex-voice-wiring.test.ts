@@ -69,7 +69,7 @@ describe("duplex voice auto-send wiring（Plan 2）", () => {
     // deferred minor：配置解析走纯函数 + signal（启动竞态：解析前不自动发送）
     expect(chatPane).toContain("resolveDuplexAutoSend")
     expect(chatPane).toContain("setDuplexAutoSendEnabled")
-    expect(chatPane).toContain('sendMessage("send", { voiceOrigin: true })')
+    expect(chatPane).toContain('submitComposer("send", { voiceOrigin: true })')
     // deferred minor：自动发送后清字幕条 final
     expect(chatPane).toContain("duplexVoice.clearFinal()")
   })

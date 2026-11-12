@@ -10,9 +10,10 @@ const css = read("src/renderer/mafw/chat-episodes.css")
 test("ChatPane groups visible turns into episodes", () => {
   assert.match(chat, /groupTurnsByEpisode/)
   assert.match(chat, /EpisodeHeader/)
-  assert.match(chat, /collapsedEpisodes/)
+  assert.match(chat, /episodeCollapseOverrides/)
   assert.match(chat, /episodeForMessage/)
   assert.match(chat, /isTurnHidden/)
+  assert.match(chat, /resetEpisodeCollapse/)
   assert.match(chat, /标记 Episode/)
 })
 

@@ -105,6 +105,40 @@ describe('message ingestion', () => {
     expect(messages).toEqual([])
   })
 
+  test('strips injected facts and composer mode directives from user display text', () => {
+    const raw = '<facts>\nmemory one\nmemory two\n</facts>\n\n真实问题\n[[mode:propose]] 请给出选项。'
+    const { messages, parts } = ingestHistoryPage(
+      [{
+        id: 'u1',
+        sessionID: 's1',
+        role: 'user',
+        text: raw,
+        time: { created: 1 },
+        content: [{ id: 'p1', type: 'text', text: raw }],
+      }],
+      { sessionID: 's1' },
+    )
+    expect(messages[0].text).toBe('真实问题')
+    expect(parts.u1[0].text).toBe('真实问题')
+  })
+
+  test('leaves assistant text untouched when it mentions facts or mode tokens', () => {
+    const raw = '<facts>not injected</facts>\n[[mode:propose]] agent output'
+    const { messages, parts } = ingestHistoryPage(
+      [{
+        id: 'a1',
+        sessionID: 's1',
+        role: 'assistant',
+        text: raw,
+        time: { created: 1 },
+        content: [{ id: 'p1', type: 'text', text: raw }],
+      }],
+      { sessionID: 's1' },
+    )
+    expect(messages[0].text).toBe(raw)
+    expect(parts.a1[0].text).toBe(raw)
+  })
+
   test('maps wire errors to canonical before session-ui and derives abort stopReason', () => {
     const { messages } = ingestHistoryPage(
       [{ ...flatMessage(), error: { name: 'MessageAbortedError' } }],

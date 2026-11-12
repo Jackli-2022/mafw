@@ -21,6 +21,8 @@ test("ChatModeBar renders four mode chips with v2 controls", () => {
 test("ChatPane owns the transient composer mode", () => {
   assert.match(chat, /ChatModeBar/)
   assert.match(chat, /composerMode/)
+  assert.match(chat, /modeActionLabel/)
+  assert.match(chat, /composerActionEnabled/)
   assert.match(chat, /canDelegate\?: \(\) => boolean/)
   assert.match(chat, /canResolve\?: \(\) => boolean/)
   assert.match(chat, /onDelegateDraft\?:/)

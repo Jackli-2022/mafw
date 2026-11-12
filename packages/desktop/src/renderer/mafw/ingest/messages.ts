@@ -7,6 +7,26 @@ import { canonicalMessageError, type CanonicalMessageError } from "./errors"
 import { canonicalToolPart } from "./parts"
 import { stripVoiceOriginMarker } from "../chat/voice-origin-marker"
 
+/** 记忆注入的 `<facts>` 块只服务模型；桌面展示层在摄取时剥离。 */
+export function stripInjectedFacts(text: string): string {
+  if (!text.startsWith("<facts>")) return text
+  const end = text.indexOf("</facts>")
+  if (end < 0) return text
+  return text.slice(end + "</facts>".length).replace(/^\s+/, "")
+}
+
+/** Composer 模式指令（synthetic part）在适配器合并后可能落进正文；展示层剥离整行。 */
+export function stripChatModeDirective(text: string): string {
+  if (!text.includes("[[mode:")) return text
+  const kept = text.split("\n").filter((line) => !line.startsWith("[[mode:"))
+  return kept.join("\n").replace(/\n+$/, "")
+}
+
+/** 用户消息展示文本：剥离事实注入、语音来源标记与模式指令。 */
+export function stripInjectedUserText(text: string): string {
+  return stripChatModeDirective(stripVoiceOriginMarker(stripInjectedFacts(text)))
+}
+
 export interface IngestedHistoryPage {
   /** 规范 flat 消息（含 `content`），不含 `info`/`parts` 信封。 */
   messages: any[]
@@ -84,13 +104,12 @@ export function canonicalMessage(
     ? flat.content
     : []
   const parts = canonicalParts(rawParts, { sessionID, messageID: id })
-  // Plan 2 D3：用户语音消息的 `[语音输入]` 标记只服务模型（服务端原始文本保留），
-  // 桌面展示层在摄取时剥离——「首个非 synthetic part」规则在 SDK 把 message 与
-  // parts 合并成单个 text part 后不再成立（真机历史重载实证泄漏）。
+  // Plan 2 D3 / Plan 4：用户消息里的隐藏上下文（事实注入、语音标记、模式指令）
+  // 只服务模型；桌面展示层在摄取时剥离——真机历史重载会暴露原始文本。
   if (flat.role === "user") {
     for (const part of parts) {
       if (part?.type === "text" && typeof part.text === "string") {
-        part.text = stripVoiceOriginMarker(part.text)
+        part.text = stripInjectedUserText(part.text)
       }
     }
   }
@@ -126,7 +145,7 @@ export function canonicalMessage(
   }
   // Plan 2：展示 DTO 的 text 同步剥离（部分消费方读 message.text 而非 parts）。
   if (message.role === "user" && typeof message.text === "string") {
-    message.text = stripVoiceOriginMarker(message.text)
+    message.text = stripInjectedUserText(message.text)
   }
   return { message, parts }
 }

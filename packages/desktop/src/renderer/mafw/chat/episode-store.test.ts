@@ -29,10 +29,12 @@ function episode(id: string, overrides: Partial<ChatEpisode> = {}): ChatEpisode 
 test("store round-trips episodes", () => {
   const storage = fakeStorage()
   const store = createEpisodeStore(storage as any, "s1")
-  store.upsert(episode("ep1"))
+  store.upsert({ ...episode("ep1"), startAt: 1_000, endAt: 2_000 })
   store.upsert(episode("ep2"))
   const loaded = store.load()
   assert.deepEqual(loaded.map((item) => item.id), ["ep1", "ep2"])
+  assert.equal(loaded[0]!.startAt, 1_000)
+  assert.equal(loaded[0]!.endAt, 2_000)
   assert.equal(store.remove("ep1").map((item) => item.id).join(","), "ep2")
 })
 
