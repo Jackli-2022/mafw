@@ -52,6 +52,8 @@ import { queueForSession, fetchQueue, cancelQueueItem, clearGatewayQueue, queueI
 import { countUserTurns, shouldKeepPaging } from "./history-paging"
 import { worktreeBadge } from "./worktree-label"
 import { ApprovalSummaryLine } from "./ApprovalSummaryLine"
+import { DecisionBoard } from "./DecisionBoard"
+import type { DecisionBoardView, DecisionItem } from "../focus/decision-model"
 import { permissionAriaLabel, permissionPresentation } from "./composer-permission"
 import { type PermissionMode } from "./permission-card-mapping"
 import { getSessionTurnDiffs } from "../session-turn-diffs"
@@ -226,6 +228,11 @@ export type ChatPaneProps = {
   /** 当前 Goal 的 Tech Lead 讨论中显示；规则由 shell 的 goal-chat-context 决定。 */
   showReturnLead?: () => boolean
   onReturnLead?: () => void
+  /** Chat 决定板：由 shell 的 decisionStore 投影；为空时不渲染。 */
+  decisionBoard?: () => DecisionBoardView
+  decisionBoardCollapsed?: () => boolean
+  onToggleDecisionBoard?: (collapsed: boolean) => void
+  onDecisionAction?: (item: DecisionItem) => void
   /** Task 20：当前 tab 是某个 Goal 的 Tech Lead 讨论时，发送走 sendTechLeadMessage。 */
   techLeadTarget?: () => { podId: string; goalId: string } | null | Promise<{ podId: string; goalId: string } | null>
   /** Task 20 review：非讨论的 Tech Lead 节点会话禁止直接发送，返回原因（保留草稿）。 */
@@ -1945,6 +1952,14 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 </Show>
               </div>
             </div>
+            <Show when={props.decisionBoard}>
+              <DecisionBoard
+                board={props.decisionBoard!()}
+                collapsed={props.decisionBoardCollapsed?.() ?? false}
+                onToggle={(collapsed) => props.onToggleDecisionBoard?.(collapsed)}
+                onAction={(item) => props.onDecisionAction?.(item)}
+              />
+            </Show>
             <Show when={hiddenTurnCount() > 0 || props.pageState[sidProp()]?.hasMore}>
               <div class="mafw-load-earlier" style="display:flex;justify-content:center;padding:8px 0;">
                 <ButtonV2 variant="ghost" size="small" onClick={() => { if (hiddenTurnCount() > 0) { expandRendered() } else { const el2 = containerRef(); const ph = el2?.scrollHeight || 0; void loadOlder(sidProp()).then(() => { setRenderLimit(l => l + 10); if (el2) requestAnimationFrame(() => { el2.scrollTop += el2.scrollHeight - ph; lastScrollTop = el2.scrollTop }) }) } }}>{hiddenTurnCount() > 0 ? `加载更早（还有 ${hiddenTurnCount()} 轮）` : "加载更早的历史"}</ButtonV2>

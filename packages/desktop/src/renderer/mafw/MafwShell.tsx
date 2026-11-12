@@ -138,6 +138,7 @@ import { buildCommandPickerItems, buildFilePickerItems, buildGoalPickerItems, wi
 import { stageActionFor } from "./focus/stage-dispatch"
 import { openGoalFocus as applyGoalFocus, openReviewItemFocus as applyReviewFocus, openChangeSetFocus as applyChangeSetFocus } from "./focus/goal-focus"
 import type { FocusOpenRequest } from "./focus/focus-open"
+import type { DecisionItem } from "./focus/decision-model"
 import { InstrumentRail } from "./components/InstrumentRail"
 import { GoalReviewQueue } from "./components/GoalReviewQueue"
 import type { PodReviewItem } from "@mafw/sdk"
@@ -431,6 +432,7 @@ export function MafwShell() {
     api: { attention: (dir) => window.api.mafw.attention.list(dir) },
     projectDir: () => currentProject(),
   })
+  const [decisionBoardCollapsed, setDecisionBoardCollapsed] = createSignal(false)
   createEffect(() => {
     const dir = currentProject()
     const detail = podStore.detail()
@@ -3120,6 +3122,15 @@ export function MafwShell() {
   const activeTechLeadTarget = async (): Promise<{ podId: string; goalId: string } | null> => {
     return (await activeTechLeadGate()).target
   }
+  /** Tech Lead thread → its Goal; Lead thread → whole project. */
+  const activeTechLeadGoalId = (): string | null => {
+    const sid = activeSessionId()
+    return sid ? techLeadGoalBySession[sid] ?? null : null
+  }
+  const handleDecisionAction = (item: DecisionItem) => {
+    if (item.action.kind !== "goal") return
+    openGoalFocus(item.action.goalId, item.action.target)
+  }
   /** 非讨论的 Tech Lead 节点会话 / Pod 不可解析：发送必须被拦住并给出指引。 */
   const activeTechLeadBlocked = async (): Promise<string | null> => {
     return (await activeTechLeadGate()).blocked
@@ -3784,6 +3795,10 @@ export function MafwShell() {
                             activeSessionId: activeSessionId(),
                           })}
                           onReturnLead={() => { void openLeadEntry() }}
+                          decisionBoard={() => decisionStore.board(activeTechLeadGoalId())}
+                          decisionBoardCollapsed={() => decisionBoardCollapsed()}
+                          onToggleDecisionBoard={setDecisionBoardCollapsed}
+                          onDecisionAction={handleDecisionAction}
                           techLeadTarget={activeTechLeadTarget}
                           sendBlocked={activeTechLeadBlocked}
                           onOpenDiffReview={() => openWorkbenchContext("review")}
