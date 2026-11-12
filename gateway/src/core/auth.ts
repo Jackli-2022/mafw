@@ -176,6 +176,10 @@ export const WS_UNAUTHORIZED_RESPONSE: Buffer = WS_401_BYTES;
  * or `{ ok: false, rejectResponse }` with the bytes to write to the raw socket.
  *
  * Accepts the same three channels as HTTP (Bearer / X-API-Token / ?token=).
+ *
+ * @deprecated No production caller — `createWsHub` uses `resolvePrincipal`
+ * (human/device/service/local) so upgrades carry a principal. Kept for older
+ * callers/tests; do not use for new code.
  */
 export function authorizeWsUpgrade(req: WsAuthRequest, apiToken: string): WsAuthResult {
   const addr = req.remoteAddress || '';
@@ -241,16 +245,25 @@ function extractQueryToken(req: { headers: Record<string, string | undefined>; u
 // ---------------------------------------------------------------------------
 
 /**
- * Replace Bearer tokens and token= query values with *** to prevent
- * plaintext credential leakage in logs.
+ * Replace credentials with *** so no plaintext token reaches a log line.
+ *
+ * Covers the shapes the gateway actually logs:
+ *   - `Authorization: Bearer <token>` / `?token=` / `&token=`
+ *   - `X-MAFW-Human-Token: <token>` and `x-mafw-device-token=<token>` (header form)
+ *   - `{"x-mafw-human-token":"<token>"}` / `{'x-mafw-device-token':'<token>'}`
+ *     (logger stringifies object args with JSON.stringify)
+ *   - `dev_…` device tokens anywhere (pairing responses carry them in `token`)
+ *
+ * Deliberately does NOT mask arbitrary 64-hex strings: those are common in
+ * hashes/commit ids, and human tokens only leak through the named header.
  */
 export function redactLog(s: string): string {
   return s
     .replace(/Bearer\s+[^\s"]+/gi, 'Bearer ***')
     .replace(/([?&]token=)[^&\s"]+/gi, '$1***')
-    // E5a: human / device tokens must never reach a log line.
-    .replace(/(x-mafw-human-token\s*[:=]\s*)[^\s",;}]+/gi, '$1***')
-    .replace(/(x-mafw-device-token\s*[:=]\s*)[^\s",;}]+/gi, '$1***');
+    .replace(/(x-mafw-human-token["']?\s*[:=]\s*["']?)[^\s",;}']+/gi, '$1***')
+    .replace(/(x-mafw-device-token["']?\s*[:=]\s*["']?)[^\s",;}']+/gi, '$1***')
+    .replace(/dev_[A-Za-z0-9_-]{20,}/g, 'dev_***');
 }
 
 // ---------------------------------------------------------------------------

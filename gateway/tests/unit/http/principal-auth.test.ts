@@ -261,6 +261,29 @@ describe('registry dispatch principal gate', () => {
     expect(out.status).toBe(401);
     expect(handler).not.toHaveBeenCalled();
   });
+
+  // F3: fail-closed for malformed / unknown principals (allowlist, not
+  // "anything that isn't anonymous"). authorizeRequest is still consulted.
+  const badPrincipals: Array<[string, unknown]> = [
+    ['empty object', {}],
+    ['undefined kind', { kind: undefined }],
+    ['unknown kind', { kind: 'agent' }],
+    ['non-string kind', { kind: 42 }],
+  ];
+
+  it.each(badPrincipals)('rejects a %s principal from remote as fail-closed', async (_label, principal) => {
+    const handler = jest.fn(async () => true);
+    const registry = registryWith(handler);
+    const req = fakeReq({ remoteAddress: REMOTE, url: '/api/pods/p1/goals' }) as any;
+    req.mafwPrincipal = principal;
+    const { res, out } = fakeDispatchRes();
+
+    const handled = await dispatchAuthorized({ registry, apiToken: SERVICE }, req, res);
+
+    expect(handled).toBe(true);
+    expect(out.status).toBe(401);
+    expect(handler).not.toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -291,6 +314,7 @@ const hubs: Array<ReturnType<typeof createWsHub>> = [];
 function setupWs(): {
   server: http.Server;
   wsUpgrade: jest.SpyInstance;
+  voiceUpgrade: jest.SpyInstance;
   addOnlineWs: jest.Mock;
   fire: (req: http.IncomingMessage, socket: FakeSocket) => void;
 } {
@@ -316,9 +340,11 @@ function setupWs(): {
   const hub = createWsHub(server, deps);
   hubs.push(hub);
   const wsUpgrade = jest.spyOn(hub.wss, 'handleUpgrade').mockImplementation(() => undefined);
+  const voiceUpgrade = jest.spyOn(hub.voiceWss, 'handleUpgrade').mockImplementation(() => undefined);
   return {
     server,
     wsUpgrade,
+    voiceUpgrade,
     addOnlineWs,
     fire: (req, socket) => server.emit('upgrade', req, socket as never, Buffer.alloc(0)),
   };
@@ -403,6 +429,98 @@ describe('WS upgrade principal auth', () => {
     expect(wsUpgrade).not.toHaveBeenCalled();
     expect(socket.destroyed).toBe(true);
     server.removeAllListeners();
+  });
+});
+
+describe('WS voice upgrade principal auth (F4)', () => {
+  it('rejects a remote voice upgrade without credentials using the raw 401 bytes', () => {
+    const { server, voiceUpgrade, fire } = setupWs();
+    const socket = fakeSocket(REMOTE);
+
+    fire(wsReq('/ws/voice', { remoteAddress: REMOTE }), socket);
+
+    expect(voiceUpgrade).not.toHaveBeenCalled();
+    expect(socket.written).toBe('HTTP/1.1 401 Unauthorized\r\n\r\n');
+    expect(socket.destroyed).toBe(true);
+    server.removeAllListeners();
+  });
+
+  it('admits a remote voice upgrade carrying the shared service apiToken', () => {
+    const { server, voiceUpgrade, fire } = setupWs();
+
+    fire(
+      wsReq('/ws/voice', { remoteAddress: REMOTE, headers: { authorization: `Bearer ${SERVICE}` } }),
+      fakeSocket(REMOTE),
+    );
+
+    expect(voiceUpgrade).toHaveBeenCalledTimes(1);
+    server.removeAllListeners();
+  });
+
+  it('admits a remote voice upgrade carrying a human token', () => {
+    const { server, voiceUpgrade, fire } = setupWs();
+
+    fire(
+      wsReq('/ws/voice', { remoteAddress: REMOTE, headers: { 'x-mafw-human-token': HUMAN } }),
+      fakeSocket(REMOTE),
+    );
+
+    expect(voiceUpgrade).toHaveBeenCalledTimes(1);
+    server.removeAllListeners();
+  });
+});
+
+describe('reverse proxy credential hygiene (F6)', () => {
+  it('strips human/device credential headers before forwarding', async () => {
+    let resolveHeaders!: (headers: http.IncomingHttpHeaders) => void;
+    const capturedHeaders = new Promise<http.IncomingHttpHeaders>((resolve) => { resolveHeaders = resolve; });
+    const target = http.createServer((proxyReq, proxyRes) => {
+      resolveHeaders(proxyReq.headers);
+      proxyRes.writeHead(200, { 'content-type': 'application/json' });
+      proxyRes.end('{"ok":true}');
+    });
+    await new Promise<void>((resolve) => target.listen(0, '127.0.0.1', () => resolve()));
+
+    try {
+      const port = (target.address() as { port: number }).port;
+      const { deps } = makeTransportDeps({
+        dispatchAuthorized: async () => false,
+        proxyTarget: () => `http://127.0.0.1:${port}`,
+      });
+      const req = fakeReq({
+        method: 'GET',
+        url: '/api/not-a-registry-route',
+        remoteAddress: LOOPBACK,
+        headers: {
+          host: '127.0.0.1:3000',
+          'x-mafw-human-token': HUMAN,
+          'X-MAFW-Device-Token': 'dev_good',
+          authorization: `Bearer ${SERVICE}`,
+          'x-request-id': 'keep-me',
+        },
+      });
+      const { res } = fakeRes();
+      // The proxy branch pipes the upstream response into `res`; give the fake
+      // response the minimal EventEmitter surface `stream.pipe` touches.
+      Object.assign(res as any, {
+        on: jest.fn(),
+        once: jest.fn(),
+        emit: jest.fn(),
+        removeListener: jest.fn(),
+        writable: true,
+      });
+
+      await createRequestListener(deps)(req, res);
+
+      const headers = await capturedHeaders;
+      expect(headers['x-mafw-human-token']).toBeUndefined();
+      expect(headers['x-mafw-device-token']).toBeUndefined();
+      // Existing serve-auth behavior (strip inbound Authorization) is unchanged.
+      expect(headers.authorization).toBeUndefined();
+      expect(headers['x-request-id']).toBe('keep-me');
+    } finally {
+      await new Promise<void>((resolve) => target.close(() => resolve()));
+    }
   });
 });
 

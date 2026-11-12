@@ -140,6 +140,22 @@ export interface TransportDeps {
  * `GET /a2a/artifacts/<id>` — the prefix + single-segment form of the former
  * `^/a2a/artifacts/([^/]+)$` (same anchoring: non-empty id, no further slash).
  */
+/**
+ * E5a (F6): the reverse proxy forwards to the agent backend, which must never
+ * receive gateway human/device credentials. Header names are matched
+ * case-insensitively because callers/tests may not pre-lowercase them.
+ */
+function withoutCredentialHeaders(headers: http.IncomingHttpHeaders): http.IncomingHttpHeaders {
+  const out: http.IncomingHttpHeaders = { ...headers };
+  for (const key of Object.keys(out)) {
+    const lower = key.toLowerCase();
+    if (lower === 'x-mafw-human-token' || lower === 'x-mafw-device-token') {
+      delete (out as Record<string, unknown>)[key];
+    }
+  }
+  return out;
+}
+
 export function matchArtifactId(url: string): string | null {
   // 字面量前缀保留在 startsWith 里：api-contract 的源码路由面扫描靠它覆盖
   // catalog 的 `GET /a2a/artifacts/:id`（media.artifact）。
@@ -505,8 +521,9 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
       const proxyUrl = new URL(url || '/', serveUrl);
       const proxyReq = http.request(proxyUrl, {
         method: req.method,
-        // 2.1.0：serve 强制 Basic——剔除入站 Authorization 后注入 serve 凭证
-        headers: { ...injectServeAuth(req.headers, deps.proxyHeaders()), host: proxyUrl.host },
+        // 2.1.0：serve 强制 Basic——剔除入站 Authorization 后注入 serve 凭证。
+        // E5a：human/device 凭据也不转发给后端。
+        headers: { ...injectServeAuth(withoutCredentialHeaders(req.headers), deps.proxyHeaders()), host: proxyUrl.host },
       }, (proxyRes) => {
         res.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
         proxyRes.pipe(res);

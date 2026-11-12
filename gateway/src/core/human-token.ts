@@ -54,11 +54,28 @@ function isWellFormed(value: string): boolean {
 }
 
 function writeTokenAtomically(file: string, token: string): void {
+  // The kernel may call this before anything else created the data root
+  // (fresh install / wiped ~/.mafw), so create it first.
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+
   const tmp = `${file}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+  let fd: number | null = null;
   try {
-    fs.writeFileSync(tmp, token, { encoding: 'utf-8', mode: 0o600 });
+    fd = fs.openSync(tmp, 'w', 0o600);
+    const buf = Buffer.from(token, 'utf-8');
+    let written = 0;
+    while (written < buf.length) {
+      written += fs.writeSync(fd, buf, written, buf.length - written);
+    }
+    // Durability: the rename is only meaningful once the bytes hit the disk.
+    fs.fsyncSync(fd);
+    fs.closeSync(fd);
+    fd = null;
     fs.renameSync(tmp, file);
   } catch (err) {
+    if (fd !== null) {
+      try { fs.closeSync(fd); } catch { /* already closed */ }
+    }
     try { fs.unlinkSync(tmp); } catch { /* best effort: never mask the real error */ }
     throw err;
   }

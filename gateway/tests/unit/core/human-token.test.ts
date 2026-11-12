@@ -98,4 +98,15 @@ describe('loadOrCreateHumanToken', () => {
     const mode = fs.statSync(path.join(dir, 'human.token')).mode & 0o777;
     expect(mode).toBe(0o600);
   });
+
+  it('creates the data root before writing (virgin nested directory)', () => {
+    const root = trackDir();
+    const dir = path.join(root, 'nested', 'mafw');
+
+    const token = loadOrCreateHumanToken(dir);
+
+    expect(token).toMatch(HEX64);
+    expect(fs.readFileSync(path.join(dir, 'human.token'), 'utf-8').trim()).toBe(token);
+    expect(fs.readdirSync(dir)).toEqual(['human.token']);
+  });
 });

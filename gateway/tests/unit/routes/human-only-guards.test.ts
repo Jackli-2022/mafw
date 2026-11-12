@@ -231,24 +231,47 @@ describe('decision mutations', () => {
     expect(deps.service.confirm).not.toHaveBeenCalled();
   });
 
-  test('draft/list stay ordinary routes', () => {
-    // draft/list are not human-only: no principal parameter exists here at all.
-    expect(typeof handleDecisionMutation).toBe('function');
-  });
-
-  async function driveDecision(principal: Principal | undefined): Promise<{ status: number; json: any }> {
+  async function driveDecisionRoute(
+    method: string,
+    path: string,
+    body: unknown,
+    principal: Principal | undefined,
+  ): Promise<{ status: number; json: any }> {
     const dep = decisionDeps();
-    dep.service.list = jest.fn(() => []);
-    dep.service.draft = jest.fn(() => ({ id: 'd1' }));
+    dep.service.list = jest.fn(() => [{ id: 'd1', status: 'draft' }]);
+    dep.service.draft = jest.fn(() => ({ id: 'd1', status: 'draft' }));
     const registry = new RouteRegistry();
     registry.register(...buildRouteCatalog());
     attachDecisionRoutes(registry, dep);
-    const matched = registry.match('POST', '/api/decisions/d1/confirm');
+    const matched = registry.match(method as never, path);
     const res = mockRes();
-    const req = mockReq('POST', {}, principal);
-    (req as any).url = '/api/decisions/d1/confirm';
+    const req = mockReq(method, body, principal);
+    (req as any).url = path;
     await matched!.def.handler!(req, res, matched!.params);
     return { status: res.status, json: res.body ? JSON.parse(res.body) : null };
+  }
+
+  test('decisions.list stays an ordinary route (no human principal required)', async () => {
+    const out = await driveDecisionRoute('GET', '/api/decisions', undefined, undefined);
+
+    expect(out.status).toBe(200);
+    expect(Array.isArray(out.json.items)).toBe(true);
+  });
+
+  test('decisions.draft stays an ordinary route (no human principal required)', async () => {
+    const out = await driveDecisionRoute('POST', '/api/decisions', {
+      projectDir: 'C:/repo',
+      goalId: 'g1',
+      kind: 'plan',
+      question: 'Which plan?',
+    }, undefined);
+
+    expect(out.status).toBe(200);
+    expect(out.json.record).toMatchObject({ id: 'd1' });
+  });
+
+  async function driveDecision(principal: Principal | undefined): Promise<{ status: number; json: any }> {
+    return driveDecisionRoute('POST', '/api/decisions/d1/confirm', {}, principal);
   }
 
   test('registry wiring denies a service principal', async () => {

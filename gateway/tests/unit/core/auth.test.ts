@@ -265,4 +265,56 @@ describe('redactLog', () => {
   it('handles empty string', () => {
     expect(redactLog('')).toBe('');
   });
+
+  // -------------------------------------------------------------------------
+  // E5a credential headers (F1)
+  // -------------------------------------------------------------------------
+
+  const HUMAN_TOKEN = 'a'.repeat(64);
+  const DEVICE_TOKEN = `dev_${'A1b2C3d4E5f6G7h8I9j0K1l2'}`;
+
+  it('redacts credential headers in the JSON shape the logger emits', () => {
+    const input = JSON.stringify({
+      'x-mafw-human-token': HUMAN_TOKEN,
+      'x-mafw-device-token': DEVICE_TOKEN,
+    });
+
+    const out = redactLog(input);
+
+    expect(out).toBe('{"x-mafw-human-token":"***","x-mafw-device-token":"***"}');
+    expect(out).not.toContain(HUMAN_TOKEN);
+    expect(out).not.toContain(DEVICE_TOKEN);
+  });
+
+  it('redacts credential headers in single-quoted JSON', () => {
+    const input = `{'x-mafw-human-token':'${HUMAN_TOKEN}','x-mafw-device-token':'${DEVICE_TOKEN}'}`;
+
+    expect(redactLog(input)).toBe("{'x-mafw-human-token':'***','x-mafw-device-token':'***'}");
+  });
+
+  it('redacts credential headers in header form', () => {
+    expect(redactLog(`X-MAFW-Human-Token: ${HUMAN_TOKEN}`)).toBe('X-MAFW-Human-Token: ***');
+    expect(redactLog(`x-mafw-device-token=${DEVICE_TOKEN}`)).toBe('x-mafw-device-token=***');
+  });
+
+  it('redacts dev_ tokens anywhere (pairing responses, bare values)', () => {
+    const pairing = JSON.stringify({ ok: true, token: DEVICE_TOKEN, deviceId: 'dev-1' });
+
+    const out = redactLog(pairing);
+
+    expect(out).toBe('{"ok":true,"token":"dev_***","deviceId":"dev-1"}');
+    expect(out).not.toContain(DEVICE_TOKEN);
+    expect(redactLog(`paired with ${DEVICE_TOKEN} ok`)).toBe('paired with dev_*** ok');
+  });
+
+  it('does not redact arbitrary 64-hex values (avoids over-redaction)', () => {
+    const hash = 'b'.repeat(64);
+    expect(redactLog(`commit ${hash} built`)).toBe(`commit ${hash} built`);
+  });
+
+  it('leaves benign text and short dev-ish names alone', () => {
+    expect(redactLog('GET /api/test 200 OK')).toBe('GET /api/test 200 OK');
+    expect(redactLog('dev_mode enabled')).toBe('dev_mode enabled');
+  });
+
 });

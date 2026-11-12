@@ -34,9 +34,15 @@ export async function dispatchAuthorized(
   // human/device credential must reach registry routes too (it is not a
   // shared apiToken). `authorizeRequest` stays for callers that dispatch
   // without going through the transport (older tests / internal wiring).
-  const principal = (req as any).mafwPrincipal as { kind?: string } | undefined;
+  const principal = (req as any).mafwPrincipal as { kind?: unknown } | undefined;
+  // F3: explicit allowlist — a malformed / unknown principal must not silently
+  // pass just because it isn't `anonymous`. `authorizeRequest` is still the
+  // fallback for dispatchers that never resolved a principal.
+  const kind = principal?.kind;
+  const principalAllowed = typeof kind === 'string'
+    && (kind === 'human' || kind === 'service' || kind === 'local');
   const allowed = hmacAuthenticated
-    || (principal !== undefined && principal.kind !== 'anonymous')
+    || principalAllowed
     || authorizeRequest(
     {
       remoteAddress,
