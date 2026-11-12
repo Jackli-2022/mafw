@@ -19,6 +19,7 @@ import '../config/connection_config.dart';
 import '../models/event_effects.dart';
 import '../models/mafw_models.dart';
 import '../network/ws_client_interface.dart';
+import 'background_credentials.dart';
 
 /// Importance levels for notification channels.
 enum NotificationImportance {
@@ -553,9 +554,9 @@ class PushService {
   }
 
   Future<void> _persistConfigForBackground() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('mafw_bg_base_url', config.normalizedBaseUrl);
-    await prefs.setString('mafw_bg_api_token', config.apiToken);
+    // Single source for the key names + semantics (E5a): the background bearer
+    // is the device token, refreshed by pairing via syncBackgroundCredentials.
+    await writeBackgroundCredentials(config);
   }
 
   // --- Private: Token Helpers (exposed for testing) ---
@@ -580,8 +581,8 @@ void callbackDispatcher() {
     }
 
     final prefs = await SharedPreferences.getInstance();
-    final baseUrl = prefs.getString('mafw_bg_base_url');
-    final apiToken = prefs.getString('mafw_bg_api_token');
+    final baseUrl = prefs.getString(kBgBaseUrlKey);
+    final apiToken = prefs.getString(kBgApiTokenKey);
     if (baseUrl == null || baseUrl.isEmpty) return Future.value(true);
 
     final headers = <String, String>{

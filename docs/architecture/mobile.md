@@ -80,8 +80,8 @@ Firebase Test Lab / BrowserStack / AWS Device Farm 上传 APK 跑真机矩阵；
 [Gateway 3000] — /api/mobile/* + mDNS(_mafw._tcp) + WS /api/ws
 ```
 
-- **配对**：`orcalore://pair?url&token&v&exp&nonce` 一次性、TTL 300s、5/min/IP 限频、nonce 哈希存储（2026-11-06 改名；旧 `mafw://pair` 仅历史）
-- **连接**：Tailscale 优先（https/wss）> LAN http（仅 192.168/10.x 放行）> 手动；`MAFW_SERVER_API_TOKEN` 三通道鉴权（Bearer/x-api-token/?token）
+- **配对**：`v=2` 链接为 `orcalore://pair?url&v=2&exp&nonce`（无凭据）；App 以稳定 `deviceId`（SharedPreferences `mafw_device_id`，32 hex）调 `POST /api/mobile/pairing/verify` 换可撤销设备 token（`dev_…`）并存 `ConnectionConfig`；`v=1` 旧链接仍解析并要求内嵌 `token`（手动 url+token 回退同样保留）。一次性、TTL 300s、5/min/IP 限频、nonce 哈希存储（2026-11-06 改名；旧 `mafw://pair` 仅历史）。重配对（同 baseUrl 已有本地 token）带 `rotate:true`；WorkManager 后台明文副本（`mafw_bg_*`）在保存时同步为同一设备 token。
+- **连接**：Tailscale 优先（https/wss）> LAN http（仅 192.168/10.x 放行）> 手动；`MAFW_SERVER_API_TOKEN` 三通道鉴权（Bearer/x-api-token/?token）；human-only 动作需设备/人类凭据，旧共享 token 仅能普通 API（E5a）
 - **发现（P1）**：网关 `bonjour-service` 广播 `_mafw._tcp`（TXT 含 port/auth）；App `multicast_dns` 扫描，配对页自动列出同网网关
 - **配对 URL 自动探测**：网关按 环境变量 `MAFW_MOBILE_TAILSCALE_URL` > Tailscale IP > LAN IP > 127.0.0.1 生成，杜绝“手机连自己 localhost”
 
@@ -150,7 +150,7 @@ adb shell am start -n ai.orcalore.mobile/.MainActivity
 adb exec-out screencap -p > screen.png
 ```
 
-> token 值：`MAFW_SERVER_API_TOKEN`（网关 config）或 `GET /api/mobile/pairing-code` 返回的 `token` 字段。
+> token 值：`MAFW_SERVER_API_TOKEN`（网关 config，旧共享 token）。E5a 起 `GET /api/mobile/pairing-code` 只返回 `orcalore://pair?url&v=2&exp&nonce`（不再带 token）——扫码后由 `/api/mobile/pairing/verify` 发放设备 token；手工注入时也可填一个已签发的 `dev_…` token。
 
 ---
 
