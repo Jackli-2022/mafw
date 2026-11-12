@@ -1043,7 +1043,10 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
         clearDraft(sidProp())
         return
       }
-      props.onResolveRequest?.()
+      if (chatMode === "resolve") {
+        props.onResolveRequest?.()
+        return
+      }
       return
     }
     void sendMessage(mode, { ...opts, chatMode })

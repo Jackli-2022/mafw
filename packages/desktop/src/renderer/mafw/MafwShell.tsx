@@ -3218,6 +3218,19 @@ export function MafwShell() {
       setGoalPlanOpenRequest({ nonce: (goalPlanOpenRequest()?.nonce ?? 0) + 1, goalId })
     }
   }
+  const openReviewFromChat = (): void => {
+    const focus = activeFocus()
+    if (focus?.scope.kind === "goal") {
+      applyFocusLens("review")
+      return
+    }
+    const scope = contentScope()
+    if (scope?.kind === "goal") {
+      openGoalDetail(scope.goalId, "result")
+      return
+    }
+    openWorkbenchContext("review")
+  }
   const handleDecisionAction = (item: DecisionItem) => {
     const action = item.action
     if (action.kind === "goal") {
@@ -3909,7 +3922,7 @@ export function MafwShell() {
                           canDelegate={() => !!currentProject()}
                           canResolve={() => activeFocus()?.scope.kind === "goal" || contentScopeIsGoal()}
                           onDelegateDraft={openGoalComposerWithDraft}
-                          onResolveRequest={() => {}}
+                          onResolveRequest={openReviewFromChat}
                           techLeadTarget={activeTechLeadTarget}
                           sendBlocked={activeTechLeadBlocked}
                           onOpenDiffReview={() => openWorkbenchContext("review")}
