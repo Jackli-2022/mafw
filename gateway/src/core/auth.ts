@@ -274,5 +274,10 @@ declare module 'http' {
   interface IncomingMessage {
     /** Principal resolved by the HTTP transport / WS upgrade (never logged). */
     mafwPrincipal?: Principal;
+    /**
+     * E5a-3: set by the transport for the credential-less pairing-verify
+     * request (`POST /api/mobile/pairing/verify`). The nonce is the credential.
+     */
+    mafwPairingVerify?: boolean;
   }
 }

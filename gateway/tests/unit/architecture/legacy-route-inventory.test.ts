@@ -168,7 +168,9 @@ describe('transport inventory (D3 Task 3: http/transport.ts)', () => {
     const markers = [
       "res.setHeader('Content-Type', 'application/json')",
       'if (req.method === "OPTIONS") {',
-      'authorizeRequest({',
+      // E5a: the transport resolves principals (human/device/service/local) —
+      // `resolvePrincipal` replaced the plain `authorizeRequest` gate here.
+      'resolvePrincipal(',
       'deps.dispatchAuthorized(req, res, apiToken)',
       'deps.pluginWebWildcard(req, res)',
       'deps.fileHistory(req, res, isLoopback)',

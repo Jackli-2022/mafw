@@ -5397,9 +5397,9 @@ class MafwScheduler {
    * startApiServer 抽出，保持启动方法体薄；匹配/顺序语义在 http/transport.ts。
    */
   /**
-   * E5a: device-token verification seam. Task 3 adds
-   * `PushGateway.verifyDeviceToken`; until then every device token is invalid
-   * (fail-closed) instead of silently granting human rights.
+   * E5a-3: device-token verification. `PushGateway.verifyDeviceToken` hashes the
+   * presented token and matches it against DeviceStore (fail-closed on any
+   * error / unknown token).
    */
   private verifyDeviceToken(token: string): { deviceId: string } | null {
     const gateway = this.pushGateway as unknown as {
@@ -5417,7 +5417,7 @@ class MafwScheduler {
       cors: () => config.server.cors,
       apiToken: () => (config.raw as any)?.server?.apiToken || '',
       // E5a: live getters — the human token is loaded in initServices and the
-      // device verifier lands in Task 3; neither is captured by value.
+      // device verifier reads the live PushGateway; neither is captured by value.
       humanToken: () => this.humanToken,
       verifyDeviceToken: (token) => this.verifyDeviceToken(token),
       // E3-5：live 读取（release metadata 在 boot 阶段加载，attach 早于它就是 null）。

@@ -48,13 +48,20 @@ const sha = (token: string, len: number) => createHash('sha256').update(token).d
 function pushGateway() {
   const registered: any[] = [];
   const removed: string[] = [];
+  const issued: any[] = [];
   return {
     registered,
     removed,
+    issued,
     gw: {
       registerDevice: (input: any) => { registered.push(input); return { ...input, lastSeen: '2026-11-10T00:00:00Z' }; },
       listDevices: () => [{ id: 'dev-1' }, { id: 'dev-2' }],
+      listPublicDevices: () => [{ id: 'dev-1' }, { id: 'dev-2' }],
       removeDevice: (id: string) => { removed.push(id); return id === 'dev-1'; },
+      issueDeviceToken: (deviceId: string, token: string, opts: any) => {
+        issued.push({ deviceId, token, opts });
+        return { id: deviceId, deviceTokenHash: 'hash', tokenIssuedAt: '2026-11-12T00:00:00Z' };
+      },
     } as any,
   };
 }
@@ -203,9 +210,10 @@ describe('devices + mobile registry wiring (D1 Task H2)', () => {
     expect(JSON.parse(r.body).error).toBe('rate limit exceeded');
   });
 
-  it('pairing/verify consumes the nonce with the 400 gates intact', async () => {
+  it('pairing/verify consumes the nonce and issues a device credential (v2)', async () => {
     const ps = pairingService();
-    const registry = setup({ pairingService: () => ps.svc });
+    const pg = pushGateway();
+    const registry = setup({ pairingService: () => ps.svc, pushGateway: () => pg.gw });
     let r = fakeRes();
     await handlerFor(registry, 'POST', '/api/mobile/pairing/verify')!(
       fakeReq({ method: 'POST', url: '/api/mobile/pairing/verify', body: JSON.stringify({}) }), r.res,
@@ -222,10 +230,22 @@ describe('devices + mobile registry wiring (D1 Task H2)', () => {
 
     r = fakeRes();
     await handlerFor(registry, 'POST', '/api/mobile/pairing/verify')!(
-      fakeReq({ method: 'POST', url: '/api/mobile/pairing/verify', body: JSON.stringify({ nonce: 'good' }) }), r.res,
+      fakeReq({
+        method: 'POST',
+        url: '/api/mobile/pairing/verify',
+        body: JSON.stringify({ nonce: 'good', deviceId: 'phone-1', platform: 'android' }),
+      }), r.res,
     );
     expect(r.status).toBe(200);
-    expect(JSON.parse(r.body)).toEqual({ ok: true });
+    const body = JSON.parse(r.body);
+    expect(body.ok).toBe(true);
+    expect(body.deviceId).toBe('phone-1');
+    expect(body.token).toMatch(/^dev_/);
+    expect(pg.issued[0]).toEqual({
+      deviceId: 'phone-1',
+      token: body.token,
+      opts: { platform: 'android', deviceName: undefined },
+    });
     expect(ps.nonces).toEqual(['stale', 'good']);
   });
 });

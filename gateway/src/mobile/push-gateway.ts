@@ -1,4 +1,4 @@
-import { DeviceStore, DeviceEntry } from './device-store';
+import { DeviceStore, DeviceEntry, PublicDeviceEntry } from './device-store';
 import WebSocket from 'ws';
 
 interface OnlineDevice {
@@ -27,9 +27,44 @@ export class PushGateway {
     return this.store.register(input);
   }
 
+  /**
+   * E5a-3: persist a per-device credential (sha256 only). Re-issuing for the
+   * same device rotates the token — the previous one stops verifying.
+   */
+  issueDeviceToken(
+    deviceId: string,
+    token: string,
+    opts: { platform: string; deviceName?: string; fcmToken?: string },
+  ): DeviceEntry {
+    return this.store.issueCredential({
+      id: deviceId,
+      token,
+      platform: opts.platform,
+      deviceName: opts.deviceName,
+      fcmToken: opts.fcmToken,
+    });
+  }
+
+  /** Verify a presented device token → `{ deviceId }` (transport contract). */
+  verifyDeviceToken(token: string): { deviceId: string } | null {
+    const entry = this.store.verifyCredential(token);
+    return entry ? { deviceId: entry.id } : null;
+  }
+
+  /** Clear a device credential without deleting the push registration. */
+  revokeDeviceToken(deviceId: string): boolean {
+    return this.store.revokeCredential(deviceId);
+  }
+
   listDevices(): DeviceEntry[] {
     return this.store.list();
   }
+
+  /** HTTP-safe projection (no credential hashes). */
+  listPublicDevices(): PublicDeviceEntry[] {
+    return this.store.listPublic();
+  }
+
 
   removeDevice(id: string): boolean {
     const ok = this.store.remove(id);

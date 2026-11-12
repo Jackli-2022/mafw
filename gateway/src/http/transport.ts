@@ -212,10 +212,19 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
       },
     );
     (req as any).mafwPrincipal = principal;
+    // E5a-3: `POST /api/mobile/pairing/verify` is credential-less by design —
+    // the single-use nonce is the credential. Only this exact route skips the
+    // 401; no human/service principal is granted (registry dispatch also
+    // exempts the operation id) and every other anonymous request still 401s.
+    const pairingVerifyRequest = req.method === 'POST'
+      && pathname.replace(/\/+$/, '') === '/api/mobile/pairing/verify';
     if (principal.kind === 'anonymous') {
-      res.writeHead(401, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(errorBody('unauthorized', API_ERROR_CODES.unauthorized)));
-      return;
+      if (!pairingVerifyRequest) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(errorBody('unauthorized', API_ERROR_CODES.unauthorized)));
+        return;
+      }
+      (req as any).mafwPairingVerify = true;
     }
 
     // E3-5：auth 之后、registry 之前校验客户端主动携带的 epoch。只有**携带**且
