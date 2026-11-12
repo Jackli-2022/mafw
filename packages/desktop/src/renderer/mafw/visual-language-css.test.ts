@@ -97,6 +97,14 @@ describe("visual language tokens", () => {
       expect(contrast(token(b, "--border-strong"), token(b, "--bg-raised"))).toBeGreaterThanOrEqual(3)
     }
   })
+
+  test("state text colors meet 4.5:1 on inset surfaces", () => {
+    for (const [, b] of themes) {
+      for (const key of ["--success-text", "--warning-text", "--danger-text"]) {
+        expect(contrast(token(b, key), token(b, "--bg-inset"))).toBeGreaterThanOrEqual(4.5)
+      }
+    }
+  })
 })
 
 describe("visual surfaces", () => {
@@ -105,12 +113,26 @@ describe("visual surfaces", () => {
     expect(css).not.toMatch(/box-shadow:[^;{}]*0 0 0 (?:0\.5px|\.5px)/)
   })
 
-  test("composer uses one focus ring and 12px radius", () => {
+  test("composer uses a strong border, visible focus ring and 12px radius", () => {
     const base = block(".mafw-composer {")
     const focus = block(".mafw-composer:focus-within")
     expect(token(base, "border-radius")).toBe("var(--r-xl)")
-    expect(focus).toContain("box-shadow: 0 0 0 2px")
+    expect(base).toContain("border: 1px solid var(--border-strong)")
+    expect(focus).toContain("box-shadow: 0 0 0 2px var(--accent)")
     expect(focus).not.toContain("4px")
+  })
+
+  test("desktop v2 input rings are 1px strong instead of subpixel alpha", () => {
+    for (const [, b] of themes) {
+      expect(token(b, "--v2-elevation-button-neutral")).toContain("0 0 0 1px")
+    }
+    expect(css).toContain('[data-component="text-input-v2"]')
+    expect(css).toContain('[data-component="inline-input-v2"]')
+    const attachment = readFileSync(
+      join(import.meta.dirname, "../../../../session-ui/src/v2/components/attachment-card-v2.css"),
+      "utf8",
+    )
+    expect(attachment).not.toMatch(/\b(?:inset )?0 0 0 0\.5px/)
   })
 
   test("core content cards have no decorative gradient or inset highlight", () => {
@@ -152,18 +174,51 @@ describe("semantic color roles", () => {
       }
     }
   })
+
+  test("goal phase chips and completed progress use state colors", () => {
+    expect(block(".mafw-goal-chip.is-phase {")).not.toContain("background: var(--accent-soft)")
+    expect(block(".mafw-goal-chip.is-phase.mafw-phase-badge-ok {")).toContain(
+      "background: var(--success-soft)",
+    )
+    expect(block(".mafw-goal-chip.is-phase.mafw-phase-badge-fail {")).toContain("var(--danger)")
+    expect(
+      block('.mafw-goal-user-hero[data-progress-state="complete"] .mafw-goal-user-progress-value {'),
+    ).toContain("background: var(--success)")
+    const hero = readFileSync(join(import.meta.dirname, "components", "GoalUserHero.tsx"), "utf8")
+    expect(hero).toContain("data-progress-state")
+    expect(hero).toContain('"complete"')
+  })
+
+  test("required eval pill and goal chips do not collapse or wrap", () => {
+    expect(block(".mafw-pod-result-condition-required {")).toContain("white-space: nowrap")
+    expect(block(".mafw-goal-chip {")).not.toMatch(/font-size:\s*(?:9|9\.5|10|10\.5|11|11\.5)px/)
+    expect(block(".mafw-goal-id {")).not.toMatch(/font-size:\s*(?:9|9\.5|10|10\.5|11|11\.5)px/)
+  })
 })
 
 const CORE_META = [
   ".mafw-data-part-badge {",
   ".mafw-data-part-name {",
+  ".mafw-data-part-transient {",
   ".mafw-card-meta {",
   ".mafw-tool-meta-label {",
+  ".mafw-tool-chip {",
+  ".mafw-tool-badge {",
+  ".mafw-tool-tag {",
+  ".mafw-tool-energy {",
   ".mafw-execute-count {",
+  ".mafw-execute-call-status {",
   ".mafw-work-chip {",
   ".mafw-work-filter-count {",
+  ".mafw-work-all-count {",
   ".mafw-rw-overview-meta {",
   ".mafw-rw-overview-label {",
+  ".mafw-goal-chip {",
+  ".mafw-goal-id {",
+  ".mafw-resources-subtitle {",
+  ".mafw-pod-result-label {",
+  ".mafw-pod-result-condition-id {",
+  ".mafw-pod-result-condition-required {",
 ]
 
 describe("readable metadata and session icons", () => {

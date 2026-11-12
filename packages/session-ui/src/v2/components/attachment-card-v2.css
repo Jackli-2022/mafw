@@ -9,7 +9,7 @@
   padding: 8px;
   border-radius: 6px;
   background: var(--v2-overlay-simple-overlay-hover);
-  box-shadow: inset 0 0 0 0.5px var(--v2-border-border-base);
+  box-shadow: inset 0 0 0 1px var(--v2-border-border-base);
   cursor: default;
 
   &[data-wide] {
@@ -23,7 +23,7 @@
   }
 
   &[data-active] {
-    box-shadow: inset 0 0 0 0.5px var(--v2-border-border-strong);
+    box-shadow: inset 0 0 0 1px var(--v2-border-border-strong);
   }
 
   &[data-clickable] {

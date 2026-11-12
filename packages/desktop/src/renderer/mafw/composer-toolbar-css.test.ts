@@ -42,7 +42,7 @@ describe("composer toolbar layout contract", () => {
   })
 
   test("context ring turns warning at 70% and danger at 90%", () => {
-    expect(rule(".mafw-context-ring.is-warn")).toContain("var(--warning)")
+    expect(rule(".mafw-context-ring.is-warn")).toContain("var(--warning-text)")
     expect(rule(".mafw-context-ring.is-danger")).toContain("var(--danger-text)")
     expect(rule('.mafw-context-ring [data-slot="progress-circle-v2-progress"]')).toContain("currentColor")
   })

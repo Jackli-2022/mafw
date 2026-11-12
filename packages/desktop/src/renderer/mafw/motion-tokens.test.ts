@@ -19,9 +19,19 @@ describe("visual language motion tokens", () => {
     expect(shellBlock).toMatch(/--ease-surface:\s*cubic-bezier\(\.16,1,\.3,1\)/)
   })
 
-  test("legacy tokens are retained as deprecated aliases", () => {
-    expect(shellBlock).toMatch(/--dur-1:\s*120ms/)
+  test("legacy duration aliases resolve to the approved semantic scale", () => {
+    expect(shellBlock).toMatch(/--dur-1:\s*var\(--dur-fast\)/)
+    expect(shellBlock).toMatch(/--dur-2:\s*var\(--dur-select\)/)
+    expect(shellBlock).toMatch(/--dur-3:\s*var\(--dur-select\)/)
+    expect(shellBlock).toMatch(/--dur-4:\s*var\(--dur-surface\)/)
     expect(shellBlock).toMatch(/--ease:\s*cubic-bezier\(\.25,0,0,1\)/)
+  })
+
+  test("new semantic durations have real consumers", () => {
+    expect(css).toContain("var(--dur-enter)")
+    expect(css).toContain("var(--dur-press)")
+    expect(css).toContain("var(--dur-select)")
+    expect(css).toContain("var(--dur-progress)")
   })
 })
 
@@ -42,8 +52,8 @@ describe("dock column width transition", () => {
 })
 
 describe("surface-tier entrances use surface tokens", () => {
-  test("content first-paint and dock entrance use surface tokens", () => {
-    expect(css).toMatch(/\.mafw-content:not\(\.mafw-chat-content\)\s*>\s*\*\s*\{[^}]*var\(--dur-surface\)/)
+  test("content first-paint uses enter tier and dock uses surface tier", () => {
+    expect(css).toMatch(/\.mafw-content:not\(\.mafw-chat-content\)\s*>\s*\*\s*\{[^}]*var\(--dur-enter\)/)
     expect(css).toMatch(/mafw-dock-in var\(--dur-surface\) var\(--ease-surface\)/)
   })
 })

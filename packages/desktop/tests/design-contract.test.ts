@@ -280,10 +280,10 @@ describe("Tool part 卡片 v8（触发行结构化）", () => {
 })
 
 describe("Composer v4", () => {
-  test("聚焦单一 2px ring（accent 边框 + accent-soft ring）", () => {
+  test("聚焦单一 2px accent ring", () => {
     const b = cssBlock(".mafw-composer:focus-within")
     expect(b).toContain("border-color: var(--accent)")
-    expect(b).toContain("box-shadow: 0 0 0 2px var(--accent-soft)")
+    expect(b).toContain("box-shadow: 0 0 0 2px var(--accent)")
   })
   test("composer 圆角 r-xl", () => expect(cssBlock(".mafw-composer {")).toContain("border-radius: var(--r-xl)"))
   test("chat 面板 flush（C 案：无圆角/无阴影）", () => { const b = cssBlock(".mafw-chat {"); expect(b).toContain("border-radius: 0"); expect(b).toContain("box-shadow: none") })
@@ -428,10 +428,10 @@ describe("动效基建 v4", () => {
     expect(seg).toContain("transition-duration: 0.01ms")
     expect(seg).toContain("!important")
   })
-  test("enter 动画 4px + surface token（v7：class 作用域 · 仅新 tail）", () => {
+  test("enter 动画 4px + enter token（class 作用域 · 仅新 tail）", () => {
     const b = cssBlock("@keyframes mafw-enter")
     expect(b).toContain("translateY(4px)")
-    expect(cssBlock(".mafw-turn-animate")).toContain("var(--dur-surface)")
+    expect(cssBlock(".mafw-turn-animate")).toContain("var(--dur-enter)")
   })
   test("tab 内容淡入 160ms", () =>
     expect(cssBlock(".mafw-content:not(.mafw-chat-content) > *")).toContain("mafw-fade-in"))

@@ -14,7 +14,17 @@ export function GoalUserHero(props: {
   onToggleTechnical: () => void
 }): JSX.Element {
   return (
-    <section class="mafw-goal-user-hero" data-goal-face={props.summary.face}>
+    <section
+      class="mafw-goal-user-hero"
+      data-goal-face={props.summary.face}
+      data-progress-state={
+        props.summary.progressPercent == null
+          ? undefined
+          : props.summary.progressPercent >= 100
+            ? "complete"
+            : "active"
+      }
+    >
       <div class="mafw-goal-user-status">
         <span class="mafw-goal-user-state">{props.summary.statusLabel}</span>
         <span class="mafw-goal-user-owner">{props.summary.ownerLabel}</span>
