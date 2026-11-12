@@ -17,6 +17,12 @@ test('wiring: /agent picker 传入 client.agents.list() 的数组（不读 .item
   assert.doesNotMatch(appSource, /agents\.list\(\)[\s\S]{0,80}?\.items \?\? \[\]/)
 })
 
+test('wiring: app 把 human token 传给 MafwClient（E5a-4）', () => {
+  assert.match(appSource, /from '\.\.\/store\/human-token\.ts'/)
+  assert.match(appSource, /new MafwClient\(\{[\s\S]{0,120}?clientToken: readHumanToken\(\)/)
+  assert.doesNotMatch(appSource, /new MafwClient\(opts\.baseUrl\)/)
+})
+
 test('wiring: permission.asked 不因 approval.permission（含 list surface）被门控', () => {
   assert.doesNotMatch(
     appSource,

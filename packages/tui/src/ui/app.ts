@@ -9,6 +9,7 @@ import { StatusBar, type StatusState } from './status-bar.ts'
 import { AppModel } from './app-model.ts'
 import { showAgentPickerWith } from './agent-items.ts'
 import { ConnectionStore, type ConnState } from '../store/connection.ts'
+import { readHumanToken } from '../store/human-token.ts'
 import { ChatStore } from '../store/chat-store.ts'
 import { ChatTab, selectListTheme } from './chat-tab.ts'
 import { createSlashHandler } from './slash-commands.ts'
@@ -59,7 +60,7 @@ export interface AppOptions {
 }
 
 export async function runApp(opts: AppOptions): Promise<void> {
-  const client = new MafwClient(opts.baseUrl)
+  const client = new MafwClient({ baseUrl: opts.baseUrl, clientToken: readHumanToken() })
   const model = new AppModel()
   const terminal = new ProcessTerminal()
   const tui = new TuiAltScreen(terminal)
