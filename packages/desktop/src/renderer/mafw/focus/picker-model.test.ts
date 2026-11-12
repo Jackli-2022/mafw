@@ -187,6 +187,21 @@ test("picker item identities are stable", () => {
   assert.equal(items[0]!.id, `file:${subjectKey(items[0]!.subject)}`)
 })
 
+test("goal scope lists worktree files when the files root matches", () => {
+  const items = buildFilePickerItems({
+    worldId: "w1",
+    files: ["src/a.ts"],
+    filesRoot: goalScope.worktreeDir,
+    root: goalScope.worktreeDir,
+    recent: [],
+    scope: goalScope,
+    projectScope,
+  })
+  assert.equal(items.length, 1)
+  assert.deepEqual(items[0]!.subject, { kind: "file", root: goalScope.worktreeDir, rel: "src/a.ts" })
+  assert.deepEqual(items[0]!.scope, goalScope)
+})
+
 test("world overview is a picker item", () => {
   const item = buildWorldPickerItem("C:/repo")
   assert.equal(item.kind, "world")

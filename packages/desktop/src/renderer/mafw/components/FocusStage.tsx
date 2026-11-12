@@ -44,7 +44,7 @@ export function FocusStage(props: {
   onWebBadge?: (surfaceId: string, count: number) => void
   onWebTitle?: (surfaceId: string, title: string) => void
   onWebError?: (surfaceId: string, message: string) => void
-  renderChangeSet?: () => JSX.Element
+  renderChangeSet?: () => JSX.Element | null
   renderGoal?: () => JSX.Element
   renderWorld?: () => JSX.Element
 }): JSX.Element {

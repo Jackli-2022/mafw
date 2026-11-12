@@ -12,6 +12,9 @@ test("WorkbenchShell is focus-only", () => {
   assert.match(shell, /FrameBar/)
   assert.match(shell, /LensBar/)
   assert.match(shell, /SubjectPicker/)
+  assert.match(shell, /PluginSurfaceStage/)
+  // keyed Show would remount the plugin cache on every focus change.
+  assert.doesNotMatch(shell, /when=\{props\.focusView\}\s+keyed/)
   for (const legacy of [
     "WorkbenchContext",
     "ContentScopeHeader",

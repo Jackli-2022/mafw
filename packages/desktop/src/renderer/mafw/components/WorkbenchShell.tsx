@@ -58,7 +58,7 @@ export type WorkbenchShellProps = {
   onOpenReview?: () => void
   renderGoal?: () => JSX.Element
   renderWorld?: () => JSX.Element
-  renderChangeSet?: () => JSX.Element
+  renderChangeSet?: () => JSX.Element | null
   /** Mounts one plugin panel surface. */
   renderPluginSurface?: (id: string) => JSX.Element
   /** Declared Web surfaces (sandboxed pages). */
@@ -82,7 +82,6 @@ export function WorkbenchShell(props: WorkbenchShellProps): JSX.Element {
     <div class="mafw-rw-shell">
       <Show
         when={props.focusView}
-        keyed
         fallback={
           <DockEmpty
             icon="layout-right"
@@ -92,63 +91,59 @@ export function WorkbenchShell(props: WorkbenchShellProps): JSX.Element {
           />
         }
       >
-        {(focus) => (
-          <>
-            <FrameBar
-              crumbs={props.frame?.crumbs ?? []}
-              badges={props.frame?.badges ?? []}
-              canBack={true}
-              onBack={props.onFocusBack}
-              onCrumb={props.onFocusCrumb}
-              onOpenPicker={props.onOpenPicker}
-            />
-            <LensBar
-              lenses={props.lenses}
-              active={focus.lens}
-              onLens={props.onFocusLens}
-            />
-            <div class="mafw-focus-body">
-              <FocusStage
-                focus={focus}
-                active={props.open}
-                sessionID={props.sessionID}
-                sessionDirectory={props.sessionDirectory}
-                contentRoot={props.contentRoot}
-                contentScopeKey={props.contentScopeKey}
-                diffs={props.diffs}
-                liveDiffs={props.liveDiffs}
-                onActiveFileChange={props.onActiveFileChange}
-                openRequest={props.focusOpenRequest}
-                onSendAnnotation={props.onSendAnnotation}
-                onAddAnnotation={props.onAddAnnotation}
-                onSendComment={props.onSendComment}
-                onOpenReview={props.onOpenReview}
-                renderPluginSurface={props.renderPluginSurface}
-                webSurfaces={props.webSurfaces}
-                gatewayUrl={props.gatewayUrl}
-                onWebBadge={props.onWebBadge}
-                onWebTitle={props.onWebTitle}
-                onWebError={props.onWebError}
-                renderGoal={props.renderGoal}
-                renderWorld={props.renderWorld}
-                renderChangeSet={props.renderChangeSet}
-              />
-              <PluginSurfaceStage
-                activeSurfaceId={activePluginSurfaceId()}
-                sessionID={props.sessionID}
-                projectDir={props.pluginProjectDir}
-                gatewayUrl={props.gatewayUrl}
-                webSurfaces={props.webSurfaces}
-                onBadge={props.onWebBadge}
-                onTitle={props.onWebTitle}
-                onError={props.onWebError}
-              />
-              <Show when={props.instrumentRail}>
-                <div class="mafw-focus-rail-slot">{props.instrumentRail}</div>
-              </Show>
-            </div>
-          </>
-        )}
+        <FrameBar
+          crumbs={props.frame?.crumbs ?? []}
+          badges={props.frame?.badges ?? []}
+          canBack={true}
+          onBack={props.onFocusBack}
+          onCrumb={props.onFocusCrumb}
+          onOpenPicker={props.onOpenPicker}
+        />
+        <LensBar
+          lenses={props.lenses}
+          active={props.focusView!.lens}
+          onLens={props.onFocusLens}
+        />
+        <div class="mafw-focus-body">
+          <FocusStage
+            focus={props.focusView!}
+            active={props.open}
+            sessionID={props.sessionID}
+            sessionDirectory={props.sessionDirectory}
+            contentRoot={props.contentRoot}
+            contentScopeKey={props.contentScopeKey}
+            diffs={props.diffs}
+            liveDiffs={props.liveDiffs}
+            onActiveFileChange={props.onActiveFileChange}
+            openRequest={props.focusOpenRequest}
+            onSendAnnotation={props.onSendAnnotation}
+            onAddAnnotation={props.onAddAnnotation}
+            onSendComment={props.onSendComment}
+            onOpenReview={props.onOpenReview}
+            renderPluginSurface={props.renderPluginSurface}
+            webSurfaces={props.webSurfaces}
+            gatewayUrl={props.gatewayUrl}
+            onWebBadge={props.onWebBadge}
+            onWebTitle={props.onWebTitle}
+            onWebError={props.onWebError}
+            renderGoal={props.renderGoal}
+            renderWorld={props.renderWorld}
+            renderChangeSet={props.renderChangeSet}
+          />
+          <PluginSurfaceStage
+            activeSurfaceId={activePluginSurfaceId()}
+            sessionID={props.sessionID}
+            projectDir={props.pluginProjectDir}
+            gatewayUrl={props.gatewayUrl}
+            webSurfaces={props.webSurfaces}
+            onBadge={props.onWebBadge}
+            onTitle={props.onWebTitle}
+            onError={props.onWebError}
+          />
+          <Show when={props.instrumentRail}>
+            <div class="mafw-focus-rail-slot">{props.instrumentRail}</div>
+          </Show>
+        </div>
       </Show>
 
       <SubjectPicker

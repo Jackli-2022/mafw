@@ -499,7 +499,7 @@ export function PodResultView(props: {
                     })
                   }}
                 >
-                  查看本版文件
+                  查看本版变更
                 </ButtonV2>
               </div>
             </Show>

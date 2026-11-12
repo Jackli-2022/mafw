@@ -86,7 +86,6 @@ import { checkpointRev } from "../checkpoint-rev"
 import { keybindingFor } from "../keybinding-store"
 import { matchesCombo } from "../keybindings"
 import { pendingInserts, pushComposerInsert, takeComposerInsert } from "../composer-insert"
-import { requestOpenEditor } from "../editor-open"
 import { menuController } from "../context-menu/controller"
 import { buildFilePathMenu } from "../context-menu/builders/file-path"
 import { buildCodeBlockMenu, buildMessageMenu } from "../context-menu/builders/message"
@@ -179,6 +178,8 @@ export type ChatPaneProps = {
   onPermReply: (card: PermissionCardData, reply: "once" | "always" | "reject", message?: string, persist?: boolean | "tool" | "prefix") => void
   onAskSubmit: (card: AskCardData, answers: Record<string, string[]>, custom: Record<string, string>) => void
   onAskCancel: (card: AskCardData) => void
+  /** 打开文件链接：由 shell 推入焦点栈，不再走 editor-open 后门。 */
+  onOpenFile?: (root: string, rel: string) => void
   /** 打开改动审阅面板（切片 2；SessionTurn actions + composer 工具条双入口） */
   onOpenDiffReview?: () => void
   /** 点击上下文 pill：打开 Config › Usage */
@@ -738,7 +739,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
         { root, rel, inRoot, canOpenEditor: inRoot },
         (id) => {
           if (id === "filePath.attach") pushComposerInsert(sid, `@${rel}`)
-          else if (id === "filePath.openEditor") requestOpenEditor(root, rel)
+          else if (id === "filePath.openEditor") props.onOpenFile?.(root, rel)
           else if (id === "filePath.openWith.default") void window.api.openPath(abs).catch(() => showToastV2({ description: "打开失败", duration: 3000 }))
           else if (id === "filePath.openWith.vscode") void window.api.openPath(abs, "code").catch(() => showToastV2({ description: "未找到 VS Code", duration: 3000 }))
           else if (id === "filePath.openWith.cursor") void window.api.openPath(abs, "cursor").catch(() => showToastV2({ description: "未找到 Cursor", duration: 3000 }))

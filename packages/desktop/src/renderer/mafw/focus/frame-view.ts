@@ -22,6 +22,8 @@ export type FrameInput = {
   scopeLabel: string
   subjectLabel: string
   anchorLabel?: string
+  /** -1 表示栈里没有世界根（旧持久化栈），不渲染世界面包屑。 */
+  worldIndex?: number
   scopeStartIndex?: number
   subjectIndex?: number
   dirty?: boolean
@@ -41,11 +43,15 @@ function verdictTone(verdict: string): FrameBadge["tone"] {
 }
 
 export function frameView(input: FrameInput): FrameView {
-  const crumbs: FrameCrumb[] = [
-    { label: input.worldName, kind: "world", stackIndex: 0 },
+  const worldIndex = input.worldIndex ?? 0
+  const crumbs: FrameCrumb[] = []
+  if (worldIndex >= 0) {
+    crumbs.push({ label: input.worldName, kind: "world", stackIndex: worldIndex })
+  }
+  crumbs.push(
     { label: input.scopeLabel, kind: "scope", stackIndex: input.scopeStartIndex ?? 0 },
     { label: input.subjectLabel, kind: "subject", stackIndex: input.subjectIndex },
-  ]
+  )
   if (input.anchorLabel) {
     crumbs.push({ label: input.anchorLabel, kind: "anchor" })
   }

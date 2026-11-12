@@ -63,6 +63,7 @@ export function WorldOverviewStage(props: {
   const [creating, setCreating] = createSignal(false)
   const [filter, setFilter] = createSignal<WorkFilter>("all")
   const [podOpen, setPodOpen] = createSignal(false)
+  let lastPodPanelSeq = 0
 
   const load = async () => {
     const dir = props.projectDir
@@ -105,10 +106,14 @@ export function WorldOverviewStage(props: {
     setComposerOpen(false)
     setCreating(false)
     setPodOpen(false)
+    lastPodPanelSeq = 0
   }, { defer: true }))
 
   createEffect(() => {
-    if ((props.podPanelRequest?.seq ?? 0) > 0) setPodOpen(true)
+    const seq = props.podPanelRequest?.seq ?? 0
+    if (seq <= lastPodPanelSeq) return
+    lastPodPanelSeq = seq
+    setPodOpen(true)
   })
 
   const overviewGoals = createMemo<PodGoal[]>(() => {

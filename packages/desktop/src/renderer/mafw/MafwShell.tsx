@@ -55,6 +55,7 @@ import { ChatPane, mergeLocalParts, type FlowCardRecord } from "./components/Cha
 import { TaskList } from "./components/TaskList"
 import { WorkbenchShell } from "./components/WorkbenchShell"
 import { WorldOverviewStage } from "./components/WorldOverviewStage"
+import { GoalChangeSetStage } from "./components/GoalChangeSetStage"
 import { GoalDetailPanel } from "./components/GoalDetailPanel"
 import { PodTranscriptOverlay } from "./components/PodTranscriptOverlay"
 import { ingestPodEvent, podStore, pickTechLeadInviteGoal, resolvePodDetailCached, techLeadTabTitle } from "./pod-store"
@@ -2243,17 +2244,21 @@ export function MafwShell() {
         : {}),
     }, window.localStorage))
   }
-  /** 内容面统一打开入口：分流浏览器/编辑器，并在成功路由后记录最近内容。 */
-  const openContentFile = (
+  /** 空栈时先放世界根，保证返回 / 面包屑有落点。 */
+  const seedWorldRoot = (state: WorkbenchState, scope: Scope): WorkbenchState => {
+    if (state.stack.length > 0) return state
+    const worldScope: Scope = { kind: "world", worldId: scope.worldId }
+    return openSubject({ ...state, worldId: scope.worldId }, worldScope, { kind: "world" }, "orient")
+  }
+  /** 文件统一入口：按 fileOpenPlan 分流浏览器 / 编辑器，并记录 recent。 */
+  const openFileInScope = (
     rel: string,
-    root: string | null = contentRoot(),
-    _rememberLocation = true,
+    root: string | null,
+    scope: Scope,
     intent?: ContentIntent,
   ): void => {
     if (!root) return
     revealWorkbench()
-    const scope = contentScope()
-    const nextScope = focusScopeFromContent(scope)
     const nextLens = focusLensForIntent(intent ?? contentIntent())
     // 分流（2026-10-27 文件预览）：html → 浏览器 surface（mafw-file:// 单 webview 导航）；
     // 图片/SVG/文本 → 文件 surface（编辑器内部按 kind 渲染）。
@@ -2264,18 +2269,19 @@ export function MafwShell() {
           showToastV2({ description: "无法打开本地文件（文件协议注册失败）", variant: "error", duration: 4000 } as any)
           return
         }
-        if (root !== contentRoot()) return // 根已切换：丢弃迟到结果
+        if (scope.worldId !== (currentProject() ?? "unscoped")) return // 世界已切换：丢弃迟到结果
+        const url = buildMafwFileUrl(token, rel)
         try {
-          requestBrowserNavigate(buildMafwFileUrl(token, rel))
+          requestBrowserNavigate(url)
           setFocusState((state) =>
             openSubject(
-              { ...state, worldId: nextScope.worldId },
-              nextScope,
-              { kind: "web", url: buildMafwFileUrl(token, rel) },
+              { ...seedWorldRoot(state, scope), worldId: scope.worldId },
+              scope,
+              { kind: "web", url },
               "interact",
             ),
           )
-          recordRecentFile(rel, scope)
+          recordRecentFile(rel, contentScopeFromFocus(scope))
         } catch {
           showToastV2({ description: "无法打开该文件路径", variant: "error", duration: 4000 } as any)
         }
@@ -2284,9 +2290,14 @@ export function MafwShell() {
     }
     requestFocusOpen(root, rel)
     setFocusState((state) =>
-      openSubject({ ...state, worldId: nextScope.worldId }, nextScope, { kind: "file", root, rel }, nextLens),
+      openSubject(
+        { ...seedWorldRoot(state, scope), worldId: scope.worldId },
+        scope,
+        { kind: "file", root, rel },
+        nextLens,
+      ),
     )
-    recordRecentFile(rel, scope)
+    recordRecentFile(rel, contentScopeFromFocus(scope))
   }
   /** 左栏插件入口：把插件 surface 作为焦点对象打开（spec 2026-11-09 §6.4）。 */
   const openPluginSurface = (surfaceId: PluginSurfaceId) => {
@@ -2407,7 +2418,7 @@ export function MafwShell() {
           : "评审项"
         : subject.kind === "changeSet" ? "变更集"
         : subject.kind === "goal" ? (goalTitle || "Goal")
-        : subject.kind === "world" ? "世界"
+        : subject.kind === "world" ? "世界总览"
         : subject.kind === "web" ? "浏览器"
         : subject.kind === "terminal" ? "终端"
         : subject.kind === "plugin" ? "插件"
@@ -2416,15 +2427,23 @@ export function MafwShell() {
     const focusedGoal = goalScope
       ? podStore.detail()?.goals.find((goal) => goal.goalId === goalScope.goalId)
       : null
+    const stack = focusState().stack
+    const worldIndex = stack.findIndex((item) => item.subject.kind === "world")
+    const scopeStartIndex = goalScope
+      ? stack.findIndex((item) => item.scope.kind === "goal" && item.scope.goalId === goalScope.goalId)
+      : (worldIndex >= 0 ? worldIndex : 0)
     return frameView({
       worldName: railProjectName(currentProject(), true),
       scopeLabel: focusScopeLabel(focus.scope),
       subjectLabel,
-      scopeStartIndex: 0,
-      subjectIndex: focusState().stack.length - 1,
+      worldIndex,
+      scopeStartIndex,
+      subjectIndex: stack.length - 1,
       revision: goalScope ? goalScope.revision : undefined,
       execution: focusedGoal ? executionBadgeFor(focusedGoal) ?? undefined : undefined,
-      version: focus.scope.kind === "world" ? "HEAD" : undefined,
+      version: subject.kind === "file" || subject.kind === "reviewItem" || subject.kind === "changeSet"
+        ? "HEAD"
+        : undefined,
       external: subject.kind === "web" || subject.kind === "terminal" || subject.kind === "plugin",
     })
   })
@@ -2437,6 +2456,7 @@ export function MafwShell() {
   }
   const openWorldOverview = () => {
     revealWorkbench()
+    setPodGoalId(null)
     const worldId = currentProject() ?? "unscoped"
     setFocusState((state) =>
       openSubject({ ...state, worldId }, { kind: "world", worldId }, { kind: "world" }, "orient"),
@@ -2445,24 +2465,27 @@ export function MafwShell() {
   const openBrowserFocus = (url: string, opts?: { newTab?: boolean }) => {
     revealWorkbench()
     requestBrowserNavigate(url, opts)
+    const scope = focusScope()
     setFocusState((state) =>
-      openSubject(state, focusScope(), { kind: "web", url }, "interact"),
+      openSubject(seedWorldRoot(state, scope), scope, { kind: "web", url }, "interact"),
     )
   }
   const openTerminalFocus = () => {
     revealWorkbench()
+    const scope = focusScope()
     setFocusState((state) =>
-      openSubject(state, focusScope(), { kind: "terminal", id: "local" }, "interact"),
+      openSubject(seedWorldRoot(state, scope), scope, { kind: "terminal", id: "local" }, "interact"),
     )
   }
   const openPluginFocus = (surfaceId: string) => {
     const parsed = parsePluginSurfaceId(surfaceId)
     if (!parsed) return
     revealWorkbench()
+    const scope = focusScope()
     setFocusState((state) =>
       openSubject(
-        state,
-        focusScope(),
+        seedWorldRoot(state, scope),
+        scope,
         { kind: "plugin", package: parsed.package, panel: parsed.panel },
         "interact",
       ),
@@ -2471,10 +2494,11 @@ export function MafwShell() {
   const openProjectChangeSetFocus = (lens: "changes" | "review" | "decide" = "changes") => {
     revealWorkbench()
     const worldId = currentProject() ?? "unscoped"
+    const scope: Scope = { kind: "world", worldId }
     setFocusState((state) =>
       openSubject(
-        state,
-        { kind: "world", worldId },
+        seedWorldRoot(state, scope),
+        scope,
         { kind: "changeSet", scope: "project", baseline: "HEAD" },
         lens,
       ),
@@ -2482,6 +2506,7 @@ export function MafwShell() {
   }
   const showWorkbenchLanding = () => {
     setFocusState(createWorkbenchState(currentProject() ?? "unscoped"))
+    setPodGoalId(null)
     setPickerOpen(true)
     revealWorkbench()
   }
@@ -2505,6 +2530,7 @@ export function MafwShell() {
     if (state.stack.length > 1) {
       const next = popFocus(state)
       setFocusState(next)
+      if (next.stack.at(-1)?.subject.kind !== "goal") setPodGoalId(null)
       syncStageToFocus(next)
       return
     }
@@ -2538,9 +2564,16 @@ export function MafwShell() {
     const revision = goal ? (goalRevisionOf(goal) ?? goal.activeRevision ?? goal.revision ?? 1) : 1
     setPodGoalId(goalId)
     setGoalDetailFocus(focus)
+    const goalScope: Scope = {
+      kind: "goal",
+      worldId: project,
+      goalId,
+      revision,
+      worktreeDir: project,
+    }
     setFocusState((state) =>
       applyGoalFocus(
-        state,
+        seedWorldRoot(state, goalScope),
         {
           projectDir: project,
           goalId,
@@ -2686,9 +2719,26 @@ export function MafwShell() {
       />
     )
   })
+  const listScopedFiles = async (scope: Scope | null): Promise<string[]> => {
+    if (scope?.kind !== "goal") return window.api.mafw.files.list()
+    const root = scope.worktreeDir
+    const out: string[] = []
+    const walk = async (rel: string): Promise<void> => {
+      if (out.length >= 500) return
+      const entries = await window.api.fs.listDir(root, rel).catch(() => null)
+      for (const entry of entries ?? []) {
+        if (out.length >= 500) return
+        const next = rel ? `${rel}/${entry.name}` : entry.name
+        if (entry.kind === "dir") await walk(next)
+        else out.push(next)
+      }
+    }
+    await walk("")
+    return out
+  }
   const openSubjectPicker = () => {
     setPickerOpen(true)
-    void window.api.mafw.files.list().then(setPickerFiles).catch(() => {})
+    void listScopedFiles(activeFocus()?.scope ?? null).then(setPickerFiles).catch(() => {})
   }
   const pickSubject = (item: PickerItem) => {
     setPickerOpen(false)
@@ -2701,16 +2751,16 @@ export function MafwShell() {
       return
     }
     if (item.subject.kind === "file") {
-      revealWorkbench()
-      requestFocusOpen(item.subject.root, item.subject.rel)
-      setFocusState((state) =>
-        openSubject({ ...state, worldId: item.scope.worldId }, item.scope, item.subject, item.lens),
+      openFileInScope(
+        item.subject.rel,
+        item.subject.root,
+        item.scope,
+        item.lens === "edit" ? "editing" : "reading",
       )
-      recordRecentFile(item.subject.rel, contentScopeFromFocus(item.scope))
       return
     }
     const next = openSubject(
-      { ...focusState(), worldId: item.scope.worldId },
+      { ...seedWorldRoot(focusState(), item.scope), worldId: item.scope.worldId },
       item.scope,
       item.subject,
       item.lens,
@@ -2771,6 +2821,10 @@ export function MafwShell() {
   createEffect(() => {
     const worldId = currentProject()
     if (!worldId || lastFocusWorld !== worldId) return
+    if (pickerOpen()) {
+      lastAutoPickerWorld = worldId
+      return
+    }
     if (!shouldAutoOpenPicker({
       worldId,
       focusCount: focusState().stack.length,
@@ -2811,12 +2865,13 @@ export function MafwShell() {
     const worldId = project ?? "unscoped"
     const scope = focusScope()
     const projectScope: Scope = { kind: "world", worldId }
+    const filesRoot = scope.kind === "goal" ? scope.worktreeDir : (project ?? "")
     const items = buildFilePickerItems({
       worldId,
       files: pickerFiles(),
-      filesRoot: project ?? "",
+      filesRoot,
       recent: recentContent(),
-      root: contentRoot() ?? project ?? "",
+      root: contentRoot() ?? filesRoot,
       scope,
       projectScope,
     })
@@ -3803,6 +3858,7 @@ export function MafwShell() {
                           onCloseEpisode={closeEpisodeToDecision}
                           techLeadTarget={activeTechLeadTarget}
                           sendBlocked={activeTechLeadBlocked}
+                          onOpenFile={(root, rel) => openFileInScope(rel, root, focusScopeFromContent(contentScope()))}
                           onOpenDiffReview={() => openProjectChangeSetFocus("review")}
                           worktreeEnabled={worktreeEnabled()}
                           revertUndoEnabled={revertUndoEnabled()}
@@ -3955,6 +4011,29 @@ export function MafwShell() {
                     showToastV2({ description: "已加入批注", duration: 1600 } as any)
                   }}
                   onOpenReview={() => openProjectChangeSetFocus("review")}
+                  renderChangeSet={() => {
+                    const subject = activeFocus()?.subject
+                    if (subject?.kind !== "changeSet" || subject.scope !== "goal" || !subject.goalId) return null
+                    return (
+                      <GoalChangeSetStage
+                        podId={podIdForCurrentProject()}
+                        goalId={subject.goalId}
+                        revision={subject.revision ?? 1}
+                        sessionDirectory={store.session.find((s: any) => s.id === currentSessionID())?.directory ?? null}
+                        onSendComment={(sid, text) => {
+                          void window.api.mafw.sessions.promptAsync({ sessionID: sid, message: text })
+                            .then(() => showToastV2({ description: "评论已发送给 agent", duration: 2000 } as any))
+                            .catch((e: any) => showToastV2({ description: `发送失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 4000 } as any))
+                        }}
+                        onAddAnnotation={(a) => {
+                          const sid = currentSessionID()
+                          if (!sid) return
+                          addPending({ sessionID: sid, ...a })
+                          showToastV2({ description: "已加入批注", duration: 1600 } as any)
+                        }}
+                      />
+                    )
+                  }}
                   renderWorld={() => (
                     <WorldOverviewStage
                       projectDir={currentProject()}

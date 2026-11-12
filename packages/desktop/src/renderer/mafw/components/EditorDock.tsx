@@ -1239,7 +1239,7 @@ export function EditorDock(props: {
 
       <Show
         when={model().files.length > 0}
-        fallback={<DockEmpty icon="file-tree" text="从「文件」面板选择文件打开" hint="单击文件即可在此编辑" />}
+        fallback={<DockEmpty icon="file-tree" text="从取景器（Ctrl+P）选择文件打开" hint="单击文件即可在此编辑" />}
       >
         <Show when={model().files.length > 1 || props.intent === "editing"}>
           <div class="mafw-editor-tabs">

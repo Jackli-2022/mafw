@@ -16,6 +16,19 @@ test("crumbs include world, scope, subject and optional anchor", () => {
   assert.deepEqual(view.crumbs.map((crumb) => crumb.stackIndex), [0, 2, 4, undefined])
 })
 
+test("world crumb is omitted when the stack has no world root", () => {
+  const view = frameView({
+    worldName: "MAFW",
+    scopeLabel: "项目文件",
+    subjectLabel: "AGENTS.md",
+    worldIndex: -1,
+    scopeStartIndex: 0,
+    subjectIndex: 1,
+  })
+  assert.deepEqual(view.crumbs.map((crumb) => crumb.kind), ["scope", "subject"])
+  assert.deepEqual(view.crumbs.map((crumb) => crumb.stackIndex), [0, 1])
+})
+
 test("badges are ordered and toned", () => {
   const view = frameView({
     worldName: "MAFW",

@@ -37,6 +37,6 @@ test("picker opens with Meta+P or Ctrl+P and closes with Escape", () => {
 })
 
 test("picking an item opens its scope and subject", () => {
-  assert.match(shell, /openSubject\(\s*\{ \.\.\.focusState\(\), worldId: item\.scope\.worldId \},[\s\S]*?item\.scope,[\s\S]*?item\.subject,[\s\S]*?item\.lens/)
+  assert.match(shell, /openSubject\([\s\S]{0,160}?item\.scope,[\s\S]{0,80}?item\.subject,[\s\S]{0,40}?item\.lens/)
   assert.match(shell, /setPickerOpen\(false\)/)
 })
