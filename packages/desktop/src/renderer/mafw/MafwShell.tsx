@@ -3892,6 +3892,10 @@ export function MafwShell() {
                           onDecisionConfirm={confirmDecisionRecord}
                           onDecisionShelve={shelveDecisionRecord}
                           onDecisionReopen={reopenDecisionRecord}
+                          canDelegate={() => !!currentProject()}
+                          canResolve={() => activeFocus()?.scope.kind === "goal" || contentScopeIsGoal()}
+                          onDelegateDraft={() => {}}
+                          onResolveRequest={() => {}}
                           techLeadTarget={activeTechLeadTarget}
                           sendBlocked={activeTechLeadBlocked}
                           onOpenDiffReview={() => openWorkbenchContext("review")}

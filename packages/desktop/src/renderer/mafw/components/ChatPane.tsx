@@ -53,6 +53,8 @@ import { countUserTurns, shouldKeepPaging } from "./history-paging"
 import { worktreeBadge } from "./worktree-label"
 import { ApprovalSummaryLine } from "./ApprovalSummaryLine"
 import { DecisionBoard } from "./DecisionBoard"
+import { ChatModeBar } from "./ChatModeBar"
+import { modeAvailability, type ChatMode } from "../chat/composer-mode"
 import type { DecisionBoardView, DecisionItem } from "../focus/decision-model"
 import type { DecisionRecord } from "@mafw/sdk"
 import { permissionAriaLabel, permissionPresentation } from "./composer-permission"
@@ -239,6 +241,11 @@ export type ChatPaneProps = {
   onDecisionConfirm?: (id: string, input: { rationale: string; consequences: string; reviewAt?: string }) => void
   onDecisionShelve?: (id: string, input: { reviewAt: string; note?: string }) => void
   onDecisionReopen?: (id: string) => void
+  /** Composer 四模式：委托 / 解决是否可用；模式本身是瞬态。 */
+  canDelegate?: () => boolean
+  canResolve?: () => boolean
+  onDelegateDraft?: (draft: { text: string }) => void
+  onResolveRequest?: () => void
   /** Task 20：当前 tab 是某个 Goal 的 Tech Lead 讨论时，发送走 sendTechLeadMessage。 */
   techLeadTarget?: () => { podId: string; goalId: string } | null | Promise<{ podId: string; goalId: string } | null>
   /** Task 20 review：非讨论的 Tech Lead 节点会话禁止直接发送，返回原因（保留草稿）。 */
@@ -319,6 +326,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const [input, setInput] = createSignal("")
   const [sending, setSending] = createSignal(false)
   const [phase, setPhase] = createSignal<'idle' | 'searching' | 'writing'>('idle')
+  const [composerMode, setComposerMode] = createSignal<ChatMode>("discuss")
   const {
     attachments, setAttachments, dragging, setDragging,
     addAttachments, removeAttachment, addPastedFile,
@@ -2247,6 +2255,14 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             />
           )}
         </Show>
+        <ChatModeBar
+          mode={composerMode()}
+          availability={modeAvailability({
+            canDelegate: props.canDelegate?.() ?? false,
+            canResolve: props.canResolve?.() ?? false,
+          })}
+          onMode={setComposerMode}
+        />
         <div
           class="mafw-composer"
           classList={{ "mafw-composer-dragging": dragging() }}
