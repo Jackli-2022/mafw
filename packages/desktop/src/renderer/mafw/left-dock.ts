@@ -1,11 +1,11 @@
 // 左 dock 状态模型（纯函数，无 Solid 依赖）。
 // spec: docs/superpowers/specs/2026-10-22-workbench-layout-design.md D2/D3/Builder 已决项
-export type LeftDockFace = "sessions" | "search" | "notes"
+export type LeftDockFace = "files" | "sessions" | "search" | "notes"
 export type LeftDockMode = "closed" | "overlay" | "push"
 
 /** 旧版本持久化的 Pod face 一次性回落到会话面；团队已迁入项目首页。 */
 export function normalizeLeftDockFace(value: string | null | undefined): LeftDockFace {
-  return value === "search" || value === "notes" ? value : "sessions"
+  return value === "files" || value === "search" || value === "notes" ? value : "sessions"
 }
 
 export interface LeftDockState {

@@ -3752,6 +3752,15 @@ export function MafwShell() {
             onResize={applyLeftDockWidth}
             activeSessionId={activeSessionId()}
             projectsRev={projectsRev}
+            contentRoot={contentRoot()}
+            contentScopeKey={currentContentScopeKey()}
+            sessionID={currentSessionID()}
+            onOpenFile={(rel) => {
+              const root = contentRoot()
+              if (!root) return
+              closeLeftDockIfOverlay()
+              openFileInScope(rel, root, focusScopeFromContent(contentScope()))
+            }}
             onNewSession={() => { closeLeftDockIfOverlay(); void createSession().then(sid => { if (sid) openSessionTab(sid) }) }}
             onSelectSession={openSessionTab}
             onSessionDeleted={closeSession}

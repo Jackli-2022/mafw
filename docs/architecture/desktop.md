@@ -16,7 +16,7 @@
   dev checkout 先读 `~/.mafw/runtime/gateway.json`，用 `/health` 的 `pid`/`instanceId` 对账：
   兼容则 attach（Config 显示「已连接」），版本/schema 不符则 conflict 并提供「用当前构建重启」；
   `MAFW_DEV_ADOPT=0` 表示不 attach、提示先停止现有 gateway。详见 `docs/architecture/gateway.md`。
-- **主布局**：左 IconRail（46px，项目会话/搜索/便签/鲸群/审批/Config）+ 左 dock；主区 = chat 指挥列
+- **主布局**：左 IconRail（46px，文件/会话/搜索/便签/团队/审批/Config）+ 左 dock；主区 = chat 指挥列
   + 右工作台（`工作 / 工作台 / 执行 / 审阅`）。chat 档位 520/640/760（默认 760）；push 预算 1490；
   `Ctrl+Alt+F` 专注模式；最小窗口 **900×600**。窗口可用宽 ≥1240 并排（chat 520–760），
   <1240 改为 **Chat / Workbench 全宽切换**（chat 保持 760 居中，composer 不被侧面板覆盖）。
@@ -326,6 +326,11 @@ spec §5.1/§5.2/§5.3/§6.1/§7.5，plan `docs/superpowers/plans/2026-11-11-pro
 - **双文件树 watcher**：`dir-watch-pool.ts` 对 `(root, rel)` 做 renderer 侧引用计数；项目首页树与内容树同时挂载时，任一方卸载不会误关另一方的目录监听。
 - **团队属性**：左栏删除 `pod` face；`IconRail` 的 Pod 目的地改为「团队」快捷入口，点击打开项目首页并定位团队条（attention badge / result dot 保留）。Lead / Tech Lead / 团队 / 邮箱 / 记忆入口进入项目首页团队条；`ProjectResources` 退役，`PodDock` 仍保留在执行抽屉。
 - 旧 `mafw-left-dock-face=pod` 启动时回落 `sessions` 并重写键。
+- **左栏文件 face（2026-11-13）**：`LeftDockFace` 增加 `files`；`IconRail` 用文件夹按钮切换，
+  `LeftDock` 内部不放 face 切换按钮。`FilesDock` 以 `showHeader={false}` 嵌入左 dock，
+  root 跟随当前 content scope（项目主目录 / Goal revision worktree），点击文件走
+  `openFileInScope` 在右舞台打开；overlay 态选择文件后自动收起左 dock。右 dock 仍然只做文档
+  舞台，不放文件树。
 - 已知后续（Plan D3）：跨重启的树展开/滚动/草稿持久化、Goal revision 最近项、Goal 详情注意力顺序。当前 Goal 详情没有阶段页面 Tab；时间线只是只读投影，不存在待清理的阶段 Tab。
 
 #### 内容意图：阅读 / 修改（2026-11-11 Plan D3a）

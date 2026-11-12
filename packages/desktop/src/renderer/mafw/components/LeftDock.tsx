@@ -16,6 +16,7 @@ import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { ResizeHandle } from "@mafw/ui/resize-handle"
 import { NotesDock } from "./NotesDock"
+import { FilesDock } from "./FilesDock"
 import { ConfirmOverlay } from "./ConfirmOverlay"
 import { formatRailTitle, railProjectName } from "./rail-display"
 import { sessionStore } from "../session-store"
@@ -53,6 +54,11 @@ type Props = {
   onResize: (w: number) => void
   activeSessionId: string | null
   projectsRev?: () => number
+  /** 文件 face 的 root / scope；root 与右舞台 content scope 保持一致。 */
+  contentRoot?: string | null
+  contentScopeKey?: string | null
+  sessionID?: string | null
+  onOpenFile?: (rel: string) => void
   onNewSession: () => void
   onSelectSession: (id: string, title?: string, lead?: boolean, metadata?: { mafw?: { role?: string } }) => void
   onSessionDeleted?: (id: string) => void
@@ -370,7 +376,19 @@ export function LeftDock(props: Props) {
         <div class="mafw-left-dock-notes"><NotesDock /></div>
       </Show>
 
-      <Show when={props.face !== "notes"}>
+      <Show when={props.face === "files"}>
+        <div class="mafw-left-dock-files">
+          <FilesDock
+            contentRoot={props.contentRoot ?? null}
+            scopeKey={props.contentScopeKey ?? null}
+            sessionID={props.sessionID ?? null}
+            showHeader={false}
+            onOpenFile={(rel) => props.onOpenFile?.(rel)}
+          />
+        </div>
+      </Show>
+
+      <Show when={props.face !== "notes" && props.face !== "files"}>
 
       <Show when={props.face === "search"}>
         <div class="mafw-left-dock-search" ref={searchRef}>

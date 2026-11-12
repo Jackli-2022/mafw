@@ -31,6 +31,8 @@ export function FilesDock(props: {
   sessionID?: string | null
   title?: string
   headerAction?: JSX.Element
+  /** 嵌入左 dock 时由项目头承担标题，隐藏面板自带的「文件」头。 */
+  showHeader?: boolean
   onOpenFile: (rel: string) => void
 }) {
   const [rootEntries, setRootEntries] = createSignal<FsEntry[]>([])
@@ -256,20 +258,22 @@ export function FilesDock(props: {
 
   return (
     <div class="mafw-files-panel">
-      <DockPanelHeader title={props.title ?? "文件"}>
-        {props.headerAction}
-        <TooltipV2 value="刷新" openDelay={300}>
-          <ButtonV2
-            variant="ghost"
-            size="small"
-            aria-label="刷新文件树"
-            disabled={!props.contentRoot || loading()}
-            onClick={() => loadRoot()}
-          >
-            <Icon name="refresh" size="small" />
-          </ButtonV2>
-        </TooltipV2>
-      </DockPanelHeader>
+      <Show when={props.showHeader !== false}>
+        <DockPanelHeader title={props.title ?? "文件"}>
+          {props.headerAction}
+          <TooltipV2 value="刷新" openDelay={300}>
+            <ButtonV2
+              variant="ghost"
+              size="small"
+              aria-label="刷新文件树"
+              disabled={!props.contentRoot || loading()}
+              onClick={() => loadRoot()}
+            >
+              <Icon name="refresh" size="small" />
+            </ButtonV2>
+          </TooltipV2>
+        </DockPanelHeader>
+      </Show>
       <Show when={error()}>
         <DockBanner kind="error" text={error()!} action={{ label: "重试", onClick: () => loadRoot() }} />
       </Show>

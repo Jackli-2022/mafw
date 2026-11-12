@@ -4,20 +4,22 @@ import { readFileSync } from "node:fs"
 
 const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8")
 
-test("IconRail: seven buttons, one family, approved order", () => {
+test("IconRail: eight buttons, one family, approved order", () => {
   const src = read("src/renderer/mafw/components/IconRail.tsx")
   assert.match(src, /onNewSession/)
   assert.doesNotMatch(src, /<svg/) // 内联 SVG 全退役（图标只走 icon 表）
   const at = (s: string) => src.indexOf(s)
-  assert.ok(at('"bubble-5"') > 0, "sessions icon")
+  assert.ok(at('"folder"') > 0, "files icon")
+  assert.ok(at('"bubble-5"') > at('"folder"'), "sessions after files")
   assert.ok(at('"magnifying-glass"') > at('"bubble-5"'), "search after sessions")
   assert.ok(at('"sticky-note"') > at('"magnifying-glass"'), "notes after search")
   assert.ok(at('"team-three"') > at('"sticky-note"'), "team shortcut after notes")
   assert.ok(at('"checklist"') > at('"sticky-note"'), "approvals after destination group")
   assert.ok(at('"settings-gear"') > at('"checklist"'), "config last")
   assert.doesNotMatch(src, /"工作空间"/)
-  // 单 spacer：目的地组连排，便签在 spacer 之前
+  // 单 spacer：目的地组连排，文件/便签在 spacer 之前
   const spacer = src.indexOf("mafw-icon-rail-spacer")
+  assert.ok(at('"folder"') < spacer, "files before spacer")
   assert.ok(at('"sticky-note"') < spacer, "notes before spacer")
   assert.equal(src.split("mafw-icon-rail-spacer").length - 1, 1, "exactly one spacer")
 })

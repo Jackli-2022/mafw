@@ -12,17 +12,20 @@ describe("left-dock 状态模型", () => {
     test("收起态点任一 face → 打开该 face", () => {
       expect(toggleFace({ face: "sessions", open: false }, "search")).toEqual({ face: "search", open: true })
     })
-    test("团队迁入项目首页后 left dock 只剩会话/搜索/便签 face", () => {
+    test("团队迁入项目首页后 left dock 只剩文件/会话/搜索/便签 face", () => {
+      expect(toggleFace({ face: "sessions", open: false }, "files")).toEqual({ face: "files", open: true })
+      expect(toggleFace({ face: "files", open: true }, "files")).toEqual({ face: "files", open: false })
       expect(toggleFace({ face: "sessions", open: false }, "notes")).toEqual({ face: "notes", open: true })
       expect(toggleFace({ face: "notes", open: true }, "notes")).toEqual({ face: "notes", open: false })
     })
   })
 
   describe("旧 Pod face 迁移", () => {
-    test("pod/未知值回落 sessions，搜索与便签保留", () => {
+    test("pod/未知值回落 sessions，文件、搜索与便签保留", () => {
       expect(normalizeLeftDockFace("pod")).toBe("sessions")
       expect(normalizeLeftDockFace("bogus")).toBe("sessions")
       expect(normalizeLeftDockFace(null)).toBe("sessions")
+      expect(normalizeLeftDockFace("files")).toBe("files")
       expect(normalizeLeftDockFace("search")).toBe("search")
       expect(normalizeLeftDockFace("notes")).toBe("notes")
     })

@@ -65,6 +65,7 @@ export function IconRail(props: IconRailProps) {
   const connClass = () => connDotState(props.connPhase, props.gatewayState)
 
   const destinationItems = (): RailItem[] => [
+    { key: "files", icon: "folder", label: props.face === "files" ? "收起文件" : "文件", onClick: () => props.onToggleFace("files"), active: props.face === "files" },
     { key: "sessions", icon: "bubble-5", label: props.face === "sessions" ? "收起讨论 (Ctrl+B)" : "讨论 (Ctrl+B)", onClick: () => props.onToggleFace("sessions"), active: props.face === "sessions" },
     { key: "search", icon: "magnifying-glass", label: props.face === "search" ? "收起搜索" : "搜索", onClick: () => props.onToggleFace("search"), active: props.face === "search" },
     { key: "notes", icon: "sticky-note", label: props.face === "notes" ? "收起便签" : "便签", onClick: () => props.onToggleFace("notes"), active: props.face === "notes" },
