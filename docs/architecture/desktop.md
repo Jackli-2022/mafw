@@ -46,6 +46,11 @@
   `rel:Lx` 锚点，舞台分派到编辑器后 `gotoLine`。revision worktree 由 `pod.result` + `fs.listDir` 探测，
   失败回退项目目录；resolve / reopen 仍只由人触发。详见
   `docs/releases/2026-11-12-workbench-goal-review-focus.md`。
+- **Chat 决定面（2026-11-12 Plan 3）**：Chat transcript 上方是决定板（需要你定 / 待确认 / 已定 / 已搁置），
+  与 rail Pod badge 共用 `decisionStore`；`/api/attention` 投影未解决评审项，决定动作可打开 Goal face、
+  评审项锚点或计划审阅。决定记录由 MCP 起草、人确认 / 搁置 / 重开，落在 `<project>/.mafw/decisions/`；
+  新 Goal 先看委托单预览（12 字段 + 授权级别），Goal 总览显示代理契约，框显示执行 badge。详见
+  `docs/releases/2026-11-12-workbench-chat-decisions.md`。
 - **编辑器**：默认 **Monaco**（VS Code 内核；`mafw-editor-engine=codemirror` 回退，挂载失败自动回退），
   行内 diff 装饰、Ctrl/Cmd+S、MAFW 主题 token 映射、minimap ≥720px。详情见本文件 Monaco 段。
 - **文件预览**：md（session-ui markdown）、json 折叠树、csv/tsv 表格、svg 预览/源码、图片、pdf（Chromium
