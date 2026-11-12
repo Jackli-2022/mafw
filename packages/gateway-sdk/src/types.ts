@@ -1466,6 +1466,94 @@ export interface PodReviewItemList {
   items: PodReviewItem[]
 }
 
+export type DecisionKind =
+  | 'direction'
+  | 'plan'
+  | 'scope'
+  | 'authorization'
+  | 'acceptance'
+  | 'priority'
+  | 'disposition'
+  | 'other'
+
+export type DecisionRecordStatus = 'draft' | 'decided' | 'shelved'
+
+export interface DecisionRecordOption {
+  id: string
+  title: string
+  summary?: string
+  risks?: string[]
+}
+
+export interface DecisionRecordEvidence {
+  kind: 'message' | 'file' | 'change' | 'review_item' | 'goal'
+  ref: string
+  label?: string
+}
+
+export interface DecisionRecordHistoryEntry {
+  action: 'drafted' | 'confirmed' | 'shelved' | 'reopened'
+  by: 'agent' | 'user'
+  at: string
+  note?: string
+}
+
+export interface DecisionRecord {
+  id: string
+  projectDir: string
+  goalId: string | null
+  revision: number | null
+  kind: DecisionKind
+  status: DecisionRecordStatus
+  question: string
+  options: DecisionRecordOption[]
+  evidence: DecisionRecordEvidence[]
+  rationale: string | null
+  consequences: string | null
+  reviewAt: string | null
+  decidedBy: string | null
+  decidedAt: string | null
+  createdAt: string
+  updatedAt: string
+  history: DecisionRecordHistoryEntry[]
+}
+
+export type AttentionKind =
+  | 'answer'
+  | 'plan_approval'
+  | 'review'
+  | 'review_item'
+  | 'blocked'
+  | 'failed'
+  | 'direction_review'
+
+export interface AttentionItem {
+  id: string
+  goalId: string
+  revision: number
+  kind: AttentionKind
+  priority: number
+  coalesceKey: string
+  title: string
+  detail?: string
+  action: {
+    type: string
+    goalId: string
+    questionId?: string
+    itemId?: string
+    rel?: string
+    line?: number
+  }
+}
+
+export interface AttentionList {
+  items: AttentionItem[]
+}
+
+export interface DecisionList {
+  items: DecisionRecord[]
+}
+
 export interface PodGoalAcceptanceRecord {
   forced: boolean
   acceptedAt: string
