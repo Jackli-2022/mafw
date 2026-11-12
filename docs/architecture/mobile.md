@@ -237,7 +237,7 @@ mafw logs
 
 - **事件回放（E5b，移动端默认恢复路径）**：gateway 的 `GET /api/events/replay?since=&limit=` 按 seq **升序分页**返回 `events` 与 `headSeq/oldestSeq/hasMore/nextSince/reset/truncated`（internal，普通 API 鉴权，不要求 human）。App 用 SharedPreferences 持久化 `mafw_event_seq` + `mafw_event_instance`：
   - **首次连接**：用 `connected` greeting 的 `headSeq` 建立 baseline（不 replay；`instanceId` 一并落盘）；
-  - **重连 / 冷启动**：`RecoveryCoordinator` 先 `await EventRecoveryService.recover()` 从持久游标逐页补齐（每页 500，上限 100 页），按 `seq` 去重（`seq <= 游标` 丢弃；recovered 帧经 `WsClientV2.emitRecovered` 回到与 live 相同的 stream），**补完之后**才刷新工作 tab 与已打开页面；
+  - **重连 / 冷启动**：`RecoveryCoordinator` 先 `await EventRecoveryService.recover()` 从持久游标逐页补齐（每页 500，上限 100 页），按 `seq` 去重（`seq <= 游标` 丢弃；recovered 帧经 `WsClientV2.emitRecovered` 回到与 live 相同的 stream，带 `recovered` provenance，Chat / Tech Lead 只用它刷新历史、不驱动当前发送的 `_sending` / `_phase`），**补完之后**才刷新工作 tab 与已打开页面；`main.dart` 在 `recovery.init()` 后复检 `mounted`，已销毁的 State 不再接线；
   - **缺口无法补齐**：`reset` / `truncated` / replay 请求失败 / 旧网关 404·503 → 全量重拉（reset/truncated 把游标钉到 `headSeq`，临时失败保留旧游标下次重试）；greeting 的 `instanceId` 与存档不同 = 事件日志换纪元 → 丢弃游标、按新 head 重建 baseline 并全量重拉；
   - `part.delta` 等 seq 缺失帧不持久、不推进游标，其丢失仍靠 REST 对账；`onReconnected` 钩子保留但 `main.dart` 已不用（配置 `onGatewayReady` 时被抑制，避免与 `RecoveryCoordinator` 重复恢复）。
   - **已知残留**（E5b 接受）：同实例 `reset` 且新 `headSeq` **更低**时游标只抬不降 → 该次重连会重复 reset + 全量重拉（有界、不丢数据）；`hasMore` 页出现 `nextSince <= since`（契约违约）会静默结束循环，尾部小缺口被跳过且不报 fallback；busy / 后台竞态下 greeting 可能被丢弃或不做刷新（在途 replay 接管刷新）；桌面接入 replay 推迟到 E6。

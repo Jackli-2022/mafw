@@ -1,5 +1,7 @@
 # Gateway E5b 事件恢复源交付记录（2026-11-12）
 
+- 版本：desktop 5.1.0 / gateway 4.16.1
+
 ## 波次
 
 - 分支：`feat/gateway-e5b-event-recovery`（worktree `.superpowers/e5b-worktree`）
@@ -22,7 +24,9 @@
 | `68d6f526` | batch2 review | 游标单调（live 推进不回滚）、100 页上限 → `pageCap` fallback、`busy` 重入保护、replay 10s 超时、`flush()`、第二页 reset 覆盖 |
 | `218fc232` | E5b-3 | gateway greeting `instanceId`（live getter）+ mobile `onGatewayReady` / `emitRecovered` / `RecoveryCoordinator`（先 replay 后刷新；首次连接 baseline；epoch 变化全量重拉） |
 | `ff2a29d3` | batch3 review | live∩replay 去重（游标单调分页）、epoch 重设基线、busy 可观测、后台断连竞态保护、`kernel.ts` live getter 注释 |
-| 本次 commit | E5b-4 | 架构 / release / ledger 收口（docs-only） |
+| `4173902e` | E5b-4 | 架构 / release / ledger 收口（docs-only） |
+| `38042164` | docs fix | 修正 recovery contract 与基线计数 |
+| `12831674` | acceptance review | `recovery.init()` 后 mounted guard + 可注入 cursor store；recovered provenance + Chat/Tech Lead 不驱动 live 阶段；busy/epoch 回归钉 |
 
 ## 交付项
 
@@ -56,6 +60,20 @@
 5. **契约产物**：新增 `event.replay`（`gateway-paths.json` / `openapi.json` / `api-schema.gen.ts`
    纯增量 +231 行）；catalog 315 → **316 operations / 281 → 282 paths**；SDK 无调用方，contract 5/5。
 
+## 验收 review fix（`12831674`）
+
+全分支终审 3 个 Important，2 个成立、1 个不成立：
+
+1. **`recovery.init()` 后缺少 mounted 复检**：`main.dart` 现在在 await 后再次检查
+   `mounted`，已销毁的 State 不再 `setState` / 启动 observer；同时给 `MafwMobileApp`
+   加只用于测试的 `cursorStore` 注入点，widget 测试覆盖「dispose 时 init 仍在途」。
+2. **回放帧可能驱动 live turn 状态**：`MafwEvent.recovered` + `WsClientV2.emitRecovered`
+   标记 provenance，`drivesLiveTurn` 让 Chat / Tech Lead 的回放帧只刷新历史、不改
+   `_sending` / `_phase`，避免旧 `turn.completed` 结束新发送。
+3. **busy gate 抑制 epoch/fallback 重拉**：未复现。epoch change 分支会跳过 `recover()`，
+   fallback 与 busy 互斥；新增回归测试钉住「epoch change while replay in flight →
+   refresh + full reload」，未改代码。
+
 ## 验证（worktree @ E5b-4 文档改动后）
 
 | 门 | 命令 | 结果 |
@@ -68,6 +86,8 @@
 | desktop | `npm run test:desktop`（worktree root） | **3569 tests / 3569 passed / 0 failed**（696 suites）。首次运行 3568/1：`mafw-gateway-resolver.test.ts` 的 dev-path 用例因 worktree 无 `gateway/dist`（隔离环境，非代码）返回 null；`gateway npm run build` 后复跑全绿 |
 | TUI 测试 | `npm run test:tui` | **env-red**：`@earendil-works/pi-tui` 未安装（`ERR_MODULE_NOT_FOUND`，主 checkout 同）；本波零 TUI 改动 |
 | mobile 定向 | `flutter test test/event_replay_test.dart test/event_recovery_test.dart test/ws_recovery_test.dart test/recovery_coordinator_test.dart` | **69/69 passed** |
+| mobile review fix 定向 | `flutter test` 上述 4 文件 + `event_effects_test.dart` + `widget_test.dart` | **90/90 passed** |
+| mobile review fix analyzer | `dart analyze lib test` | **No issues found**（0 issues） |
 | mobile 全量 | `flutter test` | **485 passed 后 runner 中止**（`did not complete` 级联，已知 Windows 并发 flake）；被中断文件隔离复跑全绿：`plan_approval_test` 17/17、`work_tab_test` 29/29、`pairing_page_test` 45/45 |
 | mobile analyzer | `dart analyze lib test` | **No issues found**（0） |
 | 路由扫描 | `node scripts/analyze-routes.cjs`（`gateway/`） | **TOTAL 0 (match 0, equals 0)** |
@@ -79,7 +99,7 @@
 | 面 | 新增 | 依据 |
 |---|---|---|
 | gateway | **+28** | E5b-1：`event-store-replay-after` 7 + `events-replay` 15 + `api-contract.test.ts` +1；E5b-3：`ws-connected-hearseq.test.ts` 3 → 8（+5，greeting `instanceId` + live getter + 鉴权回归钉） |
-| mobile | **+69** | 四个新测试文件：`event_replay_test.dart` 21、`event_recovery_test.dart` 28、`ws_recovery_test.dart` 9、`recovery_coordinator_test.dart` 11（含 batch2/batch3 review 修正用例） |
+| mobile | **+74** | 四个新测试文件：`event_replay_test.dart` 23、`event_recovery_test.dart` 28、`ws_recovery_test.dart` 9、`recovery_coordinator_test.dart` 12（含 batch2/batch3/acceptance review 修正用例）；review 回归另含 `event_effects_test` +1、`widget_test` +1 |
 
 > 计数口径：可执行 test case 数，不是断言数。
 
