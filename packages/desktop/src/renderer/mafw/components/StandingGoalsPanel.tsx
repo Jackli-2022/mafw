@@ -41,6 +41,7 @@ export function StandingGoalsPanel(props: {
   const [busyGoalId, setBusyGoalId] = createSignal("")
   const [error, setError] = createSignal("")
   const [enabled, setEnabled] = createSignal(true)
+  const [runsError, setRunsError] = createSignal<Record<string, string>>({})
 
   const load = async (): Promise<void> => {
     const dir = props.projectDir
@@ -52,21 +53,25 @@ export function StandingGoalsPanel(props: {
     try {
       const result = await window.api.mafw.standingGoals.list({ projectDir: dir })
       setGoals(result.items)
+      const failures: Record<string, string> = {}
       const entries = await Promise.all(result.items.map(async (goal) => {
         try {
           const runs = await window.api.mafw.standingGoals.runs(goal.id)
           return [goal.id, runs.items] as const
-        } catch {
+        } catch (err: any) {
+          failures[goal.id] = String(err?.message ?? err)
           return [goal.id, []] as const
         }
       }))
       setRunsByGoal(Object.fromEntries(entries))
+      setRunsError(failures)
       setEnabled(true)
       setError("")
     } catch (err: any) {
       const message = String(err?.message ?? err)
       setGoals([])
       setRunsByGoal({})
+      setRunsError({})
       if (/\b503\b|disabled|not enabled/i.test(message)) {
         setEnabled(false)
         setError("")
@@ -204,6 +209,9 @@ export function StandingGoalsPanel(props: {
 
               <Show when={expanded().has(goal.id)}>
                 <div class="mafw-standing-goal-runs">
+                  <Show when={runsError()[goal.id]}>
+                    <div class="mafw-work-error">{runsError()[goal.id]}</div>
+                  </Show>
                   <Show
                     when={(runsByGoal()[goal.id] ?? []).length > 0}
                     fallback={<div class="mafw-work-empty">还没有运行记录</div>}

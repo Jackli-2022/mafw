@@ -186,6 +186,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'PATCH', path: '/api/event-sources/:id', operationId: 'events.sources.patch', tags: ['events'] },
   { method: 'GET', path: '/api/event-threads', operationId: 'events.threads.list', tags: ['events'] },
   { method: 'GET', path: '/api/event-threads/:id/triggers', operationId: 'events.threads.triggers', tags: ['events'] },
+  { method: 'POST', path: '/api/event-threads/:id/close', operationId: 'events.threads.close', tags: ['events'] },
   { method: 'GET', path: '/api/event-threads/:id/subscriptions', operationId: 'events.threads.subscriptions.list', tags: ['events'] },
   { method: 'POST', path: '/api/event-threads/:id/subscriptions', operationId: 'events.threads.subscriptions.create', tags: ['events'] },
   { method: 'DELETE', path: '/api/event-subscriptions/:id', operationId: 'events.subscriptions.delete', tags: ['events'] },

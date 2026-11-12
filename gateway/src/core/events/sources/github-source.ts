@@ -122,7 +122,7 @@ export async function pollGitHubSource(input: {
   for (const comment of Array.isArray(comments) ? comments : []) {
     if (!passesFilters(comment, config, false)) continue;
     const issueNumber = Number(String(comment.issue_url ?? '').split('/').at(-1));
-    if (!Number.isFinite(issueNumber)) continue;
+    if (!Number.isFinite(issueNumber) || issueNumber <= 0) continue;
     const updated = String(comment.updated_at ?? comment.created_at ?? input.now());
     envelopes.push(normalizeGitHubEvent({
       projectDir: input.projectDir,

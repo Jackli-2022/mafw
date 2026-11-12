@@ -415,6 +415,10 @@ export class EventStore {
     return row ? toThread(row) : null;
   }
 
+  setThreadState(id: string, state: EventThreadRow['state']): void {
+    this.db.prepare('UPDATE event_threads SET state = ? WHERE id = ?').run(state, id);
+  }
+
   getThreadByKey(sourceId: string, externalKey: string): EventThreadRow | null {
     const row = this.db.prepare(
       'SELECT * FROM event_threads WHERE source_id = ? AND external_key = ?',
@@ -473,6 +477,13 @@ export class EventStore {
 
   setTriggerDisposition(id: string, disposition: EventDisposition): void {
     this.db.prepare('UPDATE event_triggers SET disposition = ? WHERE id = ?').run(disposition, id);
+  }
+
+  reviveFilteredTriggers(threadId: string): number {
+    const result = this.db.prepare(
+      "UPDATE event_triggers SET disposition = 'pending' WHERE thread_id = ? AND disposition = 'filtered'",
+    ).run(threadId);
+    return result.changes;
   }
 
   upsertSubscription(

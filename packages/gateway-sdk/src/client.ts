@@ -1409,6 +1409,8 @@ export class MafwClient implements IMafwClient {
       this.request(`/api/event-threads/${encodeURIComponent(threadId)}/triggers`),
     subscriptions: async (threadId: string): Promise<{ items: EventSubscriptionView[] }> =>
       this.request(`/api/event-threads/${encodeURIComponent(threadId)}/subscriptions`),
+    closeThread: async (threadId: string): Promise<{ closed: boolean; handedBack: number; dropped: number }> =>
+      this.request(`/api/event-threads/${encodeURIComponent(threadId)}/close`, { method: 'POST' }),
     subscribe: async (
       threadId: string,
       input: { subscriberType: string; subscriberId: string; mode: 'work' | 'context' },

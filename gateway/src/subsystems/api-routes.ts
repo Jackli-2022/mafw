@@ -483,6 +483,7 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
       list: (projectDir, sourceId) => deps.eventLayer!.listThreads(projectDir, sourceId),
       triggers: (threadId) => deps.eventLayer!.listTriggers(threadId),
       subscriptions: (threadId) => deps.eventLayer!.listSubscriptions(threadId),
+      close: (threadId) => deps.eventLayer!.closeThread(threadId),
     },
     subscribe: (input: any) => deps.eventLayer!.subscribe({
       threadId: String(input?.threadId ?? ''),
@@ -571,6 +572,7 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
     }),
     update: (id, patch: any) => deps.standingGoals!.update(id, patch ?? {}),
     runs: (id) => deps.standingGoals!.listRuns(id),
+    getGoal: (id) => deps.standingGoals!.get(id),
     pause: (id) => deps.standingGoals!.pause(id),
     resume: (id) => deps.standingGoals!.resume(id),
     stop: (id) => deps.standingGoals!.stop(id),

@@ -16,6 +16,7 @@ function harness() {
   const registerCron = jest.fn((_input: any) => ({ nextRunAt: '2026-11-11T01:00:00.000Z' }));
   const unregisterCron = jest.fn();
   let seq = 0;
+  const broadcast = jest.fn();
   const service = new StandingGoalService({
     store,
     now: () => '2026-11-10T00:00:00.000Z',
@@ -23,9 +24,9 @@ function harness() {
     registerCron,
     unregisterCron,
     enabled: () => true,
-    broadcast: jest.fn(),
+    broadcast,
   });
-  return { store, service, registerCron, unregisterCron };
+  return { store, service, registerCron, unregisterCron, broadcast };
 }
 
 describe('StandingGoalService lifecycle', () => {
@@ -77,5 +78,16 @@ describe('StandingGoalService lifecycle', () => {
     } catch (err: any) {
       expect(err.status).toBe(409);
     }
+  });
+
+  test('update broadcasts a standing_goal.updated event', () => {
+    const h = harness();
+    const goal = h.service.create({ ...base, triggers: [cronTrigger] });
+    h.service.update(goal.id, { title: 'Renamed' });
+    expect(h.service.list('/p')[0].title).toBe('Renamed');
+    expect(h.broadcast).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'standing_goal.updated',
+      properties: expect.objectContaining({ standingGoalId: goal.id }),
+    }));
   });
 });

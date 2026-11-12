@@ -43,6 +43,7 @@ export interface EventRouteDeps {
     list(projectDir: string, sourceId?: string): EventThreadRow[];
     triggers(threadId: string): EventTriggerRow[];
     subscriptions(threadId: string): EventSubscriptionRow[];
+    close(threadId: string): { closed: boolean; handedBack: number; dropped: number };
   };
   subscribe(input: unknown): EventSubscriptionRow;
   unsubscribe(id: string): boolean;
@@ -149,6 +150,21 @@ export function handleListSubscriptions(
   return { status: 200, body: { items: deps.threads.subscriptions(id) } };
 }
 
+export function handleCloseThread(
+  args: { id?: string },
+  deps: EventRouteDeps,
+): { status: number; body: any } {
+  const off = gate(deps);
+  if (off) return off;
+  const id = clean(args?.id);
+  if (!id) return fail(400, 'event thread id is required');
+  try {
+    return { status: 200, body: deps.threads.close(id) };
+  } catch (err: any) {
+    return fail(typeof err?.status === 'number' ? err.status : 500, String(err?.message ?? err));
+  }
+}
+
 export function handleCreateSubscription(
   args: { id?: string; subscriberType?: string; subscriberId?: string; mode?: string },
   deps: EventRouteDeps,
@@ -241,6 +257,9 @@ export function attachEventRoutes(registry: RouteRegistry, deps: EventRouteDeps)
   });
   registry.attachHandler('events.threads.triggers', async (_req: IncomingMessage, res: ServerResponse, params: Record<string, string>) => {
     send(res, handleListTriggers({ id: params.id }, deps));
+  });
+  registry.attachHandler('events.threads.close', async (_req: IncomingMessage, res: ServerResponse, params: Record<string, string>) => {
+    send(res, handleCloseThread({ id: params.id }, deps));
   });
   registry.attachHandler('events.threads.subscriptions.list', async (_req: IncomingMessage, res: ServerResponse, params: Record<string, string>) => {
     send(res, handleListSubscriptions({ id: params.id }, deps));

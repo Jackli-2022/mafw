@@ -1,6 +1,7 @@
 import {
   handleApproveRun,
   handleCreateStandingGoal,
+  handleListRuns,
   handleListStandingGoals,
 } from '../../../src/routes/standing-goals';
 
@@ -28,6 +29,7 @@ function deps(over: Record<string, any> = {}) {
     })),
     update: jest.fn(),
     runs: jest.fn(() => []),
+    getGoal: jest.fn(() => ({ id: 'sg1', status: 'active' })),
     pause: jest.fn(),
     resume: jest.fn(),
     stop: jest.fn(),
@@ -61,5 +63,9 @@ describe('standing goal routes', () => {
 
   test('approve rejects agent actor sessions (human-only)', async () => {
     expect((await handleApproveRun({ id: 'r1', actorSessionID: 'ses_agent' }, deps())).status).toBe(403);
+  });
+
+  test('runs returns 404 for an unknown standing goal', () => {
+    expect(handleListRuns({ id: 'missing' }, deps({ getGoal: () => null })).status).toBe(404);
   });
 });

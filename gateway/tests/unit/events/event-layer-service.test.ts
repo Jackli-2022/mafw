@@ -63,6 +63,12 @@ describe('EventLayerService ingress', () => {
     expect(() => h.service.ingest(envelope())).toThrow('event layer disabled');
   });
 
+  test('disabled source refuses ingest', () => {
+    const h = harness();
+    h.service.setSourceEnabled('s1', false);
+    expect(() => h.service.ingest(envelope())).toThrow('event source disabled');
+  });
+
   test('person events are admitted even when the queue is full', () => {
     expect(admitIngress({ queueDepth: 100, person: true, tokens: 0, maxQueueDepth: 100 })).toEqual({ ok: true });
     expect(admitIngress({ queueDepth: 100, person: false, tokens: 10, maxQueueDepth: 100 }))

@@ -33,21 +33,26 @@ Source → Trigger → Thread → Subscription → Decision → Delivery → Cha
 
 ## 流程
 
-1. **Ingress（top half）**：校验开关/准入 → `ensureThread` → 插入 Trigger → 更新
+1. **Ingress（top half）**：校验开关/来源启用/准入 → `ensureThread` → 插入 Trigger → 更新
    `last_trigger_at` → 广播 `event.trigger.received`。不调用 LLM、不发网络写。
 2. **Fan-out**：每个 pending Trigger × 每个 Subscription 建一条 Delivery；Trigger 进入
-   `fanned_out`。
-3. **Decision**：同一批 Trigger 只评估一次；`work` 订阅才调用 `deliverWork`，`context`
-   永不创建 run。决定写 `event_decisions` 并广播 `event.decision.made`。
-4. **Delivery / Channel**：Delivery 状态机流转；需要写回时经 `event_outbox`，失败保留
-   `last_error` 并按退避重试。
+   `fanned_out`。没有 Subscription 时 Trigger 记为 `filtered`；后续订阅会把它复活为
+   `pending`，再 fan-out 一次，避免丢事件。
+3. **Decision**：同一批 Trigger 只评估一次；并发 `evaluate(threadId)` 共享同一个在飞
+   Promise；`work` 订阅才调用 `deliverWork`，`context` 永不创建 run。决定写
+   `event_decisions` 并广播 `event.decision.made`。
+4. **Delivery / Channel**：Delivery 状态机流转，每次状态变化广播
+   `event.delivery.changed`；需要写回时经 `event_outbox`，失败保留 `last_error` 并按退避重试。
+5. **Thread close**：`POST /api/event-threads/:id/close` 把线程置为 `closed`；已投递/已读/
+   已确认/失败的 Delivery 收口为 `handed_back`，未投递的 `pending` 记为 `dropped`。
 
 ## GitHub 来源
 
 第一版轮询：
 
 - `GET /repos/{repo}/issues?state=all&since=...`：PR / issue opened、PR synchronize。
-- `GET /repos/{repo}/issues/comments?since=...`：issue / PR comment。
+- `GET /repos/{repo}/issues/comments?since=...`：issue / PR comment；空 issue number 的评论
+  直接跳过，不产生 `#0` 线程。
 - 过滤器：repo、labels、branches、authors；`[bot]` 默认丢弃。
 - cursor 只在所有 envelope 成功 ingest 后前进。
 
@@ -55,8 +60,7 @@ Source → Trigger → Thread → Subscription → Decision → Delivery → Cha
 follow-up；`normalizeGitHubEvent` 已支持 `pr_review` / `ci_status` 的 kind。
 
 Webhook：`POST /api/event-sources/:id/webhook`，`x-hub-signature-256` HMAC 校验；与轮询共用
-normalize / thread 路径。共享 route helper 当前不保留 raw body，HMAC 按
-`JSON.stringify(parsedBody)` 计算，后续需要 raw-body capture。
+normalize / thread 路径。registry handler 读取 raw body 交给 HMAC，避免 JSON 重排导致签名不一致。
 
 ## 错误与背压
 

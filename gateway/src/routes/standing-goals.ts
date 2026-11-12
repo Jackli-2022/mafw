@@ -9,6 +9,7 @@ export interface StandingGoalRouteDeps {
   create(input: unknown): StandingGoal;
   update(id: string, patch: unknown): StandingGoal;
   runs(id: string): GoalRun[];
+  getGoal(id: string): StandingGoal | null;
   pause(id: string): StandingGoal;
   resume(id: string): StandingGoal;
   stop(id: string): StandingGoal;
@@ -86,6 +87,7 @@ export function handleListRuns(
   if (off) return off;
   const id = clean(args?.id);
   if (!id) return { status: 400, body: { error: 'standing goal id is required' } };
+  if (!deps.getGoal(id)) return { status: 404, body: { error: `standing goal not found: ${id}` } };
   return { status: 200, body: { items: deps.runs(id) } };
 }
 

@@ -3816,6 +3816,29 @@
         }
       }
     },
+    "/api/event-threads/{id}/close": {
+      "post": {
+        "operationId": "events.threads.close",
+        "tags": [
+          "events"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/event-threads/{id}/subscriptions": {
       "get": {
         "operationId": "events.threads.subscriptions.list",

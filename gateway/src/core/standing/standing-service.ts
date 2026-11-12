@@ -207,22 +207,29 @@ export class StandingGoalService {
     }
     const updated = this.deps.store.updateGoal(id, next, this.deps.now());
     this.unregisterCronTriggers(current);
-    void this.deps.unsubscribeEvents?.(current.id);
+    this.bestEffort(this.deps.unsubscribeEvents?.(current.id), 'unsubscribe');
     if (updated.state === 'active') {
       try {
         const nextRunAt = this.registerCronTriggers(updated);
         this.registerEventTriggers(updated);
-        return this.deps.store.updateGoal(id, { nextRunAt }, this.deps.now());
+        const saved = this.deps.store.updateGoal(id, { nextRunAt }, this.deps.now());
+        this.deps.broadcast({ type: 'standing_goal.updated', properties: { standingGoalId: id } });
+        return saved;
       } catch (err: any) {
         this.deps.store.setGoalState(id, 'paused', this.deps.now(), 'trigger registration failed');
         throw new StandingGoalError(500, `failed to register standing goal triggers: ${err?.message ?? err}`);
       }
     }
+    this.deps.broadcast({ type: 'standing_goal.updated', properties: { standingGoalId: id } });
     return updated;
   }
 
   list(projectDir: string): StandingGoal[] {
     return this.deps.store.listGoals(projectDir);
+  }
+
+  get(id: string): StandingGoal | null {
+    return this.deps.store.getGoal(id);
   }
 
   listRuns(standingGoalId: string, limit?: number): GoalRun[] {
@@ -417,7 +424,7 @@ export class StandingGoalService {
     const goal = this.requireGoal(id);
     if (goal.state === 'stopped') throw new StandingGoalError(409, 'stopped standing goal cannot pause');
     this.unregisterCronTriggers(goal);
-    void this.deps.unsubscribeEvents?.(goal.id);
+    this.bestEffort(this.deps.unsubscribeEvents?.(goal.id), 'unsubscribe');
     const updated = this.deps.store.setGoalState(id, 'paused', this.deps.now(), reason ?? null);
     this.deps.store.updateGoal(id, { nextRunAt: null }, this.deps.now());
     this.deps.broadcast({ type: 'standing_goal.paused', properties: { standingGoalId: id, reason: reason ?? null } });
@@ -443,7 +450,7 @@ export class StandingGoalService {
   stop(id: string): StandingGoal {
     const goal = this.requireGoal(id);
     this.unregisterCronTriggers(goal);
-    void this.deps.unsubscribeEvents?.(goal.id);
+    this.bestEffort(this.deps.unsubscribeEvents?.(goal.id), 'unsubscribe');
     const updated = this.deps.store.setGoalState(id, 'stopped', this.deps.now(), null);
     this.deps.store.updateGoal(id, { nextRunAt: null }, this.deps.now());
     this.deps.broadcast({ type: 'standing_goal.stopped', properties: { standingGoalId: id } });
@@ -472,7 +479,7 @@ export class StandingGoalService {
           this.deps.store.updateGoal(goal.id, { nextRunAt }, this.deps.now());
         } else {
           this.unregisterCronTriggers(goal);
-          void this.deps.unsubscribeEvents?.(goal.id);
+          this.bestEffort(this.deps.unsubscribeEvents?.(goal.id), 'unsubscribe');
         }
       } catch (err: any) {
         this.deps.log?.(`[StandingGoals] reconcile failed for ${goal.id}: ${err?.message ?? err}`);
@@ -664,7 +671,7 @@ export class StandingGoalService {
     if (this.deps.eventLayerEnabled && !this.deps.eventLayerEnabled()) return;
     for (const trigger of goal.triggers) {
       if (trigger.type !== 'event') continue;
-      void this.deps.subscribeEvents?.({ standingGoal: goal, trigger });
+      this.bestEffort(this.deps.subscribeEvents?.({ standingGoal: goal, trigger }), `subscribe ${trigger.id}`);
     }
   }
 
@@ -702,6 +709,13 @@ export class StandingGoalService {
       if (trigger.type !== 'cron') continue;
       void this.deps.unregisterCron(`standing-goal:${goal.id}:${trigger.id}`);
     }
+  }
+
+  private bestEffort(value: Promise<void> | void | undefined, label: string): void {
+    if (!value || typeof (value as any).then !== 'function') return;
+    void (value as Promise<void>).catch((err: any) => {
+      this.deps.log?.(`[StandingGoals] ${label} failed: ${err?.message ?? err}`);
+    });
   }
 
   private requireGoal(id: string): StandingGoal {

@@ -59,6 +59,8 @@ function sameTriggerSet(left: readonly string[], right: readonly string[]): bool
 export class EventLayerService {
   constructor(private readonly deps: EventLayerDeps) {}
 
+  private readonly evaluating = new Map<string, Promise<import('./event-types').EventDecisionRow | null>>();
+
   createSource(input: {
     projectDir: string;
     kind: EventSourceKind;
@@ -92,6 +94,9 @@ export class EventLayerService {
     duplicate: boolean;
   } {
     if (!this.deps.enabled()) throw new EventLayerError(503, 'event layer disabled');
+    const source = this.deps.store.getSource(envelope.sourceId);
+    if (!source) throw new EventLayerError(404, `event source not found: ${envelope.sourceId}`);
+    if (!source.enabled) throw new EventLayerError(403, 'event source disabled');
     const admission = this.deps.admit?.(envelope) ?? { ok: true } as const;
     if (!admission.ok) {
       throw new EventLayerError(429, `event ingress refused: ${admission.reason}`);
@@ -139,7 +144,7 @@ export class EventLayerService {
     mode: EventSubscriptionMode;
     expiresAt?: string | null;
   }): EventSubscriptionRow {
-    return this.deps.store.upsertSubscription({
+    const subscription = this.deps.store.upsertSubscription({
       id: this.deps.newId('subscription'),
       threadId: input.threadId,
       subscriberType: input.subscriberType,
@@ -147,6 +152,29 @@ export class EventLayerService {
       mode: input.mode,
       now: this.deps.now(),
     });
+    if (input.threadId !== '*') {
+      // A thread that arrived before this subscriber was filtered; revive it so
+      // the caller's fan-out can still deliver the backlog exactly once.
+      this.deps.store.reviveFilteredTriggers(input.threadId);
+    }
+    return subscription;
+  }
+
+  private updateDelivery(
+    id: string,
+    patch: Parameters<EventStore['updateDelivery']>[1],
+  ): EventDeliveryRow {
+    const row = this.deps.store.updateDelivery(id, patch);
+    this.deps.broadcast({
+      type: 'event.delivery.changed',
+      properties: {
+        deliveryId: row.id,
+        triggerId: row.triggerId,
+        subscriptionId: row.subscriptionId,
+        state: row.state,
+      },
+    });
+    return row;
   }
 
   fanOut(threadId: string): EventDeliveryRow[] {
@@ -155,8 +183,19 @@ export class EventLayerService {
     const pending = this.deps.store.listTriggers(threadId)
       .filter((trigger) => trigger.disposition === 'pending');
     const subscriptions = this.subscriptionsFor(threadId);
+    if (subscriptions.length === 0) {
+      for (const trigger of pending) {
+        this.deps.store.setTriggerDisposition(trigger.id, 'filtered');
+      }
+      if (pending.length > 0) {
+        this.deps.broadcast({
+          type: 'event.thread.updated',
+          properties: { threadId, filteredCount: pending.length },
+        });
+      }
+      return this.deps.store.listDeliveries(threadId);
+    }
     for (const trigger of pending) {
-      if (subscriptions.length === 0) continue;
       for (const subscription of subscriptions) {
         this.deps.store.insertDelivery({
           id: this.deps.newId('delivery'),
@@ -176,7 +215,17 @@ export class EventLayerService {
     return this.deps.store.listDeliveries(threadId);
   }
 
-  async evaluate(threadId: string): Promise<import('./event-types').EventDecisionRow | null> {
+  evaluate(threadId: string): Promise<import('./event-types').EventDecisionRow | null> {
+    const inFlight = this.evaluating.get(threadId);
+    if (inFlight) return inFlight;
+    const work = this.evaluateOnce(threadId).finally(() => {
+      this.evaluating.delete(threadId);
+    });
+    this.evaluating.set(threadId, work);
+    return work;
+  }
+
+  private async evaluateOnce(threadId: string): Promise<import('./event-types').EventDecisionRow | null> {
     const thread = this.deps.store.getThread(threadId);
     if (!thread) throw new EventLayerError(404, `event thread not found: ${threadId}`);
     await this.retryDueDeliveries(threadId);
@@ -230,7 +279,7 @@ export class EventLayerService {
         if (subscription.mode === 'work' && this.deps.deliverWork) {
           try {
             await this.deps.deliverWork({ thread, trigger, subscription, decision });
-            this.deps.store.updateDelivery(delivery.id, {
+            this.updateDelivery(delivery.id, {
               state: 'delivered',
               deliveredAt: now,
               nextRetryAt: null,
@@ -238,7 +287,7 @@ export class EventLayerService {
             });
           } catch (err: any) {
             const attempts = delivery.attempts + 1;
-            this.deps.store.updateDelivery(delivery.id, {
+            this.updateDelivery(delivery.id, {
               state: 'failed',
               attempts,
               lastError: String(err?.message ?? err),
@@ -246,7 +295,7 @@ export class EventLayerService {
             });
           }
         } else {
-          this.deps.store.updateDelivery(delivery.id, {
+          this.updateDelivery(delivery.id, {
             state: 'delivered',
             deliveredAt: now,
             nextRetryAt: null,
@@ -291,7 +340,7 @@ export class EventLayerService {
             rationale: latest.rationale,
           },
         });
-        this.deps.store.updateDelivery(delivery.id, {
+        this.updateDelivery(delivery.id, {
           state: 'delivered',
           deliveredAt: now,
           nextRetryAt: null,
@@ -299,7 +348,7 @@ export class EventLayerService {
         });
       } catch (err: any) {
         const attempts = delivery.attempts + 1;
-        this.deps.store.updateDelivery(delivery.id, {
+        this.updateDelivery(delivery.id, {
           state: 'failed',
           attempts,
           lastError: String(err?.message ?? err),
@@ -311,6 +360,28 @@ export class EventLayerService {
 
   unsubscribeSubscriber(subscriberId: string): number {
     return this.deps.store.removeSubscriptionsBySubscriber(subscriberId, this.deps.now());
+  }
+
+  closeThread(threadId: string): { closed: boolean; handedBack: number; dropped: number } {
+    const thread = this.deps.store.getThread(threadId);
+    if (!thread) throw new EventLayerError(404, `event thread not found: ${threadId}`);
+    this.deps.store.setThreadState(threadId, 'closed');
+    let handedBack = 0;
+    let dropped = 0;
+    for (const delivery of this.deps.store.listDeliveries(threadId)) {
+      if (delivery.state === 'delivered' || delivery.state === 'read' || delivery.state === 'acknowledged' || delivery.state === 'failed') {
+        this.updateDelivery(delivery.id, { state: 'handed_back', nextRetryAt: null });
+        handedBack += 1;
+      } else if (delivery.state === 'pending') {
+        this.updateDelivery(delivery.id, { state: 'dropped', nextRetryAt: null });
+        dropped += 1;
+      }
+    }
+    this.deps.broadcast({
+      type: 'event.thread.updated',
+      properties: { threadId, state: 'closed', handedBack, dropped },
+    });
+    return { closed: true, handedBack, dropped };
   }
 
   private subscriptionsFor(threadId: string): EventSubscriptionRow[] {

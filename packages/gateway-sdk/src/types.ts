@@ -2134,6 +2134,7 @@ export interface EventsNamespace {
   threads(input?: { projectDir?: string; sourceId?: string }): Promise<{ items: EventThreadView[] }>
   triggers(threadId: string): Promise<{ items: EventTriggerView[] }>
   subscriptions(threadId: string): Promise<{ items: EventSubscriptionView[] }>
+  closeThread(threadId: string): Promise<{ closed: boolean; handedBack: number; dropped: number }>
   subscribe(threadId: string, input: { subscriberType: string; subscriberId: string; mode: 'work' | 'context' }): Promise<EventSubscriptionView>
   unsubscribe(id: string): Promise<{ ok: boolean }>
   deliveries(threadId: string): Promise<{ items: EventDeliveryView[] }>

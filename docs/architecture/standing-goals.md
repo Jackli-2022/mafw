@@ -107,7 +107,7 @@ Review / 人工验收路径；P2.5 不新增执行器，也不会自动合并。
 
 | 类型 | 时机 |
 |---|---|
-| `standing_goal.created` / `paused` / `resumed` / `stopped` | 生命周期 |
+| `standing_goal.created` / `updated` / `paused` / `resumed` / `stopped` | 生命周期 |
 | `goal_run.created` / `triaged` / `started` / `skipped` / `finished` / `failed` | 运行 |
 | `goal_run.needs_person` | 动作待批准或连续失败 |
 | `goal_run.budget_exhausted` | 日预算耗尽并暂停 |
@@ -121,7 +121,7 @@ HTTP（`MAFW_STANDING_GOALS=1`）：
 GET    /api/standing-goals?projectDir=
 POST   /api/standing-goals
 PATCH  /api/standing-goals/:id
-GET    /api/standing-goals/:id/runs
+GET    /api/standing-goals/:id/runs        # 未知 id → 404
 POST   /api/standing-goals/:id/pause
 POST   /api/standing-goals/:id/resume
 POST   /api/standing-goals/:id/stop
@@ -133,4 +133,5 @@ MCP：`mafw_create_standing_goal` / `mafw_update_standing_goal` /
 `mafw_list_standing_goals` / `mafw_run_standing_goal`（无 approve）。
 
 桌面：右工作台「工作」面顶部的 `StandingGoalsPanel` 展示状态、上次/下次运行、成功率、
-运行记录；支持暂停/恢复/停止/立即运行，以及 `waiting_person` 运行的人工批准。
+运行记录；支持暂停/恢复/停止/立即运行，以及 `waiting_person` 运行的人工批准。单条目标
+运行记录加载失败会显示该目标的错误，不再静默折叠成空历史。

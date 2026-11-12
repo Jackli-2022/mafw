@@ -1081,7 +1081,9 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                 </Show>
               </div>
             </div>
-            <EventLayerSection projectDir={props.projectDir} />
+            <Show when={localStorage.getItem("mafw-developer-mode") === "1"}>
+              <EventLayerSection projectDir={props.projectDir} />
+            </Show>
           </Show>
 
           {/* ═══ Desktop ═══*/}
