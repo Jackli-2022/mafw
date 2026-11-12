@@ -8642,6 +8642,10 @@ html[data-theme="light"] body {
   text-transform: uppercase;
   color: var(--text-4);
 }
+.mafw-instrument-action {
+  width: 100%;
+  justify-content: flex-start;
+}
 @media (max-width: 900px) {
   .mafw-focus-body { flex-direction: column; }
   .mafw-focus-rail-slot {

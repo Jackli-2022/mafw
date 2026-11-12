@@ -135,7 +135,7 @@ import {
 import { frameView, type FrameView } from "./focus/frame-view"
 import { buildCommandPickerItems, buildFilePickerItems, buildGoalPickerItems, withCommandItems, type PickerItem } from "./focus/picker-model"
 import { stageActionFor } from "./focus/stage-dispatch"
-import { openGoalFocus as applyGoalFocus, openReviewItemFocus as applyReviewFocus } from "./focus/goal-focus"
+import { openGoalFocus as applyGoalFocus, openReviewItemFocus as applyReviewFocus, openChangeSetFocus as applyChangeSetFocus } from "./focus/goal-focus"
 import { InstrumentRail } from "./components/InstrumentRail"
 import { GoalReviewQueue } from "./components/GoalReviewQueue"
 import type { PodReviewItem } from "@mafw/sdk"
@@ -2636,6 +2636,24 @@ export function MafwShell() {
     )
   }
 
+  const openChangeSetFromFocus = () => {
+    const focus = activeFocus()
+    if (!focus || focus.scope.kind !== "goal") return
+    const scope = focus.scope
+    setFocusState((state) =>
+      applyChangeSetFocus(
+        state,
+        {
+          projectDir: scope.worldId,
+          goalId: scope.goalId,
+          revision: scope.revision,
+          worktreeDir: scope.worktreeDir,
+        },
+        "changes",
+      ),
+    )
+  }
+
   const openReviewItemToFocus = (item: PodReviewItem) => {
     const focus = activeFocus()
     if (!focus || focus.scope.kind !== "goal") return
@@ -2687,6 +2705,20 @@ export function MafwShell() {
                 onFocusItem={openReviewItemToFocus}
                 onResolved={() => { void podStore.refresh() }}
               />
+            ),
+          },
+          {
+            id: "actions",
+            label: "动作",
+            content: (
+              <ButtonV2
+                variant="outline"
+                size="small"
+                class="mafw-instrument-action"
+                onClick={openChangeSetFromFocus}
+              >
+                查看变更集
+              </ButtonV2>
             ),
           },
         ]}

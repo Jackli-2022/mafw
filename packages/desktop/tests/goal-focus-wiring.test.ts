@@ -27,3 +27,8 @@ test("goal picker items carry a goal scope and orient lens", () => {
   assert.match(picker, /lens: "orient"/)
   assert.match(picker, /subject: \{ kind: "goal", goalId: goal\.goalId \}/)
 })
+
+test("Goal rail can open the change set subject", () => {
+  assert.match(shell, /openChangeSetFromFocus/)
+  assert.match(shell, /查看变更集/)
+})
