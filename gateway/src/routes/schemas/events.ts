@@ -34,7 +34,7 @@ export const EventReplayResponse = Type.Object({
   oldestSeq: Type.Number(),
   /** 满页且最后一行 seq < headSeq → 还有下一页。 */
   hasMore: Type.Boolean(),
-  /** 下一页游标：最后一行 seq，否则回显 since。 */
+  /** 下一页游标：最后一行 seq，否则回显 since；`reset` 时为 `headSeq`（防 reset-loop）。 */
   nextSince: Type.Number(),
   /** `since > headSeq`（DB 重置 / 新纪元）→ 客户端全量重同步。 */
   reset: Type.Boolean(),

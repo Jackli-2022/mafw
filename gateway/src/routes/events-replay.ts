@@ -11,12 +11,12 @@
  *
  * 响应语义（spec §3.2）：
  *   - `reset = since > headSeq`：DB 重置 / 新纪元 → `events:[]`，客户端全量重同步；
- *     `nextSince` 仍只是 `lastSeq ?? since`（字段语义统一，不在请求失败/语义切换时
- *     偷偷跳游标）——reset 分支客户端应按 `headSeq` 重置本地游标。
+ *     `nextSince = headSeq`（不是回显 `since`）——否则客户端把 `nextSince` 持久化成
+ *     游标后会继续 `since > headSeq`，每次重连都 reset-loop。
  *   - `truncated = !reset && since + 1 < oldestSeq`：缺口在保留窗口之外，仍返回能读到
  *     的行，但客户端应全量重同步。
  *   - `hasMore = rows.length === limit && lastSeq < headSeq`。
- *   - `nextSince = lastSeq ?? since`（循环游标，单调）。
+ *   - `nextSince = lastSeq ?? since`（reset 除外，见上；循环游标，单调）。
  *
  * EventStore 为 null（初始化失败降级）→ 503 `{error:'event store unavailable'}`；
  * 与 SSE 的 null store 语义一致，不伪装成空事件页（否则客户端会误以为"已追平"）。
@@ -98,7 +98,8 @@ export function attachEventsReplayRoute(registry: RouteRegistry, deps: EventsRep
       headSeq,
       oldestSeq,
       hasMore,
-      nextSince: lastSeq ?? since,
+      // reset = 新纪元：把游标钉到 headSeq，避免客户端持久化 since 后反复 reset-loop。
+      nextSince: reset ? headSeq : (lastSeq ?? since),
       reset,
       truncated,
     })

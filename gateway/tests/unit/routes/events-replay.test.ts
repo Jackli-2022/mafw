@@ -140,7 +140,7 @@ describe('GET /api/events/replay: 响应语义', () => {
     });
   });
 
-  test('since 超过 headSeq → reset=true、events=[]、nextSince=since', async () => {
+  test('since 超过 headSeq → reset=true、events=[]、nextSince=headSeq（防 reset-loop）', async () => {
     const { store } = fakeStore({ rows: [], headSeq: 100, oldestSeq: 1 });
     const { body } = await call('/api/events/replay?since=200', store);
     expect(body).toMatchObject({
@@ -148,10 +148,12 @@ describe('GET /api/events/replay: 响应语义', () => {
       headSeq: 100,
       oldestSeq: 1,
       hasMore: false,
-      nextSince: 200,
+      nextSince: 100,
       reset: true,
       truncated: false,
     });
+    // 客户端把 nextSince 持久化成游标后不再是 since > headSeq（不会反复 reset）。
+    expect(body.nextSince).toBe(body.headSeq);
   });
 
   test('空表 since=0 → reset=false、nextSince=0', async () => {
