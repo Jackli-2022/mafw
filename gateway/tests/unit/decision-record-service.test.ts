@@ -120,6 +120,45 @@ test('records survive a second service instance', () => {
   }
 });
 
+test('list warns when the project is not registered', () => {
+  const warn = jest.fn();
+  const service = new DecisionRecordService({ mafwDir: () => null, warn });
+  expect(service.list('C:/missing')).toEqual([]);
+  expect(warn).toHaveBeenCalledWith(expect.stringContaining('not registered'));
+});
+
+test('list respects a bounded limit', () => {
+  const { service, cleanup } = setup();
+  try {
+    draft(service, { question: 'one' });
+    draft(service, { question: 'two' });
+    draft(service, { question: 'three' });
+    expect(service.list('C:/repo', undefined, { limit: 2 })).toHaveLength(2);
+    expect(service.list('C:/repo')).toHaveLength(3);
+  } finally {
+    cleanup();
+  }
+});
+
+test('confirm can clear agent-drafted fields', () => {
+  const { service, cleanup } = setup();
+  try {
+    const record = draft(service, {
+      rationale: 'agent draft',
+      consequences: 'agent consequence',
+    });
+    const confirmed = service.confirm(record.id, {
+      projectDir: 'C:/repo',
+      rationale: 'human reason',
+      consequences: '',
+    });
+    expect(confirmed.rationale).toBe('human reason');
+    expect(confirmed.consequences).toBeNull();
+  } finally {
+    cleanup();
+  }
+});
+
 test('mafwDir lookup tolerates non-canonical registered keys', () => {
   const entries = new Map([
     ['C:\\Repo\\', { mafwDir: 'C:/repo/.mafw' }],

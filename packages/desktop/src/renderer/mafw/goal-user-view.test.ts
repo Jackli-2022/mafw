@@ -272,5 +272,10 @@ test("execution badge falls back to task progress then stage", () => {
   assert.deepEqual(executionBadgeFor(goal({
     goalId: "stage",
     stage: { owner: "team", kind: "reviewing" },
-  })), { label: "reviewing", tone: "neutral" })
+  })), { label: "正在评审", tone: "neutral" })
+
+  assert.deepEqual(executionBadgeFor(goal({
+    goalId: "custom-stage",
+    stage: { owner: "team", kind: "custom" as any },
+  })), { label: "custom", tone: "neutral" })
 })

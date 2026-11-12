@@ -12,6 +12,7 @@ test("MafwShell owns one decision store and feeds the rail badge", () => {
   assert.match(shell, /attention: \(dir\) => window\.api\.mafw\.attention\.list\(dir\)/)
   assert.match(shell, /needsYou: decisionStore\.loaded\(\) \? decisionStore\.counts\(\)\.needsYou : undefined/)
   assert.match(shell, /void decisionStore\.refresh\(\)/)
+  assert.match(shell, /setTimeout\(\(\) => \{ void decisionStore\.refresh\(\) \}, 250\)/)
   assert.match(shell, /setInterval\(\(\) => \{ void decisionStore\.refresh\(\) \}, 15000\)/)
 })
 

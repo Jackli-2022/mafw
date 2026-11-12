@@ -18,3 +18,10 @@ test("GoalReviewQueue keeps human-only resolve and reopen", () => {
   assert.match(queue, /catch/)
   assert.doesNotMatch(queue, /mark.*resolved/i)
 })
+
+test("GoalReviewQueue distinguishes load failure from an empty queue", () => {
+  assert.match(queue, /setError/)
+  assert.match(queue, /评审意见加载失败/)
+  assert.match(queue, /重试/)
+  assert.match(queue, /items\(\)\.length === 0/)
+})

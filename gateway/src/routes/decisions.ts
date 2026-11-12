@@ -29,11 +29,13 @@ function actorOf(body: Record<string, unknown>): string {
 }
 
 export function handleDecisionList(
-  args: { projectDir?: string; goalId?: string },
+  args: { projectDir?: string; goalId?: string; limit?: number },
   deps: DecisionRouteDeps,
 ): { status: number; body: { items: unknown[] } | { error: string } } {
   try {
-    const items = deps.service.list(projectDirOf(args?.projectDir), args?.goalId);
+    const items = deps.service.list(projectDirOf(args?.projectDir), args?.goalId, {
+      ...(typeof args?.limit === 'number' ? { limit: args.limit } : {}),
+    });
     return { status: 200, body: { items } };
   } catch (error) {
     return failure(error);
@@ -93,9 +95,12 @@ function send(res: ServerResponse, out: { status: number; body: unknown }): void
 export function attachDecisionRoutes(registry: RouteRegistry, deps: DecisionRouteDeps): void {
   registry.attachHandler('decisions.list', async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+    const limitRaw = url.searchParams.get('limit');
+    const limit = limitRaw && Number.isFinite(Number(limitRaw)) ? Number(limitRaw) : undefined;
     send(res, handleDecisionList({
       projectDir: url.searchParams.get('projectDir') ?? undefined,
       goalId: url.searchParams.get('goalId') ?? undefined,
+      limit,
     }, deps));
   });
 

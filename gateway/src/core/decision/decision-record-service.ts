@@ -21,6 +21,8 @@ const MAX_QUESTION = 500;
 const MAX_TEXT = 4000;
 const MAX_OPTIONS = 8;
 const MAX_EVIDENCE = 12;
+const DEFAULT_LIST_LIMIT = 200;
+const MAX_LIST_LIMIT = 500;
 
 export class DecisionRecordError extends Error {
   constructor(readonly status: number, message: string) {
@@ -33,6 +35,7 @@ export interface DecisionRecordServiceDeps {
   mafwDir(projectDir: string): string | null;
   now?: () => string;
   id?: () => string;
+  warn?: (message: string) => void;
 }
 
 /** Registry keys are stored raw; compare canonically so case/trailing-separator
@@ -152,7 +155,10 @@ export class DecisionRecordService {
 
   private dir(projectDir: string): string {
     const mafwDir = this.deps.mafwDir(projectDir);
-    if (!mafwDir) throw new DecisionRecordError(503, 'project is not registered');
+    if (!mafwDir) {
+      this.deps.warn?.(`decision records: project is not registered: ${projectDir}`);
+      throw new DecisionRecordError(503, 'project is not registered');
+    }
     return path.join(mafwDir, 'decisions');
   }
 
@@ -179,7 +185,7 @@ export class DecisionRecordService {
     return record;
   }
 
-  list(projectDir: string, goalId?: string): DecisionRecord[] {
+  list(projectDir: string, goalId?: string, opts: { limit?: number } = {}): DecisionRecord[] {
     let dir: string;
     try {
       dir = this.dir(projectDir);
@@ -199,7 +205,12 @@ export class DecisionRecordService {
         /* ignore unreadable records */
       }
     }
-    return items.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    const requested = Number.isInteger(opts.limit) && Number(opts.limit) > 0
+      ? Math.min(Number(opts.limit), MAX_LIST_LIMIT)
+      : DEFAULT_LIST_LIMIT;
+    return items
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .slice(0, requested);
   }
 
   draft(input: DecisionDraftInput): DecisionRecord {
@@ -237,8 +248,12 @@ export class DecisionRecordService {
     const next: DecisionRecord = {
       ...record,
       status: 'decided',
-      rationale: optionalText(input.rationale, 'rationale', MAX_TEXT) ?? record.rationale,
-      consequences: optionalText(input.consequences, 'consequences', MAX_TEXT) ?? record.consequences,
+      rationale: input.rationale !== undefined
+        ? optionalText(input.rationale, 'rationale', MAX_TEXT)
+        : record.rationale,
+      consequences: input.consequences !== undefined
+        ? optionalText(input.consequences, 'consequences', MAX_TEXT)
+        : record.consequences,
       reviewAt: dateText(input.reviewAt, 'reviewAt', false) ?? record.reviewAt,
       decidedBy: 'user',
       decidedAt: at,

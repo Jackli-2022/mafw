@@ -1312,6 +1312,7 @@ export class MafwClient implements IMafwClient {
       const search = new URLSearchParams()
       if (query.projectDir) search.set('projectDir', query.projectDir)
       if (query.goalId) search.set('goalId', query.goalId)
+      if (query.limit !== undefined) search.set('limit', String(query.limit))
       const suffix = search.toString()
       return this.request<DecisionList>(`/api/decisions${suffix ? `?${suffix}` : ''}`)
     },

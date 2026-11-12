@@ -1590,7 +1590,7 @@ export interface DecisionReopenInput {
 }
 
 export interface DecisionsNamespace {
-  list(query?: { projectDir?: string; goalId?: string }): Promise<DecisionList>
+  list(query?: { projectDir?: string; goalId?: string; limit?: number }): Promise<DecisionList>
   draft(body: DecisionDraftInput): Promise<{ record: DecisionRecord }>
   confirm(id: string, body: DecisionConfirmInput & { actorSessionID?: string }): Promise<{ record: DecisionRecord }>
   shelve(id: string, body: DecisionShelveInput & { actorSessionID?: string }): Promise<{ record: DecisionRecord }>

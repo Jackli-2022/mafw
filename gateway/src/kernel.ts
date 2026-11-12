@@ -4049,6 +4049,7 @@ class MafwScheduler {
     const leadTopics = new LeadTopicStore(this.getGatewayDb().getStore());
     this.decisionRecords = new DecisionRecordService({
       mafwDir: (projectDir) => findMafwDirForProject(this.registeredProjects, projectDir, canonicalProjectDir),
+      warn: (message) => log.warn(message),
     });
     const leadTopicIndex = new TopicMessageIndexStore(this.getGatewayDb().getStore());
     const topicForks = new TopicForkStore(this.getGatewayDb().getStore());

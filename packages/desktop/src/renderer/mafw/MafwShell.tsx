@@ -434,7 +434,7 @@ export function MafwShell() {
   const decisionStore = createDecisionStore({
     api: {
       attention: (dir) => window.api.mafw.attention.list(dir),
-      decisions: (dir) => window.api.mafw.decisions.list({ projectDir: dir }),
+      decisions: (dir) => window.api.mafw.decisions.list({ projectDir: dir, limit: 200 }),
       confirm: (id, input) => window.api.mafw.decisions.confirm(id, input),
       shelve: (id, input) => window.api.mafw.decisions.shelve(id, input),
       reopen: (id, input) => window.api.mafw.decisions.reopen(id, input),
@@ -472,7 +472,8 @@ export function MafwShell() {
     const detail = podStore.detail()
     void podStore.reviewRevision()
     if (!dir || !detail) return
-    void decisionStore.refresh()
+    const timer = setTimeout(() => { void decisionStore.refresh() }, 250)
+    onCleanup(() => clearTimeout(timer))
   })
   // 决定记录可能由 MCP 在 Pod 静默时写入；15s 兜底刷新，不依赖 Pod 事件。
   createEffect(() => {
@@ -2023,6 +2024,7 @@ export function MafwShell() {
   const [focusOpenRequest, setFocusOpenRequest] = createSignal<FocusOpenRequest | null>(null)
   const [instrumentRailOpen, setInstrumentRailOpen] = createSignal(true)
   let focusOpenNonce = 0
+  let decisionFocusSeq = 0
   const requestFocusOpen = (root: string, rel: string, line?: number) => {
     focusOpenNonce += 1
     setFocusOpenRequest({ root, rel, nonce: focusOpenNonce, line })
@@ -2602,7 +2604,7 @@ export function MafwShell() {
     intent === "editing" ? "edit" : "read"
   const focusScope = (): Scope => focusScopeFromContent(contentScope())
   const focusScopeLabel = (scope: Scope): string =>
-    scope.kind === "world" ? "项目文件" : `Goal · rev ${scope.revision}`
+    scope.kind === "world" ? "项目文件" : "Goal"
   const focusFrame = createMemo<FrameView | null>(() => {
     const focus = activeFocus()
     if (!focus) return null
@@ -2690,6 +2692,7 @@ export function MafwShell() {
     }
   }
   const openGoalFocus = (goalId: string, focus: GoalDetailFocus = "timeline") => {
+    decisionFocusSeq += 1
     const project = currentProject()
     if (!project) return
     const goal = podStore.detail()?.goals.find((item) => item.goalId === goalId)
@@ -2734,7 +2737,9 @@ export function MafwShell() {
     if (!focus || focus.scope.kind !== "goal") return
     const scope = focus.scope
     const project = scope.worldId
+    const seq = ++decisionFocusSeq
     void resolveGoalWorktreeDir(podIdForCurrentProject(), scope.goalId, project).then((worktreeDir) => {
+      if (seq !== decisionFocusSeq) return
       if (currentProject() !== project) return
       setFocusState((state) =>
         applyChangeSetFocus(
@@ -2762,7 +2767,9 @@ export function MafwShell() {
     if (!project) return
     const goal = podStore.detail()?.goals.find((item) => item.goalId === input.goalId)
     const revision = input.revision ?? (goal ? (goalRevisionOf(goal) ?? goal.activeRevision ?? goal.revision ?? 1) : 1)
+    const seq = ++decisionFocusSeq
     void resolveGoalWorktreeDir(podIdForCurrentProject(), input.goalId, project).then((worktreeDir) => {
+      if (seq !== decisionFocusSeq) return
       if (currentProject() !== project) return
       const next = applyReviewFocus(
         focusState(),

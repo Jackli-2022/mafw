@@ -33,11 +33,18 @@ test("decision actions open the goal and the plan overlay", () => {
   assert.match(shell, /openDecisionGoal/)
   assert.match(shell, /openReviewAnchorToFocus/)
   assert.match(shell, /setGoalPlanOpenRequest/)
+  assert.match(shell, /let decisionFocusSeq = 0/)
+  assert.match(shell, /seq !== decisionFocusSeq/)
   assert.match(shell, /setGoalPlanOpenRequest\(\{ nonce: \(goalPlanOpenRequest\(\)\?\.nonce \?\? 0\) \+ 1, goalId \}\)/)
   assert.match(shell, /planOpenRequest=\{goalPlanOpenRequest\(\)\}/)
   assert.match(read("src/renderer/mafw/components/GoalDetailPanel.tsx"), /planOpenRequest\?: PlanOpenRequest \| null/)
   assert.match(read("src/renderer/mafw/components/GoalDetailPanel.tsx"), /shouldOpenPlan/)
   assert.match(read("src/renderer/mafw/components/GoalDetailPanel.tsx"), /setPlanOpen\(true\)/)
+})
+
+test("Goal frame keeps revision in the badge only", () => {
+  assert.match(shell, /scope\.kind === "world" \? "项目文件" : "Goal"/)
+  assert.doesNotMatch(shell, /Goal · rev \$\{scope\.revision\}/)
 })
 
 test("decision board CSS uses tokens and never floats over the frame", () => {

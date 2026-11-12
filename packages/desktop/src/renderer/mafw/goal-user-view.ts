@@ -183,6 +183,6 @@ export function executionBadgeFor(
     const done = Number.isFinite(progress.done) ? Math.max(0, Math.floor(progress.done)) : 0
     return { label: `${done}/${Math.floor(progress.total)}`, tone: "neutral" }
   }
-  if (stageKind) return { label: stageKind, tone: "neutral" }
+  if (stageKind) return { label: STAGE_STATUS[stageKind] ?? stageKind, tone: "neutral" }
   return null
 }
