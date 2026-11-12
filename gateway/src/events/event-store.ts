@@ -120,6 +120,40 @@ export class EventStore {
     }
   }
 
+  /**
+   * E5b-1：恢复源分页（spec §3.1）——`seq > since` 升序、最多 `limit` 行。
+   *
+   * 与 `replaySince` 的 newest-window（降序取尾再 reverse）互补：恢复面要求从游标
+   * 向后**连续**读，并由调用方依据 `oldestSeq`（MIN(seq)，空表 0）判定 truncated。
+   * 不做裁剪、不重置 `appendCount`（摊销节奏不因读操作改变）。
+   *
+   * 入参防御：`since`/`limit` 由路由校验；此处仍夹一次，避免非有限值落到 SQLite
+   * （`LIMIT -1` = 无限，会把整表读进内存）。非有限 → `since=0` / `limit=1`。
+   * fail-open：任何 DB 异常 → 空 rows + 0/0（与 `replaySince` 同 stance）。
+   */
+  replayAfter(since: number, limit: number): { rows: StoredEnvelope[]; headSeq: number; oldestSeq: number } {
+    const from = Number.isFinite(since) ? Math.max(0, Math.floor(since)) : 0;
+    const cap = Number.isFinite(limit) ? Math.max(1, Math.floor(limit)) : 1;
+    try {
+      const bounds = this.db
+        .prepare('SELECT COALESCE(MAX(seq), 0) AS head, COALESCE(MIN(seq), 0) AS oldest FROM event_log')
+        .get() as { head: number; oldest: number };
+      const raw = this.db
+        .prepare('SELECT seq, ts, type, session_id, envelope FROM event_log WHERE seq > ? ORDER BY seq ASC LIMIT ?')
+        .all(from, cap) as Array<{ seq: number; ts: string; type: string; session_id: string | null; envelope: string }>;
+      const rows = raw.map(r => ({
+        seq: r.seq,
+        ts: r.ts,
+        type: r.type,
+        sessionId: r.session_id,
+        envelope: JSON.parse(r.envelope),
+      }));
+      return { rows, headSeq: bounds.head, oldestSeq: bounds.oldest };
+    } catch {
+      return { rows: [], headSeq: 0, oldestSeq: 0 };
+    }
+  }
+
   /** 摊销裁剪：每 everyN 次 append 检查一次，保留最新 retention 行。异常吞掉（C5）。 */
   maybePrune(retention: number, everyN = 1000): void {
     if (this.appendCount < everyN) return;

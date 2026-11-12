@@ -6850,6 +6850,95 @@
         }
       }
     },
+    "/api/events/replay": {
+      "get": {
+        "operationId": "event.replay",
+        "tags": [
+          "internal"
+        ],
+        "summary": "event_log paginated recovery",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "events",
+                    "headSeq",
+                    "oldestSeq",
+                    "hasMore",
+                    "nextSince",
+                    "reset",
+                    "truncated"
+                  ],
+                  "properties": {
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "seq",
+                          "ts",
+                          "type",
+                          "sessionId",
+                          "envelope"
+                        ],
+                        "properties": {
+                          "seq": {
+                            "type": "number"
+                          },
+                          "ts": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "sessionId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "envelope": {
+                            "additionalProperties": true,
+                            "type": "object",
+                            "properties": {}
+                          }
+                        }
+                      }
+                    },
+                    "headSeq": {
+                      "type": "number"
+                    },
+                    "oldestSeq": {
+                      "type": "number"
+                    },
+                    "hasMore": {
+                      "type": "boolean"
+                    },
+                    "nextSince": {
+                      "type": "number"
+                    },
+                    "reset": {
+                      "type": "boolean"
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/mobile/media/tasks/{id}/ask": {
       "post": {
         "operationId": "mobile.mediaTaskAsk",

@@ -84,6 +84,7 @@ import { attachPodsEventsRoutes } from '../routes/pods-events-dispatch';
 import { attachMcpMgmtRoutes } from '../routes/mcp-mgmt';
 import { attachManagerSessionRoutes } from '../routes/manager-session';
 import { attachEventsSseRoutes } from '../routes/events-sse';
+import { attachEventsReplayRoute } from '../routes/events-replay';
 import { attachKernelStatsRoute } from '../routes/kernel-stats';
 import type { TimerService } from '../core/timer-service';
 import type { ConnectionTable } from '../resources/connections';
@@ -937,6 +938,10 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
     }),
     // E4-1: 保活登记到命名台账（每连接 sse:ping:<id>），关流即清。
     timers: () => deps.timers,
+  });
+  // E5b-1：event_log 升序恢复源（internal；与 SSE 共享同一个 live store）。
+  attachEventsReplayRoute(deps.routeRegistry, {
+    eventStore: () => deps.eventStore,
   });
   // code-first P0 试点：schema 是响应事实源，handler 返回数据（不写 res）。
   attachTypedRoute(deps.routeRegistry, {

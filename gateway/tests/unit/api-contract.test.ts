@@ -271,6 +271,26 @@ describe('api-contract: response schemas（E3-6 四个读接口）', () => {
     }
   });
 
+  test('E5b event.replay 的 200 响应带 event_log 恢复 schema（internal）', () => {
+    let op: any = null;
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const candidate of Object.values<any>(methods)) {
+        if (candidate?.operationId === 'event.replay') op = candidate;
+      }
+    }
+    expect(op).not.toBeNull();
+    expect(op.tags).toContain('internal');
+    const schema = op.responses?.['200']?.content?.['application/json']?.schema;
+    expect(schema).toBeDefined();
+    // 客户端循环/全量重拉判定依赖这些字段，少一个就无法决定是否补齐。
+    for (const field of ['events', 'headSeq', 'oldestSeq', 'hasMore', 'nextSince', 'reset', 'truncated']) {
+      expect({ field, present: Object.prototype.hasOwnProperty.call(schema.properties ?? {}, field) })
+        .toEqual({ field, present: true });
+    }
+    const item = schema.properties.events.items;
+    expect(item.required).toEqual(expect.arrayContaining(['seq', 'ts', 'type', 'sessionId', 'envelope']));
+  });
+
   test('E4-8 真实 builder 快照通过 KernelStatsResponse 校验（shape 不漂移）', () => {
     const input: KernelStatsInput = {
       uptimeSec: 12,

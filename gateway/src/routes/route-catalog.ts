@@ -31,6 +31,7 @@ import {
   UsageSummaryResponse,
 } from './schemas/read-models';
 import { KernelStatsResponse } from './schemas/resources';
+import { EventReplayResponse } from './schemas/events';
 
 /**
  * SDK-facing 端点（catalog → gateway-paths → openapi 单向生成；**在此新增**后必须重跑
@@ -351,6 +352,16 @@ const NON_SDK_ROUTES: RouteDef[] = [
     summary: 'resource ledger snapshot',
     tags: ['internal'],
     response: KernelStatsResponse,
+  },
+  // E5b-1：event_log 升序分页恢复源（mobile 重连补齐 / 运维诊断面；internal）。
+  // 与 /api/events（SSE，newest-window）互补，不进 @mafw/sdk 调用面。
+  {
+    method: 'GET',
+    path: '/api/events/replay',
+    operationId: 'event.replay',
+    summary: 'event_log paginated recovery',
+    tags: ['internal'],
+    response: EventReplayResponse,
   },
   // 移动端（P5 Wave 2 反向审计后全量登记）
   { method: 'POST', path: '/api/mobile/media/tasks/:id/ask', operationId: 'mobile.mediaTaskAsk', tags: ['internal'] },
