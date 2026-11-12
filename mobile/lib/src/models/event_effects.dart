@@ -58,6 +58,13 @@ const Map<String, ChatEventEffects> kChatEventEffectTable = {
 ChatEventEffects chatEventEffects(String innerType) =>
     kChatEventEffectTable[innerType] ?? ChatEventEffects.none;
 
+/// Whether a frame may drive the live chat turn (writing / terminal phase).
+///
+/// Replay-recovered frames can be older than the send currently in flight, so
+/// they still refresh history but never mutate `_sending` / `_phase` (E5b
+/// review F2). Live frames and seq-less deltas remain phase drivers.
+bool drivesLiveTurn(MafwEvent event) => !event.recovered;
+
 /// Canonical inner events that mean the session list changed.
 const Set<String> kSessionRefreshEventTypes = {
   'session.created',

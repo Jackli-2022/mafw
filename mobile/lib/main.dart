@@ -21,8 +21,10 @@ import 'src/services/active_project.dart';
 import 'src/services/connection_events.dart';
 import 'src/services/connectivity_watcher.dart';
 import 'src/services/diagnostics.dart';
+import 'src/services/event_recovery.dart';
 import 'src/services/lifecycle_ws.dart';
 import 'src/services/push_service.dart';
+import 'src/services/recovery_coordinator.dart';
 import 'src/services/work_refresh_bus.dart';
 import 'src/theme.dart';
 
@@ -59,7 +61,12 @@ Future<void> main() async {
 
 class MafwMobileApp extends StatefulWidget {
   final ConnectionConfig? initialConfig;
-  const MafwMobileApp({super.key, this.initialConfig});
+
+  /// Test seam: production uses [SharedPrefsEventCursorStore]. A delayed store
+  /// lets the widget test cover disposal while `recovery.init()` is in flight.
+  final EventCursorStore? cursorStore;
+
+  const MafwMobileApp({super.key, this.initialConfig, this.cursorStore});
 
   @override
   State<MafwMobileApp> createState() => _MafwMobileAppState();
@@ -72,6 +79,11 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
   ConnectionConfig? _config;
   GatewayClient? _client;
   WsClientV2? _ws;
+
+  /// E5b-3: event-log cursor + replay. [EventRecoveryService] persists `lastSeq`
+  /// (SharedPreferences) and replays missed frames into [WsClientV2.emitRecovered];
+  /// [RecoveryCoordinator] orders "replay, then refresh" per `connected` greeting.
+  EventRecoveryService? _recovery;
   PushService? _pushService;
   ConnectivityWatcher? _connectivityWatcher;
   LifecycleWsManager? _lifecycleManager;
@@ -123,6 +135,9 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
 
   @override
   void dispose() {
+    // Best-effort cursor flush: the last live seqs may still sit inside the
+    // service's 250 ms persist window.
+    unawaited(_recovery?.flush() ?? Future<void>.value());
     _sessionCache.dispose();
     _lifecycleManager?.dispose();
     _connectivityWatcher?.dispose();
@@ -148,6 +163,9 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
     _connectivityWatcher = null;
     _lifecycleManager?.dispose();
     _lifecycleManager = null;
+    // Persist the cursor before dropping the old recovery service.
+    unawaited(_recovery?.flush() ?? Future<void>.value());
+    _recovery = null;
     _ws?.dispose();
     _wsStatusSub?.cancel();
     _wsEventsSub?.cancel();
@@ -173,13 +191,19 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
     }
 
     final client = GatewayClient(cfg, diagnostics: _diagnostics);
+    // Gateway-ready hook (E5b-3): every `connected` greeting carries
+    // `headSeq`/`instanceId`, so recovery can baseline (first connect) or replay
+    // missed events (reconnect) *before* the surfaces refetch. Late-bound
+    // coordinator: the socket is constructed before the recovery service.
+    RecoveryCoordinator? coordinator;
     final ws = WsClientV2(
       cfg,
       onRawFrame: _diagnostics?.recordWsFrame,
-      // Reconnect hook (Task 5): events missed while offline are not replayed,
-      // so every live surface refetches once per re-handshake — the work tab
-      // through its refresh bus, open pages through [ConnectionEvents].
-      onReconnected: _onReconnected,
+      onGatewayReady: (greeting, isReconnect) {
+        final c = coordinator;
+        if (c == null) return Future<void>.value();
+        return c.handle(greeting, isReconnect: isReconnect);
+      },
     );
     // Restore the persisted reconnect budget before the first attempt so a
     // retry budget exhausted before an app kill is honoured after relaunch.
@@ -194,16 +218,57 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
       return;
     }
 
+    // Event-log cursor + replay (E5b-3). Recovered frames re-enter the live WS
+    // stream, so `seq` dedupe covers both delivery orders.
+    final recovery = EventRecoveryService(
+      fetch: (since, limit) =>
+          client.replayEvents(since: since, limit: limit),
+      cursorStore: widget.cursorStore ?? SharedPrefsEventCursorStore(),
+      emit: ws.emitRecovered,
+      onFallback: (reason) => debugPrint(
+        '[MAFW] event replay fell back (${reason.name}) — full reload follows',
+      ),
+    );
+    try {
+      await recovery.init();
+    } catch (e) {
+      // No persisted cursor: behave like a first connect (fresh baseline).
+      debugPrint('[MAFW] event cursor load failed (offlineable): $e');
+    }
+    // `recovery.init()` awaits SharedPreferences; the widget may be gone (or a
+    // newer config may have taken over) by now. Never touch state or start
+    // observers from a stale attempt.
+    if (!mounted) {
+      ws.dispose();
+      client.dispose();
+      return;
+    }
+    coordinator = RecoveryCoordinator(
+      recovery: recovery,
+      // Same fan-out as the old `onReconnected` hook (work tab bus + every open
+      // page), now running only after replay completed.
+      onRefresh: () async {
+        _workRefresh.onReconnected();
+        _connectionEvents.onReconnected();
+      },
+      onFullReload: _refreshSessions,
+    );
+
     _wsStatusSub = ws.connectionStatus.listen((ok) {
       if (mounted) setState(() => _wsConnected = ok);
     });
     // 工作 tab 的数据刷新入口：只有会改变工作面的帧才触发（总线内过滤）。
-    _wsEventsSub = ws.events.listen(_workRefresh.onEvent);
+    // 同一订阅顺带推进恢复游标（live 帧的 seq 是幂等消费的基线）。
+    _wsEventsSub = ws.events.listen((event) {
+      recovery.observe(event);
+      _workRefresh.onEvent(event);
+    });
 
     setState(() {
       _config = cfg;
       _client = client;
       _ws = ws;
+      _recovery = recovery;
       _connecting = false;
     });
 
@@ -214,8 +279,11 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
         await ws.reconnect();
       },
       onDisconnect: () async {
-        // Close socket but keep the client alive (dispose would kill streams)
+        // Close socket but keep the client alive (dispose would kill streams).
         ws.disconnect();
+        // Freeze the replay cursor before the process may be killed in the
+        // background (background isolates can be reclaimed at any time).
+        await recovery.flush();
       },
     );
 
@@ -244,13 +312,8 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
     _pushService = pushService;
   }
 
-  /// 重连成功：断线期间的 WS 事件不会重放，工作面与所有已打开的实时页面
-  /// 都必须在一次重握手后重拉（final fix wave Finding 1）。
-  void _onReconnected() {
-    _workRefresh.onReconnected();
-    _connectionEvents.onReconnected();
-  }
-
+  /// 重连成功后的刷新由 [RecoveryCoordinator] 驱动（E5b-3）：先补齐 replay，
+  /// 再跑工作 bus + 已打开页面的重连信号（原 `onReconnected` 的扇出）。
   Future<void> _refreshSessions() async {
     final c = _client;
     if (c == null) return;

@@ -846,6 +846,50 @@ class GatewayClient {
     return out;
   }
 
+  // ── Events (E5b replay-based recovery) ──
+
+  /// `GET /api/events/replay?since=N&limit=M` — event_log pages in seq order.
+  ///
+  /// Returns `null` when the gateway cannot serve replay (404 from an old build,
+  /// an HTML 200 from a reverse proxy/SPA fallback, or 503 when the event store
+  /// is unavailable): the caller falls back to a full reload. A 400 is a client
+  /// bug (bad `since`/`limit`) and is thrown instead of retried. Any other
+  /// non-2xx status also throws. The request times out after [timeout] (10s by
+  /// default) so a stalled gateway cannot block reconnect recovery forever.
+  Future<EventReplayPage?> replayEvents({
+    required int since,
+    int limit = 500,
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
+    final res = await _get(
+      _uri('/api/events/replay', {'since': '$since', 'limit': '$limit'}),
+      timeout: timeout,
+    );
+    if (res.statusCode == 404 || res.statusCode == 503) return null;
+    if (res.statusCode == 400) {
+      throw GatewayException(
+        'replayEvents: HTTP 400',
+        statusCode: 400,
+        errorBody: utf8.decode(res.bodyBytes, allowMalformed: true),
+      );
+    }
+    if (res.statusCode != 200) {
+      throw GatewayException(
+        'replayEvents: HTTP ${res.statusCode}',
+        statusCode: res.statusCode,
+      );
+    }
+
+    final text = utf8.decode(res.bodyBytes, allowMalformed: true);
+    final contentType = res.headers['content-type'] ?? '';
+    if (contentType.contains('text/html') || text.trimLeft().startsWith('<')) {
+      return null; // HTML = no replay endpoint behind this URL.
+    }
+    final decoded = jsonDecode(text);
+    if (decoded is! Map<String, dynamic>) return null;
+    return EventReplayPage.fromJson(decoded);
+  }
+
   // ── Triage ──
 
   Future<List<Map<String, dynamic>>> listTriageItems() async {

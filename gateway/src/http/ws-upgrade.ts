@@ -61,6 +61,13 @@ export interface WsHubDeps {
    * null = no persistent event store (live-only deployment).
    */
   headSeq?: () => number | null;
+  /**
+   * E5b-3: gateway instance id (event-log epoch) for the `connected` greeting.
+   * Clients persist it with their replay cursor so a cold start against a
+   * different instance/event log discards a cursor that would reset-loop.
+   * `null` = no release metadata (or absent) — the field is still emitted.
+   */
+  instanceId?: () => string | null;
   /** E4-4: live 连接表；缺省 = 不限制（向后兼容）。 */
   connections?: () => ConnectionTable | null;
   /** E4-5: WS 出站缓冲聚合计数（与 EventHub 共享）。 */
@@ -221,6 +228,9 @@ export function createWsHub(server: http.Server, deps: WsHubDeps): WsHub {
       // E2-4: live-only channel — headSeq marks where live delivery resumes;
       // replay/reconnect is the SSE cursor's or REST snapshot's job.
       headSeq: deps.headSeq?.() ?? null,
+      // E5b-3: event-log epoch marker (always present, additive). Clients pair
+      // it with their persisted cursor: a different instance = new epoch.
+      instanceId: deps.instanceId?.() ?? null,
     });
     // E4-5: 只有 kernel 注入上限时才检查背压，缺省保持旧的 `ws.send`。
     if (deps.wsMaxBufferedBytes) {

@@ -5591,6 +5591,13 @@ class MafwScheduler {
           // E2-4: WS is live-only; connected.headSeq is informational and the
           // reconnect path is SSE cursor / REST snapshot (never WS replay).
           headSeq: () => this.eventStore?.headSeq() ?? null,
+          // E5b-3: event-log epoch for the mobile replay cursor. Live getter on
+          // purpose: the hub must never capture a null identity at attach time
+          // (non-boot entrypoints, tests), so the greeting reads whatever boot
+          // has loaded by the time a client connects.
+          instanceId: () => (this.releaseMetadata && this.runtimeIdentity
+            ? this.runtimeIdentity.instanceId
+            : null),
           // E4-4/E4-5：upgrade 准入（ws/voice/terminal 名额）+ greeting 背压 +
           // 与 EventHub 共享的出站缓冲台账。
           connections: () => this.connections,

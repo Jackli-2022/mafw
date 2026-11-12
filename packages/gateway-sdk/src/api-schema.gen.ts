@@ -4062,6 +4062,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/events/replay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** event_log paginated recovery */
+        get: operations["event.replay"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/mobile/media/tasks/{id}/ask": {
         parameters: {
             query?: never;
@@ -10437,6 +10454,42 @@ export interface operations {
                             running: boolean;
                             owned: boolean;
                         };
+                    };
+                };
+            };
+        };
+    };
+    "event.replay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        events: {
+                            seq: number;
+                            ts: string;
+                            type: string;
+                            sessionId: string | null;
+                            envelope: {
+                                [key: string]: unknown;
+                            };
+                        }[];
+                        headSeq: number;
+                        oldestSeq: number;
+                        hasMore: boolean;
+                        nextSince: number;
+                        reset: boolean;
+                        truncated: boolean;
                     };
                 };
             };

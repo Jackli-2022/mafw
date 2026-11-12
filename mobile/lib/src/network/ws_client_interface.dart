@@ -6,6 +6,10 @@
 /// is a one-line swap for every consumer.
 ///
 /// See `mobile/BRAINSTORMING_V2.md` §5.1 (方案 A) for the rationale.
+///
+/// Recovery/replay hooks are intentionally **not** part of this interface: the
+/// event-log cursor + `onGatewayReady` wiring is concrete-client config used by
+/// `main.dart`, while pages keep consuming only [events].
 library;
 
 import '../models/mafw_models.dart';

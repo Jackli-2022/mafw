@@ -223,8 +223,9 @@ class _ChatPageState extends State<ChatPage> {
     // 事件语义查表（`models/event_effects.dart`，表驱动测试覆盖全词表）。
     final effects = chatEventEffects(ev.innerType);
 
-    // Perplexity 式阶段驱动：part 增量 → writing；回合终态 → 完成
-    if (_sending) {
+    // Perplexity 式阶段驱动：part 增量 → writing；回合终态 → 完成。
+    // 回放帧可能早于当前正在发送的回合，只刷新历史，不改 live 阶段。
+    if (drivesLiveTurn(ev) && _sending) {
       debugPrint('[MAFW] phase ev: ${ev.innerType} session=${ev.sessionID} '
           'sending=$_sending phase=$_phase');
       if (effects.writing) {

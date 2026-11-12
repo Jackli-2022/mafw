@@ -281,6 +281,9 @@ const Set<String> kMafwFlatEventTypes = {
   'connected',
 };
 
+/// WS greeting frame type (always flat, carries `headSeq` / `instanceId`).
+const String kMafwGreetingType = 'connected';
+
 /// WS/SSE event frame.
 ///
 /// Canonical frames are envelopes:
@@ -308,13 +311,37 @@ class MafwEvent {
   /// `data.sessionID`, falling back to the canonical `properties.message.sessionID`.
   final String? sessionID;
 
+  /// Monotonic gateway event seq (SSE `id:` / WS top-level `seq` / canonical
+  /// `data.seq` / replay column `seq`). Null for transient frames such as
+  /// `message.part.delta`, which are never persisted and must not advance a
+  /// replay cursor.
+  final int? seq;
+
+  /// True when this frame was replayed from the event log rather than received
+  /// live. Recovered frames may refresh content, but must not drive a live
+  /// turn's phase / sending state (E5b review F2).
+  final bool recovered;
+
   MafwEvent({
     required this.type,
     this.innerType = '',
     this.data = const {},
     this.properties,
     this.sessionID,
+    this.seq,
+    this.recovered = false,
   });
+
+  /// Mark this frame as replay-recovered without changing its wire identity.
+  MafwEvent asRecovered() => MafwEvent(
+        type: type,
+        innerType: innerType,
+        data: data,
+        properties: properties,
+        sessionID: sessionID,
+        seq: seq,
+        recovered: true,
+      );
 
   bool get isCanonical => innerType.isNotEmpty;
 
@@ -382,16 +409,49 @@ class MafwEvent {
   /// 1-based attempt number (watchdog retries increment it).
   int? get attempt => _flatInt('attempt');
 
+  /// Gateway event seq as carried by the `connected` greeting (`data.headSeq`).
+  ///
+  /// Only the greeting carries it: canonical envelopes keep their own `data`
+  /// map and must not surface unrelated top-level keys.
+  int? get headSeq {
+    if (type != kMafwGreetingType) return null;
+    final value = data['headSeq'];
+    return value is num ? value.toInt() : null;
+  }
+
+  /// Gateway instance id (event-log epoch) from the `connected` greeting.
+  ///
+  /// Persisted next to the replay cursor: a different instance means a new event
+  /// log, so a stale cursor is discarded instead of reset-looping.
+  String? get instanceId {
+    if (type != kMafwGreetingType) return null;
+    final value = data['instanceId'];
+    return value is String && value.isNotEmpty ? value : null;
+  }
+
+  /// Top-level `seq` wins; canonical envelopes may instead carry it in
+  /// `data.seq`. Flat broadcasts keep the frame as [data], so both paths are
+  /// the same map for them.
+  static int? _seqOf(Map<String, dynamic> frame, Map<String, dynamic> data) {
+    final top = frame['seq'];
+    if (top is num) return top.toInt();
+    final inner = data['seq'];
+    if (inner is num) return inner.toInt();
+    return null;
+  }
+
   factory MafwEvent.fromJson(Map<String, dynamic> j) {
     final type = (j['type'] ?? '').toString();
     final rawData = j['data'];
     final data = rawData is Map<String, dynamic> ? rawData : const <String, dynamic>{};
+    final seq = _seqOf(j, data);
     if (type != kMafwEventEnvelope) {
       // Flat broadcast: keep the frame itself so its top-level payload fields
       // stay readable; `innerType` remains empty (not a canonical envelope).
       return MafwEvent(
         type: type,
         data: kMafwFlatEventTypes.contains(type) ? j : const <String, dynamic>{},
+        seq: seq,
       );
     }
 
@@ -408,6 +468,68 @@ class MafwEvent {
       properties: properties,
       sessionID: (data['sessionID'] as String?) ??
           (message is Map<String, dynamic> ? message['sessionID'] as String? : null),
+      seq: seq,
     );
   }
+}
+
+/// One `GET /api/events/replay` page (E5b).
+///
+/// Wire shape: `gateway/src/routes/events-replay.ts` —
+/// `{events:[{seq, ts, type, sessionId, envelope}], headSeq, oldestSeq, hasMore,
+/// nextSince, reset, truncated}`. `reset` / `truncated` mean the client must
+/// fall back to a full reload; `nextSince` is the loop cursor for `hasMore`.
+class EventReplayPage {
+  final List<MafwEvent> events;
+  final int headSeq;
+  final int oldestSeq;
+  final bool hasMore;
+  final int nextSince;
+  final bool reset;
+  final bool truncated;
+
+  const EventReplayPage({
+    required this.events,
+    required this.headSeq,
+    this.oldestSeq = 0,
+    required this.hasMore,
+    required this.nextSince,
+    this.reset = false,
+    this.truncated = false,
+  });
+
+  factory EventReplayPage.fromJson(Map<String, dynamic> j) {
+    final rawEvents = j['events'];
+    final events = <MafwEvent>[];
+    if (rawEvents is List) {
+      for (final raw in rawEvents) {
+        if (raw is! Map<String, dynamic>) continue;
+        final rawEnvelope = raw['envelope'];
+        final frame = <String, dynamic>{
+          if (rawEnvelope is Map<String, dynamic>) ...rawEnvelope,
+        };
+        // Column projections win: replay items always carry their cursor even
+        // when the stored envelope predates `seq` (flat broadcasts).
+        final seq = raw['seq'];
+        if (seq is num) frame['seq'] = seq.toInt();
+        final ts = raw['ts'];
+        if (ts is String) frame['timestamp'] = ts;
+        if (!frame.containsKey('type') && raw['type'] is String) {
+          frame['type'] = raw['type'];
+        }
+        events.add(MafwEvent.fromJson(frame));
+      }
+    }
+    return EventReplayPage(
+      events: events,
+      headSeq: _intOf(j['headSeq']),
+      oldestSeq: _intOf(j['oldestSeq']),
+      hasMore: j['hasMore'] == true,
+      nextSince: _intOf(j['nextSince']),
+      reset: j['reset'] == true,
+      truncated: j['truncated'] == true,
+    );
+  }
+
+  static int _intOf(Object? value) => value is num ? value.toInt() : 0;
 }

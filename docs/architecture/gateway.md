@@ -694,7 +694,7 @@ D3 Task 3 的 5 → Task 4 的 0）。D3-R2 把 `.match` / `.startsWith` 纪律�
 （exact 12 + prefix 6 + artifact slot 1），dashboard 的 5 个在 `subsystems/dashboard-legacy.ts`
 钉扎；`/api/ws` 不在 HTTP 链上（`http/ws-upgrade.ts`）。
 
-**WS 是 live-only 通道（E2-4）**：`connected` 帧携带 `headSeq`（event store 缺失时为 `null`），仅用于标识实时流的衔接位置；WS **不回放**，重连恢复必须走 SSE 游标（`?since` / `Last-Event-ID`）或 REST 快照，移动端"重连即全量"路径保持不变。
+**WS 是 live-only 通道（E2-4）**：`connected` 帧携带 `headSeq`（event store 缺失时为 `null`），仅用于标识实时流的衔接位置；WS 本身**不回放**，重连恢复走 SSE 游标（`?since` / `Last-Event-ID`）、REST 快照，或（E5b 起）`GET /api/events/replay` 的 seq 游标补页——移动端默认「先 replay，补齐不了才全量重拉」。
 
 **D3 验收（spec §7 字面）**：
 
@@ -826,7 +826,7 @@ Phase 3.5 live wiring（2026-11-12，默认关闭）：
 | E2-1 | Mode A SSE greeting 增加 `instanceId` / `schemaEpoch`（来自 `releaseMetadata` / `runtimeIdentity`，`releaseIdentity` live getter 注入）与显式 `reset`。`since > headSeq`（DB 重置 / 旧纪元）→ `reset:true` 且**零回放帧**（此前静默回放 0 条）；reset 与 truncated 互斥且优先。reset 时 `maxReplayed` 归零，新纪元直播 seq 不被陈旧 since 过滤。 | 客户端对 reset 的处理在 E2-2/E2-3；网关不做自动重放。 |
 | E2-2 | SDK `SSEConnection.subscribe(baseUrl, opts?)` / `MafwClient.event.subscribe(opts?)` 支持可选 `cursor { get/set }` 与 `onReplayInfo(info)`：`cursor.get()` 非空 → URL `?since=N`；仅带 SSE `id:` 的帧写回 cursor；connected greeting 回调 `headSeq/firstReplayedSeq/truncated/reset/instanceId/schemaEpoch`。不传 opts 时行为逐字不变。类型 `SseCursor/SseReplayInfo/SseSubscribeOptions` 从 `@mafw/sdk` 导出。 | TUI 启用游标属后续接线；mobile（Dart）游标 deferred。 |
 | E2-3 | desktop SSE 持久化游标：`localStorage['mafw-sse-seq']` + `['mafw-sse-instance']`；重连带 `?since=`。greeting 分级：`reset` / `truncated` / `instanceId` 变化（含旧网关缺失 instanceId）→ 全量重同步（列表 + experience invalidate 及既有 onOpen 块）；干净 resume → **不 invalidate**。每次非首次连接强制补拉活跃会话消息并按 REST 对账状态（`part.delta` 不入 journal，游标回放无法恢复实时文本）。无 localStorage → 退化为每次 open 全量同步。 | reset/instance 变化清游标但保留当前 EventSource；浏览器内部自动重连可能用旧 URL 再次触发（幂等）。 |
-| E2-4 | WS 正式**降级为 live-only**：`connected` 帧携带 `headSeq`（deps getter，无 event store 时 `null`），既有 `type/timestamp/vocab` 不变；WS 不回放，重连恢复必须走 SSE 游标（`?since` / `Last-Event-ID`）或 REST 快照；mobile「重连即全量」路径保持。 | WS 总线化（cursor+replay）正式放弃。 |
+| E2-4 | WS 正式**降级为 live-only**：`connected` 帧携带 `headSeq`（deps getter，无 event store 时 `null`），既有 `type/timestamp/vocab` 不变；WS 本身不回放，重连恢复走 SSE 游标（`?since` / `Last-Event-ID`）或 REST 快照；**E5b 起** mobile 用 `GET /api/events/replay` + 持久化 seq 游标补齐，`reset`/`truncated`/失败才全量重拉；gateway 另有 `connected.instanceId` 标识事件日志纪元（E5b-3）。 | WS 总线化（WS 内建 cursor+replay）正式放弃。 |
 | E2-5 | `EventStore.append` 失败保持 fail-open（返回 null），但失败计数进程级累计（`appendFailures()`），日志限频 30s 一条 `[Events] append failed (total=N): …`；`/api/stats` 在有持久 event store 时暴露 `eventAppendFailures`（无 store 时字段省略，旧 payload 形状不变）。 | 计数随进程重启归零；无独立指标端点。 |
 | E2-6 | 收口：本节 + release 记录 + 全量门禁（gateway / SDK / desktop / TUI / analyzer / kernel-split）。 | deferred：mobile Dart cursor、event_log 作为恢复源与消费者幂等（C1 → E5）、定时器注册表（E4）。 |
 
@@ -864,7 +864,7 @@ Phase 3.5 live wiring（2026-11-12，默认关闭）：
 | E4-2 | `resources/disk.ts` 异步 `fs.statfs` 采样数据根（`config.resolvePath()`）：默认 warn 2 GiB / critical 512 MiB，30s 一次且启动立即采一次。回滞：critical→warn 需回到 **1.5× critical**（768 MiB），warn→ok 需回到 **1.1× warn**（2.2 GiB）；升级按阈值立即。`statfs` 失败 → `unknown` 且不降级（fail-open）。 | critical 动作见「降级矩阵」；media artifact 已有内存回退，不额外拦截。 |
 | E4-3 | `resources/heap.ts`：`memoryUsage()` + `v8.getHeapStatistics().heap_size_limit`，默认 warn 0.75 / critical 0.9，回滞 **0.05**（critical <0.85 才回 warn，warn <0.70 才回 ok）。与磁盘共用 `governor:sample`；采样抛错保留上一份样本/状态（fail-open）。 | 不在 E4 强制 GC；堆压力不阻断 `memory.add`（与写盘危险无关）。 |
 | E4-4 | `ConnectionTable`：HTTP socket 计数（`httpOpen`，仅观测）+ SSE/WS/voice/terminal 逻辑连接 lease（`release` 幂等）。HTTP **256** 走 `server.maxConnections` 硬帽；软帽 SSE/WS 各 64、voice/terminal 各 16；超限 SSE 503 `{code:'connection_limit'}`，WS/voice/terminal 在 upgrade 阶段 503（不升级）；`refused` 按 kind 计数；连接上限 `0`/负数 = 不限。`connections.sse` 只覆盖 `/api/events` 与 plugin-web SSE（`/api/plugins/:name/events`）；**TTS `/api/tts/stream` 与 MCP SSE keepalive 不在连接表内**。 | HTTP 无软拒绝路径；FD 不设硬上限（`handles.fdCount` 仅 Linux 观测）。 |
-| E4-5 | `SseBoundedWriter`：`res.write` 返回 false → paused 入队，`drain` 按序 flush；队列超 `sseMaxFrames`（256）或 `sseMaxBytes`（1 MiB）→ `destroy()` + overflow 计数。WS 广播前 `bufferedAmount > wsMaxBufferedBytes`（1 MiB）→ `terminate()` + 移出广播集。计数聚合为**平铺** `buffers`（含 `sseWriteErrors`）。 | 断开慢客户端是安全动作：SSE 用 `since`/Last-Event-ID 回放，WS live-only 重连走 REST 快照（E2 裁决）。缓冲上限的 `0` = 回退默认值，不是不限。 |
+| E4-5 | `SseBoundedWriter`：`res.write` 返回 false → paused 入队，`drain` 按序 flush；队列超 `sseMaxFrames`（256）或 `sseMaxBytes`（1 MiB）→ `destroy()` + overflow 计数。WS 广播前 `bufferedAmount > wsMaxBufferedBytes`（1 MiB）→ `terminate()` + 移出广播集。计数聚合为**平铺** `buffers`（含 `sseWriteErrors`）。 | 断开慢客户端是安全动作：SSE 用 `since`/Last-Event-ID 回放，WS live-only 重连走 REST 快照；E5b 起还可走 `GET /api/events/replay` 的 seq 游标补页。缓冲上限的 `0` = 回退默认值，不是不限。 |
 | E4-6 | `ProcessLedger`：python / llamacpp / serve 三类条目，`release` 幂等，`disposeAll` 走 close 钩子（best-effort）。Python 槽位是**会话作用域逻辑条目**（`owned:true`，gateway 托管内核），并发帽默认 4：满帽先驱逐超过 10 分钟未用且非 busy 的内核，仍满抛 `QuotaExceededError('python_kernels')` → 429；busy 内核永不驱逐，崩溃条目留到 sweep/TTL 1h。llamacpp 记录真实 child pid 且 `owned:true`。serve 只在 `serveInstance` 真存在时登记一条 `owned:false` 逻辑条目。 | 条目数 ≠ 子进程数（python 可能无 pid）；serve 无 close 钩子，gateway **不声称**能 kill adapter 的进程；`serve.running` 就是 `!!serveInstance`（不额外探测进程存活）。 |
 | E4-7 | `QuotaService`：projects 128（`/register`，同目录重复注册放行）、sessions 1000 与 `sessionRecordsPerProject` 200（`SdkSessionResource.create` / `registerExternal`，按 `projectID` / `directory` 分组）。超限统一 429 `{code:'quota_exceeded', resource, limit, current}`；watcher 自动注册超限只 log + skip。 | **worktree-before-quota**：带 worktree 的 `POST /api/session` 先建 worktree/branch 再进 quota 检查，被拒会留下空 worktree；内部 manager/lead 会话失败按既有 catch 语义降级为 log。`activeGoals` 不进配额。 |
 | E4-8 | `GET /api/kernel/stats`（catalog `kernel.stats`，internal、带 200 schema）：pressure/disk/heap/connections/buffers/timers/processes/quotas/handles/scheduler/events/serve。provider 缺席时 fail-open（`heap:null`、disk `unknown`、events 零值、handles 空表），只有 provider 自身抛错才 500。 | 新的 wire 契约：`buffers` 平铺、quotas 三键必填、`limit 0 = 不限`、`fdCount` Linux-only、`serve.owned` 与 entries 的 `owned` 两个口径；其余 op 仍无 response schema。 |
@@ -1038,6 +1038,65 @@ kernel 的 watchdog/heartbeat/queue-sweep/session-sweep 等自有 interval 与�
 - `authorizeWsUpgrade` 仅标记 deprecated，未删除（测试与旧调用方仍引用）。
 - human token 的 OS keychain / 进程签名、per-owner fencing 留给后续。
 - E5b（C1 event_log 恢复源 / mobile 游标）与 E6（单点扇出 / 实体缓存 / 事件增量）不在本波。
+
+## E5b 事件恢复源（2026-11-12）
+
+> `event_log` 从「只有 live 轨道 + SSE newest-window 回放」升级为**按 seq 升序、可分页、
+> 可检测缺口**的 REST 恢复源；移动端持久化游标，重连先补事件再刷新，补齐不了才全量重拉。
+> SSE 的 newest-window/`reset`/`truncated` 语义与 WS 的 live-only 定位都不变（E2 裁决），
+> 桌面接入 replay 属 E6。
+> spec：`docs/superpowers/specs/2026-11-12-gateway-e5b-event-recovery-design.md`；
+> 交付记录：`docs/releases/2026-11-12-gateway-e5b-event-recovery.md`。
+
+### `GET /api/events/replay`（internal，非 SDK-facing）
+
+| 项 | 契约 |
+|---|---|
+| 参数 | `since`：非负十进制整数，缺省 `0`；符号 / 小数 / 科学计数 / 空串 / 前后空格 → 400 `{error:'invalid since'}`。`limit`：整数 1..1000，缺省 `500`；非数字 / `<=0` / 小数 → 400 `{error:'invalid limit'}`；`>1000` **clamp** 到 1000（不报错，客户端不必预知上限）。 |
+| 排序 | `seq > since`，**升序**，单页最多 `limit` 条。 |
+| 返回 | `{ events:[{seq,ts,type,sessionId,envelope}], headSeq, oldestSeq, hasMore, nextSince, reset, truncated }`；`envelope` 是 event_log 原始事件对象，`type` / `sessionId` 是列投影。 |
+| `headSeq` / `oldestSeq` | 当前事件日志的 MAX / MIN seq；空表 `0/0`。 |
+| `hasMore` | `rows.length === limit && lastSeq < headSeq` → 用 `nextSince` 继续翻页。 |
+| `nextSince` | 末行 seq；**`reset` 时固定为 `headSeq`**（不回显 `since`，否则盲目持久化它的客户端每次重连都 reset-loop）。 |
+| `reset` | `since > headSeq`（DB 重置 / 新纪元）→ 强制 `events:[]`；客户端应全量重拉并把游标置 `headSeq`。 |
+| `truncated` | `!reset && since + 1 < oldestSeq`（缺口在保留窗口之外）→ 仍返回能读到的行，但客户端应全量重拉；与 `reset` 互斥且 `reset` 优先。 |
+| store 缺失 | `EventStore` 为 `null`（初始化失败降级）→ **503** `{error:'event store unavailable'}`，不伪装成空页（否则客户端误判「已追平」）。 |
+| 鉴权 | 普通 API（loopback / human token / device token / service apiToken）；**不要求 human**。 |
+| 契约 | catalog `event.replay`（`tags:['internal']`）+ TypeBox `EventReplayResponse`；SDK 无调用方（internal，不进 SDK 面）。 |
+
+### EventStore.replayAfter
+
+- `replayAfter(since, limit) → { rows, headSeq, oldestSeq }`：一条
+  `SELECT … WHERE seq > ? ORDER BY seq ASC LIMIT ?` + 同次 `MAX(seq)/MIN(seq)`；`since`/`limit`
+  非有限值做防御性夹取（`limit` 至少 1，避免 `LIMIT -1` 读全表）。
+- **fail-open**：任何 DB 异常 → `{rows:[],headSeq:0,oldestSeq:0}`（与 `replaySince` 同 stance）；
+  恢复链路失败不拖垮 live 广播。
+- 不重置 `appendCount`、不触发裁剪；`part.delta` 等非持久帧本就不入库、不占 seq，
+  因此**不会出现在恢复页**（其丢失由会话消息 REST 对账补齐）。
+
+### WS greeting（E5b-3，additive）
+
+`/api/ws` 的 `connected` 帧新增 `instanceId`（event-log 纪元，来自 `releaseMetadata` /
+`runtimeIdentity`），与既有 `headSeq` 并存；两者都是**连接时实时读取的 live getter**，
+无 event store / 无 release metadata 时为 `null`（字段仍存在，老解析器忽略未知字段即可）。
+WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接上、属于哪个事件日志纪元」；
+重连补齐由客户端走 `GET /api/events/replay`（mobile 默认）、SSE 游标（`?since` /
+`Last-Event-ID`）或 REST 快照。SSE 的 greeting / 回放 / `reset` / `truncated` **零改动**；
+鉴权仍在 upgrade 阶段完成，新增字段不影响 401 路径。
+
+### 消费者契约（mobile 已接入；desktop 留 E6）
+
+1. 按 `seq` 升序应用；`seq <= 本地游标` 直接丢弃——replay 不会重复应用 live 已推进的 seq。
+   但消费面是 **at-least-once**：持久化节流窗口（50 条 / 250ms）内进程被杀，冷启动可能重放少量
+   已应用 seq；消费者必须容忍重复（当前均为幂等刷新，REST 对账吸收）。
+2. `hasMore` → 用最后已应用 seq（与 `nextSince` 在服务端契约下相等）继续拉直到 `false`；客户端设页数上限（mobile 100 页）并把触顶当作**未补齐**（`pageCap` fallback，不伪装成功）。
+3. `reset` / `truncated` / replay 请求失败 / 旧网关 404·503 → **全量重拉**；`reset`/`truncated` 把游标置 `headSeq`，临时失败保留旧游标下次重试。
+4. `part.delta` 等 seq 缺失的瞬态帧**不推进游标、也不在 replay 里**。
+5. 重连顺序：replay 完成后再刷新页面；首次连接（无游标）用 greeting `headSeq` 建立 baseline，不 replay。
+6. 纪元变化：持久化游标同时记录 `instanceId`；greeting 的 instance 与存档不同 → 丢弃游标、按新 head 重建并全量重拉。
+
+移动端细节见 `docs/architecture/mobile.md` §7.5；桌面 replay 接入与事件→增量补丁属 E6。
+E5b 已知残留（同实例 reset 的低 head、`nextSince<=since` 短缺口、busy/后台竞态）见 release 记录。
 
 ---
 
