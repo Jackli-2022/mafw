@@ -104,3 +104,76 @@ describe('createWsHub connected greeting（E2-4）', () => {
     expect(legacyView).toEqual({ type: 'connected', timestamp: greeting.timestamp, vocab: 'v2' });
   });
 });
+
+describe('createWsHub connected greeting（E5b-3 instanceId epoch）', () => {
+  it('connected 帧同时携带 headSeq 与 instanceId', () => {
+    const { greetings } = setup({
+      headSeq: () => 42,
+      instanceId: () => 'inst-abc',
+    });
+
+    expect(greetings).toHaveLength(1);
+    expect(greetings[0].headSeq).toBe(42);
+    expect(greetings[0].instanceId).toBe('inst-abc');
+    expect(greetings[0].type).toBe('connected');
+  });
+
+  it('instanceId 在连接时实时读取（live getter）', () => {
+    let id = 'inst-1';
+    const { greetings } = setup({ instanceId: () => id });
+
+    expect(greetings[0].instanceId).toBe('inst-1');
+    id = 'inst-2';
+    expect(setup({ instanceId: () => id }).greetings[0].instanceId).toBe('inst-2');
+  });
+
+  it('deps 未提供 instanceId 时为 null（字段仍在，additive）', () => {
+    const { greetings } = setup({ headSeq: () => 7 });
+
+    expect(greetings[0].instanceId).toBeNull();
+    expect(greetings[0].headSeq).toBe(7);
+  });
+
+  it('getter 返回 null 时字段为 null（无 release metadata）', () => {
+    const { greetings } = setup({ headSeq: () => 7, instanceId: () => null });
+
+    expect(greetings[0].instanceId).toBeNull();
+  });
+
+  it('鉴权不回退：非 loopback 且无 token 的 /api/ws 升级仍 401，不写 greeting', () => {
+    const wsClients = new Set<unknown>();
+    const server = http.createServer();
+    const hub = createWsHub(server, {
+      wsClients: wsClients as never,
+      apiToken: () => TOKEN,
+      pushGateway: () => undefined,
+      handleWsMessage: jest.fn(),
+      getVoiceRuntime: jest.fn(async () => ({ createSession: jest.fn() })),
+      getTerminalService: jest.fn(() => ({ bridge: jest.fn() })),
+      pluginWebDeps: jest.fn(() => ({}) as never),
+      headSeq: () => 1,
+      instanceId: () => 'inst-abc',
+    });
+    hubs.push(hub);
+    const upgrade = jest.spyOn(hub.wss, 'handleUpgrade');
+    const written: string[] = [];
+    const socket = {
+      remoteAddress: '10.0.0.9',
+      write: (chunk: string) => { written.push(chunk); return true; },
+      destroy: jest.fn(),
+    };
+    const req = {
+      url: '/api/ws',
+      headers: { host: '10.0.0.1:3000' },
+      socket: { remoteAddress: '10.0.0.9' },
+    } as unknown as http.IncomingMessage;
+
+    server.emit('upgrade', req, socket as never, Buffer.alloc(0));
+
+    expect(upgrade).not.toHaveBeenCalled();
+    expect(socket.destroy).toHaveBeenCalled();
+    expect(written.join('')).toContain('401');
+    expect(written.join('')).not.toContain('instanceId');
+    expect(wsClients.size).toBe(0);
+  });
+});

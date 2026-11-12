@@ -46,7 +46,20 @@ class WsClientV2 implements MafwWsClient {
   /// The gateway does not replay events sent while the socket was down, so the
   /// work/goal surfaces must refetch here. A callback that throws cannot take
   /// the socket down.
+  ///
+  /// **Superseded by [onGatewayReady]**: when that hook is configured this one
+  /// is not invoked, so a replay+refresh wiring never runs its recovery twice.
   final void Function()? onReconnected;
+
+  /// Fires for every `connected` greeting frame, with `isReconnect` telling a
+  /// first handshake (`false`) from a re-handshake (`true`).
+  ///
+  /// E5b-3: the greeting carries `headSeq` / `instanceId`, so the consumer
+  /// baselines (first connect) or replays (reconnect) the event log **before**
+  /// refreshing its surfaces. Runs unawaited — frame delivery and the socket
+  /// never wait on it, and a throwing callback is swallowed.
+  final Future<void> Function(MafwEvent greeting, bool isReconnect)?
+      onGatewayReady;
 
   final SmartReconnectManager _reconnectManager = SmartReconnectManager();
 
@@ -60,6 +73,10 @@ class WsClientV2 implements MafwWsClient {
   /// At least one handshake has completed on this client (first connect vs
   /// reconnection — [onReconnected] only fires once this is true).
   bool _hasConnectedOnce = false;
+
+  /// Whether the **current** handshake is a reconnection. Captured in [connect]
+  /// before [_hasConnectedOnce] flips, read by the greeting hook.
+  bool _handshakeWasReconnect = false;
 
   /// A backoff delay is being computed (guards the async gap in nextDelay()).
   bool _reconnectPending = false;
@@ -101,7 +118,13 @@ class WsClientV2 implements MafwWsClient {
           'Authorization': 'Bearer ${config.apiToken}',
       };
 
-  WsClientV2(this.config, {this.onRawFrame, this.deviceId, this.onReconnected});
+  WsClientV2(
+    this.config, {
+    this.onRawFrame,
+    this.deviceId,
+    this.onReconnected,
+    this.onGatewayReady,
+  });
 
   /// Initialize the client, loading persisted reconnection state.
   ///
@@ -153,7 +176,11 @@ class WsClientV2 implements MafwWsClient {
       // reconnection (events missed while offline are not replayed).
       final isReconnect = _hasConnectedOnce;
       _hasConnectedOnce = true;
-      if (isReconnect) {
+      _handshakeWasReconnect = isReconnect;
+      // E5b-3: with a gateway-ready hook the consumer owns the post-handshake
+      // work (baseline / replay, then refresh), so the legacy hook stays off to
+      // avoid running recovery twice.
+      if (isReconnect && onGatewayReady == null) {
         try {
           onReconnected?.call();
         } catch (_) {
@@ -244,12 +271,33 @@ class WsClientV2 implements MafwWsClient {
     onRawFrame?.call(raw);
     try {
       final decoded = jsonDecode(raw);
-      if (decoded is Map<String, dynamic> && !_events.isClosed) {
-        _events.add(MafwEvent.fromJson(decoded));
+      if (decoded is Map<String, dynamic>) {
+        final event = MafwEvent.fromJson(decoded);
+        if (!_events.isClosed) _events.add(event);
+        if (event.type == kMafwGreetingType) _notifyGatewayReady(event);
       }
     } catch (_) {
       // ignore malformed frames (the diagnostics tap already recorded them)
     }
+  }
+
+  /// Push a replayed (recovered) frame through the live [events] stream.
+  ///
+  /// E5b-3: the recovery service emits into the same consumer surface as live
+  /// frames, so `seq`-based dedupe on the consumer side covers both orders.
+  void emitRecovered(MafwEvent event) {
+    if (_disposed || _events.isClosed) return;
+    _events.add(event);
+  }
+
+  /// Hand the `connected` greeting to [onGatewayReady] without blocking frame
+  /// delivery. Errors are swallowed: recovery is best-effort, the socket is not.
+  void _notifyGatewayReady(MafwEvent greeting) {
+    final callback = onGatewayReady;
+    if (callback == null || _disposed) return;
+    final isReconnect = _handshakeWasReconnect;
+    unawaited(Future<void>.sync(() => callback(greeting, isReconnect))
+        .catchError((Object _) {}));
   }
 
   /// Handle connection error with smart reconnection.

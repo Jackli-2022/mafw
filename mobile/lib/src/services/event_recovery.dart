@@ -223,7 +223,10 @@ class EventRecoveryService {
   /// - same gateway instance → keep the cursor untouched;
   /// - different instance → the event log epoch changed: clear the cursor and
   ///   let the caller do a full reload (then baseline again).
-  void observeHeadSeq(int? head, String? instanceId) {
+  ///
+  /// Persists before returning so a caller that awaits this can treat the
+  /// baseline as durable (E5b-3 reconnect wiring does exactly that).
+  Future<void> observeHeadSeq(int? head, String? instanceId) async {
     if (head == null) return;
 
     if (_cursor != null &&
@@ -234,21 +237,21 @@ class EventRecoveryService {
       _instanceId = null;
       _lastPersist = _now();
       _unpersisted = 0;
-      unawaited(_cursorStore.clear());
+      await _cursorStore.clear();
       return;
     }
 
     if (_cursor == null) {
       _cursor = head;
       _instanceId = instanceId;
-      _persistNow();
+      await _persistCursor();
       return;
     }
 
     // Cursor exists but we never learned the instance (legacy store): adopt it.
     if (_instanceId == null && instanceId != null) {
       _instanceId = instanceId;
-      _persistNow();
+      await _persistCursor();
     }
   }
 

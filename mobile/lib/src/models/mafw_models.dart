@@ -281,6 +281,9 @@ const Set<String> kMafwFlatEventTypes = {
   'connected',
 };
 
+/// WS greeting frame type (always flat, carries `headSeq` / `instanceId`).
+const String kMafwGreetingType = 'connected';
+
 /// WS/SSE event frame.
 ///
 /// Canonical frames are envelopes:
@@ -390,9 +393,23 @@ class MafwEvent {
   int? get attempt => _flatInt('attempt');
 
   /// Gateway event seq as carried by the `connected` greeting (`data.headSeq`).
+  ///
+  /// Only the greeting carries it: canonical envelopes keep their own `data`
+  /// map and must not surface unrelated top-level keys.
   int? get headSeq {
+    if (type != kMafwGreetingType) return null;
     final value = data['headSeq'];
     return value is num ? value.toInt() : null;
+  }
+
+  /// Gateway instance id (event-log epoch) from the `connected` greeting.
+  ///
+  /// Persisted next to the replay cursor: a different instance means a new event
+  /// log, so a stale cursor is discarded instead of reset-looping.
+  String? get instanceId {
+    if (type != kMafwGreetingType) return null;
+    final value = data['instanceId'];
+    return value is String && value.isNotEmpty ? value : null;
   }
 
   /// Top-level `seq` wins; canonical envelopes may instead carry it in

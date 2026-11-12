@@ -99,6 +99,44 @@ void main() {
 
       expect(ev.headSeq, 99);
     });
+
+    test('connected greeting exposes instanceId from the payload', () {
+      final ev = MafwEvent.fromJson({
+        'type': 'connected',
+        'vocab': 'v2',
+        'headSeq': 99,
+        'instanceId': 'inst-abc',
+      });
+
+      expect(ev.headSeq, 99);
+      expect(ev.instanceId, 'inst-abc');
+    });
+
+    test('greeting accessors are null when the fields are absent or null', () {
+      final absent = MafwEvent.fromJson({'type': 'connected'});
+      expect(absent.headSeq, isNull);
+      expect(absent.instanceId, isNull);
+
+      // An old gateway already emits `headSeq: null`; `instanceId` follows the
+      // same additive shape.
+      final nulls = MafwEvent.fromJson({
+        'type': 'connected',
+        'headSeq': null,
+        'instanceId': null,
+      });
+      expect(nulls.headSeq, isNull);
+      expect(nulls.instanceId, isNull);
+    });
+
+    test('a non-greeting frame does not invent greeting fields', () {
+      final ev = MafwEvent.fromJson({
+        'type': 'mafw_event',
+        'data': {'type': 'message.updated', 'headSeq': 5, 'instanceId': 'x'},
+      });
+
+      expect(ev.headSeq, isNull);
+      expect(ev.instanceId, isNull);
+    });
   });
 
   group('EventReplayPage.fromJson', () {
