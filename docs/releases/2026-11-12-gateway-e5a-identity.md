@@ -82,7 +82,7 @@
 
 | 门 | 命令 | 结果 |
 |---|---|---|
-| gateway 类型 | `node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json`（`gateway/`，TS 5.6.3） | **16 errors，全部 pre-existing TS1479**（`vector-index` / `pod-a2a-*` / `media-agent` / `gliner-engine` 的 ESM-only import；基线 `54f8e78d` 同命令同 16 条、同文件集，E5a 未触碰） |
+| gateway 类型 | `node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json`（`gateway/`，gateway-local TS 5.9.3） | **0 errors**；根 `node_modules/typescript`（5.6.3）会报 16 条 pre-existing TS1479，非门禁命令（见已知红 #2） |
 | gateway 全量 | `node ../node_modules/jest/bin/jest.js --runInBand --forceExit --no-coverage --json`（`gateway/`） | **6900 tests：6889 passed / 9 failed / 2 skipped**；**880 suites：876 passed / 3 failed / 1 skipped**（3 个均为已知 env-red；基线同命令 **6745 / 6735 / 9 / 1**，873 suites，失败集合相同 → **+155 tests**，无 E5a 失败） |
 | SDK 类型 | `node ../../node_modules/typescript/bin/tsc --noEmit -p tsconfig.json`（`packages/gateway-sdk`） | **0 errors** |
 | SDK 全量 | `node --import tsx --require ../../packages/test-shim/require-hook.cjs --test "src/*.test.ts"` | **229/229 passed** |
@@ -117,9 +117,10 @@
    （模拟 Desktop node_modules 的 `@mafw/plugin-contract` staging 失败）、
    `claude-adapter-acceptance` / `claude-adapter-coverage`（`@anthropic-ai/claude-agent-sdk` 缺失，
    esbuild 解析失败）。基线 `54f8e78d` 全量运行 = 同样 3 个 suite / 9 个 test。
-2. **gateway tsc TS1479（16 条，基线同红）**：共享 `node_modules` 里 `@a2a-js/sdk` / `jose` /
-   `@huggingface/transformers` 的 ESM-only 形态与 CJS 编译目标冲突（`vector-index`、`pod-a2a-*`、
-   `media-agent`、`gliner-engine`）；基线同命令同 16 条、同文件集，E5a 未触碰这些文件。
+2. **根 tsc（5.6.3）假红，非门禁**：用根 `node_modules/typescript` 跑 gateway 会报 16 条
+   pre-existing TS1479（`@a2a-js/sdk` / `jose` / `@huggingface/transformers` 的 ESM-only 形态
+   与 CJS 目标冲突，`vector-index` / `pod-a2a-*` / `media-agent` / `gliner-engine`）；
+   gateway-local `node node_modules/typescript/bin/tsc`（5.9.3）为 **0 errors**，基线同。
    附带：给 jest 加 `--experimental-vm-modules` 会让 `@a2a-js/sdk` 在 7 个 suite 里
    `exports is not defined`——标准门禁命令不带该 flag，返回 0 个此类失败。
 3. **desktop 57 个 pre-existing 失败**：renderer CSS/组件漂移（`workbench-shell-css`、`workbench-shell-wiring`
