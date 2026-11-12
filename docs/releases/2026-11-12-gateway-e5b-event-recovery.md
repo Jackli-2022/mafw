@@ -54,7 +54,7 @@
 4. **`onReconnected` 保留但不再由 `main.dart` 使用**：配置了 `onGatewayReady` 时客户端抑制旧钩子，
    `ConnectionEvents` / `WorkRefreshBus` 由 `RecoveryCoordinator` 在 replay 后驱动。
 5. **契约产物**：新增 `event.replay`（`gateway-paths.json` / `openapi.json` / `api-schema.gen.ts`
-   纯增量 +231 行）；catalog 304 → **316 operations / 282 paths**；SDK 无调用方，contract 5/5。
+   纯增量 +231 行）；catalog 315 → **316 operations / 281 → 282 paths**；SDK 无调用方，contract 5/5。
 
 ## 验证（worktree @ E5b-4 文档改动后）
 
@@ -108,6 +108,10 @@
   3. busy / 后台竞态：在途 replay 期间到达的 greeting 返回 `busy` 且不刷新（在途调用者负责）；
      主动断连（退后台）期间到达的 greeting 被丢弃，可能整段生命周期不做恢复。
   4. `onReconnected` 仅保留兼容，`main.dart` 不再使用（配置 `onGatewayReady` 时被抑制）。
+  5. 持久化节流窗口（50 条 / 250ms）内进程被杀，冷启动可能重放少量已应用 seq；
+     消费面按 **at-least-once** 设计，重复由幂等刷新 / REST 对账吸收（不是 exactly-once）。
+  6. greeting 的 `headSeq` 为 null 时 `observeHeadSeq` 直接返回，旧游标保留；下次重连仍会
+     reset/fallback（有界，不丢数据）。
 - **回放保留策略**：不改 `event_log` retention / 表结构；超出保留窗口只能 `truncated` → 全量重拉。
 - **鉴权面**：replay 沿用普通 API（loopback / human / device / service），未新增 rate limit；
   不要求 human（只读恢复通道）。

@@ -1066,8 +1066,10 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 
 ### 消费者契约（mobile 已接入；desktop 留 E6）
 
-1. 按 `seq` 升序应用；`seq <= 本地游标` 直接丢弃——live 与 replay 谁先到，同一帧只应用一次。
-2. `hasMore` → 用 `nextSince` 继续拉直到 `false`；客户端设页数上限（mobile 100 页）并把触顶当作**未补齐**（`pageCap` fallback，不伪装成功）。
+1. 按 `seq` 升序应用；`seq <= 本地游标` 直接丢弃——replay 不会重复应用 live 已推进的 seq。
+   但消费面是 **at-least-once**：持久化节流窗口（50 条 / 250ms）内进程被杀，冷启动可能重放少量
+   已应用 seq；消费者必须容忍重复（当前均为幂等刷新，REST 对账吸收）。
+2. `hasMore` → 用最后已应用 seq（与 `nextSince` 在服务端契约下相等）继续拉直到 `false`；客户端设页数上限（mobile 100 页）并把触顶当作**未补齐**（`pageCap` fallback，不伪装成功）。
 3. `reset` / `truncated` / replay 请求失败 / 旧网关 404·503 → **全量重拉**；`reset`/`truncated` 把游标置 `headSeq`，临时失败保留旧游标下次重试。
 4. `part.delta` 等 seq 缺失的瞬态帧**不推进游标、也不在 replay 里**。
 5. 重连顺序：replay 完成后再刷新页面；首次连接（无游标）用 greeting `headSeq` 建立 baseline，不 replay。
