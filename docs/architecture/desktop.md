@@ -60,7 +60,7 @@
   `--accent` 只负责选中/链接/focus/运行，`--success` 只负责通过/完成；禁止把三者混用。
   边框统一 1px（普通分隔用 subtle，输入与关键控件用 strong），内容卡片不叠加装饰阴影/渐变，
   阴影只用于浮层；圆角收敛为控件 6px、容器 10px、浮层 12px。
-- **排印/图标**：核心元信息最低 12px，正文 14px，对话 16px/1.7；路径、命令、hash、计数使用
+- **排印/图标**：核心 chat / 工具卡 / Goal 元信息最低 12px，正文 14px，对话 16px/1.7；其余页面按同规则继续审计；路径、命令、hash、计数使用
   mono + tabular-nums；会话关闭/新建等 chrome 控件使用已注册 SVG 图标，不再用文本字形。
 - **动效**：`--dur-press` 80ms / `--dur-fast` 120ms / `--dur-select` 180ms /
   `--dur-enter` 220ms / `--dur-surface` 240ms / `--dur-progress` 320ms；标准曲线
