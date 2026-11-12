@@ -33,6 +33,7 @@ export function ProjectWorkView(props: {
   projectDir: string | null
   refreshTick: () => number
   composerRequest?: number
+  composerInitial?: { title: string; objective?: string } | null
   active: boolean
   projectName?: string | null
   files?: {
@@ -207,6 +208,7 @@ export function ProjectWorkView(props: {
               activeGoalId={activeGoalId()}
               autofocus
               projectName={props.projectName ?? props.projectDir ?? "当前项目"}
+              initial={props.composerInitial ?? undefined}
               onCreate={createGoal}
             />
           </section>

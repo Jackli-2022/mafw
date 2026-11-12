@@ -1036,8 +1036,14 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const submitComposer = (mode: "send" | "queue" = "send", opts?: { voiceOrigin?: boolean }) => {
     const chatMode = composerMode()
     if (!modeSendsMessage(chatMode)) {
-      if (chatMode === "delegate") props.onDelegateDraft?.({ text: input() })
-      else props.onResolveRequest?.()
+      if (chatMode === "delegate") {
+        if (!input().trim()) return
+        props.onDelegateDraft?.({ text: input() })
+        setInput("")
+        clearDraft(sidProp())
+        return
+      }
+      props.onResolveRequest?.()
       return
     }
     void sendMessage(mode, { ...opts, chatMode })

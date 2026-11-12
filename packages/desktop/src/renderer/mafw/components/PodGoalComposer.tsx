@@ -32,7 +32,15 @@ export function PodGoalComposer(props: {
 
   createEffect(() => {
     const initial = props.initial
-    if (!initial) return
+    if (!initial) {
+      setTitle("")
+      setObjective("")
+      setAcceptance("")
+      setBoundaries("")
+      setManual(false)
+      setPreview(null)
+      return
+    }
     setTitle(initial.title)
     setObjective(initial.objective ?? "")
     setAcceptance((initial.acceptance ?? []).join("\n"))

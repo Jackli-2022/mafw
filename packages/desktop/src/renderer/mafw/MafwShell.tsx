@@ -294,6 +294,10 @@ export function MafwShell() {
   const [goalDetailFocus, setGoalDetailFocus] = createSignal<GoalDetailFocus>("timeline")
   let goalDiscussSeq = 0
   const [goalComposerRequest, setGoalComposerRequest] = createSignal(0)
+  const [goalComposerInitial, setGoalComposerInitial] = createSignal<{
+    title: string
+    objective?: string
+  } | null>(null)
   /** 打开统一 Goal 详情，并按 attention action 指定落点（计划/问题/方向/结果）。 */
   const openGoalDetail = (goalId: string, focus: GoalDetailFocus = "timeline"): void => {
     openProjectWork()
@@ -630,9 +634,19 @@ export function MafwShell() {
     openProjectWork()
     setTeamFocusRequest((seq) => seq + 1)
   }
-  const openNewGoalComposer = (): void => {
+  const openGoalComposer = (initial: { title: string; objective?: string } | null): void => {
     openProjectWork()
+    setGoalComposerInitial(initial)
     setGoalComposerRequest((seq) => seq + 1)
+  }
+  const openNewGoalComposer = (): void => {
+    openGoalComposer(null)
+  }
+  const openGoalComposerWithDraft = (draft: { text: string }): void => {
+    const text = draft.text.trim()
+    if (!text) return
+    const [first] = text.split(/\r?\n/)
+    openGoalComposer({ title: first.slice(0, 120), objective: text })
   }
   // 旧 goals / workspace 目的地兼容：不再渲染全页工作空间，统一进右工作台「工作」。
   createEffect(() => {
@@ -3894,7 +3908,7 @@ export function MafwShell() {
                           onDecisionReopen={reopenDecisionRecord}
                           canDelegate={() => !!currentProject()}
                           canResolve={() => activeFocus()?.scope.kind === "goal" || contentScopeIsGoal()}
-                          onDelegateDraft={() => {}}
+                          onDelegateDraft={openGoalComposerWithDraft}
                           onResolveRequest={() => {}}
                           techLeadTarget={activeTechLeadTarget}
                           sendBlocked={activeTechLeadBlocked}
@@ -4086,6 +4100,7 @@ export function MafwShell() {
                       projectName={railProjectName(currentProject(), true)}
                       refreshTick={() => Math.max(goalsRev(), podStore.revision())}
                       composerRequest={goalComposerRequest()}
+                      composerInitial={goalComposerInitial()}
                       active={workbenchContent() === "project" && dockPresent() && workbenchContext() === "project"}
                       files={{
                         root: currentProject(),
