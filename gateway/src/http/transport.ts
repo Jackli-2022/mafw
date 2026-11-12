@@ -30,7 +30,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
-import { authorizeRequest, isLoopbackAddr } from '../core/auth';
+import { isLoopbackAddr, resolvePrincipal } from '../core/auth';
 import { errorBody, API_ERROR_CODES } from '../core/http/api-error';
 import { handleGoalControlCommand } from '../core/goal/control-command';
 import { readBody } from '../core/http/http-util';
@@ -99,6 +99,13 @@ export interface TransportDeps {
   cors(): TransportCorsHeaders;
   /** `(config.raw as any)?.server?.apiToken || ''` — live (config is reloadable). */
   apiToken(): string;
+  /**
+   * E5a: `~/.mafw/human.token` — live getter (empty when the file is missing /
+   * unreadable → human-only actions fail closed).
+   */
+  humanToken?: () => string;
+  /** E5a: device-token verifier (Task 3 wires this to the DeviceStore). */
+  verifyDeviceToken?: (token: string) => { deviceId: string } | null;
   /**
    * E3-5: schema epoch from release metadata (`releaseMetadata.schemaEpoch`).
    * null = release metadata not loaded yet → no response header, no enforcement.
@@ -171,10 +178,25 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
     // Loopback detection (delegated to core/auth.ts)
     const isLoopback = isLoopbackAddr(req.socket.remoteAddress || '');
 
-    // API token auth: required for non-loopback connections when a token
-    // is configured (MAFW_SERVER_API_TOKEN). Loopback connections bypass.
+    // E5a principal auth: human token → device token → shared apiToken →
+    // loopback → anonymous. human/service/local pass ordinary routes; only
+    // `anonymous` is rejected here (human-only checks live in the routes).
     const apiToken = deps.apiToken();
-    if (!authorizeRequest({ remoteAddress: req.socket.remoteAddress || '', headers: req.headers as any, url: req.url, host: String(req.headers.host || '') }, apiToken)) {
+    const principal = resolvePrincipal(
+      {
+        remoteAddress: req.socket.remoteAddress || '',
+        headers: req.headers as any,
+        url: req.url,
+        host: String(req.headers.host || ''),
+      },
+      {
+        apiToken,
+        humanToken: deps.humanToken?.() ?? '',
+        verifyDeviceToken: deps.verifyDeviceToken,
+      },
+    );
+    (req as any).mafwPrincipal = principal;
+    if (principal.kind === 'anonymous') {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(errorBody('unauthorized', API_ERROR_CODES.unauthorized)));
       return;

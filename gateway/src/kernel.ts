@@ -30,6 +30,7 @@ import {
   type GatewayRuntimeIdentity,
 } from './release-info';
 import { isLoopbackAddr } from './core/auth';
+import { loadOrCreateHumanToken } from './core/human-token';
 import type { Services } from './types';
 // D3 Task 3：HTTP 传输链 + WS 上行枢纽（原先内联在 startApiServer 的 626 行回调）。
 import { createRequestListener } from './http/transport';
@@ -771,6 +772,11 @@ class MafwScheduler {
   private standingGoalStore?: StandingGoalStore;
   private ledger?: SchedulerLedger;
   private pushGateway?: PushGateway;
+  /**
+   * E5a: human credential (`~/.mafw/human.token`). Empty = the file could not
+   * be read/created → human-only actions fail closed (ordinary API unaffected).
+   */
+  private humanToken = '';
   private pairingService?: PairingService;
   private mdnsAdvertiser?: any; // MdnsAdvertiser
   private mafwDir!: string;
@@ -3531,6 +3537,16 @@ class MafwScheduler {
     const mafwDir = config.resolvePath();
     this.mafwDir = mafwDir;
 
+    // E5a: load (or create) the human token before the API server starts.
+    // Failure is non-fatal for ordinary API traffic: human-only routes stay
+    // fail-closed with the stable 403 code until the file is available.
+    try {
+      this.humanToken = loadOrCreateHumanToken(mafwDir);
+    } catch (err: any) {
+      this.humanToken = '';
+      log.warn(`[Scheduler] human token unavailable (human-only actions will 403): ${err?.message ?? String(err)}`);
+    }
+
     // Approval policy（spec docs/superpowers/specs/2026-09-18-gateway-approval-policy-design.md
     // + 切片 1 三档化）：持久规则（~/.mafw/permission-rules.json，新）+ legacy 白名单
     // （config.yaml approval 段，双读过渡）+ per-session 三档 mode（kv perm-mode）。
@@ -5380,10 +5396,30 @@ class MafwScheduler {
    * HTTP listener deps (D3 Task 3 wiring, live getters). 留在组合根，但从
    * startApiServer 抽出，保持启动方法体薄；匹配/顺序语义在 http/transport.ts。
    */
+  /**
+   * E5a: device-token verification seam. Task 3 adds
+   * `PushGateway.verifyDeviceToken`; until then every device token is invalid
+   * (fail-closed) instead of silently granting human rights.
+   */
+  private verifyDeviceToken(token: string): { deviceId: string } | null {
+    const gateway = this.pushGateway as unknown as {
+      verifyDeviceToken?: (t: string) => { deviceId: string } | null;
+    } | undefined;
+    try {
+      return gateway?.verifyDeviceToken?.(token) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   private httpTransportDeps(): Parameters<typeof createRequestListener>[0] {
     return {
       cors: () => config.server.cors,
       apiToken: () => (config.raw as any)?.server?.apiToken || '',
+      // E5a: live getters — the human token is loaded in initServices and the
+      // device verifier lands in Task 3; neither is captured by value.
+      humanToken: () => this.humanToken,
+      verifyDeviceToken: (token) => this.verifyDeviceToken(token),
       // E3-5：live 读取（release metadata 在 boot 阶段加载，attach 早于它就是 null）。
       schemaEpoch: () => this.releaseMetadata?.schemaEpoch ?? null,
       dispatchAuthorized: (req, res, apiToken) =>
@@ -5503,6 +5539,8 @@ class MafwScheduler {
         const hub = createWsHub(server, {
           wsClients: this.eventHub.wsClients,
           apiToken: () => (config.raw as any)?.server?.apiToken || '',
+          humanToken: () => this.humanToken,
+          verifyDeviceToken: (token) => this.verifyDeviceToken(token),
           pushGateway: () => this.pushGateway,
           handleWsMessage: (ws, raw) => this.handleWsMessage(ws, raw),
           getVoiceRuntime: () => this.getVoiceRuntime(),

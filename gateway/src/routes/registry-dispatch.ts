@@ -30,7 +30,14 @@ export async function dispatchAuthorized(
   // Webhook senders authenticate with HMAC inside the handler, not the
   // gateway apiToken (GitHub/Slack cannot send a MAFW bearer token).
   const hmacAuthenticated = matched.def.operationId === 'events.webhook.receive';
-  const allowed = hmacAuthenticated || authorizeRequest(
+  // E5a: the transport already resolved a principal for every request; a
+  // human/device credential must reach registry routes too (it is not a
+  // shared apiToken). `authorizeRequest` stays for callers that dispatch
+  // without going through the transport (older tests / internal wiring).
+  const principal = (req as any).mafwPrincipal as { kind?: string } | undefined;
+  const allowed = hmacAuthenticated
+    || (principal !== undefined && principal.kind !== 'anonymous')
+    || authorizeRequest(
     {
       remoteAddress,
       headers: req.headers as any,
