@@ -54,6 +54,9 @@ import { worktreeBadge } from "./worktree-label"
 import { ApprovalSummaryLine } from "./ApprovalSummaryLine"
 import { DecisionBoard } from "./DecisionBoard"
 import { ChatModeBar } from "./ChatModeBar"
+import { EpisodeHeader } from "./EpisodeHeader"
+import { closeEpisode, createEpisode, groupTurnsByEpisode, reopenEpisode, type ChatEpisode } from "../chat/episode-model"
+import { createEpisodeStore } from "../chat/episode-store"
 import { modeAvailability, modeSendsMessage, type ChatMode } from "../chat/composer-mode"
 import type { DecisionBoardView, DecisionItem } from "../focus/decision-model"
 import type { DecisionRecord } from "@mafw/sdk"
@@ -327,6 +330,59 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const [sending, setSending] = createSignal(false)
   const [phase, setPhase] = createSignal<'idle' | 'searching' | 'writing'>('idle')
   const [composerMode, setComposerMode] = createSignal<ChatMode>("discuss")
+  const episodeStore = createMemo(() => createEpisodeStore(window.localStorage, sidProp()))
+  const [episodes, setEpisodes] = createSignal<ChatEpisode[]>([])
+  const [collapsedEpisodes, setCollapsedEpisodes] = createSignal<ReadonlySet<string>>(new Set())
+  onMount(() => setEpisodes(episodeStore().load()))
+  const persistEpisodes = (next: ChatEpisode[]) => {
+    setEpisodes(next)
+    episodeStore().save(next)
+  }
+  const episodeGroups = () => groupTurnsByEpisode(visibleTurns(), episodes())
+  const episodeForMessage = (id: string): ChatEpisode | null => {
+    for (const group of episodeGroups()) {
+      if (group.turns.some((turn) => turn.id === id)) return group.episode
+    }
+    return null
+  }
+  const episodeStartFor = (id: string): ChatEpisode | null =>
+    episodes().find((episode) => episode.startMessageId === id) ?? null
+  const episodeTurnCount = (id: string): number =>
+    episodeGroups().find((group) => group.episode?.id === id)?.turns.length ?? 0
+  const isEpisodeCollapsed = (episode: ChatEpisode | null): boolean =>
+    !!episode && episode.status === "closed" && collapsedEpisodes().has(episode.id)
+  const isTurnHidden = (id: string): boolean => isEpisodeCollapsed(episodeForMessage(id))
+  const toggleEpisode = (id: string) => {
+    const next = new Set(collapsedEpisodes())
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    setCollapsedEpisodes(next)
+  }
+  const startEpisode = () => {
+    const start = visibleTurns().at(-1)?.id
+    if (!start) return
+    const episode = createEpisode({
+      sessionID: sidProp(),
+      title: `讨论 ${episodes().length + 1}`,
+      startMessageId: start,
+    })
+    persistEpisodes(episodeStore().upsert(episode))
+  }
+  const updateEpisode = (id: string, patch: Partial<Pick<ChatEpisode, "title">>) => {
+    persistEpisodes(episodes().map((episode) => episode.id === id
+      ? { ...episode, ...patch, updatedAt: new Date().toISOString() }
+      : episode))
+  }
+  const closeEpisodeById = (id: string) => {
+    const episode = episodes().find((item) => item.id === id)
+    if (!episode) return
+    const group = episodeGroups().find((item) => item.episode?.id === id)
+    const end = group?.turns.at(-1)?.id ?? episode.startMessageId
+    persistEpisodes(episodes().map((item) => item.id === id ? closeEpisode(item, end) : item))
+  }
+  const reopenEpisodeById = (id: string) => {
+    persistEpisodes(episodes().map((item) => item.id === id ? reopenEpisode(item) : item))
+  }
   const {
     attachments, setAttachments, dragging, setDragging,
     addAttachments, removeAttachment, addPastedFile,
@@ -2010,6 +2066,22 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             </Show>
             <For each={visibleTurns()}>
               {(msg) => (
+                <>
+                  <Show when={episodeStartFor(msg.id)}>
+                    {(episode) => (
+                      <EpisodeHeader
+                        episode={episode()}
+                        collapsed={isEpisodeCollapsed(episode())}
+                        turnCount={episodeTurnCount(episode().id)}
+                        onTitle={(title) => updateEpisode(episode().id, { title })}
+                        onToggle={() => toggleEpisode(episode().id)}
+                        onClose={() => closeEpisodeById(episode().id)}
+                        onReopen={() => reopenEpisodeById(episode().id)}
+                        onOpenRecord={() => {}}
+                      />
+                    )}
+                  </Show>
+                  <Show when={!isTurnHidden(msg.id)}>
                 <div class="mafw-turn-anchor" data-turn-id={msg.id} classList={{ "mafw-turn-animate": animateTurnId() === msg.id }}>
                 <ErrorBoundary
                   fallback={(err) => {
@@ -2114,6 +2186,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 </>
                 </ErrorBoundary>
                 </div>
+                  </Show>
+                </>
               )}
             </For>
             {/* Agent switch traces (local UI only) */}
@@ -2274,14 +2348,25 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             />
           )}
         </Show>
-        <ChatModeBar
-          mode={composerMode()}
-          availability={modeAvailability({
-            canDelegate: props.canDelegate?.() ?? false,
-            canResolve: props.canResolve?.() ?? false,
-          })}
-          onMode={setComposerMode}
-        />
+        <div class="mafw-chat-mode-row">
+          <ChatModeBar
+            mode={composerMode()}
+            availability={modeAvailability({
+              canDelegate: props.canDelegate?.() ?? false,
+              canResolve: props.canResolve?.() ?? false,
+            })}
+            onMode={setComposerMode}
+          />
+          <ButtonV2
+            variant="ghost"
+            size="small"
+            class="mafw-episode-mark"
+            disabled={!visibleTurns().length}
+            onClick={startEpisode}
+          >
+            标记 Episode
+          </ButtonV2>
+        </div>
         <div
           class="mafw-composer"
           classList={{ "mafw-composer-dragging": dragging() }}

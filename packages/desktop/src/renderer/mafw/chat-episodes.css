@@ -1,0 +1,65 @@
+/* Episode 头：一段讨论的边界与状态，保持在 transcript 流内。 */
+.mafw-chat-mode-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 2px 4px;
+}
+.mafw-chat-mode-row .mafw-chat-mode-bar {
+  flex: 1;
+  min-width: 0;
+  padding-bottom: 0;
+}
+.mafw-episode-mark {
+  flex: none;
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: 10px;
+}
+.mafw-episode-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--bg-inset);
+}
+.mafw-episode-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mafw-episode-kicker {
+  flex: none;
+  color: var(--text-4);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.mafw-episode-title {
+  flex: 1;
+  min-width: 0;
+}
+.mafw-episode-meta {
+  flex: none;
+  color: var(--text-3);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.mafw-episode-header[data-status="closed"] {
+  border-color: var(--border-base);
+}
+.mafw-episode-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.mafw-episode-actions button {
+  font-size: 10px;
+}
