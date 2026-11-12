@@ -329,8 +329,8 @@ spec §5.1/§5.2/§5.3/§6.1/§7.5，plan `docs/superpowers/plans/2026-11-11-pro
 - **左栏文件 face（2026-11-13）**：`LeftDockFace` 增加 `files`；`IconRail` 用文件夹按钮切换，
   `LeftDock` 内部不放 face 切换按钮。`FilesDock` 以 `showHeader={false}` 嵌入左 dock，
   root 跟随当前 content scope（项目主目录 / Goal revision worktree），点击文件走
-  `openFileInScope` 在右舞台打开；overlay 态选择文件后自动收起左 dock。右 dock 仍然只做文档
-  舞台，不放文件树。
+  `openFileInScope` 在右舞台打开；overlay 态选择文件后自动收起左 dock。无持久化 face 时默认
+  `files`；旧 `pod` / 未知值回落 `sessions`。右 dock 仍然只做文档舞台，不放文件树。
 - 已知后续（Plan D3）：跨重启的树展开/滚动/草稿持久化、Goal revision 最近项、Goal 详情注意力顺序。当前 Goal 详情没有阶段页面 Tab；时间线只是只读投影，不存在待清理的阶段 Tab。
 
 #### 内容意图：阅读 / 修改（2026-11-11 Plan D3a）

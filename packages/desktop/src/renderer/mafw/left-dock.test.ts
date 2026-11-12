@@ -21,11 +21,14 @@ describe("left-dock 状态模型", () => {
   })
 
   describe("旧 Pod face 迁移", () => {
-    test("pod/未知值回落 sessions，文件、搜索与便签保留", () => {
+    test("空值默认 files；pod/未知值回落 sessions，文件、搜索与便签保留", () => {
+      expect(normalizeLeftDockFace(null)).toBe("files")
+      expect(normalizeLeftDockFace(undefined)).toBe("files")
+      expect(normalizeLeftDockFace("")).toBe("files")
       expect(normalizeLeftDockFace("pod")).toBe("sessions")
       expect(normalizeLeftDockFace("bogus")).toBe("sessions")
-      expect(normalizeLeftDockFace(null)).toBe("sessions")
       expect(normalizeLeftDockFace("files")).toBe("files")
+      expect(normalizeLeftDockFace("sessions")).toBe("sessions")
       expect(normalizeLeftDockFace("search")).toBe("search")
       expect(normalizeLeftDockFace("notes")).toBe("notes")
     })
