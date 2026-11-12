@@ -162,3 +162,27 @@ export function summarizeGoalForUser(goal: PodGoal): GoalUserSummary {
     ended,
   }
 }
+
+/**
+ * 框上的执行状态：阻塞优先，其次待验收 / 完成 / 任务进度 / 阶段。
+ * 只做投影，不推断新的执行事实。
+ */
+export function executionBadgeFor(
+  goal: PodGoal,
+): { label: string; tone: "neutral" | "amber" | "red" | "green" } | null {
+  if (goal.lastError) return { label: "blocked", tone: "red" }
+  const stage = goal.stage as any
+  const stageKind = String(stage?.kind ?? "")
+  if (stageKind === "blocked") return { label: "blocked", tone: "red" }
+  if ((goal.resultReady || goal.bucket === "result_ready") && !goal.accepted) {
+    return { label: "待验收", tone: "amber" }
+  }
+  if (goal.accepted || goal.endedAt) return { label: "done", tone: "green" }
+  const progress = goal.progress
+  if (progress && Number.isFinite(progress.total) && progress.total > 0) {
+    const done = Number.isFinite(progress.done) ? Math.max(0, Math.floor(progress.done)) : 0
+    return { label: `${done}/${Math.floor(progress.total)}`, tone: "neutral" }
+  }
+  if (stageKind) return { label: stageKind, tone: "neutral" }
+  return null
+}

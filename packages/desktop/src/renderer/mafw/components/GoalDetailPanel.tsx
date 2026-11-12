@@ -8,6 +8,8 @@ import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import type { PodDirectionState, PodGoalAcceptResult, PodGoalRevision, PodMember, PodProbe, PodTask } from "@mafw/sdk"
 import { GoalTimelineLane } from "./GoalTimelineLane"
 import { GoalUserHero } from "./GoalUserHero"
+import { AgentContractCard } from "./AgentContractCard"
+import { agentContractFor } from "../agent-contract"
 import { DecisionRecordCard } from "./DecisionRecordCard"
 import type { DecisionRecord } from "@mafw/sdk"
 import { PlanReviewOverlay } from "./PlanReviewOverlay"
@@ -706,6 +708,15 @@ export function GoalDetailPanel(props: {
                   onToggleTechnical={() => setTechnicalOpen((open) => !open)}
                 />
               </div>
+            )}
+          </Show>
+
+          <Show when={podGoal()}>
+            {(goal) => (
+              <AgentContractCard
+                contract={agentContractFor(goal())}
+                title={goal().title}
+              />
             )}
           </Show>
 

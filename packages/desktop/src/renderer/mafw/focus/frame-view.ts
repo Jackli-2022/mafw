@@ -7,7 +7,7 @@ export type FrameCrumb = {
 }
 
 export type FrameBadge = {
-  id: "dirty" | "stale" | "unresolved" | "revision" | "version" | "external" | "verdict"
+  id: "dirty" | "stale" | "unresolved" | "revision" | "execution" | "version" | "external" | "verdict"
   label: string
   tone: "neutral" | "amber" | "red" | "green"
 }
@@ -28,6 +28,7 @@ export type FrameInput = {
   stale?: boolean
   unresolved?: number
   revision?: number
+  execution?: { label: string; tone: "neutral" | "amber" | "red" | "green" }
   version?: string
   external?: boolean
   verdict?: string
@@ -57,6 +58,9 @@ export function frameView(input: FrameInput): FrameView {
   }
   if (input.revision !== undefined) {
     badges.push({ id: "revision", label: `rev ${input.revision}`, tone: "neutral" })
+  }
+  if (input.execution) {
+    badges.push({ id: "execution", label: input.execution.label, tone: input.execution.tone })
   }
   if (input.version) {
     badges.push({ id: "version", label: input.version, tone: "neutral" })

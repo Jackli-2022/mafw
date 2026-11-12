@@ -78,6 +78,7 @@ import {
   techLeadSendGate,
   type GoalDetailFocus,
 } from "./pod-model"
+import { executionBadgeFor } from "./goal-user-view"
 import { goalDiscussionRequestCurrent, goalDiscussionTarget, shouldOpenTechLeadForGoal, shouldShowReturnLead } from "./goal-chat-context"
 import { ingestPluginEvent, ingestPluginsChanged, pluginClientRevision, pluginDescriptors, refreshPluginClient } from "./plugins/plugin-store"
 import { pluginSurfaceIssues, pluginSurfaces, pluginConfigSurfaces, resolveActiveSurface } from "./plugins/plugin-view-model"
@@ -2614,13 +2615,18 @@ export function MafwShell() {
         : subject.kind === "terminal" ? "终端"
         : subject.kind === "plugin" ? "插件"
         : "证据"
+    const goalScope = focus.scope.kind === "goal" ? focus.scope : null
+    const focusedGoal = goalScope
+      ? podStore.detail()?.goals.find((goal) => goal.goalId === goalScope.goalId)
+      : null
     return frameView({
       worldName: railProjectName(currentProject(), true),
       scopeLabel: focusScopeLabel(focus.scope),
       subjectLabel,
       scopeStartIndex: 0,
       subjectIndex: focusState().stack.length - 1,
-      revision: focus.scope.kind === "goal" ? focus.scope.revision : undefined,
+      revision: goalScope ? goalScope.revision : undefined,
+      execution: focusedGoal ? executionBadgeFor(focusedGoal) ?? undefined : undefined,
       version: focus.scope.kind === "world" ? "HEAD" : undefined,
       external: subject.kind === "web" || subject.kind === "terminal" || subject.kind === "plugin",
     })

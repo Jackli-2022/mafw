@@ -1,0 +1,85 @@
+/* 代理契约卡：默认收起，展开显示四个参数与人类边界。 */
+.mafw-agent-contract {
+  margin: 8px 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--bg-raised);
+  overflow: hidden;
+}
+.mafw-agent-contract-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 3px 8px 3px 10px;
+}
+.mafw-agent-contract-title {
+  flex: none;
+  color: var(--text-3);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.mafw-agent-contract-level {
+  flex: 1;
+  min-width: 0;
+  color: var(--accent-text);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.mafw-agent-contract-toggle {
+  flex: none;
+  color: var(--text-3);
+}
+.mafw-agent-contract-toggle svg {
+  transition: transform var(--dur-fast) var(--ease);
+}
+.mafw-agent-contract-toggle[aria-expanded="true"] svg {
+  transform: rotate(90deg);
+}
+.mafw-agent-contract-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border-subtle);
+}
+.mafw-agent-contract-row,
+.mafw-agent-contract-human {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.mafw-agent-contract-label {
+  flex: none;
+  width: 76px;
+  color: var(--text-4);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.mafw-agent-contract-value {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+  color: var(--text-2);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.mafw-agent-contract-chip {
+  padding: 1px 5px;
+  border-radius: var(--r-sm);
+  background: var(--bg-inset);
+  color: var(--text-3);
+  font-size: 9px;
+}
+.mafw-agent-contract-chip.is-human {
+  background: var(--danger-dim);
+  color: var(--danger-text);
+}
+.mafw-agent-contract-human {
+  padding-top: 6px;
+  border-top: 1px solid var(--border-subtle);
+}

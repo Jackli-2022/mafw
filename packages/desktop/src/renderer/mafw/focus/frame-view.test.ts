@@ -23,6 +23,7 @@ test("badges are ordered and toned", () => {
     subjectLabel: "src/a.ts",
     unresolved: 2,
     revision: 3,
+    execution: { label: "3/7", tone: "neutral" },
     dirty: true,
     stale: true,
     external: true,
@@ -33,6 +34,7 @@ test("badges are ordered and toned", () => {
     "stale",
     "unresolved",
     "revision",
+    "execution",
     "external",
     "verdict",
   ])
@@ -40,6 +42,7 @@ test("badges are ordered and toned", () => {
   assert.equal(view.badges.find((badge) => badge.id === "stale")?.tone, "amber")
   assert.equal(view.badges.find((badge) => badge.id === "unresolved")?.tone, "red")
   assert.equal(view.badges.find((badge) => badge.id === "revision")?.tone, "neutral")
+  assert.equal(view.badges.find((badge) => badge.id === "execution")?.tone, "neutral")
   assert.equal(view.badges.find((badge) => badge.id === "external")?.tone, "neutral")
   assert.equal(view.badges.find((badge) => badge.id === "verdict")?.tone, "green")
 })

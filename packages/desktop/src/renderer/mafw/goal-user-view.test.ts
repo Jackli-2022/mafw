@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import type { PodGoal, PodGoalStage } from "@mafw/sdk"
-import { goalUserActionIntent, goalUserFace, summarizeGoalForUser } from "./goal-user-view"
+import { goalUserActionIntent, goalUserFace, summarizeGoalForUser, executionBadgeFor } from "./goal-user-view"
 
 function goal(input: Partial<PodGoal> & Pick<PodGoal, "goalId">): PodGoal {
   const stage: PodGoalStage = { owner: "team", kind: "working" }
@@ -235,4 +235,42 @@ test("primary Goal action intent never falls through to technical details", () =
     stage: { owner: "person", kind: "blocked" },
   }), empty), "blocker")
   assert.equal(goalUserActionIntent(goal({ goalId: "healthy" }), empty), null)
+})
+
+test("execution badge prefers blockers over progress", () => {
+  const blocked = executionBadgeFor(goal({
+    goalId: "blocked",
+    lastError: "worktree_unavailable",
+    progress: { total: 3, done: 1, inProgress: 0, review: 0, failed: 1, skipped: 1 },
+  }))
+  assert.deepEqual(blocked, { label: "blocked", tone: "red" })
+
+  const blockedStage = executionBadgeFor(goal({
+    goalId: "blocked-stage",
+    stage: { owner: "person", kind: "blocked" },
+  }))
+  assert.deepEqual(blockedStage, { label: "blocked", tone: "red" })
+})
+
+test("execution badge shows result acceptance and done", () => {
+  assert.deepEqual(executionBadgeFor(goal({ goalId: "result", resultReady: true })), {
+    label: "待验收",
+    tone: "amber",
+  })
+  assert.deepEqual(executionBadgeFor(goal({ goalId: "accepted", accepted: true })), {
+    label: "done",
+    tone: "green",
+  })
+})
+
+test("execution badge falls back to task progress then stage", () => {
+  assert.deepEqual(executionBadgeFor(goal({
+    goalId: "progress",
+    progress: { total: 7, done: 3, inProgress: 1, review: 0, failed: 0, skipped: 3 },
+  })), { label: "3/7", tone: "neutral" })
+
+  assert.deepEqual(executionBadgeFor(goal({
+    goalId: "stage",
+    stage: { owner: "team", kind: "reviewing" },
+  })), { label: "reviewing", tone: "neutral" })
 })
