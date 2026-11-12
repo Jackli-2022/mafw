@@ -17,6 +17,7 @@ import type {
   PluginEventDescriptor,
   PluginJsonSchema,
   PluginMessageWindowDescriptor,
+  PluginManifestContributes,
   PluginPanelDescriptor,
   PluginToolCardDescriptor,
   PluginView,
@@ -1365,4 +1366,134 @@ export function validateConfigFormSchema(value: PluginJsonSchema): string[] {
   }
 
   return errors
+}
+
+export type PluginManifestContributesValidation =
+  | { ok: true; value: PluginManifestContributes }
+  | { ok: false; error: string }
+
+const MANIFEST_CONTRIBUTES_KEYS = ["gateway", "desktop"] as const
+const GATEWAY_CONTRIBUTES_KEYS = ["actions", "events", "http"] as const
+const DESKTOP_CONTRIBUTES_KEYS = ["ui", "web", "main"] as const
+const DESKTOP_UI_PLANE_KEYS = ["panels", "toolCards", "configPages", "messageWindows"] as const
+const DESKTOP_WEB_PLANE_KEYS = ["webSurfaces"] as const
+const DESKTOP_MAIN_PLANE_KEYS = ["legacy"] as const
+
+function readStringList(value: unknown, label: string, errors: string[]): string[] | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || item.length === 0)) {
+    addError(errors, `${label} must be an array of non-empty strings`)
+    return undefined
+  }
+  return [...value]
+}
+
+function readSlotArray(value: unknown, label: string, errors: string[]): unknown[] | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value)) {
+    addError(errors, `${label} must be an array`)
+    return undefined
+  }
+  return value
+}
+
+/**
+ * Validates the static plane container in `plugin.json`.
+ *
+ * Phase 0 shape validation only: descriptor deep-validation stays in
+ * `validateClientDescriptor` (and Phase 4 adds menu/composer slots). Existing
+ * packages that only return contributions from `activate()` remain valid.
+ */
+export function validatePluginManifestContributes(
+  value: unknown,
+): PluginManifestContributesValidation {
+  const errors: string[] = []
+  if (!isPlainObject(value)) {
+    return { ok: false, error: "manifest contributes must be an object" }
+  }
+  checkKnownFields(value, MANIFEST_CONTRIBUTES_KEYS, "manifest contributes", errors)
+
+  const out: PluginManifestContributes = {}
+
+  if (value.gateway !== undefined) {
+    if (!isPlainObject(value.gateway)) {
+      addError(errors, "manifest contributes.gateway must be an object")
+    } else {
+      checkKnownFields(value.gateway, GATEWAY_CONTRIBUTES_KEYS, "manifest contributes.gateway", errors)
+      const gateway: NonNullable<PluginManifestContributes["gateway"]> = {}
+      const actions = readStringList(value.gateway.actions, "manifest contributes.gateway.actions", errors)
+      const events = readStringList(value.gateway.events, "manifest contributes.gateway.events", errors)
+      if (actions !== undefined) gateway.actions = actions
+      if (events !== undefined) gateway.events = events
+      if (value.gateway.http !== undefined) {
+        if (typeof value.gateway.http !== "boolean") {
+          addError(errors, "manifest contributes.gateway.http must be a boolean")
+        } else {
+          gateway.http = value.gateway.http
+        }
+      }
+      out.gateway = gateway
+    }
+  }
+
+  if (value.desktop !== undefined) {
+    if (!isPlainObject(value.desktop)) {
+      addError(errors, "manifest contributes.desktop must be an object")
+    } else {
+      checkKnownFields(value.desktop, DESKTOP_CONTRIBUTES_KEYS, "manifest contributes.desktop", errors)
+      const desktop: NonNullable<PluginManifestContributes["desktop"]> = {}
+
+      if (value.desktop.ui !== undefined) {
+        if (!isPlainObject(value.desktop.ui)) {
+          addError(errors, "manifest contributes.desktop.ui must be an object")
+        } else {
+          checkKnownFields(value.desktop.ui, DESKTOP_UI_PLANE_KEYS, "manifest contributes.desktop.ui", errors)
+          const ui: Record<string, unknown> = {}
+          for (const key of DESKTOP_UI_PLANE_KEYS) {
+            const slots = readSlotArray(
+              value.desktop.ui[key],
+              `manifest contributes.desktop.ui.${key}`,
+              errors,
+            )
+            if (slots !== undefined) ui[key] = slots
+          }
+          desktop.ui = ui as NonNullable<PluginManifestContributes["desktop"]>["ui"]
+        }
+      }
+
+      if (value.desktop.web !== undefined) {
+        if (!isPlainObject(value.desktop.web)) {
+          addError(errors, "manifest contributes.desktop.web must be an object")
+        } else {
+          checkKnownFields(value.desktop.web, DESKTOP_WEB_PLANE_KEYS, "manifest contributes.desktop.web", errors)
+          const web: Record<string, unknown> = {}
+          const surfaces = readSlotArray(
+            value.desktop.web.webSurfaces,
+            "manifest contributes.desktop.web.webSurfaces",
+            errors,
+          )
+          if (surfaces !== undefined) web.webSurfaces = surfaces
+          desktop.web = web as NonNullable<PluginManifestContributes["desktop"]>["web"]
+        }
+      }
+
+      if (value.desktop.main !== undefined) {
+        if (!isPlainObject(value.desktop.main)) {
+          addError(errors, "manifest contributes.desktop.main must be an object")
+        } else {
+          checkKnownFields(value.desktop.main, DESKTOP_MAIN_PLANE_KEYS, "manifest contributes.desktop.main", errors)
+          if (value.desktop.main.legacy !== true) {
+            addError(errors, "manifest contributes.desktop.main.legacy must be true")
+          } else {
+            desktop.main = { legacy: true }
+          }
+        }
+      }
+
+      out.desktop = desktop
+    }
+  }
+
+  if (errors.length > 0) return { ok: false, error: formatErrors(errors) }
+  return { ok: true, value: out }
 }

@@ -218,3 +218,52 @@ export interface PluginClientDescriptor {
   events: PluginEventDescriptor[]
   diagnostics?: PluginDiagnostic[]
 }
+
+/**
+ * Where a contribution executes or how it is consumed.
+ *
+ * `desktop-ui` is a data plane; `desktop-web` is a sandboxed execution plane;
+ * `desktop-main` is the legacy trusted main-process plane.
+ */
+export type PluginPlane = "gateway" | "desktop-ui" | "desktop-web" | "desktop-main"
+
+/** Gateway-plane declarations. Handlers still come from `activate()`. */
+export interface PluginGatewayContributes {
+  actions?: string[]
+  events?: string[]
+  http?: boolean
+}
+
+/** Declarative Desktop UI plane. Rendered by the host; no plugin components. */
+export interface PluginDesktopUiContributes {
+  panels?: PluginPanelDescriptor[]
+  toolCards?: PluginToolCardDescriptor[]
+  configPages?: PluginConfigPageDescriptor[]
+  messageWindows?: PluginMessageWindowDescriptor[]
+}
+
+/** Sandboxed webview plane. */
+export interface PluginDesktopWebContributes {
+  webSurfaces?: PluginWebSurfaceDescriptor[]
+}
+
+/** Legacy `~/.mafw/ui-plugins` plane; no new third-party usage. */
+export interface PluginDesktopMainContributes {
+  legacy?: true
+}
+
+/**
+ * Static plane declarations in `plugin.json`.
+ *
+ * Additive/optional at apiVersion 1: existing packages that only return
+ * contributions from `activate()` remain valid. Handlers are never declared
+ * here; only metadata and plane ownership.
+ */
+export interface PluginManifestContributes {
+  gateway?: PluginGatewayContributes
+  desktop?: {
+    ui?: PluginDesktopUiContributes
+    web?: PluginDesktopWebContributes
+    main?: PluginDesktopMainContributes
+  }
+}

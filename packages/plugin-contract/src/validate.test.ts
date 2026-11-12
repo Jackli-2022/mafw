@@ -6,6 +6,7 @@ import {
   normalizePluginView,
   validateClientDescriptor,
   validateConfigFormSchema,
+  validatePluginManifestContributes,
 } from "./index.ts"
 import type { PluginClientDescriptor, PluginDescriptorValidation, PluginJsonSchema } from "./index.ts"
 
@@ -421,4 +422,43 @@ test("webSurfaces: id collides with panels and unknown fields reject", () => {
   const extra = validateClientDescriptor({ name: "demo", version: "1", revision: "r",
     ui: { webSurfaces: [{ id: "p", title: "P", url: "https://evil" }] }, actions: [], events: [] })
   assert.equal(extra.ok, false)
+})
+
+test("manifest contributes: accepts gateway and desktop planes", () => {
+  const result = validatePluginManifestContributes({
+    gateway: { actions: ["refresh"], events: ["plugin:demo:changed"], http: true },
+    desktop: {
+      ui: { panels: [{ id: "main", title: "Main", viewAction: "refresh" }] },
+      web: { webSurfaces: [{ id: "explorer", title: "Explorer" }] },
+    },
+  })
+  assert.equal(result.ok, true)
+  if (!result.ok) return
+  assert.deepEqual(result.value.gateway?.actions, ["refresh"])
+  assert.equal(result.value.desktop?.web?.webSurfaces?.length, 1)
+})
+
+test("manifest contributes: accepts desktop-only and gateway-only", () => {
+  assert.equal(validatePluginManifestContributes({ desktop: { ui: {} } }).ok, true)
+  assert.equal(validatePluginManifestContributes({ gateway: { http: true } }).ok, true)
+})
+
+test("manifest contributes: rejects unknown plane keys", () => {
+  assert.equal(validatePluginManifestContributes({ gatewayx: {} }).ok, false)
+  const desktop = validatePluginManifestContributes({ desktop: { unknown: {} } })
+  assert.equal(desktop.ok, false)
+  if (desktop.ok) return
+  assert.match(desktop.error, /desktop/i)
+})
+
+test("manifest contributes: rejects non-object ui and invalid main", () => {
+  const ui = validatePluginManifestContributes({ desktop: { ui: [] } })
+  assert.equal(ui.ok, false)
+  const main = validatePluginManifestContributes({ desktop: { main: { legacy: false } } })
+  assert.equal(main.ok, false)
+})
+
+test("manifest contributes: existing client descriptor validation is unchanged", () => {
+  const result = validateClientDescriptor(validDescriptor())
+  assert.equal(result.ok, true)
 })
