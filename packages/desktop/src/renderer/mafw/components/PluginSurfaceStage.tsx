@@ -4,7 +4,7 @@ import { For, Show, createEffect, createSignal } from "solid-js"
 import type { JSX } from "solid-js"
 import { PluginWebSurfaceHost } from "../plugins/PluginWebSurfaceHost"
 import type { PluginWebSurfaceView } from "../plugins/plugin-web-surface"
-import type { PluginSurfaceId } from "../workbench-views"
+import type { PluginSurfaceId } from "../plugins/surface-id"
 
 export function PluginSurfaceStage(props: {
   activeSurfaceId: PluginSurfaceId | null

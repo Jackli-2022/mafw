@@ -11,8 +11,7 @@ import type {
   PluginPanelDescriptor,
   PluginView,
 } from "@mafw/plugin-contract"
-import type { WorkbenchSurface } from "../workbench-views"
-import { isPluginSurfaceId, pluginSurfaceId, type PluginSurfaceId } from "../workbench-views"
+import { isPluginSurfaceId, pluginSurfaceId, type PluginSurfaceId, type WorkbenchSurface } from "./surface-id"
 import type { PluginGeneration } from "./plugin-client"
 
 // `@mafw/plugin-contract` is a CommonJS workspace package in Node tests but the

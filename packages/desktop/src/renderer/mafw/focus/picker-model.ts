@@ -2,7 +2,7 @@ import { subjectKey, type Lens, type Scope, type SubjectRef, type WorldId } from
 import type { RecentContentEntry } from "../recent-content"
 import type { PodGoal } from "@mafw/sdk"
 
-export type PickerKind = "file" | "recent" | "goal" | "change" | "review" | "command"
+export type PickerKind = "world" | "file" | "recent" | "goal" | "change" | "review" | "command"
 
 export type PickerItem = {
   id: string
@@ -12,6 +12,18 @@ export type PickerItem = {
   scope: Scope
   subject: SubjectRef
   lens?: Lens
+}
+
+export function buildWorldPickerItem(worldId: WorldId): PickerItem {
+  return {
+    id: "world:overview",
+    kind: "world",
+    label: "世界总览",
+    detail: "继续 / 需要你 / 全部 Goal",
+    scope: { kind: "world", worldId },
+    subject: { kind: "world" },
+    lens: "orient",
+  }
 }
 
 function fileItem(

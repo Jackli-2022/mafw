@@ -32,7 +32,7 @@ import {
   pluginSurfaceTitle,
   prunePluginSurfaceRuntime,
 } from "./plugins/plugin-surface-state"
-import { parsePluginSurfaceId } from "./workbench-views"
+import { parsePluginSurfaceId } from "./plugins/surface-id"
 
 // `@mafw/plugin-contract` is CommonJS in Node tests; read through the synthetic
 // default when present (same interop shim as `plugin-view-model.ts`).

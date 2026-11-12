@@ -9,7 +9,7 @@ import type { LeftDockFace } from "../left-dock"
 import { connDotState, railAriaLabel } from "../left-dock"
 import { formatRailBadge } from "../pod-rail-badge"
 import type { PluginRailItemState } from "../plugins/plugin-surface-state"
-import type { PluginSurfaceId } from "../workbench-views"
+import type { PluginSurfaceId } from "../plugins/surface-id"
 
 type IconName = ComponentProps<typeof Icon>["name"]
 

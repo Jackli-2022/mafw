@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { buildCommandPickerItems, buildFilePickerItems, buildGoalPickerItems, filterPickerItems, withCommandItems } from "./picker-model"
+import { buildCommandPickerItems, buildFilePickerItems, buildGoalPickerItems, buildWorldPickerItem, filterPickerItems, withCommandItems } from "./picker-model"
 import { subjectKey, type Scope } from "./focus-model"
 import type { RecentContentEntry } from "../recent-content"
 
@@ -185,4 +185,13 @@ test("picker item identities are stable", () => {
     projectScope,
   })
   assert.equal(items[0]!.id, `file:${subjectKey(items[0]!.subject)}`)
+})
+
+test("world overview is a picker item", () => {
+  const item = buildWorldPickerItem("C:/repo")
+  assert.equal(item.kind, "world")
+  assert.equal(item.label, "世界总览")
+  assert.deepEqual(item.scope, { kind: "world", worldId: "C:/repo" })
+  assert.deepEqual(item.subject, { kind: "world" })
+  assert.equal(item.lens, "orient")
 })

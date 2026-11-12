@@ -108,17 +108,10 @@ import { defaultDockOpen } from "./workbench-defaults"
 import type { ChatEpisode } from "./chat/episode-model"
 import { resolveEpisodeGoalReference } from "./chat/episode-decision"
 import {
-  clearLegacyWorkbenchKeys,
-  migrateWorkbenchStorage,
   parsePluginSurfaceId,
   pluginSurfaceId,
   type PluginSurfaceId,
-  type WorkbenchSurface,
-} from "./workbench-views"
-import {
-  persistedWorkbenchContext,
-  type WorkbenchContext,
-} from "./workbench-context"
+} from "./plugins/surface-id"
 import {
   createWorkbenchState,
   jumpTo,
@@ -132,7 +125,8 @@ import {
   type WorkbenchState,
 } from "./focus/focus-model"
 import { frameView, type FrameView } from "./focus/frame-view"
-import { buildCommandPickerItems, buildFilePickerItems, buildGoalPickerItems, withCommandItems, type PickerItem } from "./focus/picker-model"
+import { buildCommandPickerItems, buildFilePickerItems, buildGoalPickerItems, buildWorldPickerItem, withCommandItems, type PickerItem } from "./focus/picker-model"
+import { shouldAutoOpenPicker } from "./focus/landing"
 import { stageActionFor } from "./focus/stage-dispatch"
 import { openGoalFocus as applyGoalFocus, openReviewItemFocus as applyReviewFocus, openChangeSetFocus as applyChangeSetFocus } from "./focus/goal-focus"
 import type { FocusOpenRequest } from "./focus/focus-open"
@@ -152,7 +146,6 @@ import { fileProtocol } from "./file-protocol-client"
 import { requestBrowserNavigate } from "./browser-nav"
 import { buildMafwFileUrl } from "../../shared/mafw-file"
 import { CHAT_PX_CEIL, CHAT_PX_FLOOR, WORKBENCH_DEFAULT_DETENT, WORKBENCH_MIN_WIDTH, chatPxForDetent, snapDetent, workbenchZoneFor, type WorkbenchDetent } from "./workbench-detents"
-import { captureWorkbenchFocusSnapshot, restoreWorkbenchFocusSnapshot, type WorkbenchFocusSnapshot } from "./workbench-focus"
 import { migrateDockKeys, workbenchColumns, workbenchFocusActive, workbenchShellHidden, workbenchSplit, formatResizePreview, type WorkbenchContentMode } from "./workbench-layout"
 import { resolveWorkbenchRoot } from "./workbench-root"
 import {
@@ -2027,21 +2020,19 @@ export function MafwShell() {
     focusOpenNonce += 1
     setFocusOpenRequest({ root, rel, nonce: focusOpenNonce, line })
   }
-  let workbenchFocusSnapshot: WorkbenchFocusSnapshot | null = null
-  const bootWorkbench = migrateWorkbenchStorage((k) => {
-    try { return localStorage.getItem(k) } catch { return null }
-  })
-  const bootView = bootWorkbench.state
-  const [workbenchContext, setWorkbenchContext] = createSignal<WorkbenchContext>(bootView.context)
-  const [workbenchSurface, setWorkbenchSurface] = createSignal<WorkbenchSurface>(bootView.surface)
-  const [previousSurface, setPreviousSurface] = createSignal<"code" | "browser">(
-    bootView.surface === "browser" ? "browser" : "code",
-  )
+  let focusDetentSnapshot: WorkbenchDetent | null = null
   try {
-    localStorage.setItem("mafw-workbench-context", persistedWorkbenchContext(bootView.context))
-    localStorage.setItem("mafw-workbench-surface", bootView.surface)
-    localStorage.removeItem("mafw-workbench-view")
-    clearLegacyWorkbenchKeys((key) => localStorage.removeItem(key))
+    for (const key of [
+      "mafw-workbench-context",
+      "mafw-workbench-surface",
+      "mafw-execution-section",
+      "mafw-workbench-view",
+      "mafw-right-dock-tab",
+      "mafw-workbench-tab",
+      "mafw-tasks-placement",
+    ]) {
+      localStorage.removeItem(key)
+    }
   } catch { /* ignore */ }
   // 绝对 px 三档（520/640/760，默认 640）
   const [detent, setDetent] = createSignal<WorkbenchDetent>(workbenchBoot.detent)
@@ -2107,7 +2098,10 @@ export function MafwShell() {
 
   const applyRightDock = (open: boolean) => {
     if (!open) {
-      restoreFocusSnapshot()
+      if (focusDetentSnapshot !== null) {
+        applyDetent(focusDetentSnapshot)
+        focusDetentSnapshot = null
+      }
       setWorkbenchFocus(false)
     }
     if (narrowZone()) setNarrowView(open ? "workbench" : "chat")
@@ -2122,45 +2116,16 @@ export function MafwShell() {
     setNarrowView(view)
   }
   createEffect(() => { if (!narrowZone()) setNarrowView("chat") })
-  const applyWorkbenchSurface = (surface: WorkbenchSurface) => {
-    if (surface === "code" || surface === "browser") setPreviousSurface(surface)
-    setWorkbenchSurface(surface)
-    try { localStorage.setItem("mafw-workbench-surface", surface) } catch { /* ignore */ }
-  }
-
-  const currentWorkbenchSnapshot = (): WorkbenchFocusSnapshot => ({
-    detent: detent(),
-    context: workbenchContext(),
-    surface: workbenchSurface(),
-    previousSurface: previousSurface(),
-  })
-
-  const applyWorkbenchSnapshot = (snapshot: WorkbenchFocusSnapshot) => {
-    setDetent(snapshot.detent)
-    setChatPreview(null)
-    setWorkbenchContext(snapshot.context)
-    setWorkbenchSurface(snapshot.surface)
-    setPreviousSurface(snapshot.previousSurface)
-    try {
-      localStorage.setItem("mafw-workbench-detent", String(snapshot.detent))
-      localStorage.setItem("mafw-workbench-context", persistedWorkbenchContext(snapshot.context))
-      localStorage.setItem("mafw-workbench-surface", snapshot.surface)
-    } catch { /* ignore */ }
-  }
-
-  const restoreFocusSnapshot = () => {
-    if (!workbenchFocusSnapshot) return
-    applyWorkbenchSnapshot(restoreWorkbenchFocusSnapshot(workbenchFocusSnapshot, currentWorkbenchSnapshot()))
-    workbenchFocusSnapshot = null
-  }
-
   const toggleWorkbenchFocus = () => {
     if (workbenchFocus()) {
-      restoreFocusSnapshot()
+      if (focusDetentSnapshot !== null) {
+        applyDetent(focusDetentSnapshot)
+        focusDetentSnapshot = null
+      }
       setWorkbenchFocus(false)
       return
     }
-    workbenchFocusSnapshot = captureWorkbenchFocusSnapshot(currentWorkbenchSnapshot())
+    focusDetentSnapshot = detent()
     if (!rightDockOpen()) applyRightDock(true)
     setWorkbenchFocus(true)
   }
@@ -2296,7 +2261,6 @@ export function MafwShell() {
         if (root !== contentRoot()) return // 根已切换：丢弃迟到结果
         try {
           requestBrowserNavigate(buildMafwFileUrl(token, rel))
-          applyWorkbenchSurface("browser")
           setFocusState((state) =>
             openSubject(
               { ...state, worldId: nextScope.worldId },
@@ -2313,7 +2277,6 @@ export function MafwShell() {
       return
     }
     requestFocusOpen(root, rel)
-    applyWorkbenchSurface("code")
     setFocusState((state) =>
       openSubject({ ...state, worldId: nextScope.worldId }, nextScope, { kind: "file", root, rel }, nextLens),
     )
@@ -2723,6 +2686,10 @@ export function MafwShell() {
   }
   const pickSubject = (item: PickerItem) => {
     setPickerOpen(false)
+    if (item.subject.kind === "world") {
+      openWorldOverview()
+      return
+    }
     if (item.subject.kind === "goal") {
       openGoalFocus(item.subject.goalId, "timeline")
       return
@@ -2747,6 +2714,8 @@ export function MafwShell() {
   }
 
   let lastFocusWorld: string | null = null
+  let lastAutoPickerWorld: string | null = null
+  createEffect(on(() => currentProject(), () => { lastAutoPickerWorld = null }, { defer: true }))
   const validateFocusStack = async (worldId: string, state: WorkbenchState) => {
     const valid: Focus[] = []
     for (const focus of state.stack) {
@@ -2794,6 +2763,19 @@ export function MafwShell() {
     void validateFocusStack(worldId, state)
   })
   createEffect(() => {
+    const worldId = currentProject()
+    if (!worldId || lastFocusWorld !== worldId) return
+    if (!shouldAutoOpenPicker({
+      worldId,
+      focusCount: focusState().stack.length,
+      pickerOpen: pickerOpen(),
+      rightDockOpen: rightDockOpen(),
+      lastAutoPickerWorld,
+    })) return
+    lastAutoPickerWorld = worldId
+    setPickerOpen(true)
+  })
+  createEffect(() => {
     saveFocusState(focusState())
   })
   onCleanup(() => flushFocusPersistence())
@@ -2837,7 +2819,8 @@ export function MafwShell() {
       project ?? "",
       project ?? "",
     )
-    return withCommandItems([...items, ...goalItems], buildCommandPickerItems(scope))
+    const worldItem = buildWorldPickerItem(worldId)
+    return withCommandItems([worldItem, ...items, ...goalItems], buildCommandPickerItems(scope))
   })
   const contentDiffEntries = createMemo(() => diffsForContentScope({
     contentRoot: contentRoot(),
@@ -3301,7 +3284,10 @@ export function MafwShell() {
   // 这些 signal 变成依赖 → 自触发无限刷新（pod listMessages / cost 打屏）。
   createEffect(on(() => benchRoot() ?? currentProject(), (dir, previous) => {
     if (previous !== undefined && dir !== previous) {
-      restoreFocusSnapshot()
+      if (focusDetentSnapshot !== null) {
+        applyDetent(focusDetentSnapshot)
+        focusDetentSnapshot = null
+      }
       setWorkbenchFocus(false)
     }
     if (dir) void podStore.open(dir)

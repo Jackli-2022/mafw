@@ -10,7 +10,7 @@
 // omit `entry`/`scope`/`reloadOnSessionChange`, and packages without the slot
 // must project to nothing rather than break the rail.
 import type { PluginClientDescriptor } from "@mafw/plugin-contract"
-import { pluginSurfaceId, type PluginSurfaceId } from "../workbench-views"
+import { pluginSurfaceId, type PluginSurfaceId } from "./surface-id"
 import type { PluginTabSurface } from "./plugin-view-model"
 
 /** Declared rail projection (defaults already applied). */
