@@ -7,15 +7,19 @@ const css = readFileSync(join(import.meta.dirname, "mafw.css"), "utf8")
 /** 取 .mafw-shell 基础块（第一个不带 html[] 前缀的 .mafw-shell 规则）到 --font-ui 结束。 */
 const shellBlock = css.slice(css.indexOf(".mafw-shell, body {"), css.indexOf("/* 亮色：手动覆盖"))
 
-describe("v7 semantic motion tokens", () => {
-  test("two-tier duration + easing tokens exist with the agreed values", () => {
-    expect(shellBlock).toMatch(/--dur-fast:\s*140ms/)
-    expect(shellBlock).toMatch(/--dur-surface:\s*280ms/)
-    expect(shellBlock).toMatch(/--ease-standard:\s*cubic-bezier\(\.25,0,0,1\)/)
+describe("visual language motion tokens", () => {
+  test("approved motion tokens exist with the agreed values", () => {
+    expect(shellBlock).toMatch(/--dur-press:\s*80ms/)
+    expect(shellBlock).toMatch(/--dur-fast:\s*120ms/)
+    expect(shellBlock).toMatch(/--dur-select:\s*180ms/)
+    expect(shellBlock).toMatch(/--dur-enter:\s*220ms/)
+    expect(shellBlock).toMatch(/--dur-surface:\s*240ms/)
+    expect(shellBlock).toMatch(/--dur-progress:\s*320ms/)
+    expect(shellBlock).toMatch(/--ease-standard:\s*cubic-bezier\(\.2,\s*\.8,\s*\.2,\s*1\)/)
     expect(shellBlock).toMatch(/--ease-surface:\s*cubic-bezier\(\.16,1,\.3,1\)/)
   })
 
-  test("legacy tokens are retained (deprecated aliases)", () => {
+  test("legacy tokens are retained as deprecated aliases", () => {
     expect(shellBlock).toMatch(/--dur-1:\s*120ms/)
     expect(shellBlock).toMatch(/--ease:\s*cubic-bezier\(\.25,0,0,1\)/)
   })

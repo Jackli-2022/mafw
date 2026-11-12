@@ -124,9 +124,13 @@
   --dur-4: 240ms;
   --ease: cubic-bezier(.25,0,0,1);
   /* v7 两级动效（fast=微交互 / surface=表面级），无 spring；dur-1..4/ease 为 deprecated 别名 */
-  --dur-fast: 140ms;
-  --dur-surface: 280ms;
-  --ease-standard: cubic-bezier(.25,0,0,1);
+  --dur-press: 80ms;
+  --dur-fast: 120ms;
+  --dur-select: 180ms;
+  --dur-enter: 220ms;
+  --dur-surface: 240ms;
+  --dur-progress: 320ms;
+  --ease-standard: cubic-bezier(.2,.8,.2,1);
   --ease-surface: cubic-bezier(.16,1,.3,1);
   /* 循环动画时长（不属 token 尺度，集中建档）：mafw-breathe 2s|1s · mafw-spin 1s · mafw-think-spin 1.2s
      · mafw-phase-pulse 1.2s|0.8s · mafw-shimmer 1.2s · mafw-eq 0.8s · mafw-voice-pulse 1.5s */
@@ -257,9 +261,13 @@ html[data-theme="light"] body {
   --dur-4: 240ms;
   --ease: cubic-bezier(.25,0,0,1);
   /* v7 两级动效 + 列宽（三主题块键集一致）*/
-  --dur-fast: 140ms;
-  --dur-surface: 280ms;
-  --ease-standard: cubic-bezier(.25,0,0,1);
+  --dur-press: 80ms;
+  --dur-fast: 120ms;
+  --dur-select: 180ms;
+  --dur-enter: 220ms;
+  --dur-surface: 240ms;
+  --dur-progress: 320ms;
+  --ease-standard: cubic-bezier(.2,.8,.2,1);
   --ease-surface: cubic-bezier(.16,1,.3,1);
   --msg-col-width: 720px;
   --font-family-sans: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
@@ -330,8 +338,8 @@ html[data-theme="light"] body {
     --dur-1: 120ms; --dur-2: 160ms; --dur-3: 200ms; --dur-4: 240ms;
     --ease: cubic-bezier(.25,0,0,1);
     /* v7 两级动效 + 列宽（三主题块键集一致）*/
-    --dur-fast: 140ms; --dur-surface: 280ms;
-    --ease-standard: cubic-bezier(.25,0,0,1); --ease-surface: cubic-bezier(.16,1,.3,1);
+    --dur-press: 80ms; --dur-fast: 120ms; --dur-select: 180ms; --dur-enter: 220ms; --dur-surface: 240ms; --dur-progress: 320ms;
+    --ease-standard: cubic-bezier(.2,.8,.2,1); --ease-surface: cubic-bezier(.16,1,.3,1);
     --msg-col-width: 720px;
     --font-family-sans: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
     --font-family-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, Menlo, monospace;
@@ -621,8 +629,6 @@ html[data-theme="light"] body {
 }
 .mafw-titlebar-dot.ready {
   background: var(--accent);
-  box-shadow: var(--glow-accent);
-  animation: mafw-breathe 2s ease-in-out infinite;
 }
 .mafw-titlebar-dot.starting { background: var(--text-4); animation: mafw-breathe 1s ease-in-out infinite; }
 .mafw-titlebar-dot.failed { background: var(--danger); }
@@ -824,7 +830,7 @@ html[data-theme="light"] body {
 .mafw-usage-wb-ovw-label { font-size: 12px; font-weight: 600; color: var(--text-2); }
 .mafw-usage-wb-ovw-val { font-size: 12px; color: var(--text-1); font-family: var(--font-data); }
 .mafw-usage-wb-ovw-bar { height: 6px; border-radius: 3px; background: var(--hover); overflow: hidden; }
-.mafw-usage-wb-ovw-fill { height: 100%; border-radius: 3px; background: var(--success); transition: width var(--dur-3) var(--ease); }
+.mafw-usage-wb-ovw-fill { height: 100%; border-radius: 3px; background: var(--success); transition: width var(--dur-progress) var(--ease-standard); }
 .mafw-usage-wb-ovw-meta { display: flex; gap: 12px; font-size: 11px; color: var(--text-4); }
 .mafw-usage-wb-row { display: flex; flex-direction: column; gap: 4px; }
 .mafw-usage-wb-row label, .mafw-usage-wb-row > .mafw-config-label { font-size: 11px; color: var(--text-3); }
@@ -995,9 +1001,8 @@ html[data-theme="light"] body {
   border: 2px solid var(--text-5);
   border-top-color: var(--accent);
   flex-shrink: 0;
-  animation: mafw-spin 1s linear infinite;
 }
-.mafw-taskbar-spinner.running { border-top-color: var(--accent); }
+.mafw-taskbar-spinner.running { border-top-color: var(--accent); animation: mafw-spin 1s linear infinite; }
 .mafw-taskbar-spinner.pending {
   border: 1.5px solid var(--text-4);
   border-radius: 50%;
@@ -1049,7 +1054,7 @@ html[data-theme="light"] body {
   height: 100%;
   border-radius: 999px;
   background: var(--success);
-  transition: width var(--dur-4) var(--ease);
+  transition: width var(--dur-progress) var(--ease-standard);
 }
 .mafw-taskbar-time {
   font-size: 11px;
@@ -1403,11 +1408,8 @@ html[data-theme="light"] body {
   background: var(--accent, #6366f1);
   animation: mafw-phase-pulse 1.2s ease-in-out infinite;
 }
-.mafw-phase-searching .mafw-phase-text {
-  animation: mafw-phase-pulse 1.2s var(--ease) infinite;
-}
 .mafw-phase-writing .mafw-phase-dot {
-  background: var(--success);
+  background: var(--accent);
   animation: mafw-phase-pulse 0.8s ease-in-out infinite;
 }
 .mafw-phase-writing .mafw-phase-text {
@@ -2224,7 +2226,7 @@ html[data-theme="light"] body {
 .mafw-plugin-markdown a { color: var(--accent-text); }
 .mafw-plugin-progress { display: flex; align-items: center; gap: 8px; }
 .mafw-plugin-progress-track { flex: 1; height: 6px; border-radius: 999px; background: var(--surface-base-hover); overflow: hidden; }
-.mafw-plugin-progress-fill { height: 100%; border-radius: 999px; background: var(--success); transition: width var(--dur-4) var(--ease); }
+.mafw-plugin-progress-fill { height: 100%; border-radius: 999px; background: var(--success); transition: width var(--dur-progress) var(--ease-standard); }
 .mafw-plugin-progress-label { font-size: 11px; color: var(--text-base); white-space: nowrap; }
 
 /* ── Declarative plugin message windows (Task 11) ──
@@ -4063,7 +4065,7 @@ html[data-theme="light"] body {
   height: 100%;
   border-radius: 4px;
   background: var(--success);
-  transition: width var(--dur-4) var(--ease);
+  transition: width var(--dur-progress) var(--ease-standard);
 }
 .mafw-usage-ctx-fill.mafw-usage-ctx-warn {
   background: var(--warning);
@@ -4085,7 +4087,7 @@ html[data-theme="light"] body {
   height: 100%;
   min-width: 2px;
   border-radius: 1px;
-  transition: width var(--dur-4) var(--ease);
+  transition: width var(--dur-progress) var(--ease-standard);
 }
 
 /* ══ 紧凑统计行（手风琴） ══ */
@@ -4258,7 +4260,7 @@ html[data-theme="light"] body {
 .mafw-usage-memory-role-fill {
   height: 100%;
   border-radius: 2px;
-  transition: width var(--dur-4) var(--ease);
+  transition: width var(--dur-progress) var(--ease-standard);
 }
 
 .mafw-usage-provider {
@@ -4332,7 +4334,7 @@ html[data-theme="light"] body {
 .mafw-usage-window-progress-fill {
   height: 100%;
   border-radius: 3px;
-  transition: width var(--dur-4) var(--ease);
+  transition: width var(--dur-progress) var(--ease-standard);
 }
 
 .mafw-usage-window-pct {
@@ -4508,7 +4510,7 @@ html[data-theme="light"] body {
   height: 100%;
   background: var(--success);
   border-radius: 2px;
-  transition: width var(--dur-3) var(--ease);
+  transition: width var(--dur-progress) var(--ease-standard);
 }
 
 .mafw-usage-model-pct {
@@ -5310,11 +5312,9 @@ html[data-theme="light"] body {
   border-radius: 50%;
   background: currentColor;
   flex-shrink: 0;
-  box-shadow: 0 0 0 2px var(--bg-overlay), 0 0 10px currentColor;
 }
 .mafw-config-status-ready .mafw-config-status-dot {
-  animation: mafw-breathe 2s ease-in-out infinite;
-  box-shadow: 0 0 0 2px var(--accent-dim), 0 0 12px var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
 }
 /* Actions row */
 .mafw-config-actions-row {

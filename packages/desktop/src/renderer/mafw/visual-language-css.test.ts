@@ -198,3 +198,18 @@ describe("readable metadata and session icons", () => {
     }
   })
 })
+
+describe("motion discipline", () => {
+  test("ready state is static and phase uses one loop", () => {
+    expect(block(".mafw-titlebar-dot.ready")).not.toContain("animation")
+    expect(block(".mafw-titlebar-dot.ready")).not.toContain("glow-accent")
+    expect(block(".mafw-phase-searching .mafw-phase-text")).not.toContain("animation")
+  })
+
+  test("reduced motion stops loops but keeps status text", () => {
+    const reduce = block("@media (prefers-reduced-motion: reduce)")
+    expect(reduce).toContain("animation-duration: 0.01ms")
+    expect(reduce).toContain("animation-iteration-count: 1")
+    expect(css).toContain('data-streaming="true"')
+  })
+})
