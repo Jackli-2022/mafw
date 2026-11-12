@@ -12,6 +12,15 @@
 
 **Roadmap:** `docs/superpowers/plans/2026-11-12-fixed-core-capability-roadmap.md`
 
+## Progress（2026-11-12）
+
+- Task 3.5.1–3.5.5 全部完成。
+- 定向门禁：**238 / 238 pass**（新增 10：v2-live 5、event-dispatch 2、mafw-tools 2、boundaries 1）。
+- gateway 全量：**6972 passed / 1 skipped / 6973 total**，连续两次 clean。
+- typecheck（gateway）：通过。
+- 交付记录：`docs/releases/2026-11-12-capability-kernel-phase3-5.md`。
+- 默认两个 flag 都关闭；生产行为与 Phase 3 一致。
+
 ## Global Constraints
 
 - **默认关闭**：两个 env 都不设置时，v1 行为与 Phase 3 完全一致；不创建 registry、不注册 observer/tool、不改变事件链输出。

@@ -294,6 +294,19 @@ Probe 的作用是让 tech lead 在看详细计划前先看清关键未知；每
 
 **Gate G3**：一个插件包可以声明工具并被 agent 调用；一个 observer 可以收到 tool 事件；核心闭环无回归。
 
+## Phase 3.5：Live wiring（2026-11-12 已交付，默认关闭）
+
+**目标**：把 Phase 3 的 observer/tools 以 feature flag 接进 v1 live 路径，不改变默认行为。
+
+- 唯一 bridge `runtime/v2-live.ts`；`kernel.ts` / `boot.ts` 只 import bridge。
+- `MAFW_KERNEL_V2_OBSERVERS=1`：事件链新增 `canonicalObserverTap` stage（conformanceTap 之后、internalFilter 之前）。
+- `MAFW_KERNEL_V2_TOOLS=1`：`activateRuntimeTools` 合并 plugin tools；merge 失败回退 builtin。
+- `MafwScheduler.registerCanonicalObserver()` / `registerPluginTool()` 显式注册口。
+- 详细计划：`docs/superpowers/plans/2026-11-12-kernel-v2-phase3-5-live-wiring.md`
+- 交付记录：`docs/releases/2026-11-12-capability-kernel-phase3-5.md`
+
+**Gate G3.5**：flag 关闭 v1 零行为变化；flag 打开 observer/tool 可用；失败 fail-open；全量绿。
+
 ## Phase 4：Desktop UI 槽位（4–6 周）
 
 **目标**：固定 shell + 更多声明式槽位；不注入原生组件。

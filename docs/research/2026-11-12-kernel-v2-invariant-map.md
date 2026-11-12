@@ -38,6 +38,10 @@
 | observer 快照脱敏 | `gateway/tests/unit/kernel-v2/canonical-event.test.ts` | OK | token/secret/prompt/credential 剔除 |
 | plugin tool 命名空间/失败隔离/scope | `gateway/tests/unit/kernel-v2/tools.test.ts`、`tools-conformance.test.ts` | OK | `plugin:<package>:<tool>` |
 | G3 tools + observer 闭环 | `gateway/tests/integration/kernel-v2-g3.test.ts` | OK | fake runtime |
+| live 接线仅一个 bridge import kernel-v2 | `gateway/tests/unit/architecture/kernel-v2-boundaries.test.ts`（Phase 3.5） | OK | `runtime/v2-live.ts` |
+| feature flag 关闭零行为变化 | `gateway/tests/unit/runtime/v2-live.test.ts` | OK | 两 flag 都关 → bridge null |
+| observer live stage fail-open | `gateway/tests/unit/runtime/event-dispatch.test.ts` | OK | 抛错仍继续 finalBroadcast |
+| plugin tool live merge fail-open | `gateway/tests/unit/runtime/mafw-tools.test.ts` | OK | extraTools 抛错回退 builtin |
 
 ## Desktop
 

@@ -766,18 +766,26 @@ Phase 3 agent tools + observer（S5 → tools → G3 harness）：
 - `packages/plugin-contract`：`PluginGatewayContributes.tools` + `PluginToolDescriptor` 校验（additive）。
 - 2 个 conformance kit + 2 个测试包 fixture；G3 harness 用 fake runtime 证明工具可调用、observer 收到 tool 事件且坏 observer 不阻塞。
 
-Phase 3 仍未接 live `runtime/event-dispatch.ts` / `RuntimeTools.registerTools`；G3 是 conformance harness 级证明，live 接线留到 Phase 3.5/cutover。interceptor 仍未开放。
+Phase 3.5 live wiring（2026-11-12，默认关闭）：
 
-门禁：Phase 2 的 kernel-v2 + architecture + shadow + G2 **146 tests**；Phase 3 定向结果见 `docs/releases/2026-11-12-capability-kernel-phase3.md`。typecheck 通过；gateway 全量结果见 Phase 2/3 交付记录。runbook 见 `docs/guides/kernel-v2-cutover.md`。
+- 唯一 bridge `runtime/v2-live.ts`：live 代码中只有它能 import `kernel-v2/**`；`kernel.ts` / `boot.ts` 只 import bridge。
+- `MAFW_KERNEL_V2_OBSERVERS=1`：`event-dispatch.ts` 在 `conformanceTap` 之后、`internalFilter` 之前增加 `canonicalObserverTap` stage；事件经 `toCanonicalEvent` 脱敏后进入 observer registry。`dispatch()` 同步返回，失败 fail-open。
+- `MAFW_KERNEL_V2_TOOLS=1`：`activateRuntimeTools` 在 builtin 六件套之后合并 `ToolContributionRegistry.factory()` 的 `plugin:<package>:<tool>`；merge 抛错只回退 builtin。
+- `MafwScheduler.registerCanonicalObserver()` / `registerPluginTool()` 暴露显式注册口；flag 关闭时抛带 env 名称的错误。
+- 两个 flag 都关闭 → bridge 为 `null`，v1 事件链/tool factory 与 Phase 3 一致。
+- 仍未开放 interceptor；plugin host 自动注册 observer/tool 仍未接线。
+
+门禁：Phase 3.5 定向 **238 / 238**；gateway 全量 **6972 passed / 1 skipped / 6973 total**，连续两次 clean；typecheck 通过。各 phase 交付记录见 `docs/releases/2026-11-12-capability-kernel-phase{1,2,3,3-5}.md`。runbook 见 `docs/guides/kernel-v2-cutover.md`。
 
 - 架构 spec：`docs/superpowers/specs/2026-11-12-fixed-core-capability-architecture-design.md`
 - 路线图：`docs/superpowers/plans/2026-11-12-fixed-core-capability-roadmap.md`
 - Phase 0/1 详细 plan：`docs/superpowers/plans/2026-11-12-kernel-v2-phase0-1.md`
 - Phase 2 详细 plan：`docs/superpowers/plans/2026-11-12-kernel-v2-phase2-leaf-providers.md`
 - Phase 3 详细 plan：`docs/superpowers/plans/2026-11-12-kernel-v2-phase3-agent-tools-observer.md`
+- Phase 3.5 详细 plan：`docs/superpowers/plans/2026-11-12-kernel-v2-phase3-5-live-wiring.md`
 - 不变量 → 守卫：`docs/research/2026-11-12-kernel-v2-invariant-map.md`
 - S5 结论：`docs/research/2026-11-12-s5-canonical-event-observer-probe.md`
-- 交付记录：`docs/releases/2026-11-12-capability-kernel-phase1.md`、`docs/releases/2026-11-12-capability-kernel-phase2.md`、`docs/releases/2026-11-12-capability-kernel-phase3.md`
+- 交付记录：`docs/releases/2026-11-12-capability-kernel-phase1.md`、`docs/releases/2026-11-12-capability-kernel-phase2.md`、`docs/releases/2026-11-12-capability-kernel-phase3.md`、`docs/releases/2026-11-12-capability-kernel-phase3-5.md`
 
 ---
 
