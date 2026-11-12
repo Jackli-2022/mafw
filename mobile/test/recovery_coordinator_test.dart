@@ -13,6 +13,8 @@
 ///  - reconnect with a clean gap → refresh only.
 library;
 
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:orcalore_mobile/src/models/mafw_models.dart';
@@ -261,7 +263,8 @@ void main() {
       expect(result.fullReload, isTrue);
     });
 
-    test('a new gateway instance discards the cursor and reloads', () async {
+    test('a new gateway instance re-baselines onto the new head and reloads',
+        () async {
       final h = _Harness(
         cursor: 10,
         instanceId: 'inst-old',
@@ -276,10 +279,44 @@ void main() {
 
       expect(h.fetchCalls, isEmpty);
       expect(h.emitted, isEmpty);
-      expect(h.recovery.cursor, isNull);
+      // F4: re-baselined + persisted, so a kill before the next live frame does
+      // not force a second baseline against the same epoch.
+      expect(h.recovery.cursor, 3);
+      expect(h.store.seq, 3);
+      expect(h.store.instanceId, 'inst-new');
       expect(h.log, ['refresh', 'reload']);
       expect(result.fullReload, isTrue);
       expect(result.epochChanged, isTrue);
+    });
+
+    test('a busy replay does not refresh or reload (F3)', () async {
+      final gate = Completer<EventReplayPage?>();
+      final h = _Harness(
+        cursor: 10,
+        instanceId: 'inst-a',
+        fetch: (_, _) => gate.future,
+      );
+      await h.init();
+
+      // A reconnect's replay is still in flight when the next greeting lands.
+      final inFlight = h.recovery.recover();
+      await Future<void>.delayed(Duration.zero);
+
+      final result = await h.coordinator.handle(
+        _greeting(headSeq: 11, instanceId: 'inst-a'),
+        isReconnect: true,
+      );
+
+      expect(result.busy, isTrue);
+      expect(result.refreshed, isFalse,
+          reason: 'the in-flight replay owns the refresh');
+      expect(result.fullReload, isFalse);
+      expect(h.log, isEmpty);
+
+      gate.complete(_page(events: [_event(11)], headSeq: 11, nextSince: 11));
+      final outcome = await inFlight;
+      expect(outcome.kind, RecoveryOutcomeKind.recovered);
+      expect(h.emitted.map((e) => e.seq), [11]);
     });
 
     test('a throwing refresh still triggers the full reload', () async {

@@ -38,6 +38,10 @@ class GatewayReadyResult {
   /// The caller was asked for a full reload (fallback / epoch change).
   final bool fullReload;
 
+  /// Another replay was already in flight, so this greeting did nothing: the
+  /// running loop owns the recovery **and** the refresh (F3).
+  final bool busy;
+
   const GatewayReadyResult({
     this.baselined = false,
     this.epochChanged = false,
@@ -45,6 +49,7 @@ class GatewayReadyResult {
     this.fallback,
     this.refreshed = false,
     this.fullReload = false,
+    this.busy = false,
   });
 }
 
@@ -73,29 +78,39 @@ class RecoveryCoordinator {
     required bool isReconnect,
   }) async {
     final hadCursor = recovery.cursor != null;
+    final hadInstance = recovery.instanceId;
     RecoveryOutcome? outcome;
     var epochChanged = false;
 
     var refreshed = false;
     var fullReload = false;
+    var busy = false;
 
     try {
       await recovery.observeHeadSeq(greeting.headSeq, greeting.instanceId);
-      // observeHeadSeq drops the cursor when the greeting reports another
-      // gateway instance: same branch as a reset (the old seq space is gone).
-      epochChanged = hadCursor && recovery.cursor == null;
+      // observeHeadSeq re-baselines onto the new head when the greeting reports
+      // another gateway instance: the old seq space is gone (same branch as a
+      // reset — full reload, but the cursor is already usable).
+      epochChanged = hadCursor &&
+          hadInstance != null &&
+          greeting.instanceId != null &&
+          greeting.instanceId != hadInstance;
       if (hadCursor && !epochChanged) {
         // Bounded inside the service (100 pages / 10s request timeout).
         outcome = await recovery.recover();
       }
+      // F3: a replay started by an earlier greeting is still running. It owns
+      // the refresh, so this call must not refresh or reload (that would race
+      // the in-flight apply and double the work).
+      busy = outcome?.isBusy ?? false;
     } finally {
       // Replay first, refresh second: a surface that sees the refresh must
       // already have the recovered frames.
       final applied = outcome?.applied ?? 0;
       final fallback = outcome?.reason;
       final needsReload = epochChanged || fallback != null;
-      final shouldRefresh =
-          isReconnect || hadCursor || applied > 0 || needsReload;
+      final shouldRefresh = !busy &&
+          (isReconnect || hadCursor || applied > 0 || needsReload);
       if (shouldRefresh) {
         refreshed = true;
         try {
@@ -116,6 +131,7 @@ class RecoveryCoordinator {
       fallback: outcome?.reason,
       refreshed: refreshed,
       fullReload: fullReload,
+      busy: busy,
     );
   }
 }

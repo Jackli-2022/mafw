@@ -100,12 +100,14 @@ void main() {
     bool withGatewayReady = true,
     bool withLegacyReconnect = false,
     bool throwInCallback = false,
+    void Function(String raw)? onRawFrame,
   }) async {
     final ws = WsClientV2(
       ConnectionConfig(
         baseUrl: 'http://127.0.0.1:${server.port}',
         apiToken: 'tok-recovery',
       ),
+      onRawFrame: onRawFrame,
       onGatewayReady: withGatewayReady
           ? (greeting, isReconnect) async {
               readyFlags.add(isReconnect);
@@ -193,6 +195,21 @@ void main() {
 
       await _waitFor(() => legacyReconnects == 1, reason: 'legacy hook');
       expect(readyFlags, isEmpty);
+    });
+
+    test('a greeting racing an intentional disconnect is ignored (F5)', () async {
+      // The raw-frame tap runs synchronously at the start of `_onFrame`, i.e.
+      // exactly while the greeting is being parsed: it reproduces the window the
+      // guard closes (backgrounding closes the socket mid-frame).
+      final ws = await connect(
+        onRawFrame: (_) => client?.disconnect(),
+      );
+
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+
+      expect(ws.isConnected, isFalse);
+      expect(readyFlags, isEmpty,
+          reason: 'recovery must not run for a socket being torn down');
     });
   });
 

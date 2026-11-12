@@ -221,11 +221,14 @@ class EventRecoveryService {
   ///
   /// - no cursor yet → adopt the head as the baseline (no replay needed);
   /// - same gateway instance → keep the cursor untouched;
-  /// - different instance → the event log epoch changed: clear the cursor and
-  ///   let the caller do a full reload (then baseline again).
+  /// - different instance → the event log epoch changed: discard the old cursor,
+  ///   re-baseline onto the new head, and let the caller do a full reload.
   ///
   /// Persists before returning so a caller that awaits this can treat the
-  /// baseline as durable (E5b-3 reconnect wiring does exactly that).
+  /// baseline as durable (E5b-3 reconnect wiring does exactly that). The
+  /// epoch-change re-baseline (E5b batch-3 review F4) means a process kill
+  /// right after a gateway swap resumes at the new head instead of baselining
+  /// again on the next greeting.
   Future<void> observeHeadSeq(int? head, String? instanceId) async {
     if (head == null) return;
 
@@ -233,11 +236,12 @@ class EventRecoveryService {
         _instanceId != null &&
         instanceId != null &&
         instanceId != _instanceId) {
-      _cursor = null;
-      _instanceId = null;
+      _cursor = head;
+      _instanceId = instanceId;
       _lastPersist = _now();
       _unpersisted = 0;
       await _cursorStore.clear();
+      await _cursorStore.save(_cursor, _instanceId);
       return;
     }
 
@@ -310,11 +314,19 @@ class EventRecoveryService {
 
         for (final event in page.events) {
           final seq = event.seq;
-          if (seq == null || seq <= cursor) continue; // idempotent consume
+          if (seq == null) continue;
+          // E5b batch-3 review (F1): live delivery races the page. A seq at or
+          // below the live-advanced cursor was already consumed, so replay must
+          // not re-emit it. Advance the pagination cursor anyway — `since` must
+          // never regress, or a hasMore page would refetch the same range.
+          final live = _cursor;
+          if (seq <= cursor || (live != null && seq <= live)) {
+            if (seq > cursor) cursor = seq;
+            continue;
+          }
           cursor = seq;
-          // A live frame may have moved ahead while this page was in flight;
-          // the persisted cursor only ever moves forward.
-          if (_cursor == null || seq > _cursor!) _cursor = seq;
+          // Monotonic: the persisted cursor only ever moves forward.
+          if (live == null || seq > live) _cursor = seq;
           applied++;
           _emit(event);
         }

@@ -292,9 +292,13 @@ class WsClientV2 implements MafwWsClient {
 
   /// Hand the `connected` greeting to [onGatewayReady] without blocking frame
   /// delivery. Errors are swallowed: recovery is best-effort, the socket is not.
+  ///
+  /// F5: a greeting that lands while an **intentional** disconnect (background /
+  /// foreground handoff) is tearing the socket down is dropped — recovery must
+  /// not start against a connection that is going away.
   void _notifyGatewayReady(MafwEvent greeting) {
     final callback = onGatewayReady;
-    if (callback == null || _disposed) return;
+    if (callback == null || _disposed || _intentionalDisconnect) return;
     final isReconnect = _handshakeWasReconnect;
     unawaited(Future<void>.sync(() => callback(greeting, isReconnect))
         .catchError((Object _) {}));

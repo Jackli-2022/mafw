@@ -5549,8 +5549,10 @@ class MafwScheduler {
           // E2-4: WS is live-only; connected.headSeq is informational and the
           // reconnect path is SSE cursor / REST snapshot (never WS replay).
           headSeq: () => this.eventStore?.headSeq() ?? null,
-          // E5b-3: event-log epoch for the mobile replay cursor (instanceId is
-          // loaded in boot; live getter because attach precedes it).
+          // E5b-3: event-log epoch for the mobile replay cursor. Live getter on
+          // purpose: the hub must never capture a null identity at attach time
+          // (non-boot entrypoints, tests), so the greeting reads whatever boot
+          // has loaded by the time a client connects.
           instanceId: () => (this.releaseMetadata && this.runtimeIdentity
             ? this.runtimeIdentity.instanceId
             : null),

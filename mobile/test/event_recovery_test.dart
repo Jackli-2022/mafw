@@ -234,16 +234,18 @@ void main() {
       expect(h.store.seq, 9);
     });
 
-    test('observeHeadSeq clears the cursor when the instance changed', () async {
+    test('observeHeadSeq re-baselines onto the new epoch head', () async {
       final h = _Harness(cursor: 9, instanceId: 'inst-a', fetch: (_, _) async => null);
       await h.service.init();
 
-      h.service.observeHeadSeq(3, 'inst-b');
-      await _settle();
+      await h.service.observeHeadSeq(3, 'inst-b');
 
-      expect(h.service.cursor, isNull);
-      expect(h.service.instanceId, isNull);
-      expect(h.store.seq, isNull);
+      // E5b batch-3 review (F4): a process kill right after the epoch change
+      // must not force another baseline — the new head is already persisted.
+      expect(h.service.cursor, 3);
+      expect(h.service.instanceId, 'inst-b');
+      expect(h.store.seq, 3);
+      expect(h.store.instanceId, 'inst-b');
       expect(h.store.clears, 1);
     });
 
@@ -475,6 +477,64 @@ void main() {
       expect(h.emitted.map((e) => e.seq), [901],
           reason: 'seq <= cursor is dropped, never re-emitted');
       expect(h.store.seq, 901);
+    });
+
+    test('a live frame observed during the page drops replay duplicates (F1)',
+        () async {
+      late EventRecoveryService service;
+      final h = _Harness(cursor: 5, fetch: (since, _) async {
+        expect(since, 5);
+        // Live delivery races the replay: the consumer already saw 900.
+        service.observe(_event(900));
+        return _page(
+          events: [_event(6), _event(7), _event(8), _event(900)],
+          headSeq: 900,
+          nextSince: 900,
+        );
+      });
+      service = h.service;
+      await service.init();
+
+      final outcome = await service.recover();
+
+      expect(outcome.kind, RecoveryOutcomeKind.recovered);
+      expect(outcome.applied, 0, reason: 'every replay seq is <= the live cursor');
+      expect(h.emitted, isEmpty, reason: 'no duplicate of live-delivered events');
+      expect(h.service.cursor, 900);
+      expect(h.store.seq, 900);
+    });
+
+    test('replay still emits events newer than the live cursor (F1)', () async {
+      late EventRecoveryService service;
+      final calls = <int>[];
+      final h = _Harness(cursor: 5, fetch: (since, _) async {
+        calls.add(since);
+        service.observe(_event(900)); // live frame lands mid-replay
+        if (since == 5) {
+          return _page(
+            events: [_event(6), _event(900)],
+            headSeq: 902,
+            hasMore: true,
+            nextSince: 900,
+          );
+        }
+        return _page(
+          events: [_event(901), _event(902)],
+          headSeq: 902,
+          nextSince: 902,
+        );
+      });
+      service = h.service;
+      await service.init();
+
+      final outcome = await service.recover();
+
+      expect(calls, [5, 900], reason: 'pagination never regresses to since=5');
+      expect(outcome.applied, 2);
+      expect(h.emitted.map((e) => e.seq), [901, 902],
+          reason: 'only seqs above the live cursor are re-emitted');
+      expect(h.service.cursor, 902);
+      expect(h.store.seq, 902);
     });
 
     test('a concurrent recover returns busy without running a second loop',
