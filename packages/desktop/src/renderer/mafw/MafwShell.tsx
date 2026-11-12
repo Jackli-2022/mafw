@@ -2340,6 +2340,25 @@ export function MafwShell() {
   const benchRoot = createMemo(() =>
     resolveWorkbenchRoot(currentProject(), store.session.find((s: any) => s.id === currentSessionID())?.directory ?? null))
 
+  const activeFocus = (): Focus | null =>
+    focusState().stack[focusState().stack.length - 1] ?? null
+  const activePluginSurface = (): PluginSurfaceId | null => {
+    const subject = activeFocus()?.subject
+    return rightDockOpen() && subject?.kind === "plugin"
+      ? pluginSurfaceId(subject.package, subject.panel)
+      : null
+  }
+  const contentScopeFromFocus = (scope: Scope): ContentScope =>
+    scope.kind === "world"
+      ? { kind: "project", projectDir: scope.worldId }
+      : {
+          kind: "goal",
+          projectDir: scope.worldId,
+          goalId: scope.goalId,
+          revision: scope.revision,
+          worktreeDir: scope.worktreeDir,
+          title: null,
+        }
   // 内容工作台 scope：项目根是默认值；Goal revision 只能由显式动作进入。
   // 与会话目录解耦，Chat 角色切换不会改变这里。
   const contentScope = createMemo<ContentScope | null>(() => {
@@ -2363,25 +2382,6 @@ export function MafwShell() {
       revision: scope.revision,
       worktreeDir: scope.worktreeDir,
     }
-  }
-  const contentScopeFromFocus = (scope: Scope): ContentScope =>
-    scope.kind === "world"
-      ? { kind: "project", projectDir: scope.worldId }
-      : {
-          kind: "goal",
-          projectDir: scope.worldId,
-          goalId: scope.goalId,
-          revision: scope.revision,
-          worktreeDir: scope.worktreeDir,
-          title: null,
-        }
-  const activeFocus = (): Focus | null =>
-    focusState().stack[focusState().stack.length - 1] ?? null
-  const activePluginSurface = (): PluginSurfaceId | null => {
-    const subject = activeFocus()?.subject
-    return rightDockOpen() && subject?.kind === "plugin"
-      ? pluginSurfaceId(subject.package, subject.panel)
-      : null
   }
   const focusLenses = (): readonly Lens[] => {
     const focus = activeFocus()
@@ -3926,6 +3926,7 @@ export function MafwShell() {
                   contentScopeKey={currentContentScopeKey()}
                   pluginProjectDir={benchRoot() ?? currentProject()}
                   diffs={contentDiffEntries()}
+                  liveDiffs={store.session_diff?.[currentSessionID() ?? ""]}
                   onActiveFileChange={setActiveContentDocument}
                   onSendAnnotation={(text, opts) => {
                     const sid = currentSessionID()
