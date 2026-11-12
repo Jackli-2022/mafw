@@ -80,15 +80,14 @@ import {
 import { executionBadgeFor } from "./goal-user-view"
 import type { PlanOpenRequest } from "./plan-open"
 import { goalDiscussionRequestCurrent, goalDiscussionTarget, shouldOpenTechLeadForGoal, shouldShowReturnLead } from "./goal-chat-context"
-import { ingestPluginEvent, ingestPluginsChanged, pluginClientRevision, pluginDescriptors, refreshPluginClient } from "./plugins/plugin-store"
-import { pluginSurfaceIssues, pluginSurfaces, pluginConfigSurfaces, resolveActiveSurface } from "./plugins/plugin-view-model"
-import { railItemsFromWebSurfaces, webSurfaceTabs, webSurfaceViews } from "./plugins/plugin-web-surface"
+import { ingestPluginEvent, ingestPluginsChanged, pluginDescriptors, refreshPluginClient } from "./plugins/plugin-store"
+import { pluginSurfaceIssues, pluginSurfaces, pluginConfigSurfaces } from "./plugins/plugin-view-model"
+import { railItemsFromWebSurfaces, webSurfaceViews } from "./plugins/plugin-web-surface"
 import {
   EMPTY_PLUGIN_SURFACE_RUNTIME,
   applyPluginRailState,
   applyPluginSurfaceBadge,
   applyPluginSurfaceTitle,
-  applyPluginTabTitles,
   prunePluginSurfaceRuntime,
 } from "./plugins/plugin-surface-state"
 import { PluginSurfaceHost } from "./plugins/PluginSurfaceHost"
@@ -103,7 +102,6 @@ import { fetchTasks, ingestTask } from "./task-store"
 import { fetchQueue, ingestQueueEvent } from "./queue-store"
 import { setRun } from "./run-store"
 import { requestOpenEditor } from "./editor-open"
-import { ChangesDock } from "./components/ChangesDock"
 import { addPending } from "./annotation-store"
 import { getSessionTurnDiffs } from "./session-turn-diffs"
 import { defaultDockOpen } from "./workbench-defaults"
@@ -113,11 +111,11 @@ import {
   clearLegacyWorkbenchKeys,
   migrateWorkbenchStorage,
   parsePluginSurfaceId,
+  pluginSurfaceId,
   type PluginSurfaceId,
   type WorkbenchSurface,
 } from "./workbench-views"
 import {
-  normalizeWorkbenchContext,
   persistedWorkbenchContext,
   type WorkbenchContext,
 } from "./workbench-context"
@@ -178,7 +176,6 @@ import { persistContentScope, readPersistedContentScope } from "./content-scope-
 import { popContentHistory, pushContentHistory, type ContentHistoryEntry } from "./content-history"
 import { readRecentContent, recordRecentContent, type RecentContentEntry } from "./recent-content"
 import type { ContentIntent } from "./content-intent"
-import { contentDocumentLabel } from "./content-intent"
 import { PopoverShell } from "./components/pickers/PopoverShell"
 import { type NavTab } from "./components/nav-tab"
 import { WindowControls } from "./components/WindowControls"
@@ -2101,25 +2098,6 @@ export function MafwShell() {
   const welcomeFull = () => activeTab() === "chat" && !showConfig() && (showWelcome() || !activeSessionId())
   const chatActive = () => activeTab() === "chat" && !showConfig() && !welcomeFull()
   const workbenchContent = (): WorkbenchContentMode => (showConfig() ? "config" : "project")
-  const workbenchContextLabel = (): string => {
-    const context = workbenchContext()
-    if (context === "content") {
-      const surface = workbenchSurface()
-      if (surface === "browser") return "浏览器"
-      if (surface === "terminal") return "终端"
-      if (String(surface).startsWith("plugin:")) return "插件"
-      return contentDocumentLabel(activeContentDocument())
-    }
-    if (context === "goal") {
-      const goalId = podGoalId()
-      const goal = goalId
-        ? podStore.detail()?.goals.find((item) => item.goalId === goalId)
-        : null
-      return (goal as any)?.title?.trim?.() || "Goal"
-    }
-    if (context === "review") return "变更审阅"
-    return "项目"
-  }
   const narrowZone = () => workbenchZoneFor(availableWidth()) === "narrow"
   const narrowChat = () => narrowZone() && narrowView() === "chat"
   const chatSplit = () => workbenchSplit({ content: workbenchContent(), open: rightDockOpen() })
@@ -2151,15 +2129,6 @@ export function MafwShell() {
     setNarrowView(view)
   }
   createEffect(() => { if (!narrowZone()) setNarrowView("chat") })
-  const backWorkbenchContext = () => {
-    const goalId = contentReturnGoalId()
-    if (workbenchContext() === "content" && goalId) {
-      setPodGoalId(goalId)
-      openGoalFocus(goalId, "timeline")
-      return
-    }
-    showWorkbenchLanding()
-  }
   const applyWorkbenchSurface = (surface: WorkbenchSurface) => {
     if (surface === "code" || surface === "browser") setPreviousSurface(surface)
     setWorkbenchSurface(surface)
@@ -2208,25 +2177,12 @@ export function MafwShell() {
   const pluginConfigSurfaceList = createMemo(() => pluginConfigSurfaces(pluginDescriptors()))
   // Task 9：沙箱 Web 页面与声明式面板共用 `plugin:<pkg>:<surface>` 身份与 L2 tab。
   const pluginWebSurfaces = createMemo(() => webSurfaceViews(pluginDescriptors()))
-  const pluginWebSurfaceTabs = createMemo(() =>
-    webSurfaceTabs(pluginWebSurfaces(), pluginDescriptors()),
-  )
   // 页面通过 bridge 写的角标/标题（rail 与 tab 共用一个源）。
   const [pluginSurfaceRuntime, setPluginSurfaceRuntime] = createSignal(EMPTY_PLUGIN_SURFACE_RUNTIME)
-  const pluginTabList = createMemo(() =>
-    applyPluginTabTitles(
-      [
-        ...pluginSurfaceList(),
-        ...pluginConfigSurfaceList(),
-        ...pluginWebSurfaceTabs(),
-      ],
-      pluginSurfaceRuntime(),
-    ),
-  )
   const pluginSurfaceIdList = createMemo(() => [
     ...pluginSurfaceList().map((surface) => surface.id),
     ...pluginConfigSurfaceList().map((surface) => surface.id),
-    ...pluginWebSurfaceTabs().map((surface) => surface.id),
+    ...pluginWebSurfaces().map((surface) => surface.surfaceId),
   ])
   const pluginRailItems = createMemo(() =>
     applyPluginRailState(railItemsFromWebSurfaces(pluginWebSurfaces()), pluginSurfaceRuntime()),
@@ -2258,13 +2214,12 @@ export function MafwShell() {
     const live = pluginSurfaceIdList()
     setPluginSurfaceRuntime((prev) => prunePluginSurfaceRuntime(prev, live))
   })
-  // 包/面板/配置页/Web 页面被删除后，活动 surface 若已消失则回退到内置「文件」；不打断执行/审阅视图。
+  // 插件 surface 被删除后，活动焦点弹回上一个对象；根对象则回取景器。
   createEffect(() => {
-    const current = workbenchSurface()
-    const resolved = resolveActiveSurface(current, pluginSurfaceIdList(), pluginClientRevision() !== "")
-    if (resolved === current) return
-    setWorkbenchSurface(resolved)
-    try { localStorage.setItem("mafw-workbench-surface", resolved) } catch { /* ignore */ }
+    const active = activePluginSurface()
+    if (!active) return
+    if (pluginSurfaceIdList().includes(active)) return
+    focusBack()
   })
   const rememberContentLocation = (): void => {
     const scope = contentScope()
@@ -2472,6 +2427,12 @@ export function MafwShell() {
         }
   const activeFocus = (): Focus | null =>
     focusState().stack[focusState().stack.length - 1] ?? null
+  const activePluginSurface = (): PluginSurfaceId | null => {
+    const subject = activeFocus()?.subject
+    return rightDockOpen() && subject?.kind === "plugin"
+      ? pluginSurfaceId(subject.package, subject.panel)
+      : null
+  }
   const focusLenses = (): readonly Lens[] => {
     const focus = activeFocus()
     return focus ? lensesFor(focus.subject) : []
@@ -3700,7 +3661,7 @@ export function MafwShell() {
           podBadge={podBadgeCount()}
           podResultDot={podResultDot()}
           pluginItems={pluginRailItems()}
-          pluginActiveSurface={rightDockOpen() && workbenchContext() === "content" ? workbenchSurface() : null}
+          pluginActiveSurface={activePluginSurface()}
           onPluginItem={openPluginSurface}
           connPhase={connPhaseLabel()}
           gatewayState={gwStatus()?.state ?? null}
@@ -4005,11 +3966,6 @@ export function MafwShell() {
               <div class="mafw-dock-shell" classList={{ "is-hidden": workbenchShellHidden({ content: workbenchContent(), open: rightDockOpen() }) }}>
                 <WorkbenchShell
                   open={dockPresent()}
-                  context={workbenchContext()}
-                  contextLabel={workbenchContextLabel()}
-                  surface={workbenchSurface()}
-                  focus={workbenchFocus()}
-                  onToggleFocus={toggleWorkbenchFocus}
                   focusView={activeFocus()}
                   frame={focusFrame()}
                   lenses={focusLenses()}
@@ -4023,32 +3979,13 @@ export function MafwShell() {
                   onOpenPicker={openSubjectPicker}
                   onClosePicker={() => setPickerOpen(false)}
                   onPick={pickSubject}
-                  onContext={(context) => setWorkbenchContext(context)}
-                  onBackToProject={backWorkbenchContext}
-                  onSurface={applyWorkbenchSurface}
                   sessionID={currentSessionID() || null}
                   sessionDirectory={store.session.find((s: any) => s.id === currentSessionID())?.directory ?? null}
                   contentRoot={contentRoot()}
                   contentScopeKey={currentContentScopeKey()}
                   pluginProjectDir={benchRoot() ?? currentProject()}
-                  contentScopeLabel={contentScopeLabel(contentScope())}
-                  contentScopeIsGoal={contentScopeIsGoal()}
-                  contentIntent={contentIntent()}
-                  onContentIntent={setContentIntent}
-                  contentDocument={activeContentDocument()}
-                  onContentDocument={setActiveContentDocument}
-                  canReview={contentScopeIsGoal()}
-                  onContentReview={() => {
-                    const scope = contentScope()
-                    if (scope?.kind === "goal") openGoalDetail(scope.goalId, "result")
-                    else openProjectChangeSetFocus("review")
-                  }}
-                  canGoBack={contentHistory().length > 0}
-                  backLabel={contentBackLabel()}
-                  onBack={() => backContent()}
-                  onReturnToProjectContent={returnToProjectContent}
                   diffs={contentDiffEntries()}
-                  onOpenFile={(rel) => openContentFile(rel)}
+                  onActiveFileChange={setActiveContentDocument}
                   onSendAnnotation={(text, opts) => {
                     const sid = currentSessionID()
                     if (!sid) return
@@ -4076,7 +4013,7 @@ export function MafwShell() {
                     showToastV2({ description: "已加入批注", duration: 1600 } as any)
                   }}
                   onOpenReview={() => openProjectChangeSetFocus("review")}
-                  workView={
+                  renderWorld={() => (
                     <WorldOverviewStage
                       projectDir={currentProject()}
                       projectName={railProjectName(currentProject(), true)}
@@ -4084,7 +4021,7 @@ export function MafwShell() {
                       composerRequest={goalComposerRequest()}
                       composerInitial={goalComposerInitial()}
                       onComposerToggle={() => setGoalComposerInitial(null)}
-                      active={dockPresent() && (activeFocus()?.subject.kind === "world" || workbenchContext() === "project")}
+                      active={dockPresent() && activeFocus()?.subject.kind === "world"}
                       team={{
                         detail: podStore.detail(),
                         loading: podStore.loading(),
@@ -4103,54 +4040,38 @@ export function MafwShell() {
                       onOpenGoal={(goal, focus) => { openGoalFocus(goal.goalId, focus) }}
                       onGoalCreated={(goalId) => { setGoalComposerInitial(null); openGoalFocus(goalId, "timeline") }}
                     />
-                  }
-                  goalView={
-                    <Show when={podGoalId()} keyed>
-                      {(goalId) => (
-                        <GoalDetailPanel
-                          goalId={goalId}
-                          projectDir={currentProject()}
-                          podId={podIdForCurrentProject()}
-                          focus={goalDetailFocus()}
-                          planOpenRequest={goalPlanOpenRequest()}
-                          onClose={() => { setPodGoalId(null); focusBack() }}
-                          onOpenSession={(sid) => { void openPodSession(sid) }}
-                          onGoalAccepted={() => { void openLeadEntry() }}
-                          onOpenWorktree={(target) => openGoalContent(target)}
-                          decisionRecords={() => decisionStore.records().filter((record) => record.goalId === goalId)}
-                          decisionRecordBusy={() => decisionRecordBusy()}
-                          onDecisionConfirm={confirmDecisionRecord}
-                          onDecisionShelve={shelveDecisionRecord}
-                          onDecisionReopen={reopenDecisionRecord}
-                        />
-                      )}
-                    </Show>
-                  }
+                  )}
+                  renderGoal={() => {
+                    const subject = activeFocus()?.subject
+                    const goalId = subject?.kind === "goal" ? subject.goalId : null
+                    return (
+                      <Show when={goalId} keyed>
+                        {(id) => (
+                          <GoalDetailPanel
+                            goalId={id}
+                            projectDir={currentProject()}
+                            podId={podIdForCurrentProject()}
+                            focus={goalDetailFocus()}
+                            planOpenRequest={goalPlanOpenRequest()}
+                            onClose={() => { setPodGoalId(null); focusBack() }}
+                            onOpenSession={(sid) => { void openPodSession(sid) }}
+                            onGoalAccepted={() => { void openLeadEntry() }}
+                            onOpenWorktree={(target) => openGoalContent(target)}
+                            decisionRecords={() => decisionStore.records().filter((record) => record.goalId === id)}
+                            decisionRecordBusy={() => decisionRecordBusy()}
+                            onDecisionConfirm={confirmDecisionRecord}
+                            onDecisionShelve={shelveDecisionRecord}
+                            onDecisionReopen={reopenDecisionRecord}
+                          />
+                        )}
+                      </Show>
+                    )
+                  }}
                   onSendComment={(sid, text) => {
                     void window.api.mafw.sessions.promptAsync({ sessionID: sid, message: text })
                       .then(() => showToastV2({ description: "评论已发送给 agent", duration: 2000 } as any))
                       .catch((e: any) => showToastV2({ description: `发送失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 4000 } as any))
                   }}
-                  reviewView={
-                    <ChangesDock
-                      sessionID={currentSessionID() || null}
-                      sessionDirectory={store.session.find((s: any) => s.id === currentSessionID())?.directory ?? null}
-                      diffs={mergedSessionDiffs()}
-                      liveDiffs={store.session_diff?.[currentSessionID() ?? ""]}
-                      onSendComment={(sid, text) => {
-                        void window.api.mafw.sessions.promptAsync({ sessionID: sid, message: text })
-                          .then(() => showToastV2({ description: "评论已发送给 agent", duration: 2000 } as any))
-                          .catch((e: any) => showToastV2({ description: `发送失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 4000 } as any))
-                      }}
-                      onAddAnnotation={(a) => {
-                        const sid = currentSessionID()
-                        if (!sid) return
-                        addPending({ sessionID: sid, ...a })
-                        showToastV2({ description: "已加入批注", duration: 1600 } as any)
-                      }}
-                    />
-                  }
-                  pluginSurfaces={pluginTabList()}
                   webSurfaces={pluginWebSurfaces()}
                   gatewayUrl={gatewayUrl()}
                   onWebBadge={applyWebSurfaceBadge}

@@ -1,4 +1,4 @@
-import { Match, Switch, type JSX } from "solid-js"
+import { Match, Show, Switch, type JSX } from "solid-js"
 import { EditorDock } from "./EditorDock"
 import { BrowserDock } from "./BrowserDock"
 import { TerminalSurface } from "./TerminalSurface"
@@ -52,6 +52,10 @@ export function FocusStage(props: {
     const subject = props.focus.subject
     return subject.kind === "plugin" ? `plugin:${subject.package}:${subject.panel}` : null
   }
+  const pluginWebSurface = () => {
+    const id = pluginId()
+    return id ? props.webSurfaces?.find((view) => view.surfaceId === id) ?? null : null
+  }
 
   return (
     <div class="mafw-focus-stage">
@@ -81,7 +85,9 @@ export function FocusStage(props: {
         </Match>
 
         <Match when={kind() === "plugin"}>
-          {pluginId() ? props.renderPluginSurface?.(pluginId()!) : null}
+          <Show when={!pluginWebSurface()}>
+            {pluginId() ? props.renderPluginSurface?.(pluginId()!) : null}
+          </Show>
         </Match>
 
         <Match when={kind() === "changeSet"}>

@@ -250,20 +250,20 @@ describe("shell wiring pins", () => {
     expect(rail).toContain("item.icon as IconName")
   })
 
-  test("the workbench code view mounts the sandboxed host for web surfaces", () => {
-    const code = read("components/WorkbenchCodeView.tsx")
-    expect(code).toContain("PluginWebSurfaceHost")
-    expect(code).toContain("<PluginWebSurfaceHost")
-    expect(code).toContain("projectDir=")
-    expect(code).toContain("sessionID={props.sessionID}")
-    expect(code).toContain("onBadge=")
-    expect(code).toContain("onTitle=")
-    expect(code).toContain("onError=")
+  test("the plugin stage keeps sandboxed web surfaces mounted", () => {
+    const stage = read("components/PluginSurfaceStage.tsx")
+    expect(stage).toContain("PluginWebSurfaceHost")
+    expect(stage).toContain("<PluginWebSurfaceHost")
+    expect(stage).toContain("projectDir=")
+    expect(stage).toContain("sessionID={props.sessionID}")
+    expect(stage).toContain("onBadge=")
+    expect(stage).toContain("onTitle=")
+    expect(stage).toContain("onError=")
     // Declarative panels must not double-render for a web surface id.
-    expect(code).toContain("&& !webSurface()")
+    expect(read("components/FocusStage.tsx")).toContain("!pluginWebSurface()")
   })
 
-  test("the workbench shell forwards the web surface props", () => {
+  test("the focus shell forwards the web surface props", () => {
     const workbench = read("components/WorkbenchShell.tsx")
     for (const wire of [
       "webSurfaces={props.webSurfaces}",
@@ -274,6 +274,7 @@ describe("shell wiring pins", () => {
     ]) {
       expect(workbench).toContain(wire)
     }
+    expect(workbench).toContain("PluginSurfaceStage")
   })
 })
 
