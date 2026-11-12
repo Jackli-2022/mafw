@@ -56,7 +56,6 @@ import { TaskList } from "./components/TaskList"
 import { WorkbenchShell } from "./components/WorkbenchShell"
 import { WorldOverviewStage } from "./components/WorldOverviewStage"
 import { GoalDetailPanel } from "./components/GoalDetailPanel"
-import { ExecutionView } from "./components/ExecutionView"
 import { PodTranscriptOverlay } from "./components/PodTranscriptOverlay"
 import { ingestPodEvent, podStore, pickTechLeadInviteGoal, resolvePodDetailCached, techLeadTabTitle } from "./pod-store"
 import { podRailBadge, podResultBadge } from "./pod-rail-badge"
@@ -107,8 +106,6 @@ import { requestOpenEditor } from "./editor-open"
 import { ChangesDock } from "./components/ChangesDock"
 import { addPending } from "./annotation-store"
 import { getSessionTurnDiffs } from "./session-turn-diffs"
-import { UsageDock } from "./components/UsageDock"
-import { openExecutionUsage } from "./execution-usage"
 import { defaultDockOpen } from "./workbench-defaults"
 import type { ChatEpisode } from "./chat/episode-model"
 import { resolveEpisodeGoalReference } from "./chat/episode-decision"
@@ -116,7 +113,6 @@ import {
   clearLegacyWorkbenchKeys,
   migrateWorkbenchStorage,
   terminalSurfaceHotkeyAction,
-  type ExecutionSection,
   type PluginSurfaceId,
   type WorkbenchSurface,
 } from "./workbench-views"
@@ -836,7 +832,7 @@ export function MafwShell() {
       },
       {
         id: "open-usage", label: "打开用量与上下文", hint: "Usage & Context", group: "导航",
-        run: () => { setShowConfig(false); openExecutionDrawer("overview"); openExecutionUsage() },
+        run: () => { setShowConfig(true); setConfigSection("usage") },
       },
       {
         id: "toggle-rightdock", label: "切换右侧面板", hint: "RightDock (Ctrl+T)", group: "导航",
@@ -1564,14 +1560,14 @@ export function MafwShell() {
       showToastV2({ description: notice.toast, duration: 3000 })
       if (notice.os && bgWorkNotifyGate(Date.now())) notifyIfHidden(notice.os.title, notice.os.body)
     })
-    // 子代理对账轮询（spec §4.6）：有 running 行或面板开着才跑
+    // 子代理对账轮询（spec §4.6）：有 running 行才跑
     const subagentTimer = setInterval(() => {
-      if ((executionOpen() && executionSection() === "subagents") || subagentRows().some(r => r.status === "running")) void reconcileSubagents()
+      if (subagentRows().some(r => r.status === "running")) void reconcileSubagents()
     }, 15_000)
-    // 后台作业对账轮询：后台 tab 开着或有活跃作业才跑；快照失败由对账层 fail-open。
+    // 后台作业对账轮询：有活跃作业才跑；快照失败由对账层 fail-open。
     const backgroundTimer = setInterval(() => {
       const busy = backgroundJobs().some(j => j.sessionID === activeSessionId() && (j.status === "running" || j.status === "input_required"))
-      if (!((executionOpen() && executionSection() === "background") || busy)) return
+      if (!busy) return
       void backgroundApiAvailable().then(ok => { if (ok) void reconcileBackground() })
     }, 15_000)
     // Dev 事件检查器开关：Ctrl+Shift+E（SSE trace 浮层，漏接线事件红色高亮）
@@ -2050,25 +2046,15 @@ export function MafwShell() {
   const bootWorkbench = migrateWorkbenchStorage((k) => {
     try { return localStorage.getItem(k) } catch { return null }
   })
-  // Task 15：旧「执行 › 鲸群」持久化一次性迁到项目资源；分区键随后删除。
-  if (bootWorkbench.openResources) {
-    try {
-      localStorage.setItem("mafw-left-dock-face", "pod")
-      localStorage.removeItem("mafw-execution-section")
-    } catch { /* ignore */ }
-  }
   const bootView = bootWorkbench.state
   const [workbenchContext, setWorkbenchContext] = createSignal<WorkbenchContext>(bootView.context)
   const [workbenchSurface, setWorkbenchSurface] = createSignal<WorkbenchSurface>(bootView.surface)
   const [previousSurface, setPreviousSurface] = createSignal<"code" | "browser">(
     bootView.surface === "browser" ? "browser" : "code",
   )
-  const [executionSection, setExecutionSection] = createSignal<ExecutionSection>(bootView.executionSection)
-  const [executionOpen, setExecutionOpen] = createSignal(false)
   try {
     localStorage.setItem("mafw-workbench-context", persistedWorkbenchContext(bootView.context))
     localStorage.setItem("mafw-workbench-surface", bootView.surface)
-    localStorage.setItem("mafw-execution-section", bootView.executionSection)
     localStorage.removeItem("mafw-workbench-view")
     clearLegacyWorkbenchKeys((key) => localStorage.removeItem(key))
   } catch { /* ignore */ }
@@ -2206,8 +2192,6 @@ export function MafwShell() {
     context: workbenchContext(),
     surface: workbenchSurface(),
     previousSurface: previousSurface(),
-    executionOpen: executionOpen(),
-    executionSection: executionSection(),
   })
 
   const applyWorkbenchSnapshot = (snapshot: WorkbenchFocusSnapshot) => {
@@ -2216,13 +2200,10 @@ export function MafwShell() {
     setWorkbenchContext(snapshot.context)
     setWorkbenchSurface(snapshot.surface)
     setPreviousSurface(snapshot.previousSurface)
-    setExecutionOpen(snapshot.executionOpen)
-    setExecutionSection(snapshot.executionSection)
     try {
       localStorage.setItem("mafw-workbench-detent", String(snapshot.detent))
       localStorage.setItem("mafw-workbench-context", persistedWorkbenchContext(snapshot.context))
       localStorage.setItem("mafw-workbench-surface", snapshot.surface)
-      localStorage.setItem("mafw-execution-section", snapshot.executionSection)
     } catch { /* ignore */ }
   }
 
@@ -2306,24 +2287,9 @@ export function MafwShell() {
     setWorkbenchSurface(resolved)
     try { localStorage.setItem("mafw-workbench-surface", resolved) } catch { /* ignore */ }
   })
-  const applyExecutionSection = (section: ExecutionSection) => {
-    setExecutionSection(section)
-    setExecutionOpen(true)
-    try { localStorage.setItem("mafw-execution-section", section) } catch { /* ignore */ }
-  }
-  const applyExecutionOpen = (open: boolean) => {
-    setExecutionOpen(open)
-  }
-  const openExecutionDrawer = (section: ExecutionSection) => {
-    applyExecutionSection(section)
-    if (narrowZone()) setNarrowView("workbench")
-    setRightDockOpen(true)
-    try { localStorage.setItem("mafw-right-dock-open", "1") } catch { /* ignore */ }
-  }
-  const openWorkbenchContext = (context: WorkbenchContext, opts: { surface?: WorkbenchSurface; executionSection?: ExecutionSection } = {}) => {
+  const openWorkbenchContext = (context: WorkbenchContext, opts: { surface?: WorkbenchSurface } = {}) => {
     if (opts.surface) applyWorkbenchSurface(opts.surface)
     else applyWorkbenchContext(context)
-    if (opts.executionSection) applyExecutionSection(opts.executionSection)
     if (narrowZone()) setNarrowView("workbench")
     setRightDockOpen(true)
     try { localStorage.setItem("mafw-right-dock-open", "1") } catch { /* ignore */ }
@@ -2989,7 +2955,7 @@ export function MafwShell() {
     setActiveTab("chat")
     setShowWelcome(false)
     applyRightDock(true)
-    openExecutionDrawer("pod")
+    openProjectWork()
     // The Pod dock is tabbed now; ask it to select and then scroll to the
     // requested section instead of assuming a single flat column.
     setPodPanelRequest((prev) => ({
@@ -3875,8 +3841,7 @@ export function MafwShell() {
                           parentID={store.session.find((s: any) => s.id === activeSessionId()!)?.parentID ?? null}
                           onBackToParent={() => backToParent(activeSessionId()!)}
                           onOpenSubagent={(id) => void openSubagentSession(id)}
-                          onOpenBackgroundDock={() => openExecutionDrawer("background")}
-                          onOpenUsage={() => { setShowConfig(false); openExecutionDrawer("overview"); openExecutionUsage() }}
+                          onOpenUsage={() => { setShowConfig(true); setConfigSection("usage") }}
                           currentProject={currentProject() ?? undefined}
                           onNavigateTab={(t) => { setActiveTab(t as any); setShowConfig(false) }}
                           onToggleTheme={toggleTheme}
@@ -3987,7 +3952,6 @@ export function MafwShell() {
                       started={taskMetrics(taskListSid() ?? currentSessionID()).started}
                       placement="popover"
                       onClose={() => setTaskListOpen(false)}
-                      onPin={() => { setTaskListOpen(false); openExecutionDrawer("todos") }}
                     />
                   </PopoverShell>
                 </Show>
@@ -4039,8 +4003,6 @@ export function MafwShell() {
                   context={workbenchContext()}
                   contextLabel={workbenchContextLabel()}
                   surface={workbenchSurface()}
-                  executionSection={executionSection()}
-                  executionOpen={executionOpen()}
                   focus={workbenchFocus()}
                   onToggleFocus={toggleWorkbenchFocus}
                   focusView={activeFocus()}
@@ -4059,8 +4021,6 @@ export function MafwShell() {
                   onContext={applyWorkbenchContext}
                   onBackToProject={backWorkbenchContext}
                   onSurface={applyWorkbenchSurface}
-                  onExecutionSection={applyExecutionSection}
-                  onExecutionOpen={applyExecutionOpen}
                   sessionID={currentSessionID() || null}
                   sessionDirectory={store.session.find((s: any) => s.id === currentSessionID())?.directory ?? null}
                   contentRoot={contentRoot()}
@@ -4133,6 +4093,8 @@ export function MafwShell() {
                         onCreate: () => { void podStore.create() },
                       }}
                       teamFocusRequest={teamFocusRequest()}
+                      podPanelRequest={podPanelRequest()}
+                      onOpenPodSession={(sid, title) => { void openPodSession(sid, title) }}
                       onOpenGoal={(goal, focus) => { openGoalFocus(goal.goalId, focus) }}
                       onGoalCreated={(goalId) => { setGoalComposerInitial(null); openGoalFocus(goalId, "timeline") }}
                     />
@@ -4164,37 +4126,6 @@ export function MafwShell() {
                       .then(() => showToastV2({ description: "评论已发送给 agent", duration: 2000 } as any))
                       .catch((e: any) => showToastV2({ description: `发送失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 4000 } as any))
                   }}
-                  executionView={
-                    <ExecutionView
-                      section={executionSection()}
-                      sessionID={currentSessionID() || null}
-                      projectDir={benchRoot() ?? currentProject()}
-                      agentLabel={sessionAgent(currentSessionID())?.name ?? "默认 Agent"}
-                      modelLabel={sessionModel(currentSessionID() || "")?.label ?? "默认模型"}
-                      runStatus={sessionBusy() ? "运行中" : "空闲"}
-                      todos={todos[currentSessionID()] || []}
-                      hiddenTodos={hiddenTodos[currentSessionID()] || []}
-                      tokens={taskMetrics(currentSessionID()).tokens}
-                      started={taskMetrics(currentSessionID()).started}
-                      onClearHidden={() => clearHiddenTodos(currentSessionID())}
-                      onClosePanel={() => applyRightDock(false)}
-                      onOpenSubagent={(id) => void openSubagentSession(id)}
-                      onOpenPodSession={(sid, title) => { void openPodSession(sid, title) }}
-                      podPanelRequest={podPanelRequest()}
-                      onOpenSection={applyExecutionSection}
-                      trajectoryLive={trajectoryLive()[currentSessionID()] || []}
-                      trajectoryTurnLive={trajectoryTurnLive()[currentSessionID()] || null}
-                      usage={
-                        <UsageDock
-                          sessionID={currentSessionID()}
-                          projectID={currentProject()}
-                          store={store}
-                          model={() => sessionModel(currentSessionID())}
-                          modelGroups={modelGroups}
-                        />
-                      }
-                    />
-                  }
                   reviewView={
                     <ChangesDock
                       sessionID={currentSessionID() || null}

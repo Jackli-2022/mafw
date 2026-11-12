@@ -4,12 +4,7 @@ import { For, Show, createEffect, createMemo, createSignal, onCleanup, type JSX 
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { Icon } from "@mafw/ui/icon"
 import { DropdownMenu } from "@mafw/ui/dropdown-menu"
-import {
-  EXECUTION_SECTIONS,
-  executionSectionLabel,
-  type ExecutionSection,
-  type WorkbenchSurface,
-} from "../workbench-views"
+import type { WorkbenchSurface } from "../workbench-views"
 import type { WorkbenchContext } from "../workbench-context"
 import { observePluginTabCapacity, planPluginTabs, type PluginTabSurface } from "../plugins/plugin-view-model"
 import type { PluginWebSurfaceView } from "../plugins/plugin-web-surface"
@@ -32,13 +27,9 @@ export type WorkbenchShellProps = {
   context: WorkbenchContext
   contextLabel: string
   surface: WorkbenchSurface
-  executionSection: ExecutionSection
-  executionOpen: boolean
   onContext: (context: WorkbenchContext) => void
   onBackToProject: () => void
   onSurface: (surface: WorkbenchSurface) => void
-  onExecutionSection: (section: ExecutionSection) => void
-  onExecutionOpen: (open: boolean) => void
   sessionID: string | null
   sessionDirectory?: string | null
   contentRoot: string | null
@@ -94,7 +85,6 @@ export type WorkbenchShellProps = {
   onPick: (item: PickerItem) => void
   workView: JSX.Element
   goalView: JSX.Element
-  executionView: JSX.Element
   reviewView: JSX.Element
   /** Dynamic L2 tabs contributed by unified plugin packages. */
   pluginSurfaces: readonly PluginTabSurface[]
@@ -227,17 +217,6 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
               文件
             </ButtonV2>
           </Show>
-          <ButtonV2
-            variant="ghost"
-            size="small"
-            class="mafw-rw-exec-toggle"
-            aria-label={props.executionOpen ? "收起执行详情" : "打开执行详情"}
-            aria-pressed={props.executionOpen}
-            onClick={() => props.onExecutionOpen(!props.executionOpen)}
-          >
-            <Icon name="dot-grid" size="small" />
-            执行
-          </ButtonV2>
           <Show when={props.onToggleFocus}>
             <ButtonV2
               variant="ghost"
@@ -401,44 +380,6 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
           {props.reviewView}
         </div>
       </div>
-
-      <Show when={!props.focusView && props.executionOpen}>
-        <div class="mafw-rw-exec-drawer" role="region" aria-label="执行详情">
-          <div class="mafw-rw-exec-head">
-            <span class="mafw-rw-exec-title">执行详情</span>
-            <DropdownMenu>
-              <DropdownMenu.Trigger as={ButtonV2} variant="ghost" size="small" class="mafw-rw-exec-trigger">
-                <span>{executionSectionLabel(props.executionSection)}</span>
-                <Icon name="chevron-down" size="small" />
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Portal>
-                <DropdownMenu.Content class="mafw-rw-exec-content">
-                  <For each={EXECUTION_SECTIONS}>
-                    {(section) => (
-                      <DropdownMenu.Item onSelect={() => props.onExecutionSection(section.id)}>
-                        <DropdownMenu.ItemLabel>{section.label}</DropdownMenu.ItemLabel>
-                        <Show when={props.executionSection === section.id}>
-                          <Icon name="check-small" size="small" class="mafw-rw-check" />
-                        </Show>
-                      </DropdownMenu.Item>
-                    )}
-                  </For>
-                </DropdownMenu.Content>
-              </DropdownMenu.Portal>
-            </DropdownMenu>
-            <ButtonV2
-              variant="ghost"
-              size="small"
-              class="mafw-rw-exec-close"
-              aria-label="关闭执行详情"
-              onClick={() => props.onExecutionOpen(false)}
-            >
-              <Icon name="close" size="small" />
-            </ButtonV2>
-          </div>
-          <div class="mafw-rw-exec-body">{props.executionView}</div>
-        </div>
-      </Show>
 
       <SubjectPicker
         open={props.pickerOpen}

@@ -1445,6 +1445,30 @@ html[data-theme="light"] body {
   padding: 0 0 8px;
   flex-shrink: 0;
 }
+.mafw-chat-runs {
+  max-height: 240px;
+  overflow: auto;
+  margin: 0 0 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--bg-inset);
+}
+.mafw-world-pod-panel {
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--bg-inset);
+}
+.mafw-world-pod-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-2);
+  font-size: 12px;
+}
 .mafw-composer {
   position: relative;
   display: flex;
@@ -3129,12 +3153,10 @@ html[data-theme="light"] body {
 .mafw-rw-actions { display: flex; align-items: center; gap: 2px; flex: none; }
 /* 选中态与左 rail 统一（spec 2026-10-27 §6.1 1a）：accent 12% 填充块 + accent 前景。
    用 aria 属性选择器：ButtonV2 的 classList 对多 token class 不可靠（会把整串当 classList key）。 */
-.mafw-rw-exec-toggle[aria-pressed="true"],
 .mafw-rw-l2-tab[aria-selected="true"] {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   color: var(--accent);
 }
-.mafw-rw-exec-toggle[aria-pressed="true"]:hover,
 .mafw-rw-l2-tab[aria-selected="true"]:hover {
   background: color-mix(in srgb, var(--accent) 16%, transparent);
   color: var(--accent);
@@ -3150,48 +3172,8 @@ html[data-theme="light"] body {
   background: var(--bg-raised);
 }
 .mafw-rw-l2-tab { padding-left: 7px; padding-right: 7px; }
-.mafw-rw-exec-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 24px;
-  padding: 0 7px;
-  border-radius: var(--r-sm);
-  color: var(--text-1);
-  font-size: 12px;
-  cursor: pointer;
-}
-.mafw-rw-exec-trigger:hover { background: var(--bg-hover); }
 .mafw-rw-check { margin-left: auto; color: var(--accent); }
 .mafw-rw-content { flex: 1; min-height: 0; min-width: 0; display: flex; position: relative; }
-.mafw-rw-exec-drawer {
-  position: absolute;
-  inset: 0;
-  z-index: 20;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-base);
-  will-change: transform;
-  animation: mafw-drawer-in var(--dur-surface) var(--ease-surface);
-}
-.mafw-rw-exec-head {
-  height: 38px;
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 8px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-base);
-}
-.mafw-rw-exec-title {
-  flex: 1;
-  min-width: 0;
-  color: var(--text-1);
-  font-size: 12px;
-  font-weight: 500;
-}
-.mafw-rw-exec-body { flex: 1; min-height: 0; overflow: auto; }
 .mafw-content-scope {
   flex: none;
   min-height: 30px;
@@ -3248,35 +3230,6 @@ html[data-theme="light"] body {
 .mafw-rw-code-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .mafw-rw-code-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .mafw-rw-files-toggle { display: none; }
-.mafw-rw-execution { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
-.mafw-rw-exec-section { display: none; min-height: 0; flex: 1; flex-direction: column; overflow-y: auto; }
-.mafw-rw-exec-section.is-active { display: flex; }
-.mafw-rw-overview { flex: 1; min-height: 0; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
-.mafw-rw-overview-head { display: flex; align-items: baseline; gap: 8px; }
-.mafw-rw-overview-title { font-size: 13px; font-weight: 650; color: var(--text-1); }
-.mafw-rw-overview-meta { font-size: 12px; color: var(--text-2); }
-.mafw-rw-overview-note { font-size: 11px; color: var(--text-3); margin-left: auto; }
-.mafw-rw-overview-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.mafw-rw-overview-card {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 3px;
-  min-height: 74px;
-  padding: 9px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-md);
-  background: var(--bg-raised);
-  color: var(--text-1);
-  text-align: left;
-}
-.mafw-rw-overview-card:hover { border-color: var(--border-strong); background: var(--bg-hover); }
-.mafw-rw-overview-label { font-size: 12px; color: var(--text-3); }
-.mafw-rw-overview-card strong { font-size: 15px; color: var(--text-1); }
-.mafw-rw-overview-card span:last-child { font-size: 10px; color: var(--text-3); }
-.mafw-rw-overview-attention { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-2); }
-.mafw-rw-usage-toggle { align-self: flex-start; }
-.mafw-rw-usage { border-top: 1px solid var(--border-subtle); padding-top: 8px; min-height: 0; }
 @container (max-width: 599px) {
   .mafw-rw-files {
     display: none;

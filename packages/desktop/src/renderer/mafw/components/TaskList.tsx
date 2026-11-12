@@ -49,7 +49,6 @@ export function TaskList(props: {
   started: number
   placement: "popover" | "dock" | "overlay"
   onClose: () => void
-  onPin: () => void
   }) {
   const total = () => props.todos.length
   const done = () => props.todos.filter(t => t.status === "completed").length
@@ -111,9 +110,6 @@ export function TaskList(props: {
         <span class="mafw-tasklist-title">Tasks</span>
         <span class="mafw-tasklist-metrics">{formatDuration(elapsedMs())} · {formatTokens(props.tokens)}</span>
         <span class="mafw-tasklist-progress">{done()}/{total()}</span>
-        <Show when={props.placement === "popover"}>
-          <ButtonV2 variant="ghost" size="small" class="mafw-tasklist-pin" onClick={props.onPin} aria-label="钉到右侧 Dock">📌</ButtonV2>
-        </Show>
         <ButtonV2 variant="ghost" size="small" class="mafw-tasklist-close" onClick={props.onClose} aria-label="关闭">✕</ButtonV2>
       </div>
       <div class="mafw-tasklist-body">

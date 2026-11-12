@@ -12,6 +12,7 @@ import { SessionTurn } from "@mafw/session-ui/session-turn"
 import type { CheckpointRestoreResult, CheckpointScope, SessionCheckpoint, ThinkingLevel } from "@mafw/sdk"
 import { TaskBar } from "./TaskBar"
 import { BackgroundWorkBar } from "./BackgroundWorkBar"
+import { BackgroundDock } from "./BackgroundDock"
 import { runForSession, setRun as setRunStore, clearRun } from "../run-store"
 import { runBanner } from "../run-banner"
 import { clearTransientDataParts } from "../sse/chat-reducers"
@@ -180,9 +181,7 @@ export type ChatPaneProps = {
   onAskCancel: (card: AskCardData) => void
   /** 打开改动审阅面板（切片 2；SessionTurn actions + composer 工具条双入口） */
   onOpenDiffReview?: () => void
-  /** 打开 RightDock「后台」tab（work bar 点击；P0-3） */
-  onOpenBackgroundDock?: () => void
-  /** 点击上下文 pill：打开「执行 → 概览 → 用量与上下文」 */
+  /** 点击上下文 pill：打开 Config › Usage */
   onOpenUsage?: () => void
   /** worktree 并行隔离（切片 4）：能力门 = Experience `session.worktree`（目录级 git 事实） */
   worktreeEnabled?: boolean
@@ -332,6 +331,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
   // ── Composer state (per pane) ──
   const [input, setInput] = createSignal("")
+  const [runsOpen, setRunsOpen] = createSignal(false)
   const [sending, setSending] = createSignal(false)
   const [phase, setPhase] = createSignal<'idle' | 'searching' | 'writing'>('idle')
   const [composerMode, setComposerMode] = createSignal<ChatMode>("discuss")
@@ -2374,7 +2374,15 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           read-only (subagent) sessions: subagents are not user-facing chats. */}
       <Show when={!props.readOnly}>
       <div class="mafw-input-area">
-        <BackgroundWorkBar sessionID={props.sessionID} onOpenDock={() => props.onOpenBackgroundDock?.()} />
+        <BackgroundWorkBar sessionID={props.sessionID} onOpenDock={() => setRunsOpen((open) => !open)} />
+        <Show when={runsOpen()}>
+          <div class="mafw-chat-runs" aria-label="后台任务">
+            <BackgroundDock
+              activeSessionId={props.sessionID}
+              onOpenSession={(id) => props.onOpenSubagent?.(id)}
+            />
+          </div>
+        </Show>
         <PendingAnnotations sessionID={sidProp()} />
         <PendingCaptures
           sessionID={sidProp()}

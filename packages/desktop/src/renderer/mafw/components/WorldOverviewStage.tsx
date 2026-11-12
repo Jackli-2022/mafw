@@ -1,11 +1,13 @@
 import { Show, createEffect, createMemo, createSignal, on, onCleanup, type JSX } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
+import { Icon } from "@mafw/ui/icon"
 import type { PodGoal, PodWorkOverview } from "@mafw/sdk"
 import { WorkOverview } from "./WorkOverview"
 import { WorkPriorityList } from "./WorkPriorityList"
 import { PodGoalComposer } from "./PodGoalComposer"
 import { StandingGoalsPanel } from "./StandingGoalsPanel"
 import { ProjectTeamStrip } from "./ProjectTeamStrip"
+import { PodDock } from "./PodDock"
 import { buildAttentionList, buildWorkPriority, type WorkFilter } from "../work-overview-model"
 import { goalRevisionOf, type GoalDetailFocus } from "../pod-model"
 import { isPodResultViewed } from "../pod-result-store"
@@ -49,6 +51,8 @@ export function WorldOverviewStage(props: {
   active: boolean
   team?: WorldTeamProps
   teamFocusRequest?: number
+  podPanelRequest?: { tab: "team" | "memory"; seq: number; target?: "members" | "inbox" }
+  onOpenPodSession?: (sid: string, title?: string) => void
   onOpenGoal: (goal: PodGoal, focus?: GoalDetailFocus) => void
   onGoalCreated?: (goalId: string, goal?: PodGoal) => void
 }): JSX.Element {
@@ -58,6 +62,7 @@ export function WorldOverviewStage(props: {
   const [composerOpen, setComposerOpen] = createSignal(false)
   const [creating, setCreating] = createSignal(false)
   const [filter, setFilter] = createSignal<WorkFilter>("all")
+  const [podOpen, setPodOpen] = createSignal(false)
 
   const load = async () => {
     const dir = props.projectDir
@@ -99,7 +104,12 @@ export function WorldOverviewStage(props: {
   createEffect(on(() => props.projectDir, () => {
     setComposerOpen(false)
     setCreating(false)
+    setPodOpen(false)
   }, { defer: true }))
+
+  createEffect(() => {
+    if ((props.podPanelRequest?.seq ?? 0) > 0) setPodOpen(true)
+  })
 
   const overviewGoals = createMemo<PodGoal[]>(() => {
     const current = overview()
@@ -197,6 +207,28 @@ export function WorldOverviewStage(props: {
           <div class="mafw-project-team-slot" ref={teamRef}>
             <ProjectTeamStrip {...props.team!} />
           </div>
+        </Show>
+
+        <Show when={podOpen()}>
+          <section class="mafw-world-pod-panel" aria-label="团队与记忆">
+            <div class="mafw-world-pod-head">
+              <span>团队与记忆</span>
+              <ButtonV2
+                variant="ghost"
+                size="small"
+                aria-label="关闭团队与记忆"
+                onClick={() => setPodOpen(false)}
+              >
+                <Icon name="close" size="small" />
+              </ButtonV2>
+            </div>
+            <PodDock
+              projectDir={props.projectDir}
+              active={props.active}
+              onOpenSession={(sid, title) => props.onOpenPodSession?.(sid, title)}
+              panelRequest={props.podPanelRequest}
+            />
+          </section>
         </Show>
 
         <Show when={composerOpen()}>
