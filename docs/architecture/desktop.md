@@ -40,6 +40,12 @@
   `⌘P` / `Ctrl+P` 取景器打开文件、最近内容、浏览器、终端；返回 / 面包屑通过 `syncStageToFocus` 同步舞台。
   `project` / `goal` / `review` 仍是 legacy context；旧 `ContentScopeState` 在首次启动时迁移。详见
   `docs/releases/2026-11-12-workbench-focus-foundation.md`。
+- **Goal / 评审焦点（2026-11-12 Plan 2）**：Goal 以 `goal` scope 进入焦点栈，Goal 总览复用
+  `GoalDetailPanel`；变更集以 `changeSet` subject 进入 `ChangeSetStage`（复用 `ChangesDock`，无 diff 显式空态）；
+  Goal scope 下的审阅 lens 在 `InstrumentRail` 展示 `GoalReviewQueue`，评审项可聚焦为 `reviewItem` 并携带
+  `rel:Lx` 锚点，舞台分派到编辑器后 `gotoLine`。revision worktree 由 `pod.result` + `fs.listDir` 探测，
+  失败回退项目目录；resolve / reopen 仍只由人触发。详见
+  `docs/releases/2026-11-12-workbench-goal-review-focus.md`。
 - **编辑器**：默认 **Monaco**（VS Code 内核；`mafw-editor-engine=codemirror` 回退，挂载失败自动回退），
   行内 diff 装饰、Ctrl/Cmd+S、MAFW 主题 token 映射、minimap ≥720px。详情见本文件 Monaco 段。
 - **文件预览**：md（session-ui markdown）、json 折叠树、csv/tsv 表格、svg 预览/源码、图片、pdf（Chromium
