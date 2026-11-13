@@ -707,3 +707,25 @@ E6 留下的第一条残留（`/api/attention` 不投影 decision）在 E9-2 收
   分组仍由 records 驱动）。`goalId === null` 的 draft 没有 attention item，只从 records 生成。
 - 测试：`focus/decision-model.test.ts` 新增 5 条（record action、缺 `itemId`、draft 不重复、
   decided 仍在、goal 过滤）。
+
+### 缺失会话 404（2026-11-13，E10-3）
+
+gateway 的 `session.get` 对不存在会话从 `200 {error:'not found'}` 改为 **404 `{error:'not found'}`**
+（body 逐字不变；gateway 侧见 `gateway.md` §「E10 契约覆盖第一批」）。SDK 的 `request()` 对非 2xx
+抛错，不再把错误信封当作 `Session` 返回，因此桌面侧的「会话是否还在」判定必须从「读响应体」改成
+「认 404」。
+
+- `renderer/mafw/subagent-reconcile.ts` 新增 `isSessionNotFoundError(err)`：`err.status === 404`
+  或消息同时含 `404` 与 `not found`（`HTTP 404: not found`，兼容 electron IPC 再包一层的错误串）。
+- `reconcileSubagentsOnce` 的空历史收敛路径：`getSession` **成功且带 `error`** → 旧 gateway 的
+  200 信封（跨代兼容，仍收敛 `session-deleted`）；**抛错且是 404** → E10-3+ 的缺失 → 同样收敛
+  `session-deleted`；其余失败（网络 / 500 / IPC 崩）继续 **fail-open**（不收敛，宁可留旧状态也不误删）。
+  E10-3 之前 404 也落在 fail-open 分支，已删子会话的行会一直停在 stale `running`；现在只有真正的
+  404（或旧 gateway 的 200 信封）才收敛。
+- 其余调用方本来安全，无需改：`ChatPane`（try/catch，失败时 `canUnrevert` 保持 false）、
+  `MafwShell` 的 `hydrateSessionInfo` / `openSubagentSession`（try/catch）、`loadSessionHistory`
+  （`.catch(() => null)`）、`session-status.ts`（纯函数读 `info?.status`，缺失 = 不可用）。
+- 测试：`subagent-reconcile.test.ts` 新增 2 条（404 收敛 / 500 不误判）。
+- **注意旧桌面产物**：在 E10-3 之前把 200 信封当「会话可用」的旧构建会把缺失会话当活会话（不会崩，
+  只是状态偏旧）。桌面与 gateway 同版本发布（managed payload），跨版本混用时以升级桌面为准。
+

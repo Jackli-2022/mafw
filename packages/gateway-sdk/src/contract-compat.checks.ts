@@ -7,7 +7,13 @@ import type { operations } from './api-schema.gen'
 import type {
   Session, Goal, GoalSessionInfo, MemoryUnit, TriageItem, Approval, AutomationRule, QuestionRequest,
   DecisionList, AttentionList, PodDetail,
+  // E10-1 session read surface
+  QueueItem, SessionConfigState, Todo, SessionCheckpointListItem, SubagentList, SessionNamespace,
+  // E10-2 pod / work read surface
+  PodGoal, PodTask, PodMessage, PodEventItem, PodGoalResult, PodReviewItemList, PodWorkOverview,
+  PodNamespace,
 } from './types'
+import type { MafwDiff } from './view-dto'
 
 /** 鐢熸垚褰㈢姸锛歳esponses.200.content['application/json'] 涓嬬洿鎺ュ唴鑱?schema 灞炴€э紙鏃?schema: 鍖呰锛夈€?*/
 type Resp<S> = S extends { responses: { 200: { content: { 'application/json': infer C } } } } ? C : never
@@ -43,6 +49,51 @@ const CHECK_decisions_list: AssertEq<Resp<operations['decisions.list']>, Decisio
 const CHECK_attention_list: AssertEq<Resp<operations['attention.list']>, AttentionList> = true
 const CHECK_pods_get: AssertEq<Resp<operations['pods.get']>, PodDetail> = true
 
+// E10-1: session 读接口（8 ops）—— schema 是 handler wire 的转写，DTO 必须同步。
+type GenQueueItem = ItemOf<Resp<operations['session.queue.list']>, 'items'>
+/**
+ * `parts` 是客户端 prompt payload 边界（owner: view-dto part 联合；gateway 原样入队），
+ * 故按 session.messages 的先例只锁最小承诺（type/text + 开放索引），其余字段仍整体等价。
+ */
+const CHECK_session_queue_list_item: AssertEq<Omit<GenQueueItem, 'parts'>, Omit<QueueItem, 'parts'>> = true
+type GenQueuePart = NonNullable<GenQueueItem['parts']>[number]
+const CHECK_session_queue_part_type: AssertEq<GenQueuePart['type'], string> = true
+const CHECK_session_queue_part_boundary: AssertEq<GenQueuePart extends Record<string, unknown> ? true : false, true> = true
+const CHECK_session_config: AssertEq<Resp<operations['session.config']>, SessionConfigState> = true
+const CHECK_session_todo_item: AssertEq<ItemOf<Resp<operations['session.todo']>, 'data'>, Todo> = true
+const CHECK_session_checkpoints_item: AssertEq<
+  ItemOf<Resp<operations['session.checkpoints']>, 'checkpoints'>,
+  SessionCheckpointListItem
+> = true
+const CHECK_session_subagents: AssertEq<
+  Resp<operations['session.subagents.list']>,
+  SubagentList
+> = true
+const CHECK_session_diff_item: AssertEq<
+  ItemOf<Resp<operations['session.diff']>, 'files'>,
+  MafwDiff
+> = true
+/** tokenSummary 无独立命名 DTO：锁 client `session.tokenSummary` 的内联返回类型。 */
+type SdkTokenSummary = Awaited<ReturnType<SessionNamespace['tokenSummary']>>
+const CHECK_session_token_summary: AssertEq<Resp<operations['session.tokenSummary']>, SdkTokenSummary> = true
+
+// E10-2: pod / work 读接口（8 ops）—— schema 是 handler wire 的转写，DTO 必须同步。
+type GenPodEventItem = ItemOf<Resp<operations['pod.events.list']>, 'items'>
+const CHECK_pod_events_list_item: AssertEq<GenPodEventItem, PodEventItem> = true
+type GenPodTaskItem = ItemOf<Resp<operations['pods.tasks.list']>, 'items'>
+const CHECK_pods_tasks_list_item: AssertEq<GenPodTaskItem, PodTask> = true
+type GenPodMessageItem = ItemOf<Resp<operations['pods.messages.list']>, 'items'>
+const CHECK_pods_messages_list_item: AssertEq<GenPodMessageItem, PodMessage> = true
+type GenPodGoalItem = ItemOf<Resp<operations['pods.goals']>, 'items'>
+const CHECK_pods_goals_item: AssertEq<GenPodGoalItem, PodGoal> = true
+const CHECK_pods_goal_result: AssertEq<Resp<operations['pods.goals.result']>, PodGoalResult> = true
+const CHECK_pods_review_items: AssertEq<Resp<operations['pods.goals.reviewItems']>, PodReviewItemList> = true
+/** cost 无独立命名 DTO：锁 client `pod.cost` 的内联返回类型。 */
+type SdkPodCost = Awaited<ReturnType<PodNamespace['cost']>>
+const CHECK_pods_cost: AssertEq<Resp<operations['pods.cost']>, SdkPodCost> = true
+/** work.overview 的 groups/counts 五桶键集与 `PodWorkBucket` 一一对应。 */
+const CHECK_work_overview: AssertEq<Resp<operations['work.overview']>, PodWorkOverview> = true
+
 /**
  * session.messages：`data` 的 part 判别联合由 view-dto 契约拥有，schema 只承诺
  * SDK 边界守卫 `MafwMessageShape` 认可的形状；游标必须与 client 的
@@ -60,4 +111,13 @@ export const CONTRACT_COMPAT_CHECKS = [
   CHECK_memory_search, CHECK_triage_list, CHECK_approvals_list, CHECK_automations_list, CHECK_questions_list,
   CHECK_decisions_list, CHECK_attention_list, CHECK_pods_get,
   CHECK_session_messages_cursor, CHECK_session_messages_role, CHECK_session_messages_part_type,
+  // E10-1
+  CHECK_session_queue_list_item, CHECK_session_queue_part_type, CHECK_session_queue_part_boundary,
+  CHECK_session_config, CHECK_session_todo_item,
+  CHECK_session_checkpoints_item, CHECK_session_subagents, CHECK_session_diff_item,
+  CHECK_session_token_summary,
+  // E10-2
+  CHECK_pod_events_list_item, CHECK_pods_tasks_list_item, CHECK_pods_messages_list_item,
+  CHECK_pods_goals_item, CHECK_pods_goal_result, CHECK_pods_review_items, CHECK_pods_cost,
+  CHECK_work_overview,
 ]

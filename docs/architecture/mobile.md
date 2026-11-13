@@ -385,6 +385,24 @@ adb shell input keyevent 4                    # 返回（root 页再按会退出
 - 测试：`event_envelope_test.dart` / `event_effects_test.dart` / `vocabulary_parity_test.dart` /
   `work_tab_test.dart` 合计 64 → 71。
 
+### 7.11 工作 tab 的 work.overview 契约（E10-2，2026-11-13）
+
+gateway 给 `work.overview`（`GET /api/projects/:projectId/work`）加了 200 response schema
+（`gateway/src/routes/schemas/work.ts#WorkOverviewResponse`，gateway 侧见 `gateway.md` §「E10 契约覆盖第一批」）。
+**mobile 零代码改动**：`lib/src/models/pod_models.dart` 的 `WorkOverview.fromJson` 与 schema 逐字段对齐——
+
+- 只读 `projectDir` / `podId` / `groups{bucket → []}` / `counts{bucket → n}` / `total`，与 schema 的五个
+  必填字段一一对应；
+- 五个 bucket 名（`needs_you` / `queued` / `in_progress` / `result_ready` / `ended`）来自
+  `workBuckets`，schema 按 handler 的严格五桶建模（`groups` 与 `counts` 是同一 `views()` 数组的两个投影，
+  handler 不截断）；
+- `counts[bucket]` 缺失时用 `groups[bucket].length` 兜底，`rawGroups` / `rawCounts` 里出现**未知 bucket**
+  也会被读出来（向前兼容，不丢弃），所以未来加桶不需要先改 mobile；`PodGoalView.fromJson` 只读取它实际
+  用到的字段，`PodGoalSchema` 的必填面更宽不影响解析。
+- 门禁：`pod_models_test.dart` + `work_tab_test.dart` 51 条与 `dart analyze lib test` 均绿（本波无 mobile
+  代码变更，只做契约对齐核对）。
+
+
 ---
 
 ## 8. 已知待办（roadmap）

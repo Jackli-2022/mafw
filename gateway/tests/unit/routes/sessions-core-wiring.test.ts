@@ -1,9 +1,10 @@
 // Phase D1 Task D1: sessions core registry wiring — ten legacy branches
 // (create / get / deleteLegacy / abort / background / promptAsync / prompt /
-// queue list+clear+cancel). Quirks that must survive: session.get's 200
-// {error:'not found'} miss envelope, prompt's 409 suspended arm, queue cancel's
-// 404 miss, deleteLegacy's own cleanup set (R4 — NOT session.delete's), and the
-// background delegation into routes/session-background.ts.
+// queue list+clear+cancel). Quirks that must survive: session.get's 404
+// {error:'not found'} miss (E10-3; body unchanged, status no longer 200),
+// prompt's 409 suspended arm, queue cancel's 404 miss, deleteLegacy's own
+// cleanup set (R4 — NOT session.delete's), and the background delegation into
+// routes/session-background.ts.
 import type { IncomingMessage, ServerResponse } from 'http';
 import * as path from 'path';
 import { RouteRegistry } from '../../../src/routes/registry';
@@ -187,11 +188,11 @@ describe('sessions core registry wiring (D1 Task D1)', () => {
     expect(JSON.parse(r.body).id).toBe('known');
   });
 
-  it('get: a miss is 200 {error:not found} — NOT 404 (legacy envelope preserved)', async () => {
+  it('get: a miss is 404 {error:not found} (body kept, status aligned with SessionSchema)', async () => {
     const { registry } = setup();
     const r = fakeRes();
     await handlerFor(registry, 'GET', '/api/sessions/missing')!(fakeReq({ url: '/api/sessions/missing', method: 'GET' }), r.res);
-    expect(r.status).toBe(200);
+    expect(r.status).toBe(404);
     expect(JSON.parse(r.body)).toEqual({ error: 'not found' });
   });
 

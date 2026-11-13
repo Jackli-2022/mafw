@@ -83,7 +83,8 @@ export type MafwAPI = {
   sessions: {
     list: (projectID?: string) => Promise<Session[]>
     create: (opts?: { directory?: string; metadata?: Record<string, unknown>; worktree?: boolean | string }) => Promise<Session & { worktree?: { dir: string; branch: string } }>
-    get: (id: string) => Promise<Session | null>
+    /** Throws on missing session (gateway returns 404 since E10-3); callers catch. */
+    get: (id: string) => Promise<Session>
     /** MAFW flat 历史（View DTO：content = 部件数组，无 {info,parts} 信封）。 */
     messages: (sessionID: string, limit?: number, before?: string) => Promise<{ data: MafwMessage[]; nextCursor: string | null }>
     todo: (sessionID: string) => Promise<{ data: any[] }>

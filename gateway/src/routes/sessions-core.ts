@@ -2,7 +2,7 @@
  * Phase D1 Task D1: sessions core 面（registry dispatch 接线）。
  *
  *   POST   /api/session                    — 创建会话（worktree 归属门，委托 routes/session-create.ts）
- *   GET    /api/sessions/:id               — 会话详情（缺失 → 200 {error:'not found'}，不是 404）
+ *   GET    /api/sessions/:id               — 会话详情（缺失 → 404 {error:'not found'}；E10-3）
  *   DELETE /api/session/:id                — 旧删除面（cleanup 集合与 session.delete 不同，R4）
  *   POST   /api/session/:id/abort          — 中止在途回合
  *   POST   /api/session/:id/background     — 转后台（委托 routes/session-background.ts）
@@ -88,8 +88,15 @@ export function attachSessionsCoreRoutes(registry: RouteRegistry, deps: Sessions
         } catch {}
       }
       const session = await deps.sdkSession().get(id);
+      if (!session) {
+        // E10-3: a miss is 404 (was 200). Body shape unchanged; `session.get`
+        // declares SessionSchema, and a 200 error envelope contradicted it.
+        res.writeHead(404);
+        res.end(JSON.stringify({ error: 'not found' }));
+        return;
+      }
       res.writeHead(200);
-      res.end(JSON.stringify(session ? projectSession(session) : { error: 'not found' }));
+      res.end(JSON.stringify(projectSession(session)));
     } catch (err: any) {
       res.writeHead(500);
       res.end(JSON.stringify({ error: err.message }));

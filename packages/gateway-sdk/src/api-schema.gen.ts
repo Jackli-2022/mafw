@@ -4657,7 +4657,26 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            podId: string;
+                            goalId: string | null;
+                            revision: number | null;
+                            kind: string;
+                            severity: "p1" | "p2" | "p3";
+                            reason: "decision" | "result" | "blocked" | "progress" | "message";
+                            title: string;
+                            summary: string | null;
+                            audience: "human" | "lead" | "none";
+                            state: "unread" | "seen";
+                            createdAt: string;
+                            seenAt: string | null;
+                        }[];
+                        unread: number;
+                    };
+                };
             };
         };
     };
@@ -4790,7 +4809,32 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            sessionID: string;
+                            text?: string;
+                            parts?: ({
+                                type: string;
+                                text?: string;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                            agent?: string;
+                            model?: {
+                                providerID: string;
+                                modelID: string;
+                            };
+                            expectReply?: boolean;
+                            idempotencyKey?: string;
+                            thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                            variant?: string;
+                            enqueuedAt: string;
+                            source: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -4830,7 +4874,19 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        mode: "read-only" | "auto" | "full-access";
+                        agent?: string;
+                        model?: {
+                            providerID: string;
+                            modelID: string;
+                        };
+                        variant?: string;
+                        thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                        thinkingLevelSupported: boolean;
+                    };
+                };
             };
         };
     };
@@ -5102,7 +5158,16 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        data: {
+                            id: string;
+                            content: string;
+                            status: string;
+                            priority: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -5122,7 +5187,16 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: ({
+                            id: string;
+                            depth: number;
+                        } & {
+                            [key: string]: unknown;
+                        })[];
+                    };
+                };
             };
         };
     };
@@ -5356,7 +5430,30 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        totalTokens: {
+                            input: number;
+                            output: number;
+                            reasoning: number;
+                            cache: {
+                                read: number;
+                                write: number;
+                            };
+                        };
+                        totalCost: number;
+                        turnCount: number;
+                        avgTokensPerTurn: {
+                            input: number;
+                            output: number;
+                            reasoning: number;
+                            cache: {
+                                read: number;
+                                write: number;
+                            };
+                        };
+                    };
+                };
             };
         };
     };
@@ -5436,7 +5533,17 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        files: {
+                            file: string;
+                            patch?: string;
+                            additions?: number;
+                            deletions?: number;
+                            status?: "added" | "modified" | "deleted" | "renamed" | "unknown";
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -5496,7 +5603,49 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        checkpoints: {
+                            id: string;
+                            sessionID: string;
+                            projectDir: string;
+                            anchorMessageID: string;
+                            snapshotTree: string | null;
+                            untracked: string[];
+                            kind: "auto" | "manual";
+                            createdAt: string;
+                            actions: {
+                                restoreConversation: {
+                                    supported: boolean;
+                                    enabled: boolean;
+                                    reason?: "unsupported" | "busy" | "missing-data" | "non-invertible-patch" | "unsafe";
+                                    warningKey?: string;
+                                    semantics?: {
+                                        [key: string]: unknown;
+                                    };
+                                };
+                                restoreFiles: {
+                                    supported: boolean;
+                                    enabled: boolean;
+                                    reason?: "unsupported" | "busy" | "missing-data" | "non-invertible-patch" | "unsafe";
+                                    warningKey?: string;
+                                    semantics?: {
+                                        [key: string]: unknown;
+                                    };
+                                };
+                                restoreBoth: {
+                                    supported: boolean;
+                                    enabled: boolean;
+                                    reason?: "unsupported" | "busy" | "missing-data" | "non-invertible-patch" | "unsafe";
+                                    warningKey?: string;
+                                    semantics?: {
+                                        [key: string]: unknown;
+                                    };
+                                };
+                            };
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -9189,7 +9338,337 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        projectDir: string;
+                        podId: string;
+                        groups: {
+                            needs_you: {
+                                id: string;
+                                podId: string;
+                                goalId: string;
+                                status: "queued" | "active" | "done" | "aborted";
+                                title: string;
+                                phase: string | null;
+                                verdict: ("PASS" | "FAIL" | "MAX_RETRIES" | "ERROR" | "CANCELLED") | null;
+                                stage: {
+                                    owner: "person" | "team" | "system";
+                                    kind: "plan_approval" | "direction_review" | "question" | "blocked" | "queued" | "discussing" | "planning" | "probing" | "implementing" | "reviewing" | "result_notified" | "working" | "waiting" | "ended";
+                                    role?: "lead" | "tech_lead" | "builder" | "reviewer";
+                                    queueReason?: "active_goal" | "paused" | "archived" | "budget" | "state_error";
+                                    action?: {
+                                        type: "open_plan_review" | "open_direction_review" | "open_question" | "open_discussion" | "open_goal" | "open_result";
+                                        goalId: string;
+                                        questionId?: string;
+                                    };
+                                };
+                                pendingQuestion?: {
+                                    questionId: string;
+                                    node: "plan" | "execute" | "review";
+                                    questions: string[];
+                                } | null;
+                                bucket?: "needs_you" | "queued" | "in_progress" | "result_ready" | "ended";
+                                resultReady: boolean;
+                                accepted?: boolean;
+                                lastError?: string | null;
+                                progress?: {
+                                    total: number;
+                                    done: number;
+                                    inProgress: number;
+                                    review: number;
+                                    failed: number;
+                                    skipped: number;
+                                } | null;
+                                sourceRef?: {
+                                    sessionID?: string;
+                                    messageID?: string;
+                                    snapshot: string;
+                                    capturedAt: string;
+                                    topicId?: string;
+                                    messageRange?: {
+                                        from: string;
+                                        to: string;
+                                    };
+                                } | null;
+                                strategy?: ("quick" | "collaborative") | null;
+                                goalMode?: "quick" | "standard" | "standing";
+                                assessment?: ("reviewed" | "unreviewed") | null;
+                                currentAssignment?: {
+                                    assignmentId: string;
+                                    role: "builder" | "reviewer";
+                                    taskIds: string[];
+                                    attempt: number;
+                                } | null;
+                                activeRevision?: number;
+                                revision?: number;
+                                priority?: number;
+                                enqueuedAt: string;
+                                startedAt: string | null;
+                                endedAt: string | null;
+                            }[];
+                            queued: {
+                                id: string;
+                                podId: string;
+                                goalId: string;
+                                status: "queued" | "active" | "done" | "aborted";
+                                title: string;
+                                phase: string | null;
+                                verdict: ("PASS" | "FAIL" | "MAX_RETRIES" | "ERROR" | "CANCELLED") | null;
+                                stage: {
+                                    owner: "person" | "team" | "system";
+                                    kind: "plan_approval" | "direction_review" | "question" | "blocked" | "queued" | "discussing" | "planning" | "probing" | "implementing" | "reviewing" | "result_notified" | "working" | "waiting" | "ended";
+                                    role?: "lead" | "tech_lead" | "builder" | "reviewer";
+                                    queueReason?: "active_goal" | "paused" | "archived" | "budget" | "state_error";
+                                    action?: {
+                                        type: "open_plan_review" | "open_direction_review" | "open_question" | "open_discussion" | "open_goal" | "open_result";
+                                        goalId: string;
+                                        questionId?: string;
+                                    };
+                                };
+                                pendingQuestion?: {
+                                    questionId: string;
+                                    node: "plan" | "execute" | "review";
+                                    questions: string[];
+                                } | null;
+                                bucket?: "needs_you" | "queued" | "in_progress" | "result_ready" | "ended";
+                                resultReady: boolean;
+                                accepted?: boolean;
+                                lastError?: string | null;
+                                progress?: {
+                                    total: number;
+                                    done: number;
+                                    inProgress: number;
+                                    review: number;
+                                    failed: number;
+                                    skipped: number;
+                                } | null;
+                                sourceRef?: {
+                                    sessionID?: string;
+                                    messageID?: string;
+                                    snapshot: string;
+                                    capturedAt: string;
+                                    topicId?: string;
+                                    messageRange?: {
+                                        from: string;
+                                        to: string;
+                                    };
+                                } | null;
+                                strategy?: ("quick" | "collaborative") | null;
+                                goalMode?: "quick" | "standard" | "standing";
+                                assessment?: ("reviewed" | "unreviewed") | null;
+                                currentAssignment?: {
+                                    assignmentId: string;
+                                    role: "builder" | "reviewer";
+                                    taskIds: string[];
+                                    attempt: number;
+                                } | null;
+                                activeRevision?: number;
+                                revision?: number;
+                                priority?: number;
+                                enqueuedAt: string;
+                                startedAt: string | null;
+                                endedAt: string | null;
+                            }[];
+                            in_progress: {
+                                id: string;
+                                podId: string;
+                                goalId: string;
+                                status: "queued" | "active" | "done" | "aborted";
+                                title: string;
+                                phase: string | null;
+                                verdict: ("PASS" | "FAIL" | "MAX_RETRIES" | "ERROR" | "CANCELLED") | null;
+                                stage: {
+                                    owner: "person" | "team" | "system";
+                                    kind: "plan_approval" | "direction_review" | "question" | "blocked" | "queued" | "discussing" | "planning" | "probing" | "implementing" | "reviewing" | "result_notified" | "working" | "waiting" | "ended";
+                                    role?: "lead" | "tech_lead" | "builder" | "reviewer";
+                                    queueReason?: "active_goal" | "paused" | "archived" | "budget" | "state_error";
+                                    action?: {
+                                        type: "open_plan_review" | "open_direction_review" | "open_question" | "open_discussion" | "open_goal" | "open_result";
+                                        goalId: string;
+                                        questionId?: string;
+                                    };
+                                };
+                                pendingQuestion?: {
+                                    questionId: string;
+                                    node: "plan" | "execute" | "review";
+                                    questions: string[];
+                                } | null;
+                                bucket?: "needs_you" | "queued" | "in_progress" | "result_ready" | "ended";
+                                resultReady: boolean;
+                                accepted?: boolean;
+                                lastError?: string | null;
+                                progress?: {
+                                    total: number;
+                                    done: number;
+                                    inProgress: number;
+                                    review: number;
+                                    failed: number;
+                                    skipped: number;
+                                } | null;
+                                sourceRef?: {
+                                    sessionID?: string;
+                                    messageID?: string;
+                                    snapshot: string;
+                                    capturedAt: string;
+                                    topicId?: string;
+                                    messageRange?: {
+                                        from: string;
+                                        to: string;
+                                    };
+                                } | null;
+                                strategy?: ("quick" | "collaborative") | null;
+                                goalMode?: "quick" | "standard" | "standing";
+                                assessment?: ("reviewed" | "unreviewed") | null;
+                                currentAssignment?: {
+                                    assignmentId: string;
+                                    role: "builder" | "reviewer";
+                                    taskIds: string[];
+                                    attempt: number;
+                                } | null;
+                                activeRevision?: number;
+                                revision?: number;
+                                priority?: number;
+                                enqueuedAt: string;
+                                startedAt: string | null;
+                                endedAt: string | null;
+                            }[];
+                            result_ready: {
+                                id: string;
+                                podId: string;
+                                goalId: string;
+                                status: "queued" | "active" | "done" | "aborted";
+                                title: string;
+                                phase: string | null;
+                                verdict: ("PASS" | "FAIL" | "MAX_RETRIES" | "ERROR" | "CANCELLED") | null;
+                                stage: {
+                                    owner: "person" | "team" | "system";
+                                    kind: "plan_approval" | "direction_review" | "question" | "blocked" | "queued" | "discussing" | "planning" | "probing" | "implementing" | "reviewing" | "result_notified" | "working" | "waiting" | "ended";
+                                    role?: "lead" | "tech_lead" | "builder" | "reviewer";
+                                    queueReason?: "active_goal" | "paused" | "archived" | "budget" | "state_error";
+                                    action?: {
+                                        type: "open_plan_review" | "open_direction_review" | "open_question" | "open_discussion" | "open_goal" | "open_result";
+                                        goalId: string;
+                                        questionId?: string;
+                                    };
+                                };
+                                pendingQuestion?: {
+                                    questionId: string;
+                                    node: "plan" | "execute" | "review";
+                                    questions: string[];
+                                } | null;
+                                bucket?: "needs_you" | "queued" | "in_progress" | "result_ready" | "ended";
+                                resultReady: boolean;
+                                accepted?: boolean;
+                                lastError?: string | null;
+                                progress?: {
+                                    total: number;
+                                    done: number;
+                                    inProgress: number;
+                                    review: number;
+                                    failed: number;
+                                    skipped: number;
+                                } | null;
+                                sourceRef?: {
+                                    sessionID?: string;
+                                    messageID?: string;
+                                    snapshot: string;
+                                    capturedAt: string;
+                                    topicId?: string;
+                                    messageRange?: {
+                                        from: string;
+                                        to: string;
+                                    };
+                                } | null;
+                                strategy?: ("quick" | "collaborative") | null;
+                                goalMode?: "quick" | "standard" | "standing";
+                                assessment?: ("reviewed" | "unreviewed") | null;
+                                currentAssignment?: {
+                                    assignmentId: string;
+                                    role: "builder" | "reviewer";
+                                    taskIds: string[];
+                                    attempt: number;
+                                } | null;
+                                activeRevision?: number;
+                                revision?: number;
+                                priority?: number;
+                                enqueuedAt: string;
+                                startedAt: string | null;
+                                endedAt: string | null;
+                            }[];
+                            ended: {
+                                id: string;
+                                podId: string;
+                                goalId: string;
+                                status: "queued" | "active" | "done" | "aborted";
+                                title: string;
+                                phase: string | null;
+                                verdict: ("PASS" | "FAIL" | "MAX_RETRIES" | "ERROR" | "CANCELLED") | null;
+                                stage: {
+                                    owner: "person" | "team" | "system";
+                                    kind: "plan_approval" | "direction_review" | "question" | "blocked" | "queued" | "discussing" | "planning" | "probing" | "implementing" | "reviewing" | "result_notified" | "working" | "waiting" | "ended";
+                                    role?: "lead" | "tech_lead" | "builder" | "reviewer";
+                                    queueReason?: "active_goal" | "paused" | "archived" | "budget" | "state_error";
+                                    action?: {
+                                        type: "open_plan_review" | "open_direction_review" | "open_question" | "open_discussion" | "open_goal" | "open_result";
+                                        goalId: string;
+                                        questionId?: string;
+                                    };
+                                };
+                                pendingQuestion?: {
+                                    questionId: string;
+                                    node: "plan" | "execute" | "review";
+                                    questions: string[];
+                                } | null;
+                                bucket?: "needs_you" | "queued" | "in_progress" | "result_ready" | "ended";
+                                resultReady: boolean;
+                                accepted?: boolean;
+                                lastError?: string | null;
+                                progress?: {
+                                    total: number;
+                                    done: number;
+                                    inProgress: number;
+                                    review: number;
+                                    failed: number;
+                                    skipped: number;
+                                } | null;
+                                sourceRef?: {
+                                    sessionID?: string;
+                                    messageID?: string;
+                                    snapshot: string;
+                                    capturedAt: string;
+                                    topicId?: string;
+                                    messageRange?: {
+                                        from: string;
+                                        to: string;
+                                    };
+                                } | null;
+                                strategy?: ("quick" | "collaborative") | null;
+                                goalMode?: "quick" | "standard" | "standing";
+                                assessment?: ("reviewed" | "unreviewed") | null;
+                                currentAssignment?: {
+                                    assignmentId: string;
+                                    role: "builder" | "reviewer";
+                                    taskIds: string[];
+                                    attempt: number;
+                                } | null;
+                                activeRevision?: number;
+                                revision?: number;
+                                priority?: number;
+                                enqueuedAt: string;
+                                startedAt: string | null;
+                                endedAt: string | null;
+                            }[];
+                        };
+                        counts: {
+                            needs_you: number;
+                            queued: number;
+                            in_progress: number;
+                            result_ready: number;
+                            ended: number;
+                        };
+                        total: number;
+                    };
+                };
             };
         };
     };
@@ -9475,7 +9954,27 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            podId: string;
+                            goalId: string | null;
+                            sourceKey: string;
+                            externalTaskId: string | null;
+                            kind: "plan" | "note" | "external_request";
+                            title: string;
+                            description: string | null;
+                            ownerMemberId: string | null;
+                            status: "pending" | "in_progress" | "blocked" | "review" | "done" | "failed" | "skipped" | "reopened";
+                            dependenciesJson: string | null;
+                            artifactRefsJson: string | null;
+                            acceptanceJson?: string | null;
+                            createdAt: string;
+                            updatedAt: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -9557,7 +10056,24 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            podId: string;
+                            fromMemberId: string;
+                            toMemberId: string | null;
+                            kind: string;
+                            body: string;
+                            createdAt: string;
+                            readAt: string | null;
+                            protocol: string | null;
+                            externalMessageId: string | null;
+                            deliveredAt: string | null;
+                            deliveredSessionId: string | null;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -9700,7 +10216,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        spentUsd: number;
+                        limitUsd: number;
+                    };
+                };
             };
         };
     };
@@ -9720,7 +10241,73 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            podId: string;
+                            goalId: string;
+                            status: "queued" | "active" | "done" | "aborted";
+                            title: string;
+                            phase: string | null;
+                            verdict: ("PASS" | "FAIL" | "MAX_RETRIES" | "ERROR" | "CANCELLED") | null;
+                            stage: {
+                                owner: "person" | "team" | "system";
+                                kind: "plan_approval" | "direction_review" | "question" | "blocked" | "queued" | "discussing" | "planning" | "probing" | "implementing" | "reviewing" | "result_notified" | "working" | "waiting" | "ended";
+                                role?: "lead" | "tech_lead" | "builder" | "reviewer";
+                                queueReason?: "active_goal" | "paused" | "archived" | "budget" | "state_error";
+                                action?: {
+                                    type: "open_plan_review" | "open_direction_review" | "open_question" | "open_discussion" | "open_goal" | "open_result";
+                                    goalId: string;
+                                    questionId?: string;
+                                };
+                            };
+                            pendingQuestion?: {
+                                questionId: string;
+                                node: "plan" | "execute" | "review";
+                                questions: string[];
+                            } | null;
+                            bucket?: "needs_you" | "queued" | "in_progress" | "result_ready" | "ended";
+                            resultReady: boolean;
+                            accepted?: boolean;
+                            lastError?: string | null;
+                            progress?: {
+                                total: number;
+                                done: number;
+                                inProgress: number;
+                                review: number;
+                                failed: number;
+                                skipped: number;
+                            } | null;
+                            sourceRef?: {
+                                sessionID?: string;
+                                messageID?: string;
+                                snapshot: string;
+                                capturedAt: string;
+                                topicId?: string;
+                                messageRange?: {
+                                    from: string;
+                                    to: string;
+                                };
+                            } | null;
+                            strategy?: ("quick" | "collaborative") | null;
+                            goalMode?: "quick" | "standard" | "standing";
+                            assessment?: ("reviewed" | "unreviewed") | null;
+                            currentAssignment?: {
+                                assignmentId: string;
+                                role: "builder" | "reviewer";
+                                taskIds: string[];
+                                attempt: number;
+                            } | null;
+                            activeRevision?: number;
+                            revision?: number;
+                            priority?: number;
+                            enqueuedAt: string;
+                            startedAt: string | null;
+                            endedAt: string | null;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -9802,7 +10389,53 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        goalId: string;
+                        revision: number;
+                        verdict: ("PASS" | "FAIL" | "MAX_RETRIES" | "ERROR" | "CANCELLED") | null;
+                        resultReady: boolean;
+                        reviewed: boolean;
+                        assessment: "reviewed" | "unreviewed" | null;
+                        goalAcceptance: string[];
+                        goalConditions: {
+                            id: string;
+                            statement: string;
+                            required: boolean;
+                            evidence: string;
+                            method: string;
+                        }[];
+                        goalResults: {
+                            conditionId: string;
+                            result: "pass" | "fail" | "skipped";
+                            evidence: string;
+                        }[];
+                        goalEvalValid: boolean;
+                        failure: "review_missing" | "review_invalid" | "goal_eval_invalid" | null;
+                        tasks: {
+                            taskId: string;
+                            result: "pass" | "fail" | "skipped";
+                            evidence: string;
+                        }[];
+                        reviewFeedback: string;
+                        receipt: unknown | null;
+                        artifacts: string[];
+                        worktree: {
+                            dir: string;
+                            branch: string;
+                            baseBranch: string | null;
+                            status: "active" | "merged" | "abandoned" | "missing";
+                            mergeCommit: string | null;
+                            mergedAt: string | null;
+                        } | null;
+                        acceptance: "pending" | "accepted" | "unavailable";
+                        acceptanceRecord?: {
+                            forced: boolean;
+                            acceptedAt: string;
+                            unresolvedReviewItemIds: string[];
+                        } | null;
+                    };
+                };
             };
         };
     };
@@ -9823,7 +10456,54 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        revision: number;
+                        items: {
+                            id: string;
+                            podId: string;
+                            goalId: string;
+                            revision: number;
+                            status: "pending" | "responded" | "resolved";
+                            rel: string;
+                            startLine: number | null;
+                            endLine: number | null;
+                            code: string;
+                            comment: string;
+                            anchor: ({
+                                /** @constant */
+                                kind: "quote";
+                                quote: string;
+                            } | {
+                                /** @constant */
+                                kind: "jsonPath";
+                                path: string;
+                                valueSummary: string;
+                            } | {
+                                /** @constant */
+                                kind: "cell";
+                                sheet?: string;
+                                ref: string;
+                                value: string;
+                            } | {
+                                /** @constant */
+                                kind: "region";
+                                x: number;
+                                y: number;
+                                w: number;
+                                h: number;
+                                slide?: number;
+                            }) | null;
+                            response: string | null;
+                            originItemId: string | null;
+                            originRevision: number | null;
+                            createdAt: string;
+                            updatedAt: string;
+                            respondedAt: string | null;
+                            resolvedAt: string | null;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -11160,7 +11840,22 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            parentID: string;
+                            depth: number;
+                            agent?: string;
+                            description?: string;
+                            status: "running" | "completed" | "failed" | "aborted";
+                            background?: boolean;
+                            createdAt: number;
+                            updatedAt: number;
+                            error?: string;
+                        }[];
+                    };
+                };
             };
         };
     };
