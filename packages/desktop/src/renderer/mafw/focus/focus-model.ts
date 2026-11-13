@@ -146,6 +146,27 @@ export function replaceLens(state: WorkbenchState, lens: Lens): WorkbenchState {
   return { ...state, stack: [...state.stack.slice(0, -1), nextTop] }
 }
 
+/**
+ * 直接选择一个已打开对象（tab 点击）：把已有 focus 移到栈顶，不重复入栈。
+ * 这样「返回上一焦点」不会在重复的 file/web 条目之间空转。
+ */
+export function selectFocus(
+  state: WorkbenchState,
+  scope: Scope,
+  subject: SubjectRef,
+  lens?: Lens,
+): WorkbenchState {
+  const top = state.stack[state.stack.length - 1]
+  if (top && sameSubject(top.subject, subject)) return state
+  const existing = state.stack.find((focus) => sameSubject(focus.subject, subject))
+  const rest = state.stack.filter((focus) => !sameSubject(focus.subject, subject))
+  const nextLens = lens && isLensApplicable(subject, lens) ? lens : defaultLensFor(subject)
+  return {
+    ...state,
+    stack: [...rest, { scope, subject, lens: nextLens, place: existing?.place ?? {} }],
+  }
+}
+
 export function updatePlace(state: WorkbenchState, place: Place): WorkbenchState {
   const top = state.stack[state.stack.length - 1]
   if (!top) return state

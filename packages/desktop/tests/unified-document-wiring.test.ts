@@ -19,6 +19,7 @@ test("MafwShell owns the unified document strip routing", () => {
   assert.match(shell, /fileDocumentTabId/)
   assert.match(shell, /webDocumentTabId/)
   assert.match(shell, /activeBrowserDocumentId/)
+  assert.match(shell, /selectFocus/)
 })
 
 test("DocumentStage mounts both embedded bodies", () => {

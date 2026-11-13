@@ -11,6 +11,7 @@ import {
   popFocus,
   replaceLens,
   sameSubject,
+  selectFocus,
   subjectKey,
   unkeepSubject,
   updatePlace,
@@ -51,6 +52,31 @@ test("opening the same subject replaces lens and place instead of pushing", () =
   assert.equal(same.stack[0]!.lens, "changes")
   assert.equal(same.stack[0]!.place.scroll, 120)
   assert.deepEqual(same.stack[0]!.place.selection, { anchor: 1, head: 4 })
+})
+
+test("selectFocus moves an existing subject to the top without duplicating", () => {
+  const world: SubjectRef = { kind: "world" }
+  const web: SubjectRef = { kind: "web", url: "https://example.com" }
+  let state = openSubject(createWorkbenchState("w1"), worldScope, world)
+  state = openSubject(state, worldScope, file)
+  state = openSubject(state, worldScope, web)
+
+  const next = selectFocus(state, worldScope, file)
+
+  assert.deepEqual(next.stack.map((focus) => subjectKey(focus.subject)), [
+    subjectKey(world),
+    subjectKey(web),
+    subjectKey(file),
+  ])
+  assert.equal(next.stack.at(-1)!.lens, "read")
+})
+
+test("selectFocus appends a new subject and keeps the top unchanged", () => {
+  let state = openSubject(createWorkbenchState("w1"), worldScope, file)
+  const next = selectFocus(state, worldScope, file2)
+  assert.equal(next.stack.length, 2)
+  assert.equal(next.stack[1]!.subject.kind, "file")
+  assert.equal(selectFocus(next, worldScope, file2), next)
 })
 
 test("same file at another version keeps one focus and updates the subject", () => {

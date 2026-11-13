@@ -124,6 +124,7 @@ import {
   openSubject,
   popFocus,
   replaceLens,
+  selectFocus,
   type Focus,
   type Lens,
   type Scope,
@@ -2660,7 +2661,7 @@ export function MafwShell() {
       const root = contentRoot()
       if (!root) return
       const scope = contentScope() ? focusScopeFromContent(contentScope()!) : base
-      const next = openSubject(
+      const next = selectFocus(
         seedWorldRoot(focusState(), scope),
         scope,
         { kind: "file", root, rel: entry.view.id },
@@ -2670,7 +2671,7 @@ export function MafwShell() {
       syncStageToFocus(next)
     } else {
       const url = entry.view.title ?? ""
-      const next = openSubject(
+      const next = selectFocus(
         seedWorldRoot(focusState(), base),
         base,
         { kind: "web", url },
