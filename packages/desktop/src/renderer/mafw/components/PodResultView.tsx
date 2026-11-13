@@ -503,6 +503,10 @@ export function PodResultView(props: {
                 >
                   查看本版文件
                 </ButtonV2>
+              </div>
+            </Show>
+            <Show when={props.onOpenChanges}>
+              <div class="mafw-pod-result-diff-actions">
                 <ButtonV2 variant="ghost" size="small" onClick={() => props.onOpenChanges?.({ section: "changes" })}>
                   改动面板
                 </ButtonV2>
