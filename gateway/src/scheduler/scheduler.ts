@@ -8,9 +8,9 @@
 // Node is single-threaded: there is no preemption. Scheduling here means
 // (1) ordering of queued tasks by priority, (2) admission control at submit
 // (skip/coalesce/budget), and (3) start-time eligibility (mutex keys, idle
-// deferral, concurrency cap). Foreground tasks execute immediately and are
-// never queued behind lower classes; the concurrency cap does not apply to
-// them.
+// deferral, concurrency cap, resource pressure via `resourceAdmission`).
+// Foreground tasks execute immediately and are never queued behind lower
+// classes; the concurrency cap and the resource re-check do not apply to them.
 //
 // Spec: docs/superpowers/specs/2026-11-09-gateway-kernel-scheduler-design.md
 
@@ -65,6 +65,7 @@ export class Scheduler {
   private readonly maxConcurrent: number;
   private readonly budgetChecker?: BudgetChecker;
   private readonly admissionChecker?: BudgetChecker;
+  private readonly resourceAdmission?: () => boolean;
   private readonly log: (msg: string) => void;
 
   private readonly queue: Task[] = [];
@@ -80,6 +81,7 @@ export class Scheduler {
     this.maxConcurrent = Math.max(1, opts?.maxConcurrent ?? 4);
     this.budgetChecker = opts?.budgetChecker;
     this.admissionChecker = opts?.admissionChecker;
+    this.resourceAdmission = opts?.resourceAdmission;
     this.log = opts?.log ?? (() => {});
   }
 
@@ -194,8 +196,13 @@ export class Scheduler {
 
   /** Start queued tasks while capacity and eligibility allow. */
   private pump(): void {
+    // E11-3: resource pressure is re-checked when STARTING, not only at submit.
+    // A task queued while healthy (cap / mutex / defer-to-idle) must not start
+    // after the box degraded behind its back. Evaluated once per pump — the
+    // flag cannot flip in the middle of this synchronous loop.
+    const nonForegroundBlocked = this.resourceAdmission ? !this.resourceAdmission() : false;
     for (;;) {
-      const next = this.pickEligible();
+      const next = this.pickEligible(nonForegroundBlocked);
       if (!next) return;
       // Foreground tasks bypass the non-foreground cap; pickEligible ranks
       // them first, so if it returned a non-foreground task no eligible
@@ -210,10 +217,13 @@ export class Scheduler {
 
   /** Best eligible queued task: priority rank first, submission seq second.
    *  Mutex-blocked and idle-deferred tasks are passed over (work-conserving)
-   *  but keep their queue position. */
-  private pickEligible(): Task | undefined {
+   *  but keep their queue position. `nonForegroundBlocked` (E11-3) likewise
+   *  passes over pressure-blocked non-foreground tasks while leaving them
+   *  queued — foreground candidates are still considered. */
+  private pickEligible(nonForegroundBlocked = false): Task | undefined {
     let best: Task | undefined;
     for (const t of this.queue) {
+      if (nonForegroundBlocked && t.descriptor.priority !== 'foreground') continue;
       if (best) {
         const rank = PRIORITY_RANK[t.descriptor.priority] - PRIORITY_RANK[best.descriptor.priority];
         if (rank > 0 || (rank === 0 && t.seq > best.seq)) continue; // worse than best

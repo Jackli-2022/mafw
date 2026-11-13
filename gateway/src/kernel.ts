@@ -198,7 +198,7 @@ import { QuotaExceededError, QuotaService, projectAdmission } from './resources/
 import { ConnectionTable } from './resources/connections';
 import { BufferCounters } from './resources/outbound-buffer';
 import { ResourceGovernor } from './resources/governor';
-import { createResourceBudgetChecker, shouldPruneEventLog } from './resources/degradation';
+import { createResourceBudgetChecker, shouldPruneEventLog, shouldResumeScheduler } from './resources/degradation';
 import { buildHandlesSnapshot, buildKernelStatsSnapshot, type KernelStatsSnapshot } from './resources/stats';
 import { limitOf } from './resources/settings';
 import { TimerService, type TimerHandle } from './core/timer-service';
@@ -571,6 +571,9 @@ class MafwScheduler {
    */
   private scheduler = new Scheduler({
     admissionChecker: (task) => this.resourceAdmission(task),
+    // E11-3: START-time pressure re-check for tasks that were already queued
+    // when the box degraded. Live read — the governor is created after listen().
+    resourceAdmission: () => !(this.governor?.isDegraded() ?? false),
     budgetChecker: (task) => {
       const b = task.budget;
       if (b?.kind === 'pipeline' && b.pipeline) {
@@ -5809,6 +5812,9 @@ class MafwScheduler {
               log.warn(`[Resources] disk critical — pruned event_log to ${retention} rows`);
             }
           }
+          // E11-3：恢复边沿自动续跑——降级期间排队（启动前二次检查挡下）的
+          // 非前台任务不会自己回来，必须主动 sweep 一次；非边沿不扫。
+          if (shouldResumeScheduler(prev, next)) void this.scheduler.sweep();
         });
         // E4-6：serve 实例通常在 boot 稍后拉起，这里只是尽力登记；stats 构建时幂等补登。
         this.syncServeLedger();
