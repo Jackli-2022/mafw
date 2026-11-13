@@ -12,6 +12,16 @@
 
 **Roadmap:** `docs/superpowers/plans/2026-11-12-fixed-core-capability-roadmap.md`
 
+## Progress（2026-11-13）
+
+- S4（Task 4.1–4.4）完成。
+- plugin-contract：**42 / 42 pass**（新增 2）。
+- gateway 定向：**45 / 45 pass**；gateway 全量 **7006 passed / 1 skipped / 7007 total**，run 2/3 连续 clean。
+- desktop 全量：**3625 / 3625 pass**；S4 新增 16 个测试。
+- gateway typecheck 通过；desktop 用 `tsc` typecheck 通过（`tsgo` 依赖当前未安装）。
+- 交付记录：`docs/releases/2026-11-13-capability-kernel-phase4-s4.md`。
+- 明确未做：composer action、panel rail entry、chat part renderer、danger/shortcut 键位。
+
 ## Global Constraints
 
 - 插件 UI 只做声明式数据；禁止把 Solid/原生组件注入 renderer。

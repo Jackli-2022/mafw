@@ -58,6 +58,9 @@
 | 插件 action package-local | `packages/plugin-contract/src/validate.test.ts` | OK |  |
 | 主题 token 单源 | `packages/desktop/src/renderer/mafw/visual-language-css.test.ts`、`theme-merge-css.test.ts` | OK |  |
 | UI 槽位 revision/stale guard | `packages/desktop/src/renderer/mafw/plugins/*.test.ts` | OK |  |
+| 菜单贡献 grammar / surface / action 引用 | `packages/plugin-contract/src/validate.test.ts`、`packages/desktop/src/renderer/mafw/context-menu/contributions.test.ts` | OK | S4 |
+| 菜单贡献 revision / unload | `packages/desktop/src/renderer/mafw/plugins/plugin-menu-contributions.test.ts` | OK | S4 |
+| 菜单 action 路由 | `packages/desktop/src/renderer/mafw/plugins/plugin-menu-contributions.test.ts` | OK | S4 |
 | capability manifest / plane | 本 phase Task 0.4 新增 | GAP→新增 | shared contract |
 | desktop cutover 并行窗口 | Phase 4 | GAP | 不在 Phase 0/1 |
 

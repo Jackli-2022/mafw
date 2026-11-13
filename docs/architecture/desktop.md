@@ -182,6 +182,21 @@ O(n²) 传输）。启动扫描 + fs.watch 热重载，fail-open（坏插件跳�
 `renderer/mafw/components/UserPluginCards.tsx`（代理+解释器）。示例：
 `docs/examples/ui-plugins/example-tool-cards.js`。
 
+#### 统一插件包菜单槽位（S4，2026-11-13）
+
+统一插件包可以通过 `plugin.json` / `activate()` 的 `ui.menuItems` 贡献 context-menu 项。descriptor 是纯数据：
+
+```ts
+{ id, surface, label, action, icon?, shortcut?, order? }
+```
+
+- gateway 用 `validateClientDescriptor` 校验：surface 必须在 `PLUGIN_MENU_SURFACES`，`action` 必须引用同包 action，icon 必须已注册；`danger` 暂不开放。
+- desktop `MenuContributionRegistry`（`context-menu/contributions.ts`）把匹配项追加为「扩展」group；merge 后仍过 `validateMenu()`，失败 fail-open 回原菜单。每 surface 上限 7。
+- `PluginMenuWiring` 监听 committed descriptors：revision 变化/包卸载先 dispose 旧贡献再注册新快照。
+- 点击贡献项调用 `window.api.mafw.plugins.invoke(pkg, action, {}, sessionID)`；失败只记录，不影响菜单。
+- 支持的 surface：`editor.tab` / `file.tree` / `file.path` / `message` / `session.row`。
+- 仍是宿主渲染：不注入 Solid 组件，不改变 preload/webview sandbox。
+
 #### 插件平面与 kernel-v2（2026-11-12，规划中）
 
 统一插件包按 **contributes 平面**区分，而不是按目录/包名：`gateway`（进程内 driver）、`desktop.ui`（声明式数据）、`desktop.web`（sandboxed webview）、`desktop.main`（legacy `~/.mafw/ui-plugins`，迁移期默认关闭/显式同意）。一个包可以同时有多个平面，gateway 与 desktop 各自只加载自己的部分；跨平面只走 action/event bridge，webview 永不接收 gateway apiToken。

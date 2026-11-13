@@ -286,6 +286,31 @@ observers: [{
 - 工具三原语（`tool.call` / `tool.delta` / `tool.result`）在 observer 之前已被丢弃；工具事件请观察 `part.updated` 的 tool part。
 - observer 执行需要 `MAFW_KERNEL_V2_OBSERVERS=1`；flag 关闭时只校验声明，不投递事件。
 
+## 5.3 Context menu items
+
+`ui.menuItems` 贡献固定 shell 的 context-menu 项（data-only）：
+
+```js
+ui: {
+  menuItems: [{
+    id: 'copy-markdown',
+    surface: 'message',
+    label: '复制为 Markdown',
+    action: 'copyMarkdown', // 必须是本包 actions 里声明的 action
+    icon: 'file',           // 必须是已注册的插件图标
+    order: 10,
+    // shortcut: 'Ctrl+Shift+C', // 仅展示提示，不注册全局键位
+  }],
+}
+```
+
+- 支持的 `surface`：`editor.tab` / `file.tree` / `file.path` / `message` / `session.row`。
+- 每个 surface 最多 7 个贡献；merge 后仍过宿主菜单 grammar，失败回退原菜单。
+- `danger` 暂不开放；需要确认/危险操作请用 action 内部确认。
+- 点击调用 `plugins.invoke(package, action, {}, sessionID)`；action 失败只记录，不影响菜单。
+- 包 reload/disable/remove 时贡献随 revision 自动退订。
+- 不注入原生组件；菜单项只渲染 label/icon/shortcut 文本。
+
 ## 6. UI slots
 
 `ui` 接受五个 slot（未知 slot 直接失败）：`panels` / `configPages` / `toolCards` / `messageWindows` 是**声明式数据**（Desktop 用内置组件渲染）；`webSurfaces` 是**沙箱 Web 页面**（插件自己写 HTML/JS）。两类可以并存于同一个包。

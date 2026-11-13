@@ -320,9 +320,13 @@ Probe 的作用是让 tech lead 在看详细计划前先看清关键未知；每
 
 **Gate G3.6**：activate 贡献自动注册；reload 换 revision；remove/disable 退订；flag 关闭零执行；全量绿。
 
-## Phase 4：Desktop UI 槽位（4–6 周）
+## Phase 4：Desktop UI 槽位（4–6 周，S4 已交付 2026-11-13）
 
 **目标**：固定 shell + 更多声明式槽位；不注入原生组件。
+
+**状态**：S4 `ui.menuItems` 已端到端交付：contract 校验 → gateway 投影 → desktop `MenuContributionRegistry` → package action。composer action / panel rail entry / chat part renderer 仍待做。
+**S4 详细计划**：`docs/superpowers/plans/2026-11-13-kernel-v2-phase4-desktop-ui-slots.md`
+**S4 交付记录**：`docs/releases/2026-11-13-capability-kernel-phase4-s4.md`
 
 **顺序**：`desktop.ui.menuItems`（先做 S4）→ composer action → panel rail entry → chat part renderer 评估。
 
