@@ -31,6 +31,7 @@ import {
 } from './release-info';
 import { isLoopbackAddr } from './core/auth';
 import { loadOrCreateHumanToken, rotateHumanToken } from './core/human-token';
+import { registerLeadSessionRecord } from './core/session/internal-registration';
 import type { Services } from './types';
 // D3 Task 3：HTTP 传输链 + WS 上行枢纽（原先内联在 startApiServer 的 626 行回调）。
 import { createRequestListener } from './http/transport';
@@ -1711,6 +1712,27 @@ class MafwScheduler {
     this.internalSessionRoles.delete(sessionId);
     this.getGatewayDb().kvDelete('internal-session', sessionId);
     this.identityState.unbind(sessionId);
+  }
+
+  /**
+   * E11-2: register a Lead as internal identity + session record in one
+   * reconciling step. A quota rejection (or any `registerExternal` failure)
+   * rolls the internal identity back and broadcasts
+   * `session.registration_failed`; it never throws, so the Lead boot path
+   * survives a full quota bucket with a usable runtime session.
+   */
+  private async registerLeadRecord(sessionId: string, directory: string): Promise<void> {
+    await registerLeadSessionRecord({
+      sdkSession: this.sdkSession,
+      registerInternal: (id, role, identity) => this.registerInternalSession(id, role, identity),
+      unregisterInternal: (id) => this.unregisterInternalSession(id),
+      broadcast: (event) => this.broadcast(event),
+      log,
+      sessionId,
+      directory,
+      metadata: projectLeadSessionMetadata(),
+      identity: resolveIdentityAlias('manager'),
+    });
   }
 
   /** Retired Leads stay readable as ordinary history, never as current Lead candidates. */
@@ -3994,9 +4016,10 @@ class MafwScheduler {
         }
       },
       registerLead: async (sessionId, dir) => {
-        this.registerInternalSession(sessionId, 'lead', resolveIdentityAlias('manager'));
-        await this.sdkSession.registerExternal(sessionId, dir, projectLeadSessionMetadata())
-          .catch((err: any) => log.warn(`[Scheduler] Lead local register failed: ${err?.message ?? err} (non-fatal)`));
+        // E11-2: internal identity + session record in one reconciling step —
+        // a quota rejection rolls the identity back and broadcasts
+        // `session.registration_failed` instead of leaving a phantom.
+        await this.registerLeadRecord(sessionId, dir);
       },
       archiveLead: (sessionId) => this.archiveLeadSession(sessionId),
       bindPodLead: async (podId, sessionId) => {
@@ -7141,8 +7164,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     const sessionId = session.id;
     if (!sessionId) throw new Error('Failed to create lead session: no id returned');
     this.getGatewayDb().kvSet('manager-session', canonical, writeManagerSlot(this.getGatewayDb().kvGet('manager-session', canonical), this.runtimeName, { sessionId, createdAt: new Date().toISOString() }));
-    this.registerInternalSession(sessionId, 'lead', resolveIdentityAlias('manager'));
-    await this.sdkSession.registerExternal(sessionId, canonical, projectLeadSessionMetadata()).catch(() => {});
+    await this.registerLeadRecord(sessionId, canonical);
     await this.syncPodLead(canonical, sessionId);
     return sessionId;
   }
