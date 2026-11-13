@@ -39,11 +39,21 @@ import {
   PodDetailResponse,
   PodEventsResponse,
   PodGoalResultResponse,
+  PodGoalRevisionsResponse,
   PodGoalsResponse,
   PodMessagesResponse,
+  PodProbesResponse,
   PodReviewItemsResponse,
   PodTasksResponse,
+  PodTechLeadHistoryResponse,
 } from './schemas/pods';
+import {
+  GoalListResponse,
+  GoalPlanResponse,
+  GoalSessionsResponse,
+  GoalSourceResponse,
+  GoalTimelineResponse,
+} from './schemas/goals';
 import { WorkOverviewResponse } from './schemas/work';
 import { MemoryStatsResponse } from './schemas/memory-stats';
 import {
@@ -182,13 +192,13 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'PUT', path: '/api/config', operationId: 'config.set', tags: ['config'] },
   { method: 'GET', path: '/api/runtime-config', operationId: 'runtime.config.get', tags: ['runtime'] },
   { method: 'PATCH', path: '/api/runtime-config', operationId: 'runtime.config.update', tags: ['runtime'] },
-  { method: 'GET', path: '/api/goals', operationId: 'goals.list', tags: ['goals'] },
+  { method: 'GET', path: '/api/goals', operationId: 'goals.list', tags: ['goals'], response: GoalListResponse },
   { method: 'GET', path: '/api/goals/:id', operationId: 'goals.get', tags: ['goals'], response: GoalViewSchema },
-  { method: 'GET', path: '/api/goals/:id/plan', operationId: 'goals.plan', tags: ['goals'] },
+  { method: 'GET', path: '/api/goals/:id/plan', operationId: 'goals.plan', tags: ['goals'], response: GoalPlanResponse },
   { method: 'POST', path: '/api/goals/:id/plan-approval', operationId: 'goals.planApproval', tags: ['goals'] },
-  { method: 'GET', path: '/api/goals/:id/sessions', operationId: 'goals.sessions', tags: ['goals'] },
-  { method: 'GET', path: '/api/goals/:id/timeline', operationId: 'goals.timeline', tags: ['goals'] },
-  { method: 'GET', path: '/api/goals/:id/source', operationId: 'goals.source', tags: ['goals'] },
+  { method: 'GET', path: '/api/goals/:id/sessions', operationId: 'goals.sessions', tags: ['goals'], response: GoalSessionsResponse },
+  { method: 'GET', path: '/api/goals/:id/timeline', operationId: 'goals.timeline', tags: ['goals'], response: GoalTimelineResponse },
+  { method: 'GET', path: '/api/goals/:id/source', operationId: 'goals.source', tags: ['goals'], response: GoalSourceResponse },
   { method: 'GET', path: '/api/lead/context', operationId: 'lead.context', tags: ['internal'] },
   { method: 'GET', path: '/api/attention', operationId: 'attention.list', tags: ['internal'], response: AttentionListResponse },
   { method: 'GET', path: '/api/decisions', operationId: 'decisions.list', tags: ['internal'], response: DecisionListResponse },
@@ -323,13 +333,13 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/pods/:podId/memory', operationId: 'pods.memory.get', tags: ['pods'] },
   { method: 'POST', path: '/api/pods/:podId/memory', operationId: 'pods.memory.write', tags: ['pods'] },
   // Task 18：直接讨论 Goal 的协作面（Tech Lead 会话 / 方向裁定 / Spike / 打回 / revision）
-  { method: 'GET', path: '/api/pods/:podId/goals/:goalId/tech-lead', operationId: 'pods.goals.techLead', tags: ['pods'] },
+  { method: 'GET', path: '/api/pods/:podId/goals/:goalId/tech-lead', operationId: 'pods.goals.techLead', tags: ['pods'], response: PodTechLeadHistoryResponse },
   { method: 'POST', path: '/api/pods/:podId/goals/:goalId/tech-lead/messages', operationId: 'pods.goals.techLead.messages', tags: ['pods'] },
   { method: 'POST', path: '/api/pods/:podId/goals/:goalId/direction-decision', operationId: 'pods.goals.direction', tags: ['pods'] },
-  { method: 'GET', path: '/api/pods/:podId/goals/:goalId/probes', operationId: 'pods.goals.probes', tags: ['pods'] },
+  { method: 'GET', path: '/api/pods/:podId/goals/:goalId/probes', operationId: 'pods.goals.probes', tags: ['pods'], response: PodProbesResponse },
   { method: 'POST', path: '/api/pods/:podId/goals/:goalId/probes', operationId: 'pods.goals.probes.create', tags: ['pods'] },
   { method: 'POST', path: '/api/pods/:podId/goals/:goalId/reject', operationId: 'pods.goals.reject', tags: ['pods'] },
-  { method: 'GET', path: '/api/pods/:podId/goals/:goalId/revisions', operationId: 'pods.goals.revisions', tags: ['pods'] },
+  { method: 'GET', path: '/api/pods/:podId/goals/:goalId/revisions', operationId: 'pods.goals.revisions', tags: ['pods'], response: PodGoalRevisionsResponse },
 ];
 
 /** 非 SDK 端点补充登记（desktop/TUI/worker/dashboard 专用面），operationId 自拟，tags 'internal'。 */

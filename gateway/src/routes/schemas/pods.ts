@@ -22,8 +22,12 @@
  * 不写进 schema：它们是 DB 行投影的附加列，契约面只承诺 DTO（E8 先例）。
  *
  * `work.overview`（同一套 group/count 投影）见 `schemas/work.ts`。
+ *
+ * E10b-1：协作面 3 个读 op（tech-lead / probes / revisions）追加在本文件末尾；
+ * `sourceRef` 复用 `schemas/goals.ts` 的 `GoalSourceRefSchema`（同一份 DTO）。
  */
 import { Type } from '@sinclair/typebox'
+import { GoalSourceRefSchema } from './goals'
 
 const PodStatusSchema = Type.Union([
   Type.Literal('active'),
@@ -54,7 +58,7 @@ const PodGoalStatusSchema = Type.Union([
   Type.Literal('aborted'),
 ])
 
-const PodGoalVerdictSchema = Type.Union([
+export const PodGoalVerdictSchema = Type.Union([
   Type.Literal('PASS'),
   Type.Literal('FAIL'),
   Type.Literal('MAX_RETRIES'),
@@ -137,18 +141,6 @@ const PodGoalProgressSchema = Type.Object({
   review: Type.Number(),
   failed: Type.Number(),
   skipped: Type.Number(),
-})
-
-const GoalSourceRefSchema = Type.Object({
-  sessionID: Type.Optional(Type.String()),
-  messageID: Type.Optional(Type.String()),
-  snapshot: Type.String(),
-  capturedAt: Type.String(),
-  topicId: Type.Optional(Type.String()),
-  messageRange: Type.Optional(Type.Object({
-    from: Type.String(),
-    to: Type.String(),
-  })),
 })
 
 const PodGoalStrategySchema = Type.Union([
@@ -562,4 +554,145 @@ export const PodReviewItemsResponse = Type.Object({
 export const PodCostResponse = Type.Object({
   spentUsd: Type.Number(),
   limitUsd: Type.Number(),
+})
+
+// ── E10b-1：Pod Goal 协作面读接口 ───────────────────────────────────────────
+
+/**
+ * `GET /api/pods/:podId/goals/:goalId/tech-lead` →
+ * `{...PodTechLeadService.history(), sessionID, sessionError?}`.
+ *
+ * `messages` 归 runtime 所有（`runtime.messages()` 的 `data` 页，part 判别联合随
+ * runtime 演进）——owner = runtime session history；gateway 只透传，故 schema 只承诺
+ * 数组元素存在（与 SDK `PodTechLeadHistory.messages: unknown[]` 等价）。
+ * `sessionError` 只在「确保 Tech Lead 会话」失败时出现（讨论历史仍照常返回）。
+ */
+export const PodTechLeadHistoryResponse = Type.Object({
+  goalId: Type.String(),
+  revision: Type.Number(),
+  sessionID: Type.Union([Type.String(), Type.Null()]),
+  messages: Type.Array(Type.Unknown()),
+  nextCursor: Type.Optional(Type.String()),
+  sessionError: Type.Optional(Type.String()),
+})
+
+/** Spike 探针作用域（`core/goal/probe.ts` `ProbeScope`）。命令类别在白名单内，schema 按字符串数组承诺。 */
+const PodProbeScopeSchema = Type.Object({
+  paths: Type.Array(Type.String()),
+  commandClasses: Type.Array(Type.String()),
+  network: Type.Boolean(),
+  credentials: Type.Array(Type.String()),
+})
+
+const PodProbeBudgetSchema = Type.Object({
+  maxMinutes: Type.Number(),
+  maxUsd: Type.Number(),
+})
+
+const PodProbeAffectsSchema = Type.Object({
+  planAssertions: Type.Optional(Type.Array(Type.String())),
+  evalMethods: Type.Optional(Type.Array(Type.String())),
+  options: Type.Optional(Type.Array(Type.String())),
+})
+
+const PodProbeRequestSchema = Type.Object({
+  id: Type.String(),
+  podId: Type.String(),
+  goalId: Type.String(),
+  revision: Type.Number(),
+  question: Type.String(),
+  hypothesis: Type.String(),
+  scope: PodProbeScopeSchema,
+  budget: PodProbeBudgetSchema,
+  evidenceRequired: Type.Array(Type.String()),
+  affects: PodProbeAffectsSchema,
+})
+
+const PodProbeReportSchema = Type.Object({
+  probeId: Type.String(),
+  conclusion: Type.Union([
+    Type.Literal('supports'),
+    Type.Literal('refutes'),
+    Type.Literal('inconclusive'),
+  ]),
+  commands: Type.Array(Type.String()),
+  keyOutput: Type.String(),
+  repro: Type.Array(Type.String()),
+  remainingAssumptions: Type.Array(Type.String()),
+  impact: Type.Object({
+    plan: Type.Optional(Type.String()),
+    goalEval: Type.Optional(Type.String()),
+  }),
+})
+
+/** 探针条目 = `core/pod/pod-probe-service.ts` `ProbeRecord`（row + 请求/报告原子文）。 */
+const PodProbeSchema = Type.Object({
+  id: Type.String(),
+  podId: Type.String(),
+  goalId: Type.String(),
+  revision: Type.Number(),
+  status: Type.Union([
+    Type.Literal('queued'),
+    Type.Literal('running'),
+    Type.Literal('completed'),
+    Type.Literal('failed'),
+    Type.Literal('cancelled'),
+  ]),
+  request: PodProbeRequestSchema,
+  report: Type.Union([PodProbeReportSchema, Type.Null()]),
+  error: Type.Union([Type.String(), Type.Null()]),
+  requestPath: Type.String(),
+  reportPath: Type.Union([Type.String(), Type.Null()]),
+  createdAt: Type.String(),
+  startedAt: Type.Union([Type.String(), Type.Null()]),
+  endedAt: Type.Union([Type.String(), Type.Null()]),
+})
+
+/** `GET /api/pods/:podId/goals/:goalId/probes` → `{items: ProbeRecord[]}`（revision/status 可过滤）。 */
+export const PodProbesResponse = Type.Object({
+  items: Type.Array(PodProbeSchema),
+})
+
+const PodGoalRevisionStatusSchema = Type.Union([
+  Type.Literal('discussing'),
+  Type.Literal('direction_review'),
+  Type.Literal('planning'),
+  Type.Literal('plan_review'),
+  Type.Literal('queued'),
+  Type.Literal('implementing'),
+  Type.Literal('reviewing'),
+  Type.Literal('completed'),
+  Type.Literal('aborted'),
+  Type.Literal('discarded'),
+])
+
+/**
+ * `GET /api/pods/:podId/goals/:goalId/revisions` → `{items: PodGoalRevisionRow[]}`。
+ * 行内的 `goalMode` 是 pod store 的投影列（SDK `PodGoalRevision` 不暴露），
+ * 与 E8/E10 的 row-projection 先例一致不写进契约面。
+ */
+const PodGoalRevisionSchema = Type.Object({
+  id: Type.String(),
+  podId: Type.String(),
+  goalId: Type.String(),
+  revision: Type.Number(),
+  status: PodGoalRevisionStatusSchema,
+  verdict: Type.Union([PodGoalVerdictSchema, Type.Null()]),
+  directionStatus: Type.Union([
+    Type.Literal('none'),
+    Type.Literal('pending'),
+    Type.Literal('decided'),
+  ]),
+  directionJson: Type.Union([Type.String(), Type.Null()]),
+  planHash: Type.Union([Type.String(), Type.Null()]),
+  evalHash: Type.Union([Type.String(), Type.Null()]),
+  feedback: Type.Union([Type.String(), Type.Null()]),
+  priority: Type.Number(),
+  enqueuedAt: Type.String(),
+  startedAt: Type.Union([Type.String(), Type.Null()]),
+  endedAt: Type.Union([Type.String(), Type.Null()]),
+})
+
+export const PodGoalRevisionsResponse = Type.Object({
+  items: Type.Array(PodGoalRevisionSchema),
 })

@@ -3,9 +3,9 @@
 // `scripts/schema-coverage.cjs` parses `route-catalog.ts` (no TS import, no
 // generated SDK artifact) and reports how many catalog ops carry a 200
 // response schema. This test pins that report against the catalog:
-//   - the 29 ops covered at the E10 close (13 pre-E10 + 16 E10) must each keep
-//     their `response` — a silent schema deletion fails here;
-//   - the covered count may only grow (>= 29);
+//   - the 37 ops covered at the E10b-1 close (13 pre-E10 + 16 E10 + 8 E10b-1) must each
+//     keep their `response` — a silent schema deletion fails here;
+//   - the covered count may only grow (>= 37);
 //   - the total op count is pinned (316) so an unregistered/new route surfaces
 //     instead of drifting the ledger;
 //   - the script, spawned as a child process from the gateway root, must report
@@ -25,20 +25,27 @@ interface CoverageReport {
 const GATEWAY_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPT = path.join(GATEWAY_ROOT, 'scripts', 'schema-coverage.cjs');
 
-/** Baseline 13 (E8 and earlier) + 8 session read (E10-1) + 8 pod/work read (E10-2). */
+/** Baseline 13 (E8 and earlier) + 8 session read (E10-1) + 8 pod/work read (E10-2) + 8 goal read (E10b-1). */
 const E10_COVERED_OPS = [
   'attention.list',
   'decisions.list',
   'event.replay',
   'goals.get',
+  'goals.plan',
+  'goals.sessions',
+  'goals.source',
+  'goals.timeline',
   'kernel.stats',
   'memory.stats',
   'pod.events.list',
   'pods.cost',
   'pods.get',
   'pods.goals',
+  'pods.goals.probes',
   'pods.goals.result',
   'pods.goals.reviewItems',
+  'pods.goals.revisions',
+  'pods.goals.techLead',
   'pods.messages.list',
   'pods.tasks.list',
   'presence.get',
@@ -84,7 +91,7 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(lost).toEqual([]);
   });
 
-  it('covered count is >= 29 and the catalog still has exactly 316 ops', () => {
+  it('covered count is >= 37 and the catalog still has exactly 316 ops', () => {
     const ops = catalogOps();
     const covered = ops.filter((op) => op.hasResponse).length;
     expect(covered).toBeGreaterThanOrEqual(E10_COVERED_OPS.length);

@@ -11,12 +11,17 @@
  */
 import { Type } from '@sinclair/typebox'
 
+/**
+ * `goals.get` → routes/goal-get.ts `projectGoalView()`。
+ * E10b-1：波次计数在 `goals.list` 的 dashboard 投影里不存在，而同一个 `Goal` DTO
+ * 服务两个 op，因此契约面按 optional 承诺（get 恒补齐，list 不携带）。
+ */
 export const GoalViewSchema = Type.Object({
   goalId: Type.String(),
   phase: Type.Union([Type.String(), Type.Null()]),
   loop: Type.Number(),
-  currentWave: Type.Number(),
-  totalWaves: Type.Number(),
+  currentWave: Type.Optional(Type.Number()),
+  totalWaves: Type.Optional(Type.Number()),
   nextAction: Type.Optional(Type.String()),
   error: Type.Union([Type.String(), Type.Null()]),
   updatedAt: Type.Union([Type.String(), Type.Null()]),

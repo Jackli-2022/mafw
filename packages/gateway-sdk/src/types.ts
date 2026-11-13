@@ -58,8 +58,9 @@ export interface Goal {
   /** E1/E3: NodeDriver 状态可能尚未定相。 */
   phase: string | null
   loop: number
-  currentWave: number
-  totalWaves: number
+  /** E10b-1: `goals.list` 的 dashboard 投影不含波次计数（`goals.get` 恒补齐）。 */
+  currentWave?: number
+  totalWaves?: number
   nextAction?: string
   /** 失败原因（成功/未失败时为 null）。 */
   error: string | null
@@ -929,6 +930,18 @@ export interface GoalNodeRunInfo {
   costUsd: number | null
 }
 
+/** 计划审阅状态（`GoalStateV3.planApproval`）；`revision` / `*Hash` 是 Task 13 内容绑定。 */
+export interface GoalPlanApproval {
+  id?: string
+  status: 'pending' | 'approved' | 'rejected'
+  feedback?: string
+  decidedAt?: string
+  round: number
+  revision?: number
+  planHash?: string | null
+  evalHash?: string | null
+}
+
 export interface GoalTimeline {
   goal: {
     goalId: string
@@ -941,35 +954,62 @@ export interface GoalTimeline {
     nextAction: string
     lastError: string | null
     updatedAt: string
-    /** W1 计划审阅状态（泳道「待批准」徽标数据源）。 */
-    planReview?: 'auto' | 'manual'
-    planApproval?: {
-      id?: string
-      status: 'pending' | 'approved' | 'rejected'
-      feedback?: string
-      decidedAt?: string
-      round: number
-    } | null
+    /** W1 计划审阅状态（泳道「待批准」徽标数据源），handler 恒发（缺省 'auto'）。 */
+    planReview: 'auto' | 'manual'
+    planApproval: GoalPlanApproval | null
   }
   nodes: GoalNodeRunInfo[]
-  artifacts: { wavesPath: string; receipts: string[]; reviewsDir: string }
+  /** `receipts` 是 execute 节点 outcome 原值（未产出回执时为 null）。 */
+  artifacts: { wavesPath: string; receipts: (string | null)[]; reviewsDir: string }
+  /** goal_outcomes 归档行（owner = goal driver archive），未归档时字段省略。 */
   outcome?: unknown
 }
+
+/** Goal Eval 单条条件（gateway `core/goal/goal-eval.ts` `GoalEvalCondition`）。 */
+export interface GoalEvalCondition {
+  id: string
+  statement: string
+  required: boolean
+  evidence: string
+  method: string
+}
+
+export interface GoalEvalMappingEntry {
+  tasks?: string[]
+  probes?: string[]
+  artifacts?: string[]
+}
+
+/** 校验/规范化后的 Goal Eval 文档（`validateGoalEval()` 输出）。 */
+export interface GoalEval {
+  outcome: string
+  conditions: GoalEvalCondition[]
+  failureConditions: string[]
+  constraints: string[]
+  nonGoals: string[]
+  mapping: Record<string, GoalEvalMappingEntry>
+}
+
+/** Wave-plan 原子文条目：`id` 必填，其余任务字段由 goal driver / plan skill 版本决定。 */
+export type GoalPlanWave = { id: string } & { [key: string]: unknown }
 
 /** W1 计划审阅：GET /api/goals/:id/plan 响应。 */
 export interface GoalPlanInfo {
   planReview: 'auto' | 'manual'
-  planApproval: {
-    id?: string
-    status: 'pending' | 'approved' | 'rejected'
-    feedback?: string
-    decidedAt?: string
-    round: number
-  } | null
+  planApproval: GoalPlanApproval | null
   planFeedback: string | null
   round: number
-  waves: unknown
+  revision: number
+  waves: GoalPlanWave[] | null
   wavePlanPath: string | null
+  wavesPath: string
+  goalEval: GoalEval | null
+  goalEvalPath: string | null
+  goalEvalError: string | null
+  planHash: string | null
+  evalHash: string | null
+  /** 已批准内容与当前内容不一致（客户端据此判断能否继续批准）。 */
+  stale: boolean
 }
 
 export interface GoalsNamespace {
