@@ -1,5 +1,5 @@
 import { createEffect, createRoot, createSignal } from "solid-js"
-import type { DocumentTabView } from "../document-frame-model"
+import { editorDocumentTabs, type DocumentTabView } from "../document-frame-model"
 import {
   closeOtherTabIds,
   closeRightTabIds,
@@ -17,10 +17,12 @@ import {
   saveDocumentListSnapshot,
 } from "./document-list-persistence"
 import { browserDocuments, browserDocumentTitle } from "./browser-documents"
+import { fileModelFor } from "./file-documents"
 
 const [entries, setEntries] = createSignal<DocumentTabEntry[]>([])
 const [activeId, setActiveId] = createSignal<string | null>(null)
 const [closeRequests, setCloseRequests] = createSignal<readonly string[]>([])
+const [fileRoot, setFileRoot] = createSignal<string | null>(null)
 
 let worldId: string | null = null
 let savedOrder: string[] = []
@@ -70,6 +72,17 @@ function syncBrowserDocuments(): void {
     icon: "globe",
     active: false,
   })))
+}
+
+function syncFileDocuments(): void {
+  const root = fileRoot()
+  if (!root) return
+  syncFileTabs(root, editorDocumentTabs(fileModelFor(root)))
+}
+
+/** EditorDock 在 contentRoot 变化时调用；文件 entries 由 fileModelFor 自动派生。 */
+export function configureFileDocumentRoot(root: string | null): void {
+  setFileRoot(root)
 }
 
 function applyKind(kind: DocumentTabKind, incoming: DocumentTabEntry[]): void {
@@ -207,9 +220,12 @@ export function resetDocumentTabsForTests(): void {
   worldId = null
   savedOrder = []
   desiredActiveId = null
+  setFileRoot(null)
 }
 
-// web tab 状态归 browser-documents 所有；document store 只做视图同步，不再由 body 手写。
+// web / file 文档状态分别归 browser-documents / file-documents 所有；
+// document store 只做 entries 派生，不再由 body 手写 sync。
 createRoot(() => {
+  createEffect(syncFileDocuments)
   createEffect(syncBrowserDocuments)
 })

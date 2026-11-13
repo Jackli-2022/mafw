@@ -15,10 +15,10 @@ import { Icon } from "@mafw/ui/icon"
 import { DockBanner, DockEmpty } from "./dock-panel"
 import { DocumentFrame, DocumentTabs, DocumentToolbar } from "./document-frame"
 import { editorDocumentTabs } from "../document-frame-model"
-import { activeDocumentTab, consumeCloseRequest, pendingCloseRequests, syncFileTabs } from "../documents/document-tabs-store"
+import { activeDocumentTab, configureFileDocumentRoot, consumeCloseRequest, pendingCloseRequests } from "../documents/document-tabs-store"
 import { registerDocumentToolbar, type DocumentToolbarSlots } from "../documents/document-toolbar-registry"
 import {
-  createEditorModel, openFile, openPreviewFile, closeFile, setActive,
+  openFile, openPreviewFile, closeFile, setActive,
   markDirty, markSaved, onExternalChange, resolveConflict, applyCleanReload, canApplyCleanReload,
   editorSaveContent, isReadOnlyPreview, promotePreview,
   type EditorModel, type OpenFile,
@@ -101,7 +101,12 @@ export function EditorDock(props: {
   /** 批注标记点击 → 切到审阅面（回路闭合）。 */
   onOpenReview?: () => void
 }) {
-  const [model, setModel] = createSignal<EditorModel>(createEditorModel())
+  const model = () => editorModelFor(props.contentRoot)
+  const setModel = (update: EditorModel | ((current: EditorModel) => EditorModel)) => {
+    const current = editorModelFor(props.contentRoot)
+    const next = typeof update === "function" ? update(current) : update
+    saveEditorModel(props.contentRoot, next)
+  }
   const [readNotes, setReadNotes] = createSignal<Record<string, string>>({})
   const [saving, setSaving] = createSignal(false)
   const [sel, setSel] = createSignal<SelectionState | null>(null)
@@ -181,16 +186,19 @@ export function EditorDock(props: {
     )
   }
 
-  const rememberActiveScroll = (key: string | null = props.scopeKey ?? null): void => {
-    const file = activeFile()
+  const rememberScrollForModel = (m: EditorModel, key: string | null): void => {
+    const file = m.files.find((f) => f.rel === m.active) ?? null
     if (!file) return
-    const top = previewing() ? previewScrollPort()?.scrollTop : editor?.getScroll()
+    const top = previewingFile(file) ? previewScrollPort()?.scrollTop : editor?.getScroll()
     if (top === undefined) return
     const withPosition = rememberReadingPosition(contentScopeStateFor(key), file.rel, top)
     saveContentScopeState(
       key,
       rememberSelection(withPosition, file.rel, editor?.getSelection() ?? null),
     )
+  }
+  const rememberActiveScroll = (key: string | null = props.scopeKey ?? null): void => {
+    rememberScrollForModel(model(), key)
   }
 
   const tabs = createMemo(() => editorDocumentTabs(model()))
@@ -203,9 +211,9 @@ export function EditorDock(props: {
     void mountActive()
   }
 
-  // 统一文档 tab 条：把本 root 的文件 tab 同步到共享 store。
+  // 文件 entries 由 file-documents + document store 自动派生。
   createEffect(() => {
-    syncFileTabs(props.contentRoot ?? "", tabs())
+    configureFileDocumentRoot(props.contentRoot)
   })
 
   // 统一 tab 条选中的文件：只激活，不重新读盘。
@@ -262,12 +270,12 @@ export function EditorDock(props: {
     if (f.kind === "svg" || f.kind === "table" || f.kind === "markdown" || f.kind === "json") return sourceMode()[f.rel] !== true
     return false
   }
-  const previewing = (): boolean => {
-    const f = activeFile()
+  const previewingFile = (f: OpenFile | null): boolean => {
     if (!f || mode() !== "edit") return false
     if (isReadOnlyPreview(f.kind)) return true
     return showsPreview(f)
   }
+  const previewing = (): boolean => previewingFile(activeFile())
 
   /** tab 头切换按钮文案：预览中 → 「源码」；源码态 → 「表格」（csv/tsv）/「树」（json）/「预览」（svg/markdown）。 */
   const previewToggleLabel = (): string => {
@@ -366,14 +374,20 @@ export function EditorDock(props: {
     watched.clear()
   }
 
-  // ── root/scope 跟随：保存旧模型与滚动位置，恢复目标 scope 的模型 ───────
+  // ── root/scope 跟随：切换 root 时重建 editor，模型由 file-documents 持有 ───
+  let lastFileRoot: string | null | undefined
+  let lastFileScope: string | null | undefined
   createEffect(() => {
     const root = props.contentRoot
     const scopeKey = props.scopeKey ?? null
-    const current = untrack(model)
-    if (current.root === root && scopeKey === lastScopeKey) return
-    untrack(() => rememberActiveScroll(lastScopeKey))
-    if (current.root) saveEditorModel(current.root, current)
+    if (lastFileRoot === root && lastFileScope === scopeKey) return
+    const previousRoot = lastFileRoot
+    const previousScope = lastScopeKey
+    lastFileRoot = root
+    lastFileScope = scopeKey
+    if (previousRoot !== undefined) {
+      untrack(() => rememberScrollForModel(editorModelFor(previousRoot), previousScope))
+    }
     // 旧 editor 必须在模型/根切换前同步失效，避免 refreshActiveFromDisk 的
     // await 窗口里 saveActive 把旧文档写进新 scope 的同名文件。
     mountToken += 1

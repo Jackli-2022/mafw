@@ -14,9 +14,12 @@ import {
   pendingCloseRequests,
   requestCloseDocumentTab,
   resetDocumentTabsForTests,
+  configureFileDocumentRoot,
   syncFileTabs,
 } from "./document-tabs-store"
 import { closeBrowserTab, openBrowserTab, resetBrowserTabsForTests, updateBrowserTab } from "../browser-tabs"
+import { clearFileModels, saveFileModel } from "./file-documents"
+import { closeFile, createEditorModel, markDirty, openFile } from "../editor-state"
 import {
   configureDocumentListStorage,
   documentListStorageKey,
@@ -51,6 +54,7 @@ function web(id: string, label = id): void {
 
 beforeEach(() => {
   resetBrowserTabsForTests()
+  clearFileModels()
   resetDocumentTabsForTests()
   resetDocumentListPersistenceForTests()
 })
@@ -134,6 +138,23 @@ test("browser documents create and remove web entries automatically", () => {
 
   assert.deepEqual(documentTabs().map((entry) => entry.kind), ["file"])
   assert.equal(activeDocumentTabId(), null)
+})
+
+test("file documents create and update file entries automatically", () => {
+  configureFileDocumentRoot("C:/repo")
+  const base = { ...createEditorModel(), root: "C:/repo" }
+  let model = openFile(base, "a.ts", "A")
+  saveFileModel("C:/repo", model)
+
+  assert.deepEqual(documentTabs().map((entry) => entry.kind), ["file"])
+  assert.equal(documentTabs()[0]!.view.label, "a.ts")
+
+  model = markDirty(model, "a.ts")
+  saveFileModel("C:/repo", model)
+  assert.equal(documentTabs()[0]!.view.dirty, true)
+
+  saveFileModel("C:/repo", closeFile(model, "a.ts"))
+  assert.deepEqual(documentTabs(), [])
 })
 
 test("close requests are deduped and consumed exactly once", () => {
