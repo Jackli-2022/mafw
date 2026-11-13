@@ -1178,8 +1178,9 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 - OS keychain / 进程签名、MCP human 工具。
 - 强制版本协商 / SDK 全量 schema 类型化。
 - 插件 / manager 会话的配额副作用（内部会话失败只 log）。
-- `session.get` 对不存在会话仍返回 **200 + error body**（kernel registry 的 200-not-404 miss 语义，
-  `gateway.md` §路由注册表），未改成 404。
+- `session.get` 的 miss 语义在 E10-3 收口：不存在会话返回 **404 + `{error:'not found'}`**
+  （body 与旧版逐字相同，状态码不再是 200；与 `SessionSchema` 对齐）。覆盖台账与门禁见
+  `npm run schema:coverage` / `tests/unit/architecture/schema-coverage.test.ts`。
 - **won't do**：`pod.updated` 记录级实体 payload（E9-3，理由见下节）、mobile 工作 tab 的增量渲染
   （E9-1 后 flat 帧已能触发 `goalId` 局部 patch，其余仍是整页快照）。
 

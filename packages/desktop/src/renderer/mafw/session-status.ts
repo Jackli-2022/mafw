@@ -11,7 +11,8 @@ export function isWorkingStatus(status: MafwSessionStatus | undefined | null): b
 }
 
 /**
- * @param info   `sessions.get()` 的会话快照（`MafwSession`；缺 `status` = unknown）
+ * @param info   `sessions.get()` 的会话快照（`MafwSession`；缺 `status` = unknown）。会话不存在
+ *               时 E10-3 起 `sessions.get()` 抛 404，调用方传 `null` —— 同样按 unknown 处理。
  * @param previous  本地已有状态；存在时优先——live SSE 事件比取回的快照新，
  *                  历史加载不得把刚收到的 busy 覆写成 idle。
  */

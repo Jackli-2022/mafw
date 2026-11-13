@@ -46,6 +46,31 @@ describe("reconcileSubagentsOnce（对账编排，fetch 注入）", () => {
     })
     expect(seen).toEqual([{ kind: "session-deleted", sessionID: "c1" }])
   })
+  test("空历史 + session.get 抛 HTTP 404（E10-3 wire）→ 同样收敛 session-deleted", async () => {
+    const seen: any[] = []
+    await reconcileSubagentsOnce({
+      activeSessionId: null, runningChildIDs: ["c1"],
+      fetchers: fetchers({
+        messages: async () => ({ data: [] }),
+        // SDK request() throws on non-2xx; electron IPC re-wraps the message.
+        getSession: async () => { throw new Error("Error invoking remote method 'mafw-invoke': Error: HTTP 404: not found") },
+      }),
+      ingest: (ev) => seen.push(ev),
+    })
+    expect(seen).toEqual([{ kind: "session-deleted", sessionID: "c1" }])
+  })
+  test("空历史 + session.get 非 404 抛错 → fail-open（网络/500 不误判删除）", async () => {
+    const seen: any[] = []
+    await reconcileSubagentsOnce({
+      activeSessionId: null, runningChildIDs: ["c1"],
+      fetchers: fetchers({
+        messages: async () => ({ data: [] }),
+        getSession: async () => { throw new Error("HTTP 500: db locked") },
+      }),
+      ingest: (ev) => seen.push(ev),
+    })
+    expect(seen).toEqual([])
+  })
   test("空历史 + 会话存在 → 不收敛（新会话尚无消息）", async () => {
     const seen: any[] = []
     await reconcileSubagentsOnce({

@@ -363,7 +363,7 @@ export function MafwShell() {
         return { ...prev, session: next }
       })
     } catch {
-      sessionInfoHydrated.delete(sid) // 失败允许下次激活重试
+      sessionInfoHydrated.delete(sid) // E10-3: 404（会话不存在）或失败 → 未水合，下次激活重试
     }
   }
   createEffect(() => {
@@ -397,7 +397,7 @@ export function MafwShell() {
           message: prev.message[childID] ? prev.message : { ...prev.message, [childID]: [] },
         }))
       }
-    } catch (e) { console.warn("[mafw] open subagent failed:", e) }
+    } catch (e) { console.warn("[mafw] open subagent failed:", e) } // E10-3: 404 = 子会话不存在，不插入假 tab
     setActiveSessionId(childID)
   }
 

@@ -645,7 +645,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     try {
       const info: any = await window.api.mafw.sessions.get(sidProp())
       setCanUnrevert(props.revertUndoEnabled === true && !!info?.reverted)
-    } catch { /* fail-open */ }
+    } catch { /* E10-3: 404（会话已删）按不可用处理，canUnrevert 保持 false */ }
   })
 
   const refreshAfterRevert = () => {

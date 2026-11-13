@@ -380,6 +380,7 @@ export interface SessionConfigState {
 export interface SessionNamespace {
   /** worktree: true|'<slug>' → git worktree add + 会话绑定隔离目录（切片 4；worktreeApi runtime-only） */
   create(params?: { directory?: string; metadata?: Record<string, unknown>; worktree?: boolean | string }): Promise<Session & { worktree?: { dir: string; branch: string } }>
+  /** 缺失会话返回 **404** `{error:'not found'}` → `request()` 对非 2xx 抛错（不会把错误信封当 Session）。 */
   get(params: { path: { id: string } }): Promise<Session>
   list(params?: { query?: { projectID?: string } }): Promise<Session[]>
   delete(params: { path: { id: string } }): Promise<void>

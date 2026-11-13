@@ -126,6 +126,8 @@ export class MafwClient implements IMafwClient {
     },
 
     get: async (params: { path: { id: string } }): Promise<Session> => {
+      // E10-3: a missing session is 404, so this rejects (request() throws on
+      // non-2xx). Callers that tolerate absence must catch / .catch(() => null).
       return this.request<Session>(`/api/sessions/${params.path.id}`)
     },
 

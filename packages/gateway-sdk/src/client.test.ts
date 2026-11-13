@@ -348,6 +348,14 @@ test("session.get throws on 500", async () => {
   await expect(c.session.get({ path: { id: "x" } })).rejects.toThrow("HTTP 500")
 })
 
+test("session.get throws HTTP 404 for a missing session (E10-3 wire)", async () => {
+  // Gateway answers 404 {error:'not found'} — the SDK never returns an error
+  // envelope typed as Session.
+  fetchMock.mockResolvedValue(notOkWithBody(404, { error: "not found" }))
+  const c = new MafwClient()
+  await expect(c.session.get({ path: { id: "gone" } })).rejects.toThrow(/HTTP 404.*not found/)
+})
+
 test("error responses surface the gateway's JSON error message (not just the status)", async () => {
   fetchMock.mockResolvedValue(notOkWithBody(400, { error: "confirm:true required" }))
   const c = new MafwClient()
