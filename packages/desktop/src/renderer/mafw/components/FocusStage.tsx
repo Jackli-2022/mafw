@@ -4,6 +4,7 @@ import { DocumentStage } from "./DocumentStage"
 import { DockEmpty } from "./dock-panel"
 import { ChangeSetStage } from "./ChangeSetStage"
 import type { FileDiffEntry } from "./DiffReviewPanel"
+import type { DiffDocument } from "../documents/diff-documents"
 import type { AnnotationAnchor } from "../../../shared/annotation-types"
 import type { PluginWebSurfaceView } from "../plugins/plugin-web-surface"
 import type { Focus } from "../focus/focus-model"
@@ -37,6 +38,9 @@ export function FocusStage(props: {
   }) => void
   onSendComment?: (sid: string, text: string) => void
   onOpenReview?: () => void
+  onOpenDiffFile?: (doc: DiffDocument) => void
+  onSendDiffComment?: (sid: string, text: string) => void
+  onAddDiffAnnotation?: (a: { rel: string; startLine: number; endLine: number; code: string; comment: string }) => void
   renderPluginSurface?: (id: string) => JSX.Element
   webSurfaces?: readonly PluginWebSurfaceView[]
   gatewayUrl?: string
@@ -51,7 +55,7 @@ export function FocusStage(props: {
   onDocumentCloseMany?: (ids: readonly string[]) => void
 }): JSX.Element {
   const kind = () => stageKindFor(props.focus)
-  const isDocument = () => kind() === "editor" || kind() === "browser"
+  const isDocument = () => kind() === "editor" || kind() === "browser" || kind() === "diff"
   const pluginId = () => {
     const subject = props.focus.subject
     return subject.kind === "plugin" ? `plugin:${subject.package}:${subject.panel}` : null
@@ -76,6 +80,9 @@ export function FocusStage(props: {
           onAddAnnotation={props.onAddAnnotation}
           onSendComment={props.onSendComment}
           onOpenReview={props.onOpenReview}
+          onOpenDiffFile={props.onOpenDiffFile}
+          onSendDiffComment={props.onSendDiffComment}
+          onAddDiffAnnotation={props.onAddDiffAnnotation}
           onSelect={(id) => props.onDocumentSelect?.(id)}
           onClose={(id) => props.onDocumentClose?.(id)}
           onCloseMany={(ids) => props.onDocumentCloseMany?.(ids)}

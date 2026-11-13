@@ -89,3 +89,7 @@ test("stageActionFor opens a review item at its anchor", () => {
     line: 12,
   })
 })
+
+test("diff subjects dispatch to the diff stage", () => {
+  assert.equal(stageKindFor(focus({ kind: "diff", source: "session", id: "d1", rel: "src/a.ts" }, "interact")), "diff")
+})

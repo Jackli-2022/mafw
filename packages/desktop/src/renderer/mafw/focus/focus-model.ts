@@ -16,6 +16,7 @@ export type SubjectRef =
   | { kind: "web"; url: string }
   | { kind: "terminal"; id: string }
   | { kind: "plugin"; package: string; panel: string }
+  | { kind: "diff"; source: "session" | "goal"; id: string; rel: string; line?: number }
 
 export type Lens = "orient" | "read" | "edit" | "changes" | "evidence" | "review" | "decide" | "interact"
 
@@ -69,6 +70,8 @@ export function subjectKey(subject: SubjectRef): string {
       return `terminal:${subject.id}`
     case "plugin":
       return `plugin:${subject.package}:${subject.panel}`
+    case "diff":
+      return `diff:${subject.source}:${subject.id}:${subject.rel}`
   }
 }
 
@@ -94,6 +97,8 @@ export function lensesFor(subject: SubjectRef): readonly Lens[] {
     case "terminal":
     case "plugin":
       return LENSES.transient
+    case "diff":
+      return []
   }
 }
 
@@ -113,6 +118,8 @@ export function defaultLensFor(subject: SubjectRef): Lens {
     case "web":
     case "terminal":
     case "plugin":
+      return "interact"
+    case "diff":
       return "interact"
   }
 }

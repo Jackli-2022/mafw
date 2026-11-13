@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { splitHunks, hunkStats, pickSelectedFile, buildDiffCommentPrompt, lineNewNumber, buildLineCommentPrompt } from "./diff-hunks"
+import { splitHunks, hunkStats, pickSelectedFile, buildDiffCommentPrompt, lineNewNumber, buildLineCommentPrompt, diffPatchSignature } from "./diff-hunks"
 
 const PATCH = [
   'diff --git a/x.txt b/x.txt',
@@ -117,5 +117,12 @@ describe('buildLineCommentPrompt（W0-3）', () => {
     expect(out).toContain('const x = 1')
     expect(out).not.toContain('+const')
     expect(out).toContain('这个命名不好')
+  })
+})
+
+describe('diffPatchSignature', () => {
+  test('is stable for the same patch and changes with a hunk edit', () => {
+    expect(diffPatchSignature([{ file: 'a.ts', patch: PATCH }])).toBe(diffPatchSignature([{ file: 'a.ts', patch: PATCH }]))
+    expect(diffPatchSignature([{ file: 'a.ts', patch: PATCH }])).not.toBe(diffPatchSignature([{ file: 'a.ts', patch: PATCH + '\n+x' }]))
   })
 })

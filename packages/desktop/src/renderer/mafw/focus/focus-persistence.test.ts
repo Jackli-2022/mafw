@@ -192,3 +192,25 @@ test("drops the retired split subject from loaded places", () => {
   assert.equal(loaded.stack[0]!.place.scroll, 10)
   assert.equal("split" in loaded.stack[0]!.place, false)
 })
+
+test("diff focuses are transient and never round-trip", () => {
+  const io = fakeStorage()
+  resetFocusPersistence()
+  configureFocusStorage(io)
+  let state = openSubject(createWorkbenchState("w1"), worldScope, file)
+  state = {
+    ...state,
+    stack: [...state.stack, {
+      scope: worldScope,
+      subject: { kind: "diff", source: "session", id: "d1", rel: "src/a.ts" },
+      lens: "interact",
+      place: {},
+    }],
+  }
+  saveFocusState(state)
+  flushFocusPersistence("w1")
+  resetFocusPersistence()
+  configureFocusStorage(io)
+  const loaded = loadFocusState("w1")
+  assert.deepEqual(loaded?.stack.map((focus) => focus.subject.kind), ["file"])
+})

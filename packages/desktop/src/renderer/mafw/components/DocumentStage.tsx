@@ -2,7 +2,9 @@ import { Show, createMemo, type JSX } from "solid-js"
 import { DocumentTabs, DocumentToolbar } from "./document-frame"
 import { EditorDock } from "./EditorDock"
 import { BrowserDock } from "./BrowserDock"
+import { DiffDocumentView } from "./DiffDocumentView"
 import { activeDocumentTabId, documentTabs, moveDocumentTab } from "../documents/document-tabs-store"
+import { activeDiffDocument } from "../documents/diff-documents"
 import { documentToolbarProvider } from "../documents/document-toolbar-registry"
 import {
   closeOtherTabIds,
@@ -14,6 +16,7 @@ import { menuController } from "../context-menu/controller"
 import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
 import type { FocusOpenRequest } from "../focus/focus-open"
 import type { FileDiffEntry } from "./DiffReviewPanel"
+import type { DiffDocument } from "../documents/diff-documents"
 
 export function DocumentStage(props: {
   sessionID: string | null
@@ -27,6 +30,9 @@ export function DocumentStage(props: {
   onAddAnnotation?: (a: any) => void
   onSendComment?: (sid: string, text: string) => void
   onOpenReview?: () => void
+  onOpenDiffFile?: (doc: DiffDocument) => void
+  onSendDiffComment?: (sid: string, text: string) => void
+  onAddDiffAnnotation?: (a: { rel: string; startLine: number; endLine: number; code: string; comment: string }) => void
   onSelect: (id: string) => void
   onClose: (id: string) => void
   onCloseMany: (ids: readonly string[]) => void
@@ -121,6 +127,21 @@ export function DocumentStage(props: {
           style={{ display: activeKind() === "web" ? "contents" : "none" }}
         >
           <BrowserDock embedded sessionID={props.sessionID} />
+        </div>
+        <div
+          class="mafw-document-stage-pane"
+          style={{ display: activeKind() === "diff" ? "contents" : "none" }}
+        >
+          <Show when={activeDiffDocument()}>
+            {(doc) => (
+              <DiffDocumentView
+                doc={doc()}
+                onOpenFile={(item) => props.onOpenDiffFile?.(item)}
+                onSendComment={props.onSendDiffComment}
+                onAddAnnotation={props.onAddDiffAnnotation}
+              />
+            )}
+          </Show>
         </div>
       </div>
     </div>

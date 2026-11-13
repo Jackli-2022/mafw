@@ -141,11 +141,13 @@ import {
   configureDocumentListWorld,
   documentTabs,
   requestCloseDocumentTab,
+  requestDocumentActivation,
 } from "./documents/document-tabs-store"
 import { fileDocumentTabId, nextDocumentTabId, webDocumentTabId } from "./documents/document-tabs-model"
 import { configureDocumentListStorage } from "./documents/document-list-persistence"
 import { configureBrowserTabsStorage } from "./documents/browser-tabs-persistence"
 import { activeBrowserDocumentId, openBrowserDocument } from "./documents/browser-documents"
+import { diffDocuments, openDiffDocument, type DiffDocument, type OpenDiffInput } from "./documents/diff-documents"
 import { stageActionFor } from "./focus/stage-dispatch"
 import { openGoalFocus as applyGoalFocus, openReviewItemFocus as applyReviewFocus, openChangeSetFocus as applyChangeSetFocus } from "./focus/goal-focus"
 import type { FocusOpenRequest } from "./focus/focus-open"
@@ -2350,7 +2352,7 @@ export function MafwShell() {
     root: string | null,
     scope: Scope,
     intent?: ContentIntent,
-    opts?: { persist?: boolean },
+    opts?: { persist?: boolean; line?: number },
   ): void => {
     if (!root) return
     revealWorkbench()
@@ -2383,7 +2385,7 @@ export function MafwShell() {
       })()
       return
     }
-    requestFocusOpen(root, rel, undefined, opts?.persist === true)
+    requestFocusOpen(root, rel, opts?.line, opts?.persist === true)
     setFocusState((state) =>
       openSubject(
         { ...seedWorldRoot(state, scope), worldId: scope.worldId },
@@ -2517,6 +2519,7 @@ export function MafwShell() {
         : subject.kind === "web" ? "浏览器"
         : subject.kind === "terminal" ? "终端"
         : subject.kind === "plugin" ? "插件"
+        : subject.kind === "diff" ? `${subject.rel} · 改动`
         : "证据"
     const goalScope = focus.scope.kind === "goal" ? focus.scope : null
     const focusedGoal = goalScope
@@ -2586,6 +2589,20 @@ export function MafwShell() {
     setFocusState((state) =>
       openSubject(seedWorldRoot(state, scope), scope, { kind: "terminal", id: "local" }, "interact"),
     )
+  }
+  /** 打开/激活一个 diff tab，并把焦点切到对应 diff subject。 */
+  const openDiffTab = (input: OpenDiffInput) => {
+    const doc = openDiffDocument(input)
+    revealWorkbench()
+    const next = selectFocus(
+      seedWorldRoot(focusState(), input.scope),
+      input.scope,
+      { kind: "diff", source: input.source.kind, id: doc.id, rel: doc.rel, line: input.anchorLine },
+      "interact",
+    )
+    setFocusState(next)
+    syncStageToFocus(next)
+    requestDocumentActivation(doc.id)
   }
   const openPluginFocus = (surfaceId: string) => {
     const parsed = parsePluginSurfaceId(surfaceId)
@@ -2668,6 +2685,17 @@ export function MafwShell() {
         scope,
         { kind: "file", root, rel: entry.view.id },
         "read",
+      )
+      setFocusState(next)
+      syncStageToFocus(next)
+    } else if (entry.kind === "diff") {
+      const doc = diffDocuments().find((item) => item.id === id)
+      if (!doc) return
+      const next = selectFocus(
+        seedWorldRoot(focusState(), doc.scope),
+        doc.scope,
+        { kind: "diff", source: doc.source.kind, id: doc.id, rel: doc.rel, line: doc.anchorLine },
+        "interact",
       )
       setFocusState(next)
       syncStageToFocus(next)
@@ -4019,6 +4047,22 @@ export function MafwShell() {
                 availableModes={changesAvailableModes()}
                 context={changesContext()}
                 sessionDiffs={contentDiffEntries()}
+                onOpenSessionDiff={(file) => {
+                  const sid = currentSessionID()
+                  const root = contentRoot()
+                  const rel = file.file
+                  if (!sid || !root || !rel) return
+                  openDiffTab({
+                    source: { kind: "session", sessionID: sid },
+                    root,
+                    scope: focusScopeFromContent(contentScope()),
+                    rel,
+                    patch: file.patch ?? "",
+                    additions: file.additions ?? 0,
+                    deletions: file.deletions ?? 0,
+                    status: file.status,
+                  })
+                }}
                 onOpenFile={(rel) => {
                   const root = contentRoot()
                   if (!root) return
@@ -4261,6 +4305,13 @@ export function MafwShell() {
                   onActiveFileChange={setActiveContentDocument}
                   onSendAnnotation={sendAnnotation}
                   onAddAnnotation={addAnnotation}
+                  onOpenDiffFile={(doc) => openFileInScope(doc.rel, doc.root, doc.scope, undefined, { persist: true, line: doc.anchorLine })}
+                  onSendDiffComment={(sid, text) => {
+                    void window.api.mafw.sessions.promptAsync({ sessionID: sid, message: text })
+                      .then(() => showToastV2({ description: "评论已发送给 agent", duration: 2000 } as any))
+                      .catch((e: any) => showToastV2({ description: `发送失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 4000 } as any))
+                  }}
+                  onAddDiffAnnotation={addAnnotation}
                   onOpenReview={() => openProjectChangeSetFocus("review")}
                   renderChangeSet={() => {
                     const subject = activeFocus()?.subject

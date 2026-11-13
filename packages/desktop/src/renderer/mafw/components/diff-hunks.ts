@@ -128,3 +128,8 @@ export function buildDiffCommentPrompt(
     "è¯·æŒ‰ä¸Šè¿°æ„è§ä¿®æ”¹è¯¥æ–‡ä»¶ã€‚",
   ].join("\n")
 }
+
+/** ÎÈ¶¨µÄ patch Ö¸ÎÆ£º¹© DiffReviewPanel ÔÚÊµÊ± diff ±ä»¯Ê±Çå¿Õ¾É¹´Ñ¡¡£ */
+export function diffPatchSignature(files: readonly { file?: string; patch?: string }[]): string {
+  return files.map((file) => `${file.file ?? ""}\u0000${file.patch ?? ""}`).join("\u0000")
+}

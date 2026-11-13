@@ -174,3 +174,10 @@ test("lens matrix is pinned per subject kind", () => {
   assert.equal(isLensApplicable(file, "interact"), false)
   assert.equal(isLensApplicable({ kind: "web", url: "https://example.com" }, "read"), false)
 })
+
+test("diff subjects have a stable identity and no lenses", () => {
+  const subject: SubjectRef = { kind: "diff", source: "session", id: "d1", rel: "src/a.ts" }
+  assert.equal(subjectKey(subject), "diff:session:d1:src/a.ts")
+  assert.deepEqual([...lensesFor(subject)], [])
+  assert.equal(defaultLensFor(subject), "interact")
+})

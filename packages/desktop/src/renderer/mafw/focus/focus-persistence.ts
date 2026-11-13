@@ -189,7 +189,7 @@ function dedupeSubjects(subjects: readonly SubjectRef[]): SubjectRef[] {
 function capState(state: WorkbenchState): WorkbenchState {
   return {
     worldId: state.worldId,
-    stack: state.stack.slice(-MAX_STACK).map(cloneFocus),
+    stack: state.stack.filter((focus) => focus.subject.kind !== "diff").slice(-MAX_STACK).map(cloneFocus),
     kept: dedupeSubjects(state.kept).slice(0, MAX_KEPT),
   }
 }

@@ -23,13 +23,19 @@ export type ChangesFaceProps = {
   context: ChangesContext | null
   sessionDiffs: readonly FileDiffEntry[]
   onOpenFile: (rel: string) => void
+  onOpenSessionDiff?: (file: FileDiffEntry) => void
 }
 
 function ChangeRows(props: {
   nodes: readonly ChangeTreeNode[]
   depth: number
   onOpenFile: (rel: string) => void
+  onOpenDiff?: (file: FileDiffEntry) => void
 }): JSX.Element {
+  const openNode = (node: ChangeTreeNode) => {
+    if (props.onOpenDiff && node.file?.patch) props.onOpenDiff(node.file)
+    else props.onOpenFile(node.path)
+  }
   return (
     <For each={props.nodes}>
       {(node) => (
@@ -42,11 +48,11 @@ function ChangeRows(props: {
               role="button"
               tabIndex={0}
               aria-label={node.path}
-              onClick={() => props.onOpenFile(node.path)}
+              onClick={() => openNode(node)}
               onKeyDown={(event) => {
                 if (event.key !== "Enter" && event.key !== " ") return
                 event.preventDefault()
-                props.onOpenFile(node.path)
+                openNode(node)
               }}
             >
               <span class="mafw-change-name">{node.name}</span>
@@ -69,7 +75,7 @@ function ChangeRows(props: {
             <span class="mafw-diff-stat add">+{node.additions}</span>
             <span class="mafw-diff-stat del">-{node.deletions}</span>
           </div>
-          <ChangeRows nodes={node.children} depth={props.depth + 1} onOpenFile={props.onOpenFile} />
+          <ChangeRows nodes={node.children} depth={props.depth + 1} onOpenFile={props.onOpenFile} onOpenDiff={props.onOpenDiff} />
         </Show>
       )}
     </For>
@@ -142,7 +148,7 @@ export function ChangesFace(props: ChangesFaceProps): JSX.Element {
                 fallback={<DockEmpty icon="review" text="本次讨论还没有改动" hint="agent 修改文件后会实时出现在这里" />}
               >
                 <div class="mafw-changes-face-tree">
-                  <ChangeRows nodes={tree()} depth={0} onOpenFile={props.onOpenFile} />
+                  <ChangeRows nodes={tree()} depth={0} onOpenFile={props.onOpenFile} onOpenDiff={props.onOpenSessionDiff} />
                 </div>
               </Show>
             </div>

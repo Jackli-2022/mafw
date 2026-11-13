@@ -14,6 +14,7 @@ import type { FocusOpenRequest } from "../focus/focus-open"
 import type { PickerItem } from "../focus/picker-model"
 import type { PluginWebSurfaceView } from "../plugins/plugin-web-surface"
 import type { FileDiffEntry } from "./DiffReviewPanel"
+import type { DiffDocument } from "../documents/diff-documents"
 import type { AnnotationAnchor } from "../../../shared/annotation-types"
 
 export type WorkbenchShellProps = {
@@ -56,6 +57,9 @@ export type WorkbenchShellProps = {
   }) => void
   onSendComment?: (sid: string, text: string) => void
   onOpenReview?: () => void
+  onOpenDiffFile?: (doc: DiffDocument) => void
+  onSendDiffComment?: (sid: string, text: string) => void
+  onAddDiffAnnotation?: (a: { rel: string; startLine: number; endLine: number; code: string; comment: string }) => void
   renderGoal?: () => JSX.Element
   renderWorld?: () => JSX.Element
   renderChangeSet?: () => JSX.Element | null
@@ -123,6 +127,9 @@ export function WorkbenchShell(props: WorkbenchShellProps): JSX.Element {
             onAddAnnotation={props.onAddAnnotation}
             onSendComment={props.onSendComment}
             onOpenReview={props.onOpenReview}
+            onOpenDiffFile={props.onOpenDiffFile}
+            onSendDiffComment={props.onSendDiffComment}
+            onAddDiffAnnotation={props.onAddDiffAnnotation}
             renderPluginSurface={props.renderPluginSurface}
             webSurfaces={props.webSurfaces}
             gatewayUrl={props.gatewayUrl}

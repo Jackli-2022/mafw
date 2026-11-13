@@ -5535,6 +5535,9 @@ html[data-theme="light"] body {
   .mafw-change-pulse::before { animation: none; opacity: .45; }
 }
 .mafw-diff-panel-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border-base); }
+.mafw-diff-document { flex: 1; min-width: 0; min-height: 0; display: flex; }
+.mafw-diff-document > .mafw-diff-panel { flex: 1; }
+.mafw-diff-tab-path { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-data); font-size: 11px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mafw-diff-panel-header h2 { margin: 0; font-size: 14px; font-weight: 600; }
 .mafw-diff-panel-actions { display: flex; gap: 8px; }
 .mafw-diff-panel-hint { margin: 8px 16px; font-size: 12px; color: var(--text-4); }

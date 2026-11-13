@@ -1,10 +1,10 @@
 // DiffReviewPanel（切片 2）：会话改动逐 hunk 审阅。
 // 数据源优先 props.diffs（SSE session.diff 实时快照），空则拉 GET /sessions/:id/diff。
 // 勾选 hunk → POST /sessions/:id/diff/revert（gateway 反转 patch 后 vcs.apply）→ 刷新。
-import { Show, For, createSignal, createMemo, createEffect } from "solid-js"
+import { Show, For, createSignal, createMemo, createEffect, on } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
-import { splitHunks, hunkStats, pickSelectedFile, buildDiffCommentPrompt, lineNewNumber, buildLineCommentPrompt, type DiffHunk } from "./diff-hunks"
+import { splitHunks, hunkStats, pickSelectedFile, buildDiffCommentPrompt, lineNewNumber, buildLineCommentPrompt, diffPatchSignature, type DiffHunk } from "./diff-hunks"
 import { isFileRevertible } from "./checkpoint-revert"
 import { shouldFetchSessionDiff } from "./turn-diffs"
 import { normalizeSessionDiffs } from "../ingest/diffs"
@@ -38,6 +38,10 @@ export function DiffReviewPanel(props: {
   allowNonInvertibleRevert?: boolean
   /** 检查点恢复前只读预览：隐藏勾选/评论/回退，仅展示差异。 */
   previewOnly?: boolean
+  /** tab 模式隐藏自带标题/提示，由文档 toolbar 承担动作。 */
+  chrome?: "panel" | "tab"
+  /** 覆盖默认提示；null 表示不显示。 */
+  hint?: string | null
 }) {
   const [fetched, setFetched] = createSignal<FileDiffEntry[]>([])
   const [loading, setLoading] = createSignal(false)
@@ -61,6 +65,11 @@ export function DiffReviewPanel(props: {
   const fileNames = createMemo(() => files().map(fileName))
   const selectedFile = createMemo(() => pickSelectedFile(fileNames(), selectedFileRaw()))
   const currentFile = createMemo(() => files().find((f) => fileName(f) === selectedFile()))
+
+  // 实时会话 diff 变化时清空勾选，避免用旧行号回退。
+  createEffect(on(() => diffPatchSignature(files()), () => {
+    setSelected(new Set<string>())
+  }, { defer: true }))
 
   const refresh = () => {
     const hasDiffs = (props.diffs?.length ?? 0) > 0
@@ -171,26 +180,30 @@ export function DiffReviewPanel(props: {
   }
 
   return (
-    <div class="mafw-diff-panel" classList={{ embedded: !!props.embedded }} role="dialog" aria-label="审阅改动">
-      <header class="mafw-diff-panel-header">
-        <Show when={props.embedded && props.onBack}>
-          <ButtonV2 variant="ghost" size="small" class="mafw-diff-panel-back" onClick={() => props.onBack?.()}>← 改动列表</ButtonV2>
+    <div class="mafw-diff-panel" classList={{ embedded: !!props.embedded, tab: props.chrome === "tab" }} role="dialog" aria-label="审阅改动">
+      <Show when={props.chrome !== "tab"}>
+        <header class="mafw-diff-panel-header">
+          <Show when={props.embedded && props.onBack}>
+            <ButtonV2 variant="ghost" size="small" class="mafw-diff-panel-back" onClick={() => props.onBack?.()}>← 改动列表</ButtonV2>
+          </Show>
+          <h2>{props.previewOnly ? "改动预览（只读）" : "审阅改动"}</h2>
+          <div class="mafw-diff-panel-actions">
+            <Show when={props.allowSessionFallback !== false && !props.previewOnly}>
+              <ButtonV2 variant="ghost" size="small" disabled={busy()} onClick={() => void refresh()}>刷新</ButtonV2>
+            </Show>
+            <Show when={!props.embedded}>
+              <ButtonV2 variant="ghost" size="small" onClick={() => props.onClose?.()}>{props.previewOnly ? "返回" : "关闭"}</ButtonV2>
+            </Show>
+          </div>
+        </header>
+        <Show when={props.hint !== null}>
+          <p class="mafw-diff-panel-hint">
+            {props.hint ?? (props.previewOnly
+              ? "恢复到此检查点前将撤销以下改动；此处仅供预览（回退仍走「审阅」或时间线确认）。"
+              : "勾选要撤销的 hunk，点「回退选中」。未勾选的改动保持不变。")}
+          </p>
         </Show>
-        <h2>{props.previewOnly ? "改动预览（只读）" : "审阅改动"}</h2>
-        <div class="mafw-diff-panel-actions">
-          <Show when={props.allowSessionFallback !== false && !props.previewOnly}>
-            <ButtonV2 variant="ghost" size="small" disabled={busy()} onClick={() => void refresh()}>刷新</ButtonV2>
-          </Show>
-          <Show when={!props.embedded}>
-            <ButtonV2 variant="ghost" size="small" onClick={() => props.onClose?.()}>{props.previewOnly ? "返回" : "关闭"}</ButtonV2>
-          </Show>
-        </div>
-      </header>
-      <p class="mafw-diff-panel-hint">
-        {props.previewOnly
-          ? "恢复到此检查点前将撤销以下改动；此处仅供预览（回退仍走「审阅」或时间线确认）。"
-          : "勾选要撤销的 hunk，点「回退选中」。未勾选的改动保持不变。"}
-      </p>
+      </Show>
       <div class="mafw-diff-panel-body">
         <Show when={!loading()} fallback={<p class="mafw-diff-panel-empty">加载中…</p>}>
           <Show
