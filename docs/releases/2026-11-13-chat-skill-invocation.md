@@ -55,7 +55,7 @@ skill id 不是 command，实测返回 **400**。
 
 ## 验证
 
-- gateway 全量：**7183 / 7185**（1 skipped；含 pi/claude adapter 用例）
+- gateway 全量：**7184 / 7185**（1 skipped；含 pi/claude adapter 用例）
 - desktop 全量：**3831 / 3831**（729 suites）
 - gateway-sdk 全量：**226 / 226**
 - gateway `tsc --noEmit -p tsconfig.json`：rc=0
