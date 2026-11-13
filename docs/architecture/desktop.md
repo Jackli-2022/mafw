@@ -666,3 +666,12 @@ spec `docs/superpowers/specs/2026-11-13-gateway-e6-interaction-model-design.md`�
   2. 持久化 tab 的 `{id,title}` 仍是首帧兜底：实体未取到（离线/桶被裁剪）时显示旧标题，直到
      bucket fetch 或 `session.updated` patch 到实体。
   3. foreign-project guard 只看 `record.projectDir`（规范化后比较）；记录里缺 `projectDir` 时按本项目处理。
+
+### preload `event.url()` 零参（2026-11-13，E8-2）
+
+E7-2 把 SDK 的 `event.url(sessionID?)` 收成零参后，desktop 的 preload 桥仍保留可选
+`sessionID` 形参并在 `mafw-api.ts` 转发第三参（运行时早被忽略，无调用方传值）。E8-2 收口：
+`mafw-types.ts` 的 `EventApi.url(): Promise<string>`、`mafw-api.ts` 的
+`url: () => invoke("event", "url")`——形参与转发一并删除。唯一生产调用方 `MafwShell.tsx`
+本就零参，SSE 订阅仍恒为全局 `/api/events`（Mode A）；没有 `event/url` 专用 main handler，
+统一入口 `mafw-invoke` → `resolveIpcMethod` → SDK `events.url()` 行为逐字不变。
