@@ -72,6 +72,8 @@ test("editor and browser can embed without their own tab strip", () => {
   assert.match(editor, /embedded\?: boolean/)
   assert.match(editor, /syncFileTabs/)
   assert.match(editor, /pendingCloseRequests/)
+  assert.match(editor, /registerDocumentToolbar\("file"/)
+  assert.match(editor, /if \(props\.embedded\) return body/)
   assert.match(browser, /embedded\?: boolean/)
   assert.match(browser, /syncWebTabs/)
   assert.match(browser, /pendingCloseRequests/)
