@@ -71,17 +71,34 @@ void main() {
       }
     });
 
-    test('kMafwFlatEventTypes equals FLAT_EVENT_TYPES in set and order', () {
+    test('kMafwFlatEventTypes covers FLAT_EVENT_TYPES in order plus dual-shape names', () {
       final source = _readEventsContract();
       final gatewayFlat = _parseConstArray(source, 'FLAT_EVENT_TYPES');
+      final dartFlat = kMafwFlatEventTypes.toList();
 
       expect(gatewayFlat, isNotEmpty);
+      // Contract entries come first, in contract order.
       expect(
-        kMafwFlatEventTypes.toList(),
+        dartFlat.take(gatewayFlat.length).toList(),
         gatewayFlat,
         reason: 'mobile flat vocabulary drifted from '
             'packages/gateway-sdk/src/events.ts FLAT_EVENT_TYPES',
       );
+      // Only the documented dual-shape top-level broadcasts may be appended:
+      // the gateway emits `pod.updated` / `pod.event` / `run.updated` flat
+      // (`{type, properties}`) even though their names are canonical too.
+      expect(
+        dartFlat.skip(gatewayFlat.length).toSet(),
+        kMafwDualShapeEventTypes,
+        reason: 'Dart-only flat entries must be declared in kMafwDualShapeEventTypes',
+      );
+      for (final dual in kMafwDualShapeEventTypes) {
+        expect(
+          kMafwCanonicalEventTypes.contains(dual),
+          isTrue,
+          reason: '$dual is dual-shape, so it must be canonical too',
+        );
+      }
     });
 
     test('envelope name matches the contract', () {

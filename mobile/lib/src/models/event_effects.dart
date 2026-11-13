@@ -94,11 +94,17 @@ const Set<String> kWorkRefreshCanonicalEventTypes = {
 /// Flat frames are not canonical envelopes (they keep their own `type` and have
 /// `innerType == ''`), so they can never live in [kChatEventEffectTable] —
 /// [shouldRefreshWork] is their single consumer table.
+///
+/// E9-1: the dual-shape names ([kMafwDualShapeEventTypes]) are listed on both
+/// sides — the gateway emits `pod.updated` / `pod.event` / `run.updated` as flat
+/// frames, while `mafw_event`-wrapped variants still resolve through
+/// [kWorkRefreshCanonicalEventTypes].
 const Set<String> kWorkRefreshFlatEventTypes = {
   'goal_node',
   'phase_transition',
   'state_change',
   'user_question',
+  ...kMafwDualShapeEventTypes,
 };
 
 /// Whether [event] should trigger a debounced work-overview refetch.

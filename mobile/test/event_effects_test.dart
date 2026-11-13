@@ -201,6 +201,11 @@ void main() {
       'phase_transition': true,
       'state_change': true,
       'user_question': true,
+      // Pod / run read-model signals also arrive as flat top-level broadcasts
+      // (E9-1): dual-shape names must refresh from both shapes.
+      'pod.updated': true,
+      'pod.event': true,
+      'run.updated': true,
       // other flat broadcasts carry no work-overview meaning on mobile
       'user_feedback': false,
       'goal_created': false,
@@ -278,14 +283,30 @@ void main() {
       }
     });
 
+    test('flat pod.updated / pod.event / run.updated refresh work (E9-1)', () {
+      for (final type in const ['pod.updated', 'pod.event', 'run.updated']) {
+        final ev = MafwEvent.fromJson({
+          'type': type,
+          'properties': <String, dynamic>{'podId': 'pod-1'},
+        });
+        expect(ev.isFlatBroadcast, isTrue, reason: type);
+        expect(shouldRefreshWork(ev), isTrue, reason: type);
+      }
+    });
+
     test('refreshWork triggers stay inside their vocabularies', () {
       expect(
         kMafwCanonicalEventTypes.containsAll(kWorkRefreshCanonicalEventTypes),
         isTrue,
       );
       expect(kMafwFlatEventTypes.containsAll(kWorkRefreshFlatEventTypes), isTrue);
+      // Dual-shape broadcasts (E9-1) are the only names allowed on both sides.
       expect(
         kMafwCanonicalEventTypes.intersection(kWorkRefreshFlatEventTypes),
+        kMafwDualShapeEventTypes,
+      );
+      expect(
+        kMafwDualShapeEventTypes.difference(kWorkRefreshFlatEventTypes),
         isEmpty,
       );
     });
