@@ -81,6 +81,14 @@ export const L = {
     copyLink: "复制链接",
     openExternal: "在系统浏览器打开",
   },
+  documentTab: {
+    close: "关闭",
+    closeOthers: "关闭其他",
+    closeRight: "关闭右侧",
+    copyPath: "复制路径",
+    copyLink: "复制链接",
+    openExternal: "在系统浏览器打开",
+  },
   panel: { openSession: "打开会话", copyId: "复制 ID", cancel: "终止" },
   review: { open: "打开", reveal: "在文件夹中显示", copy: "复制" },
   goal: {
