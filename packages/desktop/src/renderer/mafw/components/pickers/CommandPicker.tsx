@@ -6,7 +6,7 @@ export type CommandItem = {
   trigger: string          // "/name"
   title: string
   description?: string
-  group: "local" | "mafw" | "custom"
+  group: "local" | "mafw" | "custom" | "skill"
   source?: "skill" | "mcp" | "command" | "builtin"
   run?: () => void         // local commands execute immediately
 }
@@ -43,11 +43,15 @@ export function CommandPicker(props: {
   })
 
   const groups = createMemo(() => {
-    const order: Record<string, number> = { local: 0, mafw: 1, custom: 2 }
+    const order: Record<string, number> = { local: 0, mafw: 1, skill: 2, custom: 3 }
     const gs: { label: string; items: CommandItem[] }[] = []
     const sorted = [...filtered()].sort((a, b) => (order[a.group] ?? 9) - (order[b.group] ?? 9))
     for (const it of sorted) {
-      const label = it.group === "local" ? "本地操作" : it.group === "mafw" ? "MAFW 命令" : "命令与技能"
+      const label =
+        it.group === "local" ? "本地操作"
+        : it.group === "mafw" ? "MAFW 命令"
+        : it.group === "skill" ? "技能"
+        : "运行时命令"
       const g = gs.find(x => x.label === label)
       if (g) g.items.push(it)
       else gs.push({ label, items: [it] })
