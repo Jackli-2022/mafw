@@ -83,7 +83,7 @@
 | SDK 全量 | `node --import tsx --require ../../packages/test-shim/require-hook.cjs --test "src/*.test.ts"` | **229/229 passed** |
 | SDK contract | 同上 `--test src/contract.test.ts` | **5/5 passed** |
 | desktop | `npm run test:desktop`（worktree root） | **3672 tests / 3671 passed / 1 failed**（`src/main/mafw-gateway-resolver.test.ts` "resolves dev path relative to module location"：worktree 未构建 `gateway/dist`，与基线同红） |
-| desktop 类型 | `npx tsgo --noEmit -p tsconfig.json` | **env-red**：本 worktree 未安装 `tsgo`（`npx` 404 `tsgo@*`）；回退 `node ../../node_modules/typescript/lib/tsc.js --noEmit -p tsconfig.json` → **仅既有 `node:tls` 噪声 2 条**（`getCACertificates` / `setDefaultCACertificates`，`src/main/index.ts:6`） |
+| desktop 类型 | `node ../../node_modules/@typescript/native-preview/bin/tsgo.js --noEmit -p tsconfig.json` | **仅既有 `node:tls` 噪声 2 条**（`getCACertificates` / `setDefaultCACertificates`，`src/main/index.ts:6`）；`tsc -p tsconfig.json` 结果相同 |
 | TUI | `npm run test:tui` | **env-red**：`@earendil-works/pi-tui` 未安装（`ERR_MODULE_NOT_FOUND`，主 checkout 同）；本波零 TUI 改动 |
 | mobile 定向 | `flutter test test/session_list_events_test.dart` / `test/sessions_page_test.dart` | **30/30 + 11/11 passed**（合计 41；两文件合并跑在并发负载下命中已知 runner 中止，单独跑全绿） |
 | mobile 对比套件 | `flutter test test/tab_shell_test.dart` / `test/lead_entry_test.dart` | **7/7 + 13/13 passed**（合计 20；合并/并发跑曾命中 runner 中止，单独跑全绿） |
@@ -112,8 +112,9 @@
 2. **TUI**：`@earendil-works/pi-tui` 未安装（`ERR_MODULE_NOT_FOUND`），本波未触碰 TUI。
 3. **desktop 1 条环境红**：worktree 内未构建 `gateway/dist` 时 `mafw-gateway-resolver` 的 dev-path
    用例拿到 `null`；E5b 同现象，`gateway npm run build` 后即全绿。
-4. **desktop 类型门禁**：`tsgo` 在本 worktree 不可用（未安装，`npx` 走 registry 404），改用等价的
-   `tsc -p tsconfig.json`；只剩既有 `node:tls` 噪声。
+4. **desktop 类型门禁**：worktree 未把 `tsgo` 链接到 `node_modules/.bin`（`npx tsgo` 404），但
+   `node_modules/@typescript/native-preview/bin/tsgo.js` 可直接运行；结果与 `tsc -p` 一致，只剩
+   既有 `node:tls` 噪声 2 条。
 5. **mobile 全量 flake**：Windows `flutter test` 并发 widget 套件偶发 runner 中止
    （`did not complete` / `Connection closed before test suite loaded`），被中断文件单独跑全绿。
 
