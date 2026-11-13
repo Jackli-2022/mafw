@@ -57,3 +57,11 @@ test('unchanged config reuses the cached instance (no kill)', () => {
   expect(again).toBe(first);
   expect(mockKilled).toEqual([]);
 });
+
+test('unknown strategy keeps the current instance instead of disposing it', () => {
+  const first = getReranker();
+  search.reranker = 'unknown';
+  const again = getReranker();
+  expect(again).toBe(first);
+  expect(mockKilled).toEqual([]);
+});

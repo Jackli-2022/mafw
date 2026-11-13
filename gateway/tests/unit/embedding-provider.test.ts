@@ -49,6 +49,31 @@ describe('createEmbeddingProvider', () => {
   });
 });
 
+describe('built-in provider metadata', () => {
+  test('carries explicit legacy modelTags and batch limits', () => {
+    const local = createEmbeddingProvider({ provider: 'local', model: 'fake', dimensions: 2 }) as EmbeddingProvider;
+    expect(local.modelTag).toBe('local_fake');
+    expect(local.batchLimit).toBe(16);
+
+    const dash = createEmbeddingProvider({
+      provider: 'dashscope',
+      model: 'text-embedding-v4',
+      dimensions: 2,
+    }) as EmbeddingProvider;
+    expect(dash.modelTag).toBe('dashscope_text-embedding-v4');
+    expect(dash.batchLimit).toBe(10);
+
+    const llama = createEmbeddingProvider({
+      provider: 'local',
+      engine: 'llamacpp',
+      model: 'fake',
+      dimensions: 2,
+    }) as EmbeddingProvider;
+    expect(llama.modelTag).toMatch(/^llamacpp_/);
+    expect(llama.batchLimit).toBe(16);
+  });
+});
+
 describe('DashScopeEmbeddingProvider', () => {
   const baseCfg = {
     provider: 'dashscope' as const,

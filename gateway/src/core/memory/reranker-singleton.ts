@@ -5,6 +5,7 @@
  * ~600MB VRAM and ~5s of model load).
  */
 import { config } from '../../config';
+import { log } from '../utils/logger';
 import { createRerankerProviderRegistry } from '../../memory/reranker-registry';
 import type { Reranker } from './reranker';
 
@@ -30,15 +31,19 @@ export function getReranker(): Reranker | null {
   if (cached?.key === key) return cached.r;
   // Config hot-reload replaced the instance — without this the previous
   // llama-server keeps running (one orphan per change, ~1.1GB VRAM each).
-  disposeReranker(cached?.r);
   try {
     const r = registry.create(name, config.search.rerankWeights, {
       gpu: config.search.rerankerGpu,
       batchSize: config.search.rerankerBatchSize,
     });
-    cached = r ? { key, r } : null;
+    if (!r) {
+      log.warn(`[Reranker] unknown/unavailable strategy "${name}"; keeping the current instance`);
+      return cached?.r ?? null;
+    }
+    disposeReranker(cached?.r);
+    cached = { key, r };
   } catch {
-    cached = null;
+    // Keep the current instance rather than degrading on a transient failure.
   }
   return cached?.r ?? null;
 }

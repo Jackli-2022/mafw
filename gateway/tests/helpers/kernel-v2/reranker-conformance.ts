@@ -31,6 +31,9 @@ export async function runRerankerConformance(
     return errors;
   }
   if (result.length > 2) errors.push('rerank must respect topK');
+  if (candidates.length > 0 && result.length === 0) {
+    errors.push('rerank returned no candidates for a non-empty input');
+  }
 
   const known = new Set(candidates.map((candidate) => candidate.entry.id));
   const seen = new Set<string>();

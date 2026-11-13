@@ -34,10 +34,32 @@ export function sanitizeModelTag(value: string): string {
     .replace(/^[._-]+/, '');
 }
 
+/** 32-bit FNV-1a; only used to disambiguate lossy sanitization. */
+function shortHash(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+function modelTagOf(
+  provider: Pick<EmbeddingProvider, 'name' | 'modelTag'>,
+): string {
+  const raw = provider.modelTag ?? provider.name;
+  const safe = sanitizeModelTag(raw);
+  // Built-ins pass an explicit modelTag and keep their legacy filenames.
+  // New providers whose raw id had to be rewritten get a short hash so
+  // `a/b` and `a_b` cannot share one vector namespace.
+  if (provider.modelTag !== undefined || safe === raw) return safe;
+  return safe ? `${safe}-${shortHash(raw)}` : '';
+}
+
 export function embeddingProviderMeta(
   provider: Pick<EmbeddingProvider, 'name' | 'dims' | 'modelTag' | 'maxInputTokens' | 'batchLimit'>,
 ): EmbeddingProviderMeta {
-  const modelTag = sanitizeModelTag(provider.modelTag ?? provider.name);
+  const modelTag = modelTagOf(provider);
   if (!modelTag) throw new Error('embedding provider name is required');
   return {
     modelTag,

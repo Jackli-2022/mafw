@@ -63,8 +63,8 @@
 
 ## 验证
 
-- 本计划新增 **26 个测试**（embedding metadata/registry/runtime/namespace/route/switch/dispose、reranker strategy/registry/hot-path/conformance、live wiring source pin）。
-- gateway 全量：**7103 passed / 1 skipped / 7104 total**（905 suites）。
+- 本计划新增 **31 个测试**（embedding metadata/registry/runtime/namespace/route/switch/dispose、reranker strategy/registry/hot-path/conformance、live wiring source pin、minors 回归）。
+- gateway 全量：**7108 passed / 1 skipped / 7109 total**（905 suites）。
 - gateway typecheck：`npx tsc --noEmit -p tsconfig.json` 退出 0。
 - SDK build + tests：`npm run build -w @mafw/sdk` 通过；`npm test -w @mafw/sdk` **224 / 224 pass**。
 - 定向回归：embedding runtime / vector store / T1 / embedding-config / reranker factory / singleton / conformance 全部通过。
@@ -96,6 +96,17 @@
 - **I8 conformance kit 抛错**：空 name / 非法 metadata 转为错误列表；kit 不再抛错。
 - **I7 live wiring**：新增 `embedding-live-wiring.test.ts` source pin；完整 kernel hot-swap harness 仍未覆盖（见 Deferred）。
 - **Deferred（Important）**：`LlamaCppServerProvider` / `LlamaCppReranker` 在“正在启动时 dispose”的 generation/epoch 竞态未修；代价是极端 hot-swap 时可能遗留一个 sidecar。后续单独处理。
+
+## Minor 修复（2026-11-13）
+
+- **命名空间碰撞**：lossy sanitize 的新 provider 加 8 位 FNV-1a 后缀；内置 provider 显式 `modelTag`，保留既有文件名。
+- **metadata 未消费**：`EmbeddingIndexer` 使用 `provider.batchLimit` 作为默认批大小，并用 `maxInputTokens` 收紧文本窗口。
+- **no-op reinit**：`lastEmbeddingConfigKey` 相同且 runtime 存在时跳过重建，避免无意义 sidecar 重启。
+- **baseUrl 语义**：config / route / SDK 注释明确它是完整 endpoint，不是 base URL。
+- **registry 死路径**：`register` 标注为 test/dev seam；live 只解析内置 provider。
+- **hot-path 守卫**：从只扫 `recall-context.ts` 扩展为扫描 `src/recall/*.ts` + `routes/recall.ts` 的 import/调用。
+- **空输出 reranker**：conformance 对非空输入返回空列表报错。
+- **未知 reranker id**：先解析新实例，解析失败保留当前实例，不再先 dispose 再降级。
 
 ## 关键 commit
 

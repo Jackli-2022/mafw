@@ -494,6 +494,8 @@ class MafwScheduler {
   private workerPool: SessionWorkerPool | null = null;
   private scanService: IndexScanService | null = null;
   private consolidationService: ConsolidationService | null = null;
+  /** Skip no-op embedding reinit (same config key) to avoid sidecar restarts. */
+  private lastEmbeddingConfigKey: string | null = null;
   private layaSidecar: import("child_process").ChildProcess | null = null;
   /** Laya conflict cascade deps, hoisted so write-phase routing can reuse the
    *  same client (defined in initEmbeddingServices; undefined when disabled). */
@@ -1756,6 +1758,15 @@ class MafwScheduler {
    *  provider before rebuilding, so /api/memory/embedding-config can hot-swap
    *  engines without a gateway restart. */
   private initEmbeddingServices(mafwDir: string): void {
+    const cfg = config.memory.embedding;
+    const configKey = JSON.stringify(cfg);
+    if (
+      configKey === this.lastEmbeddingConfigKey &&
+      (getEmbeddingRuntime() || cfg.provider === 'off')
+    ) {
+      return;
+    }
+
     const old = getEmbeddingRuntime();
     if (old) {
       old.dispose?.();
@@ -1767,7 +1778,6 @@ class MafwScheduler {
     // P1: dense embedding runtime (opt-in via memory.embedding.provider).
     // Fires on every memory write (static listener) — BM25 stays instant,
     // vectors converge asynchronously; all failures degrade to BM25-only.
-    const cfg = config.memory.embedding;
     const providerId = embeddingProviderIdFromConfig(cfg);
     const registry = createEmbeddingProviderRegistry();
     const provider = providerId
@@ -1799,6 +1809,7 @@ class MafwScheduler {
       : null;
     if (!embeddingRuntime) {
       disposeEmbeddingProvider(provider);
+      this.lastEmbeddingConfigKey = cfg.provider === 'off' ? configKey : null;
       return;
     }
 
@@ -1901,6 +1912,7 @@ class MafwScheduler {
         })`,
       );
     }
+    this.lastEmbeddingConfigKey = configKey;
     this.wireRouteWriteDeps(mafwDir);
   }
 

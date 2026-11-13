@@ -72,6 +72,7 @@ export function createEmbeddingProviderRegistry(): EmbeddingProviderRegistry {
   for (const factory of builtinFactories()) factories.set(factory.id, factory);
 
   return {
+    /** Test/dev seam; the live gateway only resolves built-ins. */
     register(factory) {
       factories.set(factory.id, factory);
       return () => {

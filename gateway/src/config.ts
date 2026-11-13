@@ -226,7 +226,7 @@ export interface GatewayConfig {
       provider: 'off' | 'local' | 'dashscope';
       model: string;
       dimensions: number;
-      /** Endpoint override for the dashscope transport. */
+      /** Full endpoint override for the dashscope transport (not a base URL). */
       baseUrl: string;
       /** Cosine threshold for consolidation candidate recall (P2). */
       minCosine: number;

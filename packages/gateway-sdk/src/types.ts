@@ -821,6 +821,7 @@ export interface EmbeddingConfigState {
   engine: 'onnx' | 'llamacpp'
   model: string
   dimensions: number
+  /** Full endpoint URL, not a base URL. */
   baseUrl: string
   threads: number
   llamacpp: { gpu: string; threads: number; contextSize: number; batchSize: number }

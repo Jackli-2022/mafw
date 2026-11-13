@@ -186,6 +186,7 @@ export class EmbeddingIndexer {
   private provider: EmbeddingProvider;
   private getTextForId?: (id: string) => Promise<string | null>;
   private batchSize: number;
+  private textCap: number;
   private closed = false;
   /** Re-entry guard: backfill and scheduled flushes must not run concurrently
    *  (two ORT batches at once double the CPU spike the thread cap limits). */
@@ -195,7 +196,10 @@ export class EmbeddingIndexer {
     this.vectors = deps.vectors;
     this.provider = deps.provider;
     this.getTextForId = deps.getTextForId;
-    this.batchSize = deps.batchSize ?? 16;
+    this.batchSize = deps.batchSize ?? deps.provider.batchLimit ?? 16;
+    // Same char cap as documentText's default (2000), lowered when a provider
+    // declares a smaller input window.
+    this.textCap = Math.min(2000, Math.max(64, (deps.provider.maxInputTokens ?? 8192) * 4));
   }
 
   /**
@@ -217,7 +221,7 @@ export class EmbeddingIndexer {
     if (!unit?.id) return;
     this.queue.set(unit.id, {
       id: unit.id,
-      text: EmbeddingIndexer.documentText(unit),
+      text: EmbeddingIndexer.documentText(unit, this.textCap),
     });
   }
 
@@ -225,7 +229,7 @@ export class EmbeddingIndexer {
    *  documentText domain — the caller owns what gets embedded. */
   enqueueText(id: string, text: string): void {
     if (!id || !text) return;
-    this.queue.set(id, { id, text });
+    this.queue.set(id, { id, text: text.slice(0, this.textCap) });
   }
 
   removeUnit(id: string): void {

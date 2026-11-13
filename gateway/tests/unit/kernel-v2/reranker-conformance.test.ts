@@ -20,4 +20,7 @@ test('a valid reranker preserves candidates and respects topK', async () => {
   };
   const errors = await runRerankerConformance(bad as any, candidates);
   expect(errors.join('\n')).toMatch(/unknown|subset/);
+
+  const empty = { name: 'empty', strategy: 'empty', rerank: () => [] };
+  expect((await runRerankerConformance(empty, candidates)).join('\n')).toMatch(/no candidates/);
 });

@@ -10,4 +10,5 @@ test('kernel wires the embedding registry and keeps route-write deps live', () =
   expect(source).toContain('initEmbeddingRuntime({');
   expect(source).toContain('wireRouteWriteDeps(mafwDir)');
   expect(source).toContain('old.dispose?.()');
+  expect(source).toContain('lastEmbeddingConfigKey');
 });

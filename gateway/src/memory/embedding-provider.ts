@@ -14,6 +14,7 @@
 // get an `Instruct:` task prefix, document inputs are embedded verbatim.
 
 import { log } from '../core/utils/logger';
+import { sanitizeModelTag } from './embedding-namespace';
 
 // Mirror + cache home for local ONNX model downloads (same policy as reranker).
 import * as path from 'path';
@@ -105,7 +106,9 @@ export function createEmbeddingProvider(cfg: EmbeddingProviderConfig): Embedding
 
 class DashScopeEmbeddingProvider implements EmbeddingProvider {
   name: string;
+  modelTag: string;
   dims: number;
+  batchLimit: number;
   private apiKey?: string;
   private getApiKeyFn?: (provider: string) => string | null;
   private fetchFn: typeof fetch;
@@ -123,6 +126,8 @@ class DashScopeEmbeddingProvider implements EmbeddingProvider {
     this.baseUrl = cfg.baseUrl || DASHSCOPE_EMBEDDING_URL;
     // v4 batch limit is 10 rows; qwen3.7-text-embedding allows 20.
     this.maxBatch = (cfg.model || '').includes('qwen3.7') ? 20 : 10;
+    this.modelTag = sanitizeModelTag(this.name);
+    this.batchLimit = this.maxBatch;
   }
 
   private resolveKey(): string | null {
@@ -238,7 +243,9 @@ export interface LocalModelHandle {
 
 class LocalEmbeddingProvider implements EmbeddingProvider {
   name: string;
+  modelTag: string;
   dims: number;
+  batchLimit = 16;
   private modelId: string;
   private profile: LocalModelProfile;
   private threads: number;
@@ -251,6 +258,7 @@ class LocalEmbeddingProvider implements EmbeddingProvider {
     this.modelId = cfg.model || 'onnx-community/Qwen3-Embedding-0.6B-ONNX';
     this.profile = resolveLocalModelProfile(this.modelId);
     this.name = `local:${this.modelId}`;
+    this.modelTag = sanitizeModelTag(this.name);
     this.dims = cfg.dimensions || this.profile.dims;
     this.threads = Math.max(1, cfg.threads ?? 2);
     this.localDeps = cfg.localDeps as any;

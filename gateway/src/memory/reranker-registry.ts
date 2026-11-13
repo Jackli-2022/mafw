@@ -64,6 +64,7 @@ export function createRerankerProviderRegistry(
   }
 
   return {
+    /** Test/dev seam; the live singleton only resolves built-ins. */
     register(factory) {
       factories.set(factory.id, factory);
       return () => {

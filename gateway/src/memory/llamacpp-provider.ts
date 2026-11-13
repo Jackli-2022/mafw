@@ -19,6 +19,7 @@ import { spawn, ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as net from 'net';
 import * as os from 'os';
+import { sanitizeModelTag } from './embedding-namespace';
 import * as path from 'path';
 import { log } from '../core/utils/logger';
 import type { ProcessHandle, ProcessLedger } from '../resources/process-ledger';
@@ -123,7 +124,9 @@ export async function pickFreePort(): Promise<number> {
 
 export class LlamaCppServerProvider implements EmbeddingProvider {
   name: string;
+  modelTag: string;
   dims: number;
+  batchLimit = 16;
   private cfg: LlamaCppConfig;
   private child: ChildProcess | null = null;
   private starting: Promise<void> | null = null;
@@ -140,6 +143,7 @@ export class LlamaCppServerProvider implements EmbeddingProvider {
     this.cfg = opts.llamacpp ?? {};
     const modelTag = (this.cfg.modelFile || DEFAULT_MODEL).split(':').pop() || 'qwen3-embedding';
     this.name = `llamacpp:${modelTag}`;
+    this.modelTag = sanitizeModelTag(this.name);
     this.dims = opts.dimensions || 1024;
   }
 

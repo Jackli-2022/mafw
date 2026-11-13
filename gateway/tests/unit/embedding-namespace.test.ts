@@ -7,8 +7,8 @@ import {
 
 describe('embedding namespace', () => {
   test('defaults metadata from name and dims', () => {
-    expect(embeddingProviderMeta({ name: 'llamacpp:Qwen3-Embedding.gguf', dims: 1024 })).toEqual({
-      modelTag: 'llamacpp_Qwen3-Embedding.gguf',
+    expect(embeddingProviderMeta({ name: 'llamacpp:Qwen3-Embedding.gguf', dims: 1024 })).toMatchObject({
+      modelTag: expect.stringMatching(/^llamacpp_Qwen3-Embedding\.gguf-[0-9a-f]{8}$/),
       dims: 1024,
       maxInputTokens: 8192,
       batchLimit: 16,
@@ -21,6 +21,12 @@ describe('embedding namespace', () => {
       modelTag: 'my_model_v2',
       dims: 512,
     });
+  });
+
+  test('lossy sanitization does not collide for distinct provider ids', () => {
+    const a = embeddingProviderMeta({ name: 'a/b', dims: 2 }).modelTag;
+    const b = embeddingProviderMeta({ name: 'a_b', dims: 2 }).modelTag;
+    expect(a).not.toBe(b);
   });
 
   test('namespace keeps the legacy vector filename and adds a separate t1 file', () => {

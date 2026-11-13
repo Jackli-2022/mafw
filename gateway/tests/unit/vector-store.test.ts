@@ -145,6 +145,44 @@ describe('EmbeddingIndexer', () => {
     expect(vectors.size()).toBe(0);
   });
 
+  test('uses provider.batchLimit as the default batch size', async () => {
+    const dir = tmpDir();
+    const vectors = new MemoryVectorStore(path.join(dir, 'v.json'), 2);
+    const batches: number[] = [];
+    const provider: EmbeddingProvider = {
+      name: 'batch-fake',
+      dims: 2,
+      batchLimit: 2,
+      embed: async (texts) => {
+        batches.push(texts.length);
+        return texts.map(() => [1, 0]);
+      },
+    };
+    const indexer = new EmbeddingIndexer({ vectors, provider });
+    for (let i = 0; i < 5; i++) indexer.onUnitWritten({ id: `u${i}`, primary_abstraction: `A${i}` } as any);
+    await indexer.flushQueue();
+    expect(batches).toEqual([2, 2, 1]);
+  });
+
+  test('caps text to the provider maxInputTokens window', async () => {
+    const dir = tmpDir();
+    const vectors = new MemoryVectorStore(path.join(dir, 'v.json'), 2);
+    const lengths: number[] = [];
+    const provider: EmbeddingProvider = {
+      name: 'small-window',
+      dims: 2,
+      maxInputTokens: 10,
+      embed: async (texts) => {
+        lengths.push(texts[0].length);
+        return texts.map(() => [1, 0]);
+      },
+    };
+    const indexer = new EmbeddingIndexer({ vectors, provider });
+    indexer.onUnitWritten({ id: 'u1', primary_abstraction: 'x'.repeat(500) } as any);
+    await indexer.flushQueue();
+    expect(lengths).toEqual([64]);
+  });
+
   test('document text is capped to avoid pathological abstractions', async () => {
     const dir = tmpDir();
     const vectors = new MemoryVectorStore(path.join(dir, 'v.json'), 2);
