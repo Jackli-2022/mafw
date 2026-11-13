@@ -3,8 +3,8 @@ import { createClaudeRuntime, type ClaudeRuntimeDeps } from './runtime.ts';
 import { claudeAdapterEvents, type ClaudeDeltaState } from './adapter-events.ts';
 
 /** Wrap the legacy raw-event claude runtime in the neutral transport. */
-export function createClaudeTransport(deps: ClaudeRuntimeDeps): RuntimeTransport {
-  const runtime = createClaudeRuntime(deps);
+export function createClaudeTransport(deps: ClaudeRuntimeDeps & { runtime?: any }): RuntimeTransport {
+  const runtime = deps.runtime ?? createClaudeRuntime(deps);
   const pendingTurns = new Map<string, string[]>();
   const activeTurns = new Map<string, string>();
   const rawToGateway = new Map<string, string>();

@@ -1,13 +1,18 @@
 import type { RuntimeChannels } from '@mafw/runtime-contract';
 import type { ClaudeSdk } from './runtime.ts';
 import { normalizeClaudeHistory } from './history.ts';
+import { createClaudeDiscovery } from './skills.ts';
 
-export function createClaudeChannels(sdk: ClaudeSdk): RuntimeChannels {
+export function createClaudeChannels(
+  sdk: ClaudeSdk,
+  opts: { promptAsync?: (sessionID: string, text: string) => Promise<void> } = {},
+): RuntimeChannels {
   return {
     messages: {
       list: async (sessionID) => ({ data: normalizeClaudeHistory(await sdk.getSessionMessages(sessionID)) }),
       normalize: normalizeClaudeHistory,
     },
+    ...(opts.promptAsync ? { discovery: createClaudeDiscovery(opts.promptAsync) } : {}),
     session: {
       list: async () => {
         const raw = await sdk.listSessions();

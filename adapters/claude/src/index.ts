@@ -46,8 +46,11 @@ export async function createClaudeDefinition(
   deps: { sdk?: ClaudeSdk } = {},
 ): Promise<RuntimeDefinition> {
   const sdk = deps.sdk ?? (await import('@anthropic-ai/claude-agent-sdk')) as unknown as ClaudeSdk;
-  const transport = createClaudeTransport({ sdk, gatewayPort: ctx?.gatewayPort });
-  const channels = createClaudeChannels(sdk);
+  const runtime = createClaudeRuntime({ sdk, gatewayPort: ctx?.gatewayPort });
+  const transport = createClaudeTransport({ sdk, gatewayPort: ctx?.gatewayPort, runtime });
+  const channels = createClaudeChannels(sdk, {
+    promptAsync: (sessionID, text) => runtime.session.promptAsync({ sessionID, message: text }),
+  });
   return defineRuntime({
     api: 1,
     name: 'claude',
@@ -55,7 +58,7 @@ export async function createClaudeDefinition(
     preset: 'conversation',
     transport,
     channels,
-    overrides: { promptWhileBusy: true, worktreeApi: true },
+    overrides: { promptWhileBusy: true, worktreeApi: true, discoveryApi: true },
   });
 }
 
