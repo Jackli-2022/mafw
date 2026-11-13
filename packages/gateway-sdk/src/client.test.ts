@@ -502,20 +502,6 @@ test("session config get/set hit the config route", async () => {
   expect(JSON.parse(calls[1][1].body)).toEqual({ category: "thought_level", value: "high" })
 })
 
-test("session.events connects SSE to session-specific endpoint (uses own connection)", async () => {
-  const connectSpy = mock()
-  const orig = SSEConnection.prototype.connectToSession
-  SSEConnection.prototype.connectToSession = connectSpy as any
-  try {
-    const c = new MafwClient("http://gw:3000")
-    const sub = await c.session.events({ path: { id: "s1" } })
-    expect(connectSpy).toHaveBeenCalledWith("http://gw:3000", "s1")
-    expect(typeof sub.on).toBe("function")
-  } finally {
-    SSEConnection.prototype.connectToSession = orig
-  }
-})
-
 test("session.create fails on non-ok response", async () => {
   fetchMock.mockResolvedValue(notOk(500))
   const c = new MafwClient("http://gw:3000")
@@ -1055,10 +1041,9 @@ test("media.artifactUrl builds artifact URL from baseUrl", () => {
   expect(c.media.artifactUrl("abc")).toBe("http://gw:3000/a2a/artifacts/abc")
 })
 
-test("event.url builds SSE endpoint (global + session-scoped)", () => {
+test("event.url builds the global SSE endpoint", () => {
   const c = new MafwClient("http://gw:3000")
   expect(c.event.url()).toBe("http://gw:3000/api/events")
-  expect(c.event.url("s 1")).toBe("http://gw:3000/api/events?sessionID=s%201")
 })
 
 test("tts.streamUrl builds stream endpoint", () => {

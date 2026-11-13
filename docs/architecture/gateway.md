@@ -28,6 +28,7 @@
 - [内核拆分（Phase D3 现状：entry / boot / kernel / HTTP）](#内核拆分phase-d3-现状entry--boot--kernel--http)
 - [E1 止血（2026-11-11）](#e1-止血2026-11-11)
 - [E4 资源台账（2026-11-11）](#e4-资源台账2026-11-11)
+- [E7 部署前 deferred 收口（2026-11-13）](#e7-部署前-deferred-收口2026-11-13)
 - [API 端点](#api-端点)
 - [UI 服务](#ui-服务)
 - [数据流全景](#数据流全景)
@@ -361,8 +362,9 @@ goal_created 事件 → startGoal（hint > request 扫描 > 首项目）
 
 `executeAskUser` 写 `QuestionLedger` asked + state.pendingQuestion；回答/取消经
 `handleAnswer/handleCancel` 写 state.userResponse/nextNode → advance。Lead 可经
-`mafw_list_pending_questions` / `mafw_answer_question` 自治代答；手机/桌面共享同一
-`/api/questions` 面（「需要你」应答）。
+`mafw_list_pending_questions` 列出待决问题；**回答只能由人类做**（手机/桌面经
+`/api/questions` 面 + human/device 凭据 → `goals.respondQuestion` / `questions.reply`）。
+MCP 不提供 `mafw_answer_question`（E7 review 已删除，见下「human-only」小节）。
 
 ### Trace 与观测
 
@@ -851,12 +853,12 @@ Phase 3.6 plugin host 自动注册（2026-11-13，默认关闭）：
 | # | 现状 | 边界 / 后续 |
 |---|---|---|
 | E3-1 | `tests/unit/api-contract.test.ts` 的幻影源码字符串断言换成**可达性守卫**：catalog 每个 op 必须 attached（字面 / 动态循环数组 / typed attach）或在 allowlist（`TRANSPORT_ALLOWLIST` 9 项、`RUNTIME_PROXY_ALLOWLIST` 1 项，每项带 reason；`DASHBOARD_RESIDUE_ALLOWLIST` 在收口修复轮清空）；allowlist 只减不增。删除 **14 个不可达 op**：E3-1 的 12 个（spec 的 11 个 + `memory.getL5Heuristics`）+ 收口修复轮删除的 `goals.loops` / `goals.loopsAt`（dashboard catch-all 实际返回 goals 列表，形状不对）。死模块 `gateway/src/dashboard/{api,server,types}.ts` 删除（SPA `public/` 保留，仍由 transport 服务）；catalog 318 → 304 ops。 | 请求 `/api/goals/:id/loops(:n)` 仍由 dashboard catch-all 兜底（只是不再登记为 catalog op）；spec 的 307/296 计数与实际基线（318）不符。 |
-| E3-2 | **Mode B 删除**：`?sessionID=` 的 per-session SSE 分支与 `ChatSessionManager` 移除；`event.subscribe` 现在忽略该参数、一律走 Mode A 全局流（SSE 头 + greeting + 回放 + `sseClients`）。`event-dispatch` 24 → 23 段（删 `modeBDelta`），kernel/api-routes 的 `chatSessions` 接线删除。**Breaking**：SDK `event.subscribeToSession` 删除（`?sessionID` 仍被接受并降级为 Mode A）。 | SDK `sessions.events()` 与 `event.url(sessionID?)` 仍构造 `?sessionID`（现降级到全局流），死面清理留后续。 |
+| E3-2 | **Mode B 删除**：`?sessionID=` 的 per-session SSE 分支与 `ChatSessionManager` 移除；`event.subscribe` 现在忽略该参数、一律走 Mode A 全局流（SSE 头 + greeting + 回放 + `sseClients`）。`event-dispatch` 24 → 23 段（删 `modeBDelta`），kernel/api-routes 的 `chatSessions` 接线删除。**Breaking**：SDK `event.subscribeToSession` 删除（`?sessionID` 仍被接受并降级为 Mode A）。 | ~~SDK `sessions.events()` 与 `event.url(sessionID?)` 仍构造 `?sessionID`~~（E7-2 已清理：两者与 `SSEConnection.connectToSession` 全部删除）。 |
 | E3-3 | 框架边界错误带机器码：`core/http/api-error.ts` 的 `API_ERROR_CODES` / `errorBody()`（`unauthorized` / `forbidden` / `capability_unavailable` / `internal`，预留 `schema_epoch_mismatch` / `not_found`）。应用点：transport 401/403/outer 500、registry-dispatch 401、kernel `capGuard`/`capGuardQuestion` 503。既有 `error` 字符串逐字保留。 | 路由内业务错误继续用原信封（错误格式按层）；客户端必须容忍可选 `code`。A2A/MCP 分支内 500 未迁移。 |
 | E3-4 | Experience `ActionDescriptor` 新增可选 `operationId`；projector 用 `EXPERIENCE_ACTION_OPERATIONS` 把 20 个动作绑定到 catalog op（复合动作取入口路由，如 `run.control → session.suspend`）。无路由动作省略该字段。 | 单 operationId 不是完整 verb 集合（run.control 也含 resume/discardRun）；路由改名时绑定测试会红。 |
 | E3-5 | **opt-in schema epoch**：所有响应带 `X-MAFW-Schema-Epoch`（`releaseMetadata.schemaEpoch`，未加载时省略）；客户端**主动携带**且不匹配 → 409 `{error, code:'schema_epoch_mismatch'}`（auth 之后、registry 之前）。不携带 / 匹配 / 服务端未知 → 正常放行。 | 不引入强制拒绝；SDK 尚未主动发送该头。 |
 | E3-6 | 四个读 op 的 200 response schema（`routes/schemas/read-models.ts`，只加 OpenAPI 元数据，不改 handler）：`goals.get`、`project.list`、`presence.get`、`session.usageSummary`。`emit:openapi` 后 272 paths / 304 operations。 | 其余 ~300 ops 仍无 response schema（渐进补齐）。 |
-| E3-7 | 收口：本节 + release 记录 + 全量门禁（gateway / SDK / desktop / TUI / analyzer / kernel-split）。收口修复轮：SDK `Goal` DTO 对齐 `projectGoalView`（phase/error/updatedAt 可空），`goals.list` override 同步、删除陈旧 `goals.get` override；删除 dashboard-residue 两个 phantom op；同步 23 段/25 DispatchCtx 成员的文档漂移。 | deferred：SDK `sessions.events()`/`event.url(sessionID?)` 清理、剩余 op 的 schema 覆盖。 |
+| E3-7 | 收口：本节 + release 记录 + 全量门禁（gateway / SDK / desktop / TUI / analyzer / kernel-split）。收口修复轮：SDK `Goal` DTO 对齐 `projectGoalView`（phase/error/updatedAt 可空），`goals.list` override 同步、删除陈旧 `goals.get` override；删除 dashboard-residue 两个 phantom op；同步 23 段/25 DispatchCtx 成员的文档漂移。 | ~~deferred：SDK `sessions.events()`/`event.url(sessionID?)` 清理~~（E7-2 已清理）。剩余 op 的 response schema 覆盖仍渐进补齐（E7 后仍约 300 ops）。 |
 
 ## E4 资源台账（2026-11-11）
 
@@ -876,7 +878,7 @@ Phase 3.6 plugin host 自动注册（2026-11-13，默认关闭）：
 | E4-4 | `ConnectionTable`：HTTP socket 计数（`httpOpen`，仅观测）+ SSE/WS/voice/terminal 逻辑连接 lease（`release` 幂等）。HTTP **256** 走 `server.maxConnections` 硬帽；软帽 SSE/WS 各 64、voice/terminal 各 16；超限 SSE 503 `{code:'connection_limit'}`，WS/voice/terminal 在 upgrade 阶段 503（不升级）；`refused` 按 kind 计数；连接上限 `0`/负数 = 不限。`connections.sse` 只覆盖 `/api/events` 与 plugin-web SSE（`/api/plugins/:name/events`）；**TTS `/api/tts/stream` 与 MCP SSE keepalive 不在连接表内**。 | HTTP 无软拒绝路径；FD 不设硬上限（`handles.fdCount` 仅 Linux 观测）。 |
 | E4-5 | `SseBoundedWriter`：`res.write` 返回 false → paused 入队，`drain` 按序 flush；队列超 `sseMaxFrames`（256）或 `sseMaxBytes`（1 MiB）→ `destroy()` + overflow 计数。WS 广播前 `bufferedAmount > wsMaxBufferedBytes`（1 MiB）→ `terminate()` + 移出广播集。计数聚合为**平铺** `buffers`（含 `sseWriteErrors`）。 | 断开慢客户端是安全动作：SSE 用 `since`/Last-Event-ID 回放，WS live-only 重连走 REST 快照；E5b 起还可走 `GET /api/events/replay` 的 seq 游标补页。缓冲上限的 `0` = 回退默认值，不是不限。 |
 | E4-6 | `ProcessLedger`：python / llamacpp / serve 三类条目，`release` 幂等，`disposeAll` 走 close 钩子（best-effort）。Python 槽位是**会话作用域逻辑条目**（`owned:true`，gateway 托管内核），并发帽默认 4：满帽先驱逐超过 10 分钟未用且非 busy 的内核，仍满抛 `QuotaExceededError('python_kernels')` → 429；busy 内核永不驱逐，崩溃条目留到 sweep/TTL 1h。llamacpp 记录真实 child pid 且 `owned:true`。serve 只在 `serveInstance` 真存在时登记一条 `owned:false` 逻辑条目。 | 条目数 ≠ 子进程数（python 可能无 pid）；serve 无 close 钩子，gateway **不声称**能 kill adapter 的进程；`serve.running` 就是 `!!serveInstance`（不额外探测进程存活）。 |
-| E4-7 | `QuotaService`：projects 128（`/register`，同目录重复注册放行）、sessions 1000 与 `sessionRecordsPerProject` 200（`SdkSessionResource.create` / `registerExternal`，按 `projectID` / `directory` 分组）。超限统一 429 `{code:'quota_exceeded', resource, limit, current}`；watcher 自动注册超限只 log + skip。 | **worktree-before-quota**：带 worktree 的 `POST /api/session` 先建 worktree/branch 再进 quota 检查，被拒会留下空 worktree；内部 manager/lead 会话失败按既有 catch 语义降级为 log。`activeGoals` 不进配额。 |
+| E4-7 | `QuotaService`：projects 128（`/register`，同目录重复注册放行）、sessions 1000 与 `sessionRecordsPerProject` 200（`SdkSessionResource.create` / `registerExternal`，按 `projectID` / `directory` 分组）。超限统一 429 `{code:'quota_exceeded', resource, limit, current}`；watcher 自动注册超限只 log + skip。 | **worktree-before-quota 已收口（E7-3）**：`createSessionWithWorktree` 在 session 创建被拒（含 429 `quota_exceeded`）时 best-effort `manager.remove(dir, branch)` 回滚 worktree/branch，原错误原样抛出，不写 kv 映射；remove 失败不吞原错。内部 manager/lead 会话失败仍按既有 catch 语义降级为 log。`activeGoals` 不进配额。 |
 | E4-8 | `GET /api/kernel/stats`（catalog `kernel.stats`，internal、带 200 schema）：pressure/disk/heap/connections/buffers/timers/processes/quotas/handles/scheduler/events/serve。provider 缺席时 fail-open（`heap:null`、disk `unknown`、events 零值、handles 空表），只有 provider 自身抛错才 500。 | 新的 wire 契约：`buffers` 平铺、quotas 三键必填、`limit 0 = 不限`、`fdCount` Linux-only、`serve.owned` 与 entries 的 `owned` 两个口径；其余 op 仍无 response schema。 |
 | E4-9 | 收口：本节 + release 记录 + 全量门禁（gateway / SDK / desktop / TUI / analyzer / kernel-split / 契约产物新鲜度）。 | deferred：见下「已知延后」。 |
 
@@ -936,8 +938,10 @@ kernel 的 watchdog/heartbeat/queue-sweep/session-sweep 等自有 interval 与�
   critical 期间 heap 变化/恢复边沿不重复裁剪，`pruneNow` 不动摊销计数。
 - `memory.add` 的判压在 authority 校验之后、exact-hash dedup 之前（非法 authority 仍回既有错误；
   被拒写入不推进 dedup 状态）；embedding backfill 返回 503 `{error, code:'disk_low'}`。
-- **MCP `mafw_add_memory` 有意绕过 HTTP 磁盘门**（该门只接在 `POST /api/memory/add` 上），
-  便于前台 agent 在满盘时仍能记录关键约束；若要全覆盖需另立任务。
+- **MCP `mafw_add_memory` 同受磁盘门约束（E7-4）**：`Services.pressure()` 是 governor 的 live 窄面
+  （缺席 → `null`），handler 在 authority 校验之后、任何 store/embedding 写之前检查；`disk === 'critical'`
+  或 `degraded` 含 `disk_critical` → `{success:false, error:'disk space critical', code:'disk_low'}`，
+  `isError:true`。HTTP 面（`POST /api/memory/add`）的既有门逐字不变。
 - 恢复：状态按回滞回到 ok 后自动重新接纳；不补跑被拒任务。前台/health/SSE 在任何压力下都不被拒。
 
 ### `/api/kernel/stats` 口径
@@ -960,10 +964,11 @@ kernel 的 watchdog/heartbeat/queue-sweep/session-sweep 等自有 interval 与�
 ### 已知延后（不在 E4 范围）
 
 - 降级前已入队任务的二次校验（pump 处回撤/抢占）与跨压力恢复补跑。
-- MCP `mafw_add_memory` 的磁盘门。
 - 全进程 timer inventory（kernel 自有 interval、插件 loader interval）。
 - 插件/manager 会话的配额副作用（内部会话失败当前降级为 log；未给 UI 明确 429 文案）。
-- review-items 的 SDK 债务：4 个 `pods.goals.reviewItems*` op 仍只在 `DEAD_CONTRACT_TODO` 里（见 release 记录）。
+- ~~MCP `mafw_add_memory` 的磁盘门~~（E7-4 已收口，见「E7 部署前 deferred 收口」）。
+- ~~review-items 的 SDK 债务~~（E7-2 已收口：`DEAD_CONTRACT_TODO` 删除，4 个 op 由
+  `pods.goals.reviewItems*` 方法覆盖）。
 
 ## E5a 身份闭环（2026-11-12）
 
@@ -1029,9 +1034,24 @@ kernel 的 watchdog/heartbeat/queue-sweep/session-sweep 等自有 interval 与�
 | `POST /api/decisions/:id/confirm` / `shelve` / `reopen` | decision 状态变更 |
 | `POST /api/goal-runs/:id/approve` | 长效目标 run 批准 |
 | `GET /api/mobile/pairing-code` | 生成配对 nonce（否则 service/local 可铸 nonce → 未认证 verify 换 device token 越权） |
+| `POST /api/goals/:id/plan-approval`（E7-1） | 计划批准（GET plan 只读不拦） |
+| `triage.confirm` / `triage.reject` / `triage.dismiss`（E7-1） | triage 决策（list / propose 不拦） |
+| `lead.boundaries.accept` / `merge` / `undo`（E7-1） | Lead 边界动作（list / observe 不拦） |
+| `approvals.respond`（E7-1） | 审批应答（list 与 rules CRUD 不拦） |
+| `permissions.reply`（E7-1） | 权限应答（`permissions.replyRuntime` 是 runtime 内部路径，不拦；list 不拦） |
+| `goals.respondQuestion`（E7-1 review） | 目标问题回答 / 取消（`GET /api/questions` 等只读面不拦） |
+| `questions.reply` / `questions.reject`（E7-1 review） | runtime 问答应答（`questions.list` 不拦） |
 
-- 判定 **fail-closed**：缺失 principal（直调 handler 的测试路径）、`service`、`local`、`anonymous` 一律 403；`human` + `actorSessionID` 仍 403（既有审计检查保留，防人类 UI 误用 agent 上下文）。
+- 判定 **fail-closed**：缺失 principal（直调 handler 的测试路径）、`service`、`local`、`anonymous` 一律 403。
+  注意 **E7-1 的 `requireHumanPrincipal` 路由没有 actor 检查**——human/device 凭据即放行，不因请求带
+  `actorSessionID` 再拒。
+- `human` + `actorSessionID` 仍 403 只适用于 **pod 验收（`pods.goals.accept`）与 decisions 写**（E5a 的既有审计检查，防人类 UI 误用 agent 上下文），不是 E7 路由的通用规则。
 - `pairing-code` 的 human 检查在调用 pairing service **之前**，被拒请求不消耗限频额度；`POST /api/mobile/pairing/verify` 仍是唯一免凭据路由（nonce 即凭据，见上）。
+- **MCP 面不提供 human 工具**：代答工具 `mafw_answer_question` 已删除（E7 review 后续
+  `ba8ac0e7`）——loopback MCP 调用无人类凭据，保留只会是一条恒 403 的 impersonation 入口。
+  删除面：工具定义 / handler / registry entry / `runtime/tool-classes.ts` 注解 / manager
+  allowlist；`tool-registry-annotations.test.ts` 有缺失断言防回填。人类回答走
+  human/device 凭据的 `goals.respondQuestion` / `questions.reply|reject`（桌面 / 手机 UI）。
 - 普通写路径（goal create / task / memory / …）**不要求** human，继续使用 service/local。
 
 ### 兼容 / 威胁模型
@@ -1043,7 +1063,8 @@ kernel 的 watchdog/heartbeat/queue-sweep/session-sweep 等自有 interval 与�
 
 ### 已知延后（不在 E5a 范围）
 
-- 计划批准（plan-approval）、triage、Lead 边界、permission approvals 仍是 service/local 可调，**尚未** human-gated。
+- ~~计划批准（plan-approval）、triage、Lead 边界、permission approvals 仍是 service/local 可调~~
+  （E7-1 已收口；统一 helper `requireHumanPrincipal` 接入，见「E7 部署前 deferred 收口」）。
 - MCP 工具集**没有** human 工具（也不提供验收/批准工具）；human-only 动作只走 HTTP（desktop/TUI/移动）。
 - `authorizeWsUpgrade` 仅标记 deprecated，未删除（测试与旧调用方仍引用）。
 - human token 的 OS keychain / 进程签名、per-owner fencing 留给后续。
@@ -1099,14 +1120,58 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 1. 按 `seq` 升序应用；`seq <= 本地游标` 直接丢弃——replay 不会重复应用 live 已推进的 seq。
    但消费面是 **at-least-once**：持久化节流窗口（50 条 / 250ms）内进程被杀，冷启动可能重放少量
    已应用 seq；消费者必须容忍重复（当前均为幂等刷新，REST 对账吸收）。
-2. `hasMore` → 用最后已应用 seq（与 `nextSince` 在服务端契约下相等）继续拉直到 `false`；客户端设页数上限（mobile 100 页）并把触顶当作**未补齐**（`pageCap` fallback，不伪装成功）。
-3. `reset` / `truncated` / replay 请求失败 / 旧网关 404·503 → **全量重拉**；`reset`/`truncated` 把游标置 `headSeq`，临时失败保留旧游标下次重试。
+2. `hasMore` → 用最后已应用 seq（与 `nextSince` 在服务端契约下相等）继续拉直到 `false`；客户端设页数上限（mobile 100 页）并把触顶当作**未补齐**（`pageCap` fallback，不伪装成功）。`hasMore` 页的 `nextSince` 不能前进（`nextSince <= since`）= 契约违约 → **`protocol` fallback**（E7-5），游标停在最后已应用 seq，由调用方全量重拉，绝不报 `recovered`。
+3. `reset` / `truncated` / replay 请求失败 / 旧网关 404·503 → **全量重拉**；`reset`/`truncated` 把游标置 `headSeq`，临时失败保留旧游标下次重试。`protocol` 违约与 `pageCap` 一样按「补齐失败」处理。
 4. `part.delta` 等 seq 缺失的瞬态帧**不推进游标、也不在 replay 里**。
 5. 重连顺序：replay 完成后再刷新页面；首次连接（无游标）用 greeting `headSeq` 建立 baseline，不 replay。
 6. 纪元变化：持久化游标同时记录 `instanceId`；greeting 的 instance 与存档不同 → 丢弃游标、按新 head 重建并全量重拉。
 
 移动端细节见 `docs/architecture/mobile.md` §7.5；桌面 replay 接入与事件→增量补丁属 E6。
-E5b 已知残留（同实例 reset 的低 head、`nextSince<=since` 短缺口、busy/后台竞态）见 release 记录。
+E5b 已知残留（同实例 reset 的低 head、busy/后台竞态）见 release 记录；`nextSince<=since`
+短缺口已由 E7-5 的 `protocol` fallback 收口，不再静默跳过。
+
+---
+
+## E7 部署前 deferred 收口（2026-11-13）
+
+> 把 E1–E6 里影响**部署安全 / 资源 / 契约门禁**的 deferred 收口；大范围 schema 覆盖、全进程
+> timer inventory、mobile 工作 tab 重做等不阻塞部署的项继续保留。
+> spec：`docs/superpowers/specs/2026-11-13-gateway-e7-deferred-cleanup-design.md`；
+> 交付记录：`docs/releases/2026-11-13-gateway-e7-deferred.md`。
+
+| # | 现状（收口后） |
+|---|---|
+| E7-1 | **剩余 human-only 路由**：统一 helper `gateway/src/core/http/human-guard.ts#requireHumanPrincipal(req, res)`（`isHumanPrincipal` → 放行；否则 403 `{error:'human principal required', code:'human_principal_required'}`，缺失 principal fail-closed）。接入 `POST /api/goals/:id/plan-approval`、`triage.confirm` / `triage.reject` / `triage.dismiss`、`lead.boundaries.accept` / `merge` / `undo`、`approvals.respond`、`permissions.reply`，review 轮补 `goals.respondQuestion`、`questions.reply` / `questions.reject`；只读 / 建议面（GET plan、triage list/propose、lead list/observe、approvals list、permissions list、questions list、`permissions.replyRuntime`）不拦。旧 pods/decisions/standing-goals 的 helper 不重构。 |
+| E7-2 | **SDK 死面清理**：`contract.test.ts` 删除 `DEAD_CONTRACT_TODO`、过滤与陈旧守卫（review-items 4 op 由既有 `pods.goals.reviewItems*` 覆盖，契约 **4/4 无豁免**）；删除 `session.events()`、`event.url(sessionID?)` 参数（恒为 `${base}/api/events`）、`SSEConnection.connectToSession()`。全仓无生产调用方；**breaking** 见 release。 |
+| E7-3 | **worktree 配额回滚**：`createSessionWithWorktree` 在 `deps.createSession` reject（429 / runtime 失败）时 best-effort `manager.remove(dir, branch)`，不写 kv 映射，并**原样 rethrow** 原错误；remove 失败不掩盖 429/500。**只有 `createSession` 在回滚作用域内**：`kvSet` 映射写在 try 之后（review 轮 F1），它失败时错误照样上抛，但绝不回滚一个**已存在会话**的 worktree。成功路径不变。 |
+| E7-4 | **MCP 磁盘门**：`Services.pressure?: () => {disk, degraded} \| null` 由 kernel 注入 governor live getter（无 governor → `null` fail-open）；`handleAddMemory` 在 authority 校验后、写盘前检查，critical → `{success:false, code:'disk_low'}`（`isError:true`），store/embedding 零调用。 |
+| E7-5 | **客户端小残留**：mobile `MafwSession.timeUpdated`（`fromJson` 读 `time.updated`、`copyWith` 透传、`applySessionListEvent` 更新并**按 `timeUpdated ?? timeCreated` 重排**，Lead 仍最前；title-only patch 不重排）；mobile `EventRecoveryService` 对 `hasMore && nextSince <= since` 返回 `fellBack('protocol')`（游标停在最后已应用 seq，不再假 `recovered`）；desktop `SseConnection` 在 replay `reset` / `truncated` 后 `writeSeq(headSeq)`，下次冷启动只补新缺口、不重复全量重同步。 |
+
+### Review 补丁轮（E7-1 / E7-3）
+
+- **F4 问题应答全部 human-only**：`goals.respondQuestion`（目标问题回答 / 取消）与
+  `questions.reply` / `questions.reject`（runtime 问答应答）补上 `requireHumanPrincipal`；
+  门在 **body 读取之前**，被拒请求不消费请求体、不碰 ledger / driver。
+  `questions.list`、GET timeline 等只读面不变。
+- **副作用（intended）**：MCP 工具 `mafw_answer_question` 走 loopback 无凭据 → principal 为
+  `local` → 现在拿到 403 `human_principal_required`。即 agent 不能再「代用户回答」目标问题。
+  **处置（E7 review 后续，`fix(mcp): remove agent impersonation question tool`）**：定义 /
+  handler / registry entry / `runtime/tool-classes.ts` 注解 / manager allowlist 全部删除，
+  `handlers/manager-answer-question.ts` 删除；`tool-registry-annotations.test.ts` 加缺失断言
+  防止回填（与「MCP 不提供 human 工具」不变量一致）。人类回答只走 human-token HTTP / UI。
+- **F1 回滚边界**：`createSessionWithWorktree` 里 `kvSet` 移到 `createSession` 的 try 之外；
+  kv 失败不再删掉活会话的 worktree / branch，错误照原样上抛。
+
+### 残余（E7 后仍 deferred）
+
+- 约 300 个 op 的 response schema 覆盖（渐进补齐）。
+- 全进程 timer inventory（serve watchdog / heartbeat / queue sweep / loader 等）。
+- mobile 工作 tab 增量渲染（已有 `goalId` 局部更新）。
+- `pod.updated` 记录级 payload、attention → decision 投影、OS keychain / 进程签名、MCP human 工具。
+- 强制版本协商 / SDK 全量 schema 类型化。
+- E5b 同实例 `reset` 且新 head 更低时的重复 reset（有界、不丢数据）；busy / 后台 greeting 竞态。
+- `authorizeWsUpgrade` 仍只标 deprecated；desktop preload 的 event bridge 仍声明可选 `sessionID`（运行时忽略，无调用方传值）。
+- 插件 / manager 会话的配额副作用（内部会话失败只 log）。
 
 ---
 

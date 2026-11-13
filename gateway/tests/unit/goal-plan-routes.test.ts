@@ -6,6 +6,10 @@ import * as path from 'path';
 import * as os from 'os';
 import { handleGoalPlan } from '../../src/routes/goal-plan';
 import { ensureGoalState } from '../../src/core/goal/state-v3';
+import type { Principal } from '../../src/core/auth';
+
+/** E7-1: plan approval is a human decision; GET /plan stays read-only. */
+const HUMAN: Principal = { kind: 'human', method: 'human-token' };
 
 // 极薄 res harness（照抄 goal-node-retry 测试模式：直接调用 handler + 收集 json）
 function makeRes() {
@@ -77,7 +81,7 @@ describe('GET /api/goals/:id/plan', () => {
 describe('POST /api/goals/:id/plan-approval', () => {
   async function post(body: any, deps: any) {
     const { res, out } = makeRes();
-    const handled = await handleGoalPlan({ method: 'POST' } as http.IncomingMessage, res, '/api/goals/g1/plan-approval', { ...deps, body } as any);
+    const handled = await handleGoalPlan({ method: 'POST', mafwPrincipal: HUMAN } as http.IncomingMessage, res, '/api/goals/g1/plan-approval', { ...deps, body } as any);
     return { handled, out };
   }
 

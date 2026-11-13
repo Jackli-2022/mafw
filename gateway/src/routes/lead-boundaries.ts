@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import type { RouteRegistry } from './registry';
 import { readRouteBody } from './cognition';
+import { requireHumanPrincipal } from '../core/http/human-guard';
 import type { LeadBoundaryService } from '../core/lead/lead-boundary-service';
 import type { TopicBoundaryRow } from '../core/lead/topic-boundary-store';
 
@@ -88,7 +89,10 @@ export function attachLeadBoundaryRoutes(registry: RouteRegistry, deps: LeadBoun
     ['lead.boundaries.merge', handleMergeBoundary],
     ['lead.boundaries.undo', handleUndoBoundary],
   ] as const) {
-    registry.attachHandler(operation, async (_req: IncomingMessage, res: ServerResponse, params: Record<string, string>) => {
+    registry.attachHandler(operation, async (req: IncomingMessage, res: ServerResponse, params: Record<string, string>) => {
+      // E7-1: accepting / merging / undoing a boundary is a human decision;
+      // list + observe (advisory proposal) stay ordinary routes.
+      if (!requireHumanPrincipal(req, res)) return;
       send(res, handler({ id: params.id, bid: params.bid }, deps));
     });
   }

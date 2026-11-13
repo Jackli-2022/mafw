@@ -5,17 +5,22 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import type { Principal } from '../../../src/core/auth';
 import { RouteRegistry } from '../../../src/routes/registry';
 import { buildRouteCatalog } from '../../../src/routes/route-catalog';
 import { attachApprovalsRoutes } from '../../../src/routes/approvals';
 
-function fakeReq(opts: { url: string; method: string; body?: string }): IncomingMessage {
+/** E7-1: human-only routes (approvals.respond) need a resolved human principal. */
+const HUMAN: Principal = { kind: 'human', method: 'human-token' };
+
+function fakeReq(opts: { url: string; method: string; body?: string; principal?: Principal }): IncomingMessage {
   const listeners: Record<string, Array<(c?: unknown) => void>> = {};
   const req = {
     method: opts.method,
     url: opts.url,
     socket: { remoteAddress: '127.0.0.1' },
     headers: {},
+    ...(opts.principal ? { mafwPrincipal: opts.principal } : {}),
     on(ev: string, fn: (c?: unknown) => void) {
       (listeners[ev] = listeners[ev] || []).push(fn);
       return req;
@@ -121,7 +126,7 @@ describe('approvals registry wiring (D1 Task A5)', () => {
     const { handlerFor } = setup([p]);
     const r = fakeRes();
     await handlerFor('POST', '/api/approvals/q-1/respond')!(
-      fakeReq({ url: '/api/approvals/q-1/respond', method: 'POST', body: JSON.stringify({ answer: 'yes' }) }), r.res,
+      fakeReq({ url: '/api/approvals/q-1/respond', method: 'POST', body: JSON.stringify({ answer: 'yes' }), principal: HUMAN }), r.res,
     );
     expect(JSON.parse(r.body)).toEqual({ status: 'ok', decision: 'answered' });
     expect(JSON.parse(fs.readFileSync(path.join(p.mafwDir, 'user-questions', 'q-1.json'), 'utf-8'))).toMatchObject({ answered: true, answer: 'yes' });

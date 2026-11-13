@@ -9,8 +9,9 @@
 /// - first connect (no persisted cursor): baseline `headSeq` / `instanceId`, no
 ///   replay, no refresh — the normal initial load path still runs;
 /// - persisted cursor: drain replay first, then refresh the live surfaces;
-/// - reset / truncated / unsupported / request error / gateway-instance change:
-///   refresh **and** full reload, because the gap cannot be bridged;
+/// - reset / truncated / unsupported / request error / non-advancing replay page
+///   (protocol) / gateway-instance change: refresh **and** full reload, because
+///   the gap cannot be bridged;
 /// - a reconnect always refreshes (seq-less delta frames are never replayed).
 library;
 

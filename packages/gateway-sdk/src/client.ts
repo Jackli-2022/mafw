@@ -486,22 +486,6 @@ export class MafwClient implements IMafwClient {
       return this.request(`/api/usage/plugins/${encodeURIComponent(name)}/test`, { method: 'POST' })
     },
 
-    events: async (
-      params: { path: { id: string } },
-    ): Promise<{ on(event: string, cb: (data: any) => void): void }> => {
-      const sse = new SSEConnection()
-      sse.connectToSession(this.baseUrl, params.path.id)
-      return {
-        on: (event: string, cb: (data: any) => void) => {
-          if (event === 'data') {
-            sse.on('*', cb)
-          } else {
-            sse.on(event, cb)
-          }
-        },
-      }
-    },
-
     command: async (
       params: { path: { id: string }; body: { command: string; arguments?: string; agent?: string; model?: { providerID: string; modelID: string } } },
     ): Promise<void> => {
@@ -687,10 +671,7 @@ export class MafwClient implements IMafwClient {
     connected: (): boolean => this._sse.connected,
 
     /** SSE 绔偣 URL锛堝绾﹀綊 SDK锛歳enderer 鐩磋繛 EventSource 鏃剁敤姝ゆ瀯閫狅紝涓嶈嚜宸辨嫾瀛楃涓诧級銆?*/
-    url: (sessionID?: string): string =>
-      sessionID
-        ? `${this.baseUrl}/api/events?sessionID=${encodeURIComponent(sessionID)}`
-        : `${this.baseUrl}/api/events`,
+    url: (): string => `${this.baseUrl}/api/events`,
 
     /** 鍙戝竷鑷畾涔変簨浠跺埌鍏ㄩ儴 UI 閫氶亾锛圫SE/WS/鎺ㄩ€侊級銆倀ype 寤鸿鍛藉悕绌洪棿
      *  'plugin:<name>:<event>'锛涙秷璐规柟瀵规湭鐭?type 蹇界暐锛圫SE 閫氱煡璇箟锛屾棤娉ㄥ唽鍒讹級銆?*/

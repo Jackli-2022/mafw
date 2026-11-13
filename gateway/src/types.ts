@@ -54,6 +54,12 @@ export interface Services {
   decisionRecords?: import('./core/decision/decision-record-service').DecisionRecordService;
   /** Current project directory for agent-scoped writes. */
   projectDir?: () => string | null;
+  /**
+   * E7-4: live resource pressure (narrow face of `governor.pressure()`), read
+   * per call; absent governor → null (fail-open). MCP memory writes use it to
+   * reject critical-disk writes with `disk_low`.
+   */
+  pressure?: () => { disk: string; degraded: string[] } | null;
 }
 
 export type ToolHandler = (

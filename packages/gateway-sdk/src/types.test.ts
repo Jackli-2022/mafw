@@ -47,7 +47,6 @@ test("exports MafwClient class", () => {
 test("exports SSEConnection class", () => {
   expect(SSEConnection).toBeDefined()
   expect(typeof SSEConnection.prototype.connect).toBe("function")
-  expect(typeof SSEConnection.prototype.connectToSession).toBe("function")
 })
 
 test("exports MethodNotSupportedError", () => {
@@ -68,7 +67,6 @@ test("SessionNamespace interface has correct methods", () => {
   expect(typeof c.session.messages).toBe("function")
   expect(typeof c.session.prompt).toBe("function")
   expect(typeof c.session.promptAsync).toBe("function")
-  expect(typeof c.session.events).toBe("function")
 })
 
 test("all MAFW namespaces exist on MafwClient", () => {
@@ -118,7 +116,6 @@ test("all MAFW namespaces exist on MafwClient", () => {
 
 test("SSEConnection has all SSE methods", () => {
   expect(typeof SSEConnection.prototype.connect).toBe("function")
-  expect(typeof SSEConnection.prototype.connectToSession).toBe("function")
   expect(typeof SSEConnection.prototype.disconnect).toBe("function")
   expect(typeof SSEConnection.prototype.on).toBe("function")
   expect(typeof SSEConnection.prototype.emit).toBe("function")

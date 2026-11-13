@@ -2,8 +2,8 @@
  * Phase D1 Task B1: question / permission 面（registry dispatch 接线）。
  *
  *   GET  /api/questions              — 待答问题清单（AskCard proxy → runtime session.question）
- *   POST /api/questions/:id/reply    — { answers: string[][] } + workspace 重试链
- *   POST /api/questions/:id/reject   — workspace 重试链
+ *   POST /api/questions/:id/reply    — { answers: string[][] } + workspace 重试链（E7-1 human-only）
+ *   POST /api/questions/:id/reject   — workspace 重试链（E7-1 human-only）
  *   GET  /api/permissions            — 待审批清单（PermissionCard proxy）
  *   POST /api/permissions/:id/reply  — 按 requestId 回复 → routes/permission
  *
@@ -16,6 +16,7 @@ import { log } from '../core/utils/logger';
 import { projectPermissionList, projectQuestionRequest } from '../runtime/view-projections';
 import { handlePermissionReplyById, resolveApprovalDirectory, type PermissionReplyByIdDeps } from './permission';
 import { readRouteBody } from './cognition';
+import { requireHumanPrincipal } from '../core/http/human-guard';
 import type { RouteRegistry } from './registry';
 import type { RuntimeFacade } from '../runtime/runtime-facade';
 
@@ -55,6 +56,8 @@ export function attachQuestionsPermissionsRoutes(
 
   // POST /api/questions/{id}/reply ── { answers: string[][] }（契约 + workspace 重试）
   registry.attachHandler('questions.reply', async (req: IncomingMessage, res: ServerResponse, params: Record<string, string>) => {
+    // E7-1 (review round): answering an agent question is a human decision.
+    if (!requireHumanPrincipal(req, res)) return;
     if (deps.capGuardQuestion(res)) return;
     const question = deps.runtime()?.session?.question;
     if (!question) {
@@ -83,6 +86,8 @@ export function attachQuestionsPermissionsRoutes(
 
   // POST /api/questions/{id}/reject（契约 + workspace 重试）
   registry.attachHandler('questions.reject', async (req: IncomingMessage, res: ServerResponse, params: Record<string, string>) => {
+    // E7-1 (review round): rejecting an agent question is a human decision.
+    if (!requireHumanPrincipal(req, res)) return;
     if (deps.capGuardQuestion(res)) return;
     const question = deps.runtime()?.session?.question;
     if (!question) {
@@ -129,6 +134,9 @@ export function attachQuestionsPermissionsRoutes(
 
   // POST /api/permissions/{id}/reply — { reply, message?, persist? }（列表反查 sessionID → permissionReply）
   registry.attachHandler('permissions.reply', async (req: IncomingMessage, res: ServerResponse, params: Record<string, string>) => {
+    // E7-1: approving/denying a tool permission is a human decision.
+    // `permissions.replyRuntime` (runtime-internal) is deliberately not gated.
+    if (!requireHumanPrincipal(req, res)) return;
     await handlePermissionReplyById(req, res, params.id, {
       runtime: deps.runtime(),
       access: deps.runtime()?.access ?? null,

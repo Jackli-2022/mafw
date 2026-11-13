@@ -3,7 +3,8 @@ import { REGISTERED_TOOLS, RULE_TOOLS, aliasKeys, registryKeys } from "./registe
 import { TOOL_SPECS } from "./extract"
 
 const ALL_TOOLS = [
-  // gateway MCP（39，gateway/src/mcp/tool-registry.ts）
+  // gateway MCP（39，gateway/src/mcp/tool-registry.ts；mafw_answer_question 已于 2026-11-13
+  // 从 MCP 删除，此处仅保留历史会话的卡片渲染）
   "mafw_create_goal", "mafw_update_state", "mafw_search_hybrid",
   "mafw_get_deltas", "mafw_load_state", "mafw_ask_user",
   "mafw_record_feedback", "mafw_get_model_route", "mafw_add_memory",

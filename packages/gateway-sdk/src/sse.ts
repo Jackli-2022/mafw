@@ -61,16 +61,6 @@ export class SSEConnection {
     this.setupMessageHandler()
   }
 
-  connectToSession(baseUrl: string, sessionID: string): void {
-    this.disconnect()
-    this.eventSource = new EventSource(`${baseUrl}/api/events?sessionID=${encodeURIComponent(sessionID)}`)
-    this.eventSource.onopen = () => { this._connected = true }
-    this.eventSource.onerror = () => {
-      this._connected = false
-    }
-    this.setupMessageHandler()
-  }
-
   private setupMessageHandler(): void {
     if (!this.eventSource) return
     this.eventSource.onmessage = (e: MessageEvent) => {

@@ -17,7 +17,9 @@ export const REGISTERED_TOOLS = [
   "mafw_get_memory", "mafw_get_axioms",
   "mafw_create_goal", "mafw_set_goal", "mafw_get_goal_status",
   "mafw_list_goals", "mafw_cancel_goal", "mafw_get_evidence",
-  "mafw_update_state", "mafw_load_state", "mafw_answer_question",
+  "mafw_update_state", "mafw_load_state",
+  // legacy：2026-11-13 起 gateway MCP 不再暴露（E7 review，human-only），保留卡片以渲染历史会话
+  "mafw_answer_question",
   "mafw_list_pending_questions",
   "mafw_ask_user", "mafw_record_feedback", "mafw_get_model_route",
   "mafw_desktop_screenshot", "mafw_desktop_navigate",

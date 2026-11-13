@@ -182,7 +182,7 @@ describe("E6-1 SseConnection 补页超时", () => {
 })
 
 describe("E6-1 SseConnection reset / truncated", () => {
-  test("reset → clearSeq + onFullResync(reset) + 以 headSeq 开流", async () => {
+  test("reset → clearSeq + onFullResync(reset) + 以 headSeq 开流并落盘 headSeq", async () => {
     const { conn, storage, opens, resync } = makeConn({
       storage: SEEDED(),
       recoverGap: async () => ({ headSeq: 30, applied: 0, reset: true }),
@@ -191,7 +191,9 @@ describe("E6-1 SseConnection reset / truncated", () => {
 
     expect(resync.map((r) => r.reason)).toEqual(["reset"])
     expect(resync[0].info).toEqual({ headSeq: 30 })
-    expect(storage.getItem(SSE_SEQ_KEY)).toBeNull()
+    // E7-5：清旧游标后必须把新纪元的 headSeq 落盘——否则下一次冷启动
+    // 又按「无游标」全量重同步一次。
+    expect(storage.getItem(SSE_SEQ_KEY)).toBe("30")
     expect(opens).toEqual([30])
     // 首次 onopen（resumeFromSeq 非 null）不再重复 initial resync
     conn.source!.fireOpen()
@@ -199,16 +201,40 @@ describe("E6-1 SseConnection reset / truncated", () => {
     conn.dispose()
   })
 
-  test("truncated → clearSeq + onFullResync(truncated) + 以 headSeq 开流", async () => {
+  test("truncated → clearSeq + onFullResync(truncated) + 以 headSeq 开流并落盘 headSeq", async () => {
     const { conn, storage, opens, resync } = makeConn({
       storage: SEEDED(),
       recoverGap: async () => ({ headSeq: 60, applied: 2, truncated: true }),
     })
     await conn.connect()
     expect(resync.map((r) => r.reason)).toEqual(["truncated"])
-    expect(storage.getItem(SSE_SEQ_KEY)).toBeNull()
+    expect(storage.getItem(SSE_SEQ_KEY)).toBe("60")
     expect(opens).toEqual([60])
     conn.dispose()
+  })
+
+  test("reset 后持久游标 = headSeq：下次冷启动只补新缺口，不再全量重同步", async () => {
+    const storage = SEEDED()
+
+    const first = makeConn({
+      storage,
+      recoverGap: async () => ({ headSeq: 30, applied: 0, reset: true }),
+    })
+    await first.conn.connect()
+    first.conn.dispose()
+    expect(storage.getItem(SSE_SEQ_KEY)).toBe("30")
+
+    // 冷启动（新进程 / 新 manager 实例，storage 保留）。
+    const second = makeConn({
+      storage,
+      recoverGap: async () => ({ headSeq: 35, applied: 5 }),
+    })
+    await second.conn.connect()
+
+    expect(second.recoverCalls).toEqual([[30, 500]])
+    expect(second.opens).toEqual([35])
+    expect(second.resync).toEqual([])
+    second.conn.dispose()
   })
 })
 

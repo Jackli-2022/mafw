@@ -24,7 +24,7 @@ function markSupersedes(
   return marked;
 }
 
-export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir, hasTrace }) => {
+export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir, hasTrace, pressure }) => {
   try {
     const content = args.content as string;
     const memoryType = (args.memoryType as string) || config.memory.defaultMemoryType;
@@ -44,6 +44,14 @@ export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir, hasT
     const authority = normalizeAuthority(args.authority);
     if (authority === null) {
       return { content: [{ type: "text", text: JSON.stringify({ success: false, error: `Invalid authority: ${String(args.authority)} (user|agent|tool|pipeline)` }) }], isError: true };
+    }
+
+    // E7-4: parity with the HTTP /api/memory/add gate — a critical disk rejects
+    // the write before any store/embedding work (write amplification on a full
+    // disk is the dangerous case). Governor absent → fail-open.
+    const livePressure = pressure?.() ?? null;
+    if (livePressure && (livePressure.disk === 'critical' || livePressure.degraded.includes('disk_critical'))) {
+      return { content: [{ type: "text", text: JSON.stringify({ success: false, error: 'disk space critical', code: 'disk_low' }) }], isError: true };
     }
 
     const resolvedDir = mafwDir ?? config.resolvePath();

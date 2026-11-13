@@ -580,7 +580,8 @@ void main() {
       expect(h.fallbacks, isEmpty);
     });
 
-    test('a non-advancing nextSince cannot loop forever', () async {
+    test('a non-advancing nextSince is a protocol fallback, never a fake success',
+        () async {
       var fetches = 0;
       final h = _Harness(cursor: 5, fetch: (_, _) async {
         fetches++;
@@ -590,9 +591,41 @@ void main() {
 
       final outcome = await h.service.recover();
 
-      expect(outcome.kind, RecoveryOutcomeKind.recovered);
+      expect(outcome.kind, RecoveryOutcomeKind.fellBack);
+      expect(outcome.reason, RecoveryFallback.protocol);
+      expect(outcome.didRecover, isFalse);
       expect(fetches, 1);
       expect(h.service.cursor, 5);
+      expect(h.store.seq, 5);
+      expect(h.fallbacks, [RecoveryFallback.protocol]);
+    });
+
+    test('a hasMore page that cannot advance past the last applied seq falls back',
+        () async {
+      var fetches = 0;
+      final h = _Harness(cursor: 5, fetch: (_, _) async {
+        fetches++;
+        // Two events applied, but nextSince never moves past `since`: claiming
+        // success would leave 8+ silently missing.
+        return _page(
+          events: [_event(6), _event(7)],
+          headSeq: 10,
+          hasMore: true,
+          nextSince: 5,
+        );
+      });
+      await h.service.init();
+
+      final outcome = await h.service.recover();
+
+      expect(outcome.kind, RecoveryOutcomeKind.fellBack);
+      expect(outcome.reason, RecoveryFallback.protocol);
+      expect(outcome.applied, 2);
+      expect(fetches, 1);
+      // Cursor keeps the last applied seq (not the non-advancing nextSince).
+      expect(h.service.cursor, 7);
+      expect(h.store.seq, 7);
+      expect(h.fallbacks, [RecoveryFallback.protocol]);
     });
 
     test('hitting the 100-page cap is a fallback, never a fake success',
