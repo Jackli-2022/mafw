@@ -77,4 +77,7 @@ test("editor and browser can embed without their own tab strip", () => {
   assert.match(browser, /embedded\?: boolean/)
   assert.match(browser, /syncWebTabs/)
   assert.match(browser, /pendingCloseRequests/)
+  assert.match(browser, /registerDocumentToolbar\("web"/)
+  assert.match(browser, /if \(props\.embedded\) return body/)
+  assert.match(browser, /onContextMenu=\{props\.embedded \? requestDockMenu : undefined\}/)
 })
