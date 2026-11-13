@@ -5,6 +5,7 @@
 import * as http from 'http';
 import * as fs from 'fs';
 import { GoalStateV3, effectiveRevision } from '../core/goal/state-v3';
+import { requireHumanPrincipal } from '../core/http/human-guard';
 import { nodeArtifactPaths, readGoalEvalArtifact } from '../core/goal/node-prompts';
 import { computeGoalEvalHash, computeWavesHash } from '../core/goal/plan-package';
 
@@ -86,6 +87,8 @@ export async function handleGoalPlan(
   }
 
   if (mPost && req.method === 'POST') {
+    // E7-1: approving/rejecting a plan is a human decision. GET (read-only) is untouched.
+    if (!requireHumanPrincipal(req, res)) return true;
     const goalId = decodeURIComponent(mPost[1]);
     try {
       const state = deps.loadState(goalId);

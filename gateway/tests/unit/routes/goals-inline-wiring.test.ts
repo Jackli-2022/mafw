@@ -7,18 +7,23 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { IncomingMessage, ServerResponse } from 'http';
+import type { Principal } from '../../../src/core/auth';
 import { ensureGoalState, writeGoalState } from '../../../src/core/goal/state-v3';
 import { RouteRegistry } from '../../../src/routes/registry';
 import { buildRouteCatalog } from '../../../src/routes/route-catalog';
 import { attachGoalRoutes, type GoalsInlineRouteDeps } from '../../../src/routes/goals-inline';
 
-function fakeReq(opts: { method: string; url: string; body?: string }): IncomingMessage {
+/** E7-1: human-only routes (plan approval) need a resolved human principal. */
+const HUMAN: Principal = { kind: 'human', method: 'human-token' };
+
+function fakeReq(opts: { method: string; url: string; body?: string; principal?: Principal }): IncomingMessage {
   const listeners: Record<string, Array<(c?: unknown) => void>> = {};
   const req = {
     method: opts.method,
     url: opts.url,
     socket: { remoteAddress: '127.0.0.1' },
     headers: {},
+    ...(opts.principal ? { mafwPrincipal: opts.principal } : {}),
     on(ev: string, fn: (c?: unknown) => void) {
       (listeners[ev] = listeners[ev] || []).push(fn);
       return req;
@@ -258,7 +263,7 @@ describe('goals-inline registry wiring (D1 Task F2)', () => {
       const { registry, calls } = planSetup();
       const r = fakeRes();
       await handlerFor(registry, 'POST', '/api/goals/g1/plan-approval')!(
-        fakeReq({ method: 'POST', url: '/api/goals/g1/plan-approval', body: JSON.stringify({ approve: true, approvalId: 'pa_1' }) }), r.res,
+        fakeReq({ method: 'POST', url: '/api/goals/g1/plan-approval', body: JSON.stringify({ approve: true, approvalId: 'pa_1' }), principal: HUMAN }), r.res,
       );
       expect(r.status).toBe(200);
       expect(JSON.parse(r.body)).toEqual({ success: true });
@@ -269,7 +274,7 @@ describe('goals-inline registry wiring (D1 Task F2)', () => {
       const { registry, calls } = planSetup();
       const r = fakeRes();
       await handlerFor(registry, 'POST', '/api/goals/g1/plan-approval')!(
-        fakeReq({ method: 'POST', url: '/api/goals/g1/plan-approval', body: '{' }), r.res,
+        fakeReq({ method: 'POST', url: '/api/goals/g1/plan-approval', body: '{', principal: HUMAN }), r.res,
       );
       expect(r.status).toBe(400);
       expect(JSON.parse(r.body)).toEqual({ error: 'reject requires feedback' });

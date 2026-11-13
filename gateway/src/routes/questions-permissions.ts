@@ -16,6 +16,7 @@ import { log } from '../core/utils/logger';
 import { projectPermissionList, projectQuestionRequest } from '../runtime/view-projections';
 import { handlePermissionReplyById, resolveApprovalDirectory, type PermissionReplyByIdDeps } from './permission';
 import { readRouteBody } from './cognition';
+import { requireHumanPrincipal } from '../core/http/human-guard';
 import type { RouteRegistry } from './registry';
 import type { RuntimeFacade } from '../runtime/runtime-facade';
 
@@ -129,6 +130,9 @@ export function attachQuestionsPermissionsRoutes(
 
   // POST /api/permissions/{id}/reply — { reply, message?, persist? }（列表反查 sessionID → permissionReply）
   registry.attachHandler('permissions.reply', async (req: IncomingMessage, res: ServerResponse, params: Record<string, string>) => {
+    // E7-1: approving/denying a tool permission is a human decision.
+    // `permissions.replyRuntime` (runtime-internal) is deliberately not gated.
+    if (!requireHumanPrincipal(req, res)) return;
     await handlePermissionReplyById(req, res, params.id, {
       runtime: deps.runtime(),
       access: deps.runtime()?.access ?? null,

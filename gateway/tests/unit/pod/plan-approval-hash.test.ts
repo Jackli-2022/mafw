@@ -21,6 +21,10 @@ import {
 } from '../../../src/core/goal/plan-package';
 import { handleGoalPlan } from '../../../src/routes/goal-plan';
 
+/** E7-1: plan approval is a human decision (GET /plan stays read-only). */
+const HUMAN = { kind: 'human', method: 'human-token' } as const;
+const POST_REQ = { method: 'POST', mafwPrincipal: HUMAN } as http.IncomingMessage;
+
 function goalEval(): any {
   return {
     outcome: '用户可以按项目切换会话标签',
@@ -238,7 +242,7 @@ describe('GET/POST /api/goals/:id/plan with content hashes', () => {
 
     const first = makeRes();
     await handleGoalPlan(
-      { method: 'POST' } as http.IncomingMessage,
+      POST_REQ,
       first.res,
       '/api/goals/g1/plan-approval',
       deps(h, {
@@ -265,7 +269,7 @@ describe('GET/POST /api/goals/:id/plan with content hashes', () => {
 
     const stale = makeRes();
     await handleGoalPlan(
-      { method: 'POST' } as http.IncomingMessage,
+      POST_REQ,
       stale.res,
       '/api/goals/g1/plan-approval',
       deps(h, { approve: true, approvalId, planHash: oldHash }) as any,
@@ -276,7 +280,7 @@ describe('GET/POST /api/goals/:id/plan with content hashes', () => {
 
     const fresh = makeRes();
     await handleGoalPlan(
-      { method: 'POST' } as http.IncomingMessage,
+      POST_REQ,
       fresh.res,
       '/api/goals/g1/plan-approval',
       deps(h, { approve: true, approvalId }) as any,

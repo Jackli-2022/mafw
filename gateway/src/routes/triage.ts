@@ -14,6 +14,7 @@ import * as path from 'path';
 import type { IncomingMessage, ServerResponse } from 'http';
 import { L5Store } from '../core/memory/l5-store';
 import { readRouteBody } from './cognition';
+import { requireHumanPrincipal } from '../core/http/human-guard';
 import type { RouteRegistry } from './registry';
 
 export interface TriageItemLike {
@@ -55,7 +56,9 @@ export function attachTriageRoutes(registry: RouteRegistry, deps: TriageRouteDep
     res.end(JSON.stringify({ items }));
   });
 
-  registry.attachHandler('triage.confirm', async (_req: IncomingMessage, res: ServerResponse, params: Record<string, string>) => {
+  registry.attachHandler('triage.confirm', async (req: IncomingMessage, res: ServerResponse, params: Record<string, string>) => {
+    // E7-1: confirming a triage item creates a goal / installs a skill — human only.
+    if (!requireHumanPrincipal(req, res)) return;
     const triageId = params.id;
     const item = deps.automationEngine()?.getTriageItem(triageId);
     if (!item) {
@@ -112,7 +115,9 @@ export function attachTriageRoutes(registry: RouteRegistry, deps: TriageRouteDep
     res.end(JSON.stringify({ status: 'confirmed', goalId }));
   });
 
-  registry.attachHandler('triage.reject', async (_req: IncomingMessage, res: ServerResponse, params: Record<string, string>) => {
+  registry.attachHandler('triage.reject', async (req: IncomingMessage, res: ServerResponse, params: Record<string, string>) => {
+    // E7-1: same gate as confirm — the propose (agent) path above stays open.
+    if (!requireHumanPrincipal(req, res)) return;
     const triageId = params.id;
     const ok = deps.automationEngine()?.rejectTriage(triageId);
     deps.ledger()?.append({

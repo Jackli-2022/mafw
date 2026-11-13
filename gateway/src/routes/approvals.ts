@@ -17,6 +17,7 @@ import { config } from '../config';
 import { handleAllowlistDelete, handleAllowlistGet, handleAllowlistPost, type AllowlistRouteDeps } from './allowlist';
 import { handleApprovalsRespond } from './approvals-respond';
 import { handleRulesDelete, handleRulesGet, handleRulesPost, type RulesRouteDeps } from './rules';
+import { requireHumanPrincipal } from '../core/http/human-guard';
 import type { RouteRegistry } from './registry';
 
 export interface ApprovalsRouteDeps {
@@ -59,6 +60,8 @@ export function attachApprovalsRoutes(registry: RouteRegistry, deps: ApprovalsRo
   });
 
   registry.attachHandler('approvals.respond', async (req: IncomingMessage, res: ServerResponse, params: Record<string, string>) => {
+    // E7-1: answering a goal question / permission prompt is a human decision.
+    if (!requireHumanPrincipal(req, res)) return;
     // 数据根优先：MCP handleAskUser 的问题文件在 ~/.mafw/user-questions
     const dirs = [config.resolvePath(), ...[...deps.registeredProjects().values()].map((info: any) => info.mafwDir)];
     // Registry 已对 path param 做过 decodeURIComponent（legacy 在此处手动 decode 一次）——

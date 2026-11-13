@@ -4,17 +4,22 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import type { Principal } from '../../../src/core/auth';
 import { RouteRegistry } from '../../../src/routes/registry';
 import { buildRouteCatalog } from '../../../src/routes/route-catalog';
 import { attachTriageRoutes, type TriageItemLike } from '../../../src/routes/triage';
 
-function fakeReq(opts: { url: string; method: string; body?: string }): IncomingMessage {
+/** E7-1: human-only routes (triage confirm/reject) need a resolved human principal. */
+const HUMAN: Principal = { kind: 'human', method: 'human-token' };
+
+function fakeReq(opts: { url: string; method: string; body?: string; principal?: Principal }): IncomingMessage {
   const listeners: Record<string, Array<(c?: unknown) => void>> = {};
   const req = {
     method: opts.method,
     url: opts.url,
     socket: { remoteAddress: '127.0.0.1' },
     headers: {},
+    ...(opts.principal ? { mafwPrincipal: opts.principal } : {}),
     on(ev: string, fn: (c?: unknown) => void) {
       (listeners[ev] = listeners[ev] || []).push(fn);
       return req;
@@ -95,7 +100,7 @@ describe('triage registry wiring (D1 Task A4)', () => {
     const { registry, dir, ledgers, confirmed } = setup();
     const r = fakeRes();
     await handlerFor(registry, 'POST', '/api/triage/auto-1/confirm')!(
-      fakeReq({ url: '/api/triage/auto-1/confirm', method: 'POST' }), r.res,
+      fakeReq({ url: '/api/triage/auto-1/confirm', method: 'POST', principal: HUMAN }), r.res,
     );
     const body = JSON.parse(r.body);
     expect(body.status).toBe('confirmed');
@@ -111,13 +116,13 @@ describe('triage registry wiring (D1 Task A4)', () => {
   it('confirm 404 when item missing, 400 when already decided', async () => {
     let r = fakeRes();
     await handlerFor(setup({ found: null }).registry, 'POST', '/api/triage/x/confirm')!(
-      fakeReq({ url: '/api/triage/x/confirm', method: 'POST' }), r.res,
+      fakeReq({ url: '/api/triage/x/confirm', method: 'POST', principal: HUMAN }), r.res,
     );
     expect(r.status).toBe(404);
 
     r = fakeRes();
     await handlerFor(setup({ found: item({ state: 'REJECTED' }) }).registry, 'POST', '/api/triage/x/confirm')!(
-      fakeReq({ url: '/api/triage/x/confirm', method: 'POST' }), r.res,
+      fakeReq({ url: '/api/triage/x/confirm', method: 'POST', principal: HUMAN }), r.res,
     );
     expect(r.status).toBe(400);
     expect(JSON.parse(r.body).error).toBe('Already REJECTED');
@@ -127,7 +132,7 @@ describe('triage registry wiring (D1 Task A4)', () => {
     const { registry, ledgers } = setup();
     const r = fakeRes();
     await handlerFor(registry, 'POST', '/api/triage/auto-9/reject')!(
-      fakeReq({ url: '/api/triage/auto-9/reject', method: 'POST' }), r.res,
+      fakeReq({ url: '/api/triage/auto-9/reject', method: 'POST', principal: HUMAN }), r.res,
     );
     expect(JSON.parse(r.body)).toEqual({ status: 'rejected' });
     expect(ledgers[0]).toMatchObject({ reason: 'triage_rejected', details: { triageId: 'auto-9' } });

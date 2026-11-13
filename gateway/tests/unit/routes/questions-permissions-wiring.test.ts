@@ -1,17 +1,22 @@
 // Phase D1 Task B1: questions/permissions registry wiring — capGuard 门、workspace
 // 重试链顺序、permissions.reply 委托（列表反查 sessionID）保留。
 import type { IncomingMessage, ServerResponse } from 'http';
+import type { Principal } from '../../../src/core/auth';
 import { RouteRegistry } from '../../../src/routes/registry';
 import { buildRouteCatalog } from '../../../src/routes/route-catalog';
 import { attachQuestionsPermissionsRoutes } from '../../../src/routes/questions-permissions';
 
-function fakeReq(opts: { url: string; method: string; body?: string }): IncomingMessage {
+/** E7-1: human-only routes (permissions.reply) need a resolved human principal. */
+const HUMAN: Principal = { kind: 'human', method: 'human-token' };
+
+function fakeReq(opts: { url: string; method: string; body?: string; principal?: Principal }): IncomingMessage {
   const listeners: Record<string, Array<(c?: unknown) => void>> = {};
   const req = {
     method: opts.method,
     url: opts.url,
     socket: { remoteAddress: '127.0.0.1' },
     headers: {},
+    ...(opts.principal ? { mafwPrincipal: opts.principal } : {}),
     on(ev: string, fn: (c?: unknown) => void) {
       (listeners[ev] = listeners[ev] || []).push(fn);
       return req;
@@ -164,7 +169,7 @@ describe('questions/permissions registry wiring (D1 Task B1)', () => {
     const { handlerFor } = setup({ runtime: runtime as any });
     const r = fakeRes();
     await handlerFor('POST', '/api/permissions/r1/reply')!(
-      fakeReq({ url: '/api/permissions/r1/reply', method: 'POST', body: JSON.stringify({ reply: 'once' }) }), r.res,
+      fakeReq({ url: '/api/permissions/r1/reply', method: 'POST', body: JSON.stringify({ reply: 'once' }), principal: HUMAN }), r.res,
     );
     expect(JSON.parse(r.body)).toEqual({ status: 'ok' });
     expect(replied[0][0]).toBe('s1');

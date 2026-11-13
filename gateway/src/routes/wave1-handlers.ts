@@ -15,6 +15,7 @@ import type { AgentRuntime } from '../runtime/contract';
 import type { RouteRegistry, RouteDef } from './registry';
 import { handleGoalSessions } from './goal-sessions';
 import { handleTriageDismiss } from './triage-dismiss';
+import { requireHumanPrincipal } from '../core/http/human-guard';
 import { handleManagerRotate, type ManagerRotateDeps } from './manager-rotate';
 import { handleEmbeddingConfigGet, handleEmbeddingConfigUpdate, type EmbeddingConfigDeps } from './embedding-config';
 import { handleModelConfigGet, handleModelConfigUpdate, type ModelConfigDeps } from './model-config';
@@ -110,11 +111,14 @@ export function attachWave1Handlers(registry: RouteRegistry, gw: Wave1Gateway): 
     res.end(JSON.stringify(source));
   }));
 
-  registry.attachHandler('triage.dismiss', H(async (req, res, params) =>
-    handleTriageDismiss(req, res, req.url || '', {
+  registry.attachHandler('triage.dismiss', H(async (req, res, params) => {
+    // E7-1: dismissing is the same user decision as reject (human only).
+    if (!requireHumanPrincipal(req, res)) return;
+    await handleTriageDismiss(req, res, req.url || '', {
       rejectTriage: (id: string) => gw.automationEngine?.rejectTriage(id) ?? false,
       appendLedger: (entry) => gw.ledger?.append(entry),
-    })));
+    });
+  }));
   registry.attachHandler('manager.rotate', H(async (req, res) =>
     handleManagerRotate(req, res, gw.rotateDeps())));
 
