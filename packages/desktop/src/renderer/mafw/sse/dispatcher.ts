@@ -27,8 +27,12 @@ export interface CoreDeps {
 
 export interface LifecycleDeps {
   invalidate(): void
-  patch(id: string, patch: { title?: string; time?: { updated?: number }; directory?: string; projectID?: string }): void
-  /** 打开中的 tab 与 ChatPane 各持一份 title 副本，patch 带 title 时双写。 */
+  /** 非标题字段（time/directory/projectID）：session-store 合并并按活跃度重排。 */
+  patch(id: string, patch: { time?: { updated?: number }; directory?: string; projectID?: string }): void
+  /**
+   * session.updated 的标题唯一写入口：只写 entity 缓存（未知 id 补 upsert，
+   * 见 session-title-writer.ts）。标签由读取端派生，不再回写 tab/store 副本。
+   */
   retitleOpenTab(id: string, title: string): void
   remove(id: string): void
   /** 外部删除已打开的 tab 时关闭（active 回退、分屏摘叶由实现方负责）。 */
@@ -233,8 +237,11 @@ export function dispatchShellEvent(event: any, deps: ShellEventDeps): void {
     if (action.kind === "invalidate") {
       deps.lifecycle.invalidate()
     } else if (action.kind === "patch") {
-      deps.lifecycle.patch(action.id, action.patch)
-      if (typeof action.patch.title === "string") deps.lifecycle.retitleOpenTab(action.id, action.patch.title)
+      // E6-2（F3）：标题只有一个写入口。`patch` 只承载 time/directory/projectID
+      // （桶重排），标题走 `retitleOpenTab` → entity 缓存；否则同一实体被写两次。
+      const { title, ...rest } = action.patch
+      if (Object.keys(rest).length > 0) deps.lifecycle.patch(action.id, rest)
+      if (typeof title === "string") deps.lifecycle.retitleOpenTab(action.id, title)
     } else if (action.kind === "remove") {
       deps.lifecycle.remove(action.id)
       deps.lifecycle.closeIfOpen(action.id)

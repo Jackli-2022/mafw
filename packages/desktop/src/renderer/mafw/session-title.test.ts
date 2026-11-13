@@ -3,7 +3,12 @@
 import { describe, expect, test } from "bun:test"
 import { createEffect, createRoot } from "solid-js"
 import { sessionEntities } from "./session-entities"
-import { sessionTabTitle, sessionTitle } from "./session-title"
+import {
+  resolveOpenSessionTitle,
+  sessionSnapshotTabs,
+  sessionTabTitle,
+  sessionTitle,
+} from "./session-title"
 
 describe("sessionTitle", () => {
   test("reads the entity cache", () => {
@@ -56,5 +61,70 @@ describe("sessionTabTitle", () => {
   test("missing entity falls back to the tab title", () => {
     sessionEntities.reset()
     expect(sessionTabTitle("s1", "Chat 3", { id: "s1", title: "Chat 3" })).toBe("Chat 3")
+  })
+})
+
+// F1: restore must not overwrite a fresh gateway title with the persisted tab
+// snapshot ("Chat 1"). The entity title wins; the caller only seeds it.
+describe("resolveOpenSessionTitle", () => {
+  test("a fresh entity title beats a stale persisted/caller title", () => {
+    sessionEntities.reset()
+    sessionEntities.upsert({ id: "s1", title: "问候" })
+    const resolved = resolveOpenSessionTitle({
+      knownTitle: sessionEntities.get("s1")?.title,
+      callerTitle: "Chat 1",
+      fallback: "Chat 1",
+    })
+    expect(resolved).toBe("问候")
+    expect(sessionTitle("s1", "Chat 1")).toBe("问候")
+  })
+
+  test("an explicit caller title seeds an entity that has none yet", () => {
+    sessionEntities.reset()
+    expect(resolveOpenSessionTitle({ callerTitle: "我的会话", fallback: "Chat 1" })).toBe("我的会话")
+  })
+
+  test("a generated caller title does not replace a real entity title", () => {
+    sessionEntities.reset()
+    sessionEntities.upsert({ id: "s1", title: "用户改名" })
+    expect(resolveOpenSessionTitle({
+      knownTitle: sessionEntities.get("s1")?.title,
+      callerTitle: "Goal X",
+      fallback: "Chat 1",
+    })).toBe("用户改名")
+  })
+
+  test("generated placeholders never win over a real title, only over each other", () => {
+    expect(resolveOpenSessionTitle({ knownTitle: "Chat 3", callerTitle: "Builder · A · rev 1" }))
+      .toBe("Builder · A · rev 1")
+    expect(resolveOpenSessionTitle({ knownTitle: "Chat 3", callerTitle: "Chat 1" }))
+      .toBe("Chat 3")
+    expect(resolveOpenSessionTitle({ fallback: "Chat 2" })).toBe("Chat 2")
+  })
+
+  test("the Lead role label wins at open time", () => {
+    expect(resolveOpenSessionTitle({ lead: true, knownTitle: "冒烟: quick eval", callerTitle: "Chat 1" }))
+      .toBe("Lead")
+  })
+})
+
+// F1: layout snapshots persist the live label, so a persisted resume cannot
+// resurrect a stale placeholder after the entity title moved on.
+describe("sessionSnapshotTabs", () => {
+  test("persists the live entity title over the stale tab fallback", () => {
+    sessionEntities.reset()
+    sessionEntities.upsert({ id: "s1", title: "问候" })
+    expect(sessionSnapshotTabs([{ id: "s1", title: "Chat 1" }])).toEqual([{ id: "s1", title: "问候" }])
+  })
+
+  test("persists the role label for the Lead tab", () => {
+    sessionEntities.reset()
+    sessionEntities.upsert({ id: "lead", title: "冒烟: quick eval derivation" })
+    expect(sessionSnapshotTabs([{ id: "lead", title: "Lead", lead: true }])[0].title).toBe("Lead")
+  })
+
+  test("falls back to the tab title while the entity is missing", () => {
+    sessionEntities.reset()
+    expect(sessionSnapshotTabs([{ id: "s1", title: "Chat 1" }])).toEqual([{ id: "s1", title: "Chat 1" }])
   })
 })

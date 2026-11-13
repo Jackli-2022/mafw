@@ -12,9 +12,10 @@ test("data layer stays raw: openSessionTab / retitleOpenTab do not format", () =
   const shell = read("src/renderer/mafw/MafwShell.tsx")
   const open = shell.match(/const openSessionTab[\s\S]*?\n  \}/)?.[0] ?? ""
   assert.doesNotMatch(open, /formatRailTitle\(/)
-  assert.match(open, /title \|\| `Chat \$\{/)
-  const retitle = shell.match(/retitleOpenTab: \(id, title\) => \{[\s\S]*?\n      \}/)?.[0] ?? ""
-  assert.doesNotMatch(retitle, /formatRailTitle\(/)
+  // E6-2 F2：标题解析收敛到 resolveOpenSessionTitle（known 优先、占位标题才补位）。
+  assert.match(open, /resolveOpenSessionTitle\(/)
+  const retitle = shell.match(/retitleOpenTab: \(id, title\) => retitleSessionEntity\(id, title\)/)?.[0] ?? ""
+  assert.ok(retitle)
 })
 
 test("render surfaces format: SessionStrip tabs + ChatPane titlebar + WelcomeHome", () => {

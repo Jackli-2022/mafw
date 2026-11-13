@@ -20,9 +20,19 @@ test("session-store keeps ids per bucket, never an entity list", () => {
 
 test("session.updated retitles the entity only, never a second tab write", () => {
   const shell = read("src/renderer/mafw/MafwShell.tsx")
-  const retitle = shell.match(/retitleOpenTab: \(id, title\) => \{[\s\S]*?\n      \}/)?.[0] ?? ""
-  assert.match(retitle, /sessionEntities\.patch\(id, \{ title \}\)/)
-  assert.doesNotMatch(retitle, /setSessions|setStore/)
+  // Behavior is covered by src/renderer/mafw/session-title-writer.test.ts.
+  // This guard only keeps the shell wired to that single writer.
+  const retitle = shell.match(/retitleOpenTab: \(id, title\) => retitleSessionEntity\(id, title\)/)?.[0] ?? ""
+  assert.ok(retitle, "retitleOpenTab must delegate to retitleSessionEntity")
+  assert.doesNotMatch(shell, /retitleOpenTab: \(id, title\) => \{/)
+})
+
+test("layout snapshots persist the live label, not the tab fallback", () => {
+  const shell = read("src/renderer/mafw/MafwShell.tsx")
+  // Both snapshot sites (project switch + debounced strip save) go through the
+  // entity-first helper so a restored stale "Chat N" cannot come back.
+  assert.equal((shell.match(/sessionSnapshotTabs\(sessions\(\)\)/g) ?? []).length, 2)
+  assert.doesNotMatch(shell, /tabs: sessions\(\)\.map\(s => \(\{ id: s\.id, title: s\.title \}\)\)/)
 })
 
 test("opening a tab upserts the entity and keeps the tab title as fallback", () => {

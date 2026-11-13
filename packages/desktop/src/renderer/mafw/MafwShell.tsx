@@ -22,7 +22,7 @@ import { formatRailTitle, railProjectName } from "./components/rail-display"
 import { clampLeftDockWidth, closeLeftDockState, effectiveLeftDockWidth, leftDockPushDragMax, normalizeLeftDockFace, resolveLeftDockWidth, resolveMode, restoreLeftDockOpen, shouldAutoRestoreLeftDock, shouldCloseOnSelect, toggleLeftDockState, type LeftDockFace } from "./left-dock"
 import { SessionStrip } from "./components/SessionStrip"
 import { sessionStore } from "./session-store"
-import { needsSessionInfoHydration } from "./session-info"
+import { needsSessionInfoHydration, sessionInfoEntityFields } from "./session-info"
 import { agentKey, isAgentKey, resolveSessionAgent } from "./agent-identity"
 import { mergeHiddenTodos } from "./todo-presenter"
   import { traceEvent } from "./event-trace"
@@ -98,7 +98,8 @@ import { buildPodNoteBody } from "./pod-note"
 import { retitleTab, shouldRetitleTab } from "./session-tab-title"
 import { dropOtherLeadTabs, mergeTabIdentity, pinLeadTabTitle } from "./session-tab-identity"
 import { sessionEntities } from "./session-entities"
-import { sessionTabTitle, sessionTitle } from "./session-title"
+import { resolveOpenSessionTitle, sessionSnapshotTabs, sessionTabTitle, sessionTitle } from "./session-title"
+import { retitleSessionEntity } from "./session-title-writer"
 import { isLeadRole, leadTabMetadata, resolveLeadSession, tabSessionRole } from "./lead-session"
 import { readSavedTheme, nextTheme, applyTheme } from "./theme"
 import { createPresence, SURFACE_MS } from "./components/presence"
@@ -334,6 +335,11 @@ export function MafwShell() {
     try {
       const info: any = await window.api.mafw.sessions.get(sid)
       if (!info?.id) { sessionInfoHydrated.delete(sid); return }
+      if (!sessions().some(s => s.id === sid)) return // tab 已关闭：丢弃
+      // E6-2（F5）：权威元数据同时进 entity 缓存（Rail / 徽标 / 角色派生都读它）；
+      // store.session 仍保留给 tab 本地展示。title 不在此列（独立写入口）。
+      const entityFields = sessionInfoEntityFields(info)
+      if (entityFields) sessionEntities.upsert(entityFields)
       setStore(prev => {
         if (!sessions().some(s => s.id === sid)) return prev // tab 已关闭：丢弃
         const idx = prev.session.findIndex((s: any) => s.id === sid)
@@ -526,7 +532,8 @@ export function MafwShell() {
     const prev = currentProject()
     if (prev && layoutProject() === prev) {
       saveProjectLayout(layoutIO, prev, {
-        tabs: sessions().map(s => ({ id: s.id, title: s.title })),
+        // F1：快照存「当前展示的标签」（entity 优先），不是 tab 的首帧兜底。
+        tabs: sessionSnapshotTabs(sessions()),
         activeViewId: activeViewId(),
       })
     }
@@ -568,7 +575,14 @@ export function MafwShell() {
     // E6-2：先 upsert 实体（唯一元数据源），tab 里的 title 只作为实体缺失时的
     // 首帧兜底（持久化布局只存 {id,title}）。session.updated 只改实体，不回写 tab。
     const known = untrack(() => sessionEntities.get(sid))
-    const entityTitle = lead === true ? "Lead" : title?.trim() || known?.title || `Chat ${sessions().length + 1}`
+    // F2：已知道的实体标题（用户改名 / gateway 最新标题）优先，调用方标题只在实体
+    // 缺失或只是占位标题时补位——打开 tab 不能覆盖用户改名。
+    const entityTitle = resolveOpenSessionTitle({
+      lead,
+      knownTitle: known?.title,
+      callerTitle: title,
+      fallback: `Chat ${sessions().length + 1}`,
+    })
     const projectDir = known?.directory ?? currentProject()
     sessionEntities.upsert({
       id: sid,
@@ -578,11 +592,10 @@ export function MafwShell() {
       time: known?.time ?? { created: Date.now() },
     })
     if (!sessions().some(s => s.id === sid)) {
-      const tabTitle = lead === true ? "Lead" : title || `Chat ${sessions().length + 1}`
-      setSessions(prev => [...prev, { id: sid, title: tabTitle, userMsgId: `user-${Date.now()}`, assistantMsgId: null, done: false, lead, metadata }])
+      setSessions(prev => [...prev, { id: sid, title: entityTitle, userMsgId: `user-${Date.now()}`, assistantMsgId: null, done: false, lead, metadata }])
       setStore(prev => ({
         ...prev,
-        session: [...prev.session, { id: sid, title: tabTitle, directory: ".", time: { created: Date.now() }, projectID: "." }],
+        session: [...prev.session, { id: sid, title: entityTitle, directory: ".", time: { created: Date.now() }, projectID: "." }],
         session_status: { ...prev.session_status, [sid]: "idle" },
         message: { ...prev.message, [sid]: [] },
       }))
@@ -590,7 +603,7 @@ export function MafwShell() {
     // A tab may have been opened earlier without knowing its role. Upgrade it
     // in place; opening a new Lead also drops the previous (possibly dead)
     // Lead tab so the strip never contains two "Lead" identities.
-    setSessions(prev => mergeTabIdentity(prev, sid, lead, metadata, title))
+    setSessions(prev => mergeTabIdentity(prev, sid, lead, metadata, entityTitle))
     // Lead 是角色 tab：标签恒为角色名，不继承 runtime 会话标题或恢复的旧标题。
     setSessions(prev => pinLeadTabTitle(prev, sid, lead))
     // ChatPane 头部同样以实体内标题为准（Lead 由 chatPaneTitle 钉成角色名）；
@@ -599,9 +612,9 @@ export function MafwShell() {
     if (lead === true) setSessions(prev => dropOtherLeadTabs(prev, sid))
     setActiveSessionId(sid)
     setActiveViewId(sid)
-    if (shouldRetitleTab(sessions().find(s => s.id === sid), title)) {
-      setSessions(prev => retitleTab(prev, sid, title))
-      setStore(prev => ({ ...prev, session: retitleTab(prev.session, sid, title) }))
+    if (shouldRetitleTab(sessions().find(s => s.id === sid), entityTitle)) {
+      setSessions(prev => retitleTab(prev, sid, entityTitle))
+      setStore(prev => ({ ...prev, session: retitleTab(prev.session, sid, entityTitle) }))
     }
     syncPermissionMode(sid) // 🛡 徽标初始态（kv 真相源拉取）
     closeLeftDockIfOverlay()
@@ -971,7 +984,9 @@ export function MafwShell() {
     for (const t of pruned.tabs) {
       const info = byId.get(t.id)
       const lead = (!!leadId && t.id === leadId) || isLeadRole(info?.metadata?.mafw?.role)
-      openSessionTab(t.id, t.title || info?.title, lead, info?.metadata ?? (lead ? leadTabMetadata() : undefined))
+      // F1：恢复时以 gateway 最新标题为先（entity 内部还会再判一次「已知标题
+      // 优先于占位标题」），持久化快照的旧标题只能是兜底。
+      openSessionTab(t.id, info?.title || t.title, lead, info?.metadata ?? (lead ? leadTabMetadata() : undefined))
     }
     const active = pruned.activeViewId && pruned.tabs.some(t => t.id === pruned.activeViewId)
       ? pruned.activeViewId
@@ -987,7 +1002,8 @@ export function MafwShell() {
   createEffect(() => {
     const project = layoutProject()
     if (!project || project !== currentProject()) return
-    const tabs = sessions().map(s => ({ id: s.id, title: s.title }))
+    // F1：持久化当前展示标签（entity 优先），避免恢复出旧的 "Chat N"。
+    const tabs = sessionSnapshotTabs(sessions())
     const active = activeViewId()
     if (layoutSaveTimer) clearTimeout(layoutSaveTimer)
     layoutSaveTimer = setTimeout(() => {
@@ -1372,13 +1388,10 @@ export function MafwShell() {
     lifecycle: {
       invalidate: () => sessionStore.invalidate(),
       patch: (id, patch) => sessionStore.patch(id, patch),
-      retitleOpenTab: (id, title) => {
-        // Lead tab 的身份是角色名：runtime 自动标题（首轮后改写会话标题）不得覆盖。
-        if (!shouldRetitleTab(sessions().find(s => s.id === id), title)) return
-        // E6-2：只写实体缓存；Rail / tab / ChatPane 都从 sessionEntities 读，
-        // 不再复制写 tab 数组（tab.title 仅作实体缺失时的持久化兜底）。
-        sessionEntities.patch(id, { title })
-      },
+      // F3/F4：session.updated 的标题唯一写入口（entity 缓存；未知 id 补建）。
+      // 标签 / ChatPane 都从 sessionEntities 读，这里不回写 tab 或 store 副本；
+      // Lead 角色名由 sessionTabTitle / chatPaneTitle 在读取端钉住。
+      retitleOpenTab: (id, title) => retitleSessionEntity(id, title),
       remove: (id) => sessionStore.remove(id),
       closeIfOpen: (id) => { if (sessions().some(s => s.id === id)) closeSession(id) },
     },
