@@ -29,6 +29,11 @@ import {
 } from "../browser-tabs"
 import { browserDocumentTabs } from "../document-frame-model"
 import { activeDocumentTab, consumeCloseRequest, pendingCloseRequests, syncWebTabs } from "../documents/document-tabs-store"
+import {
+  flushBrowserTabsPersistence,
+  restoreBrowserTabsOnce,
+  saveBrowserTabsSnapshot,
+} from "../documents/browser-tabs-persistence"
 import { createBrowserViewRegistry, navigateExistingView } from "../browser-view"
 import { DockBanner, DockEmpty } from "./dock-panel"
 import { DocumentFrame, DocumentTabs, DocumentToolbar } from "./document-frame"
@@ -205,6 +210,17 @@ export function BrowserDock(props: {
     removeView(id)
     closeBrowserTab(id)
   }
+
+  // 跨重启恢复：先读快照，再让持久化 effect 跟随 tab 变化。
+  onMount(() => { restoreBrowserTabsOnce() })
+  createEffect(() => {
+    saveBrowserTabsSnapshot({
+      version: 1,
+      activeId: activeBrowserTabId(),
+      tabs: tabs().map((tab) => ({ id: tab.id, url: tab.url, title: tab.title })),
+    })
+  })
+  onCleanup(() => flushBrowserTabsPersistence())
 
   // 统一文档 tab 条：同步浏览器 tab 视图，并消费 web close 请求。
   createEffect(() => {

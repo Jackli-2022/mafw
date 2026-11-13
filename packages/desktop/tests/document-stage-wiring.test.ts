@@ -48,6 +48,13 @@ test("document tabs expose drag reorder wiring", () => {
   assert.match(css, /\.mafw-document-tab\.drop-after/)
 })
 
+test("browser dock restores and persists tab snapshots", () => {
+  const browser = read("src/renderer/mafw/components/BrowserDock.tsx")
+  assert.match(browser, /restoreBrowserTabsOnce/)
+  assert.match(browser, /saveBrowserTabsSnapshot/)
+  assert.match(browser, /activeBrowserTabId/)
+})
+
 test("editor and browser can embed without their own tab strip", () => {
   const editor = read("src/renderer/mafw/components/EditorDock.tsx")
   const browser = read("src/renderer/mafw/components/BrowserDock.tsx")
