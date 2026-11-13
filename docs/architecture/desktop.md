@@ -222,6 +222,19 @@ O(n²) 传输）。启动扫描 + fs.watch 热重载，fail-open（坏插件跳�
 - action 失败弹 toast，不影响 composer；无活动会话时按钮 disabled。
 - 仍是宿主渲染，不注入 Solid 组件，不改变 preload/webview sandbox。
 
+#### 统一插件包 panel rail entry（2026-11-13）
+
+声明式 panel 可以通过 `panel.rail` 选择进入左侧 IconRail：
+
+```ts
+{ id, title, viewAction, rail: { icon, order?, badge? } }
+```
+
+- gateway 校验 `rail.icon` 必须已注册、`order` 整数、`badge` boolean。
+- desktop `railItemsFromPanels()` 只投影声明了 `rail` 的 panel；surface id 与工作台 tab 相同（`plugin:<pkg>:<panel>`）。
+- MafwShell 把 panel rail 与 web surface rail 合并排序，再交给 `applyPluginRailState`；点击走现有 `openPluginFocus`，不新增打开路径。
+- 仍是宿主 IconRail 渲染；不注入组件，不改变 preload/webview sandbox。
+
 #### 插件平面与 kernel-v2（2026-11-12，规划中）
 
 统一插件包按 **contributes 平面**区分，而不是按目录/包名：`gateway`（进程内 driver）、`desktop.ui`（声明式数据）、`desktop.web`（sandboxed webview）、`desktop.main`（legacy `~/.mafw/ui-plugins`，迁移期默认关闭/显式同意）。一个包可以同时有多个平面，gateway 与 desktop 各自只加载自己的部分；跨平面只走 action/event bridge，webview 永不接收 gateway apiToken。

@@ -324,9 +324,9 @@ Probe 的作用是让 tech lead 在看详细计划前先看清关键未知；每
 
 **目标**：固定 shell + 更多声明式槽位；不注入原生组件。
 
-**状态**：S4 `ui.menuItems` 与 composer action 已端到端交付：contract 校验 → gateway 投影 → desktop 宿主渲染 → package action。G4（menu + composer）达成；panel rail entry / chat part renderer 仍待做。
+**状态**：S4 `ui.menuItems`、composer action、panel rail entry 已端到端交付：contract 校验 → gateway 投影 → desktop 宿主渲染 → package action / 现有 focus 路径。G4（menu + composer）达成；chat part renderer 仅剩评估。
 **详细计划**：`docs/superpowers/plans/2026-11-13-kernel-v2-phase4-desktop-ui-slots.md`
-**交付记录**：`docs/releases/2026-11-13-capability-kernel-phase4-s4.md`、`docs/releases/2026-11-13-capability-kernel-phase4-composer.md`
+**交付记录**：`docs/releases/2026-11-13-capability-kernel-phase4-s4.md`、`docs/releases/2026-11-13-capability-kernel-phase4-composer.md`、`docs/releases/2026-11-13-capability-kernel-phase4-panel-rail.md`
 
 **顺序**：`desktop.ui.menuItems`（先做 S4）→ composer action → panel rail entry → chat part renderer 评估。
 

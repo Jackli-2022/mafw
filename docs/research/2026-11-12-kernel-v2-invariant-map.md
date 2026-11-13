@@ -63,6 +63,7 @@
 | 菜单 action 路由 | `packages/desktop/src/renderer/mafw/plugins/plugin-menu-contributions.test.ts` | OK | S4 |
 | composer action 校验 / 插入草稿 / 失败隔离 | `packages/plugin-contract/src/validate.test.ts`、`packages/desktop/src/renderer/mafw/plugins/plugin-composer-actions.test.ts` | OK | 2026-11-13 |
 | composer action 宿主渲染 | `packages/desktop/src/renderer/mafw/components/plugin-composer-wiring.test.ts` | OK | 宿主 ButtonV2 + Icon |
+| panel rail entry 校验 / 投影 / 打开路径 | `packages/plugin-contract/src/validate.test.ts`、`packages/desktop/src/renderer/mafw/plugins/plugin-view-model.test.ts`、`plugin-web-wiring.test.ts` | OK | 复用 `openPluginFocus` |
 | capability manifest / plane | 本 phase Task 0.4 新增 | GAP→新增 | shared contract |
 | desktop cutover 并行窗口 | Phase 4 | GAP | 不在 Phase 0/1 |
 

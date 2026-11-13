@@ -333,6 +333,26 @@ ui: {
 - 图标必须是已注册的插件图标；未知图标回退为 `plus`。
 - 不注入原生组件；按钮由宿主渲染。
 
+## 5.5 Panel rail entry
+
+声明式 panel 默认只在工作台 L2 tab 出现；加 `rail` 可同时进入左侧 IconRail：
+
+```js
+ui: {
+  panels: [{
+    id: 'stats',
+    title: 'Stats',
+    viewAction: 'getStats',
+    rail: { icon: 'layout-grid', order: 100, badge: true },
+  }],
+}
+```
+
+- `rail.icon` 必须是已注册的插件图标；`order` 越小越靠前；`badge` 只申请角标能力，实际数字由页面 bridge 提供。
+- 点击 rail 项打开同一个 `plugin:<package>:<panel>` surface，不新建第二条渲染路径。
+- 与 web surface 的 rail 项合并排序；capacities/样式由宿主 IconRail 统一处理。
+- 不注入原生组件。
+
 ## 6. UI slots
 
 `ui` 接受五个 slot（未知 slot 直接失败）：`panels` / `configPages` / `toolCards` / `messageWindows` 是**声明式数据**（Desktop 用内置组件渲染）；`webSurfaces` 是**沙箱 Web 页面**（插件自己写 HTML/JS）。两类可以并存于同一个包。
