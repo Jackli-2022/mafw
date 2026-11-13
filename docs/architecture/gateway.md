@@ -946,7 +946,9 @@ E8-1 之后 kernel/boot 的长驻 interval 已全部在台账内；短命 retry/
 
 - 准入接缝是 `SchedulerOpts.admissionChecker`（**每次 submit 都问**，budgeted 与否；在 coalesce 之前），
   `budgetChecker` 仍是 budget-only 语义；降级拒绝的 reason 是 `resource pressure`。
-  **submit-time only**：降级前已入队的任务仍会启动，E4 不做回撤/抢占。
+  **E4 时点是 submit-time only**（降级前已入队的任务仍会启动，不做回撤/抢占）；**E11-3 已补上 start-time
+  复检**：`SchedulerOpts.resourceAdmission`（只读压力，非 budget）在 `pump()` 里把非前台候选留在队列，
+  恢复边沿由 governor 触发 `scheduler.sweep()` 续跑——不拒绝、不丢任务，见「E11 身份 / 配额硬化」E11-3。
 - `event_log` 裁剪只看 **disk 进入 critical 的边沿**（`next.disk === 'critical' && prev.disk !== 'critical'`）；
   critical 期间 heap 变化/恢复边沿不重复裁剪，`pruneNow` 不动摊销计数。
 - `memory.add` 的判压在 authority 校验之后、exact-hash dedup 之前（非法 authority 仍回既有错误；
@@ -976,10 +978,13 @@ E8-1 之后 kernel/boot 的长驻 interval 已全部在台账内；短命 retry/
 
 ### 已知延后（不在 E4 范围）
 
-- 降级前已入队任务的二次校验（pump 处回撤/抢占）与跨压力恢复补跑。
+- ~~降级前已入队任务的二次校验（pump 处回撤/抢占）与跨压力恢复补跑~~（E11-3 已收口：`pump()` 的
+  `resourceAdmission` 只把非前台候选留在队列、不拒绝，governor 恢复边沿触发 `scheduler.sweep()`
+  自动续跑；见「E11 身份 / 配额硬化」）。
 - ~~全进程 timer inventory~~（E8-1 已把 kernel/boot 的长驻 interval 全部迁入命名台账；
   插件 loader / self-update / 第三方 transport 的本地 interval 属于各自模块边界，不在台账范围）。
-- 插件/manager 会话的配额副作用（内部会话失败当前降级为 log；未给 UI 明确 429 文案）。
+- ~~插件/manager 会话的配额副作用（内部会话失败当前降级为 log；未给 UI 明确 429 文案）~~（E11-2 /
+  E11-2b 已收口：失败回滚内部身份、广播 `session.registration_failed`、轮换路径清槽并抛错）。
 - ~~MCP `mafw_add_memory` 的磁盘门~~（E7-4 已收口，见「E7 部署前 deferred 收口」）。
 - ~~review-items 的 SDK 债务~~（E7-2 已收口：`DEAD_CONTRACT_TODO` 删除，4 个 op 由
   `pods.goals.reviewItems*` 方法覆盖）。
@@ -1023,6 +1028,11 @@ E8-1 之后 kernel/boot 的长驻 interval 已全部在台账内；短命 retry/
 - desktop：`packages/desktop/src/main/human-token.ts` 的 `readHumanToken()`（trim + 64 hex 校验，失败返回 `''`，不抛不日志）+ `createGatewayClient()` 统一构造 `MafwClient({ clientToken })`；token **不进入 renderer / preload / 插件 web / 日志**。`MAFW_HUMAN_TOKEN_FILE` 只是测试/隔离 dev 的路径覆盖。
 - TUI：`packages/tui/src/store/human-token.ts` 同语义 + `createTuiClient()`；human-only 动作失败时直接显示 gateway 403。
 - SDK：`MafwClientOptions.clientToken?` / `headers?`；`request()` 合并顺序 `Content-Type` → `options.headers` → `clientToken` → 调用点 headers；空/空白 `clientToken` 不发头；`fetchPath`（SSE / 二进制 / 媒体流）**不带** token 与 base headers。
+- **轮换（E11-1）**：`POST /api/human-token/rotate` 是唯一能把该凭据原地换掉的入口——只认
+  `method === 'human-token'` 的 human principal（device token / service / loopback 一律 403
+  `human_principal_required`）。成功即写盘并 live rebind kernel `this.humanToken`，**旧 token 立刻失效**；
+  CLI 是 `mafw rotate-human-token`，桌面遇 403 自动重读重试一次、TUI 需重启。细节见
+  「E11 身份 / 配额硬化」E11-1。
 
 ### 设备凭据（A13）
 
@@ -1203,12 +1213,14 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 
 ### 残余（E10b 后仍 deferred）
 
+> 现行清单以「E11 身份 / 配额硬化 · 残余」为准（E11 已收口插件 / manager 配额副作用与 admission 复检，
+> 并把 OS keychain / MCP human 工具定为 won't do）。此处只保留 E10b 时点的历史口径。
+
 - 剩余约 273 个 op 的 response schema 覆盖（317 operations 中 44 个已带 200 schema，13.9%；
   台账 `npm run schema:coverage`，见「E10 契约覆盖」/「E10b 契约覆盖第二批」节）。
-- OS keychain / 进程签名、MCP human 工具。
+- ~~插件 / manager 会话的配额副作用（内部会话失败只 log）~~、~~调度准入复检（admission re-check）~~、
+  ~~OS keychain / 进程签名、MCP human 工具~~：E11 已收口 / 裁决，见「E11 身份 / 配额硬化」。
 - 强制版本协商 / SDK 全量 schema 类型化。
-- 插件 / manager 会话的配额副作用（内部会话失败只 log）。
-- 调度 / Pod Goal 的准入复检（admission re-check，归 E11；本波只建模读接口）。
 - POST/PUT/PATCH/DELETE 的请求/响应 schema（E10 / E10b 只建模读接口的 200 成功体）。
 - **won't do**：`pod.updated` 记录级实体 payload（E9-3，理由见下节）、mobile 工作 tab 的其余增量渲染
   （E9-1 后 flat 帧已能触发 `goalId` 局部 patch，任务 / 消息仍是整页快照）。
@@ -1326,6 +1338,47 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
   3. `permissions.getMode` / `permissions.listAllowlist` / `permissions.listRules` 的**扩展投影**
      （无独立 SDK DTO，借 `PermissionsNamespace` 返回类型做 `AssertEq`）。
   4. `questions.list` 的 `QuestionRequest.time` **残留可选**（只读面只在源带 `createdAt` 时补齐）。
+
+---
+
+## E11 身份 / 配额硬化（2026-11-13）
+
+> E11 原清单里的设备生命周期（deviceName 校验、WS `?deviceId=` 凭据优先、`pruneStale`、rotate/revoke）
+> 已在 E5a 完成；本波只做四个真实缺口：human token 轮换、内部会话配额账实、admission 二次校验、
+> MCP human 边界审计（+ keychain 明确 won't do）。
+> spec：`docs/superpowers/specs/2026-11-13-gateway-e11-identity-hardening-design.md`；
+> plan：`docs/superpowers/plans/2026-11-13-gateway-e11-identity-hardening.md`；
+> 交付记录：`docs/releases/2026-11-13-gateway-e11-identity-hardening.md`。
+
+| # | 现状 | 边界 |
+|---|---|---|
+| E11-1 | **human token 轮换**：`core/human-token.ts#rotateHumanToken(dir)` 生成新的 32 字节 hex 并复用既有原子写（`.tmp` + fsync + rename + `chmod 0600`）；新路由 `routes/human-token.ts#attachHumanTokenRoutes` 挂 `POST /api/human-token/rotate`（catalog `humanToken.rotate`，POST / tag `auth`，response `{token, rotatedAt}`）。**只接受 `principal.kind === 'human' && principal.method === 'human-token'`**——轮换必须证明持有被替换的凭据，所以比 human-only 路由更严：device token（已配对手机可以借此作废桌面）、service（agent / MCP / 自动化永不轮换人类凭据）、loopback（无凭据本机客户端不是人类）、anonymous 一律 403 稳定体 `{error:'human principal required', code:'human_principal_required'}`（`humanOnlyDenied`），**在任何文件访问与 body 读取之前**。成功 `200 {token, rotatedAt}`，kernel dep `rotateHumanTokenNow()` 写文件后 `this.humanToken = token`（既有 `() => this.humanToken` live getter）→ 新 token 立即生效、**旧 token 立刻失效**，无需重启、不拆会话；写失败 `500 {error}` 且旧 token 仍可用（赋值在写成功之后）。`log.warn('[Auth] human token rotated')` 是常量，token 永不进日志 / 错误体（`redactLog` 另遮 `X-MAFW-Human-Token`）。 | 契约 `45/318`（新 op 使 catalog 317 → **318**；spec 写的 45/317 是分母算错，台账以脚本实测为准）。SDK **不提供该方法**：`contract.test.ts` 的 `NON_SDK_EXEMPT` 按 operationId 具名豁免（唯一调用方是 `bin/mafw.js` 的裸 HTTP），另有 stale-exemption 守卫防豁免腐烂。桌面 Config UI 的轮换按钮不做（CLI + 自动重读已覆盖）。`MAFW_HUMAN_TOKEN_FILE` 只是测试 / 隔离 dev 的路径覆盖。 |
+| E11-2 | **内部会话配额账实**：Lead 会话被登记两次（先 internal identity `internal-session` kv + identity bind，再 `SdkSessionResource.registerExternal` 走 E4-7 会话配额），第二步可能被拒。新 helper `core/session/internal-registration.ts#registerLeadSessionRecord` 保持原顺序，失败时**先回滚** `unregisterInternalSession(sessionId)`（身份不得比记录活得久），再 `log.warn`（`[Sessions] <role> session registration failed for <id> (<code>): <msg>`），再广播 **`session.registration_failed`** `{sessionId, role, code:'quota_exceeded'\|'error', message}`，最后 resolve `{ok:false, code, message}`——**从不 throw**（配额满不能把 Lead 启动路径打挂，runtime 会话仍可用）。两条 Lead 路径（`registerLead` dep 与 `rotateCreateManagerSession`）都走 kernel 私有的 `registerLeadRecord`，E11-2 之前那个静默 `.catch(() => {})` 已删除。回滚失败只额外告警，不掩盖原始失败。 | 配额**政策**不变：内部会话仍占一个 session 名额。`session.registration_failed` 是**新增事件**（消费者忽略未知事件即可；event_log 会持久化，属 additive wire）。 |
+| E11-2b | **manager slot 回滚**：`rotateCreateManagerSession` 必须在注册前就持久化 `manager-session` 槽（否则并发 `ensure()` 会造出第二个 Lead），配额拒绝时槽会指向「有 runtime 会话、无本地记录」的 id。新增 `core/manager/manager-session-runtime.ts#clearManagerSlotsForSession(store, sessionId, runtime)`（`kvAll` + `kvSet` 的读改写包装，返回被清 key）与 `internal-registration.ts#rollbackRejectedLeadRegistration(...) → Error('<code>: <message>')`：**清槽 + 抛错**，拒绝的 session id 绝不出网关。槽行保留为 `{byRuntime:{}}`，其他 runtime 与 `unattributed` 历史槽不动；store 失败照常上抛（调用方仍拿不到死 id）。`archiveLeadSession` 复用同一 helper（一份实现，不再重复读改写循环）。 | 被拒的 runtime 会话**不删除**：轮换失败是调用方可见错误，不是会话删除路径（后续可 best-effort `session.delete()`）。`registerLead`（ensure 路径）保持 E11-2 语义：失败经事件可观测，已建好的 Lead 继续可用，没有要回滚的指针。 |
+| E11-3 | **admission 二次校验**：`SchedulerOpts.resourceAdmission?: () => boolean`（**只**表达资源压力，不复用 `budgetChecker`，避免二次预算语义）；`pump()` **每次调用求值一次**并把 `nonForegroundBlocked` 传给 `pickEligible(...)`——压力下跳过 `priority !== 'foreground'` 的候选（留在队列，**不拒绝、不丢、不重复启动**），前台仍被考虑（key-blocked 的前台在 key 释放时照常启动），没有候选时循环终止。kernel 注入 `() => !(this.governor?.isDegraded() ?? false)`；`resources/degradation.ts#shouldResumeScheduler(prev, next)` = `prev.degraded.length > 0 && next.degraded.length === 0`（只看恢复边沿，降级中换 code 不触发），governor `onChange` 命中即 `void this.scheduler.sweep()`。 | submit-time `admissionChecker` **不变**（压力下新的非前台 submit 仍被拒）；本波只补「降级前已入队」的回撤。恢复续跑延迟由 governor 采样间隔决定，不保证即时（backfill / midground 可接受）。`resourceAdmission` 每 pump 只求值一次是刻意的（同步循环内不 thrash），压力在半途翻转由下一次 settle/sweep 再判。 |
+| E11-4 | **MCP human 边界 + keychain 裁决**：机器化守卫 `gateway/tests/unit/mcp/human-boundary.test.ts`（47 工具名快照 + 3 条具名白名单 + `gateway/src/mcp/**` 源码扫描），决策与理由见下「E11-4 身份边界决策」。 | MCP human 工具 = won't do；OS keychain / 进程签名 = won't do（本阶段）。 |
+
+### 运维面
+
+- `mafw rotate-human-token`（`bin/mafw.js`）：读 `~/.mafw/human.token`（或 `MAFW_HUMAN_TOKEN_FILE`）→
+  校验 64 hex → 带 `X-MAFW-Human-Token` POST `/api/human-token/rotate` → **只打印 `rotatedAt`**
+  （新 token 只落盘，绝不回显终端 / 日志）。文件缺失 / 格式非法 / 非 200 → 明确报错 + exit 1。
+  `httpRequest(...)` 因此多了可选 `headers` 参数（向后兼容）。用法与客户端影响见 `docs/guides/operations.md`。
+
+### 残余（E11 后仍 deferred）
+
+- 剩余约 273 个 op 的 response schema 覆盖（318 operations 中 45 个已带 200 schema，14.2%；
+  台账 `npm run schema:coverage`，见「E10 契约覆盖」/「E10b 契约覆盖第二批」/ 本节 E11-1）。
+- 强制版本协商 / SDK 全量 schema 类型化。
+- POST/PUT/PATCH/DELETE 的请求 / 响应 schema（E10 / E10b / E11 只建模读接口与单个 auth op 的 200 成功体，
+  错误体不建模）。
+- TUI / mobile 的 triage phantom 字段渲染（`reason` / `goalId` / `severity`；真实 wire 无这些字段）。
+- **won't do（本阶段，已有决策与缓解）**：OS keychain / 进程签名、MCP human 工具（E11-4）；
+  `pod.updated` 记录级实体 payload（E9-3）；mobile 工作 tab 的其余增量渲染（E9-1 后 flat 帧已能触发
+  `goalId` 局部 patch，任务 / 消息仍是整页快照）。
+- E10 有意保留的松口：`PodGoal` 的可选性（`bucket` / `accepted` / `progress` / `revision` / `priority`…）
+  仍比 handler 实际输出宽（收紧要动约 12 个 DTO 字段并打破桌面测试夹具，E8 先例）；`FileDiffInfo.file`
+  仍可选，而 `session.diff` schema 的 `MafwDiff.file` 必填。
 
 ---
 
