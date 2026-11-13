@@ -4427,6 +4427,9 @@ class MafwScheduler {
     await this.mediaPluginLoader.init();
     this.pluginHost?.bindMedia((entries) => this.mediaPluginLoader?.setPackageEntries(entries));
     this.pluginHost?.bindTts((entries) => this.ttsRegistry.setPackageEngines(entries.map(e => e.engine)));
+    this.pluginHost?.bindKernelV2((tools, observers) => {
+      this.kernelV2Live?.syncPluginContributions(tools, observers);
+    });
     // TTS legacy 插件目录（~/.mafw/tts-plugins/）+ 包贡献接线
     this.ttsPluginLoader = new TtsPluginLoader(path.join(mafwDir, 'tts-plugins'), {
       onChanged: () => this.ttsRegistry.setLegacyEngines(this.ttsPluginLoader?.getEngines() ?? []),

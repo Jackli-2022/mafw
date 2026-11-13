@@ -17,6 +17,7 @@ import {
   type ToolContribution,
 } from '../kernel-v2/tools';
 import type { CanonicalObserver } from '../kernel-v2/observer';
+import type { PluginObserverEntry, PluginToolEntry } from '../plugins/package-types';
 import type { MafwToolRegistration } from './contract';
 
 export type { CanonicalEvent, CanonicalObserver } from '../kernel-v2/observer';
@@ -34,6 +35,8 @@ export interface KernelV2Live {
   registerObserver(observer: CanonicalObserver): () => void;
   toolFactory(): ((sessionID: string) => MafwToolRegistration[]) | undefined;
   registerTool(tool: ToolContribution): () => void;
+  /** Phase 3.6: reconcile package tools/observers by revision. */
+  syncPluginContributions(tools: PluginToolEntry[], observers: PluginObserverEntry[]): void;
   drain(): Promise<void>;
   dispose(): Promise<void>;
 }
@@ -54,6 +57,60 @@ export function readKernelV2LiveFlags(env: NodeJS.ProcessEnv = process.env): Ker
   };
 }
 
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function normalizeToolResult(value: unknown): { text: string; isError?: boolean } {
+  if (typeof value === 'string') return { text: value };
+  if (value && typeof value === 'object') {
+    const record = value as { text?: unknown; isError?: unknown };
+    if (typeof record.text === 'string') {
+      return {
+        text: record.text,
+        ...(record.isError === true ? { isError: true } : {}),
+      };
+    }
+  }
+  try {
+    const json = JSON.stringify(value);
+    return { text: json ?? String(value) };
+  } catch {
+    return { text: String(value) };
+  }
+}
+
+function toToolContribution(entry: PluginToolEntry): ToolContribution {
+  return {
+    packageName: entry.packageName,
+    name: entry.name,
+    ...(entry.title ? { title: entry.title } : {}),
+    description: entry.description,
+    parameters: entry.inputSchema as Record<string, any>,
+    ...(entry.outputSchema
+      ? { outputSchema: entry.outputSchema as Record<string, any> }
+      : {}),
+    ...(entry.timeoutMs !== undefined ? { timeoutMs: entry.timeoutMs } : {}),
+    scope: 'global',
+    execute: async (input, ctx) =>
+      normalizeToolResult(
+        await entry.handler(input, {
+          sessionID: ctx.sessionID,
+          signal: ctx.signal ?? new AbortController().signal,
+        }),
+      ),
+  };
+}
+
+function toObserver(entry: PluginObserverEntry): CanonicalObserver {
+  return {
+    id: `plugin:${entry.packageName}:${entry.id}`,
+    ...(entry.filter ? { filter: entry.filter } : {}),
+    ...(entry.timeoutMs !== undefined ? { timeoutMs: entry.timeoutMs } : {}),
+    onEvent: (event) => entry.onEvent(event),
+  };
+}
+
 export function createKernelV2Live(
   options: KernelV2LiveOptions = {},
 ): KernelV2Live | null {
@@ -62,6 +119,57 @@ export function createKernelV2Live(
 
   const observers = flags.observers ? new CanonicalObserverRegistry() : null;
   const tools = flags.tools ? createToolContributionRegistry() : null;
+  const toolRegistrations = new Map<string, { revision: string; unregister: () => void }>();
+  const observerRegistrations = new Map<string, { revision: string; unregister: () => void }>();
+  let disposed = false;
+
+  function syncTools(entries: PluginToolEntry[]): void {
+    if (!tools) return;
+    const next = new Set(entries.map((entry) => `${entry.packageName}:${entry.name}`));
+    for (const [key, current] of toolRegistrations) {
+      if (next.has(key)) continue;
+      current.unregister();
+      toolRegistrations.delete(key);
+    }
+    for (const entry of entries) {
+      const key = `${entry.packageName}:${entry.name}`;
+      const current = toolRegistrations.get(key);
+      if (current?.revision === entry.revision) continue;
+      current?.unregister();
+      try {
+        const unregister = tools.register(toToolContribution(entry));
+        toolRegistrations.set(key, { revision: entry.revision, unregister });
+      } catch (error) {
+        options.log?.warn(
+          `[kernel-v2] plugin tool registration failed for ${key}: ${messageOf(error)}`,
+        );
+      }
+    }
+  }
+
+  function syncObservers(entries: PluginObserverEntry[]): void {
+    if (!observers) return;
+    const next = new Set(entries.map((entry) => `${entry.packageName}:${entry.id}`));
+    for (const [key, current] of observerRegistrations) {
+      if (next.has(key)) continue;
+      current.unregister();
+      observerRegistrations.delete(key);
+    }
+    for (const entry of entries) {
+      const key = `${entry.packageName}:${entry.id}`;
+      const current = observerRegistrations.get(key);
+      if (current?.revision === entry.revision) continue;
+      current?.unregister();
+      try {
+        const unregister = observers.register(toObserver(entry));
+        observerRegistrations.set(key, { revision: entry.revision, unregister });
+      } catch (error) {
+        options.log?.warn(
+          `[kernel-v2] plugin observer registration failed for ${key}: ${messageOf(error)}`,
+        );
+      }
+    }
+  }
 
   options.log?.info(
     `[kernel-v2] live wiring enabled (observers=${flags.observers}, tools=${flags.tools})`,
@@ -81,6 +189,7 @@ export function createKernelV2Live(
     },
 
     registerObserver(observer: CanonicalObserver): () => void {
+      if (disposed) throw new Error('kernel-v2 live bridge is disposed');
       if (!observers) {
         throw new Error(
           'kernel-v2 observers are disabled (set MAFW_KERNEL_V2_OBSERVERS=1)',
@@ -94,10 +203,20 @@ export function createKernelV2Live(
     },
 
     registerTool(tool: ToolContribution): () => void {
+      if (disposed) throw new Error('kernel-v2 live bridge is disposed');
       if (!tools) {
         throw new Error('kernel-v2 tools are disabled (set MAFW_KERNEL_V2_TOOLS=1)');
       }
       return tools.register(tool);
+    },
+
+    syncPluginContributions(
+      toolEntries: PluginToolEntry[],
+      observerEntries: PluginObserverEntry[],
+    ): void {
+      if (disposed) return;
+      syncTools(toolEntries);
+      syncObservers(observerEntries);
     },
 
     async drain(): Promise<void> {
@@ -105,6 +224,24 @@ export function createKernelV2Live(
     },
 
     async dispose(): Promise<void> {
+      if (disposed) return;
+      disposed = true;
+      for (const current of toolRegistrations.values()) {
+        try {
+          current.unregister();
+        } catch {
+          /* teardown is fail-open */
+        }
+      }
+      toolRegistrations.clear();
+      for (const current of observerRegistrations.values()) {
+        try {
+          current.unregister();
+        } catch {
+          /* teardown is fail-open */
+        }
+      }
+      observerRegistrations.clear();
       await Promise.allSettled([observers?.dispose(), tools?.dispose()]);
     },
   };

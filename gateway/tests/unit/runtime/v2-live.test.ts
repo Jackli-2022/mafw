@@ -55,6 +55,70 @@ test('tool bridge exposes a factory', async () => {
   await live.dispose();
 });
 
+test('syncs package tools/observers, replaces on revision change, clears on removal', async () => {
+  const live = createKernelV2Live({
+    env: { MAFW_KERNEL_V2_OBSERVERS: '1', MAFW_KERNEL_V2_TOOLS: '1' },
+  })!;
+  const seen: string[] = [];
+
+  live.syncPluginContributions(
+    [
+      {
+        packageName: 'demo',
+        revision: 'r1',
+        name: 'echo',
+        description: 'Echo',
+        inputSchema: { type: 'object' },
+        handler: async () => 'v1',
+      },
+    ],
+    [
+      {
+        packageName: 'demo',
+        revision: 'r1',
+        id: 'watch',
+        filter: { types: ['part.updated'] },
+        onEvent: (event) => {
+          seen.push(event.type);
+        },
+      },
+    ],
+  );
+
+  const tool = live
+    .toolFactory()!('s1')
+    .find((registration) => registration.name === 'plugin:demo:echo');
+  await expect(tool!.execute({})).resolves.toEqual({ text: 'v1' });
+  live.observe({ type: 'part.updated', sessionID: 's1' });
+  await live.drain();
+  expect(seen).toEqual(['part.updated']);
+
+  live.syncPluginContributions(
+    [
+      {
+        packageName: 'demo',
+        revision: 'r2',
+        name: 'echo',
+        description: 'Echo',
+        inputSchema: { type: 'object' },
+        handler: async () => 'v2',
+      },
+    ],
+    [],
+  );
+  const next = live
+    .toolFactory()!('s1')
+    .find((registration) => registration.name === 'plugin:demo:echo');
+  await expect(next!.execute({})).resolves.toEqual({ text: 'v2' });
+  live.observe({ type: 'part.updated', sessionID: 's1' });
+  await live.drain();
+  expect(seen).toEqual(['part.updated']);
+
+  live.syncPluginContributions([], []);
+  expect(live.toolFactory()!('s1')).toEqual([]);
+  await live.dispose();
+});
+
 test('disabled feature APIs throw a clear error', () => {
   const observersOnly = createKernelV2Live({
     env: { MAFW_KERNEL_V2_OBSERVERS: '1' },
