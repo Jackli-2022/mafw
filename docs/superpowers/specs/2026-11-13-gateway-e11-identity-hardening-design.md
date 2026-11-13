@@ -20,7 +20,7 @@
   - **只接受 `method === 'human-token'`**（不是任意 human/device principal）：轮换必须证明持有被替换的凭据；device token / service / loopback 一律 403 `human_principal_required`。
   - 成功：`200 { token, rotatedAt }`；新 token 立即生效，旧 token 立刻失效。
   - 失败：写文件失败 → 500 `{ error }`（不改变旧 token）。
-- catalog：`humanToken.rotate`（POST，tag `auth`）+ response schema `{ token: string; rotatedAt: string }` → 覆盖 45/317。
+- catalog：`humanToken.rotate`（POST，tag `auth`）+ response schema `{ token: string; rotatedAt: string }` → 覆盖 45/318（新 op 同时增加分子与分母；初稿的 45/317 是分母算错）。
 - kernel：注入 `rotate` 回调，成功后 `this.humanToken = token`（现有 `() => this.humanToken` getter 立即生效）+ `log.warn('[Auth] human token rotated')`。
 
 ### CLI
@@ -68,7 +68,7 @@
 
 ## 6. 门禁
 
-gateway tsc 0 + 全量（9 env-red）+ `schema:coverage` 45/317 + analyze TOTAL 0。
+gateway tsc 0 + 全量（9 env-red）+ `schema:coverage` 45/318 + analyze TOTAL 0。
 SDK tsc/full/contract（若 SDK 无改动则只跑回归）。
 desktop full（1 resolver env-red）+ tsgo（2 `node:tls`）。
 mobile 不涉及；TUI 记录 env-red；kernel-split 7/7。

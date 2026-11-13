@@ -35,7 +35,8 @@
 - **E11-1 human token 轮换**：`core/human-token.ts#rotateHumanToken(dir)` 复用既有原子写
   （`.tmp` + fsync + rename + `chmod 0600`）；`routes/human-token.ts` 挂 `POST /api/human-token/rotate`，
   **只接受 `principal.kind === 'human' && principal.method === 'human-token'`**（device token / service /
-  loopback / anonymous 一律 403 稳定体 `{error:'human principal required', code:'human_principal_required'}`，
+  loopback(`local`) → 403；无凭据的非 loopback(`anonymous`) 在 transport 层已是 401，直调 route 时同为 403。
+  route 层对上述 principal 返回稳定体 `{error:'human principal required', code:'human_principal_required'}`，
   且在任何文件访问 / body 读取之前）。成功 `200 {token, rotatedAt}`，kernel `rotateHumanTokenNow()`
   写盘后 `this.humanToken = token`（live getter）→ 新 token 立即生效、**旧 token 立刻失效**；写失败
   `500 {error}` 且旧 token 仍可用；日志只记常量 `[Auth] human token rotated`。
@@ -164,6 +165,7 @@ Time:        264.871 s
 - mobile 工作 tab 的其余增量 patch（E9-1 后 flat 帧已能触发 `goalId` 局部 patch，任务 / 消息仍是整页快照）。
 - `session.list` override 的 responseSchema 元数据仍保留（catalog 已优先，留待后续清理）。
 - `rotateCreateManagerSession` 被拒的 **runtime 会话不删除**（轮换失败是调用方可见错误，不是会话删除路径；
-  后续可 best-effort `session.delete()`）。
+  后续可 best-effort `session.delete()`）。注意 `routes/manager-rotate.ts` 在 create 之前已 archive 旧 Lead，
+  因此配额拒绝后项目在下次成功 `ensure` / `rotate` 前没有 current Lead（已记录为可接受残余）。
 - **won't do（本阶段，已有决策）**：OS keychain / 进程签名、MCP human 工具（E11-4，理由与缓解见
   `gateway.md`）；`pod.updated` 记录级实体 payload（E9-3）；`PodGoal` 可选性收紧（E8 先例）。
