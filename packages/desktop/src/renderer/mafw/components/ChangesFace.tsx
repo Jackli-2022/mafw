@@ -11,7 +11,7 @@ import type { ChangesRequest } from "../changes/changes-request"
 import { changeTotals, goalDiffErrorText, pinGoalRevision, toFileDiffEntries } from "../changes/goal-changes"
 import { reviewActionsVisible } from "../changes/review-queue"
 import { canReopenReviewItem, canResolveReviewItem, reviewStatusLabel } from "../pod-review-model"
-import { podHttpStatus } from "../pod-model"
+import { podGoalStatusLabel, podHttpStatus } from "../pod-model"
 import type { OpenDiffInput } from "../documents/diff-documents"
 import type { PodGoal, PodReviewItem } from "@mafw/sdk"
 
@@ -22,6 +22,12 @@ const MODE_LABEL: Record<ChangesMode, string> = {
 }
 
 const MODES: readonly ChangesMode[] = ["session", "goal", "project"]
+
+const UNAVAILABLE_REASON: Record<ChangesMode, string> = {
+  session: "没有可用的讨论",
+  goal: "没有可用的 Goal",
+  project: "没有可用的项目",
+}
 
 export type ChangesFaceProps = {
   mode: ChangesMode
@@ -39,6 +45,7 @@ export type ChangesFaceProps = {
   onOpenGoalFile?: (goal: GoalRef, rel: string, line?: number) => void
   accepted?: boolean
   onReviewChanged?: () => void
+  reviewRefreshKey?: () => unknown
   goals?: readonly PodGoal[]
   sessions?: readonly { id: string; title: string }[]
   reviewCountForGoal?: (goalId: string) => number
@@ -230,6 +237,7 @@ export function ChangesFace(props: ChangesFaceProps): JSX.Element {
 
   createEffect(() => {
     const goal = reviewGoal()
+    props.reviewRefreshKey?.()
     reviewRefresh()
     if (!goal) {
       setReviewItems([])
@@ -411,7 +419,7 @@ export function ChangesFace(props: ChangesFaceProps): JSX.Element {
           {(mode) => {
             const enabled = () => props.availableModes === undefined || props.availableModes.includes(mode)
             return (
-              <TooltipV2 value={enabled() ? MODE_LABEL[mode] : "没有可用的讨论 / Goal"} openDelay={300}>
+              <TooltipV2 value={enabled() ? MODE_LABEL[mode] : UNAVAILABLE_REASON[mode]} openDelay={300}>
                 <ButtonV2
                   variant="ghost"
                   size="small"
@@ -457,7 +465,7 @@ export function ChangesFace(props: ChangesFaceProps): JSX.Element {
                             }}
                           >
                             <span class="mafw-changes-project-name">{goal.title}</span>
-                            <span class="mafw-changes-stats">rev {revision} · {goal.status}</span>
+                            <span class="mafw-changes-stats">rev {revision} · {podGoalStatusLabel(goal.status)}</span>
                             <Show when={pending > 0}><span class="mafw-changes-project-badge">{pending}</span></Show>
                           </div>
                         )

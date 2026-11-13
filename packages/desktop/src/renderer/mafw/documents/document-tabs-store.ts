@@ -140,7 +140,8 @@ function persistOrder(): void {
     ...savedOrder.filter((id) => !id.startsWith("diff:")),
     ...entries().filter((entry) => entry.kind !== "diff").map((entry) => entry.id).filter((id) => !savedOrder.includes(id)),
   ]
-  saveDocumentListSnapshot(worldId, { version: 1, order, activeId: activeId() })
+  const active = activeId()
+  saveDocumentListSnapshot(worldId, { version: 1, order, activeId: active?.startsWith("diff:") ? null : active })
 }
 
 /** 按 world 加载顺序；在 store 首次同步前调用即可，未同步的 id 会等到对应 body。 */

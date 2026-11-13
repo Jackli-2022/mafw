@@ -2106,7 +2106,6 @@ export function MafwShell() {
   ))
   const [focusOpenRequest, setFocusOpenRequest] = createSignal<FocusOpenRequest | null>(null)
   let focusOpenNonce = 0
-  let decisionFocusSeq = 0
   const requestFocusOpen = (root: string, rel: string, line?: number, persist = false) => {
     focusOpenNonce += 1
     setFocusOpenRequest({ root, rel, nonce: focusOpenNonce, line, persist })
@@ -2504,7 +2503,7 @@ export function MafwShell() {
       : subject.kind === "terminal" ? "终端"
       : subject.kind === "plugin" ? "插件"
       : subject.kind === "diff" ? `${subject.rel} · 改动`
-      : "证据"
+      : "对象"
     const goalScope = focus.scope.kind === "goal" ? focus.scope : null
     const focusedGoal = goalScope
       ? podStore.detail()?.goals.find((goal) => goal.goalId === goalScope.goalId)
@@ -2523,7 +2522,7 @@ export function MafwShell() {
       subjectIndex: stack.length - 1,
       revision: goalScope ? goalScope.revision : undefined,
       execution: focusedGoal ? executionBadgeFor(focusedGoal) ?? undefined : undefined,
-      version: subject.kind === "file" || subject.kind === "diff" ? "HEAD" : undefined,
+      version: subject.kind === "file" ? "HEAD" : undefined,
       external: subject.kind === "web" || subject.kind === "terminal" || subject.kind === "plugin",
     })
   })
@@ -2756,7 +2755,6 @@ export function MafwShell() {
     }
   }
   const openGoalFocus = (goalId: string, focus: GoalDetailFocus = "timeline") => {
-    decisionFocusSeq += 1
     const project = currentProject()
     if (!project) return
     revealWorkbench()
@@ -3076,10 +3074,12 @@ export function MafwShell() {
   const activeGoalAccepted = () => !!podStore.detail()?.goals.find((goal) => goal.goalId === activeGoalId())?.accepted
   const changesBadge = () => {
     if (changesMode() === "project") return countReviewAttention(decisionStore.items())
-    const goalId = activeGoalId()
+    const goalId = changesMode() === "session"
+      ? (sessionGoalRef()?.goalId ?? activeGoalId())
+      : activeGoalId()
     return goalId ? countReviewAttention(decisionStore.items(), goalId) : 0
   }
-  const changesDot = () => changesBadge() === 0 && contentDiffEntries().length > 0
+  const changesDot = () => changesMode() === "session" && changesBadge() === 0 && contentDiffEntries().length > 0
 
   // 鲸群左栏：shell 持有常驻订阅，左右两栏共用同一个 pod-store
   // （spec 2026-10-30-pod-left-rail §4.1）。目录口径与右栏一致。
@@ -4014,6 +4014,7 @@ export function MafwShell() {
                 }}
                 accepted={activeGoalAccepted()}
                 onReviewChanged={() => { void podStore.refresh() }}
+                reviewRefreshKey={() => podStore.reviewRevision()}
                 goals={podStore.detail()?.goals ?? []}
                 sessions={sessions().map((session) => ({ id: session.id, title: session.title ?? "未命名" }))}
                 reviewCountForGoal={(goalId) => countReviewAttention(decisionStore.items(), goalId)}

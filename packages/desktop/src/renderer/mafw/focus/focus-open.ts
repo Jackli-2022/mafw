@@ -4,6 +4,6 @@ export type FocusOpenRequest = {
   rel: string
   nonce: number
   line?: number
-  /** 显式打开（文件树）→ 持久 tab；不传则按当前 content intent 决定预览/持久。 */
+  /** 显式打开（文件树）→ 持久 tab；不传则按 persist 决定预览/持久。 */
   persist?: boolean
 }

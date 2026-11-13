@@ -193,8 +193,16 @@ export function DiffReviewPanel(props: {
     setCommentingLine(null)
   }
 
+  let hunkCursor = 0
+  const gotoHunk = (delta: number) => {
+    const nodes = rootEl ? Array.from(rootEl.querySelectorAll<HTMLElement>(".mafw-diff-hunk")) : []
+    if (nodes.length === 0) return
+    hunkCursor = Math.max(0, Math.min(nodes.length - 1, hunkCursor + delta))
+    nodes[hunkCursor]?.scrollIntoView({ block: "center" })
+  }
+
   return (
-    <div class="mafw-diff-panel" ref={(el) => { rootEl = el }} classList={{ embedded: !!props.embedded, tab: props.chrome === "tab" }} role="dialog" aria-label="审阅改动">
+    <div class="mafw-diff-panel" ref={(el) => { rootEl = el }} classList={{ embedded: !!props.embedded, tab: props.chrome === "tab" }} role={props.chrome === "tab" ? "region" : "dialog"} aria-label="审阅改动">
       <Show when={props.chrome !== "tab"}>
         <header class="mafw-diff-panel-header">
           <Show when={props.embedded && props.onBack}>
@@ -217,6 +225,12 @@ export function DiffReviewPanel(props: {
               : "勾选要撤销的 hunk，点「回退选中」。未勾选的改动保持不变。")}
           </p>
         </Show>
+      </Show>
+      <Show when={props.chrome === "tab"}>
+        <div class="mafw-diff-hunk-nav">
+          <ButtonV2 variant="ghost" size="small" onClick={() => gotoHunk(-1)}>上一处</ButtonV2>
+          <ButtonV2 variant="ghost" size="small" onClick={() => gotoHunk(1)}>下一处</ButtonV2>
+        </div>
       </Show>
       <div class="mafw-diff-panel-body">
         <Show when={!loading()} fallback={<p class="mafw-diff-panel-empty">加载中…</p>}>
@@ -265,6 +279,9 @@ export function DiffReviewPanel(props: {
                           <span class="mafw-diff-stat del">-{f().deletions}</span>
                         </Show>
                       </header>
+                      <Show when={hunks.length === 0}>
+                        <p class="mafw-diff-panel-hint">此文件没有可显示的文本差异</p>
+                      </Show>
                       <Show when={!revertible && !props.previewOnly}>
                         <p class="mafw-diff-panel-hint">新增/删除文件不支持回退</p>
                       </Show>

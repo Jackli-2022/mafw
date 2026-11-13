@@ -468,7 +468,7 @@ export function EditorDock(props: {
     })
   })
 
-  /** 阅读 → 临时预览（不堆 tab）；修改或显式 persist → 持久 tab。 */
+  /** 普通打开 → 临时预览（不堆 tab）；显式 persist → 持久 tab。 */
   const openModelFile = (
     m: EditorModel,
     rel: string,

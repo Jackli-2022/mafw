@@ -1,5 +1,5 @@
 // Per-turn diff store（B3.1）：会话级 per-turn 抓取 + 合并。
-// 供 MafwShell（ChangesDock/EditorDock 数据面）与 ChatPane（composer badge）共用，
+// 供 MafwShell（ChangesFace/EditorDock 数据面）与 ChatPane（composer badge）共用，
 // 保证 badge 与变更树使用同一份合并结果。
 //
 // 生命周期规则（B3.1 历史 minors 收口）：
@@ -54,7 +54,7 @@ export function createSessionTurnDiffsStore(fetchDiff: DiffFetcher) {
     return bySession()[sid] ?? {}
   }
 
-  /** 与 ChangesDock/EditorDock 完全一致的合并结果（summary 打底，per-turn 覆盖）。 */
+  /** 与 ChangesFace/EditorDock 完全一致的合并结果（summary 打底，per-turn 覆盖）。 */
   function entries(sid: string, messages: MafwMessage[]): FileDiffEntry[] {
     return mergeDiffLists(aggregateSessionDiffs(messages), perTurn(sid))
   }
