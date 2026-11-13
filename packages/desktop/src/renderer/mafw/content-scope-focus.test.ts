@@ -13,7 +13,7 @@ test("content scope is derived from focus", () => {
   assert.doesNotMatch(shell, /contentHistory|rememberContentLocation|backContent|contentReturnGoalId/)
 })
 
-test("editor intent is derived from the focus lens", () => {
-  assert.match(shell, /activeFocus\(\)\?\.lens === "edit" \? "editing" : "reading"/)
+test("editor no longer has a reading/editing intent", () => {
+  assert.doesNotMatch(shell, /activeFocus\(\)\?\.lens === "edit"/)
   assert.doesNotMatch(shell, /const \[contentIntent, setContentIntent\]/)
 })

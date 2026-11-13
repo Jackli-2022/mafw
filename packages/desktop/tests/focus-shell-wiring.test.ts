@@ -9,7 +9,6 @@ const workbench = read("src/renderer/mafw/components/WorkbenchShell.tsx")
 test("MafwShell owns the focus state and stack actions", () => {
   assert.match(shell, /createWorkbenchState/)
   assert.match(shell, /openSubject/)
-  assert.match(shell, /replaceLens/)
   assert.match(shell, /popFocus/)
   assert.match(shell, /jumpTo/)
   assert.match(shell, /const \[focusState, setFocusState\] = createSignal/)
@@ -19,7 +18,7 @@ test("MafwShell owns the focus state and stack actions", () => {
 
 test("WorkbenchShell renders the focus shell when focusView is set", () => {
   assert.match(workbench, /FrameBar/)
-  assert.match(workbench, /LensBar/)
+  assert.doesNotMatch(workbench, /LensBar/)
   assert.match(workbench, /FocusStage/)
   assert.match(workbench, /SubjectPicker/)
   assert.match(workbench, /focusView: Focus \| null/)
@@ -31,8 +30,11 @@ test("WorkbenchShell has no legacy context branch", () => {
   assert.match(workbench, /when=\{props\.focusView\}[\s\S]*FocusStage/)
 })
 
-test("reading and editing map to focus lenses", () => {
-  assert.match(shell, /intent === "editing" \? "edit" : "read"/)
+test("files open editable; preview promotion no longer depends on a lens", () => {
+  const editor = read("src/renderer/mafw/components/EditorDock.tsx")
+  assert.match(editor, /promotePreview/)
+  assert.doesNotMatch(editor, /props\.intent/)
+  assert.doesNotMatch(shell, /focusLensForIntent/)
 })
 
 test("focus changes drive the stage and plugin cache", () => {

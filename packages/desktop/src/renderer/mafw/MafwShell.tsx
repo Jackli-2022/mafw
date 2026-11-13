@@ -124,13 +124,10 @@ import {
 import {
   createWorkbenchState,
   jumpTo,
-  lensesFor,
   openSubject,
   popFocus,
-  replaceLens,
   selectFocus,
   type Focus,
-  type Lens,
   type Scope,
   type WorkbenchState,
 } from "./focus/focus-model"
@@ -186,7 +183,6 @@ import {
 } from "./content-scope-state"
 import { configureEditorDraftStorage } from "./editor-drafts"
 import { readRecentContent, recordRecentContent, type RecentContentEntry } from "./recent-content"
-import type { ContentIntent } from "./content-intent"
 import { PopoverShell } from "./components/pickers/PopoverShell"
 import { type NavTab } from "./components/nav-tab"
 import { WindowControls } from "./components/WindowControls"
@@ -2353,12 +2349,10 @@ export function MafwShell() {
     rel: string,
     root: string | null,
     scope: Scope,
-    intent?: ContentIntent,
     opts?: { persist?: boolean; line?: number },
   ): void => {
     if (!root) return
     revealWorkbench()
-    const nextLens = focusLensForIntent(intent ?? contentIntent())
     // 分流（2026-10-27 文件预览）：html → 浏览器 surface（mafw-file:// 单 webview 导航）；
     // 图片/SVG/文本 → 文件 surface（编辑器内部按 kind 渲染）。
     if (fileOpenPlan(rel) === "browser") {
@@ -2393,7 +2387,7 @@ export function MafwShell() {
         { ...seedWorldRoot(state, scope), worldId: scope.worldId },
         scope,
         { kind: "file", root, rel },
-        nextLens,
+        "read",
       ),
     )
     recordRecentFile(rel, contentScopeFromFocus(scope))
@@ -2475,8 +2469,6 @@ export function MafwShell() {
     const focus = activeFocus()
     return focus ? contentScopeFromFocus(focus.scope) : projectContentScope(currentProject())
   })
-  const contentIntent = (): ContentIntent =>
-    activeFocus()?.lens === "edit" ? "editing" : "reading"
   const [activeContentDocument, setActiveContentDocument] = createSignal<string | null>(null)
   const contentRoot = createMemo(() => contentScopeRoot(contentScope()) ?? currentProject())
   const currentContentScopeKey = createMemo(() => contentScopeKey(contentScope()))
@@ -2493,12 +2485,6 @@ export function MafwShell() {
       worktreeDir: scope.worktreeDir,
     }
   }
-  const focusLenses = (): readonly Lens[] => {
-    const focus = activeFocus()
-    return focus ? lensesFor(focus.subject) : []
-  }
-  const focusLensForIntent = (intent: ContentIntent): Lens =>
-    intent === "editing" ? "edit" : "read"
   const focusScope = (): Scope => focusScopeFromContent(contentScope())
   const focusScopeLabel = (scope: Scope): string =>
     scope.kind === "world" ? "项目文件" : "Goal"
@@ -2638,9 +2624,6 @@ export function MafwShell() {
     setPodGoalId(null)
     setPickerOpen(true)
     revealWorkbench()
-  }
-  const applyFocusLens = (lens: Lens) => {
-    setFocusState((state) => replaceLens(state, lens))
   }
   const syncStageToFocus = (state: WorkbenchState) => {
     const focus = state.stack[state.stack.length - 1]
@@ -2993,7 +2976,6 @@ export function MafwShell() {
         item.subject.rel,
         item.subject.root,
         item.scope,
-        item.lens === "edit" ? "editing" : "reading",
       )
       return
     }
@@ -3426,20 +3408,12 @@ export function MafwShell() {
     }
   }
   const openReviewFromChat = (): void => {
-    const focus = activeFocus()
-    if (focus?.scope.kind === "goal") {
-      setShowConfig(false)
-      applyRightDock(true)
-      if (narrowZone()) applyNarrowView("workbench")
-      applyFocusLens("review")
-      return
-    }
-    const scope = contentScope()
-    if (scope?.kind === "goal") {
-      openGoalDetail(scope.goalId, "result")
-      return
-    }
-    openProjectChangeSetFocus("review")
+    openChangesFace({
+      context: currentGoalRef()
+        ? { kind: "goal", goal: currentGoalRef()! }
+        : (sessionChangesContext() ?? { kind: "project" }),
+      section: "review",
+    })
   }
   /** Episode 关闭时用的 Goal 身份：Pod 会话身份优先，其次 Tech Lead 映射/工作台焦点。 */
   const episodeGoalReference = (sessionID: string) => {
@@ -4112,7 +4086,7 @@ export function MafwShell() {
               const root = contentRoot()
               if (!root) return
               closeLeftDockIfOverlay()
-              openFileInScope(rel, root, focusScopeFromContent(contentScope()), undefined, { persist: true })
+              openFileInScope(rel, root, focusScopeFromContent(contentScope()), { persist: true })
             }}
             renderChanges={() => (
               <ChangesFace
@@ -4138,7 +4112,6 @@ export function MafwShell() {
                     rel,
                     root,
                     { kind: "goal", worldId: project, goalId: goal.goalId, revision: goal.revision, worktreeDir: root },
-                    undefined,
                     { persist: true, line },
                   )
                 }}
@@ -4170,7 +4143,7 @@ export function MafwShell() {
                   const root = contentRoot()
                   if (!root) return
                   closeLeftDockIfOverlay()
-                  openFileInScope(rel, root, focusScopeFromContent(contentScope()), undefined, { persist: true })
+                  openFileInScope(rel, root, focusScopeFromContent(contentScope()), { persist: true })
                 }}
               />
             )}
@@ -4387,8 +4360,6 @@ export function MafwShell() {
                   open={dockPresent()}
                   focusView={activeFocus()}
                   frame={focusFrame()}
-                  lenses={focusLenses()}
-                  onFocusLens={applyFocusLens}
                   onFocusBack={focusBack}
                   onFocusCrumb={focusCrumb}
                   focusOpenRequest={focusOpenRequest()}
@@ -4408,7 +4379,7 @@ export function MafwShell() {
                   onActiveFileChange={setActiveContentDocument}
                   onSendAnnotation={sendAnnotation}
                   onAddAnnotation={addAnnotation}
-                  onOpenDiffFile={(doc) => openFileInScope(doc.rel, doc.root, doc.scope, undefined, { persist: true, line: doc.anchorLine })}
+                  onOpenDiffFile={(doc) => openFileInScope(doc.rel, doc.root, doc.scope, { persist: true, line: doc.anchorLine })}
                   onSendDiffComment={(sid, text) => {
                     void window.api.mafw.sessions.promptAsync({ sessionID: sid, message: text })
                       .then(() => showToastV2({ description: "评论已发送给 agent", duration: 2000 } as any))

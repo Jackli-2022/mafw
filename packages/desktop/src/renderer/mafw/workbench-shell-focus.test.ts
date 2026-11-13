@@ -10,7 +10,7 @@ const plugin = read("components/PluginSurfaceStage.tsx")
 test("WorkbenchShell is focus-only", () => {
   assert.match(shell, /FocusStage/)
   assert.match(shell, /FrameBar/)
-  assert.match(shell, /LensBar/)
+  assert.doesNotMatch(shell, /LensBar/)
   assert.match(shell, /SubjectPicker/)
   assert.match(shell, /PluginSurfaceStage/)
   // keyed Show would remount the plugin cache on every focus change.

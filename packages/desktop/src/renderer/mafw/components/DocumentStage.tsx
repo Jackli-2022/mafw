@@ -22,7 +22,6 @@ export function DocumentStage(props: {
   sessionID: string | null
   contentRoot: string | null
   contentScopeKey?: string | null
-  intent: "reading" | "editing"
   openRequest?: FocusOpenRequest | null
   diffs?: FileDiffEntry[]
   onActiveFileChange?: (rel: string | null) => void
@@ -112,7 +111,6 @@ export function DocumentStage(props: {
             sessionID={props.sessionID}
             contentRoot={props.contentRoot}
             scopeKey={props.contentScopeKey ?? null}
-            intent={props.intent}
             openRequest={props.openRequest ?? null}
             diffs={props.diffs}
             onActiveFileChange={props.onActiveFileChange}

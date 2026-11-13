@@ -6,10 +6,9 @@ const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.ur
 const shell = read("src/renderer/mafw/MafwShell.tsx")
 const chat = read("src/renderer/mafw/components/ChatPane.tsx")
 
-test("MafwShell routes resolve mode to the existing review surfaces", () => {
+test("MafwShell routes resolve mode to the left changes face", () => {
   assert.match(shell, /openReviewFromChat/)
-  assert.match(shell, /applyFocusLens\("review"\)/)
-  assert.match(shell, /openProjectChangeSetFocus\("review"\)/)
+  assert.match(shell, /openChangesFace\(\{[\s\S]{0,200}section: "review"/)
   assert.match(shell, /onResolveRequest=\{openReviewFromChat\}/)
 })
 

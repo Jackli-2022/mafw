@@ -803,7 +803,7 @@ describe("topframe — 顶行框架", () => {
   test("D1 右工作台是焦点壳（无 L1 工具 Tab / 执行抽屉）", () => {
     const shell = read("src/renderer/mafw/components/WorkbenchShell.tsx")
     expect(shell).toContain("FrameBar")
-    expect(shell).toContain("LensBar")
+    expect(shell).not.toContain("LensBar")
     expect(shell).toContain("FocusStage")
     expect(shell).toContain("SubjectPicker")
     expect(shell).not.toContain("WORKBENCH_VIEWS")

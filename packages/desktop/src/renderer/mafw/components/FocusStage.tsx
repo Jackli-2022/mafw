@@ -72,7 +72,6 @@ export function FocusStage(props: {
           sessionID={props.sessionID}
           contentRoot={props.contentRoot}
           contentScopeKey={props.contentScopeKey}
-          intent={props.focus.lens === "edit" ? "editing" : "reading"}
           openRequest={props.openRequest}
           diffs={props.diffs}
           onActiveFileChange={props.onActiveFileChange}

@@ -6,7 +6,6 @@ const read = (path: string) => readFileSync(new URL(`./${path}`, import.meta.url
 
 test("no split affordance remains in the workbench", () => {
   for (const file of [
-    "components/LensBar.tsx",
     "components/WorkbenchShell.tsx",
     "components/WorldOverviewStage.tsx",
     "MafwShell.tsx",

@@ -58,7 +58,7 @@ import { addMark, clearMarks, marksFor, type MarkVisual } from "../annotation-ma
 import { isAnnotationHotkey } from "../annotation-hotkey"
 import type { AnnotationAnchor } from "../../../shared/annotation-types"
 import { DiffReviewPanel, type FileDiffEntry } from "./DiffReviewPanel"
-import { openModeForTab, type ContentIntent } from "../content-intent"
+import { openModeForTab } from "../content-intent"
 import type { FocusOpenRequest } from "../focus/focus-open"
 
 interface SelectionState {
@@ -76,9 +76,6 @@ export function EditorDock(props: {
   scopeKey?: string | null
   /** 统一文档舞台内嵌：不渲染自己的 tab 条。 */
   embedded?: boolean
-  /** 阅读意图用临时预览 tab；修改意图保留持久 tab。 */
-  intent: ContentIntent
-  onIntent?: (intent: ContentIntent) => void
   /** 活动文档 → 内容 surface 标签直接显示文档名。 */
   onActiveFileChange?: (rel: string | null) => void
   /** 焦点栈驱动的显式打开请求；back / crumb / restore 都落在这里。 */
@@ -169,14 +166,6 @@ export function EditorDock(props: {
   // 通知 shell：内容 surface 的标签用当前文档名，而不是泛化的「文件」。
   createEffect(() => {
     props.onActiveFileChange?.(activeFile()?.rel ?? null)
-  })
-
-  // 显式「修改」：把当前阅读预览钉成持久 tab；首次输入也会自动转持久。
-  createEffect(() => {
-    if (props.intent !== "editing") return
-    const file = activeFile()
-    if (!file?.preview) return
-    setModel(m => promotePreview(m, file.rel))
   })
 
   const previewScrollPort = (): HTMLElement | null => {
@@ -488,7 +477,7 @@ export function EditorDock(props: {
     kind: OpenFile["kind"],
     persist = false,
   ): EditorModel => {
-    const mode = openModeForTab({ intent: props.intent, persist })
+    const mode = openModeForTab({ persist })
     const next = mode === "persistent"
       ? openFile(m, rel, content, readOnly, kind)
       : openPreviewFile(m, rel, content, readOnly, kind)
@@ -692,7 +681,7 @@ export function EditorDock(props: {
         onDocChanged: () => {
           if (applyingExternal) return // 程序化 setDoc 不算用户编辑（Critical 1）
           if (root !== props.contentRoot || mountedRoot !== root || mountedRel !== f.rel) return
-          if (props.intent === "reading") props.onIntent?.("editing")
+          setModel(m => m.files.find(file => file.rel === f.rel)?.preview ? promotePreview(m, f.rel) : m)
           setDraft(root, f.rel, h.getDoc())
           setModel(m => markDirty(m, f.rel))
         },

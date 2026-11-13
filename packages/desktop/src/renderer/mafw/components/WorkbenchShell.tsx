@@ -1,14 +1,13 @@
-// 焦点工作台壳：Frame + Lens + Stage + Instruments + Picker。
+// 焦点工作台壳：Frame + Stage + Instruments + Picker。
 // 不再有 context / L2 / execution drawer；所有导航来自焦点栈。
 import { Show, type JSX } from "solid-js"
 import { DockEmpty } from "./dock-panel"
 import { FrameBar } from "./FrameBar"
-import { LensBar } from "./LensBar"
 import { FocusStage } from "./FocusStage"
 import { PluginSurfaceStage } from "./PluginSurfaceStage"
 import { SubjectPicker } from "./SubjectPicker"
 import { pluginSurfaceId, type PluginSurfaceId } from "../plugins/surface-id"
-import type { Focus, Lens } from "../focus/focus-model"
+import type { Focus } from "../focus/focus-model"
 import type { FrameView } from "../focus/frame-view"
 import type { FocusOpenRequest } from "../focus/focus-open"
 import type { PickerItem } from "../focus/picker-model"
@@ -22,8 +21,6 @@ export type WorkbenchShellProps = {
   /** 焦点栈当前对象；null 时显示取景器空态。 */
   focusView: Focus | null
   frame: FrameView | null
-  lenses: readonly Lens[]
-  onFocusLens: (lens: Lens) => void
   onFocusBack: () => void
   onFocusCrumb: (index: number) => void
   focusOpenRequest?: FocusOpenRequest | null
@@ -105,11 +102,6 @@ export function WorkbenchShell(props: WorkbenchShellProps): JSX.Element {
           onBack={props.onFocusBack}
           onCrumb={props.onFocusCrumb}
           onOpenPicker={props.onOpenPicker}
-        />
-        <LensBar
-          lenses={props.lenses}
-          active={props.focusView!.lens}
-          onLens={props.onFocusLens}
         />
         <div class="mafw-focus-body">
           <FocusStage
