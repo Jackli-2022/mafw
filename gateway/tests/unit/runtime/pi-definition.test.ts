@@ -23,7 +23,7 @@ it('builds a neutral definition with the pi capability set', async () => {
   expect(def.capabilities.sessionApi).toBe(true);
   expect(def.capabilities.nativeApprovals).toBe(true);
   expect(def.capabilities.steerApi).toBe(true);
-  expect(def.capabilities.discoveryApi).toBe(false);
+  expect(def.capabilities.discoveryApi).toBe(true);
   expect(def.capabilities.instructionsApi).toBe(false);
   expect(typeof def.transport.onEvent).toBe('function');
   expect(typeof def.transport.respondToRequest).toBe('function');
