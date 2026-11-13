@@ -38,6 +38,16 @@ import {
   SessionTodoResponse,
   SessionTokenSummaryResponse,
 } from '../../src/routes/schemas/session-read';
+import {
+  PodCostResponse,
+  PodEventsResponse,
+  PodGoalResultResponse,
+  PodGoalsResponse,
+  PodMessagesResponse,
+  PodReviewItemsResponse,
+  PodTasksResponse,
+} from '../../src/routes/schemas/pods';
+import { WorkOverviewResponse } from '../../src/routes/schemas/work';
 import { handleAttention } from '../../src/routes/attention';
 import { handleDecisionList } from '../../src/routes/decisions';
 import type { PodGoalView } from '../../src/core/pod/pod-view';
@@ -601,6 +611,227 @@ describe('api-contract: E10-1 session 读接口 response schema（8 ops）', () 
       files: [{ file: 'a.ts', patch: '@@ -1 +1 @@', additions: 1, deletions: 0, status: 'modified' }],
     })).toBe(true);
     expect(Value.Check(SessionDiffResponse, { files: [] })).toBe(true);
+  });
+});
+
+describe('api-contract: E10-2 pod / work 读接口 response schema（8 ops）', () => {
+  const findOp = (operationId: string): any => {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const candidate of Object.values<any>(methods)) {
+        if (candidate?.operationId === operationId) return candidate;
+      }
+    }
+    return null;
+  };
+
+  /** 每个 op 的承重 property + 数组元素必填（少一个客户端就无法渲染/分页）。 */
+  const EXPECTED: Record<string, { fields: string[]; item?: { at: string; required: string[] } }> = {
+    'work.overview': { fields: ['projectDir', 'podId', 'groups', 'counts', 'total'] },
+    'pod.events.list': {
+      fields: ['items', 'unread'],
+      item: {
+        at: 'items',
+        required: [
+          'id', 'podId', 'goalId', 'revision', 'kind', 'severity', 'reason', 'title',
+          'summary', 'audience', 'state', 'createdAt', 'seenAt',
+        ],
+      },
+    },
+    'pods.tasks.list': {
+      fields: ['items'],
+      item: {
+        at: 'items',
+        required: [
+          'id', 'podId', 'goalId', 'sourceKey', 'externalTaskId', 'kind', 'title',
+          'description', 'ownerMemberId', 'status', 'createdAt', 'updatedAt',
+        ],
+      },
+    },
+    'pods.messages.list': {
+      fields: ['items'],
+      item: {
+        at: 'items',
+        required: [
+          'id', 'podId', 'fromMemberId', 'toMemberId', 'kind', 'body', 'createdAt',
+          'readAt', 'protocol', 'externalMessageId', 'deliveredAt', 'deliveredSessionId',
+        ],
+      },
+    },
+    'pods.goals': {
+      fields: ['items'],
+      item: {
+        at: 'items',
+        required: ['id', 'podId', 'goalId', 'status', 'title', 'phase', 'verdict', 'stage', 'resultReady', 'enqueuedAt'],
+      },
+    },
+    'pods.goals.result': {
+      fields: [
+        'goalId', 'revision', 'verdict', 'resultReady', 'reviewed', 'assessment',
+        'goalAcceptance', 'goalConditions', 'goalResults', 'goalEvalValid', 'failure',
+        'tasks', 'reviewFeedback', 'receipt', 'artifacts', 'worktree', 'acceptance',
+      ],
+    },
+    'pods.goals.reviewItems': {
+      fields: ['revision', 'items'],
+      item: {
+        at: 'items',
+        required: [
+          'id', 'podId', 'goalId', 'revision', 'status', 'rel', 'startLine', 'endLine',
+          'code', 'comment', 'anchor', 'response', 'originItemId', 'originRevision',
+          'createdAt', 'updatedAt', 'respondedAt', 'resolvedAt',
+        ],
+      },
+    },
+    'pods.cost': { fields: ['spentUsd', 'limitUsd'] },
+  };
+
+  test('八个 op 的 200 响应都是带 properties 的 JSON schema（不得整体放宽成空对象）', () => {
+    const problems: string[] = [];
+    for (const [operationId, spec] of Object.entries(EXPECTED)) {
+      const op = findOp(operationId);
+      if (!op) { problems.push(`${operationId}: 未出现在 openapi.json`); continue; }
+      const schema = op.responses?.['200']?.content?.['application/json']?.schema;
+      if (!schema) { problems.push(`${operationId}: responses.200 缺 application/json schema`); continue; }
+      const properties = Object.keys(schema.properties ?? {});
+      if (properties.length === 0) { problems.push(`${operationId}: schema 不含任何 property（整体放宽）`); continue; }
+      for (const field of spec.fields) {
+        if (!properties.includes(field)) problems.push(`${operationId}: schema 缺 property '${field}'`);
+      }
+    }
+    if (problems.length) {
+      console.error('[api-contract] E10-2 response schema 缺失 — 先跑 emit:openapi + merge-contract:\n' + problems.join('\n'));
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test('数组元素必填字段与 handler 实际 wire 一致（items）', () => {
+    const problems: string[] = [];
+    for (const [operationId, spec] of Object.entries(EXPECTED)) {
+      if (!spec.item) continue;
+      const schema = findOp(operationId).responses['200'].content['application/json'].schema;
+      const required = schema.properties?.[spec.item.at]?.items?.required ?? [];
+      for (const field of spec.item.required) {
+        if (!required.includes(field)) problems.push(`${operationId}: ${spec.item.at}.items 缺 required '${field}'`);
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test('work.overview 的五桶键集与 PodGoalView 元素必填（counts 键集一致）', () => {
+    const schema = findOp('work.overview').responses['200'].content['application/json'].schema;
+    const buckets = ['needs_you', 'queued', 'in_progress', 'result_ready', 'ended'];
+    expect(schema.properties.groups.required).toEqual(buckets);
+    expect(schema.properties.counts.required).toEqual(buckets);
+    for (const bucket of buckets) {
+      expect(schema.properties.groups.properties[bucket].type).toBe('array');
+      expect(schema.properties.counts.properties[bucket].type).toBe('number');
+    }
+    expect(schema.properties.groups.properties.needs_you.items.required)
+      .toEqual(expect.arrayContaining(['goalId', 'stage', 'status', 'resultReady', 'enqueuedAt']));
+    expect(schema.properties.total.type).toBe('number');
+  });
+
+  test('goal result 的可空字段与枚举钉住（不能退化成 unknown/anyOf null）', () => {
+    const schema = findOp('pods.goals.result').responses['200']['content']['application/json'].schema;
+    expect(schema.properties.revision.type).toBe('number');
+    expect(schema.properties.reviewed.type).toBe('boolean');
+    expect(schema.properties.assessment.anyOf?.map((entry: any) => entry.const ?? entry.type))
+      .toEqual(expect.arrayContaining(['reviewed', 'unreviewed', 'null']));
+    expect(schema.properties.failure.anyOf?.map((entry: any) => entry.const ?? entry.type))
+      .toEqual(expect.arrayContaining(['review_missing', 'review_invalid', 'goal_eval_invalid', 'null']));
+    expect(schema.properties.acceptance.anyOf?.map((entry: any) => entry.const))
+      .toEqual(expect.arrayContaining(['pending', 'accepted', 'unavailable']));
+    expect(schema.properties.worktree.anyOf?.map((entry: any) => entry.type))
+      .toEqual(expect.arrayContaining(['object', 'null']));
+    // Goal Eval 条件必须带「要什么证据 / 怎么验」，否则 Reviewer 会漏验。
+    expect(schema.properties.goalConditions.items.required)
+      .toEqual(['id', 'statement', 'required', 'evidence', 'method']);
+    // receipt 是 runtime-owned 回执 JSON：只承诺「有值即可」，不建模内部字段。
+    expect(schema.properties.receipt).toBeDefined();
+  });
+
+  test('handler 实际 wire 样本通过各自 schema 校验（Value.Check）', () => {
+    const goalView: PodGoalView = {
+      id: 'pod_1:goal_1', podId: 'pod_1', goalId: 'goal_1', status: 'active',
+      title: 'Ship it', phase: null, verdict: null,
+      stage: { owner: 'person', kind: 'plan_approval', action: { type: 'open_plan_review', goalId: 'goal_1' } },
+      stateMissing: false,
+      bucket: 'needs_you', resultReady: false, accepted: false, sourceRef: null, strategy: null,
+      assessment: null, currentAssignment: null, activeRevision: 1, revision: 1, priority: 0,
+      enqueuedAt: '2026-11-13T00:00:00.000Z', startedAt: null, endedAt: null,
+    };
+    const buckets = ['needs_you', 'queued', 'in_progress', 'result_ready', 'ended'] as const;
+    const groups = Object.fromEntries(buckets.map((bucket) => [bucket, bucket === 'needs_you' ? [goalView] : []]));
+    const counts = Object.fromEntries(buckets.map((bucket) => [bucket, bucket === 'needs_you' ? 1 : 0]));
+    const work = { projectDir: '/tmp/project', podId: 'pod_1', groups, counts, total: 1 };
+    expect(Value.Check(WorkOverviewResponse, work)).toBe(true);
+    expect([...Value.Errors(WorkOverviewResponse, work)]).toEqual([]);
+
+    const event = {
+      id: 'evt_1', podId: 'pod_1', goalId: 'goal_1', revision: 1, kind: 'goal_result',
+      severity: 'p1', reason: 'result', title: 'goal finished', summary: null,
+      audience: 'human', state: 'unread',
+      createdAt: '2026-11-13T00:00:00.000Z', seenAt: null,
+      // 行内的存储列（refsJson / dedupeKey / wake*）不影响契约面校验。
+      refsJson: null, dedupeKey: 'goal_1:1:result',
+    };
+    expect(Value.Check(PodEventsResponse, { items: [event], unread: 1 })).toBe(true);
+
+    const task = {
+      id: 'task_1', podId: 'pod_1', goalId: null, sourceKey: 'manual:1', externalTaskId: null,
+      kind: 'note', title: 'do it', description: null, ownerMemberId: null, status: 'pending',
+      dependenciesJson: null, artifactRefsJson: null, acceptanceJson: null,
+      createdAt: '2026-11-13T00:00:00.000Z', updatedAt: '2026-11-13T00:00:00.000Z',
+    };
+    expect(Value.Check(PodTasksResponse, { items: [task] })).toBe(true);
+
+    const message = {
+      id: 'msg_1', podId: 'pod_1', fromMemberId: 'm_lead', toMemberId: null, kind: 'note',
+      body: 'hi', createdAt: '2026-11-13T00:00:00.000Z', readAt: null,
+      protocol: null, externalMessageId: null, deliveredAt: null, deliveredSessionId: null,
+    };
+    expect(Value.Check(PodMessagesResponse, { items: [message] })).toBe(true);
+
+    expect(Value.Check(PodGoalsResponse, { items: [goalView] })).toBe(true);
+
+    const result = {
+      goalId: 'goal_1', revision: 1, verdict: 'PASS', resultReady: true, reviewed: true,
+      assessment: 'reviewed',
+      goalAcceptance: ['tests pass'],
+      goalConditions: [{ id: 'g1', statement: 'tests pass', required: true, evidence: 'jest', method: 'run' }],
+      goalResults: [{ conditionId: 'g1', result: 'pass', evidence: 'jest ok' }],
+      goalEvalValid: true,
+      failure: null,
+      tasks: [{ taskId: 'task_1', result: 'pass', evidence: 'jest ok' }],
+      reviewFeedback: 'ok',
+      receipt: { merged: false },
+      artifacts: ['report.md'],
+      worktree: {
+        dir: '/repo-wt-g1-r1', branch: 'mafw/g1-r1', baseBranch: 'main',
+        status: 'active', mergeCommit: null, mergedAt: null,
+      },
+      acceptance: 'pending',
+      acceptanceRecord: null,
+    };
+    expect(Value.Check(PodGoalResultResponse, result)).toBe(true);
+    expect([...Value.Errors(PodGoalResultResponse, result)]).toEqual([]);
+    // worktree 缺失分支：service 只给 worktree: null + acceptance: 'unavailable'（无 acceptanceRecord）。
+    expect(Value.Check(PodGoalResultResponse, {
+      ...result, worktree: null, acceptance: 'unavailable', acceptanceRecord: undefined, receipt: null,
+    })).toBe(true);
+
+    const reviewItem = {
+      id: 'ri_1', podId: 'pod_1', goalId: 'goal_1', revision: 1, status: 'pending',
+      rel: 'src/a.ts', startLine: 1, endLine: 2, code: 'const a = 1', comment: 'rename',
+      anchor: { kind: 'quote', quote: 'const a = 1' },
+      response: null, originItemId: null, originRevision: null,
+      createdAt: '2026-11-13T00:00:00.000Z', updatedAt: '2026-11-13T00:00:00.000Z',
+      respondedAt: null, resolvedAt: null,
+    };
+    expect(Value.Check(PodReviewItemsResponse, { revision: 1, items: [reviewItem] })).toBe(true);
+    expect(Value.Check(PodReviewItemsResponse, { revision: 1, items: [] })).toBe(true);
+
+    expect(Value.Check(PodCostResponse, { spentUsd: 1.5, limitUsd: 10 })).toBe(true);
   });
 });
 

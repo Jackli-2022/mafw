@@ -34,7 +34,17 @@ import {
 } from './schemas/read-models';
 import { KernelStatsResponse } from './schemas/resources';
 import { EventReplayResponse } from './schemas/events';
-import { PodDetailResponse } from './schemas/pods';
+import {
+  PodCostResponse,
+  PodDetailResponse,
+  PodEventsResponse,
+  PodGoalResultResponse,
+  PodGoalsResponse,
+  PodMessagesResponse,
+  PodReviewItemsResponse,
+  PodTasksResponse,
+} from './schemas/pods';
+import { WorkOverviewResponse } from './schemas/work';
 import { MemoryStatsResponse } from './schemas/memory-stats';
 import {
   SessionCheckpointsResponse,
@@ -53,7 +63,7 @@ import {
  */
 const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/presence', operationId: 'presence.get', tags: ['presence'], response: PresenceResponse },
-  { method: 'GET', path: '/api/pods/:podId/events', operationId: 'pod.events.list', tags: ['pod'] },
+  { method: 'GET', path: '/api/pods/:podId/events', operationId: 'pod.events.list', tags: ['pod'], response: PodEventsResponse },
   { method: 'POST', path: '/api/pods/:podId/events/:id/seen', operationId: 'pod.events.seen', tags: ['pod'] },
   { method: 'POST', path: '/api/pods/:podId/events/seen', operationId: 'pod.events.seenAll', tags: ['pod'] },
   { method: 'POST', path: '/api/session', operationId: 'session.create', tags: ['session'] },
@@ -279,31 +289,31 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'PUT', path: '/api/automations/:id', operationId: 'automations.toggle', tags: ['automations'] },
   { method: 'DELETE', path: '/api/automations/:id', operationId: 'automations.remove', tags: ['automations'] },
   { method: 'POST', path: '/api/automations/draft', operationId: 'automations.draft', tags: ['automations'] },
-  { method: 'GET', path: '/api/projects/:projectId/work', operationId: 'work.overview', tags: ['work'] },
+  { method: 'GET', path: '/api/projects/:projectId/work', operationId: 'work.overview', tags: ['work'], response: WorkOverviewResponse },
   { method: 'GET', path: '/api/projects/:projectId/pod', operationId: 'pods.ensure', tags: ['pods'] },
   { method: 'GET', path: '/api/projects/:projectId/pod/lookup', operationId: 'pods.lookup', tags: ['pods'] },
   { method: 'POST', path: '/api/projects/:projectId/pod', operationId: 'pods.create', tags: ['pods'] },
   { method: 'GET', path: '/api/pods/:podId', operationId: 'pods.get', tags: ['pods'], response: PodDetailResponse },
   { method: 'PATCH', path: '/api/pods/:podId', operationId: 'pods.update', tags: ['pods'] },
   { method: 'POST', path: '/api/pods/:podId/lead/ensure', operationId: 'pods.lead.ensure', tags: ['pods'] },
-  { method: 'GET', path: '/api/pods/:podId/tasks', operationId: 'pods.tasks.list', tags: ['pods'] },
+  { method: 'GET', path: '/api/pods/:podId/tasks', operationId: 'pods.tasks.list', tags: ['pods'], response: PodTasksResponse },
   { method: 'POST', path: '/api/pods/:podId/tasks', operationId: 'pods.tasks.create', tags: ['pods'] },
   { method: 'PATCH', path: '/api/pods/:podId/tasks/:taskId', operationId: 'pods.tasks.update', tags: ['pods'] },
   { method: 'DELETE', path: '/api/pods/:podId/tasks/:taskId', operationId: 'pods.tasks.delete', tags: ['pods'] },
-  { method: 'GET', path: '/api/pods/:podId/messages', operationId: 'pods.messages.list', tags: ['pods'] },
+  { method: 'GET', path: '/api/pods/:podId/messages', operationId: 'pods.messages.list', tags: ['pods'], response: PodMessagesResponse },
   { method: 'POST', path: '/api/pods/:podId/messages', operationId: 'pods.messages.create', tags: ['pods'] },
   { method: 'POST', path: '/api/pods/:podId/messages/:messageId/read', operationId: 'pods.messages.read', tags: ['pods'] },
   { method: 'POST', path: '/api/pods/:podId/messages/:messageId/delivery/retry', operationId: 'pods.messages.delivery.retry', tags: ['pods'] },
   { method: 'POST', path: '/api/pods/:podId/messages/:messageId/delivery/dismiss', operationId: 'pods.messages.delivery.dismiss', tags: ['pods'] },
   { method: 'POST', path: '/api/pods/:podId/wake', operationId: 'pods.wake', tags: ['pods'] },
   { method: 'POST', path: '/api/pods/:podId/sleep', operationId: 'pods.sleep', tags: ['pods'] },
-  { method: 'GET', path: '/api/pods/:podId/cost', operationId: 'pods.cost', tags: ['pods'] },
-  { method: 'GET', path: '/api/pods/:podId/goals', operationId: 'pods.goals', tags: ['pods'] },
+  { method: 'GET', path: '/api/pods/:podId/cost', operationId: 'pods.cost', tags: ['pods'], response: PodCostResponse },
+  { method: 'GET', path: '/api/pods/:podId/goals', operationId: 'pods.goals', tags: ['pods'], response: PodGoalsResponse },
   { method: 'POST', path: '/api/pods/:podId/goals', operationId: 'pods.goals.create', tags: ['pods'] },
   { method: 'POST', path: '/api/pods/:podId/goals/handoff', operationId: 'pods.goals.handoff', tags: ['pods'] },
   { method: 'DELETE', path: '/api/pods/:podId/goals/:goalId', operationId: 'pods.goals.cancel', tags: ['pods'] },
-  { method: 'GET', path: '/api/pods/:podId/goals/:goalId/result', operationId: 'pods.goals.result', tags: ['pods'] },
-  { method: 'GET', path: '/api/pods/:podId/goals/:goalId/review-items', operationId: 'pods.goals.reviewItems', tags: ['pods'] },
+  { method: 'GET', path: '/api/pods/:podId/goals/:goalId/result', operationId: 'pods.goals.result', tags: ['pods'], response: PodGoalResultResponse },
+  { method: 'GET', path: '/api/pods/:podId/goals/:goalId/review-items', operationId: 'pods.goals.reviewItems', tags: ['pods'], response: PodReviewItemsResponse },
   { method: 'POST', path: '/api/pods/:podId/goals/:goalId/review-items', operationId: 'pods.goals.reviewItems.create', tags: ['pods'] },
   { method: 'POST', path: '/api/pods/:podId/goals/:goalId/review-items/:itemId/resolve', operationId: 'pods.goals.reviewItems.resolve', tags: ['pods'] },
   { method: 'POST', path: '/api/pods/:podId/goals/:goalId/review-items/:itemId/reopen', operationId: 'pods.goals.reviewItems.reopen', tags: ['pods'] },

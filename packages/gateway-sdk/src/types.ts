@@ -1380,10 +1380,10 @@ export interface PodMessage {
   body: string
   createdAt: string
   readAt: string | null
-  protocol?: string | null
-  externalMessageId?: string | null
-  deliveredAt?: string | null
-  deliveredSessionId?: string | null
+  protocol: string | null
+  externalMessageId: string | null
+  deliveredAt: string | null
+  deliveredSessionId: string | null
 }
 
 export interface PodSession {
@@ -1417,28 +1417,55 @@ export interface PodMessageDelivery {
 
 export interface PodGoalResult {
   goalId: string
-  revision?: number
+  revision: number
   verdict: PodGoalVerdict | null
   resultReady: boolean
   /** false when a quick Goal completed without an independent reviewer. */
-  reviewed?: boolean
-  assessment?: PodGoalAssessment | null
+  reviewed: boolean
+  assessment: PodGoalAssessment | null
   goalAcceptance: string[]
-  goalConditions?: Array<{ id: string; statement: string; required: boolean }>
-  goalResults?: Array<{ conditionId: string; result: 'pass' | 'fail' | 'skipped'; evidence: string }>
-  goalEvalValid?: boolean
-  tasks: Array<{ taskId: string; result: 'pass' | 'fail' | 'skipped'; evidence: string }>
+  /** Goal Eval 条件（`GoalEvalCondition`：断言 + 要什么证据 + 怎么验）。 */
+  goalConditions: PodGoalCondition[]
+  goalResults: PodGoalResultCheck[]
+  goalEvalValid: boolean
+  /** 结果不可信时的失败分类（fail-closed）；可信 = null。 */
+  failure: PodGoalResultFailure | null
+  tasks: PodGoalResultTask[]
   reviewFeedback: string
   receipt: unknown | null
   artifacts: string[]
-  failure?: unknown
-  /** Revision worktree metadata; absent on old gateways or legacy Goals. */
-  worktree?: PodGoalResultWorktree | null
-  /** User acceptance state; absent on old gateways. */
-  acceptance?: 'pending' | 'accepted' | 'unavailable'
+  /** Revision worktree metadata（legacy Goal 或老 gateway 为 null）。 */
+  worktree: PodGoalResultWorktree | null
+  /** User acceptance state（每次 result() 都会判定）。 */
+  acceptance: 'pending' | 'accepted' | 'unavailable'
   /** Durable acceptance audit (forced state + unresolved snapshot); absent before acceptance. */
   acceptanceRecord?: PodGoalAcceptanceRecord | null
 }
+
+/** Goal Eval 单条条件（`core/goal/goal-eval.ts` `GoalEvalCondition`）。 */
+export interface PodGoalCondition {
+  id: string
+  statement: string
+  required: boolean
+  evidence: string
+  method: string
+}
+
+/** Reviewer 的逐条件判定（`core/goal/review-rubric.ts` `ReviewGoalResult`）。 */
+export interface PodGoalResultCheck {
+  conditionId: string
+  result: 'pass' | 'fail' | 'skipped'
+  evidence: string
+}
+
+export interface PodGoalResultTask {
+  taskId: string
+  result: 'pass' | 'fail' | 'skipped'
+  evidence: string
+}
+
+/** 结果不可信的失败分类（`core/pod/pod-result.ts` `PodGoalResultFailure`）。 */
+export type PodGoalResultFailure = 'review_missing' | 'review_invalid' | 'goal_eval_invalid'
 
 export interface PodGoalResultWorktree {
   dir: string
@@ -1951,17 +1978,27 @@ export interface WorkNamespace {
   overview(projectID: string): Promise<PodWorkOverview>
 }
 
+/** Pod 事件严重度（`core/pod/pod-event-model.ts` 写入类型，p1 最高）。 */
+export type PodEventSeverity = 'p1' | 'p2' | 'p3'
+
+/** Pod 事件分类（同上，写入侧枚举）。 */
+export type PodEventReason = 'decision' | 'result' | 'blocked' | 'progress' | 'message'
+
+/** 事件受众：human 进收件箱，lead 唤醒 Lead，none 只做审计。 */
+export type PodEventAudience = 'human' | 'lead' | 'none'
+
 export interface PodEventItem {
   id: string
   podId: string
   goalId: string | null
   revision: number | null
   kind: string
-  severity: 'p1' | 'p2' | 'p3'
-  reason: string
+  severity: PodEventSeverity
+  reason: PodEventReason
   title: string
   summary: string | null
-  audience: string
+  /** human = 进人类收件箱；lead = 唤醒 Lead；none = 只做审计。 */
+  audience: PodEventAudience
   state: 'unread' | 'seen'
   createdAt: string
   seenAt: string | null

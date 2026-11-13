@@ -9,6 +9,9 @@ import type {
   DecisionList, AttentionList, PodDetail,
   // E10-1 session read surface
   QueueItem, SessionConfigState, Todo, SessionCheckpointListItem, SubagentList, SessionNamespace,
+  // E10-2 pod / work read surface
+  PodGoal, PodTask, PodMessage, PodEventItem, PodGoalResult, PodReviewItemList, PodWorkOverview,
+  PodNamespace,
 } from './types'
 import type { MafwDiff } from './view-dto'
 
@@ -74,6 +77,23 @@ const CHECK_session_diff_item: AssertEq<
 type SdkTokenSummary = Awaited<ReturnType<SessionNamespace['tokenSummary']>>
 const CHECK_session_token_summary: AssertEq<Resp<operations['session.tokenSummary']>, SdkTokenSummary> = true
 
+// E10-2: pod / work 读接口（8 ops）—— schema 是 handler wire 的转写，DTO 必须同步。
+type GenPodEventItem = ItemOf<Resp<operations['pod.events.list']>, 'items'>
+const CHECK_pod_events_list_item: AssertEq<GenPodEventItem, PodEventItem> = true
+type GenPodTaskItem = ItemOf<Resp<operations['pods.tasks.list']>, 'items'>
+const CHECK_pods_tasks_list_item: AssertEq<GenPodTaskItem, PodTask> = true
+type GenPodMessageItem = ItemOf<Resp<operations['pods.messages.list']>, 'items'>
+const CHECK_pods_messages_list_item: AssertEq<GenPodMessageItem, PodMessage> = true
+type GenPodGoalItem = ItemOf<Resp<operations['pods.goals']>, 'items'>
+const CHECK_pods_goals_item: AssertEq<GenPodGoalItem, PodGoal> = true
+const CHECK_pods_goal_result: AssertEq<Resp<operations['pods.goals.result']>, PodGoalResult> = true
+const CHECK_pods_review_items: AssertEq<Resp<operations['pods.goals.reviewItems']>, PodReviewItemList> = true
+/** cost 无独立命名 DTO：锁 client `pod.cost` 的内联返回类型。 */
+type SdkPodCost = Awaited<ReturnType<PodNamespace['cost']>>
+const CHECK_pods_cost: AssertEq<Resp<operations['pods.cost']>, SdkPodCost> = true
+/** work.overview 的 groups/counts 五桶键集与 `PodWorkBucket` 一一对应。 */
+const CHECK_work_overview: AssertEq<Resp<operations['work.overview']>, PodWorkOverview> = true
+
 /**
  * session.messages：`data` 的 part 判别联合由 view-dto 契约拥有，schema 只承诺
  * SDK 边界守卫 `MafwMessageShape` 认可的形状；游标必须与 client 的
@@ -96,4 +116,8 @@ export const CONTRACT_COMPAT_CHECKS = [
   CHECK_session_config, CHECK_session_todo_item,
   CHECK_session_checkpoints_item, CHECK_session_subagents, CHECK_session_diff_item,
   CHECK_session_token_summary,
+  // E10-2
+  CHECK_pod_events_list_item, CHECK_pods_tasks_list_item, CHECK_pods_messages_list_item,
+  CHECK_pods_goals_item, CHECK_pods_goal_result, CHECK_pods_review_items, CHECK_pods_cost,
+  CHECK_work_overview,
 ]
