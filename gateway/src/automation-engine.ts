@@ -34,9 +34,11 @@ export interface EventTrigger {
 }
 
 export type Trigger = CronTrigger | EventTrigger;
+export type ActionSource = 'cron' | 'event' | 'user' | 'llm';
 export type ActionHandler = (
   rule: AutomationRule,
-  engine: AutomationEngine
+  engine: AutomationEngine,
+  source?: ActionSource,
 ) => Promise<void>;
 
 /** Per-action task metadata merged into the scheduler descriptor when the
@@ -51,6 +53,20 @@ export interface RegisteredAction {
     timeoutMs?: number;
   };
 }
+
+/** External (plugin/bridge) action resolved at execution time. */
+export type ExternalActionHandler = (
+  rule: AutomationRule,
+  engine: AutomationEngine,
+  source?: ActionSource,
+) => Promise<void>;
+
+export interface ExternalActionEntry {
+  handler: ExternalActionHandler;
+  taskOpts?: RegisteredAction['taskOpts'];
+}
+
+export type ExternalActionResolver = (type: string) => ExternalActionEntry | undefined;
 /**
  * One energy-decay pass over a HarmonicIndexManager.
  *
@@ -377,6 +393,7 @@ export class AutomationEngine {
    *  builtins + the host provider on start()/reloadRules(). */
   private actions = new Map<string, RegisteredAction>();
   private actionsProvider?: () => void;
+  private externalActionResolver?: ExternalActionResolver;
   /** Monotonic per-engine sequence for task ids (Date.now() collides when two
    *  triggers of the same action land in the same millisecond �� B2 M2). */
   private _actionSeq = 0;
@@ -399,6 +416,20 @@ export class AutomationEngine {
 
   hasAction(type: string): boolean {
     return this.actions.has(type);
+  }
+
+  /** Optional bridge for actions that live outside the local map (plugin packs). */
+  setExternalActionResolver(resolver: ExternalActionResolver | null): void {
+    this.externalActionResolver = resolver ?? undefined;
+  }
+
+  canResolveAction(type: string): boolean {
+    if (this.actions.has(type)) return true;
+    try {
+      return Boolean(this.externalActionResolver?.(type));
+    } catch {
+      return false;
+    }
   }
 
   /** The host's re-registration hook: called by refreshActions() so the
@@ -694,21 +725,30 @@ export class AutomationEngine {
   private async executeAction(
     actionType: string,
     rule: AutomationRule,
-    source?: 'cron' | 'event' | 'user' | 'llm',
+    source?: ActionSource,
   ): Promise<ActionRunStatus> {
-    const entry = this.actions.get(actionType);
-    if (!entry) {
+    const local = this.actions.get(actionType);
+    let external: ExternalActionEntry | undefined;
+    if (!local) {
+      try {
+        external = this.externalActionResolver?.(actionType);
+      } catch {
+        external = undefined;
+      }
+    }
+    const handler = local?.handler ?? external?.handler;
+    const taskOpts = local?.taskOpts ?? external?.taskOpts;
+    if (!handler) {
       log.warn(`[AutomationEngine] No handler registered for action: ${actionType}`);
       return 'missing';
     }
-    const handler = entry.handler;
 
     // Standalone engines (tests, embedders without a scheduler) run handlers
     // directly �� the scheduler is an optimization/discipline layer, not a
     // hard dependency.
     if (!this._scheduler) {
       try {
-        await handler(rule, this);
+        await handler(rule, this, source);
         return 'ran';
       } catch (err: any) {
         log.error(`[AutomationEngine] Action ${actionType} failed: ${err instanceof Error ? err.message : err}`);
@@ -726,10 +766,10 @@ export class AutomationEngine {
           priority: source === 'user' || source === 'llm' ? 'foreground' : 'background',
           mutexKey: `action:${actionType}`,
           strategy: 'skip',
-          timeoutMs: entry.taskOpts?.timeoutMs ?? 30 * 60_000,
-          budget: entry.taskOpts?.budget,
+          timeoutMs: taskOpts?.timeoutMs ?? 30 * 60_000,
+          budget: taskOpts?.budget,
         },
-        () => handler(rule, this),
+        () => handler(rule, this, source),
       );
       return 'ran';
     } catch (err) {
@@ -953,7 +993,7 @@ export class AutomationEngine {
     if (!rule.action && !rule.skill) {
       errors.push('Rule must have either an action or a skill');
     }
-    if (rule.action && !this.hasAction(rule.action.type)) {
+    if (rule.action && !this.canResolveAction(rule.action.type)) {
       errors.push(`Unknown action type: ${rule.action.type}`);
     }
     if (rule.onResult && !['triage', 'goal'].includes(rule.onResult.type)) {
