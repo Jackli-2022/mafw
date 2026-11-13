@@ -48,7 +48,7 @@
 
 ## 验证
 
-- 本计划新增 **14 个测试**：
+- 本计划新增 **18 个测试**：
   - external action resolver / local precedence / missing / throwing / validate rule
   - plugin action adapter / out-of-band metadata
   - plugin event sink / dropped event / async sink rejection
