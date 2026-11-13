@@ -7,7 +7,9 @@
 - 分支：`feat/gateway-e10b-contract-coverage`（worktree `.superpowers/e10b-worktree`），
   基线 `946937f1`（main，E10b spec/plan 落库时点）
 - 范围：E10b-1 Goal / Pod Goal 读接口 8 ops + E10b-2 human-gate / 权限读接口 7 ops
-  （含 5 个 override 转 code-first）+ E10b-3 桌面 triage 渲染收口 + E10b-4 收口
+  （含 5 个 override 转 code-first）+ E10b-3 桌面 triage 渲染收口 + E10b-4 收口 +
+  E10b-5 终审修复（`goals.plan.waves` = plan 文档边界、覆盖率台账等式守卫、菜单 target 清理）+
+  E10b-6 docs 重算（merge main 后 44/317）
 - spec：`docs/superpowers/specs/2026-11-13-gateway-e10b-contract-coverage-design.md`
 - plan：`docs/superpowers/plans/2026-11-13-gateway-e10b-contract-coverage.md`
 - 架构现状：`docs/architecture/gateway.md` §「E10b 契约覆盖第二批」、
@@ -23,7 +25,10 @@
 | `f2cfffd5` | E10b-1 | `schemas/goals.ts`（new）+ `pods.ts` 扩展：8 个 Goal / Pod Goal 读 op 的 200 response schema + catalog 挂载 + 生成物 + 8 项 `AssertEq` |
 | `ace3fac2` | E10b-2 | `schemas/human-gate.ts`（new）：7 个 human-gate / 权限读 op schema + 5 个 override 删除（18 → 13）+ DTO 按 handler 修正 |
 | `86233e9e` | E10b-3 | 桌面 `triage-model.ts`（new）+ `TriagePage` 改真实 wire 字段；preload `permissions.list()` canonical 类型 |
-| E10b-4（本记录） | E10b-4 | 架构现状 + 本记录 + 全量门禁 + ledger（docs-only） |
+| `b96ea73a` | E10b-4 | 架构现状 + 本记录 + 全量门禁 + ledger（docs-only） |
+| `46e7d687` | merge | `Merge main into feat/gateway-e10b-contract-coverage`（catalog 316 → 317，冲突解到 317） |
+| `310587b6` | E10b-5 | `fix(contract)`: `goals.plan.waves` 改 plan 文档边界（schema + SDK `GoalPlanDocument` + 生成物）、覆盖率台账补 `goals.list` 并改成集合等式守卫、菜单 target 清理 |
+| E10b-6（本记录） | E10b-6 | `docs(gateway)`: merge main 后重算 44/317 / 273 uncovered、修正「没有新增边界对象」表述、mobile triage deferred |
 
 ## 交付项
 
@@ -48,6 +53,31 @@
   `TriagePage` 去 `as any[]` / 删内联 hex，badge 走既有 token 类 `.mafw-tool-badge[data-tone]`；
   卡片菜单 target 只留 `{ id }`；preload `permissions.list()` 声明 canonical `MafwPermissionRequest[]`。
 
+## 终审修复（E10b-5 / E10b-6）
+
+终审在 E10b-4 上发现两处契约错误 + 一处台账漏洞，E10b-5 修代码、E10b-6 重算文档：
+
+1. **`goals.plan.waves` 形状错误（B2）**：E10b-1 把它建模成 `GoalPlanWave[] | null`，但 handler
+   `routes/goal-plan.ts` 是 `JSON.parse(readFileSync(wavesPath))` 的**原样透传**——也就是 plan 文档
+   `{status, taskType, strategy, waves: [...], goalEval, ambiguities?}`，数组在 `waves.waves`。
+   证据链：产出契约 `core/goal/node-prompts.ts` `PLAN_OUTPUT_SCHEMA`；桌面 `plan-render.ts` /
+   `plan-review-model.ts` 一直按文档解包；mobile `plan_models.dart` 也写明「服务端给的是
+   waves.json 整份文档」。修法：`PlanWavesBoundary`（数组）→ `PlanDocumentBoundary`
+   （`status?` / `taskType?` / `strategy?` / `waves?: GoalPlanWave[]` / `ambiguities?: string[]` +
+   `additionalProperties: true`，owner 注释指向 driver 产出契约），`null` arm 保留；SDK 新增
+   `GoalPlanDocument` 并让 `GoalPlanInfo.waves: GoalPlanDocument | null`；`api-contract.test.ts`
+   的样本改为对象形态，并新增「裸数组不被接受」（`Value.Check === false`）与
+   `need_clarification`（只有 `ambiguities`）断言。**wire 零变化**——只是 schema 追平既有输出；
+   旧 schema 会导致 `Value.Check`/OpenAPI 消费者把真实响应判成非法。
+2. **覆盖率台账漏项（B1）**：`E10_COVERED_OPS` 43 条但实际 covered 44（缺 `goals.list`）。
+   补上，并把「`covered >= 清单长度`」这条宽松断言换成**双向集合等式**
+   `catalog covered set === manifest set`（+ 清单去重断言），保留 `TOTAL_OPS`。
+   红测：临时摘掉 `goals.list` 的 `response` → 2 条断言红（`lost` 命名清单 + 等式守卫），恢复后绿。
+3. **菜单 target 清理**：`context-menu/builders/card.ts` 的 `buildNotesCardMenu` /
+   `buildApprovalQuestionMenu` / `buildTriageCardMenu` 的 target 从未被读取（`void target`），
+   去掉参数与对应 `*MenuTarget` 空壳，调用点（`NotesDock` / `ApprovalsPage` / `TriagePage`）与
+   `card.test.ts` / `invariants.test.ts` 同步。
+
 ## 覆盖率数学
 
 | 口径 | operations | 说明 |
@@ -55,7 +85,8 @@
 | 基线 `946937f1` | **29 / 316** | E10 收口值（`schema:coverage` 脚本实测） |
 | E10b-1 后 | 37 / 316 | +8（goal / pod goal 读） |
 | E10b-2 后 | 44 / 316 | +7（human-gate / 权限读） |
-| **终值** | **44 / 316（13.9%）** | by-tag 分区和 = 44；未覆盖 272 |
+| **合并 main 后** | **44 / 317（13.9%）** | main 新增 `session.discoverySkillInvoke`（无 `response`）→ 分母 +1，covered 不变；E10b-6 重算 |
+| **终值** | **44 / 317（13.9%）** | by-tag 分区和 = 44；未覆盖 273 |
 
 - 本波新增 15 op 分组：**goal 8**（E10b-1）+ **human-gate + permissions 7**（E10b-2）。
 - by-tag（节选，`npm run schema:coverage`）：`goals 6/15`、`approvals 1/2`、`permissions 4/10`、
@@ -72,8 +103,11 @@
    `CHECK_goals_get` 保持精确等价）。消费面：TUI `goals-tab` 只做模板字符串展示，desktop / mobile /
    `src/` 无字段读取 → **0 破坏**。
 2. **`GoalPlanInfo` 扩展为 handler 实际 wire**：新增 `revision` / `wavesPath` / `goalEval` /
-   `goalEvalPath` / `goalEvalError` / `planHash` / `evalHash` / `stale`；`waves` 改
-   `GoalPlanWave[] | null`；新增 `GoalEval*` 家族与 `GoalPlanApproval`。desktop 只 re-export 类型。
+   `goalEvalPath` / `goalEvalError` / `planHash` / `evalHash` / `stale`；`waves` 是 **plan 文档**
+   （`GoalPlanDocument | null`），**不是** `GoalPlanWave[]`——handler 原样透传 `wavesPath` 文件，
+   数组在 `doc.waves`（E10b-5 修正；此前写成数组是错的，桌面 `plan-render.ts` /
+   `plan-review-model.ts` 一直按文档解包）。新增 `GoalEval*` 家族与 `GoalPlanApproval`。
+   desktop 只 re-export 类型。
 3. **`GoalTimeline` 对齐 wire**：`planReview` / `planApproval` 改 required，`planApproval` 带
    `revision` / `planHash` / `evalHash`；`artifacts.receipts` 改 `(string | null)[]`。
 4. **`Approval`**：`goalId` / `createdAt` required → optional（flat legacy `user-questions` 可缺）；
@@ -86,8 +120,9 @@
    axiom-distill writer 不写 `proposedGoal` → optional）。
 7. **`permissions.list()`**：`PermissionRequest[]` → `MafwPermissionRequest[]`（client +
    `PermissionsNamespace`）；旧 `PermissionRequest` 保留导出并标 `@deprecated`。
-8. 未改任何 handler 输出 / 路由集合，`TOTAL_OPS` 仍 316；生成物 diff 逐 op 比对后只有本批 15 op
-   （+ `goals.get` 的 shared-DTO 放宽）变化。
+8. 未改任何 handler 输出 / 路由集合；`TOTAL_OPS` 合并 main 后为 **317**（main 新增
+   `session.discoverySkillInvoke`，无 `response`），生成物 diff 逐 op 比对后只有本批 15 op
+   （+ `goals.get` 的 shared-DTO 放宽，+ E10b-5 的 `goals.plan.waves` 形状修正）变化。
 
 ## 行为变化 / Breaking
 
@@ -100,24 +135,24 @@
   SDK `TriageItem` 现在有 `id`，该项的「id 缺口」已消除；渲染字段对齐留待后续 TUI 批次
   （记录于 `tui.md`）。
 
-## 验证（worktree @ E10b-4）
+## 验证（worktree @ E10b-6）
 
 | 门 | 命令 | 结果 |
 |---|---|---|
 | gateway 类型 | `npx tsc --noEmit -p tsconfig.json`（`gateway/`，gateway-local TS **5.9.3**） | **0 errors** |
-| gateway 全量 | `npx jest --runInBand --forceExit --no-coverage`（`gateway/`） | **7171 tests：7160 passed / 9 failed / 2 skipped**；**suites：3 failed / 911 passed / 1 skipped（914 of 915）**。9 条失败**恰好**是 3 个已知 env-red suite（`plugin-package-e2e` 4、`claude-adapter-acceptance` 4、`claude-adapter-coverage` 1），**零 E10b 红**；419s |
-| 覆盖率台账 | `npm run schema:coverage` | **44/316 operations（13.9%）**，by-tag 分区和 = 44，未覆盖 272 |
+| gateway 全量 | `npx jest --runInBand --forceExit --no-coverage`（`gateway/`） | **7183 tests：7172 passed / 9 failed / 2 skipped**；**suites：3 failed / 912 passed / 1 skipped（915 of 916）**。9 条失败**恰好**是 3 个已知 env-red suite（`plugin-package-e2e` 4、`claude-adapter-acceptance` 4、`claude-adapter-coverage` 1），**零 E10b 红**；252s |
+| 覆盖率台账 | `npm run schema:coverage` | **44/317 operations（13.9%）**，by-tag 分区和 = 44，未覆盖 273 |
 | 路由分析 | `node scripts/analyze-routes.cjs` | **`TOTAL 0 (match 0, equals 0)`** |
-| 契约产物新鲜度 | `npm run emit:openapi`（gateway） | **316 routes → 282 paths / 316 operations，无 diff** |
+| 契约产物新鲜度 | `npm run emit:openapi`（gateway） | **317 routes → 283 paths / 317 operations，无 diff** |
 | kernel-split 守卫 | jest `tests/unit/architecture/kernel-split-guards.test.ts` | **7 / 7 passed** |
 | SDK 类型 | `npx tsc --noEmit -p tsconfig.json` | **0 errors** |
-| SDK 全量 | `npm test`（`src/*.test.ts`） | **225 / 225 passed（0 fail）** |
+| SDK 全量 | `npm test`（`src/*.test.ts`） | **226 / 226 passed（0 fail）**（含 main 带来的 +1） |
 | SDK contract | `node --import tsx --require ../test-shim/require-hook.cjs --test src/contract.test.ts` | **4 / 4 passed**（0 dead ops，0 exemptions） |
-| SDK 生成物 | `npm run gen:api` + `git status` | **无 drift**；`merge-contract` 报告 `282 paths / 316 operations（overrides 命中 13）` |
-| desktop 全量 | `npm run test:desktop`（worktree root） | **3806 tests / 728 suites：3805 passed / 1 failed**。唯一红 = `src/main/mafw-gateway-resolver.test.ts` dev-path（worktree 未构建 `gateway/dist`，E5b/E6/E7/E8/E9/E10 同红） |
+| SDK 生成物 | `npm run gen:api` + `git status` | **无 drift**；`merge-contract` 报告 `283 paths / 317 operations（overrides 命中 13）` |
+| desktop 全量 | `npm run test:desktop`（worktree root） | **3831 tests / 729 suites：3830 passed / 1 failed**。唯一红 = `src/main/mafw-gateway-resolver.test.ts` dev-path（worktree 未构建 `gateway/dist`，E5b/E6/E7/E8/E9/E10 同红） |
 | desktop 类型 | `npx tsgo --noEmit -p tsconfig.json`（`packages/desktop`） | 只剩已知 `node:tls` **2 条**（`getCACertificates` / `setDefaultCACertificates`），0 新增 |
-| mobile 定向 | `flutter test test/direction_question_test.dart test/lead_entry_test.dart test/pairing_page_test.dart --concurrency=1` | **84 / 84 passed**（全量 flake 命中的 3 个文件单独重跑全绿） |
-| mobile 全量 | `flutter test --concurrency=1` | **526 passed / 1 failed + 32 条 `did not complete`**（Windows widget worker flake：`direction_question` / `lead_entry` / `pairing_page`；见「已知红」第 5 条） |
+| mobile 定向 | `flutter test <file> --concurrency=1`（三文件分别跑） | **84 / 84 passed**（direction 26 / lead 13 / pairing 45）；合并 `--concurrency=1` 一次性跑会命中已知 widget worker `did not complete` flake（与 E10b-4 基线同现象） |
+| mobile 全量 | `flutter test --concurrency=1` | E10b-4 实测 **526 passed / 1 failed + 32 条 `did not complete`**（Windows widget worker flake：`direction_question` / `lead_entry` / `pairing_page`；见「已知红」第 5 条）；E10b-5/6 零 mobile 代码改动，未重跑全量 |
 | mobile analyzer | `dart analyze lib test` | **No issues found（0）** |
 | TUI | `npm run test:tui` | **env-red**：`ERR_MODULE_NOT_FOUND` — `@earendil-works/pi-tui` 未安装（主 checkout 同）；本波零 TUI 改动 |
 
@@ -125,7 +160,7 @@
 
 | 面 | 新增 | 依据 |
 |---|---|---|
-| gateway | **+11** | `tests/unit/api-contract.test.ts`：E10b-1 describe 6 条 + E10b-2 describe 5 条（文件 23 → 34）；`tests/unit/architecture/schema-coverage.test.ts` 3 条**断言更新**（清单 29 → 44、阈值 44、`total === 316`），用例数不变 |
+| gateway | **+11** | `tests/unit/api-contract.test.ts`：E10b-1 describe 6 条 + E10b-2 describe 5 条（文件 23 → 34）；`tests/unit/architecture/schema-coverage.test.ts` 3 条**断言更新**（清单 44、集合等式守卫、`total === 317`），用例数不变。E10b-5 只加断言（plan 文档形状 / 裸数组拒绝 / `need_clarification` arm / 台账去重），**用例数 +0** |
 | SDK | 0 | 无新增运行时用例；`contract-compat.checks.ts` 本波新增 7 个 `AssertEq`（编译期，不计入运行时计数） |
 | desktop | **+5** | `renderer/mafw/triage-model.test.ts`（title 回退 / meta 非法日期 / 三种 state / llm 优先级 / 页面不读 phantom 字段）；`card.test.ts` 同步 target 形状（改写，不新增） |
 | mobile | 0 | 无代码变更 |
@@ -152,7 +187,7 @@
 
 ## Deferred（E10b 后仍保留）
 
-- 剩余 **272** 个 op 的 response schema 覆盖（44/316 已覆盖；继续按同族读接口 7–8 ops/批推进，
+- 剩余 **273** 个 op 的 response schema 覆盖（44/317 已覆盖；继续按同族读接口 7–8 ops/批推进，
   台账 `npm run schema:coverage` 固定口径）。
 - POST/PUT/PATCH/DELETE 的请求 / 响应 schema（E10 / E10b 只建模读接口的 200 成功体，错误体不建模）。
 - OS keychain / 进程签名、MCP human 工具。
@@ -163,5 +198,9 @@
   整页快照）。
 - `session.list` override 的 responseSchema 元数据仍保留（catalog 已优先，留待后续清理）。
 - TUI triage tab 的 phantom 字段渲染（`reason` / `goalId` / `severity`）对齐。
+- **mobile `triage_page.dart` 的 phantom `reason` 回退**：`_TriageCard` 仍在读
+  `item['description'] ?? item['detail'] ?? item['reason']`（真实 wire 只有
+  `summary` / `source` / `state` / `proposedGoal`），描述区因此恒为空；对齐方式同桌面 E10b-3
+  （映射 `summary` 草稿袋 + `source` + 本地化 `discoveredAt`），留待后续 mobile 批次。
 - `proposedGoal.boundaries` / `estimatedLoops` 的桌面展示（需要产品口径）。
 - **won't do**：`pod.updated` 记录级实体 payload（E9-3）；`PodGoal` 可选性收紧（E8 先例）。

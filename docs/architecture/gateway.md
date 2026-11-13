@@ -1179,7 +1179,7 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 
 ### 残余（E10b 后仍 deferred）
 
-- 剩余约 272 个 op 的 response schema 覆盖（316 operations 中 44 个已带 200 schema，13.9%；
+- 剩余约 273 个 op 的 response schema 覆盖（317 operations 中 44 个已带 200 schema，13.9%；
   台账 `npm run schema:coverage`，见「E10 契约覆盖」/「E10b 契约覆盖第二批」节）。
 - OS keychain / 进程签名、MCP human 工具。
 - 强制版本协商 / SDK 全量 schema 类型化。
@@ -1278,20 +1278,30 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 
 | # | 现状 | 边界 |
 |---|---|---|
-| E10b-1 | **Goal / Pod Goal 读接口 8 ops** 的 200 response schema：`routes/schemas/goals.ts`（new）承载 `goals.list` / `goals.plan` / `goals.sessions` / `goals.timeline` / `goals.source`，`routes/schemas/pods.ts`（扩展）承载 `pods.goals.techLead` / `pods.goals.probes` / `pods.goals.revisions`；catalog 逐条挂 `response`。`AssertEq`：`Goal` / `GoalSessionInfo` 保持，新增 `GoalPlanInfo` / `GoalTimeline` / `GoalNodeRunInfo` / `GoalSource`（借 client 内联返回类型）/ `PodTechLeadHistory` / `PodProbe` / `PodGoalRevision`。 | `goals.list` 的 activeGoals 投影只发 `goalId/phase/loop/nextAction/error/updatedAt`，从不发波次计数 → 同一个 `Goal` DTO 的 `currentWave` / `totalWaves` 由 required 放宽为 **optional**（`goals.get` 的 `GoalViewSchema` 同步放宽以保持精确等价）。`GoalPlanInfo` 按 handler 实际 wire 扩展（`revision` / `wavesPath` / `goalEval*` / `planHash` / `evalHash` / `stale`，`waves` 改为 `GoalPlanWave[] \| null`）；`GoalTimeline` 的 `planReview` / `planApproval` 改 required（后者带 revision/planHash/evalHash），`artifacts.receipts` 为 `(string \| null)[]`。消费面：TUI 只做模板字符串展示、desktop 只 re-export 类型 → **0 破坏**。 |
+| E10b-1 | **Goal / Pod Goal 读接口 8 ops** 的 200 response schema：`routes/schemas/goals.ts`（new）承载 `goals.list` / `goals.plan` / `goals.sessions` / `goals.timeline` / `goals.source`，`routes/schemas/pods.ts`（扩展）承载 `pods.goals.techLead` / `pods.goals.probes` / `pods.goals.revisions`；catalog 逐条挂 `response`。`AssertEq`：`Goal` / `GoalSessionInfo` 保持，新增 `GoalPlanInfo` / `GoalTimeline` / `GoalNodeRunInfo` / `GoalSource`（借 client 内联返回类型）/ `PodTechLeadHistory` / `PodProbe` / `PodGoalRevision`。 | `goals.list` 的 activeGoals 投影只发 `goalId/phase/loop/nextAction/error/updatedAt`，从不发波次计数 → 同一个 `Goal` DTO 的 `currentWave` / `totalWaves` 由 required 放宽为 **optional**（`goals.get` 的 `GoalViewSchema` 同步放宽以保持精确等价）。`GoalPlanInfo` 按 handler 实际 wire 扩展（`revision` / `wavesPath` / `goalEval*` / `planHash` / `evalHash` / `stale`，`waves` 是 **plan 文档边界**（`PlanDocumentBoundary`：`status` / `taskType` / `strategy` / `waves[]` / `ambiguities` + `additionalProperties: true`），**不是** `GoalPlanWave[]`——数组在 `waves.waves`，与 handler 原样透传 `wavesPath` 文件一致；E10b-5 修正）；`GoalTimeline` 的 `planReview` / `planApproval` 改 required（后者带 revision/planHash/evalHash），`artifacts.receipts` 为 `(string \| null)[]`。消费面：TUI 只做模板字符串展示、desktop 只 re-export 类型 → **0 破坏**。 |
 | E10b-2 | **Human-gate / 权限读接口 7 ops**：`routes/schemas/human-gate.ts`（new）承载 `approvals.list` / `questions.list` / `triage.list` / `permissions.list` / `permissions.getMode` / `permissions.listAllowlist` / `permissions.listRules`。`AssertEq`：`Approval` / `QuestionRequest` / `TriageItem` 保持（DTO 同步到 handler truth），新增 4 条 permissions 断言。`contract/overrides.json` 删除 5 条（`goals.list` / `goals.sessions` / `approvals.list` / `questions.list` / `triage.list`），`$comment` 记录迁移原因。 | **「catalog response wins」语义**：`merge-contract.mjs` 先取 catalog `RouteDef.response`，overrides 只在 catalog 缺失时兜底；这 5 个 op 的 override responseSchema 与 handler 长期漂移，转 code-first 后删除条目，生成物只对本批 op 变化。**DTO 以 handler 为准修正**（consumer-relevant）：`Approval.goalId` / `createdAt` required → optional、`status` 只 `pending \| answered`（`expired` 无 writer）；`QuestionRequest` 新增 `time?: { created?: number }`；`TriageItem` 从 override 遗留的 phantom 形状（`goalId/reason/severity/createdAt`）重塑为磁盘 wire `{ id, automationId, discoveredAt, source, summary, state, userAction, deadline, proposedGoal?, llmSuggestions?, updatedAt? }`；`permissions.list()` 返回 canonical `MafwPermissionRequest`。无 handler 改动；桌面 `TriagePage` 的 phantom 字段读取由 E10b-3 收口。 |
 | E10b-3 | **桌面消费面收口**：`renderer/mafw/triage-model.ts`（new）把 wire 记录映射成 `{title, meta, badge}`；`TriagePage` 改用 `TriageItem[]`（去 `as any[]`），趋势色改走既有 token 类 `.mafw-tool-badge[data-tone]`；preload `permissions.list()` 声明 canonical `MafwPermissionRequest[]`。详见 `desktop.md` §「Triage 渲染对齐真实 wire（E10b-3）」。 | 菜单 target 只保留 `{ id }`；`triage.viewGoal` 不再猜 Goal id（打开 Goal 面）。不展示 `proposedGoal.boundaries` / `estimatedLoops`，也不凭空造 severity。 |
 
 ### 台账口径（E10b）
 
-- **29 → 44/316（13.9%）**，剩余 **272** 个 op；by-tag 分区和恒等于 covered
+- **29 → 44/317（13.9%）**，剩余 **273** 个 op；by-tag 分区和恒等于 covered
   （`npm run schema:coverage` 为准，本轮 `goals 6/15`、`approvals 1/2`、`permissions 4/10`、
-  `questions 1/3`）。
+  `questions 1/3`）。合并 main 后 catalog 316 → **317**：main 新增
+  `session.discoverySkillInvoke`（无 `response`，covered 不变，E10b-6 重算）。
 - **override 18 → 13**：本批 5 个转 code-first 后删除条目；`merge-contract` 仍提示
   `session.list: catalog response schema wins over overrides`（该条 override 元数据的历史遗留，
   非本批范围）。
-- 新增的 15 op 全部为 **exact DTO 等值或 handler 投影**，没有新增边界对象；仍遵守「schema 是
-  handler 的投影，不是 wish-list」，也不改 wire。
+- 本批 15 op 的输出全部是 **exact DTO 等值或 handler 投影**，但有 **4 类边界对象**（都有 owner 注释；
+  E10b-5 修正了此处原先「没有新增边界对象」的错误说法）：
+  1. `goals.plan` 的 `waves` = **plan 文档边界**（`PlanDocumentBoundary`，owner = goal-plan protocol
+     artifact，产出契约 `core/goal/node-prompts.ts` 的 `PLAN_OUTPUT_SCHEMA`）：`status` / `taskType` /
+     `strategy` / `waves[]`（数组在文档内）/ `ambiguities` + `additionalProperties: true`，
+     driver 演进字段原样透传；`null` arm 保留（文件缺失/损坏）。
+  2. `triage.list` 的 `TriageItem` **磁盘 wire 重塑**（owner = automation-engine triage JSON，
+     `summary` 是草稿袋，`proposedGoal` optional）。
+  3. `permissions.getMode` / `permissions.listAllowlist` / `permissions.listRules` 的**扩展投影**
+     （无独立 SDK DTO，借 `PermissionsNamespace` 返回类型做 `AssertEq`）。
+  4. `questions.list` 的 `QuestionRequest.time` **残留可选**（只读面只在源带 `createdAt` 时补齐）。
 
 ---
 
