@@ -6,6 +6,7 @@ import {
   documentTabViews,
   fileDocumentTabId,
   mergeDocumentTabs,
+  moveDocumentTab,
   nextDocumentTabId,
   syncKindEntries,
   webDocumentTabId,
@@ -107,6 +108,32 @@ test("close targets follow the clicked tab", () => {
   assert.deepEqual(closeOtherTabIds(entries, b.id), [a.id, c.id])
   assert.deepEqual(closeRightTabIds(entries, b.id), [c.id])
   assert.deepEqual(closeRightTabIds(entries, c.id), [])
+})
+
+test("moveDocumentTab places before or after the target across kinds", () => {
+  const a = file("a.ts")
+  const b = web("b")
+  const c = file("c.ts")
+  const entries = [a, b, c]
+
+  assert.deepEqual(
+    moveDocumentTab(entries, a.id, c.id, "before").map((entry) => entry.id),
+    [b.id, a.id, c.id],
+  )
+  assert.deepEqual(
+    moveDocumentTab(entries, a.id, c.id, "after").map((entry) => entry.id),
+    [b.id, c.id, a.id],
+  )
+  assert.deepEqual(
+    moveDocumentTab(entries, c.id, a.id, "before").map((entry) => entry.id),
+    [c.id, a.id, b.id],
+  )
+  assert.deepEqual(
+    moveDocumentTab(entries, c.id, a.id, "after").map((entry) => entry.id),
+    [a.id, c.id, b.id],
+  )
+  assert.equal(moveDocumentTab(entries, a.id, a.id, "before"), entries)
+  assert.equal(moveDocumentTab(entries, "missing", a.id, "before"), entries)
 })
 
 test("documentTabViews marks only the active id and keeps unified ids", () => {

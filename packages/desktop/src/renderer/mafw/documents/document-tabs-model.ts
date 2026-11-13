@@ -93,6 +93,30 @@ export function closeRightTabIds(
   return entries.slice(index + 1).map((entry) => entry.id)
 }
 
+export type DocumentDropPosition = "before" | "after"
+
+/** Move one tab next to another; no-op keeps the original array reference. */
+export function moveDocumentTab(
+  entries: readonly DocumentTabEntry[],
+  fromId: string,
+  toId: string,
+  position: DocumentDropPosition,
+): DocumentTabEntry[] {
+  if (fromId === toId) return entries as DocumentTabEntry[]
+  const fromIndex = entries.findIndex((entry) => entry.id === fromId)
+  if (fromIndex < 0) return entries as DocumentTabEntry[]
+  if (!entries.some((entry) => entry.id === toId)) return entries as DocumentTabEntry[]
+
+  const moved = entries[fromIndex]!
+  const rest = entries.filter((entry) => entry.id !== fromId)
+  const targetIndex = rest.findIndex((entry) => entry.id === toId)
+  const insertAt = targetIndex + (position === "after" ? 1 : 0)
+  const next = [...rest.slice(0, insertAt), moved, ...rest.slice(insertAt)]
+  return next.every((entry, index) => entry.id === entries[index]!.id)
+    ? (entries as DocumentTabEntry[])
+    : next
+}
+
 export function documentTabViews(
   entries: readonly DocumentTabEntry[],
   activeId: string | null,
