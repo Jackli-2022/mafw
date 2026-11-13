@@ -105,6 +105,7 @@
 - `8c52b0f8` feat(memory): wire embedding provider registry into live runtime
 - `bd6fa559` feat(memory): add reranker provider registry
 - `e57ed031` test(memory): add embedding and reranker conformance kits
+- `383e449b` fix(memory): preserve vector namespaces across provider switches（审查修复 C1/C2/I1–I6/I8）
 
 ## Next
 
