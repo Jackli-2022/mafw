@@ -1,8 +1,9 @@
 // DocumentFrame 的纯视图映射：编辑器 tab 与浏览器 tab 收敛成同一套 tab 形状。
 import type { EditorModel } from "./editor-state"
 import { browserDocumentTitle, type BrowserDocument } from "./documents/browser-documents"
+import type { DiffDocument } from "./documents/diff-documents"
 
-export type DocumentTabIcon = "file" | "globe"
+export type DocumentTabIcon = "file" | "globe" | "review"
 
 export type DocumentTabView = {
   id: string
@@ -38,6 +39,19 @@ export function browserDocumentTabs(
     title: tab.url,
     icon: "globe",
     active: tab.id === activeId,
+  }))
+}
+
+export function diffDocumentTabs(
+  docs: readonly DiffDocument[],
+  activeId: string | null,
+): DocumentTabView[] {
+  return docs.map((doc) => ({
+    id: doc.id,
+    label: doc.rel.split(/[\\/]/).filter(Boolean).pop() ?? doc.rel,
+    title: doc.rel,
+    icon: "review",
+    active: doc.id === activeId,
   }))
 }
 

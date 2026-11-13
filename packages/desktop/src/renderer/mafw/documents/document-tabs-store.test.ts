@@ -16,8 +16,10 @@ import {
   resetDocumentTabsForTests,
   configureFileDocumentRoot,
   syncFileTabs,
+  requestDocumentActivation,
 } from "./document-tabs-store"
 import { closeBrowserDocument, openBrowserDocument, resetBrowserDocumentsForTests, updateBrowserDocument } from "./browser-documents"
+import { openDiffDocument, resetDiffDocumentsForTests, updateDiffDocument } from "./diff-documents"
 import { clearFileModels, saveFileModel } from "./file-documents"
 import { closeFile, createEditorModel, markDirty, openFile } from "../editor-state"
 import {
@@ -57,6 +59,7 @@ beforeEach(() => {
   clearFileModels()
   resetDocumentTabsForTests()
   resetDocumentListPersistenceForTests()
+  resetDiffDocumentsForTests()
 })
 
 test("file and web tabs merge into one stable strip", () => {
@@ -285,4 +288,38 @@ test("no order is persisted before a world is configured", () => {
   syncFileTabs("C:/repo", [view("a.ts")])
   flushDocumentListPersistence()
   assert.equal(storage.map.size, 0)
+})
+
+const diffBase = {
+  source: { kind: "session" as const, sessionID: "s1" },
+  root: "C:/repo",
+  scope: { kind: "world" as const, worldId: "C:/repo" },
+  rel: "src/a.ts",
+  patch: "@@ -1 +1 @@\n-a\n+b",
+  additions: 1,
+  deletions: 1,
+}
+
+test("diff documents become active diff tabs and are not persisted", () => {
+  const storage = fakeStorage()
+  configureDocumentListStorage(storage)
+  configureDocumentListWorld("C:/repo")
+  const doc = openDiffDocument(diffBase)
+  requestDocumentActivation(doc.id)
+  assert.deepEqual(documentTabs().map((entry) => entry.kind), ["diff"])
+  assert.equal(documentTabs()[0]!.id, doc.id)
+  assert.equal(activeDocumentTabId(), doc.id)
+  flushDocumentListPersistence()
+  const saved = JSON.parse(storage.map.get(documentListStorageKey("C:/repo"))!)
+  assert.deepEqual(saved.order, [])
+})
+
+test("a live diff update does not steal the active file tab", () => {
+  syncFileTabs("C:/repo", [view("a.ts")])
+  const fileId = documentTabs()[0]!.id
+  activateDocumentTab(fileId)
+  const doc = openDiffDocument({ ...diffBase, rel: "src/a.ts" })
+  activateDocumentTab(fileId)
+  updateDiffDocument(doc.id, { patch: "@@ -1 +1 @@\n-a\n+c" })
+  assert.equal(activeDocumentTabId(), fileId)
 })

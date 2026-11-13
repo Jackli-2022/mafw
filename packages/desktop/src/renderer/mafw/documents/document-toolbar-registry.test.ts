@@ -47,3 +47,11 @@ test("reset clears both kinds", () => {
   assert.equal(documentToolbarProvider("file"), null)
   assert.equal(documentToolbarProvider("web"), null)
 })
+
+test("registers a diff toolbar provider", () => {
+  const diff = provider("diff")
+  const off = registerDocumentToolbar("diff", diff)
+  assert.equal(documentToolbarProvider("diff"), diff)
+  off()
+  assert.equal(documentToolbarProvider("diff"), null)
+})

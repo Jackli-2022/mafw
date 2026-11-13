@@ -1,6 +1,6 @@
 import type { DocumentTabView } from "../document-frame-model"
 
-export type DocumentTabKind = "file" | "web"
+export type DocumentTabKind = "file" | "web" | "diff"
 
 export type DocumentTabEntry = {
   id: string

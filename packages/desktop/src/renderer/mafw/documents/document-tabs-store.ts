@@ -1,5 +1,5 @@
 import { createEffect, createRoot, createSignal } from "solid-js"
-import { editorDocumentTabs, type DocumentTabView } from "../document-frame-model"
+import { diffDocumentTabs, editorDocumentTabs, type DocumentTabView } from "../document-frame-model"
 import {
   closeOtherTabIds,
   closeRightTabIds,
@@ -18,6 +18,7 @@ import {
 } from "./document-list-persistence"
 import { browserDocuments, browserDocumentTitle } from "./browser-documents"
 import { fileModelFor } from "./file-documents"
+import { closeDiffDocument, diffDocuments } from "./diff-documents"
 
 const [entries, setEntries] = createSignal<DocumentTabEntry[]>([])
 const [activeId, setActiveId] = createSignal<string | null>(null)
@@ -74,6 +75,15 @@ function syncBrowserDocuments(): void {
   })))
 }
 
+function syncDiffDocuments(): void {
+  const incoming = diffDocuments().map((doc) => ({
+    id: doc.id,
+    kind: "diff" as const,
+    view: { ...diffDocumentTabs([doc], null)[0]!, active: false },
+  }))
+  applyKind("diff", incoming)
+}
+
 function syncFileDocuments(): void {
   const root = fileRoot()
   if (!root) return
@@ -93,7 +103,7 @@ function applyKind(kind: DocumentTabKind, incoming: DocumentTabEntry[]): void {
   setEntries(next)
   const current = activeId()
   if (current && !next.some((entry) => entry.id === current)) setActiveId(null)
-  if (!activeId() && desiredActiveId && next.some((entry) => entry.id === desiredActiveId)) {
+  if (desiredActiveId && next.some((entry) => entry.id === desiredActiveId)) {
     setActiveId(desiredActiveId)
     desiredActiveId = null
   }
@@ -127,8 +137,8 @@ function pruneSavedOrder(previous: readonly DocumentTabEntry[], next: readonly D
 function persistOrder(): void {
   if (!worldId) return
   const order = [
-    ...savedOrder,
-    ...entries().map((entry) => entry.id).filter((id) => !savedOrder.includes(id)),
+    ...savedOrder.filter((id) => !id.startsWith("diff:")),
+    ...entries().filter((entry) => entry.kind !== "diff").map((entry) => entry.id).filter((id) => !savedOrder.includes(id)),
   ]
   saveDocumentListSnapshot(worldId, { version: 1, order, activeId: activeId() })
 }
@@ -139,8 +149,8 @@ export function configureDocumentListWorld(nextWorldId: string): void {
   if (worldId) flushDocumentListPersistence(worldId)
   worldId = nextWorldId
   const snapshot = loadDocumentListSnapshot(nextWorldId)
-  savedOrder = snapshot.order
-  desiredActiveId = snapshot.activeId
+  savedOrder = snapshot.order.filter((id) => !id.startsWith("diff:"))
+  desiredActiveId = snapshot.activeId?.startsWith("diff:") ? null : snapshot.activeId
   const next = applySavedOrder(entries())
   if (!sameEntries(entries(), next)) setEntries(next)
   const current = activeId()
@@ -193,6 +203,15 @@ export function activateDocumentTab(id: string): void {
   persistOrder()
 }
 
+/** 新打开的 diff 可能早于 store effect 出现；等 entry 落位后再激活。 */
+export function requestDocumentActivation(id: string): void {
+  desiredActiveId = id
+  if (entries().some((entry) => entry.id === id)) {
+    setActiveId(id)
+    desiredActiveId = null
+  }
+}
+
 export function requestCloseDocumentTab(id: string): void {
   setCloseRequests((prev) => (prev.includes(id) ? prev : [...prev, id]))
 }
@@ -228,4 +247,12 @@ export function resetDocumentTabsForTests(): void {
 createRoot(() => {
   createEffect(syncFileDocuments)
   createEffect(syncBrowserDocuments)
+  createEffect(syncDiffDocuments)
+  createEffect(() => {
+    for (const id of pendingCloseRequests()) {
+      if (!id.startsWith("diff:")) continue
+      consumeCloseRequest(id)
+      closeDiffDocument(id)
+    }
+  })
 })

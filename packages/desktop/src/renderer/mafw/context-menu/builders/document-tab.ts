@@ -3,7 +3,7 @@ import { item } from "../model"
 import type { MenuModel } from "../types"
 
 export interface DocumentTabMenuTarget {
-  kind: "file" | "web"
+  kind: "file" | "web" | "diff"
   title: string
   copyValue: string
   canCloseOthers: boolean
@@ -21,7 +21,7 @@ export function buildDocumentTabMenu(target: DocumentTabMenuTarget): MenuModel {
       ? {}
       : { disabled: true, disabledReason: "右侧没有文档" }),
   ]
-  if (target.kind === "file") {
+  if (target.kind === "file" || target.kind === "diff") {
     items.push(item("documentTab.copyPath", L.documentTab.copyPath, noCopy
       ? { disabled: true, disabledReason: "路径为空" }
       : {}))
