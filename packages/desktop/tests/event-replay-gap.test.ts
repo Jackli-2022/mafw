@@ -85,6 +85,63 @@ describe("E6-1 recoverEventGap 分页与 seq 注入", () => {
     expect(got[0].properties).toEqual({ id: "s1" })
   })
 
+  test("canonical mafw_event 信封 → 解包 data 后再 dispatch（与 live raw?.data 一致）", async () => {
+    const { fetchImpl } = makeFetch([
+      jsonResponse(page({
+        events: [{
+          seq: 21,
+          // event_log 存的是 gateway broadcast 信封：{type:'mafw_event', data:{type:'session.updated'}}
+          envelope: {
+            type: "mafw_event",
+            timestamp: "t",
+            data: {
+              type: "session.updated",
+              properties: { sessionID: "ses_1", info: { id: "ses_1", title: "新标题" } },
+              timestamp: "t",
+            },
+          },
+        }],
+        headSeq: 21,
+        nextSince: 21,
+      })),
+    ])
+    const got: any[] = []
+    const result = await recoverEventGap({
+      baseUrl: BASE,
+      since: 20,
+      fetchImpl,
+      dispatch: (event) => got.push(event),
+    })
+
+    expect(result).toEqual({ headSeq: 21, applied: 1 })
+    expect(got).toHaveLength(1)
+    expect(got[0].type).toBe("session.updated")
+    expect(got[0].seq).toBe(21)
+    expect(got[0].properties).toEqual({ sessionID: "ses_1", info: { id: "ses_1", title: "新标题" } })
+    // 包装层不得泄漏：没有 data 容器、没有 mafw_event
+    expect(got[0].data).toBeUndefined()
+  })
+
+  test("扁平事件（type 非 mafw_event / data 非对象）保持原样 + seq", async () => {
+    const { fetchImpl } = makeFetch([
+      jsonResponse(page({
+        events: [
+          { seq: 31, envelope: { type: "chat", properties: { id: "p1" } } },
+          // mafw_event 但 data 不是对象（插件数组/字符串通路）：不解包，退化为原信封
+          { seq: 32, envelope: { type: "mafw_event", data: ["not", "an", "event"] } },
+        ],
+        headSeq: 32,
+        nextSince: 32,
+      })),
+    ])
+    const got: any[] = []
+    await recoverEventGap({ baseUrl: BASE, since: 30, fetchImpl, dispatch: (e) => got.push(e) })
+
+    expect(got[0]).toEqual({ type: "chat", properties: { id: "p1" }, seq: 31 })
+    expect(got[1].type).toBe("mafw_event")
+    expect(got[1].seq).toBe(32)
+  })
+
   test("baseUrl 末尾斜杠不产生双斜杠", async () => {
     const { calls, fetchImpl } = makeFetch([
       jsonResponse(page({ headSeq: 9, nextSince: 9 })),
@@ -262,5 +319,73 @@ describe("E6-1 recoverEventGap 循环守卫", () => {
     expect(result).toEqual({ headSeq: 200, applied: 3 })
     expect(calls).toHaveLength(3)
     expect(got.map((e) => e.seq)).toEqual([101, 102, 103])
+  })
+})
+
+describe("E6-1 recoverEventGap 超时与游标倒挂", () => {
+  test("fetch 永不 settle → timeout 后返回 null（AbortSignal 被触发）", async () => {
+    let signal: AbortSignal | undefined
+    const hanging = ((_url: string, init?: RequestInit) => {
+      signal = init?.signal ?? undefined
+      return new Promise<Response>(() => {})
+    }) as unknown as typeof fetch
+
+    const startedAt = Date.now()
+    const result = await recoverEventGap({
+      baseUrl: BASE,
+      since: 10,
+      timeoutMs: 20,
+      fetchImpl: hanging,
+      dispatch: () => {},
+    })
+    const elapsed = Date.now() - startedAt
+
+    expect(result).toBeNull()
+    expect(elapsed).toBeLessThan(2000)
+    expect(signal?.aborted).toBe(true)
+  })
+
+  test("响应头已到但 body 卡住 → 同一个超时预算兜底", async () => {
+    const stalling = (async () => ({
+      ok: true,
+      json: () => new Promise(() => {}),
+    })) as unknown as typeof fetch
+
+    const startedAt = Date.now()
+    const result = await recoverEventGap({
+      baseUrl: BASE,
+      since: 10,
+      timeoutMs: 20,
+      fetchImpl: stalling,
+      dispatch: () => {},
+    })
+    expect(result).toBeNull()
+    expect(Date.now() - startedAt).toBeLessThan(2000)
+  })
+
+  test("headSeq 低于 since 且无 reset/truncated → null（游标倒挂回退）", async () => {
+    const { fetchImpl } = makeFetch([
+      jsonResponse(page({ events: [], headSeq: 40, nextSince: 40 })),
+    ])
+    const result = await recoverEventGap({
+      baseUrl: BASE,
+      since: 42,
+      fetchImpl,
+      dispatch: () => {},
+    })
+    expect(result).toBeNull()
+  })
+
+  test("reset 允许 headSeq 低于 since（新纪元）", async () => {
+    const { fetchImpl } = makeFetch([
+      jsonResponse(page({ headSeq: 5, nextSince: 5, reset: true })),
+    ])
+    const result = await recoverEventGap({
+      baseUrl: BASE,
+      since: 42,
+      fetchImpl,
+      dispatch: () => {},
+    })
+    expect(result).toEqual({ headSeq: 5, applied: 0, reset: true })
   })
 })

@@ -25,7 +25,8 @@
  *
  * E6-1（spec 2026-11-13-gateway-e6-interaction-model §3）：
  *  - 有持久化游标时，先 `recoverGap(since, 500)` 用 REST replay 补齐缺口；
- *  - 补页成功 → 以 `headSeq` 开流（SSE 零回放），`lastAppliedSeq = headSeq`；
+ *  - 补页成功 → 以 `headSeq` 开流（SSE 零回放），`lastAppliedSeq = headSeq`
+ *    并把持久化游标推进到 `headSeq`；
  *  - `reset` / `truncated` → 清游标 + `onFullResync(reason)` + 以 `headSeq` 开流；
  *  - 返回 null / 抛错 → 保持原 since，行为与 E2-3 完全一致；
  *  - 首次连接（无游标）不 replay。
@@ -142,13 +143,17 @@ export class SseConnection {
     // E6-1: 有游标先补页；失败/不支持时保持 E2-3 旧路径（SSE greeting 分级）。
     if (since !== null && this.deps.recoverGap) {
       const gap = await this.deps.recoverGap(since, 500).catch(() => null)
-      if (gap) {
+      // 非新纪元（无 reset/truncated）时 headSeq 必须 >= 游标；倒挂的响应不可信，
+      // 按 null 处理（回退原 since，让 SSE greeting 决定是否重同步）。
+      if (gap && (gap.reset || gap.truncated || gap.headSeq >= since)) {
         if (gap.reset || gap.truncated) {
           this.clearSeq()
           this.lastAppliedSeq = null
           this.deps.onFullResync?.(gap.reset ? "reset" : "truncated", { headSeq: gap.headSeq })
         } else {
           this.lastAppliedSeq = gap.headSeq
+          // 持久化游标与去重闸对齐：补页已覆盖到 headSeq，重连不应再从旧值回放。
+          this.writeSeq(gap.headSeq)
         }
         since = gap.headSeq
       }

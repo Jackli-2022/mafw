@@ -1498,7 +1498,9 @@ export function MafwShell() {
       void loadSessionHistory(sid, { force: true })
     },
     // E6-1：开流前用 REST replay 补齐断线缺口（与 live 帧同一 dispatcher）。
-    // 补页失败（404/旧网关/网络/形状不符）→ null，SseConnection 回退原 since。
+    // event_log 存的是 canonical `mafw_event` 信封；解包（raw.data || raw）与
+    // live 路径一致，由 recoverEventGap 统一完成，这里只提供 baseUrl + dispatch。
+    // 补页失败（404/旧网关/网络/超时/形状不符）→ null，SseConnection 回退原 since。
     recoverGap: async (since, limit) => {
       const info = await window.api.mafw.gateway.info()
       if (!info?.url) return null

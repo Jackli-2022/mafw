@@ -2,6 +2,7 @@ import { describe, expect, test, beforeEach, afterEach } from "bun:test"
 import { readFileSync } from "node:fs"
 import { SseConnection, withSince, SSE_SEQ_KEY, SSE_INSTANCE_KEY } from "../src/renderer/mafw/sse/sse-connection"
 import type { GapRecovery } from "../src/renderer/mafw/sse/event-replay-gap"
+import { recoverEventGap } from "../src/renderer/mafw/sse/event-replay-gap"
 
 /**
  * E6-1：SSE 开流前补 replay 缺口（spec 2026-11-13 §3.2）。
@@ -131,6 +132,51 @@ describe("E6-1 SseConnection 补页成功", () => {
     await conn.connect()
     conn.source!.fireOpen()
     expect(reconnects()).toBe(1)
+    conn.dispose()
+  })
+
+  test("补页成功把持久化游标推进到 headSeq（与 lastAppliedSeq 对齐）", async () => {
+    const { conn, storage } = makeConn({
+      storage: SEEDED(),
+      recoverGap: async () => ({ headSeq: 50, applied: 8 }),
+    })
+    await conn.connect()
+    expect(storage.getItem(SSE_SEQ_KEY)).toBe("50")
+    conn.dispose()
+  })
+
+  test("headSeq 低于 since 且无 reset/truncated → 回退原 since（游标倒挂）", async () => {
+    const { conn, opens, resync, messages } = makeConn({
+      storage: SEEDED(),
+      recoverGap: async () => ({ headSeq: 40, applied: 0 }),
+    })
+    await conn.connect()
+    expect(opens).toEqual([42])
+    expect(resync).toEqual([])
+    // lastApplied 未被拉到 40：43 仍应分发
+    conn.source!.fireMessage({ type: "chat", seq: 43 }, "43")
+    expect(messages).toHaveLength(1)
+    conn.dispose()
+  })
+})
+
+describe("E6-1 SseConnection 补页超时", () => {
+  test("recoverEventGap + 永不 settle 的 fetch → 超时后以原 since 开流", async () => {
+    const hanging = (() => new Promise<Response>(() => {})) as unknown as typeof fetch
+    const { conn, opens, resync } = makeConn({
+      storage: SEEDED(),
+      recoverGap: (since, limit) => recoverEventGap({
+        baseUrl: "http://gw:3000",
+        since,
+        limit,
+        timeoutMs: 25,
+        fetchImpl: hanging,
+        dispatch: () => {},
+      }),
+    })
+    await conn.connect()
+    expect(opens).toEqual([42])
+    expect(resync).toEqual([])
     conn.dispose()
   })
 })
