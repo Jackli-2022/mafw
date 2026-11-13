@@ -90,6 +90,7 @@ export interface RuntimeChannels {
     list(sessionID: string, opts?: { limit?: number; before?: string }): Promise<{ data: AdapterMessage[]; nextCursor?: string }>;
     normalize?(raw: unknown[]): AdapterMessage[];
   };
+  discovery?: RuntimeDiscoveryChannel;
   providers?: {
     list(): Promise<{ all: AdapterProvider[]; connected: string[]; default: Record<string, string> }>;
   };
