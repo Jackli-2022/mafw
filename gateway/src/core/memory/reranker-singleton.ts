@@ -5,9 +5,23 @@
  * ~600MB VRAM and ~5s of model load).
  */
 import { config } from '../../config';
-import { createReranker, Reranker } from './reranker';
+import { createRerankerProviderRegistry } from '../../memory/reranker-registry';
+import type { Reranker } from './reranker';
 
+const registry = createRerankerProviderRegistry();
 let cached: { key: string; r: Reranker } | null = null;
+
+function disposeReranker(reranker: Reranker | null | undefined): void {
+  if (!reranker) return;
+  try {
+    if (typeof reranker.dispose === 'function') {
+      reranker.dispose();
+      return;
+    }
+    const legacy = (reranker as { killServer?: () => void }).killServer;
+    if (typeof legacy === 'function') legacy.call(reranker);
+  } catch { /* best effort */ }
+}
 
 export function getReranker(): Reranker | null {
   const name = config.search.reranker;
@@ -16,11 +30,9 @@ export function getReranker(): Reranker | null {
   if (cached?.key === key) return cached.r;
   // Config hot-reload replaced the instance — without this the previous
   // llama-server keeps running (one orphan per change, ~1.1GB VRAM each).
+  disposeReranker(cached?.r);
   try {
-    (cached?.r as any)?.killServer?.();
-  } catch { /* best effort */ }
-  try {
-    const r = createReranker(name, config.search.rerankWeights, {
+    const r = registry.create(name, config.search.rerankWeights, {
       gpu: config.search.rerankerGpu,
       batchSize: config.search.rerankerBatchSize,
     });

@@ -10,8 +10,11 @@ if (typeof process !== 'undefined') {
 
 export interface Reranker {
   name: string;
+  strategy?: string;
   /** Rerank candidates and return at most topK entries. */
   rerank(query: string, candidates: ScoredEntry[], topK: number): ScoredEntry[] | Promise<ScoredEntry[]>;
+  health?(): 'healthy' | 'degraded' | 'failed';
+  dispose?(): void;
 }
 
 export interface RerankWeights {
@@ -49,6 +52,7 @@ function parseDate(d?: string): Date | null {
  */
 export class HeuristicReranker implements Reranker {
   name = 'heuristic';
+  strategy = 'heuristic';
   private weights: RerankWeights;
   private cutoffRatio: number;
 
@@ -119,6 +123,7 @@ export class HeuristicReranker implements Reranker {
  */
 export class CrossEncoderReranker implements Reranker {
   name = 'cross-encoder';
+  strategy = 'cross-encoder';
   private modelName = 'Xenova/bge-reranker-base';
   private classifier: any = null;
   private tokenizer: any = null;

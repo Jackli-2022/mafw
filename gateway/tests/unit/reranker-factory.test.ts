@@ -19,3 +19,9 @@ test("createReranker('llamacpp') → llamacpp (no spawn)", () => {
   // killServer is safe when nothing was spawned.
   (r as any).killServer?.();
 });
+
+test('built-in rerankers expose a stable strategy', () => {
+  expect(createReranker('heuristic')?.strategy).toBe('heuristic');
+  expect(createReranker('cross-encoder')?.strategy).toBe('cross-encoder');
+  expect(createReranker('llamacpp', undefined, { gpu: 'cpu' })?.strategy).toBe('llamacpp');
+});

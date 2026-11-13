@@ -84,6 +84,7 @@ function scoreFromTopLogprobs(top: Array<{ token: string; logprob: number }>): n
 
 export class LlamaCppReranker implements Reranker {
   name = 'llamacpp';
+  strategy = 'llamacpp';
   private cfg: LlamaCppRerankerConfig;
   private child: ChildProcess | null = null;
   private starting: Promise<void> | null = null;
@@ -195,6 +196,10 @@ export class LlamaCppReranker implements Reranker {
       throw err;
     });
     return this.starting.then(() => this.baseUrl as string);
+  }
+
+  dispose(): void {
+    this.killServer();
   }
 
   killServer(): void {
