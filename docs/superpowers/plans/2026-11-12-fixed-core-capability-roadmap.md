@@ -320,15 +320,16 @@ Probe 的作用是让 tech lead 在看详细计划前先看清关键未知；每
 
 **Gate G3.6**：activate 贡献自动注册；reload 换 revision；remove/disable 退订；flag 关闭零执行；全量绿。
 
-## Phase 4：Desktop UI 槽位（4–6 周，S4 + composer 已交付 2026-11-13，G4 达成）
+## Phase 4：Desktop UI 槽位（4–6 周，2026-11-13 收口，G4 达成）
 
 **目标**：固定 shell + 更多声明式槽位；不注入原生组件。
 
-**状态**：S4 `ui.menuItems`、composer action、panel rail entry 已端到端交付：contract 校验 → gateway 投影 → desktop 宿主渲染 → package action / 现有 focus 路径。G4（menu + composer）达成；chat part renderer 仅剩评估。
+**状态**：S4 `ui.menuItems`、composer action、panel rail entry 已端到端交付：contract 校验 → gateway 投影 → desktop 宿主渲染 → package action / 现有 focus 路径。chat part renderer 完成评估，决定暂不实现（保留 `data-*` + `DataPartCard` 兜底；未来唯一推荐形状为 `ui.dataPartCards`）。Phase 4 收口。
 **详细计划**：`docs/superpowers/plans/2026-11-13-kernel-v2-phase4-desktop-ui-slots.md`
-**交付记录**：`docs/releases/2026-11-13-capability-kernel-phase4-s4.md`、`docs/releases/2026-11-13-capability-kernel-phase4-composer.md`、`docs/releases/2026-11-13-capability-kernel-phase4-panel-rail.md`
+**交付记录**：`docs/releases/2026-11-13-capability-kernel-phase4-s4.md`、`docs/releases/2026-11-13-capability-kernel-phase4-composer.md`、`docs/releases/2026-11-13-capability-kernel-phase4-panel-rail.md`、`docs/releases/2026-11-13-capability-kernel-phase4-closeout.md`
+**评估**：`docs/research/2026-11-13-chat-part-renderer-evaluation.md`
 
-**顺序**：`desktop.ui.menuItems`（先做 S4）→ composer action → panel rail entry → chat part renderer 评估。
+**顺序**：`desktop.ui.menuItems`（先做 S4）→ composer action → panel rail entry → chat part renderer 评估（完成，暂不实现）。
 
 每个槽位的完成定义：
 

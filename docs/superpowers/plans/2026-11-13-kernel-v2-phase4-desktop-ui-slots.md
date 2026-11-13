@@ -17,13 +17,15 @@
 - S4（Task 4.1–4.4）完成。
 - composer action 完成（contract + desktop 宿主按钮 + `insertText` 草稿插入）。
 - panel rail entry 完成（contract + `railItemsFromPanels` + IconRail 合并）。
+- chat part renderer（Task 4.7）完成评估：**决定暂不实现**，写出 `ui.dataPartCards` 未来方案与触发条件。
 - plugin-contract：**44 / 44 pass**。
 - gateway 全量：**7008 passed / 1 skipped / 7009 total**；composer 阶段连续两次 clean。
-- desktop 全量：**3757 / 3757 pass**；S4 新增 16 个测试、composer 新增 5 个、panel rail 新增 1 个。
+- desktop 全量：panel rail 基线 **3757 / 3757 pass**；chat part 评估新增 1 个边界守卫 → 本阶段可归因 **3758 / 3758 pass**（当前 worktree 全量 3761，含另一会话未提交的 3 个 document 测试）。
 - gateway / desktop typecheck 通过（desktop 用 `tsc`；`tsgo` 依赖当前未安装）。
-- 交付记录：`docs/releases/2026-11-13-capability-kernel-phase4-s4.md`、`docs/releases/2026-11-13-capability-kernel-phase4-composer.md`、`docs/releases/2026-11-13-capability-kernel-phase4-panel-rail.md`。
-- G4 达成（menu + composer）；panel rail 已交付。
-- 明确未做：chat part renderer 评估、danger/shortcut 键位、composer action input 参数。
+- 交付记录：`docs/releases/2026-11-13-capability-kernel-phase4-s4.md`、`docs/releases/2026-11-13-capability-kernel-phase4-composer.md`、`docs/releases/2026-11-13-capability-kernel-phase4-panel-rail.md`、`docs/releases/2026-11-13-capability-kernel-phase4-closeout.md`。
+- 评估文档：`docs/research/2026-11-13-chat-part-renderer-evaluation.md`。
+- G4 达成（menu + composer）；panel rail 已交付；chat part 槽位以评估关闭。
+- 明确未做：`ui.dataPartCards` 实现、danger/shortcut 键位、composer action input 参数。
 
 ## Global Constraints
 
@@ -334,11 +336,35 @@ git commit -m "docs: record phase 4 s4 menu slot"
 
 ---
 
-## 后续（本计划不展开）
+## Task 4.5：composer action（已交付 2026-11-13）
 
-- 4.5 composer action：descriptor + composer 按钮/菜单 + action 路由。
-- 4.6 panel rail entry：声明式 panel 的 rail 入口。
-- 4.7 chat part renderer：只评估，优先声明式/widget 或 sandboxed web surface。
+- `plugin-contract`：`ui.composerActions`，每包最多 3 个；action 必须引用同包 action。
+- desktop：`PluginComposerActions` 宿主渲染 `ButtonV2 + Icon`，点击调用同包 action；返回 `{ insertText }` 写入草稿，不自动发送。
+- 交付记录：`docs/releases/2026-11-13-capability-kernel-phase4-composer.md`。
+
+## Task 4.6：panel rail entry（已交付 2026-11-13）
+
+- `PluginPanelDescriptor.rail = { icon, order?, badge? }`；desktop `railItemsFromPanels()` 投影到 IconRail。
+- 点击复用 `openPluginFocus`，不新增打开路径。
+- 交付记录：`docs/releases/2026-11-13-capability-kernel-phase4-panel-rail.md`。
+
+## Task 4.7：chat part renderer（评估完成 2026-11-13，不实现）
+
+**结论：** 插件包不为 chat transcript 贡献自定义 part 渲染器；保持宿主独占。
+
+**现状：**
+
+- 工具 part：`ui.toolCards` + `PluginToolCard` + `PluginViewRenderer` 已提供声明式卡片，pending/running 用原卡，settled 调 `viewAction`，失败回退。
+- 非工具 part：`data-<name>` 由 `DataPartCard` 显示名称 + JSON；gateway 已校验名字、≤64KB、可序列化，并持久化 overlay。
+- `PART_MAPPING` / `registerPartComponent` 是 renderer 内部 API；插件包不能访问，也不能注入 Solid 组件。
+
+**未来若开槽，唯一推荐形状：** `ui.dataPartCards`（`id` + `name` + `viewAction`），desktop 用独立 controller + data-part registry 调用同包 action，复用 `PluginViewRenderer`，失败/过期/冲突回退 `DataPartCard`；不覆盖 `text`/`reasoning`/`tool`/`file`/`compaction`，不做每 part webview。
+
+**触发条件：** 至少两个真实包（或一个第一方功能）被 JSON 视图阻塞；需要展示非工具产生的连续状态；现有 toolCards/panel/messageWindow 无法承载。
+
+**证据与测试清单：** `docs/research/2026-11-13-chat-part-renderer-evaluation.md`。
+
+**边界守卫：** `packages/desktop/src/renderer/mafw/plugins/plugin-chat-part-boundary.test.ts` 禁止插件模块引用 `PART_MAPPING` / `registerPartComponent`。
 
 ## Self-Review
 
@@ -350,4 +376,4 @@ git commit -m "docs: record phase 4 s4 menu slot"
 
 ## Execution Handoff
 
-按 Task 4.1 → 4.4 顺序执行。S4 完成后再决定是否继续 composer action。执行方式沿用 native（不使用 worktree）。
+Phase 4 已收口：Task 4.1–4.4（menu）、4.5（composer）、4.6（panel rail）交付，4.7（chat part）以评估关闭。执行方式沿用 native（不使用 worktree）。下一阶段是 Phase 5（有状态能力），先写 memory store/retrieval 的详细 plan。

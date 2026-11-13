@@ -355,7 +355,7 @@ ui: {
 
 ## 6. UI slots
 
-`ui` 接受五个 slot（未知 slot 直接失败）：`panels` / `configPages` / `toolCards` / `messageWindows` 是**声明式数据**（Desktop 用内置组件渲染）；`webSurfaces` 是**沙箱 Web 页面**（插件自己写 HTML/JS）。两类可以并存于同一个包。
+`ui` 只接受白名单 slot（未知 slot 直接失败）：`panels`（含 `rail`）/ `configPages` / `toolCards` / `messageWindows` / `menuItems` / `composerActions` 是**声明式数据**（Desktop 用内置组件渲染）；`webSurfaces` 是**沙箱 Web 页面**（插件自己写 HTML/JS）。两类可以并存于同一个包。chat part 渲染器目前不开放（§6.6）。
 
 ### 6.1 panels
 
@@ -586,6 +586,17 @@ bridge 是**可选**的：页面应能在缺少 `window.mafwPlugin` 时隐藏依
 | 需要项目文件或 PTY | `webSurfaces`（action 里也能调 `ctx.files`，但把文件内容塞进 256 KiB 的 action payload 不是正确用法） |
 
 完整可运行示例：`docs/examples/plugins/web-surface-demo/`（文件树 + 终端 + action/event 刷新）。
+
+### 6.6 chat part（目前不开放）
+
+统一插件包**不能**注册 chat transcript 的 part 渲染器；这是 Phase 4 的明确边界（评估见 `docs/research/2026-11-13-chat-part-renderer-evaluation.md`）。
+
+- 工具 part 用 `ui.toolCards`（§6.3）；这是当前唯一受支持的「自定义 chat 卡片」。
+- 非工具 `data-<name>` part 由宿主 `DataPartCard` 显示名称 + JSON；gateway 已校验名字、≤64KB、可序列化。
+- 不要尝试从包代码引用 `PART_MAPPING` / `registerPartComponent`，也不要通过 IPC 传组件/源码；renderer 不执行插件代码。
+- 需要富交互时，用 action 打开 panel / message window / web surface，不要把页面塞进 transcript。
+
+未来若出现真实需求，唯一候选形状是 `ui.dataPartCards`（`data-<name>` → 同包 `viewAction` → 声明式 Widget，失败回退 JSON 卡），但当前 contract 不接受该 slot。
 
 ## 7. View 与 Widget
 

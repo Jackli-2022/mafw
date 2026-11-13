@@ -64,6 +64,8 @@
 | composer action 校验 / 插入草稿 / 失败隔离 | `packages/plugin-contract/src/validate.test.ts`、`packages/desktop/src/renderer/mafw/plugins/plugin-composer-actions.test.ts` | OK | 2026-11-13 |
 | composer action 宿主渲染 | `packages/desktop/src/renderer/mafw/components/plugin-composer-wiring.test.ts` | OK | 宿主 ButtonV2 + Icon |
 | panel rail entry 校验 / 投影 / 打开路径 | `packages/plugin-contract/src/validate.test.ts`、`packages/desktop/src/renderer/mafw/plugins/plugin-view-model.test.ts`、`plugin-web-wiring.test.ts` | OK | 复用 `openPluginFocus` |
+| chat part 渲染宿主独占 / 插件不得注册 part 组件 | `packages/session-ui/src/components/message-part.tsx`（`PART_MAPPING`）、`packages/desktop/src/renderer/mafw/plugins/plugin-chat-part-boundary.test.ts` | OK | 2026-11-13 评估；`data-*` 仍走 `DataPartCard` |
+| chat part 槽位决策（暂不实现 `ui.dataPartCards`） | `docs/research/2026-11-13-chat-part-renderer-evaluation.md` | OK | 触发条件 + 未来设计已记录 |
 | capability manifest / plane | 本 phase Task 0.4 新增 | GAP→新增 | shared contract |
 | desktop cutover 并行窗口 | Phase 4 | GAP | 不在 Phase 0/1 |
 
