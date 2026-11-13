@@ -1,4 +1,4 @@
-/**
+﻿/**
  * OpencodeAdapter - 适配层，隔离上层代码与 opencode SDK 版本变化
  * 
  * 设计目标：
@@ -1059,6 +1059,15 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
         const rawHit = raw.find((s: any) => (s?.id ?? s?.name) === key || s?.name === key);
         if (!rawHit) return null;
         return { ...mapRuntimeSkill(rawHit), content: String(rawHit.content ?? '') };
+      },
+      async invokeSkill({ sessionID, directory, key, args }) {
+        const text = args.trim() ? `@${key} ${args.trim()}` : `@${key}`;
+        await directNative(
+          `/session/${encodeURIComponent(sessionID)}/prompt`,
+          'POST',
+          promptInputBody([{ type: 'text', text }]),
+          directory,
+        );
       },
     },
 
