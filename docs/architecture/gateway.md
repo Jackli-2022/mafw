@@ -1075,13 +1075,37 @@ E8-1 之后 kernel/boot 的长驻 interval 已全部在台账内；短命 retry/
 - **发布顺序**：v2 gateway 必须与支持 v2 的 mobile 同批发布（旧 app 解析不了无 token 的 v2 链接）。网关先上时，已配对设备要在下一次重配对拿到 device token 后才能做 human-only；删除设备会立即断开其在线 WS，客户端按断线退避重连，但不会自动重配对。
 - **威胁模型**：human token 与 gateway 同一 OS 用户，本机恶意进程可读；E5a 防的是 **agent/自动化误调用、误审批被当成人类**，不是本机隔离。device token 可撤销；共享 apiToken 仍是全权 service 凭据（本波不轮换）。
 
+### E11-4 身份边界决策（2026-11-13）
+
+- **MCP human 工具 = won't do。** MCP 永远是 service principal（loopback 或共享 apiToken，调用不携带
+  human/device 凭据），所以不新增任何「代替人类」的工具：验收（accept + merge）、计划批准、
+  triage confirm/reject/dismiss、decision confirm/shelve、Lead 边界 accept/merge/undo、
+  `approvals.respond`、`permissions.reply`、`goals.respondQuestion` 一律只走 human/device 凭据的
+  HTTP/UI 路由（见上「human-only 路由」）。三条例外各有明确语义：`mafw_pod_review_respond`
+  （Tech Lead 回应，只有人类能 resolve/reopen）、`mafw_decision_draft`（只草稿，人类在 UI 确认）、
+  `mafw_ask_user`（提问，绝不代答）。守卫是机器化的：`gateway/tests/unit/mcp/human-boundary.test.ts`
+  固定 47 条工具名快照（新增/改名必须显式更新才通过）、扫描名称与描述里的 human-only 动词
+  （accept/approve/confirm/shelve/reject/dismiss/merge/undo/rotate；描述侧收窄到「动词 + 人类专属对象」
+  且允许描述人类自己的动作）、并静态扫描 `gateway/src/mcp/**` 不得出现 `requireHumanPrincipal` /
+  `confirmDecision` / `shelveDecision` / `acceptGoal` / `replyPermission` / `rotateHumanToken` /
+  `human.token`。快照 + 扫描合起来保证「新增 human 工具」必然出现在评审 diff 里。
+- **OS keychain / 进程签名 = won't do（本阶段）。** 威胁模型是**同一个 OS 用户**：本机恶意进程本就
+  能以该用户身份读取解锁后的 keychain 条目，收益有限；而代价是三平台原生依赖（Windows 凭据管理器 /
+  macOS Security.framework / Linux Secret Service），并且要接进打包与签名链路（签名会改变 payload
+  哈希与 self-update 校验）。缓解措施沿用现状且都可验证：固定路径 `~/.mafw/human.token`（原子写、
+  POSIX 0600、Windows 用户目录 ACL）、只服务 loopback（非 loopback 必须凭据）、
+  `POST /api/human-token/rotate` 立即换发且 kernel 实时生效（E11-1，桌面遇 403 自动重读重试一次）、
+  `redactLog` 覆盖凭据头与 `dev_…`、轮换只记时间戳不记 token、device token 可单独撤销。
+  跨用户隔离要靠 OS 账户 / per-owner fencing，仍留在后续。
+
 ### 已知延后（不在 E5a 范围）
 
 - ~~计划批准（plan-approval）、triage、Lead 边界、permission approvals 仍是 service/local 可调~~
   （E7-1 已收口；统一 helper `requireHumanPrincipal` 接入，见「E7 部署前 deferred 收口」）。
 - MCP 工具集**没有** human 工具（也不提供验收/批准工具）；human-only 动作只走 HTTP（desktop/TUI/移动）。
+  该边界自 E11-4 起由 `gateway/tests/unit/mcp/human-boundary.test.ts` 机器化守卫（名称快照 + 动词扫描 + 源码扫描）。
 - ~~`authorizeWsUpgrade` 仅标记 deprecated，未删除（测试与旧调用方仍引用）~~（E8-5 已删除：无生产调用，测试迁移到 `resolvePrincipal` / `WS_UNAUTHORIZED_RESPONSE`）。
-- human token 的 OS keychain / 进程签名、per-owner fencing 留给后续。
+- ~~human token 的 OS keychain / 进程签名、per-owner fencing 留给后续。~~（E11-4 已裁决：OS keychain / 进程签名 **won't do 本阶段**，理由与缓解见上；per-owner fencing 仍留在后续。）
 - E5b（C1 event_log 恢复源 / mobile 游标）与 E6（单点扇出 / 实体缓存 / 事件增量）不在本波。
 
 ## E5b 事件恢复源（2026-11-12）
