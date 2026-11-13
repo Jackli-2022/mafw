@@ -63,6 +63,12 @@ export interface PluginView {
 }
 
 /** Right-workbench L2 tab contributed by a package. */
+export interface PluginPanelRailDescriptor {
+  icon: string
+  order?: number
+  badge?: boolean
+}
+
 export interface PluginPanelDescriptor {
   id: string
   title: string
@@ -71,6 +77,8 @@ export interface PluginPanelDescriptor {
   viewAction: string
   /** Registered package event types that trigger a view refresh. */
   refreshOn?: string[]
+  /** Opt-in left-rail entry that opens this panel. */
+  rail?: PluginPanelRailDescriptor
 }
 
 /** Declarative tool card that may replace or augment the default card. */

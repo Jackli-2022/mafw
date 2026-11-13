@@ -207,6 +207,7 @@ describe("shell wiring pins", () => {
   test("the shell derives rail items and live surface ids from descriptors", () => {
     expect(shell).toContain("webSurfaceViews(pluginDescriptors())")
     expect(shell).toContain("pluginRailItems")
+    expect(shell).toContain("railItemsFromPanels(")
     expect(shell).toContain("railItemsFromWebSurfaces(")
     expect(shell).toContain("pluginSurfaceIdList")
     expect(shell).toContain("pluginWebSurfaces().map((surface) => surface.surfaceId)")

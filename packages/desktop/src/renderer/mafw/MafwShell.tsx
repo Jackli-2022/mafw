@@ -83,7 +83,7 @@ import { executionBadgeFor } from "./goal-user-view"
 import type { PlanOpenRequest } from "./plan-open"
 import { goalDiscussionRequestCurrent, goalDiscussionTarget, shouldOpenTechLeadForGoal, shouldShowReturnLead } from "./goal-chat-context"
 import { ingestPluginEvent, ingestPluginsChanged, pluginDescriptors, refreshPluginClient } from "./plugins/plugin-store"
-import { pluginSurfaceIssues, pluginSurfaces, pluginConfigSurfaces } from "./plugins/plugin-view-model"
+import { pluginSurfaceIssues, pluginSurfaces, pluginConfigSurfaces, railItemsFromPanels } from "./plugins/plugin-view-model"
 import { railItemsFromWebSurfaces, webSurfaceViews } from "./plugins/plugin-web-surface"
 import { PluginMenuWiring } from "./plugins/PluginMenuWiring"
 import {
@@ -2227,9 +2227,18 @@ export function MafwShell() {
     ...pluginConfigSurfaceList().map((surface) => surface.id),
     ...pluginWebSurfaces().map((surface) => surface.surfaceId),
   ])
-  const pluginRailItems = createMemo(() =>
-    applyPluginRailState(railItemsFromWebSurfaces(pluginWebSurfaces()), pluginSurfaceRuntime()),
-  )
+  const pluginRailItems = createMemo(() => {
+    const merged = [
+      ...railItemsFromPanels(pluginSurfaceList()),
+      ...railItemsFromWebSurfaces(pluginWebSurfaces()),
+    ].sort(
+      (a, b) =>
+        a.order - b.order ||
+        a.label.localeCompare(b.label) ||
+        a.surfaceId.localeCompare(b.surfaceId),
+    )
+    return applyPluginRailState(merged, pluginSurfaceRuntime())
+  })
   const gatewayUrl = () => gwStatus()?.url ?? ""
   const applyWebSurfaceBadge = (surfaceId: string, count: number) => {
     setPluginSurfaceRuntime((prev) => applyPluginSurfaceBadge(prev, surfaceId, count))

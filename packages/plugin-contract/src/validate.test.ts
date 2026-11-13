@@ -508,6 +508,43 @@ test("menuItems: rejects unknown surface, action, icon and duplicate ids", () =>
   assert.equal(duplicate.ok, false)
 })
 
+test("panel rail: accepts a registered icon and rejects invalid rail fields", () => {
+  const ok = validateClientDescriptor({
+    ...validDescriptor(),
+    ui: {
+      panels: [
+        {
+          id: "main",
+          title: "Main",
+          viewAction: "getPanel",
+          rail: { icon: "layout-grid", order: 10, badge: true },
+        },
+      ],
+    },
+  })
+  assert.equal(ok.ok, true)
+  if (!ok.ok) return
+  assert.deepEqual(ok.value.ui.panels?.[0]?.rail, {
+    icon: "layout-grid",
+    order: 10,
+    badge: true,
+  })
+
+  for (const rail of [
+    { icon: "not-a-real-icon" },
+    { icon: "layout-grid", extra: true },
+    { icon: "layout-grid", badge: "yes" },
+  ]) {
+    const result = validateClientDescriptor({
+      ...validDescriptor(),
+      ui: {
+        panels: [{ id: "main", title: "Main", viewAction: "getPanel", rail }],
+      },
+    })
+    assert.equal(result.ok, false)
+  }
+})
+
 test("composerActions: accepts a valid action and rejects bad references", () => {
   const ok = validateClientDescriptor({
     ...validDescriptor(),

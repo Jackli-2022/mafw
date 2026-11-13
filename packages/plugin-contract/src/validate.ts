@@ -22,6 +22,7 @@ import type {
   PluginMessageWindowDescriptor,
   PluginManifestContributes,
   PluginPanelDescriptor,
+  PluginPanelRailDescriptor,
   PluginToolCardDescriptor,
   PluginToolDescriptor,
   PluginView,
@@ -73,7 +74,8 @@ const MENU_LABEL_MAX = 80
 const COMPOSER_LABEL_MAX = 40
 const MENU_SHORTCUT_MAX = 32
 
-const PANEL_KEYS = ["id", "title", "icon", "order", "viewAction", "refreshOn"] as const
+const PANEL_KEYS = ["id", "title", "icon", "order", "viewAction", "refreshOn", "rail"] as const
+const PANEL_RAIL_KEYS = ["icon", "order", "badge"] as const
 const TOOL_CARD_KEYS = ["id", "tools", "override", "viewAction"] as const
 const CONFIG_PAGE_KEYS = ["id", "title", "schema", "loadAction", "saveAction", "reloadOnSave"] as const
 const MESSAGE_WINDOW_KEYS = ["id", "title", "triggerEvent", "viewAction", "modal", "dismissible"] as const
@@ -480,6 +482,32 @@ function readEvents(value: unknown, packageName: string, errors: string[]): Plug
   return events
 }
 
+function readPanelRail(
+  value: unknown,
+  label: string,
+  errors: string[],
+): PluginPanelRailDescriptor | undefined {
+  if (value === undefined) return undefined
+  if (!isPlainObject(value)) {
+    addError(errors, `${label} must be an object`)
+    return undefined
+  }
+  checkKnownFields(value, PANEL_RAIL_KEYS, label, errors)
+  const icon =
+    typeof value.icon === "string" && isPluginIconName(value.icon) ? value.icon : undefined
+  if (icon === undefined) {
+    addError(errors, `${label}.icon must be a registered plugin icon`)
+  }
+  const order = optionalNumber(value.order, `${label}.order`, errors)
+  const badge = optionalBoolean(value.badge, `${label}.badge`, errors)
+  if (icon === undefined) return undefined
+  return {
+    icon,
+    ...(order !== undefined ? { order } : {}),
+    ...(badge !== undefined ? { badge } : {}),
+  }
+}
+
 function readPanels(
   value: unknown,
   actionNames: Set<string>,
@@ -533,6 +561,8 @@ function readPanels(
     const order = optionalNumber(item.order, `${panelLabel} order`, errors)
     if (order !== undefined) panel.order = order
     if (refreshOn !== undefined) panel.refreshOn = refreshOn
+    const rail = readPanelRail(item.rail, `${panelLabel} rail`, errors)
+    if (rail !== undefined) panel.rail = rail
     panels.push(panel)
   })
   return panels

@@ -22,6 +22,7 @@ import {
   pluginPanelRefreshesOn,
   pluginSurfaceIssues,
   pluginSurfaces,
+  railItemsFromPanels,
   pluginTabCapacityForWidth,
   observePluginTabCapacity,
   planPluginTabs,
@@ -386,5 +387,30 @@ describe("classifyPanelActionOutput", () => {
     })
     expect(classifyPanelActionOutput("done")).toEqual({ kind: "result", text: "done" })
     expect(classifyPanelActionOutput(42)).toEqual({ kind: "result", text: "42" })
+  })
+})
+
+describe("railItemsFromPanels", () => {
+  test("only opted-in panels become rail items with their panel surface id", () => {
+    const surfaces = pluginSurfaces([
+      descriptor("demo", [
+        panel({
+          id: "stats",
+          title: "Stats",
+          rail: { icon: "layout-grid", order: 10, badge: true },
+        }),
+        panel({ id: "plain", title: "Plain" }),
+      ]),
+    ])
+    expect(railItemsFromPanels(surfaces)).toEqual([
+      {
+        surfaceId: "plugin:demo:stats",
+        packageName: "demo",
+        label: "Stats",
+        icon: "layout-grid",
+        order: 10,
+        badge: true,
+      },
+    ])
   })
 })

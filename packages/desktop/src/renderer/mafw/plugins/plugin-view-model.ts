@@ -13,6 +13,7 @@ import type {
 } from "@mafw/plugin-contract"
 import { isPluginSurfaceId, pluginSurfaceId, type PluginSurfaceId, type WorkbenchSurface } from "./surface-id"
 import type { PluginGeneration } from "./plugin-client"
+import type { PluginRailItem } from "./plugin-web-surface"
 
 // `@mafw/plugin-contract` is a CommonJS workspace package in Node tests but the
 // renderer bundle aliases it to the ESM TypeScript source. Read through the
@@ -131,6 +132,39 @@ export function pluginSurfaceIssues(
  * ordering rules and use a `config.<id>` surface suffix, so panel ids and page
  * ids never collide.
  */
+const DEFAULT_PANEL_RAIL_ORDER = 100
+
+/**
+ * Left-rail entries for declarative panels that opted into `panel.rail`.
+ *
+ * The surface id is the same `plugin:<package>:<panel>` identity used by the
+ * workbench tab, so `openPluginFocus` opens the panel without a second path.
+ */
+export function railItemsFromPanels(
+  surfaces: readonly PluginSurface[],
+): PluginRailItem[] {
+  const items: PluginRailItem[] = []
+  for (const surface of surfaces ?? []) {
+    const rail = surface?.panel?.rail
+    if (!rail) continue
+    items.push({
+      surfaceId: surface.id,
+      packageName: surface.descriptor.name,
+      label: surface.label,
+      icon: rail.icon,
+      order: rail.order ?? DEFAULT_PANEL_RAIL_ORDER,
+      badge: rail.badge === true,
+    })
+  }
+  items.sort(
+    (a, b) =>
+      a.order - b.order ||
+      a.label.localeCompare(b.label) ||
+      a.surfaceId.localeCompare(b.surfaceId),
+  )
+  return items
+}
+
 export function pluginConfigSurfaces(
   descriptors: readonly PluginClientDescriptor[],
 ): PluginConfigSurface[] {
