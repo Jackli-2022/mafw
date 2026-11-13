@@ -1,27 +1,30 @@
-export type MenuSurface =
-  | "rail.new"
-  | "session.row"
-  | "session.tab"
-  | "project.row"
-  | "message"
-  | "code-block"
-  | "file.path"
-  | "file.tree"
-  | "editor.tab"
-  | "terminal"
-  | "browser"
-  | "browser.page"
-  | "panel.execution"
-  | "panel.review"
-  | "goal.card"
-  | "goal.cell"
-  | "memory.card"
-  | "notes.card"
-  | "approval.question"
-  | "approval.permission"
-  | "triage.card"
-  | "automation.card"
-  | "edit.text"
+export const MENU_SURFACES = [
+  "rail.new",
+  "session.row",
+  "session.tab",
+  "project.row",
+  "message",
+  "code-block",
+  "file.path",
+  "file.tree",
+  "editor.tab",
+  "terminal",
+  "browser",
+  "browser.page",
+  "panel.execution",
+  "panel.review",
+  "goal.card",
+  "goal.cell",
+  "memory.card",
+  "notes.card",
+  "approval.question",
+  "approval.permission",
+  "triage.card",
+  "automation.card",
+  "edit.text",
+] as const
+
+export type MenuSurface = (typeof MENU_SURFACES)[number]
 
 export type MenuItem =
   | {

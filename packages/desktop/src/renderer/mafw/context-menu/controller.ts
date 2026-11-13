@@ -1,5 +1,6 @@
 import { createSignal } from "solid-js"
 import { clampMenuPoint, type Point } from "./clamp"
+import { menuContributions, type MenuContributionRegistry } from "./contributions"
 import { shouldRestoreFocus } from "./focus"
 import type { MenuModel, MenuOpenSource } from "./types"
 
@@ -29,8 +30,15 @@ export interface MenuController {
   point(): Point
 }
 
-export function createMenuController(): MenuController {
+export interface MenuControllerOptions {
+  /** `null` disables contributions (useful for isolated tests). */
+  contributions?: MenuContributionRegistry | null
+}
+
+export function createMenuController(options: MenuControllerOptions = {}): MenuController {
   const [request, setRequest] = createSignal<MenuRequest | null>(null)
+  const contributions =
+    options.contributions === undefined ? menuContributions : options.contributions
 
   return {
     request(build, target, run, opts = {}) {
@@ -39,9 +47,17 @@ export function createMenuController(): MenuController {
         opts.point ?? { x: viewport.width / 2, y: viewport.height / 2 },
         viewport,
       )
+      const built = build(target)
+      const merged = contributions?.merge(built, { surface: built.surface, target })
+      const model = merged?.model ?? built
+      const finalRun = merged
+        ? (id: string) => {
+            if (!merged.run(id)) run(id)
+          }
+        : run
       setRequest({
-        model: build(target),
-        run,
+        model,
+        run: finalRun,
         point,
         from: opts.from ?? "contextmenu",
         returnFocus: opts.returnFocus ?? (typeof document !== "undefined" && document.activeElement instanceof HTMLElement ? document.activeElement : null),
