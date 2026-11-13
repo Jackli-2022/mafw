@@ -24,12 +24,12 @@ export function FrameBar(props: {
   return (
     <div class="mafw-frame-bar">
       <Show when={props.canBack}>
-        <TooltipV2 value="返回" openDelay={300}>
+        <TooltipV2 value="返回上一焦点" openDelay={300}>
           <ButtonV2
             variant="ghost"
             size="small"
             class="mafw-frame-back"
-            aria-label="返回"
+            aria-label="返回上一焦点"
             onClick={props.onBack}
           >
             <Icon name="arrow-left" size="small" />

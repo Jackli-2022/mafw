@@ -454,12 +454,12 @@ export function BrowserDock(props: {
     ariaLabel: "浏览器工具栏",
     leading: () => (
       <>
-        <TooltipV2 value="后退" openDelay={300}>
+        <TooltipV2 value="后退（页面历史）" openDelay={300}>
           <ButtonV2 variant="ghost" size="small" disabled={activeTab()?.canBack !== true} aria-label="后退" onClick={navigateBack}>
             <Icon name="arrow-left" size="small" />
           </ButtonV2>
         </TooltipV2>
-        <TooltipV2 value="前进" openDelay={300}>
+        <TooltipV2 value="前进（页面历史）" openDelay={300}>
           <ButtonV2 variant="ghost" size="small" disabled={activeTab()?.canForward !== true} aria-label="前进" onClick={navigateForward}>
             <Icon name="arrow-right" size="small" />
           </ButtonV2>

@@ -58,6 +58,13 @@ test("document tabs expose drag reorder wiring", () => {
   assert.match(css, /\.mafw-document-tab\.drop-after/)
 })
 
+test("focus back and page back are labelled distinctly", () => {
+  const frame = read("src/renderer/mafw/components/FrameBar.tsx")
+  const browser = read("src/renderer/mafw/components/BrowserDock.tsx")
+  assert.match(frame, /返回上一焦点/)
+  assert.match(browser, /后退（页面历史）/)
+})
+
 test("browser dock restores and persists tab snapshots", () => {
   const browser = read("src/renderer/mafw/components/BrowserDock.tsx")
   assert.match(browser, /restoreBrowserTabsOnce/)
