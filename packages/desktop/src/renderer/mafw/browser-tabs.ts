@@ -17,6 +17,11 @@ export const BROWSER_TAB_LIMIT = 12
 
 let seq = 0
 
+function reserveBrowserTabSeq(id: string): void {
+  const match = /^browser-tab-(\d+)$/.exec(id)
+  if (match) seq = Math.max(seq, Number(match[1]))
+}
+
 export function createBrowserTab(url: string, id: string, title = ""): BrowserTab {
   return { id, url, title, loading: false, canBack: false, canForward: false }
 }
@@ -75,6 +80,7 @@ export function openBrowserTab(url: string, opts: OpenBrowserTabOpts = {}): Brow
   if (newTab || !activeId() || !current.some((tab) => tab.id === activeId())) {
     if (current.length >= BROWSER_TAB_LIMIT) return null
     const tab = createBrowserTab(url, opts.id ?? `browser-tab-${++seq}`, opts.title)
+    if (opts.id) reserveBrowserTabSeq(tab.id)
     setTabs([...current, tab])
     setActiveId(tab.id)
     return tab

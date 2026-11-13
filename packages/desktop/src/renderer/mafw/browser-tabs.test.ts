@@ -82,6 +82,14 @@ describe("browser-tabs", () => {
     assert.equal(activeBrowserTabId(), a.id)
   })
 
+  test("explicit browser-tab ids advance the id sequence", () => {
+    resetBrowserTabsForTests()
+    openBrowserTab("https://restored.example", { id: "browser-tab-7", newTab: true })
+    const next = openBrowserTab("https://next.example", { newTab: true })!
+    assert.notEqual(next.id, "browser-tab-1")
+    assert.equal(next.id, "browser-tab-8")
+  })
+
   test("nextBrowserTabAfterClose handles no match and non-active close", () => {
     const tabs = [
       createBrowserTab("", "a", "A"),
