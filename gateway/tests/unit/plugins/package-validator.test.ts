@@ -508,6 +508,42 @@ describe('ctx.config.update', () => {
   });
 });
 
+describe('menu item contributions', () => {
+  it('accepts menuItems and projects them into the client UI', () => {
+    const built = buildActivatedContributions(
+      'demo',
+      {
+        ui: {
+          menuItems: [
+            {
+              id: 'copy',
+              surface: 'message',
+              label: 'Copy',
+              action: 'load',
+              icon: 'file',
+              order: 10,
+            },
+          ],
+        },
+        actions: { load: { handler: () => null } },
+      },
+      CANONICAL,
+    );
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.value.ui.menuItems).toEqual([
+      {
+        id: 'copy',
+        surface: 'message',
+        label: 'Copy',
+        action: 'load',
+        icon: 'file',
+        order: 10,
+      },
+    ]);
+  });
+});
+
 describe('tool and observer contributions', () => {
   it('accepts tool and observer declarations and strips them from legacy', () => {
     const built = buildActivatedContributions(

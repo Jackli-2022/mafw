@@ -7,7 +7,12 @@ import type { ActivatedContributions } from '../../../src/plugins/package-types'
 
 function activated(): ActivatedContributions {
   return {
-    ui: { panels: [{ id: 'main', title: 'Main', viewAction: 'load' }] },
+    ui: {
+      panels: [{ id: 'main', title: 'Main', viewAction: 'load' }],
+      menuItems: [
+        { id: 'copy', surface: 'message', label: 'Copy', action: 'load', order: 10 },
+      ],
+    },
     actions: [
       { name: 'load', descriptor: { name: 'load', title: 'Load' }, declaration: { handler: () => null } },
       {
@@ -22,6 +27,8 @@ function activated(): ActivatedContributions {
         declaration: { type: 'plugin:acme:changed', scope: 'session' },
       },
     ],
+    tools: [],
+    observers: [],
     legacy: { usage: { name: 'acme', fetch: async () => null } },
   };
 }
@@ -53,6 +60,9 @@ describe('buildClientDescriptor', () => {
       revision: 'boot-1:7',
     });
     expect(descriptor.ui.panels).toEqual([{ id: 'main', title: 'Main', viewAction: 'load' }]);
+    expect(descriptor.ui.menuItems).toEqual([
+      { id: 'copy', surface: 'message', label: 'Copy', action: 'load', order: 10 },
+    ]);
     expect(descriptor.actions.map((action) => action.name)).toEqual(['load', 'save']);
     expect(descriptor.events).toEqual([
       { type: 'plugin:acme:changed', scope: 'session', schema: { type: 'object' } },
