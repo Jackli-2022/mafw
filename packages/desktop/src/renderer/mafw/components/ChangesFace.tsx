@@ -1,10 +1,10 @@
 // 左栏「改动」面：上下文选择 + 会话改动树。
 // 后续 slice 会补 Goal 版本差异、评审项与项目索引；本文件保持单一入口。
-import { For, Show, createEffect, createMemo, createSignal, on, type JSX } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, type JSX } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { DockBanner, DockEmpty } from "./dock-panel"
-import { buildChangeTree, changeStatusLetter, type ChangeTreeNode } from "./change-tree"
+import { buildChangeTree, changeStatusLetter, nextPulseState, type ChangeTreeNode } from "./change-tree"
 import type { FileDiffEntry } from "./DiffReviewPanel"
 import type { ChangesContext, ChangesMode, GoalRef } from "../changes/changes-context"
 import type { ChangesRequest } from "../changes/changes-request"
@@ -31,6 +31,7 @@ export type ChangesFaceProps = {
   request?: ChangesRequest | null
   projectDir: string | null
   sessionDiffs: readonly FileDiffEntry[]
+  liveDiffs?: readonly FileDiffEntry[]
   onOpenFile: (rel: string) => void
   onOpenSessionDiff?: (file: FileDiffEntry) => void
   resolveGoalDir?: (goal: GoalRef) => Promise<string | null>
@@ -48,6 +49,9 @@ export type ChangesFaceProps = {
 function ChangeRows(props: {
   nodes: readonly ChangeTreeNode[]
   depth: number
+  collapsed: Set<string>
+  onToggle: (path: string) => void
+  pulse?: Set<string>
   onOpenFile: (rel: string) => void
   onOpenDiff?: (file: FileDiffEntry) => void
 }): JSX.Element {
@@ -57,12 +61,15 @@ function ChangeRows(props: {
   }
   return (
     <For each={props.nodes}>
-      {(node) => (
+      {(node) => {
+        const open = () => !props.collapsed.has(node.path)
+        return (
         <Show
           when={node.kind === "dir"}
           fallback={
             <div
               class="mafw-change-file mafw-changes-face-row"
+              classList={{ "mafw-change-pulse": props.pulse?.has(node.path) === true }}
               style={{ "padding-left": `${8 + props.depth * 12}px` }}
               role="button"
               tabIndex={0}
@@ -88,21 +95,66 @@ function ChangeRows(props: {
           <div
             class="mafw-change-dir mafw-changes-face-row"
             style={{ "padding-left": `${8 + props.depth * 12}px` }}
+            role="button"
+            tabIndex={0}
+            aria-expanded={open()}
             aria-label={node.path}
+            onClick={() => props.onToggle(node.path)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" && event.key !== " ") return
+              event.preventDefault()
+              props.onToggle(node.path)
+            }}
           >
             <span class="mafw-change-name">{node.name}</span>
             <span class="mafw-diff-stat add">+{node.additions}</span>
             <span class="mafw-diff-stat del">-{node.deletions}</span>
           </div>
-          <ChangeRows nodes={node.children} depth={props.depth + 1} onOpenFile={props.onOpenFile} onOpenDiff={props.onOpenDiff} />
+          <Show when={open()}>
+            <ChangeRows
+              nodes={node.children}
+              depth={props.depth + 1}
+              collapsed={props.collapsed}
+              onToggle={props.onToggle}
+              pulse={props.pulse}
+              onOpenFile={props.onOpenFile}
+              onOpenDiff={props.onOpenDiff}
+            />
+          </Show>
         </Show>
-      )}
+        )
+      }}
     </For>
   )
 }
 
 export function ChangesFace(props: ChangesFaceProps): JSX.Element {
   let sessionRef: HTMLDivElement | undefined
+  const [collapsed, setCollapsed] = createSignal<Set<string>>(new Set())
+  const [pulse, setPulse] = createSignal<Set<string>>(new Set())
+  let prevLive: FileDiffEntry[] | null = null
+  let liveSeen = false
+  let pulseTimer: ReturnType<typeof setTimeout> | null = null
+  createEffect(() => {
+    const live = props.liveDiffs
+    if (!Array.isArray(live)) return
+    const step = nextPulseState(prevLive, liveSeen, [...live])
+    liveSeen = step.seen
+    prevLive = step.prev
+    if (step.changed.size === 0) return
+    setPulse(step.changed)
+    if (pulseTimer) clearTimeout(pulseTimer)
+    pulseTimer = setTimeout(() => setPulse(new Set()), 1200)
+  })
+  onCleanup(() => { if (pulseTimer) clearTimeout(pulseTimer) })
+  const toggleCollapsed = (path: string) => {
+    setCollapsed((previous) => {
+      const next = new Set(previous)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      return next
+    })
+  }
   const tree = createMemo(() => buildChangeTree([...props.sessionDiffs]))
   const totals = createMemo(() => props.sessionDiffs.reduce<{
     files: number
@@ -168,8 +220,16 @@ export function ChangesFace(props: ChangesFaceProps): JSX.Element {
   const [reviewRefresh, setReviewRefresh] = createSignal(0)
   const [expandedReview, setExpandedReview] = createSignal<string | null>(null)
 
+  const reviewGoal = createMemo<GoalRef | null>(() => {
+    const context = props.context
+    if (!context) return null
+    if (context.kind === "goal") return displayedGoal()
+    if (context.kind === "session") return context.goal
+    return null
+  })
+
   createEffect(() => {
-    const goal = displayedGoal()
+    const goal = reviewGoal()
     reviewRefresh()
     if (!goal) {
       setReviewItems([])
@@ -187,7 +247,7 @@ export function ChangesFace(props: ChangesFaceProps): JSX.Element {
       .catch((error: unknown) => {
         if (!live) return
         setReviewItems([])
-        setReviewError(String((error as any)?.message ?? error).slice(0, 160) || "评审意见加载失败")
+        setReviewError("评审意见加载失败")
       })
       .finally(() => { if (live) setReviewBusy(false) })
     return () => { live = false }
@@ -200,18 +260,18 @@ export function ChangesFace(props: ChangesFaceProps): JSX.Element {
   }
 
   const openReviewItem = (item: PodReviewItem) => {
-    const goal = displayedGoal()
+    const goal = reviewGoal()
     if (!goal) return
     const file = goalFiles().find((entry) => entry.file === item.rel)
     if (file) {
-      void openGoalFile(file)
+      void openGoalFile(file, item.startLine ?? undefined)
       return
     }
     props.onOpenGoalFile?.(goal, item.rel, item.startLine ?? undefined)
   }
 
   const resolveReview = async (item: PodReviewItem) => {
-    const goal = displayedGoal()
+    const goal = reviewGoal()
     if (!goal || reviewBusy()) return
     setReviewBusy(true)
     try {
@@ -226,7 +286,7 @@ export function ChangesFace(props: ChangesFaceProps): JSX.Element {
   }
 
   const reopenReview = async (item: PodReviewItem) => {
-    const goal = displayedGoal()
+    const goal = reviewGoal()
     if (!goal || reviewBusy()) return
     setReviewBusy(true)
     try {
@@ -240,14 +300,79 @@ export function ChangesFace(props: ChangesFaceProps): JSX.Element {
     }
   }
 
-  const openGoalFile = async (file: FileDiffEntry) => {
-    const goal = displayedGoal()
+  const reviewSection = () => (
+    <Show when={reviewItems().length > 0 || reviewError()}>
+      <div class="mafw-changes-review">
+        <div class="mafw-changes-section-head">
+          <span>待审</span>
+          <span class="mafw-changes-stats">
+            {reviewItems().filter((item) => item.status !== "resolved").length} 条未解决
+          </span>
+        </div>
+        <Show when={reviewError()}>
+          <DockBanner kind="error" text={reviewError()!} />
+        </Show>
+        <For each={reviewItems()}>
+          {(item) => (
+            <div class="mafw-changes-review-item" data-status={item.status}>
+              <div
+                class="mafw-changes-review-row"
+                role="button"
+                tabIndex={0}
+                onClick={() => setExpandedReview(expandedReview() === item.id ? null : item.id)}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return
+                  event.preventDefault()
+                  setExpandedReview(expandedReview() === item.id ? null : item.id)
+                }}
+              >
+                <span class="mafw-changes-review-status">{reviewStatusLabel(item.status)}</span>
+                <span class="mafw-changes-review-path" onClick={(event) => { event.stopPropagation(); openReviewItem(item) }}>
+                  {reviewWhere(item)}
+                </span>
+              </div>
+              <Show when={expandedReview() === item.id}>
+                <div class="mafw-changes-review-body">
+                  <div class="mafw-changes-review-comment">{item.comment}</div>
+                  <Show when={item.response}>
+                    <div class="mafw-changes-review-response">
+                      <span>Tech Lead 回应</span>
+                      <span>{item.response}</span>
+                    </div>
+                  </Show>
+                  <Show when={reviewActionsVisible(props.accepted ?? false)}>
+                    <div class="mafw-changes-review-actions">
+                      <Show when={canResolveReviewItem(item)}>
+                        <ButtonV2 variant="outline" size="small" disabled={reviewBusy()} onClick={() => void resolveReview(item)}>
+                          确认解决
+                        </ButtonV2>
+                      </Show>
+                      <Show when={canReopenReviewItem(item)}>
+                        <ButtonV2 variant="ghost" size="small" disabled={reviewBusy()} onClick={() => void reopenReview(item)}>
+                          重新打开
+                        </ButtonV2>
+                      </Show>
+                    </div>
+                  </Show>
+                </div>
+              </Show>
+            </div>
+          )}
+        </For>
+      </div>
+    </Show>
+  )
+
+  const openGoalFile = async (file: FileDiffEntry, anchorLine?: number) => {
+    const goal = reviewGoal()
     if (!goal || !file.file) return
-    const root = goal.worktreeDir ?? await props.resolveGoalDir?.(goal)
-    if (!root) {
-      setGoalError("这一版的分支不可用")
+    const candidate = goal.worktreeDir && goal.worktreeDir !== props.projectDir ? goal.worktreeDir : null
+    const root = candidate ?? await props.resolveGoalDir?.(goal)
+    if (!root || root === props.projectDir) {
+      setGoalError("这一版没有可预览的分支")
       return
     }
+    setGoalError(null)
     props.onOpenDiff?.({
       source: { kind: "goal", podId: goal.podId, goalId: goal.goalId, revision: goal.revision },
       root,
@@ -263,18 +388,21 @@ export function ChangesFace(props: ChangesFaceProps): JSX.Element {
       additions: file.additions ?? 0,
       deletions: file.deletions ?? 0,
       status: file.status,
+      anchorLine,
     })
   }
 
-  createEffect(on(() => props.request?.seq, () => {
+  let lastRequestSeq = 0
+  createEffect(() => {
     const request = props.request
-    if (!request) return
+    if (!request || request.seq <= lastRequestSeq) return
+    lastRequestSeq = request.seq
     props.onMode(request.context.kind)
     queueMicrotask(() => {
       if (request.section === "review") return
       sessionRef?.scrollIntoView({ block: "nearest" })
     })
-  }, { defer: true }))
+  })
 
   return (
     <div class="mafw-changes-face" aria-label="改动">
@@ -300,6 +428,7 @@ export function ChangesFace(props: ChangesFaceProps): JSX.Element {
         </For>
       </div>
 
+      {reviewSection()}
       <Show when={props.context} fallback={<DockEmpty icon="folder" text="当前上下文不可用" hint="打开一个项目或讨论后再试" />}>
         {(context) => (
           <Show
@@ -375,66 +504,6 @@ export function ChangesFace(props: ChangesFaceProps): JSX.Element {
                         />
                       )}
                     </Show>
-                    <Show when={reviewItems().length > 0}>
-                      <div class="mafw-changes-review">
-                        <div class="mafw-changes-section-head">
-                          <span>待审</span>
-                          <span class="mafw-changes-stats">
-                            {reviewItems().filter((item) => item.status !== "resolved").length} 条未解决
-                          </span>
-                        </div>
-                        <Show when={reviewError()}>
-                          <DockBanner kind="error" text={reviewError()!} />
-                        </Show>
-                        <For each={reviewItems()}>
-                          {(item) => (
-                            <div class="mafw-changes-review-item" data-status={item.status}>
-                              <div
-                                class="mafw-changes-review-row"
-                                role="button"
-                                tabIndex={0}
-                                onClick={() => setExpandedReview(expandedReview() === item.id ? null : item.id)}
-                                onKeyDown={(event) => {
-                                  if (event.key !== "Enter" && event.key !== " ") return
-                                  event.preventDefault()
-                                  setExpandedReview(expandedReview() === item.id ? null : item.id)
-                                }}
-                              >
-                                <span class="mafw-changes-review-status">{reviewStatusLabel(item.status)}</span>
-                                <span class="mafw-changes-review-path" onClick={(event) => { event.stopPropagation(); openReviewItem(item) }}>
-                                  {reviewWhere(item)}
-                                </span>
-                              </div>
-                              <Show when={expandedReview() === item.id}>
-                                <div class="mafw-changes-review-body">
-                                  <div class="mafw-changes-review-comment">{item.comment}</div>
-                                  <Show when={item.response}>
-                                    <div class="mafw-changes-review-response">
-                                      <span>Tech Lead 回应</span>
-                                      <span>{item.response}</span>
-                                    </div>
-                                  </Show>
-                                  <Show when={reviewActionsVisible(props.accepted ?? false)}>
-                                    <div class="mafw-changes-review-actions">
-                                      <Show when={canResolveReviewItem(item)}>
-                                        <ButtonV2 variant="outline" size="small" disabled={reviewBusy()} onClick={() => void resolveReview(item)}>
-                                          确认解决
-                                        </ButtonV2>
-                                      </Show>
-                                      <Show when={canReopenReviewItem(item)}>
-                                        <ButtonV2 variant="ghost" size="small" disabled={reviewBusy()} onClick={() => void reopenReview(item)}>
-                                          重新打开
-                                        </ButtonV2>
-                                      </Show>
-                                    </div>
-                                  </Show>
-                                </div>
-                              </Show>
-                            </div>
-                          )}
-                        </For>
-                      </div>
-                    </Show>
                     <div class="mafw-changes-section-head">
                       <Show when={goalTotals().files > 0}>
                         <span class="mafw-changes-stats">
@@ -454,7 +523,7 @@ export function ChangesFace(props: ChangesFaceProps): JSX.Element {
                     </Show>
                     <Show when={!goalLoading() && !goalError() && goalFiles().length > 0}>
                       <div class="mafw-changes-face-tree">
-                        <ChangeRows nodes={goalTree()} depth={0} onOpenFile={() => {}} onOpenDiff={openGoalFile} />
+                        <ChangeRows nodes={goalTree()} depth={0} collapsed={collapsed()} onToggle={toggleCollapsed} pulse={pulse()} onOpenFile={() => {}} onOpenDiff={openGoalFile} />
                       </div>
                     </Show>
                   </div>
@@ -477,7 +546,7 @@ export function ChangesFace(props: ChangesFaceProps): JSX.Element {
                 fallback={<DockEmpty icon="review" text="本次讨论还没有改动" hint="agent 修改文件后会实时出现在这里" />}
               >
                 <div class="mafw-changes-face-tree">
-                  <ChangeRows nodes={tree()} depth={0} onOpenFile={props.onOpenFile} onOpenDiff={props.onOpenSessionDiff} />
+                  <ChangeRows nodes={tree()} depth={0} collapsed={collapsed()} onToggle={toggleCollapsed} pulse={pulse()} onOpenFile={props.onOpenFile} onOpenDiff={props.onOpenSessionDiff} />
                 </div>
               </Show>
             </div>

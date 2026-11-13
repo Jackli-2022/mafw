@@ -5592,6 +5592,7 @@ html[data-theme="light"] body {
 .mafw-diff-line { display: block; font-family: var(--font-data); font-size: 11px; line-height: 1.5; white-space: pre; color: var(--text-2); }
 .mafw-diff-line.add { color: var(--success-text); background: var(--success-soft); }
 .mafw-diff-line.del { color: var(--danger); background: var(--danger-dim); }
+.mafw-diff-line.is-focus-line { outline: 1px solid var(--accent-border); background: var(--accent-dim); }
 .mafw-diff-panel-footer { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-top: 1px solid var(--border-base); }
 .mafw-diff-panel-count { font-size: 12px; color: var(--text-4); font-variant-numeric: tabular-nums; }
 .mafw-rail-wt-badge { display: inline-block; font-size: 10px; color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; padding: 0 4px; margin-right: 6px; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -8298,86 +8299,7 @@ html[data-theme="light"] body {
   min-height: 0;
   display: flex;
 }
-.mafw-focus-rail-slot {
-  flex: none;
-  width: 280px;
-  min-height: 0;
-  display: flex;
-}
 /* ── end focus stage ───────────────────────────────────────── */
-
-/* ── instrument rail ───────────────────────────────────────── */
-.mafw-instrument-rail {
-  width: 100%;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  border-left: 1px solid var(--border-subtle);
-  background: var(--bg-inset);
-}
-.mafw-instrument-head {
-  flex: none;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 10px;
-  border-bottom: 1px solid var(--border-subtle);
-}
-.mafw-instrument-title {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-3);
-}
-.mafw-instrument-toggle { flex: none; color: var(--text-3); }
-.mafw-instrument-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-}
-.mafw-instrument-section {
-  padding: 10px;
-  border-bottom: 1px solid var(--border-subtle);
-}
-.mafw-instrument-section:last-child { border-bottom: 0; }
-.mafw-instrument-label {
-  margin-bottom: 6px;
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-4);
-}
-.mafw-instrument-action {
-  width: 100%;
-  justify-content: flex-start;
-}
-@media (max-width: 900px) {
-  .mafw-focus-body { flex-direction: column; }
-  .mafw-focus-rail-slot {
-    width: 100%;
-    max-height: 40%;
-    border-top: 1px solid var(--border-subtle);
-  }
-  .mafw-instrument-rail { border-left: 0; }
-}
-/* ── end instrument rail ───────────────────────────────────── */
-
-/* ── change set stage ──────────────────────────────────────── */
-.mafw-change-set-stage {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-/* ── end change set stage ──────────────────────────────────── */
 
 /* ── subject picker ────────────────────────────────────────── */
 .mafw-subject-picker {

@@ -57,6 +57,7 @@ export function DiffDocumentView(props: DiffDocumentViewProps): JSX.Element {
             initialFile={props.doc.rel}
             allowSessionFallback={false}
             hint={null}
+            focusLine={props.doc.anchorLine}
           />
         }
       >
@@ -66,8 +67,10 @@ export function DiffDocumentView(props: DiffDocumentViewProps): JSX.Element {
           diffs={[props.doc]}
           initialFile={props.doc.rel}
           allowSessionFallback={false}
+          allowNonInvertibleRevert={false}
           onSendComment={props.onSendComment}
           onAddAnnotation={props.onAddAnnotation}
+          focusLine={props.doc.anchorLine}
         />
       </Show>
     </div>

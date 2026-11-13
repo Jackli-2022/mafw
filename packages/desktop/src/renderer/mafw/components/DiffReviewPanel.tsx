@@ -42,6 +42,8 @@ export function DiffReviewPanel(props: {
   chrome?: "panel" | "tab"
   /** 覆盖默认提示；null 表示不显示。 */
   hint?: string | null
+  /** Goal 评审项锚点：滚动到该新行号。 */
+  focusLine?: number
 }) {
   const [fetched, setFetched] = createSignal<FileDiffEntry[]>([])
   const [loading, setLoading] = createSignal(false)
@@ -54,6 +56,7 @@ export function DiffReviewPanel(props: {
   // W0-3：行级评论——正在评论的具体行（hunk key + 行下标）
   const [commentingLine, setCommentingLine] = createSignal<{ key: string; idx: number } | null>(null)
   const [commentDraft, setCommentDraft] = createSignal("")
+  let rootEl: HTMLDivElement | undefined
 
   const files = createMemo<FileDiffEntry[]>(() => {
     const live = props.diffs
@@ -70,6 +73,17 @@ export function DiffReviewPanel(props: {
   createEffect(on(() => diffPatchSignature(files()), () => {
     setSelected(new Set<string>())
   }, { defer: true }))
+
+  createEffect(() => {
+    const line = props.focusLine
+    if (!line) return
+    queueMicrotask(() => {
+      const el = rootEl?.querySelector<HTMLElement>(`[data-new-line="${line}"]`)
+      if (!el) return
+      el.scrollIntoView({ block: "center" })
+      el.classList.add("is-focus-line")
+    })
+  })
 
   const refresh = () => {
     const hasDiffs = (props.diffs?.length ?? 0) > 0
@@ -180,7 +194,7 @@ export function DiffReviewPanel(props: {
   }
 
   return (
-    <div class="mafw-diff-panel" classList={{ embedded: !!props.embedded, tab: props.chrome === "tab" }} role="dialog" aria-label="审阅改动">
+    <div class="mafw-diff-panel" ref={(el) => { rootEl = el }} classList={{ embedded: !!props.embedded, tab: props.chrome === "tab" }} role="dialog" aria-label="审阅改动">
       <Show when={props.chrome !== "tab"}>
         <header class="mafw-diff-panel-header">
           <Show when={props.embedded && props.onBack}>
@@ -288,6 +302,7 @@ export function DiffReviewPanel(props: {
                                     return (
                                       <>
                                       <span
+                                        data-new-line={lineNo() ?? undefined}
                                         classList={{
                                           "mafw-diff-line": true,
                                           add: line.startsWith("+"),

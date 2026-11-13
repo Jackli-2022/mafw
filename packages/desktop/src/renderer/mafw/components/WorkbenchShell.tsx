@@ -24,8 +24,6 @@ export type WorkbenchShellProps = {
   onFocusBack: () => void
   onFocusCrumb: (index: number) => void
   focusOpenRequest?: FocusOpenRequest | null
-  /** 器械栏（评审队列 / 决定）；由 MafwShell 按当前 focus 生成。 */
-  instrumentRail?: JSX.Element | null
   pickerOpen: boolean
   pickerItems: readonly PickerItem[]
   onOpenPicker: () => void
@@ -143,9 +141,6 @@ export function WorkbenchShell(props: WorkbenchShellProps): JSX.Element {
             onTitle={props.onWebTitle}
             onError={props.onWebError}
           />
-          <Show when={props.instrumentRail}>
-            <div class="mafw-focus-rail-slot">{props.instrumentRail}</div>
-          </Show>
         </div>
       </Show>
 

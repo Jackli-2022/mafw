@@ -59,6 +59,7 @@ import { UpdaterBanner } from "./components/UpdaterBanner"
 import { ChatPane, mergeLocalParts, type FlowCardRecord } from "./components/ChatPane"
 import { TaskList } from "./components/TaskList"
 import { WorkbenchShell } from "./components/WorkbenchShell"
+import type { FileDiffEntry } from "./components/DiffReviewPanel"
 import { WorldOverviewStage } from "./components/WorldOverviewStage"
 import { GoalDetailPanel } from "./components/GoalDetailPanel"
 import { PodTranscriptOverlay } from "./components/PodTranscriptOverlay"
@@ -145,7 +146,7 @@ import { fileDocumentTabId, nextDocumentTabId, webDocumentTabId } from "./docume
 import { configureDocumentListStorage } from "./documents/document-list-persistence"
 import { configureBrowserTabsStorage } from "./documents/browser-tabs-persistence"
 import { activeBrowserDocumentId, openBrowserDocument } from "./documents/browser-documents"
-import { diffDocuments, openDiffDocument, type DiffDocument, type OpenDiffInput } from "./documents/diff-documents"
+import { activeDiffDocument, clearDiffDocuments, diffDocuments, openDiffDocument, setActiveDiffDocument, updateDiffDocument, type DiffDocument, type OpenDiffInput } from "./documents/diff-documents"
 import { stageActionFor } from "./focus/stage-dispatch"
 import { openGoalFocus as applyGoalFocus } from "./focus/goal-focus"
 import type { FocusOpenRequest } from "./focus/focus-open"
@@ -2098,7 +2099,10 @@ export function MafwShell() {
   )
   createEffect(on(
     () => currentProject(),
-    (project) => configureDocumentListWorld(project ?? "unscoped"),
+    (project) => {
+      clearDiffDocuments()
+      configureDocumentListWorld(project ?? "unscoped")
+    },
   ))
   const [focusOpenRequest, setFocusOpenRequest] = createSignal<FocusOpenRequest | null>(null)
   let focusOpenNonce = 0
@@ -2602,6 +2606,11 @@ export function MafwShell() {
   const syncStageToFocus = (state: WorkbenchState) => {
     const focus = state.stack[state.stack.length - 1]
     if (!focus) return
+    if (focus.subject.kind === "diff") {
+      setActiveDiffDocument(focus.subject.id)
+      activateDocumentTab(focus.subject.id)
+      return
+    }
     const action = stageActionFor(focus)
     if (action.kind === "editor") {
       requestFocusOpen(action.root, action.rel, action.line)
@@ -2967,6 +2976,21 @@ export function MafwShell() {
     sessionDirectory: store.session.find((s: any) => s.id === currentSessionID())?.directory ?? null,
     diffs: mergedSessionDiffs(),
   }))
+  createEffect(() => {
+    const sid = currentSessionID()
+    const live = sid ? store.session_diff?.[sid] : null
+    if (!sid || !Array.isArray(live)) return
+    for (const doc of diffDocuments()) {
+      if (doc.source.kind !== "session" || doc.source.sessionID !== sid) continue
+      const next = live.find((entry: FileDiffEntry) => (entry.file ?? "") === doc.rel)
+      if (!next) continue
+      const patch = next.patch ?? ""
+      const additions = next.additions ?? 0
+      const deletions = next.deletions ?? 0
+      if (patch === doc.patch && additions === doc.additions && deletions === doc.deletions) continue
+      updateDiffDocument(doc.id, { patch, additions, deletions })
+    }
+  })
   const changesContextInput = () => {
     const sid = activeSessionId()
     return {
@@ -3044,6 +3068,7 @@ export function MafwShell() {
     line?: number
   }) => {
     revealWorkbench()
+    setChangesMode(input.context.kind)
     openLeftDockFace("changes")
     setChangesRequest((previous) => nextChangesRequest(previous, input))
   }
@@ -3334,10 +3359,27 @@ export function MafwShell() {
       return
     }
     if (action.kind === "reviewItem") {
+      const goal = podStore.detail()?.goals.find((item) => item.goalId === action.goalId)
+      if (goal) {
+        openChangesFace({
+          context: {
+            kind: "goal",
+            goal: {
+              podId: goal.podId,
+              goalId: goal.goalId,
+              revision: goal.activeRevision ?? goal.revision ?? 1,
+              title: goal.title,
+              worktreeDir: null,
+            },
+          },
+          section: "review",
+          rel: action.rel,
+          line: action.line,
+        })
+        return
+      }
       openChangesFace({
-        context: currentGoalRef()?.goalId === action.goalId
-          ? { kind: "goal", goal: currentGoalRef()! }
-          : (sessionChangesContext() ?? { kind: "project" }),
+        context: sessionChangesContext() ?? { kind: "project" },
         section: "review",
         rel: action.rel,
         line: action.line,
@@ -3975,9 +4017,10 @@ export function MafwShell() {
                 goals={podStore.detail()?.goals ?? []}
                 sessions={sessions().map((session) => ({ id: session.id, title: session.title ?? "未命名" }))}
                 reviewCountForGoal={(goalId) => countReviewAttention(decisionStore.items(), goalId)}
-                onOpenGoal={(goalId) => openGoalFocus(goalId, "timeline")}
-                onOpenSession={(sid) => openSessionTab(sid)}
+                onOpenGoal={(goalId) => { setChangesMode("goal"); openGoalFocus(goalId, "timeline") }}
+                onOpenSession={(sid) => { setChangesMode("session"); openSessionTab(sid) }}
                 sessionDiffs={contentDiffEntries()}
+                liveDiffs={store.session_diff?.[currentSessionID() ?? ""]}
                 onOpenSessionDiff={(file) => {
                   const sid = currentSessionID()
                   const root = contentRoot()
@@ -4239,7 +4282,13 @@ export function MafwShell() {
                       .then(() => showToastV2({ description: "评论已发送给 agent", duration: 2000 } as any))
                       .catch((e: any) => showToastV2({ description: `发送失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 4000 } as any))
                   }}
-                  onAddDiffAnnotation={addAnnotation}
+                  onAddDiffAnnotation={(a) => {
+                    const doc = activeDiffDocument()
+                    const sid = doc?.source.kind === "session" ? doc.source.sessionID : currentSessionID()
+                    if (!sid) return
+                    addPending({ sessionID: sid, ...a })
+                    showToastV2({ description: "已加入批注", duration: 1600 } as any)
+                  }}
                   onOpenReview={() => openChangesFace({
                     context: currentGoalRef()
                       ? { kind: "goal", goal: currentGoalRef()! }

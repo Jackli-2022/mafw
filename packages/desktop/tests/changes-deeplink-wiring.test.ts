@@ -13,6 +13,7 @@ test("discussion diff review opens the changes face", () => {
 
 test("changes face consumes deep-link requests", () => {
   const face = read("src/renderer/mafw/components/ChangesFace.tsx")
-  assert.match(face, /props\.request\?\.seq/)
+  assert.match(face, /lastRequestSeq/)
+  assert.match(face, /request\.seq <= lastRequestSeq/)
   assert.match(face, /request\.context\.kind/)
 })
