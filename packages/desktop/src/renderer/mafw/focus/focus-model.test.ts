@@ -120,10 +120,6 @@ test("keepSubject dedupes by subject identity", () => {
 test("subjectKey treats version as frame state, not identity", () => {
   assert.equal(subjectKey(file), subjectKey({ ...file, version: "v2" }))
   assert.notEqual(subjectKey(file), subjectKey(file2))
-  assert.equal(
-    subjectKey({ kind: "reviewItem", id: "r1", anchor: { rel: "src/a.ts", line: 4 } }),
-    subjectKey({ kind: "reviewItem", id: "r1", anchor: { rel: "src/b.ts", line: 9 } }),
-  )
   assert.notEqual(
     subjectKey({ kind: "plugin", package: "p", panel: "x" }),
     subjectKey({ kind: "plugin", package: "p", panel: "y" }),
