@@ -27,9 +27,18 @@
 - `tsgo --noEmit -p tsconfig.json`：rc=0
 - `electron-vite build`：rc=0
 
+## 实机确认
+
+dev app（CDP 9222）实际截图：
+
+- 编辑器：`.mafw/qa/2026-11-13-right-dock-document-frame.png`
+- 浏览器（Example Domain）：`.mafw/qa/2026-11-13-right-dock-browser-tab.png`
+- 空浏览器态：`.mafw/qa/2026-11-13-right-dock-browser.png`
+
+CDP 页面截图不包含 `<webview>` guest 内容；浏览器 tab 标题 `Example Domain` 证明页面已加载。
+
 ## 边界
 
 - 编辑器与浏览器仍是两个独立 stage，各自持有自己的文档状态；**跨类型混合 tab 条未做**。这需要把
   editor model 与 browser tabs 提升成统一 document model，属于下一刀。
 - 浏览器 tab 的右键菜单仍按活动 tab 处理；逐 tab 菜单未做。
-- 本轮只做测试/类型/构建门禁，未做实机截图冒烟。
