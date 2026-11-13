@@ -50,13 +50,24 @@
 
 - 本计划新增 **14 个测试**：
   - external action resolver / local precedence / missing / throwing / validate rule
-  - plugin action adapter / metadata override
-  - plugin event sink / dropped event
-  - external event bridge / cooldown / unmatched
-  - live wiring source pins
-- gateway 全量：**7126 passed / 1 skipped / 7127 total**（911 suites，`--testTimeout=20000`）。
+  - plugin action adapter / out-of-band metadata
+  - plugin event sink / dropped event / async sink rejection
+  - external event bridge / cooldown / goal dedupe / unmatched
+  - event rule draft API / live wiring source pins
+- gateway 全量：**7140 passed / 1 skipped / 7141 total**（911 suites，`--testTimeout=20000`）。
   - 默认 5s 下 `pod-worktree-service` / `restore-git` 在当前 Windows 环境会超时；单文件也受环境影响，放宽到 20s 后全量 clean。属于既有 git worktree 环境 flake，不归因本次 automation 改动。
 - gateway typecheck：`npx tsc --noEmit -p tsconfig.json` 退出 0。
+
+## 审查修复（2026-11-13）
+
+- **Action metadata 不再污染 input schema**：`PluginActionInvokeOptions.automation` / `PluginActionCallContext.automation` 作为 out-of-band 上下文传入；handler 的 schema 只校验 `rule.args`。新增 strict `additionalProperties:false` 回归测试。
+- **Goal stateVersion 读取真实项目目录**：`AutomationEngine.setStateVersionProvider()` 由 kernel 用 `findGoalStatePath` 注入；state 缺失时不做 `reportedPairs` 去重，只走 cooldown。
+- **Dedupe 按 rule 隔离**：`reportedPairs` key 改为 `rule:scope:version`，`unregisterEventRule` 同时清理 `lastFireTimes` / `reportedPairs`。
+- **executeRule promise 不再悬空**：cron / event / external 路径都 `void ...catch` 记录错误，避免 unhandled rejection 触发 crash handler。
+- **外部事件风暴护栏**：插件事件最少 1s cooldown；`lastFireTimes` / `reportedPairs` 超过 5000 条时裁剪到 4000；插件提供的 `goalId` 先做字符集校验。
+- **async sink fail-open**：`onEvent` 支持 Promise，rejection 记录 `sink-failed`，不阻止 broadcast。
+- **Event rule 可创建**：`POST /api/automations/draft` 与 MCP `draft-automation-rule` 接受 `trigger.type='event'`、`on[]`、`perGoalCooldown`。
+- **未修（记录）**：event payload 未传给 action（只传 `rule.args + automation: {ruleId, source}`）；desktop Automations 表单仍只提供 cron；plugin hook 的 sink 诊断仍复用 drop diagnostic map。后续按需处理。
 
 ## 行为示例
 
@@ -90,6 +101,7 @@
 - `9b3605be` feat(plugins): add fail-open event sink
 - `47ccd37c` feat(automation): trigger rules from plugin events
 - `f0ac64cb` feat(automation): wire plugin events and actions into live kernel
+- `7e123299` fix(automation): address review findings
 
 ## Next
 
