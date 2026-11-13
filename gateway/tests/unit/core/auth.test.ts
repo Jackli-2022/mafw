@@ -1,13 +1,15 @@
 /**
  * Tests for gateway/src/core/auth.ts
  *
- * Covers: isLoopbackAddr, authorizeRequest, authorizeWsUpgrade, redactLog
+ * Covers: isLoopbackAddr, authorizeRequest, WS rejection bytes, redactLog.
+ * `resolvePrincipal` (including the WS upgrade credential matrix that the dead
+ * `authorizeWsUpgrade` used to duplicate) lives in `principal.test.ts`.
  */
 
 import {
   isLoopbackAddr,
   authorizeRequest,
-  authorizeWsUpgrade,
+  WS_UNAUTHORIZED_RESPONSE,
   redactLog,
 } from '../../../src/core/auth';
 
@@ -145,78 +147,17 @@ describe('authorizeRequest', () => {
 });
 
 // ---------------------------------------------------------------------------
-// authorizeWsUpgrade
+// WS upgrade rejection bytes (E8-5)
+//
+// The removed `authorizeWsUpgrade` duplicated the `resolvePrincipal` credential
+// matrix (Bearer / X-API-Token / ?token= / loopback / no credentials), which
+// `principal.test.ts` already covers in full. What the upgrade path still owes
+// on the wire is the byte-identical 401 it writes before destroying the socket.
 // ---------------------------------------------------------------------------
 
-describe('authorizeWsUpgrade', () => {
-  const wsBase = {
-    headers: {} as Record<string, string | undefined>,
-    url: 'ws://localhost:3000/ws',
-    host: 'localhost:3000',
-  };
-
-  describe('loopback bypass', () => {
-    it('allows loopback', () => {
-      expect(
-        authorizeWsUpgrade({ ...wsBase, remoteAddress: '127.0.0.1' }, 'secret').ok
-      ).toBe(true);
-    });
-  });
-
-  describe('remote with valid token', () => {
-    it('allows via Bearer header', () => {
-      const result = authorizeWsUpgrade(
-        { ...wsBase, remoteAddress: '10.0.0.1', headers: { authorization: 'Bearer secret' } },
-        'secret'
-      );
-      expect(result.ok).toBe(true);
-      expect(result.rejectResponse).toBeUndefined();
-    });
-
-    it('allows via X-API-Token', () => {
-      const result = authorizeWsUpgrade(
-        { ...wsBase, remoteAddress: '10.0.0.1', headers: { 'x-api-token': 'secret' } },
-        'secret'
-      );
-      expect(result.ok).toBe(true);
-    });
-
-    it('allows via query param', () => {
-      const result = authorizeWsUpgrade(
-        { ...wsBase, remoteAddress: '10.0.0.1', url: 'ws://localhost:3000/ws?token=secret' },
-        'secret'
-      );
-      expect(result.ok).toBe(true);
-    });
-  });
-
-  describe('rejection', () => {
-    it('rejects remote with empty apiToken', () => {
-      const result = authorizeWsUpgrade(
-        { ...wsBase, remoteAddress: '10.0.0.1' },
-        ''
-      );
-      expect(result.ok).toBe(false);
-      expect(result.rejectResponse).toBeDefined();
-      expect(result.rejectResponse!.toString()).toContain('401 Unauthorized');
-    });
-
-    it('rejects wrong token', () => {
-      const result = authorizeWsUpgrade(
-        { ...wsBase, remoteAddress: '10.0.0.1', headers: { authorization: 'Bearer wrong' } },
-        'secret'
-      );
-      expect(result.ok).toBe(false);
-      expect(result.rejectResponse!.toString()).toContain('401');
-    });
-
-    it('rejects no token', () => {
-      const result = authorizeWsUpgrade(
-        { ...wsBase, remoteAddress: '10.0.0.1' },
-        'secret'
-      );
-      expect(result.ok).toBe(false);
-    });
+describe('WS_UNAUTHORIZED_RESPONSE', () => {
+  it('is the exact raw 401 the upgrade path writes before destroying the socket', () => {
+    expect(WS_UNAUTHORIZED_RESPONSE.toString()).toBe('HTTP/1.1 401 Unauthorized\r\n\r\n');
   });
 });
 

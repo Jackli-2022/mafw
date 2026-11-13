@@ -361,8 +361,8 @@ export type MafwAPI = {
   }
 
   event: {
-    /** SSE 端点 URL（带/不带 sessionID），renderer 直连 EventSource 用。 */
-    url: (sessionID?: string) => Promise<string>
+    /** SSE 端点 URL（全局流，无 session 维度），renderer 直连 EventSource 用。 */
+    url: () => Promise<string>
   }
 
   providers: {

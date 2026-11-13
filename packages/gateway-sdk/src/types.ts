@@ -1246,9 +1246,15 @@ export interface PodPendingQuestion {
 export interface PodAttentionItem {
   id: string
   goalId: string
-  kind: 'plan_approval' | 'direction_review' | 'question' | 'blocked'
+  /** The revision this attention belongs to; ids are revision-scoped. */
+  revision: number
+  kind: 'plan_approval' | 'direction_review' | 'question' | 'blocked' | 'review' | 'failed'
   title: string
   action: NonNullable<PodGoalStage['action']>
+  /** Owning Pod id; presence attaches it so a cross-project client can navigate. */
+  podId?: string
+  /** Owning project directory (presence folds worktree Pods onto their parent). */
+  projectId?: string
 }
 
 export interface Pod {

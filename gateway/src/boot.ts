@@ -49,6 +49,7 @@ import {
 import { claimGatewayInstance } from './runtime/instance-ownership';
 import type { InstanceLock, InstanceLockHeartbeatHandle } from './runtime/instance-lock';
 import { startInstanceLockHeartbeat } from './runtime/instance-lock';
+import type { TimerHandle, TimerService } from './core/timer-service';
 import {
   gatewayDiscoveryPath,
   publishGatewayDiscovery,
@@ -156,7 +157,10 @@ export interface BootKernel {
   /** E1-1: 10s unref'd lease heartbeat owned by boot, cleared on release. */
   instanceLockHeartbeat: InstanceLockHeartbeatHandle | null;
   instanceDiscovery: GatewayDiscoveryHandle | null;
-  discoveryHeartbeatTimer: NodeJS.Timeout | null;
+  /** E8-1: discovery heartbeat 走 kernel TimerService（名字 `discovery:heartbeat`）。 */
+  discoveryHeartbeatTimer: TimerHandle | null;
+  /** E4-1: kernel 命名定时器台账（boot 的唯一长驻 timer 出口）。 */
+  timers: TimerService;
 
   // ── self-update ──
   stopTokenWatcher: (() => void) | null;
@@ -840,12 +844,11 @@ export async function publishInstanceDiscovery(kernel: BootKernel): Promise<void
     distribution: kernel.runtimeIdentity.distribution,
     origin: process.env.MAFW_GATEWAY_ORIGIN?.trim() || 'standalone',
   }, runtimeDir);
-  kernel.discoveryHeartbeatTimer = setInterval(() => {
+  kernel.discoveryHeartbeatTimer = kernel.timers.every('discovery:heartbeat', 10_000, () => {
     void kernel.instanceDiscovery?.heartbeat().catch((err: any) => {
       log.warn(`[Scheduler] gateway discovery heartbeat failed: ${err?.message ?? err}`);
     });
-  }, 10_000);
-  kernel.discoveryHeartbeatTimer.unref?.();
+  });
   log.info(`[Scheduler] gateway discovery published: ${gatewayDiscoveryPath(runtimeDir)} (port ${kernel.apiPort})`);
 }
 
@@ -855,7 +858,7 @@ export async function releaseInstanceOwnership(kernel: BootKernel): Promise<void
     kernel.instanceLockHeartbeat = null;
   }
   if (kernel.discoveryHeartbeatTimer) {
-    clearInterval(kernel.discoveryHeartbeatTimer);
+    kernel.timers.clear(kernel.discoveryHeartbeatTimer);
     kernel.discoveryHeartbeatTimer = null;
   }
   const discovery = kernel.instanceDiscovery;

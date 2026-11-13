@@ -62,3 +62,76 @@ export const SessionSchema = Type.Object({
 export const SessionListResponse = Type.Object({
   sessions: Type.Array(SessionSchema),
 })
+
+/**
+ * E8-3 `GET /api/sessions/:id/messages` —— MAFW flat 历史（`{data, nextCursor}`）。
+ *
+ * 形状来源：`routes/session-history.ts` 的单一出口（handler 是事实源）。
+ * `data` 的每一项是 `@mafw/sdk` 的 `MafwMessage`；`content` 的 part 判别联合由
+ * `contract/view-dto.json` 拥有，schema 只声明 SDK 边界守卫 `isMafwMessage()` 认可的
+ * 最小形状（`type` 必填 + 其余字段开放），避免在这里复制一份会漂移的 part 联合。
+ */
+const MafwDiffSchema = Type.Object({
+  file: Type.String(),
+  patch: Type.Optional(Type.String()),
+  additions: Type.Optional(Type.Number()),
+  deletions: Type.Optional(Type.Number()),
+  status: Type.Optional(DiffStatus),
+})
+
+const StopReason = Type.Union([
+  Type.Literal('end_turn'),
+  Type.Literal('max_tokens'),
+  Type.Literal('tool_use'),
+  Type.Literal('refusal'),
+  Type.Literal('cancelled'),
+  Type.Literal('error'),
+  Type.Literal('unknown'),
+])
+
+/** 边界形状：part 的 `type` 由 runtime 归一化，业务字段由客户端 `narrowMafwPart` 收窄。 */
+const MafwPartBoundary = Type.Object({
+  id: Type.Optional(Type.String()),
+  type: Type.String(),
+}, { additionalProperties: true })
+
+const MafwMessageSchema = Type.Object({
+  id: Type.Optional(Type.String()),
+  sessionID: Type.Optional(Type.String()),
+  role: Type.Union([Type.Literal('user'), Type.Literal('assistant')]),
+  parentID: Type.Optional(Type.String()),
+  content: Type.Optional(Type.Array(MafwPartBoundary)),
+  time: Type.Optional(Type.Object({
+    created: Type.Optional(Type.Number()),
+    updated: Type.Optional(Type.Number()),
+    completed: Type.Optional(Type.Number()),
+  })),
+  model: Type.Optional(Type.Object({
+    providerID: Type.String(),
+    modelID: Type.String(),
+    variant: Type.Optional(Type.String()),
+  })),
+  agent: Type.Optional(Type.String()),
+  stopReason: Type.Optional(StopReason),
+  summary: Type.Optional(Type.Object({
+    title: Type.Optional(Type.String()),
+    body: Type.Optional(Type.String()),
+    diffs: Type.Optional(Type.Array(MafwDiffSchema)),
+  })),
+  error: Type.Optional(Type.Object({
+    kind: Type.String(),
+    message: Type.String(),
+  })),
+  snapshot: Type.Optional(Type.Object({
+    start: Type.Optional(Type.String()),
+    end: Type.Optional(Type.String()),
+    files: Type.Optional(Type.Array(Type.Unknown())),
+  })),
+  extensions: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+})
+
+export const SessionMessagesResponse = Type.Object({
+  data: Type.Array(MafwMessageSchema),
+  // handler 的 flat 出口恒带 nextCursor（末页为 null）。
+  nextCursor: Type.Union([Type.String(), Type.Null()]),
+})

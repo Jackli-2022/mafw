@@ -10,7 +10,9 @@
 ///  - persisted cursor → replay is drained **before** the refresh callbacks;
 ///  - reset / truncated / unsupported / error / epoch change → refresh **and**
 ///    a full reload (the gap cannot be bridged);
-///  - reconnect with a clean gap → refresh only.
+///  - reconnect with a clean gap → refresh only;
+///  - a greeting that lands while a replay is in flight is queued (max one) and
+///    rerun — replay, then refresh — once that replay settles (E8-4).
 library;
 
 import 'dart:async';
@@ -318,12 +320,23 @@ void main() {
       await inFlight;
     });
 
-    test('a busy replay does not refresh or reload (F3)', () async {
+    test('a greeting during an in-flight replay reruns it once (E8-4)', () async {
       final gate = Completer<EventReplayPage?>();
+      final calls = <int>[];
+      var first = true;
       final h = _Harness(
         cursor: 10,
         instanceId: 'inst-a',
-        fetch: (_, _) => gate.future,
+        fetch: (since, _) {
+          calls.add(since);
+          if (first) {
+            first = false;
+            return gate.future;
+          }
+          return Future.value(
+            _page(events: [_event(12)], headSeq: 12, nextSince: 12),
+          );
+        },
       );
       await h.init();
 
@@ -331,21 +344,76 @@ void main() {
       final inFlight = h.recovery.recover();
       await Future<void>.delayed(Duration.zero);
 
-      final result = await h.coordinator.handle(
+      final pending = h.coordinator.handle(
+        _greeting(headSeq: 12, instanceId: 'inst-a'),
+        isReconnect: true,
+      );
+
+      gate.complete(_page(events: [_event(11)], headSeq: 11, nextSince: 11));
+      final result = await pending;
+      await inFlight;
+
+      expect(calls, [10, 11], reason: 'the rerun starts from the advanced cursor');
+      expect(h.emitted.map((e) => e.seq), [11, 12]);
+      expect(h.log, ['emit:11', 'emit:12', 'refresh'],
+          reason: 'replay finishes before the queued refresh');
+      expect(result.busy, isTrue);
+      expect(result.queued, isTrue);
+      expect(result.refreshed, isTrue);
+      expect(result.fullReload, isFalse);
+      expect(result.applied, 1);
+    });
+
+    test('only one greeting waits for the in-flight replay (E8-4)', () async {
+      final gate = Completer<EventReplayPage?>();
+      final calls = <int>[];
+      var first = true;
+      final h = _Harness(
+        cursor: 10,
+        instanceId: 'inst-a',
+        fetch: (since, _) {
+          calls.add(since);
+          if (first) {
+            first = false;
+            return gate.future;
+          }
+          return Future.value(
+            _page(events: [_event(11)], headSeq: 11, nextSince: 11),
+          );
+        },
+      );
+      await h.init();
+
+      final inFlight = h.recovery.recover();
+      await Future<void>.delayed(Duration.zero);
+
+      final queued = h.coordinator.handle(
+        _greeting(headSeq: 11, instanceId: 'inst-a'),
+        isReconnect: true,
+      );
+      // One greeting is already waiting; a second is redundant and dropped.
+      final dropped = await h.coordinator.handle(
         _greeting(headSeq: 11, instanceId: 'inst-a'),
         isReconnect: true,
       );
 
-      expect(result.busy, isTrue);
-      expect(result.refreshed, isFalse,
-          reason: 'the in-flight replay owns the refresh');
-      expect(result.fullReload, isFalse);
+      expect(dropped.busy, isTrue);
+      expect(dropped.queued, isFalse);
+      expect(dropped.refreshed, isFalse);
       expect(h.log, isEmpty);
 
-      gate.complete(_page(events: [_event(11)], headSeq: 11, nextSince: 11));
-      final outcome = await inFlight;
-      expect(outcome.kind, RecoveryOutcomeKind.recovered);
+      gate.complete(_page(headSeq: 11, nextSince: 11));
+      final result = await queued;
+      await inFlight;
+
+      expect(calls, [10, 10],
+          reason: 'exactly one rerun for two greetings, from the same cursor');
       expect(h.emitted.map((e) => e.seq), [11]);
+      expect(h.log, ['emit:11', 'refresh'],
+          reason: 'the rerun refreshes exactly once');
+      expect(result.busy, isTrue);
+      expect(result.queued, isTrue);
+      expect(result.refreshed, isTrue);
     });
 
     test('a throwing refresh still triggers the full reload', () async {

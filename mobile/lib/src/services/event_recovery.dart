@@ -11,6 +11,9 @@
 /// - `reset` / `truncated` / unsupported replay / request errors fall back to a
 ///   full reload, and only `reset` / `truncated` pin the cursor to `headSeq`
 ///   (a transient failure keeps the old cursor so the next reconnect retries);
+///   an explicit reset is authoritative even when `headSeq` is **below** the
+///   current cursor (the event log restarted inside the same gateway instance),
+///   while live `observe` stays monotonic;
 ///   a `hasMore` page whose `nextSince` cannot advance past the last applied seq
 ///   is a protocol violation and falls back too (cursor stays at last applied);
 /// - seq-less frames (`message.part.delta`) never move the cursor.
@@ -188,6 +191,7 @@ class EventRecoveryService {
   int _unpersisted = 0;
   DateTime? _lastPersist;
   bool _recovering = false;
+  Completer<void>? _inFlightDone;
 
   EventRecoveryService({
     required this._fetch,
@@ -273,6 +277,14 @@ class EventRecoveryService {
   /// seqs are not lost when the process dies inside the 250ms window.
   Future<void> flush() => _persistCursor();
 
+  /// A recover loop is currently replaying pages.
+  bool get isRecovering => _recovering;
+
+  /// Completes when the in-flight [recover] (if any) finishes; already complete
+  /// when idle. Lets a caller that got [RecoveryOutcome.busy] rerun recovery
+  /// once the running loop is done (E8-4 busy-greeting rerun).
+  Future<void> get settled => _inFlightDone?.future ?? Future<void>.value();
+
   /// Page `since=cursor` forward, emitting each new event exactly once.
   ///
   /// Only one recover loop may run at a time; a concurrent call returns
@@ -280,10 +292,15 @@ class EventRecoveryService {
   Future<RecoveryOutcome> recover() async {
     if (_recovering) return const RecoveryOutcome.busy();
     _recovering = true;
+    final done = _inFlightDone = Completer<void>();
     try {
       return await _recoverOnce();
     } finally {
+      // Clear the flags before completing so a waiter that immediately calls
+      // `recover()` again is not answered with `busy`.
       _recovering = false;
+      _inFlightDone = null;
+      done.complete();
     }
   }
 
@@ -311,11 +328,12 @@ class EventRecoveryService {
           final reason =
               page.reset ? RecoveryFallback.reset : RecoveryFallback.truncated;
           // Gap cannot be bridged. Pin the cursor to headSeq (never persist
-          // nextSince — that could reset-loop against the same epoch), but
-          // never roll back a newer live observe.
-          if (_cursor == null || page.headSeq > _cursor!) {
-            _cursor = page.headSeq;
-          }
+          // nextSince — that could reset-loop against the same epoch). An
+          // explicit reset is authoritative even downward (E8-4): the event log
+          // restarted inside the same gateway instance, so the old, higher
+          // cursor belongs to a dead seq space and would reset-loop forever.
+          // Live `observe` stays monotonic for normal frames.
+          _cursor = page.headSeq;
           await _persistCursor();
           _onFallback(reason);
           return RecoveryOutcome.fellBack(reason, applied: applied);

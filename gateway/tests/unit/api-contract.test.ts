@@ -27,6 +27,11 @@ import { RouteRegistry } from '../../src/routes/registry';
 import { buildRouteCatalog } from '../../src/routes/route-catalog';
 import { KernelStatsResponse } from '../../src/routes/schemas/resources';
 import { buildKernelStatsSnapshot, type KernelStatsInput } from '../../src/resources/stats';
+import { AttentionListResponse, DecisionListResponse } from '../../src/routes/schemas/read-models';
+import { handleAttention } from '../../src/routes/attention';
+import { handleDecisionList } from '../../src/routes/decisions';
+import type { PodGoalView } from '../../src/core/pod/pod-view';
+import type { DecisionRecord } from '../../src/core/decision/decision-record';
 
 const CONTRACT_PATH = join(__dirname, '..', '..', '..', 'packages', 'gateway-sdk', 'contract', 'openapi.json');
 const GATEWAY_SRC = join(__dirname, '..', '..', 'src');
@@ -334,6 +339,87 @@ describe('api-contract: response schemas（E3-6 四个读接口）', () => {
     const errors = [...Value.Errors(KernelStatsResponse, snapshot)];
     expect(errors).toEqual([]);
     expect(Value.Check(KernelStatsResponse, snapshot)).toBe(true);
+  });
+});
+
+describe('api-contract: E8-3 六个核心读接口 response schema', () => {
+  const findOp = (operationId: string): any => {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const candidate of Object.values<any>(methods)) {
+        if (candidate?.operationId === operationId) return candidate;
+      }
+    }
+    return null;
+  };
+
+  /** 每个 op 的承重 property（少一个客户端就无法渲染/分页）。 */
+  const EXPECTED: Record<string, string[]> = {
+    'session.get': ['id', 'projectID', 'directory', 'title', 'time'],
+    'session.messages': ['data', 'nextCursor'],
+    'decisions.list': ['items'],
+    'attention.list': ['items'],
+    'memory.stats': ['embedding', 't1', 'consolidation', 'pipelines', 'abstractionLevels'],
+    'pods.get': ['pod', 'members', 'goals', 'attention', 'messageHealth', 'tasks', 'sessions'],
+  };
+
+  test('六个 op 的 200 响应都是带 properties 的 JSON schema', () => {
+    const problems: string[] = [];
+    for (const [operationId, fields] of Object.entries(EXPECTED)) {
+      const op = findOp(operationId);
+      if (!op) { problems.push(`${operationId}: 未出现在 openapi.json`); continue; }
+      const schema = op.responses?.['200']?.content?.['application/json']?.schema;
+      if (!schema) { problems.push(`${operationId}: responses.200 缺 application/json schema`); continue; }
+      for (const field of fields) {
+        if (!Object.prototype.hasOwnProperty.call(schema.properties ?? {}, field)) {
+          problems.push(`${operationId}: schema 缺 property '${field}'`);
+        }
+      }
+    }
+    if (problems.length) {
+      console.error('[api-contract] E8-3 response schema 缺失 — 先跑 emit:openapi + merge-contract:\n' + problems.join('\n'));
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test('session.messages 的 item 仍以 role 为 required（flat DTO 边界）', () => {
+    const schema = findOp('session.messages').responses['200'].content['application/json'].schema;
+    expect(schema.properties.data.items.required).toEqual(['role']);
+    expect(schema.required).toEqual(expect.arrayContaining(['data', 'nextCursor']));
+  });
+
+  test('pods.get 声明 Pod 详情骨架（而非空对象）', () => {
+    const schema = findOp('pods.get').responses['200'].content['application/json'].schema;
+    expect(schema.properties.pod.required).toEqual(expect.arrayContaining(['id', 'projectDir', 'status']));
+    expect(schema.properties.goals.items.required).toEqual(expect.arrayContaining(['goalId', 'stage', 'status']));
+    expect(schema.properties.sessions.items.required).toEqual(expect.arrayContaining(['sessionId', 'memberId']));
+  });
+
+  test('attention.list / decisions.list 的 handler 输出通过各自 schema 校验', () => {
+    const view: PodGoalView = {
+      id: 'pod_1:goal_1', podId: 'pod_1', goalId: 'goal_1', status: 'active',
+      title: 'Ship it', phase: null, verdict: null,
+      stage: { owner: 'person', kind: 'plan_approval', action: { type: 'open_plan_review', goalId: 'goal_1' } },
+      bucket: 'needs_you', resultReady: false, accepted: false, sourceRef: null, strategy: null,
+      assessment: null, currentAssignment: null, activeRevision: 1, revision: 1, priority: 0,
+      enqueuedAt: '2026-11-13T00:00:00.000Z', startedAt: null, endedAt: null,
+    };
+    const attention = handleAttention({ projectDir: '/tmp/project' }, { views: () => [view] });
+    expect(Value.Check(AttentionListResponse, attention.body)).toBe(true);
+    expect([...Value.Errors(AttentionListResponse, attention.body)]).toEqual([]);
+
+    const record: DecisionRecord = {
+      id: 'dec_1', projectDir: '/tmp/project', goalId: 'goal_1', revision: 1,
+      kind: 'direction', status: 'draft', question: 'Which way?',
+      options: [{ id: 'a', title: 'A' }], evidence: [{ kind: 'goal', ref: 'goal_1' }],
+      rationale: null, consequences: null, reviewAt: null, decidedBy: null, decidedAt: null,
+      createdAt: '2026-11-13T00:00:00.000Z', updatedAt: '2026-11-13T00:00:00.000Z',
+      history: [{ action: 'drafted', by: 'agent', at: '2026-11-13T00:00:00.000Z' }],
+    };
+    const decisions = handleDecisionList({ projectDir: '/tmp/project' }, {
+      service: { list: () => [record] } as any,
+    });
+    expect(Value.Check(DecisionListResponse, decisions.body)).toBe(true);
+    expect([...Value.Errors(DecisionListResponse, decisions.body)]).toEqual([]);
   });
 });
 

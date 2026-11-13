@@ -199,7 +199,7 @@ import { ResourceGovernor } from './resources/governor';
 import { createResourceBudgetChecker, shouldPruneEventLog } from './resources/degradation';
 import { buildHandlesSnapshot, buildKernelStatsSnapshot, type KernelStatsSnapshot } from './resources/stats';
 import { limitOf } from './resources/settings';
-import { TimerService } from './core/timer-service';
+import { TimerService, type TimerHandle } from './core/timer-service';
 import { setLlamaCppProcessLedger } from './memory/llamacpp-provider';
 import { eventBus } from "./event-bus";
 import { AutomationEngine } from "./automation-engine";
@@ -441,7 +441,8 @@ class MafwScheduler {
   // reconnect the event stream. Flag keeps that warning a one-shot ERROR per
   // outage instead of an unbounded WARN loop.
   private serveExternalDownNotified = false;
-  private serveWatchdogTimer: ReturnType<typeof setInterval> | null = null;
+  // E8-1: 长驻 interval 一律走 TimerService（stats 可见 / disposeAll 收口）。
+  private serveWatchdogTimer: TimerHandle | null = null;
   private serveRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private serveStableTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly serveFastRetries = 3;
@@ -526,9 +527,11 @@ class MafwScheduler {
     }
     return this.pipelineBudget;
   }
-  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-  private queueSweepTimer: ReturnType<typeof setInterval> | null = null;
-  private sessionSweepTimer: ReturnType<typeof setInterval> | null = null;
+  private heartbeatTimer: TimerHandle | null = null;
+  private queueSweepTimer: TimerHandle | null = null;
+  private sessionSweepTimer: TimerHandle | null = null;
+  private podEventPruneTimer: TimerHandle | null = null;
+  private podEventWakeTimer: TimerHandle | null = null;
   // Unified session registry (kernel refactor Phase C) — the gateway's process
   // table. MUST be the default singleton: worker-origin (recall/worker-origin.ts)
   // falls back to getDefaultSessionRegistry(), and a private instance would
@@ -794,7 +797,7 @@ class MafwScheduler {
   private instanceLock: InstanceLock | null = null;
   private instanceLockHeartbeat: InstanceLockHeartbeatHandle | null = null;
   private instanceDiscovery: GatewayDiscoveryHandle | null = null;
-  private discoveryHeartbeatTimer: NodeJS.Timeout | null = null;
+  private discoveryHeartbeatTimer: TimerHandle | null = null;
   private podEventService?: PodEventService;
   private podEventWake?: PodEventWake;
   private trajectoryStore: import('./trajectory/trajectory-store').TrajectoryStore | null = null;
@@ -3576,6 +3579,14 @@ class MafwScheduler {
     this.governor?.stop();
     this.governor = undefined;
     this.timers.disposeAll();
+    // E8-1: disposeAll 只清定时器；handle 字段一并归零，避免再次 start() 时
+    // 幂等 guard 误判为"已注册"而跳过重建。
+    this.serveWatchdogTimer = null;
+    this.heartbeatTimer = null;
+    this.queueSweepTimer = null;
+    this.sessionSweepTimer = null;
+    this.podEventPruneTimer = null;
+    this.podEventWakeTimer = null;
     this.serveLedger?.release();
     this.serveLedger = undefined;
     this.processLedger.disposeAll();
@@ -3842,18 +3853,7 @@ class MafwScheduler {
     this.podEventService = new PodEventService({ store: this.podStore, mafwDir: this.mafwDir });
     // Retention: p3 is informational; drop old seen p3 rows + audit files once a day
     // (and once at startup so a long-idle install catches up immediately).
-    const prunePodEvents = () => {
-      try {
-        const out = this.podEventService?.prune();
-        if (out && (out.events > 0 || out.files > 0)) {
-          log.info(`[Pod] pruned ${out.events} stale p3 event(s), ${out.files} audit file(s)`);
-        }
-      } catch (err: any) {
-        log.warn(`[Pod] event prune failed (non-fatal): ${err?.message ?? err}`);
-      }
-    };
-    prunePodEvents();
-    setInterval(prunePodEvents, 24 * 60 * 60 * 1000).unref?.();
+    // E8-1: 两个长驻 interval 收进 TimerService（pod:event-prune / pod:event-wake）。
     this.podEventWake = new PodEventWake({
       events: this.podEventService,
       leadMemberId: (podId) => this.podStore?.getMemberByRole(podId, 'lead')?.id ?? null,
@@ -3879,7 +3879,8 @@ class MafwScheduler {
         fn,
       ),
     });
-    setInterval(() => { void this.podEventWake?.scan(); }, 60_000).unref?.();
+    this.startPodEventTimers();
+    // 启动 5s 后补一次 scan（短命 one-shot，不进长驻台账）。
     setTimeout(() => { void this.podEventWake?.scan(); }, 5_000).unref?.();
     // Agent messages reach the store through the A2A bridge, not through
     // PodMessageService — the hook must live on the store or p2 never fires.
@@ -4696,26 +4697,8 @@ class MafwScheduler {
         { onWarn: (msg) => log.warn(msg) },
       );
       this.automationEngine.setHeartbeat(this.heartbeat);
-      if (!this.heartbeatTimer) {
-        this.heartbeatTimer = setInterval(() => this.heartbeat?.sweep(), 30 * 60 * 1000);
-        this.heartbeatTimer.unref?.();
-      }
-      // 队列防楔死清扫（spec §5.1 v2 Q2）：busy 15min TTL + 队列项 24h TTL。
-      if (!this.queueSweepTimer) {
-        this.queueSweepTimer = setInterval(() => this.sweepBusyAndQueue(), 60_000);
-        this.queueSweepTimer.unref?.();
-      }
-      // 统一会话 sweeper（Phase C Task 7）：回收过期 session 记录（worker
-      // 24h TTL → per-record onEvict dispose pair；其余视图按各自生命周期）。
-      // sweepBusyAndQueue 是活跃簿记（非进程表状态），保持自己的间隔——见
-      // plan Key Ruling 7。
-      if (!this.sessionSweepTimer) {
-        this.sessionSweepTimer = setInterval(() => {
-          const swept = this.sessionRegistry.sweep();
-          if (swept > 0) log.info(`[SessionRegistry] swept ${swept} expired session record(s)`);
-        }, 60_000);
-        this.sessionSweepTimer.unref?.();
-      }
+      // E8-1: heartbeat / queue / session 三个长驻 sweep 收进 TimerService。
+      this.startHousekeepingTimers();
     }
     // memory:decay must mutate the gateway's LIVE index instance — a throwaway
     // manager's v1→v2 migration would be clobbered by the live instance's next
@@ -5090,6 +5073,58 @@ class MafwScheduler {
     }
   }
 
+  /** Pod 事件保留策略：p3 只做信息，日清一次（启动时立即补一次）。 */
+  private prunePodEvents(): void {
+    try {
+      const out = this.podEventService?.prune();
+      if (out && (out.events > 0 || out.files > 0)) {
+        log.info(`[Pod] pruned ${out.events} stale p3 event(s), ${out.files} audit file(s)`);
+      }
+    } catch (err: any) {
+      log.warn(`[Pod] event prune failed (non-fatal): ${err?.message ?? err}`);
+    }
+  }
+
+  /** E8-1: pod retention + wake 长驻 interval（幂等）。 */
+  private startPodEventTimers(): void {
+    if (!this.podEventPruneTimer) {
+      this.prunePodEvents();
+      this.podEventPruneTimer = this.timers.every(
+        'pod:event-prune',
+        24 * 60 * 60 * 1000,
+        () => this.prunePodEvents(),
+      );
+    }
+    if (!this.podEventWakeTimer) {
+      this.podEventWakeTimer = this.timers.every('pod:event-wake', 60_000, () => {
+        void this.podEventWake?.scan();
+      });
+    }
+  }
+
+  /** E8-1: heartbeat / queue / session sweeper 长驻 interval（幂等）。 */
+  private startHousekeepingTimers(): void {
+    if (!this.heartbeatTimer) {
+      this.heartbeatTimer = this.timers.every('heartbeat:sweep', 30 * 60 * 1000, () => {
+        this.heartbeat?.sweep();
+      });
+    }
+    // 队列防楔死清扫（spec §5.1 v2 Q2）：busy 15min TTL + 队列项 24h TTL。
+    if (!this.queueSweepTimer) {
+      this.queueSweepTimer = this.timers.every('queue:sweep', 60_000, () => this.sweepBusyAndQueue());
+    }
+    // 统一会话 sweeper（Phase C Task 7）：回收过期 session 记录（worker
+    // 24h TTL → per-record onEvict dispose pair；其余视图按各自生命周期）。
+    // sweepBusyAndQueue 是活跃簿记（非进程表状态），保持自己的间隔——见
+    // plan Key Ruling 7。
+    if (!this.sessionSweepTimer) {
+      this.sessionSweepTimer = this.timers.every('session:sweep', 60_000, () => {
+        const swept = this.sessionRegistry.sweep();
+        if (swept > 0) log.info(`[SessionRegistry] swept ${swept} expired session record(s)`);
+      });
+    }
+  }
+
   // Health-poll watchdog covers both adopted and owned serves. SDK
   // `createOpencodeServer` does not expose an exit callback, and even owned
   // sidecars can die silently (network stack torn down without process exit).
@@ -5097,7 +5132,7 @@ class MafwScheduler {
   private startServeWatchdog() {
     if (this.serveWatchdogTimer) return;
     let failures = 0;
-    this.serveWatchdogTimer = setInterval(async () => {
+    this.serveWatchdogTimer = this.timers.every('serve:watchdog', this.serveWatchdogIntervalMs, async () => {
       if (!this.running || this.serveRecovering) return;
       if (await this.isServeHealthy()) {
         if (failures > 0 || this.serveExternalDownNotified) {
@@ -5125,15 +5160,12 @@ class MafwScheduler {
         this.serveInstance = undefined;
         await this.recoverServe();
       }
-    }, this.serveWatchdogIntervalMs);
-    this.serveWatchdogTimer.unref();
+    });
   }
 
   private stopServeWatchdog() {
-    if (this.serveWatchdogTimer) {
-      clearInterval(this.serveWatchdogTimer);
-      this.serveWatchdogTimer = null;
-    }
+    this.timers.clear(this.serveWatchdogTimer);
+    this.serveWatchdogTimer = null;
   }
 
   private async listSessions(projectID: string | null): Promise<any[]> {

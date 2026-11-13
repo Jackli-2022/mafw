@@ -417,8 +417,8 @@ export function createMafwApi(): MafwAPI {
     },
 
     event: {
-      // SSE 端点 URL（带/不带 sessionID），renderer 直连 EventSource 用。
-      url: (sessionID?) => invoke("event", "url", sessionID),
+      // SSE 端点 URL（全局流；SDK 的 events.url() 无参），renderer 直连 EventSource 用。
+      url: () => invoke("event", "url"),
     },
 
     providers: {

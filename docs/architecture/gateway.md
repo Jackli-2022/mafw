@@ -872,7 +872,7 @@ Phase 3.6 plugin host 自动注册（2026-11-13，默认关闭）：
 
 | # | 现状 | 边界 / 后续 |
 |---|---|---|
-| E4-1 | `config.resources`（采样间隔 / 磁盘·堆阈值 / 连接·进程·配额上限 / 缓冲上限）深合并进默认配置；`core/timer-service.ts` 提供命名 timer 台账（同名 `every` 抛错、默认 unref、`clear` 幂等、`disposeAll`）。`resources/` 只放台账（`sdk-session.ts` 移到 `runtime/`）。长驻 interval 迁入：`governor:sample`、`ws:ping`、`ws:device-cleanup`、`sse:ping:<uuid>`、`python:sweep`。 | **不是全进程 inventory**：`serveWatchdog` / `heartbeat` / `queueSweep` / `sessionSweep` / `discoveryHeartbeat` 等 kernel 自有 interval 与短命 retry/超时仍在本地；插件 loader 的 interval 留给后续波次。 |
+| E4-1 | `config.resources`（采样间隔 / 磁盘·堆阈值 / 连接·进程·配额上限 / 缓冲上限）深合并进默认配置；`core/timer-service.ts` 提供命名 timer 台账（同名 `every` 抛错、默认 unref、`clear` 幂等、`disposeAll`）。`resources/` 只放台账（`sdk-session.ts` 移到 `runtime/`）。长驻 interval 迁入：`governor:sample`、`ws:ping`、`ws:device-cleanup`、`sse:ping:<uuid>`、`python:sweep`。 | **不是全进程 inventory**：短命 retry/超时仍在各自模块；E8-1 已把 kernel/boot 的 `pod:event-prune` / `pod:event-wake` / `heartbeat:sweep` / `queue:sweep` / `session:sweep` / `serve:watchdog` / `discovery:heartbeat` 全部迁入（见「计时器台账」）。插件 loader / self-update / 第三方 transport 的本地 interval 不在命名台账范围。 |
 | E4-2 | `resources/disk.ts` 异步 `fs.statfs` 采样数据根（`config.resolvePath()`）：默认 warn 2 GiB / critical 512 MiB，30s 一次且启动立即采一次。回滞：critical→warn 需回到 **1.5× critical**（768 MiB），warn→ok 需回到 **1.1× warn**（2.2 GiB）；升级按阈值立即。`statfs` 失败 → `unknown` 且不降级（fail-open）。 | critical 动作见「降级矩阵」；media artifact 已有内存回退，不额外拦截。 |
 | E4-3 | `resources/heap.ts`：`memoryUsage()` + `v8.getHeapStatistics().heap_size_limit`，默认 warn 0.75 / critical 0.9，回滞 **0.05**（critical <0.85 才回 warn，warn <0.70 才回 ok）。与磁盘共用 `governor:sample`；采样抛错保留上一份样本/状态（fail-open）。 | 不在 E4 强制 GC；堆压力不阻断 `memory.add`（与写盘危险无关）。 |
 | E4-4 | `ConnectionTable`：HTTP socket 计数（`httpOpen`，仅观测）+ SSE/WS/voice/terminal 逻辑连接 lease（`release` 幂等）。HTTP **256** 走 `server.maxConnections` 硬帽；软帽 SSE/WS 各 64、voice/terminal 各 16；超限 SSE 503 `{code:'connection_limit'}`，WS/voice/terminal 在 upgrade 阶段 503（不升级）；`refused` 按 kind 计数；连接上限 `0`/负数 = 不限。`connections.sse` 只覆盖 `/api/events` 与 plugin-web SSE（`/api/plugins/:name/events`）；**TTS `/api/tts/stream` 与 MCP SSE keepalive 不在连接表内**。 | HTTP 无软拒绝路径；FD 不设硬上限（`handles.fdCount` 仅 Linux 观测）。 |
@@ -919,9 +919,17 @@ resources:
 | `ws:device-cleanup` | 60s | 同上 |
 | `sse:ping:<uuid>` | 15s | `events/sse-attach.ts`，连接 dispose 即 clear |
 | `python:sweep` | 5min | `python/kernel-service.ts` 的 `SessionKernels` |
+| `pod:event-prune` | 24h | `kernel.ts`（启动立即跑一次） |
+| `pod:event-wake` | 60s | `kernel.ts` |
+| `heartbeat:sweep` | 30min | `kernel.ts` |
+| `queue:sweep` | 60s | `kernel.ts`（busy 15min / 队列项 24h TTL） |
+| `session:sweep` | 60s | `kernel.ts`（`SessionRegistry`） |
+| `serve:watchdog` | 30s（`serveWatchdogIntervalMs`） | `kernel.ts`，`stopServeWatchdog()` 清本 handle |
+| `discovery:heartbeat` | 10s | `boot.ts`（`publishInstanceDiscovery`；`releaseInstanceOwnership` 清） |
 
 `/api/kernel/stats.timers` 是**这张表**的视图（`sse:ping:*` 按 family 折叠），不是进程全部 timer：
-kernel 的 watchdog/heartbeat/queue-sweep/session-sweep 等自有 interval 与短命 retry 仍在各自模块本地。
+E8-1 之后 kernel/boot 的长驻 interval 已全部在台账内；短命 retry/超时、插件 loader interval
+与第三方 transport 的本地 interval 仍留在各自模块。
 
 ### 降级矩阵（as shipped）
 
@@ -964,7 +972,8 @@ kernel 的 watchdog/heartbeat/queue-sweep/session-sweep 等自有 interval 与�
 ### 已知延后（不在 E4 范围）
 
 - 降级前已入队任务的二次校验（pump 处回撤/抢占）与跨压力恢复补跑。
-- 全进程 timer inventory（kernel 自有 interval、插件 loader interval）。
+- ~~全进程 timer inventory~~（E8-1 已把 kernel/boot 的长驻 interval 全部迁入命名台账；
+  插件 loader / self-update / 第三方 transport 的本地 interval 属于各自模块边界，不在台账范围）。
 - 插件/manager 会话的配额副作用（内部会话失败当前降级为 log；未给 UI 明确 429 文案）。
 - ~~MCP `mafw_add_memory` 的磁盘门~~（E7-4 已收口，见「E7 部署前 deferred 收口」）。
 - ~~review-items 的 SDK 债务~~（E7-2 已收口：`DEAD_CONTRACT_TODO` 删除，4 个 op 由
@@ -1000,7 +1009,7 @@ kernel 的 watchdog/heartbeat/queue-sweep/session-sweep 等自有 interval 与�
 - 反向代理（`/api/*` → agent backend）**剥掉** `x-mafw-human-token` / `x-mafw-device-token`，凭据不外溢给 runtime。
 - `redactLog` 覆盖 `Bearer` / `?token=` / 两个新头（header 与 JSON 两种形状）与任意 `dev_…`；64 hex **不**做泛化脱敏（hash/commit 常见），human token 只经具名头泄漏。
 - `registry-dispatch` 只接受 transport 已解析的 principal kind（`human|service|local`）；畸形/未知 kind fail-closed 回既有 `authorizeRequest`。`POST /api/mobile/pairing/verify` 是唯一免凭据路由，且必须由 transport 打上 `mafwPairingVerify` 标记（nonce 即凭据，直调 dispatcher 不能自我授权）。
-- `authorizeWsUpgrade` **已废弃**（`@deprecated`，无生产调用）；`authorizeRequest` 仍服务只需 service/local 判定的既有调用。
+- `authorizeWsUpgrade` **已删除**（E8-5；WS upgrade 只走 `resolvePrincipal`，没有第二套凭据矩阵）；`authorizeRequest` 仍服务只需 service/local 判定的既有调用，`WS_UNAUTHORIZED_RESPONSE` 保留为 upgrade 401 的唯一字节源。
 
 ### human token
 
@@ -1066,7 +1075,7 @@ kernel 的 watchdog/heartbeat/queue-sweep/session-sweep 等自有 interval 与�
 - ~~计划批准（plan-approval）、triage、Lead 边界、permission approvals 仍是 service/local 可调~~
   （E7-1 已收口；统一 helper `requireHumanPrincipal` 接入，见「E7 部署前 deferred 收口」）。
 - MCP 工具集**没有** human 工具（也不提供验收/批准工具）；human-only 动作只走 HTTP（desktop/TUI/移动）。
-- `authorizeWsUpgrade` 仅标记 deprecated，未删除（测试与旧调用方仍引用）。
+- ~~`authorizeWsUpgrade` 仅标记 deprecated，未删除（测试与旧调用方仍引用）~~（E8-5 已删除：无生产调用，测试迁移到 `resolvePrincipal` / `WS_UNAUTHORIZED_RESPONSE`）。
 - human token 的 OS keychain / 进程签名、per-owner fencing 留给后续。
 - E5b（C1 event_log 恢复源 / mobile 游标）与 E6（单点扇出 / 实体缓存 / 事件增量）不在本波。
 
@@ -1127,15 +1136,16 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 6. 纪元变化：持久化游标同时记录 `instanceId`；greeting 的 instance 与存档不同 → 丢弃游标、按新 head 重建并全量重拉。
 
 移动端细节见 `docs/architecture/mobile.md` §7.5；桌面 replay 接入与事件→增量补丁属 E6。
-E5b 已知残留（同实例 reset 的低 head、busy/后台竞态）见 release 记录；`nextSince<=since`
-短缺口已由 E7-5 的 `protocol` fallback 收口，不再静默跳过。
+`nextSince<=since` 短缺口由 E7-5 的 `protocol` fallback 收口；E5b 的同实例 reset 低 head
+（显式 reset 现在允许把游标降到 head）与 busy greeting 丢弃（改为排队重跑一次）由 E8-4 收口，
+不再静默跳过或整段生命周期不恢复。
 
 ---
 
 ## E7 部署前 deferred 收口（2026-11-13）
 
-> 把 E1–E6 里影响**部署安全 / 资源 / 契约门禁**的 deferred 收口；大范围 schema 覆盖、全进程
-> timer inventory、mobile 工作 tab 重做等不阻塞部署的项继续保留。
+> 把 E1–E6 里影响**部署安全 / 资源 / 契约门禁**的 deferred 收口；大范围 schema 覆盖、
+> mobile 工作 tab 重做等不阻塞部署的项继续保留（timer 台账已由 E8-1 收口）。
 > spec：`docs/superpowers/specs/2026-11-13-gateway-e7-deferred-cleanup-design.md`；
 > 交付记录：`docs/releases/2026-11-13-gateway-e7-deferred.md`。
 
@@ -1162,16 +1172,34 @@ E5b 已知残留（同实例 reset 的低 head、busy/后台竞态）见 release
 - **F1 回滚边界**：`createSessionWithWorktree` 里 `kvSet` 移到 `createSession` 的 try 之外；
   kv 失败不再删掉活会话的 worktree / branch，错误照原样上抛。
 
-### 残余（E7 后仍 deferred）
+### 残余（E8 后仍 deferred）
 
-- 约 300 个 op 的 response schema 覆盖（渐进补齐）。
-- 全进程 timer inventory（serve watchdog / heartbeat / queue sweep / loader 等）。
+- 剩余约 296 个 op 的 response schema 覆盖（316 operations 中 20 个已带 200 schema）。
 - mobile 工作 tab 增量渲染（已有 `goalId` 局部更新）。
 - `pod.updated` 记录级 payload、attention → decision 投影、OS keychain / 进程签名、MCP human 工具。
 - 强制版本协商 / SDK 全量 schema 类型化。
-- E5b 同实例 `reset` 且新 head 更低时的重复 reset（有界、不丢数据）；busy / 后台 greeting 竞态。
-- `authorizeWsUpgrade` 仍只标 deprecated；desktop preload 的 event bridge 仍声明可选 `sessionID`（运行时忽略，无调用方传值）。
 - 插件 / manager 会话的配额副作用（内部会话失败只 log）。
+
+---
+
+## E8 剩余工程债收口（2026-11-13）
+
+> 清 E1–E7 里**纯工程债**的剩余 deferred：timer 台账、preload 死参数、6 个核心读 op 的
+> response schema、E5b 两个恢复残留、删除死 `authorizeWsUpgrade`。不改 wire shape、
+> 不扩产品面（schema 只加 OpenAPI 元数据）。大范围 schema 覆盖、mobile 工作 tab、
+> OS keychain / MCP human 工具等产品级项继续保留。
+> spec：`docs/superpowers/specs/2026-11-13-gateway-e8-residual-engineering-design.md`；
+> plan：`docs/superpowers/plans/2026-11-13-gateway-e8-residual-engineering.md`；
+> 交付记录：`docs/releases/2026-11-13-gateway-e8-residual-engineering.md`。
+
+| # | 现状 | 边界 |
+|---|---|---|
+| E8-1 | **kernel/boot 长驻 interval 全部进 `TimerService`**：`kernel.ts` 新增 `startPodEventTimers()`（`pod:event-prune` 24h、启动立即跑一次；`pod:event-wake` 60s）与 `startHousekeepingTimers()`（`heartbeat:sweep` 30min、`queue:sweep` 60s、`session:sweep` 60s）；`serve:watchdog` 改 `timers.every` + `timers.clear`；`boot.ts` 注入 `timers`，`discovery:heartbeat`（10s）同样注册、`releaseInstanceOwnership` 清。handle 字段改 `TimerHandle`；`stop()` 先 `disposeAll()` 再把 handle 归零，再次 `start()` 会重建而不是被幂等 guard 跳过。unref 语义不变。 | 5s 启动 Pod 扫描仍是短命 `setTimeout`（不属于命名长驻台账）；插件 loader / self-update / 第三方 transport 的本地 interval 留在各自模块（非长驻台账范畴）。`/api/kernel/stats.timers` 新增这 7 个名字，纯观测。 |
+| E8-2 | **desktop preload 死参数清理**：`mafw-types.ts` `EventApi.url(): Promise<string>`、`mafw-api.ts` `url: () => invoke("event","url")`——不再转发可选的 `sessionID` 第三参；唯一生产调用方 `MafwShell.tsx` 本就零参。 | 本仓库没有 `event/url` 专用 main handler：统一入口是 `mafw-invoke` → `resolveIpcMethod` → SDK `events.url()`（E7-2 起已零参）。运行时行为不变，只是删掉已无意义的形参。 |
+| E8-3 | **6 个核心读 op 的 200 response schema**（只加 OpenAPI 元数据，handler 零改动）：`session.get`（复用 `schemas/session.ts#SessionSchema`）、`session.messages`（flat `{data, nextCursor}`）、`decisions.list`、`attention.list`、`memory.stats`（internal diagnostics bag）、`pods.get`。catalog 从来没有 Pod 列表 op（`pods.ensure/lookup/create` 都返回单 Pod，单 Pod detail 是 `pods.get`），第 6 个按 plan 允许的替换取 `pods.get`。`overrides.json` 删除重复的 `session.get` / `session.messages` responseSchema（catalog 成为单一来源，`session.messages` 仅保留 prose description）；重生成 `gateway-paths.json` / `openapi.json` / `api-schema.gen.ts`。 | `pods.get` 是 **exact DTO 等值**（SDK `PodDetail` ↔ schema，含 `PodAttentionItem.revision` / 六种 kind）：未来任何 additive Pod 字段必须同改 `types.ts` 与 `schemas/pods.ts`。`session.messages` 的 part 变体仍由 `contract/view-dto.json` 拥有，schema 只承诺 `type` + open fields。emit 后 **282 paths / 316 operations**，带 200 schema 的 op 从 **16 → 20**（`session.get` / `session.messages` 此前由 `overrides.json` 提供，本次迁到 catalog，净增 4 个）；其余约 296 个 op 仍无 response schema。 |
+| E8-4 | **E5b 恢复残留（mobile）**：`EventRecoveryService` 的 `reset` / `truncated` 分支改为**显式权威**——无条件 `_cursor = headSeq`，同实例事件日志重启后新 head **低于**旧游标也照落（旧游标属于死 seq 空间，只抬不降会 reset-loop）；非 reset 的 live 帧 `observe` 仍单调。新增 `isRecovering` / `settled`，`recover()` 在完成 completer 之前清 `_recovering`。`RecoveryCoordinator` 把 replay 在途时到达的 greeting 挂起**一个**，`settled` 后立即重跑一次（`busy:true, queued:true`）；第二个并发 greeting 直接丢弃（`queued:false`）；**epoch change 不排队**（在途 replay 属于旧纪元，直接重建 baseline + 全量重拉）；intentional disconnect / 后台交接仍在上游 `WsClientV2._notifyGatewayReady` 丢弃。 | 排队重跑会再 refresh 一次（幂等 REST 对账，最多两个快速 greeting 两次刷新）；epoch-change greeting 仍会观察到旧 epoch 在途 replay 的游标变更（既有 E5a/E5b 行为，调用方总是全量重拉）。 |
+| E8-5 | **删除死 `authorizeWsUpgrade`**：`gateway/src/core/auth.ts` 的 `authorizeWsUpgrade`、`WsAuthRequest`、`WsAuthResult`、`WS_401_BYTES` 删除；WS upgrade 只走 `http/ws-upgrade.ts` 的 `resolvePrincipal`，不存在第二套凭据矩阵。`WS_UNAUTHORIZED_RESPONSE` 保留（byte-identical，upgrade 两个 401 站点共用）；`authorizeRequest` 保留（registry-dispatch 的 service/local 判定）。原 7 条重复测试删除，新增 1 条 pin upgrade 401 字节。 | 无生产调用方（grep 只命中注释 / 测试 / 文档）。删除是**编译期 breaking**（内部导出面），wire 不变。 |
+| E8-6 | 收口：本节 + `docs/architecture/{desktop,mobile}.md` 现状 + release 记录 + 全量门禁 + ledger（docs-only）。 | 剩余 deferred 见上「残余」。 |
 
 ---
 

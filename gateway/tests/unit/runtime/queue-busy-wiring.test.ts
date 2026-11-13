@@ -42,9 +42,13 @@ describe('busy 追踪 wiring（spec §5.1 v2）', () => {
     expect(src).toContain('QUEUE_ITEM_TTL_MS');
     expect(src).toMatch(/sweepBusyAndQueue/);
     expect(src).toMatch(/sweepBusyAndQueue/);
-    // interval 注册（60s 周期）
-    const hits = src.match(/sweepBusyAndQueue\(\), 60_000|60_000[^)]*sweepBusyAndQueue/g) ?? [];
-    expect(hits.length).toBeGreaterThanOrEqual(1);
+    // interval 注册（60s 周期）——E8-1 起走 TimerService 命名台账，pin 名字 + 周期 + 回调，
+    // 不再匹配裸 setInterval；行为侧（fake timers 触发 + dispose 静默）由
+    // tests/unit/resources/kernel-timers.test.ts 覆盖。
+    const hits = src.match(
+      /timers\.every\(\s*'queue:sweep'\s*,\s*60_000\s*,\s*\(\)\s*=>\s*this\.sweepBusyAndQueue\(\)\s*\)/g,
+    ) ?? [];
+    expect(hits).toHaveLength(1);
   });
 });
 
