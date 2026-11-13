@@ -300,6 +300,8 @@ spec `docs/superpowers/specs/2026-11-10-lead-techlead-p2-scheduler-design.md`；
 - **Attention v2**：`deriveAttention(views)` 从结构化 stage 派生 person-first 列表（plan_approval 100 /
   direction_review 90 / answer 80 / review 70 / failed 60 / blocked 50），同一 goal+kind 用
   `coalesceKey` 合并；健康/进行中的 Goal 不进 person；`GET /api/attention` 的 count 即列表长度。
+  （E9-2 起 `decision` 85 插在 direction_review 与 answer 之间，且 reviews / draft decisions 是
+  route 层追加而非 `deriveAttention` 内联；见 `gateway.md` §「E9 交互补齐」。）
 - **调度**：`planPromotions` 按 priority + enqueuedAt 排序，`capacity = maxConcurrent + 1`（人类槽
   仅在已有 active person Goal 时开启）；`PodGoalService.promote` 一次填满可用槽位，
   `startQueued` 只在新 Pod 无 activeGoalId 时写指针。`MAFW_POD_MAX_GOALS` 默认 1；

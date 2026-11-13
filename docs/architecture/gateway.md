@@ -1172,13 +1172,16 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 - **F1 回滚边界**：`createSessionWithWorktree` 里 `kvSet` 移到 `createSession` 的 try 之外；
   kv 失败不再删掉活会话的 worktree / branch，错误照原样上抛。
 
-### 残余（E8 后仍 deferred）
+### 残余（E9 后仍 deferred）
 
 - 剩余约 296 个 op 的 response schema 覆盖（316 operations 中 20 个已带 200 schema）。
-- mobile 工作 tab 增量渲染（已有 `goalId` 局部更新）。
-- `pod.updated` 记录级 payload、attention → decision 投影、OS keychain / 进程签名、MCP human 工具。
+- OS keychain / 进程签名、MCP human 工具。
 - 强制版本协商 / SDK 全量 schema 类型化。
 - 插件 / manager 会话的配额副作用（内部会话失败只 log）。
+- `session.get` 对不存在会话仍返回 **200 + error body**（kernel registry 的 200-not-404 miss 语义，
+  `gateway.md` §路由注册表），未改成 404。
+- **won't do**：`pod.updated` 记录级实体 payload（E9-3，理由见下节）、mobile 工作 tab 的增量渲染
+  （E9-1 后 flat 帧已能触发 `goalId` 局部 patch，其余仍是整页快照）。
 
 ---
 
@@ -1200,6 +1203,22 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 | E8-4 | **E5b 恢复残留（mobile）**：`EventRecoveryService` 的 `reset` / `truncated` 分支改为**显式权威**——无条件 `_cursor = headSeq`，同实例事件日志重启后新 head **低于**旧游标也照落（旧游标属于死 seq 空间，只抬不降会 reset-loop）；非 reset 的 live 帧 `observe` 仍单调。新增 `isRecovering` / `settled`，`recover()` 在完成 completer 之前清 `_recovering`。`RecoveryCoordinator` 把 replay 在途时到达的 greeting 挂起**一个**，`settled` 后立即重跑一次（`busy:true, queued:true`）；第二个并发 greeting 直接丢弃（`queued:false`）；**epoch change 不排队**（在途 replay 属于旧纪元，直接重建 baseline + 全量重拉）；intentional disconnect / 后台交接仍在上游 `WsClientV2._notifyGatewayReady` 丢弃。 | 排队重跑会再 refresh 一次（幂等 REST 对账，最多两个快速 greeting 两次刷新）；epoch-change greeting 仍会观察到旧 epoch 在途 replay 的游标变更（既有 E5a/E5b 行为，调用方总是全量重拉）。 |
 | E8-5 | **删除死 `authorizeWsUpgrade`**：`gateway/src/core/auth.ts` 的 `authorizeWsUpgrade`、`WsAuthRequest`、`WsAuthResult`、`WS_401_BYTES` 删除；WS upgrade 只走 `http/ws-upgrade.ts` 的 `resolvePrincipal`，不存在第二套凭据矩阵。`WS_UNAUTHORIZED_RESPONSE` 保留（byte-identical，upgrade 两个 401 站点共用）；`authorizeRequest` 保留（registry-dispatch 的 service/local 判定）。原 7 条重复测试删除，新增 1 条 pin upgrade 401 字节。 | 无生产调用方（grep 只命中注释 / 测试 / 文档）。删除是**编译期 breaking**（内部导出面），wire 不变。 |
 | E8-6 | 收口：本节 + `docs/architecture/{desktop,mobile}.md` 现状 + release 记录 + 全量门禁 + ledger（docs-only）。 | 剩余 deferred 见上「残余」。 |
+
+---
+
+## E9 交互补齐（2026-11-13）
+
+> 清 E6 后剩下的三个交互 deferred：mobile 工作 tab 不响应 pod/run flat 事件、attention 无 decision
+> 投影、`pod.updated` payload 过薄。前两项落地，第三项明确 **won't-do**。
+> spec：`docs/superpowers/specs/2026-11-13-gateway-e9-interaction-completion-design.md`；
+> plan：`docs/superpowers/plans/2026-11-13-gateway-e9-interaction.md`；
+> 交付记录：`docs/releases/2026-11-13-gateway-e9-interaction.md`。
+
+| # | 现状 | 边界 |
+|---|---|---|
+| E9-1 | **mobile 工作 tab 吃 flat pod/run 事件**：`pod.updated` / `pod.event` / `run.updated` 是 gateway 顶层 flat 广播（名字同时是 canonical 词汇），mobile 现在按 dual-shape 解析（`kMafwDualShapeEventTypes` spread 进 `kMafwFlatEventTypes`）、`shouldRefreshWork` 命中，并从 `properties.goalId`（回退 `data.goalId`）取 goal id，命中 `WorkRefreshBus` 的按 Goal 局部 patch。 | gateway 与 SDK 契约零改动（三个名字本就是 gateway 的顶层广播；parity 测试用「契约前缀 + 固定 dual-shape 尾巴」钉住）。消费细节见 `mobile.md` §7.10。 |
+| E9-2 | **attention 投影 draft decision**：`AttentionKind` 新增 `'decision'`（`PRIORITY.decision = 85`，介于 `direction_review` 90 与 `answer` 80）；`decisionAttentionInput` / `appendDecisionAttention` 只投影 `status === 'draft'` **且带 `goalId`** 的记录（id / coalesceKey `decision:<recordId>`，action `{type:'open_decision', goalId, itemId}`，detail 取 `rationale ?? consequences`）；`AttentionRouteDeps.decisions?(projectDir)` 在 reviews 之后追加，kernel 注入 `decisionRecords.list(projectDir)` 且 **fail-open**（读失败 → `[]`，不拖垮 attention）；SDK `AttentionKind` 与生成契约（`gateway-paths.json` / `openapi.json` / `api-schema.gen.ts`）同步。 | **goal-less draft 不进 attention**：`AttentionItem.goalId` 是 string，无法表达无 Goal 的记录——它们仍只在桌面决定板出现；`decided` / `shelved` 已结算，永不投影。桌面侧映射与去重见 `desktop.md` §「Attention decision 投影与决定板去重」。 |
+| E9-3 | **`pod.updated` 记录级 payload —— won't do**。维持 `{podId, kind}` 级刷新：desktop `podStore.ingest` 对当前 Pod 全量 `refresh()`，`kind:'review'` 已 bump `reviewRevision`；`goalId` 在 goal/revision/result 事件上已有，消费侧需要时可自行按 Goal 收敛（当前 desktop 仍整 Pod refresh）。 | 不引入完整 PodDetail / 实体 payload：member/task 高频广播下事件体积过大，且「事件快照 vs REST 权威」的一致性风险不划算；kind 级刷新 + 可用时 `goalId` 已足够。E9-1 修复后 mobile 至少能消费这些 flat 帧。 |
 
 ---
 

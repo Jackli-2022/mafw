@@ -663,9 +663,9 @@ spec `docs/superpowers/specs/2026-11-13-gateway-e6-interaction-model-design.md`�
     （旧 gateway 行为不变；attention 投影没有独立轮询，靠下一次 refresh——项目/Pod 切换、显式动作、
     fallback——收敛）。
 - **已知残留（E6 接受）**：
-  1. `/api/attention` 目前不投影 decision 记录（items 里没有同 id 行），`ingest` 的 attention patch
-     实际为空操作；attention 状态仍靠下次 `refresh()` 收敛（补丁已按 schema-tolerant 写好，
-     投影落地即生效）。
+  1. ~~`/api/attention` 不投影 decision 记录~~ **E9-2 已落地**：带 `goalId` 的 draft 现在出现在
+     `items` 里（`kind:'decision'`、`action.type:'open_decision'`、`itemId` = record id），
+     `ingest` 的 attention patch 与决定板去重都真正生效；goal-less draft 仍只在决定板（见 E9-2 节）。
   2. 持久化 tab 的 `{id,title}` 仍是首帧兜底：实体未取到（离线/桶被裁剪）时显示旧标题，直到
      bucket fetch 或 `session.updated` patch 到实体。
   3. foreign-project guard 只看 `record.projectDir`（规范化后比较）；记录里缺 `projectDir` 时按本项目处理。
@@ -678,3 +678,20 @@ E7-2 把 SDK 的 `event.url(sessionID?)` 收成零参后，desktop 的 preload �
 `url: () => invoke("event", "url")`——形参与转发一并删除。唯一生产调用方 `MafwShell.tsx`
 本就零参，SSE 订阅仍恒为全局 `/api/events`（Mode A）；没有 `event/url` 专用 main handler，
 统一入口 `mafw-invoke` → `resolveIpcMethod` → SDK `events.url()` 行为逐字不变。
+
+### Attention decision 投影与决定板去重（2026-11-13，E9-2）
+
+E6 留下的第一条残留（`/api/attention` 不投影 decision）在 E9-2 收口：gateway 现在把**带 `goalId`
+的 draft** 作为 `kind:'decision'` 的 attention item 发出（gateway 侧见 `gateway.md` §「E9 交互补齐」）。
+桌面 `focus/decision-model.ts` 的消费规则：
+
+- `attentionKind`：`'decision'` → `'other'`。不按 `action.type` 反推 record kind（记录本身没有
+  可靠的 kind 字段），因此「需要你定」里 decision 排在 typed kinds 之后（`KIND_PRIORITY.other = 10`）；
+- `decisionActionForAttention`：`action.type === 'open_decision'` 且有 `itemId` →
+  `{kind:'record', recordId: action.itemId}`，直接打开对应决定记录；缺 `itemId` → `{kind:'none'}`，
+  不再误落到 Goal/timeline；
+- `buildDecisionBoard`：先收集 attention 中所有 `open_decision` 的 `itemId`，再从 records 生成候选前
+  按 record id 丢弃 → 同一条 draft 只出现一次（「需要你」文案留在 attention item 上；已定 / 已搁置
+  分组仍由 records 驱动）。`goalId === null` 的 draft 没有 attention item，只从 records 生成。
+- 测试：`focus/decision-model.test.ts` 新增 5 条（record action、缺 `itemId`、draft 不重复、
+  decided 仍在、goal 过滤）。
