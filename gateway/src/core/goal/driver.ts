@@ -19,6 +19,8 @@ import { computeGoalEvalHash, computePlanPackageHash, computeWavesHash, evaluate
 import type { PlanApprovalMode, ProbeContinuation, ProbeContinuationRules } from './plan-package';
 import { requiredConditionIds } from './goal-eval';
 import type { GoalEval } from './goal-eval';
+import { applyGoalEvalResults, type GoalEvalProvider } from './goal-eval-provider';
+import { log } from '../utils/logger';
 import { ExecutableGoalNode, goalAgentName, isExecutableGoalNode } from './node-names';
 import { isTaskType } from '../../orchestration/capability-ledger';
 import { parseReviewRubric, taskAcceptanceFromWavePlan, taskIdsFromWavePlan } from './review-rubric';
@@ -338,7 +340,14 @@ export class NodeDriver {
   private advanceDepth = 0;
   private static readonly MAX_ADVANCE_DEPTH = 8;
 
+  private goalEvalProvider: GoalEvalProvider | null = null;
+
   constructor(private deps: DriverDeps) {}
+
+  /** Optional first-party GoalEval hook; human acceptance still happens outside. */
+  setGoalEvalProvider(provider: GoalEvalProvider | null): void {
+    this.goalEvalProvider = provider;
+  }
 
   /** index.ts 启动/starter 调用：登记 goal 的状态目录。 */
   registerGoalDir(goalId: string, mafwDir: string): void {
@@ -1895,7 +1904,30 @@ export class NodeDriver {
         const evalRead = readGoalEvalArtifact(mafwDir, goalId, revision, this.readPlanDoc(state, goalId, revision));
         if (evalRead.error) throw new Error(evalRead.error);
         const requiredIds = evalRead.goalEval ? requiredConditionIds(evalRead.goalEval) : [];
-        const verdict = parseReviewRubric(source, readWaveTaskIds(a.waves), requiredIds);
+        let verdict = parseReviewRubric(source, readWaveTaskIds(a.waves), requiredIds);
+        const provider = this.goalEvalProvider;
+        if (provider && evalRead.goalEval) {
+          try {
+            const results = await provider.evaluate({
+              goalEval: evalRead.goalEval,
+              plan: this.readPlanDoc(state, goalId, revision),
+              taskResults: verdict.tasks,
+              reviewFeedback: verdict.feedback,
+            });
+            const applied = applyGoalEvalResults(verdict, evalRead.goalEval, results, requiredIds);
+            if (applied.ok) {
+              verdict = applied.verdict;
+            } else {
+              log.warn(
+                `[GoalEval] provider ${provider.id} returned invalid results; keeping reviewer rubric: ${applied.errors.join('; ')}`,
+              );
+            }
+          } catch (err: any) {
+            log.warn(
+              `[GoalEval] provider ${provider.id} failed; keeping reviewer rubric: ${err?.message || err}`,
+            );
+          }
+        }
         // 同轮复核：FAIL 且本轮还没用过 → 保留 round（不 +1），把失败项/内容缺口写进
         // state 供 execute 修复模式使用；FAIL 且已用过 → 清空 reviewFix，走原 round+1。
         // omission-only（缺证据 / 漏任务 / 漏必需条件）与 failed task 同语义：都是评审判定，
