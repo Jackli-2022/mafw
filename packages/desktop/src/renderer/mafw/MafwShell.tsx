@@ -2989,6 +2989,8 @@ export function MafwShell() {
       updateDiffDocument(doc.id, { patch, additions, deletions })
     }
   })
+  const [changesMode, setChangesMode] = createSignal<ChangesMode>("session")
+  const [changesRequest, setChangesRequest] = createSignal<ChangesRequest | null>(null)
   const changesContextInput = () => {
     const sid = activeSessionId()
     return {
@@ -3513,8 +3515,6 @@ export function MafwShell() {
     face: normalizeLeftDockFace(localStorage.getItem("mafw-left-dock-face")),
     open: restoreLeftDockOpen(localStorage.getItem("mafw-left-dock-open"), window.innerWidth, initialLeftDockWidth.width),
   })
-  const [changesMode, setChangesMode] = createSignal<ChangesMode>("session")
-  const [changesRequest, setChangesRequest] = createSignal<ChangesRequest | null>(null)
   try {
     const storedFace = localStorage.getItem("mafw-left-dock-face")
     if (storedFace && storedFace !== leftDock().face) {
