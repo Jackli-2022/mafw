@@ -22,7 +22,16 @@
  *  - 每个非首次连接触发 `onReconnect`（B2：part.delta 从不入 journal，活跃会话
  *    必须强制补拉消息 + REST 对账状态）。
  *  - 无 localStorage（或未注入 storage）→ 退化为 E1-9 现状：每次 open 全量同步。
+ *
+ * E6-1（spec 2026-11-13-gateway-e6-interaction-model §3）：
+ *  - 有持久化游标时，先 `recoverGap(since, 500)` 用 REST replay 补齐缺口；
+ *  - 补页成功 → 以 `headSeq` 开流（SSE 零回放），`lastAppliedSeq = headSeq`；
+ *  - `reset` / `truncated` → 清游标 + `onFullResync(reason)` + 以 `headSeq` 开流；
+ *  - 返回 null / 抛错 → 保持原 since，行为与 E2-3 完全一致；
+ *  - 首次连接（无游标）不 replay。
  */
+import type { GapRecovery } from "./event-replay-gap"
+
 export const SSE_SEQ_KEY = "mafw-sse-seq"
 export const SSE_INSTANCE_KEY = "mafw-sse-instance"
 
@@ -67,6 +76,11 @@ export interface SseConnectionDeps {
    * 消息并 REST 对账状态——不得依赖「消息桶为空」的假设。
    */
   onReconnect?(): void
+  /**
+   * E6-1：开流前用 REST replay 补 `(since, headSeq]`。null = 不支持/失败，
+   * 按原 since 打开（由 SSE greeting 分级触发全量重同步）。
+   */
+  recoverGap?: (since: number, limit: number) => Promise<GapRecovery | null>
   retryDelayMs?: number
   /** 注入 storage（测试）；undefined = globalThis.localStorage ?? null。 */
   storage?: SseCursorStorage | null
@@ -124,7 +138,21 @@ export class SseConnection {
   }
 
   private async openOnce(): Promise<void> {
-    const since = this.readSeq()
+    let since = this.readSeq()
+    // E6-1: 有游标先补页；失败/不支持时保持 E2-3 旧路径（SSE greeting 分级）。
+    if (since !== null && this.deps.recoverGap) {
+      const gap = await this.deps.recoverGap(since, 500).catch(() => null)
+      if (gap) {
+        if (gap.reset || gap.truncated) {
+          this.clearSeq()
+          this.lastAppliedSeq = null
+          this.deps.onFullResync?.(gap.reset ? "reset" : "truncated", { headSeq: gap.headSeq })
+        } else {
+          this.lastAppliedSeq = gap.headSeq
+        }
+        since = gap.headSeq
+      }
+    }
     const source = await this.deps.open(since)
     if (!source) {
       this.scheduleRetry()

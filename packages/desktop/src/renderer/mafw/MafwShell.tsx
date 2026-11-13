@@ -28,6 +28,7 @@ import { mergeHiddenTodos } from "./todo-presenter"
   import { traceEvent } from "./event-trace"
 import { dispatchShellEvent, type ShellEventDeps } from "./sse/dispatcher"
 import { SseConnection, withSince } from "./sse/sse-connection"
+import { recoverEventGap } from "./sse/event-replay-gap"
 import { applyPartUpsert } from "./sse/chat-reducers"
 import { createToolPartScheduler } from "./sse/tool-part-scheduler"
 import { bumpGoalsRev, goalsRev } from "./goals-rev"
@@ -1495,6 +1496,18 @@ export function MafwShell() {
       const sid = activeSessionId()
       if (!sid) return
       void loadSessionHistory(sid, { force: true })
+    },
+    // E6-1：开流前用 REST replay 补齐断线缺口（与 live 帧同一 dispatcher）。
+    // 补页失败（404/旧网关/网络/形状不符）→ null，SseConnection 回退原 since。
+    recoverGap: async (since, limit) => {
+      const info = await window.api.mafw.gateway.info()
+      if (!info?.url) return null
+      return recoverEventGap({
+        baseUrl: info.url,
+        since,
+        limit,
+        dispatch: (event) => dispatchShellEvent(event, sseDeps),
+      })
     },
     onError: () => {
       console.log("[mafw] SSE error (will auto-reconnect)")
