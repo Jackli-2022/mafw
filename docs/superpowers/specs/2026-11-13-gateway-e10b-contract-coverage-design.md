@@ -43,7 +43,7 @@ Reserve：`goals.control`（POST，不在本批）、`pods.goals.worktree.diff`�
 
 ### E10b-3 收口
 
-- `schema-coverage.test.ts`：清单追加 15 个 op，阈值 29 → 44，`TOTAL_OPS` 仍 316。
+- `schema-coverage.test.ts`：清单追加 15 个 op，阈值 29 → 44，`TOTAL_OPS` 317（合并 main 新增 `session.discoverySkillInvoke` 后）。
 - 删除 5 个已被 catalog schema 取代的 override 条目（`goals.list` / `goals.sessions` / `approvals.list` / `questions.list` / `triage.list`），并在 `overrides.json` 的 `$comment` 记录原因。
 - docs + release + 全量门禁。
 
@@ -57,7 +57,7 @@ Reserve：`goals.control`（POST，不在本批）、`pods.goals.worktree.diff`�
 ## 3. 非目标
 
 - 请求体 schema、POST/PUT/PATCH/DELETE。
-- 其余 ~272 ops。
+- 其余 ~273 ops（合并 main 后 317 − 44）。
 - `permissions` 的写接口（reply/allowlist/rules 变更）。
 - OS keychain / MCP / 配额 / admission（属 E11）。
 
