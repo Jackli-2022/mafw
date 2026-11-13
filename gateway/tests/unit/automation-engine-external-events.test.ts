@@ -50,6 +50,28 @@ describe('AutomationEngine external events', () => {
     expect(runs).toBe(2);
   });
 
+  test('goal-scoped events dedupe by the injected state version', async () => {
+    const dir = tmpDir();
+    writeRule(dir, {
+      ...eventRule(),
+      id: 'goal-rule',
+      trigger: { type: 'event', on: ['plugin:demo:goal'], perGoalCooldown: '0s' },
+    });
+    const engine = new AutomationEngine(dir);
+    let runs = 0;
+    engine.setActionsProvider(() => engine.registerAction('test', async () => {
+      runs++;
+    }));
+    engine.setStateVersionProvider((goalId) => (goalId === 'g1' ? 7 : null));
+    engine.loadRules();
+    engine.start();
+
+    engine.handleExternalEvent({ type: 'plugin:demo:goal', properties: { goalId: 'g1' } });
+    engine.handleExternalEvent({ type: 'plugin:demo:goal', properties: { goalId: 'g1' } });
+    await wait(30);
+    expect(runs).toBe(1);
+  });
+
   test('unmatched plugin events do nothing', async () => {
     const dir = tmpDir();
     writeRule(dir, eventRule());

@@ -9,11 +9,17 @@ export const handleDraftAutomationRule: ToolHandler = async (args, { automation 
     const rule: AutomationRule = {
       id: args.id as string,
       enabled: false,
-      trigger: {
-        type: 'cron',
-        schedule: (trigger.schedule as string) || '',
-        timezone: trigger.timezone || 'UTC',
-      },
+      trigger: trigger.type === 'event'
+        ? {
+            type: 'event' as const,
+            on: Array.isArray(trigger.on) ? trigger.on : [],
+            perGoalCooldown: (trigger.perGoalCooldown as string) || '5m',
+          }
+        : {
+            type: 'cron' as const,
+            schedule: (trigger.schedule as string) || '',
+            timezone: trigger.timezone || 'UTC',
+          },
       skill: args.skill as string | undefined,
       action: args.action as any,
       onResult: args.onResult as any,

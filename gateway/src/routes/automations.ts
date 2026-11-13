@@ -47,12 +47,19 @@ export function attachAutomationRoutes(registry: RouteRegistry, deps: Automation
       const rule = {
         id: body.id as string,
         enabled: false,
-        trigger: {
-          type: 'cron' as const,
-          schedule: trigger.schedule || '',
-          timezone: trigger.timezone || 'UTC',
-        },
+        trigger: trigger.type === 'event'
+          ? {
+              type: 'event' as const,
+              on: Array.isArray(trigger.on) ? trigger.on : [],
+              perGoalCooldown: trigger.perGoalCooldown || '5m',
+            }
+          : {
+              type: 'cron' as const,
+              schedule: trigger.schedule || '',
+              timezone: trigger.timezone || 'UTC',
+            },
         skill: body.skill as string | undefined,
+        args: body.args as Record<string, any> | undefined,
         action: body.action as any,
         onResult: body.onResult as any,
         goal_defaults: body.goal_defaults as any,

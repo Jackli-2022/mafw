@@ -65,6 +65,23 @@ describe('PluginEventRegistry registration and emit', () => {
     expect(broadcast).toHaveBeenCalledWith(frame);
   });
 
+  it('async sink rejection is fail-open and recorded', async () => {
+    const broadcast = jest.fn();
+    const registry = new PluginEventRegistry({
+      canonicalTypes: CANONICAL,
+      broadcast,
+      onEvent: async () => {
+        throw new Error('async sink down');
+      },
+    });
+    registry.register('demo', [event({ type: 'plugin:demo:changed' })], createRegistrationBag());
+
+    expect(registry.emit('demo', 'plugin:demo:changed', { id: 'a' })).toMatchObject({ ok: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(broadcast).toHaveBeenCalledTimes(1);
+    expect(codes(registry.getDiagnostics())).toContain('sink-failed');
+  });
+
   it('does not call onEvent for dropped events', () => {
     const sink = jest.fn();
     const registry = new PluginEventRegistry({ canonicalTypes: CANONICAL, onEvent: sink });

@@ -46,6 +46,30 @@ describe('PluginActionRegistry invocation contract', () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
+  it('passes automation metadata out-of-band without breaking strict input schemas', async () => {
+    const handler = jest.fn(() => ({ ok: true }));
+    const bag = createRegistrationBag();
+    const reg = registry();
+    reg.register('demo', [action('refresh', {
+      handler,
+      inputSchema: {
+        type: 'object',
+        properties: { region: { type: 'string' } },
+        additionalProperties: false,
+      },
+    })], bag);
+
+    await expect(
+      reg.invoke('demo', 'refresh', { region: 'cn' }, {
+        automation: { ruleId: 'r1', source: 'event' },
+      }),
+    ).resolves.toEqual({ ok: true });
+    expect(handler).toHaveBeenCalledWith(
+      { region: 'cn' },
+      expect.objectContaining({ automation: { ruleId: 'r1', source: 'event' } }),
+    );
+  });
+
   it('validates the handler output against the declared output schema', async () => {
     const handler = jest.fn(() => ({ ok: 'yes' }));
     const bag = createRegistrationBag();

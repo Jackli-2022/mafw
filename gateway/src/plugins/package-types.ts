@@ -131,6 +131,20 @@ export interface PluginContributions {
  * `handler` stays in the gateway process; only `inputSchema` / `outputSchema` /
  * metadata are projected into the client descriptor.
  */
+export interface PluginActionAutomationContext {
+  ruleId: string;
+  source?: 'cron' | 'event' | 'user' | 'llm';
+  eventType?: string;
+  sessionID?: string;
+}
+
+export interface PluginActionCallContext {
+  sessionID?: string;
+  signal: AbortSignal;
+  /** Out-of-band automation metadata; never part of the schema-validated input. */
+  automation?: PluginActionAutomationContext;
+}
+
 export interface PluginActionDeclaration {
   title?: string;
   description?: string;
@@ -142,7 +156,7 @@ export interface PluginActionDeclaration {
   timeoutMs?: number;
   handler: (
     input: unknown,
-    call: { sessionID?: string; signal: AbortSignal },
+    call: PluginActionCallContext,
   ) => unknown;
 }
 

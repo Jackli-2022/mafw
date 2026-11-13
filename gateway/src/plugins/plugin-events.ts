@@ -74,7 +74,7 @@ export interface PluginEventRegistryOptions {
   /** Gateway broadcast sink (SSE + WS + mobile push). */
   broadcast?: (event: PluginEventFrame) => void;
   /** Optional secondary sink (automation bridge); failures are fail-open. */
-  onEvent?: (event: PluginEventFrame) => void;
+  onEvent?: (event: PluginEventFrame) => void | Promise<void>;
   /** Receives every drop diagnostic; defaults to `log.warn`. */
   onDiagnostic?: (diagnostic: PluginEventDiagnostic) => void;
   /** Distinct diagnostic keys retained (default 100). */
@@ -126,7 +126,7 @@ export class PluginEventRegistry {
   private readonly diagnostics = new Map<string, PluginEventDiagnostic>();
   private readonly canonicalTypes: ReadonlySet<string>;
   private readonly broadcast?: (event: PluginEventFrame) => void;
-  private readonly onEvent?: (event: PluginEventFrame) => void;
+  private readonly onEvent?: (event: PluginEventFrame) => void | Promise<void>;
   private readonly onDiagnostic?: (diagnostic: PluginEventDiagnostic) => void;
   private readonly maxDiagnostics: number;
 
@@ -333,15 +333,21 @@ export class PluginEventRegistry {
 
     const frame: PluginEventFrame = { type, properties: payload };
     if (resolvedSession !== undefined) frame.sessionID = resolvedSession;
-    try {
-      this.onEvent?.(frame);
-    } catch (err) {
+    const recordSinkFailure = (err: unknown) => {
       this.record({
         packageName,
         type,
         code: 'sink-failed',
         message: `event sink failed: ${describeError(err)}`,
       });
+    };
+    try {
+      const result = this.onEvent?.(frame);
+      if (result && typeof (result as Promise<void>).catch === 'function') {
+        void (result as Promise<void>).catch(recordSinkFailure);
+      }
+    } catch (err) {
+      recordSinkFailure(err);
     }
     try {
       this.broadcast?.(frame);

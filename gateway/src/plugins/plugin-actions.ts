@@ -21,7 +21,11 @@ import type { ValidateFunction } from 'ajv';
 import { PLUGIN_UI_LIMITS } from '@mafw/plugin-contract';
 import { validatePluginSchema } from './package-validator';
 import type { RegistrationBag } from './registration-bag';
-import type { ActivatedAction, PluginActionDeclaration } from './package-types';
+import type {
+  ActivatedAction,
+  PluginActionAutomationContext,
+  PluginActionDeclaration,
+} from './package-types';
 
 /** Same rules the candidate validator applies; injectable for diagnostics tests. */
 export type PluginSchemaValidator = (label: string, schema: unknown) => string[];
@@ -72,6 +76,8 @@ export class PluginActionError extends Error {
 export interface PluginActionInvokeOptions {
   /** Session that triggered the action (forwarded to the handler). */
   sessionID?: string;
+  /** Out-of-band automation metadata (not schema-validated input). */
+  automation?: PluginActionAutomationContext;
   /** Caller cancellation (HTTP client disconnect). */
   signal?: AbortSignal;
   /**
@@ -352,7 +358,11 @@ export class PluginActionRegistry {
         timer.unref?.();
       });
       const handlerPromise = Promise.resolve().then(() =>
-        entry.declaration.handler(normalized, { sessionID: options.sessionID, signal: controller.signal }));
+        entry.declaration.handler(normalized, {
+          sessionID: options.sessionID,
+          signal: controller.signal,
+          ...(options.automation ? { automation: options.automation } : {}),
+        }));
 
       let output: unknown;
       try {

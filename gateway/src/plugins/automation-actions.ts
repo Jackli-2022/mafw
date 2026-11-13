@@ -4,13 +4,19 @@
 // The engine keeps local handlers first; this adapter only resolves namespaced
 // actions that the committed PluginActionRegistry actually has.
 import type { ExternalActionResolver } from '../automation-engine';
+import type { PluginActionAutomationContext } from './package-types';
 
 const PLUGIN_ACTION_PATTERN =
   /^plugin:([A-Za-z0-9][A-Za-z0-9._-]*):([A-Za-z0-9][A-Za-z0-9._-]*)$/;
 
 export interface PluginAutomationActionDeps {
   has: (packageName: string, action: string) => boolean;
-  invoke: (packageName: string, action: string, input: unknown) => Promise<unknown>;
+  invoke: (
+    packageName: string,
+    action: string,
+    input: unknown,
+    options?: { automation?: PluginActionAutomationContext },
+  ) => Promise<unknown>;
 }
 
 export function pluginAutomationActionType(packageName: string, action: string): string {
@@ -28,12 +34,12 @@ export function createPluginAutomationActionResolver(
     if (!deps.has(packageName, action)) return undefined;
     return {
       handler: async (rule, _engine, source) => {
-        const input: Record<string, unknown> = {
-          ...(rule.args ?? {}),
-          ruleId: rule.id,
-        };
-        if (source) input.source = source;
-        await deps.invoke(packageName, action, input);
+        await deps.invoke(packageName, action, rule.args ?? {}, {
+          automation: {
+            ruleId: rule.id,
+            ...(source ? { source } : {}),
+          },
+        });
       },
     };
   };

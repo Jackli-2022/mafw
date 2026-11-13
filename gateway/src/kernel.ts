@@ -2307,8 +2307,8 @@ class MafwScheduler {
     this.automationEngine?.setExternalActionResolver(
       createPluginAutomationActionResolver({
         has: (packageName, action) => host.getActionRegistry().has(packageName, action),
-        invoke: (packageName, action, input) =>
-          host.invokeAction(packageName, action, input),
+        invoke: (packageName, action, input, options) =>
+          host.invokeAction(packageName, action, input, options),
       }),
     );
   }
@@ -4579,6 +4579,16 @@ class MafwScheduler {
     this.ledger = new SchedulerLedger(projectDir);
     this.automationEngine = new AutomationEngine(mafwDir);
     this.automationEngine.setLedger(this.ledger);
+    this.automationEngine.setStateVersionProvider((goalId) => {
+      const found = this.findGoalStatePath(goalId);
+      if (!found) return null;
+      try {
+        const state = JSON.parse(fs.readFileSync(found.statePath, 'utf-8'));
+        return typeof state.stateVersion === 'number' ? state.stateVersion : null;
+      } catch {
+        return null;
+      }
+    });
 
     // P2.4 event layer: domain ingress / threads / decisions / delivery.
     // The first evaluator is deliberately conservative: only work

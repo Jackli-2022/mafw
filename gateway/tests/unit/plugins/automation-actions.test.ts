@@ -8,8 +8,8 @@ describe('plugin automation actions', () => {
     const calls: unknown[] = [];
     const resolver = createPluginAutomationActionResolver({
       has: (pkg, action) => pkg === 'demo' && action === 'refresh',
-      invoke: async (pkg, action, input) => {
-        calls.push([pkg, action, input]);
+      invoke: async (pkg, action, input, options) => {
+        calls.push([pkg, action, input, options]);
       },
     });
 
@@ -21,7 +21,7 @@ describe('plugin automation actions', () => {
       'event',
     );
     expect(calls).toEqual([
-      ['demo', 'refresh', { region: 'cn', ruleId: 'r1', source: 'event' }],
+      ['demo', 'refresh', { region: 'cn' }, { automation: { ruleId: 'r1', source: 'event' } }],
     ]);
   });
 
@@ -35,12 +35,12 @@ describe('plugin automation actions', () => {
     expect(resolver('plugin:demo')).toBeUndefined();
   });
 
-  test('metadata wins over colliding rule args', async () => {
+  test('automation metadata stays out of the action input', async () => {
     const calls: unknown[] = [];
     const resolver = createPluginAutomationActionResolver({
       has: () => true,
-      invoke: async (_pkg, _action, input) => {
-        calls.push(input);
+      invoke: async (_pkg, _action, input, options) => {
+        calls.push([input, options]);
       },
     });
     await resolver('plugin:demo:refresh')!.handler(
@@ -48,6 +48,11 @@ describe('plugin automation actions', () => {
       {} as any,
       'user',
     );
-    expect(calls).toEqual([{ ruleId: 'r1', source: 'user' }]);
+    expect(calls).toEqual([
+      [
+        { ruleId: 'spoofed', source: 'cron' },
+        { automation: { ruleId: 'r1', source: 'user' } },
+      ],
+    ]);
   });
 });

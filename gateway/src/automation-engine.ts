@@ -394,6 +394,7 @@ export class AutomationEngine {
   private actions = new Map<string, RegisteredAction>();
   private actionsProvider?: () => void;
   private externalActionResolver?: ExternalActionResolver;
+  private stateVersionProvider?: (goalId: string) => number | null;
   /** Monotonic per-engine sequence for task ids (Date.now() collides when two
    *  triggers of the same action land in the same millisecond �� B2 M2). */
   private _actionSeq = 0;
@@ -421,6 +422,11 @@ export class AutomationEngine {
   /** Optional bridge for actions that live outside the local map (plugin packs). */
   setExternalActionResolver(resolver: ExternalActionResolver | null): void {
     this.externalActionResolver = resolver ?? undefined;
+  }
+
+  /** Resolve a goal's state version from its real project `.mafw` directory. */
+  setStateVersionProvider(resolver: ((goalId: string) => number | null) | null): void {
+    this.stateVersionProvider = resolver ?? undefined;
   }
 
   canResolveAction(type: string): boolean {
@@ -579,7 +585,11 @@ export class AutomationEngine {
       // dangling scheduled tick should never block exit.
       const job = new CronJob(
         cronTrigger.schedule,
-        () => this.executeRule(id, 'cron', this._ledger),
+        () => {
+          void this.executeRule(id, 'cron', this._ledger).catch((err) =>
+            log.error(`[AutomationEngine] cron rule ${id} failed: ${err?.message || err}`),
+          );
+        },
         null,
         true,
         cronTrigger.timezone,
@@ -607,7 +617,9 @@ export class AutomationEngine {
 
     const handler = (_data: any) => {
       const goalId = _data?.goalId;
-      if (goalId) this.fireEventRule(rule, goalId, `goal:${this.getStateVersion(goalId)}`);
+      if (!goalId) return;
+      const version = this.getStateVersion(goalId);
+      this.fireEventRule(rule, goalId, version === null ? undefined : `goal:${version}`);
     };
 
     const refs: Array<{ event: string; handler: (...args: any[]) => void }> = [];
@@ -632,52 +644,88 @@ export class AutomationEngine {
   }): void {
     if (!event || typeof event.type !== 'string') return;
     const properties = event.properties ?? {};
-    const goalId = typeof properties.goalId === 'string' ? properties.goalId : undefined;
+    const rawGoalId = typeof properties.goalId === 'string' ? properties.goalId : undefined;
+    const goalId = rawGoalId && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(rawGoalId) ? rawGoalId : undefined;
     const scopeId = goalId ?? event.sessionID ?? 'external';
-    const dedupeKey = goalId ? `goal:${this.getStateVersion(goalId)}` : undefined;
+    const version = goalId ? this.getStateVersion(goalId) : null;
+    const dedupeKey = version === null ? undefined : `goal:${version}`;
 
     for (const rule of this.rules.values()) {
       if (!rule.enabled || rule.trigger?.type !== 'event') continue;
       if (!rule.trigger.on.includes(event.type)) continue;
       try {
-        this.fireEventRule(rule, scopeId, dedupeKey);
+        // External events are package-controlled; enforce a small floor so a
+        // missing/typo'd cooldown cannot create an event storm.
+        this.fireEventRule(rule, scopeId, dedupeKey, 1000);
       } catch (err: any) {
         log.warn(`[AutomationEngine] External event rule ${rule.id} failed: ${err?.message || err}`);
       }
     }
   }
 
-  private fireEventRule(rule: AutomationRule, scopeId: string, dedupeKey?: string): void {
+  private fireEventRule(
+    rule: AutomationRule,
+    scopeId: string,
+    dedupeKey?: string,
+    minCooldownMs = 0,
+  ): void {
     const et = rule.trigger as EventTrigger;
 
-    const cooldownMs = parseDuration(et.perGoalCooldown) ?? 0;
+    const cooldownMs = Math.max(parseDuration(et.perGoalCooldown) ?? 0, minCooldownMs);
     const lastFire = this.lastFireTimes.get(`${rule.id}:${scopeId}`);
     if (lastFire && Date.now() - lastFire < cooldownMs) return;
 
     let pairKey: string | undefined;
     if (dedupeKey) {
-      pairKey = `${scopeId}:${dedupeKey}`;
+      pairKey = `${rule.id}:${scopeId}:${dedupeKey}`;
       if (this.reportedPairs.has(pairKey)) return;
     }
 
     this.lastFireTimes.set(`${rule.id}:${scopeId}`, Date.now());
     if (pairKey) this.reportedPairs.add(pairKey);
+    this.pruneEventState();
 
     if (rule.action) {
-      this.executeRule(rule.id, 'event', this._ledger);
+      void this.executeRule(rule.id, 'event', this._ledger).catch((err) =>
+        log.error(`[AutomationEngine] event rule ${rule.id} failed: ${err?.message || err}`),
+      );
     }
   }
 
-  private getStateVersion(_goalId: string): number {
-    const stateDir = path.join(this.mafwDir, 'state');
-    const stateFile = path.join(stateDir, `${_goalId}.json`);
-    if (fs.existsSync(stateFile)) {
+  private getStateVersion(goalId: string): number | null {
+    if (this.stateVersionProvider) {
       try {
-        const s = JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
-        return s.stateVersion ?? 0;
-      } catch { return 0; }
+        return this.stateVersionProvider(goalId);
+      } catch {
+        return null;
+      }
     }
-    return 0;
+    const stateFile = path.join(this.mafwDir, 'state', `${goalId}.json`);
+    if (!fs.existsSync(stateFile)) return null;
+    try {
+      const state = JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
+      return typeof state.stateVersion === 'number' ? state.stateVersion : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Bound event bookkeeping; insertion order makes the oldest entries go first. */
+  private pruneEventState(): void {
+    const limit = 5000;
+    const target = 4000;
+    if (this.lastFireTimes.size > limit) {
+      for (const key of this.lastFireTimes.keys()) {
+        if (this.lastFireTimes.size <= target) break;
+        this.lastFireTimes.delete(key);
+      }
+    }
+    if (this.reportedPairs.size > limit) {
+      for (const key of this.reportedPairs) {
+        if (this.reportedPairs.size <= target) break;
+        this.reportedPairs.delete(key);
+      }
+    }
   }
 
   private unregisterEventRule(id: string): void {
@@ -691,6 +739,9 @@ export class AutomationEngine {
     this.eventListeners.forEach((ids) => ids.delete(id));
     for (const key of this.lastFireTimes.keys()) {
       if (key.startsWith(`${id}:`)) this.lastFireTimes.delete(key);
+    }
+    for (const key of this.reportedPairs) {
+      if (key.startsWith(`${id}:`)) this.reportedPairs.delete(key);
     }
   }
 

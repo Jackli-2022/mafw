@@ -105,6 +105,36 @@ describe('automation registry wiring (D1 Task C1)', () => {
     expect(ledgers[0]).toMatchObject({ event: 'AUTOMATION_TRIGGERED', ruleId: 'r2', reason: 'rule_drafted' });
   });
 
+  it('draft accepts an event trigger for plugin events', async () => {
+    const { registry, drafted } = setup();
+    const r = fakeRes();
+    await handlerFor(registry, 'POST', '/api/automations/draft')!(
+      fakeReq({
+        url: '/api/automations/draft',
+        method: 'POST',
+        body: JSON.stringify({
+          id: 'r3',
+          trigger: {
+            type: 'event',
+            on: ['plugin:demo:changed'],
+            perGoalCooldown: '2m',
+          },
+          action: { type: 'plugin:demo:refresh' },
+        }),
+      }),
+      r.res,
+    );
+    expect(drafted[0]).toMatchObject({
+      id: 'r3',
+      enabled: false,
+      trigger: {
+        type: 'event',
+        on: ['plugin:demo:changed'],
+        perGoalCooldown: '2m',
+      },
+    });
+  });
+
   it('draft returns 503 when the engine is absent (not 500)', async () => {
     const registry = new RouteRegistry().register(...buildRouteCatalog());
     attachAutomationRoutes(registry, { automationEngine: () => undefined, ledger: () => undefined });
