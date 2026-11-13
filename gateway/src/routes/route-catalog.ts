@@ -36,6 +36,16 @@ import { KernelStatsResponse } from './schemas/resources';
 import { EventReplayResponse } from './schemas/events';
 import { PodDetailResponse } from './schemas/pods';
 import { MemoryStatsResponse } from './schemas/memory-stats';
+import {
+  SessionCheckpointsResponse,
+  SessionChildrenResponse,
+  SessionConfigResponse,
+  SessionDiffResponse,
+  SessionQueueListResponse,
+  SessionSubagentsResponse,
+  SessionTodoResponse,
+  SessionTokenSummaryResponse,
+} from './schemas/session-read';
 
 /**
  * SDK-facing 端点（catalog → gateway-paths → openapi 单向生成；**在此新增**后必须重跑
@@ -50,8 +60,8 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/cognition/gate', operationId: 'cognition.gate', tags: ['cognition'] },
   { method: 'POST', path: '/api/cognition/rewrite', operationId: 'cognition.rewrite', tags: ['cognition'] },
   { method: 'GET', path: '/api/cognition/rules', operationId: 'cognition.rules', tags: ['cognition'] },
-  { method: 'GET', path: '/api/session/:id/queue', operationId: 'session.queue.list', tags: ['session'] },
-  { method: 'GET', path: '/api/session/:id/config', operationId: 'session.config', tags: ['session'] },
+  { method: 'GET', path: '/api/session/:id/queue', operationId: 'session.queue.list', tags: ['session'], response: SessionQueueListResponse },
+  { method: 'GET', path: '/api/session/:id/config', operationId: 'session.config', tags: ['session'], response: SessionConfigResponse },
   { method: 'POST', path: '/api/session/:id/config', operationId: 'session.config.set', tags: ['session'] },
   { method: 'DELETE', path: '/api/session/:id/queue', operationId: 'session.queue.clear', tags: ['session'] },
   { method: 'DELETE', path: '/api/session/:id/queue/:itemId', operationId: 'session.queue.cancel', tags: ['session'] },
@@ -61,8 +71,8 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'DELETE', path: '/api/sessions/:id', operationId: 'session.delete', tags: ['session'] },
   { method: 'PATCH', path: '/api/sessions/:id', operationId: 'session.rename', tags: ['session'] },
   { method: 'GET', path: '/api/sessions/:id/messages', operationId: 'session.messages', summary: 'Session message history (MAFW flat DTO)', tags: ['session'], response: SessionMessagesResponse },
-  { method: 'GET', path: '/api/sessions/:id/todo', operationId: 'session.todo', tags: ['session'] },
-  { method: 'GET', path: '/api/sessions/:id/children', operationId: 'session.children', tags: ['session'] },
+  { method: 'GET', path: '/api/sessions/:id/todo', operationId: 'session.todo', tags: ['session'], response: SessionTodoResponse },
+  { method: 'GET', path: '/api/sessions/:id/children', operationId: 'session.children', tags: ['session'], response: SessionChildrenResponse },
   { method: 'GET', path: '/api/sessions/:id/structured', operationId: 'session.structured', tags: ['session'] },
   { method: 'POST', path: '/api/sessions/:id/agent', operationId: 'session.switchAgent', tags: ['session'] },
   { method: 'POST', path: '/api/sessions/:id/model', operationId: 'session.switchModel', tags: ['session'] },
@@ -74,14 +84,14 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/tasks/:id/message', operationId: 'tasks.message', tags: ['task'] },
   { method: 'GET', path: '/api/tasks/:id/output', operationId: 'tasks.output', tags: ['task'] },
   { method: 'GET', path: '/api/sessions/:id/trajectory', operationId: 'session.trajectory', tags: ['session'] },
-  { method: 'GET', path: '/api/sessions/:id/token-summary', operationId: 'session.tokenSummary', tags: ['session'] },
+  { method: 'GET', path: '/api/sessions/:id/token-summary', operationId: 'session.tokenSummary', tags: ['session'], response: SessionTokenSummaryResponse },
   { method: 'POST', path: '/api/sessions/:id/fork', operationId: 'session.fork', tags: ['session'] },
   { method: 'POST', path: '/api/sessions/:id/revert', operationId: 'session.revert', tags: ['session'] },
   { method: 'POST', path: '/api/sessions/:id/unrevert', operationId: 'session.unrevert', tags: ['session'] },
-  { method: 'GET', path: '/api/sessions/:id/diff', operationId: 'session.diff', tags: ['session'] },
+  { method: 'GET', path: '/api/sessions/:id/diff', operationId: 'session.diff', tags: ['session'], response: SessionDiffResponse },
   { method: 'POST', path: '/api/sessions/:id/diff/revert', operationId: 'session.revertDiff', tags: ['session'] },
   { method: 'POST', path: '/api/sessions/:id/checkpoint', operationId: 'session.checkpoint', tags: ['session'] },
-  { method: 'GET', path: '/api/sessions/:id/checkpoints', operationId: 'session.checkpoints', tags: ['session'] },
+  { method: 'GET', path: '/api/sessions/:id/checkpoints', operationId: 'session.checkpoints', tags: ['session'], response: SessionCheckpointsResponse },
   { method: 'POST', path: '/api/sessions/:id/checkpoints/:checkpointId/restore', operationId: 'session.restoreCheckpoint', tags: ['session'] },
   { method: 'POST', path: '/api/sessions/:id/suspend', operationId: 'session.suspend', tags: ['session'] },
   { method: 'POST', path: '/api/sessions/:id/resume', operationId: 'session.resume', tags: ['session'] },
@@ -395,7 +405,7 @@ const NON_SDK_ROUTES: RouteDef[] = [
   // /subagents 调用；packages/runtime-core/src 与 packages/desktop/src 也不发这些
   // 请求，只有 gateway 内 mafw-tools 走 HTTP）→ NON_SDK + internal，SDK 死契约门豁免。
   { method: 'POST', path: '/api/sessions/:id/subagents', operationId: 'session.subagents.spawn', tags: ['internal'] },
-  { method: 'GET', path: '/api/sessions/:id/subagents', operationId: 'session.subagents.list', tags: ['internal'] },
+  { method: 'GET', path: '/api/sessions/:id/subagents', operationId: 'session.subagents.list', tags: ['internal'], response: SessionSubagentsResponse },
   { method: 'POST', path: '/api/sessions/:id/subagents/:subId/message', operationId: 'session.subagents.message', tags: ['internal'] },
   { method: 'POST', path: '/api/sessions/:id/subagents/:subId/cancel', operationId: 'session.subagents.cancel', tags: ['internal'] },
   { method: 'GET', path: '/api/sessions/:id/subagents/:subId/result', operationId: 'session.subagents.result', tags: ['internal'] },

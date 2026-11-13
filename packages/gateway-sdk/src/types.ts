@@ -373,8 +373,8 @@ export interface SessionConfigState {
   model?: { providerID: string; modelID: string }
   variant?: string
   thinkingLevel?: ThinkingLevel
-  /** runtime 是否支持 thought_level（桌面菜单 Thinking 行渲染禁用态）。 */
-  thinkingLevelSupported?: boolean
+  /** runtime 是否支持 thought_level（桌面菜单 Thinking 行渲染禁用态）；`get()` 恒发。 */
+  thinkingLevelSupported: boolean
 }
 
 export interface SessionNamespace {
@@ -417,7 +417,7 @@ export interface SessionNamespace {
   /** T2-1：手动创建检查点（messageID 缺省=最后一条已持久化消息；tree=最后已知 snapshot.end） */
   checkpoint(params: { path: { id: string }; body?: { messageID?: string } }): Promise<{ checkpoint: SessionCheckpoint }>
   /** T2-1：检查点列表（倒序） */
-  checkpoints(params: { path: { id: string } }): Promise<{ checkpoints: SessionCheckpoint[] }>
+  checkpoints(params: { path: { id: string } }): Promise<{ checkpoints: SessionCheckpointListItem[] }>
   /** T2-1：三态恢复（session=截断历史 / files=回工作区 / both=全部；confirm 必填） */
   restoreCheckpoint(params: { path: { id: string; checkpointId: string }; body: { scope: CheckpointScope; confirm: true } }): Promise<CheckpointRestoreResult>
   /** T2-2：暂停当前回合（忙时；abort + 续跑简报） */
@@ -490,12 +490,20 @@ export interface SessionCheckpoint {
   untracked: string[]
   kind: 'auto' | 'manual'
   createdAt: string
-  /** Experience Contract：前端直接渲染的恢复动作，不再自行推导 runtime 语义。 */
-  actions?: {
-    restoreConversation: import('./experience-contract').ActionDescriptor
-    restoreFiles: import('./experience-contract').ActionDescriptor
-    restoreBoth: import('./experience-contract').ActionDescriptor
-  }
+  /** Experience Contract：前端直接渲染的恢复动作，不再自行推导 runtime 语义（列表响应恒带，创建响应不带）。 */
+  actions?: SessionCheckpointActions
+}
+
+/** 检查点的三态恢复动作（Experience ActionDescriptor 三件套）。 */
+export interface SessionCheckpointActions {
+  restoreConversation: import('./experience-contract').ActionDescriptor
+  restoreFiles: import('./experience-contract').ActionDescriptor
+  restoreBoth: import('./experience-contract').ActionDescriptor
+}
+
+/** GET /api/sessions/:id/checkpoints 的列表条目：handler 恒挂 actions（创建响应不带）。 */
+export interface SessionCheckpointListItem extends SessionCheckpoint {
+  actions: SessionCheckpointActions
 }
 
 export interface CheckpointRestoreResult {
@@ -506,6 +514,26 @@ export interface CheckpointRestoreResult {
   leftoverUntracked?: string[]
   /** files restore 的后悔药 checkpoint id。 */
   preRestoreCheckpointId?: string
+}
+
+// ── subagent 记录面（GET /api/sessions/:id/subagents）──
+
+/** gateway-owned 子代理记录（runtime 子会话 + 网关编排状态；batch3 契约）。 */
+export interface SubagentRecord {
+  id: string
+  parentID: string
+  depth: number
+  agent?: string
+  description?: string
+  status: 'running' | 'completed' | 'failed' | 'aborted'
+  background?: boolean
+  createdAt: number
+  updatedAt: number
+  error?: string
+}
+
+export interface SubagentList {
+  items: SubagentRecord[]
 }
 
 // ── T2-2 runs (soft suspend) ──

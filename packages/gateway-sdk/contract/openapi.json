@@ -419,7 +419,125 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "sessionID",
+                          "enqueuedAt",
+                          "source"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "sessionID": {
+                            "type": "string"
+                          },
+                          "text": {
+                            "type": "string"
+                          },
+                          "parts": {
+                            "type": "array",
+                            "items": {
+                              "additionalProperties": true,
+                              "type": "object",
+                              "required": [
+                                "type"
+                              ],
+                              "properties": {
+                                "type": {
+                                  "type": "string"
+                                },
+                                "text": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          },
+                          "agent": {
+                            "type": "string"
+                          },
+                          "model": {
+                            "type": "object",
+                            "required": [
+                              "providerID",
+                              "modelID"
+                            ],
+                            "properties": {
+                              "providerID": {
+                                "type": "string"
+                              },
+                              "modelID": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "expectReply": {
+                            "type": "boolean"
+                          },
+                          "idempotencyKey": {
+                            "type": "string"
+                          },
+                          "thinkingLevel": {
+                            "anyOf": [
+                              {
+                                "const": "off",
+                                "type": "string"
+                              },
+                              {
+                                "const": "minimal",
+                                "type": "string"
+                              },
+                              {
+                                "const": "low",
+                                "type": "string"
+                              },
+                              {
+                                "const": "medium",
+                                "type": "string"
+                              },
+                              {
+                                "const": "high",
+                                "type": "string"
+                              },
+                              {
+                                "const": "xhigh",
+                                "type": "string"
+                              },
+                              {
+                                "const": "max",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "variant": {
+                            "type": "string"
+                          },
+                          "enqueuedAt": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       },
@@ -463,7 +581,92 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "mode",
+                    "thinkingLevelSupported"
+                  ],
+                  "properties": {
+                    "mode": {
+                      "anyOf": [
+                        {
+                          "const": "read-only",
+                          "type": "string"
+                        },
+                        {
+                          "const": "auto",
+                          "type": "string"
+                        },
+                        {
+                          "const": "full-access",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "agent": {
+                      "type": "string"
+                    },
+                    "model": {
+                      "type": "object",
+                      "required": [
+                        "providerID",
+                        "modelID"
+                      ],
+                      "properties": {
+                        "providerID": {
+                          "type": "string"
+                        },
+                        "modelID": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "variant": {
+                      "type": "string"
+                    },
+                    "thinkingLevel": {
+                      "anyOf": [
+                        {
+                          "const": "off",
+                          "type": "string"
+                        },
+                        {
+                          "const": "minimal",
+                          "type": "string"
+                        },
+                        {
+                          "const": "low",
+                          "type": "string"
+                        },
+                        {
+                          "const": "medium",
+                          "type": "string"
+                        },
+                        {
+                          "const": "high",
+                          "type": "string"
+                        },
+                        {
+                          "const": "xhigh",
+                          "type": "string"
+                        },
+                        {
+                          "const": "max",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "thinkingLevelSupported": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       },
@@ -1182,7 +1385,45 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "content",
+                          "status",
+                          "priority"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "content": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "priority": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -1205,7 +1446,38 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "additionalProperties": true,
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "depth"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "depth": {
+                            "type": "number"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -1449,7 +1721,98 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "totalTokens",
+                    "totalCost",
+                    "turnCount",
+                    "avgTokensPerTurn"
+                  ],
+                  "properties": {
+                    "totalTokens": {
+                      "type": "object",
+                      "required": [
+                        "input",
+                        "output",
+                        "reasoning",
+                        "cache"
+                      ],
+                      "properties": {
+                        "input": {
+                          "type": "number"
+                        },
+                        "output": {
+                          "type": "number"
+                        },
+                        "reasoning": {
+                          "type": "number"
+                        },
+                        "cache": {
+                          "type": "object",
+                          "required": [
+                            "read",
+                            "write"
+                          ],
+                          "properties": {
+                            "read": {
+                              "type": "number"
+                            },
+                            "write": {
+                              "type": "number"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "totalCost": {
+                      "type": "number"
+                    },
+                    "turnCount": {
+                      "type": "number"
+                    },
+                    "avgTokensPerTurn": {
+                      "type": "object",
+                      "required": [
+                        "input",
+                        "output",
+                        "reasoning",
+                        "cache"
+                      ],
+                      "properties": {
+                        "input": {
+                          "type": "number"
+                        },
+                        "output": {
+                          "type": "number"
+                        },
+                        "reasoning": {
+                          "type": "number"
+                        },
+                        "cache": {
+                          "type": "object",
+                          "required": [
+                            "read",
+                            "write"
+                          ],
+                          "properties": {
+                            "read": {
+                              "type": "number"
+                            },
+                            "write": {
+                              "type": "number"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -1541,7 +1904,66 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "files"
+                  ],
+                  "properties": {
+                    "files": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "file"
+                        ],
+                        "properties": {
+                          "file": {
+                            "type": "string"
+                          },
+                          "patch": {
+                            "type": "string"
+                          },
+                          "additions": {
+                            "type": "number"
+                          },
+                          "deletions": {
+                            "type": "number"
+                          },
+                          "status": {
+                            "anyOf": [
+                              {
+                                "const": "added",
+                                "type": "string"
+                              },
+                              {
+                                "const": "modified",
+                                "type": "string"
+                              },
+                              {
+                                "const": "deleted",
+                                "type": "string"
+                              },
+                              {
+                                "const": "renamed",
+                                "type": "string"
+                              },
+                              {
+                                "const": "unknown",
+                                "type": "string"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -1610,7 +2032,235 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "checkpoints"
+                  ],
+                  "properties": {
+                    "checkpoints": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "sessionID",
+                          "projectDir",
+                          "anchorMessageID",
+                          "snapshotTree",
+                          "untracked",
+                          "kind",
+                          "createdAt",
+                          "actions"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "sessionID": {
+                            "type": "string"
+                          },
+                          "projectDir": {
+                            "type": "string"
+                          },
+                          "anchorMessageID": {
+                            "type": "string"
+                          },
+                          "snapshotTree": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "untracked": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "kind": {
+                            "anyOf": [
+                              {
+                                "const": "auto",
+                                "type": "string"
+                              },
+                              {
+                                "const": "manual",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "actions": {
+                            "type": "object",
+                            "required": [
+                              "restoreConversation",
+                              "restoreFiles",
+                              "restoreBoth"
+                            ],
+                            "properties": {
+                              "restoreConversation": {
+                                "type": "object",
+                                "required": [
+                                  "supported",
+                                  "enabled"
+                                ],
+                                "properties": {
+                                  "supported": {
+                                    "type": "boolean"
+                                  },
+                                  "enabled": {
+                                    "type": "boolean"
+                                  },
+                                  "reason": {
+                                    "anyOf": [
+                                      {
+                                        "const": "unsupported",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "busy",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "missing-data",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "non-invertible-patch",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "unsafe",
+                                        "type": "string"
+                                      }
+                                    ]
+                                  },
+                                  "warningKey": {
+                                    "type": "string"
+                                  },
+                                  "semantics": {
+                                    "type": "object",
+                                    "patternProperties": {
+                                      "^(.*)$": {}
+                                    }
+                                  }
+                                }
+                              },
+                              "restoreFiles": {
+                                "type": "object",
+                                "required": [
+                                  "supported",
+                                  "enabled"
+                                ],
+                                "properties": {
+                                  "supported": {
+                                    "type": "boolean"
+                                  },
+                                  "enabled": {
+                                    "type": "boolean"
+                                  },
+                                  "reason": {
+                                    "anyOf": [
+                                      {
+                                        "const": "unsupported",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "busy",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "missing-data",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "non-invertible-patch",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "unsafe",
+                                        "type": "string"
+                                      }
+                                    ]
+                                  },
+                                  "warningKey": {
+                                    "type": "string"
+                                  },
+                                  "semantics": {
+                                    "type": "object",
+                                    "patternProperties": {
+                                      "^(.*)$": {}
+                                    }
+                                  }
+                                }
+                              },
+                              "restoreBoth": {
+                                "type": "object",
+                                "required": [
+                                  "supported",
+                                  "enabled"
+                                ],
+                                "properties": {
+                                  "supported": {
+                                    "type": "boolean"
+                                  },
+                                  "enabled": {
+                                    "type": "boolean"
+                                  },
+                                  "reason": {
+                                    "anyOf": [
+                                      {
+                                        "const": "unsupported",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "busy",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "missing-data",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "non-invertible-patch",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "unsafe",
+                                        "type": "string"
+                                      }
+                                    ]
+                                  },
+                                  "warningKey": {
+                                    "type": "string"
+                                  },
+                                  "semantics": {
+                                    "type": "object",
+                                    "patternProperties": {
+                                      "^(.*)$": {}
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -10123,7 +10773,82 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "parentID",
+                          "depth",
+                          "status",
+                          "createdAt",
+                          "updatedAt"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "parentID": {
+                            "type": "string"
+                          },
+                          "depth": {
+                            "type": "number"
+                          },
+                          "agent": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "anyOf": [
+                              {
+                                "const": "running",
+                                "type": "string"
+                              },
+                              {
+                                "const": "completed",
+                                "type": "string"
+                              },
+                              {
+                                "const": "failed",
+                                "type": "string"
+                              },
+                              {
+                                "const": "aborted",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "background": {
+                            "type": "boolean"
+                          },
+                          "createdAt": {
+                            "type": "number"
+                          },
+                          "updatedAt": {
+                            "type": "number"
+                          },
+                          "error": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }

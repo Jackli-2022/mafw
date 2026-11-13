@@ -13,7 +13,7 @@ import {
   DiscoverySnapshot, DiscoverySkillContent,
   Approval, TriageItem, AutomationRule, Todo,
   QuestionRequest, PermissionRequest, MediaPluginState, PermissionRule, FileDiffInfo,
-  SessionCheckpoint, CheckpointScope, CheckpointRestoreResult, RunState, DataPart,
+  SessionCheckpoint, SessionCheckpointListItem, CheckpointScope, CheckpointRestoreResult, RunState, DataPart,
   TaskEntity, TaskSubmitInput, TaskOutput, QueueItem,
   MafwBackgroundOutput, BackgroundNamespace,
   TerminalNamespace, TerminalSessionList, TerminalConnectTicket, TerminalSessionCreateInput,
@@ -296,11 +296,11 @@ export class MafwClient implements IMafwClient {
       })
     },
 
-    /** T2-1：检查点列表（倒序） */
+    /** T2-1：检查点列表（倒序；列表条目恒带 Experience actions） */
     checkpoints: async (
       params: { path: { id: string } },
-    ): Promise<{ checkpoints: SessionCheckpoint[] }> => {
-      return this.request<{ checkpoints: SessionCheckpoint[] }>(`/api/sessions/${params.path.id}/checkpoints`)
+    ): Promise<{ checkpoints: SessionCheckpointListItem[] }> => {
+      return this.request<{ checkpoints: SessionCheckpointListItem[] }>(`/api/sessions/${params.path.id}/checkpoints`)
     },
 
     /** T2-1：三态恢复（destructive——confirm 必填） */

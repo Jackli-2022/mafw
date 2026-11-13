@@ -4790,7 +4790,32 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            sessionID: string;
+                            text?: string;
+                            parts?: ({
+                                type: string;
+                                text?: string;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                            agent?: string;
+                            model?: {
+                                providerID: string;
+                                modelID: string;
+                            };
+                            expectReply?: boolean;
+                            idempotencyKey?: string;
+                            thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                            variant?: string;
+                            enqueuedAt: string;
+                            source: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -4830,7 +4855,19 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        mode: "read-only" | "auto" | "full-access";
+                        agent?: string;
+                        model?: {
+                            providerID: string;
+                            modelID: string;
+                        };
+                        variant?: string;
+                        thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                        thinkingLevelSupported: boolean;
+                    };
+                };
             };
         };
     };
@@ -5102,7 +5139,16 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        data: {
+                            id: string;
+                            content: string;
+                            status: string;
+                            priority: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -5122,7 +5168,16 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: ({
+                            id: string;
+                            depth: number;
+                        } & {
+                            [key: string]: unknown;
+                        })[];
+                    };
+                };
             };
         };
     };
@@ -5356,7 +5411,30 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        totalTokens: {
+                            input: number;
+                            output: number;
+                            reasoning: number;
+                            cache: {
+                                read: number;
+                                write: number;
+                            };
+                        };
+                        totalCost: number;
+                        turnCount: number;
+                        avgTokensPerTurn: {
+                            input: number;
+                            output: number;
+                            reasoning: number;
+                            cache: {
+                                read: number;
+                                write: number;
+                            };
+                        };
+                    };
+                };
             };
         };
     };
@@ -5436,7 +5514,17 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        files: {
+                            file: string;
+                            patch?: string;
+                            additions?: number;
+                            deletions?: number;
+                            status?: "added" | "modified" | "deleted" | "renamed" | "unknown";
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -5496,7 +5584,49 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        checkpoints: {
+                            id: string;
+                            sessionID: string;
+                            projectDir: string;
+                            anchorMessageID: string;
+                            snapshotTree: string | null;
+                            untracked: string[];
+                            kind: "auto" | "manual";
+                            createdAt: string;
+                            actions: {
+                                restoreConversation: {
+                                    supported: boolean;
+                                    enabled: boolean;
+                                    reason?: "unsupported" | "busy" | "missing-data" | "non-invertible-patch" | "unsafe";
+                                    warningKey?: string;
+                                    semantics?: {
+                                        [key: string]: unknown;
+                                    };
+                                };
+                                restoreFiles: {
+                                    supported: boolean;
+                                    enabled: boolean;
+                                    reason?: "unsupported" | "busy" | "missing-data" | "non-invertible-patch" | "unsafe";
+                                    warningKey?: string;
+                                    semantics?: {
+                                        [key: string]: unknown;
+                                    };
+                                };
+                                restoreBoth: {
+                                    supported: boolean;
+                                    enabled: boolean;
+                                    reason?: "unsupported" | "busy" | "missing-data" | "non-invertible-patch" | "unsafe";
+                                    warningKey?: string;
+                                    semantics?: {
+                                        [key: string]: unknown;
+                                    };
+                                };
+                            };
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -11160,7 +11290,22 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            parentID: string;
+                            depth: number;
+                            agent?: string;
+                            description?: string;
+                            status: "running" | "completed" | "failed" | "aborted";
+                            background?: boolean;
+                            createdAt: number;
+                            updatedAt: number;
+                            error?: string;
+                        }[];
+                    };
+                };
             };
         };
     };
