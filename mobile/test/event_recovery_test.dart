@@ -384,6 +384,63 @@ void main() {
       expect(h.fallbacks, [RecoveryFallback.truncated]);
     });
 
+    test('reset / truncated may lower the cursor to a same-instance head',
+        () async {
+      for (final reset in [true, false]) {
+        // E8-4: a same-instance reset can hand out a head below the cursor
+        // (event log cleared/restarted). The explicit reset is authoritative —
+        // keeping the higher cursor would reset-loop on every reconnect.
+        final h = _Harness(cursor: 50, instanceId: 'inst-a', fetch: (_, _) async {
+          return _page(
+            headSeq: 12,
+            nextSince: 12,
+            reset: reset,
+            truncated: !reset,
+          );
+        });
+        await h.service.init();
+
+        final outcome = await h.service.recover();
+
+        expect(outcome.kind, RecoveryOutcomeKind.fellBack);
+        expect(
+          outcome.reason,
+          reset ? RecoveryFallback.reset : RecoveryFallback.truncated,
+        );
+        expect(h.service.cursor, 12, reason: 'explicit reset overrides monotonic');
+        expect(h.store.seq, 12);
+
+        // Normal frames stay monotonic after the downward reset.
+        h.service.observe(_event(11));
+        expect(h.service.cursor, 12);
+        h.service.observe(_event(13));
+        expect(h.service.cursor, 13);
+      }
+    });
+
+    test('isRecovering / settled track the in-flight run', () async {
+      final gate = Completer<EventReplayPage?>();
+      final h = _Harness(cursor: 5, fetch: (_, _) => gate.future);
+      await h.service.init();
+
+      expect(h.service.isRecovering, isFalse);
+
+      final run = h.service.recover();
+      expect(h.service.isRecovering, isTrue);
+
+      var settled = false;
+      final waited = h.service.settled.then((_) => settled = true);
+      await _settle();
+      expect(settled, isFalse);
+
+      gate.complete(_page(headSeq: 5, nextSince: 5));
+      await run;
+      await waited;
+
+      expect(settled, isTrue);
+      expect(h.service.isRecovering, isFalse);
+    });
+
     test('reset on page 2 falls back to headSeq, not the page-1 nextSince',
         () async {
       final calls = <int>[];

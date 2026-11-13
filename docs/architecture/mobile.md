@@ -240,10 +240,17 @@ mafw logs
   - **重连 / 冷启动**：`RecoveryCoordinator` 先 `await EventRecoveryService.recover()` 从持久游标逐页补齐（每页 500，上限 100 页），按 `seq` 去重（`seq <= 游标` 丢弃；recovered 帧经 `WsClientV2.emitRecovered` 回到与 live 相同的 stream，带 `recovered` provenance，Chat / Tech Lead 只用它刷新历史、不驱动当前发送的 `_sending` / `_phase`），**补完之后**才刷新工作 tab 与已打开页面；`main.dart` 在 `recovery.init()` 后复检 `mounted`，已销毁的 State 不再接线；
   - **缺口无法补齐**：`reset` / `truncated` / replay 请求失败 / 旧网关 404·503 / **`hasMore` 页
     `nextSince <= since`（协议违约，E7-5）** → 全量重拉（reset/truncated 把游标钉到 `headSeq`，
+    显式 reset 即使 `headSeq` **低于**当前游标也照落——同实例事件日志重启后旧游标属于死 seq 空间，
+    只抬不降会无限 reset-loop，E8-4 收口；非 reset 的 live 帧 `observe` 仍单调。
     protocol 违约把游标留在最后已应用 seq，临时失败保留旧游标下次重试）；greeting 的 `instanceId`
-    与存档不同 = 事件日志换纪元 → 丢弃游标、按新 head 重建 baseline 并全量重拉；
+    与存档不同 = 事件日志换纪元 → 丢弃游标、按新 head 重建 baseline 并全量重拉（换纪元的 greeting
+    不排队：在途 replay 属于旧纪元，直接重建更安全）；
+  - **busy greeting（E8-4）**：replay 在途时到达的 greeting 最多挂起**一个**，等在途 recover
+    `settled` 后立即重跑一次（replay → refresh）；第二个并发 greeting 冗余、直接丢弃
+    （`GatewayReadyResult{busy:true, queued:false}`）。intentional disconnect / 后台交接的 greeting
+    仍由 `WsClientV2._notifyGatewayReady` 在入口丢弃，不进入协调器。
   - `part.delta` 等 seq 缺失帧不持久、不推进游标，其丢失仍靠 REST 对账；`onReconnected` 钩子保留但 `main.dart` 已不用（配置 `onGatewayReady` 时被抑制，避免与 `RecoveryCoordinator` 重复恢复）。
-  - **已知残留**（E5b 接受，E7-5 已收口 `nextSince<=since` 短缺口）：同实例 `reset` 且新 `headSeq` **更低**时游标只抬不降 → 该次重连会重复 reset + 全量重拉（有界、不丢数据）；busy / 后台竞态下 greeting 可能被丢弃或不做刷新（在途 replay 接管刷新）；桌面接入 replay 已在 E6 完成。`hasMore` 页不能前进现在是 `protocol` fallback（绝不假报 `recovered`），游标停在最后已应用 seq。
+  - **已知残留**（E5b 接受，E7-5 已收口 `nextSince<=since` 短缺口，E8-4 已收口同实例 reset 降 head 与 busy greeting 丢弃）：桌面接入 replay 已在 E6 完成。`hasMore` 页不能前进现在是 `protocol` fallback（绝不假报 `recovered`），游标停在最后已应用 seq。
 - **配对**：`GET /api/mobile/pairing-code` 是 **human-only**（需 desktop/TUI 的 human token；service/local/旧客户端 → 403 `human_principal_required`），生成的 URL 必须含 `orcalore://pair`（改名后）且 host 不是 `127.0.0.1`；`POST /api/mobile/pairing/verify` 400 = nonce 过期/已消费或 deviceId 越界，404 = 老网关没有该路由（v1 链接 + 手动回退），**409 `device_already_paired`** = 该 `deviceId` 已有凭据但未带 `rotate:true`（重新配对必须显式轮换）。
 
 ### 7.6 故障速查（v1 场景补充）

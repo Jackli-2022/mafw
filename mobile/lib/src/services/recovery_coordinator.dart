@@ -12,7 +12,11 @@
 /// - reset / truncated / unsupported / request error / non-advancing replay page
 ///   (protocol) / gateway-instance change: refresh **and** full reload, because
 ///   the gap cannot be bridged;
-/// - a reconnect always refreshes (seq-less delta frames are never replayed).
+/// - a reconnect always refreshes (seq-less delta frames are never replayed);
+/// - a greeting that lands while another replay is still running is held (at
+///   most one) and rerun — replay, then refresh — when that run finishes (E8-4);
+///   a second waiter is redundant and is dropped. Intentional disconnects are
+///   filtered upstream by `WsClientV2` (never reach this class).
 library;
 
 import '../models/mafw_models.dart';
@@ -39,9 +43,14 @@ class GatewayReadyResult {
   /// The caller was asked for a full reload (fallback / epoch change).
   final bool fullReload;
 
-  /// Another replay was already in flight, so this greeting did nothing: the
-  /// running loop owns the recovery **and** the refresh (F3).
+  /// Another replay was already in flight, so the greeting could not recover
+  /// immediately: it either waited and reran (see [queued]) or was dropped
+  /// because one greeting was already waiting.
   final bool busy;
+
+  /// The greeting was held while the in-flight replay finished and then rerun
+  /// (replay + refresh); the rest of this result describes that rerun.
+  final bool queued;
 
   const GatewayReadyResult({
     this.baselined = false,
@@ -51,6 +60,7 @@ class GatewayReadyResult {
     this.refreshed = false,
     this.fullReload = false,
     this.busy = false,
+    this.queued = false,
   });
 }
 
@@ -69,12 +79,55 @@ class RecoveryCoordinator {
     required this.onFullReload,
   });
 
+  /// The single greeting held while another replay runs (E8-4).
+  ({MafwEvent greeting, bool isReconnect})? _pending;
+
   /// Handle one `connected` greeting.
   ///
   /// Never throws for recovery failures ([EventRecoveryService.recover] reports
   /// them through its outcome); callback errors propagate to the caller, which
   /// is the socket's fire-and-forget hook and swallows them.
+  ///
+  /// A greeting that arrives while a replay is already running is queued (max
+  /// one) and rerun as soon as that replay settles, so its own replay+refresh
+  /// still happens instead of being silently skipped (E8-4). A second waiter is
+  /// redundant: the queued rerun covers the same gap, so it returns
+  /// `busy: true, queued: false` and touches nothing.
   Future<GatewayReadyResult> handle(
+    MafwEvent greeting, {
+    required bool isReconnect,
+  }) async {
+    // An epoch change is never queued: the in-flight replay belongs to the dead
+    // seq space, so `observeHeadSeq` re-baselines immediately and the caller
+    // reloads in full instead of waiting out a replay against the old epoch.
+    final epochChange = recovery.cursor != null &&
+        recovery.instanceId != null &&
+        greeting.instanceId != null &&
+        greeting.instanceId != recovery.instanceId;
+    if (recovery.isRecovering && !epochChange) {
+      if (_pending != null) return const GatewayReadyResult(busy: true);
+      _pending = (greeting: greeting, isReconnect: isReconnect);
+      await recovery.settled;
+      final next = _pending;
+      _pending = null;
+      if (next == null) return const GatewayReadyResult(busy: true);
+      final rerun =
+          await _handleOnce(next.greeting, isReconnect: next.isReconnect);
+      return GatewayReadyResult(
+        baselined: rerun.baselined,
+        epochChanged: rerun.epochChanged,
+        applied: rerun.applied,
+        fallback: rerun.fallback,
+        refreshed: rerun.refreshed,
+        fullReload: rerun.fullReload,
+        busy: true,
+        queued: true,
+      );
+    }
+    return _handleOnce(greeting, isReconnect: isReconnect);
+  }
+
+  Future<GatewayReadyResult> _handleOnce(
     MafwEvent greeting, {
     required bool isReconnect,
   }) async {
@@ -100,9 +153,9 @@ class RecoveryCoordinator {
         // Bounded inside the service (100 pages / 10s request timeout).
         outcome = await recovery.recover();
       }
-      // F3: a replay started by an earlier greeting is still running. It owns
-      // the refresh, so this call must not refresh or reload (that would race
-      // the in-flight apply and double the work).
+      // Narrow race only (E8-4): `handle` checks `isRecovering` before this
+      // runs, so a busy outcome here means a replay started in between. Do not
+      // refresh on top of it; the queued path owns orderly reruns.
       busy = outcome?.isBusy ?? false;
     } finally {
       // Replay first, refresh second: a surface that sees the refresh must
