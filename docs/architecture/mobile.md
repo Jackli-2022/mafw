@@ -316,6 +316,42 @@ adb shell input keyevent 4                    # 返回（root 页再按会退出
 - 事件检查器里可看到 `connected`、`pod.updated`、`pod.event` 的原始帧与 `seq`——冒烟时让 gateway 产生真实事件（如 `POST /api/pods/:podId/messages`）即可验证 WS 全链。
 - App 重启后通知授权可能再次提示（系统策略），用第 5 步 grant 可避免。
 
+### 7.9 会话列表增量（E6-4，2026-11-13）
+
+聊天 tab 的会话列表不再只靠显式动作/重连全量拉取：`SessionsPage` 可选接收 `Stream<MafwEvent>? events`
+（`main.dart` 传 `_ws?.events`，WS 重建 → 新 stream → `didUpdateWidget` 重订阅，`dispose` 取消），
+事件由纯函数 `lib/src/models/session_list_events.dart#applySessionListEvent(current, event)` 应用。
+
+- **只吃 canonical 内层名**（`MafwEvent.innerType`）：`session.created/updated/deleted`；flat / legacy /
+  未知帧原样返回**同一 list 实例**（不重建、不 setState）。
+- **`session.updated`**：只 merge `properties.info` 里**存在**的 title/directory/projectID/metadata/
+  `time.created`（缺失字段永不清空，广播补丁是部分的）；不存在该 id 时忽略；不重排（`time.updated`
+  未建模——updated 事件不改变行的 `timeCreated` 排序键，因此列表顺序保持，Lead-first 排序不被破坏）。
+- **`session.deleted`**：按 `info.id`（delete 帧可省 info，回退信封 `sessionID`）移除。
+- **`session.created`**：要求 `info.id` + 非空 title，替换/追加后按
+  `compareSessionRows`（Lead 先、再 newest-first；全量拉取与增量插入共用这一比较器）重排；
+  不完整 info 返回原列表，页面置 dirty 并**合并 250ms 一次**全量拉取（id-only 幽灵行比延迟更糟；
+  信封 `sessionID` 故意不作为 created 的 id 兜底，契约要求 `properties.info.id`）。
+- **隐藏会话镜像**：`isHiddenSessionRow` 逐条镜像 gateway `session-visibility.ts#isHiddenSession`
+  （非空 `parentID`；标题前缀 `# Memory Index` / `{` / 代码围栏 / `标题：`；agent ∈
+  `memory-curator|mafw-tech-lead|mafw-execute|mafw-review`；`metadata.mafw.role` ∈
+  `lead|tech-lead|tech_lead`；`manager` 保持可见）。gateway 的 `roleFor` kv 查询不镜像（服务端知识）。
+  页面在完整性判定**之前**用同一判定丢弃隐藏 created——这是完整判定，不置 dirty、不触发刷新；
+  纯函数侧 `_completeRowOf` 再兜一次，增量列表因此不会与下一次全量拉取不一致。
+- **项目范围守卫**：active 项目存在时，`created` 的 `projectID`/`directory`/`event.directory` 若可证明
+  属于别的项目 → 直接忽略且不置 dirty；比较规范化 `\`↔`/`、大小写与尾部斜杠；目录未知则交给
+  全量刷新判定（不过早过滤）。选择「全部项目」时无过滤。
+- **dirty / 在途修正**：dirty 在**拉取开始**时兑现（`_chatDirty = false` + `_chatDirtyGen` 快照），
+  事件到达走 `_markChatDirty()` 递增代数；请求结束时若代数变化 → 再排一次合并 250ms 拉取
+  （成功/失败路径一致），所以飞行期间新建的话题不会丢。普通父级 rebuild 仍不自动重试——
+  离线「不形成重试环」的契约保留。
+- **兼容**：`events == null`（旧壳 / 未连接）完全保持「显式动作才拉取」的老行为；未加载时
+  `updated/deleted` 直接忽略（进 tab 本来就会全量拉取）。
+- 测试：`session_list_events_test.dart` 30（矩阵：update/delete/create/缺字段/隐藏/排序/类型噪声）、
+  `sessions_page_test.dart` 11（fake stream：更新不触发全量、单次 debounce、项目/路径守卫、
+  `events:null` 旧路径、重订阅、dispose），两文件合计 41。工作 tab 未改版（已有 `goalId` 局部更新
+  `WorkRefreshBus.consumeEvent`）。
+
 ---
 
 ## 8. 已知待办（roadmap）

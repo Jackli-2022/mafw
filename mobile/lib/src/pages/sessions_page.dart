@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../models/mafw_models.dart';
+import '../models/session_list_events.dart';
 import '../network/gateway_client.dart';
 import '../services/active_project.dart';
 import '../services/diagnostics.dart';
@@ -72,6 +73,12 @@ class SessionsPage extends StatefulWidget {
   /// 「＋ 新建讨论」占位（Task 11 接 composer）。
   final VoidCallback? onCreateDiscussion;
 
+  /// Live gateway event stream（`main.dart` 传 `_ws?.events`）。
+  ///
+  /// 可选：旧壳 / 未连接时传 null，聊天列表维持「显式动作才拉取」的老行为。
+  /// WS 重建后 `main.dart` 会用新的 stream 重建页面，`didUpdateWidget` 重订阅。
+  final Stream<MafwEvent>? events;
+
   const SessionsPage({
     super.key,
     required this.sessions,
@@ -90,6 +97,7 @@ class SessionsPage extends StatefulWidget {
     this.onOpenGoal,
     this.onOpenLead,
     this.onCreateDiscussion,
+    this.events,
   });
 
   @override
@@ -106,6 +114,20 @@ class _SessionsPageState extends State<SessionsPage> {
   bool _chatDirty = true;
   bool _creatingTopic = false;
   int _chatSeq = 0;
+
+  /// Bumped on every `_markChatDirty()`; snapshotted when a fetch starts.
+  ///
+  /// It separates "the dirty flag this fetch redeems" from "a dirty flag that
+  /// arrived while the fetch was in flight": the latter must survive the
+  /// completion and schedule one more debounced fetch, otherwise a topic created
+  /// mid-fetch stays invisible until the next explicit action (E6-4 review L1).
+  int _chatDirtyGen = 0;
+
+  /// 会话列表的事件订阅（`widget.events`；WS 重建后重订阅）。
+  StreamSubscription<MafwEvent>? _eventsSub;
+
+  /// `session.created` 缺字段 → 合并 250ms 后做一次全量刷新。
+  Timer? _chatRefreshDebounce;
 
   /// 「交给 Lead」在飞：防双击重复建 Goal。
   bool _handoffBusy = false;
@@ -150,12 +172,16 @@ class _SessionsPageState extends State<SessionsPage> {
   void initState() {
     super.initState();
     widget.activeProject?.addListener(_onActiveProjectChanged);
+    _subscribeEvents();
     if (_tab == SessionsTab.chat) _ensureChatLoaded();
   }
 
   @override
   void didUpdateWidget(covariant SessionsPage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.events, widget.events)) {
+      _subscribeEvents();
+    }
     if (!identical(oldWidget.activeProject, widget.activeProject)) {
       oldWidget.activeProject?.removeListener(_onActiveProjectChanged);
       widget.activeProject?.addListener(_onActiveProjectChanged);
@@ -167,11 +193,110 @@ class _SessionsPageState extends State<SessionsPage> {
     if (_tab == SessionsTab.chat) _ensureChatLoaded();
   }
 
+  void _subscribeEvents() {
+    _eventsSub?.cancel();
+    _eventsSub = widget.events?.listen(_onSessionListEvent);
+  }
+
+  /// 会话列表的增量更新（E6-4）。
+  ///
+  /// 只处理看起来已经加载过的列表（`_chatSessions != null`）：未加载时进 tab
+  /// 本来就会全量拉取。`updated/deleted` 直接就地 patch，不再打 gateway；
+  /// `created` 只有「完整」才 append，而三种不完整的情形**处理方式不同**：
+  /// - 能证明属于别的项目 → 与当前列表无关，直接忽略（不置 dirty）；
+  /// - 属于内部会话（[isHiddenSessionRow]：子会话 / worker 标题 / 内部 agent /
+  ///   Lead 角色）→ `/api/sessions` 本来就不会返回它，同样忽略，不置 dirty；
+  /// - 其余缺字段（没有 id / 没有 title / 没有目录）→ 置 dirty 并 debounce 一次
+  ///   全量拉取——id-only 的幽灵行比短暂延迟更糟。
+  void _onSessionListEvent(MafwEvent event) {
+    if (!mounted) return;
+    final current = _chatSessions;
+    if (current == null) return;
+
+    switch (event.innerType) {
+      case kSessionUpdatedEvent:
+      case kSessionDeletedEvent:
+        final next = applySessionListEvent(current, event);
+        if (!identical(next, current)) {
+          setState(() => _chatSessions = next);
+        }
+        return;
+      case kSessionCreatedEvent:
+        // 隐藏会话先判：这是完整判定，不是「信息不足」，所以不触发全量刷新。
+        if (_hiddenCreatedEvent(event)) return;
+        // 项目过滤在服务端（`listSessions(projectID:)`）；增量路径必须自己
+        // 兜住「别的项目新建了会话」，否则它会漏进当前项目的列表且没有后续
+        // 刷新纠正。目录未知时交给全量刷新判定。
+        if (_foreignCreatedEvent(event)) return;
+        final next = applySessionListEvent(current, event);
+        if (identical(next, current)) {
+          _scheduleChatRefresh();
+        } else {
+          setState(() => _chatSessions = next);
+        }
+        return;
+      default:
+        return;
+    }
+  }
+
+  /// 这个 `session.created` 是否描述一个 `/api/sessions` 会隐藏的会话。
+  ///
+  /// 与纯函数共用同一判定（[isHiddenSessionRow]），只是提前到「完整性」判断
+  /// 之前：隐藏行不需要全量刷新去纠正，也不会出现在服务端返回里。
+  bool _hiddenCreatedEvent(MafwEvent event) {
+    final info = sessionInfoOf(event);
+    if (info == null) return false;
+    return isHiddenSessionRow(MafwSession.fromJson(info));
+  }
+
+  /// 这次 `session.created` 是否属于「当前项目」列表。
+  ///
+  /// 未选择项目（显示全部）时没有过滤条件；目录未知时不当外来事件处理，
+  /// 由纯函数/全量刷新决定。**能证明是别的项目 → 直接忽略、不置 dirty**：它
+  /// 永远不会出现在当前项目的列表里，为它多打一次 gateway 只是噪音。
+  bool _foreignCreatedEvent(MafwEvent event) {
+    final active = _activeProjectDir;
+    if (active == null) return false;
+    final info = sessionInfoOf(event);
+    final candidate = info?['projectID'] ?? info?['directory'] ?? event.directory;
+    if (candidate is! String || candidate.isEmpty) return false;
+    return !_sameProjectDir(candidate, active);
+  }
+
+  /// 目录比较忽略分隔符方向、大小写与尾部分隔符（Windows 客户端常见差异）。
+  static bool _sameProjectDir(String a, String b) {
+    String norm(String path) {
+      var value = path.replaceAll('\\', '/').toLowerCase();
+      while (value.length > 1 && value.endsWith('/')) {
+        value = value.substring(0, value.length - 1);
+      }
+      return value;
+    }
+
+    return norm(a) == norm(b);
+  }
+
+  /// 标记「还有一次未兑现的拉取请求」（dirty + 代数递增）。
+  void _markChatDirty() {
+    _chatDirty = true;
+    _chatDirtyGen++;
+  }
+
+  void _scheduleChatRefresh() {
+    _markChatDirty();
+    _chatRefreshDebounce?.cancel();
+    _chatRefreshDebounce = Timer(const Duration(milliseconds: 250), () {
+      if (!mounted) return;
+      _ensureChatLoaded();
+    });
+  }
+
   /// 丢弃当前聊天页数据（在飞响应由 `_chatSeq` 作废）。
   void _resetChatSessions() {
     _chatSessions = null;
     _chatLoading = false;
-    _chatDirty = true;
+    _markChatDirty();
     _chatSeq++;
   }
 
@@ -186,7 +311,7 @@ class _SessionsPageState extends State<SessionsPage> {
     if (widget.client == null) return;
     // `_chatDirty` 是「还有一次未兑现的拉取请求」的唯一权威：
     // - 显式动作（进 tab / 切项目 / client 变更 / 新建后）把它置 true；
-    // - 请求真正结束（成功或失败）才清 false。
+    // - 拉取**开始**时就兑现（清 false），结束时只在飞行期间又有新请求时重新置位。
     // 所以失败后普通父级 rebuild（WS 状态变化等）不会自动重试——离线是移动端
     // 主场景，反复发起无超时请求 + 反复加载态比空态更糟；下一次显式动作再试。
     if (_chatLoading || !_chatDirty) return;
@@ -198,31 +323,29 @@ class _SessionsPageState extends State<SessionsPage> {
     if (client == null) return;
     final dir = _activeProjectDir;
     final seq = ++_chatSeq;
+    // 一开始就兑现 dirty 并记下代数：飞行期间到达的 created 会让代数变化，
+    // 结束时据此补一次 debounce 重试（否则它会被无条件清 dirty 吞掉）。
+    final gen = _chatDirtyGen;
+    _chatDirty = false;
     setState(() => _chatLoading = true);
     try {
       final list = await client.listSessions(projectID: dir);
       if (!mounted || seq != _chatSeq) return;
-      list.sort(_compareSessions);
+      list.sort(compareSessionRows);
       setState(() {
         _chatSessions = list;
         _chatLoading = false;
-        // 本次拉取已兑现；下一次显式动作才会重新置位。
-        _chatDirty = false;
       });
     } catch (_) {
       if (!mounted || seq != _chatSeq) return;
-      // 失败保留旧列表（离线时比空白更诚实）；没有旧列表就是空态。本次尝试
-      // 已结束（dirty 清掉），普通 rebuild 不会重试，进 tab / 切项目再试。
-      setState(() {
-        _chatLoading = false;
-        _chatDirty = false;
-      });
+      // 失败保留旧列表（离线时比空白更诚实）；没有旧列表就是空态。
+      setState(() => _chatLoading = false);
     }
-  }
-
-  static int _compareSessions(MafwSession a, MafwSession b) {
-    if (a.isLead != b.isLead) return a.isLead ? -1 : 1;
-    return (b.timeCreated ?? 0).compareTo(a.timeCreated ?? 0);
+    // 只有「确实来了新事件」才补拉一次（coalesced 250ms）；普通 rebuild 永不
+    // 自动重试，失败也不会变成重试环（代数没变就不再排）。
+    if (mounted && seq == _chatSeq && _chatDirtyGen != gen) {
+      _scheduleChatRefresh();
+    }
   }
 
   /// 聊天 tab「新话题」：active 项目目录显式创建（spec §7.7），直接进 ChatPage。
@@ -240,7 +363,7 @@ class _SessionsPageState extends State<SessionsPage> {
       setState(() => _creatingTopic = false);
       widget.onOpen(session);
       // 新会话已在网关：返回列表时它应该出现（不阻塞打开 ChatPage）。
-      _chatDirty = true;
+      _markChatDirty();
       _ensureChatLoaded();
     } catch (e) {
       if (!mounted) return;
@@ -353,6 +476,8 @@ class _SessionsPageState extends State<SessionsPage> {
   @override
   void dispose() {
     widget.activeProject?.removeListener(_onActiveProjectChanged);
+    _eventsSub?.cancel();
+    _chatRefreshDebounce?.cancel();
     _memDebounce?.cancel();
     _memSearchCtrl.dispose();
     super.dispose();
@@ -486,7 +611,7 @@ class _SessionsPageState extends State<SessionsPage> {
         setState(() => _tab = SessionsTab.values[i]);
         if (_tab == SessionsTab.chat) {
           // 显式进入聊天 tab = 重拉一次（列表可能被其它端改动/新建过）。
-          _chatDirty = true;
+          _markChatDirty();
           _ensureChatLoaded();
         }
       },

@@ -56,6 +56,8 @@ export interface DecisionRecordEvent {
   goalId: string | null;
   revision: number | null;
   recordId: string;
+  /** Full record after the write (E6-3); clients patch in place from this. */
+  record: DecisionRecord;
 }
 
 export interface DecisionDraftInput {

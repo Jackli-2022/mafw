@@ -222,11 +222,26 @@ describe("dispatchShellEvent: session lifecycle", () => {
     expect(calls.map(c => c.name)).toContain("invalidate")
   })
 
-  test("session.updated with title → patch + retitleOpenTab", () => {
+  test("session.updated with title → one title writer (no duplicate patch)", () => {
     const { deps, calls } = makeDeps()
     dispatchShellEvent({ type: "session.updated", sessionID: "s1", properties: { sessionID: "s1", info: { id: "s1", title: "new" } } }, deps)
+    expect(calls.map(c => c.name)).toEqual(["trace", "retitleOpenTab"])
+    expect(calls[1].args).toEqual(["s1", "new"])
+  })
+
+  test("session.updated with title + time → title goes to the writer, metadata to patch", () => {
+    const { deps, calls } = makeDeps()
+    dispatchShellEvent({ type: "session.updated", sessionID: "s1", properties: { sessionID: "s1", info: { id: "s1", title: "new", time: { updated: 42 } } } }, deps)
     expect(calls.map(c => c.name)).toEqual(["trace", "patch", "retitleOpenTab"])
+    expect(calls[1].args).toEqual(["s1", { time: { updated: 42 } }])
     expect(calls[2].args).toEqual(["s1", "new"])
+  })
+
+  test("session.updated without a title → patch only, the title writer stays idle", () => {
+    const { deps, calls } = makeDeps()
+    dispatchShellEvent({ type: "session.updated", sessionID: "s1", properties: { sessionID: "s1", info: { id: "s1", directory: "C:\\p" } } }, deps)
+    expect(calls.map(c => c.name)).toEqual(["trace", "patch"])
+    expect(calls[1].args).toEqual(["s1", { directory: "C:\\p" }])
   })
 
   test("session.deleted → remove + closeIfOpen", () => {

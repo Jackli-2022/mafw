@@ -61,7 +61,7 @@ test("shell opens ended Goal sessions as transcripts and reuses tab identity", (
   assert.match(shell, /reconcileGoalSessionTabs\(/)
   assert.match(shell, /identity\?\.ended/)
   assert.match(shell, /openPodTranscript\(/)
-  assert.match(shell, /mergeTabIdentity\(prev, sid, lead, metadata, title\)/)
+  assert.match(shell, /mergeTabIdentity\(prev, sid, lead, metadata, entityTitle\)/)
 })
 
 test("shell routes pod.updated, pod.event, project scope, sessions, goals, and badges", () => {

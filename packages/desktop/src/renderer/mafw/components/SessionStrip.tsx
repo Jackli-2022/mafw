@@ -17,6 +17,8 @@ import leadAvatar20 from "../assets/lore/lead-avatar-20.png"
 
 export function SessionStrip(props: {
   sessions: () => { id: string; title: string; lead?: boolean }[]
+  /** E6-2：标签真值来自 session entity 缓存，tab.title 只是缺失时的兜底。 */
+  titleOf?: (id: string, fallback: string) => string
   activeViewId: () => string | null
   onSelect: (id: string) => void
   onClose: (id: string) => void
@@ -36,6 +38,9 @@ export function SessionStrip(props: {
   let scrollEl: HTMLDivElement | undefined
 
   const recheckOverflow = () => setOverflowed(stripOverflowed(scrollEl))
+
+  /** 标签文本：entity 缓存优先（Lead 恒为角色名），tab.title 只兜底。 */
+  const labelOf = (s: { id: string; title: string }) => props.titleOf?.(s.id, s.title) ?? s.title
 
   /** Lead tab 的身份是角色名，不参与 runtime 自动标题，也不支持双击改名。 */
   const isLeadTab = (s: { id: string; lead?: boolean }) =>
@@ -90,13 +95,13 @@ export function SessionStrip(props: {
       buildSessionMenu,
       {
         id: session.id,
-        title: session.title,
+        title: labelOf(session),
         kind: "tab" as const,
         canFork: props.forkEnabled !== false,
       },
       (id) => {
         if (id === "session.open") props.onSelect(session.id)
-        else if (id === "session.rename") { setRenamingId(session.id); setRenameDraft(session.title || "") }
+        else if (id === "session.rename") { setRenamingId(session.id); setRenameDraft(labelOf(session)) }
         else if (id === "session.fork") props.onFork?.(session.id)
         else if (id === "session.export") props.onExport(session.id)
         else if (id === "session.copyId") props.onCopyId(session.id)
@@ -158,7 +163,7 @@ export function SessionStrip(props: {
             <span class="mafw-agent-dot" style={{ background: s.lead ? "var(--accent)" : "var(--text-4)" }} />
             <span
               class="mafw-session-title"
-              onDblClick={e => { e.stopPropagation(); if (isLeadTab(s)) return; setRenamingId(s.id); setRenameDraft(s.title || "") }}
+              onDblClick={e => { e.stopPropagation(); if (isLeadTab(s)) return; setRenamingId(s.id); setRenameDraft(labelOf(s)) }}
             >
               <Show when={renamingId() !== s.id} fallback={
                 <TextInputV2
@@ -168,7 +173,7 @@ export function SessionStrip(props: {
                     e.stopPropagation()
                     if (e.key === "Enter") {
                       const next = renameDraft().trim()
-                      if (next && next !== s.title) props.onRename(s.id, next)
+                      if (next && next !== labelOf(s)) props.onRename(s.id, next)
                       setRenamingId(null)
                     }
                     if (e.key === "Escape") setRenamingId(null)
@@ -176,7 +181,7 @@ export function SessionStrip(props: {
                   onBlur={() => setRenamingId(null)}
                   style={{ width: "120px", height: "22px", "font-size": "12px" }}
                 />
-              }>{formatRailTitle(s.title)}</Show>
+              }>{formatRailTitle(labelOf(s))}</Show>
             </span>
             <Show when={props.podRoleOf?.(s.id)}>
               {(role) => (
@@ -204,7 +209,7 @@ export function SessionStrip(props: {
                   <DropdownMenu.Item onSelect={() => props.onSelect(s.id)}>
                     <DropdownMenu.ItemLabel class="mafw-session-overflow-item">
                       <span class="mafw-agent-dot" style={{ background: s.lead ? "var(--accent)" : "var(--text-4)" }} />
-                      <span class="mafw-session-overflow-title">{formatRailTitle(s.title)}</span>
+                      <span class="mafw-session-overflow-title">{formatRailTitle(labelOf(s))}</span>
                       <Show when={props.activeViewId() === s.id}>
                         <Icon name="check-small" size="small" />
                       </Show>

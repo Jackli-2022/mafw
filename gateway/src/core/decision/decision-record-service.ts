@@ -194,6 +194,9 @@ export class DecisionRecordService {
       goalId: record.goalId,
       revision: record.revision,
       recordId: record.id,
+      // E6-3: additive payload so clients can patch the decision board in place
+      // instead of re-fetching attention + records on every write.
+      record: { ...record },
     });
   }
 

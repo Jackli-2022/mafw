@@ -561,3 +561,60 @@ spec `docs/superpowers/specs/2026-11-04-pod-event-layer-ambient-attention-design
   并行批次 commit `d8bfc043` 一并落库。）
 - **未做（资产类）**：托盘三态仍无独立图标资源（只换 tooltip/菜单文案）；`latestUnviewedResult` /
   `shouldMarkSeen` 作为纯契约 helper 保留（生产暂无调用方）。
+
+### 交互模型：replay 补页 / 单一实体缓存 / 决定增量补丁（2026-11-13，E6）
+
+spec `docs/superpowers/specs/2026-11-13-gateway-e6-interaction-model-design.md`，release
+`docs/releases/2026-11-13-gateway-e6-interaction.md`。协议与 gateway 事件词汇零改动，只改消费侧
+（`decision.updated` 加一个 additive 字段）。
+
+- **SSE 开流前 replay 补页（E6-1）**：`SseConnection.openOnce` 读到持久化游标后，先调
+  `recoverGap(since, 500)`；`MafwShell` 注入的实现是 `sse/event-replay-gap.ts#recoverEventGap`
+  （`gateway.info().url` + `dispatchShellEvent`，与 live 帧同一 dispatcher 路由）。
+  - 分页循环 `GET /api/events/replay?since&limit`（limit 缺省 500 / clamp 1..1000，页数硬上限 100，
+    `nextSince` 必须单调前进），每页逐条 dispatch；
+  - **canonical 信封解包**：`event_log` 存的是 broadcast 帧 `{type:'mafw_event', data:{...}}`，
+    补页时先取 `data`（与 live `raw?.data || raw` 一致）再覆盖 `seq: item.seq` ——seq 以 item 为准，
+    不依赖信封自带；
+  - 补页成功 → **以 `headSeq` 开流**，`lastAppliedSeq`/持久化游标都钉到 `headSeq`，SSE 零回放，
+    live 帧只从 headSeq+1 应用（天然无 replay∩live 重复）；
+  - `reset` / `truncated` → 先 `clearSeq()` + `onFullResync(reason)`（清实体缓存 + invalidate 所有
+    store）再以 `headSeq` 开流；404 / HTML / 503 / 网络异常 / 非 ok / 形状不符 / `headSeq < since`
+    且非新纪元 → 返回 null，保持原 `since` 走 E2-3 路径，由 SSE greeting 分级；
+  - **超时**：单次请求 5s（`REPLAY_GAP_TIMEOUT_MS`，`AbortController` + 显式 race 覆盖 body 读取），
+    网络黑洞不会挂住重连；首次连接（无游标）不 replay。
+  - **部分补页回退是幂等安全的**：页数上限/分页异常导致「已 dispatch 若干页后回退旧路径」时，这些
+    行可能在 greeting 回放里再出现一次；消费侧 store 都是幂等 upsert，重复应用无副作用。
+- **Session 单一实体缓存（E6-2）**：`session-entities.ts` 是**唯一**的会话元数据来源
+  （`id/title/directory/projectID/metadata/time/agent/parentID`；`get/upsert/patch/remove/version/reset`，
+  upsert 是 merge、`undefined` 永不清空字段）。`session-store` 不再保存实体副本，只保留
+  `project bucket → { ids（按 last-activity 排序）, fetchedAt, failed }`；`fetchFor` 先 upsert 实体再存
+  id[]（`batch` 一次 bump），`sessionsFor` = `ids.map(entities.get)`，`patch/remove` 走实体并重排/摘除
+  bucket，`invalidate` 保留实体供离线读，公共 API 不变。
+  - **tab 只作 fallback**：`ChatSession.title` 仅用于持久化 `{id,title}` 恢复的首帧兜底；
+    `session-title.ts` 是唯一读标题路径（`sessionTitle` / `sessionTabTitle`），Role 命名的 tab
+    （Lead）永远显示角色标签；`retitleOpenTab` 只写实体、不再复制写 tab/store；
+    `resolveOpenSessionTitle` 保证打开 tab / 布局快照不会用陈旧 `Chat N` 覆盖用户改名或新标题。
+  - **角色派生**：`workspace.sessionRole(sid)` 从实体 `metadata.mafw.role` 派生（tab identity 兜底）。
+  - **全量重同步**：`onFullResync` 先 `sessionEntities.reset()` 再 `sessionStore.invalidate()`，
+    新纪元不留 gateway 已不存在的行。
+- **决定增量补丁（E6-3）**：gateway 的 `decision.updated` 现在额外携带 `record`（写入后的完整
+  `DecisionRecord`），既有 `action/projectDir/goalId/revision/recordId` 字段逐字不变（内部事件，
+  catalog/openapi/SDK 契约不动）。桌面 `DecisionStore.ingest(event)`：
+  - 校验 action ∈ `drafted|confirmed|shelved|reopened`、record 的 `id/status/updatedAt` 形状 → 合法则按
+    id upsert `records`（`updatedAt` 相同复用对象保持 memo 身份，新记录 newest-first 插入），
+    patch `attention.items` 中同 id 且暴露 `status`/`summary` 的行，返回 true，**不发任何全量请求**；
+  - **freshness guard**：比已存记录更旧的补丁（`updatedAt` 更小）返回 true 且零写入，避免在途
+    refresh 回包覆盖刚 ingest 的新记录；`refresh` 的合并同样「旧的不覆盖新的」；
+  - **foreign-project guard**：`record.projectDir` 与当前项目规范化比较（`\`→`/`、去尾斜杠、小写）
+    不同 → 视为别项目写入，返回 true 不 patch、也不触发本项目的 refetch；
+  - 形状不符 / 无 record / 无当前项目 → false，`MafwShell` 回退 200ms 合并的 `scheduleDecisionRefresh()`
+    （旧 gateway 行为不变；attention 投影没有独立轮询，靠下一次 refresh——项目/Pod 切换、显式动作、
+    fallback——收敛）。
+- **已知残留（E6 接受）**：
+  1. `/api/attention` 目前不投影 decision 记录（items 里没有同 id 行），`ingest` 的 attention patch
+     实际为空操作；attention 状态仍靠下次 `refresh()` 收敛（补丁已按 schema-tolerant 写好，
+     投影落地即生效）。
+  2. 持久化 tab 的 `{id,title}` 仍是首帧兜底：实体未取到（离线/桶被裁剪）时显示旧标题，直到
+     bucket fetch 或 `session.updated` patch 到实体。
+  3. foreign-project guard 只看 `record.projectDir`（规范化后比较）；记录里缺 `projectDir` 时按本项目处理。

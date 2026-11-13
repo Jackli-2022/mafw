@@ -196,18 +196,68 @@ test('writes notify the decision event stream', () => {
       kind: 'plan',
       question: 'Q',
     } as any);
-    expect(notify).toHaveBeenLastCalledWith({
+    expect(notify).toHaveBeenLastCalledWith(expect.objectContaining({
       action: 'drafted',
       projectDir: 'C:/repo',
       goalId: 'g1',
       revision: 1,
       recordId: record.id,
-    });
+    }));
     service.confirm(record.id, { projectDir: 'C:/repo', rationale: 'R', consequences: 'C' });
     expect(notify).toHaveBeenLastCalledWith(expect.objectContaining({
       action: 'confirmed',
       recordId: record.id,
     }));
+  } finally {
+    cleanup();
+  }
+});
+
+test('decision events carry the full record (E6-3)', () => {
+  const { root, cleanup } = setup();
+  try {
+    const notify = jest.fn();
+    let tick = 0;
+    const service = new DecisionRecordService({
+      mafwDir: () => root,
+      now: () => new Date(2026, 10, 12, 0, 0, tick++).toISOString(),
+      id: () => 'dec_payload',
+      notify,
+    });
+    const drafted = service.draft({
+      projectDir: 'C:/repo',
+      goalId: 'g1',
+      revision: 1,
+      kind: 'plan',
+      question: 'Q',
+    } as any);
+    const emitted = notify.mock.calls[0][0];
+    expect(emitted.record).toBeDefined();
+    expect(emitted.record.id).toBe(drafted.id);
+    expect(emitted.record.status).toBe('draft');
+    expect(emitted.record.updatedAt).toBe(drafted.updatedAt);
+    expect(emitted.record.history).toEqual([
+      expect.objectContaining({ action: 'drafted', by: 'agent' }),
+    ]);
+    // existing fields are unchanged (additive payload)
+    expect(emitted).toMatchObject({
+      action: 'drafted',
+      projectDir: 'C:/repo',
+      goalId: 'g1',
+      revision: 1,
+      recordId: drafted.id,
+    });
+
+    const confirmed = service.confirm(drafted.id, {
+      projectDir: 'C:/repo',
+      rationale: 'R',
+      consequences: 'C',
+    });
+    const last = notify.mock.calls[1][0];
+    expect(last.record.id).toBe(confirmed.id);
+    expect(last.record.status).toBe('decided');
+    expect(last.record.updatedAt).toBe(confirmed.updatedAt);
+    expect(last.record.history.map((entry: any) => entry.action)).toEqual(['drafted', 'confirmed']);
   } finally {
     cleanup();
   }

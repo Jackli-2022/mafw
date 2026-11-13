@@ -22,6 +22,7 @@ import { ModelPicker, type ModelEntry } from "./pickers/ModelPicker"
 import { SessionConfigMenu } from "./pickers/SessionConfigMenu"
 import { agentBadge, agentMenuOptions, findAgentEntry, nextRuntimeAgent, thinkingBadge } from "../session-config-menu-model"
 import { chatPaneTitle } from "../chat-pane-title"
+import { sessionTitle } from "../session-title"
 import { messageModel } from "../message-model"
 import { useConnPhase } from "../connection-state"
 import { AgentPicker, type AgentEntry } from "./pickers/AgentPicker"
@@ -1839,7 +1840,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   }
 
   // Lead 是角色会话：头部恒显示角色名，runtime 自动标题（如「问候」）不得改写它。
-  const title = () => chatPaneTitle({ lead: isLead(), title: store.session.find(s => s.id === sidProp())?.title })
+  // E6-2：头部标题同样只读实体缓存（store.session 的 tab 占位仅作兜底）。
+  const title = () => chatPaneTitle({
+    lead: isLead(),
+    title: sessionTitle(sidProp(), store.session.find(s => s.id === sidProp())?.title),
+  })
 
   // Render window: mount only the newest N turns; scrolling up expands locally
   // first (no network) and falls through to cursor pagination once the
