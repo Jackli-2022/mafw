@@ -1,8 +1,9 @@
-import { createMemo, type JSX } from "solid-js"
-import { DocumentTabs } from "./document-frame"
+import { Show, createMemo, type JSX } from "solid-js"
+import { DocumentTabs, DocumentToolbar } from "./document-frame"
 import { EditorDock } from "./EditorDock"
 import { BrowserDock } from "./BrowserDock"
 import { activeDocumentTabId, documentTabs, moveDocumentTab } from "../documents/document-tabs-store"
+import { documentToolbarProvider } from "../documents/document-toolbar-registry"
 import {
   closeOtherTabIds,
   closeRightTabIds,
@@ -35,6 +36,10 @@ export function DocumentStage(props: {
     return id ? (documentTabs().find((entry) => entry.id === id) ?? null) : null
   })
   const activeKind = () => active()?.kind ?? null
+  const toolbar = createMemo(() => {
+    const kind = activeKind()
+    return kind ? documentToolbarProvider(kind)?.() ?? null : null
+  })
 
   const requestTabMenu = (id: string, event: MouseEvent) => {
     if (shouldUseNativeMenu(guardFactsFromEvent(event))) return
@@ -81,6 +86,16 @@ export function DocumentStage(props: {
         onContextMenu={requestTabMenu}
         onReorder={moveDocumentTab}
       />
+      <Show when={toolbar()}>
+        {(spec) => (
+          <DocumentToolbar
+            ariaLabel={spec().ariaLabel}
+            leading={spec().leading?.()}
+            center={spec().center?.()}
+            trailing={spec().trailing?.()}
+          />
+        )}
+      </Show>
       <div class="mafw-document-stage-body">
         <div
           class="mafw-document-stage-pane"

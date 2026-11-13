@@ -32,6 +32,16 @@ test("WorkbenchShell forwards document callbacks", () => {
   assert.match(shell, /onDocumentSelect=\{props\.onDocumentSelect\}/)
 })
 
+test("DocumentStage renders the active toolbar from the registry", () => {
+  const stage = read("src/renderer/mafw/components/DocumentStage.tsx")
+  assert.match(stage, /DocumentToolbar/)
+  assert.match(stage, /documentToolbarProvider/)
+  assert.match(stage, /spec\(\)\.ariaLabel/)
+  assert.match(stage, /spec\(\)\.leading/)
+  assert.match(stage, /spec\(\)\.center/)
+  assert.match(stage, /spec\(\)\.trailing/)
+})
+
 test("document tabs expose drag reorder wiring", () => {
   const frame = read("src/renderer/mafw/components/document-frame.tsx")
   const stage = read("src/renderer/mafw/components/DocumentStage.tsx")
