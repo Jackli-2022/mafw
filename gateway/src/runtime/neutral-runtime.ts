@@ -343,6 +343,7 @@ export function createNeutralRuntime(
   }
   if (channelsV2.mcp) runtime.mcp = channelsV2.mcp;
   if (channelsV2.discovery) runtime.discovery = channelsV2.discovery;
+  else if (channels.discovery) runtime.discovery = channels.discovery;
   if (channelsV2.pty) runtime.pty = channelsV2.pty;
   if (channelsV2.checkpoint) runtime.snapshotTree = channelsV2.checkpoint;
 

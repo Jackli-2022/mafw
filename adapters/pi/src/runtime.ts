@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as path from 'path';
 import {
   defineRuntime,
   type AdapterEvent,
@@ -9,6 +10,7 @@ import {
   type RuntimeDefinition,
   type RuntimeFactoryContext,
   type RuntimeHostSurface,
+  type RuntimeSkillInfo,
   type RuntimeToolRegistration,
   type RuntimeTransport,
   type SendTurnInput,
@@ -38,7 +40,7 @@ export const PI_CAPABILITIES: RuntimeCapabilities = {
   completionApi: true,
   sessionBranchApi: true,
   runStateApi: true,
-  discoveryApi: false,
+  discoveryApi: true,
   // pi native streamingBehavior:'steer' (injects between tool calls).
   steerApi: true,
   // Creator tools/skills are OpenCode plugin-host artifacts; pi does not materialize mafw-create.
@@ -337,6 +339,44 @@ export async function createPiState(
     permissionList: async () => registry.listPendingPermissions(),
   };
 
+  const loadPiSkillCatalog = async (
+    directory: string,
+  ): Promise<{ skills: RuntimeSkillInfo[]; warnings: Array<{ source: 'skills'; message: string }> }> => {
+    const pi = await imp('@earendil-works/pi-coding-agent');
+    if (typeof pi?.loadSkills !== 'function') {
+      return { skills: [], warnings: [{ source: 'skills', message: 'runtime does not expose loadSkills' }] };
+    }
+    try {
+      const found = pi.loadSkills({
+        cwd: directory,
+        agentDir: piAgentConfig.getAgentDir(),
+        skillPaths: [],
+        includeDefaults: true,
+      });
+      const skills = (found?.skills ?? [])
+        .map((s: any): RuntimeSkillInfo => {
+          const location = String(s?.filePath ?? '');
+          let contentLength = 0;
+          try { contentLength = location ? fs.statSync(location).size : 0; } catch { /* fail-open */ }
+          return {
+            id: String(s?.name ?? ''),
+            name: String(s?.name ?? ''),
+            ...(s?.description ? { description: String(s.description) } : {}),
+            ...(location ? { location } : {}),
+            contentLength,
+          };
+        })
+        .filter((s: RuntimeSkillInfo) => !!s.id);
+      const warnings = (found?.diagnostics ?? []).map((d: any) => ({
+        source: 'skills' as const,
+        message: String(d?.message ?? d).slice(0, 300),
+      }));
+      return { skills, warnings };
+    } catch (err: any) {
+      return { skills: [], warnings: [{ source: 'skills', message: String(err?.message ?? err).slice(0, 300) }] };
+    }
+  };
+
   const channels: RuntimeChannels = {
     tools: {
       registerTools: (factory) => registry.setToolFactory(factory as (sessionID: string) => RuntimeToolRegistration[]),
@@ -348,6 +388,23 @@ export async function createPiState(
       // `normalize` once (flat MAFW DTO is the only history exit).
       list: async (sessionID) => registry.messages(sessionID),
       normalize: (raw) => normalizePiMessages(raw as any[]),
+    },
+    discovery: {
+      roots: () => ({ skillRoots: [path.join(piAgentConfig.getAgentDir(), 'skills')] }),
+      async list({ directory }) {
+        const found = await loadPiSkillCatalog(directory);
+        return { commands: [], skills: found.skills, warnings: found.warnings };
+      },
+      async loadSkill({ directory, key }) {
+        const found = await loadPiSkillCatalog(directory);
+        const hit = found.skills.find((s) => s.id === key || s.name === key);
+        if (!hit?.location) return null;
+        return { ...hit, content: fs.readFileSync(hit.location, 'utf-8') };
+      },
+      async invokeSkill({ sessionID, key, args }) {
+        const text = args.trim() ? `/skill:${key} ${args.trim()}` : `/skill:${key}`;
+        await registry.promptAsync(sessionID, text);
+      },
     },
     providers: {
       list: async () => translateProviders(await modelRuntime()),
