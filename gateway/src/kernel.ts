@@ -4739,6 +4739,15 @@ class MafwScheduler {
       ledger: this.ledger,
       mafwDir,
       projectDir: () => this.resolvedProjectDir(),
+      // E7-4: live governor pressure for MCP memory writes (same narrow shape as
+      // apiRouteDeps.resourcePressure); read at call time so a governor created
+      // after services init is still observed.
+      pressure: () => {
+        const governor = this.governor;
+        if (!governor) return null;
+        const pressure = governor.pressure();
+        return { disk: pressure.disk, degraded: pressure.degraded };
+      },
       standingGoals: this.standingGoals,
       listProjects: () => Array.from(this.registeredProjects.entries()).map(([projectDir, info]) => ({ projectDir, mafwDir: info.mafwDir })),
       podTechLead: this.podTechLeadService,
