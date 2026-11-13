@@ -5,8 +5,10 @@ import {
   closeRightTabIds,
   fileDocumentTabId,
   moveDocumentTab as moveDocumentTabEntry,
+  pinWorldTabFirst,
   syncKindEntries,
   webDocumentTabId,
+  WORLD_SCENE_TAB_ID,
   type DocumentDropPosition,
   type DocumentTabEntry,
   type DocumentTabKind,
@@ -122,7 +124,7 @@ export function configureFileDocumentRoot(root: string | null): void {
 
 function applyKind(kind: DocumentTabKind, incoming: DocumentTabEntry[]): void {
   const previous = entries()
-  const next = applySavedOrder(syncKindEntries(previous, kind, incoming))
+  const next = pinWorldTabFirst(applySavedOrder(syncKindEntries(previous, kind, incoming)))
   if (sameEntries(previous, next)) return
   pruneSavedOrder(previous, next)
   setEntries(next)
@@ -173,6 +175,8 @@ function persistOrder(): void {
     ...savedOrder.filter((id) => !isTransientTabId(id)),
     ...entries().filter((entry) => !isTransientTabId(entry.id)).map((entry) => entry.id).filter((id) => !savedOrder.includes(id)),
   ]
+  const worldIndex = order.indexOf(WORLD_SCENE_TAB_ID)
+  if (worldIndex > 0) order.unshift(...order.splice(worldIndex, 1))
   const active = activeId()
   saveDocumentListSnapshot(worldId, {
     version: 1,
@@ -189,7 +193,7 @@ export function configureDocumentListWorld(nextWorldId: string): void {
   const snapshot = loadDocumentListSnapshot(nextWorldId)
   savedOrder = snapshot.order.filter((id) => !isTransientTabId(id))
   desiredActiveId = snapshot.activeId && !isTransientTabId(snapshot.activeId) ? snapshot.activeId : null
-  const next = applySavedOrder(entries())
+  const next = pinWorldTabFirst(applySavedOrder(entries()))
   if (!sameEntries(entries(), next)) setEntries(next)
   const current = activeId()
   if (current && !next.some((entry) => entry.id === current)) setActiveId(null)
@@ -201,7 +205,7 @@ export function configureDocumentListWorld(nextWorldId: string): void {
 
 export function moveDocumentTab(fromId: string, toId: string, position: DocumentDropPosition): void {
   const previous = entries()
-  const next = moveDocumentTabEntry(previous, fromId, toId, position)
+  const next = pinWorldTabFirst(moveDocumentTabEntry(previous, fromId, toId, position))
   if (next === previous) return
   savedOrder = [
     ...next.map((entry) => entry.id),
@@ -296,7 +300,7 @@ createRoot(() => {
         closeChangeSetDocument(id)
       } else if (id.startsWith("scene:")) {
         consumeCloseRequest(id)
-        closeSceneTab(id)
+        if (id !== WORLD_SCENE_TAB_ID) closeSceneTab(id)
       }
     }
   })

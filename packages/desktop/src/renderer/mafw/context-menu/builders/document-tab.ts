@@ -9,12 +9,16 @@ export interface DocumentTabMenuTarget {
   copyValue: string
   canCloseOthers: boolean
   canCloseRight: boolean
+  /** 固定 tab（世界首页）不可关闭。 */
+  pinned?: boolean
 }
 
 export function buildDocumentTabMenu(target: DocumentTabMenuTarget): MenuModel {
   const noCopy = target.copyValue.trim().length === 0
   const items = [
-    item("documentTab.close", L.documentTab.close),
+    item("documentTab.close", L.documentTab.close, target.pinned
+      ? { disabled: true, disabledReason: "世界页是固定标签页" }
+      : {}),
     item("documentTab.closeOthers", L.documentTab.closeOthers, target.canCloseOthers
       ? {}
       : { disabled: true, disabledReason: "没有其他文档" }),

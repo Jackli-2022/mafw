@@ -20,6 +20,9 @@ test("MafwShell owns the unified document strip routing", () => {
   assert.match(shell, /webDocumentTabId/)
   assert.match(shell, /activeBrowserDocumentId/)
   assert.match(shell, /selectFocus/)
+  // 世界页是固定首页 tab，shell 拒绝关闭，批量关闭也会跳过。
+  assert.match(shell, /if \(id === WORLD_SCENE_TAB_ID\) return/)
+  assert.match(shell, /ids\.filter\(\(id\) => id !== WORLD_SCENE_TAB_ID\)/)
 })
 
 test("DocumentStage mounts both embedded bodies", () => {

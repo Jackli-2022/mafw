@@ -29,12 +29,15 @@ export function DocumentTabs(props: {
   onMiddleClick?: (id: string) => void
   onContextMenu?: (id: string, event: MouseEvent) => void
   onReorder?: (fromId: string, toId: string, position: DocumentDropPosition) => void
+  /** 固定 tab（如世界首页）：不可拖动，store 也会固定在第一位。 */
+  pinnedIds?: readonly string[]
   trailing?: JSX.Element
 }): JSX.Element {
   const close = (id: string) => props.onClose(id)
   const [draggingId, setDraggingId] = createSignal<string | null>(null)
   const [dropTarget, setDropTarget] = createSignal<{ id: string; position: DocumentDropPosition } | null>(null)
   const canReorder = () => !!props.onReorder
+  const isPinned = (id: string) => props.pinnedIds?.includes(id) === true
   const clearDrag = () => {
     setDraggingId(null)
     setDropTarget(null)
@@ -69,12 +72,12 @@ export function DocumentTabs(props: {
             }}
             role="tab"
             tabIndex={0}
-            draggable={canReorder() ? "true" : "false"}
+            draggable={canReorder() && !isPinned(item.id) ? "true" : "false"}
             aria-selected={item.active}
             aria-label={item.title ?? item.label}
             onClick={() => props.onSelect(item.id)}
             onDragStart={(event) => {
-              if (!canReorder()) return
+              if (!canReorder() || isPinned(item.id)) return
               setDraggingId(item.id)
               if (event.dataTransfer) {
                 event.dataTransfer.setData("text/plain", item.id)
@@ -126,24 +129,26 @@ export function DocumentTabs(props: {
             <Show when={item.readOnly}>
               <span class="mafw-document-tab-ro">只读</span>
             </Show>
-            <span
-              class="mafw-document-tab-close"
-              role="button"
-              tabIndex={0}
-              aria-label="关闭"
-              onClick={(event) => {
-                event.stopPropagation()
-                close(item.id)
-              }}
-              onKeyDown={(event) => {
-                if (event.key !== "Enter" && event.key !== " ") return
-                event.preventDefault()
-                event.stopPropagation()
-                close(item.id)
-              }}
-            >
-              <Icon name="close-small" size="small" />
-            </span>
+            <Show when={!isPinned(item.id)}>
+              <span
+                class="mafw-document-tab-close"
+                role="button"
+                tabIndex={0}
+                aria-label="关闭"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  close(item.id)
+                }}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return
+                  event.preventDefault()
+                  event.stopPropagation()
+                  close(item.id)
+                }}
+              >
+                <Icon name="close-small" size="small" />
+              </span>
+            </Show>
           </div>
         )}
       </For>

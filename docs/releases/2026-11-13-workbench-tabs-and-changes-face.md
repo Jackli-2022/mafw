@@ -59,6 +59,8 @@
 
 - **一条 tab 条覆盖全部视图**：`WorkbenchTabs` 从 `DocumentStage` 上移到 `WorkbenchShell`，
   紧贴 30px `FrameBar`；世界 / Goal / 终端 / 插件成为 scene tab，文件 / 浏览器 / 改动集仍是文档 tab。
+- **世界页固定首页**：`scene:world` 永远排在 tab 条第一位、不可拖动、不显示关闭按钮；任何同步 /
+  拖拽后都会重新钉回首位，批量关闭也会跳过它。切换到项目时自动创建，无需先从取景器打开。
 - **场景 tab 持久化**：世界 / Goal 写入 `mafw-scene-tabs:v1:<worldId>`，跨重启恢复；终端 / 插件
   与改动集是瞬态的，不落盘。tab 顺序仍由 `mafw-document-list:v1:<worldId>` 统一持久化。
 - **改动集 tab（`changeset`）**：一个讨论 turn 或一个 Goal revision 一个 tab。单文件
@@ -71,7 +73,7 @@
   顶部只留搜索 + `全部 / 待审 / 有改动`。点标题打开对象 tab，点 revision / turn 打开改动集 tab。
 - **深链**：讨论「审阅改动」打开当前会话的合并改动集；Goal 结果 / 决策评审项打开对应 revision
   的改动集（可带文件 + 行锚点），仍只读预览、人工验收边界不变。
-- **门禁**：desktop 全量 **3826 / 3826** pass（729 suites）；`tsgo --noEmit -p tsconfig.json`
+- **门禁**：desktop 全量 **3833 / 3833** pass（729 suites）；`tsgo --noEmit -p tsconfig.json`
   rc=0；`electron-vite build` rc=0。本批新增 4 个测试文件、20 个用例：
   `change-set-documents`、`scene-tabs`、`changes-tree`、`session-turns`；另补 scene tab
   入条 / 不可持久化与 toolbar 下拉宽度上限两条接线用例。

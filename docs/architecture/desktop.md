@@ -47,7 +47,8 @@
 - **Tab-as-view + 左栏改动面（2026-11-13）**：右工作台不再有 LensBar；`FrameBar / WorkbenchTabs /
   DocumentToolbar / Stage` 是唯一 chrome。`WorkbenchTabs` 一条 tab 条覆盖全部视图：世界 / Goal /
   文件 / 浏览器 / 改动集 / 终端 / 插件。世界 / Goal 是场景 tab（`scene:*`，按 world 持久化，
-  重启恢复）；终端 / 插件是临时场景 tab（不落盘）；文件 / 浏览器 / 改动集是文档 tab。改动集 tab
+  重启恢复）；终端 / 插件是临时场景 tab（不落盘）；文件 / 浏览器 / 改动集是文档 tab。世界页是固定
+  首页 tab：`scene:world` 始终排在第一位、不可拖动 / 关闭，切换项目时自动创建。改动集 tab
   （`changeset:*`）一个 turn 或一个 Goal revision 一个 tab，文件导航只在 tab 自己的 toolbar 下拉里，
   不再常驻左侧文件列表。左 rail「改动」face 是项目级、Goal 组在前、讨论组在后：Goal / 讨论的组头
   与单项都可收起，当前项默认展开并用「当前」标签标识；点 Goal / 讨论标题打开对象 tab，点 revision /

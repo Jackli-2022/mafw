@@ -328,6 +328,18 @@ test("a live change-set update does not steal the active file tab", () => {
   assert.equal(activeDocumentTabId(), fileId)
 })
 
+test("opening the world tab later pins it before existing tabs", () => {
+  syncFileTabs("C:/repo", [view("a.ts")])
+  web("w1", "W")
+  openSceneTab({
+    subject: { kind: "world" },
+    scope: { kind: "world", worldId: "C:/repo" },
+    label: "世界总览",
+  })
+  assert.equal(documentTabs()[0]?.id, "scene:world")
+  assert.deepEqual(documentTabs().slice(1).map((entry) => entry.kind), ["file", "web"])
+})
+
 test("scene tabs join the same strip; only world / Goal scenes persist", () => {
   const storage = fakeStorage()
   configureDocumentListStorage(storage)
@@ -348,6 +360,8 @@ test("scene tabs join the same strip; only world / Goal scenes persist", () => {
     label: "Goal · 修复登录",
   })
   assert.deepEqual(documentTabs().map((entry) => entry.kind), ["scene", "scene", "scene"])
+  moveDocumentTab("scene:goal:g1", "scene:world", "before")
+  assert.deepEqual(documentTabs().map((entry) => entry.id), ["scene:world", "scene:goal:g1", "scene:terminal:local"])
   flushDocumentListPersistence()
   const saved = JSON.parse(storage.map.get(documentListStorageKey("C:/repo"))!) as { order: string[] }
   assert.deepEqual(saved.order, ["scene:world", "scene:goal:g1"])

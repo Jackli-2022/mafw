@@ -16,6 +16,16 @@ export function webDocumentTabId(tabId: string): string {
   return `web:${tabId}`
 }
 
+/** 世界是固定首页 tab：任何同步 / 拖拽之后都回到第一位。 */
+export const WORLD_SCENE_TAB_ID = "scene:world"
+
+export function pinWorldTabFirst(entries: readonly DocumentTabEntry[]): DocumentTabEntry[] {
+  const index = entries.findIndex((entry) => entry.id === WORLD_SCENE_TAB_ID)
+  if (index <= 0) return entries as DocumentTabEntry[]
+  const world = entries[index]!
+  return [world, ...entries.slice(0, index), ...entries.slice(index + 1)]
+}
+
 /** Stable merge: surviving ids keep their old position; new ids append. */
 export function mergeDocumentTabs(
   previous: readonly DocumentTabEntry[],

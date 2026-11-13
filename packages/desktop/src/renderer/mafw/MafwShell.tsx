@@ -143,7 +143,7 @@ import {
   requestCloseDocumentTab,
   requestDocumentActivation,
 } from "./documents/document-tabs-store"
-import { fileDocumentTabId, nextDocumentTabId, webDocumentTabId } from "./documents/document-tabs-model"
+import { fileDocumentTabId, nextDocumentTabId, webDocumentTabId, WORLD_SCENE_TAB_ID } from "./documents/document-tabs-model"
 import { configureDocumentListStorage } from "./documents/document-list-persistence"
 import { configureBrowserTabsStorage } from "./documents/browser-tabs-persistence"
 import { activeBrowserDocumentId, openBrowserDocument } from "./documents/browser-documents"
@@ -2811,6 +2811,7 @@ export function MafwShell() {
     activateDocumentTab(id)
   }
   const closeDocumentTab = (id: string) => {
+    if (id === WORLD_SCENE_TAB_ID) return
     const entries = documentTabs()
     const active = activeDocumentTabId()
     const wasActive = active === id
@@ -2821,7 +2822,7 @@ export function MafwShell() {
     else showWorkbenchLanding()
   }
   const closeDocumentTabs = (ids: readonly string[]) => {
-    const closing = new Set(ids)
+    const closing = new Set(ids.filter((id) => id !== WORLD_SCENE_TAB_ID))
     const entries = documentTabs()
     const active = activeDocumentTabId()
     const wasActive = !!active && closing.has(active)
@@ -3081,9 +3082,13 @@ export function MafwShell() {
     setFocusState(state)
     switchSceneTabWorld(worldId)
     const top = state.stack[state.stack.length - 1]
-    if (top?.subject.kind === "world") {
-      openSceneTab({ subject: top.subject, scope: top.scope, label: "世界总览", icon: "world" })
-    } else if (top?.subject.kind === "goal") {
+    openSceneTab({
+      subject: { kind: "world" },
+      scope: { kind: "world", worldId },
+      label: "世界总览",
+      icon: "world",
+    })
+    if (top?.subject.kind === "goal") {
       const subject = top.subject
       const goal = podStore.detail()?.goals.find((item) => item.goalId === subject.goalId)
       openSceneTab({

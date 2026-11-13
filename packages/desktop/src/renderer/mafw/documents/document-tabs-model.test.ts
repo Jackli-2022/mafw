@@ -8,8 +8,10 @@ import {
   mergeDocumentTabs,
   moveDocumentTab,
   nextDocumentTabId,
+  pinWorldTabFirst,
   syncKindEntries,
   webDocumentTabId,
+  WORLD_SCENE_TAB_ID,
   type DocumentTabEntry,
 } from "./document-tabs-model"
 
@@ -144,4 +146,18 @@ test("documentTabViews marks only the active id and keeps unified ids", () => {
   assert.deepEqual(views.map((entry) => entry.id), [a.id, b.id])
   assert.deepEqual(views.map((entry) => entry.active), [false, true])
   assert.deepEqual(views.map((entry) => entry.icon), ["file", "globe"])
+})
+
+test("the world tab is pinned to the front", () => {
+  const world: DocumentTabEntry = {
+    id: WORLD_SCENE_TAB_ID,
+    kind: "scene",
+    view: view("世界总览", "世界总览", { icon: "world" as const }),
+  }
+  const a = file("a.ts")
+  const b = web("b")
+
+  assert.deepEqual(pinWorldTabFirst([a, b, world]).map((entry) => entry.id), [world.id, a.id, b.id])
+  assert.deepEqual(pinWorldTabFirst([world, a, b]).map((entry) => entry.id), [world.id, a.id, b.id])
+  assert.deepEqual(pinWorldTabFirst([a, b]).map((entry) => entry.id), [a.id, b.id])
 })

@@ -10,6 +10,7 @@ import {
   closeOtherTabIds,
   closeRightTabIds,
   documentTabViews,
+  WORLD_SCENE_TAB_ID,
 } from "../documents/document-tabs-model"
 import { buildDocumentTabMenu } from "../context-menu/builders/document-tab"
 import { menuController } from "../context-menu/controller"
@@ -42,6 +43,7 @@ export function WorkbenchTabs(props: WorkbenchTabsProps): JSX.Element {
         copyValue,
         canCloseOthers: entries.length > 1,
         canCloseRight: index >= 0 && index < entries.length - 1,
+        pinned: entry.id === WORLD_SCENE_TAB_ID,
       },
       (action) => {
         if (action === "documentTab.close") props.onClose(id)
@@ -66,6 +68,7 @@ export function WorkbenchTabs(props: WorkbenchTabsProps): JSX.Element {
       onMiddleClick={props.onClose}
       onContextMenu={requestTabMenu}
       onReorder={moveDocumentTab}
+      pinnedIds={[WORLD_SCENE_TAB_ID]}
     />
   )
 }
