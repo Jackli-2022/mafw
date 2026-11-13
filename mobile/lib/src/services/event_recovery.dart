@@ -11,6 +11,8 @@
 /// - `reset` / `truncated` / unsupported replay / request errors fall back to a
 ///   full reload, and only `reset` / `truncated` pin the cursor to `headSeq`
 ///   (a transient failure keeps the old cursor so the next reconnect retries);
+///   a `hasMore` page whose `nextSince` cannot advance past the last applied seq
+///   is a protocol violation and falls back too (cursor stays at last applied);
 /// - seq-less frames (`message.part.delta`) never move the cursor.
 library;
 
@@ -38,6 +40,12 @@ enum RecoveryFallback {
   /// is at the last applied seq, but the gap is not fully bridged: the caller
   /// must finish with a full reload instead of treating this as success.
   pageCap,
+
+  /// `hasMore` with a `nextSince` that does not advance past the seq this client
+  /// already consumed. The server cannot bridge the gap (protocol violation), so
+  /// this is a fallback — never a success — while the cursor stays at the last
+  /// applied seq.
+  protocol,
 }
 
 /// Which branch [EventRecoveryService.recover] took.
@@ -286,6 +294,7 @@ class EventRecoveryService {
     var cursor = start; // local pagination cursor (`since` for the next fetch)
     var applied = 0;
     var reachedPageCap = false;
+    var protocolViolation = false;
     try {
       for (var pageIndex = 0; pageIndex < maxPages; pageIndex++) {
         final since = cursor;
@@ -332,8 +341,14 @@ class EventRecoveryService {
         }
 
         if (!page.hasMore) break;
-        // Contract guard: a page that does not move nextSince would loop.
-        if (page.nextSince <= since) break;
+        // Contract guard: `hasMore` with a nextSince that does not advance past
+        // the last applied seq (`since`) means the gateway cannot bridge the gap.
+        // Reporting `recovered` here would silently drop the remaining events,
+        // so the caller must finish with a full reload instead.
+        if (page.nextSince <= since) {
+          protocolViolation = true;
+          break;
+        }
         if (pageIndex == maxPages - 1) reachedPageCap = true;
       }
     } catch (_) {
@@ -345,6 +360,12 @@ class EventRecoveryService {
     }
 
     await _persistCursor();
+    if (protocolViolation) {
+      // Cursor stays at the last applied seq; the gap beyond it is unbridged.
+      _onFallback(RecoveryFallback.protocol);
+      return RecoveryOutcome.fellBack(RecoveryFallback.protocol,
+          applied: applied);
+    }
     if (reachedPageCap) {
       // The 100-page bound stopped short of head: never report this as success.
       _onFallback(RecoveryFallback.pageCap);

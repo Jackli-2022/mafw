@@ -10,7 +10,8 @@
 /// - only canonical lifecycle frames are consumed ([MafwEvent.innerType] — flat
 ///   / legacy frames keep their own `type` and carry no session contract);
 /// - `session.updated` merges only the fields present in `properties.info` and
-///   never reorders or clears the row (matching the desktop entity patch);
+///   never clears the row; a new `time.updated` re-sorts it by activity (other
+///   field patches keep the order);
 /// - `session.created` requires both an id and a non-empty title; anything less
 ///   returns the input unchanged so the page falls back to one debounced full
 ///   fetch (an id-only ghost row is worse than a short delay);
@@ -28,13 +29,18 @@ const String kSessionCreatedEvent = 'session.created';
 const String kSessionUpdatedEvent = 'session.updated';
 const String kSessionDeletedEvent = 'session.deleted';
 
-/// Chat list order: Lead rows first, then newest-first.
+/// Chat list order: Lead rows first, then newest activity-first.
 ///
 /// Single source of truth for both the full fetch (`SessionsPage`) and the
-/// incremental `session.created` insert.
+/// incremental `session.created` / `session.updated` paths. The sort key is
+/// `timeUpdated ?? timeCreated`: a session that just received a turn bubbles up
+/// even when it was created long ago; rows from older gateways (no
+/// `time.updated`) keep the previous creation-time order.
 int compareSessionRows(MafwSession a, MafwSession b) {
   if (a.isLead != b.isLead) return a.isLead ? -1 : 1;
-  return (b.timeCreated ?? 0).compareTo(a.timeCreated ?? 0);
+  final aKey = a.timeUpdated ?? a.timeCreated ?? 0;
+  final bKey = b.timeUpdated ?? b.timeCreated ?? 0;
+  return bKey.compareTo(aKey);
 }
 
 /// Internal session agents (`gateway/src/core/session-visibility.ts`).
@@ -133,6 +139,12 @@ List<MafwSession> _applyUpdated(List<MafwSession> current, MafwEvent event) {
 
   final next = List<MafwSession>.of(current);
   next[index] = merged;
+  // A new activity timestamp changes the row's place in the list: re-sort so
+  // the session that just received a turn bubbles to the top. A field patch
+  // without `time.updated` (rename, directory) keeps the order untouched.
+  if (merged.timeUpdated != current[index].timeUpdated) {
+    next.sort(compareSessionRows);
+  }
   return next;
 }
 
@@ -208,12 +220,16 @@ MafwSession? _mergeInfo(MafwSession row, Map<String, dynamic>? info) {
   final created = time is Map<String, dynamic> && time['created'] is num
       ? (time['created'] as num).toInt()
       : null;
+  final updated = time is Map<String, dynamic> && time['updated'] is num
+      ? (time['updated'] as num).toInt()
+      : null;
 
   final unchanged = (title == null || title == row.title) &&
       (projectID == null || projectID == row.projectID) &&
       (directory == null || directory == row.directory) &&
       (metadata == null || identical(metadata, row.metadata)) &&
-      (created == null || created == row.timeCreated);
+      (created == null || created == row.timeCreated) &&
+      (updated == null || updated == row.timeUpdated);
   if (unchanged) return null;
 
   return row.copyWith(
@@ -222,5 +238,6 @@ MafwSession? _mergeInfo(MafwSession row, Map<String, dynamic>? info) {
     directory: directory,
     metadata: metadata,
     timeCreated: created,
+    timeUpdated: updated,
   );
 }

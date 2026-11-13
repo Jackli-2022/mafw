@@ -18,6 +18,13 @@ class MafwSession {
   final Map<String, dynamic>? metadata;
   final int? timeCreated;
 
+  /// `time.updated` (ms) — the last-activity timestamp.
+  ///
+  /// The chat list sorts by this when present and falls back to [timeCreated]
+  /// for legacy rows: a session that just received a turn must bubble up even
+  /// though it was created long ago.
+  final int? timeUpdated;
+
   MafwSession({
     required this.id,
     this.title,
@@ -27,6 +34,7 @@ class MafwSession {
     this.agent,
     this.metadata,
     this.timeCreated,
+    this.timeUpdated,
   });
 
   /// Strings only: a malformed field (`title: 42`) is dropped, not thrown.
@@ -38,6 +46,7 @@ class MafwSession {
   factory MafwSession.fromJson(Map<String, dynamic> j) {
     final time = j['time'];
     final created = time is Map<String, dynamic> ? time['created'] : null;
+    final updated = time is Map<String, dynamic> ? time['updated'] : null;
     return MafwSession(
       id: (j['id'] ?? '').toString(),
       title: _stringField(j['title']),
@@ -47,6 +56,7 @@ class MafwSession {
       agent: _stringField(j['agent']),
       metadata: j['metadata'] is Map<String, dynamic> ? j['metadata'] as Map<String, dynamic> : null,
       timeCreated: created is num ? created.toInt() : null,
+      timeUpdated: updated is num ? updated.toInt() : null,
     );
   }
 
@@ -64,6 +74,7 @@ class MafwSession {
     String? agent,
     Map<String, dynamic>? metadata,
     int? timeCreated,
+    int? timeUpdated,
   }) {
     return MafwSession(
       id: id,
@@ -74,6 +85,7 @@ class MafwSession {
       agent: agent ?? this.agent,
       metadata: metadata ?? this.metadata,
       timeCreated: timeCreated ?? this.timeCreated,
+      timeUpdated: timeUpdated ?? this.timeUpdated,
     );
   }
 

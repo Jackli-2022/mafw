@@ -28,6 +28,7 @@
  *  - 补页成功 → 以 `headSeq` 开流（SSE 零回放），`lastAppliedSeq = headSeq`
  *    并把持久化游标推进到 `headSeq`；
  *  - `reset` / `truncated` → 清游标 + `onFullResync(reason)` + 以 `headSeq` 开流；
+ *    E7-5：随后把持久化游标重置为 `headSeq`，让下次冷启动只补新缺口；
  *  - 返回 null / 抛错 → 保持原 since，行为与 E2-3 完全一致；
  *  - 首次连接（无游标）不 replay。
  */
@@ -150,6 +151,9 @@ export class SseConnection {
           this.clearSeq()
           this.lastAppliedSeq = null
           this.deps.onFullResync?.(gap.reset ? "reset" : "truncated", { headSeq: gap.headSeq })
+          // E7-5：清掉旧游标后必须把新纪元起点落盘。否则本进程退出后下次冷启动
+          // 又按「无游标」全量重同步一次（旧行为），等于每次 restart 都多一轮全量拉取。
+          this.writeSeq(gap.headSeq)
         } else {
           this.lastAppliedSeq = gap.headSeq
           // 持久化游标与去重闸对齐：补页已覆盖到 headSeq，重连不应再从旧值回放。

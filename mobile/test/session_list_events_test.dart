@@ -52,6 +52,7 @@ MafwSession _session(
   String? agent,
   Map<String, dynamic>? metadata,
   int? timeCreated,
+  int? timeUpdated,
 }) =>
     MafwSession(
       id: id,
@@ -62,6 +63,7 @@ MafwSession _session(
       agent: agent,
       metadata: metadata,
       timeCreated: timeCreated,
+      timeUpdated: timeUpdated,
     );
 
 Map<String, dynamic> _leadMetadata() => {
@@ -93,6 +95,127 @@ void main() {
       expect(copy.directory, row.directory);
       expect(copy.metadata, row.metadata);
       expect(copy.timeCreated, row.timeCreated);
+    });
+  });
+
+  group('MafwSession time.updated', () {
+    test('fromJson reads time.updated next to time.created', () {
+      final row = MafwSession.fromJson({
+        'id': 'ses_a',
+        'time': {'created': 10, 'updated': 20},
+      });
+
+      expect(row.timeCreated, 10);
+      expect(row.timeUpdated, 20);
+    });
+
+    test('fromJson leaves timeUpdated null when absent or malformed', () {
+      expect(
+        MafwSession.fromJson({
+          'id': 'ses_a',
+          'time': {'created': 10},
+        }).timeUpdated,
+        isNull,
+      );
+      expect(
+        MafwSession.fromJson({
+          'id': 'ses_a',
+          'time': {'created': 10, 'updated': 'soon'},
+        }).timeUpdated,
+        isNull,
+      );
+    });
+
+    test('copyWith carries timeUpdated through and only replaces it when supplied', () {
+      final row = _session('ses_a', timeCreated: 10, timeUpdated: 20);
+
+      expect(row.copyWith().timeUpdated, 20);
+      expect(row.copyWith(title: 'new').timeUpdated, 20);
+      expect(row.copyWith(timeUpdated: 30).timeUpdated, 30);
+      expect(row.copyWith(timeUpdated: 30).timeCreated, 10);
+    });
+  });
+
+  group('applySessionListEvent: time.updated ordering', () {
+    test('patches timeUpdated from properties.info.time.updated', () {
+      final current = [_session('ses_a', title: 'A', timeCreated: 100)];
+
+      final next = applySessionListEvent(
+        current,
+        _event('session.updated', info: {
+          'id': 'ses_a',
+          'time': {'created': 100, 'updated': 250},
+        }),
+      );
+
+      expect(next.single.timeUpdated, 250);
+      // An update is not a creation: the original timestamp still stands.
+      expect(next.single.timeCreated, 100);
+    });
+
+    test('a newer time.updated re-sorts the list newest-first', () {
+      final current = [
+        _session('ses_a', title: 'A', timeCreated: 300),
+        _session('ses_b', title: 'B', timeCreated: 200),
+        _session('ses_c', title: 'C', timeCreated: 100),
+      ];
+
+      final next = applySessionListEvent(
+        current,
+        _event('session.updated', info: {
+          'id': 'ses_c',
+          'time': {'updated': 400},
+        }),
+      );
+
+      expect(next.map((s) => s.id), ['ses_c', 'ses_a', 'ses_b']);
+      expect(next.first.timeUpdated, 400);
+    });
+
+    test('Lead rows stay first when an update re-sorts', () {
+      final current = [
+        _session('ses_lead', title: 'Lead', metadata: _leadMetadata(), timeCreated: 10),
+        _session('ses_a', title: 'A', timeCreated: 300),
+      ];
+
+      final next = applySessionListEvent(
+        current,
+        _event('session.updated', info: {
+          'id': 'ses_a',
+          'time': {'updated': 400},
+        }),
+      );
+
+      expect(next.map((s) => s.id), ['ses_lead', 'ses_a']);
+    });
+
+    test('rows without timeUpdated fall back to timeCreated', () {
+      final old = _session('ses_old', title: 'Old', timeCreated: 100);
+      final fresh = _session('ses_new', title: 'New', timeCreated: 200);
+
+      // Legacy rows (no updated key) keep sorting by creation time.
+      expect(compareSessionRows(fresh, old), lessThan(0));
+      expect(compareSessionRows(old, fresh), greaterThan(0));
+
+      // …but a touched row outranks a newer creation.
+      final touched = old.copyWith(timeUpdated: 300);
+      expect(compareSessionRows(touched, fresh), lessThan(0));
+      expect(compareSessionRows(fresh, touched), greaterThan(0));
+    });
+
+    test('a title-only update keeps the existing order (no reorder churn)', () {
+      final current = [
+        _session('ses_b', title: 'B', timeCreated: 200),
+        _session('ses_a', title: 'A', timeCreated: 100),
+      ];
+
+      final next = applySessionListEvent(
+        current,
+        _event('session.updated', info: {'id': 'ses_a', 'title': 'A2'}),
+      );
+
+      expect(next.map((s) => s.id), ['ses_b', 'ses_a']);
+      expect(next[1].title, 'A2');
     });
   });
 

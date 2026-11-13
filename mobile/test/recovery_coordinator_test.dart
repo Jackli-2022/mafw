@@ -172,10 +172,12 @@ void main() {
       );
 
       // Cursor is at 11 after the page; the follow-up page repeats `nextSince`
-      // and the loop stops on the no-progress guard.
-      expect(h.log, ['emit:11', 'refresh']);
+      // and the no-progress guard reports a protocol fallback (E7-5) — never a
+      // fake success, so the caller reloads after the refresh.
+      expect(h.log, ['emit:11', 'refresh', 'reload']);
       expect(result.refreshed, isTrue);
-      expect(result.fullReload, isFalse);
+      expect(result.fallback, RecoveryFallback.protocol);
+      expect(result.fullReload, isTrue);
       expect(result.applied, 1);
     });
 
