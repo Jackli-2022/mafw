@@ -2051,7 +2051,7 @@ export class NodeDriver {
     });
   }
 
-  /** 应答 askUser（respond 路由 / mafw_answer_question → HTTP → index.ts 调入）。 */
+  /** 应答 askUser（human-only respond 路由 → index.ts 调入）。 */
   handleAnswer(goalId: string, questionId: string, answer: string): boolean {
     const found = this.findState(goalId);
     if (!found) return false;

@@ -495,20 +495,6 @@ export const DEFINITIONS: ToolDefinition[] = [
     inputSchema: { type: "object", properties: {} },
   },
   {
-    name: "mafw_answer_question",
-    description: "Answer a pending loop question on behalf of the user",
-    inputSchema: {
-      type: "object",
-      properties: {
-        goalId: { type: "string" },
-        questionId: { type: "string" },
-        answer: { type: "string" },
-        action: { type: "string", enum: ["answer", "cancel", "redirect"], default: "answer" },
-      },
-      required: ["goalId", "questionId", "answer"],
-    },
-  },
-  {
     name: "mafw_get_evidence",
     description: "Read review report / evidence for a goal",
     inputSchema: {
@@ -888,7 +874,6 @@ import { handleRestartAgent } from "./handlers/restart-agent";
 import { handleManagerSetGoal } from "./handlers/manager-set-goal";
 import { handleManagerGetGoalStatus } from "./handlers/manager-get-goal-status";
 import { handleManagerListGoals } from "./handlers/manager-list-goals";
-import { handleManagerAnswerQuestion } from "./handlers/manager-answer-question";
 import { handleManagerGetEvidence } from "./handlers/manager-get-evidence";
 import { handleManagerCancelGoal } from "./handlers/manager-cancel-goal";
 import { handleManagerListPendingQuestions } from "./handlers/manager-list-pending-questions";
@@ -942,7 +927,6 @@ export function createToolRegistry(): ToolRegistry {
       mafw_set_goal: handleManagerSetGoal,
       mafw_get_goal_status: handleManagerGetGoalStatus,
       mafw_list_goals: handleManagerListGoals,
-      mafw_answer_question: handleManagerAnswerQuestion,
       mafw_get_evidence: handleManagerGetEvidence,
       mafw_cancel_goal: handleManagerCancelGoal,
       mafw_list_pending_questions: handleManagerListPendingQuestions,

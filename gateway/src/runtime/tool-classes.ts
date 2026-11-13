@@ -101,7 +101,6 @@ export const MAFW_TOOL_ANNOTATIONS: Record<string, MafwToolAnnotations> = {
   mafw_supersede_memory: { readOnlyHint: false, destructiveHint: false },
   mafw_pin_memory: { readOnlyHint: false, destructiveHint: false },
   mafw_record_feedback: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
-  mafw_answer_question: { readOnlyHint: false, destructiveHint: false },
   mafw_propose_triage_decision: { readOnlyHint: false, destructiveHint: false },
   mafw_draft_automation_rule: { readOnlyHint: false, destructiveHint: false },
   // 编排触发

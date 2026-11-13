@@ -251,7 +251,7 @@ describe('runtime-agents-install', () => {
         'mafw_record_feedback', 'mafw_get_model_route', 'mafw_add_memory',
         'mafw_commit_heuristic', 'mafw_get_axioms', 'mafw_merge_memory',
         'mafw_resolve_merge', 'mafw_set_goal', 'mafw_get_goal_status',
-        'mafw_list_goals', 'mafw_answer_question', 'mafw_get_evidence',
+        'mafw_list_goals', 'mafw_get_evidence',
         'mafw_cancel_goal', 'mafw_list_pending_questions',
         'mafw_list_automation_rules', 'mafw_get_automation_rule',
         'mafw_list_triage_items', 'mafw_get_triage_item',
@@ -265,6 +265,8 @@ describe('runtime-agents-install', () => {
       for (const tool of expectedTools) {
         expect(frontmatter).toContain(`${tool}: allow`);
       }
+      // E7 review：MCP 不提供 human 工具；代答路径已删除，允许列表不得回填
+      expect(frontmatter).not.toContain('mafw_answer_question');
     });
   });
 
