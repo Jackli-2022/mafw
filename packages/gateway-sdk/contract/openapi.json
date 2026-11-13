@@ -6665,11 +6665,19 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "required": [
+                    "approvals"
+                  ],
                   "properties": {
                     "approvals": {
                       "type": "array",
                       "items": {
                         "type": "object",
+                        "required": [
+                          "id",
+                          "question",
+                          "status"
+                        ],
                         "properties": {
                           "id": {
                             "type": "string"
@@ -6681,30 +6689,24 @@
                             "type": "string"
                           },
                           "status": {
-                            "type": "string",
-                            "enum": [
-                              "pending",
-                              "answered",
-                              "expired"
+                            "anyOf": [
+                              {
+                                "const": "pending",
+                                "type": "string"
+                              },
+                              {
+                                "const": "answered",
+                                "type": "string"
+                              }
                             ]
                           },
                           "createdAt": {
                             "type": "string"
                           }
-                        },
-                        "required": [
-                          "id",
-                          "goalId",
-                          "question",
-                          "status",
-                          "createdAt"
-                        ]
+                        }
                       }
                     }
-                  },
-                  "required": [
-                    "approvals"
-                  ]
+                  }
                 }
               }
             }
@@ -6748,54 +6750,174 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "required": [
+                    "items"
+                  ],
                   "properties": {
                     "items": {
                       "type": "array",
                       "items": {
                         "type": "object",
+                        "required": [
+                          "id",
+                          "automationId",
+                          "discoveredAt",
+                          "source",
+                          "summary",
+                          "state",
+                          "userAction",
+                          "deadline"
+                        ],
                         "properties": {
                           "id": {
                             "type": "string"
                           },
-                          "goalId": {
+                          "automationId": {
                             "type": "string"
                           },
-                          "reason": {
+                          "discoveredAt": {
                             "type": "string"
                           },
-                          "severity": {
-                            "type": "string",
-                            "enum": [
-                              "low",
-                              "medium",
-                              "high"
-                            ]
-                          },
-                          "createdAt": {
+                          "source": {
                             "type": "string"
+                          },
+                          "summary": {
+                            "type": "object",
+                            "patternProperties": {
+                              "^(.*)$": {}
+                            }
+                          },
+                          "proposedGoal": {
+                            "type": "object",
+                            "required": [
+                              "title",
+                              "boundaries",
+                              "estimatedLoops"
+                            ],
+                            "properties": {
+                              "title": {
+                                "type": "string"
+                              },
+                              "boundaries": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "estimatedLoops": {
+                                "type": "number"
+                              }
+                            }
                           },
                           "state": {
-                            "type": "string",
-                            "enum": [
-                              "PENDING_CONFIRMATION",
-                              "CONFIRMED",
-                              "REJECTED"
+                            "anyOf": [
+                              {
+                                "const": "PENDING_CONFIRMATION",
+                                "type": "string"
+                              },
+                              {
+                                "const": "CONFIRMED",
+                                "type": "string"
+                              },
+                              {
+                                "const": "REJECTED",
+                                "type": "string"
+                              }
                             ]
+                          },
+                          "userAction": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "required": [
+                                  "type",
+                                  "at"
+                                ],
+                                "properties": {
+                                  "type": {
+                                    "anyOf": [
+                                      {
+                                        "const": "confirm",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "ignore",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "edit",
+                                        "type": "string"
+                                      }
+                                    ]
+                                  },
+                                  "at": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "deadline": {
+                            "type": "string"
+                          },
+                          "llmSuggestions": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "action",
+                                "reason",
+                                "priority",
+                                "timestamp"
+                              ],
+                              "properties": {
+                                "action": {
+                                  "anyOf": [
+                                    {
+                                      "const": "confirm",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "reject",
+                                      "type": "string"
+                                    }
+                                  ]
+                                },
+                                "reason": {
+                                  "type": "string"
+                                },
+                                "priority": {
+                                  "anyOf": [
+                                    {
+                                      "const": "high",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "medium",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "low",
+                                      "type": "string"
+                                    }
+                                  ]
+                                },
+                                "timestamp": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          },
+                          "updatedAt": {
+                            "type": "string"
                           }
-                        },
-                        "required": [
-                          "id",
-                          "goalId",
-                          "reason",
-                          "severity",
-                          "createdAt"
-                        ]
+                        }
                       }
                     }
-                  },
-                  "required": [
-                    "items"
-                  ]
+                  }
                 }
               }
             }
@@ -6946,11 +7068,19 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "required": [
+                    "items"
+                  ],
                   "properties": {
                     "items": {
                       "type": "array",
                       "items": {
                         "type": "object",
+                        "required": [
+                          "id",
+                          "sessionID",
+                          "questions"
+                        ],
                         "properties": {
                           "id": {
                             "type": "string"
@@ -6962,6 +7092,10 @@
                             "type": "array",
                             "items": {
                               "type": "object",
+                              "required": [
+                                "question",
+                                "options"
+                              ],
                               "properties": {
                                 "question": {
                                   "type": "string"
@@ -6973,6 +7107,9 @@
                                   "type": "array",
                                   "items": {
                                     "type": "object",
+                                    "required": [
+                                      "label"
+                                    ],
                                     "properties": {
                                       "label": {
                                         "type": "string"
@@ -6980,10 +7117,7 @@
                                       "description": {
                                         "type": "string"
                                       }
-                                    },
-                                    "required": [
-                                      "label"
-                                    ]
+                                    }
                                   }
                                 },
                                 "multiple": {
@@ -6992,15 +7126,15 @@
                                 "custom": {
                                   "type": "boolean"
                                 }
-                              },
-                              "required": [
-                                "question",
-                                "options"
-                              ]
+                              }
                             }
                           },
                           "tool": {
                             "type": "object",
+                            "required": [
+                              "messageID",
+                              "callID"
+                            ],
                             "properties": {
                               "messageID": {
                                 "type": "string"
@@ -7008,24 +7142,20 @@
                               "callID": {
                                 "type": "string"
                               }
-                            },
-                            "required": [
-                              "messageID",
-                              "callID"
-                            ]
+                            }
+                          },
+                          "time": {
+                            "type": "object",
+                            "properties": {
+                              "created": {
+                                "type": "number"
+                              }
+                            }
                           }
-                        },
-                        "required": [
-                          "id",
-                          "sessionID",
-                          "questions"
-                        ]
+                        }
                       }
                     }
-                  },
-                  "required": [
-                    "items"
-                  ]
+                  }
                 }
               }
             }
@@ -7087,7 +7217,101 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "sessionID",
+                          "kind",
+                          "targets"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "sessionID": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string"
+                          },
+                          "targets": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "suggestedRule": {
+                            "type": "object",
+                            "required": [
+                              "scope",
+                              "value"
+                            ],
+                            "properties": {
+                              "scope": {
+                                "anyOf": [
+                                  {
+                                    "const": "tool",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "prefix",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "value": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "tool": {
+                            "type": "object",
+                            "required": [
+                              "messageID",
+                              "callID"
+                            ],
+                            "properties": {
+                              "messageID": {
+                                "type": "string"
+                              },
+                              "callID": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "time": {
+                            "type": "object",
+                            "properties": {
+                              "created": {
+                                "type": "number"
+                              }
+                            }
+                          },
+                          "extensions": {
+                            "type": "object",
+                            "patternProperties": {
+                              "^(.*)$": {}
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -7133,7 +7357,43 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "mode",
+                    "autoApprovals",
+                    "budget"
+                  ],
+                  "properties": {
+                    "mode": {
+                      "anyOf": [
+                        {
+                          "const": "read-only",
+                          "type": "string"
+                        },
+                        {
+                          "const": "auto",
+                          "type": "string"
+                        },
+                        {
+                          "const": "full-access",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "autoApprovals": {
+                      "type": "number"
+                    },
+                    "budget": {
+                      "type": "number"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       },
@@ -7167,7 +7427,36 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "entries"
+                  ],
+                  "properties": {
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "tool"
+                        ],
+                        "properties": {
+                          "tool": {
+                            "type": "string"
+                          },
+                          "prefix": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       },
@@ -7202,7 +7491,41 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "entries"
+                  ],
+                  "properties": {
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "tool",
+                          "action"
+                        ],
+                        "properties": {
+                          "tool": {
+                            "type": "string"
+                          },
+                          "pattern": {
+                            "type": "string"
+                          },
+                          "action": {
+                            "const": "allow",
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       },

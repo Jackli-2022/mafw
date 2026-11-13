@@ -3,9 +3,9 @@
 // `scripts/schema-coverage.cjs` parses `route-catalog.ts` (no TS import, no
 // generated SDK artifact) and reports how many catalog ops carry a 200
 // response schema. This test pins that report against the catalog:
-//   - the 37 ops covered at the E10b-1 close (13 pre-E10 + 16 E10 + 8 E10b-1) must each
+//   - the 44 ops covered at the E10b-2 close (13 pre-E10 + 16 E10 + 8 E10b-1 + 7 E10b-2) must each
 //     keep their `response` — a silent schema deletion fails here;
-//   - the covered count may only grow (>= 37);
+//   - the covered count may only grow (>= 44);
 //   - the total op count is pinned (316) so an unregistered/new route surfaces
 //     instead of drifting the ledger;
 //   - the script, spawned as a child process from the gateway root, must report
@@ -25,8 +25,9 @@ interface CoverageReport {
 const GATEWAY_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPT = path.join(GATEWAY_ROOT, 'scripts', 'schema-coverage.cjs');
 
-/** Baseline 13 (E8 and earlier) + 8 session read (E10-1) + 8 pod/work read (E10-2) + 8 goal read (E10b-1). */
+/** Baseline 13 (E8 and earlier) + 8 session read (E10-1) + 8 pod/work read (E10-2) + 8 goal read (E10b-1) + 7 human-gate/permission read (E10b-2). */
 const E10_COVERED_OPS = [
+  'approvals.list',
   'attention.list',
   'decisions.list',
   'event.replay',
@@ -37,6 +38,10 @@ const E10_COVERED_OPS = [
   'goals.timeline',
   'kernel.stats',
   'memory.stats',
+  'permissions.getMode',
+  'permissions.list',
+  'permissions.listAllowlist',
+  'permissions.listRules',
   'pod.events.list',
   'pods.cost',
   'pods.get',
@@ -50,6 +55,7 @@ const E10_COVERED_OPS = [
   'pods.tasks.list',
   'presence.get',
   'project.list',
+  'questions.list',
   'session.checkpoints',
   'session.children',
   'session.config',
@@ -62,6 +68,7 @@ const E10_COVERED_OPS = [
   'session.todo',
   'session.tokenSummary',
   'session.usageSummary',
+  'triage.list',
   'work.overview',
 ];
 
@@ -91,7 +98,7 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(lost).toEqual([]);
   });
 
-  it('covered count is >= 37 and the catalog still has exactly 316 ops', () => {
+  it('covered count is >= 44 and the catalog still has exactly 316 ops', () => {
     const ops = catalogOps();
     const covered = ops.filter((op) => op.hasResponse).length;
     expect(covered).toBeGreaterThanOrEqual(E10_COVERED_OPS.length);

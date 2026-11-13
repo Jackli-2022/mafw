@@ -14,9 +14,11 @@ import type {
   PodNamespace,
   // E10b-1 goal / pod-goal read surface
   GoalPlanInfo, GoalTimeline, GoalNodeRunInfo, PodTechLeadHistory, PodProbe, PodGoalRevision,
+  // E10b-2 human-gate / permission read surface
+  PermissionsNamespace,
 } from './types'
 import type { MafwClient } from './client'
-import type { MafwDiff } from './view-dto'
+import type { MafwDiff, MafwPermissionRequest } from './view-dto'
 
 /** 鐢熸垚褰㈢姸锛歳esponses.200.content['application/json'] 涓嬬洿鎺ュ唴鑱?schema 灞炴€э紙鏃?schema: 鍖呰锛夈€?*/
 type Resp<S> = S extends { responses: { 200: { content: { 'application/json': infer C } } } } ? C : never
@@ -110,6 +112,19 @@ const CHECK_pods_probes_item: AssertEq<GenPodProbeItem, PodProbe> = true
 type GenPodGoalRevisionItem = ItemOf<Resp<operations['pods.goals.revisions']>, 'items'>
 const CHECK_pods_revisions_item: AssertEq<GenPodGoalRevisionItem, PodGoalRevision> = true
 
+// E10b-2: human-gate / permission 读接口（7 ops）—— 三个 override 转 code-first。
+// Approval / QuestionRequest / TriageItem 的 AssertEq（上方 CHECK_*）保持；
+// 其中 TriageItem 按 handler wire 重塑（磁盘 triage JSON），Approval 的 legacy 可选字段同步。
+type GenPermissionItem = ItemOf<Resp<operations['permissions.list']>, 'items'>
+const CHECK_permissions_list_item: AssertEq<GenPermissionItem, MafwPermissionRequest> = true
+/** getMode / listAllowlist / listRules 无独立命名 DTO：锁 PermissionsNamespace 的返回类型。 */
+type SdkPermissionMode = Awaited<ReturnType<PermissionsNamespace['getMode']>>
+const CHECK_permissions_get_mode: AssertEq<Resp<operations['permissions.getMode']>, SdkPermissionMode> = true
+type SdkAllowlist = Awaited<ReturnType<PermissionsNamespace['listAllowlist']>>
+const CHECK_permissions_allowlist: AssertEq<Resp<operations['permissions.listAllowlist']>, SdkAllowlist> = true
+type SdkRules = Awaited<ReturnType<PermissionsNamespace['listRules']>>
+const CHECK_permissions_rules: AssertEq<Resp<operations['permissions.listRules']>, SdkRules> = true
+
 /**
  * session.messages：`data` 的 part 判别联合由 view-dto 契约拥有，schema 只承诺
  * SDK 边界守卫 `MafwMessageShape` 认可的形状；游标必须与 client 的
@@ -139,4 +154,7 @@ export const CONTRACT_COMPAT_CHECKS = [
   // E10b-1
   CHECK_goals_plan, CHECK_goals_timeline, CHECK_goals_timeline_node, CHECK_goals_source,
   CHECK_pods_tech_lead, CHECK_pods_probes_item, CHECK_pods_revisions_item,
+  // E10b-2
+  CHECK_permissions_list_item, CHECK_permissions_get_mode, CHECK_permissions_allowlist,
+  CHECK_permissions_rules,
 ]

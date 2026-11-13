@@ -205,10 +205,13 @@ export interface L5Heuristic {
 
 export interface Approval {
   id: string
-  goalId: string
+  /** E10b-2: flat legacy `user-questions` 文件（`run-ask-user.ts` 的 `goalId?`）可缺该键。 */
+  goalId?: string
   question: string
-  status: 'pending' | 'answered' | 'expired'
-  createdAt: string
+  /** handler 由 `answered` 派生，wire 上只有 pending / answered。 */
+  status: 'pending' | 'answered'
+  /** 同上：legacy 文件写的是 `timestamp`，投影取不到即省略。 */
+  createdAt?: string
 }
 
 // ── Questions (AskCard) — mirrors opencode QuestionV1 ──
@@ -231,10 +234,17 @@ export interface QuestionRequest {
   sessionID: string
   questions: QuestionInfo[]
   tool?: { messageID: string; callID: string }
+  /** E10b-2: 投影在源带 `createdAt` 时补 `time.created`（原生 `time` 记录原样保留）。 */
+  time?: { created?: number }
 }
 
 // ── Permissions (PermissionCard) — mirrors opencode PermissionV1 ──
 
+/**
+ * @deprecated E10b-2：`permissions.list` 的 wire 是 canonical `MafwPermissionRequest`
+ * （id / kind / targets，见 view-dto.ts 与 `permissions.list` 契约）。该 V1 形状仅保留给
+ * 仍按旧形状声明的 desktop preload 边界，新代码请用 `MafwPermissionRequest`。
+ */
 export interface PermissionRequest {
   id: string
   sessionID: string
@@ -245,13 +255,32 @@ export interface PermissionRequest {
   tool?: { messageID: string; callID: string }
 }
 
+/**
+ * E10b-2: `triage.list` 的 wire 是 `~/.mafw/triage/*.json` 的磁盘记录原样下发
+ * （`automation-engine.getTriageItems()`），不是旧 override 描述的
+ * `{goalId, reason, severity, createdAt}`（该形状没有任何 writer 产出）。
+ * `summary` 是草稿载荷（skillDraft / axiomDraft / 自动化产物），owner 为各 writer；
+ * axiom-distill writer 不写 `proposedGoal`，故为 optional。
+ */
 export interface TriageItem {
   id: string
-  goalId: string
+  automationId: string
+  discoveredAt: string
+  source: string
+  summary: Record<string, unknown>
+  proposedGoal?: { title: string; boundaries: string[]; estimatedLoops: number }
+  state: 'PENDING_CONFIRMATION' | 'CONFIRMED' | 'REJECTED'
+  userAction: null | { type: 'confirm' | 'ignore' | 'edit'; at: string }
+  deadline: string
+  llmSuggestions?: TriageLlmSuggestion[]
+  updatedAt?: string
+}
+
+export interface TriageLlmSuggestion {
+  action: 'confirm' | 'reject'
   reason: string
-  severity: 'low' | 'medium' | 'high'
-  createdAt: string
-  state?: 'PENDING_CONFIRMATION' | 'CONFIRMED' | 'REJECTED'
+  priority: 'high' | 'medium' | 'low'
+  timestamp: string
 }
 
 export interface AutomationRule {
@@ -2147,7 +2176,8 @@ export interface PermissionRule {
 }
 
 export interface PermissionsNamespace {
-  list(): Promise<PermissionRequest[]>
+  /** E10b-2: 与 `permissions.list` 契约一致（canonical `MafwPermissionRequest` 投影）。 */
+  list(): Promise<import('./view-dto').MafwPermissionRequest[]>
   reply(id: string, reply: 'once' | 'always' | 'reject', message?: string, persist?: boolean | 'tool' | 'prefix'): Promise<void>
   /**
    * per-session 审批模式（gateway kv 持久）。三档预设：read-only（只读工具放行、变更必问）/

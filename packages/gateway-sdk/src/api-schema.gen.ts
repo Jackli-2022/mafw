@@ -8571,11 +8571,10 @@ export interface operations {
                     "application/json": {
                         approvals: {
                             id: string;
-                            goalId: string;
+                            goalId?: string;
                             question: string;
-                            /** @enum {string} */
-                            status: "pending" | "answered" | "expired";
-                            createdAt: string;
+                            status: "pending" | "answered";
+                            createdAt?: string;
                         }[];
                     };
                 };
@@ -8620,13 +8619,30 @@ export interface operations {
                     "application/json": {
                         items: {
                             id: string;
-                            goalId: string;
-                            reason: string;
-                            /** @enum {string} */
-                            severity: "low" | "medium" | "high";
-                            createdAt: string;
-                            /** @enum {string} */
-                            state?: "PENDING_CONFIRMATION" | "CONFIRMED" | "REJECTED";
+                            automationId: string;
+                            discoveredAt: string;
+                            source: string;
+                            summary: {
+                                [key: string]: unknown;
+                            };
+                            proposedGoal?: {
+                                title: string;
+                                boundaries: string[];
+                                estimatedLoops: number;
+                            };
+                            state: "PENDING_CONFIRMATION" | "CONFIRMED" | "REJECTED";
+                            userAction: {
+                                type: "confirm" | "ignore" | "edit";
+                                at: string;
+                            } | null;
+                            deadline: string;
+                            llmSuggestions?: {
+                                action: "confirm" | "reject";
+                                reason: string;
+                                priority: "high" | "medium" | "low";
+                                timestamp: string;
+                            }[];
+                            updatedAt?: string;
                         }[];
                     };
                 };
@@ -8784,6 +8800,9 @@ export interface operations {
                                 messageID: string;
                                 callID: string;
                             };
+                            time?: {
+                                created?: number;
+                            };
                         }[];
                     };
                 };
@@ -8844,7 +8863,30 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            sessionID: string;
+                            kind: string;
+                            targets: string[];
+                            suggestedRule?: {
+                                scope: "tool" | "prefix";
+                                value: string;
+                            };
+                            tool?: {
+                                messageID: string;
+                                callID: string;
+                            };
+                            time?: {
+                                created?: number;
+                            };
+                            extensions?: {
+                                [key: string]: unknown;
+                            };
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -8884,7 +8926,13 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        mode: "read-only" | "auto" | "full-access";
+                        autoApprovals: number;
+                        budget: number;
+                    };
+                };
             };
         };
     };
@@ -8922,7 +8970,14 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        entries: {
+                            tool: string;
+                            prefix?: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -8976,7 +9031,16 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        entries: {
+                            tool: string;
+                            pattern?: string;
+                            /** @constant */
+                            action: "allow";
+                        }[];
+                    };
+                };
             };
         };
     };
