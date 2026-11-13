@@ -142,7 +142,7 @@ import {
 import { fileDocumentTabId, nextDocumentTabId, webDocumentTabId } from "./documents/document-tabs-model"
 import { configureDocumentListStorage } from "./documents/document-list-persistence"
 import { configureBrowserTabsStorage } from "./documents/browser-tabs-persistence"
-import { activeBrowserTabId } from "./browser-tabs"
+import { activeBrowserTabId, openBrowserTab } from "./browser-tabs"
 import { stageActionFor } from "./focus/stage-dispatch"
 import { openGoalFocus as applyGoalFocus, openReviewItemFocus as applyReviewFocus, openChangeSetFocus as applyChangeSetFocus } from "./focus/goal-focus"
 import type { FocusOpenRequest } from "./focus/focus-open"
@@ -2543,10 +2543,25 @@ export function MafwShell() {
   }
   const openBrowserFocus = (url: string, opts?: { newTab?: boolean }) => {
     revealWorkbench()
-    requestBrowserNavigate(url, opts)
+    const target = url.trim()
+    const blank = target.length === 0 || target === "about:blank"
+    if (blank) {
+      const tab = openBrowserTab("", { newTab: true })
+      if (!tab) {
+        showToastV2({ description: "最多同时打开 12 个浏览器标签", duration: 2200 } as any)
+        return
+      }
+    } else {
+      requestBrowserNavigate(url, opts)
+    }
     const scope = focusScope()
     setFocusState((state) =>
-      openSubject(seedWorldRoot(state, scope), scope, { kind: "web", url }, "interact"),
+      openSubject(
+        seedWorldRoot(state, scope),
+        scope,
+        { kind: "web", url: blank ? "about:blank" : url },
+        "interact",
+      ),
     )
   }
   const openTerminalFocus = () => {
@@ -2933,6 +2948,10 @@ export function MafwShell() {
         item.scope,
         item.lens === "edit" ? "editing" : "reading",
       )
+      return
+    }
+    if (item.subject.kind === "web") {
+      openBrowserFocus(item.subject.url, { newTab: true })
       return
     }
     const next = openSubject(

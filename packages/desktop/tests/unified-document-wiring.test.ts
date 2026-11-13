@@ -31,6 +31,14 @@ test("DocumentStage mounts both embedded bodies", () => {
   assert.match(stage, /onCloseMany/)
 })
 
+test("MafwShell opens a blank browser tab for the browser command", () => {
+  const shell = read("src/renderer/mafw/MafwShell.tsx")
+  assert.match(shell, /target\.length === 0 \|\| target === "about:blank"/)
+  assert.match(shell, /openBrowserTab\("", \{ newTab: true \}\)/)
+  assert.match(shell, /if \(item\.subject\.kind === "web"\)/)
+  assert.match(shell, /openBrowserFocus\(item\.subject\.url, \{ newTab: true \}\)/)
+})
+
 test("MafwShell configures document persistence per world", () => {
   const shell = read("src/renderer/mafw/MafwShell.tsx")
   assert.match(shell, /configureDocumentListStorage/)
