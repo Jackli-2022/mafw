@@ -33,8 +33,28 @@ TypeError: Cannot read properties of undefined (reading 'length')
   - `message-nav-wiring.test.ts`：1（不再直接读 `props.turns().length`）
 - `tsgo --noEmit` / `electron-vite build`：rc=0
 
+## 后续发现：ChatPane `allTurns` TDZ
+
+刷新 dev app 后出现第二个错误：
+
+```text
+ReferenceError: Cannot access 'allTurns' before initialization
+    at episodeGroups → episodeForMessage → isTurnHidden → navTurns
+```
+
+原因：`navTurns` 是 `createMemo`，创建时立即求值；它调用 `isTurnHidden` →
+`episodeGroups` → `allTurns`，而 `allTurns` 的 `const` 定义在更后面，触发 TDZ。
+
+工作区已修（**未提交**，与另一路 ChatPane 改动混在一起）：
+
+- `episodeGroups` 直接读 `userMessages()`，不再依赖后置的 `allTurns`；
+- `navTurns` 下移到 `allTurns` 之后定义，并注明原因。
+
+刷新后 28 个 session tab 下切换 `LeadL` / `当前记忆系统架构` 等无异常；导航节点正常显示。
+
 ## 边界
 
-- 这是组件边界的防御性归一化：上游为什么会瞬时给 `undefined`（keyed remount / HMR 旧模块）不在
-  本轮继续追；重点是任何来源的 undefined 都不再炸整页。
+- `MessageNav` 的归一化是本提交的防御层：上游瞬时 `undefined` 不再炸整页。
+- ChatPane TDZ 属于同一错误链的第二个原因，修复目前只在工作区，未纳入 `93cd6484`；等那路
+  ChatPane 改动收口时一起提交。
 - 导航节点的排序、scroll 高亮和点击跳转语义未变。
