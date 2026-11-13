@@ -64,7 +64,8 @@
 ## 验证
 
 - 本计划新增 **31 个测试**（embedding metadata/registry/runtime/namespace/route/switch/dispose、reranker strategy/registry/hot-path/conformance、live wiring source pin、minors 回归）。
-- gateway 全量：**7108 passed / 1 skipped / 7109 total**（905 suites）。
+- gateway 全量：**7112 passed / 1 skipped / 7113 total**（907 suites，合并 E8 后）。
+  - 一次全量遇到既存 `mcp-sse-multi-client` fetch failed；单文件重跑 3/3 通过，第二次全量 clean。
 - gateway typecheck：`npx tsc --noEmit -p tsconfig.json` 退出 0。
 - SDK build + tests：`npm run build -w @mafw/sdk` 通过；`npm test -w @mafw/sdk` **224 / 224 pass**。
 - 定向回归：embedding runtime / vector store / T1 / embedding-config / reranker factory / singleton / conformance 全部通过。
