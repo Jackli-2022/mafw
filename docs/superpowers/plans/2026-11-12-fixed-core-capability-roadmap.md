@@ -347,9 +347,11 @@ Probe 的作用是让 tech lead 在看详细计划前先看清关键未知；每
 
 **memory 定位（2026-11-13 决策）**：memory 是 MAFW 的**产品能力**，不是可替换 provider。`MemoryService` / `HarmonicUnitFileStore` / 谐波索引 / soft supersede / T1 / 100ms recall / pinned/sticky 逻辑不改；不做 project/session 分区；memory 的模型调用使用当前运行中的 runtime（`RuntimeAccess` / `process.completion` / `runtimeCompletionChannel`）。Phase 5 不再包含 memory store/retrieval provider。
 
-**剩余顺序**：automation trigger/action → goal eval/executor → storage backend（embedding/reranker 是否仍按 provider 待确认）。
+**剩余顺序**：embedding/reranker → automation trigger/action → goal eval/executor → storage backend。
 
-**边界**：goal 的 **实现**可替换；NodeDriver 状态机、路由、人类验收、`planHash`/`evalHash` 绑定是核心。memory 整体不在 provider 范围。
+**embedding/reranker 边界（2026-11-13 决策）**：模型、API、本地模型、策略逻辑可替换；memory 的存储/索引/检索/soft supersede/T1/100ms/pinned/sticky 逻辑不改。向量是派生数据，换模型按 modelTag/dims 重建，失败回退 BM25；reranker 不进 100ms 同步边界 recall。
+
+**边界**：goal 的 **实现**可替换；NodeDriver 状态机、路由、人类验收、`planHash`/`evalHash` 绑定是核心。memory 存储/检索整体不在 provider 范围。
 
 每个剩余能力必须先有：
 

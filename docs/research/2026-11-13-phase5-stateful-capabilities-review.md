@@ -11,11 +11,13 @@
 - memory 的模型调用使用当前运行中的 runtime（`RuntimeAccess` / `process.completion` / `runtimeCompletionChannel`），不引入独立 memory provider。
 - memory 的存储、索引、检索、soft supersede、T1、100ms recall、pinned/sticky 逻辑**不改**。
 - memory **不做 project/session 分区**；全局记忆是产品定义，不是 v1 临时限制。
+- **embedding / reranker 可替换**：模型、API、本地模型、策略逻辑都允许换；但它们是 memory 的模型/策略 provider，不是 memory 存储/检索 provider。
 - 因此：
   - C2 / C3 / C4 中针对 memory provider 的抽象、scope、第三方信任讨论**不再是 Phase 5 工作项**；本文保留为评审历史，与本节冲突处以本节为准。
   - Phase 5 **删除 memory store/retrieval 子阶段**；不改 `MemoryService` / `HarmonicUnitFileStore`。
+  - embedding / reranker 仍在 Phase 5，但只换模型/策略，不改变 memory 核心语义；向量是派生数据，可重建。
   - C1（live 接线）与 C5（迁移回滚）仍适用于其他有状态 provider。
-  - 剩余 Phase 5 范围需要重新确认：automation trigger、goal eval/executor、storage、embedding/reranker 是否仍按 provider 处理。
+  - 剩余 Phase 5 范围需要确认：automation trigger、goal eval/executor、storage。
 
 ## Strengths
 
@@ -148,6 +150,8 @@
 
 ### I1. EmbeddingProvider 契约缺元数据，换模型/维度会静默坏
 
+> **Decision update（2026-11-13）：embedding/reranker 确认可替换**（模型、API、本地模型、策略逻辑）。这里列的是 Phase 5 的 provider 契约要求；memory 存储/索引/检索/语义仍不改。
+
 `gateway/src/memory/embedding-provider.ts:28-32` 只有 `name/dims/embed`；`embedding-runtime.ts:25-30` 是进程单例；向量文件按 `provider.name` 打标签，T1 还有独立 SQLite BLOB。Phase 5 至少需要：
 
 - `id` / `modelTag` / `dims` / `maxInputTokens` / `normalize` / `batchLimit`；
@@ -156,7 +160,12 @@
 - 失败回退 BM25（现有 fail-open 语义保留）；
 - query/document 前缀策略进契约，不能藏在实现里。
 
-Reranker 单独定义，不要放进 100ms 同步 recall；只在异步扩展/精排路径使用。
+Reranker 单独定义：
+
+- `id` / `strategy`（heuristic / cross-encoder / LLM / local 等）/ `rerank(query, candidates, opts)`；
+- 超时、health、dispose；
+- **不进 100ms 同步边界 recall**，只在异步扩展/精排路径使用；
+- 换策略不改变 memory 的 supersede/T1/最终结果过滤。
 
 ### I2. Automation trigger 不应拥有 timer / schedule
 
@@ -194,7 +203,8 @@ Phase 2 已有 `gateway/tests/helpers/kernel-v2/*-conformance.ts`，但没有“
 - 每个 capability 一个 kit + fixture；
 - `provider -> required kits` 映射；
 - 测试内直接注册 `package` tier 时必须显式通过 kit；
-- memory kit 至少覆盖 soft supersede / T1 / 100ms / scope / pinned / sticky / `distinct_from` / 近重折叠。
+- embedding/reranker kit 覆盖 dims / modelTag / batch / query-document 前缀 / BM25 fallback / backfill 幂等 / reranker 不进 100ms；
+- memory 不作为 provider，不提供 memory kit。
 
 ### I6. 缺性能基线，G5 的“全量绿”不够
 
@@ -237,47 +247,48 @@ Phase 5 至少记录：
 - **M5：Gate 基线要数字化。** 例如“连续 2 次全量 clean + recall p95 ≤ 100ms + 迁移演练通过”，不要只写“全量绿”。
 - **M6：配置与密钥迁移。** embedding provider 切换涉及 API key、endpoint、模型缓存；diagnostics 必须脱敏，迁移不能把 key 写进日志。
 
-## Missing Decisions（memory 决策已关闭后的剩余问题）
+## Missing Decisions（memory / embedding 决策已关闭后的剩余问题）
 
-1. **Embedding/reranker**：继续使用现有 `memory.embedding` 配置（off/local/dashscope），还是升级为 Phase 5 provider registry？如果 memory 是产品能力，建议保持现有配置，不做 provider registry。
-2. **Automation trigger**：Phase 5 只补 trigger 定义/事件（core 管 cron/预算/去重），还是把 action 也接 live？action provider 已在 Phase 2 存在但未 live。
-3. **Goal**：只做 `GoalEval` hook，还是同时允许现有 `plan/probe/execute/review` 的 executor 替换？不建议开放新节点名。
-4. **StorageBackend**：删除死接口，还是只做非热路径 port？
-5. **Provider loader / live wiring**：剩余能力（automation/goal）是否在 Phase 5 做最小 loader，还是只做配置选择、把安装流程留 Phase 6？
-6. **第三方 provider**：非 memory 的有状态能力（automation/goal）是否仍只允许第一方？
+1. **Automation trigger**：Phase 5 只补 trigger 定义/事件（core 管 cron/预算/去重），还是把 action 也接 live？action provider 已在 Phase 2 存在但未 live。
+2. **Goal**：只做 `GoalEval` hook，还是同时允许现有 `plan/probe/execute/review` 的 executor 替换？不建议开放新节点名。
+3. **StorageBackend**：删除死接口，还是只做非热路径 port？
+4. **Provider loader / live wiring**：剩余能力（embedding/automation/goal）是否在 Phase 5 做最小 loader，还是只做配置选择、把安装流程留 Phase 6？
+5. **第三方 provider**：embedding/reranker 允许第三方 API/包到什么程度？automation/goal 是否仍只允许第一方？
 
-## Proposed Revised Phase 5（memory 不再是 provider）
+## Proposed Revised Phase 5（memory 固定，embedding/reranker 可替换）
 
 | 子阶段 | 内容 | 出口 |
 |---|---|---|
-| **5.0 Live scaffolding（仅剩余能力）** | 为 automation/goal 等剩余 provider 提供 facade、选择/fallback、diagnostics、最小 loader | 默认旧实现不变；测试 provider 可切换并回退 |
-| **5.1 Automation** | action provider 接 live（Phase 2 已有）；trigger 只提供定义/事件，cron/预算/去重留 core | 不绕过 budget/scheduler |
-| **5.2 Goal** | `GoalEval` hook；可选现有节点 executor；不开放新节点名 | 人类验收、`planHash`/`evalHash`、routing 不变 |
-| **5.3 Storage** | 删除 `StorageBackend` 死接口，或只做非热路径 port | 不引入 async hot path |
-| **5.4 G5 drill** | 只对剩余 provider 做迁移/回滚/性能演练 | G5 |
+| **5.0 Live scaffolding（仅 provider 能力）** | 为 embedding/reranker/automation/goal 等 provider 提供选择/fallback、diagnostics、最小 loader | 默认旧实现不变；测试 provider 可切换并回退 |
+| **5.1 Embedding / reranker** | 模型/API/本地模型/策略 provider；modelTag/dims/namespace；backfill；BM25 fallback；reranker 不进 100ms 同步路径 | 换模型可回填/回退；memory 结果语义不变 |
+| **5.2 Automation** | action provider 接 live（Phase 2 已有）；trigger 只提供定义/事件，cron/预算/去重留 core | 不绕过 budget/scheduler |
+| **5.3 Goal** | `GoalEval` hook；可选现有节点 executor；不开放新节点名 | 人类验收、`planHash`/`evalHash`、routing 不变 |
+| **5.4 Storage** | 删除 `StorageBackend` 死接口，或只做非热路径 port | 不引入 async hot path |
+| **5.5 G5 drill** | 只对剩余 provider 做迁移/回滚/性能演练 | G5 |
 
-**memory 不在 Phase 5 provider 范围内**：`MemoryService` / `HarmonicUnitFileStore` / 谐波索引 / soft supersede / T1 / 100ms recall / pinned/sticky 保持现状；模型调用继续走运行中的 runtime。
+**memory 核心不在 Phase 5 provider 范围内**：`MemoryService` / `HarmonicUnitFileStore` / 谐波索引 / soft supersede / T1 / 100ms recall / pinned/sticky 保持现状；模型调用继续走运行中的 runtime。embedding/reranker 只替换“怎么算向量/怎么精排”，不替换 memory 的存储、索引、语义和最终结果过滤。
 
 ## Assessment
 
-**Ready for Phase 5 implementation?** **With fixes — memory 决策已关闭，剩余范围待确认。**
+**Ready for Phase 5 implementation?** **With fixes — memory / embedding 决策已关闭，automation/goal/storage 待确认。**
 
 已关闭：
 
 - memory 是产品能力，不做 provider 化、不改逻辑、不分区；
 - 因此 C2 / C3 / C4 对 memory 不再适用；
-- 不需要写 `MemoryPersistence` / `MemoryRetrieval`，也不需要 memory pipeline map 作为 provider 前置。
+- 不需要写 `MemoryPersistence` / `MemoryRetrieval`，也不需要 memory pipeline map 作为 provider 前置；
+- embedding/reranker 可替换模型/API/本地/策略，但只影响派生向量与精排，不改变 memory 核心。
 
 仍需解决：
 
-- C1：剩余有状态 provider（automation/goal）的 live 接线与 loader 边界；
-- C5：剩余 provider 的数据迁移/回滚演练；
-- embedding/reranker 是否仍按 provider 处理；
+- C1：embedding/automation/goal 的 live 接线与 loader 边界；
+- C5：剩余 provider 的数据迁移/回滚演练（embedding 向量可重建，风险低；automation/goal 需单独评估）；
 - automation trigger 与 goal eval/executor 的 Phase 5 取舍；
-- `StorageBackend` 删除/保留。
+- `StorageBackend` 删除/保留；
+- embedding/reranker 的第三方 API/包信任边界。
 
 **最小可执行下一步：**
 
-1. 确认剩余 Phase 5 范围（automation / goal / storage / embedding 各做不做）。
-2. 若做 automation/goal，先写它们的 live wiring + conformance 边界，而不是 memory provider。
-3. 更新路线图 Phase 5 的顺序与 G5 措辞，移除 memory provider 承诺。
+1. 写 embedding/reranker provider 边界（接口、modelTag/dims、namespace、backfill、BM25 fallback、reranker 不进 100ms）。
+2. 确认 automation / goal / storage 是否留在 Phase 5。
+3. 更新路线图 Phase 5 的 G5 措辞，区分 embedding/reranker 与 automation/goal。
