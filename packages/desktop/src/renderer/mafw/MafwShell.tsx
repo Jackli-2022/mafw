@@ -3138,8 +3138,8 @@ export function MafwShell() {
       activeSession: sid
         ? { id: sid, title: sessions().find((session) => session.id === sid)?.title ?? "" }
         : null,
-      sessionGoal: null,
-      currentGoal: null,
+      sessionGoal: sessionGoalRef(),
+      currentGoal: currentGoalRef(),
     }
   }
   const changesAvailableModes = createMemo(() =>
@@ -3150,7 +3150,7 @@ export function MafwShell() {
   const changesContext = createMemo(() =>
     resolveChangesContext({ ...changesContextInput(), mode: changesMode() }),
   )
-  const sessionGoalRef = (): GoalRef | null => {
+  function sessionGoalRef(): GoalRef | null {
     const sid = currentSessionID()
     if (!sid) return null
     const detail = podStore.detail()
@@ -3169,6 +3169,37 @@ export function MafwShell() {
   const sessionChangesContext = (): ChangesContext | null => {
     const sid = currentSessionID()
     return sid ? { kind: "session", sessionID: sid, goal: sessionGoalRef() } : null
+  }
+  function currentGoalRef(): GoalRef | null {
+    const detail = podStore.detail()
+    const directId = podGoalId()
+    if (directId) {
+      const goal = detail?.goals.find((item) => item.goalId === directId)
+      if (goal) {
+        return {
+          podId: goal.podId,
+          goalId: goal.goalId,
+          revision: goal.activeRevision ?? goal.revision ?? 1,
+          title: goal.title,
+          worktreeDir: null,
+        }
+      }
+    }
+    const focus = activeFocus()
+    if (focus?.scope.kind === "goal") {
+      const scope = focus.scope
+      const goal = detail?.goals.find((item) => item.goalId === scope.goalId)
+      if (goal) {
+        return {
+          podId: goal.podId,
+          goalId: goal.goalId,
+          revision: scope.revision,
+          title: goal.title,
+          worktreeDir: scope.worktreeDir,
+        }
+      }
+    }
+    return sessionGoalRef()
   }
   const openChangesFace = (input: {
     context: ChangesContext
@@ -4079,6 +4110,14 @@ export function MafwShell() {
                 availableModes={changesAvailableModes()}
                 context={changesContext()}
                 request={changesRequest()}
+                projectDir={currentProject()}
+                resolveGoalDir={(goal) => {
+                  const project = currentProject()
+                  return project
+                    ? resolveGoalWorktreeDir(goal.podId, goal.goalId, project)
+                    : Promise.resolve(null)
+                }}
+                onOpenDiff={openDiffTab}
                 sessionDiffs={contentDiffEntries()}
                 onOpenSessionDiff={(file) => {
                   const sid = currentSessionID()
