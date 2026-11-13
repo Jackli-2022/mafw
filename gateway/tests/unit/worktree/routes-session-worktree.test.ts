@@ -4,6 +4,7 @@ import { execSync } from 'child_process';
 import * as os from 'os';
 import * as path from 'path';
 import { createSessionWithWorktree, cleanupWorktreeForSession, WorktreeSessionDeps } from '../../../src/routes/session-worktree';
+import { SessionWorktreeManager } from '../../../src/core/engine/session-worktree-manager';
 import { tmpGitRepo } from './tmp-git';
 
 function makeDeps() {
@@ -85,6 +86,68 @@ describe('createSessionWithWorktree', () => {
     const r = await createSessionWithWorktree(deps, { directory: repo, worktree: 'ok' });
     expect(seen).toEqual([path.resolve(repo)]);
     expect(r.worktree?.branch).toBe('mafw/ok');
+  });
+});
+
+describe('createSessionWithWorktree quota rollback (E7-3)', () => {
+  function spyManager(repo: string) {
+    const manager = new SessionWorktreeManager(path.resolve(repo));
+    return { manager, remove: jest.spyOn(manager, 'remove') };
+  }
+
+  test('session creation rejected → worktree/branch rolled back, original error propagated, no kv', async () => {
+    const repo = tmpGitRepo();
+    const { deps, kv } = makeDeps();
+    const { manager, remove } = spyManager(repo);
+    deps.managerFactory = () => manager;
+    const quota = Object.assign(new Error('QuotaExceededError: session quota exceeded'), {
+      code: 'quota_exceeded',
+      status: 429,
+    });
+    deps.createSession = () => Promise.reject(quota);
+
+    await expect(
+      createSessionWithWorktree(deps, { directory: repo, worktree: 'quota' }),
+    ).rejects.toBe(quota);
+
+    expect(remove).toHaveBeenCalledTimes(1);
+    const [dir, branch] = remove.mock.calls[0];
+    expect(branch).toBe('mafw/quota');
+    expect(String(dir)).toContain('-wt-');
+    expect(fs.existsSync(String(dir))).toBe(false);
+    expect([...kv.keys()]).toEqual([]);
+    expect(execSync('git branch --list mafw/quota', { cwd: repo }).toString()).toBe('');
+  });
+
+  test('rollback remove failure is best-effort → original error still wins', async () => {
+    const repo = tmpGitRepo();
+    const { deps } = makeDeps();
+    const { manager, remove } = spyManager(repo);
+    remove.mockRejectedValue(new Error('git worktree busy'));
+    deps.managerFactory = () => manager;
+    const quota = new Error('QuotaExceededError');
+    deps.createSession = () => Promise.reject(quota);
+
+    await expect(
+      createSessionWithWorktree(deps, { directory: repo, worktree: 'quota-busy' }),
+    ).rejects.toBe(quota);
+    expect(remove).toHaveBeenCalledTimes(1);
+  });
+
+  test('success path still writes kv mapping and does not roll back', async () => {
+    const repo = tmpGitRepo();
+    const { deps, kv } = makeDeps();
+    const { manager, remove } = spyManager(repo);
+    deps.managerFactory = () => manager;
+
+    const r = await createSessionWithWorktree(deps, { directory: repo, worktree: 'happy' });
+
+    expect(remove).not.toHaveBeenCalled();
+    expect(kv.get('session-worktree/sess-1')).toMatchObject({
+      dir: r.worktree!.dir,
+      branch: 'mafw/happy',
+      projectDir: path.resolve(repo),
+    });
   });
 });
 

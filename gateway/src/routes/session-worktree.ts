@@ -53,9 +53,22 @@ export async function createSessionWithWorktree(
   const slug = typeof opts.worktree === 'string' ? opts.worktree : undefined;
   const manager = deps.managerFactory?.(projectDir) ?? new SessionWorktreeManager(projectDir);
   const wt = await manager.create(slug);
-  const session = await deps.createSession(wt.worktreeDir, opts.metadata);
-  deps.kvSet(KV_KEY, session.id, { dir: wt.worktreeDir, branch: wt.branch, projectDir });
-  return { session, worktree: { dir: wt.worktreeDir, branch: wt.branch } };
+  // E7-3: the worktree is created *before* the session exists, so a rejected
+  // session (quota 429, runtime failure) would otherwise leak a worktree +
+  // branch. Roll back best-effort, but always rethrow the original error so the
+  // route keeps its 429/500 semantics.
+  try {
+    const session = await deps.createSession(wt.worktreeDir, opts.metadata);
+    deps.kvSet(KV_KEY, session.id, { dir: wt.worktreeDir, branch: wt.branch, projectDir });
+    return { session, worktree: { dir: wt.worktreeDir, branch: wt.branch } };
+  } catch (err) {
+    try {
+      await manager.remove(wt.worktreeDir, wt.branch);
+    } catch {
+      /* best effort — the original failure is what the caller must see */
+    }
+    throw err;
+  }
 }
 
 /** session 删除后的 worktree 联动清理：删映射 + 删 worktree/分支（全部 fail-open）。 */
