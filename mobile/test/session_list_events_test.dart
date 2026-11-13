@@ -14,7 +14,12 @@
 /// - `session.created` needs complete info (id + non-empty title); it
 ///   replaces/appends and re-sorts Lead-first then newest-first, mirroring the
 ///   chat list comparator. Incomplete info returns the list unchanged so the
-///   page can fall back to a debounced full refresh.
+///   page can fall back to a debounced full refresh;
+/// - `isHiddenSessionRow` mirrors the gateway `/api/sessions` visibility
+///   predicate (parentID / legacy worker titles / internal agents / internal
+///   roles; `manager` stays visible), so an incremental `created` for an
+///   internal session is dropped instead of surviving until the next full fetch;
+/// - malformed payload field types are ignored, never thrown.
 library;
 
 import 'package:flutter_test/flutter_test.dart';
@@ -44,6 +49,7 @@ MafwSession _session(
   String? projectID = '/work/a',
   String? directory = '/work/a',
   String? parentID,
+  String? agent,
   Map<String, dynamic>? metadata,
   int? timeCreated,
 }) =>
@@ -53,6 +59,7 @@ MafwSession _session(
       projectID: projectID,
       directory: directory,
       parentID: parentID,
+      agent: agent,
       metadata: metadata,
       timeCreated: timeCreated,
     );
@@ -365,6 +372,169 @@ void main() {
       );
 
       expect(identical(next, current), isTrue);
+    });
+  });
+
+  group('isHiddenSessionRow (mirrors gateway isHiddenSession)', () {
+    test('a child session (parentID) is hidden', () {
+      expect(isHiddenSessionRow(_session('ses_child', title: 'task', parentID: 'ses_a')), isTrue);
+    });
+
+    test('legacy worker title prefixes are hidden', () {
+      for (final title in [
+        '# Memory Index 2026-11-13',
+        '{"task":"reflect"}',
+        '```json\n{}',
+        '标题：整理记忆',
+      ]) {
+        expect(
+          isHiddenSessionRow(_session('ses_worker', title: title)),
+          isTrue,
+          reason: title,
+        );
+      }
+    });
+
+    test('internal agent names are hidden', () {
+      for (final agent in [
+        'memory-curator',
+        'mafw-tech-lead',
+        'mafw-execute',
+        'mafw-review',
+      ]) {
+        expect(
+          isHiddenSessionRow(_session('ses_w', title: 'Worker', agent: agent)),
+          isTrue,
+          reason: agent,
+        );
+      }
+    });
+
+    test('internal metadata roles are hidden', () {
+      for (final role in ['lead', 'tech-lead', 'tech_lead']) {
+        expect(
+          isHiddenSessionRow(_session(
+            'ses_w',
+            title: 'Role row',
+            metadata: {
+              'mafw': {'role': role},
+            },
+          )),
+          isTrue,
+          reason: role,
+        );
+      }
+    });
+
+    test('manager stays visible (legacy coordination sessions are user history)', () {
+      expect(
+        isHiddenSessionRow(_session(
+          'ses_manager',
+          title: 'Coordinator',
+          metadata: {
+            'mafw': {'role': 'manager'},
+          },
+        )),
+        isFalse,
+      );
+    });
+
+    test('a normal conversation is visible', () {
+      expect(isHiddenSessionRow(_session('ses_a', title: 'Alpha')), isFalse);
+    });
+  });
+
+  group('applySessionListEvent: hidden sessions never enter the list', () {
+    test('a hidden session.created leaves the list untouched', () {
+      final current = [_session('ses_a', title: 'A', timeCreated: 100)];
+
+      for (final info in [
+        {'id': 'ses_child', 'title': 'Task', 'parentID': 'ses_a'},
+        {'id': 'ses_worker', 'title': '{"task":"reflect"}'},
+        {'id': 'ses_agent', 'title': 'Worker', 'agent': 'memory-curator'},
+        {
+          'id': 'ses_lead',
+          'title': 'Lead',
+          'metadata': {
+            'mafw': {'role': 'lead'},
+          },
+        },
+      ]) {
+        expect(
+          identical(
+            applySessionListEvent(current, _event('session.created', info: info)),
+            current,
+          ),
+          isTrue,
+          reason: '$info',
+        );
+      }
+    });
+
+    test('a manager session is still appended (parity with /api/sessions)', () {
+      final current = [_session('ses_a', title: 'A', timeCreated: 100)];
+
+      final next = applySessionListEvent(
+        current,
+        _event('session.created', info: {
+          'id': 'ses_manager',
+          'title': 'Coordinator',
+          'metadata': {
+            'mafw': {'role': 'manager'},
+          },
+          'time': {'created': 300},
+        }),
+      );
+
+      expect(next.map((s) => s.id), ['ses_manager', 'ses_a']);
+    });
+  });
+
+  group('applySessionListEvent: malformed payloads', () {
+    test('session.updated with wrong field types is ignored, not thrown', () {
+      final current = [
+        _session('ses_a', title: 'A', timeCreated: 1),
+      ];
+
+      final next = applySessionListEvent(
+        current,
+        _event('session.updated', info: {
+          'id': 'ses_a',
+          'title': 42,
+          'projectID': <String, dynamic>{},
+          'directory': ['/work/a'],
+          'metadata': 'not-a-map',
+          'time': {'created': 'soon'},
+        }),
+      );
+
+      expect(identical(next, current), isTrue);
+    });
+
+    test('a session.created with wrong field types does not throw', () {
+      final current = [_session('ses_a', title: 'A', timeCreated: 1)];
+
+      final next = applySessionListEvent(
+        current,
+        _event('session.created', info: {
+          'id': 'ses_new',
+          'title': 'New',
+          'parentID': 123,
+          'projectID': true,
+          'directory': 9,
+          'metadata': 'nope',
+          'time': {'created': 'later'},
+        }),
+      );
+
+      // Complete enough to append, but the malformed fields stay null.
+      expect(next.length, 2);
+      final row = next.firstWhere((s) => s.id == 'ses_new');
+      expect(row.parentID, isNull);
+      expect(row.projectID, isNull);
+      expect(row.directory, isNull);
+      expect(row.metadata, isNull);
+      expect(row.timeCreated, isNull);
     });
   });
 

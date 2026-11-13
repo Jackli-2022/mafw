@@ -8,9 +8,12 @@
 ///   stream identity changes (`didUpdateWidget`) and cancels on `dispose`;
 /// - `session.updated` / `session.deleted` patch an already-loaded 聊天 list
 ///   **without** another `listSessions` round-trip;
-/// - a complete `session.created` appends in place; an incomplete one (or one
-///   that cannot be proven to belong to the active project) falls back to
-///   exactly one debounced full refresh;
+/// - a complete `session.created` appends in place; an incomplete one falls back
+///   to exactly one debounced full refresh, while one that is provably foreign
+///   (another project) or hidden (`isHiddenSessionRow`) is ignored without a
+///   refresh;
+/// - a creation arriving while a fetch is in flight still gets a retry once that
+///   fetch completes (the dirty flag is consumed at fetch start, not at the end);
 /// - `events: null` (old shell / no WS) keeps the previous fetch-on-demand
 ///   behaviour.
 library;
@@ -74,10 +77,15 @@ class _ChatClient extends GatewayClient {
   int listCalls = 0;
   final List<String?> listProjectIDs = <String?>[];
 
+  /// When set, `listSessions` waits for it (in-flight fetch for the debounce test).
+  Completer<void>? gate;
+
   @override
   Future<List<MafwSession>> listSessions({String? projectID}) async {
     listCalls++;
     listProjectIDs.add(projectID);
+    final gate = this.gate;
+    if (gate != null) await gate.future;
     if (projectID == null) return List.of(sessions);
     return sessions
         .where((s) => s.projectID == projectID || s.directory == projectID)
@@ -278,6 +286,78 @@ void main() {
 
       expect(find.text('Other project'), findsNothing);
       expect(client.listCalls, 1);
+    });
+
+    testWidgets('a hidden session.created is ignored instead of appended',
+        (tester) async {
+      final client = _ChatClient(sessions: [
+        _session('ses_a', title: 'Alpha', timeCreated: 100),
+      ]);
+      final events = StreamController<MafwEvent>.broadcast();
+      addTearDown(events.close);
+
+      await _pumpChat(tester, client: client, events: events.stream);
+      expect(client.listCalls, 1);
+
+      // `/api/sessions` hides internal sessions; the incremental path must
+      // reach the same state without waiting for the next full fetch.
+      events.add(_event('session.created', info: {
+        'id': 'ses_worker',
+        'title': 'Worker',
+        'agent': 'memory-curator',
+        'projectID': _dirA,
+        'directory': _dirA,
+        'time': {'created': 300},
+      }));
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Worker'), findsNothing);
+      // Hidden is a complete decision, not an unknown: no full fetch either.
+      expect(client.listCalls, 1);
+    });
+
+    testWidgets('a creation arriving during an in-flight refresh retries after it',
+        (tester) async {
+      final client = _ChatClient(sessions: [
+        _session('ses_a', title: 'Alpha', timeCreated: 100),
+      ]);
+      final events = StreamController<MafwEvent>.broadcast();
+      addTearDown(events.close);
+
+      await _pumpChat(tester, client: client, events: events.stream);
+      expect(client.listCalls, 1);
+
+      // First incomplete creation → debounced refresh; gate it so it stays in flight.
+      final gate = Completer<void>();
+      client.gate = gate;
+      client.sessions = [
+        _session('ses_first', title: 'First fresh', timeCreated: 200),
+        _session('ses_a', title: 'Alpha', timeCreated: 100),
+      ];
+      events.add(_event('session.created', info: {'id': 'ses_first'}));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(client.listCalls, 2);
+      expect(find.text('First fresh'), findsNothing);
+
+      // Second creation lands while the fetch above is still running.
+      client.sessions = [
+        _session('ses_second', title: 'Second fresh', timeCreated: 300),
+        ...client.sessions,
+      ];
+      events.add(_event('session.created', info: {'id': 'ses_second'}));
+      await tester.pump(const Duration(milliseconds: 300));
+      // The debounce fired while loading: still in flight, no new call.
+      expect(client.listCalls, 2);
+
+      gate.complete();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pumpAndSettle();
+
+      // The in-flight request must not swallow the second creation's dirty flag.
+      expect(client.listCalls, 3);
+      expect(find.text('Second fresh'), findsOneWidget);
     });
 
     testWidgets('a path spelling difference is still the same project',

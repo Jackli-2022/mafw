@@ -7,6 +7,14 @@ class MafwSession {
   final String? projectID;
   final String? directory;
   final String? parentID;
+
+  /// Agent name persisted on the session (`memory-curator`, `mafw-tech-lead`, …).
+  ///
+  /// Only used for visibility (`isHiddenSessionRow`): internal agent sessions are
+  /// filtered out of `/api/sessions`, and the incremental `session.created` path
+  /// needs the same predicate to reach the same state.
+  final String? agent;
+
   final Map<String, dynamic>? metadata;
   final int? timeCreated;
 
@@ -16,20 +24,29 @@ class MafwSession {
     this.projectID,
     this.directory,
     this.parentID,
+    this.agent,
     this.metadata,
     this.timeCreated,
   });
 
+  /// Strings only: a malformed field (`title: 42`) is dropped, not thrown.
+  ///
+  /// The live `session.created` path parses arbitrary broadcast payloads, and one
+  /// bad key must not take the session list down.
+  static String? _stringField(dynamic value) => value is String ? value : null;
+
   factory MafwSession.fromJson(Map<String, dynamic> j) {
     final time = j['time'];
+    final created = time is Map<String, dynamic> ? time['created'] : null;
     return MafwSession(
       id: (j['id'] ?? '').toString(),
-      title: j['title'] as String?,
-      projectID: j['projectID'] as String?,
-      directory: j['directory'] as String?,
-      parentID: j['parentID'] as String?,
+      title: _stringField(j['title']),
+      projectID: _stringField(j['projectID']),
+      directory: _stringField(j['directory']),
+      parentID: _stringField(j['parentID']),
+      agent: _stringField(j['agent']),
       metadata: j['metadata'] is Map<String, dynamic> ? j['metadata'] as Map<String, dynamic> : null,
-      timeCreated: time is Map<String, dynamic> ? (time['created'] as num?)?.toInt() : null,
+      timeCreated: created is num ? created.toInt() : null,
     );
   }
 
@@ -44,6 +61,7 @@ class MafwSession {
     String? projectID,
     String? directory,
     String? parentID,
+    String? agent,
     Map<String, dynamic>? metadata,
     int? timeCreated,
   }) {
@@ -53,6 +71,7 @@ class MafwSession {
       projectID: projectID ?? this.projectID,
       directory: directory ?? this.directory,
       parentID: parentID ?? this.parentID,
+      agent: agent ?? this.agent,
       metadata: metadata ?? this.metadata,
       timeCreated: timeCreated ?? this.timeCreated,
     );
