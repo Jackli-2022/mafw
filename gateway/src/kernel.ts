@@ -44,6 +44,7 @@ import { attachAllRoutes, type ApiRouteDeps } from './subsystems/api-routes';
 import { normalizeDir, isPortHealthy } from './core/http/http-util';
 import { errorBody, API_ERROR_CODES } from './core/http/api-error';
 import { NodeDriver } from './core/goal/driver';
+import { createLlmGoalEvalProvider } from './core/goal/goal-eval-llm-provider';
 import { parseReviewRubric, taskIdsFromWavePlan } from './core/goal/review-rubric';
 import { ensureGoalState, effectiveRevision, isTerminalState, loadGoalState } from './core/goal/state-v3';
 import { isTaskType } from './orchestration/capability-ledger';
@@ -2316,6 +2317,26 @@ class MafwScheduler {
   /** Fail-open ingress for plugin events that may trigger automation rules. */
   handlePluginEvent(event: PluginEventFrame): void {
     this.automationEngine?.handleExternalEvent(event);
+  }
+
+  /** Opt-in first-party GoalEval verifier; default off (no extra model cost). */
+  bindGoalEvalProvider(driver: NodeDriver): void {
+    const cfg = config.raw.goal ?? {};
+    if ((cfg.evalProvider ?? 'off') !== 'llm') return;
+    const model = cfg.evalModel ?? cfg.nodeModel ?? resolveJudgeModel(config.recall);
+    if (!model?.providerID || !model.modelID) {
+      log.warn('[GoalEval] evalProvider=llm but no evalModel/nodeModel/judgeModel is configured');
+      return;
+    }
+    const provider = createLlmGoalEvalProvider({
+      channel: () => this.runtimeCompletionChannel(),
+      model,
+      timeoutMs: cfg.evalTimeoutMs ?? 60_000,
+      maxTokens: cfg.evalMaxTokens ?? 2048,
+    });
+    if (!provider) return;
+    driver.setGoalEvalProvider(provider);
+    log.info(`[GoalEval] LLM provider enabled (${model.providerID}/${model.modelID})`);
   }
 
   private pluginHubDeps(): PluginsRouteDeps {

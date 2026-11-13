@@ -175,6 +175,7 @@ export interface BootKernel {
   pluginClientSnapshot?: PluginClientSnapshot;
   bindPluginAutomation(host: PluginHost): void;
   handlePluginEvent(event: PluginEventFrame): void;
+  bindGoalEvalProvider(driver: NodeDriver): void;
 
   // ── Pod / goal services (populated by initServices) ──
   podStore: PodStore;
@@ -742,6 +743,7 @@ export async function bootKernel(kernel: BootKernel): Promise<void> {
     // ProbeWorkspaceFactory（主项目之外的隔离工作区）。
     probes: kernel.buildGoalProbePort(),
   });
+  kernel.bindGoalEvalProvider(kernel.goalDriver);
 
   // 6. 恢复活跃 Goal
   await kernel.recoverState();
