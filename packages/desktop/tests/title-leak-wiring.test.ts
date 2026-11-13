@@ -21,8 +21,8 @@ test("render surfaces format: SessionStrip tabs + ChatPane titlebar + WelcomeHom
   const strip = read("src/renderer/mafw/components/SessionStrip.tsx")
   const stripCalls = strip.match(/formatRailTitle\(/g) ?? []
   assert.ok(stripCalls.length >= 2, `tab label + overflow title, got ${stripCalls.length}`)
-  // 改名草稿 seed 原始 s.title（数据层 raw，不需要额外转换）
-  assert.match(strip, /setRenameDraft\(s\.title \|\| ""\)/)
+  // 改名草稿 seed 原始标题（E6-2：labelOf = entity 标题 → tab.title 兜底，都是 raw）
+  assert.match(strip, /setRenameDraft\(labelOf\(s\)\)/)
   const chat = read("src/renderer/mafw/components/ChatPane.tsx")
   // 2026-11-06：头部标题收敛到 chat-pane-title（Lead 固定角色名），
   // 格式化仍只发生在渲染层——helper 自己调 formatRailTitle。

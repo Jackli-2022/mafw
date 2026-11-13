@@ -97,6 +97,8 @@ import { PluginWindowHost } from "./plugins/PluginWindowHost"
 import { buildPodNoteBody } from "./pod-note"
 import { retitleTab, shouldRetitleTab } from "./session-tab-title"
 import { dropOtherLeadTabs, mergeTabIdentity, pinLeadTabTitle } from "./session-tab-identity"
+import { sessionEntities } from "./session-entities"
+import { sessionTabTitle, sessionTitle } from "./session-title"
 import { isLeadRole, leadTabMetadata, resolveLeadSession, tabSessionRole } from "./lead-session"
 import { readSavedTheme, nextTheme, applyTheme } from "./theme"
 import { createPresence, SURFACE_MS } from "./components/presence"
@@ -552,12 +554,29 @@ export function MafwShell() {
     }
   }
 
+  // E6-2：会话标题只有一个读路径 —— entity 缓存 → tab/持久化兜底。
+  // 角色命名 tab（Lead）恒为角色名，runtime 自动标题不得泄漏到标签。
+  const titleOfSession = (sid: string, fallback?: string | null): string =>
+    sessionTabTitle(sid, fallback ?? "", sessions().find(s => s.id === sid))
+
   // Open a session as a tab (single pane; v6 removed the split-view model).
   // Welcome-page entries (manager / new session / recent session) go through here.
   const openSessionTab = (sid: string, title?: string, lead?: boolean, metadata?: any) => {
     setShowConfig(false)
     setActiveTab("chat")
     setShowWelcome(false)
+    // E6-2：先 upsert 实体（唯一元数据源），tab 里的 title 只作为实体缺失时的
+    // 首帧兜底（持久化布局只存 {id,title}）。session.updated 只改实体，不回写 tab。
+    const known = untrack(() => sessionEntities.get(sid))
+    const entityTitle = lead === true ? "Lead" : title?.trim() || known?.title || `Chat ${sessions().length + 1}`
+    const projectDir = known?.directory ?? currentProject()
+    sessionEntities.upsert({
+      id: sid,
+      title: entityTitle,
+      ...(projectDir ? { directory: projectDir } : {}),
+      metadata: metadata ?? (lead === true ? leadTabMetadata() : known?.metadata),
+      time: known?.time ?? { created: Date.now() },
+    })
     if (!sessions().some(s => s.id === sid)) {
       const tabTitle = lead === true ? "Lead" : title || `Chat ${sessions().length + 1}`
       setSessions(prev => [...prev, { id: sid, title: tabTitle, userMsgId: `user-${Date.now()}`, assistantMsgId: null, done: false, lead, metadata }])
@@ -574,8 +593,8 @@ export function MafwShell() {
     setSessions(prev => mergeTabIdentity(prev, sid, lead, metadata, title))
     // Lead 是角色 tab：标签恒为角色名，不继承 runtime 会话标题或恢复的旧标题。
     setSessions(prev => pinLeadTabTitle(prev, sid, lead))
-    // ChatPane 头部读的是 store.session 的同一份标题，必须一起钉住，
-    // 否则 tab 显示 Lead、头部仍是被 runtime 改写过的「问候」。
+    // ChatPane 头部同样以实体内标题为准（Lead 由 chatPaneTitle 钉成角色名）；
+    // store.session 占位一起钉住，仅作为实体缺失时的兜底。
     if (lead === true) setStore(prev => ({ ...prev, session: pinLeadTabTitle(prev.session as any, sid, true) }))
     if (lead === true) setSessions(prev => dropOtherLeadTabs(prev, sid))
     setActiveSessionId(sid)
@@ -640,8 +659,10 @@ export function MafwShell() {
   const activeHandoffRole = (): string | undefined => {
     const sid = activeSessionId()
     if (!sid) return undefined
-    const tab = store.session.find((item: any) => item.id === sid)
-    return tabSessionRole(tab) ?? sessions().find((item) => item.id === sid)?.metadata?.mafw?.role
+    // E6-2：角色以实体缓存为准（tab/store 占位兜底），与 ChatPane 的 isLead 同源。
+    return workspace.sessionRole(sid)
+      ?? tabSessionRole(store.session.find((item: any) => item.id === sid))
+      ?? sessions().find((item) => item.id === sid)?.metadata?.mafw?.role
   }
   const canHandoffActiveSession = (): boolean => isHandoffableRole(activeHandoffRole())
 
@@ -663,9 +684,11 @@ export function MafwShell() {
       const lastAssistant = [...turns].reverse().find((turn) => turn.role === "assistant")
       const sourceText = [lastUser?.text, lastAssistant?.text].filter(Boolean).join("\n\n")
       const handoff = buildLeadHandoff({
-        sessionTitle: sessions().find((item) => item.id === sid)?.title
-          ?? historySessions().find((item) => item.id === sid)?.title
-          ?? "未命名讨论",
+        sessionTitle: sessionTitle(
+          sid,
+          sessions().find((item) => item.id === sid)?.title
+            ?? historySessions().find((item) => item.id === sid)?.title,
+        ) || "未命名讨论",
         sourceText,
         sessionID: sid,
         role: activeHandoffRole(),
@@ -832,7 +855,7 @@ export function MafwShell() {
 
   // Export a session to Markdown via the OS save dialog (main process).
   const exportSession = async (sid: string) => {    const turns = extractExportTurns(store.message[sid] || [])
-    const title = sessions().find(s => s.id === sid)?.title || sid
+    const title = titleOfSession(sid, sessions().find(s => s.id === sid)?.title) || sid
     const markdown = buildSessionMarkdown({ title, turns })
     try {
       const res = await window.api.mafw.exportSession({ filename: title, markdown })
@@ -860,7 +883,7 @@ export function MafwShell() {
   // C1（W3 分享）：复制会话 Markdown 到剪贴板（与导出同构建管线）。
   const copySessionMarkdown = async (sid: string) => {
     const turns = extractExportTurns(store.message[sid] || [])
-    const title = sessions().find(s => s.id === sid)?.title || sid
+    const title = titleOfSession(sid, sessions().find(s => s.id === sid)?.title) || sid
     const markdown = buildSessionMarkdown({ title, turns })
     try {
       await navigator.clipboard.writeText(markdown)
@@ -1039,7 +1062,7 @@ export function MafwShell() {
 
   // mapAskCard/mapPermissionCard 均为纯函数模块（sse/handlers/flow-cards.ts、
   // components/permission-card-mapping.ts），agentTitle 经参数注入。
-  const agentTitleOf = (sid: string) => sessions().find(s => s.id === sid)?.title || "Agent"
+  const agentTitleOf = (sid: string) => sessionTitle(sid, sessions().find(s => s.id === sid)?.title) || "Agent"
 
   const mapAskCard = (req: any, createdAt: number): AskCardData =>
     mapAskCardPure(req, createdAt, agentTitleOf(req.sessionID))
@@ -1352,8 +1375,9 @@ export function MafwShell() {
       retitleOpenTab: (id, title) => {
         // Lead tab 的身份是角色名：runtime 自动标题（首轮后改写会话标题）不得覆盖。
         if (!shouldRetitleTab(sessions().find(s => s.id === id), title)) return
-        setSessions(prev => prev.map(s => s.id === id ? { ...s, title } : s))
-        setStore(prev => ({ ...prev, session: prev.session.map((x: any) => x.id === id ? { ...x, title } : x) }))
+        // E6-2：只写实体缓存；Rail / tab / ChatPane 都从 sessionEntities 读，
+        // 不再复制写 tab 数组（tab.title 仅作实体缺失时的持久化兜底）。
+        sessionEntities.patch(id, { title })
       },
       remove: (id) => sessionStore.remove(id),
       closeIfOpen: (id) => { if (sessions().some(s => s.id === id)) closeSession(id) },
@@ -1402,7 +1426,7 @@ export function MafwShell() {
           now: Date.now(),
         })) return
         lastIdleNotify[sid] = Date.now()
-        const title = sessions().find(x => x.id === sid)?.title || "会话"
+        const title = sessionTitle(sid, sessions().find(x => x.id === sid)?.title) || "会话"
         notifyIfHidden("MAFW：回合完成", `「${title}」已回复`)
       },
       mediaSpeak: (sid, text, voice) => mediaSpeakHandlers[sid]?.(text, voice),
@@ -1476,6 +1500,9 @@ export function MafwShell() {
     onFullResync: (_reason, _info) => {
       // Gateway restarts keep the same port; reconnect is the only reliable
       // signal that the cached session list is stale.
+      // E6-2: a full resync (reset/truncated/instance) also clears the entity
+      // cache — a new epoch must not leave rows the gateway no longer has.
+      sessionEntities.reset()
       sessionStore.invalidate()
       experienceStore.invalidate()
       void experienceStore.load(currentSessionID() || undefined, { directory: experienceDirectory() })
@@ -3251,8 +3278,22 @@ export function MafwShell() {
   createEffect(() => {
     const detail = podStore.detail()
     if (!detail) return
-    const next = reconcileGoalSessionTabs(sessions(), detail)
-    if (next !== sessions()) setSessions(next)
+    const prev = sessions()
+    const next = reconcileGoalSessionTabs(prev, detail)
+    if (next === prev) return
+    setSessions(next)
+    // E6-2：Goal 身份标题/角色同样落到实体缓存（tab 只保留兜底 title）。
+    for (let i = 0; i < next.length; i++) {
+      if (next[i] === prev[i]) continue
+      const tab = next[i]
+      // 标题只在 reconcile 真的改过时写回实体，避免把 tab 的兜底旧标题
+      // 覆盖掉 session.updated 刚写入实体的新标题。
+      const titleChanged = !!tab.title && tab.title !== prev[i]?.title
+      sessionEntities.patch(tab.id, {
+        ...(tab.metadata ? { metadata: tab.metadata } : {}),
+        ...(titleChanged ? { title: tab.title } : {}),
+      })
+    }
   })
   // 「记入鲸群」：chatview 的一条消息 → 一条 Pod note（不自动镜像，见
   // docs/research/2026-10-31-agent-chat-vs-team-log.md）。
@@ -3692,12 +3733,14 @@ export function MafwShell() {
       >
         <SessionStrip
           sessions={sessions}
+          titleOf={(id, fallback) => titleOfSession(id, fallback)}
           activeViewId={activeViewId}
           onSelect={(id) => { closeLeftDockIfOverlay(); setShowConfig(false); setActiveTab("chat"); setShowWelcome(false); setActiveSessionId(id); setActiveViewId(id) }}
           onClose={closeSession}
           onRename={(id, next) => {
+            // 用户重命名是显式意图：实体是展示真值，tab 只保留持久化兜底。
             setSessions(prev => prev.map(x => x.id === id ? { ...x, title: next } : x))
-            setStore(prev => ({ ...prev, session: prev.session.map((x: any) => x.id === id ? { ...x, title: next } : x) }))
+            if (!sessionEntities.patch(id, { title: next })) sessionEntities.upsert({ id, title: next })
             window.api.mafw.sessions.rename(id, next)
               .catch((err: any) => showToastV2({ description: `重命名失败: ${err?.message || err}`, duration: 3000 }))
           }}

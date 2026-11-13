@@ -4,6 +4,7 @@
 import { createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
 import { tabSessionRole } from "../lead-session"
+import { sessionEntities } from "../session-entities"
 
 /** 打开的会话 tab（原 MafwShell 局部 interface，逐字迁移）。 */
 export interface ChatSession {
@@ -72,8 +73,12 @@ export function createSessionWorkspace() {
     /**
      * per-session 角色判定（split view 下各 pane 各自查，不再共享全局标记）。
      * 协调会话只认 lead-session.ts 的显式 lead 角色；历史 manager 是普通历史。
+     * E6-2：角色以 sessionEntities.metadata 为准，tab 身份只做实体缺失/未带
+     * 角色时的兜底（布局恢复、Pod 身份晚到）。
      */
     sessionRole(sid: string): string | undefined {
+      const fromEntity = tabSessionRole({ metadata: sessionEntities.get(sid)?.metadata })
+      if (fromEntity) return fromEntity
       return tabSessionRole(sessions().find((s) => s.id === sid))
     },
   }

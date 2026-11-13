@@ -1,39 +1,41 @@
 // Singleton session data layer shared by Rail and MafwShell. The gateway
-// already hides memory-worker/subagent sessions; this store adds caching,
-// unified ordering (last-activity desc), title fallback and offline tracking.
-import { createSignal } from "solid-js"
+// already hides memory-worker/subagent sessions; this store owns the project
+// buckets (ordered session ids + fetch state) and delegates every metadata
+// field to `session-entities` (E6-2: one entity cache, no list copy).
+import { batch, createSignal } from "solid-js"
+import { sessionEntities, type SessionEntity } from "./session-entities"
 
-type SessionInfo = {
-  id: string
-  directory?: string
-  projectID?: string
-  title?: string
-  metadata?: { mafw?: { role?: string } }
-  time?: { created?: number; updated?: number }
-  parentID?: string
-  /** opencode 2.1.0 sticky agent id（build/plan/…）——用于恢复 agent 药丸 */
-  agent?: string
+type Bucket = {
+  /** Session ids, last-activity desc. Metadata lives in sessionEntities. */
+  ids: string[]
+  fetchedAt: number
+  failed: boolean
 }
 
-const cache = new Map<string, { list: SessionInfo[]; fetchedAt: number; failed: boolean }>()
-const inflight = new Map<string, Promise<SessionInfo[]>>()
+const cache = new Map<string, Bucket>()
+const inflight = new Map<string, Promise<SessionEntity[]>>()
 const [loading, setLoading] = createSignal(false)
-// Bumped on every successful fetch so reactive readers re-evaluate.
+// Bumped on every successful fetch / bucket mutation so reactive readers
+// re-evaluate. Entity-only writes ride sessionEntities.version().
 const [version, setVersion] = createSignal(0)
 
 const keyOf = (projectID: string | null) => projectID || "__all__"
 
-const sortSessions = (list: SessionInfo[]): SessionInfo[] =>
-  list.filter(Boolean).sort((a, b) => {
-    const ta = a.time?.updated || a.time?.created || 0
-    const tb = b.time?.updated || b.time?.created || 0
-    return tb - ta
-  })
+const activityOf = (id: string): number => {
+  const time = sessionEntities.get(id)?.time
+  return time?.updated || time?.created || 0
+}
 
-const withFallbackTitle = (s: SessionInfo): SessionInfo =>
+const sortIds = (ids: string[]): string[] =>
+  Array.from(new Set(ids.filter(Boolean))).sort((a, b) => activityOf(b) - activityOf(a))
+
+const withFallbackTitle = (s: SessionEntity): SessionEntity =>
   s.title && s.title.trim() ? s : { ...s, title: "New conversation" }
 
-async function fetchFor(projectID: string | null): Promise<SessionInfo[]> {
+const asEntity = (row: any): SessionEntity | null =>
+  row && typeof row.id === "string" ? (row as SessionEntity) : null
+
+async function fetchFor(projectID: string | null): Promise<SessionEntity[]> {
   const key = keyOf(projectID)
   const existing = inflight.get(key)
   if (existing) return existing
@@ -41,13 +43,21 @@ async function fetchFor(projectID: string | null): Promise<SessionInfo[]> {
     setLoading(true)
     try {
       const list = await window.api.mafw.sessions.list(projectID ?? undefined)
-      const sorted = sortSessions((Array.isArray(list) ? list : []) as SessionInfo[]).map(withFallbackTitle)
-      cache.set(key, { list: sorted, fetchedAt: Date.now(), failed: false })
-      setVersion(v => v + 1)
-      return sorted
+      const entities = (Array.isArray(list) ? list : []).map(asEntity).filter((s): s is SessionEntity => !!s)
+      // Entities are the source of truth: upsert first, then keep ids only.
+      // Batched so reactive readers rerun once, with the bucket already stored
+      // (an unbatched upsert bump would re-enter an in-flight first read).
+      let ids: string[] = []
+      batch(() => {
+        for (const entity of entities) sessionEntities.upsert(entity)
+        ids = sortIds(entities.map(s => s.id))
+        cache.set(key, { ids, fetchedAt: Date.now(), failed: false })
+        setVersion(v => v + 1)
+      })
+      return ids.map(id => sessionEntities.get(id)).filter(Boolean) as SessionEntity[]
     } catch (e) {
       console.warn("[mafw] session-store fetch failed", e)
-      cache.set(key, { list: [], fetchedAt: Date.now(), failed: true })
+      cache.set(key, { ids: [], fetchedAt: Date.now(), failed: true })
       setVersion(v => v + 1)
       return []
     } finally {
@@ -61,15 +71,19 @@ async function fetchFor(projectID: string | null): Promise<SessionInfo[]> {
 
 export const sessionStore = {
   /** Reactive read; triggers a fetch on first access for the project. */
-  sessionsFor(projectID: string | null): SessionInfo[] {
+  sessionsFor(projectID: string | null): SessionEntity[] {
     version()
+    sessionEntities.version()
     const key = keyOf(projectID)
     const entry = cache.get(key)
     if (!entry) {
       void fetchFor(projectID)
       return []
     }
-    return entry.list
+    return entry.ids
+      .map(id => sessionEntities.get(id))
+      .filter((s): s is SessionEntity => !!s)
+      .map(withFallbackTitle)
   },
 
   isLoading: loading,
@@ -86,7 +100,11 @@ export const sessionStore = {
     return cache.get(keyOf(projectID))?.failed === true
   },
 
-  /** Drop cache (optionally for one project) and refetch. */
+  /**
+   * Drop buckets (optionally for one project) and refetch. Entities are kept on
+   * purpose: they back offline reads while the refetch is in flight. A full SSE
+   * resync additionally calls `sessionEntities.reset()` (see MafwShell).
+   */
   invalidate(projectID?: string | null): void {
     if (projectID === undefined || projectID === null) {
       const keys = Array.from(cache.keys())
@@ -100,30 +118,34 @@ export const sessionStore = {
   },
 
   /**
-   * Merge a partial update into a cached session (every bucket containing it),
-   * keeping ordering and title fallback intact. Returns true when found.
+   * Merge a partial update into the entity cache and re-sort every bucket that
+   * contains the id. Returns true when the session is known.
    */
-  patch(id: string, partial: Partial<SessionInfo>): boolean {
-    let found = false
-    for (const [key, entry] of cache) {
-      if (!entry.list.some(s => s.id === id)) continue
-      found = true
-      const merged = entry.list.map(s => (s.id === id ? { ...s, ...partial } : s))
-      cache.set(key, { ...entry, list: sortSessions(merged).map(withFallbackTitle) })
-    }
-    if (found) setVersion(v => v + 1)
-    return found
+  patch(id: string, partial: Partial<SessionEntity>): boolean {
+    const found = sessionEntities.patch(id, partial)
+    if (!found) return false
+    batch(() => {
+      for (const [key, entry] of cache) {
+        if (!entry.ids.includes(id)) continue
+        cache.set(key, { ...entry, ids: sortIds(entry.ids) })
+      }
+      setVersion(v => v + 1)
+    })
+    return true
   },
 
-  /** Remove a session from every cache bucket. Returns true when found. */
+  /** Remove a session from the entity cache and every bucket. True when found. */
   remove(id: string): boolean {
     let found = false
-    for (const [key, entry] of cache) {
-      if (!entry.list.some(s => s.id === id)) continue
-      found = true
-      cache.set(key, { ...entry, list: entry.list.filter(s => s.id !== id) })
-    }
-    if (found) setVersion(v => v + 1)
+    batch(() => {
+      found = sessionEntities.remove(id)
+      for (const [key, entry] of cache) {
+        if (!entry.ids.includes(id)) continue
+        found = true
+        cache.set(key, { ...entry, ids: entry.ids.filter(sid => sid !== id) })
+      }
+      if (found) setVersion(v => v + 1)
+    })
     return found
   },
 }
