@@ -25,7 +25,7 @@ import { UiPluginManager } from "./ui-plugins"
 import { createPluginWebSessionPreparer } from "./plugin-web-session"
 import type { RenderRequest } from "../shared/ui-plugins"
 import { write as writeLog } from "./logging"
-import { createGatewayClient } from "./human-token"
+import { createGatewayClient, withHumanTokenRetry } from "./human-token"
 import { createGatewayHealthMonitor, createRestartScheduler } from "./gateway-health"
 
 let mafwClient: import("@mafw/sdk").MafwClient | null = null
@@ -366,7 +366,27 @@ export function registerMafwIpcHandlers() {
     }
     const fn = resolveIpcMethod(ns, method)
     if (typeof fn !== "function") throw new Error(`Unknown method: ${namespace}.${method}`)
-    return fn(...args)
+    // E11-1: the gateway rotates the human token out-of-band (CLI / another
+    // window). The cached client still sends the old credential → stable 403.
+    // Re-read the file into a fresh client and retry exactly once. The call
+    // re-resolves the method from the *current* client, so the retry never
+    // replays through the stale one.
+    const invoke = (): unknown => {
+      if (!mafwClient) throw new Error("MAFW Gateway not ready")
+      const live = (mafwClient as unknown as Record<string, Record<string, (...a: unknown[]) => unknown>>)[namespace]
+      const liveFn = live ? resolveIpcMethod(live, method) : undefined
+      if (typeof liveFn !== "function") throw new Error(`Unknown method: ${namespace}.${method}`)
+      return liveFn(...args)
+    }
+    return withHumanTokenRetry(
+      async () => invoke(),
+      () => {
+        const port = getGatewayPort()
+        // No port → gateway is down; keep the current client so the original
+        // 403 (or transport error) surfaces unchanged.
+        if (port) mafwClient = createGatewayClient(`http://127.0.0.1:${port}`)
+      },
+    )
   })
 
   // Binary media upload straight from the main process to the gateway. Node's

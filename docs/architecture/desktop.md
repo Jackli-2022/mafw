@@ -772,3 +772,27 @@ SDK `TriageItem` 在 E10b-2 被重塑成磁盘 / wire 真形状
   新增展示需要产品口径。
 - 测试：`triage-model.test.ts` 5 条（title 回退 / meta 非法日期 / 三种 state / llm 优先级 /
   页面不再读 phantom 字段守卫），`card.test.ts` 与 context-menu wiring 同步。
+
+### human token 轮换后的 403 自动重读重试（2026-11-13，E11-1）
+
+gateway 新增 `POST /api/human-token/rotate`（见 `gateway.md` §「E11 身份 / 配额硬化」）：轮换成功后
+**旧 token 立刻失效**，而桌面主进程只在 gateway 进入 `ready` 时构造一次 SDK client（`mafwClient`
+把 `readHumanToken()` 的结果冻结在头里）——不处理的话，一次 CLI 轮换就让桌面所有 human-only 动作
+持续 403，直到重启应用。E11-1 让统一 IPC 入口自愈：
+
+- `packages/desktop/src/main/human-token.ts`（main-only，凭据永不进 renderer / preload / 插件 web / 日志）：
+  - `isStaleHumanTokenError(err)`：**只**认「凭据被换掉」这一类 403——`status === 403`
+    （显式 `err.status`，否则从 `HTTP 403` / `403 Forbidden` 文本解析）**且**带稳定码
+    `human_principal_required`。403 但没有该码是另一种授权失败，401 / 429 / 500 / 网络错误都不是凭据问题，
+    重试只会放大副作用；
+  - `withHumanTokenRetry(call, refresh)`：先 `call()`；命中 stale 才 `await refresh()` 再 `call()` 一次，
+    **只重试一次**，第二次失败原样抛给调用方。
+- `packages/desktop/src/main/mafw-ipc.ts#mafw-invoke` 统一包一层：`refresh` 用
+  `createGatewayClient('http://127.0.0.1:' + getGatewayPort())` 重建 client（重新读 token 文件）；
+  端口为 `null`（gateway 不在）时保留旧 client，让原始错误照常浮出。
+- **重试必须重新解析方法**：`invoke()` 闭包每次都从**当前** client 上 `resolveIpcMethod(namespace, method)`，
+  绝不复用已绑死旧头的 client；`method === "invoke"` 的活转发路径不入重试包装。
+- 不新增 UI / preload 面：轮换是 CLI 动作，桌面只负责「跟上」。测试：`src/main/human-token.test.ts`
+  12 条（`isStaleHumanTokenError` 6：403+码 / 文本形态 / 403 无码 / 401·429·500 / 网络 / 结构化 code；
+  `withHumanTokenRetry` 5：成功不刷新、stale 刷新后重试一次、二次失败上抛、刷新抛错、非 stale 不重试；
+  1 条 IPC 接线守卫）。

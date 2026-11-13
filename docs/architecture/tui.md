@@ -36,6 +36,19 @@
 
 **测试坑**：pi-tui 布局引擎（layout.js `layoutComponent`）需要 viewport 高度上下文，手动 `tab.render(80)` 会把 ScrollView 裁到 1 行——ChatTab 级测试断言 `(tab as any).transcript.render(80)` 而非全栈 render；chalk 非 TTY 环境自动关色，断言 ANSI 需先 `chalk.level = 3`
 
+#### TUI human token 轮换：需重启（2026-11-13，E11-1 已知限制）
+
+gateway 新增 `POST /api/human-token/rotate`（`mafw rotate-human-token`，见 `docs/guides/operations.md`），
+轮换成功后**旧 token 立刻失效**。TUI 的凭据由 `packages/tui/src/store/human-token.ts#createTuiClient()`
+读一次 `~/.mafw/human.token`（`MAFW_HUMAN_TOKEN_FILE` 可覆盖）并冻结在 SDK client 的
+`X-MAFW-Human-Token` 头里，**没有集中重试入口**（不像桌面 `mafw-invoke` 有 `withHumanTokenRetry`）：
+
+- 外部轮换后，TUI 的 human-only 动作（Goals tab 的问答 / 取消、Triage 的 c/r/d、approvals 应答…）
+  会直接显示 gateway 403 `human_principal_required`；
+- **处置：退出并重启 `mafw tui`**（重启即重读 token 文件）。不做自动重试是本阶段的明确取舍：
+  TUI 的每次按键都可能触发写动作，静默重试会把「凭据过期」变成不可见的请求重放；
+- 在 TUI 内轮换（新 slash 命令）也不在本阶段范围——CLI 是唯一入口，避免终端里出现新凭据回显。
+
 #### TUI 鼠标点击（2026-09-14，对标 opencode "click accepts"）
 
 - **分层**：滚轮滚动/滚动条拖拽/拖选复制（OSC52）/URL 点击为 pi-tui TuiAltScreen **内建**（`mouse` 选项默认开，SGR 1000/1002/1006 + tmux/screen 自动降级 button-motion）；组件级点击派发是自建层 `ui/clickable-tui.ts` 的 `enableClickDispatch(tui)`——**实例补丁** `handleSelectionMouseEvent`（TS-private，子类重写会撞私有冲突；版本锁定 ^0.84.1 + typeof 门控 fail-open）：左键按下（非拖动）→ overlay 模态命中（`resolveOverlayLayout` 运行时穿透算 rect）→ 布局树 `currentLayout.root` 由深到浅命中 → 未命中回落选区逻辑。overlay 打开时外部点击吞掉（模态语义，不落底不触发选区）

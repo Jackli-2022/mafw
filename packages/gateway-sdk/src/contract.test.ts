@@ -47,6 +47,16 @@ function isInternalOp(path: string, method: string): boolean {
 const RUNTIME_PROXY_EXEMPT = new Set<string>([])
 
 /**
+ * CLI-only endpoints called with raw HTTP (`bin/mafw.js`), never by `@mafw/sdk`.
+ * The dead-contract gate below would otherwise force a fake SDK method just to
+ * satisfy "every catalog op is called by the client". Exemption is per
+ * operationId and must name the real caller; stale entries fail the gate.
+ */
+const NON_SDK_EXEMPT: Record<string, string> = {
+  'humanToken.rotate': 'bin/mafw.js rotate-human-token (raw HTTP; human-token principal only)',
+}
+
+/**
  * 模板串内容 → 归一化路径。
  * - 剥离 `${this.baseUrl}`/`${baseUrl}` 前缀
  * - `${...}` 洞 → {}（结尾洞若为 query 变量/含 ? 则剥掉）
@@ -189,16 +199,21 @@ const calls = [...extractCalls("client.ts", clientSrc), ...extractCalls("sse.ts"
 test("contract ops ⊆ SDK 调用面（无死契约；internal 标签豁免）", () => {
   const used = new Set(calls.map(c => `${c.method} ${c.path}`))
   const dead: string[] = []
+  const seenExempt = new Set<string>()
   for (const [rawPath, methods] of Object.entries<any>(contract.paths)) {
     for (const m of Object.keys(methods)) {
       if (!(METHODS as readonly string[]).includes(m)) continue
       if (isInternalOp(rawPath, m)) continue
+      const opId = methods[m]?.operationId
+      if (opId && NON_SDK_EXEMPT[opId]) { seenExempt.add(opId); continue }
       const key = `${m.toUpperCase()} ${norm(rawPath)}`
       if (used.has(key)) continue
       dead.push(key)
     }
   }
   expect(dead).toEqual([])
+  // Stale exemption guard: an exempt op that left the contract must be removed.
+  expect([...seenExempt].sort()).toEqual(Object.keys(NON_SDK_EXEMPT).sort())
 })
 
 test("SDK 调用 ⊆ contract（无漂移）", () => {

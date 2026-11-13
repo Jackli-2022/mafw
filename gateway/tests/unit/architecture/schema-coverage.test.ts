@@ -7,7 +7,7 @@
 //     keep their `response` — a silent schema deletion fails here;
 //   - the catalog's covered set must equal this manifest exactly (both
 //     directions), so a new covered op cannot land without a ledger entry;
-//   - the total op count is pinned (317) so an unregistered/new route surfaces
+//   - the total op count is pinned (318) so an unregistered/new route surfaces
 //     instead of drifting the ledger;
 //   - the script, spawned as a child process from the gateway root, must report
 //     exactly what the catalog says (parser and source cannot drift).
@@ -26,7 +26,7 @@ interface CoverageReport {
 const GATEWAY_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPT = path.join(GATEWAY_ROOT, 'scripts', 'schema-coverage.cjs');
 
-/** Baseline 13 (E8 and earlier) + 8 session read (E10-1) + 8 pod/work read (E10-2) + 8 goal read (E10b-1) + 7 human-gate/permission read (E10b-2) = 44. */
+/** Baseline 13 (E8 and earlier) + 8 session read (E10-1) + 8 pod/work read (E10-2) + 8 goal read (E10b-1) + 7 human-gate/permission read (E10b-2) + 1 human token rotate (E11-1) = 45. */
 const E10_COVERED_OPS = [
   'approvals.list',
   'attention.list',
@@ -38,6 +38,7 @@ const E10_COVERED_OPS = [
   'goals.sessions',
   'goals.source',
   'goals.timeline',
+  'humanToken.rotate',
   'kernel.stats',
   'memory.stats',
   'permissions.getMode',
@@ -74,7 +75,8 @@ const E10_COVERED_OPS = [
   'work.overview',
 ];
 
-const TOTAL_OPS = 317;
+// Pinned: 317 through E10b, +1 for `humanToken.rotate` (E11-1) = 318.
+const TOTAL_OPS = 318;
 
 function catalogOps(): Array<{ operationId: string; hasResponse: boolean }> {
   return buildRouteCatalog().map((def) => ({
@@ -100,7 +102,7 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(lost).toEqual([]);
   });
 
-  it('the catalog covered set equals the ledger exactly, and the catalog still has 317 ops', () => {
+  it('the catalog covered set equals the ledger exactly, and the catalog still has 318 ops', () => {
     const ops = catalogOps();
     const covered = ops
       .filter((op) => op.hasResponse)

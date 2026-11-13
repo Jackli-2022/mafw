@@ -23,6 +23,9 @@ mafw logs              # 看最后 50 行
 mafw health            # HTTP 健康检查
 mafw stats             # gateway 统计
 
+# 凭据
+mafw rotate-human-token  # 轮换 human token（保留旧凭据作废，见下）
+
 # 项目/Goal 管理
 mafw projects          # 已注册项目
 mafw goals             # 活跃 Goal
@@ -33,6 +36,31 @@ mafw config            # 当前配置
 mafw dashboard         # 打开 Web Dashboard
 mafw version           # 版本号
 ```
+
+### 轮换 human token（`mafw rotate-human-token`，2026-11-13 / E11-1）
+
+human token 是 human-only 动作（验收、计划批准、triage 决策、permission 应答…）的唯一凭据，固定放在
+`~/.mafw/human.token`（32 字节 hex）。需要换发时：
+
+```bash
+mafw rotate-human-token
+# Human token rotated at 2026-11-13T12:00:00.000Z.
+```
+
+- **只打印时间戳**：新 token 直接落盘（原子写：`.tmp` + fsync + rename + 0600），不打印、不写日志
+  （gateway 侧日志是常量 `[Auth] human token rotated`）。
+- **旧 token 立即失效**：gateway 写盘后 live rebind，当前进程内无需重启；不需要停 gateway。
+- **只认 human-token 凭据**：CLI 读 `~/.mafw/human.token`（`MAFW_HUMAN_TOKEN_FILE` 可覆盖，供测试 /
+  隔离 dev 根）并带 `X-MAFW-Human-Token` POST 到 `/api/human-token/rotate`。device token（手机）、
+  service apiToken、loopback 无凭据调用一律 403 `human_principal_required`——手机端不能作废桌面凭据。
+- **失败语义**：文件缺失 / 格式非法 / 非 200 → 提示 + exit 1；gateway 写盘失败 → `500`，**旧 token 仍然可用**
+  （赋值在写成功之后），可直接重试。
+- **对客户端的影响**：
+  - **桌面自动跟上**：`mafw-invoke` 捕获 403 `human_principal_required` 后重读 token 文件、重建 SDK client、
+    原方法重试一次（只一次，避免凭据坏了变成请求风暴）——外部轮换后无需重启桌面。
+  - **TUI 需重启**：TUI 没有集中重试入口（已知限制，见 `docs/architecture/tui.md`），轮换后 human-only 动作
+    会显示 gateway 403，重启 `mafw tui` 即可。
+  - **手机**：走自己的 device token，不受影响。
 
 ### 日志路径
 

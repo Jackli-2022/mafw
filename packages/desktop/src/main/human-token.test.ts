@@ -10,7 +10,7 @@ import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, wr
 import { homedir, tmpdir } from "node:os"
 import { dirname, extname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { createGatewayClient, humanTokenPath, readHumanToken } from "./human-token"
+import { createGatewayClient, humanTokenPath, isStaleHumanTokenError, readHumanToken, withHumanTokenRetry } from "./human-token"
 
 const TOKEN = "0123456789abcdef".repeat(4) // 64 lowercase hex chars
 
@@ -165,8 +165,124 @@ describe("createGatewayClient", () => {
   })
 })
 
-// ── wiring / isolation guards ──
+// ── E11-1: stale credential detection + one-shot retry ──
 
+/** Exactly what the SDK builds for a denied human-only route. */
+function staleError(): Error {
+  return new Error("HTTP 403: human principal required [human_principal_required]")
+}
+
+describe("isStaleHumanTokenError", () => {
+  test("true for the SDK 403 + stable code shape", () => {
+    expect(isStaleHumanTokenError(staleError())).toBe(true)
+  })
+
+  test("true for 403 + code without the bracketed suffix (tolerant forms)", () => {
+    expect(isStaleHumanTokenError(new Error("HTTP 403: human_principal_required"))).toBe(true)
+    expect(isStaleHumanTokenError("HTTP 403 human_principal_required")).toBe(true)
+  })
+
+  test("true when the error carries a numeric 403 status", () => {
+    expect(isStaleHumanTokenError(Object.assign(new Error("denied"), { status: 403, code: "human_principal_required" }))).toBe(true)
+  })
+
+  test("false for a 403 without the human code (other authorization failures)", () => {
+    expect(isStaleHumanTokenError(new Error("HTTP 403: Forbidden"))).toBe(false)
+    expect(isStaleHumanTokenError(new Error("HTTP 403: human principal required"))).toBe(false)
+  })
+
+  test("false for 429 / 500 / 401 (only a stale human token is retryable)", () => {
+    for (const status of [401, 429, 500, 502, 503]) {
+      expect(isStaleHumanTokenError(new Error(`HTTP ${status}: human_principal_required`))).toBe(false)
+      expect(isStaleHumanTokenError(Object.assign(new Error("x"), { status }))).toBe(false)
+    }
+    // A 4030 must not be read as 403.
+    expect(isStaleHumanTokenError(new Error("HTTP 4030: human_principal_required"))).toBe(false)
+  })
+
+  test("false for network / unknown values", () => {
+    for (const value of [undefined, null, "", "offline", new Error("fetch failed"), { statusText: "Forbidden" }]) {
+      expect(isStaleHumanTokenError(value)).toBe(false)
+    }
+  })
+})
+
+describe("withHumanTokenRetry", () => {
+  test("retries exactly once after refreshing and returns the second result", async () => {
+    let calls = 0
+    let refreshes = 0
+    const result = await withHumanTokenRetry(
+      async () => {
+        calls += 1
+        if (calls === 1) throw staleError()
+        return "ok"
+      },
+      () => { refreshes += 1 },
+    )
+
+    expect(result).toBe("ok")
+    expect(calls).toBe(2)
+    expect(refreshes).toBe(1)
+  })
+
+  test("awaits an async refresh before the retry (client rebuilt from disk)", async () => {
+    const order: string[] = []
+    const result = await withHumanTokenRetry(
+      async () => {
+        order.push("call")
+        if (order.filter(x => x === "call").length === 1) throw staleError()
+        return 42
+      },
+      async () => {
+        order.push("refresh-start")
+        await Promise.resolve()
+        order.push("refresh-end")
+      },
+    )
+
+    expect(result).toBe(42)
+    expect(order).toEqual(["call", "refresh-start", "refresh-end", "call"])
+  })
+
+  test("propagates the second failure (no loop)", async () => {
+    let calls = 0
+    let refreshes = 0
+    await expect(
+      withHumanTokenRetry(
+        async () => { calls += 1; throw staleError() },
+        () => { refreshes += 1 },
+      ),
+    ).rejects.toThrow("human_principal_required")
+
+    expect(calls).toBe(2)
+    expect(refreshes).toBe(1)
+  })
+
+  test("does not retry non-stale failures (500 / everything else)", async () => {
+    let calls = 0
+    let refreshes = 0
+    const boom = new Error("HTTP 500: internal error")
+
+    await expect(
+      withHumanTokenRetry(
+        async () => { calls += 1; throw boom },
+        () => { refreshes += 1 },
+      ),
+    ).rejects.toBe(boom)
+
+    expect(calls).toBe(1)
+    expect(refreshes).toBe(0)
+  })
+
+  test("a first-attempt success is untouched", async () => {
+    let refreshes = 0
+    const value = await withHumanTokenRetry(async () => "first", () => { refreshes += 1 })
+    expect(value).toBe("first")
+    expect(refreshes).toBe(0)
+  })
+})
+
+// ── wiring / isolation guards ──
 const MAIN_DIR = dirname(fileURLToPath(import.meta.url))
 const SRC_DIR = join(MAIN_DIR, "..")
 
@@ -177,6 +293,15 @@ test("wiring: both main-process entrypoints build clients via createGatewayClien
     // No raw construction may bypass the helper.
     expect(source).not.toMatch(/new MafwClient\(/)
   }
+})
+
+test("wiring: mafw-invoke retries once after rebuilding the client from disk", () => {
+  const source = readFileSync(join(SRC_DIR, "main/mafw-ipc.ts"), "utf-8")
+  expect(source).toContain("withHumanTokenRetry")
+  // The refresh path must recreate the client (which re-reads the token file).
+  expect(source).toMatch(/createGatewayClient\(`http:\/\/127\.0\.0\.1:\$\{port\}`\)/)
+  // The retry must never print the credential.
+  expect(source).not.toMatch(/console\.(log|error)\([^\n]*clientToken/)
 })
 
 test("isolation: the human credential never reaches renderer/preload/shared code", () => {

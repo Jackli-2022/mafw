@@ -174,6 +174,37 @@ export function clearSlotsForSession(
   return out;
 }
 
+/** kv scope holding the per-project manager slot rows. */
+export const MANAGER_SESSION_SCOPE = 'manager-session';
+
+/** Minimal gateway-kv surface the slot writers need (keeps tests thin). */
+export interface ManagerSlotStore {
+  kvAll<T = unknown>(scope: string): Array<{ key: string; value: T }>;
+  kvSet(scope: string, key: string, value: unknown): void;
+}
+
+/**
+ * Read + persist variant of `clearSlotsForSession` (E11-2b): drop every
+ * `manager-session` row that points at `sessionId` for `currentRuntime` and
+ * write the survivors back. Returns the cleared keys (empty = nothing to do).
+ *
+ * Used both after archiving a dead Lead and after a rejected Lead
+ * registration — a slot must never keep pointing at a session that is not
+ * registered/gone.
+ */
+export function clearManagerSlotsForSession(
+  store: ManagerSlotStore,
+  sessionId: string,
+  currentRuntime: string,
+): string[] {
+  const cleared: string[] = [];
+  for (const row of clearSlotsForSession(store.kvAll<unknown>(MANAGER_SESSION_SCOPE), sessionId, currentRuntime)) {
+    store.kvSet(MANAGER_SESSION_SCOPE, row.key, row.value);
+    cleared.push(row.key);
+  }
+  return cleared;
+}
+
 /**
  * Write the slot for `currentRuntime`, preserving all other runtimes' slots.
  * A tagged v1 legacy entry is migrated into its own slot; an untagged v1 entry

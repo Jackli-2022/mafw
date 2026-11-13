@@ -30,7 +30,8 @@ import {
   type GatewayRuntimeIdentity,
 } from './release-info';
 import { isLoopbackAddr } from './core/auth';
-import { loadOrCreateHumanToken } from './core/human-token';
+import { loadOrCreateHumanToken, rotateHumanToken } from './core/human-token';
+import { registerLeadSessionRecord, rollbackRejectedLeadRegistration, type LeadRegistrationOutcome } from './core/session/internal-registration';
 import type { Services } from './types';
 // D3 Task 3：HTTP 传输链 + WS 上行枢纽（原先内联在 startApiServer 的 626 行回调）。
 import { createRequestListener } from './http/transport';
@@ -197,7 +198,7 @@ import { QuotaExceededError, QuotaService, projectAdmission } from './resources/
 import { ConnectionTable } from './resources/connections';
 import { BufferCounters } from './resources/outbound-buffer';
 import { ResourceGovernor } from './resources/governor';
-import { createResourceBudgetChecker, shouldPruneEventLog } from './resources/degradation';
+import { createResourceBudgetChecker, shouldPruneEventLog, shouldResumeScheduler } from './resources/degradation';
 import { buildHandlesSnapshot, buildKernelStatsSnapshot, type KernelStatsSnapshot } from './resources/stats';
 import { limitOf } from './resources/settings';
 import { TimerService, type TimerHandle } from './core/timer-service';
@@ -415,7 +416,7 @@ interface Session {
 // D3 Task 1: readBody / normalizeDir / isPortHealthy moved verbatim to
 // core/http/http-util.ts (single import line added at the top of the file).
 
-import { writeManagerSlot, projectLeadSessionMetadata, backfillManagerSlot, clearSlotsForSession } from './core/manager/manager-session-runtime';
+import { writeManagerSlot, projectLeadSessionMetadata, backfillManagerSlot, clearManagerSlotsForSession } from './core/manager/manager-session-runtime';
 import { LeadSessionRegistry } from './core/manager/lead-session-registry';
 import { isLiveSessionInfo } from './runtime/session-liveness';
 
@@ -570,6 +571,9 @@ class MafwScheduler {
    */
   private scheduler = new Scheduler({
     admissionChecker: (task) => this.resourceAdmission(task),
+    // E11-3: START-time pressure re-check for tasks that were already queued
+    // when the box degraded. Live read — the governor is created after listen().
+    resourceAdmission: () => !(this.governor?.isDegraded() ?? false),
     budgetChecker: (task) => {
       const b = task.budget;
       if (b?.kind === 'pipeline' && b.pipeline) {
@@ -1713,6 +1717,31 @@ class MafwScheduler {
     this.identityState.unbind(sessionId);
   }
 
+  /**
+   * E11-2: register a Lead as internal identity + session record in one
+   * reconciling step. A quota rejection (or any `registerExternal` failure)
+   * rolls the internal identity back and broadcasts
+   * `session.registration_failed`; it never throws, so the Lead boot path
+   * survives a full quota bucket with a usable runtime session.
+   *
+   * The outcome is returned (E11-2b) so callers that persisted a session id
+   * beforehand (rotation) can roll that pointer back instead of handing out a
+   * session id the gateway does not consider registered.
+   */
+  private async registerLeadRecord(sessionId: string, directory: string): Promise<LeadRegistrationOutcome> {
+    return registerLeadSessionRecord({
+      sdkSession: this.sdkSession,
+      registerInternal: (id, role, identity) => this.registerInternalSession(id, role, identity),
+      unregisterInternal: (id) => this.unregisterInternalSession(id),
+      broadcast: (event) => this.broadcast(event),
+      log,
+      sessionId,
+      directory,
+      metadata: projectLeadSessionMetadata(),
+      identity: resolveIdentityAlias('manager'),
+    });
+  }
+
   /** Retired Leads stay readable as ordinary history, never as current Lead candidates. */
   private async archiveLeadSession(sessionId: string): Promise<void> {
     try {
@@ -1727,10 +1756,7 @@ class MafwScheduler {
     this.leadSessionRegistry?.unmirrorLeadSession(sessionId);
     // stale slot 清理：归档后不得再被 findBySessionId/current 认领（不依赖 rotation 恰好写完新槽）。
     try {
-      const rows = this.getGatewayDb().kvAll<unknown>('manager-session');
-      for (const row of clearSlotsForSession(rows, sessionId, this.runtimeName)) {
-        this.getGatewayDb().kvSet('manager-session', row.key, row.value);
-      }
+      clearManagerSlotsForSession(this.getGatewayDb(), sessionId, this.runtimeName);
     } catch (err: any) {
       log.warn(`[Lead] archived slot cleanup failed for ${sessionId} (non-fatal): ${err?.message ?? err}`);
     }
@@ -3994,9 +4020,13 @@ class MafwScheduler {
         }
       },
       registerLead: async (sessionId, dir) => {
-        this.registerInternalSession(sessionId, 'lead', resolveIdentityAlias('manager'));
-        await this.sdkSession.registerExternal(sessionId, dir, projectLeadSessionMetadata())
-          .catch((err: any) => log.warn(`[Scheduler] Lead local register failed: ${err?.message ?? err} (non-fatal)`));
+        // E11-2: internal identity + session record in one reconciling step —
+        // a quota rejection rolls the identity back and broadcasts
+        // `session.registration_failed` instead of leaving a phantom.
+        // The outcome is intentionally ignored here: this path registers an
+        // already-created Lead, so a rejection is audited but the session stays
+        // usable. Only rotation (E11-2b) has a persisted pointer to roll back.
+        await this.registerLeadRecord(sessionId, dir);
       },
       archiveLead: (sessionId) => this.archiveLeadSession(sessionId),
       bindPodLead: async (podId, sessionId) => {
@@ -5561,12 +5591,34 @@ class MafwScheduler {
       get skillInstallDeps() { return (...a: any[]) => (self.skillInstallDeps as any)(...a); },
       get deoptSkill() { return (...a: any[]) => (self.deoptInstalledSkill as any)(...a); },
       get listSkills() { return (...a: any[]) => (self.listInstalledSkills as any)(...a); },
+      // E11-1：轮换 + live 重绑（写盘成功后才会赋值，失败保持旧 token 有效）。
+      get rotateHumanToken() { return () => self.rotateHumanTokenNow(); },
       get eventLayer() { return self.eventLayer; },
       get eventLayerStore() { return self.eventLayerStore; },
       get standingGoals() { return self.standingGoals; },
       get standingGoalStore() { return self.standingGoalStore; },
       get processEventThread() { return (...a: any[]) => (self.processEventThread as any)(...a); },
     };
+  }
+
+  /**
+   * E11-1: rotate `~/.mafw/human.token` and bind the new value live.
+   *
+   * The live assignment happens only after the atomic write succeeded, so a
+   * failed rotation leaves the previous credential valid (the route maps the
+   * throw to 500). `httpTransportDeps` / the WS hub read `this.humanToken`
+   * through live getters, so the next request already accepts the new token and
+   * the old one stops working — no restart, no session teardown.
+   *
+   * The token itself is never logged (constant message only); `redactLog` covers
+   * the header on every request-log path.
+   */
+  private rotateHumanTokenNow(): string {
+    const dir = this.mafwDir || config.resolvePath();
+    const token = rotateHumanToken(dir);
+    this.humanToken = token;
+    log.warn('[Auth] human token rotated');
+    return token;
   }
 
   /**
@@ -5764,6 +5816,9 @@ class MafwScheduler {
               log.warn(`[Resources] disk critical — pruned event_log to ${retention} rows`);
             }
           }
+          // E11-3：恢复边沿自动续跑——降级期间排队（启动前二次检查挡下）的
+          // 非前台任务不会自己回来，必须主动 sweep 一次；非边沿不扫。
+          if (shouldResumeScheduler(prev, next)) void this.scheduler.sweep();
         });
         // E4-6：serve 实例通常在 boot 稍后拉起，这里只是尽力登记；stats 构建时幂等补登。
         this.syncServeLedger();
@@ -7119,8 +7174,14 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     const sessionId = session.id;
     if (!sessionId) throw new Error('Failed to create lead session: no id returned');
     this.getGatewayDb().kvSet('manager-session', canonical, writeManagerSlot(this.getGatewayDb().kvGet('manager-session', canonical), this.runtimeName, { sessionId, createdAt: new Date().toISOString() }));
-    this.registerInternalSession(sessionId, 'lead', resolveIdentityAlias('manager'));
-    await this.sdkSession.registerExternal(sessionId, canonical, projectLeadSessionMetadata()).catch(() => {});
+    const registration = await this.registerLeadRecord(sessionId, canonical);
+    if (!registration.ok) {
+      // E11-2b: the slot was written above, so a rejected registration must
+      // take it back — otherwise the project keeps pointing at a session with
+      // no local record. Throwing (instead of returning) keeps the dead id out
+      // of the caller's hands; the runtime session is left for GC/cleanup.
+      throw rollbackRejectedLeadRegistration(this.getGatewayDb(), sessionId, this.runtimeName, registration);
+    }
     await this.syncPodLead(canonical, sessionId);
     return sessionId;
   }

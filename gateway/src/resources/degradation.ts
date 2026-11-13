@@ -38,3 +38,16 @@ export function createResourceBudgetChecker(
 export function shouldPruneEventLog(prev: Pressure, next: Pressure): boolean {
   return next.disk === 'critical' && prev.disk !== 'critical';
 }
+
+/**
+ * E11-3 恢复边沿：`degraded` 从非空变空的那次采样 → 排队中的非前台任务
+ * （submit 时健康、排队期间降级）应自动续跑。调度器在启动前会二次检查压力
+ * （`resourceAdmission`），降级期间它们只会停在队列里，谁也不会来"通知"它们；
+ * kernel 的 governor `onChange` 用本判定调用一次 `sweep()`。
+ *
+ * 非边沿（ok→ok / ok→degraded / degraded→degraded，含 code 变化）不触发：
+ * 每次采样都扫队列没有意义，且 degraded→degraded 时仍不允许启动。
+ */
+export function shouldResumeScheduler(prev: Pressure, next: Pressure): boolean {
+  return prev.degraded.length > 0 && next.degraded.length === 0;
+}

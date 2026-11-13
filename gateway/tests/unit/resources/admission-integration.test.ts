@@ -8,7 +8,8 @@
  */
 import { Scheduler } from '../../../src/scheduler';
 import { BudgetExceededError } from '../../../src/scheduler';
-import { createResourceBudgetChecker } from '../../../src/resources/degradation';
+import { createResourceBudgetChecker, shouldResumeScheduler } from '../../../src/resources/degradation';
+import type { DegradedCode, Pressure } from '../../../src/resources/governor';
 
 function harness() {
   let degraded = false;
@@ -89,5 +90,67 @@ describe('pressure admission integration (real Scheduler)', () => {
       ),
     ).rejects.toThrow('daily cap');
     expect(budgetCalls).toEqual(['budget']);
+  });
+});
+
+// E11-3: a task queued while healthy must not start after the box degraded, and
+// must come back automatically when the governor recovers (kernel wires the
+// edge to `scheduler.sweep()`; the edge predicate lives in degradation.ts).
+describe('governor recovery edge (E11-3)', () => {
+  const pressure = (degraded: DegradedCode[]): Pressure => ({ disk: 'ok', heap: 'ok', degraded });
+
+  it.each<[string, DegradedCode[], DegradedCode[], boolean]>([
+    ['healthy → healthy', [], [], false],
+    ['healthy → degraded', [], ['disk_critical'], false],
+    ['degraded → degraded (code change)', ['disk_critical'], ['heap_critical'], false],
+    ['degraded → healthy', ['disk_critical'], [], true],
+    ['degraded → healthy (two codes)', ['disk_critical', 'heap_critical'], [], true],
+  ])('%s', (_name, prev, next, expected) => {
+    expect(shouldResumeScheduler(pressure(prev), pressure(next))).toBe(expected);
+  });
+
+  it('parks a queued task on the degrade edge and resumes it exactly once on recovery', async () => {
+    let degraded = false;
+    const listeners = new Set<(prev: Pressure, next: Pressure) => void>();
+    const governor = {
+      isDegraded: () => degraded,
+      onChange(listener: (prev: Pressure, next: Pressure) => void) {
+        listeners.add(listener);
+        return () => { listeners.delete(listener); };
+      },
+    };
+    const scheduler = new Scheduler({
+      maxConcurrent: 1,
+      resourceAdmission: () => !governor.isDegraded(),
+    });
+    // Mirror of kernel.ts governor onChange (E11-3).
+    governor.onChange((prev, next) => {
+      if (shouldResumeScheduler(prev, next)) void scheduler.sweep();
+    });
+    const emit = (next: boolean) => {
+      const prev: Pressure = pressure(degraded ? ['disk_critical'] : []);
+      degraded = next;
+      const snapshot = pressure(degraded ? ['disk_critical'] : []);
+      for (const listener of listeners) listener(prev, snapshot);
+    };
+
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const blocker = scheduler.submit({ priority: 'background', mutexKey: 'blk', strategy: 'queue' }, () => gate);
+    const runs: string[] = [];
+    const queued = scheduler.submit({ priority: 'background', strategy: 'queue' }, async () => {
+      runs.push('queued');
+    });
+
+    emit(true); // degrade: no recovery edge, no sweep
+    release();
+    await blocker;
+    expect(runs).toEqual([]); // parked by start-time admission
+    expect(scheduler.stats().queued).toBe(1);
+
+    emit(false); // recovery: edge → sweep
+    expect(runs).toEqual(['queued']);
+    await queued;
+    expect(runs).toEqual(['queued']);
   });
 });

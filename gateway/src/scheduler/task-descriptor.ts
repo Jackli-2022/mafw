@@ -84,5 +84,16 @@ export interface SchedulerOpts {
    * stays budget-only. Default: allow everything.
    */
   admissionChecker?: BudgetChecker;
+  /**
+   * Start-time **resource-pressure** re-check (E11-3): consulted by `pump()`
+   * when a queued task is about to start, i.e. after the task outlived its
+   * submit-time check (queued behind the concurrency cap, a mutex key, or
+   * `defer-to-idle`). Returns false ⇒ non-foreground tasks stay queued
+   * (nothing is dropped, no rejection), foreground always starts.
+   *
+   * Deliberately NOT the budget checker: budgets are one-shot admission at
+   * submit; this is "is the box still healthy right now". Default: admit.
+   */
+  resourceAdmission?: () => boolean;
   log?: (msg: string) => void;
 }

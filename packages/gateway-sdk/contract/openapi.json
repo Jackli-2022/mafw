@@ -16752,6 +16752,39 @@
         }
       }
     },
+    "/api/human-token/rotate": {
+      "post": {
+        "operationId": "humanToken.rotate",
+        "tags": [
+          "auth"
+        ],
+        "summary": "Rotate the human token and bind it live",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "token",
+                    "rotatedAt"
+                  ],
+                  "properties": {
+                    "token": {
+                      "type": "string"
+                    },
+                    "rotatedAt": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/.well-known/agent-card.json": {
       "get": {
         "operationId": "a2a.agentCard",
