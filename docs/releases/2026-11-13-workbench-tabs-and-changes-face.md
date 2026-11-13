@@ -19,6 +19,8 @@
 | 8 | 删除 Lens 模型、焦点持久化迁移 | `a188b641` |
 | 9 | 删除 changeSet / evidence / InstrumentRail / ChangesDock 死代码 + 文档 | `75252cf2` |
 | 终审修复 | diff tab 选中同步、实时刷新、深链上下文、root/锚点/回退守卫 | `f259038b` |
+| Minors 修复 | 行尾归一、diff badge、a11y、review 刷新、Goal diff 刷新/空态、项目状态文案、badge scope、改动面板入口等 | `3f3a91d1`、`1d4edce3` |
+| 启动修复 | `changesMode` 提前初始化，避免 eager memo TDZ | `75170f92` |
 
 ## 结果
 
@@ -34,7 +36,7 @@
 
 ## 测试与门禁
 
-- desktop 全量：**3797 / 3797** pass（728 suites）
+- desktop 全量：**3798 / 3798** pass（728 suites）
 - 本轮新增 11 个测试文件、约 32 个用例；关键覆盖：
   - `changes-context` / `changes-request` 上下文与深链
   - `diff-documents` / `document-tabs-store` diff tab 生命周期与持久化过滤
