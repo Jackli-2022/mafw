@@ -28,6 +28,10 @@
  * Spec: docs/superpowers/specs/2026-11-13-gateway-e11-identity-hardening-design.md §2
  */
 import { QuotaExceededError } from '../../resources/quotas';
+import {
+  clearManagerSlotsForSession,
+  type ManagerSlotStore,
+} from '../manager/manager-session-runtime';
 
 /** Flattened event shape used by `session.registration_failed`. */
 export interface LeadRegistrationEvent {
@@ -118,4 +122,36 @@ export async function registerLeadSessionRecord(
 
     return { ok: false, code, message };
   }
+}
+
+/** The failure shape `rollbackRejectedLeadRegistration` accepts. */
+export interface LeadRegistrationRejection {
+  code: string;
+  message: string;
+}
+
+/**
+ * E11-2b — undo the manager slot after a rejected Lead registration.
+ *
+ * `rotateCreateManagerSession` writes the `manager-session` slot *before*
+ * registering the Lead (the session id is persisted as soon as it exists so a
+ * concurrent `ensure()` cannot create a second Lead). When registration is then
+ * rejected by the quota, the slot is left pointing at a runtime session that
+ * has no local record — every later `current` / `findBySessionId` read resolves
+ * to a session the gateway does not consider registered.
+ *
+ * This clears that slot and returns the error the caller must throw, so a dead
+ * session id never reaches the caller. The runtime session itself is
+ * deliberately left alone (rotation failures are a caller-visible error, not a
+ * session-deletion path). A store failure propagates: the caller still throws,
+ * and still never receives the dead id.
+ */
+export function rollbackRejectedLeadRegistration(
+  store: ManagerSlotStore,
+  sessionId: string,
+  currentRuntime: string,
+  failure: LeadRegistrationRejection,
+): Error {
+  clearManagerSlotsForSession(store, sessionId, currentRuntime);
+  return new Error(`${failure.code}: ${failure.message}`);
 }

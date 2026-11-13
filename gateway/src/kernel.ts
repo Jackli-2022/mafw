@@ -31,7 +31,7 @@ import {
 } from './release-info';
 import { isLoopbackAddr } from './core/auth';
 import { loadOrCreateHumanToken, rotateHumanToken } from './core/human-token';
-import { registerLeadSessionRecord } from './core/session/internal-registration';
+import { registerLeadSessionRecord, rollbackRejectedLeadRegistration, type LeadRegistrationOutcome } from './core/session/internal-registration';
 import type { Services } from './types';
 // D3 Task 3：HTTP 传输链 + WS 上行枢纽（原先内联在 startApiServer 的 626 行回调）。
 import { createRequestListener } from './http/transport';
@@ -416,7 +416,7 @@ interface Session {
 // D3 Task 1: readBody / normalizeDir / isPortHealthy moved verbatim to
 // core/http/http-util.ts (single import line added at the top of the file).
 
-import { writeManagerSlot, projectLeadSessionMetadata, backfillManagerSlot, clearSlotsForSession } from './core/manager/manager-session-runtime';
+import { writeManagerSlot, projectLeadSessionMetadata, backfillManagerSlot, clearManagerSlotsForSession } from './core/manager/manager-session-runtime';
 import { LeadSessionRegistry } from './core/manager/lead-session-registry';
 import { isLiveSessionInfo } from './runtime/session-liveness';
 
@@ -1723,9 +1723,13 @@ class MafwScheduler {
    * rolls the internal identity back and broadcasts
    * `session.registration_failed`; it never throws, so the Lead boot path
    * survives a full quota bucket with a usable runtime session.
+   *
+   * The outcome is returned (E11-2b) so callers that persisted a session id
+   * beforehand (rotation) can roll that pointer back instead of handing out a
+   * session id the gateway does not consider registered.
    */
-  private async registerLeadRecord(sessionId: string, directory: string): Promise<void> {
-    await registerLeadSessionRecord({
+  private async registerLeadRecord(sessionId: string, directory: string): Promise<LeadRegistrationOutcome> {
+    return registerLeadSessionRecord({
       sdkSession: this.sdkSession,
       registerInternal: (id, role, identity) => this.registerInternalSession(id, role, identity),
       unregisterInternal: (id) => this.unregisterInternalSession(id),
@@ -1752,10 +1756,7 @@ class MafwScheduler {
     this.leadSessionRegistry?.unmirrorLeadSession(sessionId);
     // stale slot 清理：归档后不得再被 findBySessionId/current 认领（不依赖 rotation 恰好写完新槽）。
     try {
-      const rows = this.getGatewayDb().kvAll<unknown>('manager-session');
-      for (const row of clearSlotsForSession(rows, sessionId, this.runtimeName)) {
-        this.getGatewayDb().kvSet('manager-session', row.key, row.value);
-      }
+      clearManagerSlotsForSession(this.getGatewayDb(), sessionId, this.runtimeName);
     } catch (err: any) {
       log.warn(`[Lead] archived slot cleanup failed for ${sessionId} (non-fatal): ${err?.message ?? err}`);
     }
@@ -4022,6 +4023,9 @@ class MafwScheduler {
         // E11-2: internal identity + session record in one reconciling step —
         // a quota rejection rolls the identity back and broadcasts
         // `session.registration_failed` instead of leaving a phantom.
+        // The outcome is intentionally ignored here: this path registers an
+        // already-created Lead, so a rejection is audited but the session stays
+        // usable. Only rotation (E11-2b) has a persisted pointer to roll back.
         await this.registerLeadRecord(sessionId, dir);
       },
       archiveLead: (sessionId) => this.archiveLeadSession(sessionId),
@@ -7170,7 +7174,14 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     const sessionId = session.id;
     if (!sessionId) throw new Error('Failed to create lead session: no id returned');
     this.getGatewayDb().kvSet('manager-session', canonical, writeManagerSlot(this.getGatewayDb().kvGet('manager-session', canonical), this.runtimeName, { sessionId, createdAt: new Date().toISOString() }));
-    await this.registerLeadRecord(sessionId, canonical);
+    const registration = await this.registerLeadRecord(sessionId, canonical);
+    if (!registration.ok) {
+      // E11-2b: the slot was written above, so a rejected registration must
+      // take it back — otherwise the project keeps pointing at a session with
+      // no local record. Throwing (instead of returning) keeps the dead id out
+      // of the caller's hands; the runtime session is left for GC/cleanup.
+      throw rollbackRejectedLeadRegistration(this.getGatewayDb(), sessionId, this.runtimeName, registration);
+    }
     await this.syncPodLead(canonical, sessionId);
     return sessionId;
   }
