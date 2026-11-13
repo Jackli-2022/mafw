@@ -19,7 +19,7 @@ function state(overrides: Partial<ContentScopeState> = {}): ContentScopeState {
   }
 }
 
-test("active file becomes a read focus with scroll and selection", () => {
+test("active file becomes a file focus with scroll and selection", () => {
   const migrated = migrateContentScopeState({
     worldId: "w1",
     root: "C:/repo",
@@ -27,7 +27,6 @@ test("active file becomes a read focus with scroll and selection", () => {
     state: state(),
   })
   assert.equal(migrated.stack.length, 1)
-  assert.equal(migrated.stack[0]!.lens, "read")
   assert.equal(migrated.stack[0]!.subject.kind, "file")
   assert.equal((migrated.stack[0]!.subject as { rel: string }).rel, "src/a.ts")
   assert.equal(migrated.stack[0]!.place.scroll, 120)

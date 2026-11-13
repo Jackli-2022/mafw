@@ -2315,7 +2315,6 @@ export function MafwShell() {
           state,
           goalScope,
           { kind: "changeSet", scope: "goal", goalId: scope.goalId, revision: scope.revision },
-          "changes",
         ),
       )
     })()
@@ -2342,7 +2341,7 @@ export function MafwShell() {
   const seedWorldRoot = (state: WorkbenchState, scope: Scope): WorkbenchState => {
     if (state.stack.length > 0) return state
     const worldScope: Scope = { kind: "world", worldId: scope.worldId }
-    return openSubject({ ...state, worldId: scope.worldId }, worldScope, { kind: "world" }, "orient")
+    return openSubject({ ...state, worldId: scope.worldId }, worldScope, { kind: "world" })
   }
   /** 文件统一入口：按 fileOpenPlan 分流浏览器 / 编辑器，并记录 recent。 */
   const openFileInScope = (
@@ -2371,7 +2370,6 @@ export function MafwShell() {
               { ...seedWorldRoot(state, scope), worldId: scope.worldId },
               scope,
               { kind: "web", url },
-              "interact",
             ),
           )
           recordRecentFile(rel, contentScopeFromFocus(scope))
@@ -2387,7 +2385,6 @@ export function MafwShell() {
         { ...seedWorldRoot(state, scope), worldId: scope.worldId },
         scope,
         { kind: "file", root, rel },
-        "read",
       ),
     )
     recordRecentFile(rel, contentScopeFromFocus(scope))
@@ -2545,7 +2542,7 @@ export function MafwShell() {
     setPodGoalId(null)
     const worldId = currentProject() ?? "unscoped"
     setFocusState((state) =>
-      openSubject({ ...state, worldId }, { kind: "world", worldId }, { kind: "world" }, "orient"),
+      openSubject({ ...state, worldId }, { kind: "world", worldId }, { kind: "world" }),
     )
   }
   const openBrowserFocus = (url: string, opts?: { newTab?: boolean }) => {
@@ -2567,7 +2564,6 @@ export function MafwShell() {
         seedWorldRoot(state, scope),
         scope,
         { kind: "web", url: blank ? "about:blank" : url },
-        "interact",
       ),
     )
   }
@@ -2575,7 +2571,7 @@ export function MafwShell() {
     revealWorkbench()
     const scope = focusScope()
     setFocusState((state) =>
-      openSubject(seedWorldRoot(state, scope), scope, { kind: "terminal", id: "local" }, "interact"),
+      openSubject(seedWorldRoot(state, scope), scope, { kind: "terminal", id: "local" }),
     )
   }
   /** 打开/激活一个 diff tab，并把焦点切到对应 diff subject。 */
@@ -2586,7 +2582,6 @@ export function MafwShell() {
       seedWorldRoot(focusState(), input.scope),
       input.scope,
       { kind: "diff", source: input.source.kind, id: doc.id, rel: doc.rel, line: input.anchorLine },
-      "interact",
     )
     setFocusState(next)
     syncStageToFocus(next)
@@ -2602,7 +2597,6 @@ export function MafwShell() {
         seedWorldRoot(state, scope),
         scope,
         { kind: "plugin", package: parsed.package, panel: parsed.panel },
-        "interact",
       ),
     )
   }
@@ -2615,7 +2609,6 @@ export function MafwShell() {
         seedWorldRoot(state, scope),
         scope,
         { kind: "changeSet", scope: "project", baseline: "HEAD" },
-        lens,
       ),
     )
   }
@@ -2669,7 +2662,6 @@ export function MafwShell() {
         seedWorldRoot(focusState(), scope),
         scope,
         { kind: "file", root, rel: entry.view.id },
-        "read",
       )
       setFocusState(next)
       syncStageToFocus(next)
@@ -2680,7 +2672,6 @@ export function MafwShell() {
         seedWorldRoot(focusState(), doc.scope),
         doc.scope,
         { kind: "diff", source: doc.source.kind, id: doc.id, rel: doc.rel, line: doc.anchorLine },
-        "interact",
       )
       setFocusState(next)
       syncStageToFocus(next)
@@ -2690,7 +2681,6 @@ export function MafwShell() {
         seedWorldRoot(focusState(), base),
         base,
         { kind: "web", url },
-        "interact",
       )
       setFocusState(next)
       syncStageToFocus(next)
@@ -2801,7 +2791,6 @@ export function MafwShell() {
           worktreeDir: project,
           title: goal?.title ?? null,
         },
-        "orient",
       ),
     )
     void resolveGoalWorktreeDir(podIdForCurrentProject(), goalId, project).then((worktreeDir) => {
@@ -2818,7 +2807,6 @@ export function MafwShell() {
             worktreeDir,
             title: goal?.title ?? null,
           },
-          top.lens,
         )
       })
     })
@@ -2842,7 +2830,6 @@ export function MafwShell() {
             revision: scope.revision,
             worktreeDir,
           },
-          "changes",
         ),
       )
     })
@@ -2875,7 +2862,6 @@ export function MafwShell() {
           rel: input.rel,
           line: input.line,
         },
-        "decide",
       )
       setFocusState(next)
       syncStageToFocus(next)
@@ -2896,7 +2882,7 @@ export function MafwShell() {
     const focus = activeFocus()
     if (!focus || focus.scope.kind !== "goal") return null
     const scope = focus.scope
-    if (focus.lens !== "review" && focus.subject.kind !== "goal") return null
+    if (focus.subject.kind !== "goal" && focus.subject.kind !== "reviewItem") return null
     const podId = podIdForCurrentProject()
     if (!podId) return null
     const goal = podStore.detail()?.goals.find((item) => item.goalId === scope.goalId)
@@ -2987,7 +2973,6 @@ export function MafwShell() {
       { ...seedWorldRoot(focusState(), item.scope), worldId: item.scope.worldId },
       item.scope,
       item.subject,
-      item.lens,
     )
     setFocusState(next)
     syncStageToFocus(next)

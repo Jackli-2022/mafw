@@ -2,14 +2,10 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import {
   createWorkbenchState,
-  defaultLensFor,
-  isLensApplicable,
   jumpTo,
   keepSubject,
-  lensesFor,
   openSubject,
   popFocus,
-  replaceLens,
   sameSubject,
   selectFocus,
   subjectKey,
@@ -30,26 +26,24 @@ const goalScope: Scope = {
 const file: SubjectRef = { kind: "file", root: "C:/repo", rel: "src/a.ts" }
 const file2: SubjectRef = { kind: "file", root: "C:/repo", rel: "src/b.ts" }
 
-test("openSubject pushes a new focus and defaults to the subject lens", () => {
+test("openSubject pushes a new focus", () => {
   const state = createWorkbenchState("w1")
   assert.equal(state.stack.length, 0)
   assert.equal(state.kept.length, 0)
 
   const next = openSubject(state, worldScope, file)
   assert.equal(next.stack.length, 1)
-  assert.equal(next.stack[0]!.lens, "read")
   assert.equal(next.stack[0]!.scope.kind, "world")
   assert.equal(next.stack[0]!.place.scroll, undefined)
   assert.equal(next.stack[0]!.place.selection, undefined)
 })
 
-test("opening the same subject replaces lens and place instead of pushing", () => {
+test("opening the same subject replaces place instead of pushing", () => {
   let state = openSubject(createWorkbenchState("w1"), worldScope, file)
   state = updatePlace(state, { scroll: 120, selection: { anchor: 1, head: 4 } })
 
-  const same = openSubject(state, worldScope, file, "changes")
+  const same = openSubject(state, worldScope, file)
   assert.equal(same.stack.length, 1)
-  assert.equal(same.stack[0]!.lens, "changes")
   assert.equal(same.stack[0]!.place.scroll, 120)
   assert.deepEqual(same.stack[0]!.place.selection, { anchor: 1, head: 4 })
 })
@@ -68,7 +62,6 @@ test("selectFocus moves an existing subject to the top without duplicating", () 
     subjectKey(web),
     subjectKey(file),
   ])
-  assert.equal(next.stack.at(-1)!.lens, "read")
 })
 
 test("selectFocus appends a new subject and keeps the top unchanged", () => {
@@ -85,15 +78,6 @@ test("same file at another version keeps one focus and updates the subject", () 
   assert.equal(state.stack.length, 1)
   assert.equal(state.stack[0]!.subject.kind, "file")
   assert.equal((state.stack[0]!.subject as { version?: string }).version, "v2")
-})
-
-test("replaceLens refuses an inapplicable lens", () => {
-  const state = openSubject(createWorkbenchState("w1"), worldScope, file)
-  const before = state
-  const refused = replaceLens(state, "interact")
-  assert.equal(refused, before)
-  assert.equal(refused.stack[0]!.lens, "read")
-  assert.equal(replaceLens(state, "read"), state)
 })
 
 test("popFocus restores the previous focus and is a no-op at root", () => {
@@ -146,38 +130,7 @@ test("subjectKey treats version as frame state, not identity", () => {
   )
 })
 
-test("lens matrix is pinned per subject kind", () => {
-  const cases: Array<[SubjectRef, string[]]> = [
-    [{ kind: "world" }, ["orient"]],
-    [{ kind: "goal", goalId: "g1" }, ["orient", "review", "decide"]],
-    [file, ["read", "edit", "changes", "review"]],
-    [{ kind: "changeSet", scope: "project", baseline: "HEAD" }, ["changes", "evidence", "review", "decide"]],
-    [{ kind: "reviewItem", id: "r1" }, ["review", "decide"]],
-    [{ kind: "evidence", id: "e1" }, ["evidence"]],
-    [{ kind: "web", url: "https://example.com" }, ["interact"]],
-    [{ kind: "terminal", id: "t1" }, ["interact"]],
-    [{ kind: "plugin", package: "p", panel: "x" }, ["interact"]],
-  ]
-  for (const [subject, lenses] of cases) {
-    assert.deepEqual([...lensesFor(subject)], lenses)
-  }
-
-  assert.equal(defaultLensFor({ kind: "world" }), "orient")
-  assert.equal(defaultLensFor({ kind: "goal", goalId: "g1" }), "orient")
-  assert.equal(defaultLensFor(file), "read")
-  assert.equal(defaultLensFor({ kind: "changeSet", scope: "project" }), "changes")
-  assert.equal(defaultLensFor({ kind: "reviewItem", id: "r1" }), "decide")
-  assert.equal(defaultLensFor({ kind: "evidence", id: "e1" }), "evidence")
-  assert.equal(defaultLensFor({ kind: "web", url: "https://example.com" }), "interact")
-
-  assert.equal(isLensApplicable(file, "read"), true)
-  assert.equal(isLensApplicable(file, "interact"), false)
-  assert.equal(isLensApplicable({ kind: "web", url: "https://example.com" }, "read"), false)
-})
-
-test("diff subjects have a stable identity and no lenses", () => {
+test("diff subjects have a stable identity", () => {
   const subject: SubjectRef = { kind: "diff", source: "session", id: "d1", rel: "src/a.ts" }
   assert.equal(subjectKey(subject), "diff:session:d1:src/a.ts")
-  assert.deepEqual([...lensesFor(subject)], [])
-  assert.equal(defaultLensFor(subject), "interact")
 })

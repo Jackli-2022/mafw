@@ -30,7 +30,6 @@ export function migrateContentScopeState(input: {
     createWorkbenchState(input.worldId),
     input.scope,
     { kind: "file", root: input.root, rel: active },
-    "read",
   )
 
   const place: Place = {}

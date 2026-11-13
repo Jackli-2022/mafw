@@ -21,10 +21,9 @@ test("project home and picker can open a goal focus", () => {
   assert.match(shell, /openGoalFocus\(/)
 })
 
-test("goal picker items carry a goal scope and orient lens", () => {
+test("goal picker items carry a goal scope", () => {
   assert.match(picker, /export function buildGoalPickerItems/)
   assert.match(picker, /kind: "goal"/)
-  assert.match(picker, /lens: "orient"/)
   assert.match(picker, /subject: \{ kind: "goal", goalId: goal\.goalId \}/)
 })
 

@@ -1,16 +1,15 @@
-// 台的分派：subject + lens → 用哪个舞台渲染。纯函数，方便测试。
-import { isLensApplicable, type Focus } from "./focus-model"
+// 台的分派：subject → 用哪个舞台渲染。纯函数，方便测试。
+import type { Focus } from "./focus-model"
 
 export type StageKind = "editor" | "browser" | "terminal" | "plugin" | "changeSet" | "goal" | "world" | "diff"
 
 export type StageAction =
-  | { kind: "editor"; root: string; rel: string; intent: "reading" | "editing"; line?: number }
+  | { kind: "editor"; root: string; rel: string; line?: number }
   | { kind: "browser"; url: string }
   | { kind: "none" }
 
 export function stageKindFor(focus: Focus): StageKind {
   if (focus.subject.kind === "diff") return "diff"
-  if (!isLensApplicable(focus.subject, focus.lens)) return "world"
   switch (focus.subject.kind) {
     case "file":
       return "editor"
@@ -35,20 +34,18 @@ export function stageKindFor(focus: Focus): StageKind {
 
 /** 把焦点翻译成“舞台需要执行的副作用”：打开编辑器 / 导航浏览器 / 什么都不做。 */
 export function stageActionFor(focus: Focus): StageAction {
-  if (!isLensApplicable(focus.subject, focus.lens)) return { kind: "none" }
   if (focus.subject.kind === "reviewItem") {
     const anchor = focus.subject.anchor
     if (!anchor) return { kind: "none" }
     const root = focus.scope.kind === "goal" ? focus.scope.worktreeDir : ""
     if (!root) return { kind: "none" }
-    return { kind: "editor", root, rel: anchor.rel, intent: "reading", line: anchor.line }
+    return { kind: "editor", root, rel: anchor.rel, line: anchor.line }
   }
   if (focus.subject.kind === "file") {
     return {
       kind: "editor",
       root: focus.subject.root,
       rel: focus.subject.rel,
-      intent: focus.lens === "edit" ? "editing" : "reading",
     }
   }
   if (focus.subject.kind === "web") {

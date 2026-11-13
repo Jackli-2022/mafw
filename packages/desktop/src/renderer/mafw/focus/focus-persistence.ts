@@ -1,10 +1,8 @@
 // 按世界持久化工作台焦点栈。读取时逐条校验，坏数据静默丢弃；
 // 写入 300ms 去抖，存储失败 fail-open。
 import {
-  isLensApplicable,
   subjectKey,
   type Focus,
-  type Lens,
   type Place,
   type Scope,
   type SubjectRef,
@@ -22,17 +20,6 @@ const PREFIX = "mafw-focus:v1:"
 const PERSIST_DELAY_MS = 300
 const MAX_STACK = 50
 const MAX_KEPT = 20
-
-const LENS_SET = new Set<Lens>([
-  "orient",
-  "read",
-  "edit",
-  "changes",
-  "evidence",
-  "review",
-  "decide",
-  "interact",
-])
 
 function defaultStorage(): FocusStorage | null {
   try {
@@ -90,25 +77,6 @@ function isSubject(value: unknown): value is SubjectRef {
         value.rel.length > 0 &&
         (value.version === undefined || typeof value.version === "string")
       )
-    case "changeSet":
-      return (
-        (value.scope === "project" || value.scope === "goal") &&
-        (value.goalId === undefined || typeof value.goalId === "string") &&
-        (value.revision === undefined || (typeof value.revision === "number" && Number.isFinite(value.revision))) &&
-        (value.baseline === undefined || typeof value.baseline === "string")
-      )
-    case "reviewItem": {
-      if (typeof value.id !== "string" || value.id.length === 0) return false
-      if (value.anchor === undefined) return true
-      return (
-        isRecord(value.anchor) &&
-        typeof value.anchor.rel === "string" &&
-        value.anchor.rel.length > 0 &&
-        (value.anchor.line === undefined || (typeof value.anchor.line === "number" && Number.isFinite(value.anchor.line)))
-      )
-    }
-    case "evidence":
-      return typeof value.id === "string" && value.id.length > 0
     case "web":
       return typeof value.url === "string" && value.url.length > 0
     case "terminal":
@@ -141,15 +109,10 @@ function isPlace(value: unknown): value is Place {
 function isFocus(value: unknown): value is Focus {
   if (!isRecord(value)) return false
   if (!isScope(value.scope) || !isSubject(value.subject)) return false
-  if (typeof value.lens !== "string" || !LENS_SET.has(value.lens as Lens)) return false
-  if (!isLensApplicable(value.subject, value.lens as Lens)) return false
   return isPlace(value.place)
 }
 
 function cloneSubject(subject: SubjectRef): SubjectRef {
-  if (subject.kind === "reviewItem" && subject.anchor) {
-    return { ...subject, anchor: { ...subject.anchor } }
-  }
   return { ...subject }
 }
 
@@ -157,7 +120,6 @@ function cloneFocus(focus: Focus): Focus {
   return {
     scope: { ...focus.scope },
     subject: cloneSubject(focus.subject),
-    lens: focus.lens,
     place: {
       ...(focus.place.scroll !== undefined ? { scroll: focus.place.scroll } : {}),
       ...(focus.place.selection ? { selection: { ...focus.place.selection } } : {}),

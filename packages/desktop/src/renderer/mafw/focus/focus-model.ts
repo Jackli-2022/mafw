@@ -1,4 +1,4 @@
-// 工作台焦点模型：一个焦点 = scope + subject + lens + place。
+// 工作台焦点模型：一个焦点 = scope + subject + place。
 // 这里只放纯函数；UI、存储、Solid 都不属于本模块。
 export type WorldId = string
 
@@ -18,26 +18,14 @@ export type SubjectRef =
   | { kind: "plugin"; package: string; panel: string }
   | { kind: "diff"; source: "session" | "goal"; id: string; rel: string; line?: number }
 
-export type Lens = "orient" | "read" | "edit" | "changes" | "evidence" | "review" | "decide" | "interact"
-
 export type Place = {
   scroll?: number
   selection?: { anchor: number; head: number }
   filter?: string
 }
 
-export type Focus = { scope: Scope; subject: SubjectRef; lens: Lens; place: Place }
+export type Focus = { scope: Scope; subject: SubjectRef; place: Place }
 export type WorkbenchState = { worldId: WorldId; stack: Focus[]; kept: SubjectRef[] }
-
-const LENSES = {
-  world: ["orient"],
-  goal: ["orient", "review", "decide"],
-  file: ["read", "edit", "changes", "review"],
-  changeSet: ["changes", "evidence", "review", "decide"],
-  reviewItem: ["review", "decide"],
-  evidence: ["evidence"],
-  transient: ["interact"],
-} as const satisfies Record<string, readonly Lens[]>
 
 export function createWorkbenchState(worldId: WorldId): WorkbenchState {
   return { worldId, stack: [], kept: [] }
@@ -79,78 +67,20 @@ export function sameSubject(a: SubjectRef, b: SubjectRef): boolean {
   return subjectKey(a) === subjectKey(b)
 }
 
-export function lensesFor(subject: SubjectRef): readonly Lens[] {
-  switch (subject.kind) {
-    case "world":
-      return LENSES.world
-    case "goal":
-      return LENSES.goal
-    case "file":
-      return LENSES.file
-    case "changeSet":
-      return LENSES.changeSet
-    case "reviewItem":
-      return LENSES.reviewItem
-    case "evidence":
-      return LENSES.evidence
-    case "web":
-    case "terminal":
-    case "plugin":
-      return LENSES.transient
-    case "diff":
-      return []
-  }
-}
-
-export function defaultLensFor(subject: SubjectRef): Lens {
-  switch (subject.kind) {
-    case "world":
-    case "goal":
-      return "orient"
-    case "file":
-      return "read"
-    case "changeSet":
-      return "changes"
-    case "reviewItem":
-      return "decide"
-    case "evidence":
-      return "evidence"
-    case "web":
-    case "terminal":
-    case "plugin":
-      return "interact"
-    case "diff":
-      return "interact"
-  }
-}
-
-export function isLensApplicable(subject: SubjectRef, lens: Lens): boolean {
-  return lensesFor(subject).includes(lens)
-}
-
 export function openSubject(
   state: WorkbenchState,
   scope: Scope,
   subject: SubjectRef,
-  lens?: Lens,
 ): WorkbenchState {
-  const nextLens = lens && isLensApplicable(subject, lens) ? lens : defaultLensFor(subject)
   const top = state.stack[state.stack.length - 1]
   if (top && sameSubject(top.subject, subject)) {
-    const nextTop: Focus = { ...top, scope, subject, lens: nextLens }
+    const nextTop: Focus = { ...top, scope, subject }
     return { ...state, stack: [...state.stack.slice(0, -1), nextTop] }
   }
   return {
     ...state,
-    stack: [...state.stack, { scope, subject, lens: nextLens, place: {} }],
+    stack: [...state.stack, { scope, subject, place: {} }],
   }
-}
-
-export function replaceLens(state: WorkbenchState, lens: Lens): WorkbenchState {
-  const top = state.stack[state.stack.length - 1]
-  if (!top || top.lens === lens || !isLensApplicable(top.subject, lens)) return state
-  const nextTop: Focus = { ...top, lens }
-  return { ...state, stack: [...state.stack.slice(0, -1), nextTop] }
 }
 
 /**
@@ -161,16 +91,14 @@ export function selectFocus(
   state: WorkbenchState,
   scope: Scope,
   subject: SubjectRef,
-  lens?: Lens,
 ): WorkbenchState {
   const top = state.stack[state.stack.length - 1]
   if (top && sameSubject(top.subject, subject)) return state
   const existing = state.stack.find((focus) => sameSubject(focus.subject, subject))
   const rest = state.stack.filter((focus) => !sameSubject(focus.subject, subject))
-  const nextLens = lens && isLensApplicable(subject, lens) ? lens : defaultLensFor(subject)
   return {
     ...state,
-    stack: [...rest, { scope, subject, lens: nextLens, place: existing?.place ?? {} }],
+    stack: [...rest, { scope, subject, place: existing?.place ?? {} }],
   }
 }
 

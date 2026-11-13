@@ -153,7 +153,7 @@ test("commands stay inside the picker cap", () => {
   assert.equal(merged.at(-1)?.kind, "command")
 })
 
-test("goal picker items carry a goal scope and orient lens", () => {
+test("goal picker items carry a goal scope", () => {
   const items = buildGoalPickerItems(
     [
       { goalId: "g1", title: "工作台重构", activeRevision: 3, revision: 2 },
@@ -167,7 +167,6 @@ test("goal picker items carry a goal scope and orient lens", () => {
   assert.equal(items[0]!.label, "工作台重构")
   assert.equal(items[0]!.subject.kind, "goal")
   assert.equal((items[0]!.subject as { goalId: string }).goalId, "g1")
-  assert.equal(items[0]!.lens, "orient")
   assert.equal(items[0]!.scope.kind, "goal")
   assert.equal((items[0]!.scope as { revision: number }).revision, 3)
   assert.equal((items[0]!.scope as { worldId: string }).worldId, "C:/repo")
@@ -208,5 +207,4 @@ test("world overview is a picker item", () => {
   assert.equal(item.label, "世界总览")
   assert.deepEqual(item.scope, { kind: "world", worldId: "C:/repo" })
   assert.deepEqual(item.subject, { kind: "world" })
-  assert.equal(item.lens, "orient")
 })

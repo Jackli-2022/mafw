@@ -1,4 +1,4 @@
-import { subjectKey, type Lens, type Scope, type SubjectRef, type WorldId } from "./focus-model"
+import { subjectKey, type Scope, type SubjectRef, type WorldId } from "./focus-model"
 import type { RecentContentEntry } from "../recent-content"
 import type { PodGoal } from "@mafw/sdk"
 
@@ -11,7 +11,6 @@ export type PickerItem = {
   detail?: string
   scope: Scope
   subject: SubjectRef
-  lens?: Lens
 }
 
 export function buildWorldPickerItem(worldId: WorldId): PickerItem {
@@ -22,7 +21,6 @@ export function buildWorldPickerItem(worldId: WorldId): PickerItem {
     detail: "继续 / 需要你 / 全部 Goal",
     scope: { kind: "world", worldId },
     subject: { kind: "world" },
-    lens: "orient",
   }
 }
 
@@ -113,7 +111,6 @@ export function buildGoalPickerItems(
         worktreeDir,
       },
       subject: { kind: "goal", goalId: goal.goalId },
-      lens: "orient",
     })
   }
   return out
@@ -128,7 +125,6 @@ export function buildCommandPickerItems(scope: Scope): PickerItem[] {
       detail: "新建浏览器对象",
       scope,
       subject: { kind: "web", url: "about:blank" },
-      lens: "interact",
     },
     {
       id: "command:terminal",
@@ -137,7 +133,6 @@ export function buildCommandPickerItems(scope: Scope): PickerItem[] {
       detail: "新建终端对象",
       scope,
       subject: { kind: "terminal", id: "local" },
-      lens: "interact",
     },
   ]
 }

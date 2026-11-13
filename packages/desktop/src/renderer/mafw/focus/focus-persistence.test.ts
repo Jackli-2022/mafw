@@ -55,7 +55,6 @@ test("focus state round-trips per world", () => {
   const loaded = loadFocusState("w1")
   assert.ok(loaded)
   assert.equal(loaded.stack.length, 1)
-  assert.equal(loaded.stack[0]!.lens, "read")
   assert.equal(loaded.stack[0]!.place.scroll, 42)
   assert.deepEqual(loaded.stack[0]!.place.selection, { anchor: 1, head: 5 })
   assert.equal(loaded.kept.length, 1)
@@ -203,7 +202,6 @@ test("diff focuses are transient and never round-trip", () => {
     stack: [...state.stack, {
       scope: worldScope,
       subject: { kind: "diff", source: "session", id: "d1", rel: "src/a.ts" },
-      lens: "interact",
       place: {},
     }],
   }
@@ -213,4 +211,18 @@ test("diff focuses are transient and never round-trip", () => {
   configureFocusStorage(io)
   const loaded = loadFocusState("w1")
   assert.deepEqual(loaded?.stack.map((focus) => focus.subject.kind), ["file"])
+})
+
+test("old snapshots with lens still load; lens is ignored", () => {
+  const io = fakeStorage()
+  io.data.set("mafw-focus:v1:w1", JSON.stringify({
+    v: 1,
+    stack: [{ scope: worldScope, subject: file, lens: "edit", place: {} }],
+    kept: [],
+  }))
+  resetFocusPersistence()
+  configureFocusStorage(io)
+  const loaded = loadFocusState("w1")
+  assert.equal(loaded?.stack[0]?.subject.kind, "file")
+  assert.equal("lens" in (loaded?.stack[0] ?? {}), false)
 })
