@@ -82,8 +82,10 @@
   tab 顺序是 store 权威：支持跨文件 / 网页拖拽，顺序按 world（项目）持久化到
   `mafw-document-list:v1:<worldId>`；浏览器 tab 的 id / URL / 标题持久化到
   `mafw-browser-tabs:v1`，重启后恢复并重新加载 webview。文件内容 / dirty / 草稿仍走
-  `editor-drafts` / `content-scope-state`；`EditorModel` / `BrowserTab` 详细状态迁移仍属
-  Phase 2C。左 dock 文件面头部提供手动刷新（保留展开态）。
+  `editor-drafts` / `content-scope-state`；Phase 2C-1 起浏览器 tab 状态归
+  `documents/browser-documents`，`browser-tabs` 只是兼容 facade，document store 用模块级
+  effect 自动同步 web entries；`EditorModel` 的 tab 元数据迁移仍属 Phase 2C-2。
+  左 dock 文件面头部提供手动刷新（保留展开态）。
 - **编辑器**：默认 **Monaco**（VS Code 内核；`mafw-editor-engine=codemirror` 回退，挂载失败自动回退），
   行内 diff 装饰、Ctrl/Cmd+S、MAFW 主题 token 映射、minimap ≥720px。详情见本文件 Monaco 段。
 - **文件预览**：md（session-ui markdown）、json 折叠树、csv/tsv 表格、svg 预览/源码、图片、pdf（Chromium
