@@ -84,9 +84,9 @@
   `mafw-browser-tabs:v1`，重启后恢复并重新加载 webview。文件内容 / dirty / 草稿仍走
   `editor-drafts` / `content-scope-state`；Phase 2C-1 起浏览器 tab 状态归
   `documents/browser-documents`；Phase 2C-2 起 `EditorModel` 按 root 归
-  `documents/file-documents`，`browser-tabs` / `editor-model-store` 只是兼容 facade，
-  document store 用模块级 effect 自动派生 file / web entries；剩余 2C-3 是删除 facade、
-  统一 file / web document record。左 dock 文件面头部提供手动刷新（保留展开态）。
+  `documents/file-documents`；Phase 2C-3 删除 `browser-tabs` / `editor-model-store`
+  兼容 facade，调用面统一到 `browser-documents` / `file-documents`，document store 用模块级
+  effect 自动派生 file / web entries。左 dock 文件面头部提供手动刷新（保留展开态）。
 - **编辑器**：默认 **Monaco**（VS Code 内核；`mafw-editor-engine=codemirror` 回退，挂载失败自动回退），
   行内 diff 装饰、Ctrl/Cmd+S、MAFW 主题 token 映射、minimap ≥720px。详情见本文件 Monaco 段。
 - **文件预览**：md（session-ui markdown）、json 折叠树、csv/tsv 表格、svg 预览/源码、图片、pdf（Chromium

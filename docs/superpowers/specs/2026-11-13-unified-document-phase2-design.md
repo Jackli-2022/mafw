@@ -46,9 +46,12 @@ Phase 1 解决了「文件与网页能否同条」。Phase 2 解决「这条文�
      readOnly / content 基准）按 root 迁入 `documents/file-documents.ts`；
      `editor-model-store.ts` 退化为兼容 facade；`EditorDock` 只把用户动作交给 reducer，
      文件 entries 由 document store 自动派生。
-  3. **2C-3（后续）**：删除 `browser-tabs` / `editor-model-store` 兼容 facade；如需要，
-     再把 `savedContent` 从 tab record 拆到独立内容层，统一 file / web document record 类型。
-- 2C-3 必须单独立 spec + plan，先做迁移映射与失败回滚设计。
+  3. **2C-3（已交付）**：删除 `browser-tabs.ts` / `editor-model-store.ts` 兼容 facade，
+     调用面统一到 `browser-documents` / `file-documents`；`browser-tabs-persistence` 与
+     `mafw-browser-tabs:v1` 保留（它们描述持久化的浏览器 tab，不改存储键）。
+     `savedContent` 仍作为 `EditorModel` 的一部分由 `file-documents` 持有；内容 reducer 仍在
+     `editor-state`。
+- Phase 2 完成：混合 tab、拖拽、跨重启顺序、统一 toolbar、file / web 详细状态拥有权均已落地。
 
 ## 3. 2A 设计
 
