@@ -23,8 +23,10 @@
  */
 
 import type { RouteDef } from './registry';
-import { SessionListResponse } from './schemas/session';
+import { SessionListResponse, SessionMessagesResponse, SessionSchema } from './schemas/session';
 import {
+  AttentionListResponse,
+  DecisionListResponse,
   GoalViewSchema,
   PresenceResponse,
   ProjectListResponse,
@@ -32,6 +34,8 @@ import {
 } from './schemas/read-models';
 import { KernelStatsResponse } from './schemas/resources';
 import { EventReplayResponse } from './schemas/events';
+import { PodDetailResponse } from './schemas/pods';
+import { MemoryStatsResponse } from './schemas/memory-stats';
 
 /**
  * SDK-facing 端点（catalog → gateway-paths → openapi 单向生成；**在此新增**后必须重跑
@@ -53,10 +57,10 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'DELETE', path: '/api/session/:id/queue/:itemId', operationId: 'session.queue.cancel', tags: ['session'] },
   // code-first 试点：response schema 是唯一来源（emit:openapi 直接投影，不经 overrides）。
   { method: 'GET', path: '/api/sessions', operationId: 'session.list', tags: ['session'], response: SessionListResponse },
-  { method: 'GET', path: '/api/sessions/:id', operationId: 'session.get', tags: ['session'] },
+  { method: 'GET', path: '/api/sessions/:id', operationId: 'session.get', tags: ['session'], response: SessionSchema },
   { method: 'DELETE', path: '/api/sessions/:id', operationId: 'session.delete', tags: ['session'] },
   { method: 'PATCH', path: '/api/sessions/:id', operationId: 'session.rename', tags: ['session'] },
-  { method: 'GET', path: '/api/sessions/:id/messages', operationId: 'session.messages', summary: 'Session message history (MAFW flat DTO)', tags: ['session'] },
+  { method: 'GET', path: '/api/sessions/:id/messages', operationId: 'session.messages', summary: 'Session message history (MAFW flat DTO)', tags: ['session'], response: SessionMessagesResponse },
   { method: 'GET', path: '/api/sessions/:id/todo', operationId: 'session.todo', tags: ['session'] },
   { method: 'GET', path: '/api/sessions/:id/children', operationId: 'session.children', tags: ['session'] },
   { method: 'GET', path: '/api/sessions/:id/structured', operationId: 'session.structured', tags: ['session'] },
@@ -166,8 +170,8 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/goals/:id/timeline', operationId: 'goals.timeline', tags: ['goals'] },
   { method: 'GET', path: '/api/goals/:id/source', operationId: 'goals.source', tags: ['goals'] },
   { method: 'GET', path: '/api/lead/context', operationId: 'lead.context', tags: ['internal'] },
-  { method: 'GET', path: '/api/attention', operationId: 'attention.list', tags: ['internal'] },
-  { method: 'GET', path: '/api/decisions', operationId: 'decisions.list', tags: ['internal'] },
+  { method: 'GET', path: '/api/attention', operationId: 'attention.list', tags: ['internal'], response: AttentionListResponse },
+  { method: 'GET', path: '/api/decisions', operationId: 'decisions.list', tags: ['internal'], response: DecisionListResponse },
   { method: 'POST', path: '/api/decisions', operationId: 'decisions.draft', tags: ['internal'] },
   { method: 'POST', path: '/api/decisions/:id/confirm', operationId: 'decisions.confirm', tags: ['internal'] },
   { method: 'POST', path: '/api/decisions/:id/shelve', operationId: 'decisions.shelve', tags: ['internal'] },
@@ -269,7 +273,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/projects/:projectId/pod', operationId: 'pods.ensure', tags: ['pods'] },
   { method: 'GET', path: '/api/projects/:projectId/pod/lookup', operationId: 'pods.lookup', tags: ['pods'] },
   { method: 'POST', path: '/api/projects/:projectId/pod', operationId: 'pods.create', tags: ['pods'] },
-  { method: 'GET', path: '/api/pods/:podId', operationId: 'pods.get', tags: ['pods'] },
+  { method: 'GET', path: '/api/pods/:podId', operationId: 'pods.get', tags: ['pods'], response: PodDetailResponse },
   { method: 'PATCH', path: '/api/pods/:podId', operationId: 'pods.update', tags: ['pods'] },
   { method: 'POST', path: '/api/pods/:podId/lead/ensure', operationId: 'pods.lead.ensure', tags: ['pods'] },
   { method: 'GET', path: '/api/pods/:podId/tasks', operationId: 'pods.tasks.list', tags: ['pods'] },
@@ -329,7 +333,7 @@ const NON_SDK_ROUTES: RouteDef[] = [
   // 记忆补充（memory.mergedSearch 已在 SDK-facing，不重复）
   { method: 'POST', path: '/api/memory/add', operationId: 'memory.add', tags: ['internal'] },
   { method: 'GET', path: '/api/memory/get', operationId: 'memory.get', tags: ['internal'] },
-  { method: 'GET', path: '/api/memory/stats', operationId: 'memory.stats', tags: ['internal'] },
+  { method: 'GET', path: '/api/memory/stats', operationId: 'memory.stats', tags: ['internal'], response: MemoryStatsResponse },
   { method: 'POST', path: '/api/memory/embeddings/backfill', operationId: 'memory.embeddingsBackfill', tags: ['internal'] },
   // Goal / 编排（§5.20）
   { method: 'POST', path: '/api/work/:goalId/complete', operationId: 'goals.complete', tags: ['internal'] },

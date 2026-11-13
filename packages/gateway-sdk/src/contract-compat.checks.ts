@@ -6,6 +6,7 @@
 import type { operations } from './api-schema.gen'
 import type {
   Session, Goal, GoalSessionInfo, MemoryUnit, TriageItem, Approval, AutomationRule, QuestionRequest,
+  DecisionList, AttentionList, PodDetail,
 } from './types'
 
 /** 鐢熸垚褰㈢姸锛歳esponses.200.content['application/json'] 涓嬬洿鎺ュ唴鑱?schema 灞炴€э紙鏃?schema: 鍖呰锛夈€?*/
@@ -37,7 +38,26 @@ const CHECK_approvals_list: AssertEq<GenApproval, Approval> = true
 const CHECK_automations_list: AssertEq<GenAutomationRule, AutomationRule> = true
 const CHECK_questions_list: AssertEq<GenQuestionRequest, QuestionRequest> = true
 
+// E8-3: 核心读接口的 code-first response schema 与 SDK DTO 逐字段等价。
+const CHECK_decisions_list: AssertEq<Resp<operations['decisions.list']>, DecisionList> = true
+const CHECK_attention_list: AssertEq<Resp<operations['attention.list']>, AttentionList> = true
+const CHECK_pods_get: AssertEq<Resp<operations['pods.get']>, PodDetail> = true
+
+/**
+ * session.messages：`data` 的 part 判别联合由 view-dto 契约拥有，schema 只承诺
+ * SDK 边界守卫 `MafwMessageShape` 认可的形状；游标必须与 client 的
+ * `{ data, nextCursor: string | null }` 对齐（不能退化成 optional）。
+ */
+type GenMessages = Resp<operations['session.messages']>
+type GenMessage = GenMessages['data'][number]
+const CHECK_session_messages_cursor: AssertEq<GenMessages['nextCursor'], string | null> = true
+// part 判别联合归 view-dto 所有；这里只锁边界守卫认的最小承诺（role + part.type）。
+const CHECK_session_messages_role: AssertEq<GenMessage['role'], 'user' | 'assistant'> = true
+const CHECK_session_messages_part_type: AssertEq<NonNullable<GenMessage['content']>[number]['type'], string> = true
+
 export const CONTRACT_COMPAT_CHECKS = [
   CHECK_session_list, CHECK_session_get, CHECK_goals_list, CHECK_goals_get, CHECK_goals_sessions,
   CHECK_memory_search, CHECK_triage_list, CHECK_approvals_list, CHECK_automations_list, CHECK_questions_list,
+  CHECK_decisions_list, CHECK_attention_list, CHECK_pods_get,
+  CHECK_session_messages_cursor, CHECK_session_messages_role, CHECK_session_messages_part_type,
 ]
