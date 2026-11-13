@@ -5,8 +5,9 @@
 // response schema. This test pins that report against the catalog:
 //   - the 44 ops covered at the E10b-2 close (13 pre-E10 + 16 E10 + 8 E10b-1 + 7 E10b-2) must each
 //     keep their `response` — a silent schema deletion fails here;
-//   - the covered count may only grow (>= 44);
-//   - the total op count is pinned (316) so an unregistered/new route surfaces
+//   - the catalog's covered set must equal this manifest exactly (both
+//     directions), so a new covered op cannot land without a ledger entry;
+//   - the total op count is pinned (317) so an unregistered/new route surfaces
 //     instead of drifting the ledger;
 //   - the script, spawned as a child process from the gateway root, must report
 //     exactly what the catalog says (parser and source cannot drift).
@@ -72,7 +73,7 @@ const E10_COVERED_OPS = [
   'work.overview',
 ];
 
-const TOTAL_OPS = 316;
+const TOTAL_OPS = 317;
 
 function catalogOps(): Array<{ operationId: string; hasResponse: boolean }> {
   return buildRouteCatalog().map((def) => ({
@@ -98,7 +99,7 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(lost).toEqual([]);
   });
 
-  it('covered count is >= 44 and the catalog still has exactly 316 ops', () => {
+  it('covered count is >= 44 and the catalog still has exactly 317 ops', () => {
     const ops = catalogOps();
     const covered = ops.filter((op) => op.hasResponse).length;
     expect(covered).toBeGreaterThanOrEqual(E10_COVERED_OPS.length);

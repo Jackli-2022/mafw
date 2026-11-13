@@ -3,7 +3,7 @@
 import { For, Show, createSignal, type JSX } from "solid-js"
 import { Icon } from "@mafw/ui/icon"
 import { openMenuOnKey } from "../context-menu/menu-key"
-import { tabStripWheelDelta, type DocumentTabView } from "../document-frame-model"
+import { documentTabIconName, tabStripWheelDelta, type DocumentTabView } from "../document-frame-model"
 import type { DocumentDropPosition } from "../documents/document-tabs-model"
 
 export function DocumentFrame(props: {
@@ -118,7 +118,7 @@ export function DocumentTabs(props: {
               props.onSelect(item.id)
             }}
           >
-            <span class="mafw-document-tab-icon"><Icon name={item.icon} size="small" /></span>
+            <span class="mafw-document-tab-icon"><Icon name={documentTabIconName(item.icon)} size="small" /></span>
             <span class="mafw-document-tab-label">{item.label}</span>
             <Show when={item.dirty}>
               <span class="mafw-document-tab-dot" aria-label="未保存" />

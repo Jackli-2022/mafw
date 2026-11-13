@@ -1,4 +1,4 @@
-import { createOpencodeAdapter } from '../../../../adapters/opencode/src/adapter';
+﻿import { createOpencodeAdapter } from '../../../../adapters/opencode/src/adapter';
 
 jest.mock('@opencode-ai/sdk/v2', () => ({
   createOpencodeClient: jest.fn(() => ({})),
@@ -61,5 +61,45 @@ describe('opencode adapter discovery', () => {
 
     expect((await rt.discovery!.loadSkill({ directory: '/proj', key: 'mafw-plan' }))?.content).toBe('# plan');
     expect(await rt.discovery!.loadSkill({ directory: '/proj', key: 'nope' })).toBeNull();
+  });
+
+  it('invokeSkill sends the native @skill prompt', async () => {
+    const calls: Array<{ url: string; init: any }> = [];
+    (global as any).fetch = jest.fn(async (url: string, init: any) => {
+      calls.push({ url, init });
+      return json({});
+    });
+
+    const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
+    await rt.discovery!.invokeSkill!({
+      sessionID: 's1',
+      directory: '/proj',
+      key: 'superpowers',
+      args: '帮我审一下',
+    });
+
+    const call = calls.find((c) => c.url.includes('/api/session/s1/prompt'));
+    expect(call).toBeTruthy();
+    expect(call!.url).toContain('directory=%2Fproj');
+    expect(JSON.parse(call!.init.body)).toMatchObject({ text: '@superpowers 帮我审一下' });
+  });
+
+  it('invokeSkill without args sends the bare @skill', async () => {
+    const calls: Array<{ url: string; init: any }> = [];
+    (global as any).fetch = jest.fn(async (url: string, init: any) => {
+      calls.push({ url, init });
+      return json({});
+    });
+
+    const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
+    await rt.discovery!.invokeSkill!({
+      sessionID: 's1',
+      directory: '/proj',
+      key: 'superpowers',
+      args: '',
+    });
+
+    const call = calls.find((c) => c.url.includes('/api/session/s1/prompt'));
+    expect(JSON.parse(call!.init.body)).toMatchObject({ text: '@superpowers' });
   });
 });

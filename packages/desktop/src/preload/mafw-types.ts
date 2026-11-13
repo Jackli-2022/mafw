@@ -148,6 +148,12 @@ export type MafwAPI = {
     get: (sessionID: string, opts?: { directory?: string; force?: boolean }) => Promise<DiscoverySnapshot>
     refresh: (sessionID: string, opts?: { directory?: string }) => Promise<DiscoverySnapshot>
     skill: (sessionID: string, key: string, opts?: { directory?: string; force?: boolean }) => Promise<DiscoverySkillContent>
+    invokeSkill: (
+      sessionID: string,
+      key: string,
+      args: string,
+      opts?: { directory?: string; force?: boolean },
+    ) => Promise<{ ok: true; skill: string }>
   }
 
   /** W4 v1：MCP 服务器状态（runtime 合并后的中立 DTO）。 */

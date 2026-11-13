@@ -29,7 +29,7 @@ test("shell passes the review badge and project index", () => {
 test("session context with a goal still shows the review queue", () => {
   const face = read("src/renderer/mafw/components/ChangesFace.tsx")
   assert.match(face, /reviewGoal/)
-  assert.match(face, /context\.kind === "session"\) return context\.goal/)
+  assert.match(face, /const goal = props\.reviewGoal/)
   assert.match(face, /reviewSection\(\)/)
 })
 

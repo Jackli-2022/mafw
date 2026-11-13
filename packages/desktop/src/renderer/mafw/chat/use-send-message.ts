@@ -83,7 +83,12 @@ export interface SendMessageDeps {
   textareaEl: () => HTMLTextAreaElement | null
   history: { push(t: string): void }
   clearDraft: (sid: string) => void
-  matchSlash: (text: string) => { name: string; group: "mafw" | "custom" } | null
+  matchSlash: (text: string) => {
+    name: string
+    group: "mafw" | "custom" | "skill"
+    agent?: string
+    model?: { id: string; providerID: string; variant?: string }
+  } | null
   agentSel: () => { id?: string; name: string } | null | undefined
   model: () => { providerID: string; modelID: string } | null | undefined
   setStore: (fn: (prev: any) => any) => void
@@ -323,7 +328,10 @@ export function useSendMessage(deps: SendMessageDeps) {
         history.push(text)
         clearDraft(sidProp())
         try {
-          if (cmd.group === "mafw") {
+          if (cmd.group === "skill") {
+            await window.api.mafw.discovery.invokeSkill(sid, cmd.name, rest)
+            showToastV2({ description: `已调用 /${cmd.name}`, duration: 2000 })
+          } else if (cmd.group === "mafw") {
             const result = await window.api.mafw.mafwCommands.run({ command: cmd.name, args: rest, sessionID: sid })
             if (result?.ok) {
               showToastV2({ description: result.message || result.text || `/${cmd.name} 完成`, duration: 4000 })
@@ -331,7 +339,13 @@ export function useSendMessage(deps: SendMessageDeps) {
               showToastV2({ description: `/${cmd.name} 失败: ${result?.error || "unknown"}`, duration: 4000 })
             }
           } else {
-            await window.api.mafw.sessions.command({ sessionID: sid, command: cmd.name, arguments: rest })
+            await window.api.mafw.sessions.command({
+              sessionID: sid,
+              command: cmd.name,
+              arguments: rest,
+              ...(cmd.agent ? { agent: cmd.agent } : {}),
+              ...(cmd.model ? { model: { providerID: cmd.model.providerID, modelID: cmd.model.id } } : {}),
+            })
           }
         } catch (e: any) {
           console.warn("[mafw] command run failed:", e)

@@ -192,7 +192,7 @@ test("drops the retired split subject from loaded places", () => {
   assert.equal("split" in loaded.stack[0]!.place, false)
 })
 
-test("diff focuses are transient and never round-trip", () => {
+test("change-set focuses are transient and never round-trip", () => {
   const io = fakeStorage()
   resetFocusPersistence()
   configureFocusStorage(io)
@@ -201,7 +201,7 @@ test("diff focuses are transient and never round-trip", () => {
     ...state,
     stack: [...state.stack, {
       scope: worldScope,
-      subject: { kind: "diff", source: "session", id: "d1", rel: "src/a.ts" },
+      subject: { kind: "changeset", id: "changeset:session:s1:m1" },
       place: {},
     }],
   }

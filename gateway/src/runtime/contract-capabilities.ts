@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 能力位清单：一个 RuntimeCapabilities key 一条。
  *
  * `requires` 是降级判定（缺任一 → 能力降级）；`unlocks` 只做展示/覆盖率。
@@ -128,7 +128,7 @@ export const CONTRACT_CAPABILITIES: ContractCapability[] = [
   cap({
     id: 'discoveryApi', title: 'command/skill discovery', domain: 'discovery', kind: 'feature', default: false,
     requires: ['discovery.list', 'discovery.loadSkill'],
-    unlocks: ['discovery.list', 'discovery.loadSkill'],
+    unlocks: ['discovery.list', 'discovery.loadSkill', 'discovery.invokeSkill'],
     degrade: '命令/技能目录不可见',
   }),
   cap({

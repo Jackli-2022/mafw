@@ -13,7 +13,7 @@ export type SubjectRef =
   | { kind: "web"; url: string }
   | { kind: "terminal"; id: string }
   | { kind: "plugin"; package: string; panel: string }
-  | { kind: "diff"; source: "session" | "goal"; id: string; rel: string; line?: number }
+  | { kind: "changeset"; id: string; rel?: string }
 
 export type Place = {
   scroll?: number
@@ -43,8 +43,8 @@ export function subjectKey(subject: SubjectRef): string {
       return `terminal:${subject.id}`
     case "plugin":
       return `plugin:${subject.package}:${subject.panel}`
-    case "diff":
-      return `diff:${subject.source}:${subject.id}:${subject.rel}`
+    case "changeset":
+      return `changeset:${subject.id}`
   }
 }
 

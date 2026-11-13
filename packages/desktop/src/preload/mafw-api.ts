@@ -143,6 +143,7 @@ export function createMafwApi(): MafwAPI {
       get: (sessionID, opts?) => invoke("discovery", "get", sessionID, opts || {}),
       refresh: (sessionID, opts?) => invoke("discovery", "refresh", sessionID, opts || {}),
       skill: (sessionID, key, opts?) => invoke("discovery", "skill", sessionID, key, opts || {}),
+      invokeSkill: (sessionID, key, args, opts?) => invoke("discovery", "invokeSkill", sessionID, key, args, opts || {}),
     },
 
     // W4 v1：MCP 服务器状态（CLI 解析）

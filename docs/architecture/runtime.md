@@ -113,6 +113,9 @@ gateway 与 agent runtime 之间是**能力自声明契约**（`gateway/src/runt
   agent 定义安装；缺失时跳过 + warn 日志（manager 功能降级但不崩）
 - `agentProcessApi?: boolean` + `agentProcess?: { restart() }` — agent 进程生命周期管理；
   opencode owned runtime 为 true（kill+respawn serve sidecar）；external/pi 为 false
+- `discovery.invokeSkill?(opts)` — runtime 以自身原生方式调用 skill（opencode `@id`、
+  pi `/skill:name`、claude `/name` 等）；gateway 只经 `DiscoveryService.invokeSkill` 统一转发，
+  surface 为 `discovery.invokeSkill`（presence）。缺省时 `/` 不显示技能、路由返回中性 503。
 - `completionApi?: boolean` + `completion?: { complete(req) }` — 无状态单次补全通道
   （index-scan 与 media 无状态路径优先走契约，fail-open 回退直连 HTTP，
   共享实现在 `runtime/completion-http.ts`）；`cacheable` 是 prompt-cache 提示非承诺

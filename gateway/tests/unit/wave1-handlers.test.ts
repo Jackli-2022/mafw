@@ -1,4 +1,4 @@
-import { RouteRegistry } from '../../src/routes/registry';
+﻿import { RouteRegistry } from '../../src/routes/registry';
 import { buildRouteCatalog } from '../../src/routes/route-catalog';
 import { attachWave1Handlers, type Wave1Gateway } from '../../src/routes/wave1-handlers';
 
@@ -13,7 +13,7 @@ const WAVE1_OPIDS = [
   'session.suspend', 'session.resume', 'session.run', 'session.discardRun',
   'experience.actions',
   'session.data',
-  'session.discovery', 'session.discoveryRefresh', 'session.discoverySkill',
+  'session.discovery', 'session.discoveryRefresh', 'session.discoverySkill', 'session.discoverySkillInvoke',
   'event.publish', 'media.switch',
   'session.usagePluginsList', 'session.usagePluginsReload', 'session.usagePluginsCreate',
   'session.usagePluginSourceGet', 'session.usagePluginSourcePut', 'session.usagePluginTest', 'session.usagePluginsDelete',
@@ -79,6 +79,7 @@ describe('wave1-handlers: 迁移覆盖率', () => {
       ['GET', '/api/sessions/s1/discovery', 'session.discovery'],
       ['POST', '/api/sessions/s1/discovery/refresh', 'session.discoveryRefresh'],
       ['GET', '/api/sessions/s1/discovery/skills/mafw-plan', 'session.discoverySkill'],
+      ['POST', '/api/sessions/s1/discovery/skills/mafw-plan/invoke', 'session.discoverySkillInvoke'],
       ['POST', '/api/events', 'event.publish'],
       ['POST', '/api/media/switch', 'media.switch'],
       ['GET', '/api/usage/plugins', 'session.usagePluginsList'],

@@ -14,7 +14,8 @@ export type DocumentToolbarProvider = () => DocumentToolbarSlots
 const empty = (): Record<DocumentTabKind, DocumentToolbarProvider | null> => ({
   file: null,
   web: null,
-  diff: null,
+  changeset: null,
+  scene: null,
 })
 
 const [providers, setProviders] = createSignal(empty())

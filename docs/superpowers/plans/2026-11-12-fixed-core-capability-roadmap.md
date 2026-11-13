@@ -349,7 +349,7 @@ Probe 的作用是让 tech lead 在看详细计划前先看清关键未知；每
 
 **剩余顺序**：embedding/reranker → automation trigger/action → goal eval/executor → storage backend。
 
-**状态（2026-11-13）**：embedding/reranker provider 已交付（namespace/backfill/rollback/BM25 fallback/reranker 100ms 守卫 + conformance kit）；automation action provider 已接 live，插件事件可触发 event rule（plan：`docs/superpowers/plans/2026-11-13-kernel-v2-phase5-automation.md`，交付记录：`docs/releases/2026-11-13-capability-kernel-phase5-automation.md`）；未使用的 `StorageBackend` 已删除（`docs/releases/2026-11-13-capability-kernel-phase5-storage-cleanup.md`）。剩余：GoalEval hook（可选）。
+**状态（2026-11-13）**：Phase 5 收口。embedding/reranker provider 已交付（namespace/backfill/rollback/BM25 fallback/reranker 100ms 守卫 + conformance kit）；automation action provider 已接 live，插件事件可触发 event rule（`docs/releases/2026-11-13-capability-kernel-phase5-automation.md`）；未使用的 `StorageBackend` 已删除（`docs/releases/2026-11-13-capability-kernel-phase5-storage-cleanup.md`）；GoalEval provider hook 已交付（`docs/releases/2026-11-13-capability-kernel-phase5-goal-eval.md`）。memory 保持固定产品能力。
 
 **embedding/reranker 边界（2026-11-13 决策）**：模型、API、本地模型、策略逻辑可替换；memory 的存储/索引/检索/soft supersede/T1/100ms/pinned/sticky 逻辑不改。向量是派生数据，换模型按 modelTag/dims 重建，失败回退 BM25；reranker 不进 100ms 同步边界 recall。
 

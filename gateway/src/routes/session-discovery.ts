@@ -1,5 +1,6 @@
 import * as http from 'http';
 import { DiscoveryError, type DiscoveryService } from '../core/discovery/discovery-service';
+import { readRouteBody } from './cognition';
 
 export interface SessionDiscoveryDeps {
   discovery: DiscoveryService | null;
@@ -24,6 +25,37 @@ function fail(res: http.ServerResponse, err: unknown): void {
     return;
   }
   json(res, 500, { error: (err as any)?.message ?? String(err) });
+}
+
+export async function handleSessionDiscoverySkillInvoke(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  params: Record<string, string>,
+  deps: SessionDiscoveryDeps,
+): Promise<boolean> {
+  const m = (req.url || '').match(/^\/api\/sessions\/([^/]+)\/discovery\/skills\/([^/?]+)\/invoke(?:\?|$)/);
+  if (!m || req.method !== 'POST') return false;
+  if (!deps.discovery) {
+    json(res, 503, { error: 'discovery service unavailable' });
+    return true;
+  }
+  const q = query(req);
+  const key = params.key ?? decodeURIComponent(m[2]);
+  let body: any = {};
+  try {
+    body = JSON.parse(await readRouteBody(req)) ?? {};
+  } catch { /* empty / malformed body → no args */ }
+  const args = typeof body?.args === 'string' ? body.args : '';
+  try {
+    const out = await deps.discovery.invokeSkill(params.id, key, args, {
+      directory: q.directory,
+      force: q.force,
+    });
+    json(res, 200, out);
+  } catch (err) {
+    fail(res, err);
+  }
+  return true;
 }
 
 export async function handleSessionDiscovery(

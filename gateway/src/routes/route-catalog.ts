@@ -130,6 +130,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/sessions/:id/discovery', operationId: 'session.discovery', tags: ['session'] },
   { method: 'POST', path: '/api/sessions/:id/discovery/refresh', operationId: 'session.discoveryRefresh', tags: ['session'] },
   { method: 'GET', path: '/api/sessions/:id/discovery/skills/:key', operationId: 'session.discoverySkill', tags: ['session'] },
+{ method: 'POST', path: '/api/sessions/:id/discovery/skills/:key/invoke', operationId: 'session.discoverySkillInvoke', tags: ['session'] },
   { method: 'POST', path: '/api/session/:id/abort', operationId: 'session.abort', tags: ['session'] },
   { method: 'POST', path: '/api/session/:id/summarize', operationId: 'session.summarize', tags: ['session'] },
   { method: 'POST', path: '/api/session/:id/prompt', operationId: 'session.prompt', tags: ['session'] },

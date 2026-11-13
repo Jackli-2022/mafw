@@ -1,9 +1,15 @@
 // DocumentFrame 的纯视图映射：编辑器 tab 与浏览器 tab 收敛成同一套 tab 形状。
 import type { EditorModel } from "./editor-state"
 import { browserDocumentTitle, type BrowserDocument } from "./documents/browser-documents"
-import type { DiffDocument } from "./documents/diff-documents"
 
-export type DocumentTabIcon = "file" | "globe" | "review"
+export type DocumentTabIcon =
+  | "file"
+  | "globe"
+  | "review"
+  | "world"
+  | "goal"
+  | "terminal"
+  | "plugin"
 
 export type DocumentTabView = {
   id: string
@@ -14,6 +20,27 @@ export type DocumentTabView = {
   dirty?: boolean
   preview?: boolean
   readOnly?: boolean
+}
+
+/** 语义 tab 图标 → 已注册的 Icon 名（图标表只收视觉形状，不收对象类型）。 */
+export function documentTabIconName(icon: DocumentTabIcon):
+  | "file"
+  | "globe"
+  | "review"
+  | "layout-grid"
+  | "dot-grid"
+  | "terminal"
+  | "mcp" {
+  switch (icon) {
+    case "world":
+      return "layout-grid"
+    case "goal":
+      return "dot-grid"
+    case "plugin":
+      return "mcp"
+    default:
+      return icon
+  }
 }
 
 export function editorDocumentTabs(model: EditorModel): DocumentTabView[] {
@@ -39,19 +66,6 @@ export function browserDocumentTabs(
     title: tab.url,
     icon: "globe",
     active: tab.id === activeId,
-  }))
-}
-
-export function diffDocumentTabs(
-  docs: readonly DiffDocument[],
-  activeId: string | null,
-): DocumentTabView[] {
-  return docs.map((doc) => ({
-    id: doc.id,
-    label: doc.rel.split(/[\\/]/).filter(Boolean).pop() ?? doc.rel,
-    title: doc.rel,
-    icon: "review",
-    active: doc.id === activeId,
   }))
 }
 

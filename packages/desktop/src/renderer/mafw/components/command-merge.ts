@@ -39,6 +39,21 @@ export function mergeRemoteCommands(remote: RemoteCommandDef[]): { items: Merged
 export interface DiscoveryCommandLike {
   name?: string
   source?: string
+  description?: string
+  argumentHint?: string
+  agent?: string
+  model?: { id: string; providerID: string; variant?: string }
+  subtask?: boolean
+}
+
+export interface RuntimeCommandMeta {
+  name: string
+  source: string
+  description?: string
+  argumentHint?: string
+  agent?: string
+  model?: { id: string; providerID: string; variant?: string }
+  subtask?: boolean
 }
 
 /**
@@ -52,9 +67,9 @@ export function mergeDiscoveryCommands(
   commands: ReadonlyArray<DiscoveryCommandLike | null | undefined> | undefined,
   reserved: ReadonlySet<string> = new Set(),
   seen: Set<string> = new Set(),
-): Array<{ name: string; source: string }> {
+): RuntimeCommandMeta[] {
   const reservedLower = new Set([...reserved].map((name) => name.toLowerCase()))
-  const out: Array<{ name: string; source: string }> = []
+  const out: RuntimeCommandMeta[] = []
   for (const command of commands ?? []) {
     const name = typeof command?.name === 'string' ? command.name : ''
     if (!name) continue
@@ -62,7 +77,15 @@ export function mergeDiscoveryCommands(
     const lower = name.toLowerCase()
     if (reservedLower.has(lower) || seen.has(lower)) continue
     seen.add(lower)
-    out.push({ name, source: command?.source === 'runtime' ? 'command' : (command?.source || 'command') })
+    out.push({
+      name,
+      source: command?.source === 'runtime' ? 'command' : (command?.source || 'command'),
+      ...(command?.description ? { description: command.description } : {}),
+      ...(command?.argumentHint ? { argumentHint: command.argumentHint } : {}),
+      ...(command?.agent ? { agent: command.agent } : {}),
+      ...(command?.model ? { model: command.model } : {}),
+      ...(command?.subtask !== undefined ? { subtask: command.subtask } : {}),
+    })
   }
   return out
 }

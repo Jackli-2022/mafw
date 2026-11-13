@@ -247,6 +247,12 @@ export const AGENT_SURFACES: ContractSurface[] = [
     implementation: 'discovery.loadSkill', probe: ['discovery', 'loadSkill'],
     consumer: 'skill content route', impact: '技能正文不可读', presets: DESK,
   }),
+  row({
+    id: 'discovery.invokeSkill', title: 'discovery.invokeSkill', domain: 'discovery',
+    obligation: 'gated', capability: 'discoveryApi', verification: 'presence',
+    implementation: 'discovery.invokeSkill', probe: ['discovery', 'invokeSkill'],
+    consumer: 'skill invoke route', impact: '技能调用不可用', presets: DESK,
+  }),
 
   // ── mcp ──────────────────────────────────────────────────────────────
   row({

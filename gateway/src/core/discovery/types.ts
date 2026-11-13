@@ -55,6 +55,8 @@ export interface DiscoverySnapshot {
   degraded: boolean;
   degradedReason?: DiscoveryDegradedReason;
   warnings: DiscoveryWarning[];
+  /** Runtime supports explicit skill invocation (surface discovery.invokeSkill). */
+  skillInvokeSupported: boolean;
 }
 
 export interface DiscoverySkillContent extends DiscoverySkill {

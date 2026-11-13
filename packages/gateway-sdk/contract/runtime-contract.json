@@ -1845,6 +1845,25 @@
     },
     {
       "direction": "gateway->runtime",
+      "id": "discovery.invokeSkill",
+      "title": "discovery.invokeSkill",
+      "domain": "discovery",
+      "obligation": "gated",
+      "capability": "discoveryApi",
+      "verification": "presence",
+      "implementation": "discovery.invokeSkill",
+      "probe": [
+        "discovery",
+        "invokeSkill"
+      ],
+      "consumer": "skill invoke route",
+      "impact": "技能调用不可用",
+      "presets": [
+        "desktop"
+      ]
+    },
+    {
+      "direction": "gateway->runtime",
       "id": "mcp.list",
       "title": "mcp.list",
       "domain": "mcp",
@@ -2499,7 +2518,8 @@
       ],
       "unlocks": [
         "discovery.list",
-        "discovery.loadSkill"
+        "discovery.loadSkill",
+        "discovery.invokeSkill"
       ],
       "degrade": "命令/技能目录不可见"
     },
@@ -3351,6 +3371,7 @@
         "identity.prompt.agent",
         "discovery.list",
         "discovery.loadSkill",
+        "discovery.invokeSkill",
         "mcp.list",
         "mcp.connect",
         "mcp.disconnect",

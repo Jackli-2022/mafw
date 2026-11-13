@@ -53,6 +53,8 @@ interface BaseSnapshot {
   warnings: DiscoveryWarning[];
   /** True when the runtime skill catalog could not be read (loadSkill -> 503). */
   skillsFailed: boolean;
+  /** True when the runtime exposes discovery.invokeSkill. */
+  skillInvokeSupported: boolean;
 }
 
 const MAX_SKILL_BYTES = 512 * 1024;
@@ -68,6 +70,11 @@ export function canDiscovery(access: Pick<RuntimeAccess, 'can'> | null | undefin
 /** Skill body gate (surface `discovery.loadSkill`). */
 export function canLoadSkill(access: Pick<RuntimeAccess, 'can'> | null | undefined): boolean {
   return access?.can('discovery.loadSkill') === true;
+}
+
+/** Skill invocation gate (surface `discovery.invokeSkill`). */
+export function canInvokeSkill(access: Pick<RuntimeAccess, 'can'> | null | undefined): boolean {
+  return access?.can('discovery.invokeSkill') === true;
 }
 
 function realOrResolve(p: string): string {
@@ -141,6 +148,34 @@ export class DiscoveryService {
       throw new DiscoveryError(413, 'skill content too large');
     }
     return { ...skill, content: loaded.content };
+  }
+
+  async invokeSkill(
+    sessionID: string,
+    key: string,
+    args: string,
+    opts: { directory?: string; force?: boolean } = {},
+  ): Promise<{ ok: true; skill: string }> {
+    const directory = await this.resolveDirectory(sessionID, opts.directory);
+    this.knownSessions.set(sessionID, directory);
+    const base = await this.baseFor(directory, opts.force === true);
+    const access = this.deps.getAccess();
+    const rt = this.deps.getRuntime();
+    if (!canInvokeSkill(access) || typeof rt?.discovery?.invokeSkill !== 'function') {
+      throw new DiscoveryError(503, 'skill invocation unavailable');
+    }
+    if (base.skillsFailed && base.skills.length === 0) {
+      throw new DiscoveryError(503, 'skill catalog unavailable');
+    }
+    let skill = base.skills.find((s) => s.id === key);
+    if (!skill) {
+      const matches = base.skills.filter((s) => s.name === key);
+      if (matches.length > 1) throw new DiscoveryError(409, 'ambiguous skill name; use id');
+      skill = matches[0];
+    }
+    if (!skill) throw new DiscoveryError(404, `skill not found: ${key}`);
+    await rt.discovery.invokeSkill({ sessionID, directory, key: skill.id, args });
+    return { ok: true, skill: skill.id };
   }
 
   invalidate(): void {
@@ -234,6 +269,8 @@ export class DiscoveryService {
 
     const rt = this.deps.getRuntime();
     const discoveryAvailable = canDiscovery(this.deps.getAccess()) && !!rt?.discovery;
+    const skillInvokeSupported =
+      canInvokeSkill(this.deps.getAccess()) && typeof rt?.discovery?.invokeSkill === 'function';
     let runtimeCommands: RuntimeCommandInfo[] = [];
     let runtimeSkills: RuntimeSkillInfo[] = [];
     if (rt && discoveryAvailable) {
@@ -317,6 +354,7 @@ export class DiscoveryService {
       ...(degradedReason ? { degradedReason } : {}),
       warnings,
       skillsFailed,
+      skillInvokeSupported,
     };
   }
 

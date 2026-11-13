@@ -52,6 +52,12 @@ export interface GatewayConfig {
     nodeModel?: { providerID: string; modelID: string };
     /** P0-4：Tech Lead 讨论回合模型覆盖（空对 = 身份内置模型）。 */
     techLeadModel?: { providerID: string; modelID: string } | null;
+    /** First-party GoalEval verifier; default off (no extra cost). */
+    evalProvider?: 'off' | 'llm';
+    /** Model for evalProvider=llm; falls back to nodeModel / judgeModel. */
+    evalModel?: { providerID: string; modelID: string } | null;
+    evalTimeoutMs?: number;
+    evalMaxTokens?: number;
   };
   /** 移动端配对 URL 覆盖（Tailscale/MagicDNS 基地址）；空串 = 自动探测。
    *  Env（优先）: MAFW_MOBILE_TAILSCALE_URL。 */

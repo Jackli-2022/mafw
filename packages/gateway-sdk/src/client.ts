@@ -586,6 +586,22 @@ export class MafwClient implements IMafwClient {
       const queryString = q ? `?${q}` : ''
       return this.request<DiscoverySkillContent>(`/api/sessions/${encodeURIComponent(sessionID)}/discovery/skills/${encodeURIComponent(key)}${queryString}`)
     },
+    invokeSkill: async (
+      sessionID: string,
+      key: string,
+      args: string,
+      params?: { directory?: string; force?: boolean },
+    ): Promise<{ ok: true; skill: string }> => {
+      const qs = new URLSearchParams()
+      if (params?.directory) qs.set('directory', params.directory)
+      if (params?.force) qs.set('force', '1')
+      const q = qs.toString()
+      const queryString = q ? `?${q}` : ''
+      return this.request<{ ok: true; skill: string }>(
+        `/api/sessions/${encodeURIComponent(sessionID)}/discovery/skills/${encodeURIComponent(key)}/invoke${queryString}`,
+        { method: 'POST', body: JSON.stringify({ args }) },
+      )
+    },
   }
 
   // 鈹€鈹€ MAFW native commands (desktop slash panel) 鈹€鈹€

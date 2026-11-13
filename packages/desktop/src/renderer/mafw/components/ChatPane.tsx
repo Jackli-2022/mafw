@@ -47,6 +47,7 @@ import {
 } from "../chat/flow-card-slots"
 import { useAttachments, mimeOf } from "../chat/use-attachments"
 import { useSendMessage } from "../chat/use-send-message"
+import { resolveSlash } from "../chat/slash-resolve"
 import { TtsPicker } from "../chat/TtsPicker"
 import { MessageNav } from "./MessageNav"
 import { enqueueTurn, removeTurnAt, takeFirstTurn, type QueuedTurn } from "./turn-queue"
@@ -100,7 +101,7 @@ import { sameQuoteSelection, snapshotQuoteSelection, type QuoteSelectionSnapshot
 import { createFocusScheduler } from "./composer-focus-scheduler"
 import { computeContextUsage, formatContextUsage } from "../context-usage"
 import { ingestHistoryPage } from "../ingest/messages"
-import { mergeRemoteCommands, mergeDiscoveryCommands } from "./command-merge"
+import { mergeRemoteCommands, mergeDiscoveryCommands, type RuntimeCommandMeta } from "./command-merge"
 import { getDraft, setDraft, clearDraft } from "./session-drafts"
 import { fuzzyMatchFiles } from "./file-fuzzy"
 import { FilePicker, type FilePickerItem } from "./pickers/FilePicker"
@@ -943,9 +944,10 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     }
   }
   const [subagents, setSubagents] = createSignal<{ id: string; title: string }[]>([])
-  const [cmdItems, setCmdItems] = createSignal<CommandItem[]>([])
   const [cmdLoading, setCmdLoading] = createSignal(false)
-  const [cmdCustom, setCmdCustom] = createSignal<{ name: string; source: string }[]>([])
+  const [cmdCustom, setCmdCustom] = createSignal<RuntimeCommandMeta[]>([])
+  const [discoveredSkills, setDiscoveredSkills] = createSignal<{ id: string; name?: string; description?: string }[]>([])
+  const [skillInvokeSupported, setSkillInvokeSupported] = createSignal(false)
 
   // previewing = TTS picker 试听态（TtsPicker 内部管理高亮；这里的信号仅供
   // voice hook 在播报结束时清除残留高亮）
@@ -1519,12 +1521,24 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       id: `custom-${c.source}-${c.name}`,
       trigger: `/${c.name}`,
       title: c.name,
-      description: c.source === "skill" ? "技能" : c.source === "mcp" ? "MCP 命令" : "命令",
+      description: c.argumentHint || (c.source === "mcp" ? "MCP 命令" : "运行时命令"),
       group: "custom" as const,
       source: (c.source as any) || "command",
     }))
-    return [...local, ...mafw, ...custom]
+    const skills: CommandItem[] = skillInvokeSupported()
+      ? discoveredSkills().map(s => ({
+          id: `skill-${s.id}`,
+          trigger: `/${s.id}`,
+          title: s.id,
+          description: (s.description || "技能").slice(0, 80),
+          group: "skill" as const,
+          source: "skill" as const,
+        }))
+      : []
+    return [...local, ...mafw, ...skills, ...custom]
   }
+
+  const cmdItems = createMemo(() => buildCommands())
 
   // Fetch commands+skills once per pane via the discovery DTO (single source;
   // legacy `command`/`skill` namespaces are removed in Task 15).
@@ -1541,41 +1555,52 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
         window.api.mafw.mafwCommands.list?.().catch(() => []),
       ])
       if (Array.isArray(remoteMafw)) setMafwRemote(mergeRemoteCommands(remoteMafw))
+      setSkillInvokeSupported(snapshot?.skillInvokeSupported === true)
+      setDiscoveredSkills(
+        (snapshot?.skills ?? [])
+          .filter((s: any) => typeof s?.id === "string" && s.id.length > 0)
+          .map((s: any) => ({ id: s.id, name: s.name, description: s.description })),
+      )
       const seen = new Set<string>()
       // MAFW custom commands 已在 mafwCommands.list()（mafw 组）出现；这里只收
       // runtime 命令并按远端名称去重，避免选择器里出现两份自定义命令。
-      const merged: { name: string; source: string }[] = mergeDiscoveryCommands(
+      const merged = mergeDiscoveryCommands(
         snapshot?.commands ?? [],
         mafwRemote().names,
         seen,
       )
-      for (const s of snapshot?.skills ?? []) {
-        const name = s?.name
-        if (!name) continue
-        const lower = name.toLowerCase()
-        if (seen.has(lower)) continue
-        seen.add(lower)
-        merged.push({ name, source: "skill" })
-      }
       setCmdCustom(merged)
-    } catch (e) { console.warn("[mafw] load commands:", e) }
+    } catch (e) {
+      console.warn("[mafw] load commands:", e)
+      setSkillInvokeSupported(false)
+      setDiscoveredSkills([])
+    }
     setCmdLoading(false)
   }
 
+  onMount(() => { void loadCustomCommands() })
+
   // Match a leading "/cmd" against the known command sets; returns the matched
   // name + group, or null when it's a plain message.
-  const matchCommand = (text: string): { name: string; group: "mafw" | "custom" } | null => {
-    const m = text.match(/^\/(\S+)(?:\s+(.*))?$/)
-    if (!m) return null
-    const name = m[1].toLowerCase()
-    if (mafwRemote().names.has(name) || MAFW_FALLBACK_NAMES.has(name)) return { name, group: "mafw" }
-    if (cmdCustom().some(c => c.name === name)) return { name, group: "custom" }
-    return null
+  const matchCommand = (text: string): {
+    name: string
+    group: "mafw" | "custom" | "skill"
+    agent?: string
+    model?: { id: string; providerID: string; variant?: string }
+  } | null => {
+    const r = resolveSlash(text, {
+      mafwNames: new Set([...mafwRemote().names, ...MAFW_FALLBACK_NAMES]),
+      runtime: cmdCustom(),
+      skills: skillInvokeSupported() ? discoveredSkills() : [],
+    })
+    if (!r) return null
+    if (r.kind === "mafw") return { name: r.name, group: "mafw" }
+    if (r.kind === "runtime") return { name: r.name, group: "custom", agent: r.agent, model: r.model }
+    return { name: r.name, group: "skill" }
   }
 
   const openCommandPicker = () => {
     void loadCustomCommands()
-    setCmdItems(buildCommands())
     setPickerTrigger(textareaEl())
     setPickerOpen("command")
   }

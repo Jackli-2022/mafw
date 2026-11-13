@@ -714,6 +714,8 @@ export interface DiscoverySnapshot {
   degraded: boolean
   degradedReason?: 'capability_absent' | 'runtime_error' | 'partial' | 'instructions_error'
   warnings: DiscoveryWarning[]
+  /** Runtime supports explicit skill invocation (surface discovery.invokeSkill). */
+  skillInvokeSupported: boolean
 }
 
 export interface DiscoverySkillContent extends DiscoverySkill {
@@ -724,6 +726,12 @@ export interface DiscoveryNamespace {
   get(sessionID: string, params?: { directory?: string; force?: boolean }): Promise<DiscoverySnapshot>
   refresh(sessionID: string, params?: { directory?: string }): Promise<DiscoverySnapshot>
   skill(sessionID: string, key: string, params?: { directory?: string; force?: boolean }): Promise<DiscoverySkillContent>
+  invokeSkill(
+    sessionID: string,
+    key: string,
+    args: string,
+    params?: { directory?: string; force?: boolean },
+  ): Promise<{ ok: true; skill: string }>
 }
 
 // ── MAFW native commands (desktop slash panel) ──

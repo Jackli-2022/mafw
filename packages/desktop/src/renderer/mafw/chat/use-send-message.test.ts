@@ -664,4 +664,84 @@ describe("sendMessage busy 排队路径", () => {
       expect((sent[0].parts ?? []).some((p: any) => p.synthetic === true && p.text.includes("[语音输入]"))).toBe(true)
     } finally { delete (globalThis as any).window }
   })
+
+  test("skill slash calls the uniform invokeSkill API", async () => {
+    const calls: any[] = []
+    const commands: any[] = []
+    ;(globalThis as any).window = {
+      api: {
+        mafw: {
+          discovery: { invokeSkill: async (...args: any[]) => { calls.push(args) } },
+          sessions: { command: async (req: any) => { commands.push(req) } },
+        },
+      },
+    }
+    try {
+      const f = baseDeps({
+        sending: () => false,
+        input: () => "/superpowers 帮我审一下",
+        matchSlash: () => ({ name: "superpowers", group: "skill" }),
+      })
+      const { sendMessage } = useSendMessage(f.deps)
+      await sendMessage()
+      expect(commands).toHaveLength(0)
+      expect(calls).toEqual([["s_test_session", "superpowers", "帮我审一下"]])
+    } finally {
+      delete (globalThis as any).window
+    }
+  })
+
+  test("runtime slash forwards agent/model metadata", async () => {
+    const calls: any[] = []
+    ;(globalThis as any).window = {
+      api: { mafw: { sessions: { command: async (req: any) => { calls.push(req) } } } },
+    }
+    try {
+      const f = baseDeps({
+        sending: () => false,
+        input: () => "/review 123",
+        matchSlash: () => ({
+          name: "review",
+          group: "custom",
+          agent: "plan",
+          model: { id: "m1", providerID: "p1" },
+        }),
+      })
+      const { sendMessage } = useSendMessage(f.deps)
+      await sendMessage()
+      expect(calls).toEqual([{
+        sessionID: "s_test_session",
+        command: "review",
+        arguments: "123",
+        agent: "plan",
+        model: { providerID: "p1", modelID: "m1" },
+      }])
+    } finally {
+      delete (globalThis as any).window
+    }
+  })
+
+  test("skill failure does not fall back to session.command", async () => {
+    const commands: any[] = []
+    ;(globalThis as any).window = {
+      api: {
+        mafw: {
+          discovery: { invokeSkill: async () => { throw new Error("unavailable") } },
+          sessions: { command: async (req: any) => { commands.push(req) } },
+        },
+      },
+    }
+    try {
+      const f = baseDeps({
+        sending: () => false,
+        input: () => "/superpowers",
+        matchSlash: () => ({ name: "superpowers", group: "skill" }),
+      })
+      const { sendMessage } = useSendMessage(f.deps)
+      await sendMessage()
+      expect(commands).toHaveLength(0)
+    } finally {
+      delete (globalThis as any).window
+    }
+  })
 })

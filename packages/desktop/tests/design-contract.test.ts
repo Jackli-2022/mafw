@@ -661,16 +661,17 @@ describe("DiffReviewPanel 接线", () => {
   })
 })
 
-describe("Left changes face + diff tabs", () => {
+describe("Left changes face + change-set tabs", () => {
   const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
-  test("changes face是左栏改动入口", () => {
-    expect(read("src/renderer/mafw/components/ChangesFace.tsx")).toContain("buildChangeTree")
+  test("changes face是左栏改动入口（Goal 在前）", () => {
+    expect(read("src/renderer/mafw/components/ChangesFace.tsx")).toContain("buildGoalGroups")
     expect(read("src/renderer/mafw/MafwShell.tsx")).toContain("ChangesFace")
     expect(read("src/renderer/mafw/MafwShell.tsx")).not.toContain("openProjectChangeSetFocus")
   })
-  test("diff tab 复用 DiffReviewPanel", () => {
-    expect(read("src/renderer/mafw/components/DiffDocumentView.tsx")).toContain("DiffReviewPanel")
-    expect(read("src/renderer/mafw/components/DocumentStage.tsx")).toContain("DiffDocumentView")
+  test("change-set tab 复用 DiffReviewPanel", () => {
+    expect(read("src/renderer/mafw/components/ChangeSetView.tsx")).toContain("DiffReviewPanel")
+    expect(read("src/renderer/mafw/components/DocumentStage.tsx")).toContain("ChangeSetView")
+    expect(read("src/renderer/mafw/components/WorkbenchShell.tsx")).toContain("WorkbenchTabs")
     expect(read("src/renderer/mafw/MafwShell.tsx")).not.toContain("renderChangeSet")
   })
   test("changes row 样式存在", () => {

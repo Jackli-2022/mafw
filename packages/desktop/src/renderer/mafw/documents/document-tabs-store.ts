@@ -1,5 +1,5 @@
 import { createEffect, createRoot, createSignal } from "solid-js"
-import { diffDocumentTabs, editorDocumentTabs, type DocumentTabView } from "../document-frame-model"
+import { editorDocumentTabs, type DocumentTabView } from "../document-frame-model"
 import {
   closeOtherTabIds,
   closeRightTabIds,
@@ -18,7 +18,11 @@ import {
 } from "./document-list-persistence"
 import { browserDocuments, browserDocumentTitle } from "./browser-documents"
 import { fileModelFor } from "./file-documents"
-import { closeDiffDocument, diffDocuments } from "./diff-documents"
+import {
+  changeSetDocuments,
+  closeChangeSetDocument,
+} from "./change-set-documents"
+import { closeSceneTab, sceneTabs } from "./scene-tabs"
 
 const [entries, setEntries] = createSignal<DocumentTabEntry[]>([])
 const [activeId, setActiveId] = createSignal<string | null>(null)
@@ -75,13 +79,34 @@ function syncBrowserDocuments(): void {
   })))
 }
 
-function syncDiffDocuments(): void {
-  const incoming = diffDocuments().map((doc) => ({
+function syncChangeSetDocuments(): void {
+  const incoming = changeSetDocuments().map((doc) => ({
     id: doc.id,
-    kind: "diff" as const,
-    view: { ...diffDocumentTabs([doc], null)[0]!, active: false },
+    kind: "changeset" as const,
+    view: {
+      id: doc.id,
+      label: doc.label,
+      title: doc.label,
+      icon: "review" as const,
+      active: false,
+    },
   }))
-  applyKind("diff", incoming)
+  applyKind("changeset", incoming)
+}
+
+function syncSceneTabs(): void {
+  const incoming = sceneTabs().map((tab) => ({
+    id: tab.id,
+    kind: "scene" as const,
+    view: {
+      id: tab.id,
+      label: tab.label,
+      title: tab.label,
+      icon: tab.icon,
+      active: false,
+    },
+  }))
+  applyKind("scene", incoming)
 }
 
 function syncFileDocuments(): void {
@@ -134,14 +159,26 @@ function pruneSavedOrder(previous: readonly DocumentTabEntry[], next: readonly D
   savedOrder = savedOrder.filter((id) => nextIds.has(id) || !previousIds.has(id))
 }
 
+/** 瞬态 tab：diff 单文件（旧）、改动集、终端 / 插件场景不跨重启。 */
+function isTransientTabId(id: string): boolean {
+  return id.startsWith("diff:") ||
+    id.startsWith("changeset:") ||
+    id.startsWith("scene:terminal:") ||
+    id.startsWith("scene:plugin:")
+}
+
 function persistOrder(): void {
   if (!worldId) return
   const order = [
-    ...savedOrder.filter((id) => !id.startsWith("diff:")),
-    ...entries().filter((entry) => entry.kind !== "diff").map((entry) => entry.id).filter((id) => !savedOrder.includes(id)),
+    ...savedOrder.filter((id) => !isTransientTabId(id)),
+    ...entries().filter((entry) => !isTransientTabId(entry.id)).map((entry) => entry.id).filter((id) => !savedOrder.includes(id)),
   ]
   const active = activeId()
-  saveDocumentListSnapshot(worldId, { version: 1, order, activeId: active?.startsWith("diff:") ? null : active })
+  saveDocumentListSnapshot(worldId, {
+    version: 1,
+    order,
+    activeId: active && !isTransientTabId(active) ? active : null,
+  })
 }
 
 /** 按 world 加载顺序；在 store 首次同步前调用即可，未同步的 id 会等到对应 body。 */
@@ -150,8 +187,8 @@ export function configureDocumentListWorld(nextWorldId: string): void {
   if (worldId) flushDocumentListPersistence(worldId)
   worldId = nextWorldId
   const snapshot = loadDocumentListSnapshot(nextWorldId)
-  savedOrder = snapshot.order.filter((id) => !id.startsWith("diff:"))
-  desiredActiveId = snapshot.activeId?.startsWith("diff:") ? null : snapshot.activeId
+  savedOrder = snapshot.order.filter((id) => !isTransientTabId(id))
+  desiredActiveId = snapshot.activeId && !isTransientTabId(snapshot.activeId) ? snapshot.activeId : null
   const next = applySavedOrder(entries())
   if (!sameEntries(entries(), next)) setEntries(next)
   const current = activeId()
@@ -243,17 +280,24 @@ export function resetDocumentTabsForTests(): void {
   setFileRoot(null)
 }
 
-// web / file 文档状态分别归 browser-documents / file-documents 所有；
+// web / file / changeset / scene 状态归各自 store 所有；
 // document store 只做 entries 派生，不再由 body 手写 sync。
 createRoot(() => {
   createEffect(syncFileDocuments)
   createEffect(syncBrowserDocuments)
-  createEffect(syncDiffDocuments)
+  createEffect(syncChangeSetDocuments)
+  createEffect(syncSceneTabs)
   createEffect(() => {
     for (const id of pendingCloseRequests()) {
-      if (!id.startsWith("diff:")) continue
-      consumeCloseRequest(id)
-      closeDiffDocument(id)
+      if (id.startsWith("diff:")) {
+        consumeCloseRequest(id)
+      } else if (id.startsWith("changeset:")) {
+        consumeCloseRequest(id)
+        closeChangeSetDocument(id)
+      } else if (id.startsWith("scene:")) {
+        consumeCloseRequest(id)
+        closeSceneTab(id)
+      }
     }
   })
 })

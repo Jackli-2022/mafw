@@ -54,3 +54,26 @@
 - 左栏改动面不做全量 N+1：项目视图只做 Goal / 讨论索引；评审项只拉当前上下文。
 - worktree 不可用时显示中性文案，不伪造 diff，也不打开错误 root 的文件。
 - 未改 gateway、评审项状态机、验收权限或 revision 隔离；E6 未触碰。
+
+## 追加 · 全视图 tab 化 + Goal-first 改动面（同日）
+
+- **一条 tab 条覆盖全部视图**：`WorkbenchTabs` 从 `DocumentStage` 上移到 `WorkbenchShell`，
+  紧贴 30px `FrameBar`；世界 / Goal / 终端 / 插件成为 scene tab，文件 / 浏览器 / 改动集仍是文档 tab。
+- **场景 tab 持久化**：世界 / Goal 写入 `mafw-scene-tabs:v1:<worldId>`，跨重启恢复；终端 / 插件
+  与改动集是瞬态的，不落盘。tab 顺序仍由 `mafw-document-list:v1:<worldId>` 统一持久化。
+- **改动集 tab（`changeset`）**：一个讨论 turn 或一个 Goal revision 一个 tab。单文件
+  `diff-documents` / `DiffDocumentView` 退役，`ChangeSetView` 复用 `DiffReviewPanel` 渲染当前文件。
+- **文件导航只在 toolbar**：toolbar 下拉无外框、无 `◀ ▶`，只显示状态字母 + 当前相对路径 + `▾`；
+  下拉 `width:max-content`，上限 `calc(100% - 16px)`（右 dock 宽度），显示完整相对路径、`+/−`
+  与当前行勾选；左侧常驻文件列表在 tab chrome 下隐藏。
+- **左栏改动面**：删除 `当前讨论 / 当前 Goal / 项目` 三按钮；Goal 组在前（Goal → revision），
+  讨论组在后（讨论 → turn）；组头与每个 Goal / 讨论都可收起，当前项默认展开并带「当前」标签；
+  顶部只留搜索 + `全部 / 待审 / 有改动`。点标题打开对象 tab，点 revision / turn 打开改动集 tab。
+- **深链**：讨论「审阅改动」打开当前会话的合并改动集；Goal 结果 / 决策评审项打开对应 revision
+  的改动集（可带文件 + 行锚点），仍只读预览、人工验收边界不变。
+- **门禁**：desktop 全量 **3826 / 3826** pass（729 suites）；`tsgo --noEmit -p tsconfig.json`
+  rc=0；`electron-vite build` rc=0。本批新增 4 个测试文件、20 个用例：
+  `change-set-documents`、`scene-tabs`、`changes-tree`、`session-turns`；另补 scene tab
+  入条 / 不可持久化与 toolbar 下拉宽度上限两条接线用例。
+- **边界**：改动集不持久化 patch（重启只保留世界 / Goal scene tab）；diff 文件导航不跨 tab
+  混文件；未改 gateway / SDK / 验收权限。
