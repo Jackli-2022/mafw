@@ -29,6 +29,9 @@
 - [E1 止血（2026-11-11）](#e1-止血2026-11-11)
 - [E4 资源台账（2026-11-11）](#e4-资源台账2026-11-11)
 - [E7 部署前 deferred 收口（2026-11-13）](#e7-部署前-deferred-收口2026-11-13)
+- [E8 剩余工程债收口（2026-11-13）](#e8-剩余工程债收口2026-11-13)
+- [E9 交互补齐（2026-11-13）](#e9-交互补齐2026-11-13)
+- [E10 契约覆盖第一批（2026-11-13）](#e10-契约覆盖第一批2026-11-13)
 - [API 端点](#api-端点)
 - [UI 服务](#ui-服务)
 - [数据流全景](#数据流全景)
@@ -1172,17 +1175,19 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 - **F1 回滚边界**：`createSessionWithWorktree` 里 `kvSet` 移到 `createSession` 的 try 之外；
   kv 失败不再删掉活会话的 worktree / branch，错误照原样上抛。
 
-### 残余（E9 后仍 deferred）
+### 残余（E10 后仍 deferred）
 
-- 剩余约 296 个 op 的 response schema 覆盖（316 operations 中 20 个已带 200 schema）。
+- 剩余约 287 个 op 的 response schema 覆盖（316 operations 中 29 个已带 200 schema，9.2%；
+  台账 `npm run schema:coverage`，见「E10 契约覆盖」节）。
 - OS keychain / 进程签名、MCP human 工具。
 - 强制版本协商 / SDK 全量 schema 类型化。
 - 插件 / manager 会话的配额副作用（内部会话失败只 log）。
-- `session.get` 的 miss 语义在 E10-3 收口：不存在会话返回 **404 + `{error:'not found'}`**
-  （body 与旧版逐字相同，状态码不再是 200；与 `SessionSchema` 对齐）。覆盖台账与门禁见
-  `npm run schema:coverage` / `tests/unit/architecture/schema-coverage.test.ts`。
+- POST/PUT/PATCH/DELETE 的请求/响应 schema（E10 只建模读接口的 200 成功体）。
 - **won't do**：`pod.updated` 记录级实体 payload（E9-3，理由见下节）、mobile 工作 tab 的增量渲染
   （E9-1 后 flat 帧已能触发 `goalId` 局部 patch，其余仍是整页快照）。
+- E10 有意保留的松口：`PodGoal` 的可选性（`bucket` / `accepted` / `progress` / `revision` / `priority`…）
+  仍比 handler 实际输出宽（收紧要动约 12 个 DTO 字段并打破桌面测试夹具，E8 先例）；`FileDiffInfo.file`
+  仍可选，而 `session.diff` schema 的 `MafwDiff.file` 必填。
 
 ---
 
@@ -1220,6 +1225,42 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 | E9-1 | **mobile 工作 tab 吃 flat pod/run 事件**：`pod.updated` / `pod.event` / `run.updated` 是 gateway 顶层 flat 广播（名字同时是 canonical 词汇），mobile 现在按 dual-shape 解析（`kMafwDualShapeEventTypes` spread 进 `kMafwFlatEventTypes`）、`shouldRefreshWork` 命中，并从 `properties.goalId`（回退 `data.goalId`）取 goal id，命中 `WorkRefreshBus` 的按 Goal 局部 patch。 | gateway 与 SDK 契约零改动（三个名字本就是 gateway 的顶层广播；parity 测试用「契约前缀 + 固定 dual-shape 尾巴」钉住）。消费细节见 `mobile.md` §7.10。 |
 | E9-2 | **attention 投影 draft decision**：`AttentionKind` 新增 `'decision'`（`PRIORITY.decision = 85`，介于 `direction_review` 90 与 `answer` 80）；`decisionAttentionInput` / `appendDecisionAttention` 只投影 `status === 'draft'` **且带 `goalId`** 的记录（id / coalesceKey `decision:<recordId>`，action `{type:'open_decision', goalId, itemId}`，detail 取 `rationale ?? consequences`）；`AttentionRouteDeps.decisions?(projectDir)` 在 reviews 之后追加，kernel 注入 `decisionRecords.list(projectDir)` 且 **fail-open**（读失败 → `[]`，不拖垮 attention）；SDK `AttentionKind` 与生成契约（`gateway-paths.json` / `openapi.json` / `api-schema.gen.ts`）同步。 | **goal-less draft 不进 attention**：`AttentionItem.goalId` 是 string，无法表达无 Goal 的记录——它们仍只在桌面决定板出现；`decided` / `shelved` 已结算，永不投影。桌面侧映射与去重见 `desktop.md` §「Attention decision 投影与决定板去重」。 |
 | E9-3 | **`pod.updated` 记录级 payload —— won't do**。维持 `{podId, kind}` 级刷新：desktop `podStore.ingest` 对当前 Pod 全量 `refresh()`，`kind:'review'` 已 bump `reviewRevision`；`goalId` 在 goal/revision/result 事件上已有，消费侧需要时可自行按 Goal 收敛（当前 desktop 仍整 Pod refresh）。 | 不引入完整 PodDetail / 实体 payload：member/task 高频广播下事件体积过大，且「事件快照 vs REST 权威」的一致性风险不划算；kind 级刷新 + 可用时 `goalId` 已足够。E9-1 修复后 mobile 至少能消费这些 flat 帧。 |
+
+---
+
+## E10 契约覆盖第一批（2026-11-13）
+
+> 把 desktop / mobile 实际消费的**读接口**从「无 schema」变成可校验契约，并建立可重复的覆盖率台账。
+> 本波只做 16 个读 op + 台账 + `session.get` 404；handler 输出零改动（404 除外），不改路由集合。
+> spec：`docs/superpowers/specs/2026-11-13-gateway-e10-contract-coverage-design.md`；
+> plan：`docs/superpowers/plans/2026-11-13-gateway-e10-contract-coverage.md`；
+> 交付记录：`docs/releases/2026-11-13-gateway-e10-contract-coverage.md`。
+
+| # | 现状 | 边界 |
+|---|---|---|
+| E10-1 | **session 读接口 8 ops** 的 200 response schema（`routes/schemas/session-read.ts`，new）：`session.queue.list`（`{items: QueueItem[]}`）、`session.config`（`SessionConfigState`）、`session.todo`（`{data: Todo[]}`）、`session.children`（`{items: 子会话[]}`）、`session.tokenSummary`（4 字段）、`session.checkpoints`（`{checkpoints: SessionCheckpointListItem[]}`）、`session.subagents.list`（`{items: SubagentRecord[]}`）、`session.diff`（`{files: MafwDiff[]}`）。 | `session.children` 是唯一 schema-only：wire 的 item 由 runtime 拥有（opencode 原生 `/session?parentID=` / pi 的 `AdapterSession`，只有 `id` 必填），因此**不**组合 `SessionSchema`（会要求 pi 不保证的 title/directory/time），改用带 owner 注释的边界对象，只承诺 `id` + `depth`。queue 的 `parts` 是客户端 prompt payload 边界（owner = view-dto part 联合），AssertEq 拆成「其余字段等值 + part 边界」，与 `session.messages` 先例一致。 |
+| E10-2 | **Pod / Work 读接口 8 ops**：`work.overview`（`routes/schemas/work.ts`，new：5 桶 × `PodGoalSchema` + 同源 `counts` + `total`）、`pod.events.list`、`pods.tasks.list`、`pods.messages.list`、`pods.goals`、`pods.goals.result`、`pods.goals.reviewItems`、`pods.cost`（`routes/schemas/pods.ts` 扩展）。 | `groups[bucket]` 与 `counts[bucket]` 是同一 `goals.views()` 数组的两个投影（handler 不截断），按严格五桶建模，不做 `additionalProperties` 放宽；`PodGoalResult.receipt` 是 goal driver 拥有的不透明 receipt JSON（`unknown \| null`，带 owner 注释）。 |
+| E10-3 | **覆盖率台账 + `session.get` miss 语义**：`gateway/scripts/schema-coverage.cjs`（文本解析 catalog，输出 total / covered / byTag / uncovered，`--json` 机器可读）+ `npm run schema:coverage`；测试 `tests/unit/architecture/schema-coverage.test.ts` pin 住 29 个覆盖 op、`total === 316`、脚本与 `buildRouteCatalog()` 一致。`session.get` 对不存在会话由 `200 {error:'not found'}` 改为 **404 `{error:'not found'}`**（body 逐字不变，与 `SessionSchema` 对齐）。 | 脚本是**文本扫描器**：catalog entry 必须保持 `method` / `path` / `operationId` 字面量形态，解析漂移会由 catalog↔脚本一致性断言立刻打红。404 是**唯一 wire 变化**；旧 desktop 构建产物若依赖 200 信封需升级（见 release 的 breaking 节）。桌面侧处理见 `desktop.md` §「缺失会话 404（E10-3）」。 |
+
+### 台账口径与推进方式
+
+- **基线 13/316，本波终值 29/316（9.2%）**，剩余 287 个 op。基线口径以脚本实测为准
+  （E8 release 里「20/316」是含非 catalog 统计的旧口径）；`schema:coverage` 的 by-tag 分区和恒等于 covered。
+- **每批 8 ops**：先按「谁在消费」挑一组同族读接口（本波 = session 读 8 + pod/work 读 8 / 2 个 commit），
+  写 TypeBox schema → catalog 挂 `RouteDef.response` → `npm run emit:openapi`（gateway）→
+  SDK `npm run gen:api`（`merge-contract.mjs` + `openapi-typescript`）→ 生成物入库（
+  `contract/gateway-paths.json` / `contract/openapi.json` / `src/api-schema.gen.ts`）。
+- **schema 是 handler 的投影，不是 wish-list**：字段以 handler 实际 wire 为准，不得为了好写把响应放宽成
+  `Unknown` / `additionalProperties: true`；边界对象只允许用于 runtime / 外部拥有的 payload，且必须在注释里
+  写明 owner（先例 `MafwPartBoundary`、`session.children`、`PodGoalResult.receipt`）。
+- **有 SDK DTO 的 op 必须 `AssertEq`**（`packages/gateway-sdk/src/contract-compat.checks.ts`，编译期）：
+  本波 16 op 中 15 个有等价断言（仅 `session.children` 因 item 归 runtime 所有而只能 schema-only；
+  `tokenSummary` / `pods.cost` 借 client 的内联返回类型，不新增命名 DTO）。
+  schema 与 DTO 冲突时**以 handler 为准修 DTO**，并在批次报告里列出受影响消费者（本波 4 处收紧、0 破坏性消费者）：
+  `SessionConfigState.thinkingLevelSupported` 改必填、`SessionCheckpointListItem` 拆分列表条目、
+  `PodMessage` 4 个字段改必填可空、`PodGoalResult`（含 `PodGoalCondition` / `PodGoalResultFailure`）与
+  `PodEventItem` 的 `reason` / `audience` / `severity` 收紧成联合类型。
+- 每个 op 只建模 **200 成功体**，错误体不建模；请求体 schema 仍 deferred。
 
 ---
 
