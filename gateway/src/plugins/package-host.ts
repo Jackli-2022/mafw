@@ -35,7 +35,9 @@ import type {
   PackageManifest,
   PackageState,
   PluginContributions,
+  PluginObserverEntry,
   PluginPackageContext,
+  PluginToolEntry,
   RuntimePackageEntry,
   TtsPackageEntry,
   UnifiedPluginContributions,
@@ -209,12 +211,15 @@ export class PluginHost {
   private mediaCb?: (entries: MediaPackageEntry[]) => void;
   private ttsCb?: (entries: TtsPackageEntry[]) => void;
   private usageCb?: (entries: UsagePackageEntry[]) => void;
+  private kernelV2Cb?: (tools: PluginToolEntry[], observers: PluginObserverEntry[]) => void;
   private snapshotCb?: (snapshot: PluginClientSnapshot) => void;
   private stateCb?: () => void;
   private lastRuntime: RuntimePackageEntry[] = [];
   private lastMedia: MediaPackageEntry[] = [];
   private lastTts: TtsPackageEntry[] = [];
   private lastUsage: UsagePackageEntry[] = [];
+  private lastTools: PluginToolEntry[] = [];
+  private lastObservers: PluginObserverEntry[] = [];
   private readonly createBag: () => RegistrationBag;
   private readonly canonicalTypes: ReadonlySet<string>;
   private readonly broadcast?: PluginHostOptions['broadcast'];
@@ -253,6 +258,18 @@ export class PluginHost {
   bindMedia(cb: (entries: MediaPackageEntry[]) => void): void { this.mediaCb = cb; cb(this.lastMedia); }
   bindTts(cb: (entries: TtsPackageEntry[]) => void): void { this.ttsCb = cb; cb(this.lastTts); }
   bindUsage(cb: (entries: UsagePackageEntry[]) => void): void { this.usageCb = cb; cb(this.lastUsage); }
+
+  /**
+   * Phase 3.6: publish validated package tools/observers (with their revision)
+   * to the live kernel-v2 bridge. Replays the last committed snapshot; an empty
+   * array after remove/disable is the unsubscribe signal.
+   */
+  bindKernelV2(
+    cb: (tools: PluginToolEntry[], observers: PluginObserverEntry[]) => void,
+  ): void {
+    this.kernelV2Cb = cb;
+    cb(this.lastTools, this.lastObservers);
+  }
 
   /** Client snapshot subscriber; replays the current snapshot immediately. */
   onSnapshot(cb: (snapshot: PluginClientSnapshot) => void): void {
@@ -455,6 +472,9 @@ export class PluginHost {
     this.pending.clear();
     this.failures.clear();
     this.stagedNew.clear();
+    this.lastTools = [];
+    this.lastObservers = [];
+    this.kernelV2Cb?.([], []);
     void this.disposeBags(bags);
   }
 
@@ -836,6 +856,8 @@ export class PluginHost {
     const media: MediaPackageEntry[] = [];
     const tts: TtsPackageEntry[] = [];
     const usage: UsagePackageEntry[] = [];
+    const tools: PluginToolEntry[] = [];
+    const observers: PluginObserverEntry[] = [];
     const records = [...this.active.values()].sort((a, b) => a.descriptor.name.localeCompare(b.descriptor.name));
     for (const record of records) {
       const entries = record.entries;
@@ -843,15 +865,32 @@ export class PluginHost {
       if (entries.media) media.push(entries.media);
       if (entries.tts) tts.push(entries.tts);
       if (entries.usage) usage.push(entries.usage);
+      for (const declaration of record.activated.tools) {
+        tools.push({
+          ...declaration,
+          packageName: record.descriptor.name,
+          revision: record.revision,
+        });
+      }
+      for (const declaration of record.activated.observers) {
+        observers.push({
+          ...declaration,
+          packageName: record.descriptor.name,
+          revision: record.revision,
+        });
+      }
     }
     this.lastRuntime = runtime;
     this.lastMedia = media;
     this.lastTts = tts;
     this.lastUsage = usage;
+    this.lastTools = tools;
+    this.lastObservers = observers;
     this.runtimeCb?.(runtime);
     this.mediaCb?.(media);
     this.ttsCb?.(tts);
     this.usageCb?.(usage);
+    this.kernelV2Cb?.(tools, observers);
   }
 
   private notifyStateChanged(broadcastChange = true): void {
@@ -1122,9 +1161,15 @@ export class PluginHost {
 
     if (activated.actions.length > 0) kinds.push('actions');
     if (activated.events.length > 0) kinds.push('events');
+    if (activated.tools.length > 0) kinds.push('tools');
+    if (activated.observers.length > 0) kinds.push('observers');
     if (hasUiSlots(activated.ui)) kinds.push('ui');
 
-    if (kinds.length === 0) throw new Error('no contributions (usage/media/runtime/tts/uiTools/ui/actions/events)');
+    if (kinds.length === 0) {
+      throw new Error(
+        'no contributions (usage/media/runtime/tts/uiTools/ui/actions/events/tools/observers)',
+      );
+    }
 
     return {
       version: desc.manifest?.version,

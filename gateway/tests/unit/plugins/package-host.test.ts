@@ -693,3 +693,65 @@ module.exports = { name: '${name}', async activate() {
     expect(next.get(watchedDir)).not.toBe(oldWatcher);
   });
 });
+
+const TOOLFUL = (name: string) => `
+module.exports = { name: '${name}', async activate() {
+  return {
+    tools: [{
+      name: 'echo',
+      description: 'Echo',
+      inputSchema: { type: 'object' },
+      handler: async (input) => ({ text: 'ok' }),
+    }],
+    observers: [{
+      id: 'watch',
+      filter: { types: ['part.updated'] },
+      onEvent() {},
+    }],
+  };
+} };
+`;
+
+describe('PluginHost kernel-v2 entries', () => {
+  let dir: string;
+  let host: PluginHost | undefined;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-kernel-v2-'));
+  });
+
+  afterEach(() => {
+    host?.stop();
+    host = undefined;
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('publishes tool/observer entries on commit and clears them on remove', async () => {
+    const file = path.join(dir, 'toolful.js');
+    fs.writeFileSync(file, TOOLFUL('toolful'));
+    host = mkHost(dir);
+    const published: Array<{ tools: any[]; observers: any[] }> = [];
+    host.bindKernelV2((tools, observers) => {
+      published.push({ tools, observers });
+    });
+    await host.init();
+
+    expect(published.at(-1)!.tools).toHaveLength(1);
+    expect(published.at(-1)!.tools[0]).toMatchObject({
+      packageName: 'toolful',
+      name: 'echo',
+      description: 'Echo',
+    });
+    expect(published.at(-1)!.observers).toHaveLength(1);
+    expect(published.at(-1)!.observers[0]).toMatchObject({
+      packageName: 'toolful',
+      id: 'watch',
+    });
+    expect(typeof published.at(-1)!.tools[0].revision).toBe('string');
+
+    fs.unlinkSync(file);
+    await host.reload();
+    expect(published.at(-1)!.tools).toEqual([]);
+    expect(published.at(-1)!.observers).toEqual([]);
+  });
+});
