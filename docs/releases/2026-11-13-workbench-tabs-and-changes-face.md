@@ -17,7 +17,8 @@
 | 6 | 评审项投影、Goal 深链、rail badge、项目索引 | `fa3c0c66` |
 | 7 | 删除 LensBar、阅读/修改 intent、预览自动提升 | `33f4cbd1` |
 | 8 | 删除 Lens 模型、焦点持久化迁移 | `a188b641` |
-| 9 | 删除 changeSet / evidence / InstrumentRail / ChangesDock 死代码 + 文档 | 本次提交 |
+| 9 | 删除 changeSet / evidence / InstrumentRail / ChangesDock 死代码 + 文档 | `75252cf2` |
+| 终审修复 | diff tab 选中同步、实时刷新、深链上下文、root/锚点/回退守卫 | `f259038b` |
 
 ## 结果
 
