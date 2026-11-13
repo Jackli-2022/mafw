@@ -154,49 +154,20 @@ export function authorizeRequest(req: AuthRequest, apiToken: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// WebSocket upgrade auth
+// WebSocket upgrade rejection bytes
 // ---------------------------------------------------------------------------
 
-export interface WsAuthRequest {
-  remoteAddress: string;
-  headers: Record<string, string | undefined>;
-  url: string;
-  host?: string;
-}
-
-export interface WsAuthResult {
-  ok: boolean;
-  /** When ok === false, the raw HTTP response bytes to write before destroying the socket. */
-  rejectResponse?: Buffer;
-}
-
-const WS_401_BYTES = Buffer.from('HTTP/1.1 401 Unauthorized\r\n\r\n');
-
-/** Raw 401 bytes for upgrade rejections (exported so the hub keeps them byte-identical). */
-export const WS_UNAUTHORIZED_RESPONSE: Buffer = WS_401_BYTES;
-
 /**
- * Authorize a WebSocket upgrade request.  Returns `{ ok: true }` on success,
- * or `{ ok: false, rejectResponse }` with the bytes to write to the raw socket.
+ * Raw 401 bytes for upgrade rejections (the hub writes these byte-identically
+ * before destroying the socket).
  *
- * Accepts the same three channels as HTTP (Bearer / X-API-Token / ?token=).
- *
- * @deprecated No production caller — `createWsHub` uses `resolvePrincipal`
- * (human/device/service/local) so upgrades carry a principal. Kept for older
- * callers/tests; do not use for new code.
+ * E8-5 removed `authorizeWsUpgrade`: upgrades authorize through
+ * `resolvePrincipal` (human/device/service/local) so they carry a principal,
+ * and its credential matrix was a dead duplicate of that function.
  */
-export function authorizeWsUpgrade(req: WsAuthRequest, apiToken: string): WsAuthResult {
-  const addr = req.remoteAddress || '';
-  if (isLoopbackAddr(addr)) return { ok: true };
-  if (!apiToken) return { ok: false, rejectResponse: WS_401_BYTES };
-  const bearer = extractBearer(req);
-  const xToken = extractXApiToken(req);
-  const qToken = extractQueryToken(req);
-  if (bearer === apiToken || xToken === apiToken || qToken === apiToken) {
-    return { ok: true };
-  }
-  return { ok: false, rejectResponse: WS_401_BYTES };
-}
+export const WS_UNAUTHORIZED_RESPONSE: Buffer = Buffer.from(
+  'HTTP/1.1 401 Unauthorized\r\n\r\n'
+);
 
 // ---------------------------------------------------------------------------
 // Token extraction helpers (private)

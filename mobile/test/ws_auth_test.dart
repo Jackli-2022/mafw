@@ -2,7 +2,7 @@
 //
 // The gateway accepts the API token on three channels for `/api/ws` upgrades
 // (Bearer header, X-API-Token, ?token= — see gateway/src/core/auth.ts
-// `authorizeWsUpgrade`). Mobile is dart:io, so `IOWebSocketChannel.connect` can
+// `resolvePrincipal`). Mobile is dart:io, so `IOWebSocketChannel.connect` can
 // send real headers: the Bearer header is the primary channel and keeps the
 // token out of URLs/logs. These tests pin the URI + header composition, and a
 // loopback server pins that `connect()` actually sends them (plus the

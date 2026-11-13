@@ -1008,7 +1008,7 @@ E8-1 之后 kernel/boot 的长驻 interval 已全部在台账内；短命 retry/
 - 反向代理（`/api/*` → agent backend）**剥掉** `x-mafw-human-token` / `x-mafw-device-token`，凭据不外溢给 runtime。
 - `redactLog` 覆盖 `Bearer` / `?token=` / 两个新头（header 与 JSON 两种形状）与任意 `dev_…`；64 hex **不**做泛化脱敏（hash/commit 常见），human token 只经具名头泄漏。
 - `registry-dispatch` 只接受 transport 已解析的 principal kind（`human|service|local`）；畸形/未知 kind fail-closed 回既有 `authorizeRequest`。`POST /api/mobile/pairing/verify` 是唯一免凭据路由，且必须由 transport 打上 `mafwPairingVerify` 标记（nonce 即凭据，直调 dispatcher 不能自我授权）。
-- `authorizeWsUpgrade` **已废弃**（`@deprecated`，无生产调用）；`authorizeRequest` 仍服务只需 service/local 判定的既有调用。
+- `authorizeWsUpgrade` **已删除**（E8-5；WS upgrade 只走 `resolvePrincipal`，没有第二套凭据矩阵）；`authorizeRequest` 仍服务只需 service/local 判定的既有调用，`WS_UNAUTHORIZED_RESPONSE` 保留为 upgrade 401 的唯一字节源。
 
 ### human token
 
@@ -1074,7 +1074,7 @@ E8-1 之后 kernel/boot 的长驻 interval 已全部在台账内；短命 retry/
 - ~~计划批准（plan-approval）、triage、Lead 边界、permission approvals 仍是 service/local 可调~~
   （E7-1 已收口；统一 helper `requireHumanPrincipal` 接入，见「E7 部署前 deferred 收口」）。
 - MCP 工具集**没有** human 工具（也不提供验收/批准工具）；human-only 动作只走 HTTP（desktop/TUI/移动）。
-- `authorizeWsUpgrade` 仅标记 deprecated，未删除（测试与旧调用方仍引用）。
+- ~~`authorizeWsUpgrade` 仅标记 deprecated，未删除（测试与旧调用方仍引用）~~（E8-5 已删除：无生产调用，测试迁移到 `resolvePrincipal` / `WS_UNAUTHORIZED_RESPONSE`）。
 - human token 的 OS keychain / 进程签名、per-owner fencing 留给后续。
 - E5b（C1 event_log 恢复源 / mobile 游标）与 E6（单点扇出 / 实体缓存 / 事件增量）不在本波。
 
@@ -1177,8 +1177,8 @@ E5b 已知残留（同实例 reset 的低 head、busy/后台竞态）见 release
 - mobile 工作 tab 增量渲染（已有 `goalId` 局部更新）。
 - `pod.updated` 记录级 payload、attention → decision 投影、OS keychain / 进程签名、MCP human 工具。
 - 强制版本协商 / SDK 全量 schema 类型化。
-- E5b 同实例 `reset` 且新 head 更低时的重复 reset（有界、不丢数据）；busy / 后台 greeting 竞态。
-- `authorizeWsUpgrade` 仍只标 deprecated；desktop preload 的 event bridge 仍声明可选 `sessionID`（运行时忽略，无调用方传值）。
+- ~~E5b 同实例 `reset` 且新 head 更低时的重复 reset（有界、不丢数据）；busy / 后台 greeting 竞态~~（E8-4 已收口：reset 可降游标，busy greeting 排队重跑一次）。
+- ~~`authorizeWsUpgrade` 仍只标 deprecated；desktop preload 的 event bridge 仍声明可选 `sessionID`~~（E8-2/E8-5 已收口）。
 - 插件 / manager 会话的配额副作用（内部会话失败只 log）。
 
 ---

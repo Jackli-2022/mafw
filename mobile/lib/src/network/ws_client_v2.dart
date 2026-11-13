@@ -104,7 +104,7 @@ class WsClientV2 implements MafwWsClient {
   /// `/api/ws` upgrade target: `ws(s)://host/api/ws` (+ `?deviceId=`).
   ///
   /// No `?token=`: URLs leak into proxy/access logs and the gateway accepts the
-  /// Bearer header on upgrades (`authorizeWsUpgrade` in `gateway/src/core/auth.ts`).
+  /// Bearer header on upgrades (`resolvePrincipal` in `gateway/src/core/auth.ts`).
   Uri get endpointUri {
     final base = Uri.parse(config.wsUrl);
     final extra = <String, String>{};
@@ -152,7 +152,7 @@ class WsClientV2 implements MafwWsClient {
       );
       _channel = channel;
 
-      // Await the handshake so a rejected upgrade (401 from authorizeWsUpgrade)
+      // Await the handshake so a rejected upgrade (401 from the WS gate)
       // surfaces as a connection error instead of a false "connected" blip.
       await channel.ready;
       if (!_isCurrentAttempt(seq)) {
