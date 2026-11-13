@@ -34,7 +34,7 @@
 
 ## 测试与门禁
 
-- desktop 全量：**3793 / 3793** pass（728 suites）
+- desktop 全量：**3797 / 3797** pass（728 suites）
 - 本轮新增 11 个测试文件、约 32 个用例；关键覆盖：
   - `changes-context` / `changes-request` 上下文与深链
   - `diff-documents` / `document-tabs-store` diff tab 生命周期与持久化过滤

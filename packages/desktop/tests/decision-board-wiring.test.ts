@@ -32,6 +32,7 @@ test("MafwShell feeds the active thread's decision board", () => {
 test("decision actions open the goal and the plan overlay", () => {
   assert.match(shell, /openDecisionGoal/)
   assert.match(shell, /openChangesFace/)
+  assert.match(shell, /podStore\.detail\(\)\?\.goals\.find\(\(item\) => item\.goalId === action\.goalId\)/)
   assert.match(shell, /setGoalPlanOpenRequest/)
   assert.match(shell, /setGoalPlanOpenRequest\(\{ nonce: \(goalPlanOpenRequest\(\)\?\.nonce \?\? 0\) \+ 1, goalId \}\)/)
   assert.match(shell, /planOpenRequest=\{goalPlanOpenRequest\(\)\}/)

@@ -10,6 +10,8 @@ describe("live changes tree wiring", () => {
     const face = read("src/renderer/mafw/components/ChangesFace.tsx")
     expect(face).toContain("buildChangeTree")
     expect(face).toContain("changeStatusLetter")
+    expect(face).toContain("nextPulseState")
+    expect(face).toContain("collapsed")
     expect(face).toContain("mafw-change-dir")
   })
 

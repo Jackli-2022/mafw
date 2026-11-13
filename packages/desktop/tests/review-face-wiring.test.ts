@@ -25,3 +25,17 @@ test("shell passes the review badge and project index", () => {
   assert.match(shell, /reviewCountForGoal/)
   assert.match(shell, /onOpenSession/)
 })
+
+test("session context with a goal still shows the review queue", () => {
+  const face = read("src/renderer/mafw/components/ChangesFace.tsx")
+  assert.match(face, /reviewGoal/)
+  assert.match(face, /context\.kind === "session"\) return context\.goal/)
+  assert.match(face, /reviewSection\(\)/)
+})
+
+test("review load failures render a neutral error outside the item list", () => {
+  const face = read("src/renderer/mafw/components/ChangesFace.tsx")
+  assert.match(face, /reviewItems\(\)\.length > 0 \|\| reviewError\(\)/)
+  assert.match(face, /评审意见加载失败/)
+  assert.doesNotMatch(face, /String\(\(error as any\)\?\.message/)
+})
