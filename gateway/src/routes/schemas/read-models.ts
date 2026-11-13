@@ -189,6 +189,7 @@ const AttentionKindSchema = Type.Union([
   Type.Literal('blocked'),
   Type.Literal('failed'),
   Type.Literal('direction_review'),
+  Type.Literal('decision'),
 ])
 
 export const AttentionListResponse = Type.Object({

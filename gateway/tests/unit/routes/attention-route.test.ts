@@ -1,5 +1,27 @@
 import { handleAttention } from "../../../src/routes/attention";
 import type { PodGoalView } from "../../../src/core/pod/pod-view";
+import type { DecisionRecord } from "../../../src/core/decision/decision-record";
+
+const record = (over: Partial<DecisionRecord> = {}): DecisionRecord => ({
+  id: "dec_1",
+  projectDir: "/p",
+  goalId: "g1",
+  revision: 1,
+  kind: "plan",
+  status: "draft",
+  question: "采用哪个方案？",
+  options: [],
+  evidence: [],
+  rationale: "方案 A 更省改动",
+  consequences: null,
+  reviewAt: null,
+  decidedBy: null,
+  decidedAt: null,
+  createdAt: "2026-11-12T00:00:00.000Z",
+  updatedAt: "2026-11-12T00:00:00.000Z",
+  history: [],
+  ...over,
+});
 
 const view = (goalId: string, over: Partial<PodGoalView> = {}): PodGoalView => ({
   id: `row-${goalId}`,
@@ -40,5 +62,41 @@ describe("GET /api/attention", () => {
   test("is empty when the project has no Pod", () => {
     const out = handleAttention({ projectDir: "/p" }, { views: () => [] });
     expect(out.body.items).toEqual([]);
+  });
+
+  test("appends draft decisions after the Goal facts and reviews", () => {
+    const dirs: string[] = [];
+    const out = handleAttention({ projectDir: "/p" }, {
+      views: () => [view("g1")],
+      reviews: () => [{
+        id: "item_1",
+        goalId: "g1",
+        revision: 1,
+        title: "src/a.ts:12",
+        rel: "src/a.ts",
+        line: 12,
+        comment: "这里要补测试",
+      }],
+      decisions: (projectDir) => {
+        dirs.push(projectDir);
+        return [record()];
+      },
+    });
+
+    expect(dirs).toEqual(["/p"]);
+    expect(out.body.items.map((item: any) => item.kind)).toEqual([
+      "plan_approval", "decision", "review_item",
+    ]);
+    expect(out.body.items[1].action).toEqual({
+      type: "open_decision", goalId: "g1", itemId: "dec_1",
+    });
+  });
+
+  test("draft decisions without a goal are not goal-scoped attention", () => {
+    const out = handleAttention({ projectDir: "/p" }, {
+      views: () => [view("g1")],
+      decisions: () => [record({ goalId: null }), record({ id: "dec_2", status: "decided" })],
+    });
+    expect(out.body.items.map((item: any) => item.kind)).toEqual(["plan_approval"]);
   });
 });

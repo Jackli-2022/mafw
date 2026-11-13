@@ -1,7 +1,9 @@
 import type { PodGoalView } from '../pod/pod-view';
+import type { DecisionRecord } from '../decision/decision-record';
 
 export type AttentionKind =
-  | 'answer' | 'plan_approval' | 'review' | 'review_item' | 'blocked' | 'failed' | 'direction_review';
+  | 'answer' | 'plan_approval' | 'review' | 'review_item' | 'blocked' | 'failed' | 'direction_review'
+  | 'decision';
 
 export interface AttentionItem {
   id: string;
@@ -32,9 +34,19 @@ export interface ReviewAttentionInput {
   comment: string;
 }
 
+/** A draft decision reduced to the fields person-first attention needs. */
+export interface DecisionAttentionInput {
+  id: string;
+  goalId: string;
+  revision: number;
+  title: string;
+  detail?: string;
+}
+
 const PRIORITY: Record<AttentionKind, number> = {
   plan_approval: 100,
   direction_review: 90,
+  decision: 85,
   answer: 80,
   review_item: 75,
   review: 70,
@@ -110,6 +122,13 @@ export function deriveAttention(views: PodGoalView[]): AttentionItem[] {
     || a.goalId.localeCompare(b.goalId));
 }
 
+function sortAttention(items: Iterable<AttentionItem>): AttentionItem[] {
+  return [...items].sort((a, b) =>
+    b.priority - a.priority
+    || a.goalId.localeCompare(b.goalId)
+    || a.id.localeCompare(b.id));
+}
+
 /**
  * Project unresolved review items into the same person-first attention list.
  * Review items are appended, not merged into deriveAttention, so historical
@@ -141,8 +160,50 @@ export function appendReviewAttention(
       },
     });
   }
-  return [...byKey.values()].sort((a, b) =>
-    b.priority - a.priority
-    || a.goalId.localeCompare(b.goalId)
-    || a.id.localeCompare(b.id));
+  return sortAttention(byKey.values());
+}
+
+/**
+ * Only a draft decision is still waiting on a person. Decided/shelved records
+ * are settled, and records without a Goal cannot be goal-scoped, so they stay
+ * on the decision board instead of entering the attention list.
+ */
+export function decisionAttentionInput(record: DecisionRecord): DecisionAttentionInput | null {
+  if (record.status !== 'draft' || !record.goalId) return null;
+  return {
+    id: record.id,
+    goalId: record.goalId,
+    revision: record.revision ?? 1,
+    title: record.question,
+    detail: record.rationale ?? record.consequences ?? undefined,
+  };
+}
+
+/**
+ * Project draft decision records into the same person-first list. Appended like
+ * review items so Goal-stage attention stays byte-identical.
+ */
+export function appendDecisionAttention(
+  items: readonly AttentionItem[],
+  decisions: readonly DecisionRecord[],
+): AttentionItem[] {
+  const byKey = new Map(items.map((item) => [item.coalesceKey, item]));
+  for (const record of decisions) {
+    const input = decisionAttentionInput(record);
+    if (!input) continue;
+    const coalesceKey = `decision:${input.id}`;
+    if (byKey.has(coalesceKey)) continue;
+    byKey.set(coalesceKey, {
+      id: coalesceKey,
+      goalId: input.goalId,
+      revision: input.revision,
+      kind: 'decision',
+      priority: PRIORITY.decision,
+      coalesceKey,
+      title: input.title,
+      ...(input.detail !== undefined ? { detail: input.detail } : {}),
+      action: { type: 'open_decision', goalId: input.goalId, itemId: input.id },
+    });
+  }
+  return sortAttention(byKey.values());
 }

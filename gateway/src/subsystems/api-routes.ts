@@ -405,6 +405,15 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
         }));
       });
     },
+    // Draft decisions join the same person-first list (E9-2). The decision
+    // store is a side channel: a read failure must not take attention down.
+    decisions: (projectDir) => {
+      try {
+        return deps.decisionRecords.list(projectDir);
+      } catch {
+        return [];
+      }
+    },
   });
   attachDecisionRoutes(deps.routeRegistry, { service: deps.decisionRecords });
   attachSchedulerRoutes(deps.routeRegistry, {

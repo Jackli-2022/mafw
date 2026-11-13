@@ -138,6 +138,95 @@ test("review item without itemId has no action", () => {
   assert.equal(action.kind, "none")
 })
 
+test("decision attention keeps the record kind out of the DTO and routes to the record", () => {
+  const item = attention({
+    id: "decision:dec_1",
+    kind: "decision",
+    priority: 85,
+    coalesceKey: "decision:dec_1",
+    title: "采用哪个方案？",
+    detail: "方案 A 更省改动",
+    action: { type: "open_decision", goalId: "g1", itemId: "dec_1" },
+  })
+
+  assert.deepEqual(decisionActionForAttention(item), { kind: "record", recordId: "dec_1" })
+
+  const board = buildDecisionBoard({ attention: [item], records: [] })
+  const projected = board.groups[0]!.items[0]!
+  assert.equal(projected.kind, "other")
+  assert.equal(projected.source, "attention")
+  assert.equal(projected.detail, "方案 A 更省改动")
+  assert.deepEqual(projected.action, { kind: "record", recordId: "dec_1" })
+})
+
+test("decision attention without a record id has no action", () => {
+  const action = decisionActionForAttention(
+    attention({ kind: "decision", action: { type: "open_decision", goalId: "g1" } }),
+  )
+  assert.equal(action.kind, "none")
+})
+
+test("draft records projected through attention are not duplicated from records", () => {
+  const board = buildDecisionBoard({
+    attention: [
+      attention({
+        id: "decision:dec_1",
+        kind: "decision",
+        priority: 85,
+        coalesceKey: "decision:dec_1",
+        title: "采用哪个方案？",
+        action: { type: "open_decision", goalId: "g1", itemId: "dec_1" },
+      }),
+    ],
+    records: [record({ id: "dec_1", status: "draft" })],
+  })
+
+  assert.deepEqual(board.groups.map((group) => group.items.map((item) => item.id)), [
+    ["decision:dec_1"],
+    [],
+    [],
+    [],
+  ])
+  assert.equal(board.counts.needsYou, 1)
+  assert.equal(board.counts.pending, 0)
+})
+
+test("decided records still appear next to projected draft decisions", () => {
+  const board = buildDecisionBoard({
+    attention: [
+      attention({
+        id: "decision:dec_1",
+        kind: "decision",
+        coalesceKey: "decision:dec_1",
+        action: { type: "open_decision", goalId: "g1", itemId: "dec_1" },
+      }),
+    ],
+    records: [record({ id: "dec_1", status: "draft" }), record({ id: "dec_2", status: "decided" })],
+  })
+
+  assert.deepEqual(board.groups[2]!.items.map((item) => item.id), ["dec_2"])
+  assert.equal(board.counts.decided, 1)
+})
+
+test("goal filter applies to decision attention and records alike", () => {
+  const board = buildDecisionBoard({
+    attention: [
+      attention({
+        id: "decision:dec_g2",
+        goalId: "g2",
+        kind: "decision",
+        coalesceKey: "decision:dec_g2",
+        action: { type: "open_decision", goalId: "g2", itemId: "dec_g2" },
+      }),
+    ],
+    records: [record({ id: "dec_g1", goalId: "g1" })],
+    goalId: "g1",
+  })
+
+  assert.deepEqual(board.groups[0]!.items, [])
+  assert.deepEqual(board.groups[1]!.items.map((item) => item.id), ["dec_g1"])
+})
+
 test("visibleDecisionItems caps a group and keeps the remainder countable", () => {
   const items = Array.from({ length: 60 }, (_, i) => ({ id: `d${i}` } as any))
   assert.equal(visibleDecisionItems(items, 25).length, 25)
