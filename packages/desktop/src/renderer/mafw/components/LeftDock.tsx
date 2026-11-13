@@ -1,7 +1,7 @@
 // 左 dock：会话/搜索两个面（spec 2026-10-22-workbench-layout D2/D3/D5）。
 // 由旧 Rail 的会话列表与搜索提取而来；品牌块/五页面导航/底部 Usage 入口已移出
 // （品牌与主题→IconRail，五页面→Dashboard，用量→右 dock「用量」tab）。
-import { createSignal, createEffect, createMemo, For, Show, onMount, onCleanup } from "solid-js"
+import { createSignal, createEffect, createMemo, For, Show, onMount, onCleanup, type JSX } from "solid-js"
 import { Icon } from "@mafw/ui/icon"
 import { DropdownMenu } from "@mafw/ui/dropdown-menu"
 import { menuController } from "../context-menu/controller"
@@ -59,6 +59,8 @@ type Props = {
   contentScopeKey?: string | null
   sessionID?: string | null
   onOpenFile?: (rel: string) => void
+  /** 「改动」face 的渲染器；数据与动作由 shell 注入。 */
+  renderChanges?: () => JSX.Element
   onNewSession: () => void
   onSelectSession: (id: string, title?: string, lead?: boolean, metadata?: { mafw?: { role?: string } }) => void
   onSessionDeleted?: (id: string) => void
@@ -402,7 +404,11 @@ export function LeftDock(props: Props) {
         </div>
       </Show>
 
-      <Show when={props.face !== "notes" && props.face !== "files"}>
+      <Show when={props.face === "changes"}>
+        <div class="mafw-left-dock-changes">{props.renderChanges?.()}</div>
+      </Show>
+
+      <Show when={props.face !== "notes" && props.face !== "files" && props.face !== "changes"}>
 
       <Show when={props.face === "search"}>
         <div class="mafw-left-dock-search" ref={searchRef}>

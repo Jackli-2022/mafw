@@ -14,6 +14,8 @@ import { FileComponentProvider } from "@mafw/ui/context/file"
 import { FileSSR } from "@mafw/session-ui/file-ssr"
 import { IconRail } from "./components/IconRail"
 import { LeftDock } from "./components/LeftDock"
+import { ChangesFace } from "./components/ChangesFace"
+import { resolveChangesContext, type ChangesMode } from "./changes/changes-context"
 import { MenuHost } from "./context-menu/MenuHost"
 import { TextMenuBridge } from "./context-menu/TextMenuBridge"
 import { menuController } from "./context-menu/controller"
@@ -3100,6 +3102,25 @@ export function MafwShell() {
     sessionDirectory: store.session.find((s: any) => s.id === currentSessionID())?.directory ?? null,
     diffs: mergedSessionDiffs(),
   }))
+  const changesContextInput = () => {
+    const sid = activeSessionId()
+    return {
+      projectDir: currentProject(),
+      activeSession: sid
+        ? { id: sid, title: sessions().find((session) => session.id === sid)?.title ?? "" }
+        : null,
+      sessionGoal: null,
+      currentGoal: null,
+    }
+  }
+  const changesAvailableModes = createMemo(() =>
+    (["session", "goal", "project"] as const).filter(
+      (mode) => !!resolveChangesContext({ ...changesContextInput(), mode }),
+    ),
+  )
+  const changesContext = createMemo(() =>
+    resolveChangesContext({ ...changesContextInput(), mode: changesMode() }),
+  )
 
   // 鲸群左栏：shell 持有常驻订阅，左右两栏共用同一个 pod-store
   // （spec 2026-10-30-pod-left-rail §4.1）。目录口径与右栏一致。
@@ -3522,6 +3543,7 @@ export function MafwShell() {
     face: normalizeLeftDockFace(localStorage.getItem("mafw-left-dock-face")),
     open: restoreLeftDockOpen(localStorage.getItem("mafw-left-dock-open"), window.innerWidth, initialLeftDockWidth.width),
   })
+  const [changesMode, setChangesMode] = createSignal<ChangesMode>("session")
   try {
     const storedFace = localStorage.getItem("mafw-left-dock-face")
     if (storedFace && storedFace !== leftDock().face) {
@@ -3990,6 +4012,21 @@ export function MafwShell() {
               closeLeftDockIfOverlay()
               openFileInScope(rel, root, focusScopeFromContent(contentScope()), undefined, { persist: true })
             }}
+            renderChanges={() => (
+              <ChangesFace
+                mode={changesMode()}
+                onMode={setChangesMode}
+                availableModes={changesAvailableModes()}
+                context={changesContext()}
+                sessionDiffs={contentDiffEntries()}
+                onOpenFile={(rel) => {
+                  const root = contentRoot()
+                  if (!root) return
+                  closeLeftDockIfOverlay()
+                  openFileInScope(rel, root, focusScopeFromContent(contentScope()), undefined, { persist: true })
+                }}
+              />
+            )}
             onNewSession={() => { closeLeftDockIfOverlay(); void createSession().then(sid => { if (sid) openSessionTab(sid) }) }}
             onSelectSession={openSessionTab}
             onSessionDeleted={closeSession}

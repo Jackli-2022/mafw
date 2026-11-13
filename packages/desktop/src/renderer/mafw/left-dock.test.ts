@@ -31,6 +31,7 @@ describe("left-dock 状态模型", () => {
       expect(normalizeLeftDockFace("sessions")).toBe("sessions")
       expect(normalizeLeftDockFace("search")).toBe("search")
       expect(normalizeLeftDockFace("notes")).toBe("notes")
+      expect(normalizeLeftDockFace("changes")).toBe("changes")
     })
   })
 

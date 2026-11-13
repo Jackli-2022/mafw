@@ -25,6 +25,10 @@ export type IconRailProps = {
   onNewWorktreeSession?: () => void
   worktreeEnabled?: boolean
   approvals: number
+  /** 左栏「改动」面：当前上下文的未解决评审项数 */
+  changesBadge?: number
+  /** 左栏「改动」面：有改动但无待审数字时的小圆点 */
+  changesDot?: boolean
   /** 鲸群：人类阻塞 attention 数字（spec 2026-10-30-pod-left-rail §4.3） */
   podBadge?: number
   /** 鲸群：有未查看的结果（Task 21）——独立圆点，不计入 attention 数字。 */
@@ -55,6 +59,9 @@ type RailItem = {
   badgeLabel?: string
   /** 未查看结果圆点（与数字 badge 视觉/语义分开）。 */
   resultDot?: boolean
+  /** 通用小圆点（如「改动」有内容），aria 文案由 dotLabel 决定。 */
+  dot?: boolean
+  dotLabel?: string
   connDot?: boolean
 }
 
@@ -66,6 +73,7 @@ export function IconRail(props: IconRailProps) {
 
   const destinationItems = (): RailItem[] => [
     { key: "files", icon: "folder", label: props.face === "files" ? "收起文件" : "文件", onClick: () => props.onToggleFace("files"), active: props.face === "files" },
+    { key: "changes", icon: "review", label: props.face === "changes" ? "收起改动" : "改动", onClick: () => props.onToggleFace("changes"), active: props.face === "changes", badge: props.changesBadge, dot: !!props.changesDot, dotLabel: "有改动" },
     { key: "sessions", icon: "bubble-5", label: props.face === "sessions" ? "收起讨论 (Ctrl+B)" : "讨论 (Ctrl+B)", onClick: () => props.onToggleFace("sessions"), active: props.face === "sessions" },
     { key: "search", icon: "magnifying-glass", label: props.face === "search" ? "收起搜索" : "搜索", onClick: () => props.onToggleFace("search"), active: props.face === "search" },
     { key: "notes", icon: "sticky-note", label: props.face === "notes" ? "收起便签" : "便签", onClick: () => props.onToggleFace("notes"), active: props.face === "notes" },
@@ -108,7 +116,9 @@ export function IconRail(props: IconRailProps) {
         size="small"
         class="mafw-icon-rail-icon"
         classList={{ active: !!item.active }}
-        aria-label={item.resultDot ? `${railAriaLabel(item.label, item.badge)}（有新结果）` : railAriaLabel(item.label, item.badge)}
+        aria-label={`${railAriaLabel(item.label, item.badge)}${
+          item.resultDot ? "（有新结果）" : item.dot ? `（${item.dotLabel ?? "有新结果"}）` : ""
+        }`}
         aria-pressed={item.active}
         onClick={item.onClick}
       >
@@ -116,7 +126,7 @@ export function IconRail(props: IconRailProps) {
         <Show when={(item.badge ?? 0) > 0}>
           <span class="mafw-icon-rail-badge">{item.badgeLabel ?? item.badge}</span>
         </Show>
-        <Show when={item.resultDot}>
+        <Show when={item.resultDot || item.dot}>
           <span class="mafw-icon-rail-result-dot" aria-hidden="true" />
         </Show>
         <Show when={item.connDot}>
