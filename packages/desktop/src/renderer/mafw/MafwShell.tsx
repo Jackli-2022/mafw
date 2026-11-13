@@ -135,10 +135,13 @@ import { shouldAutoOpenPicker } from "./focus/landing"
 import {
   activeDocumentTabId,
   activateDocumentTab,
+  configureDocumentListWorld,
   documentTabs,
   requestCloseDocumentTab,
 } from "./documents/document-tabs-store"
 import { fileDocumentTabId, nextDocumentTabId, webDocumentTabId } from "./documents/document-tabs-model"
+import { configureDocumentListStorage } from "./documents/document-list-persistence"
+import { configureBrowserTabsStorage } from "./documents/browser-tabs-persistence"
 import { activeBrowserTabId } from "./browser-tabs"
 import { stageActionFor } from "./focus/stage-dispatch"
 import { openGoalFocus as applyGoalFocus, openReviewItemFocus as applyReviewFocus, openChangeSetFocus as applyChangeSetFocus } from "./focus/goal-focus"
@@ -227,6 +230,8 @@ if (typeof window !== "undefined") {
     configureContentScopeStateStorage(window.localStorage)
     configureEditorDraftStorage(window.localStorage)
     configureFocusStorage(window.localStorage)
+    configureDocumentListStorage(window.localStorage)
+    configureBrowserTabsStorage(window.localStorage)
   } catch { /* storage blocked — keep in-memory */ }
 }
 
@@ -2088,6 +2093,10 @@ export function MafwShell() {
   const [focusState, setFocusState] = createSignal<WorkbenchState>(
     createWorkbenchState(currentProject() ?? "unscoped"),
   )
+  createEffect(on(
+    () => currentProject(),
+    (project) => configureDocumentListWorld(project ?? "unscoped"),
+  ))
   const [focusOpenRequest, setFocusOpenRequest] = createSignal<FocusOpenRequest | null>(null)
   const [instrumentRailOpen, setInstrumentRailOpen] = createSignal(true)
   let focusOpenNonce = 0

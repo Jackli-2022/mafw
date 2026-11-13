@@ -30,3 +30,12 @@ test("DocumentStage mounts both embedded bodies", () => {
   assert.match(stage, /onClose=/)
   assert.match(stage, /onCloseMany/)
 })
+
+test("MafwShell configures document persistence per world", () => {
+  const shell = read("src/renderer/mafw/MafwShell.tsx")
+  assert.match(shell, /configureDocumentListStorage/)
+  assert.match(shell, /configureBrowserTabsStorage/)
+  assert.match(shell, /configureDocumentListWorld/)
+  assert.match(shell, /configureDocumentListWorld\(project \?\? "unscoped"\)/)
+  assert.match(shell, /\(\) => currentProject\(\)/)
+})
