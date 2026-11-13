@@ -744,3 +744,30 @@ gateway 的 `session.get` 对不存在会话从 `200 {error:'not found'}` 改为
 - **注意旧桌面产物**：在 E10-3 之前把 200 信封当「会话可用」的旧构建会把缺失会话当活会话（不会崩，
   只是状态偏旧）。桌面与 gateway 同版本发布（managed payload），跨版本混用时以升级桌面为准。
 
+### Triage 渲染对齐真实 wire（2026-11-13，E10b-3）
+
+SDK `TriageItem` 在 E10b-2 被重塑成磁盘 / wire 真形状
+`{ id, automationId, discoveredAt, source, summary, state, userAction, deadline, proposedGoal?, llmSuggestions?, updatedAt? }`
+（旧形状 `{goalId, reason, severity, createdAt}` 是无人产出的 phantom override 遗留；gateway 侧见
+`gateway.md` §「E10b 契约覆盖第二批」）。`TriagePage` 之前仍在读 `reason` / `goalId` / `severity` / `createdAt`
+（恒为 `undefined`），并且用 `as any[]` 绕过了类型：
+
+- 新增纯模块 `renderer/mafw/triage-model.ts#triageCardModel(item)` → `{ title, meta, badge }`：
+  - **title**：`proposedGoal.title` → `summary.title` → `summary.skillDraft.name` →
+    `summary.axiomDraft.name` → `id`（空白串视为缺失）；
+  - **meta**：`source` · 本地化 `discoveredAt` · `截止 <deadline>`；非法 / 空时间**静默省略**
+    （绝不出现 `Invalid Date`），`deadline` 只在合法时追加；
+  - **badge**：`PENDING_CONFIRMATION` → 待确认 / `warn`、`CONFIRMED` → 已确认 / `neutral`、
+    `REJECTED` → 已拒绝 / `danger`；存在 `llmSuggestions` 时只追加**最高优先级**
+    （high > medium > low）的 ` · 建议确认|建议拒绝 <priority>`，**不**凭空造 severity、不改 tone。
+- `TriagePage` 改用 `createSignal<TriageItem[]>`（去掉 `as any[]`），删除 `severityColor` 内联 hex，
+  badge 走既有 token 类 `.mafw-tool-badge[data-tone]`（`warn|danger|neutral → warn|err|muted`）；
+  卡片菜单 target 只保留 `{ id }`（`buildTriageCardMenu` 不再接收没人用的 `goalId`）。
+- `triage.viewGoal` 菜单项保留，但只 `props.onOpenGoals()` 打开 Goal 面——wire 不再携带 Goal 关联，
+  不猜目标 ID。
+- preload `permissions.list()` 声明改为 canonical `MafwPermissionRequest[]`（运行时本就是它，
+  旧声明 `PermissionRequest[]` 只是类型滞后）。
+- 未展示 `proposedGoal.boundaries` / `estimatedLoops`；本批只保证「不渲染 phantom 字段」，
+  新增展示需要产品口径。
+- 测试：`triage-model.test.ts` 5 条（title 回退 / meta 非法日期 / 三种 state / llm 优先级 /
+  页面不再读 phantom 字段守卫），`card.test.ts` 与 context-menu wiring 同步。

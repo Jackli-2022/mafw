@@ -10,7 +10,12 @@
 - 分层：`src/store/`（状态机，不依赖 pi-tui）→ `src/ui/`（组件）；AppModel（tab 切换/quit）与各 store 均纯 TS 可测；ConnectionStore 监督 SSE（1/2/5/15s 退避重订阅）
 - 测试：`node --test tests/*.test.ts`（Node 22+ 类型剥离）；**源码禁用 TS parameter properties**（strip-only 不支持）；相对 import 用 `.ts` 后缀 + tsconfig `rewriteRelativeImportExtensions`（tsc 编译时改写为 .js）；UI 组件直接 `render(width)`/`handleTabKey` 断言（pi-tui **不导出 VirtualTerminal**）；冒烟测 cli 退出码（`MAFW_TUI_SMOKE=1` 启用）；冒烟与轮询注意 interval cleanup（store.stop() 必须清 schedule handle，否则 node 进程挂住）
 - 发布注意：`@earendil-works/pi-tui` + `chalk` 在 **root dependencies**（发布后全局解析），root `files` 含 `packages/tui/dist/`；SDK `event.connected()` 为 TUI 监督器新增
-- 已知类型缺口：SDK `TriageItem` 缺 `id` 字段（wire 实际有，TUI 用 `TriageItem & { id: string }`）；`--hybrid` 检索 flag 待 SDK `memory.search` 加 retriever 参数后接（v1 固定 bm25）
+- 已知类型缺口：SDK `TriageItem` 缺 `id` 字段（wire 实际有，TUI 用 `TriageItem & { id: string }`）；
+  **2026-11-13（E10b-2）已收口 `id`**（`TriageItem` 重塑为磁盘 wire 形状，`id` 必填），但
+  `ui/triage-tab.ts` 仍读 phantom `reason` / `goalId` / `severity`（真实 wire 无这些字段，渲染为
+  空 / `undefined`），且 TUI 测试因缺 `@earendil-works/pi-tui` 处于 env-red，类型漂移无法用门禁验证；
+  对齐桌面 `triage-model` 的做法留待后续 TUI 批次。`--hybrid` 检索 flag 待 SDK `memory.search`
+  加 retriever 参数后接（v1 固定 bm25）
 
 #### TUI v2 能力批（2026-09-14，对标 Claude Code/Codex/opencode/Hermes 调研缺口）
 

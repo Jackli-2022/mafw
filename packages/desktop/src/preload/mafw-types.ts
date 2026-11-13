@@ -3,7 +3,7 @@ import type {
   MemoryUnit, MemorySearchOptions, MergedSearchOptions,
   EnergyDistribution, Axiom, L5Heuristic, StickyNote, ModelUsageWindows, MemoryStats,
   Approval, TriageItem, AutomationRule, GatewayStatus,
-  QuestionRequest, PermissionRequest,
+  QuestionRequest, MafwPermissionRequest,
   AttentionList,
   DecisionList, DecisionRecord, DecisionDraftInput, DecisionConfirmInput, DecisionShelveInput, DecisionReopenInput,
   TaskEntity, TaskSubmitInput, TaskOutput, QueueItem, SessionConfigState, SessionConfigCategory,
@@ -309,7 +309,7 @@ export type MafwAPI = {
   }
 
   permissions: {
-    list: () => Promise<PermissionRequest[]>
+    list: () => Promise<MafwPermissionRequest[]>
     reply: (id: string, reply: 'once' | 'always' | 'reject', message?: string, persist?: boolean | 'tool' | 'prefix') => Promise<void>
     getMode: (sessionID: string) => Promise<{ mode: 'read-only' | 'auto' | 'full-access'; autoApprovals: number; budget: number }>
     setMode: (sessionID: string, mode: 'read-only' | 'auto' | 'full-access') => Promise<void>

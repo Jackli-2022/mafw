@@ -7156,8 +7156,8 @@ export interface operations {
                             goalId: string;
                             phase: string | null;
                             loop: number;
-                            currentWave: number;
-                            totalWaves: number;
+                            currentWave?: number;
+                            totalWaves?: number;
                             nextAction?: string;
                             error: string | null;
                             updatedAt: string | null;
@@ -7188,8 +7188,8 @@ export interface operations {
                         goalId: string;
                         phase: string | null;
                         loop: number;
-                        currentWave: number;
-                        totalWaves: number;
+                        currentWave?: number;
+                        totalWaves?: number;
                         nextAction?: string;
                         error: string | null;
                         updatedAt: string | null;
@@ -7214,7 +7214,64 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        planReview: "auto" | "manual";
+                        planApproval: {
+                            id?: string;
+                            status: "pending" | "approved" | "rejected";
+                            feedback?: string;
+                            decidedAt?: string;
+                            round: number;
+                            revision?: number;
+                            planHash?: string | null;
+                            evalHash?: string | null;
+                        } | null;
+                        planFeedback: string | null;
+                        round: number;
+                        revision: number;
+                        waves: ({
+                            status?: string;
+                            taskType?: string;
+                            strategy?: string;
+                            waves?: ({
+                                id: string;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                            ambiguities?: string[];
+                        } & {
+                            [key: string]: unknown;
+                        }) | null;
+                        wavePlanPath: string | null;
+                        wavesPath: string;
+                        goalEval: {
+                            outcome: string;
+                            conditions: {
+                                id: string;
+                                statement: string;
+                                required: boolean;
+                                evidence: string;
+                                method: string;
+                            }[];
+                            failureConditions: string[];
+                            constraints: string[];
+                            nonGoals: string[];
+                            mapping: {
+                                [key: string]: {
+                                    tasks?: string[];
+                                    probes?: string[];
+                                    artifacts?: string[];
+                                };
+                            };
+                        } | null;
+                        goalEvalPath: string | null;
+                        goalEvalError: string | null;
+                        planHash: string | null;
+                        evalHash: string | null;
+                        stale: boolean;
+                    };
+                };
             };
         };
     };
@@ -7287,7 +7344,55 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        goal: {
+                            goalId: string;
+                            title: string;
+                            phase: string;
+                            round: number;
+                            maxRounds: number;
+                            verdict: string | null;
+                            nextNode: string;
+                            nextAction: string;
+                            lastError: string | null;
+                            updatedAt: string;
+                            planReview: "auto" | "manual";
+                            planApproval: {
+                                id?: string;
+                                status: "pending" | "approved" | "rejected";
+                                feedback?: string;
+                                decidedAt?: string;
+                                round: number;
+                                revision?: number;
+                                planHash?: string | null;
+                                evalHash?: string | null;
+                            } | null;
+                        };
+                        nodes: {
+                            runId: number;
+                            loop: number;
+                            node: string;
+                            attempt: number;
+                            status: string;
+                            sessionId: string | null;
+                            startedAt: string;
+                            finishedAt: string | null;
+                            durationMs: number | null;
+                            outcome: string | null;
+                            error: string | null;
+                            tokensInput: number | null;
+                            tokensOutput: number | null;
+                            costUsd: number | null;
+                        }[];
+                        artifacts: {
+                            wavesPath: string;
+                            receipts: (string | null)[];
+                            reviewsDir: string;
+                        };
+                        outcome?: unknown;
+                    };
+                };
             };
         };
     };
@@ -7307,7 +7412,23 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        sourceRef: {
+                            sessionID?: string;
+                            messageID?: string;
+                            snapshot: string;
+                            capturedAt: string;
+                            topicId?: string;
+                            messageRange?: {
+                                from: string;
+                                to: string;
+                            };
+                        } | null;
+                        handoffPath: string | null;
+                        fullText: string | null;
+                    };
+                };
             };
         };
     };
@@ -8495,11 +8616,10 @@ export interface operations {
                     "application/json": {
                         approvals: {
                             id: string;
-                            goalId: string;
+                            goalId?: string;
                             question: string;
-                            /** @enum {string} */
-                            status: "pending" | "answered" | "expired";
-                            createdAt: string;
+                            status: "pending" | "answered";
+                            createdAt?: string;
                         }[];
                     };
                 };
@@ -8544,13 +8664,30 @@ export interface operations {
                     "application/json": {
                         items: {
                             id: string;
-                            goalId: string;
-                            reason: string;
-                            /** @enum {string} */
-                            severity: "low" | "medium" | "high";
-                            createdAt: string;
-                            /** @enum {string} */
-                            state?: "PENDING_CONFIRMATION" | "CONFIRMED" | "REJECTED";
+                            automationId: string;
+                            discoveredAt: string;
+                            source: string;
+                            summary: {
+                                [key: string]: unknown;
+                            };
+                            proposedGoal?: {
+                                title: string;
+                                boundaries: string[];
+                                estimatedLoops: number;
+                            };
+                            state: "PENDING_CONFIRMATION" | "CONFIRMED" | "REJECTED";
+                            userAction: {
+                                type: "confirm" | "ignore" | "edit";
+                                at: string;
+                            } | null;
+                            deadline: string;
+                            llmSuggestions?: {
+                                action: "confirm" | "reject";
+                                reason: string;
+                                priority: "high" | "medium" | "low";
+                                timestamp: string;
+                            }[];
+                            updatedAt?: string;
                         }[];
                     };
                 };
@@ -8708,6 +8845,9 @@ export interface operations {
                                 messageID: string;
                                 callID: string;
                             };
+                            time?: {
+                                created?: number;
+                            };
                         }[];
                     };
                 };
@@ -8768,7 +8908,30 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            sessionID: string;
+                            kind: string;
+                            targets: string[];
+                            suggestedRule?: {
+                                scope: "tool" | "prefix";
+                                value: string;
+                            };
+                            tool?: {
+                                messageID: string;
+                                callID: string;
+                            };
+                            time?: {
+                                created?: number;
+                            };
+                            extensions?: {
+                                [key: string]: unknown;
+                            };
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -8808,7 +8971,13 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        mode: "read-only" | "auto" | "full-access";
+                        autoApprovals: number;
+                        budget: number;
+                    };
+                };
             };
         };
     };
@@ -8846,7 +9015,14 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        entries: {
+                            tool: string;
+                            prefix?: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -8900,7 +9076,16 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        entries: {
+                            tool: string;
+                            pattern?: string;
+                            /** @constant */
+                            action: "allow";
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -10729,7 +10914,16 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        goalId: string;
+                        revision: number;
+                        sessionID: string | null;
+                        messages: unknown[];
+                        nextCursor?: string;
+                        sessionError?: string;
+                    };
+                };
             };
         };
     };
@@ -10792,7 +10986,59 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            podId: string;
+                            goalId: string;
+                            revision: number;
+                            status: "queued" | "running" | "completed" | "failed" | "cancelled";
+                            request: {
+                                id: string;
+                                podId: string;
+                                goalId: string;
+                                revision: number;
+                                question: string;
+                                hypothesis: string;
+                                scope: {
+                                    paths: string[];
+                                    commandClasses: string[];
+                                    network: boolean;
+                                    credentials: string[];
+                                };
+                                budget: {
+                                    maxMinutes: number;
+                                    maxUsd: number;
+                                };
+                                evidenceRequired: string[];
+                                affects: {
+                                    planAssertions?: string[];
+                                    evalMethods?: string[];
+                                    options?: string[];
+                                };
+                            };
+                            report: {
+                                probeId: string;
+                                conclusion: "supports" | "refutes" | "inconclusive";
+                                commands: string[];
+                                keyOutput: string;
+                                repro: string[];
+                                remainingAssumptions: string[];
+                                impact: {
+                                    plan?: string;
+                                    goalEval?: string;
+                                };
+                            } | null;
+                            error: string | null;
+                            requestPath: string;
+                            reportPath: string | null;
+                            createdAt: string;
+                            startedAt: string | null;
+                            endedAt: string | null;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -10855,7 +11101,27 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            podId: string;
+                            goalId: string;
+                            revision: number;
+                            status: "discussing" | "direction_review" | "planning" | "plan_review" | "queued" | "implementing" | "reviewing" | "completed" | "aborted" | "discarded";
+                            verdict: ("PASS" | "FAIL" | "MAX_RETRIES" | "ERROR" | "CANCELLED") | null;
+                            directionStatus: "none" | "pending" | "decided";
+                            directionJson: string | null;
+                            planHash: string | null;
+                            evalHash: string | null;
+                            feedback: string | null;
+                            priority: number;
+                            enqueuedAt: string;
+                            startedAt: string | null;
+                            endedAt: string | null;
+                        }[];
+                    };
+                };
             };
         };
     };

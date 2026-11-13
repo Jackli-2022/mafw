@@ -12,7 +12,7 @@ import {
   MafwCommandResult, MafwCommandDef, ManagerSessionInfo, ManagerRotateResult,
   DiscoverySnapshot, DiscoverySkillContent,
   Approval, TriageItem, AutomationRule, Todo,
-  QuestionRequest, PermissionRequest, MediaPluginState, PermissionRule, FileDiffInfo,
+  QuestionRequest, MediaPluginState, PermissionRule, FileDiffInfo,
   SessionCheckpoint, SessionCheckpointListItem, CheckpointScope, CheckpointRestoreResult, RunState, DataPart,
   TaskEntity, TaskSubmitInput, TaskOutput, QueueItem,
   MafwBackgroundOutput, BackgroundNamespace,
@@ -36,7 +36,7 @@ import {
 import { SSEConnection } from './sse'
 import type { SseSubscribeOptions } from './sse'
 import type { ApiPath } from './api-path'
-import type { MafwBackgroundJob, MafwMessage } from './view-dto'
+import type { MafwBackgroundJob, MafwMessage, MafwPermissionRequest } from './view-dto'
 
 /** 非 2xx → Error：优先 surface gateway 的 JSON `error`/`message`（桌面 toast
  *  的可操作文案），读不到 body 时回退 statusText。 */
@@ -1763,8 +1763,8 @@ export class MafwClient implements IMafwClient {
   }
 
   permissions = {
-    list: async (): Promise<PermissionRequest[]> => {
-      const data = await this.request<{ items: PermissionRequest[] }>('/api/permissions')
+    list: async (): Promise<MafwPermissionRequest[]> => {
+      const data = await this.request<{ items: MafwPermissionRequest[] }>('/api/permissions')
       return data.items || []
     },
 

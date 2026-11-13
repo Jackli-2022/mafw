@@ -3,9 +3,10 @@
 // `scripts/schema-coverage.cjs` parses `route-catalog.ts` (no TS import, no
 // generated SDK artifact) and reports how many catalog ops carry a 200
 // response schema. This test pins that report against the catalog:
-//   - the 29 ops covered at the E10 close (13 pre-E10 + 16 E10) must each keep
-//     their `response` — a silent schema deletion fails here;
-//   - the covered count may only grow (>= 29);
+//   - the 44 ops covered at the E10b-2 close (13 pre-E10 + 16 E10 + 8 E10b-1 + 7 E10b-2) must each
+//     keep their `response` — a silent schema deletion fails here;
+//   - the catalog's covered set must equal this manifest exactly (both
+//     directions), so a new covered op cannot land without a ledger entry;
 //   - the total op count is pinned (317) so an unregistered/new route surfaces
 //     instead of drifting the ledger;
 //   - the script, spawned as a child process from the gateway root, must report
@@ -25,24 +26,38 @@ interface CoverageReport {
 const GATEWAY_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPT = path.join(GATEWAY_ROOT, 'scripts', 'schema-coverage.cjs');
 
-/** Baseline 13 (E8 and earlier) + 8 session read (E10-1) + 8 pod/work read (E10-2). */
+/** Baseline 13 (E8 and earlier) + 8 session read (E10-1) + 8 pod/work read (E10-2) + 8 goal read (E10b-1) + 7 human-gate/permission read (E10b-2) = 44. */
 const E10_COVERED_OPS = [
+  'approvals.list',
   'attention.list',
   'decisions.list',
   'event.replay',
   'goals.get',
+  'goals.list',
+  'goals.plan',
+  'goals.sessions',
+  'goals.source',
+  'goals.timeline',
   'kernel.stats',
   'memory.stats',
+  'permissions.getMode',
+  'permissions.list',
+  'permissions.listAllowlist',
+  'permissions.listRules',
   'pod.events.list',
   'pods.cost',
   'pods.get',
   'pods.goals',
+  'pods.goals.probes',
   'pods.goals.result',
   'pods.goals.reviewItems',
+  'pods.goals.revisions',
+  'pods.goals.techLead',
   'pods.messages.list',
   'pods.tasks.list',
   'presence.get',
   'project.list',
+  'questions.list',
   'session.checkpoints',
   'session.children',
   'session.config',
@@ -55,6 +70,7 @@ const E10_COVERED_OPS = [
   'session.todo',
   'session.tokenSummary',
   'session.usageSummary',
+  'triage.list',
   'work.overview',
 ];
 
@@ -77,17 +93,25 @@ function runScript(): CoverageReport {
 }
 
 describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () => {
-  it('every op covered at E10 close still declares a response schema', () => {
+  it('every op listed in the ledger still declares a response schema', () => {
     const byId = new Map(catalogOps().map((op) => [op.operationId, op.hasResponse]));
     const lost = E10_COVERED_OPS.filter((id) => !byId.get(id));
     // Named so the failure says which schema disappeared, not just "expected true".
     expect(lost).toEqual([]);
   });
 
-  it('covered count is >= 29 and the catalog still has exactly 317 ops', () => {
+  it('the catalog covered set equals the ledger exactly, and the catalog still has 317 ops', () => {
     const ops = catalogOps();
-    const covered = ops.filter((op) => op.hasResponse).length;
-    expect(covered).toBeGreaterThanOrEqual(E10_COVERED_OPS.length);
+    const covered = ops
+      .filter((op) => op.hasResponse)
+      .map((op) => op.operationId)
+      .sort();
+    // Both directions, not just `covered >= ledger.length` (that lenient form let
+    // `goals.list` ship covered-but-unlisted in E10b-4): a covered op missing from
+    // the ledger lands unrecorded, a ledger op without a schema goes stale.
+    expect(covered).toEqual([...E10_COVERED_OPS].sort());
+    // Duplicates would mask an alias/typo in the ledger.
+    expect(new Set(E10_COVERED_OPS).size).toBe(E10_COVERED_OPS.length);
     // Pinned: a new/removed catalog route must be reflected in the ledger.
     expect(ops.length).toBe(TOTAL_OPS);
   });

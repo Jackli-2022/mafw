@@ -58,8 +58,9 @@ export interface Goal {
   /** E1/E3: NodeDriver 状态可能尚未定相。 */
   phase: string | null
   loop: number
-  currentWave: number
-  totalWaves: number
+  /** E10b-1: `goals.list` 的 dashboard 投影不含波次计数（`goals.get` 恒补齐）。 */
+  currentWave?: number
+  totalWaves?: number
   nextAction?: string
   /** 失败原因（成功/未失败时为 null）。 */
   error: string | null
@@ -204,10 +205,13 @@ export interface L5Heuristic {
 
 export interface Approval {
   id: string
-  goalId: string
+  /** E10b-2: flat legacy `user-questions` 文件（`run-ask-user.ts` 的 `goalId?`）可缺该键。 */
+  goalId?: string
   question: string
-  status: 'pending' | 'answered' | 'expired'
-  createdAt: string
+  /** handler 由 `answered` 派生，wire 上只有 pending / answered。 */
+  status: 'pending' | 'answered'
+  /** 同上：legacy 文件写的是 `timestamp`，投影取不到即省略。 */
+  createdAt?: string
 }
 
 // ── Questions (AskCard) — mirrors opencode QuestionV1 ──
@@ -230,10 +234,17 @@ export interface QuestionRequest {
   sessionID: string
   questions: QuestionInfo[]
   tool?: { messageID: string; callID: string }
+  /** E10b-2: 投影在源带 `createdAt` 时补 `time.created`（原生 `time` 记录原样保留）。 */
+  time?: { created?: number }
 }
 
 // ── Permissions (PermissionCard) — mirrors opencode PermissionV1 ──
 
+/**
+ * @deprecated E10b-2：`permissions.list` 的 wire 是 canonical `MafwPermissionRequest`
+ * （id / kind / targets，见 view-dto.ts 与 `permissions.list` 契约）。该 V1 形状仅保留给
+ * 仍按旧形状声明的 desktop preload 边界，新代码请用 `MafwPermissionRequest`。
+ */
 export interface PermissionRequest {
   id: string
   sessionID: string
@@ -244,13 +255,32 @@ export interface PermissionRequest {
   tool?: { messageID: string; callID: string }
 }
 
+/**
+ * E10b-2: `triage.list` 的 wire 是 `~/.mafw/triage/*.json` 的磁盘记录原样下发
+ * （`automation-engine.getTriageItems()`），不是旧 override 描述的
+ * `{goalId, reason, severity, createdAt}`（该形状没有任何 writer 产出）。
+ * `summary` 是草稿载荷（skillDraft / axiomDraft / 自动化产物），owner 为各 writer；
+ * axiom-distill writer 不写 `proposedGoal`，故为 optional。
+ */
 export interface TriageItem {
   id: string
-  goalId: string
+  automationId: string
+  discoveredAt: string
+  source: string
+  summary: Record<string, unknown>
+  proposedGoal?: { title: string; boundaries: string[]; estimatedLoops: number }
+  state: 'PENDING_CONFIRMATION' | 'CONFIRMED' | 'REJECTED'
+  userAction: null | { type: 'confirm' | 'ignore' | 'edit'; at: string }
+  deadline: string
+  llmSuggestions?: TriageLlmSuggestion[]
+  updatedAt?: string
+}
+
+export interface TriageLlmSuggestion {
+  action: 'confirm' | 'reject'
   reason: string
-  severity: 'low' | 'medium' | 'high'
-  createdAt: string
-  state?: 'PENDING_CONFIRMATION' | 'CONFIRMED' | 'REJECTED'
+  priority: 'high' | 'medium' | 'low'
+  timestamp: string
 }
 
 export interface AutomationRule {
@@ -937,6 +967,18 @@ export interface GoalNodeRunInfo {
   costUsd: number | null
 }
 
+/** 计划审阅状态（`GoalStateV3.planApproval`）；`revision` / `*Hash` 是 Task 13 内容绑定。 */
+export interface GoalPlanApproval {
+  id?: string
+  status: 'pending' | 'approved' | 'rejected'
+  feedback?: string
+  decidedAt?: string
+  round: number
+  revision?: number
+  planHash?: string | null
+  evalHash?: string | null
+}
+
 export interface GoalTimeline {
   goal: {
     goalId: string
@@ -949,35 +991,77 @@ export interface GoalTimeline {
     nextAction: string
     lastError: string | null
     updatedAt: string
-    /** W1 计划审阅状态（泳道「待批准」徽标数据源）。 */
-    planReview?: 'auto' | 'manual'
-    planApproval?: {
-      id?: string
-      status: 'pending' | 'approved' | 'rejected'
-      feedback?: string
-      decidedAt?: string
-      round: number
-    } | null
+    /** W1 计划审阅状态（泳道「待批准」徽标数据源），handler 恒发（缺省 'auto'）。 */
+    planReview: 'auto' | 'manual'
+    planApproval: GoalPlanApproval | null
   }
   nodes: GoalNodeRunInfo[]
-  artifacts: { wavesPath: string; receipts: string[]; reviewsDir: string }
+  /** `receipts` 是 execute 节点 outcome 原值（未产出回执时为 null）。 */
+  artifacts: { wavesPath: string; receipts: (string | null)[]; reviewsDir: string }
+  /** goal_outcomes 归档行（owner = goal driver archive），未归档时字段省略。 */
   outcome?: unknown
 }
+
+/** Goal Eval 单条条件（gateway `core/goal/goal-eval.ts` `GoalEvalCondition`）。 */
+export interface GoalEvalCondition {
+  id: string
+  statement: string
+  required: boolean
+  evidence: string
+  method: string
+}
+
+export interface GoalEvalMappingEntry {
+  tasks?: string[]
+  probes?: string[]
+  artifacts?: string[]
+}
+
+/** 校验/规范化后的 Goal Eval 文档（`validateGoalEval()` 输出）。 */
+export interface GoalEval {
+  outcome: string
+  conditions: GoalEvalCondition[]
+  failureConditions: string[]
+  constraints: string[]
+  nonGoals: string[]
+  mapping: Record<string, GoalEvalMappingEntry>
+}
+
+/** Wave-plan 原子文条目：`id` 必填，其余任务字段由 goal driver / plan skill 版本决定。 */
+export type GoalPlanWave = { id: string } & { [key: string]: unknown }
+
+/**
+ * Plan 文档（`wavesPath` 文件的解析结果，`GET /api/goals/:id/plan` 的 `waves` 字段）。
+ * handler 原样透传，**不是** wave 数组——数组在 `waves.waves`。
+ * 已知锚点见 `gateway/src/core/goal/node-prompts.ts` `PLAN_OUTPUT_SCHEMA`；
+ * 其余字段（quick 档 strategy、每波任务/acceptance、doc 内嵌 goalEval）随 driver 版本演进，
+ * `goalEval` / `ambiguities` 之外的内容由索引签名透传。
+ */
+export type GoalPlanDocument = {
+  status?: string
+  taskType?: string
+  strategy?: string
+  waves?: GoalPlanWave[]
+  ambiguities?: string[]
+} & { [key: string]: unknown }
 
 /** W1 计划审阅：GET /api/goals/:id/plan 响应。 */
 export interface GoalPlanInfo {
   planReview: 'auto' | 'manual'
-  planApproval: {
-    id?: string
-    status: 'pending' | 'approved' | 'rejected'
-    feedback?: string
-    decidedAt?: string
-    round: number
-  } | null
+  planApproval: GoalPlanApproval | null
   planFeedback: string | null
   round: number
-  waves: unknown
+  revision: number
+  waves: GoalPlanDocument | null
   wavePlanPath: string | null
+  wavesPath: string
+  goalEval: GoalEval | null
+  goalEvalPath: string | null
+  goalEvalError: string | null
+  planHash: string | null
+  evalHash: string | null
+  /** 已批准内容与当前内容不一致（客户端据此判断能否继续批准）。 */
+  stale: boolean
 }
 
 export interface GoalsNamespace {
@@ -2115,7 +2199,8 @@ export interface PermissionRule {
 }
 
 export interface PermissionsNamespace {
-  list(): Promise<PermissionRequest[]>
+  /** E10b-2: 与 `permissions.list` 契约一致（canonical `MafwPermissionRequest` 投影）。 */
+  list(): Promise<import('./view-dto').MafwPermissionRequest[]>
   reply(id: string, reply: 'once' | 'always' | 'reject', message?: string, persist?: boolean | 'tool' | 'prefix'): Promise<void>
   /**
    * per-session 审批模式（gateway kv 持久）。三档预设：read-only（只读工具放行、变更必问）/

@@ -9,7 +9,8 @@
 - SDK `contract/overrides.json`：**18** 个 override op。其中 5 个落在本批范围：
   `goals.list`、`goals.sessions`、`approvals.list`、`questions.list`、`triage.list`。
 - 生成链：catalog `response` 优先于 overrides（`merge-contract.mjs` 明确打印 "catalog response schema wins over overrides"）。
-- 目标终值：29 + 15 = **44/316**；override 数 18 → **13**（5 个转为 code-first 后删除 override 条目）。
+- 目标终值：29 + 15 = **44** 个 covered（E10b 收口时分母 316；合并 main 后分母 **317**——main 新增
+  `session.discoverySkillInvoke`，covered 不变 → **44/317**）；override 数 18 → **13**（5 个转 code-first 后删除 override 条目）。
 
 ## 1. 范围
 
@@ -42,7 +43,7 @@ Reserve：`goals.control`（POST，不在本批）、`pods.goals.worktree.diff`�
 
 ### E10b-3 收口
 
-- `schema-coverage.test.ts`：清单追加 15 个 op，阈值 29 → 44，`TOTAL_OPS` 仍 316。
+- `schema-coverage.test.ts`：清单追加 15 个 op，阈值 29 → 44，`TOTAL_OPS` 317（合并 main 新增 `session.discoverySkillInvoke` 后）。
 - 删除 5 个已被 catalog schema 取代的 override 条目（`goals.list` / `goals.sessions` / `approvals.list` / `questions.list` / `triage.list`），并在 `overrides.json` 的 `$comment` 记录原因。
 - docs + release + 全量门禁。
 
@@ -56,13 +57,13 @@ Reserve：`goals.control`（POST，不在本批）、`pods.goals.worktree.diff`�
 ## 3. 非目标
 
 - 请求体 schema、POST/PUT/PATCH/DELETE。
-- 其余 ~272 ops。
+- 其余 ~273 ops（合并 main 后 317 − 44）。
 - `permissions` 的写接口（reply/allowlist/rules 变更）。
 - OS keychain / MCP / 配额 / admission（属 E11）。
 
 ## 4. 门禁
 
-gateway：tsc 0 + `emit:openapi` 无意外 diff + `schema:coverage` 44/316 + targeted（api-contract、schema-coverage、goals/pods/permissions/approvals 路由）+ 全量（9 env-red）。
+gateway：tsc 0 + `emit:openapi` 无意外 diff + `schema:coverage` 44/317（合并 main 后）+ targeted（api-contract、schema-coverage、goals/pods/permissions/approvals 路由）+ 全量（9 env-red）。
 SDK：tsc 0 + full（225 基线）+ contract 4/4 + `gen:api` 后无漂移。
 desktop：full（1 resolver env-red）+ tsgo（2 `node:tls` 噪声）。
 mobile：targeted（本批无 wire 变化，预期无改动）。

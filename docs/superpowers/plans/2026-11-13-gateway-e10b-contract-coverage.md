@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development.
 
-**Goal:** 15 个读接口 code-first schema；覆盖 29 → 44/316；5 个 override 转 code-first。
+**Goal:** 15 个读接口 code-first schema；覆盖 29 → 44 个 covered（合并 main 后 **44/317**）；5 个 override 转 code-first。
 
 **Spec:** `docs/superpowers/specs/2026-11-13-gateway-e10b-contract-coverage-design.md`
 
@@ -34,7 +34,7 @@
 
 ### Task 3: 收口（E10b-3）
 
-- [ ] docs：`gateway.md` 覆盖台账 44/316、override 18 → 13；`desktop.md` / `mobile.md` 如有消费面变化。
+- [ ] docs：`gateway.md` 覆盖台账 44/317、override 18 → 13；`desktop.md` / `mobile.md` 如有消费面变化。
 - [ ] release `docs/releases/2026-11-13-gateway-e10b-contract-coverage.md`。
 - [ ] 全量门禁 + 终审 + 合并 + 部署（gateway + desktop 重建）。
 - [ ] Commit `docs(gateway): E10b contract coverage closeout (E10b-3)`。

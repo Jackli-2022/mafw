@@ -42,11 +42,30 @@ import {
   PodCostResponse,
   PodEventsResponse,
   PodGoalResultResponse,
+  PodGoalRevisionsResponse,
   PodGoalsResponse,
   PodMessagesResponse,
+  PodProbesResponse,
   PodReviewItemsResponse,
   PodTasksResponse,
+  PodTechLeadHistoryResponse,
 } from '../../src/routes/schemas/pods';
+import {
+  GoalListResponse,
+  GoalPlanResponse,
+  GoalSessionsResponse,
+  GoalSourceResponse,
+  GoalTimelineResponse,
+} from '../../src/routes/schemas/goals';
+import {
+  AllowlistListResponse,
+  ApprovalListResponse,
+  PermissionListResponse,
+  PermissionModeResponse,
+  PermissionRulesListResponse,
+  QuestionListResponse,
+  TriageListResponse,
+} from '../../src/routes/schemas/human-gate';
 import { WorkOverviewResponse } from '../../src/routes/schemas/work';
 import { handleAttention } from '../../src/routes/attention';
 import { handleDecisionList } from '../../src/routes/decisions';
@@ -832,6 +851,474 @@ describe('api-contract: E10-2 pod / work 读接口 response schema（8 ops）', 
     expect(Value.Check(PodReviewItemsResponse, { revision: 1, items: [] })).toBe(true);
 
     expect(Value.Check(PodCostResponse, { spentUsd: 1.5, limitUsd: 10 })).toBe(true);
+  });
+});
+
+describe('api-contract: E10b-1 goal / pod-goal read response schema (8 ops)', () => {
+  const findOp = (operationId: string): any => {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const candidate of Object.values<any>(methods)) {
+        if (candidate?.operationId === operationId) return candidate;
+      }
+    }
+    return null;
+  };
+
+  /** 每个 op 的承重 property + 数组元素必填（少一个客户端按比较/渲染就会缺字段）。 */
+  const EXPECTED: Record<string, { fields: string[]; item?: { at: string; required: string[] } }> = {
+    'goals.list': {
+      fields: ['goals'],
+      item: { at: 'goals', required: ['goalId', 'phase', 'loop', 'error', 'updatedAt'] },
+    },
+    'goals.plan': {
+      fields: [
+        'planReview', 'planApproval', 'planFeedback', 'round', 'revision', 'waves',
+        'wavePlanPath', 'wavesPath', 'goalEval', 'goalEvalPath', 'goalEvalError',
+        'planHash', 'evalHash', 'stale',
+      ],
+    },
+    'goals.sessions': {
+      fields: ['sessions'],
+      item: { at: 'sessions', required: ['sessionID', 'phase', 'loop'] },
+    },
+    'goals.timeline': {
+      fields: ['goal', 'nodes', 'artifacts'],
+      item: {
+        at: 'nodes',
+        required: [
+          'runId', 'loop', 'node', 'attempt', 'status', 'sessionId', 'startedAt',
+          'finishedAt', 'durationMs', 'outcome', 'error', 'tokensInput', 'tokensOutput', 'costUsd',
+        ],
+      },
+    },
+    'goals.source': { fields: ['sourceRef', 'handoffPath', 'fullText'] },
+    'pods.goals.techLead': { fields: ['goalId', 'revision', 'sessionID', 'messages'] },
+    'pods.goals.probes': {
+      fields: ['items'],
+      item: {
+        at: 'items',
+        required: [
+          'id', 'podId', 'goalId', 'revision', 'status', 'request', 'report', 'error',
+          'requestPath', 'reportPath', 'createdAt', 'startedAt', 'endedAt',
+        ],
+      },
+    },
+    'pods.goals.revisions': {
+      fields: ['items'],
+      item: {
+        at: 'items',
+        required: [
+          'id', 'podId', 'goalId', 'revision', 'status', 'verdict', 'directionStatus',
+          'directionJson', 'planHash', 'evalHash', 'feedback', 'priority',
+          'enqueuedAt', 'startedAt', 'endedAt',
+        ],
+      },
+    },
+  };
+
+  test('eight ops expose a 200 JSON schema with properties (not a whole-response widening)', () => {
+    const problems: string[] = [];
+    for (const [operationId, spec] of Object.entries(EXPECTED)) {
+      const op = findOp(operationId);
+      if (!op) { problems.push(`${operationId}: missing from openapi.json`); continue; }
+      const schema = op.responses?.['200']?.content?.['application/json']?.schema;
+      if (!schema) { problems.push(`${operationId}: responses.200 missing application/json schema`); continue; }
+      const properties = Object.keys(schema.properties ?? {});
+      if (properties.length === 0) { problems.push(`${operationId}: schema has no properties (widened)`); continue; }
+      for (const field of spec.fields) {
+        if (!properties.includes(field)) problems.push(`${operationId}: schema missing property '${field}'`);
+      }
+    }
+    if (problems.length) {
+      console.error('[api-contract] E10b-1 response schema missing - run emit:openapi + merge-contract:\n' + problems.join('\n'));
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test('array item required fields match the handler wire (items/goals/sessions/nodes)', () => {
+    const problems: string[] = [];
+    for (const [operationId, spec] of Object.entries(EXPECTED)) {
+      if (!spec.item) continue;
+      const schema = findOp(operationId).responses['200'].content['application/json'].schema;
+      const required = schema.properties?.[spec.item.at]?.items?.required ?? [];
+      for (const field of spec.item.required) {
+        if (!required.includes(field)) problems.push(`${operationId}: ${spec.item.at}.items missing required '${field}'`);
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test('goals.list / goals.sessions are code-first now (wave counters optional, time optional)', () => {
+    const list = findOp('goals.list').responses['200']['content']['application/json'].schema;
+    expect(list.properties.goals.items.required).toEqual(
+      expect.arrayContaining(['goalId', 'phase', 'loop', 'error', 'updatedAt']),
+    );
+    // dashboard projection does not carry wave counters; the shared Goal DTO makes them optional.
+    expect(list.properties.goals.items.required).not.toContain('currentWave');
+    expect(list.properties.goals.items.required).not.toContain('totalWaves');
+    expect(list.properties.goals.items.properties.currentWave).toBeDefined();
+
+    const sessions = findOp('goals.sessions').responses['200']['content']['application/json'].schema;
+    // time is runtime-enriched and optional, unlike the legacy override's required object.
+    expect(sessions.properties.sessions.items.properties.time).toBeDefined();
+    expect(sessions.properties.sessions.items.required).not.toContain('time');
+  });
+
+  test('timeline / plan key shapes pinned (node runs, nullable receipts, hashes, wave items)', () => {
+    const timeline = findOp('goals.timeline').responses['200']['content']['application/json'].schema;
+    expect(timeline.properties.goal.required).toEqual(
+      expect.arrayContaining(['goalId', 'phase', 'planReview', 'planApproval']),
+    );
+    const receipts = timeline.properties.artifacts.properties.receipts;
+    expect(receipts.type).toBe('array');
+    expect(receipts.items.anyOf?.map((entry: any) => entry.type))
+      .toEqual(expect.arrayContaining(['string', 'null']));
+    expect(timeline.properties.nodes.items.properties.durationMs.anyOf?.map((entry: any) => entry.type))
+      .toEqual(expect.arrayContaining(['number', 'null']));
+
+    const plan = findOp('goals.plan').responses['200']['content']['application/json'].schema;
+    expect(plan.properties.stale.type).toBe('boolean');
+    expect(plan.properties.planHash.anyOf?.map((entry: any) => entry.type))
+      .toEqual(expect.arrayContaining(['string', 'null']));
+    // `waves` 是 plan 文档本身（handler 原样透传 `readFileSync(wavesPath)`），
+    // 不是 goal-plan wave 数组——数组在 `waves.waves` 里。
+    expect(plan.properties.waves.anyOf?.map((entry: any) => entry.type))
+      .toEqual(expect.arrayContaining(['object', 'null']));
+    expect(plan.properties.waves.anyOf[0].properties.waves.items.required).toEqual(['id']);
+    expect(plan.properties.goalEval.anyOf[0].properties.conditions.items.required)
+      .toEqual(['id', 'statement', 'required', 'evidence', 'method']);
+  });
+
+  test('probes / revisions enums and row-projection boundary (goalMode not modeled)', () => {
+    const probes = findOp('pods.goals.probes').responses['200']['content']['application/json'].schema;
+    expect(probes.properties.items.items.properties.status.anyOf?.map((entry: any) => entry.const))
+      .toEqual(expect.arrayContaining(['queued', 'running', 'completed', 'failed', 'cancelled']));
+    expect(probes.properties.items.items.properties.request.properties.scope.required)
+      .toEqual(['paths', 'commandClasses', 'network', 'credentials']);
+
+    const revisions = findOp('pods.goals.revisions').responses['200']['content']['application/json'].schema;
+    const item = revisions.properties.items.items;
+    expect(item.properties.status.anyOf?.map((entry: any) => entry.const))
+      .toEqual(expect.arrayContaining(['discussing', 'plan_review', 'implementing', 'completed']));
+    expect(item.properties.goalMode).toBeUndefined();
+  });
+
+  test('handler wire samples validate against each schema (Value.Check)', () => {
+    const listItem = {
+      goalId: 'g1', phase: 'execute', loop: 1, nextAction: 'RUNNING_execute',
+      error: null, updatedAt: '2026-11-13T00:00:00.000Z',
+    };
+    expect(Value.Check(GoalListResponse, { goals: [listItem] })).toBe(true);
+    expect(Value.Check(GoalListResponse, { goals: [] })).toBe(true);
+    // goals.get's same DTO (with wave counters) stays within the list schema.
+    expect(Value.Check(GoalListResponse, { goals: [{ ...listItem, currentWave: 1, totalWaves: 3 }] })).toBe(true);
+
+    expect(Value.Check(GoalSessionsResponse, {
+      sessions: [
+        { sessionID: 's1', phase: 'plan', loop: 1 },
+        { sessionID: 's2', phase: 'execute', loop: 2, title: 'wave 2', time: { created: 1, updated: 2 } },
+      ],
+    })).toBe(true);
+
+    const planApproval = {
+      id: 'ap_1', status: 'pending', round: 1, revision: 2,
+      planHash: 'w-hash', evalHash: null,
+    };
+    const plan = {
+      planReview: 'manual', planApproval, planFeedback: null, round: 1, revision: 2,
+      waves: {
+        status: 'ready',
+        taskType: 'feature',
+        waves: [{ id: 'w1', tasks: [{ id: 't1', title: 'do it' }] }],
+      },
+      wavePlanPath: '/g/waves.json', wavesPath: '/g/waves.json',
+      goalEval: {
+        outcome: 'tests pass',
+        conditions: [{ id: 'c1', statement: 'jest green', required: true, evidence: 'jest', method: 'run' }],
+        failureConditions: ['jest red'], constraints: ['no new deps'], nonGoals: [],
+        mapping: { c1: { tasks: ['t1'], probes: [], artifacts: [] } },
+      },
+      goalEvalPath: '/g/goal-eval.json', goalEvalError: null,
+      planHash: 'w-hash', evalHash: 'e-hash', stale: false,
+    };
+    expect(Value.Check(GoalPlanResponse, plan)).toBe(true);
+    expect([...Value.Errors(GoalPlanResponse, plan)]).toEqual([]);
+    expect(Value.Check(GoalPlanResponse, {
+      ...plan, waves: null, goalEval: null, goalEvalPath: null, planHash: null, planApproval: null,
+    })).toBe(true);
+    // A bare wave array is the pre-E10b-5 (wrong) wire shape: reject it, so the
+    // schema cannot silently drift back to `GoalPlanWave[]`.
+    expect(Value.Check(GoalPlanResponse, { ...plan, waves: [{ id: 'w1' }] })).toBe(false);
+    // need_clarification documents carry `ambiguities` and no waves.
+    expect(Value.Check(GoalPlanResponse, {
+      ...plan, waves: { status: 'need_clarification', ambiguities: ['which DB?'] },
+    })).toBe(true);
+
+    const node = {
+      runId: 7, loop: 1, node: 'execute', attempt: 1, status: 'completed', sessionId: 's1',
+      startedAt: '2026-11-13T00:00:00.000Z', finishedAt: '2026-11-13T00:01:00.000Z',
+      durationMs: 60000, outcome: 'ok', error: null,
+      tokensInput: 10, tokensOutput: 20, costUsd: 0.01,
+    };
+    const timeline = {
+      goal: {
+        goalId: 'g1', title: 'Ship', phase: 'review', round: 1, maxRounds: 3,
+        verdict: null, nextNode: 'review', nextAction: 'RUNNING_review',
+        lastError: null, updatedAt: '2026-11-13T00:01:00.000Z',
+        planReview: 'auto', planApproval: null,
+      },
+      nodes: [node, { ...node, runId: 8, outcome: null, error: null }],
+      artifacts: { wavesPath: '/g/waves.json', receipts: ['ok', null], reviewsDir: '/g/reviews' },
+    };
+    expect(Value.Check(GoalTimelineResponse, timeline)).toBe(true);
+    expect([...Value.Errors(GoalTimelineResponse, timeline)]).toEqual([]);
+    // Unarchived goals omit outcome (undefined never reaches JSON).
+    expect(Value.Check(GoalTimelineResponse, { ...timeline, outcome: undefined })).toBe(true);
+
+    expect(Value.Check(GoalSourceResponse, {
+      sourceRef: {
+        sessionID: 's1', messageID: 'm1', snapshot: 'lead handoff text',
+        capturedAt: '2026-11-13T00:00:00.000Z', topicId: 'topic_1',
+        messageRange: { from: 'm1', to: 'm2' },
+      },
+      handoffPath: '/g/context/lead-handoff.md', fullText: '# handoff',
+    })).toBe(true);
+    expect(Value.Check(GoalSourceResponse, {
+      sourceRef: null, handoffPath: null, fullText: null,
+    })).toBe(true);
+
+    const techLead = {
+      goalId: 'g1', revision: 2, sessionID: 'sess_tl',
+      messages: [{ info: { id: 'm1' }, parts: [{ type: 'text', text: 'hi' }] }],
+      nextCursor: 'c1',
+    };
+    expect(Value.Check(PodTechLeadHistoryResponse, techLead)).toBe(true);
+    expect(Value.Check(PodTechLeadHistoryResponse, {
+      goalId: 'g1', revision: 2, sessionID: null, messages: [], sessionError: 'boot failed',
+    })).toBe(true);
+
+    const probe = {
+      id: 'probe_1', podId: 'pod_1', goalId: 'g1', revision: 1, status: 'completed',
+      request: {
+        id: 'probe_1', podId: 'pod_1', goalId: 'g1', revision: 1,
+        question: 'does it build?', hypothesis: 'yes',
+        scope: { paths: ['.'], commandClasses: ['build'], network: false, credentials: [] },
+        budget: { maxMinutes: 10, maxUsd: 1 },
+        evidenceRequired: ['log'], affects: { planAssertions: ['a1'] },
+      },
+      report: {
+        probeId: 'probe_1', conclusion: 'supports', commands: ['npm run build'], keyOutput: 'ok',
+        repro: ['npm run build'], remainingAssumptions: [], impact: { plan: 'keep' },
+      },
+      error: null, requestPath: '/g/probes/probe_1/request.json',
+      reportPath: '/g/probes/probe_1/report.json',
+      createdAt: '2026-11-13T00:00:00.000Z',
+      startedAt: '2026-11-13T00:00:01.000Z', endedAt: '2026-11-13T00:00:02.000Z',
+    };
+    expect(Value.Check(PodProbesResponse, { items: [probe] })).toBe(true);
+    expect(Value.Check(PodProbesResponse, { items: [] })).toBe(true);
+
+    const revision = {
+      id: 'rev_1', podId: 'pod_1', goalId: 'g1', revision: 1, status: 'implementing',
+      verdict: null, directionStatus: 'decided', directionJson: null,
+      planHash: 'w-hash', evalHash: 'e-hash', feedback: null, priority: 0,
+      enqueuedAt: '2026-11-13T00:00:00.000Z', startedAt: '2026-11-13T00:00:01.000Z',
+      endedAt: null,
+      // Row projection column (not part of the contract) must not break validation.
+      goalMode: 'standard',
+    };
+    expect(Value.Check(PodGoalRevisionsResponse, { items: [revision] })).toBe(true);
+    expect(Value.Check(PodGoalRevisionsResponse, { items: [] })).toBe(true);
+  });
+});
+
+describe('api-contract: E10b-2 human-gate / permission read response schema (7 ops)', () => {
+  const findOp = (operationId: string): any => {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const candidate of Object.values<any>(methods)) {
+        if (candidate?.operationId === operationId) return candidate;
+      }
+    }
+    return null;
+  };
+
+  const schemaOf = (operationId: string): any =>
+    findOp(operationId).responses['200']['content']['application/json'].schema;
+
+  /** 每个 op 的承重 property + 数组元素必填（handler 恒发的字段）。 */
+  const EXPECTED: Record<string, { fields: string[]; item?: { at: string; required: string[] } }> = {
+    'approvals.list': {
+      fields: ['approvals'],
+      item: { at: 'approvals', required: ['id', 'question', 'status'] },
+    },
+    'questions.list': {
+      fields: ['items'],
+      item: { at: 'items', required: ['id', 'sessionID', 'questions'] },
+    },
+    'triage.list': {
+      fields: ['items'],
+      item: {
+        at: 'items',
+        required: [
+          'id', 'automationId', 'discoveredAt', 'source', 'summary',
+          'state', 'userAction', 'deadline',
+        ],
+      },
+    },
+    'permissions.list': {
+      fields: ['items'],
+      item: { at: 'items', required: ['id', 'sessionID', 'kind', 'targets'] },
+    },
+    'permissions.getMode': { fields: ['mode', 'autoApprovals', 'budget'] },
+    'permissions.listAllowlist': {
+      fields: ['entries'],
+      item: { at: 'entries', required: ['tool'] },
+    },
+    'permissions.listRules': {
+      fields: ['entries'],
+      item: { at: 'entries', required: ['tool', 'action'] },
+    },
+  };
+
+  test('seven ops expose a 200 JSON schema with properties (not a whole-response widening)', () => {
+    const problems: string[] = [];
+    for (const [operationId, spec] of Object.entries(EXPECTED)) {
+      const op = findOp(operationId);
+      if (!op) { problems.push(`${operationId}: missing from openapi.json`); continue; }
+      const schema = op.responses?.['200']?.content?.['application/json']?.schema;
+      if (!schema) { problems.push(`${operationId}: responses.200 missing application/json schema`); continue; }
+      const properties = Object.keys(schema.properties ?? {});
+      if (properties.length === 0) { problems.push(`${operationId}: schema has no properties (widened)`); continue; }
+      for (const field of spec.fields) {
+        if (!properties.includes(field)) problems.push(`${operationId}: schema missing property '${field}'`);
+      }
+    }
+    if (problems.length) {
+      console.error('[api-contract] E10b-2 response schema missing - run emit:openapi + merge-contract:\n' + problems.join('\n'));
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test('array item required fields match the handler wire (approvals/items/entries)', () => {
+    const problems: string[] = [];
+    for (const [operationId, spec] of Object.entries(EXPECTED)) {
+      if (!spec.item) continue;
+      const required = schemaOf(operationId).properties?.[spec.item.at]?.items?.required ?? [];
+      for (const field of spec.item.required) {
+        if (!required.includes(field)) problems.push(`${operationId}: ${spec.item.at}.items missing required '${field}'`);
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test('overrides are gone: approvals / questions / triage now describe handler truth', () => {
+    // approvals.list: handler scans user-questions files; goalId/createdAt are legacy-optional,
+    // status is derived from `answered` and never 'expired' (the old override claimed otherwise).
+    const approval = schemaOf('approvals.list').properties.approvals.items;
+    expect(approval.required).toEqual(['id', 'question', 'status']);
+    expect(approval.properties.goalId).toBeDefined();
+    expect(approval.required).not.toContain('goalId');
+    expect(approval.required).not.toContain('createdAt');
+    expect(approval.properties.status.anyOf?.map((entry: any) => entry.const))
+      .toEqual(['pending', 'answered']);
+
+    // questions.list: projection always emits id/sessionID/questions; time only when createdAt exists.
+    const question = schemaOf('questions.list').properties.items.items;
+    expect(question.required).toEqual(['id', 'sessionID', 'questions']);
+    expect(question.properties.time).toBeDefined();
+    expect(question.required).not.toContain('time');
+    expect(question.properties.questions.items.required).toEqual(['question', 'options']);
+
+    // triage.list: automation-engine TriageItem (disk JSON passthrough), not the phantom
+    // {goalId, reason, severity, createdAt} shape the override described.
+    const triage = schemaOf('triage.list').properties.items.items;
+    expect(triage.properties.goalId).toBeUndefined();
+    expect(triage.properties.reason).toBeUndefined();
+    expect(triage.properties.severity).toBeUndefined();
+    expect(triage.properties.automationId).toBeDefined();
+    expect(triage.properties.proposedGoal).toBeDefined();
+    // axiom-distill writer omits proposedGoal -> optional.
+    expect(triage.required).not.toContain('proposedGoal');
+    expect(triage.properties.state.anyOf?.map((entry: any) => entry.const))
+      .toEqual(['PENDING_CONFIRMATION', 'CONFIRMED', 'REJECTED']);
+  });
+
+  test('permissions.* pin the projection / policy / store shapes', () => {
+    const perm = schemaOf('permissions.list').properties.items.items;
+    expect(perm.properties.kind.type).toBe('string');
+    expect(perm.properties.targets.type).toBe('array');
+    expect(perm.properties.suggestedRule.properties.scope.anyOf?.map((entry: any) => entry.const))
+      .toEqual(['tool', 'prefix']);
+
+    const mode = schemaOf('permissions.getMode');
+    expect(mode.required).toEqual(expect.arrayContaining(['mode', 'autoApprovals', 'budget']));
+    expect(mode.properties.mode.anyOf?.map((entry: any) => entry.const))
+      .toEqual(['read-only', 'auto', 'full-access']);
+
+    const allow = schemaOf('permissions.listAllowlist').properties.entries.items;
+    expect(allow.required).toEqual(['tool']);
+    expect(allow.properties.prefix.type).toBe('string');
+
+    const rules = schemaOf('permissions.listRules').properties.entries.items;
+    expect(rules.required).toEqual(expect.arrayContaining(['tool', 'action']));
+    expect(rules.properties.action.const).toBe('allow');
+    expect(rules.properties.pattern.type).toBe('string');
+  });
+
+  test('handler wire samples validate against each schema (Value.Check)', () => {
+    // Flat legacy file (goalId + createdAt) and nested legacy (goalId from dir name).
+    expect(Value.Check(ApprovalListResponse, {
+      approvals: [
+        { id: 'flat-1', goalId: 'g1', question: 'Q1', status: 'pending', createdAt: 't1' },
+        { id: 'q_1', question: 'Q2', status: 'answered' },
+      ],
+    })).toBe(true);
+    expect([...Value.Errors(ApprovalListResponse, {
+      approvals: [{ id: 'q_1', question: 'Q2', status: 'paused' }],
+    })]).not.toEqual([]);
+
+    expect(Value.Check(QuestionListResponse, {
+      items: [{
+        id: 'que_1', sessionID: 's1',
+        questions: [{ question: 'Pick', header: 'H', options: [{ label: 'a' }, { label: 'b', description: 'B' }], multiple: true }],
+        tool: { messageID: 'm1', callID: 'c1' },
+        time: { created: 1 },
+        // residual runtime fields are passed through untouched
+        form: { mode: 'single' },
+      }],
+    })).toBe(true);
+
+    const triage = {
+      id: 'triage-1', automationId: 'auto-1', discoveredAt: '2026-11-13T00:00:00.000Z',
+      source: 'skill-promotion', summary: { skillDraft: { name: 'x', memoryId: 'mem-1' } },
+      proposedGoal: { title: 'Materialize skill x', boundaries: [], estimatedLoops: 1 },
+      state: 'PENDING_CONFIRMATION', userAction: null,
+      deadline: '2026-11-20T00:00:00.000Z', llmSuggestions: [],
+      updatedAt: '2026-11-13T00:00:00.000Z',
+    };
+    expect(Value.Check(TriageListResponse, { items: [triage] })).toBe(true);
+    // axiom-distill writer: no proposedGoal, no llmSuggestions.
+    expect(Value.Check(TriageListResponse, {
+      items: [{ ...triage, proposedGoal: undefined, llmSuggestions: undefined, summary: { axiomDraft: { candidates: ['a'] } } }],
+    })).toBe(true);
+    expect(Value.Check(TriageListResponse, { items: [] })).toBe(true);
+
+    expect(Value.Check(PermissionListResponse, {
+      items: [{
+        id: 'per_1', sessionID: 's1', kind: 'bash', targets: ['ls'],
+        suggestedRule: { scope: 'prefix', value: 'ls' },
+        tool: { messageID: 'm1', callID: 'c1' },
+        time: { created: 1 },
+        extensions: { metadata: { impact: 'read' }, risk: 'low' },
+      }],
+    })).toBe(true);
+    expect(Value.Check(PermissionListResponse, { items: [{ id: 'per_2', sessionID: 's1', kind: 'tool', targets: [] }] })).toBe(true);
+
+    expect(Value.Check(PermissionModeResponse, { mode: 'read-only', autoApprovals: 0, budget: 25 })).toBe(true);
+    expect(Value.Check(AllowlistListResponse, { entries: [{ tool: 'read' }, { tool: 'bash', prefix: 'git' }] })).toBe(true);
+    expect(Value.Check(PermissionRulesListResponse, {
+      entries: [{ tool: 'bash', action: 'allow' }, { tool: 'edit', pattern: 'src/**', action: 'allow' }],
+    })).toBe(true);
   });
 });
 

@@ -12,8 +12,13 @@ import type {
   // E10-2 pod / work read surface
   PodGoal, PodTask, PodMessage, PodEventItem, PodGoalResult, PodReviewItemList, PodWorkOverview,
   PodNamespace,
+  // E10b-1 goal / pod-goal read surface
+  GoalPlanInfo, GoalTimeline, GoalNodeRunInfo, PodTechLeadHistory, PodProbe, PodGoalRevision,
+  // E10b-2 human-gate / permission read surface
+  PermissionsNamespace,
 } from './types'
-import type { MafwDiff } from './view-dto'
+import type { MafwClient } from './client'
+import type { MafwDiff, MafwPermissionRequest } from './view-dto'
 
 /** 鐢熸垚褰㈢姸锛歳esponses.200.content['application/json'] 涓嬬洿鎺ュ唴鑱?schema 灞炴€э紙鏃?schema: 鍖呰锛夈€?*/
 type Resp<S> = S extends { responses: { 200: { content: { 'application/json': infer C } } } } ? C : never
@@ -94,6 +99,32 @@ const CHECK_pods_cost: AssertEq<Resp<operations['pods.cost']>, SdkPodCost> = tru
 /** work.overview 的 groups/counts 五桶键集与 `PodWorkBucket` 一一对应。 */
 const CHECK_work_overview: AssertEq<Resp<operations['work.overview']>, PodWorkOverview> = true
 
+// E10b-1: goal / pod-goal 读接口（8 ops）—— schema 是 handler wire 的转写，DTO 必须同步。
+const CHECK_goals_plan: AssertEq<Resp<operations['goals.plan']>, GoalPlanInfo> = true
+const CHECK_goals_timeline: AssertEq<Resp<operations['goals.timeline']>, GoalTimeline> = true
+const CHECK_goals_timeline_node: AssertEq<ItemOf<Resp<operations['goals.timeline']>, 'nodes'>, GoalNodeRunInfo> = true
+/** goals.source 无命名 DTO：锁 client `goals.source` 的现有内联返回类型。 */
+type SdkGoalSource = Awaited<ReturnType<MafwClient['goals']['source']>>
+const CHECK_goals_source: AssertEq<Resp<operations['goals.source']>, SdkGoalSource> = true
+const CHECK_pods_tech_lead: AssertEq<Resp<operations['pods.goals.techLead']>, PodTechLeadHistory> = true
+type GenPodProbeItem = ItemOf<Resp<operations['pods.goals.probes']>, 'items'>
+const CHECK_pods_probes_item: AssertEq<GenPodProbeItem, PodProbe> = true
+type GenPodGoalRevisionItem = ItemOf<Resp<operations['pods.goals.revisions']>, 'items'>
+const CHECK_pods_revisions_item: AssertEq<GenPodGoalRevisionItem, PodGoalRevision> = true
+
+// E10b-2: human-gate / permission 读接口（7 ops）—— 三个 override 转 code-first。
+// Approval / QuestionRequest / TriageItem 的 AssertEq（上方 CHECK_*）保持；
+// 其中 TriageItem 按 handler wire 重塑（磁盘 triage JSON），Approval 的 legacy 可选字段同步。
+type GenPermissionItem = ItemOf<Resp<operations['permissions.list']>, 'items'>
+const CHECK_permissions_list_item: AssertEq<GenPermissionItem, MafwPermissionRequest> = true
+/** getMode / listAllowlist / listRules 无独立命名 DTO：锁 PermissionsNamespace 的返回类型。 */
+type SdkPermissionMode = Awaited<ReturnType<PermissionsNamespace['getMode']>>
+const CHECK_permissions_get_mode: AssertEq<Resp<operations['permissions.getMode']>, SdkPermissionMode> = true
+type SdkAllowlist = Awaited<ReturnType<PermissionsNamespace['listAllowlist']>>
+const CHECK_permissions_allowlist: AssertEq<Resp<operations['permissions.listAllowlist']>, SdkAllowlist> = true
+type SdkRules = Awaited<ReturnType<PermissionsNamespace['listRules']>>
+const CHECK_permissions_rules: AssertEq<Resp<operations['permissions.listRules']>, SdkRules> = true
+
 /**
  * session.messages：`data` 的 part 判别联合由 view-dto 契约拥有，schema 只承诺
  * SDK 边界守卫 `MafwMessageShape` 认可的形状；游标必须与 client 的
@@ -120,4 +151,10 @@ export const CONTRACT_COMPAT_CHECKS = [
   CHECK_pod_events_list_item, CHECK_pods_tasks_list_item, CHECK_pods_messages_list_item,
   CHECK_pods_goals_item, CHECK_pods_goal_result, CHECK_pods_review_items, CHECK_pods_cost,
   CHECK_work_overview,
+  // E10b-1
+  CHECK_goals_plan, CHECK_goals_timeline, CHECK_goals_timeline_node, CHECK_goals_source,
+  CHECK_pods_tech_lead, CHECK_pods_probes_item, CHECK_pods_revisions_item,
+  // E10b-2
+  CHECK_permissions_list_item, CHECK_permissions_get_mode, CHECK_permissions_allowlist,
+  CHECK_permissions_rules,
 ]
