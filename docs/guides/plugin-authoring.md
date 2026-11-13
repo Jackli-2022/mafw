@@ -239,6 +239,53 @@ actions: {
 | `timeout` | 408 | 超过 `timeoutMs` |
 | `aborted` / `unloaded` / `stale-revision` | 409 | 调用被取消、包被卸载、revision 已替换 |
 
+## 5.1 Agent tools
+
+`tools` 是数组；每个 tool 由 Host 命名空间化为 `plugin:<package>:<name>`：
+
+```js
+tools: [{
+  name: 'echo',
+  title: 'Echo',
+  description: 'Echo the input text',
+  inputSchema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
+  outputSchema: { type: 'object' },
+  timeoutMs: 5000, // 缺省 60_000，上限 60_000
+  handler(input, call) {
+    // call.sessionID?: 会话提示
+    // call.signal:    超时/卸载时 abort
+    return { text: `echo:${input.text}` }; // string / { text, isError? } / 其他 JSON
+  },
+}]
+```
+
+- tool 只会注册进 gateway 的 `RuntimeTools.registerTools`；handler 永远不进入 Desktop。
+- handler 抛错、超时、health failed 都只返回 `isError: true` 的 tool 结果，不拖垮 turn。
+- 本阶段包 tool 只支持 `scope: 'global'`；`scope: 'session'` 会在 candidate 校验阶段失败。需要按会话区分时，在 handler 内读 `call.sessionID`。
+- tool 执行需要 `MAFW_KERNEL_V2_TOOLS=1`；flag 关闭时包仍可安装/校验，但 tool 不执行。
+- 包 reload/disable/remove 时按 revision 自动退订；旧 handler 不会继续被调用。
+
+## 5.2 Canonical event observers
+
+`observers` 是只读、post-hoc 的 canonical 事件订阅，不是 interceptor：
+
+```js
+observers: [{
+  id: 'watch-tools',
+  filter: { types: ['part.updated'], sessionID: 'optional-session' },
+  timeoutMs: 1000,
+  onEvent(event) {
+    // event: { type, sessionID?, projectId?, at, properties? }（已脱敏）
+  },
+}]
+```
+
+- Host 把 id 命名空间化为 `plugin:<package>:<observer>`。
+- `types` 支持精确名或尾部 `*` 前缀；不写 filter = 全收。
+- observer 失败/超时只丢该次观察，不影响 SSE、recall、turn；不能 veto/rewrite。
+- 工具三原语（`tool.call` / `tool.delta` / `tool.result`）在 observer 之前已被丢弃；工具事件请观察 `part.updated` 的 tool part。
+- observer 执行需要 `MAFW_KERNEL_V2_OBSERVERS=1`；flag 关闭时只校验声明，不投递事件。
+
 ## 6. UI slots
 
 `ui` 接受五个 slot（未知 slot 直接失败）：`panels` / `configPages` / `toolCards` / `messageWindows` 是**声明式数据**（Desktop 用内置组件渲染）；`webSurfaces` 是**沙箱 Web 页面**（插件自己写 HTML/JS）。两类可以并存于同一个包。

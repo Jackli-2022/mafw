@@ -12,6 +12,15 @@
 
 **Roadmap:** `docs/superpowers/plans/2026-11-12-fixed-core-capability-roadmap.md`
 
+## Progress（2026-11-13）
+
+- Task 3.6.1–3.6.5 全部完成。
+- 定向门禁：**531 / 531 pass**；新增 5 个测试。
+- gateway 全量：**7005 passed / 1 skipped / 7006 total**，run 4/5 连续 clean；run 1/3 的 worktree 5s timeout 为负载下的既存 flake，单文件重跑通过。
+- typecheck（gateway）：通过。
+- 交付记录：`docs/releases/2026-11-13-capability-kernel-phase3-6.md`。
+- 默认两个 flag 都关闭；包 tools/observers 仅校验，不执行。
+
 ## Global Constraints
 
 - 默认行为不变：`MAFW_KERNEL_V2_TOOLS` / `MAFW_KERNEL_V2_OBSERVERS` 未开启时，package tools/observers 只被校验和记录，不执行。

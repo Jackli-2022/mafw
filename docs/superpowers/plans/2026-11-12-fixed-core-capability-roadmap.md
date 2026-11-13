@@ -307,6 +307,19 @@ Probe 的作用是让 tech lead 在看详细计划前先看清关键未知；每
 
 **Gate G3.5**：flag 关闭 v1 零行为变化；flag 打开 observer/tool 可用；失败 fail-open；全量绿。
 
+## Phase 3.6：Plugin host 自动注册（2026-11-13 已交付，默认关闭）
+
+**目标**：统一插件包在 `activate()` 贡献 tools/observers 后，由 PackageHost 自动同步到 live bridge，并按 revision 退订。
+
+- `activate()` 新增 `tools` / `observers` 数组；validator 校验后进入 `ActivatedContributions`。
+- `PluginHost.bindKernelV2(cb)` 发布 `PluginToolEntry[]` / `PluginObserverEntry[]`（含 revision）。
+- `runtime/v2-live.ts` 的 `syncPluginContributions()` 按 revision diff；remove/disable/stop 发布空数组。
+- 命名空间：`plugin:<package>:<tool>` / `plugin:<package>:<observer>`；包 tool 暂只支持 global scope。
+- 详细计划：`docs/superpowers/plans/2026-11-13-kernel-v2-plugin-host-auto-registration.md`
+- 交付记录：`docs/releases/2026-11-13-capability-kernel-phase3-6.md`
+
+**Gate G3.6**：activate 贡献自动注册；reload 换 revision；remove/disable 退订；flag 关闭零执行；全量绿。
+
 ## Phase 4：Desktop UI 槽位（4–6 周）
 
 **目标**：固定 shell + 更多声明式槽位；不注入原生组件。
