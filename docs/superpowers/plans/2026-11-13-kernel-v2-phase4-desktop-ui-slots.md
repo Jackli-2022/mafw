@@ -15,12 +15,14 @@
 ## Progress（2026-11-13）
 
 - S4（Task 4.1–4.4）完成。
-- plugin-contract：**42 / 42 pass**（新增 2）。
-- gateway 定向：**45 / 45 pass**；gateway 全量 **7006 passed / 1 skipped / 7007 total**，run 2/3 连续 clean。
-- desktop 全量：**3625 / 3625 pass**；S4 新增 16 个测试。
+- composer action 完成（contract + desktop 宿主按钮 + `insertText` 草稿插入）。
+- plugin-contract：**43 / 43 pass**（S4 +2，composer +1）。
+- gateway 全量：**7008 passed / 1 skipped / 7009 total**，连续两次 clean。
+- desktop 全量：**3754 / 3754 pass**；S4 新增 16 个测试，composer 新增 5 个。
 - gateway typecheck 通过；desktop 用 `tsc` typecheck 通过（`tsgo` 依赖当前未安装）。
-- 交付记录：`docs/releases/2026-11-13-capability-kernel-phase4-s4.md`。
-- 明确未做：composer action、panel rail entry、chat part renderer、danger/shortcut 键位。
+- 交付记录：`docs/releases/2026-11-13-capability-kernel-phase4-s4.md`、`docs/releases/2026-11-13-capability-kernel-phase4-composer.md`。
+- G4 达成（menu + composer）。
+- 明确未做：panel rail entry、chat part renderer、danger/shortcut 键位、composer action input 参数。
 
 ## Global Constraints
 

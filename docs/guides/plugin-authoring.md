@@ -311,6 +311,28 @@ ui: {
 - 包 reload/disable/remove 时贡献随 revision 自动退订。
 - 不注入原生组件；菜单项只渲染 label/icon/shortcut 文本。
 
+## 5.4 Composer actions
+
+`ui.composerActions` 在 chat composer 左侧工具条贡献按钮（最多 3 个）：
+
+```js
+ui: {
+  composerActions: [{
+    id: 'draft-reply',
+    label: 'Draft reply',
+    action: 'draftReply', // 必须是本包 actions 里的 action
+    icon: 'bubble-5',
+    order: 10,
+  }],
+}
+```
+
+- 点击调用 `plugins.invoke(package, action, {}, sessionID)`。
+- action 返回 `{ insertText: '...' }` 时追加到当前会话草稿，**不会自动发送**；其他返回值忽略。
+- action 失败只弹 toast，不影响 composer；没有活动会话时按钮不可用。
+- 图标必须是已注册的插件图标；未知图标回退为 `plus`。
+- 不注入原生组件；按钮由宿主渲染。
+
 ## 6. UI slots
 
 `ui` 接受五个 slot（未知 slot 直接失败）：`panels` / `configPages` / `toolCards` / `messageWindows` 是**声明式数据**（Desktop 用内置组件渲染）；`webSurfaces` 是**沙箱 Web 页面**（插件自己写 HTML/JS）。两类可以并存于同一个包。

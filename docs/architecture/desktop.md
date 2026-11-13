@@ -71,16 +71,19 @@
 - **DocumentStage / 统一文档条（2026-11-13）**：`DocumentStage` 把文件与浏览器 tab 合成同一条
   `DocumentTabs`，顺序为打开顺序（文件 id 带 root，浏览器 id 带 tab id）；`EditorDock` /
   `BrowserDock` 以 `embedded` 模式常挂载，按 active kind 用 wrapper 的 `display` 显隐，切换不重载
-  webview、不丢编辑器状态。`DocumentToolbar` 仍由 active body 自己渲染：编辑器动作（保存 / 外部 /
-  预览 / 改动）与浏览器动作（后退 / 前进 / 刷新 / 地址 / 点选 / 外部）不合并。tab 右键菜单由
+  webview、不丢编辑器状态。2026-11-13 Phase 2B 起，toolbar 由 document 层统一渲染：body 通过
+  `registerDocumentToolbar` 注册 `leading / center / trailing` slot，`DocumentStage` 只渲染
+  active kind 的一份 `DocumentToolbar`（编辑器的保存 / 外部 / 预览 / 改动，浏览器的后退 / 前进 /
+  刷新 / 地址 / 点选 / 外部仍由各自 body 拥有）。`打开浏览器` 命令会先创建一个空白浏览器 tab 再
+  聚焦 web subject，保证统一 toolbar 有地址栏可输入。tab 右键菜单由
   `buildDocumentTabMenu` 按 kind 提供关闭 / 关闭其他 / 关闭右侧 / 复制路径（文件）或复制链接 /
   系统浏览器打开（网页）。`MafwShell` 是 select / close / close-others / close-right 的路由层，
   关闭请求经 `document-tabs-store` 一次性队列交给 owning body 执行。2026-11-13 Phase 2A 起，
   tab 顺序是 store 权威：支持跨文件 / 网页拖拽，顺序按 world（项目）持久化到
   `mafw-document-list:v1:<worldId>`；浏览器 tab 的 id / URL / 标题持久化到
   `mafw-browser-tabs:v1`，重启后恢复并重新加载 webview。文件内容 / dirty / 草稿仍走
-  `editor-drafts` / `content-scope-state`；`EditorModel` / `BrowserTab` 详细状态迁移与统一
-  toolbar 动作注册仍属 Phase 2B / 2C。左 dock 文件面头部提供手动刷新（保留展开态）。
+  `editor-drafts` / `content-scope-state`；`EditorModel` / `BrowserTab` 详细状态迁移仍属
+  Phase 2C。左 dock 文件面头部提供手动刷新（保留展开态）。
 - **编辑器**：默认 **Monaco**（VS Code 内核；`mafw-editor-engine=codemirror` 回退，挂载失败自动回退），
   行内 diff 装饰、Ctrl/Cmd+S、MAFW 主题 token 映射、minimap ≥720px。详情见本文件 Monaco 段。
 - **文件预览**：md（session-ui markdown）、json 折叠树、csv/tsv 表格、svg 预览/源码、图片、pdf（Chromium
@@ -202,6 +205,20 @@ O(n²) 传输）。启动扫描 + fs.watch 热重载，fail-open（坏插件跳�
 - 点击贡献项调用 `window.api.mafw.plugins.invoke(pkg, action, {}, sessionID)`；失败只记录，不影响菜单。
 - 支持的 surface：`editor.tab` / `file.tree` / `file.path` / `message` / `session.row`。
 - 仍是宿主渲染：不注入 Solid 组件，不改变 preload/webview sandbox。
+
+#### 统一插件包 composer action（2026-11-13）
+
+统一插件包可以通过 `ui.composerActions` 在 chat composer 左侧工具条贡献按钮：
+
+```ts
+{ id, label, action, icon?, order? }
+```
+
+- gateway 校验：`action` 必须引用同包 action；icon 必须已注册；每包最多 3 个。
+- desktop `PluginComposerActions` 只渲染 `ButtonV2 + Icon`，点击调用 `window.api.mafw.plugins.invoke(pkg, action, {}, sessionID)`。
+- action 返回 `{ insertText: string }` 时写入当前会话草稿（`pushComposerInsert`），**不自动发送**；其他返回值忽略。
+- action 失败弹 toast，不影响 composer；无活动会话时按钮 disabled。
+- 仍是宿主渲染，不注入 Solid 组件，不改变 preload/webview sandbox。
 
 #### 插件平面与 kernel-v2（2026-11-12，规划中）
 
