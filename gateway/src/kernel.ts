@@ -139,6 +139,7 @@ import { createToolRegistry } from "./mcp/tool-registry";
 import { abstractionLevelFor } from './core/memory/abstraction-level';
 import { MemoryService } from "./memory/service";
 import { initEmbeddingRuntime, computeDenseScores, getEmbeddingRuntime, setEmbeddingRuntime } from "./memory/embedding-runtime";
+import { createEmbeddingProviderRegistry, disposeEmbeddingProvider, embeddingProviderIdFromConfig } from "./memory/embedding-registry";
 import { EmbeddingIndexer } from "./memory/vector-store";
 import { onMemoryWritten } from "./memory/harmonic-file-store";
 import { MinHashMerger } from "./core/memory/minhash-merger";
@@ -1756,27 +1757,47 @@ class MafwScheduler {
    *  engines without a gateway restart. */
   private initEmbeddingServices(mafwDir: string): void {
     const old = getEmbeddingRuntime();
-    if (old && typeof (old.provider as any).killServer === 'function') {
-      try { (old.provider as any).killServer(); } catch { /* best effort */ }
-    }
+    if (old) disposeEmbeddingProvider(old.provider);
     setEmbeddingRuntime(null);
     this.consolidationService = null;
 
     // P1: dense embedding runtime (opt-in via memory.embedding.provider).
     // Fires on every memory write (static listener) — BM25 stays instant,
     // vectors converge asynchronously; all failures degrade to BM25-only.
-    const embeddingRuntime = initEmbeddingRuntime({
-      getApiKeyFn: this.runtimeGetApiKey.bind(this),
-      baseDir: mafwDir,
-      vectorDb: this.getGatewayDb().getStore(),
-      getTextForId: async (id) => {
-        try {
-          const u = await new HarmonicUnitFileStore(mafwDir).read(id);
-          return u ? EmbeddingIndexer.documentText(u) : null;
-        } catch { return null; }
-      },
-    });
-    if (!embeddingRuntime) return;
+    const cfg = config.memory.embedding;
+    const providerId = embeddingProviderIdFromConfig(cfg);
+    const registry = createEmbeddingProviderRegistry();
+    const provider = providerId
+      ? registry.create(providerId, {
+          provider: cfg.provider,
+          model: cfg.model,
+          dimensions: cfg.dimensions,
+          baseUrl: cfg.baseUrl || undefined,
+          threads: cfg.threads,
+          engine: cfg.engine,
+          llamacpp: cfg.llamacpp,
+          getApiKeyFn: this.runtimeGetApiKey.bind(this),
+        })
+      : null;
+    const embeddingRuntime = provider
+      ? initEmbeddingRuntime({
+          baseDir: mafwDir,
+          provider,
+          providerId: providerId ?? undefined,
+          cfg: cfg as any,
+          vectorDb: this.getGatewayDb().getStore(),
+          getTextForId: async (id) => {
+            try {
+              const u = await new HarmonicUnitFileStore(mafwDir).read(id);
+              return u ? EmbeddingIndexer.documentText(u) : null;
+            } catch { return null; }
+          },
+        })
+      : null;
+    if (!embeddingRuntime) {
+      disposeEmbeddingProvider(provider);
+      return;
+    }
 
     // P2: Memora-style consolidation (embedding recall + LLM UPDATE/CREATE).
     // Judge model: `recall.judgeModel` (falls back to workerModel). It must be
@@ -2266,6 +2287,7 @@ class MafwScheduler {
           engine: e.engine ?? 'onnx',
           model: e.model,
           dimensions: e.dimensions,
+          baseUrl: e.baseUrl ?? '',
           threads: e.threads,
           llamacpp: {
             gpu: e.llamacpp?.gpu ?? 'cpu',
@@ -2286,6 +2308,9 @@ class MafwScheduler {
         const vectors = rt?.vectors.size() ?? 0;
         return {
           active: rt?.provider.name ?? null,
+          providerId: rt?.providerId ?? null,
+          modelTag: rt?.modelTag ?? null,
+          dims: rt?.dims ?? null,
           vectors,
           indexEntries,
           coverage: indexEntries > 0 ? vectors / indexEntries : 1,

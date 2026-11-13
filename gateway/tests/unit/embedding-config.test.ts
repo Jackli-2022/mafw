@@ -7,6 +7,7 @@ function makeDeps(overrides: Partial<EmbeddingConfigDeps> = {}) {
     engine: 'onnx',
     model: 'onnx-community/Qwen3-Embedding-0.6B-ONNX',
     dimensions: 1024,
+    baseUrl: '',
     threads: 2,
     llamacpp: { gpu: 'cpu', threads: 2, contextSize: 2048 },
   };
@@ -26,6 +27,9 @@ function makeDeps(overrides: Partial<EmbeddingConfigDeps> = {}) {
     reinit: () => { calls.reinit++; return { active: persisted.provider === 'off' ? null : `local:${persisted.model}` }; },
     runtimeState: () => ({
       active: persisted.provider === 'off' ? null : `local:${persisted.model}`,
+      providerId: persisted.provider === 'off' ? null : 'local-onnx',
+      modelTag: persisted.provider === 'off' ? null : 'local_onnx-community_Qwen3-Embedding-0.6B-ONNX',
+      dims: persisted.provider === 'off' ? null : 1024,
       vectors: 100,
       indexEntries: 100,
       coverage: 1,
@@ -80,6 +84,27 @@ describe('embedding-config route', () => {
     expect(r.body.current.engine).toBe('onnx');
     expect(r.body.runtime.coverage).toBe(1);
     expect(r.body.available.gpus).toEqual(['cpu', 'vulkan', 'cuda']);
+  });
+
+  it('GET exposes providerId, modelTag and dims', async () => {
+    const deps = makeDeps();
+    server = createServer(deps);
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const r = await request(server, 'GET');
+    expect(r.body.runtime.providerId).toBe('local-onnx');
+    expect(r.body.runtime.modelTag).toBe('local_onnx-community_Qwen3-Embedding-0.6B-ONNX');
+    expect(r.body.runtime.dims).toBe(1024);
+  });
+
+  it('POST persists baseUrl and rejects non-http(s) values', async () => {
+    const deps = makeDeps();
+    server = createServer(deps);
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const ok = await request(server, 'POST', { baseUrl: 'https://example.test/v1/embeddings' });
+    expect(ok.status).toBe(200);
+    expect(ok.body.current.baseUrl).toBe('https://example.test/v1/embeddings');
+    const bad = await request(server, 'POST', { baseUrl: 'file:///etc/passwd' });
+    expect(bad.status).toBe(400);
   });
 
   it('POST switches engine: persists + reinits + schedules backfill', async () => {

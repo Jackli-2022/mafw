@@ -12,6 +12,7 @@ export interface EmbeddingConfigState {
   engine: 'onnx' | 'llamacpp';
   model: string;
   dimensions: number;
+  baseUrl: string;
   threads: number;
   llamacpp: {
     gpu: string;
@@ -24,6 +25,9 @@ export interface EmbeddingConfigState {
 export interface EmbeddingRuntimeState {
   /** Active provider name (e.g. "llamacpp:Qwen3-Embedding-0.6B.Q4_K_M.gguf"), null when off. */
   active: string | null;
+  providerId: string | null;
+  modelTag: string | null;
+  dims: number | null;
   vectors: number;
   indexEntries: number;
   coverage: number;
@@ -73,6 +77,7 @@ export interface EmbeddingConfigUpdate {
   provider?: string;
   engine?: string;
   model?: string;
+  baseUrl?: string;
   threads?: number;
   llamacpp?: { gpu?: string; threads?: number; contextSize?: number; batchSize?: number };
 }
@@ -102,6 +107,13 @@ export async function handleEmbeddingConfigUpdate(
   if (body.engine !== undefined && !ENGINES.includes(body.engine as any)) {
     errors.push(`engine must be one of ${ENGINES.join('|')}`);
   }
+  if (body.baseUrl !== undefined) {
+    if (typeof body.baseUrl !== 'string') {
+      errors.push('baseUrl must be a string');
+    } else if (body.baseUrl !== '' && !/^https?:\/\//i.test(body.baseUrl)) {
+      errors.push('baseUrl must be empty or an http(s) URL');
+    }
+  }
   if (body.threads !== undefined && (!Number.isInteger(body.threads) || body.threads < 1 || body.threads > 32)) {
     errors.push('threads must be an integer in 1..32');
   }
@@ -127,6 +139,7 @@ export async function handleEmbeddingConfigUpdate(
   if (body.provider !== undefined) embedding.provider = body.provider;
   if (body.engine !== undefined) embedding.engine = body.engine;
   if (body.model !== undefined) embedding.model = body.model;
+  if (body.baseUrl !== undefined) embedding.baseUrl = body.baseUrl;
   if (body.threads !== undefined) embedding.threads = body.threads;
   if (body.llamacpp && Object.keys(body.llamacpp).length > 0) embedding.llamacpp = body.llamacpp;
   deps.persist({ memory: { embedding } });
