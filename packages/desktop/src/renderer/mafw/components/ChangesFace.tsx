@@ -1,12 +1,13 @@
 // 左栏「改动」面：上下文选择 + 会话改动树。
 // 后续 slice 会补 Goal 版本差异、评审项与项目索引；本文件保持单一入口。
-import { For, Show, createMemo, type JSX } from "solid-js"
+import { For, Show, createEffect, createMemo, on, type JSX } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { DockEmpty } from "./dock-panel"
 import { buildChangeTree, changeStatusLetter, type ChangeTreeNode } from "./change-tree"
 import type { FileDiffEntry } from "./DiffReviewPanel"
 import type { ChangesContext, ChangesMode } from "../changes/changes-context"
+import type { ChangesRequest } from "../changes/changes-request"
 
 const MODE_LABEL: Record<ChangesMode, string> = {
   session: "当前讨论",
@@ -21,6 +22,7 @@ export type ChangesFaceProps = {
   onMode: (mode: ChangesMode) => void
   availableModes?: readonly ChangesMode[]
   context: ChangesContext | null
+  request?: ChangesRequest | null
   sessionDiffs: readonly FileDiffEntry[]
   onOpenFile: (rel: string) => void
   onOpenSessionDiff?: (file: FileDiffEntry) => void
@@ -83,6 +85,7 @@ function ChangeRows(props: {
 }
 
 export function ChangesFace(props: ChangesFaceProps): JSX.Element {
+  let sessionRef: HTMLDivElement | undefined
   const tree = createMemo(() => buildChangeTree([...props.sessionDiffs]))
   const totals = createMemo(() => props.sessionDiffs.reduce<{
     files: number
@@ -96,6 +99,16 @@ export function ChangesFace(props: ChangesFaceProps): JSX.Element {
     }),
     { files: 0, additions: 0, deletions: 0 },
   ))
+
+  createEffect(on(() => props.request?.seq, () => {
+    const request = props.request
+    if (!request) return
+    props.onMode(request.context.kind)
+    queueMicrotask(() => {
+      if (request.section === "review") return
+      sessionRef?.scrollIntoView({ block: "nearest" })
+    })
+  }, { defer: true }))
 
   return (
     <div class="mafw-changes-face" aria-label="改动">
@@ -133,7 +146,7 @@ export function ChangesFace(props: ChangesFaceProps): JSX.Element {
               />
             }
           >
-            <div class="mafw-changes-section">
+            <div class="mafw-changes-section" ref={(el) => { sessionRef = el }}>
               <div class="mafw-changes-section-head">
                 <span>本会话改动</span>
                 <Show when={totals().files > 0}>

@@ -15,7 +15,8 @@ import { FileSSR } from "@mafw/session-ui/file-ssr"
 import { IconRail } from "./components/IconRail"
 import { LeftDock } from "./components/LeftDock"
 import { ChangesFace } from "./components/ChangesFace"
-import { resolveChangesContext, type ChangesMode } from "./changes/changes-context"
+import { resolveChangesContext, type ChangesMode, type ChangesContext, type GoalRef } from "./changes/changes-context"
+import { nextChangesRequest, type ChangesRequest } from "./changes/changes-request"
 import { MenuHost } from "./context-menu/MenuHost"
 import { TextMenuBridge } from "./context-menu/TextMenuBridge"
 import { menuController } from "./context-menu/controller"
@@ -3149,6 +3150,36 @@ export function MafwShell() {
   const changesContext = createMemo(() =>
     resolveChangesContext({ ...changesContextInput(), mode: changesMode() }),
   )
+  const sessionGoalRef = (): GoalRef | null => {
+    const sid = currentSessionID()
+    if (!sid) return null
+    const detail = podStore.detail()
+    const identity = goalSessionIdentity(detail, sid)
+    if (!identity?.goalId) return null
+    const goal = detail?.goals.find((item) => item.goalId === identity.goalId)
+    if (!goal) return null
+    return {
+      podId: goal.podId,
+      goalId: goal.goalId,
+      revision: goal.activeRevision ?? goal.revision ?? identity.revision ?? 1,
+      title: goal.title,
+      worktreeDir: null,
+    }
+  }
+  const sessionChangesContext = (): ChangesContext | null => {
+    const sid = currentSessionID()
+    return sid ? { kind: "session", sessionID: sid, goal: sessionGoalRef() } : null
+  }
+  const openChangesFace = (input: {
+    context: ChangesContext
+    section?: "review" | "changes"
+    rel?: string
+    line?: number
+  }) => {
+    revealWorkbench()
+    openLeftDockFace("changes")
+    setChangesRequest((previous) => nextChangesRequest(previous, input))
+  }
 
   // 鲸群左栏：shell 持有常驻订阅，左右两栏共用同一个 pod-store
   // （spec 2026-10-30-pod-left-rail §4.1）。目录口径与右栏一致。
@@ -3572,6 +3603,7 @@ export function MafwShell() {
     open: restoreLeftDockOpen(localStorage.getItem("mafw-left-dock-open"), window.innerWidth, initialLeftDockWidth.width),
   })
   const [changesMode, setChangesMode] = createSignal<ChangesMode>("session")
+  const [changesRequest, setChangesRequest] = createSignal<ChangesRequest | null>(null)
   try {
     const storedFace = localStorage.getItem("mafw-left-dock-face")
     if (storedFace && storedFace !== leftDock().face) {
@@ -4046,6 +4078,7 @@ export function MafwShell() {
                 onMode={setChangesMode}
                 availableModes={changesAvailableModes()}
                 context={changesContext()}
+                request={changesRequest()}
                 sessionDiffs={contentDiffEntries()}
                 onOpenSessionDiff={(file) => {
                   const sid = currentSessionID()
@@ -4178,7 +4211,7 @@ export function MafwShell() {
                           techLeadTarget={activeTechLeadTarget}
                           sendBlocked={activeTechLeadBlocked}
                           onOpenFile={(root, rel) => openFileInScope(rel, root, focusScopeFromContent(contentScope()))}
-                          onOpenDiffReview={() => openProjectChangeSetFocus("review")}
+                          onOpenDiffReview={() => openChangesFace({ context: sessionChangesContext() ?? { kind: "project" }, section: "changes" })}
                           worktreeEnabled={worktreeEnabled()}
                           revertUndoEnabled={revertUndoEnabled()}
                           onCreateWorktreeSession={createWorktreeSession}
