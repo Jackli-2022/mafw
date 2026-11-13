@@ -4,7 +4,8 @@
 
 export type KeybindingAction =
   | "toggle-terminal"    // Ctrl+`（capture 阶段，terminal-hotkey）
-  | "command-palette"    // Ctrl+P
+  | "command-palette"    // Ctrl+Shift+P
+  | "open-picker"        // Ctrl+P（取景器：文件 / Goal / 终端…）
   | "toggle-leftdock"    // Ctrl+B
   | "toggle-rightdock"   // Ctrl+Alt+B
   | "toggle-workbench-focus" // Ctrl+Alt+F（Ctrl+Shift+M 是 main 进程全局 Quick Entry）
@@ -17,6 +18,7 @@ export type KeybindingAction =
 export const KEYBINDING_LABELS: Record<KeybindingAction, string> = {
   "toggle-terminal": "终端开合",
   "command-palette": "命令面板",
+  "open-picker": "打开取景器",
   "toggle-leftdock": "左侧栏开合",
   "toggle-rightdock": "右侧面板开合",
   "toggle-workbench-focus": "切换工作台全宽",
@@ -28,7 +30,8 @@ export const KEYBINDING_LABELS: Record<KeybindingAction, string> = {
 
 export const DEFAULT_KEYBINDINGS: Record<KeybindingAction, string> = {
   "toggle-terminal": "ctrl+`",
-  "command-palette": "ctrl+p",
+  "command-palette": "ctrl+shift+p",
+  "open-picker": "ctrl+p",
   "toggle-leftdock": "ctrl+b",
   "toggle-rightdock": "ctrl+alt+b",
   "toggle-workbench-focus": "ctrl+alt+f",

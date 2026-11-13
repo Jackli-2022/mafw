@@ -9,7 +9,7 @@ export type PaletteItem = {
   run: () => void
 }
 
-// Global command palette (Ctrl+P): app-level navigation and actions. The
+// Global command palette (Ctrl+Shift+P): app-level navigation and actions. The
 // in-chat slash commands stay in the composer; this palette covers shell
 // navigation (tabs, settings, window management) that has no composer focus.
 export function CommandPalette(props: {

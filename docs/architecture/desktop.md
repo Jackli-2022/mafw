@@ -38,6 +38,7 @@
 - **Stage-first 焦点基础（2026-11-12 Plan 1）**：content context 走 `FrameBar / LensBar / FocusStage /
   SubjectPicker`；焦点 = `scope + subject + lens + place`，按世界持久化到 `mafw-focus:v1:<worldId>`。
   `⌘P` / `Ctrl+P` 取景器打开文件、最近内容、浏览器、终端；返回 / 面包屑通过 `syncStageToFocus` 同步舞台。
+  `⌘⇧P` / `Ctrl+Shift+P` 是命令面板（应用级动作）；两者都走 C3 快捷键注册表、互斥，同一时刻只显示一个浮层。
   `project` / `goal` / `review` 仍是 legacy context；旧 `ContentScopeState` 在首次启动时迁移。详见
   `docs/releases/2026-11-12-workbench-focus-foundation.md`。
 - **Goal / 评审焦点（2026-11-12 Plan 2）**：Goal 以 `goal` scope 进入焦点栈，Goal 总览复用

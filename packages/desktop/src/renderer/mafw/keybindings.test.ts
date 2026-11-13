@@ -58,17 +58,22 @@ describe("resolveKeybindings", () => {
     expect(resolveKeybindings({})).toEqual(DEFAULT_KEYBINDINGS)
     expect(resolveKeybindings(undefined)).toEqual(DEFAULT_KEYBINDINGS)
   })
+  test("Ctrl+P 归取景器，命令面板用 Ctrl+Shift+P（VS Code 惯例）", () => {
+    expect(DEFAULT_KEYBINDINGS["open-picker"]).toBe("ctrl+p")
+    expect(DEFAULT_KEYBINDINGS["command-palette"]).toBe("ctrl+shift+p")
+    expect(KEYBINDING_LABELS["open-picker"]).toBe("打开取景器")
+  })
 })
 
 describe("findConflicts", () => {
   test("两个动作同键 → 报告", () => {
-    const c = findConflicts({ ...DEFAULT_KEYBINDINGS, taskbar: "ctrl+p" } as any)
+    const c = findConflicts({ ...DEFAULT_KEYBINDINGS, taskbar: "ctrl+shift+p" } as any)
     expect(c).toHaveLength(1)
-    expect(c[0].combo).toBe("ctrl+p")
+    expect(c[0].combo).toBe("ctrl+shift+p")
     expect(c[0].actions).toContain("command-palette")
     expect(c[0].actions).toContain("taskbar")
   })
-  test("无冲突 → 空", () => {
+  test("无冲突 → 空（取景器与命令面板不撞键）", () => {
     expect(findConflicts(DEFAULT_KEYBINDINGS)).toEqual([])
   })
 })

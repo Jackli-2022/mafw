@@ -27,13 +27,13 @@ test("focus back closes the last focus and lands on the picker", () => {
   assert.match(shell, /const focusCrumb = \(index: number\) => \{/)
 })
 
-test("picker opens with Meta+P or Ctrl+P and closes with Escape", () => {
-  assert.match(shell, /event\.key === "p"/)
-  assert.match(shell, /event\.metaKey \|\| event\.ctrlKey/)
+test("picker opens through the keybinding registry and closes with Escape", () => {
+  assert.match(shell, /matchesCombo\(event, keybindingFor\("open-picker"\)\)/)
   assert.match(shell, /event\.key === "Escape"/)
   assert.match(shell, /window\.addEventListener\("keydown"/)
   assert.match(shell, /window\.removeEventListener\("keydown"/)
   assert.match(shell, /onCleanup/)
+  assert.doesNotMatch(shell, /event\.key === "p"/)
 })
 
 test("picking an item opens its scope and subject", () => {

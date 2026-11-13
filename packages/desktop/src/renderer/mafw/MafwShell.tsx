@@ -816,13 +816,17 @@ export function MafwShell() {
   // blocking window.confirm for in-shell actions.
   const [confirmReq, setConfirmReq] = createSignal<{ title: string; message?: string; confirmLabel?: string; onConfirm: () => void } | null>(null)
 
-  // Global command palette (Ctrl+P).
+  // Global command palette (Ctrl+Shift+P).
   const [paletteOpen, setPaletteOpen] = createSignal(false)
   onMount(() => {
     const onKey = (e: KeyboardEvent) => {
       if (matchesCombo(e, keybindingFor("command-palette"))) {
         e.preventDefault()
-        setPaletteOpen(o => !o)
+        setPaletteOpen(o => {
+          // 单浮层语义：命令面板与取景器互斥，哪怕被重绑到同一组合键。
+          if (!o) setPickerOpen(false)
+          return !o
+        })
       }
     }
     window.addEventListener("keydown", onKey)
@@ -2937,6 +2941,7 @@ export function MafwShell() {
     return out
   }
   const openSubjectPicker = () => {
+    setPaletteOpen(false)
     setPickerOpen(true)
     void listScopedFiles(activeFocus()?.scope ?? null).then(setPickerFiles).catch(() => {})
   }
@@ -3045,7 +3050,9 @@ export function MafwShell() {
   onCleanup(() => flushFocusPersistence())
   onMount(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key === "p") {
+      // Ctrl/Cmd+P：取景器（文件 / Goal / 终端…）。走快捷键注册表，与命令面板
+      //（Ctrl+Shift+P）分开，避免同一次按键同时打开两个浮层。
+      if (matchesCombo(event, keybindingFor("open-picker"))) {
         event.preventDefault()
         openSubjectPicker()
         return
