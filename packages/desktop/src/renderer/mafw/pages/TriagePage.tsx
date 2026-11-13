@@ -1,4 +1,5 @@
 import { createSignal, createEffect, onCleanup } from "solid-js"
+import type { TriageItem } from "@mafw/sdk"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { PageHeader } from "../components/PageHeader"
 import { EmptyState } from "../components/EmptyState"
@@ -9,16 +10,17 @@ import { menuController } from "../context-menu/controller"
 import { buildTriageCardMenu } from "../context-menu/builders/card"
 import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
 import { openMenuOnKey } from "../context-menu/menu-key"
+import { triageCardModel, type TriageTone } from "../triage-model"
 
 export function TriagePage(props: { onOpenGoals?: () => void } = {}) {
-  const [items, setItems] = createSignal<any[]>([])
+  const [items, setItems] = createSignal<TriageItem[]>([])
   const [loading, setLoading] = createSignal(true)
   const [dismissConfirmId, setDismissConfirmId] = createSignal<string | null>(null)
 
   async function fetch() {
     setLoading(true)
     try {
-      const list = await window.api.mafw.triage.list() as any[]
+      const list = await window.api.mafw.triage.list()
       setItems(list)
     } catch (e) { console.warn("[mafw]", e) }
     setLoading(false)
@@ -30,11 +32,8 @@ export function TriagePage(props: { onOpenGoals?: () => void } = {}) {
     onCleanup(() => clearInterval(interval))
   })
 
-  const severityColor = (s: string) => {
-    if (s === "high") return "#e8636b"
-    if (s === "medium") return "#e8b84b"
-    return "#7698fd"
-  }
+  // Token-safe badge tones: `.mafw-tool-badge` owns the palette in mafw.css.
+  const toneAttr = (tone: TriageTone) => tone === "warn" ? "warn" : tone === "danger" ? "err" : "muted"
 
   const act = async (label: string, fn: () => Promise<any>) => {
     try {
@@ -46,12 +45,12 @@ export function TriagePage(props: { onOpenGoals?: () => void } = {}) {
     }
   }
 
-  const requestTriageMenu = (t: any, event: MouseEvent) => {
+  const requestTriageMenu = (t: TriageItem, event: MouseEvent) => {
     if (shouldUseNativeMenu(guardFactsFromEvent(event))) return
     event.preventDefault()
     menuController.request(
       buildTriageCardMenu,
-      { id: t.id, goalId: t.goalId },
+      { id: t.id },
       (id) => {
         if (id === "triage.confirm") void act("确认", () => window.api.mafw.triage.confirm(t.id))
         else if (id === "triage.proposeConfirm") void act("提议确认", () => window.api.mafw.triage.propose(t.id, "confirm", "用户在桌面端提议确认"))
@@ -72,20 +71,21 @@ export function TriagePage(props: { onOpenGoals?: () => void } = {}) {
           <EmptyState glyph="⚖" title="没有待确认项" hint="自动化扫描的结果会出现在这里" />
       ) : (
         items().map(t => {
+          const card = triageCardModel(t)
           const confirmIt = () => void act("确认", () => window.api.mafw.triage.confirm(t.id))
           const proposeConfirm = () => void act("提议确认", () => window.api.mafw.triage.propose(t.id, "confirm", "用户在桌面端提议确认"))
           const proposeReject = () => void act("提议拒绝", () => window.api.mafw.triage.propose(t.id, "reject", "用户在桌面端提议拒绝"))
           return (
             <div class="mafw-card" tabIndex={0} onKeyDown={openMenuOnKey} onContextMenu={(event) => requestTriageMenu(t, event)}>
               <div style={{ flex: 1 }}>
-                <div class="mafw-card-title">{t.reason || t.id}</div>
-                <div class="mafw-card-meta">Goal: {t.goalId} · {t.createdAt ? new Date(t.createdAt).toLocaleString() : ""}</div>
+                <div class="mafw-card-title">{card.title}</div>
+                <div class="mafw-card-meta">{card.meta}</div>
               </div>
               <div style={{ display: "flex", "align-items": "center", gap: "6px" }}>
                 <ButtonV2 variant="outline" size="small" onClick={confirmIt}>确认</ButtonV2>
                 <ButtonV2 variant="ghost" size="small" onClick={proposeConfirm}>提议确认</ButtonV2>
                 <ButtonV2 variant="ghost" size="small" onClick={proposeReject}>提议拒绝</ButtonV2>
-                <span class="mafw-tool-tag" style={{ background: severityColor(t.severity) + "22", color: severityColor(t.severity), border: `0.5px solid ${severityColor(t.severity)}44` }}>{t.severity}</span>
+                <span class="mafw-tool-badge" data-tone={toneAttr(card.badge.tone)}>{card.badge.label}</span>
               </div>
             </div>
           )

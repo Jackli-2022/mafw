@@ -113,7 +113,6 @@ export function buildApprovalPermissionMenu(target: ApprovalPermissionMenuTarget
 
 export interface TriageCardMenuTarget {
   id: string
-  goalId: string
 }
 
 export function buildTriageCardMenu(target: TriageCardMenuTarget): MenuModel {

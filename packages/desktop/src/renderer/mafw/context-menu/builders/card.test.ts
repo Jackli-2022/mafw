@@ -96,7 +96,7 @@ describe("approval menus", () => {
 
 describe("buildTriageCardMenu", () => {
   test("has all three decisions", () => {
-    const m = buildTriageCardMenu({ id: "t", goalId: "g" })
+    const m = buildTriageCardMenu({ id: "t" })
     expect(ids(m)).toEqual([
       "triage.confirm",
       "triage.proposeConfirm",
