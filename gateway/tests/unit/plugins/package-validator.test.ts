@@ -507,3 +507,69 @@ describe('ctx.config.update', () => {
     expect(calls).toHaveLength(0);
   });
 });
+
+describe('tool and observer contributions', () => {
+  it('accepts tool and observer declarations and strips them from legacy', () => {
+    const built = buildActivatedContributions(
+      'demo',
+      {
+        tools: [
+          {
+            name: 'echo',
+            description: 'Echo input',
+            inputSchema: { type: 'object', properties: { text: { type: 'string' } } },
+            handler: async () => 'ok',
+          },
+        ],
+        observers: [
+          {
+            id: 'watch',
+            filter: { types: ['part.updated'] },
+            onEvent: () => undefined,
+          },
+        ],
+      },
+      CANONICAL,
+    );
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.value.tools.map((tool) => tool.name)).toEqual(['echo']);
+    expect(built.value.observers.map((observer) => observer.id)).toEqual(['watch']);
+    expect((built.value.legacy as any).tools).toBeUndefined();
+    expect((built.value.legacy as any).observers).toBeUndefined();
+  });
+
+  it('rejects bad tool names, session scope, missing handlers and duplicate observers', () => {
+    const errors = validateUnifiedContributions(
+      'demo',
+      {
+        tools: [
+          { name: 'a:b', description: 'x', inputSchema: {}, handler: () => null },
+          {
+            name: 'session-tool',
+            description: 'x',
+            inputSchema: {},
+            scope: 'session',
+            handler: () => null,
+          },
+          { name: 'no-handler', description: 'x', inputSchema: {} } as any,
+          { name: 'dupe', description: 'x', inputSchema: {}, handler: () => null },
+          { name: 'dupe', description: 'x', inputSchema: {}, handler: () => null },
+        ],
+        observers: [
+          { id: 'same', onEvent: () => undefined },
+          { id: 'same', onEvent: () => undefined },
+          { id: 'bad-filter', filter: { types: [] }, onEvent: () => undefined },
+        ],
+      },
+      CANONICAL,
+    ).join('\n');
+
+    expect(errors).toMatch(/a:b/);
+    expect(errors).toMatch(/session scope/);
+    expect(errors).toMatch(/handler/);
+    expect(errors).toMatch(/duplicate tool name "dupe"/);
+    expect(errors).toMatch(/duplicate observer id "same"/);
+    expect(errors).toMatch(/filter\.types/);
+  });
+});

@@ -28,6 +28,9 @@ import type {
   PluginActionDeclaration,
   PluginEventDeclaration,
   PluginContributions,
+  PluginObserverDeclaration,
+  PluginObserverFilter,
+  PluginToolDeclaration,
   UnifiedPluginContributions,
 } from './package-types';
 const NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -49,6 +52,25 @@ const EVENT_DECLARATION_KEYS = [
   'payloadSchema',
   'scope',
 ] as const;
+const TOOL_DECLARATION_KEYS = [
+  'name',
+  'title',
+  'description',
+  'inputSchema',
+  'outputSchema',
+  'timeoutMs',
+  'scope',
+  'handler',
+] as const;
+const OBSERVER_DECLARATION_KEYS = [
+  'id',
+  'title',
+  'description',
+  'filter',
+  'timeoutMs',
+  'onEvent',
+] as const;
+const OBSERVER_FILTER_KEYS = ['sessionID', 'projectId', 'types'] as const;
 
 const FORBIDDEN_KEY_NAMES = new Set(['__proto__', 'prototype', 'constructor']);
 
@@ -330,11 +352,189 @@ function collectEvents(
   return out;
 }
 
+interface CollectedTools {
+  declarations: PluginToolDeclaration[];
+}
+
+function collectTools(value: unknown, errors: string[]): CollectedTools {
+  const out: CollectedTools = { declarations: [] };
+  if (value === undefined) return out;
+  if (!Array.isArray(value)) {
+    errors.push('tools must be an array of tool declarations');
+    return out;
+  }
+
+  const seen = new Set<string>();
+  value.forEach((raw, index) => {
+    const label = `tools[${index}]`;
+    if (!isPlainObject(raw)) {
+      errors.push(`${label} must be an object`);
+      return;
+    }
+    checkKnownFields(raw, TOOL_DECLARATION_KEYS, label, errors);
+    const name = raw.name;
+    if (typeof name !== 'string' || name.length === 0 || name.length > 128 || !NAME_PATTERN.test(name)) {
+      errors.push(`${label}.name "${String(name)}" must match ${NAME_PATTERN}`);
+      return;
+    }
+    if (seen.has(name)) {
+      errors.push(`duplicate tool name "${name}"`);
+      return;
+    }
+    seen.add(name);
+    if (typeof raw.description !== 'string' || raw.description.trim().length === 0) {
+      errors.push(`${label}.description must be a non-empty string`);
+    }
+    if (!isPlainObject(raw.inputSchema)) {
+      errors.push(`${label}.inputSchema must be an object`);
+    } else {
+      errors.push(...validatePluginSchema(`${label}.inputSchema`, raw.inputSchema));
+    }
+    if (raw.outputSchema !== undefined) {
+      if (!isPlainObject(raw.outputSchema)) {
+        errors.push(`${label}.outputSchema must be an object`);
+      } else {
+        errors.push(...validatePluginSchema(`${label}.outputSchema`, raw.outputSchema));
+      }
+    }
+    if (raw.timeoutMs !== undefined) {
+      const timeout = raw.timeoutMs;
+      if (typeof timeout !== 'number' || !Number.isInteger(timeout) || timeout <= 0) {
+        errors.push(`${label}.timeoutMs must be a positive integer`);
+      } else if (timeout > PLUGIN_UI_LIMITS.maxActionTimeoutMs) {
+        errors.push(
+          `${label}.timeoutMs exceeds the maximum of ${PLUGIN_UI_LIMITS.maxActionTimeoutMs}ms`,
+        );
+      }
+    }
+    if (raw.scope !== undefined && raw.scope !== 'global') {
+      errors.push(
+        raw.scope === 'session'
+          ? `${label}.scope: package tools do not support session scope yet`
+          : `${label}.scope must be "global"`,
+      );
+    }
+    if (typeof raw.handler !== 'function') {
+      errors.push(`${label}.handler must be a function`);
+      return;
+    }
+
+    const declaration: PluginToolDeclaration = {
+      name,
+      description: typeof raw.description === 'string' ? raw.description : '',
+      inputSchema: (isPlainObject(raw.inputSchema) ? raw.inputSchema : {}) as PluginJsonSchema,
+      handler: raw.handler as PluginToolDeclaration['handler'],
+    };
+    if (raw.title !== undefined) declaration.title = raw.title as string;
+    if (isPlainObject(raw.outputSchema)) declaration.outputSchema = raw.outputSchema as PluginJsonSchema;
+    if (typeof raw.timeoutMs === 'number') declaration.timeoutMs = raw.timeoutMs;
+    if (raw.scope === 'global') declaration.scope = 'global';
+    out.declarations.push(declaration);
+  });
+  return out;
+}
+
+interface CollectedObservers {
+  declarations: PluginObserverDeclaration[];
+}
+
+function collectObservers(value: unknown, errors: string[]): CollectedObservers {
+  const out: CollectedObservers = { declarations: [] };
+  if (value === undefined) return out;
+  if (!Array.isArray(value)) {
+    errors.push('observers must be an array of observer declarations');
+    return out;
+  }
+
+  const seen = new Set<string>();
+  value.forEach((raw, index) => {
+    const label = `observers[${index}]`;
+    if (!isPlainObject(raw)) {
+      errors.push(`${label} must be an object`);
+      return;
+    }
+    checkKnownFields(raw, OBSERVER_DECLARATION_KEYS, label, errors);
+    const id = raw.id;
+    if (typeof id !== 'string' || id.length === 0 || id.length > 128 || !NAME_PATTERN.test(id)) {
+      errors.push(`${label}.id "${String(id)}" must match ${NAME_PATTERN}`);
+      return;
+    }
+    if (seen.has(id)) {
+      errors.push(`duplicate observer id "${id}"`);
+      return;
+    }
+    seen.add(id);
+
+    let filter: PluginObserverFilter | undefined;
+    if (raw.filter !== undefined) {
+      if (!isPlainObject(raw.filter)) {
+        errors.push(`${label}.filter must be an object`);
+      } else {
+        checkKnownFields(raw.filter, OBSERVER_FILTER_KEYS, `${label}.filter`, errors);
+        filter = {};
+        if (raw.filter.sessionID !== undefined) {
+          if (typeof raw.filter.sessionID !== 'string' || raw.filter.sessionID.length === 0) {
+            errors.push(`${label}.filter.sessionID must be a non-empty string`);
+          } else {
+            filter.sessionID = raw.filter.sessionID;
+          }
+        }
+        if (raw.filter.projectId !== undefined) {
+          if (typeof raw.filter.projectId !== 'string' || raw.filter.projectId.length === 0) {
+            errors.push(`${label}.filter.projectId must be a non-empty string`);
+          } else {
+            filter.projectId = raw.filter.projectId;
+          }
+        }
+        if (raw.filter.types !== undefined) {
+          if (
+            !Array.isArray(raw.filter.types) ||
+            raw.filter.types.length === 0 ||
+            raw.filter.types.length > 32 ||
+            raw.filter.types.some((type) => typeof type !== 'string' || type.length === 0)
+          ) {
+            errors.push(`${label}.filter.types must be an array of 1-32 non-empty strings`);
+          } else {
+            filter.types = [...raw.filter.types] as string[];
+          }
+        }
+      }
+    }
+    if (raw.timeoutMs !== undefined) {
+      const timeout = raw.timeoutMs;
+      if (typeof timeout !== 'number' || !Number.isInteger(timeout) || timeout <= 0) {
+        errors.push(`${label}.timeoutMs must be a positive integer`);
+      } else if (timeout > PLUGIN_UI_LIMITS.maxActionTimeoutMs) {
+        errors.push(
+          `${label}.timeoutMs exceeds the maximum of ${PLUGIN_UI_LIMITS.maxActionTimeoutMs}ms`,
+        );
+      }
+    }
+    if (typeof raw.onEvent !== 'function') {
+      errors.push(`${label}.onEvent must be a function`);
+      return;
+    }
+
+    const declaration: PluginObserverDeclaration = {
+      id,
+      onEvent: raw.onEvent as PluginObserverDeclaration['onEvent'],
+    };
+    if (raw.title !== undefined) declaration.title = raw.title as string;
+    if (raw.description !== undefined) declaration.description = raw.description as string;
+    if (filter !== undefined) declaration.filter = filter;
+    if (typeof raw.timeoutMs === 'number') declaration.timeoutMs = raw.timeoutMs;
+    out.declarations.push(declaration);
+  });
+  return out;
+}
+
 interface Analysis {
   errors: string[];
   ui: PluginUiContribution;
   actions: CollectedActions;
   events: CollectedEvents;
+  tools: CollectedTools;
+  observers: CollectedObservers;
   /** Present only when the shared contract accepted the projection. */
   descriptor?: PluginClientDescriptor;
 }
@@ -351,6 +551,8 @@ function analyze(
       ui: {},
       actions: { declarations: {}, descriptors: [] },
       events: { declarations: [], descriptors: [] },
+      tools: { declarations: [] },
+      observers: { declarations: [] },
     };
   }
   if (!isPlainObject(contributions)) {
@@ -359,11 +561,15 @@ function analyze(
       ui: {},
       actions: { declarations: {}, descriptors: [] },
       events: { declarations: [], descriptors: [] },
+      tools: { declarations: [] },
+      observers: { declarations: [] },
     };
   }
 
   const actions = collectActions(contributions.actions, errors);
   const events = collectEvents(packageName, contributions.events, canonicalTypes, errors);
+  const tools = collectTools(contributions.tools, errors);
+  const observers = collectObservers(contributions.observers, errors);
 
   // Delegate cross-reference, id, size and config-form-subset validation to the
   // shared contract so gateway and Desktop cannot drift.
@@ -378,9 +584,17 @@ function analyze(
   const validated = validateClientDescriptor(descriptorInput);
   if (!validated.ok) {
     errors.push(validated.error);
-    return { errors, ui: {}, actions, events };
+    return { errors, ui: {}, actions, events, tools, observers };
   }
-  return { errors, ui: validated.value.ui, actions, events, descriptor: validated.value };
+  return {
+    errors,
+    ui: validated.value.ui,
+    actions,
+    events,
+    tools,
+    observers,
+    descriptor: validated.value,
+  };
 }
 
 /**
@@ -415,7 +629,7 @@ export function buildActivatedContributions(
   canonicalTypes: ReadonlySet<string>,
 ): BuildActivatedContributionsResult {
   const analysis = analyze(packageName, contributions, canonicalTypes);
-  const { errors, ui, actions, events, descriptor } = analysis;
+  const { errors, ui, actions, events, tools, observers, descriptor } = analysis;
   if (errors.length > 0) return { ok: false, errors };
   if (!descriptor) {
     return { ok: false, errors: ['plugin descriptor could not be validated'] };
@@ -440,6 +654,8 @@ export function buildActivatedContributions(
   const {
     actions: _actions,
     events: _events,
+    tools: _tools,
+    observers: _observers,
     ui: _ui,
     ...legacy
   } = contributions as UnifiedPluginContributions;
@@ -450,6 +666,8 @@ export function buildActivatedContributions(
       ui,
       actions: activatedActions,
       events: activatedEvents,
+      tools: tools.declarations,
+      observers: observers.declarations,
       legacy: legacy as PluginContributions,
     },
   };

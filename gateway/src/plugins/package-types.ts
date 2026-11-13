@@ -165,6 +165,63 @@ export interface PluginEventDeclaration {
   scope?: 'global' | 'session';
 }
 
+/** Read-only canonical event snapshot delivered to package observers. */
+export interface PluginCanonicalEvent {
+  type: string;
+  sessionID?: string;
+  projectId?: string;
+  at: number;
+  properties?: Record<string, unknown>;
+}
+
+export interface PluginObserverFilter {
+  sessionID?: string;
+  projectId?: string;
+  /** Exact type or trailing `*` prefix (e.g. "part.*"). */
+  types?: string[];
+}
+
+/**
+ * Agent tool declaration. Handlers stay in the gateway process; the host
+ * namespaces the local `name` as `plugin:<package>:<name>`.
+ */
+export interface PluginToolDeclaration {
+  name: string;
+  title?: string;
+  description: string;
+  inputSchema: PluginJsonSchema;
+  outputSchema?: PluginJsonSchema;
+  timeoutMs?: number;
+  /** Package tools are global in this phase; session scope is rejected. */
+  scope?: 'global';
+  handler(
+    input: unknown,
+    call: { sessionID?: string; signal: AbortSignal },
+  ): unknown | Promise<unknown>;
+}
+
+/** Read-only canonical event observer contributed by a package. */
+export interface PluginObserverDeclaration {
+  id: string;
+  title?: string;
+  description?: string;
+  filter?: PluginObserverFilter;
+  timeoutMs?: number;
+  onEvent(event: PluginCanonicalEvent): void | Promise<void>;
+}
+
+/** Entry published by PluginHost after commit (includes revision). */
+export interface PluginToolEntry extends PluginToolDeclaration {
+  packageName: string;
+  revision: string;
+}
+
+/** Entry published by PluginHost after commit (includes revision). */
+export interface PluginObserverEntry extends PluginObserverDeclaration {
+  packageName: string;
+  revision: string;
+}
+
 /** `activate()` 的完整返回形状：legacy 贡献 + 统一声明式贡献。 */
 export interface UnifiedPluginContributions extends PluginContributions {
   /** 声明式 UI 贡献；纯 Host 包可省略。 */
@@ -173,6 +230,10 @@ export interface UnifiedPluginContributions extends PluginContributions {
   actions?: Record<string, PluginActionDeclaration>;
   /** 本包 `plugin:<package>:*` 事件声明。 */
   events?: PluginEventDeclaration[];
+  /** Agent tools (host-only handlers). */
+  tools?: PluginToolDeclaration[];
+  /** Read-only canonical event observers (host-only handlers). */
+  observers?: PluginObserverDeclaration[];
 }
 
 /** 校验并投影后的单个 action。 */
@@ -199,6 +260,10 @@ export interface ActivatedContributions {
   ui: PluginUiContribution;
   actions: ActivatedAction[];
   events: ActivatedEvent[];
+  /** Validated host-only tool handlers. */
+  tools: PluginToolDeclaration[];
+  /** Validated host-only observer handlers. */
+  observers: PluginObserverDeclaration[];
   /** usage/media/runtime/tts/uiTools 原对象（PluginHost 负责各自校验）。 */
   legacy: PluginContributions;
 }
