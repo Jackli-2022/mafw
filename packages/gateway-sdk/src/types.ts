@@ -1030,6 +1030,21 @@ export interface GoalEval {
 /** Wave-plan 原子文条目：`id` 必填，其余任务字段由 goal driver / plan skill 版本决定。 */
 export type GoalPlanWave = { id: string } & { [key: string]: unknown }
 
+/**
+ * Plan 文档（`wavesPath` 文件的解析结果，`GET /api/goals/:id/plan` 的 `waves` 字段）。
+ * handler 原样透传，**不是** wave 数组——数组在 `waves.waves`。
+ * 已知锚点见 `gateway/src/core/goal/node-prompts.ts` `PLAN_OUTPUT_SCHEMA`；
+ * 其余字段（quick 档 strategy、每波任务/acceptance、doc 内嵌 goalEval）随 driver 版本演进，
+ * `goalEval` / `ambiguities` 之外的内容由索引签名透传。
+ */
+export type GoalPlanDocument = {
+  status?: string
+  taskType?: string
+  strategy?: string
+  waves?: GoalPlanWave[]
+  ambiguities?: string[]
+} & { [key: string]: unknown }
+
 /** W1 计划审阅：GET /api/goals/:id/plan 响应。 */
 export interface GoalPlanInfo {
   planReview: 'auto' | 'manual'
@@ -1037,7 +1052,7 @@ export interface GoalPlanInfo {
   planFeedback: string | null
   round: number
   revision: number
-  waves: GoalPlanWave[] | null
+  waves: GoalPlanDocument | null
   wavePlanPath: string | null
   wavesPath: string
   goalEval: GoalEval | null

@@ -26,13 +26,14 @@ interface CoverageReport {
 const GATEWAY_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPT = path.join(GATEWAY_ROOT, 'scripts', 'schema-coverage.cjs');
 
-/** Baseline 13 (E8 and earlier) + 8 session read (E10-1) + 8 pod/work read (E10-2) + 8 goal read (E10b-1) + 7 human-gate/permission read (E10b-2). */
+/** Baseline 13 (E8 and earlier) + 8 session read (E10-1) + 8 pod/work read (E10-2) + 8 goal read (E10b-1) + 7 human-gate/permission read (E10b-2) = 44. */
 const E10_COVERED_OPS = [
   'approvals.list',
   'attention.list',
   'decisions.list',
   'event.replay',
   'goals.get',
+  'goals.list',
   'goals.plan',
   'goals.sessions',
   'goals.source',
@@ -92,17 +93,25 @@ function runScript(): CoverageReport {
 }
 
 describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () => {
-  it('every op covered at E10 close still declares a response schema', () => {
+  it('every op listed in the ledger still declares a response schema', () => {
     const byId = new Map(catalogOps().map((op) => [op.operationId, op.hasResponse]));
     const lost = E10_COVERED_OPS.filter((id) => !byId.get(id));
     // Named so the failure says which schema disappeared, not just "expected true".
     expect(lost).toEqual([]);
   });
 
-  it('covered count is >= 44 and the catalog still has exactly 317 ops', () => {
+  it('the catalog covered set equals the ledger exactly, and the catalog still has 317 ops', () => {
     const ops = catalogOps();
-    const covered = ops.filter((op) => op.hasResponse).length;
-    expect(covered).toBeGreaterThanOrEqual(E10_COVERED_OPS.length);
+    const covered = ops
+      .filter((op) => op.hasResponse)
+      .map((op) => op.operationId)
+      .sort();
+    // Both directions, not just `covered >= ledger.length` (that lenient form let
+    // `goals.list` ship covered-but-unlisted in E10b-4): a covered op missing from
+    // the ledger lands unrecorded, a ledger op without a schema goes stale.
+    expect(covered).toEqual([...E10_COVERED_OPS].sort());
+    // Duplicates would mask an alias/typo in the ledger.
+    expect(new Set(E10_COVERED_OPS).size).toBe(E10_COVERED_OPS.length);
     // Pinned: a new/removed catalog route must be reflected in the ledger.
     expect(ops.length).toBe(TOTAL_OPS);
   });

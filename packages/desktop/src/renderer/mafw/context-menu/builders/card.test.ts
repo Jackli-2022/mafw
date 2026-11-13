@@ -67,7 +67,7 @@ describe("buildMemoryCardMenu", () => {
 
 describe("buildNotesCardMenu", () => {
   test("renew, unsticky, delete", () => {
-    const m = buildNotesCardMenu({ id: "n" })
+    const m = buildNotesCardMenu()
     expect(ids(m)).toEqual(["notes.renew", "notes.unsticky", "notes.delete"])
     expect(validateMenu(m)).toEqual([])
   })
@@ -75,7 +75,7 @@ describe("buildNotesCardMenu", () => {
 
 describe("approval menus", () => {
   test("question cards", () => {
-    const m = buildApprovalQuestionMenu({ id: "q" })
+    const m = buildApprovalQuestionMenu()
     expect(ids(m)).toEqual(["approvalQ.approve", "approvalQ.reject", "approvalQ.copyQuestion"])
     expect(validateMenu(m)).toEqual([])
   })
@@ -96,7 +96,7 @@ describe("approval menus", () => {
 
 describe("buildTriageCardMenu", () => {
   test("has all three decisions", () => {
-    const m = buildTriageCardMenu({ id: "t" })
+    const m = buildTriageCardMenu()
     expect(ids(m)).toEqual([
       "triage.confirm",
       "triage.proposeConfirm",

@@ -98,14 +98,26 @@ export const GoalSessionsResponse = Type.Object({
 // ── goals.plan ──────────────────────────────────────────────────────────────
 
 /**
- * 边界形状：`waves` 是 goal driver / plan skill 写入的 wave-plan 原子文
- * （`readFileSync(wavesPath)` 原样透传）。owner = goal-plan protocol artifact：
- * gateway 只校验「数组 + 每波有 id」并计算 `planHash`，任务字段随 driver 版本演进，
- * 不做静态建模。文件缺失/损坏时 handler 回 `null`。
+ * 边界形状：`waves` 是 goal driver / plan skill 写入的 **plan 文档**（
+ * `readFileSync(wavesPath)` 原样透传给客户端），**不是** wave 数组——数组在
+ * `doc.waves` 里。owner = goal-plan protocol artifact（产出契约见
+ * `core/goal/node-prompts.ts` `PLAN_OUTPUT_SCHEMA`；桌面 `plan-render.ts` /
+ * `plan-review-model.ts` 已按文档解包）。
+ * gateway 只校验「对象 + 稳定锚点」：`status`（ready / need_clarification）、
+ * `taskType`、`strategy`（quick 档）、`waves[].id`、`ambiguities`；
+ * 其余字段（每波任务、acceptance、mapping、doc 内嵌 `goalEval`）随 driver 版本演进，
+ * 由 `additionalProperties: true` 透传，不做静态建模。
+ * 文件缺失/损坏时 handler 回 `null`（`null` arm）。
  */
-const PlanWavesBoundary = Type.Array(Type.Object({
-  id: Type.String(),
-}, { additionalProperties: true }))
+const PlanDocumentBoundary = Type.Object({
+  status: Type.Optional(Type.String()),
+  taskType: Type.Optional(Type.String()),
+  strategy: Type.Optional(Type.String()),
+  waves: Type.Optional(Type.Array(Type.Object({
+    id: Type.String(),
+  }, { additionalProperties: true }))),
+  ambiguities: Type.Optional(Type.Array(Type.String())),
+}, { additionalProperties: true })
 
 /** Goal Eval 单条条件（`core/goal/goal-eval.ts` `validateGoalEval` 的规范化输出）。 */
 const GoalEvalConditionSchema = Type.Object({
@@ -143,7 +155,7 @@ export const GoalPlanResponse = Type.Object({
   planFeedback: Type.Union([Type.String(), Type.Null()]),
   round: Type.Number(),
   revision: Type.Number(),
-  waves: Type.Union([PlanWavesBoundary, Type.Null()]),
+  waves: Type.Union([PlanDocumentBoundary, Type.Null()]),
   wavePlanPath: Type.Union([Type.String(), Type.Null()]),
   wavesPath: Type.String(),
   goalEval: Type.Union([GoalEvalSchema, Type.Null()]),

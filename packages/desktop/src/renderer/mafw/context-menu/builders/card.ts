@@ -60,12 +60,7 @@ export function buildMemoryCardMenu(target: MemoryCardMenuTarget): MenuModel {
   return { surface: "memory.card", items }
 }
 
-export interface NotesCardMenuTarget {
-  id: string
-}
-
-export function buildNotesCardMenu(target: NotesCardMenuTarget): MenuModel {
-  void target
+export function buildNotesCardMenu(): MenuModel {
   return {
     surface: "notes.card",
     items: [
@@ -77,12 +72,7 @@ export function buildNotesCardMenu(target: NotesCardMenuTarget): MenuModel {
   }
 }
 
-export interface ApprovalQuestionMenuTarget {
-  id: string
-}
-
-export function buildApprovalQuestionMenu(target: ApprovalQuestionMenuTarget): MenuModel {
-  void target
+export function buildApprovalQuestionMenu(): MenuModel {
   return {
     surface: "approval.question",
     items: [
@@ -111,12 +101,7 @@ export function buildApprovalPermissionMenu(target: ApprovalPermissionMenuTarget
   return { surface: "approval.permission", items }
 }
 
-export interface TriageCardMenuTarget {
-  id: string
-}
-
-export function buildTriageCardMenu(target: TriageCardMenuTarget): MenuModel {
-  void target
+export function buildTriageCardMenu(): MenuModel {
   return {
     surface: "triage.card",
     items: [

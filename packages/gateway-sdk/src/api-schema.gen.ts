@@ -7231,10 +7231,18 @@ export interface operations {
                         round: number;
                         revision: number;
                         waves: ({
-                            id: string;
+                            status?: string;
+                            taskType?: string;
+                            strategy?: string;
+                            waves?: ({
+                                id: string;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                            ambiguities?: string[];
                         } & {
                             [key: string]: unknown;
-                        })[] | null;
+                        }) | null;
                         wavePlanPath: string | null;
                         wavesPath: string;
                         goalEval: {

@@ -980,9 +980,11 @@ describe('api-contract: E10b-1 goal / pod-goal read response schema (8 ops)', ()
     expect(plan.properties.stale.type).toBe('boolean');
     expect(plan.properties.planHash.anyOf?.map((entry: any) => entry.type))
       .toEqual(expect.arrayContaining(['string', 'null']));
+    // `waves` 是 plan 文档本身（handler 原样透传 `readFileSync(wavesPath)`），
+    // 不是 goal-plan wave 数组——数组在 `waves.waves` 里。
     expect(plan.properties.waves.anyOf?.map((entry: any) => entry.type))
-      .toEqual(expect.arrayContaining(['array', 'null']));
-    expect(plan.properties.waves.anyOf[0].items.required).toEqual(['id']);
+      .toEqual(expect.arrayContaining(['object', 'null']));
+    expect(plan.properties.waves.anyOf[0].properties.waves.items.required).toEqual(['id']);
     expect(plan.properties.goalEval.anyOf[0].properties.conditions.items.required)
       .toEqual(['id', 'statement', 'required', 'evidence', 'method']);
   });
@@ -1024,7 +1026,11 @@ describe('api-contract: E10b-1 goal / pod-goal read response schema (8 ops)', ()
     };
     const plan = {
       planReview: 'manual', planApproval, planFeedback: null, round: 1, revision: 2,
-      waves: [{ id: 'w1', tasks: [{ id: 't1', title: 'do it' }] }],
+      waves: {
+        status: 'ready',
+        taskType: 'feature',
+        waves: [{ id: 'w1', tasks: [{ id: 't1', title: 'do it' }] }],
+      },
       wavePlanPath: '/g/waves.json', wavesPath: '/g/waves.json',
       goalEval: {
         outcome: 'tests pass',
@@ -1039,6 +1045,13 @@ describe('api-contract: E10b-1 goal / pod-goal read response schema (8 ops)', ()
     expect([...Value.Errors(GoalPlanResponse, plan)]).toEqual([]);
     expect(Value.Check(GoalPlanResponse, {
       ...plan, waves: null, goalEval: null, goalEvalPath: null, planHash: null, planApproval: null,
+    })).toBe(true);
+    // A bare wave array is the pre-E10b-5 (wrong) wire shape: reject it, so the
+    // schema cannot silently drift back to `GoalPlanWave[]`.
+    expect(Value.Check(GoalPlanResponse, { ...plan, waves: [{ id: 'w1' }] })).toBe(false);
+    // need_clarification documents carry `ambiguities` and no waves.
+    expect(Value.Check(GoalPlanResponse, {
+      ...plan, waves: { status: 'need_clarification', ambiguities: ['which DB?'] },
     })).toBe(true);
 
     const node = {

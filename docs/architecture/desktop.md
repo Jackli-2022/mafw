@@ -771,5 +771,3 @@ SDK `TriageItem` 在 E10b-2 被重塑成磁盘 / wire 真形状
   新增展示需要产品口径。
 - 测试：`triage-model.test.ts` 5 条（title 回退 / meta 非法日期 / 三种 state / llm 优先级 /
   页面不再读 phantom 字段守卫），`card.test.ts` 与 context-menu wiring 同步。
-
-

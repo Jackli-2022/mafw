@@ -4397,15 +4397,36 @@
                     "waves": {
                       "anyOf": [
                         {
-                          "type": "array",
-                          "items": {
-                            "additionalProperties": true,
-                            "type": "object",
-                            "required": [
-                              "id"
-                            ],
-                            "properties": {
-                              "id": {
+                          "additionalProperties": true,
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string"
+                            },
+                            "taskType": {
+                              "type": "string"
+                            },
+                            "strategy": {
+                              "type": "string"
+                            },
+                            "waves": {
+                              "type": "array",
+                              "items": {
+                                "additionalProperties": true,
+                                "type": "object",
+                                "required": [
+                                  "id"
+                                ],
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  }
+                                }
+                              }
+                            },
+                            "ambiguities": {
+                              "type": "array",
+                              "items": {
                                 "type": "string"
                               }
                             }
