@@ -536,6 +536,16 @@ attention 通知链整体移交 `2026-11-04-pod-event-layer-ambient-attention-de
 - **已知边界**：attention 通知链与托盘 presence 归 pod-event-layer 批次（其设计已评审、实现进行中）；
   本批未 push、未 deploy。
 
+### Chat `/` 命令与技能（2026-11-13）
+
+- `/` 菜单在 `DiscoverySnapshot.skillInvokeSupported` 为 true 时显示 runtime 技能分组；
+  `/skill-id` 由 Desktop 调用统一的 `discovery.invokeSkill`，不把 skill id 传给 `session.command`。
+- 技能调用方言只存在于 adapter（opencode `@id`、pi `/skill:name`、claude `/name`）；
+  gateway 只做 `DiscoveryService.invokeSkill` 校验/转发，Desktop 只认统一 API。
+- 同名优先级：MAFW 命令 > runtime 命令 > skill。
+- runtime 不支持时 `/` 不显示技能分组，路由返回中性 503。
+- runtime command 的 `agent` / `model` 元数据由 Desktop 透传给 `session.command`。
+
 ### Pod 事件层与常驻注意力（2026-11-04，进行中）
 
 spec `docs/superpowers/specs/2026-11-04-pod-event-layer-ambient-attention-design.md`，plan
