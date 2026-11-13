@@ -1,4 +1,4 @@
-// Goal 作用域的焦点 helpers：Goal 总览 / 变更集 / 评审项。
+// Goal 作用域的焦点 helper：Goal 总览。
 import { openSubject, type Scope, type WorkbenchState } from "./focus-model"
 
 export type GoalFocusInput = {
@@ -21,32 +21,4 @@ export function goalFocusScope(input: GoalFocusInput): Scope {
 
 export function openGoalFocus(state: WorkbenchState, input: GoalFocusInput): WorkbenchState {
   return openSubject(state, goalFocusScope(input), { kind: "goal", goalId: input.goalId })
-}
-
-export function openChangeSetFocus(state: WorkbenchState, input: GoalFocusInput): WorkbenchState {
-  return openSubject(
-    state,
-    goalFocusScope(input),
-    {
-      kind: "changeSet",
-      scope: "goal",
-      goalId: input.goalId,
-      revision: input.revision,
-    },
-  )
-}
-
-export function openReviewItemFocus(
-  state: WorkbenchState,
-  input: GoalFocusInput & { itemId: string; rel: string; line?: number },
-): WorkbenchState {
-  return openSubject(
-    state,
-    goalFocusScope(input),
-    {
-      kind: "reviewItem",
-      id: input.itemId,
-      anchor: input.line === undefined ? { rel: input.rel } : { rel: input.rel, line: input.line },
-    },
-  )
 }

@@ -1,7 +1,7 @@
 // 台的分派：subject → 用哪个舞台渲染。纯函数，方便测试。
 import type { Focus } from "./focus-model"
 
-export type StageKind = "editor" | "browser" | "terminal" | "plugin" | "changeSet" | "goal" | "world" | "diff"
+export type StageKind = "editor" | "browser" | "terminal" | "plugin" | "goal" | "world" | "diff"
 
 export type StageAction =
   | { kind: "editor"; root: string; rel: string; line?: number }
@@ -13,16 +13,12 @@ export function stageKindFor(focus: Focus): StageKind {
   switch (focus.subject.kind) {
     case "file":
       return "editor"
-    case "reviewItem":
-      return "editor"
     case "web":
       return "browser"
     case "terminal":
       return "terminal"
     case "plugin":
       return "plugin"
-    case "changeSet":
-      return "changeSet"
     case "goal":
       return "goal"
     case "world":
@@ -34,13 +30,6 @@ export function stageKindFor(focus: Focus): StageKind {
 
 /** 把焦点翻译成“舞台需要执行的副作用”：打开编辑器 / 导航浏览器 / 什么都不做。 */
 export function stageActionFor(focus: Focus): StageAction {
-  if (focus.subject.kind === "reviewItem") {
-    const anchor = focus.subject.anchor
-    if (!anchor) return { kind: "none" }
-    const root = focus.scope.kind === "goal" ? focus.scope.worktreeDir : ""
-    if (!root) return { kind: "none" }
-    return { kind: "editor", root, rel: anchor.rel, line: anchor.line }
-  }
   if (focus.subject.kind === "file") {
     return {
       kind: "editor",

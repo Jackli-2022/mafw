@@ -34,10 +34,9 @@ test("episode grouping never calls the later-declared allTurns accessor", () => 
   assert.doesNotMatch(block, /allTurns\(\)/)
 })
 
-test("goal change sets use the Pod revision diff, not the session scope", () => {
-  assert.match(shell, /GoalChangeSetStage/)
-  assert.match(shell, /podIdForCurrentProject\(\)/)
-  const stage = read("components/GoalChangeSetStage.tsx")
-  assert.match(stage, /worktreeDiff\(podId, goalId, revision\)/)
-  assert.match(stage, /ChangesDock/)
+test("goal diffs use the Pod revision diff, not the session scope", () => {
+  const face = read("components/ChangesFace.tsx")
+  assert.match(face, /worktreeDiff\(goal\.podId, goal\.goalId, goal\.revision\)/)
+  const goalChanges = read("changes/goal-changes.ts")
+  assert.match(goalChanges, /PodWorktreeDiffFile/)
 })

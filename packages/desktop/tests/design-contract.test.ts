@@ -647,9 +647,10 @@ describe("DiffReviewPanel 抽屉化（业界对齐：无全屏遮罩）", () => 
 
 describe("DiffReviewPanel 接线", () => {
   const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
-  test("MafwShell：审阅改动打开 project change set", () => {
+  test("MafwShell：审阅改动打开左栏改动面", () => {
     const src = read("src/renderer/mafw/MafwShell.tsx")
-    expect(src).toContain('openProjectChangeSetFocus("review")')
+    expect(src).toContain("openChangesFace")
+    expect(src).not.toContain("openProjectChangeSetFocus")
   })
   test("审阅改动已移出 composer（归回合动作 + 工作台）", () => {
     const src = read("src/renderer/mafw/components/ChatPane.tsx")
@@ -660,22 +661,19 @@ describe("DiffReviewPanel 接线", () => {
   })
 })
 
-describe("Dock changes tab（改动列表常驻入口）", () => {
+describe("Left changes face + diff tabs", () => {
   const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
-  test("变更集舞台渲染 ChangesDock", () => {
-    const src = read("src/renderer/mafw/MafwShell.tsx")
-    expect(read("src/renderer/mafw/components/ChangeSetStage.tsx")).toContain("ChangesDock")
-    expect(src).toContain('openProjectChangeSetFocus("review")')
-    expect(src).not.toContain("reviewView=")
+  test("changes face是左栏改动入口", () => {
+    expect(read("src/renderer/mafw/components/ChangesFace.tsx")).toContain("buildChangeTree")
+    expect(read("src/renderer/mafw/MafwShell.tsx")).toContain("ChangesFace")
+    expect(read("src/renderer/mafw/MafwShell.tsx")).not.toContain("openProjectChangeSetFocus")
   })
-  test("两级视图：审阅内嵌 DiffReviewPanel（无 shell 级抽屉）", () => {
-    const src = read("src/renderer/mafw/MafwShell.tsx")
-    expect(src).not.toContain("diffPanelFor")
-    const dock = read("src/renderer/mafw/components/ChangesDock.tsx")
-    expect(dock).toContain("embedded")
-    expect(dock).toContain("<DiffReviewPanel")
+  test("diff tab 复用 DiffReviewPanel", () => {
+    expect(read("src/renderer/mafw/components/DiffDocumentView.tsx")).toContain("DiffReviewPanel")
+    expect(read("src/renderer/mafw/components/DocumentStage.tsx")).toContain("DiffDocumentView")
+    expect(read("src/renderer/mafw/MafwShell.tsx")).not.toContain("renderChangeSet")
   })
-  test("ChangesDock 行样式存在", () => {
+  test("changes row 样式存在", () => {
     expect(cssBlock(".mafw-changes-row {")).toContain("cursor: pointer")
   })
 })
@@ -956,7 +954,6 @@ describe("工作台面板骨架统一（workbench merge spec 2026-10-26）", () 
   const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
   const panels = [
     "src/renderer/mafw/components/FilesDock.tsx",
-    "src/renderer/mafw/components/ChangesDock.tsx",
   ]
   test("共享骨架面板都走 DockPanelHeader", () => {
     for (const f of panels) expect(read(f)).toContain("DockPanelHeader")

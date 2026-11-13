@@ -97,7 +97,7 @@ test("popFocus restores the previous focus and is a no-op at root", () => {
 test("jumpTo truncates the stack", () => {
   let state = openSubject(createWorkbenchState("w1"), worldScope, file)
   state = openSubject(state, worldScope, file2)
-  state = openSubject(state, goalScope, { kind: "changeSet", scope: "goal", goalId: "g1", revision: 3 })
+  state = openSubject(state, goalScope, { kind: "web", url: "https://example.com" })
   assert.equal(state.stack.length, 3)
 
   const jumped = jumpTo(state, 0)

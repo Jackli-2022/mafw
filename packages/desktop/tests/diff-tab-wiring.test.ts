@@ -12,3 +12,11 @@ test("document stage renders a diff pane and diff toolbar", () => {
   assert.match(view, /registerDocumentToolbar\("diff"/)
   assert.match(view, /DiffReviewPanel/)
 })
+
+test("the lens and instrument rail chrome are gone", () => {
+  const shell = read("src/renderer/mafw/components/WorkbenchShell.tsx")
+  assert.doesNotMatch(shell, /InstrumentRail/)
+  const focus = read("src/renderer/mafw/focus/focus-model.ts")
+  assert.doesNotMatch(focus, /Lens/)
+  assert.doesNotMatch(focus, /changeSet/)
+})

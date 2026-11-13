@@ -59,7 +59,6 @@ export type WorkbenchShellProps = {
   onAddDiffAnnotation?: (a: { rel: string; startLine: number; endLine: number; code: string; comment: string }) => void
   renderGoal?: () => JSX.Element
   renderWorld?: () => JSX.Element
-  renderChangeSet?: () => JSX.Element | null
   onDocumentSelect?: (id: string) => void
   onDocumentClose?: (id: string) => void
   onDocumentCloseMany?: (ids: readonly string[]) => void
@@ -130,7 +129,6 @@ export function WorkbenchShell(props: WorkbenchShellProps): JSX.Element {
             onWebError={props.onWebError}
             renderGoal={props.renderGoal}
             renderWorld={props.renderWorld}
-            renderChangeSet={props.renderChangeSet}
             onDocumentSelect={props.onDocumentSelect}
             onDocumentClose={props.onDocumentClose}
             onDocumentCloseMany={props.onDocumentCloseMany}

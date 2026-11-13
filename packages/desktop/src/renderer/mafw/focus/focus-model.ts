@@ -10,9 +10,6 @@ export type SubjectRef =
   | { kind: "world" }
   | { kind: "goal"; goalId: string }
   | { kind: "file"; root: string; rel: string; version?: string }
-  | { kind: "changeSet"; scope: "project" | "goal"; goalId?: string; revision?: number; baseline?: string }
-  | { kind: "reviewItem"; id: string; anchor?: { rel: string; line?: number } }
-  | { kind: "evidence"; id: string }
   | { kind: "web"; url: string }
   | { kind: "terminal"; id: string }
   | { kind: "plugin"; package: string; panel: string }
@@ -40,18 +37,6 @@ export function subjectKey(subject: SubjectRef): string {
     case "file":
       // version 是框上的状态，不是对象身份：同一个文件换版本仍是同一个焦点。
       return `file:${subject.root}\u0000${subject.rel}`
-    case "changeSet":
-      return [
-        "changeSet",
-        subject.scope,
-        subject.goalId ?? "",
-        subject.revision ?? "",
-        subject.baseline ?? "",
-      ].join(":")
-    case "reviewItem":
-      return `reviewItem:${subject.id}`
-    case "evidence":
-      return `evidence:${subject.id}`
     case "web":
       return `web:${subject.url}`
     case "terminal":

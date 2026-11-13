@@ -20,7 +20,7 @@ test("FocusStage delegates document surfaces through DocumentStage", () => {
 
 test("FocusStage uses DockEmpty fallbacks and no raw controls", () => {
   assert.match(stage, /DockEmpty/)
-  assert.match(stage, /ChangeSetStage/)
+  assert.doesNotMatch(stage, /ChangeSetStage/)
   assert.match(stage, /Goal 总览待接入/)
   assert.match(stage, /世界总览待接入/)
   assert.doesNotMatch(stage, /<button/)

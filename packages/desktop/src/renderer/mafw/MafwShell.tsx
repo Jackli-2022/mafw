@@ -60,7 +60,6 @@ import { ChatPane, mergeLocalParts, type FlowCardRecord } from "./components/Cha
 import { TaskList } from "./components/TaskList"
 import { WorkbenchShell } from "./components/WorkbenchShell"
 import { WorldOverviewStage } from "./components/WorldOverviewStage"
-import { GoalChangeSetStage } from "./components/GoalChangeSetStage"
 import { GoalDetailPanel } from "./components/GoalDetailPanel"
 import { PodTranscriptOverlay } from "./components/PodTranscriptOverlay"
 import { ingestPodEvent, podStore, pickTechLeadInviteGoal, resolvePodDetailCached, techLeadTabTitle } from "./pod-store"
@@ -148,12 +147,9 @@ import { configureBrowserTabsStorage } from "./documents/browser-tabs-persistenc
 import { activeBrowserDocumentId, openBrowserDocument } from "./documents/browser-documents"
 import { diffDocuments, openDiffDocument, type DiffDocument, type OpenDiffInput } from "./documents/diff-documents"
 import { stageActionFor } from "./focus/stage-dispatch"
-import { openGoalFocus as applyGoalFocus, openReviewItemFocus as applyReviewFocus, openChangeSetFocus as applyChangeSetFocus } from "./focus/goal-focus"
+import { openGoalFocus as applyGoalFocus } from "./focus/goal-focus"
 import type { FocusOpenRequest } from "./focus/focus-open"
 import type { DecisionItem } from "./focus/decision-model"
-import { InstrumentRail } from "./components/InstrumentRail"
-import { GoalReviewQueue } from "./components/GoalReviewQueue"
-import type { PodReviewItem } from "@mafw/sdk"
 import {
   configureFocusStorage,
   flushFocusPersistence,
@@ -2105,7 +2101,6 @@ export function MafwShell() {
     (project) => configureDocumentListWorld(project ?? "unscoped"),
   ))
   const [focusOpenRequest, setFocusOpenRequest] = createSignal<FocusOpenRequest | null>(null)
-  const [instrumentRailOpen, setInstrumentRailOpen] = createSignal(true)
   let focusOpenNonce = 0
   let decisionFocusSeq = 0
   const requestFocusOpen = (root: string, rel: string, line?: number, persist = false) => {
@@ -2311,10 +2306,15 @@ export function MafwShell() {
         worktreeDir: scope.worktreeDir,
       }
       setFocusState((state) =>
-        openSubject(
-          state,
-          goalScope,
-          { kind: "changeSet", scope: "goal", goalId: scope.goalId, revision: scope.revision },
+        applyGoalFocus(
+          seedWorldRoot(state, goalScope),
+          {
+            projectDir: scope.projectDir,
+            goalId: scope.goalId,
+            revision: scope.revision,
+            worktreeDir: scope.worktreeDir,
+            title: input.title,
+          },
         ),
       )
     })()
@@ -2494,18 +2494,13 @@ export function MafwShell() {
       : null
     const subjectLabel =
       subject.kind === "file" ? subject.rel
-      : subject.kind === "reviewItem"
-        ? subject.anchor
-          ? `${subject.anchor.rel}${subject.anchor.line !== undefined ? `:L${subject.anchor.line}` : ""}`
-          : "评审项"
-        : subject.kind === "changeSet" ? "变更集"
-        : subject.kind === "goal" ? (goalTitle || "Goal")
-        : subject.kind === "world" ? "世界总览"
-        : subject.kind === "web" ? "浏览器"
-        : subject.kind === "terminal" ? "终端"
-        : subject.kind === "plugin" ? "插件"
-        : subject.kind === "diff" ? `${subject.rel} · 改动`
-        : "证据"
+      : subject.kind === "goal" ? (goalTitle || "Goal")
+      : subject.kind === "world" ? "世界总览"
+      : subject.kind === "web" ? "浏览器"
+      : subject.kind === "terminal" ? "终端"
+      : subject.kind === "plugin" ? "插件"
+      : subject.kind === "diff" ? `${subject.rel} · 改动`
+      : "证据"
     const goalScope = focus.scope.kind === "goal" ? focus.scope : null
     const focusedGoal = goalScope
       ? podStore.detail()?.goals.find((goal) => goal.goalId === goalScope.goalId)
@@ -2524,9 +2519,7 @@ export function MafwShell() {
       subjectIndex: stack.length - 1,
       revision: goalScope ? goalScope.revision : undefined,
       execution: focusedGoal ? executionBadgeFor(focusedGoal) ?? undefined : undefined,
-      version: subject.kind === "file" || subject.kind === "reviewItem" || subject.kind === "changeSet"
-        ? "HEAD"
-        : undefined,
+      version: subject.kind === "file" || subject.kind === "diff" ? "HEAD" : undefined,
       external: subject.kind === "web" || subject.kind === "terminal" || subject.kind === "plugin",
     })
   })
@@ -2597,18 +2590,6 @@ export function MafwShell() {
         seedWorldRoot(state, scope),
         scope,
         { kind: "plugin", package: parsed.package, panel: parsed.panel },
-      ),
-    )
-  }
-  const openProjectChangeSetFocus = (lens: "changes" | "review" | "decide" = "changes") => {
-    revealWorkbench()
-    const worldId = currentProject() ?? "unscoped"
-    const scope: Scope = { kind: "world", worldId }
-    setFocusState((state) =>
-      openSubject(
-        seedWorldRoot(state, scope),
-        scope,
-        { kind: "changeSet", scope: "project", baseline: "HEAD" },
       ),
     )
   }
@@ -2812,119 +2793,6 @@ export function MafwShell() {
     })
   }
 
-  const openChangeSetFromFocus = () => {
-    const focus = activeFocus()
-    if (!focus || focus.scope.kind !== "goal") return
-    const scope = focus.scope
-    const project = scope.worldId
-    const seq = ++decisionFocusSeq
-    void resolveGoalWorktreeDir(podIdForCurrentProject(), scope.goalId, project).then((worktreeDir) => {
-      if (seq !== decisionFocusSeq) return
-      if (currentProject() !== project) return
-      setFocusState((state) =>
-        applyChangeSetFocus(
-          state,
-          {
-            projectDir: project,
-            goalId: scope.goalId,
-            revision: scope.revision,
-            worktreeDir,
-          },
-        ),
-      )
-    })
-  }
-
-  const openReviewAnchorToFocus = (input: {
-    goalId: string
-    revision?: number
-    itemId: string
-    rel: string
-    line?: number
-  }) => {
-    const project = currentProject()
-    if (!project) return
-    const goal = podStore.detail()?.goals.find((item) => item.goalId === input.goalId)
-    const revision = input.revision ?? (goal ? (goalRevisionOf(goal) ?? goal.activeRevision ?? goal.revision ?? 1) : 1)
-    const seq = ++decisionFocusSeq
-    void resolveGoalWorktreeDir(podIdForCurrentProject(), input.goalId, project).then((worktreeDir) => {
-      if (seq !== decisionFocusSeq) return
-      if (currentProject() !== project) return
-      const next = applyReviewFocus(
-        focusState(),
-        {
-          projectDir: project,
-          goalId: input.goalId,
-          revision,
-          worktreeDir,
-          title: goal?.title ?? null,
-          itemId: input.itemId,
-          rel: input.rel,
-          line: input.line,
-        },
-      )
-      setFocusState(next)
-      syncStageToFocus(next)
-    })
-  }
-
-  const openReviewItemToFocus = (item: PodReviewItem) => {
-    openReviewAnchorToFocus({
-      goalId: item.goalId,
-      revision: item.revision,
-      itemId: item.id,
-      rel: item.rel,
-      line: item.startLine ?? undefined,
-    })
-  }
-
-  const instrumentRail = createMemo<JSX.Element | null>(() => {
-    const focus = activeFocus()
-    if (!focus || focus.scope.kind !== "goal") return null
-    const scope = focus.scope
-    if (focus.subject.kind !== "goal" && focus.subject.kind !== "reviewItem") return null
-    const podId = podIdForCurrentProject()
-    if (!podId) return null
-    const goal = podStore.detail()?.goals.find((item) => item.goalId === scope.goalId)
-    return (
-      <InstrumentRail
-        title="评审"
-        open={instrumentRailOpen()}
-        onToggle={setInstrumentRailOpen}
-        sections={[
-          {
-            id: "review",
-            label: "评审意见",
-            content: (
-              <GoalReviewQueue
-                podId={podId}
-                goalId={scope.goalId}
-                revision={scope.revision}
-                accepted={!!goal?.accepted}
-                refreshKey={() => podStore.reviewRevision()}
-                onFocusItem={openReviewItemToFocus}
-                onResolved={() => { void podStore.refresh() }}
-              />
-            ),
-          },
-          {
-            id: "actions",
-            label: "动作",
-            content: (
-              <ButtonV2
-                variant="outline"
-                size="small"
-                class="mafw-instrument-action"
-                onClick={openChangeSetFromFocus}
-              >
-                查看变更集
-              </ButtonV2>
-            ),
-          },
-        ]}
-      />
-    )
-  })
   const listScopedFiles = async (scope: Scope | null): Promise<string[]> => {
     if (scope?.kind !== "goal") return window.api.mafw.files.list()
     const root = scope.worktreeDir
@@ -3466,9 +3334,11 @@ export function MafwShell() {
       return
     }
     if (action.kind === "reviewItem") {
-      openReviewAnchorToFocus({
-        goalId: action.goalId,
-        itemId: action.itemId,
+      openChangesFace({
+        context: currentGoalRef()?.goalId === action.goalId
+          ? { kind: "goal", goal: currentGoalRef()! }
+          : (sessionChangesContext() ?? { kind: "project" }),
+        section: "review",
         rel: action.rel,
         line: action.line,
       })
@@ -4348,7 +4218,6 @@ export function MafwShell() {
                   onFocusBack={focusBack}
                   onFocusCrumb={focusCrumb}
                   focusOpenRequest={focusOpenRequest()}
-                  instrumentRail={instrumentRail()}
                   pickerOpen={pickerOpen()}
                   pickerItems={pickerItems()}
                   onOpenPicker={openSubjectPicker}
@@ -4371,30 +4240,12 @@ export function MafwShell() {
                       .catch((e: any) => showToastV2({ description: `发送失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 4000 } as any))
                   }}
                   onAddDiffAnnotation={addAnnotation}
-                  onOpenReview={() => openProjectChangeSetFocus("review")}
-                  renderChangeSet={() => {
-                    const subject = activeFocus()?.subject
-                    if (subject?.kind !== "changeSet" || subject.scope !== "goal" || !subject.goalId) return null
-                    return (
-                      <GoalChangeSetStage
-                        podId={podIdForCurrentProject()}
-                        goalId={subject.goalId}
-                        revision={subject.revision ?? 1}
-                        sessionDirectory={store.session.find((s: any) => s.id === currentSessionID())?.directory ?? null}
-                        onSendComment={(sid, text) => {
-                          void window.api.mafw.sessions.promptAsync({ sessionID: sid, message: text })
-                            .then(() => showToastV2({ description: "评论已发送给 agent", duration: 2000 } as any))
-                            .catch((e: any) => showToastV2({ description: `发送失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 4000 } as any))
-                        }}
-                        onAddAnnotation={(a) => {
-                          const sid = currentSessionID()
-                          if (!sid) return
-                          addPending({ sessionID: sid, ...a })
-                          showToastV2({ description: "已加入批注", duration: 1600 } as any)
-                        }}
-                      />
-                    )
-                  }}
+                  onOpenReview={() => openChangesFace({
+                    context: currentGoalRef()
+                      ? { kind: "goal", goal: currentGoalRef()! }
+                      : (sessionChangesContext() ?? { kind: "project" }),
+                    section: "review",
+                  })}
                   renderWorld={() => (
                     <WorldOverviewStage
                       projectDir={currentProject()}

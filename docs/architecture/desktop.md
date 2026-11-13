@@ -16,8 +16,8 @@
   dev checkout 先读 `~/.mafw/runtime/gateway.json`，用 `/health` 的 `pid`/`instanceId` 对账：
   兼容则 attach（Config 显示「已连接」），版本/schema 不符则 conflict 并提供「用当前构建重启」；
   `MAFW_DEV_ADOPT=0` 表示不 attach、提示先停止现有 gateway。详见 `docs/architecture/gateway.md`。
-- **主布局**：左 IconRail（46px，文件/会话/搜索/便签/团队/审批/Config）+ 左 dock；主区 = chat 指挥列
-  + 右工作台（`工作 / 工作台 / 执行 / 审阅`）。chat 档位 520/640/760（默认 760）；push 预算 1490；
+- **主布局**：左 IconRail（46px，文件/改动/讨论/搜索/便签/团队/审批/Config）+ 左 dock；主区 = chat 指挥列
+  + 右工作台（文档舞台）。chat 档位 520/640/760（默认 760）；push 预算 1490；
   `Ctrl+Alt+F` 专注模式；最小窗口 **900×600**。窗口可用宽 ≥1240 并排（chat 520–760），
   <1240 改为 **Chat / Workbench 全宽切换**（chat 保持 760 居中，composer 不被侧面板覆盖）。
 - **Lead / Tech Lead 入口（2026-11-10）**：Lead 会话 composer 上方保留 Tech Lead 邀请条（Goal
@@ -35,20 +35,29 @@
   编辑器 tabs/活动文件/阅读位置/选区按 scope 恢复；批注草稿携带 `scopeKey`/`root`，草稿内容仍按 root 隔离。
   最后 scope 按项目持久化（重启/切项目后恢复，worktree 不可用则回退项目根）；终端为每个 scope 保留独立本地会话；
   返回会同步树选中并恢复编辑器选区。内联 diff 只在活动会话目录与内容根一致时显示；持久化评审项留给后续。
-- **Stage-first 焦点基础（2026-11-12 Plan 1）**：content context 走 `FrameBar / LensBar / FocusStage /
-  SubjectPicker`；焦点 = `scope + subject + lens + place`，按世界持久化到 `mafw-focus:v1:<worldId>`。
-  `⌘P` / `Ctrl+P` 取景器打开文件、最近内容、浏览器、终端；返回 / 面包屑通过 `syncStageToFocus` 同步舞台。
-  选择已打开的文档 tab 会把已有 focus 移到栈顶而不是重复入栈，返回按不同 subject 回退，不会在重复
-  file / web 条目之间空转。文档 tab 右键菜单是非 modal，不会给 `body` 加 `pointer-events: none`。
+- **Stage-first 焦点基础（2026-11-12 Plan 1；2026-11-13 部分被取代）**：content context 走
+  `FrameBar / FocusStage / SubjectPicker`；焦点 = `scope + subject + place`，按世界持久化到
+  `mafw-focus:v1:<worldId>`。`⌘P` / `Ctrl+P` 取景器打开文件、最近内容、浏览器、终端；返回 /
+  面包屑通过 `syncStageToFocus` 同步舞台。选择已打开的文档 tab 会把已有 focus 移到栈顶而不是
+  重复入栈，返回按不同 subject 回退，不会在重复 file / web 条目之间空转。文档 tab 右键菜单是
+  非 modal，不会给 `body` 加 `pointer-events: none`。
   `⌘⇧P` / `Ctrl+Shift+P` 是命令面板（应用级动作）；两者都走 C3 快捷键注册表、互斥，同一时刻只显示一个浮层。
   `project` / `goal` / `review` 仍是 legacy context；旧 `ContentScopeState` 在首次启动时迁移。详见
   `docs/releases/2026-11-12-workbench-focus-foundation.md`。
-- **Goal / 评审焦点（2026-11-12 Plan 2）**：Goal 以 `goal` scope 进入焦点栈，Goal 总览复用
-  `GoalDetailPanel`；变更集以 `changeSet` subject 进入 `ChangeSetStage`（复用 `ChangesDock`，无 diff 显式空态）；
-  Goal scope 下的审阅 lens 在 `InstrumentRail` 展示 `GoalReviewQueue`，评审项可聚焦为 `reviewItem` 并携带
-  `rel:Lx` 锚点，舞台分派到编辑器后 `gotoLine`。revision worktree 由 `pod.result` + `fs.listDir` 探测，
-  失败回退项目目录；resolve / reopen 仍只由人触发。详见
-  `docs/releases/2026-11-12-workbench-goal-review-focus.md`。
+- **Tab-as-view + 左栏改动面（2026-11-13）**：右工作台不再有 LensBar；`FrameBar / DocumentTabs /
+  DocumentToolbar / Stage` 是唯一 chrome。文件 / 浏览器 / diff 是文档 tab 的三种 kind：文件 tab 直接
+  可编辑，普通打开先给预览 tab、首次输入提升为持久 tab；diff tab 是瞬态的，不持久化 patch。左 rail
+  新增「改动」face，按 `当前讨论 / 当前 Goal / 项目` 三种上下文展示待审评审项、本版变更（Goal
+  revision worktree diff）和本会话改动；点击条目在右工作台打开 diff tab。Goal 验收仍是人类专属动作，
+  只在 Goal 结果页出现，不进入左栏。详见
+  `docs/releases/2026-11-13-workbench-tabs-and-changes-face.md`。
+- **Goal / 评审焦点（2026-11-12 Plan 2；2026-11-13 迁移）**：Goal 以 `goal` scope 进入焦点栈，
+  Goal 总览复用 `GoalDetailPanel`。原 `changeSet` subject + `ChangeSetStage` + `InstrumentRail` +
+  `GoalReviewQueue` 已删除；评审项改由左栏「改动」面投影（`pod.reviewItems`），
+  resolve / reopen 仍只由人触发，验收仍走 Goal 结果页。revision worktree 由 `pod.result` +
+  `fs.listDir` 探测，失败回退项目目录。详见
+  `docs/releases/2026-11-12-workbench-goal-review-focus.md` 与
+  `docs/releases/2026-11-13-workbench-tabs-and-changes-face.md`。
 - **Chat 决定面（2026-11-12 Plan 3）**：Chat transcript 上方是决定板（需要你定 / 待确认 / 已定 / 已搁置），
   与 rail Pod badge 共用 `decisionStore`；`/api/attention` 投影未解决评审项，决定动作可打开 Goal face、
   评审项锚点或计划审阅。决定记录由 MCP 起草、人确认 / 搁置 / 重开，落在 `<project>/.mafw/decisions/`；
@@ -90,6 +99,9 @@
   `documents/file-documents`；Phase 2C-3 删除 `browser-tabs` / `editor-model-store`
   兼容 facade，调用面统一到 `browser-documents` / `file-documents`，document store 用模块级
   effect 自动派生 file / web entries。左 dock 文件面头部提供手动刷新（保留展开态）。
+  2026-11-13 起 document store 还派生 `diff` entries：`documents/diff-documents` 持有瞬态 diff
+  文档，`DiffDocumentView` 复用 `DiffReviewPanel` 渲染；diff tab 不持久化，重启后丢弃，避免
+  用不存在的 patch 恢复 tab。
 - **编辑器**：默认 **Monaco**（VS Code 内核；`mafw-editor-engine=codemirror` 回退，挂载失败自动回退），
   行内 diff 装饰、Ctrl/Cmd+S、MAFW 主题 token 映射、minimap ≥720px。详情见本文件 Monaco 段。
 - **文件预览**：md（session-ui markdown）、json 折叠树、csv/tsv 表格、svg 预览/源码、图片、pdf（Chromium

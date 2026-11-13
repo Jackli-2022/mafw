@@ -7,11 +7,11 @@ const shell = read("src/renderer/mafw/MafwShell.tsx")
 const editor = read("src/renderer/mafw/components/EditorDock.tsx")
 const focusOpen = read("src/renderer/mafw/focus/focus-open.ts")
 
-test("review item focus carries the line into the explicit open request", () => {
-  assert.match(shell, /openReviewItemToFocus/)
-  assert.match(shell, /applyReviewFocus/)
+test("review items open through the left changes face", () => {
+  assert.match(shell, /openChangesFace/)
+  assert.match(shell, /section: "review"/)
   assert.match(shell, /syncStageToFocus\(next\)/)
-  assert.match(shell, /:L/)
+  assert.doesNotMatch(shell, /openReviewItemToFocus|applyReviewFocus/)
   assert.match(focusOpen, /line\?: number/)
 })
 

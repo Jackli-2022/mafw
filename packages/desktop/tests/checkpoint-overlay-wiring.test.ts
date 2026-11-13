@@ -39,7 +39,6 @@ describe("checkpoint overlay wiring", () => {
 
   test("embedded docks forbid session fallback and non-invertible revert", () => {
     for (const path of [
-      "src/renderer/mafw/components/ChangesDock.tsx",
       "src/renderer/mafw/components/EditorDock.tsx",
     ]) {
       const src = read(path)

@@ -12,7 +12,7 @@ test("workbench entry points go through focus actions", () => {
     "openBrowserFocus",
     "openTerminalFocus",
     "openPluginFocus",
-    "openProjectChangeSetFocus",
+    "openChangesFace",
     "showWorkbenchLanding",
   ]) {
     assert.match(shell, new RegExp(name))

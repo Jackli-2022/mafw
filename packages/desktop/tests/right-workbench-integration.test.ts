@@ -7,7 +7,8 @@ const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), "u
 test("MafwShell renders the focus shell and no legacy SessionRail", () => {
   const src = read("src/renderer/mafw/MafwShell.tsx")
   assert.match(src, /WorkbenchShell/)
-  assert.match(src, /openProjectChangeSetFocus\("review"\)/)
+  assert.match(src, /openChangesFace\(/)
+  assert.doesNotMatch(src, /openProjectChangeSetFocus/)
   assert.doesNotMatch(src, /SessionRail/)
   assert.doesNotMatch(src, /rightDockTab/)
   assert.doesNotMatch(src, /ExecutionView|openExecutionDrawer|openWorkbenchContext|migrateWorkbenchStorage/)

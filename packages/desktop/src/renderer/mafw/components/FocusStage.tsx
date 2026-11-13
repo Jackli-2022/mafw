@@ -2,7 +2,6 @@ import { Match, Show, Switch, type JSX } from "solid-js"
 import { TerminalSurface } from "./TerminalSurface"
 import { DocumentStage } from "./DocumentStage"
 import { DockEmpty } from "./dock-panel"
-import { ChangeSetStage } from "./ChangeSetStage"
 import type { FileDiffEntry } from "./DiffReviewPanel"
 import type { DiffDocument } from "../documents/diff-documents"
 import type { AnnotationAnchor } from "../../../shared/annotation-types"
@@ -47,7 +46,6 @@ export function FocusStage(props: {
   onWebBadge?: (surfaceId: string, count: number) => void
   onWebTitle?: (surfaceId: string, title: string) => void
   onWebError?: (surfaceId: string, message: string) => void
-  renderChangeSet?: () => JSX.Element | null
   renderGoal?: () => JSX.Element
   renderWorld?: () => JSX.Element
   onDocumentSelect?: (id: string) => void
@@ -97,19 +95,6 @@ export function FocusStage(props: {
           <Show when={!pluginWebSurface()}>
             {pluginId() ? props.renderPluginSurface?.(pluginId()!) : null}
           </Show>
-        </Match>
-
-        <Match when={kind() === "changeSet"}>
-          {props.renderChangeSet?.() ?? (
-            <ChangeSetStage
-              sessionID={props.sessionID}
-              sessionDirectory={props.sessionDirectory ?? null}
-              diffs={props.diffs}
-              liveDiffs={props.liveDiffs}
-              onSendComment={props.onSendComment}
-              onAddAnnotation={props.onAddAnnotation}
-            />
-          )}
         </Match>
 
         <Match when={kind() === "goal"}>

@@ -20,18 +20,9 @@ test("web/terminal/plugin dispatch to their surfaces", () => {
   assert.equal(stageKindFor(focus({ kind: "plugin", package: "p", panel: "x" })), "plugin")
 })
 
-test("changeSet/goal/world dispatch to their stage", () => {
-  assert.equal(
-    stageKindFor(focus({ kind: "changeSet", scope: "project", baseline: "HEAD" })),
-    "changeSet",
-  )
+test("goal/world dispatch to their stage", () => {
   assert.equal(stageKindFor(focus({ kind: "goal", goalId: "g1" })), "goal")
   assert.equal(stageKindFor(focus({ kind: "world" })), "world")
-})
-
-test("unknown subjects fall back to world", () => {
-  assert.equal(stageKindFor(focus({ kind: "evidence", id: "e1" })), "world")
-  assert.equal(stageKindFor(focus({ kind: "reviewItem", id: "r1", anchor: { rel: "src/a.ts", line: 4 } })), "editor")
 })
 
 test("stageActionFor drives the editor for file subjects", () => {
@@ -52,27 +43,6 @@ test("stageActionFor drives the browser for web subjects", () => {
 test("stageActionFor leaves non-file stages alone", () => {
   assert.deepEqual(stageActionFor(focus({ kind: "terminal", id: "t1" })), { kind: "none" })
   assert.deepEqual(stageActionFor(focus({ kind: "goal", goalId: "g1" })), { kind: "none" })
-})
-
-test("stageActionFor opens a review item at its anchor", () => {
-  const goalScope = {
-    kind: "goal",
-    worldId: "C:/repo",
-    goalId: "g1",
-    revision: 3,
-    worktreeDir: "C:/repo-wt",
-  } as const
-  const reviewFocus: Focus = {
-    scope: goalScope,
-    subject: { kind: "reviewItem", id: "r1", anchor: { rel: "src/a.ts", line: 12 } },
-    place: {},
-  }
-  assert.deepEqual(stageActionFor(reviewFocus), {
-    kind: "editor",
-    root: "C:/repo-wt",
-    rel: "src/a.ts",
-    line: 12,
-  })
 })
 
 test("diff subjects dispatch to the diff stage", () => {

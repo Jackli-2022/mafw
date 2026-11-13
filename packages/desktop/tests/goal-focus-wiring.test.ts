@@ -27,9 +27,9 @@ test("goal picker items carry a goal scope", () => {
   assert.match(picker, /subject: \{ kind: "goal", goalId: goal\.goalId \}/)
 })
 
-test("Goal rail can open the change set subject", () => {
-  assert.match(shell, /openChangeSetFromFocus/)
-  assert.match(shell, /查看变更集/)
+test("Goal rail opens changes through the left changes face", () => {
+  assert.match(shell, /openChangesFace/)
+  assert.doesNotMatch(shell, /openChangeSetFromFocus/)
 })
 
 test("Goal focus resolves the revision worktree before opening content", () => {

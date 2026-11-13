@@ -29,12 +29,12 @@ test("WorkbenchShell is focus-only", () => {
   }
 })
 
-test("FocusStage dispatches world, goal, changeSet and plugin", () => {
+test("FocusStage dispatches world, goal, diff and plugin", () => {
   assert.match(stage, /kind\(\) === "world"/)
   assert.match(stage, /kind\(\) === "goal"/)
-  assert.match(stage, /kind\(\) === "changeSet"/)
+  assert.doesNotMatch(stage, /kind\(\) === "changeSet"/)
   assert.match(stage, /kind\(\) === "plugin"/)
-  assert.match(stage, /PluginSurfaceStage|renderPluginSurface/)
+  assert.match(stage, /DiffDocumentView|DocumentStage/)
 })
 
 test("PluginSurfaceStage keeps visited web surfaces mounted", () => {

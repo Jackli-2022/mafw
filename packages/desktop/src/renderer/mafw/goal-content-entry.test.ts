@@ -24,7 +24,7 @@ test("the Goal entry carries revision and title, and never auto-switches scope",
 
 test("Goal revision content keeps a return path through the focus stack", () => {
   assert.match(shell, /openGoalContent/)
-  assert.match(shell, /openSubject\(/)
-  assert.match(shell, /kind: "changeSet", scope: "goal"/)
+  assert.match(shell, /applyGoalFocus/)
+  assert.doesNotMatch(shell, /kind: "changeSet"/)
   assert.match(shell, /focusBack|showWorkbenchLanding/)
 })
