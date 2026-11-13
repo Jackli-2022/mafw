@@ -509,6 +509,26 @@ describe('ctx.config.update', () => {
 });
 
 describe('menu item contributions', () => {
+  it('accepts composerActions and projects them into the client UI', () => {
+    const built = buildActivatedContributions(
+      'demo',
+      {
+        ui: {
+          composerActions: [
+            { id: 'draft', label: 'Draft', action: 'load', icon: 'bubble-5', order: 10 },
+          ],
+        },
+        actions: { load: { handler: () => null } },
+      },
+      CANONICAL,
+    );
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.value.ui.composerActions).toEqual([
+      { id: 'draft', label: 'Draft', action: 'load', icon: 'bubble-5', order: 10 },
+    ]);
+  });
+
   it('accepts menuItems and projects them into the client UI', () => {
     const built = buildActivatedContributions(
       'demo',

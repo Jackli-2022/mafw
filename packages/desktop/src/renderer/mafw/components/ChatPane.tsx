@@ -87,6 +87,7 @@ import { checkpointRev } from "../checkpoint-rev"
 import { keybindingFor } from "../keybinding-store"
 import { matchesCombo } from "../keybindings"
 import { pendingInserts, pushComposerInsert, takeComposerInsert } from "../composer-insert"
+import { PluginComposerActions } from "../plugins/PluginComposerActions"
 import { menuController } from "../context-menu/controller"
 import { buildFilePathMenu } from "../context-menu/builders/file-path"
 import { buildCodeBlockMenu, buildMessageMenu } from "../context-menu/builders/message"
@@ -2692,6 +2693,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   <Icon name={perm().icon} size="small" />
                 </ButtonV2>
               </TooltipV2>
+              <PluginComposerActions sessionID={sidProp()} />
             </div>
             <div class="mafw-composer-right">
               <TooltipV2 value={contextTooltip()} openDelay={300}>
