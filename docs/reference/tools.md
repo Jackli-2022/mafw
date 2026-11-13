@@ -33,7 +33,6 @@
 | `mafw_set_goal` | 设置活跃 Goal |
 | `mafw_get_goal_status` | 查询 Goal 状态 |
 | `mafw_list_goals` | 列出 Goal |
-| `mafw_answer_question` | 回答待决问题（Manager） |
 | `mafw_get_evidence` | 获取 Goal 证据 |
 | `mafw_cancel_goal` | 取消 Goal |
 | `mafw_list_pending_questions` | 列出待决问题 |
@@ -53,6 +52,9 @@
 | `mafw_desktop_type` | 桌面输入 |
 | `mafw_desktop_scroll` | 桌面滚动 |
 | `mafw_restart_agent` | 重启 gateway 拥有的 agent 进程（opencode serve sidecar）；external/进程内 runtime 不可用 |
+
+> **2026-11-13（E7 review）**：`mafw_answer_question` 已从 MCP 删除（human-only；回答只走
+> human-token HTTP / UI）。表内计数是 2026-11-10 迁移快照，不再追踪增删。
 
 > **接线要求（2026-09-08 修复）**：以上 42 个工具经 gateway MCP 暴露（`http://127.0.0.1:3000/mcp`），opencode 侧需在配置中有 `"mcp": { "mafw": { "type": "remote", "url": "http://127.0.0.1:3000/mcp", "enabled": true, "oauth": false } }` 才可用。接线有两条路径：①插件**激活时自接线**（`src/utils/self-wiring.ts` 的 `ensureMcpWiring()`——检测全局 `~/.config/opencode/opencode.jsonc` 缺 `"mcp"` 段则幂等补写，带 `.bak-mafw-<ts>` 备份，fail-open）；②手动写全局或项目级 opencode 配置。**排错关键**：旧键 `mcpServers`（v4.1 时代 `opencode.json.example`）已被 opencode 1.x 废弃并**静默忽略**，接线缺失无任何报错、工具直接消失；验证用 `opencode mcp list` 应显示 `mafw connected`。插件原生工具（6 个，§4.2）不经 MCP，独立可用。
 >

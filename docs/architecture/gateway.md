@@ -362,8 +362,9 @@ goal_created 事件 → startGoal（hint > request 扫描 > 首项目）
 
 `executeAskUser` 写 `QuestionLedger` asked + state.pendingQuestion；回答/取消经
 `handleAnswer/handleCancel` 写 state.userResponse/nextNode → advance。Lead 可经
-`mafw_list_pending_questions` / `mafw_answer_question` 自治代答；手机/桌面共享同一
-`/api/questions` 面（「需要你」应答）。
+`mafw_list_pending_questions` 列出待决问题；**回答只能由人类做**（手机/桌面经
+`/api/questions` 面 + human/device 凭据 → `goals.respondQuestion` / `questions.reply`）。
+MCP 不提供 `mafw_answer_question`（E7 review 已删除，见下「human-only」小节）。
 
 ### Trace 与观测
 
@@ -1046,6 +1047,11 @@ kernel 的 watchdog/heartbeat/queue-sweep/session-sweep 等自有 interval 与�
   `actorSessionID` 再拒。
 - `human` + `actorSessionID` 仍 403 只适用于 **pod 验收（`pods.goals.accept`）与 decisions 写**（E5a 的既有审计检查，防人类 UI 误用 agent 上下文），不是 E7 路由的通用规则。
 - `pairing-code` 的 human 检查在调用 pairing service **之前**，被拒请求不消耗限频额度；`POST /api/mobile/pairing/verify` 仍是唯一免凭据路由（nonce 即凭据，见上）。
+- **MCP 面不提供 human 工具**：代答工具 `mafw_answer_question` 已删除（E7 review 后续
+  `ba8ac0e7`）——loopback MCP 调用无人类凭据，保留只会是一条恒 403 的 impersonation 入口。
+  删除面：工具定义 / handler / registry entry / `runtime/tool-classes.ts` 注解 / manager
+  allowlist；`tool-registry-annotations.test.ts` 有缺失断言防回填。人类回答走
+  human/device 凭据的 `goals.respondQuestion` / `questions.reply|reject`（桌面 / 手机 UI）。
 - 普通写路径（goal create / task / memory / …）**不要求** human，继续使用 service/local。
 
 ### 兼容 / 威胁模型
@@ -1148,8 +1154,11 @@ E5b 已知残留（同实例 reset 的低 head、busy/后台竞态）见 release
   门在 **body 读取之前**，被拒请求不消费请求体、不碰 ledger / driver。
   `questions.list`、GET timeline 等只读面不变。
 - **副作用（intended）**：MCP 工具 `mafw_answer_question` 走 loopback 无凭据 → principal 为
-  `local` → 现在拿到 403 `human_principal_required`。即 agent 不能再「代用户回答」目标问题，
-  与「MCP 不提供 human 工具」不变量一致（工具本身未删除，留待后续评估）。
+  `local` → 现在拿到 403 `human_principal_required`。即 agent 不能再「代用户回答」目标问题。
+  **处置（E7 review 后续，`fix(mcp): remove agent impersonation question tool`）**：定义 /
+  handler / registry entry / `runtime/tool-classes.ts` 注解 / manager allowlist 全部删除，
+  `handlers/manager-answer-question.ts` 删除；`tool-registry-annotations.test.ts` 加缺失断言
+  防止回填（与「MCP 不提供 human 工具」不变量一致）。人类回答只走 human-token HTTP / UI。
 - **F1 回滚边界**：`createSessionWithWorktree` 里 `kvSet` 移到 `createSession` 的 try 之外；
   kv 失败不再删掉活会话的 worktree / branch，错误照原样上抛。
 
@@ -1159,7 +1168,6 @@ E5b 已知残留（同实例 reset 的低 head、busy/后台竞态）见 release
 - 全进程 timer inventory（serve watchdog / heartbeat / queue sweep / loader 等）。
 - mobile 工作 tab 增量渲染（已有 `goalId` 局部更新）。
 - `pod.updated` 记录级 payload、attention → decision 投影、OS keychain / 进程签名、MCP human 工具。
-- `mafw_answer_question` MCP 工具的去留（现被 human gate 403；删除或改为只读待评估）。
 - 强制版本协商 / SDK 全量 schema 类型化。
 - E5b 同实例 `reset` 且新 head 更低时的重复 reset（有界、不丢数据）；busy / 后台 greeting 竞态。
 - `authorizeWsUpgrade` 仍只标 deprecated；desktop preload 的 event bridge 仍声明可选 `sessionID`（运行时忽略，无调用方传值）。

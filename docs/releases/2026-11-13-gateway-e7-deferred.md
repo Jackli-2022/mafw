@@ -28,6 +28,7 @@
 | E7-6（本记录） | E7-6 | 架构现状 + 本记录 + 全量门禁 + ledger（docs-only） |
 | `97d734de` | E7-1 / E7-3 review | F4：`goals.respondQuestion`、`questions.reply` / `questions.reject` 补 `requireHumanPrincipal`（body 读取前）；F1：`createSessionWithWorktree` 的 `kvSet` 移出回滚 try |
 | E7 review（本记录） | docs | 架构 human-gate 口径 / 本记录 clean gate 计数 / AGENTS.md / ledger 补丁 |
+| `ba8ac0e7` | E7 review 后续 | 删除 MCP `mafw_answer_question`（定义 / handler / registry / 注解 / manager allowlist）+ 缺失断言，human 回答只走 human-token HTTP/UI |
 
 ## 交付项
 
@@ -96,6 +97,12 @@
    被拒——agent 不能再代用户回答目标问题。
 9. **worktree kv 失败语义（review 轮）**：`kvSet` 映射写失败不再回滚已存在会话的
    worktree/branch，只上抛错误（E7-3 的 createSession 回滚不变）。
+10. **MCP `mafw_answer_question` 删除（breaking，review 后续 `ba8ac0e7`）**：工具定义、
+    `handlers/manager-answer-question.ts`、registry entry、`runtime/tool-classes.ts` 注解、
+    manager allowlist 全部移除。任何仍在调用 `mafw_answer_question` 的外部 agent/MCP 客户端
+    会收到「tool not found」；人类回答改走 human/device 凭据的
+    `POST /api/goals/:id/questions/:qid/respond`（`goals.respondQuestion`）或桌面 / 手机
+    「需要你」UI。desktop 工具卡仍保留该名字的渲染规格（仅历史会话展示，不是调用路径）。
 
 ## Review 修复轮（F4 / F1，commit `97d734de`）
 
@@ -114,6 +121,25 @@
   goals.respondQuestion 7，含「denied 不消费 body」与 ledger 未动的断言）；
   `routes-session-worktree` 12 → **13**（+1：kvSet 抛错 → 不调 `manager.remove`、worktree 目录
   与分支仍在、错误原样传播）。既有 wiring 测试全部注入 human principal。
+
+## Review 后续：MCP 代答工具删除（`ba8ac0e7`）
+
+F4 把 `goals.respondQuestion` 收紧为 human-only 后，MCP `mafw_answer_question` 只剩 403；
+且 E5a 已声明「MCP 不提供 human 工具」。本次直接删除该 impersonation 路径：
+
+- `gateway/src/mcp/tool-registry.ts`：删除定义（原 :498）、`handleManagerAnswerQuestion`
+  import、handlers 表 entry。
+- 删除 `gateway/src/mcp/handlers/manager-answer-question.ts`（全仓无其他 import）。
+- `gateway/src/runtime/tool-classes.ts` 注解、`gateway/src/skills/manager-agent-config.ts`
+  manager allowlist 同步移除（防「定义已删但 allowlist 仍放行」的悬空引用）。
+- 测试：`tests/unit/mcp/tool-registry-annotations.test.ts` 新增 3 条缺失断言
+  （DEFINITIONS / registry.definitions / handlers 均不含；handler 源文件不存在；manager
+  allowlist 不含）；`tests/unit/runtime/runtime-agents-install.test.ts` 的 allowlist
+  枚举去掉该项并加 `not.toContain` 反向断言。desktop 工具卡保留同名渲染规格（仅历史会话）。
+- 门禁：gateway `tsc --noEmit -p tsconfig.json`（gateway-local TS 5.9.3）**0 errors**；
+  `tests/unit/mcp/` + `mcp-route` / `mcp-streamable` / `mcp-sse-*` / `api-contract` /
+  `route-surface-catalog` / `runtime-agents-install`：**22 suites / 136 tests 全绿**
+  （`--runInBand --forceExit`）。
 
 ## 验证（worktree @ E7 review）
 
@@ -140,7 +166,7 @@
 
 | 面 | 新增 | 依据 |
 |---|---|---|
-| gateway | **+66** | E7-1 38（`tests/unit/routes/human-only-guards-e7.test.ts`）+ review F4 18（同文件：questions.reply/reject 11 + goals.respondQuestion 7）+ E7-3 3（`worktree/routes-session-worktree.test.ts` 配额回滚 describe）+ review F1 1（同文件 kvSet 不回收活会话 worktree）+ E7-4 6（`tests/unit/mcp/add-memory-pressure.test.ts`） |
+| gateway | **+69** | E7-1 38（`tests/unit/routes/human-only-guards-e7.test.ts`）+ review F4 18（同文件：questions.reply/reject 11 + goals.respondQuestion 7）+ E7-3 3（`worktree/routes-session-worktree.test.ts` 配额回滚 describe）+ review F1 1（同文件 kvSet 不回收活会话 worktree）+ E7-4 6（`tests/unit/mcp/add-memory-pressure.test.ts`）+ review 后续 3（`tests/unit/mcp/tool-registry-annotations.test.ts` 代答工具缺失断言） |
 | mobile | **+9** | `session_list_events_test.dart` +8（`time.updated` 建模 3 + 事件 patch/重排/Lead-first/legacy fallback/title-only 5）+ `event_recovery_test.dart` +1（hasMore 不前进 = protocol fallback）；`recovery_coordinator_test.dart` 仅改既有期望 |
 | desktop | **+1** | `tests/sse-replay-gap.test.ts` 冷启动只补新缺口用例（另 2 条既有 reset/truncated 用例改断言） |
 
