@@ -151,6 +151,31 @@ export interface PluginWebSurfaceClientDescriptor {
   rail?: { icon: string; order: number; badge: boolean }
 }
 
+/** Context-menu surfaces a package may contribute to. */
+export const PLUGIN_MENU_SURFACES = [
+  "editor.tab",
+  "file.tree",
+  "file.path",
+  "message",
+  "session.row",
+] as const
+export type PluginMenuSurface = (typeof PLUGIN_MENU_SURFACES)[number]
+
+/**
+ * Declarative context-menu item. `action` must reference an action declared by
+ * the same package; the Host namespaces the item id and renders it.
+ */
+export interface PluginMenuItemDescriptor {
+  id: string
+  surface: PluginMenuSurface
+  label: string
+  action: string
+  icon?: string
+  /** Display-only hint; Desktop does not register a global keybinding. */
+  shortcut?: string
+  order?: number
+}
+
 /** First-phase UI contribution slots. Unknown slots are rejected. */
 export interface PluginUiContribution {
   panels?: PluginPanelDescriptor[]
@@ -158,6 +183,7 @@ export interface PluginUiContribution {
   configPages?: PluginConfigPageDescriptor[]
   messageWindows?: PluginMessageWindowDescriptor[]
   webSurfaces?: PluginWebSurfaceDescriptor[]
+  menuItems?: PluginMenuItemDescriptor[]
 }
 
 /**

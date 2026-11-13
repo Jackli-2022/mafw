@@ -94,6 +94,7 @@ test("limits use the documented values", () => {
   assert.equal(PLUGIN_UI_LIMITS.maxDepth, 12)
   assert.equal(PLUGIN_UI_LIMITS.maxTextBytes, 64 * 1024)
   assert.equal(PLUGIN_UI_LIMITS.maxImageDataUrlBytes, 2 * 1024 * 1024)
+  assert.equal(PLUGIN_UI_LIMITS.maxMenuItems, 20)
   assert.equal(PLUGIN_UI_LIMITS.maxToolPayloadBytes, 256 * 1024)
   assert.equal(PLUGIN_UI_LIMITS.maxActionPayloadBytes, 256 * 1024)
   assert.equal(PLUGIN_UI_LIMITS.defaultActionTimeoutMs, 15_000)
@@ -456,6 +457,54 @@ test("manifest contributes: rejects non-object ui and invalid main", () => {
   assert.equal(ui.ok, false)
   const main = validatePluginManifestContributes({ desktop: { main: { legacy: false } } })
   assert.equal(main.ok, false)
+})
+
+test("menuItems: accepts a valid menu declaration", () => {
+  const result = validateClientDescriptor({
+    ...validDescriptor(),
+    ui: {
+      panels: [{ id: "main", title: "Main", viewAction: "getPanel" }],
+      menuItems: [
+        {
+          id: "copy-md",
+          surface: "message",
+          label: "Copy markdown",
+          action: "getPanel",
+          icon: "file",
+          shortcut: "Ctrl+Shift+C",
+          order: 10,
+        },
+      ],
+    },
+  })
+  assert.equal(result.ok, true)
+  if (!result.ok) return
+  assert.equal(result.value.ui.menuItems?.[0]?.id, "copy-md")
+  assert.equal(result.value.ui.menuItems?.[0]?.surface, "message")
+})
+
+test("menuItems: rejects unknown surface, action, icon and duplicate ids", () => {
+  for (const item of [
+    { id: "x", surface: "unknown", label: "X", action: "getPanel" },
+    { id: "x", surface: "message", label: "X", action: "other:action" },
+    { id: "x", surface: "message", label: "X", action: "missing" },
+    { id: "x", surface: "message", label: "X", action: "getPanel", icon: "nope" },
+    { id: "x", surface: "message", label: "X", action: "getPanel", danger: true },
+  ]) {
+    const result = validateClientDescriptor({ ...validDescriptor(), ui: { menuItems: [item] } })
+    assert.equal(result.ok, false)
+  }
+
+  const duplicate = validateClientDescriptor({
+    ...validDescriptor(),
+    ui: {
+      menuItems: [
+        { id: "same", surface: "message", label: "A", action: "getPanel" },
+        { id: "same", surface: "message", label: "B", action: "getPanel" },
+      ],
+    },
+  })
+  assert.equal(duplicate.ok, false)
 })
 
 test("manifest contributes: accepts gateway tools", () => {

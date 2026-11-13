@@ -7,6 +7,7 @@
  * truncating it silently.
  */
 import { PLUGIN_UI_LIMITS } from "./limits.ts"
+import { PLUGIN_MENU_SURFACES } from "./types.ts"
 import { isPluginIconName } from "./icons.ts"
 import type {
   PluginActionDescriptor,
@@ -16,6 +17,7 @@ import type {
   PluginDiagnostic,
   PluginEventDescriptor,
   PluginJsonSchema,
+  PluginMenuItemDescriptor,
   PluginMessageWindowDescriptor,
   PluginManifestContributes,
   PluginPanelDescriptor,
@@ -55,7 +57,17 @@ const DESCRIPTOR_KEYS = [
   "diagnostics",
 ] as const
 
-const UI_SLOT_KEYS = ["panels", "toolCards", "configPages", "messageWindows", "webSurfaces"] as const
+const UI_SLOT_KEYS = [
+  "panels",
+  "toolCards",
+  "configPages",
+  "messageWindows",
+  "webSurfaces",
+  "menuItems",
+] as const
+const MENU_ITEM_KEYS = ["id", "surface", "label", "action", "icon", "shortcut", "order"] as const
+const MENU_LABEL_MAX = 80
+const MENU_SHORTCUT_MAX = 32
 
 const PANEL_KEYS = ["id", "title", "icon", "order", "viewAction", "refreshOn"] as const
 const TOOL_CARD_KEYS = ["id", "tools", "override", "viewAction"] as const
@@ -881,6 +893,98 @@ function readWebSurfaces(
   return surfaces
 }
 
+function readMenuItems(
+  value: unknown,
+  actionNames: Set<string>,
+  errors: string[],
+): PluginMenuItemDescriptor[] | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value)) {
+    addError(errors, "ui.menuItems must be an array")
+    return undefined
+  }
+  if (value.length > PLUGIN_UI_LIMITS.maxMenuItems) {
+    addError(errors, `ui.menuItems exceeds ${PLUGIN_UI_LIMITS.maxMenuItems} entries`)
+    return undefined
+  }
+
+  const items: PluginMenuItemDescriptor[] = []
+  const ids = new Set<string>()
+  value.forEach((raw, index) => {
+    const label = `ui.menuItems[${index}]`
+    if (!isPlainObject(raw)) {
+      addError(errors, `${label} must be an object`)
+      return
+    }
+    checkKnownFields(raw, MENU_ITEM_KEYS, label, errors)
+
+    const id = requireString(raw.id, `${label}.id`, MAX_ID_LENGTH, errors)
+    if (id !== undefined && !NAME_PATTERN.test(id)) {
+      addError(errors, `${label}.id "${id}" must match ${NAME_PATTERN}`)
+    }
+    if (id !== undefined) {
+      if (ids.has(id)) addError(errors, `duplicate menu item id "${id}"`)
+      else ids.add(id)
+    }
+
+    const itemLabel = requireString(raw.label, `${label}.label`, MENU_LABEL_MAX, errors)
+    const surface = raw.surface
+    const validSurface =
+      typeof surface === "string" &&
+      (PLUGIN_MENU_SURFACES as readonly string[]).includes(surface)
+    if (!validSurface) {
+      addError(
+        errors,
+        `${label}.surface must be one of ${PLUGIN_MENU_SURFACES.join(", ")}`,
+      )
+    }
+
+    const action = requireString(raw.action, `${label}.action`, MAX_ID_LENGTH, errors)
+    if (action !== undefined) {
+      if (!NAME_PATTERN.test(action)) {
+        addError(errors, `${label}.action "${action}" must match ${NAME_PATTERN}`)
+      } else if (!actionNames.has(action)) {
+        addError(errors, `${label}.action references undeclared action "${action}"`)
+      }
+    }
+
+    if (raw.icon !== undefined && !isPluginIconName(raw.icon)) {
+      addError(errors, `${label}.icon must be a registered plugin icon`)
+    }
+    if (raw.shortcut !== undefined) {
+      if (
+        typeof raw.shortcut !== "string" ||
+        raw.shortcut.length === 0 ||
+        raw.shortcut.length > MENU_SHORTCUT_MAX ||
+        !/^[\x20-\x7e]+$/.test(raw.shortcut)
+      ) {
+        addError(errors, `${label}.shortcut must be 1-${MENU_SHORTCUT_MAX} printable characters`)
+      }
+    }
+
+    let order: number | undefined
+    if (raw.order !== undefined) {
+      if (!Number.isInteger(raw.order)) {
+        addError(errors, `${label}.order must be an integer`)
+      } else {
+        order = raw.order as number
+      }
+    }
+
+    if (!id || !itemLabel || !validSurface || action === undefined) return
+    items.push({
+      id,
+      surface: surface as PluginMenuItemDescriptor["surface"],
+      label: itemLabel,
+      action,
+      ...(typeof raw.icon === "string" ? { icon: raw.icon } : {}),
+      ...(typeof raw.shortcut === "string" ? { shortcut: raw.shortcut } : {}),
+      ...(order !== undefined ? { order } : {}),
+    })
+  })
+  return items
+}
+
 function readUi(
   value: unknown,
   packageName: string,
@@ -926,6 +1030,10 @@ function readUi(
       errors,
     )
     if (messageWindows !== undefined) ui.messageWindows = messageWindows
+  }
+  if (value.menuItems !== undefined) {
+    const menuItems = readMenuItems(value.menuItems, actionNames, errors)
+    if (menuItems !== undefined) ui.menuItems = menuItems
   }
   return ui
 }
