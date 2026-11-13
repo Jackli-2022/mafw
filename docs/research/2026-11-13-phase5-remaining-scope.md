@@ -11,11 +11,13 @@
 |---|---|---|
 | memory store/retrieval | 已关闭 | 产品能力，不做 provider、不改逻辑、不分区 |
 | embedding/reranker | 已交付 | 模型/API/本地/策略可换；memory 核心不变 |
-| automation trigger/action | 未做 | action provider 已有（Phase 2），但未接 live；trigger 仍是闭合 union |
+| automation trigger/action | 已交付（2026-11-13） | action provider 接 live；插件事件可触发 event rule；cron/timer/scheduler 仍由 core 拥有 |
 | goal eval/executor | 未做 | `GoalEval` 是纯产品契约；NodeDriver / 路由 / 人类验收固定 |
 | storage backend | 未做 | `StorageBackend` 是 async 死接口，无消费者 |
 
 ## 2. Automation trigger/action
+
+> **已交付（2026-11-13）**：action provider 接 live；插件事件通过 `PluginEventRegistry.onEvent` → `AutomationEngine.handleExternalEvent()` 触发 event rule；cron / timer / scheduler 仍由 core 拥有。交付记录：`docs/releases/2026-11-13-capability-kernel-phase5-automation.md`。
 
 ### 现状
 
@@ -122,26 +124,24 @@ NodeDriver、路由、人类验收、`planHash`/`evalHash`、artifact 校验、r
 
 | 子阶段 | 内容 | 估算 |
 |---|---|---|
-| **5.4 Automation live wiring** | action provider 接 live；plugin event bridge；trigger 只发事件 | 1–2 周 |
+| **5.4 Automation live wiring** | 已交付：action provider 接 live；plugin event bridge；trigger 只发事件 | ✅ 2026-11-13 |
 | **5.5 GoalEval hook** | 逐 condition 评估 + 证据；human accept 不变 | 1 周（可选） |
 | **5.6 Storage cleanup** | 删除 `StorageBackend` 死接口 | 0.5 周 |
 | **5.7 G5 drill** | 剩余 provider 的切换/回滚/性能演练 | 1 周 |
 
-如果 automation 只做事件桥接、goal 暂不做、storage 删除，剩余工作量可以压到 **2–3 周**，而不是路线图原来的 6–8 周。
+automation 已交付；剩余 goal/storage 约 **1.5–2.5 周**，而不是路线图原来的 6–8 周。
 
 ## 6. 需要先定的决策
 
-1. Automation action 是否接 live？如果接，包 action 的权限/审计怎么做？
-2. 插件事件是否允许触发 automation？如果允许，走 `eventBus` bridge 还是 trigger provider？
-3. Goal 只做 GoalEval hook，还是也要现有节点 executor？是否明确不开放新节点名？
-4. `StorageBackend` 删除还是保留为非热路径 port？
+1. Goal 只做 GoalEval hook，还是也要现有节点 executor？是否明确不开放新节点名？
+2. `StorageBackend` 删除还是保留为非热路径 port？
 
 ## 7. 结论
 
-剩下的 Phase 5 不应该继续“把所有东西 provider 化”：
+Phase 5 没有继续“把所有东西 provider 化”：
 
-- **automation** 值得做，但核心是 live wiring + 事件桥接，不是把 cron 交给 provider。
+- **automation** 已按 live wiring + 事件桥接交付，没有把 cron 交给 provider。
 - **goal** 只值得做 GoalEval hook；状态机和人类验收不动。
 - **storage** 建议直接删除死接口，不做通用后端。
 
-这样 Phase 5 可以从“6–8 周的有状态迁移”收敛成“2–3 周的剩余接线 + 清理”，风险也低得多。
+这样 Phase 5 可以从“6–8 周的有状态迁移”收敛成“1.5–2.5 周的剩余清理”，风险也低得多。
