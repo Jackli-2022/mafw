@@ -126,7 +126,7 @@ test("subjectKey treats version as frame state, not identity", () => {
   )
 })
 
-test("diff subjects have a stable identity", () => {
-  const subject: SubjectRef = { kind: "diff", source: "session", id: "d1", rel: "src/a.ts" }
-  assert.equal(subjectKey(subject), "diff:session:d1:src/a.ts")
+test("change-set subjects have a stable identity", () => {
+  const subject: SubjectRef = { kind: "changeset", id: "changeset:session:s1:m1", rel: "src/a.ts" }
+  assert.equal(subjectKey(subject), "changeset:changeset:session:s1:m1")
 })

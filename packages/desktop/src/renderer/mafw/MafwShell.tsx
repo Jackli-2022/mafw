@@ -15,8 +15,9 @@ import { FileSSR } from "@mafw/session-ui/file-ssr"
 import { IconRail } from "./components/IconRail"
 import { LeftDock } from "./components/LeftDock"
 import { ChangesFace } from "./components/ChangesFace"
-import { resolveChangesContext, type ChangesMode, type ChangesContext, type GoalRef } from "./changes/changes-context"
+import { type GoalRef } from "./changes/changes-context"
 import { nextChangesRequest, type ChangesRequest } from "./changes/changes-request"
+import { buildSessionTurnChanges, type SessionTurnChange } from "./changes/session-turns"
 import { countReviewAttention } from "./changes/review-queue"
 import { MenuHost } from "./context-menu/MenuHost"
 import { TextMenuBridge } from "./context-menu/TextMenuBridge"
@@ -146,7 +147,25 @@ import { fileDocumentTabId, nextDocumentTabId, webDocumentTabId } from "./docume
 import { configureDocumentListStorage } from "./documents/document-list-persistence"
 import { configureBrowserTabsStorage } from "./documents/browser-tabs-persistence"
 import { activeBrowserDocumentId, openBrowserDocument } from "./documents/browser-documents"
-import { activeDiffDocument, clearDiffDocuments, diffDocuments, openDiffDocument, setActiveDiffDocument, updateDiffDocument, type DiffDocument, type OpenDiffInput } from "./documents/diff-documents"
+import {
+  activeChangeSetDocument,
+  changeSetDocuments,
+  clearChangeSetDocuments,
+  openChangeSetDocument,
+  setActiveChangeSetDocument,
+  updateChangeSetDocument,
+  type ChangeSetSource,
+  type OpenChangeSetInput,
+} from "./documents/change-set-documents"
+import {
+  closeSceneTab,
+  flushSceneTabs,
+  openSceneTab,
+  sceneTabId,
+  sceneTabs,
+  switchSceneTabWorld,
+  type SceneSubject,
+} from "./documents/scene-tabs"
 import { stageActionFor } from "./focus/stage-dispatch"
 import { openGoalFocus as applyGoalFocus } from "./focus/goal-focus"
 import type { FocusOpenRequest } from "./focus/focus-open"
@@ -2100,7 +2119,7 @@ export function MafwShell() {
   createEffect(on(
     () => currentProject(),
     (project) => {
-      clearDiffDocuments()
+      clearChangeSetDocuments()
       configureDocumentListWorld(project ?? "unscoped")
     },
   ))
@@ -2158,6 +2177,15 @@ export function MafwShell() {
   const mergedSessionDiffs = createMemo(() =>
     getSessionTurnDiffs().entries(currentSessionID() || "", sessionMessages()),
   )
+  const sessionTurnChanges = createMemo<SessionTurnChange[]>(() => {
+    const sid = currentSessionID()
+    if (!sid) return []
+    return buildSessionTurnChanges(
+      sessionMessages(),
+      store.part as Record<string, any[] | undefined>,
+      getSessionTurnDiffs().perTurn(sid),
+    )
+  })
   createEffect(() => {
     const sid = currentSessionID()
     if (!sid) return
@@ -2502,7 +2530,8 @@ export function MafwShell() {
       : subject.kind === "web" ? "浏览器"
       : subject.kind === "terminal" ? "终端"
       : subject.kind === "plugin" ? "插件"
-      : subject.kind === "diff" ? `${subject.rel} · 改动`
+      : subject.kind === "changeset"
+        ? (changeSetDocuments().find((doc) => doc.id === subject.id)?.label ?? "改动")
       : "对象"
     const goalScope = focus.scope.kind === "goal" ? focus.scope : null
     const focusedGoal = goalScope
@@ -2537,8 +2566,10 @@ export function MafwShell() {
     revealWorkbench()
     setPodGoalId(null)
     const worldId = currentProject() ?? "unscoped"
+    const worldScope: Scope = { kind: "world", worldId }
+    openSceneTab({ subject: { kind: "world" }, scope: worldScope, label: "世界总览", icon: "world" })
     setFocusState((state) =>
-      openSubject({ ...state, worldId }, { kind: "world", worldId }, { kind: "world" }),
+      openSubject({ ...state, worldId }, worldScope, { kind: "world" }),
     )
   }
   const openBrowserFocus = (url: string, opts?: { newTab?: boolean }) => {
@@ -2566,28 +2597,86 @@ export function MafwShell() {
   const openTerminalFocus = () => {
     revealWorkbench()
     const scope = focusScope()
+    const subject = { kind: "terminal" as const, id: "local" }
+    openSceneTab({ subject, scope, label: "终端", icon: "terminal" })
     setFocusState((state) =>
-      openSubject(seedWorldRoot(state, scope), scope, { kind: "terminal", id: "local" }),
+      openSubject(seedWorldRoot(state, scope), scope, subject),
     )
   }
-  /** 打开/激活一个 diff tab，并把焦点切到对应 diff subject。 */
-  const openDiffTab = (input: OpenDiffInput) => {
-    const doc = openDiffDocument(input)
+  /** 打开/激活一个改动集 tab，并把焦点切到对应 changeset subject。 */
+  const openChangeSetTab = (input: OpenChangeSetInput) => {
+    const doc = openChangeSetDocument(input)
     revealWorkbench()
     const next = selectFocus(
       seedWorldRoot(focusState(), input.scope),
       input.scope,
-      { kind: "diff", source: input.source.kind, id: doc.id, rel: doc.rel, line: input.anchorLine },
+      { kind: "changeset", id: doc.id, rel: doc.activeFile ?? undefined },
     )
     setFocusState(next)
     syncStageToFocus(next)
     requestDocumentActivation(doc.id)
+  }
+  const openGoalChangeSet = (input: {
+    podId: string
+    goalId: string
+    revision: number
+    title: string
+    scope: Scope
+    root: string | null
+    rel?: string
+    line?: number
+    reviewItemId?: string
+  }) => {
+    const source: ChangeSetSource = {
+      kind: "goal",
+      podId: input.podId,
+      goalId: input.goalId,
+      revision: input.revision,
+      title: input.title,
+    }
+    openChangeSetTab({
+      source,
+      root: input.root,
+      scope: input.scope,
+      activeFile: input.rel ?? null,
+      anchorLine: input.line,
+    })
+  }
+  const openSessionChangeSet = (input: {
+    sessionID: string
+    title: string
+    turnID?: string | null
+    files?: readonly FileDiffEntry[]
+    scope: Scope
+    root: string | null
+    rel?: string
+    line?: number
+  }) => {
+    openChangeSetTab({
+      source: {
+        kind: "session",
+        sessionID: input.sessionID,
+        turnID: input.turnID ?? null,
+        title: input.title,
+      },
+      root: input.root,
+      scope: input.scope,
+      files: input.files,
+      activeFile: input.rel ?? null,
+      anchorLine: input.line,
+    })
   }
   const openPluginFocus = (surfaceId: string) => {
     const parsed = parsePluginSurfaceId(surfaceId)
     if (!parsed) return
     revealWorkbench()
     const scope = focusScope()
+    openSceneTab({
+      subject: { kind: "plugin", package: parsed.package, panel: parsed.panel },
+      scope,
+      label: `插件 · ${parsed.panel}`,
+      icon: "plugin",
+    })
     setFocusState((state) =>
       openSubject(
         seedWorldRoot(state, scope),
@@ -2602,13 +2691,47 @@ export function MafwShell() {
     setPickerOpen(true)
     revealWorkbench()
   }
+  const sceneSubjectOf = (subject: Focus["subject"]): SceneSubject | null => {
+    if (subject.kind !== "world" && subject.kind !== "goal" && subject.kind !== "terminal" && subject.kind !== "plugin") {
+      return null
+    }
+    return subject
+  }
+  const sceneLabelFor = (subject: SceneSubject): string => {
+    if (subject.kind === "world") return "世界总览"
+    if (subject.kind === "terminal") return "终端"
+    if (subject.kind === "plugin") return `插件 · ${subject.panel}`
+    const goal = podStore.detail()?.goals.find((item) => item.goalId === subject.goalId)
+    return goal?.title ? `Goal · ${goal.title}` : "Goal"
+  }
+  /** 焦点回到场景 subject（含“返回上一焦点”）时保证 tab 存在。 */
+  const ensureSceneTabFor = (subject: Focus["subject"], scope: Scope): string | null => {
+    const scene = sceneSubjectOf(subject)
+    if (!scene) return null
+    const id = sceneTabId(scene)
+    if (!sceneTabs().some((tab) => tab.id === id)) {
+      openSceneTab({ subject: scene, scope, label: sceneLabelFor(scene), icon: scene.kind })
+    }
+    return id
+  }
+  const tabIdForSubject = (subject: Focus["subject"]): string | null => {
+    if (subject.kind === "file") return fileDocumentTabId(subject.root, subject.rel)
+    if (subject.kind === "changeset") return subject.id
+    const scene = sceneSubjectOf(subject)
+    return scene ? sceneTabId(scene) : null
+  }
   const syncStageToFocus = (state: WorkbenchState) => {
     const focus = state.stack[state.stack.length - 1]
     if (!focus) return
-    if (focus.subject.kind === "diff") {
-      setActiveDiffDocument(focus.subject.id)
-      activateDocumentTab(focus.subject.id)
+    if (focus.subject.kind === "changeset") {
+      setActiveChangeSetDocument(focus.subject.id)
+      requestDocumentActivation(focus.subject.id)
       return
+    }
+    const tabId = tabIdForSubject(focus.subject) ?? ensureSceneTabFor(focus.subject, focus.scope)
+    if (tabId) {
+      if (documentTabs().some((entry) => entry.id === tabId)) activateDocumentTab(tabId)
+      else requestDocumentActivation(tabId)
     }
     const action = stageActionFor(focus)
     if (action.kind === "editor") {
@@ -2637,7 +2760,7 @@ export function MafwShell() {
     setFocusState(next)
     syncStageToFocus(next)
   }
-  /** 统一文档 tab 条 → 焦点栈：只切换，不重新读盘 / 不重新导航。 */
+  /** 统一 tab 条 → 焦点栈：只切换，不重新读盘 / 不重新导航。 */
   const focusDocumentTab = (id: string) => {
     const entry = documentTabs().find((item) => item.id === id)
     if (!entry) return
@@ -2654,13 +2777,24 @@ export function MafwShell() {
       )
       setFocusState(next)
       syncStageToFocus(next)
-    } else if (entry.kind === "diff") {
-      const doc = diffDocuments().find((item) => item.id === id)
+    } else if (entry.kind === "changeset") {
+      const doc = changeSetDocuments().find((item) => item.id === id)
       if (!doc) return
+      setActiveChangeSetDocument(id)
       const next = selectFocus(
         seedWorldRoot(focusState(), doc.scope),
         doc.scope,
-        { kind: "diff", source: doc.source.kind, id: doc.id, rel: doc.rel, line: doc.anchorLine },
+        { kind: "changeset", id: doc.id, rel: doc.activeFile ?? undefined },
+      )
+      setFocusState(next)
+      syncStageToFocus(next)
+    } else if (entry.kind === "scene") {
+      const tab = sceneTabs().find((item) => item.id === id)
+      if (!tab) return
+      const next = selectFocus(
+        seedWorldRoot(focusState(), tab.scope),
+        tab.scope,
+        tab.subject,
       )
       setFocusState(next)
       syncStageToFocus(next)
@@ -2724,14 +2858,12 @@ export function MafwShell() {
     showToastV2({ description: "已加入批注", duration: 1600 } as any)
   }
 
-  // 焦点是文档 subject 时同步 active tab；entry 可能稍后由 body 同步进来。
+  // 焦点 → tab 条激活项：文档靠 id，场景靠 subject id；entry 可能稍后同步进来。
   createEffect(() => {
     documentTabs()
     const subject = activeFocus()?.subject
-    if (subject?.kind === "file") {
-      const id = fileDocumentTabId(subject.root, subject.rel)
-      if (documentTabs().some((entry) => entry.id === id)) activateDocumentTab(id)
-    } else if (subject?.kind === "web") {
+    if (!subject) return
+    if (subject.kind === "web") {
       const byUrl = documentTabs().find(
         (item) => item.kind === "web" && (item.view.title ?? "") === subject.url,
       )
@@ -2740,7 +2872,14 @@ export function MafwShell() {
         ? documentTabs().find((item) => item.id === webDocumentTabId(activeWeb))
         : undefined)
       if (entry) activateDocumentTab(entry.id)
+      return
     }
+    const focus = activeFocus()
+    if (!focus) return
+    const id = tabIdForSubject(focus.subject) ?? ensureSceneTabFor(focus.subject, focus.scope)
+    if (!id) return
+    if (documentTabs().some((entry) => entry.id === id)) activateDocumentTab(id)
+    else requestDocumentActivation(id)
   })
   const resolveGoalWorktreeDir = async (podId: string | null, goalId: string, project: string): Promise<string> => {
     if (!podId) return project
@@ -2753,6 +2892,33 @@ export function MafwShell() {
     } catch {
       return project
     }
+  }
+  const openGoalChangeSetFromGoal = (
+    goal: PodGoal,
+    revision: number,
+    opts?: { rel?: string; line?: number },
+  ) => {
+    const project = currentProject()
+    if (!project) return
+    const baseScope: Scope = {
+      kind: "goal",
+      worldId: project,
+      goalId: goal.goalId,
+      revision,
+      worktreeDir: project,
+    }
+    void resolveGoalWorktreeDir(goal.podId, goal.goalId, project).then((root) => {
+      openGoalChangeSet({
+        podId: goal.podId,
+        goalId: goal.goalId,
+        revision,
+        title: goal.title,
+        scope: { ...baseScope, worktreeDir: root },
+        root,
+        rel: opts?.rel,
+        line: opts?.line,
+      })
+    })
   }
   const openGoalFocus = (goalId: string, focus: GoalDetailFocus = "timeline") => {
     const project = currentProject()
@@ -2769,6 +2935,12 @@ export function MafwShell() {
       revision,
       worktreeDir: project,
     }
+    openSceneTab({
+      subject: { kind: "goal", goalId },
+      scope: goalScope,
+      label: goal?.title ? `Goal · ${goal.title}` : "Goal",
+      icon: "goal",
+    })
     setFocusState((state) =>
       applyGoalFocus(
         seedWorldRoot(state, goalScope),
@@ -2783,6 +2955,14 @@ export function MafwShell() {
     )
     void resolveGoalWorktreeDir(podIdForCurrentProject(), goalId, project).then((worktreeDir) => {
       if (worktreeDir === project || currentProject() !== project) return
+      if (goal) {
+        openSceneTab({
+          subject: { kind: "goal", goalId },
+          scope: { ...goalScope, worktreeDir },
+          label: `Goal · ${goal.title}`,
+          icon: "goal",
+        })
+      }
       setFocusState((state) => {
         const top = state.stack[state.stack.length - 1]
         if (!top || top.subject.kind !== "goal" || top.subject.goalId !== goalId) return state
@@ -2899,6 +3079,20 @@ export function MafwShell() {
     }
     const state = next
     setFocusState(state)
+    switchSceneTabWorld(worldId)
+    const top = state.stack[state.stack.length - 1]
+    if (top?.subject.kind === "world") {
+      openSceneTab({ subject: top.subject, scope: top.scope, label: "世界总览", icon: "world" })
+    } else if (top?.subject.kind === "goal") {
+      const subject = top.subject
+      const goal = podStore.detail()?.goals.find((item) => item.goalId === subject.goalId)
+      openSceneTab({
+        subject,
+        scope: top.scope,
+        label: goal?.title ? `Goal · ${goal.title}` : "Goal",
+        icon: "goal",
+      })
+    }
     syncStageToFocus(state)
     void validateFocusStack(worldId, state)
   })
@@ -2922,7 +3116,7 @@ export function MafwShell() {
   createEffect(() => {
     saveFocusState(focusState())
   })
-  onCleanup(() => flushFocusPersistence())
+  onCleanup(() => { flushSceneTabs(); flushFocusPersistence() })
   onMount(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       // Ctrl/Cmd+P：取景器（文件 / Goal / 终端…）。走快捷键注册表，与命令面板
@@ -2976,40 +3170,22 @@ export function MafwShell() {
   }))
   createEffect(() => {
     const sid = currentSessionID()
-    const live = sid ? store.session_diff?.[sid] : null
-    if (!sid || !Array.isArray(live)) return
-    for (const doc of diffDocuments()) {
-      if (doc.source.kind !== "session" || doc.source.sessionID !== sid) continue
-      const next = live.find((entry: FileDiffEntry) => (entry.file ?? "") === doc.rel)
-      if (!next) continue
-      const patch = next.patch ?? ""
-      const additions = next.additions ?? 0
-      const deletions = next.deletions ?? 0
-      if (patch === doc.patch && additions === doc.additions && deletions === doc.deletions) continue
-      updateDiffDocument(doc.id, { patch, additions, deletions })
-    }
+    if (!sid) return
+    const live = mergedSessionDiffs()
+    const perTurn = getSessionTurnDiffs().perTurn(sid)
+    untrack(() => {
+      for (const doc of changeSetDocuments()) {
+        if (doc.source.kind !== "session" || doc.source.sessionID !== sid) continue
+        if (doc.source.turnID) {
+          const files = perTurn[doc.source.turnID]
+          if (Array.isArray(files)) updateChangeSetDocument(doc.id, { files })
+        } else {
+          updateChangeSetDocument(doc.id, { files: live })
+        }
+      }
+    })
   })
-  const [changesMode, setChangesMode] = createSignal<ChangesMode>("session")
   const [changesRequest, setChangesRequest] = createSignal<ChangesRequest | null>(null)
-  const changesContextInput = () => {
-    const sid = activeSessionId()
-    return {
-      projectDir: currentProject(),
-      activeSession: sid
-        ? { id: sid, title: sessions().find((session) => session.id === sid)?.title ?? "" }
-        : null,
-      sessionGoal: sessionGoalRef(),
-      currentGoal: currentGoalRef(),
-    }
-  }
-  const changesAvailableModes = createMemo(() =>
-    (["session", "goal", "project"] as const).filter(
-      (mode) => !!resolveChangesContext({ ...changesContextInput(), mode }),
-    ),
-  )
-  const changesContext = createMemo(() =>
-    resolveChangesContext({ ...changesContextInput(), mode: changesMode() }),
-  )
   function sessionGoalRef(): GoalRef | null {
     const sid = currentSessionID()
     if (!sid) return null
@@ -3025,10 +3201,6 @@ export function MafwShell() {
       title: goal.title,
       worktreeDir: null,
     }
-  }
-  const sessionChangesContext = (): ChangesContext | null => {
-    const sid = currentSessionID()
-    return sid ? { kind: "session", sessionID: sid, goal: sessionGoalRef() } : null
   }
   function currentGoalRef(): GoalRef | null {
     const detail = podStore.detail()
@@ -3062,26 +3234,47 @@ export function MafwShell() {
     return sessionGoalRef()
   }
   const openChangesFace = (input: {
-    context: ChangesContext
     section?: "review" | "changes"
     rel?: string
     line?: number
-  }) => {
+  } = {}) => {
     revealWorkbench()
-    setChangesMode(input.context.kind)
     openLeftDockFace("changes")
     setChangesRequest((previous) => nextChangesRequest(previous, input))
   }
   const activeGoalId = () => currentGoalRef()?.goalId ?? null
   const activeGoalAccepted = () => !!podStore.detail()?.goals.find((goal) => goal.goalId === activeGoalId())?.accepted
-  const changesBadge = () => {
-    if (changesMode() === "project") return countReviewAttention(decisionStore.items())
-    const goalId = changesMode() === "session"
-      ? (sessionGoalRef()?.goalId ?? activeGoalId())
-      : activeGoalId()
-    return goalId ? countReviewAttention(decisionStore.items(), goalId) : 0
+  const changesBadge = () => countReviewAttention(decisionStore.items())
+  const changesDot = () => changesBadge() === 0 && contentDiffEntries().length > 0
+  const openCurrentSessionChangeSet = () => {
+    const sid = currentSessionID()
+    if (!sid) {
+      openChangesFace({ section: "changes" })
+      return
+    }
+    const title = sessions().find((session) => session.id === sid)?.title ?? "本会话"
+    openSessionChangeSet({
+      sessionID: sid,
+      title,
+      scope: focusScope(),
+      root: contentRoot(),
+      files: contentDiffEntries(),
+    })
+    openChangesFace({ section: "changes" })
   }
-  const changesDot = () => changesMode() === "session" && changesBadge() === 0 && contentDiffEntries().length > 0
+  const openTurnChangeSet = (turn: SessionTurnChange) => {
+    const sid = currentSessionID()
+    if (!sid) return
+    const title = `${turn.timeLabel} ${turn.title}`.trim()
+    openSessionChangeSet({
+      sessionID: sid,
+      title,
+      turnID: turn.id,
+      scope: focusScope(),
+      root: contentRoot(),
+      files: turn.files,
+    })
+  }
 
   // 鲸群左栏：shell 持有常驻订阅，左右两栏共用同一个 pod-store
   // （spec 2026-10-30-pod-left-rail §4.1）。目录口径与右栏一致。
@@ -3288,12 +3481,7 @@ export function MafwShell() {
     }
   }
   const openReviewFromChat = (): void => {
-    openChangesFace({
-      context: currentGoalRef()
-        ? { kind: "goal", goal: currentGoalRef()! }
-        : (sessionChangesContext() ?? { kind: "project" }),
-      section: "review",
-    })
+    openChangesFace({ section: "review" })
   }
   /** Episode 关闭时用的 Goal 身份：Pod 会话身份优先，其次 Tech Lead 映射/工作台焦点。 */
   const episodeGoalReference = (sessionID: string) => {
@@ -3363,29 +3551,14 @@ export function MafwShell() {
     if (action.kind === "reviewItem") {
       const goal = podStore.detail()?.goals.find((item) => item.goalId === action.goalId)
       if (goal) {
-        openChangesFace({
-          context: {
-            kind: "goal",
-            goal: {
-              podId: goal.podId,
-              goalId: goal.goalId,
-              revision: goal.activeRevision ?? goal.revision ?? 1,
-              title: goal.title,
-              worktreeDir: null,
-            },
-          },
-          section: "review",
+        openGoalChangeSetFromGoal(goal, goal.activeRevision ?? goal.revision ?? 1, {
           rel: action.rel,
           line: action.line,
         })
+        openChangesFace({ section: "review", rel: action.rel, line: action.line })
         return
       }
-      openChangesFace({
-        context: sessionChangesContext() ?? { kind: "project" },
-        section: "review",
-        rel: action.rel,
-        line: action.line,
-      })
+      openChangesFace({ section: "review", rel: action.rel, line: action.line })
     }
   }
   /** 非讨论的 Tech Lead 节点会话 / Pod 不可解析：发送必须被拦住并给出指引。 */
@@ -3987,63 +4160,23 @@ export function MafwShell() {
             }}
             renderChanges={() => (
               <ChangesFace
-                mode={changesMode()}
-                onMode={setChangesMode}
-                availableModes={changesAvailableModes()}
-                context={changesContext()}
                 request={changesRequest()}
-                projectDir={currentProject()}
-                resolveGoalDir={(goal) => {
-                  const project = currentProject()
-                  return project
-                    ? resolveGoalWorktreeDir(goal.podId, goal.goalId, project)
-                    : Promise.resolve(null)
-                }}
-                onOpenDiff={openDiffTab}
-                onOpenGoalFile={async (goal, rel, line) => {
-                  const project = currentProject()
-                  if (!project) return
-                  const root = goal.worktreeDir ?? await resolveGoalWorktreeDir(goal.podId, goal.goalId, project)
-                  if (!root) return
-                  openFileInScope(
-                    rel,
-                    root,
-                    { kind: "goal", worldId: project, goalId: goal.goalId, revision: goal.revision, worktreeDir: root },
-                    { persist: true, line },
-                  )
-                }}
+                goals={podStore.detail()?.goals ?? []}
+                sessions={sessions().map((session) => ({ id: session.id, title: session.title ?? "未命名" }))}
+                activeSessionID={currentSessionID()}
+                activeGoalId={activeGoalId()}
+                turns={sessionTurnChanges()}
+                sessionDiffs={contentDiffEntries()}
+                reviewGoal={currentGoalRef() ?? sessionGoalRef()}
                 accepted={activeGoalAccepted()}
                 onReviewChanged={() => { void podStore.refresh() }}
                 reviewRefreshKey={() => podStore.reviewRevision()}
-                goals={podStore.detail()?.goals ?? []}
-                sessions={sessions().map((session) => ({ id: session.id, title: session.title ?? "未命名" }))}
                 reviewCountForGoal={(goalId) => countReviewAttention(decisionStore.items(), goalId)}
-                onOpenGoal={(goalId) => { setChangesMode("goal"); openGoalFocus(goalId, "timeline") }}
-                onOpenSession={(sid) => { setChangesMode("session"); openSessionTab(sid) }}
-                sessionDiffs={contentDiffEntries()}
-                liveDiffs={store.session_diff?.[currentSessionID() ?? ""]}
-                onOpenSessionDiff={(file) => {
-                  const sid = currentSessionID()
-                  const root = contentRoot()
-                  const rel = file.file
-                  if (!sid || !root || !rel) return
-                  openDiffTab({
-                    source: { kind: "session", sessionID: sid },
-                    root,
-                    scope: focusScopeFromContent(contentScope()),
-                    rel,
-                    patch: file.patch ?? "",
-                    additions: file.additions ?? 0,
-                    deletions: file.deletions ?? 0,
-                    status: file.status,
-                  })
-                }}
-                onOpenFile={(rel) => {
-                  const root = contentRoot()
-                  if (!root) return
-                  closeLeftDockIfOverlay()
-                  openFileInScope(rel, root, focusScopeFromContent(contentScope()), { persist: true })
-                }}
+                onOpenGoal={(goalId) => openGoalFocus(goalId, "timeline")}
+                onOpenGoalChangeSet={(goal, revision) => openGoalChangeSetFromGoal(goal, revision)}
+                onOpenSession={(sid) => openSessionTab(sid)}
+                onOpenTurnChangeSet={openTurnChangeSet}
+                onOpenSessionChangeSet={openCurrentSessionChangeSet}
               />
             )}
             onNewSession={() => { closeLeftDockIfOverlay(); void createSession().then(sid => { if (sid) openSessionTab(sid) }) }}
@@ -4153,7 +4286,7 @@ export function MafwShell() {
                           techLeadTarget={activeTechLeadTarget}
                           sendBlocked={activeTechLeadBlocked}
                           onOpenFile={(root, rel) => openFileInScope(rel, root, focusScopeFromContent(contentScope()))}
-                          onOpenDiffReview={() => openChangesFace({ context: sessionChangesContext() ?? { kind: "project" }, section: "changes" })}
+                          onOpenDiffReview={openCurrentSessionChangeSet}
                           worktreeEnabled={worktreeEnabled()}
                           revertUndoEnabled={revertUndoEnabled()}
                           onCreateWorktreeSession={createWorktreeSession}
@@ -4274,28 +4407,33 @@ export function MafwShell() {
                   pluginProjectDir={benchRoot() ?? currentProject()}
                   diffs={contentDiffEntries()}
                   liveDiffs={store.session_diff?.[currentSessionID() ?? ""]}
+                  activeTabId={activeDocumentTabId()}
                   onActiveFileChange={setActiveContentDocument}
                   onSendAnnotation={sendAnnotation}
                   onAddAnnotation={addAnnotation}
-                  onOpenDiffFile={(doc) => openFileInScope(doc.rel, doc.root, doc.scope, { persist: true, line: doc.anchorLine })}
+                  onOpenFile={(rel, line) => {
+                    const doc = activeChangeSetDocument()
+                    if (doc?.root) {
+                      openFileInScope(rel, doc.root, doc.scope, { persist: true, line })
+                      return
+                    }
+                    const root = contentRoot()
+                    if (!root) return
+                    openFileInScope(rel, root, focusScopeFromContent(contentScope()), { persist: true, line })
+                  }}
                   onSendDiffComment={(sid, text) => {
                     void window.api.mafw.sessions.promptAsync({ sessionID: sid, message: text })
                       .then(() => showToastV2({ description: "评论已发送给 agent", duration: 2000 } as any))
                       .catch((e: any) => showToastV2({ description: `发送失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 4000 } as any))
                   }}
                   onAddDiffAnnotation={(a) => {
-                    const doc = activeDiffDocument()
+                    const doc = activeChangeSetDocument()
                     const sid = doc?.source.kind === "session" ? doc.source.sessionID : currentSessionID()
                     if (!sid) return
                     addPending({ sessionID: sid, ...a })
                     showToastV2({ description: "已加入批注", duration: 1600 } as any)
                   }}
-                  onOpenReview={() => openChangesFace({
-                    context: currentGoalRef()
-                      ? { kind: "goal", goal: currentGoalRef()! }
-                      : (sessionChangesContext() ?? { kind: "project" }),
-                    section: "review",
-                  })}
+                  onOpenReview={() => openChangesFace({ section: "review" })}
                   renderWorld={() => (
                     <WorldOverviewStage
                       projectDir={currentProject()}
@@ -4343,12 +4481,19 @@ export function MafwShell() {
                             onOpenSession={(sid) => { void openPodSession(sid) }}
                             onGoalAccepted={() => { void openLeadEntry() }}
                             onOpenWorktree={(target) => openGoalContent(target)}
-                            onOpenChanges={(input) => openChangesFace({
-                              context: currentGoalRef()
-                                ? { kind: "goal", goal: currentGoalRef()! }
-                                : (sessionChangesContext() ?? { kind: "project" }),
-                              ...input,
-                            })}
+                            onOpenChanges={(input) => {
+                              const goal = currentGoalRef()
+                              const podGoal = goal
+                                ? podStore.detail()?.goals.find((item) => item.goalId === goal.goalId)
+                                : null
+                              if (goal && podGoal) {
+                                openGoalChangeSetFromGoal(podGoal, goal.revision, {
+                                  rel: input.rel,
+                                  line: input.line,
+                                })
+                              }
+                              openChangesFace({ section: input.section, rel: input.rel, line: input.line })
+                            }}
                             decisionRecords={() => decisionStore.records().filter((record) => record.goalId === id)}
                             decisionRecordBusy={() => decisionRecordBusy()}
                             onDecisionConfirm={confirmDecisionRecord}

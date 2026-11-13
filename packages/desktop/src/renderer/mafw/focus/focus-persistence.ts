@@ -88,6 +88,12 @@ function isSubject(value: unknown): value is SubjectRef {
         typeof value.panel === "string" &&
         value.panel.length > 0
       )
+    case "changeset":
+      return (
+        typeof value.id === "string" &&
+        value.id.length > 0 &&
+        (value.rel === undefined || typeof value.rel === "string")
+      )
     default:
       return false
   }
@@ -151,7 +157,10 @@ function dedupeSubjects(subjects: readonly SubjectRef[]): SubjectRef[] {
 function capState(state: WorkbenchState): WorkbenchState {
   return {
     worldId: state.worldId,
-    stack: state.stack.filter((focus) => focus.subject.kind !== "diff").slice(-MAX_STACK).map(cloneFocus),
+    stack: state.stack
+      .filter((focus) => focus.subject.kind !== "changeset")
+      .slice(-MAX_STACK)
+      .map(cloneFocus),
     kept: dedupeSubjects(state.kept).slice(0, MAX_KEPT),
   }
 }

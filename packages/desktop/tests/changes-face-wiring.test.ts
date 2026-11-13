@@ -14,17 +14,10 @@ test("left dock exposes a changes face", () => {
   assert.match(left, /renderChanges/)
 })
 
-test("changes face reuses the change tree and has a mode selector", () => {
+test("changes face is Goal-first with collapsible groups", () => {
   const face = read("src/renderer/mafw/components/ChangesFace.tsx")
-  assert.match(face, /buildChangeTree/)
-  assert.match(face, /resolveChangesContext|ChangesContext/)
-})
-
-test("changes mode is declared before the memos that read it", () => {
-  const shell = read("src/renderer/mafw/MafwShell.tsx")
-  const modeDecl = shell.indexOf("const [changesMode, setChangesMode]")
-  const memo = shell.indexOf("const changesAvailableModes = createMemo")
-  assert.ok(modeDecl > 0)
-  assert.ok(memo > 0)
-  assert.ok(modeDecl < memo, "changesMode must be initialized before createMemo")
+  assert.match(face, /buildGoalGroups/)
+  assert.match(face, /buildDiscussionGroups/)
+  assert.match(face, /collapsedGroups/)
+  assert.doesNotMatch(face, /changesMode|onMode=/)
 })

@@ -37,8 +37,8 @@ describe("checkpoint overlay wiring", () => {
     expect(src).toContain("serverPreviewLoading() === row.checkpoint.id")
   })
 
-  test("diff tabs forbid session fallback and non-invertible revert", () => {
-    const src = read("src/renderer/mafw/components/DiffDocumentView.tsx")
+  test("change-set tabs forbid session fallback and non-invertible revert", () => {
+    const src = read("src/renderer/mafw/components/ChangeSetView.tsx")
     expect(src).toContain("allowSessionFallback={false}")
     expect(src).toContain("allowNonInvertibleRevert={false}")
   })

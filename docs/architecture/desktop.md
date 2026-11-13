@@ -44,12 +44,14 @@
   `⌘⇧P` / `Ctrl+Shift+P` 是命令面板（应用级动作）；两者都走 C3 快捷键注册表、互斥，同一时刻只显示一个浮层。
   `project` / `goal` / `review` 仍是 legacy context；旧 `ContentScopeState` 在首次启动时迁移。详见
   `docs/releases/2026-11-12-workbench-focus-foundation.md`。
-- **Tab-as-view + 左栏改动面（2026-11-13）**：右工作台不再有 LensBar；`FrameBar / DocumentTabs /
-  DocumentToolbar / Stage` 是唯一 chrome。文件 / 浏览器 / diff 是文档 tab 的三种 kind：文件 tab 直接
-  可编辑，普通打开先给预览 tab、首次输入提升为持久 tab；diff tab 是瞬态的，不持久化 patch。左 rail
-  新增「改动」face，按 `当前讨论 / 当前 Goal / 项目` 三种上下文展示待审评审项、本版变更（Goal
-  revision worktree diff）和本会话改动；点击条目在右工作台打开 diff tab。Goal 验收仍是人类专属动作，
-  只在 Goal 结果页出现，不进入左栏。详见
+- **Tab-as-view + 左栏改动面（2026-11-13）**：右工作台不再有 LensBar；`FrameBar / WorkbenchTabs /
+  DocumentToolbar / Stage` 是唯一 chrome。`WorkbenchTabs` 一条 tab 条覆盖全部视图：世界 / Goal /
+  文件 / 浏览器 / 改动集 / 终端 / 插件。世界 / Goal 是场景 tab（`scene:*`，按 world 持久化，
+  重启恢复）；终端 / 插件是临时场景 tab（不落盘）；文件 / 浏览器 / 改动集是文档 tab。改动集 tab
+  （`changeset:*`）一个 turn 或一个 Goal revision 一个 tab，文件导航只在 tab 自己的 toolbar 下拉里，
+  不再常驻左侧文件列表。左 rail「改动」face 是项目级、Goal 组在前、讨论组在后：Goal / 讨论的组头
+  与单项都可收起，当前项默认展开并用「当前」标签标识；点 Goal / 讨论标题打开对象 tab，点 revision /
+  turn 打开改动集 tab。Goal 验收仍是人类专属动作，只在 Goal 结果页出现，不进入左栏。详见
   `docs/releases/2026-11-13-workbench-tabs-and-changes-face.md`。
 - **Goal / 评审焦点（2026-11-12 Plan 2；2026-11-13 迁移）**：Goal 以 `goal` scope 进入焦点栈，
   Goal 总览复用 `GoalDetailPanel`。原 `changeSet` subject + `ChangeSetStage` + `InstrumentRail` +
@@ -80,34 +82,37 @@
   派生，旧 `mafw-content-scope` 一次性迁移。后台任务在 Chat 内联，团队 / 记忆在
   世界总览的 Pod 面板。决定板由 `decision.updated` SSE 定向刷新，记录每 25 条分批
   渲染。详见 `docs/releases/2026-11-12-workbench-world-overview-cleanup.md`。
-- **DocumentStage / 统一文档条（2026-11-13）**：`DocumentStage` 把文件与浏览器 tab 合成同一条
-  `DocumentTabs`，顺序为打开顺序（文件 id 带 root，浏览器 id 带 tab id）；`EditorDock` /
-  `BrowserDock` 以 `embedded` 模式常挂载，按 active kind 用 wrapper 的 `display` 显隐，切换不重载
-  webview、不丢编辑器状态。2026-11-13 Phase 2B 起，toolbar 由 document 层统一渲染：body 通过
+- **WorkbenchTabs / 统一文档条（2026-11-13）**：`WorkbenchTabs` 渲染全工作台唯一的
+  `DocumentTabs`，顺序为打开顺序（文件 id 带 root，浏览器 id 带 tab id，场景 id 带 subject）；
+  `EditorDock` / `BrowserDock` 以 `embedded` 模式常挂载，按 active kind 用 wrapper 的 `display`
+  显隐，切换不重载 webview、不丢编辑器状态。场景 tab（世界 / Goal / 终端 / 插件）与文档 tab 共用
+  同一条顺序与拖拽；世界 / Goal 的 scene 快照写入 `mafw-scene-tabs:v1:<worldId>`，终端 / 插件与
+  改动集不落盘。2026-11-13 Phase 2B 起，toolbar 由 document 层统一渲染：body 通过
   `registerDocumentToolbar` 注册 `leading / center / trailing` slot，`DocumentStage` 只渲染
-  active kind 的一份 `DocumentToolbar`（编辑器的保存 / 外部 / 预览 / 改动，浏览器的后退 / 前进 /
-  刷新 / 地址 / 点选 / 外部仍由各自 body 拥有）。`打开浏览器` 命令会先创建一个空白浏览器 tab 再
-  聚焦 web subject，保证统一 toolbar 有地址栏可输入。tab 右键菜单由
-  `buildDocumentTabMenu` 按 kind 提供关闭 / 关闭其他 / 关闭右侧 / 复制路径（文件）或复制链接 /
-  系统浏览器打开（网页）。`MafwShell` 是 select / close / close-others / close-right 的路由层，
-  关闭请求经 `document-tabs-store` 一次性队列交给 owning body 执行。2026-11-13 Phase 2A 起，
-  tab 顺序是 store 权威：支持跨文件 / 网页拖拽，顺序按 world（项目）持久化到
-  `mafw-document-list:v1:<worldId>`；浏览器 tab 的 id / URL / 标题持久化到
+  active kind 的一份 `DocumentToolbar`（编辑器的保存 / 外部 / 预览，浏览器的后退 / 前进 /
+  刷新 / 地址 / 点选 / 外部，改动集的文件下拉 / 打开文件 / 复制路径 / 刷新仍由各自 body 拥有）。
+  `打开浏览器` 命令会先创建一个空白浏览器 tab 再聚焦 web subject，保证统一 toolbar 有地址栏可输入。
+  tab 右键菜单由 `buildDocumentTabMenu` 按 kind 提供关闭 / 关闭其他 / 关闭右侧 / 复制路径（文件、
+  改动集）或复制链接 / 系统浏览器打开（网页）。`MafwShell` 是 select / close / close-others /
+  close-right 的路由层，关闭请求经 `document-tabs-store` 一次性队列交给 owning body 执行。
+  2026-11-13 Phase 2A 起，tab 顺序是 store 权威：支持跨文件 / 网页 / 场景拖拽，顺序按 world（项目）
+  持久化到 `mafw-document-list:v1:<worldId>`；浏览器 tab 的 id / URL / 标题持久化到
   `mafw-browser-tabs:v1`，重启后恢复并重新加载 webview。文件内容 / dirty / 草稿仍走
   `editor-drafts` / `content-scope-state`；Phase 2C-1 起浏览器 tab 状态归
   `documents/browser-documents`；Phase 2C-2 起 `EditorModel` 按 root 归
   `documents/file-documents`；Phase 2C-3 删除 `browser-tabs` / `editor-model-store`
   兼容 facade，调用面统一到 `browser-documents` / `file-documents`，document store 用模块级
-  effect 自动派生 file / web entries。左 dock 文件面头部提供手动刷新（保留展开态）。
-  2026-11-13 起 document store 还派生 `diff` entries：`documents/diff-documents` 持有瞬态 diff
-  文档，`DiffDocumentView` 复用 `DiffReviewPanel` 渲染；diff tab 不持久化，重启后丢弃，避免
-  用不存在的 patch 恢复 tab。
+  effect 自动派生 file / web / changeset / scene entries。左 dock 文件面头部提供手动刷新（保留展开态）。
+  2026-11-13 起 document store 派生 `changeset` entries：`documents/change-set-documents` 持有
+  一个 turn / 一个 Goal revision 的改动集，`ChangeSetView` 在 tab toolbar 里用文件下拉切换当前文件，
+  复用 `DiffReviewPanel`（tab chrome 隐藏左侧文件列表）渲染；改动集不持久化，重启后丢弃。
 - **编辑器**：默认 **Monaco**（VS Code 内核；`mafw-editor-engine=codemirror` 回退，挂载失败自动回退），
   行内 diff 装饰、Ctrl/Cmd+S、MAFW 主题 token 映射、minimap ≥720px。详情见本文件 Monaco 段。
 - **文件预览**：md（session-ui markdown）、json 折叠树、csv/tsv 表格、svg 预览/源码、图片、pdf（Chromium
   viewer）、docx/xlsx/pptx（懒加载）、legacy office 外部打开；HTML 走 `mafw-file://` 在浏览器面打开。
 - **批注/审阅**：预览选区 = quote 锚、json 节点路径、表格单元格、图片区域、pptx 页码；Enter 直发 /
-  Ctrl+Enter 攒草稿；锚点原地高亮 + 已回应状态。改动审阅 = ChangesDock 目录树 + per-turn diff。
+  Ctrl+Enter 攒草稿；锚点原地高亮 + 已回应状态。改动审阅 = 左栏 Goal-first 改动面 + 每 turn / 每
+  Goal revision 的改动集 tab。
 - **检查点**：`CheckpointOverlay` 时间线（会话回滚 / 文件回滚 / both）；服务端检查点支持只读预览。
 - **托盘与存在感**：15s 轮询 `/api/presence` → tooltip / 菜单状态 / 任务栏进度；attention 差集通知
   持久化防重发；点击通知 `navigateToGoal` 跨项目打开。

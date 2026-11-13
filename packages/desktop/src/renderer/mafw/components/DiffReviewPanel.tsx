@@ -238,7 +238,7 @@ export function DiffReviewPanel(props: {
             when={files().length > 0}
             fallback={<p class="mafw-diff-panel-empty">当前会话没有待审的文件改动。</p>}
           >
-            <Show when={!props.embedded}>
+            <Show when={!props.embedded && props.chrome !== "tab"}>
             <div class="mafw-diff-files">
               <For each={files()}>
                 {(f) => (

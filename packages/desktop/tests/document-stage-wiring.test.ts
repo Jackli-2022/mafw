@@ -4,32 +4,32 @@ import { readFileSync } from "node:fs"
 
 const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8")
 
-test("DocumentStage renders one strip and keeps both bodies mounted", () => {
+test("WorkbenchTabs renders one strip for every right-dock view", () => {
+  const tabs = read("src/renderer/mafw/components/WorkbenchTabs.tsx")
+  assert.match(tabs, /DocumentTabs/)
+  assert.match(tabs, /documentTabs\(\)/)
+  assert.match(tabs, /documentTabViews/)
+  assert.match(tabs, /buildDocumentTabMenu/)
   const stage = read("src/renderer/mafw/components/DocumentStage.tsx")
-  assert.match(stage, /DocumentTabs/)
-  assert.match(stage, /documentTabs\(\)/)
-  assert.match(stage, /documentTabViews/)
-  assert.match(stage, /buildDocumentTabMenu/)
   assert.match(stage, /<EditorDock/)
   assert.match(stage, /<BrowserDock/)
+  assert.match(stage, /<ChangeSetView/)
   assert.match(stage, /mafw-document-stage-pane/)
 })
 
-test("FocusStage routes editor and browser through DocumentStage", () => {
+test("FocusStage routes documents and scene stages separately", () => {
   const stage = read("src/renderer/mafw/components/FocusStage.tsx")
   assert.match(stage, /DocumentStage/)
-  assert.match(stage, /onDocumentSelect/)
-  assert.match(stage, /onDocumentClose/)
-  assert.match(stage, /onDocumentCloseMany/)
-  assert.match(stage, /kind\(\) === "editor" \|\| kind\(\) === "browser"/)
+  assert.match(stage, /onOpenFile/)
+  assert.match(stage, /kind\(\) === "editor" \|\| kind\(\) === "browser" \|\| kind\(\) === "changeset"/)
 })
 
-test("WorkbenchShell forwards document callbacks", () => {
+test("WorkbenchShell forwards tab callbacks through WorkbenchTabs", () => {
   const shell = read("src/renderer/mafw/components/WorkbenchShell.tsx")
-  assert.match(shell, /onDocumentSelect/)
-  assert.match(shell, /onDocumentClose/)
-  assert.match(shell, /onDocumentCloseMany/)
-  assert.match(shell, /onDocumentSelect=\{props\.onDocumentSelect\}/)
+  assert.match(shell, /<WorkbenchTabs/)
+  assert.match(shell, /onSelect=\{\(id\) => props\.onDocumentSelect\?\.\(id\)\}/)
+  assert.match(shell, /onClose=\{\(id\) => props\.onDocumentClose\?\.\(id\)\}/)
+  assert.match(shell, /onCloseMany=\{\(ids\) => props\.onDocumentCloseMany\?\.\(ids\)\}/)
 })
 
 test("DocumentStage renders the active toolbar from the registry", () => {
@@ -44,7 +44,7 @@ test("DocumentStage renders the active toolbar from the registry", () => {
 
 test("document tabs expose drag reorder wiring", () => {
   const frame = read("src/renderer/mafw/components/document-frame.tsx")
-  const stage = read("src/renderer/mafw/components/DocumentStage.tsx")
+  const tabs = read("src/renderer/mafw/components/WorkbenchTabs.tsx")
   const css = read("src/renderer/mafw/mafw.css")
 
   assert.match(frame, /onReorder\?:/)
@@ -52,7 +52,7 @@ test("document tabs expose drag reorder wiring", () => {
   assert.match(frame, /onDragStart=/)
   assert.match(frame, /onDragOver=/)
   assert.match(frame, /onDrop=/)
-  assert.match(stage, /moveDocumentTab/)
+  assert.match(tabs, /moveDocumentTab/)
   assert.match(css, /\.mafw-document-tab\.is-dragging/)
   assert.match(css, /\.mafw-document-tab\.drop-before/)
   assert.match(css, /\.mafw-document-tab\.drop-after/)

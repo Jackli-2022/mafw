@@ -1,242 +1,115 @@
-// 左栏「改动」面：上下文选择 + 会话改动树。
-// 后续 slice 会补 Goal 版本差异、评审项与项目索引；本文件保持单一入口。
-import { For, Show, createEffect, createMemo, createSignal, onCleanup, type JSX } from "solid-js"
+// 左栏「改动」：Goal 组在前、讨论组在后；组与单项都可收起。
+// 点 Goal / 讨论标题打开对象 tab；点 revision / turn 打开对应的改动集 tab。
+import { For, Show, createEffect, createMemo, createSignal, type JSX } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
-import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
+import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
+import { Icon } from "@mafw/ui/icon"
 import { DockBanner, DockEmpty } from "./dock-panel"
-import { buildChangeTree, changeStatusLetter, nextPulseState, type ChangeTreeNode } from "./change-tree"
+import {
+  buildDiscussionGroups,
+  buildGoalGroups,
+  filterDiscussionGroups,
+  filterGoalGroups,
+  type ChangesFilter,
+  type DiscussionChangeGroup,
+  type GoalChangeGroup,
+} from "../changes/changes-tree"
+import type { SessionTurnChange } from "../changes/session-turns"
 import type { FileDiffEntry } from "./DiffReviewPanel"
-import type { ChangesContext, ChangesMode, GoalRef } from "../changes/changes-context"
 import type { ChangesRequest } from "../changes/changes-request"
-import { changeTotals, goalDiffErrorText, pinGoalRevision, toFileDiffEntries } from "../changes/goal-changes"
+import type { GoalRef } from "../changes/changes-context"
 import { reviewActionsVisible } from "../changes/review-queue"
 import { canReopenReviewItem, canResolveReviewItem, reviewStatusLabel } from "../pod-review-model"
-import { podGoalStatusLabel, podHttpStatus } from "../pod-model"
-import type { OpenDiffInput } from "../documents/diff-documents"
+import { podGoalStatusLabel } from "../pod-model"
 import type { PodGoal, PodReviewItem } from "@mafw/sdk"
 
-const MODE_LABEL: Record<ChangesMode, string> = {
-  session: "当前讨论",
-  goal: "当前 Goal",
-  project: "项目",
-}
-
-const MODES: readonly ChangesMode[] = ["session", "goal", "project"]
-
-const UNAVAILABLE_REASON: Record<ChangesMode, string> = {
-  session: "没有可用的讨论",
-  goal: "没有可用的 Goal",
-  project: "没有可用的项目",
-}
-
 export type ChangesFaceProps = {
-  mode: ChangesMode
-  onMode: (mode: ChangesMode) => void
-  availableModes?: readonly ChangesMode[]
-  context: ChangesContext | null
-  request?: ChangesRequest | null
-  projectDir: string | null
+  goals: readonly PodGoal[]
+  sessions: readonly { id: string; title: string }[]
+  activeSessionID: string | null
+  activeGoalId: string | null
+  turns: readonly SessionTurnChange[]
   sessionDiffs: readonly FileDiffEntry[]
-  liveDiffs?: readonly FileDiffEntry[]
-  onOpenFile: (rel: string) => void
-  onOpenSessionDiff?: (file: FileDiffEntry) => void
-  resolveGoalDir?: (goal: GoalRef) => Promise<string | null>
-  onOpenDiff?: (input: OpenDiffInput) => void
-  onOpenGoalFile?: (goal: GoalRef, rel: string, line?: number) => void
+  reviewGoal: GoalRef | null
+  request?: ChangesRequest | null
   accepted?: boolean
   onReviewChanged?: () => void
   reviewRefreshKey?: () => unknown
-  goals?: readonly PodGoal[]
-  sessions?: readonly { id: string; title: string }[]
   reviewCountForGoal?: (goalId: string) => number
-  onOpenGoal?: (goalId: string) => void
-  onOpenSession?: (sessionID: string) => void
+  onOpenGoal: (goalId: string) => void
+  onOpenGoalChangeSet: (goal: PodGoal, revision: number) => void
+  onOpenSession: (sessionID: string) => void
+  onOpenTurnChangeSet: (turn: SessionTurnChange) => void
+  onOpenSessionChangeSet: () => void
 }
 
-function ChangeRows(props: {
-  nodes: readonly ChangeTreeNode[]
-  depth: number
-  collapsed: Set<string>
-  onToggle: (path: string) => void
-  pulse?: Set<string>
-  onOpenFile: (rel: string) => void
-  onOpenDiff?: (file: FileDiffEntry) => void
-}): JSX.Element {
-  const openNode = (node: ChangeTreeNode) => {
-    if (props.onOpenDiff && node.file?.patch) props.onOpenDiff(node.file)
-    else props.onOpenFile(node.path)
-  }
-  return (
-    <For each={props.nodes}>
-      {(node) => {
-        const open = () => !props.collapsed.has(node.path)
-        return (
-        <Show
-          when={node.kind === "dir"}
-          fallback={
-            <div
-              class="mafw-change-file mafw-changes-face-row"
-              classList={{ "mafw-change-pulse": props.pulse?.has(node.path) === true }}
-              style={{ "padding-left": `${8 + props.depth * 12}px` }}
-              role="button"
-              tabIndex={0}
-              aria-label={node.path}
-              onClick={() => openNode(node)}
-              onKeyDown={(event) => {
-                if (event.key !== "Enter" && event.key !== " ") return
-                event.preventDefault()
-                openNode(node)
-              }}
-            >
-              <span class="mafw-change-name">{node.name}</span>
-              <Show when={changeStatusLetter(node.status)}>
-                <span class="mafw-change-status" data-status={node.status}>
-                  {changeStatusLetter(node.status)}
-                </span>
-              </Show>
-              <span class="mafw-diff-stat add">+{node.additions}</span>
-              <span class="mafw-diff-stat del">-{node.deletions}</span>
-            </div>
-          }
-        >
-          <div
-            class="mafw-change-dir mafw-changes-face-row"
-            style={{ "padding-left": `${8 + props.depth * 12}px` }}
-            role="button"
-            tabIndex={0}
-            aria-expanded={open()}
-            aria-label={node.path}
-            onClick={() => props.onToggle(node.path)}
-            onKeyDown={(event) => {
-              if (event.key !== "Enter" && event.key !== " ") return
-              event.preventDefault()
-              props.onToggle(node.path)
-            }}
-          >
-            <span class="mafw-change-name">{node.name}</span>
-            <span class="mafw-diff-stat add">+{node.additions}</span>
-            <span class="mafw-diff-stat del">-{node.deletions}</span>
-          </div>
-          <Show when={open()}>
-            <ChangeRows
-              nodes={node.children}
-              depth={props.depth + 1}
-              collapsed={props.collapsed}
-              onToggle={props.onToggle}
-              pulse={props.pulse}
-              onOpenFile={props.onOpenFile}
-              onOpenDiff={props.onOpenDiff}
-            />
-          </Show>
-        </Show>
-        )
-      }}
-    </For>
-  )
+const FILTERS: readonly { id: ChangesFilter; label: string }[] = [
+  { id: "all", label: "全部" },
+  { id: "review", label: "待审" },
+  { id: "changes", label: "有改动" },
+]
+
+function toggleIn(set: Set<string>, id: string): Set<string> {
+  const next = new Set(set)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  return next
 }
 
 export function ChangesFace(props: ChangesFaceProps): JSX.Element {
-  let sessionRef: HTMLDivElement | undefined
-  const [collapsed, setCollapsed] = createSignal<Set<string>>(new Set())
-  const [pulse, setPulse] = createSignal<Set<string>>(new Set())
-  let prevLive: FileDiffEntry[] | null = null
-  let liveSeen = false
-  let pulseTimer: ReturnType<typeof setTimeout> | null = null
-  createEffect(() => {
-    const live = props.liveDiffs
-    if (!Array.isArray(live)) return
-    const step = nextPulseState(prevLive, liveSeen, [...live])
-    liveSeen = step.seen
-    prevLive = step.prev
-    if (step.changed.size === 0) return
-    setPulse(step.changed)
-    if (pulseTimer) clearTimeout(pulseTimer)
-    pulseTimer = setTimeout(() => setPulse(new Set()), 1200)
-  })
-  onCleanup(() => { if (pulseTimer) clearTimeout(pulseTimer) })
-  const toggleCollapsed = (path: string) => {
-    setCollapsed((previous) => {
-      const next = new Set(previous)
-      if (next.has(path)) next.delete(path)
-      else next.add(path)
-      return next
-    })
-  }
-  const tree = createMemo(() => buildChangeTree([...props.sessionDiffs]))
-  const totals = createMemo(() => props.sessionDiffs.reduce<{
-    files: number
-    additions: number
-    deletions: number
-  }>(
-    (sum, file) => ({
-      files: sum.files + 1,
-      additions: sum.additions + (file.additions ?? 0),
-      deletions: sum.deletions + (file.deletions ?? 0),
+  const [query, setQuery] = createSignal("")
+  const [filter, setFilter] = createSignal<ChangesFilter>("all")
+  const [collapsedGroups, setCollapsedGroups] = createSignal<Set<string>>(new Set())
+  const [collapsedGoals, setCollapsedGoals] = createSignal<Set<string>>(new Set())
+  const [expandedGoals, setExpandedGoals] = createSignal<Set<string>>(new Set())
+  const [collapsedDiscussions, setCollapsedDiscussions] = createSignal<Set<string>>(new Set())
+  const [expandedDiscussions, setExpandedDiscussions] = createSignal<Set<string>>(new Set())
+  let reviewRef: HTMLDivElement | undefined
+
+  const allGoals = createMemo(() =>
+    buildGoalGroups({
+      goals: props.goals,
+      activeGoalId: props.activeGoalId,
+      reviewCountForGoal: props.reviewCountForGoal,
     }),
-    { files: 0, additions: 0, deletions: 0 },
-  ))
+  )
+  const allDiscussions = createMemo(() =>
+    buildDiscussionGroups({
+      sessions: props.sessions,
+      activeSessionID: props.activeSessionID,
+      turns: props.turns,
+      sessionDiffs: props.sessionDiffs,
+    }),
+  )
+  const goals = createMemo(() => filterGoalGroups(allGoals(), query(), filter()))
+  const discussions = createMemo(() => filterDiscussionGroups(allDiscussions(), query(), filter()))
 
-  const [displayedGoal, setDisplayedGoal] = createSignal<GoalRef | null>(null)
-  const [newerRevision, setNewerRevision] = createSignal<number | null>(null)
-  const [goalFiles, setGoalFiles] = createSignal<FileDiffEntry[]>([])
-  const [goalLoading, setGoalLoading] = createSignal(false)
-  const [goalError, setGoalError] = createSignal<string | null>(null)
+  const groupCollapsed = (id: "goal" | "discussion") => collapsedGroups().has(id)
+  const toggleGroup = (id: "goal" | "discussion") => setCollapsedGroups((previous) => toggleIn(previous, id))
 
-  createEffect(() => {
-    const context = props.context
-    if (context?.kind !== "goal") {
-      setDisplayedGoal(null)
-      setNewerRevision(null)
-      return
-    }
-    const pin = pinGoalRevision(displayedGoal(), context.goal)
-    if (pin.displayed !== displayedGoal()) setDisplayedGoal(pin.displayed)
-    setNewerRevision(pin.newerRevision)
-  })
+  const goalExpanded = (group: GoalChangeGroup) =>
+    group.current ? !collapsedGoals().has(group.id) : expandedGoals().has(group.id)
+  const toggleGoal = (group: GoalChangeGroup) => {
+    if (group.current) setCollapsedGoals((previous) => toggleIn(previous, group.id))
+    else setExpandedGoals((previous) => toggleIn(previous, group.id))
+  }
 
-  createEffect(() => {
-    const goal = displayedGoal()
-    if (!goal) {
-      setGoalFiles([])
-      setGoalError(null)
-      return
-    }
-    let live = true
-    setGoalLoading(true)
-    setGoalError(null)
-    void window.api.mafw.pod.worktreeDiff(goal.podId, goal.goalId, goal.revision)
-      .then((diff) => {
-        if (!live) return
-        setGoalFiles(toFileDiffEntries(Array.isArray(diff?.files) ? diff.files : []))
-      })
-      .catch((error: unknown) => {
-        if (!live) return
-        setGoalFiles([])
-        setGoalError(goalDiffErrorText(podHttpStatus(error)))
-      })
-      .finally(() => { if (live) setGoalLoading(false) })
-    return () => { live = false }
-  })
+  const discussionExpanded = (group: DiscussionChangeGroup) =>
+    group.current ? !collapsedDiscussions().has(group.id) : expandedDiscussions().has(group.id)
+  const toggleDiscussion = (group: DiscussionChangeGroup) => {
+    if (group.current) setCollapsedDiscussions((previous) => toggleIn(previous, group.id))
+    else setExpandedDiscussions((previous) => toggleIn(previous, group.id))
+  }
 
-  const goalTotals = createMemo(() => changeTotals(goalFiles()))
-  const goalTree = createMemo(() => buildChangeTree(goalFiles()))
-
+  // 评审项：Goal 级；左栏顶部保留「待审」区，深链只滚到这里。
   const [reviewItems, setReviewItems] = createSignal<PodReviewItem[]>([])
   const [reviewBusy, setReviewBusy] = createSignal(false)
   const [reviewError, setReviewError] = createSignal<string | null>(null)
   const [reviewRefresh, setReviewRefresh] = createSignal(0)
   const [expandedReview, setExpandedReview] = createSignal<string | null>(null)
 
-  const reviewGoal = createMemo<GoalRef | null>(() => {
-    const context = props.context
-    if (!context) return null
-    if (context.kind === "goal") return displayedGoal()
-    if (context.kind === "session") return context.goal
-    return null
-  })
-
   createEffect(() => {
-    const goal = reviewGoal()
+    const goal = props.reviewGoal
     props.reviewRefreshKey?.()
     reviewRefresh()
     if (!goal) {
@@ -252,7 +125,7 @@ export function ChangesFace(props: ChangesFaceProps): JSX.Element {
         if (!live) return
         setReviewItems(Array.isArray(list?.items) ? list.items : [])
       })
-      .catch((error: unknown) => {
+      .catch(() => {
         if (!live) return
         setReviewItems([])
         setReviewError("评审意见加载失败")
@@ -267,19 +140,8 @@ export function ChangesFace(props: ChangesFaceProps): JSX.Element {
     return `${item.rel}:L${item.startLine}-${item.endLine}`
   }
 
-  const openReviewItem = (item: PodReviewItem) => {
-    const goal = reviewGoal()
-    if (!goal) return
-    const file = goalFiles().find((entry) => entry.file === item.rel)
-    if (file) {
-      void openGoalFile(file, item.startLine ?? undefined)
-      return
-    }
-    props.onOpenGoalFile?.(goal, item.rel, item.startLine ?? undefined)
-  }
-
   const resolveReview = async (item: PodReviewItem) => {
-    const goal = reviewGoal()
+    const goal = props.reviewGoal
     if (!goal || reviewBusy()) return
     setReviewBusy(true)
     try {
@@ -294,7 +156,7 @@ export function ChangesFace(props: ChangesFaceProps): JSX.Element {
   }
 
   const reopenReview = async (item: PodReviewItem) => {
-    const goal = reviewGoal()
+    const goal = props.reviewGoal
     if (!goal || reviewBusy()) return
     setReviewBusy(true)
     try {
@@ -308,13 +170,22 @@ export function ChangesFace(props: ChangesFaceProps): JSX.Element {
     }
   }
 
+  let lastRequestSeq = 0
+  createEffect(() => {
+    const request = props.request
+    if (!request || request.seq <= lastRequestSeq) return
+    lastRequestSeq = request.seq
+    if (request.section !== "review") return
+    queueMicrotask(() => reviewRef?.scrollIntoView({ block: "nearest" }))
+  })
+
   const reviewSection = () => (
     <Show when={reviewItems().length > 0 || reviewError()}>
-      <div class="mafw-changes-review">
-        <div class="mafw-changes-section-head">
-          <span>待审</span>
-          <span class="mafw-changes-stats">
-            {reviewItems().filter((item) => item.status !== "resolved").length} 条未解决
+      <div class="mafw-changes-review" ref={(el) => { reviewRef = el }}>
+        <div class="mafw-changes-group-head">
+          <span class="mafw-changes-group-title">待审</span>
+          <span class="mafw-changes-group-count">
+            {reviewItems().filter((item) => item.status !== "resolved").length}
           </span>
         </div>
         <Show when={reviewError()}>
@@ -335,9 +206,7 @@ export function ChangesFace(props: ChangesFaceProps): JSX.Element {
                 }}
               >
                 <span class="mafw-changes-review-status">{reviewStatusLabel(item.status)}</span>
-                <span class="mafw-changes-review-path" onClick={(event) => { event.stopPropagation(); openReviewItem(item) }}>
-                  {reviewWhere(item)}
-                </span>
+                <span class="mafw-changes-review-path">{reviewWhere(item)}</span>
               </div>
               <Show when={expandedReview() === item.id}>
                 <div class="mafw-changes-review-body">
@@ -371,196 +240,303 @@ export function ChangesFace(props: ChangesFaceProps): JSX.Element {
     </Show>
   )
 
-  const openGoalFile = async (file: FileDiffEntry, anchorLine?: number) => {
-    const goal = reviewGoal()
-    if (!goal || !file.file) return
-    const candidate = goal.worktreeDir && goal.worktreeDir !== props.projectDir ? goal.worktreeDir : null
-    const root = candidate ?? await props.resolveGoalDir?.(goal)
-    if (!root || root === props.projectDir) {
-      setGoalError("这一版没有可预览的分支")
-      return
-    }
-    setGoalError(null)
-    props.onOpenDiff?.({
-      source: { kind: "goal", podId: goal.podId, goalId: goal.goalId, revision: goal.revision },
-      root,
-      scope: {
-        kind: "goal",
-        worldId: props.projectDir ?? "",
-        goalId: goal.goalId,
-        revision: goal.revision,
-        worktreeDir: root,
-      },
-      rel: file.file,
-      patch: file.patch ?? "",
-      additions: file.additions ?? 0,
-      deletions: file.deletions ?? 0,
-      status: file.status,
-      anchorLine,
-    })
-  }
-
-  let lastRequestSeq = 0
-  createEffect(() => {
-    const request = props.request
-    if (!request || request.seq <= lastRequestSeq) return
-    lastRequestSeq = request.seq
-    props.onMode(request.context.kind)
-    queueMicrotask(() => {
-      if (request.section === "review") return
-      sessionRef?.scrollIntoView({ block: "nearest" })
-    })
-  })
+  const currentGoalSummary = () => allGoals().find((group) => group.current) ?? null
+  const currentDiscussionSummary = () => allDiscussions().find((group) => group.current) ?? null
 
   return (
     <div class="mafw-changes-face" aria-label="改动">
-      <div class="mafw-changes-mode" role="tablist" aria-label="改动上下文">
-        <For each={MODES}>
-          {(mode) => {
-            const enabled = () => props.availableModes === undefined || props.availableModes.includes(mode)
-            return (
-              <TooltipV2 value={enabled() ? MODE_LABEL[mode] : UNAVAILABLE_REASON[mode]} openDelay={300}>
-                <ButtonV2
-                  variant="ghost"
-                  size="small"
-                  class="mafw-changes-mode-btn"
-                  aria-pressed={props.mode === mode}
-                  disabled={!enabled()}
-                  onClick={() => props.onMode(mode)}
-                >
-                  {MODE_LABEL[mode]}
-                </ButtonV2>
-              </TooltipV2>
-            )
-          }}
-        </For>
+      <div class="mafw-changes-toolbar">
+        <TextInputV2
+          class="mafw-changes-search"
+          appearance="base"
+          placeholder="搜索 Goal / 讨论 / 文件"
+          value={query()}
+          leadingIcon={<Icon name="magnifying-glass" size="small" />}
+          onInput={(event) => setQuery(event.currentTarget.value)}
+        />
+        <div class="mafw-changes-filter" role="group" aria-label="改动过滤">
+          <For each={FILTERS}>
+            {(item) => (
+              <ButtonV2
+                variant="ghost"
+                size="small"
+                class="mafw-changes-filter-btn"
+                aria-pressed={filter() === item.id}
+                onClick={() => setFilter(item.id)}
+              >
+                {item.label}
+              </ButtonV2>
+            )}
+          </For>
+        </div>
       </div>
 
       {reviewSection()}
-      <Show when={props.context} fallback={<DockEmpty icon="folder" text="当前上下文不可用" hint="打开一个项目或讨论后再试" />}>
-        {(context) => (
+
+      <div class="mafw-changes-scroll">
+        <section class="mafw-changes-group" aria-label="Goal">
+          <div
+            class="mafw-changes-group-head"
+            role="button"
+            tabIndex={0}
+            aria-expanded={!groupCollapsed("goal")}
+            onClick={() => toggleGroup("goal")}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" && event.key !== " ") return
+              event.preventDefault()
+              toggleGroup("goal")
+            }}
+          >
+            <span class="mafw-changes-caret" aria-hidden="true">{groupCollapsed("goal") ? "▸" : "▾"}</span>
+            <span class="mafw-changes-group-title">Goal</span>
+            <span class="mafw-changes-group-count">{goals().length}</span>
+          </div>
+
           <Show
-            when={context().kind === "session"}
+            when={!groupCollapsed("goal")}
             fallback={
-              <Show
-                when={context().kind === "goal" && displayedGoal()}
-                fallback={
-                  <div class="mafw-changes-project">
-                    <div class="mafw-changes-section-head"><span>项目</span><span class="mafw-changes-stats">选择上下文</span></div>
-                    <div class="mafw-changes-section-head"><span>Goal</span></div>
-                    <For each={props.goals ?? []}>
-                      {(goal) => {
-                        const revision = goal.activeRevision ?? goal.revision ?? 1
-                        const pending = props.reviewCountForGoal?.(goal.goalId) ?? 0
-                        return (
-                          <div
-                            class="mafw-changes-project-row"
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => props.onOpenGoal?.(goal.goalId)}
-                            onKeyDown={(event) => {
-                              if (event.key !== "Enter" && event.key !== " ") return
-                              event.preventDefault()
-                              props.onOpenGoal?.(goal.goalId)
-                            }}
-                          >
-                            <span class="mafw-changes-project-name">{goal.title}</span>
-                            <span class="mafw-changes-stats">rev {revision} · {podGoalStatusLabel(goal.status)}</span>
-                            <Show when={pending > 0}><span class="mafw-changes-project-badge">{pending}</span></Show>
-                          </div>
-                        )
-                      }}
-                    </For>
-                    <div class="mafw-changes-section-head"><span>讨论</span></div>
-                    <For each={props.sessions ?? []}>
-                      {(session) => (
-                        <div
-                          class="mafw-changes-project-row"
-                          role="button"
-                          tabIndex={0}
-                          onClick={() => props.onOpenSession?.(session.id)}
-                          onKeyDown={(event) => {
-                            if (event.key !== "Enter" && event.key !== " ") return
-                            event.preventDefault()
-                            props.onOpenSession?.(session.id)
-                          }}
-                        >
-                          <span class="mafw-changes-project-name">{session.title}</span>
-                        </div>
-                      )}
-                    </For>
-                  </div>
-                }
-              >
-                {(goal) => (
-                  <div class="mafw-changes-section">
-                    <Show when={newerRevision()}>
-                      {(revision) => (
-                        <DockBanner
-                          kind="info"
-                          text={`有新版本 rev ${revision()} · 切换`}
-                          action={{
-                            label: "切换",
-                            onClick: () => {
-                              const contextValue = props.context
-                              if (contextValue?.kind === "goal") {
-                                setDisplayedGoal(contextValue.goal)
-                                setNewerRevision(null)
-                              }
-                            },
-                          }}
-                        />
-                      )}
-                    </Show>
-                    <div class="mafw-changes-section-head">
-                      <Show when={goalTotals().files > 0}>
-                        <span class="mafw-changes-stats">
-                          {goalTotals().files} 个文件 <span class="mafw-diff-stat add">+{goalTotals().additions}</span>{" "}
-                          <span class="mafw-diff-stat del">-{goalTotals().deletions}</span>
-                        </span>
-                      </Show>
-                    </div>
-                    <Show when={goalError()}>
-                      <DockBanner kind="error" text={goalError()!} />
-                    </Show>
-                    <Show when={!goalLoading() && !goalError() && goalFiles().length === 0}>
-                      <DockEmpty icon="review" text="这一版还没有变更" hint="执行或直接编辑产生 diff 后会出现在这里" />
-                    </Show>
-                    <Show when={goalLoading()}>
-                      <DockEmpty icon="review" text="正在读取这一版变更…" />
-                    </Show>
-                    <Show when={!goalLoading() && !goalError() && goalFiles().length > 0}>
-                      <div class="mafw-changes-face-tree">
-                        <ChangeRows nodes={goalTree()} depth={0} collapsed={collapsed()} onToggle={toggleCollapsed} pulse={pulse()} onOpenFile={() => {}} onOpenDiff={openGoalFile} />
-                      </div>
+              <Show when={currentGoalSummary()}>
+                {(group) => (
+                  <div class="mafw-changes-summary">
+                    <span class="mafw-changes-summary-main">
+                      <span class="mafw-changes-row-title">{group().title}</span>
+                      <span class="mafw-changes-row-sub">当前 Goal · rev {group().activeRevision}</span>
+                    </span>
+                    <Show when={group().pendingReview > 0}>
+                      <span class="mafw-changes-badge">{group().pendingReview}</span>
                     </Show>
                   </div>
                 )}
               </Show>
             }
           >
-            <div class="mafw-changes-section" ref={(el) => { sessionRef = el }}>
-              <div class="mafw-changes-section-head">
-                <span>本会话改动</span>
-                <Show when={totals().files > 0}>
-                  <span class="mafw-changes-stats">
-                    {totals().files} 个文件 <span class="mafw-diff-stat add">+{totals().additions}</span>{" "}
-                    <span class="mafw-diff-stat del">-{totals().deletions}</span>
-                  </span>
-                </Show>
-              </div>
-              <Show
-                when={tree().length > 0}
-                fallback={<DockEmpty icon="review" text="本次讨论还没有改动" hint="agent 修改文件后会实时出现在这里" />}
-              >
-                <div class="mafw-changes-face-tree">
-                  <ChangeRows nodes={tree()} depth={0} collapsed={collapsed()} onToggle={toggleCollapsed} pulse={pulse()} onOpenFile={props.onOpenFile} onOpenDiff={props.onOpenSessionDiff} />
-                </div>
-              </Show>
-            </div>
+            <Show when={goals().length > 0} fallback={<DockEmpty icon="dot-grid" text="没有匹配的 Goal" />}>
+              <For each={goals()}>
+                {(group) => (
+                  <div class="mafw-changes-node" classList={{ "is-current": group.current }}>
+                    <div
+                      class="mafw-changes-row"
+                      role="button"
+                      tabIndex={0}
+                      aria-expanded={goalExpanded(group)}
+                      onClick={() => props.onOpenGoal(group.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === "ArrowRight") {
+                          event.preventDefault()
+                          if (!goalExpanded(group)) toggleGoal(group)
+                          return
+                        }
+                        if (event.key === "ArrowLeft") {
+                          event.preventDefault()
+                          if (goalExpanded(group)) toggleGoal(group)
+                          return
+                        }
+                        if (event.key !== "Enter" && event.key !== " ") return
+                        event.preventDefault()
+                        props.onOpenGoal(group.id)
+                      }}
+                    >
+                      <span
+                        class="mafw-changes-caret"
+                        aria-hidden="true"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          toggleGoal(group)
+                        }}
+                      >
+                        {goalExpanded(group) ? "▾" : "▸"}
+                      </span>
+                      <span class="mafw-changes-row-main">
+                        <span class="mafw-changes-row-title">{group.title}</span>
+                        <span class="mafw-changes-row-sub">
+                          rev {group.activeRevision} · {podGoalStatusLabel(group.goal.status)}
+                        </span>
+                      </span>
+                      <Show when={group.current}>
+                        <span class="mafw-changes-current">当前</span>
+                      </Show>
+                      <Show when={group.pendingReview > 0}>
+                        <span class="mafw-changes-badge">{group.pendingReview}</span>
+                      </Show>
+                    </div>
+                    <Show when={goalExpanded(group)}>
+                      <For each={group.revisions}>
+                        {(revision) => (
+                          <div
+                            class="mafw-changes-row is-child"
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => props.onOpenGoalChangeSet(group.goal, revision.revision)}
+                            onKeyDown={(event) => {
+                              if (event.key !== "Enter" && event.key !== " ") return
+                              event.preventDefault()
+                              props.onOpenGoalChangeSet(group.goal, revision.revision)
+                            }}
+                          >
+                            <span class="mafw-changes-row-main">
+                              <span class="mafw-changes-row-title">rev {revision.revision}{revision.current ? " · 当前版本" : ""}</span>
+                              <span class="mafw-changes-row-sub">{revision.current ? "本版变更" : "历史版本"}</span>
+                            </span>
+                          </div>
+                        )}
+                      </For>
+                    </Show>
+                  </div>
+                )}
+              </For>
+            </Show>
           </Show>
-        )}
-      </Show>
+        </section>
+
+        <section class="mafw-changes-group" aria-label="讨论">
+          <div
+            class="mafw-changes-group-head"
+            role="button"
+            tabIndex={0}
+            aria-expanded={!groupCollapsed("discussion")}
+            onClick={() => toggleGroup("discussion")}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" && event.key !== " ") return
+              event.preventDefault()
+              toggleGroup("discussion")
+            }}
+          >
+            <span class="mafw-changes-caret" aria-hidden="true">{groupCollapsed("discussion") ? "▸" : "▾"}</span>
+            <span class="mafw-changes-group-title">讨论</span>
+            <span class="mafw-changes-group-count">{discussions().length}</span>
+          </div>
+
+          <Show
+            when={!groupCollapsed("discussion")}
+            fallback={
+              <Show when={currentDiscussionSummary()}>
+                {(group) => (
+                  <div class="mafw-changes-summary">
+                    <span class="mafw-changes-summary-main">
+                      <span class="mafw-changes-row-title">{group().title}</span>
+                      <span class="mafw-changes-row-sub">
+                        当前讨论 · {group().turns.length} 个改动回合
+                      </span>
+                    </span>
+                  </div>
+                )}
+              </Show>
+            }
+          >
+            <Show when={discussions().length > 0} fallback={<DockEmpty icon="bubble-5" text="没有匹配的讨论" />}>
+              <For each={discussions()}>
+                {(group) => (
+                  <div class="mafw-changes-node" classList={{ "is-current": group.current }}>
+                    <div
+                      class="mafw-changes-row"
+                      role="button"
+                      tabIndex={0}
+                      aria-expanded={discussionExpanded(group)}
+                      onClick={() => props.onOpenSession(group.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === "ArrowRight") {
+                          event.preventDefault()
+                          if (!discussionExpanded(group)) toggleDiscussion(group)
+                          return
+                        }
+                        if (event.key === "ArrowLeft") {
+                          event.preventDefault()
+                          if (discussionExpanded(group)) toggleDiscussion(group)
+                          return
+                        }
+                        if (event.key !== "Enter" && event.key !== " ") return
+                        event.preventDefault()
+                        props.onOpenSession(group.id)
+                      }}
+                    >
+                      <span
+                        class="mafw-changes-caret"
+                        aria-hidden="true"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          toggleDiscussion(group)
+                        }}
+                      >
+                        {discussionExpanded(group) ? "▾" : "▸"}
+                      </span>
+                      <span class="mafw-changes-row-main">
+                        <span class="mafw-changes-row-title">{group.title}</span>
+                        <span class="mafw-changes-row-sub">
+                          {group.current
+                            ? `${group.fileCount} 个文件 · ${group.turns.length} 个改动回合`
+                            : "切换到此讨论查看改动"}
+                        </span>
+                      </span>
+                      <Show when={group.current}>
+                        <span class="mafw-changes-current">当前</span>
+                      </Show>
+                    </div>
+
+                    <Show when={discussionExpanded(group)}>
+                      <Show
+                        when={group.turns.length > 0}
+                        fallback={
+                          <div class="mafw-changes-row is-child is-muted" role="note">
+                            <span class="mafw-changes-row-main">
+                              <span class="mafw-changes-row-title">还没有按回合记录的改动</span>
+                            </span>
+                          </div>
+                        }
+                      >
+                        <div
+                          class="mafw-changes-row is-child"
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => props.onOpenSessionChangeSet()}
+                          onKeyDown={(event) => {
+                            if (event.key !== "Enter" && event.key !== " ") return
+                            event.preventDefault()
+                            props.onOpenSessionChangeSet()
+                          }}
+                        >
+                          <span class="mafw-changes-row-main">
+                            <span class="mafw-changes-row-title">全部改动</span>
+                            <span class="mafw-changes-row-sub">整个讨论的合并改动集</span>
+                          </span>
+                          <span class="mafw-changes-stats">
+                            {group.fileCount} files
+                          </span>
+                        </div>
+                        <For each={group.turns}>
+                          {(turn) => (
+                            <div
+                              class="mafw-changes-row is-child"
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => props.onOpenTurnChangeSet(turn)}
+                              onKeyDown={(event) => {
+                                if (event.key !== "Enter" && event.key !== " ") return
+                                event.preventDefault()
+                                props.onOpenTurnChangeSet(turn)
+                              }}
+                            >
+                              <span class="mafw-changes-row-main">
+                                <span class="mafw-changes-row-title">
+                                  {turn.timeLabel ? `${turn.timeLabel} ` : ""}{turn.title}
+                                </span>
+                                <span class="mafw-changes-row-sub">{turn.files.length} files</span>
+                              </span>
+                              <span class="mafw-changes-stats">
+                                <span class="mafw-diff-stat add">+{turn.additions}</span>
+                                <span class="mafw-diff-stat del">-{turn.deletions}</span>
+                              </span>
+                            </div>
+                          )}
+                        </For>
+                      </Show>
+                    </Show>
+                  </div>
+                )}
+              </For>
+            </Show>
+          </Show>
+        </section>
+      </div>
     </div>
   )
 }

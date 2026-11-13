@@ -4,6 +4,7 @@ import { Show, type JSX } from "solid-js"
 import { DockEmpty } from "./dock-panel"
 import { FrameBar } from "./FrameBar"
 import { FocusStage } from "./FocusStage"
+import { WorkbenchTabs } from "./WorkbenchTabs"
 import { PluginSurfaceStage } from "./PluginSurfaceStage"
 import { SubjectPicker } from "./SubjectPicker"
 import { pluginSurfaceId, type PluginSurfaceId } from "../plugins/surface-id"
@@ -13,7 +14,6 @@ import type { FocusOpenRequest } from "../focus/focus-open"
 import type { PickerItem } from "../focus/picker-model"
 import type { PluginWebSurfaceView } from "../plugins/plugin-web-surface"
 import type { FileDiffEntry } from "./DiffReviewPanel"
-import type { DiffDocument } from "../documents/diff-documents"
 import type { AnnotationAnchor } from "../../../shared/annotation-types"
 
 export type WorkbenchShellProps = {
@@ -52,11 +52,12 @@ export type WorkbenchShellProps = {
   }) => void
   onSendComment?: (sid: string, text: string) => void
   onOpenReview?: () => void
-  onOpenDiffFile?: (doc: DiffDocument) => void
+  onOpenFile?: (rel: string, line?: number) => void
   onSendDiffComment?: (sid: string, text: string) => void
   onAddDiffAnnotation?: (a: { rel: string; startLine: number; endLine: number; code: string; comment: string }) => void
   renderGoal?: () => JSX.Element
   renderWorld?: () => JSX.Element
+  activeTabId?: string | null
   onDocumentSelect?: (id: string) => void
   onDocumentClose?: (id: string) => void
   onDocumentCloseMany?: (ids: readonly string[]) => void
@@ -100,6 +101,12 @@ export function WorkbenchShell(props: WorkbenchShellProps): JSX.Element {
           onCrumb={props.onFocusCrumb}
           onOpenPicker={props.onOpenPicker}
         />
+        <WorkbenchTabs
+          activeId={props.activeTabId}
+          onSelect={(id) => props.onDocumentSelect?.(id)}
+          onClose={(id) => props.onDocumentClose?.(id)}
+          onCloseMany={(ids) => props.onDocumentCloseMany?.(ids)}
+        />
         <div class="mafw-focus-body">
           <FocusStage
             focus={props.focusView!}
@@ -116,7 +123,7 @@ export function WorkbenchShell(props: WorkbenchShellProps): JSX.Element {
             onAddAnnotation={props.onAddAnnotation}
             onSendComment={props.onSendComment}
             onOpenReview={props.onOpenReview}
-            onOpenDiffFile={props.onOpenDiffFile}
+            onOpenFile={props.onOpenFile}
             onSendDiffComment={props.onSendDiffComment}
             onAddDiffAnnotation={props.onAddDiffAnnotation}
             renderPluginSurface={props.renderPluginSurface}
@@ -127,9 +134,6 @@ export function WorkbenchShell(props: WorkbenchShellProps): JSX.Element {
             onWebError={props.onWebError}
             renderGoal={props.renderGoal}
             renderWorld={props.renderWorld}
-            onDocumentSelect={props.onDocumentSelect}
-            onDocumentClose={props.onDocumentClose}
-            onDocumentCloseMany={props.onDocumentCloseMany}
           />
           <PluginSurfaceStage
             activeSurfaceId={activePluginSurfaceId()}

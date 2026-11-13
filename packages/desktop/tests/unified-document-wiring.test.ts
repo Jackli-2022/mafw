@@ -27,9 +27,11 @@ test("DocumentStage mounts both embedded bodies", () => {
   assert.match(stage, /<EditorDock/)
   assert.match(stage, /embedded/)
   assert.match(stage, /<BrowserDock/)
-  assert.match(stage, /onSelect=/)
-  assert.match(stage, /onClose=/)
-  assert.match(stage, /onCloseMany/)
+  assert.match(stage, /<ChangeSetView/)
+  const tabs = read("src/renderer/mafw/components/WorkbenchTabs.tsx")
+  assert.match(tabs, /onSelect=/)
+  assert.match(tabs, /onClose=/)
+  assert.match(tabs, /onCloseMany/)
 })
 
 test("MafwShell opens a blank browser tab for the browser command", () => {

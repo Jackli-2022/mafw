@@ -45,6 +45,6 @@ test("stageActionFor leaves non-file stages alone", () => {
   assert.deepEqual(stageActionFor(focus({ kind: "goal", goalId: "g1" })), { kind: "none" })
 })
 
-test("diff subjects dispatch to the diff stage", () => {
-  assert.equal(stageKindFor(focus({ kind: "diff", source: "session", id: "d1", rel: "src/a.ts" })), "diff")
+test("change-set subjects dispatch to the changeset stage", () => {
+  assert.equal(stageKindFor(focus({ kind: "changeset", id: "changeset:session:s1:m1" })), "changeset")
 })

@@ -19,7 +19,8 @@ import {
   requestDocumentActivation,
 } from "./document-tabs-store"
 import { closeBrowserDocument, openBrowserDocument, resetBrowserDocumentsForTests, updateBrowserDocument } from "./browser-documents"
-import { openDiffDocument, resetDiffDocumentsForTests, updateDiffDocument } from "./diff-documents"
+import { openChangeSetDocument, resetChangeSetDocumentsForTests, updateChangeSetDocument } from "./change-set-documents"
+import { openSceneTab, resetSceneTabsForTests } from "./scene-tabs"
 import { clearFileModels, saveFileModel } from "./file-documents"
 import { closeFile, createEditorModel, markDirty, openFile } from "../editor-state"
 import {
@@ -59,7 +60,8 @@ beforeEach(() => {
   clearFileModels()
   resetDocumentTabsForTests()
   resetDocumentListPersistenceForTests()
-  resetDiffDocumentsForTests()
+  resetChangeSetDocumentsForTests()
+  resetSceneTabsForTests()
 })
 
 test("file and web tabs merge into one stable strip", () => {
@@ -290,23 +292,25 @@ test("no order is persisted before a world is configured", () => {
   assert.equal(storage.map.size, 0)
 })
 
-const diffBase = {
-  source: { kind: "session" as const, sessionID: "s1" },
+const changeSetBase = {
+  source: { kind: "session" as const, sessionID: "s1", turnID: "m1", title: "14:32 修复登录" },
   root: "C:/repo",
   scope: { kind: "world" as const, worldId: "C:/repo" },
-  rel: "src/a.ts",
-  patch: "@@ -1 +1 @@\n-a\n+b",
-  additions: 1,
-  deletions: 1,
+  files: [{
+    file: "src/a.ts",
+    patch: "@@ -1 +1 @@\n-a\n+b",
+    additions: 1,
+    deletions: 1,
+  }],
 }
 
-test("diff documents become active diff tabs and are not persisted", () => {
+test("change sets become active change-set tabs and are not persisted", () => {
   const storage = fakeStorage()
   configureDocumentListStorage(storage)
   configureDocumentListWorld("C:/repo")
-  const doc = openDiffDocument(diffBase)
+  const doc = openChangeSetDocument(changeSetBase)
   requestDocumentActivation(doc.id)
-  assert.deepEqual(documentTabs().map((entry) => entry.kind), ["diff"])
+  assert.deepEqual(documentTabs().map((entry) => entry.kind), ["changeset"])
   assert.equal(documentTabs()[0]!.id, doc.id)
   assert.equal(activeDocumentTabId(), doc.id)
   flushDocumentListPersistence()
@@ -314,12 +318,37 @@ test("diff documents become active diff tabs and are not persisted", () => {
   assert.deepEqual(saved.order, [])
 })
 
-test("a live diff update does not steal the active file tab", () => {
+test("a live change-set update does not steal the active file tab", () => {
   syncFileTabs("C:/repo", [view("a.ts")])
   const fileId = documentTabs()[0]!.id
   activateDocumentTab(fileId)
-  const doc = openDiffDocument({ ...diffBase, rel: "src/a.ts" })
+  const doc = openChangeSetDocument(changeSetBase)
   activateDocumentTab(fileId)
-  updateDiffDocument(doc.id, { patch: "@@ -1 +1 @@\n-a\n+c" })
+  updateChangeSetDocument(doc.id, { files: [{ file: "src/a.ts", patch: "@@ -1 +1 @@\n-a\n+c", additions: 1, deletions: 1 }] })
   assert.equal(activeDocumentTabId(), fileId)
+})
+
+test("scene tabs join the same strip; only world / Goal scenes persist", () => {
+  const storage = fakeStorage()
+  configureDocumentListStorage(storage)
+  configureDocumentListWorld("C:/repo")
+  openSceneTab({
+    subject: { kind: "world" },
+    scope: { kind: "world", worldId: "C:/repo" },
+    label: "世界总览",
+  })
+  openSceneTab({
+    subject: { kind: "terminal", id: "local" },
+    scope: { kind: "world", worldId: "C:/repo" },
+    label: "终端",
+  })
+  openSceneTab({
+    subject: { kind: "goal", goalId: "g1" },
+    scope: { kind: "goal", worldId: "C:/repo", goalId: "g1", revision: 2, worktreeDir: "C:/wt" },
+    label: "Goal · 修复登录",
+  })
+  assert.deepEqual(documentTabs().map((entry) => entry.kind), ["scene", "scene", "scene"])
+  flushDocumentListPersistence()
+  const saved = JSON.parse(storage.map.get(documentListStorageKey("C:/repo"))!) as { order: string[] }
+  assert.deepEqual(saved.order, ["scene:world", "scene:goal:g1"])
 })

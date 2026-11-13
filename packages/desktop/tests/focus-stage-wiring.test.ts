@@ -15,7 +15,7 @@ test("FocusStage delegates document surfaces through DocumentStage", () => {
   assert.match(stage, /plugin:\$\{subject\.package\}:\$\{subject\.panel\}/)
   assert.doesNotMatch(stage, /FilesDock/)
   assert.doesNotMatch(stage, /ContentScopeHeader/)
-  assert.doesNotMatch(stage, /onOpenFile/)
+  assert.match(stage, /onOpenFile/)
 })
 
 test("FocusStage uses DockEmpty fallbacks and no raw controls", () => {

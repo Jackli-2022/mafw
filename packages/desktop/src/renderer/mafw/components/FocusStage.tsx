@@ -3,7 +3,6 @@ import { TerminalSurface } from "./TerminalSurface"
 import { DocumentStage } from "./DocumentStage"
 import { DockEmpty } from "./dock-panel"
 import type { FileDiffEntry } from "./DiffReviewPanel"
-import type { DiffDocument } from "../documents/diff-documents"
 import type { AnnotationAnchor } from "../../../shared/annotation-types"
 import type { PluginWebSurfaceView } from "../plugins/plugin-web-surface"
 import type { Focus } from "../focus/focus-model"
@@ -11,7 +10,7 @@ import type { FocusOpenRequest } from "../focus/focus-open"
 import { stageKindFor } from "../focus/stage-dispatch"
 import "../focus-goal-stage.css"
 
-/** 工作台的「台」：只放当前对象；文件 / 浏览器 / 终端 / 插件 / 变更集 / Goal / 世界。 */
+/** 工作台的「台」：只放当前对象；文件 / 浏览器 / 改动集 / 终端 / 插件 / Goal / 世界。 */
 export function FocusStage(props: {
   focus: Focus
   active: boolean
@@ -37,7 +36,7 @@ export function FocusStage(props: {
   }) => void
   onSendComment?: (sid: string, text: string) => void
   onOpenReview?: () => void
-  onOpenDiffFile?: (doc: DiffDocument) => void
+  onOpenFile?: (rel: string, line?: number) => void
   onSendDiffComment?: (sid: string, text: string) => void
   onAddDiffAnnotation?: (a: { rel: string; startLine: number; endLine: number; code: string; comment: string }) => void
   renderPluginSurface?: (id: string) => JSX.Element
@@ -48,12 +47,9 @@ export function FocusStage(props: {
   onWebError?: (surfaceId: string, message: string) => void
   renderGoal?: () => JSX.Element
   renderWorld?: () => JSX.Element
-  onDocumentSelect?: (id: string) => void
-  onDocumentClose?: (id: string) => void
-  onDocumentCloseMany?: (ids: readonly string[]) => void
 }): JSX.Element {
   const kind = () => stageKindFor(props.focus)
-  const isDocument = () => kind() === "editor" || kind() === "browser" || kind() === "diff"
+  const isDocument = () => kind() === "editor" || kind() === "browser" || kind() === "changeset"
   const pluginId = () => {
     const subject = props.focus.subject
     return subject.kind === "plugin" ? `plugin:${subject.package}:${subject.panel}` : null
@@ -77,12 +73,9 @@ export function FocusStage(props: {
           onAddAnnotation={props.onAddAnnotation}
           onSendComment={props.onSendComment}
           onOpenReview={props.onOpenReview}
-          onOpenDiffFile={props.onOpenDiffFile}
+          onOpenFile={props.onOpenFile}
           onSendDiffComment={props.onSendDiffComment}
           onAddDiffAnnotation={props.onAddDiffAnnotation}
-          onSelect={(id) => props.onDocumentSelect?.(id)}
-          onClose={(id) => props.onDocumentClose?.(id)}
-          onCloseMany={(ids) => props.onDocumentCloseMany?.(ids)}
         />
       </div>
 

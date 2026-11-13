@@ -1,9 +1,10 @@
 import { L } from "../labels"
 import { item } from "../model"
 import type { MenuModel } from "../types"
+import type { DocumentTabKind } from "../../documents/document-tabs-model"
 
 export interface DocumentTabMenuTarget {
-  kind: "file" | "web" | "diff"
+  kind: DocumentTabKind
   title: string
   copyValue: string
   canCloseOthers: boolean
@@ -21,11 +22,11 @@ export function buildDocumentTabMenu(target: DocumentTabMenuTarget): MenuModel {
       ? {}
       : { disabled: true, disabledReason: "右侧没有文档" }),
   ]
-  if (target.kind === "file" || target.kind === "diff") {
+  if (target.kind === "file" || target.kind === "changeset") {
     items.push(item("documentTab.copyPath", L.documentTab.copyPath, noCopy
       ? { disabled: true, disabledReason: "路径为空" }
       : {}))
-  } else {
+  } else if (target.kind === "web") {
     items.push(
       item("documentTab.copyLink", L.documentTab.copyLink, noCopy
         ? { disabled: true, disabledReason: "地址为空" }
