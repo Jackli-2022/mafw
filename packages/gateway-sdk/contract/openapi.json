@@ -2650,6 +2650,37 @@
         }
       }
     },
+    "/api/sessions/{id}/discovery/skills/{key}/invoke": {
+      "post": {
+        "operationId": "session.discoverySkillInvoke",
+        "tags": [
+          "session"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/session/{id}/abort": {
       "post": {
         "operationId": "session.abort",

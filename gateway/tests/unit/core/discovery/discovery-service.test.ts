@@ -13,6 +13,7 @@ function fakeRuntime(over: any = {}) {
     discovery: {
       list: jest.fn(async () => ({ commands: [{ name: 'init', description: 'i' }], skills: [], warnings: [] })),
       loadSkill: jest.fn(async () => null),
+      invokeSkill: jest.fn(async () => undefined),
     },
     session: { get: jest.fn(async () => ({ directory: tempDir() })) },
     ...over,
@@ -21,7 +22,9 @@ function fakeRuntime(over: any = {}) {
 
 function fakeAccess(over: Record<string, boolean> = {}) {
   return {
-    can: (id: string) => over[id] ?? (id === 'discovery.list' || id === 'discovery.loadSkill'),
+    can: (id: string) => over[id] ?? (
+      id === 'discovery.list' || id === 'discovery.loadSkill' || id === 'discovery.invokeSkill'
+    ),
   };
 }
 
@@ -157,6 +160,60 @@ describe('DiscoveryService', () => {
 
     const noRuntime = new DiscoveryService(deps({ runtime: fakeRuntime({ capabilities: { discoveryApi: false }, discovery: undefined }) }));
     await expect(noRuntime.loadSkill('s1', 'a', { directory: dir })).rejects.toMatchObject({ status: 503 });
+  });
+
+  it('invokeSkill calls the adapter with the canonical id', async () => {
+    const dir = tempDir();
+    const rt = fakeRuntime();
+    rt.discovery.list.mockResolvedValue({
+      commands: [],
+      skills: [{ id: 'superpowers', name: 'Superpowers', contentLength: 1 }],
+      warnings: [],
+    });
+    const svc = new DiscoveryService(deps({ runtime: rt }));
+
+    await expect(svc.invokeSkill('s1', 'superpowers', '帮我审一下', { directory: dir }))
+      .resolves.toEqual({ ok: true, skill: 'superpowers' });
+    expect(rt.discovery.invokeSkill).toHaveBeenCalledWith({
+      sessionID: 's1',
+      directory: dir,
+      key: 'superpowers',
+      args: '帮我审一下',
+    });
+  });
+
+  it('invokeSkill maps 404 / 409 / 503', async () => {
+    const dir = tempDir();
+    const rt = fakeRuntime();
+    rt.discovery.list.mockResolvedValue({
+      commands: [],
+      skills: [
+        { id: 'a', name: 'Same', contentLength: 1 },
+        { id: 'b', name: 'Same', contentLength: 1 },
+      ],
+      warnings: [],
+    });
+    const svc = new DiscoveryService(deps({ runtime: rt }));
+    await expect(svc.invokeSkill('s1', 'nope', '', { directory: dir })).rejects.toMatchObject({ status: 404 });
+    await expect(svc.invokeSkill('s1', 'Same', '', { directory: dir })).rejects.toMatchObject({ status: 409 });
+
+    const unsupported = new DiscoveryService(deps({
+      runtime: fakeRuntime({ discovery: { list: rt.discovery.list, loadSkill: rt.discovery.loadSkill } }),
+      getAccess: () => fakeAccess({ 'discovery.invokeSkill': false }),
+    }));
+    await expect(unsupported.invokeSkill('s1', 'a', '', { directory: dir })).rejects.toMatchObject({ status: 503 });
+  });
+
+  it('snapshot exposes skillInvokeSupported from RuntimeAccess', async () => {
+    const dir = tempDir();
+    const yes = await new DiscoveryService(deps({ runtime: fakeRuntime() })).get('s1', { directory: dir });
+    expect(yes.skillInvokeSupported).toBe(true);
+
+    const no = await new DiscoveryService(deps({
+      runtime: fakeRuntime({ discovery: { list: jest.fn(async () => ({ commands: [], skills: [], warnings: [] })) } }),
+      getAccess: () => fakeAccess({ 'discovery.invokeSkill': false }),
+    })).get('s1', { directory: dir });
+    expect(no.skillInvokeSupported).toBe(false);
   });
 
   it('broadcastKnown emits session.commands with commands only and forget removes the session', async () => {

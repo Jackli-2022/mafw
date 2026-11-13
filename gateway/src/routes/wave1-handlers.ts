@@ -27,6 +27,7 @@ import {
   handleSessionDiscovery,
   handleSessionDiscoveryRefresh,
   handleSessionDiscoverySkill,
+  handleSessionDiscoverySkillInvoke,
 } from './session-discovery';
 import type { DiscoveryService } from '../core/discovery/discovery-service';
 import { handleSessionDiff, handleSessionDiffRevert } from './session-diff';
@@ -177,11 +178,12 @@ export function attachWave1Handlers(registry: RouteRegistry, gw: Wave1Gateway): 
       data: gw.dataPartService ?? undefined,
     })));
 
-  for (const op of ['session.discovery', 'session.discoveryRefresh', 'session.discoverySkill'] as const) {
+  for (const op of ['session.discovery', 'session.discoveryRefresh', 'session.discoverySkill', 'session.discoverySkillInvoke'] as const) {
     registry.attachHandler(op, H(async (req, res, params) => {
       const deps = { discovery: gw.discovery ?? null };
       if (op === 'session.discovery') return handleSessionDiscovery(req, res, params, deps);
       if (op === 'session.discoveryRefresh') return handleSessionDiscoveryRefresh(req, res, params, deps);
+      if (op === 'session.discoverySkillInvoke') return handleSessionDiscoverySkillInvoke(req, res, params, deps);
       return handleSessionDiscoverySkill(req, res, params, deps);
     }));
   }

@@ -1,9 +1,11 @@
 import * as http from 'http';
+import { Readable } from 'stream';
 import { DiscoveryError } from '../../../src/core/discovery/discovery-service';
 import {
   handleSessionDiscovery,
   handleSessionDiscoveryRefresh,
   handleSessionDiscoverySkill,
+  handleSessionDiscoverySkillInvoke,
 } from '../../../src/routes/session-discovery';
 
 const snapshot = {
@@ -94,6 +96,42 @@ describe('session discovery routes', () => {
       { discovery: discovery as any },
     );
     expect(conflict.out.status).toBe(409);
+  });
+
+  it('skill invoke route forwards args and maps DiscoveryError status', async () => {
+    const discovery = fakeService({
+      invokeSkill: jest.fn(async () => ({ ok: true, skill: 'superpowers' })),
+    });
+    const { res, out } = mockRes();
+    const req = Object.assign(
+      Readable.from([JSON.stringify({ args: 'x' })]),
+      { method: 'POST', url: '/api/sessions/s1/discovery/skills/superpowers/invoke?directory=%2Fproj' },
+    );
+    await handleSessionDiscoverySkillInvoke(
+      req as any,
+      res,
+      { id: 's1', key: 'superpowers' },
+      { discovery: discovery as any },
+    );
+    expect(discovery.invokeSkill).toHaveBeenCalledWith('s1', 'superpowers', 'x', {
+      directory: '/proj',
+      force: false,
+    });
+    expect(out.status).toBe(200);
+    expect(JSON.parse(out.body)).toEqual({ ok: true, skill: 'superpowers' });
+
+    discovery.invokeSkill.mockRejectedValueOnce(new DiscoveryError(503, 'skill invocation unavailable'));
+    const unavailable = mockRes();
+    await handleSessionDiscoverySkillInvoke(
+      Object.assign(Readable.from([JSON.stringify({ args: '' })]), {
+        method: 'POST',
+        url: '/api/sessions/s1/discovery/skills/superpowers/invoke',
+      }) as any,
+      unavailable.res,
+      { id: 's1', key: 'superpowers' },
+      { discovery: discovery as any },
+    );
+    expect(unavailable.out.status).toBe(503);
   });
 
   it('returns 503 when the service is unavailable', async () => {

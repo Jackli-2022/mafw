@@ -1255,6 +1255,17 @@ test("discovery.refresh POSTs and discovery.skill encodes the key", async () => 
   expect(calls[1][0]).toBe("http://gw:3000/api/sessions/s1/discovery/skills/mafw%20plan?directory=%2Fp&force=1")
 })
 
+test("discovery.invokeSkill POSTs args and encodes the key", async () => {
+  fetchMock.mockResolvedValue(okJson({ ok: true, skill: "superpowers" }))
+  const c = new MafwClient("http://gw:3000")
+  const out = await c.discovery.invokeSkill("s1", "mafw plan", "x", { directory: "/p" })
+  const calls = (fetchMock as any).mock.calls
+  expect(calls[0][0]).toBe("http://gw:3000/api/sessions/s1/discovery/skills/mafw%20plan/invoke?directory=%2Fp")
+  expect(calls[0][1].method).toBe("POST")
+  expect(calls[0][1].body).toBe(JSON.stringify({ args: "x" }))
+  expect(out).toEqual({ ok: true, skill: "superpowers" })
+})
+
 // -- Pod --
 
 test("pod.ensure sends GET /api/projects/:projectId/pod", async () => {
