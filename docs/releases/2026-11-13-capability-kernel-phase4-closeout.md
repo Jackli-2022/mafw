@@ -89,7 +89,8 @@ G4 达成：一个插件包可以贡献 menu item + composer action，端到端�
   - `918ca4e7` feat(desktop): add panel rail entries
   - `0147b5f1` docs: record phase 4 panel rail entry
 - chat part 评估：
-  - 文档提交见 `git log -- docs/research/2026-11-13-chat-part-renderer-evaluation.md`、`git log -- packages/desktop/src/renderer/mafw/plugins/plugin-chat-part-boundary.test.ts`
+  - `c5188551` docs: evaluate chat part renderer and close phase 4
+  - 包含 `docs/research/2026-11-13-chat-part-renderer-evaluation.md`、`docs/releases/2026-11-13-capability-kernel-phase4-closeout.md`、`plugin-chat-part-boundary.test.ts`
 
 ## 明确未做
 
