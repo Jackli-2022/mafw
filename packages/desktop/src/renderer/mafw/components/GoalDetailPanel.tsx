@@ -77,6 +77,7 @@ export function GoalDetailPanel(props: {
   onGoalAccepted?: () => void
   /** 显式进入当前 revision 的 worktree 内容；右侧 Goal 保持不变。 */
   onOpenWorktree?: (target: GoalWorktreeTarget) => void
+  onOpenChanges?: (input: { section: "changes" | "review"; rel?: string; line?: number }) => void
   /** Goal 作用域的决定记录；由 shell 的 decisionStore 提供。 */
   decisionRecords?: () => readonly DecisionRecord[]
   decisionRecordBusy?: () => string | null
@@ -909,6 +910,7 @@ export function GoalDetailPanel(props: {
                         ...target,
                         title: podGoal()?.title ?? null,
                       })}
+                      onOpenChanges={(input) => props.onOpenChanges?.(input)}
                     />
                   )}
                 </Show>

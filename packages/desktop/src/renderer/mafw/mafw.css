@@ -3266,6 +3266,25 @@ html[data-theme="light"] body {
 .mafw-changes-face .mafw-change-dir { font-size: 11px; }
 .mafw-changes-face .mafw-change-file { display: flex; align-items: center; gap: 6px; padding-top: 5px; padding-bottom: 5px; border-radius: 6px; cursor: pointer; font-size: 11px; color: var(--text-2); }
 .mafw-changes-face .mafw-change-file:hover { background: var(--hover); color: var(--text-1); }
+.mafw-changes-review { display: flex; flex-direction: column; gap: 2px; padding-bottom: 4px; border-bottom: 1px solid var(--border-subtle); }
+.mafw-changes-review-item { padding: 0 6px; }
+.mafw-changes-review-row { display: flex; align-items: center; gap: 6px; padding: 5px 4px; border-radius: 6px; cursor: pointer; font-size: 11px; color: var(--text-2); }
+.mafw-changes-review-row:hover { background: var(--hover); color: var(--text-1); }
+.mafw-changes-review-status { flex: none; font-size: 9px; padding: 1px 4px; border-radius: 3px; background: var(--pill); color: var(--text-3); }
+.mafw-changes-review-item[data-status="unresolved"] .mafw-changes-review-status { color: var(--warning-text); }
+.mafw-changes-review-item[data-status="responded"] .mafw-changes-review-status { color: var(--success-text); }
+.mafw-changes-review-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-data); }
+.mafw-changes-review-path:hover { color: var(--accent-text); }
+.mafw-changes-review-body { display: flex; flex-direction: column; gap: 4px; padding: 2px 4px 8px; font-size: 11px; color: var(--text-3); }
+.mafw-changes-review-comment { color: var(--text-2); }
+.mafw-changes-review-response { display: flex; flex-direction: column; gap: 1px; padding: 4px 6px; border-radius: 5px; background: var(--bg-overlay); }
+.mafw-changes-review-response > span:first-child { font-size: 9px; color: var(--text-4); }
+.mafw-changes-review-actions { display: flex; gap: 4px; }
+.mafw-changes-project { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
+.mafw-changes-project-row { display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; color: var(--text-2); }
+.mafw-changes-project-row:hover { background: var(--hover); color: var(--text-1); }
+.mafw-changes-project-name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mafw-changes-project-badge { flex: none; min-width: 14px; padding: 0 4px; border-radius: 99px; background: var(--bg-overlay); color: var(--warning-text); font-size: 9px; text-align: center; }
 .mafw-left-dock-backdrop { position: absolute; inset: 0; z-index: 60; background: transparent; }
 .mafw-trajectory-dock { height: 100%; display: flex; flex-direction: column; }
 .mafw-trajectory-summary {

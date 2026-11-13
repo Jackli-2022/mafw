@@ -17,6 +17,7 @@ import { LeftDock } from "./components/LeftDock"
 import { ChangesFace } from "./components/ChangesFace"
 import { resolveChangesContext, type ChangesMode, type ChangesContext, type GoalRef } from "./changes/changes-context"
 import { nextChangesRequest, type ChangesRequest } from "./changes/changes-request"
+import { countReviewAttention } from "./changes/review-queue"
 import { MenuHost } from "./context-menu/MenuHost"
 import { TextMenuBridge } from "./context-menu/TextMenuBridge"
 import { menuController } from "./context-menu/controller"
@@ -3211,6 +3212,14 @@ export function MafwShell() {
     openLeftDockFace("changes")
     setChangesRequest((previous) => nextChangesRequest(previous, input))
   }
+  const activeGoalId = () => currentGoalRef()?.goalId ?? null
+  const activeGoalAccepted = () => !!podStore.detail()?.goals.find((goal) => goal.goalId === activeGoalId())?.accepted
+  const changesBadge = () => {
+    if (changesMode() === "project") return countReviewAttention(decisionStore.items())
+    const goalId = activeGoalId()
+    return goalId ? countReviewAttention(decisionStore.items(), goalId) : 0
+  }
+  const changesDot = () => changesBadge() === 0 && contentDiffEntries().length > 0
 
   // 鲸群左栏：shell 持有常驻订阅，左右两栏共用同一个 pod-store
   // （spec 2026-10-30-pod-left-rail §4.1）。目录口径与右栏一致。
@@ -3994,6 +4003,8 @@ export function MafwShell() {
           onNewWorktreeSession={() => createWorktreeSession()}
           worktreeEnabled={worktreeEnabled()}
           approvals={pendingPermissionCount()}
+          changesBadge={changesBadge()}
+          changesDot={changesDot()}
           podBadge={podBadgeCount()}
           podResultDot={podResultDot()}
           pluginItems={pluginRailItems()}
@@ -4118,6 +4129,26 @@ export function MafwShell() {
                     : Promise.resolve(null)
                 }}
                 onOpenDiff={openDiffTab}
+                onOpenGoalFile={async (goal, rel, line) => {
+                  const project = currentProject()
+                  if (!project) return
+                  const root = goal.worktreeDir ?? await resolveGoalWorktreeDir(goal.podId, goal.goalId, project)
+                  if (!root) return
+                  openFileInScope(
+                    rel,
+                    root,
+                    { kind: "goal", worldId: project, goalId: goal.goalId, revision: goal.revision, worktreeDir: root },
+                    undefined,
+                    { persist: true, line },
+                  )
+                }}
+                accepted={activeGoalAccepted()}
+                onReviewChanged={() => { void podStore.refresh() }}
+                goals={podStore.detail()?.goals ?? []}
+                sessions={sessions().map((session) => ({ id: session.id, title: session.title ?? "未命名" }))}
+                reviewCountForGoal={(goalId) => countReviewAttention(decisionStore.items(), goalId)}
+                onOpenGoal={(goalId) => openGoalFocus(goalId, "timeline")}
+                onOpenSession={(sid) => openSessionTab(sid)}
                 sessionDiffs={contentDiffEntries()}
                 onOpenSessionDiff={(file) => {
                   const sid = currentSessionID()
@@ -4455,6 +4486,12 @@ export function MafwShell() {
                             onOpenSession={(sid) => { void openPodSession(sid) }}
                             onGoalAccepted={() => { void openLeadEntry() }}
                             onOpenWorktree={(target) => openGoalContent(target)}
+                            onOpenChanges={(input) => openChangesFace({
+                              context: currentGoalRef()
+                                ? { kind: "goal", goal: currentGoalRef()! }
+                                : (sessionChangesContext() ?? { kind: "project" }),
+                              ...input,
+                            })}
                             decisionRecords={() => decisionStore.records().filter((record) => record.goalId === id)}
                             decisionRecordBusy={() => decisionRecordBusy()}
                             onDecisionConfirm={confirmDecisionRecord}

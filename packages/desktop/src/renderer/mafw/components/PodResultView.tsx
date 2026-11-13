@@ -61,6 +61,8 @@ export function PodResultView(props: {
   onAccept?: (opts?: { revision?: number; force?: boolean; riskAcknowledged?: boolean }) => Promise<PodGoalAcceptResult | null>
   /** 显式进入当前 revision 的 worktree 内容；不会自动切换 scope。 */
   onOpenWorktree?: (target: Omit<GoalWorktreeTarget, "title">) => void
+  /** 打开左栏改动面（本版变更 / 待审）。 */
+  onOpenChanges?: (input: { section: "changes" | "review"; rel?: string; line?: number }) => void
   /** 外部 Pod 事实变化时刷新评审项（如 Tech Lead 回应/新批注落库）。 */
   reviewRefreshKey?: () => unknown
 }) {
@@ -499,7 +501,10 @@ export function PodResultView(props: {
                     })
                   }}
                 >
-                  查看本版变更
+                  查看本版文件
+                </ButtonV2>
+                <ButtonV2 variant="ghost" size="small" onClick={() => props.onOpenChanges?.({ section: "changes" })}>
+                  改动面板
                 </ButtonV2>
               </div>
             </Show>
@@ -566,6 +571,13 @@ export function PodResultView(props: {
             </Show>
 
             <div ref={(el) => { reviewRef = el }}>
+              <Show when={reviewItems().length > 0}>
+                <div class="mafw-pod-result-diff-actions">
+                  <ButtonV2 variant="ghost" size="small" onClick={() => props.onOpenChanges?.({ section: "review" })}>
+                    在改动面板查看
+                  </ButtonV2>
+                </div>
+              </Show>
               <PodReviewItems
                 items={reviewItems()}
                 busy={reviewBusy()}
