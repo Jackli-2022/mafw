@@ -44,3 +44,55 @@ export function createGatewayClient(baseUrl: string, fetchImpl?: typeof fetch): 
     ...(fetchImpl ? { fetchImpl } : {}),
   })
 }
+
+// ── E11-1: live reload after an out-of-band rotation ────────────────────────
+
+/** Message text of anything the SDK may throw (Error / string / `{message}`). */
+function errorText(err: unknown): string {
+  if (typeof err === "string") return err
+  if (err instanceof Error) return err.message
+  const message = (err as { message?: unknown } | null | undefined)?.message
+  return typeof message === "string" ? message : ""
+}
+
+/**
+ * True only for "the gateway rejected our human credential because it was
+ * rotated" — the SDK surfaces it as
+ * `HTTP 403: human principal required [human_principal_required]`
+ * (see `httpError()` in `@mafw/sdk`).
+ *
+ * Deliberately narrow: a 403 without the stable code is a different
+ * authorization failure, and 429/500 are not credential problems — retrying
+ * those would double side effects without fixing anything.
+ */
+export function isStaleHumanTokenError(err: unknown): boolean {
+  const text = errorText(err)
+  const explicit = (err as { status?: unknown } | null | undefined)?.status
+  const status = typeof explicit === "number"
+    ? explicit
+    : Number((text.match(/\bHTTP\s+(\d{3})\b/) ?? text.match(/\b(\d{3})\s+Forbidden\b/))?.[1] ?? NaN)
+  if (status !== 403) return false
+  const code = (err as { code?: unknown } | null | undefined)?.code
+  return code === "human_principal_required" || text.includes("human_principal_required")
+}
+
+/**
+ * Retry a gateway call **exactly once** after `refresh` rebuilt the client.
+ *
+ * `call` must re-resolve the method from the live client on each invocation
+ * (the stale client is already captured in its own headers). A second failure
+ * is the caller's to see — a rotation loop would turn a bad credential into a
+ * request storm.
+ */
+export async function withHumanTokenRetry<T>(
+  call: () => Promise<T>,
+  refresh: () => void | Promise<void>,
+): Promise<T> {
+  try {
+    return await call()
+  } catch (err) {
+    if (!isStaleHumanTokenError(err)) throw err
+    await refresh()
+    return call()
+  }
+}

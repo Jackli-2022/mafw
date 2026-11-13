@@ -65,6 +65,7 @@ import {
 } from './schemas/human-gate';
 import { WorkOverviewResponse } from './schemas/work';
 import { MemoryStatsResponse } from './schemas/memory-stats';
+import { HumanTokenRotateResponse } from './schemas/human-token';
 import {
   SessionCheckpointsResponse,
   SessionChildrenResponse,
@@ -420,6 +421,18 @@ const NON_SDK_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/devices', operationId: 'devices.register', tags: ['internal'] },
   { method: 'GET', path: '/api/devices', operationId: 'devices.list', tags: ['internal'] },
   { method: 'DELETE', path: '/api/devices/:id', operationId: 'devices.delete', tags: ['internal'] },
+  // E11-1：human token 轮换。只有 CLI（bin/mafw.js）与运维脚本直接打这个端点，
+  // @mafw/sdk 不暴露（raw HTTP + 旧凭据证明占有）→ SDK 死契约门按 operationId
+  // 显式豁免（packages/gateway-sdk/src/contract.test.ts 的 NON_SDK_EXEMPT）。
+  // 只接受 method === 'human-token' 的 human principal（device/service/loopback 一律 403）。
+  {
+    method: 'POST',
+    path: '/api/human-token/rotate',
+    operationId: 'humanToken.rotate',
+    summary: 'Rotate the human token and bind it live',
+    tags: ['auth'],
+    response: HumanTokenRotateResponse,
+  },
   // P5 Wave 2 反向审计补遗
   { method: 'GET', path: '/.well-known/agent-card.json', operationId: 'a2a.agentCard', tags: ['internal'] },
   // Task C1：单规则详情 GET /api/automations/:id 未进 @mafw/sdk 调用面

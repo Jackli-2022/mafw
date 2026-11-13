@@ -49,6 +49,22 @@ export function isWellFormedHumanToken(value: string): boolean {
   return isWellFormed(value);
 }
 
+/**
+ * E11-1: replace the on-disk credential with a fresh 32-byte hex token and
+ * return it. Reuses the same atomic write as first-time creation (`.tmp` +
+ * fsync + rename + 0600), so a crash or failed rename leaves the previous
+ * token file untouched — the caller's live token stays valid until it binds
+ * the returned value.
+ *
+ * Throws when the file cannot be written; callers must treat that as "nothing
+ * changed" (the HTTP route maps it to 500 without touching the live token).
+ */
+export function rotateHumanToken(dir: string): string {
+  const token = crypto.randomBytes(32).toString('hex');
+  writeTokenAtomically(humanTokenPath(dir), token);
+  return token;
+}
+
 function isWellFormed(value: string): boolean {
   return HUMAN_TOKEN_RE.test(value);
 }

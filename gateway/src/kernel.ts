@@ -30,7 +30,7 @@ import {
   type GatewayRuntimeIdentity,
 } from './release-info';
 import { isLoopbackAddr } from './core/auth';
-import { loadOrCreateHumanToken } from './core/human-token';
+import { loadOrCreateHumanToken, rotateHumanToken } from './core/human-token';
 import type { Services } from './types';
 // D3 Task 3：HTTP 传输链 + WS 上行枢纽（原先内联在 startApiServer 的 626 行回调）。
 import { createRequestListener } from './http/transport';
@@ -5561,12 +5561,34 @@ class MafwScheduler {
       get skillInstallDeps() { return (...a: any[]) => (self.skillInstallDeps as any)(...a); },
       get deoptSkill() { return (...a: any[]) => (self.deoptInstalledSkill as any)(...a); },
       get listSkills() { return (...a: any[]) => (self.listInstalledSkills as any)(...a); },
+      // E11-1：轮换 + live 重绑（写盘成功后才会赋值，失败保持旧 token 有效）。
+      get rotateHumanToken() { return () => self.rotateHumanTokenNow(); },
       get eventLayer() { return self.eventLayer; },
       get eventLayerStore() { return self.eventLayerStore; },
       get standingGoals() { return self.standingGoals; },
       get standingGoalStore() { return self.standingGoalStore; },
       get processEventThread() { return (...a: any[]) => (self.processEventThread as any)(...a); },
     };
+  }
+
+  /**
+   * E11-1: rotate `~/.mafw/human.token` and bind the new value live.
+   *
+   * The live assignment happens only after the atomic write succeeded, so a
+   * failed rotation leaves the previous credential valid (the route maps the
+   * throw to 500). `httpTransportDeps` / the WS hub read `this.humanToken`
+   * through live getters, so the next request already accepts the new token and
+   * the old one stops working — no restart, no session teardown.
+   *
+   * The token itself is never logged (constant message only); `redactLog` covers
+   * the header on every request-log path.
+   */
+  private rotateHumanTokenNow(): string {
+    const dir = this.mafwDir || config.resolvePath();
+    const token = rotateHumanToken(dir);
+    this.humanToken = token;
+    log.warn('[Auth] human token rotated');
+    return token;
   }
 
   /**

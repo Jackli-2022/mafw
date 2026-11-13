@@ -32,6 +32,7 @@ API Commands:
   health             Gateway health check (GET /health)
   stats              Gateway statistics (GET /api/stats)
   restart-agent      Restart the agent serve process (POST /api/runtime/restart-agent)
+  rotate-human-token Rotate the human credential (POST /api/human-token/rotate)
   projects           List registered projects (GET /api/projects)
   goals              List active goals (GET /api/goals)
   register <dir>     Register a project (POST /register)
@@ -72,12 +73,13 @@ const COMMANDS = [
     'health', 'stats', 'projects', 'goals', 'register',
     'sessions', 'control', 'memory-search',
     'automations', 'approvals', 'triage', 'restart-agent', 'plugin-test', 'plugin-check', 'route-check',
+  'rotate-human-token',
   'office',
   'service-register', 'service-unregister',
   'config', 'dashboard', 'uninstall', 'version', 'update', 'tui',
 ];
 
-function httpRequest(method, urlPath, body, timeoutMs) {
+function httpRequest(method, urlPath, body, timeoutMs, headers) {
   return new Promise((resolve, reject) => {
     const url = new URL(urlPath, GATEWAY_URL);
     const opts = {
@@ -85,7 +87,7 @@ function httpRequest(method, urlPath, body, timeoutMs) {
       port: url.port,
       path: url.pathname + url.search,
       method,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(headers || {}) },
       timeout: timeoutMs || 10000,
     };
     const req = http.request(opts, (res) => {
@@ -223,6 +225,45 @@ async function callApi(name, method, urlPath, body) {
     console.error(`API call failed: ${err.message}`);
     console.error(`Is the gateway running? Try: mafw start`);
   }
+}
+
+// `mafw rotate-human-token` (E11-1): prove possession of the current human
+// token, ask the gateway to rotate it, and print only the timestamp. The new
+// credential lives in ~/.mafw/human.token — never echo it to a terminal or log.
+// Rotation is atomic gateway-side: a failed write leaves the old token valid.
+// MAFW_HUMAN_TOKEN_FILE mirrors the desktop seam (tests / isolated dev roots).
+async function runHumanTokenRotation() {
+  const file = process.env.MAFW_HUMAN_TOKEN_FILE || path.join(os.homedir(), '.mafw', 'human.token');
+  let current;
+  try {
+    current = fs.readFileSync(file, 'utf-8').trim();
+  } catch (err) {
+    console.error(`Cannot read human token at ${file}: ${err.message}`);
+    console.error('Start the gateway once (mafw start) so it can create the credential.');
+    process.exit(1);
+  }
+  if (!/^[0-9a-f]{64}$/.test(current)) {
+    console.error(`Human token at ${file} is malformed (expected 64 lowercase hex chars).`);
+    process.exit(1);
+  }
+  let res;
+  try {
+    res = await httpRequest('POST', '/api/human-token/rotate', undefined, undefined, {
+      'X-MAFW-Human-Token': current,
+    });
+  } catch (err) {
+    console.error(`API call failed: ${err.message}`);
+    console.error('Is the gateway running? Try: mafw start');
+    process.exit(1);
+  }
+  if (res.status !== 200) {
+    const detail = typeof res.body === 'string' ? res.body : JSON.stringify(res.body);
+    console.error(`Rotation failed (${res.status}): ${detail}`);
+    process.exit(1);
+  }
+  const rotatedAt = res.body && res.body.rotatedAt;
+  console.log(`Human token rotated at ${rotatedAt || 'unknown'}.`);
+  console.log('Desktop picks it up automatically; a running TUI needs a restart.');
 }
 
 function registerService() {
@@ -451,6 +492,7 @@ async function main() {
 
     case 'health': await callApi('health', 'GET', '/health'); break;
     case 'restart-agent': await callApi('restart-agent', 'POST', '/api/runtime/restart-agent'); break;
+    case 'rotate-human-token': await runHumanTokenRotation(); break;
     case 'plugin-test': await runConformance(); break;
     case 'route-check': await runRouteCheck(); break;
     case 'stats': await callApi('stats', 'GET', '/api/stats'); break;

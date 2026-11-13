@@ -80,6 +80,7 @@ import { attachStandingGoalRoutes } from '../routes/standing-goals';
 import { attachLlmRoutes } from '../routes/llm';
 import { attachMediaPluginRoutes } from '../routes/media-plugins';
 import { attachDevicesMobileRoutes } from '../routes/devices-mobile';
+import { attachHumanTokenRoutes } from '../routes/human-token';
 import { attachPodsEventsRoutes } from '../routes/pods-events-dispatch';
 import { attachMcpMgmtRoutes } from '../routes/mcp-mgmt';
 import { attachManagerSessionRoutes } from '../routes/manager-session';
@@ -148,6 +149,7 @@ type PodsEventsDeps = Parameters<typeof attachPodsEventsRoutes>[1];
 type QuestionsPermissionsDeps = Parameters<typeof attachQuestionsPermissionsRoutes>[1];
 type TriageDeps = Parameters<typeof attachTriageRoutes>[1];
 type MediaPluginsDeps = Parameters<typeof attachMediaPluginRoutes>[1];
+type HumanTokenDeps = Parameters<typeof attachHumanTokenRoutes>[1];
 
 /**
  * The kernel surface the attach block needs, all as **live** reads:
@@ -305,6 +307,8 @@ export interface ApiRouteDeps {
   skillInstallDeps: TriageDeps['skillInstallDeps'];
   deoptSkill(name: string, reason: string): { deopted: boolean; archivedTo?: string; error?: string };
   listSkills(): Array<Record<string, unknown>>;
+  /** E11-1: atomic rotation + live rebind of the human credential (never logs it). */
+  rotateHumanToken: HumanTokenDeps['rotate'];
 
   // ── P2.4 event layer (live: constructed in initServices, inert when off) ──
   eventLayer?: EventLayerService;
@@ -922,6 +926,11 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
   attachDevicesMobileRoutes(deps.routeRegistry, {
     pushGateway: () => deps.pushGateway,
     pairingService: () => deps.pairingService,
+  });
+  // E11-1：human token 轮换（kernel 的 rotateHumanToken 原子写盘后立刻重绑
+  // `this.humanToken`，现有 live getter 让下一次请求即用新值；无需重启）。
+  attachHumanTokenRoutes(deps.routeRegistry, {
+    rotate: () => deps.rotateHumanToken(),
   });
   attachPodsEventsRoutes(deps.routeRegistry, {
     podEventService: () => deps.podEventService,

@@ -1322,6 +1322,29 @@ describe('api-contract: E10b-2 human-gate / permission read response schema (7 o
   });
 });
 
+describe('api-contract: E11-1 human token rotation response schema', () => {
+  const findOp = (operationId: string): any => {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const candidate of Object.values<any>(methods)) {
+        if (candidate?.operationId === operationId) return candidate;
+      }
+    }
+    return null;
+  };
+
+  test('humanToken.rotate is catalogued as an auth POST returning {token, rotatedAt}', () => {
+    const op = findOp('humanToken.rotate');
+    expect(op).toBeTruthy();
+    expect(op.tags).toContain('auth');
+    const schema = op.responses?.['200']?.content?.['application/json']?.schema;
+    expect(schema).toBeTruthy();
+    expect(Object.keys(schema.properties).sort()).toEqual(['rotatedAt', 'token']);
+    expect([...schema.required].sort()).toEqual(['rotatedAt', 'token']);
+    expect(schema.properties.token.type).toBe('string');
+    expect(schema.properties.rotatedAt.type).toBe('string');
+  });
+});
+
 describe('api-contract: contract 产物新鲜度', () => {
   test('openapi.json paths/operationId ≡ catalog 当前生成结果', () => {
     const expected = registry.toOpenApiPaths();
