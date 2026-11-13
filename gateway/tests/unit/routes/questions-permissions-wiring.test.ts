@@ -114,7 +114,7 @@ describe('questions/permissions registry wiring (D1 Task B1)', () => {
     const { handlerFor } = setup({ question, runtime: { session: { question } } as any, projects: ['/proj/other'] });
     const r = fakeRes();
     await handlerFor('POST', '/api/questions/q1/reply')!(
-      fakeReq({ url: '/api/questions/q1/reply', method: 'POST', body: JSON.stringify({ answers: [['a']] }) }), r.res,
+      fakeReq({ url: '/api/questions/q1/reply', method: 'POST', body: JSON.stringify({ answers: [['a']] }), principal: HUMAN }), r.res,
     );
     expect(JSON.parse(r.body)).toEqual({ status: 'ok' });
     // undefined (runtime default) → projectDir → registered project
@@ -126,7 +126,7 @@ describe('questions/permissions registry wiring (D1 Task B1)', () => {
     const { handlerFor } = setup({ question, runtime: { session: { question } } as any });
     const r = fakeRes();
     await handlerFor('POST', '/api/questions/q1/reject')!(
-      fakeReq({ url: '/api/questions/q1/reject', method: 'POST' }), r.res,
+      fakeReq({ url: '/api/questions/q1/reject', method: 'POST', principal: HUMAN }), r.res,
     );
     expect(r.status).toBe(400);
     expect(JSON.parse(r.body)).toEqual({ status: 'error', error: 'fail /proj/main' });
@@ -136,7 +136,7 @@ describe('questions/permissions registry wiring (D1 Task B1)', () => {
     const { handlerFor } = setup({ runtime: { session: {} } as any });
     const r = fakeRes();
     await handlerFor('POST', '/api/questions/q1/reply')!(
-      fakeReq({ url: '/api/questions/q1/reply', method: 'POST', body: '{}' }), r.res,
+      fakeReq({ url: '/api/questions/q1/reply', method: 'POST', body: '{}', principal: HUMAN }), r.res,
     );
     expect(r.status).toBe(503);
     expect(JSON.parse(r.body).error).toBe('question API not available on this runtime');

@@ -149,6 +149,31 @@ describe('createSessionWithWorktree quota rollback (E7-3)', () => {
       projectDir: path.resolve(repo),
     });
   });
+
+  // F1 (review round): kvSet is a bookkeeping write after the session exists. If
+  // it sits inside the createSession try/catch, a kv failure rolls back the
+  // worktree of a *live* session — deleting the directory the session is running
+  // in. The mapping write must stay outside the rollback scope: the error still
+  // propagates, but the session and its worktree survive.
+  test('kvSet failure after session creation keeps the live worktree and propagates', async () => {
+    const repo = tmpGitRepo();
+    const { deps, created } = makeDeps();
+    const { manager, remove } = spyManager(repo);
+    deps.managerFactory = () => manager;
+    const kvBoom = new Error('kv write failed');
+    deps.kvSet = () => { throw kvBoom; };
+
+    await expect(
+      createSessionWithWorktree(deps, { directory: repo, worktree: 'kv-boom' }),
+    ).rejects.toBe(kvBoom);
+
+    expect(remove).not.toHaveBeenCalled();
+    expect(created).toHaveLength(1);
+    const wtDir = String(created[0].directory);
+    expect(wtDir).toContain('-wt-');
+    expect(fs.existsSync(wtDir)).toBe(true);
+    expect(execSync('git branch --list mafw/kv-boom', { cwd: repo }).toString()).toContain('kv-boom');
+  });
 });
 
 describe('cleanupWorktreeForSession', () => {

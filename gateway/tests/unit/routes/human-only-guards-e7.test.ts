@@ -3,9 +3,10 @@
  *
  * E5a closed the human gates on pod accept / review items / decisions / goal-run
  * approval. These are the deferred mutations: plan approval, triage
- * confirm/reject/dismiss, lead boundary accept/merge/undo, approvals.respond and
- * permissions.reply. Every one of them is a user decision in the desktop UI, so
- * a service/local/anonymous/missing principal must get the stable
+ * confirm/reject/dismiss, lead boundary accept/merge/undo, approvals.respond,
+ * permissions.reply and the question answer paths (goals.respondQuestion,
+ * questions.reply/reject). Every one of them is a user decision in the desktop
+ * UI, so a service/local/anonymous/missing principal must get the stable
  * `human_principal_required` 403 — while read-only / advisory paths
  * (GET plan, triage list/propose, boundary list/observe) stay ordinary routes.
  */
@@ -15,9 +16,11 @@ import * as os from 'os';
 import * as path from 'path';
 import type { Principal } from '../../../src/core/auth';
 import { ensureGoalState } from '../../../src/core/goal/state-v3';
+import { QuestionLedger } from '../../../src/core/manager/question-ledger';
 import { handleGoalPlan } from '../../../src/routes/goal-plan';
 import { RouteRegistry } from '../../../src/routes/registry';
 import { buildRouteCatalog } from '../../../src/routes/route-catalog';
+import { attachGoalRoutes } from '../../../src/routes/goals-inline';
 import { attachTriageRoutes } from '../../../src/routes/triage';
 import { attachLeadBoundaryRoutes } from '../../../src/routes/lead-boundaries';
 import { attachApprovalsRoutes } from '../../../src/routes/approvals';
@@ -461,5 +464,156 @@ describe('permissions.reply is human-only', () => {
     const { registry } = permissionsSetup();
     const out = await drive(registry, 'GET', '/api/permissions');
     expect(out.status).toBe(200);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// questions.reply / questions.reject (runtime question answers)
+// ---------------------------------------------------------------------------
+
+function questionsSetup() {
+  const reply = jest.fn(async () => true);
+  const reject = jest.fn(async () => true);
+  const question = { list: async () => [], reply, reject };
+  const registry = registryWith((r) => attachQuestionsPermissionsRoutes(r, {
+    capGuard: () => false,
+    capGuardQuestion: () => false,
+    serveUrl: () => 'http://127.0.0.1:3000',
+    currentProjectDir: () => 'C:/repo',
+    projectDir: () => 'C:/repo',
+    runtime: () => ({ session: { question } }) as any,
+    registeredProjects: () => new Map(),
+    permissionRules: () => ({ match: () => null, add: () => {}, list: () => [] }) as any,
+  }));
+  return { registry, reply, reject };
+}
+
+describe('questions.reply / questions.reject are human-only', () => {
+  test.each(DENIED_PRINCIPALS)('reply denies a %s with the stable code', async (_label, principal) => {
+    const { registry, reply, reject } = questionsSetup();
+    const out = await drive(registry, 'POST', '/api/questions/q1/reply', {
+      body: { answers: [['a']] },
+      principal,
+    });
+
+    expect(out.status).toBe(403);
+    expect(out.json).toEqual(DENIED_BODY);
+    expect(reply).not.toHaveBeenCalled();
+    expect(reject).not.toHaveBeenCalled();
+  });
+
+  test.each(DENIED_PRINCIPALS)('reject denies a %s with the stable code', async (_label, principal) => {
+    const { registry, reply, reject } = questionsSetup();
+    const out = await drive(registry, 'POST', '/api/questions/q1/reject', { principal });
+
+    expect(out.status).toBe(403);
+    expect(out.json).toEqual(DENIED_BODY);
+    expect(reply).not.toHaveBeenCalled();
+    expect(reject).not.toHaveBeenCalled();
+  });
+
+  test('admits a human principal and replies', async () => {
+    const { registry, reply } = questionsSetup();
+    const out = await drive(registry, 'POST', '/api/questions/q1/reply', {
+      body: { answers: [['yes']] },
+      principal: HUMAN,
+    });
+
+    expect(out.status).toBe(200);
+    expect(out.json).toEqual({ status: 'ok' });
+    expect(reply).toHaveBeenCalledTimes(1);
+    expect(reply.mock.calls[0][0]).toMatchObject({ requestID: 'q1', answers: [['yes']] });
+  });
+
+  test('admits a device principal and rejects', async () => {
+    const { registry, reject } = questionsSetup();
+    const out = await drive(registry, 'POST', '/api/questions/q1/reject', { principal: DEVICE });
+
+    expect(out.status).toBe(200);
+    expect(out.json).toEqual({ status: 'ok' });
+    expect(reject).toHaveBeenCalledWith(expect.objectContaining({ requestID: 'q1' }));
+  });
+
+  test('questions.list stays an ordinary route', async () => {
+    const { registry } = questionsSetup();
+    const out = await drive(registry, 'GET', '/api/questions');
+    expect(out.status).toBe(200);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// goals.respondQuestion (human answer / cancel)
+// ---------------------------------------------------------------------------
+
+function goalsRespondSetup() {
+  const mafwDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-e7-goalq-'));
+  new QuestionLedger(mafwDir).appendQuestionEvent({
+    type: 'asked',
+    questionId: 'q1',
+    goalId: 'g1',
+    questions: ['Which way?'],
+  });
+  const handleCancel = jest.fn();
+  const handleAnswer = jest.fn();
+  const registry = registryWith((r) => attachGoalRoutes(r, {
+    mafwDir: () => mafwDir,
+    goalDriver: () => ({ handleCancel, handleAnswer }) as any,
+    goalDriverMafwDirCache: () => new Map<string, string>(),
+    findGoalStatePath: () => null,
+    loadRequest: async () => null,
+    getGatewayDb: () => ({ listNodeRuns: () => [], getGoalOutcome: () => null }) as any,
+    handleValidate: async () => ({ ok: true }),
+    handleComplete: async () => ({ ok: true }),
+  }));
+  return { registry, handleCancel, handleAnswer, mafwDir };
+}
+
+describe('goals.respondQuestion is human-only', () => {
+  const URL = '/api/goals/g1/questions/q1/respond';
+
+  test.each(DENIED_PRINCIPALS)('denies a %s with the stable code', async (_label, principal) => {
+    const { registry, handleCancel, handleAnswer, mafwDir } = goalsRespondSetup();
+    const out = await drive(registry, 'POST', URL, { body: { answer: 'left' }, principal });
+
+    expect(out.status).toBe(403);
+    expect(out.json).toEqual(DENIED_BODY);
+    expect(handleCancel).not.toHaveBeenCalled();
+    expect(handleAnswer).not.toHaveBeenCalled();
+    // Ledger untouched — the question is still pending.
+    expect(new QuestionLedger(mafwDir).getQuestionState('q1')).toBe('pending');
+  });
+
+  test('denied request does not consume the body (guard runs before read)', async () => {
+    const { registry } = goalsRespondSetup();
+    const matched = registry.match('POST' as never, URL)!;
+    let drained = false;
+    const req: any = mockReq('POST', { answer: 'x' });
+    const originalOn = req.on.bind(req);
+    req.on = (ev: string, fn: unknown) => {
+      if (ev === 'data' || ev === 'end') drained = true;
+      return originalOn(ev, fn);
+    };
+    const res = mockRes();
+    await matched.def.handler!(req, res, matched.params);
+    expect(res.status).toBe(403);
+    expect(drained).toBe(false);
+  });
+
+  test('admits a human principal and records the answer', async () => {
+    const { registry, handleAnswer } = goalsRespondSetup();
+    const out = await drive(registry, 'POST', URL, { body: { answer: 'left' }, principal: HUMAN });
+
+    expect(out.status).toBe(200);
+    expect(out.json).toEqual({ status: 'accepted' });
+    expect(handleAnswer).toHaveBeenCalledWith('g1', 'q1', 'left');
+  });
+
+  test('admits a device principal and cancels', async () => {
+    const { registry, handleCancel } = goalsRespondSetup();
+    const out = await drive(registry, 'POST', URL, { body: { type: 'cancel' }, principal: DEVICE });
+
+    expect(out.status).toBe(200);
+    expect(out.json).toEqual({ status: 'accepted', action: 'cancelled' });
+    expect(handleCancel).toHaveBeenCalledWith('g1', 'q1');
   });
 });

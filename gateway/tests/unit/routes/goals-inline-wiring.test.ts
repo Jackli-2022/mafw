@@ -13,7 +13,7 @@ import { RouteRegistry } from '../../../src/routes/registry';
 import { buildRouteCatalog } from '../../../src/routes/route-catalog';
 import { attachGoalRoutes, type GoalsInlineRouteDeps } from '../../../src/routes/goals-inline';
 
-/** E7-1: human-only routes (plan approval) need a resolved human principal. */
+/** E7-1: human-only routes (plan approval, goal question answers) need a resolved human principal. */
 const HUMAN: Principal = { kind: 'human', method: 'human-token' };
 
 function fakeReq(opts: { method: string; url: string; body?: string; principal?: Principal }): IncomingMessage {
@@ -95,7 +95,7 @@ describe('goals-inline registry wiring (D1 Task F2)', () => {
     const { registry } = setup();
     const r = fakeRes();
     await handlerFor(registry, 'POST', '/api/goals/g1/questions/q1/respond')!(
-      fakeReq({ method: 'POST', url: '/api/goals/g1/questions/q1/respond', body: '{' }), r.res,
+      fakeReq({ method: 'POST', url: '/api/goals/g1/questions/q1/respond', body: '{', principal: HUMAN }), r.res,
     );
     expect(r.status).toBe(400);
     expect(JSON.parse(r.body)).toEqual({ status: 'bad_request', error: 'Invalid JSON' });
@@ -111,7 +111,7 @@ describe('goals-inline registry wiring (D1 Task F2)', () => {
     });
     let r = fakeRes();
     await handlerFor(registry, 'POST', '/api/goals/g1/questions/q1/respond')!(
-      fakeReq({ method: 'POST', url: '/api/goals/g1/questions/q1/respond', body: JSON.stringify({ answer: 'x' }) }), r.res,
+      fakeReq({ method: 'POST', url: '/api/goals/g1/questions/q1/respond', body: JSON.stringify({ answer: 'x' }), principal: HUMAN }), r.res,
     );
     // Unknown question → 404 (ledger from the empty temp dir).
     expect(r.status).toBe(404);

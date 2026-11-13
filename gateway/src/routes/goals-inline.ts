@@ -1,7 +1,7 @@
 /**
  * Phase D1 Task F2: goals inline 面（registry dispatch 接线）。
  *
- *   POST /api/goals/:goalId/questions/:questionId/respond — 人侧回答/取消（goals.respondQuestion）
+ *   POST /api/goals/:goalId/questions/:questionId/respond — 人侧回答/取消（goals.respondQuestion，E7-1 human-only）
  *   GET  /api/goals/:id/timeline                          — 节点级 trace 聚合（goals.timeline）
  *   POST /api/goals/:id/nodes/:runId/retry                — 节点重跑（goals.retryNode）
  *   GET  /api/goals/:id/plan                              — W1 计划审阅（goals.plan）
@@ -24,6 +24,7 @@ import { handleGoalPlan } from './goal-plan';
 import { handleGoalTimeline } from './goal-timeline';
 import { handleNodeRetry } from './goal-node-retry';
 import { readRouteBody } from './cognition';
+import { requireHumanPrincipal } from '../core/http/human-guard';
 import type { RouteRegistry } from './registry';
 
 export interface GoalsInlineRouteDeps {
@@ -39,10 +40,13 @@ export interface GoalsInlineRouteDeps {
 
 export function attachGoalRoutes(registry: RouteRegistry, deps: GoalsInlineRouteDeps): void {
   // POST /api/goals/{goalId}/questions/{questionId}/respond
-  registry.attachHandler('goals.respondQuestion', async (_req: IncomingMessage, res: ServerResponse, params: Record<string, string>) => {
+  registry.attachHandler('goals.respondQuestion', async (req: IncomingMessage, res: ServerResponse, params: Record<string, string>) => {
+    // E7-1 (review round): answering / cancelling a goal question is a human
+    // decision. Gate before the body read so a denied request consumes nothing.
+    if (!requireHumanPrincipal(req, res)) return;
     const goalId = params.goalId;
     const questionId = params.questionId;
-    const body = await readRouteBody(_req);
+    const body = await readRouteBody(req);
     let data: any;
     try { data = JSON.parse(body); } catch {
       res.writeHead(400);

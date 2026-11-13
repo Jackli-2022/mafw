@@ -57,10 +57,14 @@ export async function createSessionWithWorktree(
   // session (quota 429, runtime failure) would otherwise leak a worktree +
   // branch. Roll back best-effort, but always rethrow the original error so the
   // route keeps its 429/500 semantics.
+  //
+  // F1 (review round): only `createSession` sits inside the rollback scope. The
+  // kvSet below is bookkeeping for a session that already exists — rolling back
+  // on its failure would delete the worktree a live session is running in. It
+  // stays outside: the error still propagates, the session/worktree survive.
+  let session: { id: string };
   try {
-    const session = await deps.createSession(wt.worktreeDir, opts.metadata);
-    deps.kvSet(KV_KEY, session.id, { dir: wt.worktreeDir, branch: wt.branch, projectDir });
-    return { session, worktree: { dir: wt.worktreeDir, branch: wt.branch } };
+    session = await deps.createSession(wt.worktreeDir, opts.metadata);
   } catch (err) {
     try {
       await manager.remove(wt.worktreeDir, wt.branch);
@@ -69,6 +73,8 @@ export async function createSessionWithWorktree(
     }
     throw err;
   }
+  deps.kvSet(KV_KEY, session.id, { dir: wt.worktreeDir, branch: wt.branch, projectDir });
+  return { session, worktree: { dir: wt.worktreeDir, branch: wt.branch } };
 }
 
 /** session 删除后的 worktree 联动清理：删映射 + 删 worktree/分支（全部 fail-open）。 */
