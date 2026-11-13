@@ -2313,6 +2313,11 @@ class MafwScheduler {
     );
   }
 
+  /** Fail-open ingress for plugin events that may trigger automation rules. */
+  handlePluginEvent(event: PluginEventFrame): void {
+    this.automationEngine?.handleExternalEvent(event);
+  }
+
   private pluginHubDeps(): PluginsRouteDeps {
     return {
       hub: {

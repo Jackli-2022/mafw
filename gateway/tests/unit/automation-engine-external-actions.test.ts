@@ -70,6 +70,21 @@ describe('AutomationEngine external actions', () => {
     expect(await (engine as any).executeAction('boom', rule('boom'), 'cron')).toBe('error');
   });
 
+  test('validateRule accepts a plugin action only when the resolver can see it', () => {
+    const engine = new AutomationEngine(tmpDir());
+    const pluginRule: AutomationRule = {
+      id: 'plugin-rule',
+      enabled: true,
+      trigger: { type: 'cron', schedule: '0 * * * *', timezone: 'UTC' },
+      action: { type: 'plugin:p:a' },
+    };
+    expect(engine.validateRule(pluginRule).valid).toBe(false);
+    engine.setExternalActionResolver((type) =>
+      type === 'plugin:p:a' ? { handler: async () => {} } : undefined,
+    );
+    expect(engine.validateRule(pluginRule).valid).toBe(true);
+  });
+
   test('canResolveAction sees both local and external handlers', () => {
     const engine = new AutomationEngine(tmpDir());
     engine.setActionsProvider(() => engine.registerAction('local', async () => {}));

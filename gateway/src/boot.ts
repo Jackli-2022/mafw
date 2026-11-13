@@ -91,6 +91,7 @@ import type { RuntimeFacade, RuntimeHost } from './runtime/runtime-facade';
 import type { IdentityRegistry } from './runtime/identity-registry';
 import { UnknownEventTracker } from './runtime/event-telemetry';
 import { PluginHost } from './plugins/package-host';
+import type { PluginEventFrame } from './plugins/plugin-events';
 import { PackageStateStore } from './plugins/package-state-store';
 import { PackageManager } from './plugins/package-manager';
 import type { PluginClientSnapshot } from './plugins/client-descriptor';
@@ -172,6 +173,8 @@ export interface BootKernel {
   packageStateStore?: PackageStateStore;
   packageManager?: PackageManager;
   pluginClientSnapshot?: PluginClientSnapshot;
+  bindPluginAutomation(host: PluginHost): void;
+  handlePluginEvent(event: PluginEventFrame): void;
 
   // ── Pod / goal services (populated by initServices) ──
   podStore: PodStore;
@@ -441,6 +444,8 @@ export async function bootKernel(kernel: BootKernel): Promise<void> {
       canonicalTypes: kernel.canonicalTypes(),
       // 包事件 + 提交后的 plugins.changed 走 gateway 既有扁平广播通道。
       broadcast: (event) => kernel.broadcast(event as any),
+      // 插件事件作为 automation external trigger 的只读入口。
+      onEvent: (event) => kernel.handlePluginEvent(event),
     },
   );
   kernel.bindPluginAutomation(kernel.pluginHost);
