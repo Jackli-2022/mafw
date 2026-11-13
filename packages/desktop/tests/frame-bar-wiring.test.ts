@@ -14,7 +14,7 @@ test("FrameBar uses the v2 primitives and one-row structure", () => {
   assert.match(bar, /mafw-frame-crumbs/)
   assert.match(bar, /mafw-frame-badges/)
   assert.match(bar, /mafw-frame-badge/)
-  assert.match(bar, /aria-label="返回"/)
+  assert.match(bar, /aria-label="返回上一焦点"/)
   assert.match(bar, /⌘P/)
   assert.match(bar, /Ctrl\+P/)
   assert.match(bar, /pickerHint/)

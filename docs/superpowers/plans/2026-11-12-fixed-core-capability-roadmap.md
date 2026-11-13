@@ -341,23 +341,25 @@ Probe 的作用是让 tech lead 在看详细计划前先看清关键未知；每
 
 **Gate G4**：一个插件包可以贡献 menu item + composer action，端到端可用；desktop 全量绿；无原生组件注入。
 
-## Phase 5：有状态能力（6–8 周）
+## Phase 5：有状态能力（6–8 周，memory 已移出 provider 范围，需按剩余范围重估）
 
 **目标**：处理真正难替换的能力，但只做安装时替换/重启生效，不做热插拔。
 
-**顺序**：memory store/retrieval → embedding/reranker → automation trigger/action → goal node/eval → storage backend。
+**memory 定位（2026-11-13 决策）**：memory 是 MAFW 的**产品能力**，不是可替换 provider。`MemoryService` / `HarmonicUnitFileStore` / 谐波索引 / soft supersede / T1 / 100ms recall / pinned/sticky 逻辑不改；不做 project/session 分区；memory 的模型调用使用当前运行中的 runtime（`RuntimeAccess` / `process.completion` / `runtimeCompletionChannel`）。Phase 5 不再包含 memory store/retrieval provider。
 
-**边界**：memory/goal 的 **实现**可替换；memory schema、soft supersede、T1 隔离、100ms recall、NodeDriver 状态机、人类验收、`planHash`/`evalHash` 绑定是核心，不在 provider 范围。
+**剩余顺序**：automation trigger/action → goal eval/executor → storage backend（embedding/reranker 是否仍按 provider 待确认）。
 
-每个能力必须先有：
+**边界**：goal 的 **实现**可替换；NodeDriver 状态机、路由、人类验收、`planHash`/`evalHash` 绑定是核心。memory 整体不在 provider 范围。
+
+每个剩余能力必须先有：
 
 - 稳定接口 + 状态迁移策略。
-- conformance kit（soft supersede / T1 / recall / scope 等）。
+- capability 对应的 conformance kit。
 - 旧实现作为 fallback 至少一个发布周期。
 - 数据兼容/回滚演练。
 - 不在 hot path 引入 RPC。
 
-**Gate G5**：有状态 provider 可以安装时替换并在重启后工作；数据迁移可回滚；全量绿。
+**Gate G5**：剩余有状态 provider 可以安装/配置替换并在重启后工作；数据迁移可回滚；全量绿；memory 行为与基线一致（不因 Phase 5 改动）。
 
 ## Phase 6：信任与运维硬化（持续）
 

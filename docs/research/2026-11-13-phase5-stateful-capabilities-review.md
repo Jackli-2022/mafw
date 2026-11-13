@@ -3,14 +3,26 @@
 - 日期：2026-11-13
 - 审查对象：`docs/superpowers/plans/2026-11-12-fixed-core-capability-roadmap.md` §Phase 5
 - 关联：`docs/superpowers/specs/2026-11-12-fixed-core-capability-architecture-design.md`、`docs/research/2026-11-12-microkernel-capability-research.md`
-- 结论：**With fixes**。Phase 5 的目标和顺序是对的，但按当前路线图直接开工，会在 live 接线、memory 抽象边界、作用域、信任边界、数据迁移五处做成假 seam。C1–C5 解决前不建议写 memory provider 代码。
+- 结论：**With fixes**。Phase 5 的目标和顺序是对的，但按当前路线图直接开工，会在 live 接线、memory 抽象边界、作用域、信任边界、数据迁移五处做成假 seam。memory 已按产品决策移出 provider 范围；C1/C5 解决前不建议写剩余 stateful provider 代码。
+
+## Decision Update（2026-11-13，用户决策）
+
+- **memory 是 MAFW 的产品能力，不是 Phase 5 的可替换 provider。**
+- memory 的模型调用使用当前运行中的 runtime（`RuntimeAccess` / `process.completion` / `runtimeCompletionChannel`），不引入独立 memory provider。
+- memory 的存储、索引、检索、soft supersede、T1、100ms recall、pinned/sticky 逻辑**不改**。
+- memory **不做 project/session 分区**；全局记忆是产品定义，不是 v1 临时限制。
+- 因此：
+  - C2 / C3 / C4 中针对 memory provider 的抽象、scope、第三方信任讨论**不再是 Phase 5 工作项**；本文保留为评审历史，与本节冲突处以本节为准。
+  - Phase 5 **删除 memory store/retrieval 子阶段**；不改 `MemoryService` / `HarmonicUnitFileStore`。
+  - C1（live 接线）与 C5（迁移回滚）仍适用于其他有状态 provider。
+  - 剩余 Phase 5 范围需要重新确认：automation trigger、goal eval/executor、storage、embedding/reranker 是否仍按 provider 处理。
 
 ## Strengths
 
 1. **风险判断正确**：把 memory / goal / automation / storage 放到最后，承认它们与 TTS/usage 这类叶子能力不是一个量级。
 2. **不变量边界写得清楚**：memory schema、soft supersede、T1、100ms recall、NodeDriver、人类验收、`planHash`/`evalHash` 都明确留在核心。
 3. **五件套方向正确**：接口 + 状态迁移策略、conformance kit、旧实现 fallback 一个发布周期、数据兼容/回滚演练、hot path 不引入 RPC。
-4. **顺序有依据**：memory 先行，embedding 依赖 retrieval，storage 最后，符合依赖关系。
+4. **剩余顺序有依据**：automation 先于 goal，storage 最后；memory 已按产品决策移出 provider 范围。
 5. **复用已有基础**：`CapabilityRegistry`、`ProviderLifecycle`、manifest、diagnostics 已经在 Phase 1–3 落地，不需要另起一套。
 6. **Gate G5 的意图正确**：安装时替换、重启生效、迁移可回滚、全量绿；问题在验收方式，不在方向。
 
@@ -40,6 +52,8 @@
 
 ### C2. “MemoryStore” 抽象边界未定义，而现有 store 同时拥有持久化、索引和语义
 
+> **Decision update（2026-11-13）：memory 不做 provider，本节关闭。** 保留为未来若重新考虑 provider 化时的风险清单；Phase 5 不改 `MemoryService` / `HarmonicUnitFileStore`。
+
 **Where:**
 
 - `gateway/src/memory/harmonic-file-store.ts:59-161`：`write()` 同时写 OKF 文件、更新 `.harmonic_index.json`、更新 anchor/coactivation graph、写 event log、触发 post-write listeners。
@@ -67,6 +81,8 @@
 
 ### C3. Memory 目前是全局的，路线图的 L2 scope 对 memory 不成立
 
+> **Decision update（2026-11-13）：memory 明确不分区，本节关闭。** 全局记忆是产品定义，不是临时限制。
+
 **Where:**
 
 - `gateway/src/kernel.ts`：`new MemoryService(mafwDir)`，base dir 是全局 `~/.mafw`。
@@ -84,6 +100,8 @@
 **Fix:** Phase 5 v1 明确 **memory provider 只支持 global scope**；项目/会话记忆隔离另立设计（数据分区 + 合并规则 + recall 过滤），不要把它塞进 provider 抽象。路线图把 `memory` 从 L2 示例里移除或标注“future”。
 
 ### C4. 第三方有状态 provider 是 Phase 5 的安全洞
+
+> **Decision update（2026-11-13）：memory 不开放 provider，本节对 memory 关闭。** 若未来自动化/goal 等剩余能力引入第三方有状态 provider，仍需按本节处理权限/审计/kill switch。
 
 **Where:**
 
@@ -104,6 +122,8 @@
 并在 diagnostics 中显示 provider 申请了哪些权限。
 
 ### C5. 数据迁移与回滚只有一句“演练”，没有格式和验收
+
+> **Decision update（2026-11-13）：memory 不做 provider、不迁移，本节对 memory 关闭。** 保留给 automation/goal/storage 等剩余 provider 的数据迁移验收。
 
 **Where:**
 
@@ -210,55 +230,54 @@ Phase 5 至少记录：
 
 ## Minor
 
-- **M1：Phase 5 体量偏大。** 5 个能力 + 数据迁移，6–8 周偏乐观；建议拆成 5A（memory/embedding）与 5B（automation/goal/storage），各自 gate，或把 goal/storage 推到 Phase 6。
-- **M2：顺序微调。** memory persistence → memory retrieval → embedding/reranker → automation → goal → storage；embedding 契约应跟着 retrieval 契约一起定，避免回填返工。
-- **M3：术语统一。** “memory store / retrieval / backend / provider”在路线图里混用；先定义每个词对应哪个接口。
-- **M4：版本策略缺失。** provider API version、memory format version、兼容/拒绝规则没有写；G5 前至少要冻结 `apiVersion`。
+- **M1：Phase 5 剩余范围仍偏大。** 去掉 memory 后仍有 automation/goal/storage/embedding；建议逐个确认，不做的明确移到 Phase 6。
+- **M2：剩余顺序。** automation → goal → storage；embedding/reranker 是否保留按下一步决策。memory 已移出。
+- **M3：术语统一。** “memory store / retrieval / backend / provider”在路线图里混用；memory 已定调为产品能力，剩余 provider 术语要统一。
+- **M4：版本策略缺失。** provider API version、兼容/拒绝规则没有写；G5 前至少要冻结 `apiVersion`。
 - **M5：Gate 基线要数字化。** 例如“连续 2 次全量 clean + recall p95 ≤ 100ms + 迁移演练通过”，不要只写“全量绿”。
 - **M6：配置与密钥迁移。** embedding provider 切换涉及 API key、endpoint、模型缓存；diagnostics 必须脱敏，迁移不能把 key 写进日志。
 
-## Missing Decisions
+## Missing Decisions（memory 决策已关闭后的剩余问题）
 
-Phase 5 plan 开工前必须先回答：
+1. **Embedding/reranker**：继续使用现有 `memory.embedding` 配置（off/local/dashscope），还是升级为 Phase 5 provider registry？如果 memory 是产品能力，建议保持现有配置，不做 provider registry。
+2. **Automation trigger**：Phase 5 只补 trigger 定义/事件（core 管 cron/预算/去重），还是把 action 也接 live？action provider 已在 Phase 2 存在但未 live。
+3. **Goal**：只做 `GoalEval` hook，还是同时允许现有 `plan/probe/execute/review` 的 executor 替换？不建议开放新节点名。
+4. **StorageBackend**：删除死接口，还是只做非热路径 port？
+5. **Provider loader / live wiring**：剩余能力（automation/goal）是否在 Phase 5 做最小 loader，还是只做配置选择、把安装流程留 Phase 6？
+6. **第三方 provider**：非 memory 的有状态能力（automation/goal）是否仍只允许第一方？
 
-1. Memory provider 是 **whole backend** 还是 **persistence + retrieval 两个接口**？
-2. Memory 是否只支持 **global scope**？项目/会话隔离什么时候做？
-3. Phase 5 是否允许第三方有状态 provider？如果不允许，G5 的“安装时替换”是否改成“配置选择第一方 provider”？
-4. `StorageBackend` 是修成真 port，还是删除？
-5. Goal 是否只允许现有节点的 executor 替换，还是允许新节点名？
-6. Provider loader / live wiring 放在 Phase 5.0，还是明确推到 Phase 6？
-7. Memory format version 覆盖哪些文件/表，回滚由谁执行？
-
-## Proposed Revised Phase 5
-
-建议把路线图拆成以下子阶段，而不是直接按五个能力平铺：
+## Proposed Revised Phase 5（memory 不再是 provider）
 
 | 子阶段 | 内容 | 出口 |
 |---|---|---|
-| **5.0 Live scaffolding** | MemoryAccess facade、provider 选择/fallback、diagnostics、最小 loader、迁移框架 | 测试 provider 可切换并回退，默认行为不变 |
-| **5.1 Memory persistence** | `MemoryPersistence` + 默认实现 + consumer 收口 + boundary guard | 现有 memory 测试全绿；provider 只换持久化 |
-| **5.2 Memory retrieval** | `MemoryRetrieval` + core 出口后处理（supersede/T1/去重） | 100ms + LongMemEval 不回归 |
-| **5.3 Embedding/reranker** | registry + modelTag/dims + backfill + BM25 fallback | 切换模型可回填/回退 |
-| **5.4 Automation/Goal** | trigger 定义（core 调度）+ goal executor/eval hook | 不绕过 budget/状态机/人类验收 |
-| **5.5 Storage** | 删除死接口，或只做非热路径 port | 不引入 async hot path |
-| **5.6 G5 drill** | 数据迁移 → 写入 → 回滚 → 校验；性能基线 | G5 |
+| **5.0 Live scaffolding（仅剩余能力）** | 为 automation/goal 等剩余 provider 提供 facade、选择/fallback、diagnostics、最小 loader | 默认旧实现不变；测试 provider 可切换并回退 |
+| **5.1 Automation** | action provider 接 live（Phase 2 已有）；trigger 只提供定义/事件，cron/预算/去重留 core | 不绕过 budget/scheduler |
+| **5.2 Goal** | `GoalEval` hook；可选现有节点 executor；不开放新节点名 | 人类验收、`planHash`/`evalHash`、routing 不变 |
+| **5.3 Storage** | 删除 `StorageBackend` 死接口，或只做非热路径 port | 不引入 async hot path |
+| **5.4 G5 drill** | 只对剩余 provider 做迁移/回滚/性能演练 | G5 |
+
+**memory 不在 Phase 5 provider 范围内**：`MemoryService` / `HarmonicUnitFileStore` / 谐波索引 / soft supersede / T1 / 100ms recall / pinned/sticky 保持现状；模型调用继续走运行中的 runtime。
 
 ## Assessment
 
-**Ready for Phase 5 implementation?** **With fixes — not yet.**
+**Ready for Phase 5 implementation?** **With fixes — memory 决策已关闭，剩余范围待确认。**
 
-Phase 5 的方向正确，但当前路线图把“有状态 provider”当成一个已经存在的 live seam 来写。实际上：
+已关闭：
 
-- v2 还没有 live memory/automation/goal 消费者；
-- memory store 同时拥有持久化和语义，边界没选；
-- memory 是全局数据，L2 scope 是假承诺；
-- 第三方 stateful provider 的信任模型还没到 Phase 6；
-- 数据迁移只有目标，没有格式和演练。
+- memory 是产品能力，不做 provider 化、不改逻辑、不分区；
+- 因此 C2 / C3 / C4 对 memory 不再适用；
+- 不需要写 `MemoryPersistence` / `MemoryRetrieval`，也不需要 memory pipeline map 作为 provider 前置。
 
-**建议顺序：** 先做 5.0 live scaffolding + memory pipeline map + 数据格式清单，再决定 `MemoryPersistence` / `MemoryRetrieval` 接口；在这些完成前，不要写 `MemoryProvider` 实现代码。
+仍需解决：
+
+- C1：剩余有状态 provider（automation/goal）的 live 接线与 loader 边界；
+- C5：剩余 provider 的数据迁移/回滚演练；
+- embedding/reranker 是否仍按 provider 处理；
+- automation trigger 与 goal eval/executor 的 Phase 5 取舍；
+- `StorageBackend` 删除/保留。
 
 **最小可执行下一步：**
 
-1. 写 `docs/research/2026-11-13-phase5-memory-pipeline-map.md`（写路径、读路径、热路径、数据文件、消费者）。
-2. 定 C2/C3/C4 三个决策（边界、scope、信任）。
-3. 再写 memory store/retrieval 的详细 plan。
+1. 确认剩余 Phase 5 范围（automation / goal / storage / embedding 各做不做）。
+2. 若做 automation/goal，先写它们的 live wiring + conformance 边界，而不是 memory provider。
+3. 更新路线图 Phase 5 的顺序与 G5 措辞，移除 memory provider 承诺。
