@@ -406,7 +406,6 @@ export interface SessionNamespace {
   prompt(params: { path: { id: string }; body: { parts: Array<{ type: 'text'; text: string }>; system?: string; outputSchema?: { name?: string; schema: Record<string, unknown>; retryCount?: number } } }): Promise<{ parts: TextPart[]; structured?: unknown; structuredError?: string }>
   promptAsync(params: { path: { id: string }; body: { message?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string }; outputSchema?: { name?: string; schema: Record<string, unknown>; retryCount?: number }; delivery?: 'queue' | 'steer' | 'followup'; idempotencyKey?: string; expectReply?: boolean; thinkingLevel?: ThinkingLevel; variant?: string } }): Promise<void>
   trajectory(params: { path: { id: string }; query?: { limit?: number; before_turn?: number; rebuild?: boolean } }): Promise<TrajectoryResponse>
-  events(params: { path: { id: string } }): Promise<{ on(event: string, cb: (data: any) => void): void }>
   command(params: { path: { id: string }; body: { command: string; arguments?: string; agent?: string; model?: { providerID: string; modelID: string } } }): Promise<void>
   fork(params: { path: { id: string }; body?: { messageID?: string } }): Promise<{ session: Session }>
   revert(params: { path: { id: string }; body: { messageID: string; partID?: string } }): Promise<void>
@@ -730,8 +729,9 @@ export interface EventNamespace {
   subscribe(opts?: SseSubscribeOptions): Promise<{ on(event: string, cb: (data: any) => void): void }>
   /** SSE 连接状态（onopen/onerror 维护；供监督器健康轮询）。 */
   connected(): boolean
-  /** SSE 端点 URL（契约归 SDK：renderer 直连 EventSource 时用此构造，不自己拼字符串）。 */
-  url(sessionID?: string): string
+  /** SSE 端点 URL（契约归 SDK：renderer 直连 EventSource 时用此构造，不自己拼字符串）。
+   *  Mode B 已删除：订阅面只有全局流，不接收 sessionID。 */
+  url(): string
 }
 
 export interface RuntimeNamespace {

@@ -15,23 +15,6 @@ test("SSEConnection.connect() creates EventSource with correct URL", () => {
   sse.disconnect()
 })
 
-test("SSEConnection.connectToSession() creates EventSource with sessionID", () => {
-  const es = mockEventSource()
-  const sse = new SSEConnection()
-  sse.connectToSession("http://localhost:3000", "session-abc")
-  expect(globalThis.EventSource).toHaveBeenCalledWith("http://localhost:3000/api/events?sessionID=session-abc")
-  sse.disconnect()
-})
-
-test("SSEConnection.connectToSession() encodes sessionID", () => {
-  const es = mockEventSource()
-  const sse = new SSEConnection()
-  sse.connectToSession("http://localhost:3000", "session with spaces/&?")
-  const url = (globalThis.EventSource as any).mock.calls[0][0] as string
-  expect(url).toContain(encodeURIComponent("session with spaces/&?"))
-  sse.disconnect()
-})
-
 test("SSEConnection.disconnect() closes EventSource and clears state", () => {
   const es = mockEventSource()
   const sse = new SSEConnection()

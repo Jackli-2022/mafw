@@ -142,11 +142,3 @@ test("onReplayInfo 抛错不打断事件分发（fail-open）", () => {
   sse.disconnect()
 })
 
-test("session 订阅不继承全局游标（connectToSession 行为不变）", () => {
-  mockEventSource()
-  const sse = new SSEConnection()
-  sse.subscribe("http://localhost:3000", { cursor: cursorOf(9) })
-  sse.connectToSession("http://localhost:3000", "s1")
-  expect(lastUrl()).toBe("http://localhost:3000/api/events?sessionID=s1")
-  sse.disconnect()
-})

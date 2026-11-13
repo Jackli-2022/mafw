@@ -47,27 +47,6 @@ function isInternalOp(path: string, method: string): boolean {
 const RUNTIME_PROXY_EXEMPT = new Set<string>([])
 
 /**
- * DEAD_CONTRACT_TODO —— 已知"gateway 有 op、SDK 无调用方"的契约缺口，**故意**留红转黄。
- *
- * 来源：commit `163b2001`（review-items 门禁）往 `route-catalog.ts` 加了 4 条 SDK-facing
- * op（`pods.goals.reviewItems*`，`tags:['pods']`）却没重跑契约产物。本波重生成产物后
- * 它们在死契约检查里显形：`packages/gateway-sdk/src/client.ts` 没有 review-items 方法，
- * desktop/session-ui 也无消费方。
- *
- * 为什么不在本波补：review-items 的 SDK client + DTO 归 review-items 波次所有。只补一个
- * 无类型、无响应模型的裸 client 方法会让本测试变成假绿（调用面存在 ≠ 契约可用）；
- * 把它们 retag 成 `internal` 则是撒谎（desktop 的 review-items 面板将来要走 SDK）。
- * 因此这里显式记账，并由下面那条 stale-entry 守卫保证豁免不会无限期滞留：
- * 某条 op 从 contract 消失（改名/降级/删除）时，这里必须同步删除。
- */
-const DEAD_CONTRACT_TODO = new Set<string>([
-  "GET /api/pods/{}/goals/{}/review-items",
-  "POST /api/pods/{}/goals/{}/review-items",
-  "POST /api/pods/{}/goals/{}/review-items/{}/resolve",
-  "POST /api/pods/{}/goals/{}/review-items/{}/reopen",
-])
-
-/**
  * 模板串内容 → 归一化路径。
  * - 剥离 `${this.baseUrl}`/`${baseUrl}` 前缀
  * - `${...}` 洞 → {}（结尾洞若为 query 变量/含 ? 则剥掉）
@@ -216,23 +195,10 @@ test("contract ops ⊆ SDK 调用面（无死契约；internal 标签豁免）",
       if (isInternalOp(rawPath, m)) continue
       const key = `${m.toUpperCase()} ${norm(rawPath)}`
       if (used.has(key)) continue
-      if (DEAD_CONTRACT_TODO.has(key)) continue
       dead.push(key)
     }
   }
   expect(dead).toEqual([])
-})
-
-test("DEAD_CONTRACT_TODO 无陈旧条目（每个豁免仍是 contract 里的真实 op）", () => {
-  const ops = new Set<string>()
-  for (const [rawPath, methods] of Object.entries<any>(contract.paths)) {
-    for (const m of Object.keys(methods)) {
-      if (!(METHODS as readonly string[]).includes(m)) continue
-      ops.add(`${m.toUpperCase()} ${norm(rawPath)}`)
-    }
-  }
-  const stale = [...DEAD_CONTRACT_TODO].filter(key => !ops.has(key))
-  expect(stale).toEqual([])
 })
 
 test("SDK 调用 ⊆ contract（无漂移）", () => {
