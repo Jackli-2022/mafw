@@ -443,6 +443,7 @@ export async function bootKernel(kernel: BootKernel): Promise<void> {
       broadcast: (event) => kernel.broadcast(event as any),
     },
   );
+  kernel.bindPluginAutomation(kernel.pluginHost);
   kernel.packageManager = new PackageManager({
     pluginDir: pluginPackageDir,
     host: kernel.pluginHost,

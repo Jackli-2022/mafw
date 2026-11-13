@@ -339,6 +339,8 @@ import {
 import { createPluginWebTicketStore } from './plugins/plugin-web-ticket';
 import type { DryEventDeps } from './routes/dry-event';
 import { PluginHost } from './plugins/package-host';
+import { createPluginAutomationActionResolver } from './plugins/automation-actions';
+import type { PluginEventFrame } from './plugins/plugin-events';
 import { PackageStateStore } from './plugins/package-state-store';
 import { PackageManager } from './plugins/package-manager';
 import { mergePackageInventory } from './plugins/package-inventory';
@@ -2300,6 +2302,17 @@ class MafwScheduler {
   }
 
   /** P5 Wave 2：/api/plugins* deps（Plugin Hub 四类型统一面）。 */
+  /** Bind unified-package actions as automation action providers. */
+  bindPluginAutomation(host: PluginHost): void {
+    this.automationEngine?.setExternalActionResolver(
+      createPluginAutomationActionResolver({
+        has: (packageName, action) => host.getActionRegistry().has(packageName, action),
+        invoke: (packageName, action, input) =>
+          host.invokeAction(packageName, action, input),
+      }),
+    );
+  }
+
   private pluginHubDeps(): PluginsRouteDeps {
     return {
       hub: {
