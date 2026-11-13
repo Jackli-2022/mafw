@@ -1038,8 +1038,13 @@ kernel 的 watchdog/heartbeat/queue-sweep/session-sweep 等自有 interval 与�
 | `lead.boundaries.accept` / `merge` / `undo`（E7-1） | Lead 边界动作（list / observe 不拦） |
 | `approvals.respond`（E7-1） | 审批应答（list 与 rules CRUD 不拦） |
 | `permissions.reply`（E7-1） | 权限应答（`permissions.replyRuntime` 是 runtime 内部路径，不拦；list 不拦） |
+| `goals.respondQuestion`（E7-1 review） | 目标问题回答 / 取消（`GET /api/questions` 等只读面不拦） |
+| `questions.reply` / `questions.reject`（E7-1 review） | runtime 问答应答（`questions.list` 不拦） |
 
-- 判定 **fail-closed**：缺失 principal（直调 handler 的测试路径）、`service`、`local`、`anonymous` 一律 403；`human` + `actorSessionID` 仍 403（既有审计检查保留，防人类 UI 误用 agent 上下文）。
+- 判定 **fail-closed**：缺失 principal（直调 handler 的测试路径）、`service`、`local`、`anonymous` 一律 403。
+  注意 **E7-1 的 `requireHumanPrincipal` 路由没有 actor 检查**——human/device 凭据即放行，不因请求带
+  `actorSessionID` 再拒。
+- `human` + `actorSessionID` 仍 403 只适用于 **pod 验收（`pods.goals.accept`）与 decisions 写**（E5a 的既有审计检查，防人类 UI 误用 agent 上下文），不是 E7 路由的通用规则。
 - `pairing-code` 的 human 检查在调用 pairing service **之前**，被拒请求不消耗限频额度；`POST /api/mobile/pairing/verify` 仍是唯一免凭据路由（nonce 即凭据，见上）。
 - 普通写路径（goal create / task / memory / …）**不要求** human，继续使用 service/local。
 
@@ -1130,11 +1135,23 @@ E5b 已知残留（同实例 reset 的低 head、busy/后台竞态）见 release
 
 | # | 现状（收口后） |
 |---|---|
-| E7-1 | **剩余 human-only 路由**：统一 helper `gateway/src/core/http/human-guard.ts#requireHumanPrincipal(req, res)`（`isHumanPrincipal` → 放行；否则 403 `{error:'human principal required', code:'human_principal_required'}`，缺失 principal fail-closed）。接入 `POST /api/goals/:id/plan-approval`、`triage.confirm` / `triage.reject` / `triage.dismiss`、`lead.boundaries.accept` / `merge` / `undo`、`approvals.respond`、`permissions.reply`；只读 / 建议面（GET plan、triage list/propose、lead list/observe、approvals list、permissions list、`permissions.replyRuntime`）不拦。旧 pods/decisions/standing-goals 的 helper 不重构。 |
+| E7-1 | **剩余 human-only 路由**：统一 helper `gateway/src/core/http/human-guard.ts#requireHumanPrincipal(req, res)`（`isHumanPrincipal` → 放行；否则 403 `{error:'human principal required', code:'human_principal_required'}`，缺失 principal fail-closed）。接入 `POST /api/goals/:id/plan-approval`、`triage.confirm` / `triage.reject` / `triage.dismiss`、`lead.boundaries.accept` / `merge` / `undo`、`approvals.respond`、`permissions.reply`，review 轮补 `goals.respondQuestion`、`questions.reply` / `questions.reject`；只读 / 建议面（GET plan、triage list/propose、lead list/observe、approvals list、permissions list、questions list、`permissions.replyRuntime`）不拦。旧 pods/decisions/standing-goals 的 helper 不重构。 |
 | E7-2 | **SDK 死面清理**：`contract.test.ts` 删除 `DEAD_CONTRACT_TODO`、过滤与陈旧守卫（review-items 4 op 由既有 `pods.goals.reviewItems*` 覆盖，契约 **4/4 无豁免**）；删除 `session.events()`、`event.url(sessionID?)` 参数（恒为 `${base}/api/events`）、`SSEConnection.connectToSession()`。全仓无生产调用方；**breaking** 见 release。 |
-| E7-3 | **worktree 配额回滚**：`createSessionWithWorktree` 在 `deps.createSession` reject（429 / runtime 失败）时 best-effort `manager.remove(dir, branch)`，不写 kv 映射，并**原样 rethrow** 原错误；remove 失败不掩盖 429/500。成功路径不变。 |
+| E7-3 | **worktree 配额回滚**：`createSessionWithWorktree` 在 `deps.createSession` reject（429 / runtime 失败）时 best-effort `manager.remove(dir, branch)`，不写 kv 映射，并**原样 rethrow** 原错误；remove 失败不掩盖 429/500。**只有 `createSession` 在回滚作用域内**：`kvSet` 映射写在 try 之后（review 轮 F1），它失败时错误照样上抛，但绝不回滚一个**已存在会话**的 worktree。成功路径不变。 |
 | E7-4 | **MCP 磁盘门**：`Services.pressure?: () => {disk, degraded} \| null` 由 kernel 注入 governor live getter（无 governor → `null` fail-open）；`handleAddMemory` 在 authority 校验后、写盘前检查，critical → `{success:false, code:'disk_low'}`（`isError:true`），store/embedding 零调用。 |
 | E7-5 | **客户端小残留**：mobile `MafwSession.timeUpdated`（`fromJson` 读 `time.updated`、`copyWith` 透传、`applySessionListEvent` 更新并**按 `timeUpdated ?? timeCreated` 重排**，Lead 仍最前；title-only patch 不重排）；mobile `EventRecoveryService` 对 `hasMore && nextSince <= since` 返回 `fellBack('protocol')`（游标停在最后已应用 seq，不再假 `recovered`）；desktop `SseConnection` 在 replay `reset` / `truncated` 后 `writeSeq(headSeq)`，下次冷启动只补新缺口、不重复全量重同步。 |
+
+### Review 补丁轮（E7-1 / E7-3）
+
+- **F4 问题应答全部 human-only**：`goals.respondQuestion`（目标问题回答 / 取消）与
+  `questions.reply` / `questions.reject`（runtime 问答应答）补上 `requireHumanPrincipal`；
+  门在 **body 读取之前**，被拒请求不消费请求体、不碰 ledger / driver。
+  `questions.list`、GET timeline 等只读面不变。
+- **副作用（intended）**：MCP 工具 `mafw_answer_question` 走 loopback 无凭据 → principal 为
+  `local` → 现在拿到 403 `human_principal_required`。即 agent 不能再「代用户回答」目标问题，
+  与「MCP 不提供 human 工具」不变量一致（工具本身未删除，留待后续评估）。
+- **F1 回滚边界**：`createSessionWithWorktree` 里 `kvSet` 移到 `createSession` 的 try 之外；
+  kv 失败不再删掉活会话的 worktree / branch，错误照原样上抛。
 
 ### 残余（E7 后仍 deferred）
 
@@ -1142,6 +1159,7 @@ E5b 已知残留（同实例 reset 的低 head、busy/后台竞态）见 release
 - 全进程 timer inventory（serve watchdog / heartbeat / queue sweep / loader 等）。
 - mobile 工作 tab 增量渲染（已有 `goalId` 局部更新）。
 - `pod.updated` 记录级 payload、attention → decision 投影、OS keychain / 进程签名、MCP human 工具。
+- `mafw_answer_question` MCP 工具的去留（现被 human gate 403；删除或改为只读待评估）。
 - 强制版本协商 / SDK 全量 schema 类型化。
 - E5b 同实例 `reset` 且新 head 更低时的重复 reset（有界、不丢数据）；busy / 后台 greeting 竞态。
 - `authorizeWsUpgrade` 仍只标 deprecated；desktop preload 的 event bridge 仍声明可选 `sessionID`（运行时忽略，无调用方传值）。

@@ -26,6 +26,8 @@
 | `51c888da` | E7-4 | kernel 注入 `Services.pressure` live getter；`mafw_add_memory` 在 disk critical 时返回 `disk_low`，不再绕过 HTTP 门 |
 | `f1cda812` | E7-5 | mobile 建模 `time.updated` 并重排；replay `nextSince <= since` 改 `protocol` fallback；desktop reset/truncated 后游标落盘 `headSeq` |
 | E7-6（本记录） | E7-6 | 架构现状 + 本记录 + 全量门禁 + ledger（docs-only） |
+| `97d734de` | E7-1 / E7-3 review | F4：`goals.respondQuestion`、`questions.reply` / `questions.reject` 补 `requireHumanPrincipal`（body 读取前）；F1：`createSessionWithWorktree` 的 `kvSet` 移出回滚 try |
+| E7 review（本记录） | docs | 架构 human-gate 口径 / 本记录 clean gate 计数 / AGENTS.md / ledger 补丁 |
 
 ## 交付项
 
@@ -36,18 +38,21 @@
   `triage.ts`（confirm/reject；list/propose 不拦）、`wave1-handlers.ts`（dismiss）、
   `lead-boundaries.ts`（accept/merge/undo；list/observe 不拦）、`approvals.ts`（respond；
   list 与 rules CRUD 不拦）、`questions-permissions.ts`（reply；`replyRuntime` runtime 内部路径
-  不动，list 不拦）。旧 pods/decisions/standing-goals 的本地 helper 不重构。新增
-  `tests/unit/routes/human-only-guards-e7.test.ts` 38 条：每路由 missing/service/local/anonymous
+  不动，list 不拦；review 轮补 `questions.reject` 与 `goals.respondQuestion`）。旧
+  pods/decisions/standing-goals 的本地 helper 不重构。新增
+  `tests/unit/routes/human-only-guards-e7.test.ts` 38 条（review 轮扩到 56 条）：
+  每路由 missing/service/local/anonymous
   → 403 code + human/device → 原成功，外加只读/建议面不拦的负向断言。
 - **E7-2 SDK 死面清理**：`contract.test.ts` 删除 `DEAD_CONTRACT_TODO`、其过滤与陈旧守卫测试；
   review-items 4 op 已由 SDK `pods.goals.reviewItems*` 方法覆盖，契约测试 **4/4 无豁免**
   （spec 的 5/5 计数包含被删的陈旧守卫，删除后为 4）。`client.ts` 删除 `session.events()`、
   `event.url()` 归零参并恒为 `${base}/api/events`；`sse.ts` 删除 `connectToSession()`；
   `types.ts` 同步。SDK 全量 224（删 4 条死面测试 + 1 条陈旧守卫）。全仓 grep 无生产调用方。
-- **E7-3 worktree 配额回滚**：`createSessionWithWorktree` 把 `createSession` + `kvSet` 包进
-  try/catch；失败时 best-effort `manager.remove(wt.worktreeDir, wt.branch)` 后 **rethrow 原错误**
+- **E7-3 worktree 配额回滚**：`createSessionWithWorktree` 把 `createSession` 包进
+  try/catch（`kvSet` 在 review 轮 F1 已移到 try 外）；失败时 best-effort
+  `manager.remove(wt.worktreeDir, wt.branch)` 后 **rethrow 原错误**
   （remove 自身失败被吞，429/500 语义不变）。新增 3 条测试：回滚 + 原错传播 + 无 kv、remove 失败
-  仍原错优先、成功路径不回归。
+  仍原错优先、成功路径不回归（review 轮 F1 再 +1：kvSet 失败不回收活会话 worktree）。
 - **E7-4 MCP 磁盘门**：`gateway/src/types.ts` 增加 `Services.pressure?: () => { disk: string;
   degraded: string[] } | null`；`kernel.ts` 注入读 `this.governor` 的 live getter（governor 未建
   → null fail-open）；`mcp/handlers/add-memory.ts` 在 authority 校验之后、store/embedding 之前检查
@@ -85,13 +90,39 @@
 6. **mobile replay 违约**：`nextSince <= since` 从「静默按 recovered 结束」变为
    `protocol` fallback → 调用方多一次全量重拉（正确性优先）。
 7. **desktop 冷启动**：`reset`/`truncated` 后持久游标 = `headSeq`，不再每次重启全量重同步。
+8. **问题应答收紧（review 轮）**：`goals.respondQuestion`、`questions.reply|reject` 对
+   service/local/anonymous/缺失 principal → 403 `human_principal_required`；desktop/TUI/mobile
+   经 SDK 已带 human/device 凭据，不受影响；MCP `mafw_answer_question`（loopback 无凭据）现在
+   被拒——agent 不能再代用户回答目标问题。
+9. **worktree kv 失败语义（review 轮）**：`kvSet` 映射写失败不再回滚已存在会话的
+   worktree/branch，只上抛错误（E7-3 的 createSession 回滚不变）。
 
-## 验证（worktree @ E7-6）
+## Review 修复轮（F4 / F1，commit `97d734de`）
+
+- **F4 — 剩余人类决策路由全部收口**：`goals.respondQuestion`（目标问题回答 / 取消）与
+  `questions.reply` / `questions.reject`（runtime 问答应答）接入
+  `requireHumanPrincipal(req, res)`，门在 **body 读取之前**（被拒请求不消费请求体、不碰
+  `QuestionLedger`、不调 `NodeDriver.handleAnswer/handleCancel`）。只读 / 清单面
+  （`questions.list`、goal timeline / plan GET）不拦。
+- **行为后果（intended）**：MCP 工具 `mafw_answer_question` 走 loopback 无凭据 → `local`
+  principal → 现在收到 403 `human_principal_required`。agent 不能再「代用户回答」目标问题，
+  与「MCP 不提供 human 工具」不变量一致；工具去留记入残余（架构文档已标注）。
+- **F1 — 回滚边界修正**：`createSessionWithWorktree` 只把 `createSession` 留在 try 内；
+  `kvSet` 映射写移到 try 之后。`createSession` 失败仍 best-effort 回滚 worktree/branch 并
+  rethrow（E7-3 语义不变）；`kvSet` 失败只上抛错误，**不再删除已存在会话的 worktree**。
+- 测试：`human-only-guards-e7` 38 → **56**（+18：questions.reply 5 / questions.reject 4 /
+  goals.respondQuestion 7，含「denied 不消费 body」与 ledger 未动的断言）；
+  `routes-session-worktree` 12 → **13**（+1：kvSet 抛错 → 不调 `manager.remove`、worktree 目录
+  与分支仍在、错误原样传播）。既有 wiring 测试全部注入 human principal。
+
+## 验证（worktree @ E7 review）
 
 | 门 | 命令 | 结果 |
 |---|---|---|
 | gateway 类型 | `node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json`（`gateway/`，gateway-local TS 5.9.3） | **0 errors** |
-| gateway 全量 | `node ../node_modules/jest/bin/jest.js --runInBand --forceExit --no-coverage`（`gateway/`） | **7055 tests：7039 passed / 14 failed / 2 skipped**；**897 suites：892 passed / 4 failed / 1 skipped**。失败 = 3 个基线 env-red suite（`plugin-package-e2e` 4、`claude-adapter-acceptance` 4、`claude-adapter-coverage` 1）+ `tests/unit/pod/pod-worktree-service` 5 条 **5s timeout**（全量并发下 git I/O 慢；单跑 **16/16 passed**，与 E7 无关）。E7-3 自己的 `worktree/routes-session-worktree` 在套件内全绿 |
+| gateway 全量（负载下） | `node ../node_modules/jest/bin/jest.js --runInBand --forceExit --no-coverage`（`gateway/`） | **7055 tests：7039 passed / 14 failed / 2 skipped**；**897 suites：892 passed / 4 failed / 1 skipped**。失败 = 3 个基线 env-red suite（`plugin-package-e2e` 4、`claude-adapter-acceptance` 4、`claude-adapter-coverage` 1）+ `tests/unit/pod/pod-worktree-service` 5 条 **5s timeout**（全量并发下 git I/O 慢；单跑 **16/16 passed**，与 E7 无关）。E7-3 自己的 `worktree/routes-session-worktree` 在套件内全绿 |
+| gateway 全量（空闲机器重跑，review 轮） | 同上命令 | **7055 tests：7044 passed / 9 failed / 2 skipped**；**897 suites：893 passed / 3 failed / 1 skipped**。9 = 恰好 3 个基线 env-red suite（4+4+1），**零** pod-worktree timeout；pod-worktree 的 5 条在负载下才超时（单跑 16/16），确认是并发 git I/O flake 而非代码问题 |
+| gateway 定向（review 轮） | jest `tests/unit/routes/ tests/unit/worktree/`（`--runInBand --forceExit`） | **88 suites / 732 tests 全绿**（含新增 F4/F1 用例） |
 | SDK 类型 | `node ../../node_modules/typescript/bin/tsc --noEmit -p tsconfig.json`（`packages/gateway-sdk`） | **0 errors** |
 | SDK 全量 | `node --import tsx --require ../../packages/test-shim/require-hook.cjs --test "src/*.test.ts"` | **224/224 passed** |
 | SDK contract | 同上 `--test src/contract.test.ts` | **4/4 passed，0 dead ops，0 exemptions** |
@@ -109,12 +140,12 @@
 
 | 面 | 新增 | 依据 |
 |---|---|---|
-| gateway | **+47** | E7-1 38（`tests/unit/routes/human-only-guards-e7.test.ts`）+ E7-3 3（`worktree/routes-session-worktree.test.ts` 配额回滚 describe）+ E7-4 6（`tests/unit/mcp/add-memory-pressure.test.ts`） |
+| gateway | **+66** | E7-1 38（`tests/unit/routes/human-only-guards-e7.test.ts`）+ review F4 18（同文件：questions.reply/reject 11 + goals.respondQuestion 7）+ E7-3 3（`worktree/routes-session-worktree.test.ts` 配额回滚 describe）+ review F1 1（同文件 kvSet 不回收活会话 worktree）+ E7-4 6（`tests/unit/mcp/add-memory-pressure.test.ts`） |
 | mobile | **+9** | `session_list_events_test.dart` +8（`time.updated` 建模 3 + 事件 patch/重排/Lead-first/legacy fallback/title-only 5）+ `event_recovery_test.dart` +1（hasMore 不前进 = protocol fallback）；`recovery_coordinator_test.dart` 仅改既有期望 |
 | desktop | **+1** | `tests/sse-replay-gap.test.ts` 冷启动只补新缺口用例（另 2 条既有 reset/truncated 用例改断言） |
 
 > 计数口径：可执行 test case 数，不是断言数。SDK 为**减少** 5 条（4 条死面 + 1 条陈旧守卫）。
-> gateway 基线（`fb53caa9`，按 7055 − 47 推算）7008 tests（6997 passed / 9 failed / 2 skipped）。
+> gateway 基线（`fb53caa9`，按 7055 − 66 推算）6989 tests（6978 passed / 9 failed / 2 skipped）。
 
 ## 已知红（非本波代码问题）
 
@@ -122,7 +153,8 @@
    `claude-adapter-coverage`（esbuild 解析不到 `@anthropic-ai/claude-agent-sdk` / Desktop
    `node_modules` 的 `@mafw/plugin-contract` staging），与基线同集合（9 条）。
 2. **gateway 负载 flake**：`tests/unit/pod/pod-worktree-service` 5 条 5s timeout（全量套件下 git
-   I/O 慢；单跑 16/16 全绿），本波只改 `routes/session-worktree.ts`，未触碰该服务。
+   I/O 慢；单跑 16/16 全绿）。空闲机器重跑全量为 **9 failed / 3 failed suites**（= 基线 env-red），
+   该 5 条全部通过——确认是并发负载 flake，本波只改 `routes/session-worktree.ts`，未触碰该服务。
 3. **desktop 1 条环境红**：worktree 未构建 `gateway/dist` 时 `mafw-gateway-resolver` 的 dev-path
    用例拿到 `null`；`gateway npm run build` 后即全绿。
 4. **desktop 类型门禁**：只剩既有 `node:tls` 2 条噪声（tsgo 与 tsc 结果一致）。

@@ -44,7 +44,7 @@
 
 ### Pod / Goal
 - Lead 是项目唯一入口；Lead / Tech Lead / Builder / Reviewer / Probe 会话隐藏，不回流 rail。
-- 验收（accept）是 **人类专属**：必须 human/device 凭据（`human_principal_required`），service/local 403；请求带 `actorSessionID` 仍 403；不提供 MCP 验收工具。计划批准、triage confirm/reject/dismiss、Lead 边界 accept/merge/undo、`approvals.respond`、`permissions.reply` 同为 human-only（只读/建议面不拦）。
+- 验收（accept）是 **人类专属**：必须 human/device 凭据（`human_principal_required`），service/local 403；pod 验收 / decisions 请求带 `actorSessionID` 仍 403；不提供 MCP 验收工具。计划批准、triage confirm/reject/dismiss、Lead 边界 accept/merge/undo、`approvals.respond`、`permissions.reply`、`goals.respondQuestion`、`questions.reply|reject` 同为 human-only（只读/建议面不拦；这组 E7 路由无 actor 检查）。
 - 计划批准绑定 `planHash` / `evalHash`；计划被编辑会自动作废旧批准。
 - Review 必须逐 task + 逐必需 Goal 条件给结果与证据；漏项 / 证据空 → FAIL，绝不 PASS。
 - 每个 Goal revision 一个 worktree/branch；PASS 不自动合并，人工验收才 merge。
