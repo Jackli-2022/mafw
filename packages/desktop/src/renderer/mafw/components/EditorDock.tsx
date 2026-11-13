@@ -15,6 +15,7 @@ import { Icon } from "@mafw/ui/icon"
 import { DockBanner, DockEmpty } from "./dock-panel"
 import { DocumentFrame, DocumentTabs, DocumentToolbar } from "./document-frame"
 import { editorDocumentTabs } from "../document-frame-model"
+import { activeDocumentTab, consumeCloseRequest, pendingCloseRequests, syncFileTabs } from "../documents/document-tabs-store"
 import {
   createEditorModel, openFile, openPreviewFile, closeFile, setActive,
   markDirty, markSaved, onExternalChange, resolveConflict, applyCleanReload, canApplyCleanReload,
@@ -72,6 +73,8 @@ export function EditorDock(props: {
   sessionID: string | null
   contentRoot: string | null
   scopeKey?: string | null
+  /** 统一文档舞台内嵌：不渲染自己的 tab 条。 */
+  embedded?: boolean
   /** 阅读意图用临时预览 tab；修改意图保留持久 tab。 */
   intent: ContentIntent
   onIntent?: (intent: ContentIntent) => void
@@ -198,6 +201,30 @@ export function EditorDock(props: {
     clearSelection()
     void mountActive()
   }
+
+  // 统一文档 tab 条：把本 root 的文件 tab 同步到共享 store。
+  createEffect(() => {
+    syncFileTabs(props.contentRoot ?? "", tabs())
+  })
+
+  // 统一 tab 条选中的文件：只激活，不重新读盘。
+  createEffect(() => {
+    const active = activeDocumentTab()
+    if (!active || active.kind !== "file") return
+    if (active.view.id !== model().active) activateRel(active.view.id)
+  })
+
+  // 共享 tab 条发来的关闭请求：只消费属于本 root 的 file id。
+  createEffect(() => {
+    const root = props.contentRoot
+    if (!root) return
+    const prefix = `file:${root}\u0000`
+    for (const id of pendingCloseRequests()) {
+      if (!id.startsWith(prefix)) continue
+      consumeCloseRequest(id)
+      closeRel(id.slice(prefix.length))
+    }
+  })
 
   const noteFor = (rel: string) => readNotes()[rel]
 
@@ -1174,15 +1201,17 @@ export function EditorDock(props: {
 
   return (
     <DocumentFrame
-      tabs={tabs().length > 0 ? (
-        <DocumentTabs
-          items={tabs()}
-          ariaLabel="打开的文档"
-          onSelect={activateRel}
-          onClose={closeRel}
-          onContextMenu={(id, event) => requestTabMenu(id, model().files.findIndex(f => f.rel === id), event)}
-        />
-      ) : undefined}
+      tabs={props.embedded ? undefined : (
+        tabs().length > 0 ? (
+          <DocumentTabs
+            items={tabs()}
+            ariaLabel="打开的文档"
+            onSelect={activateRel}
+            onClose={closeRel}
+            onContextMenu={(id, event) => requestTabMenu(id, model().files.findIndex(f => f.rel === id), event)}
+          />
+        ) : undefined
+      )}
       toolbar={
         <DocumentToolbar
           ariaLabel="编辑器工具栏"

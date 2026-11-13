@@ -28,6 +28,7 @@ import {
   type BrowserTab,
 } from "../browser-tabs"
 import { browserDocumentTabs } from "../document-frame-model"
+import { activeDocumentTab, consumeCloseRequest, pendingCloseRequests, syncWebTabs } from "../documents/document-tabs-store"
 import { createBrowserViewRegistry, navigateExistingView } from "../browser-view"
 import { DockBanner, DockEmpty } from "./dock-panel"
 import { DocumentFrame, DocumentTabs, DocumentToolbar } from "./document-frame"
@@ -37,7 +38,11 @@ import { clampRect } from "../capture/crop-math"
 import { dataUrlToFile } from "../capture/data-url"
 import { pushCaptureFile } from "../capture/attach-sink"
 
-export function BrowserDock(props: { sessionID: string | null }) {
+export function BrowserDock(props: {
+  sessionID: string | null
+  /** 统一文档舞台内嵌：不渲染自己的 tab 条。 */
+  embedded?: boolean
+}) {
   const [addressDraft, setAddressDraft] = createSignal("")
   const [picking, setPicking] = createSignal(false)
   const viewRegistry = createBrowserViewRegistry<any>()
@@ -200,6 +205,25 @@ export function BrowserDock(props: { sessionID: string | null }) {
     removeView(id)
     closeBrowserTab(id)
   }
+
+  // 统一文档 tab 条：同步浏览器 tab 视图，并消费 web close 请求。
+  createEffect(() => {
+    syncWebTabs(browserDocumentTabs(tabs(), activeBrowserTabId()))
+  })
+
+  createEffect(() => {
+    const active = activeDocumentTab()
+    if (!active || active.kind !== "web") return
+    if (active.view.id !== activeBrowserTabId()) setActiveBrowserTab(active.view.id)
+  })
+
+  createEffect(() => {
+    for (const id of pendingCloseRequests()) {
+      if (!id.startsWith("web:")) continue
+      consumeCloseRequest(id)
+      closeTab(id.slice("web:".length))
+    }
+  })
 
   const newBlankTab = () => {
     const tab = openBrowserTab("", { newTab: true })
@@ -412,7 +436,7 @@ export function BrowserDock(props: { sessionID: string | null }) {
   return (
     <DocumentFrame
       onContextMenu={requestDockMenu}
-      tabs={
+      tabs={props.embedded ? undefined : (
         <DocumentTabs
           items={browserDocumentTabs(tabs(), activeBrowserTabId())}
           ariaLabel="浏览器标签"
@@ -426,7 +450,7 @@ export function BrowserDock(props: { sessionID: string | null }) {
             </ButtonV2>
           }
         />
-      }
+      )}
       toolbar={
         <DocumentToolbar
           ariaLabel="浏览器工具栏"

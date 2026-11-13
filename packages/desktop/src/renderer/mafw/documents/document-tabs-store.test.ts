@@ -2,6 +2,7 @@ import { beforeEach, test } from "node:test"
 import assert from "node:assert/strict"
 import {
   activateDocumentTab,
+  activeDocumentTab,
   activeDocumentTabId,
   activeDocumentTabKind,
   closeDocumentTabsToRight,
@@ -71,6 +72,25 @@ test("activate sets active id and kind; unknown ids are ignored", () => {
   assert.equal(activeDocumentTabKind(), "web")
   activateDocumentTab("missing")
   assert.equal(activeDocumentTabId(), webId)
+})
+
+test("re-syncing identical tabs does not rewrite the strip", () => {
+  syncFileTabs("C:/repo", [view("a.ts")])
+  syncWebTabs([view("w1", "W", { icon: "globe" })])
+  const first = documentTabs()
+
+  syncFileTabs("C:/repo", [view("a.ts")])
+  syncWebTabs([view("w1", "W", { icon: "globe" })])
+
+  assert.equal(documentTabs(), first)
+})
+
+test("activeDocumentTab returns the active entry", () => {
+  syncFileTabs("C:/repo", [view("a.ts")])
+  const id = documentTabs()[0]!.id
+  activateDocumentTab(id)
+  assert.equal(activeDocumentTab()?.id, id)
+  assert.equal(activeDocumentTab()?.kind, "file")
 })
 
 test("close requests are deduped and consumed exactly once", () => {

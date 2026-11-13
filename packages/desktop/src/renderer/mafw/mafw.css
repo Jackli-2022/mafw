@@ -4701,6 +4701,9 @@ html[data-theme="light"] body {
 .mafw-document-toolbar-center { flex: 1; min-width: 0; display: flex; align-items: center; }
 .mafw-document-toolbar-trailing { margin-left: auto; }
 .mafw-document-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.mafw-document-stage { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.mafw-document-stage-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.mafw-document-stage-pane { flex: 1; min-height: 0; }
 .mafw-editor-host { flex: 1; min-height: 0; overflow: hidden; }
 .mafw-editor-body { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
 .mafw-editor-diff { flex: 1; min-height: 0; overflow: auto; }

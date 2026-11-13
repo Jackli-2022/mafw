@@ -97,5 +97,5 @@ export function documentTabViews(
   entries: readonly DocumentTabEntry[],
   activeId: string | null,
 ): DocumentTabView[] {
-  return entries.map((entry) => ({ ...entry.view, active: entry.id === activeId }))
+  return entries.map((entry) => ({ ...entry.view, id: entry.id, active: entry.id === activeId }))
 }

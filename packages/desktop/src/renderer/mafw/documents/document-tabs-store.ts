@@ -22,6 +22,11 @@ export function activeDocumentTabId(): string | null {
   return activeId()
 }
 
+export function activeDocumentTab(): DocumentTabEntry | null {
+  const id = activeId()
+  return id ? (entries().find((entry) => entry.id === id) ?? null) : null
+}
+
 export function activeDocumentTabKind(): DocumentTabKind | null {
   const id = activeId()
   return id ? (entries().find((entry) => entry.id === id)?.kind ?? null) : null
@@ -47,9 +52,32 @@ export function syncWebTabs(views: readonly DocumentTabView[]): void {
 
 function applyKind(kind: DocumentTabKind, incoming: DocumentTabEntry[]): void {
   const next = syncKindEntries(entries(), kind, incoming)
+  if (sameEntries(entries(), next)) return
   setEntries(next)
   const current = activeId()
   if (current && !next.some((entry) => entry.id === current)) setActiveId(null)
+}
+
+function sameEntries(a: readonly DocumentTabEntry[], b: readonly DocumentTabEntry[]): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    const left = a[i]!
+    const right = b[i]!
+    if (left.id !== right.id || left.kind !== right.kind) return false
+    const lv = left.view
+    const rv = right.view
+    if (
+      lv.id !== rv.id ||
+      lv.label !== rv.label ||
+      lv.title !== rv.title ||
+      lv.icon !== rv.icon ||
+      lv.active !== rv.active ||
+      lv.dirty !== rv.dirty ||
+      lv.preview !== rv.preview ||
+      lv.readOnly !== rv.readOnly
+    ) return false
+  }
+  return true
 }
 
 export function activateDocumentTab(id: string): void {

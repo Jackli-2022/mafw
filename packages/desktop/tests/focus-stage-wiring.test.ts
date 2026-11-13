@@ -6,9 +6,8 @@ const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.ur
 const stage = read("src/renderer/mafw/components/FocusStage.tsx")
 const css = read("src/renderer/mafw/mafw.css")
 
-test("FocusStage dispatches through the existing surfaces", () => {
-  assert.match(stage, /EditorDock/)
-  assert.match(stage, /BrowserDock/)
+test("FocusStage delegates document surfaces through DocumentStage", () => {
+  assert.match(stage, /DocumentStage/)
   assert.match(stage, /TerminalSurface/)
   assert.match(stage, /stageKindFor/)
   assert.match(stage, /mafw-focus-stage/)

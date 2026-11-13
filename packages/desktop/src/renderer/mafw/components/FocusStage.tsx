@@ -1,7 +1,6 @@
 import { Match, Show, Switch, type JSX } from "solid-js"
-import { EditorDock } from "./EditorDock"
-import { BrowserDock } from "./BrowserDock"
 import { TerminalSurface } from "./TerminalSurface"
+import { DocumentStage } from "./DocumentStage"
 import { DockEmpty } from "./dock-panel"
 import { ChangeSetStage } from "./ChangeSetStage"
 import type { FileDiffEntry } from "./DiffReviewPanel"
@@ -47,8 +46,12 @@ export function FocusStage(props: {
   renderChangeSet?: () => JSX.Element | null
   renderGoal?: () => JSX.Element
   renderWorld?: () => JSX.Element
+  onDocumentSelect?: (id: string) => void
+  onDocumentClose?: (id: string) => void
+  onDocumentCloseMany?: (ids: readonly string[]) => void
 }): JSX.Element {
   const kind = () => stageKindFor(props.focus)
+  const isDocument = () => kind() === "editor" || kind() === "browser"
   const pluginId = () => {
     const subject = props.focus.subject
     return subject.kind === "plugin" ? `plugin:${subject.package}:${subject.panel}` : null
@@ -60,27 +63,26 @@ export function FocusStage(props: {
 
   return (
     <div class="mafw-focus-stage">
+      <div class="mafw-focus-document" style={{ display: isDocument() ? "contents" : "none" }}>
+        <DocumentStage
+          sessionID={props.sessionID}
+          contentRoot={props.contentRoot}
+          contentScopeKey={props.contentScopeKey}
+          intent={props.focus.lens === "edit" ? "editing" : "reading"}
+          openRequest={props.openRequest}
+          diffs={props.diffs}
+          onActiveFileChange={props.onActiveFileChange}
+          onSendAnnotation={props.onSendAnnotation}
+          onAddAnnotation={props.onAddAnnotation}
+          onSendComment={props.onSendComment}
+          onOpenReview={props.onOpenReview}
+          onSelect={(id) => props.onDocumentSelect?.(id)}
+          onClose={(id) => props.onDocumentClose?.(id)}
+          onCloseMany={(ids) => props.onDocumentCloseMany?.(ids)}
+        />
+      </div>
+
       <Switch>
-        <Match when={kind() === "editor"}>
-          <EditorDock
-            sessionID={props.sessionID}
-            contentRoot={props.contentRoot}
-            scopeKey={props.contentScopeKey}
-            intent={props.focus.lens === "edit" ? "editing" : "reading"}
-            onActiveFileChange={props.onActiveFileChange}
-            openRequest={props.openRequest}
-            diffs={props.diffs}
-            onSendAnnotation={props.onSendAnnotation}
-            onAddAnnotation={props.onAddAnnotation}
-            onSendComment={props.onSendComment}
-            onOpenReview={props.onOpenReview}
-          />
-        </Match>
-
-        <Match when={kind() === "browser"}>
-          <BrowserDock sessionID={props.sessionID} />
-        </Match>
-
         <Match when={kind() === "terminal"}>
           <TerminalSurface directory={props.contentRoot} active={props.active} />
         </Match>

@@ -59,6 +59,9 @@ export type WorkbenchShellProps = {
   renderGoal?: () => JSX.Element
   renderWorld?: () => JSX.Element
   renderChangeSet?: () => JSX.Element | null
+  onDocumentSelect?: (id: string) => void
+  onDocumentClose?: (id: string) => void
+  onDocumentCloseMany?: (ids: readonly string[]) => void
   /** Mounts one plugin panel surface. */
   renderPluginSurface?: (id: string) => JSX.Element
   /** Declared Web surfaces (sandboxed pages). */
@@ -129,6 +132,9 @@ export function WorkbenchShell(props: WorkbenchShellProps): JSX.Element {
             renderGoal={props.renderGoal}
             renderWorld={props.renderWorld}
             renderChangeSet={props.renderChangeSet}
+            onDocumentSelect={props.onDocumentSelect}
+            onDocumentClose={props.onDocumentClose}
+            onDocumentCloseMany={props.onDocumentCloseMany}
           />
           <PluginSurfaceStage
             activeSurfaceId={activePluginSurfaceId()}

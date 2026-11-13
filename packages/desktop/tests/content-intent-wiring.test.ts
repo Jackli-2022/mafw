@@ -25,6 +25,6 @@ test("editor opens preview tabs while reading and promotes on first edit", () =>
 
 test("focus lens drives the editor intent", () => {
   assert.match(shell, /activeFocus\(\)\?\.lens === "edit" \? "editing" : "reading"/)
-  assert.match(stage, /intent=\{props\.focus\.lens === "edit" \? "editing" : "reading"\}/)
+  assert.match(stage, /DocumentStage/)
   assert.doesNotMatch(shell, /setContentIntent/)
 })

@@ -128,6 +128,14 @@ import {
 import { frameView, type FrameView } from "./focus/frame-view"
 import { buildCommandPickerItems, buildFilePickerItems, buildGoalPickerItems, buildWorldPickerItem, withCommandItems, type PickerItem } from "./focus/picker-model"
 import { shouldAutoOpenPicker } from "./focus/landing"
+import {
+  activeDocumentTabId,
+  activateDocumentTab,
+  documentTabs,
+  requestCloseDocumentTab,
+} from "./documents/document-tabs-store"
+import { fileDocumentTabId, nextDocumentTabId, webDocumentTabId } from "./documents/document-tabs-model"
+import { activeBrowserTabId } from "./browser-tabs"
 import { stageActionFor } from "./focus/stage-dispatch"
 import { openGoalFocus as applyGoalFocus, openReviewItemFocus as applyReviewFocus, openChangeSetFocus as applyChangeSetFocus } from "./focus/goal-focus"
 import type { FocusOpenRequest } from "./focus/focus-open"
@@ -2544,6 +2552,103 @@ export function MafwShell() {
     setFocusState(next)
     syncStageToFocus(next)
   }
+  /** 统一文档 tab 条 → 焦点栈：只切换，不重新读盘 / 不重新导航。 */
+  const focusDocumentTab = (id: string) => {
+    const entry = documentTabs().find((item) => item.id === id)
+    if (!entry) return
+    revealWorkbench()
+    const base = focusScope()
+    if (entry.kind === "file") {
+      const root = contentRoot()
+      if (!root) return
+      const scope = contentScope() ? focusScopeFromContent(contentScope()!) : base
+      const next = openSubject(
+        seedWorldRoot(focusState(), scope),
+        scope,
+        { kind: "file", root, rel: entry.view.id },
+        "read",
+      )
+      setFocusState(next)
+      syncStageToFocus(next)
+    } else {
+      const url = entry.view.title ?? ""
+      const next = openSubject(
+        seedWorldRoot(focusState(), base),
+        base,
+        { kind: "web", url },
+        "interact",
+      )
+      setFocusState(next)
+      syncStageToFocus(next)
+    }
+    activateDocumentTab(id)
+  }
+  const closeDocumentTab = (id: string) => {
+    const entries = documentTabs()
+    const active = activeDocumentTabId()
+    const wasActive = active === id
+    const next = nextDocumentTabId(entries, id, active)
+    requestCloseDocumentTab(id)
+    if (!wasActive) return
+    if (next) focusDocumentTab(next)
+    else showWorkbenchLanding()
+  }
+  const closeDocumentTabs = (ids: readonly string[]) => {
+    const closing = new Set(ids)
+    const entries = documentTabs()
+    const active = activeDocumentTabId()
+    const wasActive = !!active && closing.has(active)
+    const survivors = entries.filter((entry) => !closing.has(entry.id))
+    for (const id of ids) requestCloseDocumentTab(id)
+    if (!wasActive) return
+    const next = survivors[0]?.id ?? null
+    if (next) focusDocumentTab(next)
+    else showWorkbenchLanding()
+  }
+  const sendAnnotation = (text: string, opts?: { imageDataUrl?: string }) => {
+    const sid = currentSessionID()
+    if (!sid) return
+    const run = (async () => {
+      if (!opts?.imageDataUrl) {
+        return window.api.mafw.sessions.promptAsync({ sessionID: sid, message: text })
+      }
+      const task = await window.api.mafw.media.createTask({
+        dataUrl: opts.imageDataUrl,
+        mediaType: "image/png",
+        question: text,
+      })
+      const pointer = `[媒体附件 taskID: ${task.id} contextID: ${task.contextId}（媒体: annotation.png），这是用户批注的区域截图——调用 mafw_media_ask 工具获取其内容后直接回应（taskID 填 ${task.id}）]`
+      return window.api.mafw.sessions.promptAsync({ sessionID: sid, message: `${text}\n\n${pointer}` })
+    })()
+    void run
+      .then(() => showToastV2({ description: "批注已发送给 agent", duration: 2000 } as any))
+      .catch((e: any) => showToastV2({ description: `发送失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 4000 } as any))
+  }
+  const addAnnotation = (a: any) => {
+    const sid = currentSessionID()
+    if (!sid) return
+    addPending({ sessionID: sid, ...a })
+    showToastV2({ description: "已加入批注", duration: 1600 } as any)
+  }
+
+  // 焦点是文档 subject 时同步 active tab；entry 可能稍后由 body 同步进来。
+  createEffect(() => {
+    documentTabs()
+    const subject = activeFocus()?.subject
+    if (subject?.kind === "file") {
+      const id = fileDocumentTabId(subject.root, subject.rel)
+      if (documentTabs().some((entry) => entry.id === id)) activateDocumentTab(id)
+    } else if (subject?.kind === "web") {
+      const byUrl = documentTabs().find(
+        (item) => item.kind === "web" && (item.view.title ?? "") === subject.url,
+      )
+      const activeWeb = activeBrowserTabId()
+      const entry = byUrl ?? (activeWeb
+        ? documentTabs().find((item) => item.id === webDocumentTabId(activeWeb))
+        : undefined)
+      if (entry) activateDocumentTab(entry.id)
+    }
+  })
   const resolveGoalWorktreeDir = async (podId: string | null, goalId: string, project: string): Promise<string> => {
     if (!podId) return project
     try {
@@ -3995,32 +4100,8 @@ export function MafwShell() {
                   diffs={contentDiffEntries()}
                   liveDiffs={store.session_diff?.[currentSessionID() ?? ""]}
                   onActiveFileChange={setActiveContentDocument}
-                  onSendAnnotation={(text, opts) => {
-                    const sid = currentSessionID()
-                    if (!sid) return
-                    // I2：区域截图走 A2A 媒体管道（与输入框附件同路），消息只带任务指针。
-                    const run = (async () => {
-                      if (!opts?.imageDataUrl) {
-                        return window.api.mafw.sessions.promptAsync({ sessionID: sid, message: text })
-                      }
-                      const task = await window.api.mafw.media.createTask({
-                        dataUrl: opts.imageDataUrl,
-                        mediaType: "image/png",
-                        question: text,
-                      })
-                      const pointer = `[媒体附件 taskID: ${task.id} contextID: ${task.contextId}（媒体: annotation.png），这是用户批注的区域截图——调用 mafw_media_ask 工具获取其内容后直接回应（taskID 填 ${task.id}）]`
-                      return window.api.mafw.sessions.promptAsync({ sessionID: sid, message: `${text}\n\n${pointer}` })
-                    })()
-                    void run
-                      .then(() => showToastV2({ description: "批注已发送给 agent", duration: 2000 } as any))
-                      .catch((e: any) => showToastV2({ description: `发送失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 4000 } as any))
-                  }}
-                  onAddAnnotation={(a) => {
-                    const sid = currentSessionID()
-                    if (!sid) return
-                    addPending({ sessionID: sid, ...a })
-                    showToastV2({ description: "已加入批注", duration: 1600 } as any)
-                  }}
+                  onSendAnnotation={sendAnnotation}
+                  onAddAnnotation={addAnnotation}
                   onOpenReview={() => openProjectChangeSetFocus("review")}
                   renderChangeSet={() => {
                     const subject = activeFocus()?.subject
@@ -4073,6 +4154,9 @@ export function MafwShell() {
                       onGoalCreated={(goalId) => { setGoalComposerInitial(null); openGoalFocus(goalId, "timeline") }}
                     />
                   )}
+                  onDocumentSelect={focusDocumentTab}
+                  onDocumentClose={closeDocumentTab}
+                  onDocumentCloseMany={closeDocumentTabs}
                   renderGoal={() => {
                     const subject = activeFocus()?.subject
                     const goalId = subject?.kind === "goal" ? subject.goalId : null

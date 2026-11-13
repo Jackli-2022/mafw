@@ -9,7 +9,9 @@ const read = (p: string) => readFileSync(join(root, p), "utf8")
 describe("浏览器 tab 接线（2026-10-26 工作台合并后）", () => {
   test("浏览器是焦点 stage 的 surface", () => {
     const stage = read("src/renderer/mafw/components/FocusStage.tsx")
-    expect(stage).toContain("BrowserDock")
+    const documentStage = read("src/renderer/mafw/components/DocumentStage.tsx")
+    expect(stage).toContain("DocumentStage")
+    expect(documentStage).toContain("BrowserDock")
   })
   test("MafwShell 经 WorkbenchShell 渲染 FocusStage", () => {
     const shell = read("src/renderer/mafw/MafwShell.tsx")

@@ -109,11 +109,12 @@ test("close targets follow the clicked tab", () => {
   assert.deepEqual(closeRightTabIds(entries, c.id), [])
 })
 
-test("documentTabViews marks only the active id", () => {
+test("documentTabViews marks only the active id and keeps unified ids", () => {
   const a = file("a.ts")
   const b = web("b")
   const views = documentTabViews([a, b], b.id)
 
+  assert.deepEqual(views.map((entry) => entry.id), [a.id, b.id])
   assert.deepEqual(views.map((entry) => entry.active), [false, true])
   assert.deepEqual(views.map((entry) => entry.icon), ["file", "globe"])
 })
