@@ -1483,7 +1483,13 @@ export function MafwShell() {
     },
     // 统一插件包（Task 7）：修订通知 → 重拉 committed descriptors；
     // 已注册包事件 → 事件 hub（只做数据投递，绝不执行插件代码）。
-    decisions: { onEvent: scheduleDecisionRefresh },
+    // 决定记录写入由 gateway `decision.updated` 推送（E6-3）：事件自带完整
+    // record → 就地 upsert；旧 gateway 无 record → 回退 200ms 合并全量刷新。
+    decisions: {
+      onEvent: (event) => {
+        if (!decisionStore.ingest(event)) scheduleDecisionRefresh()
+      },
+    },
     plugins: {
       onChanged: (event) => { void ingestPluginsChanged(event) },
       onEvent: (event) => { ingestPluginEvent(event) },

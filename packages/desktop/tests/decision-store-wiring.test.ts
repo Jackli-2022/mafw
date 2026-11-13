@@ -14,7 +14,7 @@ test("MafwShell owns one decision store and feeds the rail badge", () => {
   assert.match(shell, /void decisionStore\.refresh\(\)/)
   assert.match(shell, /setTimeout\(\(\) => \{ void decisionStore\.refresh\(\) \}, 250\)/)
   assert.match(shell, /scheduleDecisionRefresh/)
-  assert.match(shell, /decisions: \{ onEvent: scheduleDecisionRefresh \}/)
+  assert.match(shell, /if \(!decisionStore\.ingest\(event\)\) scheduleDecisionRefresh\(\)/)
 })
 
 test("attention is reachable through preload and the SDK client", () => {

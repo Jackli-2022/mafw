@@ -71,7 +71,7 @@ export interface PodDeps {
   onPodEvent(event: unknown): void
 }
 
-/** `decision.updated`：决定记录写入后定向刷新决定板。 */
+/** `decision.updated`：决定记录写入后原地补丁（E6-3 事件带 record），旧 gateway 回退刷新。 */
 export interface DecisionDeps {
   onEvent(event: unknown): void
 }

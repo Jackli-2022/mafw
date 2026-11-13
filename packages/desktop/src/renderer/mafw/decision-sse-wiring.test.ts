@@ -9,6 +9,7 @@ const dispatcher = read("sse/dispatcher.ts")
 test("decision updates refresh the board without polling", () => {
   assert.match(dispatcher, /decision\.updated/)
   assert.match(shell, /scheduleDecisionRefresh/)
-  assert.match(shell, /decisions: \{ onEvent: scheduleDecisionRefresh \}/)
+  assert.match(shell, /decisionStore\.ingest\(event\)/)
+  assert.match(shell, /if \(!decisionStore\.ingest\(event\)\) scheduleDecisionRefresh\(\)/)
   assert.doesNotMatch(shell, /setInterval\(\(\) => \{ void decisionStore\.refresh\(\) \}, 15000\)/)
 })

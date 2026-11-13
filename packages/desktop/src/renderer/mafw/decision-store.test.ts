@@ -239,3 +239,186 @@ test("project switch clears previous decisions even if the new fetch fails", asy
   assert.equal(store.items().length, 0)
   assert.equal(store.records().length, 0)
 })
+
+// --- E6-3: incremental patch from `decision.updated` -------------------------
+
+function decisionEvent(overrides: Record<string, unknown> = {}, recordOverrides: Record<string, unknown> = {}) {
+  return {
+    type: "decision.updated",
+    properties: {
+      action: "confirmed",
+      projectDir: "C:/repo",
+      goalId: "g1",
+      revision: 1,
+      recordId: "dec_1",
+      record: record(recordOverrides),
+      ...overrides,
+    },
+  }
+}
+
+function countingStore(projectDir: () => string | null = () => "C:/repo") {
+  const calls = { attention: 0, decisions: 0 }
+  const store = createDecisionStore({
+    api: {
+      attention: async () => { calls.attention += 1; return { items: [] } },
+      decisions: async () => { calls.decisions += 1; return { items: [record()] } },
+    },
+    projectDir,
+  })
+  return { store, calls }
+}
+
+test("ingest inserts the carried record without refetching", () => {
+  const { store, calls } = countingStore()
+  const handled = store.ingest(decisionEvent({}, { status: "decided", updatedAt: "2026-11-13T00:00:00.000Z" }))
+
+  assert.equal(handled, true)
+  assert.equal(store.records().length, 1)
+  assert.equal(store.records()[0]!.status, "decided")
+  assert.equal(calls.attention, 0)
+  assert.equal(calls.decisions, 0)
+  assert.ok(store.revision() >= 1)
+})
+
+test("ingest patches an existing record in place", async () => {
+  const { store, calls } = countingStore()
+  await store.refresh()
+  assert.equal(store.records()[0]!.status, "draft")
+  const before = store.revision()
+
+  const handled = store.ingest(decisionEvent({}, { status: "decided", updatedAt: "2026-11-13T00:00:00.000Z" }))
+
+  assert.equal(handled, true)
+  assert.equal(store.records().length, 1)
+  assert.equal(store.records()[0]!.status, "decided")
+  assert.ok(store.revision() > before)
+  assert.equal(calls.attention, 1)
+  assert.equal(calls.decisions, 1)
+  assert.equal(store.counts().decided, 1)
+})
+
+test("ingest keeps record identity when updatedAt is unchanged", async () => {
+  const { store } = countingStore()
+  await store.refresh()
+  const first = store.records()[0]!
+  const before = store.revision()
+
+  const handled = store.ingest(decisionEvent())
+
+  assert.equal(handled, true)
+  assert.equal(store.records()[0], first)
+  assert.equal(store.revision(), before)
+})
+
+test("ingest ignores a stale record event", async () => {
+  const { store } = countingStore()
+  store.ingest(decisionEvent({}, { status: "decided", updatedAt: "2026-11-13T00:00:00.000Z" }))
+  const fresh = store.records()[0]!
+  const before = store.revision()
+
+  const handled = store.ingest(decisionEvent({}, { status: "draft", updatedAt: "2026-11-11T00:00:00.000Z" }))
+
+  assert.equal(handled, true)
+  assert.equal(store.records()[0], fresh)
+  assert.equal(store.records()[0]!.status, "decided")
+  assert.equal(store.revision(), before)
+})
+
+test("ingest patches attention items with the same id", async () => {
+  const store = createDecisionStore({
+    api: {
+      attention: async () => ({
+        items: [attention({ id: "dec_1", status: "open", summary: "旧摘要" })],
+      } as any),
+      decisions: async () => ({ items: [] }),
+    },
+    projectDir: () => "C:/repo",
+  })
+  await store.refresh()
+  assert.equal((store.items()[0] as any).summary, "旧摘要")
+
+  store.ingest(decisionEvent({}, {
+    status: "decided",
+    rationale: "方案 A 更稳",
+    updatedAt: "2026-11-13T00:00:00.000Z",
+  }))
+
+  const seeded = store.items()[0] as any
+  assert.equal(seeded.status, "decided")
+  assert.equal(seeded.summary, "方案 A 更稳")
+  assert.equal(seeded.id, "dec_1")
+})
+
+test("ingest does not patch attention from a stale event", async () => {
+  const store = createDecisionStore({
+    api: {
+      attention: async () => ({ items: [attention({ id: "dec_1", status: "open", summary: "当前摘要" })] } as any),
+      decisions: async () => ({ items: [record({ status: "decided", updatedAt: "2026-11-13T00:00:00.000Z" })] }),
+    },
+    projectDir: () => "C:/repo",
+  })
+  await store.refresh()
+
+  const handled = store.ingest(decisionEvent({}, {
+    status: "draft",
+    rationale: "过期",
+    updatedAt: "2026-11-10T00:00:00.000Z",
+  }))
+
+  assert.equal(handled, true)
+  assert.equal((store.items()[0] as any).status, "open")
+  assert.equal((store.items()[0] as any).summary, "当前摘要")
+  assert.equal(store.records()[0]!.status, "decided")
+})
+
+test("ingest leaves attention alone when no item matches the id", async () => {
+  const { store } = countingStore()
+  await store.refresh()
+  store.ingest(decisionEvent({}, { updatedAt: "2026-11-13T00:00:00.000Z" }))
+  assert.equal(store.items().length, 0)
+})
+
+test("ingest accepts a bare payload carrying action + record", () => {
+  const { store } = countingStore()
+  const handled = store.ingest({
+    action: "drafted",
+    record: record({ status: "decided" }),
+  })
+  assert.equal(handled, true)
+  assert.equal(store.records().length, 1)
+})
+
+test("ingest rejects events without a record so the caller refetches", () => {
+  const { store, calls } = countingStore()
+  const handled = store.ingest({
+    type: "decision.updated",
+    properties: { action: "drafted", projectDir: "C:/repo", goalId: "g1", revision: 1, recordId: "dec_1" },
+  })
+  assert.equal(handled, false)
+  assert.equal(store.records().length, 0)
+  assert.equal(calls.decisions, 0)
+})
+
+test("ingest rejects malformed records", () => {
+  const { store } = countingStore()
+  assert.equal(store.ingest(decisionEvent({}, { id: "" })), false)
+  assert.equal(store.ingest(decisionEvent({}, { status: "nope" })), false)
+  assert.equal(store.ingest(decisionEvent({}, { updatedAt: "not-a-date" })), false)
+  assert.equal(store.ingest({ properties: { action: "bogus", record: record() } }), false)
+  assert.equal(store.records().length, 0)
+})
+
+test("ingest ignores records from another project", () => {
+  const { store } = countingStore(() => "C:/other")
+  const handled = store.ingest(decisionEvent())
+  assert.equal(handled, true)
+  assert.equal(store.records().length, 0)
+})
+
+test("ingest tolerates separator/case differences in projectDir", () => {
+  const { store } = countingStore(() => "C:\\Repo\\")
+  const handled = store.ingest(decisionEvent())
+  assert.equal(handled, true)
+  assert.equal(store.records().length, 1)
+})
