@@ -84,6 +84,7 @@ export function MenuHost(props: { controller: MenuController }): JSX.Element {
   return (
     <DropdownMenu
       open={!!request()}
+      modal={false}
       onOpenChange={(open) => {
         if (!open) props.controller.close()
       }}
