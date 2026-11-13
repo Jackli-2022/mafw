@@ -17,3 +17,11 @@ test("BrowserDock uses the shared DocumentTabs and one pane per tab", () => {
   assert.match(src, /mafw-browser-tab-pane/)
   assert.doesNotMatch(src, /TabsV2/)
 })
+
+test("browser tabs have a per-tab context menu", () => {
+  const src = read("BrowserDock.tsx")
+  assert.match(src, /buildBrowserTabMenu/)
+  assert.match(src, /onContextMenu=\{requestTabMenu\}/)
+  assert.match(src, /closeOtherBrowserTabs/)
+  assert.match(src, /closeBrowserTabsToRight/)
+})

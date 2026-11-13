@@ -92,6 +92,27 @@ export function closeBrowserTab(id: string): void {
   setActiveId(next)
 }
 
+/** Context-menu action: keep only [id] and make it active. */
+export function closeOtherBrowserTabs(id: string): void {
+  const current = tabs()
+  const keep = current.find((tab) => tab.id === id)
+  if (!keep) return
+  setTabs([keep])
+  setActiveId(keep.id)
+}
+
+/** Context-menu action: keep [id] and everything left of it. */
+export function closeBrowserTabsToRight(id: string): void {
+  const current = tabs()
+  const index = current.findIndex((tab) => tab.id === id)
+  if (index < 0) return
+  const keep = current.slice(0, index + 1)
+  setTabs(keep)
+  if (!keep.some((tab) => tab.id === activeId())) {
+    setActiveId(keep[keep.length - 1]?.id ?? null)
+  }
+}
+
 export function updateBrowserTab(id: string, patch: Partial<BrowserTab>): void {
   setTabs((prev) => prev.map((tab) => (tab.id === id ? { ...tab, ...patch } : tab)))
 }

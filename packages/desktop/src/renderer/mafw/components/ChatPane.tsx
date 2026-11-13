@@ -178,7 +178,7 @@ export type ChatPaneProps = {
   onPermReply: (card: PermissionCardData, reply: "once" | "always" | "reject", message?: string, persist?: boolean | "tool" | "prefix") => void
   onAskSubmit: (card: AskCardData, answers: Record<string, string[]>, custom: Record<string, string>) => void
   onAskCancel: (card: AskCardData) => void
-  /** 打开文件链接：由 shell 推入焦点栈，不再走 editor-open 后门。 */
+  /** 打开文件链接：由 shell 推入焦点栈。 */
   onOpenFile?: (root: string, rel: string) => void
   /** 打开改动审阅面板（切片 2；SessionTurn actions + composer 工具条双入口） */
   onOpenDiffReview?: () => void
@@ -371,7 +371,9 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     ].join(":"))
     .join("|")
   const episodeGroups = () => {
-    const turns = allTurns() as any[]
+    // Use the unfiltered user turns directly: `allTurns` is declared later and
+    // calling it from navTurns -> isTurnHidden hits the const TDZ.
+    const turns = userMessages() as any[]
     const key = episodeStructureKey()
     if (episodeGroupsCache && episodeGroupsCache.turns === turns && episodeGroupsCache.key === key) {
       return episodeGroupsCache.groups
@@ -1599,21 +1601,6 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       .sort((a, b) => (a.time?.created || 0) - (b.time?.created || 0))
   })
 
-  // DeepSeek-style node nav: one node per user turn, preview from text parts.
-  const navTurns = createMemo(() =>
-    userMessages()
-      .filter((m) => !isTurnHidden(m.id))
-      .map(m => {
-        const parts = store.part[m.id] || []
-        const text = parts
-          .filter(p => p?.type === "text" && typeof p.text === "string")
-          .map(p => p.text)
-          .join(" ")
-          .trim()
-        return { id: m.id, text }
-      }),
-  )
-
   // 语音回复：扫描本会话所有 assistant 消息的 text parts，提取 [语音回复 art:<id>]
   // 标记，供 AudioReply 渲染（挂在该 turn 的 SessionTurn 之后，跟在回复文本下方）。
   const voiceRepliesForTurn = (userMsgId: string) => {
@@ -1863,6 +1850,23 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     const all = allTurns()
     return all.slice(Math.max(0, all.length - renderLimit()))
   })
+
+  // DeepSeek-style node nav: one node per user turn, preview from text parts.
+  // 必须定义在 allTurns 之后：isTurnHidden → episodeGroups → allTurns 是同步调用链，
+  // createMemo 会立即求值；提前定义会触发 allTurns TDZ。
+  const navTurns = createMemo(() =>
+    userMessages()
+      .filter((m) => !isTurnHidden(m.id))
+      .map(m => {
+        const parts = store.part[m.id] || []
+        const text = parts
+          .filter(p => p?.type === "text" && typeof p.text === "string")
+          .map(p => p.text)
+          .join(" ")
+          .trim()
+        return { id: m.id, text }
+      }),
+  )
 
   // 进场去抖：仅「本会话加载后新追加的 tail」播 mafw-enter；历史水合/翻旧页不弹
   const [animateTurnId, setAnimateTurnId] = createSignal<string | null>(null)

@@ -10,6 +10,35 @@ export interface BrowserMenuTarget {
   canPick: boolean
 }
 
+export interface BrowserTabMenuTarget {
+  url: string
+  canCloseOthers: boolean
+  canCloseRight: boolean
+}
+
+/** Per-tab context menu: actions target the clicked tab, not the active one. */
+export function buildBrowserTabMenu(target: BrowserTabMenuTarget): MenuModel {
+  const noUrl = target.url.trim().length === 0
+  return {
+    surface: "browser",
+    items: [
+      item("browserTab.close", L.browserTab.close),
+      item("browserTab.closeOthers", L.browserTab.closeOthers, target.canCloseOthers
+        ? {}
+        : { disabled: true, disabledReason: "没有其他标签页" }),
+      item("browserTab.closeRight", L.browserTab.closeRight, target.canCloseRight
+        ? {}
+        : { disabled: true, disabledReason: "右侧没有标签页" }),
+      item("browserTab.copyLink", L.browserTab.copyLink, noUrl
+        ? { disabled: true, disabledReason: "地址栏为空" }
+        : {}),
+      item("browserTab.openExternal", L.browserTab.openExternal, noUrl
+        ? { disabled: true, disabledReason: "地址栏为空" }
+        : {}),
+    ],
+  }
+}
+
 export function buildBrowserMenu(target: BrowserMenuTarget): MenuModel {
   const noUrl = target.url.trim().length === 0
   return {

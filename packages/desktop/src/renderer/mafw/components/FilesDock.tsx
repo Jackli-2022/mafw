@@ -33,6 +33,8 @@ export function FilesDock(props: {
   headerAction?: JSX.Element
   /** 嵌入左 dock 时由项目头承担标题，隐藏面板自带的「文件」头。 */
   showHeader?: boolean
+  /** 左 dock 头部的手动刷新信号；每次递增触发一次根目录重载。 */
+  refreshNonce?: number
   onOpenFile: (rel: string) => void
 }) {
   const [rootEntries, setRootEntries] = createSignal<FsEntry[]>([])
@@ -43,6 +45,7 @@ export function FilesDock(props: {
   const [error, setError] = createSignal<string | null>(null)
   /** root 加载代际：重试/切目录时丢弃迟到结果。 */
   let loadToken = 0
+  let lastRefreshNonce = props.refreshNonce ?? 0
 
   const persistScope = (update: (state: ContentScopeState) => ContentScopeState): void => {
     const key = props.scopeKey ?? null
@@ -138,6 +141,14 @@ export function FilesDock(props: {
     props.contentRoot
     expanded()
     syncWatches()
+  })
+
+  // 左 dock 头部的手动刷新：保留展开态，只重列根与已展开目录。
+  createEffect(() => {
+    const nonce = props.refreshNonce ?? 0
+    if (nonce === lastRefreshNonce) return
+    lastRefreshNonce = nonce
+    loadRoot()
   })
 
   async function refreshDir(rel: string) {

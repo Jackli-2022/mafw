@@ -10,7 +10,7 @@ import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import { Icon } from "@mafw/ui/icon"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { menuController } from "../context-menu/controller"
-import { buildBrowserMenu } from "../context-menu/builders/browser"
+import { buildBrowserMenu, buildBrowserTabMenu } from "../context-menu/builders/browser"
 import { buildBrowserPageMenu } from "../context-menu/builders/browser-page"
 import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
 import { BROWSER_PARTITION, navigationDecision, normalizeAddress } from "../../../shared/browser-policy"
@@ -20,6 +20,8 @@ import {
   activeBrowserTabId,
   browserTabs,
   closeBrowserTab,
+  closeBrowserTabsToRight,
+  closeOtherBrowserTabs,
   openBrowserTab,
   setActiveBrowserTab,
   updateBrowserTab,
@@ -346,6 +348,41 @@ export function BrowserDock(props: { sessionID: string | null }) {
     })
   })
 
+  const requestTabMenu = (id: string, event: MouseEvent) => {
+    const tab = tabs().find((item) => item.id === id)
+    if (!tab) return
+    if (shouldUseNativeMenu(guardFactsFromEvent(event))) return
+    event.preventDefault()
+    event.stopPropagation()
+    const index = tabs().findIndex((item) => item.id === id)
+    const url = tab.url
+    menuController.request(
+      buildBrowserTabMenu,
+      {
+        url,
+        canCloseOthers: tabs().length > 1,
+        canCloseRight: index >= 0 && index < tabs().length - 1,
+      },
+      (action) => {
+        if (action === "browserTab.close") closeTab(id)
+        else if (action === "browserTab.closeOthers") {
+          const removed = tabs().filter((item) => item.id !== id).map((item) => item.id)
+          closeOtherBrowserTabs(id)
+          for (const removedId of removed) removeView(removedId)
+        } else if (action === "browserTab.closeRight") {
+          const removed = tabs().slice(index + 1).map((item) => item.id)
+          closeBrowserTabsToRight(id)
+          for (const removedId of removed) removeView(removedId)
+        } else if (action === "browserTab.copyLink") {
+          if (url) void navigator.clipboard.writeText(url)
+        } else if (action === "browserTab.openExternal") {
+          if (url) void window.api.browser.openExternal(url)
+        }
+      },
+      { point: { x: event.clientX, y: event.clientY } },
+    )
+  }
+
   const requestDockMenu = (event: MouseEvent) => {
     if (shouldUseNativeMenu(guardFactsFromEvent(event))) return
     event.preventDefault()
@@ -382,6 +419,7 @@ export function BrowserDock(props: { sessionID: string | null }) {
           onSelect={(id) => setActiveBrowserTab(id)}
           onClose={(id) => closeTab(id)}
           onMiddleClick={(id) => closeTab(id)}
+          onContextMenu={requestTabMenu}
           trailing={
             <ButtonV2 variant="ghost" size="small" class="mafw-browser-new-tab" aria-label="新建浏览器标签" onClick={newBlankTab}>
               <Icon name="plus" size="small" />

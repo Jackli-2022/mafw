@@ -72,7 +72,9 @@
   `DocumentTabs` 统一文件 / 浏览器 tab 的视觉、关闭、中键关闭与键盘上下文菜单；
   `DocumentToolbar` 统一编辑器动作（保存 / 外部 / 预览 / 改动）与浏览器动作（后退 / 前进 / 刷新 /
   地址 / 点选 / 外部）。编辑器不再渲染私有「编辑器」标题，浏览器不再使用 pill tab + 独立地址 bar。
-  当前两个 stage 仍各自持有文档状态；跨类型混合 tab 未做。
+  当前两个 stage 仍各自持有文档状态；跨类型混合 tab 未做。浏览器 tab 的右键菜单按
+  被点击的 tab 提供关闭 / 关闭其他 / 关闭右侧 / 复制链接 / 系统浏览器打开；左 dock
+  文件面头部提供手动刷新（保留展开态）。
 - **编辑器**：默认 **Monaco**（VS Code 内核；`mafw-editor-engine=codemirror` 回退，挂载失败自动回退），
   行内 diff 装饰、Ctrl/Cmd+S、MAFW 主题 token 映射、minimap ≥720px。详情见本文件 Monaco 段。
 - **文件预览**：md（session-ui markdown）、json 折叠树、csv/tsv 表格、svg 预览/源码、图片、pdf（Chromium

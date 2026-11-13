@@ -23,6 +23,15 @@ test("files is a left-dock face driven by IconRail, with no inner face switch", 
   assert.doesNotMatch(left, /face-switch|mafw-left-dock-switch/)
 })
 
+test("left dock files face keeps a manual refresh action", () => {
+  const left = read("src/renderer/mafw/components/LeftDock.tsx")
+  const files = read("src/renderer/mafw/components/FilesDock.tsx")
+
+  assert.match(left, /filesRefreshNonce/)
+  assert.match(left, /刷新文件树/)
+  assert.match(files, /refreshNonce/)
+})
+
 test("shell passes the active content scope and opens files from the left tree", () => {
   const shell = read("src/renderer/mafw/MafwShell.tsx")
   const start = shell.indexOf("<LeftDock")

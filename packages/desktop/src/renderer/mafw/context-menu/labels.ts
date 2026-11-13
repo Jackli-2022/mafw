@@ -74,6 +74,13 @@ export const L = {
     openLink: "在浏览器打开链接",
     copyImageUrl: "复制图片地址",
   },
+  browserTab: {
+    close: "关闭标签页",
+    closeOthers: "关闭其他标签页",
+    closeRight: "关闭右侧标签页",
+    copyLink: "复制链接",
+    openExternal: "在系统浏览器打开",
+  },
   panel: { openSession: "打开会话", copyId: "复制 ID", cancel: "终止" },
   review: { open: "打开", reveal: "在文件夹中显示", copy: "复制" },
   goal: {

@@ -73,6 +73,7 @@ export function LeftDock(props: Props) {
   const [gwStatus, setGwStatus] = createSignal<any>(null)
   const [query, setQuery] = createSignal("")
   const [hi, setHi] = createSignal(-1)
+  const [filesRefreshNonce, setFilesRefreshNonce] = createSignal(0)
   const [renamingId, setRenamingId] = createSignal<string | null>(null)
   const [renameDraft, setRenameDraft] = createSignal("")
   const [deleteConfirmId, setDeleteConfirmId] = createSignal<string | null>(null)
@@ -367,6 +368,18 @@ export function LeftDock(props: Props) {
     <div ref={dockRef} tabIndex={-1} class="mafw-left-dock" classList={{ overlay: props.mode === "overlay", push: props.mode === "push" }} style={{ width: `${props.width}px` }}>
       <div class="mafw-left-dock-head">
         {projectSwitcher()}
+        <Show when={props.face === "files"}>
+          <TooltipV2 value="刷新文件树" openDelay={300}>
+            <ButtonV2
+              variant="ghost"
+              size="small"
+              class="mafw-left-dock-refresh"
+              icon="refresh"
+              aria-label="刷新文件树"
+              onClick={() => setFilesRefreshNonce((nonce) => nonce + 1)}
+            />
+          </TooltipV2>
+        </Show>
         <TooltipV2 value="关闭左栏" openDelay={300}>
           <ButtonV2 variant="ghost" size="small" class="mafw-layout-toggle" icon="layout-left-partial" aria-label="关闭左栏" onClick={props.onClose} />
         </TooltipV2>
@@ -383,6 +396,7 @@ export function LeftDock(props: Props) {
             scopeKey={props.contentScopeKey ?? null}
             sessionID={props.sessionID ?? null}
             showHeader={false}
+            refreshNonce={filesRefreshNonce()}
             onOpenFile={(rel) => props.onOpenFile?.(rel)}
           />
         </div>

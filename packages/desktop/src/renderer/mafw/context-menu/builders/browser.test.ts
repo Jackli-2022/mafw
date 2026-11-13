@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { buildBrowserMenu } from "./browser"
+import { buildBrowserMenu, buildBrowserTabMenu } from "./browser"
 import { ids } from "../test-helpers"
 import { validateMenu } from "../model"
 
@@ -28,5 +28,34 @@ describe("buildBrowserMenu", () => {
     for (const entry of m.items) {
       if (entry.type === "item") expect(entry.disabled).toBeFalsy()
     }
+  })
+})
+
+describe("buildBrowserTabMenu", () => {
+  test("targets the clicked tab with close/copy/open actions", () => {
+    const m = buildBrowserTabMenu({ url: "https://x", canCloseOthers: true, canCloseRight: true })
+    expect(ids(m)).toEqual([
+      "browserTab.close",
+      "browserTab.closeOthers",
+      "browserTab.closeRight",
+      "browserTab.copyLink",
+      "browserTab.openExternal",
+    ])
+    for (const entry of m.items) {
+      if (entry.type === "item") expect(entry.disabled).toBeFalsy()
+    }
+    expect(validateMenu(m)).toEqual([])
+  })
+
+  test("single tab and empty URL disable the impossible actions", () => {
+    const m = buildBrowserTabMenu({ url: "", canCloseOthers: false, canCloseRight: false })
+    const byId = (id: string) => m.items.find((entry) => entry.type === "item" && entry.id === id) as any
+
+    expect(byId("browserTab.closeOthers").disabled).toBe(true)
+    expect(byId("browserTab.closeRight").disabled).toBe(true)
+    expect(byId("browserTab.copyLink").disabled).toBe(true)
+    expect(byId("browserTab.openExternal").disabled).toBe(true)
+    expect(byId("browserTab.close").disabled).toBeFalsy()
+    expect(validateMenu(m)).toEqual([])
   })
 })

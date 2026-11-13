@@ -17,6 +17,23 @@ test("picker and Chat file opens share the focus-aware file route", () => {
   assert.match(chat, /props\.onOpenFile\?\.\(root, rel\)/)
 })
 
+test("the dead editor-open signal channel is gone", () => {
+  const editor = read("components/EditorDock.tsx")
+  assert.doesNotMatch(shell, /editor-open|requestOpenEditor/)
+  assert.doesNotMatch(editor, /editor-open|pendingEditorOpen|consumeEditorOpen/)
+  assert.match(editor, /props\.openRequest/)
+})
+
+test("episode grouping never calls the later-declared allTurns accessor", () => {
+  const chat = read("components/ChatPane.tsx")
+  const block = chat.slice(
+    chat.indexOf("const episodeGroups ="),
+    chat.indexOf("const episodeForMessage ="),
+  )
+  assert.match(block, /userMessages\(\)/)
+  assert.doesNotMatch(block, /allTurns\(\)/)
+})
+
 test("goal change sets use the Pod revision diff, not the session scope", () => {
   assert.match(shell, /GoalChangeSetStage/)
   assert.match(shell, /podIdForCurrentProject\(\)/)

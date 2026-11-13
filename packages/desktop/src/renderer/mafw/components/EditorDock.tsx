@@ -1,5 +1,5 @@
 // EditorDock：RightDock「编辑器」tab —— 人机协同编辑器（spec §5.2）。
-// - 打开文件（来自「文件」tab 的 editor-open 请求）→ CodeMirror 6；
+// - 打开文件（焦点栈 openRequest / 左侧文件树）→ CodeMirror 6；
 // - VSCode 式保存（Ctrl+S / 保存按钮，显式写盘；dirty 缓冲不自动落盘）；
 // - 外部改动（agent 改了同一文件）：干净 → 静默刷新；dirty → 冲突横幅（绝不静默覆盖）；
 // - 保存时 mtime 版本校验（调研 §3 防线②）：磁盘已变 → 冲突，覆盖需显式选择；
@@ -34,7 +34,6 @@ import {
 import {
   clearDraft, getDraft, getEol, getMtime, setDraft, setEol, setMtime,
 } from "../editor-drafts"
-import { consumeEditorOpen, pendingEditorOpen } from "../editor-open"
 import { fileKindFor } from "../file-kind"
 import { fileProtocol } from "../file-protocol-client"
 import { parseCsv } from "../csv-parse"
@@ -78,7 +77,7 @@ export function EditorDock(props: {
   onIntent?: (intent: ContentIntent) => void
   /** 活动文档 → 内容 surface 标签直接显示文档名。 */
   onActiveFileChange?: (rel: string | null) => void
-  /** 焦点栈驱动的显式打开请求；与全局 pendingEditorOpen 分开，避免双编辑器抢消费。 */
+  /** 焦点栈驱动的显式打开请求；back / crumb / restore 都落在这里。 */
   openRequest?: FocusOpenRequest | null
   diffs?: FileDiffEntry[]
   onSendAnnotation?: (text: string, opts?: { imageDataUrl?: string }) => void
@@ -422,16 +421,7 @@ export function EditorDock(props: {
     marksOwner = sid
   })
 
-  // ── 打开请求（FilesDock → editor-open）───────────────────────────────
-  createEffect(() => {
-    const req = pendingEditorOpen()
-    if (!req) return
-    consumeEditorOpen()
-    if (req.root !== props.contentRoot) return
-    void openRel(req.rel)
-  })
-
-  // ── 焦点栈显式打开请求：不经过全局单例，back / crumb / restore 都能落到位 ──
+  // ── 焦点栈显式打开请求：back / crumb / restore 都能落到位 ──
   let lastExplicitOpen = 0
   createEffect(() => {
     const req = props.openRequest
