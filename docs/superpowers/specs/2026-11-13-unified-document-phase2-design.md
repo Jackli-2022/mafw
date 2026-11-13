@@ -42,10 +42,13 @@ Phase 1 解决了「文件与网页能否同条」。Phase 2 解决「这条文�
   1. **2C-1（已交付）**：web tab 状态迁入 `documents/browser-documents.ts`；
      `browser-tabs.ts` 退化为兼容 facade；`document-tabs-store` 用模块级 effect 自动同步
      web entries，body 不再手写 `syncWebTabs`。
-  2. **2C-2（后续）**：`EditorModel` 的 tab 元数据（root / rel / 顺序 / active / dirty /
-     preview / readOnly）迁入 document 层；`editor-state` 只保留内容与 conflict reducer。
-  3. **2C-3（后续）**：删除兼容 facade，统一 file / web document record 类型。
-- 2C-2 / 2C-3 必须单独立 spec + plan，先做迁移映射与失败回滚设计。
+  2. **2C-2（已交付）**：`EditorModel`（含 root / files / active / dirty / preview /
+     readOnly / content 基准）按 root 迁入 `documents/file-documents.ts`；
+     `editor-model-store.ts` 退化为兼容 facade；`EditorDock` 只把用户动作交给 reducer，
+     文件 entries 由 document store 自动派生。
+  3. **2C-3（后续）**：删除 `browser-tabs` / `editor-model-store` 兼容 facade；如需要，
+     再把 `savedContent` 从 tab record 拆到独立内容层，统一 file / web document record 类型。
+- 2C-3 必须单独立 spec + plan，先做迁移映射与失败回滚设计。
 
 ## 3. 2A 设计
 
