@@ -12,7 +12,7 @@
 | memory store/retrieval | 已关闭 | 产品能力，不做 provider、不改逻辑、不分区 |
 | embedding/reranker | 已交付 | 模型/API/本地/策略可换；memory 核心不变 |
 | automation trigger/action | 已交付（2026-11-13） | action provider 接 live；插件事件可触发 event rule；cron/timer/scheduler 仍由 core 拥有 |
-| goal eval/executor | 未做 | `GoalEval` 是纯产品契约；NodeDriver / 路由 / 人类验收固定 |
+| goal eval/executor | 已交付 GoalEval hook（2026-11-13） | `GoalEvalProvider` + core 校验；NodeDriver / 路由 / 人类验收固定 |
 | storage backend | 已清理（2026-11-13） | `StorageBackend` / `FileStorage` / `SQLiteStorage` 已删除；无数据迁移 |
 
 ## 2. Automation trigger/action
@@ -58,6 +58,8 @@
 先做 **action live wiring + plugin event bridge**，再决定是否需要 trigger provider。多数“新 trigger”需求可以通过事件桥接满足，不必开放 timer 所有权。
 
 ## 3. Goal eval / executor
+
+> **GoalEval hook 已交付（2026-11-13）**：`GoalEvalProvider` + `applyGoalEvalResults` core 校验；reviewer rubric / 人类验收 / NodeDriver 状态机不变。交付记录：`docs/releases/2026-11-13-capability-kernel-phase5-goal-eval.md`。
 
 ### 现状
 
@@ -127,7 +129,7 @@ NodeDriver、路由、人类验收、`planHash`/`evalHash`、artifact 校验、r
 | 子阶段 | 内容 | 估算 |
 |---|---|---|
 | **5.4 Automation live wiring** | 已交付：action provider 接 live；plugin event bridge；trigger 只发事件 | ✅ 2026-11-13 |
-| **5.5 GoalEval hook** | 逐 condition 评估 + 证据；human accept 不变 | 1 周（可选） |
+| **5.5 GoalEval hook** | 已交付：逐 condition 评估 + 核心校验；human accept 不变 | ✅ 2026-11-13 |
 | **5.6 Storage cleanup** | 已交付：删除 `StorageBackend` 死接口 | ✅ 2026-11-13 |
 | **5.7 G5 drill** | 剩余 provider 的切换/回滚/性能演练 | 1 周 |
 
@@ -135,14 +137,14 @@ automation 已交付；剩余 goal/storage 约 **1.5–2.5 周**，而不是路�
 
 ## 6. 需要先定的决策
 
-1. Goal 只做 GoalEval hook，还是也要现有节点 executor？是否明确不开放新节点名？
+Phase 5 剩余项已收口；没有阻塞决策。后续只有按需实现第一方 GoalEval provider / 评估 executor 时才需要新设计。
 
 ## 7. 结论
 
 Phase 5 没有继续“把所有东西 provider 化”：
 
 - **automation** 已按 live wiring + 事件桥接交付，没有把 cron 交给 provider。
-- **goal** 只值得做 GoalEval hook；状态机和人类验收不动。
+- **goal** 已交付 GoalEval hook；状态机和人类验收不动。
 - **storage** 已删除死接口，不做通用后端。
 
-这样 Phase 5 可以从“6–8 周的有状态迁移”收敛成“1.5–2.5 周的剩余清理”，风险也低得多。
+Phase 5 已从“6–8 周的有状态迁移”收敛为已交付的接线 + 清理，风险保持可控。
