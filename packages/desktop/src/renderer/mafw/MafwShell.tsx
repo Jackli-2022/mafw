@@ -84,6 +84,7 @@ import { goalDiscussionRequestCurrent, goalDiscussionTarget, shouldOpenTechLeadF
 import { ingestPluginEvent, ingestPluginsChanged, pluginDescriptors, refreshPluginClient } from "./plugins/plugin-store"
 import { pluginSurfaceIssues, pluginSurfaces, pluginConfigSurfaces } from "./plugins/plugin-view-model"
 import { railItemsFromWebSurfaces, webSurfaceViews } from "./plugins/plugin-web-surface"
+import { PluginMenuWiring } from "./plugins/PluginMenuWiring"
 import {
   EMPTY_PLUGIN_SURFACE_RUNTIME,
   applyPluginRailState,
@@ -3626,6 +3627,7 @@ export function MafwShell() {
             <DataProvider data={store} directory="." onNavigateToSession={(id) => void openSubagentSession(id)}>
               <div class="mafw-shell" classList={{ maximized: winMaximized() }}>
       <MenuHost controller={menuController} />
+      <PluginMenuWiring sessionID={activeSessionId()} />
       <TextMenuBridge />
       <ToastV2.Region />
       <UpdaterBanner />

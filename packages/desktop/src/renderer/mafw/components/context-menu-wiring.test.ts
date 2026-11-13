@@ -50,6 +50,12 @@ test("panels and goal cells are wired", () => {
   expect(read("GoalTimelineLane.tsx")).toContain("buildGoalCellMenu")
 })
 
+test("plugin menu contributions are mounted once by the shell", () => {
+  const shell = read("../MafwShell.tsx")
+  expect(shell).toContain('import { PluginMenuWiring } from "./plugins/PluginMenuWiring"')
+  expect(shell).toContain("<PluginMenuWiring sessionID={activeSessionId()} />")
+})
+
 test("preload uses positional args and file links are not native links", () => {
   expect(read("../../../preload/mafw-api.ts")).toContain('invoke("memory", "setPinned", id, pinned)')
   expect(read("../../../preload/mafw-api.ts")).toContain('invoke("memory", "setSticky", id, sticky, stickyDays)')
