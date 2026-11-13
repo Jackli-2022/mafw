@@ -23,3 +23,11 @@ export function contentDocumentLabel(rel: string | null | undefined): string {
   const name = (rel ?? "").split(/[/\\]/).pop()?.trim()
   return name || "文件"
 }
+
+/**
+ * 打开模式：阅读默认临时预览；修改或显式 persist（文件树明确打开）→ 持久 tab。
+ * persist 只影响 tab 生命周期，不改 lens。
+ */
+export function openModeForTab(input: { intent: ContentIntent; persist?: boolean }): "preview" | "persistent" {
+  return input.persist === true || input.intent === "editing" ? "persistent" : "preview"
+}

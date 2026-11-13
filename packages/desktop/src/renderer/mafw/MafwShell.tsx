@@ -2023,9 +2023,9 @@ export function MafwShell() {
   const [instrumentRailOpen, setInstrumentRailOpen] = createSignal(true)
   let focusOpenNonce = 0
   let decisionFocusSeq = 0
-  const requestFocusOpen = (root: string, rel: string, line?: number) => {
+  const requestFocusOpen = (root: string, rel: string, line?: number, persist = false) => {
     focusOpenNonce += 1
-    setFocusOpenRequest({ root, rel, nonce: focusOpenNonce, line })
+    setFocusOpenRequest({ root, rel, nonce: focusOpenNonce, line, persist })
   }
   let focusDetentSnapshot: WorkbenchDetent | null = null
   try {
@@ -2256,6 +2256,7 @@ export function MafwShell() {
     root: string | null,
     scope: Scope,
     intent?: ContentIntent,
+    opts?: { persist?: boolean },
   ): void => {
     if (!root) return
     revealWorkbench()
@@ -2288,7 +2289,7 @@ export function MafwShell() {
       })()
       return
     }
-    requestFocusOpen(root, rel)
+    requestFocusOpen(root, rel, undefined, opts?.persist === true)
     setFocusState((state) =>
       openSubject(
         { ...seedWorldRoot(state, scope), worldId: scope.worldId },
@@ -3759,7 +3760,7 @@ export function MafwShell() {
               const root = contentRoot()
               if (!root) return
               closeLeftDockIfOverlay()
-              openFileInScope(rel, root, focusScopeFromContent(contentScope()))
+              openFileInScope(rel, root, focusScopeFromContent(contentScope()), undefined, { persist: true })
             }}
             onNewSession={() => { closeLeftDockIfOverlay(); void createSession().then(sid => { if (sid) openSessionTab(sid) }) }}
             onSelectSession={openSessionTab}

@@ -5,6 +5,7 @@ import {
   contentDocumentLabel,
   contentIntentLabel,
   normalizeContentIntent,
+  openModeForTab,
 } from "./content-intent"
 
 test("content intent only exposes reading and editing", () => {
@@ -27,4 +28,11 @@ test("content surface label shows the open document name", () => {
   assert.equal(contentDocumentLabel("C:\\work\\a\\b.ts"), "b.ts")
   assert.equal(contentDocumentLabel(null), "文件")
   assert.equal(contentDocumentLabel(""), "文件")
+})
+
+test("explicit persistent opens keep a tab even in reading intent", () => {
+  assert.equal(openModeForTab({ intent: "reading" }), "preview")
+  assert.equal(openModeForTab({ intent: "reading", persist: true }), "persistent")
+  assert.equal(openModeForTab({ intent: "editing" }), "persistent")
+  assert.equal(openModeForTab({ intent: "editing", persist: true }), "persistent")
 })

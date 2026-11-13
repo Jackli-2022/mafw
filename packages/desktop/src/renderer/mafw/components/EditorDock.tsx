@@ -57,7 +57,7 @@ import { addMark, clearMarks, marksFor, type MarkVisual } from "../annotation-ma
 import { isAnnotationHotkey } from "../annotation-hotkey"
 import type { AnnotationAnchor } from "../../../shared/annotation-types"
 import { DiffReviewPanel, type FileDiffEntry } from "./DiffReviewPanel"
-import type { ContentIntent } from "../content-intent"
+import { openModeForTab, type ContentIntent } from "../content-intent"
 import type { FocusOpenRequest } from "../focus/focus-open"
 
 interface SelectionState {
@@ -439,7 +439,7 @@ export function EditorDock(props: {
     if (req.root !== props.contentRoot) return
     if (req.nonce === lastExplicitOpen) return
     lastExplicitOpen = req.nonce
-    void openRel(req.rel).then(() => {
+    void openRel(req.rel, { persist: req.persist === true }).then(() => {
       if (req.line === undefined) return
       requestAnimationFrame(() => {
         if (req.nonce === props.openRequest?.nonce) editor?.gotoLine(req.line!)
@@ -447,29 +447,34 @@ export function EditorDock(props: {
     })
   })
 
-  /** 阅读 → 临时预览（不堆 tab）；修改 → 持久 tab。 */
+  /** 阅读 → 临时预览（不堆 tab）；修改或显式 persist → 持久 tab。 */
   const openModelFile = (
     m: EditorModel,
     rel: string,
     content: string,
     readOnly: boolean,
     kind: OpenFile["kind"],
+    persist = false,
   ): EditorModel => {
-    const next = props.intent === "reading"
-      ? openPreviewFile(m, rel, content, readOnly, kind)
-      : openFile(m, rel, content, readOnly, kind)
+    const mode = openModeForTab({ intent: props.intent, persist })
+    const next = mode === "persistent"
+      ? openFile(m, rel, content, readOnly, kind)
+      : openPreviewFile(m, rel, content, readOnly, kind)
     // 跨重启草稿：有草稿的文件恢复后必须标 dirty 并转持久 Tab，避免下一次预览替换掉。
     const root = props.contentRoot
     return root && getDraft(root, rel) !== undefined ? markDirty(next, rel) : next
   }
 
-  async function openRel(rel: string) {
+  async function openRel(rel: string, opts: { persist?: boolean } = {}) {
     const root = props.contentRoot
     if (!root) return
     allowEmptyPersist = false
     rememberActiveScroll()
     if (model().files.some(f => f.rel === rel)) {
-      setModel(m => setActive(m, rel))
+      setModel(m => {
+        const promoted = opts.persist === true ? promotePreview(m, rel) : m
+        return setActive(promoted, rel)
+      })
       setMode("edit")
       clearSelection()
       void mountActive()
@@ -496,7 +501,7 @@ export function EditorDock(props: {
       } catch { /* 元数据可选，失败仍可预览 */ }
       setFileVersion(prev => ({ ...prev, [rel]: version }))
       setImageMeta(prev => ({ ...prev, [rel]: { w: 0, h: 0, size } }))
-      setModel(m => openModelFile(m, rel, "", true, "image"))
+      setModel(m => openModelFile(m, rel, "", true, "image", opts.persist))
       setMode("edit")
       clearSelection()
       setIoError(null)
@@ -518,7 +523,7 @@ export function EditorDock(props: {
         if (st.ok) setMtime(root, rel, st.mtimeMs)
       } catch { /* 可选元数据 */ }
       setFileVersion(prev => ({ ...prev, [rel]: Date.now() }))
-      setModel(m => openModelFile(m, rel, "", true, kind))
+      setModel(m => openModelFile(m, rel, "", true, kind, opts.persist))
       setMode("edit")
       clearSelection()
       setIoError(null)
@@ -539,13 +544,13 @@ export function EditorDock(props: {
         setMtime(root, rel, res.mtimeMs)
         setEol(root, rel, res.eol)
         setFileVersion(prev => ({ ...prev, [rel]: res.mtimeMs }))
-        setModel(m => openModelFile(m, rel, res.content, false, editorKind))
+        setModel(m => openModelFile(m, rel, res.content, false, editorKind, opts.persist))
       } else if (res.reason === "too-large" || res.reason === "binary" || res.reason === "encoding") {
         const note = res.reason === "binary" ? "二进制文件（只读）"
           : res.reason === "too-large" ? "文件超过 1MB（只读）"
             : "非 UTF-8 编码（只读，防保存损坏）"
         setReadNotes(prev => ({ ...prev, [rel]: note }))
-        setModel(m => openModelFile(m, rel, "", true, editorKind))
+        setModel(m => openModelFile(m, rel, "", true, editorKind, opts.persist))
       } else {
         setIoError(res.reason === "not-found" ? "文件不存在（可能已被移动/删除）" : "读取文件失败")
         return
