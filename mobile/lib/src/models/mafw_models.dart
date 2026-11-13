@@ -33,6 +33,31 @@ class MafwSession {
     );
   }
 
+  /// Copy with only the supplied fields replaced.
+  ///
+  /// The id is the row identity and can never change. A `null` argument means
+  /// "not in this patch" (the same convention as the live `session.updated`
+  /// payload, whose absent fields must not clear the row) — not "clear it".
+  /// `parentID` is carried over untouched unless explicitly supplied.
+  MafwSession copyWith({
+    String? title,
+    String? projectID,
+    String? directory,
+    String? parentID,
+    Map<String, dynamic>? metadata,
+    int? timeCreated,
+  }) {
+    return MafwSession(
+      id: id,
+      title: title ?? this.title,
+      projectID: projectID ?? this.projectID,
+      directory: directory ?? this.directory,
+      parentID: parentID ?? this.parentID,
+      metadata: metadata ?? this.metadata,
+      timeCreated: timeCreated ?? this.timeCreated,
+    );
+  }
+
   /// Lead 会话（`metadata.mafw.role`）。
   ///
   /// 2026-11-03 起 Lead 取代 Manager 成为项目协调身份，新写入一律是 `lead`；

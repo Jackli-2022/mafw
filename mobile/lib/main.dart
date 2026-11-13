@@ -505,6 +505,9 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
         refreshBus: _workRefresh,
         onOpenGoal: _openGoal,
         onOpenLead: _openLeadChat,
+        // E6-4：聊天列表按 live session 事件增量更新（WS 重建 → 新 stream →
+        // didUpdateWidget 重订阅）。
+        events: _ws?.events,
       ),
     );
   }
