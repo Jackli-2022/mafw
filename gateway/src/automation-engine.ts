@@ -607,30 +607,61 @@ export class AutomationEngine {
 
     const handler = (_data: any) => {
       const goalId = _data?.goalId;
-      if (goalId) this.fireEventRule(rule, goalId);
+      if (goalId) this.fireEventRule(rule, goalId, `goal:${this.getStateVersion(goalId)}`);
     };
 
     const refs: Array<{ event: string; handler: (...args: any[]) => void }> = [];
     for (const eventName of et.on) {
+      // Plugin events arrive through the PluginEventRegistry sink, not eventBus.
+      if (eventName.startsWith('plugin:')) continue;
       eventBus.on(eventName, handler);
       refs.push({ event: eventName, handler });
     }
     this.eventHandlerRefs.set(id, refs);
   }
 
-  private fireEventRule(rule: AutomationRule, goalId: string): void {
+  /**
+   * External event ingress (plugin event sink). Goal events keep the
+   * `goal + stateVersion` dedupe; other events use the session/global scope
+   * plus the rule cooldown only.
+   */
+  handleExternalEvent(event: {
+    type: string;
+    properties?: Record<string, unknown>;
+    sessionID?: string;
+  }): void {
+    if (!event || typeof event.type !== 'string') return;
+    const properties = event.properties ?? {};
+    const goalId = typeof properties.goalId === 'string' ? properties.goalId : undefined;
+    const scopeId = goalId ?? event.sessionID ?? 'external';
+    const dedupeKey = goalId ? `goal:${this.getStateVersion(goalId)}` : undefined;
+
+    for (const rule of this.rules.values()) {
+      if (!rule.enabled || rule.trigger?.type !== 'event') continue;
+      if (!rule.trigger.on.includes(event.type)) continue;
+      try {
+        this.fireEventRule(rule, scopeId, dedupeKey);
+      } catch (err: any) {
+        log.warn(`[AutomationEngine] External event rule ${rule.id} failed: ${err?.message || err}`);
+      }
+    }
+  }
+
+  private fireEventRule(rule: AutomationRule, scopeId: string, dedupeKey?: string): void {
     const et = rule.trigger as EventTrigger;
 
     const cooldownMs = parseDuration(et.perGoalCooldown) ?? 0;
-    const lastFire = this.lastFireTimes.get(`${rule.id}:${goalId}`);
+    const lastFire = this.lastFireTimes.get(`${rule.id}:${scopeId}`);
     if (lastFire && Date.now() - lastFire < cooldownMs) return;
 
-    const stateVersion = this.getStateVersion(goalId);
-    const pairKey = `${goalId}:${stateVersion}`;
-    if (this.reportedPairs.has(pairKey)) return;
+    let pairKey: string | undefined;
+    if (dedupeKey) {
+      pairKey = `${scopeId}:${dedupeKey}`;
+      if (this.reportedPairs.has(pairKey)) return;
+    }
 
-    this.lastFireTimes.set(`${rule.id}:${goalId}`, Date.now());
-    this.reportedPairs.add(pairKey);
+    this.lastFireTimes.set(`${rule.id}:${scopeId}`, Date.now());
+    if (pairKey) this.reportedPairs.add(pairKey);
 
     if (rule.action) {
       this.executeRule(rule.id, 'event', this._ledger);
