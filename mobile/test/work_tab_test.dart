@@ -100,13 +100,13 @@ WorkOverview _overviewA({String dir = _dirA, String needsTitle = '修 CI'}) {
 
 /// [_overviewA] with one more Goal in the **queued** bucket — proves the 15s
 /// fallback poll publishes the whole snapshot instead of a stale goalId patch.
-WorkOverview _overviewB() {
+WorkOverview _overviewB({String needsTitle = '修 CI'}) {
   return WorkOverview.fromJson({
     'projectDir': _dirA,
     'podId': 'pod-a',
     'groups': {
       'needs_you': [
-        _goal('needs_you', 'g-need', '修 CI',
+        _goal('needs_you', 'g-need', needsTitle,
             revision: 2, strategy: 'collaborative', stageKind: 'plan_approval', stageOwner: 'person'),
       ],
       'queued': [
@@ -295,6 +295,19 @@ MafwEvent _canonicalEvent(String type) {
   return MafwEvent.fromJson({
     'type': 'mafw_event',
     'data': {'type': type, 'properties': <String, dynamic>{}},
+  });
+}
+
+/// Flat top-level broadcast with a nested payload (E9-1): `pod.updated` /
+/// `pod.event` / `run.updated` carry their fields in `properties`, not at the
+/// top level of the frame.
+MafwEvent _flatPropertiesEvent(
+  String type, {
+  Map<String, dynamic> properties = const <String, dynamic>{},
+}) {
+  return MafwEvent.fromJson({
+    'type': type,
+    'properties': properties,
   });
 }
 
@@ -557,6 +570,82 @@ void main() {
 
       expect(client.workCalls, 3);
       expect(find.text('新目标'), findsOneWidget);
+    });
+
+    testWidgets('a flat pod.updated with properties.goalId patches that Goal only', (tester) async {
+      final bus = WorkRefreshBus();
+      final client = _FakeWorkClient(overviews: {_dirA: _overviewA()});
+      await _pumpWorkTab(
+        tester,
+        client: client,
+        bus: bus,
+        refreshDebounce: Duration.zero,
+      );
+
+      // One refetch that both renames the touched Goal and adds an unrelated
+      // one in another bucket (the queued snapshot).
+      client.overviews[_dirA] = _overviewB(needsTitle: '修 CI（已更新）');
+      bus.onEvent(_flatPropertiesEvent(
+        'pod.updated',
+        properties: {'podId': 'pod-a', 'kind': 'task', 'goalId': 'g-need'},
+      ));
+      await tester.pump();
+      await tester.pumpAndSettle();
+
+      expect(client.workCalls, 2);
+      // The touched Goal adopts the refetched row …
+      expect(find.text('修 CI（已更新）'), findsOneWidget);
+      expect(find.text('修 CI'), findsNothing);
+      // … and the other buckets are not republished (no full-snapshot
+      // fallback), so a Goal that only exists in the fresh queued bucket would
+      // have to wait for the authoritative 15s poll.
+      expect(find.text('新目标'), findsNothing);
+      expect(find.text('跑着的'), findsOneWidget);
+    });
+
+    testWidgets('a flat pod.updated without goalId falls back to the full snapshot', (tester) async {
+      final bus = WorkRefreshBus();
+      final client = _FakeWorkClient(overviews: {_dirA: _overviewA()});
+      await _pumpWorkTab(
+        tester,
+        client: client,
+        bus: bus,
+        refreshDebounce: Duration.zero,
+      );
+
+      client.overviews[_dirA] = _overviewB(needsTitle: '修 CI（已更新）');
+      // `kind: 'review'` frames carry no goalId (Pod-wide change).
+      bus.onEvent(_flatPropertiesEvent(
+        'pod.updated',
+        properties: {'podId': 'pod-a', 'kind': 'review'},
+      ));
+      await tester.pump();
+      await tester.pumpAndSettle();
+
+      expect(client.workCalls, 2);
+      expect(find.text('修 CI（已更新）'), findsOneWidget);
+      expect(find.text('新目标'), findsOneWidget);
+    });
+
+    testWidgets('a flat run.updated also refetches the work overview', (tester) async {
+      final bus = WorkRefreshBus();
+      final client = _FakeWorkClient();
+      await _pumpWorkTab(
+        tester,
+        client: client,
+        bus: bus,
+        refreshDebounce: Duration.zero,
+      );
+      expect(client.workCalls, 1);
+
+      bus.onEvent(_flatPropertiesEvent(
+        'run.updated',
+        properties: {'sessionID': 'ses_1', 'goalId': 'g-run'},
+      ));
+      await tester.pump();
+      await tester.pumpAndSettle();
+
+      expect(client.workCalls, 2);
     });
 
     test('patchWorkOverview replaces only the buckets that hold the touched Goal', () {

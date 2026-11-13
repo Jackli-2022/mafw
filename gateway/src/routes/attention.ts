@@ -1,11 +1,18 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import type { RouteRegistry } from './registry';
-import { appendReviewAttention, deriveAttention, type ReviewAttentionInput } from '../core/lead/attention';
+import {
+  appendDecisionAttention,
+  appendReviewAttention,
+  deriveAttention,
+  type ReviewAttentionInput,
+} from '../core/lead/attention';
+import type { DecisionRecord } from '../core/decision/decision-record';
 import type { PodGoalView } from '../core/pod/pod-view';
 
 export interface AttentionRouteDeps {
   views(projectDir: string): PodGoalView[];
   reviews?(projectDir: string, views: readonly PodGoalView[]): ReviewAttentionInput[];
+  decisions?(projectDir: string): DecisionRecord[];
 }
 
 function projectDirOf(value: unknown): string {
@@ -22,7 +29,11 @@ export function handleAttention(
   const projectDir = projectDirOf(args?.projectDir);
   const views = deps.views(projectDir);
   const reviews = deps.reviews?.(projectDir, views) ?? [];
-  const items = appendReviewAttention(deriveAttention(views), reviews);
+  const decisions = deps.decisions?.(projectDir) ?? [];
+  const items = appendDecisionAttention(
+    appendReviewAttention(deriveAttention(views), reviews),
+    decisions,
+  );
   return { status: 200, body: { items } };
 }
 

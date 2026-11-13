@@ -1537,6 +1537,7 @@ export type AttentionKind =
   | 'blocked'
   | 'failed'
   | 'direction_review'
+  | 'decision'
 
 export interface AttentionItem {
   id: string

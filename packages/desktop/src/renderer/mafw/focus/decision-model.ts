@@ -85,6 +85,9 @@ function attentionKind(item: AttentionItem): DecisionKind {
     case "plan_approval": return "plan"
     case "direction_review": return "direction"
     case "review": return "acceptance"
+    // The attention DTO carries only `decision`, not the record kind: the record
+    // is the source of truth for kind, so do not invent one here.
+    case "decision": return "other"
     case "answer":
     case "review_item":
     case "blocked":
@@ -103,6 +106,11 @@ export function decisionActionForAttention(item: AttentionItem): DecisionAction 
       return { kind: "goal", goalId: item.goalId, target: "question" }
     case "review":
       return { kind: "goal", goalId: item.goalId, target: "result" }
+    case "decision": {
+      const recordId = item.action.itemId
+      if (!recordId) return { kind: "none" }
+      return { kind: "record", recordId }
+    }
     case "review_item": {
       const itemId = item.action.itemId
       if (!itemId) return { kind: "none" }
@@ -167,12 +175,22 @@ export function buildDecisionBoard(input: {
   goalId?: string | null
 }): DecisionBoardView {
   const goalId = input.goalId ?? null
+  // Draft decisions already projected through attention (E9-2) must not show up
+  // twice; their attention item is the needs-you copy, the record would be the
+  // pending copy of the same decision.
+  const attentionRecordIds = new Set<string>()
+  for (const item of input.attention) {
+    if (item.action.type !== "open_decision") continue
+    const recordId = item.action.itemId
+    if (recordId) attentionRecordIds.add(recordId)
+  }
   const items: DecisionItem[] = [
     ...input.attention
       .filter((item) => goalId === null || item.goalId === goalId)
       .map(attentionItem),
     ...input.records
       .filter((record) => goalId === null || record.goalId === goalId)
+      .filter((record) => !attentionRecordIds.has(record.id))
       .map(recordItem),
   ]
 

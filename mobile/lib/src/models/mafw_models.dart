@@ -318,6 +318,10 @@ String canonicalEventTypeOf(String rawType) {
 /// `innerType` stays empty, and the payload fields sit at the top level of the
 /// frame. **Set and order are pinned** by `test/vocabulary_parity_test.dart`,
 /// which parses the TS contract — do not reorder or hand-add entries there.
+///
+/// E9-1: [kMafwDualShapeEventTypes] is appended after the contract entries —
+/// those three names are emitted as top-level flat frames by the gateway even
+/// though the TS contract lists them as canonical (`RUNTIME_EVENT_TYPES`).
 const Set<String> kMafwFlatEventTypes = {
   'user_question',
   'user_feedback',
@@ -335,6 +339,24 @@ const Set<String> kMafwFlatEventTypes = {
   'goal_node',
   'plugins.changed',
   'connected',
+  ...kMafwDualShapeEventTypes,
+};
+
+/// Event names that travel in **both** shapes (E9-1).
+///
+/// `pod.updated` / `pod.event` / `run.updated` are canonical names
+/// (`RUNTIME_EVENT_TYPES`) that the gateway also broadcasts as flat frames
+/// (`broadcast({type, properties})` in `gateway/src/kernel.ts` and
+/// `pod-service.ts`) because the desktop / mobile shells read them top-level.
+/// Both shapes must parse: flat frames keep their payload for [MafwEvent.goalId]
+/// and work-tab refreshes, canonical envelopes still resolve their inner type.
+///
+/// Every member must also be in [kMafwCanonicalEventTypes]; the parity test in
+/// `test/vocabulary_parity_test.dart` pins that.
+const Set<String> kMafwDualShapeEventTypes = {
+  'pod.updated',
+  'pod.event',
+  'run.updated',
 };
 
 /// WS greeting frame type (always flat, carries `headSeq` / `instanceId`).
@@ -347,8 +369,10 @@ const String kMafwGreetingType = 'connected';
 /// Flat top-level broadcasts (e.g. `goal_created`) keep their own `type` and are
 /// **not** canonical envelopes (`innerType == ''`); their payload fields are
 /// readable through [goalId] / [loop] / [node] / [revision] / [transition] /
-/// [phase] / [verdict] / [error] / [attempt]. Legacy `opencode_event` frames are
-/// likewise not unpacked.
+/// [phase] / [verdict] / [error] / [attempt]. [goalId] / [podId] also read the
+/// frame's nested `properties` map, so the dual-shape pod/run broadcasts
+/// (E9-1, `{type, properties:{goalId, podId}}`) resolve. Legacy
+/// `opencode_event` frames are likewise not unpacked.
 class MafwEvent {
   /// Frame type as received (`mafw_event` for canonical envelopes, the
   /// broadcast name for flat frames).
@@ -437,9 +461,39 @@ class MafwEvent {
     return value is num ? value.toInt() : null;
   }
 
-  /// Owning goal id (`goal_node` / `phase_transition` / `state_change` /
+  /// The payload map of this frame, whatever its shape.
+  ///
+  /// Canonical envelopes carry it as `data.properties`; flat broadcasts nest the
+  /// same map under the frame's own `properties` key (they have no `data`).
+  Map<String, dynamic>? get _payload {
+    final nested = data['properties'];
+    if (nested is Map<String, dynamic>) return nested;
+    return properties;
+  }
+
+  /// First non-empty string for [key] in the payload map, then at the top level.
+  ///
+  /// Flat goal frames put `goalId` at the top level (`goal_node`); the E9-1
+  /// pod/run broadcasts put it in `properties`. Reading both keeps a single
+  /// accessor valid for canonical and flat frames alike.
+  String? _payloadString(String key) {
+    final value = _payload?[key];
+    if (value is String && value.isNotEmpty) return value;
+    final top = data[key];
+    if (top is String && top.isNotEmpty) return top;
+    return null;
+  }
+
+  /// Owning goal id.
+  ///
+  /// `properties.goalId` (canonical envelopes and flat `pod.updated` /
+  /// `pod.event` / `run.updated` frames) falls back to the flat top-level
+  /// `goalId` (`goal_node` / `phase_transition` / `state_change` /
   /// `user_question`).
-  String? get goalId => _flatString('goalId');
+  String? get goalId => _payloadString('goalId');
+
+  /// Owning Pod id (flat `pod.updated` / `pod.event` carry `properties.podId`).
+  String? get podId => _payloadString('podId');
 
   /// Goal loop index (`goal_node` / `phase_transition`).
   int? get loop => _flatInt('loop');

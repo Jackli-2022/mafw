@@ -7163,7 +7163,7 @@ export interface operations {
                             id: string;
                             goalId: string;
                             revision: number;
-                            kind: "answer" | "plan_approval" | "review" | "review_item" | "blocked" | "failed" | "direction_review";
+                            kind: "answer" | "plan_approval" | "review" | "review_item" | "blocked" | "failed" | "direction_review" | "decision";
                             priority: number;
                             coalesceKey: string;
                             title: string;

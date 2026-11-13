@@ -3676,6 +3676,10 @@
                               {
                                 "const": "direction_review",
                                 "type": "string"
+                              },
+                              {
+                                "const": "decision",
+                                "type": "string"
                               }
                             ]
                           },

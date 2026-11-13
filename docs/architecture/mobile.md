@@ -362,7 +362,28 @@ adb shell input keyevent 4                    # 返回（root 页再按会退出
 - 测试：`session_list_events_test.dart` 38（矩阵：update/delete/create/缺字段/隐藏/排序/类型噪声 +
   `time.updated` 建模与重排 8，E7-5）、`sessions_page_test.dart` 11（fake stream：更新不触发全量、
   单次 debounce、项目/路径守卫、`events:null` 旧路径、重订阅、dispose），两文件合计 49。工作 tab
-  未改版（已有 `goalId` 局部更新 `WorkRefreshBus.consumeEvent`）。
+  未改版（已有 `goalId` 局部更新 `WorkRefreshBus.consumeEvent`）；E9-1 起 flat 的
+  `pod.updated` / `pod.event` / `run.updated` 也能触达它（§7.10）。
+
+### 7.10 工作 tab 的 flat pod/run 事件保真（E9-1，2026-11-13）
+
+`pod.updated` / `pod.event` / `run.updated` 是 gateway 的**顶层 flat 广播**（`{type, properties}`，
+名字同时是 canonical 词汇）。此前 mobile 把它们当未知帧：`MafwEvent.fromJson` 把 `data` 置空、
+`shouldRefreshWork` 也不命中 → 工作 tab 收不到刷新信号。
+
+- `kMafwDualShapeEventTypes`（`lib/src/models/mafw_models.dart`）声明这三个名字，并 spread 进
+  `kMafwFlatEventTypes`：flat 帧把 `properties` 保留在 `data`；canonical 帧仍走内层 `data`。
+  契约零改动——`vocabulary_parity_test.dart` 用「`events.ts` 有序前缀 + 恰好这三个 dual-shape 尾巴」钉住。
+- `kWorkRefreshFlatEventTypes`（`event_effects.dart`）纳入同三项 → `shouldRefreshWork` 对 flat 帧
+  返回 true（canonical 分支不变）。
+- `MafwEvent.goalId` / `podId`：先读 `properties.goalId`，再回退 `data.goalId`（canonical / flat
+  两种形状都适用）。flat `pod.updated {properties.goalId}` 因此能命中 `WorkRefreshBus.consumeEvent`
+  的按 Goal 局部 patch：只更新该 Goal 卡，不发布刚出现的 queued Goal；无 `goalId`（目前
+  `pod.updated` 的多数帧，见 E9-3 won't-do）时沿用整页快照。
+- 修复点全在模型与效果表，`WorkTab` / `WorkRefreshBus` 代码零改动；测试直接证明两条路径
+  （partial patch / full snapshot）。
+- 测试：`event_envelope_test.dart` / `event_effects_test.dart` / `vocabulary_parity_test.dart` /
+  `work_tab_test.dart` 合计 64 → 71。
 
 ---
 

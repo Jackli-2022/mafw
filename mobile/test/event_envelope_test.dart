@@ -143,12 +143,102 @@ void main() {
           'phase_transition',
           'state_change',
           'user_question',
+          'pod.updated',
+          'pod.event',
+          'run.updated',
         ]),
       );
       for (final flat in kMafwFlatEventTypes) {
+        if (kMafwDualShapeEventTypes.contains(flat)) {
+          // Dual-shape names (E9-1): the gateway emits them as top-level flat
+          // frames (`{type, properties}`) while their names are also canonical
+          // (`RUNTIME_EVENT_TYPES`), so a `mafw_event`-wrapped variant stays
+          // valid. Both shapes must parse.
+          expect(kMafwCanonicalEventTypes.contains(flat), isTrue, reason: flat);
+          expect(canonicalEventTypeOf(flat), flat, reason: flat);
+          continue;
+        }
         expect(kMafwCanonicalEventTypes.contains(flat), isFalse, reason: flat);
         expect(canonicalEventTypeOf(flat), isEmpty, reason: flat);
       }
+    });
+
+    test('pod.updated / pod.event / run.updated keep their flat frame payload', () {
+      for (final type in const ['pod.updated', 'pod.event', 'run.updated']) {
+        final ev = MafwEvent.fromJson({
+          'type': type,
+          'properties': <String, dynamic>{
+            'podId': 'pod-1',
+            'kind': 'task',
+            'goalId': 'goal-9',
+          },
+        });
+
+        expect(ev.type, type);
+        expect(ev.innerType, isEmpty, reason: type);
+        expect(ev.isCanonical, isFalse, reason: type);
+        expect(ev.isFlatBroadcast, isTrue, reason: type);
+        // The frame itself is kept, so `properties` stays readable.
+        expect(ev.data['type'], type, reason: type);
+        expect(ev.data['properties'], isNotNull, reason: type);
+        expect(ev.goalId, 'goal-9', reason: type);
+        expect(ev.podId, 'pod-1', reason: type);
+      }
+    });
+
+    test('unknown frames keep an empty data map', () {
+      final ev = MafwEvent.fromJson({
+        'type': 'mystery.broadcast',
+        'goalId': 'goal-1',
+      });
+
+      expect(ev.type, 'mystery.broadcast');
+      expect(ev.isFlatBroadcast, isFalse);
+      expect(ev.data, isEmpty);
+      expect(ev.goalId, isNull);
+    });
+
+    test('goalId falls back properties → data for flat and canonical frames', () {
+      // flat with nested properties (pod.updated shape)
+      expect(
+        MafwEvent.fromJson({
+          'type': 'pod.updated',
+          'properties': <String, dynamic>{'podId': 'pod-1', 'goalId': 'g-props'},
+        }).goalId,
+        'g-props',
+      );
+      // flat top-level payload (goal_node) is unchanged
+      expect(
+        MafwEvent.fromJson({'type': 'goal_node', 'goalId': 'g-flat'}).goalId,
+        'g-flat',
+      );
+      // canonical properties
+      expect(
+        MafwEvent.fromJson({
+          'type': kMafwEventEnvelope,
+          'data': {
+            'type': 'pod.event',
+            'properties': <String, dynamic>{'goalId': 'g-canon'},
+          },
+        }).goalId,
+        'g-canon',
+      );
+      // canonical top-level data (no properties)
+      expect(
+        MafwEvent.fromJson({
+          'type': kMafwEventEnvelope,
+          'data': {'type': 'run.updated', 'goalId': 'g-data'},
+        }).goalId,
+        'g-data',
+      );
+      // malformed values read as null
+      expect(
+        MafwEvent.fromJson({
+          'type': 'pod.updated',
+          'properties': <String, dynamic>{'goalId': 42},
+        }).goalId,
+        isNull,
+      );
     });
 
     test('goal_node exposes its lifecycle payload fields', () {
@@ -247,7 +337,7 @@ void main() {
       expect(ev.transition, isNull);
     });
 
-    test('canonical envelopes expose no flat payload fields', () {
+    test('canonical envelopes expose goalId but keep flat-only fields empty', () {
       final ev = MafwEvent.fromJson({
         'type': 'mafw_event',
         'data': {
@@ -261,7 +351,10 @@ void main() {
 
       expect(ev.isCanonical, isTrue);
       expect(ev.isFlatBroadcast, isFalse);
-      expect(ev.goalId, isNull);
+      // E9-1: `goalId` is part of the envelope contract (properties → data), so
+      // the work tab can patch in place for canonical pod/run frames too.
+      expect(ev.goalId, 'goal-1');
+      // Remaining flat-only accessors stay flat-only.
       expect(ev.revision, isNull);
       expect(ev.loop, isNull);
       expect(ev.node, isNull);
