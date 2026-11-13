@@ -93,6 +93,8 @@ describe('MemoryVectorStore', () => {
 
     const mismatched = new MemoryVectorStore(file, 3);
     expect(mismatched.size()).toBe(0);
+    mismatched.upsert('a', [1, 2, 3]);
+    mismatched.flush();
     expect(fs.existsSync(file)).toBe(true);
 
     const restored = new MemoryVectorStore(file, 2);
@@ -125,6 +127,22 @@ describe('EmbeddingIndexer', () => {
     expect(embedded).toEqual(['Abs A k8s setup', 'Abs B']);
     expect(vectors.get('u1')).toEqual([0, 1]);
     expect(vectors.get('u2')).toEqual([1, 1]);
+  });
+
+  test('flushQueue drops batches with wrong count or dimensions', async () => {
+    const dir = tmpDir();
+    const vectors = new MemoryVectorStore(path.join(dir, 'v.json'), 2);
+    const provider: EmbeddingProvider = {
+      name: 'bad-dims',
+      dims: 2,
+      embed: async (texts) => (texts.length === 2 ? [[1, 0]] : texts.map(() => [1, 0, 0])),
+    };
+    const indexer = new EmbeddingIndexer({ vectors, provider });
+    indexer.onUnitWritten({ id: 'u1', primary_abstraction: 'A' } as any);
+    indexer.onUnitWritten({ id: 'u2', primary_abstraction: 'B' } as any);
+    const result = await indexer.flushQueue();
+    expect(result.failed).toBe(2);
+    expect(vectors.size()).toBe(0);
   });
 
   test('document text is capped to avoid pathological abstractions', async () => {

@@ -821,12 +821,16 @@ export interface EmbeddingConfigState {
   engine: 'onnx' | 'llamacpp'
   model: string
   dimensions: number
+  baseUrl: string
   threads: number
   llamacpp: { gpu: string; threads: number; contextSize: number; batchSize: number }
 }
 
 export interface EmbeddingRuntimeState {
   active: string | null
+  providerId: string | null
+  modelTag: string | null
+  dims: number | null
   vectors: number
   indexEntries: number
   coverage: number

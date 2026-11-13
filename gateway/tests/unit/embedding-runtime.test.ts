@@ -112,6 +112,47 @@ describe('embedding-runtime', () => {
     }
   });
 
+  test('dispose cancels the debounce and drops queued work', async () => {
+    jest.useFakeTimers();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rt-dispose-'));
+    let calls = 0;
+    const provider: EmbeddingProvider = {
+      name: 'dispose-fake',
+      dims: 2,
+      embed: async (texts) => {
+        calls++;
+        return texts.map(() => [1, 0]);
+      },
+    };
+    const rt = initEmbeddingRuntime({ baseDir: dir, provider, providerId: 'fake' })!;
+    rt.indexer.enqueueText('u1', 'alpha');
+    rt.scheduleFlush();
+    rt.dispose?.();
+    jest.advanceTimersByTime(3000);
+    await rt.indexer.flushQueue();
+    expect(calls).toBe(0);
+    jest.useRealTimers();
+    setEmbeddingRuntime(null);
+  });
+
+  test('dispose ignores a flush that resolves after teardown', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rt-inflight-'));
+    let resolveEmbed!: (vectors: number[][]) => void;
+    const provider: EmbeddingProvider = {
+      name: 'slow-fake',
+      dims: 2,
+      embed: () => new Promise((resolve) => { resolveEmbed = resolve; }),
+    };
+    const rt = initEmbeddingRuntime({ baseDir: dir, provider, providerId: 'fake' })!;
+    rt.indexer.enqueueText('u1', 'alpha');
+    const pending = rt.indexer.flushQueue();
+    rt.dispose?.();
+    resolveEmbed([[1, 0]]);
+    await pending;
+    expect(rt.vectors.size()).toBe(0);
+    setEmbeddingRuntime(null);
+  });
+
   test('injected provider controls providerId, modelTag, dims and namespace', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rt-meta-'));
     const provider: EmbeddingProvider = {

@@ -14,6 +14,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import { EmbeddingProvider } from './embedding-provider';
+import { namespacedVectorPath } from './embedding-namespace';
 import { log } from '../core/utils/logger';
 
 /**
@@ -61,20 +62,18 @@ export class MemoryVectorStore implements VectorStoreLike {
   private load(): void {
     try {
       if (!fs.existsSync(this.filePath)) return;
-      const data = JSON.parse(fs.readFileSync(this.filePath, 'utf-8'));
-      if (!data || typeof data !== 'object' || !data.vectors) return;
-      if (data.dims !== this.dims) {
+      let data = this.readData(this.filePath);
+      if (!data) return;
+      if (!this.matches(data)) {
+        const fallback = namespacedVectorPath(this.filePath, this.dims, this.version);
         log.warn(
-          `[VectorStore] dims mismatch in ${this.filePath}: file=${data.dims} expected=${this.dims}; starting empty`,
+          `[VectorStore] namespace mismatch in ${this.filePath}; using ${fallback}`,
         );
-        return;
-      }
-      const fileVersion = data.version ?? 1;
-      if (fileVersion !== this.version) {
-        log.warn(
-          `[VectorStore] version mismatch in ${this.filePath}: file=${fileVersion} expected=${this.version}; starting empty`,
-        );
-        return;
+        this.filePath = fallback;
+        if (fallback === data.path) return;
+        if (!fs.existsSync(fallback)) return;
+        data = this.readData(fallback);
+        if (!data || !this.matches(data)) return;
       }
       this.model = data.model || this.model;
       for (const [id, vec] of Object.entries(data.vectors)) {
@@ -83,6 +82,18 @@ export class MemoryVectorStore implements VectorStoreLike {
     } catch (err: any) {
       log.warn(`[VectorStore] failed to load ${this.filePath}: ${err?.message || err}`);
     }
+  }
+
+  private readData(filePath: string): any | null {
+    const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    if (!data || typeof data !== 'object' || !data.vectors) return null;
+    return { ...data, path: filePath };
+  }
+
+  private matches(data: any): boolean {
+    if (data.dims !== this.dims) return false;
+    const fileVersion = data.version ?? 1;
+    return fileVersion === this.version;
   }
 
   flush(): void {
@@ -175,6 +186,7 @@ export class EmbeddingIndexer {
   private provider: EmbeddingProvider;
   private getTextForId?: (id: string) => Promise<string | null>;
   private batchSize: number;
+  private closed = false;
   /** Re-entry guard: backfill and scheduled flushes must not run concurrently
    *  (two ORT batches at once double the CPU spike the thread cap limits). */
   private flushing: Promise<{ indexed: number; failed: number }> | null = null;
@@ -221,12 +233,19 @@ export class EmbeddingIndexer {
     this.vectors.remove(id);
   }
 
+  /** Hot-swap teardown: drop queued work and ignore results already in flight. */
+  close(): void {
+    this.closed = true;
+    this.queue.clear();
+  }
+
   /**
    * Embed everything queued (document kind) and upsert into the vector store.
    * Fail-open: an embedding error drops the batch item and logs — the dense
    * channel converges on a later flush/backfill instead of blocking writes.
    */
   async flushQueue(): Promise<{ indexed: number; failed: number }> {
+    if (this.closed) return { indexed: 0, failed: 0 };
     if (this.flushing) return this.flushing;
     this.flushing = this.flushQueueInner().finally(() => { this.flushing = null; });
     return this.flushing;
@@ -238,15 +257,31 @@ export class EmbeddingIndexer {
     // Drain until the queue is empty: items enqueued while a flush is in
     // flight would otherwise be stranded until the next scheduleFlush (the
     // re-entry guard coalesces concurrent calls into this one).
-    while (this.queue.size > 0) {
+    while (!this.closed && this.queue.size > 0) {
       const items = [...this.queue.values()];
       this.queue.clear();
       for (let i = 0; i < items.length; i += this.batchSize) {
         const batch = items.slice(i, i + this.batchSize);
         try {
           const vectors = await this.provider.embed(batch.map(b => b.text), 'document');
+          if (this.closed) return { indexed, failed };
+          if (!Array.isArray(vectors) || vectors.length !== batch.length) {
+            failed += batch.length;
+            log.warn(
+              `[EmbeddingIndexer] embed returned ${Array.isArray(vectors) ? vectors.length : 'non-array'} vectors for ${batch.length} texts; dropping batch`,
+            );
+            continue;
+          }
           for (let j = 0; j < batch.length; j++) {
-            this.vectors.upsert(batch[j].id, vectors[j]);
+            const vector = vectors[j];
+            if (!Array.isArray(vector) || vector.length !== this.provider.dims || !vector.every(Number.isFinite)) {
+              failed++;
+              log.warn(
+                `[EmbeddingIndexer] invalid vector for ${batch[j].id} (expected dims ${this.provider.dims}); dropping item`,
+              );
+              continue;
+            }
+            this.vectors.upsert(batch[j].id, vector);
             indexed++;
           }
         } catch (err: any) {

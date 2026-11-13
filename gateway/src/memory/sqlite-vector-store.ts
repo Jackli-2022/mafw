@@ -51,21 +51,40 @@ export class SqliteT1VectorStore implements VectorStoreLike {
   readonly migrated: number;
 
   constructor(private db: Database.Database, private opts: SqliteVectorStoreOptions) {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS t1_vectors (
-        key TEXT PRIMARY KEY,
-        dims INTEGER NOT NULL,
-        model TEXT,
-        vector BLOB NOT NULL,
-        updated_at INTEGER DEFAULT (unixepoch())
-      );
-      CREATE INDEX IF NOT EXISTS idx_t1_vectors_model ON t1_vectors(model);
-    `);
+    this.initSchema();
     const existing = (
-      this.db.prepare('SELECT COUNT(*) AS c FROM t1_vectors WHERE model = ? AND dims = ?').get(this.opts.model, this.opts.dims) as { c: number }
+      this.db.prepare('SELECT COUNT(*) AS c FROM t1_vectors_v2 WHERE model = ? AND dims = ?').get(this.opts.model, this.opts.dims) as { c: number }
     ).c;
     this.migrated = existing === 0 && opts.legacyJsonPath ? this.importLegacyJson(opts.legacyJsonPath) : 0;
     this.load();
+  }
+
+  private initSchema(): void {
+    const exists = this.db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 't1_vectors_v2'")
+      .get();
+    if (!exists) {
+      this.db.exec(`
+        CREATE TABLE t1_vectors_v2 (
+          model TEXT NOT NULL,
+          dims INTEGER NOT NULL,
+          key TEXT NOT NULL,
+          vector BLOB NOT NULL,
+          updated_at INTEGER DEFAULT (unixepoch()),
+          PRIMARY KEY (model, dims, key)
+        );
+        CREATE INDEX IF NOT EXISTS idx_t1_vectors_v2_model ON t1_vectors_v2(model, dims);
+      `);
+      const legacy = this.db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 't1_vectors'")
+        .get();
+      if (legacy) {
+        this.db.exec(`
+          INSERT OR IGNORE INTO t1_vectors_v2 (model, dims, key, vector, updated_at)
+          SELECT model, dims, key, vector, updated_at FROM t1_vectors
+        `);
+      }
+    }
   }
 
   private importLegacyJson(filePath: string): number {
@@ -95,10 +114,10 @@ export class SqliteT1VectorStore implements VectorStoreLike {
 
     try {
       const insert = this.db.prepare(
-        `INSERT INTO t1_vectors (key, dims, model, vector, updated_at)
+        `INSERT INTO t1_vectors_v2 (key, dims, model, vector, updated_at)
          VALUES (?, ?, ?, ?, unixepoch())
-         ON CONFLICT(key) DO UPDATE SET dims = excluded.dims, model = excluded.model,
-           vector = excluded.vector, updated_at = unixepoch()`,
+         ON CONFLICT(model, dims, key) DO UPDATE SET vector = excluded.vector,
+           updated_at = unixepoch()`,
       );
       const txn = this.db.transaction(() => {
         for (const [key, vec] of entries) {
@@ -125,7 +144,7 @@ export class SqliteT1VectorStore implements VectorStoreLike {
   private load(): void {
     try {
       const rows = this.db
-        .prepare('SELECT key, vector FROM t1_vectors WHERE model = ? AND dims = ?')
+        .prepare('SELECT key, vector FROM t1_vectors_v2 WHERE model = ? AND dims = ?')
         .all(this.opts.model, this.opts.dims) as Array<{ key: string; vector: Buffer }>;
       for (const row of rows) {
         this.vectors.set(row.key, decodeVector(row.vector));
@@ -156,18 +175,18 @@ export class SqliteT1VectorStore implements VectorStoreLike {
     if (this.dirty.size === 0 && this.deleted.size === 0) return;
     try {
       const upsert = this.db.prepare(
-        `INSERT INTO t1_vectors (key, dims, model, vector, updated_at)
+        `INSERT INTO t1_vectors_v2 (key, dims, model, vector, updated_at)
          VALUES (?, ?, ?, ?, unixepoch())
-         ON CONFLICT(key) DO UPDATE SET dims = excluded.dims, model = excluded.model,
-           vector = excluded.vector, updated_at = unixepoch()`,
+         ON CONFLICT(model, dims, key) DO UPDATE SET vector = excluded.vector,
+           updated_at = unixepoch()`,
       );
-      const del = this.db.prepare('DELETE FROM t1_vectors WHERE key = ?');
+      const del = this.db.prepare('DELETE FROM t1_vectors_v2 WHERE model = ? AND dims = ? AND key = ?');
       const txn = this.db.transaction(() => {
         for (const key of this.dirty) {
           const vec = this.vectors.get(key);
-          if (vec) upsert.run(key, vec.length, this.opts.model, encodeVector(vec));
+          if (vec) upsert.run(key, this.opts.dims, this.opts.model, encodeVector(vec));
         }
-        for (const key of this.deleted) del.run(key);
+        for (const key of this.deleted) del.run(this.opts.model, this.opts.dims, key);
       });
       txn();
       this.dirty.clear();

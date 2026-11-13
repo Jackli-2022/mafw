@@ -29,6 +29,8 @@ export interface EmbeddingRuntime {
   t1Indexer: EmbeddingIndexer;
   /** Debounced async flush of both embedding queues (call after each write). */
   scheduleFlush(): void;
+  /** Hot-swap teardown: cancel the debounce and drop queued/in-flight work. */
+  dispose?(): void;
 }
 
 let runtime: EmbeddingRuntime | null = null;
@@ -100,9 +102,10 @@ export function initEmbeddingRuntime(opts: InitEmbeddingRuntimeOptions): Embeddi
       : new MemoryVectorStore(t1JsonPath, dims, namespace.modelTag, namespace.version);
     const t1Indexer = new EmbeddingIndexer({ vectors: t1Vectors, provider });
 
-    const providerId = opts.providerId ?? cfg?.provider ?? provider.name;
+    const providerId = opts.providerId ?? provider.name;
 
     let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    let closed = false;
     const rt: EmbeddingRuntime = {
       provider,
       providerId,
@@ -114,12 +117,21 @@ export function initEmbeddingRuntime(opts: InitEmbeddingRuntimeOptions): Embeddi
       t1Vectors,
       t1Indexer,
       scheduleFlush() {
-        if (flushTimer) return;
+        if (closed || flushTimer) return;
         flushTimer = setTimeout(() => {
           flushTimer = null;
           Promise.all([indexer.flushQueue(), t1Indexer.flushQueue()]).catch(() => { /* fail-open */ });
         }, 2000);
         (flushTimer as any).unref?.();
+      },
+      dispose() {
+        closed = true;
+        if (flushTimer) {
+          clearTimeout(flushTimer);
+          flushTimer = null;
+        }
+        indexer.close();
+        t1Indexer.close();
       },
     };
 

@@ -31,6 +31,11 @@ export interface RerankerProviderRegistry {
   dispose(): void;
 }
 
+export interface RerankerRegistryOptions {
+  /** Production uses false: the singleton owns the live instance. */
+  retainCreated?: boolean;
+}
+
 function disposeReranker(reranker: Reranker): void {
   try {
     if (typeof reranker.dispose === 'function') {
@@ -44,9 +49,12 @@ function disposeReranker(reranker: Reranker): void {
   }
 }
 
-export function createRerankerProviderRegistry(): RerankerProviderRegistry {
+export function createRerankerProviderRegistry(
+  options: RerankerRegistryOptions = {},
+): RerankerProviderRegistry {
   const factories = new Map<string, RerankerProviderFactory>();
   const created: Reranker[] = [];
+  const retainCreated = options.retainCreated !== false;
 
   for (const id of ['heuristic', 'cross-encoder', 'llamacpp'] as const) {
     factories.set(id, {
@@ -68,7 +76,7 @@ export function createRerankerProviderRegistry(): RerankerProviderRegistry {
       if (!factory) return null;
       try {
         const reranker = factory.create(weights, opts);
-        if (reranker) created.push(reranker);
+        if (reranker && retainCreated) created.push(reranker);
         return reranker;
       } catch {
         return null;

@@ -96,15 +96,14 @@ describe('embedding-config route', () => {
     expect(r.body.runtime.dims).toBe(1024);
   });
 
-  it('POST persists baseUrl and rejects non-http(s) values', async () => {
+  it('POST rejects baseUrl because it is config-file only', async () => {
     const deps = makeDeps();
     server = createServer(deps);
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
-    const ok = await request(server, 'POST', { baseUrl: 'https://example.test/v1/embeddings' });
-    expect(ok.status).toBe(200);
-    expect(ok.body.current.baseUrl).toBe('https://example.test/v1/embeddings');
-    const bad = await request(server, 'POST', { baseUrl: 'file:///etc/passwd' });
-    expect(bad.status).toBe(400);
+    const rejected = await request(server, 'POST', { baseUrl: 'https://example.test/v1/embeddings' });
+    expect(rejected.status).toBe(400);
+    expect(rejected.body.error).toMatch(/config-file/);
+    expect(deps.calls.reinit).toBe(0);
   });
 
   it('POST switches engine: persists + reinits + schedules backfill', async () => {

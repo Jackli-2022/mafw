@@ -156,6 +156,13 @@ export class CrossEncoderReranker implements Reranker {
     return this.loading;
   }
 
+  dispose(): void {
+    this.classifier = null;
+    this.tokenizer = null;
+    this.model = null;
+    this.loading = null;
+  }
+
   async rerank(query: string, candidates: ScoredEntry[], topK: number): Promise<ScoredEntry[]> {
     await this.ensureClassifier();
     if (!this.classifier) {

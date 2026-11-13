@@ -8,7 +8,7 @@ import { config } from '../../config';
 import { createRerankerProviderRegistry } from '../../memory/reranker-registry';
 import type { Reranker } from './reranker';
 
-const registry = createRerankerProviderRegistry();
+const registry = createRerankerProviderRegistry({ retainCreated: false });
 let cached: { key: string; r: Reranker } | null = null;
 
 function disposeReranker(reranker: Reranker | null | undefined): void {

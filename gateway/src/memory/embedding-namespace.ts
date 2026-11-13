@@ -28,23 +28,34 @@ export interface EmbeddingNamespace {
 }
 
 export function sanitizeModelTag(value: string): string {
-  const safe = value
+  return value
     .trim()
     .replace(/[^A-Za-z0-9._-]/g, '_')
     .replace(/^[._-]+/, '');
-  return safe || 'provider';
 }
 
 export function embeddingProviderMeta(
   provider: Pick<EmbeddingProvider, 'name' | 'dims' | 'modelTag' | 'maxInputTokens' | 'batchLimit'>,
 ): EmbeddingProviderMeta {
+  const modelTag = sanitizeModelTag(provider.modelTag ?? provider.name);
+  if (!modelTag) throw new Error('embedding provider name is required');
   return {
-    modelTag: sanitizeModelTag(provider.modelTag ?? provider.name),
+    modelTag,
     dims: provider.dims,
     maxInputTokens: provider.maxInputTokens ?? DEFAULT_MAX_INPUT_TOKENS,
     batchLimit: provider.batchLimit ?? DEFAULT_BATCH_LIMIT,
     version: EMBEDDING_NAMESPACE_VERSION,
   };
+}
+
+/**
+ * A vector file that already exists in another dims/version namespace must not
+ * be overwritten by the new namespace. The suffixed path keeps the legacy
+ * unsuffixed file intact so rolling back to the old provider can reuse it.
+ */
+export function namespacedVectorPath(filePath: string, dims: number, version: number): string {
+  if (/-d\d+-v\d+\.json$/i.test(filePath)) return filePath;
+  return filePath.replace(/\.json$/i, `-d${dims}-v${version}.json`);
 }
 
 export function resolveEmbeddingNamespace(

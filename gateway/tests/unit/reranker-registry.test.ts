@@ -39,6 +39,25 @@ describe('reranker provider registry', () => {
     expect(order).toEqual(['b', 'a']);
   });
 
+  test('retainCreated:false lets the owner drop instances', () => {
+    const order: string[] = [];
+    const registry = createRerankerProviderRegistry({ retainCreated: false });
+    registry.register({
+      id: 'live' as any,
+      create: () => ({
+        name: 'live',
+        strategy: 'live',
+        rerank: () => [],
+        dispose: () => {
+          order.push('live');
+        },
+      }),
+    });
+    registry.create('live');
+    registry.dispose();
+    expect(order).toEqual([]);
+  });
+
   test('unknown / throwing factories return null', () => {
     const registry = createRerankerProviderRegistry();
     registry.register({

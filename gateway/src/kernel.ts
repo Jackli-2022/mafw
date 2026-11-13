@@ -1757,7 +1757,10 @@ class MafwScheduler {
    *  engines without a gateway restart. */
   private initEmbeddingServices(mafwDir: string): void {
     const old = getEmbeddingRuntime();
-    if (old) disposeEmbeddingProvider(old.provider);
+    if (old) {
+      old.dispose?.();
+      disposeEmbeddingProvider(old.provider);
+    }
     setEmbeddingRuntime(null);
     this.consolidationService = null;
 
@@ -1898,6 +1901,56 @@ class MafwScheduler {
         })`,
       );
     }
+    this.wireRouteWriteDeps(mafwDir);
+  }
+
+  /** Keep write-time routing on the live embedding runtime across hot-swaps. */
+  private wireRouteWriteDeps(mafwDir: string): void {
+    const routeRt = getEmbeddingRuntime();
+    if (!routeRt || !this.memoryService) {
+      setRouteWriteDeps(null);
+      return;
+    }
+    const judgeStore = new HarmonicUnitFileStore(mafwDir, this.memoryService.harmonicIndex);
+    const judgeModel = resolveJudgeModel(config.recall);
+    const providerID = judgeModel?.providerID;
+    const modelID = judgeModel?.modelID;
+    const judgeBaseUrl = providerID ? resolveScanBaseUrl(providerID) : undefined;
+    const judgeApiKey = judgeBaseUrl ? this.runtimeGetApiKey(providerID!) : null;
+    setRouteWriteDeps({
+      vectors: routeRt.vectors,
+      provider: routeRt.provider,
+      judge: async (u, ids) => {
+        const v = await consolidationJudge(u, ids, {
+          store: judgeStore,
+          llm: judgeBaseUrl && judgeApiKey && modelID
+            ? { baseUrl: judgeBaseUrl, apiKey: judgeApiKey, model: modelID }
+            : undefined,
+          completion: () => this.runtimeCompletionChannel(),
+          model: providerID && modelID ? { providerID, modelID } : undefined,
+        });
+        if (!v) return null;
+        return { action: v.action, targetId: v.target_id, distinction: v.distinction };
+      },
+      candidateCosine: config.memory.embedding.minCosine,
+      dupCosine: config.memory.embedding.dupCosine,
+      isSuperseded: (id) =>
+        Boolean(this.memoryService!.harmonicIndex.getIndex().entries.find(e => e.id === id)?.superseded_by),
+      readEntry: (id) =>
+        this.memoryService!.harmonicIndex.getIndex().entries.find(e => e.id === id),
+      laya: this.layaDeps
+        ? { client: this.layaDeps.client as any, tauRedundantHigh: config.memory.embedding.laya?.tauRedundantHigh ?? 1.0 }
+        : undefined,
+      readUnit: async (id) => judgeStore.read(id),
+      onRoute: (record) => {
+        try {
+          const logsDir = path.join(mafwDir, 'logs');
+          fs.mkdirSync(logsDir, { recursive: true });
+          fs.appendFileSync(path.join(logsDir, 'consolidation-pairs.jsonl'), JSON.stringify(record) + '\n', 'utf-8');
+        } catch { /* fail-open */ }
+      },
+    });
+    log.info('[RouteWrite] write-time routing enabled');
   }
 
   /** Spawn the laya conflict sidecar (windowsHide mandatory — detached
@@ -4394,57 +4447,9 @@ class MafwScheduler {
       } catch { /* fail-open */ }
     });
 
-    // S1: wire write-time routing (embedding recall + LLM identity judge).
-    // The judge store shares this.memoryService.harmonicIndex so UPDATE merges
-    // land in the live index (fixing the consolidation index divergence).
-    const routeRt = getEmbeddingRuntime();
-    if (routeRt && this.memoryService) {
-      const judgeStore = new HarmonicUnitFileStore(mafwDir, this.memoryService.harmonicIndex);
-      const judgeModel = resolveJudgeModel(config.recall);
-      const providerID = judgeModel?.providerID;
-      const modelID = judgeModel?.modelID;
-      const judgeBaseUrl = providerID ? resolveScanBaseUrl(providerID) : undefined;
-      const judgeApiKey = judgeBaseUrl ? this.runtimeGetApiKey(providerID!) : null;
-      setRouteWriteDeps({
-        vectors: routeRt.vectors,
-        provider: routeRt.provider,
-        judge: async (u, ids) => {
-          const v = await consolidationJudge(u, ids, {
-            store: judgeStore,
-            llm: judgeBaseUrl && judgeApiKey && modelID
-              ? { baseUrl: judgeBaseUrl, apiKey: judgeApiKey, model: modelID }
-              : undefined,
-            completion: () => this.runtimeCompletionChannel(),
-            model: providerID && modelID ? { providerID, modelID } : undefined,
-          });
-          if (!v) return null;
-          return { action: v.action, targetId: v.target_id, distinction: v.distinction };
-        },
-        candidateCosine: config.memory.embedding.minCosine,
-        dupCosine: config.memory.embedding.dupCosine,
-        isSuperseded: (id) =>
-          Boolean(this.memoryService!.harmonicIndex.getIndex().entries.find(e => e.id === id)?.superseded_by),
-        // Near-identical skip check: a value change must route to the judge,
-        // not be dropped as a duplicate.
-        readEntry: (id) =>
-          this.memoryService!.harmonicIndex.getIndex().entries.find(e => e.id === id),
-        // G2 laya redundancy gate (write-phase): only wired when the sidecar is
-        // provisioned (this.layaDeps undefined otherwise → gate skipped).
-        // tauRedundantHigh 1.0 = observe-only (scores still flow to onRoute).
-        laya: this.layaDeps
-          ? { client: this.layaDeps.client as any, tauRedundantHigh: config.memory.embedding.laya?.tauRedundantHigh ?? 1.0 }
-          : undefined,
-        readUnit: async (id) => judgeStore.read(id),
-        onRoute: (record) => {
-          try {
-            const logsDir = path.join(mafwDir, 'logs');
-            fs.mkdirSync(logsDir, { recursive: true });
-            fs.appendFileSync(path.join(logsDir, 'consolidation-pairs.jsonl'), JSON.stringify(record) + '\n', 'utf-8');
-          } catch { /* fail-open */ }
-        },
-      });
-      log.info('[RouteWrite] write-time routing enabled');
-    }
+    // S1: write-time routing follows the live embedding runtime (also re-run
+    // from initEmbeddingServices on hot-swap).
+    this.wireRouteWriteDeps(mafwDir);
 
     this.mediaPluginLoader = new MediaPluginLoader(path.join(mafwDir, 'media-plugins'), {
       getApiKey: this.runtimeGetApiKey.bind(this),

@@ -446,11 +446,12 @@ export interface EmbeddingConfigUpdate {
   provider?: string
   engine?: string
   model?: string
-  baseUrl?: string
   threads?: number
   llamacpp?: { gpu?: string; threads?: number; contextSize?: number; batchSize?: number }
 }
 ```
+
+> **Execution ruling (2026-11-13):** `baseUrl` is **not** accepted by `POST /api/memory/embedding-config`; it can exfiltrate the DashScope key / enable SSRF. The route returns 400 and custom endpoints remain config-file only. Tests below assert the rejection. T1 uses `t1_vectors_v2` with `(model, dims, key)` to preserve rollback rows.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -467,15 +468,14 @@ it('GET exposes providerId, modelTag and dims', async () => {
   expect(r.body.runtime.dims).toBe(1024)
 })
 
-it('POST persists baseUrl and rejects non-http(s) values', async () => {
+it('POST rejects baseUrl because it is config-file only', async () => {
   const deps = makeDeps()
   server = createServer(deps)
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
-  const ok = await request(server, 'POST', { baseUrl: 'https://example.test/v1/embeddings' })
-  expect(ok.status).toBe(200)
-  expect(ok.body.current.baseUrl).toBe('https://example.test/v1/embeddings')
-  const bad = await request(server, 'POST', { baseUrl: 'file:///etc/passwd' })
-  expect(bad.status).toBe(400)
+  const rejected = await request(server, 'POST', { baseUrl: 'https://example.test/v1/embeddings' })
+  expect(rejected.status).toBe(400)
+  expect(rejected.body.error).toMatch(/config-file/)
+  expect(deps.calls.reinit).toBe(0)
 })
 ```
 
@@ -516,7 +516,7 @@ Expected: FAIL — missing runtime fields / no switch behavior.
 - Update `embedding-config.test.ts` `makeDeps()` so `currentConfig()` includes `baseUrl` and `runtimeState()` includes `providerId: 'local-onnx'`, the sanitized `modelTag`, and `dims: 1024`.
 - `initEmbeddingServices`: build `EmbeddingProviderConfig` from `config.memory.embedding` including `baseUrl`, `engine`, `threads`, `llamacpp`, `getApiKeyFn`. Resolve `providerId = embeddingProviderIdFromConfig(cfg)`. Create registry, `provider = registry.create(providerId, cfg)`, then `initEmbeddingRuntime({ provider, providerId, baseDir, vectorDb, getTextForId })`. Dispose the old provider with `dispose()` / legacy `killServer()` before clearing runtime. If `initEmbeddingRuntime` returns null, dispose the newly created provider and leave the dense channel off (BM25-only).
 - `embeddingConfigDeps`: return `providerId`, `modelTag`, `dims` from `getEmbeddingRuntime()`; `active` remains `provider.name`.
-- `embedding-config` route: validate `baseUrl` is empty or `http(s)://`; persist it; include `baseUrl` in GET current config; keep existing enum/range checks.
+- `embedding-config` route: reject `baseUrl` in POST (`config-file only`); include `baseUrl` in GET current config; keep existing enum/range checks.
 - Do not change `MemoryService` or recall paths.
 
 - [ ] **Step 4: Run tests to verify they pass**

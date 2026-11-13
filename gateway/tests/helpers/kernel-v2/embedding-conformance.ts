@@ -12,16 +12,23 @@ export async function runEmbeddingConformance(provider: EmbeddingProvider): Prom
   if (typeof provider.name !== 'string' || provider.name.trim() === '') {
     errors.push('name is required');
   }
-  const meta = embeddingProviderMeta(provider);
-  if (!meta.modelTag) errors.push('modelTag is required');
+  let meta: ReturnType<typeof embeddingProviderMeta> | null = null;
+  try {
+    meta = embeddingProviderMeta(provider);
+  } catch (err) {
+    errors.push(messageOf(err));
+  }
+  if (meta) {
+    if (!meta.modelTag) errors.push('modelTag is required');
+    if (!Number.isInteger(meta.maxInputTokens) || meta.maxInputTokens <= 0) {
+      errors.push('maxInputTokens must be a positive integer');
+    }
+    if (!Number.isInteger(meta.batchLimit) || meta.batchLimit <= 0) {
+      errors.push('batchLimit must be a positive integer');
+    }
+  }
   if (!Number.isInteger(provider.dims) || provider.dims <= 0) {
     errors.push('dims must be a positive integer');
-  }
-  if (!Number.isInteger(meta.maxInputTokens) || meta.maxInputTokens <= 0) {
-    errors.push('maxInputTokens must be a positive integer');
-  }
-  if (!Number.isInteger(meta.batchLimit) || meta.batchLimit <= 0) {
-    errors.push('batchLimit must be a positive integer');
   }
 
   try {

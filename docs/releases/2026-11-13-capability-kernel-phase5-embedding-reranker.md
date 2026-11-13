@@ -21,13 +21,14 @@
   - `embeddingProviderIdFromConfig()` 把现有配置映射到 provider id。
   - 未知/抛错工厂 fail-open 为 null；创建实例 LIFO dispose。
 - `initEmbeddingRuntime` 支持注入 provider，runtime 暴露 `providerId` / `modelTag` / `dims` / `namespace`。
-- `MemoryVectorStore` 按 `dims + version` 校验文件；不匹配时跳过旧文件、从空命名空间开始（旧文件保留）。
-- `SqliteT1VectorStore` 按 `model + dims` 加载，避免混用不同 embedding space。
-- `kernel.initEmbeddingServices` 通过 registry 创建 provider；hot-swap 前 dispose 旧 provider；新 runtime 初始化失败时 dispose 新 provider 并回退 BM25-only。
+- `MemoryVectorStore` 按 `dims + version` 校验文件；不匹配时改写到带 `-d<dims>-v<version>` 后缀的命名空间，旧文件保留。
+- `SqliteT1VectorStore` 改用 `(model, dims, key)` 复合主键的 `t1_vectors_v2` 表；首次启动从旧 `t1_vectors` 复制，旧表保留。
+- `kernel.initEmbeddingServices` 通过 registry 创建 provider；hot-swap 前 dispose 旧 runtime（取消防抖/丢弃在飞结果）和旧 provider；新 runtime 初始化失败时 dispose 新 provider 并回退 BM25-only。
+- 写时路由在每次 hot-swap 后重新绑定到新 runtime（`wireRouteWriteDeps`），不会继续用旧 provider/旧 vector store。
 - `/api/memory/embedding-config`：
-  - GET 暴露 `providerId` / `modelTag` / `dims`。
-  - POST 接受 `baseUrl`（空或 http(s)），持久化并触发 hot-swap + background backfill。
-- 向量是派生数据：换模型只重建向量；旧向量文件保留，切回旧 provider 可直接复用。
+  - GET 暴露 `providerId` / `modelTag` / `dims` / `baseUrl`。
+  - POST 只接受 provider/engine/model/threads/llamacpp；`baseUrl` 仍只允许通过 config file 设置（避免任意 endpoint 拿到 API key / SSRF）。
+- 向量是派生数据：换模型只重建向量；旧命名空间文件保留，切回旧 provider 可直接复用。
 
 ### Reranker provider
 
@@ -53,16 +54,19 @@
 
 - **memory 核心未改**：`MemoryService`、`HarmonicUnitFileStore`、谐波索引、soft supersede、T1 隔离、100ms recall、pinned/sticky 逻辑保持原样；memory 仍不按项目/会话分区。
 - **默认行为不变**：`memory.embedding.provider=off` 时不创建 runtime；未配置 reranker 时仍为 `off`。
-- **维度隔离**：同 `modelTag`、不同 dims 的旧向量文件不会被加载；旧文件保留，切回旧维度仍可读。
+- **维度隔离**：同 `modelTag`、不同 dims 的旧向量文件不会被加载；新维度写到独立后缀命名空间，旧文件保留，切回旧维度仍可读。
 - **版本隔离**：`vectors-*.json` 写入 `version`；旧文件缺省按 v1 读取。
+- **T1 回滚**：`t1_vectors_v2` 以 `(model, dims, key)` 为主键；新维度写入不会覆盖旧维度行。
+- **热切换**：旧 runtime dispose 后取消防抖、丢弃队列/在飞结果；旧 provider 不再被调用。
 - **失败回退**：embedding init / embed 失败 → dense 通道关闭或 `computeDenseScores` 返回 null，BM25 仍可用；reranker 失败/不可用 → 未精排结果。
-- **模型/API/本地/策略**：由 provider 工厂与 config 选择，不引入第三方包 loader。
+- **模型/API/本地/策略**：由 provider 工厂与 config 选择，不引入第三方包 loader；自定义 endpoint 走 config file。
 
 ## 验证
 
-- 本计划新增 **21 个测试**（embedding metadata/registry/runtime/namespace/route/switch、reranker strategy/registry/hot-path/conformance）。
-- gateway 全量：**7098 passed / 1 skipped / 7099 total**（904 suites）。
+- 本计划新增 **26 个测试**（embedding metadata/registry/runtime/namespace/route/switch/dispose、reranker strategy/registry/hot-path/conformance、live wiring source pin）。
+- gateway 全量：**7103 passed / 1 skipped / 7104 total**（905 suites）。
 - gateway typecheck：`npx tsc --noEmit -p tsconfig.json` 退出 0。
+- SDK build + tests：`npm run build -w @mafw/sdk` 通过；`npm test -w @mafw/sdk` **224 / 224 pass**。
 - 定向回归：embedding runtime / vector store / T1 / embedding-config / reranker factory / singleton / conformance 全部通过。
 
 ## 明确未做
@@ -75,10 +79,23 @@
 
 ## Rollback
 
-- embedding：把 `memory.embedding.provider` 切回旧值（或 `off`）并重启/热切换；旧 `vectors-<modelTag>.json` / T1 rows 保留，切回即可复用。
+- embedding：把 `memory.embedding.provider` 切回旧值（或 `off`）并重启/热切换；旧 `vectors-<modelTag>.json` / `t1_vectors_v2` 旧维度行保留，切回即可复用。
 - 新 provider 初始化失败：runtime 为 null，dense 通道关闭，BM25 继续工作。
 - reranker：把 `search.reranker` 设为 `off`；旧 sidecar 由 singleton dispose。
 - 代码回滚：回退本阶段提交即可；没有 memory schema/unit 迁移。
+
+## 审查修复（2026-11-13）
+
+- **C1 向量文件被新维度覆盖**：`MemoryVectorStore` 在 dims/version 不匹配时改写到 `-d<dims>-v<version>` 命名空间；旧 unsuffixed 文件保留。补充“新维度写入后切回旧维度仍可读”的测试。
+- **C2 热切换旧 runtime 在飞 flush**：`EmbeddingRuntime.dispose()` 取消防抖、`EmbeddingIndexer.close()` 丢弃队列并在 `await` 后拒绝写入；kernel 先 dispose 旧 runtime 再 dispose provider。补充 dispose / 在飞 flush 测试。
+- **I2 T1 回滚**：`t1_vectors_v2` 使用 `(model, dims, key)` 复合主键；旧 `t1_vectors` 首次启动复制一次并保留。补充“新维度写入后切回旧维度仍可读”的测试。
+- **I1 写时路由旧引用**：抽出 `wireRouteWriteDeps()`，每次 hot-swap 重新绑定；`initServices` 复用。
+- **I4 baseUrl 安全**：POST 不再接受 `baseUrl`（返回 400）；自定义 endpoint 只允许 config file 设置，避免任意 endpoint 拿到 API key / SSRF。
+- **I5 reranker 引用泄漏**：registry 增加 `retainCreated`；live singleton 使用 `retainCreated:false`；`CrossEncoderReranker.dispose()` 释放模型句柄。
+- **I6 embed 输出校验**：`EmbeddingIndexer` 校验向量数量/维度/有限值，非法批次丢弃；`SqliteT1VectorStore` 写入固定 dims。
+- **I8 conformance kit 抛错**：空 name / 非法 metadata 转为错误列表；kit 不再抛错。
+- **I7 live wiring**：新增 `embedding-live-wiring.test.ts` source pin；完整 kernel hot-swap harness 仍未覆盖（见 Deferred）。
+- **Deferred（Important）**：`LlamaCppServerProvider` / `LlamaCppReranker` 在“正在启动时 dispose”的 generation/epoch 竞态未修；代价是极端 hot-swap 时可能遗留一个 sidecar。后续单独处理。
 
 ## 关键 commit
 

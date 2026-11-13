@@ -46,7 +46,7 @@ describe('SqliteT1VectorStore', () => {
     expect(store.size()).toBe(1);
     expect(store.ids()).toEqual(['b']);
     store.flush();
-    const rows = db.prepare('SELECT key FROM t1_vectors').all() as Array<{ key: string }>;
+    const rows = db.prepare('SELECT key FROM t1_vectors_v2').all() as Array<{ key: string }>;
     expect(rows).toEqual([{ key: 'b' }]);
   });
 
@@ -92,6 +92,8 @@ describe('SqliteT1VectorStore', () => {
 
     const mismatched = new SqliteT1VectorStore(db, { dims: 3, model: 'm1' });
     expect(mismatched.size()).toBe(0);
+    mismatched.upsert('a', [1, 2, 3]);
+    mismatched.flush();
 
     const restored = new SqliteT1VectorStore(db, { dims: 2, model: 'm1' });
     expect(Array.from(restored.get('a')!)).toEqual([1, 0]);
