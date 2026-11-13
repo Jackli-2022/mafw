@@ -872,7 +872,7 @@ Phase 3.6 plugin host 自动注册（2026-11-13，默认关闭）：
 
 | # | 现状 | 边界 / 后续 |
 |---|---|---|
-| E4-1 | `config.resources`（采样间隔 / 磁盘·堆阈值 / 连接·进程·配额上限 / 缓冲上限）深合并进默认配置；`core/timer-service.ts` 提供命名 timer 台账（同名 `every` 抛错、默认 unref、`clear` 幂等、`disposeAll`）。`resources/` 只放台账（`sdk-session.ts` 移到 `runtime/`）。长驻 interval 迁入：`governor:sample`、`ws:ping`、`ws:device-cleanup`、`sse:ping:<uuid>`、`python:sweep`。 | **不是全进程 inventory**：`serveWatchdog` / `heartbeat` / `queueSweep` / `sessionSweep` / `discoveryHeartbeat` 等 kernel 自有 interval 与短命 retry/超时仍在本地；插件 loader 的 interval 留给后续波次。 |
+| E4-1 | `config.resources`（采样间隔 / 磁盘·堆阈值 / 连接·进程·配额上限 / 缓冲上限）深合并进默认配置；`core/timer-service.ts` 提供命名 timer 台账（同名 `every` 抛错、默认 unref、`clear` 幂等、`disposeAll`）。`resources/` 只放台账（`sdk-session.ts` 移到 `runtime/`）。长驻 interval 迁入：`governor:sample`、`ws:ping`、`ws:device-cleanup`、`sse:ping:<uuid>`、`python:sweep`。 | **不是全进程 inventory**：`serveWatchdog` / `heartbeat` / `queueSweep` / `sessionSweep` / `discoveryHeartbeat` 等 kernel/boot 自有 interval 与短命 retry/超时仍在本地；插件 loader 的 interval 留给后续波次（E8-1 已收口 kernel/boot 长驻部分，见「计时器台账」）。 |
 | E4-2 | `resources/disk.ts` 异步 `fs.statfs` 采样数据根（`config.resolvePath()`）：默认 warn 2 GiB / critical 512 MiB，30s 一次且启动立即采一次。回滞：critical→warn 需回到 **1.5× critical**（768 MiB），warn→ok 需回到 **1.1× warn**（2.2 GiB）；升级按阈值立即。`statfs` 失败 → `unknown` 且不降级（fail-open）。 | critical 动作见「降级矩阵」；media artifact 已有内存回退，不额外拦截。 |
 | E4-3 | `resources/heap.ts`：`memoryUsage()` + `v8.getHeapStatistics().heap_size_limit`，默认 warn 0.75 / critical 0.9，回滞 **0.05**（critical <0.85 才回 warn，warn <0.70 才回 ok）。与磁盘共用 `governor:sample`；采样抛错保留上一份样本/状态（fail-open）。 | 不在 E4 强制 GC；堆压力不阻断 `memory.add`（与写盘危险无关）。 |
 | E4-4 | `ConnectionTable`：HTTP socket 计数（`httpOpen`，仅观测）+ SSE/WS/voice/terminal 逻辑连接 lease（`release` 幂等）。HTTP **256** 走 `server.maxConnections` 硬帽；软帽 SSE/WS 各 64、voice/terminal 各 16；超限 SSE 503 `{code:'connection_limit'}`，WS/voice/terminal 在 upgrade 阶段 503（不升级）；`refused` 按 kind 计数；连接上限 `0`/负数 = 不限。`connections.sse` 只覆盖 `/api/events` 与 plugin-web SSE（`/api/plugins/:name/events`）；**TTS `/api/tts/stream` 与 MCP SSE keepalive 不在连接表内**。 | HTTP 无软拒绝路径；FD 不设硬上限（`handles.fdCount` 仅 Linux 观测）。 |
@@ -919,9 +919,17 @@ resources:
 | `ws:device-cleanup` | 60s | 同上 |
 | `sse:ping:<uuid>` | 15s | `events/sse-attach.ts`，连接 dispose 即 clear |
 | `python:sweep` | 5min | `python/kernel-service.ts` 的 `SessionKernels` |
+| `pod:event-prune` | 24h | `kernel.ts`（启动立即跑一次） |
+| `pod:event-wake` | 60s | `kernel.ts` |
+| `heartbeat:sweep` | 30min | `kernel.ts` |
+| `queue:sweep` | 60s | `kernel.ts`（busy 15min / 队列项 24h TTL） |
+| `session:sweep` | 60s | `kernel.ts`（`SessionRegistry`） |
+| `serve:watchdog` | 30s（`serveWatchdogIntervalMs`） | `kernel.ts`，`stopServeWatchdog()` 清本 handle |
+| `discovery:heartbeat` | 10s | `boot.ts`（`publishInstanceDiscovery`；`releaseInstanceOwnership` 清） |
 
 `/api/kernel/stats.timers` 是**这张表**的视图（`sse:ping:*` 按 family 折叠），不是进程全部 timer：
-kernel 的 watchdog/heartbeat/queue-sweep/session-sweep 等自有 interval 与短命 retry 仍在各自模块本地。
+E8-1 之后 kernel/boot 的长驻 interval 已全部在台账内；短命 retry/超时、插件 loader interval
+与第三方 transport 的本地 interval 仍留在各自模块。
 
 ### 降级矩阵（as shipped）
 
@@ -964,7 +972,7 @@ kernel 的 watchdog/heartbeat/queue-sweep/session-sweep 等自有 interval 与�
 ### 已知延后（不在 E4 范围）
 
 - 降级前已入队任务的二次校验（pump 处回撤/抢占）与跨压力恢复补跑。
-- 全进程 timer inventory（kernel 自有 interval、插件 loader interval）。
+- 全进程 timer inventory 的剩余部分（插件 loader interval、self-update / 第三方 transport 的本地 interval）。
 - 插件/manager 会话的配额副作用（内部会话失败当前降级为 log；未给 UI 明确 429 文案）。
 - ~~MCP `mafw_add_memory` 的磁盘门~~（E7-4 已收口，见「E7 部署前 deferred 收口」）。
 - ~~review-items 的 SDK 债务~~（E7-2 已收口：`DEAD_CONTRACT_TODO` 删除，4 个 op 由
@@ -1165,7 +1173,7 @@ E5b 已知残留（同实例 reset 的低 head、busy/后台竞态）见 release
 ### 残余（E7 后仍 deferred）
 
 - 约 300 个 op 的 response schema 覆盖（渐进补齐）。
-- 全进程 timer inventory（serve watchdog / heartbeat / queue sweep / loader 等）。
+- 全进程 timer inventory 的剩余部分（插件 loader、self-update / 第三方 transport 等）。
 - mobile 工作 tab 增量渲染（已有 `goalId` 局部更新）。
 - `pod.updated` 记录级 payload、attention → decision 投影、OS keychain / 进程签名、MCP human 工具。
 - 强制版本协商 / SDK 全量 schema 类型化。
