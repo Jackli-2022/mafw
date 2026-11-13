@@ -15,8 +15,8 @@ import {
   requestCloseDocumentTab,
   resetDocumentTabsForTests,
   syncFileTabs,
-  syncWebTabs,
 } from "./document-tabs-store"
+import { closeBrowserTab, openBrowserTab, resetBrowserTabsForTests, updateBrowserTab } from "../browser-tabs"
 import {
   configureDocumentListStorage,
   documentListStorageKey,
@@ -45,14 +45,19 @@ function fakeStorage() {
 
 const fileId = (rel: string) => `file:C:/repo\u0000${rel}`
 
+function web(id: string, label = id): void {
+  openBrowserTab(`https://${id}.example`, { id, newTab: true, title: label })
+}
+
 beforeEach(() => {
+  resetBrowserTabsForTests()
   resetDocumentTabsForTests()
   resetDocumentListPersistenceForTests()
 })
 
 test("file and web tabs merge into one stable strip", () => {
   syncFileTabs("C:/repo", [view("a.ts")])
-  syncWebTabs([view("w1", "Example", { icon: "globe" })])
+  web("w1", "Example")
 
   assert.deepEqual(documentTabs().map((entry) => entry.kind), ["file", "web"])
   assert.deepEqual(documentTabs().map((entry) => entry.view.label), ["a.ts", "Example"])
@@ -64,7 +69,7 @@ test("file and web tabs merge into one stable strip", () => {
 
 test("removing files leaves web tabs and keeps their order", () => {
   syncFileTabs("C:/repo", [view("a.ts"), view("b.ts")])
-  syncWebTabs([view("w1", "W", { icon: "globe" })])
+  web("w1", "W")
   syncFileTabs("C:/repo", [])
 
   assert.deepEqual(documentTabs().map((entry) => entry.kind), ["web"])
@@ -73,7 +78,7 @@ test("removing files leaves web tabs and keeps their order", () => {
 
 test("a different root replaces stale file tabs but not web tabs", () => {
   syncFileTabs("C:/repo", [view("a.ts")])
-  syncWebTabs([view("w1", "W", { icon: "globe" })])
+  web("w1", "W")
   syncFileTabs("C:/worktree", [view("a.ts")])
 
   const files = documentTabs().filter((entry) => entry.kind === "file")
@@ -84,7 +89,7 @@ test("a different root replaces stale file tabs but not web tabs", () => {
 
 test("activate sets active id and kind; unknown ids are ignored", () => {
   syncFileTabs("C:/repo", [view("a.ts")])
-  syncWebTabs([view("w1", "W", { icon: "globe" })])
+  web("w1", "W")
   const fileId = documentTabs()[0]!.id
   const webId = documentTabs()[1]!.id
 
@@ -99,11 +104,11 @@ test("activate sets active id and kind; unknown ids are ignored", () => {
 
 test("re-syncing identical tabs does not rewrite the strip", () => {
   syncFileTabs("C:/repo", [view("a.ts")])
-  syncWebTabs([view("w1", "W", { icon: "globe" })])
+  web("w1", "W")
   const first = documentTabs()
 
   syncFileTabs("C:/repo", [view("a.ts")])
-  syncWebTabs([view("w1", "W", { icon: "globe" })])
+  updateBrowserTab("w1", { title: "W" })
 
   assert.equal(documentTabs(), first)
 })
@@ -116,9 +121,24 @@ test("activeDocumentTab returns the active entry", () => {
   assert.equal(activeDocumentTab()?.kind, "file")
 })
 
+test("browser documents create and remove web entries automatically", () => {
+  syncFileTabs("C:/repo", [view("a.ts")])
+  web("w1", "W")
+  const [, webDocumentId] = documentTabs().map((entry) => entry.id)
+  activateDocumentTab(webDocumentId!)
+
+  assert.deepEqual(documentTabs().map((entry) => entry.kind), ["file", "web"])
+  assert.equal(activeDocumentTabId(), webDocumentId)
+
+  closeBrowserTab("w1")
+
+  assert.deepEqual(documentTabs().map((entry) => entry.kind), ["file"])
+  assert.equal(activeDocumentTabId(), null)
+})
+
 test("close requests are deduped and consumed exactly once", () => {
   syncFileTabs("C:/repo", [view("a.ts")])
-  syncWebTabs([view("w1", "W", { icon: "globe" })])
+  web("w1", "W")
   const [fileId, webId] = documentTabs().map((entry) => entry.id)
 
   requestCloseDocumentTab(fileId!)
@@ -134,7 +154,7 @@ test("close requests are deduped and consumed exactly once", () => {
 
 test("close other and close right enqueue the clicked tab's targets", () => {
   syncFileTabs("C:/repo", [view("a.ts"), view("b.ts")])
-  syncWebTabs([view("w1", "W", { icon: "globe" })])
+  web("w1", "W")
   const [a, b, w] = documentTabs().map((entry) => entry.id)
 
   closeOtherDocumentTabs(b!)
@@ -159,7 +179,7 @@ test("configured world applies saved mixed order before both bodies sync", () =>
   syncFileTabs("C:/repo", [view("a.ts")])
   assert.deepEqual(documentTabs().map((entry) => entry.id), [fileId("a.ts")])
 
-  syncWebTabs([view("w1", "W", { icon: "globe" })])
+  web("w1", "W")
   assert.deepEqual(documentTabs().map((entry) => entry.id), ["web:w1", fileId("a.ts")])
   assert.equal(activeDocumentTabId(), "web:w1")
 })
@@ -175,7 +195,8 @@ test("new tabs append and closing prunes the saved order", () => {
   configureDocumentListWorld("w")
 
   syncFileTabs("C:/repo", [view("a.ts"), view("b.ts")])
-  syncWebTabs([view("w1", "W", { icon: "globe" }), view("w2", "W2", { icon: "globe" })])
+  web("w1", "W")
+  web("w2", "W2")
   assert.deepEqual(documentTabs().map((entry) => entry.id), [
     fileId("a.ts"),
     "web:w1",
@@ -194,7 +215,7 @@ test("moving a tab persists the new mixed order and survives syncs", () => {
   configureDocumentListStorage(storage)
   configureDocumentListWorld("w")
   syncFileTabs("C:/repo", [view("a.ts"), view("b.ts")])
-  syncWebTabs([view("w1", "W", { icon: "globe" })])
+  web("w1", "W")
 
   moveDocumentTab("web:w1", fileId("a.ts"), "before")
   assert.deepEqual(documentTabs().map((entry) => entry.id), [
@@ -203,7 +224,7 @@ test("moving a tab persists the new mixed order and survives syncs", () => {
     fileId("b.ts"),
   ])
 
-  syncWebTabs([view("w1", "W", { icon: "globe" })])
+  web("w1", "W")
   assert.deepEqual(documentTabs().map((entry) => entry.id), [
     "web:w1",
     fileId("a.ts"),

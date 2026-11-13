@@ -28,7 +28,7 @@ import {
   type BrowserTab,
 } from "../browser-tabs"
 import { browserDocumentTabs } from "../document-frame-model"
-import { activeDocumentTab, consumeCloseRequest, pendingCloseRequests, syncWebTabs } from "../documents/document-tabs-store"
+import { activeDocumentTab, consumeCloseRequest, pendingCloseRequests } from "../documents/document-tabs-store"
 import { registerDocumentToolbar, type DocumentToolbarSlots } from "../documents/document-toolbar-registry"
 import {
   flushBrowserTabsPersistence,
@@ -227,11 +227,7 @@ export function BrowserDock(props: {
   })
   onCleanup(() => flushBrowserTabsPersistence())
 
-  // 统一文档 tab 条：同步浏览器 tab 视图，并消费 web close 请求。
-  createEffect(() => {
-    syncWebTabs(browserDocumentTabs(tabs(), activeBrowserTabId()))
-  })
-
+  // 统一文档 tab 条：web entries 由 browser-documents 自动同步；这里只消费 close 请求。
   createEffect(() => {
     const active = activeDocumentTab()
     if (!active || active.kind !== "web") return

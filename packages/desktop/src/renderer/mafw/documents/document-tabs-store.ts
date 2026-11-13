@@ -1,4 +1,4 @@
-import { createSignal } from "solid-js"
+import { createEffect, createRoot, createSignal } from "solid-js"
 import type { DocumentTabView } from "../document-frame-model"
 import {
   closeOtherTabIds,
@@ -16,6 +16,7 @@ import {
   loadDocumentListSnapshot,
   saveDocumentListSnapshot,
 } from "./document-list-persistence"
+import { browserDocuments, browserDocumentTitle } from "./browser-documents"
 
 const [entries, setEntries] = createSignal<DocumentTabEntry[]>([])
 const [activeId, setActiveId] = createSignal<string | null>(null)
@@ -52,13 +53,23 @@ export function syncFileTabs(root: string, views: readonly DocumentTabView[]): v
   applyKind("file", incoming)
 }
 
-export function syncWebTabs(views: readonly DocumentTabView[]): void {
+function syncWebTabs(views: readonly DocumentTabView[]): void {
   const incoming = views.map((view) => ({
     id: webDocumentTabId(view.id),
     kind: "web" as const,
     view: { ...view, active: false },
   }))
   applyKind("web", incoming)
+}
+
+function syncBrowserDocuments(): void {
+  syncWebTabs(browserDocuments().map((doc) => ({
+    id: doc.id,
+    label: browserDocumentTitle(doc),
+    title: doc.url,
+    icon: "globe",
+    active: false,
+  })))
 }
 
 function applyKind(kind: DocumentTabKind, incoming: DocumentTabEntry[]): void {
@@ -197,3 +208,8 @@ export function resetDocumentTabsForTests(): void {
   savedOrder = []
   desiredActiveId = null
 }
+
+// web tab 状态归 browser-documents 所有；document store 只做视图同步，不再由 body 手写。
+createRoot(() => {
+  createEffect(syncBrowserDocuments)
+})
