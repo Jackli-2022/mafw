@@ -85,6 +85,18 @@ describe('SqliteT1VectorStore', () => {
     expect(fs.existsSync(legacy)).toBe(true);
   });
 
+  test('reopening with different dims does not load the old embedding space', () => {
+    const first = new SqliteT1VectorStore(db, { dims: 2, model: 'm1' });
+    first.upsert('a', [1, 0]);
+    first.flush();
+
+    const mismatched = new SqliteT1VectorStore(db, { dims: 3, model: 'm1' });
+    expect(mismatched.size()).toBe(0);
+
+    const restored = new SqliteT1VectorStore(db, { dims: 2, model: 'm1' });
+    expect(Array.from(restored.get('a')!)).toEqual([1, 0]);
+  });
+
   test('ignores the legacy file when the table already has rows', () => {
     const first = new SqliteT1VectorStore(db, { dims: 2, model: 'm1' });
     first.upsert('existing', [1, 0]);

@@ -49,7 +49,12 @@ export interface VectorStoreLike {
 export class MemoryVectorStore implements VectorStoreLike {
   private vectors = new Map<string, number[]>();
   private dirty = false;
-  constructor(private filePath: string, public dims: number, private model = '') {
+  constructor(
+    private filePath: string,
+    public dims: number,
+    private model = '',
+    private version = 1,
+  ) {
     this.load();
   }
 
@@ -57,12 +62,23 @@ export class MemoryVectorStore implements VectorStoreLike {
     try {
       if (!fs.existsSync(this.filePath)) return;
       const data = JSON.parse(fs.readFileSync(this.filePath, 'utf-8'));
-      if (data && typeof data === 'object' && data.vectors) {
-        this.model = data.model || this.model;
-        this.dims = data.dims || this.dims;
-        for (const [id, vec] of Object.entries(data.vectors)) {
-          this.vectors.set(id, vec as number[]);
-        }
+      if (!data || typeof data !== 'object' || !data.vectors) return;
+      if (data.dims !== this.dims) {
+        log.warn(
+          `[VectorStore] dims mismatch in ${this.filePath}: file=${data.dims} expected=${this.dims}; starting empty`,
+        );
+        return;
+      }
+      const fileVersion = data.version ?? 1;
+      if (fileVersion !== this.version) {
+        log.warn(
+          `[VectorStore] version mismatch in ${this.filePath}: file=${fileVersion} expected=${this.version}; starting empty`,
+        );
+        return;
+      }
+      this.model = data.model || this.model;
+      for (const [id, vec] of Object.entries(data.vectors)) {
+        this.vectors.set(id, vec as number[]);
       }
     } catch (err: any) {
       log.warn(`[VectorStore] failed to load ${this.filePath}: ${err?.message || err}`);
@@ -74,6 +90,7 @@ export class MemoryVectorStore implements VectorStoreLike {
     const body = {
       model: this.model,
       dims: this.dims,
+      version: this.version,
       updated_at: new Date().toISOString(),
       vectors: Object.fromEntries(this.vectors),
     };

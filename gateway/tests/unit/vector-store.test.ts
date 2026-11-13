@@ -83,6 +83,21 @@ describe('MemoryVectorStore', () => {
     const hits = store.searchByCosine([1, 0], 5);
     expect(hits.map(h => h.id)).toEqual(['ok']);
   });
+
+  test('reopening with a different dims does not load the old vector file', () => {
+    const dir = tmpDir();
+    const file = path.join(dir, 'vectors-dims.json');
+    const first = new MemoryVectorStore(file, 2);
+    first.upsert('a', [1, 0]);
+    first.flush();
+
+    const mismatched = new MemoryVectorStore(file, 3);
+    expect(mismatched.size()).toBe(0);
+    expect(fs.existsSync(file)).toBe(true);
+
+    const restored = new MemoryVectorStore(file, 2);
+    expect(restored.get('a')).toEqual([1, 0]);
+  });
 });
 
 describe('EmbeddingIndexer', () => {

@@ -8,16 +8,20 @@
 // Everything here is fail-open: embedding errors degrade to BM25-only recall,
 // never block the synchronous path.
 
-import * as path from 'path';
 import type Database from 'better-sqlite3';
 import { config } from '../config';
 import { log } from '../core/utils/logger';
 import { createEmbeddingProvider, EmbeddingProvider } from './embedding-provider';
+import { resolveEmbeddingNamespace, type EmbeddingNamespace } from './embedding-namespace';
 import { MemoryVectorStore, EmbeddingIndexer, VectorStoreLike } from './vector-store';
 import { SqliteT1VectorStore } from './sqlite-vector-store';
 
 export interface EmbeddingRuntime {
   provider: EmbeddingProvider;
+  providerId: string;
+  modelTag: string;
+  dims: number;
+  namespace: EmbeddingNamespace;
   vectors: MemoryVectorStore;
   indexer: EmbeddingIndexer;
   /** V1 verbatim layer: second vector namespace over t1 rounds. */
@@ -42,7 +46,10 @@ export interface InitEmbeddingRuntimeOptions {
   /** Resolve the embeddable text for an entry id (startup backfill). */
   getTextForId?: (id: string) => Promise<string | null>;
   /** Config override for tests (defaults to config.memory.embedding). */
-  cfg?: { provider: 'off' | 'local' | 'dashscope'; model?: string; dimensions?: number; baseUrl?: string; threads?: number; engine?: 'onnx' | 'llamacpp'; llamacpp?: any };
+  cfg?: { provider: 'off' | 'local' | 'dashscope'; model?: string; dimensions?: number; baseUrl?: string; threads?: number; engine?: 'onnx' | 'llamacpp'; llamacpp?: any; t1VectorStore?: 'sqlite' | 'json' };
+  /** Injected by the live provider registry; omitted only in legacy tests. */
+  provider?: EmbeddingProvider;
+  providerId?: string;
   /** ƾ�� seam��Plan 3 ���� #2����ע��ʽ getApiKeyFn��index.ts ������ߣ��� */
   getApiKeyFn?: (provider: string) => string | null;
   /** Test seam: override the provider factory (fake providers). */
@@ -54,13 +61,13 @@ export interface InitEmbeddingRuntimeOptions {
 
 export function initEmbeddingRuntime(opts: InitEmbeddingRuntimeOptions): EmbeddingRuntime | null {
   const cfg = opts.cfg ?? (config as any).memory?.embedding;
-  if (!cfg || cfg.provider === 'off') return null;
+  if (!opts.provider && (!cfg || cfg.provider === 'off')) return null;
   try {
-    const provider = (opts.createProviderFn ?? createEmbeddingProvider)({
-      provider: cfg.provider,
-      model: cfg.model,
-      dimensions: cfg.dimensions,
-      baseUrl: cfg.baseUrl || undefined,
+    const provider = opts.provider ?? (opts.createProviderFn ?? createEmbeddingProvider)({
+      provider: cfg!.provider,
+      model: cfg!.model,
+      dimensions: cfg!.dimensions,
+      baseUrl: cfg!.baseUrl || undefined,
       threads: (cfg as any).threads,
       engine: (cfg as any).engine,
       getApiKeyFn: opts.getApiKeyFn,
@@ -68,14 +75,13 @@ export function initEmbeddingRuntime(opts: InitEmbeddingRuntimeOptions): Embeddi
     });
     if (!provider) return null;
 
-    // Tag the vector file by provider identity (engine + model), not just the
-    // config model id: ONNX-q8 and GGUF-Q4 embeddings of the same model are
-    // numerically different and must not share a vector store.
-    const modelTag = provider.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const namespace = resolveEmbeddingNamespace(opts.baseDir, provider);
+    const dims = provider.dims;
     const vectors = new MemoryVectorStore(
-      path.join(opts.baseDir, 'memory', `vectors-${modelTag}.json`),
-      cfg.dimensions || provider.dims,
-      cfg.model,
+      namespace.vectorFile,
+      dims,
+      namespace.modelTag,
+      namespace.version,
     );
 
     const indexer = new EmbeddingIndexer({ vectors, provider, getTextForId: opts.getTextForId });
@@ -83,20 +89,26 @@ export function initEmbeddingRuntime(opts: InitEmbeddingRuntimeOptions): Embeddi
     // V1 verbatim layer: a second, independent vector namespace over t1
     // rounds (raw observation/archive rows), keyed by session:turn:hash.
     // SQLite BLOBs avoid rewriting a ~500MB JSON file on every flush.
-    const t1JsonPath = path.join(opts.baseDir, 'memory', `vectors-t1-${modelTag}.json`);
-    const t1StoreKind = (cfg as any).t1VectorStore ?? 'sqlite';
+    const t1JsonPath = namespace.t1JsonFile;
+    const t1StoreKind = (cfg as any)?.t1VectorStore ?? 'sqlite';
     const t1Vectors: VectorStoreLike = opts.vectorDb && t1StoreKind !== 'json'
       ? new SqliteT1VectorStore(opts.vectorDb, {
-          dims: cfg.dimensions || provider.dims,
-          model: modelTag,
+          dims,
+          model: namespace.modelTag,
           legacyJsonPath: t1JsonPath,
         })
-      : new MemoryVectorStore(t1JsonPath, cfg.dimensions || provider.dims, cfg.model);
+      : new MemoryVectorStore(t1JsonPath, dims, namespace.modelTag, namespace.version);
     const t1Indexer = new EmbeddingIndexer({ vectors: t1Vectors, provider });
+
+    const providerId = opts.providerId ?? cfg?.provider ?? provider.name;
 
     let flushTimer: ReturnType<typeof setTimeout> | null = null;
     const rt: EmbeddingRuntime = {
       provider,
+      providerId,
+      modelTag: namespace.modelTag,
+      dims,
+      namespace,
       vectors,
       indexer,
       t1Vectors,

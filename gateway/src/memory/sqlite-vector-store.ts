@@ -62,7 +62,7 @@ export class SqliteT1VectorStore implements VectorStoreLike {
       CREATE INDEX IF NOT EXISTS idx_t1_vectors_model ON t1_vectors(model);
     `);
     const existing = (
-      this.db.prepare('SELECT COUNT(*) AS c FROM t1_vectors WHERE model = ?').get(this.opts.model) as { c: number }
+      this.db.prepare('SELECT COUNT(*) AS c FROM t1_vectors WHERE model = ? AND dims = ?').get(this.opts.model, this.opts.dims) as { c: number }
     ).c;
     this.migrated = existing === 0 && opts.legacyJsonPath ? this.importLegacyJson(opts.legacyJsonPath) : 0;
     this.load();
@@ -125,8 +125,8 @@ export class SqliteT1VectorStore implements VectorStoreLike {
   private load(): void {
     try {
       const rows = this.db
-        .prepare('SELECT key, vector FROM t1_vectors WHERE model = ?')
-        .all(this.opts.model) as Array<{ key: string; vector: Buffer }>;
+        .prepare('SELECT key, vector FROM t1_vectors WHERE model = ? AND dims = ?')
+        .all(this.opts.model, this.opts.dims) as Array<{ key: string; vector: Buffer }>;
       for (const row of rows) {
         this.vectors.set(row.key, decodeVector(row.vector));
       }

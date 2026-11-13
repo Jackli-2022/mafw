@@ -318,6 +318,10 @@ export class LlamaCppServerProvider implements EmbeddingProvider {
     return this.starting.then(() => this.baseUrl as string);
   }
 
+  dispose(): void {
+    this.killServer();
+  }
+
   killServer(): void {
     const child = this.child;
     this.child = null;
