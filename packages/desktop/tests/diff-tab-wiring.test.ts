@@ -63,3 +63,10 @@ test("the dead instrument rail prop and CSS are gone", () => {
   const css = read("src/renderer/mafw/mafw.css")
   assert.doesNotMatch(css, /mafw-instrument-|mafw-focus-rail-slot/)
 })
+
+test("document toolbar only carries document actions, not diff/review", () => {
+  const editor = read("src/renderer/mafw/components/EditorDock.tsx")
+  assert.doesNotMatch(editor, /aria-label="�Ķ�"/)
+  assert.doesNotMatch(editor, /mode\(\) === "diff"/)
+  assert.doesNotMatch(editor, /<DiffReviewPanel/)
+})

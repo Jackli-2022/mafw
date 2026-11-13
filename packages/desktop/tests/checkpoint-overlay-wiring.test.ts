@@ -37,14 +37,10 @@ describe("checkpoint overlay wiring", () => {
     expect(src).toContain("serverPreviewLoading() === row.checkpoint.id")
   })
 
-  test("embedded docks forbid session fallback and non-invertible revert", () => {
-    for (const path of [
-      "src/renderer/mafw/components/EditorDock.tsx",
-    ]) {
-      const src = read(path)
-      expect(src).toContain("allowSessionFallback={false}")
-      expect(src).toContain("allowNonInvertibleRevert={false}")
-    }
+  test("diff tabs forbid session fallback and non-invertible revert", () => {
+    const src = read("src/renderer/mafw/components/DiffDocumentView.tsx")
+    expect(src).toContain("allowSessionFallback={false}")
+    expect(src).toContain("allowNonInvertibleRevert={false}")
   })
 
   test("checkpoint CSS exists", () => {

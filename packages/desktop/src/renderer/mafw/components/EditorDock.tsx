@@ -57,7 +57,7 @@ import { dragRectPx, cropImageDataUrl, type Rect01 } from "../region-capture"
 import { addMark, clearMarks, marksFor, type MarkVisual } from "../annotation-marks"
 import { isAnnotationHotkey } from "../annotation-hotkey"
 import type { AnnotationAnchor } from "../../../shared/annotation-types"
-import { DiffReviewPanel, type FileDiffEntry } from "./DiffReviewPanel"
+import type { FileDiffEntry } from "./DiffReviewPanel"
 import { openModeForTab } from "../content-intent"
 import type { FocusOpenRequest } from "../focus/focus-open"
 
@@ -133,7 +133,6 @@ export function EditorDock(props: {
   let bodyEl: HTMLDivElement | undefined
   const IS_MAC = /Mac/.test(globalThis.navigator?.platform ?? "")
   let marksOwner: string | null = null
-  const [mode, setMode] = createSignal<"edit" | "diff">("edit")
   /** 常驻 IO 错误（读/存/外部打开失败）——统一 DockBanner，不再只用 toast。 */
   const [ioError, setIoError] = createSignal<string | null>(null)
   /** mafw-file:// 版本（mtime / 变更时刻）——图片与 SVG 预览的缓存破坏参数。 */
@@ -195,7 +194,6 @@ export function EditorDock(props: {
   const activateRel = (rel: string) => {
     rememberActiveScroll()
     setModel(m => setActive(m, rel))
-    setMode("edit")
     clearSelection()
     void mountActive()
   }
@@ -254,13 +252,13 @@ export function EditorDock(props: {
     editor.gotoLine(ranges[next].from)
   }
 
-  /** 预览态：图片恒预览；svg / csv-tsv / markdown / json 默认预览（仅显式源码态例外）。diff 模式不预览。 */
+  /** 预览态：图片恒预览；svg / csv-tsv / markdown / json 默认预览（仅显式源码态例外）。 */
   const showsPreview = (f: OpenFile): boolean => {
     if (f.kind === "svg" || f.kind === "table" || f.kind === "markdown" || f.kind === "json") return sourceMode()[f.rel] !== true
     return false
   }
   const previewingFile = (f: OpenFile | null): boolean => {
-    if (!f || mode() !== "edit") return false
+    if (!f) return false
     if (isReadOnlyPreview(f.kind)) return true
     return showsPreview(f)
   }
@@ -398,7 +396,6 @@ export function EditorDock(props: {
     setSourceMode({})
     setIoError(null)
     clearSelection()
-    setMode("edit")
     void unwatchAll()
     if (shouldRestore && activeRel) {
       void openRel(activeRel).finally(() => { restoringActive = false })
@@ -496,7 +493,6 @@ export function EditorDock(props: {
         const promoted = opts.persist === true ? promotePreview(m, rel) : m
         return setActive(promoted, rel)
       })
-      setMode("edit")
       clearSelection()
       void mountActive()
       return
@@ -523,7 +519,6 @@ export function EditorDock(props: {
       setFileVersion(prev => ({ ...prev, [rel]: version }))
       setImageMeta(prev => ({ ...prev, [rel]: { w: 0, h: 0, size } }))
       setModel(m => openModelFile(m, rel, "", true, "image", opts.persist))
-      setMode("edit")
       clearSelection()
       setIoError(null)
       void mountActive({ fresh: true })
@@ -545,7 +540,6 @@ export function EditorDock(props: {
       } catch { /* 可选元数据 */ }
       setFileVersion(prev => ({ ...prev, [rel]: Date.now() }))
       setModel(m => openModelFile(m, rel, "", true, kind, opts.persist))
-      setMode("edit")
       clearSelection()
       setIoError(null)
       void mountActive({ fresh: true })
@@ -576,7 +570,6 @@ export function EditorDock(props: {
         setIoError(res.reason === "not-found" ? "文件不存在（可能已被移动/删除）" : "读取文件失败")
         return
       }
-      setMode("edit")
       clearSelection()
       setIoError(null)
       void mountActive({ fresh: true })
@@ -651,7 +644,7 @@ export function EditorDock(props: {
     const ranges = inlineRanges()
     const ed = editor
     if (!ed) return
-    if (mode() !== "edit" || previewing()) { ed.setInlineDiff([]); return }
+    if (previewing()) { ed.setInlineDiff([]); return }
     ed.setInlineDiff(ranges)
     if (inlineIndex() >= ranges.length) setInlineIndex(0)
   })
@@ -703,7 +696,7 @@ export function EditorDock(props: {
       const savedSelection = selectionFor(scopeState, f.rel)
       if (savedSelection) h.setSelection(savedSelection.anchor, savedSelection.head)
       h.setScroll(readingPositionFor(scopeState, f.rel) ?? 0)
-      h.setInlineDiff(mode() === "edit" && !previewing() ? inlineRanges() : [])
+      h.setInlineDiff(!previewing() ? inlineRanges() : [])
       if (!f.readOnly) {
         const key = `${root}\u0000${f.rel}`
         watched.add(key)
@@ -849,7 +842,6 @@ export function EditorDock(props: {
     setSourceMode(prev => { const next = { ...prev }; delete next[rel]; return next })
     setImageMeta(prev => { const next = { ...prev }; delete next[rel]; return next })
     setFileVersion(prev => { const next = { ...prev }; delete next[rel]; return next })
-    setMode("edit")
     clearSelection()
     void mountActive()
   }
@@ -904,7 +896,7 @@ export function EditorDock(props: {
 
   /** 预览面划选（md/docx）：选区落在 [data-annotatable="quote"] 内 → quote 锚 + 浮钮。 */
   function captureQuoteFromSelection(): boolean {
-    if (mode() !== "edit" || quoteOpen()) return false
+    if (quoteOpen()) return false
     const selection = window.getSelection()
     if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
       setQuoteSel(null)
@@ -956,7 +948,7 @@ export function EditorDock(props: {
   // I1：预览面焦点不在 editor-body 内 —— 键盘路径挂 document；选区变化（含 Shift+方向键）也走同一捕获。
   onMount(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!isAnnotationHotkey(e, IS_MAC) || mode() !== "edit") return
+      if (!isAnnotationHotkey(e, IS_MAC)) return
       if (sel() && !annotOpen()) {
         e.preventDefault()
         e.stopPropagation()
@@ -972,13 +964,11 @@ export function EditorDock(props: {
     }
     let timer: number | undefined
     const onSelectionChange = () => {
-      if (mode() !== "edit") return
       window.clearTimeout(timer)
       timer = window.setTimeout(() => captureQuoteFromSelection(), 150)
     }
     document.addEventListener("keydown", onKey, true)
     const onKeyUp = (e: KeyboardEvent) => {
-      if (mode() !== "edit") return
       if (!(e.key === "Shift" || e.key.startsWith("Arrow"))) return
       if (annotOpen() || quoteOpen() || anchorOpen()) return
       if (!captureQuoteFromSelection() && !previewing() && sel() && props.onSendAnnotation) setAnnotOpen(true)
@@ -995,7 +985,6 @@ export function EditorDock(props: {
 
   /** 表格单元格批注（csv/tsv）：事件委托，data-cell-ref 定位。 */
   function handleCellClick(e: MouseEvent) {
-    if (mode() !== "edit") return
     // I6：拖选用户在复制单元格文字 —— 有非折叠 DOM 选区时不当批注点击。
     const domSel = window.getSelection()
     if (domSel && !domSel.isCollapsed && domSel.toString().trim()) return
@@ -1015,7 +1004,7 @@ export function EditorDock(props: {
 
   /** 图片拖框：pointerdown/move/up（相对 region layer）。 */
   function onRegionDown(e: PointerEvent) {
-    if (mode() !== "edit" || e.button !== 0) return
+    if (e.button !== 0) return
     const layer = e.currentTarget as HTMLElement
     const rect = layer.getBoundingClientRect()
     if (rect.width <= 0 || rect.height <= 0) return
@@ -1246,7 +1235,7 @@ export function EditorDock(props: {
             </ButtonV2>
           </TooltipV2>
         </Show>
-        <Show when={mode() === "edit" && inlineRanges().length > 0}>
+        <Show when={inlineRanges().length > 0}>
           <div class="mafw-editor-inline-diff">
             <span class="mafw-editor-inline-diff-count" aria-label={`${inlineRanges().length} 处 agent 改动`}>{inlineRanges().length}</span>
             <TooltipV2 value="上一处改动" openDelay={300}>
@@ -1260,18 +1249,6 @@ export function EditorDock(props: {
               </ButtonV2>
             </TooltipV2>
           </div>
-        </Show>
-        <Show when={activeFile() && diffEntryFor(props.diffs, activeFile()!.rel)}>
-          <TooltipV2 value={mode() === "diff" ? "返回编辑" : "查看改动"} openDelay={300}>
-            <ButtonV2
-              variant={mode() === "diff" ? "contrast" : "ghost"}
-              size="small"
-              aria-label="改动"
-              onClick={() => { setMode(mode() === "diff" ? "edit" : "diff"); clearSelection() }}
-            >
-              <Icon name="review" size="small" />
-            </ButtonV2>
-          </TooltipV2>
         </Show>
       </>
     ),
@@ -1314,7 +1291,7 @@ export function EditorDock(props: {
           <div
             class="mafw-editor-host"
             ref={(el) => { host = el }}
-            style={{ display: mode() === "diff" || previewing() ? "none" : "block" }}
+            style={{ display: previewing() ? "none" : "block" }}
           />
 
           {/* 文件预览（图片只读 / SVG 预览态）：host 保持挂载，仅隐藏 */}
@@ -1328,28 +1305,26 @@ export function EditorDock(props: {
                   alt={activeFile()!.rel}
                   onLoad={(e) => recordImageDims(activeFile()!.rel, e.currentTarget)}
                 />
-                <Show when={mode() === "edit"}>
-                  <div
-                    class="mafw-region-layer"
-                    aria-label="拖框批注区域"
-                    onPointerDown={onRegionDown}
-                    onPointerMove={onRegionMove}
-                    onPointerUp={onRegionUp}
-                    onPointerCancel={onRegionCancel}
-                  >
-                    <Show when={drag()}>
-                      <div
-                        class="mafw-region-rect"
-                        style={{
-                          left: `${Math.min(drag()!.x0, drag()!.x1)}px`,
-                          top: `${Math.min(drag()!.y0, drag()!.y1)}px`,
-                          width: `${Math.abs(drag()!.x1 - drag()!.x0)}px`,
-                          height: `${Math.abs(drag()!.y1 - drag()!.y0)}px`,
-                        }}
-                      />
-                    </Show>
-                  </div>
-                </Show>
+                <div
+                  class="mafw-region-layer"
+                  aria-label="拖框批注区域"
+                  onPointerDown={onRegionDown}
+                  onPointerMove={onRegionMove}
+                  onPointerUp={onRegionUp}
+                  onPointerCancel={onRegionCancel}
+                >
+                  <Show when={drag()}>
+                    <div
+                      class="mafw-region-rect"
+                      style={{
+                        left: `${Math.min(drag()!.x0, drag()!.x1)}px`,
+                        top: `${Math.min(drag()!.y0, drag()!.y1)}px`,
+                        width: `${Math.abs(drag()!.x1 - drag()!.x0)}px`,
+                        height: `${Math.abs(drag()!.y1 - drag()!.y0)}px`,
+                      }}
+                    />
+                  </Show>
+                </div>
                 <For each={fileMarks().filter((m) => m.anchor?.kind === "region")}>
                   {(m) => {
                     const a = m.anchor as Extract<AnnotationAnchor, { kind: "region" }>
@@ -1517,7 +1492,7 @@ export function EditorDock(props: {
           </div>
 
           {/* 选中即批注（rev4）：无浮钮、无模式；选中/落点直接出输入框 */}
-          <Show when={mode() === "edit" && annotOpen() && sel()}>
+          <Show when={annotOpen() && sel()}>
             <AnnotationSheet
               anchor={{ left: Math.max(8, sel()!.left), top: sel()!.top, width: 8, height: 18 }}
               meta={`${sel()!.rel}:L${selRange()?.startLine}-${selRange()?.endLine}`}
@@ -1525,7 +1500,7 @@ export function EditorDock(props: {
               onCancel={() => setAnnotOpen(false)}
             />
           </Show>
-          <Show when={mode() === "edit" && quoteOpen() && quoteSel()}>
+          <Show when={quoteOpen() && quoteSel()}>
             <AnnotationSheet
               anchor={quoteSel()!.box}
               meta={`${activeFile()?.rel ?? ""} › ${describeAnchor(quoteSel()!.anchor)}`}
@@ -1547,7 +1522,7 @@ export function EditorDock(props: {
               onCancel={() => { setQuoteOpen(false); setQuoteSel(null) }}
             />
           </Show>
-          <Show when={mode() === "edit" && anchorOpen() ? anchorSel() : null} keyed>
+          <Show when={anchorOpen() ? anchorSel() : null} keyed>
             {(sel) => (
               <AnnotationSheet
                 anchor={sel.box}
@@ -1564,22 +1539,6 @@ export function EditorDock(props: {
                 onCancel={() => { setAnchorOpen(false); setAnchorSel(null) }}
               />
             )}
-          </Show>
-
-          <Show when={mode() === "diff" && activeFile() && props.sessionID}>
-            <div class="mafw-editor-diff">
-              <DiffReviewPanel
-                embedded
-                sessionID={props.sessionID!}
-                diffs={props.diffs}
-                initialFile={activeFile()!.rel}
-                onBack={() => { setMode("edit"); clearSelection() }}
-                onSendComment={props.onSendComment}
-                onAddAnnotation={props.onAddAnnotation}
-                allowSessionFallback={false}
-                allowNonInvertibleRevert={false}
-              />
-            </div>
           </Show>
         </div>
       </Show>
