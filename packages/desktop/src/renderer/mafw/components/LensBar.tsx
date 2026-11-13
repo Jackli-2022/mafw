@@ -10,7 +10,7 @@ const LENS_LABELS: Record<Lens, string> = {
   evidence: "证据",
   review: "审阅",
   decide: "决定",
-  interact: "操作",
+  interact: "交互",
 }
 
 /** 工作台的「镜」：问题不是位置；换镜不换台。 */
