@@ -13,6 +13,7 @@ import type {
   PluginActionDescriptor,
   PluginClientDescriptor,
   PluginClientUiContribution,
+  PluginComposerActionDescriptor,
   PluginConfigPageDescriptor,
   PluginDiagnostic,
   PluginEventDescriptor,
@@ -64,9 +65,12 @@ const UI_SLOT_KEYS = [
   "messageWindows",
   "webSurfaces",
   "menuItems",
+  "composerActions",
 ] as const
 const MENU_ITEM_KEYS = ["id", "surface", "label", "action", "icon", "shortcut", "order"] as const
+const COMPOSER_ACTION_KEYS = ["id", "label", "action", "icon", "order"] as const
 const MENU_LABEL_MAX = 80
+const COMPOSER_LABEL_MAX = 40
 const MENU_SHORTCUT_MAX = 32
 
 const PANEL_KEYS = ["id", "title", "icon", "order", "viewAction", "refreshOn"] as const
@@ -985,6 +989,82 @@ function readMenuItems(
   return items
 }
 
+function readComposerActions(
+  value: unknown,
+  actionNames: Set<string>,
+  errors: string[],
+): PluginComposerActionDescriptor[] | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value)) {
+    addError(errors, "ui.composerActions must be an array")
+    return undefined
+  }
+  if (value.length > PLUGIN_UI_LIMITS.maxComposerActions) {
+    addError(
+      errors,
+      `ui.composerActions exceeds ${PLUGIN_UI_LIMITS.maxComposerActions} entries`,
+    )
+    return undefined
+  }
+
+  const actions: PluginComposerActionDescriptor[] = []
+  const ids = new Set<string>()
+  value.forEach((raw, index) => {
+    const label = `ui.composerActions[${index}]`
+    if (!isPlainObject(raw)) {
+      addError(errors, `${label} must be an object`)
+      return
+    }
+    checkKnownFields(raw, COMPOSER_ACTION_KEYS, label, errors)
+
+    const id = requireString(raw.id, `${label}.id`, MAX_ID_LENGTH, errors)
+    if (id !== undefined && !NAME_PATTERN.test(id)) {
+      addError(errors, `${label}.id "${id}" must match ${NAME_PATTERN}`)
+    }
+    if (id !== undefined) {
+      if (ids.has(id)) addError(errors, `duplicate composer action id "${id}"`)
+      else ids.add(id)
+    }
+
+    const actionLabel = requireString(
+      raw.label,
+      `${label}.label`,
+      COMPOSER_LABEL_MAX,
+      errors,
+    )
+    const action = requireString(raw.action, `${label}.action`, MAX_ID_LENGTH, errors)
+    if (action !== undefined) {
+      if (!NAME_PATTERN.test(action)) {
+        addError(errors, `${label}.action "${action}" must match ${NAME_PATTERN}`)
+      } else if (!actionNames.has(action)) {
+        addError(errors, `${label}.action references undeclared action "${action}"`)
+      }
+    }
+    if (raw.icon !== undefined && !isPluginIconName(raw.icon)) {
+      addError(errors, `${label}.icon must be a registered plugin icon`)
+    }
+
+    let order: number | undefined
+    if (raw.order !== undefined) {
+      if (!Number.isInteger(raw.order)) {
+        addError(errors, `${label}.order must be an integer`)
+      } else {
+        order = raw.order as number
+      }
+    }
+
+    if (!id || !actionLabel || action === undefined) return
+    actions.push({
+      id,
+      label: actionLabel,
+      action,
+      ...(typeof raw.icon === "string" ? { icon: raw.icon } : {}),
+      ...(order !== undefined ? { order } : {}),
+    })
+  })
+  return actions
+}
+
 function readUi(
   value: unknown,
   packageName: string,
@@ -1034,6 +1114,10 @@ function readUi(
   if (value.menuItems !== undefined) {
     const menuItems = readMenuItems(value.menuItems, actionNames, errors)
     if (menuItems !== undefined) ui.menuItems = menuItems
+  }
+  if (value.composerActions !== undefined) {
+    const composerActions = readComposerActions(value.composerActions, actionNames, errors)
+    if (composerActions !== undefined) ui.composerActions = composerActions
   }
   return ui
 }

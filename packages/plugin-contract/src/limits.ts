@@ -16,6 +16,8 @@ export const PLUGIN_UI_LIMITS = {
   maxImageDataUrlBytes: 2 * 1024 * 1024,
   /** Maximum number of declarative menu items across all surfaces. */
   maxMenuItems: 20,
+  /** Maximum number of composer action buttons. */
+  maxComposerActions: 3,
   /** Maximum bytes of a tool-card payload sent to a plugin view action. */
   maxToolPayloadBytes: 256 * 1024,
   /** Maximum bytes of an action input or output payload. */

@@ -95,6 +95,7 @@ test("limits use the documented values", () => {
   assert.equal(PLUGIN_UI_LIMITS.maxTextBytes, 64 * 1024)
   assert.equal(PLUGIN_UI_LIMITS.maxImageDataUrlBytes, 2 * 1024 * 1024)
   assert.equal(PLUGIN_UI_LIMITS.maxMenuItems, 20)
+  assert.equal(PLUGIN_UI_LIMITS.maxComposerActions, 3)
   assert.equal(PLUGIN_UI_LIMITS.maxToolPayloadBytes, 256 * 1024)
   assert.equal(PLUGIN_UI_LIMITS.maxActionPayloadBytes, 256 * 1024)
   assert.equal(PLUGIN_UI_LIMITS.defaultActionTimeoutMs, 15_000)
@@ -505,6 +506,44 @@ test("menuItems: rejects unknown surface, action, icon and duplicate ids", () =>
     },
   })
   assert.equal(duplicate.ok, false)
+})
+
+test("composerActions: accepts a valid action and rejects bad references", () => {
+  const ok = validateClientDescriptor({
+    ...validDescriptor(),
+    ui: {
+      composerActions: [
+        { id: "draft", label: "Draft reply", action: "getPanel", icon: "bubble-5", order: 10 },
+      ],
+    },
+  })
+  assert.equal(ok.ok, true)
+  if (!ok.ok) return
+  assert.equal(ok.value.ui.composerActions?.[0]?.id, "draft")
+
+  for (const item of [
+    { id: "x", label: "X", action: "missing" },
+    { id: "x", label: "X", action: "getPanel", icon: "nope" },
+    { id: "x", label: "", action: "getPanel" },
+  ]) {
+    const result = validateClientDescriptor({
+      ...validDescriptor(),
+      ui: { composerActions: [item] },
+    })
+    assert.equal(result.ok, false)
+  }
+
+  const tooMany = validateClientDescriptor({
+    ...validDescriptor(),
+    ui: {
+      composerActions: Array.from({ length: 4 }, (_, index) => ({
+        id: `a${index}`,
+        label: `A${index}`,
+        action: "getPanel",
+      })),
+    },
+  })
+  assert.equal(tooMany.ok, false)
 })
 
 test("manifest contributes: accepts gateway tools", () => {

@@ -176,6 +176,19 @@ export interface PluginMenuItemDescriptor {
   order?: number
 }
 
+/**
+ * Declarative composer action. Clicking it invokes the same-package action with
+ * the current session id; an `{ insertText }` result is inserted into the draft
+ * without sending.
+ */
+export interface PluginComposerActionDescriptor {
+  id: string
+  label: string
+  action: string
+  icon?: string
+  order?: number
+}
+
 /** First-phase UI contribution slots. Unknown slots are rejected. */
 export interface PluginUiContribution {
   panels?: PluginPanelDescriptor[]
@@ -184,6 +197,7 @@ export interface PluginUiContribution {
   messageWindows?: PluginMessageWindowDescriptor[]
   webSurfaces?: PluginWebSurfaceDescriptor[]
   menuItems?: PluginMenuItemDescriptor[]
+  composerActions?: PluginComposerActionDescriptor[]
 }
 
 /**
