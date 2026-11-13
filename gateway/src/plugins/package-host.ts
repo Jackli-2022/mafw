@@ -74,6 +74,8 @@ export interface PluginHostOptions {
    * headless/tests, where events are accepted but not delivered.
    */
   broadcast?: (event: PluginEventFrame) => void;
+  /** Optional fail-open secondary event sink (automation bridge). */
+  onEvent?: (event: PluginEventFrame) => void;
   /** Injected action registry (defaults to a fresh one owned by this host). */
   actionRegistry?: PluginActionRegistry;
   /** Injected event registry (defaults to one bound to `canonicalTypes`). */
@@ -223,6 +225,7 @@ export class PluginHost {
   private readonly createBag: () => RegistrationBag;
   private readonly canonicalTypes: ReadonlySet<string>;
   private readonly broadcast?: PluginHostOptions['broadcast'];
+  private readonly onEvent?: PluginHostOptions['onEvent'];
   private readonly actions: PluginActionRegistry;
   private readonly events: PluginEventRegistry;
   private readonly http: PluginHttpRegistry;
@@ -241,12 +244,14 @@ export class PluginHost {
     this.canonicalTypes = options.canonicalTypes ?? EMPTY_CANONICAL_TYPES;
     this.createBag = options.createBag ?? createRegistrationBag;
     this.broadcast = options.broadcast;
+    this.onEvent = options.onEvent;
     this.actions = options.actionRegistry ?? new PluginActionRegistry({
       onDiagnostic: (diagnostic) => log.warn(`[PluginHost] ${diagnostic.packageName} ${diagnostic.code}: ${diagnostic.message}`),
     });
     this.events = options.eventRegistry ?? new PluginEventRegistry({
       canonicalTypes: this.canonicalTypes,
       broadcast: this.broadcast ? (frame) => this.broadcast?.(frame) : undefined,
+      onEvent: this.onEvent ? (frame) => this.onEvent?.(frame) : undefined,
       onDiagnostic: (diagnostic) => log.warn(`[PluginHost] ${diagnostic.packageName} ${diagnostic.code}: ${diagnostic.message}`),
     });
     this.http = options.httpRegistry ?? createPluginHttpRegistry({ log });

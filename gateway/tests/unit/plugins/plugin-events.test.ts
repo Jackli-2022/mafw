@@ -45,6 +45,38 @@ describe('PluginEventRegistry registration and emit', () => {
     });
   });
 
+  it('calls onEvent with the validated frame and keeps broadcasting when the sink throws', () => {
+    const broadcast = jest.fn();
+    const sink = jest.fn(() => {
+      throw new Error('sink down');
+    });
+    const registry = new PluginEventRegistry({ canonicalTypes: CANONICAL, broadcast, onEvent: sink });
+    registry.register('demo', [event({ type: 'plugin:demo:changed' })], createRegistrationBag());
+
+    const result = registry.emit('demo', 'plugin:demo:changed', { id: 'a' }, 'sess-1');
+    const frame = {
+      type: 'plugin:demo:changed',
+      properties: { id: 'a' },
+      sessionID: 'sess-1',
+    };
+
+    expect(result).toMatchObject({ ok: true });
+    expect(sink).toHaveBeenCalledWith(frame);
+    expect(broadcast).toHaveBeenCalledWith(frame);
+  });
+
+  it('does not call onEvent for dropped events', () => {
+    const sink = jest.fn();
+    const registry = new PluginEventRegistry({ canonicalTypes: CANONICAL, onEvent: sink });
+    registry.register('demo', [event({ type: 'plugin:demo:changed' })], createRegistrationBag());
+
+    expect(registry.emit('demo', 'plugin:demo:other', {})).toMatchObject({
+      ok: false,
+      error: 'unregistered-event',
+    });
+    expect(sink).not.toHaveBeenCalled();
+  });
+
   it('drops a payload that violates the registered schema and records a diagnostic', () => {
     const broadcast = jest.fn();
     const registry = new PluginEventRegistry({ canonicalTypes: CANONICAL, broadcast });

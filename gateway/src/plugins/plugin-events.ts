@@ -38,6 +38,7 @@ export type PluginEventDiagnosticCode =
   | 'unloaded'
   | 'stale-emitter'
   | 'broadcast-failed'
+  | 'sink-failed'
   | 'payload-too-large';
 
 export interface PluginEventDiagnostic {
@@ -72,6 +73,8 @@ export interface PluginEventRegistryOptions {
   canonicalTypes?: ReadonlySet<string>;
   /** Gateway broadcast sink (SSE + WS + mobile push). */
   broadcast?: (event: PluginEventFrame) => void;
+  /** Optional secondary sink (automation bridge); failures are fail-open. */
+  onEvent?: (event: PluginEventFrame) => void;
   /** Receives every drop diagnostic; defaults to `log.warn`. */
   onDiagnostic?: (diagnostic: PluginEventDiagnostic) => void;
   /** Distinct diagnostic keys retained (default 100). */
@@ -123,12 +126,14 @@ export class PluginEventRegistry {
   private readonly diagnostics = new Map<string, PluginEventDiagnostic>();
   private readonly canonicalTypes: ReadonlySet<string>;
   private readonly broadcast?: (event: PluginEventFrame) => void;
+  private readonly onEvent?: (event: PluginEventFrame) => void;
   private readonly onDiagnostic?: (diagnostic: PluginEventDiagnostic) => void;
   private readonly maxDiagnostics: number;
 
   constructor(options: PluginEventRegistryOptions = {}) {
     this.canonicalTypes = options.canonicalTypes ?? EMPTY_CANONICAL;
     this.broadcast = options.broadcast;
+    this.onEvent = options.onEvent;
     this.onDiagnostic = options.onDiagnostic;
     this.maxDiagnostics = options.maxDiagnostics ?? 100;
   }
@@ -328,6 +333,16 @@ export class PluginEventRegistry {
 
     const frame: PluginEventFrame = { type, properties: payload };
     if (resolvedSession !== undefined) frame.sessionID = resolvedSession;
+    try {
+      this.onEvent?.(frame);
+    } catch (err) {
+      this.record({
+        packageName,
+        type,
+        code: 'sink-failed',
+        message: `event sink failed: ${describeError(err)}`,
+      });
+    }
     try {
       this.broadcast?.(frame);
     } catch (err) {
