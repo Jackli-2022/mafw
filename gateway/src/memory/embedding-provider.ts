@@ -24,11 +24,18 @@ if (typeof process !== 'undefined') {
 }
 
 export type EmbeddingKind = 'query' | 'document';
+export type EmbeddingHealth = 'healthy' | 'degraded' | 'failed';
 
 export interface EmbeddingProvider {
   name: string;
   dims: number;
+  /** Stable vector namespace identity. Defaults to sanitized `name`. */
+  modelTag?: string;
+  maxInputTokens?: number;
+  batchLimit?: number;
   embed(texts: string[], kind: EmbeddingKind): Promise<number[][]>;
+  health?(): EmbeddingHealth;
+  dispose?(): void | Promise<void>;
 }
 
 export interface EmbeddingProviderConfig {
