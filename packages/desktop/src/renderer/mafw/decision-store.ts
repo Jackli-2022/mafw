@@ -81,9 +81,11 @@ export function createDecisionStore(deps: {
       return true
     }
     // Same reset refresh() does on a project switch, so a stray event can never
-    // graft records onto the wrong project.
+    // graft records onto the wrong project. Bump the refresh generation too: an
+    // in-flight refresh for the previous project must not land after this reset.
     if (dataDir !== dir) {
       dataDir = dir
+      seq += 1
       setItems([])
       setRecords([])
       setLoaded(false)
@@ -143,7 +145,7 @@ export function createDecisionStore(deps: {
     }
     const attentionTask = deps.api.attention(dir)
       .then((next) => {
-        if (my !== seq) return
+        if (my !== seq || deps.projectDir() !== dir) return
         setItems(Array.isArray(next?.items) ? next.items : [])
         setLoaded(true)
         setRevision((value) => value + 1)
@@ -152,13 +154,20 @@ export function createDecisionStore(deps: {
     const recordsTask = deps.api.decisions
       ? deps.api.decisions(dir)
         .then((next) => {
-          if (my !== seq) return
+          if (my !== seq || deps.projectDir() !== dir) return
           const nextItems = Array.isArray(next?.items) ? next.items : []
           setRecords((previous) => {
             const byId = new Map(previous.map((record) => [record.id, record]))
             return nextItems.map((record) => {
               const old = byId.get(record.id)
-              return old && old.updatedAt === record.updatedAt ? old : record
+              if (!old) return record
+              const oldAt = Date.parse(old.updatedAt)
+              const nextAt = Date.parse(record.updatedAt)
+              // Freshness guard: a record ingested while this refresh was in
+              // flight must survive an older snapshot. Equal updatedAt reuses
+              // the stored object by design (memoized views must not thrash).
+              if (Number.isFinite(oldAt) && Number.isFinite(nextAt)) return oldAt >= nextAt ? old : record
+              return old.updatedAt >= record.updatedAt ? old : record
             })
           })
         })

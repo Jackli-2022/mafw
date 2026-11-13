@@ -422,3 +422,80 @@ test("ingest tolerates separator/case differences in projectDir", () => {
   assert.equal(handled, true)
   assert.equal(store.records().length, 1)
 })
+
+// --- E6-3 review: freshness wins over an in-flight refresh -------------------
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((settle) => { resolve = settle })
+  return { promise, resolve }
+}
+
+test("a stale in-flight refresh cannot clobber a newer ingested record", async () => {
+  const pending = deferred<{ items: any[] }>()
+  const store = createDecisionStore({
+    api: {
+      attention: async () => ({ items: [] }),
+      decisions: () => pending.promise,
+    },
+    projectDir: () => "C:/repo",
+  })
+
+  const inFlight = store.refresh()
+  const handled = store.ingest(decisionEvent({}, {
+    status: "decided",
+    rationale: "新结论",
+    updatedAt: "2026-11-13T00:00:00.000Z",
+  }))
+  assert.equal(handled, true)
+  const ingested = store.records()[0]!
+  assert.equal(ingested.status, "decided")
+
+  // The refresh started before the event and resolves with the pre-write record.
+  pending.resolve({ items: [record({ status: "draft", updatedAt: "2026-11-12T00:00:00.000Z" })] })
+  await inFlight
+
+  assert.equal(store.records().length, 1)
+  assert.equal(store.records()[0], ingested)
+  assert.equal(store.records()[0]!.status, "decided")
+})
+
+test("project switch during an in-flight refresh ignores the old response", async () => {
+  let dir = "C:/a"
+  const pending = deferred<{ items: any[] }>()
+  const store = createDecisionStore({
+    api: {
+      attention: async () => ({ items: [] }),
+      decisions: () => pending.promise,
+    },
+    projectDir: () => dir,
+  })
+
+  const inFlight = store.refresh()
+  // The user switches projects; the first event for the new project resets the
+  // store, which must also invalidate the refresh still in flight for C:/a.
+  dir = "C:/b"
+  const handled = store.ingest(decisionEvent(
+    { projectDir: "C:/b" },
+    { id: "dec_b", projectDir: "C:/b", status: "decided", updatedAt: "2026-11-13T00:00:00.000Z" },
+  ))
+  assert.equal(handled, true)
+  assert.equal(store.records().length, 1)
+  assert.equal(store.records()[0]!.id, "dec_b")
+
+  pending.resolve({ items: [record({ id: "dec_a", status: "draft", updatedAt: "2026-11-12T00:00:00.000Z" })] })
+  await inFlight
+
+  assert.equal(store.records().length, 1)
+  assert.equal(store.records()[0]!.id, "dec_b")
+  assert.equal(store.records()[0]!.status, "decided")
+})
+
+test("ingest without a current project is a no-op", () => {
+  const { store, calls } = countingStore(() => null)
+  const handled = store.ingest(decisionEvent())
+  assert.equal(handled, false)
+  assert.equal(store.records().length, 0)
+  assert.equal(calls.attention, 0)
+  assert.equal(calls.decisions, 0)
+})
