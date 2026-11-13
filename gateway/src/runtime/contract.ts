@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Runtime 能力契约 —— gateway 与 agent runtime（opencode / claude / pi ...）之间的接缝。
  *
  * 设计原则：能力自声明 + fail-open 降级。runtime 加载时声明 capabilities，
@@ -370,6 +370,13 @@ export interface RuntimeDiscoveryResult {
 export interface RuntimeDiscoveryChannel {
   list(opts: { directory: string }): Promise<RuntimeDiscoveryResult>;
   loadSkill(opts: { directory: string; key: string }): Promise<RuntimeSkillContent | null>;
+  /** Invoke a runtime skill by its native mechanism; the adapter owns the dialect. */
+  invokeSkill?(opts: {
+    sessionID: string;
+    directory: string;
+    key: string;
+    args: string;
+  }): Promise<void>;
   /** Adapter-declared skill/instruction roots (Phase 4: gateway stops hardcoding vendor paths). */
   roots?(): { skillRoots?: string[]; instructionRoots?: string[] };
 }

@@ -242,6 +242,13 @@ export interface RuntimeDiscoveryRoots {
 export interface RuntimeDiscoveryChannel {
   list(opts: { directory: string }): Promise<RuntimeDiscoveryResult>;
   loadSkill?(opts: { directory: string; key: string }): Promise<RuntimeDiscoverySkillContent | null>;
+  /** Invoke a runtime skill by its native mechanism; the adapter owns the dialect. */
+  invokeSkill?(opts: {
+    sessionID: string;
+    directory: string;
+    key: string;
+    args: string;
+  }): Promise<void>;
   /** Host-facing roots so gateway core stops hardcoding vendor config paths. */
   roots?(): RuntimeDiscoveryRoots;
 }

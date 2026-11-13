@@ -1,4 +1,4 @@
-import {
+﻿import {
   buildRuntimeContractManifest,
   validateManifest,
   type RuntimeContractManifest,
@@ -10,6 +10,7 @@ import { CONTRACT_CAPABILITIES } from '../../../src/runtime/contract-capabilitie
 import { CONTRACT_PRESETS } from '../../../src/runtime/contract-presets';
 import { CONTRACT_EVENTS } from '../../../src/runtime/contract-events';
 import { MAFW_RUNTIME_EVENT_NAMES } from '../../../src/runtime/mafw-vocabulary';
+import { probePasses } from '../../../src/runtime/coverage';
 
 function fixture(overrides: Partial<RuntimeContractManifest> = {}): RuntimeContractManifest {
   return {
@@ -33,6 +34,17 @@ function surface(id: string) {
 describe('runtime contract manifest invariants', () => {
   it('accepts an empty well-formed manifest', () => {
     expect(validateManifest(fixture())).toEqual([]);
+  });
+
+  it('exposes discovery.invokeSkill as a presence surface under discoveryApi', () => {
+    const s = surface('discovery.invokeSkill');
+    expect(s).toMatchObject({
+      capability: 'discoveryApi',
+      verification: 'presence',
+      probe: ['discovery', 'invokeSkill'],
+    });
+    expect(probePasses({ rt: { discovery: { invokeSkill: () => {} } } as any, source: 'active' }, s!)).toBe(true);
+    expect(probePasses({ rt: { discovery: {} } as any, source: 'active' }, s!)).toBe(false);
   });
 
   it('rejects duplicate surface ids', () => {
