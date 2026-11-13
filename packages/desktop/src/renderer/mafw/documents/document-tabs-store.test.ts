@@ -7,14 +7,22 @@ import {
   activeDocumentTabKind,
   closeDocumentTabsToRight,
   closeOtherDocumentTabs,
+  configureDocumentListWorld,
   consumeCloseRequest,
   documentTabs,
+  moveDocumentTab,
   pendingCloseRequests,
   requestCloseDocumentTab,
   resetDocumentTabsForTests,
   syncFileTabs,
   syncWebTabs,
 } from "./document-tabs-store"
+import {
+  configureDocumentListStorage,
+  documentListStorageKey,
+  flushDocumentListPersistence,
+  resetDocumentListPersistenceForTests,
+} from "./document-list-persistence"
 import type { DocumentTabView } from "../document-frame-model"
 
 const view = (id: string, label = id, extra: Partial<DocumentTabView> = {}): DocumentTabView => ({
@@ -25,7 +33,22 @@ const view = (id: string, label = id, extra: Partial<DocumentTabView> = {}): Doc
   ...extra,
 })
 
-beforeEach(() => resetDocumentTabsForTests())
+function fakeStorage() {
+  const map = new Map<string, string>()
+  return {
+    map,
+    getItem: (key: string) => map.get(key) ?? null,
+    setItem: (key: string, value: string) => { map.set(key, value) },
+    removeItem: (key: string) => { map.delete(key) },
+  }
+}
+
+const fileId = (rel: string) => `file:C:/repo\u0000${rel}`
+
+beforeEach(() => {
+  resetDocumentTabsForTests()
+  resetDocumentListPersistenceForTests()
+})
 
 test("file and web tabs merge into one stable strip", () => {
   syncFileTabs("C:/repo", [view("a.ts")])
@@ -121,4 +144,103 @@ test("close other and close right enqueue the clicked tab's targets", () => {
   consumeCloseRequest(w!)
   closeDocumentTabsToRight(b!)
   assert.deepEqual(pendingCloseRequests(), [w])
+})
+
+test("configured world applies saved mixed order before both bodies sync", () => {
+  const storage = fakeStorage()
+  configureDocumentListStorage(storage)
+  storage.setItem(documentListStorageKey("w"), JSON.stringify({
+    version: 1,
+    order: ["web:w1", fileId("a.ts")],
+    activeId: "web:w1",
+  }))
+
+  configureDocumentListWorld("w")
+  syncFileTabs("C:/repo", [view("a.ts")])
+  assert.deepEqual(documentTabs().map((entry) => entry.id), [fileId("a.ts")])
+
+  syncWebTabs([view("w1", "W", { icon: "globe" })])
+  assert.deepEqual(documentTabs().map((entry) => entry.id), ["web:w1", fileId("a.ts")])
+  assert.equal(activeDocumentTabId(), "web:w1")
+})
+
+test("new tabs append and closing prunes the saved order", () => {
+  const storage = fakeStorage()
+  configureDocumentListStorage(storage)
+  storage.setItem(documentListStorageKey("w"), JSON.stringify({
+    version: 1,
+    order: ["file:C:/repo\u0000a.ts", "web:w1"],
+    activeId: null,
+  }))
+  configureDocumentListWorld("w")
+
+  syncFileTabs("C:/repo", [view("a.ts"), view("b.ts")])
+  syncWebTabs([view("w1", "W", { icon: "globe" }), view("w2", "W2", { icon: "globe" })])
+  assert.deepEqual(documentTabs().map((entry) => entry.id), [
+    fileId("a.ts"),
+    "web:w1",
+    fileId("b.ts"),
+    "web:w2",
+  ])
+
+  syncFileTabs("C:/repo", [view("a.ts")])
+  flushDocumentListPersistence()
+  const saved = JSON.parse(storage.map.get(documentListStorageKey("w"))!) as { order: string[] }
+  assert.deepEqual(saved.order, [fileId("a.ts"), "web:w1", "web:w2"])
+})
+
+test("moving a tab persists the new mixed order and survives syncs", () => {
+  const storage = fakeStorage()
+  configureDocumentListStorage(storage)
+  configureDocumentListWorld("w")
+  syncFileTabs("C:/repo", [view("a.ts"), view("b.ts")])
+  syncWebTabs([view("w1", "W", { icon: "globe" })])
+
+  moveDocumentTab("web:w1", fileId("a.ts"), "before")
+  assert.deepEqual(documentTabs().map((entry) => entry.id), [
+    "web:w1",
+    fileId("a.ts"),
+    fileId("b.ts"),
+  ])
+
+  syncWebTabs([view("w1", "W", { icon: "globe" })])
+  assert.deepEqual(documentTabs().map((entry) => entry.id), [
+    "web:w1",
+    fileId("a.ts"),
+    fileId("b.ts"),
+  ])
+
+  flushDocumentListPersistence()
+  const saved = JSON.parse(storage.map.get(documentListStorageKey("w"))!) as { order: string[] }
+  assert.deepEqual(saved.order, ["web:w1", fileId("a.ts"), fileId("b.ts")])
+})
+
+test("switching worlds loads that world's order", () => {
+  const storage = fakeStorage()
+  configureDocumentListStorage(storage)
+  storage.setItem(documentListStorageKey("w1"), JSON.stringify({
+    version: 1,
+    order: [fileId("a.ts"), fileId("b.ts")],
+    activeId: null,
+  }))
+  storage.setItem(documentListStorageKey("w2"), JSON.stringify({
+    version: 1,
+    order: [fileId("b.ts"), fileId("a.ts")],
+    activeId: null,
+  }))
+
+  configureDocumentListWorld("w1")
+  syncFileTabs("C:/repo", [view("a.ts"), view("b.ts")])
+  assert.deepEqual(documentTabs().map((entry) => entry.id), [fileId("a.ts"), fileId("b.ts")])
+
+  configureDocumentListWorld("w2")
+  assert.deepEqual(documentTabs().map((entry) => entry.id), [fileId("b.ts"), fileId("a.ts")])
+})
+
+test("no order is persisted before a world is configured", () => {
+  const storage = fakeStorage()
+  configureDocumentListStorage(storage)
+  syncFileTabs("C:/repo", [view("a.ts")])
+  flushDocumentListPersistence()
+  assert.equal(storage.map.size, 0)
 })
