@@ -579,8 +579,9 @@ spec `docs/superpowers/specs/2026-11-13-gateway-e6-interaction-model-design.md`�
   - 补页成功 → **以 `headSeq` 开流**，`lastAppliedSeq`/持久化游标都钉到 `headSeq`，SSE 零回放，
     live 帧只从 headSeq+1 应用（天然无 replay∩live 重复）；
   - `reset` / `truncated` → 先 `clearSeq()` + `onFullResync(reason)`（清实体缓存 + invalidate 所有
-    store）再以 `headSeq` 开流；404 / HTML / 503 / 网络异常 / 非 ok / 形状不符 / `headSeq < since`
-    且非新纪元 → 返回 null，保持原 `since` 走 E2-3 路径，由 SSE greeting 分级；
+    store）再以 `headSeq` 开流；**E7-5 起同时 `writeSeq(headSeq)`**，把新纪元起点落盘——否则本进程
+    退出后下次冷启动又按「无游标」全量重同步一次；404 / HTML / 503 / 网络异常 / 非 ok / 形状不符 /
+    `headSeq < since` 且非新纪元 → 返回 null，保持原 `since` 走 E2-3 路径，由 SSE greeting 分级；
   - **超时**：单次请求 5s（`REPLAY_GAP_TIMEOUT_MS`，`AbortController` + 显式 race 覆盖 body 读取），
     网络黑洞不会挂住重连；首次连接（无游标）不 replay。
   - **部分补页回退是幂等安全的**：页数上限/分页异常导致「已 dispatch 若干页后回退旧路径」时，这些
