@@ -32,6 +32,22 @@ test("WorkbenchShell forwards document callbacks", () => {
   assert.match(shell, /onDocumentSelect=\{props\.onDocumentSelect\}/)
 })
 
+test("document tabs expose drag reorder wiring", () => {
+  const frame = read("src/renderer/mafw/components/document-frame.tsx")
+  const stage = read("src/renderer/mafw/components/DocumentStage.tsx")
+  const css = read("src/renderer/mafw/mafw.css")
+
+  assert.match(frame, /onReorder\?:/)
+  assert.match(frame, /draggable=/)
+  assert.match(frame, /onDragStart=/)
+  assert.match(frame, /onDragOver=/)
+  assert.match(frame, /onDrop=/)
+  assert.match(stage, /moveDocumentTab/)
+  assert.match(css, /\.mafw-document-tab\.is-dragging/)
+  assert.match(css, /\.mafw-document-tab\.drop-before/)
+  assert.match(css, /\.mafw-document-tab\.drop-after/)
+})
+
 test("editor and browser can embed without their own tab strip", () => {
   const editor = read("src/renderer/mafw/components/EditorDock.tsx")
   const browser = read("src/renderer/mafw/components/BrowserDock.tsx")

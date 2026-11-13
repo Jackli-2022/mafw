@@ -4659,7 +4659,22 @@ html[data-theme="light"] body {
   font-size: 11px;
   white-space: nowrap;
   cursor: pointer;
+  position: relative;
 }
+.mafw-document-tab.is-dragging { opacity: .45; }
+.mafw-document-tab.drop-before::before,
+.mafw-document-tab.drop-after::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+  pointer-events: none;
+}
+.mafw-document-tab.drop-before::before { left: -1px; }
+.mafw-document-tab.drop-after::after { right: -1px; }
 .mafw-document-tab:hover { background: var(--bg-hover); color: var(--text-1); }
 .mafw-document-tab.is-active {
   background: var(--bg-overlay);

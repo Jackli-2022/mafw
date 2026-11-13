@@ -1,9 +1,10 @@
 // 右 dock 的共享文档框架：tab 条、toolbar、内容 body 只有一套度量。
 // 编辑器与浏览器各自提供 tab 数据和动作，不再各自发明 header / pill tab / 地址栏。
-import { For, Show, type JSX } from "solid-js"
+import { For, Show, createSignal, type JSX } from "solid-js"
 import { Icon } from "@mafw/ui/icon"
 import { openMenuOnKey } from "../context-menu/menu-key"
 import { tabStripWheelDelta, type DocumentTabView } from "../document-frame-model"
+import type { DocumentDropPosition } from "../documents/document-tabs-model"
 
 export function DocumentFrame(props: {
   tabs?: JSX.Element
@@ -27,9 +28,17 @@ export function DocumentTabs(props: {
   onClose: (id: string) => void
   onMiddleClick?: (id: string) => void
   onContextMenu?: (id: string, event: MouseEvent) => void
+  onReorder?: (fromId: string, toId: string, position: DocumentDropPosition) => void
   trailing?: JSX.Element
 }): JSX.Element {
   const close = (id: string) => props.onClose(id)
+  const [draggingId, setDraggingId] = createSignal<string | null>(null)
+  const [dropTarget, setDropTarget] = createSignal<{ id: string; position: DocumentDropPosition } | null>(null)
+  const canReorder = () => !!props.onReorder
+  const clearDrag = () => {
+    setDraggingId(null)
+    setDropTarget(null)
+  }
   let stripEl: HTMLDivElement | undefined
   const onWheel = (event: WheelEvent) => {
     const el = stripEl
@@ -54,12 +63,46 @@ export function DocumentTabs(props: {
             classList={{
               "is-active": item.active,
               "mafw-document-tab-preview": item.preview === true,
+              "is-dragging": draggingId() === item.id,
+              "drop-before": dropTarget()?.id === item.id && dropTarget()?.position === "before",
+              "drop-after": dropTarget()?.id === item.id && dropTarget()?.position === "after",
             }}
             role="tab"
             tabIndex={0}
+            draggable={canReorder() ? "true" : "false"}
             aria-selected={item.active}
             aria-label={item.title ?? item.label}
             onClick={() => props.onSelect(item.id)}
+            onDragStart={(event) => {
+              if (!canReorder()) return
+              setDraggingId(item.id)
+              if (event.dataTransfer) {
+                event.dataTransfer.setData("text/plain", item.id)
+                event.dataTransfer.effectAllowed = "move"
+              }
+            }}
+            onDragOver={(event) => {
+              if (!canReorder() || !draggingId()) return
+              event.preventDefault()
+              if (event.dataTransfer) event.dataTransfer.dropEffect = "move"
+              const rect = (event.currentTarget as HTMLDivElement).getBoundingClientRect()
+              const position: DocumentDropPosition =
+                event.clientX < rect.left + rect.width / 2 ? "before" : "after"
+              setDropTarget({ id: item.id, position })
+            }}
+            onDragLeave={() => {
+              if (dropTarget()?.id === item.id) setDropTarget(null)
+            }}
+            onDrop={(event) => {
+              if (!canReorder()) return
+              event.preventDefault()
+              const fromId = draggingId() ?? event.dataTransfer?.getData("text/plain") ?? ""
+              const target = dropTarget()
+              clearDrag()
+              if (!fromId || fromId === item.id) return
+              props.onReorder!(fromId, item.id, target?.id === item.id ? target.position : "before")
+            }}
+            onDragEnd={clearDrag}
             onContextMenu={(event) => {
               props.onContextMenu?.(item.id, event)
             }}

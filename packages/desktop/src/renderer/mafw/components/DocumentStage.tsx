@@ -2,7 +2,7 @@ import { createMemo, type JSX } from "solid-js"
 import { DocumentTabs } from "./document-frame"
 import { EditorDock } from "./EditorDock"
 import { BrowserDock } from "./BrowserDock"
-import { activeDocumentTabId, documentTabs } from "../documents/document-tabs-store"
+import { activeDocumentTabId, documentTabs, moveDocumentTab } from "../documents/document-tabs-store"
 import {
   closeOtherTabIds,
   closeRightTabIds,
@@ -79,6 +79,7 @@ export function DocumentStage(props: {
         onClose={props.onClose}
         onMiddleClick={props.onClose}
         onContextMenu={requestTabMenu}
+        onReorder={moveDocumentTab}
       />
       <div class="mafw-document-stage-body">
         <div
