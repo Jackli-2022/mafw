@@ -3,7 +3,7 @@
 import { For, Show, type JSX } from "solid-js"
 import { Icon } from "@mafw/ui/icon"
 import { openMenuOnKey } from "../context-menu/menu-key"
-import type { DocumentTabView } from "../document-frame-model"
+import { tabStripWheelDelta, type DocumentTabView } from "../document-frame-model"
 
 export function DocumentFrame(props: {
   tabs?: JSX.Element
@@ -30,8 +30,23 @@ export function DocumentTabs(props: {
   trailing?: JSX.Element
 }): JSX.Element {
   const close = (id: string) => props.onClose(id)
+  let stripEl: HTMLDivElement | undefined
+  const onWheel = (event: WheelEvent) => {
+    const el = stripEl
+    if (!el || el.scrollWidth <= el.clientWidth) return
+    const delta = tabStripWheelDelta(event, el.clientWidth)
+    if (!delta) return
+    event.preventDefault()
+    el.scrollLeft += delta
+  }
   return (
-    <div class="mafw-document-tabs" role="tablist" aria-label={props.ariaLabel}>
+    <div
+      ref={(el) => { stripEl = el }}
+      class="mafw-document-tabs"
+      role="tablist"
+      aria-label={props.ariaLabel}
+      onWheel={onWheel}
+    >
       <For each={props.items}>
         {(item) => (
           <div

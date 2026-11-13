@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { createEditorModel, openFile, openPreviewFile } from "./editor-state"
 import { createBrowserTab } from "./browser-tabs"
-import { browserDocumentTabs, editorDocumentTabs } from "./document-frame-model"
+import { browserDocumentTabs, editorDocumentTabs, tabStripWheelDelta } from "./document-frame-model"
 
 describe("DocumentFrame tab mapping", () => {
   test("editor files keep identity, basename, dirty/preview/read-only state", () => {
@@ -26,5 +26,13 @@ describe("DocumentFrame tab mapping", () => {
     const mapped = browserDocumentTabs(tabs, "browser-tab-2")
     expect(mapped[0]).toMatchObject({ id: "browser-tab-1", label: "Orcalore Usage", icon: "globe", active: false })
     expect(mapped[1]).toMatchObject({ id: "browser-tab-2", label: "新标签页", icon: "globe", active: true })
+  })
+
+  test("tab strip wheel maps vertical wheel to horizontal scroll", () => {
+    expect(tabStripWheelDelta({ deltaX: 0, deltaY: 120 }, 800)).toBe(120)
+    expect(tabStripWheelDelta({ deltaX: 80, deltaY: 20 }, 800)).toBe(80)
+    expect(tabStripWheelDelta({ deltaX: 0, deltaY: 3, deltaMode: 1 }, 800)).toBe(48)
+    expect(tabStripWheelDelta({ deltaX: 0, deltaY: 1, deltaMode: 2 }, 800)).toBe(800)
+    expect(tabStripWheelDelta({ deltaX: 0, deltaY: 0 }, 800)).toBe(0)
   })
 })

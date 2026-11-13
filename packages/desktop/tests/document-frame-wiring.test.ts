@@ -35,6 +35,13 @@ test("browser drops its private pill tab bar and address bar", () => {
   assert.match(browser, /browserDocumentTabs/)
 })
 
+test("tab strip handles wheel-to-horizontal scrolling", () => {
+  const component = read("src/renderer/mafw/components/document-frame.tsx")
+  assert.match(component, /onWheel/)
+  assert.match(component, /scrollLeft/)
+  assert.match(component, /tabStripWheelDelta/)
+})
+
 test("document chrome CSS is shared", () => {
   const css = read("src/renderer/mafw/mafw.css")
   for (const cls of [

@@ -40,3 +40,14 @@ export function browserDocumentTabs(
     active: tab.id === activeId,
   }))
 }
+
+/** tab 条滚轮：横向手势用 deltaX，纵向滚轮映射成左右滚动。 */
+export function tabStripWheelDelta(
+  input: { deltaX: number; deltaY: number; deltaMode?: number },
+  viewportWidth: number,
+): number {
+  const axis = Math.abs(input.deltaX) > Math.abs(input.deltaY) ? input.deltaX : input.deltaY
+  if (!axis) return 0
+  const unit = input.deltaMode === 1 ? 16 : input.deltaMode === 2 ? Math.max(1, viewportWidth) : 1
+  return axis * unit
+}
