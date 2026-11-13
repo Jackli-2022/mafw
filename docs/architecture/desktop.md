@@ -75,9 +75,12 @@
   预览 / 改动）与浏览器动作（后退 / 前进 / 刷新 / 地址 / 点选 / 外部）不合并。tab 右键菜单由
   `buildDocumentTabMenu` 按 kind 提供关闭 / 关闭其他 / 关闭右侧 / 复制路径（文件）或复制链接 /
   系统浏览器打开（网页）。`MafwShell` 是 select / close / close-others / close-right 的路由层，
-  关闭请求经 `document-tabs-store` 一次性队列交给 owning body 执行。Phase 1 不迁移
-  `EditorModel` / `BrowserTab` 详细状态，也不做拖拽排序或跨重启文档列表持久化（Phase 2）。
-  左 dock 文件面头部提供手动刷新（保留展开态）。
+  关闭请求经 `document-tabs-store` 一次性队列交给 owning body 执行。2026-11-13 Phase 2A 起，
+  tab 顺序是 store 权威：支持跨文件 / 网页拖拽，顺序按 world（项目）持久化到
+  `mafw-document-list:v1:<worldId>`；浏览器 tab 的 id / URL / 标题持久化到
+  `mafw-browser-tabs:v1`，重启后恢复并重新加载 webview。文件内容 / dirty / 草稿仍走
+  `editor-drafts` / `content-scope-state`；`EditorModel` / `BrowserTab` 详细状态迁移与统一
+  toolbar 动作注册仍属 Phase 2B / 2C。左 dock 文件面头部提供手动刷新（保留展开态）。
 - **编辑器**：默认 **Monaco**（VS Code 内核；`mafw-editor-engine=codemirror` 回退，挂载失败自动回退），
   行内 diff 装饰、Ctrl/Cmd+S、MAFW 主题 token 映射、minimap ≥720px。详情见本文件 Monaco 段。
 - **文件预览**：md（session-ui markdown）、json 折叠树、csv/tsv 表格、svg 预览/源码、图片、pdf（Chromium
