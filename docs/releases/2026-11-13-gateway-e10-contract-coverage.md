@@ -94,7 +94,7 @@
    `pod-store.test.ts` 的 mock 用本地宽松类型 → `tsgo` 无新增红，均为 **0 破坏**。这三处 DTO 上「旧 gateway
    可能不发」的注释随之下架（wire 一直发，注释是陈旧的保守表述）。
 3. **`work.overview` / pod 读接口的 OpenAPI schema 新增**：纯元数据，wire 不变；生成物
-   `gateway-paths.json` 有 +6865/−2505 的 diff，绝大部分是 git 对齐噪声（`PodGoalSchema` 在
+   `gateway-paths.json` 有 +6675/−1429 的 diff，绝大部分是 git 对齐噪声（`PodGoalSchema` 在
    `work.overview` 里被内联 5 次），按解析后 JSON 比对确认只有 8 个目标 op 变化。
 4. **`session.children` 的 SDK 声明与 wire 不一致（既有问题，本波只记录不改）**：client `children()`
    声明 `Promise<any[]>`，实际是 `{items}`，桌面 `subagent-reconcile` 的 `Array.isArray(children)`

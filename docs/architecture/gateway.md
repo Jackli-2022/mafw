@@ -560,7 +560,8 @@ legacy 链——`goals.sessions` 先于 dashboard 兜底、`memory/embedding-con
 **路由模块**：`gateway/src/routes/` 下 38 个文件、40 个 `attach*` 入口，向 `RouteRegistry`
 （`routes/registry.ts`；catalog = `routes/route-catalog.ts`，278 条 `operationId`）挂
 **208 个 handler**。每个模块 = `attach<Domain>Routes(registry, deps)`，handler 体从
-index.ts **逐字**搬迁（状态码 / 响应形状 / fail-open / 200-not-404 miss / 405-else 臂全保留），
+index.ts **逐字**搬迁（状态码 / 响应形状 / fail-open / 405-else 臂全保留；`session.get` 缺失的
+200-not-404 已在 E10-3 改为 404），
 `this.x` 一律换成 **live getter** `() => this.x`（boot 后重赋的字段不能捕快照）。
 新增路由 = catalog 条目（`operationId` + method + path-template）+ `attachHandler`，缺一不可达；
 path-template 里 `{id}` 是字面量、只有 `:param` 才是参数（registry 拆分后 decodeURIComponent）。
@@ -1256,7 +1257,7 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 - **有 SDK DTO 的 op 必须 `AssertEq`**（`packages/gateway-sdk/src/contract-compat.checks.ts`，编译期）：
   本波 16 op 中 15 个有等价断言（仅 `session.children` 因 item 归 runtime 所有而只能 schema-only；
   `tokenSummary` / `pods.cost` 借 client 的内联返回类型，不新增命名 DTO）。
-  schema 与 DTO 冲突时**以 handler 为准修 DTO**，并在批次报告里列出受影响消费者（本波 4 处收紧、0 破坏性消费者）：
+  schema 与 DTO 冲突时**以 handler 为准修 DTO**，并在批次报告里列出受影响消费者（本波 5 处收紧、0 破坏性消费者）：
   `SessionConfigState.thinkingLevelSupported` 改必填、`SessionCheckpointListItem` 拆分列表条目、
   `PodMessage` 4 个字段改必填可空、`PodGoalResult`（含 `PodGoalCondition` / `PodGoalResultFailure`）与
   `PodEventItem` 的 `reason` / `audience` / `severity` 收紧成联合类型。
