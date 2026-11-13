@@ -17,16 +17,16 @@ import { BROWSER_PARTITION, navigationDecision, normalizeAddress } from "../../.
 import { displayMafwFilePath } from "../../../shared/mafw-file"
 import { takeBrowserNavRequest } from "../browser-nav"
 import {
-  activeBrowserTabId,
-  browserTabs,
-  closeBrowserTab,
-  closeBrowserTabsToRight,
-  closeOtherBrowserTabs,
-  openBrowserTab,
-  setActiveBrowserTab,
-  updateBrowserTab,
-  type BrowserTab,
-} from "../browser-tabs"
+  activeBrowserDocumentId,
+  browserDocuments,
+  closeBrowserDocument,
+  closeBrowserDocumentsToRight,
+  closeOtherBrowserDocuments,
+  openBrowserDocument,
+  setActiveBrowserDocument,
+  updateBrowserDocument,
+  type BrowserDocument,
+} from "../documents/browser-documents"
 import { browserDocumentTabs } from "../document-frame-model"
 import { activeDocumentTab, consumeCloseRequest, pendingCloseRequests } from "../documents/document-tabs-store"
 import { registerDocumentToolbar, type DocumentToolbarSlots } from "../documents/document-toolbar-registry"
@@ -56,10 +56,10 @@ export function BrowserDock(props: {
   const paneEls = new Map<string, HTMLDivElement>()
   let host: HTMLDivElement | undefined
 
-  const tabs = () => browserTabs()
-  const activeTab = (): BrowserTab | null => tabs().find((tab) => tab.id === activeBrowserTabId()) ?? null
+  const tabs = () => browserDocuments()
+  const activeTab = (): BrowserDocument | null => tabs().find((tab) => tab.id === activeBrowserDocumentId()) ?? null
   const activeView = () => {
-    const id = activeBrowserTabId()
+    const id = activeBrowserDocumentId()
     return id ? viewRegistry.get(id) : null
   }
   const displayAddress = (url: string) => displayMafwFilePath(url) ?? url
@@ -71,7 +71,7 @@ export function BrowserDock(props: {
   let addressTabId: string | null = null
   let addressUrl = ""
   createEffect(() => {
-    const id = activeBrowserTabId()
+    const id = activeBrowserDocumentId()
     const tab = tabs().find((item) => item.id === id)
     const url = tab?.url ?? ""
     if (id === addressTabId && url === addressUrl) return
@@ -94,9 +94,9 @@ export function BrowserDock(props: {
       const url = String(view.getURL?.() ?? "")
       if (url) {
         viewUrls.set(id, url)
-        updateBrowserTab(id, { url })
+        updateBrowserDocument(id, { url })
       }
-      updateBrowserTab(id, {
+      updateBrowserDocument(id, {
         canBack: !!view.canGoBack?.(),
         canForward: !!view.canGoForward?.(),
         title: String(view.getTitle?.() ?? ""),
@@ -104,7 +104,7 @@ export function BrowserDock(props: {
     } catch { /* 未 attach 时方法不可用 */ }
   }
 
-  const createView = (tab: BrowserTab, pane: HTMLDivElement) => {
+  const createView = (tab: BrowserDocument, pane: HTMLDivElement) => {
     // 用 createElement 而非 JSX：webview 是 Electron 自定义元素，JSX 类型面不认。
     const el = document.createElement("webview") as any
     el.setAttribute("partition", BROWSER_PARTITION)
@@ -112,16 +112,16 @@ export function BrowserDock(props: {
     el.className = "mafw-browser-view"
     el.addEventListener("did-navigate", () => sync(tab.id, el))
     el.addEventListener("did-navigate-in-page", () => sync(tab.id, el))
-    el.addEventListener("did-start-loading", () => updateBrowserTab(tab.id, { loading: true, failed: undefined }))
+    el.addEventListener("did-start-loading", () => updateBrowserDocument(tab.id, { loading: true, failed: undefined }))
     el.addEventListener("did-stop-loading", () => {
-      updateBrowserTab(tab.id, { loading: false })
+      updateBrowserDocument(tab.id, { loading: false })
       sync(tab.id, el)
     })
-    el.addEventListener("page-title-updated", (event: any) => updateBrowserTab(tab.id, { title: String(event?.title ?? "") }))
+    el.addEventListener("page-title-updated", (event: any) => updateBrowserDocument(tab.id, { title: String(event?.title ?? "") }))
     el.addEventListener("dom-ready", () => sync(tab.id, el))
     el.addEventListener("did-fail-load", (event: any) => {
       if (event?.errorCode === -3 || !event?.isMainFrame) return
-      updateBrowserTab(tab.id, {
+      updateBrowserDocument(tab.id, {
         failed: `加载失败：${String(event?.errorDescription ?? event?.errorCode ?? "unknown")}`,
       })
     })
@@ -149,7 +149,7 @@ export function BrowserDock(props: {
         host.appendChild(pane)
         paneEls.set(tab.id, pane)
       }
-      pane.classList.toggle("is-active", tab.id === activeBrowserTabId())
+      pane.classList.toggle("is-active", tab.id === activeBrowserDocumentId())
       const view = viewRegistry.get(tab.id)
       if (!view && tab.url) {
         createView(tab, pane)
@@ -162,7 +162,7 @@ export function BrowserDock(props: {
 
   createEffect(() => {
     tabs()
-    activeBrowserTabId()
+    activeBrowserDocumentId()
     ensurePanes()
   })
 
@@ -172,8 +172,8 @@ export function BrowserDock(props: {
     const decision = navigationDecision(url)
     if (decision === "external") { void window.api.browser.openExternal(url); return }
     if (decision !== "allow") return
-    const newTab = opts.newTab === true || !activeBrowserTabId()
-    const tab = openBrowserTab(url, { newTab })
+    const newTab = opts.newTab === true || !activeBrowserDocumentId()
+    const tab = openBrowserDocument(url, { newTab })
     if (!tab) {
       showToastV2({ description: "最多同时打开 12 个浏览器标签", duration: 2200 } as any)
       return
@@ -209,7 +209,7 @@ export function BrowserDock(props: {
   const closeTab = (id: string) => {
     if (pickTabId === id) cancelPick()
     removeView(id)
-    closeBrowserTab(id)
+    closeBrowserDocument(id)
   }
 
   // 跨重启恢复：先读快照，再让持久化 effect 跟随 tab 变化。
@@ -221,7 +221,7 @@ export function BrowserDock(props: {
   createEffect(() => {
     saveBrowserTabsSnapshot({
       version: 1,
-      activeId: activeBrowserTabId(),
+      activeId: activeBrowserDocumentId(),
       tabs: tabs().map((tab) => ({ id: tab.id, url: tab.url, title: tab.title })),
     })
   })
@@ -231,7 +231,7 @@ export function BrowserDock(props: {
   createEffect(() => {
     const active = activeDocumentTab()
     if (!active || active.kind !== "web") return
-    if (active.view.id !== activeBrowserTabId()) setActiveBrowserTab(active.view.id)
+    if (active.view.id !== activeBrowserDocumentId()) setActiveBrowserDocument(active.view.id)
   })
 
   createEffect(() => {
@@ -243,7 +243,7 @@ export function BrowserDock(props: {
   })
 
   const newBlankTab = () => {
-    const tab = openBrowserTab("", { newTab: true })
+    const tab = openBrowserDocument("", { newTab: true })
     if (!tab) showToastV2({ description: "最多同时打开 12 个浏览器标签", duration: 2200 } as any)
   }
 
@@ -269,7 +269,7 @@ export function BrowserDock(props: {
     try { void view?.executeJavaScript?.(buildPickCancelScript()) } catch { /* ignore */ }
   }
   createEffect(() => {
-    const id = activeBrowserTabId()
+    const id = activeBrowserDocumentId()
     if (picking() && pickTabId && id !== pickTabId) cancelPick()
   })
   createEffect(() => {
@@ -408,11 +408,11 @@ export function BrowserDock(props: {
         if (action === "browserTab.close") closeTab(id)
         else if (action === "browserTab.closeOthers") {
           const removed = tabs().filter((item) => item.id !== id).map((item) => item.id)
-          closeOtherBrowserTabs(id)
+          closeOtherBrowserDocuments(id)
           for (const removedId of removed) removeView(removedId)
         } else if (action === "browserTab.closeRight") {
           const removed = tabs().slice(index + 1).map((item) => item.id)
-          closeBrowserTabsToRight(id)
+          closeBrowserDocumentsToRight(id)
           for (const removedId of removed) removeView(removedId)
         } else if (action === "browserTab.copyLink") {
           if (url) void navigator.clipboard.writeText(url)
@@ -536,9 +536,9 @@ export function BrowserDock(props: {
       onContextMenu={requestDockMenu}
       tabs={
         <DocumentTabs
-          items={browserDocumentTabs(tabs(), activeBrowserTabId())}
+          items={browserDocumentTabs(tabs(), activeBrowserDocumentId())}
           ariaLabel="浏览器标签"
-          onSelect={(id) => setActiveBrowserTab(id)}
+          onSelect={(id) => setActiveBrowserDocument(id)}
           onClose={(id) => closeTab(id)}
           onMiddleClick={(id) => closeTab(id)}
           onContextMenu={requestTabMenu}

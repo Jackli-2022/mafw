@@ -1,10 +1,10 @@
 import { beforeEach, test } from "node:test"
 import assert from "node:assert/strict"
 import {
-  activeBrowserTabId,
-  browserTabs,
-  resetBrowserTabsForTests,
-} from "../browser-tabs"
+  activeBrowserDocumentId,
+  browserDocuments,
+  resetBrowserDocumentsForTests,
+} from "./browser-documents"
 import {
   configureBrowserTabsStorage,
   flushBrowserTabsPersistence,
@@ -25,7 +25,7 @@ function fakeStorage() {
 }
 
 beforeEach(() => {
-  resetBrowserTabsForTests()
+  resetBrowserDocumentsForTests()
   resetBrowserTabsPersistenceForTests()
 })
 
@@ -42,12 +42,12 @@ test("browser tabs restore ids, urls, titles and active once", () => {
   }))
 
   assert.equal(restoreBrowserTabsOnce(), 2)
-  assert.deepEqual(browserTabs().map((tab) => tab.id), ["browser-tab-7", "browser-tab-3"])
-  assert.equal(browserTabs()[0].title, "Example Domain")
-  assert.equal(activeBrowserTabId(), "browser-tab-7")
+  assert.deepEqual(browserDocuments().map((tab) => tab.id), ["browser-tab-7", "browser-tab-3"])
+  assert.equal(browserDocuments()[0].title, "Example Domain")
+  assert.equal(activeBrowserDocumentId(), "browser-tab-7")
 
   assert.equal(restoreBrowserTabsOnce(), 0)
-  assert.equal(browserTabs().length, 2)
+  assert.equal(browserDocuments().length, 2)
 })
 
 test("restore skips invalid urls and unknown active ids", () => {
@@ -67,9 +67,9 @@ test("restore skips invalid urls and unknown active ids", () => {
   }))
 
   assert.equal(restoreBrowserTabsOnce(), 2)
-  assert.deepEqual(browserTabs().map((tab) => tab.id), ["ok", "dup"])
-  assert.equal(browserTabs()[1].url, "https://a.example")
-  assert.equal(activeBrowserTabId(), "dup")
+  assert.deepEqual(browserDocuments().map((tab) => tab.id), ["ok", "dup"])
+  assert.equal(browserDocuments()[1].url, "https://a.example")
+  assert.equal(activeBrowserDocumentId(), "dup")
 })
 
 test("browser snapshots roundtrip and keep only restorable urls", () => {
@@ -111,5 +111,5 @@ test("restored snapshot drops tabs beyond the limit", () => {
   }))
 
   assert.equal(restoreBrowserTabsOnce(), 12)
-  assert.equal(browserTabs().length, 12)
+  assert.equal(browserDocuments().length, 12)
 })

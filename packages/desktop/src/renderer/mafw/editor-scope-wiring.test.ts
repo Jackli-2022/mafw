@@ -10,8 +10,8 @@ const monaco = read("editor/monaco-setup.ts")
 const types = readFileSync(join(import.meta.dirname, "../../shared/annotation-types.ts"), "utf8")
 
 test("EditorDock restores models and reading positions per scope", () => {
-  assert.match(editor, /editorModelFor\(/)
-  assert.match(editor, /saveEditorModel\(/)
+  assert.match(editor, /fileModelFor\(/)
+  assert.match(editor, /saveFileModel\(/)
   assert.match(editor, /rememberReadingPosition/)
   assert.match(editor, /readingPositionFor/)
   assert.match(editor, /getScroll\(\)/)

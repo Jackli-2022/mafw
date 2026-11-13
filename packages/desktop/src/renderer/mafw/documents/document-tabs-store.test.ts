@@ -17,7 +17,7 @@ import {
   configureFileDocumentRoot,
   syncFileTabs,
 } from "./document-tabs-store"
-import { closeBrowserTab, openBrowserTab, resetBrowserTabsForTests, updateBrowserTab } from "../browser-tabs"
+import { closeBrowserDocument, openBrowserDocument, resetBrowserDocumentsForTests, updateBrowserDocument } from "./browser-documents"
 import { clearFileModels, saveFileModel } from "./file-documents"
 import { closeFile, createEditorModel, markDirty, openFile } from "../editor-state"
 import {
@@ -49,11 +49,11 @@ function fakeStorage() {
 const fileId = (rel: string) => `file:C:/repo\u0000${rel}`
 
 function web(id: string, label = id): void {
-  openBrowserTab(`https://${id}.example`, { id, newTab: true, title: label })
+  openBrowserDocument(`https://${id}.example`, { id, newTab: true, title: label })
 }
 
 beforeEach(() => {
-  resetBrowserTabsForTests()
+  resetBrowserDocumentsForTests()
   clearFileModels()
   resetDocumentTabsForTests()
   resetDocumentListPersistenceForTests()
@@ -112,7 +112,7 @@ test("re-syncing identical tabs does not rewrite the strip", () => {
   const first = documentTabs()
 
   syncFileTabs("C:/repo", [view("a.ts")])
-  updateBrowserTab("w1", { title: "W" })
+  updateBrowserDocument("w1", { title: "W" })
 
   assert.equal(documentTabs(), first)
 })
@@ -134,7 +134,7 @@ test("browser documents create and remove web entries automatically", () => {
   assert.deepEqual(documentTabs().map((entry) => entry.kind), ["file", "web"])
   assert.equal(activeDocumentTabId(), webDocumentId)
 
-  closeBrowserTab("w1")
+  closeBrowserDocument("w1")
 
   assert.deepEqual(documentTabs().map((entry) => entry.kind), ["file"])
   assert.equal(activeDocumentTabId(), null)

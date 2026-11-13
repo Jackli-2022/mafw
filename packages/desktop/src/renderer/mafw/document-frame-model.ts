@@ -1,6 +1,6 @@
 // DocumentFrame 的纯视图映射：编辑器 tab 与浏览器 tab 收敛成同一套 tab 形状。
 import type { EditorModel } from "./editor-state"
-import { browserTabTitle, type BrowserTab } from "./browser-tabs"
+import { browserDocumentTitle, type BrowserDocument } from "./documents/browser-documents"
 
 export type DocumentTabIcon = "file" | "globe"
 
@@ -29,12 +29,12 @@ export function editorDocumentTabs(model: EditorModel): DocumentTabView[] {
 }
 
 export function browserDocumentTabs(
-  tabs: readonly BrowserTab[],
+  tabs: readonly BrowserDocument[],
   activeId: string | null,
 ): DocumentTabView[] {
   return tabs.map((tab) => ({
     id: tab.id,
-    label: browserTabTitle(tab),
+    label: browserDocumentTitle(tab),
     title: tab.url,
     icon: "globe",
     active: tab.id === activeId,

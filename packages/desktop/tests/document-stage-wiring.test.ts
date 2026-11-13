@@ -62,7 +62,7 @@ test("browser dock restores and persists tab snapshots", () => {
   const browser = read("src/renderer/mafw/components/BrowserDock.tsx")
   assert.match(browser, /restoreBrowserTabsOnce/)
   assert.match(browser, /saveBrowserTabsSnapshot/)
-  assert.match(browser, /activeBrowserTabId/)
+  assert.match(browser, /activeBrowserDocumentId/)
 })
 
 test("editor and browser can embed without their own tab strip", () => {

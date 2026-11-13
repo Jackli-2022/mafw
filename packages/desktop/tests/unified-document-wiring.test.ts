@@ -18,7 +18,7 @@ test("MafwShell owns the unified document strip routing", () => {
   assert.match(shell, /nextDocumentTabId/)
   assert.match(shell, /fileDocumentTabId/)
   assert.match(shell, /webDocumentTabId/)
-  assert.match(shell, /activeBrowserTabId/)
+  assert.match(shell, /activeBrowserDocumentId/)
 })
 
 test("DocumentStage mounts both embedded bodies", () => {
@@ -34,7 +34,7 @@ test("DocumentStage mounts both embedded bodies", () => {
 test("MafwShell opens a blank browser tab for the browser command", () => {
   const shell = read("src/renderer/mafw/MafwShell.tsx")
   assert.match(shell, /target\.length === 0 \|\| target === "about:blank"/)
-  assert.match(shell, /openBrowserTab\("", \{ newTab: true \}\)/)
+  assert.match(shell, /openBrowserDocument\("", \{ newTab: true \}\)/)
   assert.match(shell, /if \(item\.subject\.kind === "web"\)/)
   assert.match(shell, /openBrowserFocus\(item\.subject\.url, \{ newTab: true \}\)/)
 })

@@ -1,5 +1,4 @@
 // Web 文档状态：document 层拥有浏览器 tab 集合与 active id。
-// browser-tabs.ts 保留为兼容 facade，供 BrowserDock / persistence / tests 继续使用旧命名。
 import { createSignal } from "solid-js"
 import { displayMafwFilePath } from "../../../shared/mafw-file"
 

@@ -3,10 +3,10 @@
 import { navigationDecision } from "../../../shared/browser-policy"
 import {
   BROWSER_TAB_LIMIT,
-  browserTabs,
-  openBrowserTab,
-  setActiveBrowserTab,
-} from "../browser-tabs"
+  browserDocuments,
+  openBrowserDocument,
+  setActiveBrowserDocument,
+} from "./browser-documents"
 import type { DocumentListStorage } from "./document-list-persistence"
 
 export type PersistedBrowserTab = {
@@ -124,15 +124,15 @@ export function restoreBrowserTabsOnce(): number {
   if (snapshot.tabs.length === 0) return 0
 
   let count = 0
-  const existing = new Set(browserTabs().map((tab) => tab.id))
+  const existing = new Set(browserDocuments().map((tab) => tab.id))
   for (const tab of snapshot.tabs) {
     if (existing.has(tab.id)) continue
-    if (!openBrowserTab(tab.url, { id: tab.id, title: tab.title, newTab: true })) break
+    if (!openBrowserDocument(tab.url, { id: tab.id, title: tab.title, newTab: true })) break
     existing.add(tab.id)
     count++
   }
   if (snapshot.activeId && existing.has(snapshot.activeId)) {
-    setActiveBrowserTab(snapshot.activeId)
+    setActiveBrowserDocument(snapshot.activeId)
   }
   return count
 }

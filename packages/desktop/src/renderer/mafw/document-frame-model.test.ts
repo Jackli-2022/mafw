@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createEditorModel, openFile, openPreviewFile } from "./editor-state"
-import { createBrowserTab } from "./browser-tabs"
+import { createBrowserDocument } from "./documents/browser-documents"
 import { browserDocumentTabs, editorDocumentTabs, tabStripWheelDelta } from "./document-frame-model"
 
 describe("DocumentFrame tab mapping", () => {
@@ -20,8 +20,8 @@ describe("DocumentFrame tab mapping", () => {
 
   test("browser tabs use the browser title and active tab id", () => {
     const tabs = [
-      createBrowserTab("http://localhost:3000/usage", "browser-tab-1", "Orcalore Usage"),
-      createBrowserTab("", "browser-tab-2"),
+      createBrowserDocument("http://localhost:3000/usage", "browser-tab-1", "Orcalore Usage"),
+      createBrowserDocument("", "browser-tab-2"),
     ]
     const mapped = browserDocumentTabs(tabs, "browser-tab-2")
     expect(mapped[0]).toMatchObject({ id: "browser-tab-1", label: "Orcalore Usage", icon: "globe", active: false })

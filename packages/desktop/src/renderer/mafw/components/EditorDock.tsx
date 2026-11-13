@@ -23,7 +23,7 @@ import {
   editorSaveContent, isReadOnlyPreview, promotePreview,
   type EditorModel, type OpenFile,
 } from "../editor-state"
-import { editorModelFor, saveEditorModel } from "../editor-model-store"
+import { fileModelFor, saveFileModel } from "../documents/file-documents"
 import {
   contentScopeStateFor,
   readingPositionFor,
@@ -101,11 +101,11 @@ export function EditorDock(props: {
   /** 批注标记点击 → 切到审阅面（回路闭合）。 */
   onOpenReview?: () => void
 }) {
-  const model = () => editorModelFor(props.contentRoot)
+  const model = () => fileModelFor(props.contentRoot)
   const setModel = (update: EditorModel | ((current: EditorModel) => EditorModel)) => {
-    const current = editorModelFor(props.contentRoot)
+    const current = fileModelFor(props.contentRoot)
     const next = typeof update === "function" ? update(current) : update
-    saveEditorModel(props.contentRoot, next)
+    saveFileModel(props.contentRoot, next)
   }
   const [readNotes, setReadNotes] = createSignal<Record<string, string>>({})
   const [saving, setSaving] = createSignal(false)
@@ -386,7 +386,7 @@ export function EditorDock(props: {
     lastFileRoot = root
     lastFileScope = scopeKey
     if (previousRoot !== undefined) {
-      untrack(() => rememberScrollForModel(editorModelFor(previousRoot), previousScope))
+      untrack(() => rememberScrollForModel(fileModelFor(previousRoot), previousScope))
     }
     // 旧 editor 必须在模型/根切换前同步失效，避免 refreshActiveFromDisk 的
     // await 窗口里 saveActive 把旧文档写进新 scope 的同名文件。
@@ -397,7 +397,7 @@ export function EditorDock(props: {
     mountedRel = null
     previewRestoredKey = null
     lastScopeKey = scopeKey
-    const restored = editorModelFor(root)
+    const restored = fileModelFor(root)
     const activeRel = scopeKey ? contentScopeStateFor(scopeKey).activeFile : null
     const shouldRestore = !!root && restored.files.length === 0 && !!activeRel
     // 必须在 setModel 之前置位：Solid 可能同步触发 model effect，空模型会覆盖持久化状态。
@@ -421,7 +421,7 @@ export function EditorDock(props: {
   createEffect(() => {
     const current = model()
     const key = props.scopeKey ?? null
-    if (current.root) saveEditorModel(current.root, current)
+    if (current.root) saveFileModel(current.root, current)
     if (!key) return
     // 初始挂载时 contentRoot 尚未就绪：空 model 绝不能覆盖上一次持久化的 activeFile。
     if (!current.root || current.root !== props.contentRoot) return
