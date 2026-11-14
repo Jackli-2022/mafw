@@ -185,6 +185,10 @@ export type ChatPaneProps = {
   onOpenFile?: (root: string, rel: string) => void
   /** 打开改动审阅面板（切片 2；SessionTurn actions + composer 工具条双入口） */
   onOpenDiffReview?: () => void
+  /** 导出当前会话为 Markdown（标题/消息组装在 shell）。 */
+  onExportCurrentSession?: () => void
+  /** 分叉当前会话（新会话打开在 shell）。 */
+  onForkCurrentSession?: () => void
   /** 点击上下文 pill：打开 Config › Usage */
   onOpenUsage?: () => void
   /** worktree 并行隔离（切片 4）：能力门 = Experience `session.worktree`（目录级 git 事实） */
@@ -1514,6 +1518,32 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       { id: "triage", trigger: "/triage", title: "Triage 页", description: "打开分诊页", group: "local", source: "builtin", run: () => { closeCommandPicker(); props.onNavigateTab?.("triage") } },
       { id: "automation", trigger: "/automation", title: "Automation 页", description: "打开自动化页", group: "local", source: "builtin", run: () => { closeCommandPicker(); props.onNavigateTab?.("automation") } },
       { id: "mcp", trigger: "/mcp", title: "MCP 服务器", description: "查看 MCP 连接状态", group: "local", source: "builtin", run: () => { closeCommandPicker(); props.onNavigateTab?.("mcp") } },
+      {
+        id: "compact", trigger: "/compact", title: "压缩上下文",
+        description: "手动压缩当前会话历史", group: "local", source: "builtin",
+        run: () => {
+          closeCommandPicker()
+          const sid = sidProp()
+          if (!sid) return
+          if (sessionBusy()) {
+            showToastV2({ description: "回合进行中，结束后再压缩", duration: 2500 })
+            return
+          }
+          void window.api.mafw.sessions.summarize(sid)
+            .then(() => showToastV2({ description: "已压缩当前会话", duration: 2500 }))
+            .catch((e: any) => showToastV2({ description: `压缩失败: ${e?.message ?? e}`, duration: 4000 }))
+        },
+      },
+      {
+        id: "export", trigger: "/export", title: "导出会话",
+        description: "导出当前会话为 Markdown 文件", group: "local", source: "builtin",
+        run: () => { closeCommandPicker(); props.onExportCurrentSession?.() },
+      },
+      {
+        id: "fork", trigger: "/fork", title: "分叉会话",
+        description: "基于当前会话创建历史副本", group: "local", source: "builtin",
+        run: () => { closeCommandPicker(); props.onForkCurrentSession?.() },
+      },
     ]
     const mafw: CommandItem[] = mafwRemote().items.length > 0
       ? mafwRemote().items

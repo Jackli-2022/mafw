@@ -4306,6 +4306,8 @@ export function MafwShell() {
                           sendBlocked={activeTechLeadBlocked}
                           onOpenFile={(root, rel) => openFileInScope(rel, root, focusScopeFromContent(contentScope()))}
                           onOpenDiffReview={openCurrentSessionChangeSet}
+                          onExportCurrentSession={() => { const sid = activeSessionId(); if (sid) void exportSession(sid) }}
+                          onForkCurrentSession={() => { const sid = activeSessionId(); if (sid) void forkSessionFromMenu(sid) }}
                           worktreeEnabled={worktreeEnabled()}
                           revertUndoEnabled={revertUndoEnabled()}
                           onCreateWorktreeSession={createWorktreeSession}

@@ -30,3 +30,24 @@ test("local commands clear composer state before running", () => {
   )
   assert.match(chat, /if \(item\.run\) \{ runLocalCommand\(item\.run\); return \}/)
 })
+
+test("session commands are wired", () => {
+  for (const trigger of ["/compact", "/export", "/fork"]) {
+    assert.match(chat, new RegExp(`trigger: "${trigger}"`))
+  }
+
+  const compact = commandBlock("compact")
+  assert.match(compact, /sessions\.summarize\(sid\)/)
+  assert.match(compact, /if \(!sid\) return/)
+  assert.ok(
+    compact.indexOf("sessionBusy()") < compact.indexOf("sessions.summarize"),
+    "compact must guard a busy turn before calling summarize",
+  )
+
+  assert.match(chat, /props\.onExportCurrentSession/)
+  assert.match(chat, /props\.onForkCurrentSession/)
+  assert.match(shell, /onExportCurrentSession=\{/)
+  assert.match(shell, /if \(sid\) void exportSession\(sid\)/)
+  assert.match(shell, /onForkCurrentSession=\{/)
+  assert.match(shell, /if \(sid\) void forkSessionFromMenu\(sid\)/)
+})
