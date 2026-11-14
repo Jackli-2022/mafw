@@ -42,6 +42,7 @@ goal:
   - `buildGoalEvalPrompt()`：注入 GoalEval conditions、plan、task results、review feedback。
   - `createLlmGoalEvalProvider()`：调用 runtime `CompletionChannel.complete()`。
   - 解析 ```json fenced / 裸 JSON array；非法 JSON 抛错，不自动 PASS。
+  - **`mode: 'advisory'`**：provider 只能提出 fail，不能替 reviewer 放行；pass/skipped 视为不反对，保留 reviewer 结果。
 - `gateway/src/kernel.ts`
   - `bindGoalEvalProvider(driver)`：读取 `goal.evalProvider` / `evalModel` / `nodeModel` / `recall.judgeModel`。
 - `gateway/src/boot.ts`
@@ -58,18 +59,17 @@ goal:
 
 ## 验证
 
-- 新增 **4 个 provider 测试**：
+- 新增 **5 个 provider 测试**：
   - structured JSON 解析 + prompt 内容
   - 非法 JSON 拒绝
   - 缺失 completion 通道拒绝
   - prompt 包含 conditions / task evidence / feedback
-- 定向：goal eval provider / driver wiring / LLM provider **10 / 10 pass**。
+  - advisory：provider fail 可覆盖 PASS，pass/skipped 不改变 reviewer 结果
+- 定向：goal eval provider / driver wiring / LLM provider **11 / 11 pass**。
 - runtime architecture boundaries：**34 / 34 pass**（provider 使用 `channel` thunk，不直接读 runtime capability）。
 - gateway typecheck：`npx tsc --noEmit -p tsconfig.json` 退出 0。
-- gateway 全量：**7167 passed / 1 skipped / 7171 total**；2 个失败套件来自并行会话新增路由未更新 ledger：
-  - `schema-coverage` 316 → 317
-  - `wave1-handlers` 49 → 50
-  - 与 GoalEval provider 无关；定向/架构测试通过。
+- gateway 全量：**7249 passed / 2 skipped / 7251 total**（923 suites，`--testTimeout=20000`）。
+- 使用场景评估：`docs/research/2026-11-14-goal-eval-provider-use-case.md`。
 
 ## 明确未做
 
@@ -87,6 +87,7 @@ goal:
 ## 关键 commit
 
 - `718c6ea9` feat(goal): add first-party LLM goal eval provider
+- `b30ab0d1` fix(goal): make llm goal eval advisory
 
 ## Next
 
