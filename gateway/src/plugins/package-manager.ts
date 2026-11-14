@@ -24,16 +24,23 @@ import * as path from 'path';
 import { randomBytes } from 'crypto';
 import type { PluginCheckResult, PluginHost } from './package-host';
 import type { PackageStateStore } from './package-state-store';
-import type { PackageManifest } from './package-types';
+import type { PluginKind, NormalizedPackageManifest } from './package-manifest';
+import { parsePackageManifest } from './package-manifest';
+import { computePackageIntegrity, verifyDeclaredIntegrity } from './package-integrity';
 
 const SAFE_PACKAGE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const DEFAULT_MAX_REQUEST_IDS = 50;
 
 export class PackageManagerError extends Error {
-  constructor(readonly status: number, message: string) {
+  constructor(readonly status: number, message: string, readonly code?: string) {
     super(message);
     this.name = 'PackageManagerError';
   }
+}
+
+export interface InstallConsent {
+  trust: PluginKind;
+  permissions: string[];
 }
 
 export interface InstallInput {
@@ -43,6 +50,8 @@ export interface InstallInput {
   overwrite?: boolean;
   /** Idempotency key: replaying the same key returns the first result. */
   requestId?: string;
+  /** Required for apiVersion 2 packages; v1 packages may omit it. */
+  accept?: InstallConsent;
 }
 
 export interface InstallResult {
@@ -54,6 +63,8 @@ export interface InstallResult {
   saved: boolean;
   application: 'applied' | 'pending' | 'failed';
   error?: string;
+  kind?: PluginKind;
+  apiVersion?: 1 | 2;
 }
 
 export interface UpdateResult {
@@ -87,6 +98,8 @@ export interface PackageManagerDeps {
   stateStore: PackageStateStore;
   /** Idempotency cache size (default 50). */
   maxRequestIds?: number;
+  /** Untrusted packages require a working worker host. Default false. */
+  workerAvailable?: boolean;
 }
 
 function describeError(err: unknown): string {
@@ -119,6 +132,7 @@ export class PackageManager {
   private readonly host: PluginHost;
   private readonly stateStore: PackageStateStore;
   private readonly maxRequestIds: number;
+  private readonly workerAvailable: boolean;
   private readonly requestResults = new Map<string, InstallResult>();
   /** Serializes mutations so two installs cannot interleave staging markers. */
   private queue: Promise<unknown> = Promise.resolve();
@@ -128,6 +142,7 @@ export class PackageManager {
     this.host = deps.host;
     this.stateStore = deps.stateStore;
     this.maxRequestIds = deps.maxRequestIds ?? DEFAULT_MAX_REQUEST_IDS;
+    this.workerAvailable = deps.workerAvailable === true;
   }
 
   /** Absolute plugin package root (`~/.mafw/plugins` by default). */
@@ -160,12 +175,50 @@ export class PackageManager {
       const manifest = this.readManifest(source);
       const name = this.validatePackageName(manifest.name);
 
+      this.assertConsent(manifest, input?.accept);
+      if (manifest.kind === 'untrusted' && !this.workerAvailable) {
+        throw new PackageManagerError(
+          409,
+          'untrusted packages require a worker host',
+          'untrusted_requires_worker',
+        );
+      }
+      if (manifest.integrity) {
+        const check = verifyDeclaredIntegrity(source, manifest.integrity);
+        if (!check.ok) {
+          throw new PackageManagerError(
+            422,
+            `integrity mismatch: ${check.errors.join('; ')}`,
+            'integrity_mismatch',
+          );
+        }
+      }
+
       this.copyIntoRoot(source, name, input?.overwrite === true);
       // Windows overwrite installs rename a new directory over the package
       // path; the directory watcher from the previous object is dead even though
       // the path string is unchanged. Rebuild the watchers so hot reload keeps
       // working. Harmless for a fresh install (there is no watcher yet).
       this.host.resetWatchers();
+
+      const installedDir = path.join(this.ensureRoot(), name);
+      try {
+        const snapshot = computePackageIntegrity(installedDir, path.join(installedDir, manifest.main));
+        this.stateStore.setInstalled(name, {
+          ...(manifest.version !== undefined ? { version: manifest.version } : {}),
+          fingerprint: snapshot.fingerprint,
+          files: snapshot.files,
+          installedAt: new Date().toISOString(),
+          consecutiveFailures: 0,
+        });
+      } catch (err) {
+        try { fs.rmSync(installedDir, { recursive: true, force: true }); } catch { /* best effort */ }
+        throw new PackageManagerError(
+          500,
+          `could not record integrity for ${name}: ${describeError(err)}`,
+          'integrity_failed',
+        );
+      }
 
       // An installed package is enabled: the manager file is the only source
       // of the disabled flag and re-installation is an explicit opt-in.
@@ -175,7 +228,11 @@ export class PackageManager {
       this.host.stageNewPackage(name);
       await this.host.reload();
 
-      const result = this.toInstallResult(this.describe(name), manifest.version);
+      const result: InstallResult = {
+        ...this.toInstallResult(this.describe(name), manifest.version),
+        kind: manifest.kind,
+        apiVersion: manifest.apiVersion,
+      };
       if (requestId) this.remember(requestId, result);
       return result;
     });
@@ -363,34 +420,50 @@ export class PackageManager {
     return real;
   }
 
-  private readManifest(source: string): PackageManifest {
+  private readManifest(source: string): NormalizedPackageManifest {
     const manifestPath = path.join(source, 'plugin.json');
     if (!fs.existsSync(manifestPath)) {
       throw new PackageManagerError(400, `plugin.json not found in ${source}`);
     }
-    let manifest: unknown;
+    let parsed: unknown;
     try {
-      manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+      parsed = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
     } catch (err) {
       throw new PackageManagerError(400, `invalid plugin.json: ${describeError(err)}`);
     }
-    if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
-      throw new PackageManagerError(400, 'invalid plugin.json: expected an object');
+    const result = parsePackageManifest(parsed);
+    if (!result.ok || !result.manifest) {
+      throw new PackageManagerError(
+        400,
+        `invalid plugin.json: ${result.errors.join('; ')}`,
+        'invalid_manifest',
+      );
     }
-    const record = manifest as Record<string, unknown>;
-    this.validatePackageName(record.name);
-    if (record.main !== undefined && (typeof record.main !== 'string' || record.main.length === 0)) {
-      throw new PackageManagerError(400, 'invalid plugin.json: "main" must be a non-empty string');
+    return result.manifest;
+  }
+
+  /** v2 installs require explicit trust + permission consent; v1 stays compatible. */
+  private assertConsent(
+    manifest: NormalizedPackageManifest,
+    accept: InstallConsent | undefined,
+  ): void {
+    if (manifest.apiVersion === 1) return;
+    const declared = [...manifest.permissions].sort();
+    if (!accept) {
+      throw new PackageManagerError(
+        400,
+        `permission consent required: ${declared.join(', ') || '(none)'}`,
+        'permission_consent_required',
+      );
     }
-    if (typeof record.main === 'string') {
-      // The entry file must live inside the package: a manifest is data, it
-      // cannot point the host at an arbitrary local module.
-      const resolved = path.resolve(source, record.main);
-      if (!isContained(source, resolved)) {
-        throw new PackageManagerError(400, 'invalid plugin.json: "main" escapes the package');
-      }
+    const accepted = [...new Set(accept.permissions)].sort();
+    if (accept.trust !== manifest.kind || accepted.join('\0') !== declared.join('\0')) {
+      throw new PackageManagerError(
+        400,
+        `permission consent required: ${declared.join(', ') || '(none)'}`,
+        'permission_consent_required',
+      );
     }
-    return record as unknown as PackageManifest;
   }
 
   private ensureRoot(): string {
@@ -469,7 +542,7 @@ export class PackageManager {
   private installedVersion(name: string): string | undefined {
     try {
       const manifestPath = path.join(this.ensureRoot(), name, 'plugin.json');
-      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8')) as PackageManifest;
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8')) as { version?: unknown };
       return typeof manifest?.version === 'string' ? manifest.version : undefined;
     } catch {
       return undefined;
