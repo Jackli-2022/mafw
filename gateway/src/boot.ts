@@ -218,6 +218,8 @@ export interface BootKernel {
   recordTranslationError(runtime: string, kind: 'transformEvent' | 'normalizeMessages', reason: string): void;
   registerInternalSession(sessionId: string, role: string, identity?: string): void;
   restoreWorkerState(): void;
+  /** Run memory-pipeline cron rules that were missed while the gateway was offline. */
+  catchUpMissedPipelines(): void;
   runtimeGetApiKey(provider: string): string | null;
   /** Adapter-declared user-level skills dir (`discovery.roots().skillRoots[0]`). */
   skillsDir(): string;
@@ -785,6 +787,9 @@ export async function bootKernel(kernel: BootKernel): Promise<void> {
   // 8.0 Worker-state recovery: reflect sessions that accumulated unreflected
   // episodes while their workers were evicted (fire-and-forget).
   setTimeout(() => kernel.restoreWorkerState(), 3000);
+  // 8.0b Cron catch-up: replay memory-pipeline ticks missed while the gateway
+  // was offline (weekly review/promotion/axiom and the daily reflect/decay).
+  setTimeout(() => kernel.catchUpMissedPipelines(), 30_000);
 
   // 8. 开始轮询（降级兜底）
   const pollInterval = config.timeouts.backupPollInterval;

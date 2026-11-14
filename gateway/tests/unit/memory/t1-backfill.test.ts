@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { GatewayDatabase } from '../../../src/memory/gateway-db';
+import { config } from '../../../src/config';
 
 describe('GatewayDatabase.listT1RowsForBackfill', () => {
   let dir: string;
@@ -122,5 +123,12 @@ describe('backfillT1Vectors', () => {
     const d = deps([row('s1', 1, 'raw')]);
     expect(await backfillT1Vectors(d, { limit: 0 })).toEqual({ scanned: 0, indexed: 0, missing: 0, failed: 0 });
     expect(d.listRows).not.toHaveBeenCalled();
+  });
+
+  test('the default daily limit outpaces observed archive growth', () => {
+    // Production archive grew ~485 rows/day while the old default (200) could
+    // never converge. 3k/day leaves headroom for catch-up without turning the
+    // decay job into an embedding storm.
+    expect(config.recall.t1Recall.t1BackfillLimit).toBeGreaterThanOrEqual(3000);
   });
 });

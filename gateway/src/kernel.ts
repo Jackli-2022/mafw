@@ -147,7 +147,7 @@ import { onMemoryWritten } from "./memory/harmonic-file-store";
 import { MinHashMerger } from "./core/memory/minhash-merger";
 import { GatewayDatabase } from "./memory/gateway-db";
 import { TurnPipeline } from "./recall/turn-pipeline";
-import { ReflectionPipeline } from "./recall/reflection";
+import { ReflectionPipeline, selectRestoreSessions } from "./recall/reflection";
 import { StaleVerifyPipeline } from "./recall/stale-verify";
 import { getRetrievalEventBuffer } from "./core/memory/retrieval-events";
 import { MemoryWorker } from "./recall/memory-worker";
@@ -209,7 +209,7 @@ import { SchedulerLedger } from "./ledger";
 import { DesktopClient } from "./desktop-client";
 import { QuestionLedger } from './core/manager/question-ledger';
 import { ensureManagerRules } from './core/manager/system-rule-templates';
-import { ensureMemoryPipelineRules } from './recall/pipeline-rules';
+import { ensureMemoryPipelineRules, findMissedPipelineRuns, MEMORY_PIPELINE_RULES } from './recall/pipeline-rules';
 import { MilestonePushNotifier } from './core/manager/milestone-push';
 import { WebSocket } from 'ws';
 import { PushGateway } from './mobile/push-gateway';
@@ -2859,7 +2859,7 @@ class MafwScheduler {
           const pipeline = this.getReflectPipeline();
           const res = await pipeline.runAll();
           log.info(
-            `[Reflection] sessions=${res.sessions} reviewed=${res.reviewed} distilled=${res.distilled} deduped=${res.deduped} superseded=${res.superseded} failed=${res.failed}`,
+            `[Reflection] sessions=${res.sessions} reviewed=${res.reviewed} distilled=${res.distilled} deduped=${res.deduped} superseded=${res.superseded} failed=${res.failed} deferred=${res.deferredSessions ?? 0}`,
           );
           this.heartbeat?.record('memory:reflect', {
             ok: res.failed === 0,
@@ -2870,6 +2870,7 @@ class MafwScheduler {
               distilled: res.distilled,
               superseded: res.superseded,
               failed: res.failed,
+              deferredSessions: res.deferredSessions ?? 0,
               replayedTraces: res.replayedTraces,
               replayChars: res.replayChars,
             },
@@ -3489,6 +3490,8 @@ class MafwScheduler {
       cursor: this.getReflectCursor(),
       maxEpisodicPerSession: config.recall.maxEpisodicPerReflect,
       reflectionBatchSize: config.recall.reflectionBatchSize,
+      maxRunMs: config.recall.reflectionMaxRunMs,
+      maxSessionsPerRun: config.recall.reflectionMaxSessionsPerRun,
       exclusive: (sessionID, fn) => pool.runExclusive(sessionID, 'reflect', fn),
       workerModel: config.recall.workerModel,
       // A4: selection-pressure feedback — prior insights' 7-day retrieval hits.
@@ -3526,19 +3529,59 @@ class MafwScheduler {
       const sessions = new Set<string>();
       for (const turn of this.getGatewayDb().listTurns()) sessions.add(turn.session_id);
       const pipeline = this.getReflectPipeline();
-      for (const sessionID of sessions) {
-        const pending = pipeline.pendingFor(sessionID);
-        if (pending < config.recall.reflectThresholdEpisodic) continue;
-        const pool = this.getPool();
-        void pool.runExclusive(sessionID, 'reflect', async () => {
-          const res = await pipeline.runSession(sessionID);
-          log.info(
-            `[Reflection:restore] session=${sessionID} reviewed=${res.reviewed} distilled=${res.distilled} deduped=${res.deduped}`,
-          );
-        }).catch((err: any) => log.warn(`[Reflection:restore] session=${sessionID} failed: ${err.message}`));
-      }
+      const candidates = selectRestoreSessions(
+        sessions,
+        (id) => pipeline.pendingFor(id),
+        config.recall.reflectThresholdEpisodic,
+        config.recall.restoreReflectMaxSessions,
+      );
+      const pool = this.getPool();
+      // Sequential: a boot-time stampede of concurrent worker prompts is what
+      // pushed each prompt into the 300s ceiling and starved the daily pass.
+      void (async () => {
+        for (const sessionID of candidates) {
+          try {
+            const res = await pool.runExclusive(sessionID, 'reflect', async () => pipeline.runSession(sessionID));
+            log.info(
+              `[Reflection:restore] session=${sessionID} reviewed=${res.reviewed} distilled=${res.distilled} deduped=${res.deduped}`,
+            );
+          } catch (err: any) {
+            log.warn(`[Reflection:restore] session=${sessionID} failed: ${err.message}`);
+          }
+        }
+      })();
     } catch (err: any) {
       log.warn(`[Reflection:restore] failed (non-fatal): ${err.message}`);
+    }
+  }
+
+  /**
+   * Cron catch-up: a gateway that was offline at the scheduled minute misses
+   * that tick forever. After boot, compare each memory pipeline's last attempt
+   * with its cron expression and run the missed ones once, staggered so a
+   * long-offline boot does not fire every LLM pipeline at the same second.
+   */
+  catchUpMissedPipelines(): void {
+    if (!this.heartbeat) return;
+    const engine = this.automationEngine;
+    if (!engine) return;
+    const due = findMissedPipelineRuns(
+      MEMORY_PIPELINE_RULES,
+      (action) => this.heartbeat?.snapshot([action])[0] ?? null,
+      Date.now(),
+    );
+    due.forEach((rule, i) => {
+      if (!engine.hasRule(rule.id)) return;
+      const timer = setTimeout(() => {
+        log.info(`[Scheduler] catch-up: ${rule.id} missed at least one scheduled occurrence; running once`);
+        void engine.executeRule(rule.id, 'cron').catch((err: any) =>
+          log.warn(`[Scheduler] catch-up ${rule.id} failed: ${err?.message ?? err}`),
+        );
+      }, 60_000 + i * 60_000);
+      timer.unref?.();
+    });
+    if (due.length > 0) {
+      log.info(`[Scheduler] catch-up scheduled for: ${due.map((r) => r.id).join(', ')}`);
     }
   }
 
