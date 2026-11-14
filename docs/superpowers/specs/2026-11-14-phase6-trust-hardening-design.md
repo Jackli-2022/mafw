@@ -266,23 +266,24 @@ v1 包没有 `permissions` 字段时：视为 `["*legacy*"]`，doctor 标 warn�
 
 行为：
 
-1. 解析 manifest；v2 包必须提供 `accept.trust`，且与 manifest `kind` 一致。
-2. `accept.permissions` 必须与 manifest `permissions` **逐项相等**（排序后比较）；缺失 / 多 / 少都返回 `400 permission_consent_required`，响应体回显声明的权限清单。
-3. v1 包（无 `apiVersion` / 无 `permissions`）允许省略 `accept`，保持现有 MCP / plugin-creator 工作流可用。
-4. `kind: untrusted` 在 6A 一律 `409 untrusted_requires_worker`，不复制、不写状态。
-5. 复制完成后：
+1. **同意权**：`apiVersion: 2` 的安装 / 覆盖必须由 human / device principal 发起；service / local / agent 返回 `403 human_principal_required`，不复制、不落盘。v1 包沿用现有 auth（MCP / plugin-creator 不受影响）。
+2. 解析 manifest；v2 包必须提供 `accept.trust`，且与 manifest `kind` 一致。
+3. `accept.permissions` 必须与 manifest `permissions` **逐项相等**（排序后比较）；缺失 / 多 / 少都返回 `400 permission_consent_required`，响应体回显声明的权限清单。
+4. v1 包（无 `apiVersion` / 无 `permissions`）允许省略 `accept`，保持现有 MCP / plugin-creator 工作流可用。
+5. `kind: untrusted` 在 6A 一律 `409 untrusted_requires_worker`，不复制、不写状态。
+6. 复制完成后：
    - 计算指纹与文件 hash 清单；
    - 若 manifest 声明 `integrity`，逐文件校验；失败 = 删除刚复制的目录、写审计、返回 `422 integrity_mismatch`；
    - 成功后把 `installed` 基线和 `fingerprint` 写入状态 v2。
-6. 覆盖安装：
+7. 覆盖安装：
    - 6A 只要求同意；
    - 6C 在覆盖前把当前健康版本快照到 `.last-good/<name>/`。
-7. 安装 / 覆盖失败必须回滚文件系统：不留下半装状态，不改变旧的已安装版本。
-8. **quarantined 包的重装**：
+8. 安装 / 覆盖失败必须回滚文件系统：不留下半装状态，不改变旧的已安装版本。
+9. **quarantined 包的重装**：
    - `trusted` / `v1` 包：允许带 consent 覆盖安装；新副本通过 manifest / integrity 校验后**清除 quarantine**，再走正常激活；激活失败会重新 quarantine。
    - `untrusted` 包：不允许用安装绕过隔离；必须先由 human principal 调用 `POST /api/plugins/:name/unquarantine`，再安装。
-9. **safe mode 下的安装**：允许复制和校验，但不激活；`plugins.list` 显示 `safe-mode`。resume 后按正常流程激活。
-10. **API 守卫**：quarantined 包上的 `enable` / `apply` / `reload` / `rollback` 返回 `409 plugin_quarantined`；safe mode 下的 `enable` / `apply` 返回 `409 safe_mode_active`；`doctor` 始终可读，但不在 quarantine / safe mode 下执行 dry-run 激活。
+10. **safe mode 下的安装**：允许复制和校验，但不激活；`plugins.list` 显示 `safe-mode`。resume 后按正常流程激活。
+11. **API 守卫**：quarantined 包上的 `enable` / `apply` / `reload` / `rollback` 返回 `409 plugin_quarantined`；safe mode 下的 `enable` / `apply` 返回 `409 safe_mode_active`；`doctor` 始终可读，但不在 quarantine / safe mode 下执行 dry-run 激活。
 
 ### 4.5 审计
 
@@ -443,7 +444,7 @@ type PluginLifecycleState =
 | 路由 | 方法 | 权限 | 说明 |
 |---|---|---|---|
 | `/api/plugins` | GET | 现有 auth | 每项增加 `apiVersion`、`kind`、`trust`、`transport`、`permissions`、`state`、`quarantinedReason` |
-| `/api/plugins/packages/install` | POST | 现有 auth | 增加 `accept` |
+| `/api/plugins/packages/install` | POST | v1: 现有 auth；v2: human / device | 增加 `accept`；v2 由 service/agent 调用返回 403 |
 | `/api/plugins/:name/doctor` | POST | 现有 auth | 单包报告 |
 | `/api/plugins/doctor` | POST | 现有 auth | 全部报告 |
 | `/api/plugins/kill` | POST | 任意已认证 | 进 safe mode |
@@ -462,11 +463,15 @@ type PluginLifecycleState =
 - `plugin_quarantined`
 - `safe_mode_active`
 - `human_principal_required`
+- `worker_unavailable`
+- `plugin_stopped`
+
+**CLI 凭据**：`mafw plugins install`（v2）、`resume`、`unquarantine`、`rollback` 读取 `MAFW_HUMAN_TOKEN` 或 `~/.mafw/human.token`；缺失时打印明确提示并以非零退出，不回退到 `server.apiToken`。
 
 ### 4.9 6A 验收
 
 - `plugin.json` v1 包全部照常安装 / 启动 / 热更新；现有 gateway 全量测试不回归。
-- v2 trusted 包安装必须带 consent；缺 consent 返回 400；permissions 不一致返回 400。
+- v2 trusted 包安装必须由 human / device principal 发起，且带 consent；service/agent 返回 403；缺 consent 返回 400；permissions 不一致返回 400。
 - `untrusted` 在 6A 返回 409，且不落盘。
 - integrity 不匹配的安装被拒绝，旧版本不受影响。
 - 磁盘上篡改 trusted 包只产生 warn + 审计，不阻断（开发热更新）。
@@ -724,11 +729,11 @@ npm run drill:plugin-trust
 |---|---|---|
 | 不可信代码不进主进程 | ✅ | worker-only；worker 不可用则拒绝 |
 | fs 越权 | ✅（有 Node permission model 时） | 只读包根目录；无写、无 addons、无 child process；flag 不可用则拒绝 |
-| net 越权 | ⚠️ defense-in-depth | Node permission model 不覆盖网络；通过 Module._load / global stub 拦截，非内核级 |
+| net 越权 | ⚠️ defense-in-depth（已确认接受） | Node permission model 不覆盖网络；通过 Module._load / global stub 拦截，非内核级；OS 级 hermetic 隔离另立专项 |
 | 崩溃爆炸半径 | ✅ | child 崩溃 / OOM / 超时只影响该包；5 分钟 3 次 quarantine |
 | 重启收敛 | ✅ | safe mode / quarantine / last-good 持久化；不自动拉起隔离包 |
 
-**结论**：Phase 6 满足 G6 的进程隔离与故障隔离部分；**hermetic 网络隔离不在本 Phase**。如果要把“net 完全不可越权”作为 G6 的硬条件，需要另立 OS 级沙箱（Windows AppContainer / Linux netns / macOS sandbox），这是一个独立的、平台相关的大项目，建议单列 Phase 6D 或后续安全专项。
+**结论（2026-11-14 已确认）**：Phase 6 满足 G6 的进程隔离与故障隔离部分；**hermetic 网络隔离不在本 Phase**，接受 defense-in-depth。若未来把“net 完全不可越权”升级为硬条件，需要另立 OS 级沙箱（Windows AppContainer / Linux netns / macOS sandbox），单列安全专项。
 
 ---
 
@@ -739,6 +744,7 @@ npm run drill:plugin-trust
 | manifest 非法 | 跳过该包，gateway 启动 | `activate.failed` / `install.rejected` | 修 manifest / 重装 |
 | `apiVersion` 不支持 | 跳过该包 | `unsupported_api_version` | 升级包 / 降级宿主 |
 | `host` 不兼容 | 跳过该包 | `host_range_incompatible` | 升级包 / 宿主 |
+| v2 安装由 service / agent 发起 | 403，不复制 | `install.rejected` | 由 human / device 重新发起 |
 | consent 缺失 / 不一致 | 400，不复制 | `install.rejected` | 带正确 consent 重试 |
 | integrity 不匹配（安装） | 422，删除临时副本 | `install.rejected` | 修 hash / 重打包 |
 | integrity 不匹配（untrusted 加载） | quarantine | `quarantine` | 重装 / unquarantine |
@@ -790,8 +796,8 @@ npm run drill:plugin-trust
 
 - 路由全部增量；`GET /api/plugins` 只加字段，不改已有字段名。
 - SDK / 客户端不强制升级；新字段可忽略。
-- MCP `mafw_plugin_manager` 保持现有操作；6A 的 consent 只对 v2 包强制，v1 包不受影响。
-- plugin-creator 草稿（无 `apiVersion`）继续可 install / check / test。
+- MCP `mafw_plugin_manager` 保持现有操作；6A 的 human-only 安装 / consent 只对 v2 包强制，v1 包不受影响。
+- plugin-creator 草稿（无 `apiVersion`）继续可 install / check / test；如果草稿显式声明 `apiVersion: 2`，agent 只能生成 / check，最终安装需要人类在桌面或 CLI 完成。
 
 ### 10.3 回滚
 
@@ -814,16 +820,16 @@ npm run drill:plugin-trust
 
 ---
 
-## 12. 设计取舍（我的判断，需你确认）
+## 12. 设计取舍（已确认）
 
 1. **信任边界优先放在 live 统一插件包**，而不是 kernel-v2 provider。  
    理由：v2 还没 cutover，先硬化 live 系统才有真实收益；worker host 接口保持可复用。
-2. **Node permission model + RPC 能力代理**，不引入 OS 沙箱。  
-   理由：跨平台、无原生依赖；代价是 net 只能 defense-in-depth（§7）。
+2. **Node permission model + RPC 能力代理**，不引入 OS 沙箱；接受 net 的 defense-in-depth（§7）。  
+   理由：跨平台、无原生依赖；OS 级 hermetic 网络隔离另立专项。
 3. **untrusted v1 只支持 actions / events / config**。  
    理由：files / terminal / http / tools / observers 的代理面太大，先验证最小闭环；后续按权限逐步开放。
-4. **kill / quarantine 允许 service，resume / unquarantine 必须 human**。  
-   理由：停机是安全方向；恢复不可信代码必须人类确认。
+4. **kill / quarantine 允许 service，resume / unquarantine 必须 human**；v2 安装本身也必须是 human / device。  
+   理由：停机是安全方向；安装 / 恢复不可信代码必须人类确认。
 5. **审计写 gateway.db**，不写 JSONL。  
    理由：统一数据层、可查询、可和 doctor/列表联动；失败 fail-soft。
 6. **trusted 的磁盘漂移只 warn，不阻断**。  
@@ -843,11 +849,18 @@ npm run drill:plugin-trust
 
 ---
 
-## 13. 待确认（会改变实现范围）
+## 13. 已确认决策（2026-11-14）
 
-以下四项会实质改变 6B/6A 的实现量或安全承诺；本文先按“推荐项”写，确认后我再改：
+用户确认按推荐项执行，以下四项锁定，后续 plan 不再重新讨论：
 
-1. **G6 的 net 隔离标准**：接受 `Node permission model + JS 级 net 拦截`（defense-in-depth，推荐），还是必须做到 OS 级 hermetic 网络隔离（Windows AppContainer / Linux netns / macOS sandbox，另立专项）？
-2. **v2 包的安装同意权**：`apiVersion: 2` 安装必须 human / device principal（推荐，v1 / plugin-creator / MCP 不受影响），还是允许 service / agent 带 `accept` 代为同意？
-3. **untrusted v1 能力面**：只支持 actions / events / config（推荐），还是 6B 就要包含 files / net 的权限代理？
-4. **kill switch 范围**：只停统一插件包（推荐），还是也要停 MCP server / runtime adapter / automation engine？
+1. **G6 net 隔离**：接受 `Node permission model + JS 级 net 拦截` 作为 defense-in-depth；OS 级 hermetic 网络隔离另立专项，不进 Phase 6。
+2. **v2 安装同意权**：`apiVersion: 2` 安装 / 覆盖必须 human / device principal；v1 包、plugin-creator 草稿、MCP 现有安装流程保持现有 auth。
+3. **untrusted v1 能力面**：只支持 actions / events / config；files / net / terminal / http / tools / observers / ui.web 在 6B v1 全部拒绝。
+4. **kill switch 范围**：只停统一插件包（gateway plane，含 worker），不停 MCP server / runtime adapter / automation engine / 核心服务。
+
+### 13.1 对 plan 的直接影响
+
+- 6A 的安装路由必须区分 v1 / v2 权限；v2 的 403 不能误伤 plugin-creator（它继续产出 v1）。
+- 6B 的 worker ctx 只需要实现 logger / config / emit / effect 四项；files / net broker 不排期。
+- 6B 的 G6 验收按 §7 的 defense-in-depth 口径写，不把 OS 沙箱列为出口条件。
+- 6A 的 kill switch 只做 `PackageManager` / `PluginHost` / `SubprocessLedger` 范围，不碰 MCP / runtime 生命周期。
