@@ -6,11 +6,13 @@
 // Load-bearing quirk: no writeHead → error bodies are HTTP 200.
 const mockSetSticky = jest.fn();
 const mockSetPinned = jest.fn();
+const mockWrite = jest.fn();
 
 jest.mock('../../../src/memory/harmonic-file-store', () => ({
   HarmonicUnitFileStore: class {
     setSticky(...args: unknown[]) { return mockSetSticky(...args); }
     setPinned(...args: unknown[]) { return mockSetPinned(...args); }
+    write(...args: unknown[]) { return mockWrite(...args); }
   },
 }));
 
@@ -75,6 +77,7 @@ const handlerFor = (registry: RouteRegistry, method: string, url: string) => {
 beforeEach(() => {
   mockSetSticky.mockReset();
   mockSetPinned.mockReset();
+  mockWrite.mockReset();
   resetDedupStatsForTest();
 });
 
@@ -192,8 +195,47 @@ describe('dashboard registry wiring (D1 Task G)', () => {
     expect(JSON.parse(r.body)).toEqual({ success: false, error: 'content and valid memoryType required' });
   });
 
-  it('memory.add skips a verbatim re-submit via the exact-hash guard', async () => {
-    const { registry } = setup();
+  it('memory.add stores validated sourceTraceIds on the unit', async () => {
+    const { registry } = setup({
+      memoryService: () => ({ harmonicIndex: { getIndex: () => ({ entries: [] }) } }) as any,
+      hasTrace: (id: string) => id === 't1t_a',
+    });
+    const r = fakeRes();
+    await handlerFor(registry, 'POST', '/api/memory/add')!(
+      fakeReq({
+        method: 'POST',
+        url: '/api/memory/add',
+        body: JSON.stringify({
+          content: `provenance route probe ${Date.now()}`,
+          memoryType: 'semantic',
+          sourceTraceIds: ['t1t_a', 't1t_missing'],
+        }),
+      }),
+      r.res,
+    );
+    expect(r.status).toBe(200);
+    expect(mockWrite).toHaveBeenCalledTimes(1);
+    expect((mockWrite.mock.calls[0][0] as any).source_trace_ids).toEqual(['t1t_a']);
+  });
+
+  it('memory.add omits source_trace_ids when the field is absent', async () => {
+    const { registry } = setup({
+      memoryService: () => ({ harmonicIndex: { getIndex: () => ({ entries: [] }) } }) as any,
+    });
+    const r = fakeRes();
+    await handlerFor(registry, 'POST', '/api/memory/add')!(
+      fakeReq({
+        method: 'POST',
+        url: '/api/memory/add',
+        body: JSON.stringify({ content: `legacy route probe ${Date.now()}`, memoryType: 'semantic' }),
+      }),
+      r.res,
+    );
+    expect(mockWrite).toHaveBeenCalledTimes(1);
+    expect((mockWrite.mock.calls[0][0] as any)).not.toHaveProperty('source_trace_ids');
+  });
+
+  it('memory.add skips a verbatim re-submit via the exact-hash guard', async () => {    const { registry } = setup();
     const body = JSON.stringify({ content: 'exact-hash dedup probe', memoryType: 'semantic' });
     let r = fakeRes();
     await handlerFor(registry, 'POST', '/api/memory/add')!(

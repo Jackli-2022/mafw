@@ -228,7 +228,9 @@ export async function routeAndWrite(
         const target = await store.read(decision.targetId);
         if (target) {
           const union = unionSourceTraceIds(unit.source_trace_ids, target.source_trace_ids);
-          if (union?.length) {
+          const known = new Set(target.source_trace_ids ?? []);
+          const addsNew = (union ?? []).some((id) => !known.has(id));
+          if (union?.length && addsNew) {
             await store.write({
               ...target,
               source_trace_ids: union,

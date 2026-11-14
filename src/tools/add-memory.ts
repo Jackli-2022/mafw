@@ -19,6 +19,8 @@ export interface AddMemoryTool {
       cueAnchors?: string[];
       primaryAbstraction?: string;
       importance?: number;
+      /** Exact T1 trace ids backing this memory (optional, additive). */
+      sourceTraceIds?: string[];
     },
     ctx: { sessionID: string; abort: AbortSignal },
   ) => Promise<unknown>;
@@ -37,6 +39,7 @@ export const addMemoryTool: AddMemoryTool = {
     cueAnchors: z.array(z.string()).max(8).optional().describe('检索关键词'),
     primaryAbstraction: z.string().optional().describe('6-8 词摘要（缺省自动生成）'),
     importance: z.number().int().min(1).max(10).optional().describe('重要性打分 1-10：1=琐碎日常，5=普通事实，9-10=架构级决定/严重事故。缺省自动判定'),
+    sourceTraceIds: z.array(z.string()).max(20).optional().describe('精确来源 T1 trace id（可选；从 [trace:<id>] 标记复制，未知 id 会被 gateway 丢弃）'),
   },
   async execute(args, ctx) {
     try {
@@ -51,6 +54,7 @@ export const addMemoryTool: AddMemoryTool = {
           cueAnchors: args.cueAnchors || [],
           primaryAbstraction: args.primaryAbstraction,
           importance: args.importance,
+          ...(args.sourceTraceIds?.length ? { sourceTraceIds: args.sourceTraceIds } : {}),
           sessionID: ctx?.sessionID,
         }),
         signal: controller.signal,
