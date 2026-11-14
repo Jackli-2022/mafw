@@ -28,6 +28,7 @@ import type { PluginKind, NormalizedPackageManifest } from './package-manifest';
 import { parsePackageManifest } from './package-manifest';
 import { computePackageIntegrity, verifyDeclaredIntegrity } from './package-integrity';
 import type { PluginAuditStore } from './plugin-audit-store';
+import type { PackageLastGoodStore } from './package-last-good';
 
 const SAFE_PACKAGE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const DEFAULT_MAX_REQUEST_IDS = 50;
@@ -103,6 +104,8 @@ export interface PackageManagerDeps {
   workerAvailable?: boolean;
   /** Phase 6 trust audit (optional in headless hosts). */
   audit?: PluginAuditStore;
+  /** Phase 6C rollback snapshots (optional in headless hosts). */
+  lastGood?: PackageLastGoodStore;
 }
 
 function describeError(err: unknown): string {
@@ -137,6 +140,7 @@ export class PackageManager {
   private readonly maxRequestIds: number;
   private readonly workerAvailable: boolean;
   private readonly audit?: PluginAuditStore;
+  private readonly lastGood?: PackageLastGoodStore;
   private readonly requestResults = new Map<string, InstallResult>();
   /** Serializes mutations so two installs cannot interleave staging markers. */
   private queue: Promise<unknown> = Promise.resolve();
@@ -148,6 +152,7 @@ export class PackageManager {
     this.maxRequestIds = deps.maxRequestIds ?? DEFAULT_MAX_REQUEST_IDS;
     this.workerAvailable = deps.workerAvailable === true;
     this.audit = deps.audit;
+    this.lastGood = deps.lastGood;
   }
 
   /** Absolute plugin package root (`~/.mafw/plugins` by default). */
@@ -197,6 +202,16 @@ export class PackageManager {
             'integrity_mismatch',
           );
         }
+      }
+
+      if (input?.overwrite === true && this.lastGood) {
+        const installed = this.stateStore.getInstalled(name);
+        this.lastGood.snapshot(name, {
+          ...(this.installedVersion(name) !== undefined
+            ? { version: this.installedVersion(name) }
+            : {}),
+          fingerprint: installed?.fingerprint ?? '',
+        });
       }
 
       this.copyIntoRoot(source, name, input?.overwrite === true);
@@ -328,6 +343,7 @@ export class PackageManager {
       fs.rmSync(realTarget, { recursive: true, force: true });
       this.stateStore.setDisabled(safeName, false);
       this.stateStore.removeInstalled(safeName);
+      this.lastGood?.remove(safeName);
       await this.host.reload();
       this.audit?.append({ action: 'remove', package: safeName, result: 'ok' });
 
@@ -368,6 +384,25 @@ export class PackageManager {
         version: state.version ?? this.installedVersion(safeName),
         saved: true,
         enabled: true,
+      };
+    });
+  }
+
+  /** Restores the last-known-good snapshot and reloads the package. */
+  rollback(name: string): Promise<UpdateResult> {
+    return this.enqueue(async () => {
+      const safeName = this.validatePackageName(name);
+      if (!this.lastGood || !this.lastGood.restore(safeName)) {
+        throw new PackageManagerError(404, `no last-known-good snapshot for ${safeName}`, 'last_good_missing');
+      }
+      await this.host.reload();
+      this.audit?.append({ action: 'rollback', package: safeName, result: 'ok' });
+      const state = this.describe(safeName);
+      return {
+        ...state,
+        version: state.version ?? this.installedVersion(safeName),
+        saved: true,
+        enabled: !this.stateStore.isDisabled(safeName),
       };
     });
   }
