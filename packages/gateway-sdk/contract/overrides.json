@@ -1,5 +1,5 @@
 {
-  "$comment": "P4-B hand-written response schema overlay, keyed by operationId; merge-contract injects it into openapi.json responses.200.content['application/json'].schema. Catalog code-first schemas win at merge time (merge-contract.mjs prints \"catalog response schema wins over overrides\"). goals.list / goals.sessions (E10b-1) and approvals.list / questions.list / triage.list (E10b-2) are code-first now, so their entries were deleted (18 -> 13).",
+  "$comment": "P4-B hand-written response schema overlay, keyed by operationId; merge-contract injects it into openapi.json responses.200.content['application/json'].schema. Catalog code-first schemas win at merge time (merge-contract.mjs prints \"catalog response schema wins over overrides\"). goals.list / goals.sessions (E10b-1), approvals.list / questions.list / triage.list (E10b-2) and memory.search (E10c-1) are code-first now, so their entries were deleted (18 -> 12).",
   "operations": {
     "session.list": {
       "responseSchema": {
@@ -135,65 +135,6 @@
     },
     "session.messages": {
       "description": "Session history as MAFW View DTO (flat MafwMessage: {id,role,content,...}). The legacy {info,parts} envelope and the format opt-in were removed in Task 15."
-    },
-    "memory.search": {
-      "responseSchema": {
-        "type": "object",
-        "properties": {
-          "results": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "string"
-                },
-                "type": {
-                  "type": "string",
-                  "enum": [
-                    "episodic",
-                    "semantic",
-                    "procedural",
-                    "global"
-                  ]
-                },
-                "primary_abstraction": {
-                  "type": "string"
-                },
-                "cue_anchors": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                "memory_value": {
-                  "type": "string"
-                },
-                "energy": {
-                  "type": "number"
-                },
-                "salience": {
-                  "type": "number"
-                },
-                "created_at": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "id",
-                "type",
-                "primary_abstraction",
-                "cue_anchors",
-                "memory_value",
-                "energy"
-              ]
-            }
-          }
-        },
-        "required": [
-          "results"
-        ]
-      }
     },
     "automations.list": {
       "responseSchema": {

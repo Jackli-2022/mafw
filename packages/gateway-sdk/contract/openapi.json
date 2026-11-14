@@ -6339,7 +6339,123 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "resident",
+                    "warm",
+                    "cold",
+                    "pinned",
+                    "evicted",
+                    "topics"
+                  ],
+                  "properties": {
+                    "resident": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "warm": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "cold": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "pinned": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "evicted": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "topics": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "title",
+                          "summary",
+                          "state",
+                          "lastActiveAt",
+                          "goalId",
+                          "resumedFrom"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "summary": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "state": {
+                            "anyOf": [
+                              {
+                                "const": "resident",
+                                "type": "string"
+                              },
+                              {
+                                "const": "warm",
+                                "type": "string"
+                              },
+                              {
+                                "const": "cold",
+                                "type": "string"
+                              },
+                              {
+                                "const": "archived",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "lastActiveAt": {
+                            "type": "string"
+                          },
+                          "goalId": {
+                            "type": "string"
+                          },
+                          "resumedFrom": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -6352,7 +6468,48 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "candidates"
+                  ],
+                  "properties": {
+                    "candidates": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "topicId",
+                          "title",
+                          "score",
+                          "matches"
+                        ],
+                        "properties": {
+                          "topicId": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "score": {
+                            "type": "number"
+                          },
+                          "matches": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -6531,22 +6688,44 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "required": [
+                    "results"
+                  ],
                   "properties": {
                     "results": {
                       "type": "array",
                       "items": {
                         "type": "object",
+                        "required": [
+                          "id",
+                          "type",
+                          "primary_abstraction",
+                          "cue_anchors",
+                          "memory_value",
+                          "energy"
+                        ],
                         "properties": {
                           "id": {
                             "type": "string"
                           },
                           "type": {
-                            "type": "string",
-                            "enum": [
-                              "episodic",
-                              "semantic",
-                              "procedural",
-                              "global"
+                            "anyOf": [
+                              {
+                                "const": "episodic",
+                                "type": "string"
+                              },
+                              {
+                                "const": "semantic",
+                                "type": "string"
+                              },
+                              {
+                                "const": "procedural",
+                                "type": "string"
+                              },
+                              {
+                                "const": "global",
+                                "type": "string"
+                              }
                             ]
                           },
                           "primary_abstraction": {
@@ -6570,21 +6749,64 @@
                           "created_at": {
                             "type": "string"
                           }
-                        },
+                        }
+                      }
+                    },
+                    "t1Results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
                         "required": [
-                          "id",
-                          "type",
-                          "primary_abstraction",
-                          "cue_anchors",
-                          "memory_value",
-                          "energy"
-                        ]
+                          "sessionId",
+                          "turnId",
+                          "cosine",
+                          "excerpt"
+                        ],
+                        "properties": {
+                          "sessionId": {
+                            "type": "string"
+                          },
+                          "turnId": {
+                            "type": "number"
+                          },
+                          "traceId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "cosine": {
+                            "type": "number"
+                          },
+                          "excerpt": {
+                            "type": "string"
+                          },
+                          "sources": {
+                            "type": "array",
+                            "items": {
+                              "anyOf": [
+                                {
+                                  "const": "dense",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "lexical",
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          "score": {
+                            "type": "number"
+                          }
+                        }
                       }
                     }
-                  },
-                  "required": [
-                    "results"
-                  ]
+                  }
                 }
               }
             }
@@ -15346,7 +15568,29 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "pointers"
+                  ],
+                  "properties": {
+                    "pointers": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -15359,7 +15603,103 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "profile",
+                    "entries",
+                    "budget"
+                  ],
+                  "properties": {
+                    "profile": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "type",
+                          "primary_abstraction",
+                          "memory_value",
+                          "energy"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "anyOf": [
+                              {
+                                "const": "episodic",
+                                "type": "string"
+                              },
+                              {
+                                "const": "semantic",
+                                "type": "string"
+                              },
+                              {
+                                "const": "procedural",
+                                "type": "string"
+                              },
+                              {
+                                "const": "global",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "primary_abstraction": {
+                            "type": "string"
+                          },
+                          "memory_value": {
+                            "type": "string"
+                          },
+                          "energy": {
+                            "type": "number"
+                          },
+                          "salience": {
+                            "type": "number"
+                          },
+                          "created_at": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "budget": {
+                      "type": "object",
+                      "required": [
+                        "max",
+                        "maxChars",
+                        "used"
+                      ],
+                      "properties": {
+                        "max": {
+                          "type": "number"
+                        },
+                        "maxChars": {
+                          "type": "number"
+                        },
+                        "used": {
+                          "type": "number"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -15372,7 +15712,65 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "managed",
+                    "revision",
+                    "missing",
+                    "staleKeys",
+                    "erroredKeys",
+                    "blocks"
+                  ],
+                  "properties": {
+                    "managed": {
+                      "type": "boolean"
+                    },
+                    "revision": {
+                      "type": "string"
+                    },
+                    "missing": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "staleKeys": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "erroredKeys": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "blocks": {
+                      "type": "object",
+                      "properties": {
+                        "memoryGuide": {
+                          "type": "string"
+                        },
+                        "userProfile": {
+                          "type": "string"
+                        },
+                        "agentPriors": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -15385,7 +15783,45 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "block",
+                    "used",
+                    "budget"
+                  ],
+                  "properties": {
+                    "block": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "used": {
+                      "type": "number"
+                    },
+                    "budget": {
+                      "type": "object",
+                      "required": [
+                        "maxChars"
+                      ],
+                      "properties": {
+                        "maxChars": {
+                          "type": "number"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -15411,7 +15847,494 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "success",
+                        "memory"
+                      ],
+                      "properties": {
+                        "success": {
+                          "const": true,
+                          "type": "boolean"
+                        },
+                        "memory": {
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "type",
+                            "primary_abstraction",
+                            "cue_anchors",
+                            "memory_value",
+                            "energy",
+                            "updated_at"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "anyOf": [
+                                {
+                                  "const": "episodic",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "semantic",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "procedural",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "global",
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "granularity": {
+                              "anyOf": [
+                                {
+                                  "const": "function",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "class",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "module",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "architecture",
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "primary_abstraction": {
+                              "type": "string"
+                            },
+                            "cue_anchors": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "memory_value": {
+                              "type": "string"
+                            },
+                            "energy": {
+                              "type": "number"
+                            },
+                            "created_at": {
+                              "type": "string"
+                            },
+                            "updated_at": {
+                              "type": "string"
+                            },
+                            "goal_id": {
+                              "type": "string"
+                            },
+                            "merged_from": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "distinct_from": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "salience": {
+                              "type": "number"
+                            },
+                            "abstraction_level": {
+                              "type": "number"
+                            },
+                            "review_count": {
+                              "type": "number"
+                            },
+                            "last_reviewed": {
+                              "type": "string"
+                            },
+                            "superseded_by": {
+                              "type": "string"
+                            },
+                            "pinned": {
+                              "type": "boolean"
+                            },
+                            "sticky_until": {
+                              "type": "string"
+                            },
+                            "source_session_id": {
+                              "type": "string"
+                            },
+                            "source_trace_ids": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "authority": {
+                              "anyOf": [
+                                {
+                                  "const": "user",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "agent",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "tool",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "pipeline",
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "distilled_by": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "commitment_capped_at": {
+                              "type": "string"
+                            },
+                            "novelty": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        "latest": {
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "type",
+                            "primary_abstraction",
+                            "cue_anchors",
+                            "memory_value",
+                            "energy",
+                            "updated_at"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "anyOf": [
+                                {
+                                  "const": "episodic",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "semantic",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "procedural",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "global",
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "granularity": {
+                              "anyOf": [
+                                {
+                                  "const": "function",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "class",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "module",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "architecture",
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "primary_abstraction": {
+                              "type": "string"
+                            },
+                            "cue_anchors": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "memory_value": {
+                              "type": "string"
+                            },
+                            "energy": {
+                              "type": "number"
+                            },
+                            "created_at": {
+                              "type": "string"
+                            },
+                            "updated_at": {
+                              "type": "string"
+                            },
+                            "goal_id": {
+                              "type": "string"
+                            },
+                            "merged_from": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "distinct_from": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "salience": {
+                              "type": "number"
+                            },
+                            "abstraction_level": {
+                              "type": "number"
+                            },
+                            "review_count": {
+                              "type": "number"
+                            },
+                            "last_reviewed": {
+                              "type": "string"
+                            },
+                            "superseded_by": {
+                              "type": "string"
+                            },
+                            "pinned": {
+                              "type": "boolean"
+                            },
+                            "sticky_until": {
+                              "type": "string"
+                            },
+                            "source_session_id": {
+                              "type": "string"
+                            },
+                            "source_trace_ids": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "authority": {
+                              "anyOf": [
+                                {
+                                  "const": "user",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "agent",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "tool",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "pipeline",
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "distilled_by": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "commitment_capped_at": {
+                              "type": "string"
+                            },
+                            "novelty": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        "source": {
+                          "type": "object",
+                          "required": [
+                            "sessionId"
+                          ],
+                          "properties": {
+                            "sessionId": {
+                              "type": "string"
+                            },
+                            "evidence": {
+                              "type": "string"
+                            },
+                            "traces": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "required": [
+                                  "traceId",
+                                  "sessionId",
+                                  "turnId",
+                                  "archived",
+                                  "excerpt"
+                                ],
+                                "properties": {
+                                  "traceId": {
+                                    "type": "string"
+                                  },
+                                  "sessionId": {
+                                    "type": "string"
+                                  },
+                                  "turnId": {
+                                    "type": "number"
+                                  },
+                                  "archived": {
+                                    "type": "boolean"
+                                  },
+                                  "excerpt": {
+                                    "type": "string"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "success",
+                        "t1"
+                      ],
+                      "properties": {
+                        "success": {
+                          "const": true,
+                          "type": "boolean"
+                        },
+                        "t1": {
+                          "type": "object",
+                          "required": [
+                            "sessionId",
+                            "turnId",
+                            "rows"
+                          ],
+                          "properties": {
+                            "sessionId": {
+                              "type": "string"
+                            },
+                            "turnId": {
+                              "type": "number"
+                            },
+                            "traceId": {
+                              "type": "string"
+                            },
+                            "rows": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "required": [
+                                  "source",
+                                  "content"
+                                ],
+                                "properties": {
+                                  "source": {
+                                    "type": "string"
+                                  },
+                                  "content": {
+                                    "type": "string"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "success",
+                        "t1"
+                      ],
+                      "properties": {
+                        "success": {
+                          "const": true,
+                          "type": "boolean"
+                        },
+                        "t1": {
+                          "type": "object",
+                          "required": [
+                            "traceId",
+                            "sessionId",
+                            "turnId",
+                            "archived",
+                            "legacyAmbiguous",
+                            "rows"
+                          ],
+                          "properties": {
+                            "traceId": {
+                              "type": "string"
+                            },
+                            "sessionId": {
+                              "type": "string"
+                            },
+                            "turnId": {
+                              "type": "number"
+                            },
+                            "archived": {
+                              "type": "boolean"
+                            },
+                            "legacyAmbiguous": {
+                              "type": "boolean"
+                            },
+                            "rows": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "required": [
+                                  "source",
+                                  "content"
+                                ],
+                                "properties": {
+                                  "source": {
+                                    "type": "string"
+                                  },
+                                  "content": {
+                                    "type": "string"
+                                  },
+                                  "observationKey": {
+                                    "type": "string"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
           }
         }
       }

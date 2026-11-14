@@ -16,6 +16,8 @@ import type {
   GoalPlanInfo, GoalTimeline, GoalNodeRunInfo, PodTechLeadHistory, PodProbe, PodGoalRevision,
   // E10b-2 human-gate / permission read surface
   PermissionsNamespace,
+  // E10c-1 memory read surface
+  T1SearchHit,
 } from './types'
 import type { MafwClient } from './client'
 import type { MafwDiff, MafwPermissionRequest } from './view-dto'
@@ -125,6 +127,11 @@ const CHECK_permissions_allowlist: AssertEq<Resp<operations['permissions.listAll
 type SdkRules = Awaited<ReturnType<PermissionsNamespace['listRules']>>
 const CHECK_permissions_rules: AssertEq<Resp<operations['permissions.listRules']>, SdkRules> = true
 
+// E10c-1: memory.search 从 override 转 code-first —— results 仍是 MemoryUnit（CHECK_memory_search），
+// 新增的 t1Results（layer=t1|both 才出现）与 T1SearchHit 逐字段等价；memory.get 无 SDK DTO（internal）。
+type GenT1SearchHit = NonNullable<Resp<operations['memory.search']>['t1Results']>[number]
+const CHECK_memory_search_t1_item: AssertEq<GenT1SearchHit, T1SearchHit> = true
+
 /**
  * session.messages：`data` 的 part 判别联合由 view-dto 契约拥有，schema 只承诺
  * SDK 边界守卫 `MafwMessageShape` 认可的形状；游标必须与 client 的
@@ -157,4 +164,6 @@ export const CONTRACT_COMPAT_CHECKS = [
   // E10b-2
   CHECK_permissions_list_item, CHECK_permissions_get_mode, CHECK_permissions_allowlist,
   CHECK_permissions_rules,
+  // E10c-1
+  CHECK_memory_search_t1_item,
 ]

@@ -33,6 +33,7 @@
 - [E9 交互补齐（2026-11-13）](#e9-交互补齐2026-11-13)
 - [E10 契约覆盖第一批（2026-11-13）](#e10-契约覆盖第一批2026-11-13)
 - [E10b 契约覆盖第二批（2026-11-13）](#e10b-契约覆盖第二批2026-11-13)
+- [E10c 契约覆盖第三批（2026-11-14）](#e10c-契约覆盖第三批2026-11-14)
 - [API 端点](#api-端点)
 - [UI 服务](#ui-服务)
 - [数据流全景](#数据流全景)
@@ -1341,6 +1342,48 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 
 ---
 
+## E10c 契约覆盖第三批（2026-11-14）
+
+> 承接 E10b（44/317 → 45/318，E11-1 新增的 `humanToken.rotate` 占 1）。本批覆盖 **8 个读接口**：
+> memory 2 + recall 4 + lead 2，并把 `memory.search` 从 override 转成 code-first。
+> handler 输出零改动、catalog 仍是 318 ops（不新增路由）；规则与生成链沿用 E10 / E10b。
+> spec：`docs/superpowers/specs/2026-11-14-gateway-e10c-memory-recall-coverage-design.md`；
+> plan：`docs/superpowers/plans/2026-11-14-gateway-e10c-memory-recall-coverage.md`；
+> 交付记录：`docs/releases/2026-11-14-gateway-e10c-memory-recall-coverage.md`。
+
+| # | 现状 | 边界 |
+|---|---|---|
+| E10c-1 | **memory / recall / lead 读接口 8 ops** 的 200 response schema：`routes/schemas/memory.ts`（new，`memory.search` / `memory.get`）、`routes/schemas/recall.ts`（new，`recall.context` / `recall.pinned` / `recall.instructions` / `recall.priors`）、`routes/schemas/lead.ts`（new，`lead.recall` / `lead.workingSet`）；catalog 逐条挂 `response`。`AssertEq`：`memory.search.results` 与 SDK `MemoryUnit` 保持（既有 `CHECK_memory_search`），新增 `CHECK_memory_search_t1_item`（`t1Results` item ↔ `T1SearchHit`）。`contract/overrides.json` 删除 `memory.search.responseSchema`（13 → 12），`merge-contract` 只剩 `session.list` 的历史提示。 | **`memory.search` override → code-first**：handler 三出口 `layer=gist → {results}`、`layer=t1 → {results:[], t1Results}`、`layer=both → {results, t1Results}`，故 `t1Results` optional、`results` 恒为数组；降级分支（index 有、OKF 文件缺失）补的 `tier` 是索引级字段，**不建模**（JSON Schema 未关 `additionalProperties`，多余键合法），MemoryUnit 精确等价优先。**`memory.get` 200 是三变体 union**（Harmonic unit 体 `{success, memory, latest?, source?}` / legacy `t1:<tail>:<turn>` / 永久 `t1:<traceId>`），不做「全 optional 宽松对象」；**404 体**（`{success:false, error, candidates?}`，含 ambiguous tail 候选）**不是 200 schema 的一部分**，由 api-contract 用例反向断言排除。`recall.*` 四面都是 **fail-open 200**（内存服务缺失 / 渲染异常 / 检索异常 → 中性空体），无 4xx/5xx 需建模；`recall.pinned.entries` 的 `salience` / `created_at` 按 legacy OKF 缺键保守设 optional。`lead.*` 两路由恒 200，`LeadTopicView` 是 `toView` 投影（不含 session id / 索引行，`summary` / `resumedFrom` 为 `string \| null`，`state` 是 `normalizeState` 四值闭词表）。 |
+
+### 台账口径（E10c）
+
+- **45 → 53/318（16.7%）**，剩余 **265** 个 op；by-tag 分区和恒等于 covered
+  （`npm run schema:coverage` 为准，本轮 `memory 1/7`（`memory.get` 在 `internal` 组）、
+  `lead 2/11`、`internal 11/73`（含 recall 4 + `memory.get`））。
+- **override 13 → 12**：`memory.search` 转 code-first 后删除条目，`$comment` 记录 E10c-1；
+  生成物 `gateway-paths.json` / `openapi.json` / `api-schema.gen.ts` 的 diff **恰好**落在本批 8 个 op
+  （added 0 / removed 0），`gen:api` 二次运行幂等。
+- 本批 8 op 全是**读诊断 / 宿主注入面**：`memory.search` 走 SDK DTO 精确等价，`memory.get` /
+  `recall.*` / `lead.*` 无 SDK client（`internal` / `lead` tag），schema-only + api-contract 断言。
+- **已知漂移风险（deferred）**：`memory.get` 的 `HarmonicUnitSchema` 是 `core/memory/harmonic-types.ts`
+  **手工镜像**（`HarmonicUnit` 不是 SDK DTO，没有 `AssertEq` 可钉）→ 新增 harmonic 字段不会打红任何测试。
+  缓解：schema 只做描述、未关 `additionalProperties`，多余键不会判非法；要强约束需在 gateway 侧加
+  `AssertEq<typeof HarmonicUnitSchema, HarmonicUnit>` 编译期桥（本批范围外）。`memory.get` 若将来开 SDK
+  client，返回类型会是三变体 union 而非扁平 `{memory}`。
+
+### 残余（E10c 后仍 deferred）
+
+- 剩余约 **265** 个 op 的 response schema 覆盖（318 operations 中 53 个已带 200 schema，16.7%；
+  台账 `npm run schema:coverage`，见「E10 契约覆盖」/「E10b 契约覆盖第二批」/「E10c 契约覆盖第三批」）。
+- POST/PUT/PATCH/DELETE 的请求 / 响应 schema（E10 / E10b / E10c 只建模读接口的 200 成功体，
+  错误体不建模——`memory.get` 的 404 体只在测试里做反向断言，不进 schema）。
+- 强制版本协商 / SDK 全量 schema 类型化。
+- TUI / mobile 的 triage phantom 字段渲染（`reason` / `goalId` / `severity`；真实 wire 无这些字段）。
+- mobile 工作 tab 的其余增量 patch（E9-1 后 flat 帧已能触发 `goalId` 局部 patch，任务 / 消息仍是整页快照）。
+- `memory.get` 的 HarmonicUnit 编译期 `AssertEq` 桥（见上「已知漂移风险」）。
+
+---
+
 ## E11 身份 / 配额硬化（2026-11-13）
 
 > E11 原清单里的设备生命周期（deviceName 校验、WS `?deviceId=` 凭据优先、`pruneStale`、rotate/revoke）
@@ -1367,8 +1410,9 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 
 ### 残余（E11 后仍 deferred）
 
-- 剩余约 273 个 op 的 response schema 覆盖（318 operations 中 45 个已带 200 schema，14.2%；
-  台账 `npm run schema:coverage`，见「E10 契约覆盖」/「E10b 契约覆盖第二批」/ 本节 E11-1）。
+- 剩余 op 的 response schema 覆盖：E11 收口时 **273 未覆盖 / 45 已覆盖（14.2%）**，
+  E10c 后为 **265 / 53（16.7%）**（台账 `npm run schema:coverage`，见「E10 契约覆盖」/
+  「E10b 契约覆盖第二批」/「E10c 契约覆盖第三批」/ 本节 E11-1）。
 - 强制版本协商 / SDK 全量 schema 类型化。
 - POST/PUT/PATCH/DELETE 的请求 / 响应 schema（E10 / E10b / E11 只建模读接口与单个 auth op 的 200 成功体，
   错误体不建模）。

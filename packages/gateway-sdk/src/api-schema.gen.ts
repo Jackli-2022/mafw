@@ -8277,7 +8277,24 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        resident: string[];
+                        warm: string[];
+                        cold: string[];
+                        pinned: string[];
+                        evicted: string[];
+                        topics: {
+                            id: string;
+                            title: string;
+                            summary: string | null;
+                            state: "resident" | "warm" | "cold" | "archived";
+                            lastActiveAt: string;
+                            goalId: string;
+                            resumedFrom: string | null;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -8295,7 +8312,16 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        candidates: {
+                            topicId: string;
+                            title: string;
+                            score: number;
+                            matches: string[];
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -8455,7 +8481,6 @@ export interface operations {
                     "application/json": {
                         results: {
                             id: string;
-                            /** @enum {string} */
                             type: "episodic" | "semantic" | "procedural" | "global";
                             primary_abstraction: string;
                             cue_anchors: string[];
@@ -8463,6 +8488,15 @@ export interface operations {
                             energy: number;
                             salience?: number;
                             created_at?: string;
+                        }[];
+                        t1Results?: {
+                            sessionId: string;
+                            turnId: number;
+                            traceId?: string | null;
+                            cosine: number;
+                            excerpt: string;
+                            sources?: ("dense" | "lexical")[];
+                            score?: number;
                         }[];
                     };
                 };
@@ -11289,7 +11323,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        pointers: string | null;
+                    };
+                };
             };
         };
     };
@@ -11307,7 +11345,25 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        profile: string | null;
+                        entries: {
+                            id: string;
+                            type: "episodic" | "semantic" | "procedural" | "global";
+                            primary_abstraction: string;
+                            memory_value: string;
+                            energy: number;
+                            salience?: number;
+                            created_at?: string;
+                        }[];
+                        budget: {
+                            max: number;
+                            maxChars: number;
+                            used: number;
+                        };
+                    };
+                };
             };
         };
     };
@@ -11325,7 +11381,21 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        managed: boolean;
+                        revision: string;
+                        missing: string[];
+                        staleKeys: string[];
+                        erroredKeys: string[];
+                        reason?: string;
+                        blocks: {
+                            memoryGuide?: string;
+                            userProfile?: string;
+                            agentPriors?: string;
+                        };
+                    };
+                };
             };
         };
     };
@@ -11343,7 +11413,15 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        block: string | null;
+                        used: number;
+                        budget: {
+                            maxChars: number;
+                        };
+                    };
+                };
             };
         };
     };
@@ -11379,7 +11457,104 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        success: true;
+                        memory: {
+                            id: string;
+                            type: "episodic" | "semantic" | "procedural" | "global";
+                            granularity?: "function" | "class" | "module" | "architecture";
+                            primary_abstraction: string;
+                            cue_anchors: string[];
+                            memory_value: string;
+                            energy: number;
+                            created_at?: string;
+                            updated_at: string;
+                            goal_id?: string;
+                            merged_from?: string[];
+                            distinct_from?: string[];
+                            salience?: number;
+                            abstraction_level?: number;
+                            review_count?: number;
+                            last_reviewed?: string;
+                            superseded_by?: string;
+                            pinned?: boolean;
+                            sticky_until?: string;
+                            source_session_id?: string;
+                            source_trace_ids?: string[];
+                            authority?: "user" | "agent" | "tool" | "pipeline";
+                            distilled_by?: string[];
+                            commitment_capped_at?: string;
+                            novelty?: number;
+                        };
+                        latest?: {
+                            id: string;
+                            type: "episodic" | "semantic" | "procedural" | "global";
+                            granularity?: "function" | "class" | "module" | "architecture";
+                            primary_abstraction: string;
+                            cue_anchors: string[];
+                            memory_value: string;
+                            energy: number;
+                            created_at?: string;
+                            updated_at: string;
+                            goal_id?: string;
+                            merged_from?: string[];
+                            distinct_from?: string[];
+                            salience?: number;
+                            abstraction_level?: number;
+                            review_count?: number;
+                            last_reviewed?: string;
+                            superseded_by?: string;
+                            pinned?: boolean;
+                            sticky_until?: string;
+                            source_session_id?: string;
+                            source_trace_ids?: string[];
+                            authority?: "user" | "agent" | "tool" | "pipeline";
+                            distilled_by?: string[];
+                            commitment_capped_at?: string;
+                            novelty?: number;
+                        };
+                        source?: {
+                            sessionId: string;
+                            evidence?: string;
+                            traces?: {
+                                traceId: string;
+                                sessionId: string;
+                                turnId: number;
+                                archived: boolean;
+                                excerpt: string;
+                            }[];
+                        };
+                    } | {
+                        /** @constant */
+                        success: true;
+                        t1: {
+                            sessionId: string;
+                            turnId: number;
+                            traceId?: string;
+                            rows: {
+                                source: string;
+                                content: string;
+                            }[];
+                        };
+                    } | {
+                        /** @constant */
+                        success: true;
+                        t1: {
+                            traceId: string;
+                            sessionId: string;
+                            turnId: number;
+                            archived: boolean;
+                            legacyAmbiguous: boolean;
+                            rows: {
+                                source: string;
+                                content: string;
+                                observationKey?: string;
+                            }[];
+                        };
+                    };
+                };
             };
         };
     };
