@@ -53,6 +53,8 @@ export interface DashboardRouteDeps {
    * （200 壳 + `code:'disk_low'`，不落盘）。null = 无 governor（fail-open）。
    */
   pressure?: () => { disk: string; degraded: string[] } | null;
+  /** Exact T1 provenance validation for memory.add (defaults to drop all). */
+  hasTrace?: (traceId: string) => boolean;
 }
 
 export function attachDashboardRoutes(registry: RouteRegistry, deps: DashboardRouteDeps): void {
@@ -153,6 +155,10 @@ export function attachDashboardRoutes(registry: RouteRegistry, deps: DashboardRo
       const salience = typeof data?.importance === 'number' && Number.isFinite(data.importance)
         ? importanceToSalience(data.importance)
         : judgeSalience({ text: content, novelty }).score;
+      const sourceTraceIds = require('../core/memory/provenance.js').normalizeSourceTraceIds(
+        data?.sourceTraceIds,
+        (id: string) => (deps.hasTrace ? deps.hasTrace(id) : false),
+      );
       const unit = {
         id: generateHarmonicId(),
         type: memoryType,
@@ -176,6 +182,7 @@ export function attachDashboardRoutes(registry: RouteRegistry, deps: DashboardRo
         // V1 provenance: pipeline workers write via HTTP with their own
         // session id — map back to the source session for C0 reconstruction.
         source_session_id: (data?.sessionID && require('../recall/worker-origin').resolveWorkerOrigin(String(data.sessionID))) || (data?.sessionID ? String(data.sessionID) : undefined),
+        ...(sourceTraceIds.length > 0 ? { source_trace_ids: sourceTraceIds } : {}),
       };
       let supersedesTarget: any = null;
       if (data?.supersedes) {

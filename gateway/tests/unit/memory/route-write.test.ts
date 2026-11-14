@@ -313,6 +313,24 @@ describe('routeAndWrite', () => {
     expect(s.writes[0].energy).toBe(1);
   });
 
+  test('skip with already-known provenance is a pure no-op', async () => {
+    const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
+    v.upsert('dup', [1, 0]);
+    const target = u('dup');
+    target.source_trace_ids = ['t1t_old'];
+    const incoming = u('n1');
+    incoming.source_trace_ids = ['t1t_old'];
+    const s = memStore([target]);
+    const out = await routeAndWrite(incoming, s as any, {
+      vectors: v,
+      provider,
+      judge: async () => null,
+      readEntry: () => ({ primary_abstraction: 'n1' }),
+    });
+    expect(out).toEqual({ action: 'skip', id: 'dup', targetId: 'dup' });
+    expect(s.writes).toHaveLength(0);
+  });
+
   test('update → merges into newer, supersedes target', async () => {
     const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
     v.upsert('old', [0.9, 0.44]);
