@@ -3703,3 +3703,134 @@ describe('api-contract: E10f-D observability / device / A2A read response schema
   });
 });
 
+describe('api-contract: E10g request bodies (W1 session writes)', () => {
+  function opById(operationId: string): any {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const op of Object.values<any>(methods)) {
+        if (op?.operationId === operationId) return op;
+      }
+    }
+    return null;
+  }
+
+  function bodyOf(operationId: string): any {
+    const op = opById(operationId);
+    expect(`${operationId}:${op ? 'present' : 'missing'}`).toBe(`${operationId}:present`);
+    const body = op.requestBody;
+    expect(`${operationId}:requestBody`).toBe(`${operationId}:${body ? 'requestBody' : 'missing'}`);
+    return body;
+  }
+
+  test('write ops with a requestBody count matches the coverage ledger (38 = P0 3 + W1 35)', () => {
+    const withBody: string[] = [];
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const [method, op] of Object.entries<any>(methods)) {
+        if (method === 'get' || !op?.operationId) continue;
+        if (op.requestBody) withBody.push(op.operationId);
+      }
+    }
+    expect(withBody).toHaveLength(38);
+    expect(withBody).toEqual(expect.arrayContaining([
+      'session.create', 'tasks.submit', 'pods.tasks.create',
+      'session.config.set', 'session.promptAsync', 'structured.submit',
+    ]));
+  });
+
+  test('session.config.set: category+value required, category is a closed enum', () => {
+    const body = bodyOf('session.config.set');
+    expect(body.required).toBe(true);
+    const schema = body.content['application/json'].schema;
+    expect(schema.required).toEqual(['category', 'value']);
+    expect(schema.properties.category.anyOf.map((v: any) => v.const))
+      .toEqual(['mode', 'agent', 'model', 'model_config', 'thought_level']);
+    // value is required but its shape depends on category (null clears thought_level).
+    expect(schema.properties.value.description).toContain('null clears thought_level');
+    expect(schema.properties.value.type).toBeUndefined();
+  });
+
+  test('session.switchModel / switchAgent: required payload, variant optional', () => {
+    const model = bodyOf('session.switchModel');
+    expect(model.required).toBe(true);
+    const modelSchema = model.content['application/json'].schema;
+    expect(modelSchema.required).toEqual(['model']);
+    expect(modelSchema.properties.model.required).toEqual(['providerID', 'modelID']);
+    expect(modelSchema.properties.variant).toBeDefined();
+    expect(modelSchema.required).not.toContain('variant');
+
+    const agent = bodyOf('session.switchAgent');
+    expect(agent.content['application/json'].schema.required).toEqual(['agent']);
+  });
+
+  test('session.promptAsync: message/parts optional, delivery enum pinned', () => {
+    const body = bodyOf('session.promptAsync');
+    expect(body.required).toBe(true);
+    const schema = body.content['application/json'].schema;
+    expect(schema.required).toBeUndefined();
+    expect(schema.properties.message.description).toContain('parts is absent');
+    expect(schema.properties.parts.description).toContain('message is absent');
+    expect(schema.properties.delivery.anyOf.map((v: any) => v.const))
+      .toEqual(['steer', 'followup', 'queue']);
+    expect(schema.properties.maxTurns.type).toBe('number');
+  });
+
+  test('session.rename / session.revert / session.restoreCheckpoint: required fields', () => {
+    expect(bodyOf('session.rename').content['application/json'].schema.required).toEqual(['title']);
+    expect(bodyOf('session.revert').content['application/json'].schema.required).toEqual(['messageID']);
+    const restore = bodyOf('session.restoreCheckpoint').content['application/json'].schema;
+    expect(restore.required).toEqual(['scope', 'confirm']);
+    expect(restore.properties.scope.anyOf.map((v: any) => v.const)).toEqual(['session', 'files', 'both']);
+    expect(restore.properties.confirm.const).toBe(true);
+  });
+
+  test('session.revertDiff: non-empty patches with integer hunk indices', () => {
+    const schema = bodyOf('session.revertDiff').content['application/json'].schema;
+    expect(schema.required).toEqual(['patches']);
+    expect(schema.properties.patches.minItems).toBe(1);
+    expect(schema.properties.patches.items.required).toEqual(['patch', 'hunkIndices']);
+    expect(schema.properties.patches.items.properties.hunkIndices.minItems).toBe(1);
+    expect(schema.properties.patches.items.properties.hunkIndices.items.type).toBe('integer');
+  });
+
+  test('structured.submit / session.data / subagents.spawn keep their required anchors', () => {
+    expect(bodyOf('structured.submit').content['application/json'].schema.required).toEqual(['sessionID', 'data']);
+    const data = bodyOf('session.data').content['application/json'].schema;
+    expect(data.required).toEqual(['name']);
+    expect(data.properties.name.pattern).toBe('^[a-z0-9][a-z0-9_-]{0,31}$');
+    const spawn = bodyOf('session.subagents.spawn').content['application/json'].schema;
+    expect(spawn.required).toEqual(['prompt']);
+    expect(spawn.properties.background.type).toBe('boolean');
+    expect(bodyOf('session.subagents.message').content['application/json'].schema.required).toEqual(['message']);
+  });
+
+  test('session.command: proxied runtime body (optional body, required command+arguments)', () => {
+    const body = bodyOf('session.command');
+    expect(body.required).toBe(false);
+    expect(body.content['application/json'].schema.required).toEqual(['command', 'arguments']);
+  });
+
+  test('no-body actions declare an empty object with required:false', () => {
+    for (const id of [
+      'session.abort',
+      'session.background',
+      'session.suspend',
+      'session.resume',
+      'session.discardRun',
+      'session.unrevert',
+      'session.delete',
+      'session.deleteLegacy',
+      'session.queue.clear',
+      'session.queue.cancel',
+      'session.subagents.cancel',
+      'session.discoveryRefresh',
+      'session.usagePluginsReload',
+      'session.usagePluginsDelete',
+      'session.usagePluginTest',
+    ]) {
+      const body = bodyOf(id);
+      expect(`${id}:${body.required}`).toBe(`${id}:false`);
+      const schema = body.content['application/json'].schema;
+      expect(`${id}:${schema.type}`).toBe(`${id}:object`);
+      expect(Object.keys(schema.properties ?? {})).toEqual([]);
+    }
+  });
+});

@@ -850,6 +850,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -979,6 +990,49 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "category",
+                  "value"
+                ],
+                "properties": {
+                  "category": {
+                    "anyOf": [
+                      {
+                        "const": "mode",
+                        "type": "string"
+                      },
+                      {
+                        "const": "agent",
+                        "type": "string"
+                      },
+                      {
+                        "const": "model",
+                        "type": "string"
+                      },
+                      {
+                        "const": "model_config",
+                        "type": "string"
+                      },
+                      {
+                        "const": "thought_level",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "value": {
+                    "description": "Shape depends on category; null clears thought_level."
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -1010,6 +1064,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -1374,6 +1439,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -1395,6 +1471,25 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "title"
+                ],
+                "properties": {
+                  "title": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -1852,6 +1947,25 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "agent"
+                ],
+                "properties": {
+                  "agent": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -1875,6 +1989,39 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "model"
+                ],
+                "properties": {
+                  "model": {
+                    "type": "object",
+                    "required": [
+                      "providerID",
+                      "modelID"
+                    ],
+                    "properties": {
+                      "providerID": {
+                        "type": "string"
+                      },
+                      "modelID": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "variant": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -1888,6 +2035,29 @@
         "tags": [
           "session"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "sessionID",
+                  "data"
+                ],
+                "properties": {
+                  "sessionID": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "data": {
+                    "description": "Validated against the session output schema at submit time."
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -2829,6 +2999,21 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "messageID": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -2852,6 +3037,28 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "messageID"
+                ],
+                "properties": {
+                  "messageID": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "partID": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -2875,6 +3082,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -2980,6 +3198,46 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "patches"
+                ],
+                "properties": {
+                  "patches": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "patch",
+                        "hunkIndices"
+                      ],
+                      "properties": {
+                        "patch": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "hunkIndices": {
+                          "minItems": 1,
+                          "type": "array",
+                          "items": {
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -3003,6 +3261,21 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "messageID": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -3285,6 +3558,42 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "scope",
+                  "confirm"
+                ],
+                "properties": {
+                  "scope": {
+                    "anyOf": [
+                      {
+                        "const": "session",
+                        "type": "string"
+                      },
+                      {
+                        "const": "files",
+                        "type": "string"
+                      },
+                      {
+                        "const": "both",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "confirm": {
+                    "const": true,
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -3308,6 +3617,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -3331,6 +3651,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -3481,6 +3812,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -3504,6 +3846,39 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$",
+                    "type": "string"
+                  },
+                  "id": {
+                    "pattern": "^[A-Za-z0-9._:-]{1,64}$",
+                    "type": "string"
+                  },
+                  "data": {
+                    "description": "JSON-serializable payload (<= 64KB after encoding)."
+                  },
+                  "transient": {
+                    "description": "Not persisted; overrides an existing row for the same id.",
+                    "type": "boolean"
+                  },
+                  "messageID": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -3860,6 +4235,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -3976,6 +4362,21 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -3999,6 +4400,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -4022,6 +4434,24 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "providerID": {
+                    "type": "string"
+                  },
+                  "modelID": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -4045,6 +4475,94 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "parts": {
+                    "type": "array",
+                    "items": {
+                      "additionalProperties": true,
+                      "type": "object",
+                      "required": [
+                        "type"
+                      ],
+                      "properties": {
+                        "type": {
+                          "type": "string"
+                        },
+                        "text": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "system": {
+                    "type": "string"
+                  },
+                  "outputSchema": {
+                    "type": "object",
+                    "required": [
+                      "schema"
+                    ],
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "schema": {
+                        "type": "object",
+                        "patternProperties": {
+                          "^(.*)$": {}
+                        }
+                      },
+                      "retryCount": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "thinkingLevel": {
+                    "anyOf": [
+                      {
+                        "const": "off",
+                        "type": "string"
+                      },
+                      {
+                        "const": "minimal",
+                        "type": "string"
+                      },
+                      {
+                        "const": "low",
+                        "type": "string"
+                      },
+                      {
+                        "const": "medium",
+                        "type": "string"
+                      },
+                      {
+                        "const": "high",
+                        "type": "string"
+                      },
+                      {
+                        "const": "xhigh",
+                        "type": "string"
+                      },
+                      {
+                        "const": "max",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "variant": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -4068,6 +4586,144 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "message": {
+                    "description": "Required when parts is absent.",
+                    "type": "string"
+                  },
+                  "parts": {
+                    "description": "Required when message is absent.",
+                    "type": "array",
+                    "items": {
+                      "additionalProperties": true,
+                      "type": "object",
+                      "required": [
+                        "type"
+                      ],
+                      "properties": {
+                        "type": {
+                          "type": "string"
+                        },
+                        "text": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "object",
+                    "required": [
+                      "providerID",
+                      "modelID"
+                    ],
+                    "properties": {
+                      "providerID": {
+                        "type": "string"
+                      },
+                      "modelID": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "maxTurns": {
+                    "description": "Rejected when the prompt is queued or the run is suspended.",
+                    "type": "number"
+                  },
+                  "maxCostUsd": {
+                    "description": "Rejected when the prompt is queued or the run is suspended.",
+                    "type": "number"
+                  },
+                  "delivery": {
+                    "anyOf": [
+                      {
+                        "const": "steer",
+                        "type": "string"
+                      },
+                      {
+                        "const": "followup",
+                        "type": "string"
+                      },
+                      {
+                        "const": "queue",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "idempotencyKey": {
+                    "type": "string"
+                  },
+                  "expectReply": {
+                    "type": "boolean"
+                  },
+                  "thinkingLevel": {
+                    "anyOf": [
+                      {
+                        "const": "off",
+                        "type": "string"
+                      },
+                      {
+                        "const": "minimal",
+                        "type": "string"
+                      },
+                      {
+                        "const": "low",
+                        "type": "string"
+                      },
+                      {
+                        "const": "medium",
+                        "type": "string"
+                      },
+                      {
+                        "const": "high",
+                        "type": "string"
+                      },
+                      {
+                        "const": "xhigh",
+                        "type": "string"
+                      },
+                      {
+                        "const": "max",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "variant": {
+                    "type": "string"
+                  },
+                  "outputSchema": {
+                    "type": "object",
+                    "required": [
+                      "schema"
+                    ],
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "schema": {
+                        "type": "object",
+                        "patternProperties": {
+                          "^(.*)$": {}
+                        }
+                      },
+                      "retryCount": {
+                        "type": "number"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -4091,6 +4747,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -4114,6 +4781,38 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "command",
+                  "arguments"
+                ],
+                "properties": {
+                  "command": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "arguments": {
+                    "type": "string"
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "messageID": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -6901,6 +7600,17 @@
         "tags": [
           "session"
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -6914,6 +7624,36 @@
         "tags": [
           "session"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "template": {
+                    "description": "Mutually exclusive with name+source.",
+                    "type": "string"
+                  },
+                  "values": {
+                    "type": "object",
+                    "patternProperties": {
+                      "^(.*)$": {}
+                    }
+                  },
+                  "name": {
+                    "description": "Required for name+source; optional for templates.",
+                    "type": "string"
+                  },
+                  "source": {
+                    "description": "Required with name when template is absent.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -6986,6 +7726,25 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "source"
+                ],
+                "properties": {
+                  "source": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -7009,6 +7768,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -7032,6 +7802,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -28986,6 +29767,72 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "prompt"
+                ],
+                "properties": {
+                  "prompt": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "directory": {
+                    "type": "string"
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "background": {
+                    "type": "boolean"
+                  },
+                  "model": {
+                    "type": "object",
+                    "required": [
+                      "providerID",
+                      "modelID"
+                    ],
+                    "properties": {
+                      "providerID": {
+                        "type": "string"
+                      },
+                      "modelID": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "outputSchema": {
+                    "type": "object",
+                    "required": [
+                      "schema"
+                    ],
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "schema": {
+                        "type": "object",
+                        "patternProperties": {
+                          "^(.*)$": {}
+                        }
+                      },
+                      "retryCount": {
+                        "type": "number"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -29113,6 +29960,25 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "message"
+                ],
+                "properties": {
+                  "message": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -29144,6 +30010,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -29234,6 +30111,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"

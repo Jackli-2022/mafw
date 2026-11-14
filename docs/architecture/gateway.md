@@ -37,7 +37,7 @@
 - [E10d 契约覆盖第四批（2026-11-14）](#e10d-契约覆盖第四批2026-11-14)
 - [E10e 契约覆盖第五批（2026-11-14）](#e10e-契约覆盖第五批2026-11-14)
 - [E10f 全量读表面收口（2026-11-14）](#e10f-全量读表面收口2026-11-14)
-- [E10g 请求契约（进行中：P0，2026-11-14）](#e10g-请求契约进行中p02026-11-14)
+- [E10g 请求契约（进行中：P0 + W1，2026-11-14）](#e10g-请求契约进行中p0--w12026-11-14)
 - [API 端点](#api-端点)
 - [UI 服务](#ui-服务)
 - [数据流全景](#数据流全景)
@@ -1561,9 +1561,10 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 
 ---
 
-## E10g 请求契约（进行中：P0，2026-11-14）
+## E10g 请求契约（进行中：P0 + W1，2026-11-14）
 
-> 承接 E10f（响应 125/318）。E10g 给 **188 个写 op** 补请求契约；本篇只记录 P0 管线与 3 个 pilot。
+> 承接 E10f（响应 125/318）。E10g 给 **188 个写 op** 补请求契约；本篇记录 P0 管线、
+> 3 个 pilot 与 W1（session 写接口 35 个）。
 > spec：`docs/superpowers/specs/2026-11-14-gateway-e10g-request-contracts-design.md`。
 
 - **`RouteDef` 新增三个声明位**：`request?: object`（TypeBox / JSON Schema，缺省 = 未建模）、
@@ -1580,7 +1581,16 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
   service 校验，schema 用 optional + description 表达）、`pods.tasks.create`（`title` 必填；
   plan 模式 `goalId` 必填，manual 可选 `goalId` / `ownerMemberId`，`actorSessionID` 是鉴权 actor）。
   生成物 diff 恰好这 3 个 op 从 `requestBody?: never` 变为请求体 schema，`gen:api` 幂等。
-- **残余**：其余 185 个写 op 按 W1-W7 分批推进；`REQUEST_EXCLUDED` 清单与收口覆盖测试在 E10g 收口波落地。
+- **W1（session 写接口，35 个）**：schema 集中在 `routes/schemas/session-write.ts`，字段来自
+  handler 读取面（config.set 的 `category` + 多态 `value`；prompt / promptAsync 的 `parts` /
+  `delivery` / budget 字段；revertDiff 的 `patches` + `hunkIndices`；restoreCheckpoint 的
+  `scope` + `confirm:true`；usage plugin create/source；subagents spawn/message）。
+  **20 个 JSON body + 15 个空对象动作**（abort / suspend / resume / discardRun / unrevert /
+  delete / deleteLegacy / queue.clear / queue.cancel / subagents.cancel / discoveryRefresh /
+  background / usage plugins reload/delete/test），空对象统一 `EmptyRequest` + `requestRequired:false`。
+  `session.command` 无 gateway handler（尾部反代 runtime serve），按 `@opencode-ai/sdk`
+  `SessionCommandData.body` 声明（body 可缺省，`command`/`arguments` 必填）。
+- **残余**：其余 150 个写 op 按 W2-W7 分批推进；`REQUEST_EXCLUDED` 清单与收口覆盖测试在 E10g 收口波落地。
 
 ---
 

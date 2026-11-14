@@ -4909,7 +4909,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -4961,7 +4965,15 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    category: "mode" | "agent" | "model" | "model_config" | "thought_level";
+                    /** @description Shape depends on category; null clears thought_level. */
+                    value: unknown;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -4982,7 +4994,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5102,7 +5118,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5122,7 +5142,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    title: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5302,7 +5328,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    agent: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5322,7 +5354,17 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    model: {
+                        providerID: string;
+                        modelID: string;
+                    };
+                    variant?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5340,7 +5382,15 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    sessionID: string;
+                    /** @description Validated against the session output schema at submit time. */
+                    data: unknown;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5682,7 +5732,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    messageID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5702,7 +5758,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    messageID: string;
+                    partID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5722,7 +5785,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5772,7 +5839,16 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    patches: {
+                        patch: string;
+                        hunkIndices: number[];
+                    }[];
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5792,7 +5868,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    messageID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5875,7 +5957,15 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    scope: "session" | "files" | "both";
+                    /** @constant */
+                    confirm: true;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5895,7 +5985,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5915,7 +6009,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5975,7 +6073,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5995,7 +6097,19 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                    id?: string;
+                    /** @description JSON-serializable payload (<= 64KB after encoding). */
+                    data?: unknown;
+                    /** @description Not persisted; overrides an existing row for the same id. */
+                    transient?: boolean;
+                    messageID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -6086,7 +6200,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -6139,7 +6257,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    args?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -6159,7 +6283,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -6179,7 +6307,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    providerID?: string;
+                    modelID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -6199,7 +6334,28 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    parts?: ({
+                        type: string;
+                        text?: string;
+                    } & {
+                        [key: string]: unknown;
+                    })[];
+                    system?: string;
+                    outputSchema?: {
+                        name?: string;
+                        schema: {
+                            [key: string]: unknown;
+                        };
+                        retryCount?: number;
+                    };
+                    thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                    variant?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -6219,7 +6375,42 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Required when parts is absent. */
+                    message?: string;
+                    /** @description Required when message is absent. */
+                    parts?: ({
+                        type: string;
+                        text?: string;
+                    } & {
+                        [key: string]: unknown;
+                    })[];
+                    agent?: string;
+                    model?: {
+                        providerID: string;
+                        modelID: string;
+                    };
+                    /** @description Rejected when the prompt is queued or the run is suspended. */
+                    maxTurns?: number;
+                    /** @description Rejected when the prompt is queued or the run is suspended. */
+                    maxCostUsd?: number;
+                    delivery?: "steer" | "followup" | "queue";
+                    idempotencyKey?: string;
+                    expectReply?: boolean;
+                    thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                    variant?: string;
+                    outputSchema?: {
+                        name?: string;
+                        schema: {
+                            [key: string]: unknown;
+                        };
+                        retryCount?: number;
+                    };
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -6239,7 +6430,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -6259,7 +6454,17 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    command: string;
+                    arguments: string;
+                    agent?: string;
+                    model?: string;
+                    messageID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7028,7 +7233,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7046,7 +7255,21 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Mutually exclusive with name+source. */
+                    template?: string;
+                    values?: {
+                        [key: string]: unknown;
+                    };
+                    /** @description Required for name+source; optional for templates. */
+                    name?: string;
+                    /** @description Required with name when template is absent. */
+                    source?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7091,7 +7314,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    source: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7111,7 +7340,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7131,7 +7364,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -14492,7 +14729,28 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    prompt: string;
+                    directory?: string;
+                    agent?: string;
+                    description?: string;
+                    background?: boolean;
+                    model?: {
+                        providerID: string;
+                        modelID: string;
+                    };
+                    outputSchema?: {
+                        name?: string;
+                        schema: {
+                            [key: string]: unknown;
+                        };
+                        retryCount?: number;
+                    };
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -14513,7 +14771,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    message: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -14534,7 +14798,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -14581,7 +14849,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {

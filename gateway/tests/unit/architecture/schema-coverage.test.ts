@@ -175,6 +175,84 @@ function catalogOps(): Array<{ operationId: string; hasResponse: boolean }> {
 /** E10g: write ops = everything that is not a GET (query-only surface). */
 const WRITE_OPS_TOTAL = 188;
 
+/** P0 pilots：requestBody 管线的第一批（始终保留，不随批次回退）。 */
+const E10G_P0_REQUEST_OPS = ['pods.tasks.create', 'session.create', 'tasks.submit'];
+
+/**
+ * E10g-W1：session 域写接口（35 个）。P0 的 session.create + 这 35 个 = 38。
+ * 后续 W2-W7 只会追加，因此总数断言是下界（`>= 38`），本清单用于钉住
+ * 「这一批每个 op 都真的声明了 request」。
+ */
+const E10G_W1_REQUEST_OPS = [
+  'session.abort',
+  'session.background',
+  'session.checkpoint',
+  'session.command',
+  'session.config.set',
+  'session.data',
+  'session.delete',
+  'session.deleteLegacy',
+  'session.discardRun',
+  'session.discoveryRefresh',
+  'session.discoverySkillInvoke',
+  'session.fork',
+  'session.prompt',
+  'session.promptAsync',
+  'session.queue.cancel',
+  'session.queue.clear',
+  'session.rename',
+  'session.restoreCheckpoint',
+  'session.resume',
+  'session.revert',
+  'session.revertDiff',
+  'session.subagents.cancel',
+  'session.subagents.message',
+  'session.subagents.spawn',
+  'session.summarize',
+  'session.suspend',
+  'session.switchAgent',
+  'session.switchModel',
+  'session.unrevert',
+  'session.usagePluginSourcePut',
+  'session.usagePluginTest',
+  'session.usagePluginsCreate',
+  'session.usagePluginsDelete',
+  'session.usagePluginsReload',
+  'structured.submit',
+];
+
+/** W1 中「无 body / body 被忽略」的动作：空对象 + `required:false`。 */
+const E10G_W1_EMPTY_OPS = [
+  'session.abort',
+  'session.background',
+  'session.delete',
+  'session.deleteLegacy',
+  'session.discardRun',
+  'session.discoveryRefresh',
+  'session.queue.cancel',
+  'session.queue.clear',
+  'session.resume',
+  'session.suspend',
+  'session.subagents.cancel',
+  'session.unrevert',
+  'session.usagePluginTest',
+  'session.usagePluginsDelete',
+  'session.usagePluginsReload',
+];
+
+function catalogById(): Map<string, { hasRequest: boolean; request?: object; requestRequired?: boolean }> {
+  return new Map(
+    buildRouteCatalog().map((def) => [
+      def.operationId,
+      {
+        hasRequest: Boolean(def.request),
+        request: def.request,
+        requestRequired: def.requestRequired,
+      },
+    ]),
+  );
+}
+
 function catalogWriteOps(): Array<{ operationId: string; hasRequest: boolean }> {
   return buildRouteCatalog()
     .filter((def) => def.method !== 'GET')
@@ -251,8 +329,35 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(report.requestUncovered.some((id) => covered.includes(id))).toBe(false);
   });
 
-  it('P0 pilots are the only write ops with a request schema', () => {
-    expect(catalogWriteOps().filter((op) => op.hasRequest).map((op) => op.operationId).sort())
-      .toEqual(['pods.tasks.create', 'session.create', 'tasks.submit']);
+  it('P0 pilots still declare a request schema', () => {
+    const byId = catalogById();
+    expect(E10G_P0_REQUEST_OPS.filter((id) => !byId.get(id)?.hasRequest)).toEqual([]);
+  });
+
+  // E10g-W1: session writes. Pinned per-op so a dropped `request:` fails by name,
+  // and as a floor (`>= 38`) so the count can only grow with W2-W7.
+  it('every W1 session write op declares a request schema (catalog requests >= 38)', () => {
+    const byId = catalogById();
+    const missing = E10G_W1_REQUEST_OPS.filter((id) => !byId.get(id)?.hasRequest);
+    expect(missing).toEqual([]);
+    const requests = catalogWriteOps().filter((op) => op.hasRequest).map((op) => op.operationId);
+    expect(requests.length).toBeGreaterThanOrEqual(38);
+    expect(requests).toEqual(expect.arrayContaining([...E10G_P0_REQUEST_OPS, ...E10G_W1_REQUEST_OPS]));
+  });
+
+  it('W1 no-body actions use an empty object schema with requestRequired:false', () => {
+    const byId = catalogById();
+    const problems: string[] = [];
+    for (const id of E10G_W1_EMPTY_OPS) {
+      const def = byId.get(id);
+      if (!def?.hasRequest) { problems.push(`${id}: missing request`); continue; }
+      if (def.requestRequired !== false) problems.push(`${id}: requestRequired must be false`);
+      const props = (def.request as { properties?: Record<string, unknown> }).properties ?? {};
+      if (Object.keys(props).length !== 0) problems.push(`${id}: expected empty object, got ${Object.keys(props).join(',')}`);
+    }
+    expect(problems).toEqual([]);
+    // The two classifications are disjoint: an empty-object action cannot be
+    // one of the JSON-body ops in the W1 list.
+    expect(E10G_W1_EMPTY_OPS.filter((id) => !E10G_W1_REQUEST_OPS.includes(id))).toEqual([]);
   });
 });
