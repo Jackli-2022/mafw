@@ -360,6 +360,14 @@ export interface GatewayConfig {
     t1Replay: { enabled: boolean; exactK: number; activatedK: number; maxChars: number; perTraceChars: number };
     /** Phase 4B: episodes per reflection batch (small-step consolidation). */
     reflectionBatchSize: number;
+    /** Wall-clock budget for one reflection pass (default 15min). Keeps the
+     *  daily run inside the scheduler's 30min watchdog. */
+    reflectionMaxRunMs: number;
+    /** Max sessions reflected in one pass (default 50); the rest wait for the
+     *  next run. */
+    reflectionMaxSessionsPerRun: number;
+    /** Max sessions the boot-time restore path reflects (default 3, sequential). */
+    restoreReflectMaxSessions: number;
     /** V2 ⑦: commitment gradient — pipeline first-pass semantic/procedural
      *  writes cap at 0.6, graduate to 0.75 after the 48h window. */
     commitmentGradient?: boolean;
@@ -705,9 +713,16 @@ function defaults(projectDir: string): GatewayConfig {
       scanTimeoutMs: 60_000,
       pipelineBudgetUsdPerDay: 0,
       sourceEvidence: { enabled: true, k: 5, maxChars: 1500 },
-      t1Recall: { enabled: true, k: 3, maxChars: 600, retentionDays: 90, lexical: true, t1BackfillLimit: 200, activationHalfLifeDays: 14, activationRanking: 'shadow', activationRankWeight: 0.1, activationRankBand: 0.6 },
+      t1Recall: { enabled: true, k: 3, maxChars: 600, retentionDays: 90, lexical: true, t1BackfillLimit: 3000, activationHalfLifeDays: 14, activationRanking: 'shadow', activationRankWeight: 0.1, activationRankBand: 0.6 },
       t1Replay: { enabled: true, exactK: 8, activatedK: 3, maxChars: 6000, perTraceChars: 400 },
       reflectionBatchSize: 10,
+      // Leave 15min of watchdog headroom: one batch can burn two 300s worker
+      // timeouts, so the pass must return well before the 30min task watchdog
+      // (a timed-out run is killed by the next restart before it can record a
+      // heartbeat — the 2026-11 reflection stall).
+      reflectionMaxRunMs: 15 * 60_000,
+      reflectionMaxSessionsPerRun: 50,
+      restoreReflectMaxSessions: 3,
       commitmentGradient: true,
       segmentation: 'shadow',
       eventSegmentInput: false,

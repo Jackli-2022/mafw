@@ -419,6 +419,11 @@ export class AutomationEngine {
     return this.actions.has(type);
   }
 
+  /** True when an enabled rule with this id is loaded (catch-up gate). */
+  hasRule(id: string): boolean {
+    return this.rules.has(id);
+  }
+
   /** Optional bridge for actions that live outside the local map (plugin packs). */
   setExternalActionResolver(resolver: ExternalActionResolver | null): void {
     this.externalActionResolver = resolver ?? undefined;
