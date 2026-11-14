@@ -1,0 +1,8 @@
+{
+  "name": "echo",
+  "version": "1.0.0",
+  "main": "index.js",
+  "apiVersion": 2,
+  "kind": "untrusted",
+  "permissions": ["actions", "config.read", "config.write"]
+}
