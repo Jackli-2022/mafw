@@ -121,6 +121,8 @@ export function verifyDeclaredIntegrity(
     else if (hash !== declared) errors.push(`mismatch: ${file}`);
   }
   for (const file of Object.keys(actual)) {
+    // plugin.json cannot declare its own hash; it is the manifest, not content.
+    if (file === 'plugin.json') continue;
     if (!(file in integrity.files)) errors.push(`unexpected: ${file}`);
   }
 

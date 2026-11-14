@@ -526,6 +526,20 @@ describe('PackageManager filesystem operations', () => {
     expect(fs.existsSync(path.join(pluginDir, 'acme'))).toBe(false);
   });
 
+  it('keeps the installed version when an overwrite source is missing its main', async () => {
+    const good = writePackage(sourceDir, 'acme', { module: DECLARATIVE_MODULE('acme', 'Acme') });
+    await host!.init();
+    await manager.installFromPath({ path: good });
+
+    const bad = writePackage(sourceDir, 'acme', {
+      module: 'module.exports = {};',
+      manifest: { main: 'missing.js' },
+    });
+    await expect(manager.installFromPath({ path: bad, overwrite: true }))
+      .rejects.toMatchObject({ status: 400, code: 'invalid_manifest' });
+    expect(fs.existsSync(path.join(pluginDir, 'acme', 'index.js'))).toBe(true);
+  });
+
   it('records the integrity baseline after a successful install', async () => {
     const source = writePackage(sourceDir, 'acme', { module: DECLARATIVE_MODULE('acme', 'Acme') });
     await host!.init();

@@ -77,7 +77,7 @@ export class WorkerHost {
   private stopping = false;
   private sequence = 0;
   private inflight = new Map<string, PendingInvoke>();
-  private queue: Array<() => void> = [];
+  private queue: Array<{ resolve: () => void; reject: (error: Error) => void }> = [];
   private restarts = 0;
   private lastStderr = '';
   private restartTimer?: NodeJS.Timeout;
@@ -129,6 +129,7 @@ export class WorkerHost {
         NODE_ENV: process.env.NODE_ENV ?? 'production',
         LANG: process.env.LANG ?? '',
         TZ: process.env.TZ ?? '',
+        MAFW_WORKER_PERMISSIONS: JSON.stringify(this.options.manifest.permissions ?? []),
       },
       execArgv,
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
@@ -167,7 +168,7 @@ export class WorkerHost {
     }
     if (this.inflight.size >= MAX_INFLIGHT) {
       if (this.queue.length >= MAX_QUEUE) throw new Error('worker_busy');
-      await new Promise<void>((resolve) => this.queue.push(resolve));
+      await new Promise<void>((resolve, reject) => this.queue.push({ resolve, reject }));
     }
     if (this.state !== 'healthy' || !this.child?.connected) {
       throw new Error('worker not running');
@@ -255,6 +256,18 @@ export class WorkerHost {
   }
 
   private handleMessage(raw: unknown): void {
+    try {
+      this.handleMessageUnsafe(raw);
+    } catch (err: any) {
+      // A worker-triggered host-side error must never escape into the process
+      // uncaughtException handler and take down the gateway.
+      this.options.logger.warn(
+        `[plugin:${this.options.name}] worker message handler failed: ${err?.message ?? String(err)}`,
+      );
+    }
+  }
+
+  private handleMessageUnsafe(raw: unknown): void {
     const text = typeof raw === 'string' ? raw : JSON.stringify(raw);
     const message = decodeWorkerMessage(text);
     if (!message) {
@@ -294,7 +307,14 @@ export class WorkerHost {
         this.options.logger[message.level](`[plugin:${this.options.name}] ${message.message}`);
         break;
       case 'config.get':
-        this.send({ t: 'result', id: message.id, ok: true, output: this.options.getConfig() });
+        try {
+          this.send({ t: 'result', id: message.id, ok: true, output: this.options.getConfig() });
+        } catch (err: any) {
+          this.send({
+            t: 'result', id: message.id, ok: false,
+            error: { message: err?.message ?? String(err) },
+          });
+        }
         break;
       case 'config.update':
         try {
@@ -366,12 +386,14 @@ export class WorkerHost {
       pending.reject(error);
     }
     this.inflight.clear();
+    const queued = this.queue;
     this.queue = [];
+    for (const waiter of queued) waiter.reject(error);
   }
 
   private releaseQueue(): void {
     while (this.inflight.size < MAX_INFLIGHT && this.queue.length > 0) {
-      this.queue.shift()?.();
+      this.queue.shift()?.resolve();
     }
   }
 

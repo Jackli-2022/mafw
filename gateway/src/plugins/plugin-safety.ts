@@ -141,6 +141,12 @@ export class PluginSafety {
       }
       this.deps.state.updateInstalled(name, {
         pendingHealthCheck: undefined,
+        // The restored files no longer match the failed version's baseline.
+        // Clear it so the host does not quarantine the recovered package; the
+        // next successful activation records a fresh snapshot.
+        fingerprint: '',
+        files: {},
+        ...(pending.version !== undefined ? { version: pending.version } : {}),
         degraded: {
           reason: 'unconfirmed health window; restored last-known-good on boot',
           at: new Date().toISOString(),
@@ -219,6 +225,10 @@ export class PluginSafety {
 
   unquarantine(name: string, principal: SafetyPrincipal = {}): void {
     this.deps.state.clearQuarantine(name);
+    this.deps.state.updateInstalled(name, {
+      consecutiveFailures: 0,
+      degraded: undefined,
+    });
     this.deps.audit.append({
       action: 'unquarantine',
       package: name,

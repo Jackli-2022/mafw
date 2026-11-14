@@ -101,6 +101,7 @@ import { PackageLastGoodStore } from './plugins/package-last-good';
 import type { PluginClientSnapshot } from './plugins/client-descriptor';
 import { createPluginPackageContext } from './plugins/package-context';
 import { WorkerHost } from './plugins/worker/worker-host';
+import { permissionFlagFor } from './plugins/worker/node-flags';
 import type { UsageStatsProvider } from './usage/plugin-context';
 import { TerminalService } from './terminal/terminal-service';
 import { ensureGlobalOfficeSkill } from './core/office/global-skill';
@@ -430,6 +431,7 @@ export async function bootKernel(kernel: BootKernel): Promise<void> {
   // 2b. 统一插件包宿主（必须在 createRuntime 之前 init——包 runtime 贡献要先注册）
   const pluginPackageDir = process.env.MAFW_PLUGINS_DIR || config.resolvePath('plugins');
   kernel.packageStateStore = new PackageStateStore(config.resolvePath());
+  let pluginSafetyRef: PluginSafety | undefined;
   kernel.pluginHost = new PluginHost(
     pluginPackageDir,
     (name, bag) => createPluginPackageContext(name, {
@@ -461,7 +463,19 @@ export async function bootKernel(kernel: BootKernel): Promise<void> {
       broadcast: (event) => kernel.broadcast(event as any),
       // 插件事件作为 automation external trigger 的只读入口。
       onEvent: (event) => kernel.handlePluginEvent(event),
-      workerAvailable: () => true,
+      workerAvailable: () => permissionFlagFor(process.execPath) !== null,
+      activationBlocked: (name) => {
+        if (process.env.MAFW_SAFE_MODE === '1' || kernel.packageStateStore?.isSafeMode()) {
+          return 'safe-mode';
+        }
+        return kernel.packageStateStore?.getQuarantine(name) ? 'quarantined' : null;
+      },
+      onActivationFailure: (name, reason) => {
+        pluginSafetyRef?.recordActivationFailure(name, undefined, reason);
+      },
+      onActivationSuccess: (name) => {
+        pluginSafetyRef?.recordActivationSuccess(name);
+      },
       installedFingerprint: (name) => kernel.packageStateStore?.getInstalled(name)?.fingerprint,
       onUntrustedDrift: (name, reason) => {
         try {
@@ -487,6 +501,9 @@ export async function bootKernel(kernel: BootKernel): Promise<void> {
           entryFile: desc.mainFile,
           manifest,
           onEmit: hooks.emit,
+          onCrash: () => {
+            pluginSafetyRef?.recordActivationFailure(desc.name, manifest.version, 'worker crashed');
+          },
           getConfig: () => packageCtx.pluginConfig(),
           updateConfig: (patch) => packageCtx.config.update(patch),
           logger: log,
@@ -504,12 +521,13 @@ export async function bootKernel(kernel: BootKernel): Promise<void> {
     lastGood: pluginLastGood,
     oneRunSafeMode: process.env.MAFW_SAFE_MODE === '1',
   });
+  pluginSafetyRef = pluginSafety;
   kernel.packageManager = new PackageManager({
     pluginDir: pluginPackageDir,
     host: kernel.pluginHost,
     stateStore: kernel.packageStateStore,
     audit: pluginAudit,
-    workerAvailable: true,
+    workerAvailable: permissionFlagFor(process.execPath) !== null,
     lastGood: pluginLastGood,
     safety: pluginSafety,
   });

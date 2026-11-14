@@ -190,12 +190,26 @@ export class PackageManager {
       const manifest = this.readManifest(source);
       const name = this.validatePackageName(manifest.name);
 
+      const block = this.safety?.blockedReason(name);
+      if (block === 'safe-mode' || this.stateStore.isSafeMode()) {
+        throw new PackageManagerError(409, 'plugin safe mode is active', 'safe_mode_active');
+      }
+      if (block === 'quarantined' && manifest.kind === 'untrusted') {
+        throw new PackageManagerError(409, `package is quarantined: ${name}`, 'plugin_quarantined');
+      }
       this.assertConsent(manifest, input?.accept);
       if (manifest.kind === 'untrusted' && !this.workerAvailable) {
         throw new PackageManagerError(
           409,
           'untrusted packages require a worker host',
           'untrusted_requires_worker',
+        );
+      }
+      if (!fs.existsSync(path.join(source, manifest.main))) {
+        throw new PackageManagerError(
+          400,
+          `entry file not found in source: ${manifest.main}`,
+          'invalid_manifest',
         );
       }
       if (manifest.integrity) {
@@ -236,8 +250,16 @@ export class PackageManager {
           installedAt: new Date().toISOString(),
           consecutiveFailures: 0,
         });
+        if (manifest.kind !== 'untrusted' && this.stateStore.getQuarantine(name)) {
+          this.stateStore.clearQuarantine(name);
+        }
       } catch (err) {
-        try { fs.rmSync(installedDir, { recursive: true, force: true }); } catch { /* best effort */ }
+        // The overwrite removed the on-disk backup; last-good is the only copy
+        // of the previous version. Restore it before reporting the failure.
+        const restored = this.lastGood?.restore(name) ?? false;
+        if (!restored) {
+          try { fs.rmSync(installedDir, { recursive: true, force: true }); } catch { /* best effort */ }
+        }
         throw new PackageManagerError(
           500,
           `could not record integrity for ${name}: ${describeError(err)}`,
@@ -253,6 +275,23 @@ export class PackageManager {
       this.host.stageNewPackage(name);
       await this.host.reload();
 
+      const described = this.describe(name);
+      if (input?.overwrite === true && described.application === 'failed') {
+        const restored = this.lastGood?.restore(name) ?? false;
+        if (restored) {
+          this.stateStore.updateInstalled(name, { fingerprint: '', files: {} });
+          this.safety?.markDegraded(name, 'update failed before commit; restored last-good', manifest.version);
+          this.audit?.append({
+            action: 'rollback',
+            package: name,
+            result: 'ok',
+            detail: { reason: 'update failed before commit' },
+          });
+          await this.host.reload();
+        } else {
+          this.safety?.quarantine(name, 'update failed before commit and no last-good was available');
+        }
+      }
       const result: InstallResult = {
         ...this.toInstallResult(this.describe(name), manifest.version),
         kind: manifest.kind,
@@ -303,6 +342,7 @@ export class PackageManager {
     return this.enqueue(async () => {
       const safeName = this.validatePackageName(name);
       this.assertInstalled(safeName);
+      this.assertNotBlocked(safeName);
       this.stateStore.setDisabled(safeName, true);
       await this.host.reload();
       this.audit?.append({ action: 'disable', package: safeName, result: 'ok' });
@@ -322,6 +362,7 @@ export class PackageManager {
     return this.enqueue(async () => {
       const safeName = this.validatePackageName(name);
       this.assertInstalled(safeName);
+      this.assertNotBlocked(safeName);
       this.stateStore.setDisabled(safeName, false);
       // Re-enabling a runtime package must not silently replace the active
       // runtime either: the host stages it as pending when it applies.
@@ -357,6 +398,7 @@ export class PackageManager {
       fs.rmSync(realTarget, { recursive: true, force: true });
       this.stateStore.setDisabled(safeName, false);
       this.stateStore.removeInstalled(safeName);
+      this.stateStore.clearQuarantine(safeName);
       this.lastGood?.remove(safeName);
       await this.host.reload();
       this.audit?.append({ action: 'remove', package: safeName, result: 'ok' });
@@ -380,6 +422,7 @@ export class PackageManager {
     return this.enqueue(async () => {
       const safeName = this.validatePackageName(name);
       this.assertInstalled(safeName);
+      this.assertNotBlocked(safeName);
       if (this.stateStore.isDisabled(safeName)) {
         return {
           name: safeName,
@@ -406,9 +449,11 @@ export class PackageManager {
   rollback(name: string): Promise<UpdateResult> {
     return this.enqueue(async () => {
       const safeName = this.validatePackageName(name);
+      this.assertNotBlocked(safeName);
       if (!this.lastGood || !this.lastGood.restore(safeName)) {
         throw new PackageManagerError(404, `no last-known-good snapshot for ${safeName}`, 'last_good_missing');
       }
+      this.stateStore.updateInstalled(safeName, { fingerprint: '', files: {} });
       await this.host.reload();
       this.audit?.append({ action: 'rollback', package: safeName, result: 'ok' });
       const state = this.describe(safeName);
@@ -425,6 +470,7 @@ export class PackageManager {
   applyPending(name: string): Promise<UpdateResult> {
     return this.enqueue(async () => {
       const safeName = this.validatePackageName(name);
+      this.assertNotBlocked(safeName);
       const result = await this.host.applyPending(safeName);
       if (result.applied) {
         this.audit?.append({ action: 'apply', package: safeName, result: 'ok' });
@@ -526,6 +572,17 @@ export class PackageManager {
   }
 
   /** v2 installs require explicit trust + permission consent; v1 stays compatible. */
+  /** Safe mode / quarantine block mutations; disabled is handled by each operation. */
+  private assertNotBlocked(name: string): void {
+    const reason = this.safety?.blockedReason(name);
+    if (reason === 'safe-mode') {
+      throw new PackageManagerError(409, 'plugin safe mode is active', 'safe_mode_active');
+    }
+    if (reason === 'quarantined') {
+      throw new PackageManagerError(409, `package is quarantined: ${name}`, 'plugin_quarantined');
+    }
+  }
+
   private assertConsent(
     manifest: NormalizedPackageManifest,
     accept: InstallConsent | undefined,

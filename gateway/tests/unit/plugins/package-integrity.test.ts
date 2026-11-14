@@ -48,6 +48,13 @@ describe('package integrity', () => {
     expect(Object.keys(snapshot.files).sort()).toEqual(['index.js', 'plugin.json']);
   });
 
+  it('accepts a declared map for a real package with plugin.json', () => {
+    const dir = makePackage({ 'plugin.json': '{"name":"acme"}', 'index.js': 'x' });
+    const snapshot = computePackageIntegrity(dir, path.join(dir, 'index.js'));
+    const declared = { 'index.js': snapshot.files['index.js'] };
+    expect(verifyDeclaredIntegrity(dir, { algorithm: 'sha256', files: declared }).ok).toBe(true);
+  });
+
   it('reports missing and unexpected files', () => {
     const dir = makePackage({ 'plugin.json': '{"name":"acme"}', 'index.js': 'x' });
     const result = verifyDeclaredIntegrity(dir, {
@@ -57,6 +64,5 @@ describe('package integrity', () => {
     expect(result.ok).toBe(false);
     expect(result.errors.join(' ')).toContain('mismatch: index.js');
     expect(result.errors.join(' ')).toContain('missing: missing.js');
-    expect(result.errors.join(' ')).toContain('unexpected: plugin.json');
   });
 });

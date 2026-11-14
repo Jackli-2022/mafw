@@ -48,6 +48,14 @@ const pendingConfig = new Map();
 const effects = [];
 let handlers = new Map();
 let configSeq = 0;
+let permissions = [];
+try {
+  const parsed = JSON.parse(process.env.MAFW_WORKER_PERMISSIONS || '[]');
+  if (Array.isArray(parsed)) permissions = parsed.filter((item) => typeof item === 'string');
+} catch {
+  permissions = [];
+}
+const hasPermission = (token) => permissions.includes(token);
 
 const MAX_MESSAGE_BYTES = 1024 * 1024;
 
@@ -94,6 +102,12 @@ function normalizeContributions(raw) {
       throw new Error(`not allowed in untrusted worker: ${key}`);
     }
   }
+  if (raw.actions !== undefined && !hasPermission('actions')) {
+    throw new Error('permission denied: actions');
+  }
+  if (raw.events !== undefined && !hasPermission('events')) {
+    throw new Error('permission denied: events');
+  }
   const actions = {};
   const source = raw.actions && typeof raw.actions === 'object' ? raw.actions : {};
   for (const [name, declaration] of Object.entries(source)) {
@@ -122,8 +136,12 @@ async function start() {
     version: '',
     log: makeLogger(),
     config: {
-      get: () => requestConfig('config.get'),
+      get: () => {
+        if (!hasPermission('config.read')) throw new Error('permission denied: config.read');
+        return requestConfig('config.get');
+      },
       update: (patch) => {
+        if (!hasPermission('config.write')) throw new Error('permission denied: config.write');
         if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
           throw new TypeError('config.update requires a plain object');
         }
@@ -131,6 +149,7 @@ async function start() {
       },
     },
     emit: (type, payload) => {
+      if (!hasPermission('events')) throw new Error('permission denied: events');
       if (typeof type !== 'string' || !type.startsWith('plugin:')) {
         throw new Error('untrusted worker events must use plugin:<package>:<event>');
       }

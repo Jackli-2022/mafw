@@ -192,6 +192,16 @@ function sanitize(document: unknown): SanitizeResult {
   if (version !== 1 && version !== 2) {
     return { document: corruptDocument(), corrupt: true };
   }
+  if (version === 2) {
+    // Safety fields are not optional in v2: a partial/truncated document must
+    // not silently clear safeMode/quarantine.
+    if (!Array.isArray(document.disabled)
+      || typeof document.safeMode !== 'boolean'
+      || !Array.isArray(document.quarantined)
+      || !isPlainObject(document.installed)) {
+      return { document: corruptDocument(), corrupt: true };
+    }
+  }
   const disabled = Array.isArray(document.disabled)
     ? [...new Set(document.disabled.filter(isSafeName))].sort()
     : [];

@@ -66,6 +66,28 @@ describe('untrusted worker sandbox', () => {
     await host.stop('test');
   });
 
+  it('does not let a throwing config provider crash the host', async () => {
+    const packageDir = path.join(FIXTURES, 'config-echo');
+    const host = new WorkerHost({
+      name: 'config-echo',
+      packageDir,
+      entryFile: path.join(packageDir, 'index.js'),
+      manifest: {
+        name: 'config-echo', main: 'index.js', apiVersion: 2, kind: 'untrusted',
+        permissions: ['actions', 'config.read', 'config.write'], legacy: false,
+      },
+      bootstrapPath: BOOTSTRAP,
+      onEmit: () => {},
+      getConfig: () => { throw new Error('config provider exploded'); },
+      updateConfig: () => {},
+      logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+    });
+    await host.start();
+    await expect(host.invoke('roundTrip', { value: 1 }, 1000))
+      .rejects.toThrow(/config provider exploded/);
+    await host.stop('test');
+  });
+
   it('rejects tools / observers / ui declarations', async () => {
     const { host } = makeWorkerHost('forbidden-tools');
     await expect(host.start()).rejects.toThrow(/not allowed in untrusted worker/i);

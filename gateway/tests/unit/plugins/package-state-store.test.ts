@@ -92,6 +92,9 @@ describe('PackageStateStore', () => {
     fs.writeFileSync(path.join(dir, PACKAGE_STATE_FILE), JSON.stringify({
       version: 2,
       disabled: ['acme', 42, '', null, '../escape'],
+      safeMode: false,
+      quarantined: [],
+      installed: {},
     }));
     const store = new PackageStateStore(dir);
     expect(store.read().disabled).toEqual(['acme']);
