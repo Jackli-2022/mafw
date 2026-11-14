@@ -22,9 +22,13 @@ import type {
   MemoryFact, EnergyDistribution, Axiom, L5Heuristic, PodWorktreeDiff,
   // E10e-1 metadata / registry read surface
   McpServerEntry, PluginsListResult,
+  // E10f-A session / task / terminal / usage read surface
+  TaskEntity, TaskOutput, DiscoverySnapshot, DiscoverySkillContent, TerminalSessionList,
+  MafwBackgroundOutput,
 } from './types'
 import type { MafwClient } from './client'
-import type { MafwDiff, MafwPermissionRequest, MafwAgent, MafwProvider } from './view-dto'
+import type { MafwDiff, MafwPermissionRequest, MafwAgent, MafwProvider, MafwBackgroundJob } from './view-dto'
+import type { ExperienceActionsResponse } from './experience-contract'
 
 /** 鐢熸垚褰㈢姸锛歳esponses.200.content['application/json'] 涓嬬洿鎺ュ唴鑱?schema 灞炴€э紙鏃?schema: 鍖呰锛夈€?*/
 type Resp<S> = S extends { responses: { 200: { content: { 'application/json': infer C } } } } ? C : never
@@ -178,6 +182,82 @@ type GenMcpServer = ItemOf<Resp<operations['mcp.servers']>, 'servers'>
 const CHECK_mcp_servers_item: AssertEq<GenMcpServer, McpServerEntry> = true
 const CHECK_plugins_list: AssertEq<Resp<operations['plugins.list']>, PluginsListResult> = true
 
+// E10f-A: session / task / terminal / usage 读接口（16 ops）—— schema 是 handler wire 的转写。
+/**
+ * `tasks.*` 的公开生命周期面 ≡ `TaskEntity`；`publicTask()` 额外下发的输出快照旁账
+ * （`outputCursor` / `outputSize` / `outputTruncated`）SDK DTO 不暴露，故按 Omit 锁等价。
+ */
+type GenTask = ItemOf<Resp<operations['tasks.list']>, 'items'>
+const CHECK_tasks_list_item: AssertEq<
+  Omit<GenTask, 'outputCursor' | 'outputSize' | 'outputTruncated'>,
+  TaskEntity
+> = true
+const CHECK_tasks_get: AssertEq<Resp<operations['tasks.get']>, GenTask> = true
+const CHECK_tasks_output_cursor: AssertEq<GenTask['outputCursor'], number | undefined> = true
+const CHECK_tasks_output_size: AssertEq<GenTask['outputSize'], number | undefined> = true
+const CHECK_tasks_output_truncated: AssertEq<GenTask['outputTruncated'], boolean | undefined> = true
+/**
+ * `tasks.output` 是 runtime shell 的透传边界（四键 optional + 开放索引）；这里仍锁
+ * 「SDK 认的四个字段类型不变」，让透传不能把 TaskOutput 的 wire 语义改掉。
+ */
+type GenTaskOutput = Resp<operations['tasks.output']>
+const CHECK_tasks_output_fields: AssertEq<
+  Required<Pick<GenTaskOutput, 'output' | 'cursor' | 'size' | 'truncated'>>,
+  TaskOutput
+> = true
+
+/** `session.trajectory` 无 SDK 等价 DTO（SDK TrajectoryTurn 是缺 sessionID/provider 的 legacy 子集）。 */
+/** `session.run` 与 client 的 `session.run()` 返回类型逐字段等价（run 可为 null）。 */
+const CHECK_session_run: AssertEq<
+  Resp<operations['session.run']>,
+  Awaited<ReturnType<SessionNamespace['run']>>
+> = true
+const CHECK_session_discovery: AssertEq<Resp<operations['session.discovery']>, DiscoverySnapshot> = true
+const CHECK_session_discovery_skill: AssertEq<
+  Resp<operations['session.discoverySkill']>,
+  DiscoverySkillContent
+> = true
+
+/**
+ * `experience.actions`：动作键集与 SDK `EXPERIENCE_ACTION_IDS` 一致；描述符除
+ * `operationId`（gateway 侧 E3-4 新增，SDK DTO 尚未跟进）外逐字段等价。
+ * `minClientVersion` handler 恒发，SDK DTO 声明为 optional → 两侧分别锁。
+ */
+type GenExperience = Resp<operations['experience.actions']>
+type GenExperienceAction = NonNullable<GenExperience['actions']['checkpoint.restore']>
+type SdkExperienceAction = NonNullable<ExperienceActionsResponse['actions']['checkpoint.restore']>
+const CHECK_experience_action: AssertEq<Omit<GenExperienceAction, 'operationId'>, SdkExperienceAction> = true
+const CHECK_experience_action_operation_id: AssertEq<
+  GenExperienceAction['operationId'],
+  string | undefined
+> = true
+const CHECK_experience_keys: AssertEq<
+  keyof GenExperience,
+  keyof ExperienceActionsResponse
+> = true
+const CHECK_experience_action_ids: AssertEq<
+  keyof GenExperience['actions'],
+  keyof ExperienceActionsResponse['actions']
+> = true
+const CHECK_experience_min_client_version: AssertEq<GenExperience['minClientVersion'], string> = true
+const CHECK_experience_session_id: AssertEq<GenExperience['sessionID'], string | undefined> = true
+
+/** `background.jobs.*` 出口只有中性 DTO：item ≡ MafwBackgroundJob，output ≡ MafwBackgroundOutput。 */
+type GenBackgroundJob = ItemOf<Resp<operations['background.jobs.list']>, 'items'>
+const CHECK_background_jobs_list_item: AssertEq<GenBackgroundJob, MafwBackgroundJob> = true
+const CHECK_background_jobs_output: AssertEq<
+  Resp<operations['background.jobs.output']>,
+  MafwBackgroundOutput
+> = true
+
+/** `terminal.list` 只发 MAFW DTO + protocol（runtime 原生 PTY 形状不进 wire）。 */
+const CHECK_terminal_list: AssertEq<Resp<operations['terminal.list']>, TerminalSessionList> = true
+
+// usage（session.usage / usagePluginsList / usagePluginSourceGet）无稳定 SDK DTO：
+// client 的 `usage()` 把 summary/memory/providers 声明成 any，`usagePlugins()` 仍是
+// `{plugins:[{overridden}]}` 旧形状，`usagePluginSource()` 把 200/403/404 混成一个类型
+// → 三者 schema-only（tag: internal 之外没有可对齐的生成类型）。
+
 /**
  * session.messages：`data` 的 part 判别联合由 view-dto 契约拥有，schema 只承诺
  * SDK 边界守卫 `MafwMessageShape` 认可的形状；游标必须与 client 的
@@ -219,4 +299,11 @@ export const CONTRACT_COMPAT_CHECKS = [
   // E10e-1
   CHECK_agents_list_item, CHECK_providers_list_item, CHECK_providers_list_connected,
   CHECK_providers_list_default, CHECK_mcp_servers_item, CHECK_plugins_list,
+  // E10f-A
+  CHECK_tasks_list_item, CHECK_tasks_get,
+  CHECK_tasks_output_cursor, CHECK_tasks_output_size, CHECK_tasks_output_truncated,
+  CHECK_tasks_output_fields, CHECK_session_run, CHECK_session_discovery, CHECK_session_discovery_skill,
+  CHECK_experience_action, CHECK_experience_action_operation_id, CHECK_experience_keys,
+  CHECK_experience_action_ids, CHECK_experience_min_client_version, CHECK_experience_session_id,
+  CHECK_background_jobs_list_item, CHECK_background_jobs_output, CHECK_terminal_list,
 ]

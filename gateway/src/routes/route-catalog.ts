@@ -102,6 +102,22 @@ import {
   SkillsListResponse,
   ToolsListResponse,
 } from './schemas/meta';
+import { TaskGetResponse, TaskListResponse, TaskOutputResponse } from './schemas/tasks';
+import {
+  SessionDiscoveryResponse,
+  SessionDiscoverySkillResponse,
+  SessionRunResponse,
+  SessionStructuredResponse,
+  SessionTrajectoryResponse,
+} from './schemas/session-runtime';
+import { CognitionRulesResponse, ExperienceActionsResponse } from './schemas/experience';
+import { BackgroundJobOutputResponse, BackgroundJobsListResponse } from './schemas/background';
+import { TerminalListResponse } from './schemas/terminal';
+import {
+  SessionUsageResponse,
+  UsagePluginSourceResponse,
+  UsagePluginsListResponse,
+} from './schemas/usage';
 
 /**
  * SDK-facing 端点（catalog → gateway-paths → openapi 单向生成；**在此新增**后必须重跑
@@ -115,7 +131,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/session', operationId: 'session.create', tags: ['session'] },
   { method: 'POST', path: '/api/cognition/gate', operationId: 'cognition.gate', tags: ['cognition'] },
   { method: 'POST', path: '/api/cognition/rewrite', operationId: 'cognition.rewrite', tags: ['cognition'] },
-  { method: 'GET', path: '/api/cognition/rules', operationId: 'cognition.rules', tags: ['cognition'] },
+  { method: 'GET', path: '/api/cognition/rules', operationId: 'cognition.rules', tags: ['cognition'], response: CognitionRulesResponse },
   { method: 'GET', path: '/api/session/:id/queue', operationId: 'session.queue.list', tags: ['session'], response: SessionQueueListResponse },
   { method: 'GET', path: '/api/session/:id/config', operationId: 'session.config', tags: ['session'], response: SessionConfigResponse },
   { method: 'POST', path: '/api/session/:id/config', operationId: 'session.config.set', tags: ['session'] },
@@ -129,17 +145,17 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/sessions/:id/messages', operationId: 'session.messages', summary: 'Session message history (MAFW flat DTO)', tags: ['session'], response: SessionMessagesResponse },
   { method: 'GET', path: '/api/sessions/:id/todo', operationId: 'session.todo', tags: ['session'], response: SessionTodoResponse },
   { method: 'GET', path: '/api/sessions/:id/children', operationId: 'session.children', tags: ['session'], response: SessionChildrenResponse },
-  { method: 'GET', path: '/api/sessions/:id/structured', operationId: 'session.structured', tags: ['session'] },
+  { method: 'GET', path: '/api/sessions/:id/structured', operationId: 'session.structured', tags: ['session'], response: SessionStructuredResponse },
   { method: 'POST', path: '/api/sessions/:id/agent', operationId: 'session.switchAgent', tags: ['session'] },
   { method: 'POST', path: '/api/sessions/:id/model', operationId: 'session.switchModel', tags: ['session'] },
   { method: 'POST', path: '/api/structured/submit', operationId: 'structured.submit', tags: ['session'] },
   { method: 'POST', path: '/api/tasks', operationId: 'tasks.submit', tags: ['task'] },
-  { method: 'GET', path: '/api/tasks', operationId: 'tasks.list', tags: ['task'] },
-  { method: 'GET', path: '/api/tasks/:id', operationId: 'tasks.get', tags: ['task'] },
+  { method: 'GET', path: '/api/tasks', operationId: 'tasks.list', tags: ['task'], response: TaskListResponse },
+  { method: 'GET', path: '/api/tasks/:id', operationId: 'tasks.get', tags: ['task'], response: TaskGetResponse },
   { method: 'POST', path: '/api/tasks/:id/cancel', operationId: 'tasks.cancel', tags: ['task'] },
   { method: 'POST', path: '/api/tasks/:id/message', operationId: 'tasks.message', tags: ['task'] },
-  { method: 'GET', path: '/api/tasks/:id/output', operationId: 'tasks.output', tags: ['task'] },
-  { method: 'GET', path: '/api/sessions/:id/trajectory', operationId: 'session.trajectory', tags: ['session'] },
+  { method: 'GET', path: '/api/tasks/:id/output', operationId: 'tasks.output', tags: ['task'], response: TaskOutputResponse },
+  { method: 'GET', path: '/api/sessions/:id/trajectory', operationId: 'session.trajectory', tags: ['session'], response: SessionTrajectoryResponse },
   { method: 'GET', path: '/api/sessions/:id/token-summary', operationId: 'session.tokenSummary', tags: ['session'], response: SessionTokenSummaryResponse },
   { method: 'POST', path: '/api/sessions/:id/fork', operationId: 'session.fork', tags: ['session'] },
   { method: 'POST', path: '/api/sessions/:id/revert', operationId: 'session.revert', tags: ['session'] },
@@ -151,12 +167,12 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/sessions/:id/checkpoints/:checkpointId/restore', operationId: 'session.restoreCheckpoint', tags: ['session'] },
   { method: 'POST', path: '/api/sessions/:id/suspend', operationId: 'session.suspend', tags: ['session'] },
   { method: 'POST', path: '/api/sessions/:id/resume', operationId: 'session.resume', tags: ['session'] },
-  { method: 'GET', path: '/api/sessions/:id/run', operationId: 'session.run', tags: ['session'] },
+  { method: 'GET', path: '/api/sessions/:id/run', operationId: 'session.run', tags: ['session'], response: SessionRunResponse },
   { method: 'POST', path: '/api/sessions/:id/run/discard', operationId: 'session.discardRun', tags: ['session'] },
   { method: 'POST', path: '/api/sessions/:id/data', operationId: 'session.data', tags: ['session'] },
-  { method: 'GET', path: '/api/sessions/:id/discovery', operationId: 'session.discovery', tags: ['session'] },
+  { method: 'GET', path: '/api/sessions/:id/discovery', operationId: 'session.discovery', tags: ['session'], response: SessionDiscoveryResponse },
   { method: 'POST', path: '/api/sessions/:id/discovery/refresh', operationId: 'session.discoveryRefresh', tags: ['session'] },
-  { method: 'GET', path: '/api/sessions/:id/discovery/skills/:key', operationId: 'session.discoverySkill', tags: ['session'] },
+  { method: 'GET', path: '/api/sessions/:id/discovery/skills/:key', operationId: 'session.discoverySkill', tags: ['session'], response: SessionDiscoverySkillResponse },
 { method: 'POST', path: '/api/sessions/:id/discovery/skills/:key/invoke', operationId: 'session.discoverySkillInvoke', tags: ['session'] },
   { method: 'POST', path: '/api/session/:id/abort', operationId: 'session.abort', tags: ['session'] },
   { method: 'POST', path: '/api/session/:id/summarize', operationId: 'session.summarize', tags: ['session'] },
@@ -166,22 +182,22 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   // 守卫在验收批暴露的契约洞）。surface = session.background。
   { method: 'POST', path: '/api/session/:id/background', operationId: 'session.background', tags: ['session'] },
   { method: 'POST', path: '/api/session/:id/command', operationId: 'session.command', tags: ['session'] },
-  { method: 'GET', path: '/api/experience/actions', operationId: 'experience.actions', tags: ['experience'] },
+  { method: 'GET', path: '/api/experience/actions', operationId: 'experience.actions', tags: ['experience'], response: ExperienceActionsResponse },
   // Task 3：三源统一的后台作业 façade（MafwBackgroundJob / MafwBackgroundOutput）
-  { method: 'GET', path: '/api/background/jobs', operationId: 'background.jobs.list', tags: ['background'] },
-  { method: 'GET', path: '/api/background/jobs/:id/output', operationId: 'background.jobs.output', tags: ['background'] },
+  { method: 'GET', path: '/api/background/jobs', operationId: 'background.jobs.list', tags: ['background'], response: BackgroundJobsListResponse },
+  { method: 'GET', path: '/api/background/jobs/:id/output', operationId: 'background.jobs.output', tags: ['background'], response: BackgroundJobOutputResponse },
   { method: 'POST', path: '/api/background/jobs/:id/cancel', operationId: 'background.jobs.cancel', tags: ['background'] },
   // Task 4：中性 terminal PTY（mafw-terminal/1；WS 升级不登记，同 /api/ws）
-  { method: 'GET', path: '/api/terminal/sessions', operationId: 'terminal.list', tags: ['terminal'] },
+  { method: 'GET', path: '/api/terminal/sessions', operationId: 'terminal.list', tags: ['terminal'], response: TerminalListResponse },
   { method: 'POST', path: '/api/terminal/sessions', operationId: 'terminal.create', tags: ['terminal'] },
   { method: 'DELETE', path: '/api/terminal/sessions/:id', operationId: 'terminal.remove', tags: ['terminal'] },
   { method: 'POST', path: '/api/terminal/sessions/:id/connect-ticket', operationId: 'terminal.connectTicket', tags: ['terminal'] },
-  { method: 'GET', path: '/api/usage', operationId: 'session.usage', tags: ['session'] },
+  { method: 'GET', path: '/api/usage', operationId: 'session.usage', tags: ['session'], response: SessionUsageResponse },
   { method: 'GET', path: '/api/usage/summary', operationId: 'session.usageSummary', tags: ['session'], response: UsageSummaryResponse },
-  { method: 'GET', path: '/api/usage/plugins', operationId: 'session.usagePluginsList', tags: ['session'] },
+  { method: 'GET', path: '/api/usage/plugins', operationId: 'session.usagePluginsList', tags: ['session'], response: UsagePluginsListResponse },
   { method: 'POST', path: '/api/usage/plugins/reload', operationId: 'session.usagePluginsReload', tags: ['session'] },
   { method: 'POST', path: '/api/usage/plugins/create', operationId: 'session.usagePluginsCreate', tags: ['session'] },
-  { method: 'GET', path: '/api/usage/plugins/:name/source', operationId: 'session.usagePluginSourceGet', tags: ['session'] },
+  { method: 'GET', path: '/api/usage/plugins/:name/source', operationId: 'session.usagePluginSourceGet', tags: ['session'], response: UsagePluginSourceResponse },
   { method: 'PUT', path: '/api/usage/plugins/:name/source', operationId: 'session.usagePluginSourcePut', tags: ['session'] },
   { method: 'DELETE', path: '/api/usage/plugins/:name', operationId: 'session.usagePluginsDelete', tags: ['session'] },
   { method: 'POST', path: '/api/usage/plugins/:name/test', operationId: 'session.usagePluginTest', tags: ['session'] },

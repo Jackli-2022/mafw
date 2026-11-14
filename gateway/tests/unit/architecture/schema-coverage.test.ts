@@ -27,14 +27,18 @@ interface CoverageReport {
 const GATEWAY_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPT = path.join(GATEWAY_ROOT, 'scripts', 'schema-coverage.cjs');
 
-/** Baseline 13 (E8 and earlier) + 8 session read (E10-1) + 8 pod/work read (E10-2) + 8 goal read (E10b-1) + 7 human-gate/permission read (E10b-2) + 1 human token rotate (E11-1) + 8 memory/recall/lead read (E10c-1) + 8 memory extra / lead.context / pod read (E10d-1) + 8 metadata/registry read (E10e-1) = 69. */
+/** Baseline 13 (E8 and earlier) + 8 session read (E10-1) + 8 pod/work read (E10-2) + 8 goal read (E10b-1) + 7 human-gate/permission read (E10b-2) + 1 human token rotate (E11-1) + 8 memory/recall/lead read (E10c-1) + 8 memory extra / lead.context / pod read (E10d-1) + 8 metadata/registry read (E10e-1) + 16 session/task/terminal/usage read (E10f-A) = 85. */
 const E10_COVERED_OPS = [
   'agents.list',
   'approvals.list',
   'attention.list',
+  'background.jobs.list',
+  'background.jobs.output',
+  'cognition.rules',
   'config.get',
   'decisions.list',
   'event.replay',
+  'experience.actions',
   'goals.get',
   'goals.list',
   'goals.plan',
@@ -86,21 +90,33 @@ const E10_COVERED_OPS = [
   'session.children',
   'session.config',
   'session.diff',
+  'session.discovery',
+  'session.discoverySkill',
   'session.get',
   'session.list',
   'session.messages',
   'session.queue.list',
+  'session.run',
+  'session.structured',
   'session.subagents.list',
   'session.todo',
   'session.tokenSummary',
+  'session.trajectory',
+  'session.usage',
+  'session.usagePluginSourceGet',
+  'session.usagePluginsList',
   'session.usageSummary',
   'skills.list',
+  'tasks.get',
+  'tasks.list',
+  'tasks.output',
+  'terminal.list',
   'tools.list',
   'triage.list',
   'work.overview',
 ];
 
-// Pinned: 317 through E10b, +1 for `humanToken.rotate` (E11-1) = 318.
+// Pinned: 317 through E10b, +1 for `humanToken.rotate` (E11-1) = 318 (E10f only adds schemas).
 const TOTAL_OPS = 318;
 
 function catalogOps(): Array<{ operationId: string; hasResponse: boolean }> {

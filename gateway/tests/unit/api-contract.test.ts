@@ -83,6 +83,25 @@ import {
   TriageListResponse,
 } from '../../src/routes/schemas/human-gate';
 import { WorkOverviewResponse } from '../../src/routes/schemas/work';
+import { TaskGetResponse, TaskListResponse, TaskOutputResponse } from '../../src/routes/schemas/tasks';
+import {
+  SessionDiscoveryResponse,
+  SessionDiscoverySkillResponse,
+  SessionRunResponse,
+  SessionStructuredResponse,
+  SessionTrajectoryResponse,
+} from '../../src/routes/schemas/session-runtime';
+import { CognitionRulesResponse, ExperienceActionsResponse } from '../../src/routes/schemas/experience';
+import {
+  BackgroundJobOutputResponse,
+  BackgroundJobsListResponse,
+} from '../../src/routes/schemas/background';
+import { TerminalListResponse } from '../../src/routes/schemas/terminal';
+import {
+  SessionUsageResponse,
+  UsagePluginSourceResponse,
+  UsagePluginsListResponse,
+} from '../../src/routes/schemas/usage';
 import {
   AgentListResponse,
   ConfigGetResponse,
@@ -2089,5 +2108,418 @@ describe('api-contract: E10e-1 metadata / registry read response schema (8 ops)'
       active: [], queued: [], capacity: 2, plan: { start: [], waiting: ['goal_3'] },
     })).toBe(false);
     expect(Value.Check(SchedulerStatusResponse, { error: 'pod not found' })).toBe(false);
+  });
+});
+
+describe('api-contract: E10f-A session / task / terminal / usage read response schema (16 ops)', () => {
+  const findOp = (operationId: string): any => {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const candidate of Object.values<any>(methods)) {
+        if (candidate?.operationId === operationId) return candidate;
+      }
+    }
+    return null;
+  };
+
+  const schemaOf = (operationId: string): any =>
+    findOp(operationId).responses['200']['content']['application/json'].schema;
+
+  /** Load-bearing properties per op (a missing one breaks rendering / pagination / cursoring). */
+  const EXPECTED: Record<string, { fields: string[]; item?: { at: string; required: string[] } }> = {
+    'cognition.rules': {
+      fields: ['rules', 'errors'],
+      item: { at: 'rules', required: ['on', 'action'] },
+    },
+    'session.structured': { fields: ['sessionID', 'schema', 'errors', 'updatedAt'] },
+    'tasks.list': {
+      fields: ['items'],
+      item: { at: 'items', required: ['id', 'kind', 'parentSessionID', 'title', 'status', 'createdAt', 'updatedAt'] },
+    },
+    'tasks.get': { fields: ['id', 'kind', 'status', 'title', 'createdAt', 'updatedAt'] },
+    'tasks.output': { fields: ['output', 'cursor', 'size', 'truncated'] },
+    'session.trajectory': {
+      fields: ['turns', 'events'],
+      item: {
+        at: 'turns',
+        required: [
+          'projectID', 'sessionID', 'turnID', 'turnStartMs', 'turnEndMs', 'durationMs',
+          'toolCount', 'toolErrorCount', 'reasoningCount', 'agentSwitchCount', 'tokens',
+          'cost', 'finish', 'model', 'provider', 'agent', 'userText',
+        ],
+      },
+    },
+    'session.run': { fields: ['run'] },
+    'session.discovery': {
+      fields: [
+        'sessionID', 'directory', 'revision', 'commandsRevision', 'generatedAt',
+        'commands', 'skills', 'instructions', 'degraded', 'warnings', 'skillInvokeSupported',
+      ],
+    },
+    'session.discoverySkill': {
+      fields: ['id', 'name', 'slash', 'scope', 'contentLength', 'content'],
+    },
+    'experience.actions': { fields: ['experienceVersion', 'minClientVersion', 'actions'] },
+    'background.jobs.list': {
+      fields: ['items'],
+      item: { at: 'items', required: ['id', 'source', 'kind', 'status', 'sessionID'] },
+    },
+    'background.jobs.output': { fields: ['cursor', 'data', 'truncated'] },
+    'terminal.list': {
+      fields: ['protocol', 'supported', 'sessions'],
+      item: { at: 'sessions', required: ['id', 'status'] },
+    },
+    'session.usage': { fields: ['summary', 'providers', 'updatedAt'] },
+    'session.usagePluginsList': { fields: ['plugins', 'templates', 'builtins'] },
+    'session.usagePluginSourceGet': { fields: ['source', 'origin'] },
+  };
+
+  test('all sixteen ops expose a 200 JSON schema with properties (not a whole-response widening)', () => {
+    expect(Object.keys(EXPECTED)).toHaveLength(16);
+    const problems: string[] = [];
+    for (const [operationId, spec] of Object.entries(EXPECTED)) {
+      const op = findOp(operationId);
+      if (!op) { problems.push(`${operationId}: missing from openapi.json`); continue; }
+      const schema = op.responses?.['200']?.content?.['application/json']?.schema;
+      if (!schema) { problems.push(`${operationId}: responses.200 missing application/json schema`); continue; }
+      const properties = Object.keys(schema.properties ?? {});
+      if (properties.length === 0) { problems.push(`${operationId}: schema has no properties (widened)`); continue; }
+      for (const field of spec.fields) {
+        if (!properties.includes(field)) problems.push(`${operationId}: schema missing property '${field}'`);
+      }
+    }
+    if (problems.length) {
+      console.error('[api-contract] E10f-A response schema missing - run emit:openapi + merge-contract:\n' + problems.join('\n'));
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test('array item required fields match the handler wire (items/rules/turns/sessions)', () => {
+    const problems: string[] = [];
+    for (const [operationId, spec] of Object.entries(EXPECTED)) {
+      if (!spec.item) continue;
+      const required = schemaOf(operationId).properties?.[spec.item.at]?.items?.required ?? [];
+      for (const field of spec.item.required) {
+        if (!required.includes(field)) problems.push(`${operationId}: ${spec.item.at}.items missing required '${field}'`);
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test('tasks.* pin the task state machine and keep the output snapshot bookkeeping optional', () => {
+    const list = schemaOf('tasks.list').properties.items.items;
+    expect(list.properties.kind.anyOf?.map((e: any) => e.const)).toEqual(['shell', 'subagent']);
+    expect(list.properties.status.anyOf?.map((e: any) => e.const))
+      .toEqual(['working', 'input_required', 'completed', 'failed', 'cancelled']);
+    // publicTask() strips only `output`/`resumeAt`; the snapshot cursors are extra gateway bookkeeping.
+    expect(list.properties.output).toBeUndefined();
+    expect(list.properties.outputCursor).toBeDefined();
+    expect(list.required).not.toContain('outputCursor');
+    expect(list.required).not.toContain('outputSize');
+    expect(list.required).not.toContain('outputTruncated');
+    expect(schemaOf('tasks.get')).toEqual(schemaOf('tasks.list').properties.items.items);
+  });
+
+  test('tasks.output stays a runtime shell boundary (known keys optional, open index)', () => {
+    const schema = schemaOf('tasks.output');
+    // Live tasks pass `shell.output()` through untouched -> no required key, open index,
+    // but the four keys the SDK guards on keep their types (see contract-compat checks).
+    expect(schema.required ?? []).toEqual([]);
+    expect(schema.additionalProperties).toBe(true);
+    for (const field of ['output', 'cursor', 'size', 'truncated']) {
+      expect(schema.properties[field]).toBeDefined();
+    }
+  });
+
+  test('session.trajectory models gateway turn/event rows (SDK TrajectoryTurn is a legacy subset)', () => {
+    const schema = schemaOf('session.trajectory');
+    expect(schema.required).toEqual(['turns', 'events']);
+    const turn = schema.properties.turns.items;
+    // gateway-owned fields the SDK subset lacks: sessionID / provider / workerRole.
+    expect(turn.required).toEqual(expect.arrayContaining(['sessionID', 'provider']));
+    expect(turn.properties.workerRole).toBeDefined();
+    expect(turn.properties.turnEndMs.anyOf?.map((e: any) => e.type)).toEqual(expect.arrayContaining(['number', 'null']));
+    const event = schema.properties.events.items;
+    expect(event.properties.eventType.anyOf?.map((e: any) => e.const)).toEqual(expect.arrayContaining([
+      'tool_start', 'tool_end', 'reasoning_start', 'step_finish', 'turn_start', 'turn_end', 'text_end',
+    ]));
+    // Empty store / rebuild failure still returns the same two arrays.
+    expect(Value.Check(SessionTrajectoryResponse, { turns: [], events: [] })).toBe(true);
+  });
+
+  test('session.run mirrors toRunDto (brief four keys, nullable run, optional resumed/finished)', () => {
+    const schema = schemaOf('session.run');
+    expect(schema.properties.run.anyOf?.map((e: any) => e.type)).toEqual(expect.arrayContaining(['object', 'null']));
+    const run = schema.properties.run.anyOf[0];
+    expect(run.required).toEqual(expect.arrayContaining([
+      'id', 'sessionID', 'projectDir', 'status', 'brief', 'createdAt', 'suspendedAt',
+    ]));
+    expect(run.required).not.toContain('resumedAt');
+    expect(run.required).not.toContain('finishedAt');
+    expect(run.required).not.toContain('reason');
+    expect(run.properties.brief.required).toEqual([
+      'lastUserText', 'lastAssistantTail', 'anchorMessageID', 'queuedCount',
+    ]);
+    expect(run.properties.status.anyOf?.map((e: any) => e.const))
+      .toEqual(['suspended', 'resumed', 'completed', 'failed', 'cancelled']);
+    expect(Value.Check(SessionRunResponse, { run: null })).toBe(true);
+  });
+
+  test('session.discovery pins the snapshot envelope and optional degradedReason', () => {
+    const schema = schemaOf('session.discovery');
+    expect([...schema.required].sort()).toEqual([
+      'commands', 'commandsRevision', 'degraded', 'directory', 'generatedAt',
+      'instructions', 'revision', 'sessionID', 'skillInvokeSupported', 'skills', 'warnings',
+    ]);
+    expect(schema.properties.degradedReason.anyOf?.map((e: any) => e.const)).toEqual([
+      'capability_absent', 'runtime_error', 'partial', 'instructions_error',
+    ]);
+    expect(schema.required).not.toContain('degradedReason');
+    const skill = schema.properties.skills.items;
+    expect(skill.properties.scope.anyOf?.map((e: any) => e.const)).toEqual(['user', 'project', 'path']);
+    const shadow = schemaOf('session.discoverySkill');
+    // contentLength is bytes of the full text; content only ships on the single-skill op.
+    expect(shadow.required).toEqual(expect.arrayContaining(['id', 'name', 'slash', 'scope', 'contentLength', 'content']));
+    expect(schema.properties.skills.items.properties.content).toBeUndefined();
+  });
+
+  test('experience.actions derives the closed action vocabulary from the contract constant', () => {
+    const schema = schemaOf('experience.actions');
+    expect(schema.required).toEqual(['experienceVersion', 'minClientVersion', 'actions']);
+    // actions is a Partial map: every action id is optional, unknown ids are not in the schema.
+    const ids = Object.keys(schema.properties.actions.properties ?? {});
+    expect(ids).toHaveLength(20);
+    expect(ids).toContain('checkpoint.restore');
+    expect(ids).toContain('mcp.config.write');
+    expect(schema.properties.actions.required ?? []).toEqual([]);
+    expect(schema.properties.actions.additionalProperties).toBeFalsy();
+    const descriptor = schema.properties.actions.properties['run.control'];
+    expect(descriptor.required).toEqual(['supported', 'enabled']);
+    expect(descriptor.properties.reason.anyOf?.map((e: any) => e.const)).toEqual([
+      'unsupported', 'busy', 'missing-data', 'non-invertible-patch', 'unsafe',
+    ]);
+    expect(descriptor.properties.operationId).toBeDefined();
+  });
+
+  test('cognition.rules keeps config-authored data open but pins on/action', () => {
+    const rule = schemaOf('cognition.rules').properties.rules.items;
+    expect(rule.required).toEqual(['on', 'action']);
+    expect(rule.additionalProperties).toBe(true);
+    expect(rule.properties.on.anyOf?.map((e: any) => e.const)).toEqual(['tool_call', 'prompt', 'tool_result']);
+    expect(rule.properties.action.anyOf?.map((e: any) => e.const))
+      .toEqual(['deny', 'ask', 'rewrite', 'transform', 'redact']);
+    expect(schemaOf('cognition.rules').required).toEqual(['rules', 'errors']);
+  });
+
+  test('background / terminal read surfaces speak only MAFW DTOs', () => {
+    const job = schemaOf('background.jobs.list').properties.items.items;
+    expect(job.properties.source.anyOf?.map((e: any) => e.const))
+      .toEqual(['runtime-shell', 'mafw-task', 'subagent']);
+    expect(job.properties.status.anyOf?.map((e: any) => e.const))
+      .toEqual(['running', 'input_required', 'completed', 'failed', 'cancelled']);
+    // cursor is the next read offset in bytes -> number, and the three output keys are required.
+    expect(schemaOf('background.jobs.output').required).toEqual(['cursor', 'data', 'truncated']);
+
+    const terminal = schemaOf('terminal.list');
+    expect(terminal.required).toEqual(['protocol', 'supported', 'sessions']);
+    expect(terminal.properties.sessions.items.properties.status.anyOf?.map((e: any) => e.const))
+      .toEqual(['running', 'exited', 'unknown']);
+    // Unsupported runtime is still 200: supported:false + empty list, never a fabricated PTY.
+    expect(Value.Check(TerminalListResponse, { protocol: 'mafw-terminal/1', supported: false, sessions: [] })).toBe(true);
+  });
+
+  test('session.usage documents both branches (success + fail-open 200)', () => {
+    const schema = schemaOf('session.usage');
+    expect(schema.required).toEqual(['summary', 'providers', 'updatedAt']);
+    // summary is null on the fail-open branch, an object on success.
+    expect(schema.properties.summary.anyOf?.map((e: any) => e.type)).toEqual(expect.arrayContaining(['object', 'null']));
+    // memory / modelStats are omitted by the fail-open catch branch.
+    expect(schema.required).not.toContain('memory');
+    expect(schema.required).not.toContain('modelStats');
+    const summary = schema.properties.summary.anyOf[0];
+    expect(summary.properties.session.required).toEqual(expect.arrayContaining([
+      'totalTokens', 'totalCost', 'turnCount', 'avgTokensPerTurn',
+    ]));
+    expect(summary.properties.project.required).toEqual(
+      expect.arrayContaining(['totalTokens', 'totalCost', 'turnCount', 'sessionCount']),
+    );
+    expect(schema.properties.modelStats.properties.windows.required).toEqual(['today', '7d', '30d', 'all']);
+    expect(schema.properties.providers.items.required).toEqual(['name', 'windows']);
+    // window/unit vocabulary belongs to the usage plugins (user JS) -> open strings.
+    expect(schema.properties.providers.items.properties.windows.items.properties.window.type).toBe('string');
+  });
+
+  test('usage plugin surface pins the inventory rows and template fields', () => {
+    const plugin = schemaOf('session.usagePluginsList').properties.plugins.items;
+    expect(plugin.required).toEqual(['file', 'status', 'disabled', 'origin', 'config']);
+    expect(plugin.properties.origin.anyOf?.map((e: any) => e.const)).toEqual(['builtin', 'override', 'user']);
+    expect(plugin.properties.status.anyOf?.map((e: any) => e.const)).toEqual(['ok', 'error']);
+    expect(plugin.properties.configSchema.items.properties.type.anyOf?.map((e: any) => e.const))
+      .toEqual(['number', 'string', 'boolean', 'select']);
+    const tpl = schemaOf('session.usagePluginsList').properties.templates.items;
+    expect(tpl.required).toEqual(['id', 'label', 'description', 'fields']);
+    expect(tpl.properties.fields.items.properties.type.anyOf?.map((e: any) => e.const))
+      .toEqual(['string', 'number', 'boolean', 'select', 'textarea']);
+    // 200 body only: 403 (builtin read-only) / 404 envelopes are error bodies.
+    expect(schemaOf('session.usagePluginSourceGet').required).toEqual(['source', 'origin']);
+    expect(schemaOf('session.usagePluginSourceGet').properties.origin.anyOf?.map((e: any) => e.const))
+      .toEqual(['override', 'user']);
+  });
+
+  test('handler wire samples validate against each new schema (Value.Check)', () => {
+    // tasks.list: durable task row (shell, terminal snapshot bookkeeping included).
+    const task = {
+      id: 'task_1', kind: 'shell', parentSessionID: 's1', shellID: 'sh_1', title: 'npm test',
+      status: 'completed', directory: '/p', createdAt: 1, updatedAt: 2, finishedAt: 3, exitCode: 0,
+      metadata: { command: 'npm test' }, outputCursor: 12, outputSize: 12, outputTruncated: false,
+    };
+    expect(Value.Check(TaskListResponse, { items: [task] })).toBe(true);
+    expect(Value.Check(TaskListResponse, { items: [] })).toBe(true);
+    expect(Value.Check(TaskListResponse, { items: [{ ...task, status: 'paused' }] })).toBe(false);
+    expect(Value.Check(TaskGetResponse, task)).toBe(true);
+    expect(Value.Check(TaskGetResponse, { id: 'task_1', kind: 'subagent', parentSessionID: 's1', title: 'x', status: 'working', createdAt: 1, updatedAt: 1 })).toBe(true);
+
+    // tasks.output: terminal snapshot + runtime passthrough (unknown runtime-only keys allowed).
+    expect(Value.Check(TaskOutputResponse, { output: 'ok', cursor: 2, size: 2, truncated: false })).toBe(true);
+    expect(Value.Check(TaskOutputResponse, { output: '', cursor: 0, size: 0, truncated: true })).toBe(true);
+    expect(Value.Check(TaskOutputResponse, { output: 'x', runtimeCursorExt: 7 })).toBe(true);
+
+    // session.structured: unsubmitted (no name / submitted) and submitted forms.
+    expect(Value.Check(SessionStructuredResponse, {
+      sessionID: 's1', schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
+      errors: [], updatedAt: 1,
+    })).toBe(true);
+    expect(Value.Check(SessionStructuredResponse, {
+      sessionID: 's1', name: 'report', schema: { type: 'object' }, submitted: { ok: true }, errors: ['a: bad'], updatedAt: 2,
+    })).toBe(true);
+    expect(Value.Check(SessionStructuredResponse, { sessionID: 's1', errors: [], updatedAt: 1 })).toBe(false);
+
+    // session.run: toRunDto row (suspended + resumed).
+    const tokens = { input: 1, output: 2, reasoning: 3, cache: { read: 4, write: 5 } };
+    const run = {
+      id: 'run_1', sessionID: 's1', projectDir: '/p', status: 'suspended',
+      brief: { lastUserText: 'go', lastAssistantTail: 'doing', anchorMessageID: 'm1', queuedCount: 0 },
+      createdAt: '2026-11-14T00:00:00.000Z', suspendedAt: '2026-11-14T00:00:01.000Z',
+    };
+    expect(Value.Check(SessionRunResponse, { run })).toBe(true);
+    expect(Value.Check(SessionRunResponse, { run: { ...run, status: 'resumed', resumedAt: '2026-11-14T00:00:02.000Z', reason: 'user' } })).toBe(true);
+    expect(Value.Check(SessionRunResponse, { run: { ...run, status: 'paused' } })).toBe(false);
+
+    // session.discovery: degraded snapshot (optional reason) + warnings.
+    const snapshot = {
+      sessionID: 's1', directory: '/p', revision: 'r1', commandsRevision: 'c1',
+      generatedAt: '2026-11-14T00:00:00.000Z',
+      commands: [{ name: 'goal', description: 'd', source: 'mafw', scope: 'gateway', destructive: false }],
+      skills: [{ id: 'sk_1', name: 'office-editing', slash: true, scope: 'user', contentLength: 42 }],
+      instructions: [{ id: 'in_1', path: '/p/AGENTS.md', scope: 'project', kind: 'agents-md', bytes: 10, mtime: 't' }],
+      degraded: true, degradedReason: 'partial',
+      warnings: [{ source: 'skills', message: 'failed' }], skillInvokeSupported: false,
+    };
+    expect(Value.Check(SessionDiscoveryResponse, snapshot)).toBe(true);
+    expect(Value.Check(SessionDiscoveryResponse, { ...snapshot, degraded: false, degradedReason: undefined })).toBe(true);
+    expect(Value.Check(SessionDiscoveryResponse, { ...snapshot, degradedReason: 'slow' })).toBe(false);
+    expect(Value.Check(SessionDiscoverySkillResponse, { ...snapshot.skills[0], content: '# skill' })).toBe(true);
+
+    // experience.actions: full projection (all 20 ids) + sessionID echo.
+    const descriptor = { supported: true, enabled: true, operationId: 'session.diff' };
+    const actions = Object.fromEntries(
+      ['checkpoint.restore', 'checkpoint.create', 'branch.fork', 'branch.revert', 'branch.unrevert',
+       'branch.diff', 'run.control', 'session.worktree', 'session.summarize', 'session.switch-agent',
+       'session.switch-model', 'session.discovery', 'approval.permission', 'approval.question',
+       'background.jobs', 'terminal.attach', 'prompt.steer', 'session.background', 'mcp.manage',
+       'mcp.config.write'].map((id) => [id, descriptor]),
+    );
+    expect(Value.Check(ExperienceActionsResponse, {
+      experienceVersion: '2026.11.1', minClientVersion: '2026.11.0', sessionID: 's1', actions,
+    })).toBe(true);
+    expect(Value.Check(ExperienceActionsResponse, {
+      experienceVersion: '2026.11.1', minClientVersion: '2026.11.0',
+      actions: { 'run.control': { supported: true, enabled: false, reason: 'busy', warningKey: 'w', semantics: { any: 1 } } },
+    })).toBe(true);
+    expect(Value.Check(ExperienceActionsResponse, {
+      experienceVersion: '2026.11.1', minClientVersion: '2026.11.0',
+      actions: { 'run.control': { supported: true, enabled: false, reason: 'tired' } },
+    })).toBe(false);
+
+    // cognition.rules: raw config entry passthrough (extra keys survive) + validation errors.
+    expect(Value.Check(CognitionRulesResponse, {
+      rules: [
+        { on: 'tool_call', tool: 'bash', match: 'rm -rf', action: 'deny', reason: 'no', name: 'no-rm' },
+        { on: 'prompt', action: 'transform', text: '{{text}}', customFutureKey: true },
+      ],
+      errors: ['rule[2]: invalid action \'explode\''],
+    })).toBe(true);
+    expect(Value.Check(CognitionRulesResponse, { rules: [{ on: 'model', action: 'deny' }], errors: [] })).toBe(false);
+
+    // background.jobs: merged three-source rows + cursor output.
+    expect(Value.Check(BackgroundJobsListResponse, {
+      items: [
+        { id: 'task_1', source: 'mafw-task', kind: 'shell', status: 'running', sessionID: 's1', taskID: 'task_1', title: 'npm test', command: 'npm test', time: { created: 1, updated: 2 }, runtimeShellID: 'sh_1' },
+        { id: 'sub_1', source: 'subagent', kind: 'subagent', status: 'completed', sessionID: 's1', childSessionID: 'sub_1', extensions: { error: 'x' } },
+      ],
+    })).toBe(true);
+    expect(Value.Check(BackgroundJobsListResponse, { items: [{ id: 'x', source: 'cron', kind: 'shell', status: 'running', sessionID: 's1' }] })).toBe(false);
+    expect(Value.Check(BackgroundJobOutputResponse, { cursor: 128, data: 'ok', truncated: false })).toBe(true);
+    expect(Value.Check(BackgroundJobOutputResponse, { data: 'ok' })).toBe(false);
+
+    // terminal.list: supported + unsupported forms.
+    expect(Value.Check(TerminalListResponse, {
+      protocol: 'mafw-terminal/1', supported: true,
+      sessions: [{ id: 'pty_1', directory: '/p', title: 'zsh', status: 'running', cwd: '/p' }],
+    })).toBe(true);
+    expect(Value.Check(TerminalListResponse, {
+      protocol: 'mafw-terminal/1', supported: true, sessions: [{ id: 'pty_2', status: 'unknown' }],
+    })).toBe(true);
+
+    // session.usage: success branch (store present) and fail-open branch (query failed).
+    const scope = { totalTokens: tokens, totalCost: 0.1, turnCount: 2, sessionCount: 1 };
+    const usage = {
+      summary: {
+        session: { totalTokens: tokens, totalCost: 0.1, turnCount: 2, avgTokensPerTurn: tokens },
+        project: scope,
+        global: scope,
+      },
+      memory: { ...scope, byRole: { builder: scope } },
+      modelStats: {
+        windows: {
+          today: [{ provider: 'anthropic', model: 'claude', turns: 1, tokens, estimatedCost: null }],
+          '7d': [], '30d': [], all: [],
+        },
+      },
+      providers: [{
+        name: 'anthropic', plan: 'pro', type: 'api', severity: 'low',
+        windows: [{ window: '5h', used: 1, limit: 10, unit: '$', pct: 10, resetAt: 1, pacing: 'on-track', remaining: 9, detailLines: ['claude: 1'] }],
+      }],
+      updatedAt: 1,
+    };
+    expect(Value.Check(SessionUsageResponse, usage)).toBe(true);
+    expect(Value.Check(SessionUsageResponse, { summary: null, providers: [], updatedAt: 2 })).toBe(true);
+    // memory is nullable when the trajectory store is absent.
+    expect(Value.Check(SessionUsageResponse, { ...usage, memory: null })).toBe(true);
+    expect(Value.Check(SessionUsageResponse, { ...usage, summary: { session: null } })).toBe(false);
+
+    // usage plugin inventory: builtin override row (config non-null) + user row.
+    const tplField = { key: 'endpoint', label: 'Endpoint', type: 'string', required: true, placeholder: 'https://x' };
+    const usagePlugins = {
+      plugins: [
+        {
+          file: 'opencode-go.js', name: 'opencode-go', status: 'ok', disabled: false, origin: 'builtin',
+          pluginType: 'token-plan',
+          configSchema: [{ key: 'endpoint', label: 'Endpoint', type: 'string', default: 'https://x' }],
+          config: { endpoint: 'https://x' },
+        },
+        { file: 'broken.js', name: 'broken', status: 'error', error: 'boom', disabled: true, origin: 'user', config: null },
+      ],
+      templates: [{ id: 'token-plan', label: '套餐窗口型', description: 'd', fields: [tplField] }],
+      builtins: ['opencode-go', 'zen'],
+    };
+    expect(Value.Check(UsagePluginsListResponse, usagePlugins)).toBe(true);
+    expect(Value.Check(UsagePluginsListResponse, {
+      ...usagePlugins, templates: [{ id: 'x', label: 'x', description: 'x', fields: [{ key: 'k', label: 'l', type: 'slider' }] }],
+    })).toBe(false);
+
+    // session.usagePluginSourceGet: success body only (403/404 carry {error, builtin?}).
+    expect(Value.Check(UsagePluginSourceResponse, { source: 'module.exports = {}', origin: 'user' })).toBe(true);
+    expect(Value.Check(UsagePluginSourceResponse, { source: 'x', origin: 'builtin' })).toBe(false);
+    expect(Value.Check(UsagePluginSourceResponse, { error: 'plugin file not found' })).toBe(false);
   });
 });
