@@ -1914,7 +1914,13 @@ export class NodeDriver {
               taskResults: verdict.tasks,
               reviewFeedback: verdict.feedback,
             });
-            const applied = applyGoalEvalResults(verdict, evalRead.goalEval, results, requiredIds);
+            const applied = applyGoalEvalResults(
+              verdict,
+              evalRead.goalEval,
+              results,
+              requiredIds,
+              provider.mode ?? 'replace',
+            );
             if (applied.ok) {
               verdict = applied.verdict;
             } else {

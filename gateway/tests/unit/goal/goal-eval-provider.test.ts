@@ -81,6 +81,45 @@ describe('goal eval provider results', () => {
     }
   });
 
+  test('advisory mode only lets provider failures override reviewer results', () => {
+    const failed = applyGoalEvalResults(
+      verdict(),
+      goalEval(),
+      [{ conditionId: 'c1', result: 'fail', evidence: 'contradicts task evidence' }],
+      ['c1'],
+      'advisory',
+    );
+    expect(failed.ok).toBe(true);
+    expect(failed.verdict.verdict).toBe('FAIL');
+    expect(failed.verdict.goalResults[0]).toMatchObject({ conditionId: 'c1', result: 'fail' });
+
+    const abstained = applyGoalEvalResults(
+      verdict(),
+      goalEval(),
+      [{ conditionId: 'c1', result: 'skipped', evidence: '' }],
+      ['c1'],
+      'advisory',
+    );
+    expect(abstained.ok).toBe(true);
+    expect(abstained.verdict.verdict).toBe('PASS');
+    expect(abstained.verdict.goalResults[0]).toMatchObject({ conditionId: 'c1', result: 'pass' });
+
+    const reviewerFailed = verdict({
+      verdict: 'FAIL',
+      goalResults: [{ conditionId: 'c1', result: 'fail', evidence: 'reviewer says fail' }],
+    });
+    const providerPassed = applyGoalEvalResults(
+      reviewerFailed,
+      goalEval(),
+      [{ conditionId: 'c1', result: 'pass', evidence: 'provider says pass' }],
+      ['c1'],
+      'advisory',
+    );
+    expect(providerPassed.ok).toBe(true);
+    expect(providerPassed.verdict.verdict).toBe('FAIL');
+    expect(providerPassed.verdict.goalResults[0]).toMatchObject({ conditionId: 'c1', result: 'fail' });
+  });
+
   test('pass without evidence is downgraded to fail', () => {
     const applied = applyGoalEvalResults(verdict(), goalEval(), [
       { conditionId: 'c1', result: 'pass', evidence: '' },

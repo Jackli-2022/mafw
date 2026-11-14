@@ -22,6 +22,8 @@ export type GoalEvalConditionResult = ReviewGoalResult;
 
 export interface GoalEvalProvider {
   id: string;
+  /** replace = authoritative; advisory = only provider failures override reviewer. */
+  mode?: 'replace' | 'advisory';
   evaluate(input: GoalEvalProviderInput): Promise<GoalEvalConditionResult[]> | GoalEvalConditionResult[];
   health?(): 'healthy' | 'degraded' | 'failed';
   dispose?(): void;
@@ -47,6 +49,7 @@ export function applyGoalEvalResults(
   goalEval: GoalEval,
   results: GoalEvalConditionResult[],
   requiredIds: string[],
+  mode: 'replace' | 'advisory' = 'replace',
 ): GoalEvalApplyResult {
   const errors: string[] = [];
   if (!Array.isArray(results)) {
@@ -79,7 +82,8 @@ export function applyGoalEvalResults(
 
     let evidence = typeof item.evidence === 'string' ? item.evidence.trim() : '';
     let normalizedResult = result;
-    if (result !== 'skipped' && !evidence) {
+    // Advisory providers only act on failures; pass/skipped are abstentions.
+    if (mode === 'replace' && result !== 'skipped' && !evidence) {
       omissions.push(`goal condition ${conditionId} is missing verifiable evidence`);
       normalizedResult = 'fail';
       evidence = 'missing verifiable evidence';
@@ -91,7 +95,23 @@ export function applyGoalEvalResults(
     return { ok: false, verdict, errors };
   }
 
-  const byId = new Map(normalized.map((item) => [item.conditionId, item]));
+  let merged: ReviewGoalResult[];
+  if (mode === 'advisory') {
+    const byId = new Map(verdict.goalResults.map((item) => [item.conditionId, item]));
+    for (const item of normalized) {
+      if (item.result !== 'fail') continue;
+      byId.set(item.conditionId, {
+        conditionId: item.conditionId,
+        result: 'fail',
+        evidence: item.evidence || 'provider reported fail',
+      });
+    }
+    merged = [...byId.values()];
+  } else {
+    merged = normalized;
+  }
+
+  const byId = new Map(merged.map((item) => [item.conditionId, item]));
   const missingRequired = requiredIds.filter((id) => !byId.has(id));
   const blocking = requiredIds.filter((id) => byId.get(id)?.result !== 'pass');
 
@@ -105,7 +125,7 @@ export function applyGoalEvalResults(
   const keptOmissions = (verdict.omissions ?? []).filter((item) => !GOAL_OMISSION_RE.test(item));
   const next: ReviewRubric = {
     ...verdict,
-    goalResults: normalized,
+    goalResults: merged,
     missingGoalConditions: missingRequired,
     omissions: [...keptOmissions, ...omissions],
   };

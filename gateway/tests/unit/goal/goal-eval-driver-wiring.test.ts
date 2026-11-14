@@ -8,7 +8,8 @@ test('the Goal review path can apply a provider result under core validation', (
   );
   expect(source).toContain('setGoalEvalProvider');
   expect(source).toContain('provider.evaluate({');
-  expect(source).toContain('applyGoalEvalResults(verdict, evalRead.goalEval, results, requiredIds)');
+  expect(source).toContain('applyGoalEvalResults(');
+  expect(source).toContain("provider.mode ?? 'replace'");
   expect(source).toContain('keeping reviewer rubric');
 
   const kernel = fs.readFileSync(path.join(__dirname, '../../../src/kernel.ts'), 'utf8');

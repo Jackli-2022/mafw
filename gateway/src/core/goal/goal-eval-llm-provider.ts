@@ -77,6 +77,7 @@ export function createLlmGoalEvalProvider(
   if (!options.model?.providerID || !options.model.modelID) return null;
   return {
     id: options.id ?? 'llm-goal-eval',
+    mode: 'advisory',
     async evaluate(input: GoalEvalProviderInput): Promise<GoalEvalConditionResult[]> {
       const channel = options.channel();
       if (!channel) throw new Error('runtime completion channel unavailable');
