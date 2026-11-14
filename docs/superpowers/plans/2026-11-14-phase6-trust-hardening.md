@@ -824,7 +824,7 @@ git commit -m "feat(plugins): expose trust, doctor and kill routes"
 **Interfaces:**
 - Produces:
   - `runPluginsCommand(argv: string[], deps: { request(path: string, method: 'GET' | 'POST', body?: unknown, humanToken?: string): Promise<{ status: number; body: any }>; readHumanToken(): string | null; print(text: string): void }): Promise<number>`
-  - Subcommands: `list`, `doctor [name]`, `install <path> [--overwrite] [--trust trusted|untrusted] [--permission <token>]...`, `kill`, `resume`, `quarantine <name> --reason <text>`, `unquarantine <name>`, `rollback <name>`, `audit [--package <name>] [--limit <n>]`.
+  - Subcommands: `list`, `doctor [name]`, `install <path> [--overwrite] [--trust trusted|untrusted] [--permission <token>]...`, `kill`, `resume`, `quarantine <name> --reason <text>`, `unquarantine <name>`, `audit [--package <name>] [--limit <n>]`. `rollback` is added in Task 21, after `last-good` exists.
 - `bin/mafw.js` lazily requires `../gateway/dist/cli/plugins-command.js` and forwards `process.argv.slice(2)`; `start --safe-mode` sets `MAFW_SAFE_MODE=1` before spawning.
 
 - [ ] **Step 1: Write the failing test**
