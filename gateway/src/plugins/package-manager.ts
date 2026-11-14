@@ -29,6 +29,7 @@ import { parsePackageManifest } from './package-manifest';
 import { computePackageIntegrity, verifyDeclaredIntegrity } from './package-integrity';
 import type { PluginAuditStore } from './plugin-audit-store';
 import type { PackageLastGoodStore } from './package-last-good';
+import type { PluginSafety } from './plugin-safety';
 
 const SAFE_PACKAGE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const DEFAULT_MAX_REQUEST_IDS = 50;
@@ -106,6 +107,8 @@ export interface PackageManagerDeps {
   audit?: PluginAuditStore;
   /** Phase 6C rollback snapshots (optional in headless hosts). */
   lastGood?: PackageLastGoodStore;
+  /** Phase 6C health window (optional in headless hosts). */
+  safety?: PluginSafety;
 }
 
 function describeError(err: unknown): string {
@@ -141,6 +144,7 @@ export class PackageManager {
   private readonly workerAvailable: boolean;
   private readonly audit?: PluginAuditStore;
   private readonly lastGood?: PackageLastGoodStore;
+  private readonly safety?: PluginSafety;
   private readonly requestResults = new Map<string, InstallResult>();
   /** Serializes mutations so two installs cannot interleave staging markers. */
   private queue: Promise<unknown> = Promise.resolve();
@@ -153,6 +157,7 @@ export class PackageManager {
     this.workerAvailable = deps.workerAvailable === true;
     this.audit = deps.audit;
     this.lastGood = deps.lastGood;
+    this.safety = deps.safety;
   }
 
   /** Absolute plugin package root (`~/.mafw/plugins` by default). */
@@ -267,6 +272,15 @@ export class PackageManager {
           permissions: manifest.permissions,
         },
       });
+      if (result.application === 'applied') {
+        const installed = this.stateStore.getInstalled(name);
+        if (installed) {
+          this.safety?.beginHealthCheck(name, {
+            ...(installed.version !== undefined ? { version: installed.version } : {}),
+            fingerprint: installed.fingerprint,
+          });
+        }
+      }
       if (requestId) this.remember(requestId, result);
       return result;
     });
@@ -414,6 +428,13 @@ export class PackageManager {
       const result = await this.host.applyPending(safeName);
       if (result.applied) {
         this.audit?.append({ action: 'apply', package: safeName, result: 'ok' });
+        const installed = this.stateStore.getInstalled(safeName);
+        if (installed) {
+          this.safety?.beginHealthCheck(safeName, {
+            ...(installed.version !== undefined ? { version: installed.version } : {}),
+            fingerprint: installed.fingerprint,
+          });
+        }
       }
       if (!result.applied) {
         return {

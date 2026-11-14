@@ -97,6 +97,7 @@ import { PackageManager } from './plugins/package-manager';
 import { PluginSafety } from './plugins/plugin-safety';
 import { PluginDoctor } from './plugins/plugin-doctor';
 import { PluginAuditStore } from './plugins/plugin-audit-store';
+import { PackageLastGoodStore } from './plugins/package-last-good';
 import type { PluginClientSnapshot } from './plugins/client-descriptor';
 import { createPluginPackageContext } from './plugins/package-context';
 import { WorkerHost } from './plugins/worker/worker-host';
@@ -494,18 +495,22 @@ export async function bootKernel(kernel: BootKernel): Promise<void> {
   );
   kernel.bindPluginAutomation(kernel.pluginHost);
   const pluginAudit = new PluginAuditStore(kernel.getGatewayDb());
+  const pluginLastGood = new PackageLastGoodStore(pluginPackageDir);
+  const pluginSafety = new PluginSafety({
+    state: kernel.packageStateStore,
+    host: kernel.pluginHost,
+    audit: pluginAudit,
+    lastGood: pluginLastGood,
+    oneRunSafeMode: process.env.MAFW_SAFE_MODE === '1',
+  });
   kernel.packageManager = new PackageManager({
     pluginDir: pluginPackageDir,
     host: kernel.pluginHost,
     stateStore: kernel.packageStateStore,
     audit: pluginAudit,
     workerAvailable: true,
-  });
-  const pluginSafety = new PluginSafety({
-    state: kernel.packageStateStore,
-    host: kernel.pluginHost,
-    audit: pluginAudit,
-    oneRunSafeMode: process.env.MAFW_SAFE_MODE === '1',
+    lastGood: pluginLastGood,
+    safety: pluginSafety,
   });
   const hostVersion = process.env.MAFW_HOST_VERSION
     ?? (() => { try { return String(require('../../package.json').version); } catch { return '0.0.0'; } })();
@@ -524,6 +529,7 @@ export async function bootKernel(kernel: BootKernel): Promise<void> {
   kernel.pluginHost.bindRuntime((entries) => kernel.runtimeLoader?.setPackageEntries(entries));
   // 客户端快照只在 commit 后替换；handler/源码永不下发。
   kernel.pluginHost.onSnapshot((snapshot) => { kernel.pluginClientSnapshot = snapshot; });
+  await pluginSafety.reconcilePendingHealthChecks();
   await kernel.pluginHost.init();
 
   // 3. 创建 SDK 客户端（auth），用于健康检查和后续通信

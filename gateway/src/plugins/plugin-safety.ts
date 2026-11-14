@@ -6,6 +6,7 @@
  */
 import type { PackageStateStore } from './package-state-store';
 import type { PluginAuditStore } from './plugin-audit-store';
+import type { PackageLastGoodStore } from './package-last-good';
 
 export type PluginBlockReason = 'safe-mode' | 'quarantined' | 'disabled' | null;
 
@@ -16,6 +17,12 @@ export interface PluginSafetyDeps {
   audit: Pick<PluginAuditStore, 'append'>;
   /** `MAFW_SAFE_MODE=1` / `mafw start --safe-mode`: this boot only. */
   oneRunSafeMode?: boolean;
+  /** Phase 6C rollback snapshots. */
+  lastGood?: Pick<PackageLastGoodStore, 'snapshot' | 'restore'>;
+  /** Health window before a new version is promoted. Default 5 minutes. */
+  healthWindowMs?: number;
+  /** Tests set false to reconcile manually. Default true. */
+  autoConfirm?: boolean;
 }
 
 export interface SafetyPrincipal {
@@ -79,6 +86,80 @@ export class PluginSafety {
         at: new Date().toISOString(),
         ...(version !== undefined ? { version } : {}),
       },
+    });
+  }
+
+  /** Marks a newly committed version as awaiting its health window. */
+  beginHealthCheck(name: string, meta: { version?: string; fingerprint: string }): void {
+    this.deps.state.updateInstalled(name, {
+      pendingHealthCheck: {
+        ...(meta.version !== undefined ? { version: meta.version } : {}),
+        fingerprint: meta.fingerprint,
+        startedAt: new Date().toISOString(),
+      },
+    });
+    if (this.deps.autoConfirm === false) return;
+    const timer = setTimeout(() => this.confirmHealthCheck(name), this.deps.healthWindowMs ?? 5 * 60 * 1000);
+    timer.unref?.();
+  }
+
+  /** Promotes the current version to last-known-good after a healthy window. */
+  confirmHealthCheck(name: string): void {
+    const installed = this.deps.state.getInstalled(name);
+    const pending = installed?.pendingHealthCheck;
+    if (!installed || !pending) return;
+    if (installed.fingerprint !== pending.fingerprint) return;
+    this.deps.lastGood?.snapshot(name, {
+      ...(pending.version !== undefined ? { version: pending.version } : {}),
+      fingerprint: pending.fingerprint,
+    });
+    this.deps.state.updateInstalled(name, {
+      pendingHealthCheck: undefined,
+      lastKnownGood: {
+        ...(pending.version !== undefined ? { version: pending.version } : {}),
+        fingerprint: pending.fingerprint,
+        savedAt: new Date().toISOString(),
+      },
+    });
+  }
+
+  /**
+   * Boot-time reconcile: a pending health check means the previous process
+   * died before confirming. Restore last-known-good before activation.
+   */
+  async reconcilePendingHealthChecks(): Promise<{ rolledBack: string[]; quarantined: string[] }> {
+    const rolledBack: string[] = [];
+    const quarantined: string[] = [];
+    for (const [name, installed] of Object.entries(this.deps.state.read().installed)) {
+      const pending = installed.pendingHealthCheck;
+      if (!pending) continue;
+      const restored = this.deps.lastGood?.restore(name) ?? false;
+      if (!restored) {
+        this.quarantine(name, 'health window was not confirmed and no last-known-good is available');
+        quarantined.push(name);
+        continue;
+      }
+      this.deps.state.updateInstalled(name, {
+        pendingHealthCheck: undefined,
+        degraded: {
+          reason: 'unconfirmed health window; restored last-known-good on boot',
+          at: new Date().toISOString(),
+          ...(pending.version !== undefined ? { version: pending.version } : {}),
+        },
+      });
+      this.auditRollback(name, pending.version);
+      rolledBack.push(name);
+    }
+    return { rolledBack, quarantined };
+  }
+
+  private auditRollback(name: string, version?: string): void {
+    this.deps.audit.append({
+      action: 'rollback',
+      package: name,
+      ...(version !== undefined ? { version } : {}),
+      result: 'ok',
+      detail: { reason: 'restored last-known-good on boot' },
     });
   }
 
