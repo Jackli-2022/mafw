@@ -56,13 +56,13 @@
 
 ## 验证
 
-- gateway 全量：**7418 total / 7415 passed / 2 skipped**（944 suites，`--testTimeout=20000`）。
+- gateway 全量：**7416 passed / 2 skipped / 7418 total**（944 suites，`--testTimeout=20000`）。
 - gateway typecheck：0。
 - desktop：**3868 / 3868**。
 - SDK：**226 / 226**。
 - plugin-contract：**44 / 44**。
 - drill：10/10。
-- 说明：最终全量首轮因 `plugins.lastGood` / `plugins.rollback` 未 attach handler 失败（api-contract 可达性守卫），补 attach 后定向 96/96；第二轮全量待记录。
+- 说明：最终全量首轮因 `plugins.lastGood` / `plugins.rollback` 未 attach handler 失败（api-contract 可达性守卫）；补 attach 后第二轮全量 944/944 干净通过。
 
 ## 明确未做
 
