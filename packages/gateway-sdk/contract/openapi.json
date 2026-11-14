@@ -601,6 +601,56 @@
         "tags": [
           "cognition"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "description": "kind is a closed enum, and tool is conditionally required when kind is 'tool_call' (missing → 400).",
+                "type": "object",
+                "required": [
+                  "sessionID",
+                  "kind"
+                ],
+                "properties": {
+                  "sessionID": {
+                    "minLength": 1,
+                    "description": "Session the gate decision is scoped to (required; loopback-only route).",
+                    "type": "string"
+                  },
+                  "kind": {
+                    "description": "Interception point: 'tool_call' before a tool runs, 'prompt' before a prompt is submitted (closed enum; anything else → 400).",
+                    "anyOf": [
+                      {
+                        "const": "tool_call",
+                        "type": "string"
+                      },
+                      {
+                        "const": "prompt",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "tool": {
+                    "description": "Tool name. Required when kind is 'tool_call' (missing → 400); ignored for kind:'prompt'.",
+                    "type": "string"
+                  },
+                  "input": {
+                    "description": "Tool arguments for kind:'tool_call' (absent → {}). Free-form: the rule engine interpolates {{field}} from it.",
+                    "type": "object",
+                    "patternProperties": {
+                      "^(.*)$": {}
+                    }
+                  },
+                  "text": {
+                    "description": "Prompt text for kind:'prompt' (non-string values are evaluated as ''). Ignored for kind:'tool_call'.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -614,6 +664,70 @@
         "tags": [
           "cognition"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "description": "sessionID, tool and output.content[] are required (missing → 400).",
+                "type": "object",
+                "required": [
+                  "sessionID",
+                  "tool",
+                  "output"
+                ],
+                "properties": {
+                  "sessionID": {
+                    "minLength": 1,
+                    "description": "Session used for internal-exemption / observability scoping (required).",
+                    "type": "string"
+                  },
+                  "tool": {
+                    "description": "Tool whose output is being rewritten; matched against on:tool_result rules (required).",
+                    "type": "string"
+                  },
+                  "input": {
+                    "description": "Host envelope field from the cognition contract; the current gateway handler does not read it (redaction keys on tool + output.content).",
+                    "type": "object",
+                    "patternProperties": {
+                      "^(.*)$": {}
+                    }
+                  },
+                  "output": {
+                    "description": "Tool result envelope. `content` is the only field the gateway reads.",
+                    "type": "object",
+                    "required": [
+                      "content"
+                    ],
+                    "properties": {
+                      "content": {
+                        "description": "Tool result content parts. Required and must be an array (otherwise → 400); an empty array is valid.",
+                        "type": "array",
+                        "items": {
+                          "additionalProperties": true,
+                          "type": "object",
+                          "required": [
+                            "type"
+                          ],
+                          "properties": {
+                            "type": {
+                              "description": "Content part type ('text' / 'image' / runtime-specific). Only text parts are redacted; everything else passes through unchanged.",
+                              "type": "string"
+                            }
+                          }
+                        }
+                      },
+                      "isError": {
+                        "description": "Host-side error flag; echoed by the host, not read by the gateway handler.",
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"

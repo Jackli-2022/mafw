@@ -194,6 +194,7 @@ import {
   SessionTrajectoryResponse,
 } from './schemas/session-runtime';
 import { CognitionRulesResponse, ExperienceActionsResponse } from './schemas/experience';
+import { CognitionGateRequest, CognitionRewriteRequest } from './schemas/cognition-write';
 import { BackgroundJobOutputResponse, BackgroundJobsListResponse } from './schemas/background';
 import { TerminalListResponse } from './schemas/terminal';
 import {
@@ -325,8 +326,8 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/pods/:podId/events/:id/seen', operationId: 'pod.events.seen', tags: ['pod'], request: EmptyRequest, requestRequired: false },
   { method: 'POST', path: '/api/pods/:podId/events/seen', operationId: 'pod.events.seenAll', tags: ['pod'], request: PodEventsSeenAllRequest },
   { method: 'POST', path: '/api/session', operationId: 'session.create', tags: ['session'], request: SessionCreateRequest },
-  { method: 'POST', path: '/api/cognition/gate', operationId: 'cognition.gate', tags: ['cognition'] },
-  { method: 'POST', path: '/api/cognition/rewrite', operationId: 'cognition.rewrite', tags: ['cognition'] },
+  { method: 'POST', path: '/api/cognition/gate', operationId: 'cognition.gate', tags: ['cognition'], request: CognitionGateRequest },
+  { method: 'POST', path: '/api/cognition/rewrite', operationId: 'cognition.rewrite', tags: ['cognition'], request: CognitionRewriteRequest },
   { method: 'GET', path: '/api/cognition/rules', operationId: 'cognition.rules', tags: ['cognition'], response: CognitionRulesResponse },
   { method: 'GET', path: '/api/session/:id/queue', operationId: 'session.queue.list', tags: ['session'], response: SessionQueueListResponse },
   { method: 'GET', path: '/api/session/:id/config', operationId: 'session.config', tags: ['session'], response: SessionConfigResponse },

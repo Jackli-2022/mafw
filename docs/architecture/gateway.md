@@ -37,7 +37,7 @@
 - [E10d 契约覆盖第四批（2026-11-14）](#e10d-契约覆盖第四批2026-11-14)
 - [E10e 契约覆盖第五批（2026-11-14）](#e10e-契约覆盖第五批2026-11-14)
 - [E10f 全量读表面收口（2026-11-14）](#e10f-全量读表面收口2026-11-14)
-- [E10g 请求契约（P0 + W1 + W2/W3 + W4 + W5 + W6 + W7，2026-11-14）](#e10g-请求契约p0--w1--w2w3--w4--w5--w6--w72026-11-14)
+- [E10g 请求契约（P0 + W1 + W2/W3 + W4 + W5 + W6 + W7 + W8，2026-11-14）](#e10g-请求契约p0--w1--w2w3--w4--w5--w6--w7--w82026-11-14)
 - [API 端点](#api-端点)
 - [UI 服务](#ui-服务)
 - [数据流全景](#数据流全景)
@@ -1561,14 +1561,15 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 
 ---
 
-## E10g 请求契约（P0 + W1 + W2/W3 + W4 + W5 + W6 + W7，2026-11-14）
+## E10g 请求契约（P0 + W1 + W2/W3 + W4 + W5 + W6 + W7 + W8，2026-11-14）
 
 > 承接 E10f（响应 125/318）。E10g 给 **188 个写 op** 补请求契约；本篇记录 P0 管线、
 > 3 个 pilot、W1（session 写接口 35 个）、W2/W3（tasks/terminal/background/fileHistory 8 个 +
 > pod 写接口 25 个）、W4（goals/decisions/lead/standing/goalRuns 29 个）、W5
 > （events/automations/approvals/questions/triage/permissions 24 个）、W6
-> （mcp/plugins/runtime/config/project/manager/commands 26 个）与 W7
-> （memory/media/tts/chat/python/obs/models/embedding/tools/eval/llm/mobile/devices/a2a 30 个）。
+> （mcp/plugins/runtime/config/project/manager/commands 26 个）、W7
+> （memory/media/tts/chat/python/obs/models/embedding/tools/eval/llm/mobile/devices/a2a 30 个）
+> 与 W8（cognition gate/rewrite 2 个，写表面收口 182/188）。
 > spec：`docs/superpowers/specs/2026-11-14-gateway-e10g-request-contracts-design.md`。
 
 - **`RouteDef` 新增三个声明位**：`request?: object`（TypeBox / JSON Schema，缺省 = 未建模）、
@@ -1718,10 +1719,21 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
   - `mobile.pairingVerify` 的 `deviceId`/`platform`/`deviceName` 带上
     `device-store.ts` 的 pattern + 长度上限；`devices.register` 的 `id` 可缺省（transport
     注入 `principal.deviceId`），`fcmToken`/`platform`/`token` 恒必填。
-- **残余（2 个）**：`cognition.gate` / `cognition.rewrite` 不在 E10g 批次表内（body 归 cognition
-  gate 契约所有），当前 `requests: 180/188`；加上 6 个显式排除（`plugins.install` +
-  W7 五项）后 180 + 6 = 186，实际分母 188 由这 2 个 cognition op 补齐。`REQUEST_EXCLUDED`
-  清单与收口覆盖测试在 E10g 收口波落地。
+- **W8（cognition gate / rewrite，2 个写表面收口）**：schema 在
+  `routes/schemas/cognition-write.ts`。两个 op 都是 **JSON body（`requestRequired` 缺省 true）**；
+  handler 在 body 缺失时直接 400，没有可省缺的信封。
+  - `cognition.gate`：`sessionID` + `kind` 必填，`kind` 是闭集（`tool_call` / `prompt`，其余 400）。
+    `tool` **条件必填**（`kind:'tool_call'` 缺失 → 400；`kind:'prompt'` 忽略），因此是
+    optional + description，不伪造 oneOf；`input` 缺省 `{}`（规则引擎 `{{field}}` 插值），
+    `text` 非字符串时 handler 按空串求值。
+  - `cognition.rewrite`：`sessionID` / `tool` / `output` 必填，`output.content` 必为数组
+    （否则 400；空数组合法 → 200 `{content: []}`）。内容部件只钉 `type` + `additionalProperties:true`
+    （`applyToolResultRedact` 只改 `type:'text'`，其余原样透传）；`output.isError` 是宿主信封字段
+    （gateway 不读），`input` 同理（`contract-cognition` 的 requiredFields 列了它，handler 不用）。
+  - **收口算术**：`requests: 182/188`（96.8%）= 182 covered + 6 excluded
+    （W6 `plugins.install` + W7 `media.upload` / `media.uploadAndCreate` / `media.createTask` /
+    `mobile.mediaTaskUpload` / `pods.a2a`）。W7 遗留的 2 个 cognition op 至此归位，
+    188 个写 op 全部有归属（覆盖或显式排除）。
 
 ---
 

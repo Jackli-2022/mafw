@@ -536,8 +536,8 @@ const E10G_W6_EXCLUDED_OPS: Record<string, string> = {
 /**
  * E10g-W7：memory / media / tts / chat / python / obs / models / embedding /
  * tools / eval / llm / mobile / devices / a2a / skills（30 个已覆盖）。
- * P0 3 + W1 35 + W2W3 33 + W4 29 + W5 24 + W6 26 + 这 30 = 180。
- * 分母 188 = 180 covered + 8 excluded（W6 1 + W7 5 + cognition 2 未在批次范围）。
+ * P0 3 + W1 35 + W2W3 33 + W4 29 + W5 24 + W6 26 + 这 30 = 180（W8 再补 cognition 2）。
+ * 分母 188 = W8 后 182 covered + 6 excluded（W6 1 + W7 5）。
  */
 const E10G_W7_REQUEST_OPS = [
   // memory / embedding
@@ -614,6 +614,14 @@ const E10G_W7_EXCLUDED_OPS: Record<string, string> = {
   'mobile.mediaTaskUpload': 'multipart/form-data file part (boundary parsed in mobile/media-proxy.ts); no JSON body',
   'pods.a2a': 'A2A JSON-RPC pass-through (raw body → PodA2AAgent.handleJsonRpc); envelope owned by the protocol',
 };
+
+/**
+ * E10g-W8：cognition gate / rewrite（2 个，最后一个写批）。
+ * P0 3 + W1 35 + W2W3 33 + W4 29 + W5 24 + W6 26 + W7 30 + 这 2 = 182。
+ * 分母 188 = **182 covered + 6 excluded**（W6 1 + W7 5）；W7 遗留的两个
+ * cognition op 在此归位（body 归 cognition gate 契约，handler 是事实源）。
+ */
+const E10G_W8_REQUEST_OPS = ['cognition.gate', 'cognition.rewrite'];
 
 
 function catalogById(): Map<string, { hasRequest: boolean; request?: object; requestRequired?: boolean }> {
@@ -1045,10 +1053,68 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(ids.filter((id) => E10G_W7_REQUEST_OPS.includes(id))).toEqual([]);
   });
 
-  // Closing arithmetic for the W7 scope: 188 write ops = 180 declared requests +
-  // 6 excluded (W6 1 + W7 5) + 2 cognition writes that no batch owns (their
-  // envelope belongs to the cognition gate contract; E10g §2 has no cognition row).
-  it('W7 request arithmetic closes on 188 with the documented exclusions', () => {
+  // E10g-W8: the last two writes (cognition gate / rewrite) now declare their
+  // request bodies, so the write-op denominator is fully accounted for:
+  // 188 = 182 covered + 6 excluded (W6 1 + W7 5).
+  it('every W8 cognition write op declares a request schema (catalog requests >= 182)', () => {
+    const byId = catalogById();
+    const missing = E10G_W8_REQUEST_OPS.filter((id) => !byId.get(id)?.hasRequest);
+    expect(missing).toEqual([]);
+    const requests = catalogWriteOps().filter((op) => op.hasRequest).map((op) => op.operationId);
+    expect(requests.length).toBeGreaterThanOrEqual(182);
+    expect(requests).toEqual(expect.arrayContaining([
+      ...E10G_P0_REQUEST_OPS,
+      ...E10G_W1_REQUEST_OPS,
+      ...E10G_W2W3_REQUEST_OPS,
+      ...E10G_W4_REQUEST_OPS,
+      ...E10G_W5_REQUEST_OPS,
+      ...E10G_W6_REQUEST_OPS,
+      ...E10G_W7_REQUEST_OPS,
+      ...E10G_W8_REQUEST_OPS,
+    ]));
+    // No duplicate ids across batches (a typo would hide here otherwise).
+    expect(new Set(E10G_W8_REQUEST_OPS).size).toBe(E10G_W8_REQUEST_OPS.length);
+    expect(E10G_W8_REQUEST_OPS.filter((id) => E10G_W7_REQUEST_OPS.includes(id))).toEqual([]);
+  });
+
+  it('W8 cognition bodies pin the handler gate/rewrite required fields', () => {
+    const gate = catalogById().get('cognition.gate');
+    if (!gate?.hasRequest) throw new Error('cognition.gate: missing request');
+    // JSON body with no optional envelope: a missing body is a 400.
+    expect(gate.requestRequired).toBeUndefined();
+    const gateSchema = gate.request as any;
+    expect(gateSchema.required).toEqual(['sessionID', 'kind']);
+    expect(gateSchema.properties.kind.anyOf.map((v: any) => v.const)).toEqual(['tool_call', 'prompt']);
+    // `tool` is required only on the tool_call branch → optional + description,
+    // never a fabricated oneOf (the handler 400s on tool_call without it).
+    expect(gateSchema.required).not.toContain('tool');
+    expect(gateSchema.properties.tool.description).toContain("kind is 'tool_call'");
+    expect(gateSchema.properties.input.type).toBe('object');
+    expect(gateSchema.properties.text.type).toBe('string');
+
+    const rewrite = catalogById().get('cognition.rewrite');
+    if (!rewrite?.hasRequest) throw new Error('cognition.rewrite: missing request');
+    expect(rewrite.requestRequired).toBeUndefined();
+    const rewriteSchema = rewrite.request as any;
+    expect(rewriteSchema.required).toEqual(['sessionID', 'tool', 'output']);
+    // output.content must be an array; an empty array is a valid 200.
+    expect(rewriteSchema.properties.output.required).toEqual(['content']);
+    const content = rewriteSchema.properties.output.properties.content;
+    expect(content.type).toBe('array');
+    expect(content.minItems).toBeUndefined();
+    // Parts are runtime-owned: only `type` is pinned, the rest passes through.
+    expect(content.items.required).toEqual(['type']);
+    expect(content.items.additionalProperties).toBe(true);
+    expect(rewriteSchema.properties.output.required).not.toContain('isError');
+    // `isError` is part of the host envelope but the gateway never reads it.
+    expect(rewriteSchema.properties.output.properties.isError.type).toBe('boolean');
+    // Host envelope field (`contract-cognition` requiredFields) the handler ignores.
+    expect(rewriteSchema.properties.input.type).toBe('object');
+  });
+
+  // Closing arithmetic for the E10g scope: 188 write ops = 182 declared requests +
+  // 6 excluded (W6 1 + W7 5). Nothing is left unaccounted for after W8.
+  it('E10g request arithmetic closes on 188 (W8: 182 covered + 6 excluded)', () => {
     const covered = new Set(catalogWriteOps().filter((op) => op.hasRequest).map((op) => op.operationId));
     const excluded = new Set([
       ...Object.keys(E10G_W6_EXCLUDED_OPS),
@@ -1056,8 +1122,6 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     ]);
     const withoutRequest = catalogWriteOps().map((op) => op.operationId).filter((id) => !covered.has(id));
     expect(withoutRequest.sort()).toEqual([
-      'cognition.gate',
-      'cognition.rewrite',
       'media.createTask',
       'media.upload',
       'media.uploadAndCreate',
@@ -1065,9 +1129,10 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
       'plugins.install',
       'pods.a2a',
     ]);
-    expect(covered.size).toBe(180);
+    expect(covered.size).toBe(182);
     expect(excluded.size).toBe(6);
-    expect(covered.size + excluded.size + 2).toBe(WRITE_OPS_TOTAL);
+    expect([...covered].filter((id) => excluded.has(id))).toEqual([]);
+    expect(covered.size + excluded.size).toBe(WRITE_OPS_TOTAL);
     expect(catalogWriteOps()).toHaveLength(WRITE_OPS_TOTAL);
   });
 });

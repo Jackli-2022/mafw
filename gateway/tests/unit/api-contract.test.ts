@@ -3721,7 +3721,7 @@ describe('api-contract: E10g request bodies (W1 session writes)', () => {
     return body;
   }
 
-  test('write ops with a requestBody count matches the coverage ledger (180 = P0 3 + W1 35 + W2W3 33 + W4 29 + W5 24 + W6 26 + W7 30)', () => {
+  test('write ops with a requestBody count matches the coverage ledger (182 = P0 3 + W1 35 + W2W3 33 + W4 29 + W5 24 + W6 26 + W7 30 + W8 2)', () => {
     const withBody: string[] = [];
     for (const methods of Object.values<any>(contract.paths)) {
       for (const [method, op] of Object.entries<any>(methods)) {
@@ -3729,7 +3729,7 @@ describe('api-contract: E10g request bodies (W1 session writes)', () => {
         if (op.requestBody) withBody.push(op.operationId);
       }
     }
-    expect(withBody).toHaveLength(180);
+    expect(withBody).toHaveLength(182);
     expect(withBody).toEqual(expect.arrayContaining([
       'session.create', 'tasks.submit', 'pods.tasks.create',
       'session.config.set', 'session.promptAsync', 'structured.submit',
@@ -3748,6 +3748,7 @@ describe('api-contract: E10g request bodies (W1 session writes)', () => {
       'python.execute', 'obs.capture', 'models.update', 'tools.execute',
       'eval.chatCompletions', 'llm.compress', 'mobile.devicesRegister',
       'devices.register', 'humanToken.rotate', 'skills.deopt',
+      'cognition.gate', 'cognition.rewrite',
     ]));
     // Binary / multipart / A2A pass-through inputs have no JSON body schema:
     // they stay out of the ledger (E10g spec §1.3; the closing REQUEST_EXCLUDED
@@ -4631,5 +4632,82 @@ describe('api-contract: E10g request bodies (W7 memory, media, tts, chat, python
     const schema = body.content['application/json'].schema;
     expect(Object.keys(schema.properties)).toEqual(['reason']);
     expect(schema.properties.reason.description).toContain('manual');
+  });
+});
+
+describe('api-contract: E10g request bodies (W8 cognition gate / rewrite)', () => {
+  function bodyOf(operationId: string): any {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const op of Object.values<any>(methods)) {
+        if (op?.operationId === operationId) {
+          expect(`${operationId}:requestBody`).toBe(`${operationId}:${op.requestBody ? 'requestBody' : 'missing'}`);
+          return op.requestBody;
+        }
+      }
+    }
+    throw new Error(`operation not found: ${operationId}`);
+  }
+
+  function schemaOf(operationId: string): any {
+    return bodyOf(operationId).content['application/json'].schema;
+  }
+
+  test('cognition.gate: sessionID+kind required, kind closed enum, tool conditional', () => {
+    const body = bodyOf('cognition.gate');
+    expect(body.required).toBe(true);
+    const schema = body.content['application/json'].schema;
+    expect(schema.required).toEqual(['sessionID', 'kind']);
+    expect(schema.properties.kind.anyOf.map((v: any) => v.const)).toEqual(['tool_call', 'prompt']);
+    // tool is needed only on the tool_call branch; the handler 400s there, but a
+    // prompt gate must stay valid without it → optional + description, no oneOf.
+    expect(schema.required).not.toContain('tool');
+    expect(schema.properties.tool.type).toBe('string');
+    expect(schema.properties.tool.description).toContain("kind is 'tool_call'");
+    expect(schema.properties.input.type).toBe('object');
+    expect(schema.properties.text.type).toBe('string');
+    expect(schema.description).toContain('conditionally required');
+  });
+
+  test('cognition.rewrite: sessionID+tool+output required, output.content is the anchor', () => {
+    const body = bodyOf('cognition.rewrite');
+    expect(body.required).toBe(true);
+    const schema = body.content['application/json'].schema;
+    expect(schema.required).toEqual(['sessionID', 'tool', 'output']);
+    expect(schema.properties.output.required).toEqual(['content']);
+    const content = schema.properties.output.properties.content;
+    expect(content.type).toBe('array');
+    // An empty array is a valid 200 ({content: []}), so no minItems.
+    expect(content.minItems).toBeUndefined();
+    // Runtime content parts: pin `type`, leave the rest open.
+    expect(content.items.required).toEqual(['type']);
+    expect(content.items.additionalProperties).toBe(true);
+    expect(schema.properties.output.required).not.toContain('isError');
+    expect(schema.properties.output.properties.isError.type).toBe('boolean');
+    // `input` is a host-envelope field the current handler ignores → declared
+    // optional (contract-cognition lists it, the handler does not read it).
+    expect(schema.required).not.toContain('input');
+    expect(schema.properties.input.type).toBe('object');
+  });
+
+  test('W8 closes the request ledger: cognition ops are covered, exclusions unchanged', () => {
+    const withBody: string[] = [];
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const [method, op] of Object.entries<any>(methods)) {
+        if (method === 'get' || !op?.operationId) continue;
+        if (op.requestBody) withBody.push(op.operationId);
+      }
+    }
+    expect(withBody).toHaveLength(182);
+    expect(withBody).toEqual(expect.arrayContaining(['cognition.gate', 'cognition.rewrite']));
+    for (const id of [
+      'plugins.install',
+      'media.upload',
+      'media.uploadAndCreate',
+      'media.createTask',
+      'mobile.mediaTaskUpload',
+      'pods.a2a',
+    ]) {
+      expect(`${id}:${withBody.includes(id)}`).toBe(`${id}:false`);
+    }
   });
 });

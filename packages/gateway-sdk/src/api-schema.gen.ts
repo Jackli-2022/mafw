@@ -4801,7 +4801,24 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Session the gate decision is scoped to (required; loopback-only route). */
+                    sessionID: string;
+                    /** @description Interception point: 'tool_call' before a tool runs, 'prompt' before a prompt is submitted (closed enum; anything else → 400). */
+                    kind: "tool_call" | "prompt";
+                    /** @description Tool name. Required when kind is 'tool_call' (missing → 400); ignored for kind:'prompt'. */
+                    tool?: string;
+                    /** @description Tool arguments for kind:'tool_call' (absent → {}). Free-form: the rule engine interpolates {{field}} from it. */
+                    input?: {
+                        [key: string]: unknown;
+                    };
+                    /** @description Prompt text for kind:'prompt' (non-string values are evaluated as ''). Ignored for kind:'tool_call'. */
+                    text?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -4819,7 +4836,32 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Session used for internal-exemption / observability scoping (required). */
+                    sessionID: string;
+                    /** @description Tool whose output is being rewritten; matched against on:tool_result rules (required). */
+                    tool: string;
+                    /** @description Host envelope field from the cognition contract; the current gateway handler does not read it (redaction keys on tool + output.content). */
+                    input?: {
+                        [key: string]: unknown;
+                    };
+                    /** @description Tool result envelope. `content` is the only field the gateway reads. */
+                    output: {
+                        /** @description Tool result content parts. Required and must be an array (otherwise → 400); an empty array is valid. */
+                        content: ({
+                            /** @description Content part type ('text' / 'image' / runtime-specific). Only text parts are redacted; everything else passes through unchanged. */
+                            type: string;
+                        } & {
+                            [key: string]: unknown;
+                        })[];
+                        /** @description Host-side error flag; echoed by the host, not read by the gateway handler. */
+                        isError?: boolean;
+                    };
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
