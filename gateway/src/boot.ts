@@ -94,6 +94,9 @@ import { PluginHost } from './plugins/package-host';
 import type { PluginEventFrame } from './plugins/plugin-events';
 import { PackageStateStore } from './plugins/package-state-store';
 import { PackageManager } from './plugins/package-manager';
+import { PluginSafety } from './plugins/plugin-safety';
+import { PluginDoctor } from './plugins/plugin-doctor';
+import { PluginAuditStore } from './plugins/plugin-audit-store';
 import type { PluginClientSnapshot } from './plugins/client-descriptor';
 import { createPluginPackageContext } from './plugins/package-context';
 import type { UsageStatsProvider } from './usage/plugin-context';
@@ -172,6 +175,12 @@ export interface BootKernel {
   pluginHost?: PluginHost;
   packageStateStore?: PackageStateStore;
   packageManager?: PackageManager;
+  bindPluginTrust(input: {
+    audit: PluginAuditStore;
+    safety: PluginSafety;
+    doctor: PluginDoctor;
+    packageDir: string;
+  }): void;
   pluginClientSnapshot?: PluginClientSnapshot;
   bindPluginAutomation(host: PluginHost): void;
   handlePluginEvent(event: PluginEventFrame): void;
@@ -454,6 +463,27 @@ export async function bootKernel(kernel: BootKernel): Promise<void> {
     pluginDir: pluginPackageDir,
     host: kernel.pluginHost,
     stateStore: kernel.packageStateStore,
+  });
+  const pluginAudit = new PluginAuditStore(kernel.getGatewayDb());
+  const pluginSafety = new PluginSafety({
+    state: kernel.packageStateStore,
+    host: kernel.pluginHost,
+    audit: pluginAudit,
+    oneRunSafeMode: process.env.MAFW_SAFE_MODE === '1',
+  });
+  const hostVersion = process.env.MAFW_HOST_VERSION
+    ?? (() => { try { return String(require('../../package.json').version); } catch { return '0.0.0'; } })();
+  const pluginDoctor = new PluginDoctor({
+    pluginDir: pluginPackageDir,
+    host: kernel.pluginHost,
+    state: kernel.packageStateStore,
+    hostVersion,
+  });
+  kernel.bindPluginTrust({
+    audit: pluginAudit,
+    safety: pluginSafety,
+    doctor: pluginDoctor,
+    packageDir: pluginPackageDir,
   });
   kernel.pluginHost.bindRuntime((entries) => kernel.runtimeLoader?.setPackageEntries(entries));
   // 客户端快照只在 commit 后替换；handler/源码永不下发。

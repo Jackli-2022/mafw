@@ -65,4 +65,17 @@ describe('plugin web ticket store', () => {
     expect(() => createPluginWebTicketStore({ ttlMs: 0 })).toThrow(/ttlMs/);
     expect(() => createPluginWebTicketStore({ ttlMs: Number.NaN })).toThrow(/ttlMs/);
   });
+
+  it('revokes every ticket for one package only', () => {
+    const store = createPluginWebTicketStore({ now: () => 0, ttlMs: 1000 });
+    const demo = store.issue('demo', { projectDir: '/repo', sessionID: 's1' });
+    const demo2 = store.issue('demo', { projectDir: '/repo', sessionID: 's2' });
+    const other = store.issue('other', { projectDir: '/repo' });
+
+    store.revokePackage('demo');
+
+    expect(store.verify('demo', demo.ticket)).toBeNull();
+    expect(store.verify('demo', demo2.ticket)).toBeNull();
+    expect(store.verify('other', other.ticket)).not.toBeNull();
+  });
 });

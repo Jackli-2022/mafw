@@ -345,6 +345,9 @@ import { createPluginAutomationActionResolver } from './plugins/automation-actio
 import type { PluginEventFrame } from './plugins/plugin-events';
 import { PackageStateStore } from './plugins/package-state-store';
 import { PackageManager } from './plugins/package-manager';
+import { PluginSafety } from './plugins/plugin-safety';
+import { PluginDoctor } from './plugins/plugin-doctor';
+import { PluginAuditStore } from './plugins/plugin-audit-store';
 import { mergePackageInventory } from './plugins/package-inventory';
 import type { PluginClientSnapshot } from './plugins/client-descriptor';
 import { createPluginPackageContext } from './plugins/package-context';
@@ -762,6 +765,10 @@ class MafwScheduler {
   private packageStateStore?: PackageStateStore;
   /** 统一插件包文件系统操作（Task 6 REST 面直接调用）。 */
   private packageManager?: PackageManager;
+  private pluginSafety?: PluginSafety;
+  private pluginDoctor?: PluginDoctor;
+  private pluginAuditStore?: PluginAuditStore;
+  private pluginPackageDir?: string;
   /** 最近一次已提交的统一插件包 client 快照（Task 6 的 /api/plugins/client 直接读）。 */
   private pluginClientSnapshot?: PluginClientSnapshot;
   /** Plugin Web surface 票据（进程内，8h TTL；重启即失效，客户端重取）。 */
@@ -2245,6 +2252,11 @@ class MafwScheduler {
           begin: () => { this.switchingRuntime = true; },
           end: () => { this.switchingRuntime = false; },
         }),
+      safety: () => this.pluginSafety,
+      doctor: () => this.pluginDoctor,
+      audit: () => this.pluginAuditStore,
+      reloadAll: async () => { await this.pluginHost?.reload(); },
+      revokeWebTickets: (name: string) => this.pluginWebTickets.revokePackage(name),
     };
   }
 
@@ -2322,10 +2334,33 @@ class MafwScheduler {
    * 合并回来，否则用户无法在管理界面重新启用。
    */
   private pluginPackageInventory(): PluginsPackageEntry[] {
+    const safeMode = this.packageStateStore?.isSafeMode() ?? false;
     return mergePackageInventory(
       this.pluginHost?.getState() ?? [],
       this.packageStateStore?.read().disabled ?? [],
-    );
+    ).map((entry) => {
+      const quarantine = this.packageStateStore?.getQuarantine(entry.name);
+      const degraded = this.packageStateStore?.getInstalled(entry.name)?.degraded;
+      const state = safeMode
+        ? 'safe-mode'
+        : quarantine
+          ? 'quarantined'
+          : entry.status === 'disabled'
+            ? 'disabled'
+            : degraded
+              ? 'degraded'
+              : entry.status === 'error'
+                ? 'error'
+                : entry.pendingRevision
+                  ? 'pending'
+                  : 'active';
+      return {
+        ...entry,
+        state,
+        ...(quarantine ? { quarantinedReason: quarantine.reason } : {}),
+        ...(degraded ? { degradedReason: degraded.reason } : {}),
+      } as PluginsPackageEntry;
+    });
   }
 
   /** P5 Wave 2：/api/plugins* deps（Plugin Hub 四类型统一面）。 */
@@ -2343,6 +2378,19 @@ class MafwScheduler {
   /** Fail-open ingress for plugin events that may trigger automation rules. */
   handlePluginEvent(event: PluginEventFrame): void {
     this.automationEngine?.handleExternalEvent(event);
+  }
+
+  /** Phase 6: wire audit / safety / doctor into the package route surface. */
+  bindPluginTrust(input: {
+    audit: PluginAuditStore;
+    safety: PluginSafety;
+    doctor: PluginDoctor;
+    packageDir: string;
+  }): void {
+    this.pluginAuditStore = input.audit;
+    this.pluginSafety = input.safety;
+    this.pluginDoctor = input.doctor;
+    this.pluginPackageDir = input.packageDir;
   }
 
   /** Opt-in first-party GoalEval verifier; default off (no extra model cost). */

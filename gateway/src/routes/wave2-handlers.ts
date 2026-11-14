@@ -31,6 +31,13 @@ import {
   handlePluginApply,
   handlePluginReload,
   handlePluginInvokeAction,
+  handlePluginKill,
+  handlePluginResume,
+  handlePluginQuarantine,
+  handlePluginUnquarantine,
+  handlePluginDoctor,
+  handlePluginDoctorAll,
+  handlePluginAudit,
 } from './plugin-packages';
 import type { PluginWebRouteDeps } from './plugin-web';
 import {
@@ -133,6 +140,20 @@ export function attachWave2Handlers(registry: RouteRegistry, gw: Wave2Gateway): 
       name: params.name,
       action: params.action,
     })));
+  registry.attachHandler('plugins.doctorAll', H(async (req, res) =>
+    handlePluginDoctorAll(req, res, gw.pluginPackageDeps())));
+  registry.attachHandler('plugins.doctor', H(async (req, res, params) =>
+    handlePluginDoctor(req, res, gw.pluginPackageDeps(), { name: params.name })));
+  registry.attachHandler('plugins.kill', H(async (req, res) =>
+    handlePluginKill(req, res, gw.pluginPackageDeps())));
+  registry.attachHandler('plugins.resume', H(async (req, res) =>
+    handlePluginResume(req, res, gw.pluginPackageDeps())));
+  registry.attachHandler('plugins.quarantine', H(async (req, res, params) =>
+    handlePluginQuarantine(req, res, gw.pluginPackageDeps(), { name: params.name })));
+  registry.attachHandler('plugins.unquarantine', H(async (req, res, params) =>
+    handlePluginUnquarantine(req, res, gw.pluginPackageDeps(), { name: params.name })));
+  registry.attachHandler('plugins.audit', H(async (req, res) =>
+    handlePluginAudit(req, res, gw.pluginPackageDeps())));
 
   // Task 4：Plugin Web surfaces。catalog 只登记三个精确路径；`ui/*` 与 `api/*`
   // 的通配匹配在 index.ts 的请求链（registry 只支持精确段数）。SSE 事件过滤器

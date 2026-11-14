@@ -341,4 +341,9 @@ export interface PackageState {
   pendingRevision?: string;
   /** Content fingerprint of the committed activation (Host diagnostics). */
   fingerprint?: string;
+  /** Phase 6 trust metadata (additive; legacy packages read as trusted/v1). */
+  apiVersion?: 1 | 2;
+  kind?: 'trusted' | 'untrusted';
+  transport?: 'in-process' | 'worker';
+  permissions?: string[];
 }
