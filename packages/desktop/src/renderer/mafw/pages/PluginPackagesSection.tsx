@@ -317,6 +317,9 @@ export function PluginPackagesSection(props: { sessionID?: string; creatorEntry?
   })
 
   const configOptions = createMemo<PluginConfigPageDescriptor[]>(() => configView()?.pages ?? [])
+  const safeMode = createMemo(() =>
+    inventory().some((entry) => (entry as PluginsPackageEntry & { state?: string }).state === "safe-mode"),
+  )
 
   return (
     <>
@@ -370,6 +373,12 @@ export function PluginPackagesSection(props: { sessionID?: string; creatorEntry?
           <div class="mafw-config-section-desc">
             统一插件包（目录内含 plugin.json）。安装前先检查候选包；覆盖已安装包会显示版本与贡献差异并要求确认。
           </div>
+
+          <Show when={safeMode()}>
+            <div class="mafw-hub-empty">
+              安全模式：所有插件包已停止。确认问题后由人类凭据恢复。
+            </div>
+          </Show>
 
           <Show when={loadError()}>
             <div class="mafw-config-error-row">

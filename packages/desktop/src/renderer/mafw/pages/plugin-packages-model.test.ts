@@ -5,6 +5,7 @@ import type { PluginClientDescriptor } from "@mafw/plugin-contract"
 
 import {
   buildPackageRows,
+  buildPluginPackagesModel,
   contributionBadges,
   deleteConfirmation,
   disableConfirmation,
@@ -524,5 +525,32 @@ describe("plugin package confirmations", () => {
     const enabled = enableConfirmation({ ...EMPTY_VIEW, name: "demo" })
     assert.match(enabled.title, /启用插件包 demo/)
     assert.equal(enabled.danger, false)
+  })
+
+  it("surfaces safe mode and quarantine without hiding rows", () => {
+    const model = buildPluginPackagesModel({
+      safeMode: true,
+      packages: [
+        { ...row({ name: "acme" }), state: "safe-mode", quarantinedReason: "integrity" } as any,
+        { ...row({ name: "beta", enabled: false, status: "disabled" }) } as any,
+      ],
+    })
+    assert.equal(model.safeMode, true)
+    assert.deepEqual(model.rows.map((entry) => entry.name), ["acme", "beta"])
+    assert.match(model.rows[0].badge ?? "", /safe-mode/)
+    assert.match(model.banner ?? "", /safe mode|安全模式/)
+  })
+
+  it("maps trust and transport fields", () => {
+    const model = buildPluginPackagesModel({
+      safeMode: false,
+      packages: [{
+        ...row({ name: "acme" }),
+        apiVersion: 2, kind: "untrusted", transport: "worker", permissions: ["actions"],
+      } as any],
+    })
+    assert.equal(model.rows[0].kind, "untrusted")
+    assert.equal(model.rows[0].transport, "worker")
+    assert.deepEqual(model.rows[0].permissions, ["actions"])
   })
 })

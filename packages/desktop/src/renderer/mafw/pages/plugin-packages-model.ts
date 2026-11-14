@@ -11,7 +11,14 @@
 import type { PluginsPackageEntry, PluginCheckResult } from "@mafw/sdk"
 import type { PluginClientDescriptor } from "@mafw/plugin-contract"
 
-export type PackageStatus = "active" | "pending" | "error" | "disabled"
+export type PackageStatus =
+  | "active"
+  | "pending"
+  | "error"
+  | "disabled"
+  | "quarantined"
+  | "safe-mode"
+  | "degraded"
 
 export interface PackageContributionBadge {
   key: string
@@ -57,6 +64,13 @@ export interface PackageRowView {
   actions: PackageActionFlags
   diagnostics: PackageDiagnostic[]
   descriptor?: PluginClientDescriptor
+  apiVersion?: number
+  kind?: "trusted" | "untrusted"
+  transport?: "in-process" | "worker"
+  permissions: string[]
+  quarantinedReason?: string
+  degradedReason?: string
+  badge?: string
 }
 
 export interface OverwriteDiff {
@@ -96,6 +110,9 @@ const STATUS_LABEL: Record<PackageStatus, string> = {
   pending: "待应用",
   error: "错误",
   disabled: "已禁用",
+  quarantined: "已隔离",
+  "safe-mode": "安全模式",
+  degraded: "已回滚",
 }
 
 const LEGACY_CONTRIBUTIONS: Record<string, string> = {
@@ -112,6 +129,10 @@ const LEGACY_CONTRIBUTIONS: Record<string, string> = {
 // ---------------------------------------------------------------------------
 
 export function packageStatus(row: PluginsPackageEntry): PackageStatus {
+  const lifecycle = (row as PluginsPackageEntry & { state?: PackageStatus }).state
+  if (lifecycle === "safe-mode" || lifecycle === "quarantined" || lifecycle === "degraded") {
+    return lifecycle
+  }
   const enabled = row.enabled !== false && row.status !== "disabled"
   if (!enabled) return "disabled"
   if (row.status === "error" || (typeof row.error === "string" && row.error.length > 0)) {
@@ -282,7 +303,23 @@ export function buildPackageRows(
       actions: packageActions(entry, descriptor),
       retainsActiveRevision: retainsActiveRevision(entry),
       diagnostics: packageDiagnosticsFor(entry, notices),
+      permissions: Array.isArray((entry as any).permissions)
+        ? [...(entry as any).permissions]
+        : [],
     }
+    const extended = entry as PluginsPackageEntry & {
+      apiVersion?: number
+      kind?: "trusted" | "untrusted"
+      transport?: "in-process" | "worker"
+      quarantinedReason?: string
+      degradedReason?: string
+    }
+    if (typeof extended.apiVersion === "number") view.apiVersion = extended.apiVersion
+    if (extended.kind) view.kind = extended.kind
+    if (extended.transport) view.transport = extended.transport
+    if (extended.quarantinedReason) view.quarantinedReason = extended.quarantinedReason
+    if (extended.degradedReason) view.degradedReason = extended.degradedReason
+    view.badge = [view.kind, view.transport, view.status].filter(Boolean).join(" · ")
     if (typeof entry.version === "string" && entry.version.length > 0) view.version = entry.version
     if (typeof entry.revision === "string" && entry.revision.length > 0) {
       view.activeRevision = entry.revision
@@ -476,5 +513,27 @@ export function enableConfirmation(row: Pick<PackageRowView, "name">): Confirmat
     message: "启用后会重新加载该插件包，并在提交成功后恢复其贡献。",
     confirmLabel: "启用",
     danger: false,
+  }
+}
+
+export function safeModeBanner(safeMode: boolean): string | undefined {
+  return safeMode
+    ? "安全模式：所有插件包已停止。确认问题后由人类凭据恢复。"
+    : undefined
+}
+
+export function buildPluginPackagesModel(input: {
+  safeMode: boolean
+  packages: readonly PluginsPackageEntry[]
+}): { safeMode: boolean; banner?: string; rows: PackageRowView[] } {
+  const rows = buildPackageRows(input.packages, [], [])
+  return {
+    safeMode: input.safeMode,
+    ...(safeModeBanner(input.safeMode) ? { banner: safeModeBanner(input.safeMode) } : {}),
+    rows: rows.map((row) => ({
+      ...row,
+      status: input.safeMode ? "safe-mode" : row.status,
+      statusLabel: packageStatusLabel(input.safeMode ? "safe-mode" : row.status),
+    })),
   }
 }
