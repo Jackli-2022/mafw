@@ -672,10 +672,16 @@ worker 启动前：
 
 ### 6.3 演练（drill）
 
-新增 `scripts/plugin-trust-drill.mjs`，在临时目录中构造包 / manager / host，不写真实 `~/.mafw`，不启动完整 gateway。CI 命令：
+新增 `gateway/tests/integration/plugin-trust-drill.test.ts`（ts-jest），在临时目录中构造包 / manager / host，不写真实 `~/.mafw`，不启动完整 gateway。用 Jest 而不是独立 `.mjs`，是为了复用现有 TS 模块和 ts-jest，不引入额外的运行时加载链。CI 命令：
 
 ```bash
 npm run drill:plugin-trust
+```
+
+根 `package.json` 的脚本转发到 `gateway/package.json` 的 `drill:plugin-trust`，后者执行：
+
+```bash
+npx jest --runInBand tests/integration/plugin-trust-drill.test.ts
 ```
 
 输出 `artifacts/plugin-trust-drill.json`（CI artifact），字段：
