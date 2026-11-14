@@ -1,7 +1,8 @@
 # 2026-11-14 · 记忆管线运维修复（reflection / cron 补跑 / T1 回填）
 
 - **分支**：`fix/memory-pipeline-ops`（基于 main `919f432e`）
-- **状态**：实现与 focused 测试完成；待全量门禁、合并与部署
+- **状态**：已合并并部署；生产验证通过
+- **部署**：`ed28ff84`（有界 reflection / cron 补跑 / T1 回填）→ `dfd2d292`（无工具 reflector）→ `3592b082`（opencode system prompt 透传）
 - **范围**：只改 gateway 记忆管线；统一插件包、runtime 契约、adapters、插件中心零改动
 
 ## 观测到的三类故障
@@ -48,12 +49,25 @@
 
 新增/扩展：
 
-- `gateway/tests/unit/recall/reflection-resilience.test.ts`（8 项）
-  - 解释文字包裹 JSON、空 insights 推进游标、不可解析保留 pending、worker 失败上报、`maxSessionsPerRun`、批间 deadline、restore 选择上限
+- `gateway/tests/unit/recall/reflection-resilience.test.ts`（12 项）
+  - 解释文字包裹 JSON、空 insights 推进游标、不可解析保留 pending、worker 失败上报、`maxSessionsPerRun`、批间 deadline、restore 选择上限、`memory-reflector` 身份禁用全部工具、reflection 使用该身份
 - `gateway/tests/unit/recall/pipeline-catchup.test.ts`（7 项）
   - 日/周规则错过与未错过、从未运行不补、非法时间戳、非记忆管线动作过滤
 - `gateway/tests/unit/memory/t1-backfill.test.ts`（+1 项）
   - 默认回填上限 ≥ 3000
+- `gateway/tests/unit/opencode-adapter.test.ts`（+2 项）
+  - `prompt` / `promptAsync` 把 `system` 前置进原生 prompt text
+
+全量：**927/927 suites，7350/7352 tests passed，0 failed，2 skipped**（`human-token` 的 2 个 POSIX-only 用例）。
+
+## 生产验证（2026-11-14 20:11 +08:00）
+
+- `memory:reflect` catch-up 一次运行：`sessions=14 reviewed=133 distilled=184 deduped=0 failed=0 deferred=330`；heartbeat `lastRunAt/lastSuccessAt=2026-11-14T12:11:37Z`，`stale=false`。
+- boot restore 额外完成 3 个 session：`reviewed=39/60/83 → distilled=42/71/82`。
+- 精确 provenance `t1.provenance.withExact`：32 → 183（reflection insight 带回了 raw-T1 replay 的 `source_trace_ids`）。
+- 周级补跑：`memory:review` / `memory:skillPromotion` / `memory:axiomDistill` 均在启动后运行并记录成功；axiom 产出 3 个候选。
+- 部署配置实测：`t1BackfillLimit=3000`、`reflectionMaxRunMs=900000`、`reflectionMaxSessionsPerRun=50`、`restoreReflectMaxSessions=3`。
+- T1 覆盖率 37.5%，archive 70,151；下一次 `memory:decay` 起按 3000/天追赶（净增约 +2500/天）。
 
 ## 已知限制
 
