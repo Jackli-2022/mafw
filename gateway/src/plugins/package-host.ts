@@ -428,6 +428,16 @@ export class PluginHost {
     return this.enqueue(() => this.runRemovePackage(name));
   }
 
+  /** Disposes one package's committed/pending revision without touching disk. */
+  deactivate(name: string): Promise<boolean> {
+    return this.enqueue(() => this.runDeactivate(name));
+  }
+
+  /** Disposes every committed/pending package. Used by the kill switch. */
+  deactivateAll(): Promise<string[]> {
+    return this.enqueue(() => this.runDeactivateAll());
+  }
+
   /**
    * Does this committed package own the runtime name the gateway is using?
    *
@@ -782,6 +792,60 @@ export class PluginHost {
     // The commit broadcast covers this change.
     this.notifyStateChanged(false);
     return { removed: true, revision };
+  }
+
+  private async runDeactivate(name: string): Promise<boolean> {
+    const active = this.active.get(name);
+    const pending = this.pending.get(name);
+    if (!active && !pending) return false;
+
+    const bags: RegistrationBag[] = [];
+    if (active) bags.push(active.bag);
+    if (pending?.activation) bags.push(pending.activation.bag);
+    await this.disposeBags(bags);
+
+    const nextPending = new Map(this.pending);
+    nextPending.delete(name);
+    this.pending = nextPending;
+
+    if (!active) {
+      this.notifyStateChanged(true);
+      return true;
+    }
+
+    const nextActive = new Map(this.active);
+    nextActive.delete(name);
+    const revision = this.nextToken();
+    this.active = nextActive;
+    this.snapshot = this.buildSnapshot(revision);
+    this.publishEntries();
+    this.snapshotCb?.(this.snapshot);
+    this.broadcastPluginsChanged(revision);
+    this.notifyStateChanged(false);
+    return true;
+  }
+
+  private async runDeactivateAll(): Promise<string[]> {
+    const names = [...new Set([...this.active.keys(), ...this.pending.keys()])].sort();
+    if (names.length === 0) return [];
+    const bags: RegistrationBag[] = [];
+    for (const name of names) {
+      const active = this.active.get(name);
+      const pending = this.pending.get(name);
+      if (active) bags.push(active.bag);
+      if (pending?.activation) bags.push(pending.activation.bag);
+    }
+    await this.disposeBags(bags);
+
+    const revision = this.nextToken();
+    this.active = new Map();
+    this.pending = new Map();
+    this.snapshot = this.buildSnapshot(revision);
+    this.publishEntries();
+    this.snapshotCb?.(this.snapshot);
+    this.broadcastPluginsChanged(revision);
+    this.notifyStateChanged(false);
+    return names;
   }
 
   /**
