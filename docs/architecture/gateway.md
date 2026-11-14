@@ -1396,7 +1396,7 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 | # | 现状 | 边界 |
 |---|---|---|
 | E10d-1 | **memory 扩展 / `lead.context` / pod 读接口 8 ops** 的 200 response schema：`routes/schemas/memory-extra.ts`（new，`memory.mergedSearch` / `memory.getEnergyDistribution` / `memory.getL5Axioms` / `memory.listSticky`）、`routes/schemas/lead.ts`（扩展，`lead.context`）、`routes/schemas/pods.ts`（扩展，`pods.transcript` / `pods.goals.worktree.diff`）、catalog 挂 `pods.lookup`。`AssertEq`：`mergedSearch.results` item ↔ `MemoryFact`、`getEnergyDistribution` ↔ `EnergyDistribution`、`getL5Axioms` ×2（`Axiom` / `L5Heuristic`）、`listSticky` ↔ client `memory.listSticky` 返回类型、`pods.lookup` ↔ `PodDetail`、`pods.transcript` ↔ client `pod.transcript` 返回类型、`worktree.diff` ↔ `PodWorktreeDiff`。 | **`pods.lookup` 复用 `PodDetailResponse`**：`handlePods` 的 lookup 分支与 `pods.get` 共用 `enrichPodDetail()`，字段面完全一致（非 lead 成员只是 `sessions: []`）→ 不另立 schema，api-contract 用 `schemaOf('pods.lookup') toEqual schemaOf('pods.get')` 钉住。**`pods.transcript.transcript` 是 runtime-owned 边界**（owner = runtime session history，`PodRouteDeps.transcript()` 直接透传；part 判别联合随 runtime 演进）→ 只承诺「外层仅此一键 + 值任意 JSON（`Type.Unknown()`）」，不整响应放宽。`memory.listSticky` 的 503 / catch 分支回**同形** fail-open 体 `{entries: [], budget}`，故 200 schema 恰好也描述两个降级体。`lead.context` 四出口同形（非 Lead / working set 关闭 / 无 projectDir → `EMPTY_CONTEXT`），`topicId` / `title` 只有 recalled-topic 块带 → optional。 |
-| E10d-2 | **DTO 同步（仅类型面）**：`Axiom` 补 `source: 'manual' \| 'distilled'` 与 `created_at`；`L5Heuristic` 的 `success_rate` / `source_goal_ids` / `created_at` 由 optional 收紧为必填；`StickyNote.type` 从裸 `string` 收窄为 `MemoryUnit['type']`。三处都以 handler 写入面为事实源（`L5Store.addAxiom` / `addHeuristic` 恒写全列，note-board 条目来自 `HarmonicUnit`），零 handler 改动、wire 字节不变；desktop `NotesDock` 用自有 `type: string` 接口、TUI 只读 → 0 破坏性消费者。 | **历史数据可能比契约短**：`~/.mafw` 下更早版本 / 手工编辑过的 `axioms.json` / `heuristics.json` 若缺列，读路径 `JSON.parse` 不校验、wire 仍会缺键——OpenAPI 只是**元数据**（不运行时拒绝），契约描述的是当前 store 写入面。`memory.mergedSearch` 的 `MemoryFact.type` 仍是 `string`（接口未收窄：parametric 行恒 `'delta'`，harmonic 行取记忆词表），不枚举以免把开放度写进契约。 |
+| E10d-1b | **DTO 同步（仅类型面）**：`Axiom` 补 `source: 'manual' \| 'distilled'` 与 `created_at`；`L5Heuristic` 的 `success_rate` / `source_goal_ids` / `created_at` 由 optional 收紧为必填；`StickyNote.type` 从裸 `string` 收窄为 `MemoryUnit['type']`。三处都以 handler 写入面为事实源（`L5Store.addAxiom` / `addHeuristic` 恒写全列，note-board 条目来自 `HarmonicUnit`），零 handler 改动、wire 字节不变；desktop `NotesDock` 用自有 `type: string` 接口、TUI 只读 → 0 破坏性消费者。 | **历史数据可能比契约短**：`~/.mafw` 下更早版本 / 手工编辑过的 `axioms.json` / `heuristics.json` 若缺列，读路径 `JSON.parse` 不校验、wire 仍会缺键——OpenAPI 只是**元数据**（不运行时拒绝），契约描述的是当前 store 写入面。`memory.mergedSearch` 的 `MemoryFact.type` 仍是 `string`（接口未收窄：parametric 行恒 `'delta'`，harmonic 行取记忆词表），不枚举以免把开放度写进契约。 |
 
 ### 台账口径（E10d）
 
@@ -1413,6 +1413,9 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 
 - 剩余约 **257** 个 op 的 response schema 覆盖（61/318，19.2%；台账 `npm run schema:coverage`，
   见「E10 契约覆盖」/「E10b 契约覆盖第二批」/「E10c 契约覆盖第三批」/ 本节）。
+- **note-board budget 的 `perNoteCap` 未建模**（E10c `recall.pinned` / E10d `memory.listSticky` 同一选择）：
+  wire 是 `{...NOTE_BOARD_BUDGET, used}`（含 `perNoteCap: 240`），schema / SDK `StickyNoteBudget` 只声明
+  `max` / `maxChars` / `used`；补全会连带改 SDK 类型。
 - POST/PUT/PATCH/DELETE 的请求 / 响应 schema；错误体仍不建模（`memory.get` 404 只在测试里反向断言）。
 - 强制版本协商 / SDK 全量 schema 类型化。
 - **`memory.get` 的 HarmonicUnit 手工镜像漂移**（E10c 遗留）：`HarmonicUnitSchema` 仍无 gateway 侧
