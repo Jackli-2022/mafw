@@ -52,8 +52,8 @@ export function closeLeftDockState(s: LeftDockState, io: LeftDockStorage): LeftD
 //（760 chat 默认档 + 730 工作台，spec 2026-11-04-agent-workbench-right-primary §4.1）。
 // 只保证默认档：chat 拉 520/640 不参与阈值，由 workbench-detents 护栏钳制。
 export const LEFT_RAIL_WIDTH = 46
-/** split 模式：推挤必须同时保住 chat 阅读档与工作台。 */
-export const PUSH_PAIR_BUDGET = 1490 // 760 chat 默认档 + 730 工作台保底
+/** split 模式：两侧都放得下才 push（chat 舒适 520 + 工作台 720）。 */
+export const PUSH_PAIR_BUDGET = 1240
 
 /**
  * 推挤预算：窗口宽 ≥ 此值才 push。

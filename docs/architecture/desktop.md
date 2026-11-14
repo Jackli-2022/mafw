@@ -17,7 +17,7 @@
   兼容则 attach（Config 显示「已连接」），版本/schema 不符则 conflict 并提供「用当前构建重启」；
   `MAFW_DEV_ADOPT=0` 表示不 attach、提示先停止现有 gateway。详见 `docs/architecture/gateway.md`。
 - **主布局**：左 IconRail（46px，文件/改动/讨论/搜索/便签/团队/审批/Config）+ 左 dock；主区 = chat 指挥列
-  + 右工作台（文档舞台）。chat 档位 520/640/760（默认 760）；split push 预算 1490；
+  + 右工作台（文档舞台）。chat 档位 520/640/760（默认 760）；split push 预算 1240；
   窄窗二选一按当前可见栏算 push（Chat 520 / Workbench 720）；
   `Ctrl+Alt+F` 专注模式；最小窗口 **900×600**。窗口可用宽 ≥1240 并排（chat 520–760），
   <1240 改为 **Chat / Workbench 全宽切换**（chat 保持 760 居中，composer 不被侧面板覆盖）。
@@ -345,9 +345,9 @@ chatview 是指挥列，左侧 rail 负责导航与团队状态。
   分段控件；chat 视图 `.mafw-main.mafw-narrow-chat .mafw-chat` 宽 `min(760px, 100%)` 居中，
   composer 全宽；隐藏 resize handle。320 只作为极端兜底。
 - **尺寸与字体**：chat 档位 `520/640/760`、默认/双击 **760**；`WORKBENCH_MIN_WIDTH=720`；
-  `PUSH_PAIR_BUDGET=1490`（split 默认 dock push 点约 1800）。窄窗二选一不按整窗 split 预算：
-  `resolveMode` 按当前可见栏算，Chat 用 520（默认 dock 264 → 830 可推）、Workbench 用 720
-  （→ 1030 可推）；切 Chat / Workbench 时左栏可在 push / overlay 之间切换。
+  `PUSH_PAIR_BUDGET=1240`（520 chat + 720 工作台，split 默认 dock push 点约 1550）。
+  窄窗二选一不按整窗 split 预算：`resolveMode` 按当前可见栏算，Chat 用 520（默认 dock 264 → 830 可推）、
+  Workbench 用 720（→ 1030 可推）；切 Chat / Workbench 时左栏可在 push / overlay 之间切换。
   默认窗口 1720×1000、硬下限 **900×600**。
   chat 作用域 token `--mafw-chat-reading/--mafw-chat-composer: 16px`，composer max-height 220px；
   全局 UI base font 仍 14px。
