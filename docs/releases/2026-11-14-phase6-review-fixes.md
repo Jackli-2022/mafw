@@ -44,7 +44,9 @@
 
 - 定向插件套件：42 suites / 376 tests pass。
 - gateway typecheck：0。
-- gateway 全量：见 `gateway-review-fixes.log`（待记录）。
+- gateway 全量：**7422 passed / 2 skipped / 7424 total**（946 suites，`--testTimeout=20000`）。
+- desktop：3868 / 3868；SDK：226 / 226；plugin-contract：44 / 44。
+- drill：10/10（注意：部分场景仍是模块级，见 I12）。
 
 ## 结论
 
