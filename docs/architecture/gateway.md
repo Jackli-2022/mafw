@@ -1839,7 +1839,61 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
   `node scripts/analyze-routes.cjs` = `TOTAL 0 (match 0, equals 0)`。
 - **F3**：交付记录里 W6 行的 `api-contract +9 / coverage +4` 实为 **+11 / +5（+16）**，已更正。
 
-### E10h-P0（写响应台账 + 2 个 pilot，进行中）
+---
+
+## E10h 写响应契约（P0 + R1–R6，2026-11-15）
+
+> 承接 E10g（请求 **189/195**）。E10h 给 **195 个写 op**（非 GET）补 200 响应契约：
+> 写响应 **0 → 194/195（99.5%）+ 1 排除（`tts.speakStream`）**，total response
+> **127 → 320/327（97.9%）**；GET 侧 126/132 已全部覆盖（6 个非 JSON GET 不进 JSON schema）。
+> spec：`docs/superpowers/specs/2026-11-15-gateway-e10h-write-responses-design.md`；
+> plan：`docs/superpowers/plans/2026-11-15-gateway-e10h-write-responses.md`；
+> 交付记录：`docs/releases/2026-11-15-gateway-e10h-write-responses.md`。
+
+| 批次 | 范围 | 写响应 | total response |
+|---|---|---|---|
+| P0 | 台账（`write responses: X/195`）+ pilot `session.create` / `tasks.submit` | +2 → 3/195 | 129/327 |
+| R1 | session 写接口（usage plugins / subagents / queue / rename / delete …） | +35 → 38/195 | 164/327 |
+| R2 | pods（含 `pod.events.*` / tasks / messages / goals / reviewItems / memory / a2a）+ task / terminal / background / fileHistory | +35 → 73/195 | 199/327 |
+| R3 | goals / decisions / lead / standing / cognition | +31 → 104/195 | 230/327 |
+| R4 | events / automations / approvals / questions / triage / permissions | +24 → 128/195 | 254/327 |
+| R5 | mcp / plugins（含 Phase 6 自愈面 8 个）/ runtime / config / project / manager / commands / models | +35 → 163/195 | 289/327 |
+| R6 | memory / media / tts / chat / python / obs / tools / eval / llm / mobile / devices / skills | +31 → 194/195 | 320/327 |
+
+- **响应规则（三选一，handler 是事实源）**：
+  1. **复用读侧 DTO**：写后读回或同一投影时直接指向既有 schema 对象（`tasks.submit` ≡ `tasks.get`、
+     `pods.create` ≡ `PodDetailResponse`、`permissions.setMode` ≡ `permissions.getMode`、
+     `models.update` 的 `recall|media|goal` ≡ `models.get`、`embedding.update` 的 `current|runtime`
+     ≡ `embedding.get`、`devices.register` 的 `device` ≡ `devices.list` item …）。为此只给内部
+     schema 加 `export`，**不改任何既有响应形状**。
+  2. **按 handler wire 新写**（`routes/schemas/*-write-responses.ts`，按域拆文件）；常量回执直接用
+     `Type.Literal` 声明 handler 的唯一写出值，不放宽到 SDK 的宽类型（`{success:true}` /
+     `{status:'paused'}` / `{ok:true}` / `state:'TASK_STATE_WORKING'` / `mime:'audio/wav'`）。
+  3. **排除**：200 不是单个 JSON 文档 → `WRITE_RESPONSE_EXCLUDED`（本波唯一项 `tts.speakStream`）。
+- **声明式契约为界**：`toOpenApiPaths()` 只投影 `responses.200.content['application/json']`，
+  **无运行时响应校验**（与请求面、E10f 同策略）。错误体（4xx/5xx）一律不建模。
+- **200 分支必须如实联合**：「未命中 / 失败也是 200」的 handler 事实用判别联合表达，不收敛成
+  带 optional 的对象（`session.promptAsync` 三态、`memory.add` / `setSticky` / `merge`、
+  `obs.capture`、`triage.confirm` 三分支、`plugins.enable|disable|delete` 的
+  `UpdateResult`｜`PluginEntry` 双分支、`automations.*` / `triage.dismiss|reject` 的
+  `not_found` 分支）。收敛会合法化 handler 永不发出的键组合。
+- **空体 200（`Type.Object({})`）只有 4 个**：`session.revert` / `unrevert` / `summarize` /
+  `background`（handler 逐字 `json(200, {})`），成功语义只在状态码上。
+- **顶层开放对象 4 个**（body 不由 gateway 拥有）：`pods.a2a` / `media.createTask`（A2A JSON-RPC
+  信封，协议边界，**不排除**——仍是 JSON 200）、`session.command`（无 gateway handler，尾部反代
+  runtime serve）、`mafwCommands.run`（命令注册表可追加任意键）。`plugins.invoke.output`
+  是**字段级**开放边界（owner = 包的 `outputSchema`），网关只承诺 JSON 可序列化 + ≤256KB。
+- **非 JSON 请求 ≠ 非 JSON 响应**：`media.upload` / `media.uploadAndCreate` /
+  `mobile.mediaTaskUpload`（原始字节 / multipart，E10g 请求排除）与 `plugins.install`
+  （原始 `.js` 字节流）在本波补了闭合的 JSON 200。
+- **收口守卫**：`tests/unit/architecture/write-response-coverage.test.ts`（7 tests）——每个非 GET op
+  恰好「有 `response`」或「在 `WRITE_RESPONSE_EXCLUDED`」其一、排除项具名 + 带原因 + 不声明
+  `response`、**195 = 194 + 1**、全量 **320/327** 且 7 个缺口逐个对账（6 个非 JSON GET + 1 排除）、
+  写分母不含任何 GET、四条形状清单（空体 4 / 顶层开放 4 / 联合 10 / 其余闭合）钉死，外加
+  **mutation test**（抽掉一个 `response` 或一个排除项 → 按 operationId 报错，恢复后归零）。
+  GET 读表面仍由 `schema-coverage.test.ts#E10_COVERED_OPS` 独立锁定，本守卫不重复断言 GET。
+
+### E10h-P0（写响应台账 + 2 个 pilot）
 
 - 分母固定 **195 写 op**（E10g 的同一集合）；P0 只补两个响应 schema，写响应 **3/195**
   （存量 `humanToken.rotate` + 本批 2 个），total response 台账 127 → **129/327**。
@@ -2090,6 +2144,34 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
   （chat ×2、tts speak ×2、media upload/uploadAndCreate ×3、pluginsReload、
   embedding.update ×2）。生成物 diff 恰好这 31 个 op（重跑幂等）。
 
+### E10h-close（收口守卫 + 门禁，2026-11-15）
+
+- **写入收口**：写响应 **194/195（99.5%）**、total response **320/327（97.9%）**；catalog 仍
+  **327 ops / 293 paths**，请求台账仍 **189/195**，handler / 路由 / wire 字节零变化。
+- **新守卫 `tests/unit/architecture/write-response-coverage.test.ts`（7 tests / 1 suite）**：
+  1. 每个非 GET op 恰好「声明 `response`」或「在 `WRITE_RESPONSE_EXCLUDED`」其一（按 operationId 点名）；
+  2. 排除项是写 op + 带原因 + 不声明 `response`，键集恰为 `['tts.speakStream']`；
+  3. **195 = 194 + 1**（去重 + 无未记账 op）；
+  4. **327 = 320 + 7**，7 个缺口逐个对账（6 个具名非 JSON GET + 1 个写排除）；
+  5. 写分母不含任何 GET、GET 不进排除表（**GET 读表面不在本守卫重复断言**，仍在
+     `schema-coverage.test.ts#E10_COVERED_OPS`）；
+  6. 200 形状清单：空体 **4** / 顶层开放 **4** / 联合 **10**，其余闭合；
+  7. **mutation test**：抽掉一个 `response`、或临时删掉唯一排除项 → 审计按 operationId 报错，
+     恢复后归零（审计是纯函数 `auditWriteResponses()`，源文件不动）。
+- **门禁（worktree @ `86a4ba5a` + 本收口）**：gateway `tsc -p tsconfig.json` **0**；全量 jest
+  `--runInBand --forceExit --no-coverage` **7624 tests（7612 passed / 9 failed / 3 skipped）**，
+  3 个失败 suite 全是已知 env-red（`plugin-package-e2e` + `claude-adapter-acceptance` +
+  `claude-adapter-coverage`，9 条），零契约红；
+  `schema:coverage` **responses 320/327 + write responses 194/195 + requests 189/195**；
+  `analyze-routes.cjs` **TOTAL 0**；`emit:openapi` **327 routes / 293 paths / 327 operations** 无 diff；
+  SDK `tsc` **0** + 全量 **226** + `contract.test.ts` **4/4** + `gen:api` 幂等；
+  desktop 全量（仅 resolver 1 条 env-red）+ `tsgo -p`（`node:tls` 2 条）；
+  mobile 定向 **31** + `flutter analyze` **0**；TUI env-red（`pi-tui` 未安装）；
+  `kernel-split-guards` **7/7**（定向四套 297 passed：api-contract 231 + coverage 52 + 本守卫 7 + 7）。
+  明细见 `docs/releases/2026-11-15-gateway-e10h-write-responses.md`。
+- **残余**：见「残余（E11 后仍 deferred）」——写响应只剩 `tts.speakStream`；错误体、版本协商、
+  TUI triage phantom、mobile 工作 tab 增量 patch 仍 out of scope。
+
 ---
 
 ## E11 身份 / 配额硬化（2026-11-13）
@@ -2125,11 +2207,17 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
   「E10b 契约覆盖第二批」/「E10c 契约覆盖第三批」/「E10d 契约覆盖第四批」/「E10e 契约覆盖第五批」/
   「E10f 全量读表面收口」/ 本节 E11-1）。
   **E10g（+E10g-fix）后**：**读表面已收口**（127/327 response，JSON GET 127/133 = 100%）、
-  **请求表面已收口**（189/195，剩余 6 个二进制 / multipart / A2A 显式排除）。剩下的 response
-  缺口 = **194 个写 op 的 200 体** + **6 个非 JSON GET**（二进制 / SSE，不进 JSON schema）。
+  **请求表面已收口**（189/195，剩余 6 个二进制 / multipart / A2A 显式排除）。
+  **E10h 后（终态）**：**320/327（97.9%）** = GET **126/132** + 写响应 **194/195（99.5%）**；
+  剩余 7 个缺口 = **6 个非 JSON GET**（`event.subscribe` SSE / `media.artifact` /
+  `mobile.ttsArtifact` / `pods.a2aArtifact` / `plugins.webAsset` / `plugins.webEvents`，
+  传输层内容类型不进 JSON schema）+ **1 个非 JSON 写**（`tts.speakStream`：PCM16 分块流，
+  `WRITE_RESPONSE_EXCLUDED` 的唯一项；要建模只能换 `text/event-stream` 帧 schema，
+  当前 OpenAPI 3.1 投影只描述 JSON content）。请求面维持 **189/195**（6 个二进制 /
+  multipart / A2A 显式排除）。
 - 强制版本协商 / SDK 全量 schema 类型化。
-- **写面 response schema**（POST/PUT/PATCH/DELETE 的 200 成功体）：E10g 只补了请求体，
-  响应仍只覆盖读面；错误体一律不建模。
+- **错误体（4xx/5xx）不建模**：读写两面都只声明 200 成功体（声明式契约，handler 是事实源，
+  无运行时响应校验）。
 - **TUI** triage phantom 字段渲染（`reason` / `goalId` / `severity`；真实 wire 无这些字段）。
   mobile 侧已在 E10f-E 收口（`triage_card_model.dart`），desktop 侧是 E10b-3。
 - **won't do（本阶段，已有决策与缓解）**：OS keychain / 进程签名、MCP human 工具（E11-4）；
