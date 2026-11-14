@@ -102,7 +102,8 @@ export interface MemoryFact {
 
 export interface StickyNote {
   id: string
-  type: string
+  /** E10d-1: note-board 条目来自 HarmonicUnit → 与 MemoryUnit 同一类型词表（原为裸 string）。 */
+  type: MemoryUnit['type']
   primary_abstraction: string
   memory_value: string
   energy: number
@@ -190,17 +191,21 @@ export interface EnergyDistribution {
 export interface Axiom {
   id: string
   content: string
+  /** E10d-1: L5Store.addAxiom 恒写 source/created_at；补齐为 handler wire（原 DTO 只列三项）。 */
+  source: 'manual' | 'distilled'
   energy: number
+  created_at: string
 }
 
 export interface L5Heuristic {
   id: string
   pattern: string
   trigger_context: string[]
-  success_rate?: number
-  source_goal_ids?: string[]
+  /** E10d-1: addHeuristic 恒写这三列（success_rate 初值 0.9）→ 由 optional 收紧为必填。 */
+  success_rate: number
+  source_goal_ids: string[]
   energy: number
-  created_at?: string
+  created_at: string
 }
 
 export interface Approval {

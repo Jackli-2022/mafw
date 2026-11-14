@@ -25,6 +25,9 @@
  *
  * E10b-1：协作面 3 个读 op（tech-lead / probes / revisions）追加在本文件末尾；
  * `sourceRef` 复用 `schemas/goals.ts` 的 `GoalSourceRefSchema`（同一份 DTO）。
+ *
+ * E10d-1：`pods.goals.worktree.diff` / `pods.transcript` 追加在末尾；`pods.lookup`
+ * 与 `pods.get` 同 wire（复用 `PodDetailResponse`）。
  */
 import { Type } from '@sinclair/typebox'
 import { GoalSourceRefSchema } from './goals'
@@ -695,4 +698,46 @@ const PodGoalRevisionSchema = Type.Object({
 
 export const PodGoalRevisionsResponse = Type.Object({
   items: Type.Array(PodGoalRevisionSchema),
+})
+
+// ── E10d-1：Pod 读接口补充（transcript / worktree diff）─────────────────────
+//
+// `pods.lookup`（GET /api/projects/:projectId/pod/lookup）与 `pods.get` 同 wire：
+// `handlePods` 的 lookup 分支复用 `enrichPodDetail()`，只按成员角色把 `sessions` 清空
+// （非 lead 成员），字段面不变 → catalog 直接复用 `PodDetailResponse`，不另立 schema。
+
+/**
+ * `GET /api/pods/:podId/goals/:goalId/worktree/diff?revision=` →
+ * `PodWorktreeService.branchDiff()` 的 `PodWorktreeDiff`（merge-base 三点 diff 预览）：
+ * `files` 按 `MAX_DIFF_FILES`（100）截断，`patch` 是 unified=3 原文（读取失败降级空串），
+ * `additions`/`deletions` 在二进制文件上由 git 的 `-` 归零。
+ *
+ * 与 `@mafw/sdk` `PodWorktreeDiff` 逐字段等价（`contract-compat.checks.ts` AssertEq 钉住）。
+ */
+const PodWorktreeDiffFileSchema = Type.Object({
+  file: Type.String(),
+  patch: Type.String(),
+  additions: Type.Number(),
+  deletions: Type.Number(),
+  status: Type.String(),
+})
+
+export const PodWorktreeDiffResponse = Type.Object({
+  goalId: Type.String(),
+  revision: Type.Number(),
+  branch: Type.String(),
+  baseRef: Type.String(),
+  files: Type.Array(PodWorktreeDiffFileSchema),
+})
+
+/**
+ * `GET /api/pods/:podId/sessions/:sessionId/transcript` → `{transcript}`。
+ *
+ * `transcript` 是 **runtime-owned** 的会话历史载荷（`PodRouteDeps.transcript()` 直接
+ * 返回 runtime 页数据；part 判别联合随 runtime 演进，gateway 只透传、不解释）。
+ * owner = runtime session history → 契约面只承诺「该键存在 + 任意 JSON」，
+ * 不整响应放宽（外层对象仍然只有这一个键），与 `pods.goals.techLead.messages` 同一先例。
+ */
+export const PodTranscriptResponse = Type.Object({
+  transcript: Type.Unknown(),
 })

@@ -18,6 +18,8 @@ import type {
   PermissionsNamespace,
   // E10c-1 memory read surface
   T1SearchHit,
+  // E10d-1 memory extra / pod read surface
+  MemoryFact, EnergyDistribution, Axiom, L5Heuristic, PodWorktreeDiff,
 } from './types'
 import type { MafwClient } from './client'
 import type { MafwDiff, MafwPermissionRequest } from './view-dto'
@@ -132,6 +134,30 @@ const CHECK_permissions_rules: AssertEq<Resp<operations['permissions.listRules']
 type GenT1SearchHit = NonNullable<Resp<operations['memory.search']>['t1Results']>[number]
 const CHECK_memory_search_t1_item: AssertEq<GenT1SearchHit, T1SearchHit> = true
 
+// E10d-1: memory 扩展 / lead.context / pod 读接口（8 ops）—— schema 是 handler wire 的转写。
+type GenMemoryFact = ItemOf<Resp<operations['memory.mergedSearch']>, 'results'>
+const CHECK_memory_merged_search_item: AssertEq<GenMemoryFact, MemoryFact> = true
+const CHECK_memory_energy_distribution: AssertEq<
+  Resp<operations['memory.getEnergyDistribution']>,
+  EnergyDistribution
+> = true
+type GenL5Axiom = ItemOf<Resp<operations['memory.getL5Axioms']>, 'axioms'>
+const CHECK_memory_l5_axiom: AssertEq<GenL5Axiom, Axiom> = true
+type GenL5Heuristic = ItemOf<Resp<operations['memory.getL5Axioms']>, 'heuristics'>
+const CHECK_memory_l5_heuristic: AssertEq<GenL5Heuristic, L5Heuristic> = true
+/** listSticky 无单一命名 DTO：锁 client `memory.listSticky` 的返回类型（entries + budget）。 */
+type SdkSticky = Awaited<ReturnType<MafwClient['memory']['listSticky']>>
+const CHECK_memory_list_sticky: AssertEq<Resp<operations['memory.listSticky']>, SdkSticky> = true
+/** lead.context 是 host 注入面（tags: internal），SDK 不调用 → 无 DTO，schema-only。 */
+const CHECK_pods_lookup: AssertEq<Resp<operations['pods.lookup']>, PodDetail> = true
+const CHECK_pods_worktree_diff: AssertEq<Resp<operations['pods.goals.worktree.diff']>, PodWorktreeDiff> = true
+/**
+ * `transcript` 归 runtime 所有（part 判别联合随 runtime 演进）→ 锁边界：
+ * 外层对象只有一个 `transcript` 键，值是 `unknown`（与 client 内联返回类型逐字段等价）。
+ */
+type SdkPodTranscript = Awaited<ReturnType<PodNamespace['transcript']>>
+const CHECK_pods_transcript: AssertEq<Resp<operations['pods.transcript']>, SdkPodTranscript> = true
+
 /**
  * session.messages：`data` 的 part 判别联合由 view-dto 契约拥有，schema 只承诺
  * SDK 边界守卫 `MafwMessageShape` 认可的形状；游标必须与 client 的
@@ -166,4 +192,8 @@ export const CONTRACT_COMPAT_CHECKS = [
   CHECK_permissions_rules,
   // E10c-1
   CHECK_memory_search_t1_item,
+  // E10d-1
+  CHECK_memory_merged_search_item, CHECK_memory_energy_distribution,
+  CHECK_memory_l5_axiom, CHECK_memory_l5_heuristic, CHECK_memory_list_sticky,
+  CHECK_pods_lookup, CHECK_pods_worktree_diff, CHECK_pods_transcript,
 ]
