@@ -72,6 +72,7 @@ export class WorkerHost {
   private queue: Array<() => void> = [];
   private restarts = 0;
   private lastStderr = '';
+  private restartTimer?: NodeJS.Timeout;
   private ledgerId: string;
 
   constructor(private readonly options: WorkerHostOptions) {
@@ -127,10 +128,13 @@ export class WorkerHost {
     this.child = child;
     this.attach(child);
 
-    this.options.ledger?.track(this.ledgerId, {
-      pid: child.pid,
-      stop: () => this.stop('ledger'),
-    }, 'provider');
+    const tracked = this.options.ledger?.snapshot().some((record) => record.id === this.ledgerId);
+    if (!tracked) {
+      this.options.ledger?.track(this.ledgerId, {
+        pid: child.pid,
+        stop: () => this.stop('ledger'),
+      }, 'provider');
+    }
 
     return await new Promise<WorkerReady>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -193,6 +197,10 @@ export class WorkerHost {
       return;
     }
     this.stopping = true;
+    if (this.restartTimer) {
+      clearTimeout(this.restartTimer);
+      this.restartTimer = undefined;
+    }
     const child = this.child;
     this.rejectAll(new Error('worker_stopped'));
 
@@ -256,7 +264,7 @@ export class WorkerHost {
           pid: this.child?.pid,
         };
         this.state = 'healthy';
-        this.options.ledger?.markRunning(this.ledgerId);
+        try { this.options.ledger?.markRunning(this.ledgerId); } catch { /* restarted child keeps the prior record */ }
         this.readyResolve?.(this.ready);
         this.readyResolve = undefined;
         this.readyReject = undefined;
@@ -315,12 +323,31 @@ export class WorkerHost {
       signal: this.child?.signalCode ?? undefined,
       restarts: this.restarts,
     });
+    this.scheduleRestart();
+  }
+
+  private scheduleRestart(): void {
+    if (this.stopping || this.restartTimer) return;
+    const backoff = this.options.backoffMs ?? [500, 1000, 2000];
+    if (this.restarts >= backoff.length) return;
+    const delay = backoff[this.restarts] ?? 2000;
+    this.restarts += 1;
+    this.restartTimer = setTimeout(() => {
+      this.restartTimer = undefined;
+      this.state = 'stopped';
+      this.ready = undefined;
+      this.lastStderr = '';
+      void this.start().catch(() => { /* exit/error path schedules the next attempt */ });
+    }, delay);
+    this.restartTimer.unref?.();
   }
 
   private kill(reason: string): void {
     const child = this.child;
     if (!child) return;
-    this.state = 'failed';
+    // Leave the healthy state immediately so callers cannot observe a live
+    // worker while the kill is in flight; the exit handler owns the restart.
+    this.state = 'starting';
     this.options.ledger?.markFailed(this.ledgerId, reason);
     try { child.kill('SIGKILL'); } catch { /* best effort */ }
   }

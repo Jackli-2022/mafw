@@ -49,8 +49,21 @@ const effects = [];
 let handlers = new Map();
 let configSeq = 0;
 
+const MAX_MESSAGE_BYTES = 1024 * 1024;
+
 function send(message) {
   if (typeof process.send === 'function') process.send(message);
+}
+
+function sendResult(id, ok, payload) {
+  const message = ok
+    ? { t: 'result', id, ok: true, output: payload }
+    : { t: 'result', id, ok: false, error: { message: String(payload) } };
+  if (Buffer.byteLength(JSON.stringify(message), 'utf8') > MAX_MESSAGE_BYTES) {
+    send({ t: 'result', id, ok: false, error: { message: 'message_too_large' } });
+    return;
+  }
+  send(message);
 }
 
 function log(level, message) {
@@ -159,19 +172,14 @@ process.on('message', (message) => {
   if (message.t !== 'invoke') return;
   const handler = handlers.get(message.action);
   if (!handler) {
-    send({ t: 'result', id: message.id, ok: false, error: { message: `unknown worker action: ${message.action}` } });
+    sendResult(message.id, false, `unknown worker action: ${message.action}`);
     return;
   }
   Promise.resolve()
     .then(() => handler(message.input, { signal: new AbortController().signal }))
     .then(
-      (output) => send({ t: 'result', id: message.id, ok: true, output }),
-      (err) => send({
-        t: 'result',
-        id: message.id,
-        ok: false,
-        error: { message: err && err.message ? err.message : String(err) },
-      }),
+      (output) => sendResult(message.id, true, output),
+      (err) => sendResult(message.id, false, err && err.message ? err.message : String(err)),
     );
 });
 
