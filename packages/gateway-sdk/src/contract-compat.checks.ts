@@ -25,7 +25,11 @@ import type {
   // E10f-A session / task / terminal / usage read surface
   TaskEntity, TaskOutput, DiscoverySnapshot, DiscoverySkillContent, TerminalSessionList,
   MafwBackgroundOutput,
+  // E10f-B project / runtime / metadata read surface
+  MafwCommandDef, ManagerSessionInfo, Project, MediaPluginState, VoiceStatusResponse,
+  ModelConfigState, ModelRef, EmbeddingConfigGetResponse, TtsNamespace, PluginClientSnapshot,
 } from './types'
+import type { RuntimeContractResponse } from './runtime-contract'
 import type { MafwClient } from './client'
 import type { MafwDiff, MafwPermissionRequest, MafwAgent, MafwProvider, MafwBackgroundJob } from './view-dto'
 import type { ExperienceActionsResponse } from './experience-contract'
@@ -33,6 +37,8 @@ import type { ExperienceActionsResponse } from './experience-contract'
 /** 鐢熸垚褰㈢姸锛歳esponses.200.content['application/json'] 涓嬬洿鎺ュ唴鑱?schema 灞炴€э紙鏃?schema: 鍖呰锛夈€?*/
 type Resp<S> = S extends { responses: { 200: { content: { 'application/json': infer C } } } } ? C : never
 type ItemOf<S, K extends string> = S extends Record<K, infer T> ? (T extends readonly (infer X)[] ? X : T) : never
+/** 联合响应的数组分支（分发通过裸类型参数生效，供 manager.session 的双形态使用）。 */
+type ArrayBranch<T> = T extends readonly (infer X)[] ? X : never
 
 /** 鎭掔瓑鍑芥暟鎶€宸х殑绮剧‘鐩哥瓑锛堥潪鍒嗛厤锛宯ever 瀹夊叏锛夈€?*/
 type Equals<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false
@@ -253,6 +259,89 @@ const CHECK_background_jobs_output: AssertEq<
 /** `terminal.list` 只发 MAFW DTO + protocol（runtime 原生 PTY 形状不进 wire）。 */
 const CHECK_terminal_list: AssertEq<Resp<operations['terminal.list']>, TerminalSessionList> = true
 
+// E10f-B: project / runtime / metadata 读接口（16 ops）—— schema 是 handler wire 的转写。
+type GenCommand = ItemOf<Resp<operations['mafwCommands.list']>, 'commands'>
+const CHECK_mafw_commands_list_item: AssertEq<GenCommand, MafwCommandDef> = true
+
+/**
+ * `manager.session` 是双形态 200：带 `?projectDir=` 是单对象，无过滤是数组。
+ * DTO 只描述"行"（`ManagerSessionInfo`）；handler 恒发 `createdAt`（缺失补 null），
+ * 故字段级锁 createdAt 的 null 性，其余键按 Omit 等价。
+ */
+type GenManagerSession = ArrayBranch<Resp<operations['manager.session']>>
+const CHECK_manager_session_keys: AssertEq<keyof GenManagerSession, keyof ManagerSessionInfo> = true
+const CHECK_manager_session_fields: AssertEq<
+  Omit<GenManagerSession, 'createdAt'>,
+  Omit<ManagerSessionInfo, 'createdAt'>
+> = true
+const CHECK_manager_session_created_at: AssertEq<GenManagerSession['createdAt'], string | null> = true
+
+/** `project.current` 在 SDK `Project` 之外多带注册期 `mafwDir`。 */
+type GenCurrentProject = NonNullable<Resp<operations['project.current']>['project']>
+const CHECK_project_current_project: AssertEq<Omit<GenCurrentProject, 'mafwDir'>, Project> = true
+const CHECK_project_current_mafw_dir: AssertEq<GenCurrentProject['mafwDir'], string> = true
+
+/** `runtime.get`：能力位与未知事件遥测是 runtime/gateway 的开放键集（deep 值域不锁）。 */
+type GenRuntimeGet = Resp<operations['runtime.get']>
+const CHECK_runtime_get_capabilities: AssertEq<GenRuntimeGet['active']['capabilities'], Record<string, boolean>> = true
+const CHECK_runtime_get_unknown_events: AssertEq<
+  GenRuntimeGet['unknownEvents'],
+  Record<string, Record<string, number>>
+> = true
+
+/**
+ * `runtime.contract` 与 SDK 的边界 DTO 逐字段等价（manifest 顶层形状 + coverage 边界；
+ * surface/capability 条目内部归契约包所有，两侧都只声明开放对象）。
+ */
+const CHECK_runtime_contract: AssertEq<Resp<operations['runtime.contract']>, RuntimeContractResponse> = true
+
+/**
+ * `plugins.client`：顶层快照只有 revision + plugins；描述符内部归 `@mafw/plugin-contract`
+ * 所有（schema 用边界对象）→ 只锁外层键集与 revision 类型。
+ */
+type GenPluginsClient = Resp<operations['plugins.client']>
+const CHECK_plugins_client_keys: AssertEq<keyof GenPluginsClient, keyof PluginClientSnapshot> = true
+const CHECK_plugins_client_revision: AssertEq<GenPluginsClient['revision'], string> = true
+
+/** `models.get`：recall / media / available 与 SDK `ModelConfigState` 等价。 */
+type GenModelsGet = Resp<operations['models.get']>
+const CHECK_models_get_recall: AssertEq<GenModelsGet['recall'], ModelConfigState['recall']> = true
+const CHECK_models_get_media: AssertEq<GenModelsGet['media'], ModelConfigState['media']> = true
+const CHECK_models_get_available: AssertEq<GenModelsGet['available'], ModelConfigState['available']> = true
+/** goal 段增量：SDK 只声明 nodeModel，handler 还发 techLeadModel（P0-4）。 */
+const CHECK_models_get_goal_node: AssertEq<
+  GenModelsGet['goal']['nodeModel'],
+  NonNullable<ModelConfigState['goal']>['nodeModel']
+> = true
+const CHECK_models_get_goal_tech_lead: AssertEq<
+  GenModelsGet['goal']['techLeadModel'],
+  ModelRef | null | undefined
+> = true
+
+/** `media.plugins` 行 ≡ SDK `MediaPluginState`。 */
+type GenMediaPlugin = ItemOf<Resp<operations['media.plugins']>, 'plugins'>
+const CHECK_media_plugins_item: AssertEq<GenMediaPlugin, MediaPluginState> = true
+
+/**
+ * `tts.voices`：SDK 返回类型是 wire 的子集（缺 engine / capabilities / engines），
+ * 故按子集字段锁等价（voices / models / 默认值），其余字段 schema-only。
+ */
+type SdkTtsVoices = Awaited<ReturnType<TtsNamespace['voices']>>
+type GenTtsVoices = Resp<operations['tts.voices']>
+const CHECK_tts_voices_voices: AssertEq<GenTtsVoices['voices'], SdkTtsVoices['voices']> = true
+const CHECK_tts_voices_models: AssertEq<GenTtsVoices['models'], SdkTtsVoices['models']> = true
+const CHECK_tts_voices_default_voice: AssertEq<GenTtsVoices['defaultVoice'], string> = true
+const CHECK_tts_voices_default_model: AssertEq<GenTtsVoices['defaultModel'], string> = true
+
+/** `voice.status`（config + engines + routing）与 SDK `VoiceStatusResponse` 逐字段等价。 */
+const CHECK_voice_status: AssertEq<Resp<operations['voice.status']>, VoiceStatusResponse> = true
+
+/** `embedding.get`（current + runtime + available）与 SDK `EmbeddingConfigGetResponse` 等价。 */
+const CHECK_embedding_get: AssertEq<Resp<operations['embedding.get']>, EmbeddingConfigGetResponse> = true
+
+// fileHistory.list / runtime.config.get / python.status / agent.capabilities /
+// media.resolveTask 没有 SDK client（tags: internal，或 handler 返回 any）→ schema-only。
+
 // usage（session.usage / usagePluginsList / usagePluginSourceGet）无稳定 SDK DTO：
 // client 的 `usage()` 把 summary/memory/providers 声明成 any，`usagePlugins()` 仍是
 // `{plugins:[{overridden}]}` 旧形状，`usagePluginSource()` 把 200/403/404 混成一个类型
@@ -306,4 +395,13 @@ export const CONTRACT_COMPAT_CHECKS = [
   CHECK_experience_action, CHECK_experience_action_operation_id, CHECK_experience_keys,
   CHECK_experience_action_ids, CHECK_experience_min_client_version, CHECK_experience_session_id,
   CHECK_background_jobs_list_item, CHECK_background_jobs_output, CHECK_terminal_list,
+  // E10f-B
+  CHECK_mafw_commands_list_item, CHECK_manager_session_keys, CHECK_manager_session_fields,
+  CHECK_manager_session_created_at, CHECK_project_current_project, CHECK_project_current_mafw_dir,
+  CHECK_runtime_get_capabilities, CHECK_runtime_get_unknown_events, CHECK_runtime_contract,
+  CHECK_plugins_client_keys, CHECK_plugins_client_revision,
+  CHECK_models_get_recall, CHECK_models_get_media, CHECK_models_get_available,
+  CHECK_models_get_goal_node, CHECK_models_get_goal_tech_lead, CHECK_media_plugins_item,
+  CHECK_tts_voices_voices, CHECK_tts_voices_models, CHECK_tts_voices_default_voice,
+  CHECK_tts_voices_default_model, CHECK_voice_status, CHECK_embedding_get,
 ]

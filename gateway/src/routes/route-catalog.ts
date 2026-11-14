@@ -118,6 +118,28 @@ import {
   UsagePluginSourceResponse,
   UsagePluginsListResponse,
 } from './schemas/usage';
+import {
+  FileHistoryListResponse,
+  MafwCommandsListResponse,
+  ManagerSessionResponse,
+  ProjectCurrentResponse,
+} from './schemas/project-meta';
+import {
+  PluginsClientResponse,
+  RuntimeConfigGetResponse,
+  RuntimeContractResponse,
+  RuntimeGetResponse,
+} from './schemas/runtime-surface';
+import {
+  AgentCapabilitiesResponse,
+  EmbeddingGetResponse,
+  MediaPluginsResponse,
+  MediaResolveTaskResponse,
+  ModelConfigGetResponse,
+  PythonStatusResponse,
+  TtsVoicesResponse,
+  VoiceStatusResponse,
+} from './schemas/media-voice';
 
 /**
  * SDK-facing 端点（catalog → gateway-paths → openapi 单向生成；**在此新增**后必须重跑
@@ -210,24 +232,24 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/mcp/config/restore', operationId: 'mcp.configRestore', tags: ['mcp'] },
   { method: 'DELETE', path: '/api/mcp/config/servers/:name', operationId: 'mcp.configRemove', tags: ['mcp'] },
   { method: 'POST', path: '/api/mafw-commands/run', operationId: 'mafwCommands.run', tags: ['mafwCommands'] },
-  { method: 'GET', path: '/api/mafw-commands', operationId: 'mafwCommands.list', tags: ['mafwCommands'] },
-  { method: 'GET', path: '/api/manager/session', operationId: 'manager.session', tags: ['manager'] },
+  { method: 'GET', path: '/api/mafw-commands', operationId: 'mafwCommands.list', tags: ['mafwCommands'], response: MafwCommandsListResponse },
+  { method: 'GET', path: '/api/manager/session', operationId: 'manager.session', tags: ['manager'], response: ManagerSessionResponse },
   { method: 'POST', path: '/api/manager/session/rotate', operationId: 'manager.rotate', tags: ['manager'] },
   { method: 'GET', path: '/api/projects', operationId: 'project.list', tags: ['project'], response: ProjectListResponse },
-  { method: 'GET', path: '/api/projects/current', operationId: 'project.current', tags: ['project'] },
+  { method: 'GET', path: '/api/projects/current', operationId: 'project.current', tags: ['project'], response: ProjectCurrentResponse },
   { method: 'POST', path: '/register', operationId: 'project.setCurrent', tags: ['project'] },
   { method: 'POST', path: '/api/file-history/snapshot', operationId: 'fileHistory.snapshot', tags: ['internal'] },
-  { method: 'GET', path: '/api/file-history', operationId: 'fileHistory.list', tags: ['internal'] },
+  { method: 'GET', path: '/api/file-history', operationId: 'fileHistory.list', tags: ['internal'], response: FileHistoryListResponse },
   { method: 'POST', path: '/api/file-history/restore', operationId: 'fileHistory.restore', tags: ['internal'] },
   { method: 'GET', path: '/api/events', operationId: 'event.subscribe', tags: ['event'] },
   { method: 'POST', path: '/api/events', operationId: 'event.publish', tags: ['event'] },
-  { method: 'GET', path: '/api/runtime', operationId: 'runtime.get', tags: ['runtime'] },
-  { method: 'GET', path: '/api/runtime/contract', operationId: 'runtime.contract', tags: ['runtime'] },
+  { method: 'GET', path: '/api/runtime', operationId: 'runtime.get', tags: ['runtime'], response: RuntimeGetResponse },
+  { method: 'GET', path: '/api/runtime/contract', operationId: 'runtime.contract', tags: ['runtime'], response: RuntimeContractResponse },
   { method: 'POST', path: '/api/runtime/switch', operationId: 'runtime.switch', tags: ['runtime'] },
   { method: 'POST', path: '/api/runtime/restart-agent', operationId: 'runtime.restartAgent', tags: ['runtime'] },
   // runtime.reload（POST /api/runtime/reload）在下方 NON_SDK 补遗块登记（SDK 不调用 → internal）
   { method: 'GET', path: '/api/plugins', operationId: 'plugins.list', tags: ['plugins'], response: PluginsListResponse },
-  { method: 'GET', path: '/api/plugins/client', operationId: 'plugins.client', tags: ['plugins'] },
+  { method: 'GET', path: '/api/plugins/client', operationId: 'plugins.client', tags: ['plugins'], response: PluginsClientResponse },
   { method: 'POST', path: '/api/plugins/install', operationId: 'plugins.install', tags: ['plugins'] },
   { method: 'POST', path: '/api/plugins/packages/install', operationId: 'plugins.installPackage', tags: ['plugins'] },
   { method: 'POST', path: '/api/plugins/check', operationId: 'plugins.check', tags: ['plugins'] },
@@ -243,7 +265,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/plugins/:name/web-ticket', operationId: 'plugins.webTicket', tags: ['plugins'] },
   { method: 'GET', path: '/api/config', operationId: 'config.get', tags: ['config'], response: ConfigGetResponse },
   { method: 'PUT', path: '/api/config', operationId: 'config.set', tags: ['config'] },
-  { method: 'GET', path: '/api/runtime-config', operationId: 'runtime.config.get', tags: ['runtime'] },
+  { method: 'GET', path: '/api/runtime-config', operationId: 'runtime.config.get', tags: ['runtime'], response: RuntimeConfigGetResponse },
   { method: 'PATCH', path: '/api/runtime-config', operationId: 'runtime.config.update', tags: ['runtime'] },
   { method: 'GET', path: '/api/goals', operationId: 'goals.list', tags: ['goals'], response: GoalListResponse },
   { method: 'GET', path: '/api/goals/:id', operationId: 'goals.get', tags: ['goals'], response: GoalViewSchema },
@@ -307,7 +329,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'DELETE', path: '/api/memory/:id', operationId: 'memory.delete', tags: ['memory'] },
   { method: 'GET', path: '/api/memory/sticky', operationId: 'memory.listSticky', tags: ['memory'], response: MemoryStickyResponse },
   { method: 'POST', path: '/api/memory/pin', operationId: 'memory.setSticky', tags: ['memory'] },
-  { method: 'GET', path: '/api/memory/embedding-config', operationId: 'embedding.get', tags: ['embedding'] },
+  { method: 'GET', path: '/api/memory/embedding-config', operationId: 'embedding.get', tags: ['embedding'], response: EmbeddingGetResponse },
   { method: 'POST', path: '/api/memory/embedding-config', operationId: 'embedding.update', tags: ['embedding'] },
   { method: 'GET', path: '/api/approvals', operationId: 'approvals.list', tags: ['approvals'], response: ApprovalListResponse },
   { method: 'POST', path: '/api/approvals/:id/respond', operationId: 'approvals.respond', tags: ['approvals'] },
@@ -333,20 +355,20 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'DELETE', path: '/api/approvals/rules', operationId: 'permissions.removeRule', tags: ['permissions'] },
   { method: 'POST', path: '/api/chat', operationId: 'chat.send', tags: ['chat'] },
   { method: 'POST', path: '/api/chat/enriched', operationId: 'chat.sendEnriched', tags: ['chat'] },
-  { method: 'GET', path: '/api/media/plugins', operationId: 'media.plugins', tags: ['media'] },
+  { method: 'GET', path: '/api/media/plugins', operationId: 'media.plugins', tags: ['media'], response: MediaPluginsResponse },
   { method: 'POST', path: '/api/media/switch', operationId: 'media.switch', tags: ['media'] },
   { method: 'POST', path: '/api/media/upload', operationId: 'media.upload', tags: ['media'] },
   { method: 'POST', path: '/api/media/upload-and-create', operationId: 'media.uploadAndCreate', tags: ['media'] },
   { method: 'POST', path: '/a2a', operationId: 'media.createTask', tags: ['media'] },
   { method: 'GET', path: '/a2a/artifacts/:id', operationId: 'media.artifact', tags: ['media'] },
   { method: 'POST', path: '/api/tts', operationId: 'tts.speak', tags: ['tts'] },
-  { method: 'GET', path: '/api/tts/voices', operationId: 'tts.voices', tags: ['tts'] },
+  { method: 'GET', path: '/api/tts/voices', operationId: 'tts.voices', tags: ['tts'], response: TtsVoicesResponse },
   { method: 'POST', path: '/api/tts/stream', operationId: 'tts.speakStream', tags: ['tts'] },
   { method: 'POST', path: '/api/tts/interrupt', operationId: 'tts.interrupt', tags: ['tts'] },
-  { method: 'GET', path: '/api/voice/status', operationId: 'voice.status', tags: ['voice'] },
+  { method: 'GET', path: '/api/voice/status', operationId: 'voice.status', tags: ['voice'], response: VoiceStatusResponse },
   { method: 'GET', path: '/api/provider', operationId: 'providers.list', tags: ['providers'], response: ProviderListResponse },
   { method: 'GET', path: '/api/agents', operationId: 'agents.list', tags: ['agents'], response: AgentListResponse },
-  { method: 'GET', path: '/api/model-config', operationId: 'models.get', tags: ['models'] },
+  { method: 'GET', path: '/api/model-config', operationId: 'models.get', tags: ['models'], response: ModelConfigGetResponse },
   { method: 'POST', path: '/api/model-config', operationId: 'models.update', tags: ['models'] },
   { method: 'GET', path: '/api/automations', operationId: 'automations.list', tags: ['automations'] },
   { method: 'PUT', path: '/api/automations/:id', operationId: 'automations.toggle', tags: ['automations'] },
@@ -404,7 +426,7 @@ const NON_SDK_ROUTES: RouteDef[] = [
   // Python 内核（§5.17）
   { method: 'POST', path: '/api/python/execute', operationId: 'python.execute', tags: ['internal'] },
   { method: 'POST', path: '/api/python/restart', operationId: 'python.restart', tags: ['internal'] },
-  { method: 'GET', path: '/api/python/status', operationId: 'python.status', tags: ['internal'] },
+  { method: 'GET', path: '/api/python/status', operationId: 'python.status', tags: ['internal'], response: PythonStatusResponse },
   // 观察捕获 / 边界 recall / pinned 披露层（§5.11/§5.13）
   { method: 'POST', path: '/api/obs/capture', operationId: 'obs.capture', tags: ['internal'] },
   { method: 'GET', path: '/api/recall/context', operationId: 'recall.context', tags: ['internal'], response: RecallContextResponse },
@@ -424,7 +446,7 @@ const NON_SDK_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/orchestration/outcomes', operationId: 'orchestration.outcomes', tags: ['internal'] },
   // 媒体补充（media.upload / uploadAndCreate / switch / plugins GET / a2a / artifacts GET 已在 SDK-facing）
   { method: 'POST', path: '/api/media/create-task', operationId: 'media.createTaskApi', tags: ['internal'] },
-  { method: 'GET', path: '/api/media/resolve-task/:id', operationId: 'media.resolveTask', tags: ['internal'] },
+  { method: 'GET', path: '/api/media/resolve-task/:id', operationId: 'media.resolveTask', tags: ['internal'], response: MediaResolveTaskResponse },
   { method: 'POST', path: '/api/media/analyze-audio', operationId: 'media.analyzeAudio', tags: ['internal'] },
   { method: 'POST', path: '/api/media/plugins/reload', operationId: 'media.pluginsReload', tags: ['internal'] },
   // 用量 dashboard（/api/stats 由 routes/dashboard.ts 挂 handler；其余旧 dashboard
@@ -511,7 +533,7 @@ const NON_SDK_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/tools', operationId: 'tools.list', tags: ['internal'], response: ToolsListResponse },
   { method: 'POST', path: '/api/tools/execute', operationId: 'tools.execute', tags: ['internal'] },
   // Agent 自我认知只读面（L1 能力账本 + L2 失败谱；fail-open）
-  { method: 'GET', path: '/api/agent/capabilities', operationId: 'agent.capabilities', tags: ['internal'] },
+  { method: 'GET', path: '/api/agent/capabilities', operationId: 'agent.capabilities', tags: ['internal'], response: AgentCapabilitiesResponse },
 ];
 
 /** gateway 全量 HTTP 端点 shadow 登记（无 handler；Phase 3 逐条挂 handler 前不参与 dispatch）。

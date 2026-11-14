@@ -112,6 +112,28 @@ import {
   SkillsListResponse,
   ToolsListResponse,
 } from '../../src/routes/schemas/meta';
+import {
+  FileHistoryListResponse,
+  MafwCommandsListResponse,
+  ManagerSessionResponse,
+  ProjectCurrentResponse,
+} from '../../src/routes/schemas/project-meta';
+import {
+  PluginsClientResponse,
+  RuntimeConfigGetResponse,
+  RuntimeContractResponse,
+  RuntimeGetResponse,
+} from '../../src/routes/schemas/runtime-surface';
+import {
+  AgentCapabilitiesResponse,
+  EmbeddingGetResponse,
+  MediaPluginsResponse,
+  MediaResolveTaskResponse,
+  ModelConfigGetResponse,
+  PythonStatusResponse,
+  TtsVoicesResponse,
+  VoiceStatusResponse,
+} from '../../src/routes/schemas/media-voice';
 import { handleAttention } from '../../src/routes/attention';
 import { handleDecisionList } from '../../src/routes/decisions';
 import type { PodGoalView } from '../../src/core/pod/pod-view';
@@ -2521,5 +2543,427 @@ describe('api-contract: E10f-A session / task / terminal / usage read response s
     expect(Value.Check(UsagePluginSourceResponse, { source: 'module.exports = {}', origin: 'user' })).toBe(true);
     expect(Value.Check(UsagePluginSourceResponse, { source: 'x', origin: 'builtin' })).toBe(false);
     expect(Value.Check(UsagePluginSourceResponse, { error: 'plugin file not found' })).toBe(false);
+  });
+});
+
+describe('api-contract: E10f-B project / runtime / metadata read response schema (16 ops)', () => {
+  const findOp = (operationId: string): any => {
+    for (const pathItem of Object.values(contract.paths || {}) as any[]) {
+      for (const op of Object.values(pathItem) as any[]) {
+        if (op?.operationId === operationId) return op;
+      }
+    }
+    return undefined;
+  };
+  const schemaOf = (operationId: string): any =>
+    findOp(operationId).responses['200'].content['application/json'].schema;
+
+  const EXPECTED: Record<string, {
+    fields: string[];
+    union?: true;
+    item?: { at: string; required: string[] };
+  }> = {
+    'mafwCommands.list': {
+      fields: ['commands'],
+      item: { at: 'commands', required: ['name', 'description', 'category', 'kind'] },
+    },
+    // Dual shape: single object with ?projectDir=, array without.
+    'manager.session': { fields: [], union: true },
+    'project.current': { fields: ['project'] },
+    'fileHistory.list': {
+      fields: ['entries'],
+      item: {
+        at: 'entries',
+        required: ['id', 'sessionID', 'projectDir', 'rel', 'blob', 'size', 'mtimeMs', 'createdAt', 'seq', 'reason'],
+      },
+    },
+    'runtime.get': {
+      fields: ['active', 'plugins', 'unknownEvents', 'validation', 'translationErrors', 'translationDrops'],
+      item: { at: 'plugins', required: ['file', 'status'] },
+    },
+    'runtime.contract': { fields: ['manifest', 'coverage'] },
+    'runtime.config.get': { fields: ['config'] },
+    'plugins.client': {
+      fields: ['revision', 'plugins'],
+      item: { at: 'plugins', required: ['name', 'version', 'revision', 'ui', 'actions', 'events'] },
+    },
+    'models.get': { fields: ['recall', 'media', 'goal', 'available'] },
+    'media.plugins': { fields: ['plugins'], item: { at: 'plugins', required: ['file', 'status'] } },
+    'tts.voices': {
+      fields: ['voices', 'engine', 'capabilities', 'engines', 'models', 'defaultVoice', 'defaultModel'],
+    },
+    'voice.status': {
+      fields: ['ok', 'config', 'engines', 'routing'],
+      item: { at: 'engines', required: ['name', 'capabilities', 'source'] },
+    },
+    'python.status': { fields: ['running'] },
+    'agent.capabilities': {
+      fields: ['ledger', 'failureTaxonomy'],
+      item: { at: 'failureTaxonomy', required: ['pattern', 'count', 'energy', 'id'] },
+    },
+    'media.resolveTask': { fields: ['artifactId'] },
+    'embedding.get': { fields: ['current', 'runtime', 'available'] },
+  };
+
+  test('all sixteen ops expose a 200 JSON schema with properties (not a whole-response widening)', () => {
+    expect(Object.keys(EXPECTED)).toHaveLength(16);
+    const problems: string[] = [];
+    for (const [operationId, spec] of Object.entries(EXPECTED)) {
+      const op = findOp(operationId);
+      if (!op) { problems.push(`${operationId}: missing from openapi.json`); continue; }
+      const schema = op.responses?.['200']?.content?.['application/json']?.schema;
+      if (!schema) { problems.push(`${operationId}: responses.200 missing application/json schema`); continue; }
+      if (spec.union) {
+        if ((schema.anyOf ?? []).length !== 2) problems.push(`${operationId}: expected a two-branch union`);
+        continue;
+      }
+      const properties = Object.keys(schema.properties ?? {});
+      if (properties.length === 0) { problems.push(`${operationId}: schema has no properties (widened)`); continue; }
+      for (const field of spec.fields) {
+        if (!properties.includes(field)) problems.push(`${operationId}: schema missing property '${field}'`);
+      }
+    }
+    if (problems.length) {
+      console.error('[api-contract] E10f-B response schema missing - run emit:openapi + gen:api:\n' + problems.join('\n'));
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test('array item required fields match the handler wire (commands/entries/plugins/sources)', () => {
+    const problems: string[] = [];
+    for (const [operationId, spec] of Object.entries(EXPECTED)) {
+      if (!spec.item) continue;
+      const required = schemaOf(operationId).properties?.[spec.item.at]?.items?.required ?? [];
+      for (const field of spec.item.required) {
+        if (!required.includes(field)) problems.push(`${operationId}: ${spec.item.at}.items missing required '${field}'`);
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test('manager.session is dual-shaped and project.current may be absent', () => {
+    const manager = schemaOf('manager.session');
+    expect(manager.anyOf.map((branch: any) => branch.type)).toEqual(['object', 'array']);
+    const row = manager.anyOf[0];
+    expect(row.required).toEqual(['projectDir', 'sessionId', 'createdAt']);
+    // Handler always emits createdAt with an explicit null fallback.
+    expect(row.properties.createdAt.anyOf.map((e: any) => e.type)).toEqual(['string', 'null']);
+    expect(manager.anyOf[1].items).toEqual(row);
+
+    const current = schemaOf('project.current');
+    expect(current.required).toEqual(['project']);
+    const branches = current.properties.project.anyOf;
+    expect(branches.map((e: any) => e.type)).toEqual(['object', 'null']);
+    expect(branches[0].required).toEqual(['id', 'worktree', 'mafwDir']);
+  });
+
+  test('runtime.get / runtime.contract keep runtime-owned payloads as boundary objects', () => {
+    const runtime = schemaOf('runtime.get');
+    expect(runtime.required).toEqual([
+      'active', 'plugins', 'unknownEvents', 'validation', 'translationErrors', 'translationDrops',
+    ]);
+    expect(runtime.properties.active.required).toEqual([
+      'name', 'capabilities', 'envOverride', 'dialect', 'coverage',
+    ]);
+    // Capability flags are runtime-declared booleans, never an enumerated key set.
+    expect(runtime.properties.active.properties.capabilities.type).toBe('object');
+    expect(runtime.properties.active.properties.capabilities.patternProperties['^(.*)$'].type).toBe('boolean');
+    expect(runtime.properties.active.properties.capabilities.properties).toBeUndefined();
+    expect(runtime.properties.active.properties.dialect.anyOf.map((e: any) => e.type))
+      .toEqual(['string', 'null']);
+    // Diagnostic telemetry has gateway-owned shapes.
+    expect(runtime.properties.unknownEvents.patternProperties['^(.*)$']
+      .patternProperties['^(.*)$'].type).toBe('number');
+    expect(runtime.properties.translationErrors.patternProperties['^(.*)$'].required)
+      .toEqual(['transformEvent', 'normalizeMessages']);
+    expect(runtime.properties.translationDrops.patternProperties['^(.*)$'].required)
+      .toEqual(['unmatched', 'suppressed']);
+    expect(runtime.properties.plugins.items.properties.status.anyOf.map((e: any) => e.const))
+      .toEqual(['ok', 'error']);
+
+    const contractSchema = schemaOf('runtime.contract');
+    expect(contractSchema.required).toEqual(['manifest', 'coverage']);
+    const manifest = contractSchema.properties.manifest;
+    expect(manifest.required).toEqual([
+      'schemaVersion', 'contractVersion', 'generatedFrom',
+      'domains', 'surfaces', 'capabilities', 'events', 'cognition', 'presets',
+    ]);
+    expect(manifest.properties.domains.items.required).toEqual(['id', 'title', 'description']);
+    // surfaces/capabilities/events/cognition/presets stay open (contract package owns the entries).
+    for (const key of ['surfaces', 'capabilities', 'events', 'cognition', 'presets']) {
+      expect(manifest.properties[key].items.type).toBe('object');
+      expect(manifest.properties[key].items.properties).toBeUndefined();
+    }
+    const coverageBranches = contractSchema.properties.coverage.anyOf;
+    expect(coverageBranches.map((e: any) => e.type)).toEqual(['object', 'null']);
+    expect(coverageBranches[0].required).toEqual(['runtime', 'contractVersion', 'static']);
+    expect(coverageBranches[0].properties.behavioral).toBeDefined();
+  });
+
+  test('plugins.client / runtime.config.get only promise the envelope (owner payloads stay open)', () => {
+    const client = schemaOf('plugins.client');
+    expect(client.required).toEqual(['revision', 'plugins']);
+    const descriptor = client.properties.plugins.items;
+    expect(descriptor.required).toEqual(['name', 'version', 'revision', 'ui', 'actions', 'events']);
+    // Descriptor internals belong to @mafw/plugin-contract: nested contributions stay open.
+    expect(descriptor.additionalProperties).toBe(true);
+    for (const key of ['ui']) {
+      expect(descriptor.properties[key].patternProperties['^(.*)$']).toBeDefined();
+    }
+    expect(descriptor.properties.actions.items.patternProperties['^(.*)$']).toBeDefined();
+    expect(descriptor.properties.events.items.patternProperties['^(.*)$']).toBeDefined();
+
+    const runtimeConfig = schemaOf('runtime.config.get');
+    expect(runtimeConfig.required).toEqual(['config']);
+    // runtime Config model is runtime-owned -> object with an open index, no copied keys.
+    expect(runtimeConfig.properties.config.type).toBe('object');
+    expect(runtimeConfig.properties.config.properties).toBeUndefined();
+  });
+
+  test('model/media/tts/voice/embedding surfaces pin their enumerations', () => {
+    const models = schemaOf('models.get');
+    expect(models.required).toEqual(['recall', 'media', 'goal', 'available']);
+    expect(models.properties.recall.required).toEqual(['workerModel']);
+    expect(models.properties.recall.properties.workerModel.required).toEqual(['providerID', 'modelID']);
+    // available is nullable (provider scan unavailable), never a fabricated empty error.
+    expect(models.properties.available.anyOf.map((e: any) => e.type)).toEqual(['array', 'null']);
+    expect(models.properties.available.anyOf[0].items.required).toEqual(['providerID', 'providerName', 'models']);
+    expect(Object.keys(models.properties.media.properties).sort())
+      .toEqual(['audio', 'image', 'model', 'provider', 'video']);
+    expect(models.properties.media.required ?? []).toEqual([]);
+    expect(Object.keys(models.properties.goal.properties).sort()).toEqual(['nodeModel', 'techLeadModel']);
+
+    const media = schemaOf('media.plugins').properties.plugins.items;
+    expect(media.properties.status.anyOf.map((e: any) => e.const)).toEqual(['ok', 'error']);
+
+    const tts = schemaOf('tts.voices');
+    expect(tts.required).toEqual([
+      'voices', 'engine', 'capabilities', 'engines', 'models', 'defaultVoice', 'defaultModel',
+    ]);
+    expect(tts.properties.voices.items.required).toEqual(['id', 'label', 'lang']);
+    expect(tts.properties.capabilities.properties.streaming.anyOf.map((e: any) => e.const))
+      .toEqual(['native', 'none']);
+    expect(tts.properties.capabilities.required)
+      .toEqual(['streaming', 'voiceCloning', 'styleControl', 'languages', 'sampleRate']);
+    expect(tts.properties.engines.items.properties.source.anyOf.map((e: any) => e.const))
+      .toEqual(['builtin', 'legacy', 'package']);
+
+    const voice = schemaOf('voice.status');
+    expect(voice.properties.config.properties.tier.anyOf.map((e: any) => e.const))
+      .toEqual(['auto', 'local', 'cloud']);
+    expect(voice.properties.config.properties.localTier.anyOf.map((e: any) => e.const))
+      .toEqual(['dgpu', 'igpu']);
+    expect(voice.properties.config.required).toEqual([
+      'tier', 'localTier', 'asrEngine', 'ttsEngine', 'cloudConsent', 'modelsDir', 'sidecarPort', 'duplexV1',
+    ]);
+    expect(voice.properties.routing.properties.status.anyOf.map((e: any) => e.const))
+      .toEqual(['local_accelerated', 'local_cpu', 'cloud', 'degraded']);
+
+    const embedding = schemaOf('embedding.get');
+    expect(embedding.properties.current.required).toEqual([
+      'provider', 'engine', 'model', 'dimensions', 'baseUrl', 'threads', 'llamacpp',
+    ]);
+    expect(embedding.properties.current.properties.provider.anyOf.map((e: any) => e.const))
+      .toEqual(['off', 'local', 'dashscope']);
+    expect(embedding.properties.current.properties.engine.anyOf.map((e: any) => e.const))
+      .toEqual(['onnx', 'llamacpp']);
+    expect(embedding.properties.current.properties.llamacpp.required)
+      .toEqual(['gpu', 'threads', 'contextSize', 'batchSize']);
+    // Live runtime identity is nullable when the provider is off.
+    expect(embedding.properties.runtime.properties.active.anyOf.map((e: any) => e.type))
+      .toEqual(['string', 'null']);
+    expect(embedding.properties.available.required).toEqual(['providers', 'engines', 'gpus']);
+  });
+
+  test('orphan read surfaces document both branches (fail-open agent ledger, null artifact)', () => {
+    expect(Value.Check(PythonStatusResponse, { running: true })).toBe(true);
+    expect(Value.Check(PythonStatusResponse, { running: false })).toBe(true);
+    expect(Value.Check(PythonStatusResponse, { running: 'yes' })).toBe(false);
+
+    // media.resolveTask: explicit null on a miss (not a 404).
+    expect(Value.Check(MediaResolveTaskResponse, { artifactId: 'art_1' })).toBe(true);
+    expect(Value.Check(MediaResolveTaskResponse, { artifactId: null })).toBe(true);
+    expect(Value.Check(MediaResolveTaskResponse, {})).toBe(false);
+
+    // agent.capabilities: the catch branch is 200 {total, passRate} only.
+    expect(Value.Check(AgentCapabilitiesResponse, {
+      ledger: { total: 0, passRate: 0 },
+      failureTaxonomy: [],
+    })).toBe(true);
+    expect(Value.Check(AgentCapabilitiesResponse, {
+      ledger: {
+        total: 4, passRate: 0.5, avgRounds: 2.5, avgCostUsd: 0.3, thumbsUp: 2, thumbsDown: 1,
+        byFailureKind: { tests: 2 }, byTaskType: { feature: { total: 2, passRate: 0.5, avgRounds: 1, avgCostUsd: 0.1 } },
+      },
+      failureTaxonomy: [{ pattern: 'flaky tests', count: 2, energy: 1.5, id: 'mem_1' }],
+    })).toBe(true);
+    expect(Value.Check(AgentCapabilitiesResponse, {
+      ledger: { total: 1, passRate: 1 },
+      failureTaxonomy: [{ pattern: 'x', count: 1, energy: 1 }],
+    })).toBe(false);
+  });
+
+  test('handler wire samples validate against each new schema (Value.Check)', () => {
+    expect(Value.Check(MafwCommandsListResponse, {
+      commands: [{
+        name: 'goal', description: 'submit', argumentHint: '<target>',
+        category: 'goals', kind: 'builtin', destructive: false,
+      }],
+    })).toBe(true);
+    expect(Value.Check(MafwCommandsListResponse, {
+      commands: [{ name: 'x', description: 'x', category: 'shell', kind: 'builtin' }],
+    })).toBe(false);
+
+    // manager.session both branches (single object / array), createdAt nullable.
+    expect(Value.Check(ManagerSessionResponse, {
+      projectDir: '/p', sessionId: 'ses_1', createdAt: null,
+    })).toBe(true);
+    expect(Value.Check(ManagerSessionResponse, [
+      { projectDir: '/p', sessionId: 'ses_1', createdAt: '2026-11-14T00:00:00.000Z' },
+    ])).toBe(true);
+    expect(Value.Check(ManagerSessionResponse, [])).toBe(true);
+    expect(Value.Check(ManagerSessionResponse, { projectDir: '/p', sessionID: 'ses_1', createdAt: null })).toBe(false);
+
+    expect(Value.Check(ProjectCurrentResponse, { project: null })).toBe(true);
+    expect(Value.Check(ProjectCurrentResponse, {
+      project: { id: '/p', worktree: '/p', mafwDir: '/p/.mafw' },
+    })).toBe(true);
+    expect(Value.Check(ProjectCurrentResponse, { project: { id: '/p', worktree: '/p' } })).toBe(false);
+
+    const entry = {
+      id: 'fh_1', sessionID: 'ses_1', projectDir: '/p', rel: 'src/a.ts', blob: 'sha256',
+      size: 10, mtimeMs: 1, createdAt: '2026-11-14T00:00:00.000Z', seq: 1, reason: 'pre-write',
+    };
+    expect(Value.Check(FileHistoryListResponse, { entries: [entry] })).toBe(true);
+    expect(Value.Check(FileHistoryListResponse, { entries: [] })).toBe(true);
+    expect(Value.Check(FileHistoryListResponse, { entries: [{ ...entry, rel: undefined }] })).toBe(false);
+
+    // runtime.get: builtin/package loader rows + diagnostics telemetry.
+    expect(Value.Check(RuntimeGetResponse, {
+      active: {
+        name: 'opencode@v2', capabilities: { sessionApi: true, eventStream: false },
+        envOverride: false, dialect: 'v2', coverage: null,
+      },
+      plugins: [{
+        file: 'builtin:opencode', name: 'opencode', status: 'ok',
+        capabilities: { sessionApi: true }, alias: 'oc',
+      }, { file: 'broken.js', status: 'error', error: 'boom' }],
+      unknownEvents: { 'api': { 'x.y': 2 } },
+      validation: ['eventStream declared but missing'],
+      translationErrors: { opencode: { transformEvent: 1, normalizeMessages: 0, lastError: 'bad' } },
+      translationDrops: { opencode: { unmatched: { 'turn.x': 1 }, suppressed: {} } },
+    })).toBe(true);
+    expect(Value.Check(RuntimeGetResponse, {
+      active: { name: 'x', capabilities: {}, envOverride: false, dialect: null, coverage: null },
+      plugins: [{ file: 'a.js', status: 'pending' }],
+      unknownEvents: {}, validation: [], translationErrors: {}, translationDrops: {},
+    })).toBe(false);
+
+    expect(Value.Check(RuntimeContractResponse, {
+      manifest: {
+        schemaVersion: 1, contractVersion: '1.2.3', generatedFrom: 'gateway/src/runtime/contract-manifest.ts',
+        domains: [{ id: 'meta', title: 'Meta', description: 'd' }],
+        surfaces: [{ id: 'plugin.tools' }], capabilities: [], events: [], cognition: [], presets: [],
+      },
+      coverage: { runtime: 'opencode', contractVersion: '1.2.3', static: { missing: [] } },
+    })).toBe(true);
+    expect(Value.Check(RuntimeContractResponse, {
+      manifest: { schemaVersion: 1, contractVersion: 'x', generatedFrom: 'y', domains: [] },
+      coverage: null,
+    })).toBe(false);
+
+    expect(Value.Check(RuntimeConfigGetResponse, { config: {} })).toBe(true);
+    expect(Value.Check(RuntimeConfigGetResponse, { config: { provider: { openai: {} } } })).toBe(true);
+    expect(Value.Check(RuntimeConfigGetResponse, { config: null })).toBe(false);
+
+    // plugins.client: committed snapshot; descriptor internals stay open.
+    expect(Value.Check(PluginsClientResponse, {
+      revision: 'boot:1',
+      plugins: [{
+        name: 'demo', version: '1.0.0', revision: 'boot:1',
+        ui: { panels: [{ title: 'Demo' }] },
+        actions: [{ id: 'run' }], events: [{ name: 'ran' }],
+        diagnostics: [{ level: 'warn', message: 'm' }],
+        futureKey: true,
+      }],
+    })).toBe(true);
+    expect(Value.Check(PluginsClientResponse, { revision: 'boot:1', plugins: [{ name: 'demo' }] })).toBe(false);
+
+    expect(Value.Check(ModelConfigGetResponse, {
+      recall: { workerModel: { providerID: 'p', modelID: 'm' } },
+      media: { provider: 'dashscope', model: 'wan', image: { provider: 'p', model: 'i' } },
+      goal: { nodeModel: { providerID: 'p', modelID: 'm' }, techLeadModel: null },
+      available: [{ providerID: 'p', providerName: 'P', models: [{ id: 'm', name: 'M' }] }],
+    })).toBe(true);
+    // Provider scan unavailable: available null is a valid 200.
+    expect(Value.Check(ModelConfigGetResponse, {
+      recall: { workerModel: { providerID: 'p', modelID: 'm' } },
+      media: {},
+      goal: {},
+      available: null,
+    })).toBe(true);
+
+    expect(Value.Check(MediaPluginsResponse, {
+      plugins: [{ file: 'dashscope.js', name: 'dashscope', status: 'ok', modalities: ['image', 'video'] }],
+    })).toBe(true);
+
+    expect(Value.Check(TtsVoicesResponse, {
+      voices: [{ id: 'Mia', label: 'Mia', lang: 'en' }],
+      engine: 'mimo',
+      capabilities: { streaming: 'native', voiceCloning: false, styleControl: true, languages: ['zh'], sampleRate: 24000 },
+      engines: [{ name: 'mimo', source: 'builtin' }, { name: 'legacy', source: 'legacy' }],
+      models: [{ id: 'mimo-v2.5-tts', description: 'preset' }],
+      defaultVoice: '茉莉',
+      defaultModel: 'mimo-v2.5-tts',
+    })).toBe(true);
+    expect(Value.Check(TtsVoicesResponse, {
+      voices: [], engine: 'mimo',
+      capabilities: { streaming: 'sse', voiceCloning: false, styleControl: false, languages: [], sampleRate: 1 },
+      engines: [], models: [], defaultVoice: 'x', defaultModel: 'y',
+    })).toBe(false);
+
+    const voiceStatus = {
+      ok: true,
+      config: {
+        tier: 'local', localTier: 'dgpu', asrEngine: 'qwen3-asr-1.7b-vllm', ttsEngine: 'cosyvoice3-0.5b',
+        cloudConsent: false, modelsDir: '/m', sidecarPort: 3911, duplexV1: false,
+      },
+      engines: [{
+        name: 'qwen3-asr', source: 'builtin',
+        capabilities: { streaming: 'native', languages: ['zh'], punctuation: true, timestamps: 'segment', sampleRate: 16000 },
+      }],
+      routing: { status: 'local_accelerated' },
+    };
+    expect(Value.Check(VoiceStatusResponse, voiceStatus)).toBe(true);
+    // Sidecar not initialized: still 200 with an empty engine list.
+    expect(Value.Check(VoiceStatusResponse, { ...voiceStatus, engines: [] })).toBe(true);
+    expect(Value.Check(VoiceStatusResponse, {
+      ...voiceStatus, routing: { status: 'network' },
+    })).toBe(false);
+
+    expect(Value.Check(EmbeddingGetResponse, {
+      current: {
+        provider: 'local', engine: 'llamacpp', model: 'qwen3', dimensions: 1024, baseUrl: 'http://127.0.0.1:1',
+        threads: 4, llamacpp: { gpu: 'vulkan', threads: 4, contextSize: 2048, batchSize: 256 },
+      },
+      runtime: { active: 'llamacpp:qwen3', providerId: 'local', modelTag: 'qwen3', dims: 1024, vectors: 10, indexEntries: 10, coverage: 1 },
+      available: { providers: ['off', 'local', 'dashscope'], engines: ['onnx', 'llamacpp'], gpus: ['cpu', 'vulkan', 'cuda'] },
+    })).toBe(true);
+    expect(Value.Check(EmbeddingGetResponse, {
+      current: {
+        provider: 'off', engine: 'onnx', model: 'm', dimensions: 1, baseUrl: '', threads: 1,
+        llamacpp: { gpu: 'cpu', threads: 1, contextSize: 1, batchSize: 1 },
+      },
+      runtime: { active: null, providerId: null, modelTag: null, dims: null, vectors: 0, indexEntries: 0, coverage: 1 },
+      available: { providers: [], engines: [], gpus: [] },
+    })).toBe(true);
+    expect(Value.Check(EmbeddingGetResponse, {
+      current: {
+        provider: 'remote', engine: 'onnx', model: 'm', dimensions: 1, baseUrl: '', threads: 1,
+        llamacpp: { gpu: 'cpu', threads: 1, contextSize: 1, batchSize: 1 },
+      },
+      runtime: { active: null, providerId: null, modelTag: null, dims: null, vectors: 0, indexEntries: 0, coverage: 1 },
+      available: { providers: [], engines: [], gpus: [] },
+    })).toBe(false);
   });
 });

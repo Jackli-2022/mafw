@@ -7299,7 +7299,20 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        commands: {
+                            name: string;
+                            aliases?: string[];
+                            description: string;
+                            argumentHint?: string;
+                            category: "goals" | "session" | "memory" | "custom";
+                            destructive?: boolean;
+                            kind: "builtin" | "custom";
+                            source?: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -7317,7 +7330,17 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        projectDir: string;
+                        sessionId: string;
+                        createdAt: string | null;
+                    } | {
+                        projectDir: string;
+                        sessionId: string;
+                        createdAt: string | null;
+                    }[];
+                };
             };
         };
     };
@@ -7378,7 +7401,15 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        project: {
+                            id: string;
+                            worktree: string;
+                            mafwDir: string;
+                        } | null;
+                    };
+                };
             };
         };
     };
@@ -7432,7 +7463,22 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        entries: {
+                            id: string;
+                            sessionID: string;
+                            projectDir: string;
+                            rel: string;
+                            blob: string;
+                            size: number;
+                            mtimeMs: number;
+                            createdAt: string;
+                            seq: number;
+                            reason: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -7504,7 +7550,63 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        active: {
+                            name: string;
+                            capabilities: {
+                                [key: string]: boolean;
+                            };
+                            envOverride: boolean;
+                            dialect: string | null;
+                            coverage: {
+                                runtime: string;
+                                contractVersion: string;
+                                static: {
+                                    [key: string]: unknown;
+                                };
+                                behavioral?: {
+                                    [key: string]: unknown;
+                                };
+                            } | null;
+                        };
+                        plugins: {
+                            file: string;
+                            name?: string;
+                            status: "ok" | "error";
+                            error?: string;
+                            capabilities?: {
+                                [key: string]: boolean;
+                            };
+                            alias?: string;
+                        }[];
+                        unknownEvents: {
+                            [key: string]: {
+                                [key: string]: number;
+                            };
+                        };
+                        validation: string[];
+                        translationErrors: {
+                            [key: string]: {
+                                transformEvent: number;
+                                normalizeMessages: number;
+                                lastError?: string;
+                                lastAt?: string;
+                                lastWarnAt?: number;
+                            };
+                        };
+                        translationDrops: {
+                            [key: string]: {
+                                unmatched: {
+                                    [key: string]: number;
+                                };
+                                suppressed: {
+                                    [key: string]: number;
+                                };
+                            };
+                        };
+                    };
+                };
             };
         };
     };
@@ -7522,7 +7624,45 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        manifest: {
+                            schemaVersion: number;
+                            contractVersion: string;
+                            generatedFrom: string;
+                            domains: {
+                                id: string;
+                                title: string;
+                                description: string;
+                            }[];
+                            surfaces: {
+                                [key: string]: unknown;
+                            }[];
+                            capabilities: {
+                                [key: string]: unknown;
+                            }[];
+                            events: {
+                                [key: string]: unknown;
+                            }[];
+                            cognition: {
+                                [key: string]: unknown;
+                            }[];
+                            presets: {
+                                [key: string]: unknown;
+                            }[];
+                        };
+                        coverage: {
+                            runtime: string;
+                            contractVersion: string;
+                            static: {
+                                [key: string]: unknown;
+                            };
+                            behavioral?: {
+                                [key: string]: unknown;
+                            };
+                        } | null;
+                    };
+                };
             };
         };
     };
@@ -7622,7 +7762,32 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        revision: string;
+                        plugins: ({
+                            name: string;
+                            version: string;
+                            revision: string;
+                            title?: string;
+                            description?: string;
+                            ui: {
+                                [key: string]: unknown;
+                            };
+                            actions: {
+                                [key: string]: unknown;
+                            }[];
+                            events: {
+                                [key: string]: unknown;
+                            }[];
+                            diagnostics?: {
+                                [key: string]: unknown;
+                            }[];
+                        } & {
+                            [key: string]: unknown;
+                        })[];
+                    };
+                };
             };
         };
     };
@@ -7946,7 +8111,13 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        config: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
             };
         };
     };
@@ -9520,7 +9691,38 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        current: {
+                            provider: "off" | "local" | "dashscope";
+                            engine: "onnx" | "llamacpp";
+                            model: string;
+                            dimensions: number;
+                            baseUrl: string;
+                            threads: number;
+                            llamacpp: {
+                                gpu: string;
+                                threads: number;
+                                contextSize: number;
+                                batchSize: number;
+                            };
+                        };
+                        runtime: {
+                            active: string | null;
+                            providerId: string | null;
+                            modelTag: string | null;
+                            dims: number | null;
+                            vectors: number;
+                            indexEntries: number;
+                            coverage: number;
+                        };
+                        available: {
+                            providers: string[];
+                            engines: string[];
+                            gpus: string[];
+                        };
+                    };
+                };
             };
         };
     };
@@ -10139,7 +10341,17 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        plugins: {
+                            file: string;
+                            name?: string;
+                            status: "ok" | "error";
+                            error?: string;
+                            modalities?: string[];
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -10267,7 +10479,33 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        voices: {
+                            id: string;
+                            label: string;
+                            lang: string;
+                        }[];
+                        engine: string;
+                        capabilities: {
+                            streaming: "native" | "none";
+                            voiceCloning: boolean;
+                            styleControl: boolean;
+                            languages: string[];
+                            sampleRate: number;
+                        };
+                        engines: {
+                            name: string;
+                            source: "builtin" | "legacy" | "package";
+                        }[];
+                        models: {
+                            id: string;
+                            description: string;
+                        }[];
+                        defaultVoice: string;
+                        defaultModel: string;
+                    };
+                };
             };
         };
     };
@@ -10321,7 +10559,37 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        ok: boolean;
+                        config: {
+                            tier: "auto" | "local" | "cloud";
+                            localTier: "dgpu" | "igpu";
+                            asrEngine: string;
+                            ttsEngine: string;
+                            cloudConsent: boolean;
+                            modelsDir: string;
+                            sidecarPort: number;
+                            duplexV1: boolean;
+                        };
+                        engines: {
+                            name: string;
+                            capabilities: {
+                                streaming: "native" | "none";
+                                languages: string[];
+                                punctuation: boolean;
+                                timestamps: "word" | "segment" | "none";
+                                sampleRate: number;
+                                maxAudioSeconds?: number;
+                            };
+                            source: "builtin" | "plugin";
+                        }[];
+                        routing: {
+                            status: "local_accelerated" | "local_cpu" | "cloud" | "degraded";
+                            reason?: string;
+                        };
+                    };
+                };
             };
         };
     };
@@ -10421,7 +10689,50 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        recall: {
+                            workerModel: {
+                                providerID: string;
+                                modelID: string;
+                            };
+                        };
+                        media: {
+                            provider?: string;
+                            model?: string;
+                            image?: {
+                                provider?: string;
+                                model?: string;
+                            };
+                            video?: {
+                                provider?: string;
+                                model?: string;
+                            };
+                            audio?: {
+                                provider?: string;
+                                model?: string;
+                            };
+                        };
+                        goal: {
+                            nodeModel?: {
+                                providerID: string;
+                                modelID: string;
+                            } | null;
+                            techLeadModel?: {
+                                providerID: string;
+                                modelID: string;
+                            } | null;
+                        };
+                        available: {
+                            providerID: string;
+                            providerName: string;
+                            models: {
+                                id: string;
+                                name: string;
+                            }[];
+                        }[] | null;
+                    };
+                };
             };
         };
     };
@@ -12410,7 +12721,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        running: boolean;
+                    };
+                };
             };
         };
     };
@@ -12897,7 +13212,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        artifactId: string | null;
+                    };
+                };
             };
         };
     };
@@ -13786,7 +14105,35 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        ledger: {
+                            total: number;
+                            passRate: number;
+                            avgRounds?: number;
+                            avgCostUsd?: number;
+                            thumbsUp?: number;
+                            thumbsDown?: number;
+                            byFailureKind?: {
+                                [key: string]: number;
+                            };
+                            byTaskType?: {
+                                [key: string]: {
+                                    total: number;
+                                    passRate: number;
+                                    avgRounds: number;
+                                    avgCostUsd: number;
+                                };
+                            };
+                        };
+                        failureTaxonomy: {
+                            pattern: string;
+                            count: number;
+                            energy: number;
+                            id: string;
+                        }[];
+                    };
+                };
             };
         };
     };
