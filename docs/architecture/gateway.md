@@ -37,7 +37,7 @@
 - [E10d 契约覆盖第四批（2026-11-14）](#e10d-契约覆盖第四批2026-11-14)
 - [E10e 契约覆盖第五批（2026-11-14）](#e10e-契约覆盖第五批2026-11-14)
 - [E10f 全量读表面收口（2026-11-14）](#e10f-全量读表面收口2026-11-14)
-- [E10g 请求契约（进行中：P0 + W1 + W2/W3 + W4 + W5，2026-11-14）](#e10g-请求契约进行中p0--w1--w2w3--w4--w52026-11-14)
+- [E10g 请求契约（进行中：P0 + W1 + W2/W3 + W4 + W5 + W6，2026-11-14）](#e10g-请求契约进行中p0--w1--w2w3--w4--w5--w62026-11-14)
 - [API 端点](#api-端点)
 - [UI 服务](#ui-服务)
 - [数据流全景](#数据流全景)
@@ -1561,12 +1561,13 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 
 ---
 
-## E10g 请求契约（进行中：P0 + W1 + W2/W3 + W4 + W5，2026-11-14）
+## E10g 请求契约（进行中：P0 + W1 + W2/W3 + W4 + W5 + W6，2026-11-14）
 
 > 承接 E10f（响应 125/318）。E10g 给 **188 个写 op** 补请求契约；本篇记录 P0 管线、
 > 3 个 pilot、W1（session 写接口 35 个）、W2/W3（tasks/terminal/background/fileHistory 8 个 +
-> pod 写接口 25 个）、W4（goals/decisions/lead/standing/goalRuns 29 个）与 W5
-> （events/automations/approvals/questions/triage/permissions 24 个）。
+> pod 写接口 25 个）、W4（goals/decisions/lead/standing/goalRuns 29 个）、W5
+> （events/automations/approvals/questions/triage/permissions 24 个）与 W6
+> （mcp/plugins/runtime/config/project/manager/commands 26 个）。
 > spec：`docs/superpowers/specs/2026-11-14-gateway-e10g-request-contracts-design.md`。
 
 - **`RouteDef` 新增三个声明位**：`request?: object`（TypeBox / JSON Schema，缺省 = 未建模）、
@@ -1656,7 +1657,32 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
     `reply:'always'` 生效，`'tool'|'prefix'` 决定沉淀规则的作用域。
   - `permissions.setMode` 的 `mode` 闭集含 legacy `'manual'`（`normalizeMode` 收敛为 read-only）；
     allowlist / rules 的删除同样走 **JSON body**（`tool` 必填，`prefix`/`pattern` 可选）。
-- **残余**：其余 64 个写 op 按 W6-W7 分批推进；`REQUEST_EXCLUDED` 清单与收口覆盖测试在 E10g 收口波落地。
+- **W6（mcp / plugins / runtime / config / project / manager / commands，26 个）**：schema 在
+  `routes/schemas/mcp-write.ts`（7 个 op）、`plugin-write.ts`（10）、`runtime-write.ts`（6）、
+  `platform-write.ts`（4：config/project/manager/commands）。**16 个 JSON body + 2 个可选 body +
+  6 个空对象动作 + 2 个所有权边界 + 1 个排除**。
+  - 空对象（`requestRequired:false`）只给 handler 不读 body 的动作：`mcp.connect` / `mcp.disconnect`
+    （路径 `:name` + query `directory`）、`plugins.apply` / `plugins.reload`（只读路径 `:name`）、
+    `runtime.restartAgent` / `runtime.reload`。
+  - 可选 body（有字段 + `requestRequired:false`）：`plugins.invoke`（空 body 合法，
+    `{input,sessionID,revision}`；`input` 是插件自定义负载 → 开放对象边界）、
+    `runtime.conformance`（`scenarios` / `timeoutMs`，缺省跑全部场景）。
+  - 所有权边界（开放对象、body 必填）：`runtime.config.update`（runtime 原生 Config merge 文档，
+    gateway 只 `JSON.parse` 转发）与 `runtime.dryEvent`（runtime 原生事件样本；顶层
+    `additionalProperties:true` 以允许「直接事件对象」形态，`event`/`plugin` 信封字段声明为可选）。
+  - `config.set` 只声明 `GatewayConfig` 的**顶层分区**（全部 optional + `additionalProperties:true`）：
+    handler 不校验字段、未知键原样落盘，收窄会比 handler 更严。
+  - `project.setCurrent`（`POST /register`）锚定 `projectDir` + `mafwDir` 必填；`setCurrent` 缺省
+    false（插件自动注册只登记，不切换当前项目）。
+  - **排除**：`plugins.install` —— 读原始 `.js` 字节（`readBodyBuffer`）+ query
+    （`filename`/`type`/`overwrite`），没有 JSON body；按 spec §1.3 排除并进收口
+    `REQUEST_EXCLUDED`。单文件插件仍可经 `plugins.installPackage`（JSON `{path}`）安装。
+  - `mcp.config*` 的 `token` 来自 preview（文件内容哈希）；apply/remove/restore 强制
+    `confirm:true`（否则 400）+ `token` 不匹配 409 `etag_mismatch`；`type:'remote'` 的 `url` /
+    `type:'local'` 的 `command` 是适配器条件必填，契约只保留 optional + description。
+  - `plugins.enable|disable|delete` 共用 `{package}` 或 `{type,filename}` 二选一形态：body 必填，
+    字段全 optional 是**变体**而非自由形状（handler `assertBodyShape` 同时给两种 → 400）。
+- **残余**：其余 38 个写 op 按 W7 推进；`REQUEST_EXCLUDED` 清单与收口覆盖测试在 E10g 收口波落地。
 
 ---
 

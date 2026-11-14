@@ -225,6 +225,32 @@ import {
   QuestionReplyRequest,
   TriageProposeRequest,
 } from './schemas/human-gate-write';
+import {
+  McpConfigApplyRequest,
+  McpConfigPreviewRemoveRequest,
+  McpConfigPreviewRequest,
+  McpConfigRemoveRequest,
+  McpConfigRestoreRequest,
+} from './schemas/mcp-write';
+import {
+  PluginCheckRequest,
+  PluginInstallPackageRequest,
+  PluginInvokeRequest,
+  PluginToggleRequest,
+  PluginWebTicketRequest,
+} from './schemas/plugin-write';
+import {
+  RuntimeConformanceRequest,
+  RuntimeConfigUpdateRequest,
+  RuntimeDryEventRequest,
+  RuntimeSwitchRequest,
+} from './schemas/runtime-write';
+import {
+  ConfigSetRequest,
+  MafwCommandRunRequest,
+  ManagerRotateRequest,
+  ProjectSetCurrentRequest,
+} from './schemas/platform-write';
 import { StandingGoalListResponse, StandingGoalRunsResponse } from './schemas/standing';
 import { StandingGoalCreateRequest, StandingGoalUpdateRequest } from './schemas/standing-write';
 import {
@@ -342,20 +368,20 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'DELETE', path: '/api/usage/plugins/:name', operationId: 'session.usagePluginsDelete', tags: ['session'], request: EmptyRequest, requestRequired: false },
   { method: 'POST', path: '/api/usage/plugins/:name/test', operationId: 'session.usagePluginTest', tags: ['session'], request: EmptyRequest, requestRequired: false },
   { method: 'GET', path: '/api/mcp/servers', operationId: 'mcp.servers', tags: ['mcp'], response: McpServersResponse },
-  { method: 'POST', path: '/api/mcp/:name/connect', operationId: 'mcp.connect', tags: ['mcp'] },
-  { method: 'POST', path: '/api/mcp/:name/disconnect', operationId: 'mcp.disconnect', tags: ['mcp'] },
-  { method: 'POST', path: '/api/mcp/config/preview', operationId: 'mcp.configPreview', tags: ['mcp'] },
-  { method: 'POST', path: '/api/mcp/config/preview-remove', operationId: 'mcp.configPreviewRemove', tags: ['mcp'] },
-  { method: 'POST', path: '/api/mcp/config/apply', operationId: 'mcp.configApply', tags: ['mcp'] },
-  { method: 'POST', path: '/api/mcp/config/restore', operationId: 'mcp.configRestore', tags: ['mcp'] },
-  { method: 'DELETE', path: '/api/mcp/config/servers/:name', operationId: 'mcp.configRemove', tags: ['mcp'] },
-  { method: 'POST', path: '/api/mafw-commands/run', operationId: 'mafwCommands.run', tags: ['mafwCommands'] },
+  { method: 'POST', path: '/api/mcp/:name/connect', operationId: 'mcp.connect', tags: ['mcp'], request: EmptyRequest, requestRequired: false },
+  { method: 'POST', path: '/api/mcp/:name/disconnect', operationId: 'mcp.disconnect', tags: ['mcp'], request: EmptyRequest, requestRequired: false },
+  { method: 'POST', path: '/api/mcp/config/preview', operationId: 'mcp.configPreview', tags: ['mcp'], request: McpConfigPreviewRequest },
+  { method: 'POST', path: '/api/mcp/config/preview-remove', operationId: 'mcp.configPreviewRemove', tags: ['mcp'], request: McpConfigPreviewRemoveRequest },
+  { method: 'POST', path: '/api/mcp/config/apply', operationId: 'mcp.configApply', tags: ['mcp'], request: McpConfigApplyRequest },
+  { method: 'POST', path: '/api/mcp/config/restore', operationId: 'mcp.configRestore', tags: ['mcp'], request: McpConfigRestoreRequest },
+  { method: 'DELETE', path: '/api/mcp/config/servers/:name', operationId: 'mcp.configRemove', tags: ['mcp'], request: McpConfigRemoveRequest },
+  { method: 'POST', path: '/api/mafw-commands/run', operationId: 'mafwCommands.run', tags: ['mafwCommands'], request: MafwCommandRunRequest },
   { method: 'GET', path: '/api/mafw-commands', operationId: 'mafwCommands.list', tags: ['mafwCommands'], response: MafwCommandsListResponse },
   { method: 'GET', path: '/api/manager/session', operationId: 'manager.session', tags: ['manager'], response: ManagerSessionResponse },
-  { method: 'POST', path: '/api/manager/session/rotate', operationId: 'manager.rotate', tags: ['manager'] },
+  { method: 'POST', path: '/api/manager/session/rotate', operationId: 'manager.rotate', tags: ['manager'], request: ManagerRotateRequest },
   { method: 'GET', path: '/api/projects', operationId: 'project.list', tags: ['project'], response: ProjectListResponse },
   { method: 'GET', path: '/api/projects/current', operationId: 'project.current', tags: ['project'], response: ProjectCurrentResponse },
-  { method: 'POST', path: '/register', operationId: 'project.setCurrent', tags: ['project'] },
+  { method: 'POST', path: '/register', operationId: 'project.setCurrent', tags: ['project'], request: ProjectSetCurrentRequest },
   { method: 'POST', path: '/api/file-history/snapshot', operationId: 'fileHistory.snapshot', tags: ['internal'], request: FileHistorySnapshotRequest },
   { method: 'GET', path: '/api/file-history', operationId: 'fileHistory.list', tags: ['internal'], response: FileHistoryListResponse },
   { method: 'POST', path: '/api/file-history/restore', operationId: 'fileHistory.restore', tags: ['internal'], request: FileHistoryRestoreRequest },
@@ -363,28 +389,30 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/events', operationId: 'event.publish', tags: ['event'], request: EventPublishRequest },
   { method: 'GET', path: '/api/runtime', operationId: 'runtime.get', tags: ['runtime'], response: RuntimeGetResponse },
   { method: 'GET', path: '/api/runtime/contract', operationId: 'runtime.contract', tags: ['runtime'], response: RuntimeContractResponse },
-  { method: 'POST', path: '/api/runtime/switch', operationId: 'runtime.switch', tags: ['runtime'] },
-  { method: 'POST', path: '/api/runtime/restart-agent', operationId: 'runtime.restartAgent', tags: ['runtime'] },
+  { method: 'POST', path: '/api/runtime/switch', operationId: 'runtime.switch', tags: ['runtime'], request: RuntimeSwitchRequest },
+  { method: 'POST', path: '/api/runtime/restart-agent', operationId: 'runtime.restartAgent', tags: ['runtime'], request: EmptyRequest, requestRequired: false },
   // runtime.reload（POST /api/runtime/reload）在下方 NON_SDK 补遗块登记（SDK 不调用 → internal）
   { method: 'GET', path: '/api/plugins', operationId: 'plugins.list', tags: ['plugins'], response: PluginsListResponse },
   { method: 'GET', path: '/api/plugins/client', operationId: 'plugins.client', tags: ['plugins'], response: PluginsClientResponse },
+  // `plugins.install` 刻意不声明 request：输入是原始 `.js` 字节流 + query
+  // （filename/type/overwrite），不是 JSON body —— 见 schemas/plugin-write.ts 尾注。
   { method: 'POST', path: '/api/plugins/install', operationId: 'plugins.install', tags: ['plugins'] },
-  { method: 'POST', path: '/api/plugins/packages/install', operationId: 'plugins.installPackage', tags: ['plugins'] },
-  { method: 'POST', path: '/api/plugins/check', operationId: 'plugins.check', tags: ['plugins'] },
-  { method: 'POST', path: '/api/plugins/enable', operationId: 'plugins.enable', tags: ['plugins'] },
-  { method: 'POST', path: '/api/plugins/disable', operationId: 'plugins.disable', tags: ['plugins'] },
-  { method: 'POST', path: '/api/plugins/delete', operationId: 'plugins.delete', tags: ['plugins'] },
-  { method: 'POST', path: '/api/plugins/:name/apply', operationId: 'plugins.apply', tags: ['plugins'] },
-  { method: 'POST', path: '/api/plugins/:name/reload', operationId: 'plugins.reload', tags: ['plugins'] },
-  { method: 'POST', path: '/api/plugins/:name/actions/:action', operationId: 'plugins.invoke', tags: ['plugins'] },
+  { method: 'POST', path: '/api/plugins/packages/install', operationId: 'plugins.installPackage', tags: ['plugins'], request: PluginInstallPackageRequest },
+  { method: 'POST', path: '/api/plugins/check', operationId: 'plugins.check', tags: ['plugins'], request: PluginCheckRequest },
+  { method: 'POST', path: '/api/plugins/enable', operationId: 'plugins.enable', tags: ['plugins'], request: PluginToggleRequest },
+  { method: 'POST', path: '/api/plugins/disable', operationId: 'plugins.disable', tags: ['plugins'], request: PluginToggleRequest },
+  { method: 'POST', path: '/api/plugins/delete', operationId: 'plugins.delete', tags: ['plugins'], request: PluginToggleRequest },
+  { method: 'POST', path: '/api/plugins/:name/apply', operationId: 'plugins.apply', tags: ['plugins'], request: EmptyRequest, requestRequired: false },
+  { method: 'POST', path: '/api/plugins/:name/reload', operationId: 'plugins.reload', tags: ['plugins'], request: EmptyRequest, requestRequired: false },
+  { method: 'POST', path: '/api/plugins/:name/actions/:action', operationId: 'plugins.invoke', tags: ['plugins'], request: PluginInvokeRequest, requestRequired: false },
   // Plugin web surfaces (spec 2026-11-09 §5.5): the desktop main process mints
   // the package-bound ticket through the SDK; asset/events stay browser-only
   // (internal, see NON_SDK_ROUTES).
-  { method: 'POST', path: '/api/plugins/:name/web-ticket', operationId: 'plugins.webTicket', tags: ['plugins'] },
+  { method: 'POST', path: '/api/plugins/:name/web-ticket', operationId: 'plugins.webTicket', tags: ['plugins'], request: PluginWebTicketRequest },
   { method: 'GET', path: '/api/config', operationId: 'config.get', tags: ['config'], response: ConfigGetResponse },
-  { method: 'PUT', path: '/api/config', operationId: 'config.set', tags: ['config'] },
+  { method: 'PUT', path: '/api/config', operationId: 'config.set', tags: ['config'], request: ConfigSetRequest },
   { method: 'GET', path: '/api/runtime-config', operationId: 'runtime.config.get', tags: ['runtime'], response: RuntimeConfigGetResponse },
-  { method: 'PATCH', path: '/api/runtime-config', operationId: 'runtime.config.update', tags: ['runtime'] },
+  { method: 'PATCH', path: '/api/runtime-config', operationId: 'runtime.config.update', tags: ['runtime'], request: RuntimeConfigUpdateRequest },
   { method: 'GET', path: '/api/goals', operationId: 'goals.list', tags: ['goals'], response: GoalListResponse },
   { method: 'GET', path: '/api/goals/:id', operationId: 'goals.get', tags: ['goals'], response: GoalViewSchema },
   { method: 'GET', path: '/api/goals/:id/plan', operationId: 'goals.plan', tags: ['goals'], response: GoalPlanResponse },
@@ -622,9 +650,9 @@ const NON_SDK_ROUTES: RouteDef[] = [
   // NON_SDK 并标 internal，SDK 死契约门据此豁免。
   { method: 'GET', path: '/api/automations/:id', operationId: 'automations.get', tags: ['internal'], response: AutomationGetResponse },
   { method: 'GET', path: '/api/automations/:id/history', operationId: 'automations.history', tags: ['internal'], response: AutomationHistoryResponse },
-  { method: 'POST', path: '/api/runtime/reload', operationId: 'runtime.reload', tags: ['internal'] },
-  { method: 'POST', path: '/api/runtime/dry-event', operationId: 'runtime.dryEvent', tags: ['internal'] },
-  { method: 'POST', path: '/api/runtime/conformance', operationId: 'runtime.conformance', tags: ['internal'] },
+  { method: 'POST', path: '/api/runtime/reload', operationId: 'runtime.reload', tags: ['internal'], request: EmptyRequest, requestRequired: false },
+  { method: 'POST', path: '/api/runtime/dry-event', operationId: 'runtime.dryEvent', tags: ['internal'], request: RuntimeDryEventRequest },
+  { method: 'POST', path: '/api/runtime/conformance', operationId: 'runtime.conformance', tags: ['internal'], request: RuntimeConformanceRequest, requestRequired: false },
   { method: 'POST', path: '/api/sessions/:sid/permissions/:rid', operationId: 'permissions.replyRuntime', tags: ['internal'], request: PermissionReplyRuntimeRequest },
   // Task E2：subagent 面对不上 SDK 调用面（packages/gateway-sdk/src/client.ts 无
   // /subagents 调用；packages/runtime-core/src 与 packages/desktop/src 也不发这些

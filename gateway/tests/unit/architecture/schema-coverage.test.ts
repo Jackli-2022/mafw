@@ -450,6 +450,89 @@ const E10G_W5_EMPTY_OPS = [
  */
 const E10G_W5_BOUNDARY_OPS = ['events.webhook.receive'];
 
+/**
+ * E10g-W6：mcp / plugins / runtime / config / project / manager / commands（26 个）。
+ * P0 3 + W1 35 + W2W3 33 + W4 29 + W5 24 + 这 26 = 150。W7 只会追加，
+ * 因此总数断言是下界（`>= 150`）。
+ *
+ * `plugins.install` 不在清单里：它读原始 `.js` 字节（`readBodyBuffer`）+ query
+ * （filename/type/overwrite），没有 JSON body —— 按 spec §1.3 排除，
+ * 见 `E10G_W6_EXCLUDED_OPS`（收口台账 `REQUEST_EXCLUDED` 的唯一来源）。
+ */
+const E10G_W6_REQUEST_OPS = [
+  // mcp
+  'mcp.connect',
+  'mcp.disconnect',
+  'mcp.configPreview',
+  'mcp.configPreviewRemove',
+  'mcp.configApply',
+  'mcp.configRestore',
+  'mcp.configRemove',
+  // plugins
+  'plugins.installPackage',
+  'plugins.check',
+  'plugins.enable',
+  'plugins.disable',
+  'plugins.delete',
+  'plugins.apply',
+  'plugins.reload',
+  'plugins.invoke',
+  'plugins.webTicket',
+  // runtime
+  'runtime.switch',
+  'runtime.restartAgent',
+  'runtime.reload',
+  'runtime.dryEvent',
+  'runtime.conformance',
+  'runtime.config.update',
+  // config / project / manager / commands
+  'config.set',
+  'project.setCurrent',
+  'manager.rotate',
+  'mafwCommands.run',
+];
+
+/**
+ * W6 的「body 被完全忽略」动作（空对象 + `requestRequired:false`）：
+ * `mcp.connect` / `mcp.disconnect`（路径 `:name` + query `directory`）、
+ * `plugins.apply` / `plugins.reload`（handler `_req`，只读路径 `:name`）、
+ * `runtime.restartAgent` / `runtime.reload`（handler 不读 body）。
+ */
+const E10G_W6_EMPTY_OPS = [
+  'mcp.connect',
+  'mcp.disconnect',
+  'plugins.apply',
+  'plugins.reload',
+  'runtime.restartAgent',
+  'runtime.reload',
+];
+
+/**
+ * W6 的「body 可缺省但有字段」动作（`requestRequired:false` + 非空 properties）：
+ * `plugins.invoke`（空 body → `{}`，`input` 是插件自定义负载）、
+ * `runtime.conformance`（缺省跑全部场景）。
+ */
+const E10G_W6_OPTIONAL_OPS = ['plugins.invoke', 'runtime.conformance'];
+
+/**
+ * W6 的协议/所有权边界（开放对象，不枚举字段）：
+ *   - `runtime.config.update`：runtime 原生 Config merge 文档，shape 归活跃
+ *     runtime 所有，gateway 原样转发（body 必填，空 body 解析失败）；
+ *   - `runtime.dryEvent`：runtime 原生事件样本（adapter-owned），顶层
+ *     `additionalProperties:true` 以允许「直接事件对象」形态（body 必填）。
+ * `plugins.invoke` 的 `input` 边界在 optional 用例里单独断言（顶层 body 有字段）。
+ */
+const E10G_W6_BOUNDARY_OPS = ['runtime.config.update', 'runtime.dryEvent'];
+
+/**
+ * W6 的排除项（不入 request，由收口 `REQUEST_EXCLUDED` 台账记录原因）：
+ * `plugins.install` 读原始 `.js` 字节流 + query 元数据，不是 JSON body。
+ * 单文件插件仍可经 `plugins.installPackage`（JSON `{ path }`）安装。
+ */
+const E10G_W6_EXCLUDED_OPS: Record<string, string> = {
+  'plugins.install': 'raw .js byte stream (readBodyBuffer) + query filename/type/overwrite; no JSON body',
+};
+
 function catalogById(): Map<string, { hasRequest: boolean; request?: object; requestRequired?: boolean }> {
   return new Map(
     buildRouteCatalog().map((def) => [
@@ -713,5 +796,104 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     }
     expect(problems).toEqual([]);
     expect(E10G_W5_BOUNDARY_OPS.filter((id) => !E10G_W5_REQUEST_OPS.includes(id))).toEqual([]);
+  });
+
+  // E10g-W6: mcp / plugins / runtime / config / project / manager / commands writes.
+  // Same shape as W1-W5: pinned per-op by name, count floor at 150
+  // (P0 3 + W1 35 + W2W3 33 + W4 29 + W5 24 + W6 26).
+  it('every W6 mcp/plugin/runtime/config/project/manager/command write op declares a request schema (catalog requests >= 150)', () => {
+    const byId = catalogById();
+    const missing = E10G_W6_REQUEST_OPS.filter((id) => !byId.get(id)?.hasRequest);
+    expect(missing).toEqual([]);
+    const requests = catalogWriteOps().filter((op) => op.hasRequest).map((op) => op.operationId);
+    expect(requests.length).toBeGreaterThanOrEqual(150);
+    expect(requests).toEqual(expect.arrayContaining([
+      ...E10G_P0_REQUEST_OPS,
+      ...E10G_W1_REQUEST_OPS,
+      ...E10G_W2W3_REQUEST_OPS,
+      ...E10G_W4_REQUEST_OPS,
+      ...E10G_W5_REQUEST_OPS,
+      ...E10G_W6_REQUEST_OPS,
+    ]));
+    // No duplicate ids across batches (a typo would hide here otherwise).
+    expect(new Set(E10G_W6_REQUEST_OPS).size).toBe(E10G_W6_REQUEST_OPS.length);
+  });
+
+  it('W6 body-ignored actions use an empty object schema with requestRequired:false', () => {
+    const byId = catalogById();
+    const problems: string[] = [];
+    for (const id of E10G_W6_EMPTY_OPS) {
+      const def = byId.get(id);
+      if (!def?.hasRequest) { problems.push(`${id}: missing request`); continue; }
+      if (def.requestRequired !== false) problems.push(`${id}: requestRequired must be false`);
+      const props = (def.request as { properties?: Record<string, unknown> }).properties ?? {};
+      if (Object.keys(props).length !== 0) problems.push(`${id}: expected empty object, got ${Object.keys(props).join(',')}`);
+    }
+    expect(problems).toEqual([]);
+    expect(E10G_W6_EMPTY_OPS.filter((id) => !E10G_W6_REQUEST_OPS.includes(id))).toEqual([]);
+    expect(E10G_W6_EMPTY_OPS.filter((id) => E10G_W6_OPTIONAL_OPS.includes(id))).toEqual([]);
+  });
+
+  it('W6 optional-body actions declare fields but requestRequired:false', () => {
+    const byId = catalogById();
+    const problems: string[] = [];
+    for (const id of E10G_W6_OPTIONAL_OPS) {
+      const def = byId.get(id);
+      if (!def?.hasRequest) { problems.push(`${id}: missing request`); continue; }
+      if (def.requestRequired !== false) problems.push(`${id}: requestRequired must be false`);
+      const props = (def.request as { properties?: Record<string, unknown> }).properties ?? {};
+      if (Object.keys(props).length === 0) problems.push(`${id}: expected declared fields, got empty object`);
+    }
+    expect(problems).toEqual([]);
+    expect(E10G_W6_OPTIONAL_OPS.filter((id) => !E10G_W6_REQUEST_OPS.includes(id))).toEqual([]);
+  });
+
+  // Ownership/protocol boundaries stay documented AND counted: the body is
+  // required (an empty body is a 4xx/5xx in the handler), but the shape belongs
+  // to the runtime / plugin author, so the object is open with no field list.
+  it('W6 runtime/plugin-owned bodies declare an open-object boundary', () => {
+    const byId = catalogById();
+    const problems: string[] = [];
+    for (const id of E10G_W6_BOUNDARY_OPS) {
+      const def = byId.get(id);
+      if (!def?.hasRequest) { problems.push(`${id}: missing request`); continue; }
+      if (def.requestRequired === false) problems.push(`${id}: handler rejects an empty body`);
+      const schema = def.request as {
+        properties?: Record<string, unknown>;
+        additionalProperties?: unknown;
+        anyOf?: unknown;
+      };
+      if (schema.additionalProperties !== true) problems.push(`${id}: boundary must allow additionalProperties`);
+      if (id === 'runtime.config.update' && Object.keys(schema.properties ?? {}).length !== 0) {
+        problems.push(`${id}: boundary must not enumerate properties`);
+      }
+      if (id === 'runtime.dryEvent' && Object.keys(schema.properties ?? {}).length === 0) {
+        problems.push(`${id}: envelope fields (event/plugin) must be declared`);
+      }
+    }
+    expect(problems).toEqual([]);
+    expect(E10G_W6_BOUNDARY_OPS.filter((id) => !E10G_W6_REQUEST_OPS.includes(id))).toEqual([]);
+
+    // `plugins.invoke.input` is plugin-defined: the field is declared, the
+    // payload itself is an open object (never a closed property list).
+    const invoke = byId.get('plugins.invoke');
+    const input = (invoke?.request as any)?.properties?.input;
+    expect(input?.type).toBe('object');
+    expect(input?.additionalProperties).toBe(true);
+    expect(Object.keys(input?.properties ?? {})).toEqual([]);
+  });
+
+  // Exclusions are ledger entries, not silent gaps: W6 contributes exactly one
+  // (plugins.install), and it must still exist in the catalog.
+  it('W6 exclusions are named with a reason and are still catalog ops', () => {
+    const ids = Object.keys(E10G_W6_EXCLUDED_OPS);
+    const all = new Set(buildRouteCatalog().map((def) => def.operationId));
+    expect(ids.filter((id) => !all.has(id))).toEqual([]);
+    for (const [id, reason] of Object.entries(E10G_W6_EXCLUDED_OPS)) {
+      expect(`${id}:${reason.length > 0}`).toBe(`${id}:true`);
+    }
+    // The excluded op is neither covered nor double-counted.
+    expect(ids.filter((id) => E10G_W6_REQUEST_OPS.includes(id))).toEqual([]);
+    expect(catalogById().get('plugins.install')?.hasRequest).toBe(false);
   });
 });

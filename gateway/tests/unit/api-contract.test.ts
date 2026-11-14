@@ -3721,7 +3721,7 @@ describe('api-contract: E10g request bodies (W1 session writes)', () => {
     return body;
   }
 
-  test('write ops with a requestBody count matches the coverage ledger (124 = P0 3 + W1 35 + W2W3 33 + W4 29 + W5 24)', () => {
+  test('write ops with a requestBody count matches the coverage ledger (150 = P0 3 + W1 35 + W2W3 33 + W4 29 + W5 24 + W6 26)', () => {
     const withBody: string[] = [];
     for (const methods of Object.values<any>(contract.paths)) {
       for (const [method, op] of Object.entries<any>(methods)) {
@@ -3729,7 +3729,7 @@ describe('api-contract: E10g request bodies (W1 session writes)', () => {
         if (op.requestBody) withBody.push(op.operationId);
       }
     }
-    expect(withBody).toHaveLength(124);
+    expect(withBody).toHaveLength(150);
     expect(withBody).toEqual(expect.arrayContaining([
       'session.create', 'tasks.submit', 'pods.tasks.create',
       'session.config.set', 'session.promptAsync', 'structured.submit',
@@ -3740,7 +3740,13 @@ describe('api-contract: E10g request bodies (W1 session writes)', () => {
       'lead.compact', 'goals.control', 'goalRuns.approve',
       'event.publish', 'automations.draft', 'approvals.respond',
       'questions.reply', 'triage.propose', 'permissions.reply',
+      'mcp.configApply', 'plugins.installPackage', 'runtime.switch',
+      'config.set', 'project.setCurrent', 'manager.rotate',
+      'mafwCommands.run',
     ]));
+    // The binary upload has no JSON body schema: it stays out of the ledger
+    // (E10g spec §1.3; the final REQUEST_EXCLUDED ledger records it).
+    expect(withBody).not.toContain('plugins.install');
   });
 
   test('session.config.set: category+value required, category is a closed enum', () => {
@@ -4233,5 +4239,183 @@ describe('api-contract: E10g request bodies (W5 events, automations, human gates
       expect(`${id}:${body.required}`).toBe(`${id}:false`);
       expect(Object.keys(body.content['application/json'].schema.properties ?? {})).toEqual([]);
     }
+  });
+});
+
+describe('api-contract: E10g request bodies (W6 mcp, plugins, runtime, config, project, manager, commands)', () => {
+  function bodyOf(operationId: string): any {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const op of Object.values<any>(methods)) {
+        if (op?.operationId === operationId) {
+          expect(`${operationId}:requestBody`).toBe(`${operationId}:${op.requestBody ? 'requestBody' : 'missing'}`);
+          return op.requestBody;
+        }
+      }
+    }
+    throw new Error(`operation not found: ${operationId}`);
+  }
+
+  function schemaOf(operationId: string): any {
+    return bodyOf(operationId).content['application/json'].schema;
+  }
+
+  test('mcp config preview/apply/remove anchor the optimistic-lock contract', () => {
+    const preview = bodyOf('mcp.configPreview');
+    expect(preview.required).toBe(true);
+    const previewSchema = preview.content['application/json'].schema;
+    expect(previewSchema.required).toEqual(['name', 'type']);
+    expect(previewSchema.properties.type.anyOf.map((v: any) => v.const))
+      .toEqual(['remote', 'local']);
+    // url/command are conditionally required by the adapter, not by the contract.
+    expect(previewSchema.required).not.toContain('url');
+    expect(previewSchema.required).not.toContain('command');
+
+    // apply re-declares the config input and adds the preview token + confirm.
+    const apply = schemaOf('mcp.configApply');
+    expect(apply.required).toEqual(['name', 'type', 'token', 'confirm']);
+    expect(apply.properties.confirm.const).toBe(true);
+    expect(apply.properties.token.minLength).toBe(1);
+
+    const restore = schemaOf('mcp.configRestore');
+    expect(restore.required).toEqual(['token', 'confirm']);
+    expect(restore.properties.backupPath.type).toBe('string');
+
+    const remove = schemaOf('mcp.configRemove');
+    expect(remove.required).toEqual(['token', 'confirm']);
+
+    expect(schemaOf('mcp.configPreviewRemove').required).toEqual(['name']);
+  });
+
+  test('mcp connect/disconnect ignore the body (path + directory query only)', () => {
+    for (const id of ['mcp.connect', 'mcp.disconnect']) {
+      const body = bodyOf(id);
+      expect(`${id}:${body.required}`).toBe(`${id}:false`);
+      expect(Object.keys(body.content['application/json'].schema.properties ?? {})).toEqual([]);
+    }
+  });
+
+  test('plugin package/check bodies require an absolute path', () => {
+    const install = bodyOf('plugins.installPackage');
+    expect(install.required).toBe(true);
+    expect(install.content['application/json'].schema.required).toEqual(['path']);
+    expect(install.content['application/json'].schema.properties.overwrite.type).toBe('boolean');
+    expect(install.content['application/json'].schema.properties.requestId.type).toBe('string');
+
+    expect(schemaOf('plugins.check').required).toEqual(['path']);
+  });
+
+  test('plugin enable/disable/delete share the {package} | {type, filename} body', () => {
+    for (const id of ['plugins.enable', 'plugins.disable', 'plugins.delete']) {
+      const body = bodyOf(id);
+      expect(`${id}:${body.required}`).toBe(`${id}:true`);
+      const schema = body.content['application/json'].schema;
+      // Variants, not free-form: every field is optional but the shape is fixed.
+      expect(schema.required).toBeUndefined();
+      expect(Object.keys(schema.properties).sort()).toEqual(['filename', 'package', 'type']);
+      expect(schema.properties.type.anyOf.map((v: any) => v.const))
+        .toEqual(['runtime', 'media', 'usage', 'ui']);
+    }
+  });
+
+  test('plugin apply/reload ignore the body; invoke carries a plugin-defined input boundary', () => {
+    for (const id of ['plugins.apply', 'plugins.reload']) {
+      const body = bodyOf(id);
+      expect(`${id}:${body.required}`).toBe(`${id}:false`);
+      expect(Object.keys(body.content['application/json'].schema.properties ?? {})).toEqual([]);
+    }
+
+    const invoke = bodyOf('plugins.invoke');
+    expect(invoke.required).toBe(false);
+    const schema = invoke.content['application/json'].schema;
+    expect(Object.keys(schema.properties).sort()).toEqual(['input', 'revision', 'sessionID']);
+    // The action payload belongs to the plugin package author.
+    expect(schema.properties.input.type).toBe('object');
+    expect(schema.properties.input.additionalProperties).toBe(true);
+    expect(Object.keys(schema.properties.input.properties ?? {})).toEqual([]);
+  });
+
+  test('plugins.webTicket requires a registered projectDir, sessionID optional', () => {
+    const body = bodyOf('plugins.webTicket');
+    expect(body.required).toBe(true);
+    const schema = body.content['application/json'].schema;
+    expect(schema.required).toEqual(['projectDir']);
+    expect(schema.properties.sessionID.minLength).toBe(1);
+  });
+
+  test('plugins.install is excluded: raw byte upload, no JSON request schema', () => {
+    // Spec §1.3: binary/multipart inputs are not modeled; the op must not
+    // pretend to have a JSON body (that would inflate `requests`).
+    const withBody: string[] = [];
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const [method, op] of Object.entries<any>(methods)) {
+        if (method === 'get' || !op?.operationId) continue;
+        if (op.requestBody) withBody.push(op.operationId);
+      }
+    }
+    expect(withBody).not.toContain('plugins.install');
+  });
+
+  test('runtime.switch/dryEvent/config.update boundaries and conformance options', () => {
+    const sw = bodyOf('runtime.switch');
+    expect(sw.required).toBe(true);
+    expect(sw.content['application/json'].schema.required).toBeUndefined();
+    expect(sw.content['application/json'].schema.properties.plugin.type).toBe('string');
+
+    const dry = bodyOf('runtime.dryEvent');
+    expect(dry.required).toBe(true);
+    const drySchema = dry.content['application/json'].schema;
+    expect(drySchema.additionalProperties).toBe(true);
+    expect(drySchema.properties.event.additionalProperties).toBe(true);
+    expect(Object.keys(drySchema.properties.event.properties ?? {})).toEqual([]);
+
+    const update = bodyOf('runtime.config.update');
+    expect(update.required).toBe(true);
+    const updateSchema = update.content['application/json'].schema;
+    expect(updateSchema.additionalProperties).toBe(true);
+    expect(Object.keys(updateSchema.properties ?? {})).toEqual([]);
+
+    const conformance = bodyOf('runtime.conformance');
+    expect(conformance.required).toBe(false);
+    const conformanceSchema = conformance.content['application/json'].schema;
+    expect(conformanceSchema.properties.scenarios.items.type).toBe('string');
+    expect(conformanceSchema.properties.timeoutMs.type).toBe('number');
+  });
+
+  test('runtime restart/reload ignore the body', () => {
+    for (const id of ['runtime.restartAgent', 'runtime.reload']) {
+      const body = bodyOf(id);
+      expect(`${id}:${body.required}`).toBe(`${id}:false`);
+      expect(Object.keys(body.content['application/json'].schema.properties ?? {})).toEqual([]);
+    }
+  });
+
+  test('config.set declares known top-level sections and stays open for unknown keys', () => {
+    const body = bodyOf('config.set');
+    expect(body.required).toBe(true);
+    const schema = body.content['application/json'].schema;
+    expect(schema.additionalProperties).toBe(true);
+    expect(Object.keys(schema.properties)).toEqual(expect.arrayContaining([
+      'server', 'paths', 'timeouts', 'memory', 'llm', 'media', 'events', 'runtime', 'resources', 'env',
+    ]));
+    // No section is mandatory: omitted keys fall back to config defaults.
+    expect(schema.required).toBeUndefined();
+  });
+
+  test('project.setCurrent / manager.rotate / mafwCommands.run anchor their required fields', () => {
+    const register = bodyOf('project.setCurrent');
+    expect(register.required).toBe(true);
+    const registerSchema = register.content['application/json'].schema;
+    expect(registerSchema.required).toEqual(['projectDir', 'mafwDir']);
+    expect(registerSchema.properties.setCurrent.type).toBe('boolean');
+    expect(registerSchema.required).not.toContain('setCurrent');
+
+    expect(schemaOf('manager.rotate').required).toEqual(['projectDir']);
+
+    const run = bodyOf('mafwCommands.run');
+    expect(run.required).toBe(true);
+    const runSchema = run.content['application/json'].schema;
+    expect(runSchema.required).toEqual(['command']);
+    expect(runSchema.properties.command.minLength).toBe(1);
+    expect(Object.keys(runSchema.properties).sort()).toEqual(['args', 'command', 'sessionID']);
   });
 });

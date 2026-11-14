@@ -8056,6 +8056,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -8079,6 +8090,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -8092,6 +8114,59 @@
         "tags": [
           "mcp"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "type"
+                ],
+                "properties": {
+                  "name": {
+                    "minLength": 1,
+                    "description": "Configured server key; the adapter validates the accepted charset.",
+                    "type": "string"
+                  },
+                  "type": {
+                    "description": "Determines which of url / command the adapter requires.",
+                    "anyOf": [
+                      {
+                        "const": "remote",
+                        "type": "string"
+                      },
+                      {
+                        "const": "local",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "url": {
+                    "description": "Required when type is 'remote'; the adapter validates the URL.",
+                    "type": "string"
+                  },
+                  "command": {
+                    "description": "Required (non-empty argv) when type is 'local'.",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "overwrite": {
+                    "description": "Replace an existing entry with the same name (absent → conflict error).",
+                    "type": "boolean"
+                  },
+                  "replace": {
+                    "description": "Explicitly allow a type change for an existing name (absent → conflict error).",
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -8105,6 +8180,26 @@
         "tags": [
           "mcp"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "minLength": 1,
+                    "description": "Configured server key to remove (preview only; nothing is written).",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -8118,6 +8213,71 @@
         "tags": [
           "mcp"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "type",
+                  "token",
+                  "confirm"
+                ],
+                "properties": {
+                  "name": {
+                    "minLength": 1,
+                    "description": "Configured server key; the adapter validates the accepted charset.",
+                    "type": "string"
+                  },
+                  "type": {
+                    "description": "Determines which of url / command the adapter requires.",
+                    "anyOf": [
+                      {
+                        "const": "remote",
+                        "type": "string"
+                      },
+                      {
+                        "const": "local",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "url": {
+                    "description": "Required when type is 'remote'; the adapter validates the URL.",
+                    "type": "string"
+                  },
+                  "command": {
+                    "description": "Required (non-empty argv) when type is 'local'.",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "overwrite": {
+                    "description": "Replace an existing entry with the same name (absent → conflict error).",
+                    "type": "boolean"
+                  },
+                  "replace": {
+                    "description": "Explicitly allow a type change for an existing name (absent → conflict error).",
+                    "type": "boolean"
+                  },
+                  "token": {
+                    "minLength": 1,
+                    "description": "Optimistic-lock token returned by the matching preview call.",
+                    "type": "string"
+                  },
+                  "confirm": {
+                    "description": "Must be literally true; any other value is rejected with 400.",
+                    "const": true,
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -8131,6 +8291,36 @@
         "tags": [
           "mcp"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "token",
+                  "confirm"
+                ],
+                "properties": {
+                  "token": {
+                    "minLength": 1,
+                    "description": "Optimistic-lock token returned by the preview call.",
+                    "type": "string"
+                  },
+                  "confirm": {
+                    "description": "Must be literally true; any other value is rejected with 400.",
+                    "const": true,
+                    "type": "boolean"
+                  },
+                  "backupPath": {
+                    "description": "Backup file to restore from; absent → the most recent backup.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -8154,6 +8344,32 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "token",
+                  "confirm"
+                ],
+                "properties": {
+                  "token": {
+                    "minLength": 1,
+                    "description": "Optimistic-lock token returned by the preview-remove call.",
+                    "type": "string"
+                  },
+                  "confirm": {
+                    "description": "Must be literally true; any other value is rejected with 400.",
+                    "const": true,
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -8167,6 +8383,34 @@
         "tags": [
           "mafwCommands"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "command"
+                ],
+                "properties": {
+                  "command": {
+                    "minLength": 1,
+                    "description": "Command name including the leading slash form the UI sends (resolved case-insensitively).",
+                    "type": "string"
+                  },
+                  "args": {
+                    "description": "Raw argument string, trimmed and passed to the command handler.",
+                    "type": "string"
+                  },
+                  "sessionID": {
+                    "description": "Session context; a suspended session short-circuits with 409 before running.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -8348,6 +8592,26 @@
         "tags": [
           "manager"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "projectDir"
+                ],
+                "properties": {
+                  "projectDir": {
+                    "minLength": 1,
+                    "description": "Project whose manager (Lead) session should be rotated.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -8455,6 +8719,36 @@
         "tags": [
           "project"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "projectDir",
+                  "mafwDir"
+                ],
+                "properties": {
+                  "projectDir": {
+                    "minLength": 1,
+                    "description": "Absolute project directory to register.",
+                    "type": "string"
+                  },
+                  "mafwDir": {
+                    "minLength": 1,
+                    "description": "Project-level .mafw data directory.",
+                    "type": "string"
+                  },
+                  "setCurrent": {
+                    "description": "Switch the current project (default false: registration only).",
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -9051,6 +9345,22 @@
         "tags": [
           "runtime"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "plugin": {
+                    "description": "Runtime plugin name (loader key or alias); empty/absent rebuilds the configured runtime.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -9064,6 +9374,17 @@
         "tags": [
           "runtime"
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -9353,6 +9674,34 @@
         "tags": [
           "plugins"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "path"
+                ],
+                "properties": {
+                  "path": {
+                    "minLength": 1,
+                    "description": "Absolute local directory of the package to install.",
+                    "type": "string"
+                  },
+                  "overwrite": {
+                    "description": "Replace an installed package of the same name (default false).",
+                    "type": "boolean"
+                  },
+                  "requestId": {
+                    "description": "Idempotency key; a new iteration must use a fresh value.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -9366,6 +9715,26 @@
         "tags": [
           "plugins"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "path"
+                ],
+                "properties": {
+                  "path": {
+                    "minLength": 1,
+                    "description": "Absolute local directory of the candidate package.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -9379,6 +9748,48 @@
         "tags": [
           "plugins"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "description": "Body must be a JSON object shaped as { package } or { type, filename } (never both).",
+                "type": "object",
+                "properties": {
+                  "package": {
+                    "minLength": 1,
+                    "description": "Unified package name; mutually exclusive with type+filename.",
+                    "type": "string"
+                  },
+                  "type": {
+                    "anyOf": [
+                      {
+                        "const": "runtime",
+                        "type": "string"
+                      },
+                      {
+                        "const": "media",
+                        "type": "string"
+                      },
+                      {
+                        "const": "usage",
+                        "type": "string"
+                      },
+                      {
+                        "const": "ui",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "filename": {
+                    "description": "Legacy per-type plugin filename; requires type and excludes package.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -9392,6 +9803,48 @@
         "tags": [
           "plugins"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "description": "Body must be a JSON object shaped as { package } or { type, filename } (never both).",
+                "type": "object",
+                "properties": {
+                  "package": {
+                    "minLength": 1,
+                    "description": "Unified package name; mutually exclusive with type+filename.",
+                    "type": "string"
+                  },
+                  "type": {
+                    "anyOf": [
+                      {
+                        "const": "runtime",
+                        "type": "string"
+                      },
+                      {
+                        "const": "media",
+                        "type": "string"
+                      },
+                      {
+                        "const": "usage",
+                        "type": "string"
+                      },
+                      {
+                        "const": "ui",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "filename": {
+                    "description": "Legacy per-type plugin filename; requires type and excludes package.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -9405,6 +9858,48 @@
         "tags": [
           "plugins"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "description": "Body must be a JSON object shaped as { package } or { type, filename } (never both).",
+                "type": "object",
+                "properties": {
+                  "package": {
+                    "minLength": 1,
+                    "description": "Unified package name; mutually exclusive with type+filename.",
+                    "type": "string"
+                  },
+                  "type": {
+                    "anyOf": [
+                      {
+                        "const": "runtime",
+                        "type": "string"
+                      },
+                      {
+                        "const": "media",
+                        "type": "string"
+                      },
+                      {
+                        "const": "usage",
+                        "type": "string"
+                      },
+                      {
+                        "const": "ui",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "filename": {
+                    "description": "Legacy per-type plugin filename; requires type and excludes package.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -9428,6 +9923,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -9451,6 +9957,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -9482,6 +9999,32 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "input": {
+                    "additionalProperties": true,
+                    "description": "Plugin-defined action payload, passed through verbatim to the committed action registry.",
+                    "type": "object",
+                    "properties": {}
+                  },
+                  "sessionID": {
+                    "description": "Session the invocation is attributed to (plugin action context).",
+                    "type": "string"
+                  },
+                  "revision": {
+                    "description": "Client snapshot token; superseded tokens are rejected with 409 stale-revision. Falls back to ?revision=.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -9505,6 +10048,31 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "projectDir"
+                ],
+                "properties": {
+                  "projectDir": {
+                    "minLength": 1,
+                    "description": "Registered project, known worktree, or a directory below one (canonicalized before the scope check).",
+                    "type": "string"
+                  },
+                  "sessionID": {
+                    "minLength": 1,
+                    "description": "Bind the ticket to one session; absent → project-scoped surface.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -9722,6 +10290,98 @@
         "tags": [
           "config"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "description": "Gateway config overrides persisted to config.yaml. Unknown keys are written verbatim; omitted keys fall back to defaults.",
+                "type": "object",
+                "properties": {
+                  "server": {
+                    "description": "HTTP/CORS/serve ports and apiToken."
+                  },
+                  "paths": {
+                    "description": "Project and data-root paths (the data root is fixed to ~/.mafw)."
+                  },
+                  "timeouts": {
+                    "description": "serve / session / goal timeouts."
+                  },
+                  "loop": {
+                    "description": "Loop round caps and degradation factors."
+                  },
+                  "goal": {
+                    "description": "Goal node model overrides and eval switches."
+                  },
+                  "mobile": {
+                    "description": "Mobile pairing URL override."
+                  },
+                  "search": {
+                    "description": "Default retriever / reranker / topK."
+                  },
+                  "memory": {
+                    "description": "Memory pipeline parameters."
+                  },
+                  "decay": {
+                    "description": "CATD topology-weighted decay."
+                  },
+                  "llm": {
+                    "description": "Default provider/model and token caps."
+                  },
+                  "logging": {
+                    "description": "Log directory, rotation size and level."
+                  },
+                  "mcpserver": {
+                    "description": "MCP server metadata."
+                  },
+                  "metrics": {
+                    "description": "In-memory metrics retention."
+                  },
+                  "chat": {
+                    "description": "Chat command keywords."
+                  },
+                  "manager": {
+                    "description": "Manager session wake/report cadence."
+                  },
+                  "recall": {
+                    "description": "Recall instruction surface, worker and boundary-recall parameters."
+                  },
+                  "usage": {
+                    "description": "Usage accounting parameters."
+                  },
+                  "trajectory": {
+                    "description": "Trajectory rebuild parameters."
+                  },
+                  "approval": {
+                    "description": "Approval policy parameters."
+                  },
+                  "media": {
+                    "description": "Media / TTS engine configuration."
+                  },
+                  "cognition": {
+                    "description": "Declarative cognition rules (validateRules is authoritative)."
+                  },
+                  "events": {
+                    "description": "Persistent event log switches and retention."
+                  },
+                  "runtime": {
+                    "description": "Active runtime plugin name and per-plugin config index."
+                  },
+                  "alignment": {
+                    "description": "Alignment weights file."
+                  },
+                  "resources": {
+                    "description": "Resource ledger watermarks and connection/quota limits (0 = unlimited)."
+                  },
+                  "env": {
+                    "description": "Environment mirror (MAFW_* paths and switches)."
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -9764,6 +10424,19 @@
         "tags": [
           "runtime"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "description": "Runtime-native Config merge document (shape owned by the active runtime; gateway forwards it verbatim).",
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -32753,6 +33426,17 @@
         "tags": [
           "internal"
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -32766,6 +33450,30 @@
         "tags": [
           "internal"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "description": "Either { event: {...}, plugin? } or a bare runtime-native event object.",
+                "type": "object",
+                "properties": {
+                  "event": {
+                    "additionalProperties": true,
+                    "description": "Runtime-native event payload (adapter-owned). Omit to treat the top-level object itself as the event.",
+                    "type": "object",
+                    "properties": {}
+                  },
+                  "plugin": {
+                    "description": "Apply this runtime plugin’s event mapping table before normalization; absent → identity.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -32779,6 +33487,29 @@
         "tags": [
           "internal"
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "scenarios": {
+                    "description": "Scenario ids to run (unknown ids are ignored); absent → every scenario.",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "timeoutMs": {
+                    "description": "Per-scenario observation window; non-number values are ignored.",
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"

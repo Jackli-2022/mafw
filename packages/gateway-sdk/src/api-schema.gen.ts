@@ -7464,7 +7464,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7484,7 +7488,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7502,7 +7510,24 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Configured server key; the adapter validates the accepted charset. */
+                    name: string;
+                    /** @description Determines which of url / command the adapter requires. */
+                    type: "remote" | "local";
+                    /** @description Required when type is 'remote'; the adapter validates the URL. */
+                    url?: string;
+                    /** @description Required (non-empty argv) when type is 'local'. */
+                    command?: string[];
+                    /** @description Replace an existing entry with the same name (absent → conflict error). */
+                    overwrite?: boolean;
+                    /** @description Explicitly allow a type change for an existing name (absent → conflict error). */
+                    replace?: boolean;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7520,7 +7545,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Configured server key to remove (preview only; nothing is written). */
+                    name: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7538,7 +7570,31 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Configured server key; the adapter validates the accepted charset. */
+                    name: string;
+                    /** @description Determines which of url / command the adapter requires. */
+                    type: "remote" | "local";
+                    /** @description Required when type is 'remote'; the adapter validates the URL. */
+                    url?: string;
+                    /** @description Required (non-empty argv) when type is 'local'. */
+                    command?: string[];
+                    /** @description Replace an existing entry with the same name (absent → conflict error). */
+                    overwrite?: boolean;
+                    /** @description Explicitly allow a type change for an existing name (absent → conflict error). */
+                    replace?: boolean;
+                    /** @description Optimistic-lock token returned by the matching preview call. */
+                    token: string;
+                    /**
+                     * @description Must be literally true; any other value is rejected with 400.
+                     * @constant
+                     */
+                    confirm: true;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7556,7 +7612,21 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Optimistic-lock token returned by the preview call. */
+                    token: string;
+                    /**
+                     * @description Must be literally true; any other value is rejected with 400.
+                     * @constant
+                     */
+                    confirm: true;
+                    /** @description Backup file to restore from; absent → the most recent backup. */
+                    backupPath?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7576,7 +7646,19 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Optimistic-lock token returned by the preview-remove call. */
+                    token: string;
+                    /**
+                     * @description Must be literally true; any other value is rejected with 400.
+                     * @constant
+                     */
+                    confirm: true;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7594,7 +7676,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Command name including the leading slash form the UI sends (resolved case-insensitively). */
+                    command: string;
+                    /** @description Raw argument string, trimmed and passed to the command handler. */
+                    args?: string;
+                    /** @description Session context; a suspended session short-circuits with 409 before running. */
+                    sessionID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7671,7 +7764,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Project whose manager (Lead) session should be rotated. */
+                    projectDir: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7740,7 +7840,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Absolute project directory to register. */
+                    projectDir: string;
+                    /** @description Project-level .mafw data directory. */
+                    mafwDir: string;
+                    /** @description Switch the current project (default false: registration only). */
+                    setCurrent?: boolean;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8019,7 +8130,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Runtime plugin name (loader key or alias); empty/absent rebuilds the configured runtime. */
+                    plugin?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8037,7 +8155,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8162,7 +8284,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Absolute local directory of the package to install. */
+                    path: string;
+                    /** @description Replace an installed package of the same name (default false). */
+                    overwrite?: boolean;
+                    /** @description Idempotency key; a new iteration must use a fresh value. */
+                    requestId?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8180,7 +8313,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Absolute local directory of the candidate package. */
+                    path: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8198,7 +8338,17 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Unified package name; mutually exclusive with type+filename. */
+                    package?: string;
+                    type?: "runtime" | "media" | "usage" | "ui";
+                    /** @description Legacy per-type plugin filename; requires type and excludes package. */
+                    filename?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8216,7 +8366,17 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Unified package name; mutually exclusive with type+filename. */
+                    package?: string;
+                    type?: "runtime" | "media" | "usage" | "ui";
+                    /** @description Legacy per-type plugin filename; requires type and excludes package. */
+                    filename?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8234,7 +8394,17 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Unified package name; mutually exclusive with type+filename. */
+                    package?: string;
+                    type?: "runtime" | "media" | "usage" | "ui";
+                    /** @description Legacy per-type plugin filename; requires type and excludes package. */
+                    filename?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8254,7 +8424,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8274,7 +8448,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8295,7 +8473,20 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Plugin-defined action payload, passed through verbatim to the committed action registry. */
+                    input?: {
+                        [key: string]: unknown;
+                    };
+                    /** @description Session the invocation is attributed to (plugin action context). */
+                    sessionID?: string;
+                    /** @description Client snapshot token; superseded tokens are rejected with 409 stale-revision. Falls back to ?revision=. */
+                    revision?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8315,7 +8506,16 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Registered project, known worktree, or a directory below one (canonicalized before the scope check). */
+                    projectDir: string;
+                    /** @description Bind the ticket to one session; absent → project-scoped surface. */
+                    sessionID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8432,7 +8632,66 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description HTTP/CORS/serve ports and apiToken. */
+                    server?: unknown;
+                    /** @description Project and data-root paths (the data root is fixed to ~/.mafw). */
+                    paths?: unknown;
+                    /** @description serve / session / goal timeouts. */
+                    timeouts?: unknown;
+                    /** @description Loop round caps and degradation factors. */
+                    loop?: unknown;
+                    /** @description Goal node model overrides and eval switches. */
+                    goal?: unknown;
+                    /** @description Mobile pairing URL override. */
+                    mobile?: unknown;
+                    /** @description Default retriever / reranker / topK. */
+                    search?: unknown;
+                    /** @description Memory pipeline parameters. */
+                    memory?: unknown;
+                    /** @description CATD topology-weighted decay. */
+                    decay?: unknown;
+                    /** @description Default provider/model and token caps. */
+                    llm?: unknown;
+                    /** @description Log directory, rotation size and level. */
+                    logging?: unknown;
+                    /** @description MCP server metadata. */
+                    mcpserver?: unknown;
+                    /** @description In-memory metrics retention. */
+                    metrics?: unknown;
+                    /** @description Chat command keywords. */
+                    chat?: unknown;
+                    /** @description Manager session wake/report cadence. */
+                    manager?: unknown;
+                    /** @description Recall instruction surface, worker and boundary-recall parameters. */
+                    recall?: unknown;
+                    /** @description Usage accounting parameters. */
+                    usage?: unknown;
+                    /** @description Trajectory rebuild parameters. */
+                    trajectory?: unknown;
+                    /** @description Approval policy parameters. */
+                    approval?: unknown;
+                    /** @description Media / TTS engine configuration. */
+                    media?: unknown;
+                    /** @description Declarative cognition rules (validateRules is authoritative). */
+                    cognition?: unknown;
+                    /** @description Persistent event log switches and retention. */
+                    events?: unknown;
+                    /** @description Active runtime plugin name and per-plugin config index. */
+                    runtime?: unknown;
+                    /** @description Alignment weights file. */
+                    alignment?: unknown;
+                    /** @description Resource ledger watermarks and connection/quota limits (0 = unlimited). */
+                    resources?: unknown;
+                    /** @description Environment mirror (MAFW_* paths and switches). */
+                    env?: unknown;
+                } & {
+                    [key: string]: unknown;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8474,7 +8733,13 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -15430,7 +15695,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -15448,7 +15717,20 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Runtime-native event payload (adapter-owned). Omit to treat the top-level object itself as the event. */
+                    event?: {
+                        [key: string]: unknown;
+                    };
+                    /** @description Apply this runtime plugin’s event mapping table before normalization; absent → identity. */
+                    plugin?: string;
+                } & {
+                    [key: string]: unknown;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -15466,7 +15748,16 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Scenario ids to run (unknown ids are ignored); absent → every scenario. */
+                    scenarios?: string[];
+                    /** @description Per-scenario observation window; non-number values are ignored. */
+                    timeoutMs?: number;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
