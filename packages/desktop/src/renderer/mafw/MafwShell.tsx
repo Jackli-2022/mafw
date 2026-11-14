@@ -24,7 +24,7 @@ import { TextMenuBridge } from "./context-menu/TextMenuBridge"
 import { menuController } from "./context-menu/controller"
 import { experienceStore } from "./experience-store"
 import { formatRailTitle, railProjectName } from "./components/rail-display"
-import { clampLeftDockWidth, closeLeftDockState, effectiveLeftDockWidth, leftDockPushDragMax, normalizeLeftDockFace, resolveLeftDockWidth, resolveMode, restoreLeftDockOpen, shouldAutoRestoreLeftDock, shouldCloseOnSelect, toggleLeftDockState, type LeftDockFace } from "./left-dock"
+import { LEFT_RAIL_WIDTH, PUSH_PAIR_BUDGET, clampLeftDockWidth, closeLeftDockState, effectiveLeftDockWidth, leftDockPushDragMax, normalizeLeftDockFace, resolveLeftDockWidth, resolveMode, restoreLeftDockOpen, shouldAutoRestoreLeftDock, shouldCloseOnSelect, toggleLeftDockState, type LeftDockFace } from "./left-dock"
 import { SessionStrip } from "./components/SessionStrip"
 import { sessionStore } from "./session-store"
 import { needsSessionInfoHydration, sessionInfoEntityFields } from "./session-info"
@@ -181,7 +181,7 @@ import { fileOpenPlan } from "./file-kind"
 import { fileProtocol } from "./file-protocol-client"
 import { requestBrowserNavigate } from "./browser-nav"
 import { buildMafwFileUrl } from "../../shared/mafw-file"
-import { CHAT_PX_CEIL, CHAT_PX_FLOOR, WORKBENCH_DEFAULT_DETENT, WORKBENCH_MIN_WIDTH, chatPxForDetent, snapDetent, workbenchZoneFor, type WorkbenchDetent } from "./workbench-detents"
+import { CHAT_COMFORT_MIN, CHAT_PX_CEIL, CHAT_PX_FLOOR, WORKBENCH_DEFAULT_DETENT, WORKBENCH_MIN_WIDTH, chatPxForDetent, snapDetent, workbenchZoneFor, type WorkbenchDetent } from "./workbench-detents"
 import { migrateDockKeys, workbenchColumns, workbenchFocusActive, workbenchShellHidden, workbenchSplit, formatResizePreview, type WorkbenchContentMode } from "./workbench-layout"
 import { resolveWorkbenchRoot } from "./workbench-root"
 import {
@@ -2149,7 +2149,11 @@ export function MafwShell() {
   const [detent, setDetent] = createSignal<WorkbenchDetent>(workbenchBoot.detent)
   /** 拖动中的连续预览（松手吸附后清空）。 */
   const [chatPreview, setChatPreview] = createSignal<number | null>(null)
-  const availableWidth = () => Math.max(0, window.innerWidth - 46 - (leftDockMode() === "push" ? effectiveLeftDockWidth(leftDockWidth(), viewportWidth()) : 0))
+  // 二选一窄窗只存在一栏：推挤按当前可见栏的最小宽度算，而不是整窗的 split 预算。
+  const narrowZone = () => workbenchZoneFor(viewportWidth() - LEFT_RAIL_WIDTH) === "narrow"
+  const narrowRequiredMainWidth = () => narrowView() === "workbench" ? WORKBENCH_MIN_WIDTH : CHAT_COMFORT_MIN
+  const leftDockRequiredMainWidth = () => narrowZone() ? narrowRequiredMainWidth() : PUSH_PAIR_BUDGET
+  const availableWidth = () => Math.max(0, viewportWidth() - LEFT_RAIL_WIDTH - (leftDockMode() === "push" ? effectiveLeftDockWidth(leftDockWidth(), viewportWidth(), leftDockRequiredMainWidth()) : 0))
   const chatPx = () => chatPreview() ?? chatPxForDetent(detent(), availableWidth())
   const applyDetent = (d: WorkbenchDetent) => {
     setDetent(d)
@@ -2202,13 +2206,12 @@ export function MafwShell() {
   const welcomeFull = () => activeTab() === "chat" && !showConfig() && (showWelcome() || !activeSessionId())
   const chatActive = () => activeTab() === "chat" && !showConfig() && !welcomeFull()
   const workbenchContent = (): WorkbenchContentMode => (showConfig() ? "config" : "project")
-  const narrowZone = () => workbenchZoneFor(availableWidth()) === "narrow"
   const narrowChat = () => narrowZone() && narrowView() === "chat"
   const chatSplit = () => workbenchSplit({ content: workbenchContent(), open: rightDockOpen() })
   const focusActive = () => workbenchFocusActive({ focus: workbenchFocus(), content: workbenchContent(), open: rightDockOpen() })
   const bodyColumns = () =>
     workbenchColumns({
-      leftPx: leftDockMode() === "push" ? effectiveLeftDockWidth(leftDockWidth(), viewportWidth()) : 0,
+      leftPx: leftDockMode() === "push" ? effectiveLeftDockWidth(leftDockWidth(), viewportWidth(), leftDockRequiredMainWidth()) : 0,
       chatPx: chatPx(),
       split: chatSplit(),
       focus: focusActive(),
@@ -3691,9 +3694,15 @@ export function MafwShell() {
       localStorage.removeItem("mafw-rail-width")
     } catch { /* ignore */ }
   }
+  const initialLeftDockNarrow = workbenchZoneFor(window.innerWidth - LEFT_RAIL_WIDTH) === "narrow"
   const [leftDock, setLeftDock] = createSignal<{ face: LeftDockFace; open: boolean }>({
     face: normalizeLeftDockFace(localStorage.getItem("mafw-left-dock-face")),
-    open: restoreLeftDockOpen(localStorage.getItem("mafw-left-dock-open"), window.innerWidth, initialLeftDockWidth.width),
+    open: restoreLeftDockOpen(
+      localStorage.getItem("mafw-left-dock-open"),
+      window.innerWidth,
+      initialLeftDockWidth.width,
+      initialLeftDockNarrow ? CHAT_COMFORT_MIN : PUSH_PAIR_BUDGET,
+    ),
   })
   try {
     const storedFace = localStorage.getItem("mafw-left-dock-face")
@@ -3701,7 +3710,7 @@ export function MafwShell() {
       localStorage.setItem("mafw-left-dock-face", leftDock().face)
     }
   } catch { /* ignore */ }
-  const leftDockMode = () => resolveMode(leftDock().open, viewportWidth(), leftDockWidth())
+  const leftDockMode = () => resolveMode(leftDock().open, viewportWidth(), leftDockWidth(), leftDockRequiredMainWidth())
   const openLeftDockFace = (face: LeftDockFace) => {
     // Persist before state, same ordering rule as toggle/close.
     try {
@@ -3859,7 +3868,8 @@ export function MafwShell() {
   // 启动时因窄幅被抑制的 open 偏好，在拉宽到 push 阈值后恢复。
   createEffect(() => {
     const width = viewportWidth()
-    if (!shouldAutoRestoreLeftDock(localStorage.getItem("mafw-left-dock-open"), leftDock().open, width, leftDockWidth())) return
+    const required = leftDockRequiredMainWidth()
+    if (!shouldAutoRestoreLeftDock(localStorage.getItem("mafw-left-dock-open"), leftDock().open, width, leftDockWidth(), required)) return
     setLeftDock((s) => ({ ...s, open: true }))
   })
   // 浮层模式：Esc 关闭（点外关闭由 backdrop 承担）。
@@ -4152,8 +4162,8 @@ export function MafwShell() {
           <LeftDock
             mode={leftDockMode()}
             face={leftDock().face}
-            width={leftDockMode() === "push" ? effectiveLeftDockWidth(leftDockWidth(), viewportWidth()) : leftDockWidth()}
-            resizeMax={leftDockPushDragMax(viewportWidth())}
+            width={leftDockMode() === "push" ? effectiveLeftDockWidth(leftDockWidth(), viewportWidth(), leftDockRequiredMainWidth()) : leftDockWidth()}
+            resizeMax={leftDockPushDragMax(viewportWidth(), leftDockRequiredMainWidth())}
             onClose={closeLeftDock}
             onResize={applyLeftDockWidth}
             activeSessionId={activeSessionId()}
