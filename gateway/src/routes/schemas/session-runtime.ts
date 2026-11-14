@@ -134,7 +134,7 @@ const ResumeBriefSchema = Type.Object({
 })
 
 /** `RunState`（`toRunDto`）：resumedAt / finishedAt 只在推进后出现。 */
-const RunStateSchema = Type.Object({
+export const RunStateSchema = Type.Object({
   id: Type.String(),
   sessionID: Type.String(),
   projectDir: Type.String(),

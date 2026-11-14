@@ -1854,6 +1854,28 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
   `contract-compat.checks.ts` 新增 `CHECK_tasks_submit`（≡ `GenTask`）与
   `CHECK_session_create_session_half` / `_worktree`（composite 会展平，按两半锁等价）。
 
+### E10h-R1（session 写响应 35 个）
+
+- 覆盖写响应 **38/195**（`humanToken.rotate` + P0 的 2 个 + R1 的 35 个），total response
+  台账 129 → **164/327**。catalog 的 35 个 entry 只加 `response:`，请求契约与 handler 不动。
+- 新文件 `routes/schemas/session-write-responses.ts`：复用读侧同形 schema（`session.config.set`
+  ≡ `SessionConfigResponse`、`session.discoveryRefresh` ≡ `SessionDiscoveryResponse`、
+  `session.suspend` / `resume` / `discardRun` 的 `run` 来自 `RunStateSchema`、
+  `session.subagents.spawn` ≡ `SubagentRecordSchema`、`session.usagePluginsReload` ≡
+  `UsagePluginsListResponse`），其余按 handler wire 字面新写。
+- 复用所需的内部 schema 只加了 `export`（`SessionCheckpointSchema`、`SubagentRecordSchema`、
+  `RunStateSchema`、`UsagePluginSummarySchema`），未改任何既有响应形状。
+- 空体（handler 逐字 `json(200, {})`）：`session.revert` / `unrevert` / `summarize` /
+  `background` → `Type.Object({})`；`session.command` 无 gateway handler（尾部反代 runtime
+  serve），按协议边界 `additionalProperties:true` 开放。
+- `session.promptAsync` 的 200 三态联合：`{status:'ok'}`（直发）、`{status:'ok', queued:true,
+  itemId, position}`（队列短路）、`{status:'ok', queued:true, duplicate:true, itemId}`（幂等命中）。
+- `session.checkpoint` 回 `SessionCheckpoint` 本体（无列表专属 `actions`，用 `Type.Omit`
+  从列表条目骨架去掉）；`session.fork` 只有 `id` 是 gateway 契约保证的（runtime 记录开放）。
+- 守卫：`schema-coverage.test.ts` 写响应下界 3 → **38**，新增 R1 逐 op 清单与空体分类断言；
+  `api-contract.test.ts` 新增 9 条代表性断言（复用同形、checkpoint 无 actions、promptAsync
+  三态、legacy `{status:'ok'}` 等）。生成物 diff 恰好这 35 个 op。
+
 ---
 
 ## E11 身份 / 配额硬化（2026-11-13）

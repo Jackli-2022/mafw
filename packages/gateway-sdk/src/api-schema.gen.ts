@@ -5151,7 +5151,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        cleared: number;
+                    };
+                };
             };
         };
     };
@@ -5211,7 +5215,19 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        mode: "read-only" | "auto" | "full-access";
+                        agent?: string;
+                        model?: {
+                            providerID: string;
+                            modelID: string;
+                        };
+                        variant?: string;
+                        thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                        thinkingLevelSupported: boolean;
+                    };
+                };
             };
         };
     };
@@ -5236,7 +5252,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        cancelled: string;
+                    };
+                };
             };
         };
     };
@@ -5360,7 +5380,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        ok: true;
+                    };
+                };
             };
         };
     };
@@ -5386,7 +5411,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        ok: true;
+                    };
+                };
             };
         };
     };
@@ -5572,7 +5602,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        ok: true;
+                    };
+                };
             };
         };
     };
@@ -5602,7 +5637,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        ok: true;
+                    };
+                };
             };
         };
     };
@@ -5628,7 +5668,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        ok: boolean;
+                        errors: string[];
+                    };
+                };
             };
         };
     };
@@ -6008,7 +6053,16 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @description Runtime session record for the fork; the gateway contract guarantees `id` only. */
+                        session: {
+                            id: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
             };
         };
     };
@@ -6035,7 +6089,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": Record<string, never>;
+                };
             };
         };
     };
@@ -6059,7 +6115,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": Record<string, never>;
+                };
             };
         };
     };
@@ -6118,7 +6176,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        reverted: number;
+                    };
+                };
             };
         };
     };
@@ -6144,7 +6206,20 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        checkpoint: {
+                            id: string;
+                            sessionID: string;
+                            projectDir: string;
+                            anchorMessageID: string;
+                            snapshotTree: string | null;
+                            untracked: string[];
+                            kind: "auto" | "manual";
+                            createdAt: string;
+                        };
+                    };
+                };
             };
         };
     };
@@ -6235,7 +6310,14 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        scope: "session" | "files" | "both";
+                        filesSkipped?: boolean;
+                        leftoverUntracked?: string[];
+                        preRestoreCheckpointId?: string;
+                    };
+                };
             };
         };
     };
@@ -6262,7 +6344,27 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        run: {
+                            id: string;
+                            sessionID: string;
+                            projectDir: string;
+                            status: "suspended" | "resumed" | "completed" | "failed" | "cancelled";
+                            reason?: string;
+                            brief: {
+                                lastUserText: string;
+                                lastAssistantTail: string;
+                                anchorMessageID: string;
+                                queuedCount: number;
+                            };
+                            createdAt: string;
+                            suspendedAt: string;
+                            resumedAt?: string;
+                            finishedAt?: string;
+                        };
+                    };
+                };
             };
         };
     };
@@ -6289,7 +6391,29 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        run: {
+                            id: string;
+                            sessionID: string;
+                            projectDir: string;
+                            status: "suspended" | "resumed" | "completed" | "failed" | "cancelled";
+                            reason?: string;
+                            brief: {
+                                lastUserText: string;
+                                lastAssistantTail: string;
+                                anchorMessageID: string;
+                                queuedCount: number;
+                            };
+                            createdAt: string;
+                            suspendedAt: string;
+                            resumedAt?: string;
+                            finishedAt?: string;
+                        };
+                        /** @constant */
+                        prompted: true;
+                    };
+                };
             };
         };
     };
@@ -6356,7 +6480,27 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        run: {
+                            id: string;
+                            sessionID: string;
+                            projectDir: string;
+                            status: "suspended" | "resumed" | "completed" | "failed" | "cancelled";
+                            reason?: string;
+                            brief: {
+                                lastUserText: string;
+                                lastAssistantTail: string;
+                                anchorMessageID: string;
+                                queuedCount: number;
+                            };
+                            createdAt: string;
+                            suspendedAt: string;
+                            resumedAt?: string;
+                            finishedAt?: string;
+                        };
+                    };
+                };
             };
         };
     };
@@ -6388,7 +6532,21 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        part: {
+                            id: string;
+                            type: string;
+                            data: unknown;
+                            transient?: boolean;
+                            sessionID?: string;
+                            messageID?: string;
+                            native?: {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
             };
         };
     };
@@ -6483,7 +6641,58 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        sessionID: string;
+                        directory: string;
+                        revision: string;
+                        commandsRevision: string;
+                        generatedAt: string;
+                        commands: {
+                            name: string;
+                            aliases?: string[];
+                            description: string;
+                            argumentHint?: string;
+                            category?: "goals" | "session" | "memory" | "custom" | "runtime";
+                            destructive?: boolean;
+                            source: "mafw" | "custom" | "runtime";
+                            scope: "gateway" | "user" | "project" | "runtime";
+                            runtime?: boolean;
+                            agent?: string;
+                            model?: {
+                                id: string;
+                                providerID: string;
+                                variant?: string;
+                            };
+                            subtask?: boolean;
+                        }[];
+                        skills: {
+                            id: string;
+                            name: string;
+                            description?: string;
+                            slash: boolean;
+                            scope: "user" | "project" | "path";
+                            location?: string;
+                            contentLength: number;
+                        }[];
+                        instructions: {
+                            id: string;
+                            path: string;
+                            scope: "global" | "project" | "nested";
+                            /** @constant */
+                            kind: "agents-md";
+                            bytes: number;
+                            mtime: string;
+                        }[];
+                        degraded: boolean;
+                        degradedReason?: "capability_absent" | "runtime_error" | "partial" | "instructions_error";
+                        warnings: {
+                            source: "commands" | "skills" | "instructions";
+                            message: string;
+                        }[];
+                        skillInvokeSupported: boolean;
+                    };
+                };
             };
         };
     };
@@ -6542,7 +6751,13 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        ok: true;
+                        skill: string;
+                    };
+                };
             };
         };
     };
@@ -6566,7 +6781,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        ok: true;
+                    };
+                };
             };
         };
     };
@@ -6593,7 +6813,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": Record<string, never>;
+                };
             };
         };
     };
@@ -6634,7 +6856,20 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        parts: {
+                            id: string;
+                            sessionID: string;
+                            messageID: string;
+                            /** @constant */
+                            type: "text";
+                            text: string;
+                        }[];
+                        structured?: unknown;
+                        structuredError?: string;
+                    };
+                };
             };
         };
     };
@@ -6689,7 +6924,27 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        status: "ok";
+                    } | {
+                        /** @constant */
+                        status: "ok";
+                        /** @constant */
+                        queued: true;
+                        itemId: string;
+                        position: number;
+                    } | {
+                        /** @constant */
+                        status: "ok";
+                        /** @constant */
+                        queued: true;
+                        /** @constant */
+                        duplicate: true;
+                        itemId: string;
+                    };
+                };
             };
         };
     };
@@ -6713,7 +6968,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": Record<string, never>;
+                };
             };
         };
     };
@@ -6743,7 +7000,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
             };
         };
     };
@@ -7540,7 +7801,42 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        plugins: {
+                            file: string;
+                            name?: string;
+                            status: "ok" | "error";
+                            error?: string;
+                            disabled: boolean;
+                            origin: "builtin" | "override" | "user";
+                            pluginType?: string;
+                            configSchema?: {
+                                key: string;
+                                label: string;
+                                type: "number" | "string" | "boolean" | "select";
+                                options?: string[];
+                                default?: string | number | boolean;
+                            }[];
+                            config: unknown;
+                        }[];
+                        templates: {
+                            id: string;
+                            label: string;
+                            description: string;
+                            fields: {
+                                key: string;
+                                label: string;
+                                type: "string" | "number" | "boolean" | "select" | "textarea";
+                                required?: boolean;
+                                options?: string[];
+                                placeholder?: string;
+                                hint?: string;
+                            }[];
+                        }[];
+                        builtins: string[];
+                    };
+                };
             };
         };
     };
@@ -7572,7 +7868,30 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        ok: true;
+                        name: string;
+                        plugins: {
+                            file: string;
+                            name?: string;
+                            status: "ok" | "error";
+                            error?: string;
+                            disabled: boolean;
+                            origin: "builtin" | "override" | "user";
+                            pluginType?: string;
+                            configSchema?: {
+                                key: string;
+                                label: string;
+                                type: "number" | "string" | "boolean" | "select";
+                                options?: string[];
+                                default?: string | number | boolean;
+                            }[];
+                            config: unknown;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -7623,7 +7942,29 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        ok: true;
+                        plugins: {
+                            file: string;
+                            name?: string;
+                            status: "ok" | "error";
+                            error?: string;
+                            disabled: boolean;
+                            origin: "builtin" | "override" | "user";
+                            pluginType?: string;
+                            configSchema?: {
+                                key: string;
+                                label: string;
+                                type: "number" | "string" | "boolean" | "select";
+                                options?: string[];
+                                default?: string | number | boolean;
+                            }[];
+                            config: unknown;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -7647,7 +7988,29 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        ok: true;
+                        plugins: {
+                            file: string;
+                            name?: string;
+                            status: "ok" | "error";
+                            error?: string;
+                            disabled: boolean;
+                            origin: "builtin" | "override" | "user";
+                            pluginType?: string;
+                            configSchema?: {
+                                key: string;
+                                label: string;
+                                type: "number" | "string" | "boolean" | "select";
+                                options?: string[];
+                                default?: string | number | boolean;
+                            }[];
+                            config: unknown;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -7671,7 +8034,13 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        ok: boolean;
+                        result?: unknown;
+                        error?: string;
+                    };
+                };
             };
         };
     };
@@ -16676,7 +17045,20 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        parentID: string;
+                        depth: number;
+                        agent?: string;
+                        description?: string;
+                        status: "running" | "completed" | "failed" | "aborted";
+                        background?: boolean;
+                        createdAt: number;
+                        updatedAt: number;
+                        error?: string;
+                    };
+                };
             };
         };
     };
@@ -16703,7 +17085,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        ok: true;
+                    };
+                };
             };
         };
     };
@@ -16728,7 +17115,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        ok: true;
+                    };
+                };
             };
         };
     };
@@ -16779,7 +17171,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        status: "ok";
+                    };
+                };
             };
         };
     };

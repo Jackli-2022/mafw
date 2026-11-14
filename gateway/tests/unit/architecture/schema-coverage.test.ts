@@ -3,8 +3,9 @@
 // `scripts/schema-coverage.cjs` parses `route-catalog.ts` (no TS import, no
 // generated SDK artifact) and reports how many catalog ops carry a 200
 // response schema. This test pins that report against the catalog:
-//   - the 129 ops covered through E10h-P0（E10g-fix 的 127 + 2 个写响应 pilot：
-//     `session.create` / `tasks.submit`）(13 pre-E10 + 16 E10 + 8 E10b-1 + 7 E10b-2 +
+//   - the 164 ops covered through E10h-R1（E10g-fix 的 127 + 2 个写响应 pilot + R1 的
+//     35 个 session 写响应：`session.create` / `tasks.submit` / `humanToken.rotate` 之外）
+//     (13 pre-E10 + 16 E10 + 8 E10b-1 + 7 E10b-2 +
 //     1 E11-1 + 8 E10c-1 + 8 E10d-1 + 8 E10e-1 + 16 E10f-A + 16 E10f-B + 16 E10f-C +
 //     8 E10f-D) must each
 //     keep their `response` — a silent schema deletion fails here;
@@ -37,7 +38,7 @@ interface CoverageReport {
 const GATEWAY_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPT = path.join(GATEWAY_ROOT, 'scripts', 'schema-coverage.cjs');
 
-/** Baseline 13 (E8 and earlier) + 8 session read (E10-1) + 8 pod/work read (E10-2) + 8 goal read (E10b-1) + 7 human-gate/permission read (E10b-2) + 1 human token rotate (E11-1) + 8 memory/recall/lead read (E10c-1) + 8 memory extra / lead.context / pod read (E10d-1) + 8 metadata/registry read (E10e-1) + 16 session/task/terminal/usage read (E10f-A) + 16 project/runtime/metadata read (E10f-B) + 16 goal/lead/event/standing/automation/pod read (E10f-C) + 8 observability/device/A2A read (E10f-D) = 125. */
+/** Baseline 分组 (E8 and earlier 13 + 8 session read (E10-1) + 8 pod/work read (E10-2) + 8 goal read (E10b-1) + 7 human-gate/permission read (E10b-2) + 1 human token rotate (E11-1) + 8 memory/recall/lead read (E10c-1) + 8 memory extra / lead.context / pod read (E10d-1) + 8 metadata/registry read (E10e-1) + 16 session/task/terminal/usage read (E10f-A) + 16 project/runtime/metadata read (E10f-B) + 16 goal/lead/event/standing/automation/pod read (E10f-C) + 8 observability/device/A2A read (E10f-D)) = 125 entries; E10f-D 收口时台账 127（含 humanToken.rotate 与 orchestration.outcomes），E10h-P0 +2 → 129，E10h-R1 的 35 个 session 写响应 → 164。 */
 const E10_COVERED_OPS = [
   'a2a.agentCard',
   'agent.capabilities',
@@ -133,31 +134,66 @@ const E10_COVERED_OPS = [
   'runtime.contract',
   'runtime.get',
   'scheduler.status',
+  'session.abort',
+  'session.background',
+  'session.checkpoint',
   'session.checkpoints',
   'session.children',
+  'session.command',
   'session.config',
+  'session.config.set',
   'session.create',
+  'session.data',
+  'session.delete',
+  'session.deleteLegacy',
   'session.diff',
+  'session.discardRun',
   'session.discovery',
+  'session.discoveryRefresh',
   'session.discoverySkill',
+  'session.discoverySkillInvoke',
+  'session.fork',
   'session.get',
   'session.list',
   'session.messages',
+  'session.prompt',
+  'session.promptAsync',
+  'session.queue.cancel',
+  'session.queue.clear',
   'session.queue.list',
+  'session.rename',
+  'session.restoreCheckpoint',
+  'session.resume',
+  'session.revert',
+  'session.revertDiff',
   'session.run',
   'session.structured',
+  'session.subagents.cancel',
   'session.subagents.list',
+  'session.subagents.message',
   'session.subagents.result',
+  'session.subagents.spawn',
+  'session.summarize',
+  'session.suspend',
+  'session.switchAgent',
+  'session.switchModel',
   'session.todo',
   'session.tokenSummary',
   'session.trajectory',
+  'session.unrevert',
   'session.usage',
   'session.usagePluginSourceGet',
+  'session.usagePluginSourcePut',
+  'session.usagePluginTest',
+  'session.usagePluginsCreate',
+  'session.usagePluginsDelete',
   'session.usagePluginsList',
+  'session.usagePluginsReload',
   'session.usageSummary',
   'skills.list',
   'standingGoals.list',
   'standingGoals.runs',
+  'structured.submit',
   'tasks.get',
   'tasks.list',
   'tasks.output',
@@ -196,6 +232,59 @@ const E10G_P0_REQUEST_OPS = ['pods.tasks.create', 'session.create', 'tasks.submi
  * 后续 R1-R6 只追加；本清单钉住「这两个 op 的 `response:` 不被误删」。
  */
 const E10H_P0_WRITE_RESPONSE_OPS = ['session.create', 'tasks.submit'];
+
+/**
+ * E10h-R1：session 域 35 个写 op 的 200 响应。P0 的 2 个 + 存量
+ * `humanToken.rotate` 与这批同属一个台账；本清单按名钉住每个 op 的 `response:`。
+ */
+const E10H_R1_WRITE_RESPONSE_OPS = [
+  'session.abort',
+  'session.background',
+  'session.checkpoint',
+  'session.command',
+  'session.config.set',
+  'session.data',
+  'session.delete',
+  'session.deleteLegacy',
+  'session.discardRun',
+  'session.discoveryRefresh',
+  'session.discoverySkillInvoke',
+  'session.fork',
+  'session.prompt',
+  'session.promptAsync',
+  'session.queue.cancel',
+  'session.queue.clear',
+  'session.rename',
+  'session.restoreCheckpoint',
+  'session.resume',
+  'session.revert',
+  'session.revertDiff',
+  'session.subagents.cancel',
+  'session.subagents.message',
+  'session.subagents.spawn',
+  'session.summarize',
+  'session.suspend',
+  'session.switchAgent',
+  'session.switchModel',
+  'session.unrevert',
+  'session.usagePluginSourcePut',
+  'session.usagePluginTest',
+  'session.usagePluginsCreate',
+  'session.usagePluginsDelete',
+  'session.usagePluginsReload',
+  'structured.submit',
+];
+
+/**
+ * R1 中 handler 逐字 `json(200, {})` 的四个动作：schema 是空对象（无 properties）。
+ * `session.command` 是 runtime 边界（open object），故意不在此列。
+ */
+const E10H_R1_EMPTY_RESPONSE_OPS = [
+  'session.background',
+  'session.revert',
+  'session.summarize',
+  'session.unrevert',
+];
 
 /**
  * E10g-W1：session 域写接口（35 个）。P0 的 session.create + 这 35 个 = 38。
@@ -703,6 +792,11 @@ function catalogWriteOps(): Array<{ operationId: string; hasRequest: boolean; ha
     }));
 }
 
+/** E10h: the declared 200 response schema per op (text-level for the empty-body check). */
+function catalogResponseById(): Map<string, any> {
+  return new Map(buildRouteCatalog().map((def) => [def.operationId, (def as { response?: unknown }).response]));
+}
+
 function runScript(): CoverageReport {
   const out = execFileSync(process.execPath, [SCRIPT, '--json'], {
     cwd: GATEWAY_ROOT,
@@ -774,9 +868,9 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(E10G_P0_REQUEST_OPS.filter((id) => !byId.get(id)?.hasRequest)).toEqual([]);
   });
 
-  // E10h-P0: write-response ledger. Same parser, same 195 write-op denominator;
-  // `humanToken.rotate` (E11-1) was the only write with a 200 schema, the two
-  // pilots make it 3/195. Later batches only append, so the count is a floor.
+  // E10h-P0/R1: write-response ledger. Same parser, same 195 write-op denominator;
+  // `humanToken.rotate` (E11-1) + 2 P0 pilots + 35 R1 session writes = 38/195.
+  // Later batches only append, so the count is a floor.
   it('the script reports write-response coverage over the 195 write ops', () => {
     const report = runScript();
     const write = catalogWriteOps();
@@ -785,7 +879,7 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(write).toHaveLength(WRITE_OPS_TOTAL);
     expect(report.writeResponseTotal).toBe(WRITE_OPS_TOTAL);
     expect(report.writeResponses).toBe(covered.length);
-    expect(report.writeResponses).toBeGreaterThanOrEqual(3);
+    expect(report.writeResponses).toBeGreaterThanOrEqual(38);
     expect(report.writeResponseCovered).toEqual(covered);
     // Disjoint from the request ledger: the two scans are independent `response:`/
     // `request:` hits on the same write ops.
@@ -810,6 +904,44 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     ).toBe(true);
   });
 
+  // E10h-R1: session 写响应。P0 的两个 pilot 之外再补 35 个（含 usage plugins /
+  // subagents / queue / deleteLegacy），同台账下界 38。按名钉住，删一个 `response:`
+  // 立刻按名失败，而不是只掉一个计数。
+  it('R1 session write ops declare a 200 response schema (write responses >= 38)', () => {
+    const writes = catalogWriteOps();
+    const responded = new Set(writes.filter((op) => op.hasResponse).map((op) => op.operationId));
+
+    expect(E10H_R1_WRITE_RESPONSE_OPS.filter((id) => !responded.has(id))).toEqual([]);
+    expect(E10H_R1_WRITE_RESPONSE_OPS).toHaveLength(35);
+    // No duplicates across P0/R1 (a typo would otherwise hide behind the floor).
+    expect(new Set(E10H_R1_WRITE_RESPONSE_OPS).size).toBe(E10H_R1_WRITE_RESPONSE_OPS.length);
+    expect(E10H_R1_WRITE_RESPONSE_OPS.filter((id) => E10H_P0_WRITE_RESPONSE_OPS.includes(id))).toEqual([]);
+    // 38 = humanToken.rotate + P0 2 + R1 35.
+    expect(writes.filter((op) => op.hasResponse).length).toBeGreaterThanOrEqual(38);
+  });
+
+  // 这四个 handler 逐字 `json(200, {})`：schema 必须是空对象（无字段），不是「任意 body」。
+  // `session.command` 是 runtime 边界，故意 open——不在此清单里（见下一条）。
+  it('R1 empty-body actions model `{}` exactly (no invented fields)', () => {
+    const responses = catalogResponseById();
+    const problems: string[] = [];
+    for (const id of E10H_R1_EMPTY_RESPONSE_OPS) {
+      const schema = responses.get(id) as { type?: string; properties?: Record<string, unknown>; additionalProperties?: unknown } | undefined;
+      if (!schema) { problems.push(`${id}: missing response`); continue; }
+      if (schema.type !== 'object') problems.push(`${id}: expected object`);
+      if (Object.keys(schema.properties ?? {}).length !== 0) {
+        problems.push(`${id}: expected empty object, got ${Object.keys(schema.properties ?? {}).join(',')}`);
+      }
+      // An open object would silently legalize a body the handler never sends.
+      if (schema.additionalProperties !== undefined) problems.push(`${id}: must not be open`);
+    }
+    expect(problems).toEqual([]);
+    // The classification is meaningful: the four empty ops are in the R1 ledger …
+    expect(E10H_R1_EMPTY_RESPONSE_OPS.filter((id) => !E10H_R1_WRITE_RESPONSE_OPS.includes(id))).toEqual([]);
+    // … and the runtime boundary (`command`) is the only open R1 response.
+    const command = responses.get('session.command') as { additionalProperties?: unknown } | undefined;
+    expect(command?.additionalProperties).toBe(true);
+  });
   // E10g-W1: session writes. Pinned per-op so a dropped `request:` fails by name,
   // and as a floor (>= 124 through W5) so the count can only grow with W6-W7.
   it('every W1 session write op declares a request schema (catalog requests >= 180)', () => {

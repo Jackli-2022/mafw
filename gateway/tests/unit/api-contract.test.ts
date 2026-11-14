@@ -91,6 +91,19 @@ import { WorkOverviewResponse } from '../../src/routes/schemas/work';
 import { TaskGetResponse, TaskListResponse, TaskOutputResponse, TaskSubmitResponse } from '../../src/routes/schemas/tasks';
 import { SessionCreateResponse } from '../../src/routes/schemas/session';
 import {
+  SessionCheckpointResponse,
+  SessionCommandResponse,
+  SessionDeleteLegacyResponse,
+  SessionPromptAsyncResponse,
+  SessionPromptResponse,
+  SessionQueueCancelResponse,
+  SessionQueueClearResponse,
+  SessionSubagentSpawnResponse,
+  SessionSuspendResponse,
+  SessionUsagePluginsReloadResponse,
+  StructuredSubmitResponse,
+} from '../../src/routes/schemas/session-write-responses';
+import {
   SessionDiscoveryResponse,
   SessionDiscoverySkillResponse,
   SessionRunResponse,
@@ -4944,4 +4957,175 @@ describe('api-contract: E10h write responses (P0 pilots)', () => {
     }
   });
 });
+
+describe('api-contract: E10h-R1 session write responses', () => {
+  const findOp = (operationId: string): any => {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const candidate of Object.values<any>(methods)) {
+        if (candidate?.operationId === operationId) return candidate;
+      }
+    }
+    return null;
+  };
+
+  const schemaOf = (operationId: string): any => {
+    const op = findOp(operationId);
+    expect(`${operationId}:found`).toBe(`${operationId}:${op ? 'found' : 'missing'}`);
+    const schema = op.responses?.['200']?.content?.['application/json']?.schema;
+    expect(`${operationId}:200`).toBe(`${operationId}:${schema ? '200' : 'missing'}`);
+    return schema;
+  };
+
+  test('session.config.set reuses the session.config state schema exactly', () => {
+    // SessionConfigService.set() returns the same SessionConfigState as get().
+    expect(schemaOf('session.config.set')).toEqual(schemaOf('session.config'));
+    expect(schemaOf('session.config.set').additionalProperties).toBeUndefined();
+  });
+
+  test('checkpoint create returns the checkpoint body without list-only actions', () => {
+    const schema = schemaOf('session.checkpoint');
+    expect(schema.required).toEqual(['checkpoint']);
+    expect(schema.properties.checkpoint.required).toEqual([
+      'id', 'sessionID', 'projectDir', 'anchorMessageID', 'snapshotTree', 'untracked', 'kind', 'createdAt',
+    ]);
+    // `actions` is projected by the list route only (projectCheckpointActions).
+    expect(schema.properties.checkpoint.properties.actions).toBeUndefined();
+    // The list item is a strict superset: same eight fields + actions.
+    const listItem = schemaOf('session.checkpoints').properties.checkpoints.items;
+    expect(Object.keys(listItem.properties)).toEqual(
+      [...Object.keys(schema.properties.checkpoint.properties), 'actions'],
+    );
+  });
+
+  test('suspend / resume / discardRun return the same RunState as session.run', () => {
+    const runBranch = schemaOf('session.run').properties.run.anyOf[0];
+    expect(schemaOf('session.suspend')).toEqual({ type: 'object', required: ['run'], properties: { run: runBranch } });
+    expect(schemaOf('session.discardRun')).toEqual({ type: 'object', required: ['run'], properties: { run: runBranch } });
+    const resume = schemaOf('session.resume');
+    expect(resume.required).toEqual(['run', 'prompted']);
+    expect(resume.properties.run).toEqual(runBranch);
+    // `prompted` is the literal true (resume re-sends the resume prompt).
+    expect(resume.properties.prompted).toEqual({ const: true, type: 'boolean' });
+  });
+
+  test('prompt / promptAsync model the sync envelope and the queue short-circuit', () => {
+    const prompt = schemaOf('session.prompt');
+    expect(prompt.required).toEqual(['parts']);
+    expect(prompt.properties.parts.items.properties.type).toEqual({ const: 'text', type: 'string' });
+    // structured / structuredError only appear with outputSchema.
+    expect(prompt.required).not.toContain('structured');
+
+    const asyncSchema = schemaOf('session.promptAsync');
+    // 200 has three branches: plain ack, queued ack, idempotent duplicate ack.
+    expect(asyncSchema.anyOf).toHaveLength(3);
+    expect(asyncSchema.anyOf[0]).toEqual({ type: 'object', required: ['status'], properties: { status: { const: 'ok', type: 'string' } } });
+    expect(asyncSchema.anyOf[1].required).toEqual(['status', 'queued', 'itemId', 'position']);
+    expect(asyncSchema.anyOf[2].required).toEqual(['status', 'queued', 'duplicate', 'itemId']);
+  });
+
+  test('queue clear/cancel and legacy delete declare their literal envelopes', () => {
+    expect(schemaOf('session.queue.clear')).toEqual({
+      type: 'object', required: ['cleared'], properties: { cleared: { type: 'number' } },
+    });
+    expect(schemaOf('session.queue.cancel')).toEqual({
+      type: 'object', required: ['cancelled'], properties: { cancelled: { type: 'string' } },
+    });
+    expect(schemaOf('session.deleteLegacy')).toEqual({
+      type: 'object', required: ['status'], properties: { status: { const: 'ok', type: 'string' } },
+    });
+  });
+
+  test('usage plugins reload reuses the list schema; create/put/delete return the updated list', () => {
+    // The reload handler delegates to handleUsagePluginsList: same wire, no {ok} envelope.
+    expect(schemaOf('session.usagePluginsReload')).toEqual(schemaOf('session.usagePluginsList'));
+    for (const id of ['session.usagePluginSourcePut', 'session.usagePluginsDelete']) {
+      const schema = schemaOf(id);
+      expect(`${id}:${schema.required.join(',')}`).toBe(`${id}:ok,plugins`);
+    }
+    // create additionally names the file it wrote.
+    expect(schemaOf('session.usagePluginsCreate').required).toEqual(['ok', 'name', 'plugins']);
+    expect(schemaOf('session.usagePluginsCreate').properties.name).toEqual({ type: 'string' });
+  });
+
+  test('subagent spawn returns the list item shape; command stays an open runtime boundary', () => {
+    const listItem = schemaOf('session.subagents.list').properties.items.items;
+    expect(schemaOf('session.subagents.spawn')).toEqual(listItem);
+    // Gateway has no command handler; the runtime response shape is not ours to close.
+    expect(schemaOf('session.command').additionalProperties).toBe(true);
+    expect(Object.keys(schemaOf('session.command').properties ?? {})).toEqual([]);
+  });
+
+  test('representative write responses validate handler-shaped payloads', () => {
+    const run = {
+      id: 'run_1',
+      sessionID: 'ses_1',
+      projectDir: 'C:/work/demo',
+      status: 'suspended',
+      brief: { lastUserText: 'hi', lastAssistantTail: 'ok', anchorMessageID: 'msg_1', queuedCount: 0 },
+      createdAt: '2026-11-15T00:00:00.000Z',
+      suspendedAt: '2026-11-15T00:00:01.000Z',
+    };
+    expect(Value.Check(SessionSuspendResponse, { run })).toBe(true);
+    // RunState without its brief is not a resumable run.
+    expect(Value.Check(SessionSuspendResponse, { run: { ...run, brief: undefined } })).toBe(false);
+
+    const checkpoint = {
+      id: 'cp_1',
+      sessionID: 'ses_1',
+      projectDir: 'C:/work/demo',
+      anchorMessageID: 'msg_1',
+      snapshotTree: null,
+      untracked: [],
+      kind: 'manual',
+      createdAt: '2026-11-15T00:00:00.000Z',
+    };
+    expect(Value.Check(SessionCheckpointResponse, { checkpoint })).toBe(true);
+    expect(Value.Check(SessionCheckpointResponse, { checkpoint: { ...checkpoint, id: undefined } })).toBe(false);
+
+    expect(Value.Check(SessionPromptResponse, {
+      parts: [{ id: '', sessionID: 'ses_1', messageID: '', type: 'text', text: 'answer' }],
+    })).toBe(true);
+    expect(Value.Check(SessionPromptResponse, { structured: { ok: true } })).toBe(false);
+
+    expect(Value.Check(SessionPromptAsyncResponse, { status: 'ok' })).toBe(true);
+    expect(Value.Check(SessionPromptAsyncResponse, { status: 'ok', queued: true, itemId: 'q_1', position: 1 })).toBe(true);
+    expect(Value.Check(SessionPromptAsyncResponse, {
+      status: 'ok', queued: true, duplicate: true, itemId: 'q_1',
+    })).toBe(true);
+
+    expect(Value.Check(StructuredSubmitResponse, { ok: false, errors: ['bad'] })).toBe(true);
+    expect(Value.Check(SessionQueueClearResponse, { cleared: 2 })).toBe(true);
+    expect(Value.Check(SessionQueueCancelResponse, { cancelled: 'q_1' })).toBe(true);
+    expect(Value.Check(SessionDeleteLegacyResponse, { status: 'ok' })).toBe(true);
+    expect(Value.Check(SessionSubagentSpawnResponse, {
+      id: 'sub_1', parentID: 'ses_1', depth: 1, status: 'running', createdAt: 1, updatedAt: 1,
+    })).toBe(true);
+    // The runtime owns the command body; any JSON object passes, a non-object does not.
+    expect(Value.Check(SessionCommandResponse, { info: {}, parts: [] })).toBe(true);
+    expect(Value.Check(SessionCommandResponse, null)).toBe(false);
+  });
+
+  test('the R1 batch raises the write-response ledger to 38/195', () => {
+    const writeOps = new Set<string>();
+    const responded = new Set<string>();
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const [method, op] of Object.entries<any>(methods)) {
+        if (method === 'get' || !op?.operationId) continue;
+        writeOps.add(op.operationId);
+        if (op.responses?.['200']?.content?.['application/json']?.schema) responded.add(op.operationId);
+      }
+    }
+    expect(writeOps.size).toBe(195);
+    // humanToken.rotate + session.create + tasks.submit + 35 R1 ops.
+    expect(responded.size).toBe(38);
+    for (const id of [
+      'session.config.set', 'structured.submit', 'session.checkpoint', 'session.prompt',
+      'session.promptAsync', 'session.suspend', 'session.resume', 'session.discardRun',
+      'session.usagePluginsReload', 'session.subagents.spawn', 'session.deleteLegacy',
+    ]) {
+      expect(`${id}:${responded.has(id)}`).toBe(`${id}:true`);
+    }
+  });
+});
+
 

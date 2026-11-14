@@ -31,6 +31,8 @@ import type {
   // E10f-C goal / lead / event / automation / pod read surface
   AutomationRuleListItem, StandingGoalView, GoalRunView,
   LeadTopicView, LeadTopicIndexMessage, LeadBoundaryView, EventSourceView,
+  // E10h-R1 session write responses (same DTOs as their read twins)
+  RunState, CheckpointRestoreResult, DataPart, SubagentRecord,
 } from './types'
 import type { RuntimeContractResponse } from './runtime-contract'
 import type { MafwClient } from './client'
@@ -223,6 +225,39 @@ const CHECK_session_create_session_half: AssertEq<
 const CHECK_session_create_worktree: AssertEq<
   Resp<operations['session.create']>['worktree'],
   { dir: string; branch: string } | undefined
+> = true
+
+// E10h-R1: session 写响应 —— 与读侧 DTO 同形的直接复用，其余按 handler wire 字面锁。
+const CHECK_session_config_set: AssertEq<Resp<operations['session.config.set']>, SessionConfigState> = true
+const CHECK_session_suspend: AssertEq<Resp<operations['session.suspend']>, { run: RunState }> = true
+const CHECK_session_resume: AssertEq<
+  Resp<operations['session.resume']>,
+  { run: RunState; prompted: true }
+> = true
+const CHECK_session_discard_run: AssertEq<Resp<operations['session.discardRun']>, { run: RunState }> = true
+/** createManual 回 SessionCheckpoint 本体（无 Experience actions，列表才投影）。 */
+const CHECK_session_checkpoint_created: AssertEq<
+  ItemOf<Resp<operations['session.checkpoint']>, 'checkpoint'>,
+  Omit<SessionCheckpointListItem, 'actions'>
+> = true
+const CHECK_session_restore_checkpoint: AssertEq<
+  Resp<operations['session.restoreCheckpoint']>,
+  CheckpointRestoreResult
+> = true
+/** `type` 是 `data-${string}` 模板字面量，schema 侧只能承诺前缀 pattern → 分开锁。 */
+type GenDataPart = ItemOf<Resp<operations['session.data']>, 'part'>
+const CHECK_session_data_part: AssertEq<Omit<GenDataPart, 'type'>, Omit<DataPart, 'type'>> = true
+const CHECK_session_data_part_type: AssertEq<GenDataPart['type'], string> = true
+const CHECK_session_prompt: AssertEq<
+  Resp<operations['session.prompt']>,
+  Awaited<ReturnType<SessionNamespace['prompt']>>
+> = true
+const CHECK_session_subagent_spawn: AssertEq<Resp<operations['session.subagents.spawn']>, SubagentRecord> = true
+const CHECK_session_queue_clear: AssertEq<Resp<operations['session.queue.clear']>, { cleared: number }> = true
+const CHECK_session_queue_cancel: AssertEq<Resp<operations['session.queue.cancel']>, { cancelled: string }> = true
+const CHECK_structured_submit: AssertEq<
+  Resp<operations['structured.submit']>,
+  { ok: boolean; errors: string[] }
 > = true
 
 /**
@@ -493,4 +528,10 @@ export const CONTRACT_COMPAT_CHECKS = [
   CHECK_standing_goals_list_item, CHECK_standing_goals_runs_item,
   CHECK_automations_get_rule, CHECK_events_sources_item, CHECK_pods_ensure,
   CHECK_pods_memory_file, CHECK_pods_memory_context,
+  // E10h-R1
+  CHECK_session_config_set, CHECK_session_suspend, CHECK_session_resume, CHECK_session_discard_run,
+  CHECK_session_checkpoint_created, CHECK_session_restore_checkpoint,
+  CHECK_session_data_part, CHECK_session_data_part_type, CHECK_session_prompt,
+  CHECK_session_subagent_spawn, CHECK_session_queue_clear, CHECK_session_queue_cancel,
+  CHECK_structured_submit,
 ]

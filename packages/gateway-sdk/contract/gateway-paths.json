@@ -1169,7 +1169,22 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "cleared"
+                  ],
+                  "properties": {
+                    "cleared": {
+                      "type": "number"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -1341,7 +1356,92 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "mode",
+                    "thinkingLevelSupported"
+                  ],
+                  "properties": {
+                    "mode": {
+                      "anyOf": [
+                        {
+                          "const": "read-only",
+                          "type": "string"
+                        },
+                        {
+                          "const": "auto",
+                          "type": "string"
+                        },
+                        {
+                          "const": "full-access",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "agent": {
+                      "type": "string"
+                    },
+                    "model": {
+                      "type": "object",
+                      "required": [
+                        "providerID",
+                        "modelID"
+                      ],
+                      "properties": {
+                        "providerID": {
+                          "type": "string"
+                        },
+                        "modelID": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "variant": {
+                      "type": "string"
+                    },
+                    "thinkingLevel": {
+                      "anyOf": [
+                        {
+                          "const": "off",
+                          "type": "string"
+                        },
+                        {
+                          "const": "minimal",
+                          "type": "string"
+                        },
+                        {
+                          "const": "low",
+                          "type": "string"
+                        },
+                        {
+                          "const": "medium",
+                          "type": "string"
+                        },
+                        {
+                          "const": "high",
+                          "type": "string"
+                        },
+                        {
+                          "const": "xhigh",
+                          "type": "string"
+                        },
+                        {
+                          "const": "max",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "thinkingLevelSupported": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -1383,7 +1483,22 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "cancelled"
+                  ],
+                  "properties": {
+                    "cancelled": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -1758,7 +1873,23 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "const": true,
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       },
@@ -1798,7 +1929,23 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "const": true,
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -2273,7 +2420,23 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "const": true,
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -2329,7 +2492,23 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "const": true,
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -2365,7 +2544,29 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok",
+                    "errors"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "errors": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -3453,7 +3654,32 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "session"
+                  ],
+                  "properties": {
+                    "session": {
+                      "additionalProperties": true,
+                      "description": "Runtime session record for the fork; the gateway contract guarantees `id` only.",
+                      "type": "object",
+                      "required": [
+                        "id"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -3498,7 +3724,15 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {}
+                }
+              }
+            }
           }
         }
       }
@@ -3532,7 +3766,15 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {}
+                }
+              }
+            }
           }
         }
       }
@@ -3677,7 +3919,22 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "reverted"
+                  ],
+                  "properties": {
+                    "reverted": {
+                      "type": "number"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -3715,7 +3972,77 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "checkpoint"
+                  ],
+                  "properties": {
+                    "checkpoint": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "sessionID",
+                        "projectDir",
+                        "anchorMessageID",
+                        "snapshotTree",
+                        "untracked",
+                        "kind",
+                        "createdAt"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "sessionID": {
+                          "type": "string"
+                        },
+                        "projectDir": {
+                          "type": "string"
+                        },
+                        "anchorMessageID": {
+                          "type": "string"
+                        },
+                        "snapshotTree": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "untracked": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "kind": {
+                          "anyOf": [
+                            {
+                              "const": "auto",
+                              "type": "string"
+                            },
+                            {
+                              "const": "manual",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -4033,7 +4360,47 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "scope"
+                  ],
+                  "properties": {
+                    "scope": {
+                      "anyOf": [
+                        {
+                          "const": "session",
+                          "type": "string"
+                        },
+                        {
+                          "const": "files",
+                          "type": "string"
+                        },
+                        {
+                          "const": "both",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "filesSkipped": {
+                      "type": "boolean"
+                    },
+                    "leftoverUntracked": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "preRestoreCheckpointId": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -4072,7 +4439,104 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "run"
+                  ],
+                  "properties": {
+                    "run": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "sessionID",
+                        "projectDir",
+                        "status",
+                        "brief",
+                        "createdAt",
+                        "suspendedAt"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "sessionID": {
+                          "type": "string"
+                        },
+                        "projectDir": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "anyOf": [
+                            {
+                              "const": "suspended",
+                              "type": "string"
+                            },
+                            {
+                              "const": "resumed",
+                              "type": "string"
+                            },
+                            {
+                              "const": "completed",
+                              "type": "string"
+                            },
+                            {
+                              "const": "failed",
+                              "type": "string"
+                            },
+                            {
+                              "const": "cancelled",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "reason": {
+                          "type": "string"
+                        },
+                        "brief": {
+                          "type": "object",
+                          "required": [
+                            "lastUserText",
+                            "lastAssistantTail",
+                            "anchorMessageID",
+                            "queuedCount"
+                          ],
+                          "properties": {
+                            "lastUserText": {
+                              "type": "string"
+                            },
+                            "lastAssistantTail": {
+                              "type": "string"
+                            },
+                            "anchorMessageID": {
+                              "type": "string"
+                            },
+                            "queuedCount": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "suspendedAt": {
+                          "type": "string"
+                        },
+                        "resumedAt": {
+                          "type": "string"
+                        },
+                        "finishedAt": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -4111,7 +4575,109 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "run",
+                    "prompted"
+                  ],
+                  "properties": {
+                    "run": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "sessionID",
+                        "projectDir",
+                        "status",
+                        "brief",
+                        "createdAt",
+                        "suspendedAt"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "sessionID": {
+                          "type": "string"
+                        },
+                        "projectDir": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "anyOf": [
+                            {
+                              "const": "suspended",
+                              "type": "string"
+                            },
+                            {
+                              "const": "resumed",
+                              "type": "string"
+                            },
+                            {
+                              "const": "completed",
+                              "type": "string"
+                            },
+                            {
+                              "const": "failed",
+                              "type": "string"
+                            },
+                            {
+                              "const": "cancelled",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "reason": {
+                          "type": "string"
+                        },
+                        "brief": {
+                          "type": "object",
+                          "required": [
+                            "lastUserText",
+                            "lastAssistantTail",
+                            "anchorMessageID",
+                            "queuedCount"
+                          ],
+                          "properties": {
+                            "lastUserText": {
+                              "type": "string"
+                            },
+                            "lastAssistantTail": {
+                              "type": "string"
+                            },
+                            "anchorMessageID": {
+                              "type": "string"
+                            },
+                            "queuedCount": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "suspendedAt": {
+                          "type": "string"
+                        },
+                        "resumedAt": {
+                          "type": "string"
+                        },
+                        "finishedAt": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "prompted": {
+                      "const": true,
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -4277,7 +4843,104 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "run"
+                  ],
+                  "properties": {
+                    "run": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "sessionID",
+                        "projectDir",
+                        "status",
+                        "brief",
+                        "createdAt",
+                        "suspendedAt"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "sessionID": {
+                          "type": "string"
+                        },
+                        "projectDir": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "anyOf": [
+                            {
+                              "const": "suspended",
+                              "type": "string"
+                            },
+                            {
+                              "const": "resumed",
+                              "type": "string"
+                            },
+                            {
+                              "const": "completed",
+                              "type": "string"
+                            },
+                            {
+                              "const": "failed",
+                              "type": "string"
+                            },
+                            {
+                              "const": "cancelled",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "reason": {
+                          "type": "string"
+                        },
+                        "brief": {
+                          "type": "object",
+                          "required": [
+                            "lastUserText",
+                            "lastAssistantTail",
+                            "anchorMessageID",
+                            "queuedCount"
+                          ],
+                          "properties": {
+                            "lastUserText": {
+                              "type": "string"
+                            },
+                            "lastAssistantTail": {
+                              "type": "string"
+                            },
+                            "anchorMessageID": {
+                              "type": "string"
+                            },
+                            "queuedCount": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "suspendedAt": {
+                          "type": "string"
+                        },
+                        "resumedAt": {
+                          "type": "string"
+                        },
+                        "finishedAt": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -4333,7 +4996,52 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "part"
+                  ],
+                  "properties": {
+                    "part": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "type",
+                        "data"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "pattern": "^data-",
+                          "type": "string"
+                        },
+                        "data": {},
+                        "transient": {
+                          "type": "boolean"
+                        },
+                        "sessionID": {
+                          "type": "string"
+                        },
+                        "messageID": {
+                          "type": "string"
+                        },
+                        "native": {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(.*)$": {}
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -4700,7 +5408,317 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "sessionID",
+                    "directory",
+                    "revision",
+                    "commandsRevision",
+                    "generatedAt",
+                    "commands",
+                    "skills",
+                    "instructions",
+                    "degraded",
+                    "warnings",
+                    "skillInvokeSupported"
+                  ],
+                  "properties": {
+                    "sessionID": {
+                      "type": "string"
+                    },
+                    "directory": {
+                      "type": "string"
+                    },
+                    "revision": {
+                      "type": "string"
+                    },
+                    "commandsRevision": {
+                      "type": "string"
+                    },
+                    "generatedAt": {
+                      "type": "string"
+                    },
+                    "commands": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "name",
+                          "description",
+                          "source",
+                          "scope"
+                        ],
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "aliases": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "argumentHint": {
+                            "type": "string"
+                          },
+                          "category": {
+                            "anyOf": [
+                              {
+                                "const": "goals",
+                                "type": "string"
+                              },
+                              {
+                                "const": "session",
+                                "type": "string"
+                              },
+                              {
+                                "const": "memory",
+                                "type": "string"
+                              },
+                              {
+                                "const": "custom",
+                                "type": "string"
+                              },
+                              {
+                                "const": "runtime",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "destructive": {
+                            "type": "boolean"
+                          },
+                          "source": {
+                            "anyOf": [
+                              {
+                                "const": "mafw",
+                                "type": "string"
+                              },
+                              {
+                                "const": "custom",
+                                "type": "string"
+                              },
+                              {
+                                "const": "runtime",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "scope": {
+                            "anyOf": [
+                              {
+                                "const": "gateway",
+                                "type": "string"
+                              },
+                              {
+                                "const": "user",
+                                "type": "string"
+                              },
+                              {
+                                "const": "project",
+                                "type": "string"
+                              },
+                              {
+                                "const": "runtime",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "runtime": {
+                            "type": "boolean"
+                          },
+                          "agent": {
+                            "type": "string"
+                          },
+                          "model": {
+                            "type": "object",
+                            "required": [
+                              "id",
+                              "providerID"
+                            ],
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "providerID": {
+                                "type": "string"
+                              },
+                              "variant": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "subtask": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    },
+                    "skills": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "name",
+                          "slash",
+                          "scope",
+                          "contentLength"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "slash": {
+                            "type": "boolean"
+                          },
+                          "scope": {
+                            "anyOf": [
+                              {
+                                "const": "user",
+                                "type": "string"
+                              },
+                              {
+                                "const": "project",
+                                "type": "string"
+                              },
+                              {
+                                "const": "path",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "location": {
+                            "type": "string"
+                          },
+                          "contentLength": {
+                            "type": "number"
+                          }
+                        }
+                      }
+                    },
+                    "instructions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "path",
+                          "scope",
+                          "kind",
+                          "bytes",
+                          "mtime"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "scope": {
+                            "anyOf": [
+                              {
+                                "const": "global",
+                                "type": "string"
+                              },
+                              {
+                                "const": "project",
+                                "type": "string"
+                              },
+                              {
+                                "const": "nested",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "kind": {
+                            "const": "agents-md",
+                            "type": "string"
+                          },
+                          "bytes": {
+                            "type": "number"
+                          },
+                          "mtime": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "degraded": {
+                      "type": "boolean"
+                    },
+                    "degradedReason": {
+                      "anyOf": [
+                        {
+                          "const": "capability_absent",
+                          "type": "string"
+                        },
+                        {
+                          "const": "runtime_error",
+                          "type": "string"
+                        },
+                        {
+                          "const": "partial",
+                          "type": "string"
+                        },
+                        {
+                          "const": "instructions_error",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "source",
+                          "message"
+                        ],
+                        "properties": {
+                          "source": {
+                            "anyOf": [
+                              {
+                                "const": "commands",
+                                "type": "string"
+                              },
+                              {
+                                "const": "skills",
+                                "type": "string"
+                              },
+                              {
+                                "const": "instructions",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "skillInvokeSupported": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -4831,7 +5849,27 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok",
+                    "skill"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "skill": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -4865,7 +5903,23 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "const": true,
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -4906,7 +5960,15 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {}
+                }
+              }
+            }
           }
         }
       }
@@ -5017,7 +6079,54 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "parts"
+                  ],
+                  "properties": {
+                    "parts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "sessionID",
+                          "messageID",
+                          "type",
+                          "text"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "sessionID": {
+                            "type": "string"
+                          },
+                          "messageID": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "text",
+                            "type": "string"
+                          },
+                          "text": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "structured": {},
+                    "structuredError": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -5178,7 +6287,78 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "status"
+                      ],
+                      "properties": {
+                        "status": {
+                          "const": "ok",
+                          "type": "string"
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "status",
+                        "queued",
+                        "itemId",
+                        "position"
+                      ],
+                      "properties": {
+                        "status": {
+                          "const": "ok",
+                          "type": "string"
+                        },
+                        "queued": {
+                          "const": true,
+                          "type": "boolean"
+                        },
+                        "itemId": {
+                          "type": "string"
+                        },
+                        "position": {
+                          "type": "number"
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "status",
+                        "queued",
+                        "duplicate",
+                        "itemId"
+                      ],
+                      "properties": {
+                        "status": {
+                          "const": "ok",
+                          "type": "string"
+                        },
+                        "queued": {
+                          "const": true,
+                          "type": "boolean"
+                        },
+                        "duplicate": {
+                          "const": true,
+                          "type": "boolean"
+                        },
+                        "itemId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -5212,7 +6392,15 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {}
+                }
+              }
+            }
           }
         }
       }
@@ -5267,7 +6455,17 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Runtime serve command result; shape owned by the runtime adapter (gateway tail-proxies it).",
+                  "type": "object",
+                  "properties": {}
+                }
+              }
+            }
           }
         }
       }
@@ -8133,7 +9331,225 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "plugins",
+                    "templates",
+                    "builtins"
+                  ],
+                  "properties": {
+                    "plugins": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "file",
+                          "status",
+                          "disabled",
+                          "origin",
+                          "config"
+                        ],
+                        "properties": {
+                          "file": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "anyOf": [
+                              {
+                                "const": "ok",
+                                "type": "string"
+                              },
+                              {
+                                "const": "error",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "error": {
+                            "type": "string"
+                          },
+                          "disabled": {
+                            "type": "boolean"
+                          },
+                          "origin": {
+                            "anyOf": [
+                              {
+                                "const": "builtin",
+                                "type": "string"
+                              },
+                              {
+                                "const": "override",
+                                "type": "string"
+                              },
+                              {
+                                "const": "user",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "pluginType": {
+                            "type": "string"
+                          },
+                          "configSchema": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "key",
+                                "label",
+                                "type"
+                              ],
+                              "properties": {
+                                "key": {
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": "string"
+                                },
+                                "type": {
+                                  "anyOf": [
+                                    {
+                                      "const": "number",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "string",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "boolean",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "select",
+                                      "type": "string"
+                                    }
+                                  ]
+                                },
+                                "options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "default": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "boolean"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          },
+                          "config": {}
+                        }
+                      }
+                    },
+                    "templates": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "label",
+                          "description",
+                          "fields"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "fields": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "key",
+                                "label",
+                                "type"
+                              ],
+                              "properties": {
+                                "key": {
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": "string"
+                                },
+                                "type": {
+                                  "anyOf": [
+                                    {
+                                      "const": "string",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "number",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "boolean",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "select",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "textarea",
+                                      "type": "string"
+                                    }
+                                  ]
+                                },
+                                "required": {
+                                  "type": "boolean"
+                                },
+                                "options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "placeholder": {
+                                  "type": "string"
+                                },
+                                "hint": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "builtins": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -8176,7 +9592,145 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok",
+                    "name",
+                    "plugins"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "plugins": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "file",
+                          "status",
+                          "disabled",
+                          "origin",
+                          "config"
+                        ],
+                        "properties": {
+                          "file": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "anyOf": [
+                              {
+                                "const": "ok",
+                                "type": "string"
+                              },
+                              {
+                                "const": "error",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "error": {
+                            "type": "string"
+                          },
+                          "disabled": {
+                            "type": "boolean"
+                          },
+                          "origin": {
+                            "anyOf": [
+                              {
+                                "const": "builtin",
+                                "type": "string"
+                              },
+                              {
+                                "const": "override",
+                                "type": "string"
+                              },
+                              {
+                                "const": "user",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "pluginType": {
+                            "type": "string"
+                          },
+                          "configSchema": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "key",
+                                "label",
+                                "type"
+                              ],
+                              "properties": {
+                                "key": {
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": "string"
+                                },
+                                "type": {
+                                  "anyOf": [
+                                    {
+                                      "const": "number",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "string",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "boolean",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "select",
+                                      "type": "string"
+                                    }
+                                  ]
+                                },
+                                "options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "default": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "boolean"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          },
+                          "config": {}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -8267,7 +9821,141 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok",
+                    "plugins"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "plugins": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "file",
+                          "status",
+                          "disabled",
+                          "origin",
+                          "config"
+                        ],
+                        "properties": {
+                          "file": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "anyOf": [
+                              {
+                                "const": "ok",
+                                "type": "string"
+                              },
+                              {
+                                "const": "error",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "error": {
+                            "type": "string"
+                          },
+                          "disabled": {
+                            "type": "boolean"
+                          },
+                          "origin": {
+                            "anyOf": [
+                              {
+                                "const": "builtin",
+                                "type": "string"
+                              },
+                              {
+                                "const": "override",
+                                "type": "string"
+                              },
+                              {
+                                "const": "user",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "pluginType": {
+                            "type": "string"
+                          },
+                          "configSchema": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "key",
+                                "label",
+                                "type"
+                              ],
+                              "properties": {
+                                "key": {
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": "string"
+                                },
+                                "type": {
+                                  "anyOf": [
+                                    {
+                                      "const": "number",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "string",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "boolean",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "select",
+                                      "type": "string"
+                                    }
+                                  ]
+                                },
+                                "options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "default": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "boolean"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          },
+                          "config": {}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -8301,7 +9989,141 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok",
+                    "plugins"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "plugins": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "file",
+                          "status",
+                          "disabled",
+                          "origin",
+                          "config"
+                        ],
+                        "properties": {
+                          "file": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "anyOf": [
+                              {
+                                "const": "ok",
+                                "type": "string"
+                              },
+                              {
+                                "const": "error",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "error": {
+                            "type": "string"
+                          },
+                          "disabled": {
+                            "type": "boolean"
+                          },
+                          "origin": {
+                            "anyOf": [
+                              {
+                                "const": "builtin",
+                                "type": "string"
+                              },
+                              {
+                                "const": "override",
+                                "type": "string"
+                              },
+                              {
+                                "const": "user",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "pluginType": {
+                            "type": "string"
+                          },
+                          "configSchema": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "key",
+                                "label",
+                                "type"
+                              ],
+                              "properties": {
+                                "key": {
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": "string"
+                                },
+                                "type": {
+                                  "anyOf": [
+                                    {
+                                      "const": "number",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "string",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "boolean",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "select",
+                                      "type": "string"
+                                    }
+                                  ]
+                                },
+                                "options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "default": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "boolean"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          },
+                          "config": {}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -8335,7 +10157,26 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "result": {},
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -35399,7 +37240,71 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "parentID",
+                    "depth",
+                    "status",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "parentID": {
+                      "type": "string"
+                    },
+                    "depth": {
+                      "type": "number"
+                    },
+                    "agent": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "anyOf": [
+                        {
+                          "const": "running",
+                          "type": "string"
+                        },
+                        {
+                          "const": "completed",
+                          "type": "string"
+                        },
+                        {
+                          "const": "failed",
+                          "type": "string"
+                        },
+                        {
+                          "const": "aborted",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "background": {
+                      "type": "boolean"
+                    },
+                    "createdAt": {
+                      "type": "number"
+                    },
+                    "updatedAt": {
+                      "type": "number"
+                    },
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       },
@@ -35545,7 +37450,23 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "const": true,
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -35587,7 +37508,23 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "const": true,
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -35688,7 +37625,23 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status"
+                  ],
+                  "properties": {
+                    "status": {
+                      "const": "ok",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
