@@ -5015,7 +5015,34 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        decision: "allow";
+                    } | {
+                        /** @constant */
+                        decision: "deny";
+                        reason?: string;
+                        rule?: string;
+                    } | {
+                        /** @constant */
+                        decision: "ask";
+                        reason?: string;
+                        rule?: string;
+                    } | {
+                        /** @constant */
+                        decision: "rewrite";
+                        input: {
+                            [key: string]: unknown;
+                        };
+                        rule?: string;
+                    } | {
+                        /** @constant */
+                        decision: "transform";
+                        text: string;
+                        rule?: string;
+                    };
+                };
             };
         };
     };
@@ -5058,7 +5085,15 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        content: ({
+                            type: string;
+                        } & {
+                            [key: string]: unknown;
+                        })[];
+                    };
+                };
             };
         };
     };
@@ -9884,7 +9919,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        success: true;
+                    };
+                };
             };
         };
     };
@@ -10190,7 +10230,43 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        record: {
+                            id: string;
+                            projectDir: string;
+                            goalId: string | null;
+                            revision: number | null;
+                            kind: "direction" | "plan" | "scope" | "authorization" | "acceptance" | "priority" | "disposition" | "other";
+                            status: "draft" | "decided" | "shelved";
+                            question: string;
+                            options: {
+                                id: string;
+                                title: string;
+                                summary?: string;
+                                risks?: string[];
+                            }[];
+                            evidence: {
+                                kind: "message" | "file" | "change" | "review_item" | "goal";
+                                ref: string;
+                                label?: string;
+                            }[];
+                            rationale: string | null;
+                            consequences: string | null;
+                            reviewAt: string | null;
+                            decidedBy: string | null;
+                            decidedAt: string | null;
+                            createdAt: string;
+                            updatedAt: string;
+                            history: {
+                                action: "drafted" | "confirmed" | "shelved" | "reopened";
+                                by: "agent" | "user";
+                                at: string;
+                                note?: string;
+                            }[];
+                        };
+                    };
+                };
             };
         };
     };
@@ -10221,7 +10297,43 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        record: {
+                            id: string;
+                            projectDir: string;
+                            goalId: string | null;
+                            revision: number | null;
+                            kind: "direction" | "plan" | "scope" | "authorization" | "acceptance" | "priority" | "disposition" | "other";
+                            status: "draft" | "decided" | "shelved";
+                            question: string;
+                            options: {
+                                id: string;
+                                title: string;
+                                summary?: string;
+                                risks?: string[];
+                            }[];
+                            evidence: {
+                                kind: "message" | "file" | "change" | "review_item" | "goal";
+                                ref: string;
+                                label?: string;
+                            }[];
+                            rationale: string | null;
+                            consequences: string | null;
+                            reviewAt: string | null;
+                            decidedBy: string | null;
+                            decidedAt: string | null;
+                            createdAt: string;
+                            updatedAt: string;
+                            history: {
+                                action: "drafted" | "confirmed" | "shelved" | "reopened";
+                                by: "agent" | "user";
+                                at: string;
+                                note?: string;
+                            }[];
+                        };
+                    };
+                };
             };
         };
     };
@@ -10251,7 +10363,43 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        record: {
+                            id: string;
+                            projectDir: string;
+                            goalId: string | null;
+                            revision: number | null;
+                            kind: "direction" | "plan" | "scope" | "authorization" | "acceptance" | "priority" | "disposition" | "other";
+                            status: "draft" | "decided" | "shelved";
+                            question: string;
+                            options: {
+                                id: string;
+                                title: string;
+                                summary?: string;
+                                risks?: string[];
+                            }[];
+                            evidence: {
+                                kind: "message" | "file" | "change" | "review_item" | "goal";
+                                ref: string;
+                                label?: string;
+                            }[];
+                            rationale: string | null;
+                            consequences: string | null;
+                            reviewAt: string | null;
+                            decidedBy: string | null;
+                            decidedAt: string | null;
+                            createdAt: string;
+                            updatedAt: string;
+                            history: {
+                                action: "drafted" | "confirmed" | "shelved" | "reopened";
+                                by: "agent" | "user";
+                                at: string;
+                                note?: string;
+                            }[];
+                        };
+                    };
+                };
             };
         };
     };
@@ -10279,7 +10427,43 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        record: {
+                            id: string;
+                            projectDir: string;
+                            goalId: string | null;
+                            revision: number | null;
+                            kind: "direction" | "plan" | "scope" | "authorization" | "acceptance" | "priority" | "disposition" | "other";
+                            status: "draft" | "decided" | "shelved";
+                            question: string;
+                            options: {
+                                id: string;
+                                title: string;
+                                summary?: string;
+                                risks?: string[];
+                            }[];
+                            evidence: {
+                                kind: "message" | "file" | "change" | "review_item" | "goal";
+                                ref: string;
+                                label?: string;
+                            }[];
+                            rationale: string | null;
+                            consequences: string | null;
+                            reviewAt: string | null;
+                            decidedBy: string | null;
+                            decidedAt: string | null;
+                            createdAt: string;
+                            updatedAt: string;
+                            history: {
+                                action: "drafted" | "confirmed" | "shelved" | "reopened";
+                                by: "agent" | "user";
+                                at: string;
+                                note?: string;
+                            }[];
+                        };
+                    };
+                };
             };
         };
     };
@@ -10333,7 +10517,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        status: "paused";
+                    };
+                };
             };
         };
     };
@@ -10357,7 +10546,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        status: "resumed";
+                    };
+                };
             };
         };
     };
@@ -10381,7 +10575,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        status: "stopped";
+                    };
+                };
             };
         };
     };
@@ -10408,7 +10607,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        status: "retried";
+                    };
+                };
             };
         };
     };
@@ -10468,7 +10672,13 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        status: "accepted";
+                        toTopicId: string;
+                    };
+                };
             };
         };
     };
@@ -10493,7 +10703,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        status: "merged";
+                    };
+                };
             };
         };
     };
@@ -10518,7 +10733,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        status: "undone";
+                    };
+                };
             };
         };
     };
@@ -10545,7 +10765,17 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        proposed: boolean;
+                        proposal?: {
+                            trigger: "explicit" | "semantic" | "idle" | "goal_closed" | "keyword";
+                            confidence: number;
+                            reason: string;
+                        } | null;
+                        error?: string;
+                    };
+                };
             };
         };
     };
@@ -10986,7 +11216,47 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        goal: {
+                            id: string;
+                            projectDir: string;
+                            title: string;
+                            objective: string;
+                            template: {
+                                taskType?: "feature" | "bug" | "research" | "refactor" | "ops";
+                                acceptance?: string[];
+                                boundaries?: string[];
+                                planReview?: "auto" | "manual";
+                            };
+                            triggers: {
+                                id: string;
+                                type: "cron" | "event" | "manual";
+                                schedule?: string;
+                                timezone?: string;
+                                eventKinds?: string[];
+                                filter?: {
+                                    [key: string]: unknown;
+                                };
+                            }[];
+                            state: "active" | "paused" | "stopped";
+                            stateReason?: string | null;
+                            concurrency: number;
+                            cooldownMs: number;
+                            budget: {
+                                perRunTurns?: number;
+                                perRunCostUsd?: number;
+                                perDayCostUsd?: number;
+                            };
+                            approval: "auto" | "plan" | "confirm";
+                            createdBy: string | null;
+                            createdAt: string;
+                            updatedAt: string;
+                            lastRunAt: string | null;
+                            nextRunAt: string | null;
+                        };
+                    };
+                };
             };
         };
     };
@@ -11037,7 +11307,47 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        goal: {
+                            id: string;
+                            projectDir: string;
+                            title: string;
+                            objective: string;
+                            template: {
+                                taskType?: "feature" | "bug" | "research" | "refactor" | "ops";
+                                acceptance?: string[];
+                                boundaries?: string[];
+                                planReview?: "auto" | "manual";
+                            };
+                            triggers: {
+                                id: string;
+                                type: "cron" | "event" | "manual";
+                                schedule?: string;
+                                timezone?: string;
+                                eventKinds?: string[];
+                                filter?: {
+                                    [key: string]: unknown;
+                                };
+                            }[];
+                            state: "active" | "paused" | "stopped";
+                            stateReason?: string | null;
+                            concurrency: number;
+                            cooldownMs: number;
+                            budget: {
+                                perRunTurns?: number;
+                                perRunCostUsd?: number;
+                                perDayCostUsd?: number;
+                            };
+                            approval: "auto" | "plan" | "confirm";
+                            createdBy: string | null;
+                            createdAt: string;
+                            updatedAt: string;
+                            lastRunAt: string | null;
+                            nextRunAt: string | null;
+                        };
+                    };
+                };
             };
         };
     };
@@ -11106,7 +11416,47 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        goal: {
+                            id: string;
+                            projectDir: string;
+                            title: string;
+                            objective: string;
+                            template: {
+                                taskType?: "feature" | "bug" | "research" | "refactor" | "ops";
+                                acceptance?: string[];
+                                boundaries?: string[];
+                                planReview?: "auto" | "manual";
+                            };
+                            triggers: {
+                                id: string;
+                                type: "cron" | "event" | "manual";
+                                schedule?: string;
+                                timezone?: string;
+                                eventKinds?: string[];
+                                filter?: {
+                                    [key: string]: unknown;
+                                };
+                            }[];
+                            state: "active" | "paused" | "stopped";
+                            stateReason?: string | null;
+                            concurrency: number;
+                            cooldownMs: number;
+                            budget: {
+                                perRunTurns?: number;
+                                perRunCostUsd?: number;
+                                perDayCostUsd?: number;
+                            };
+                            approval: "auto" | "plan" | "confirm";
+                            createdBy: string | null;
+                            createdAt: string;
+                            updatedAt: string;
+                            lastRunAt: string | null;
+                            nextRunAt: string | null;
+                        };
+                    };
+                };
             };
         };
     };
@@ -11130,7 +11480,47 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        goal: {
+                            id: string;
+                            projectDir: string;
+                            title: string;
+                            objective: string;
+                            template: {
+                                taskType?: "feature" | "bug" | "research" | "refactor" | "ops";
+                                acceptance?: string[];
+                                boundaries?: string[];
+                                planReview?: "auto" | "manual";
+                            };
+                            triggers: {
+                                id: string;
+                                type: "cron" | "event" | "manual";
+                                schedule?: string;
+                                timezone?: string;
+                                eventKinds?: string[];
+                                filter?: {
+                                    [key: string]: unknown;
+                                };
+                            }[];
+                            state: "active" | "paused" | "stopped";
+                            stateReason?: string | null;
+                            concurrency: number;
+                            cooldownMs: number;
+                            budget: {
+                                perRunTurns?: number;
+                                perRunCostUsd?: number;
+                                perDayCostUsd?: number;
+                            };
+                            approval: "auto" | "plan" | "confirm";
+                            createdBy: string | null;
+                            createdAt: string;
+                            updatedAt: string;
+                            lastRunAt: string | null;
+                            nextRunAt: string | null;
+                        };
+                    };
+                };
             };
         };
     };
@@ -11154,7 +11544,47 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        goal: {
+                            id: string;
+                            projectDir: string;
+                            title: string;
+                            objective: string;
+                            template: {
+                                taskType?: "feature" | "bug" | "research" | "refactor" | "ops";
+                                acceptance?: string[];
+                                boundaries?: string[];
+                                planReview?: "auto" | "manual";
+                            };
+                            triggers: {
+                                id: string;
+                                type: "cron" | "event" | "manual";
+                                schedule?: string;
+                                timezone?: string;
+                                eventKinds?: string[];
+                                filter?: {
+                                    [key: string]: unknown;
+                                };
+                            }[];
+                            state: "active" | "paused" | "stopped";
+                            stateReason?: string | null;
+                            concurrency: number;
+                            cooldownMs: number;
+                            budget: {
+                                perRunTurns?: number;
+                                perRunCostUsd?: number;
+                                perDayCostUsd?: number;
+                            };
+                            approval: "auto" | "plan" | "confirm";
+                            createdBy: string | null;
+                            createdAt: string;
+                            updatedAt: string;
+                            lastRunAt: string | null;
+                            nextRunAt: string | null;
+                        };
+                    };
+                };
             };
         };
     };
@@ -11178,7 +11608,32 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        run: {
+                            id: string;
+                            standingGoalId: string;
+                            triggerType: "cron" | "event" | "manual";
+                            triggerKey: string;
+                            payload: {
+                                [key: string]: unknown;
+                            };
+                            status: "queued" | "triaging" | "running" | "waiting_person" | "done" | "failed" | "skipped";
+                            mode: "goal" | "report" | "action" | "skip" | null;
+                            rationale: string | null;
+                            goalId: string | null;
+                            sessionId: string | null;
+                            worktree: string | null;
+                            result: {
+                                [key: string]: unknown;
+                            } | null;
+                            costUsd: number | null;
+                            tokens: number | null;
+                            startedAt: string | null;
+                            endedAt: string | null;
+                        };
+                    };
+                };
             };
         };
     };
@@ -11202,7 +11657,32 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        run: {
+                            id: string;
+                            standingGoalId: string;
+                            triggerType: "cron" | "event" | "manual";
+                            triggerKey: string;
+                            payload: {
+                                [key: string]: unknown;
+                            };
+                            status: "queued" | "triaging" | "running" | "waiting_person" | "done" | "failed" | "skipped";
+                            mode: "goal" | "report" | "action" | "skip" | null;
+                            rationale: string | null;
+                            goalId: string | null;
+                            sessionId: string | null;
+                            worktree: string | null;
+                            result: {
+                                [key: string]: unknown;
+                            } | null;
+                            costUsd: number | null;
+                            tokens: number | null;
+                            startedAt: string | null;
+                            endedAt: string | null;
+                        };
+                    };
+                };
             };
         };
     };
@@ -11358,7 +11838,14 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        topicId: string;
+                        beforeTokens: number;
+                        afterTokens: number;
+                        evictedMessageIds: string[];
+                    };
+                };
             };
         };
     };
@@ -11382,7 +11869,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        sessionID: string;
+                        resumedFrom: string | null;
+                    };
+                };
             };
         };
     };
@@ -11409,7 +11901,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        goalId: string;
+                        sessionID?: string | null;
+                    };
+                };
             };
         };
     };
@@ -11437,7 +11934,13 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        success: true;
+                        runId: number;
+                    };
+                };
             };
         };
     };
@@ -11467,7 +11970,14 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        status: "accepted";
+                        /** @constant */
+                        action?: "cancelled";
+                    };
+                };
             };
         };
     };
@@ -11494,7 +12004,15 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        success: true;
+                        goalId: string;
+                        /** @constant */
+                        nextAction: "GRAPH_INVOKED";
+                    };
+                };
             };
         };
     };
@@ -11522,7 +12040,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        status: "ok";
+                    };
+                };
             };
         };
     };
@@ -17338,7 +17861,14 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        success: true;
+                        /** @constant */
+                        nextAction: "SCHEDULED";
+                    };
+                };
             };
         };
     };
@@ -17366,7 +17896,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        status: "ok";
+                    };
+                };
             };
         };
     };

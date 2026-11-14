@@ -1906,6 +1906,41 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
   a2a 是唯一开放边界」断言；`api-contract.test.ts` 新增 13 条代表性断言；
   SDK `contract-compat.checks.ts` +23 条编译期等价。生成物 diff 恰好这 35 个 op（重跑幂等）。
 
+### E10h-R3（goal / decision / lead / standing / cognition 写响应 31 个）
+
+- 覆盖写响应 73 → **104/195**，total response 台账 199 → **230/327**（70.3%）。catalog 的
+  31 个 entry 只加 `response:`，请求契约与 handler 零改动。
+- 五个新文件按域拆（每个都只有十几到几十行）：`routes/schemas/goal-write-responses.ts`（11）、
+  `decision-write-responses.ts`（4）、`lead-write-responses.ts`（7）、
+  `standing-write-responses.ts`（7）、`cognition-write-responses.ts`（2）。
+  `schemas/read-models.ts` 的 `DecisionRecordSchema` 加 `export`（无 wire 变化），
+  decision 四个写响应直接复用列表 item，不写第二份转写。
+- 复用读侧 DTO：`standingGoals.create` / `update` / `pause` / `resume` / `stop` ≡
+  `{goal: StandingGoalSchema}`（list item），`standingGoals.run` / `goalRuns.approve` ≡
+  `{run: GoalRunSchema}`（runs item）。
+- **常量回执**按 handler 的终值声明（`Type.Literal`），不放宽到 SDK 的宽类型：
+  `goals.planApproval` `{success:true}`、`goals.pause|resume|stop|retry`
+  `{status:paused|resumed|stopped|retried}`、`goals.control` / `goals.controlLegacy`
+  `{status:'ok'}`（同 handler 同一 schema 对象）、`goals.complete`
+  `{success:true,nextAction:'SCHEDULED'}`、`goals.validate`
+  `{success:true,goalId,nextAction:'GRAPH_INVOKED'}`、`goals.retryNode`
+  `{success:true,runId}`、`goals.respondQuestion` `{status:'accepted',action?:'cancelled'}`。
+- 领域对象：`decisions.{draft,confirm,shelve,reopen}` ≡ `{record: DecisionRecord}`；
+  `lead.boundaries.accept` `{status:'accepted',toTopicId}`（只有 accept 拆分出新 topic）、
+  `merge` `{status:'merged'}`、`undo` `{status:'undone'}`；`lead.boundaries.observe`
+  `{proposed, proposal?:{trigger,confidence,reason}|null, error?}`（advisory，永不失败）；
+  `lead.compact` ≡ `LeadCompactResult`；`lead.topics.resume` `{sessionID,resumedFrom|null}`；
+  `lead.topics.fork` `{goalId,sessionID?:string|null}`。
+- `cognition.gate` 是判别联合（`decision` ∈ allow/deny/ask/rewrite/transform；deny/ask 的
+  `reason`/`rule` 可选，rewrite 带 `input`，transform 带 `text`）；`cognition.rewrite`
+  `{content: Part[]}`，部件只承诺 `type` + runtime 其余字段（`additionalProperties:true`）。
+- 本批无排除、无空体 200、无顶层开放对象。
+- 守卫：`schema-coverage.test.ts` 写响应下界 73 → **104**，新增 R3 逐 op 清单（31）+
+  「无空壳 / 无顶层开放对象」+「同 handler 共 schema / 复用读侧 DTO」断言；
+  `api-contract.test.ts` 新增 11 条代表性断言；SDK `contract-compat.checks.ts` +14 条
+  编译期等价（decision ×4、lead compact/resume/fork、standing goal ×5、run ×2）。
+  生成物 diff 恰好这 31 个 op（重跑幂等）。
+
 ---
 
 ## E11 身份 / 配额硬化（2026-11-13）

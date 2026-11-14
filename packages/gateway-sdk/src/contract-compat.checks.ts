@@ -6,7 +6,7 @@
 import type { operations } from './api-schema.gen'
 import type {
   Session, Goal, GoalSessionInfo, MemoryUnit, TriageItem, Approval, AutomationRule, QuestionRequest,
-  DecisionList, AttentionList, PodDetail,
+  DecisionList, DecisionRecord, AttentionList, PodDetail,
   // E10-1 session read surface
   QueueItem, SessionConfigState, Todo, SessionCheckpointListItem, SubagentList, SessionNamespace,
   // E10-2 pod / work read surface
@@ -30,7 +30,7 @@ import type {
   ModelConfigState, ModelRef, EmbeddingConfigGetResponse, TtsNamespace, PluginClientSnapshot,
   // E10f-C goal / lead / event / automation / pod read surface
   AutomationRuleListItem, StandingGoalView, GoalRunView,
-  LeadTopicView, LeadTopicIndexMessage, LeadBoundaryView, EventSourceView,
+  LeadTopicView, LeadTopicIndexMessage, LeadBoundaryView, EventSourceView, LeadCompactResult,
   // E10h-R1 session write responses (same DTOs as their read twins)
   RunState, CheckpointRestoreResult, DataPart, SubagentRecord,
   // E10h-R2 pod / task / terminal write responses
@@ -334,6 +334,43 @@ const CHECK_terminal_connect_ticket: AssertEq<
 /** 取消后台作业回中性 job 行（与 list item 同形，不是 task 原始 DTO）。 */
 const CHECK_background_cancel: AssertEq<Resp<operations['background.jobs.cancel']>, MafwBackgroundJob> = true
 
+// E10h-R3: goal / decision / lead / standing / cognition 写响应。
+// 只有「wire 与 SDK DTO 逐字段等价」的 op 加 AssertEq；常量回执（`{status:'paused'}`、
+// `{success:true}`、`{status:'ok'}`）比 SDK 的 `{status:string}` / `{success:boolean}` /
+// void 更精确，`goals.validate` 比 SDK 的 `{goalId}` 多两个字段——这些都按 handler 声明，
+// 故意**不放宽**到 SDK 类型，故不加 AssertEq（见 R3-report.md 的 concerns）。
+
+/** decision 四个动作同形 `{record}`，record 复用 `decisions.list` 的 `DecisionRecord`。 */
+const CHECK_decisions_draft: AssertEq<Resp<operations['decisions.draft']>, { record: DecisionRecord }> = true
+const CHECK_decisions_confirm: AssertEq<Resp<operations['decisions.confirm']>, { record: DecisionRecord }> = true
+const CHECK_decisions_shelve: AssertEq<Resp<operations['decisions.shelve']>, { record: DecisionRecord }> = true
+const CHECK_decisions_reopen: AssertEq<Resp<operations['decisions.reopen']>, { record: DecisionRecord }> = true
+
+/**
+ * `lead.compact` 回四个统计键（≡ SDK `LeadCompactResult`）；
+ * `lead.topics.resume` / `lead.topics.fork` 与 `LeadNamespace` 的返回等价。
+ * accept / merge / undo 的 wire 是 `BoundaryDecision`（每 op 一个 status 字面量），
+ * 比 SDK 三态联合更精确，故不加 AssertEq。
+ */
+const CHECK_lead_compact: AssertEq<Resp<operations['lead.compact']>, LeadCompactResult> = true
+const CHECK_lead_topic_resume: AssertEq<
+  Resp<operations['lead.topics.resume']>,
+  { sessionID: string; resumedFrom: string | null }
+> = true
+const CHECK_lead_topic_fork: AssertEq<
+  Resp<operations['lead.topics.fork']>,
+  { goalId: string; sessionID?: string | null }
+> = true
+
+/** standing 生命周期复用读侧实体：`{goal}` ≡ `StandingGoalView`，`{run}` ≡ `GoalRunView`。 */
+const CHECK_standing_goal_create: AssertEq<Resp<operations['standingGoals.create']>, { goal: StandingGoalView }> = true
+const CHECK_standing_goal_update: AssertEq<Resp<operations['standingGoals.update']>, { goal: StandingGoalView }> = true
+const CHECK_standing_goal_pause: AssertEq<Resp<operations['standingGoals.pause']>, { goal: StandingGoalView }> = true
+const CHECK_standing_goal_resume: AssertEq<Resp<operations['standingGoals.resume']>, { goal: StandingGoalView }> = true
+const CHECK_standing_goal_stop: AssertEq<Resp<operations['standingGoals.stop']>, { goal: StandingGoalView }> = true
+const CHECK_standing_goal_run: AssertEq<Resp<operations['standingGoals.run']>, { run: GoalRunView }> = true
+const CHECK_goal_run_approve: AssertEq<Resp<operations['goalRuns.approve']>, { run: GoalRunView }> = true
+
 /**
  * `tasks.output` 是 runtime shell 的透传边界（四键 optional + 开放索引）；这里仍锁
  * 「SDK 认的四个字段类型不变」，让透传不能把 TaskOutput 的 wire 语义改掉。
@@ -617,4 +654,10 @@ export const CONTRACT_COMPAT_CHECKS = [
   CHECK_pods_tech_lead_message, CHECK_pods_probes_create, CHECK_pods_reject,
   CHECK_pods_accept, CHECK_tasks_cancel, CHECK_terminal_create,
   CHECK_terminal_connect_ticket, CHECK_background_cancel,
+  // E10h-R3
+  CHECK_decisions_draft, CHECK_decisions_confirm, CHECK_decisions_shelve, CHECK_decisions_reopen,
+  CHECK_lead_compact, CHECK_lead_topic_resume, CHECK_lead_topic_fork,
+  CHECK_standing_goal_create, CHECK_standing_goal_update, CHECK_standing_goal_pause,
+  CHECK_standing_goal_resume, CHECK_standing_goal_stop, CHECK_standing_goal_run,
+  CHECK_goal_run_approve,
 ]

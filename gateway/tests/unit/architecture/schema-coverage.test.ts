@@ -38,7 +38,7 @@ interface CoverageReport {
 const GATEWAY_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPT = path.join(GATEWAY_ROOT, 'scripts', 'schema-coverage.cjs');
 
-/** Baseline 分组 (E8 and earlier 13 + 8 session read (E10-1) + 8 pod/work read (E10-2) + 8 goal read (E10b-1) + 7 human-gate/permission read (E10b-2) + 1 human token rotate (E11-1) + 8 memory/recall/lead read (E10c-1) + 8 memory extra / lead.context / pod read (E10d-1) + 8 metadata/registry read (E10e-1) + 16 session/task/terminal/usage read (E10f-A) + 16 project/runtime/metadata read (E10f-B) + 16 goal/lead/event/standing/automation/pod read (E10f-C) + 8 observability/device/A2A read (E10f-D)) = 125 entries; E10f-D 收口时台账 127（含 humanToken.rotate 与 orchestration.outcomes），E10h-P0 +2 → 129，E10h-R1 的 35 个 session 写响应 → 164，E10h-R2 的 35 个 pod/task/terminal/fileHistory 写响应 → 199。 */
+/** Baseline 分组 (E8 and earlier 13 + 8 session read (E10-1) + 8 pod/work read (E10-2) + 8 goal read (E10b-1) + 7 human-gate/permission read (E10b-2) + 1 human token rotate (E11-1) + 8 memory/recall/lead read (E10c-1) + 8 memory extra / lead.context / pod read (E10d-1) + 8 metadata/registry read (E10e-1) + 16 session/task/terminal/usage read (E10f-A) + 16 project/runtime/metadata read (E10f-B) + 16 goal/lead/event/standing/automation/pod read (E10f-C) + 8 observability/device/A2A read (E10f-D)) = 125 entries; E10f-D 收口时台账 127（含 humanToken.rotate 与 orchestration.outcomes），E10h-P0 +2 → 129，E10h-R1 的 35 个 session 写响应 → 164，E10h-R2 的 35 个 pod/task/terminal/fileHistory 写响应 → 199，E10h-R3 的 31 个 goal/decision/lead/standing/cognition 写响应 → 230。 */
 const E10_COVERED_OPS = [
   'a2a.agentCard',
   'agent.capabilities',
@@ -51,10 +51,16 @@ const E10_COVERED_OPS = [
   'background.jobs.cancel',
   'background.jobs.list',
   'background.jobs.output',
+  'cognition.gate',
+  'cognition.rewrite',
   'cognition.rules',
   'config.get',
   'dashboard.stats',
+  'decisions.confirm',
+  'decisions.draft',
   'decisions.list',
+  'decisions.reopen',
+  'decisions.shelve',
   'devices.list',
   'embedding.get',
   'event.replay',
@@ -67,20 +73,39 @@ const E10_COVERED_OPS = [
   'fileHistory.list',
   'fileHistory.restore',
   'fileHistory.snapshot',
+  'goalRuns.approve',
+  'goals.complete',
+  'goals.control',
+  'goals.controlLegacy',
   'goals.get',
   'goals.list',
+  'goals.pause',
   'goals.plan',
+  'goals.planApproval',
+  'goals.respondQuestion',
+  'goals.resume',
+  'goals.retry',
+  'goals.retryNode',
   'goals.sessions',
   'goals.source',
+  'goals.stop',
   'goals.timeline',
+  'goals.validate',
   'health.root',
   'humanToken.rotate',
   'kernel.stats',
+  'lead.boundaries.accept',
   'lead.boundaries.list',
+  'lead.boundaries.merge',
+  'lead.boundaries.observe',
+  'lead.boundaries.undo',
+  'lead.compact',
   'lead.context',
   'lead.recall',
+  'lead.topics.fork',
   'lead.topics.get',
   'lead.topics.list',
+  'lead.topics.resume',
   'lead.workingSet',
   'mafwCommands.list',
   'manager.session',
@@ -221,8 +246,14 @@ const E10_COVERED_OPS = [
   'session.usagePluginsReload',
   'session.usageSummary',
   'skills.list',
+  'standingGoals.create',
   'standingGoals.list',
+  'standingGoals.pause',
+  'standingGoals.resume',
+  'standingGoals.run',
   'standingGoals.runs',
+  'standingGoals.stop',
+  'standingGoals.update',
   'structured.submit',
   'tasks.cancel',
   'tasks.get',
@@ -362,6 +393,44 @@ const E10H_R2_WRITE_RESPONSE_OPS = [
   'terminal.connectTicket',
   'terminal.create',
   'terminal.remove',
+];
+
+/**
+ * E10h-R3：goal / decision / lead / standing / cognition 共 31 个写 op 的 200 响应。
+ * 与 R1/R2 同一台账（73 → 104）；按名钉住，删一个 `response:` 立刻按名失败。
+ */
+const E10H_R3_WRITE_RESPONSE_OPS = [
+  'cognition.gate',
+  'cognition.rewrite',
+  'decisions.confirm',
+  'decisions.draft',
+  'decisions.reopen',
+  'decisions.shelve',
+  'goalRuns.approve',
+  'goals.complete',
+  'goals.control',
+  'goals.controlLegacy',
+  'goals.pause',
+  'goals.planApproval',
+  'goals.respondQuestion',
+  'goals.resume',
+  'goals.retry',
+  'goals.retryNode',
+  'goals.stop',
+  'goals.validate',
+  'lead.boundaries.accept',
+  'lead.boundaries.merge',
+  'lead.boundaries.observe',
+  'lead.boundaries.undo',
+  'lead.compact',
+  'lead.topics.fork',
+  'lead.topics.resume',
+  'standingGoals.create',
+  'standingGoals.pause',
+  'standingGoals.resume',
+  'standingGoals.run',
+  'standingGoals.stop',
+  'standingGoals.update',
 ];
 
 /**
@@ -946,10 +1015,10 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(E10G_P0_REQUEST_OPS.filter((id) => !byId.get(id)?.hasRequest)).toEqual([]);
   });
 
-  // E10h-P0/R1/R2: write-response ledger. Same parser, same 195 write-op denominator;
+  // E10h-P0/R1/R2/R3: write-response ledger. Same parser, same 195 write-op denominator;
   // `humanToken.rotate` (E11-1) + 2 P0 pilots + 35 R1 session writes + 35 R2
-  // pod/task/terminal/fileHistory writes = 73/195. Later batches only append, so the
-  // count is a floor.
+  // pod/task/terminal/fileHistory writes + 31 R3 goal/decision/lead/standing/cognition
+  // writes = 104/195. Later batches only append, so the count is a floor.
   it('the script reports write-response coverage over the 195 write ops', () => {
     const report = runScript();
     const write = catalogWriteOps();
@@ -958,7 +1027,7 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(write).toHaveLength(WRITE_OPS_TOTAL);
     expect(report.writeResponseTotal).toBe(WRITE_OPS_TOTAL);
     expect(report.writeResponses).toBe(covered.length);
-    expect(report.writeResponses).toBeGreaterThanOrEqual(73);
+    expect(report.writeResponses).toBeGreaterThanOrEqual(104);
     expect(report.writeResponseCovered).toEqual(covered);
     // Disjoint from the request ledger: the two scans are independent `response:`/
     // `request:` hits on the same write ops — with one deliberate exception, `pods.a2a`,
@@ -1070,6 +1139,71 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     } | undefined;
     expect(a2a?.additionalProperties).toBe(true);
     expect(Object.keys(a2a?.properties ?? {})).toEqual([]);
+  });
+
+  // E10h-R3: goal / decision / lead / standing / cognition 写响应（31 个）。同台账，
+  // 下界 104；按名钉住，删一个 `response:` 立刻按名失败。
+  it('R3 goal/decision/lead/standing/cognition write ops declare a 200 response schema (write responses >= 104)', () => {
+    const writes = catalogWriteOps();
+    const responded = new Set(writes.filter((op) => op.hasResponse).map((op) => op.operationId));
+
+    expect(E10H_R3_WRITE_RESPONSE_OPS.filter((id) => !responded.has(id))).toEqual([]);
+    expect(E10H_R3_WRITE_RESPONSE_OPS).toHaveLength(31);
+    // No duplicates inside the batch …
+    expect(new Set(E10H_R3_WRITE_RESPONSE_OPS).size).toBe(E10H_R3_WRITE_RESPONSE_OPS.length);
+    // … and no overlap with the earlier batches.
+    for (const earlier of [E10H_P0_WRITE_RESPONSE_OPS, E10H_R1_WRITE_RESPONSE_OPS, E10H_R2_WRITE_RESPONSE_OPS]) {
+      expect(E10H_R3_WRITE_RESPONSE_OPS.filter((id) => earlier.includes(id))).toEqual([]);
+    }
+    // 104 = humanToken.rotate + P0 2 + R1 35 + R2 35 + R3 31.
+    expect(responded.size).toBeGreaterThanOrEqual(104);
+  });
+
+  // 本批 200 全是「常量回执 / 复用读侧 DTO / 判别联合」，没有一个空壳对象；
+  // 顶层也不许开放（开放会合法化 handler 不会发的字段）。
+  it('R3 responses model real bodies (no empty shells, no open top-level object)', () => {
+    const responses = catalogResponseById();
+    const problems: string[] = [];
+    for (const id of E10H_R3_WRITE_RESPONSE_OPS) {
+      const schema = responses.get(id) as {
+        type?: string;
+        anyOf?: unknown[];
+        properties?: Record<string, unknown>;
+        additionalProperties?: unknown;
+      } | undefined;
+      if (!schema) { problems.push(`${id}: missing response`); continue; }
+      // `cognition.gate` 是判别联合（allow/deny/ask/rewrite/transform），其余是对象。
+      if (schema.anyOf) {
+        if (schema.anyOf.length !== 5) problems.push(`${id}: expected 5 decision branches`);
+        continue;
+      }
+      if (schema.type !== 'object') problems.push(`${id}: expected object`);
+      if (Object.keys(schema.properties ?? {}).length === 0) problems.push(`${id}: expected declared fields`);
+      if (schema.additionalProperties !== undefined) problems.push(`${id}: must not be open`);
+    }
+    expect(problems).toEqual([]);
+  });
+
+  it('R3 shares one schema for same-handler receipts and reuses the read DTOs', () => {
+    const responses = catalogResponseById();
+    // control / controlLegacy 是同一 handler 的同一 body → 同一个 schema 对象。
+    expect(responses.get('goals.control')).toBe(responses.get('goals.controlLegacy'));
+    // decisions 四个动作同形 `{record}`（draft 的 schema 被其余三个复用）。
+    for (const id of ['decisions.confirm', 'decisions.draft', 'decisions.reopen', 'decisions.shelve']) {
+      expect(responses.get(id)).toBe(responses.get('decisions.draft'));
+    }
+    // standing 生命周期复用读侧 item：[{goal}] / [{run}]。
+    const goalItem = (responses.get('standingGoals.list') as any).properties.items.items;
+    for (const id of [
+      'standingGoals.create', 'standingGoals.update', 'standingGoals.pause',
+      'standingGoals.resume', 'standingGoals.stop',
+    ]) {
+      expect((responses.get(id) as any).properties.goal).toEqual(goalItem);
+    }
+    const runItem = (responses.get('standingGoals.runs') as any).properties.items.items;
+    for (const id of ['standingGoals.run', 'goalRuns.approve']) {
+      expect((responses.get(id) as any).properties.run).toEqual(runItem);
+    }
   });
   // E10g-W1: session writes. Pinned per-op so a dropped `request:` fails by name,
   // and as a floor (>= 124 through W5) so the count can only grow with W6-W7.

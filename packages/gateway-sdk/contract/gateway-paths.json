@@ -851,7 +851,104 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "decision"
+                      ],
+                      "properties": {
+                        "decision": {
+                          "const": "allow",
+                          "type": "string"
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "decision"
+                      ],
+                      "properties": {
+                        "decision": {
+                          "const": "deny",
+                          "type": "string"
+                        },
+                        "reason": {
+                          "type": "string"
+                        },
+                        "rule": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "decision"
+                      ],
+                      "properties": {
+                        "decision": {
+                          "const": "ask",
+                          "type": "string"
+                        },
+                        "reason": {
+                          "type": "string"
+                        },
+                        "rule": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "decision",
+                        "input"
+                      ],
+                      "properties": {
+                        "decision": {
+                          "const": "rewrite",
+                          "type": "string"
+                        },
+                        "input": {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(.*)$": {}
+                          }
+                        },
+                        "rule": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "decision",
+                        "text"
+                      ],
+                      "properties": {
+                        "decision": {
+                          "const": "transform",
+                          "type": "string"
+                        },
+                        "text": {
+                          "type": "string"
+                        },
+                        "rule": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -928,7 +1025,34 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "content"
+                  ],
+                  "properties": {
+                    "content": {
+                      "type": "array",
+                      "items": {
+                        "additionalProperties": true,
+                        "type": "object",
+                        "required": [
+                          "type"
+                        ],
+                        "properties": {
+                          "type": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -14124,7 +14248,23 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true,
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -15369,7 +15509,300 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "record"
+                  ],
+                  "properties": {
+                    "record": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "projectDir",
+                        "goalId",
+                        "revision",
+                        "kind",
+                        "status",
+                        "question",
+                        "options",
+                        "evidence",
+                        "rationale",
+                        "consequences",
+                        "reviewAt",
+                        "decidedBy",
+                        "decidedAt",
+                        "createdAt",
+                        "updatedAt",
+                        "history"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "projectDir": {
+                          "type": "string"
+                        },
+                        "goalId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "revision": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "kind": {
+                          "anyOf": [
+                            {
+                              "const": "direction",
+                              "type": "string"
+                            },
+                            {
+                              "const": "plan",
+                              "type": "string"
+                            },
+                            {
+                              "const": "scope",
+                              "type": "string"
+                            },
+                            {
+                              "const": "authorization",
+                              "type": "string"
+                            },
+                            {
+                              "const": "acceptance",
+                              "type": "string"
+                            },
+                            {
+                              "const": "priority",
+                              "type": "string"
+                            },
+                            {
+                              "const": "disposition",
+                              "type": "string"
+                            },
+                            {
+                              "const": "other",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "status": {
+                          "anyOf": [
+                            {
+                              "const": "draft",
+                              "type": "string"
+                            },
+                            {
+                              "const": "decided",
+                              "type": "string"
+                            },
+                            {
+                              "const": "shelved",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "question": {
+                          "type": "string"
+                        },
+                        "options": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "id",
+                              "title"
+                            ],
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "title": {
+                                "type": "string"
+                              },
+                              "summary": {
+                                "type": "string"
+                              },
+                              "risks": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "evidence": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "kind",
+                              "ref"
+                            ],
+                            "properties": {
+                              "kind": {
+                                "anyOf": [
+                                  {
+                                    "const": "message",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "file",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "change",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "review_item",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "goal",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "ref": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        },
+                        "rationale": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "consequences": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "reviewAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "decidedBy": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "decidedAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        },
+                        "history": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "action",
+                              "by",
+                              "at"
+                            ],
+                            "properties": {
+                              "action": {
+                                "anyOf": [
+                                  {
+                                    "const": "drafted",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "confirmed",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "shelved",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "reopened",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "by": {
+                                "anyOf": [
+                                  {
+                                    "const": "agent",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "user",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "at": {
+                                "type": "string"
+                              },
+                              "note": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -15441,7 +15874,300 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "record"
+                  ],
+                  "properties": {
+                    "record": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "projectDir",
+                        "goalId",
+                        "revision",
+                        "kind",
+                        "status",
+                        "question",
+                        "options",
+                        "evidence",
+                        "rationale",
+                        "consequences",
+                        "reviewAt",
+                        "decidedBy",
+                        "decidedAt",
+                        "createdAt",
+                        "updatedAt",
+                        "history"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "projectDir": {
+                          "type": "string"
+                        },
+                        "goalId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "revision": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "kind": {
+                          "anyOf": [
+                            {
+                              "const": "direction",
+                              "type": "string"
+                            },
+                            {
+                              "const": "plan",
+                              "type": "string"
+                            },
+                            {
+                              "const": "scope",
+                              "type": "string"
+                            },
+                            {
+                              "const": "authorization",
+                              "type": "string"
+                            },
+                            {
+                              "const": "acceptance",
+                              "type": "string"
+                            },
+                            {
+                              "const": "priority",
+                              "type": "string"
+                            },
+                            {
+                              "const": "disposition",
+                              "type": "string"
+                            },
+                            {
+                              "const": "other",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "status": {
+                          "anyOf": [
+                            {
+                              "const": "draft",
+                              "type": "string"
+                            },
+                            {
+                              "const": "decided",
+                              "type": "string"
+                            },
+                            {
+                              "const": "shelved",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "question": {
+                          "type": "string"
+                        },
+                        "options": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "id",
+                              "title"
+                            ],
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "title": {
+                                "type": "string"
+                              },
+                              "summary": {
+                                "type": "string"
+                              },
+                              "risks": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "evidence": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "kind",
+                              "ref"
+                            ],
+                            "properties": {
+                              "kind": {
+                                "anyOf": [
+                                  {
+                                    "const": "message",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "file",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "change",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "review_item",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "goal",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "ref": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        },
+                        "rationale": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "consequences": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "reviewAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "decidedBy": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "decidedAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        },
+                        "history": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "action",
+                              "by",
+                              "at"
+                            ],
+                            "properties": {
+                              "action": {
+                                "anyOf": [
+                                  {
+                                    "const": "drafted",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "confirmed",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "shelved",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "reopened",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "by": {
+                                "anyOf": [
+                                  {
+                                    "const": "agent",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "user",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "at": {
+                                "type": "string"
+                              },
+                              "note": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -15491,7 +16217,300 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "record"
+                  ],
+                  "properties": {
+                    "record": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "projectDir",
+                        "goalId",
+                        "revision",
+                        "kind",
+                        "status",
+                        "question",
+                        "options",
+                        "evidence",
+                        "rationale",
+                        "consequences",
+                        "reviewAt",
+                        "decidedBy",
+                        "decidedAt",
+                        "createdAt",
+                        "updatedAt",
+                        "history"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "projectDir": {
+                          "type": "string"
+                        },
+                        "goalId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "revision": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "kind": {
+                          "anyOf": [
+                            {
+                              "const": "direction",
+                              "type": "string"
+                            },
+                            {
+                              "const": "plan",
+                              "type": "string"
+                            },
+                            {
+                              "const": "scope",
+                              "type": "string"
+                            },
+                            {
+                              "const": "authorization",
+                              "type": "string"
+                            },
+                            {
+                              "const": "acceptance",
+                              "type": "string"
+                            },
+                            {
+                              "const": "priority",
+                              "type": "string"
+                            },
+                            {
+                              "const": "disposition",
+                              "type": "string"
+                            },
+                            {
+                              "const": "other",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "status": {
+                          "anyOf": [
+                            {
+                              "const": "draft",
+                              "type": "string"
+                            },
+                            {
+                              "const": "decided",
+                              "type": "string"
+                            },
+                            {
+                              "const": "shelved",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "question": {
+                          "type": "string"
+                        },
+                        "options": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "id",
+                              "title"
+                            ],
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "title": {
+                                "type": "string"
+                              },
+                              "summary": {
+                                "type": "string"
+                              },
+                              "risks": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "evidence": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "kind",
+                              "ref"
+                            ],
+                            "properties": {
+                              "kind": {
+                                "anyOf": [
+                                  {
+                                    "const": "message",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "file",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "change",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "review_item",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "goal",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "ref": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        },
+                        "rationale": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "consequences": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "reviewAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "decidedBy": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "decidedAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        },
+                        "history": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "action",
+                              "by",
+                              "at"
+                            ],
+                            "properties": {
+                              "action": {
+                                "anyOf": [
+                                  {
+                                    "const": "drafted",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "confirmed",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "shelved",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "reopened",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "by": {
+                                "anyOf": [
+                                  {
+                                    "const": "agent",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "user",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "at": {
+                                "type": "string"
+                              },
+                              "note": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -15534,7 +16553,300 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "record"
+                  ],
+                  "properties": {
+                    "record": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "projectDir",
+                        "goalId",
+                        "revision",
+                        "kind",
+                        "status",
+                        "question",
+                        "options",
+                        "evidence",
+                        "rationale",
+                        "consequences",
+                        "reviewAt",
+                        "decidedBy",
+                        "decidedAt",
+                        "createdAt",
+                        "updatedAt",
+                        "history"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "projectDir": {
+                          "type": "string"
+                        },
+                        "goalId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "revision": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "kind": {
+                          "anyOf": [
+                            {
+                              "const": "direction",
+                              "type": "string"
+                            },
+                            {
+                              "const": "plan",
+                              "type": "string"
+                            },
+                            {
+                              "const": "scope",
+                              "type": "string"
+                            },
+                            {
+                              "const": "authorization",
+                              "type": "string"
+                            },
+                            {
+                              "const": "acceptance",
+                              "type": "string"
+                            },
+                            {
+                              "const": "priority",
+                              "type": "string"
+                            },
+                            {
+                              "const": "disposition",
+                              "type": "string"
+                            },
+                            {
+                              "const": "other",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "status": {
+                          "anyOf": [
+                            {
+                              "const": "draft",
+                              "type": "string"
+                            },
+                            {
+                              "const": "decided",
+                              "type": "string"
+                            },
+                            {
+                              "const": "shelved",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "question": {
+                          "type": "string"
+                        },
+                        "options": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "id",
+                              "title"
+                            ],
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "title": {
+                                "type": "string"
+                              },
+                              "summary": {
+                                "type": "string"
+                              },
+                              "risks": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "evidence": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "kind",
+                              "ref"
+                            ],
+                            "properties": {
+                              "kind": {
+                                "anyOf": [
+                                  {
+                                    "const": "message",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "file",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "change",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "review_item",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "goal",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "ref": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        },
+                        "rationale": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "consequences": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "reviewAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "decidedBy": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "decidedAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        },
+                        "history": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "action",
+                              "by",
+                              "at"
+                            ],
+                            "properties": {
+                              "action": {
+                                "anyOf": [
+                                  {
+                                    "const": "drafted",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "confirmed",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "shelved",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "reopened",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "by": {
+                                "anyOf": [
+                                  {
+                                    "const": "agent",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "user",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "at": {
+                                "type": "string"
+                              },
+                              "note": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -15640,7 +16952,23 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status"
+                  ],
+                  "properties": {
+                    "status": {
+                      "const": "paused",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -15674,7 +17002,23 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status"
+                  ],
+                  "properties": {
+                    "status": {
+                      "const": "resumed",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -15708,7 +17052,23 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status"
+                  ],
+                  "properties": {
+                    "status": {
+                      "const": "stopped",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -15748,7 +17108,23 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status"
+                  ],
+                  "properties": {
+                    "status": {
+                      "const": "retried",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -15924,7 +17300,27 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "toTopicId"
+                  ],
+                  "properties": {
+                    "status": {
+                      "const": "accepted",
+                      "type": "string"
+                    },
+                    "toTopicId": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -15966,7 +17362,23 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status"
+                  ],
+                  "properties": {
+                    "status": {
+                      "const": "merged",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -16008,7 +17420,23 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status"
+                  ],
+                  "properties": {
+                    "status": {
+                      "const": "undone",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -16041,7 +17469,72 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "proposed"
+                  ],
+                  "properties": {
+                    "proposed": {
+                      "type": "boolean"
+                    },
+                    "proposal": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "required": [
+                            "trigger",
+                            "confidence",
+                            "reason"
+                          ],
+                          "properties": {
+                            "trigger": {
+                              "anyOf": [
+                                {
+                                  "const": "explicit",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "semantic",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "idle",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "goal_closed",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "keyword",
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "confidence": {
+                              "type": "number"
+                            },
+                            "reason": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -17330,7 +18823,254 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "goal"
+                  ],
+                  "properties": {
+                    "goal": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "projectDir",
+                        "title",
+                        "objective",
+                        "template",
+                        "triggers",
+                        "state",
+                        "concurrency",
+                        "cooldownMs",
+                        "budget",
+                        "approval",
+                        "createdBy",
+                        "createdAt",
+                        "updatedAt",
+                        "lastRunAt",
+                        "nextRunAt"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "projectDir": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "objective": {
+                          "type": "string"
+                        },
+                        "template": {
+                          "type": "object",
+                          "properties": {
+                            "taskType": {
+                              "anyOf": [
+                                {
+                                  "const": "feature",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "bug",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "research",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "refactor",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "ops",
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "acceptance": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "boundaries": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "planReview": {
+                              "anyOf": [
+                                {
+                                  "const": "auto",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "manual",
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "triggers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "id",
+                              "type"
+                            ],
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "type": {
+                                "anyOf": [
+                                  {
+                                    "const": "cron",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "event",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "manual",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "schedule": {
+                                "type": "string"
+                              },
+                              "timezone": {
+                                "type": "string"
+                              },
+                              "eventKinds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "filter": {
+                                "type": "object",
+                                "patternProperties": {
+                                  "^(.*)$": {}
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "state": {
+                          "anyOf": [
+                            {
+                              "const": "active",
+                              "type": "string"
+                            },
+                            {
+                              "const": "paused",
+                              "type": "string"
+                            },
+                            {
+                              "const": "stopped",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "stateReason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "concurrency": {
+                          "type": "number"
+                        },
+                        "cooldownMs": {
+                          "type": "number"
+                        },
+                        "budget": {
+                          "type": "object",
+                          "properties": {
+                            "perRunTurns": {
+                              "type": "number"
+                            },
+                            "perRunCostUsd": {
+                              "type": "number"
+                            },
+                            "perDayCostUsd": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        "approval": {
+                          "anyOf": [
+                            {
+                              "const": "auto",
+                              "type": "string"
+                            },
+                            {
+                              "const": "plan",
+                              "type": "string"
+                            },
+                            {
+                              "const": "confirm",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "createdBy": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        },
+                        "lastRunAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "nextRunAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -17512,7 +19252,254 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "goal"
+                  ],
+                  "properties": {
+                    "goal": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "projectDir",
+                        "title",
+                        "objective",
+                        "template",
+                        "triggers",
+                        "state",
+                        "concurrency",
+                        "cooldownMs",
+                        "budget",
+                        "approval",
+                        "createdBy",
+                        "createdAt",
+                        "updatedAt",
+                        "lastRunAt",
+                        "nextRunAt"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "projectDir": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "objective": {
+                          "type": "string"
+                        },
+                        "template": {
+                          "type": "object",
+                          "properties": {
+                            "taskType": {
+                              "anyOf": [
+                                {
+                                  "const": "feature",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "bug",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "research",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "refactor",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "ops",
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "acceptance": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "boundaries": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "planReview": {
+                              "anyOf": [
+                                {
+                                  "const": "auto",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "manual",
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "triggers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "id",
+                              "type"
+                            ],
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "type": {
+                                "anyOf": [
+                                  {
+                                    "const": "cron",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "event",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "manual",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "schedule": {
+                                "type": "string"
+                              },
+                              "timezone": {
+                                "type": "string"
+                              },
+                              "eventKinds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "filter": {
+                                "type": "object",
+                                "patternProperties": {
+                                  "^(.*)$": {}
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "state": {
+                          "anyOf": [
+                            {
+                              "const": "active",
+                              "type": "string"
+                            },
+                            {
+                              "const": "paused",
+                              "type": "string"
+                            },
+                            {
+                              "const": "stopped",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "stateReason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "concurrency": {
+                          "type": "number"
+                        },
+                        "cooldownMs": {
+                          "type": "number"
+                        },
+                        "budget": {
+                          "type": "object",
+                          "properties": {
+                            "perRunTurns": {
+                              "type": "number"
+                            },
+                            "perRunCostUsd": {
+                              "type": "number"
+                            },
+                            "perDayCostUsd": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        "approval": {
+                          "anyOf": [
+                            {
+                              "const": "auto",
+                              "type": "string"
+                            },
+                            {
+                              "const": "plan",
+                              "type": "string"
+                            },
+                            {
+                              "const": "confirm",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "createdBy": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        },
+                        "lastRunAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "nextRunAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -17786,7 +19773,254 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "goal"
+                  ],
+                  "properties": {
+                    "goal": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "projectDir",
+                        "title",
+                        "objective",
+                        "template",
+                        "triggers",
+                        "state",
+                        "concurrency",
+                        "cooldownMs",
+                        "budget",
+                        "approval",
+                        "createdBy",
+                        "createdAt",
+                        "updatedAt",
+                        "lastRunAt",
+                        "nextRunAt"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "projectDir": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "objective": {
+                          "type": "string"
+                        },
+                        "template": {
+                          "type": "object",
+                          "properties": {
+                            "taskType": {
+                              "anyOf": [
+                                {
+                                  "const": "feature",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "bug",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "research",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "refactor",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "ops",
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "acceptance": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "boundaries": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "planReview": {
+                              "anyOf": [
+                                {
+                                  "const": "auto",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "manual",
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "triggers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "id",
+                              "type"
+                            ],
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "type": {
+                                "anyOf": [
+                                  {
+                                    "const": "cron",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "event",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "manual",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "schedule": {
+                                "type": "string"
+                              },
+                              "timezone": {
+                                "type": "string"
+                              },
+                              "eventKinds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "filter": {
+                                "type": "object",
+                                "patternProperties": {
+                                  "^(.*)$": {}
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "state": {
+                          "anyOf": [
+                            {
+                              "const": "active",
+                              "type": "string"
+                            },
+                            {
+                              "const": "paused",
+                              "type": "string"
+                            },
+                            {
+                              "const": "stopped",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "stateReason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "concurrency": {
+                          "type": "number"
+                        },
+                        "cooldownMs": {
+                          "type": "number"
+                        },
+                        "budget": {
+                          "type": "object",
+                          "properties": {
+                            "perRunTurns": {
+                              "type": "number"
+                            },
+                            "perRunCostUsd": {
+                              "type": "number"
+                            },
+                            "perDayCostUsd": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        "approval": {
+                          "anyOf": [
+                            {
+                              "const": "auto",
+                              "type": "string"
+                            },
+                            {
+                              "const": "plan",
+                              "type": "string"
+                            },
+                            {
+                              "const": "confirm",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "createdBy": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        },
+                        "lastRunAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "nextRunAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -17820,7 +20054,254 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "goal"
+                  ],
+                  "properties": {
+                    "goal": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "projectDir",
+                        "title",
+                        "objective",
+                        "template",
+                        "triggers",
+                        "state",
+                        "concurrency",
+                        "cooldownMs",
+                        "budget",
+                        "approval",
+                        "createdBy",
+                        "createdAt",
+                        "updatedAt",
+                        "lastRunAt",
+                        "nextRunAt"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "projectDir": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "objective": {
+                          "type": "string"
+                        },
+                        "template": {
+                          "type": "object",
+                          "properties": {
+                            "taskType": {
+                              "anyOf": [
+                                {
+                                  "const": "feature",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "bug",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "research",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "refactor",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "ops",
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "acceptance": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "boundaries": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "planReview": {
+                              "anyOf": [
+                                {
+                                  "const": "auto",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "manual",
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "triggers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "id",
+                              "type"
+                            ],
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "type": {
+                                "anyOf": [
+                                  {
+                                    "const": "cron",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "event",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "manual",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "schedule": {
+                                "type": "string"
+                              },
+                              "timezone": {
+                                "type": "string"
+                              },
+                              "eventKinds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "filter": {
+                                "type": "object",
+                                "patternProperties": {
+                                  "^(.*)$": {}
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "state": {
+                          "anyOf": [
+                            {
+                              "const": "active",
+                              "type": "string"
+                            },
+                            {
+                              "const": "paused",
+                              "type": "string"
+                            },
+                            {
+                              "const": "stopped",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "stateReason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "concurrency": {
+                          "type": "number"
+                        },
+                        "cooldownMs": {
+                          "type": "number"
+                        },
+                        "budget": {
+                          "type": "object",
+                          "properties": {
+                            "perRunTurns": {
+                              "type": "number"
+                            },
+                            "perRunCostUsd": {
+                              "type": "number"
+                            },
+                            "perDayCostUsd": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        "approval": {
+                          "anyOf": [
+                            {
+                              "const": "auto",
+                              "type": "string"
+                            },
+                            {
+                              "const": "plan",
+                              "type": "string"
+                            },
+                            {
+                              "const": "confirm",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "createdBy": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        },
+                        "lastRunAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "nextRunAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -17854,7 +20335,254 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "goal"
+                  ],
+                  "properties": {
+                    "goal": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "projectDir",
+                        "title",
+                        "objective",
+                        "template",
+                        "triggers",
+                        "state",
+                        "concurrency",
+                        "cooldownMs",
+                        "budget",
+                        "approval",
+                        "createdBy",
+                        "createdAt",
+                        "updatedAt",
+                        "lastRunAt",
+                        "nextRunAt"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "projectDir": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "objective": {
+                          "type": "string"
+                        },
+                        "template": {
+                          "type": "object",
+                          "properties": {
+                            "taskType": {
+                              "anyOf": [
+                                {
+                                  "const": "feature",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "bug",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "research",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "refactor",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "ops",
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "acceptance": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "boundaries": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "planReview": {
+                              "anyOf": [
+                                {
+                                  "const": "auto",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "manual",
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "triggers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "id",
+                              "type"
+                            ],
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "type": {
+                                "anyOf": [
+                                  {
+                                    "const": "cron",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "event",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "manual",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "schedule": {
+                                "type": "string"
+                              },
+                              "timezone": {
+                                "type": "string"
+                              },
+                              "eventKinds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "filter": {
+                                "type": "object",
+                                "patternProperties": {
+                                  "^(.*)$": {}
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "state": {
+                          "anyOf": [
+                            {
+                              "const": "active",
+                              "type": "string"
+                            },
+                            {
+                              "const": "paused",
+                              "type": "string"
+                            },
+                            {
+                              "const": "stopped",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "stateReason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "concurrency": {
+                          "type": "number"
+                        },
+                        "cooldownMs": {
+                          "type": "number"
+                        },
+                        "budget": {
+                          "type": "object",
+                          "properties": {
+                            "perRunTurns": {
+                              "type": "number"
+                            },
+                            "perRunCostUsd": {
+                              "type": "number"
+                            },
+                            "perDayCostUsd": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        "approval": {
+                          "anyOf": [
+                            {
+                              "const": "auto",
+                              "type": "string"
+                            },
+                            {
+                              "const": "plan",
+                              "type": "string"
+                            },
+                            {
+                              "const": "confirm",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "createdBy": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        },
+                        "lastRunAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "nextRunAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -17888,7 +20616,221 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "run"
+                  ],
+                  "properties": {
+                    "run": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "standingGoalId",
+                        "triggerType",
+                        "triggerKey",
+                        "payload",
+                        "status",
+                        "mode",
+                        "rationale",
+                        "goalId",
+                        "sessionId",
+                        "worktree",
+                        "result",
+                        "costUsd",
+                        "tokens",
+                        "startedAt",
+                        "endedAt"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "standingGoalId": {
+                          "type": "string"
+                        },
+                        "triggerType": {
+                          "anyOf": [
+                            {
+                              "const": "cron",
+                              "type": "string"
+                            },
+                            {
+                              "const": "event",
+                              "type": "string"
+                            },
+                            {
+                              "const": "manual",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "triggerKey": {
+                          "type": "string"
+                        },
+                        "payload": {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(.*)$": {}
+                          }
+                        },
+                        "status": {
+                          "anyOf": [
+                            {
+                              "const": "queued",
+                              "type": "string"
+                            },
+                            {
+                              "const": "triaging",
+                              "type": "string"
+                            },
+                            {
+                              "const": "running",
+                              "type": "string"
+                            },
+                            {
+                              "const": "waiting_person",
+                              "type": "string"
+                            },
+                            {
+                              "const": "done",
+                              "type": "string"
+                            },
+                            {
+                              "const": "failed",
+                              "type": "string"
+                            },
+                            {
+                              "const": "skipped",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "mode": {
+                          "anyOf": [
+                            {
+                              "const": "goal",
+                              "type": "string"
+                            },
+                            {
+                              "const": "report",
+                              "type": "string"
+                            },
+                            {
+                              "const": "action",
+                              "type": "string"
+                            },
+                            {
+                              "const": "skip",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "rationale": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "goalId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "sessionId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "worktree": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "result": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "patternProperties": {
+                                "^(.*)$": {}
+                              }
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "costUsd": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "tokens": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "startedAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "endedAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -17922,7 +20864,221 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "run"
+                  ],
+                  "properties": {
+                    "run": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "standingGoalId",
+                        "triggerType",
+                        "triggerKey",
+                        "payload",
+                        "status",
+                        "mode",
+                        "rationale",
+                        "goalId",
+                        "sessionId",
+                        "worktree",
+                        "result",
+                        "costUsd",
+                        "tokens",
+                        "startedAt",
+                        "endedAt"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "standingGoalId": {
+                          "type": "string"
+                        },
+                        "triggerType": {
+                          "anyOf": [
+                            {
+                              "const": "cron",
+                              "type": "string"
+                            },
+                            {
+                              "const": "event",
+                              "type": "string"
+                            },
+                            {
+                              "const": "manual",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "triggerKey": {
+                          "type": "string"
+                        },
+                        "payload": {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(.*)$": {}
+                          }
+                        },
+                        "status": {
+                          "anyOf": [
+                            {
+                              "const": "queued",
+                              "type": "string"
+                            },
+                            {
+                              "const": "triaging",
+                              "type": "string"
+                            },
+                            {
+                              "const": "running",
+                              "type": "string"
+                            },
+                            {
+                              "const": "waiting_person",
+                              "type": "string"
+                            },
+                            {
+                              "const": "done",
+                              "type": "string"
+                            },
+                            {
+                              "const": "failed",
+                              "type": "string"
+                            },
+                            {
+                              "const": "skipped",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "mode": {
+                          "anyOf": [
+                            {
+                              "const": "goal",
+                              "type": "string"
+                            },
+                            {
+                              "const": "report",
+                              "type": "string"
+                            },
+                            {
+                              "const": "action",
+                              "type": "string"
+                            },
+                            {
+                              "const": "skip",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "rationale": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "goalId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "sessionId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "worktree": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "result": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "patternProperties": {
+                                "^(.*)$": {}
+                              }
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "costUsd": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "tokens": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "startedAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "endedAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -18376,7 +21532,37 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "topicId",
+                    "beforeTokens",
+                    "afterTokens",
+                    "evictedMessageIds"
+                  ],
+                  "properties": {
+                    "topicId": {
+                      "type": "string"
+                    },
+                    "beforeTokens": {
+                      "type": "number"
+                    },
+                    "afterTokens": {
+                      "type": "number"
+                    },
+                    "evictedMessageIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -18410,7 +21596,33 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "sessionID",
+                    "resumedFrom"
+                  ],
+                  "properties": {
+                    "sessionID": {
+                      "type": "string"
+                    },
+                    "resumedFrom": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -18449,7 +21661,32 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "goalId"
+                  ],
+                  "properties": {
+                    "goalId": {
+                      "type": "string"
+                    },
+                    "sessionID": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -18496,7 +21733,27 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "runId"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "runId": {
+                      "type": "number"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -18559,7 +21816,27 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status"
+                  ],
+                  "properties": {
+                    "status": {
+                      "const": "accepted",
+                      "type": "string"
+                    },
+                    "action": {
+                      "const": "cancelled",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -18598,7 +21875,32 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "goalId",
+                    "nextAction"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "goalId": {
+                      "type": "string"
+                    },
+                    "nextAction": {
+                      "const": "GRAPH_INVOKED",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -18654,7 +21956,23 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status"
+                  ],
+                  "properties": {
+                    "status": {
+                      "const": "ok",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -44361,7 +47679,28 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "nextAction"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "nextAction": {
+                      "const": "SCHEDULED",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -44418,7 +47757,23 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status"
+                  ],
+                  "properties": {
+                    "status": {
+                      "const": "ok",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }

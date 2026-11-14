@@ -5438,7 +5438,7 @@ describe('api-contract: E10h-R2 pod/task/terminal/fileHistory write responses', 
     expect(Value.Check(PodA2AResponse, null)).toBe(false);
   });
 
-  test('the R2 batch raises the write-response ledger to 73/195', () => {
+  test('the R2 batch keeps the write-response ledger at or above 73/195', () => {
     const writeOps = new Set<string>();
     const responded = new Set<string>();
     for (const methods of Object.values<any>(contract.paths)) {
@@ -5449,11 +5449,206 @@ describe('api-contract: E10h-R2 pod/task/terminal/fileHistory write responses', 
       }
     }
     expect(writeOps.size).toBe(195);
-    // humanToken.rotate + session.create + tasks.submit + 35 R1 + 35 R2.
-    expect(responded.size).toBe(73);
+    // humanToken.rotate + session.create + tasks.submit + 35 R1 + 35 R2. Later
+    // batches (R3+) only append, so this is a floor.
+    expect(responded.size).toBeGreaterThanOrEqual(73);
     for (const id of [
       'pods.a2a', 'pods.create', 'pods.goals.accept', 'pods.goals.cancel', 'tasks.cancel',
       'terminal.connectTicket', 'fileHistory.snapshot', 'pod.events.seenAll',
+    ]) {
+      expect(`${id}:${responded.has(id)}`).toBe(`${id}:true`);
+    }
+  });
+});
+
+describe('api-contract: E10h-R3 goal/decision/lead/standing/cognition write responses', () => {
+  const findOp = (operationId: string): any => {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const candidate of Object.values<any>(methods)) {
+        if (candidate?.operationId === operationId) return candidate;
+      }
+    }
+    return null;
+  };
+
+  const schemaOf = (operationId: string): any => {
+    const op = findOp(operationId);
+    expect(`${operationId}:found`).toBe(`${operationId}:${op ? 'found' : 'missing'}`);
+    const schema = op.responses?.['200']?.content?.['application/json']?.schema;
+    expect(`${operationId}:200`).toBe(`${operationId}:${schema ? '200' : 'missing'}`);
+    return schema;
+  };
+
+  test('goal control receipts pin the handler literals', () => {
+    expect(schemaOf('goals.planApproval')).toEqual({
+      type: 'object',
+      required: ['success'],
+      properties: { success: { const: true, type: 'boolean' } },
+    });
+    // handleGoalControl 的四个动作各自只有一个终值（不读回 Goal 状态）。
+    const statuses: Array<[string, string]> = [
+      ['goals.pause', 'paused'],
+      ['goals.resume', 'resumed'],
+      ['goals.stop', 'stopped'],
+      ['goals.retry', 'retried'],
+    ];
+    for (const [id, status] of statuses) {
+      expect(schemaOf(id)).toEqual({
+        type: 'object',
+        required: ['status'],
+        properties: { status: { const: status, type: 'string' } },
+      });
+    }
+    // control / controlLegacy 是同一 handler 的 fail-open `{status:'ok'}`。
+    for (const id of ['goals.control', 'goals.controlLegacy']) {
+      expect(schemaOf(id)).toEqual({
+        type: 'object',
+        required: ['status'],
+        properties: { status: { const: 'ok', type: 'string' } },
+      });
+    }
+  });
+
+  test('goal work receipts keep success/goalId/nextAction (validate, complete, retryNode)', () => {
+    const validate = schemaOf('goals.validate');
+    expect(validate.required).toEqual(['success', 'goalId', 'nextAction']);
+    // 启动是 setImmediate 异步的：200 只表示已排队。
+    expect(validate.properties.nextAction).toEqual({ const: 'GRAPH_INVOKED', type: 'string' });
+    expect(schemaOf('goals.complete')).toEqual({
+      type: 'object',
+      required: ['success', 'nextAction'],
+      properties: {
+        success: { const: true, type: 'boolean' },
+        nextAction: { const: 'SCHEDULED', type: 'string' },
+      },
+    });
+    expect(schemaOf('goals.retryNode').required).toEqual(['success', 'runId']);
+    // runId 是 retryNodeRun() 的新 run id，可能是 number 而非路径里的字符串。
+    expect(schemaOf('goals.retryNode').properties.runId).toEqual({ type: 'number' });
+  });
+
+  test('goals.respondQuestion: accepted, action only on the cancel branch', () => {
+    const schema = schemaOf('goals.respondQuestion');
+    expect(schema.required).toEqual(['status']);
+    expect(schema.properties.status).toEqual({ const: 'accepted', type: 'string' });
+    expect(schema.properties.action).toEqual({ const: 'cancelled', type: 'string' });
+    // 回答分支没有 action 键 → 不能进 required。
+    expect(schema.required).not.toContain('action');
+  });
+
+  test('decision writes return the decisions.list record', () => {
+    const record = schemaOf('decisions.list').properties.items.items;
+    for (const id of ['decisions.draft', 'decisions.confirm', 'decisions.shelve', 'decisions.reopen']) {
+      expect(schemaOf(id)).toEqual({
+        type: 'object',
+        required: ['record'],
+        properties: { record },
+      });
+    }
+  });
+
+  test('lead boundary decisions pin each branch (only accept splits)', () => {
+    expect(schemaOf('lead.boundaries.accept')).toEqual({
+      type: 'object',
+      required: ['status', 'toTopicId'],
+      properties: {
+        status: { const: 'accepted', type: 'string' },
+        toTopicId: { type: 'string' },
+      },
+    });
+    expect(schemaOf('lead.boundaries.merge').properties.status).toEqual({ const: 'merged', type: 'string' });
+    expect(schemaOf('lead.boundaries.undo').properties.status).toEqual({ const: 'undone', type: 'string' });
+    // merge / undo 不产生新 topic，故没有 toTopicId。
+    expect(Object.keys(schemaOf('lead.boundaries.merge').properties)).toEqual(['status']);
+    expect(Object.keys(schemaOf('lead.boundaries.undo').properties)).toEqual(['status']);
+  });
+
+  test('lead.boundaries.observe is advisory: proposed always, proposal/error optional', () => {
+    const schema = schemaOf('lead.boundaries.observe');
+    expect(schema.required).toEqual(['proposed']);
+    expect(schema.properties.proposed).toEqual({ type: 'boolean' });
+    // 五类检测触发器 + null（未命中时 proposal 可为 null）。
+    const proposalBranches = schema.properties.proposal.anyOf;
+    const concrete = proposalBranches.find((b: any) => b.type === 'object');
+    expect(concrete.required).toEqual(['trigger', 'confidence', 'reason']);
+    expect(concrete.properties.trigger.anyOf.map((t: any) => t.const)).toEqual([
+      'explicit', 'semantic', 'idle', 'goal_closed', 'keyword',
+    ]);
+    expect(proposalBranches.some((b: any) => b.type === 'null')).toBe(true);
+    // 观察器抛错仍是 200：error 只是字段。
+    expect(schema.required).not.toContain('error');
+    expect(schema.properties.error).toEqual({ type: 'string' });
+  });
+
+  test('lead compact / topic writes match the SDK DTOs', () => {
+    expect(schemaOf('lead.compact').required).toEqual([
+      'topicId', 'beforeTokens', 'afterTokens', 'evictedMessageIds',
+    ]);
+    expect(schemaOf('lead.topics.resume').required).toEqual(['sessionID', 'resumedFrom']);
+    expect(schemaOf('lead.topics.resume').properties.resumedFrom.anyOf.map((v: any) => v.type))
+      .toEqual(['string', 'null']);
+    // fork 只保证创建 Goal：sessionID 缺省或 null。
+    expect(schemaOf('lead.topics.fork').required).toEqual(['goalId']);
+    expect(schemaOf('lead.topics.fork').properties.sessionID.anyOf.map((v: any) => v.type))
+      .toEqual(['string', 'null']);
+  });
+
+  test('standing goal writes reuse the list / runs entities', () => {
+    const goal = schemaOf('standingGoals.list').properties.items.items;
+    for (const id of [
+      'standingGoals.create', 'standingGoals.update', 'standingGoals.pause',
+      'standingGoals.resume', 'standingGoals.stop',
+    ]) {
+      const schema = schemaOf(id);
+      expect(schema.required).toEqual(['goal']);
+      // 同一 store 行投影：字段面与 list item 逐字节相同。
+      expect(JSON.stringify(schema.properties.goal)).toBe(JSON.stringify(goal));
+    }
+    const run = schemaOf('standingGoals.runs').properties.items.items;
+    for (const id of ['standingGoals.run', 'goalRuns.approve']) {
+      expect(JSON.stringify(schemaOf(id).properties.run)).toBe(JSON.stringify(run));
+    }
+  });
+
+  test('cognition.gate is a discriminated union of five decisions', () => {
+    const branches = schemaOf('cognition.gate').anyOf;
+    expect(branches.map((b: any) => b.properties.decision.const)).toEqual([
+      'allow', 'deny', 'ask', 'rewrite', 'transform',
+    ]);
+    // deny/ask 的依据字段可选（规则可以只给动作）。
+    expect(branches[1].required).toEqual(['decision']);
+    expect(branches[2].required).toEqual(['decision']);
+    // rewrite 带替换后的工具入参，transform 带改写后的 prompt 正文。
+    expect(branches[3].required).toEqual(['decision', 'input']);
+    expect(branches[4].required).toEqual(['decision', 'text']);
+  });
+
+  test('cognition.rewrite returns rewritten content parts (type + runtime extras)', () => {
+    const schema = schemaOf('cognition.rewrite');
+    expect(schema.required).toEqual(['content']);
+    const item = schema.properties.content.items;
+    // 只有 type 是 gateway 的承诺；其余部件字段归 runtime（原样透传）。
+    expect(item.required).toEqual(['type']);
+    expect(item.additionalProperties).toBe(true);
+  });
+
+  test('the R3 batch raises the write-response ledger to 104/195', () => {
+    const writeOps = new Set<string>();
+    const responded = new Set<string>();
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const [method, op] of Object.entries<any>(methods)) {
+        if (method === 'get' || !op?.operationId) continue;
+        writeOps.add(op.operationId);
+        if (op.responses?.['200']?.content?.['application/json']?.schema) responded.add(op.operationId);
+      }
+    }
+    expect(writeOps.size).toBe(195);
+    // humanToken.rotate + P0 2 + R1 35 + R2 35 + R3 31 = 104.
+    expect(responded.size).toBeGreaterThanOrEqual(104);
+    for (const id of [
+      'goals.controlLegacy', 'goals.validate', 'decisions.draft', 'lead.boundaries.observe',
+      'lead.topics.fork', 'standingGoals.run', 'goalRuns.approve', 'cognition.gate',
+      'cognition.rewrite',
     ]) {
       expect(`${id}:${responded.has(id)}`).toBe(`${id}:true`);
     }

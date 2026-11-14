@@ -264,6 +264,7 @@ import {
 } from './schemas/session-runtime';
 import { CognitionRulesResponse, ExperienceActionsResponse } from './schemas/experience';
 import { CognitionGateRequest, CognitionRewriteRequest } from './schemas/cognition-write';
+import { CognitionGateResponse, CognitionRewriteResponse } from './schemas/cognition-write-responses';
 import { BackgroundJobCancelResponse, BackgroundJobOutputResponse, BackgroundJobsListResponse } from './schemas/background';
 import {
   TerminalConnectTicketResponse,
@@ -365,6 +366,7 @@ import {
 } from './schemas/platform-write';
 import { StandingGoalListResponse, StandingGoalRunsResponse } from './schemas/standing';
 import { StandingGoalCreateRequest, StandingGoalUpdateRequest } from './schemas/standing-write';
+import { StandingGoalResponse, StandingGoalRunResponse } from './schemas/standing-write-responses';
 import {
   GoalControlRequest,
   GoalPlanApprovalRequest,
@@ -374,16 +376,38 @@ import {
   GoalValidateRequest,
 } from './schemas/goal-write';
 import {
+  GoalCompleteResponse,
+  GoalControlResponse,
+  GoalPauseResponse,
+  GoalPlanApprovalResponse,
+  GoalRespondQuestionResponse,
+  GoalResumeResponse,
+  GoalRetryNodeResponse,
+  GoalRetryResponse,
+  GoalStopResponse,
+  GoalValidateResponse,
+} from './schemas/goal-write-responses';
+import {
   DecisionConfirmRequest,
   DecisionDraftRequest,
   DecisionReopenRequest,
   DecisionShelveRequest,
 } from './schemas/decision-write';
+import { DecisionRecordResponse } from './schemas/decision-write-responses';
 import {
   LeadBoundaryObserveRequest,
   LeadCompactRequest,
   LeadTopicForkRequest,
 } from './schemas/lead-write';
+import {
+  LeadBoundaryAcceptResponse,
+  LeadBoundaryMergeResponse,
+  LeadBoundaryObserveResponse,
+  LeadBoundaryUndoResponse,
+  LeadCompactResponse,
+  LeadTopicForkResponse,
+  LeadTopicResumeResponse,
+} from './schemas/lead-write-responses';
 import {
   AutomationGetResponse,
   AutomationHistoryResponse,
@@ -407,8 +431,8 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/pods/:podId/events/:id/seen', operationId: 'pod.events.seen', tags: ['pod'], request: EmptyRequest, requestRequired: false, response: PodEventSeenResponse },
   { method: 'POST', path: '/api/pods/:podId/events/seen', operationId: 'pod.events.seenAll', tags: ['pod'], request: PodEventsSeenAllRequest, response: PodEventSeenAllResponse },
   { method: 'POST', path: '/api/session', operationId: 'session.create', tags: ['session'], request: SessionCreateRequest, response: SessionCreateResponse },
-  { method: 'POST', path: '/api/cognition/gate', operationId: 'cognition.gate', tags: ['cognition'], request: CognitionGateRequest },
-  { method: 'POST', path: '/api/cognition/rewrite', operationId: 'cognition.rewrite', tags: ['cognition'], request: CognitionRewriteRequest },
+  { method: 'POST', path: '/api/cognition/gate', operationId: 'cognition.gate', tags: ['cognition'], request: CognitionGateRequest, response: CognitionGateResponse },
+  { method: 'POST', path: '/api/cognition/rewrite', operationId: 'cognition.rewrite', tags: ['cognition'], request: CognitionRewriteRequest, response: CognitionRewriteResponse },
   { method: 'GET', path: '/api/cognition/rules', operationId: 'cognition.rules', tags: ['cognition'], response: CognitionRulesResponse },
   { method: 'GET', path: '/api/session/:id/queue', operationId: 'session.queue.list', tags: ['session'], response: SessionQueueListResponse },
   { method: 'GET', path: '/api/session/:id/config', operationId: 'session.config', tags: ['session'], response: SessionConfigResponse },
@@ -538,27 +562,27 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/goals', operationId: 'goals.list', tags: ['goals'], response: GoalListResponse },
   { method: 'GET', path: '/api/goals/:id', operationId: 'goals.get', tags: ['goals'], response: GoalViewSchema },
   { method: 'GET', path: '/api/goals/:id/plan', operationId: 'goals.plan', tags: ['goals'], response: GoalPlanResponse },
-  { method: 'POST', path: '/api/goals/:id/plan-approval', operationId: 'goals.planApproval', tags: ['goals'], request: GoalPlanApprovalRequest },
+  { method: 'POST', path: '/api/goals/:id/plan-approval', operationId: 'goals.planApproval', tags: ['goals'], request: GoalPlanApprovalRequest, response: GoalPlanApprovalResponse },
   { method: 'GET', path: '/api/goals/:id/sessions', operationId: 'goals.sessions', tags: ['goals'], response: GoalSessionsResponse },
   { method: 'GET', path: '/api/goals/:id/timeline', operationId: 'goals.timeline', tags: ['goals'], response: GoalTimelineResponse },
   { method: 'GET', path: '/api/goals/:id/source', operationId: 'goals.source', tags: ['goals'], response: GoalSourceResponse },
   { method: 'GET', path: '/api/lead/context', operationId: 'lead.context', tags: ['internal'], response: LeadContextResponse },
   { method: 'GET', path: '/api/attention', operationId: 'attention.list', tags: ['internal'], response: AttentionListResponse },
   { method: 'GET', path: '/api/decisions', operationId: 'decisions.list', tags: ['internal'], response: DecisionListResponse },
-  { method: 'POST', path: '/api/decisions', operationId: 'decisions.draft', tags: ['internal'], request: DecisionDraftRequest },
-  { method: 'POST', path: '/api/decisions/:id/confirm', operationId: 'decisions.confirm', tags: ['internal'], request: DecisionConfirmRequest, requestRequired: false },
-  { method: 'POST', path: '/api/decisions/:id/shelve', operationId: 'decisions.shelve', tags: ['internal'], request: DecisionShelveRequest },
-  { method: 'POST', path: '/api/decisions/:id/reopen', operationId: 'decisions.reopen', tags: ['internal'], request: DecisionReopenRequest, requestRequired: false },
+  { method: 'POST', path: '/api/decisions', operationId: 'decisions.draft', tags: ['internal'], request: DecisionDraftRequest, response: DecisionRecordResponse },
+  { method: 'POST', path: '/api/decisions/:id/confirm', operationId: 'decisions.confirm', tags: ['internal'], request: DecisionConfirmRequest, requestRequired: false, response: DecisionRecordResponse },
+  { method: 'POST', path: '/api/decisions/:id/shelve', operationId: 'decisions.shelve', tags: ['internal'], request: DecisionShelveRequest, response: DecisionRecordResponse },
+  { method: 'POST', path: '/api/decisions/:id/reopen', operationId: 'decisions.reopen', tags: ['internal'], request: DecisionReopenRequest, requestRequired: false, response: DecisionRecordResponse },
   { method: 'GET', path: '/api/scheduler/status', operationId: 'scheduler.status', tags: ['internal'], response: SchedulerStatusResponse },
-  { method: 'POST', path: '/api/goals/:id/pause', operationId: 'goals.pause', tags: ['goals'], request: EmptyRequest, requestRequired: false },
-  { method: 'POST', path: '/api/goals/:id/resume', operationId: 'goals.resume', tags: ['goals'], request: EmptyRequest, requestRequired: false },
-  { method: 'POST', path: '/api/goals/:id/stop', operationId: 'goals.stop', tags: ['goals'], request: EmptyRequest, requestRequired: false },
-  { method: 'POST', path: '/api/goals/:id/retry', operationId: 'goals.retry', tags: ['goals'], request: GoalRetryRequest, requestRequired: false },
+  { method: 'POST', path: '/api/goals/:id/pause', operationId: 'goals.pause', tags: ['goals'], request: EmptyRequest, requestRequired: false, response: GoalPauseResponse },
+  { method: 'POST', path: '/api/goals/:id/resume', operationId: 'goals.resume', tags: ['goals'], request: EmptyRequest, requestRequired: false, response: GoalResumeResponse },
+  { method: 'POST', path: '/api/goals/:id/stop', operationId: 'goals.stop', tags: ['goals'], request: EmptyRequest, requestRequired: false, response: GoalStopResponse },
+  { method: 'POST', path: '/api/goals/:id/retry', operationId: 'goals.retry', tags: ['goals'], request: GoalRetryRequest, requestRequired: false, response: GoalRetryResponse },
   { method: 'GET', path: '/api/lead/topics/:id/boundaries', operationId: 'lead.boundaries.list', tags: ['lead'], response: LeadBoundariesResponse },
-  { method: 'POST', path: '/api/lead/topics/:id/boundaries/:bid/accept', operationId: 'lead.boundaries.accept', tags: ['lead'], request: EmptyRequest, requestRequired: false },
-  { method: 'POST', path: '/api/lead/topics/:id/boundaries/:bid/merge', operationId: 'lead.boundaries.merge', tags: ['lead'], request: EmptyRequest, requestRequired: false },
-  { method: 'POST', path: '/api/lead/topics/:id/boundaries/:bid/undo', operationId: 'lead.boundaries.undo', tags: ['lead'], request: EmptyRequest, requestRequired: false },
-  { method: 'POST', path: '/api/lead/boundaries/observe', operationId: 'lead.boundaries.observe', tags: ['internal'], request: LeadBoundaryObserveRequest },
+  { method: 'POST', path: '/api/lead/topics/:id/boundaries/:bid/accept', operationId: 'lead.boundaries.accept', tags: ['lead'], request: EmptyRequest, requestRequired: false, response: LeadBoundaryAcceptResponse },
+  { method: 'POST', path: '/api/lead/topics/:id/boundaries/:bid/merge', operationId: 'lead.boundaries.merge', tags: ['lead'], request: EmptyRequest, requestRequired: false, response: LeadBoundaryMergeResponse },
+  { method: 'POST', path: '/api/lead/topics/:id/boundaries/:bid/undo', operationId: 'lead.boundaries.undo', tags: ['lead'], request: EmptyRequest, requestRequired: false, response: LeadBoundaryUndoResponse },
+  { method: 'POST', path: '/api/lead/boundaries/observe', operationId: 'lead.boundaries.observe', tags: ['internal'], request: LeadBoundaryObserveRequest, response: LeadBoundaryObserveResponse },
   { method: 'GET', path: '/api/event-sources', operationId: 'events.sources.list', tags: ['events'], response: EventSourcesResponse },
   { method: 'POST', path: '/api/event-sources', operationId: 'events.sources.create', tags: ['events'], request: EventSourceCreateRequest },
   { method: 'PATCH', path: '/api/event-sources/:id', operationId: 'events.sources.patch', tags: ['events'], request: EventSourcePatchRequest },
@@ -571,25 +595,25 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/event-deliveries', operationId: 'events.deliveries.list', tags: ['events'], response: EventDeliveriesResponse },
   { method: 'POST', path: '/api/event-sources/:id/webhook', operationId: 'events.webhook.receive', tags: ['internal'], request: EventWebhookReceiveRequest, requestRequired: false },
   { method: 'GET', path: '/api/standing-goals', operationId: 'standingGoals.list', tags: ['standing'], response: StandingGoalListResponse },
-  { method: 'POST', path: '/api/standing-goals', operationId: 'standingGoals.create', tags: ['standing'], request: StandingGoalCreateRequest },
-  { method: 'PATCH', path: '/api/standing-goals/:id', operationId: 'standingGoals.update', tags: ['standing'], request: StandingGoalUpdateRequest },
+  { method: 'POST', path: '/api/standing-goals', operationId: 'standingGoals.create', tags: ['standing'], request: StandingGoalCreateRequest, response: StandingGoalResponse },
+  { method: 'PATCH', path: '/api/standing-goals/:id', operationId: 'standingGoals.update', tags: ['standing'], request: StandingGoalUpdateRequest, response: StandingGoalResponse },
   { method: 'GET', path: '/api/standing-goals/:id/runs', operationId: 'standingGoals.runs', tags: ['standing'], response: StandingGoalRunsResponse },
-  { method: 'POST', path: '/api/standing-goals/:id/pause', operationId: 'standingGoals.pause', tags: ['standing'], request: EmptyRequest, requestRequired: false },
-  { method: 'POST', path: '/api/standing-goals/:id/resume', operationId: 'standingGoals.resume', tags: ['standing'], request: EmptyRequest, requestRequired: false },
-  { method: 'POST', path: '/api/standing-goals/:id/stop', operationId: 'standingGoals.stop', tags: ['standing'], request: EmptyRequest, requestRequired: false },
-  { method: 'POST', path: '/api/standing-goals/:id/run', operationId: 'standingGoals.run', tags: ['standing'], request: EmptyRequest, requestRequired: false },
-  { method: 'POST', path: '/api/goal-runs/:id/approve', operationId: 'goalRuns.approve', tags: ['standing'], request: EmptyRequest, requestRequired: false },
+  { method: 'POST', path: '/api/standing-goals/:id/pause', operationId: 'standingGoals.pause', tags: ['standing'], request: EmptyRequest, requestRequired: false, response: StandingGoalResponse },
+  { method: 'POST', path: '/api/standing-goals/:id/resume', operationId: 'standingGoals.resume', tags: ['standing'], request: EmptyRequest, requestRequired: false, response: StandingGoalResponse },
+  { method: 'POST', path: '/api/standing-goals/:id/stop', operationId: 'standingGoals.stop', tags: ['standing'], request: EmptyRequest, requestRequired: false, response: StandingGoalResponse },
+  { method: 'POST', path: '/api/standing-goals/:id/run', operationId: 'standingGoals.run', tags: ['standing'], request: EmptyRequest, requestRequired: false, response: StandingGoalRunResponse },
+  { method: 'POST', path: '/api/goal-runs/:id/approve', operationId: 'goalRuns.approve', tags: ['standing'], request: EmptyRequest, requestRequired: false, response: StandingGoalRunResponse },
   { method: 'GET', path: '/api/lead/topics', operationId: 'lead.topics.list', tags: ['lead'], response: LeadTopicsResponse },
   { method: 'GET', path: '/api/lead/topics/:id', operationId: 'lead.topics.get', tags: ['lead'], response: LeadTopicGetResponse },
   { method: 'GET', path: '/api/lead/working-set', operationId: 'lead.workingSet', tags: ['lead'], response: LeadWorkingSetResponse },
   { method: 'GET', path: '/api/lead/recall', operationId: 'lead.recall', tags: ['lead'], response: LeadRecallResponse },
-  { method: 'POST', path: '/api/lead/compact', operationId: 'lead.compact', tags: ['lead'], request: LeadCompactRequest },
-  { method: 'POST', path: '/api/lead/topics/:id/resume', operationId: 'lead.topics.resume', tags: ['lead'], request: EmptyRequest, requestRequired: false },
-  { method: 'POST', path: '/api/lead/topics/:id/fork', operationId: 'lead.topics.fork', tags: ['lead'], request: LeadTopicForkRequest, requestRequired: false },
-  { method: 'POST', path: '/api/goals/:id/nodes/:runId/retry', operationId: 'goals.retryNode', tags: ['goals'], request: GoalRetryNodeRequest, requestRequired: false },
-  { method: 'POST', path: '/api/goals/:goalId/questions/:questionId/respond', operationId: 'goals.respondQuestion', tags: ['goals'], request: GoalRespondQuestionRequest },
-  { method: 'POST', path: '/api/work/:goalId/validate', operationId: 'goals.validate', tags: ['goals'], request: GoalValidateRequest, requestRequired: false },
-  { method: 'POST', path: '/api/goals/control', operationId: 'goals.control', tags: ['goals'], request: GoalControlRequest },
+  { method: 'POST', path: '/api/lead/compact', operationId: 'lead.compact', tags: ['lead'], request: LeadCompactRequest, response: LeadCompactResponse },
+  { method: 'POST', path: '/api/lead/topics/:id/resume', operationId: 'lead.topics.resume', tags: ['lead'], request: EmptyRequest, requestRequired: false, response: LeadTopicResumeResponse },
+  { method: 'POST', path: '/api/lead/topics/:id/fork', operationId: 'lead.topics.fork', tags: ['lead'], request: LeadTopicForkRequest, requestRequired: false, response: LeadTopicForkResponse },
+  { method: 'POST', path: '/api/goals/:id/nodes/:runId/retry', operationId: 'goals.retryNode', tags: ['goals'], request: GoalRetryNodeRequest, requestRequired: false, response: GoalRetryNodeResponse },
+  { method: 'POST', path: '/api/goals/:goalId/questions/:questionId/respond', operationId: 'goals.respondQuestion', tags: ['goals'], request: GoalRespondQuestionRequest, response: GoalRespondQuestionResponse },
+  { method: 'POST', path: '/api/work/:goalId/validate', operationId: 'goals.validate', tags: ['goals'], request: GoalValidateRequest, requestRequired: false, response: GoalValidateResponse },
+  { method: 'POST', path: '/api/goals/control', operationId: 'goals.control', tags: ['goals'], request: GoalControlRequest, response: GoalControlResponse },
   { method: 'GET', path: '/api/memory/search', operationId: 'memory.search', tags: ['memory'], response: MemorySearchResponse },
   { method: 'GET', path: '/api/memory/merged-search', operationId: 'memory.mergedSearch', tags: ['memory'], response: MemoryMergedSearchResponse },
   { method: 'GET', path: '/api/memory/energy-distribution', operationId: 'memory.getEnergyDistribution', tags: ['memory'], response: MemoryEnergyDistributionResponse },
@@ -718,8 +742,8 @@ const NON_SDK_ROUTES: RouteDef[] = [
   // 只读 `?limit=N`（handler 不读 body）→ 空对象 + required:false。
   { method: 'POST', path: '/api/memory/embeddings/backfill', operationId: 'memory.embeddingsBackfill', tags: ['internal'], request: EmptyRequest, requestRequired: false },
   // Goal / 编排（§5.20）
-  { method: 'POST', path: '/api/work/:goalId/complete', operationId: 'goals.complete', tags: ['internal'], request: EmptyRequest, requestRequired: false },
-  { method: 'POST', path: '/control', operationId: 'goals.controlLegacy', summary: 'MCP 兼容别名，与 /api/goals/control 同 handler', tags: ['internal'], request: GoalControlRequest },
+  { method: 'POST', path: '/api/work/:goalId/complete', operationId: 'goals.complete', tags: ['internal'], request: EmptyRequest, requestRequired: false, response: GoalCompleteResponse },
+  { method: 'POST', path: '/control', operationId: 'goals.controlLegacy', summary: 'MCP 兼容别名，与 /api/goals/control 同 handler', tags: ['internal'], request: GoalControlRequest, response: GoalControlResponse },
   { method: 'GET', path: '/api/orchestration/outcomes', operationId: 'orchestration.outcomes', tags: ['internal'], response: OrchestrationOutcomesResponse },
   // 媒体补充（media.upload / uploadAndCreate 二进制排除见上；switch / plugins GET /
   // a2a / artifacts GET 已在 SDK-facing）
