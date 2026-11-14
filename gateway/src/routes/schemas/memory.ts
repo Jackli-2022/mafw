@@ -97,7 +97,9 @@ const HarmonicUnitSchema = Type.Object({
   cue_anchors: Type.Array(Type.String()),
   memory_value: Type.String(),
   energy: Type.Number(),
-  created_at: Type.String(),
+  // 与 recall.pinned 同一 store.read() 来源：legacy OKF 文件可能缺 created_at，
+  // store 只回填 updated_at，因此这里与 recall.pinned 保持一致为 optional。
+  created_at: Type.Optional(Type.String()),
   updated_at: Type.String(),
   goal_id: Type.Optional(Type.String()),
   merged_from: Type.Optional(Type.Array(Type.String())),

@@ -11469,7 +11469,7 @@ export interface operations {
                             cue_anchors: string[];
                             memory_value: string;
                             energy: number;
-                            created_at: string;
+                            created_at?: string;
                             updated_at: string;
                             goal_id?: string;
                             merged_from?: string[];
@@ -11496,7 +11496,7 @@ export interface operations {
                             cue_anchors: string[];
                             memory_value: string;
                             energy: number;
-                            created_at: string;
+                            created_at?: string;
                             updated_at: string;
                             goal_id?: string;
                             merged_from?: string[];

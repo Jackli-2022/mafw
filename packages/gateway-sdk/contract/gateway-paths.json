@@ -15789,7 +15789,6 @@
                             "cue_anchors",
                             "memory_value",
                             "energy",
-                            "created_at",
                             "updated_at"
                           ],
                           "properties": {
@@ -15945,7 +15944,6 @@
                             "cue_anchors",
                             "memory_value",
                             "energy",
-                            "created_at",
                             "updated_at"
                           ],
                           "properties": {

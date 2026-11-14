@@ -118,7 +118,7 @@ Time:        255.09 s
 
 | 面 | 新增 | 依据 |
 |---|---|---|
-| gateway | **+5** | `tests/unit/api-contract.test.ts`：8-op 的 200 schema 属性/数组必填（非整响放宽）、`memory.search` code-first 形状（override 已删 + `t1Results` 随 layer 可选）、`memory.get` 三变体 union + 404 体排除、handler 线样 `Value.Check`、生成物路径一致性 |
+| gateway | **+5** | `tests/unit/api-contract.test.ts`：8-op 的 200 schema 属性/数组必填（非整响放宽）、`memory.search` code-first 形状（override 已删 + `t1Results` 随 layer 可选）、`memory.get` 三变体 union + 404 体排除、handler 线样 `Value.Check` |
 | SDK | **0 运行时 / +1 编译期** | `contract-compat.checks.ts` 新增 `CHECK_memory_search_t1_item`（`AssertEq` 是编译期检查，`npm test` 仍 226） |
 | desktop | 0 | 无代码变更（本批无消费面变化） |
 | mobile | 0 | 无代码变更 |
@@ -126,7 +126,7 @@ Time:        255.09 s
 
 - gateway 全量 **7250** = 基线 `4a506403` 反推 **7245** + 5（基线未单独复跑；E11 记录里的 7243 是
   E11 worktree 合并前口径，main 合并后为 7245）。commit 内 `gateway/tests` 只有 2 个文件改动、
-  无删除用例（`git show --numstat`：`api-contract` +225 / `schema-coverage` +13/−2 行）。
+  无删除用例（`git show --numstat`：`api-contract` +225 / `schema-coverage` +11/−2 行）。
 
 ## 已知红（非本波代码问题）
 

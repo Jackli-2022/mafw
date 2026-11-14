@@ -1389,7 +1389,7 @@ describe('api-contract: E10c-1 memory / recall / lead read response schema (8 op
   const schemaOf = (operationId: string): any =>
     findOp(operationId).responses['200']['content']['application/json'].schema;
 
-  /** Ã¿¸ö op µÄ³ÐÖØ property + Êý×éÔªËØ±ØÌî£¨handler ºã·¢µÄ×Ö¶Î£©¡£ */
+  /** Ã¿ï¿½ï¿½ op ï¿½Ä³ï¿½ï¿½ï¿½ property + ï¿½ï¿½ï¿½ï¿½Ôªï¿½Ø±ï¿½ï¿½î£¨handler ï¿½ã·¢ï¿½ï¿½ï¿½Ö¶Î£ï¿½ï¿½ï¿½ */
   const EXPECTED: Record<string, { fields: string[]; item?: { at: string; required: string[] } }> = {
     'memory.search': {
       fields: ['results', 't1Results'],
@@ -1480,8 +1480,10 @@ describe('api-contract: E10c-1 memory / recall / lead read response schema (8 op
     expect([...unit.required].sort()).toEqual(['memory', 'success']);
     expect(unit.properties.memory.required).toEqual(expect.arrayContaining([
       'id', 'type', 'primary_abstraction', 'cue_anchors', 'memory_value',
-      'energy', 'created_at', 'updated_at',
+      'energy', 'updated_at',
     ]));
+    // Legacy OKF files may omit created_at (same store.read() source as recall.pinned).
+    expect(unit.properties.memory.required).not.toContain('created_at');
     expect(unit.properties.latest).toBeDefined();
     expect(unit.properties.source).toBeDefined();
     // Variants 2/3: t1 pointer payloads (legacy session tail vs permanent trace).
@@ -1548,12 +1550,12 @@ describe('api-contract: E10c-1 memory / recall / lead read response schema (8 op
     expect(Value.Check(MemoryGetResponse, { success: false, error: 'memory not found: x' })).toBe(false);
 
     expect(Value.Check(RecallContextResponse, { pointers: null })).toBe(true);
-    expect(Value.Check(RecallContextResponse, { pointers: '<recall>¡­</recall>' })).toBe(true);
+    expect(Value.Check(RecallContextResponse, { pointers: '<recall>ï¿½ï¿½</recall>' })).toBe(true);
     expect(Value.Check(RecallContextResponse, {})).toBe(false);
 
     expect(Value.Check(RecallPinnedResponse, { profile: null, entries: [], budget: { max: 20, maxChars: 2000, used: 0 } })).toBe(true);
     expect(Value.Check(RecallPinnedResponse, {
-      profile: '<user-profile>¡­</user-profile>',
+      profile: '<user-profile>ï¿½ï¿½</user-profile>',
       entries: [{ id: 'mem-1', type: 'semantic', primary_abstraction: 'a', memory_value: 'v', energy: 0.9, salience: 2, created_at: 't' }],
       budget: { max: 20, maxChars: 2000, used: 1 },
     })).toBe(true);
@@ -1569,7 +1571,7 @@ describe('api-contract: E10c-1 memory / recall / lead read response schema (8 op
     expect(Value.Check(RecallInstructionsResponse, { managed: true, revision: '', missing: [], staleKeys: [], erroredKeys: [] })).toBe(false);
 
     expect(Value.Check(RecallPriorsResponse, { block: null, used: 0, budget: { maxChars: 800 } })).toBe(true);
-    expect(Value.Check(RecallPriorsResponse, { block: '<agent-priors>¡­', used: 5, budget: { maxChars: 800 } })).toBe(true);
+    expect(Value.Check(RecallPriorsResponse, { block: '<agent-priors>ï¿½ï¿½', used: 5, budget: { maxChars: 800 } })).toBe(true);
 
     expect(Value.Check(LeadRecallResponse, {
       candidates: [{ topicId: 'topic_1', title: 'Ship E10c', score: 0.9, matches: ['e10c'] }],
