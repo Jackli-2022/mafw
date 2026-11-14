@@ -53,6 +53,16 @@ export const TaskListResponse = Type.Object({
 export const TaskGetResponse = TaskEntitySchema
 
 /**
+ * E10h-P0 `POST /api/tasks` 的 200 响应（handler 事实源：`routes/tasks.ts`
+ * `handleTaskSubmit` → `TaskService.submit` → `publicTask(task)`）。
+ *
+ * 与 `tasks.get` 完全同形：没有信封，task 就是 body（SDK `tasks.submit()` 直接
+ * 返回 `TaskEntity`）。submit 只是把新任务写进表并进入 `working`（subagent 派生
+ * 失败时立即 `failed` + `finishedAt`/`error`），输出游标仍是终态旁账。
+ */
+export const TaskSubmitResponse = TaskEntitySchema
+
+/**
  * 边界形状（owner = runtime shell surface `session.shell.output`）。
  *
  * - 终态 task 命中本地快照 → MAFW 自有 `{ output, cursor, size, truncated }`；

@@ -23,7 +23,7 @@
  */
 
 import type { RouteDef } from './registry';
-import { SessionCreateRequest, SessionListResponse, SessionMessagesResponse, SessionSchema } from './schemas/session';
+import { SessionCreateRequest, SessionCreateResponse, SessionListResponse, SessionMessagesResponse, SessionSchema } from './schemas/session';
 import {
   EmptyRequest,
   SessionCheckpointRequest,
@@ -181,7 +181,7 @@ import {
   SkillsListResponse,
   ToolsListResponse,
 } from './schemas/meta';
-import { TaskGetResponse, TaskListResponse, TaskOutputResponse, TaskSubmitRequest } from './schemas/tasks';
+import { TaskGetResponse, TaskListResponse, TaskOutputResponse, TaskSubmitRequest, TaskSubmitResponse } from './schemas/tasks';
 import {
   FileHistoryRestoreRequest,
   FileHistorySnapshotRequest,
@@ -333,7 +333,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/pods/:podId/events', operationId: 'pod.events.list', tags: ['pod'], response: PodEventsResponse },
   { method: 'POST', path: '/api/pods/:podId/events/:id/seen', operationId: 'pod.events.seen', tags: ['pod'], request: EmptyRequest, requestRequired: false },
   { method: 'POST', path: '/api/pods/:podId/events/seen', operationId: 'pod.events.seenAll', tags: ['pod'], request: PodEventsSeenAllRequest },
-  { method: 'POST', path: '/api/session', operationId: 'session.create', tags: ['session'], request: SessionCreateRequest },
+  { method: 'POST', path: '/api/session', operationId: 'session.create', tags: ['session'], request: SessionCreateRequest, response: SessionCreateResponse },
   { method: 'POST', path: '/api/cognition/gate', operationId: 'cognition.gate', tags: ['cognition'], request: CognitionGateRequest },
   { method: 'POST', path: '/api/cognition/rewrite', operationId: 'cognition.rewrite', tags: ['cognition'], request: CognitionRewriteRequest },
   { method: 'GET', path: '/api/cognition/rules', operationId: 'cognition.rules', tags: ['cognition'], response: CognitionRulesResponse },
@@ -354,7 +354,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/sessions/:id/agent', operationId: 'session.switchAgent', tags: ['session'], request: SessionSwitchAgentRequest },
   { method: 'POST', path: '/api/sessions/:id/model', operationId: 'session.switchModel', tags: ['session'], request: SessionSwitchModelRequest },
   { method: 'POST', path: '/api/structured/submit', operationId: 'structured.submit', tags: ['session'], request: StructuredSubmitRequest },
-  { method: 'POST', path: '/api/tasks', operationId: 'tasks.submit', tags: ['task'], request: TaskSubmitRequest },
+  { method: 'POST', path: '/api/tasks', operationId: 'tasks.submit', tags: ['task'], request: TaskSubmitRequest, response: TaskSubmitResponse },
   { method: 'GET', path: '/api/tasks', operationId: 'tasks.list', tags: ['task'], response: TaskListResponse },
   { method: 'GET', path: '/api/tasks/:id', operationId: 'tasks.get', tags: ['task'], response: TaskGetResponse },
   { method: 'POST', path: '/api/tasks/:id/cancel', operationId: 'tasks.cancel', tags: ['task'], request: EmptyRequest, requestRequired: false },

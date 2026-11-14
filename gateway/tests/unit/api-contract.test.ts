@@ -88,7 +88,8 @@ import {
   TriageListResponse,
 } from '../../src/routes/schemas/human-gate';
 import { WorkOverviewResponse } from '../../src/routes/schemas/work';
-import { TaskGetResponse, TaskListResponse, TaskOutputResponse } from '../../src/routes/schemas/tasks';
+import { TaskGetResponse, TaskListResponse, TaskOutputResponse, TaskSubmitResponse } from '../../src/routes/schemas/tasks';
+import { SessionCreateResponse } from '../../src/routes/schemas/session';
 import {
   SessionDiscoveryResponse,
   SessionDiscoverySkillResponse,
@@ -4828,3 +4829,119 @@ describe('api-contract: Phase 6 plugin recovery routes (E10g-fix)', () => {
     })).toBe(false);
   });
 });
+
+describe('api-contract: E10h write responses (P0 pilots)', () => {
+  const findOp = (operationId: string): any => {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const candidate of Object.values<any>(methods)) {
+        if (candidate?.operationId === operationId) return candidate;
+      }
+    }
+    return null;
+  };
+
+  const schemaOf = (operationId: string): any => {
+    const op = findOp(operationId);
+    expect(`${operationId}:found`).toBe(`${operationId}:${op ? 'found' : 'missing'}`);
+    expect(`${operationId}:200`).toBe(
+      `${operationId}:${op.responses?.['200']?.content?.['application/json']?.schema ? '200' : 'missing'}`,
+    );
+    return op.responses['200'].content['application/json'].schema;
+  };
+
+  test('session.create declares the created session + optional worktree envelope', () => {
+    const schema = schemaOf('session.create');
+    // Handler (routes/session-create.ts) spreads the created session record and
+    // appends `worktree`; the session half is the same DTO as session.get.
+    expect(schema.required).toEqual(['id', 'projectID', 'directory', 'title', 'time']);
+    for (const field of ['id', 'projectID', 'directory', 'title', 'time', 'parentID', 'model', 'agent']) {
+      expect(`${field}:${Boolean(schema.properties[field])}`).toBe(`${field}:true`);
+    }
+    // `worktree` is absent (not null) on a plain session: JSON.stringify drops it.
+    expect(schema.required).not.toContain('worktree');
+    expect(schema.properties.worktree.required).toEqual(['dir', 'branch']);
+    expect(schema.properties.worktree.properties.dir.type).toBe('string');
+    // A closed object: only the declared session view + worktree, no runtime extras.
+    expect(schema.additionalProperties).toBeUndefined();
+  });
+
+  test('tasks.submit returns the public task entity (exact tasks.get reuse)', () => {
+    const schema = schemaOf('tasks.submit');
+    // TaskService.submit returns publicTask(task), the same wire as tasks.get.
+    expect(schema).toEqual(schemaOf('tasks.get'));
+    expect(schema.properties.status.anyOf.map((v: any) => v.const))
+      .toEqual(['working', 'input_required', 'completed', 'failed', 'cancelled']);
+    // No response envelope: the task is the body (SDK tasks.submit() returns TaskEntity).
+    expect(Object.keys(schema.properties)).not.toContain('task');
+  });
+
+  test('pilots validate handler-shaped payloads and reject missing anchors', () => {
+    expect(Value.Check(SessionCreateResponse, {
+      id: 'ses_1',
+      projectID: 'proj_1',
+      directory: 'C:/work/demo',
+      title: 'New session',
+      time: { created: 1, updated: 2 },
+      worktree: { dir: 'C:/work/demo/.worktrees/wt-1', branch: 'mafw/wt-1' },
+    })).toBe(true);
+    // Plain create: no worktree key at all.
+    expect(Value.Check(SessionCreateResponse, {
+      id: 'ses_1',
+      projectID: 'proj_1',
+      directory: 'C:/work/demo',
+      title: 'New session',
+      time: { created: 1, updated: 2 },
+    })).toBe(true);
+    // A worktree without a branch is not a worktree ref.
+    expect(Value.Check(SessionCreateResponse, {
+      id: 'ses_1',
+      projectID: 'proj_1',
+      directory: 'C:/work/demo',
+      title: 'New session',
+      time: { created: 1, updated: 2 },
+      worktree: { dir: 'x' },
+    })).toBe(false);
+    // The session id is load-bearing for every follow-up call.
+    expect(Value.Check(SessionCreateResponse, {
+      projectID: 'proj_1',
+      directory: 'C:/work/demo',
+      title: 'New session',
+      time: { created: 1, updated: 2 },
+    })).toBe(false);
+
+    expect(Value.Check(TaskSubmitResponse, {
+      id: 'task_1',
+      kind: 'shell',
+      parentSessionID: 'ses_1',
+      title: 'npm test',
+      status: 'working',
+      createdAt: 1,
+      updatedAt: 1,
+    })).toBe(true);
+    // A task without a status is not a task the poller can follow.
+    expect(Value.Check(TaskSubmitResponse, {
+      id: 'task_1',
+      kind: 'shell',
+      parentSessionID: 'ses_1',
+      title: 'npm test',
+      createdAt: 1,
+      updatedAt: 1,
+    })).toBe(false);
+  });
+
+  test('the write-response ledger counts only non-GET ops (humanToken.rotate + the 2 pilots)', () => {
+    // Guards the denominator: a GET with a response must not inflate writeResponses.
+    const writeOps = new Set<string>();
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const [method, op] of Object.entries<any>(methods)) {
+        if (method !== 'get' && op?.operationId) writeOps.add(op.operationId);
+      }
+    }
+    expect(writeOps.size).toBe(195);
+    for (const id of ['session.create', 'tasks.submit', 'humanToken.rotate']) {
+      expect(`${id}:${writeOps.has(id)}`).toBe(`${id}:true`);
+      expect(schemaOf(id)).toBeDefined();
+    }
+  });
+});
+

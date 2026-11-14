@@ -205,6 +205,26 @@ const CHECK_tasks_get: AssertEq<Resp<operations['tasks.get']>, GenTask> = true
 const CHECK_tasks_output_cursor: AssertEq<GenTask['outputCursor'], number | undefined> = true
 const CHECK_tasks_output_size: AssertEq<GenTask['outputSize'], number | undefined> = true
 const CHECK_tasks_output_truncated: AssertEq<GenTask['outputTruncated'], boolean | undefined> = true
+
+// E10h-P0: the first two write responses are the same DTOs as their read twins.
+// `tasks.submit` returns `publicTask(task)` — byte-identical to `tasks.get`.
+const CHECK_tasks_submit: AssertEq<Resp<operations['tasks.submit']>, GenTask> = true
+/**
+ * `session.create` = the created session view + an optional worktree envelope.
+ * The SDK client already promises `Session & { worktree?: {dir,branch} }`; this
+ * pins the catalog schema to that promise field for field. Split into halves
+ * (session side / worktree side) because the composite flattens the intersection
+ * in the generated type — same reason `CHECK_tasks_list_item` uses `Omit`.
+ */
+const CHECK_session_create_session_half: AssertEq<
+  Omit<Resp<operations['session.create']>, 'worktree'>,
+  Session
+> = true
+const CHECK_session_create_worktree: AssertEq<
+  Resp<operations['session.create']>['worktree'],
+  { dir: string; branch: string } | undefined
+> = true
+
 /**
  * `tasks.output` 是 runtime shell 的透传边界（四键 optional + 开放索引）；这里仍锁
  * 「SDK 认的四个字段类型不变」，让透传不能把 TaskOutput 的 wire 语义改掉。

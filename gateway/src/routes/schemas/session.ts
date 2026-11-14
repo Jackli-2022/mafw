@@ -64,6 +64,28 @@ export const SessionListResponse = Type.Object({
 })
 
 /**
+ * `POST /api/session` 的 200 响应（E10h-P0，handler 事实源：`routes/session-create.ts`）。
+ *
+ * handler 下发 `{ ...result.session, worktree: result.worktree }`：
+ *   - 会话半边与 `session.get` 同形（SDK `session.create()` 把它当 `Session` 读）；
+ *   - `worktree` 只在 `worktree:true|<slug>` 创建成功时存在，普通创建**没有该键**
+ *     （`JSON.stringify` 会丢掉 `undefined`），因此 optional —— 客户端不得假定
+ *     `worktree` 恒在（desktop 的 `createSession()` 只读 `r.id`）。
+ *
+ * `dir` 是 worktree 的绝对路径、`branch` 是 `mafw/<slug>` 分支名（manager 的
+ * `WorktreeRef` 去掉 `worktreeDir` 命名）。
+ */
+export const SessionCreateResponse = Type.Composite([
+  SessionSchema,
+  Type.Object({
+    worktree: Type.Optional(Type.Object({
+      dir: Type.String(),
+      branch: Type.String(),
+    })),
+  }),
+])
+
+/**
  * E8-3 `GET /api/sessions/:id/messages` —— MAFW flat 历史（`{data, nextCursor}`）。
  *
  * 形状来源：`routes/session-history.ts` 的单一出口（handler 是事实源）。

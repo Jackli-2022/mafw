@@ -3,8 +3,8 @@
 // `scripts/schema-coverage.cjs` parses `route-catalog.ts` (no TS import, no
 // generated SDK artifact) and reports how many catalog ops carry a 200
 // response schema. This test pins that report against the catalog:
-//   - the 127 ops covered through E10g-fix（E10f-D 的 125 + Phase 6 的
-//     `plugins.audit` / `plugins.lastGood`）(13 pre-E10 + 16 E10 + 8 E10b-1 + 7 E10b-2 +
+//   - the 129 ops covered through E10h-P0（E10g-fix 的 127 + 2 个写响应 pilot：
+//     `session.create` / `tasks.submit`）(13 pre-E10 + 16 E10 + 8 E10b-1 + 7 E10b-2 +
 //     1 E11-1 + 8 E10c-1 + 8 E10d-1 + 8 E10e-1 + 16 E10f-A + 16 E10f-B + 16 E10f-C +
 //     8 E10f-D) must each
 //     keep their `response` — a silent schema deletion fails here;
@@ -28,6 +28,10 @@ interface CoverageReport {
   requestCovered: string[];
   requestTotal: number;
   requestUncovered: string[];
+  // E10h: write responses (non-GET ops that declare `response:`).
+  writeResponses: number;
+  writeResponseCovered: string[];
+  writeResponseTotal: number;
 }
 
 const GATEWAY_ROOT = path.join(__dirname, '..', '..', '..');
@@ -132,6 +136,7 @@ const E10_COVERED_OPS = [
   'session.checkpoints',
   'session.children',
   'session.config',
+  'session.create',
   'session.diff',
   'session.discovery',
   'session.discoverySkill',
@@ -156,6 +161,7 @@ const E10_COVERED_OPS = [
   'tasks.get',
   'tasks.list',
   'tasks.output',
+  'tasks.submit',
   'terminal.list',
   'tools.list',
   'triage.list',
@@ -184,6 +190,12 @@ const WRITE_OPS_TOTAL = 195;
 
 /** P0 pilots：requestBody 管线的第一批（始终保留，不随批次回退）。 */
 const E10G_P0_REQUEST_OPS = ['pods.tasks.create', 'session.create', 'tasks.submit'];
+
+/**
+ * E10h-P0：200 响应管线的第一批（`humanToken.rotate` 是 E11-1 的存量写响应）。
+ * 后续 R1-R6 只追加；本清单钉住「这两个 op 的 `response:` 不被误删」。
+ */
+const E10H_P0_WRITE_RESPONSE_OPS = ['session.create', 'tasks.submit'];
 
 /**
  * E10g-W1：session 域写接口（35 个）。P0 的 session.create + 这 35 个 = 38。
@@ -680,13 +692,14 @@ function catalogById(): Map<string, { hasRequest: boolean; request?: object; req
   );
 }
 
-function catalogWriteOps(): Array<{ operationId: string; hasRequest: boolean }> {
+function catalogWriteOps(): Array<{ operationId: string; hasRequest: boolean; hasResponse: boolean }> {
   return buildRouteCatalog()
     .filter((def) => def.method !== 'GET')
     .map((def) => ({
       operationId: def.operationId,
-      // RouteDef.request is the catalog's single source for the request body.
+      // RouteDef.request / RouteDef.response are the catalog's single source.
       hasRequest: Boolean((def as { request?: unknown }).request),
+      hasResponse: Boolean((def as { response?: unknown }).response),
     }));
 }
 
@@ -759,6 +772,42 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
   it('P0 pilots still declare a request schema', () => {
     const byId = catalogById();
     expect(E10G_P0_REQUEST_OPS.filter((id) => !byId.get(id)?.hasRequest)).toEqual([]);
+  });
+
+  // E10h-P0: write-response ledger. Same parser, same 195 write-op denominator;
+  // `humanToken.rotate` (E11-1) was the only write with a 200 schema, the two
+  // pilots make it 3/195. Later batches only append, so the count is a floor.
+  it('the script reports write-response coverage over the 195 write ops', () => {
+    const report = runScript();
+    const write = catalogWriteOps();
+    const covered = write.filter((op) => op.hasResponse).map((op) => op.operationId).sort();
+
+    expect(write).toHaveLength(WRITE_OPS_TOTAL);
+    expect(report.writeResponseTotal).toBe(WRITE_OPS_TOTAL);
+    expect(report.writeResponses).toBe(covered.length);
+    expect(report.writeResponses).toBeGreaterThanOrEqual(3);
+    expect(report.writeResponseCovered).toEqual(covered);
+    // Disjoint from the request ledger: the two scans are independent `response:`/
+    // `request:` hits on the same write ops.
+    const requestCovered = new Set(report.requestCovered);
+    expect(report.writeResponseCovered.filter((id) => !requestCovered.has(id))).toEqual([]);
+  });
+
+  it('P0 write-response pilots declare a 200 response schema', () => {
+    const byId = catalogById();
+    expect(
+      E10H_P0_WRITE_RESPONSE_OPS.filter((id) => !catalogWriteOps().some((op) => op.operationId === id && op.hasResponse)),
+    ).toEqual([]);
+    // Named, so a dropped `response:` on a pilot fails by name (not as a count delta).
+    expect(E10H_P0_WRITE_RESPONSE_OPS.filter((id) => !byId.get(id)?.hasRequest)).toEqual([]);
+    // A write response for a write op that declared no request would be a shape
+    // nobody can construct: the pilot batch stays self-consistent.
+    expect(
+      catalogWriteOps()
+        .filter((op) => op.hasResponse)
+        .map((op) => op.operationId)
+        .every((id) => byId.get(id)?.hasRequest),
+    ).toBe(true);
   });
 
   // E10g-W1: session writes. Pinned per-op so a dropped `request:` fails by name,

@@ -1586,6 +1586,8 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 - **台账**：`scripts/schema-coverage.cjs` 解析每个 catalog entry 的 `request:`，输出
   `requests: X/195 write operations`（分母 = 非 GET op；GET 不参与；E10g 时为 188），`--json` 增
   `requests` / `requestCovered` / `requestTotal` / `requestUncovered`。response 口径见下（合并后 127/327）。
+  E10h 起同一脚本再切一刀写响应：`write responses: X/195`（`--json` 增 `writeResponses` /
+  `writeResponseCovered` / `writeResponseTotal` / `writeResponseUncovered`），分母与请求台账同为 195。
 - **P0 pilot（3）**：`session.create`（`directory` 必填绝对路径 + `worktree` / `metadata`）、
   `tasks.submit`（`kind` / `parentSessionID` 必填；shell→`command`、subagent→`prompt` 的条件必填由
   service 校验，schema 用 optional + description 表达）、`pods.tasks.create`（`title` 必填；
@@ -1836,6 +1838,21 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
   = 189 covered + 6 excluded；`emit:openapi` = **327 routes / 293 paths / 327 operations**；
   `node scripts/analyze-routes.cjs` = `TOTAL 0 (match 0, equals 0)`。
 - **F3**：交付记录里 W6 行的 `api-contract +9 / coverage +4` 实为 **+11 / +5（+16）**，已更正。
+
+### E10h-P0（写响应台账 + 2 个 pilot，进行中）
+
+- 分母固定 **195 写 op**（E10g 的同一集合）；P0 只补两个响应 schema，写响应 **3/195**
+  （存量 `humanToken.rotate` + 本批 2 个），total response 台账 127 → **129/327**。
+- `session.create` → `routes/schemas/session.ts#SessionCreateResponse` =
+  `Type.Composite([SessionSchema, { worktree?: {dir, branch} }])`：handler
+  （`session-create.ts`）下发 `{...result.session, worktree}`，普通创建**没有 `worktree` 键**
+  （`JSON.stringify` 丢 `undefined`），故 optional；`dir` 是 worktree 绝对路径、`branch` 是
+  `mafw/<slug>`。
+- `tasks.submit` → `routes/schemas/tasks.ts#TaskSubmitResponse` = `TaskEntitySchema`
+  （`TaskService.submit` 直接返回 `publicTask(task)`，与 `tasks.get` 严格同形，无信封）。
+- 生成物 diff 恰好这 2 个 op 从 `content?: never` 变为 200 JSON schema；SDK
+  `contract-compat.checks.ts` 新增 `CHECK_tasks_submit`（≡ `GenTask`）与
+  `CHECK_session_create_session_half` / `_worktree`（composite 会展平，按两半锁等价）。
 
 ---
 

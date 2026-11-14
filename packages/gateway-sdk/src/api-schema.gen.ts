@@ -4934,7 +4934,41 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        projectID: string;
+                        directory: string;
+                        title: string;
+                        time: {
+                            created: number;
+                            updated: number;
+                        };
+                        parentID?: string;
+                        status?: "idle" | "busy" | "retry" | "unknown";
+                        reverted?: {
+                            messageID: string;
+                            partID?: string;
+                            diffs?: {
+                                file: string;
+                                patch?: string;
+                                additions?: number;
+                                deletions?: number;
+                                status?: "added" | "modified" | "deleted" | "renamed" | "unknown";
+                            }[];
+                        };
+                        model?: {
+                            providerID: string;
+                            modelID: string;
+                            variant?: string;
+                        };
+                        agent?: string;
+                        worktree?: {
+                            dir: string;
+                            branch: string;
+                        };
+                    };
+                };
             };
         };
     };
@@ -5681,7 +5715,29 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        kind: "shell" | "subagent";
+                        parentSessionID: string;
+                        childSessionID?: string;
+                        shellID?: string;
+                        title: string;
+                        status: "working" | "input_required" | "completed" | "failed" | "cancelled";
+                        directory?: string;
+                        createdAt: number;
+                        updatedAt: number;
+                        finishedAt?: number;
+                        exitCode?: number;
+                        error?: string;
+                        metadata?: {
+                            [key: string]: unknown;
+                        };
+                        outputCursor?: number;
+                        outputSize?: number;
+                        outputTruncated?: boolean;
+                    };
+                };
             };
         };
     };
