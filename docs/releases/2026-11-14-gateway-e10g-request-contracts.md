@@ -87,7 +87,7 @@
 | requests | 182/188（96.8%） | **189/195（96.9%）** |
 | 排除项 | 6 | **6**（不变） |
 | 分类 | 105 JSON / 56 空 / 20 可选 / 1 边界 / 6 排除 | **106 JSON / 59 空 / 23 可选 / 1 边界 / 6 排除 = 195** |
-| 生成物 diff | 无 | 仅 7 个 plugin POST 的 `requestBody` + 2 个 GET 的 `responses` |
+| 生成物 diff | 无 | 仅 7 个 plugin POST 的 `requestBody` + 2 个 GET 的 `responses`；另有 F1 的 3 个 run body（suspend/resume/discardRun）与 F2 的 3 处上限删除（共 6 个 op 被修改） |
 
 
 ## requestBody 投影语义（P0）
@@ -112,11 +112,11 @@ if (def.request) op.requestBody = {
 - **没有 `request` 就没有 `requestBody`**：其余 op 在 `openapi.json` / `api-schema.gen.ts` 里仍是
   `requestBody?: never` → 排除项不会被「空壳 requestBody」伪装成已建模。
 - `requestContentType` 本波**没有任何 op 使用**（二进制 / multipart 面全部排除）：它是管道位，
-  留给未来真正需要 `application/octet-stream` 的 op；当前 182 个 requestBody 全是 `application/json`。
+  留给未来真正需要 `application/octet-stream` 的 op；当前 189 个 requestBody 全是 `application/json`。
 - **运行时校验有意缺席**（spec §4 非目标，与 response 同策略）：gateway 不解析 / 不拒绝 body；
   400 / 截断 / fail-open 的语义仍在 handler（schema 的 description 只做说明）。
 - 台账口径：`gateway/scripts/schema-coverage.cjs` 用与 `response:` 相同的 brace-balanced 文本解析扫
-  `request:`，分母 = 非 GET op（163 POST + 16 DELETE + 6 PATCH + 3 PUT = **188**）；`--json` 增
+  `request:`，分母 = 非 GET op（170 POST + 16 DELETE + 6 PATCH + 3 PUT = **195**）；`--json` 增
   `requests` / `requestCovered` / `requestTotal` / `requestUncovered`。response 输出（合并后 127/327）。
 
 ## 覆盖率数学
@@ -288,7 +288,7 @@ if (def.request) op.requestBody = {
 
 | 产物 | ops | paths | added | removed | changed |
 |---|---|---|---|---|---|
-| `contract/gateway-paths.json` | 318 → 327 | 284 → 293 | +9（Phase 6） | 0 | 逐批恰好该批 op 的 `requestBody` 新增（剥掉 requestBody 后逐 path 深比较相等）；E10g-fix 的 diff = 7 个 plugin POST requestBody + 2 个 GET response |
+| `contract/gateway-paths.json` | 318 → 327 | 284 → 293 | +9（Phase 6） | 0 | 逐批恰好该批 op 的 `requestBody` 新增（剥掉 requestBody 后逐 path 深比较相等）；E10g-fix 的 diff = 7 个 plugin POST requestBody + 2 个 GET response + F1 的 3 个 run body / F2 的 3 处上限删除（共 6 个 op） |
 | `contract/openapi.json` | 318 → 327 | 284 → 293 | +9（Phase 6） | 0 | 同上 |
 | `src/api-schema.gen.ts` | — | — | — | — | 同上（每批 op 块从 `requestBody?: never` 变为请求体类型） |
 | `contract/overrides.json` | — | — | — | — | 未改动（仍 10 条命中） |

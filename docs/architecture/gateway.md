@@ -1785,8 +1785,9 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
   `E10G_W*_OPTIONAL_OPS` / `E10G_P6_*`）继续钉住每批 op；`E10G_W1_OPTIONAL_OPS` 钉住 F1 的三个 run body。
 - **生成物**：合并 main 后 **327 ops / 293 paths**；`gateway-paths.json` / `openapi.json` /
   `api-schema.gen.ts` 每批 diff 恰好是该批 op 的 `requestBody`（或 F1 的 body 形状）新增
-  （0 added / 0 removed 路由），`emit:openapi` + `gen:api` 二次运行幂等。E10g-fix 的 diff 只有
-  7 个 plugin POST 的 requestBody + 2 个 GET 的 response。
+  （0 added / 0 removed 路由），`emit:openapi` + `gen:api` 二次运行幂等。E10g-fix 的 diff = 7 个
+  plugin POST 的 requestBody + 2 个 GET 的 response，另有 F1 的 3 个 run body 与 F2 的 3 处上限删除
+  （共 6 个 op 被修改）。
 - **运行时校验有意缺席**（spec §4 非目标）：`request` 只是声明式契约，gateway **不**在 transport 层校验 body；
   handler 仍是事实源（400 / 截断 / fail-open 的语义在 handler 里，schema 描述只做说明）。因此把 body 改坏不会在
   gateway 层被拒——这是与 response 相同的策略，不是遗漏。

@@ -741,8 +741,8 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
   });
 
   // E10g-P0: request ledger shares the same parser so the write-op denominator
-  // (188) and the grown coverage set stay pinned while W1-W7 land.
-  it('the script reports request coverage over the 188 write ops', () => {
+  // (195 after the Phase 6 merge) and the grown coverage set stay pinned while W1-W7 land.
+  it('the script reports request coverage over the 195 write ops', () => {
     const report = runScript();
     const write = catalogWriteOps();
     const covered = write.filter((op) => op.hasRequest).map((op) => op.operationId).sort();
