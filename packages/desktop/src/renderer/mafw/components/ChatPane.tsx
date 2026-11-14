@@ -1606,8 +1606,15 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     setPickerOpen("command")
   }
 
+  const runLocalCommand = (run: () => void) => {
+    setInput("")
+    clearDraft(sidProp())
+    closeCommandPicker()
+    run()
+  }
+
   const onCommandSelect = (item: CommandItem) => {
-    if (item.run) { item.run(); return }
+    if (item.run) { runLocalCommand(item.run); return }
     insertCommandText(item.trigger)
   }
 

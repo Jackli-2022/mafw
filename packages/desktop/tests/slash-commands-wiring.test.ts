@@ -22,3 +22,11 @@ test("preload exposes session summarize", () => {
     /summarize: \(sessionID\) => invoke\("session", "summarize", \{ path: \{ id: sessionID \}, body: \{\} \}\)/,
   )
 })
+
+test("local commands clear composer state before running", () => {
+  assert.match(
+    chat,
+    /const runLocalCommand = \(run: \(\) => void\) => \{[\s\S]{0,240}?setInput\(""\)[\s\S]{0,240}?clearDraft\(sidProp\(\)\)[\s\S]{0,240}?closeCommandPicker\(\)[\s\S]{0,120}?run\(\)/,
+  )
+  assert.match(chat, /if \(item\.run\) \{ runLocalCommand\(item\.run\); return \}/)
+})
