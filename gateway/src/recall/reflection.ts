@@ -472,7 +472,7 @@ export class ReflectionPipeline {
     let parsedOk = false;
     try {
       // Step 1: generate salient questions
-      const qText = await worker.prompt(prompt, QUESTIONS_SYSTEM, this.opts.workerModel, 'memory-curator');
+      const qText = await worker.prompt(prompt, QUESTIONS_SYSTEM, this.opts.workerModel, 'memory-reflector');
       const questions = parseQuestions(qText);
       // Step 2: retrieve evidence per question. V2 ⑤: dense channel fused
       // via RRF when the embedding runtime is available (fail-open → bm25
@@ -541,7 +541,7 @@ export class ReflectionPipeline {
         replayChars = replay.chars;
         injected = new Set(replayUsed);
       }
-      const text = await worker.prompt(prompt + evidenceBlock + replayBlock + entityBlock + feedbackBlock, REFLECT_SYSTEM, this.opts.workerModel, 'memory-curator');
+      const text = await worker.prompt(prompt + evidenceBlock + replayBlock + entityBlock + feedbackBlock, REFLECT_SYSTEM, this.opts.workerModel, 'memory-reflector');
       const parsed = parseInsightsDetailed(text);
       insights = parsed.insights;
       parsedOk = parsed.ok;
@@ -602,7 +602,7 @@ export class ReflectionPipeline {
           `DRAFT ABSTRACTIONS:\n${listText}`,
           TENTATIVE_SYSTEM,
           this.opts.workerModel,
-          'memory-curator',
+          'memory-reflector',
         );
         const m = reply.match(/\{[\s\S]*\}/);
         const parsed = m ? JSON.parse(m[0]) : null;

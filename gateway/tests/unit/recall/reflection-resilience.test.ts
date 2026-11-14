@@ -6,6 +6,7 @@ import {
   parseInsightsDetailed,
   selectRestoreSessions,
 } from '../../../src/recall/reflection';
+import { createBuiltinIdentityRegistry } from '../../../src/runtime/identity-registry';
 import { HarmonicIndexManager } from '../../../src/core/memory/harmonic-index';
 import { HarmonicUnitFileStore } from '../../../src/memory/harmonic-file-store';
 import { ReflectCursor } from '../../../src/recall/reflect-cursor';
@@ -47,9 +48,11 @@ async function setup(opts: SetupOpts = {}) {
 
   const errors: Array<{ sessionID: string; error: string }> = [];
   const prompts: Array<{ prompt: string; system: string }> = [];
+  const agents: string[] = [];
   const worker = {
-    prompt: jest.fn(async (prompt: string, system: string) => {
+    prompt: jest.fn(async (prompt: string, system: string, _model?: unknown, agent?: string) => {
       prompts.push({ prompt, system });
+      if (agent) agents.push(agent);
       if (system.includes('salient high-level questions')) return JSON.stringify({ questions: [] });
       if (opts.reflectReply) return opts.reflectReply(prompt);
       return JSON.stringify({ insights: [] });
@@ -68,7 +71,7 @@ async function setup(opts: SetupOpts = {}) {
     maxSessionsPerRun: opts.maxSessionsPerRun,
     onError: (info) => errors.push(info),
   });
-  return { dir, db, cursor, pipe, prompts, errors, ids };
+  return { dir, db, cursor, pipe, prompts, errors, agents, ids };
 }
 
 function cleanup(ctx: { dir: string; db: GatewayDatabase }) {
@@ -96,6 +99,20 @@ describe('parseInsightsDetailed', () => {
 });
 
 describe('reflection resilience', () => {
+  test('the reflector identity disables every tool', () => {
+    const spec = createBuiltinIdentityRegistry().get('memory-reflector');
+    expect(spec).toBeTruthy();
+    expect(spec?.nativeTools).toEqual({ '*': false });
+  });
+
+  test('reflection prompts run on the tool-free memory-reflector identity', async () => {
+    const ctx = await setup({ reflectReply: () => '{"insights":[]}' });
+    await ctx.pipe.runSession('s1');
+    expect(ctx.agents.length).toBeGreaterThan(0);
+    expect(new Set(ctx.agents)).toEqual(new Set(['memory-reflector']));
+    cleanup(ctx);
+  });
+
   test('boot restore is bounded and skips sessions below the pending threshold', () => {
     const pending: Record<string, number> = { a: 5, b: 1, c: 4, d: 9 };
     expect(selectRestoreSessions(Object.keys(pending), (id) => pending[id], 3, 2)).toEqual(['a', 'c']);
