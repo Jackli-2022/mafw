@@ -8650,6 +8650,28 @@
         "tags": [
           "event"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "description": "Flat envelope: `type` plus arbitrary payload keys (broadcast verbatim).",
+                "type": "object",
+                "required": [
+                  "type"
+                ],
+                "properties": {
+                  "type": {
+                    "minLength": 1,
+                    "description": "Custom event name; recommended namespace 'plugin:<name>:<event>'. Reserved gateway/runtime names are 400.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -12324,6 +12346,57 @@
         "tags": [
           "events"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "kind",
+                  "name"
+                ],
+                "properties": {
+                  "kind": {
+                    "anyOf": [
+                      {
+                        "const": "github",
+                        "type": "string"
+                      },
+                      {
+                        "const": "cron",
+                        "type": "string"
+                      },
+                      {
+                        "const": "internal",
+                        "type": "string"
+                      },
+                      {
+                        "const": "webhook",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "name": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "config": {
+                    "description": "Source-adapter specific config, stored verbatim (owner: each event source adapter).",
+                    "type": "object",
+                    "patternProperties": {
+                      "^(.*)$": {}
+                    }
+                  },
+                  "projectDir": {
+                    "description": "Defaults to MAFW_PROJECT_DIR / cwd when absent (handler projectDirOf).",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -12347,6 +12420,24 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "enabled"
+                ],
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -12581,6 +12672,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -12715,6 +12817,56 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "subscriberType",
+                  "subscriberId",
+                  "mode"
+                ],
+                "properties": {
+                  "subscriberType": {
+                    "anyOf": [
+                      {
+                        "const": "standing_goal",
+                        "type": "string"
+                      },
+                      {
+                        "const": "goal",
+                        "type": "string"
+                      },
+                      {
+                        "const": "lead",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "subscriberId": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "mode": {
+                    "description": "work = wake the subscriber; context = inject context only.",
+                    "anyOf": [
+                      {
+                        "const": "work",
+                        "type": "string"
+                      },
+                      {
+                        "const": "context",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -12738,6 +12890,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -12915,6 +13078,19 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "description": "Source-defined JSON payload, passed verbatim to the event source adapter (signature / idempotency are header- and raw-body-based).",
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -15478,6 +15654,35 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "decision": {
+                    "description": "Required unless answer is present.",
+                    "anyOf": [
+                      {
+                        "const": "approve",
+                        "type": "string"
+                      },
+                      {
+                        "const": "reject",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "answer": {
+                    "description": "Free-text answer (MCP ask_user widget). Required unless decision is present; wins when both are given.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -15689,6 +15894,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -15714,6 +15930,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -15737,6 +15964,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -15760,6 +15998,54 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "suggestion"
+                ],
+                "properties": {
+                  "suggestion": {
+                    "anyOf": [
+                      {
+                        "const": "confirm",
+                        "type": "string"
+                      },
+                      {
+                        "const": "reject",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "description": "Defaults to ''.",
+                    "type": "string"
+                  },
+                  "priority": {
+                    "description": "Defaults to medium; unknown values are coerced to medium.",
+                    "anyOf": [
+                      {
+                        "const": "high",
+                        "type": "string"
+                      },
+                      {
+                        "const": "medium",
+                        "type": "string"
+                      },
+                      {
+                        "const": "low",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -16046,6 +16332,31 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "answers"
+                ],
+                "properties": {
+                  "answers": {
+                    "description": "One array of selected option labels per question, in question order.",
+                    "type": "array",
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -16069,6 +16380,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -16199,6 +16521,57 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "reply"
+                ],
+                "properties": {
+                  "reply": {
+                    "anyOf": [
+                      {
+                        "const": "once",
+                        "type": "string"
+                      },
+                      {
+                        "const": "always",
+                        "type": "string"
+                      },
+                      {
+                        "const": "reject",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "message": {
+                    "description": "Optional note forwarded to the runtime reply.",
+                    "type": "string"
+                  },
+                  "persist": {
+                    "description": "Only read for reply:'always' — rule scope for the auto-persisted allow rule.",
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "const": "tool",
+                        "type": "string"
+                      },
+                      {
+                        "const": "prefix",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -16279,6 +16652,42 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "mode"
+                ],
+                "properties": {
+                  "mode": {
+                    "description": "'manual' is a legacy alias normalized to read-only.",
+                    "anyOf": [
+                      {
+                        "const": "read-only",
+                        "type": "string"
+                      },
+                      {
+                        "const": "auto",
+                        "type": "string"
+                      },
+                      {
+                        "const": "full-access",
+                        "type": "string"
+                      },
+                      {
+                        "const": "manual",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -16332,6 +16741,29 @@
         "tags": [
           "permissions"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "tool"
+                ],
+                "properties": {
+                  "tool": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "prefix": {
+                    "description": "Argument prefix scope; blank = tool-wide entry.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -16343,6 +16775,29 @@
         "tags": [
           "permissions"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "tool"
+                ],
+                "properties": {
+                  "tool": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "prefix": {
+                    "description": "Must match the stored prefix; blank = tool-wide entry.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -16401,6 +16856,29 @@
         "tags": [
           "permissions"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "tool"
+                ],
+                "properties": {
+                  "tool": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "pattern": {
+                    "description": "Argument pattern; trailing * is stripped. Blank = tool-wide rule.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -16412,6 +16890,29 @@
         "tags": [
           "permissions"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "tool"
+                ],
+                "properties": {
+                  "tool": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "pattern": {
+                    "description": "Must match the stored pattern; blank = tool-wide rule.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -17627,6 +18128,25 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "enabled"
+                ],
+                "properties": {
+                  "enabled": {
+                    "description": "Target enabled state; persisted verbatim by toggleRule (missing value is stored as unset).",
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -17648,6 +18168,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -17887,6 +18418,144 @@
         "tags": [
           "automations"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "trigger"
+                ],
+                "properties": {
+                  "id": {
+                    "minLength": 1,
+                    "description": "Rule id; draftRule always returns valid:false without it (200, not 400).",
+                    "type": "string"
+                  },
+                  "trigger": {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "description": "Absent → cron (handler's else branch).",
+                        "anyOf": [
+                          {
+                            "const": "cron",
+                            "type": "string"
+                          },
+                          {
+                            "const": "event",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "schedule": {
+                        "description": "Cron expression; required when type is cron/absent (validateRule error otherwise).",
+                        "type": "string"
+                      },
+                      "timezone": {
+                        "description": "IANA name; defaults to 'UTC'.",
+                        "type": "string"
+                      },
+                      "on": {
+                        "description": "Event kinds to subscribe; required (non-empty) when type is event.",
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "perGoalCooldown": {
+                        "description": "Per-goal debounce window (e.g. 60s/5m); defaults to 5m, must match /^\\d+(s|m|h)$/.",
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "skill": {
+                    "description": "Skill to run; at least one of skill/action is required by validateRule.",
+                    "type": "string"
+                  },
+                  "args": {
+                    "description": "Skill / action input, owner: the action handler.",
+                    "type": "object",
+                    "patternProperties": {
+                      "^(.*)$": {}
+                    }
+                  },
+                  "action": {
+                    "additionalProperties": true,
+                    "description": "External action payload; unresolved action types fail validateRule.",
+                    "type": "object",
+                    "required": [
+                      "type"
+                    ],
+                    "properties": {
+                      "type": {
+                        "minLength": 1,
+                        "description": "Builtin action type or a plugin-center registered external action.",
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "onResult": {
+                    "type": "object",
+                    "required": [
+                      "type"
+                    ],
+                    "properties": {
+                      "type": {
+                        "anyOf": [
+                          {
+                            "const": "triage",
+                            "type": "string"
+                          },
+                          {
+                            "const": "goal",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "auto_confirm": {
+                        "type": "boolean"
+                      },
+                      "template": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "goal_defaults": {
+                    "type": "object",
+                    "properties": {
+                      "maxLoops": {
+                        "type": "number"
+                      },
+                      "metrics": {
+                        "type": "object",
+                        "patternProperties": {
+                          "^(.*)$": {
+                            "type": "object",
+                            "required": [
+                              "target",
+                              "unit"
+                            ],
+                            "properties": {
+                              "target": {
+                                "type": "number"
+                              },
+                              "unit": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -32165,6 +32834,58 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reply": {
+                    "anyOf": [
+                      {
+                        "const": "once",
+                        "type": "string"
+                      },
+                      {
+                        "const": "always",
+                        "type": "string"
+                      },
+                      {
+                        "const": "reject",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "approved": {
+                    "description": "Legacy boolean form, only read when reply is absent (true → once, false → reject).",
+                    "type": "boolean"
+                  },
+                  "message": {
+                    "description": "Optional note forwarded to the runtime reply.",
+                    "type": "string"
+                  },
+                  "persist": {
+                    "description": "Only read for reply:'always' — rule scope for the auto-persisted allow rule.",
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "const": "tool",
+                        "type": "string"
+                      },
+                      {
+                        "const": "prefix",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"

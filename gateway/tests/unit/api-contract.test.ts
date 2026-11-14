@@ -3721,7 +3721,7 @@ describe('api-contract: E10g request bodies (W1 session writes)', () => {
     return body;
   }
 
-  test('write ops with a requestBody count matches the coverage ledger (100 = P0 3 + W1 35 + W2W3 33 + W4 29)', () => {
+  test('write ops with a requestBody count matches the coverage ledger (124 = P0 3 + W1 35 + W2W3 33 + W4 29 + W5 24)', () => {
     const withBody: string[] = [];
     for (const methods of Object.values<any>(contract.paths)) {
       for (const [method, op] of Object.entries<any>(methods)) {
@@ -3729,7 +3729,7 @@ describe('api-contract: E10g request bodies (W1 session writes)', () => {
         if (op.requestBody) withBody.push(op.operationId);
       }
     }
-    expect(withBody).toHaveLength(100);
+    expect(withBody).toHaveLength(124);
     expect(withBody).toEqual(expect.arrayContaining([
       'session.create', 'tasks.submit', 'pods.tasks.create',
       'session.config.set', 'session.promptAsync', 'structured.submit',
@@ -3738,6 +3738,8 @@ describe('api-contract: E10g request bodies (W1 session writes)', () => {
       'pod.events.seenAll',
       'goals.planApproval', 'decisions.draft', 'standingGoals.create',
       'lead.compact', 'goals.control', 'goalRuns.approve',
+      'event.publish', 'automations.draft', 'approvals.respond',
+      'questions.reply', 'triage.propose', 'permissions.reply',
     ]));
   });
 
@@ -4069,6 +4071,163 @@ describe('api-contract: E10g request bodies (W4 goals, decisions, lead, standing
       'standingGoals.stop',
       'standingGoals.run',
       'goalRuns.approve',
+    ]) {
+      const body = bodyOf(id);
+      expect(`${id}:${body.required}`).toBe(`${id}:false`);
+      expect(Object.keys(body.content['application/json'].schema.properties ?? {})).toEqual([]);
+    }
+  });
+});
+
+describe('api-contract: E10g request bodies (W5 events, automations, human gates, permissions)', () => {
+  function bodyOf(operationId: string): any {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const op of Object.values<any>(methods)) {
+        if (op?.operationId === operationId) {
+          expect(`${operationId}:requestBody`).toBe(`${operationId}:${op.requestBody ? 'requestBody' : 'missing'}`);
+          return op.requestBody;
+        }
+      }
+    }
+    throw new Error(`operation not found: ${operationId}`);
+  }
+
+  function schemaOf(operationId: string): any {
+    return bodyOf(operationId).content['application/json'].schema;
+  }
+
+  test('event.publish: flat envelope with a required type and open payload keys', () => {
+    const body = bodyOf('event.publish');
+    expect(body.required).toBe(true);
+    const schema = body.content['application/json'].schema;
+    expect(schema.required).toEqual(['type']);
+    expect(schema.properties.type.minLength).toBe(1);
+    expect(schema.properties.type.description).toContain('plugin:');
+    // The payload is an open key set: arbitrary plugin fields ride along.
+    expect(schema.additionalProperties).toBe(true);
+  });
+
+  test('event source create/patch anchor the handler-validated fields', () => {
+    const create = bodyOf('events.sources.create');
+    expect(create.required).toBe(true);
+    const createSchema = create.content['application/json'].schema;
+    expect(createSchema.required).toEqual(['kind', 'name']);
+    expect(createSchema.properties.kind.anyOf.map((v: any) => v.const))
+      .toEqual(['github', 'cron', 'internal', 'webhook']);
+    expect(createSchema.properties.name.minLength).toBe(1);
+    // projectDir falls back to MAFW_PROJECT_DIR / cwd.
+    expect(createSchema.required).not.toContain('projectDir');
+
+    const patch = schemaOf('events.sources.patch');
+    expect(patch.required).toEqual(['enabled']);
+    expect(patch.properties.enabled.type).toBe('boolean');
+  });
+
+  test('event subscription create: closed subscriber/mode sets', () => {
+    const schema = schemaOf('events.threads.subscriptions.create');
+    expect(schema.required).toEqual(['subscriberType', 'subscriberId', 'mode']);
+    expect(schema.properties.subscriberType.anyOf.map((v: any) => v.const))
+      .toEqual(['standing_goal', 'goal', 'lead']);
+    expect(schema.properties.mode.anyOf.map((v: any) => v.const)).toEqual(['work', 'context']);
+  });
+
+  test('events.webhook.receive: declared as an open-object protocol boundary', () => {
+    const body = bodyOf('events.webhook.receive');
+    // The source adapter owns the shape; gateway passes body + rawBody + headers through.
+    expect(body.required).toBe(false);
+    const schema = body.content['application/json'].schema;
+    expect(schema.properties ?? {}).toEqual({});
+    expect(schema.additionalProperties).toBe(true);
+  });
+
+  test('automations.toggle requires the target state; draft anchors id + trigger', () => {
+    const toggle = bodyOf('automations.toggle');
+    expect(toggle.required).toBe(true);
+    expect(toggle.content['application/json'].schema.required).toEqual(['enabled']);
+
+    const draft = bodyOf('automations.draft');
+    expect(draft.required).toBe(true);
+    const draftSchema = draft.content['application/json'].schema;
+    expect(draftSchema.required).toEqual(['id', 'trigger']);
+    expect(draftSchema.properties.trigger.properties.type.anyOf.map((v: any) => v.const))
+      .toEqual(['cron', 'event']);
+    // Validation failures come back as 200 {valid:false, errors}, so only the
+    // identity/mechanism fields are required.
+    expect(draftSchema.required).not.toContain('skill');
+    expect(draftSchema.properties.onResult.properties.type.anyOf.map((v: any) => v.const))
+      .toEqual(['triage', 'goal']);
+  });
+
+  test('approvals.respond / questions.reply / triage.propose: human-supplied fields only', () => {
+    const respond = bodyOf('approvals.respond');
+    expect(respond.required).toBe(true);
+    const respondSchema = respond.content['application/json'].schema;
+    expect(respondSchema.required).toBeUndefined();
+    expect(respondSchema.properties.decision.anyOf.map((v: any) => v.const)).toEqual(['approve', 'reject']);
+    expect(respondSchema.properties.answer.description).toContain('unless decision');
+    // actorSessionID is a forbidden field on human-only routes, never declared.
+    expect(respondSchema.properties.actorSessionID).toBeUndefined();
+
+    const reply = schemaOf('questions.reply');
+    expect(reply.required).toEqual(['answers']);
+    expect(reply.properties.answers.items.type).toBe('array');
+
+    const propose = schemaOf('triage.propose');
+    expect(propose.required).toEqual(['suggestion']);
+    expect(propose.properties.suggestion.anyOf.map((v: any) => v.const)).toEqual(['confirm', 'reject']);
+    expect(propose.properties.priority.anyOf.map((v: any) => v.const))
+      .toEqual(['high', 'medium', 'low']);
+  });
+
+  test('permissions: reply vocabulary, mode tiers and allowlist/rule bodies', () => {
+    const reply = bodyOf('permissions.reply');
+    expect(reply.required).toBe(true);
+    const replySchema = reply.content['application/json'].schema;
+    expect(replySchema.required).toEqual(['reply']);
+    expect(replySchema.properties.reply.anyOf.map((v: any) => v.const))
+      .toEqual(['once', 'always', 'reject']);
+    // persist is boolean | 'tool' | 'prefix' (the boolean branch has no const).
+    const persistBranches = replySchema.properties.persist.anyOf;
+    expect(persistBranches.map((v: any) => v.const).filter((v: unknown) => v !== undefined))
+      .toEqual(['tool', 'prefix']);
+    expect(persistBranches.some((v: any) => v.type === 'boolean')).toBe(true);
+
+    const runtime = bodyOf('permissions.replyRuntime');
+    expect(runtime.required).toBe(true);
+    const runtimeSchema = runtime.content['application/json'].schema;
+    // reply or the legacy approved boolean — either satisfies the handler.
+    expect(runtimeSchema.required).toBeUndefined();
+    expect(runtimeSchema.properties.approved.description).toContain('reply is absent');
+
+    const mode = schemaOf('permissions.setMode');
+    expect(mode.required).toEqual(['mode']);
+    expect(mode.properties.mode.anyOf.map((v: any) => v.const))
+      .toEqual(['read-only', 'auto', 'full-access', 'manual']);
+
+    for (const [id, scopeKey] of [
+      ['permissions.addAllowlist', 'prefix'],
+      ['permissions.removeAllowlist', 'prefix'],
+      ['permissions.addRule', 'pattern'],
+      ['permissions.removeRule', 'pattern'],
+    ] as const) {
+      const body = bodyOf(id);
+      expect(`${id}:${body.required}`).toBe(`${id}:true`);
+      const schema = body.content['application/json'].schema;
+      expect(schema.required).toEqual(['tool']);
+      expect(schema.properties.tool.minLength).toBe(1);
+      expect(schema.properties[scopeKey]).toBeDefined();
+    }
+  });
+
+  test('W5 body-ignored actions project to required:false with an empty object', () => {
+    for (const id of [
+      'events.threads.close',
+      'events.subscriptions.delete',
+      'automations.remove',
+      'questions.reject',
+      'triage.dismiss',
+      'triage.confirm',
+      'triage.reject',
     ]) {
       const body = bodyOf(id);
       expect(`${id}:${body.required}`).toBe(`${id}:false`);

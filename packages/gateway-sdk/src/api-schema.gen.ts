@@ -7862,7 +7862,16 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Custom event name; recommended namespace 'plugin:<name>:<event>'. Reserved gateway/runtime names are 400. */
+                    type: string;
+                } & {
+                    [key: string]: unknown;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9349,7 +9358,20 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    kind: "github" | "cron" | "internal" | "webhook";
+                    name: string;
+                    /** @description Source-adapter specific config, stored verbatim (owner: each event source adapter). */
+                    config?: {
+                        [key: string]: unknown;
+                    };
+                    /** @description Defaults to MAFW_PROJECT_DIR / cwd when absent (handler projectDirOf). */
+                    projectDir?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9369,7 +9391,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    enabled: boolean;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9458,7 +9486,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9511,7 +9543,16 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    subscriberType: "standing_goal" | "goal" | "lead";
+                    subscriberId: string;
+                    /** @description work = wake the subscriber; context = inject context only. */
+                    mode: "work" | "context";
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9531,7 +9572,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9585,7 +9630,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10554,7 +10605,16 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Required unless answer is present. */
+                    decision?: "approve" | "reject";
+                    /** @description Free-text answer (MCP ask_user widget). Required unless decision is present; wins when both are given. */
+                    answer?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10622,7 +10682,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10642,7 +10706,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10662,7 +10730,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10682,7 +10754,17 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    suggestion: "confirm" | "reject";
+                    /** @description Defaults to ''. */
+                    reason?: string;
+                    /** @description Defaults to medium; unknown values are coerced to medium. */
+                    priority?: "high" | "medium" | "low";
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10802,7 +10884,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description One array of selected option labels per question, in question order. */
+                    answers: string[][];
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10822,7 +10911,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10883,7 +10976,17 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    reply: "once" | "always" | "reject";
+                    /** @description Optional note forwarded to the runtime reply. */
+                    message?: string;
+                    /** @description Only read for reply:'always' — rule scope for the auto-persisted allow rule. */
+                    persist?: boolean | "tool" | "prefix";
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10929,7 +11032,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description 'manual' is a legacy alias normalized to read-only. */
+                    mode: "read-only" | "auto" | "full-access" | "manual";
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10972,7 +11082,15 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    tool: string;
+                    /** @description Argument prefix scope; blank = tool-wide entry. */
+                    prefix?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10990,7 +11108,15 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    tool: string;
+                    /** @description Must match the stored prefix; blank = tool-wide entry. */
+                    prefix?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -11035,7 +11161,15 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    tool: string;
+                    /** @description Argument pattern; trailing * is stripped. Blank = tool-wide rule. */
+                    pattern?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -11053,7 +11187,15 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    tool: string;
+                    /** @description Must match the stored pattern; blank = tool-wide rule. */
+                    pattern?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -11676,7 +11818,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Target enabled state; persisted verbatim by toggleRule (missing value is stored as unset). */
+                    enabled: boolean;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -11696,7 +11845,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -11714,7 +11867,53 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Rule id; draftRule always returns valid:false without it (200, not 400). */
+                    id: string;
+                    trigger: {
+                        /** @description Absent → cron (handler's else branch). */
+                        type?: "cron" | "event";
+                        /** @description Cron expression; required when type is cron/absent (validateRule error otherwise). */
+                        schedule?: string;
+                        /** @description IANA name; defaults to 'UTC'. */
+                        timezone?: string;
+                        /** @description Event kinds to subscribe; required (non-empty) when type is event. */
+                        on?: string[];
+                        /** @description Per-goal debounce window (e.g. 60s/5m); defaults to 5m, must match /^\d+(s|m|h)$/. */
+                        perGoalCooldown?: string;
+                    };
+                    /** @description Skill to run; at least one of skill/action is required by validateRule. */
+                    skill?: string;
+                    /** @description Skill / action input, owner: the action handler. */
+                    args?: {
+                        [key: string]: unknown;
+                    };
+                    /** @description External action payload; unresolved action types fail validateRule. */
+                    action?: {
+                        /** @description Builtin action type or a plugin-center registered external action. */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    onResult?: {
+                        type: "triage" | "goal";
+                        auto_confirm?: boolean;
+                        template?: string;
+                    };
+                    goal_defaults?: {
+                        maxLoops?: number;
+                        metrics?: {
+                            [key: string]: {
+                                target: number;
+                                unit: string;
+                            };
+                        };
+                    };
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -15288,7 +15487,19 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    reply?: "once" | "always" | "reject";
+                    /** @description Legacy boolean form, only read when reply is absent (true → once, false → reject). */
+                    approved?: boolean;
+                    /** @description Optional note forwarded to the runtime reply. */
+                    message?: string;
+                    /** @description Only read for reply:'always' — rule scope for the auto-persisted allow rule. */
+                    persist?: boolean | "tool" | "prefix";
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {

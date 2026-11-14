@@ -390,6 +390,66 @@ const E10G_W4_OPTIONAL_OPS = [
   'lead.topics.fork',
 ];
 
+/**
+ * E10g-W5：events / automations / approvals / questions / triage / permissions（24 个）。
+ * P0 3 + W1 35 + W2W3 33 + W4 29 + 这 24 = 124。后续 W6-W7 只会追加，
+ * 因此总数断言是下界（`>= 124`）。
+ */
+const E10G_W5_REQUEST_OPS = [
+  // events
+  'event.publish',
+  'events.sources.create',
+  'events.sources.patch',
+  'events.threads.close',
+  'events.threads.subscriptions.create',
+  'events.subscriptions.delete',
+  'events.webhook.receive',
+  // automations
+  'automations.toggle',
+  'automations.remove',
+  'automations.draft',
+  // approvals / questions
+  'approvals.respond',
+  'questions.reply',
+  'questions.reject',
+  // triage
+  'triage.dismiss',
+  'triage.confirm',
+  'triage.reject',
+  'triage.propose',
+  // permissions
+  'permissions.reply',
+  'permissions.setMode',
+  'permissions.addAllowlist',
+  'permissions.removeAllowlist',
+  'permissions.addRule',
+  'permissions.removeRule',
+  'permissions.replyRuntime',
+];
+
+/**
+ * W5 的「body 被完全忽略」动作（空对象 + `requestRequired:false`）：
+ * `events.threads.close` / `events.subscriptions.delete`（只读路径 id）、
+ * `automations.remove`（只读路径 id）、`questions.reject`（只 requestID + workspace
+ * 回退链）、`triage.confirm` / `reject` / `dismiss`（分支由磁盘 item 决定，只做 human gate）。
+ */
+const E10G_W5_EMPTY_OPS = [
+  'automations.remove',
+  'events.subscriptions.delete',
+  'events.threads.close',
+  'questions.reject',
+  'triage.confirm',
+  'triage.dismiss',
+  'triage.reject',
+];
+
+/**
+ * W5 的协议透传边界（`requestRequired:false` + `additionalProperties:true` +
+ * 无 `properties`）：`events.webhook.receive` 的 body 由上游源定义，gateway 只把
+ * body + rawBody + headers 交给 source adapter，字段面不可枚举。
+ */
+const E10G_W5_BOUNDARY_OPS = ['events.webhook.receive'];
+
 function catalogById(): Map<string, { hasRequest: boolean; request?: object; requestRequired?: boolean }> {
   return new Map(
     buildRouteCatalog().map((def) => [
@@ -485,13 +545,13 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
   });
 
   // E10g-W1: session writes. Pinned per-op so a dropped `request:` fails by name,
-  // and as a floor (>= 100 through W4) so the count can only grow with W5-W7.
-  it('every W1 session write op declares a request schema (catalog requests >= 100)', () => {
+  // and as a floor (>= 124 through W5) so the count can only grow with W6-W7.
+  it('every W1 session write op declares a request schema (catalog requests >= 124)', () => {
     const byId = catalogById();
     const missing = E10G_W1_REQUEST_OPS.filter((id) => !byId.get(id)?.hasRequest);
     expect(missing).toEqual([]);
     const requests = catalogWriteOps().filter((op) => op.hasRequest).map((op) => op.operationId);
-    expect(requests.length).toBeGreaterThanOrEqual(100);
+    expect(requests.length).toBeGreaterThanOrEqual(124);
     expect(requests).toEqual(expect.arrayContaining([...E10G_P0_REQUEST_OPS, ...E10G_W1_REQUEST_OPS]));
   });
 
@@ -512,13 +572,13 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
   });
 
   // E10g-W2/W3: tasks/terminal/background/fileHistory + pods. Same shape as W1:
-  // pinned per-op by name, count floor at 100 (P0 3 + W1 35 + W2W3 33 + W4 29).
-  it('every W2/W3 write op declares a request schema (catalog requests >= 100)', () => {
+  // pinned per-op by name, count floor at 124 (P0 3 + W1 35 + W2W3 33 + W4 29 + W5 24).
+  it('every W2/W3 write op declares a request schema (catalog requests >= 124)', () => {
     const byId = catalogById();
     const missing = E10G_W2W3_REQUEST_OPS.filter((id) => !byId.get(id)?.hasRequest);
     expect(missing).toEqual([]);
     const requests = catalogWriteOps().filter((op) => op.hasRequest).map((op) => op.operationId);
-    expect(requests.length).toBeGreaterThanOrEqual(100);
+    expect(requests.length).toBeGreaterThanOrEqual(124);
     expect(requests).toEqual(expect.arrayContaining([
       ...E10G_P0_REQUEST_OPS,
       ...E10G_W1_REQUEST_OPS,
@@ -558,13 +618,13 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
   });
 
   // E10g-W4: goals / decisions / lead / standing / goalRuns writes. Same shape as
-  // W1/W2W3: pinned per-op by name, count floor at 100.
-  it('every W4 goal/decision/lead/standing write op declares a request schema (catalog requests >= 100)', () => {
+  // W1/W2W3: pinned per-op by name, count floor at 124.
+  it('every W4 goal/decision/lead/standing write op declares a request schema (catalog requests >= 124)', () => {
     const byId = catalogById();
     const missing = E10G_W4_REQUEST_OPS.filter((id) => !byId.get(id)?.hasRequest);
     expect(missing).toEqual([]);
     const requests = catalogWriteOps().filter((op) => op.hasRequest).map((op) => op.operationId);
-    expect(requests.length).toBeGreaterThanOrEqual(100);
+    expect(requests.length).toBeGreaterThanOrEqual(124);
     expect(requests).toEqual(expect.arrayContaining([
       ...E10G_P0_REQUEST_OPS,
       ...E10G_W1_REQUEST_OPS,
@@ -602,5 +662,56 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     }
     expect(problems).toEqual([]);
     expect(E10G_W4_OPTIONAL_OPS.filter((id) => !E10G_W4_REQUEST_OPS.includes(id))).toEqual([]);
+  });
+
+  // E10g-W5: events / automations / approvals / questions / triage / permissions writes.
+  // Same shape as W1-W4: pinned per-op by name, count floor at 124.
+  it('every W5 event/automation/human-gate write op declares a request schema (catalog requests >= 124)', () => {
+    const byId = catalogById();
+    const missing = E10G_W5_REQUEST_OPS.filter((id) => !byId.get(id)?.hasRequest);
+    expect(missing).toEqual([]);
+    const requests = catalogWriteOps().filter((op) => op.hasRequest).map((op) => op.operationId);
+    expect(requests.length).toBeGreaterThanOrEqual(124);
+    expect(requests).toEqual(expect.arrayContaining([
+      ...E10G_P0_REQUEST_OPS,
+      ...E10G_W1_REQUEST_OPS,
+      ...E10G_W2W3_REQUEST_OPS,
+      ...E10G_W4_REQUEST_OPS,
+      ...E10G_W5_REQUEST_OPS,
+    ]));
+    // No duplicate ids across batches (a typo would hide here otherwise).
+    expect(new Set(E10G_W5_REQUEST_OPS).size).toBe(E10G_W5_REQUEST_OPS.length);
+  });
+
+  it('W5 body-ignored actions use an empty object schema with requestRequired:false', () => {
+    const byId = catalogById();
+    const problems: string[] = [];
+    for (const id of E10G_W5_EMPTY_OPS) {
+      const def = byId.get(id);
+      if (!def?.hasRequest) { problems.push(`${id}: missing request`); continue; }
+      if (def.requestRequired !== false) problems.push(`${id}: requestRequired must be false`);
+      const props = (def.request as { properties?: Record<string, unknown> }).properties ?? {};
+      if (Object.keys(props).length !== 0) problems.push(`${id}: expected empty object, got ${Object.keys(props).join(',')}`);
+    }
+    expect(problems).toEqual([]);
+    expect(E10G_W5_EMPTY_OPS.filter((id) => !E10G_W5_REQUEST_OPS.includes(id))).toEqual([]);
+    expect(E10G_W5_EMPTY_OPS.filter((id) => E10G_W5_BOUNDARY_OPS.includes(id))).toEqual([]);
+  });
+
+  // The webhook body is source-defined: the boundary is declared as an open object
+  // instead of being excluded, so the op still counts as covered in `requests`.
+  it('W5 webhook pass-through declares an open-object boundary with requestRequired:false', () => {
+    const byId = catalogById();
+    const problems: string[] = [];
+    for (const id of E10G_W5_BOUNDARY_OPS) {
+      const def = byId.get(id);
+      if (!def?.hasRequest) { problems.push(`${id}: missing request`); continue; }
+      if (def.requestRequired !== false) problems.push(`${id}: requestRequired must be false`);
+      const schema = def.request as { properties?: Record<string, unknown>; additionalProperties?: unknown };
+      if (Object.keys(schema.properties ?? {}).length !== 0) problems.push(`${id}: boundary must not enumerate properties`);
+      if (schema.additionalProperties !== true) problems.push(`${id}: boundary must allow additionalProperties`);
+    }
+    expect(problems).toEqual([]);
+    expect(E10G_W5_BOUNDARY_OPS.filter((id) => !E10G_W5_REQUEST_OPS.includes(id))).toEqual([]);
   });
 });

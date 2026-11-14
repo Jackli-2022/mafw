@@ -37,7 +37,7 @@
 - [E10d 契约覆盖第四批（2026-11-14）](#e10d-契约覆盖第四批2026-11-14)
 - [E10e 契约覆盖第五批（2026-11-14）](#e10e-契约覆盖第五批2026-11-14)
 - [E10f 全量读表面收口（2026-11-14）](#e10f-全量读表面收口2026-11-14)
-- [E10g 请求契约（进行中：P0 + W1 + W2/W3 + W4，2026-11-14）](#e10g-请求契约进行中p0--w1--w2w3--w42026-11-14)
+- [E10g 请求契约（进行中：P0 + W1 + W2/W3 + W4 + W5，2026-11-14）](#e10g-请求契约进行中p0--w1--w2w3--w4--w52026-11-14)
 - [API 端点](#api-端点)
 - [UI 服务](#ui-服务)
 - [数据流全景](#数据流全景)
@@ -1561,11 +1561,12 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 
 ---
 
-## E10g 请求契约（进行中：P0 + W1 + W2/W3 + W4，2026-11-14）
+## E10g 请求契约（进行中：P0 + W1 + W2/W3 + W4 + W5，2026-11-14）
 
 > 承接 E10f（响应 125/318）。E10g 给 **188 个写 op** 补请求契约；本篇记录 P0 管线、
 > 3 个 pilot、W1（session 写接口 35 个）、W2/W3（tasks/terminal/background/fileHistory 8 个 +
-> pod 写接口 25 个）与 W4（goals/decisions/lead/standing/goalRuns 29 个）。
+> pod 写接口 25 个）、W4（goals/decisions/lead/standing/goalRuns 29 个）与 W5
+> （events/automations/approvals/questions/triage/permissions 24 个）。
 > spec：`docs/superpowers/specs/2026-11-14-gateway-e10g-request-contracts-design.md`。
 
 - **`RouteDef` 新增三个声明位**：`request?: object`（TypeBox / JSON Schema，缺省 = 未建模）、
@@ -1630,7 +1631,32 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
     决定；`projectDir` 一律 optional（handler `projectDirOf` 回退 env/cwd）。
   - `standingGoals.create` 只有 `triggers` 必填（≥1；cron 需 schedule+timezone，event 需 eventKinds）；
     `title` / `objective` / `projectDir` 由 handler/service 兜底；`update` 是 PATCH，全字段 optional。
-- **残余**：其余 88 个写 op 按 W5-W7 分批推进；`REQUEST_EXCLUDED` 清单与收口覆盖测试在 E10g 收口波落地。
+- **W5（events / automations / approvals / questions / triage / permissions，24 个）**：schema 在
+  `routes/schemas/event-write.ts`（7 个 op）、`automation-write.ts`（3）、`human-gate-write.ts`（14）。
+  **16 个 JSON body + 1 个协议透传边界 + 7 个空对象动作**。
+  - 空对象（`requestRequired:false`）只给 handler 不读 body 的动作：`events.threads.close` /
+    `events.subscriptions.delete`（只读路径 id）、`automations.remove`（只读路径 id）、
+    `questions.reject`（只 requestID + workspace 回退链）、`triage.confirm` / `reject` / `dismiss`
+    （confirm 的三分支由磁盘 item 的 `summary.skillDraft` / `axiomDraft` 决定，handler 不解析 body）。
+  - `events.webhook.receive` 是 **协议透传边界**：body 由上游源定义（GitHub / generic webhook），
+    gateway 只把 body + rawBody + headers 交给 source adapter 做签名/幂等；因此声明为
+    `Type.Object({}, {additionalProperties:true})` + `requestRequired:false` —— 有意的开放对象，
+    不是排除项（签名头不是 body 字段）。
+  - `event.publish` 的 `type` 必填非空 + `additionalProperties:true`（扁平信封，其余键是插件负载）；
+    保留名（gateway/runtime 自有事件）是运行时策略，不写进 schema（清单随事件矩阵演进）。
+  - `events.sources.patch` 是 PATCH 但只支持 `enabled:boolean`（其余 body 键被 handler 忽略）。
+  - `automations.draft` 的校验通道是**响应**（`draftRule` → `200 {valid:false, errors}`，不落盘），
+    所以只有 `id` / `trigger` 必填，cron/event 子字段与 `skill`/`action`（至少一个）留 optional +
+    description；`trigger.type` 缺省走 cron 分支，不能做成判别联合。
+  - human-only 路由（`approvals.respond`、`questions.reply|reject`、`triage.confirm|reject|dismiss`）
+    只声明人类提供的字段，**不声明** `actorSessionID`（携带即 403 的禁止字段）；
+    `approvals.respond` 的 `decision` / `answer` 二选一用 description 表达（都缺 → 400）。
+  - `permissions.reply` / `replyRuntime` 共用 `{reply, message, persist}`；直连入口额外接受
+    legacy `approved:boolean`（`reply` 缺省时 true→once、false→reject）；`persist` 只在
+    `reply:'always'` 生效，`'tool'|'prefix'` 决定沉淀规则的作用域。
+  - `permissions.setMode` 的 `mode` 闭集含 legacy `'manual'`（`normalizeMode` 收敛为 read-only）；
+    allowlist / rules 的删除同样走 **JSON body**（`tool` 必填，`prefix`/`pattern` 可选）。
+- **残余**：其余 64 个写 op 按 W6-W7 分批推进；`REQUEST_EXCLUDED` 清单与收口覆盖测试在 E10g 收口波落地。
 
 ---
 
