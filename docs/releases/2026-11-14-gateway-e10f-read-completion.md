@@ -221,15 +221,15 @@ Time:        657.3 s
 失败 suite 恰好三个已知 env-red：`tests/integration/plugin-package-e2e.test.ts`、
 `tests/unit/runtime/claude-adapter-acceptance.test.ts`、`tests/unit/runtime/claude-adapter-coverage.test.ts`
 （同一根因：esbuild 解析不到 `@anthropic-ai/claude-agent-sdk`），零 E10f 红。
-总数 `7311` 相对基线 `44aceda4` 的增量 = 本波 **+43**（api-contract 54 → 96、note-board 12 → 13）+
-基线分支 merge（`7eb3a191` 带入 `memory/route-write` / `routes/dashboard-wiring` 的新用例）。
+总数 `7311` 相对基线 `44aceda4` 的增量 = 本波 **+43**（api-contract 54 → 96、note-board 12 → 13）；
+基线 `44aceda4` 已包含 `7eb3a191` 合并带入的用例，不重复计入。
 
 ## 新增测试（对基线 `44aceda4` 的增量）
 
 | 面 | 新增 | 依据 |
 |---|---|---|
 | gateway | **+43** | `api-contract.test.ts` 54 → **96**（A +13 / B +8 / C +11 / D +9 / E +1）；`note-board.test.ts` 12 → **13**（E：新增 non-empty board 的 budget 精确形状用例 `{...NOTE_BOARD_BUDGET, used: 1}`；`emptyNoteBoardBudget()` 的 503 / 降级体在既有用例里随 `perNoteCap` 一并断言） |
-| SDK | **0 运行时 / +52 编译期** | `contract-compat.checks.ts` 新增 52 个 `CHECK_*`（A 18 / B 23 / C 11）；另 4 条 gateway 侧 `AssertEq`（D 2 / E 3，tsc 门禁）——`npm test` 仍 226 |
+| SDK | **0 运行时 / +52 编译期** | `contract-compat.checks.ts` 新增 52 个 `CHECK_*`（A 18 / B 23 / C 11）；另 4 条 gateway 侧 `AssertEq`（D 2 / E 2，tsc 门禁）——`npm test` 仍 226 |
 | desktop | 0 | 无代码变更（preload 仅类型） |
 | mobile | **+12** | `test/triage_card_model_test.dart`（12 例） |
 | **合计** | **+55** | 可执行 test case 数（非断言数） |
