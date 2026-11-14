@@ -92,6 +92,16 @@ import {
   SessionTodoResponse,
   SessionTokenSummaryResponse,
 } from './schemas/session-read';
+import {
+  AgentListResponse,
+  ConfigGetResponse,
+  McpServersResponse,
+  PluginsListResponse,
+  ProviderListResponse,
+  SchedulerStatusResponse,
+  SkillsListResponse,
+  ToolsListResponse,
+} from './schemas/meta';
 
 /**
  * SDK-facing 端点（catalog → gateway-paths → openapi 单向生成；**在此新增**后必须重跑
@@ -175,7 +185,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'PUT', path: '/api/usage/plugins/:name/source', operationId: 'session.usagePluginSourcePut', tags: ['session'] },
   { method: 'DELETE', path: '/api/usage/plugins/:name', operationId: 'session.usagePluginsDelete', tags: ['session'] },
   { method: 'POST', path: '/api/usage/plugins/:name/test', operationId: 'session.usagePluginTest', tags: ['session'] },
-  { method: 'GET', path: '/api/mcp/servers', operationId: 'mcp.servers', tags: ['mcp'] },
+  { method: 'GET', path: '/api/mcp/servers', operationId: 'mcp.servers', tags: ['mcp'], response: McpServersResponse },
   { method: 'POST', path: '/api/mcp/:name/connect', operationId: 'mcp.connect', tags: ['mcp'] },
   { method: 'POST', path: '/api/mcp/:name/disconnect', operationId: 'mcp.disconnect', tags: ['mcp'] },
   { method: 'POST', path: '/api/mcp/config/preview', operationId: 'mcp.configPreview', tags: ['mcp'] },
@@ -200,7 +210,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/runtime/switch', operationId: 'runtime.switch', tags: ['runtime'] },
   { method: 'POST', path: '/api/runtime/restart-agent', operationId: 'runtime.restartAgent', tags: ['runtime'] },
   // runtime.reload（POST /api/runtime/reload）在下方 NON_SDK 补遗块登记（SDK 不调用 → internal）
-  { method: 'GET', path: '/api/plugins', operationId: 'plugins.list', tags: ['plugins'] },
+  { method: 'GET', path: '/api/plugins', operationId: 'plugins.list', tags: ['plugins'], response: PluginsListResponse },
   { method: 'GET', path: '/api/plugins/client', operationId: 'plugins.client', tags: ['plugins'] },
   { method: 'POST', path: '/api/plugins/install', operationId: 'plugins.install', tags: ['plugins'] },
   { method: 'POST', path: '/api/plugins/packages/install', operationId: 'plugins.installPackage', tags: ['plugins'] },
@@ -215,7 +225,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   // the package-bound ticket through the SDK; asset/events stay browser-only
   // (internal, see NON_SDK_ROUTES).
   { method: 'POST', path: '/api/plugins/:name/web-ticket', operationId: 'plugins.webTicket', tags: ['plugins'] },
-  { method: 'GET', path: '/api/config', operationId: 'config.get', tags: ['config'] },
+  { method: 'GET', path: '/api/config', operationId: 'config.get', tags: ['config'], response: ConfigGetResponse },
   { method: 'PUT', path: '/api/config', operationId: 'config.set', tags: ['config'] },
   { method: 'GET', path: '/api/runtime-config', operationId: 'runtime.config.get', tags: ['runtime'] },
   { method: 'PATCH', path: '/api/runtime-config', operationId: 'runtime.config.update', tags: ['runtime'] },
@@ -233,7 +243,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/decisions/:id/confirm', operationId: 'decisions.confirm', tags: ['internal'] },
   { method: 'POST', path: '/api/decisions/:id/shelve', operationId: 'decisions.shelve', tags: ['internal'] },
   { method: 'POST', path: '/api/decisions/:id/reopen', operationId: 'decisions.reopen', tags: ['internal'] },
-  { method: 'GET', path: '/api/scheduler/status', operationId: 'scheduler.status', tags: ['internal'] },
+  { method: 'GET', path: '/api/scheduler/status', operationId: 'scheduler.status', tags: ['internal'], response: SchedulerStatusResponse },
   { method: 'POST', path: '/api/goals/:id/pause', operationId: 'goals.pause', tags: ['goals'] },
   { method: 'POST', path: '/api/goals/:id/resume', operationId: 'goals.resume', tags: ['goals'] },
   { method: 'POST', path: '/api/goals/:id/stop', operationId: 'goals.stop', tags: ['goals'] },
@@ -291,7 +301,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/triage/:id/reject', operationId: 'triage.reject', tags: ['triage'] },
   { method: 'POST', path: '/api/triage/:id/propose', operationId: 'triage.propose', tags: ['triage'] },
   { method: 'POST', path: '/api/skills/:name/deopt', operationId: 'skills.deopt', tags: ['internal'] },
-  { method: 'GET', path: '/api/skills', operationId: 'skills.list', tags: ['internal'] },
+  { method: 'GET', path: '/api/skills', operationId: 'skills.list', tags: ['internal'], response: SkillsListResponse },
   { method: 'GET', path: '/api/questions', operationId: 'questions.list', tags: ['questions'], response: QuestionListResponse },
   { method: 'POST', path: '/api/questions/:id/reply', operationId: 'questions.reply', tags: ['questions'] },
   { method: 'POST', path: '/api/questions/:id/reject', operationId: 'questions.reject', tags: ['questions'] },
@@ -318,8 +328,8 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/tts/stream', operationId: 'tts.speakStream', tags: ['tts'] },
   { method: 'POST', path: '/api/tts/interrupt', operationId: 'tts.interrupt', tags: ['tts'] },
   { method: 'GET', path: '/api/voice/status', operationId: 'voice.status', tags: ['voice'] },
-  { method: 'GET', path: '/api/provider', operationId: 'providers.list', tags: ['providers'] },
-  { method: 'GET', path: '/api/agents', operationId: 'agents.list', tags: ['agents'] },
+  { method: 'GET', path: '/api/provider', operationId: 'providers.list', tags: ['providers'], response: ProviderListResponse },
+  { method: 'GET', path: '/api/agents', operationId: 'agents.list', tags: ['agents'], response: AgentListResponse },
   { method: 'GET', path: '/api/model-config', operationId: 'models.get', tags: ['models'] },
   { method: 'POST', path: '/api/model-config', operationId: 'models.update', tags: ['models'] },
   { method: 'GET', path: '/api/automations', operationId: 'automations.list', tags: ['automations'] },
@@ -482,7 +492,7 @@ const NON_SDK_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/plugins/:name/ui', operationId: 'plugins.webAsset', tags: ['internal'] },
   { method: 'GET', path: '/api/plugins/:name/events', operationId: 'plugins.webEvents', tags: ['internal'] },
   // MAFW 基础工具面（out-of-process runtime 注册/执行通道；loopback-only）
-  { method: 'GET', path: '/api/tools', operationId: 'tools.list', tags: ['internal'] },
+  { method: 'GET', path: '/api/tools', operationId: 'tools.list', tags: ['internal'], response: ToolsListResponse },
   { method: 'POST', path: '/api/tools/execute', operationId: 'tools.execute', tags: ['internal'] },
   // Agent 自我认知只读面（L1 能力账本 + L2 失败谱；fail-open）
   { method: 'GET', path: '/api/agent/capabilities', operationId: 'agent.capabilities', tags: ['internal'] },

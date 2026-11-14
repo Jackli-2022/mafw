@@ -3,8 +3,8 @@
 // `scripts/schema-coverage.cjs` parses `route-catalog.ts` (no TS import, no
 // generated SDK artifact) and reports how many catalog ops carry a 200
 // response schema. This test pins that report against the catalog:
-//   - the 61 ops covered at the E10d-1 close (13 pre-E10 + 16 E10 + 8 E10b-1 + 7 E10b-2 +
-//     1 E11-1 + 8 E10c-1 + 8 E10d-1) must each
+//   - the 69 ops covered at the E10e-1 close (13 pre-E10 + 16 E10 + 8 E10b-1 + 7 E10b-2 +
+//     1 E11-1 + 8 E10c-1 + 8 E10d-1 + 8 E10e-1) must each
 //     keep their `response` — a silent schema deletion fails here;
 //   - the catalog's covered set must equal this manifest exactly (both
 //     directions), so a new covered op cannot land without a ledger entry;
@@ -27,10 +27,12 @@ interface CoverageReport {
 const GATEWAY_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPT = path.join(GATEWAY_ROOT, 'scripts', 'schema-coverage.cjs');
 
-/** Baseline 13 (E8 and earlier) + 8 session read (E10-1) + 8 pod/work read (E10-2) + 8 goal read (E10b-1) + 7 human-gate/permission read (E10b-2) + 1 human token rotate (E11-1) + 8 memory/recall/lead read (E10c-1) + 8 memory extra / lead.context / pod read (E10d-1) = 61. */
+/** Baseline 13 (E8 and earlier) + 8 session read (E10-1) + 8 pod/work read (E10-2) + 8 goal read (E10b-1) + 7 human-gate/permission read (E10b-2) + 1 human token rotate (E11-1) + 8 memory/recall/lead read (E10c-1) + 8 memory extra / lead.context / pod read (E10d-1) + 8 metadata/registry read (E10e-1) = 69. */
 const E10_COVERED_OPS = [
+  'agents.list',
   'approvals.list',
   'attention.list',
+  'config.get',
   'decisions.list',
   'event.replay',
   'goals.get',
@@ -44,6 +46,7 @@ const E10_COVERED_OPS = [
   'lead.context',
   'lead.recall',
   'lead.workingSet',
+  'mcp.servers',
   'memory.get',
   'memory.getEnergyDistribution',
   'memory.getL5Axioms',
@@ -55,6 +58,7 @@ const E10_COVERED_OPS = [
   'permissions.list',
   'permissions.listAllowlist',
   'permissions.listRules',
+  'plugins.list',
   'pod.events.list',
   'pods.cost',
   'pods.get',
@@ -71,11 +75,13 @@ const E10_COVERED_OPS = [
   'pods.transcript',
   'presence.get',
   'project.list',
+  'providers.list',
   'questions.list',
   'recall.context',
   'recall.instructions',
   'recall.pinned',
   'recall.priors',
+  'scheduler.status',
   'session.checkpoints',
   'session.children',
   'session.config',
@@ -88,6 +94,8 @@ const E10_COVERED_OPS = [
   'session.todo',
   'session.tokenSummary',
   'session.usageSummary',
+  'skills.list',
+  'tools.list',
   'triage.list',
   'work.overview',
 ];

@@ -83,6 +83,16 @@ import {
   TriageListResponse,
 } from '../../src/routes/schemas/human-gate';
 import { WorkOverviewResponse } from '../../src/routes/schemas/work';
+import {
+  AgentListResponse,
+  ConfigGetResponse,
+  McpServersResponse,
+  PluginsListResponse,
+  ProviderListResponse,
+  SchedulerStatusResponse,
+  SkillsListResponse,
+  ToolsListResponse,
+} from '../../src/routes/schemas/meta';
 import { handleAttention } from '../../src/routes/attention';
 import { handleDecisionList } from '../../src/routes/decisions';
 import type { PodGoalView } from '../../src/core/pod/pod-view';
@@ -1801,5 +1811,283 @@ describe('api-contract: E10d-1 memory extra / lead.context / pod read response s
     expect(Value.Check(PodWorktreeDiffResponse, diff)).toBe(true);
     expect(Value.Check(PodWorktreeDiffResponse, { ...diff, files: [{ file: 'x' }] })).toBe(false);
     expect(Value.Check(PodWorktreeDiffResponse, { ...diff, files: [] })).toBe(true);
+  });
+});
+
+describe('api-contract: E10e-1 metadata / registry read response schema (8 ops)', () => {
+  const findOp = (operationId: string): any => {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const candidate of Object.values<any>(methods)) {
+        if (candidate?.operationId === operationId) return candidate;
+      }
+    }
+    return null;
+  };
+
+  const schemaOf = (operationId: string): any =>
+    findOp(operationId).responses['200']['content']['application/json'].schema;
+
+  /** 每个 op 的承重 property + 数组元素必填（handler 恒发的字段）。 */
+  const EXPECTED: Record<string, { fields: string[]; item?: { at: string; required: string[] } }> = {
+    'agents.list': {
+      fields: ['items'],
+      item: { at: 'items', required: ['id', 'label', 'source', 'selectable'] },
+    },
+    'providers.list': {
+      fields: ['items', 'connected', 'default'],
+      item: { at: 'items', required: ['id', 'name', 'models'] },
+    },
+    'mcp.servers': {
+      fields: ['servers'],
+      item: { at: 'servers', required: ['name', 'status'] },
+    },
+    'plugins.list': {
+      fields: ['plugins', 'packages'],
+      item: {
+        at: 'plugins',
+        required: ['type', 'name', 'file', 'status', 'size', 'mtime'],
+      },
+    },
+    'skills.list': {
+      fields: ['skills'],
+      item: {
+        at: 'skills',
+        required: [
+          'name', 'version', 'status', 'sourceMemoryIds', 'sourceTraceIds',
+          'installedAt', 'updatedAt', 'deoptReason', 'stats',
+        ],
+      },
+    },
+    'tools.list': {
+      fields: ['tools'],
+      item: { at: 'tools', required: ['name', 'description', 'parameters'] },
+    },
+    'config.get': { fields: CONFIG_SECTION_KEYS_FOR_TEST() },
+    'scheduler.status': { fields: ['active', 'queued', 'capacity', 'plan'] },
+  };
+
+  /** `GatewayConfig` 顶层 section 名（与 schemas/meta.ts 的台账一致，测试侧独立抄写）。 */
+  function CONFIG_SECTION_KEYS_FOR_TEST(): string[] {
+    return [
+      'server', 'paths', 'timeouts', 'loop', 'goal', 'mobile', 'search', 'memory',
+      'decay', 'llm', 'logging', 'mcpserver', 'metrics', 'chat', 'manager', 'recall',
+      'usage', 'trajectory', 'approval', 'media', 'cognition', 'events', 'runtime',
+      'alignment', 'resources', 'env',
+    ];
+  }
+
+  test('eight ops expose a 200 JSON schema with properties (not a whole-response widening)', () => {
+    const problems: string[] = [];
+    for (const [operationId, spec] of Object.entries(EXPECTED)) {
+      const op = findOp(operationId);
+      if (!op) { problems.push(`${operationId}: missing from openapi.json`); continue; }
+      const schema = op.responses?.['200']?.content?.['application/json']?.schema;
+      if (!schema) { problems.push(`${operationId}: responses.200 missing application/json schema`); continue; }
+      const properties = Object.keys(schema.properties ?? {});
+      if (properties.length === 0) { problems.push(`${operationId}: schema has no properties (widened)`); continue; }
+      for (const field of spec.fields) {
+        if (!properties.includes(field)) problems.push(`${operationId}: schema missing property '${field}'`);
+      }
+    }
+    if (problems.length) {
+      console.error('[api-contract] E10e-1 response schema missing - run emit:openapi + merge-contract:\n' + problems.join('\n'));
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test('array item required fields match the handler wire', () => {
+    const problems: string[] = [];
+    for (const [operationId, spec] of Object.entries(EXPECTED)) {
+      if (!spec.item) continue;
+      const required = schemaOf(operationId).properties?.[spec.item.at]?.items?.required ?? [];
+      for (const field of spec.item.required) {
+        if (!required.includes(field)) problems.push(`${operationId}: ${spec.item.at}.items missing required '${field}'`);
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test('view DTO projections pin the closed vocabularies (agent source, model refs, mcp state)', () => {
+    const agent = schemaOf('agents.list').properties.items.items;
+    expect(agent.properties.source.anyOf?.map((entry: any) => entry.const)).toEqual(['mafw', 'runtime']);
+    expect(agent.properties.model.required).toEqual(['providerID', 'modelID']);
+    // 投影条件展开的字段不能变成 required（runtime 原生 agent 可能不带 mode/model）。
+    expect(agent.required).not.toContain('model');
+    expect(agent.required).not.toContain('mode');
+    expect(agent.required).not.toContain('description');
+
+    const provider = schemaOf('providers.list').properties;
+    expect(provider.items.items.required).toEqual(['id', 'name', 'models']);
+    expect(provider.items.items.properties.models.items.required).toEqual(['id', 'name']);
+    // 信封残余由 runtime 拥有：connected = 已连接 providerID，default = providerID→modelID。
+    expect(provider.connected.type).toBe('array');
+    expect(provider.default.type).toBe('object');
+    expect(schemaOf('providers.list').required).toEqual(['items']);
+
+    const mcp = schemaOf('mcp.servers').properties.servers.items;
+    expect(mcp.properties.status.anyOf?.map((entry: any) => entry.const))
+      .toEqual(['connected', 'disabled', 'failed', 'needs_auth', 'unknown']);
+    expect(mcp.properties.type.anyOf?.map((entry: any) => entry.const)).toEqual(['local', 'remote']);
+    expect(schemaOf('mcp.servers').required).toEqual(['servers']);
+  });
+
+  test('plugins.list mirrors PluginsListResult (legacy entries + unified package rows)', () => {
+    const schema = schemaOf('plugins.list');
+    expect(schema.required).toEqual(['plugins']);
+    expect(schema.properties.revision.type).toBe('string');
+    const entry = schema.properties.plugins.items;
+    expect(entry.properties.type.anyOf?.map((e: any) => e.const)).toEqual(['runtime', 'media', 'usage', 'ui']);
+    expect(entry.properties.status.anyOf?.map((e: any) => e.const))
+      .toEqual(['enabled', 'disabled', 'error', 'config-disabled']);
+    const pkg = schema.properties.packages.items;
+    expect(pkg.required).toEqual(['name', 'source', 'status', 'enabled', 'contributions']);
+    expect(pkg.properties.status.anyOf?.map((e: any) => e.const)).toEqual(['ok', 'error', 'disabled']);
+    // revision 只在 envelope provider 存在时下发 → 不 required。
+    expect(schema.required).not.toContain('revision');
+    expect(schema.required).not.toContain('packages');
+  });
+
+  test('skills.list / tools.list model the kernel rows and the tool spec surface', () => {
+    const skill = schemaOf('skills.list').properties.skills.items;
+    expect(skill.properties.status.anyOf?.map((e: any) => e.const))
+      .toEqual(['staging', 'active', 'paused', 'deprecated']);
+    expect(skill.properties.stats.required).toEqual(['total', 'success', 'failure', 'unknown', 'lastAt']);
+    expect(skill.properties.lastAt).toBeUndefined();
+    expect(skill.properties.stats.properties.lastAt.anyOf?.map((e: any) => e.type))
+      .toEqual(expect.arrayContaining(['number', 'null']));
+    expect(schemaOf('skills.list').required).toEqual(['skills']);
+
+    const tool = schemaOf('tools.list').properties.tools.items;
+    expect(tool.required).toEqual(['name', 'description', 'parameters']);
+    // parameters / outputSchema 是工具作者的 JSON Schema 对象（边界）。
+    expect(tool.properties.parameters.type).toBe('object');
+    expect(tool.properties.outputSchema.type).toBe('object');
+    expect(tool.properties.annotations.properties.readOnlyHint.type).toBe('boolean');
+  });
+
+  test('config.get documents the GatewayConfig envelope without widening the whole response', () => {
+    const schema = schemaOf('config.get');
+    const sections = CONFIG_SECTION_KEYS_FOR_TEST();
+    expect(Object.keys(schema.properties).sort()).toEqual([...sections].sort());
+    expect([...schema.required].sort()).toEqual([...sections].sort());
+    // 每个 section 是韧性边界对象（defaults + config.yaml 深合并 → 键集运营可扩展），
+    // 但顶层键集必须封闭：不得退化成 Record<string, unknown>。
+    expect(schema.additionalProperties).toBeUndefined();
+    expect(schema.patternProperties).toBeUndefined();
+    for (const section of sections) {
+      expect({ section, type: schema.properties[section].type }).toEqual({ section, type: 'object' });
+      // TypeBox 的 Record(String, Unknown) 投影成 patternProperties['^(.*)$'] = {}（任意 JSON 值）。
+      expect(schema.properties[section].patternProperties?.['^(.*)$']).toEqual({});
+    }
+  });
+
+  test('scheduler.status pins SchedulerStatus.plan (human slot + capacity)', () => {
+    const schema = schemaOf('scheduler.status');
+    expect([...schema.required].sort()).toEqual(['active', 'capacity', 'plan', 'queued']);
+    expect(schema.properties.plan.required).toEqual(['start', 'waiting', 'humanSlot', 'capacity']);
+    expect(schema.properties.plan.properties.humanSlot.type).toBe('boolean');
+    expect(schema.properties.plan.properties.capacity.type).toBe('number');
+  });
+
+  test('handler wire samples validate against each schema (Value.Check)', () => {
+    // agents.list: projectAgents() 的规范投影（mfaw 身份 + runtime 原生 agent）。
+    expect(Value.Check(AgentListResponse, {
+      items: [
+        { id: 'build', label: 'build', source: 'mafw', selectable: true, default: true },
+        {
+          id: 'review', label: 'review', description: 'reviewer', source: 'runtime',
+          selectable: false, mode: 'subagent', model: { providerID: 'p', modelID: 'm' },
+        },
+      ],
+    })).toBe(true);
+    expect(Value.Check(AgentListResponse, {
+      items: [{ id: 'x', label: 'x', source: 'registry', selectable: true }],
+    })).toBe(false);
+    expect(Value.Check(AgentListResponse, { items: [{ id: 'x', label: 'x', source: 'runtime' }] })).toBe(false);
+
+    // providers.list: envelope = items + runtime 残余（default / connected）。
+    expect(Value.Check(ProviderListResponse, {
+      items: [{
+        id: 'anthropic', name: 'Anthropic', connected: true,
+        models: [{ id: 'claude', name: 'Claude', providerID: 'anthropic', contextLimit: 200000 }],
+      }],
+      connected: ['anthropic'],
+      default: { anthropic: 'claude' },
+    })).toBe(true);
+    expect(Value.Check(ProviderListResponse, { items: [] })).toBe(true);
+    // models 恒为数组（原生对象映射也被投影成数组）。
+    expect(Value.Check(ProviderListResponse, { items: [{ id: 'p', name: 'P', models: {} }] })).toBe(false);
+
+    // mcp.servers: runtime mcp channel list() 原样条目。
+    expect(Value.Check(McpServersResponse, {
+      servers: [
+        { name: 'fs', status: 'connected', type: 'local', command: ['npx', 'mcp'], source: 'project' },
+        { name: 'remote', status: 'needs_auth', type: 'remote', url: 'https://x', disabled: true },
+      ],
+    })).toBe(true);
+    expect(Value.Check(McpServersResponse, { servers: [{ name: 'fs', status: 'ready' }] })).toBe(false);
+
+    // plugins.list: legacy inventory + unified packages + revision。
+    const legacyEntry = {
+      type: 'usage', name: 'demo', file: 'demo.js', status: 'enabled', size: 12,
+      mtime: '2026-11-14T00:00:00.000Z', builtin: true,
+    };
+    expect(Value.Check(PluginsListResponse, {
+      plugins: [legacyEntry, { ...legacyEntry, status: 'config-disabled', overridden: true }],
+      packages: [{
+        name: 'pkg', source: '/x/pkg', status: 'ok', enabled: true, contributions: ['ui'],
+        version: '1.0.0', revision: 'boot:1', fingerprint: 'sha',
+      }],
+      revision: 'boot:1',
+    })).toBe(true);
+    expect(Value.Check(PluginsListResponse, { plugins: [] })).toBe(true);
+    expect(Value.Check(PluginsListResponse, { plugins: [{ ...legacyEntry, status: 'pending' }] })).toBe(false);
+    // disabled 合成行的最小形状（source 空串 + 无 error/version）。
+    expect(Value.Check(PluginsListResponse, {
+      plugins: [],
+      packages: [{ name: 'gone', source: '', status: 'disabled', enabled: false, contributions: [] }],
+    })).toBe(true);
+
+    // skills.list: DB 行 + 调用统计（无调用记录 lastAt 为 null）。
+    const skillRow = {
+      name: 'office-editing', version: 2, status: 'active',
+      sourceMemoryIds: ['mem-1'], sourceTraceIds: [], installedAt: 1, updatedAt: 2,
+      deoptReason: null,
+      stats: { total: 3, success: 2, failure: 0, unknown: 1, lastAt: 2 },
+    };
+    expect(Value.Check(SkillsListResponse, { skills: [skillRow] })).toBe(true);
+    expect(Value.Check(SkillsListResponse, {
+      skills: [{ ...skillRow, stats: { total: 0, success: 0, failure: 0, unknown: 0, lastAt: null } }],
+    })).toBe(true);
+    expect(Value.Check(SkillsListResponse, { skills: [{ ...skillRow, status: 'retired' }] })).toBe(false);
+
+    // tools.list: MAFW_TOOL_SPECS（parameters 是任意 JSON Schema 对象）。
+    expect(Value.Check(ToolsListResponse, {
+      tools: [{
+        name: 'mafw_add_memory', label: 'MAFW 记忆写入',
+        description: '保存一条记忆',
+        parameters: { type: 'object', properties: { content: { type: 'string' } }, required: ['content'] },
+        annotations: { readOnlyHint: false },
+      }],
+    })).toBe(true);
+    expect(Value.Check(ToolsListResponse, { tools: [{ name: 'x', parameters: {} }] })).toBe(false);
+
+    // config.get: 26 个 section 全在；缺一即失败（envelope 是封闭的）。
+    const config = Object.fromEntries(CONFIG_SECTION_KEYS_FOR_TEST().map((k) => [k, { sample: 1 }]));
+    expect(Value.Check(ConfigGetResponse, config)).toBe(true);
+    expect(Value.Check(ConfigGetResponse, { ...config, server: undefined })).toBe(false);
+    // section 内是运营可扩展的边界：任意 JSON 键都接受。
+    expect(Value.Check(ConfigGetResponse, { ...config, memory: { unknownFutureKey: [1, 2, 3] } })).toBe(true);
+    expect(Value.Check(ConfigGetResponse, { ...config, memory: 'not-an-object' })).toBe(false);
+
+    // scheduler.status: plan 四键恒在；404 的 {error} 不是 200 body。
+    expect(Value.Check(SchedulerStatusResponse, {
+      active: ['goal_1'], queued: [], capacity: 3,
+      plan: { start: ['goal_2'], waiting: ['goal_3'], humanSlot: true, capacity: 4 },
+    })).toBe(true);
+    expect(Value.Check(SchedulerStatusResponse, {
+      active: [], queued: [], capacity: 2, plan: { start: [], waiting: ['goal_3'] },
+    })).toBe(false);
+    expect(Value.Check(SchedulerStatusResponse, { error: 'pod not found' })).toBe(false);
   });
 });

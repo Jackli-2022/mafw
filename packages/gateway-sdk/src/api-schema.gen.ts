@@ -6425,7 +6425,20 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        servers: {
+                            name: string;
+                            status: "connected" | "disabled" | "failed" | "needs_auth" | "unknown";
+                            detail?: string;
+                            type?: "local" | "remote";
+                            url?: string;
+                            command?: string[];
+                            source?: string;
+                            disabled?: boolean;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -6870,7 +6883,35 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        plugins: {
+                            type: "runtime" | "media" | "usage" | "ui";
+                            name: string;
+                            file: string;
+                            status: "enabled" | "disabled" | "error" | "config-disabled";
+                            error?: string;
+                            size: number;
+                            mtime: string;
+                            builtin?: boolean;
+                            overridden?: boolean;
+                            pluginType?: string;
+                        }[];
+                        packages?: {
+                            name: string;
+                            source: string;
+                            status: "ok" | "error" | "disabled";
+                            enabled: boolean;
+                            error?: string;
+                            contributions: string[];
+                            version?: string;
+                            revision?: string;
+                            pendingRevision?: string;
+                            fingerprint?: string;
+                        }[];
+                        revision?: string;
+                    };
+                };
             };
         };
     };
@@ -7095,7 +7136,88 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        server: {
+                            [key: string]: unknown;
+                        };
+                        paths: {
+                            [key: string]: unknown;
+                        };
+                        timeouts: {
+                            [key: string]: unknown;
+                        };
+                        loop: {
+                            [key: string]: unknown;
+                        };
+                        goal: {
+                            [key: string]: unknown;
+                        };
+                        mobile: {
+                            [key: string]: unknown;
+                        };
+                        search: {
+                            [key: string]: unknown;
+                        };
+                        memory: {
+                            [key: string]: unknown;
+                        };
+                        decay: {
+                            [key: string]: unknown;
+                        };
+                        llm: {
+                            [key: string]: unknown;
+                        };
+                        logging: {
+                            [key: string]: unknown;
+                        };
+                        mcpserver: {
+                            [key: string]: unknown;
+                        };
+                        metrics: {
+                            [key: string]: unknown;
+                        };
+                        chat: {
+                            [key: string]: unknown;
+                        };
+                        manager: {
+                            [key: string]: unknown;
+                        };
+                        recall: {
+                            [key: string]: unknown;
+                        };
+                        usage: {
+                            [key: string]: unknown;
+                        };
+                        trajectory: {
+                            [key: string]: unknown;
+                        };
+                        approval: {
+                            [key: string]: unknown;
+                        };
+                        media: {
+                            [key: string]: unknown;
+                        };
+                        cognition: {
+                            [key: string]: unknown;
+                        };
+                        events: {
+                            [key: string]: unknown;
+                        };
+                        runtime: {
+                            [key: string]: unknown;
+                        };
+                        alignment: {
+                            [key: string]: unknown;
+                        };
+                        resources: {
+                            [key: string]: unknown;
+                        };
+                        env: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
             };
         };
     };
@@ -7665,7 +7787,19 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        active: string[];
+                        queued: string[];
+                        capacity: number;
+                        plan: {
+                            start: string[];
+                            waiting: string[];
+                            humanSlot: boolean;
+                            capacity: number;
+                        };
+                    };
+                };
             };
         };
     };
@@ -8925,7 +9059,27 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        skills: {
+                            name: string;
+                            version: number;
+                            status: "staging" | "active" | "paused" | "deprecated";
+                            sourceMemoryIds: string[];
+                            sourceTraceIds: string[];
+                            installedAt: number;
+                            updatedAt: number;
+                            deoptReason: string | null;
+                            stats: {
+                                total: number;
+                                success: number;
+                                failure: number;
+                                unknown: number;
+                                lastAt: number | null;
+                            };
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -9492,7 +9646,32 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            name: string;
+                            models: {
+                                id: string;
+                                name: string;
+                                providerID?: string;
+                                contextLimit?: number;
+                                outputLimit?: number;
+                                extensions?: {
+                                    [key: string]: unknown;
+                                };
+                            }[];
+                            connected?: boolean;
+                            extensions?: {
+                                [key: string]: unknown;
+                            };
+                        }[];
+                        connected?: string[];
+                        default?: {
+                            [key: string]: string;
+                        };
+                    };
+                };
             };
         };
     };
@@ -9510,7 +9689,28 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            label: string;
+                            description?: string;
+                            source: "mafw" | "runtime";
+                            selectable: boolean;
+                            default?: boolean;
+                            planning?: boolean;
+                            mode?: string;
+                            model?: {
+                                providerID: string;
+                                modelID: string;
+                                variant?: string;
+                            };
+                            extensions?: {
+                                [key: string]: unknown;
+                            };
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -12836,7 +13036,28 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        tools: {
+                            name: string;
+                            label?: string;
+                            description: string;
+                            parameters: {
+                                [key: string]: unknown;
+                            };
+                            annotations?: {
+                                title?: string;
+                                readOnlyHint?: boolean;
+                                destructiveHint?: boolean;
+                                idempotentHint?: boolean;
+                                openWorldHint?: boolean;
+                            };
+                            outputSchema?: {
+                                [key: string]: unknown;
+                            };
+                        }[];
+                    };
+                };
             };
         };
     };
