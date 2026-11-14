@@ -45,6 +45,7 @@ API Commands:
   triage             List triage items (GET /api/triage)
 
 Runtime Plugin Commands:
+  plugins <list|doctor|install|kill|resume|quarantine|unquarantine|audit>
   plugin-check <file> [--preset core|conversation|autonomous|desktop] [--strict] [--json]
                      [--audit] [--events <events.jsonl>] [--contract <runtime-contract.json>] [--probe]
                      Offline plugin check: load + validate + dry-event samples (no LLM calls).
@@ -72,7 +73,7 @@ const COMMANDS = [
   'start', 'daemon', 'stop', 'status', 'restart', 'logs',
     'health', 'stats', 'projects', 'goals', 'register',
     'sessions', 'control', 'memory-search',
-    'automations', 'approvals', 'triage', 'restart-agent', 'plugin-test', 'plugin-check', 'route-check',
+    'automations', 'approvals', 'triage', 'restart-agent', 'plugin-test', 'plugin-check', 'plugins', 'route-check',
   'rotate-human-token',
   'office',
   'service-register', 'service-unregister',
@@ -211,6 +212,38 @@ function showLogs() {
   const lines = fs.readFileSync(LOG_FILE, 'utf-8').split(/\r?\n/);
   const tail = lines.length > 50 ? lines.slice(-50) : lines;
   console.log(tail.join('\n'));
+}
+
+async function pluginsCommand(args) {
+  let command;
+  try {
+    command = require(path.join(__dirname, '..', 'gateway', 'dist', 'cli', 'plugins-command.js'));
+  } catch (err) {
+    console.error(`plugins command is not built: ${err.message}`);
+    console.error('Run: npm run build');
+    process.exitCode = 1;
+    return;
+  }
+  const readHumanToken = () => {
+    if (process.env.MAFW_HUMAN_TOKEN) return process.env.MAFW_HUMAN_TOKEN;
+    const file = process.env.MAFW_HUMAN_TOKEN_FILE || path.join(os.homedir(), '.mafw', 'human.token');
+    try {
+      return fs.readFileSync(file, 'utf-8').trim() || null;
+    } catch {
+      return null;
+    }
+  };
+  process.exitCode = await command.runPluginsCommand(args, {
+    request: async (urlPath, method, body, humanToken) => httpRequest(
+      method,
+      urlPath,
+      body,
+      10000,
+      humanToken ? { 'X-MAFW-Human-Token': humanToken } : undefined,
+    ),
+    readHumanToken,
+    print: (text) => console.log(text),
+  });
 }
 
 async function callApi(name, method, urlPath, body) {
@@ -494,6 +527,7 @@ async function main() {
     case 'restart-agent': await callApi('restart-agent', 'POST', '/api/runtime/restart-agent'); break;
     case 'rotate-human-token': await runHumanTokenRotation(); break;
     case 'plugin-test': await runConformance(); break;
+    case 'plugins': await pluginsCommand(process.argv.slice(3)); break;
     case 'route-check': await runRouteCheck(); break;
     case 'stats': await callApi('stats', 'GET', '/api/stats'); break;
     case 'projects': await callApi('projects', 'GET', '/api/projects'); break;
