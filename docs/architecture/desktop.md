@@ -547,6 +547,15 @@ attention 通知链整体移交 `2026-11-04-pod-event-layer-ambient-attention-de
 - runtime 不支持时 `/` 不显示技能分组，路由返回中性 503。
 - runtime command 的 `agent` / `model` 元数据由 Desktop 透传给 `session.command`。
 
+### MCP 管理页（2026-11-14）
+
+- 一级导航新增 `mcp`（IconRail 的 `mcp` 图标 + `/mcp` 命令），不再只埋在 Config → 扩展。
+- 页面数据来自 `window.api.mafw.mcp.servers()`（gateway `/api/mcp/servers`），展示
+  服务器总数、已连接、需要处理（needs_auth + failed）、未连接/已禁用摘要，以及每个服务器的
+  `已连接 / 需要认证 / 连接失败 / 已禁用 / 未知` 状态。
+- 支持连接 / 断开、复制认证命令、添加服务器、删除配置文件项；`mcpApi` 缺失时显示中性空态。
+- Config → 扩展里的 MCP 管理仍保留；两者共用同一套 gateway API。
+
 ### Pod 事件层与常驻注意力（2026-11-04，进行中）
 
 spec `docs/superpowers/specs/2026-11-04-pod-event-layer-ambient-attention-design.md`，plan
