@@ -10177,6 +10177,17 @@
         "tags": [
           "plugins"
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -10200,6 +10211,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -10213,6 +10235,17 @@
         "tags": [
           "plugins"
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -10226,6 +10259,17 @@
         "tags": [
           "plugins"
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -10249,6 +10293,26 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "reason"
+                ],
+                "properties": {
+                  "reason": {
+                    "minLength": 1,
+                    "description": "Why the package is being isolated; stored in state and the trust audit (empty → 400).",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -10272,6 +10336,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -10287,7 +10362,145 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "events"
+                  ],
+                  "properties": {
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "at",
+                          "action",
+                          "result"
+                        ],
+                        "properties": {
+                          "id": {
+                            "description": "Audit row id (`pa_<uuid>`).",
+                            "type": "string"
+                          },
+                          "at": {
+                            "description": "ISO timestamp written when the action ran.",
+                            "type": "string"
+                          },
+                          "action": {
+                            "anyOf": [
+                              {
+                                "const": "install",
+                                "type": "string"
+                              },
+                              {
+                                "const": "install.rejected",
+                                "type": "string"
+                              },
+                              {
+                                "const": "enable",
+                                "type": "string"
+                              },
+                              {
+                                "const": "disable",
+                                "type": "string"
+                              },
+                              {
+                                "const": "remove",
+                                "type": "string"
+                              },
+                              {
+                                "const": "reload",
+                                "type": "string"
+                              },
+                              {
+                                "const": "apply",
+                                "type": "string"
+                              },
+                              {
+                                "const": "activate.failed",
+                                "type": "string"
+                              },
+                              {
+                                "const": "quarantine",
+                                "type": "string"
+                              },
+                              {
+                                "const": "unquarantine",
+                                "type": "string"
+                              },
+                              {
+                                "const": "safe-mode.on",
+                                "type": "string"
+                              },
+                              {
+                                "const": "safe-mode.off",
+                                "type": "string"
+                              },
+                              {
+                                "const": "rollback",
+                                "type": "string"
+                              },
+                              {
+                                "const": "doctor",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "package": {
+                            "description": "Package name; absent for gateway-wide actions (safe-mode.on/off).",
+                            "type": "string"
+                          },
+                          "version": {
+                            "type": "string"
+                          },
+                          "fingerprint": {
+                            "type": "string"
+                          },
+                          "principalKind": {
+                            "description": "human | device | service | local (principal that acted).",
+                            "type": "string"
+                          },
+                          "principalMethod": {
+                            "type": "string"
+                          },
+                          "sessionId": {
+                            "description": "Originating session when the action came from a session-bound client.",
+                            "type": "string"
+                          },
+                          "result": {
+                            "anyOf": [
+                              {
+                                "const": "ok",
+                                "type": "string"
+                              },
+                              {
+                                "const": "failed",
+                                "type": "string"
+                              },
+                              {
+                                "const": "denied",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "detail": {
+                            "description": "Allowlisted diagnostic detail (reason / permissions / consent / versions / doctorSummary).",
+                            "type": "object",
+                            "patternProperties": {
+                              "^(.*)$": {}
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -10310,7 +10523,44 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "name",
+                    "lastGood"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "lastGood": {
+                      "type": "object",
+                      "required": [
+                        "fingerprint",
+                        "savedAt"
+                      ],
+                      "properties": {
+                        "version": {
+                          "description": "Snapshot version; absent for legacy single-file packages.",
+                          "type": "string"
+                        },
+                        "fingerprint": {
+                          "description": "Content fingerprint the snapshot was promoted with.",
+                          "type": "string"
+                        },
+                        "savedAt": {
+                          "description": "ISO timestamp of the snapshot (promotion time).",
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -10331,6 +10581,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"

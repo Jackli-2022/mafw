@@ -167,6 +167,7 @@ import {
   SessionSubagentResultResponse,
 } from '../../src/routes/schemas/observability';
 import { A2AAgentCardResponse } from '../../src/routes/schemas/a2a';
+import { PluginsAuditResponse, PluginLastGoodResponse } from '../../src/routes/schemas/plugin-recovery';
 import { handleAttention } from '../../src/routes/attention';
 import { handleDecisionList } from '../../src/routes/decisions';
 import type { PodGoalView } from '../../src/core/pod/pod-view';
@@ -3721,7 +3722,7 @@ describe('api-contract: E10g request bodies (W1 session writes)', () => {
     return body;
   }
 
-  test('write ops with a requestBody count matches the coverage ledger (182 = P0 3 + W1 35 + W2W3 33 + W4 29 + W5 24 + W6 26 + W7 30 + W8 2)', () => {
+  test('write ops with a requestBody count matches the coverage ledger (189 = P0 3 + W1 35 + W2W3 33 + W4 29 + W5 24 + W6 26 + W7 30 + W8 2 + P6 7)', () => {
     const withBody: string[] = [];
     for (const methods of Object.values<any>(contract.paths)) {
       for (const [method, op] of Object.entries<any>(methods)) {
@@ -3729,8 +3730,12 @@ describe('api-contract: E10g request bodies (W1 session writes)', () => {
         if (op.requestBody) withBody.push(op.operationId);
       }
     }
-    expect(withBody).toHaveLength(182);
+    expect(withBody).toHaveLength(189);
     expect(withBody).toEqual(expect.arrayContaining([
+      // Phase 6 plugin recovery (E10g-fix): quarantine has a body, the rest are
+      // empty-object opt-in bodies, so all seven carry a requestBody.
+      'plugins.quarantine', 'plugins.doctor', 'plugins.doctorAll', 'plugins.kill',
+      'plugins.resume', 'plugins.unquarantine', 'plugins.rollback',
       'session.create', 'tasks.submit', 'pods.tasks.create',
       'session.config.set', 'session.promptAsync', 'structured.submit',
       'tasks.message', 'terminal.create', 'fileHistory.snapshot',
@@ -4729,7 +4734,7 @@ describe('api-contract: E10g request bodies (W8 cognition gate / rewrite)', () =
         if (op.requestBody) withBody.push(op.operationId);
       }
     }
-    expect(withBody).toHaveLength(182);
+    expect(withBody).toHaveLength(189);
     expect(withBody).toEqual(expect.arrayContaining(['cognition.gate', 'cognition.rewrite']));
     for (const id of [
       'plugins.install',
@@ -4741,5 +4746,85 @@ describe('api-contract: E10g request bodies (W8 cognition gate / rewrite)', () =
     ]) {
       expect(`${id}:${withBody.includes(id)}`).toBe(`${id}:false`);
     }
+  });
+});
+
+describe('api-contract: Phase 6 plugin recovery routes (E10g-fix)', () => {
+  function opOf(operationId: string): any {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const op of Object.values<any>(methods)) {
+        if (op?.operationId === operationId) return op;
+      }
+    }
+    throw new Error(`operation not found: ${operationId}`);
+  }
+
+  function schemaOf(operationId: string): any {
+    const body = opOf(operationId).requestBody;
+    expect(`${operationId}:requestBody`).toBe(`${operationId}:${body ? 'requestBody' : 'missing'}`);
+    return body.content['application/json'].schema;
+  }
+
+  test('quarantine requires a reason; the other six POSTs take no body', () => {
+    const quarantine = schemaOf('plugins.quarantine');
+    expect(quarantine.required).toEqual(['reason']);
+    expect(quarantine.properties.reason.type).toBe('string');
+    expect(quarantine.properties.reason.minLength).toBe(1);
+
+    // Handlers read only the path (`:name`) and the principal headers
+    // (`principalOf` / `assertHuman`), so there is no body field to declare.
+    for (const id of [
+      'plugins.doctorAll',
+      'plugins.doctor',
+      'plugins.kill',
+      'plugins.resume',
+      'plugins.unquarantine',
+      'plugins.rollback',
+    ]) {
+      const body = opOf(id).requestBody;
+      expect(`${id}:${body.required}`).toBe(`${id}:false`);
+      expect(`${id}:${JSON.stringify(Object.keys(body.content['application/json'].schema.properties ?? {}))}`)
+        .toBe(`${id}:[]`);
+    }
+    // Human-only actions must never advertise an actor field in the body.
+    expect(schemaOf('plugins.kill').additionalProperties).toBeUndefined();
+  });
+
+  test('plugins.audit / plugins.lastGood responses match the handler payloads', () => {
+    expect(Value.Check(PluginsAuditResponse, {
+      events: [{
+        id: 'pa_1',
+        at: '2026-11-14T00:00:00.000Z',
+        action: 'quarantine',
+        package: 'demo',
+        version: '1.0.0',
+        fingerprint: 'abc',
+        principalKind: 'human',
+        principalMethod: 'device',
+        result: 'ok',
+        detail: { reason: 'boom' },
+      }],
+    })).toBe(true);
+    // An empty audit table is a valid 200.
+    expect(Value.Check(PluginsAuditResponse, { events: [] })).toBe(true);
+    // `action` is the closed PluginAuditAction enum: a typo is not an audit event.
+    expect(Value.Check(PluginsAuditResponse, {
+      events: [{ id: 'pa_1', at: 'x', action: 'nope', result: 'ok' }],
+    })).toBe(false);
+
+    expect(Value.Check(PluginLastGoodResponse, {
+      name: 'demo',
+      lastGood: { version: '1.0.0', fingerprint: 'abc', savedAt: '2026-11-14T00:00:00.000Z' },
+    })).toBe(true);
+    // Legacy single-file packages have no manifest version.
+    expect(Value.Check(PluginLastGoodResponse, {
+      name: 'demo',
+      lastGood: { fingerprint: 'abc', savedAt: '2026-11-14T00:00:00.000Z' },
+    })).toBe(true);
+    // fingerprint is the store's only hard requirement.
+    expect(Value.Check(PluginLastGoodResponse, {
+      name: 'demo',
+      lastGood: { savedAt: 'x' },
+    })).toBe(false);
   });
 });

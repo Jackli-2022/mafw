@@ -3,7 +3,8 @@
 // `scripts/schema-coverage.cjs` parses `route-catalog.ts` (no TS import, no
 // generated SDK artifact) and reports how many catalog ops carry a 200
 // response schema. This test pins that report against the catalog:
-//   - the 125 ops covered through E10f-D (13 pre-E10 + 16 E10 + 8 E10b-1 + 7 E10b-2 +
+//   - the 127 ops covered through E10g-fix（E10f-D 的 125 + Phase 6 的
+//     `plugins.audit` / `plugins.lastGood`）(13 pre-E10 + 16 E10 + 8 E10b-1 + 7 E10b-2 +
 //     1 E11-1 + 8 E10c-1 + 8 E10d-1 + 8 E10e-1 + 16 E10f-A + 16 E10f-B + 16 E10f-C +
 //     8 E10f-D) must each
 //     keep their `response` — a silent schema deletion fails here;
@@ -93,7 +94,9 @@ const E10_COVERED_OPS = [
   'permissions.list',
   'permissions.listAllowlist',
   'permissions.listRules',
+  'plugins.audit',
   'plugins.client',
+  'plugins.lastGood',
   'plugins.list',
   'pod.events.list',
   'pods.a2aCard',
@@ -173,8 +176,11 @@ function catalogOps(): Array<{ operationId: string; hasResponse: boolean }> {
   }));
 }
 
-/** E10g: write ops = everything that is not a GET (query-only surface). */
-const WRITE_OPS_TOTAL = 188;
+/**
+ * E10g: write ops = everything that is not a GET (query-only surface).
+ * 188 before main's Phase 6 merge, +7 plugin recovery POSTs = 195.
+ */
+const WRITE_OPS_TOTAL = 195;
 
 /** P0 pilots：requestBody 管线的第一批（始终保留，不随批次回退）。 */
 const E10G_P0_REQUEST_OPS = ['pods.tasks.create', 'session.create', 'tasks.submit'];
@@ -633,6 +639,33 @@ const E10G_W7_EXCLUDED_OPS: Record<string, string> = {
  */
 const E10G_W8_REQUEST_OPS = ['cognition.gate', 'cognition.rewrite'];
 
+/**
+ * E10g-fix（main Phase 6 集成）：main 新增 7 个 plugin 自愈面 POST。
+ * handler 事实（`routes/plugin-packages.ts`）：
+ *   - `plugins.quarantine` 读 `{reason}`（缺失 / 空串 → 400），JSON body 必填；
+ *   - 其余 6 个只读路径 `:name` 与凭据头部（`_req` / `principalOf(req)` /
+ *     `assertHuman(req)`）→ 空对象 + `requestRequired:false`。
+ */
+const E10G_P6_REQUEST_OPS = [
+  'plugins.doctor',
+  'plugins.doctorAll',
+  'plugins.kill',
+  'plugins.quarantine',
+  'plugins.resume',
+  'plugins.rollback',
+  'plugins.unquarantine',
+];
+
+/** P6 的「无 body 字段」动作（空对象 + `requestRequired:false`）。 */
+const E10G_P6_EMPTY_OPS = [
+  'plugins.doctor',
+  'plugins.doctorAll',
+  'plugins.kill',
+  'plugins.resume',
+  'plugins.rollback',
+  'plugins.unquarantine',
+];
+
 
 function catalogById(): Map<string, { hasRequest: boolean; request?: object; requestRequired?: boolean }> {
   return new Map(
@@ -673,7 +706,7 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(lost).toEqual([]);
   });
 
-  it('the catalog covered set equals the ledger exactly, and the catalog still has 318 ops', () => {
+  it('the catalog covered set equals the ledger exactly, and the catalog still has 327 ops', () => {
     const ops = catalogOps();
     const covered = ops
       .filter((op) => op.hasResponse)
@@ -1137,9 +1170,40 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(rewriteSchema.properties.input.type).toBe('object');
   });
 
-  // Closing arithmetic for the E10g scope: 188 write ops = 182 declared requests +
-  // 6 excluded (W6 1 + W7 5). Nothing is left unaccounted for after W8.
-  it('E10g request arithmetic closes on 188 (W8: 182 covered + 6 excluded)', () => {
+  // E10g-fix: main's Phase 6 plugin recovery writes join the ledger. 195 write
+  // ops = 189 covered + 6 excluded.
+  it('every Phase 6 plugin recovery write op declares a request schema (catalog requests >= 189)', () => {
+    const byId = catalogById();
+    const missing = E10G_P6_REQUEST_OPS.filter((id) => !byId.get(id)?.hasRequest);
+    expect(missing).toEqual([]);
+    const requests = catalogWriteOps().filter((op) => op.hasRequest).map((op) => op.operationId);
+    expect(requests.length).toBeGreaterThanOrEqual(189);
+    // No duplicate ids in the batch (a typo would hide here otherwise).
+    expect(new Set(E10G_P6_REQUEST_OPS).size).toBe(E10G_P6_REQUEST_OPS.length);
+  });
+
+  it('P6 body-ignored actions use an empty object schema with requestRequired:false', () => {
+    const byId = catalogById();
+    const problems: string[] = [];
+    for (const id of E10G_P6_EMPTY_OPS) {
+      const def = byId.get(id);
+      if (!def?.hasRequest) { problems.push(`${id}: missing request`); continue; }
+      if (def.requestRequired !== false) problems.push(`${id}: requestRequired must be false`);
+      const props = (def.request as { properties?: Record<string, unknown> }).properties ?? {};
+      if (Object.keys(props).length !== 0) problems.push(`${id}: expected empty object, got ${Object.keys(props).join(',')}`);
+    }
+    expect(problems).toEqual([]);
+    expect(E10G_P6_EMPTY_OPS.filter((id) => !E10G_P6_REQUEST_OPS.includes(id))).toEqual([]);
+    // The one JSON-body op in the batch: quarantine's `reason` is required.
+    const quarantine = byId.get('plugins.quarantine');
+    if (!quarantine?.hasRequest) throw new Error('plugins.quarantine: missing request');
+    expect((quarantine.request as any).required).toEqual(['reason']);
+    expect(quarantine.requestRequired).toBeUndefined();
+  });
+
+  // Closing arithmetic for the E10g(-fix) scope: 195 write ops = 189 declared
+  // requests + 6 excluded (W6 1 + W7 5). Nothing is left unaccounted for.
+  it('E10g request arithmetic closes on 195 (189 covered + 6 excluded)', () => {
     const covered = new Set(catalogWriteOps().filter((op) => op.hasRequest).map((op) => op.operationId));
     const excluded = new Set([
       ...Object.keys(E10G_W6_EXCLUDED_OPS),
@@ -1154,7 +1218,7 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
       'plugins.install',
       'pods.a2a',
     ]);
-    expect(covered.size).toBe(182);
+    expect(covered.size).toBe(189);
     expect(excluded.size).toBe(6);
     expect([...covered].filter((id) => excluded.has(id))).toEqual([]);
     expect(covered.size + excluded.size).toBe(WRITE_OPS_TOTAL);

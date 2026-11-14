@@ -8700,7 +8700,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8720,7 +8724,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8738,7 +8746,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8756,7 +8768,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8776,7 +8792,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Why the package is being isolated; stored in state and the trust audit (empty → 400). */
+                    reason: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8796,7 +8819,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8821,7 +8848,31 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        events: {
+                            /** @description Audit row id (`pa_<uuid>`). */
+                            id: string;
+                            /** @description ISO timestamp written when the action ran. */
+                            at: string;
+                            action: "install" | "install.rejected" | "enable" | "disable" | "remove" | "reload" | "apply" | "activate.failed" | "quarantine" | "unquarantine" | "safe-mode.on" | "safe-mode.off" | "rollback" | "doctor";
+                            /** @description Package name; absent for gateway-wide actions (safe-mode.on/off). */
+                            package?: string;
+                            version?: string;
+                            fingerprint?: string;
+                            /** @description human | device | service | local (principal that acted). */
+                            principalKind?: string;
+                            principalMethod?: string;
+                            /** @description Originating session when the action came from a session-bound client. */
+                            sessionId?: string;
+                            result: "ok" | "failed" | "denied";
+                            /** @description Allowlisted diagnostic detail (reason / permissions / consent / versions / doctorSummary). */
+                            detail?: {
+                                [key: string]: unknown;
+                            };
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -8841,7 +8892,19 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        name: string;
+                        lastGood: {
+                            /** @description Snapshot version; absent for legacy single-file packages. */
+                            version?: string;
+                            /** @description Content fingerprint the snapshot was promoted with. */
+                            fingerprint: string;
+                            /** @description ISO timestamp of the snapshot (promotion time). */
+                            savedAt: string;
+                        };
+                    };
+                };
             };
         };
     };
@@ -8854,7 +8917,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {

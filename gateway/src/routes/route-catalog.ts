@@ -274,6 +274,11 @@ import {
   PluginWebTicketRequest,
 } from './schemas/plugin-write';
 import {
+  PluginLastGoodResponse,
+  PluginQuarantineRequest,
+  PluginsAuditResponse,
+} from './schemas/plugin-recovery';
+import {
   RuntimeConformanceRequest,
   RuntimeConfigUpdateRequest,
   RuntimeDryEventRequest,
@@ -440,15 +445,15 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/plugins/:name/reload', operationId: 'plugins.reload', tags: ['plugins'], request: EmptyRequest, requestRequired: false },
   { method: 'POST', path: '/api/plugins/:name/actions/:action', operationId: 'plugins.invoke', tags: ['plugins'], request: PluginInvokeRequest, requestRequired: false },
   // Phase 6 自愈面（main 合并进来的 9 个 op）：contract 见 schemas/plugin-recovery.ts
-  { method: 'POST', path: '/api/plugins/doctor', operationId: 'plugins.doctorAll', tags: ['plugins'] },
-  { method: 'POST', path: '/api/plugins/:name/doctor', operationId: 'plugins.doctor', tags: ['plugins'] },
-  { method: 'POST', path: '/api/plugins/kill', operationId: 'plugins.kill', tags: ['plugins'] },
-  { method: 'POST', path: '/api/plugins/resume', operationId: 'plugins.resume', tags: ['plugins'] },
-  { method: 'POST', path: '/api/plugins/:name/quarantine', operationId: 'plugins.quarantine', tags: ['plugins'] },
-  { method: 'POST', path: '/api/plugins/:name/unquarantine', operationId: 'plugins.unquarantine', tags: ['plugins'] },
-  { method: 'GET', path: '/api/plugins/audit', operationId: 'plugins.audit', tags: ['plugins'] },
-  { method: 'GET', path: '/api/plugins/:name/last-good', operationId: 'plugins.lastGood', tags: ['plugins'] },
-  { method: 'POST', path: '/api/plugins/:name/rollback', operationId: 'plugins.rollback', tags: ['plugins'] },
+  { method: 'POST', path: '/api/plugins/doctor', operationId: 'plugins.doctorAll', tags: ['plugins'], request: EmptyRequest, requestRequired: false },
+  { method: 'POST', path: '/api/plugins/:name/doctor', operationId: 'plugins.doctor', tags: ['plugins'], request: EmptyRequest, requestRequired: false },
+  { method: 'POST', path: '/api/plugins/kill', operationId: 'plugins.kill', tags: ['plugins'], request: EmptyRequest, requestRequired: false },
+  { method: 'POST', path: '/api/plugins/resume', operationId: 'plugins.resume', tags: ['plugins'], request: EmptyRequest, requestRequired: false },
+  { method: 'POST', path: '/api/plugins/:name/quarantine', operationId: 'plugins.quarantine', tags: ['plugins'], request: PluginQuarantineRequest },
+  { method: 'POST', path: '/api/plugins/:name/unquarantine', operationId: 'plugins.unquarantine', tags: ['plugins'], request: EmptyRequest, requestRequired: false },
+  { method: 'GET', path: '/api/plugins/audit', operationId: 'plugins.audit', tags: ['plugins'], response: PluginsAuditResponse },
+  { method: 'GET', path: '/api/plugins/:name/last-good', operationId: 'plugins.lastGood', tags: ['plugins'], response: PluginLastGoodResponse },
+  { method: 'POST', path: '/api/plugins/:name/rollback', operationId: 'plugins.rollback', tags: ['plugins'], request: EmptyRequest, requestRequired: false },
   // Plugin web surfaces (spec 2026-11-09 §5.5): the desktop main process mints
   // the package-bound ticket through the SDK; asset/events stay browser-only
   // (internal, see NON_SDK_ROUTES).

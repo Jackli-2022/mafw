@@ -2,10 +2,10 @@
 //
 // `RouteDef.request` is the catalog's single source for a write op's request
 // body (`toOpenApiPaths()` projects it to `requestBody`; the gateway never
-// validates at runtime — the handler stays the source of truth). After E10g the
-// 188 write ops (every non-GET op) close as:
+// validates at runtime — the handler stays the source of truth). After the
+// Phase 6 merge the 195 write ops (every non-GET op) close as:
 //
-//   182 covered + 6 explicitly excluded = 188
+//   189 covered + 6 explicitly excluded = 195
 //
 // This test is the final ledger: every write op must be *exactly one* of
 // "declares a request" or "recorded in REQUEST_EXCLUDED with a reason". A new
@@ -20,11 +20,14 @@
 // `mobile.mediaTaskAsk`) — the write surface is not left unreachable.
 import { buildRouteCatalog } from '../../../src/routes/route-catalog';
 
-/** Every non-GET catalog op (the request-body denominator established in E10g-P0). */
-const WRITE_OPS_TOTAL = 188;
+/**
+ * Every non-GET catalog op (the request-body denominator established in E10g-P0).
+ * 188 through E10g-W8, +7 Phase 6 plugin recovery POSTs (E10g-fix) = 195.
+ */
+const WRITE_OPS_TOTAL = 195;
 
 /** Ops that declare a `request` schema (JSON body, optional body, or empty object). */
-const COVERED_TOTAL = 182;
+const COVERED_TOTAL = 189;
 
 /**
  * Declared request bodies with no enumerable fields (`EmptyRequest` / bare
@@ -33,13 +36,14 @@ const COVERED_TOTAL = 182;
  * says "no fields", not "any body" and not "a required object".
  *
  * 12 session + 9 task/terminal/pod + 13 goal/lead/standing + 7 event/human-gate
- * + 6 mcp/plugin/runtime + 6 memory/device/token = 53.
+ * + 6 mcp/plugin/runtime + 6 memory/device/token + 6 Phase 6 plugin recovery
+ * (doctorAll / doctor / kill / resume / unquarantine / rollback) = 59.
  *
  * `session.suspend` / `session.resume` / `session.discardRun` are *not* fieldless:
  * `routes/session-run.ts` reads `reason` / `runId`, so they moved to the
  * optional-body class (E10g-fix F1).
  */
-const CLOSED_EMPTY_TOTAL = 53;
+const CLOSED_EMPTY_TOTAL = 59;
 
 /**
  * Write ops whose body is *not* a JSON body, with the reason it is excluded.
@@ -106,7 +110,7 @@ describe('request-coverage: ledger for catalog request bodies (E10g)', () => {
     expect(Object.keys(REQUEST_EXCLUDED)).toHaveLength(6);
   });
 
-  it('closes on 188 = 182 covered + 6 excluded', () => {
+  it('closes on 195 = 189 covered + 6 excluded', () => {
     const ops = writeOps();
     const covered = ops.filter((op) => Boolean(op.request)).map((op) => op.operationId);
     expect(ops).toHaveLength(WRITE_OPS_TOTAL);
