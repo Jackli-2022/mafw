@@ -8209,7 +8209,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        ok: true;
+                    };
+                };
             };
         };
     };
@@ -8233,7 +8238,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        ok: true;
+                    };
+                };
             };
         };
     };
@@ -8268,7 +8278,22 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @description Optimistic-lock token the apply / remove / restore call must echo back. */
+                        token: string;
+                        /** @description Absolute path of the runtime config file the write would touch. */
+                        target: string;
+                        /** @description Unified diff of the would-be write (gateway never rewrites it). */
+                        diff: string;
+                        /** @description Backup file the adapter would create before writing. */
+                        backup?: string;
+                        /** @description Config subtrees the adapter keeps verbatim (adapter-owned labels). */
+                        preserved?: string[];
+                        /** @description Adapter-emitted warnings about the previewed write. */
+                        warnings?: string[];
+                    };
+                };
             };
         };
     };
@@ -8293,7 +8318,22 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @description Optimistic-lock token the apply / remove / restore call must echo back. */
+                        token: string;
+                        /** @description Absolute path of the runtime config file the write would touch. */
+                        target: string;
+                        /** @description Unified diff of the would-be write (gateway never rewrites it). */
+                        diff: string;
+                        /** @description Backup file the adapter would create before writing. */
+                        backup?: string;
+                        /** @description Config subtrees the adapter keeps verbatim (adapter-owned labels). */
+                        preserved?: string[];
+                        /** @description Adapter-emitted warnings about the previewed write. */
+                        warnings?: string[];
+                    };
+                };
             };
         };
     };
@@ -8335,7 +8375,18 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @description The config file was persisted. */
+                        applied: boolean;
+                        /** @description The active runtime picked the new config up without a restart. */
+                        runtimeApplied: boolean;
+                        /** @description Backup file written before the mutation. */
+                        backup?: string;
+                        /** @description Runtime-side apply error (present when runtimeApplied is false). */
+                        error?: string;
+                    };
+                };
             };
         };
     };
@@ -8367,7 +8418,18 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @description The config file was persisted. */
+                        applied: boolean;
+                        /** @description The active runtime picked the new config up without a restart. */
+                        runtimeApplied: boolean;
+                        /** @description Backup file written before the mutation. */
+                        backup?: string;
+                        /** @description Runtime-side apply error (present when runtimeApplied is false). */
+                        error?: string;
+                    };
+                };
             };
         };
     };
@@ -8399,7 +8461,18 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @description The config file was persisted. */
+                        applied: boolean;
+                        /** @description The active runtime picked the new config up without a restart. */
+                        runtimeApplied: boolean;
+                        /** @description Backup file written before the mutation. */
+                        backup?: string;
+                        /** @description Runtime-side apply error (present when runtimeApplied is false). */
+                        error?: string;
+                    };
+                };
             };
         };
     };
@@ -8428,7 +8501,16 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        ok: boolean;
+                        message?: string;
+                        text?: string;
+                        error?: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
             };
         };
     };
@@ -8512,7 +8594,17 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        success: true;
+                        /** @description Newly created (or lazily ensured) manager session id. */
+                        sessionId: string;
+                        /** @description Archived Lead session id; present only when created is rotated. */
+                        previousSessionId?: string;
+                        created: "initial" | "rotated";
+                    };
+                };
             };
         };
     };
@@ -8592,7 +8684,14 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        status: "ok";
+                        /** @description Project directory that was registered (echoed verbatim). */
+                        registered: string;
+                    };
+                };
             };
         };
     };
@@ -8909,7 +9008,21 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        success: true;
+                        active: {
+                            /** @description Active runtime facade identity (bare name, no dialect suffix). */
+                            name: string;
+                            capabilities: {
+                                [key: string]: boolean;
+                            };
+                        };
+                        /** @description True when an environment override pins the runtime for this process. */
+                        envOverride: boolean;
+                    };
+                };
             };
         };
     };
@@ -8931,7 +9044,14 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        success: true;
+                        /** @description Restart mode reported by the runtime adapter. */
+                        mode: string;
+                    };
+                };
             };
         };
     };
@@ -9038,7 +9158,20 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        type: "runtime" | "media" | "usage" | "ui";
+                        name: string;
+                        file: string;
+                        status: "enabled" | "disabled" | "error" | "config-disabled";
+                        error?: string;
+                        size: number;
+                        mtime: string;
+                        builtin?: boolean;
+                        overridden?: boolean;
+                        pluginType?: string;
+                    };
+                };
             };
         };
     };
@@ -9067,7 +9200,26 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @description Package name from the manifest. */
+                        name: string;
+                        /** @description Manifest version; absent for legacy packages. */
+                        version?: string;
+                        /** @description Committed revision now serving clients. */
+                        activeRevision?: string;
+                        /** @description Staged revision awaiting apply. */
+                        pendingRevision?: string;
+                        /** @description Package files exist in the plugin root. */
+                        saved: boolean;
+                        application: "applied" | "pending" | "failed";
+                        /** @description Activation error when application is failed. */
+                        error?: string;
+                        kind?: "trusted" | "untrusted";
+                        /** @description Unified contract version declared by the manifest. */
+                        apiVersion?: 1 | 2;
+                    };
+                };
             };
         };
     };
@@ -9092,7 +9244,22 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @description false is a diagnostic answer, still HTTP 200. */
+                        ok: boolean;
+                        name?: string;
+                        version?: string;
+                        /** @description Contribution kinds of the candidate (ui / actions / runtime / …). */
+                        contributions?: string[];
+                        /** @description Validated Web surface summary; absent when the candidate declares none. */
+                        webSurfaces?: {
+                            count: number;
+                            rail: boolean;
+                        };
+                        error?: string;
+                    };
+                };
             };
         };
     };
@@ -9120,7 +9287,33 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        name: string;
+                        version?: string;
+                        activeRevision?: string;
+                        pendingRevision?: string;
+                        saved: boolean;
+                        enabled: boolean;
+                        application: "applied" | "pending" | "failed";
+                        error?: string;
+                        /** @description The committed package owns the active runtime; the caller must switch it. */
+                        runtimeSwitchRequired?: boolean;
+                        /** @description Runtime contribution name (loader key) when runtimeSwitchRequired is true. */
+                        runtimeName?: string;
+                    } | {
+                        type: "runtime" | "media" | "usage" | "ui";
+                        name: string;
+                        file: string;
+                        status: "enabled" | "disabled" | "error" | "config-disabled";
+                        error?: string;
+                        size: number;
+                        mtime: string;
+                        builtin?: boolean;
+                        overridden?: boolean;
+                        pluginType?: string;
+                    };
+                };
             };
         };
     };
@@ -9148,7 +9341,33 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        name: string;
+                        version?: string;
+                        activeRevision?: string;
+                        pendingRevision?: string;
+                        saved: boolean;
+                        enabled: boolean;
+                        application: "applied" | "pending" | "failed";
+                        error?: string;
+                        /** @description The committed package owns the active runtime; the caller must switch it. */
+                        runtimeSwitchRequired?: boolean;
+                        /** @description Runtime contribution name (loader key) when runtimeSwitchRequired is true. */
+                        runtimeName?: string;
+                    } | {
+                        type: "runtime" | "media" | "usage" | "ui";
+                        name: string;
+                        file: string;
+                        status: "enabled" | "disabled" | "error" | "config-disabled";
+                        error?: string;
+                        size: number;
+                        mtime: string;
+                        builtin?: boolean;
+                        overridden?: boolean;
+                        pluginType?: string;
+                    };
+                };
             };
         };
     };
@@ -9176,7 +9395,25 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        name: string;
+                        version?: string;
+                        activeRevision?: string;
+                        pendingRevision?: string;
+                        saved: boolean;
+                        enabled: boolean;
+                        application: "applied" | "pending" | "failed";
+                        error?: string;
+                        /** @description The committed package owns the active runtime; the caller must switch it. */
+                        runtimeSwitchRequired?: boolean;
+                        /** @description Runtime contribution name (loader key) when runtimeSwitchRequired is true. */
+                        runtimeName?: string;
+                    } | {
+                        /** @constant */
+                        ok: true;
+                    };
+                };
             };
         };
     };
@@ -9200,7 +9437,33 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        name: string;
+                        version?: string;
+                        activeRevision?: string;
+                        pendingRevision?: string;
+                        saved: boolean;
+                        enabled: boolean;
+                        application: "applied" | "pending" | "failed";
+                        error?: string;
+                        runtimeSwitchRequired?: boolean;
+                        runtimeName?: string;
+                        /** @description Only present when the committed package owns the active runtime. */
+                        runtimeSwitch?: "applied" | "failed" | "required";
+                        /** @description Present when runtimeSwitch is failed. */
+                        runtimeError?: string;
+                        /** @description Present when runtimeSwitch is applied. */
+                        active?: {
+                            /** @description Runtime facade identity the gateway switched to. */
+                            name: string;
+                            /** @description Runtime-declared capability bits (owner = runtime contract). */
+                            capabilities: {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
             };
         };
     };
@@ -9224,7 +9487,22 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        name: string;
+                        version?: string;
+                        activeRevision?: string;
+                        pendingRevision?: string;
+                        saved: boolean;
+                        enabled: boolean;
+                        application: "applied" | "pending" | "failed";
+                        error?: string;
+                        /** @description The committed package owns the active runtime; the caller must switch it. */
+                        runtimeSwitchRequired?: boolean;
+                        /** @description Runtime contribution name (loader key) when runtimeSwitchRequired is true. */
+                        runtimeName?: string;
+                    };
+                };
             };
         };
     };
@@ -9258,7 +9536,17 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        package: string;
+                        action: string;
+                        /** @description Committed client snapshot the result belongs to. */
+                        revision: string;
+                        output?: {
+                            [key: string]: unknown;
+                        } | unknown[] | string | number | boolean | null;
+                    };
+                };
             };
         };
     };
@@ -9280,7 +9568,27 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        name: string;
+                        version?: string;
+                        /** @description 0 when the manifest could not be resolved. */
+                        apiVersion: number;
+                        kind: "trusted" | "untrusted" | "unknown";
+                        fingerprint?: string;
+                        ok: boolean;
+                        checks: {
+                            /** @description Check id (manifest / api-version / integrity / …). */
+                            id: string;
+                            status: "pass" | "warn" | "fail";
+                            message: string;
+                            /** @description Suggested remediation for warn/fail checks. */
+                            fix?: string;
+                        }[];
+                        /** @description ISO timestamp of the diagnosis. */
+                        generatedAt: string;
+                    }[];
+                };
             };
         };
     };
@@ -9304,7 +9612,27 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        name: string;
+                        version?: string;
+                        /** @description 0 when the manifest could not be resolved. */
+                        apiVersion: number;
+                        kind: "trusted" | "untrusted" | "unknown";
+                        fingerprint?: string;
+                        ok: boolean;
+                        checks: {
+                            /** @description Check id (manifest / api-version / integrity / …). */
+                            id: string;
+                            status: "pass" | "warn" | "fail";
+                            message: string;
+                            /** @description Suggested remediation for warn/fail checks. */
+                            fix?: string;
+                        }[];
+                        /** @description ISO timestamp of the diagnosis. */
+                        generatedAt: string;
+                    };
+                };
             };
         };
     };
@@ -9326,7 +9654,14 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        safeMode: true;
+                        /** @description Packages deactivated by the kill switch. */
+                        stopped: string[];
+                    };
+                };
             };
         };
     };
@@ -9348,7 +9683,13 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        safeMode: false;
+                        activated: string[];
+                    };
+                };
             };
         };
     };
@@ -9375,7 +9716,14 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        name: string;
+                        /** @constant */
+                        quarantined: true;
+                        reason: string;
+                    };
+                };
             };
         };
     };
@@ -9399,7 +9747,13 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        name: string;
+                        /** @constant */
+                        quarantined: false;
+                    };
+                };
             };
         };
     };
@@ -9497,7 +9851,22 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        name: string;
+                        version?: string;
+                        activeRevision?: string;
+                        pendingRevision?: string;
+                        saved: boolean;
+                        enabled: boolean;
+                        application: "applied" | "pending" | "failed";
+                        error?: string;
+                        /** @description The committed package owns the active runtime; the caller must switch it. */
+                        runtimeSwitchRequired?: boolean;
+                        /** @description Runtime contribution name (loader key) when runtimeSwitchRequired is true. */
+                        runtimeName?: string;
+                    };
+                };
             };
         };
     };
@@ -9526,7 +9895,14 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @description Path-scoped ticket secret (also set as an HttpOnly cookie). */
+                        ticket: string;
+                        /** @description Epoch milliseconds; the client renews before expiry. */
+                        expiresAt: number;
+                    };
+                };
             };
         };
     };
@@ -9702,7 +10078,14 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        success: true;
+                        /** @description Config sections that only take effect after a gateway restart. */
+                        restartRequired: string[];
+                    };
+                };
             };
         };
     };
@@ -9750,7 +10133,15 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        status: "ok";
+                        config: {
+                            [key: string]: unknown;
+                        } | null;
+                    };
+                };
             };
         };
     };
@@ -13724,7 +14115,44 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        success: true;
+                        recall: {
+                            workerModel: {
+                                providerID: string;
+                                modelID: string;
+                            };
+                        };
+                        media: {
+                            provider?: string;
+                            model?: string;
+                            image?: {
+                                provider?: string;
+                                model?: string;
+                            };
+                            video?: {
+                                provider?: string;
+                                model?: string;
+                            };
+                            audio?: {
+                                provider?: string;
+                                model?: string;
+                            };
+                        };
+                        goal: {
+                            nodeModel?: {
+                                providerID: string;
+                                modelID: string;
+                            } | null;
+                            techLeadModel?: {
+                                providerID: string;
+                                modelID: string;
+                            } | null;
+                        };
+                    };
+                };
             };
         };
     };
@@ -18849,7 +19277,20 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        plugins: {
+                            file: string;
+                            name?: string;
+                            status: "ok" | "error";
+                            error?: string;
+                            capabilities?: {
+                                [key: string]: boolean;
+                            };
+                            alias?: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -18880,7 +19321,51 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @description Echo of the requested mapping plugin; absent for identity passthrough. */
+                        plugin?: string;
+                        mapping?: {
+                            matched: boolean;
+                            /** @description Canonical type the mapping rewrote the event to. */
+                            to?: string;
+                            /** @description True when the mapping table dropped the event. */
+                            dropped?: boolean;
+                        };
+                        /** @description Canonical event type; null when the mapping dropped the event. */
+                        type: string | null;
+                        /** @description Whether the type is a known canonical event. */
+                        known: boolean;
+                        /** @description Normalized facets; null for dropped events and assembled tool primitives. */
+                        facets: {
+                            sessionID: string | null;
+                            step: boolean;
+                            chatSignal: "delta" | "complete" | "error" | null;
+                            compaction: "start" | "end" | null;
+                            toolCommand: string | null;
+                            approval: {
+                                requestId: string;
+                                toolName: string;
+                                patterns: string[];
+                                metadata?: {
+                                    [key: string]: unknown;
+                                };
+                            } | null;
+                        } | null;
+                        flow?: {
+                            modeA: "passthrough" | "rewrite" | "drop";
+                            desktop: "handled" | "ignore";
+                            tui: "handled" | "ignore";
+                            note?: string;
+                        };
+                        /** @description Field-contract warnings raised while checking the sample. */
+                        warnings: string[];
+                        /** @description Runtime-native events emitted by the ToolPart assembler (owner = runtime-core RawRuntimeEvent). */
+                        assembled?: {
+                            [key: string]: unknown;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -18907,7 +19392,24 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @description Active runtime facade identity that was exercised. */
+                        runtime: string;
+                        results: {
+                            /** @description Scenario id (chat-roundtrip / tool-visibility / …). */
+                            id: string;
+                            title: string;
+                            pass: boolean;
+                            failures: string[];
+                            durationMs: number;
+                        }[];
+                        summary: {
+                            pass: number;
+                            fail: number;
+                        };
+                    };
+                };
             };
         };
     };

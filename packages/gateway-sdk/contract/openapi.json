@@ -10769,7 +10769,23 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "const": true,
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -10803,7 +10819,23 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "const": true,
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -10869,7 +10901,51 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "token",
+                    "target",
+                    "diff"
+                  ],
+                  "properties": {
+                    "token": {
+                      "description": "Optimistic-lock token the apply / remove / restore call must echo back.",
+                      "type": "string"
+                    },
+                    "target": {
+                      "description": "Absolute path of the runtime config file the write would touch.",
+                      "type": "string"
+                    },
+                    "diff": {
+                      "description": "Unified diff of the would-be write (gateway never rewrites it).",
+                      "type": "string"
+                    },
+                    "backup": {
+                      "description": "Backup file the adapter would create before writing.",
+                      "type": "string"
+                    },
+                    "preserved": {
+                      "description": "Config subtrees the adapter keeps verbatim (adapter-owned labels).",
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "warnings": {
+                      "description": "Adapter-emitted warnings about the previewed write.",
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -10902,7 +10978,51 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "token",
+                    "target",
+                    "diff"
+                  ],
+                  "properties": {
+                    "token": {
+                      "description": "Optimistic-lock token the apply / remove / restore call must echo back.",
+                      "type": "string"
+                    },
+                    "target": {
+                      "description": "Absolute path of the runtime config file the write would touch.",
+                      "type": "string"
+                    },
+                    "diff": {
+                      "description": "Unified diff of the would-be write (gateway never rewrites it).",
+                      "type": "string"
+                    },
+                    "backup": {
+                      "description": "Backup file the adapter would create before writing.",
+                      "type": "string"
+                    },
+                    "preserved": {
+                      "description": "Config subtrees the adapter keeps verbatim (adapter-owned labels).",
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "warnings": {
+                      "description": "Adapter-emitted warnings about the previewed write.",
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -10980,7 +11100,36 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "applied",
+                    "runtimeApplied"
+                  ],
+                  "properties": {
+                    "applied": {
+                      "description": "The config file was persisted.",
+                      "type": "boolean"
+                    },
+                    "runtimeApplied": {
+                      "description": "The active runtime picked the new config up without a restart.",
+                      "type": "boolean"
+                    },
+                    "backup": {
+                      "description": "Backup file written before the mutation.",
+                      "type": "string"
+                    },
+                    "error": {
+                      "description": "Runtime-side apply error (present when runtimeApplied is false).",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -11023,7 +11172,36 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "applied",
+                    "runtimeApplied"
+                  ],
+                  "properties": {
+                    "applied": {
+                      "description": "The config file was persisted.",
+                      "type": "boolean"
+                    },
+                    "runtimeApplied": {
+                      "description": "The active runtime picked the new config up without a restart.",
+                      "type": "boolean"
+                    },
+                    "backup": {
+                      "description": "Backup file written before the mutation.",
+                      "type": "string"
+                    },
+                    "error": {
+                      "description": "Runtime-side apply error (present when runtimeApplied is false).",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -11072,7 +11250,36 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "applied",
+                    "runtimeApplied"
+                  ],
+                  "properties": {
+                    "applied": {
+                      "description": "The config file was persisted.",
+                      "type": "boolean"
+                    },
+                    "runtimeApplied": {
+                      "description": "The active runtime picked the new config up without a restart.",
+                      "type": "boolean"
+                    },
+                    "backup": {
+                      "description": "Backup file written before the mutation.",
+                      "type": "string"
+                    },
+                    "error": {
+                      "description": "Runtime-side apply error (present when runtimeApplied is false).",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -11113,7 +11320,33 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Command result (MafwCommandResult); custom commands may add arbitrary keys.",
+                  "type": "object",
+                  "required": [
+                    "ok"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -11314,7 +11547,45 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "sessionId",
+                    "created"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "sessionId": {
+                      "description": "Newly created (or lazily ensured) manager session id.",
+                      "type": "string"
+                    },
+                    "previousSessionId": {
+                      "description": "Archived Lead session id; present only when created is rotated.",
+                      "type": "string"
+                    },
+                    "created": {
+                      "anyOf": [
+                        {
+                          "const": "initial",
+                          "type": "string"
+                        },
+                        {
+                          "const": "rotated",
+                          "type": "string"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -11451,7 +11722,28 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "registered"
+                  ],
+                  "properties": {
+                    "status": {
+                      "const": "ok",
+                      "type": "string"
+                    },
+                    "registered": {
+                      "description": "Project directory that was registered (echoed verbatim).",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "summary": "Register current project",
@@ -12205,7 +12497,50 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "active",
+                    "envOverride"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "active": {
+                      "type": "object",
+                      "required": [
+                        "name",
+                        "capabilities"
+                      ],
+                      "properties": {
+                        "name": {
+                          "description": "Active runtime facade identity (bare name, no dialect suffix).",
+                          "type": "string"
+                        },
+                        "capabilities": {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(.*)$": {
+                              "type": "boolean"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "envOverride": {
+                      "description": "True when an environment override pins the runtime for this process.",
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -12229,7 +12564,28 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "mode"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "mode": {
+                      "description": "Restart mode reported by the runtime adapter.",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -12505,7 +12861,88 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "name",
+                    "file",
+                    "status",
+                    "size",
+                    "mtime"
+                  ],
+                  "properties": {
+                    "type": {
+                      "anyOf": [
+                        {
+                          "const": "runtime",
+                          "type": "string"
+                        },
+                        {
+                          "const": "media",
+                          "type": "string"
+                        },
+                        {
+                          "const": "usage",
+                          "type": "string"
+                        },
+                        {
+                          "const": "ui",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "file": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "anyOf": [
+                        {
+                          "const": "enabled",
+                          "type": "string"
+                        },
+                        {
+                          "const": "disabled",
+                          "type": "string"
+                        },
+                        {
+                          "const": "error",
+                          "type": "string"
+                        },
+                        {
+                          "const": "config-disabled",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "size": {
+                      "type": "number"
+                    },
+                    "mtime": {
+                      "type": "string"
+                    },
+                    "builtin": {
+                      "type": "boolean"
+                    },
+                    "overridden": {
+                      "type": "boolean"
+                    },
+                    "pluginType": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -12546,7 +12983,86 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "name",
+                    "saved",
+                    "application"
+                  ],
+                  "properties": {
+                    "name": {
+                      "description": "Package name from the manifest.",
+                      "type": "string"
+                    },
+                    "version": {
+                      "description": "Manifest version; absent for legacy packages.",
+                      "type": "string"
+                    },
+                    "activeRevision": {
+                      "description": "Committed revision now serving clients.",
+                      "type": "string"
+                    },
+                    "pendingRevision": {
+                      "description": "Staged revision awaiting apply.",
+                      "type": "string"
+                    },
+                    "saved": {
+                      "description": "Package files exist in the plugin root.",
+                      "type": "boolean"
+                    },
+                    "application": {
+                      "anyOf": [
+                        {
+                          "const": "applied",
+                          "type": "string"
+                        },
+                        {
+                          "const": "pending",
+                          "type": "string"
+                        },
+                        {
+                          "const": "failed",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "error": {
+                      "description": "Activation error when application is failed.",
+                      "type": "string"
+                    },
+                    "kind": {
+                      "anyOf": [
+                        {
+                          "const": "trusted",
+                          "type": "string"
+                        },
+                        {
+                          "const": "untrusted",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "apiVersion": {
+                      "description": "Unified contract version declared by the manifest.",
+                      "anyOf": [
+                        {
+                          "const": 1,
+                          "type": "number"
+                        },
+                        {
+                          "const": 2,
+                          "type": "number"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -12579,7 +13095,55 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "description": "false is a diagnostic answer, still HTTP 200.",
+                      "type": "boolean"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "contributions": {
+                      "description": "Contribution kinds of the candidate (ui / actions / runtime / …).",
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "webSurfaces": {
+                      "description": "Validated Web surface summary; absent when the candidate declares none.",
+                      "type": "object",
+                      "required": [
+                        "count",
+                        "rail"
+                      ],
+                      "properties": {
+                        "count": {
+                          "type": "number"
+                        },
+                        "rail": {
+                          "type": "boolean"
+                        }
+                      }
+                    },
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -12634,7 +13198,149 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "{package} → UpdateResult; {type, filename} → PluginEntry.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "name",
+                        "saved",
+                        "enabled",
+                        "application"
+                      ],
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "string"
+                        },
+                        "activeRevision": {
+                          "type": "string"
+                        },
+                        "pendingRevision": {
+                          "type": "string"
+                        },
+                        "saved": {
+                          "type": "boolean"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "application": {
+                          "anyOf": [
+                            {
+                              "const": "applied",
+                              "type": "string"
+                            },
+                            {
+                              "const": "pending",
+                              "type": "string"
+                            },
+                            {
+                              "const": "failed",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "error": {
+                          "type": "string"
+                        },
+                        "runtimeSwitchRequired": {
+                          "description": "The committed package owns the active runtime; the caller must switch it.",
+                          "type": "boolean"
+                        },
+                        "runtimeName": {
+                          "description": "Runtime contribution name (loader key) when runtimeSwitchRequired is true.",
+                          "type": "string"
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "type",
+                        "name",
+                        "file",
+                        "status",
+                        "size",
+                        "mtime"
+                      ],
+                      "properties": {
+                        "type": {
+                          "anyOf": [
+                            {
+                              "const": "runtime",
+                              "type": "string"
+                            },
+                            {
+                              "const": "media",
+                              "type": "string"
+                            },
+                            {
+                              "const": "usage",
+                              "type": "string"
+                            },
+                            {
+                              "const": "ui",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "file": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "anyOf": [
+                            {
+                              "const": "enabled",
+                              "type": "string"
+                            },
+                            {
+                              "const": "disabled",
+                              "type": "string"
+                            },
+                            {
+                              "const": "error",
+                              "type": "string"
+                            },
+                            {
+                              "const": "config-disabled",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "error": {
+                          "type": "string"
+                        },
+                        "size": {
+                          "type": "number"
+                        },
+                        "mtime": {
+                          "type": "string"
+                        },
+                        "builtin": {
+                          "type": "boolean"
+                        },
+                        "overridden": {
+                          "type": "boolean"
+                        },
+                        "pluginType": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -12689,7 +13395,149 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "{package} → UpdateResult; {type, filename} → PluginEntry.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "name",
+                        "saved",
+                        "enabled",
+                        "application"
+                      ],
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "string"
+                        },
+                        "activeRevision": {
+                          "type": "string"
+                        },
+                        "pendingRevision": {
+                          "type": "string"
+                        },
+                        "saved": {
+                          "type": "boolean"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "application": {
+                          "anyOf": [
+                            {
+                              "const": "applied",
+                              "type": "string"
+                            },
+                            {
+                              "const": "pending",
+                              "type": "string"
+                            },
+                            {
+                              "const": "failed",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "error": {
+                          "type": "string"
+                        },
+                        "runtimeSwitchRequired": {
+                          "description": "The committed package owns the active runtime; the caller must switch it.",
+                          "type": "boolean"
+                        },
+                        "runtimeName": {
+                          "description": "Runtime contribution name (loader key) when runtimeSwitchRequired is true.",
+                          "type": "string"
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "type",
+                        "name",
+                        "file",
+                        "status",
+                        "size",
+                        "mtime"
+                      ],
+                      "properties": {
+                        "type": {
+                          "anyOf": [
+                            {
+                              "const": "runtime",
+                              "type": "string"
+                            },
+                            {
+                              "const": "media",
+                              "type": "string"
+                            },
+                            {
+                              "const": "usage",
+                              "type": "string"
+                            },
+                            {
+                              "const": "ui",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "file": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "anyOf": [
+                            {
+                              "const": "enabled",
+                              "type": "string"
+                            },
+                            {
+                              "const": "disabled",
+                              "type": "string"
+                            },
+                            {
+                              "const": "error",
+                              "type": "string"
+                            },
+                            {
+                              "const": "config-disabled",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "error": {
+                          "type": "string"
+                        },
+                        "size": {
+                          "type": "number"
+                        },
+                        "mtime": {
+                          "type": "string"
+                        },
+                        "builtin": {
+                          "type": "boolean"
+                        },
+                        "overridden": {
+                          "type": "boolean"
+                        },
+                        "pluginType": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -12744,7 +13592,84 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "{package} → UpdateResult; {type, filename} → {ok:true}.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "name",
+                        "saved",
+                        "enabled",
+                        "application"
+                      ],
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "string"
+                        },
+                        "activeRevision": {
+                          "type": "string"
+                        },
+                        "pendingRevision": {
+                          "type": "string"
+                        },
+                        "saved": {
+                          "type": "boolean"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "application": {
+                          "anyOf": [
+                            {
+                              "const": "applied",
+                              "type": "string"
+                            },
+                            {
+                              "const": "pending",
+                              "type": "string"
+                            },
+                            {
+                              "const": "failed",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "error": {
+                          "type": "string"
+                        },
+                        "runtimeSwitchRequired": {
+                          "description": "The committed package owns the active runtime; the caller must switch it.",
+                          "type": "boolean"
+                        },
+                        "runtimeName": {
+                          "description": "Runtime contribution name (loader key) when runtimeSwitchRequired is true.",
+                          "type": "string"
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "ok"
+                      ],
+                      "properties": {
+                        "ok": {
+                          "const": true,
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -12778,7 +13703,107 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "name",
+                    "saved",
+                    "enabled",
+                    "application"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "activeRevision": {
+                      "type": "string"
+                    },
+                    "pendingRevision": {
+                      "type": "string"
+                    },
+                    "saved": {
+                      "type": "boolean"
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "application": {
+                      "anyOf": [
+                        {
+                          "const": "applied",
+                          "type": "string"
+                        },
+                        {
+                          "const": "pending",
+                          "type": "string"
+                        },
+                        {
+                          "const": "failed",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "runtimeSwitchRequired": {
+                      "type": "boolean"
+                    },
+                    "runtimeName": {
+                      "type": "string"
+                    },
+                    "runtimeSwitch": {
+                      "description": "Only present when the committed package owns the active runtime.",
+                      "anyOf": [
+                        {
+                          "const": "applied",
+                          "type": "string"
+                        },
+                        {
+                          "const": "failed",
+                          "type": "string"
+                        },
+                        {
+                          "const": "required",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "runtimeError": {
+                      "description": "Present when runtimeSwitch is failed.",
+                      "type": "string"
+                    },
+                    "active": {
+                      "description": "Present when runtimeSwitch is applied.",
+                      "type": "object",
+                      "required": [
+                        "name",
+                        "capabilities"
+                      ],
+                      "properties": {
+                        "name": {
+                          "description": "Runtime facade identity the gateway switched to.",
+                          "type": "string"
+                        },
+                        "capabilities": {
+                          "description": "Runtime-declared capability bits (owner = runtime contract).",
+                          "type": "object",
+                          "patternProperties": {
+                            "^(.*)$": {}
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -12812,7 +13837,67 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "name",
+                    "saved",
+                    "enabled",
+                    "application"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "activeRevision": {
+                      "type": "string"
+                    },
+                    "pendingRevision": {
+                      "type": "string"
+                    },
+                    "saved": {
+                      "type": "boolean"
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "application": {
+                      "anyOf": [
+                        {
+                          "const": "applied",
+                          "type": "string"
+                        },
+                        {
+                          "const": "pending",
+                          "type": "string"
+                        },
+                        {
+                          "const": "failed",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "runtimeSwitchRequired": {
+                      "description": "The committed package owns the active runtime; the caller must switch it.",
+                      "type": "boolean"
+                    },
+                    "runtimeName": {
+                      "description": "Runtime contribution name (loader key) when runtimeSwitchRequired is true.",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -12869,7 +13954,58 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "package",
+                    "action",
+                    "revision"
+                  ],
+                  "properties": {
+                    "package": {
+                      "type": "string"
+                    },
+                    "action": {
+                      "type": "string"
+                    },
+                    "revision": {
+                      "description": "Committed client snapshot the result belongs to.",
+                      "type": "string"
+                    },
+                    "output": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": true,
+                          "description": "Plugin-defined action output object (owner = the package outputSchema).",
+                          "type": "object",
+                          "properties": {}
+                        },
+                        {
+                          "description": "Plugin-defined array output.",
+                          "type": "array",
+                          "items": {}
+                        },
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -12893,7 +14029,103 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "name",
+                      "apiVersion",
+                      "kind",
+                      "ok",
+                      "checks",
+                      "generatedAt"
+                    ],
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "version": {
+                        "type": "string"
+                      },
+                      "apiVersion": {
+                        "description": "0 when the manifest could not be resolved.",
+                        "type": "number"
+                      },
+                      "kind": {
+                        "anyOf": [
+                          {
+                            "const": "trusted",
+                            "type": "string"
+                          },
+                          {
+                            "const": "untrusted",
+                            "type": "string"
+                          },
+                          {
+                            "const": "unknown",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "fingerprint": {
+                        "type": "string"
+                      },
+                      "ok": {
+                        "type": "boolean"
+                      },
+                      "checks": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "status",
+                            "message"
+                          ],
+                          "properties": {
+                            "id": {
+                              "description": "Check id (manifest / api-version / integrity / …).",
+                              "type": "string"
+                            },
+                            "status": {
+                              "anyOf": [
+                                {
+                                  "const": "pass",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "warn",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "fail",
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "fix": {
+                              "description": "Suggested remediation for warn/fail checks.",
+                              "type": "string"
+                            }
+                          }
+                        }
+                      },
+                      "generatedAt": {
+                        "description": "ISO timestamp of the diagnosis.",
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -12927,7 +14159,100 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "name",
+                    "apiVersion",
+                    "kind",
+                    "ok",
+                    "checks",
+                    "generatedAt"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "apiVersion": {
+                      "description": "0 when the manifest could not be resolved.",
+                      "type": "number"
+                    },
+                    "kind": {
+                      "anyOf": [
+                        {
+                          "const": "trusted",
+                          "type": "string"
+                        },
+                        {
+                          "const": "untrusted",
+                          "type": "string"
+                        },
+                        {
+                          "const": "unknown",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "fingerprint": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "checks": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "status",
+                          "message"
+                        ],
+                        "properties": {
+                          "id": {
+                            "description": "Check id (manifest / api-version / integrity / …).",
+                            "type": "string"
+                          },
+                          "status": {
+                            "anyOf": [
+                              {
+                                "const": "pass",
+                                "type": "string"
+                              },
+                              {
+                                "const": "warn",
+                                "type": "string"
+                              },
+                              {
+                                "const": "fail",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "fix": {
+                            "description": "Suggested remediation for warn/fail checks.",
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "generatedAt": {
+                      "description": "ISO timestamp of the diagnosis.",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -12951,7 +14276,31 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "safeMode",
+                    "stopped"
+                  ],
+                  "properties": {
+                    "safeMode": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "stopped": {
+                      "description": "Packages deactivated by the kill switch.",
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -12975,7 +14324,30 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "safeMode",
+                    "activated"
+                  ],
+                  "properties": {
+                    "safeMode": {
+                      "const": false,
+                      "type": "boolean"
+                    },
+                    "activated": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -13018,7 +14390,31 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "name",
+                    "quarantined",
+                    "reason"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "quarantined": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -13052,7 +14448,27 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "name",
+                    "quarantined"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "quarantined": {
+                      "const": false,
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -13297,7 +14713,67 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "name",
+                    "saved",
+                    "enabled",
+                    "application"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "activeRevision": {
+                      "type": "string"
+                    },
+                    "pendingRevision": {
+                      "type": "string"
+                    },
+                    "saved": {
+                      "type": "boolean"
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "application": {
+                      "anyOf": [
+                        {
+                          "const": "applied",
+                          "type": "string"
+                        },
+                        {
+                          "const": "pending",
+                          "type": "string"
+                        },
+                        {
+                          "const": "failed",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "runtimeSwitchRequired": {
+                      "description": "The committed package owns the active runtime; the caller must switch it.",
+                      "type": "boolean"
+                    },
+                    "runtimeName": {
+                      "description": "Runtime contribution name (loader key) when runtimeSwitchRequired is true.",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -13345,7 +14821,28 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ticket",
+                    "expiresAt"
+                  ],
+                  "properties": {
+                    "ticket": {
+                      "description": "Path-scoped ticket secret (also set as an HttpOnly cookie).",
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "description": "Epoch milliseconds; the client renews before expiry.",
+                      "type": "number"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -13654,7 +15151,31 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "restartRequired"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "restartRequired": {
+                      "description": "Config sections that only take effect after a gateway restart.",
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -13709,7 +15230,37 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "config"
+                  ],
+                  "properties": {
+                    "status": {
+                      "const": "ok",
+                      "type": "string"
+                    },
+                    "config": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(.*)$": {}
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -26052,7 +27603,142 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "recall",
+                    "media",
+                    "goal"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "recall": {
+                      "type": "object",
+                      "required": [
+                        "workerModel"
+                      ],
+                      "properties": {
+                        "workerModel": {
+                          "type": "object",
+                          "required": [
+                            "providerID",
+                            "modelID"
+                          ],
+                          "properties": {
+                            "providerID": {
+                              "type": "string"
+                            },
+                            "modelID": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "media": {
+                      "type": "object",
+                      "properties": {
+                        "provider": {
+                          "type": "string"
+                        },
+                        "model": {
+                          "type": "string"
+                        },
+                        "image": {
+                          "type": "object",
+                          "properties": {
+                            "provider": {
+                              "type": "string"
+                            },
+                            "model": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "video": {
+                          "type": "object",
+                          "properties": {
+                            "provider": {
+                              "type": "string"
+                            },
+                            "model": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "audio": {
+                          "type": "object",
+                          "properties": {
+                            "provider": {
+                              "type": "string"
+                            },
+                            "model": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "goal": {
+                      "type": "object",
+                      "properties": {
+                        "nodeModel": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "required": [
+                                "providerID",
+                                "modelID"
+                              ],
+                              "properties": {
+                                "providerID": {
+                                  "type": "string"
+                                },
+                                "modelID": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "techLeadModel": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "required": [
+                                "providerID",
+                                "modelID"
+                              ],
+                              "properties": {
+                                "providerID": {
+                                  "type": "string"
+                                },
+                                "modelID": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -50321,7 +52007,63 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "plugins"
+                  ],
+                  "properties": {
+                    "plugins": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "file",
+                          "status"
+                        ],
+                        "properties": {
+                          "file": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "anyOf": [
+                              {
+                                "const": "ok",
+                                "type": "string"
+                              },
+                              {
+                                "const": "error",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "error": {
+                            "type": "string"
+                          },
+                          "capabilities": {
+                            "type": "object",
+                            "patternProperties": {
+                              "^(.*)$": {
+                                "type": "boolean"
+                              }
+                            }
+                          },
+                          "alias": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -50358,7 +52100,243 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "known",
+                    "facets",
+                    "warnings"
+                  ],
+                  "properties": {
+                    "plugin": {
+                      "description": "Echo of the requested mapping plugin; absent for identity passthrough.",
+                      "type": "string"
+                    },
+                    "mapping": {
+                      "type": "object",
+                      "required": [
+                        "matched"
+                      ],
+                      "properties": {
+                        "matched": {
+                          "type": "boolean"
+                        },
+                        "to": {
+                          "description": "Canonical type the mapping rewrote the event to.",
+                          "type": "string"
+                        },
+                        "dropped": {
+                          "description": "True when the mapping table dropped the event.",
+                          "type": "boolean"
+                        }
+                      }
+                    },
+                    "type": {
+                      "description": "Canonical event type; null when the mapping dropped the event.",
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "known": {
+                      "description": "Whether the type is a known canonical event.",
+                      "type": "boolean"
+                    },
+                    "facets": {
+                      "description": "Normalized facets; null for dropped events and assembled tool primitives.",
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "required": [
+                            "sessionID",
+                            "step",
+                            "chatSignal",
+                            "compaction",
+                            "toolCommand",
+                            "approval"
+                          ],
+                          "properties": {
+                            "sessionID": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "step": {
+                              "type": "boolean"
+                            },
+                            "chatSignal": {
+                              "anyOf": [
+                                {
+                                  "const": "delta",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "complete",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "error",
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "compaction": {
+                              "anyOf": [
+                                {
+                                  "const": "start",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "end",
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "toolCommand": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "approval": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "required": [
+                                    "requestId",
+                                    "toolName",
+                                    "patterns"
+                                  ],
+                                  "properties": {
+                                    "requestId": {
+                                      "type": "string"
+                                    },
+                                    "toolName": {
+                                      "type": "string"
+                                    },
+                                    "patterns": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "metadata": {
+                                      "type": "object",
+                                      "patternProperties": {
+                                        "^(.*)$": {}
+                                      }
+                                    }
+                                  }
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "flow": {
+                      "type": "object",
+                      "required": [
+                        "modeA",
+                        "desktop",
+                        "tui"
+                      ],
+                      "properties": {
+                        "modeA": {
+                          "anyOf": [
+                            {
+                              "const": "passthrough",
+                              "type": "string"
+                            },
+                            {
+                              "const": "rewrite",
+                              "type": "string"
+                            },
+                            {
+                              "const": "drop",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "desktop": {
+                          "anyOf": [
+                            {
+                              "const": "handled",
+                              "type": "string"
+                            },
+                            {
+                              "const": "ignore",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "tui": {
+                          "anyOf": [
+                            {
+                              "const": "handled",
+                              "type": "string"
+                            },
+                            {
+                              "const": "ignore",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "note": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "warnings": {
+                      "description": "Field-contract warnings raised while checking the sample.",
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "assembled": {
+                      "description": "Runtime-native events emitted by the ToolPart assembler (owner = runtime-core RawRuntimeEvent).",
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "patternProperties": {
+                          "^(.*)$": {}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -50394,7 +52372,74 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "runtime",
+                    "results",
+                    "summary"
+                  ],
+                  "properties": {
+                    "runtime": {
+                      "description": "Active runtime facade identity that was exercised.",
+                      "type": "string"
+                    },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "title",
+                          "pass",
+                          "failures",
+                          "durationMs"
+                        ],
+                        "properties": {
+                          "id": {
+                            "description": "Scenario id (chat-roundtrip / tool-visibility / …).",
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "pass": {
+                            "type": "boolean"
+                          },
+                          "failures": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "durationMs": {
+                            "type": "number"
+                          }
+                        }
+                      }
+                    },
+                    "summary": {
+                      "type": "object",
+                      "required": [
+                        "pass",
+                        "fail"
+                      ],
+                      "properties": {
+                        "pass": {
+                          "type": "number"
+                        },
+                        "fail": {
+                          "type": "number"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }

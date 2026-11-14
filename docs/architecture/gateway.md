@@ -1981,6 +1981,60 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
   断言；`api-contract.test.ts` 新增 8 条代表性断言；SDK `contract-compat.checks.ts`
   +9 条编译期等价。生成物 diff 恰好这 24 个 op（重跑幂等）。
 
+### E10h-R5（mcp / plugins / runtime / config / project / manager / commands / models 写响应 35 个）
+
+- 覆盖写响应 128 → **163/195**，total response 台账 254 → **289/327**（88.4%）。catalog 的
+  35 个 entry 只加 `response:`，请求契约与 handler 零改动。
+- 四个新文件按域拆：`routes/schemas/mcp-write-responses.ts`（7）、
+  `plugin-write-responses.ts`（17：含 Phase 6 自愈面 8 个）、`runtime-write-responses.ts`（6）、
+  `platform-write-responses.ts`（5：config / project / manager / commands / models）。
+  `schemas/meta.ts` 的 `PluginsEntrySchema`、`schemas/runtime-surface.ts` 的
+  `RuntimeCapabilitiesSchema` / `RuntimePluginStateSchema`、`schemas/media-voice.ts` 的
+  `ModelRefSchema` / `MediaConfigSchema` / `GoalModelConfigSchema` 加 `export`（无 wire 变化），
+  写响应复用而不是二次转写。
+- 复用读侧 DTO / 共享信封：`plugins.install` ≡ `plugins.list` item（同一个 `statEntry()`
+  投影）；`runtime.reload` 的 `plugins` item ≡ `runtime.get`（同一 loader 状态）；
+  `models.update` 的 `recall` / `media` / `goal` ≡ `models.get`（写后读回，同一批 schema）；
+  `mcp.connect` / `mcp.disconnect` 复用 R1 的 `{ok:true}` 信封。
+- mcp 面全部是 **runtime 适配器的已类型化 DTO**（owner = `@mafw/runtime-contract`
+  `RuntimeMcpConfigChannel`），gateway 只透传：`mcp.configPreview` /
+  `configPreviewRemove` ≡ `RuntimeMcpConfigPreview`（`token`/`target`/`diff` +
+  `backup?`/`preserved?`/`warnings?`），`mcp.configApply` / `configRestore` /
+  `configRemove` ≡ `RuntimeMcpConfigResult`（`applied` 与 `runtimeApplied` 是两个独立
+  布尔：写盘成功但热载失败是合法组合）。
+- plugin 面有三处**判别式双分支**（handler `assertBodyShape` 收窄 `{package}` vs
+  `{type,filename}`）：`plugins.enable|disable` → `UpdateResult` ｜ `PluginEntry`，
+  `plugins.delete` → `UpdateResult` ｜ `{ok:true}`。两个分支公共键只有 `name`，
+  所以必须是联合，收敛成一份会合法化 handler 永不发出的字段组合。
+- `plugins.apply` 在 `UpdateResult` 之上补运行时切换三态：
+  `runtimeSwitch:'required'|'applied'|'failed'`（无 switch 接线 / 成功 / 失败），
+  成功带 `active:{name,capabilities}`，失败带 `runtimeError`。
+- `plugins.invoke` 的 200 是网关信封 `{package,action,revision,output?}`；`output`
+  是**插件定义**边界（owner = 包的 `outputSchema`，gateway 只要求 JSON 可序列化 + ≤256KB），
+  因此声明为「开放对象 + 其余 JSON 形态」的联合，不枚举业务字段。
+- `plugins.doctor` / `doctorAll` 复用同一份 `PluginDoctorReport`
+  （`ok` 只看 `fail`；`{ok:false}` 检查报告仍可能是 200）；`plugins.check` 的
+  `{ok:false}` 也是诊断结果（200）。`plugins.kill` / `resume` 的 `safeMode`
+  是字面量 `true`/`false`，`quarantine` / `unquarantine` 的 `quarantined` 同理。
+- `runtime.dryEvent` 一个 schema 覆盖三条成功分支：映射丢弃（`type:null` +
+  `facets:null`）、工具三原语（`facets:null` + `assembled` 是 runtime 事件数组）、
+  普通事件（`facets` 对象 + 可选 `flow`）。`assembled` 归 `RawRuntimeEvent` 所有，
+  按开放对象数组建模。
+- `runtime.config.update` 回 `{status:'ok',config}`：`config` 是 merge 后的整份 runtime
+  Config（owner = runtime，可为 `null`），与 `runtime.config.get` 同口径。
+- `mafwCommands.run` 的 200 就是命令 handler 的 `MafwCommandResult`（`ok` + 常见三键），
+  自定义命令可追加任意键 → **本批唯一开放顶层对象**（owner = 命令注册表）。
+- `project.setCurrent`（`POST /register`）回 `{status:'ok',registered}`（目录回显，
+  不是 `Project` DTO）；`manager.rotate` 回 `{success:true,...ManagerRotateResult}`
+  （`created:'initial'|'rotated'`）；`config.set` 回 `{success:true,restartRequired[]}`。
+- 本批**排除 0、空体 200 为 0**；与 E10g 请求台账的两处具名例外：`plugins.install`
+  （请求是原始 `.js` 字节流被排除，响应仍是 JSON）与既有的 `pods.a2a`。
+- 守卫：`schema-coverage.test.ts` 写响应下界 128 → **163**，新增 R5 逐 op 清单（35）+
+  「只有命令结果是开放顶层对象」+「复用读侧 DTO（同 DTO 指向同一 schema 对象）」+
+  「action output 是开放边界」+「handler 字面量」断言；`api-contract.test.ts` 新增 13 条
+  代表性断言；SDK `contract-compat.checks.ts` +22 条编译期等价。生成物 diff 恰好这 35 个 op
+  （重跑幂等）。
+
 ---
 
 ## E11 身份 / 配额硬化（2026-11-13）

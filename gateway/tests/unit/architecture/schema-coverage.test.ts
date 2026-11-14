@@ -38,7 +38,7 @@ interface CoverageReport {
 const GATEWAY_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPT = path.join(GATEWAY_ROOT, 'scripts', 'schema-coverage.cjs');
 
-/** Baseline 分组 (E8 and earlier 13 + 8 session read (E10-1) + 8 pod/work read (E10-2) + 8 goal read (E10b-1) + 7 human-gate/permission read (E10b-2) + 1 human token rotate (E11-1) + 8 memory/recall/lead read (E10c-1) + 8 memory extra / lead.context / pod read (E10d-1) + 8 metadata/registry read (E10e-1) + 16 session/task/terminal/usage read (E10f-A) + 16 project/runtime/metadata read (E10f-B) + 16 goal/lead/event/standing/automation/pod read (E10f-C) + 8 observability/device/A2A read (E10f-D)) = 125 entries; E10f-D 收口时台账 127（含 humanToken.rotate 与 orchestration.outcomes），E10h-P0 +2 → 129，E10h-R1 的 35 个 session 写响应 → 164，E10h-R2 的 35 个 pod/task/terminal/fileHistory 写响应 → 199，E10h-R3 的 31 个 goal/decision/lead/standing/cognition 写响应 → 230，E10h-R4 的 24 个 event/automation/approvals/questions/triage/permissions 写响应 → 254。 */
+/** Baseline 分组 (E8 and earlier 13 + 8 session read (E10-1) + 8 pod/work read (E10-2) + 8 goal read (E10b-1) + 7 human-gate/permission read (E10b-2) + 1 human token rotate (E11-1) + 8 memory/recall/lead read (E10c-1) + 8 memory extra / lead.context / pod read (E10d-1) + 8 metadata/registry read (E10e-1) + 16 session/task/terminal/usage read (E10f-A) + 16 project/runtime/metadata read (E10f-B) + 16 goal/lead/event/standing/automation/pod read (E10f-C) + 8 observability/device/A2A read (E10f-D)) = 125 entries; E10f-D 收口时台账 127（含 humanToken.rotate 与 orchestration.outcomes），E10h-P0 +2 → 129，E10h-R1 的 35 个 session 写响应 → 164，E10h-R2 的 35 个 pod/task/terminal/fileHistory 写响应 → 199，E10h-R3 的 31 个 goal/decision/lead/standing/cognition 写响应 → 230，E10h-R4 的 24 个 event/automation/approvals/questions/triage/permissions 写响应 → 254，E10h-R5 的 35 个 mcp/plugins/runtime/config/project/manager/commands/models 写响应 → 289。 */
 const E10_COVERED_OPS = [
   'a2a.agentCard',
   'agent.capabilities',
@@ -59,6 +59,7 @@ const E10_COVERED_OPS = [
   'cognition.rewrite',
   'cognition.rules',
   'config.get',
+  'config.set',
   'dashboard.stats',
   'decisions.confirm',
   'decisions.draft',
@@ -119,7 +120,16 @@ const E10_COVERED_OPS = [
   'lead.topics.resume',
   'lead.workingSet',
   'mafwCommands.list',
+  'mafwCommands.run',
+  'manager.rotate',
   'manager.session',
+  'mcp.configApply',
+  'mcp.configPreview',
+  'mcp.configPreviewRemove',
+  'mcp.configRemove',
+  'mcp.configRestore',
+  'mcp.connect',
+  'mcp.disconnect',
   'mcp.servers',
   'media.plugins',
   'media.resolveTask',
@@ -133,6 +143,7 @@ const E10_COVERED_OPS = [
   'mobile.devicesList',
   'mobile.pairingCode',
   'models.get',
+  'models.update',
   'orchestration.outcomes',
   'permissions.addAllowlist',
   'permissions.addRule',
@@ -145,10 +156,27 @@ const E10_COVERED_OPS = [
   'permissions.reply',
   'permissions.replyRuntime',
   'permissions.setMode',
+  'plugins.apply',
   'plugins.audit',
+  'plugins.check',
   'plugins.client',
+  'plugins.delete',
+  'plugins.disable',
+  'plugins.doctor',
+  'plugins.doctorAll',
+  'plugins.enable',
+  'plugins.install',
+  'plugins.installPackage',
+  'plugins.invoke',
+  'plugins.kill',
   'plugins.lastGood',
   'plugins.list',
+  'plugins.quarantine',
+  'plugins.reload',
+  'plugins.resume',
+  'plugins.rollback',
+  'plugins.unquarantine',
+  'plugins.webTicket',
   'pod.events.list',
   'pod.events.seen',
   'pod.events.seenAll',
@@ -196,6 +224,7 @@ const E10_COVERED_OPS = [
   'presence.get',
   'project.current',
   'project.list',
+  'project.setCurrent',
   'providers.list',
   'python.status',
   'questions.list',
@@ -206,8 +235,14 @@ const E10_COVERED_OPS = [
   'recall.pinned',
   'recall.priors',
   'runtime.config.get',
+  'runtime.config.update',
+  'runtime.conformance',
   'runtime.contract',
+  'runtime.dryEvent',
   'runtime.get',
+  'runtime.reload',
+  'runtime.restartAgent',
+  'runtime.switch',
   'scheduler.status',
   'session.abort',
   'session.background',
@@ -487,6 +522,49 @@ const E10H_R4_WRITE_RESPONSE_OPS = [
   'triage.dismiss',
   'triage.propose',
   'triage.reject',
+];
+
+/**
+ * E10h-R5：mcp / plugins（含 Phase 6 自愈 8 个）/ runtime / config / project /
+ * manager / commands / models 共 35 个写 op 的 200 响应。与 R1-R4 同一台账
+ * （128 → 163）；按名钉住，删一个 `response:` 立刻按名失败。
+ */
+const E10H_R5_WRITE_RESPONSE_OPS = [
+  'config.set',
+  'mafwCommands.run',
+  'manager.rotate',
+  'mcp.configApply',
+  'mcp.configPreview',
+  'mcp.configPreviewRemove',
+  'mcp.configRemove',
+  'mcp.configRestore',
+  'mcp.connect',
+  'mcp.disconnect',
+  'models.update',
+  'plugins.apply',
+  'plugins.check',
+  'plugins.delete',
+  'plugins.disable',
+  'plugins.doctor',
+  'plugins.doctorAll',
+  'plugins.enable',
+  'plugins.install',
+  'plugins.installPackage',
+  'plugins.invoke',
+  'plugins.kill',
+  'plugins.quarantine',
+  'plugins.reload',
+  'plugins.resume',
+  'plugins.rollback',
+  'plugins.unquarantine',
+  'plugins.webTicket',
+  'project.setCurrent',
+  'runtime.config.update',
+  'runtime.conformance',
+  'runtime.dryEvent',
+  'runtime.reload',
+  'runtime.restartAgent',
+  'runtime.switch',
 ];
 
 /**
@@ -1071,10 +1149,11 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(E10G_P0_REQUEST_OPS.filter((id) => !byId.get(id)?.hasRequest)).toEqual([]);
   });
 
-  // E10h-P0/R1/R2/R3/R4: write-response ledger. Same parser, same 195 write-op
+  // E10h-P0/R1/R2/R3/R4/R5: write-response ledger. Same parser, same 195 write-op
   // denominator; `humanToken.rotate` (E11-1) + 2 P0 pilots + 35 R1 session writes +
   // 35 R2 pod/task/terminal/fileHistory writes + 31 R3 goal/decision/lead/standing/
-  // cognition writes + 24 R4 event/automation/human-gate writes = 128/195.
+  // cognition writes + 24 R4 event/automation/human-gate writes + 35 R5
+  // mcp/plugin/runtime/platform writes = 163/195.
   // Later batches only append, so the count is a floor.
   it('the script reports write-response coverage over the 195 write ops', () => {
     const report = runScript();
@@ -1084,14 +1163,15 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(write).toHaveLength(WRITE_OPS_TOTAL);
     expect(report.writeResponseTotal).toBe(WRITE_OPS_TOTAL);
     expect(report.writeResponses).toBe(covered.length);
-    expect(report.writeResponses).toBeGreaterThanOrEqual(128);
+    expect(report.writeResponses).toBeGreaterThanOrEqual(163);
     expect(report.writeResponseCovered).toEqual(covered);
     // Disjoint from the request ledger: the two scans are independent `response:`/
-    // `request:` hits on the same write ops — with one deliberate exception, `pods.a2a`,
-    // whose JSON-RPC envelope is modeled as an open 200 response while E10g excluded it
-    // from the request ledger (raw body owned by the A2A protocol).
+    // `request:` hits on the same write ops — with two deliberate exceptions:
+    // `pods.a2a` (raw JSON-RPC body excluded by E10g; JSON 200 envelope modeled) and
+    // `plugins.install` (raw `.js` byte stream excluded by E10g; JSON `PluginEntry`).
     const requestCovered = new Set(report.requestCovered);
-    expect(report.writeResponseCovered.filter((id) => !requestCovered.has(id))).toEqual(['pods.a2a']);
+    expect(report.writeResponseCovered.filter((id) => !requestCovered.has(id)))
+      .toEqual(['plugins.install', 'pods.a2a']);
   });
 
   it('P0 write-response pilots declare a 200 response schema', () => {
@@ -1103,10 +1183,12 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(E10H_P0_WRITE_RESPONSE_OPS.filter((id) => !byId.get(id)?.hasRequest)).toEqual([]);
     // A write response for a write op that declared no request would be a shape
     // nobody can construct: every covered write response still has a request, except
-    // `pods.a2a` (E10g excluded its raw JSON-RPC body; the 200 envelope is still JSON).
+    // `pods.a2a` (E10g excluded its raw JSON-RPC body; the 200 envelope is still JSON)
+    // and `plugins.install` (E10g excluded the raw `.js` bytes; the 200 is a PluginEntry).
+    const noRequestButResponded = new Set(['pods.a2a', 'plugins.install']);
     expect(
       catalogWriteOps()
-        .filter((op) => op.hasResponse && op.operationId !== 'pods.a2a')
+        .filter((op) => op.hasResponse && !noRequestButResponded.has(op.operationId))
         .map((op) => op.operationId)
         .every((id) => byId.get(id)?.hasRequest),
     ).toBe(true);
@@ -1798,5 +1880,142 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect([...covered].filter((id) => excluded.has(id))).toEqual([]);
     expect(covered.size + excluded.size).toBe(WRITE_OPS_TOTAL);
     expect(catalogWriteOps()).toHaveLength(WRITE_OPS_TOTAL);
+  });
+
+  // E10h-R5: mcp / plugins（Phase 6 自愈面在内）/ runtime / config / project /
+  // manager / commands / models 写响应，35 个。与 R1-R4 同一台账（128 → 163）；
+  // 按名钉住，删一个 `response:` 立刻按名失败，而不是只掉一个计数。
+  it('R5 mcp/plugin/runtime/platform write ops declare a 200 response schema (write responses >= 163)', () => {
+    const writes = catalogWriteOps();
+    const responded = new Set(writes.filter((op) => op.hasResponse).map((op) => op.operationId));
+
+    expect(E10H_R5_WRITE_RESPONSE_OPS.filter((id) => !responded.has(id))).toEqual([]);
+    expect(E10H_R5_WRITE_RESPONSE_OPS).toHaveLength(35);
+    // No duplicates inside the batch …
+    expect(new Set(E10H_R5_WRITE_RESPONSE_OPS).size).toBe(E10H_R5_WRITE_RESPONSE_OPS.length);
+    // … and no overlap with the earlier batches.
+    for (const earlier of [
+      E10H_P0_WRITE_RESPONSE_OPS,
+      E10H_R1_WRITE_RESPONSE_OPS,
+      E10H_R2_WRITE_RESPONSE_OPS,
+      E10H_R3_WRITE_RESPONSE_OPS,
+      E10H_R4_WRITE_RESPONSE_OPS,
+    ]) {
+      expect(E10H_R5_WRITE_RESPONSE_OPS.filter((id) => earlier.includes(id))).toEqual([]);
+    }
+    // 163 = humanToken.rotate + P0 2 + R1 35 + R2 35 + R3 31 + R4 24 + R5 35.
+    expect(responded.size).toBeGreaterThanOrEqual(163);
+  });
+
+  // 本批的 200 全是「有定义的对象 / 双分支联合」，只有命令结果是开放对象
+  // （自定义命令可以追加任意键）；插件 action 的 output 是嵌套边界，不影响顶层。
+  it('R5 responses model real bodies (the command result is the only open top-level object)', () => {
+    const responses = catalogResponseById();
+    const problems: string[] = [];
+    const openTopLevel = new Set(['mafwCommands.run']);
+    for (const id of E10H_R5_WRITE_RESPONSE_OPS) {
+      const schema = responses.get(id) as {
+        type?: string;
+        anyOf?: unknown[];
+        properties?: Record<string, unknown>;
+        additionalProperties?: unknown;
+      } | undefined;
+      if (!schema) { problems.push(`${id}: missing response`); continue; }
+      // plugins.enable|disable|delete 的判别式双分支（package vs legacy）。
+      if (schema.anyOf) {
+        if (schema.anyOf.length !== 2) problems.push(`${id}: expected 2 body branches`);
+        continue;
+      }
+      // plugins.doctorAll 是报告**数组**（checkAll），其余都是单个 body 对象。
+      const arraySchema = schema as { type?: string; items?: { type?: string } };
+      if (arraySchema.type === 'array') {
+        if (arraySchema.items?.type !== 'object') problems.push(`${id}: expected report items`);
+        continue;
+      }
+      if (schema.type !== 'object') problems.push(`${id}: expected object`);
+      if (Object.keys(schema.properties ?? {}).length === 0) problems.push(`${id}: expected declared fields`);
+      if (schema.additionalProperties !== undefined && !openTopLevel.has(id)) {
+        problems.push(`${id}: must not be open`);
+      }
+    }
+    expect(problems).toEqual([]);
+    // 三个双分支 op 的第二支都是「legacy 单文件」的回执，不是第二份业务 DTO。
+    const deleteBranches = (responses.get('plugins.delete') as any).anyOf;
+    expect(deleteBranches[1].required).toEqual(['ok']);
+    const toggleBranches = (responses.get('plugins.enable') as any).anyOf;
+    expect(toggleBranches[1].required).toEqual([
+      'type', 'name', 'file', 'status', 'size', 'mtime',
+    ]);
+    // enable / disable 是同一个双分支（handler 只有 enabled 布尔不同）。
+    expect(responses.get('plugins.disable')).toBe(responses.get('plugins.enable'));
+  });
+
+  // 写响应必须复用读侧 DTO，不写第二份转写：同一 DTO 的多次出现要指向同一
+  // schema 对象，跨读写的复用要逐段相等。
+  it('R5 reuses the read-side DTOs (no second transcription)', () => {
+    const responses = catalogResponseById();
+
+    // mcp：preview / preview-remove 同一个 preview DTO；apply / remove / restore
+    // 同一个 result DTO；connect / disconnect 共用 `{ok:true}` 信封。
+    expect(responses.get('mcp.configPreviewRemove')).toBe(responses.get('mcp.configPreview'));
+    expect(responses.get('mcp.configApply')).toBe(responses.get('mcp.configRemove'));
+    expect(responses.get('mcp.configRemove')).toBe(responses.get('mcp.configRestore'));
+    expect(responses.get('mcp.connect')).toBe(responses.get('event.publish'));
+    expect(responses.get('mcp.disconnect')).toBe(responses.get('mcp.connect'));
+
+    // runtime.reload 的 plugins item ≡ runtime.get 的 plugins item（同一 loader 投影）。
+    const reload = responses.get('runtime.reload') as any;
+    const runtimeGet = responses.get('runtime.get') as any;
+    expect(reload.properties.plugins.items).toEqual(runtimeGet.properties.plugins.items);
+
+    // models.update 的三段 ≡ models.get 的同名段（写入后读回，不是新 DTO）。
+    const update = responses.get('models.update') as any;
+    const modelGet = responses.get('models.get') as any;
+    for (const key of ['recall', 'media', 'goal']) {
+      expect(`${key}:${JSON.stringify(update.properties[key])}`)
+        .toBe(`${key}:${JSON.stringify(modelGet.properties[key])}`);
+    }
+
+    // plugins.install ≡ plugins.list 的 item（同一个 `statEntry()` 投影）。
+    const list = responses.get('plugins.list') as any;
+    expect(responses.get('plugins.install')).toEqual(list.properties.plugins.items);
+  });
+
+  // 插件 action 的输出是**包定义**的边界：信封字段固定，output 允许任意 JSON，
+  // 其中对象分支必须是开放对象（additionalProperties:true）而不是空壳。
+  it('R5 keeps the plugin action output as an open boundary', () => {
+    const invoke = catalogResponseById().get('plugins.invoke') as any;
+    expect(invoke.required).toEqual(['package', 'action', 'revision']);
+    const output = invoke.properties.output;
+    const branches: any[] = output.anyOf;
+    expect(branches).toHaveLength(6);
+    const objectBranch = branches.find((branch) => branch.type === 'object');
+    expect(objectBranch?.additionalProperties).toBe(true);
+    // 标量 / 数组 / null 也是合法输出（handler 只要求 JSON 可序列化）。
+    expect(branches.map((branch) => branch.type).sort())
+      .toEqual(['array', 'boolean', 'null', 'number', 'object', 'string']);
+  });
+
+  // 同一批里的状态字面量都来自 handler 的唯一写出值，不放宽成 string。
+  it('R5 pins the handler literals (kill/resume, quarantine pair, switch/apply receipts)', () => {
+    const responses = catalogResponseById();
+    const literal = (id: string, key: string): unknown =>
+      (responses.get(id) as any).properties[key].const;
+    expect(literal('plugins.kill', 'safeMode')).toBe(true);
+    expect(literal('plugins.resume', 'safeMode')).toBe(false);
+    expect(literal('plugins.quarantine', 'quarantined')).toBe(true);
+    expect(literal('plugins.unquarantine', 'quarantined')).toBe(false);
+    expect(literal('runtime.switch', 'success')).toBe(true);
+    expect(literal('runtime.restartAgent', 'success')).toBe(true);
+    expect(literal('config.set', 'success')).toBe(true);
+    expect(literal('project.setCurrent', 'status')).toBe('ok');
+    expect(literal('runtime.config.update', 'status')).toBe('ok');
+    // manager.rotate 的 created 两态（initial = 懒建，rotated = 换新）。
+    expect((responses.get('manager.rotate') as any).properties.created.anyOf
+      .map((branch: any) => branch.const)).toEqual(['initial', 'rotated']);
+    // dryEvent：type 与 facets 都可空但恒在（丢弃 / 工具原语分支）。
+    const dry = responses.get('runtime.dryEvent') as any;
+    expect(dry.required).toEqual(['type', 'known', 'facets', 'warnings']);
+    expect(dry.properties.type.anyOf.map((b: any) => b.type).sort()).toEqual(['null', 'string']);
   });
 });

@@ -22,6 +22,9 @@ import type {
   MemoryFact, EnergyDistribution, Axiom, L5Heuristic, PodWorktreeDiff,
   // E10e-1 metadata / registry read surface
   McpServerEntry, PluginsListResult,
+  // E10h-R5 mcp / plugin / runtime / platform write responses
+  McpConfigPreview, McpConfigResult, PluginCheckResult, PluginPackageInstallResult,
+  PluginPackageUpdateResult, PluginWebTicket, ManagerRotateResult,
   // E10f-A session / task / terminal / usage read surface
   TaskEntity, TaskOutput, DiscoverySnapshot, DiscoverySkillContent, TerminalSessionList,
   MafwBackgroundOutput,
@@ -430,6 +433,115 @@ const CHECK_permissions_remove_allowlist_entries: AssertEq<
   Array<{ tool: string; prefix?: string }>
 > = true
 
+// E10h-R5: mcp / plugin / runtime / platform 写响应。
+// 只锁「wire 与 SDK DTO 逐字段等价」的 op：`mcp.connect|disconnect`（SDK 回
+// `unknown`）、`plugins.apply` 的额外三键、`runtime.dryEvent|conformance`、
+// `runtime.config.update`（SDK 回 `unknown`）、`config.set|project.setCurrent`
+// （SDK `Promise<void>`）、`mafwCommands.run`（命令自定义键）都没有可比 DTO，
+// 因此只做字段级/单段锁定（见 R5-report.md 的 concerns）。
+
+/** `RuntimeMcpConfigPreview`：token/target/diff 恒在，backup/preserved/warnings 可选。 */
+const CHECK_mcp_config_preview: AssertEq<Resp<operations['mcp.configPreview']>, McpConfigPreview> = true
+const CHECK_mcp_config_preview_remove: AssertEq<
+  Resp<operations['mcp.configPreviewRemove']>,
+  McpConfigPreview
+> = true
+
+/** `RuntimeMcpConfigResult`：applied 与 runtimeApplied 是两个独立布尔。 */
+const CHECK_mcp_config_apply: AssertEq<Resp<operations['mcp.configApply']>, McpConfigResult> = true
+const CHECK_mcp_config_remove: AssertEq<Resp<operations['mcp.configRemove']>, McpConfigResult> = true
+const CHECK_mcp_config_restore: AssertEq<Resp<operations['mcp.configRestore']>, McpConfigResult> = true
+
+/** `plugins.install` 的 200 是 `plugins.list` 的 item（同一个 `statEntry()` 投影）。 */
+const CHECK_plugins_install: AssertEq<
+  Resp<operations['plugins.install']>,
+  PluginsListResult['plugins'][number]
+> = true
+
+/** installPackage 的 `application` / `saved` 与 SDK `PluginPackageInstallResult` 同义。 */
+const CHECK_plugins_install_package_application: AssertEq<
+  Resp<operations['plugins.installPackage']>['application'],
+  PluginPackageInstallResult['application']
+> = true
+const CHECK_plugins_install_package_saved: AssertEq<
+  Resp<operations['plugins.installPackage']>['saved'],
+  PluginPackageInstallResult['saved']
+> = true
+
+/** check 的 200 就是 SDK 的 `PluginCheckResult`（`ok:false` 也是 200）。 */
+const CHECK_plugins_check: AssertEq<Resp<operations['plugins.check']>, PluginCheckResult> = true
+
+/**
+ * enable / disable 是 package|legacy 的判别式联合；legacy 分支按 `file` 判别后
+ * 必须与 `plugins.list` 的 item 逐字段等价（package 分支见 concerns：SDK 少
+ * `runtimeSwitchRequired` / `runtimeName` 两键）。
+ */
+type GenPluginToggle = Resp<operations['plugins.enable']>
+const CHECK_plugins_enable_legacy: AssertEq<
+  Extract<GenPluginToggle, { file: string }>,
+  PluginsListResult['plugins'][number]
+> = true
+const CHECK_plugins_disable_legacy: AssertEq<
+  Extract<Resp<operations['plugins.disable']>, { file: string }>,
+  PluginsListResult['plugins'][number]
+> = true
+const CHECK_plugins_disable_legacy_matches_enable: AssertEq<
+  Extract<Resp<operations['plugins.disable']>, { file: string }>,
+  Extract<GenPluginToggle, { file: string }>
+> = true
+
+/** `plugins.apply` 的 `active` 与 SDK `PluginPackageUpdateResult['active']` 等价。 */
+const CHECK_plugins_apply_active: AssertEq<
+  NonNullable<Resp<operations['plugins.apply']>['active']>,
+  NonNullable<PluginPackageUpdateResult['active']>
+> = true
+const CHECK_plugins_apply_runtime_switch: AssertEq<
+  NonNullable<Resp<operations['plugins.apply']>['runtimeSwitch']>,
+  NonNullable<PluginPackageUpdateResult['runtimeSwitch']>
+> = true
+
+/** `plugins.webTicket` 的凭证对与 SDK `PluginWebTicket` 逐字段等价。 */
+const CHECK_plugins_web_ticket: AssertEq<Resp<operations['plugins.webTicket']>, PluginWebTicket> = true
+
+/**
+ * `runtime.switch` 的 `success` 是字面量 `true`（失败走 400/409/500），故只锁
+ * `active` 与 `envOverride`（SDK 把它们声明在一个内联对象里）。
+ */
+const CHECK_runtime_switch_active: AssertEq<
+  Resp<operations['runtime.switch']>['active'],
+  { name: string; capabilities: Record<string, boolean> }
+> = true
+const CHECK_runtime_switch_env_override: AssertEq<
+  Resp<operations['runtime.switch']>['envOverride'],
+  boolean
+> = true
+const CHECK_runtime_restart_mode: AssertEq<Resp<operations['runtime.restartAgent']>['mode'], string> = true
+
+/** `runtime.reload` 的 plugins item 与 `runtime.get` 的同一段等价（同一 loader 投影）。 */
+const CHECK_runtime_reload_plugins: AssertEq<
+  Resp<operations['runtime.reload']>['plugins'],
+  Resp<operations['runtime.get']>['plugins']
+> = true
+
+/**
+ * `manager.rotate` 的 `success` 同样是字面量 `true`；其余四键与 SDK
+ * `ManagerRotateResult` 逐字段等价。
+ */
+const CHECK_manager_rotate_fields: AssertEq<
+  Omit<Resp<operations['manager.rotate']>, 'success'>,
+  Omit<ManagerRotateResult, 'success'>
+> = true
+
+/** `models.update` 的 recall / media 段是 `models.get` 的同一投影（写后读回）。 */
+const CHECK_models_update_recall: AssertEq<
+  Resp<operations['models.update']>['recall'],
+  ModelConfigState['recall']
+> = true
+const CHECK_models_update_media: AssertEq<
+  Resp<operations['models.update']>['media'],
+  ModelConfigState['media']
+> = true
+
 /**
  * `tasks.output` 是 runtime shell 的透传边界（四键 optional + 开放索引）；这里仍锁
  * 「SDK 认的四个字段类型不变」，让透传不能把 TaskOutput 的 wire 语义改掉。
@@ -724,4 +836,14 @@ export const CONTRACT_COMPAT_CHECKS = [
   CHECK_automations_draft, CHECK_triage_propose,
   CHECK_permissions_add_rule, CHECK_permissions_add_allowlist,
   CHECK_permissions_remove_rule_entries, CHECK_permissions_remove_allowlist_entries,
+  // E10h-R5
+  CHECK_mcp_config_preview, CHECK_mcp_config_preview_remove,
+  CHECK_mcp_config_apply, CHECK_mcp_config_remove, CHECK_mcp_config_restore,
+  CHECK_plugins_install, CHECK_plugins_install_package_application, CHECK_plugins_install_package_saved,
+  CHECK_plugins_check, CHECK_plugins_enable_legacy, CHECK_plugins_disable_legacy,
+  CHECK_plugins_disable_legacy_matches_enable, CHECK_plugins_apply_active,
+  CHECK_plugins_apply_runtime_switch, CHECK_plugins_web_ticket,
+  CHECK_runtime_switch_active, CHECK_runtime_switch_env_override, CHECK_runtime_restart_mode,
+  CHECK_runtime_reload_plugins, CHECK_manager_rotate_fields,
+  CHECK_models_update_recall, CHECK_models_update_media,
 ]

@@ -5843,4 +5843,232 @@ describe('api-contract: E10h-R4 event/automation/human-gate write responses', ()
   });
 });
 
+describe('api-contract: E10h-R5 mcp/plugin/runtime/platform write responses', () => {
+  const findOp = (operationId: string): any => {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const candidate of Object.values<any>(methods)) {
+        if (candidate?.operationId === operationId) return candidate;
+      }
+    }
+    return null;
+  };
+
+  const schemaOf = (operationId: string): any => {
+    const op = findOp(operationId);
+    expect(`${operationId}:found`).toBe(`${operationId}:${op ? 'found' : 'missing'}`);
+    const schema = op.responses?.['200']?.content?.['application/json']?.schema;
+    expect(`${operationId}:200`).toBe(`${operationId}:${schema ? '200' : 'missing'}`);
+    return schema;
+  };
+
+  const branchTypes = (schema: any): string[] =>
+    (schema.anyOf ?? []).map((branch: any) => branch.type ?? branch.const ?? 'literal');
+
+  test('mcp connect/disconnect are ok receipts and the config surface is two DTOs', () => {
+    for (const id of ['mcp.connect', 'mcp.disconnect']) {
+      expect(schemaOf(id)).toEqual({
+        type: 'object',
+        required: ['ok'],
+        properties: { ok: { const: true, type: 'boolean' } },
+      });
+    }
+    // preview / preview-remove: token + target + diff 恒在（乐观锁 + dry-run 证据）。
+    for (const id of ['mcp.configPreview', 'mcp.configPreviewRemove']) {
+      const preview = schemaOf(id);
+      expect(preview.required).toEqual(['token', 'target', 'diff']);
+      expect(Object.keys(preview.properties).sort())
+        .toEqual(['backup', 'diff', 'preserved', 'target', 'token', 'warnings']);
+    }
+    // apply / remove / restore: applied + runtimeApplied 两个布尔不能合并。
+    for (const id of ['mcp.configApply', 'mcp.configRemove', 'mcp.configRestore']) {
+      const result = schemaOf(id);
+      expect(result.required).toEqual(['applied', 'runtimeApplied']);
+      expect(Object.keys(result.properties).sort()).toEqual(['applied', 'backup', 'error', 'runtimeApplied']);
+    }
+  });
+
+  test('plugin installs return the hub entry / manager install result (not the raw request)', () => {
+    // install 的请求是 .js 字节流（无 requestBody），但 200 仍是 PluginEntry。
+    const install = schemaOf('plugins.install');
+    expect(install.required).toEqual(['type', 'name', 'file', 'status', 'size', 'mtime']);
+    expect(findOp('plugins.install').requestBody).toBeUndefined();
+    // packages/install: InstallResult（saved + application 决定是否需要 apply）。
+    const pkg = schemaOf('plugins.installPackage');
+    expect(pkg.required).toEqual(['name', 'saved', 'application']);
+    expect(pkg.properties.application.anyOf.map((b: any) => b.const))
+      .toEqual(['applied', 'pending', 'failed']);
+    expect(pkg.properties.apiVersion.anyOf.map((b: any) => b.const)).toEqual([1, 2]);
+  });
+
+  test('plugin toggle/delete keep both body branches (package vs legacy)', () => {
+    const enable = schemaOf('plugins.enable');
+    expect(branchTypes(enable)).toEqual(['object', 'object']);
+    expect(enable.anyOf[0].required).toContain('enabled');
+    expect(enable.anyOf[1].properties.status.anyOf.map((b: any) => b.const))
+      .toEqual(['enabled', 'disabled', 'error', 'config-disabled']);
+    expect(JSON.stringify(schemaOf('plugins.disable'))).toBe(JSON.stringify(enable));
+    // delete 的 legacy 分支只有 {ok:true}——不是 PluginEntry。
+    const del = schemaOf('plugins.delete');
+    expect(branchTypes(del)).toEqual(['object', 'object']);
+    expect(del.anyOf[1]).toEqual({
+      type: 'object',
+      required: ['ok'],
+      properties: { ok: { const: true, type: 'boolean' } },
+    });
+  });
+
+  test('plugin apply adds the runtime-switch tri-state on top of the update result', () => {
+    const apply = schemaOf('plugins.apply');
+    expect(apply.required).toEqual(['name', 'saved', 'enabled', 'application']);
+    expect(apply.properties.runtimeSwitch.anyOf.map((b: any) => b.const))
+      .toEqual(['applied', 'failed', 'required']);
+    expect(apply.properties.active.properties.capabilities.type).toBe('object');
+    // reload/rollback 是纯 UpdateResult（没有 runtimeSwitch 三态）。
+    for (const id of ['plugins.reload', 'plugins.rollback']) {
+      expect(schemaOf(id).properties.runtimeSwitch).toBeUndefined();
+      expect(schemaOf(id).properties.enabled.type).toBe('boolean');
+    }
+  });
+
+  test('plugin invoke keeps the action output as an open plugin-owned boundary', () => {
+    const invoke = schemaOf('plugins.invoke');
+    expect(invoke.required).toEqual(['package', 'action', 'revision']);
+    const branches = invoke.properties.output.anyOf;
+    expect(branches).toHaveLength(6);
+    const objectBranch = branches.find((branch: any) => branch.type === 'object');
+    expect(objectBranch.additionalProperties).toBe(true);
+    // output 只在 handler 真的返回非 undefined 时出现。
+    expect(invoke.required).not.toContain('output');
+  });
+
+  test('plugin doctor reports reuse one DTO (single + array) and pin ok semantics', () => {
+    const report = schemaOf('plugins.doctor');
+    expect(report.required).toEqual(['name', 'apiVersion', 'kind', 'ok', 'checks', 'generatedAt']);
+    expect(report.properties.checks.items.required).toEqual(['id', 'status', 'message']);
+    expect(report.properties.checks.items.properties.status.anyOf.map((b: any) => b.const))
+      .toEqual(['pass', 'warn', 'fail']);
+    expect(schemaOf('plugins.doctorAll').items).toEqual(report);
+  });
+
+  test('plugin safety receipts pin the literals (kill/resume/quarantine pair)', () => {
+    expect(schemaOf('plugins.kill').properties.safeMode.const).toBe(true);
+    expect(schemaOf('plugins.resume').properties.safeMode.const).toBe(false);
+    expect(schemaOf('plugins.resume').required).toEqual(['safeMode', 'activated']);
+    expect(schemaOf('plugins.quarantine').required).toEqual(['name', 'quarantined', 'reason']);
+    expect(schemaOf('plugins.quarantine').properties.quarantined.const).toBe(true);
+    expect(schemaOf('plugins.unquarantine').required).toEqual(['name', 'quarantined']);
+    expect(schemaOf('plugins.unquarantine').properties.quarantined.const).toBe(false);
+  });
+
+  test('plugin web ticket exposes the credential pair only', () => {
+    const ticket = schemaOf('plugins.webTicket');
+    expect(ticket.required).toEqual(['ticket', 'expiresAt']);
+    expect(Object.keys(ticket.properties).sort()).toEqual(['expiresAt', 'ticket']);
+    expect(ticket.properties.ticket.type).toBe('string');
+    expect(ticket.properties.expiresAt.type).toBe('number');
+  });
+
+  test('runtime switch/restart receipts and the loader rescan body', () => {
+    const sw = schemaOf('runtime.switch');
+    expect(sw.required).toEqual(['success', 'active', 'envOverride']);
+    expect(sw.properties.success.const).toBe(true);
+    expect(sw.properties.active.required).toEqual(['name', 'capabilities']);
+    // reload 的 plugins item 与 runtime.get 的同名段严格同形。
+    expect(JSON.stringify(schemaOf('runtime.reload').properties.plugins.items))
+      .toBe(JSON.stringify(schemaOf('runtime.get').properties.plugins.items));
+    expect(schemaOf('runtime.restartAgent').required).toEqual(['success', 'mode']);
+    expect(schemaOf('runtime.restartAgent').properties.success.const).toBe(true);
+    expect(schemaOf('runtime.restartAgent').properties.mode.type).toBe('string');
+  });
+
+  test('runtime dry-event models all three success branches with one shape', () => {
+    const dry = schemaOf('runtime.dryEvent');
+    // 丢弃分支：type:null / facets:null；工具原语分支：facets:null + assembled。
+    expect(dry.required).toEqual(['type', 'known', 'facets', 'warnings']);
+    expect(dry.properties.type.anyOf.map((b: any) => b.type).sort()).toEqual(['null', 'string']);
+    expect(dry.properties.facets.anyOf.map((b: any) => b.type).sort()).toEqual(['null', 'object']);
+    expect(dry.properties.facets.anyOf[0].required)
+      .toEqual(['sessionID', 'step', 'chatSignal', 'compaction', 'toolCommand', 'approval']);
+    expect(dry.properties.flow.properties.modeA.anyOf.map((b: any) => b.const))
+      .toEqual(['passthrough', 'rewrite', 'drop']);
+    expect(dry.properties.assembled.type).toBe('array');
+  });
+
+  test('runtime conformance reports per-scenario results and the pass/fail summary', () => {
+    const conformance = schemaOf('runtime.conformance');
+    expect(conformance.required).toEqual(['runtime', 'results', 'summary']);
+    expect(conformance.properties.results.items.required)
+      .toEqual(['id', 'title', 'pass', 'failures', 'durationMs']);
+    expect(conformance.properties.summary.required).toEqual(['pass', 'fail']);
+  });
+
+  test('platform writes pin their own receipts (config / project / manager / models)', () => {
+    const configSet = schemaOf('config.set');
+    expect(configSet.required).toEqual(['success', 'restartRequired']);
+    expect(configSet.properties.success.const).toBe(true);
+    expect(configSet.properties.restartRequired.items.type).toBe('string');
+    // /register 回显 projectDir，不是 Project DTO。
+    const setCurrent = schemaOf('project.setCurrent');
+    expect(setCurrent.required).toEqual(['status', 'registered']);
+    expect(setCurrent.properties.status.const).toBe('ok');
+    expect(setCurrent.properties.registered.type).toBe('string');
+    const rotate = schemaOf('manager.rotate');
+    expect(rotate.required).toEqual(['success', 'sessionId', 'created']);
+    expect(rotate.properties.created.anyOf.map((b: any) => b.const)).toEqual(['initial', 'rotated']);
+    expect(rotate.properties.previousSessionId.type).toBe('string');
+  });
+
+  test('runtime config update echoes the merged runtime config (open owner)', () => {
+    const update = schemaOf('runtime.config.update');
+    expect(update.required).toEqual(['status', 'config']);
+    expect(update.properties.status.const).toBe('ok');
+    // config 归 runtime 所有：对象分支是开放索引（Record → patternProperties），
+    // 另加 null（裸 runtime）。
+    expect(update.properties.config.anyOf.map((b: any) => b.type).sort()).toEqual(['null', 'object']);
+    expect(Object.keys(update.properties.config.anyOf[0].patternProperties ?? {}))
+      .toEqual(['^(.*)$']);
+  });
+
+  test('mafwCommands.run is the command result (open to custom keys)', () => {
+    const run = schemaOf('mafwCommands.run');
+    expect(run.required).toEqual(['ok']);
+    expect(run.properties.ok.type).toBe('boolean');
+    expect(run.additionalProperties).toBe(true);
+  });
+
+  test('models.update returns the re-read model sections, same shape as models.get', () => {
+    const update = schemaOf('models.update');
+    expect(update.required).toEqual(['success', 'recall', 'media', 'goal']);
+    expect(update.properties.success.const).toBe(true);
+    const get = schemaOf('models.get');
+    for (const key of ['recall', 'media', 'goal']) {
+      expect(JSON.stringify(update.properties[key])).toBe(JSON.stringify(get.properties[key]));
+    }
+  });
+
+  test('the R5 batch raises the write-response ledger to 163/195', () => {
+    const writeOps = new Set<string>();
+    const responded = new Set<string>();
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const [method, op] of Object.entries<any>(methods)) {
+        if (method === 'get' || !op?.operationId) continue;
+        writeOps.add(op.operationId);
+        if (op.responses?.['200']?.content?.['application/json']?.schema) responded.add(op.operationId);
+      }
+    }
+    expect(writeOps.size).toBe(195);
+    // humanToken.rotate + P0 2 + R1 35 + R2 35 + R3 31 + R4 24 + R5 35 = 163.
+    expect(responded.size).toBeGreaterThanOrEqual(163);
+    for (const id of [
+      'mcp.connect', 'mcp.configPreview', 'mcp.configApply', 'plugins.install',
+      'plugins.installPackage', 'plugins.enable', 'plugins.delete', 'plugins.apply',
+      'plugins.invoke', 'plugins.doctorAll', 'plugins.kill', 'plugins.webTicket',
+      'runtime.switch', 'runtime.dryEvent', 'runtime.conformance', 'runtime.config.update',
+      'config.set', 'project.setCurrent', 'manager.rotate', 'mafwCommands.run', 'models.update',
+    ]) {
+      expect(`${id}:${responded.has(id)}`).toBe(`${id}:true`);
+    }
+  });
+});
+
 
