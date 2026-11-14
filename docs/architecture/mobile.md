@@ -405,6 +405,36 @@ gateway 给 `work.overview`（`GET /api/projects/:projectId/work`）加了 200 r
 
 ---
 
+### 7.12 Triage 渲染对齐真实 wire（E10f-E，2026-11-14）
+
+gateway 的 `triage.list` 200 schema（`gateway/src/routes/schemas/human-gate.ts#TriageItemSchema`，gateway 侧见
+`gateway.md` §「E10f 全量读表面收口」）是磁盘 wire 的真形状：`{ id, automationId, discoveredAt, source,
+summary, proposedGoal?, state, userAction, deadline, llmSuggestions?, updatedAt? }`。desktop 在 E10b-3 已
+改读它，mobile 的 `pages/triage_page.dart` 仍在读 phantom 字段（`reason` / `type` / `kind` / `origin` /
+`title` / `name` / `question` / `description` / `detail`）——这些键**没有任何 writer**，恒为空 → 卡片只有
+占位文本。E10f-E 收口：
+
+- 新增纯 Dart helper `lib/src/models/triage_card_model.dart`（无 Flutter import，可单测），与 desktop
+  `packages/desktop/src/renderer/mafw/triage-model.ts` **同一条链**：
+  - `titleOf`：`proposedGoal.title` → `summary.title` → `summary.skillDraft.name` →
+    `summary.axiomDraft.name` → `id` → `未命名待决项`（空白串视为缺失）；
+  - `metaOf`：`source · <discoveredAt> · 截止 <deadline>`；`localizedTimestamp` 只输出
+    `YYYY-MM-DD HH:mm`，缺失 / 不可解析一律返回 `null`（**绝不出现 `Invalid Date`**）；
+  - `badgeOf`：真实 `state`（`PENDING_CONFIRMATION` / `CONFIRMED` / `REJECTED` → 待确认 / 已确认 / 已拒绝，
+    tone = warn / neutral / danger），并在有 `llmSuggestions` 时只追加**最高优先级**（high > medium > low）
+    的一条；未知 state 原样显示 + 中性 tone（不猜、不造 severity）；
+  - 页面唯一入口 `triageCardModel(item)`。
+- `TriagePage` 不再读上述 phantom 字段：状态 badge 取代 phantom `type` chip，`meta` 取代 phantom 描述行；
+  tone → 主题 token（无字面颜色）。
+- 测试 `test/triage_card_model_test.dart` **12 例**：proposedGoal 标题、summary 标题、两个 draft name 回退、
+  phantom 字段存在时的 `id` 回退、空条目占位、meta 组合、缺日期、不可解析日期、三种 state 标签 / tone、
+  未知 state、最高优先级建议、空建议列表。
+- 门禁：`flutter test test/triage_card_model_test.dart`（12/12）+ triage 相关四文件 32/32 +
+  `dart analyze lib test`（0）。全量 `flutter test` 在负载下会随机报 "did not complete"（并行 / 环境，
+  单文件恒过），故以定向门禁为准。
+
+---
+
 ## 8. 已知待办（roadmap）
 
 - **P2** Tailscale DNS 自动检测：App 启动探测 `*.ts.net` 可达性，自动切换 Tailscale/局域网，真机免填 baseUrl

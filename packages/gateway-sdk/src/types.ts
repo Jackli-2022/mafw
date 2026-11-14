@@ -114,6 +114,9 @@ export interface StickyNote {
 export interface StickyNoteBudget {
   max: number
   maxChars: number
+  /** E10f-E: per-note truncation cap (anti-starvation). Wire is `{...NOTE_BOARD_BUDGET, used}`,
+   *  so `perNoteCap` is present on every `memory.listSticky` body (including the 503 shell). */
+  perNoteCap: number
   used: number
 }
 
@@ -288,12 +291,54 @@ export interface TriageLlmSuggestion {
   timestamp: string
 }
 
+/**
+ * E10f-C：automation 规则 = `~/.mafw/automations/*.json` 的持久规则
+ * （`automation-engine.ts` `AutomationRule` 原样解析）+ handler 追加的两个派生字段。
+ *
+ * 旧 DTO 是 `{id, enabled, name?, trigger?{schedule,timezone}, action?{type}}`，来自
+ * 已删除的 `overrides.json` 手写 schema：`name` 没有任何 writer，`trigger` 实际**必填**
+ * 且是 cron/event 判别联合。现在以 handler 为准（E10f-C）。
+ */
+export type AutomationTrigger =
+  | { type: 'cron'; schedule: string; timezone: string }
+  | { type: 'event'; on: string[]; perGoalCooldown: string }
+
+/** `AutomationRule.goal_defaults`：起 Goal 时的默认 loops / 指标阈值。 */
+export interface AutomationGoalDefaults {
+  maxLoops?: number
+  metrics?: Record<string, { target: number; unit: string }>
+}
+
 export interface AutomationRule {
   id: string
   enabled: boolean
-  name?: string
-  trigger?: { schedule: string; timezone: string }
+  trigger: AutomationTrigger
+  skill?: string
+  args?: Record<string, unknown>
+  onResult?: { type: 'triage' | 'goal'; auto_confirm?: boolean; template?: string }
+  goal_defaults?: AutomationGoalDefaults
   action?: { type: string }
+}
+
+/**
+ * `ledger.ts` `LedgerEntry`（`~/.mafw/ledger.md` 行解析）：只有 timestamp/event 必定存在，
+ * 其余来自行内 tag / key=value / 行尾 JSON。
+ */
+export interface AutomationLedgerEntry {
+  timestamp: string
+  event: string
+  goalId?: string
+  ruleId?: string
+  source?: 'cron' | 'event' | 'llm' | 'user'
+  reason?: string
+  sessionId?: string
+  details?: Record<string, unknown>
+}
+
+/** `automations.list` 行：规则本体 + 下 5 个触发时刻 + 最近 3 条账本行。 */
+export interface AutomationRuleListItem extends AutomationRule {
+  nextTriggers: string[]
+  recentHistory: AutomationLedgerEntry[]
 }
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
@@ -1169,7 +1214,8 @@ export interface AutomationDraftInput {
 }
 
 export interface AutomationsNamespace {
-  list(): Promise<AutomationRule[]>
+  /** E10f-C：每行是规则本体 + nextTriggers / recentHistory（见 `AutomationRuleListItem`）。 */
+  list(): Promise<AutomationRuleListItem[]>
   toggle(id: string, enabled: boolean): Promise<void>
   /** 起草规则（enabled=false 落盘，需手动启用） */
   draft(input: AutomationDraftInput): Promise<{ id: string; valid: boolean; errors?: string[] }>
@@ -2281,6 +2327,8 @@ export interface LeadBoundaryView {
   trigger: 'explicit' | 'semantic' | 'idle' | 'goal_closed' | 'keyword'
   confidence: number
   status: 'proposed' | 'accepted' | 'merged' | 'split' | 'undone'
+  /** 触发边界的用户原文（E10f-C 补齐：`TopicBoundaryRow.text` 一直在 wire 上）。 */
+  text: string
   createdAt: string
 }
 

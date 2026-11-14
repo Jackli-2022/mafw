@@ -4822,7 +4822,25 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        rules: ({
+                            on: "tool_call" | "prompt" | "tool_result";
+                            tool?: string;
+                            match?: string;
+                            action: "deny" | "ask" | "rewrite" | "transform" | "redact";
+                            reason?: string;
+                            input?: {
+                                [key: string]: string;
+                            };
+                            text?: string;
+                            name?: string;
+                        } & {
+                            [key: string]: unknown;
+                        })[];
+                        errors: string[];
+                    };
+                };
             };
         };
     };
@@ -5249,7 +5267,18 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        sessionID: string;
+                        name?: string;
+                        schema: {
+                            [key: string]: unknown;
+                        };
+                        submitted?: unknown;
+                        errors: string[];
+                        updatedAt: number;
+                    };
+                };
             };
         };
     };
@@ -5325,7 +5354,31 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            kind: "shell" | "subagent";
+                            parentSessionID: string;
+                            childSessionID?: string;
+                            shellID?: string;
+                            title: string;
+                            status: "working" | "input_required" | "completed" | "failed" | "cancelled";
+                            directory?: string;
+                            createdAt: number;
+                            updatedAt: number;
+                            finishedAt?: number;
+                            exitCode?: number;
+                            error?: string;
+                            metadata?: {
+                                [key: string]: unknown;
+                            };
+                            outputCursor?: number;
+                            outputSize?: number;
+                            outputTruncated?: boolean;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -5363,7 +5416,29 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        kind: "shell" | "subagent";
+                        parentSessionID: string;
+                        childSessionID?: string;
+                        shellID?: string;
+                        title: string;
+                        status: "working" | "input_required" | "completed" | "failed" | "cancelled";
+                        directory?: string;
+                        createdAt: number;
+                        updatedAt: number;
+                        finishedAt?: number;
+                        exitCode?: number;
+                        error?: string;
+                        metadata?: {
+                            [key: string]: unknown;
+                        };
+                        outputCursor?: number;
+                        outputSize?: number;
+                        outputTruncated?: boolean;
+                    };
+                };
             };
         };
     };
@@ -5423,7 +5498,16 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        output?: string;
+                        cursor?: number;
+                        size?: number;
+                        truncated?: boolean;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
             };
         };
     };
@@ -5443,7 +5527,68 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        turns: {
+                            projectID: string;
+                            sessionID: string;
+                            turnID: number;
+                            turnStartMs: number;
+                            turnEndMs: number | null;
+                            durationMs: number | null;
+                            toolCount: number;
+                            toolErrorCount: number;
+                            reasoningCount: number;
+                            agentSwitchCount: number;
+                            tokens: {
+                                input: number;
+                                output: number;
+                                reasoning: number;
+                                cache: {
+                                    read: number;
+                                    write: number;
+                                };
+                            };
+                            cost: number;
+                            finish: string | null;
+                            model: string | null;
+                            provider: string | null;
+                            agent: string | null;
+                            userText: string;
+                            assistantText?: string;
+                            workerRole?: string;
+                        }[];
+                        events: {
+                            id?: number;
+                            projectID: string;
+                            sessionID: string;
+                            turnID: number;
+                            seq: number;
+                            eventType: "tool_start" | "tool_update" | "tool_end" | "reasoning_start" | "reasoning_end" | "agent_switch" | "model_switch" | "step_finish" | "turn_start" | "turn_end" | "text_start" | "text_end";
+                            toolName?: string;
+                            callID?: string;
+                            toolState?: "running" | "completed" | "error";
+                            agent?: string;
+                            model?: string;
+                            inputSummary?: string;
+                            outputSummary?: string;
+                            error?: string;
+                            tokens?: {
+                                input: number;
+                                output: number;
+                                reasoning: number;
+                                cache: {
+                                    read: number;
+                                    write: number;
+                                };
+                            };
+                            cost?: number;
+                            finish?: string;
+                            timeMs: number;
+                            durationMs?: number;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -5759,7 +5904,27 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        run: {
+                            id: string;
+                            sessionID: string;
+                            projectDir: string;
+                            status: "suspended" | "resumed" | "completed" | "failed" | "cancelled";
+                            reason?: string;
+                            brief: {
+                                lastUserText: string;
+                                lastAssistantTail: string;
+                                anchorMessageID: string;
+                                queuedCount: number;
+                            };
+                            createdAt: string;
+                            suspendedAt: string;
+                            resumedAt?: string;
+                            finishedAt?: string;
+                        } | null;
+                    };
+                };
             };
         };
     };
@@ -5819,7 +5984,58 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        sessionID: string;
+                        directory: string;
+                        revision: string;
+                        commandsRevision: string;
+                        generatedAt: string;
+                        commands: {
+                            name: string;
+                            aliases?: string[];
+                            description: string;
+                            argumentHint?: string;
+                            category?: "goals" | "session" | "memory" | "custom" | "runtime";
+                            destructive?: boolean;
+                            source: "mafw" | "custom" | "runtime";
+                            scope: "gateway" | "user" | "project" | "runtime";
+                            runtime?: boolean;
+                            agent?: string;
+                            model?: {
+                                id: string;
+                                providerID: string;
+                                variant?: string;
+                            };
+                            subtask?: boolean;
+                        }[];
+                        skills: {
+                            id: string;
+                            name: string;
+                            description?: string;
+                            slash: boolean;
+                            scope: "user" | "project" | "path";
+                            location?: string;
+                            contentLength: number;
+                        }[];
+                        instructions: {
+                            id: string;
+                            path: string;
+                            scope: "global" | "project" | "nested";
+                            /** @constant */
+                            kind: "agents-md";
+                            bytes: number;
+                            mtime: string;
+                        }[];
+                        degraded: boolean;
+                        degradedReason?: "capability_absent" | "runtime_error" | "partial" | "instructions_error";
+                        warnings: {
+                            source: "commands" | "skills" | "instructions";
+                            message: string;
+                        }[];
+                        skillInvokeSupported: boolean;
+                    };
+                };
             };
         };
     };
@@ -5860,7 +6076,18 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        name: string;
+                        description?: string;
+                        slash: boolean;
+                        scope: "user" | "project" | "path";
+                        location?: string;
+                        contentLength: number;
+                        content: string;
+                    };
+                };
             };
         };
     };
@@ -6019,7 +6246,215 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        experienceVersion: string;
+                        minClientVersion: string;
+                        sessionID?: string;
+                        actions: {
+                            "checkpoint.restore"?: {
+                                supported: boolean;
+                                enabled: boolean;
+                                reason?: "unsupported" | "busy" | "missing-data" | "non-invertible-patch" | "unsafe";
+                                warningKey?: string;
+                                operationId?: string;
+                                semantics?: {
+                                    [key: string]: unknown;
+                                };
+                            };
+                            "checkpoint.create"?: {
+                                supported: boolean;
+                                enabled: boolean;
+                                reason?: "unsupported" | "busy" | "missing-data" | "non-invertible-patch" | "unsafe";
+                                warningKey?: string;
+                                operationId?: string;
+                                semantics?: {
+                                    [key: string]: unknown;
+                                };
+                            };
+                            "branch.fork"?: {
+                                supported: boolean;
+                                enabled: boolean;
+                                reason?: "unsupported" | "busy" | "missing-data" | "non-invertible-patch" | "unsafe";
+                                warningKey?: string;
+                                operationId?: string;
+                                semantics?: {
+                                    [key: string]: unknown;
+                                };
+                            };
+                            "branch.revert"?: {
+                                supported: boolean;
+                                enabled: boolean;
+                                reason?: "unsupported" | "busy" | "missing-data" | "non-invertible-patch" | "unsafe";
+                                warningKey?: string;
+                                operationId?: string;
+                                semantics?: {
+                                    [key: string]: unknown;
+                                };
+                            };
+                            "branch.unrevert"?: {
+                                supported: boolean;
+                                enabled: boolean;
+                                reason?: "unsupported" | "busy" | "missing-data" | "non-invertible-patch" | "unsafe";
+                                warningKey?: string;
+                                operationId?: string;
+                                semantics?: {
+                                    [key: string]: unknown;
+                                };
+                            };
+                            "branch.diff"?: {
+                                supported: boolean;
+                                enabled: boolean;
+                                reason?: "unsupported" | "busy" | "missing-data" | "non-invertible-patch" | "unsafe";
+                                warningKey?: string;
+                                operationId?: string;
+                                semantics?: {
+                                    [key: string]: unknown;
+                                };
+                            };
+                            "run.control"?: {
+                                supported: boolean;
+                                enabled: boolean;
+                                reason?: "unsupported" | "busy" | "missing-data" | "non-invertible-patch" | "unsafe";
+                                warningKey?: string;
+                                operationId?: string;
+                                semantics?: {
+                                    [key: string]: unknown;
+                                };
+                            };
+                            "session.worktree"?: {
+                                supported: boolean;
+                                enabled: boolean;
+                                reason?: "unsupported" | "busy" | "missing-data" | "non-invertible-patch" | "unsafe";
+                                warningKey?: string;
+                                operationId?: string;
+                                semantics?: {
+                                    [key: string]: unknown;
+                                };
+                            };
+                            "session.summarize"?: {
+                                supported: boolean;
+                                enabled: boolean;
+                                reason?: "unsupported" | "busy" | "missing-data" | "non-invertible-patch" | "unsafe";
+                                warningKey?: string;
+                                operationId?: string;
+                                semantics?: {
+                                    [key: string]: unknown;
+                                };
+                            };
+                            "session.switch-agent"?: {
+                                supported: boolean;
+                                enabled: boolean;
+                                reason?: "unsupported" | "busy" | "missing-data" | "non-invertible-patch" | "unsafe";
+                                warningKey?: string;
+                                operationId?: string;
+                                semantics?: {
+                                    [key: string]: unknown;
+                                };
+                            };
+                            "session.switch-model"?: {
+                                supported: boolean;
+                                enabled: boolean;
+                                reason?: "unsupported" | "busy" | "missing-data" | "non-invertible-patch" | "unsafe";
+                                warningKey?: string;
+                                operationId?: string;
+                                semantics?: {
+                                    [key: string]: unknown;
+                                };
+                            };
+                            "session.discovery"?: {
+                                supported: boolean;
+                                enabled: boolean;
+                                reason?: "unsupported" | "busy" | "missing-data" | "non-invertible-patch" | "unsafe";
+                                warningKey?: string;
+                                operationId?: string;
+                                semantics?: {
+                                    [key: string]: unknown;
+                                };
+                            };
+                            "approval.permission"?: {
+                                supported: boolean;
+                                enabled: boolean;
+                                reason?: "unsupported" | "busy" | "missing-data" | "non-invertible-patch" | "unsafe";
+                                warningKey?: string;
+                                operationId?: string;
+                                semantics?: {
+                                    [key: string]: unknown;
+                                };
+                            };
+                            "approval.question"?: {
+                                supported: boolean;
+                                enabled: boolean;
+                                reason?: "unsupported" | "busy" | "missing-data" | "non-invertible-patch" | "unsafe";
+                                warningKey?: string;
+                                operationId?: string;
+                                semantics?: {
+                                    [key: string]: unknown;
+                                };
+                            };
+                            "background.jobs"?: {
+                                supported: boolean;
+                                enabled: boolean;
+                                reason?: "unsupported" | "busy" | "missing-data" | "non-invertible-patch" | "unsafe";
+                                warningKey?: string;
+                                operationId?: string;
+                                semantics?: {
+                                    [key: string]: unknown;
+                                };
+                            };
+                            "terminal.attach"?: {
+                                supported: boolean;
+                                enabled: boolean;
+                                reason?: "unsupported" | "busy" | "missing-data" | "non-invertible-patch" | "unsafe";
+                                warningKey?: string;
+                                operationId?: string;
+                                semantics?: {
+                                    [key: string]: unknown;
+                                };
+                            };
+                            "prompt.steer"?: {
+                                supported: boolean;
+                                enabled: boolean;
+                                reason?: "unsupported" | "busy" | "missing-data" | "non-invertible-patch" | "unsafe";
+                                warningKey?: string;
+                                operationId?: string;
+                                semantics?: {
+                                    [key: string]: unknown;
+                                };
+                            };
+                            "session.background"?: {
+                                supported: boolean;
+                                enabled: boolean;
+                                reason?: "unsupported" | "busy" | "missing-data" | "non-invertible-patch" | "unsafe";
+                                warningKey?: string;
+                                operationId?: string;
+                                semantics?: {
+                                    [key: string]: unknown;
+                                };
+                            };
+                            "mcp.manage"?: {
+                                supported: boolean;
+                                enabled: boolean;
+                                reason?: "unsupported" | "busy" | "missing-data" | "non-invertible-patch" | "unsafe";
+                                warningKey?: string;
+                                operationId?: string;
+                                semantics?: {
+                                    [key: string]: unknown;
+                                };
+                            };
+                            "mcp.config.write"?: {
+                                supported: boolean;
+                                enabled: boolean;
+                                reason?: "unsupported" | "busy" | "missing-data" | "non-invertible-patch" | "unsafe";
+                                warningKey?: string;
+                                operationId?: string;
+                                semantics?: {
+                                    [key: string]: unknown;
+                                };
+                            };
+                        };
+                    };
+                };
             };
         };
     };
@@ -6037,7 +6472,32 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            source: "runtime-shell" | "mafw-task" | "subagent";
+                            kind: "shell" | "subagent";
+                            status: "running" | "input_required" | "completed" | "failed" | "cancelled";
+                            sessionID: string;
+                            title?: string;
+                            command?: string;
+                            runtimeShellID?: string;
+                            taskID?: string;
+                            childSessionID?: string;
+                            time?: {
+                                created?: number;
+                                updated?: number;
+                                completed?: number;
+                            };
+                            cursor?: number;
+                            exitCode?: number;
+                            extensions?: {
+                                [key: string]: unknown;
+                            };
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -6057,7 +6517,13 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        cursor: number;
+                        data: string;
+                        truncated: boolean;
+                    };
+                };
             };
         };
     };
@@ -6095,7 +6561,19 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        protocol: string;
+                        supported: boolean;
+                        sessions: {
+                            id: string;
+                            directory?: string;
+                            title?: string;
+                            status: "running" | "exited" | "unknown";
+                            cwd?: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -6171,7 +6649,182 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        summary: {
+                            session: {
+                                totalTokens: {
+                                    input: number;
+                                    output: number;
+                                    reasoning: number;
+                                    cache: {
+                                        read: number;
+                                        write: number;
+                                    };
+                                };
+                                totalCost: number;
+                                turnCount: number;
+                                sessionCount?: number;
+                                avgTokensPerTurn: {
+                                    input: number;
+                                    output: number;
+                                    reasoning: number;
+                                    cache: {
+                                        read: number;
+                                        write: number;
+                                    };
+                                };
+                            };
+                            project: {
+                                totalTokens: {
+                                    input: number;
+                                    output: number;
+                                    reasoning: number;
+                                    cache: {
+                                        read: number;
+                                        write: number;
+                                    };
+                                };
+                                totalCost: number;
+                                turnCount: number;
+                                sessionCount: number;
+                            };
+                            global: {
+                                totalTokens: {
+                                    input: number;
+                                    output: number;
+                                    reasoning: number;
+                                    cache: {
+                                        read: number;
+                                        write: number;
+                                    };
+                                };
+                                totalCost: number;
+                                turnCount: number;
+                                sessionCount: number;
+                            };
+                        } | null;
+                        memory?: {
+                            totalTokens: {
+                                input: number;
+                                output: number;
+                                reasoning: number;
+                                cache: {
+                                    read: number;
+                                    write: number;
+                                };
+                            };
+                            totalCost: number;
+                            turnCount: number;
+                            sessionCount: number;
+                            byRole: {
+                                [key: string]: {
+                                    totalTokens: {
+                                        input: number;
+                                        output: number;
+                                        reasoning: number;
+                                        cache: {
+                                            read: number;
+                                            write: number;
+                                        };
+                                    };
+                                    totalCost: number;
+                                    turnCount: number;
+                                    sessionCount: number;
+                                };
+                            };
+                        } | null;
+                        modelStats?: {
+                            windows: {
+                                today: {
+                                    provider: string | null;
+                                    model: string;
+                                    turns: number;
+                                    tokens: {
+                                        input: number;
+                                        output: number;
+                                        reasoning: number;
+                                        cache: {
+                                            read: number;
+                                            write: number;
+                                        };
+                                    };
+                                    estimatedCost: number | null;
+                                }[];
+                                "7d": {
+                                    provider: string | null;
+                                    model: string;
+                                    turns: number;
+                                    tokens: {
+                                        input: number;
+                                        output: number;
+                                        reasoning: number;
+                                        cache: {
+                                            read: number;
+                                            write: number;
+                                        };
+                                    };
+                                    estimatedCost: number | null;
+                                }[];
+                                "30d": {
+                                    provider: string | null;
+                                    model: string;
+                                    turns: number;
+                                    tokens: {
+                                        input: number;
+                                        output: number;
+                                        reasoning: number;
+                                        cache: {
+                                            read: number;
+                                            write: number;
+                                        };
+                                    };
+                                    estimatedCost: number | null;
+                                }[];
+                                all: {
+                                    provider: string | null;
+                                    model: string;
+                                    turns: number;
+                                    tokens: {
+                                        input: number;
+                                        output: number;
+                                        reasoning: number;
+                                        cache: {
+                                            read: number;
+                                            write: number;
+                                        };
+                                    };
+                                    estimatedCost: number | null;
+                                }[];
+                            };
+                        };
+                        providers: ({
+                            name: string;
+                            plan?: string;
+                            type?: string;
+                            windows: ({
+                                window: string;
+                                used: number;
+                                limit: number;
+                                unit: string;
+                                resetAt?: number;
+                                pct: number;
+                                pacing?: string;
+                                projected?: number;
+                                remaining?: number;
+                                tokens?: number;
+                                projectedCost?: number;
+                                detailLines?: string[];
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                            severity?: string;
+                        } & {
+                            [key: string]: unknown;
+                        })[];
+                        updatedAt: number;
+                    };
+                };
             };
         };
     };
@@ -6291,7 +6944,42 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        plugins: {
+                            file: string;
+                            name?: string;
+                            status: "ok" | "error";
+                            error?: string;
+                            disabled: boolean;
+                            origin: "builtin" | "override" | "user";
+                            pluginType?: string;
+                            configSchema?: {
+                                key: string;
+                                label: string;
+                                type: "number" | "string" | "boolean" | "select";
+                                options?: string[];
+                                default?: string | number | boolean;
+                            }[];
+                            config: unknown;
+                        }[];
+                        templates: {
+                            id: string;
+                            label: string;
+                            description: string;
+                            fields: {
+                                key: string;
+                                label: string;
+                                type: "string" | "number" | "boolean" | "select" | "textarea";
+                                required?: boolean;
+                                options?: string[];
+                                placeholder?: string;
+                                hint?: string;
+                            }[];
+                        }[];
+                        builtins: string[];
+                    };
+                };
             };
         };
     };
@@ -6347,7 +7035,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        source: string;
+                        origin: "override" | "user";
+                    };
+                };
             };
         };
     };
@@ -6606,7 +7299,20 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        commands: {
+                            name: string;
+                            aliases?: string[];
+                            description: string;
+                            argumentHint?: string;
+                            category: "goals" | "session" | "memory" | "custom";
+                            destructive?: boolean;
+                            kind: "builtin" | "custom";
+                            source?: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -6624,7 +7330,17 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        projectDir: string;
+                        sessionId: string;
+                        createdAt: string | null;
+                    } | {
+                        projectDir: string;
+                        sessionId: string;
+                        createdAt: string | null;
+                    }[];
+                };
             };
         };
     };
@@ -6685,7 +7401,15 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        project: {
+                            id: string;
+                            worktree: string;
+                            mafwDir: string;
+                        } | null;
+                    };
+                };
             };
         };
     };
@@ -6739,7 +7463,22 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        entries: {
+                            id: string;
+                            sessionID: string;
+                            projectDir: string;
+                            rel: string;
+                            blob: string;
+                            size: number;
+                            mtimeMs: number;
+                            createdAt: string;
+                            seq: number;
+                            reason: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -6811,7 +7550,63 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        active: {
+                            name: string;
+                            capabilities: {
+                                [key: string]: boolean;
+                            };
+                            envOverride: boolean;
+                            dialect: string | null;
+                            coverage: {
+                                runtime: string;
+                                contractVersion: string;
+                                static: {
+                                    [key: string]: unknown;
+                                };
+                                behavioral?: {
+                                    [key: string]: unknown;
+                                };
+                            } | null;
+                        };
+                        plugins: {
+                            file: string;
+                            name?: string;
+                            status: "ok" | "error";
+                            error?: string;
+                            capabilities?: {
+                                [key: string]: boolean;
+                            };
+                            alias?: string;
+                        }[];
+                        unknownEvents: {
+                            [key: string]: {
+                                [key: string]: number;
+                            };
+                        };
+                        validation: string[];
+                        translationErrors: {
+                            [key: string]: {
+                                transformEvent: number;
+                                normalizeMessages: number;
+                                lastError?: string;
+                                lastAt?: string;
+                                lastWarnAt?: number;
+                            };
+                        };
+                        translationDrops: {
+                            [key: string]: {
+                                unmatched: {
+                                    [key: string]: number;
+                                };
+                                suppressed: {
+                                    [key: string]: number;
+                                };
+                            };
+                        };
+                    };
+                };
             };
         };
     };
@@ -6829,7 +7624,45 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        manifest: {
+                            schemaVersion: number;
+                            contractVersion: string;
+                            generatedFrom: string;
+                            domains: {
+                                id: string;
+                                title: string;
+                                description: string;
+                            }[];
+                            surfaces: {
+                                [key: string]: unknown;
+                            }[];
+                            capabilities: {
+                                [key: string]: unknown;
+                            }[];
+                            events: {
+                                [key: string]: unknown;
+                            }[];
+                            cognition: {
+                                [key: string]: unknown;
+                            }[];
+                            presets: {
+                                [key: string]: unknown;
+                            }[];
+                        };
+                        coverage: {
+                            runtime: string;
+                            contractVersion: string;
+                            static: {
+                                [key: string]: unknown;
+                            };
+                            behavioral?: {
+                                [key: string]: unknown;
+                            };
+                        } | null;
+                    };
+                };
             };
         };
     };
@@ -6929,7 +7762,32 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        revision: string;
+                        plugins: ({
+                            name: string;
+                            version: string;
+                            revision: string;
+                            title?: string;
+                            description?: string;
+                            ui: {
+                                [key: string]: unknown;
+                            };
+                            actions: {
+                                [key: string]: unknown;
+                            }[];
+                            events: {
+                                [key: string]: unknown;
+                            }[];
+                            diagnostics?: {
+                                [key: string]: unknown;
+                            }[];
+                        } & {
+                            [key: string]: unknown;
+                        })[];
+                    };
+                };
             };
         };
     };
@@ -7253,7 +8111,13 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        config: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
             };
         };
     };
@@ -7899,7 +8763,22 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            projectDir: string;
+                            leadSessionId: string;
+                            fromTopicId: string;
+                            toTopicId: string | null;
+                            trigger: "explicit" | "semantic" | "idle" | "goal_closed" | "keyword";
+                            confidence: number;
+                            status: "proposed" | "accepted" | "merged" | "split" | "undone";
+                            text: string;
+                            createdAt: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -7998,7 +8877,20 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            kind: "github" | "cron" | "internal" | "webhook";
+                            name: string;
+                            enabled: boolean;
+                            cursor: {
+                                [key: string]: unknown;
+                            };
+                            updatedAt: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -8054,7 +8946,20 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            sourceId: string;
+                            projectDir: string;
+                            externalKey: string;
+                            title: string;
+                            state: "open" | "closed" | "archived";
+                            lastTriggerAt: string | null;
+                            createdAt: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -8074,7 +8979,25 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            sourceId: string;
+                            threadId: string;
+                            externalId: string;
+                            kind: string;
+                            actor: string | null;
+                            payload: {
+                                [key: string]: unknown;
+                            };
+                            occurredAt: string;
+                            receivedAt: string;
+                            idempotencyKey: string;
+                            disposition: "pending" | "evaluating" | "accepted" | "ignored" | "fanned_out" | "filtered";
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -8114,7 +9037,20 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            threadId: string;
+                            subscriberType: "standing_goal" | "goal" | "lead";
+                            subscriberId: string;
+                            mode: "work" | "context";
+                            createdAt: string;
+                            expiresAt: string | null;
+                            droppedAt: string | null;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -8172,7 +9108,23 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            triggerId: string;
+                            subscriptionId: string;
+                            state: "pending" | "delivered" | "read" | "acknowledged" | "answered" | "handed_back" | "failed" | "dropped";
+                            attempts: number;
+                            lastError: string | null;
+                            deliveredAt: string | null;
+                            readAt: string | null;
+                            ackAt: string | null;
+                            answeredAt: string | null;
+                            nextRetryAt: string | null;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -8210,7 +9162,47 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            projectDir: string;
+                            title: string;
+                            objective: string;
+                            template: {
+                                taskType?: "feature" | "bug" | "research" | "refactor" | "ops";
+                                acceptance?: string[];
+                                boundaries?: string[];
+                                planReview?: "auto" | "manual";
+                            };
+                            triggers: {
+                                id: string;
+                                type: "cron" | "event" | "manual";
+                                schedule?: string;
+                                timezone?: string;
+                                eventKinds?: string[];
+                                filter?: {
+                                    [key: string]: unknown;
+                                };
+                            }[];
+                            state: "active" | "paused" | "stopped";
+                            stateReason?: string | null;
+                            concurrency: number;
+                            cooldownMs: number;
+                            budget: {
+                                perRunTurns?: number;
+                                perRunCostUsd?: number;
+                                perDayCostUsd?: number;
+                            };
+                            approval: "auto" | "plan" | "confirm";
+                            createdBy: string | null;
+                            createdAt: string;
+                            updatedAt: string;
+                            lastRunAt: string | null;
+                            nextRunAt: string | null;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -8268,7 +9260,32 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            standingGoalId: string;
+                            triggerType: "cron" | "event" | "manual";
+                            triggerKey: string;
+                            payload: {
+                                [key: string]: unknown;
+                            };
+                            status: "queued" | "triaging" | "running" | "waiting_person" | "done" | "failed" | "skipped";
+                            mode: "goal" | "report" | "action" | "skip" | null;
+                            rationale: string | null;
+                            goalId: string | null;
+                            sessionId: string | null;
+                            worktree: string | null;
+                            result: {
+                                [key: string]: unknown;
+                            } | null;
+                            costUsd: number | null;
+                            tokens: number | null;
+                            startedAt: string | null;
+                            endedAt: string | null;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -8386,7 +9403,19 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            title: string;
+                            summary: string | null;
+                            state: "resident" | "warm" | "cold" | "archived";
+                            lastActiveAt: string;
+                            goalId: string;
+                            resumedFrom: string | null;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -8406,7 +9435,27 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        topic: {
+                            id: string;
+                            title: string;
+                            summary: string | null;
+                            state: "resident" | "warm" | "cold" | "archived";
+                            lastActiveAt: string;
+                            goalId: string;
+                            resumedFrom: string | null;
+                        };
+                        messages: {
+                            topicId: string;
+                            messageId: string;
+                            role: "user" | "assistant";
+                            text: string;
+                            tokenEstimate: number;
+                            createdAt: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -8788,6 +9837,7 @@ export interface operations {
                         budget: {
                             max: number;
                             maxChars: number;
+                            perNoteCap: number;
                             used: number;
                         };
                     };
@@ -8827,7 +9877,38 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        current: {
+                            provider: "off" | "local" | "dashscope";
+                            engine: "onnx" | "llamacpp";
+                            model: string;
+                            dimensions: number;
+                            baseUrl: string;
+                            threads: number;
+                            llamacpp: {
+                                gpu: string;
+                                threads: number;
+                                contextSize: number;
+                                batchSize: number;
+                            };
+                        };
+                        runtime: {
+                            active: string | null;
+                            providerId: string | null;
+                            modelTag: string | null;
+                            dims: number | null;
+                            vectors: number;
+                            indexEntries: number;
+                            coverage: number;
+                        };
+                        available: {
+                            providers: string[];
+                            engines: string[];
+                            gpus: string[];
+                        };
+                    };
+                };
             };
         };
     };
@@ -9446,7 +10527,17 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        plugins: {
+                            file: string;
+                            name?: string;
+                            status: "ok" | "error";
+                            error?: string;
+                            modalities?: string[];
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -9574,7 +10665,33 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        voices: {
+                            id: string;
+                            label: string;
+                            lang: string;
+                        }[];
+                        engine: string;
+                        capabilities: {
+                            streaming: "native" | "none";
+                            voiceCloning: boolean;
+                            styleControl: boolean;
+                            languages: string[];
+                            sampleRate: number;
+                        };
+                        engines: {
+                            name: string;
+                            source: "builtin" | "legacy" | "package";
+                        }[];
+                        models: {
+                            id: string;
+                            description: string;
+                        }[];
+                        defaultVoice: string;
+                        defaultModel: string;
+                    };
+                };
             };
         };
     };
@@ -9628,7 +10745,37 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        ok: boolean;
+                        config: {
+                            tier: "auto" | "local" | "cloud";
+                            localTier: "dgpu" | "igpu";
+                            asrEngine: string;
+                            ttsEngine: string;
+                            cloudConsent: boolean;
+                            modelsDir: string;
+                            sidecarPort: number;
+                            duplexV1: boolean;
+                        };
+                        engines: {
+                            name: string;
+                            capabilities: {
+                                streaming: "native" | "none";
+                                languages: string[];
+                                punctuation: boolean;
+                                timestamps: "word" | "segment" | "none";
+                                sampleRate: number;
+                                maxAudioSeconds?: number;
+                            };
+                            source: "builtin" | "plugin";
+                        }[];
+                        routing: {
+                            status: "local_accelerated" | "local_cpu" | "cloud" | "degraded";
+                            reason?: string;
+                        };
+                    };
+                };
             };
         };
     };
@@ -9728,7 +10875,50 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        recall: {
+                            workerModel: {
+                                providerID: string;
+                                modelID: string;
+                            };
+                        };
+                        media: {
+                            provider?: string;
+                            model?: string;
+                            image?: {
+                                provider?: string;
+                                model?: string;
+                            };
+                            video?: {
+                                provider?: string;
+                                model?: string;
+                            };
+                            audio?: {
+                                provider?: string;
+                                model?: string;
+                            };
+                        };
+                        goal: {
+                            nodeModel?: {
+                                providerID: string;
+                                modelID: string;
+                            } | null;
+                            techLeadModel?: {
+                                providerID: string;
+                                modelID: string;
+                            } | null;
+                        };
+                        available: {
+                            providerID: string;
+                            providerName: string;
+                            models: {
+                                id: string;
+                                name: string;
+                            }[];
+                        }[] | null;
+                    };
+                };
             };
         };
     };
@@ -9769,14 +10959,51 @@ export interface operations {
                         rules: {
                             id: string;
                             enabled: boolean;
-                            name?: string;
-                            trigger?: {
+                            trigger: {
+                                /** @constant */
+                                type: "cron";
                                 schedule: string;
                                 timezone: string;
+                            } | {
+                                /** @constant */
+                                type: "event";
+                                on: string[];
+                                perGoalCooldown: string;
+                            };
+                            skill?: string;
+                            args?: {
+                                [key: string]: unknown;
+                            };
+                            onResult?: {
+                                type: "triage" | "goal";
+                                auto_confirm?: boolean;
+                                template?: string;
+                            };
+                            goal_defaults?: {
+                                maxLoops?: number;
+                                metrics?: {
+                                    [key: string]: {
+                                        target: number;
+                                        unit: string;
+                                    };
+                                };
                             };
                             action?: {
                                 type: string;
                             };
+                            nextTriggers: string[];
+                            recentHistory: {
+                                timestamp: string;
+                                event: string;
+                                goalId?: string;
+                                ruleId?: string;
+                                source?: "cron" | "event" | "llm" | "user";
+                                reason?: string;
+                                sessionId?: string;
+                                details?: {
+                                    [key: string]: unknown;
+                                };
+                            }[];
                         }[];
                     };
                 };
@@ -9799,7 +11026,57 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        enabled: boolean;
+                        trigger: {
+                            /** @constant */
+                            type: "cron";
+                            schedule: string;
+                            timezone: string;
+                        } | {
+                            /** @constant */
+                            type: "event";
+                            on: string[];
+                            perGoalCooldown: string;
+                        };
+                        skill?: string;
+                        args?: {
+                            [key: string]: unknown;
+                        };
+                        onResult?: {
+                            type: "triage" | "goal";
+                            auto_confirm?: boolean;
+                            template?: string;
+                        };
+                        goal_defaults?: {
+                            maxLoops?: number;
+                            metrics?: {
+                                [key: string]: {
+                                    target: number;
+                                    unit: string;
+                                };
+                            };
+                        };
+                        action?: {
+                            type: string;
+                        };
+                        nextTriggers: string[];
+                        history: {
+                            timestamp: string;
+                            event: string;
+                            goalId?: string;
+                            ruleId?: string;
+                            source?: "cron" | "event" | "llm" | "user";
+                            reason?: string;
+                            sessionId?: string;
+                            details?: {
+                                [key: string]: unknown;
+                            };
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -10227,7 +11504,153 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        pod: {
+                            id: string;
+                            projectDir: string;
+                            name: string;
+                            status: "active" | "idle" | "paused" | "archived";
+                            configJson: string;
+                            activeGoalId: string | null;
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                        members: {
+                            id: string;
+                            podId: string;
+                            role: "lead" | "tech_lead" | "builder" | "reviewer";
+                            displayName: string;
+                            agentName: string;
+                            modelProvider: string | null;
+                            modelId: string | null;
+                            status: "available" | "working" | "waiting" | "sleeping" | "retired";
+                            configJson: string | null;
+                            createdAt: string;
+                            updatedAt: string;
+                        }[];
+                        stageSupported?: boolean;
+                        goals: {
+                            id: string;
+                            podId: string;
+                            goalId: string;
+                            status: "queued" | "active" | "done" | "aborted";
+                            title: string;
+                            phase: string | null;
+                            verdict: ("PASS" | "FAIL" | "MAX_RETRIES" | "ERROR" | "CANCELLED") | null;
+                            stage: {
+                                owner: "person" | "team" | "system";
+                                kind: "plan_approval" | "direction_review" | "question" | "blocked" | "queued" | "discussing" | "planning" | "probing" | "implementing" | "reviewing" | "result_notified" | "working" | "waiting" | "ended";
+                                role?: "lead" | "tech_lead" | "builder" | "reviewer";
+                                queueReason?: "active_goal" | "paused" | "archived" | "budget" | "state_error";
+                                action?: {
+                                    type: "open_plan_review" | "open_direction_review" | "open_question" | "open_discussion" | "open_goal" | "open_result";
+                                    goalId: string;
+                                    questionId?: string;
+                                };
+                            };
+                            pendingQuestion?: {
+                                questionId: string;
+                                node: "plan" | "execute" | "review";
+                                questions: string[];
+                            } | null;
+                            bucket?: "needs_you" | "queued" | "in_progress" | "result_ready" | "ended";
+                            resultReady: boolean;
+                            accepted?: boolean;
+                            lastError?: string | null;
+                            progress?: {
+                                total: number;
+                                done: number;
+                                inProgress: number;
+                                review: number;
+                                failed: number;
+                                skipped: number;
+                            } | null;
+                            sourceRef?: {
+                                sessionID?: string;
+                                messageID?: string;
+                                snapshot: string;
+                                capturedAt: string;
+                                topicId?: string;
+                                messageRange?: {
+                                    from: string;
+                                    to: string;
+                                };
+                            } | null;
+                            strategy?: ("quick" | "collaborative") | null;
+                            goalMode?: "quick" | "standard" | "standing";
+                            assessment?: ("reviewed" | "unreviewed") | null;
+                            currentAssignment?: {
+                                assignmentId: string;
+                                role: "builder" | "reviewer";
+                                taskIds: string[];
+                                attempt: number;
+                            } | null;
+                            activeRevision?: number;
+                            revision?: number;
+                            priority?: number;
+                            enqueuedAt: string;
+                            startedAt: string | null;
+                            endedAt: string | null;
+                        }[];
+                        attention: {
+                            id: string;
+                            goalId: string;
+                            revision: number;
+                            kind: "plan_approval" | "direction_review" | "question" | "blocked" | "review" | "failed";
+                            title: string;
+                            action: {
+                                type: "open_plan_review" | "open_direction_review" | "open_question" | "open_discussion" | "open_goal" | "open_result";
+                                goalId: string;
+                                questionId?: string;
+                            };
+                            podId?: string;
+                            projectId?: string;
+                        }[];
+                        messageHealth: {
+                            messageId: string;
+                            podId: string;
+                            memberId: string;
+                            deliveredAt: string | null;
+                            deliveredSessionId: string | null;
+                            status: "pending" | "delivered" | "failed";
+                            attempts: number;
+                            lastError: string | null;
+                            nextRetryAt: string | null;
+                        }[];
+                        tasks: {
+                            id: string;
+                            podId: string;
+                            goalId: string | null;
+                            sourceKey: string;
+                            externalTaskId: string | null;
+                            kind: "plan" | "note" | "external_request";
+                            title: string;
+                            description: string | null;
+                            ownerMemberId: string | null;
+                            status: "pending" | "in_progress" | "blocked" | "review" | "done" | "failed" | "skipped" | "reopened";
+                            dependenciesJson: string | null;
+                            artifactRefsJson: string | null;
+                            acceptanceJson?: string | null;
+                            createdAt: string;
+                            updatedAt: string;
+                        }[];
+                        sessions: {
+                            id: string;
+                            podId: string;
+                            memberId: string;
+                            goalId: string | null;
+                            node: string | null;
+                            sessionId: string;
+                            runtime?: string;
+                            status: string;
+                            transcriptRef: string | null;
+                            scopeKind?: ("project" | "discussion" | "probe" | "implementation" | "review") | null;
+                            createdAt: string;
+                            endedAt: string | null;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -11354,7 +12777,13 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        content: string | null;
+                    } | {
+                        context: string | null;
+                    };
+                };
             };
         };
     };
@@ -11642,7 +13071,58 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        name: string;
+                        description: string;
+                        url: string;
+                        version: string;
+                        protocolVersion?: string;
+                        provider: {
+                            url: string;
+                            organization: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                        capabilities: {
+                            streaming: boolean;
+                            pushNotifications: boolean;
+                            extensions: unknown[];
+                        } & {
+                            [key: string]: unknown;
+                        };
+                        defaultInputModes: string[];
+                        defaultOutputModes: string[];
+                        skills: ({
+                            id: string;
+                            name: string;
+                            description: string;
+                            tags?: string[];
+                            examples?: string[];
+                            inputModes?: string[];
+                            outputModes?: string[];
+                            securityRequirements?: unknown[];
+                        } & {
+                            [key: string]: unknown;
+                        })[];
+                        supportedInterfaces?: ({
+                            url: string;
+                            protocolBinding: string;
+                            protocolVersion: string;
+                        } & {
+                            [key: string]: unknown;
+                        })[];
+                        documentationUrl?: string;
+                        iconUrl?: string;
+                        securitySchemes: {
+                            [key: string]: unknown;
+                        };
+                        securityRequirements: unknown[];
+                        signatures: unknown[];
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
             };
         };
     };
@@ -11717,7 +13197,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        running: boolean;
+                    };
+                };
             };
         };
     };
@@ -12166,7 +13650,30 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        outcomes: {
+                            goal_id: string;
+                            project_id: string | null;
+                            verdict: string;
+                            rounds: number;
+                            duration_ms: number | null;
+                            tokens_input: number | null;
+                            tokens_output: number | null;
+                            total_cost: number | null;
+                            tool_error_count: number | null;
+                            thumbs_up: number;
+                            thumbs_down: number;
+                            policy_version: string;
+                            evolution_proposal_id: string | null;
+                            failure_kind: string | null;
+                            failure_signature: string | null;
+                            task_type?: string | null;
+                            created_at: string | null;
+                            archived_at: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -12204,7 +13711,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        artifactId: string | null;
+                    };
+                };
             };
         };
     };
@@ -12258,7 +13769,29 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        activeGoals: number;
+                        registeredProjects: number;
+                        sseClients: number;
+                        serveRunning: boolean;
+                        eventAppendFailures?: number;
+                        tokens?: {
+                            totalTokens: {
+                                input: number;
+                                output: number;
+                                reasoning: number;
+                                cache: {
+                                    read: number;
+                                    write: number;
+                                };
+                            };
+                            totalCost: number;
+                            turnCount: number;
+                            sessionCount: number;
+                        };
+                    };
+                };
             };
         };
     };
@@ -12502,7 +14035,18 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        devices: {
+                            id: string;
+                            fcmToken: string;
+                            platform: string;
+                            lastSeen: string;
+                            deviceName?: string;
+                            tokenIssuedAt?: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -12558,7 +14102,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        url: string;
+                    };
+                };
             };
         };
     };
@@ -12594,7 +14142,18 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        devices: {
+                            id: string;
+                            fcmToken: string;
+                            platform: string;
+                            lastSeen: string;
+                            deviceName?: string;
+                            tokenIssuedAt?: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -12673,7 +14232,58 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        name: string;
+                        description: string;
+                        url: string;
+                        version: string;
+                        protocolVersion?: string;
+                        provider: {
+                            url: string;
+                            organization: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                        capabilities: {
+                            streaming: boolean;
+                            pushNotifications: boolean;
+                            extensions: unknown[];
+                        } & {
+                            [key: string]: unknown;
+                        };
+                        defaultInputModes: string[];
+                        defaultOutputModes: string[];
+                        skills: ({
+                            id: string;
+                            name: string;
+                            description: string;
+                            tags?: string[];
+                            examples?: string[];
+                            inputModes?: string[];
+                            outputModes?: string[];
+                            securityRequirements?: unknown[];
+                        } & {
+                            [key: string]: unknown;
+                        })[];
+                        supportedInterfaces?: ({
+                            url: string;
+                            protocolBinding: string;
+                            protocolVersion: string;
+                        } & {
+                            [key: string]: unknown;
+                        })[];
+                        documentationUrl?: string;
+                        iconUrl?: string;
+                        securitySchemes: {
+                            [key: string]: unknown;
+                        };
+                        securityRequirements: unknown[];
+                        signatures: unknown[];
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
             };
         };
     };
@@ -12693,7 +14303,22 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        history: {
+                            timestamp: string;
+                            event: string;
+                            goalId?: string;
+                            ruleId?: string;
+                            source?: "cron" | "event" | "llm" | "user";
+                            reason?: string;
+                            sessionId?: string;
+                            details?: {
+                                [key: string]: unknown;
+                            };
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -12886,7 +14511,13 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        status: "running" | "completed" | "failed" | "aborted";
+                        structured?: unknown;
+                        text?: string;
+                    };
+                };
             };
         };
     };
@@ -12978,7 +14609,26 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        status: "ok";
+                        serveRunning: boolean;
+                        registeredProjects: string[];
+                        activeGoals: string[];
+                        media: {
+                            configured: boolean;
+                        };
+                        gatewayVersion?: string;
+                        experienceVersion?: string;
+                        minimumClientExperienceVersion?: string;
+                        schemaEpoch?: number;
+                        instanceId?: string;
+                        distribution?: "desktop-managed" | "standalone";
+                        channel?: string;
+                        pid?: number;
+                    };
+                };
             };
         };
     };
@@ -13093,7 +14743,35 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        ledger: {
+                            total: number;
+                            passRate: number;
+                            avgRounds?: number;
+                            avgCostUsd?: number;
+                            thumbsUp?: number;
+                            thumbsDown?: number;
+                            byFailureKind?: {
+                                [key: string]: number;
+                            };
+                            byTaskType?: {
+                                [key: string]: {
+                                    total: number;
+                                    passRate: number;
+                                    avgRounds: number;
+                                    avgCostUsd: number;
+                                };
+                            };
+                        };
+                        failureTaxonomy: {
+                            pattern: string;
+                            count: number;
+                            energy: number;
+                            id: string;
+                        }[];
+                    };
+                };
             };
         };
     };

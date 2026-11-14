@@ -71,7 +71,7 @@ export const PresenceResponse = Type.Object({
   }),
 })
 
-const TokenCountsSchema = Type.Object({
+export const TokenCountsSchema = Type.Object({
   input: Type.Number(),
   output: Type.Number(),
   reasoning: Type.Number(),
@@ -81,7 +81,7 @@ const TokenCountsSchema = Type.Object({
   }),
 })
 
-const TokenSummarySchema = Type.Object({
+export const TokenSummarySchema = Type.Object({
   totalTokens: TokenCountsSchema,
   totalCost: Type.Number(),
   turnCount: Type.Number(),
@@ -216,4 +216,40 @@ export const AttentionListResponse = Type.Object({
       line: Type.Optional(Type.Number()),
     }),
   })),
+})
+
+// ── E10f-C：orchestration.outcomes ──────────────────────────────────────────
+
+/**
+ * `GET /api/orchestration/outcomes?policy=&verdict=&project=&limit=` →
+ * `{outcomes}`，行来自 `memory/gateway-db.ts` `GoalOutcome`（`SELECT *` 原样下发，
+ * 列名是 snake_case 存储形态）。internal / 运维诊断面：SDK 与 desktop 都不调用
+ * （只有 MCP `listOutcomes` 在 gateway 内消费），故 schema-only。
+ *
+ * `task_type` 是 D4b 迁移列（legacy 行为 NULL），`created_at` 可空；
+ * `rounds` / `thumbs_up` / `thumbs_down` 有 DEFAULT 0，非空。
+ */
+const GoalOutcomeRowSchema = Type.Object({
+  goal_id: Type.String(),
+  project_id: Type.Union([Type.String(), Type.Null()]),
+  verdict: Type.String(),
+  rounds: Type.Number(),
+  duration_ms: Type.Union([Type.Number(), Type.Null()]),
+  tokens_input: Type.Union([Type.Number(), Type.Null()]),
+  tokens_output: Type.Union([Type.Number(), Type.Null()]),
+  total_cost: Type.Union([Type.Number(), Type.Null()]),
+  tool_error_count: Type.Union([Type.Number(), Type.Null()]),
+  thumbs_up: Type.Number(),
+  thumbs_down: Type.Number(),
+  policy_version: Type.String(),
+  evolution_proposal_id: Type.Union([Type.String(), Type.Null()]),
+  failure_kind: Type.Union([Type.String(), Type.Null()]),
+  failure_signature: Type.Union([Type.String(), Type.Null()]),
+  task_type: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  created_at: Type.Union([Type.String(), Type.Null()]),
+  archived_at: Type.String(),
+})
+
+export const OrchestrationOutcomesResponse = Type.Object({
+  outcomes: Type.Array(GoalOutcomeRowSchema),
 })

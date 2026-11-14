@@ -27,7 +27,11 @@ import { RouteRegistry } from '../../src/routes/registry';
 import { buildRouteCatalog } from '../../src/routes/route-catalog';
 import { KernelStatsResponse } from '../../src/routes/schemas/resources';
 import { buildKernelStatsSnapshot, type KernelStatsInput } from '../../src/resources/stats';
-import { AttentionListResponse, DecisionListResponse } from '../../src/routes/schemas/read-models';
+import {
+  AttentionListResponse,
+  DecisionListResponse,
+  OrchestrationOutcomesResponse,
+} from '../../src/routes/schemas/read-models';
 import {
   SessionCheckpointsResponse,
   SessionChildrenResponse,
@@ -44,6 +48,7 @@ import {
   PodGoalResultResponse,
   PodGoalRevisionsResponse,
   PodGoalsResponse,
+  PodMemoryResponse,
   PodMessagesResponse,
   PodProbesResponse,
   PodReviewItemsResponse,
@@ -83,6 +88,25 @@ import {
   TriageListResponse,
 } from '../../src/routes/schemas/human-gate';
 import { WorkOverviewResponse } from '../../src/routes/schemas/work';
+import { TaskGetResponse, TaskListResponse, TaskOutputResponse } from '../../src/routes/schemas/tasks';
+import {
+  SessionDiscoveryResponse,
+  SessionDiscoverySkillResponse,
+  SessionRunResponse,
+  SessionStructuredResponse,
+  SessionTrajectoryResponse,
+} from '../../src/routes/schemas/session-runtime';
+import { CognitionRulesResponse, ExperienceActionsResponse } from '../../src/routes/schemas/experience';
+import {
+  BackgroundJobOutputResponse,
+  BackgroundJobsListResponse,
+} from '../../src/routes/schemas/background';
+import { TerminalListResponse } from '../../src/routes/schemas/terminal';
+import {
+  SessionUsageResponse,
+  UsagePluginSourceResponse,
+  UsagePluginsListResponse,
+} from '../../src/routes/schemas/usage';
 import {
   AgentListResponse,
   ConfigGetResponse,
@@ -93,6 +117,56 @@ import {
   SkillsListResponse,
   ToolsListResponse,
 } from '../../src/routes/schemas/meta';
+import {
+  FileHistoryListResponse,
+  MafwCommandsListResponse,
+  ManagerSessionResponse,
+  ProjectCurrentResponse,
+} from '../../src/routes/schemas/project-meta';
+import {
+  PluginsClientResponse,
+  RuntimeConfigGetResponse,
+  RuntimeContractResponse,
+  RuntimeGetResponse,
+} from '../../src/routes/schemas/runtime-surface';
+import {
+  AgentCapabilitiesResponse,
+  EmbeddingGetResponse,
+  MediaPluginsResponse,
+  MediaResolveTaskResponse,
+  ModelConfigGetResponse,
+  PythonStatusResponse,
+  TtsVoicesResponse,
+  VoiceStatusResponse,
+} from '../../src/routes/schemas/media-voice';
+import {
+  LeadBoundariesResponse,
+  LeadTopicGetResponse,
+  LeadTopicsResponse,
+} from '../../src/routes/schemas/lead';
+import {
+  EventDeliveriesResponse,
+  EventSourcesResponse,
+  EventSubscriptionsResponse,
+  EventThreadsResponse,
+  EventTriggersResponse,
+} from '../../src/routes/schemas/events';
+import {
+  StandingGoalListResponse,
+  StandingGoalRunsResponse,
+} from '../../src/routes/schemas/standing';
+import {
+  AutomationGetResponse,
+  AutomationHistoryResponse,
+  AutomationsListResponse,
+} from '../../src/routes/schemas/automations';
+import { DeviceListResponse, PairingCodeResponse } from '../../src/routes/schemas/devices';
+import {
+  DashboardStatsResponse,
+  HealthResponse,
+  SessionSubagentResultResponse,
+} from '../../src/routes/schemas/observability';
+import { A2AAgentCardResponse } from '../../src/routes/schemas/a2a';
 import { handleAttention } from '../../src/routes/attention';
 import { handleDecisionList } from '../../src/routes/decisions';
 import type { PodGoalView } from '../../src/core/pod/pod-view';
@@ -1698,7 +1772,10 @@ describe('api-contract: E10d-1 memory extra / lead.context / pod read response s
       .toEqual(['manual', 'distilled']);
 
     const sticky = schemaOf('memory.listSticky');
-    expect([...sticky.properties.budget.required].sort()).toEqual(['max', 'maxChars', 'used']);
+    // E10f-E: the formatter budget carries the anti-starvation per-note cap
+    // (`NOTE_BOARD_BUDGET = { max, maxChars, perNoteCap }` + `used`).
+    expect([...sticky.properties.budget.required].sort()).toEqual(['max', 'maxChars', 'perNoteCap', 'used']);
+    expect(sticky.properties.budget.properties.perNoteCap.type).toBe('number');
     expect([...sticky.properties.entries.items.required].sort())
       .toEqual(['energy', 'id', 'memory_value', 'primary_abstraction', 'type']);
     // HarmonicUnit.type vocabulary, same as memory.search results.
@@ -1772,10 +1849,18 @@ describe('api-contract: E10d-1 memory extra / lead.context / pod read response s
       id: 'mem-1', type: 'semantic', primary_abstraction: 'a', memory_value: 'v', energy: 0.9,
       created_at: 't', sticky_until: '2026-11-21T00:00:00.000Z',
     };
-    expect(Value.Check(MemoryStickyResponse, { entries: [note], budget: { max: 12, maxChars: 1200, used: 1 } })).toBe(true);
-    expect(Value.Check(MemoryStickyResponse, { entries: [], budget: { max: 12, maxChars: 1200, used: 0 } })).toBe(true);
     expect(Value.Check(MemoryStickyResponse, {
-      entries: [{ ...note, type: 'hot' }], budget: { max: 12, maxChars: 1200, used: 1 },
+      entries: [note], budget: { max: 10, maxChars: 1600, perNoteCap: 240, used: 1 },
+    })).toBe(true);
+    expect(Value.Check(MemoryStickyResponse, {
+      entries: [], budget: { max: 10, maxChars: 1600, perNoteCap: 240, used: 0 },
+    })).toBe(true);
+    // E10f-E: perNoteCap is part of every budget body — including the 503 shell.
+    expect(Value.Check(MemoryStickyResponse, {
+      entries: [], budget: { max: 10, maxChars: 1600, used: 0 },
+    })).toBe(false);
+    expect(Value.Check(MemoryStickyResponse, {
+      entries: [{ ...note, type: 'hot' }], budget: { max: 10, maxChars: 1600, perNoteCap: 240, used: 1 },
     })).toBe(false);
 
     // lead.context: LeadContext (blocks + counters); empty context is the fail-open body.
@@ -2091,3 +2176,1530 @@ describe('api-contract: E10e-1 metadata / registry read response schema (8 ops)'
     expect(Value.Check(SchedulerStatusResponse, { error: 'pod not found' })).toBe(false);
   });
 });
+
+describe('api-contract: E10f-A session / task / terminal / usage read response schema (16 ops)', () => {
+  const findOp = (operationId: string): any => {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const candidate of Object.values<any>(methods)) {
+        if (candidate?.operationId === operationId) return candidate;
+      }
+    }
+    return null;
+  };
+
+  const schemaOf = (operationId: string): any =>
+    findOp(operationId).responses['200']['content']['application/json'].schema;
+
+  /** Load-bearing properties per op (a missing one breaks rendering / pagination / cursoring). */
+  const EXPECTED: Record<string, { fields: string[]; item?: { at: string; required: string[] } }> = {
+    'cognition.rules': {
+      fields: ['rules', 'errors'],
+      item: { at: 'rules', required: ['on', 'action'] },
+    },
+    'session.structured': { fields: ['sessionID', 'schema', 'errors', 'updatedAt'] },
+    'tasks.list': {
+      fields: ['items'],
+      item: { at: 'items', required: ['id', 'kind', 'parentSessionID', 'title', 'status', 'createdAt', 'updatedAt'] },
+    },
+    'tasks.get': { fields: ['id', 'kind', 'status', 'title', 'createdAt', 'updatedAt'] },
+    'tasks.output': { fields: ['output', 'cursor', 'size', 'truncated'] },
+    'session.trajectory': {
+      fields: ['turns', 'events'],
+      item: {
+        at: 'turns',
+        required: [
+          'projectID', 'sessionID', 'turnID', 'turnStartMs', 'turnEndMs', 'durationMs',
+          'toolCount', 'toolErrorCount', 'reasoningCount', 'agentSwitchCount', 'tokens',
+          'cost', 'finish', 'model', 'provider', 'agent', 'userText',
+        ],
+      },
+    },
+    'session.run': { fields: ['run'] },
+    'session.discovery': {
+      fields: [
+        'sessionID', 'directory', 'revision', 'commandsRevision', 'generatedAt',
+        'commands', 'skills', 'instructions', 'degraded', 'warnings', 'skillInvokeSupported',
+      ],
+    },
+    'session.discoverySkill': {
+      fields: ['id', 'name', 'slash', 'scope', 'contentLength', 'content'],
+    },
+    'experience.actions': { fields: ['experienceVersion', 'minClientVersion', 'actions'] },
+    'background.jobs.list': {
+      fields: ['items'],
+      item: { at: 'items', required: ['id', 'source', 'kind', 'status', 'sessionID'] },
+    },
+    'background.jobs.output': { fields: ['cursor', 'data', 'truncated'] },
+    'terminal.list': {
+      fields: ['protocol', 'supported', 'sessions'],
+      item: { at: 'sessions', required: ['id', 'status'] },
+    },
+    'session.usage': { fields: ['summary', 'providers', 'updatedAt'] },
+    'session.usagePluginsList': { fields: ['plugins', 'templates', 'builtins'] },
+    'session.usagePluginSourceGet': { fields: ['source', 'origin'] },
+  };
+
+  test('all sixteen ops expose a 200 JSON schema with properties (not a whole-response widening)', () => {
+    expect(Object.keys(EXPECTED)).toHaveLength(16);
+    const problems: string[] = [];
+    for (const [operationId, spec] of Object.entries(EXPECTED)) {
+      const op = findOp(operationId);
+      if (!op) { problems.push(`${operationId}: missing from openapi.json`); continue; }
+      const schema = op.responses?.['200']?.content?.['application/json']?.schema;
+      if (!schema) { problems.push(`${operationId}: responses.200 missing application/json schema`); continue; }
+      const properties = Object.keys(schema.properties ?? {});
+      if (properties.length === 0) { problems.push(`${operationId}: schema has no properties (widened)`); continue; }
+      for (const field of spec.fields) {
+        if (!properties.includes(field)) problems.push(`${operationId}: schema missing property '${field}'`);
+      }
+    }
+    if (problems.length) {
+      console.error('[api-contract] E10f-A response schema missing - run emit:openapi + merge-contract:\n' + problems.join('\n'));
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test('array item required fields match the handler wire (items/rules/turns/sessions)', () => {
+    const problems: string[] = [];
+    for (const [operationId, spec] of Object.entries(EXPECTED)) {
+      if (!spec.item) continue;
+      const required = schemaOf(operationId).properties?.[spec.item.at]?.items?.required ?? [];
+      for (const field of spec.item.required) {
+        if (!required.includes(field)) problems.push(`${operationId}: ${spec.item.at}.items missing required '${field}'`);
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test('tasks.* pin the task state machine and keep the output snapshot bookkeeping optional', () => {
+    const list = schemaOf('tasks.list').properties.items.items;
+    expect(list.properties.kind.anyOf?.map((e: any) => e.const)).toEqual(['shell', 'subagent']);
+    expect(list.properties.status.anyOf?.map((e: any) => e.const))
+      .toEqual(['working', 'input_required', 'completed', 'failed', 'cancelled']);
+    // publicTask() strips only `output`/`resumeAt`; the snapshot cursors are extra gateway bookkeeping.
+    expect(list.properties.output).toBeUndefined();
+    expect(list.properties.outputCursor).toBeDefined();
+    expect(list.required).not.toContain('outputCursor');
+    expect(list.required).not.toContain('outputSize');
+    expect(list.required).not.toContain('outputTruncated');
+    expect(schemaOf('tasks.get')).toEqual(schemaOf('tasks.list').properties.items.items);
+  });
+
+  test('tasks.output stays a runtime shell boundary (known keys optional, open index)', () => {
+    const schema = schemaOf('tasks.output');
+    // Live tasks pass `shell.output()` through untouched -> no required key, open index,
+    // but the four keys the SDK guards on keep their types (see contract-compat checks).
+    expect(schema.required ?? []).toEqual([]);
+    expect(schema.additionalProperties).toBe(true);
+    for (const field of ['output', 'cursor', 'size', 'truncated']) {
+      expect(schema.properties[field]).toBeDefined();
+    }
+  });
+
+  test('session.trajectory models gateway turn/event rows (SDK TrajectoryTurn is a legacy subset)', () => {
+    const schema = schemaOf('session.trajectory');
+    expect(schema.required).toEqual(['turns', 'events']);
+    const turn = schema.properties.turns.items;
+    // gateway-owned fields the SDK subset lacks: sessionID / provider / workerRole.
+    expect(turn.required).toEqual(expect.arrayContaining(['sessionID', 'provider']));
+    expect(turn.properties.workerRole).toBeDefined();
+    expect(turn.properties.turnEndMs.anyOf?.map((e: any) => e.type)).toEqual(expect.arrayContaining(['number', 'null']));
+    const event = schema.properties.events.items;
+    expect(event.properties.eventType.anyOf?.map((e: any) => e.const)).toEqual(expect.arrayContaining([
+      'tool_start', 'tool_end', 'reasoning_start', 'step_finish', 'turn_start', 'turn_end', 'text_end',
+    ]));
+    // Empty store / rebuild failure still returns the same two arrays.
+    expect(Value.Check(SessionTrajectoryResponse, { turns: [], events: [] })).toBe(true);
+  });
+
+  test('session.run mirrors toRunDto (brief four keys, nullable run, optional resumed/finished)', () => {
+    const schema = schemaOf('session.run');
+    expect(schema.properties.run.anyOf?.map((e: any) => e.type)).toEqual(expect.arrayContaining(['object', 'null']));
+    const run = schema.properties.run.anyOf[0];
+    expect(run.required).toEqual(expect.arrayContaining([
+      'id', 'sessionID', 'projectDir', 'status', 'brief', 'createdAt', 'suspendedAt',
+    ]));
+    expect(run.required).not.toContain('resumedAt');
+    expect(run.required).not.toContain('finishedAt');
+    expect(run.required).not.toContain('reason');
+    expect(run.properties.brief.required).toEqual([
+      'lastUserText', 'lastAssistantTail', 'anchorMessageID', 'queuedCount',
+    ]);
+    expect(run.properties.status.anyOf?.map((e: any) => e.const))
+      .toEqual(['suspended', 'resumed', 'completed', 'failed', 'cancelled']);
+    expect(Value.Check(SessionRunResponse, { run: null })).toBe(true);
+  });
+
+  test('session.discovery pins the snapshot envelope and optional degradedReason', () => {
+    const schema = schemaOf('session.discovery');
+    expect([...schema.required].sort()).toEqual([
+      'commands', 'commandsRevision', 'degraded', 'directory', 'generatedAt',
+      'instructions', 'revision', 'sessionID', 'skillInvokeSupported', 'skills', 'warnings',
+    ]);
+    expect(schema.properties.degradedReason.anyOf?.map((e: any) => e.const)).toEqual([
+      'capability_absent', 'runtime_error', 'partial', 'instructions_error',
+    ]);
+    expect(schema.required).not.toContain('degradedReason');
+    const skill = schema.properties.skills.items;
+    expect(skill.properties.scope.anyOf?.map((e: any) => e.const)).toEqual(['user', 'project', 'path']);
+    const shadow = schemaOf('session.discoverySkill');
+    // contentLength is bytes of the full text; content only ships on the single-skill op.
+    expect(shadow.required).toEqual(expect.arrayContaining(['id', 'name', 'slash', 'scope', 'contentLength', 'content']));
+    expect(schema.properties.skills.items.properties.content).toBeUndefined();
+  });
+
+  test('experience.actions derives the closed action vocabulary from the contract constant', () => {
+    const schema = schemaOf('experience.actions');
+    expect(schema.required).toEqual(['experienceVersion', 'minClientVersion', 'actions']);
+    // actions is a Partial map: every action id is optional, unknown ids are not in the schema.
+    const ids = Object.keys(schema.properties.actions.properties ?? {});
+    expect(ids).toHaveLength(20);
+    expect(ids).toContain('checkpoint.restore');
+    expect(ids).toContain('mcp.config.write');
+    expect(schema.properties.actions.required ?? []).toEqual([]);
+    expect(schema.properties.actions.additionalProperties).toBeFalsy();
+    const descriptor = schema.properties.actions.properties['run.control'];
+    expect(descriptor.required).toEqual(['supported', 'enabled']);
+    expect(descriptor.properties.reason.anyOf?.map((e: any) => e.const)).toEqual([
+      'unsupported', 'busy', 'missing-data', 'non-invertible-patch', 'unsafe',
+    ]);
+    expect(descriptor.properties.operationId).toBeDefined();
+  });
+
+  test('cognition.rules keeps config-authored data open but pins on/action', () => {
+    const rule = schemaOf('cognition.rules').properties.rules.items;
+    expect(rule.required).toEqual(['on', 'action']);
+    expect(rule.additionalProperties).toBe(true);
+    expect(rule.properties.on.anyOf?.map((e: any) => e.const)).toEqual(['tool_call', 'prompt', 'tool_result']);
+    expect(rule.properties.action.anyOf?.map((e: any) => e.const))
+      .toEqual(['deny', 'ask', 'rewrite', 'transform', 'redact']);
+    expect(schemaOf('cognition.rules').required).toEqual(['rules', 'errors']);
+  });
+
+  test('background / terminal read surfaces speak only MAFW DTOs', () => {
+    const job = schemaOf('background.jobs.list').properties.items.items;
+    expect(job.properties.source.anyOf?.map((e: any) => e.const))
+      .toEqual(['runtime-shell', 'mafw-task', 'subagent']);
+    expect(job.properties.status.anyOf?.map((e: any) => e.const))
+      .toEqual(['running', 'input_required', 'completed', 'failed', 'cancelled']);
+    // cursor is the next read offset in bytes -> number, and the three output keys are required.
+    expect(schemaOf('background.jobs.output').required).toEqual(['cursor', 'data', 'truncated']);
+
+    const terminal = schemaOf('terminal.list');
+    expect(terminal.required).toEqual(['protocol', 'supported', 'sessions']);
+    expect(terminal.properties.sessions.items.properties.status.anyOf?.map((e: any) => e.const))
+      .toEqual(['running', 'exited', 'unknown']);
+    // Unsupported runtime is still 200: supported:false + empty list, never a fabricated PTY.
+    expect(Value.Check(TerminalListResponse, { protocol: 'mafw-terminal/1', supported: false, sessions: [] })).toBe(true);
+  });
+
+  test('session.usage documents both branches (success + fail-open 200)', () => {
+    const schema = schemaOf('session.usage');
+    expect(schema.required).toEqual(['summary', 'providers', 'updatedAt']);
+    // summary is null on the fail-open branch, an object on success.
+    expect(schema.properties.summary.anyOf?.map((e: any) => e.type)).toEqual(expect.arrayContaining(['object', 'null']));
+    // memory / modelStats are omitted by the fail-open catch branch.
+    expect(schema.required).not.toContain('memory');
+    expect(schema.required).not.toContain('modelStats');
+    const summary = schema.properties.summary.anyOf[0];
+    expect(summary.properties.session.required).toEqual(expect.arrayContaining([
+      'totalTokens', 'totalCost', 'turnCount', 'avgTokensPerTurn',
+    ]));
+    expect(summary.properties.project.required).toEqual(
+      expect.arrayContaining(['totalTokens', 'totalCost', 'turnCount', 'sessionCount']),
+    );
+    expect(schema.properties.modelStats.properties.windows.required).toEqual(['today', '7d', '30d', 'all']);
+    expect(schema.properties.providers.items.required).toEqual(['name', 'windows']);
+    // window/unit vocabulary belongs to the usage plugins (user JS) -> open strings.
+    expect(schema.properties.providers.items.properties.windows.items.properties.window.type).toBe('string');
+  });
+
+  test('usage plugin surface pins the inventory rows and template fields', () => {
+    const plugin = schemaOf('session.usagePluginsList').properties.plugins.items;
+    expect(plugin.required).toEqual(['file', 'status', 'disabled', 'origin', 'config']);
+    expect(plugin.properties.origin.anyOf?.map((e: any) => e.const)).toEqual(['builtin', 'override', 'user']);
+    expect(plugin.properties.status.anyOf?.map((e: any) => e.const)).toEqual(['ok', 'error']);
+    expect(plugin.properties.configSchema.items.properties.type.anyOf?.map((e: any) => e.const))
+      .toEqual(['number', 'string', 'boolean', 'select']);
+    const tpl = schemaOf('session.usagePluginsList').properties.templates.items;
+    expect(tpl.required).toEqual(['id', 'label', 'description', 'fields']);
+    expect(tpl.properties.fields.items.properties.type.anyOf?.map((e: any) => e.const))
+      .toEqual(['string', 'number', 'boolean', 'select', 'textarea']);
+    // 200 body only: 403 (builtin read-only) / 404 envelopes are error bodies.
+    expect(schemaOf('session.usagePluginSourceGet').required).toEqual(['source', 'origin']);
+    expect(schemaOf('session.usagePluginSourceGet').properties.origin.anyOf?.map((e: any) => e.const))
+      .toEqual(['override', 'user']);
+  });
+
+  test('handler wire samples validate against each new schema (Value.Check)', () => {
+    // tasks.list: durable task row (shell, terminal snapshot bookkeeping included).
+    const task = {
+      id: 'task_1', kind: 'shell', parentSessionID: 's1', shellID: 'sh_1', title: 'npm test',
+      status: 'completed', directory: '/p', createdAt: 1, updatedAt: 2, finishedAt: 3, exitCode: 0,
+      metadata: { command: 'npm test' }, outputCursor: 12, outputSize: 12, outputTruncated: false,
+    };
+    expect(Value.Check(TaskListResponse, { items: [task] })).toBe(true);
+    expect(Value.Check(TaskListResponse, { items: [] })).toBe(true);
+    expect(Value.Check(TaskListResponse, { items: [{ ...task, status: 'paused' }] })).toBe(false);
+    expect(Value.Check(TaskGetResponse, task)).toBe(true);
+    expect(Value.Check(TaskGetResponse, { id: 'task_1', kind: 'subagent', parentSessionID: 's1', title: 'x', status: 'working', createdAt: 1, updatedAt: 1 })).toBe(true);
+
+    // tasks.output: terminal snapshot + runtime passthrough (unknown runtime-only keys allowed).
+    expect(Value.Check(TaskOutputResponse, { output: 'ok', cursor: 2, size: 2, truncated: false })).toBe(true);
+    expect(Value.Check(TaskOutputResponse, { output: '', cursor: 0, size: 0, truncated: true })).toBe(true);
+    expect(Value.Check(TaskOutputResponse, { output: 'x', runtimeCursorExt: 7 })).toBe(true);
+
+    // session.structured: unsubmitted (no name / submitted) and submitted forms.
+    expect(Value.Check(SessionStructuredResponse, {
+      sessionID: 's1', schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
+      errors: [], updatedAt: 1,
+    })).toBe(true);
+    expect(Value.Check(SessionStructuredResponse, {
+      sessionID: 's1', name: 'report', schema: { type: 'object' }, submitted: { ok: true }, errors: ['a: bad'], updatedAt: 2,
+    })).toBe(true);
+    expect(Value.Check(SessionStructuredResponse, { sessionID: 's1', errors: [], updatedAt: 1 })).toBe(false);
+
+    // session.run: toRunDto row (suspended + resumed).
+    const tokens = { input: 1, output: 2, reasoning: 3, cache: { read: 4, write: 5 } };
+    const run = {
+      id: 'run_1', sessionID: 's1', projectDir: '/p', status: 'suspended',
+      brief: { lastUserText: 'go', lastAssistantTail: 'doing', anchorMessageID: 'm1', queuedCount: 0 },
+      createdAt: '2026-11-14T00:00:00.000Z', suspendedAt: '2026-11-14T00:00:01.000Z',
+    };
+    expect(Value.Check(SessionRunResponse, { run })).toBe(true);
+    expect(Value.Check(SessionRunResponse, { run: { ...run, status: 'resumed', resumedAt: '2026-11-14T00:00:02.000Z', reason: 'user' } })).toBe(true);
+    expect(Value.Check(SessionRunResponse, { run: { ...run, status: 'paused' } })).toBe(false);
+
+    // session.discovery: degraded snapshot (optional reason) + warnings.
+    const snapshot = {
+      sessionID: 's1', directory: '/p', revision: 'r1', commandsRevision: 'c1',
+      generatedAt: '2026-11-14T00:00:00.000Z',
+      commands: [{ name: 'goal', description: 'd', source: 'mafw', scope: 'gateway', destructive: false }],
+      skills: [{ id: 'sk_1', name: 'office-editing', slash: true, scope: 'user', contentLength: 42 }],
+      instructions: [{ id: 'in_1', path: '/p/AGENTS.md', scope: 'project', kind: 'agents-md', bytes: 10, mtime: 't' }],
+      degraded: true, degradedReason: 'partial',
+      warnings: [{ source: 'skills', message: 'failed' }], skillInvokeSupported: false,
+    };
+    expect(Value.Check(SessionDiscoveryResponse, snapshot)).toBe(true);
+    expect(Value.Check(SessionDiscoveryResponse, { ...snapshot, degraded: false, degradedReason: undefined })).toBe(true);
+    expect(Value.Check(SessionDiscoveryResponse, { ...snapshot, degradedReason: 'slow' })).toBe(false);
+    expect(Value.Check(SessionDiscoverySkillResponse, { ...snapshot.skills[0], content: '# skill' })).toBe(true);
+
+    // experience.actions: full projection (all 20 ids) + sessionID echo.
+    const descriptor = { supported: true, enabled: true, operationId: 'session.diff' };
+    const actions = Object.fromEntries(
+      ['checkpoint.restore', 'checkpoint.create', 'branch.fork', 'branch.revert', 'branch.unrevert',
+       'branch.diff', 'run.control', 'session.worktree', 'session.summarize', 'session.switch-agent',
+       'session.switch-model', 'session.discovery', 'approval.permission', 'approval.question',
+       'background.jobs', 'terminal.attach', 'prompt.steer', 'session.background', 'mcp.manage',
+       'mcp.config.write'].map((id) => [id, descriptor]),
+    );
+    expect(Value.Check(ExperienceActionsResponse, {
+      experienceVersion: '2026.11.1', minClientVersion: '2026.11.0', sessionID: 's1', actions,
+    })).toBe(true);
+    expect(Value.Check(ExperienceActionsResponse, {
+      experienceVersion: '2026.11.1', minClientVersion: '2026.11.0',
+      actions: { 'run.control': { supported: true, enabled: false, reason: 'busy', warningKey: 'w', semantics: { any: 1 } } },
+    })).toBe(true);
+    expect(Value.Check(ExperienceActionsResponse, {
+      experienceVersion: '2026.11.1', minClientVersion: '2026.11.0',
+      actions: { 'run.control': { supported: true, enabled: false, reason: 'tired' } },
+    })).toBe(false);
+
+    // cognition.rules: raw config entry passthrough (extra keys survive) + validation errors.
+    expect(Value.Check(CognitionRulesResponse, {
+      rules: [
+        { on: 'tool_call', tool: 'bash', match: 'rm -rf', action: 'deny', reason: 'no', name: 'no-rm' },
+        { on: 'prompt', action: 'transform', text: '{{text}}', customFutureKey: true },
+      ],
+      errors: ['rule[2]: invalid action \'explode\''],
+    })).toBe(true);
+    expect(Value.Check(CognitionRulesResponse, { rules: [{ on: 'model', action: 'deny' }], errors: [] })).toBe(false);
+
+    // background.jobs: merged three-source rows + cursor output.
+    expect(Value.Check(BackgroundJobsListResponse, {
+      items: [
+        { id: 'task_1', source: 'mafw-task', kind: 'shell', status: 'running', sessionID: 's1', taskID: 'task_1', title: 'npm test', command: 'npm test', time: { created: 1, updated: 2 }, runtimeShellID: 'sh_1' },
+        { id: 'sub_1', source: 'subagent', kind: 'subagent', status: 'completed', sessionID: 's1', childSessionID: 'sub_1', extensions: { error: 'x' } },
+      ],
+    })).toBe(true);
+    expect(Value.Check(BackgroundJobsListResponse, { items: [{ id: 'x', source: 'cron', kind: 'shell', status: 'running', sessionID: 's1' }] })).toBe(false);
+    expect(Value.Check(BackgroundJobOutputResponse, { cursor: 128, data: 'ok', truncated: false })).toBe(true);
+    expect(Value.Check(BackgroundJobOutputResponse, { data: 'ok' })).toBe(false);
+
+    // terminal.list: supported + unsupported forms.
+    expect(Value.Check(TerminalListResponse, {
+      protocol: 'mafw-terminal/1', supported: true,
+      sessions: [{ id: 'pty_1', directory: '/p', title: 'zsh', status: 'running', cwd: '/p' }],
+    })).toBe(true);
+    expect(Value.Check(TerminalListResponse, {
+      protocol: 'mafw-terminal/1', supported: true, sessions: [{ id: 'pty_2', status: 'unknown' }],
+    })).toBe(true);
+
+    // session.usage: success branch (store present) and fail-open branch (query failed).
+    const scope = { totalTokens: tokens, totalCost: 0.1, turnCount: 2, sessionCount: 1 };
+    const usage = {
+      summary: {
+        session: { totalTokens: tokens, totalCost: 0.1, turnCount: 2, avgTokensPerTurn: tokens },
+        project: scope,
+        global: scope,
+      },
+      memory: { ...scope, byRole: { builder: scope } },
+      modelStats: {
+        windows: {
+          today: [{ provider: 'anthropic', model: 'claude', turns: 1, tokens, estimatedCost: null }],
+          '7d': [], '30d': [], all: [],
+        },
+      },
+      providers: [{
+        name: 'anthropic', plan: 'pro', type: 'api', severity: 'low',
+        windows: [{ window: '5h', used: 1, limit: 10, unit: '$', pct: 10, resetAt: 1, pacing: 'on-track', remaining: 9, detailLines: ['claude: 1'] }],
+      }],
+      updatedAt: 1,
+    };
+    expect(Value.Check(SessionUsageResponse, usage)).toBe(true);
+    expect(Value.Check(SessionUsageResponse, { summary: null, providers: [], updatedAt: 2 })).toBe(true);
+    // memory is nullable when the trajectory store is absent.
+    expect(Value.Check(SessionUsageResponse, { ...usage, memory: null })).toBe(true);
+    expect(Value.Check(SessionUsageResponse, { ...usage, summary: { session: null } })).toBe(false);
+
+    // usage plugin inventory: builtin override row (config non-null) + user row.
+    const tplField = { key: 'endpoint', label: 'Endpoint', type: 'string', required: true, placeholder: 'https://x' };
+    const usagePlugins = {
+      plugins: [
+        {
+          file: 'opencode-go.js', name: 'opencode-go', status: 'ok', disabled: false, origin: 'builtin',
+          pluginType: 'token-plan',
+          configSchema: [{ key: 'endpoint', label: 'Endpoint', type: 'string', default: 'https://x' }],
+          config: { endpoint: 'https://x' },
+        },
+        { file: 'broken.js', name: 'broken', status: 'error', error: 'boom', disabled: true, origin: 'user', config: null },
+      ],
+      templates: [{ id: 'token-plan', label: '套餐窗口型', description: 'd', fields: [tplField] }],
+      builtins: ['opencode-go', 'zen'],
+    };
+    expect(Value.Check(UsagePluginsListResponse, usagePlugins)).toBe(true);
+    expect(Value.Check(UsagePluginsListResponse, {
+      ...usagePlugins, templates: [{ id: 'x', label: 'x', description: 'x', fields: [{ key: 'k', label: 'l', type: 'slider' }] }],
+    })).toBe(false);
+
+    // session.usagePluginSourceGet: success body only (403/404 carry {error, builtin?}).
+    expect(Value.Check(UsagePluginSourceResponse, { source: 'module.exports = {}', origin: 'user' })).toBe(true);
+    expect(Value.Check(UsagePluginSourceResponse, { source: 'x', origin: 'builtin' })).toBe(false);
+    expect(Value.Check(UsagePluginSourceResponse, { error: 'plugin file not found' })).toBe(false);
+  });
+});
+
+describe('api-contract: E10f-B project / runtime / metadata read response schema (16 ops)', () => {
+  const findOp = (operationId: string): any => {
+    for (const pathItem of Object.values(contract.paths || {}) as any[]) {
+      for (const op of Object.values(pathItem) as any[]) {
+        if (op?.operationId === operationId) return op;
+      }
+    }
+    return undefined;
+  };
+  const schemaOf = (operationId: string): any =>
+    findOp(operationId).responses['200'].content['application/json'].schema;
+
+  const EXPECTED: Record<string, {
+    fields: string[];
+    union?: true;
+    item?: { at: string; required: string[] };
+  }> = {
+    'mafwCommands.list': {
+      fields: ['commands'],
+      item: { at: 'commands', required: ['name', 'description', 'category', 'kind'] },
+    },
+    // Dual shape: single object with ?projectDir=, array without.
+    'manager.session': { fields: [], union: true },
+    'project.current': { fields: ['project'] },
+    'fileHistory.list': {
+      fields: ['entries'],
+      item: {
+        at: 'entries',
+        required: ['id', 'sessionID', 'projectDir', 'rel', 'blob', 'size', 'mtimeMs', 'createdAt', 'seq', 'reason'],
+      },
+    },
+    'runtime.get': {
+      fields: ['active', 'plugins', 'unknownEvents', 'validation', 'translationErrors', 'translationDrops'],
+      item: { at: 'plugins', required: ['file', 'status'] },
+    },
+    'runtime.contract': { fields: ['manifest', 'coverage'] },
+    'runtime.config.get': { fields: ['config'] },
+    'plugins.client': {
+      fields: ['revision', 'plugins'],
+      item: { at: 'plugins', required: ['name', 'version', 'revision', 'ui', 'actions', 'events'] },
+    },
+    'models.get': { fields: ['recall', 'media', 'goal', 'available'] },
+    'media.plugins': { fields: ['plugins'], item: { at: 'plugins', required: ['file', 'status'] } },
+    'tts.voices': {
+      fields: ['voices', 'engine', 'capabilities', 'engines', 'models', 'defaultVoice', 'defaultModel'],
+    },
+    'voice.status': {
+      fields: ['ok', 'config', 'engines', 'routing'],
+      item: { at: 'engines', required: ['name', 'capabilities', 'source'] },
+    },
+    'python.status': { fields: ['running'] },
+    'agent.capabilities': {
+      fields: ['ledger', 'failureTaxonomy'],
+      item: { at: 'failureTaxonomy', required: ['pattern', 'count', 'energy', 'id'] },
+    },
+    'media.resolveTask': { fields: ['artifactId'] },
+    'embedding.get': { fields: ['current', 'runtime', 'available'] },
+  };
+
+  test('all sixteen ops expose a 200 JSON schema with properties (not a whole-response widening)', () => {
+    expect(Object.keys(EXPECTED)).toHaveLength(16);
+    const problems: string[] = [];
+    for (const [operationId, spec] of Object.entries(EXPECTED)) {
+      const op = findOp(operationId);
+      if (!op) { problems.push(`${operationId}: missing from openapi.json`); continue; }
+      const schema = op.responses?.['200']?.content?.['application/json']?.schema;
+      if (!schema) { problems.push(`${operationId}: responses.200 missing application/json schema`); continue; }
+      if (spec.union) {
+        if ((schema.anyOf ?? []).length !== 2) problems.push(`${operationId}: expected a two-branch union`);
+        continue;
+      }
+      const properties = Object.keys(schema.properties ?? {});
+      if (properties.length === 0) { problems.push(`${operationId}: schema has no properties (widened)`); continue; }
+      for (const field of spec.fields) {
+        if (!properties.includes(field)) problems.push(`${operationId}: schema missing property '${field}'`);
+      }
+    }
+    if (problems.length) {
+      console.error('[api-contract] E10f-B response schema missing - run emit:openapi + gen:api:\n' + problems.join('\n'));
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test('array item required fields match the handler wire (commands/entries/plugins/sources)', () => {
+    const problems: string[] = [];
+    for (const [operationId, spec] of Object.entries(EXPECTED)) {
+      if (!spec.item) continue;
+      const required = schemaOf(operationId).properties?.[spec.item.at]?.items?.required ?? [];
+      for (const field of spec.item.required) {
+        if (!required.includes(field)) problems.push(`${operationId}: ${spec.item.at}.items missing required '${field}'`);
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test('manager.session is dual-shaped and project.current may be absent', () => {
+    const manager = schemaOf('manager.session');
+    expect(manager.anyOf.map((branch: any) => branch.type)).toEqual(['object', 'array']);
+    const row = manager.anyOf[0];
+    expect(row.required).toEqual(['projectDir', 'sessionId', 'createdAt']);
+    // Handler always emits createdAt with an explicit null fallback.
+    expect(row.properties.createdAt.anyOf.map((e: any) => e.type)).toEqual(['string', 'null']);
+    expect(manager.anyOf[1].items).toEqual(row);
+
+    const current = schemaOf('project.current');
+    expect(current.required).toEqual(['project']);
+    const branches = current.properties.project.anyOf;
+    expect(branches.map((e: any) => e.type)).toEqual(['object', 'null']);
+    expect(branches[0].required).toEqual(['id', 'worktree', 'mafwDir']);
+  });
+
+  test('runtime.get / runtime.contract keep runtime-owned payloads as boundary objects', () => {
+    const runtime = schemaOf('runtime.get');
+    expect(runtime.required).toEqual([
+      'active', 'plugins', 'unknownEvents', 'validation', 'translationErrors', 'translationDrops',
+    ]);
+    expect(runtime.properties.active.required).toEqual([
+      'name', 'capabilities', 'envOverride', 'dialect', 'coverage',
+    ]);
+    // Capability flags are runtime-declared booleans, never an enumerated key set.
+    expect(runtime.properties.active.properties.capabilities.type).toBe('object');
+    expect(runtime.properties.active.properties.capabilities.patternProperties['^(.*)$'].type).toBe('boolean');
+    expect(runtime.properties.active.properties.capabilities.properties).toBeUndefined();
+    expect(runtime.properties.active.properties.dialect.anyOf.map((e: any) => e.type))
+      .toEqual(['string', 'null']);
+    // Diagnostic telemetry has gateway-owned shapes.
+    expect(runtime.properties.unknownEvents.patternProperties['^(.*)$']
+      .patternProperties['^(.*)$'].type).toBe('number');
+    expect(runtime.properties.translationErrors.patternProperties['^(.*)$'].required)
+      .toEqual(['transformEvent', 'normalizeMessages']);
+    expect(runtime.properties.translationDrops.patternProperties['^(.*)$'].required)
+      .toEqual(['unmatched', 'suppressed']);
+    expect(runtime.properties.plugins.items.properties.status.anyOf.map((e: any) => e.const))
+      .toEqual(['ok', 'error']);
+
+    const contractSchema = schemaOf('runtime.contract');
+    expect(contractSchema.required).toEqual(['manifest', 'coverage']);
+    const manifest = contractSchema.properties.manifest;
+    expect(manifest.required).toEqual([
+      'schemaVersion', 'contractVersion', 'generatedFrom',
+      'domains', 'surfaces', 'capabilities', 'events', 'cognition', 'presets',
+    ]);
+    expect(manifest.properties.domains.items.required).toEqual(['id', 'title', 'description']);
+    // surfaces/capabilities/events/cognition/presets stay open (contract package owns the entries).
+    for (const key of ['surfaces', 'capabilities', 'events', 'cognition', 'presets']) {
+      expect(manifest.properties[key].items.type).toBe('object');
+      expect(manifest.properties[key].items.properties).toBeUndefined();
+    }
+    const coverageBranches = contractSchema.properties.coverage.anyOf;
+    expect(coverageBranches.map((e: any) => e.type)).toEqual(['object', 'null']);
+    expect(coverageBranches[0].required).toEqual(['runtime', 'contractVersion', 'static']);
+    expect(coverageBranches[0].properties.behavioral).toBeDefined();
+  });
+
+  test('plugins.client / runtime.config.get only promise the envelope (owner payloads stay open)', () => {
+    const client = schemaOf('plugins.client');
+    expect(client.required).toEqual(['revision', 'plugins']);
+    const descriptor = client.properties.plugins.items;
+    expect(descriptor.required).toEqual(['name', 'version', 'revision', 'ui', 'actions', 'events']);
+    // Descriptor internals belong to @mafw/plugin-contract: nested contributions stay open.
+    expect(descriptor.additionalProperties).toBe(true);
+    for (const key of ['ui']) {
+      expect(descriptor.properties[key].patternProperties['^(.*)$']).toBeDefined();
+    }
+    expect(descriptor.properties.actions.items.patternProperties['^(.*)$']).toBeDefined();
+    expect(descriptor.properties.events.items.patternProperties['^(.*)$']).toBeDefined();
+
+    const runtimeConfig = schemaOf('runtime.config.get');
+    expect(runtimeConfig.required).toEqual(['config']);
+    // runtime Config model is runtime-owned -> object with an open index, no copied keys.
+    expect(runtimeConfig.properties.config.type).toBe('object');
+    expect(runtimeConfig.properties.config.properties).toBeUndefined();
+  });
+
+  test('model/media/tts/voice/embedding surfaces pin their enumerations', () => {
+    const models = schemaOf('models.get');
+    expect(models.required).toEqual(['recall', 'media', 'goal', 'available']);
+    expect(models.properties.recall.required).toEqual(['workerModel']);
+    expect(models.properties.recall.properties.workerModel.required).toEqual(['providerID', 'modelID']);
+    // available is nullable (provider scan unavailable), never a fabricated empty error.
+    expect(models.properties.available.anyOf.map((e: any) => e.type)).toEqual(['array', 'null']);
+    expect(models.properties.available.anyOf[0].items.required).toEqual(['providerID', 'providerName', 'models']);
+    expect(Object.keys(models.properties.media.properties).sort())
+      .toEqual(['audio', 'image', 'model', 'provider', 'video']);
+    expect(models.properties.media.required ?? []).toEqual([]);
+    expect(Object.keys(models.properties.goal.properties).sort()).toEqual(['nodeModel', 'techLeadModel']);
+
+    const media = schemaOf('media.plugins').properties.plugins.items;
+    expect(media.properties.status.anyOf.map((e: any) => e.const)).toEqual(['ok', 'error']);
+
+    const tts = schemaOf('tts.voices');
+    expect(tts.required).toEqual([
+      'voices', 'engine', 'capabilities', 'engines', 'models', 'defaultVoice', 'defaultModel',
+    ]);
+    expect(tts.properties.voices.items.required).toEqual(['id', 'label', 'lang']);
+    expect(tts.properties.capabilities.properties.streaming.anyOf.map((e: any) => e.const))
+      .toEqual(['native', 'none']);
+    expect(tts.properties.capabilities.required)
+      .toEqual(['streaming', 'voiceCloning', 'styleControl', 'languages', 'sampleRate']);
+    expect(tts.properties.engines.items.properties.source.anyOf.map((e: any) => e.const))
+      .toEqual(['builtin', 'legacy', 'package']);
+
+    const voice = schemaOf('voice.status');
+    expect(voice.properties.config.properties.tier.anyOf.map((e: any) => e.const))
+      .toEqual(['auto', 'local', 'cloud']);
+    expect(voice.properties.config.properties.localTier.anyOf.map((e: any) => e.const))
+      .toEqual(['dgpu', 'igpu']);
+    expect(voice.properties.config.required).toEqual([
+      'tier', 'localTier', 'asrEngine', 'ttsEngine', 'cloudConsent', 'modelsDir', 'sidecarPort', 'duplexV1',
+    ]);
+    expect(voice.properties.routing.properties.status.anyOf.map((e: any) => e.const))
+      .toEqual(['local_accelerated', 'local_cpu', 'cloud', 'degraded']);
+
+    const embedding = schemaOf('embedding.get');
+    expect(embedding.properties.current.required).toEqual([
+      'provider', 'engine', 'model', 'dimensions', 'baseUrl', 'threads', 'llamacpp',
+    ]);
+    expect(embedding.properties.current.properties.provider.anyOf.map((e: any) => e.const))
+      .toEqual(['off', 'local', 'dashscope']);
+    expect(embedding.properties.current.properties.engine.anyOf.map((e: any) => e.const))
+      .toEqual(['onnx', 'llamacpp']);
+    expect(embedding.properties.current.properties.llamacpp.required)
+      .toEqual(['gpu', 'threads', 'contextSize', 'batchSize']);
+    // Live runtime identity is nullable when the provider is off.
+    expect(embedding.properties.runtime.properties.active.anyOf.map((e: any) => e.type))
+      .toEqual(['string', 'null']);
+    expect(embedding.properties.available.required).toEqual(['providers', 'engines', 'gpus']);
+  });
+
+  test('orphan read surfaces document both branches (fail-open agent ledger, null artifact)', () => {
+    expect(Value.Check(PythonStatusResponse, { running: true })).toBe(true);
+    expect(Value.Check(PythonStatusResponse, { running: false })).toBe(true);
+    expect(Value.Check(PythonStatusResponse, { running: 'yes' })).toBe(false);
+
+    // media.resolveTask: explicit null on a miss (not a 404).
+    expect(Value.Check(MediaResolveTaskResponse, { artifactId: 'art_1' })).toBe(true);
+    expect(Value.Check(MediaResolveTaskResponse, { artifactId: null })).toBe(true);
+    expect(Value.Check(MediaResolveTaskResponse, {})).toBe(false);
+
+    // agent.capabilities: the catch branch is 200 {total, passRate} only.
+    expect(Value.Check(AgentCapabilitiesResponse, {
+      ledger: { total: 0, passRate: 0 },
+      failureTaxonomy: [],
+    })).toBe(true);
+    expect(Value.Check(AgentCapabilitiesResponse, {
+      ledger: {
+        total: 4, passRate: 0.5, avgRounds: 2.5, avgCostUsd: 0.3, thumbsUp: 2, thumbsDown: 1,
+        byFailureKind: { tests: 2 }, byTaskType: { feature: { total: 2, passRate: 0.5, avgRounds: 1, avgCostUsd: 0.1 } },
+      },
+      failureTaxonomy: [{ pattern: 'flaky tests', count: 2, energy: 1.5, id: 'mem_1' }],
+    })).toBe(true);
+    expect(Value.Check(AgentCapabilitiesResponse, {
+      ledger: { total: 1, passRate: 1 },
+      failureTaxonomy: [{ pattern: 'x', count: 1, energy: 1 }],
+    })).toBe(false);
+  });
+
+  test('handler wire samples validate against each new schema (Value.Check)', () => {
+    expect(Value.Check(MafwCommandsListResponse, {
+      commands: [{
+        name: 'goal', description: 'submit', argumentHint: '<target>',
+        category: 'goals', kind: 'builtin', destructive: false,
+      }],
+    })).toBe(true);
+    expect(Value.Check(MafwCommandsListResponse, {
+      commands: [{ name: 'x', description: 'x', category: 'shell', kind: 'builtin' }],
+    })).toBe(false);
+
+    // manager.session both branches (single object / array), createdAt nullable.
+    expect(Value.Check(ManagerSessionResponse, {
+      projectDir: '/p', sessionId: 'ses_1', createdAt: null,
+    })).toBe(true);
+    expect(Value.Check(ManagerSessionResponse, [
+      { projectDir: '/p', sessionId: 'ses_1', createdAt: '2026-11-14T00:00:00.000Z' },
+    ])).toBe(true);
+    expect(Value.Check(ManagerSessionResponse, [])).toBe(true);
+    expect(Value.Check(ManagerSessionResponse, { projectDir: '/p', sessionID: 'ses_1', createdAt: null })).toBe(false);
+
+    expect(Value.Check(ProjectCurrentResponse, { project: null })).toBe(true);
+    expect(Value.Check(ProjectCurrentResponse, {
+      project: { id: '/p', worktree: '/p', mafwDir: '/p/.mafw' },
+    })).toBe(true);
+    expect(Value.Check(ProjectCurrentResponse, { project: { id: '/p', worktree: '/p' } })).toBe(false);
+
+    const entry = {
+      id: 'fh_1', sessionID: 'ses_1', projectDir: '/p', rel: 'src/a.ts', blob: 'sha256',
+      size: 10, mtimeMs: 1, createdAt: '2026-11-14T00:00:00.000Z', seq: 1, reason: 'pre-write',
+    };
+    expect(Value.Check(FileHistoryListResponse, { entries: [entry] })).toBe(true);
+    expect(Value.Check(FileHistoryListResponse, { entries: [] })).toBe(true);
+    expect(Value.Check(FileHistoryListResponse, { entries: [{ ...entry, rel: undefined }] })).toBe(false);
+
+    // runtime.get: builtin/package loader rows + diagnostics telemetry.
+    expect(Value.Check(RuntimeGetResponse, {
+      active: {
+        name: 'opencode@v2', capabilities: { sessionApi: true, eventStream: false },
+        envOverride: false, dialect: 'v2', coverage: null,
+      },
+      plugins: [{
+        file: 'builtin:opencode', name: 'opencode', status: 'ok',
+        capabilities: { sessionApi: true }, alias: 'oc',
+      }, { file: 'broken.js', status: 'error', error: 'boom' }],
+      unknownEvents: { 'api': { 'x.y': 2 } },
+      validation: ['eventStream declared but missing'],
+      translationErrors: { opencode: { transformEvent: 1, normalizeMessages: 0, lastError: 'bad' } },
+      translationDrops: { opencode: { unmatched: { 'turn.x': 1 }, suppressed: {} } },
+    })).toBe(true);
+    expect(Value.Check(RuntimeGetResponse, {
+      active: { name: 'x', capabilities: {}, envOverride: false, dialect: null, coverage: null },
+      plugins: [{ file: 'a.js', status: 'pending' }],
+      unknownEvents: {}, validation: [], translationErrors: {}, translationDrops: {},
+    })).toBe(false);
+
+    expect(Value.Check(RuntimeContractResponse, {
+      manifest: {
+        schemaVersion: 1, contractVersion: '1.2.3', generatedFrom: 'gateway/src/runtime/contract-manifest.ts',
+        domains: [{ id: 'meta', title: 'Meta', description: 'd' }],
+        surfaces: [{ id: 'plugin.tools' }], capabilities: [], events: [], cognition: [], presets: [],
+      },
+      coverage: { runtime: 'opencode', contractVersion: '1.2.3', static: { missing: [] } },
+    })).toBe(true);
+    expect(Value.Check(RuntimeContractResponse, {
+      manifest: { schemaVersion: 1, contractVersion: 'x', generatedFrom: 'y', domains: [] },
+      coverage: null,
+    })).toBe(false);
+
+    expect(Value.Check(RuntimeConfigGetResponse, { config: {} })).toBe(true);
+    expect(Value.Check(RuntimeConfigGetResponse, { config: { provider: { openai: {} } } })).toBe(true);
+    expect(Value.Check(RuntimeConfigGetResponse, { config: null })).toBe(false);
+
+    // plugins.client: committed snapshot; descriptor internals stay open.
+    expect(Value.Check(PluginsClientResponse, {
+      revision: 'boot:1',
+      plugins: [{
+        name: 'demo', version: '1.0.0', revision: 'boot:1',
+        ui: { panels: [{ title: 'Demo' }] },
+        actions: [{ id: 'run' }], events: [{ name: 'ran' }],
+        diagnostics: [{ level: 'warn', message: 'm' }],
+        futureKey: true,
+      }],
+    })).toBe(true);
+    expect(Value.Check(PluginsClientResponse, { revision: 'boot:1', plugins: [{ name: 'demo' }] })).toBe(false);
+
+    expect(Value.Check(ModelConfigGetResponse, {
+      recall: { workerModel: { providerID: 'p', modelID: 'm' } },
+      media: { provider: 'dashscope', model: 'wan', image: { provider: 'p', model: 'i' } },
+      goal: { nodeModel: { providerID: 'p', modelID: 'm' }, techLeadModel: null },
+      available: [{ providerID: 'p', providerName: 'P', models: [{ id: 'm', name: 'M' }] }],
+    })).toBe(true);
+    // Provider scan unavailable: available null is a valid 200.
+    expect(Value.Check(ModelConfigGetResponse, {
+      recall: { workerModel: { providerID: 'p', modelID: 'm' } },
+      media: {},
+      goal: {},
+      available: null,
+    })).toBe(true);
+
+    expect(Value.Check(MediaPluginsResponse, {
+      plugins: [{ file: 'dashscope.js', name: 'dashscope', status: 'ok', modalities: ['image', 'video'] }],
+    })).toBe(true);
+
+    expect(Value.Check(TtsVoicesResponse, {
+      voices: [{ id: 'Mia', label: 'Mia', lang: 'en' }],
+      engine: 'mimo',
+      capabilities: { streaming: 'native', voiceCloning: false, styleControl: true, languages: ['zh'], sampleRate: 24000 },
+      engines: [{ name: 'mimo', source: 'builtin' }, { name: 'legacy', source: 'legacy' }],
+      models: [{ id: 'mimo-v2.5-tts', description: 'preset' }],
+      defaultVoice: '茉莉',
+      defaultModel: 'mimo-v2.5-tts',
+    })).toBe(true);
+    expect(Value.Check(TtsVoicesResponse, {
+      voices: [], engine: 'mimo',
+      capabilities: { streaming: 'sse', voiceCloning: false, styleControl: false, languages: [], sampleRate: 1 },
+      engines: [], models: [], defaultVoice: 'x', defaultModel: 'y',
+    })).toBe(false);
+
+    const voiceStatus = {
+      ok: true,
+      config: {
+        tier: 'local', localTier: 'dgpu', asrEngine: 'qwen3-asr-1.7b-vllm', ttsEngine: 'cosyvoice3-0.5b',
+        cloudConsent: false, modelsDir: '/m', sidecarPort: 3911, duplexV1: false,
+      },
+      engines: [{
+        name: 'qwen3-asr', source: 'builtin',
+        capabilities: { streaming: 'native', languages: ['zh'], punctuation: true, timestamps: 'segment', sampleRate: 16000 },
+      }],
+      routing: { status: 'local_accelerated' },
+    };
+    expect(Value.Check(VoiceStatusResponse, voiceStatus)).toBe(true);
+    // Sidecar not initialized: still 200 with an empty engine list.
+    expect(Value.Check(VoiceStatusResponse, { ...voiceStatus, engines: [] })).toBe(true);
+    expect(Value.Check(VoiceStatusResponse, {
+      ...voiceStatus, routing: { status: 'network' },
+    })).toBe(false);
+
+    expect(Value.Check(EmbeddingGetResponse, {
+      current: {
+        provider: 'local', engine: 'llamacpp', model: 'qwen3', dimensions: 1024, baseUrl: 'http://127.0.0.1:1',
+        threads: 4, llamacpp: { gpu: 'vulkan', threads: 4, contextSize: 2048, batchSize: 256 },
+      },
+      runtime: { active: 'llamacpp:qwen3', providerId: 'local', modelTag: 'qwen3', dims: 1024, vectors: 10, indexEntries: 10, coverage: 1 },
+      available: { providers: ['off', 'local', 'dashscope'], engines: ['onnx', 'llamacpp'], gpus: ['cpu', 'vulkan', 'cuda'] },
+    })).toBe(true);
+    expect(Value.Check(EmbeddingGetResponse, {
+      current: {
+        provider: 'off', engine: 'onnx', model: 'm', dimensions: 1, baseUrl: '', threads: 1,
+        llamacpp: { gpu: 'cpu', threads: 1, contextSize: 1, batchSize: 1 },
+      },
+      runtime: { active: null, providerId: null, modelTag: null, dims: null, vectors: 0, indexEntries: 0, coverage: 1 },
+      available: { providers: [], engines: [], gpus: [] },
+    })).toBe(true);
+    expect(Value.Check(EmbeddingGetResponse, {
+      current: {
+        provider: 'remote', engine: 'onnx', model: 'm', dimensions: 1, baseUrl: '', threads: 1,
+        llamacpp: { gpu: 'cpu', threads: 1, contextSize: 1, batchSize: 1 },
+      },
+      runtime: { active: null, providerId: null, modelTag: null, dims: null, vectors: 0, indexEntries: 0, coverage: 1 },
+      available: { providers: [], engines: [], gpus: [] },
+    })).toBe(false);
+  });
+});
+
+describe('api-contract: E10f-C goal / lead / event / standing / automation / pod read response schema (16 ops)', () => {
+  const findOp = (operationId: string): any => {
+    for (const pathItem of Object.values(contract.paths || {}) as any[]) {
+      for (const op of Object.values(pathItem) as any[]) {
+        if (op?.operationId === operationId) return op;
+      }
+    }
+    return undefined;
+  };
+  const schemaOf = (operationId: string): any =>
+    findOp(operationId).responses['200'].content['application/json'].schema;
+
+  const ISO = '2026-11-14T00:00:00.000Z';
+
+  const EXPECTED: Record<string, {
+    fields: string[];
+    union?: true;
+    item?: { at: string; required: string[] };
+  }> = {
+    'lead.boundaries.list': {
+      fields: ['items'],
+      item: {
+        at: 'items',
+        required: [
+          'id', 'projectDir', 'leadSessionId', 'fromTopicId', 'toTopicId', 'trigger', 'confidence',
+          'status', 'text', 'createdAt',
+        ],
+      },
+    },
+    'lead.topics.list': {
+      fields: ['items'],
+      item: { at: 'items', required: ['id', 'title', 'summary', 'state', 'lastActiveAt', 'goalId', 'resumedFrom'] },
+    },
+    'lead.topics.get': {
+      fields: ['topic', 'messages'],
+      item: { at: 'messages', required: ['topicId', 'messageId', 'role', 'text', 'tokenEstimate', 'createdAt'] },
+    },
+    'events.sources.list': {
+      fields: ['items'],
+      item: { at: 'items', required: ['id', 'kind', 'name', 'enabled', 'cursor', 'updatedAt'] },
+    },
+    'events.threads.list': {
+      fields: ['items'],
+      item: {
+        at: 'items',
+        required: ['id', 'sourceId', 'projectDir', 'externalKey', 'title', 'state', 'lastTriggerAt', 'createdAt'],
+      },
+    },
+    'events.threads.triggers': {
+      fields: ['items'],
+      item: {
+        at: 'items',
+        required: [
+          'id', 'sourceId', 'threadId', 'externalId', 'kind', 'actor', 'payload', 'occurredAt',
+          'receivedAt', 'idempotencyKey', 'disposition',
+        ],
+      },
+    },
+    'events.threads.subscriptions.list': {
+      fields: ['items'],
+      item: {
+        at: 'items',
+        required: [
+          'id', 'threadId', 'subscriberType', 'subscriberId', 'mode', 'createdAt', 'expiresAt', 'droppedAt',
+        ],
+      },
+    },
+    'events.deliveries.list': {
+      fields: ['items'],
+      item: {
+        at: 'items',
+        required: [
+          'id', 'triggerId', 'subscriptionId', 'state', 'attempts', 'lastError', 'deliveredAt',
+          'readAt', 'ackAt', 'answeredAt', 'nextRetryAt',
+        ],
+      },
+    },
+    'standingGoals.list': {
+      fields: ['items'],
+      item: {
+        at: 'items',
+        required: [
+          'id', 'projectDir', 'title', 'objective', 'template', 'triggers', 'state', 'concurrency',
+          'cooldownMs', 'budget', 'approval', 'createdBy', 'createdAt', 'updatedAt', 'lastRunAt', 'nextRunAt',
+        ],
+      },
+    },
+    'standingGoals.runs': {
+      fields: ['items'],
+      item: {
+        at: 'items',
+        required: [
+          'id', 'standingGoalId', 'triggerType', 'triggerKey', 'payload', 'status', 'mode', 'rationale',
+          'goalId', 'sessionId', 'worktree', 'result', 'costUsd', 'tokens', 'startedAt', 'endedAt',
+        ],
+      },
+    },
+    'automations.list': {
+      fields: ['rules'],
+      item: { at: 'rules', required: ['id', 'enabled', 'trigger', 'nextTriggers', 'recentHistory'] },
+    },
+    'automations.get': { fields: ['id', 'enabled', 'trigger', 'nextTriggers', 'history'] },
+    'automations.history': { fields: ['history'], item: { at: 'history', required: ['timestamp', 'event'] } },
+    'pods.ensure': {
+      fields: ['pod', 'members', 'goals', 'attention', 'messageHealth', 'tasks', 'sessions'],
+    },
+    // ?file= → {content}；无 file → {context}（文件缺失时两者都是 null，不是 404）。
+    'pods.memory.get': { fields: [], union: true },
+    'orchestration.outcomes': {
+      fields: ['outcomes'],
+      item: {
+        at: 'outcomes',
+        required: [
+          'goal_id', 'project_id', 'verdict', 'rounds', 'duration_ms', 'tokens_input', 'tokens_output',
+          'total_cost', 'tool_error_count', 'thumbs_up', 'thumbs_down', 'policy_version',
+          'evolution_proposal_id', 'failure_kind', 'failure_signature', 'created_at', 'archived_at',
+        ],
+      },
+    },
+  };
+
+  test('all sixteen ops expose a 200 JSON schema with properties (not a whole-response widening)', () => {
+    expect(Object.keys(EXPECTED)).toHaveLength(16);
+    const problems: string[] = [];
+    for (const [operationId, spec] of Object.entries(EXPECTED)) {
+      const op = findOp(operationId);
+      if (!op) { problems.push(`${operationId}: missing from openapi.json`); continue; }
+      const schema = op.responses?.['200']?.content?.['application/json']?.schema;
+      if (!schema) { problems.push(`${operationId}: responses.200 missing application/json schema`); continue; }
+      if (spec.union) {
+        if ((schema.anyOf ?? []).length !== 2) problems.push(`${operationId}: expected a two-branch union`);
+        continue;
+      }
+      const properties = Object.keys(schema.properties ?? {});
+      if (properties.length === 0) { problems.push(`${operationId}: schema has no properties (widened)`); continue; }
+      for (const field of spec.fields) {
+        if (!properties.includes(field)) problems.push(`${operationId}: schema missing property '${field}'`);
+      }
+    }
+    if (problems.length) {
+      console.error('[api-contract] E10f-C response schema missing - run emit:openapi + gen:api:\n' + problems.join('\n'));
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test('array item required fields match the handler wire', () => {
+    const problems: string[] = [];
+    for (const [operationId, spec] of Object.entries(EXPECTED)) {
+      if (!spec.item) continue;
+      const required = schemaOf(operationId).properties?.[spec.item.at]?.items?.required ?? [];
+      for (const field of spec.item.required) {
+        if (!required.includes(field)) problems.push(`${operationId}: ${spec.item.at}.items missing required '${field}'`);
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test('lead topics / boundaries expose the full wire row (view projection + index rows)', () => {
+    const topics = schemaOf('lead.topics.list').properties.items.items;
+    expect(topics.properties.summary.anyOf.map((e: any) => e.type)).toEqual(['string', 'null']);
+    expect(topics.properties.resumedFrom.anyOf.map((e: any) => e.type)).toEqual(['string', 'null']);
+    expect(topics.properties.state.anyOf.map((e: any) => e.const))
+      .toEqual(['resident', 'warm', 'cold', 'archived']);
+    // topic detail carries the searchable index rows, not the transcript.
+    expect(Object.keys(schemaOf('lead.topics.get').properties).sort()).toEqual(['messages', 'topic']);
+    const boundary = schemaOf('lead.boundaries.list').properties.items.items;
+    // `text` is on the wire (`TopicBoundaryRow.text`) and was missing from the SDK DTO before E10f-C.
+    expect(boundary.required).toContain('text');
+    expect(boundary.properties.trigger.anyOf.map((e: any) => e.const))
+      .toEqual(['explicit', 'semantic', 'idle', 'goal_closed', 'keyword']);
+    expect(boundary.properties.toTopicId.anyOf.map((e: any) => e.type)).toEqual(['string', 'null']);
+  });
+
+  test('event layer rows keep storage columns; sources are the owned view projection', () => {
+    // sources: sourceView() drops projectDir/config/createdAt (SDK EventSourceView).
+    expect(Object.keys(schemaOf('events.sources.list').properties.items.items.properties).sort())
+      .toEqual(['cursor', 'enabled', 'id', 'kind', 'name', 'updatedAt']);
+    const cursor = schemaOf('events.sources.list').properties.items.items.properties.cursor;
+    // Cursor internals are per-adapter → boundary object (open index), not a whole-response widening.
+    expect(cursor.type).toBe('object');
+    expect(cursor.patternProperties).toEqual({ '^(.*)$': {} });
+
+    for (const op of ['events.threads.list', 'events.threads.triggers',
+      'events.threads.subscriptions.list', 'events.deliveries.list']) {
+      expect(Object.keys(schemaOf(op).properties)).toEqual(['items']);
+    }
+    expect(schemaOf('events.threads.list').properties.items.items.required).toContain('projectDir');
+    expect(schemaOf('events.threads.list').properties.items.items.properties.state.anyOf.map((e: any) => e.const))
+      .toEqual(['open', 'closed', 'archived']);
+    expect(schemaOf('events.deliveries.list').properties.items.items.properties.state.anyOf
+      .map((e: any) => e.const))
+      .toEqual(['pending', 'delivered', 'read', 'acknowledged', 'answered', 'handed_back', 'failed', 'dropped']);
+  });
+
+  test('standing goals keep optional template/budget facets and nullable run outcome', () => {
+    const goal = schemaOf('standingGoals.list').properties.items.items;
+    expect(goal.properties.state.anyOf.map((e: any) => e.const)).toEqual(['active', 'paused', 'stopped']);
+    expect(goal.properties.stateReason.anyOf.map((e: any) => e.type)).toEqual(['string', 'null']);
+    // stateReason is optional (legacy rows never wrote it).
+    expect(goal.required).not.toContain('stateReason');
+    expect(Object.keys(goal.properties.template.properties).sort())
+      .toEqual(['acceptance', 'boundaries', 'planReview', 'taskType']);
+    expect(Object.keys(goal.properties.budget.properties).sort())
+      .toEqual(['perDayCostUsd', 'perRunCostUsd', 'perRunTurns']);
+    expect(goal.properties.triggers.items.properties.type.anyOf.map((e: any) => e.const))
+      .toEqual(['cron', 'event', 'manual']);
+
+    const run = schemaOf('standingGoals.runs').properties.items.items;
+    expect(run.properties.mode.anyOf.map((e: any) => e.const ?? e.type))
+      .toEqual(['goal', 'report', 'action', 'skip', 'null']);
+    // result is an engine-owned summary object, nullable until the run finishes.
+    expect(run.properties.result.anyOf.map((e: any) => e.type)).toEqual(['object', 'null']);
+  });
+
+  test('automations.list is now handler truth (trigger union + enrichment, no stale override shape)', () => {
+    const rules = schemaOf('automations.list').properties.rules;
+    const item = rules.items;
+    // The deleted override marked only id/enabled required and had no name-less trigger union.
+    expect(item.required).toEqual(['id', 'enabled', 'trigger', 'nextTriggers', 'recentHistory']);
+    expect(item.properties.trigger.anyOf.map((branch: any) => branch.properties.type.const))
+      .toEqual(['cron', 'event']);
+    expect(item.properties.trigger.anyOf[0].required).toEqual(['type', 'schedule', 'timezone']);
+    expect(item.properties.trigger.anyOf[1].required).toEqual(['type', 'on', 'perGoalCooldown']);
+    // No writer emits `name`; it is gone from both schema and DTO.
+    expect(item.properties.name).toBeUndefined();
+    // automations.get shares the rule body + derives nextTriggers/history.
+    expect(Object.keys(schemaOf('automations.get').properties)).toEqual(expect.arrayContaining([
+      'id', 'enabled', 'trigger', 'skill', 'args', 'onResult', 'goal_defaults', 'action',
+      'nextTriggers', 'history',
+    ]));
+    expect(schemaOf('automations.history').properties.history.items.required)
+      .toEqual(['timestamp', 'event']);
+  });
+
+  test('automations.list + session.list override entries are deleted (code-first now)', () => {
+    const overrides = JSON.parse(readFileSync(
+      join(__dirname, '..', '..', '..', 'packages', 'gateway-sdk', 'contract', 'overrides.json'),
+      'utf-8',
+    ));
+    expect(overrides.operations['automations.list']).toBeUndefined();
+    // E10f-E: `session.list` was inert (catalog already supplied the response schema,
+    // merge-contract printed "catalog wins") -> deleted as dead weight, 11 -> 10.
+    expect(overrides.operations['session.list']).toBeUndefined();
+    expect(Object.keys(overrides.operations)).toHaveLength(10);
+    // Deleting the override must NOT remove the schema: the catalog is the fact source.
+    expect(schemaOf('session.list').properties.sessions.type).toBe('array');
+  });
+
+  test('E10f-E: note-board budget carries perNoteCap; recall.pinned budget does not', () => {
+    // memory.listSticky wire = { ...NOTE_BOARD_BUDGET, used } -> perNoteCap is required
+    // on both the 200 body and the 503 fail-open shell (same shape).
+    const stickyBudget = schemaOf('memory.listSticky').properties.budget;
+    expect([...stickyBudget.required].sort()).toEqual(['max', 'maxChars', 'perNoteCap', 'used']);
+
+    // recall.pinned renders <user-profile> from PINNED_BUDGET (20 entries / 2000 chars)
+    // and formatPinnedProfile does not truncate per note -> declaring perNoteCap there
+    // would make the schema reject the handler's own body. Documented deviation from
+    // the E10f-E brief; pinned identity text must stay whole.
+    const pinnedBudget = schemaOf('recall.pinned').properties.budget;
+    expect([...pinnedBudget.required].sort()).toEqual(['max', 'maxChars', 'used']);
+    expect(pinnedBudget.properties.perNoteCap).toBeUndefined();
+    expect(Value.Check(RecallPinnedResponse, {
+      profile: null, entries: [], budget: { max: 20, maxChars: 2000, used: 0 },
+    })).toBe(true);
+  });
+
+  test('pods.ensure reuses the pods.get detail shape; pods.memory.get is dual-shaped', () => {
+    expect(schemaOf('pods.ensure')).toEqual(schemaOf('pods.get'));
+    const memory = schemaOf('pods.memory.get');
+    expect(memory.anyOf.map((branch: any) => branch.required))
+      .toEqual([['content'], ['context']]);
+    expect(memory.anyOf.map((branch: any) => branch.properties.content?.anyOf?.[1]?.type
+      ?? branch.properties.context?.anyOf?.[1]?.type)).toEqual(['null', 'null']);
+  });
+
+  test('orchestration.outcomes keeps the gateway.db snake_case row', () => {
+    const row = schemaOf('orchestration.outcomes').properties.outcomes.items;
+    expect(row.properties.goal_id.type).toBe('string');
+    expect(row.properties.archived_at.type).toBe('string');
+    // legacy rows have no task_type value → optional/nullable, never required-as-string.
+    expect(row.properties.task_type.anyOf.map((e: any) => e.type)).toEqual(['string', 'null']);
+    expect(row.required).not.toContain('task_type');
+  });
+
+  test('error envelopes are not part of the 200 schema', () => {
+    expect(Value.Check(LeadBoundariesResponse, { error: 'topic id is required' })).toBe(false);
+    expect(Value.Check(LeadTopicGetResponse, { error: 'topic not found' })).toBe(false);
+    expect(Value.Check(EventSourcesResponse, { error: 'event layer disabled' })).toBe(false);
+    expect(Value.Check(StandingGoalListResponse, { error: 'standing goals disabled' })).toBe(false);
+    expect(Value.Check(StandingGoalRunsResponse, { error: 'standing goal not found: sg_1' })).toBe(false);
+    expect(Value.Check(AutomationGetResponse, { error: 'Rule not found' })).toBe(false);
+    expect(Value.Check(OrchestrationOutcomesResponse, { error: 'boom' })).toBe(false);
+  });
+
+  test('handler wire samples validate against each new schema (Value.Check)', () => {
+    const topic = {
+      id: 'tp_1', title: 'Goal intake', summary: null, state: 'warm',
+      lastActiveAt: ISO, goalId: 'g_1', resumedFrom: null,
+    };
+    expect(Value.Check(LeadTopicsResponse, { items: [topic] })).toBe(true);
+    expect(Value.Check(LeadTopicsResponse, { items: [{ ...topic, state: 'hot' }] })).toBe(false);
+
+    const message = {
+      topicId: 'tp_1', messageId: 'm_1', role: 'user', text: 'hi', tokenEstimate: 1, createdAt: ISO,
+    };
+    expect(Value.Check(LeadTopicGetResponse, { topic, messages: [message] })).toBe(true);
+    expect(Value.Check(LeadTopicGetResponse, { topic, messages: [{ ...message, role: 'system' }] })).toBe(false);
+
+    const boundary = {
+      id: 'bd_1', projectDir: '/p', leadSessionId: 'ses_1', fromTopicId: 'tp_1', toTopicId: null,
+      trigger: 'semantic', confidence: 0.62, status: 'proposed', text: 'let us switch', createdAt: ISO,
+    };
+    expect(Value.Check(LeadBoundariesResponse, { items: [boundary] })).toBe(true);
+    expect(Value.Check(LeadBoundariesResponse, { items: [{ ...boundary, trigger: 'manual' }] })).toBe(false);
+
+    const source = {
+      id: 'src_1', kind: 'webhook', name: 'hook', enabled: true, cursor: { etag: 'x' }, updatedAt: ISO,
+    };
+    expect(Value.Check(EventSourcesResponse, { items: [source] })).toBe(true);
+    expect(Value.Check(EventSourcesResponse, { items: [{ ...source, kind: 'slack' }] })).toBe(false);
+
+    const thread = {
+      id: 'th_1', sourceId: 'src_1', projectDir: '/p', externalKey: 'o/r#1', title: 'issue',
+      state: 'open', lastTriggerAt: null, createdAt: ISO,
+    };
+    expect(Value.Check(EventThreadsResponse, { items: [thread] })).toBe(true);
+    expect(Value.Check(EventThreadsResponse, { items: [{ ...thread, state: 'pending' }] })).toBe(false);
+
+    const trigger = {
+      id: 'tr_1', sourceId: 'src_1', threadId: 'th_1', externalId: 'evt_1', kind: 'issues.opened',
+      actor: null, payload: { number: 1 }, occurredAt: ISO, receivedAt: ISO,
+      idempotencyKey: 'src_1:evt_1', disposition: 'pending',
+    };
+    expect(Value.Check(EventTriggersResponse, { items: [trigger] })).toBe(true);
+    expect(Value.Check(EventTriggersResponse, { items: [{ ...trigger, disposition: 'done' }] })).toBe(false);
+
+    const subscription = {
+      id: 'sub_1', threadId: 'th_1', subscriberType: 'goal', subscriberId: 'g_1',
+      mode: 'work', createdAt: ISO, expiresAt: null, droppedAt: null,
+    };
+    expect(Value.Check(EventSubscriptionsResponse, { items: [subscription] })).toBe(true);
+    expect(Value.Check(EventSubscriptionsResponse, { items: [{ ...subscription, subscriberType: 'user' }] }))
+      .toBe(false);
+
+    const delivery = {
+      id: 'dl_1', triggerId: 'tr_1', subscriptionId: 'sub_1', state: 'delivered', attempts: 1,
+      lastError: null, deliveredAt: ISO, readAt: null, ackAt: null, answeredAt: null, nextRetryAt: null,
+    };
+    expect(Value.Check(EventDeliveriesResponse, { items: [delivery] })).toBe(true);
+    expect(Value.Check(EventDeliveriesResponse, { items: [{ ...delivery, state: 'ok' }] })).toBe(false);
+
+    const standingGoal = {
+      id: 'sg_1', projectDir: '/p', title: 'Nightly flake hunt', objective: 'Fix flaky tests',
+      template: { taskType: 'bug', acceptance: ['tests pass'], boundaries: ['no deps'], planReview: 'auto' },
+      triggers: [{ id: 'tg_1', type: 'cron', schedule: '0 3 * * *', timezone: 'UTC' }],
+      state: 'active', stateReason: null, concurrency: 1, cooldownMs: 60000,
+      budget: { perRunTurns: 20, perRunCostUsd: 1.5, perDayCostUsd: 5 },
+      approval: 'plan', createdBy: 'user', createdAt: ISO, updatedAt: ISO,
+      lastRunAt: null, nextRunAt: ISO,
+    };
+    expect(Value.Check(StandingGoalListResponse, { items: [standingGoal] })).toBe(true);
+    expect(Value.Check(StandingGoalListResponse, { items: [{ ...standingGoal, state: 'done' }] })).toBe(false);
+
+    const run = {
+      id: 'run_1', standingGoalId: 'sg_1', triggerType: 'event', triggerKey: 'tr_1', payload: { number: 1 },
+      status: 'queued', mode: null, rationale: null, goalId: null, sessionId: null, worktree: null,
+      result: null, costUsd: null, tokens: null, startedAt: null, endedAt: null,
+    };
+    expect(Value.Check(StandingGoalRunsResponse, { items: [run] })).toBe(true);
+    expect(Value.Check(StandingGoalRunsResponse, { items: [{ ...run, status: 'active' }] })).toBe(false);
+
+    const ledger = { timestamp: ISO, event: 'AUTOMATION_TRIGGERED', ruleId: 'rule_1', source: 'user', reason: 'enabled' };
+    const rule = {
+      id: 'rule_1', enabled: true,
+      trigger: { type: 'cron', schedule: '0 * * * *', timezone: 'UTC' },
+      skill: 'daily-triage', nextTriggers: [ISO], recentHistory: [ledger],
+    };
+    expect(Value.Check(AutomationsListResponse, { rules: [rule] })).toBe(true);
+    expect(Value.Check(AutomationsListResponse, {
+      rules: [{ ...rule, trigger: { type: 'event', on: ['issues.opened'], perGoalCooldown: '5m' }, nextTriggers: [] }],
+    })).toBe(true);
+    // Pre-E10f-C override shape (no discriminator, no enrichment) is no longer valid.
+    expect(Value.Check(AutomationsListResponse, {
+      rules: [{ id: 'rule_1', enabled: true, trigger: { schedule: '0 * * * *', timezone: 'UTC' } }],
+    })).toBe(false);
+
+    expect(Value.Check(AutomationGetResponse, {
+      id: 'rule_1', enabled: true,
+      trigger: { type: 'event', on: ['issues.opened'], perGoalCooldown: '5m' },
+      nextTriggers: [], history: [ledger],
+    })).toBe(true);
+    expect(Value.Check(AutomationHistoryResponse, { history: [ledger] })).toBe(true);
+    expect(Value.Check(AutomationHistoryResponse, { history: [{ event: 'x' }] })).toBe(false);
+
+    // pods.memory.get both branches; a missing file is null, not an error envelope.
+    expect(Value.Check(PodMemoryResponse, { content: '# POD' })).toBe(true);
+    expect(Value.Check(PodMemoryResponse, { content: null })).toBe(true);
+    expect(Value.Check(PodMemoryResponse, { context: '[POD CONTEXT]' })).toBe(true);
+    expect(Value.Check(PodMemoryResponse, { context: null })).toBe(true);
+    expect(Value.Check(PodMemoryResponse, {})).toBe(false);
+    expect(Value.Check(PodMemoryResponse, { content: 1 })).toBe(false);
+
+    const outcome = {
+      goal_id: 'g_1', project_id: 'proj_1', verdict: 'PASS', rounds: 3, duration_ms: 1200,
+      tokens_input: 10, tokens_output: 20, total_cost: 0.02, tool_error_count: 1,
+      thumbs_up: 0, thumbs_down: 0, policy_version: 'builtin-v1', evolution_proposal_id: null,
+      failure_kind: null, failure_signature: null, task_type: 'feature', created_at: ISO, archived_at: ISO,
+    };
+    expect(Value.Check(OrchestrationOutcomesResponse, { outcomes: [outcome] })).toBe(true);
+    expect(Value.Check(OrchestrationOutcomesResponse, { outcomes: [] })).toBe(true);
+    const { verdict: _verdict, ...withoutVerdict } = outcome;
+    expect(Value.Check(OrchestrationOutcomesResponse, { outcomes: [withoutVerdict] })).toBe(false);
+  });
+});
+
+describe('api-contract: E10f-D observability / device / A2A read response schema (8 ops)', () => {
+  const findOp = (operationId: string): any => {
+    for (const pathItem of Object.values(contract.paths || {}) as any[]) {
+      for (const op of Object.values(pathItem) as any[]) {
+        if (op?.operationId === operationId) return op;
+      }
+    }
+    return undefined;
+  };
+  const schemaOf = (operationId: string): any =>
+    findOp(operationId).responses['200'].content['application/json'].schema;
+
+  const EXPECTED: Record<string, {
+    fields: string[];
+    item?: { at: string; required: string[] };
+  }> = {
+    'dashboard.stats': {
+      fields: [
+        'activeGoals', 'registeredProjects', 'sseClients', 'serveRunning',
+        'eventAppendFailures', 'tokens',
+      ],
+    },
+    'mobile.devicesList': {
+      fields: ['devices'],
+      item: { at: 'devices', required: ['id', 'fcmToken', 'platform', 'lastSeen'] },
+    },
+    'mobile.pairingCode': { fields: ['url'] },
+    'devices.list': {
+      fields: ['devices'],
+      item: { at: 'devices', required: ['id', 'fcmToken', 'platform', 'lastSeen'] },
+    },
+    'session.subagents.result': { fields: ['status', 'structured', 'text'] },
+    'health.root': {
+      fields: [
+        'status', 'serveRunning', 'registeredProjects', 'activeGoals', 'media',
+        'gatewayVersion', 'experienceVersion', 'minimumClientExperienceVersion',
+        'schemaEpoch', 'instanceId', 'distribution', 'channel', 'pid',
+      ],
+    },
+    'a2a.agentCard': {
+      fields: [
+        'name', 'description', 'url', 'version', 'provider', 'capabilities',
+        'defaultInputModes', 'defaultOutputModes', 'skills', 'securitySchemes',
+        'securityRequirements', 'signatures',
+      ],
+      item: { at: 'skills', required: ['id', 'name', 'description'] },
+    },
+    'pods.a2aCard': {
+      fields: [
+        'name', 'description', 'url', 'version', 'provider', 'capabilities',
+        'defaultInputModes', 'defaultOutputModes', 'skills', 'securitySchemes',
+        'securityRequirements', 'signatures',
+      ],
+      item: { at: 'skills', required: ['id', 'name', 'description'] },
+    },
+  };
+
+  test('all eight ops expose a 200 JSON schema with properties (not a whole-response widening)', () => {
+    expect(Object.keys(EXPECTED)).toHaveLength(8);
+    const problems: string[] = [];
+    for (const [operationId, spec] of Object.entries(EXPECTED)) {
+      const op = findOp(operationId);
+      if (!op) { problems.push(`${operationId}: missing from openapi.json`); continue; }
+      const schema = op.responses?.['200']?.content?.['application/json']?.schema;
+      if (!schema) { problems.push(`${operationId}: responses.200 missing application/json schema`); continue; }
+      const properties = Object.keys(schema.properties ?? {});
+      if (properties.length === 0) { problems.push(`${operationId}: schema has no properties (widened)`); continue; }
+      for (const field of spec.fields) {
+        if (!properties.includes(field)) problems.push(`${operationId}: schema missing property '${field}'`);
+      }
+    }
+    if (problems.length) {
+      console.error('[api-contract] E10f-D response schema missing - run emit:openapi + gen:api:\n' + problems.join('\n'));
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test('array item required fields match the handler wire (devices/skills)', () => {
+    const problems: string[] = [];
+    for (const [operationId, spec] of Object.entries(EXPECTED)) {
+      if (!spec.item) continue;
+      const required = schemaOf(operationId).properties?.[spec.item.at]?.items?.required ?? [];
+      for (const field of spec.item.required) {
+        if (!required.includes(field)) problems.push(`${operationId}: ${spec.item.at}.items missing required '${field}'`);
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test('dashboard.stats keeps the optional token/event facets out of required', () => {
+    const stats = schemaOf('dashboard.stats');
+    // E2-5 / trajectory fail-open: both facets are omitted on some 200 paths.
+    expect(stats.required).toEqual(['activeGoals', 'registeredProjects', 'sseClients', 'serveRunning']);
+    expect(stats.properties.eventAppendFailures.type).toBe('number');
+    // tokens reuses the usage.summary projection (getGlobalTokenSummary).
+    expect(stats.properties.tokens.required).toEqual(['totalTokens', 'totalCost', 'turnCount', 'sessionCount']);
+    expect(stats.properties.tokens.properties.totalTokens.required)
+      .toEqual(['input', 'output', 'reasoning', 'cache']);
+    expect(stats.properties.tokens.properties.totalTokens.properties.cache.required)
+      .toEqual(['read', 'write']);
+  });
+
+  test('health.root is the liveness envelope with all-or-nothing release identity', () => {
+    const health = schemaOf('health.root');
+    expect(health.required).toEqual([
+      'status', 'serveRunning', 'registeredProjects', 'activeGoals', 'media',
+    ]);
+    expect(health.properties.status.const).toBe('ok');
+    expect(health.properties.media.required).toEqual(['configured']);
+    expect(health.properties.registeredProjects.items.type).toBe('string');
+    expect(health.properties.activeGoals.items.type).toBe('string');
+    // gatewayHealthFields() returns all eight or {} -> provenance fields optional.
+    for (const field of ['gatewayVersion', 'experienceVersion', 'minimumClientExperienceVersion',
+      'schemaEpoch', 'instanceId', 'distribution', 'channel', 'pid']) {
+      expect(health.required).not.toContain(field);
+      expect(health.properties[field]).toBeDefined();
+    }
+    expect(health.properties.distribution.anyOf.map((e: any) => e.const))
+      .toEqual(['desktop-managed', 'standalone']);
+  });
+
+  test('device lists promise the PublicDeviceEntry projection only (no credential hashes)', () => {
+    const device = schemaOf('mobile.devicesList').properties.devices.items;
+    expect(device.required).toEqual(['id', 'fcmToken', 'platform', 'lastSeen']);
+    expect(Object.keys(device.properties).sort())
+      .toEqual(['deviceName', 'fcmToken', 'id', 'lastSeen', 'platform', 'tokenIssuedAt']);
+    expect(device.properties.apiTokenHash).toBeUndefined();
+    expect(device.properties.deviceTokenHash).toBeUndefined();
+    // legacy GET /api/devices is the same listPublicDevices() wire.
+    expect(schemaOf('devices.list')).toEqual(schemaOf('mobile.devicesList'));
+    expect(schemaOf('mobile.pairingCode').required).toEqual(['url']);
+  });
+
+  test('session.subagents.result pins the service status union and keeps structured/text exclusive', () => {
+    const result = schemaOf('session.subagents.result');
+    expect(result.required).toEqual(['status']);
+    expect(result.properties.status.anyOf.map((e: any) => e.const))
+      .toEqual(['running', 'completed', 'failed', 'aborted']);
+    // outputSchema-owned JSON / last assistant text: present one at a time.
+    expect(result.required).not.toContain('structured');
+    expect(result.required).not.toContain('text');
+  });
+
+  test('A2A agent cards are protocol boundary documents shared by both emitters', () => {
+    const card = schemaOf('a2a.agentCard');
+    expect(card.required).toEqual([
+      'name', 'description', 'url', 'version', 'provider', 'capabilities',
+      'defaultInputModes', 'defaultOutputModes', 'skills', 'securitySchemes',
+      'securityRequirements', 'signatures',
+    ]);
+    // owner = A2A protocol: v0.3 card-level version + v1.0 interfaces are optional.
+    expect(card.properties.protocolVersion.type).toBe('string');
+    expect(card.properties.supportedInterfaces.type).toBe('array');
+    expect(card.properties.supportedInterfaces.items.required)
+      .toEqual(['url', 'protocolBinding', 'protocolVersion']);
+    expect(card.properties.capabilities.required)
+      .toEqual(['streaming', 'pushNotifications', 'extensions']);
+    // Nested protocol-owned entries stay open (protocol evolution must not break).
+    expect(card.properties.skills.items.additionalProperties).toBe(true);
+    expect(card.properties.capabilities.additionalProperties).toBe(true);
+    expect(card.additionalProperties).toBe(true);
+    expect(card.properties.securitySchemes.type).toBe('object');
+    // pods.a2aCard is the same AgentCard document (Pod handoff agent).
+    expect(schemaOf('pods.a2aCard')).toEqual(card);
+  });
+
+  test('error envelopes are not part of the 200 schema', () => {
+    expect(Value.Check(PairingCodeResponse, { error: 'rate limit exceeded' })).toBe(false);
+    expect(Value.Check(DeviceListResponse, { error: 'push gateway unavailable' })).toBe(false);
+    expect(Value.Check(SessionSubagentResultResponse, { error: 'subagent not found: sub_1' })).toBe(false);
+    expect(Value.Check(HealthResponse, { error: 'boom' })).toBe(false);
+    expect(Value.Check(A2AAgentCardResponse, { error: 'pod not found' })).toBe(false);
+  });
+
+  test('handler wire samples validate against each new schema (Value.Check)', () => {
+    // dashboard.stats: base-only (no event store) and enriched with tokens.
+    expect(Value.Check(DashboardStatsResponse, {
+      activeGoals: 2, registeredProjects: 3, sseClients: 1, serveRunning: true,
+    })).toBe(true);
+    expect(Value.Check(DashboardStatsResponse, {
+      activeGoals: 0, registeredProjects: 0, sseClients: 0, serveRunning: false,
+      eventAppendFailures: 0,
+      tokens: {
+        totalTokens: { input: 10, output: 20, reasoning: 1, cache: { read: 3, write: 4 } },
+        totalCost: 0.25, turnCount: 7, sessionCount: 2,
+      },
+    })).toBe(true);
+    expect(Value.Check(DashboardStatsResponse, {
+      activeGoals: 0, registeredProjects: 0, sseClients: 0, serveRunning: true,
+      tokens: { totalTokens: { input: 1, output: 1, reasoning: 0 }, totalCost: 0, turnCount: 0, sessionCount: 0 },
+    })).toBe(false);
+
+    // health.root: release metadata not loaded yet -> envelope only.
+    expect(Value.Check(HealthResponse, {
+      status: 'ok', serveRunning: true, registeredProjects: ['/p'], activeGoals: ['g_1'],
+      media: { configured: false },
+    })).toBe(true);
+    // managed desktop payload carries the full release identity.
+    expect(Value.Check(HealthResponse, {
+      status: 'ok', serveRunning: true, registeredProjects: [], activeGoals: [],
+      media: { configured: true },
+      gatewayVersion: '4.16.1', experienceVersion: '1.0', minimumClientExperienceVersion: '1.0',
+      schemaEpoch: 3, instanceId: 'uuid', distribution: 'desktop-managed', channel: 'managed', pid: 123,
+    })).toBe(true);
+    expect(Value.Check(HealthResponse, {
+      status: 'ok', serveRunning: true, registeredProjects: [], activeGoals: [],
+      media: { configured: true }, distribution: 'cloud',
+    })).toBe(false);
+
+    // devices: listPublicDevices() rows (credential hashes already stripped).
+    const device = {
+      id: 'dev_1', fcmToken: 'fcm', platform: 'android', lastSeen: '2026-11-14T00:00:00.000Z',
+    };
+    expect(Value.Check(DeviceListResponse, { devices: [device] })).toBe(true);
+    expect(Value.Check(DeviceListResponse, { devices: [] })).toBe(true);
+    expect(Value.Check(DeviceListResponse, {
+      devices: [{ ...device, deviceName: 'Pixel', tokenIssuedAt: '2026-11-14T00:00:00.000Z' }],
+    })).toBe(true);
+    const { platform: _platform, ...withoutPlatform } = device;
+    expect(Value.Check(DeviceListResponse, { devices: [withoutPlatform] })).toBe(false);
+
+    expect(Value.Check(PairingCodeResponse, {
+      url: 'orcalore://pair?url=https%3A%2F%2Fx&v=2&exp=1&nonce=abc',
+    })).toBe(true);
+    expect(Value.Check(PairingCodeResponse, {})).toBe(false);
+
+    // subagent result: structured output branch / final assistant text branch.
+    expect(Value.Check(SessionSubagentResultResponse, { status: 'completed', text: 'done' })).toBe(true);
+    expect(Value.Check(SessionSubagentResultResponse, {
+      status: 'completed', structured: { answer: 42 },
+    })).toBe(true);
+    expect(Value.Check(SessionSubagentResultResponse, { status: 'running' })).toBe(true);
+    expect(Value.Check(SessionSubagentResultResponse, { status: 'cancelled' })).toBe(false);
+    expect(Value.Check(SessionSubagentResultResponse, {})).toBe(false);
+
+    // A2A media card (no protocolVersion / supportedInterfaces) and Pod card (both).
+    const mediaCard = {
+      name: 'MAFW MediaAgent',
+      description: 'multimodal agent',
+      url: 'http://127.0.0.1:3000/a2a',
+      version: '1.0.0',
+      provider: { url: 'http://127.0.0.1:3000', organization: 'MAFW' },
+      capabilities: { streaming: false, pushNotifications: false, extensions: [] },
+      defaultInputModes: ['text', 'image'],
+      defaultOutputModes: ['text'],
+      skills: [{
+        id: 'media_analyze', name: 'media_analyze', description: 'answer media questions',
+        tags: ['media'], examples: [], inputModes: ['text'], outputModes: ['text'],
+        securityRequirements: [],
+      }],
+      supportedInterfaces: [],
+      securitySchemes: {},
+      securityRequirements: [],
+      signatures: [],
+    };
+    expect(Value.Check(A2AAgentCardResponse, mediaCard)).toBe(true);
+    expect(Value.Check(A2AAgentCardResponse, {
+      ...mediaCard,
+      name: 'MAFW Pod pod_1',
+      protocolVersion: '1.0',
+      supportedInterfaces: [{
+        url: 'http://127.0.0.1:3000/a2a/pods/pod_1',
+        protocolBinding: 'JSONRPC',
+        protocolVersion: '1.0',
+      }],
+    })).toBe(true);
+    // Protocol-owned extension key is tolerated (boundary, not a closed shape).
+    expect(Value.Check(A2AAgentCardResponse, { ...mediaCard, futureProtocolField: true })).toBe(true);
+    const { skills: _skills, ...withoutSkills } = mediaCard;
+    expect(Value.Check(A2AAgentCardResponse, withoutSkills)).toBe(false);
+    expect(Value.Check(A2AAgentCardResponse, {
+      ...mediaCard, capabilities: { streaming: false },
+    })).toBe(false);
+  });
+});
+

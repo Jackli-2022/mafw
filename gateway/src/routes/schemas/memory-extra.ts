@@ -127,7 +127,10 @@ const StickyNoteSchema = Type.Object({
  * `GET /api/memory/sticky` —— note-board 结构化列表（desktop dock 用）。
  *
  * `entries` 只含**排版后仍上板**的条目（`formatNoteBoard` 的 `used` 截断，超预算的条目
- * 只记日志）；`budget.max` / `budget.maxChars` 是常量预算，`budget.used` 是收录条数。
+ * 只记日志）；`budget.max` / `budget.maxChars` / `budget.perNoteCap` 是常量预算
+ * （`NOTE_BOARD_BUDGET`），`budget.used` 是收录条数。`perNoteCap` 是防饿死关键：
+ * 无上限时一条超长便签吃光总预算、后续条目全被丢弃。wire 恒为
+ * `{ ...NOTE_BOARD_BUDGET, used }`（E10f-E 建模，原来只声明三键）。
  * 503（记忆服务缺失）与 catch 分支都回 `{entries: [], budget: emptyNoteBoardBudget()}`
  * ——与 200 同形，故单个 schema 覆盖两种降级体。
  */
@@ -136,6 +139,7 @@ export const MemoryStickyResponse = Type.Object({
   budget: Type.Object({
     max: Type.Number(),
     maxChars: Type.Number(),
+    perNoteCap: Type.Number(),
     used: Type.Number(),
   }),
 })

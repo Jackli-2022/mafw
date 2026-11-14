@@ -60,6 +60,11 @@ const PinnedEntrySchema = Type.Object({
  * `GET /api/recall/pinned` —— 每轮注入的 `<user-profile>` 披露层。
  * `profile` 是渲染后的 profile 串（无 pinned 记忆时为 null）；`budget.used` 是实际
  * 收录条数（超出预算的条目被 formatter 丢弃，只记日志），`max`/`maxChars` 是常量预算。
+ *
+ * **没有 `perNoteCap`**：pinned 走 `PINNED_BUDGET`（20 条 / 2000 字符），
+ * `formatPinnedProfile` 不按条截断（身份陈述必须完整）。note-board 的 `perNoteCap`
+ * 只属于 `memory.listSticky` 的 `NOTE_BOARD_BUDGET`；此处加一个不生效的字段
+ * 会让 schema 拒绝 handler 自己的输出（E10f-E 记为有意偏离 spec 的一处）。
  */
 export const RecallPinnedResponse = Type.Object({
   profile: Type.Union([Type.String(), Type.Null()]),
