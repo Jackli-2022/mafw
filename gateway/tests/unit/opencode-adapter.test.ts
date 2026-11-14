@@ -90,6 +90,33 @@ describe('opencode-adapter 2.1.0 native session routes (directNative)', () => {
     expect(out.finish).toBeUndefined();
   });
 
+  it('prompt delivers the system contract as part of the native prompt text', async () => {
+    routeFetch();
+    const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
+    await rt.session.prompt({
+      sessionID: 'ses_1',
+      message: 'EPISODES 1..10',
+      system: 'Return ONLY {"insights":[...]}',
+    });
+    const [url, init] = callsFor('/api/session/ses_1/prompt')[0];
+    expect(url).toBe('http://127.0.0.1:4096/api/session/ses_1/prompt');
+    expect(JSON.parse(init.body as string).text).toBe(
+      'Return ONLY {"insights":[...]}\nEPISODES 1..10',
+    );
+  });
+
+  it('promptAsync delivers the system contract too', async () => {
+    routeFetch();
+    const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
+    await rt.session.promptAsync({
+      sessionID: 'ses_1',
+      parts: [{ type: 'text', text: 'EPISODES' }],
+      system: 'SYSTEM CONTRACT',
+    });
+    const [, init] = callsFor('/api/session/ses_1/prompt')[0];
+    expect(JSON.parse(init.body as string).text).toBe('SYSTEM CONTRACT\nEPISODES');
+  });
+
   it('session.get 404 错误信封 → undefined（SDK throwOnError=false，不能把 envelope 当会话）', async () => {
     mockClient.session.get.mockResolvedValueOnce({
       error: { name: 'NotFoundError', data: { message: 'Session not found' } },

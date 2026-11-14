@@ -54,6 +54,15 @@ const RUNTIME_PROXY_EXEMPT = new Set<string>([])
  */
 const NON_SDK_EXEMPT: Record<string, string> = {
   'humanToken.rotate': 'bin/mafw.js rotate-human-token (raw HTTP; human-token principal only)',
+  'plugins.doctor': 'desktop plugins page / mafw plugins doctor',
+  'plugins.doctorAll': 'desktop plugins page / mafw plugins doctor',
+  'plugins.kill': 'desktop plugins page / mafw plugins kill',
+  'plugins.resume': 'desktop plugins page / mafw plugins resume',
+  'plugins.quarantine': 'desktop plugins page / mafw plugins quarantine',
+  'plugins.unquarantine': 'desktop plugins page / mafw plugins unquarantine',
+  'plugins.audit': 'desktop plugins page / mafw plugins audit',
+  'plugins.lastGood': 'desktop plugins page / mafw plugins rollback',
+  'plugins.rollback': 'desktop plugins page / mafw plugins rollback',
 }
 
 /**

@@ -24,16 +24,26 @@ import * as path from 'path';
 import { randomBytes } from 'crypto';
 import type { PluginCheckResult, PluginHost } from './package-host';
 import type { PackageStateStore } from './package-state-store';
-import type { PackageManifest } from './package-types';
+import type { PluginKind, NormalizedPackageManifest } from './package-manifest';
+import { parsePackageManifest } from './package-manifest';
+import { computePackageIntegrity, verifyDeclaredIntegrity } from './package-integrity';
+import type { PluginAuditStore } from './plugin-audit-store';
+import type { PackageLastGoodStore } from './package-last-good';
+import type { PluginSafety } from './plugin-safety';
 
 const SAFE_PACKAGE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const DEFAULT_MAX_REQUEST_IDS = 50;
 
 export class PackageManagerError extends Error {
-  constructor(readonly status: number, message: string) {
+  constructor(readonly status: number, message: string, readonly code?: string) {
     super(message);
     this.name = 'PackageManagerError';
   }
+}
+
+export interface InstallConsent {
+  trust: PluginKind;
+  permissions: string[];
 }
 
 export interface InstallInput {
@@ -43,6 +53,8 @@ export interface InstallInput {
   overwrite?: boolean;
   /** Idempotency key: replaying the same key returns the first result. */
   requestId?: string;
+  /** Required for apiVersion 2 packages; v1 packages may omit it. */
+  accept?: InstallConsent;
 }
 
 export interface InstallResult {
@@ -54,6 +66,8 @@ export interface InstallResult {
   saved: boolean;
   application: 'applied' | 'pending' | 'failed';
   error?: string;
+  kind?: PluginKind;
+  apiVersion?: 1 | 2;
 }
 
 export interface UpdateResult {
@@ -87,6 +101,14 @@ export interface PackageManagerDeps {
   stateStore: PackageStateStore;
   /** Idempotency cache size (default 50). */
   maxRequestIds?: number;
+  /** Untrusted packages require a working worker host. Default false. */
+  workerAvailable?: boolean;
+  /** Phase 6 trust audit (optional in headless hosts). */
+  audit?: PluginAuditStore;
+  /** Phase 6C rollback snapshots (optional in headless hosts). */
+  lastGood?: PackageLastGoodStore;
+  /** Phase 6C health window (optional in headless hosts). */
+  safety?: PluginSafety;
 }
 
 function describeError(err: unknown): string {
@@ -119,6 +141,10 @@ export class PackageManager {
   private readonly host: PluginHost;
   private readonly stateStore: PackageStateStore;
   private readonly maxRequestIds: number;
+  private readonly workerAvailable: boolean;
+  private readonly audit?: PluginAuditStore;
+  private readonly lastGood?: PackageLastGoodStore;
+  private readonly safety?: PluginSafety;
   private readonly requestResults = new Map<string, InstallResult>();
   /** Serializes mutations so two installs cannot interleave staging markers. */
   private queue: Promise<unknown> = Promise.resolve();
@@ -128,6 +154,10 @@ export class PackageManager {
     this.host = deps.host;
     this.stateStore = deps.stateStore;
     this.maxRequestIds = deps.maxRequestIds ?? DEFAULT_MAX_REQUEST_IDS;
+    this.workerAvailable = deps.workerAvailable === true;
+    this.audit = deps.audit;
+    this.lastGood = deps.lastGood;
+    this.safety = deps.safety;
   }
 
   /** Absolute plugin package root (`~/.mafw/plugins` by default). */
@@ -160,12 +190,82 @@ export class PackageManager {
       const manifest = this.readManifest(source);
       const name = this.validatePackageName(manifest.name);
 
+      const block = this.safety?.blockedReason(name);
+      if (block === 'safe-mode' || this.stateStore.isSafeMode()) {
+        throw new PackageManagerError(409, 'plugin safe mode is active', 'safe_mode_active');
+      }
+      if (block === 'quarantined' && manifest.kind === 'untrusted') {
+        throw new PackageManagerError(409, `package is quarantined: ${name}`, 'plugin_quarantined');
+      }
+      this.assertConsent(manifest, input?.accept);
+      if (manifest.kind === 'untrusted' && !this.workerAvailable) {
+        throw new PackageManagerError(
+          409,
+          'untrusted packages require a worker host',
+          'untrusted_requires_worker',
+        );
+      }
+      if (!fs.existsSync(path.join(source, manifest.main))) {
+        throw new PackageManagerError(
+          400,
+          `entry file not found in source: ${manifest.main}`,
+          'invalid_manifest',
+        );
+      }
+      if (manifest.integrity) {
+        const check = verifyDeclaredIntegrity(source, manifest.integrity);
+        if (!check.ok) {
+          throw new PackageManagerError(
+            422,
+            `integrity mismatch: ${check.errors.join('; ')}`,
+            'integrity_mismatch',
+          );
+        }
+      }
+
+      if (input?.overwrite === true && this.lastGood) {
+        const installed = this.stateStore.getInstalled(name);
+        this.lastGood.snapshot(name, {
+          ...(this.installedVersion(name) !== undefined
+            ? { version: this.installedVersion(name) }
+            : {}),
+          fingerprint: installed?.fingerprint ?? '',
+        });
+      }
+
       this.copyIntoRoot(source, name, input?.overwrite === true);
       // Windows overwrite installs rename a new directory over the package
       // path; the directory watcher from the previous object is dead even though
       // the path string is unchanged. Rebuild the watchers so hot reload keeps
       // working. Harmless for a fresh install (there is no watcher yet).
       this.host.resetWatchers();
+
+      const installedDir = path.join(this.ensureRoot(), name);
+      try {
+        const snapshot = computePackageIntegrity(installedDir, path.join(installedDir, manifest.main));
+        this.stateStore.setInstalled(name, {
+          ...(manifest.version !== undefined ? { version: manifest.version } : {}),
+          fingerprint: snapshot.fingerprint,
+          files: snapshot.files,
+          installedAt: new Date().toISOString(),
+          consecutiveFailures: 0,
+        });
+        if (manifest.kind !== 'untrusted' && this.stateStore.getQuarantine(name)) {
+          this.stateStore.clearQuarantine(name);
+        }
+      } catch (err) {
+        // The overwrite removed the on-disk backup; last-good is the only copy
+        // of the previous version. Restore it before reporting the failure.
+        const restored = this.lastGood?.restore(name) ?? false;
+        if (!restored) {
+          try { fs.rmSync(installedDir, { recursive: true, force: true }); } catch { /* best effort */ }
+        }
+        throw new PackageManagerError(
+          500,
+          `could not record integrity for ${name}: ${describeError(err)}`,
+          'integrity_failed',
+        );
+      }
 
       // An installed package is enabled: the manager file is the only source
       // of the disabled flag and re-installation is an explicit opt-in.
@@ -175,7 +275,51 @@ export class PackageManager {
       this.host.stageNewPackage(name);
       await this.host.reload();
 
-      const result = this.toInstallResult(this.describe(name), manifest.version);
+      const described = this.describe(name);
+      if (input?.overwrite === true && described.application === 'failed') {
+        const restored = this.lastGood?.restore(name) ?? false;
+        if (restored) {
+          this.stateStore.updateInstalled(name, { fingerprint: '', files: {} });
+          this.safety?.markDegraded(name, 'update failed before commit; restored last-good', manifest.version);
+          this.audit?.append({
+            action: 'rollback',
+            package: name,
+            result: 'ok',
+            detail: { reason: 'update failed before commit' },
+          });
+          await this.host.reload();
+        } else {
+          this.safety?.quarantine(name, 'update failed before commit and no last-good was available');
+        }
+      }
+      const result: InstallResult = {
+        ...this.toInstallResult(this.describe(name), manifest.version),
+        kind: manifest.kind,
+        apiVersion: manifest.apiVersion,
+      };
+      this.audit?.append({
+        action: 'install',
+        package: name,
+        ...(manifest.version !== undefined ? { version: manifest.version } : {}),
+        ...(this.stateStore.getInstalled(name)?.fingerprint
+          ? { fingerprint: this.stateStore.getInstalled(name)!.fingerprint }
+          : {}),
+        result: 'ok',
+        detail: {
+          apiVersion: manifest.apiVersion,
+          kind: manifest.kind,
+          permissions: manifest.permissions,
+        },
+      });
+      if (result.application === 'applied') {
+        const installed = this.stateStore.getInstalled(name);
+        if (installed) {
+          this.safety?.beginHealthCheck(name, {
+            ...(installed.version !== undefined ? { version: installed.version } : {}),
+            fingerprint: installed.fingerprint,
+          });
+        }
+      }
       if (requestId) this.remember(requestId, result);
       return result;
     });
@@ -198,8 +342,10 @@ export class PackageManager {
     return this.enqueue(async () => {
       const safeName = this.validatePackageName(name);
       this.assertInstalled(safeName);
+      this.assertNotBlocked(safeName);
       this.stateStore.setDisabled(safeName, true);
       await this.host.reload();
+      this.audit?.append({ action: 'disable', package: safeName, result: 'ok' });
       return {
         name: safeName,
         version: this.installedVersion(safeName),
@@ -216,11 +362,13 @@ export class PackageManager {
     return this.enqueue(async () => {
       const safeName = this.validatePackageName(name);
       this.assertInstalled(safeName);
+      this.assertNotBlocked(safeName);
       this.stateStore.setDisabled(safeName, false);
       // Re-enabling a runtime package must not silently replace the active
       // runtime either: the host stages it as pending when it applies.
       this.host.stageNewPackage(safeName);
       await this.host.reload();
+      this.audit?.append({ action: 'enable', package: safeName, result: 'ok' });
       const state = this.describe(safeName);
       return {
         ...state,
@@ -249,7 +397,11 @@ export class PackageManager {
 
       fs.rmSync(realTarget, { recursive: true, force: true });
       this.stateStore.setDisabled(safeName, false);
+      this.stateStore.removeInstalled(safeName);
+      this.stateStore.clearQuarantine(safeName);
+      this.lastGood?.remove(safeName);
       await this.host.reload();
+      this.audit?.append({ action: 'remove', package: safeName, result: 'ok' });
 
       return {
         name: safeName,
@@ -270,6 +422,7 @@ export class PackageManager {
     return this.enqueue(async () => {
       const safeName = this.validatePackageName(name);
       this.assertInstalled(safeName);
+      this.assertNotBlocked(safeName);
       if (this.stateStore.isDisabled(safeName)) {
         return {
           name: safeName,
@@ -281,6 +434,7 @@ export class PackageManager {
         };
       }
       await this.host.reload();
+      this.audit?.append({ action: 'reload', package: safeName, result: 'ok' });
       const state = this.describe(safeName);
       return {
         ...state,
@@ -291,11 +445,43 @@ export class PackageManager {
     });
   }
 
+  /** Restores the last-known-good snapshot and reloads the package. */
+  rollback(name: string): Promise<UpdateResult> {
+    return this.enqueue(async () => {
+      const safeName = this.validatePackageName(name);
+      this.assertNotBlocked(safeName);
+      if (!this.lastGood || !this.lastGood.restore(safeName)) {
+        throw new PackageManagerError(404, `no last-known-good snapshot for ${safeName}`, 'last_good_missing');
+      }
+      this.stateStore.updateInstalled(safeName, { fingerprint: '', files: {} });
+      await this.host.reload();
+      this.audit?.append({ action: 'rollback', package: safeName, result: 'ok' });
+      const state = this.describe(safeName);
+      return {
+        ...state,
+        version: state.version ?? this.installedVersion(safeName),
+        saved: true,
+        enabled: !this.stateStore.isDisabled(safeName),
+      };
+    });
+  }
+
   /** Commits a staged candidate; failures keep the previous active revision. */
   applyPending(name: string): Promise<UpdateResult> {
     return this.enqueue(async () => {
       const safeName = this.validatePackageName(name);
+      this.assertNotBlocked(safeName);
       const result = await this.host.applyPending(safeName);
+      if (result.applied) {
+        this.audit?.append({ action: 'apply', package: safeName, result: 'ok' });
+        const installed = this.stateStore.getInstalled(safeName);
+        if (installed) {
+          this.safety?.beginHealthCheck(safeName, {
+            ...(installed.version !== undefined ? { version: installed.version } : {}),
+            fingerprint: installed.fingerprint,
+          });
+        }
+      }
       if (!result.applied) {
         return {
           name: safeName,
@@ -363,34 +549,61 @@ export class PackageManager {
     return real;
   }
 
-  private readManifest(source: string): PackageManifest {
+  private readManifest(source: string): NormalizedPackageManifest {
     const manifestPath = path.join(source, 'plugin.json');
     if (!fs.existsSync(manifestPath)) {
       throw new PackageManagerError(400, `plugin.json not found in ${source}`);
     }
-    let manifest: unknown;
+    let parsed: unknown;
     try {
-      manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+      parsed = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
     } catch (err) {
       throw new PackageManagerError(400, `invalid plugin.json: ${describeError(err)}`);
     }
-    if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
-      throw new PackageManagerError(400, 'invalid plugin.json: expected an object');
+    const result = parsePackageManifest(parsed);
+    if (!result.ok || !result.manifest) {
+      throw new PackageManagerError(
+        400,
+        `invalid plugin.json: ${result.errors.join('; ')}`,
+        'invalid_manifest',
+      );
     }
-    const record = manifest as Record<string, unknown>;
-    this.validatePackageName(record.name);
-    if (record.main !== undefined && (typeof record.main !== 'string' || record.main.length === 0)) {
-      throw new PackageManagerError(400, 'invalid plugin.json: "main" must be a non-empty string');
+    return result.manifest;
+  }
+
+  /** v2 installs require explicit trust + permission consent; v1 stays compatible. */
+  /** Safe mode / quarantine block mutations; disabled is handled by each operation. */
+  private assertNotBlocked(name: string): void {
+    const reason = this.safety?.blockedReason(name);
+    if (reason === 'safe-mode') {
+      throw new PackageManagerError(409, 'plugin safe mode is active', 'safe_mode_active');
     }
-    if (typeof record.main === 'string') {
-      // The entry file must live inside the package: a manifest is data, it
-      // cannot point the host at an arbitrary local module.
-      const resolved = path.resolve(source, record.main);
-      if (!isContained(source, resolved)) {
-        throw new PackageManagerError(400, 'invalid plugin.json: "main" escapes the package');
-      }
+    if (reason === 'quarantined') {
+      throw new PackageManagerError(409, `package is quarantined: ${name}`, 'plugin_quarantined');
     }
-    return record as unknown as PackageManifest;
+  }
+
+  private assertConsent(
+    manifest: NormalizedPackageManifest,
+    accept: InstallConsent | undefined,
+  ): void {
+    if (manifest.apiVersion === 1) return;
+    const declared = [...manifest.permissions].sort();
+    if (!accept) {
+      throw new PackageManagerError(
+        400,
+        `permission consent required: ${declared.join(', ') || '(none)'}`,
+        'permission_consent_required',
+      );
+    }
+    const accepted = [...new Set(accept.permissions)].sort();
+    if (accept.trust !== manifest.kind || accepted.join('\0') !== declared.join('\0')) {
+      throw new PackageManagerError(
+        400,
+        `permission consent required: ${declared.join(', ') || '(none)'}`,
+        'permission_consent_required',
+      );
+    }
   }
 
   private ensureRoot(): string {
@@ -469,7 +682,7 @@ export class PackageManager {
   private installedVersion(name: string): string | undefined {
     try {
       const manifestPath = path.join(this.ensureRoot(), name, 'plugin.json');
-      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8')) as PackageManifest;
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8')) as { version?: unknown };
       return typeof manifest?.version === 'string' ? manifest.version : undefined;
     } catch {
       return undefined;

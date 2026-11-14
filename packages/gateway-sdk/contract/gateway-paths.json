@@ -10146,6 +10146,173 @@
         }
       }
     },
+    "/api/plugins/doctor": {
+      "post": {
+        "operationId": "plugins.doctorAll",
+        "tags": [
+          "plugins"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/plugins/{name}/doctor": {
+      "post": {
+        "operationId": "plugins.doctor",
+        "tags": [
+          "plugins"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/plugins/kill": {
+      "post": {
+        "operationId": "plugins.kill",
+        "tags": [
+          "plugins"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/plugins/resume": {
+      "post": {
+        "operationId": "plugins.resume",
+        "tags": [
+          "plugins"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/plugins/{name}/quarantine": {
+      "post": {
+        "operationId": "plugins.quarantine",
+        "tags": [
+          "plugins"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/plugins/{name}/unquarantine": {
+      "post": {
+        "operationId": "plugins.unquarantine",
+        "tags": [
+          "plugins"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/plugins/audit": {
+      "get": {
+        "operationId": "plugins.audit",
+        "tags": [
+          "plugins"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/plugins/{name}/last-good": {
+      "get": {
+        "operationId": "plugins.lastGood",
+        "tags": [
+          "plugins"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/plugins/{name}/rollback": {
+      "post": {
+        "operationId": "plugins.rollback",
+        "tags": [
+          "plugins"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/plugins/{name}/web-ticket": {
       "post": {
         "operationId": "plugins.webTicket",

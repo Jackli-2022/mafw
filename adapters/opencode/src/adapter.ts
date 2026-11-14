@@ -196,6 +196,19 @@ function unwrapNative<T>(body: any): T {
 }
 
 /** 契约 parts → 2.1.0 PromptInput body（text 必填；file 部件映射到 files.uri）。 */
+/**
+ * opencode 2.1.0's native prompt input has no `system` field (the SDK's older
+ * `/message` route did). The runtime contract still carries `system`, so an
+ * adapter that drops it silently loses the task contract — the memory workers
+ * invented their own JSON schema because REFLECT_SYSTEM never reached the
+ * model. Prepend it as a text part so every pipeline prompt keeps its
+ * instructions.
+ */
+function withSystemPart(parts: any[], system?: string): any[] {
+  if (!system || !system.trim()) return parts;
+  return [{ type: 'text', text: system }, ...parts];
+}
+
 function promptInputBody(parts: any[], opts?: { delivery?: string }): Record<string, unknown> {
   const texts: string[] = [];
   const files: Array<Record<string, unknown>> = [];
@@ -443,7 +456,7 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
       async promptAsync(opts: SessionPromptOpts) {
         // 2.1.0：POST /api/session/{id}/prompt（无 prompt_async），顶层 {text}
         // 立即返回（入队），回合进度走 /api/event。
-        const parts = messageToParts(opts.message, opts.parts);
+        const parts = withSystemPart(messageToParts(opts.message, opts.parts), opts.system);
         if (opts.agent) await directNative(`/session/${opts.sessionID}/agent`, 'POST', { agent: opts.agent });
         await switchModel(opts.sessionID, opts.model, opts.variant);
         await directNative(
@@ -454,7 +467,7 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
       },
 
       async prompt(opts: SessionPromptOpts) {
-        const parts = messageToParts(opts.message, opts.parts);
+        const parts = withSystemPart(messageToParts(opts.message, opts.parts), opts.system);
         if (opts.agent) await directNative(`/session/${opts.sessionID}/agent`, 'POST', { agent: opts.agent });
         await switchModel(opts.sessionID, opts.model, opts.variant);
         await directNative(

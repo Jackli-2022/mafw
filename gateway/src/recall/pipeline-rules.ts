@@ -3,9 +3,18 @@
 // no rules and the pipelines never run.
 import * as fs from 'fs';
 import * as path from 'path';
+import { CronTime } from 'cron';
 import { log } from '../core/utils/logger';
+import { DEFAULT_PIPELINE_INTERVALS_MS } from './pipeline-heartbeat';
 
-const RULES: Array<{ id: string; schedule: string; timezone: string; action: string }> = [
+export interface MemoryPipelineRule {
+  id: string;
+  schedule: string;
+  timezone: string;
+  action: string;
+}
+
+export const MEMORY_PIPELINE_RULES: ReadonlyArray<MemoryPipelineRule> = [
   { id: 'turn-compress', schedule: '0 * * * *', timezone: 'UTC', action: 'memory:turnCompress' },
   { id: 'memory-reflect', schedule: '0 3 * * *', timezone: 'UTC', action: 'memory:reflect' },
   // Daily energy decay — memories fade by elapsed time (0.005/day base rate).
@@ -29,9 +38,39 @@ const RULES: Array<{ id: string; schedule: string; timezone: string; action: str
   { id: 'axiom-distill', schedule: '0 6 * * 0', timezone: 'UTC', action: 'memory:axiomDistill' },
 ];
 
+/**
+ * Cron catch-up: a gateway that is offline at the scheduled minute misses the
+ * tick permanently (cron has no replay). Compare each pipeline's last attempt
+ * against its cron expression and return the rules that missed at least one
+ * occurrence. Only pipelines with a recorded attempt are eligible — a fresh
+ * install must not kick off long LLM passes on its first boot.
+ */
+export function findMissedPipelineRuns(
+  rules: ReadonlyArray<MemoryPipelineRule>,
+  getRecord: (action: string) => { lastRunAt?: string } | null | undefined,
+  now: number,
+): MemoryPipelineRule[] {
+  const due: MemoryPipelineRule[] = [];
+  for (const rule of rules) {
+    if (!(rule.action in DEFAULT_PIPELINE_INTERVALS_MS)) continue;
+    const lastRunAt = getRecord(rule.action)?.lastRunAt;
+    const lastRunMs = lastRunAt ? Date.parse(lastRunAt) : NaN;
+    if (!Number.isFinite(lastRunMs)) continue;
+    try {
+      const timezone = rule.timezone || 'UTC';
+      const cron = new CronTime(rule.schedule, timezone);
+      const next = cron.getNextDateFrom(new Date(lastRunMs), timezone).toMillis();
+      if (Number.isFinite(next) && next <= now) due.push(rule);
+    } catch {
+      // An invalid schedule must never prevent the gateway from booting.
+    }
+  }
+  return due;
+}
+
 export function ensureMemoryPipelineRules(mafwDir: string): void {
   const dir = path.join(mafwDir, 'automations');
-  for (const rule of RULES) {
+  for (const rule of MEMORY_PIPELINE_RULES) {
     const file = path.join(dir, `${rule.id}.json`);
     if (fs.existsSync(file)) continue;
     try {

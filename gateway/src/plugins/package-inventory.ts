@@ -21,6 +21,10 @@ import type { PackageState } from './package-types';
 export interface PackageInventoryEntry extends Omit<PackageState, 'status'> {
   status: PackageState['status'] | 'disabled';
   enabled: boolean;
+  /** Phase 6 lifecycle projection (additive). */
+  state?: 'active' | 'pending' | 'error' | 'disabled' | 'quarantined' | 'safe-mode' | 'degraded';
+  quarantinedReason?: string;
+  degradedReason?: string;
 }
 
 /**

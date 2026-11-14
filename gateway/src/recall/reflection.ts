@@ -16,6 +16,7 @@ import { getRouteWriteDeps, routeAndWrite } from '../memory/route-write';
 import { PipelineBudgetLike } from './pipeline-budget';
 import { collectT1ReplayEvidence, T1ReplayDeps } from './t1-replay';
 import { normalizeSourceTraceIds } from '../core/memory/provenance';
+import { log } from '../core/utils/logger';
 
 /** Session key for episodic memories with no source_session_id (legacy data). */
 export const ORPHAN_SESSION = '__orphan__';
@@ -61,6 +62,17 @@ export interface ReflectionOptions {
   };
   /** Phase 4B: episodes per reflection batch (default 10, min 1). */
   reflectionBatchSize?: number;
+  /** Wall-clock budget for one run pass (default 15min, 0 = unlimited). A run
+   *  must return before the scheduler's 30min watchdog: a run killed by a
+   *  restart would never record a heartbeat. */
+  maxRunMs?: number;
+  /** Max sessions per runAll pass (default 50). Remaining sessions keep their
+   *  pending episodes for the next run. */
+  maxSessionsPerRun?: number;
+  /** Injectable clock (tests). */
+  now?: () => number;
+  /** Error sink; defaults to a warning log with the session id. */
+  onError?: (info: { sessionID: string; error: string }) => void;
 }
 
 export interface ReflectionResult {
@@ -73,6 +85,8 @@ export interface ReflectionResult {
   pendingSessions: number;
   replayedTraces: number;
   replayChars: number;
+  /** Sessions left for the next pass because a run budget was reached. */
+  deferredSessions?: number;
 }
 
 export type InsightCategory = 'failure' | 'correction' | 'insight' | 'preference' | 'convention' | 'tool-quirk';
@@ -118,13 +132,66 @@ ${HARD_BOUNDARIES}`;
 
 export function parseQuestions(text: string): string[] {
   try {
-    const parsed = JSON.parse(text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, ''));
+    const parsed: any = extractJsonPayload(text);
     const items = parsed?.questions ?? parsed;
     if (!Array.isArray(items)) return [];
     return items.filter((q: any) => typeof q === 'string' && q.trim()).slice(0, 3).map(String);
   } catch {
     return [];
   }
+}
+
+/**
+ * Models occasionally wrap the JSON payload in prose or a fences block. A
+ * strict JSON.parse made every such reply look like "no insights", which kept
+ * the cursor stuck and re-processed the same episodes forever. Parse the first
+ * balanced JSON object/array instead.
+ */
+export function extractJsonPayload(text: string): unknown | null {
+  if (!text) return null;
+  const cleaned = String(text)
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/```\s*$/i, '')
+    .trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch { /* fall through to balanced extraction */ }
+  const start = cleaned.search(/[{[]/);
+  if (start === -1) return null;
+  const open = cleaned[start];
+  const close = open === '{' ? '}' : ']';
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < cleaned.length; i++) {
+    const ch = cleaned[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === '\\' && inString) {
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (ch === open) depth++;
+    else if (ch === close) {
+      depth--;
+      if (depth === 0) {
+        try {
+          return JSON.parse(cleaned.slice(start, i + 1));
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+  return null;
 }
 
 const CATEGORY_TO_TYPE: Record<InsightCategory, HarmonicUnit['type']> = {
@@ -212,11 +279,24 @@ export function buildInsightUnit(insight: Insight, sessionID: string, now: strin
 }
 
 export function parseInsights(text: string): Insight[] {
-  try {
-    const parsed = JSON.parse(text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, ''));
-    const items = parsed?.insights ?? parsed;
-    if (!Array.isArray(items)) return [];
-    return items
+  return parseInsightsDetailed(text).insights;
+}
+
+/**
+ * Like parseInsights, but distinguishes "the model answered with a well-formed
+ * (possibly empty) insights array" from "the reply was not parseable". Only
+ * the former may advance the cursor: advancing on garbage would silently drop
+ * episodes, while never advancing on a legitimate empty answer reprocesses the
+ * same episodes on every run (the 2026-11 reflection stall).
+ */
+export function parseInsightsDetailed(text: string): { ok: boolean; insights: Insight[] } {
+  const parsed: any = extractJsonPayload(text);
+  if (parsed === null || typeof parsed !== 'object') return { ok: false, insights: [] };
+  const items = parsed?.insights ?? parsed;
+  if (!Array.isArray(items)) return { ok: false, insights: [] };
+  return {
+    ok: true,
+    insights: items
       .filter(
         (i: any) =>
           i?.content?.trim() &&
@@ -229,10 +309,8 @@ export function parseInsights(text: string): Insight[] {
         ...(Array.isArray(i.sourceTraceIds)
           ? { source_trace_ids: i.sourceTraceIds.filter((x: any) => typeof x === 'string').slice(0, 20) }
           : {}),
-      }));
-  } catch {
-    return [];
-  }
+      })),
+  };
 }
 
 /**
@@ -264,6 +342,27 @@ export function unreflectedBySession(
  *  validation — live entries carrying the literal 'tentative' cue anchor. */
 export function collectTentative(entries: HarmonicIndexEntry[], _now: number): HarmonicIndexEntry[] {
   return entries.filter((e) => !e.superseded_by && (e.cue_anchors ?? []).includes('tentative'));
+}
+
+/**
+ * Boot-time restore herd guard: reflection is expensive (two LLM prompts per
+ * batch), so restoring every pending session at once starves the provider and
+ * makes each prompt hit the 300s timeout. Pick at most `max` sessions and let
+ * the bounded daily pass pick up the rest.
+ */
+export function selectRestoreSessions(
+  sessions: Iterable<string>,
+  pendingFor: (id: string) => number,
+  threshold: number,
+  max: number,
+): string[] {
+  const out: string[] = [];
+  if (max <= 0) return out;
+  for (const id of sessions) {
+    if (out.length >= max) break;
+    if (pendingFor(id) >= threshold) out.push(id);
+  }
+  return out;
 }
 
 export interface TentativeVerdict { id: string; verdict: 'promote' | 'reject' }
@@ -301,20 +400,43 @@ export class ReflectionPipeline {
     this.store = new HarmonicUnitFileStore(opts.baseDir, opts.index);
   }
 
+  private clock(): number {
+    return (this.opts.now ?? Date.now)();
+  }
+
+  private runBudgetMs(): number {
+    return Math.max(0, this.opts.maxRunMs ?? 15 * 60_000);
+  }
+
+  private reportError(sessionID: string, err: unknown): string {
+    const message = err instanceof Error ? err.message : String(err);
+    if (this.opts.onError) this.opts.onError({ sessionID, error: message });
+    else log.warn(`[Reflection] session=${sessionID} batch failed: ${message}`);
+    return message;
+  }
+
   /**
    * Reflect one session's unreflected episodes. Returns the number of
    * reviewed episodes (0 when nothing pending). Marks ids reflected only
-   * after insights were successfully written (failure keeps them pending for
-   * the next run).
+   * after the worker produced a parseable result (possibly an empty insight
+   * list) — a hard failure keeps them pending for the next run.
    */
-  private async reflectSession(sessionID: string, episodes: { id: string; text: string }[]): Promise<ReflectionResult> {
+  private async reflectSession(
+    sessionID: string,
+    episodes: { id: string; text: string }[],
+    deadline?: number,
+  ): Promise<ReflectionResult> {
     const result: ReflectionResult = { sessions: 0, reviewed: 0, distilled: 0, deduped: 0, superseded: 0, failed: 0, pendingSessions: 0, replayedTraces: 0, replayChars: 0 };
+    // The caller's list is a snapshot: a concurrent restore run may have
+    // advanced the cursor while this call waited on the per-session gate.
+    episodes = episodes.filter((e) => !this.opts.cursor.isReflected(sessionID, e.id));
     if (episodes.length === 0) return result;
     const batchSize = Math.max(1, this.opts.reflectionBatchSize ?? 10);
     if (episodes.length > batchSize) {
       const aggregate: ReflectionResult = { sessions: 0, reviewed: 0, distilled: 0, deduped: 0, superseded: 0, failed: 0, pendingSessions: 0, replayedTraces: 0, replayChars: 0 };
       for (let i = 0; i < episodes.length; i += batchSize) {
-        const r = await this.reflectSession(sessionID, episodes.slice(i, i + batchSize));
+        if (deadline != null && this.clock() >= deadline) break;
+        const r = await this.reflectSession(sessionID, episodes.slice(i, i + batchSize), deadline);
         aggregate.reviewed += r.reviewed;
         aggregate.distilled += r.distilled;
         aggregate.deduped += r.deduped;
@@ -347,9 +469,10 @@ export class ReflectionPipeline {
     let injected = new Set<string>();
     let replayUsed: string[] = [];
     let replayChars = 0;
+    let parsedOk = false;
     try {
       // Step 1: generate salient questions
-      const qText = await worker.prompt(prompt, QUESTIONS_SYSTEM, this.opts.workerModel, 'memory-curator');
+      const qText = await worker.prompt(prompt, QUESTIONS_SYSTEM, this.opts.workerModel, 'memory-reflector');
       const questions = parseQuestions(qText);
       // Step 2: retrieve evidence per question. V2 ⑤: dense channel fused
       // via RRF when the embedding runtime is available (fail-open → bm25
@@ -418,10 +541,18 @@ export class ReflectionPipeline {
         replayChars = replay.chars;
         injected = new Set(replayUsed);
       }
-      const text = await worker.prompt(prompt + evidenceBlock + replayBlock + entityBlock + feedbackBlock, REFLECT_SYSTEM, this.opts.workerModel, 'memory-curator');
-      insights = parseInsights(text);
-    } catch {
+      const text = await worker.prompt(prompt + evidenceBlock + replayBlock + entityBlock + feedbackBlock, REFLECT_SYSTEM, this.opts.workerModel, 'memory-reflector');
+      const parsed = parseInsightsDetailed(text);
+      insights = parsed.insights;
+      parsedOk = parsed.ok;
+      if (!parsed.ok) {
+        result.failed++;
+        this.reportError(sessionID, new Error('unparseable reflection output'));
+        return result; // episodes stay pending: the model reply was not usable
+      }
+    } catch (err) {
       result.failed++;
+      this.reportError(sessionID, err);
       return result; // episodes stay unreflected
     }
 
@@ -471,7 +602,7 @@ export class ReflectionPipeline {
           `DRAFT ABSTRACTIONS:\n${listText}`,
           TENTATIVE_SYSTEM,
           this.opts.workerModel,
-          'memory-curator',
+          'memory-reflector',
         );
         const m = reply.match(/\{[\s\S]*\}/);
         const parsed = m ? JSON.parse(m[0]) : null;
@@ -511,12 +642,14 @@ export class ReflectionPipeline {
 
     // Mark the batch reflected once the LLM produced a parseable result —
     // regardless of dedup/partial write failures. The episodes were processed;
-    // retrying them would only re-extract the same (deduped) insights. Only a
-    // hard LLM failure (no insights at all) keeps them pending.
-    if (insights.length > 0) {
+    // retrying them would only re-extract the same (deduped) insights. A valid
+    // empty list is a real answer ("nothing durable here") and must advance
+    // too: leaving it pending re-runs the same batch forever.
+    // Only a hard worker failure or an unparseable reply keeps them pending.
+    if (parsedOk) {
       this.opts.cursor.markReflected(sessionID, episodes.map((e) => e.id));
     }
-    result.sessions = insights.length > 0 ? 1 : 0;
+    result.sessions = parsedOk && insights.length > 0 ? 1 : 0;
     return result;
   }
 
@@ -526,7 +659,7 @@ export class ReflectionPipeline {
    * can never double-process the same episodes on the same worker.
    */
   async runAll(): Promise<ReflectionResult> {
-    const total: ReflectionResult = { sessions: 0, reviewed: 0, distilled: 0, deduped: 0, superseded: 0, failed: 0, pendingSessions: 0, replayedTraces: 0, replayChars: 0 };
+    const total: ReflectionResult = { sessions: 0, reviewed: 0, distilled: 0, deduped: 0, superseded: 0, failed: 0, pendingSessions: 0, replayedTraces: 0, replayChars: 0, deferredSessions: 0 };
     if (this.opts.budget && !this.opts.budget.allow('reflect')) return total;
     const bySession = unreflectedBySession(
       this.opts.index,
@@ -535,9 +668,15 @@ export class ReflectionPipeline {
     );
     const exclusive =
       this.opts.exclusive ?? ((_sessionID: string, fn: () => Promise<unknown>) => fn());
+    const startedAt = this.clock();
+    const budgetMs = this.runBudgetMs();
+    const maxSessions = Math.max(0, this.opts.maxSessionsPerRun ?? 50);
+    let processed = 0;
     for (const [sessionID, episodes] of bySession) {
+      if (processed >= maxSessions) break;
+      if (budgetMs > 0 && this.clock() - startedAt >= budgetMs) break;
       const res = await exclusive(sessionID, async () => {
-        return this.reflectSession(sessionID, episodes);
+        return this.reflectSession(sessionID, episodes, budgetMs > 0 ? startedAt + budgetMs : undefined);
       });
       const r = res as ReflectionResult;
       total.sessions += r.sessions;
@@ -548,7 +687,9 @@ export class ReflectionPipeline {
       total.failed += r.failed;
       total.replayedTraces += r.replayedTraces ?? 0;
       total.replayChars += r.replayChars ?? 0;
+      processed++;
     }
+    total.deferredSessions = Math.max(0, bySession.size - processed);
     // Maintenance: drop reflected ids that no longer exist in the index so the
     // bounded per-session list never re-exposes stale episodes.
     this.opts.cursor.prune(new Set(this.opts.index.getIndex().entries.map((e) => e.id)));
@@ -564,7 +705,9 @@ export class ReflectionPipeline {
     );
     const episodes = bySession.get(sessionID);
     if (!episodes || episodes.length === 0) return { sessions: 0, reviewed: 0, distilled: 0, deduped: 0, superseded: 0, failed: 0, pendingSessions: 0, replayedTraces: 0, replayChars: 0 };
-    return this.reflectSession(sessionID, episodes);
+    const budgetMs = this.runBudgetMs();
+    const deadline = budgetMs > 0 ? this.clock() + budgetMs : undefined;
+    return this.reflectSession(sessionID, episodes, deadline);
   }
 
   /** Number of unreflected episodes for a session (shouldReflect gate). */

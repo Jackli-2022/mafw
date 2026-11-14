@@ -164,3 +164,38 @@ re-export shim 已在 Task 7 删除）；驱动包不得 import `gateway/src`，
 
 - adapter 导出 `REGISTRATION`/dialect 描述符与 `getBridgeEventEntry`/`setBridgeEventEntry`（`entry-registry.ts`），dry-event/conformance 通过 gateway 的 provider seam 读取，不依赖 legacy bridge 实例。
 - opencode 的 `discovery.roots()` 暴露 skills/instruction 根目录；插件/技能安装不再由 gateway 猜测厂商路径。
+
+## Phase 6A trust surface（2026-11-14）
+
+- 统一包 manifest 增加 apiVersion/kind/permissions/host/integrity/deprecated；缺省 apiVersion=1 的 legacy 包按 trusted 处理。
+- 安装 v2 包需要 human/device principal 显式接受 permissions；v1 包、plugin-creator 草稿和 MCP 现有流程不变。
+- 安装后记录内容指纹与文件 hash；manifest 声明 integrity 时安装前严格校验。
+- 插件状态文件 v2 增加 safeMode/quarantine/installed/consecutiveFailures/pendingHealthCheck；文件损坏进入 safe mode。
+- 审计写入 gateway.db 的 plugin_audit_events 表；detail 只保留 allowlist 字段。
+- 新增 plugin doctor（12 项检查）、kill/resume、quarantine/unquarantine、audit 路由与 mafw plugins CLI。
+- kill switch 只停统一插件包；resume/unquarantine/v2 install 必须 human/device。
+
+
+## Phase 6B worker host（2026-11-14）
+
+- untrusted 包只通过 child_process worker 执行，gateway 主进程从不 require 其入口。
+- worker 启动参数：Node permission flag（--permission 或 --experimental-permission）、只读包根目录、无写/无 child-process/无 addon。
+- v1 能力：actions / events / config.read / config.write；files / net / terminal / http / tools / observers / ui.web 全部拒绝。
+- RPC 为 JSON-only，单条消息上限 1 MiB；config 走 host 回调。
+- action 超时杀 child；崩溃按 0.5s/1s/2s 退避重启；3 次后由 safety quarantine。
+- worker 启动失败或无 permission flag → 拒绝 untrusted，绝不 in-process fallback。
+- net 仍是 defense-in-depth（Module._load + global stub），不是 OS 级 hermetic 隔离。
+
+
+## Phase 6C compatible rollback（2026-11-14）
+
+- 宿主只接受 apiVersion 1/2；apiVersion 3+ 只跳过该包，不进 safe mode。
+- manifest host range 比较 MAFW 产品版本；不兼容只跳过该包。
+- deprecated 只产生 doctor warn。
+- 覆盖安装前把当前健康版本快照到 \.last-good/<name>/\；安装失败恢复，首次失败保留目录并 quarantine。
+- 新版本 commit 后写 pendingHealthCheck；健康窗口（默认 5 分钟）通过才提升为 lastKnownGood。
+- 进程在窗口内退出时，下次 boot 在激活前 reconcile：恢复 last-good 或 quarantine。
+- 手动回滚 \POST /api/plugins/:name/rollback\（human only）；last-good 元数据 \GET /api/plugins/:name/last-good\。
+- 10 个 drill 场景由 \
+pm run drill:plugin-trust\ 固化。
+

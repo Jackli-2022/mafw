@@ -94,8 +94,14 @@ import { PluginHost } from './plugins/package-host';
 import type { PluginEventFrame } from './plugins/plugin-events';
 import { PackageStateStore } from './plugins/package-state-store';
 import { PackageManager } from './plugins/package-manager';
+import { PluginSafety } from './plugins/plugin-safety';
+import { PluginDoctor } from './plugins/plugin-doctor';
+import { PluginAuditStore } from './plugins/plugin-audit-store';
+import { PackageLastGoodStore } from './plugins/package-last-good';
 import type { PluginClientSnapshot } from './plugins/client-descriptor';
 import { createPluginPackageContext } from './plugins/package-context';
+import { WorkerHost } from './plugins/worker/worker-host';
+import { permissionFlagFor } from './plugins/worker/node-flags';
 import type { UsageStatsProvider } from './usage/plugin-context';
 import { TerminalService } from './terminal/terminal-service';
 import { ensureGlobalOfficeSkill } from './core/office/global-skill';
@@ -172,6 +178,13 @@ export interface BootKernel {
   pluginHost?: PluginHost;
   packageStateStore?: PackageStateStore;
   packageManager?: PackageManager;
+  bindPluginTrust(input: {
+    audit: PluginAuditStore;
+    safety: PluginSafety;
+    doctor: PluginDoctor;
+    lastGood?: PackageLastGoodStore;
+    packageDir: string;
+  }): void;
   pluginClientSnapshot?: PluginClientSnapshot;
   bindPluginAutomation(host: PluginHost): void;
   handlePluginEvent(event: PluginEventFrame): void;
@@ -218,6 +231,8 @@ export interface BootKernel {
   recordTranslationError(runtime: string, kind: 'transformEvent' | 'normalizeMessages', reason: string): void;
   registerInternalSession(sessionId: string, role: string, identity?: string): void;
   restoreWorkerState(): void;
+  /** Run memory-pipeline cron rules that were missed while the gateway was offline. */
+  catchUpMissedPipelines(): void;
   runtimeGetApiKey(provider: string): string | null;
   /** Adapter-declared user-level skills dir (`discovery.roots().skillRoots[0]`). */
   skillsDir(): string;
@@ -416,6 +431,7 @@ export async function bootKernel(kernel: BootKernel): Promise<void> {
   // 2b. 统一插件包宿主（必须在 createRuntime 之前 init——包 runtime 贡献要先注册）
   const pluginPackageDir = process.env.MAFW_PLUGINS_DIR || config.resolvePath('plugins');
   kernel.packageStateStore = new PackageStateStore(config.resolvePath());
+  let pluginSafetyRef: PluginSafety | undefined;
   kernel.pluginHost = new PluginHost(
     pluginPackageDir,
     (name, bag) => createPluginPackageContext(name, {
@@ -447,17 +463,93 @@ export async function bootKernel(kernel: BootKernel): Promise<void> {
       broadcast: (event) => kernel.broadcast(event as any),
       // 插件事件作为 automation external trigger 的只读入口。
       onEvent: (event) => kernel.handlePluginEvent(event),
+      workerAvailable: () => permissionFlagFor(process.execPath) !== null,
+      activationBlocked: (name) => {
+        if (process.env.MAFW_SAFE_MODE === '1' || kernel.packageStateStore?.isSafeMode()) {
+          return 'safe-mode';
+        }
+        return kernel.packageStateStore?.getQuarantine(name) ? 'quarantined' : null;
+      },
+      onActivationFailure: (name, reason) => {
+        pluginSafetyRef?.recordActivationFailure(name, undefined, reason);
+      },
+      onActivationSuccess: (name) => {
+        pluginSafetyRef?.recordActivationSuccess(name);
+      },
+      installedFingerprint: (name) => kernel.packageStateStore?.getInstalled(name)?.fingerprint,
+      onUntrustedDrift: (name, reason) => {
+        try {
+          kernel.packageStateStore?.setQuarantine({
+            name,
+            reason,
+            at: new Date().toISOString(),
+          });
+        } catch { /* fail-open: the host still refuses activation */ }
+      },
+      workerHostFactory: (desc, manifest, hooks) => {
+        const packageDir = desc.pkgDir ?? path.dirname(desc.mainFile);
+        const packageCtx = createPluginPackageContext(desc.name, {
+          projectDir: kernel.projectDir,
+          gatewayPort: config.server.apiPort,
+          persistConfig: (overrides) => {
+            config.persistOverrides(overrides as unknown as Parameters<typeof config.persistOverrides>[0]);
+          },
+        });
+        return new WorkerHost({
+          name: desc.name,
+          packageDir,
+          entryFile: desc.mainFile,
+          manifest,
+          onEmit: hooks.emit,
+          onCrash: () => {
+            pluginSafetyRef?.recordActivationFailure(desc.name, manifest.version, 'worker crashed');
+          },
+          getConfig: () => packageCtx.pluginConfig(),
+          updateConfig: (patch) => packageCtx.config.update(patch),
+          logger: log,
+        });
+      },
     },
   );
   kernel.bindPluginAutomation(kernel.pluginHost);
+  const pluginAudit = new PluginAuditStore(kernel.getGatewayDb());
+  const pluginLastGood = new PackageLastGoodStore(pluginPackageDir);
+  const pluginSafety = new PluginSafety({
+    state: kernel.packageStateStore,
+    host: kernel.pluginHost,
+    audit: pluginAudit,
+    lastGood: pluginLastGood,
+    oneRunSafeMode: process.env.MAFW_SAFE_MODE === '1',
+  });
+  pluginSafetyRef = pluginSafety;
   kernel.packageManager = new PackageManager({
     pluginDir: pluginPackageDir,
     host: kernel.pluginHost,
     stateStore: kernel.packageStateStore,
+    audit: pluginAudit,
+    workerAvailable: permissionFlagFor(process.execPath) !== null,
+    lastGood: pluginLastGood,
+    safety: pluginSafety,
+  });
+  const hostVersion = process.env.MAFW_HOST_VERSION
+    ?? (() => { try { return String(require('../../package.json').version); } catch { return '0.0.0'; } })();
+  const pluginDoctor = new PluginDoctor({
+    pluginDir: pluginPackageDir,
+    host: kernel.pluginHost,
+    state: kernel.packageStateStore,
+    hostVersion,
+  });
+  kernel.bindPluginTrust({
+    audit: pluginAudit,
+    safety: pluginSafety,
+    doctor: pluginDoctor,
+    lastGood: pluginLastGood,
+    packageDir: pluginPackageDir,
   });
   kernel.pluginHost.bindRuntime((entries) => kernel.runtimeLoader?.setPackageEntries(entries));
   // 客户端快照只在 commit 后替换；handler/源码永不下发。
   kernel.pluginHost.onSnapshot((snapshot) => { kernel.pluginClientSnapshot = snapshot; });
+  await pluginSafety.reconcilePendingHealthChecks();
   await kernel.pluginHost.init();
 
   // 3. 创建 SDK 客户端（auth），用于健康检查和后续通信
@@ -785,6 +877,9 @@ export async function bootKernel(kernel: BootKernel): Promise<void> {
   // 8.0 Worker-state recovery: reflect sessions that accumulated unreflected
   // episodes while their workers were evicted (fire-and-forget).
   setTimeout(() => kernel.restoreWorkerState(), 3000);
+  // 8.0b Cron catch-up: replay memory-pipeline ticks missed while the gateway
+  // was offline (weekly review/promotion/axiom and the daily reflect/decay).
+  setTimeout(() => kernel.catchUpMissedPipelines(), 30_000);
 
   // 8. 开始轮询（降级兜底）
   const pollInterval = config.timeouts.backupPollInterval;

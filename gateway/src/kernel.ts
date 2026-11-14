@@ -147,7 +147,7 @@ import { onMemoryWritten } from "./memory/harmonic-file-store";
 import { MinHashMerger } from "./core/memory/minhash-merger";
 import { GatewayDatabase } from "./memory/gateway-db";
 import { TurnPipeline } from "./recall/turn-pipeline";
-import { ReflectionPipeline } from "./recall/reflection";
+import { ReflectionPipeline, selectRestoreSessions } from "./recall/reflection";
 import { StaleVerifyPipeline } from "./recall/stale-verify";
 import { getRetrievalEventBuffer } from "./core/memory/retrieval-events";
 import { MemoryWorker } from "./recall/memory-worker";
@@ -209,7 +209,7 @@ import { SchedulerLedger } from "./ledger";
 import { DesktopClient } from "./desktop-client";
 import { QuestionLedger } from './core/manager/question-ledger';
 import { ensureManagerRules } from './core/manager/system-rule-templates';
-import { ensureMemoryPipelineRules } from './recall/pipeline-rules';
+import { ensureMemoryPipelineRules, findMissedPipelineRuns, MEMORY_PIPELINE_RULES } from './recall/pipeline-rules';
 import { MilestonePushNotifier } from './core/manager/milestone-push';
 import { WebSocket } from 'ws';
 import { PushGateway } from './mobile/push-gateway';
@@ -345,6 +345,10 @@ import { createPluginAutomationActionResolver } from './plugins/automation-actio
 import type { PluginEventFrame } from './plugins/plugin-events';
 import { PackageStateStore } from './plugins/package-state-store';
 import { PackageManager } from './plugins/package-manager';
+import { PluginSafety } from './plugins/plugin-safety';
+import { PluginDoctor } from './plugins/plugin-doctor';
+import { PluginAuditStore } from './plugins/plugin-audit-store';
+import type { PackageLastGoodStore } from './plugins/package-last-good';
 import { mergePackageInventory } from './plugins/package-inventory';
 import type { PluginClientSnapshot } from './plugins/client-descriptor';
 import { createPluginPackageContext } from './plugins/package-context';
@@ -762,6 +766,11 @@ class MafwScheduler {
   private packageStateStore?: PackageStateStore;
   /** 统一插件包文件系统操作（Task 6 REST 面直接调用）。 */
   private packageManager?: PackageManager;
+  private pluginSafety?: PluginSafety;
+  private pluginDoctor?: PluginDoctor;
+  private pluginAuditStore?: PluginAuditStore;
+  private pluginLastGood?: PackageLastGoodStore;
+  private pluginPackageDir?: string;
   /** 最近一次已提交的统一插件包 client 快照（Task 6 的 /api/plugins/client 直接读）。 */
   private pluginClientSnapshot?: PluginClientSnapshot;
   /** Plugin Web surface 票据（进程内，8h TTL；重启即失效，客户端重取）。 */
@@ -2245,6 +2254,12 @@ class MafwScheduler {
           begin: () => { this.switchingRuntime = true; },
           end: () => { this.switchingRuntime = false; },
         }),
+      safety: () => this.pluginSafety,
+      doctor: () => this.pluginDoctor,
+      audit: () => this.pluginAuditStore,
+      lastGood: () => this.pluginLastGood,
+      reloadAll: async () => { await this.pluginHost?.reload(); },
+      revokeWebTickets: (name: string) => this.pluginWebTickets.revokePackage(name),
     };
   }
 
@@ -2322,10 +2337,33 @@ class MafwScheduler {
    * 合并回来，否则用户无法在管理界面重新启用。
    */
   private pluginPackageInventory(): PluginsPackageEntry[] {
+    const safeMode = this.packageStateStore?.isSafeMode() ?? false;
     return mergePackageInventory(
       this.pluginHost?.getState() ?? [],
       this.packageStateStore?.read().disabled ?? [],
-    );
+    ).map((entry) => {
+      const quarantine = this.packageStateStore?.getQuarantine(entry.name);
+      const degraded = this.packageStateStore?.getInstalled(entry.name)?.degraded;
+      const state = safeMode
+        ? 'safe-mode'
+        : quarantine
+          ? 'quarantined'
+          : entry.status === 'disabled'
+            ? 'disabled'
+            : degraded
+              ? 'degraded'
+              : entry.status === 'error'
+                ? 'error'
+                : entry.pendingRevision
+                  ? 'pending'
+                  : 'active';
+      return {
+        ...entry,
+        state,
+        ...(quarantine ? { quarantinedReason: quarantine.reason } : {}),
+        ...(degraded ? { degradedReason: degraded.reason } : {}),
+      } as PluginsPackageEntry;
+    });
   }
 
   /** P5 Wave 2：/api/plugins* deps（Plugin Hub 四类型统一面）。 */
@@ -2343,6 +2381,21 @@ class MafwScheduler {
   /** Fail-open ingress for plugin events that may trigger automation rules. */
   handlePluginEvent(event: PluginEventFrame): void {
     this.automationEngine?.handleExternalEvent(event);
+  }
+
+  /** Phase 6: wire audit / safety / doctor into the package route surface. */
+  bindPluginTrust(input: {
+    audit: PluginAuditStore;
+    safety: PluginSafety;
+    doctor: PluginDoctor;
+    lastGood?: PackageLastGoodStore;
+    packageDir: string;
+  }): void {
+    this.pluginAuditStore = input.audit;
+    this.pluginSafety = input.safety;
+    this.pluginDoctor = input.doctor;
+    this.pluginLastGood = input.lastGood;
+    this.pluginPackageDir = input.packageDir;
   }
 
   /** Opt-in first-party GoalEval verifier; default off (no extra model cost). */
@@ -2859,7 +2912,7 @@ class MafwScheduler {
           const pipeline = this.getReflectPipeline();
           const res = await pipeline.runAll();
           log.info(
-            `[Reflection] sessions=${res.sessions} reviewed=${res.reviewed} distilled=${res.distilled} deduped=${res.deduped} superseded=${res.superseded} failed=${res.failed}`,
+            `[Reflection] sessions=${res.sessions} reviewed=${res.reviewed} distilled=${res.distilled} deduped=${res.deduped} superseded=${res.superseded} failed=${res.failed} deferred=${res.deferredSessions ?? 0}`,
           );
           this.heartbeat?.record('memory:reflect', {
             ok: res.failed === 0,
@@ -2870,6 +2923,7 @@ class MafwScheduler {
               distilled: res.distilled,
               superseded: res.superseded,
               failed: res.failed,
+              deferredSessions: res.deferredSessions ?? 0,
               replayedTraces: res.replayedTraces,
               replayChars: res.replayChars,
             },
@@ -2893,7 +2947,7 @@ class MafwScheduler {
             readMemory: (id: string) => store.read(id),
             worker: {
               prompt: (t: string, s: string) =>
-                this.getPool().getWorker('grace', 'reflect').prompt(t, s, config.recall.workerModel, 'memory-curator'),
+                this.getPool().getWorker('grace', 'reflect').prompt(t, s, config.recall.workerModel, 'memory-reflector'),
             },
             ...createGraceWriteOps(store),
             mode: mode === 'live' ? 'live' : 'shadow',
@@ -2972,7 +3026,7 @@ class MafwScheduler {
             readRelated: (id: string) => store.read(id),
             worker: {
               prompt: (t: string, s: string) =>
-                this.getPool().getWorker('reconsolidate', 'reflect').prompt(t, s, config.recall.workerModel, 'memory-curator'),
+                this.getPool().getWorker('reconsolidate', 'reflect').prompt(t, s, config.recall.workerModel, 'memory-reflector'),
             },
             writeSuperseding: async (oldId: string, content: string) => {
               const { generateHarmonicId } = require('./core/memory/harmonic-types');
@@ -3043,7 +3097,7 @@ class MafwScheduler {
               .slice(-3000);
             if (!tail.trim()) continue;
             const worker = this.getPool().getWorker(`dream-${sid}`, 'reflect');
-            const reply = await worker.prompt(`SESSION TAIL:\n${tail}`, DREAM_SYSTEM, config.recall.workerModel, 'memory-curator');
+            const reply = await worker.prompt(`SESSION TAIL:\n${tail}`, DREAM_SYSTEM, config.recall.workerModel, 'memory-reflector');
             const queries = parseDreamQueries(reply, 3);
             if (queries.length > 0) {
               db.kvSet('dream-queries', sid, { queries, generatedAt: Date.now() });
@@ -3071,7 +3125,7 @@ class MafwScheduler {
           if (sources.length >= 3 && this.getPipelineBudget().allow('axiomDistill')) {
             const evidence = sources.map((e: any) => `- [${e.id}] ${e.primary_abstraction}`).join('\n');
             const worker = this.getPool().getWorker('axiom-distill', 'reflect');
-            const reply = await worker.prompt(evidence, AXIOM_SYSTEM, config.recall.workerModel, 'memory-curator');
+            const reply = await worker.prompt(evidence, AXIOM_SYSTEM, config.recall.workerModel, 'memory-reflector');
             const candidates = parseAxiomCandidates(reply, 3);
             if (candidates.length > 0) {
               const triageDir = path.join(this.mafwDir, 'triage');
@@ -3489,6 +3543,8 @@ class MafwScheduler {
       cursor: this.getReflectCursor(),
       maxEpisodicPerSession: config.recall.maxEpisodicPerReflect,
       reflectionBatchSize: config.recall.reflectionBatchSize,
+      maxRunMs: config.recall.reflectionMaxRunMs,
+      maxSessionsPerRun: config.recall.reflectionMaxSessionsPerRun,
       exclusive: (sessionID, fn) => pool.runExclusive(sessionID, 'reflect', fn),
       workerModel: config.recall.workerModel,
       // A4: selection-pressure feedback — prior insights' 7-day retrieval hits.
@@ -3526,19 +3582,59 @@ class MafwScheduler {
       const sessions = new Set<string>();
       for (const turn of this.getGatewayDb().listTurns()) sessions.add(turn.session_id);
       const pipeline = this.getReflectPipeline();
-      for (const sessionID of sessions) {
-        const pending = pipeline.pendingFor(sessionID);
-        if (pending < config.recall.reflectThresholdEpisodic) continue;
-        const pool = this.getPool();
-        void pool.runExclusive(sessionID, 'reflect', async () => {
-          const res = await pipeline.runSession(sessionID);
-          log.info(
-            `[Reflection:restore] session=${sessionID} reviewed=${res.reviewed} distilled=${res.distilled} deduped=${res.deduped}`,
-          );
-        }).catch((err: any) => log.warn(`[Reflection:restore] session=${sessionID} failed: ${err.message}`));
-      }
+      const candidates = selectRestoreSessions(
+        sessions,
+        (id) => pipeline.pendingFor(id),
+        config.recall.reflectThresholdEpisodic,
+        config.recall.restoreReflectMaxSessions,
+      );
+      const pool = this.getPool();
+      // Sequential: a boot-time stampede of concurrent worker prompts is what
+      // pushed each prompt into the 300s ceiling and starved the daily pass.
+      void (async () => {
+        for (const sessionID of candidates) {
+          try {
+            const res = await pool.runExclusive(sessionID, 'reflect', async () => pipeline.runSession(sessionID));
+            log.info(
+              `[Reflection:restore] session=${sessionID} reviewed=${res.reviewed} distilled=${res.distilled} deduped=${res.deduped}`,
+            );
+          } catch (err: any) {
+            log.warn(`[Reflection:restore] session=${sessionID} failed: ${err.message}`);
+          }
+        }
+      })();
     } catch (err: any) {
       log.warn(`[Reflection:restore] failed (non-fatal): ${err.message}`);
+    }
+  }
+
+  /**
+   * Cron catch-up: a gateway that was offline at the scheduled minute misses
+   * that tick forever. After boot, compare each memory pipeline's last attempt
+   * with its cron expression and run the missed ones once, staggered so a
+   * long-offline boot does not fire every LLM pipeline at the same second.
+   */
+  catchUpMissedPipelines(): void {
+    if (!this.heartbeat) return;
+    const engine = this.automationEngine;
+    if (!engine) return;
+    const due = findMissedPipelineRuns(
+      MEMORY_PIPELINE_RULES,
+      (action) => this.heartbeat?.snapshot([action])[0] ?? null,
+      Date.now(),
+    );
+    due.forEach((rule, i) => {
+      if (!engine.hasRule(rule.id)) return;
+      const timer = setTimeout(() => {
+        log.info(`[Scheduler] catch-up: ${rule.id} missed at least one scheduled occurrence; running once`);
+        void engine.executeRule(rule.id, 'cron').catch((err: any) =>
+          log.warn(`[Scheduler] catch-up ${rule.id} failed: ${err?.message ?? err}`),
+        );
+      }, 60_000 + i * 60_000);
+      timer.unref?.();
+    });
+    if (due.length > 0) {
+      log.info(`[Scheduler] catch-up scheduled for: ${due.map((r) => r.id).join(', ')}`);
     }
   }
 

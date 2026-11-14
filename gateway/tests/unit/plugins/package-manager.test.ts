@@ -54,6 +54,7 @@ module.exports = { name: '${name}', async activate() {
 interface PackageFiles {
   version?: string;
   module: string;
+  manifest?: Record<string, unknown>;
 }
 
 function writePackage(dir: string, name: string, files: PackageFiles): string {
@@ -62,6 +63,7 @@ function writePackage(dir: string, name: string, files: PackageFiles): string {
   fs.writeFileSync(path.join(root, 'plugin.json'), JSON.stringify({
     name,
     version: files.version ?? '1.0.0',
+    ...files.manifest,
   }));
   fs.writeFileSync(path.join(root, 'index.js'), files.module);
   return root;
@@ -458,5 +460,94 @@ describe('PackageManager filesystem operations', () => {
     expect(result.application).toBe('applied');
     expect(result.activeRevision).toBe(host!.getClientSnapshot().revision);
     expect(result.activeRevision).not.toBe(before);
+  });
+
+  it('requires consent for a v2 package', async () => {
+    const source = writePackage(sourceDir, 'acme', {
+      module: DECLARATIVE_MODULE('acme', 'Acme'),
+      manifest: { apiVersion: 2, kind: 'trusted', permissions: ['actions'] },
+    });
+    await host!.init();
+
+    await expect(manager.installFromPath({ path: source }))
+      .rejects.toMatchObject({ status: 400, code: 'permission_consent_required' });
+    expect(fs.existsSync(path.join(pluginDir, 'acme'))).toBe(false);
+  });
+
+  it('rejects a permission list that does not match the manifest', async () => {
+    const source = writePackage(sourceDir, 'acme', {
+      module: DECLARATIVE_MODULE('acme', 'Acme'),
+      manifest: { apiVersion: 2, kind: 'trusted', permissions: ['actions', 'events'] },
+    });
+    await host!.init();
+
+    await expect(manager.installFromPath({
+      path: source,
+      accept: { trust: 'trusted', permissions: ['actions'] },
+    })).rejects.toMatchObject({ status: 400, code: 'permission_consent_required' });
+  });
+
+  it('installs a v1 package without consent', async () => {
+    const source = writePackage(sourceDir, 'acme', { module: DECLARATIVE_MODULE('acme', 'Acme') });
+    await host!.init();
+
+    await expect(manager.installFromPath({ path: source }))
+      .resolves.toMatchObject({ name: 'acme', version: '1.0.0', apiVersion: 1, kind: 'trusted' });
+  });
+
+  it('rejects untrusted packages when no worker is available', async () => {
+    const source = writePackage(sourceDir, 'acme', {
+      module: DECLARATIVE_MODULE('acme', 'Acme'),
+      manifest: { apiVersion: 2, kind: 'untrusted', permissions: ['actions'] },
+    });
+    await host!.init();
+
+    await expect(manager.installFromPath({
+      path: source,
+      accept: { trust: 'untrusted', permissions: ['actions'] },
+    })).rejects.toMatchObject({ status: 409, code: 'untrusted_requires_worker' });
+    expect(fs.existsSync(path.join(pluginDir, 'acme'))).toBe(false);
+  });
+
+  it('rejects a manifest-declared integrity mismatch and leaves no directory', async () => {
+    const source = writePackage(sourceDir, 'acme', {
+      module: DECLARATIVE_MODULE('acme', 'Acme'),
+      manifest: {
+        apiVersion: 2,
+        integrity: { algorithm: 'sha256', files: { 'index.js': 'sha256-deadbeef' } },
+      },
+    });
+    await host!.init();
+
+    await expect(manager.installFromPath({
+      path: source,
+      accept: { trust: 'trusted', permissions: [] },
+    })).rejects.toMatchObject({ status: 422, code: 'integrity_mismatch' });
+    expect(fs.existsSync(path.join(pluginDir, 'acme'))).toBe(false);
+  });
+
+  it('keeps the installed version when an overwrite source is missing its main', async () => {
+    const good = writePackage(sourceDir, 'acme', { module: DECLARATIVE_MODULE('acme', 'Acme') });
+    await host!.init();
+    await manager.installFromPath({ path: good });
+
+    const bad = writePackage(sourceDir, 'acme', {
+      module: 'module.exports = {};',
+      manifest: { main: 'missing.js' },
+    });
+    await expect(manager.installFromPath({ path: bad, overwrite: true }))
+      .rejects.toMatchObject({ status: 400, code: 'invalid_manifest' });
+    expect(fs.existsSync(path.join(pluginDir, 'acme', 'index.js'))).toBe(true);
+  });
+
+  it('records the integrity baseline after a successful install', async () => {
+    const source = writePackage(sourceDir, 'acme', { module: DECLARATIVE_MODULE('acme', 'Acme') });
+    await host!.init();
+    await manager.installFromPath({ path: source });
+
+    const installed = stateStore.getInstalled('acme');
+    expect(installed?.fingerprint).toMatch(/^[a-f0-9]{64}$/);
+    expect(installed?.files['index.js']).toMatch(/^sha256-/);
+    expect(installed?.consecutiveFailures).toBe(0);
   });
 });

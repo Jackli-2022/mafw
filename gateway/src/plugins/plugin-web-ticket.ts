@@ -44,6 +44,8 @@ export interface PluginWebTicketStore {
   verify(pkg: string, ticket: string): PluginWebTicketBinding | null;
   /** Extends a live ticket's expiry; `null` when unknown/expired. */
   refresh(ticket: string): PluginWebTicketIssue | null;
+  /** Kill switch: drop every live ticket for one package. */
+  revokePackage(pkg: string): void;
 }
 
 interface TicketEntry extends PluginWebTicketBinding {
@@ -135,5 +137,11 @@ export function createPluginWebTicketStore(
     return { ticket, expiresAt: entry.expiresAt };
   }
 
-  return { issue, verify, refresh };
+  function revokePackage(pkg: string): void {
+    for (const [ticket, entry] of [...entries]) {
+      if (entry.pkg === pkg) drop(ticket);
+    }
+  }
+
+  return { issue, verify, refresh, revokePackage };
 }

@@ -16,6 +16,12 @@ import { log } from '../core/utils/logger';
 import { PackageManager, PackageManagerError } from '../plugins/package-manager';
 import { PluginActionError, type PluginActionInvokeOptions } from '../plugins/plugin-actions';
 import type { PluginClientSnapshot } from '../plugins/client-descriptor';
+import type { PluginSafety } from '../plugins/plugin-safety';
+import type { PluginDoctor } from '../plugins/plugin-doctor';
+import type { PluginAuditStore } from '../plugins/plugin-audit-store';
+import type { PackageLastGoodStore } from '../plugins/package-last-good';
+import type { InstallConsent } from '../plugins/package-manager';
+import { isHumanPrincipal } from '../core/auth';
 
 export interface PluginPackageParams {
   name: string;
@@ -50,6 +56,16 @@ export interface PluginPackagesRouteDeps {
    * a silent no-op.
    */
   switchRuntime?: (name: string) => Promise<{ success: boolean; error?: string; active?: unknown }>;
+  /** Phase 6 safety policy; absent in headless hosts. */
+  safety?: () => PluginSafety | undefined;
+  doctor?: () => PluginDoctor | undefined;
+  audit?: () => PluginAuditStore | undefined;
+  /** Rescan every installed package after leaving safe mode. */
+  reloadAll?: () => Promise<void>;
+  /** Kill switch closes this package's web surfaces. */
+  revokeWebTickets?: (name: string) => void;
+  /** Phase 6C last-known-good snapshots. */
+  lastGood?: () => PackageLastGoodStore | undefined;
 }
 
 /** 400 for a malformed request body; never leaks parser internals. */
@@ -95,7 +111,10 @@ function sendError(res: http.ServerResponse, err: unknown): void {
     return;
   }
   if (err instanceof PackageManagerError) {
-    send(res, err.status, { error: err.message });
+    send(res, err.status, {
+      error: err.message,
+      ...(err.code !== undefined ? { code: err.code } : {}),
+    });
     return;
   }
   if (err instanceof PluginActionError) {
@@ -135,6 +154,54 @@ function optionalBoolean(value: unknown, field: string): boolean | undefined {
   return value;
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function optionalConsent(value: unknown): InstallConsent | undefined {
+  if (value === undefined) return undefined;
+  if (!isPlainObject(value)) throw new BodyError('accept must be an object');
+  if (value.trust !== 'trusted' && value.trust !== 'untrusted') {
+    throw new BodyError('accept.trust must be "trusted" or "untrusted"');
+  }
+  if (!Array.isArray(value.permissions) || value.permissions.some((item) => typeof item !== 'string')) {
+    throw new BodyError('accept.permissions must be an array of strings');
+  }
+  return { trust: value.trust, permissions: value.permissions as string[] };
+}
+
+function principalOf(req: http.IncomingMessage): { principalKind?: string; principalMethod?: string } {
+  const principal = (req as any).mafwPrincipal;
+  return {
+    ...(typeof principal?.kind === 'string' ? { principalKind: principal.kind } : {}),
+    ...(typeof principal?.method === 'string' ? { principalMethod: principal.method } : {}),
+  };
+}
+
+function assertHuman(req: http.IncomingMessage): void {
+  if (!isHumanPrincipal((req as any).mafwPrincipal)) {
+    throw new PackageManagerError(403, 'human principal required', 'human_principal_required');
+  }
+}
+
+function requireSafety(deps: PluginPackagesRouteDeps): PluginSafety {
+  const safety = deps.safety?.();
+  if (!safety) throw new PackageManagerError(503, 'plugin safety is not available', 'safety_unavailable');
+  return safety;
+}
+
+function requireDoctor(deps: PluginPackagesRouteDeps): PluginDoctor {
+  const doctor = deps.doctor?.();
+  if (!doctor) throw new PackageManagerError(503, 'plugin doctor is not available', 'doctor_unavailable');
+  return doctor;
+}
+
+function requireAudit(deps: PluginPackagesRouteDeps): PluginAuditStore {
+  const audit = deps.audit?.();
+  if (!audit) throw new PackageManagerError(503, 'plugin audit is not available', 'audit_unavailable');
+  return audit;
+}
+
 /** GET /api/plugins/client — committed descriptors only (never pending). */
 export async function handlePluginClient(
   _req: http.IncomingMessage,
@@ -155,8 +222,12 @@ export async function handlePluginPackageInstall(
     const overwrite = optionalBoolean(body.overwrite, 'overwrite');
     const requestId = optionalString(body.requestId, 'requestId');
     const path = optionalString(body.path, 'path');
+    const accept = optionalConsent(body.accept);
     if (!path) throw new BodyError('path is required');
-    const result = await requireManager(deps).installFromPath({ path, overwrite, requestId });
+    // v2 packages always carry `accept`; only a human/device principal may
+    // grant that consent. v1 packages omit it and keep the existing auth path.
+    if (accept) assertHuman(req);
+    const result = await requireManager(deps).installFromPath({ path, overwrite, requestId, accept });
     log.info(`[PluginPackages] installed ${result.name} (${result.application})`);
     return result;
   });
@@ -260,6 +331,138 @@ export async function handlePluginInvokeAction(
       revision: deps.snapshot().revision,
       output,
     };
+  });
+}
+
+/** POST /api/plugins/kill — enter safe mode and stop every package. */
+export async function handlePluginKill(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  deps: PluginPackagesRouteDeps,
+): Promise<void> {
+  await guarded(res, async () => {
+    const result = await requireSafety(deps).kill(principalOf(req));
+    for (const name of result.stopped) deps.revokeWebTickets?.(name);
+    return result;
+  });
+}
+
+/** POST /api/plugins/resume — leave safe mode (human/device only). */
+export async function handlePluginResume(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  deps: PluginPackagesRouteDeps,
+): Promise<void> {
+  await guarded(res, async () => {
+    assertHuman(req);
+    const result = await requireSafety(deps).resume(principalOf(req));
+    await deps.reloadAll?.();
+    return result;
+  });
+}
+
+/** POST /api/plugins/:name/quarantine — isolate one package. */
+export async function handlePluginQuarantine(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  deps: PluginPackagesRouteDeps,
+  params: PluginPackageParams,
+): Promise<void> {
+  await guarded(res, async () => {
+    const name = requireName(params);
+    const body = await readJsonObject(req);
+    const reason = optionalString(body.reason, 'reason');
+    if (!reason) throw new BodyError('reason is required');
+    requireSafety(deps).quarantine(name, reason, principalOf(req));
+    return { name, quarantined: true, reason };
+  });
+}
+
+/** POST /api/plugins/:name/unquarantine — clear isolation (human/device only). */
+export async function handlePluginUnquarantine(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  deps: PluginPackagesRouteDeps,
+  params: PluginPackageParams,
+): Promise<void> {
+  await guarded(res, async () => {
+    assertHuman(req);
+    const name = requireName(params);
+    requireSafety(deps).unquarantine(name, principalOf(req));
+    await deps.reloadAll?.();
+    return { name, quarantined: false };
+  });
+}
+
+/** POST /api/plugins/:name/doctor — diagnose one package. */
+export async function handlePluginDoctor(
+  _req: http.IncomingMessage,
+  res: http.ServerResponse,
+  deps: PluginPackagesRouteDeps,
+  params: PluginPackageParams,
+): Promise<void> {
+  await guarded(res, async () => requireDoctor(deps).check(requireName(params)));
+}
+
+/** POST /api/plugins/doctor — diagnose every installed package. */
+export async function handlePluginDoctorAll(
+  _req: http.IncomingMessage,
+  res: http.ServerResponse,
+  deps: PluginPackagesRouteDeps,
+): Promise<void> {
+  await guarded(res, async () => requireDoctor(deps).checkAll());
+}
+
+/** GET /api/plugins/:name/last-good — rollback target metadata. */
+export async function handlePluginLastGood(
+  _req: http.IncomingMessage,
+  res: http.ServerResponse,
+  deps: PluginPackagesRouteDeps,
+  params: PluginPackageParams,
+): Promise<void> {
+  await guarded(res, async () => {
+    const name = requireName(params);
+    const store = deps.lastGood?.();
+    if (!store) {
+      throw new PackageManagerError(503, 'last-known-good store is not available', 'last_good_unavailable');
+    }
+    const meta = store.read(name);
+    if (!meta) {
+      throw new PackageManagerError(404, `no last-known-good snapshot for ${name}`, 'last_good_missing');
+    }
+    return { name, lastGood: meta };
+  });
+}
+
+/** POST /api/plugins/:name/rollback — restore last-known-good (human only). */
+export async function handlePluginRollback(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  deps: PluginPackagesRouteDeps,
+  params: PluginPackageParams,
+): Promise<void> {
+  await guarded(res, async () => {
+    assertHuman(req);
+    const name = requireName(params);
+    return requireManager(deps).rollback(name);
+  });
+}
+
+/** GET /api/plugins/audit — recent trust audit events. */
+export async function handlePluginAudit(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  deps: PluginPackagesRouteDeps,
+): Promise<void> {
+  await guarded(res, async () => {
+    const query = new URL(req.url || '/', 'http://localhost').searchParams;
+    const packageName = query.get('package') ?? undefined;
+    const limitRaw = query.get('limit');
+    const limit = limitRaw === null ? undefined : Number(limitRaw);
+    if (limit !== undefined && (!Number.isFinite(limit) || limit < 1 || limit > 500)) {
+      throw new BodyError('limit must be between 1 and 500');
+    }
+    return { events: requireAudit(deps).list({ package: packageName, limit }) };
   });
 }
 

@@ -161,8 +161,9 @@ const E10_COVERED_OPS = [
   'work.overview',
 ];
 
-// Pinned: 317 through E10b, +1 for `humanToken.rotate` (E11-1) = 318 (E10f only adds schemas).
-const TOTAL_OPS = 318;
+// Pinned: 317 through E10b, +1 for `humanToken.rotate` (E11-1) = 318,
+// +7 Phase 6 device-trust routes = 325, +2 last-good/rollback = 327.
+const TOTAL_OPS = 327;
 
 function catalogOps(): Array<{ operationId: string; hasResponse: boolean }> {
   return buildRouteCatalog().map((def) => ({

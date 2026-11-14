@@ -34,7 +34,9 @@ import type {
   PackageDescriptor,
   PackageManifest,
   PackageState,
+  PluginActionDeclaration,
   PluginContributions,
+  PluginEmitEvent,
   PluginObserverEntry,
   PluginPackageContext,
   PluginToolEntry,
@@ -44,6 +46,12 @@ import type {
   UsagePackageEntry,
 } from './package-types';
 import type { PcmChunk, TtsEngine, TtsOpts } from '../tts/types';
+import {
+  parsePackageManifest,
+  isHostRangeCompatible,
+  type NormalizedPackageManifest,
+} from './package-manifest';
+import type { WorkerHost } from './worker/worker-host';
 
 const VALID_MODALITIES = new Set(['image', 'video', 'audio']);
 const EMPTY_CANONICAL_TYPES: ReadonlySet<string> = new Set();
@@ -86,6 +94,25 @@ export interface PluginHostOptions {
    * `/api/plugins/<pkg>/api*` and the `/ws/*` upgrade path.
    */
   httpRegistry?: PluginHttpRegistry;
+  /** Phase 6B: untrusted packages require a worker host. */
+  workerHostFactory?: (
+    desc: PackageDescriptor,
+    manifest: NormalizedPackageManifest,
+    hooks: { emit: (event: PluginEmitEvent) => void },
+  ) => WorkerHost;
+  /** False (default) keeps untrusted packages fail-closed. */
+  workerAvailable?: () => boolean;
+  /** Committed content fingerprint used to detect untrusted file drift. */
+  installedFingerprint?: (name: string) => string | undefined;
+  onUntrustedDrift?: (name: string, reason: string) => void;
+  /** Product version used by manifest `host` ranges (default MAFW_HOST_VERSION / 5.1.0). */
+  hostVersion?: string;
+  /** Safe mode / quarantine: return a reason to skip and deactivate the package. */
+  activationBlocked?: (name: string) => string | null;
+  /** Phase 6 failure counting: called after a real activation failure. */
+  onActivationFailure?: (name: string, reason: string) => void;
+  /** Phase 6 success reset: called after a committed activation. */
+  onActivationSuccess?: (name: string) => void;
 }
 
 export interface PluginPendingState {
@@ -365,6 +392,13 @@ export class PluginHost {
         pendingRevision: pending?.revision,
         fingerprint: active?.fingerprint,
       };
+      const manifest = active?.descriptor.manifest ?? pending?.descriptor.manifest;
+      if (manifest?.kind === 'untrusted') {
+        state.kind = 'untrusted';
+        state.apiVersion = manifest.apiVersion ?? 2;
+        state.permissions = manifest.permissions ?? [];
+        state.transport = 'worker';
+      }
       if (error) state.error = error;
       out.push(state);
     }
@@ -426,6 +460,16 @@ export class PluginHost {
    */
   removePackage(name: string): Promise<PluginRemoveResult> {
     return this.enqueue(() => this.runRemovePackage(name));
+  }
+
+  /** Disposes one package's committed/pending revision without touching disk. */
+  deactivate(name: string): Promise<boolean> {
+    return this.enqueue(() => this.runDeactivate(name));
+  }
+
+  /** Disposes every committed/pending package. Used by the kill switch. */
+  deactivateAll(): Promise<string[]> {
+    return this.enqueue(() => this.runDeactivateAll());
   }
 
   /**
@@ -520,6 +564,15 @@ export class PluginHost {
 
     for (const desc of this.scanDescriptors(scanErrors)) {
       if (desc.pkgDir) pkgDirs.push(desc.pkgDir);
+      const blocked = this.options.activationBlocked?.(desc.name);
+      if (blocked) {
+        nextFailures.set(desc.name, {
+          source: desc.mainFile,
+          error: `blocked: ${blocked}`,
+        });
+        log.info(`[PluginHost] ${desc.name} skipped: ${blocked}`);
+        continue;
+      }
       const existing = this.active.get(desc.name);
 
       let fingerprint: string;
@@ -566,6 +619,7 @@ export class PluginHost {
           });
         } else {
           toCommit.push(staged);
+          this.options.onActivationSuccess?.(desc.name);
         }
       } catch (err) {
         toDispose.push(bag);
@@ -581,6 +635,7 @@ export class PluginHost {
             error: message,
           });
         }
+        this.options.onActivationFailure?.(desc.name, message);
         log.warn(`[PluginHost] ${desc.name} activate error: ${message}`);
       }
     }
@@ -599,7 +654,8 @@ export class PluginHost {
     const committing = new Set(toCommit.map((staged) => staged.descriptor.name));
     const removed: ActivePackage[] = [];
     for (const [name, record] of this.active) {
-      if (nextActive.has(name) || nextFailures.has(name) || committing.has(name)) continue;
+      // A failure keeps its package in nextActive; a blocked package does not.
+      if (nextActive.has(name) || committing.has(name)) continue;
       removed.push(record);
     }
 
@@ -647,9 +703,14 @@ export class PluginHost {
 
   private async runApplyPending(name: string): Promise<PluginApplyResult> {
     const pending = this.pending.get(name);
-    if (!pending) return { applied: false, error: `no pending revision for "${name}"` };
+    if (!pending) {
+      this.options.onActivationFailure?.(name, `no pending revision for "${name}"`);
+      return { applied: false, error: `no pending revision for "${name}"` };
+    }
     if (!pending.activation) {
-      return { applied: false, error: pending.error ?? `pending revision for "${name}" is invalid` };
+      const error = pending.error ?? `pending revision for "${name}" is invalid`;
+      this.options.onActivationFailure?.(name, error);
+      return { applied: false, error };
     }
 
     const revision = this.nextToken();
@@ -666,6 +727,7 @@ export class PluginHost {
     this.snapshot = this.buildSnapshot(revision);
     const applied = nextActive.get(name);
     if (applied) this.registerDeclarativeContributions(applied);
+    this.options.onActivationSuccess?.(name);
     this.publishEntries();
     this.snapshotCb?.(this.snapshot);
     this.broadcastPluginsChanged(revision);
@@ -695,29 +757,41 @@ export class PluginHost {
   private async runCheckPackage(dir: string): Promise<PluginCheckResult> {
     const pkgDir = path.resolve(dir);
     let manifest: PackageManifest | undefined;
-    let name = path.basename(pkgDir);
+    let name = path.basename(pkgDir).replace(/\.js$/i, '');
+    let mainFile = pkgDir;
+    let packageDir: string | undefined;
     try {
-      if (!fs.statSync(pkgDir).isDirectory()) throw new Error('candidate is not a directory');
-      const manifestPath = path.join(pkgDir, 'plugin.json');
-      if (!fs.existsSync(manifestPath)) throw new Error('plugin.json not found');
-      manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-      if (typeof manifest?.name !== 'string' || manifest.name.length === 0) {
-        throw new Error('plugin.json is missing "name"');
+      const stat = fs.statSync(pkgDir);
+      if (stat.isDirectory()) {
+        const manifestPath = path.join(pkgDir, 'plugin.json');
+        if (!fs.existsSync(manifestPath)) throw new Error('plugin.json not found');
+        manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+        if (typeof manifest?.name !== 'string' || manifest.name.length === 0) {
+          throw new Error('plugin.json is missing "name"');
+        }
+        name = manifest.name;
+        mainFile = path.join(pkgDir, manifest.main ?? 'index.js');
+        if (!fs.existsSync(mainFile)) throw new Error(`main file not found: ${manifest.main ?? 'index.js'}`);
+        packageDir = pkgDir;
+      } else if (!stat.isFile()) {
+        throw new Error('candidate is not a file or directory');
       }
-      name = manifest.name;
-      const mainFile = path.join(pkgDir, manifest.main ?? 'index.js');
-      if (!fs.existsSync(mainFile)) throw new Error(`main file not found: ${manifest.main ?? 'index.js'}`);
-      const desc: PackageDescriptor = { name, mainFile, manifest, pkgDir };
+      const desc: PackageDescriptor = {
+        name,
+        mainFile,
+        ...(manifest !== undefined ? { manifest } : {}),
+        ...(packageDir !== undefined ? { pkgDir: packageDir } : {}),
+      };
       const bag = this.createBag();
       try {
-        const activation = await this.activate(desc, bag);
+        const activation = await this.activate(desc, bag, true);
         // Web surfaces are the only slot with on-disk assets; activation already
         // validated them, so the summary is authoritative for the install preview.
         const webSurfaces = activation.activated.ui.webSurfaces ?? [];
         const result: PluginCheckResult = {
           ok: true,
           name,
-          version: activation.version ?? manifest.version,
+          version: activation.version ?? manifest?.version,
           contributions: activation.contributions,
         };
         if (webSurfaces.length > 0) {
@@ -782,6 +856,60 @@ export class PluginHost {
     // The commit broadcast covers this change.
     this.notifyStateChanged(false);
     return { removed: true, revision };
+  }
+
+  private async runDeactivate(name: string): Promise<boolean> {
+    const active = this.active.get(name);
+    const pending = this.pending.get(name);
+    if (!active && !pending) return false;
+
+    const bags: RegistrationBag[] = [];
+    if (active) bags.push(active.bag);
+    if (pending?.activation) bags.push(pending.activation.bag);
+    await this.disposeBags(bags);
+
+    const nextPending = new Map(this.pending);
+    nextPending.delete(name);
+    this.pending = nextPending;
+
+    if (!active) {
+      this.notifyStateChanged(true);
+      return true;
+    }
+
+    const nextActive = new Map(this.active);
+    nextActive.delete(name);
+    const revision = this.nextToken();
+    this.active = nextActive;
+    this.snapshot = this.buildSnapshot(revision);
+    this.publishEntries();
+    this.snapshotCb?.(this.snapshot);
+    this.broadcastPluginsChanged(revision);
+    this.notifyStateChanged(false);
+    return true;
+  }
+
+  private async runDeactivateAll(): Promise<string[]> {
+    const names = [...new Set([...this.active.keys(), ...this.pending.keys()])].sort();
+    if (names.length === 0) return [];
+    const bags: RegistrationBag[] = [];
+    for (const name of names) {
+      const active = this.active.get(name);
+      const pending = this.pending.get(name);
+      if (active) bags.push(active.bag);
+      if (pending?.activation) bags.push(pending.activation.bag);
+    }
+    await this.disposeBags(bags);
+
+    const revision = this.nextToken();
+    this.active = new Map();
+    this.pending = new Map();
+    this.snapshot = this.buildSnapshot(revision);
+    this.publishEntries();
+    this.snapshotCb?.(this.snapshot);
+    this.broadcastPluginsChanged(revision);
+    this.notifyStateChanged(false);
+    return names;
   }
 
   /**
@@ -1036,13 +1164,129 @@ export class PluginHost {
     return out;
   }
 
-  private async activate(desc: PackageDescriptor, bag: RegistrationBag): Promise<ActivationResult> {
+  private async activateWorker(
+    desc: PackageDescriptor,
+    bag: RegistrationBag,
+    probe = false,
+  ): Promise<ActivationResult> {
+    const parsed = desc.manifest ? parsePackageManifest(desc.manifest) : null;
+    if (!parsed?.ok || !parsed.manifest || parsed.manifest.kind !== 'untrusted') {
+      throw new Error('untrusted package manifest is invalid');
+    }
+    if (!this.options.workerHostFactory) {
+      throw new Error('worker_unavailable: no worker host factory');
+    }
+    const available = this.options.workerAvailable?.() ?? false;
+    if (!available) throw new Error('worker_unavailable: untrusted packages are not enabled');
+
+    const installed = this.options.installedFingerprint?.(desc.name);
+    if (!probe && installed) {
+      const current = fingerprintPackage(
+        desc.mainFile,
+        desc.pkgDir ? { rootDir: desc.pkgDir } : {},
+      );
+      if (current !== installed) {
+        this.options.onUntrustedDrift?.(desc.name, 'fingerprint changed on disk');
+        throw new Error('untrusted package changed on disk; reinstall or unquarantine explicitly');
+      }
+    }
+
+    const emitterToken = {};
+    const worker = this.options.workerHostFactory(desc, parsed.manifest, {
+      emit: (event) => this.events.emitFrom(desc.name, emitterToken, event),
+    });
+
+    try {
+      const ready = await worker.start();
+      const raw = ready.contributions ?? {};
+      const unsupported = Object.keys(raw).filter(
+        (key) => raw[key] !== undefined && key !== 'actions' && key !== 'events',
+      );
+      if (unsupported.length > 0) {
+        throw new Error(`not allowed in untrusted worker: ${unsupported.join(', ')}`);
+      }
+      if (raw.actions && Object.keys(raw.actions as object).length > 0
+        && !parsed.manifest.permissions.includes('actions')) {
+        throw new Error('permission denied: actions');
+      }
+      if (raw.events && Object.keys(raw.events as object).length > 0
+        && !parsed.manifest.permissions.includes('events')) {
+        throw new Error('permission denied: events');
+      }
+
+      const actions: Record<string, PluginActionDeclaration> = {};
+      const rawActions = raw.actions && typeof raw.actions === 'object'
+        ? raw.actions as Record<string, Record<string, unknown>>
+        : {};
+      for (const [name, declaration] of Object.entries(rawActions)) {
+        actions[name] = {
+          ...(declaration as unknown as PluginActionDeclaration),
+          handler: (input) => worker.invoke(
+            name,
+            input,
+            typeof declaration.timeoutMs === 'number' ? declaration.timeoutMs : undefined,
+          ),
+        };
+      }
+
+      const built = buildActivatedContributions(
+        desc.name,
+        {
+          actions,
+          events: Object.values(raw.events ?? {}) as UnifiedPluginContributions['events'],
+        },
+        this.canonicalTypes,
+      );
+      if (!built.ok) throw new Error(`invalid contributions: ${built.errors.join('; ')}`);
+
+      const httpRecorder = createPluginHttpRecorder(desc.name);
+      httpRecorder.seal();
+      bag.effect(() => worker.stop('dispose'));
+
+      const kinds: string[] = [];
+      if (Object.keys(actions).length > 0) kinds.push('actions');
+      if (Object.keys(raw.events ?? {}).length > 0) kinds.push('events');
+      return {
+        ...(ready.version !== undefined ? { version: ready.version } : {}),
+        contributions: kinds,
+        activated: built.value,
+        entries: {},
+        emitterToken,
+        http: httpRecorder,
+      };
+    } catch (err) {
+      await worker.stop('activate-failed').catch(() => {});
+      throw err;
+    }
+  }
+
+  private async activate(
+    desc: PackageDescriptor,
+    bag: RegistrationBag,
+    probe = false,
+  ): Promise<ActivationResult> {
     // One activate() result = one bag = one revision. Action/event registries
     // attach their cleanups to this bag at commit time
     // (registerDeclarativeContributions), so the per-package lifecycle has
     // exactly one owner from the first scan onwards.
     void bag;
     this.invalidatePackageCache(desc);
+    const parsedManifest = desc.manifest ? parsePackageManifest(desc.manifest) : null;
+    if (parsedManifest && !parsedManifest.ok) {
+      throw new Error(parsedManifest.errors.join('; '));
+    }
+    const hostVersion = this.options.hostVersion
+      ?? process.env.MAFW_HOST_VERSION
+      ?? '5.1.0';
+    if (parsedManifest?.manifest?.host
+      && !isHostRangeCompatible(parsedManifest.manifest.host, hostVersion)) {
+      throw new Error(
+        `host range ${parsedManifest.manifest.host} does not include ${hostVersion}`,
+      );
+    }
+    if (desc.manifest?.kind === 'untrusted') {
+      return this.activateWorker(desc, bag, probe);
+    }
     const mod = require(desc.mainFile);
     const modName = mod?.name;
     if (typeof modName !== 'string' || !modName) throw new Error('missing name');
