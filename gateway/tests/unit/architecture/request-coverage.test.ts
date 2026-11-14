@@ -32,10 +32,14 @@ const COVERED_TOTAL = 182;
  * seen / cancel / reload …). They must be `requestRequired:false` — the schema
  * says "no fields", not "any body" and not "a required object".
  *
- * 15 session + 9 task/terminal/pod + 13 goal/lead/standing + 7 event/human-gate
- * + 6 mcp/plugin/runtime + 6 memory/device/token = 56.
+ * 12 session + 9 task/terminal/pod + 13 goal/lead/standing + 7 event/human-gate
+ * + 6 mcp/plugin/runtime + 6 memory/device/token = 53.
+ *
+ * `session.suspend` / `session.resume` / `session.discardRun` are *not* fieldless:
+ * `routes/session-run.ts` reads `reason` / `runId`, so they moved to the
+ * optional-body class (E10g-fix F1).
  */
-const CLOSED_EMPTY_TOTAL = 56;
+const CLOSED_EMPTY_TOTAL = 53;
 
 /**
  * Write ops whose body is *not* a JSON body, with the reason it is excluded.

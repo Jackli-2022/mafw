@@ -3838,13 +3838,29 @@ describe('api-contract: E10g request bodies (W1 session writes)', () => {
     expect(body.content['application/json'].schema.required).toEqual(['command', 'arguments']);
   });
 
+  test('session run bodies are optional but declare their handler fields', () => {
+    // `routes/session-run.ts`: suspend reads `reason`, resume/discard read `runId`.
+    // Every read is guarded (`typeof x === 'string' && x`), so an empty body is valid.
+    const suspend = bodyOf('session.suspend');
+    expect(suspend.required).toBe(false);
+    const suspendSchema = suspend.content['application/json'].schema;
+    expect(Object.keys(suspendSchema.properties)).toEqual(['reason']);
+    expect(suspendSchema.properties.reason.type).toBe('string');
+    expect(suspendSchema.properties.reason.description).toContain('non-string');
+
+    for (const id of ['session.resume', 'session.discardRun']) {
+      const body = bodyOf(id);
+      expect(`${id}:${body.required}`).toBe(`${id}:false`);
+      const schema = body.content['application/json'].schema;
+      expect(Object.keys(schema.properties)).toEqual(['runId']);
+      expect(schema.properties.runId.type).toBe('string');
+    }
+  });
+
   test('no-body actions declare an empty object with required:false', () => {
     for (const id of [
       'session.abort',
       'session.background',
-      'session.suspend',
-      'session.resume',
-      'session.discardRun',
       'session.unrevert',
       'session.delete',
       'session.deleteLegacy',
@@ -3895,7 +3911,19 @@ describe('api-contract: E10g request bodies (W2/W3 tasks, terminal, pods)', () =
     expect(schema.required).not.toContain('directory');
     expect(schema.properties.paths.minItems).toBe(1);
     expect(schema.properties.paths.maxItems).toBe(200);
+    // `reason` is truncated to 200 chars by the handler, never rejected.
+    expect(schema.properties.reason.maxLength).toBeUndefined();
+    expect(schema.properties.reason.description).toContain('200');
     expect(schemaOf('fileHistory.restore').required).toEqual(['sessionID', 'entryId']);
+  });
+
+  test('pods.goals.techLead.messages: parts are text-only and capped, not rejected', () => {
+    const schema = schemaOf('pods.goals.techLead.messages');
+    const parts = schema.properties.parts;
+    expect(parts.items.properties.type.const).toBe('text');
+    // `normalizeTechLeadParts` keeps the first 8; a longer array is not a 400.
+    expect(parts.maxItems).toBeUndefined();
+    expect(parts.description).toContain('first 8');
   });
 
   test('pods.update is a status-only PATCH with a closed status enum', () => {
@@ -4466,8 +4494,12 @@ describe('api-contract: E10g request bodies (W7 memory, media, tts, chat, python
     // Sticky/pin flags are optional: absent → plain note-board-free write.
     expect(schema.properties.pinned.type).toBe('boolean');
     expect(schema.properties.sticky.type).toBe('boolean');
-    expect(schema.properties.cueAnchors.maxItems).toBe(8);
-    expect(schema.properties.sourceTraceIds.maxItems).toBe(20);
+    // Anchors are capped by the write pipeline (first 8 / first 20), never rejected:
+    // a maxItems here would advertise a 400 the handler never sends.
+    expect(schema.properties.cueAnchors.maxItems).toBeUndefined();
+    expect(schema.properties.sourceTraceIds.maxItems).toBeUndefined();
+    expect(schema.properties.cueAnchors.description).toContain('first 8');
+    expect(schema.properties.sourceTraceIds.description).toContain('first 20');
   });
 
   test('memory.setSticky / memory.merge: id/sourceWorktree anchors, mode flags optional', () => {

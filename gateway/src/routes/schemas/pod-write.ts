@@ -268,7 +268,8 @@ export const PodGoalDirectionRequest = Type.Object({
 /**
  * `POST /api/pods/:podId/goals/:goalId/tech-lead/messages`（handler：
  * routes/pod-collaboration.ts）。`text` 或 `message` 至少一个 trim 后非空；
- * `parts` 只保留 `{type:'text', text}`（最多 8 条，`synthetic:true` 透传）。
+ * `parts` 只保留 `{type:'text', text}`（`synthetic:true` 透传），超出前 8 条的
+ * 部分由 `normalizeTechLeadParts` 静默丢弃 —— 截断而非拒绝，故不声明 maxItems。
  */
 export const PodTechLeadMessageRequest = Type.Object({
   text: Type.Optional(Type.String({ description: 'Required unless message is present.' })),
@@ -277,7 +278,7 @@ export const PodTechLeadMessageRequest = Type.Object({
     type: Type.Literal('text'),
     text: Type.String(),
     synthetic: Type.Optional(Type.Boolean()),
-  }), { maxItems: 8 })),
+  }), { description: 'Text parts only; the handler keeps the first 8 and drops the rest.' })),
   actorSessionID: ActorSessionID,
 })
 

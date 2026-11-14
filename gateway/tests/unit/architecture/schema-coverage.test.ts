@@ -228,17 +228,26 @@ const E10G_W1_EMPTY_OPS = [
   'session.background',
   'session.delete',
   'session.deleteLegacy',
-  'session.discardRun',
   'session.discoveryRefresh',
   'session.queue.cancel',
   'session.queue.clear',
-  'session.resume',
-  'session.suspend',
   'session.subagents.cancel',
   'session.unrevert',
   'session.usagePluginTest',
   'session.usagePluginsDelete',
   'session.usagePluginsReload',
+];
+
+/**
+ * W1 的「body 可缺省但有字段」动作（`requestRequired:false` + 非空 properties）：
+ * `routes/session-run.ts` 读 `reason`（suspend）/ `runId`（resume / discardRun），
+ * 全部带 `typeof x === 'string' && x` 守卫 —— 空 body 合法，但字段确实被消费，
+ * 因此是 optional body 而不是空对象（E10g-fix F1）。
+ */
+const E10G_W1_OPTIONAL_OPS = [
+  'session.discardRun',
+  'session.resume',
+  'session.suspend',
 ];
 
 /**
@@ -744,6 +753,21 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     // The two classifications are disjoint: an empty-object action cannot be
     // one of the JSON-body ops in the W1 list.
     expect(E10G_W1_EMPTY_OPS.filter((id) => !E10G_W1_REQUEST_OPS.includes(id))).toEqual([]);
+  });
+
+  it('W1 optional-body actions declare fields but requestRequired:false', () => {
+    const byId = catalogById();
+    const problems: string[] = [];
+    for (const id of E10G_W1_OPTIONAL_OPS) {
+      const def = byId.get(id);
+      if (!def?.hasRequest) { problems.push(`${id}: missing request`); continue; }
+      if (def.requestRequired !== false) problems.push(`${id}: requestRequired must be false`);
+      const props = (def.request as { properties?: Record<string, unknown> }).properties ?? {};
+      if (Object.keys(props).length === 0) problems.push(`${id}: expected declared fields, got empty object`);
+    }
+    expect(problems).toEqual([]);
+    expect(E10G_W1_OPTIONAL_OPS.filter((id) => !E10G_W1_REQUEST_OPS.includes(id))).toEqual([]);
+    expect(E10G_W1_OPTIONAL_OPS.filter((id) => E10G_W1_EMPTY_OPS.includes(id))).toEqual([]);
   });
 
   // E10g-W2/W3: tasks/terminal/background/fileHistory + pods. Same shape as W1:

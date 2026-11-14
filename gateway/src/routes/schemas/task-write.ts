@@ -67,13 +67,16 @@ export const TerminalConnectTicketRequest = Type.Object({
  * `POST /api/file-history/snapshot`（handler：routes/file-history.ts）。
  * `sessionID` 必填；`directory` 缺省时按 sessionID 解析（office 技能只传
  * sessionID），解析失败 → 400。`paths` 为 1..200 条字符串（绝对路径会被
- * 收敛到 session 目录内转 rel）；`reason` 由 handler 截断到 200 字符。
+ * 收敛到 session 目录内转 rel）；`reason` 由 handler 截断到 200 字符（是截断
+ * 不是拒绝，所以不声明 `maxLength`：声明了就是承诺一个 handler 不会返回的 400）。
  */
 export const FileHistorySnapshotRequest = Type.Object({
   sessionID: Type.String({ minLength: 1 }),
   directory: Type.Optional(Type.String({ description: 'Required unless resolvable from sessionID.' })),
   paths: Type.Array(Type.String(), { minItems: 1, maxItems: 200 }),
-  reason: Type.Optional(Type.String({ maxLength: 200 })),
+  reason: Type.Optional(Type.String({
+    description: 'Free-form label; the handler truncates it to 200 chars instead of rejecting longer values.',
+  })),
 })
 
 /** `POST /api/file-history/restore`（handler 同上）：两者都必填，缺一 400。 */

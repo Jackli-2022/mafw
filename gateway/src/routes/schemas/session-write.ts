@@ -175,6 +175,38 @@ export const SessionSummarizeRequest = Type.Object({
   modelID: Type.Optional(Type.String()),
 })
 
+/**
+ * `POST /api/sessions/:id/suspend`（handler：routes/session-run.ts →
+ * `RunCoordinator.suspend`）。body 可选：`reason` 只是落进 run 记录的附注
+ * （`typeof body.reason === 'string' && body.reason` 守卫，非字符串被忽略，
+ * 不拒绝）。能力门 `branch.runState` 缺失 → 503；没有活动 run → 404。
+ */
+export const SessionSuspendRequest = Type.Object({
+  reason: Type.Optional(Type.String({
+    description: 'Free-form note stored with the suspended run; a non-string value is ignored, not rejected.',
+  })),
+})
+
+/**
+ * `POST /api/sessions/:id/resume`（handler 同上 → `RunCoordinator.resume`）。
+ * body 可选：`runId` 与活动 run 不一致 → 404（乐观锁），缺省接受当前活动 run。
+ */
+export const SessionResumeRequest = Type.Object({
+  runId: Type.Optional(Type.String({
+    description: 'Expected active run id; a mismatch is 404, absent accepts the active run.',
+  })),
+})
+
+/**
+ * `POST /api/sessions/:id/run/discard`（handler 同上 → `RunCoordinator.discard`）。
+ * body 可选：与 resume 同口径的 `runId` 乐观锁。
+ */
+export const SessionDiscardRunRequest = Type.Object({
+  runId: Type.Optional(Type.String({
+    description: 'Expected active run id; a mismatch is 404, absent discards the active run.',
+  })),
+})
+
 // ── prompts ───────────────────────────────────────────────────────────────
 
 /**

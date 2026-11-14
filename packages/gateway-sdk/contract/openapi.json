@@ -3801,7 +3801,12 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "properties": {}
+                "properties": {
+                  "reason": {
+                    "description": "Free-form note stored with the suspended run; a non-string value is ignored, not rejected.",
+                    "type": "string"
+                  }
+                }
               }
             }
           }
@@ -3835,7 +3840,12 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "properties": {}
+                "properties": {
+                  "runId": {
+                    "description": "Expected active run id; a mismatch is 404, absent accepts the active run.",
+                    "type": "string"
+                  }
+                }
               }
             }
           }
@@ -3996,7 +4006,12 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "properties": {}
+                "properties": {
+                  "runId": {
+                    "description": "Expected active run id; a mismatch is 404, absent discards the active run.",
+                    "type": "string"
+                  }
+                }
               }
             }
           }
@@ -8912,7 +8927,7 @@
                     }
                   },
                   "reason": {
-                    "maxLength": 200,
+                    "description": "Free-form label; the handler truncates it to 200 chars instead of rejecting longer values.",
                     "type": "string"
                   }
                 }
@@ -29960,7 +29975,7 @@
                     "type": "string"
                   },
                   "parts": {
-                    "maxItems": 8,
+                    "description": "Text parts only; the handler keeps the first 8 and drops the rest.",
                     "type": "array",
                     "items": {
                       "type": "object",
@@ -31747,8 +31762,7 @@
                     "type": "string"
                   },
                   "cueAnchors": {
-                    "maxItems": 8,
-                    "description": "Retrieval keywords (identifiers kept verbatim); extra items are dropped.",
+                    "description": "Retrieval keywords (identifiers kept verbatim); the pipeline keeps the first 8 and drops the rest.",
                     "type": "array",
                     "items": {
                       "type": "string"
@@ -31771,8 +31785,7 @@
                     "type": "string"
                   },
                   "sourceTraceIds": {
-                    "maxItems": 20,
-                    "description": "Exact T1 trace ids (unknown ids are dropped, not rejected).",
+                    "description": "Exact T1 trace ids (unknown ids are dropped, not rejected); the pipeline keeps the first 20.",
                     "type": "array",
                     "items": {
                       "type": "string"

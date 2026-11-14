@@ -6194,7 +6194,10 @@ export interface operations {
         };
         requestBody?: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    /** @description Free-form note stored with the suspended run; a non-string value is ignored, not rejected. */
+                    reason?: string;
+                };
             };
         };
         responses: {
@@ -6218,7 +6221,10 @@ export interface operations {
         };
         requestBody?: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    /** @description Expected active run id; a mismatch is 404, absent accepts the active run. */
+                    runId?: string;
+                };
             };
         };
         responses: {
@@ -6282,7 +6288,10 @@ export interface operations {
         };
         requestBody?: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    /** @description Expected active run id; a mismatch is 404, absent discards the active run. */
+                    runId?: string;
+                };
             };
         };
         responses: {
@@ -8062,6 +8071,7 @@ export interface operations {
                     /** @description Required unless resolvable from sessionID. */
                     directory?: string;
                     paths: string[];
+                    /** @description Free-form label; the handler truncates it to 200 chars instead of rejecting longer values. */
                     reason?: string;
                 };
             };
@@ -14637,6 +14647,7 @@ export interface operations {
                     text?: string;
                     /** @description Alias of text. */
                     message?: string;
+                    /** @description Text parts only; the handler keeps the first 8 and drops the rest. */
                     parts?: {
                         /** @constant */
                         type: "text";
@@ -15263,7 +15274,7 @@ export interface operations {
                     importance?: number;
                     /** @description 6-8 word index abstraction; absent → the content, truncated to 200 chars. */
                     primaryAbstraction?: string;
-                    /** @description Retrieval keywords (identifiers kept verbatim); extra items are dropped. */
+                    /** @description Retrieval keywords (identifiers kept verbatim); the pipeline keeps the first 8 and drops the rest. */
                     cueAnchors?: string[];
                     /** @description Pin to the per-turn <user-profile> disclosure layer. */
                     pinned?: boolean;
@@ -15273,7 +15284,7 @@ export interface operations {
                     stickyDays?: number;
                     /** @description Originating session; pipeline worker ids resolve back to their source session. */
                     sessionID?: string;
-                    /** @description Exact T1 trace ids (unknown ids are dropped, not rejected). */
+                    /** @description Exact T1 trace ids (unknown ids are dropped, not rejected); the pipeline keeps the first 20. */
                     sourceTraceIds?: string[];
                     /** @description Harmonic id to soft-supersede (missing target → 200 {success:false}). */
                     supersedes?: string;

@@ -44,8 +44,9 @@ const MemoryAuthority = Type.Union([
  * `supersedes` 指向不存在的 id → 200 `{success:false}`。
  *
  * `content` 会被截断到 4000 字符、`primaryAbstraction` 到 200、`cueAnchors`
- * 到 8 个 —— 是截断而不是拒绝，因此不声明 maxLength/maxItems 之外的硬约束
- * （`sourceTraceIds` 的 20 条上限由 `normalizeSourceTraceIds` 静默削平）。
+ * 到前 8 个（`sourceTraceIds` 的前 20 条由 `normalizeSourceTraceIds` 保留）——
+ * 全是**截断而不是拒绝**，所以这里不声明 `maxItems`：声明了就等于向客户端
+ * 承诺一个 handler 永远不会返回的 400。上限写在 description 里（E10g-fix F2）。
  */
 export const MemoryAddRequest = Type.Object({
   content: Type.String({
@@ -61,8 +62,7 @@ export const MemoryAddRequest = Type.Object({
     description: '6-8 word index abstraction; absent → the content, truncated to 200 chars.',
   })),
   cueAnchors: Type.Optional(Type.Array(Type.String(), {
-    maxItems: 8,
-    description: 'Retrieval keywords (identifiers kept verbatim); extra items are dropped.',
+    description: 'Retrieval keywords (identifiers kept verbatim); the pipeline keeps the first 8 and drops the rest.',
   })),
   pinned: Type.Optional(Type.Boolean({
     description: 'Pin to the per-turn <user-profile> disclosure layer.',
@@ -77,8 +77,7 @@ export const MemoryAddRequest = Type.Object({
     description: 'Originating session; pipeline worker ids resolve back to their source session.',
   })),
   sourceTraceIds: Type.Optional(Type.Array(Type.String(), {
-    maxItems: 20,
-    description: 'Exact T1 trace ids (unknown ids are dropped, not rejected).',
+    description: 'Exact T1 trace ids (unknown ids are dropped, not rejected); the pipeline keeps the first 20.',
   })),
   supersedes: Type.Optional(Type.String({
     description: 'Harmonic id to soft-supersede (missing target → 200 {success:false}).',
