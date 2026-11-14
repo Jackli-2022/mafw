@@ -10,7 +10,7 @@
 |---|---|---|
 | reflection 自 2026-11-02 后无成功 | `pipeline-heartbeat` `memory:reflect.lastSuccessAt=2026-11-02T03:51:25Z`；11-10 `failed=176` | 11-10 是 opencode serve 401 风暴（176 个 session 的 worker prompt 全部失败），catch 静默吞错，无法定位 |
 | 每晚 03:00 触发但从不落心跳 | 11-12/13/14 均在 03:30:3x 报 watchdog timeout；`lastRunAt` 仍停在 11-10 | `runAll` 无墙钟预算：逐 session × 最多 100 episode × 每批 2 次 LLM，每次 prompt 上限 300s；超过 30min watchdog 后进程被后续重启打断，永远走不到 `heartbeat.record` |
-| 每次 restore 都 `reviewed=N distilled=0 deduped=0` 且同一批反复出现 | 11-11～11-14 `[Reflection:restore]` 日志；11-14 部署后复现 `batch failed: unparseable reflection output` | ① **worker 身份带写工具**：`memory-curator` 的 agent tools 允许 `mafw_add_memory`，模型把 reflection 当成策展任务，直接写记忆并回复 markdown，从不返回 JSON；② worker 输出解析过严（只接受纯 JSON）；③ 空 insights 不推进游标 → 同一批 episode 每晚重跑；④ boot restore 对每个 pending session 并发启动，形成 prompt 惊群 |
+| 每次 restore 都 `reviewed=N distilled=0 deduped=0` 且同一批反复出现 | 11-11～11-14 `[Reflection:restore]` 日志；11-14 部署后复现 `batch failed: unparseable reflection output` | ① **opencode adapter 丢弃 `system`**：2.1.0 `/session/{id}/prompt` 没有 `system` 字段，adapter 没有降级写入，`REFLECT_SYSTEM`（JSON schema 与规则）从未到达模型；② **worker 身份带写工具**：`memory-curator` 允许 `mafw_add_memory`，模型把 reflection 当策展任务直接写库并回复 markdown；③ worker 输出解析过严（只接受纯 JSON）；④ 空 insights 不推进游标 → 同一批 episode 每晚重跑；⑤ boot restore 对每个 pending session 并发启动，形成 prompt 惊群 |
 | 周级任务 10-25 后未运行 | `memory:review` / `skillPromotion` / `axiomDistill` 心跳停在 10-25；11-01/11-08 周日 04:00–06:00 UTC gateway 不在线 | cron 无补跑机制，错过即永久错过 |
 | T1 覆盖率持续下滑 | archive 70,151 / vectors 26,266（37.4%）；archive 约 +485/天，回填 200/天 | 每日回填上限低于增长速度 |
 
@@ -30,7 +30,11 @@
    - 新增 `memory-reflector` agent：`nativeTools: { '*': false }`，系统提示明确“无工具、只返回 JSON”。
    - reflection（questions/distill/tentative）、reconsolidation、grace revisit、dream、axiom distill 全部从 `memory-curator` 切到 `memory-reflector`。
    - `memory-curator` 保留记忆写工具与只读工具，仅供需要 `read` 核验的 stale-verify（`memory:review`）使用。
-   - 这是 11-14 首次部署后仍报 `unparseable reflection output` 的直接根因：模型在 `memory-curator` 下会直接调用 `mafw_add_memory` 并把结果写成 markdown。
+
+2c. **opencode adapter 兑现 `system` 契约**（`adapters/opencode/src/adapter.ts`）
+   - 2.1.0 原生 `/session/{id}/prompt` 没有 `system` 字段；adapter 之前直接忽略 `opts.system`，所有记忆管线的 system 指令（REFLECT_SYSTEM / QUESTIONS_SYSTEM / AXIOM_SYSTEM / DREAM_SYSTEM…）从未到达模型。
+   - `prompt` 与 `promptAsync` 现在把 `system` 作为首个 text part 前置到 `text`，保留原有 `{text}` 顶层形状。
+   - 这是 11-14 第二次部署后仍报 `unparseable` 的直接原因：无工具身份下模型能返回 JSON，但 schema 是它自己编的（`task`/`memories`/`operation`），不是 `{"insights":[...]}`。
 
 3. **cron 补跑**（`gateway/src/recall/pipeline-rules.ts`、`automation-engine.ts`、`boot.ts`、`kernel.ts`）
    - `findMissedPipelineRuns` 用 `cron.CronTime.getNextDateFrom(lastRunAt, timezone)` 判断自上次尝试后是否错过计划时刻。
