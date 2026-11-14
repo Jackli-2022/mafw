@@ -49,6 +49,8 @@ import {
   PodReviewItemsResponse,
   PodTasksResponse,
   PodTechLeadHistoryResponse,
+  PodTranscriptResponse,
+  PodWorktreeDiffResponse,
 } from '../../src/routes/schemas/pods';
 import {
   GoalListResponse,
@@ -64,7 +66,13 @@ import {
   RecallPinnedResponse,
   RecallPriorsResponse,
 } from '../../src/routes/schemas/recall';
-import { LeadRecallResponse, LeadWorkingSetResponse } from '../../src/routes/schemas/lead';
+import { LeadContextResponse, LeadRecallResponse, LeadWorkingSetResponse } from '../../src/routes/schemas/lead';
+import {
+  MemoryEnergyDistributionResponse,
+  MemoryL5AxiomsResponse,
+  MemoryMergedSearchResponse,
+  MemoryStickyResponse,
+} from '../../src/routes/schemas/memory-extra';
 import {
   AllowlistListResponse,
   ApprovalListResponse,
@@ -1592,5 +1600,206 @@ describe('api-contract: E10c-1 memory / recall / lead read response schema (8 op
     expect(Value.Check(LeadWorkingSetResponse, {
       resident: [], warm: [], cold: [], pinned: [], evicted: [], topics: [{ ...topic, state: 'hot' }],
     })).toBe(false);
+  });
+});
+
+describe('api-contract: E10d-1 memory extra / lead.context / pod read response schema (8 ops)', () => {
+  const findOp = (operationId: string): any => {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const candidate of Object.values<any>(methods)) {
+        if (candidate?.operationId === operationId) return candidate;
+      }
+    }
+    return null;
+  };
+
+  const schemaOf = (operationId: string): any =>
+    findOp(operationId).responses['200']['content']['application/json'].schema;
+
+  /** 每个 op 的承重 property + 数组元素必填（handler 恒发的字段）。 */
+  const EXPECTED: Record<string, { fields: string[]; item?: { at: string; required: string[] } }> = {
+    'memory.mergedSearch': {
+      fields: ['results'],
+      item: { at: 'results', required: ['source', 'type', 'content', 'energy'] },
+    },
+    'memory.getEnergyDistribution': {
+      fields: ['critical', 'high', 'medium', 'low', 'total'],
+    },
+    'memory.getL5Axioms': {
+      fields: ['axioms', 'heuristics'],
+      item: { at: 'axioms', required: ['id', 'content', 'source', 'energy', 'created_at'] },
+    },
+    'memory.listSticky': {
+      fields: ['entries', 'budget'],
+      item: { at: 'entries', required: ['id', 'type', 'primary_abstraction', 'memory_value', 'energy'] },
+    },
+    'lead.context': {
+      fields: ['blocks', 'totalTokens', 'recalledTopicIds', 'trimmed'],
+      item: { at: 'blocks', required: ['kind', 'text', 'tokens'] },
+    },
+    'pods.lookup': {
+      fields: ['pod', 'members', 'goals', 'attention', 'messageHealth', 'tasks', 'sessions'],
+    },
+    'pods.transcript': { fields: ['transcript'] },
+    'pods.goals.worktree.diff': {
+      fields: ['goalId', 'revision', 'branch', 'baseRef', 'files'],
+      item: { at: 'files', required: ['file', 'patch', 'additions', 'deletions', 'status'] },
+    },
+  };
+
+  test('all eight ops expose a 200 JSON schema with the handler wire properties', () => {
+    const problems: string[] = [];
+    for (const [operationId, spec] of Object.entries(EXPECTED)) {
+      const op = findOp(operationId);
+      if (!op) { problems.push(`${operationId}: missing from openapi.json`); continue; }
+      const schema = op.responses?.['200']?.content?.['application/json']?.schema;
+      if (!schema) { problems.push(`${operationId}: responses.200 missing application/json schema`); continue; }
+      const properties = Object.keys(schema.properties ?? {});
+      if (properties.length === 0) { problems.push(`${operationId}: schema has no properties (widened)`); continue; }
+      for (const field of spec.fields) {
+        if (!properties.includes(field)) problems.push(`${operationId}: schema missing property '${field}'`);
+      }
+    }
+    if (problems.length) {
+      console.error('[api-contract] E10d-1 response schema missing - run emit:openapi + merge-contract:\n' + problems.join('\n'));
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test('array item required fields match the handler wire', () => {
+    const problems: string[] = [];
+    for (const [operationId, spec] of Object.entries(EXPECTED)) {
+      if (!spec.item) continue;
+      const required = schemaOf(operationId).properties?.[spec.item.at]?.items?.required ?? [];
+      for (const field of spec.item.required) {
+        if (!required.includes(field)) problems.push(`${operationId}: ${spec.item.at}.items missing required '${field}'`);
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test('nested shapes: L5 heuristics, note-board budget, lead block vocabulary', () => {
+    const l5 = schemaOf('memory.getL5Axioms');
+    expect([...l5.required].sort()).toEqual(['axioms', 'heuristics']);
+    expect([...l5.properties.heuristics.items.required].sort()).toEqual([
+      'created_at', 'energy', 'id', 'pattern', 'source_goal_ids', 'success_rate', 'trigger_context',
+    ]);
+    expect(l5.properties.axioms.items.properties.source.anyOf.map((entry: any) => entry.const))
+      .toEqual(['manual', 'distilled']);
+
+    const sticky = schemaOf('memory.listSticky');
+    expect([...sticky.properties.budget.required].sort()).toEqual(['max', 'maxChars', 'used']);
+    expect([...sticky.properties.entries.items.required].sort())
+      .toEqual(['energy', 'id', 'memory_value', 'primary_abstraction', 'type']);
+    // HarmonicUnit.type vocabulary, same as memory.search results.
+    expect(sticky.properties.entries.items.properties.type.anyOf.map((entry: any) => entry.const))
+      .toEqual(['episodic', 'semantic', 'procedural', 'global']);
+
+    const lead = schemaOf('lead.context');
+    const block = lead.properties.blocks.items;
+    expect(block.properties.kind.anyOf.map((entry: any) => entry.const))
+      .toEqual(['goal-status', 'topic-index', 'recalled-topic']);
+    // topicId/title only exist on recalled-topic blocks -> optional, never required.
+    expect(block.required).toContain('kind');
+    expect(block.required).toContain('text');
+    expect(block.required).toContain('tokens');
+    expect(block.required).not.toContain('topicId');
+    expect(block.required).not.toContain('title');
+  });
+
+  test('pods.transcript.transcript stays a runtime-owned boundary object', () => {
+    const schema = schemaOf('pods.transcript');
+    expect(schema.required).toEqual(['transcript']);
+    // Boundary object: the payload is the runtime session history (owner = runtime).
+    // An empty JSON Schema means "any JSON value" — no whole-response widening beyond
+    // the one key the handler always sends.
+    expect(schema.properties.transcript).toEqual({});
+    expect(Object.keys(schema.properties)).toEqual(['transcript']);
+  });
+
+  test('pods.goals.worktree.diff response mirrors the SDK PodWorktreeDiff field set', () => {
+    const schema = schemaOf('pods.goals.worktree.diff');
+    expect([...schema.required].sort()).toEqual(['baseRef', 'branch', 'files', 'goalId', 'revision']);
+    expect(Object.keys(schema.properties).sort()).toEqual(['baseRef', 'branch', 'files', 'goalId', 'revision']);
+    expect(schema.properties.revision.type).toBe('number');
+    const file = schema.properties.files.items;
+    expect([...file.required].sort()).toEqual(['additions', 'deletions', 'file', 'patch', 'status']);
+    expect(file.properties.additions.type).toBe('number');
+    expect(file.properties.deletions.type).toBe('number');
+  });
+
+  test('handler wire samples validate against each new schema (Value.Check)', () => {
+    // memory.mergedSearch: MemoryFact (parametric delta vs harmonic unit).
+    const fact = { source: 'harmonic', type: 'semantic', content: 'abstraction', energy: 0.8 };
+    expect(Value.Check(MemoryMergedSearchResponse, { results: [fact] })).toBe(true);
+    expect(Value.Check(MemoryMergedSearchResponse, {
+      results: [{ source: 'parametric', type: 'delta', content: '[Δ] x', energy: 0.8 }],
+    })).toBe(true);
+    expect(Value.Check(MemoryMergedSearchResponse, { results: [] })).toBe(true);
+    expect(Value.Check(MemoryMergedSearchResponse, { results: [{ ...fact, source: 'index' }] })).toBe(false);
+
+    // memory.getEnergyDistribution: exactly the five bucket counters.
+    expect(Value.Check(MemoryEnergyDistributionResponse, {
+      critical: 1, high: 2, medium: 3, low: 4, total: 10,
+    })).toBe(true);
+    expect(Value.Check(MemoryEnergyDistributionResponse, { critical: 1, high: 2, medium: 3, low: 4 })).toBe(false);
+
+    // memory.getL5Axioms: L5Store.getTop() pass-through.
+    expect(Value.Check(MemoryL5AxiomsResponse, {
+      axioms: [{ id: 'l5_1', content: 'a', source: 'manual', energy: 0.8, created_at: 't' }],
+      heuristics: [{
+        id: 'l5_2', pattern: 'p', trigger_context: ['c'], success_rate: 0.9,
+        source_goal_ids: ['g1'], energy: 0.8, created_at: 't',
+      }],
+    })).toBe(true);
+    expect(Value.Check(MemoryL5AxiomsResponse, {
+      axioms: [{ id: 'l5_1', content: 'a', source: 'dreamed', energy: 0.8, created_at: 't' }],
+      heuristics: [],
+    })).toBe(false);
+
+    // memory.listSticky: note-board entries + budget; the 503/fail-open body is shape-identical.
+    const note = {
+      id: 'mem-1', type: 'semantic', primary_abstraction: 'a', memory_value: 'v', energy: 0.9,
+      created_at: 't', sticky_until: '2026-11-21T00:00:00.000Z',
+    };
+    expect(Value.Check(MemoryStickyResponse, { entries: [note], budget: { max: 12, maxChars: 1200, used: 1 } })).toBe(true);
+    expect(Value.Check(MemoryStickyResponse, { entries: [], budget: { max: 12, maxChars: 1200, used: 0 } })).toBe(true);
+    expect(Value.Check(MemoryStickyResponse, {
+      entries: [{ ...note, type: 'hot' }], budget: { max: 12, maxChars: 1200, used: 1 },
+    })).toBe(false);
+
+    // lead.context: LeadContext (blocks + counters); empty context is the fail-open body.
+    expect(Value.Check(LeadContextResponse, {
+      blocks: [
+        { kind: 'goal-status', text: '<goal-status>\n</goal-status>', tokens: 3 },
+        { kind: 'recalled-topic', topicId: 'topic_1', title: 'Ship E10d', text: 'x', tokens: 5 },
+      ],
+      totalTokens: 8,
+      recalledTopicIds: ['topic_1'],
+      trimmed: ['topic-index'],
+    })).toBe(true);
+    expect(Value.Check(LeadContextResponse, {
+      blocks: [], totalTokens: 0, recalledTopicIds: [], trimmed: [],
+    })).toBe(true);
+    expect(Value.Check(LeadContextResponse, {
+      blocks: [{ kind: 'summary', text: 'x', tokens: 1 }], totalTokens: 1, recalledTopicIds: [], trimmed: [],
+    })).toBe(false);
+
+    // pods.lookup is the same schema as pods.get: same PodDetail wire.
+    expect(schemaOf('pods.lookup')).toEqual(schemaOf('pods.get'));
+
+    // pods.transcript: runtime-owned payload passes through untouched.
+    expect(Value.Check(PodTranscriptResponse, { transcript: null })).toBe(true);
+    expect(Value.Check(PodTranscriptResponse, { transcript: { messages: [{ role: 'user' }] } })).toBe(true);
+    expect(Value.Check(PodTranscriptResponse, {})).toBe(false);
+
+    // pods.goals.worktree.diff: PodWorktreeService.branchDiff() return value.
+    const diff = {
+      goalId: 'g1', revision: 2, branch: 'pod/g1/r2', baseRef: 'main',
+      files: [{ file: 'gateway/src/index.ts', patch: '@@', additions: 3, deletions: 1, status: 'M' }],
+    };
+    expect(Value.Check(PodWorktreeDiffResponse, diff)).toBe(true);
+    expect(Value.Check(PodWorktreeDiffResponse, { ...diff, files: [{ file: 'x' }] })).toBe(false);
+    expect(Value.Check(PodWorktreeDiffResponse, { ...diff, files: [] })).toBe(true);
   });
 });

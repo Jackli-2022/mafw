@@ -7463,7 +7463,20 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        blocks: {
+                            kind: "goal-status" | "topic-index" | "recalled-topic";
+                            topicId?: string;
+                            title?: string;
+                            text: string;
+                            tokens: number;
+                        }[];
+                        totalTokens: number;
+                        recalledTopicIds: string[];
+                        trimmed: string[];
+                    };
+                };
             };
         };
     };
@@ -8517,7 +8530,16 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        results: {
+                            source: "parametric" | "harmonic";
+                            type: string;
+                            content: string;
+                            energy: number;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -8535,7 +8557,15 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        critical: number;
+                        high: number;
+                        medium: number;
+                        low: number;
+                        total: number;
+                    };
+                };
             };
         };
     };
@@ -8553,7 +8583,26 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        axioms: {
+                            id: string;
+                            content: string;
+                            source: "manual" | "distilled";
+                            energy: number;
+                            created_at: string;
+                        }[];
+                        heuristics: {
+                            id: string;
+                            pattern: string;
+                            trigger_context: string[];
+                            success_rate: number;
+                            source_goal_ids: string[];
+                            energy: number;
+                            created_at: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -8591,7 +8640,24 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        entries: {
+                            id: string;
+                            type: "episodic" | "semantic" | "procedural" | "global";
+                            primary_abstraction: string;
+                            memory_value: string;
+                            energy: number;
+                            created_at?: string;
+                            sticky_until?: string;
+                        }[];
+                        budget: {
+                            max: number;
+                            maxChars: number;
+                            used: number;
+                        };
+                    };
+                };
             };
         };
     };
@@ -10001,7 +10067,153 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        pod: {
+                            id: string;
+                            projectDir: string;
+                            name: string;
+                            status: "active" | "idle" | "paused" | "archived";
+                            configJson: string;
+                            activeGoalId: string | null;
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                        members: {
+                            id: string;
+                            podId: string;
+                            role: "lead" | "tech_lead" | "builder" | "reviewer";
+                            displayName: string;
+                            agentName: string;
+                            modelProvider: string | null;
+                            modelId: string | null;
+                            status: "available" | "working" | "waiting" | "sleeping" | "retired";
+                            configJson: string | null;
+                            createdAt: string;
+                            updatedAt: string;
+                        }[];
+                        stageSupported?: boolean;
+                        goals: {
+                            id: string;
+                            podId: string;
+                            goalId: string;
+                            status: "queued" | "active" | "done" | "aborted";
+                            title: string;
+                            phase: string | null;
+                            verdict: ("PASS" | "FAIL" | "MAX_RETRIES" | "ERROR" | "CANCELLED") | null;
+                            stage: {
+                                owner: "person" | "team" | "system";
+                                kind: "plan_approval" | "direction_review" | "question" | "blocked" | "queued" | "discussing" | "planning" | "probing" | "implementing" | "reviewing" | "result_notified" | "working" | "waiting" | "ended";
+                                role?: "lead" | "tech_lead" | "builder" | "reviewer";
+                                queueReason?: "active_goal" | "paused" | "archived" | "budget" | "state_error";
+                                action?: {
+                                    type: "open_plan_review" | "open_direction_review" | "open_question" | "open_discussion" | "open_goal" | "open_result";
+                                    goalId: string;
+                                    questionId?: string;
+                                };
+                            };
+                            pendingQuestion?: {
+                                questionId: string;
+                                node: "plan" | "execute" | "review";
+                                questions: string[];
+                            } | null;
+                            bucket?: "needs_you" | "queued" | "in_progress" | "result_ready" | "ended";
+                            resultReady: boolean;
+                            accepted?: boolean;
+                            lastError?: string | null;
+                            progress?: {
+                                total: number;
+                                done: number;
+                                inProgress: number;
+                                review: number;
+                                failed: number;
+                                skipped: number;
+                            } | null;
+                            sourceRef?: {
+                                sessionID?: string;
+                                messageID?: string;
+                                snapshot: string;
+                                capturedAt: string;
+                                topicId?: string;
+                                messageRange?: {
+                                    from: string;
+                                    to: string;
+                                };
+                            } | null;
+                            strategy?: ("quick" | "collaborative") | null;
+                            goalMode?: "quick" | "standard" | "standing";
+                            assessment?: ("reviewed" | "unreviewed") | null;
+                            currentAssignment?: {
+                                assignmentId: string;
+                                role: "builder" | "reviewer";
+                                taskIds: string[];
+                                attempt: number;
+                            } | null;
+                            activeRevision?: number;
+                            revision?: number;
+                            priority?: number;
+                            enqueuedAt: string;
+                            startedAt: string | null;
+                            endedAt: string | null;
+                        }[];
+                        attention: {
+                            id: string;
+                            goalId: string;
+                            revision: number;
+                            kind: "plan_approval" | "direction_review" | "question" | "blocked" | "review" | "failed";
+                            title: string;
+                            action: {
+                                type: "open_plan_review" | "open_direction_review" | "open_question" | "open_discussion" | "open_goal" | "open_result";
+                                goalId: string;
+                                questionId?: string;
+                            };
+                            podId?: string;
+                            projectId?: string;
+                        }[];
+                        messageHealth: {
+                            messageId: string;
+                            podId: string;
+                            memberId: string;
+                            deliveredAt: string | null;
+                            deliveredSessionId: string | null;
+                            status: "pending" | "delivered" | "failed";
+                            attempts: number;
+                            lastError: string | null;
+                            nextRetryAt: string | null;
+                        }[];
+                        tasks: {
+                            id: string;
+                            podId: string;
+                            goalId: string | null;
+                            sourceKey: string;
+                            externalTaskId: string | null;
+                            kind: "plan" | "note" | "external_request";
+                            title: string;
+                            description: string | null;
+                            ownerMemberId: string | null;
+                            status: "pending" | "in_progress" | "blocked" | "review" | "done" | "failed" | "skipped" | "reopened";
+                            dependenciesJson: string | null;
+                            artifactRefsJson: string | null;
+                            acceptanceJson?: string | null;
+                            createdAt: string;
+                            updatedAt: string;
+                        }[];
+                        sessions: {
+                            id: string;
+                            podId: string;
+                            memberId: string;
+                            goalId: string | null;
+                            node: string | null;
+                            sessionId: string;
+                            runtime?: string;
+                            status: string;
+                            transcriptRef: string | null;
+                            scopeKind?: ("project" | "discussion" | "probe" | "implementation" | "review") | null;
+                            createdAt: string;
+                            endedAt: string | null;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -10883,7 +11095,21 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        goalId: string;
+                        revision: number;
+                        branch: string;
+                        baseRef: string;
+                        files: {
+                            file: string;
+                            patch: string;
+                            additions: number;
+                            deletions: number;
+                            status: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -10904,7 +11130,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        transcript: unknown;
+                    };
+                };
             };
         };
     };

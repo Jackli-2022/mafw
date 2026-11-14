@@ -46,6 +46,8 @@ import {
   PodReviewItemsResponse,
   PodTasksResponse,
   PodTechLeadHistoryResponse,
+  PodTranscriptResponse,
+  PodWorktreeDiffResponse,
 } from './schemas/pods';
 import {
   GoalListResponse,
@@ -66,12 +68,18 @@ import {
 import { WorkOverviewResponse } from './schemas/work';
 import { MemoryGetResponse, MemorySearchResponse } from './schemas/memory';
 import {
+  MemoryEnergyDistributionResponse,
+  MemoryL5AxiomsResponse,
+  MemoryMergedSearchResponse,
+  MemoryStickyResponse,
+} from './schemas/memory-extra';
+import {
   RecallContextResponse,
   RecallInstructionsResponse,
   RecallPinnedResponse,
   RecallPriorsResponse,
 } from './schemas/recall';
-import { LeadRecallResponse, LeadWorkingSetResponse } from './schemas/lead';
+import { LeadContextResponse, LeadRecallResponse, LeadWorkingSetResponse } from './schemas/lead';
 import { MemoryStatsResponse } from './schemas/memory-stats';
 import { HumanTokenRotateResponse } from './schemas/human-token';
 import {
@@ -218,7 +226,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/goals/:id/sessions', operationId: 'goals.sessions', tags: ['goals'], response: GoalSessionsResponse },
   { method: 'GET', path: '/api/goals/:id/timeline', operationId: 'goals.timeline', tags: ['goals'], response: GoalTimelineResponse },
   { method: 'GET', path: '/api/goals/:id/source', operationId: 'goals.source', tags: ['goals'], response: GoalSourceResponse },
-  { method: 'GET', path: '/api/lead/context', operationId: 'lead.context', tags: ['internal'] },
+  { method: 'GET', path: '/api/lead/context', operationId: 'lead.context', tags: ['internal'], response: LeadContextResponse },
   { method: 'GET', path: '/api/attention', operationId: 'attention.list', tags: ['internal'], response: AttentionListResponse },
   { method: 'GET', path: '/api/decisions', operationId: 'decisions.list', tags: ['internal'], response: DecisionListResponse },
   { method: 'POST', path: '/api/decisions', operationId: 'decisions.draft', tags: ['internal'] },
@@ -267,11 +275,11 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/work/:goalId/validate', operationId: 'goals.validate', tags: ['goals'] },
   { method: 'POST', path: '/api/goals/control', operationId: 'goals.control', tags: ['goals'] },
   { method: 'GET', path: '/api/memory/search', operationId: 'memory.search', tags: ['memory'], response: MemorySearchResponse },
-  { method: 'GET', path: '/api/memory/merged-search', operationId: 'memory.mergedSearch', tags: ['memory'] },
-  { method: 'GET', path: '/api/memory/energy-distribution', operationId: 'memory.getEnergyDistribution', tags: ['memory'] },
-  { method: 'GET', path: '/api/l5/axioms', operationId: 'memory.getL5Axioms', tags: ['memory'] },
+  { method: 'GET', path: '/api/memory/merged-search', operationId: 'memory.mergedSearch', tags: ['memory'], response: MemoryMergedSearchResponse },
+  { method: 'GET', path: '/api/memory/energy-distribution', operationId: 'memory.getEnergyDistribution', tags: ['memory'], response: MemoryEnergyDistributionResponse },
+  { method: 'GET', path: '/api/l5/axioms', operationId: 'memory.getL5Axioms', tags: ['memory'], response: MemoryL5AxiomsResponse },
   { method: 'DELETE', path: '/api/memory/:id', operationId: 'memory.delete', tags: ['memory'] },
-  { method: 'GET', path: '/api/memory/sticky', operationId: 'memory.listSticky', tags: ['memory'] },
+  { method: 'GET', path: '/api/memory/sticky', operationId: 'memory.listSticky', tags: ['memory'], response: MemoryStickyResponse },
   { method: 'POST', path: '/api/memory/pin', operationId: 'memory.setSticky', tags: ['memory'] },
   { method: 'GET', path: '/api/memory/embedding-config', operationId: 'embedding.get', tags: ['embedding'] },
   { method: 'POST', path: '/api/memory/embedding-config', operationId: 'embedding.update', tags: ['embedding'] },
@@ -320,7 +328,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/automations/draft', operationId: 'automations.draft', tags: ['automations'] },
   { method: 'GET', path: '/api/projects/:projectId/work', operationId: 'work.overview', tags: ['work'], response: WorkOverviewResponse },
   { method: 'GET', path: '/api/projects/:projectId/pod', operationId: 'pods.ensure', tags: ['pods'] },
-  { method: 'GET', path: '/api/projects/:projectId/pod/lookup', operationId: 'pods.lookup', tags: ['pods'] },
+  { method: 'GET', path: '/api/projects/:projectId/pod/lookup', operationId: 'pods.lookup', tags: ['pods'], response: PodDetailResponse },
   { method: 'POST', path: '/api/projects/:projectId/pod', operationId: 'pods.create', tags: ['pods'] },
   { method: 'GET', path: '/api/pods/:podId', operationId: 'pods.get', tags: ['pods'], response: PodDetailResponse },
   { method: 'PATCH', path: '/api/pods/:podId', operationId: 'pods.update', tags: ['pods'] },
@@ -347,8 +355,8 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/pods/:podId/goals/:goalId/review-items/:itemId/resolve', operationId: 'pods.goals.reviewItems.resolve', tags: ['pods'] },
   { method: 'POST', path: '/api/pods/:podId/goals/:goalId/review-items/:itemId/reopen', operationId: 'pods.goals.reviewItems.reopen', tags: ['pods'] },
   { method: 'POST', path: '/api/pods/:podId/goals/:goalId/accept', operationId: 'pods.goals.accept', tags: ['pods'] },
-  { method: 'GET', path: '/api/pods/:podId/goals/:goalId/worktree/diff', operationId: 'pods.goals.worktree.diff', tags: ['pods'] },
-  { method: 'GET', path: '/api/pods/:podId/sessions/:sessionId/transcript', operationId: 'pods.transcript', tags: ['pods'] },
+  { method: 'GET', path: '/api/pods/:podId/goals/:goalId/worktree/diff', operationId: 'pods.goals.worktree.diff', tags: ['pods'], response: PodWorktreeDiffResponse },
+  { method: 'GET', path: '/api/pods/:podId/sessions/:sessionId/transcript', operationId: 'pods.transcript', tags: ['pods'], response: PodTranscriptResponse },
   { method: 'GET', path: '/api/pods/:podId/memory', operationId: 'pods.memory.get', tags: ['pods'] },
   { method: 'POST', path: '/api/pods/:podId/memory', operationId: 'pods.memory.write', tags: ['pods'] },
   // Task 18：直接讨论 Goal 的协作面（Tech Lead 会话 / 方向裁定 / Spike / 打回 / revision）
