@@ -12,7 +12,16 @@
  * （`contract-compat.checks.ts` 的 `CHECK_memory_search` 钉住）；`t1Results` 元素与
  * `T1SearchHit` 等价（`CHECK_memory_search_t1_item`）。
  */
-import { Type } from '@sinclair/typebox'
+import { Type, type Static } from '@sinclair/typebox'
+import type { HarmonicUnit } from '../../core/memory/harmonic-types'
+
+/**
+ * 编译期精确相等（恒等函数技巧，never 安全）。与 SDK `contract-compat.checks.ts`
+ * 的 AssertEq 同一写法；这里锁的是 gateway 自己的 store 类型（`HarmonicUnit`
+ * 没有 SDK DTO —— `memory.get` 是 internal op，只做 OKF frontmatter 透传）。
+ */
+type Equals<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false
+type AssertEq<A, B> = Equals<A, B> extends true ? true : ['MISMATCH', A, B]
 
 /** 记忆类型词表（`core/memory/harmonic-types.ts` `HarmonicUnit['type']`）。 */
 const MemoryTypeSchema = Type.Union([
@@ -83,6 +92,13 @@ export const MemorySearchResponse = Type.Object({
  * owner = memory store；`memory.get` 只做 `JSON.parse(result.content[0].text)` 透传。
  * 磁盘上可能存在接口未枚举的残留键（例如 `archived`）——JSON Schema 不声明
  * `additionalProperties: false`，残留键合法，但不属本契约承诺。
+ *
+ * **E10f-E 编译期桥**：`HarmonicUnitSchema` 不再手工镜像——下方 AssertEq 钉住
+ * 它与 store 类型的等价性（`npx tsc --noEmit -p tsconfig.json` 即门禁）。
+ * 唯一**有意**的偏差是 `created_at`：E10c 为 legacy OKF 文件（缺该键、store 只回填
+ * `updated_at`）把 wire 放宽为 optional，而 `HarmonicUnit` 仍标记 required，
+ * 故桥接目标对称剥掉 `created_at` 再比剩余键，并单独断言它是 optional string。
+ * 任何**其它**字段的新增/删除/可选性/类型漂移都会让 tsc 红。
  */
 const HarmonicUnitSchema = Type.Object({
   id: Type.String(),
@@ -123,6 +139,30 @@ const HarmonicUnitSchema = Type.Object({
   commitment_capped_at: Type.Optional(Type.String()),
   novelty: Type.Optional(Type.Number()),
 })
+
+/**
+ * `HarmonicUnit` 的 wire 投影：除 `created_at` 放宽为 optional（legacy OKF 缺键，见上）外
+ * 与 store 类型逐字段等价。用 `Omit` 对称剥掉 `created_at` 再比剩余键，避免把
+ * `Omit<…> & {…}` 交集当作比较对象（交集不会被条件类型归一，恒等比较会假红）。
+ */
+type HarmonicUnitSchemaWire = Omit<Static<typeof HarmonicUnitSchema>, 'created_at'>
+type HarmonicUnitStoreShape = Omit<HarmonicUnit, 'created_at'>
+
+/**
+ * schema ↔ `HarmonicUnit` 漂移即 gateway tsc 红（`npx tsc --noEmit -p tsconfig.json`）。
+ * 换新字段时先改 `core/memory/harmonic-types.ts`，这句会逼你同步 schema。
+ */
+const _MEMORY_GET_UNIT_SCHEMA_MATCHES_STORE: AssertEq<HarmonicUnitSchemaWire, HarmonicUnitStoreShape> = true
+
+/**
+ * 有意偏差的显式断言（E10c）：wire 的 `created_at` 必须是 optional string。
+ * 若有人把 schema 改回 required，这里红。
+ */
+const _MEMORY_GET_CREATED_AT_IS_OPTIONAL: AssertEq<
+  Pick<Static<typeof HarmonicUnitSchema>, 'created_at'>,
+  { created_at?: string }
+> = true
+export { _MEMORY_GET_UNIT_SCHEMA_MATCHES_STORE, _MEMORY_GET_CREATED_AT_IS_OPTIONAL }
 
 /**
  * 溯源块（`handleGetMemory`）：exact trace 命中时带 `traces`（最多 5 条，每条

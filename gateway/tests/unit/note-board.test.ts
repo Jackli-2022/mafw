@@ -30,6 +30,9 @@ describe('handleNoteBoard', () => {
     expect(b.maxChars).toBe(NOTE_BOARD_BUDGET.maxChars);
     expect(b.maxChars).toBe(1600);
     expect(b.used).toBe(0);
+    // E10f-E: perNoteCap 也是 budget 的一部分（wire 契约 required）。
+    expect(b.perNoteCap).toBe(240);
+    expect(b).toEqual({ ...NOTE_BOARD_BUDGET, used: 0 });
   });
 
   test('active sticky on board; expired and superseded excluded', async () => {
@@ -85,6 +88,12 @@ describe('handleNoteBoard', () => {
     const result = await handleNoteBoard(deps([]), NOW);
     expect(result.board).toBeNull();
     expect(result.budget).toEqual({ ...NOTE_BOARD_BUDGET, used: 0 });
+  });
+
+  test('budget is exactly { ...NOTE_BOARD_BUDGET, used } on a non-empty board (E10f-E)', async () => {
+    const result = await handleNoteBoard(deps([entry({ id: 'mem_a' })]), NOW);
+    expect(result.budget).toEqual({ ...NOTE_BOARD_BUDGET, used: 1 });
+    expect(Object.keys(result.budget).sort()).toEqual(['max', 'maxChars', 'perNoteCap', 'used']);
   });
 });
 

@@ -9837,6 +9837,7 @@ export interface operations {
                         budget: {
                             max: number;
                             maxChars: number;
+                            perNoteCap: number;
                             used: number;
                         };
                     };

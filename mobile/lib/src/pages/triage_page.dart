@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../models/triage_card_model.dart';
 import '../network/gateway_client.dart';
 import '../theme.dart';
 
@@ -117,11 +118,13 @@ class _TriageCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final id = (item['id'] ?? '').toString();
-    final title = (item['title'] ?? item['name'] ?? item['question'] ?? id).toString();
-    final description = (item['description'] ?? item['detail'] ?? item['reason'] ?? '').toString();
-    final type = (item['type'] ?? item['kind'] ?? '').toString();
-    final source = (item['source'] ?? item['origin'] ?? '').toString();
+    // E10f-E: 唯一取值入口（title/meta/badge 兜底对齐真实 wire；不再读 reason/type/origin）。
+    final model = triageCardModel(item);
+    final badgeColor = switch (model.badge.tone) {
+      TriageTone.warn => kMafwGoalActive,
+      TriageTone.neutral => scheme.onSurfaceVariant,
+      TriageTone.danger => scheme.error,
+    };
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -133,28 +136,28 @@ class _TriageCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                if (type.isNotEmpty)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: kMafwGoalActive.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(type, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: kMafwGoalActive)),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: badgeColor.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(999),
                   ),
-                if (type.isNotEmpty && source.isNotEmpty) const SizedBox(width: 6),
-                if (source.isNotEmpty)
-                  Text(source, style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
+                  child: Text(model.badge.label,
+                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: badgeColor)),
+                ),
                 const Spacer(),
                 if (processing)
                   const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
               ],
             ),
             const SizedBox(height: 8),
-            Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: scheme.onSurface)),
-            if (description.isNotEmpty) ...[
+            Text(model.title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: scheme.onSurface)),
+            if (model.meta.isNotEmpty) ...[
               const SizedBox(height: 4),
-              Text(description, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant), maxLines: 3, overflow: TextOverflow.ellipsis),
+              Text(model.meta,
+                  style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis),
             ],
             const SizedBox(height: 10),
             Row(

@@ -1772,7 +1772,10 @@ describe('api-contract: E10d-1 memory extra / lead.context / pod read response s
       .toEqual(['manual', 'distilled']);
 
     const sticky = schemaOf('memory.listSticky');
-    expect([...sticky.properties.budget.required].sort()).toEqual(['max', 'maxChars', 'used']);
+    // E10f-E: the formatter budget carries the anti-starvation per-note cap
+    // (`NOTE_BOARD_BUDGET = { max, maxChars, perNoteCap }` + `used`).
+    expect([...sticky.properties.budget.required].sort()).toEqual(['max', 'maxChars', 'perNoteCap', 'used']);
+    expect(sticky.properties.budget.properties.perNoteCap.type).toBe('number');
     expect([...sticky.properties.entries.items.required].sort())
       .toEqual(['energy', 'id', 'memory_value', 'primary_abstraction', 'type']);
     // HarmonicUnit.type vocabulary, same as memory.search results.
@@ -1846,10 +1849,18 @@ describe('api-contract: E10d-1 memory extra / lead.context / pod read response s
       id: 'mem-1', type: 'semantic', primary_abstraction: 'a', memory_value: 'v', energy: 0.9,
       created_at: 't', sticky_until: '2026-11-21T00:00:00.000Z',
     };
-    expect(Value.Check(MemoryStickyResponse, { entries: [note], budget: { max: 12, maxChars: 1200, used: 1 } })).toBe(true);
-    expect(Value.Check(MemoryStickyResponse, { entries: [], budget: { max: 12, maxChars: 1200, used: 0 } })).toBe(true);
     expect(Value.Check(MemoryStickyResponse, {
-      entries: [{ ...note, type: 'hot' }], budget: { max: 12, maxChars: 1200, used: 1 },
+      entries: [note], budget: { max: 10, maxChars: 1600, perNoteCap: 240, used: 1 },
+    })).toBe(true);
+    expect(Value.Check(MemoryStickyResponse, {
+      entries: [], budget: { max: 10, maxChars: 1600, perNoteCap: 240, used: 0 },
+    })).toBe(true);
+    // E10f-E: perNoteCap is part of every budget body — including the 503 shell.
+    expect(Value.Check(MemoryStickyResponse, {
+      entries: [], budget: { max: 10, maxChars: 1600, used: 0 },
+    })).toBe(false);
+    expect(Value.Check(MemoryStickyResponse, {
+      entries: [{ ...note, type: 'hot' }], budget: { max: 10, maxChars: 1600, perNoteCap: 240, used: 1 },
     })).toBe(false);
 
     // lead.context: LeadContext (blocks + counters); empty context is the fail-open body.
@@ -3235,14 +3246,36 @@ describe('api-contract: E10f-C goal / lead / event / standing / automation / pod
       .toEqual(['timestamp', 'event']);
   });
 
-  test('automations.list override entry is deleted (code-first now)', () => {
+  test('automations.list + session.list override entries are deleted (code-first now)', () => {
     const overrides = JSON.parse(readFileSync(
       join(__dirname, '..', '..', '..', 'packages', 'gateway-sdk', 'contract', 'overrides.json'),
       'utf-8',
     ));
     expect(overrides.operations['automations.list']).toBeUndefined();
-    // 12 -> 11 (E10f-C); session.list is still listed here until it is dropped as dead weight.
-    expect(Object.keys(overrides.operations)).toHaveLength(11);
+    // E10f-E: `session.list` was inert (catalog already supplied the response schema,
+    // merge-contract printed "catalog wins") -> deleted as dead weight, 11 -> 10.
+    expect(overrides.operations['session.list']).toBeUndefined();
+    expect(Object.keys(overrides.operations)).toHaveLength(10);
+    // Deleting the override must NOT remove the schema: the catalog is the fact source.
+    expect(schemaOf('session.list').properties.sessions.type).toBe('array');
+  });
+
+  test('E10f-E: note-board budget carries perNoteCap; recall.pinned budget does not', () => {
+    // memory.listSticky wire = { ...NOTE_BOARD_BUDGET, used } -> perNoteCap is required
+    // on both the 200 body and the 503 fail-open shell (same shape).
+    const stickyBudget = schemaOf('memory.listSticky').properties.budget;
+    expect([...stickyBudget.required].sort()).toEqual(['max', 'maxChars', 'perNoteCap', 'used']);
+
+    // recall.pinned renders <user-profile> from PINNED_BUDGET (20 entries / 2000 chars)
+    // and formatPinnedProfile does not truncate per note -> declaring perNoteCap there
+    // would make the schema reject the handler's own body. Documented deviation from
+    // the E10f-E brief; pinned identity text must stay whole.
+    const pinnedBudget = schemaOf('recall.pinned').properties.budget;
+    expect([...pinnedBudget.required].sort()).toEqual(['max', 'maxChars', 'used']);
+    expect(pinnedBudget.properties.perNoteCap).toBeUndefined();
+    expect(Value.Check(RecallPinnedResponse, {
+      profile: null, entries: [], budget: { max: 20, maxChars: 2000, used: 0 },
+    })).toBe(true);
   });
 
   test('pods.ensure reuses the pods.get detail shape; pods.memory.get is dual-shaped', () => {

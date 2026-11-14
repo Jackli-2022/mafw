@@ -13068,6 +13068,7 @@
                       "required": [
                         "max",
                         "maxChars",
+                        "perNoteCap",
                         "used"
                       ],
                       "properties": {
@@ -13075,6 +13076,9 @@
                           "type": "number"
                         },
                         "maxChars": {
+                          "type": "number"
+                        },
+                        "perNoteCap": {
                           "type": "number"
                         },
                         "used": {

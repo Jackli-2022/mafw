@@ -114,6 +114,9 @@ export interface StickyNote {
 export interface StickyNoteBudget {
   max: number
   maxChars: number
+  /** E10f-E: per-note truncation cap (anti-starvation). Wire is `{...NOTE_BOARD_BUDGET, used}`,
+   *  so `perNoteCap` is present on every `memory.listSticky` body (including the 503 shell). */
+  perNoteCap: number
   used: number
 }
 

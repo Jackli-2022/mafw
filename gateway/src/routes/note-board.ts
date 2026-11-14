@@ -8,9 +8,15 @@ export interface NoteBoardDeps {
 
 export { NOTE_BOARD_BUDGET };
 
-/** 空板预算（端点 503 / 降级兜底专用）——单一来源，避免与渲染预算漂移。 */
-export function emptyNoteBoardBudget(): { max: number; maxChars: number; used: number } {
-  return { max: NOTE_BOARD_BUDGET.max, maxChars: NOTE_BOARD_BUDGET.maxChars, used: 0 };
+/** 空板预算（端点 503 / 降级兜底专用）——单一来源，避免与渲染预算漂移。
+ *  E10f-E：`perNoteCap` 与 `max` / `maxChars` 同属 wire budget（缺它就与 200 体不同形）。 */
+export function emptyNoteBoardBudget(): { max: number; maxChars: number; perNoteCap: number; used: number } {
+  return {
+    max: NOTE_BOARD_BUDGET.max,
+    maxChars: NOTE_BOARD_BUDGET.maxChars,
+    perNoteCap: NOTE_BOARD_BUDGET.perNoteCap,
+    used: 0,
+  };
 }
 
 /**
@@ -23,7 +29,7 @@ export function emptyNoteBoardBudget(): { max: number; maxChars: number; used: n
 export async function handleNoteBoard(deps: NoteBoardDeps, now: Date = new Date()): Promise<{
   board: string | null;
   entries: Array<Pick<HarmonicUnit, 'id' | 'type' | 'primary_abstraction' | 'memory_value' | 'energy' | 'created_at' | 'sticky_until'>>;
-  budget: { max: number; maxChars: number; used: number };
+  budget: { max: number; maxChars: number; perNoteCap: number; used: number };
 }> {
   const { formatNoteBoard, NOTE_BOARD_BUDGET } = require('../recall/inject-format');
 
