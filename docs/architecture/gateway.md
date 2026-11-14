@@ -37,7 +37,7 @@
 - [E10d 契约覆盖第四批（2026-11-14）](#e10d-契约覆盖第四批2026-11-14)
 - [E10e 契约覆盖第五批（2026-11-14）](#e10e-契约覆盖第五批2026-11-14)
 - [E10f 全量读表面收口（2026-11-14）](#e10f-全量读表面收口2026-11-14)
-- [E10g 请求契约（进行中：P0 + W1 + W2/W3，2026-11-14）](#e10g-请求契约进行中p0--w1--w2w32026-11-14)
+- [E10g 请求契约（进行中：P0 + W1 + W2/W3 + W4，2026-11-14）](#e10g-请求契约进行中p0--w1--w2w3--w42026-11-14)
 - [API 端点](#api-端点)
 - [UI 服务](#ui-服务)
 - [数据流全景](#数据流全景)
@@ -1561,11 +1561,11 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 
 ---
 
-## E10g 请求契约（进行中：P0 + W1 + W2/W3，2026-11-14）
+## E10g 请求契约（进行中：P0 + W1 + W2/W3 + W4，2026-11-14）
 
 > 承接 E10f（响应 125/318）。E10g 给 **188 个写 op** 补请求契约；本篇记录 P0 管线、
-> 3 个 pilot、W1（session 写接口 35 个）与 W2/W3（tasks/terminal/background/fileHistory 8 个 +
-> pod 写接口 25 个）。
+> 3 个 pilot、W1（session 写接口 35 个）、W2/W3（tasks/terminal/background/fileHistory 8 个 +
+> pod 写接口 25 个）与 W4（goals/decisions/lead/standing/goalRuns 29 个）。
 > spec：`docs/superpowers/specs/2026-11-14-gateway-e10g-request-contracts-design.md`。
 
 - **`RouteDef` 新增三个声明位**：`request?: object`（TypeBox / JSON Schema，缺省 = 未建模）、
@@ -1607,7 +1607,30 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
     handler 里互斥（混用 400）；schema 全部 optional，不伪造 oneOf。
   - `pod.events.seenAll` 是 JSON body（`goalId` + `revision` 缺一 400），与 `pod.events.seen`
     的空 body 不同——以 handler 为事实源，没有按「seen 类一律空对象」硬套。
-- **残余**：其余 117 个写 op 按 W4-W7 分批推进；`REQUEST_EXCLUDED` 清单与收口覆盖测试在 E10g 收口波落地。
+- **W4（goals / decisions / lead / standing / goalRuns，29 个）**：schema 在
+  `routes/schemas/goal-write.ts`（11 个 op）、`decision-write.ts`（4）、`lead-write.ts`（7）、
+  `standing-write.ts`（6，复用 `schemas/standing.ts` 的 trigger/template/budget 子 schema）。
+  **10 个 JSON body + 6 个可选 body + 13 个空对象动作**。
+  - 空对象（`requestRequired:false`）只给 handler 不读 body 的动作：`goals.pause` / `resume` /
+    `stop`（pause/resume/stop/retry 共用一个 control handler，`runId` 只被 retry 使用）、
+    `goals.complete`（kernel `handleComplete` 忽略 `score`）、`lead.boundaries.accept` / `merge` /
+    `undo`（human-only 只看凭据）、`lead.topics.resume`（只读路径 id）、`standingGoals.pause` /
+    `resume` / `stop` / `run`、`goalRuns.approve`（`actorSessionID` 携带即 403，属禁止字段不声明）。
+  - 可选 body 的字段是补充信息/门禁：`goals.retry`（`runId` 缺省 = 最近失败 run）、
+    `goals.retryNode`（`confirm` 只在 execute 节点需要）、`goals.validate`（`projectDir` 只是提示）、
+    `decisions.confirm` / `reopen`（rationale / consequences / reviewAt / note）、
+    `lead.topics.fork`（`goalTitle`）。
+  - `goals.planApproval` 是批准/驳回联合体：`approve` + `feedback` 条件必填；`planHash` / `evalHash`
+    是内容绑定（不匹配 409 `stale_plan`），`approvalId` 必须等于 pending 记录 id。
+  - `goals.respondQuestion` 的 `type` 是闭集（answer/cancel），`answer` 在 answer 分支必填。
+  - `goals.control` 与 `goals.controlLegacy`（`POST /control` 兼容别名）共用同一个
+    `GoalControlRequest`（PAUSE/ABORT/FORCE_PHASE/RESET_PARAMETRIC）；handler 的历史 fail-open
+    （未知/缺失动作仍 200）不当作「任意 body」。
+  - `decisions.draft` 的 `kind` 八类闭集、`question`/`shelve.reviewAt` 条件必填由 service 400 事实源
+    决定；`projectDir` 一律 optional（handler `projectDirOf` 回退 env/cwd）。
+  - `standingGoals.create` 只有 `triggers` 必填（≥1；cron 需 schedule+timezone，event 需 eventKinds）；
+    `title` / `objective` / `projectDir` 由 handler/service 兜底；`update` 是 PATCH，全字段 optional。
+- **残余**：其余 88 个写 op 按 W5-W7 分批推进；`REQUEST_EXCLUDED` 清单与收口覆盖测试在 E10g 收口波落地。
 
 ---
 

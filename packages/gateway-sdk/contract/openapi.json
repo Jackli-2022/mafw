@@ -10285,6 +10285,38 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "approve": {
+                    "description": "true approves; false/absent rejects, and feedback is then required (handler 400).",
+                    "type": "boolean"
+                  },
+                  "feedback": {
+                    "description": "Rejection reason; required when approve is not true.",
+                    "type": "string"
+                  },
+                  "approvalId": {
+                    "description": "Must equal the pending approval id; missing/stale → 409.",
+                    "type": "string"
+                  },
+                  "planHash": {
+                    "description": "Declared plan-content hash; mismatch → 409 stale_plan.",
+                    "type": "string"
+                  },
+                  "evalHash": {
+                    "description": "Declared Goal Eval hash; mismatch → 409 stale_plan.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -11321,6 +11353,215 @@
         "tags": [
           "internal"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "kind",
+                  "question"
+                ],
+                "properties": {
+                  "projectDir": {
+                    "description": "Defaults to MAFW_PROJECT_DIR / cwd when absent (handler projectDirOf).",
+                    "type": "string"
+                  },
+                  "goalId": {
+                    "anyOf": [
+                      {
+                        "maxLength": 200,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "revision": {
+                    "anyOf": [
+                      {
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "kind": {
+                    "anyOf": [
+                      {
+                        "const": "direction",
+                        "type": "string"
+                      },
+                      {
+                        "const": "plan",
+                        "type": "string"
+                      },
+                      {
+                        "const": "scope",
+                        "type": "string"
+                      },
+                      {
+                        "const": "authorization",
+                        "type": "string"
+                      },
+                      {
+                        "const": "acceptance",
+                        "type": "string"
+                      },
+                      {
+                        "const": "priority",
+                        "type": "string"
+                      },
+                      {
+                        "const": "disposition",
+                        "type": "string"
+                      },
+                      {
+                        "const": "other",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "question": {
+                    "minLength": 1,
+                    "maxLength": 500,
+                    "type": "string"
+                  },
+                  "options": {
+                    "maxItems": 8,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "title"
+                      ],
+                      "properties": {
+                        "id": {
+                          "minLength": 1,
+                          "maxLength": 80,
+                          "type": "string"
+                        },
+                        "title": {
+                          "minLength": 1,
+                          "maxLength": 200,
+                          "type": "string"
+                        },
+                        "summary": {
+                          "maxLength": 4000,
+                          "type": "string"
+                        },
+                        "risks": {
+                          "type": "array",
+                          "items": {
+                            "minLength": 1,
+                            "maxLength": 300,
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "evidence": {
+                    "maxItems": 12,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "ref"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "anyOf": [
+                            {
+                              "const": "message",
+                              "type": "string"
+                            },
+                            {
+                              "const": "file",
+                              "type": "string"
+                            },
+                            {
+                              "const": "change",
+                              "type": "string"
+                            },
+                            {
+                              "const": "review_item",
+                              "type": "string"
+                            },
+                            {
+                              "const": "goal",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "ref": {
+                          "minLength": 1,
+                          "maxLength": 1000,
+                          "type": "string"
+                        },
+                        "label": {
+                          "maxLength": 200,
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "rationale": {
+                    "anyOf": [
+                      {
+                        "maxLength": 4000,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "consequences": {
+                    "anyOf": [
+                      {
+                        "maxLength": 4000,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reviewAt": {
+                    "description": "ISO date for the review reminder; invalid dates are 400.",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "source": {
+                    "anyOf": [
+                      {
+                        "const": "agent",
+                        "type": "string"
+                      },
+                      {
+                        "const": "user",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -11344,6 +11585,55 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "projectDir": {
+                    "description": "Defaults to MAFW_PROJECT_DIR / cwd when absent (handler projectDirOf).",
+                    "type": "string"
+                  },
+                  "rationale": {
+                    "anyOf": [
+                      {
+                        "maxLength": 4000,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "consequences": {
+                    "anyOf": [
+                      {
+                        "maxLength": 4000,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reviewAt": {
+                    "description": "ISO date; null keeps the draft value.",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -11367,6 +11657,33 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "reviewAt"
+                ],
+                "properties": {
+                  "projectDir": {
+                    "description": "Defaults to MAFW_PROJECT_DIR / cwd when absent (handler projectDirOf).",
+                    "type": "string"
+                  },
+                  "reviewAt": {
+                    "description": "Required ISO date (when the shelved record resurfaces).",
+                    "type": "string"
+                  },
+                  "note": {
+                    "maxLength": 4000,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -11390,6 +11707,26 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "projectDir": {
+                    "description": "Defaults to MAFW_PROJECT_DIR / cwd when absent (handler projectDirOf).",
+                    "type": "string"
+                  },
+                  "note": {
+                    "maxLength": 4000,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -11485,6 +11822,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -11508,6 +11856,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -11531,6 +11890,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -11554,6 +11924,23 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "runId": {
+                    "minimum": 1,
+                    "description": "Failed node run to replay; absent = latest failed run in the active revision.",
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -11719,6 +12106,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -11750,6 +12148,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -11781,6 +12190,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -11794,6 +12214,26 @@
         "tags": [
           "internal"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "sessionID": {
+                    "description": "Lead session id; absent/blank → proposed:false.",
+                    "type": "string"
+                  },
+                  "text": {
+                    "description": "Utterance to observe; absent/blank → proposed:false.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -12749,6 +13189,186 @@
         "tags": [
           "standing"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "triggers"
+                ],
+                "properties": {
+                  "projectDir": {
+                    "description": "Absolute path; absent falls back to MAFW_PROJECT_DIR / cwd (handler projectDirOf).",
+                    "type": "string"
+                  },
+                  "title": {
+                    "description": "Defaults to \"Standing Goal\" (service).",
+                    "type": "string"
+                  },
+                  "objective": {
+                    "description": "Defaults to title (service).",
+                    "type": "string"
+                  },
+                  "triggers": {
+                    "minItems": 1,
+                    "description": "At least one trigger; parseStandingTriggers 400s on empty arrays or unknown types.",
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "type"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "anyOf": [
+                            {
+                              "const": "cron",
+                              "type": "string"
+                            },
+                            {
+                              "const": "event",
+                              "type": "string"
+                            },
+                            {
+                              "const": "manual",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "schedule": {
+                          "type": "string"
+                        },
+                        "timezone": {
+                          "type": "string"
+                        },
+                        "eventKinds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "filter": {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(.*)$": {}
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "template": {
+                    "type": "object",
+                    "properties": {
+                      "taskType": {
+                        "anyOf": [
+                          {
+                            "const": "feature",
+                            "type": "string"
+                          },
+                          {
+                            "const": "bug",
+                            "type": "string"
+                          },
+                          {
+                            "const": "research",
+                            "type": "string"
+                          },
+                          {
+                            "const": "refactor",
+                            "type": "string"
+                          },
+                          {
+                            "const": "ops",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "acceptance": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "boundaries": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "planReview": {
+                        "anyOf": [
+                          {
+                            "const": "auto",
+                            "type": "string"
+                          },
+                          {
+                            "const": "manual",
+                            "type": "string"
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "concurrency": {
+                    "minimum": 1,
+                    "description": "Clamped/validated by the service (>= 1).",
+                    "type": "number"
+                  },
+                  "cooldownMs": {
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "budget": {
+                    "type": "object",
+                    "properties": {
+                      "perRunTurns": {
+                        "type": "number"
+                      },
+                      "perRunCostUsd": {
+                        "type": "number"
+                      },
+                      "perDayCostUsd": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "approval": {
+                    "anyOf": [
+                      {
+                        "const": "auto",
+                        "type": "string"
+                      },
+                      {
+                        "const": "plan",
+                        "type": "string"
+                      },
+                      {
+                        "const": "confirm",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "createdBy": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -12772,6 +13392,165 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "objective": {
+                    "type": "string"
+                  },
+                  "template": {
+                    "type": "object",
+                    "properties": {
+                      "taskType": {
+                        "anyOf": [
+                          {
+                            "const": "feature",
+                            "type": "string"
+                          },
+                          {
+                            "const": "bug",
+                            "type": "string"
+                          },
+                          {
+                            "const": "research",
+                            "type": "string"
+                          },
+                          {
+                            "const": "refactor",
+                            "type": "string"
+                          },
+                          {
+                            "const": "ops",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "acceptance": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "boundaries": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "planReview": {
+                        "anyOf": [
+                          {
+                            "const": "auto",
+                            "type": "string"
+                          },
+                          {
+                            "const": "manual",
+                            "type": "string"
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "triggers": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "type"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "anyOf": [
+                            {
+                              "const": "cron",
+                              "type": "string"
+                            },
+                            {
+                              "const": "event",
+                              "type": "string"
+                            },
+                            {
+                              "const": "manual",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "schedule": {
+                          "type": "string"
+                        },
+                        "timezone": {
+                          "type": "string"
+                        },
+                        "eventKinds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "filter": {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(.*)$": {}
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "concurrency": {
+                    "minimum": 1,
+                    "type": "number"
+                  },
+                  "cooldownMs": {
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "budget": {
+                    "type": "object",
+                    "properties": {
+                      "perRunTurns": {
+                        "type": "number"
+                      },
+                      "perRunCostUsd": {
+                        "type": "number"
+                      },
+                      "perDayCostUsd": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "approval": {
+                    "anyOf": [
+                      {
+                        "const": "auto",
+                        "type": "string"
+                      },
+                      {
+                        "const": "plan",
+                        "type": "string"
+                      },
+                      {
+                        "const": "confirm",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -13035,6 +13814,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -13058,6 +13848,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -13081,6 +13882,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -13104,6 +13916,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -13127,6 +13950,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -13562,6 +14396,25 @@
         "tags": [
           "lead"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "topicId"
+                ],
+                "properties": {
+                  "topicId": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -13585,6 +14438,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -13608,6 +14472,22 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "goalTitle": {
+                    "description": "Goal title for the forked topic; blank = derived default.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -13639,6 +14519,22 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "confirm": {
+                    "description": "Required (true) when the node is execute; other nodes can retry without a body.",
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -13670,6 +14566,38 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "type"
+                ],
+                "properties": {
+                  "type": {
+                    "description": "cancel abandons the question; answer (or any other value) forwards `answer` to the driver.",
+                    "anyOf": [
+                      {
+                        "const": "answer",
+                        "type": "string"
+                      },
+                      {
+                        "const": "cancel",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "answer": {
+                    "description": "Required when type is answer.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -13695,6 +14623,22 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "projectDir": {
+                    "description": "Project hint for goal start; absent = resolve from the goal row.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -13708,6 +14652,49 @@
         "tags": [
           "goals"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "action"
+                ],
+                "properties": {
+                  "action": {
+                    "anyOf": [
+                      {
+                        "const": "PAUSE",
+                        "type": "string"
+                      },
+                      {
+                        "const": "ABORT",
+                        "type": "string"
+                      },
+                      {
+                        "const": "FORCE_PHASE",
+                        "type": "string"
+                      },
+                      {
+                        "const": "RESET_PARAMETRIC",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "goalId": {
+                    "description": "Target goal; not read for RESET_PARAMETRIC.",
+                    "type": "string"
+                  },
+                  "targetPhase": {
+                    "description": "Only FORCE_PHASE: next phase name (upper-cased by the handler).",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -29453,6 +30440,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -29467,6 +30465,49 @@
           "internal"
         ],
         "summary": "MCP 兼容别名，与 /api/goals/control 同 handler",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "action"
+                ],
+                "properties": {
+                  "action": {
+                    "anyOf": [
+                      {
+                        "const": "PAUSE",
+                        "type": "string"
+                      },
+                      {
+                        "const": "ABORT",
+                        "type": "string"
+                      },
+                      {
+                        "const": "FORCE_PHASE",
+                        "type": "string"
+                      },
+                      {
+                        "const": "RESET_PARAMETRIC",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "goalId": {
+                    "description": "Target goal; not read for RESET_PARAMETRIC.",
+                    "type": "string"
+                  },
+                  "targetPhase": {
+                    "description": "Only FORCE_PHASE: next phase name (upper-cased by the handler).",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"

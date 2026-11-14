@@ -8624,7 +8624,22 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description true approves; false/absent rejects, and feedback is then required (handler 400). */
+                    approve?: boolean;
+                    /** @description Rejection reason; required when approve is not true. */
+                    feedback?: string;
+                    /** @description Must equal the pending approval id; missing/stale → 409. */
+                    approvalId?: string;
+                    /** @description Declared plan-content hash; mismatch → 409 stale_plan. */
+                    planHash?: string;
+                    /** @description Declared Goal Eval hash; mismatch → 409 stale_plan. */
+                    evalHash?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8903,7 +8918,34 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Defaults to MAFW_PROJECT_DIR / cwd when absent (handler projectDirOf). */
+                    projectDir?: string;
+                    goalId?: string | null;
+                    revision?: number | null;
+                    kind: "direction" | "plan" | "scope" | "authorization" | "acceptance" | "priority" | "disposition" | "other";
+                    question: string;
+                    options?: {
+                        id: string;
+                        title: string;
+                        summary?: string;
+                        risks?: string[];
+                    }[];
+                    evidence?: {
+                        kind: "message" | "file" | "change" | "review_item" | "goal";
+                        ref: string;
+                        label?: string;
+                    }[];
+                    rationale?: string | null;
+                    consequences?: string | null;
+                    /** @description ISO date for the review reminder; invalid dates are 400. */
+                    reviewAt?: string | null;
+                    source?: "agent" | "user";
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8923,7 +8965,18 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Defaults to MAFW_PROJECT_DIR / cwd when absent (handler projectDirOf). */
+                    projectDir?: string;
+                    rationale?: string | null;
+                    consequences?: string | null;
+                    /** @description ISO date; null keeps the draft value. */
+                    reviewAt?: string | null;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8943,7 +8996,17 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Defaults to MAFW_PROJECT_DIR / cwd when absent (handler projectDirOf). */
+                    projectDir?: string;
+                    /** @description Required ISO date (when the shelved record resurfaces). */
+                    reviewAt: string;
+                    note?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8963,7 +9026,15 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Defaults to MAFW_PROJECT_DIR / cwd when absent (handler projectDirOf). */
+                    projectDir?: string;
+                    note?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9013,7 +9084,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9033,7 +9108,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9053,7 +9132,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9073,7 +9156,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Failed node run to replay; absent = latest failed run in the active revision. */
+                    runId?: number;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9129,7 +9219,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9150,7 +9244,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9171,7 +9269,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9189,7 +9291,16 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Lead session id; absent/blank → proposed:false. */
+                    sessionID?: string;
+                    /** @description Utterance to observe; absent/blank → proposed:false. */
+                    text?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9550,7 +9661,45 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Absolute path; absent falls back to MAFW_PROJECT_DIR / cwd (handler projectDirOf). */
+                    projectDir?: string;
+                    /** @description Defaults to "Standing Goal" (service). */
+                    title?: string;
+                    /** @description Defaults to title (service). */
+                    objective?: string;
+                    /** @description At least one trigger; parseStandingTriggers 400s on empty arrays or unknown types. */
+                    triggers: {
+                        id: string;
+                        type: "cron" | "event" | "manual";
+                        schedule?: string;
+                        timezone?: string;
+                        eventKinds?: string[];
+                        filter?: {
+                            [key: string]: unknown;
+                        };
+                    }[];
+                    template?: {
+                        taskType?: "feature" | "bug" | "research" | "refactor" | "ops";
+                        acceptance?: string[];
+                        boundaries?: string[];
+                        planReview?: "auto" | "manual";
+                    };
+                    /** @description Clamped/validated by the service (>= 1). */
+                    concurrency?: number;
+                    cooldownMs?: number;
+                    budget?: {
+                        perRunTurns?: number;
+                        perRunCostUsd?: number;
+                        perDayCostUsd?: number;
+                    };
+                    approval?: "auto" | "plan" | "confirm";
+                    createdBy?: string | null;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9570,7 +9719,38 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    title?: string;
+                    objective?: string;
+                    template?: {
+                        taskType?: "feature" | "bug" | "research" | "refactor" | "ops";
+                        acceptance?: string[];
+                        boundaries?: string[];
+                        planReview?: "auto" | "manual";
+                    };
+                    triggers?: {
+                        id: string;
+                        type: "cron" | "event" | "manual";
+                        schedule?: string;
+                        timezone?: string;
+                        eventKinds?: string[];
+                        filter?: {
+                            [key: string]: unknown;
+                        };
+                    }[];
+                    concurrency?: number;
+                    cooldownMs?: number;
+                    budget?: {
+                        perRunTurns?: number;
+                        perRunCostUsd?: number;
+                        perDayCostUsd?: number;
+                    };
+                    approval?: "auto" | "plan" | "confirm";
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9635,7 +9815,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9655,7 +9839,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9675,7 +9863,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9695,7 +9887,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9715,7 +9911,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9865,7 +10065,13 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    topicId: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9885,7 +10091,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9905,7 +10115,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Goal title for the forked topic; blank = derived default. */
+                    goalTitle?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9926,7 +10143,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Required (true) when the node is execute; other nodes can retry without a body. */
+                    confirm?: boolean;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9947,7 +10171,16 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description cancel abandons the question; answer (or any other value) forwards `answer` to the driver. */
+                    type: "answer" | "cancel";
+                    /** @description Required when type is answer. */
+                    answer?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9967,7 +10200,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Project hint for goal start; absent = resolve from the goal row. */
+                    projectDir?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9985,7 +10225,17 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    action: "PAUSE" | "ABORT" | "FORCE_PHASE" | "RESET_PARAMETRIC";
+                    /** @description Target goal; not read for RESET_PARAMETRIC. */
+                    goalId?: string;
+                    /** @description Only FORCE_PHASE: next phase name (upper-cased by the handler). */
+                    targetPhase?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -14245,7 +14495,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -14263,7 +14517,17 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    action: "PAUSE" | "ABORT" | "FORCE_PHASE" | "RESET_PARAMETRIC";
+                    /** @description Target goal; not read for RESET_PARAMETRIC. */
+                    goalId?: string;
+                    /** @description Only FORCE_PHASE: next phase name (upper-cased by the handler). */
+                    targetPhase?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {

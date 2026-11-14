@@ -313,6 +313,83 @@ const E10G_W2W3_OPTIONAL_OPS = [
   'terminal.connectTicket',
 ];
 
+/**
+ * E10g-W4：goals / decisions / lead / standing / goalRuns（29 个）。
+ * P0 3 + W1 35 + W2W3 33 + 这 29 = 100。后续 W5-W7 只会追加，因此总数断言是下界（`>= 100`）。
+ */
+const E10G_W4_REQUEST_OPS = [
+  // goals
+  'goals.planApproval',
+  'goals.pause',
+  'goals.resume',
+  'goals.stop',
+  'goals.retry',
+  'goals.retryNode',
+  'goals.respondQuestion',
+  'goals.validate',
+  'goals.control',
+  'goals.controlLegacy',
+  'goals.complete',
+  // decisions
+  'decisions.draft',
+  'decisions.confirm',
+  'decisions.shelve',
+  'decisions.reopen',
+  // lead
+  'lead.boundaries.accept',
+  'lead.boundaries.merge',
+  'lead.boundaries.undo',
+  'lead.boundaries.observe',
+  'lead.compact',
+  'lead.topics.resume',
+  'lead.topics.fork',
+  // standing + goal run
+  'standingGoals.create',
+  'standingGoals.update',
+  'standingGoals.pause',
+  'standingGoals.resume',
+  'standingGoals.stop',
+  'standingGoals.run',
+  'goalRuns.approve',
+];
+
+/**
+ * W4 的「body 被完全忽略」动作（空对象 + `requestRequired:false`）：
+ * goals pause/resume/stop（control handler 只把 runId 给 retry）与 complete
+ * （kernel 的 handleComplete 不读 score）、lead boundaries accept/merge/undo
+ * （human-only 门只看凭据）、lead.topics.resume（只读路径 id）、standing 生命周期
+ * 4 个 + goalRuns.approve（actorSessionID 是禁止字段，不声明）。
+ */
+const E10G_W4_EMPTY_OPS = [
+  'goals.pause',
+  'goals.resume',
+  'goals.stop',
+  'goals.complete',
+  'lead.boundaries.accept',
+  'lead.boundaries.merge',
+  'lead.boundaries.undo',
+  'lead.topics.resume',
+  'standingGoals.pause',
+  'standingGoals.resume',
+  'standingGoals.stop',
+  'standingGoals.run',
+  'goalRuns.approve',
+];
+
+/**
+ * W4 的「body 可缺省但有字段」动作（`requestRequired:false` + 非空 properties）：
+ * 字段只是补充信息/门禁（retry 的 runId、retryNode 的 confirm、validate 的
+ * projectDir、decision confirm/reopen 的说明、fork 的 goalTitle）。
+ */
+const E10G_W4_OPTIONAL_OPS = [
+  'goals.retry',
+  'goals.retryNode',
+  'goals.validate',
+  'decisions.confirm',
+  'decisions.reopen',
+  'lead.topics.fork',
+];
+
 function catalogById(): Map<string, { hasRequest: boolean; request?: object; requestRequired?: boolean }> {
   return new Map(
     buildRouteCatalog().map((def) => [
@@ -408,13 +485,13 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
   });
 
   // E10g-W1: session writes. Pinned per-op so a dropped `request:` fails by name,
-  // and as a floor (>= 71 through W2/W3) so the count can only grow with W4-W7.
-  it('every W1 session write op declares a request schema (catalog requests >= 71)', () => {
+  // and as a floor (>= 100 through W4) so the count can only grow with W5-W7.
+  it('every W1 session write op declares a request schema (catalog requests >= 100)', () => {
     const byId = catalogById();
     const missing = E10G_W1_REQUEST_OPS.filter((id) => !byId.get(id)?.hasRequest);
     expect(missing).toEqual([]);
     const requests = catalogWriteOps().filter((op) => op.hasRequest).map((op) => op.operationId);
-    expect(requests.length).toBeGreaterThanOrEqual(71);
+    expect(requests.length).toBeGreaterThanOrEqual(100);
     expect(requests).toEqual(expect.arrayContaining([...E10G_P0_REQUEST_OPS, ...E10G_W1_REQUEST_OPS]));
   });
 
@@ -435,13 +512,13 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
   });
 
   // E10g-W2/W3: tasks/terminal/background/fileHistory + pods. Same shape as W1:
-  // pinned per-op by name, count floor at 71 (P0 3 + W1 35 + W2W3 33).
-  it('every W2/W3 write op declares a request schema (catalog requests >= 71)', () => {
+  // pinned per-op by name, count floor at 100 (P0 3 + W1 35 + W2W3 33 + W4 29).
+  it('every W2/W3 write op declares a request schema (catalog requests >= 100)', () => {
     const byId = catalogById();
     const missing = E10G_W2W3_REQUEST_OPS.filter((id) => !byId.get(id)?.hasRequest);
     expect(missing).toEqual([]);
     const requests = catalogWriteOps().filter((op) => op.hasRequest).map((op) => op.operationId);
-    expect(requests.length).toBeGreaterThanOrEqual(71);
+    expect(requests.length).toBeGreaterThanOrEqual(100);
     expect(requests).toEqual(expect.arrayContaining([
       ...E10G_P0_REQUEST_OPS,
       ...E10G_W1_REQUEST_OPS,
@@ -478,5 +555,52 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     }
     expect(problems).toEqual([]);
     expect(E10G_W2W3_OPTIONAL_OPS.filter((id) => !E10G_W2W3_REQUEST_OPS.includes(id))).toEqual([]);
+  });
+
+  // E10g-W4: goals / decisions / lead / standing / goalRuns writes. Same shape as
+  // W1/W2W3: pinned per-op by name, count floor at 100.
+  it('every W4 goal/decision/lead/standing write op declares a request schema (catalog requests >= 100)', () => {
+    const byId = catalogById();
+    const missing = E10G_W4_REQUEST_OPS.filter((id) => !byId.get(id)?.hasRequest);
+    expect(missing).toEqual([]);
+    const requests = catalogWriteOps().filter((op) => op.hasRequest).map((op) => op.operationId);
+    expect(requests.length).toBeGreaterThanOrEqual(100);
+    expect(requests).toEqual(expect.arrayContaining([
+      ...E10G_P0_REQUEST_OPS,
+      ...E10G_W1_REQUEST_OPS,
+      ...E10G_W2W3_REQUEST_OPS,
+      ...E10G_W4_REQUEST_OPS,
+    ]));
+    // No duplicate ids across batches (a typo would hide here otherwise).
+    expect(new Set(E10G_W4_REQUEST_OPS).size).toBe(E10G_W4_REQUEST_OPS.length);
+  });
+
+  it('W4 body-ignored actions use an empty object schema with requestRequired:false', () => {
+    const byId = catalogById();
+    const problems: string[] = [];
+    for (const id of E10G_W4_EMPTY_OPS) {
+      const def = byId.get(id);
+      if (!def?.hasRequest) { problems.push(`${id}: missing request`); continue; }
+      if (def.requestRequired !== false) problems.push(`${id}: requestRequired must be false`);
+      const props = (def.request as { properties?: Record<string, unknown> }).properties ?? {};
+      if (Object.keys(props).length !== 0) problems.push(`${id}: expected empty object, got ${Object.keys(props).join(',')}`);
+    }
+    expect(problems).toEqual([]);
+    expect(E10G_W4_EMPTY_OPS.filter((id) => !E10G_W4_REQUEST_OPS.includes(id))).toEqual([]);
+    expect(E10G_W4_EMPTY_OPS.filter((id) => E10G_W4_OPTIONAL_OPS.includes(id))).toEqual([]);
+  });
+
+  it('W4 optional-body actions declare fields but requestRequired:false', () => {
+    const byId = catalogById();
+    const problems: string[] = [];
+    for (const id of E10G_W4_OPTIONAL_OPS) {
+      const def = byId.get(id);
+      if (!def?.hasRequest) { problems.push(`${id}: missing request`); continue; }
+      if (def.requestRequired !== false) problems.push(`${id}: requestRequired must be false`);
+      const props = (def.request as { properties?: Record<string, unknown> }).properties ?? {};
+      if (Object.keys(props).length === 0) problems.push(`${id}: expected declared fields, got empty object`);
+    }
+    expect(problems).toEqual([]);
+    expect(E10G_W4_OPTIONAL_OPS.filter((id) => !E10G_W4_REQUEST_OPS.includes(id))).toEqual([]);
   });
 });

@@ -3721,7 +3721,7 @@ describe('api-contract: E10g request bodies (W1 session writes)', () => {
     return body;
   }
 
-  test('write ops with a requestBody count matches the coverage ledger (71 = P0 3 + W1 35 + W2W3 33)', () => {
+  test('write ops with a requestBody count matches the coverage ledger (100 = P0 3 + W1 35 + W2W3 33 + W4 29)', () => {
     const withBody: string[] = [];
     for (const methods of Object.values<any>(contract.paths)) {
       for (const [method, op] of Object.entries<any>(methods)) {
@@ -3729,13 +3729,15 @@ describe('api-contract: E10g request bodies (W1 session writes)', () => {
         if (op.requestBody) withBody.push(op.operationId);
       }
     }
-    expect(withBody).toHaveLength(71);
+    expect(withBody).toHaveLength(100);
     expect(withBody).toEqual(expect.arrayContaining([
       'session.create', 'tasks.submit', 'pods.tasks.create',
       'session.config.set', 'session.promptAsync', 'structured.submit',
       'tasks.message', 'terminal.create', 'fileHistory.snapshot',
       'pods.update', 'pods.messages.create', 'pods.goals.accept',
       'pod.events.seenAll',
+      'goals.planApproval', 'decisions.draft', 'standingGoals.create',
+      'lead.compact', 'goals.control', 'goalRuns.approve',
     ]));
   });
 
@@ -3943,6 +3945,134 @@ describe('api-contract: E10g request bodies (W2/W3 tasks, terminal, pods)', () =
       const body = bodyOf(id);
       expect(`${id}:${body.required}`).toBe(`${id}:false`);
       expect(Object.keys(body.content['application/json'].schema.properties).length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('api-contract: E10g request bodies (W4 goals, decisions, lead, standing)', () => {
+  function bodyOf(operationId: string): any {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const op of Object.values<any>(methods)) {
+        if (op?.operationId === operationId) {
+          expect(`${operationId}:requestBody`).toBe(`${operationId}:${op.requestBody ? 'requestBody' : 'missing'}`);
+          return op.requestBody;
+        }
+      }
+    }
+    throw new Error(`operation not found: ${operationId}`);
+  }
+
+  function schemaOf(operationId: string): any {
+    return bodyOf(operationId).content['application/json'].schema;
+  }
+
+  test('goals.planApproval: approver envelope, feedback is the reject anchor', () => {
+    const body = bodyOf('goals.planApproval');
+    expect(body.required).toBe(true);
+    const schema = body.content['application/json'].schema;
+    // Every field is conditional: approve+hashes for approve, feedback for reject.
+    expect(schema.required).toBeUndefined();
+    expect(schema.properties.approve.type).toBe('boolean');
+    expect(schema.properties.feedback.description).toContain('approve is not true');
+    expect(schema.properties.approvalId.description).toContain('409');
+    expect(schema.properties.planHash.description).toContain('stale_plan');
+  });
+
+  test('goals.retryNode / goals.retry: optional-body gates project to required:false', () => {
+    const retryNode = bodyOf('goals.retryNode');
+    expect(retryNode.required).toBe(false);
+    expect(retryNode.content['application/json'].schema.properties.confirm.description)
+      .toContain('execute');
+    const retry = bodyOf('goals.retry');
+    expect(retry.required).toBe(false);
+    expect(retry.content['application/json'].schema.properties.runId.minimum).toBe(1);
+    expect(bodyOf('goals.validate').required).toBe(false);
+  });
+
+  test('goals.respondQuestion / goals.control: closed discriminators', () => {
+    const question = schemaOf('goals.respondQuestion');
+    expect(question.required).toEqual(['type']);
+    expect(question.properties.type.anyOf.map((v: any) => v.const)).toEqual(['answer', 'cancel']);
+    expect(question.properties.answer.description).toContain('type is answer');
+
+    const control = schemaOf('goals.control');
+    expect(control.required).toEqual(['action']);
+    expect(control.properties.action.anyOf.map((v: any) => v.const))
+      .toEqual(['PAUSE', 'ABORT', 'FORCE_PHASE', 'RESET_PARAMETRIC']);
+    expect(control.properties.goalId.description).toContain('RESET_PARAMETRIC');
+    // Legacy alias /control shares the same request contract.
+    expect(schemaOf('goals.controlLegacy')).toEqual(control);
+  });
+
+  test('decisions: draft/shelve anchor required fields; confirm/reopen are optional bodies', () => {
+    const draft = bodyOf('decisions.draft');
+    expect(draft.required).toBe(true);
+    const draftSchema = draft.content['application/json'].schema;
+    expect(draftSchema.required).toEqual(['kind', 'question']);
+    expect(draftSchema.properties.question.maxLength).toBe(500);
+    expect(draftSchema.properties.kind.anyOf).toHaveLength(8);
+    expect(draftSchema.properties.options.maxItems).toBe(8);
+    expect(draftSchema.properties.evidence.maxItems).toBe(12);
+    // projectDir falls back to MAFW_PROJECT_DIR / cwd, so it is never required.
+    expect(draftSchema.required).not.toContain('projectDir');
+
+    expect(schemaOf('decisions.shelve').required).toEqual(['reviewAt']);
+    for (const id of ['decisions.confirm', 'decisions.reopen']) {
+      const body = bodyOf(id);
+      expect(`${id}:${body.required}`).toBe(`${id}:false`);
+      expect(Object.keys(body.content['application/json'].schema.properties).length).toBeGreaterThan(0);
+    }
+  });
+
+  test('lead.compact requires topicId; fork goalTitle is optional metadata', () => {
+    expect(schemaOf('lead.compact').required).toEqual(['topicId']);
+    const fork = bodyOf('lead.topics.fork');
+    expect(fork.required).toBe(false);
+    expect(fork.content['application/json'].schema.required).toBeUndefined();
+    expect(fork.content['application/json'].schema.properties.goalTitle).toBeDefined();
+    // observe body is the input carrier (fields stay optional: blank → proposed:false).
+    const observe = bodyOf('lead.boundaries.observe');
+    expect(observe.required).toBe(true);
+    expect(observe.content['application/json'].schema.required).toBeUndefined();
+  });
+
+  test('standingGoals.create anchors triggers; update is an all-optional PATCH', () => {
+    const create = bodyOf('standingGoals.create');
+    expect(create.required).toBe(true);
+    const createSchema = create.content['application/json'].schema;
+    expect(createSchema.required).toEqual(['triggers']);
+    expect(createSchema.properties.triggers.minItems).toBe(1);
+    expect(createSchema.properties.triggers.items.required).toEqual(['id', 'type']);
+    expect(createSchema.properties.approval.anyOf.map((v: any) => v.const))
+      .toEqual(['auto', 'plan', 'confirm']);
+    expect(createSchema.properties.concurrency.minimum).toBe(1);
+
+    const update = schemaOf('standingGoals.update');
+    expect(update.required).toBeUndefined();
+    expect(Object.keys(update.properties).sort()).toEqual([
+      'approval', 'budget', 'concurrency', 'cooldownMs', 'objective', 'template', 'title', 'triggers',
+    ]);
+  });
+
+  test('W4 body-ignored actions project to required:false with an empty object', () => {
+    for (const id of [
+      'goals.pause',
+      'goals.resume',
+      'goals.stop',
+      'goals.complete',
+      'lead.boundaries.accept',
+      'lead.boundaries.merge',
+      'lead.boundaries.undo',
+      'lead.topics.resume',
+      'standingGoals.pause',
+      'standingGoals.resume',
+      'standingGoals.stop',
+      'standingGoals.run',
+      'goalRuns.approve',
+    ]) {
+      const body = bodyOf(id);
+      expect(`${id}:${body.required}`).toBe(`${id}:false`);
+      expect(Object.keys(body.content['application/json'].schema.properties ?? {})).toEqual([]);
     }
   });
 });
