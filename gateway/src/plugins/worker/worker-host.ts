@@ -71,6 +71,7 @@ export class WorkerHost {
   private inflight = new Map<string, PendingInvoke>();
   private queue: Array<() => void> = [];
   private restarts = 0;
+  private lastStderr = '';
   private ledgerId: string;
 
   constructor(private readonly options: WorkerHostOptions) {
@@ -231,7 +232,9 @@ export class WorkerHost {
       this.options.logger.info(`[plugin:${this.options.name}] ${String(chunk).trimEnd()}`);
     });
     child.stderr?.on('data', (chunk) => {
-      this.options.logger.warn(`[plugin:${this.options.name}] ${String(chunk).trimEnd()}`);
+      const text = String(chunk).trimEnd();
+      this.lastStderr = `${this.lastStderr}\n${text}`.trim().slice(-2000);
+      this.options.logger.warn(`[plugin:${this.options.name}] ${text}`);
     });
   }
 
@@ -301,9 +304,10 @@ export class WorkerHost {
   private fail(reason: string): void {
     if (this.state === 'failed') return;
     this.state = 'failed';
+    const detail = this.lastStderr ? `${reason}: ${this.lastStderr}` : reason;
     this.options.ledger?.markFailed(this.ledgerId, reason);
-    this.rejectAll(new Error(`worker_crashed: ${reason}`));
-    this.readyReject?.(new Error(`worker_crashed: ${reason}`));
+    this.rejectAll(new Error(`worker_crashed: ${detail}`));
+    this.readyReject?.(new Error(`worker_crashed: ${detail}`));
     this.readyResolve = undefined;
     this.readyReject = undefined;
     this.options.onCrash?.({
