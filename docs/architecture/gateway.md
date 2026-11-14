@@ -1941,6 +1941,46 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
   编译期等价（decision ×4、lead compact/resume/fork、standing goal ×5、run ×2）。
   生成物 diff 恰好这 31 个 op（重跑幂等）。
 
+### E10h-R4（event / automation / approvals / questions / triage / permissions 写响应 24 个）
+
+- 覆盖写响应 104 → **128/195**，total response 台账 230 → **254/327**（77.7%）。catalog 的
+  24 个 entry 只加 `response:`，请求契约与 handler 零改动。
+- 五个新文件按域拆：`routes/schemas/event-write-responses.ts`（7）、
+  `automation-write-responses.ts`（3）、`approval-write-responses.ts`（3：approvals +
+  questions）、`triage-write-responses.ts`（4）、`permission-write-responses.ts`（7）。
+  `schemas/events.ts` 的 `EventSourceViewSchema` / `EventSubscriptionRowSchema` 与
+  `schemas/human-gate.ts` 的 `AllowlistEntrySchema` / `PermissionRuleSchema` 加 `export`
+  （无 wire 变化），写响应复用而不是二次转写。
+- 复用读侧 DTO / 共享信封：`events.sources.create` ≡ `events.sources.list` item（同一个
+  `sourceView()`）；`events.threads.subscriptions.create` ≡ 订阅列表 item（store 行本体，
+  含 `threadId`/`expiresAt`/`droppedAt`）；`permissions.setMode` ≡ `permissions.getMode`
+  （`PermissionModeResponse`，写入路径 `autoApprovals` 恒 0）。`{ok:true}` 复用 R1 的
+  `OkResponse`（`event.publish` / `events.sources.patch` / `events.subscriptions.delete`），
+  `{status:'ok'}` 复用 `StatusOkResponse`（`questions.reply|reject`、`permissions.reply`）。
+- 本批的 200 大量是「未命中也是 200」，status 必须是联合而不是字面量：
+  `automations.toggle` `{status:'toggled'|'not_found', enabled}`、`automations.remove`
+  `{status:'deleted'|'not_found'}`、`triage.dismiss` / `triage.reject`
+  `{status:'dismissed'|'rejected'|'not_found'}`。同理 `automations.draft`
+  `{id,valid,errors}` 覆盖 `valid:false`（规则未落盘），`triage.propose`
+  `{success:boolean,message}` 覆盖 `success:false`（条目不存在/已处理）。
+- `triage.confirm` 是三条成功分支的判别联合：skill 物化 `{status:'confirmed',installed}`
+  （`installSkillDraft` 返回 skill 名）、公理草稿 `{…,axioms}`（commit 成功条数）、
+  默认 `{…,goalId}`——不把三键设成 optional，避免合法化 handler 不会发的组合。
+- `approvals.respond` `{status:'ok', decision:'approve'|'reject'|'answered'}`：`decision`
+  是归一化回显（文本回答 → `answered`）。`events.threads.close`
+  `{closed:boolean,handedBack,dropped}`：唯一实现恒 `closed:true`，但路由端口类型与
+  SDK `events.closeThread` 都声明 boolean，按端口/DTO 走。
+- `permissions.reply` 与 `permissions.replyRuntime` **刻意不同形**（`{status:'ok'}` vs
+  `{success:true}`）：两个 handler 事实不同，合并会掩盖差异。
+- `events.webhook.receive`：**请求体**才是源定义边界（E10g 的
+  `EventWebhookReceiveRequest`，`additionalProperties:true`）；200 是网关自己的回执
+  `{accepted:true,duplicate:boolean}`，故按 handler 声明为闭合对象，不开放。
+- 本批无排除、无空体 200、无顶层开放对象。
+- 守卫：`schema-coverage.test.ts` 写响应下界 104 → **128**，新增 R4 逐 op 清单（24）+
+  「无空壳 / 无顶层开放对象」+「复用读侧 DTO / 两个 reply 不同形 / 共享 `{ok:true}`」
+  断言；`api-contract.test.ts` 新增 8 条代表性断言；SDK `contract-compat.checks.ts`
+  +9 条编译期等价。生成物 diff 恰好这 24 个 op（重跑幂等）。
+
 ---
 
 ## E11 身份 / 配额硬化（2026-11-13）

@@ -38,16 +38,20 @@ interface CoverageReport {
 const GATEWAY_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPT = path.join(GATEWAY_ROOT, 'scripts', 'schema-coverage.cjs');
 
-/** Baseline 分组 (E8 and earlier 13 + 8 session read (E10-1) + 8 pod/work read (E10-2) + 8 goal read (E10b-1) + 7 human-gate/permission read (E10b-2) + 1 human token rotate (E11-1) + 8 memory/recall/lead read (E10c-1) + 8 memory extra / lead.context / pod read (E10d-1) + 8 metadata/registry read (E10e-1) + 16 session/task/terminal/usage read (E10f-A) + 16 project/runtime/metadata read (E10f-B) + 16 goal/lead/event/standing/automation/pod read (E10f-C) + 8 observability/device/A2A read (E10f-D)) = 125 entries; E10f-D 收口时台账 127（含 humanToken.rotate 与 orchestration.outcomes），E10h-P0 +2 → 129，E10h-R1 的 35 个 session 写响应 → 164，E10h-R2 的 35 个 pod/task/terminal/fileHistory 写响应 → 199，E10h-R3 的 31 个 goal/decision/lead/standing/cognition 写响应 → 230。 */
+/** Baseline 分组 (E8 and earlier 13 + 8 session read (E10-1) + 8 pod/work read (E10-2) + 8 goal read (E10b-1) + 7 human-gate/permission read (E10b-2) + 1 human token rotate (E11-1) + 8 memory/recall/lead read (E10c-1) + 8 memory extra / lead.context / pod read (E10d-1) + 8 metadata/registry read (E10e-1) + 16 session/task/terminal/usage read (E10f-A) + 16 project/runtime/metadata read (E10f-B) + 16 goal/lead/event/standing/automation/pod read (E10f-C) + 8 observability/device/A2A read (E10f-D)) = 125 entries; E10f-D 收口时台账 127（含 humanToken.rotate 与 orchestration.outcomes），E10h-P0 +2 → 129，E10h-R1 的 35 个 session 写响应 → 164，E10h-R2 的 35 个 pod/task/terminal/fileHistory 写响应 → 199，E10h-R3 的 31 个 goal/decision/lead/standing/cognition 写响应 → 230，E10h-R4 的 24 个 event/automation/approvals/questions/triage/permissions 写响应 → 254。 */
 const E10_COVERED_OPS = [
   'a2a.agentCard',
   'agent.capabilities',
   'agents.list',
   'approvals.list',
+  'approvals.respond',
   'attention.list',
+  'automations.draft',
   'automations.get',
   'automations.history',
   'automations.list',
+  'automations.remove',
+  'automations.toggle',
   'background.jobs.cancel',
   'background.jobs.list',
   'background.jobs.output',
@@ -63,12 +67,19 @@ const E10_COVERED_OPS = [
   'decisions.shelve',
   'devices.list',
   'embedding.get',
+  'event.publish',
   'event.replay',
   'events.deliveries.list',
+  'events.sources.create',
   'events.sources.list',
+  'events.sources.patch',
+  'events.subscriptions.delete',
+  'events.threads.close',
   'events.threads.list',
+  'events.threads.subscriptions.create',
   'events.threads.subscriptions.list',
   'events.threads.triggers',
+  'events.webhook.receive',
   'experience.actions',
   'fileHistory.list',
   'fileHistory.restore',
@@ -123,10 +134,17 @@ const E10_COVERED_OPS = [
   'mobile.pairingCode',
   'models.get',
   'orchestration.outcomes',
+  'permissions.addAllowlist',
+  'permissions.addRule',
   'permissions.getMode',
   'permissions.list',
   'permissions.listAllowlist',
   'permissions.listRules',
+  'permissions.removeAllowlist',
+  'permissions.removeRule',
+  'permissions.reply',
+  'permissions.replyRuntime',
+  'permissions.setMode',
   'plugins.audit',
   'plugins.client',
   'plugins.lastGood',
@@ -181,6 +199,8 @@ const E10_COVERED_OPS = [
   'providers.list',
   'python.status',
   'questions.list',
+  'questions.reject',
+  'questions.reply',
   'recall.context',
   'recall.instructions',
   'recall.pinned',
@@ -266,7 +286,11 @@ const E10_COVERED_OPS = [
   'terminal.list',
   'terminal.remove',
   'tools.list',
+  'triage.confirm',
+  'triage.dismiss',
   'triage.list',
+  'triage.propose',
+  'triage.reject',
   'tts.voices',
   'voice.status',
   'work.overview',
@@ -431,6 +455,38 @@ const E10H_R3_WRITE_RESPONSE_OPS = [
   'standingGoals.run',
   'standingGoals.stop',
   'standingGoals.update',
+];
+
+/**
+ * E10h-R4：event / automation / approvals / questions / triage / permissions
+ * 共 24 个写 op 的 200 响应。与 R1/R2/R3 同一台账（104 → 128）；
+ * 按名钉住，删一个 `response:` 立刻按名失败。
+ */
+const E10H_R4_WRITE_RESPONSE_OPS = [
+  'approvals.respond',
+  'automations.draft',
+  'automations.remove',
+  'automations.toggle',
+  'event.publish',
+  'events.sources.create',
+  'events.sources.patch',
+  'events.subscriptions.delete',
+  'events.threads.close',
+  'events.threads.subscriptions.create',
+  'events.webhook.receive',
+  'permissions.addAllowlist',
+  'permissions.addRule',
+  'permissions.removeAllowlist',
+  'permissions.removeRule',
+  'permissions.reply',
+  'permissions.replyRuntime',
+  'permissions.setMode',
+  'questions.reject',
+  'questions.reply',
+  'triage.confirm',
+  'triage.dismiss',
+  'triage.propose',
+  'triage.reject',
 ];
 
 /**
@@ -1015,10 +1071,11 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(E10G_P0_REQUEST_OPS.filter((id) => !byId.get(id)?.hasRequest)).toEqual([]);
   });
 
-  // E10h-P0/R1/R2/R3: write-response ledger. Same parser, same 195 write-op denominator;
-  // `humanToken.rotate` (E11-1) + 2 P0 pilots + 35 R1 session writes + 35 R2
-  // pod/task/terminal/fileHistory writes + 31 R3 goal/decision/lead/standing/cognition
-  // writes = 104/195. Later batches only append, so the count is a floor.
+  // E10h-P0/R1/R2/R3/R4: write-response ledger. Same parser, same 195 write-op
+  // denominator; `humanToken.rotate` (E11-1) + 2 P0 pilots + 35 R1 session writes +
+  // 35 R2 pod/task/terminal/fileHistory writes + 31 R3 goal/decision/lead/standing/
+  // cognition writes + 24 R4 event/automation/human-gate writes = 128/195.
+  // Later batches only append, so the count is a floor.
   it('the script reports write-response coverage over the 195 write ops', () => {
     const report = runScript();
     const write = catalogWriteOps();
@@ -1027,7 +1084,7 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(write).toHaveLength(WRITE_OPS_TOTAL);
     expect(report.writeResponseTotal).toBe(WRITE_OPS_TOTAL);
     expect(report.writeResponses).toBe(covered.length);
-    expect(report.writeResponses).toBeGreaterThanOrEqual(104);
+    expect(report.writeResponses).toBeGreaterThanOrEqual(128);
     expect(report.writeResponseCovered).toEqual(covered);
     // Disjoint from the request ledger: the two scans are independent `response:`/
     // `request:` hits on the same write ops — with one deliberate exception, `pods.a2a`,
@@ -1205,6 +1262,80 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
       expect((responses.get(id) as any).properties.run).toEqual(runItem);
     }
   });
+  // E10h-R4: event / automation / approvals / questions / triage / permissions 写响应（24 个）。
+  // 同台账，下界 128；按名钉住，删一个 `response:` 立刻按名失败。
+  it('R4 event/automation/human-gate write ops declare a 200 response schema (write responses >= 128)', () => {
+    const writes = catalogWriteOps();
+    const responded = new Set(writes.filter((op) => op.hasResponse).map((op) => op.operationId));
+
+    expect(E10H_R4_WRITE_RESPONSE_OPS.filter((id) => !responded.has(id))).toEqual([]);
+    expect(E10H_R4_WRITE_RESPONSE_OPS).toHaveLength(24);
+    // No duplicates inside the batch …
+    expect(new Set(E10H_R4_WRITE_RESPONSE_OPS).size).toBe(E10H_R4_WRITE_RESPONSE_OPS.length);
+    // … and no overlap with the earlier batches.
+    for (const earlier of [
+      E10H_P0_WRITE_RESPONSE_OPS,
+      E10H_R1_WRITE_RESPONSE_OPS,
+      E10H_R2_WRITE_RESPONSE_OPS,
+      E10H_R3_WRITE_RESPONSE_OPS,
+    ]) {
+      expect(E10H_R4_WRITE_RESPONSE_OPS.filter((id) => earlier.includes(id))).toEqual([]);
+    }
+    // 128 = humanToken.rotate + P0 2 + R1 35 + R2 35 + R3 31 + R4 24.
+    expect(responded.size).toBeGreaterThanOrEqual(128);
+  });
+
+  // 本批没有空体 200，也没有顶层开放对象：`events.webhook.receive` 的**请求**是
+  // 源定义边界，但 200 是网关自己的回执（`{accepted:true, duplicate}`），所以也闭合。
+  it('R4 responses model real bodies (no empty shells, no open top-level object)', () => {
+    const responses = catalogResponseById();
+    const problems: string[] = [];
+    for (const id of E10H_R4_WRITE_RESPONSE_OPS) {
+      const schema = responses.get(id) as {
+        type?: string;
+        anyOf?: unknown[];
+        properties?: Record<string, unknown>;
+        additionalProperties?: unknown;
+      } | undefined;
+      if (!schema) { problems.push(`${id}: missing response`); continue; }
+      // `triage.confirm` 是三条成功分支的判别联合（installed / axioms / goalId）。
+      if (schema.anyOf) {
+        if (schema.anyOf.length !== 3) problems.push(`${id}: expected 3 confirm branches`);
+        continue;
+      }
+      if (schema.type !== 'object') problems.push(`${id}: expected object`);
+      if (Object.keys(schema.properties ?? {}).length === 0) problems.push(`${id}: expected declared fields`);
+      if (schema.additionalProperties !== undefined) problems.push(`${id}: must not be open`);
+    }
+    expect(problems).toEqual([]);
+  });
+
+  it('R4 reuses the read DTOs and keeps the two permission reply receipts apart', () => {
+    const responses = catalogResponseById();
+    // events.sources.create 与 list item 是同一个 sourceView() 投影。
+    expect(responses.get('events.sources.create')).toEqual(
+      (responses.get('events.sources.list') as any).properties.items.items,
+    );
+    // subscriptions.create 返回 store 行本体（与 list item 同形，未做窄投影）。
+    expect(responses.get('events.threads.subscriptions.create')).toEqual(
+      (responses.get('events.threads.subscriptions.list') as any).properties.items.items,
+    );
+    // setMode 与 getMode 同形（写入路径只是 autoApprovals 恒为 0）。
+    expect(responses.get('permissions.setMode')).toBe(responses.get('permissions.getMode'));
+    // 两个 reply 入口刻意不同形：`{status:'ok'}` vs `{success:true}`。
+    expect(responses.get('permissions.reply')).not.toBe(responses.get('permissions.replyRuntime'));
+    expect(Object.keys((responses.get('permissions.reply') as any).properties)).toEqual(['status']);
+    expect(Object.keys((responses.get('permissions.replyRuntime') as any).properties)).toEqual(['success']);
+    // `{ok:true}` 共享一个 OkResponse，`{status:'ok'}` 同理。
+    for (const id of ['event.publish', 'events.sources.patch', 'events.subscriptions.delete']) {
+      expect(responses.get(id)).toBe(responses.get('event.publish'));
+    }
+    for (const id of ['questions.reject', 'questions.reply', 'permissions.reply']) {
+      expect(responses.get(id)).toBe(responses.get('questions.reply'));
+    }
+  });
+
+
   // E10g-W1: session writes. Pinned per-op so a dropped `request:` fails by name,
   // and as a floor (>= 124 through W5) so the count can only grow with W6-W7.
   it('every W1 session write op declares a request schema (catalog requests >= 180)', () => {

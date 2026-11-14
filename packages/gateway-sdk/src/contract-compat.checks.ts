@@ -35,6 +35,8 @@ import type {
   RunState, CheckpointRestoreResult, DataPart, SubagentRecord,
   // E10h-R2 pod / task / terminal write responses
   PodLeadEnsureResult, PodTechLeadPrompt, PodGoalAcceptResult, PodRejectResult, TerminalConnectTicket,
+  // E10h-R4 event / automation / human-gate write responses
+  PermissionRule, EventsNamespace, AutomationsNamespace, TriageNamespace,
 } from './types'
 import type { RuntimeContractResponse } from './runtime-contract'
 import type { MafwClient } from './client'
@@ -371,6 +373,63 @@ const CHECK_standing_goal_stop: AssertEq<Resp<operations['standingGoals.stop']>,
 const CHECK_standing_goal_run: AssertEq<Resp<operations['standingGoals.run']>, { run: GoalRunView }> = true
 const CHECK_goal_run_approve: AssertEq<Resp<operations['goalRuns.approve']>, { run: GoalRunView }> = true
 
+// E10h-R4: event / automation / human-gate 写响应。
+// 只锁「wire 与 SDK DTO 逐字段等价」的 op：`approvals.respond`、`questions.reply|reject`、
+// `triage.dismiss|confirm|reject`、`automations.toggle|remove`、`permissions.reply|replyRuntime`、
+// `permissions.setMode` 在 SDK 侧都声明为 `Promise<void>`（客户端只关心 2xx），没有可比的
+// DTO；`events.sources.patch` / `events.subscriptions.delete` 的 `{ok:true}` 比 SDK 的
+// `{ok:boolean}` 更精确 —— 这些都不加 AssertEq（见 R4-report.md 的 concerns）。
+
+/** `events.sources.create` 与 `events.sources.list` 的 item 是同一个 `sourceView()` 投影。 */
+const CHECK_events_sources_create: AssertEq<Resp<operations['events.sources.create']>, EventSourceView> = true
+
+/** `events.threads.close` 回的是 `EventLayerService.closeThread()` 的三键计数。 */
+const CHECK_events_close_thread: AssertEq<
+  Resp<operations['events.threads.close']>,
+  Awaited<ReturnType<EventsNamespace['closeThread']>>
+> = true
+
+/** `event.publish` 是 fire-and-forget：SDK `event.publish()` 的 `{ok:true}` 与 wire 同形。 */
+const CHECK_event_publish: AssertEq<Resp<operations['event.publish']>, { ok: true }> = true
+
+/**
+ * `automations.draft` 的 `errors` 在 wire 上恒存在（空数组 = 校验通过），
+ * SDK 声明为 optional —— 用 `Required` 把差额锁在「只多不少」的方向。
+ */
+const CHECK_automations_draft: AssertEq<
+  Resp<operations['automations.draft']>,
+  Required<Awaited<ReturnType<AutomationsNamespace['draft']>>>
+> = true
+
+/** `triage.propose` 的 `message` 同理：两个 200 分支都写，SDK 声明 optional。 */
+const CHECK_triage_propose: AssertEq<
+  Resp<operations['triage.propose']>,
+  Required<Awaited<ReturnType<TriageNamespace['propose']>>>
+> = true
+
+/** allowlist / rules 的写入回执与 SDK 手写 DTO 逐字段等价（`entries` 是写入后的全量）。 */
+const CHECK_permissions_add_rule: AssertEq<
+  Resp<operations['permissions.addRule']>,
+  Awaited<ReturnType<PermissionsNamespace['addRule']>>
+> = true
+const CHECK_permissions_add_allowlist: AssertEq<
+  Resp<operations['permissions.addAllowlist']>,
+  Awaited<ReturnType<PermissionsNamespace['addAllowlist']>>
+> = true
+
+/**
+ * 删除回执的 `success` 是字面量 `true`（未命中走 404），比 SDK 的 `boolean` 更精确，
+ * 因此只锁 `entries` 段（写入/删除后都是同一份 `PermissionRule` / allowlist 行）。
+ */
+const CHECK_permissions_remove_rule_entries: AssertEq<
+  Resp<operations['permissions.removeRule']>['entries'],
+  PermissionRule[]
+> = true
+const CHECK_permissions_remove_allowlist_entries: AssertEq<
+  Resp<operations['permissions.removeAllowlist']>['entries'],
+  Array<{ tool: string; prefix?: string }>
+> = true
+
 /**
  * `tasks.output` 是 runtime shell 的透传边界（四键 optional + 开放索引）；这里仍锁
  * 「SDK 认的四个字段类型不变」，让透传不能把 TaskOutput 的 wire 语义改掉。
@@ -660,4 +719,9 @@ export const CONTRACT_COMPAT_CHECKS = [
   CHECK_standing_goal_create, CHECK_standing_goal_update, CHECK_standing_goal_pause,
   CHECK_standing_goal_resume, CHECK_standing_goal_stop, CHECK_standing_goal_run,
   CHECK_goal_run_approve,
+  // E10h-R4
+  CHECK_events_sources_create, CHECK_events_close_thread, CHECK_event_publish,
+  CHECK_automations_draft, CHECK_triage_propose,
+  CHECK_permissions_add_rule, CHECK_permissions_add_allowlist,
+  CHECK_permissions_remove_rule_entries, CHECK_permissions_remove_allowlist_entries,
 ]

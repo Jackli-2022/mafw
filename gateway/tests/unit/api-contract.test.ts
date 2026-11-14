@@ -5655,4 +5655,192 @@ describe('api-contract: E10h-R3 goal/decision/lead/standing/cognition write resp
   });
 });
 
+describe('api-contract: E10h-R4 event/automation/human-gate write responses', () => {
+  const findOp = (operationId: string): any => {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const candidate of Object.values<any>(methods)) {
+        if (candidate?.operationId === operationId) return candidate;
+      }
+    }
+    return null;
+  };
+
+  const schemaOf = (operationId: string): any => {
+    const op = findOp(operationId);
+    expect(`${operationId}:found`).toBe(`${operationId}:${op ? 'found' : 'missing'}`);
+    const schema = op.responses?.['200']?.content?.['application/json']?.schema;
+    expect(`${operationId}:200`).toBe(`${operationId}:${schema ? '200' : 'missing'}`);
+    return schema;
+  };
+
+  test('event writes pin the ok receipt and the closed webhook envelope', () => {
+    // publish / sources.patch / subscriptions.delete 都是 fire-and-forget `{ok:true}`。
+    for (const id of ['event.publish', 'events.sources.patch', 'events.subscriptions.delete']) {
+      expect(schemaOf(id)).toEqual({
+        type: 'object',
+        required: ['ok'],
+        properties: { ok: { const: true, type: 'boolean' } },
+      });
+    }
+    // 请求体归源所有，但 200 是网关自己的回执：闭合、两个字段都必填。
+    expect(schemaOf('events.webhook.receive')).toEqual({
+      type: 'object',
+      required: ['accepted', 'duplicate'],
+      properties: {
+        accepted: { const: true, type: 'boolean' },
+        duplicate: { type: 'boolean' },
+      },
+    });
+  });
+
+  test('event source / subscription writes return the read-side DTOs', () => {
+    expect(JSON.stringify(schemaOf('events.sources.create')))
+      .toBe(JSON.stringify(schemaOf('events.sources.list').properties.items.items));
+    expect(JSON.stringify(schemaOf('events.threads.subscriptions.create')))
+      .toBe(JSON.stringify(schemaOf('events.threads.subscriptions.list').properties.items.items));
+    // closeThread 的计数是本次关闭迁移的投递数；closed 跟端口类型走（boolean）。
+    expect(schemaOf('events.threads.close')).toEqual({
+      type: 'object',
+      required: ['closed', 'handedBack', 'dropped'],
+      properties: {
+        closed: { type: 'boolean' },
+        handedBack: { type: 'number' },
+        dropped: { type: 'number' },
+      },
+    });
+  });
+
+  test('automation writes keep the handler status unions and the draft errors array', () => {
+    const toggle = schemaOf('automations.toggle');
+    expect(toggle.required).toEqual(['status', 'enabled']);
+    // 找不到规则也回 200：status 是联合而不是字面量。
+    expect(toggle.properties.status.anyOf.map((b: any) => b.const)).toEqual(['toggled', 'not_found']);
+    expect(toggle.properties.enabled).toEqual({ type: 'boolean' });
+    expect(schemaOf('automations.remove').properties.status.anyOf.map((b: any) => b.const))
+      .toEqual(['deleted', 'not_found']);
+    // errors 恒存在（空数组 = 校验通过）。
+    expect(schemaOf('automations.draft')).toEqual({
+      type: 'object',
+      required: ['id', 'valid', 'errors'],
+      properties: {
+        id: { type: 'string' },
+        valid: { type: 'boolean' },
+        errors: { type: 'array', items: { type: 'string' } },
+      },
+    });
+  });
+
+  test('approval / question receipts stay human-gate-specific', () => {
+    const respond = schemaOf('approvals.respond');
+    expect(respond.required).toEqual(['status', 'decision']);
+    expect(respond.properties.status).toEqual({ const: 'ok', type: 'string' });
+    // 请求是 approve|reject|{answer}；回显把文本回答归一化成 'answered'。
+    expect(respond.properties.decision.anyOf.map((b: any) => b.const))
+      .toEqual(['approve', 'reject', 'answered']);
+    for (const id of ['questions.reply', 'questions.reject']) {
+      expect(schemaOf(id)).toEqual({
+        type: 'object',
+        required: ['status'],
+        properties: { status: { const: 'ok', type: 'string' } },
+      });
+    }
+  });
+
+  test('triage writes: dismiss/reject are 200-even-when-missing, confirm has three branches', () => {
+    expect(schemaOf('triage.dismiss').properties.status.anyOf.map((b: any) => b.const))
+      .toEqual(['dismissed', 'not_found']);
+    expect(schemaOf('triage.reject').properties.status.anyOf.map((b: any) => b.const))
+      .toEqual(['rejected', 'not_found']);
+    const branches = schemaOf('triage.confirm').anyOf;
+    expect(branches).toHaveLength(3);
+    // 三个成功分支互不共享可选的业务字段：installed / axioms / goalId 各自必填。
+    expect(branches.map((b: any) => b.required)).toEqual([
+      ['status', 'installed'],
+      ['status', 'axioms'],
+      ['status', 'goalId'],
+    ]);
+    expect(branches.every((b: any) => b.properties.status.const === 'confirmed')).toBe(true);
+    // propose 的条目不存在/已处理也是 200 的 success:false —— 不能缩成 true。
+    expect(schemaOf('triage.propose')).toEqual({
+      type: 'object',
+      required: ['success', 'message'],
+      properties: {
+        success: { type: 'boolean' },
+        message: { type: 'string' },
+      },
+    });
+  });
+
+  test('permission writes keep the two reply receipts apart and reuse the mode DTO', () => {
+    expect(schemaOf('permissions.reply')).toEqual({
+      type: 'object',
+      required: ['status'],
+      properties: { status: { const: 'ok', type: 'string' } },
+    });
+    // 会话直连入口是老形状 `{success:true}`，与按 requestId 反查的 reply 不同。
+    expect(schemaOf('permissions.replyRuntime')).toEqual({
+      type: 'object',
+      required: ['success'],
+      properties: { success: { const: true, type: 'boolean' } },
+    });
+    expect(JSON.stringify(schemaOf('permissions.setMode')))
+      .toBe(JSON.stringify(schemaOf('permissions.getMode')));
+  });
+
+  test('allowlist / rule writes return the post-write entry list', () => {
+    const allowlistEntry = schemaOf('permissions.listAllowlist').properties.entries.items;
+    const rule = schemaOf('permissions.listRules').properties.entries.items;
+    expect(schemaOf('permissions.addAllowlist')).toEqual({
+      type: 'object',
+      required: ['success', 'entries'],
+      properties: {
+        success: { type: 'boolean' },
+        entries: { type: 'array', items: allowlistEntry },
+      },
+    });
+    // 删除未命中是 404 → 200 的 success 恒为 true。
+    expect(schemaOf('permissions.removeAllowlist')).toEqual({
+      type: 'object',
+      required: ['success', 'entries'],
+      properties: {
+        success: { const: true, type: 'boolean' },
+        entries: { type: 'array', items: allowlistEntry },
+      },
+    });
+    expect(schemaOf('permissions.addRule')).toEqual({
+      type: 'object',
+      required: ['success', 'entries'],
+      properties: {
+        success: { type: 'boolean' },
+        entries: { type: 'array', items: rule },
+      },
+    });
+    expect(schemaOf('permissions.removeRule').properties.success).toEqual({ const: true, type: 'boolean' });
+    expect(JSON.stringify(schemaOf('permissions.removeRule').properties.entries))
+      .toBe(JSON.stringify(schemaOf('permissions.addRule').properties.entries));
+  });
+
+  test('the R4 batch raises the write-response ledger to 128/195', () => {
+    const writeOps = new Set<string>();
+    const responded = new Set<string>();
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const [method, op] of Object.entries<any>(methods)) {
+        if (method === 'get' || !op?.operationId) continue;
+        writeOps.add(op.operationId);
+        if (op.responses?.['200']?.content?.['application/json']?.schema) responded.add(op.operationId);
+      }
+    }
+    expect(writeOps.size).toBe(195);
+    // humanToken.rotate + P0 2 + R1 35 + R2 35 + R3 31 + R4 24 = 128.
+    expect(responded.size).toBeGreaterThanOrEqual(128);
+    for (const id of [
+      'event.publish', 'events.sources.create', 'events.webhook.receive', 'automations.draft',
+      'approvals.respond', 'questions.reject', 'triage.confirm', 'triage.propose',
+      'permissions.replyRuntime', 'permissions.addRule', 'permissions.removeAllowlist',
+    ]) {
+      expect(`${id}:${responded.has(id)}`).toBe(`${id}:true`);
+    }
+  });
+});
+
 
