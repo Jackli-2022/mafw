@@ -560,6 +560,20 @@ attention 通知链整体移交 `2026-11-04-pod-event-layer-ambient-attention-de
 - 支持连接 / 断开、复制认证命令、添加服务器、删除配置文件项；`mcpApi` 缺失时显示中性空态。
 - Config → 扩展里的 MCP 管理仍保留；两者共用同一套 gateway API。
 
+### 标准 Chat `/` 指令（2026-11-14）
+
+- 首批 12 条本地命令：`/compact` `/export` `/fork` `/usage` `/permissions` `/diff`
+  `/skills` `/undo` `/redo` `/plan` `/build` `/details`。
+- 本地命令统一经 `runLocalCommand()`：清空 composer、清草稿、关选择器，再执行。
+- `/compact` 调用既有 `POST /api/session/:id/summarize`；Desktop 只新增 preload
+  `sessions.summarize`，不新增 gateway/runtime 契约。
+- `/export` / `/fork` 复用 shell 的 `exportSession` / `forkSessionFromMenu`。
+- `/usage` 打开 Config › Usage；`/permissions` 打开会话配置菜单；`/diff` 打开变更集；
+  `/skills` 通过 `mafw:open-config` 事件打开 Config › 扩展；`/details` 等同 Ctrl+O。
+- `/undo` 打开检查点面板；`/redo` 在 `canUnrevert()` 时执行 `unrevert`。
+- `/plan` / `/build` 只消费 `MafwAgent.planning` / `MafwAgent.default`，不硬编码 runtime
+  原生 agent 名。
+
 ### Pod 事件层与常驻注意力（2026-11-04，进行中）
 
 spec `docs/superpowers/specs/2026-11-04-pod-event-layer-ambient-attention-design.md`，plan
