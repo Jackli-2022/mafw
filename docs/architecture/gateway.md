@@ -1547,8 +1547,9 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 
 ### 残余（E10f 后仍 deferred）
 
-- ~~**187 个写面 op** 的请求 schema~~ → **E10g 收口**：182/188 已声明 + 6 个二进制 / multipart / A2A
-  显式排除（见「台账口径（E10g）」）。**写面 op 的 200 response schema 仍 deferred**（仍是 187 个非 GET）。
+- ~~**187 个写面 op** 的请求 schema~~ → **E10g 收口**：合并 main 后 **189/195** 已声明 + 6 个
+  二进制 / multipart / A2A 显式排除（见「台账口径（E10g）」）。
+  **写面 op 的 200 response schema 仍 deferred**（194 个非 GET 仍无 response）。
 - **强制版本协商 / SDK 全量 schema 类型化**（`minClientVersion` 已在 `experience.actions` 暴露，
   但没有拒绝旧客户端的运行时策略；产品决策未定）。
 - **TUI triage phantom**（`reason` / `goalId` / `severity`）：TUI 消费面未改——`@earendil-works/pi-tui`
@@ -1564,13 +1565,14 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 
 ## E10g 请求契约（P0 + W1 + W2/W3 + W4 + W5 + W6 + W7 + W8，2026-11-14）
 
-> 承接 E10f（响应 125/318）。E10g 给 **188 个写 op** 补请求契约；本篇记录 P0 管线、
+> 承接 E10f（响应 125/318）。E10g 给 **188 个写 op** 补请求契约（main 合入 Phase 6 后分母变
+> **195**，E10g-fix 再补 7 个 plugin 自愈面写 op，见「E10g-fix」）；本篇记录 P0 管线、
 > 3 个 pilot、W1（session 写接口 35 个）、W2/W3（tasks/terminal/background/fileHistory 8 个 +
 > pod 写接口 25 个）、W4（goals/decisions/lead/standing/goalRuns 29 个）、W5
 > （events/automations/approvals/questions/triage/permissions 24 个）、W6
 > （mcp/plugins/runtime/config/project/manager/commands 26 个）、W7
 > （memory/media/tts/chat/python/obs/models/embedding/tools/eval/llm/mobile/devices/a2a 30 个）
-> 与 W8（cognition gate/rewrite 2 个，写表面收口 182/188）。
+> 与 W8（cognition gate/rewrite 2 个，写表面收口 182/188；合并 main 后 **189/195**）。
 > spec：`docs/superpowers/specs/2026-11-14-gateway-e10g-request-contracts-design.md`；
 > plan：`docs/superpowers/plans/2026-11-14-gateway-e10g-request-contracts.md`；
 > 交付记录：`docs/releases/2026-11-14-gateway-e10g-request-contracts.md`。
@@ -1582,8 +1584,8 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
   `requestBody: { required, content: { [contentType]: { schema } } }`；**不生成运行时 body 校验**
   （与 response 同策略：声明式契约，handler 是事实源）。
 - **台账**：`scripts/schema-coverage.cjs` 解析每个 catalog entry 的 `request:`，输出
-  `requests: X/188 write operations`（分母 = 非 GET op；GET 不参与），`--json` 增
-  `requests` / `requestCovered` / `requestTotal` / `requestUncovered`。response 口径不变（125/318）。
+  `requests: X/195 write operations`（分母 = 非 GET op；GET 不参与；E10g 时为 188），`--json` 增
+  `requests` / `requestCovered` / `requestTotal` / `requestUncovered`。response 口径见下（合并后 127/327）。
 - **P0 pilot（3）**：`session.create`（`directory` 必填绝对路径 + `worktree` / `metadata`）、
   `tasks.submit`（`kind` / `parentSessionID` 必填；shell→`command`、subagent→`prompt` 的条件必填由
   service 校验，schema 用 optional + description 表达）、`pods.tasks.create`（`title` 必填；
@@ -1593,9 +1595,12 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
   handler 读取面（config.set 的 `category` + 多态 `value`；prompt / promptAsync 的 `parts` /
   `delivery` / budget 字段；revertDiff 的 `patches` + `hunkIndices`；restoreCheckpoint 的
   `scope` + `confirm:true`；usage plugin create/source；subagents spawn/message）。
-  **20 个 JSON body + 15 个空对象动作**（abort / suspend / resume / discardRun / unrevert /
-  delete / deleteLegacy / queue.clear / queue.cancel / subagents.cancel / discoveryRefresh /
-  background / usage plugins reload/delete/test），空对象统一 `EmptyRequest` + `requestRequired:false`。
+  **20 个 JSON body + 5 个可选 body + 15 个空对象动作**（abort / unrevert / delete /
+  deleteLegacy / queue.clear / queue.cancel / subagents.cancel / discoveryRefresh / background /
+  usage plugins reload/delete/test），空对象统一 `EmptyRequest` + `requestRequired:false`。
+  E10g-fix 把 `session.suspend`（`reason`）/ `resume`（`runId`）/ `discardRun`（`runId`）从空对象
+  改成**可选 body**（`routes/session-run.ts` 确实读这两个字段，空 body 仍合法）——
+  W1 现为 20 JSON + 8 可选 + 12 空对象。
   `session.command` 无 gateway handler（尾部反代 runtime serve），按 `@opencode-ai/sdk`
   `SessionCommandData.body` 声明（body 可缺省，`command`/`arguments` 必填）。
 - **W2/W3（33 个）**：schema 在 `routes/schemas/task-write.ts`（W2：8 个）与
@@ -1733,12 +1738,16 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
     （否则 400；空数组合法 → 200 `{content: []}`）。内容部件只钉 `type` + `additionalProperties:true`
     （`applyToolResultRedact` 只改 `type:'text'`，其余原样透传）；`output.isError` 是宿主信封字段
     （gateway 不读），`input` 同理（`contract-cognition` 的 requiredFields 列了它，handler 不用）。
-  - **收口算术**：`requests: 182/188`（96.8%）= 182 covered + 6 excluded
+  - **收口算术**：W8 时 `requests: 182/188`（96.8%）= 182 covered + 6 excluded
     （W6 `plugins.install` + W7 `media.upload` / `media.uploadAndCreate` / `media.createTask` /
-    `mobile.mediaTaskUpload` / `pods.a2a`）。W7 遗留的 2 个 cognition op 至此归位，
-    188 个写 op 全部有归属（覆盖或显式排除）。
+    `mobile.mediaTaskUpload` / `pods.a2a`）。W7 遗留的 2 个 cognition op 至此归位。
+    **main 合入 Phase 6 后分母 195**：+7 个 plugin 自愈面写 op（P6，见「E10g-fix」），
+    收口 **189/195（96.9%）= 189 covered + 6 excluded**，195 个写 op 全部有归属。
 
 ### 台账口径（E10g）
+
+> 「累计」列的 `/188` 是**合并 main 之前**的分母；Phase 6 合并后写 op = 195，
+> 最终收口见 P6 行与「E10g-fix」。
 
 | 批次 | 范围 | 新增 request | 累计 |
 |---|---|---|---|
@@ -1750,26 +1759,34 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 | W6 | mcp / plugins / runtime / config / project / manager / commands | 26 | 150/188 |
 | W7 | memory / media / tts / chat / python / obs / models / embedding / tools / eval / llm / mobile / devices / a2a | 30 | 180/188 |
 | W8 | cognition gate / rewrite | 2 | **182/188（96.8%）** |
+| **P6（merge main 后，E10g-fix）** | plugin 自愈面：doctorAll / doctor / kill / resume / quarantine / unquarantine / rollback | 7（6 空对象 + 1 JSON） | **189/195（96.9%）** |
 
-- **请求 schema 分类**（每个写 op 恰好一类，实测分类计数和 = 182 covered）：
+- **请求 schema 分类**（每个写 op 恰好一类；106 + 59 + 23 + 1 + 6 = 195，其中 189 个声明 `request`、6 个显式排除）：
 
   | 类别 | 声明 | 数量 | 判据 |
   |---|---|---|---|
-  | JSON body | `request` + `requestRequired` 缺省（true） | **105** | handler 读 body 字段；缺失 → 400 |
-  | 空对象动作 | `request: EmptyRequest`（`Type.Object({})`）+ `requestRequired:false` | **56** | 输入只在 path / query；语义是「无字段」，不是「任意 body」（15 session / 9 task-pod / 13 goal-lead-standing / 7 human-gate / 6 mcp-plugin-runtime / 6 memory-device-token） |
-  | 可选 body | 有 `properties` + `requestRequired:false` | **20** | body 可缺省：有缺省值（`session.fork` / `session.checkpoint` / `session.command` / `session.summarize` / `session.discoverySkillInvoke` / `goals.retry` / `decisions.confirm` …）或只用于 actor 鉴权 / query 回退（`pods.tasks.delete` / `terminal.connectTicket`） |
+  | JSON body | `request` + `requestRequired` 缺省（true） | **106** | handler 读 body 字段；缺失 → 400（含 Phase 6 的 `plugins.quarantine`） |
+  | 空对象动作 | `request: EmptyRequest`（`Type.Object({})`）+ `requestRequired:false` | **59** | 输入只在 path / query；语义是「无字段」，不是「任意 body」（12 session / 9 task-pod / 13 goal-lead-standing / 7 human-gate / 6 mcp-plugin-runtime / 6 memory-device-token / 6 Phase 6 plugin recovery） |
+  | 可选 body | 有 `properties` + `requestRequired:false` | **23** | body 可缺省：有缺省值（`session.fork` / `session.checkpoint` / `session.command` / `session.summarize` / `session.discoverySkillInvoke` / `goals.retry` / `decisions.confirm` …）、run 乐观锁（`session.suspend.reason` / `session.resume.runId` / `session.discardRun.runId`）或只用于 actor 鉴权 / query 回退（`pods.tasks.delete` / `terminal.connectTicket`） |
   | 协议透传边界 | `Type.Object({}, {additionalProperties:true})` + `requestRequired:false` | **1** | `events.webhook.receive`：body 由上游源定义，adapter 校验签名 / 幂等 |
   | 显式排除 | `REQUEST_EXCLUDED`（不入 catalog `request`） | **6** | 见下表：原始字节 / multipart / A2A 透传 |
 
-- **响应口径不变**：`npm run schema:coverage` 仍报 **125/318 responses**（E10f 终值）。
-  未覆盖 193 = **187 个非 GET 的 response** + **6 个非 JSON GET**；请求侧不再是缺口，
-  `requests: 182/188` 与 responses 是两个独立分母（182 的分母是 188 个非 GET op）。
+- **响应口径**：E10f 终值 125/318；Phase 6 合并后 E10g-fix 补了 `plugins.audit` /
+  `plugins.lastGood` 两个 GET 的 200 schema → **127/327（38.8%）**。未覆盖 200 =
+  **194 个非 GET 的 response** + **6 个非 JSON GET**（`event.subscribe` SSE、`media.artifact` /
+  `pods.a2aArtifact` / `mobile.ttsArtifact` / `plugins.webAsset` / `plugins.webEvents`）。
+  口径：**JSON GET 127/133 = 100%**（分母 = 127 covered + 6 非 JSON GET；127 里含
+  `humanToken.rotate` 这个返回 JSON 的 POST）。`requests: 189/195` 与 responses 是两个独立分母。
 - **收口守卫** `gateway/tests/unit/architecture/request-coverage.test.ts`（本波唯一新增测试文件）：
   ① 每个非 GET op **恰好**满足 `request` 或 `REQUEST_EXCLUDED` 之一（覆盖又排除 / 两者皆无都按 operationId 报错）；
   ② 排除项必须在 catalog 中、理由非空、且**不得**声明 `request`；
-  ③ 算术 `182 + 6 = 188`；④ 空对象动作必须 `requestRequired:false`（56 个，开放对象边界 `additionalProperties:true` 不计入）；
-  ⑤ GET 不得声明 request。逐批台账（`schema-coverage.test.ts` 的 `E10G_W*_REQUEST_OPS` + `E10G_W*_EMPTY_OPS`）继续钉住每批 op。
-- **生成物**：318 ops / 284 paths 不变；`gateway-paths.json` / `openapi.json` / `api-schema.gen.ts` 每批 diff 恰好是该批 op 的 `requestBody` 新增（0 added / 0 removed 路由），`emit:openapi` + `gen:api` 二次运行幂等。
+  ③ 算术 `189 + 6 = 195`；④ 空对象动作必须 `requestRequired:false`（59 个，开放对象边界 `additionalProperties:true` 不计入）；
+  ⑤ GET 不得声明 request。逐批台账（`schema-coverage.test.ts` 的 `E10G_W*_REQUEST_OPS` / `E10G_W*_EMPTY_OPS` /
+  `E10G_W*_OPTIONAL_OPS` / `E10G_P6_*`）继续钉住每批 op；`E10G_W1_OPTIONAL_OPS` 钉住 F1 的三个 run body。
+- **生成物**：合并 main 后 **327 ops / 293 paths**；`gateway-paths.json` / `openapi.json` /
+  `api-schema.gen.ts` 每批 diff 恰好是该批 op 的 `requestBody`（或 F1 的 body 形状）新增
+  （0 added / 0 removed 路由），`emit:openapi` + `gen:api` 二次运行幂等。E10g-fix 的 diff 只有
+  7 个 plugin POST 的 requestBody + 2 个 GET 的 response。
 - **运行时校验有意缺席**（spec §4 非目标）：`request` 只是声明式契约，gateway **不**在 transport 层校验 body；
   handler 仍是事实源（400 / 截断 / fail-open 的语义在 handler 里，schema 描述只做说明）。因此把 body 改坏不会在
   gateway 层被拒——这是与 response 相同的策略，不是遗漏。
@@ -1787,6 +1804,37 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 
 - 六项都**不**声明 `request`（声明一个 gateway 从不解析的形状会虚增 `requests`）。
   二进制 / multipart 的 multipart schema 建模、A2A 信封的机器可读产物皆不在本波（spec §4 非目标）。
+
+### E10g-fix（main Phase 6 集成，2026-11-14）
+
+> main 合入 9 个 plugin 自愈面 op（`plugins.audit` / `plugins.lastGood` 两个 GET +
+> `doctorAll` / `doctor` / `kill` / `resume` / `quarantine` / `unquarantine` / `rollback` 七个 POST，
+> catalog 318 → **327**）。本修正轮把新增面纳入契约，并修掉三处 review blocker（F1 / F2 / F3）。
+
+- **F1 session run body**：`session.suspend` 读 `body.reason`、`session.resume` /
+  `session.discardRun` 读 `body.runId`（`routes/session-run.ts`），且都是
+  `typeof x === 'string' && x` 守卫 → 空 body 合法。三个 op 从 `EmptyRequest` 改为**可选 body**
+  （`SessionSuspendRequest` / `SessionResumeRequest` / `SessionDiscardRunRequest`，
+  `requestRequired:false`）。台账：空对象动作 56 → 53（`CLOSED_EMPTY_TOTAL` 53，Phase 6 再加 6 → 59）。
+- **F2 截断 ≠ 拒绝**：`memory.add.cueAnchors`（8）/ `sourceTraceIds`（20）、
+  `fileHistory.snapshot.reason`（200 字符）、`pods.goals.techLead.messages.parts`（8 条）的上限
+  全部由 handler **静默截断**（`dashboard-legacy.ts` 的 `slice(0, 8)` / `primary_abstraction` 截断、
+  `normalizeSourceTraceIds`、`file-history.ts` 的 `reason.slice(0, 200)`、
+  `normalizeTechLeadParts` 的 `slice(0, MAX_TECH_LEAD_PARTS)`）。schema 里声明 `maxItems` /
+  `maxLength` 等于承诺一个不会发生的 400 → 删除硬上限，上限只写在 description。
+- **Phase 6 契约**：`routes/schemas/plugin-recovery.ts`（new）
+  - `plugins.audit` → `PluginsAuditResponse`：`{events: PluginAuditEvent[]}`，`action` 是
+    `PluginAuditAction` 闭集，`detail` 只保留 allowlist 键但值形状随操作（开放对象）；
+  - `plugins.lastGood` → `PluginLastGoodResponse`：`{name, lastGood:{version?,fingerprint,savedAt}}`，
+    `fingerprint` 是 `LastGoodMeta` 的唯一硬字段；
+  - `plugins.quarantine` → JSON body `{reason}`（缺失 / 空串 → 400）；
+  - 其余 6 个（`doctorAll` / `doctor` / `kill` / `resume` / `unquarantine` / `rollback`）只读路径
+    `:name` 与凭据头部（`principalOf(req)` / `assertHuman(req)` / `_req`）→ 空对象 +
+    `requestRequired:false`（human-only 语义在头部，body 不出现 actor 字段）。
+- **重编号（合并 main 后）**：responses **127/327（38.8%）**；requests **189/195（96.9%）**
+  = 189 covered + 6 excluded；`emit:openapi` = **327 routes / 293 paths / 327 operations**；
+  `node scripts/analyze-routes.cjs` = `TOTAL 0 (match 0, equals 0)`。
+- **F3**：交付记录里 W6 行的 `api-contract +9 / coverage +4` 实为 **+11 / +5（+16）**，已更正。
 
 ---
 
@@ -1822,9 +1870,9 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
   （台账 `npm run schema:coverage`，见「E10 契约覆盖」/
   「E10b 契约覆盖第二批」/「E10c 契约覆盖第三批」/「E10d 契约覆盖第四批」/「E10e 契约覆盖第五批」/
   「E10f 全量读表面收口」/ 本节 E11-1）。
-  **E10g 后**：**读表面已收口**（125/318 response，JSON GET 100%）、**请求表面已收口**
-  （182/188，剩余 6 个二进制 / multipart / A2A 显式排除）。剩下的 response 缺口 = **187 个写 op 的 200 体**
-  + **6 个非 JSON GET**（二进制 / SSE，不进 JSON schema）。
+  **E10g（+E10g-fix）后**：**读表面已收口**（127/327 response，JSON GET 127/133 = 100%）、
+  **请求表面已收口**（189/195，剩余 6 个二进制 / multipart / A2A 显式排除）。剩下的 response
+  缺口 = **194 个写 op 的 200 体** + **6 个非 JSON GET**（二进制 / SSE，不进 JSON schema）。
 - 强制版本协商 / SDK 全量 schema 类型化。
 - **写面 response schema**（POST/PUT/PATCH/DELETE 的 200 成功体）：E10g 只补了请求体，
   响应仍只覆盖读面；错误体一律不建模。

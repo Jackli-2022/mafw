@@ -1,10 +1,13 @@
 # Gateway E10g 写请求契约收口交付记录（2026-11-14）
 
 - 版本：gateway 4.16.1 / SDK 5.1.0 / desktop 5.1.0（**无版本号变更**；mobile 1.1.0+2 不变）
-- 性质：为 catalog 的**全部 188 个写 op**（非 GET）补请求契约 —— **182 个声明 `request` + 6 个显式排除**；
-  路由集合零变化（**318 ops / 284 paths**），**handler 零改动**（唯二例外：`schemas/pods.ts` 的 5 个 const
-  改为 export 供 W3 复用、`schemas/standing.ts` 的 3 个 const 改 export 供 W4 复用，形状零变化），
-  **响应口径不变 125/318**，**没有运行时 body 校验**（声明式契约，handler 仍是事实源）
+- 性质：为 catalog 的写 op（非 GET）补请求契约。E10g 本体覆盖 **188 个写 op**（182 声明 `request` +
+  6 显式排除）；**合并 main 的 Phase 6（+9 plugin 自愈面 op，catalog 318 → 327）后分母 195**，
+  收口 **189 声明 + 6 排除**（E10g-fix）。
+  路由集合只在合并处变化（**327 ops / 293 paths**），**handler 零改动**（唯三例外：`schemas/pods.ts` 的
+  5 个 const 改为 export 供 W3 复用、`schemas/standing.ts` 的 3 个 const 改 export 供 W4 复用，
+  以及 E10g-fix 删掉 4 处截断型 `maxItems`/`maxLength`；形状 / 行为零变化），
+  **响应口径 127/327**（E10g-fix 补 2 个 Phase 6 GET），**没有运行时 body 校验**（声明式契约，handler 仍是事实源）
 - spec：`docs/superpowers/specs/2026-11-14-gateway-e10g-request-contracts-design.md`
 - plan：`docs/superpowers/plans/2026-11-14-gateway-e10g-request-contracts.md`
 - 架构现状：`docs/architecture/gateway.md` §「E10g 请求契约」+§「台账口径（E10g）」+§「明确排除（E10g）」
@@ -24,10 +27,68 @@
 | `881e2794` | E10g-W2/W3 | `feat(contract)`: tasks/terminal/background/fileHistory 8 个 + pod 写接口 25 个（18 JSON + 6 可选 + 9 空对象）+ api-contract +8 + coverage +3；71/188 |
 | `aa1685c9` | E10g-W4 | `feat(contract)`: goals/decisions/lead/standing/goalRuns 29 个（10 JSON + 6 可选 + 13 空对象）+ api-contract +7 + coverage +3；100/188 |
 | `ce162b10` | E10g-W5 | `feat(contract)`: events/automations/approvals/questions/triage/permissions 24 个（16 JSON + 1 协议边界 + 7 空对象）+ api-contract +8 + coverage +3；124/188 |
-| `b1f53a3e` | E10g-W6 | `feat(contract)`: mcp/plugins/runtime/config/project/manager/commands 26 个（16 JSON + 2 所有权边界 + 2 可选 + 6 空对象）+ `plugins.install` 排除 + api-contract +9 + coverage +4；150/188 |
+| `b1f53a3e` | E10g-W6 | `feat(contract)`: mcp/plugins/runtime/config/project/manager/commands 26 个（16 JSON + 2 所有权边界 + 2 可选 + 6 空对象）+ `plugins.install` 排除 + **api-contract +11 / coverage +5（+16）**；150/188 |
 | `38283690` | E10g-W7 | `feat(contract)`: memory/media/tts/chat/python/obs/models/tools/eval/llm/mobile/devices 30 个（23 JSON + 1 可选 + 6 空对象）+ 5 排除 + api-contract +13 + coverage +5；180/188 |
 | `16918551` | E10g-W8 | `feat(contract)`: cognition gate/rewrite 2 个 JSON body + api-contract +3 + coverage +2；**182/188（96.8%）**，写表面收口 |
 | 本记录 | E10g-close | `docs(gateway)`: `request-coverage.test.ts` 收口守卫 + 架构台账 + 本记录 + 全量门禁 |
+| `4230a9a3` | merge main | `Merge main into feat/gateway-e10g-request-contracts`（Phase 6：+9 plugin 自愈面 op → 327 ops；冲突只在 `route-catalog.ts`，两侧都保留） |
+| `26b747fe` | E10g-fix F1/F2 | `fix(contract)`: session run 三个 op 改可选 body（`reason` / `runId`）+ 删 4 处截断型上限（`cueAnchors` / `sourceTraceIds` / `reason` / `parts`） |
+| `5e5b6c41` | E10g-fix P6 | `feat(contract)`: Phase 6 plugin 自愈面 7 个 POST 请求体（1 JSON + 6 空对象）+ `plugins.audit` / `plugins.lastGood` 响应 schema → 189/195、127/327 |
+| 本记录（E10g-fix） | docs(gateway) | `docs(gateway)`: 合并 main 后重编号（327/293、127/327、189/195）+ E10g-fix 记录 + W6 计数更正 |
+
+## Phase 6 集成与 E10g-fix（review blocker 修复，2026-11-14）
+
+> main 在 E10g-close 之后合入 Phase 6 的 9 个 plugin 自愈面 op（catalog 318 → **327**：
+> GET `plugins.audit` / `plugins.lastGood` + POST `plugins.doctorAll` / `doctor` / `kill` /
+> `resume` / `quarantine` / `unquarantine` / `rollback`；handler 在
+> `gateway/src/routes/plugin-packages.ts`，attach 在 `routes/wave2-handlers.ts`）。
+> 合并冲突只在 `route-catalog.ts`：两侧都保留（main 的 9 条路由 + 本分支已有的 `request:` 字段）。
+> 随后修掉三处 review blocker。
+
+- **F1（session run body 建模错误）**：`routes/session-run.ts` 里 `session.suspend` 读
+  `body.reason`、`session.resume` / `session.discardRun` 读 `body.runId`（都是
+  `typeof x === 'string' && x` 守卫，空 body 合法）。原先声明 `EmptyRequest` 等于宣称「handler
+  不读字段」——错误。改为可选 body schema：
+  `SessionSuspendRequest({reason?})` / `SessionResumeRequest({runId?})` /
+  `SessionDiscardRunRequest({runId?})`，全部 `requestRequired:false`。
+  台账：`CLOSED_EMPTY_TOTAL` 56 → 53；`E10G_W1_EMPTY_OPS` 12 项；新增 `E10G_W1_OPTIONAL_OPS` 3 项；
+  可选 body 20 → 23。
+- **F2（截断被写成硬上限）**：四处上限由 handler **静默截断**而不是拒绝，schema 声明硬上限会
+  承诺一个不会发生的 400，全部删除：
+  `memory.add.cueAnchors.maxItems:8`（`dashboard-legacy.ts` 的 `cue_anchors.slice(0, 8)`）、
+  `sourceTraceIds.maxItems:20`（`provenance.normalizeSourceTraceIds`）、
+  `fileHistory.snapshot.reason.maxLength:200`（`file-history.ts` 的 `reason.slice(0, 200)`）、
+  `pods.goals.techLead.messages.parts.maxItems:8`（`normalizeTechLeadParts` 的
+  `slice(0, MAX_TECH_LEAD_PARTS)`）。上限只保留在 description（"keeps the first 8 / 20" /
+  "truncates it to 200 chars"），api-contract 反向钉住 `maxItems` / `maxLength` 为 `undefined`。
+- **P6（Phase 6 契约）**：`gateway/src/routes/schemas/plugin-recovery.ts`（new）
+  - `plugins.audit` → `PluginsAuditResponse`（`{events: PluginAuditEvent[]}`；`action` 是
+    `PluginAuditAction` 14 值闭集，`result` 是 `ok|failed|denied`，`detail` 只有 allowlist 键但
+    值随动作变化 → 开放对象）；
+  - `plugins.lastGood` → `PluginLastGoodResponse`（`{name, lastGood:{version?, fingerprint, savedAt}}`，
+    `fingerprint` 是 `LastGoodMeta` 的唯一硬字段；无快照是 404、store 未接线是 503）；
+  - `plugins.quarantine` → JSON body `{reason}`（`minLength:1`；缺失 / 空串 → 400）；
+  - `plugins.doctorAll` / `doctor`（`_req` 只读路径 / 全量扫描）、`kill` / `resume` /
+    `unquarantine` / `rollback`（`principalOf(req)` / `assertHuman(req)` 只读凭据头部）→
+    空对象 `EmptyRequest` + `requestRequired:false`（human-only 语义在头部，body 不出现 actor 字段）。
+  - 只有这两个 GET 补 200 response schema（与任务口径一致：responses 125 → 127）；
+    7 个 POST 不带 response schema（写面 response 仍是 deferred 项）。
+- **F3（W6 计数更正）**：commit 表 W6 行原写 `api-contract +9 / coverage +4`，
+  实测 **api-contract +11 / coverage +5（+16）**（W6 的 26 个 op 里 `plugins.enable|disable|delete`
+  共享 schema，但断言逐 op 计数），已在本记录更正。
+
+**合并后重编号（实测）**
+
+| 指标 | E10g-close | 合并 main + E10g-fix |
+|---|---|---|
+| catalog ops / paths | 318 / 284 | **327 / 293** |
+| responses | 125/318（39.3%） | **127/327（38.8%）** |
+| JSON GET | 125/131（100%） | **127/133（100%）**（126 GET + `humanToken.rotate`，分母 = 127 covered + 6 非 JSON GET） |
+| requests | 182/188（96.8%） | **189/195（96.9%）** |
+| 排除项 | 6 | **6**（不变） |
+| 分类 | 105 JSON / 56 空 / 20 可选 / 1 边界 / 6 排除 | **106 JSON / 59 空 / 23 可选 / 1 边界 / 6 排除 = 195** |
+| 生成物 diff | 无 | 仅 7 个 plugin POST 的 `requestBody` + 2 个 GET 的 `responses` |
+
 
 ## requestBody 投影语义（P0）
 
@@ -56,12 +117,13 @@ if (def.request) op.requestBody = {
   400 / 截断 / fail-open 的语义仍在 handler（schema 的 description 只做说明）。
 - 台账口径：`gateway/scripts/schema-coverage.cjs` 用与 `response:` 相同的 brace-balanced 文本解析扫
   `request:`，分母 = 非 GET op（163 POST + 16 DELETE + 6 PATCH + 3 PUT = **188**）；`--json` 增
-  `requests` / `requestCovered` / `requestTotal` / `requestUncovered`。response 输出不变（125/318）。
+  `requests` / `requestCovered` / `requestTotal` / `requestUncovered`。response 输出（合并后 127/327）。
 
 ## 覆盖率数学
 
 | 批次 | 新增 request | 累计 |
 |---|---|---|
+| _（下表 P0-W8 的 `/188` 是 **合并 main 之前**的分母；Phase 6 后写 op = 195）_ | — | — |
 | 基线 `ca62ba13` | — | 0/188 |
 | P0（3 pilot） | 3 | 3/188（1.6%） |
 | W1 session | 35 | 38/188（20.2%） |
@@ -72,19 +134,22 @@ if (def.request) op.requestBody = {
 | W7 memory/media/device/misc | 30 | 180/188（95.7%） |
 | W8 cognition | 2 | **182/188（96.8%）** |
 | 排除（W6 1 + W7 5） | 0 | **182 covered + 6 excluded = 188** |
+| P6（merge main 后，E10g-fix） | 7（6 空对象 + 1 JSON） | **189/195（96.9%）** |
+| 最终 | — | **189 covered + 6 excluded = 195** |
 
-最终分类（实测 `catalog` 扫描，和 = 188）：
+最终分类（实测 `catalog` 扫描，106 + 59 + 23 + 1 + 6 = 195）：
 
 | 类别 | 数量 | 判据 |
 |---|---|---|
-| JSON body（`requestRequired` 缺省 true） | **105** | handler 读 body；缺失 → 400 |
-| 空对象动作（`Type.Object({})` + `requestRequired:false`） | **56** | 输入只在 path / query；语义是「无字段」 |
-| 可选 body（有 `properties` + `requestRequired:false`） | **20** | 有缺省值，或字段只用于 actor 鉴权 / query 回退 |
+| JSON body（`requestRequired` 缺省 true） | **106** | handler 读 body；缺失 → 400（含 `plugins.quarantine`） |
+| 空对象动作（`Type.Object({})` + `requestRequired:false`） | **59** | 输入只在 path / query；语义是「无字段」（含 Phase 6 的 6 个自愈面动作） |
+| 可选 body（有 `properties` + `requestRequired:false`） | **23** | 有缺省值、run 乐观锁（`suspend.reason` / `resume.runId` / `discardRun.runId`），或字段只用于 actor 鉴权 / query 回退 |
 | 协议透传边界（开放对象 + `requestRequired:false`） | **1** | `events.webhook.receive` |
 | 显式排除（不入 `request`） | **6** | 见下表 |
 
-- **响应覆盖不变**：`125/318（39.3%）`。E10g 只动请求侧；未覆盖的 193 = 187 个非 GET 的 200 体
-  + 6 个非 JSON GET（二进制 / SSE）。两个分母独立：responses 318、requests 188。
+- **响应覆盖**：E10g 只动请求侧（125/318）；Phase 6 合并后 E10g-fix 补 `plugins.audit` /
+  `plugins.lastGood` → **127/327（38.8%）**。未覆盖 200 = 194 个非 GET 的 200 体 + 6 个非 JSON GET
+  （二进制 / SSE）。两个分母独立：responses 327、requests 195。
 
 ### 6 个排除（原因入库，`request-coverage.test.ts` 的 `REQUEST_EXCLUDED`）
 
@@ -107,7 +172,7 @@ if (def.request) op.requestBody = {
 | 文件 | 内容 |
 |---|---|
 | `gateway/src/routes/registry.ts` | `RouteDef.request/requestContentType/requestRequired` + `toOpenApiPaths()` requestBody 投影 |
-| `gateway/scripts/schema-coverage.cjs` | `requests: X/188` + `--json` 四个新字段 |
+| `gateway/scripts/schema-coverage.cjs` | `requests: X/188`（合并 main 后分母 195）+ `--json` 四个新字段 |
 | `gateway/src/routes/schemas/session.ts` | `SessionCreateRequest`（`directory` 必填绝对路径：`minLength:1` + 跨平台绝对路径 pattern；`worktree?: boolean\|string`；`metadata?: Record`） |
 | `gateway/src/routes/schemas/tasks.ts` | `TaskSubmitRequest`（`kind` / `parentSessionID` 必填；shell→`command`、subagent→`prompt` 条件必填由 `TaskService.submit` 校验） |
 | `gateway/src/routes/schemas/pods.ts` | `PodTaskCreateRequest`（`title` 必填；plan 模式 `goalId` 必填） |
@@ -120,7 +185,8 @@ if (def.request) op.requestBody = {
   `checkpoint`、`restoreCheckpoint`（`scope` + `confirm:true`）、`data`、`discoverySkillInvoke`、`summarize`、
   `prompt` / `promptAsync`（`parts` / `delivery` / budget）、`command`、`rename`、`usagePluginsCreate`、
   `usagePluginSourcePut`、`subagents.spawn` / `subagents.message`。
-- **15 空对象**（`requestRequired:false`）：`abort` / `suspend` / `resume` / `discardRun` / `unrevert` /
+- **15 空对象**（`requestRequired:false`；E10g-fix 后 `suspend` / `resume` / `discardRun` 移入可选 body，
+  空对象 12 个）：`abort` / `suspend` / `resume` / `discardRun` / `unrevert` /
   `delete` / `deleteLegacy` / `queue.clear` / `queue.cancel` / `subagents.cancel` / `discoveryRefresh` /
   `background` / `usagePluginsReload` / `usagePluginsDelete` / `usagePluginTest`。
 - `session.command` 无 gateway handler（尾部反代 runtime serve）→ schema 按 `@opencode-ai/sdk`
@@ -180,7 +246,7 @@ if (def.request) op.requestBody = {
 
 - `routes/schemas/{memory-write,media-write,misc-write}.ts`（new）。
 - **23 JSON body**：`memory.add`（`content` trim 后为空 → 400；`cueAnchors` / `sourceTraceIds` 超限截断
-  而非拒绝）、`memory.setSticky`、`memory.merge`、`embedding.update`（**不声明** `baseUrl`——handler 显式
+  而非拒绝 —— E10g-fix 因此删掉了 `maxItems`，上限只写在 description）、`memory.setSticky`、`memory.merge`、`embedding.update`（**不声明** `baseUrl`——handler 显式
   拒绝；llama.cpp 数值区间逐项对齐）、`media.switch` / `createTaskApi` / `analyzeAudio`、`tts.speak` /
   `speakStream`（请求是 JSON，响应才是流）/ `interrupt`、`chat.send` / `sendEnriched`、
   `python.execute` / `restart`、`obs.capture`（JSON chunked，不是原始二进制）、`models.update`、
@@ -213,17 +279,17 @@ if (def.request) op.requestBody = {
 | 11 | **`embedding.update` 反向收窄** | `baseUrl` 被 handler 显式拒绝（防 DashScope key 外发）→ 不写进契约 |
 
 - **SDK DTO 零改动**：请求契约不进 `@mafw/sdk` 的 DTO 面（SDK 只消费响应类型与 Experience Action）；
-  182 个 request 只体现在生成物 `openapi.json` / `api-schema.gen.ts` 的 `requestBody` 类型上。
+  189 个 request 只体现在生成物 `openapi.json` / `api-schema.gen.ts` 的 `requestBody` 类型上。
   因此本波 **0 DTO 破坏**、`npm test` 恒为 226。
 
 ## 生成物 diff 审计
 
-`emit:openapi` → `318 routes → 284 paths / 318 operations`；`gen:api` → 318 ops（overrides 命中 10）。
+`emit:openapi` → `327 routes → 293 paths / 327 operations`；`gen:api` → 327 ops（overrides 命中 10）。
 
 | 产物 | ops | paths | added | removed | changed |
 |---|---|---|---|---|---|
-| `contract/gateway-paths.json` | 318 → 318 | 284 → 284 | 0 | 0 | 逐批恰好该批 op 的 `requestBody` 新增（剥掉 requestBody 后逐 path 深比较相等） |
-| `contract/openapi.json` | 318 → 318 | 284 → 284 | 0 | 0 | 同上 |
+| `contract/gateway-paths.json` | 318 → 327 | 284 → 293 | +9（Phase 6） | 0 | 逐批恰好该批 op 的 `requestBody` 新增（剥掉 requestBody 后逐 path 深比较相等）；E10g-fix 的 diff = 7 个 plugin POST requestBody + 2 个 GET response |
+| `contract/openapi.json` | 318 → 327 | 284 → 293 | +9（Phase 6） | 0 | 同上 |
 | `src/api-schema.gen.ts` | — | — | — | — | 同上（每批 op 块从 `requestBody?: never` 变为请求体类型） |
 | `contract/overrides.json` | — | — | — | — | 未改动（仍 10 条命中） |
 
@@ -237,39 +303,40 @@ if (def.request) op.requestBody = {
 1. 每个非 GET op **恰好**满足 `request` 或 `REQUEST_EXCLUDED` 之一（覆盖又排除 / 两者皆无都按
    operationId 报错）；
 2. 排除项必须是 catalog 写 op、理由非空、且**不得**声明 `request`；清单恰好 6 条；
-3. 算术闭合：`catalog 写 op 188`、`covered 182`、`182 + 6 = 188`、无未归属项；
-4. 空对象动作必须 `requestRequired:false`（**56** 个；`additionalProperties:true` 的开放对象边界不计入），
+3. 算术闭合：`catalog 写 op 195`、`covered 189`、`189 + 6 = 195`、无未归属项；
+4. 空对象动作必须 `requestRequired:false`（**59** 个；`additionalProperties:true` 的开放对象边界不计入），
    数量钉死，防止新的 fieldless 动作以「required body」形态落地；
-5. GET 不得声明 request（否则会广告一个 HTTP 层从不读取的 body）。
+5. GET 不得声明 request（否则会广告一个 HTTP 层从不读取的 body）
 
 逐批台账仍在 `schema-coverage.test.ts`（`E10G_*_REQUEST_OPS` / `E10G_*_EMPTY_OPS` / `E10G_*_OPTIONAL_OPS`
-/ `E10G_*_BOUNDARY_OPS` / `E10G_W*_EXCLUDED_OPS`）：按 op 命名失败，并交叉校验
+/ `E10G_*_BOUNDARY_OPS` / `E10G_W*_EXCLUDED_OPS` / `E10G_P6_*`）：按 op 命名失败，并交叉校验
 `scripts/schema-coverage.cjs` 的 `requests` 数字与 catalog 一致（parser 与源码不能漂移）。
+E10g-fix 新增 `E10G_W1_OPTIONAL_OPS`（F1 的 `suspend` / `resume` / `discardRun`）与 `E10G_P6_*`（7 个自愈面 op）。
 
 ## 行为变化 / Breaking
 
 - **wire 字节：零变化**（没有 handler / 路由 / 响应体改动）。
 - **SDK 类型面：零变化**（无 DTO 改动，`npm test` 226 不变）。
-- **客户端可见**：只有 `openapi.json` / `api-schema.gen.ts` 多了 182 个 `requestBody` —— 对代码生成消费者
+- **客户端可见**：只有 `openapi.json` / `api-schema.gen.ts` 多了 189 个 `requestBody` + 2 个 response —— 对代码生成消费者
   是 additive（此前是 `never`）。
 - **未改变**：运行时 body 校验、错误体、SSE / 二进制面、override 表。
 
-## 验证（worktree @ E10g-close）
+## 验证（worktree @ E10g-fix）
 
 | 门 | 命令 | 结果 |
 |---|---|---|
 | gateway 类型 | `npx tsc --noEmit -p tsconfig.json`（`gateway/`） | **0 errors** |
-| gateway 全量 | `npx jest --runInBand --forceExit --no-coverage`（`gateway/`） | **7410 tests：7398 passed / 9 failed / 3 skipped**；suites **3 failed / 1 skipped / 921 passed（924 of 925）**；**9 条失败恰好是 3 个已知 env-red suite，零 E10g 红**；377.9s |
-| 覆盖率台账 | `npm run schema:coverage` | **responses 125/318（39.3%）不变**；**requests 182/188（96.8%）** |
+| gateway 全量 | `npx jest --runInBand --forceExit --no-coverage`（`gateway/`） | **7524 tests（7511 passed / 10 failed / 3 skipped）**；suites **4 failed / 1 skipped / 942 passed（946 of 947）**；10 条红 = 3 个已知 env-red suite 的 9 条 + `tests/unit/memory/laya-client.test.ts` 1 条计时抖动（isolated rerun **10/10 pass**）；325.0s |
+| 覆盖率台账 | `npm run schema:coverage` | **responses 127/327（38.8%）**；**requests 189/195（96.9%）** |
 | 路由分析 | `node scripts/analyze-routes.cjs` | **`TOTAL 0 (match 0, equals 0)`** |
-| 契约产物新鲜度 | `npm run emit:openapi`（gateway） | **318 routes → 284 paths / 318 operations，无 diff**（`git status` 无生成物改动） |
-| 定向契约 + 收口守卫 | jest `api-contract` + `architecture/{schema-coverage,request-coverage}` + `registry` | **202 passed / 4 suites**（155 + 28 + 5 + 14） |
+| 契约产物新鲜度 | `npm run emit:openapi`（gateway） | **327 routes → 293 paths / 327 operations，无 diff**（二次运行 `git status` 无生成物改动） |
+| 定向契约 + 收口守卫 | jest `api-contract` + `architecture/{schema-coverage,request-coverage}` + `registry` | **209 passed / 4 suites**（159 + 31 + 5 + 14） |
 | kernel-split 守卫 | jest `tests/unit/architecture/kernel-split-guards.test.ts` | **7 / 7 passed** |
 | SDK 类型 | `npx tsc --noEmit -p tsconfig.json` | **0 errors** |
 | SDK 全量 | `npm test`（`src/*.test.ts`） | **226 / 226 passed（0 fail）**（本波 0 运行时新增） |
 | SDK contract | `node --import tsx --require ../../packages/test-shim/require-hook.cjs --test src/contract.test.ts` | **4 / 4 passed** |
-| SDK 生成幂等 | `npm run gen:api`（二次） | **幂等**（`284 paths / 318 operations`，overrides 命中 **10**，工作树无生成物 diff） |
-| desktop 全量 | `npm run test:desktop`（worktree root） | **3866 tests / 736 suites：3865 passed / 1 failed**。唯一红 = `src/main/mafw-gateway-resolver.test.ts` dev-path（worktree 未构建 `gateway/dist`） |
+| SDK 生成幂等 | `npm run gen:api`（二次） | **幂等**（`293 paths / 327 operations`，overrides 命中 **10**，工作树无生成物 diff） |
+| desktop 全量 | `npm run test:desktop`（worktree root） | **3868 tests / 736 suites（3867 passed / 1 failed）**。唯一红 = `src/main/mafw-gateway-resolver.test.ts` dev-path（worktree 未构建 `gateway/dist`） |
 | desktop 类型 | `npx tsgo --noEmit -p tsconfig.json`（`packages/desktop`） | 只剩已知 `node:tls` **2 条**（`getCACertificates` / `setDefaultCACertificates`），0 新增 |
 | mobile 定向 | `flutter test test/triage_card_model_test.dart test/sessions_page_test.dart test/widget_test.dart test/tab_shell_test.dart --concurrency=1` | **32 / 32 passed**（`triage_card_model_test.dart` 单独 **12 / 12**） |
 | mobile analyzer | `dart analyze lib test` | **No issues found（0）** |
@@ -278,28 +345,31 @@ if (def.request) op.requestBody = {
 ### gateway 全量明细
 
 ```
-Test Suites: 3 failed, 1 skipped, 921 passed, 924 of 925 total
-Tests:       9 failed, 3 skipped, 7398 passed, 7410 total
+Test Suites: 4 failed, 1 skipped, 942 passed, 946 of 947 total
+Tests:       10 failed, 3 skipped, 7511 passed, 7524 total
 Snapshots:   0 total
-Time:        377.9 s
+Time:        325.0 s
 ```
 
-失败 suite 恰好三个已知 env-red：`tests/integration/plugin-package-e2e.test.ts`（npm staging /
+失败 suite：三个已知 env-red —— `tests/integration/plugin-package-e2e.test.ts`（npm staging /
 `@mafw/plugin-contract` 解析）、`tests/unit/runtime/claude-adapter-acceptance.test.ts`、
 `tests/unit/runtime/claude-adapter-coverage.test.ts`（esbuild 解析不到
-`@anthropic-ai/claude-agent-sdk`）——与 E10e / E10f 同一集合，**零 E10g 红**（无需 isolated rerun）。
-总数 `7410` 相对 E10f-close（7311）的增量 = 本波 **+93** + 基线带入的 `e717bd16`（plugin manifest v2
-parser，+6 / +1 suite）；suite 总数 925 = 基线 923 + `e717bd16` 1 + 本波 `request-coverage` 1。
+`@anthropic-ai/claude-agent-sdk`）——与 E10e / E10f 同一集合，共 9 条；
+外加 `tests/unit/memory/laya-client.test.ts` 1 条 **计时抖动**（full-suite 负载下 circuit breaker
+计数多 1，isolated rerun **10/10 pass**），**零契约红**。
+总数 `7524` 相对 E10f-close（7311）的增量 = E10g 本体 **+93** + `e717bd16`（plugin manifest v2
+parser）**+6 / +1 suite** + main Phase 6（+9 op 及其自带测试）+ E10g-fix **+6**；
+suite 总数 947 = 基线 923 + `e717bd16` 1 + E10g `request-coverage` 1 + Phase 6 / E10g-fix 的新 suite。
 
 ## 新增测试（对基线 `ca62ba13` 的增量）
 
 | 文件 | 基线 → 终值 | 增量 | 依据 |
 |---|---|---|---|
-| `gateway/tests/unit/api-contract.test.ts` | 96 → **155** | **+59** | W1 +9 / W2W3 +8 / W4 +7 / W5 +8 / W6 +11 / W7 +13 / W8 +3（计数锚 + 逐 op body 形状 + 空对象/边界/排除分类） |
-| `gateway/tests/unit/architecture/schema-coverage.test.ts` | 3 → **28** | **+25** | P0 2（188 分母 / pilot）+ 每批逐 op + 空对象/可选/边界/排除 + W8 最终算术 |
+| `gateway/tests/unit/api-contract.test.ts` | 96 → **159** | **+63** | W1 +9 / W2W3 +8 / W4 +7 / W5 +8 / W6 +11 / W7 +13 / W8 +3 + E10g-fix +3（F1 session run 可选 body、P6 请求体、P6 响应形状）+ 计数锚（E10g-close 记的 155 实际为 156） |
+| `gateway/tests/unit/architecture/schema-coverage.test.ts` | 3 → **31** | **+28** | P0 2（分母 / pilot）+ 每批逐 op + 空对象/可选/边界/排除 + W8 最终算术 + E10g-fix 3（`E10G_W1_OPTIONAL_OPS`、`E10G_P6_REQUEST_OPS`、`E10G_P6_EMPTY_OPS`） |
 | `gateway/tests/unit/registry.test.ts` | 10 → **14** | **+4** | P0 管线：JSON / `application/octet-stream` / `required:false` / 无 request 无 requestBody |
-| `gateway/tests/unit/architecture/request-coverage.test.ts` | 0 → **5** | **+5** | 收口守卫（恰好其一 / 排除台账 / 188 算术 / 56 空对象 optional / GET 无 request） |
-| **gateway 合计** | — | **+93** | 可执行 test case 数（非断言数） |
+| `gateway/tests/unit/architecture/request-coverage.test.ts` | 0 → **5** | **+5** | 收口守卫（恰好其一 / 排除台账 / 195 算术 / 59 空对象 optional / GET 无 request） |
+| **gateway 合计** | — | **+100** | 可执行 test case 数（非断言数）：E10g 本体 +93、E10g-fix +6、修正 E10g-close 计数偏差 +1（155 → 156） |
 | SDK / desktop / mobile | — | **0** | 本波无 SDK DTO、无 desktop、无 mobile 代码改动（`npm test` 仍 226、desktop 3866、mobile 32 定向不变） |
 
 ## 已知红（非本波代码问题）
@@ -313,13 +383,15 @@ parser，+6 / +1 suite）；suite 总数 925 = 基线 923 + `e717bd16` 1 + 本�
 3. **desktop 类型 `node:tls` 2 条**：hoisted `@types/node` 比运行时旧，缺 `getCACertificates` /
    `setDefaultCACertificates`（既有噪声）。
 4. **TUI env-red**：`@earendil-works/pi-tui` 未安装（全仓同）。
-5. 说明：mobile 定向首跑在 gateway 全量并行时出现 `sessions_page_test` 的 "did not complete" 超时；
+5. **`laya-client.test.ts` 计时抖动 1 条**（full-suite 下 circuit breaker 计数 3 → 4，isolated
+   rerun **10/10 pass**）：与 E10e / E10f 同类的时序噪声，非契约改动引入。
+6. 说明：mobile 定向首跑与 gateway 全量并行时出现 `sessions_page_test` 的 "did not complete" 超时；
    gateway 跑完后同一命令 **32/32 通过**（纯资源争用，非代码问题）。
 
 
 ## Deferred（E10g 后仍保留）
 
-- **写面 182 个 op 的 200 response schema**（请求侧已收口；`responses` 仍 125/318）。
+- **写面 op 的 200 response schema**（请求侧已收口 189/195；`responses` 127/327，194 个非 GET 仍无 200 体）。
 - **6 个二进制 / multipart / A2A 透传 op 的 transport 级契约**（content-type / SSE 帧 / multipart 部件）：
   只排除并记录，不建 JSON schema。
 - **运行时 body 校验**（有意不做：声明式契约，handler 是事实源）。
