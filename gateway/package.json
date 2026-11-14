@@ -8,7 +8,7 @@
     "emit:runtime-contract": "ts-node --project tsconfig.json scripts/emit-runtime-contract.ts",
     "emit:experience-contract": "ts-node --project tsconfig.json scripts/emit-experience-contract.ts",
     "schema:coverage": "node scripts/schema-coverage.cjs",
-    "build": "tsc && node scripts/write-release-manifest.mjs && node -e \"const fs=require('fs'),p=require('path');const cp=(s,d)=>{if(fs.existsSync(s)){fs.cpSync(s,d,{recursive:true});console.log('[copy] '+d)}else{console.log('[skip] '+s)};};cp(p.join(__dirname,'src','dashboard','public'),p.join(__dirname,'dist','dashboard','public'));cp(p.join(__dirname,'src','usage','builtin-plugins'),p.join(__dirname,'dist','usage','builtin-plugins'));\"",
+    "build": "tsc && node scripts/write-release-manifest.mjs && node -e \"const fs=require('fs'),p=require('path');const cp=(s,d)=>{if(fs.existsSync(s)){fs.cpSync(s,d,{recursive:true});console.log('[copy] '+d)}else{console.log('[skip] '+s)};};cp(p.join(__dirname,'src','dashboard','public'),p.join(__dirname,'dist','dashboard','public'));cp(p.join(__dirname,'src','usage','builtin-plugins'),p.join(__dirname,'dist','usage','builtin-plugins'));cp(p.join(__dirname,'src','plugins','worker'),p.join(__dirname,'dist','plugins','worker'));\"",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
     "test": "jest --runInBand",

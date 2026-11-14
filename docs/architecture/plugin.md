@@ -175,3 +175,14 @@ re-export shim 已在 Task 7 删除）；驱动包不得 import `gateway/src`，
 - 新增 plugin doctor（12 项检查）、kill/resume、quarantine/unquarantine、audit 路由与 mafw plugins CLI。
 - kill switch 只停统一插件包；resume/unquarantine/v2 install 必须 human/device。
 
+
+## Phase 6B worker host（2026-11-14）
+
+- untrusted 包只通过 child_process worker 执行，gateway 主进程从不 require 其入口。
+- worker 启动参数：Node permission flag（--permission 或 --experimental-permission）、只读包根目录、无写/无 child-process/无 addon。
+- v1 能力：actions / events / config.read / config.write；files / net / terminal / http / tools / observers / ui.web 全部拒绝。
+- RPC 为 JSON-only，单条消息上限 1 MiB；config 走 host 回调。
+- action 超时杀 child；崩溃按 0.5s/1s/2s 退避重启；3 次后由 safety quarantine。
+- worker 启动失败或无 permission flag → 拒绝 untrusted，绝不 in-process fallback。
+- net 仍是 defense-in-depth（Module._load + global stub），不是 OS 级 hermetic 隔离。
+

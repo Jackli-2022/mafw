@@ -8,8 +8,16 @@ import { fork, type ChildProcess } from 'child_process';
 import * as path from 'path';
 import { permissionFlagFor, type PermissionFlag } from './node-flags';
 import { decodeWorkerMessage, encodeWorkerMessage } from './worker-protocol';
-import type { SubprocessLedger } from '../../kernel-v2/subprocess-ledger';
 import type { NormalizedPackageManifest } from '../package-manifest';
+
+/** Structural subset of the kernel-v2 ledger used by the live worker host. */
+export interface WorkerSubprocessLedger {
+  track(id: string, handle: { pid?: number; stop(): Promise<void> }, ownership?: 'provider' | 'external'): void;
+  markRunning(id: string): void;
+  markFailed(id: string, reason: string): void;
+  markStopped(id: string, reason?: string): void;
+  snapshot(): Array<{ id: string; state: string }>;
+}
 import type { PluginEmitEvent } from '../package-types';
 
 export interface WorkerLogger {
@@ -37,7 +45,7 @@ export interface WorkerHostOptions {
   permissionFlag?: PermissionFlag | null;
   timeoutMs?: number;
   maxOldSpaceMb?: number;
-  ledger?: SubprocessLedger;
+  ledger?: WorkerSubprocessLedger;
   onEmit: (event: PluginEmitEvent) => void;
   getConfig: () => Record<string, unknown>;
   updateConfig: (patch: Record<string, unknown>) => void;
