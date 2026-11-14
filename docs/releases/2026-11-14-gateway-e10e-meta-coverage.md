@@ -68,9 +68,10 @@
   `annotations` 是 MCP stable spec 注解五键（全 optional）。
 - **`config.get`**：200 body = `config.raw`（defaults + `config.yaml` 深合并 + env 覆盖）。`deepMerge`
   对未知键同样写入 → section 内键集运营可扩展，逐字段转写会成为 `GatewayConfig` 的手抄第二副本（无
-  编译期链接、静默漂移）。因此：**外层 section 键集封闭**（26 个名字 required，编译期断言 ≡
-  `keyof GatewayConfig`），**section 内是边界对象**（owner = gateway config loader，`Config.buildData`）。
-  不整响应放宽（顶层没有 `additionalProperties` / `patternProperties`）。
+  编译期链接、静默漂移）。因此：**外层 section 键集 required 固定**（26 个名字 required，编译期断言 ≡
+  `keyof GatewayConfig`；TypeBox 不输出 `additionalProperties: false`，闭包由 required 集合 + 编译期 pin
+  保证，而非 schema 自身闭合），**section 内是边界对象**（owner = gateway config loader，`Config.buildData`）。
+  顶层不额外放宽（无 `additionalProperties` / `patternProperties`）。
 - **`scheduler.status`**：`{active, queued, capacity, plan}`；`plan` 四键恒在（`humanSlot` 打开时
   capacity +1）；404 的 `{error}` 不是 200 body。
 
@@ -177,8 +178,8 @@ Time:        589.63 s
 
 - commit 内 `gateway/tests` 只有两个文件改动（`git show --numstat 95f289f1`：
   `api-contract` +288/−0 / `schema-coverage` +11/−3 行），无删除用例。
-- gateway 全量 **7265** = E10d 收口口径 **7256** + 基线新增 `ac7852b7`（`test(goal): pin llm goal eval
-  advisory mode`，+1）+ E10e-1 新增 **8**。
+- gateway 全量 **7265** = E10d 收口口径 **7256** + 基线新增 `b30ab0d1`（`fix(goal): make llm goal eval
+  advisory`，经 merge `6cecf9cb` 带入；+1 用例）+ E10e-1 新增 **8**。
 
 ## 已知红（非本波代码问题）
 
