@@ -141,13 +141,16 @@ function hashFile(hash: ReturnType<typeof createHash>, file: CollectedFile): voi
   hash.update('\0');
 }
 
-/**
- * Computes the content fingerprint of a package entry file.
- *
- * @throws when the entry file does not exist — the host records that as a
- *   package error instead of guessing a fingerprint.
- */
-export function fingerprintPackage(mainFile: string, options: FingerprintOptions = {}): string {
+interface ResolvedPackageFiles {
+  main: string;
+  root: string | null;
+  files: CollectedFile[];
+}
+
+function resolvePackageFiles(
+  mainFile: string,
+  options: FingerprintOptions,
+): ResolvedPackageFiles {
   const main = path.resolve(mainFile);
   let stat: fs.Stats;
   try {
@@ -157,16 +160,12 @@ export function fingerprintPackage(mainFile: string, options: FingerprintOptions
   }
   if (!stat.isFile()) throw new Error(`package main file not found: ${mainFile}`);
 
-  const hash = createHash('sha256');
-  hash.update(`${SALT}\0`);
-
   const explicitRoot = options.rootDir ? path.resolve(options.rootDir) : null;
   const root = explicitRoot ?? findManifestRoot(main);
 
   if (!root) {
     // Single-file package: only its own content is part of the fingerprint.
-    hashFile(hash, { relPath: path.basename(main), absolute: main });
-    return hash.digest('hex');
+    return { main, root: null, files: [{ relPath: path.basename(main), absolute: main }] };
   }
 
   const files: CollectedFile[] = [];
@@ -175,6 +174,51 @@ export function fingerprintPackage(mainFile: string, options: FingerprintOptions
     files.push({ relPath: path.basename(main), absolute: main });
     files.sort((a, b) => a.relPath.localeCompare(b.relPath));
   }
+  return { main, root, files };
+}
+
+/**
+ * Computes the content fingerprint of a package entry file.
+ *
+ * @throws when the entry file does not exist — the host records that as a
+ *   package error instead of guessing a fingerprint.
+ */
+export function fingerprintPackage(mainFile: string, options: FingerprintOptions = {}): string {
+  const { files } = resolvePackageFiles(mainFile, options);
+  const hash = createHash('sha256');
+  hash.update(`${SALT}\0`);
   for (const file of files) hashFile(hash, file);
   return hash.digest('hex');
+}
+
+function hashFileContent(file: CollectedFile): string {
+  const hash = createHash('sha256');
+  if (file.linkTarget !== undefined) {
+    hash.update(`link:${file.linkTarget}`);
+    return `sha256-${hash.digest('hex')}`;
+  }
+  let bytes: Buffer;
+  try {
+    bytes = fs.readFileSync(file.absolute);
+  } catch (err: any) {
+    hash.update(`unreadable:${err?.code ?? 'error'}`);
+    return `sha256-${hash.digest('hex')}`;
+  }
+  hash.update(bytes);
+  return `sha256-${hash.digest('hex')}`;
+}
+
+/**
+ * Per-file hashes used by the integrity baseline. Paths are relative to the
+ * package root (POSIX separators) and use the same ignore rules as the
+ * content fingerprint.
+ */
+export function packageFileHashes(
+  mainFile: string,
+  options: FingerprintOptions = {},
+): Record<string, string> {
+  const { files } = resolvePackageFiles(mainFile, options);
+  const out: Record<string, string> = {};
+  for (const file of files) out[file.relPath] = hashFileContent(file);
+  return out;
 }
