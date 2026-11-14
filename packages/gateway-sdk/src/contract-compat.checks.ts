@@ -33,6 +33,8 @@ import type {
   LeadTopicView, LeadTopicIndexMessage, LeadBoundaryView, EventSourceView,
   // E10h-R1 session write responses (same DTOs as their read twins)
   RunState, CheckpointRestoreResult, DataPart, SubagentRecord,
+  // E10h-R2 pod / task / terminal write responses
+  PodLeadEnsureResult, PodTechLeadPrompt, PodGoalAcceptResult, PodRejectResult, TerminalConnectTicket,
 } from './types'
 import type { RuntimeContractResponse } from './runtime-contract'
 import type { MafwClient } from './client'
@@ -259,6 +261,78 @@ const CHECK_structured_submit: AssertEq<
   Resp<operations['structured.submit']>,
   { ok: boolean; errors: string[] }
 > = true
+
+// E10h-R2: pod / task / terminal / background 写响应。复用读侧 DTO 的直接锁等价；
+// 其余按 handler wire 字面新写——`pods.goals.cancel` 的 `{goal}` 是 `PodGoalRow`
+// （不是视图）、`pods.messages.delivery.retry` 透传含 `skipped`、`terminal.remove`
+// 的 `ok` 是字面量 true，因此这三处**故意**不绑 SDK 的宽松类型（见 schema 注释）。
+const CHECK_pods_create: AssertEq<Resp<operations['pods.create']>, PodDetail> = true
+const CHECK_pods_update: AssertEq<Resp<operations['pods.update']>, PodDetail> = true
+const CHECK_pods_wake: AssertEq<Resp<operations['pods.wake']>, PodDetail> = true
+const CHECK_pods_sleep: AssertEq<Resp<operations['pods.sleep']>, PodDetail> = true
+const CHECK_pods_lead_ensure: AssertEq<Resp<operations['pods.lead.ensure']>, PodLeadEnsureResult> = true
+const CHECK_pods_tasks_create: AssertEq<
+  Resp<operations['pods.tasks.create']>,
+  Awaited<ReturnType<PodNamespace['createTask']>>
+> = true
+const CHECK_pods_tasks_update: AssertEq<
+  Resp<operations['pods.tasks.update']>,
+  Awaited<ReturnType<PodNamespace['updateTask']>>
+> = true
+const CHECK_pods_tasks_delete: AssertEq<
+  Resp<operations['pods.tasks.delete']>,
+  Awaited<ReturnType<PodNamespace['deleteTask']>>
+> = true
+const CHECK_pods_messages_create: AssertEq<
+  Resp<operations['pods.messages.create']>,
+  Awaited<ReturnType<PodNamespace['sendMessage']>>
+> = true
+const CHECK_pods_messages_read: AssertEq<
+  Resp<operations['pods.messages.read']>,
+  Awaited<ReturnType<PodNamespace['markRead']>>
+> = true
+const CHECK_pods_messages_dismiss: AssertEq<
+  Resp<operations['pods.messages.delivery.dismiss']>,
+  Awaited<ReturnType<PodNamespace['dismissDelivery']>>
+> = true
+const CHECK_pods_memory_write: AssertEq<
+  Resp<operations['pods.memory.write']>,
+  Awaited<ReturnType<PodNamespace['writeMemory']>>
+> = true
+const CHECK_pods_review_items_create: AssertEq<
+  Resp<operations['pods.goals.reviewItems.create']>,
+  Awaited<ReturnType<PodNamespace['createReviewItems']>>
+> = true
+const CHECK_pods_review_items_resolve: AssertEq<
+  Resp<operations['pods.goals.reviewItems.resolve']>,
+  Awaited<ReturnType<PodNamespace['resolveReviewItem']>>
+> = true
+const CHECK_pods_review_items_reopen: AssertEq<
+  Resp<operations['pods.goals.reviewItems.reopen']>,
+  Awaited<ReturnType<PodNamespace['reopenReviewItem']>>
+> = true
+const CHECK_pods_tech_lead_message: AssertEq<
+  Resp<operations['pods.goals.techLead.messages']>,
+  PodTechLeadPrompt
+> = true
+const CHECK_pods_probes_create: AssertEq<
+  Resp<operations['pods.goals.probes.create']>,
+  Awaited<ReturnType<PodNamespace['createProbe']>>
+> = true
+const CHECK_pods_reject: AssertEq<Resp<operations['pods.goals.reject']>, PodRejectResult> = true
+const CHECK_pods_accept: AssertEq<Resp<operations['pods.goals.accept']>, PodGoalAcceptResult> = true
+/** cancel 回迁移后的 task 本体（与 `tasks.get` 同形），不是 `{ok:true}`。 */
+const CHECK_tasks_cancel: AssertEq<Resp<operations['tasks.cancel']>, GenTask> = true
+const CHECK_terminal_create: AssertEq<
+  Resp<operations['terminal.create']>,
+  { protocol: string; id: string }
+> = true
+const CHECK_terminal_connect_ticket: AssertEq<
+  Resp<operations['terminal.connectTicket']>,
+  TerminalConnectTicket
+> = true
+/** 取消后台作业回中性 job 行（与 list item 同形，不是 task 原始 DTO）。 */
+const CHECK_background_cancel: AssertEq<Resp<operations['background.jobs.cancel']>, MafwBackgroundJob> = true
 
 /**
  * `tasks.output` 是 runtime shell 的透传边界（四键 optional + 开放索引）；这里仍锁
@@ -534,4 +608,13 @@ export const CONTRACT_COMPAT_CHECKS = [
   CHECK_session_data_part, CHECK_session_data_part_type, CHECK_session_prompt,
   CHECK_session_subagent_spawn, CHECK_session_queue_clear, CHECK_session_queue_cancel,
   CHECK_structured_submit,
+  // E10h-R2
+  CHECK_pods_create, CHECK_pods_update, CHECK_pods_wake, CHECK_pods_sleep,
+  CHECK_pods_lead_ensure, CHECK_pods_tasks_create, CHECK_pods_tasks_update,
+  CHECK_pods_tasks_delete, CHECK_pods_messages_create, CHECK_pods_messages_read,
+  CHECK_pods_messages_dismiss, CHECK_pods_memory_write, CHECK_pods_review_items_create,
+  CHECK_pods_review_items_resolve, CHECK_pods_review_items_reopen,
+  CHECK_pods_tech_lead_message, CHECK_pods_probes_create, CHECK_pods_reject,
+  CHECK_pods_accept, CHECK_tasks_cancel, CHECK_terminal_create,
+  CHECK_terminal_connect_ticket, CHECK_background_cancel,
 ]

@@ -29,3 +29,31 @@ export const TerminalListResponse = Type.Object({
   supported: Type.Boolean(),
   sessions: Type.Array(TerminalSessionSchema),
 })
+
+// ── E10h-R2：terminal 写接口（3 ops）────────────────────────────────────
+//
+// 事实源：routes/terminal.ts `handleTerminal`。PTY 不支持时是 503（带
+// `supported:false`），因此下面的 200 形状只在 `supported=true` 时出现。
+
+/** `POST /api/terminal/sessions`（→ `TerminalService.create`）：只回协议标识 + 新 id。 */
+export const TerminalCreateResponse = Type.Object({
+  protocol: Type.String(),
+  id: Type.String(),
+})
+
+/**
+ * `POST /api/terminal/sessions/:id/connect-ticket`（→ `TerminalService.issueTicket`）：
+ * `TerminalTicketView`——一次性票据 + 相对 WS 路径（客户端与 gateway base 拼成 ws(s)）。
+ */
+export const TerminalConnectTicketResponse = Type.Object({
+  protocol: Type.String(),
+  ticket: Type.String(),
+  url: Type.String(),
+  expiresAt: Type.Number(),
+})
+
+/** `DELETE /api/terminal/sessions/:id`（→ `TerminalService.remove`）：无字段成功体。 */
+export const TerminalRemoveResponse = Type.Object({
+  ok: Type.Literal(true),
+})
+

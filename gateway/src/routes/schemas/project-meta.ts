@@ -90,7 +90,7 @@ export const ProjectCurrentResponse = Type.Object({
  * `FileHistoryEntry`（file-history-service.ts）：服务端持久化索引的原始行。
  * `blob` 是内容 sha256（客户端拿它做去重，不直接取字节）；`seq` 只用于同毫秒排序。
  */
-const FileHistoryEntrySchema = Type.Object({
+export const FileHistoryEntrySchema = Type.Object({
   id: Type.String(),
   sessionID: Type.String(),
   projectDir: Type.String(),
@@ -108,3 +108,38 @@ const FileHistoryEntrySchema = Type.Object({
 export const FileHistoryListResponse = Type.Object({
   entries: Type.Array(FileHistoryEntrySchema),
 })
+
+// ── E10h-R2：fileHistory 写接口（2 ops）─────────────────────────────────
+//
+// 事实源：routes/file-history.ts `handleFileHistoryRoutes` →
+// core/file-history/file-history-service.ts `snapshot()` / `restore()`。
+
+/**
+ * `POST /api/file-history/snapshot`（body：`{sessionID, directory, paths[1..200], reason?}`）：
+ * `SnapshotResult`——写入成功的条目 + 被跳过的相对路径及原因
+ * （`unsafe-path` / `missing` / `not-file` / `too-large` / `io`）。
+ */
+export const FileHistorySnapshotResponse = Type.Object({
+  entries: Type.Array(FileHistoryEntrySchema),
+  skipped: Type.Array(Type.Object({
+    rel: Type.String(),
+    reason: Type.Union([
+      Type.Literal('unsafe-path'),
+      Type.Literal('missing'),
+      Type.Literal('not-file'),
+      Type.Literal('too-large'),
+      Type.Literal('io'),
+    ]),
+  })),
+})
+
+/**
+ * `POST /api/file-history/restore`（body：`{sessionID, entryId}`）：
+ * 200 只在恢复成功时出现——回 `{ok:true, rel}`；失败分支走 404（`not-found` /
+ * `blob-missing`）或 409（`unsafe-path` / `io`），不进本 schema。
+ */
+export const FileHistoryRestoreResponse = Type.Object({
+  ok: Type.Literal(true),
+  rel: Type.String(),
+})
+

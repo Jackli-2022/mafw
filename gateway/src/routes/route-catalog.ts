@@ -136,6 +136,35 @@ import {
   PodUpdateRequest,
 } from './schemas/pod-write';
 import {
+  PodA2AResponse,
+  PodCreateResponse,
+  PodEventSeenAllResponse,
+  PodEventSeenResponse,
+  PodGoalAcceptResponse,
+  PodGoalCancelResponse,
+  PodGoalCreateResponse,
+  PodGoalDirectionResponse,
+  PodGoalHandoffResponse,
+  PodGoalRejectResponse,
+  PodLeadEnsureResponse,
+  PodMemoryWriteResponse,
+  PodMessageCreateResponse,
+  PodMessageDeliveryDismissResponse,
+  PodMessageDeliveryRetryResponse,
+  PodMessageReadResponse,
+  PodProbeCreateResponse,
+  PodReviewItemCreateResponse,
+  PodReviewItemReopenResponse,
+  PodReviewItemResolveResponse,
+  PodSleepResponse,
+  PodTaskCreateResponse,
+  PodTaskDeleteResponse,
+  PodTaskUpdateResponse,
+  PodTechLeadMessageResponse,
+  PodUpdateResponse,
+  PodWakeResponse,
+} from './schemas/pod-write-responses';
+import {
   GoalListResponse,
   GoalPlanResponse,
   GoalSessionsResponse,
@@ -218,7 +247,7 @@ import {
   SkillsListResponse,
   ToolsListResponse,
 } from './schemas/meta';
-import { TaskGetResponse, TaskListResponse, TaskOutputResponse, TaskSubmitRequest, TaskSubmitResponse } from './schemas/tasks';
+import { TaskCancelResponse, TaskGetResponse, TaskListResponse, TaskMessageResponse, TaskOutputResponse, TaskSubmitRequest, TaskSubmitResponse } from './schemas/tasks';
 import {
   FileHistoryRestoreRequest,
   FileHistorySnapshotRequest,
@@ -235,8 +264,13 @@ import {
 } from './schemas/session-runtime';
 import { CognitionRulesResponse, ExperienceActionsResponse } from './schemas/experience';
 import { CognitionGateRequest, CognitionRewriteRequest } from './schemas/cognition-write';
-import { BackgroundJobOutputResponse, BackgroundJobsListResponse } from './schemas/background';
-import { TerminalListResponse } from './schemas/terminal';
+import { BackgroundJobCancelResponse, BackgroundJobOutputResponse, BackgroundJobsListResponse } from './schemas/background';
+import {
+  TerminalConnectTicketResponse,
+  TerminalCreateResponse,
+  TerminalListResponse,
+  TerminalRemoveResponse,
+} from './schemas/terminal';
 import {
   SessionUsageResponse,
   UsagePluginSourceResponse,
@@ -244,6 +278,8 @@ import {
 } from './schemas/usage';
 import {
   FileHistoryListResponse,
+  FileHistoryRestoreResponse,
+  FileHistorySnapshotResponse,
   MafwCommandsListResponse,
   ManagerSessionResponse,
   ProjectCurrentResponse,
@@ -368,8 +404,8 @@ import { A2AAgentCardResponse } from './schemas/a2a';
 const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/presence', operationId: 'presence.get', tags: ['presence'], response: PresenceResponse },
   { method: 'GET', path: '/api/pods/:podId/events', operationId: 'pod.events.list', tags: ['pod'], response: PodEventsResponse },
-  { method: 'POST', path: '/api/pods/:podId/events/:id/seen', operationId: 'pod.events.seen', tags: ['pod'], request: EmptyRequest, requestRequired: false },
-  { method: 'POST', path: '/api/pods/:podId/events/seen', operationId: 'pod.events.seenAll', tags: ['pod'], request: PodEventsSeenAllRequest },
+  { method: 'POST', path: '/api/pods/:podId/events/:id/seen', operationId: 'pod.events.seen', tags: ['pod'], request: EmptyRequest, requestRequired: false, response: PodEventSeenResponse },
+  { method: 'POST', path: '/api/pods/:podId/events/seen', operationId: 'pod.events.seenAll', tags: ['pod'], request: PodEventsSeenAllRequest, response: PodEventSeenAllResponse },
   { method: 'POST', path: '/api/session', operationId: 'session.create', tags: ['session'], request: SessionCreateRequest, response: SessionCreateResponse },
   { method: 'POST', path: '/api/cognition/gate', operationId: 'cognition.gate', tags: ['cognition'], request: CognitionGateRequest },
   { method: 'POST', path: '/api/cognition/rewrite', operationId: 'cognition.rewrite', tags: ['cognition'], request: CognitionRewriteRequest },
@@ -394,8 +430,8 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/tasks', operationId: 'tasks.submit', tags: ['task'], request: TaskSubmitRequest, response: TaskSubmitResponse },
   { method: 'GET', path: '/api/tasks', operationId: 'tasks.list', tags: ['task'], response: TaskListResponse },
   { method: 'GET', path: '/api/tasks/:id', operationId: 'tasks.get', tags: ['task'], response: TaskGetResponse },
-  { method: 'POST', path: '/api/tasks/:id/cancel', operationId: 'tasks.cancel', tags: ['task'], request: EmptyRequest, requestRequired: false },
-  { method: 'POST', path: '/api/tasks/:id/message', operationId: 'tasks.message', tags: ['task'], request: TaskMessageRequest },
+  { method: 'POST', path: '/api/tasks/:id/cancel', operationId: 'tasks.cancel', tags: ['task'], request: EmptyRequest, requestRequired: false, response: TaskCancelResponse },
+  { method: 'POST', path: '/api/tasks/:id/message', operationId: 'tasks.message', tags: ['task'], request: TaskMessageRequest, response: TaskMessageResponse },
   { method: 'GET', path: '/api/tasks/:id/output', operationId: 'tasks.output', tags: ['task'], response: TaskOutputResponse },
   { method: 'GET', path: '/api/sessions/:id/trajectory', operationId: 'session.trajectory', tags: ['session'], response: SessionTrajectoryResponse },
   { method: 'GET', path: '/api/sessions/:id/token-summary', operationId: 'session.tokenSummary', tags: ['session'], response: SessionTokenSummaryResponse },
@@ -428,12 +464,12 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   // Task 3：三源统一的后台作业 façade（MafwBackgroundJob / MafwBackgroundOutput）
   { method: 'GET', path: '/api/background/jobs', operationId: 'background.jobs.list', tags: ['background'], response: BackgroundJobsListResponse },
   { method: 'GET', path: '/api/background/jobs/:id/output', operationId: 'background.jobs.output', tags: ['background'], response: BackgroundJobOutputResponse },
-  { method: 'POST', path: '/api/background/jobs/:id/cancel', operationId: 'background.jobs.cancel', tags: ['background'], request: EmptyRequest, requestRequired: false },
+  { method: 'POST', path: '/api/background/jobs/:id/cancel', operationId: 'background.jobs.cancel', tags: ['background'], request: EmptyRequest, requestRequired: false, response: BackgroundJobCancelResponse },
   // Task 4：中性 terminal PTY（mafw-terminal/1；WS 升级不登记，同 /api/ws）
   { method: 'GET', path: '/api/terminal/sessions', operationId: 'terminal.list', tags: ['terminal'], response: TerminalListResponse },
-  { method: 'POST', path: '/api/terminal/sessions', operationId: 'terminal.create', tags: ['terminal'], request: TerminalCreateRequest },
-  { method: 'DELETE', path: '/api/terminal/sessions/:id', operationId: 'terminal.remove', tags: ['terminal'], request: EmptyRequest, requestRequired: false },
-  { method: 'POST', path: '/api/terminal/sessions/:id/connect-ticket', operationId: 'terminal.connectTicket', tags: ['terminal'], request: TerminalConnectTicketRequest, requestRequired: false },
+  { method: 'POST', path: '/api/terminal/sessions', operationId: 'terminal.create', tags: ['terminal'], request: TerminalCreateRequest, response: TerminalCreateResponse },
+  { method: 'DELETE', path: '/api/terminal/sessions/:id', operationId: 'terminal.remove', tags: ['terminal'], request: EmptyRequest, requestRequired: false, response: TerminalRemoveResponse },
+  { method: 'POST', path: '/api/terminal/sessions/:id/connect-ticket', operationId: 'terminal.connectTicket', tags: ['terminal'], request: TerminalConnectTicketRequest, requestRequired: false, response: TerminalConnectTicketResponse },
   { method: 'GET', path: '/api/usage', operationId: 'session.usage', tags: ['session'], response: SessionUsageResponse },
   { method: 'GET', path: '/api/usage/summary', operationId: 'session.usageSummary', tags: ['session'], response: UsageSummaryResponse },
   { method: 'GET', path: '/api/usage/plugins', operationId: 'session.usagePluginsList', tags: ['session'], response: UsagePluginsListResponse },
@@ -458,9 +494,9 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/projects', operationId: 'project.list', tags: ['project'], response: ProjectListResponse },
   { method: 'GET', path: '/api/projects/current', operationId: 'project.current', tags: ['project'], response: ProjectCurrentResponse },
   { method: 'POST', path: '/register', operationId: 'project.setCurrent', tags: ['project'], request: ProjectSetCurrentRequest },
-  { method: 'POST', path: '/api/file-history/snapshot', operationId: 'fileHistory.snapshot', tags: ['internal'], request: FileHistorySnapshotRequest },
+  { method: 'POST', path: '/api/file-history/snapshot', operationId: 'fileHistory.snapshot', tags: ['internal'], request: FileHistorySnapshotRequest, response: FileHistorySnapshotResponse },
   { method: 'GET', path: '/api/file-history', operationId: 'fileHistory.list', tags: ['internal'], response: FileHistoryListResponse },
-  { method: 'POST', path: '/api/file-history/restore', operationId: 'fileHistory.restore', tags: ['internal'], request: FileHistoryRestoreRequest },
+  { method: 'POST', path: '/api/file-history/restore', operationId: 'fileHistory.restore', tags: ['internal'], request: FileHistoryRestoreRequest, response: FileHistoryRestoreResponse },
   { method: 'GET', path: '/api/events', operationId: 'event.subscribe', tags: ['event'] },
   { method: 'POST', path: '/api/events', operationId: 'event.publish', tags: ['event'], request: EventPublishRequest },
   { method: 'GET', path: '/api/runtime', operationId: 'runtime.get', tags: ['runtime'], response: RuntimeGetResponse },
@@ -615,43 +651,43 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/projects/:projectId/work', operationId: 'work.overview', tags: ['work'], response: WorkOverviewResponse },
   { method: 'GET', path: '/api/projects/:projectId/pod', operationId: 'pods.ensure', tags: ['pods'], response: PodDetailResponse },
   { method: 'GET', path: '/api/projects/:projectId/pod/lookup', operationId: 'pods.lookup', tags: ['pods'], response: PodDetailResponse },
-  { method: 'POST', path: '/api/projects/:projectId/pod', operationId: 'pods.create', tags: ['pods'], request: EmptyRequest, requestRequired: false },
+  { method: 'POST', path: '/api/projects/:projectId/pod', operationId: 'pods.create', tags: ['pods'], request: EmptyRequest, requestRequired: false, response: PodCreateResponse },
   { method: 'GET', path: '/api/pods/:podId', operationId: 'pods.get', tags: ['pods'], response: PodDetailResponse },
-  { method: 'PATCH', path: '/api/pods/:podId', operationId: 'pods.update', tags: ['pods'], request: PodUpdateRequest },
-  { method: 'POST', path: '/api/pods/:podId/lead/ensure', operationId: 'pods.lead.ensure', tags: ['pods'], request: EmptyRequest, requestRequired: false },
+  { method: 'PATCH', path: '/api/pods/:podId', operationId: 'pods.update', tags: ['pods'], request: PodUpdateRequest, response: PodUpdateResponse },
+  { method: 'POST', path: '/api/pods/:podId/lead/ensure', operationId: 'pods.lead.ensure', tags: ['pods'], request: EmptyRequest, requestRequired: false, response: PodLeadEnsureResponse },
   { method: 'GET', path: '/api/pods/:podId/tasks', operationId: 'pods.tasks.list', tags: ['pods'], response: PodTasksResponse },
-  { method: 'POST', path: '/api/pods/:podId/tasks', operationId: 'pods.tasks.create', tags: ['pods'], request: PodTaskCreateRequest },
-  { method: 'PATCH', path: '/api/pods/:podId/tasks/:taskId', operationId: 'pods.tasks.update', tags: ['pods'], request: PodTaskUpdateRequest },
-  { method: 'DELETE', path: '/api/pods/:podId/tasks/:taskId', operationId: 'pods.tasks.delete', tags: ['pods'], request: PodTaskDeleteRequest, requestRequired: false },
+  { method: 'POST', path: '/api/pods/:podId/tasks', operationId: 'pods.tasks.create', tags: ['pods'], request: PodTaskCreateRequest, response: PodTaskCreateResponse },
+  { method: 'PATCH', path: '/api/pods/:podId/tasks/:taskId', operationId: 'pods.tasks.update', tags: ['pods'], request: PodTaskUpdateRequest, response: PodTaskUpdateResponse },
+  { method: 'DELETE', path: '/api/pods/:podId/tasks/:taskId', operationId: 'pods.tasks.delete', tags: ['pods'], request: PodTaskDeleteRequest, requestRequired: false, response: PodTaskDeleteResponse },
   { method: 'GET', path: '/api/pods/:podId/messages', operationId: 'pods.messages.list', tags: ['pods'], response: PodMessagesResponse },
-  { method: 'POST', path: '/api/pods/:podId/messages', operationId: 'pods.messages.create', tags: ['pods'], request: PodMessageCreateRequest },
-  { method: 'POST', path: '/api/pods/:podId/messages/:messageId/read', operationId: 'pods.messages.read', tags: ['pods'], request: EmptyRequest, requestRequired: false },
-  { method: 'POST', path: '/api/pods/:podId/messages/:messageId/delivery/retry', operationId: 'pods.messages.delivery.retry', tags: ['pods'], request: PodMessageDeliveryRetryRequest, requestRequired: false },
-  { method: 'POST', path: '/api/pods/:podId/messages/:messageId/delivery/dismiss', operationId: 'pods.messages.delivery.dismiss', tags: ['pods'], request: PodMessageDeliveryDismissRequest },
-  { method: 'POST', path: '/api/pods/:podId/wake', operationId: 'pods.wake', tags: ['pods'], request: EmptyRequest, requestRequired: false },
-  { method: 'POST', path: '/api/pods/:podId/sleep', operationId: 'pods.sleep', tags: ['pods'], request: EmptyRequest, requestRequired: false },
+  { method: 'POST', path: '/api/pods/:podId/messages', operationId: 'pods.messages.create', tags: ['pods'], request: PodMessageCreateRequest, response: PodMessageCreateResponse },
+  { method: 'POST', path: '/api/pods/:podId/messages/:messageId/read', operationId: 'pods.messages.read', tags: ['pods'], request: EmptyRequest, requestRequired: false, response: PodMessageReadResponse },
+  { method: 'POST', path: '/api/pods/:podId/messages/:messageId/delivery/retry', operationId: 'pods.messages.delivery.retry', tags: ['pods'], request: PodMessageDeliveryRetryRequest, requestRequired: false, response: PodMessageDeliveryRetryResponse },
+  { method: 'POST', path: '/api/pods/:podId/messages/:messageId/delivery/dismiss', operationId: 'pods.messages.delivery.dismiss', tags: ['pods'], request: PodMessageDeliveryDismissRequest, response: PodMessageDeliveryDismissResponse },
+  { method: 'POST', path: '/api/pods/:podId/wake', operationId: 'pods.wake', tags: ['pods'], request: EmptyRequest, requestRequired: false, response: PodWakeResponse },
+  { method: 'POST', path: '/api/pods/:podId/sleep', operationId: 'pods.sleep', tags: ['pods'], request: EmptyRequest, requestRequired: false, response: PodSleepResponse },
   { method: 'GET', path: '/api/pods/:podId/cost', operationId: 'pods.cost', tags: ['pods'], response: PodCostResponse },
   { method: 'GET', path: '/api/pods/:podId/goals', operationId: 'pods.goals', tags: ['pods'], response: PodGoalsResponse },
-  { method: 'POST', path: '/api/pods/:podId/goals', operationId: 'pods.goals.create', tags: ['pods'], request: PodGoalCreateRequest },
-  { method: 'POST', path: '/api/pods/:podId/goals/handoff', operationId: 'pods.goals.handoff', tags: ['pods'], request: PodGoalHandoffRequest },
-  { method: 'DELETE', path: '/api/pods/:podId/goals/:goalId', operationId: 'pods.goals.cancel', tags: ['pods'], request: PodGoalCancelRequest, requestRequired: false },
+  { method: 'POST', path: '/api/pods/:podId/goals', operationId: 'pods.goals.create', tags: ['pods'], request: PodGoalCreateRequest, response: PodGoalCreateResponse },
+  { method: 'POST', path: '/api/pods/:podId/goals/handoff', operationId: 'pods.goals.handoff', tags: ['pods'], request: PodGoalHandoffRequest, response: PodGoalHandoffResponse },
+  { method: 'DELETE', path: '/api/pods/:podId/goals/:goalId', operationId: 'pods.goals.cancel', tags: ['pods'], request: PodGoalCancelRequest, requestRequired: false, response: PodGoalCancelResponse },
   { method: 'GET', path: '/api/pods/:podId/goals/:goalId/result', operationId: 'pods.goals.result', tags: ['pods'], response: PodGoalResultResponse },
   { method: 'GET', path: '/api/pods/:podId/goals/:goalId/review-items', operationId: 'pods.goals.reviewItems', tags: ['pods'], response: PodReviewItemsResponse },
-  { method: 'POST', path: '/api/pods/:podId/goals/:goalId/review-items', operationId: 'pods.goals.reviewItems.create', tags: ['pods'], request: PodReviewItemsCreateRequest },
-  { method: 'POST', path: '/api/pods/:podId/goals/:goalId/review-items/:itemId/resolve', operationId: 'pods.goals.reviewItems.resolve', tags: ['pods'], request: PodReviewItemActionRequest, requestRequired: false },
-  { method: 'POST', path: '/api/pods/:podId/goals/:goalId/review-items/:itemId/reopen', operationId: 'pods.goals.reviewItems.reopen', tags: ['pods'], request: PodReviewItemActionRequest, requestRequired: false },
-  { method: 'POST', path: '/api/pods/:podId/goals/:goalId/accept', operationId: 'pods.goals.accept', tags: ['pods'], request: PodGoalAcceptRequest },
+  { method: 'POST', path: '/api/pods/:podId/goals/:goalId/review-items', operationId: 'pods.goals.reviewItems.create', tags: ['pods'], request: PodReviewItemsCreateRequest, response: PodReviewItemCreateResponse },
+  { method: 'POST', path: '/api/pods/:podId/goals/:goalId/review-items/:itemId/resolve', operationId: 'pods.goals.reviewItems.resolve', tags: ['pods'], request: PodReviewItemActionRequest, requestRequired: false, response: PodReviewItemResolveResponse },
+  { method: 'POST', path: '/api/pods/:podId/goals/:goalId/review-items/:itemId/reopen', operationId: 'pods.goals.reviewItems.reopen', tags: ['pods'], request: PodReviewItemActionRequest, requestRequired: false, response: PodReviewItemReopenResponse },
+  { method: 'POST', path: '/api/pods/:podId/goals/:goalId/accept', operationId: 'pods.goals.accept', tags: ['pods'], request: PodGoalAcceptRequest, response: PodGoalAcceptResponse },
   { method: 'GET', path: '/api/pods/:podId/goals/:goalId/worktree/diff', operationId: 'pods.goals.worktree.diff', tags: ['pods'], response: PodWorktreeDiffResponse },
   { method: 'GET', path: '/api/pods/:podId/sessions/:sessionId/transcript', operationId: 'pods.transcript', tags: ['pods'], response: PodTranscriptResponse },
   { method: 'GET', path: '/api/pods/:podId/memory', operationId: 'pods.memory.get', tags: ['pods'], response: PodMemoryResponse },
-  { method: 'POST', path: '/api/pods/:podId/memory', operationId: 'pods.memory.write', tags: ['pods'], request: PodMemoryWriteRequest },
+  { method: 'POST', path: '/api/pods/:podId/memory', operationId: 'pods.memory.write', tags: ['pods'], request: PodMemoryWriteRequest, response: PodMemoryWriteResponse },
   // Task 18：直接讨论 Goal 的协作面（Tech Lead 会话 / 方向裁定 / Spike / 打回 / revision）
   { method: 'GET', path: '/api/pods/:podId/goals/:goalId/tech-lead', operationId: 'pods.goals.techLead', tags: ['pods'], response: PodTechLeadHistoryResponse },
-  { method: 'POST', path: '/api/pods/:podId/goals/:goalId/tech-lead/messages', operationId: 'pods.goals.techLead.messages', tags: ['pods'], request: PodTechLeadMessageRequest },
-  { method: 'POST', path: '/api/pods/:podId/goals/:goalId/direction-decision', operationId: 'pods.goals.direction', tags: ['pods'], request: PodGoalDirectionRequest },
+  { method: 'POST', path: '/api/pods/:podId/goals/:goalId/tech-lead/messages', operationId: 'pods.goals.techLead.messages', tags: ['pods'], request: PodTechLeadMessageRequest, response: PodTechLeadMessageResponse },
+  { method: 'POST', path: '/api/pods/:podId/goals/:goalId/direction-decision', operationId: 'pods.goals.direction', tags: ['pods'], request: PodGoalDirectionRequest, response: PodGoalDirectionResponse },
   { method: 'GET', path: '/api/pods/:podId/goals/:goalId/probes', operationId: 'pods.goals.probes', tags: ['pods'], response: PodProbesResponse },
-  { method: 'POST', path: '/api/pods/:podId/goals/:goalId/probes', operationId: 'pods.goals.probes.create', tags: ['pods'], request: PodProbeCreateRequest },
-  { method: 'POST', path: '/api/pods/:podId/goals/:goalId/reject', operationId: 'pods.goals.reject', tags: ['pods'], request: PodGoalRejectRequest },
+  { method: 'POST', path: '/api/pods/:podId/goals/:goalId/probes', operationId: 'pods.goals.probes.create', tags: ['pods'], request: PodProbeCreateRequest, response: PodProbeCreateResponse },
+  { method: 'POST', path: '/api/pods/:podId/goals/:goalId/reject', operationId: 'pods.goals.reject', tags: ['pods'], request: PodGoalRejectRequest, response: PodGoalRejectResponse },
   { method: 'GET', path: '/api/pods/:podId/goals/:goalId/revisions', operationId: 'pods.goals.revisions', tags: ['pods'], response: PodGoalRevisionsResponse },
 ];
 
@@ -660,7 +696,7 @@ const NON_SDK_ROUTES: RouteDef[] = [
   // Pod A2A endpoint（协议内部面，不进 SDK 契约）。A2A JSON-RPC 透传
   // （`pod-a2a.ts` 把 raw body 交给 agent.handleJsonRpc）：信封归 A2A 协议所有，
   // 按 spec §1.3 排除（收口 `REQUEST_EXCLUDED` 记录原因）。
-  { method: 'POST', path: '/a2a/pods/:podId', operationId: 'pods.a2a', tags: ['internal'] },
+  { method: 'POST', path: '/a2a/pods/:podId', operationId: 'pods.a2a', tags: ['internal'], response: PodA2AResponse },
   { method: 'GET', path: '/a2a/pods/:podId/.well-known/agent-card.json', operationId: 'pods.a2aCard', tags: ['internal'], response: A2AAgentCardResponse },
   { method: 'GET', path: '/a2a/pods/:podId/artifacts/:artifactId', operationId: 'pods.a2aArtifact', tags: ['internal'] },
   // Python 内核（§5.17）

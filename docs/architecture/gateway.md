@@ -1876,6 +1876,36 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
   `api-contract.test.ts` 新增 9 条代表性断言（复用同形、checkpoint 无 actions、promptAsync
   三态、legacy `{status:'ok'}` 等）。生成物 diff 恰好这 35 个 op。
 
+### E10h-R2（pod / task / terminal / fileHistory 写响应 35 个）
+
+- 覆盖写响应 38 → **73/195**，total response 台账 164 → **199/327**（60.9%）。catalog 的
+  35 个 entry 只加 `response:`，请求契约与 handler 零改动。
+- 新文件 `routes/schemas/pod-write-responses.ts`（25 个 pod op）；task / terminal /
+  background / fileHistory 的 10 个写响应就落在各自的读侧 schema 文件里
+  （`schemas/{tasks,terminal,background,project-meta}.ts`）。
+- 复用读侧 DTO：`pods.create` / `update` / `wake` / `sleep` ≡ `PodDetailResponse`
+  （四个 handler 都过 `enrichPodDetail()`，非 lead 只把 `sessions` 清空）；`pods.tasks.create`
+  / `update` 的 `task` ≡ `PodTaskSchema`；`pods.messages.create` / `read` 的 `message` ≡
+  `PodMessageSchema`；review-items create/resolve/reopen ≡ `PodReviewItemSchema`；
+  `pods.goals.probes.create` ≡ `PodProbesResponse`；`tasks.cancel` ≡ `TaskEntitySchema`；
+  `background.jobs.cancel` ≡ list item（`BackgroundJobSchema`）。
+- 按 handler wire 新写：`PodLeadEnsureResponse`（**小写 `sessionId`**，与 goals 面的
+  `sessionID` 不同）、`pods.tasks.delete` 的 `{deleted:{goalId,externalTaskId}}`、
+  `pods.goals.create` / `handoff` 的两分支（Tech Lead 讨论 vs legacy intake，只有
+  `goalId/status/queueReason/goal` 四键恒在）、`pods.goals.accept`（`PodGoalAcceptResult`）、
+  `pods.goals.reject`（`PodRejectResult`，含 `previous` 收尾结果）、`pods.goals.direction`
+  （`PodDirectionResult` + `planningStarted` / `planningError`）、`pods.goals.techLead.messages`
+  （`PodTechLeadPrompt`）、`pods.memory.write` 的 `{path}`。
+- 三处「schema 比 SDK 类型更贴 handler」（故意，不绑 AssertEq）：`pods.goals.cancel` 的
+  `goal` 是 `PodGoalRow` 行而不是 `PodGoal` 视图（无 `title/phase/stage/resultReady`）；
+  `pods.messages.delivery.retry` 原样透传 `deliver()` 的 `skipped`（create 分支把它映射成
+  `disabled`）；`terminal.remove` 的 `ok` 是字面量 `true`。
+- `pods.a2a` 是 A2A JSON-RPC 信封：**不排除**，按协议边界声明 `additionalProperties:true`
+  + owner 注释（仍是 JSON 200 schema）。本批无空体 200。
+- 守卫：`schema-coverage.test.ts` 写响应下界 38 → **73**，新增 R2 逐 op 清单 + 「无空壳 /
+  a2a 是唯一开放边界」断言；`api-contract.test.ts` 新增 13 条代表性断言；
+  SDK `contract-compat.checks.ts` +23 条编译期等价。生成物 diff 恰好这 35 个 op（重跑幂等）。
+
 ---
 
 ## E11 身份 / 配额硬化（2026-11-13）

@@ -88,7 +88,14 @@ import {
   TriageListResponse,
 } from '../../src/routes/schemas/human-gate';
 import { WorkOverviewResponse } from '../../src/routes/schemas/work';
-import { TaskGetResponse, TaskListResponse, TaskOutputResponse, TaskSubmitResponse } from '../../src/routes/schemas/tasks';
+import {
+  TaskCancelResponse,
+  TaskGetResponse,
+  TaskListResponse,
+  TaskMessageResponse,
+  TaskOutputResponse,
+  TaskSubmitResponse,
+} from '../../src/routes/schemas/tasks';
 import { SessionCreateResponse } from '../../src/routes/schemas/session';
 import {
   SessionCheckpointResponse,
@@ -112,10 +119,39 @@ import {
 } from '../../src/routes/schemas/session-runtime';
 import { CognitionRulesResponse, ExperienceActionsResponse } from '../../src/routes/schemas/experience';
 import {
+  BackgroundJobCancelResponse,
   BackgroundJobOutputResponse,
   BackgroundJobsListResponse,
 } from '../../src/routes/schemas/background';
-import { TerminalListResponse } from '../../src/routes/schemas/terminal';
+import {
+  TerminalConnectTicketResponse,
+  TerminalCreateResponse,
+  TerminalListResponse,
+  TerminalRemoveResponse,
+} from '../../src/routes/schemas/terminal';
+import {
+  FileHistoryRestoreResponse,
+  FileHistorySnapshotResponse,
+} from '../../src/routes/schemas/project-meta';
+import {
+  PodA2AResponse,
+  PodEventSeenAllResponse,
+  PodEventSeenResponse,
+  PodGoalAcceptResponse,
+  PodGoalCancelResponse,
+  PodGoalCreateResponse,
+  PodGoalDirectionResponse,
+  PodGoalHandoffResponse,
+  PodGoalRejectResponse,
+  PodLeadEnsureResponse,
+  PodMemoryWriteResponse,
+  PodMessageCreateResponse,
+  PodMessageDeliveryDismissResponse,
+  PodMessageDeliveryRetryResponse,
+  PodMessageReadResponse,
+  PodTaskDeleteResponse,
+  PodTechLeadMessageResponse,
+} from '../../src/routes/schemas/pod-write-responses';
 import {
   SessionUsageResponse,
   UsagePluginSourceResponse,
@@ -5105,7 +5141,7 @@ describe('api-contract: E10h-R1 session write responses', () => {
     expect(Value.Check(SessionCommandResponse, null)).toBe(false);
   });
 
-  test('the R1 batch raises the write-response ledger to 38/195', () => {
+  test('the R1 batch keeps the write-response ledger at or above 38/195', () => {
     const writeOps = new Set<string>();
     const responded = new Set<string>();
     for (const methods of Object.values<any>(contract.paths)) {
@@ -5116,12 +5152,308 @@ describe('api-contract: E10h-R1 session write responses', () => {
       }
     }
     expect(writeOps.size).toBe(195);
-    // humanToken.rotate + session.create + tasks.submit + 35 R1 ops.
-    expect(responded.size).toBe(38);
+    // humanToken.rotate + session.create + tasks.submit + 35 R1 ops. Later batches
+    // (R2+) only append, so this is a floor; the exact total is pinned per batch.
+    expect(responded.size).toBeGreaterThanOrEqual(38);
     for (const id of [
       'session.config.set', 'structured.submit', 'session.checkpoint', 'session.prompt',
       'session.promptAsync', 'session.suspend', 'session.resume', 'session.discardRun',
       'session.usagePluginsReload', 'session.subagents.spawn', 'session.deleteLegacy',
+    ]) {
+      expect(`${id}:${responded.has(id)}`).toBe(`${id}:true`);
+    }
+  });
+});
+
+describe('api-contract: E10h-R2 pod/task/terminal/fileHistory write responses', () => {
+  const findOp = (operationId: string): any => {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const candidate of Object.values<any>(methods)) {
+        if (candidate?.operationId === operationId) return candidate;
+      }
+    }
+    return null;
+  };
+
+  const schemaOf = (operationId: string): any => {
+    const op = findOp(operationId);
+    expect(`${operationId}:found`).toBe(`${operationId}:${op ? 'found' : 'missing'}`);
+    const schema = op.responses?.['200']?.content?.['application/json']?.schema;
+    expect(`${operationId}:200`).toBe(`${operationId}:${schema ? '200' : 'missing'}`);
+    return schema;
+  };
+
+  test('pod lifecycle writes return the pods.get body (no envelope)', () => {
+    const detail = schemaOf('pods.get');
+    for (const id of ['pods.create', 'pods.update', 'pods.wake', 'pods.sleep']) {
+      // Same wire: `enrichPodDetail()` runs on every one of them; a non-lead caller
+      // only gets `sessions: []`, never a different field set.
+      expect(`${id}:${JSON.stringify(schemaOf(id)) === JSON.stringify(detail)}`).toBe(`${id}:true`);
+    }
+    expect(detail.required).toEqual([
+      'pod', 'members', 'goals', 'attention', 'messageHealth', 'tasks', 'sessions',
+    ]);
+  });
+
+  test('pods.lead.ensure keeps the service lower-case sessionId', () => {
+    const schema = schemaOf('pods.lead.ensure');
+    // `PodService.ensureLead` returns `{podId, projectDir, sessionId}` — the `d` case
+    // differs from every `pods.goals.*` payload, which use `sessionID`.
+    expect(schema.required).toEqual(['podId', 'projectDir', 'sessionId']);
+    expect(Object.keys(schema.properties)).toEqual(['podId', 'projectDir', 'sessionId']);
+  });
+
+  test('task writes: cancel returns the task entity, message returns {ok:true}', () => {
+    expect(schemaOf('tasks.cancel')).toEqual(schemaOf('tasks.get'));
+    expect(schemaOf('tasks.message')).toEqual({
+      type: 'object',
+      required: ['ok'],
+      properties: { ok: { const: true, type: 'boolean' } },
+    });
+  });
+
+  test('terminal writes pin protocol/id, the ticket view and the remove ack', () => {
+    expect(schemaOf('terminal.create').required).toEqual(['protocol', 'id']);
+    expect(schemaOf('terminal.create').properties.id).toEqual({ type: 'string' });
+    // PTY-less runtimes are 503, never a 200 without a ticket.
+    expect(schemaOf('terminal.connectTicket').required).toEqual(['protocol', 'ticket', 'url', 'expiresAt']);
+    expect(schemaOf('terminal.remove').required).toEqual(['ok']);
+  });
+
+  test('background cancel returns the same neutral job row as the list item', () => {
+    const item = schemaOf('background.jobs.list').properties.items.items;
+    expect(schemaOf('background.jobs.cancel')).toEqual(item);
+  });
+
+  test('fileHistory snapshot/restore model the service results exactly', () => {
+    const snapshot = schemaOf('fileHistory.snapshot');
+    expect(snapshot.required).toEqual(['entries', 'skipped']);
+    expect(snapshot.properties.skipped.items.required).toEqual(['rel', 'reason']);
+    expect(snapshot.properties.skipped.items.properties.reason.anyOf.map((v: any) => v.const)).toEqual([
+      'unsafe-path', 'missing', 'not-file', 'too-large', 'io',
+    ]);
+    // The entry skeleton is the list item (same persisted row).
+    expect(snapshot.properties.entries.items).toEqual(schemaOf('fileHistory.list').properties.entries.items);
+    // 200 only exists for a successful restore; failures are 404/409 with `{ok:false}`.
+    expect(schemaOf('fileHistory.restore').required).toEqual(['ok', 'rel']);
+    expect(schemaOf('fileHistory.restore').properties.ok).toEqual({ const: true, type: 'boolean' });
+  });
+
+  test('pod tasks / messages / review items reuse their list DTOs', () => {
+    const taskItem = schemaOf('pods.tasks.list').properties.items.items;
+    for (const id of ['pods.tasks.create', 'pods.tasks.update']) {
+      expect(`${id}:${JSON.stringify(schemaOf(id).properties.task) === JSON.stringify(taskItem)}`).toBe(`${id}:true`);
+    }
+    expect(schemaOf('pods.tasks.delete').properties.deleted.required).toEqual(['goalId', 'externalTaskId']);
+
+    const messageItem = schemaOf('pods.messages.list').properties.items.items;
+    expect(schemaOf('pods.messages.read')).toEqual({
+      type: 'object', required: ['message'], properties: { message: messageItem },
+    });
+    expect(schemaOf('pods.messages.create').required).toEqual(['message']);
+    // notify:true adds `delivery`; the skipped branch is mapped to `disabled`.
+    expect(schemaOf('pods.messages.create').properties.delivery.anyOf.map((v: any) => v.const))
+      .toEqual(['delivered', 'pending', 'disabled']);
+    // retry re-emits `deliver()` verbatim — `skipped` is part of the wire.
+    expect(schemaOf('pods.messages.delivery.retry').properties.delivery.anyOf.map((v: any) => v.const))
+      .toEqual(['delivered', 'pending', 'skipped']);
+    expect(schemaOf('pods.messages.delivery.dismiss').required).toEqual(['dismissed']);
+
+    const reviewItem = schemaOf('pods.goals.reviewItems').properties.items.items;
+    expect(schemaOf('pods.goals.reviewItems.create')).toEqual({
+      type: 'object', required: ['items'], properties: { items: { type: 'array', items: reviewItem } },
+    });
+    for (const id of ['pods.goals.reviewItems.resolve', 'pods.goals.reviewItems.reopen']) {
+      expect(schemaOf(id)).toEqual({ type: 'object', required: ['item'], properties: { item: reviewItem } });
+    }
+  });
+
+  test('pods.goals.cancel returns the Goal row, not the Goal view', () => {
+    const goal = schemaOf('pods.goals.cancel').properties.goal;
+    expect(goal.required).toEqual([
+      'id', 'podId', 'goalId', 'status', 'verdict', 'activeRevision', 'priority', 'enqueuedAt', 'startedAt', 'endedAt',
+    ]);
+    // `cancelQueued()` returns `PodGoalRow`: the view-only projections are absent.
+    for (const viewOnly of ['title', 'phase', 'stage', 'resultReady', 'bucket']) {
+      expect(`${viewOnly}:${goal.properties[viewOnly] === undefined}`).toBe(`${viewOnly}:true`);
+    }
+    // … and the row is not the list item (docs the SDK `{goal: PodGoal}` mismatch).
+    expect(JSON.stringify(goal)).not.toBe(JSON.stringify(schemaOf('pods.goals').properties.items.items));
+  });
+
+  test('goal create vs handoff: shared four keys, Tech Lead branch adds the rest', () => {
+    const create = schemaOf('pods.goals.create');
+    // Both branches (Tech Lead discussion / legacy intake) always send these four.
+    expect(create.required).toEqual(['goalId', 'status', 'queueReason', 'goal']);
+    expect(create.properties.status.anyOf.map((v: any) => v.const)).toEqual(['started', 'queued', 'discussing']);
+    // `podId` only exists on the Tech Lead branch → declared, never required.
+    expect(create.properties.podId.type).toBe('string');
+    expect(create.required).not.toContain('podId');
+
+    const handoff = schemaOf('pods.goals.handoff');
+    expect(handoff.required).toEqual([
+      'podId', 'goalId', 'status', 'revision', 'stage', 'queueReason', 'sessionID', 'goal',
+    ]);
+    // `createGoal` never queues: the handoff Goal is always revision 1 discussing.
+    expect(handoff.properties.status).toEqual({ const: 'discussing', type: 'string' });
+    expect(handoff.properties.queueReason).toEqual({ type: 'null' });
+    // Session provisioning can fail without failing the Goal (nullable sessionID).
+    expect(handoff.properties.sessionID.anyOf.map((v: any) => v.type)).toEqual(['string', 'null']);
+  });
+
+  test('direction / tech lead / probes / accept / reject carry the collaboration DTOs', () => {
+    const direction = schemaOf('pods.goals.direction');
+    expect(direction.required).toEqual([
+      'podId', 'goalId', 'revision', 'revisionStatus', 'directionStatus', 'state', 'decision',
+      'artifactPath', 'planningStarted',
+    ]);
+    // needs_user never starts planning; decided/clear append an error instead of rolling back.
+    expect(direction.required).not.toContain('planningError');
+    expect(direction.properties.state.required).toEqual([
+      'version', 'goalId', 'revision', 'status', 'options', 'requests', 'decisions', 'updatedAt',
+    ]);
+
+    expect(schemaOf('pods.goals.techLead.messages').required).toEqual(['goalId', 'revision', 'sessionID', 'text']);
+
+    // Probes create returns the same `{items}` payload as the GET list.
+    expect(schemaOf('pods.goals.probes.create')).toEqual(schemaOf('pods.goals.probes'));
+
+    const accept = schemaOf('pods.goals.accept');
+    expect(accept.required).toEqual(['podId', 'goalId', 'revision', 'branch', 'mergeCommit', 'mergedAt']);
+    expect(accept.required).not.toContain('forced');
+
+    const reject = schemaOf('pods.goals.reject');
+    expect(reject.required).toEqual([
+      'podId', 'goalId', 'revision', 'status', 'priority', 'feedback', 'archivedState', 'previous', 'sessionID',
+    ]);
+    expect(reject.properties.previous.required).toEqual(['revision', 'closed', 'alreadyTerminal', 'missing']);
+  });
+
+  test('pod.events seen/seenAll and pods.a2a stay honest about their bodies', () => {
+    expect(schemaOf('pod.events.seen').required).toEqual(['ok', 'changed']);
+    expect(schemaOf('pod.events.seen').properties.changed).toEqual({ type: 'boolean' });
+    expect(schemaOf('pod.events.seenAll').properties.changed).toEqual({ type: 'number' });
+
+    // A2A JSON-RPC envelope: covered (JSON 200), but the field set is protocol-owned.
+    const a2a = schemaOf('pods.a2a');
+    expect(a2a.additionalProperties).toBe(true);
+    expect(Object.keys(a2a.properties ?? {})).toEqual([]);
+  });
+
+  test('representative R2 write responses validate handler-shaped payloads', () => {
+    expect(Value.Check(PodEventSeenResponse, { ok: true, changed: false })).toBe(true);
+    expect(Value.Check(PodEventSeenAllResponse, { ok: true, changed: 3 })).toBe(true);
+    expect(Value.Check(PodEventSeenAllResponse, { ok: true, changed: true })).toBe(false);
+    expect(Value.Check(TaskMessageResponse, { ok: true })).toBe(true);
+    expect(Value.Check(TaskMessageResponse, { ok: false })).toBe(false);
+
+    expect(Value.Check(TerminalCreateResponse, { protocol: 'mafw-terminal/1', id: 'term_1' })).toBe(true);
+    expect(Value.Check(TerminalConnectTicketResponse, {
+      protocol: 'mafw-terminal/1', ticket: 't', url: '/api/ws/terminal/term_1?ticket=t', expiresAt: 1,
+    })).toBe(true);
+    expect(Value.Check(TerminalConnectTicketResponse, { protocol: 'mafw-terminal/1', id: 'term_1' })).toBe(false);
+    expect(Value.Check(TerminalRemoveResponse, { ok: true })).toBe(true);
+
+    expect(Value.Check(PodTaskDeleteResponse, { deleted: { goalId: null, externalTaskId: 'ext_1' } })).toBe(true);
+    expect(Value.Check(PodTaskDeleteResponse, { deleted: null })).toBe(false);
+
+    // The cancel row keeps the row counter but has no view projection.
+    const row = {
+      id: 'pg_1', podId: 'pod_1', goalId: 'goal_1', status: 'aborted', verdict: null,
+      activeRevision: 1, priority: 0, enqueuedAt: '2026-11-15T00:00:00.000Z',
+      startedAt: null, endedAt: '2026-11-15T00:00:01.000Z',
+    };
+    expect(Value.Check(PodGoalCancelResponse, { goal: row })).toBe(true);
+    // A view-shaped goal has no `activeRevision`: this endpoint returns the row.
+    expect(Value.Check(PodGoalCancelResponse, { goal: { ...row, activeRevision: undefined } })).toBe(false);
+
+    expect(Value.Check(PodLeadEnsureResponse, { podId: 'pod_1', projectDir: '/w', sessionId: 'ses_1' })).toBe(true);
+    expect(Value.Check(PodLeadEnsureResponse, { podId: 'pod_1', projectDir: '/w', sessionID: 'ses_1' })).toBe(false);
+
+    expect(Value.Check(PodMessageDeliveryDismissResponse, { dismissed: true })).toBe(true);
+    expect(Value.Check(PodMessageDeliveryRetryResponse, { delivery: 'skipped' })).toBe(true);
+    expect(Value.Check(PodMessageDeliveryRetryResponse, { delivery: 'disabled' })).toBe(false);
+    expect(Value.Check(PodMemoryWriteResponse, { path: '/w/.mafw/POD.md' })).toBe(true);
+
+    expect(Value.Check(PodTechLeadMessageResponse, {
+      goalId: 'goal_1', revision: 1, sessionID: 'ses_1', text: '[manifest]\nhello',
+    })).toBe(true);
+    expect(Value.Check(PodTechLeadMessageResponse, { goalId: 'goal_1', revision: 1, text: 'x' })).toBe(false);
+
+    expect(Value.Check(PodGoalAcceptResponse, {
+      podId: 'pod_1', goalId: 'goal_1', revision: 1, branch: 'mafw/goal-1', mergeCommit: 'abc', mergedAt: 'T',
+    })).toBe(true);
+    expect(Value.Check(PodGoalAcceptResponse, {
+      podId: 'pod_1', goalId: 'goal_1', revision: 1, branch: 'b', mergeCommit: 'abc', mergedAt: 'T',
+      forced: true, unresolvedReviewItemIds: ['ri_1'],
+    })).toBe(true);
+
+    const reject = {
+      podId: 'pod_1', goalId: 'goal_1', revision: 2, status: 'discussing', priority: 10,
+      feedback: 'redo', archivedState: null,
+      previous: { revision: 1, closed: true, alreadyTerminal: false, missing: false },
+      sessionID: null,
+    };
+    expect(Value.Check(PodGoalRejectResponse, reject)).toBe(true);
+    expect(Value.Check(PodGoalRejectResponse, { ...reject, previous: { revision: 1 } })).toBe(false);
+
+    // create/handoff share the four-key core; the intake branch has no Tech Lead extras.
+    const goalView = {
+      id: 'pg_1', podId: 'pod_1', goalId: 'goal_1', status: 'active', title: 'T', phase: null,
+      verdict: null, stage: { owner: 'team', kind: 'working' }, resultReady: false,
+      enqueuedAt: '2026-11-15T00:00:00.000Z', startedAt: null, endedAt: null,
+    };
+    expect(Value.Check(PodGoalCreateResponse, {
+      goalId: 'goal_1', status: 'queued', queueReason: 'active_goal', goal: goalView,
+    })).toBe(true);
+    expect(Value.Check(PodGoalHandoffResponse, {
+      podId: 'pod_1', goalId: 'goal_1', status: 'discussing', revision: 1, stage: 'discussing',
+      queueReason: null, sessionID: 'ses_1', goal: goalView,
+    })).toBe(true);
+    expect(Value.Check(PodGoalHandoffResponse, {
+      podId: 'pod_1', goalId: 'goal_1', status: 'discussing', revision: 1, stage: 'discussing',
+      queueReason: 'paused', sessionID: 'ses_1', goal: goalView,
+    })).toBe(false);
+
+    expect(Value.Check(FileHistoryRestoreResponse, { ok: true, rel: 'docs/a.md' })).toBe(true);
+    expect(Value.Check(FileHistoryRestoreResponse, { ok: false, reason: 'not-found' })).toBe(false);
+    expect(Value.Check(FileHistorySnapshotResponse, {
+      entries: [{
+        id: 'fh_1', sessionID: 'ses_1', projectDir: '/w', rel: 'a.md', blob: 'sha',
+        size: 3, mtimeMs: 1, createdAt: 'T', seq: 1, reason: 'manual',
+      }],
+      skipped: [{ rel: 'b.md', reason: 'too-large' }],
+    })).toBe(true);
+    expect(Value.Check(FileHistorySnapshotResponse, {
+      entries: [], skipped: [{ rel: 'b.md', reason: 'nope' }],
+    })).toBe(false);
+
+    expect(Value.Check(BackgroundJobCancelResponse, {
+      id: 'task_1', source: 'mafw-task', kind: 'shell', status: 'cancelled', sessionID: 'ses_1',
+      taskID: 'task_1',
+    })).toBe(true);
+
+    // The A2A envelope is forwarded verbatim; any JSON object passes, null does not.
+    expect(Value.Check(PodA2AResponse, { jsonrpc: '2.0', id: '1', result: { kind: 'task' } })).toBe(true);
+    expect(Value.Check(PodA2AResponse, null)).toBe(false);
+  });
+
+  test('the R2 batch raises the write-response ledger to 73/195', () => {
+    const writeOps = new Set<string>();
+    const responded = new Set<string>();
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const [method, op] of Object.entries<any>(methods)) {
+        if (method === 'get' || !op?.operationId) continue;
+        writeOps.add(op.operationId);
+        if (op.responses?.['200']?.content?.['application/json']?.schema) responded.add(op.operationId);
+      }
+    }
+    expect(writeOps.size).toBe(195);
+    // humanToken.rotate + session.create + tasks.submit + 35 R1 + 35 R2.
+    expect(responded.size).toBe(73);
+    for (const id of [
+      'pods.a2a', 'pods.create', 'pods.goals.accept', 'pods.goals.cancel', 'tasks.cancel',
+      'terminal.connectTicket', 'fileHistory.snapshot', 'pod.events.seenAll',
     ]) {
       expect(`${id}:${responded.has(id)}`).toBe(`${id}:true`);
     }

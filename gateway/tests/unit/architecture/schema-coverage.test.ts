@@ -38,7 +38,7 @@ interface CoverageReport {
 const GATEWAY_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPT = path.join(GATEWAY_ROOT, 'scripts', 'schema-coverage.cjs');
 
-/** Baseline 分组 (E8 and earlier 13 + 8 session read (E10-1) + 8 pod/work read (E10-2) + 8 goal read (E10b-1) + 7 human-gate/permission read (E10b-2) + 1 human token rotate (E11-1) + 8 memory/recall/lead read (E10c-1) + 8 memory extra / lead.context / pod read (E10d-1) + 8 metadata/registry read (E10e-1) + 16 session/task/terminal/usage read (E10f-A) + 16 project/runtime/metadata read (E10f-B) + 16 goal/lead/event/standing/automation/pod read (E10f-C) + 8 observability/device/A2A read (E10f-D)) = 125 entries; E10f-D 收口时台账 127（含 humanToken.rotate 与 orchestration.outcomes），E10h-P0 +2 → 129，E10h-R1 的 35 个 session 写响应 → 164。 */
+/** Baseline 分组 (E8 and earlier 13 + 8 session read (E10-1) + 8 pod/work read (E10-2) + 8 goal read (E10b-1) + 7 human-gate/permission read (E10b-2) + 1 human token rotate (E11-1) + 8 memory/recall/lead read (E10c-1) + 8 memory extra / lead.context / pod read (E10d-1) + 8 metadata/registry read (E10e-1) + 16 session/task/terminal/usage read (E10f-A) + 16 project/runtime/metadata read (E10f-B) + 16 goal/lead/event/standing/automation/pod read (E10f-C) + 8 observability/device/A2A read (E10f-D)) = 125 entries; E10f-D 收口时台账 127（含 humanToken.rotate 与 orchestration.outcomes），E10h-P0 +2 → 129，E10h-R1 的 35 个 session 写响应 → 164，E10h-R2 的 35 个 pod/task/terminal/fileHistory 写响应 → 199。 */
 const E10_COVERED_OPS = [
   'a2a.agentCard',
   'agent.capabilities',
@@ -48,6 +48,7 @@ const E10_COVERED_OPS = [
   'automations.get',
   'automations.history',
   'automations.list',
+  'background.jobs.cancel',
   'background.jobs.list',
   'background.jobs.output',
   'cognition.rules',
@@ -64,6 +65,8 @@ const E10_COVERED_OPS = [
   'events.threads.triggers',
   'experience.actions',
   'fileHistory.list',
+  'fileHistory.restore',
+  'fileHistory.snapshot',
   'goals.get',
   'goals.list',
   'goals.plan',
@@ -104,22 +107,49 @@ const E10_COVERED_OPS = [
   'plugins.lastGood',
   'plugins.list',
   'pod.events.list',
+  'pod.events.seen',
+  'pod.events.seenAll',
+  'pods.a2a',
   'pods.a2aCard',
   'pods.cost',
+  'pods.create',
   'pods.ensure',
   'pods.get',
   'pods.goals',
+  'pods.goals.accept',
+  'pods.goals.cancel',
+  'pods.goals.create',
+  'pods.goals.direction',
+  'pods.goals.handoff',
   'pods.goals.probes',
+  'pods.goals.probes.create',
+  'pods.goals.reject',
   'pods.goals.result',
   'pods.goals.reviewItems',
+  'pods.goals.reviewItems.create',
+  'pods.goals.reviewItems.reopen',
+  'pods.goals.reviewItems.resolve',
   'pods.goals.revisions',
   'pods.goals.techLead',
+  'pods.goals.techLead.messages',
   'pods.goals.worktree.diff',
+  'pods.lead.ensure',
   'pods.lookup',
   'pods.memory.get',
+  'pods.memory.write',
+  'pods.messages.create',
+  'pods.messages.delivery.dismiss',
+  'pods.messages.delivery.retry',
   'pods.messages.list',
+  'pods.messages.read',
+  'pods.sleep',
+  'pods.tasks.create',
+  'pods.tasks.delete',
   'pods.tasks.list',
+  'pods.tasks.update',
   'pods.transcript',
+  'pods.update',
+  'pods.wake',
   'presence.get',
   'project.current',
   'project.list',
@@ -194,11 +224,16 @@ const E10_COVERED_OPS = [
   'standingGoals.list',
   'standingGoals.runs',
   'structured.submit',
+  'tasks.cancel',
   'tasks.get',
   'tasks.list',
+  'tasks.message',
   'tasks.output',
   'tasks.submit',
+  'terminal.connectTicket',
+  'terminal.create',
   'terminal.list',
+  'terminal.remove',
   'tools.list',
   'triage.list',
   'tts.voices',
@@ -284,6 +319,49 @@ const E10H_R1_EMPTY_RESPONSE_OPS = [
   'session.revert',
   'session.summarize',
   'session.unrevert',
+];
+
+/**
+ * E10h-R2：pod（含 pod.events.* / tasks / messages / goals / reviewItems / memory /
+ * a2a）+ task / terminal / background / fileHistory 共 35 个写 op 的 200 响应。
+ * 与 R1 同一台账；按名钉住，删一个 `response:` 立刻按名失败。
+ */
+const E10H_R2_WRITE_RESPONSE_OPS = [
+  'background.jobs.cancel',
+  'fileHistory.restore',
+  'fileHistory.snapshot',
+  'pod.events.seen',
+  'pod.events.seenAll',
+  'pods.a2a',
+  'pods.create',
+  'pods.goals.accept',
+  'pods.goals.cancel',
+  'pods.goals.create',
+  'pods.goals.direction',
+  'pods.goals.handoff',
+  'pods.goals.probes.create',
+  'pods.goals.reject',
+  'pods.goals.reviewItems.create',
+  'pods.goals.reviewItems.reopen',
+  'pods.goals.reviewItems.resolve',
+  'pods.goals.techLead.messages',
+  'pods.lead.ensure',
+  'pods.memory.write',
+  'pods.messages.create',
+  'pods.messages.delivery.dismiss',
+  'pods.messages.delivery.retry',
+  'pods.messages.read',
+  'pods.sleep',
+  'pods.tasks.create',
+  'pods.tasks.delete',
+  'pods.tasks.update',
+  'pods.update',
+  'pods.wake',
+  'tasks.cancel',
+  'tasks.message',
+  'terminal.connectTicket',
+  'terminal.create',
+  'terminal.remove',
 ];
 
 /**
@@ -868,9 +946,10 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(E10G_P0_REQUEST_OPS.filter((id) => !byId.get(id)?.hasRequest)).toEqual([]);
   });
 
-  // E10h-P0/R1: write-response ledger. Same parser, same 195 write-op denominator;
-  // `humanToken.rotate` (E11-1) + 2 P0 pilots + 35 R1 session writes = 38/195.
-  // Later batches only append, so the count is a floor.
+  // E10h-P0/R1/R2: write-response ledger. Same parser, same 195 write-op denominator;
+  // `humanToken.rotate` (E11-1) + 2 P0 pilots + 35 R1 session writes + 35 R2
+  // pod/task/terminal/fileHistory writes = 73/195. Later batches only append, so the
+  // count is a floor.
   it('the script reports write-response coverage over the 195 write ops', () => {
     const report = runScript();
     const write = catalogWriteOps();
@@ -879,12 +958,14 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(write).toHaveLength(WRITE_OPS_TOTAL);
     expect(report.writeResponseTotal).toBe(WRITE_OPS_TOTAL);
     expect(report.writeResponses).toBe(covered.length);
-    expect(report.writeResponses).toBeGreaterThanOrEqual(38);
+    expect(report.writeResponses).toBeGreaterThanOrEqual(73);
     expect(report.writeResponseCovered).toEqual(covered);
     // Disjoint from the request ledger: the two scans are independent `response:`/
-    // `request:` hits on the same write ops.
+    // `request:` hits on the same write ops — with one deliberate exception, `pods.a2a`,
+    // whose JSON-RPC envelope is modeled as an open 200 response while E10g excluded it
+    // from the request ledger (raw body owned by the A2A protocol).
     const requestCovered = new Set(report.requestCovered);
-    expect(report.writeResponseCovered.filter((id) => !requestCovered.has(id))).toEqual([]);
+    expect(report.writeResponseCovered.filter((id) => !requestCovered.has(id))).toEqual(['pods.a2a']);
   });
 
   it('P0 write-response pilots declare a 200 response schema', () => {
@@ -895,10 +976,11 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     // Named, so a dropped `response:` on a pilot fails by name (not as a count delta).
     expect(E10H_P0_WRITE_RESPONSE_OPS.filter((id) => !byId.get(id)?.hasRequest)).toEqual([]);
     // A write response for a write op that declared no request would be a shape
-    // nobody can construct: the pilot batch stays self-consistent.
+    // nobody can construct: every covered write response still has a request, except
+    // `pods.a2a` (E10g excluded its raw JSON-RPC body; the 200 envelope is still JSON).
     expect(
       catalogWriteOps()
-        .filter((op) => op.hasResponse)
+        .filter((op) => op.hasResponse && op.operationId !== 'pods.a2a')
         .map((op) => op.operationId)
         .every((id) => byId.get(id)?.hasRequest),
     ).toBe(true);
@@ -907,7 +989,7 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
   // E10h-R1: session 写响应。P0 的两个 pilot 之外再补 35 个（含 usage plugins /
   // subagents / queue / deleteLegacy），同台账下界 38。按名钉住，删一个 `response:`
   // 立刻按名失败，而不是只掉一个计数。
-  it('R1 session write ops declare a 200 response schema (write responses >= 38)', () => {
+  it('R1 session write ops declare a 200 response schema (write responses >= 73)', () => {
     const writes = catalogWriteOps();
     const responded = new Set(writes.filter((op) => op.hasResponse).map((op) => op.operationId));
 
@@ -916,8 +998,8 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     // No duplicates across P0/R1 (a typo would otherwise hide behind the floor).
     expect(new Set(E10H_R1_WRITE_RESPONSE_OPS).size).toBe(E10H_R1_WRITE_RESPONSE_OPS.length);
     expect(E10H_R1_WRITE_RESPONSE_OPS.filter((id) => E10H_P0_WRITE_RESPONSE_OPS.includes(id))).toEqual([]);
-    // 38 = humanToken.rotate + P0 2 + R1 35.
-    expect(writes.filter((op) => op.hasResponse).length).toBeGreaterThanOrEqual(38);
+    // 73 = humanToken.rotate + P0 2 + R1 35 + R2 35.
+    expect(writes.filter((op) => op.hasResponse).length).toBeGreaterThanOrEqual(73);
   });
 
   // 这四个 handler 逐字 `json(200, {})`：schema 必须是空对象（无字段），不是「任意 body」。
@@ -941,6 +1023,53 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     // … and the runtime boundary (`command`) is the only open R1 response.
     const command = responses.get('session.command') as { additionalProperties?: unknown } | undefined;
     expect(command?.additionalProperties).toBe(true);
+  });
+
+  // E10h-R2: pod / task / terminal / fileHistory 写响应（35 个）。与 R1 同一台账，
+  // 下界 73；按名钉住，删一个 `response:` 立刻按名失败。
+  it('R2 pod/task/terminal/fileHistory write ops declare a 200 response schema (write responses >= 73)', () => {
+    const writes = catalogWriteOps();
+    const responded = new Set(writes.filter((op) => op.hasResponse).map((op) => op.operationId));
+
+    expect(E10H_R2_WRITE_RESPONSE_OPS.filter((id) => !responded.has(id))).toEqual([]);
+    expect(E10H_R2_WRITE_RESPONSE_OPS).toHaveLength(35);
+    // No duplicates inside the batch …
+    expect(new Set(E10H_R2_WRITE_RESPONSE_OPS).size).toBe(E10H_R2_WRITE_RESPONSE_OPS.length);
+    // … and no overlap with the earlier batches (R2 = the pod/task/terminal/fileHistory
+    // writes that R1 left uncovered).
+    expect(E10H_R2_WRITE_RESPONSE_OPS.filter((id) => E10H_R1_WRITE_RESPONSE_OPS.includes(id))).toEqual([]);
+    expect(E10H_R2_WRITE_RESPONSE_OPS.filter((id) => E10H_P0_WRITE_RESPONSE_OPS.includes(id))).toEqual([]);
+    // 73 = humanToken.rotate + P0 2 + R1 35 + R2 35.
+    expect(responded.size).toBeGreaterThanOrEqual(73);
+    // `pods.a2a` is a JSON 200 with a protocol-owned envelope — covered, not excluded.
+    expect(responded.has('pods.a2a')).toBe(true);
+  });
+
+  // 本批没有空体 200（handler 都发字段）；唯一不枚举字段的是 A2A 协议边界。
+  it('R2 responses model real bodies (no empty shells; a2a is the only open boundary)', () => {
+    const responses = catalogResponseById();
+    const problems: string[] = [];
+    for (const id of E10H_R2_WRITE_RESPONSE_OPS) {
+      if (id === 'pods.a2a') continue; // asserted separately below
+      const schema = responses.get(id) as {
+        type?: string;
+        properties?: Record<string, unknown>;
+        additionalProperties?: unknown;
+      } | undefined;
+      if (!schema) { problems.push(`${id}: missing response`); continue; }
+      if (schema.type !== 'object') problems.push(`${id}: expected object`);
+      if (Object.keys(schema.properties ?? {}).length === 0) problems.push(`${id}: expected declared fields`);
+      // A10: an open object would silently legalize fields the handler never sends.
+      if (schema.additionalProperties !== undefined) problems.push(`${id}: must not be open`);
+    }
+    expect(problems).toEqual([]);
+
+    const a2a = responses.get('pods.a2a') as {
+      additionalProperties?: unknown;
+      properties?: Record<string, unknown>;
+    } | undefined;
+    expect(a2a?.additionalProperties).toBe(true);
+    expect(Object.keys(a2a?.properties ?? {})).toEqual([]);
   });
   // E10g-W1: session writes. Pinned per-op so a dropped `request:` fails by name,
   // and as a floor (>= 124 through W5) so the count can only grow with W6-W7.

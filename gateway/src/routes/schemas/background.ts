@@ -60,3 +60,12 @@ export const BackgroundJobOutputResponse = Type.Object({
   data: Type.String(),
   truncated: Type.Boolean(),
 })
+
+/**
+ * E10h-R2 `POST /api/background/jobs/:id/cancel?sessionID=` 的 200 响应
+ * （handler 事实源：`routes/background-jobs.ts` `handleBackgroundJobCancel` →
+ * `BackgroundJobService.cancel`）：回取消后的中性作业行——与 list item 同形
+ * （task 源 `jobFromTask`，子代理源 `mergeSubagents`）。
+ */
+export const BackgroundJobCancelResponse = BackgroundJobSchema
+
