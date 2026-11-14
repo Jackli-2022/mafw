@@ -123,8 +123,15 @@ export const McpServersResponse = Type.Object({
 
 // ── plugins.list ────────────────────────────────────────────────────────────
 
-/** 单个 legacy 插件文件（`plugins/hub.ts` `PluginEntry`；builtin 由 hub 补 `builtin`/`overridden`）。 */
-const PluginsEntrySchema = Type.Object({
+/**
+ * 单个 legacy 插件文件（`plugins/hub.ts` `PluginEntry`；builtin 由 hub 补
+ * `builtin`/`overridden`）。
+ *
+ * E10h-R5 起同时是 `plugins.install` / `plugins.enable|disable`（legacy 分支）的
+ * 200 响应——`installPlugin()` / `setPluginEnabled()` 都返回 `statEntry()` 同一投影，
+ * 故写侧直接复用本 schema，不写第二份转写。
+ */
+export const PluginsEntrySchema = Type.Object({
   type: Type.Union([
     Type.Literal('runtime'),
     Type.Literal('media'),

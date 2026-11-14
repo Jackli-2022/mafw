@@ -88,7 +88,28 @@ import {
   TriageListResponse,
 } from '../../src/routes/schemas/human-gate';
 import { WorkOverviewResponse } from '../../src/routes/schemas/work';
-import { TaskGetResponse, TaskListResponse, TaskOutputResponse } from '../../src/routes/schemas/tasks';
+import {
+  TaskCancelResponse,
+  TaskGetResponse,
+  TaskListResponse,
+  TaskMessageResponse,
+  TaskOutputResponse,
+  TaskSubmitResponse,
+} from '../../src/routes/schemas/tasks';
+import { SessionCreateResponse } from '../../src/routes/schemas/session';
+import {
+  SessionCheckpointResponse,
+  SessionCommandResponse,
+  SessionDeleteLegacyResponse,
+  SessionPromptAsyncResponse,
+  SessionPromptResponse,
+  SessionQueueCancelResponse,
+  SessionQueueClearResponse,
+  SessionSubagentSpawnResponse,
+  SessionSuspendResponse,
+  SessionUsagePluginsReloadResponse,
+  StructuredSubmitResponse,
+} from '../../src/routes/schemas/session-write-responses';
 import {
   SessionDiscoveryResponse,
   SessionDiscoverySkillResponse,
@@ -98,10 +119,39 @@ import {
 } from '../../src/routes/schemas/session-runtime';
 import { CognitionRulesResponse, ExperienceActionsResponse } from '../../src/routes/schemas/experience';
 import {
+  BackgroundJobCancelResponse,
   BackgroundJobOutputResponse,
   BackgroundJobsListResponse,
 } from '../../src/routes/schemas/background';
-import { TerminalListResponse } from '../../src/routes/schemas/terminal';
+import {
+  TerminalConnectTicketResponse,
+  TerminalCreateResponse,
+  TerminalListResponse,
+  TerminalRemoveResponse,
+} from '../../src/routes/schemas/terminal';
+import {
+  FileHistoryRestoreResponse,
+  FileHistorySnapshotResponse,
+} from '../../src/routes/schemas/project-meta';
+import {
+  PodA2AResponse,
+  PodEventSeenAllResponse,
+  PodEventSeenResponse,
+  PodGoalAcceptResponse,
+  PodGoalCancelResponse,
+  PodGoalCreateResponse,
+  PodGoalDirectionResponse,
+  PodGoalHandoffResponse,
+  PodGoalRejectResponse,
+  PodLeadEnsureResponse,
+  PodMemoryWriteResponse,
+  PodMessageCreateResponse,
+  PodMessageDeliveryDismissResponse,
+  PodMessageDeliveryRetryResponse,
+  PodMessageReadResponse,
+  PodTaskDeleteResponse,
+  PodTechLeadMessageResponse,
+} from '../../src/routes/schemas/pod-write-responses';
 import {
   SessionUsageResponse,
   UsagePluginSourceResponse,
@@ -4826,5 +4876,1421 @@ describe('api-contract: Phase 6 plugin recovery routes (E10g-fix)', () => {
       name: 'demo',
       lastGood: { savedAt: 'x' },
     })).toBe(false);
+  });
+});
+
+describe('api-contract: E10h write responses (P0 pilots)', () => {
+  const findOp = (operationId: string): any => {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const candidate of Object.values<any>(methods)) {
+        if (candidate?.operationId === operationId) return candidate;
+      }
+    }
+    return null;
+  };
+
+  const schemaOf = (operationId: string): any => {
+    const op = findOp(operationId);
+    expect(`${operationId}:found`).toBe(`${operationId}:${op ? 'found' : 'missing'}`);
+    expect(`${operationId}:200`).toBe(
+      `${operationId}:${op.responses?.['200']?.content?.['application/json']?.schema ? '200' : 'missing'}`,
+    );
+    return op.responses['200'].content['application/json'].schema;
+  };
+
+  test('session.create declares the created session + optional worktree envelope', () => {
+    const schema = schemaOf('session.create');
+    // Handler (routes/session-create.ts) spreads the created session record and
+    // appends `worktree`; the session half is the same DTO as session.get.
+    expect(schema.required).toEqual(['id', 'projectID', 'directory', 'title', 'time']);
+    for (const field of ['id', 'projectID', 'directory', 'title', 'time', 'parentID', 'model', 'agent']) {
+      expect(`${field}:${Boolean(schema.properties[field])}`).toBe(`${field}:true`);
+    }
+    // `worktree` is absent (not null) on a plain session: JSON.stringify drops it.
+    expect(schema.required).not.toContain('worktree');
+    expect(schema.properties.worktree.required).toEqual(['dir', 'branch']);
+    expect(schema.properties.worktree.properties.dir.type).toBe('string');
+    // A closed object: only the declared session view + worktree, no runtime extras.
+    expect(schema.additionalProperties).toBeUndefined();
+  });
+
+  test('tasks.submit returns the public task entity (exact tasks.get reuse)', () => {
+    const schema = schemaOf('tasks.submit');
+    // TaskService.submit returns publicTask(task), the same wire as tasks.get.
+    expect(schema).toEqual(schemaOf('tasks.get'));
+    expect(schema.properties.status.anyOf.map((v: any) => v.const))
+      .toEqual(['working', 'input_required', 'completed', 'failed', 'cancelled']);
+    // No response envelope: the task is the body (SDK tasks.submit() returns TaskEntity).
+    expect(Object.keys(schema.properties)).not.toContain('task');
+  });
+
+  test('pilots validate handler-shaped payloads and reject missing anchors', () => {
+    expect(Value.Check(SessionCreateResponse, {
+      id: 'ses_1',
+      projectID: 'proj_1',
+      directory: 'C:/work/demo',
+      title: 'New session',
+      time: { created: 1, updated: 2 },
+      worktree: { dir: 'C:/work/demo/.worktrees/wt-1', branch: 'mafw/wt-1' },
+    })).toBe(true);
+    // Plain create: no worktree key at all.
+    expect(Value.Check(SessionCreateResponse, {
+      id: 'ses_1',
+      projectID: 'proj_1',
+      directory: 'C:/work/demo',
+      title: 'New session',
+      time: { created: 1, updated: 2 },
+    })).toBe(true);
+    // A worktree without a branch is not a worktree ref.
+    expect(Value.Check(SessionCreateResponse, {
+      id: 'ses_1',
+      projectID: 'proj_1',
+      directory: 'C:/work/demo',
+      title: 'New session',
+      time: { created: 1, updated: 2 },
+      worktree: { dir: 'x' },
+    })).toBe(false);
+    // The session id is load-bearing for every follow-up call.
+    expect(Value.Check(SessionCreateResponse, {
+      projectID: 'proj_1',
+      directory: 'C:/work/demo',
+      title: 'New session',
+      time: { created: 1, updated: 2 },
+    })).toBe(false);
+
+    expect(Value.Check(TaskSubmitResponse, {
+      id: 'task_1',
+      kind: 'shell',
+      parentSessionID: 'ses_1',
+      title: 'npm test',
+      status: 'working',
+      createdAt: 1,
+      updatedAt: 1,
+    })).toBe(true);
+    // A task without a status is not a task the poller can follow.
+    expect(Value.Check(TaskSubmitResponse, {
+      id: 'task_1',
+      kind: 'shell',
+      parentSessionID: 'ses_1',
+      title: 'npm test',
+      createdAt: 1,
+      updatedAt: 1,
+    })).toBe(false);
+  });
+
+  test('the write-response ledger counts only non-GET ops (humanToken.rotate + the 2 pilots)', () => {
+    // Guards the denominator: a GET with a response must not inflate writeResponses.
+    const writeOps = new Set<string>();
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const [method, op] of Object.entries<any>(methods)) {
+        if (method !== 'get' && op?.operationId) writeOps.add(op.operationId);
+      }
+    }
+    expect(writeOps.size).toBe(195);
+    for (const id of ['session.create', 'tasks.submit', 'humanToken.rotate']) {
+      expect(`${id}:${writeOps.has(id)}`).toBe(`${id}:true`);
+      expect(schemaOf(id)).toBeDefined();
+    }
+  });
+});
+
+describe('api-contract: E10h-R1 session write responses', () => {
+  const findOp = (operationId: string): any => {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const candidate of Object.values<any>(methods)) {
+        if (candidate?.operationId === operationId) return candidate;
+      }
+    }
+    return null;
+  };
+
+  const schemaOf = (operationId: string): any => {
+    const op = findOp(operationId);
+    expect(`${operationId}:found`).toBe(`${operationId}:${op ? 'found' : 'missing'}`);
+    const schema = op.responses?.['200']?.content?.['application/json']?.schema;
+    expect(`${operationId}:200`).toBe(`${operationId}:${schema ? '200' : 'missing'}`);
+    return schema;
+  };
+
+  test('session.config.set reuses the session.config state schema exactly', () => {
+    // SessionConfigService.set() returns the same SessionConfigState as get().
+    expect(schemaOf('session.config.set')).toEqual(schemaOf('session.config'));
+    expect(schemaOf('session.config.set').additionalProperties).toBeUndefined();
+  });
+
+  test('checkpoint create returns the checkpoint body without list-only actions', () => {
+    const schema = schemaOf('session.checkpoint');
+    expect(schema.required).toEqual(['checkpoint']);
+    expect(schema.properties.checkpoint.required).toEqual([
+      'id', 'sessionID', 'projectDir', 'anchorMessageID', 'snapshotTree', 'untracked', 'kind', 'createdAt',
+    ]);
+    // `actions` is projected by the list route only (projectCheckpointActions).
+    expect(schema.properties.checkpoint.properties.actions).toBeUndefined();
+    // The list item is a strict superset: same eight fields + actions.
+    const listItem = schemaOf('session.checkpoints').properties.checkpoints.items;
+    expect(Object.keys(listItem.properties)).toEqual(
+      [...Object.keys(schema.properties.checkpoint.properties), 'actions'],
+    );
+  });
+
+  test('suspend / resume / discardRun return the same RunState as session.run', () => {
+    const runBranch = schemaOf('session.run').properties.run.anyOf[0];
+    expect(schemaOf('session.suspend')).toEqual({ type: 'object', required: ['run'], properties: { run: runBranch } });
+    expect(schemaOf('session.discardRun')).toEqual({ type: 'object', required: ['run'], properties: { run: runBranch } });
+    const resume = schemaOf('session.resume');
+    expect(resume.required).toEqual(['run', 'prompted']);
+    expect(resume.properties.run).toEqual(runBranch);
+    // `prompted` is the literal true (resume re-sends the resume prompt).
+    expect(resume.properties.prompted).toEqual({ const: true, type: 'boolean' });
+  });
+
+  test('prompt / promptAsync model the sync envelope and the queue short-circuit', () => {
+    const prompt = schemaOf('session.prompt');
+    expect(prompt.required).toEqual(['parts']);
+    expect(prompt.properties.parts.items.properties.type).toEqual({ const: 'text', type: 'string' });
+    // structured / structuredError only appear with outputSchema.
+    expect(prompt.required).not.toContain('structured');
+
+    const asyncSchema = schemaOf('session.promptAsync');
+    // 200 has three branches: plain ack, queued ack, idempotent duplicate ack.
+    expect(asyncSchema.anyOf).toHaveLength(3);
+    expect(asyncSchema.anyOf[0]).toEqual({ type: 'object', required: ['status'], properties: { status: { const: 'ok', type: 'string' } } });
+    expect(asyncSchema.anyOf[1].required).toEqual(['status', 'queued', 'itemId', 'position']);
+    expect(asyncSchema.anyOf[2].required).toEqual(['status', 'queued', 'duplicate', 'itemId']);
+  });
+
+  test('queue clear/cancel and legacy delete declare their literal envelopes', () => {
+    expect(schemaOf('session.queue.clear')).toEqual({
+      type: 'object', required: ['cleared'], properties: { cleared: { type: 'number' } },
+    });
+    expect(schemaOf('session.queue.cancel')).toEqual({
+      type: 'object', required: ['cancelled'], properties: { cancelled: { type: 'string' } },
+    });
+    expect(schemaOf('session.deleteLegacy')).toEqual({
+      type: 'object', required: ['status'], properties: { status: { const: 'ok', type: 'string' } },
+    });
+  });
+
+  test('usage plugins reload reuses the list schema; create/put/delete return the updated list', () => {
+    // The reload handler delegates to handleUsagePluginsList: same wire, no {ok} envelope.
+    expect(schemaOf('session.usagePluginsReload')).toEqual(schemaOf('session.usagePluginsList'));
+    for (const id of ['session.usagePluginSourcePut', 'session.usagePluginsDelete']) {
+      const schema = schemaOf(id);
+      expect(`${id}:${schema.required.join(',')}`).toBe(`${id}:ok,plugins`);
+    }
+    // create additionally names the file it wrote.
+    expect(schemaOf('session.usagePluginsCreate').required).toEqual(['ok', 'name', 'plugins']);
+    expect(schemaOf('session.usagePluginsCreate').properties.name).toEqual({ type: 'string' });
+  });
+
+  test('subagent spawn returns the list item shape; command stays an open runtime boundary', () => {
+    const listItem = schemaOf('session.subagents.list').properties.items.items;
+    expect(schemaOf('session.subagents.spawn')).toEqual(listItem);
+    // Gateway has no command handler; the runtime response shape is not ours to close.
+    expect(schemaOf('session.command').additionalProperties).toBe(true);
+    expect(Object.keys(schemaOf('session.command').properties ?? {})).toEqual([]);
+  });
+
+  test('representative write responses validate handler-shaped payloads', () => {
+    const run = {
+      id: 'run_1',
+      sessionID: 'ses_1',
+      projectDir: 'C:/work/demo',
+      status: 'suspended',
+      brief: { lastUserText: 'hi', lastAssistantTail: 'ok', anchorMessageID: 'msg_1', queuedCount: 0 },
+      createdAt: '2026-11-15T00:00:00.000Z',
+      suspendedAt: '2026-11-15T00:00:01.000Z',
+    };
+    expect(Value.Check(SessionSuspendResponse, { run })).toBe(true);
+    // RunState without its brief is not a resumable run.
+    expect(Value.Check(SessionSuspendResponse, { run: { ...run, brief: undefined } })).toBe(false);
+
+    const checkpoint = {
+      id: 'cp_1',
+      sessionID: 'ses_1',
+      projectDir: 'C:/work/demo',
+      anchorMessageID: 'msg_1',
+      snapshotTree: null,
+      untracked: [],
+      kind: 'manual',
+      createdAt: '2026-11-15T00:00:00.000Z',
+    };
+    expect(Value.Check(SessionCheckpointResponse, { checkpoint })).toBe(true);
+    expect(Value.Check(SessionCheckpointResponse, { checkpoint: { ...checkpoint, id: undefined } })).toBe(false);
+
+    expect(Value.Check(SessionPromptResponse, {
+      parts: [{ id: '', sessionID: 'ses_1', messageID: '', type: 'text', text: 'answer' }],
+    })).toBe(true);
+    expect(Value.Check(SessionPromptResponse, { structured: { ok: true } })).toBe(false);
+
+    expect(Value.Check(SessionPromptAsyncResponse, { status: 'ok' })).toBe(true);
+    expect(Value.Check(SessionPromptAsyncResponse, { status: 'ok', queued: true, itemId: 'q_1', position: 1 })).toBe(true);
+    expect(Value.Check(SessionPromptAsyncResponse, {
+      status: 'ok', queued: true, duplicate: true, itemId: 'q_1',
+    })).toBe(true);
+
+    expect(Value.Check(StructuredSubmitResponse, { ok: false, errors: ['bad'] })).toBe(true);
+    expect(Value.Check(SessionQueueClearResponse, { cleared: 2 })).toBe(true);
+    expect(Value.Check(SessionQueueCancelResponse, { cancelled: 'q_1' })).toBe(true);
+    expect(Value.Check(SessionDeleteLegacyResponse, { status: 'ok' })).toBe(true);
+    expect(Value.Check(SessionSubagentSpawnResponse, {
+      id: 'sub_1', parentID: 'ses_1', depth: 1, status: 'running', createdAt: 1, updatedAt: 1,
+    })).toBe(true);
+    // The runtime owns the command body; any JSON object passes, a non-object does not.
+    expect(Value.Check(SessionCommandResponse, { info: {}, parts: [] })).toBe(true);
+    expect(Value.Check(SessionCommandResponse, null)).toBe(false);
+  });
+
+  test('the R1 batch keeps the write-response ledger at or above 38/195', () => {
+    const writeOps = new Set<string>();
+    const responded = new Set<string>();
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const [method, op] of Object.entries<any>(methods)) {
+        if (method === 'get' || !op?.operationId) continue;
+        writeOps.add(op.operationId);
+        if (op.responses?.['200']?.content?.['application/json']?.schema) responded.add(op.operationId);
+      }
+    }
+    expect(writeOps.size).toBe(195);
+    // humanToken.rotate + session.create + tasks.submit + 35 R1 ops. Later batches
+    // (R2+) only append, so this is a floor; the exact total is pinned per batch.
+    expect(responded.size).toBeGreaterThanOrEqual(38);
+    for (const id of [
+      'session.config.set', 'structured.submit', 'session.checkpoint', 'session.prompt',
+      'session.promptAsync', 'session.suspend', 'session.resume', 'session.discardRun',
+      'session.usagePluginsReload', 'session.subagents.spawn', 'session.deleteLegacy',
+    ]) {
+      expect(`${id}:${responded.has(id)}`).toBe(`${id}:true`);
+    }
+  });
+});
+
+describe('api-contract: E10h-R2 pod/task/terminal/fileHistory write responses', () => {
+  const findOp = (operationId: string): any => {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const candidate of Object.values<any>(methods)) {
+        if (candidate?.operationId === operationId) return candidate;
+      }
+    }
+    return null;
+  };
+
+  const schemaOf = (operationId: string): any => {
+    const op = findOp(operationId);
+    expect(`${operationId}:found`).toBe(`${operationId}:${op ? 'found' : 'missing'}`);
+    const schema = op.responses?.['200']?.content?.['application/json']?.schema;
+    expect(`${operationId}:200`).toBe(`${operationId}:${schema ? '200' : 'missing'}`);
+    return schema;
+  };
+
+  test('pod lifecycle writes return the pods.get body (no envelope)', () => {
+    const detail = schemaOf('pods.get');
+    for (const id of ['pods.create', 'pods.update', 'pods.wake', 'pods.sleep']) {
+      // Same wire: `enrichPodDetail()` runs on every one of them; a non-lead caller
+      // only gets `sessions: []`, never a different field set.
+      expect(`${id}:${JSON.stringify(schemaOf(id)) === JSON.stringify(detail)}`).toBe(`${id}:true`);
+    }
+    expect(detail.required).toEqual([
+      'pod', 'members', 'goals', 'attention', 'messageHealth', 'tasks', 'sessions',
+    ]);
+  });
+
+  test('pods.lead.ensure keeps the service lower-case sessionId', () => {
+    const schema = schemaOf('pods.lead.ensure');
+    // `PodService.ensureLead` returns `{podId, projectDir, sessionId}` — the `d` case
+    // differs from every `pods.goals.*` payload, which use `sessionID`.
+    expect(schema.required).toEqual(['podId', 'projectDir', 'sessionId']);
+    expect(Object.keys(schema.properties)).toEqual(['podId', 'projectDir', 'sessionId']);
+  });
+
+  test('task writes: cancel returns the task entity, message returns {ok:true}', () => {
+    expect(schemaOf('tasks.cancel')).toEqual(schemaOf('tasks.get'));
+    expect(schemaOf('tasks.message')).toEqual({
+      type: 'object',
+      required: ['ok'],
+      properties: { ok: { const: true, type: 'boolean' } },
+    });
+  });
+
+  test('terminal writes pin protocol/id, the ticket view and the remove ack', () => {
+    expect(schemaOf('terminal.create').required).toEqual(['protocol', 'id']);
+    expect(schemaOf('terminal.create').properties.id).toEqual({ type: 'string' });
+    // PTY-less runtimes are 503, never a 200 without a ticket.
+    expect(schemaOf('terminal.connectTicket').required).toEqual(['protocol', 'ticket', 'url', 'expiresAt']);
+    expect(schemaOf('terminal.remove').required).toEqual(['ok']);
+  });
+
+  test('background cancel returns the same neutral job row as the list item', () => {
+    const item = schemaOf('background.jobs.list').properties.items.items;
+    expect(schemaOf('background.jobs.cancel')).toEqual(item);
+  });
+
+  test('fileHistory snapshot/restore model the service results exactly', () => {
+    const snapshot = schemaOf('fileHistory.snapshot');
+    expect(snapshot.required).toEqual(['entries', 'skipped']);
+    expect(snapshot.properties.skipped.items.required).toEqual(['rel', 'reason']);
+    expect(snapshot.properties.skipped.items.properties.reason.anyOf.map((v: any) => v.const)).toEqual([
+      'unsafe-path', 'missing', 'not-file', 'too-large', 'io',
+    ]);
+    // The entry skeleton is the list item (same persisted row).
+    expect(snapshot.properties.entries.items).toEqual(schemaOf('fileHistory.list').properties.entries.items);
+    // 200 only exists for a successful restore; failures are 404/409 with `{ok:false}`.
+    expect(schemaOf('fileHistory.restore').required).toEqual(['ok', 'rel']);
+    expect(schemaOf('fileHistory.restore').properties.ok).toEqual({ const: true, type: 'boolean' });
+  });
+
+  test('pod tasks / messages / review items reuse their list DTOs', () => {
+    const taskItem = schemaOf('pods.tasks.list').properties.items.items;
+    for (const id of ['pods.tasks.create', 'pods.tasks.update']) {
+      expect(`${id}:${JSON.stringify(schemaOf(id).properties.task) === JSON.stringify(taskItem)}`).toBe(`${id}:true`);
+    }
+    expect(schemaOf('pods.tasks.delete').properties.deleted.required).toEqual(['goalId', 'externalTaskId']);
+
+    const messageItem = schemaOf('pods.messages.list').properties.items.items;
+    expect(schemaOf('pods.messages.read')).toEqual({
+      type: 'object', required: ['message'], properties: { message: messageItem },
+    });
+    expect(schemaOf('pods.messages.create').required).toEqual(['message']);
+    // notify:true adds `delivery`; the skipped branch is mapped to `disabled`.
+    expect(schemaOf('pods.messages.create').properties.delivery.anyOf.map((v: any) => v.const))
+      .toEqual(['delivered', 'pending', 'disabled']);
+    // retry re-emits `deliver()` verbatim — `skipped` is part of the wire.
+    expect(schemaOf('pods.messages.delivery.retry').properties.delivery.anyOf.map((v: any) => v.const))
+      .toEqual(['delivered', 'pending', 'skipped']);
+    expect(schemaOf('pods.messages.delivery.dismiss').required).toEqual(['dismissed']);
+
+    const reviewItem = schemaOf('pods.goals.reviewItems').properties.items.items;
+    expect(schemaOf('pods.goals.reviewItems.create')).toEqual({
+      type: 'object', required: ['items'], properties: { items: { type: 'array', items: reviewItem } },
+    });
+    for (const id of ['pods.goals.reviewItems.resolve', 'pods.goals.reviewItems.reopen']) {
+      expect(schemaOf(id)).toEqual({ type: 'object', required: ['item'], properties: { item: reviewItem } });
+    }
+  });
+
+  test('pods.goals.cancel returns the Goal row, not the Goal view', () => {
+    const goal = schemaOf('pods.goals.cancel').properties.goal;
+    expect(goal.required).toEqual([
+      'id', 'podId', 'goalId', 'status', 'verdict', 'activeRevision', 'priority', 'enqueuedAt', 'startedAt', 'endedAt',
+    ]);
+    // `cancelQueued()` returns `PodGoalRow`: the view-only projections are absent.
+    for (const viewOnly of ['title', 'phase', 'stage', 'resultReady', 'bucket']) {
+      expect(`${viewOnly}:${goal.properties[viewOnly] === undefined}`).toBe(`${viewOnly}:true`);
+    }
+    // … and the row is not the list item (docs the SDK `{goal: PodGoal}` mismatch).
+    expect(JSON.stringify(goal)).not.toBe(JSON.stringify(schemaOf('pods.goals').properties.items.items));
+  });
+
+  test('goal create vs handoff: shared four keys, Tech Lead branch adds the rest', () => {
+    const create = schemaOf('pods.goals.create');
+    // Both branches (Tech Lead discussion / legacy intake) always send these four.
+    expect(create.required).toEqual(['goalId', 'status', 'queueReason', 'goal']);
+    expect(create.properties.status.anyOf.map((v: any) => v.const)).toEqual(['started', 'queued', 'discussing']);
+    // `podId` only exists on the Tech Lead branch → declared, never required.
+    expect(create.properties.podId.type).toBe('string');
+    expect(create.required).not.toContain('podId');
+
+    const handoff = schemaOf('pods.goals.handoff');
+    expect(handoff.required).toEqual([
+      'podId', 'goalId', 'status', 'revision', 'stage', 'queueReason', 'sessionID', 'goal',
+    ]);
+    // `createGoal` never queues: the handoff Goal is always revision 1 discussing.
+    expect(handoff.properties.status).toEqual({ const: 'discussing', type: 'string' });
+    expect(handoff.properties.queueReason).toEqual({ type: 'null' });
+    // Session provisioning can fail without failing the Goal (nullable sessionID).
+    expect(handoff.properties.sessionID.anyOf.map((v: any) => v.type)).toEqual(['string', 'null']);
+  });
+
+  test('direction / tech lead / probes / accept / reject carry the collaboration DTOs', () => {
+    const direction = schemaOf('pods.goals.direction');
+    expect(direction.required).toEqual([
+      'podId', 'goalId', 'revision', 'revisionStatus', 'directionStatus', 'state', 'decision',
+      'artifactPath', 'planningStarted',
+    ]);
+    // needs_user never starts planning; decided/clear append an error instead of rolling back.
+    expect(direction.required).not.toContain('planningError');
+    expect(direction.properties.state.required).toEqual([
+      'version', 'goalId', 'revision', 'status', 'options', 'requests', 'decisions', 'updatedAt',
+    ]);
+
+    expect(schemaOf('pods.goals.techLead.messages').required).toEqual(['goalId', 'revision', 'sessionID', 'text']);
+
+    // Probes create returns the same `{items}` payload as the GET list.
+    expect(schemaOf('pods.goals.probes.create')).toEqual(schemaOf('pods.goals.probes'));
+
+    const accept = schemaOf('pods.goals.accept');
+    expect(accept.required).toEqual(['podId', 'goalId', 'revision', 'branch', 'mergeCommit', 'mergedAt']);
+    expect(accept.required).not.toContain('forced');
+
+    const reject = schemaOf('pods.goals.reject');
+    expect(reject.required).toEqual([
+      'podId', 'goalId', 'revision', 'status', 'priority', 'feedback', 'archivedState', 'previous', 'sessionID',
+    ]);
+    expect(reject.properties.previous.required).toEqual(['revision', 'closed', 'alreadyTerminal', 'missing']);
+  });
+
+  test('pod.events seen/seenAll and pods.a2a stay honest about their bodies', () => {
+    expect(schemaOf('pod.events.seen').required).toEqual(['ok', 'changed']);
+    expect(schemaOf('pod.events.seen').properties.changed).toEqual({ type: 'boolean' });
+    expect(schemaOf('pod.events.seenAll').properties.changed).toEqual({ type: 'number' });
+
+    // A2A JSON-RPC envelope: covered (JSON 200), but the field set is protocol-owned.
+    const a2a = schemaOf('pods.a2a');
+    expect(a2a.additionalProperties).toBe(true);
+    expect(Object.keys(a2a.properties ?? {})).toEqual([]);
+  });
+
+  test('representative R2 write responses validate handler-shaped payloads', () => {
+    expect(Value.Check(PodEventSeenResponse, { ok: true, changed: false })).toBe(true);
+    expect(Value.Check(PodEventSeenAllResponse, { ok: true, changed: 3 })).toBe(true);
+    expect(Value.Check(PodEventSeenAllResponse, { ok: true, changed: true })).toBe(false);
+    expect(Value.Check(TaskMessageResponse, { ok: true })).toBe(true);
+    expect(Value.Check(TaskMessageResponse, { ok: false })).toBe(false);
+
+    expect(Value.Check(TerminalCreateResponse, { protocol: 'mafw-terminal/1', id: 'term_1' })).toBe(true);
+    expect(Value.Check(TerminalConnectTicketResponse, {
+      protocol: 'mafw-terminal/1', ticket: 't', url: '/api/ws/terminal/term_1?ticket=t', expiresAt: 1,
+    })).toBe(true);
+    expect(Value.Check(TerminalConnectTicketResponse, { protocol: 'mafw-terminal/1', id: 'term_1' })).toBe(false);
+    expect(Value.Check(TerminalRemoveResponse, { ok: true })).toBe(true);
+
+    expect(Value.Check(PodTaskDeleteResponse, { deleted: { goalId: null, externalTaskId: 'ext_1' } })).toBe(true);
+    expect(Value.Check(PodTaskDeleteResponse, { deleted: null })).toBe(false);
+
+    // The cancel row keeps the row counter but has no view projection.
+    const row = {
+      id: 'pg_1', podId: 'pod_1', goalId: 'goal_1', status: 'aborted', verdict: null,
+      activeRevision: 1, priority: 0, enqueuedAt: '2026-11-15T00:00:00.000Z',
+      startedAt: null, endedAt: '2026-11-15T00:00:01.000Z',
+    };
+    expect(Value.Check(PodGoalCancelResponse, { goal: row })).toBe(true);
+    // A view-shaped goal has no `activeRevision`: this endpoint returns the row.
+    expect(Value.Check(PodGoalCancelResponse, { goal: { ...row, activeRevision: undefined } })).toBe(false);
+
+    expect(Value.Check(PodLeadEnsureResponse, { podId: 'pod_1', projectDir: '/w', sessionId: 'ses_1' })).toBe(true);
+    expect(Value.Check(PodLeadEnsureResponse, { podId: 'pod_1', projectDir: '/w', sessionID: 'ses_1' })).toBe(false);
+
+    expect(Value.Check(PodMessageDeliveryDismissResponse, { dismissed: true })).toBe(true);
+    expect(Value.Check(PodMessageDeliveryRetryResponse, { delivery: 'skipped' })).toBe(true);
+    expect(Value.Check(PodMessageDeliveryRetryResponse, { delivery: 'disabled' })).toBe(false);
+    expect(Value.Check(PodMemoryWriteResponse, { path: '/w/.mafw/POD.md' })).toBe(true);
+
+    expect(Value.Check(PodTechLeadMessageResponse, {
+      goalId: 'goal_1', revision: 1, sessionID: 'ses_1', text: '[manifest]\nhello',
+    })).toBe(true);
+    expect(Value.Check(PodTechLeadMessageResponse, { goalId: 'goal_1', revision: 1, text: 'x' })).toBe(false);
+
+    expect(Value.Check(PodGoalAcceptResponse, {
+      podId: 'pod_1', goalId: 'goal_1', revision: 1, branch: 'mafw/goal-1', mergeCommit: 'abc', mergedAt: 'T',
+    })).toBe(true);
+    expect(Value.Check(PodGoalAcceptResponse, {
+      podId: 'pod_1', goalId: 'goal_1', revision: 1, branch: 'b', mergeCommit: 'abc', mergedAt: 'T',
+      forced: true, unresolvedReviewItemIds: ['ri_1'],
+    })).toBe(true);
+
+    const reject = {
+      podId: 'pod_1', goalId: 'goal_1', revision: 2, status: 'discussing', priority: 10,
+      feedback: 'redo', archivedState: null,
+      previous: { revision: 1, closed: true, alreadyTerminal: false, missing: false },
+      sessionID: null,
+    };
+    expect(Value.Check(PodGoalRejectResponse, reject)).toBe(true);
+    expect(Value.Check(PodGoalRejectResponse, { ...reject, previous: { revision: 1 } })).toBe(false);
+
+    // create/handoff share the four-key core; the intake branch has no Tech Lead extras.
+    const goalView = {
+      id: 'pg_1', podId: 'pod_1', goalId: 'goal_1', status: 'active', title: 'T', phase: null,
+      verdict: null, stage: { owner: 'team', kind: 'working' }, resultReady: false,
+      enqueuedAt: '2026-11-15T00:00:00.000Z', startedAt: null, endedAt: null,
+    };
+    expect(Value.Check(PodGoalCreateResponse, {
+      goalId: 'goal_1', status: 'queued', queueReason: 'active_goal', goal: goalView,
+    })).toBe(true);
+    expect(Value.Check(PodGoalHandoffResponse, {
+      podId: 'pod_1', goalId: 'goal_1', status: 'discussing', revision: 1, stage: 'discussing',
+      queueReason: null, sessionID: 'ses_1', goal: goalView,
+    })).toBe(true);
+    expect(Value.Check(PodGoalHandoffResponse, {
+      podId: 'pod_1', goalId: 'goal_1', status: 'discussing', revision: 1, stage: 'discussing',
+      queueReason: 'paused', sessionID: 'ses_1', goal: goalView,
+    })).toBe(false);
+
+    expect(Value.Check(FileHistoryRestoreResponse, { ok: true, rel: 'docs/a.md' })).toBe(true);
+    expect(Value.Check(FileHistoryRestoreResponse, { ok: false, reason: 'not-found' })).toBe(false);
+    expect(Value.Check(FileHistorySnapshotResponse, {
+      entries: [{
+        id: 'fh_1', sessionID: 'ses_1', projectDir: '/w', rel: 'a.md', blob: 'sha',
+        size: 3, mtimeMs: 1, createdAt: 'T', seq: 1, reason: 'manual',
+      }],
+      skipped: [{ rel: 'b.md', reason: 'too-large' }],
+    })).toBe(true);
+    expect(Value.Check(FileHistorySnapshotResponse, {
+      entries: [], skipped: [{ rel: 'b.md', reason: 'nope' }],
+    })).toBe(false);
+
+    expect(Value.Check(BackgroundJobCancelResponse, {
+      id: 'task_1', source: 'mafw-task', kind: 'shell', status: 'cancelled', sessionID: 'ses_1',
+      taskID: 'task_1',
+    })).toBe(true);
+
+    // The A2A envelope is forwarded verbatim; any JSON object passes, null does not.
+    expect(Value.Check(PodA2AResponse, { jsonrpc: '2.0', id: '1', result: { kind: 'task' } })).toBe(true);
+    expect(Value.Check(PodA2AResponse, null)).toBe(false);
+  });
+
+  test('the R2 batch keeps the write-response ledger at or above 73/195', () => {
+    const writeOps = new Set<string>();
+    const responded = new Set<string>();
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const [method, op] of Object.entries<any>(methods)) {
+        if (method === 'get' || !op?.operationId) continue;
+        writeOps.add(op.operationId);
+        if (op.responses?.['200']?.content?.['application/json']?.schema) responded.add(op.operationId);
+      }
+    }
+    expect(writeOps.size).toBe(195);
+    // humanToken.rotate + session.create + tasks.submit + 35 R1 + 35 R2. Later
+    // batches (R3+) only append, so this is a floor.
+    expect(responded.size).toBeGreaterThanOrEqual(73);
+    for (const id of [
+      'pods.a2a', 'pods.create', 'pods.goals.accept', 'pods.goals.cancel', 'tasks.cancel',
+      'terminal.connectTicket', 'fileHistory.snapshot', 'pod.events.seenAll',
+    ]) {
+      expect(`${id}:${responded.has(id)}`).toBe(`${id}:true`);
+    }
+  });
+});
+
+describe('api-contract: E10h-R3 goal/decision/lead/standing/cognition write responses', () => {
+  const findOp = (operationId: string): any => {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const candidate of Object.values<any>(methods)) {
+        if (candidate?.operationId === operationId) return candidate;
+      }
+    }
+    return null;
+  };
+
+  const schemaOf = (operationId: string): any => {
+    const op = findOp(operationId);
+    expect(`${operationId}:found`).toBe(`${operationId}:${op ? 'found' : 'missing'}`);
+    const schema = op.responses?.['200']?.content?.['application/json']?.schema;
+    expect(`${operationId}:200`).toBe(`${operationId}:${schema ? '200' : 'missing'}`);
+    return schema;
+  };
+
+  test('goal control receipts pin the handler literals', () => {
+    expect(schemaOf('goals.planApproval')).toEqual({
+      type: 'object',
+      required: ['success'],
+      properties: { success: { const: true, type: 'boolean' } },
+    });
+    // handleGoalControl 的四个动作各自只有一个终值（不读回 Goal 状态）。
+    const statuses: Array<[string, string]> = [
+      ['goals.pause', 'paused'],
+      ['goals.resume', 'resumed'],
+      ['goals.stop', 'stopped'],
+      ['goals.retry', 'retried'],
+    ];
+    for (const [id, status] of statuses) {
+      expect(schemaOf(id)).toEqual({
+        type: 'object',
+        required: ['status'],
+        properties: { status: { const: status, type: 'string' } },
+      });
+    }
+    // control / controlLegacy 是同一 handler 的 fail-open `{status:'ok'}`。
+    for (const id of ['goals.control', 'goals.controlLegacy']) {
+      expect(schemaOf(id)).toEqual({
+        type: 'object',
+        required: ['status'],
+        properties: { status: { const: 'ok', type: 'string' } },
+      });
+    }
+  });
+
+  test('goal work receipts keep success/goalId/nextAction (validate, complete, retryNode)', () => {
+    const validate = schemaOf('goals.validate');
+    expect(validate.required).toEqual(['success', 'goalId', 'nextAction']);
+    // 启动是 setImmediate 异步的：200 只表示已排队。
+    expect(validate.properties.nextAction).toEqual({ const: 'GRAPH_INVOKED', type: 'string' });
+    expect(schemaOf('goals.complete')).toEqual({
+      type: 'object',
+      required: ['success', 'nextAction'],
+      properties: {
+        success: { const: true, type: 'boolean' },
+        nextAction: { const: 'SCHEDULED', type: 'string' },
+      },
+    });
+    expect(schemaOf('goals.retryNode').required).toEqual(['success', 'runId']);
+    // runId 是 retryNodeRun() 的新 run id，可能是 number 而非路径里的字符串。
+    expect(schemaOf('goals.retryNode').properties.runId).toEqual({ type: 'number' });
+  });
+
+  test('goals.respondQuestion: accepted, action only on the cancel branch', () => {
+    const schema = schemaOf('goals.respondQuestion');
+    expect(schema.required).toEqual(['status']);
+    expect(schema.properties.status).toEqual({ const: 'accepted', type: 'string' });
+    expect(schema.properties.action).toEqual({ const: 'cancelled', type: 'string' });
+    // 回答分支没有 action 键 → 不能进 required。
+    expect(schema.required).not.toContain('action');
+  });
+
+  test('decision writes return the decisions.list record', () => {
+    const record = schemaOf('decisions.list').properties.items.items;
+    for (const id of ['decisions.draft', 'decisions.confirm', 'decisions.shelve', 'decisions.reopen']) {
+      expect(schemaOf(id)).toEqual({
+        type: 'object',
+        required: ['record'],
+        properties: { record },
+      });
+    }
+  });
+
+  test('lead boundary decisions pin each branch (only accept splits)', () => {
+    expect(schemaOf('lead.boundaries.accept')).toEqual({
+      type: 'object',
+      required: ['status', 'toTopicId'],
+      properties: {
+        status: { const: 'accepted', type: 'string' },
+        toTopicId: { type: 'string' },
+      },
+    });
+    expect(schemaOf('lead.boundaries.merge').properties.status).toEqual({ const: 'merged', type: 'string' });
+    expect(schemaOf('lead.boundaries.undo').properties.status).toEqual({ const: 'undone', type: 'string' });
+    // merge / undo 不产生新 topic，故没有 toTopicId。
+    expect(Object.keys(schemaOf('lead.boundaries.merge').properties)).toEqual(['status']);
+    expect(Object.keys(schemaOf('lead.boundaries.undo').properties)).toEqual(['status']);
+  });
+
+  test('lead.boundaries.observe is advisory: proposed always, proposal/error optional', () => {
+    const schema = schemaOf('lead.boundaries.observe');
+    expect(schema.required).toEqual(['proposed']);
+    expect(schema.properties.proposed).toEqual({ type: 'boolean' });
+    // 五类检测触发器 + null（未命中时 proposal 可为 null）。
+    const proposalBranches = schema.properties.proposal.anyOf;
+    const concrete = proposalBranches.find((b: any) => b.type === 'object');
+    expect(concrete.required).toEqual(['trigger', 'confidence', 'reason']);
+    expect(concrete.properties.trigger.anyOf.map((t: any) => t.const)).toEqual([
+      'explicit', 'semantic', 'idle', 'goal_closed', 'keyword',
+    ]);
+    expect(proposalBranches.some((b: any) => b.type === 'null')).toBe(true);
+    // 观察器抛错仍是 200：error 只是字段。
+    expect(schema.required).not.toContain('error');
+    expect(schema.properties.error).toEqual({ type: 'string' });
+  });
+
+  test('lead compact / topic writes match the SDK DTOs', () => {
+    expect(schemaOf('lead.compact').required).toEqual([
+      'topicId', 'beforeTokens', 'afterTokens', 'evictedMessageIds',
+    ]);
+    expect(schemaOf('lead.topics.resume').required).toEqual(['sessionID', 'resumedFrom']);
+    expect(schemaOf('lead.topics.resume').properties.resumedFrom.anyOf.map((v: any) => v.type))
+      .toEqual(['string', 'null']);
+    // fork 只保证创建 Goal：sessionID 缺省或 null。
+    expect(schemaOf('lead.topics.fork').required).toEqual(['goalId']);
+    expect(schemaOf('lead.topics.fork').properties.sessionID.anyOf.map((v: any) => v.type))
+      .toEqual(['string', 'null']);
+  });
+
+  test('standing goal writes reuse the list / runs entities', () => {
+    const goal = schemaOf('standingGoals.list').properties.items.items;
+    for (const id of [
+      'standingGoals.create', 'standingGoals.update', 'standingGoals.pause',
+      'standingGoals.resume', 'standingGoals.stop',
+    ]) {
+      const schema = schemaOf(id);
+      expect(schema.required).toEqual(['goal']);
+      // 同一 store 行投影：字段面与 list item 逐字节相同。
+      expect(JSON.stringify(schema.properties.goal)).toBe(JSON.stringify(goal));
+    }
+    const run = schemaOf('standingGoals.runs').properties.items.items;
+    for (const id of ['standingGoals.run', 'goalRuns.approve']) {
+      expect(JSON.stringify(schemaOf(id).properties.run)).toBe(JSON.stringify(run));
+    }
+  });
+
+  test('cognition.gate is a discriminated union of five decisions', () => {
+    const branches = schemaOf('cognition.gate').anyOf;
+    expect(branches.map((b: any) => b.properties.decision.const)).toEqual([
+      'allow', 'deny', 'ask', 'rewrite', 'transform',
+    ]);
+    // deny/ask 的依据字段可选（规则可以只给动作）。
+    expect(branches[1].required).toEqual(['decision']);
+    expect(branches[2].required).toEqual(['decision']);
+    // rewrite 带替换后的工具入参，transform 带改写后的 prompt 正文。
+    expect(branches[3].required).toEqual(['decision', 'input']);
+    expect(branches[4].required).toEqual(['decision', 'text']);
+  });
+
+  test('cognition.rewrite returns rewritten content parts (type + runtime extras)', () => {
+    const schema = schemaOf('cognition.rewrite');
+    expect(schema.required).toEqual(['content']);
+    const item = schema.properties.content.items;
+    // 只有 type 是 gateway 的承诺；其余部件字段归 runtime（原样透传）。
+    expect(item.required).toEqual(['type']);
+    expect(item.additionalProperties).toBe(true);
+  });
+
+  test('the R3 batch raises the write-response ledger to 104/195', () => {
+    const writeOps = new Set<string>();
+    const responded = new Set<string>();
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const [method, op] of Object.entries<any>(methods)) {
+        if (method === 'get' || !op?.operationId) continue;
+        writeOps.add(op.operationId);
+        if (op.responses?.['200']?.content?.['application/json']?.schema) responded.add(op.operationId);
+      }
+    }
+    expect(writeOps.size).toBe(195);
+    // humanToken.rotate + P0 2 + R1 35 + R2 35 + R3 31 = 104.
+    expect(responded.size).toBeGreaterThanOrEqual(104);
+    for (const id of [
+      'goals.controlLegacy', 'goals.validate', 'decisions.draft', 'lead.boundaries.observe',
+      'lead.topics.fork', 'standingGoals.run', 'goalRuns.approve', 'cognition.gate',
+      'cognition.rewrite',
+    ]) {
+      expect(`${id}:${responded.has(id)}`).toBe(`${id}:true`);
+    }
+  });
+});
+
+describe('api-contract: E10h-R4 event/automation/human-gate write responses', () => {
+  const findOp = (operationId: string): any => {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const candidate of Object.values<any>(methods)) {
+        if (candidate?.operationId === operationId) return candidate;
+      }
+    }
+    return null;
+  };
+
+  const schemaOf = (operationId: string): any => {
+    const op = findOp(operationId);
+    expect(`${operationId}:found`).toBe(`${operationId}:${op ? 'found' : 'missing'}`);
+    const schema = op.responses?.['200']?.content?.['application/json']?.schema;
+    expect(`${operationId}:200`).toBe(`${operationId}:${schema ? '200' : 'missing'}`);
+    return schema;
+  };
+
+  test('event writes pin the ok receipt and the closed webhook envelope', () => {
+    // publish / sources.patch / subscriptions.delete 都是 fire-and-forget `{ok:true}`。
+    for (const id of ['event.publish', 'events.sources.patch', 'events.subscriptions.delete']) {
+      expect(schemaOf(id)).toEqual({
+        type: 'object',
+        required: ['ok'],
+        properties: { ok: { const: true, type: 'boolean' } },
+      });
+    }
+    // 请求体归源所有，但 200 是网关自己的回执：闭合、两个字段都必填。
+    expect(schemaOf('events.webhook.receive')).toEqual({
+      type: 'object',
+      required: ['accepted', 'duplicate'],
+      properties: {
+        accepted: { const: true, type: 'boolean' },
+        duplicate: { type: 'boolean' },
+      },
+    });
+  });
+
+  test('event source / subscription writes return the read-side DTOs', () => {
+    expect(JSON.stringify(schemaOf('events.sources.create')))
+      .toBe(JSON.stringify(schemaOf('events.sources.list').properties.items.items));
+    expect(JSON.stringify(schemaOf('events.threads.subscriptions.create')))
+      .toBe(JSON.stringify(schemaOf('events.threads.subscriptions.list').properties.items.items));
+    // closeThread 的计数是本次关闭迁移的投递数；closed 跟端口类型走（boolean）。
+    expect(schemaOf('events.threads.close')).toEqual({
+      type: 'object',
+      required: ['closed', 'handedBack', 'dropped'],
+      properties: {
+        closed: { type: 'boolean' },
+        handedBack: { type: 'number' },
+        dropped: { type: 'number' },
+      },
+    });
+  });
+
+  test('automation writes keep the handler status unions and the draft errors array', () => {
+    const toggle = schemaOf('automations.toggle');
+    expect(toggle.required).toEqual(['status', 'enabled']);
+    // 找不到规则也回 200：status 是联合而不是字面量。
+    expect(toggle.properties.status.anyOf.map((b: any) => b.const)).toEqual(['toggled', 'not_found']);
+    expect(toggle.properties.enabled).toEqual({ type: 'boolean' });
+    expect(schemaOf('automations.remove').properties.status.anyOf.map((b: any) => b.const))
+      .toEqual(['deleted', 'not_found']);
+    // errors 恒存在（空数组 = 校验通过）。
+    expect(schemaOf('automations.draft')).toEqual({
+      type: 'object',
+      required: ['id', 'valid', 'errors'],
+      properties: {
+        id: { type: 'string' },
+        valid: { type: 'boolean' },
+        errors: { type: 'array', items: { type: 'string' } },
+      },
+    });
+  });
+
+  test('approval / question receipts stay human-gate-specific', () => {
+    const respond = schemaOf('approvals.respond');
+    expect(respond.required).toEqual(['status', 'decision']);
+    expect(respond.properties.status).toEqual({ const: 'ok', type: 'string' });
+    // 请求是 approve|reject|{answer}；回显把文本回答归一化成 'answered'。
+    expect(respond.properties.decision.anyOf.map((b: any) => b.const))
+      .toEqual(['approve', 'reject', 'answered']);
+    for (const id of ['questions.reply', 'questions.reject']) {
+      expect(schemaOf(id)).toEqual({
+        type: 'object',
+        required: ['status'],
+        properties: { status: { const: 'ok', type: 'string' } },
+      });
+    }
+  });
+
+  test('triage writes: dismiss/reject are 200-even-when-missing, confirm has three branches', () => {
+    expect(schemaOf('triage.dismiss').properties.status.anyOf.map((b: any) => b.const))
+      .toEqual(['dismissed', 'not_found']);
+    expect(schemaOf('triage.reject').properties.status.anyOf.map((b: any) => b.const))
+      .toEqual(['rejected', 'not_found']);
+    const branches = schemaOf('triage.confirm').anyOf;
+    expect(branches).toHaveLength(3);
+    // 三个成功分支互不共享可选的业务字段：installed / axioms / goalId 各自必填。
+    expect(branches.map((b: any) => b.required)).toEqual([
+      ['status', 'installed'],
+      ['status', 'axioms'],
+      ['status', 'goalId'],
+    ]);
+    expect(branches.every((b: any) => b.properties.status.const === 'confirmed')).toBe(true);
+    // propose 的条目不存在/已处理也是 200 的 success:false —— 不能缩成 true。
+    expect(schemaOf('triage.propose')).toEqual({
+      type: 'object',
+      required: ['success', 'message'],
+      properties: {
+        success: { type: 'boolean' },
+        message: { type: 'string' },
+      },
+    });
+  });
+
+  test('permission writes keep the two reply receipts apart and reuse the mode DTO', () => {
+    expect(schemaOf('permissions.reply')).toEqual({
+      type: 'object',
+      required: ['status'],
+      properties: { status: { const: 'ok', type: 'string' } },
+    });
+    // 会话直连入口是老形状 `{success:true}`，与按 requestId 反查的 reply 不同。
+    expect(schemaOf('permissions.replyRuntime')).toEqual({
+      type: 'object',
+      required: ['success'],
+      properties: { success: { const: true, type: 'boolean' } },
+    });
+    expect(JSON.stringify(schemaOf('permissions.setMode')))
+      .toBe(JSON.stringify(schemaOf('permissions.getMode')));
+  });
+
+  test('allowlist / rule writes return the post-write entry list', () => {
+    const allowlistEntry = schemaOf('permissions.listAllowlist').properties.entries.items;
+    const rule = schemaOf('permissions.listRules').properties.entries.items;
+    expect(schemaOf('permissions.addAllowlist')).toEqual({
+      type: 'object',
+      required: ['success', 'entries'],
+      properties: {
+        success: { type: 'boolean' },
+        entries: { type: 'array', items: allowlistEntry },
+      },
+    });
+    // 删除未命中是 404 → 200 的 success 恒为 true。
+    expect(schemaOf('permissions.removeAllowlist')).toEqual({
+      type: 'object',
+      required: ['success', 'entries'],
+      properties: {
+        success: { const: true, type: 'boolean' },
+        entries: { type: 'array', items: allowlistEntry },
+      },
+    });
+    expect(schemaOf('permissions.addRule')).toEqual({
+      type: 'object',
+      required: ['success', 'entries'],
+      properties: {
+        success: { type: 'boolean' },
+        entries: { type: 'array', items: rule },
+      },
+    });
+    expect(schemaOf('permissions.removeRule').properties.success).toEqual({ const: true, type: 'boolean' });
+    expect(JSON.stringify(schemaOf('permissions.removeRule').properties.entries))
+      .toBe(JSON.stringify(schemaOf('permissions.addRule').properties.entries));
+  });
+
+  test('the R4 batch raises the write-response ledger to 128/195', () => {
+    const writeOps = new Set<string>();
+    const responded = new Set<string>();
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const [method, op] of Object.entries<any>(methods)) {
+        if (method === 'get' || !op?.operationId) continue;
+        writeOps.add(op.operationId);
+        if (op.responses?.['200']?.content?.['application/json']?.schema) responded.add(op.operationId);
+      }
+    }
+    expect(writeOps.size).toBe(195);
+    // humanToken.rotate + P0 2 + R1 35 + R2 35 + R3 31 + R4 24 = 128.
+    expect(responded.size).toBeGreaterThanOrEqual(128);
+    for (const id of [
+      'event.publish', 'events.sources.create', 'events.webhook.receive', 'automations.draft',
+      'approvals.respond', 'questions.reject', 'triage.confirm', 'triage.propose',
+      'permissions.replyRuntime', 'permissions.addRule', 'permissions.removeAllowlist',
+    ]) {
+      expect(`${id}:${responded.has(id)}`).toBe(`${id}:true`);
+    }
+  });
+});
+
+describe('api-contract: E10h-R5 mcp/plugin/runtime/platform write responses', () => {
+  const findOp = (operationId: string): any => {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const candidate of Object.values<any>(methods)) {
+        if (candidate?.operationId === operationId) return candidate;
+      }
+    }
+    return null;
+  };
+
+  const schemaOf = (operationId: string): any => {
+    const op = findOp(operationId);
+    expect(`${operationId}:found`).toBe(`${operationId}:${op ? 'found' : 'missing'}`);
+    const schema = op.responses?.['200']?.content?.['application/json']?.schema;
+    expect(`${operationId}:200`).toBe(`${operationId}:${schema ? '200' : 'missing'}`);
+    return schema;
+  };
+
+  const branchTypes = (schema: any): string[] =>
+    (schema.anyOf ?? []).map((branch: any) => branch.type ?? branch.const ?? 'literal');
+
+  test('mcp connect/disconnect are ok receipts and the config surface is two DTOs', () => {
+    for (const id of ['mcp.connect', 'mcp.disconnect']) {
+      expect(schemaOf(id)).toEqual({
+        type: 'object',
+        required: ['ok'],
+        properties: { ok: { const: true, type: 'boolean' } },
+      });
+    }
+    // preview / preview-remove: token + target + diff 恒在（乐观锁 + dry-run 证据）。
+    for (const id of ['mcp.configPreview', 'mcp.configPreviewRemove']) {
+      const preview = schemaOf(id);
+      expect(preview.required).toEqual(['token', 'target', 'diff']);
+      expect(Object.keys(preview.properties).sort())
+        .toEqual(['backup', 'diff', 'preserved', 'target', 'token', 'warnings']);
+    }
+    // apply / remove / restore: applied + runtimeApplied 两个布尔不能合并。
+    for (const id of ['mcp.configApply', 'mcp.configRemove', 'mcp.configRestore']) {
+      const result = schemaOf(id);
+      expect(result.required).toEqual(['applied', 'runtimeApplied']);
+      expect(Object.keys(result.properties).sort()).toEqual(['applied', 'backup', 'error', 'runtimeApplied']);
+    }
+  });
+
+  test('plugin installs return the hub entry / manager install result (not the raw request)', () => {
+    // install 的请求是 .js 字节流（无 requestBody），但 200 仍是 PluginEntry。
+    const install = schemaOf('plugins.install');
+    expect(install.required).toEqual(['type', 'name', 'file', 'status', 'size', 'mtime']);
+    expect(findOp('plugins.install').requestBody).toBeUndefined();
+    // packages/install: InstallResult（saved + application 决定是否需要 apply）。
+    const pkg = schemaOf('plugins.installPackage');
+    expect(pkg.required).toEqual(['name', 'saved', 'application']);
+    expect(pkg.properties.application.anyOf.map((b: any) => b.const))
+      .toEqual(['applied', 'pending', 'failed']);
+    expect(pkg.properties.apiVersion.anyOf.map((b: any) => b.const)).toEqual([1, 2]);
+  });
+
+  test('plugin toggle/delete keep both body branches (package vs legacy)', () => {
+    const enable = schemaOf('plugins.enable');
+    expect(branchTypes(enable)).toEqual(['object', 'object']);
+    expect(enable.anyOf[0].required).toContain('enabled');
+    expect(enable.anyOf[1].properties.status.anyOf.map((b: any) => b.const))
+      .toEqual(['enabled', 'disabled', 'error', 'config-disabled']);
+    expect(JSON.stringify(schemaOf('plugins.disable'))).toBe(JSON.stringify(enable));
+    // delete 的 legacy 分支只有 {ok:true}——不是 PluginEntry。
+    const del = schemaOf('plugins.delete');
+    expect(branchTypes(del)).toEqual(['object', 'object']);
+    expect(del.anyOf[1]).toEqual({
+      type: 'object',
+      required: ['ok'],
+      properties: { ok: { const: true, type: 'boolean' } },
+    });
+  });
+
+  test('plugin apply adds the runtime-switch tri-state on top of the update result', () => {
+    const apply = schemaOf('plugins.apply');
+    expect(apply.required).toEqual(['name', 'saved', 'enabled', 'application']);
+    expect(apply.properties.runtimeSwitch.anyOf.map((b: any) => b.const))
+      .toEqual(['applied', 'failed', 'required']);
+    expect(apply.properties.active.properties.capabilities.type).toBe('object');
+    // reload/rollback 是纯 UpdateResult（没有 runtimeSwitch 三态）。
+    for (const id of ['plugins.reload', 'plugins.rollback']) {
+      expect(schemaOf(id).properties.runtimeSwitch).toBeUndefined();
+      expect(schemaOf(id).properties.enabled.type).toBe('boolean');
+    }
+  });
+
+  test('plugin invoke keeps the action output as an open plugin-owned boundary', () => {
+    const invoke = schemaOf('plugins.invoke');
+    expect(invoke.required).toEqual(['package', 'action', 'revision']);
+    const branches = invoke.properties.output.anyOf;
+    expect(branches).toHaveLength(6);
+    const objectBranch = branches.find((branch: any) => branch.type === 'object');
+    expect(objectBranch.additionalProperties).toBe(true);
+    // output 只在 handler 真的返回非 undefined 时出现。
+    expect(invoke.required).not.toContain('output');
+  });
+
+  test('plugin doctor reports reuse one DTO (single + array) and pin ok semantics', () => {
+    const report = schemaOf('plugins.doctor');
+    expect(report.required).toEqual(['name', 'apiVersion', 'kind', 'ok', 'checks', 'generatedAt']);
+    expect(report.properties.checks.items.required).toEqual(['id', 'status', 'message']);
+    expect(report.properties.checks.items.properties.status.anyOf.map((b: any) => b.const))
+      .toEqual(['pass', 'warn', 'fail']);
+    expect(schemaOf('plugins.doctorAll').items).toEqual(report);
+  });
+
+  test('plugin safety receipts pin the literals (kill/resume/quarantine pair)', () => {
+    expect(schemaOf('plugins.kill').properties.safeMode.const).toBe(true);
+    expect(schemaOf('plugins.resume').properties.safeMode.const).toBe(false);
+    expect(schemaOf('plugins.resume').required).toEqual(['safeMode', 'activated']);
+    expect(schemaOf('plugins.quarantine').required).toEqual(['name', 'quarantined', 'reason']);
+    expect(schemaOf('plugins.quarantine').properties.quarantined.const).toBe(true);
+    expect(schemaOf('plugins.unquarantine').required).toEqual(['name', 'quarantined']);
+    expect(schemaOf('plugins.unquarantine').properties.quarantined.const).toBe(false);
+  });
+
+  test('plugin web ticket exposes the credential pair only', () => {
+    const ticket = schemaOf('plugins.webTicket');
+    expect(ticket.required).toEqual(['ticket', 'expiresAt']);
+    expect(Object.keys(ticket.properties).sort()).toEqual(['expiresAt', 'ticket']);
+    expect(ticket.properties.ticket.type).toBe('string');
+    expect(ticket.properties.expiresAt.type).toBe('number');
+  });
+
+  test('runtime switch/restart receipts and the loader rescan body', () => {
+    const sw = schemaOf('runtime.switch');
+    expect(sw.required).toEqual(['success', 'active', 'envOverride']);
+    expect(sw.properties.success.const).toBe(true);
+    expect(sw.properties.active.required).toEqual(['name', 'capabilities']);
+    // reload 的 plugins item 与 runtime.get 的同名段严格同形。
+    expect(JSON.stringify(schemaOf('runtime.reload').properties.plugins.items))
+      .toBe(JSON.stringify(schemaOf('runtime.get').properties.plugins.items));
+    expect(schemaOf('runtime.restartAgent').required).toEqual(['success', 'mode']);
+    expect(schemaOf('runtime.restartAgent').properties.success.const).toBe(true);
+    expect(schemaOf('runtime.restartAgent').properties.mode.type).toBe('string');
+  });
+
+  test('runtime dry-event models all three success branches with one shape', () => {
+    const dry = schemaOf('runtime.dryEvent');
+    // 丢弃分支：type:null / facets:null；工具原语分支：facets:null + assembled。
+    expect(dry.required).toEqual(['type', 'known', 'facets', 'warnings']);
+    expect(dry.properties.type.anyOf.map((b: any) => b.type).sort()).toEqual(['null', 'string']);
+    expect(dry.properties.facets.anyOf.map((b: any) => b.type).sort()).toEqual(['null', 'object']);
+    expect(dry.properties.facets.anyOf[0].required)
+      .toEqual(['sessionID', 'step', 'chatSignal', 'compaction', 'toolCommand', 'approval']);
+    expect(dry.properties.flow.properties.modeA.anyOf.map((b: any) => b.const))
+      .toEqual(['passthrough', 'rewrite', 'drop']);
+    expect(dry.properties.assembled.type).toBe('array');
+  });
+
+  test('runtime conformance reports per-scenario results and the pass/fail summary', () => {
+    const conformance = schemaOf('runtime.conformance');
+    expect(conformance.required).toEqual(['runtime', 'results', 'summary']);
+    expect(conformance.properties.results.items.required)
+      .toEqual(['id', 'title', 'pass', 'failures', 'durationMs']);
+    expect(conformance.properties.summary.required).toEqual(['pass', 'fail']);
+  });
+
+  test('platform writes pin their own receipts (config / project / manager / models)', () => {
+    const configSet = schemaOf('config.set');
+    expect(configSet.required).toEqual(['success', 'restartRequired']);
+    expect(configSet.properties.success.const).toBe(true);
+    expect(configSet.properties.restartRequired.items.type).toBe('string');
+    // /register 回显 projectDir，不是 Project DTO。
+    const setCurrent = schemaOf('project.setCurrent');
+    expect(setCurrent.required).toEqual(['status', 'registered']);
+    expect(setCurrent.properties.status.const).toBe('ok');
+    expect(setCurrent.properties.registered.type).toBe('string');
+    const rotate = schemaOf('manager.rotate');
+    expect(rotate.required).toEqual(['success', 'sessionId', 'created']);
+    expect(rotate.properties.created.anyOf.map((b: any) => b.const)).toEqual(['initial', 'rotated']);
+    expect(rotate.properties.previousSessionId.type).toBe('string');
+  });
+
+  test('runtime config update echoes the merged runtime config (open owner)', () => {
+    const update = schemaOf('runtime.config.update');
+    expect(update.required).toEqual(['status', 'config']);
+    expect(update.properties.status.const).toBe('ok');
+    // config 归 runtime 所有：对象分支是开放索引（Record → patternProperties），
+    // 另加 null（裸 runtime）。
+    expect(update.properties.config.anyOf.map((b: any) => b.type).sort()).toEqual(['null', 'object']);
+    expect(Object.keys(update.properties.config.anyOf[0].patternProperties ?? {}))
+      .toEqual(['^(.*)$']);
+  });
+
+  test('mafwCommands.run is the command result (open to custom keys)', () => {
+    const run = schemaOf('mafwCommands.run');
+    expect(run.required).toEqual(['ok']);
+    expect(run.properties.ok.type).toBe('boolean');
+    expect(run.additionalProperties).toBe(true);
+  });
+
+  test('models.update returns the re-read model sections, same shape as models.get', () => {
+    const update = schemaOf('models.update');
+    expect(update.required).toEqual(['success', 'recall', 'media', 'goal']);
+    expect(update.properties.success.const).toBe(true);
+    const get = schemaOf('models.get');
+    for (const key of ['recall', 'media', 'goal']) {
+      expect(JSON.stringify(update.properties[key])).toBe(JSON.stringify(get.properties[key]));
+    }
+  });
+
+  test('the R5 batch raises the write-response ledger to 163/195', () => {
+    const writeOps = new Set<string>();
+    const responded = new Set<string>();
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const [method, op] of Object.entries<any>(methods)) {
+        if (method === 'get' || !op?.operationId) continue;
+        writeOps.add(op.operationId);
+        if (op.responses?.['200']?.content?.['application/json']?.schema) responded.add(op.operationId);
+      }
+    }
+    expect(writeOps.size).toBe(195);
+    // humanToken.rotate + P0 2 + R1 35 + R2 35 + R3 31 + R4 24 + R5 35 = 163.
+    expect(responded.size).toBeGreaterThanOrEqual(163);
+    for (const id of [
+      'mcp.connect', 'mcp.configPreview', 'mcp.configApply', 'plugins.install',
+      'plugins.installPackage', 'plugins.enable', 'plugins.delete', 'plugins.apply',
+      'plugins.invoke', 'plugins.doctorAll', 'plugins.kill', 'plugins.webTicket',
+      'runtime.switch', 'runtime.dryEvent', 'runtime.conformance', 'runtime.config.update',
+      'config.set', 'project.setCurrent', 'manager.rotate', 'mafwCommands.run', 'models.update',
+    ]) {
+      expect(`${id}:${responded.has(id)}`).toBe(`${id}:true`);
+    }
+  });
+});
+
+
+
+describe('api-contract: E10h-R6 memory/media/internal/device write responses', () => {
+  const findOp = (operationId: string): any => {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const candidate of Object.values<any>(methods)) {
+        if (candidate?.operationId === operationId) return candidate;
+      }
+    }
+    return null;
+  };
+
+  const schemaOf = (operationId: string): any => {
+    const op = findOp(operationId);
+    expect(`${operationId}:found`).toBe(`${operationId}:${op ? 'found' : 'missing'}`);
+    const schema = op.responses?.['200']?.content?.['application/json']?.schema;
+    expect(`${operationId}:200`).toBe(`${operationId}:${schema ? '200' : 'missing'}`);
+    return schema;
+  };
+
+  test('chat writes only promise the session id (fire-and-forget)', () => {
+    for (const id of ['chat.send', 'chat.sendEnriched']) {
+      const schema = schemaOf(id);
+      expect(schema.required).toEqual(['sessionID']);
+      expect(Object.keys(schema.properties)).toEqual(['sessionID']);
+      expect(schema.properties.sessionID.type).toBe('string');
+    }
+  });
+
+  test('memory receipts pin the two-mode setSticky and the fail-open add', () => {
+    expect(schemaOf('memory.delete').properties.status.const).toBe('deleted');
+
+    const setSticky = schemaOf('memory.setSticky');
+    expect(setSticky.anyOf).toHaveLength(3);
+    expect(setSticky.anyOf[0].required).toEqual(['success', 'id', 'sticky']);
+    expect(setSticky.anyOf[0].properties.sticky.type).toBe('boolean');
+    expect(setSticky.anyOf[1].required).toEqual(['success', 'id', 'pinned']);
+    expect(setSticky.anyOf[2].required).toEqual(['success', 'error']);
+    expect(setSticky.anyOf[2].properties.success.const).toBe(false);
+
+    const add = schemaOf('memory.add');
+    expect(add.anyOf).toHaveLength(2);
+    // dedup 命中没有 id，deduped 是字面量 true。
+    expect(add.anyOf[0].required).toEqual(['success']);
+    expect(add.anyOf[0].properties.deduped.const).toBe(true);
+    expect(add.anyOf[0].properties.updated.type).toBe('string');
+    expect(add.anyOf[1].properties.code.const).toBe('disk_low');
+
+    // backfill 是本次计数 + 整库覆盖率快照。
+    const backfill = schemaOf('memory.embeddingsBackfill');
+    expect(backfill.required).toEqual(['indexed', 'skipped', 'missing', 'vectors', 'indexEntries']);
+  });
+
+  test('memory.merge has one success branch (details) and one MCP failure branch', () => {
+    const merge = schemaOf('memory.merge');
+    expect(merge.anyOf).toHaveLength(2);
+    const [ok, failed] = merge.anyOf;
+    expect(ok.required).toEqual(['ok', 'success', 'added', 'conflicts', 'skipped', 'details']);
+    expect(ok.properties.details.required).toEqual(['added', 'conflicts', 'strategy']);
+    expect(ok.properties.details.properties.conflicts.items.required)
+      .toEqual(['source', 'target', 'similarity']);
+    expect(failed.properties.ok.const).toBe(false);
+    expect(failed.properties.success.const).toBe(false);
+  });
+
+  test('embedding.update returns the re-read config/runtime (same shape as embedding.get)', () => {
+    const update = schemaOf('embedding.update');
+    expect(update.required).toEqual(['success', 'current', 'runtime', 'note']);
+    expect(update.properties.success.const).toBe(true);
+    const get = schemaOf('embedding.get');
+    for (const key of ['current', 'runtime']) {
+      expect(JSON.stringify(update.properties[key])).toBe(JSON.stringify(get.properties[key]));
+    }
+  });
+
+  test('media writes keep the artifact reference and the A2A envelope boundary', () => {
+    const upload = schemaOf('media.upload');
+    expect(upload.required).toEqual(['artifactId', 'mediaType', 'size', 'url']);
+    // 请求是原始字节（无 requestBody），响应仍是 JSON。
+    expect(findOp('media.upload').requestBody).toBeUndefined();
+
+    const created = schemaOf('media.uploadAndCreate');
+    expect(created.required).toEqual(['id', 'contextId', 'state', 'artifactId', 'mediaType', 'size']);
+    expect(created.properties.state.const).toBe('TASK_STATE_WORKING');
+
+    const api = schemaOf('media.createTaskApi');
+    expect(api.required).toEqual(['id', 'contextId', 'state']);
+    expect(api.properties.state.type).toBe('string');
+
+    // POST /a2a：请求信封归协议（E10g 排除），200 按协议边界开放。
+    const a2a = schemaOf('media.createTask');
+    expect(a2a.additionalProperties).toBe(true);
+    expect(Object.keys(a2a.properties ?? {})).toEqual([]);
+    expect(findOp('media.createTask').requestBody).toBeUndefined();
+
+    // 分析结果一直是叙述文本。
+    expect(schemaOf('media.analyzeAudio').properties.result.type).toBe('string');
+
+    // reload 的 plugins 段 ≡ media.plugins 的列表段（同一 getState() 投影）。
+    const reload = schemaOf('media.pluginsReload');
+    expect(reload.required).toEqual(['ok', 'plugins']);
+    expect(reload.properties.ok.const).toBe(true);
+    expect(JSON.stringify(reload.properties.plugins))
+      .toBe(JSON.stringify(schemaOf('media.plugins').properties.plugins));
+  });
+
+  test('tts.speak returns a wav reference; the stream op stays excluded', () => {
+    const speak = schemaOf('tts.speak');
+    expect(speak.required).toEqual(['artifactId', 'voice', 'mime', 'url']);
+    expect(speak.properties.mime.const).toBe('audio/wav');
+    expect(schemaOf('tts.interrupt').required).toEqual(['ok', 'cancelled']);
+    expect(schemaOf('tts.interrupt').properties.ok.const).toBe(true);
+    // 音频流：200 只有 description，没有任何 JSON schema。
+    expect(findOp('tts.speakStream').responses['200'].content).toBeUndefined();
+    // 请求面没有被排除影响。
+    expect(findOp('tts.speakStream').requestBody).toBeDefined();
+  });
+
+  test('obs.capture is fail-open 200 and python.execute returns the kernel result itself', () => {
+    const obs = schemaOf('obs.capture');
+    expect(obs.anyOf).toHaveLength(2);
+    expect(obs.anyOf[0].required).toEqual(['ok', 'id', 'turnId', 'deduped']);
+    expect(obs.anyOf[0].properties.id.anyOf.map((b: any) => b.type).sort())
+      .toEqual(['null', 'number']);
+    expect(obs.anyOf[1].required).toEqual(['ok', 'error']);
+    expect(obs.anyOf[1].properties.ok.const).toBe(false);
+
+    const py = schemaOf('python.execute');
+    expect(py.required).toEqual(['stdout', 'stderr', 'status', 'durationMs', 'truncated', 'attachments']);
+    expect(py.properties.status.anyOf.map((b: any) => b.const).sort())
+      .toEqual(['aborted', 'error', 'ok']);
+    // 错误信封只在 Python 异常时出现。
+    expect(py.required).not.toContain('error');
+    expect(py.properties.error.required).toEqual(['ename', 'evalue', 'traceback']);
+    expect(schemaOf('python.restart').properties.ok.const).toBe(true);
+  });
+
+  test('tools / eval / llm receipts keep their handler shapes', () => {
+    const tools = schemaOf('tools.execute');
+    expect(tools.required).toEqual(['text']);
+    expect(tools.properties.isError.type).toBe('boolean');
+
+    const evalSchema = schemaOf('eval.chatCompletions');
+    expect(evalSchema.required).toEqual(['id', 'object', 'model', 'choices', 'usage']);
+    expect(evalSchema.properties.object.const).toBe('chat.completion');
+    expect(evalSchema.properties.choices.items.required)
+      .toEqual(['index', 'finish_reason', 'message']);
+    expect(evalSchema.properties.choices.items.properties.finish_reason.const).toBe('stop');
+    expect(evalSchema.properties.usage.required)
+      .toEqual(['prompt_tokens', 'completion_tokens', 'total_tokens']);
+
+    const compress = schemaOf('llm.compress');
+    expect(compress.required).toEqual(['narrative', 'facts', 'concepts', 'energy']);
+    expect(compress.properties.narrative.type).toBe('string');
+    expect(compress.properties.facts.type).toBe('array');
+    expect(compress.properties.energy.type).toBe('number');
+  });
+
+  test('device writes never expose credential hashes; pairing returns the token pair', () => {
+    const register = schemaOf('devices.register');
+    expect(register.required).toEqual(['ok']);
+    expect(register.properties.ok.const).toBe(true);
+    // device 是 PublicDeviceEntry（与 devices.list 的 item 同一投影）。
+    expect(JSON.stringify(register.properties.device))
+      .toBe(JSON.stringify(schemaOf('devices.list').properties.devices.items));
+    expect(JSON.stringify(schemaOf('mobile.devicesRegister')))
+      .toBe(JSON.stringify(register));
+
+    for (const id of ['devices.delete', 'mobile.devicesDelete']) {
+      expect(schemaOf(id).required).toEqual(['ok']);
+      expect(schemaOf(id).properties.ok.const).toBe(true);
+    }
+
+    const verify = schemaOf('mobile.pairingVerify');
+    expect(verify.required).toEqual(['ok', 'token', 'deviceId']);
+    expect(verify.properties.token.type).toBe('string');
+    expect(verify.properties.deviceId.type).toBe('string');
+
+    const ask = schemaOf('mobile.mediaTaskAsk');
+    expect(ask.required).toEqual(['answer']);
+    expect(ask.properties.taskId.type).toBe('string');
+
+    const uploadTask = schemaOf('mobile.mediaTaskUpload');
+    expect(uploadTask.required).toEqual(['id', 'contextId', 'state', 'artifactId']);
+    // 请求是 multipart（无 requestBody），响应仍是 JSON。
+    expect(findOp('mobile.mediaTaskUpload').requestBody).toBeUndefined();
+  });
+
+  test('skills.deopt keeps the 404 deopted:false apart from the 200 receipt', () => {
+    const deopt = schemaOf('skills.deopt');
+    expect(deopt.required).toEqual(['deopted']);
+    expect(deopt.properties.deopted.const).toBe(true);
+    expect(deopt.properties.archivedTo.type).toBe('string');
+  });
+
+  test('the R6 batch raises the write-response ledger to 194/195', () => {
+    const writeOps = new Set<string>();
+    const responded = new Set<string>();
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const [method, op] of Object.entries<any>(methods)) {
+        if (method === 'get' || !op?.operationId) continue;
+        writeOps.add(op.operationId);
+        if (op.responses?.['200']?.content?.['application/json']?.schema) responded.add(op.operationId);
+      }
+    }
+    expect(writeOps.size).toBe(195);
+    // humanToken.rotate + P0 2 + R1 35 + R2 35 + R3 31 + R4 24 + R5 35 + R6 31 = 194
+    //（195 - tts.speakStream 音频流）。
+    expect(responded.size).toBe(194);
+    for (const id of [
+      'memory.add', 'memory.delete', 'memory.setSticky', 'memory.embeddingsBackfill', 'memory.merge',
+      'embedding.update', 'media.switch', 'media.upload', 'media.uploadAndCreate', 'media.createTask',
+      'media.createTaskApi', 'media.analyzeAudio', 'media.pluginsReload', 'tts.speak', 'tts.interrupt',
+      'chat.send', 'chat.sendEnriched', 'python.execute', 'python.restart', 'obs.capture',
+      'tools.execute', 'eval.chatCompletions', 'llm.compress', 'mobile.mediaTaskAsk',
+      'mobile.mediaTaskUpload', 'mobile.devicesRegister', 'mobile.pairingVerify', 'mobile.devicesDelete',
+      'devices.register', 'devices.delete', 'skills.deopt',
+    ]) {
+      expect(`${id}:${responded.has(id)}`).toBe(`${id}:true`);
+    }
+    expect(responded.has('tts.speakStream')).toBe(false);
   });
 });

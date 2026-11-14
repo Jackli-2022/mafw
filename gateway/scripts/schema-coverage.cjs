@@ -2,6 +2,9 @@
 // response schema, sliced by tag, plus the uncovered operation list.
 // E10g extends the same scan with request bodies: `requests: X/188` counts
 // non-GET ops that declare `request:` (the 188 write-op denominator).
+// E10h adds the write-response slice: `write responses: X/195` counts non-GET
+// ops that declare `response:` (the 195 write-op denominator from E10g; till
+// E10h-P0 only `humanToken.rotate` was covered).
 //
 // Source of truth is `src/routes/route-catalog.ts` itself (text scan, not a TS
 // import) so this stays a plain `node` script with no ts-node/jest dependency
@@ -115,6 +118,14 @@ function analyze(catalogPath = CATALOG_PATH) {
   const requestCovered = writeOps.filter((op) => op.hasRequest).map((op) => op.operationId).sort();
   const requestUncovered = writeOps.filter((op) => !op.hasRequest).map((op) => op.operationId).sort();
 
+  // E10h: the same write ops are the *response* denominator — a write response
+  // is the 200 body a client parses after the mutation lands.
+  const writeResponseCovered = writeOps.filter((op) => op.hasResponse).map((op) => op.operationId).sort();
+  const writeResponseUncovered = writeOps
+    .filter((op) => !op.hasResponse)
+    .map((op) => op.operationId)
+    .sort();
+
   const buckets = new Map();
   for (const op of ops) {
     for (const tag of op.tags.length ? op.tags : ['(untagged)']) {
@@ -136,6 +147,10 @@ function analyze(catalogPath = CATALOG_PATH) {
     requestCovered,
     requestTotal: writeOps.length,
     requestUncovered,
+    writeResponses: writeResponseCovered.length,
+    writeResponseCovered,
+    writeResponseTotal: writeOps.length,
+    writeResponseUncovered,
   };
 }
 
@@ -151,6 +166,12 @@ function printReport(report) {
   const requestPct = report.requestTotal ? ((report.requests / report.requestTotal) * 100).toFixed(1) : '0.0';
   console.log(
     `requests: ${report.requests}/${report.requestTotal} write operations declare a request body schema (${requestPct}%)`,
+  );
+  const writePct = report.writeResponseTotal
+    ? ((report.writeResponses / report.writeResponseTotal) * 100).toFixed(1)
+    : '0.0';
+  console.log(
+    `write responses: ${report.writeResponses}/${report.writeResponseTotal} write operations declare a 200 response schema (${writePct}%)`,
   );
   console.log(`uncovered operations (${report.uncoveredOps.length}):`);
   for (const id of report.uncoveredOps) console.log(`  - ${id}`);

@@ -195,7 +195,7 @@ export const PermissionModeResponse = Type.Object({
 // ── permissions.listAllowlist ───────────────────────────────────────────────
 
 /** `AllowlistStore.list()`：`tool` 必填，`prefix` 只在 config 串带 `tool:prefix` 时出现。 */
-const AllowlistEntrySchema = Type.Object({
+export const AllowlistEntrySchema = Type.Object({
   tool: Type.String(),
   prefix: Type.Optional(Type.String()),
 })
@@ -210,7 +210,7 @@ export const AllowlistListResponse = Type.Object({
  * `PermissionRulesStore.list()` 的行（`~/.mafw/permission-rules.json`）。
  * `action` 当前只有 'allow'（deny 规则预留，store 读取时过滤掉非 allow 行）。
  */
-const PermissionRuleSchema = Type.Object({
+export const PermissionRuleSchema = Type.Object({
   tool: Type.String(),
   pattern: Type.Optional(Type.String()),
   action: Type.Literal('allow'),

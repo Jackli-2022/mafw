@@ -168,7 +168,7 @@ const CheckpointActionsSchema = Type.Object({
  * `projectCheckpointActions` 恒挂的 `actions`（POST 创建响应不带 actions，故 SDK 用
  * `SessionCheckpointListItem` 单独表达列表形状）。
  */
-const SessionCheckpointSchema = Type.Object({
+export const SessionCheckpointSchema = Type.Object({
   id: Type.String(),
   sessionID: Type.String(),
   projectDir: Type.String(),
@@ -187,7 +187,7 @@ export const SessionCheckpointsResponse = Type.Object({
 // ── session.subagents.list ──────────────────────────────────────────────────
 
 /** `SubagentService.list()` → `SubagentRecord`（gateway-owned 记录面）。 */
-const SubagentRecordSchema = Type.Object({
+export const SubagentRecordSchema = Type.Object({
   id: Type.String(),
   parentID: Type.String(),
   depth: Type.Number(),

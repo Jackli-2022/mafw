@@ -1586,6 +1586,8 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 - **台账**：`scripts/schema-coverage.cjs` 解析每个 catalog entry 的 `request:`，输出
   `requests: X/195 write operations`（分母 = 非 GET op；GET 不参与；E10g 时为 188），`--json` 增
   `requests` / `requestCovered` / `requestTotal` / `requestUncovered`。response 口径见下（合并后 127/327）。
+  E10h 起同一脚本再切一刀写响应：`write responses: X/195`（`--json` 增 `writeResponses` /
+  `writeResponseCovered` / `writeResponseTotal` / `writeResponseUncovered`），分母与请求台账同为 195。
 - **P0 pilot（3）**：`session.create`（`directory` 必填绝对路径 + `worktree` / `metadata`）、
   `tasks.submit`（`kind` / `parentSessionID` 必填；shell→`command`、subagent→`prompt` 的条件必填由
   service 校验，schema 用 optional + description 表达）、`pods.tasks.create`（`title` 必填；
@@ -1839,6 +1841,341 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 
 ---
 
+## E10h 写响应契约（P0 + R1–R6，2026-11-15）
+
+> 承接 E10g（请求 **189/195**）。E10h 给 **195 个写 op**（非 GET）补 200 响应契约：
+> 写响应 **0 → 194/195（99.5%）+ 1 排除（`tts.speakStream`）**，total response
+> **127 → 320/327（97.9%）**；GET 侧 126/132 已全部覆盖（6 个非 JSON GET 不进 JSON schema）。
+> 注：E10g 段落里的「JSON GET 127/133」是混合口径（127 含 `humanToken.rotate` POST、133 含该 POST），
+> E10h 起统一用 126/132。
+> spec：`docs/superpowers/specs/2026-11-15-gateway-e10h-write-responses-design.md`；
+> plan：`docs/superpowers/plans/2026-11-15-gateway-e10h-write-responses.md`；
+> 交付记录：`docs/releases/2026-11-15-gateway-e10h-write-responses.md`。
+
+| 批次 | 范围 | 写响应 | total response |
+|---|---|---|---|
+| P0 | 台账（`write responses: X/195`）+ pilot `session.create` / `tasks.submit` | +2 → 3/195 | 129/327 |
+| R1 | session 写接口（usage plugins / subagents / queue / rename / delete …） | +35 → 38/195 | 164/327 |
+| R2 | pods（含 `pod.events.*` / tasks / messages / goals / reviewItems / memory / a2a）+ task / terminal / background / fileHistory | +35 → 73/195 | 199/327 |
+| R3 | goals / decisions / lead / standing / cognition | +31 → 104/195 | 230/327 |
+| R4 | events / automations / approvals / questions / triage / permissions | +24 → 128/195 | 254/327 |
+| R5 | mcp / plugins（含 Phase 6 自愈面 8 个）/ runtime / config / project / manager / commands / models | +35 → 163/195 | 289/327 |
+| R6 | memory / media / tts / chat / python / obs / tools / eval / llm / mobile / devices / skills | +31 → 194/195 | 320/327 |
+
+- **响应规则（三选一，handler 是事实源）**：
+  1. **复用读侧 DTO**：写后读回或同一投影时直接指向既有 schema 对象（`tasks.submit` ≡ `tasks.get`、
+     `pods.create` ≡ `PodDetailResponse`、`permissions.setMode` ≡ `permissions.getMode`、
+     `models.update` 的 `recall|media|goal` ≡ `models.get`、`embedding.update` 的 `current|runtime`
+     ≡ `embedding.get`、`devices.register` 的 `device` ≡ `devices.list` item …）。为此只给内部
+     schema 加 `export`，**不改任何既有响应形状**。
+  2. **按 handler wire 新写**（`routes/schemas/*-write-responses.ts`，按域拆文件）；常量回执直接用
+     `Type.Literal` 声明 handler 的唯一写出值，不放宽到 SDK 的宽类型（`{success:true}` /
+     `{status:'paused'}` / `{ok:true}` / `state:'TASK_STATE_WORKING'` / `mime:'audio/wav'`）。
+  3. **排除**：200 不是单个 JSON 文档 → `WRITE_RESPONSE_EXCLUDED`（本波唯一项 `tts.speakStream`）。
+- **声明式契约为界**：`toOpenApiPaths()` 只投影 `responses.200.content['application/json']`，
+  **无运行时响应校验**（与请求面、E10f 同策略）。错误体（4xx/5xx）一律不建模。
+- **200 分支必须如实联合**：「未命中 / 失败也是 200」的 handler 事实用判别联合表达，不收敛成
+  带 optional 的对象（`session.promptAsync` 三态、`memory.add` / `setSticky` / `merge`、
+  `obs.capture`、`triage.confirm` 三分支、`plugins.enable|disable|delete` 的
+  `UpdateResult`｜`PluginEntry` 双分支、`automations.*` / `triage.dismiss|reject` 的
+  `not_found` 分支）。收敛会合法化 handler 永不发出的键组合。
+- **空体 200（`Type.Object({})`）只有 4 个**：`session.revert` / `unrevert` / `summarize` /
+  `background`（handler 逐字 `json(200, {})`），成功语义只在状态码上。
+- **顶层开放对象 4 个**（body 不由 gateway 拥有）：`pods.a2a` / `media.createTask`（A2A JSON-RPC
+  信封，协议边界，**不排除**——仍是 JSON 200）、`session.command`（无 gateway handler，尾部反代
+  runtime serve）、`mafwCommands.run`（命令注册表可追加任意键）。`plugins.invoke.output`
+  是**字段级**开放边界（owner = 包的 `outputSchema`），网关只承诺 JSON 可序列化 + ≤256KB。
+- **非 JSON 请求 ≠ 非 JSON 响应**：`media.upload` / `media.uploadAndCreate` /
+  `mobile.mediaTaskUpload`（原始字节 / multipart，E10g 请求排除）与 `plugins.install`
+  （原始 `.js` 字节流）在本波补了闭合的 JSON 200。
+- **收口守卫**：`tests/unit/architecture/write-response-coverage.test.ts`（7 tests）——每个非 GET op
+  恰好「有 `response`」或「在 `WRITE_RESPONSE_EXCLUDED`」其一、排除项具名 + 带原因 + 不声明
+  `response`、**195 = 194 + 1**、全量 **320/327** 且 7 个缺口逐个对账（6 个非 JSON GET + 1 排除）、
+  写分母不含任何 GET、四条形状清单（空体 4 / 顶层开放 4 / 联合 10 / 其余闭合）钉死，外加
+  **mutation test**（抽掉一个 `response` 或一个排除项 → 按 operationId 报错，恢复后归零）。
+  GET 读表面仍由 `schema-coverage.test.ts#E10_COVERED_OPS` 独立锁定，本守卫不重复断言 GET。
+
+### E10h-P0（写响应台账 + 2 个 pilot）
+
+- 分母固定 **195 写 op**（E10g 的同一集合）；P0 只补两个响应 schema，写响应 **3/195**
+  （存量 `humanToken.rotate` + 本批 2 个），total response 台账 127 → **129/327**。
+- `session.create` → `routes/schemas/session.ts#SessionCreateResponse` =
+  `Type.Composite([SessionSchema, { worktree?: {dir, branch} }])`：handler
+  （`session-create.ts`）下发 `{...result.session, worktree}`，普通创建**没有 `worktree` 键**
+  （`JSON.stringify` 丢 `undefined`），故 optional；`dir` 是 worktree 绝对路径、`branch` 是
+  `mafw/<slug>`。
+- `tasks.submit` → `routes/schemas/tasks.ts#TaskSubmitResponse` = `TaskEntitySchema`
+  （`TaskService.submit` 直接返回 `publicTask(task)`，与 `tasks.get` 严格同形，无信封）。
+- 生成物 diff 恰好这 2 个 op 从 `content?: never` 变为 200 JSON schema；SDK
+  `contract-compat.checks.ts` 新增 `CHECK_tasks_submit`（≡ `GenTask`）与
+  `CHECK_session_create_session_half` / `_worktree`（composite 会展平，按两半锁等价）。
+
+### E10h-R1（session 写响应 35 个）
+
+- 覆盖写响应 **38/195**（`humanToken.rotate` + P0 的 2 个 + R1 的 35 个），total response
+  台账 129 → **164/327**。catalog 的 35 个 entry 只加 `response:`，请求契约与 handler 不动。
+- 新文件 `routes/schemas/session-write-responses.ts`：复用读侧同形 schema（`session.config.set`
+  ≡ `SessionConfigResponse`、`session.discoveryRefresh` ≡ `SessionDiscoveryResponse`、
+  `session.suspend` / `resume` / `discardRun` 的 `run` 来自 `RunStateSchema`、
+  `session.subagents.spawn` ≡ `SubagentRecordSchema`、`session.usagePluginsReload` ≡
+  `UsagePluginsListResponse`），其余按 handler wire 字面新写。
+- 复用所需的内部 schema 只加了 `export`（`SessionCheckpointSchema`、`SubagentRecordSchema`、
+  `RunStateSchema`、`UsagePluginSummarySchema`），未改任何既有响应形状。
+- 空体（handler 逐字 `json(200, {})`）：`session.revert` / `unrevert` / `summarize` /
+  `background` → `Type.Object({})`；`session.command` 无 gateway handler（尾部反代 runtime
+  serve），按协议边界 `additionalProperties:true` 开放。
+- `session.promptAsync` 的 200 三态联合：`{status:'ok'}`（直发）、`{status:'ok', queued:true,
+  itemId, position}`（队列短路）、`{status:'ok', queued:true, duplicate:true, itemId}`（幂等命中）。
+- `session.checkpoint` 回 `SessionCheckpoint` 本体（无列表专属 `actions`，用 `Type.Omit`
+  从列表条目骨架去掉）；`session.fork` 只有 `id` 是 gateway 契约保证的（runtime 记录开放）。
+- 守卫：`schema-coverage.test.ts` 写响应下界 3 → **38**，新增 R1 逐 op 清单与空体分类断言；
+  `api-contract.test.ts` 新增 9 条代表性断言（复用同形、checkpoint 无 actions、promptAsync
+  三态、legacy `{status:'ok'}` 等）。生成物 diff 恰好这 35 个 op。
+
+### E10h-R2（pod / task / terminal / fileHistory 写响应 35 个）
+
+- 覆盖写响应 38 → **73/195**，total response 台账 164 → **199/327**（60.9%）。catalog 的
+  35 个 entry 只加 `response:`，请求契约与 handler 零改动。
+- 新文件 `routes/schemas/pod-write-responses.ts`（25 个 pod op）；task / terminal /
+  background / fileHistory 的 10 个写响应就落在各自的读侧 schema 文件里
+  （`schemas/{tasks,terminal,background,project-meta}.ts`）。
+- 复用读侧 DTO：`pods.create` / `update` / `wake` / `sleep` ≡ `PodDetailResponse`
+  （四个 handler 都过 `enrichPodDetail()`，非 lead 只把 `sessions` 清空）；`pods.tasks.create`
+  / `update` 的 `task` ≡ `PodTaskSchema`；`pods.messages.create` / `read` 的 `message` ≡
+  `PodMessageSchema`；review-items create/resolve/reopen ≡ `PodReviewItemSchema`；
+  `pods.goals.probes.create` ≡ `PodProbesResponse`；`tasks.cancel` ≡ `TaskEntitySchema`；
+  `background.jobs.cancel` ≡ list item（`BackgroundJobSchema`）。
+- 按 handler wire 新写：`PodLeadEnsureResponse`（**小写 `sessionId`**，与 goals 面的
+  `sessionID` 不同）、`pods.tasks.delete` 的 `{deleted:{goalId,externalTaskId}}`、
+  `pods.goals.create` / `handoff` 的两分支（Tech Lead 讨论 vs legacy intake，只有
+  `goalId/status/queueReason/goal` 四键恒在）、`pods.goals.accept`（`PodGoalAcceptResult`）、
+  `pods.goals.reject`（`PodRejectResult`，含 `previous` 收尾结果）、`pods.goals.direction`
+  （`PodDirectionResult` + `planningStarted` / `planningError`）、`pods.goals.techLead.messages`
+  （`PodTechLeadPrompt`）、`pods.memory.write` 的 `{path}`。
+- 三处「schema 比 SDK 类型更贴 handler」（故意，不绑 AssertEq）：`pods.goals.cancel` 的
+  `goal` 是 `PodGoalRow` 行而不是 `PodGoal` 视图（无 `title/phase/stage/resultReady`）；
+  `pods.messages.delivery.retry` 原样透传 `deliver()` 的 `skipped`（create 分支把它映射成
+  `disabled`）；`terminal.remove` 的 `ok` 是字面量 `true`。
+- `pods.a2a` 是 A2A JSON-RPC 信封：**不排除**，按协议边界声明 `additionalProperties:true`
+  + owner 注释（仍是 JSON 200 schema）。本批无空体 200。
+- 守卫：`schema-coverage.test.ts` 写响应下界 38 → **73**，新增 R2 逐 op 清单 + 「无空壳 /
+  a2a 是唯一开放边界」断言；`api-contract.test.ts` 新增 13 条代表性断言；
+  SDK `contract-compat.checks.ts` +23 条编译期等价。生成物 diff 恰好这 35 个 op（重跑幂等）。
+
+### E10h-R3（goal / decision / lead / standing / cognition 写响应 31 个）
+
+- 覆盖写响应 73 → **104/195**，total response 台账 199 → **230/327**（70.3%）。catalog 的
+  31 个 entry 只加 `response:`，请求契约与 handler 零改动。
+- 五个新文件按域拆（每个都只有十几到几十行）：`routes/schemas/goal-write-responses.ts`（11）、
+  `decision-write-responses.ts`（4）、`lead-write-responses.ts`（7）、
+  `standing-write-responses.ts`（7）、`cognition-write-responses.ts`（2）。
+  `schemas/read-models.ts` 的 `DecisionRecordSchema` 加 `export`（无 wire 变化），
+  decision 四个写响应直接复用列表 item，不写第二份转写。
+- 复用读侧 DTO：`standingGoals.create` / `update` / `pause` / `resume` / `stop` ≡
+  `{goal: StandingGoalSchema}`（list item），`standingGoals.run` / `goalRuns.approve` ≡
+  `{run: GoalRunSchema}`（runs item）。
+- **常量回执**按 handler 的终值声明（`Type.Literal`），不放宽到 SDK 的宽类型：
+  `goals.planApproval` `{success:true}`、`goals.pause|resume|stop|retry`
+  `{status:paused|resumed|stopped|retried}`、`goals.control` / `goals.controlLegacy`
+  `{status:'ok'}`（同 handler 同一 schema 对象）、`goals.complete`
+  `{success:true,nextAction:'SCHEDULED'}`、`goals.validate`
+  `{success:true,goalId,nextAction:'GRAPH_INVOKED'}`、`goals.retryNode`
+  `{success:true,runId}`、`goals.respondQuestion` `{status:'accepted',action?:'cancelled'}`。
+- 领域对象：`decisions.{draft,confirm,shelve,reopen}` ≡ `{record: DecisionRecord}`；
+  `lead.boundaries.accept` `{status:'accepted',toTopicId}`（只有 accept 拆分出新 topic）、
+  `merge` `{status:'merged'}`、`undo` `{status:'undone'}`；`lead.boundaries.observe`
+  `{proposed, proposal?:{trigger,confidence,reason}|null, error?}`（advisory，永不失败）；
+  `lead.compact` ≡ `LeadCompactResult`；`lead.topics.resume` `{sessionID,resumedFrom|null}`；
+  `lead.topics.fork` `{goalId,sessionID?:string|null}`。
+- `cognition.gate` 是判别联合（`decision` ∈ allow/deny/ask/rewrite/transform；deny/ask 的
+  `reason`/`rule` 可选，rewrite 带 `input`，transform 带 `text`）；`cognition.rewrite`
+  `{content: Part[]}`，部件只承诺 `type` + runtime 其余字段（`additionalProperties:true`）。
+- 本批无排除、无空体 200、无顶层开放对象。
+- 守卫：`schema-coverage.test.ts` 写响应下界 73 → **104**，新增 R3 逐 op 清单（31）+
+  「无空壳 / 无顶层开放对象」+「同 handler 共 schema / 复用读侧 DTO」断言；
+  `api-contract.test.ts` 新增 11 条代表性断言；SDK `contract-compat.checks.ts` +14 条
+  编译期等价（decision ×4、lead compact/resume/fork、standing goal ×5、run ×2）。
+  生成物 diff 恰好这 31 个 op（重跑幂等）。
+
+### E10h-R4（event / automation / approvals / questions / triage / permissions 写响应 24 个）
+
+- 覆盖写响应 104 → **128/195**，total response 台账 230 → **254/327**（77.7%）。catalog 的
+  24 个 entry 只加 `response:`，请求契约与 handler 零改动。
+- 五个新文件按域拆：`routes/schemas/event-write-responses.ts`（7）、
+  `automation-write-responses.ts`（3）、`approval-write-responses.ts`（3：approvals +
+  questions）、`triage-write-responses.ts`（4）、`permission-write-responses.ts`（7）。
+  `schemas/events.ts` 的 `EventSourceViewSchema` / `EventSubscriptionRowSchema` 与
+  `schemas/human-gate.ts` 的 `AllowlistEntrySchema` / `PermissionRuleSchema` 加 `export`
+  （无 wire 变化），写响应复用而不是二次转写。
+- 复用读侧 DTO / 共享信封：`events.sources.create` ≡ `events.sources.list` item（同一个
+  `sourceView()`）；`events.threads.subscriptions.create` ≡ 订阅列表 item（store 行本体，
+  含 `threadId`/`expiresAt`/`droppedAt`）；`permissions.setMode` ≡ `permissions.getMode`
+  （`PermissionModeResponse`，写入路径 `autoApprovals` 恒 0）。`{ok:true}` 复用 R1 的
+  `OkResponse`（`event.publish` / `events.sources.patch` / `events.subscriptions.delete`），
+  `{status:'ok'}` 复用 `StatusOkResponse`（`questions.reply|reject`、`permissions.reply`）。
+- 本批的 200 大量是「未命中也是 200」，status 必须是联合而不是字面量：
+  `automations.toggle` `{status:'toggled'|'not_found', enabled}`、`automations.remove`
+  `{status:'deleted'|'not_found'}`、`triage.dismiss` / `triage.reject`
+  `{status:'dismissed'|'rejected'|'not_found'}`。同理 `automations.draft`
+  `{id,valid,errors}` 覆盖 `valid:false`（规则未落盘），`triage.propose`
+  `{success:boolean,message}` 覆盖 `success:false`（条目不存在/已处理）。
+- `triage.confirm` 是三条成功分支的判别联合：skill 物化 `{status:'confirmed',installed}`
+  （`installSkillDraft` 返回 skill 名）、公理草稿 `{…,axioms}`（commit 成功条数）、
+  默认 `{…,goalId}`——不把三键设成 optional，避免合法化 handler 不会发的组合。
+- `approvals.respond` `{status:'ok', decision:'approve'|'reject'|'answered'}`：`decision`
+  是归一化回显（文本回答 → `answered`）。`events.threads.close`
+  `{closed:boolean,handedBack,dropped}`：唯一实现恒 `closed:true`，但路由端口类型与
+  SDK `events.closeThread` 都声明 boolean，按端口/DTO 走。
+- `permissions.reply` 与 `permissions.replyRuntime` **刻意不同形**（`{status:'ok'}` vs
+  `{success:true}`）：两个 handler 事实不同，合并会掩盖差异。
+- `events.webhook.receive`：**请求体**才是源定义边界（E10g 的
+  `EventWebhookReceiveRequest`，`additionalProperties:true`）；200 是网关自己的回执
+  `{accepted:true,duplicate:boolean}`，故按 handler 声明为闭合对象，不开放。
+- 本批无排除、无空体 200、无顶层开放对象。
+- 守卫：`schema-coverage.test.ts` 写响应下界 104 → **128**，新增 R4 逐 op 清单（24）+
+  「无空壳 / 无顶层开放对象」+「复用读侧 DTO / 两个 reply 不同形 / 共享 `{ok:true}`」
+  断言；`api-contract.test.ts` 新增 8 条代表性断言；SDK `contract-compat.checks.ts`
+  +9 条编译期等价。生成物 diff 恰好这 24 个 op（重跑幂等）。
+
+### E10h-R5（mcp / plugins / runtime / config / project / manager / commands / models 写响应 35 个）
+
+- 覆盖写响应 128 → **163/195**，total response 台账 254 → **289/327**（88.4%）。catalog 的
+  35 个 entry 只加 `response:`，请求契约与 handler 零改动。
+- 四个新文件按域拆：`routes/schemas/mcp-write-responses.ts`（7）、
+  `plugin-write-responses.ts`（17：含 Phase 6 自愈面 8 个）、`runtime-write-responses.ts`（6）、
+  `platform-write-responses.ts`（5：config / project / manager / commands / models）。
+  `schemas/meta.ts` 的 `PluginsEntrySchema`、`schemas/runtime-surface.ts` 的
+  `RuntimeCapabilitiesSchema` / `RuntimePluginStateSchema`、`schemas/media-voice.ts` 的
+  `ModelRefSchema` / `MediaConfigSchema` / `GoalModelConfigSchema` 加 `export`（无 wire 变化），
+  写响应复用而不是二次转写。
+- 复用读侧 DTO / 共享信封：`plugins.install` ≡ `plugins.list` item（同一个 `statEntry()`
+  投影）；`runtime.reload` 的 `plugins` item ≡ `runtime.get`（同一 loader 状态）；
+  `models.update` 的 `recall` / `media` / `goal` ≡ `models.get`（写后读回，同一批 schema）；
+  `mcp.connect` / `mcp.disconnect` 复用 R1 的 `{ok:true}` 信封。
+- mcp 面全部是 **runtime 适配器的已类型化 DTO**（owner = `@mafw/runtime-contract`
+  `RuntimeMcpConfigChannel`），gateway 只透传：`mcp.configPreview` /
+  `configPreviewRemove` ≡ `RuntimeMcpConfigPreview`（`token`/`target`/`diff` +
+  `backup?`/`preserved?`/`warnings?`），`mcp.configApply` / `configRestore` /
+  `configRemove` ≡ `RuntimeMcpConfigResult`（`applied` 与 `runtimeApplied` 是两个独立
+  布尔：写盘成功但热载失败是合法组合）。
+- plugin 面有三处**判别式双分支**（handler `assertBodyShape` 收窄 `{package}` vs
+  `{type,filename}`）：`plugins.enable|disable` → `UpdateResult` ｜ `PluginEntry`，
+  `plugins.delete` → `UpdateResult` ｜ `{ok:true}`。两个分支公共键只有 `name`，
+  所以必须是联合，收敛成一份会合法化 handler 永不发出的字段组合。
+- `plugins.apply` 在 `UpdateResult` 之上补运行时切换三态：
+  `runtimeSwitch:'required'|'applied'|'failed'`（无 switch 接线 / 成功 / 失败），
+  成功带 `active:{name,capabilities}`，失败带 `runtimeError`。
+- `plugins.invoke` 的 200 是网关信封 `{package,action,revision,output?}`；`output`
+  是**插件定义**边界（owner = 包的 `outputSchema`，gateway 只要求 JSON 可序列化 + ≤256KB），
+  因此声明为「开放对象 + 其余 JSON 形态」的联合，不枚举业务字段。
+- `plugins.doctor` / `doctorAll` 复用同一份 `PluginDoctorReport`
+  （`ok` 只看 `fail`；`{ok:false}` 检查报告仍可能是 200）；`plugins.check` 的
+  `{ok:false}` 也是诊断结果（200）。`plugins.kill` / `resume` 的 `safeMode`
+  是字面量 `true`/`false`，`quarantine` / `unquarantine` 的 `quarantined` 同理。
+- `runtime.dryEvent` 一个 schema 覆盖三条成功分支：映射丢弃（`type:null` +
+  `facets:null`）、工具三原语（`facets:null` + `assembled` 是 runtime 事件数组）、
+  普通事件（`facets` 对象 + 可选 `flow`）。`assembled` 归 `RawRuntimeEvent` 所有，
+  按开放对象数组建模。
+- `runtime.config.update` 回 `{status:'ok',config}`：`config` 是 merge 后的整份 runtime
+  Config（owner = runtime，可为 `null`），与 `runtime.config.get` 同口径。
+- `mafwCommands.run` 的 200 就是命令 handler 的 `MafwCommandResult`（`ok` + 常见三键），
+  自定义命令可追加任意键 → **本批唯一开放顶层对象**（owner = 命令注册表）。
+- `project.setCurrent`（`POST /register`）回 `{status:'ok',registered}`（目录回显，
+  不是 `Project` DTO）；`manager.rotate` 回 `{success:true,...ManagerRotateResult}`
+  （`created:'initial'|'rotated'`）；`config.set` 回 `{success:true,restartRequired[]}`。
+- 本批**排除 0、空体 200 为 0**；与 E10g 请求台账的两处具名例外：`plugins.install`
+  （请求是原始 `.js` 字节流被排除，响应仍是 JSON）与既有的 `pods.a2a`。
+- 守卫：`schema-coverage.test.ts` 写响应下界 128 → **163**，新增 R5 逐 op 清单（35）+
+  「只有命令结果是开放顶层对象」+「复用读侧 DTO（同 DTO 指向同一 schema 对象）」+
+  「action output 是开放边界」+「handler 字面量」断言；`api-contract.test.ts` 新增 13 条
+  代表性断言；SDK `contract-compat.checks.ts` +22 条编译期等价。生成物 diff 恰好这 35 个 op
+  （重跑幂等）。
+
+### E10h-R6（memory / media / tts / chat / python / obs / tools / eval / llm / mobile / devices / skills 写响应 31 个）
+
+- 覆盖写响应 163 → **194/195**，total response 台账 289 → **320/327**（97.9%）。catalog 的
+  31 个 entry 只加 `response:`，请求契约与 handler 零改动。
+- 六个新文件按域拆：`routes/schemas/memory-write-responses.ts`（6：memory + embedding）、
+  `media-write-responses.ts`（7：含 `/a2a`）、`tts-write-responses.ts`（2）、
+  `internal-write-responses.ts`（8：chat / python / obs / tools / eval / llm）、
+  `devices-write-responses.ts`（7：devices + mobile）、`skills-write-responses.ts`（1）。
+  `schemas/media-voice.ts` 的 `EmbeddingConfigStateSchema` / `EmbeddingRuntimeStateSchema`
+  加 `export`（无 wire 变化）：`embedding.update` 的 `current` / `runtime` 就是写后读回的
+  同一投影。
+- **唯一排除：`tts.speakStream`** —— 200 是 `text/event-stream` 的 PCM16 分块流
+  （`data: {data,voice}` … + `{"done":true}`），不是单个 JSON 文档；请求仍是已覆盖的 JSON
+  body。收口 `WRITE_RESPONSE_EXCLUDED` 以它为唯一来源项。
+- 复用读侧 DTO / 兄弟 op：`media.pluginsReload` 的 `plugins` ≡ `media.plugins` 列表段
+  （同一 `getState()` 五键投影）；`devices.register` / `mobile.devicesRegister` 共一份回执，
+  `device` ≡ `devices.list` item（`PublicDeviceEntrySchema`，两个 hash 永不出现）；
+  `devices.delete` / `mobile.devicesDelete` 共用 `{ok:true}`；`chat.send` /
+  `sendEnriched` 严格同形（`{sessionID}`）；`embedding.update` 的 `current`/`runtime` ≡
+  `embedding.get`。
+- **「未命中 / 失败也是 200」的分支必须进 schema**：`memory.add`（`{success:false,
+  error, code?:'disk_low'}` 与 exact-hash dedup 回执）、`memory.setSticky`（便签 / pin /
+  失败三支）、`memory.merge`（MCP handler 的 `{success:false,error}` 也走 200）、
+  `obs.capture`（fail-open `{ok:false,error}`）都是 2 支或 3 支联合，不收敛成一份带
+  optional 的对象（否则「两个模式都给」的 body 会被合法化）。
+- 常量回执按 handler 的唯一写出值：`memory.delete` `{status:'deleted'}`、
+  `media.uploadAndCreate.state:'TASK_STATE_WORKING'`（后台分析，先回 working）、
+  `tts.speak.mime:'audio/wav'`、`python.restart` / `tts.interrupt` / 设备删除的 `ok:true`、
+  `eval.chatCompletions.object:'chat.completion'` + `finish_reason:'stop'`。
+- 三个 op 的**请求**是原始字节 / multipart（E10g 已排除），**响应**仍是 JSON，故本波补
+  200：`media.upload`（`{artifactId,mediaType,size,url}`）、`media.uploadAndCreate`、
+  `mobile.mediaTaskUpload`（`{id,contextId,state,artifactId}`）。
+- `media.createTask`（`POST /a2a`）与 `pods.a2a` 同口径：**不排除**，按 A2A 协议边界声明
+  `additionalProperties:true` + owner 注释（仍是 JSON 200 schema）。
+- `media.analyzeAudio` 的 `result` 是 media-service 的叙述文本（`analyze()` /
+  `analyzeAudioNarrative()` 的真实返回 `Promise<string>`；路由 deps 为了可单测写宽成
+  `unknown`，契约按真实 service 声明）。
+- `obs.capture` 的 `id` 是 `number|null`（三种「不落盘」路径都为 null）、`deduped` = `id
+  === null`，`internal` / `filtered` 是两个递归守卫各自的字面量 true 标记。
+- `python.execute` 回 `PythonExecuteResult` 本体（`status:'ok'|'error'|'aborted'`，
+  `error` 只在 Python 异常时出现，`truncated` 时 handler 已把说明追加到 `stdout`）。
+- `llm.compress` 的 `facts` / `concepts` 是模型定义的元素（gateway 只保证数组 →
+  `Type.Array(Type.Unknown())`），`narrative` / `energy` 由 `parseLLMResponse` 兜底。
+- 本批**排除 1（`tts.speakStream`）、空体 200 为 0、顶层开放对象 1（`media.createTask`
+  的 A2A 信封，与 `pods.a2a` 同形）**。
+- 守卫：`schema-coverage.test.ts` 写响应下界 163 → **194**，`E10_COVERED_OPS` +31
+  （289 → 320），新增 R6 逐 op 清单（31）+「只有 A2A 信封是开放顶层对象」+
+  「复用读侧 DTO / 两个模式回执」+「排除项有原因且不声明 response」断言；
+  「写响应必有请求」「写响应 ⊆ 请求台账」两处具名例外扩到 6 个
+  （`pods.a2a` / `media.createTask` / `plugins.install` / `media.upload` /
+  `media.uploadAndCreate` / `mobile.mediaTaskUpload`）。`api-contract.test.ts` 新增 12 条
+  代表性断言 + 台账 194；SDK `contract-compat.checks.ts` +11 条编译期等价
+  （chat ×2、tts speak ×2、media upload/uploadAndCreate ×3、pluginsReload、
+  embedding.update ×2）。生成物 diff 恰好这 31 个 op（重跑幂等）。
+
+### E10h-close（收口守卫 + 门禁，2026-11-15）
+
+- **写入收口**：写响应 **194/195（99.5%）**、total response **320/327（97.9%）**；catalog 仍
+  **327 ops / 293 paths**，请求台账仍 **189/195**，handler / 路由 / wire 字节零变化。
+- **新守卫 `tests/unit/architecture/write-response-coverage.test.ts`（7 tests / 1 suite）**：
+  1. 每个非 GET op 恰好「声明 `response`」或「在 `WRITE_RESPONSE_EXCLUDED`」其一（按 operationId 点名）；
+  2. 排除项是写 op + 带原因 + 不声明 `response`，键集恰为 `['tts.speakStream']`；
+  3. **195 = 194 + 1**（去重 + 无未记账 op）；
+  4. **327 = 320 + 7**，7 个缺口逐个对账（6 个具名非 JSON GET + 1 个写排除）；
+  5. 写分母不含任何 GET、GET 不进排除表（**GET 读表面不在本守卫重复断言**，仍在
+     `schema-coverage.test.ts#E10_COVERED_OPS`）；
+  6. 200 形状清单：空体 **4** / 顶层开放 **4** / 联合 **10**，其余闭合；
+  7. **mutation test**：抽掉一个 `response`、或临时删掉唯一排除项 → 审计按 operationId 报错，
+     恢复后归零（审计是纯函数 `auditWriteResponses()`，源文件不动）。
+- **门禁（worktree @ `86a4ba5a` + 本收口）**：gateway `tsc -p tsconfig.json` **0**；全量 jest
+  `--runInBand --forceExit --no-coverage` **7624 tests（7612 passed / 9 failed / 3 skipped）**，
+  3 个失败 suite 全是已知 env-red（`plugin-package-e2e` + `claude-adapter-acceptance` +
+  `claude-adapter-coverage`，9 条），零契约红；
+  `schema:coverage` **responses 320/327 + write responses 194/195 + requests 189/195**；
+  `analyze-routes.cjs` **TOTAL 0**；`emit:openapi` **327 routes / 293 paths / 327 operations** 无 diff；
+  SDK `tsc` **0** + 全量 **226** + `contract.test.ts` **4/4** + `gen:api` 幂等；
+  desktop 全量（仅 resolver 1 条 env-red）+ `tsgo -p`（`node:tls` 2 条）；
+  mobile 定向 **31** + `flutter analyze` **0**；TUI env-red（`pi-tui` 未安装）；
+  `kernel-split-guards` **7/7**（定向四套 297 passed：api-contract 231 + coverage 52 + 本守卫 7 + 7）。
+  明细见 `docs/releases/2026-11-15-gateway-e10h-write-responses.md`。
+- **残余**：见「残余（E11 后仍 deferred）」——写响应只剩 `tts.speakStream`；错误体、版本协商、
+  TUI triage phantom、mobile 工作 tab 增量 patch 仍 out of scope。
+
+---
+
 ## E11 身份 / 配额硬化（2026-11-13）
 
 > E11 原清单里的设备生命周期（deviceName 校验、WS `?deviceId=` 凭据优先、`pruneStale`、rotate/revoke）
@@ -1872,11 +2209,17 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
   「E10b 契约覆盖第二批」/「E10c 契约覆盖第三批」/「E10d 契约覆盖第四批」/「E10e 契约覆盖第五批」/
   「E10f 全量读表面收口」/ 本节 E11-1）。
   **E10g（+E10g-fix）后**：**读表面已收口**（127/327 response，JSON GET 127/133 = 100%）、
-  **请求表面已收口**（189/195，剩余 6 个二进制 / multipart / A2A 显式排除）。剩下的 response
-  缺口 = **194 个写 op 的 200 体** + **6 个非 JSON GET**（二进制 / SSE，不进 JSON schema）。
+  **请求表面已收口**（189/195，剩余 6 个二进制 / multipart / A2A 显式排除）。
+  **E10h 后（终态）**：**320/327（97.9%）** = GET **126/132** + 写响应 **194/195（99.5%）**；
+  剩余 7 个缺口 = **6 个非 JSON GET**（`event.subscribe` SSE / `media.artifact` /
+  `mobile.ttsArtifact` / `pods.a2aArtifact` / `plugins.webAsset` / `plugins.webEvents`，
+  传输层内容类型不进 JSON schema）+ **1 个非 JSON 写**（`tts.speakStream`：PCM16 分块流，
+  `WRITE_RESPONSE_EXCLUDED` 的唯一项；要建模只能换 `text/event-stream` 帧 schema，
+  当前 OpenAPI 3.1 投影只描述 JSON content）。请求面维持 **189/195**（6 个二进制 /
+  multipart / A2A 显式排除）。
 - 强制版本协商 / SDK 全量 schema 类型化。
-- **写面 response schema**（POST/PUT/PATCH/DELETE 的 200 成功体）：E10g 只补了请求体，
-  响应仍只覆盖读面；错误体一律不建模。
+- **错误体（4xx/5xx）不建模**：读写两面都只声明 200 成功体（声明式契约，handler 是事实源，
+  无运行时响应校验）。
 - **TUI** triage phantom 字段渲染（`reason` / `goalId` / `severity`；真实 wire 无这些字段）。
   mobile 侧已在 E10f-E 收口（`triage_card_model.dart`），desktop 侧是 E10b-3。
 - **won't do（本阶段，已有决策与缓解）**：OS keychain / 进程签名、MCP human 工具（E11-4）；

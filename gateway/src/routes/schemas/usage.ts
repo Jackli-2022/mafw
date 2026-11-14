@@ -140,7 +140,7 @@ const ConfigSchemaFieldSchema = Type.Object({
 })
 
 /** `pluginSummary()` 行：origin 由 loader 判定（builtin / override / user）。 */
-const UsagePluginSummarySchema = Type.Object({
+export const UsagePluginSummarySchema = Type.Object({
   file: Type.String(),
   name: Type.Optional(Type.String()),
   status: Type.Union([Type.Literal('ok'), Type.Literal('error')]),

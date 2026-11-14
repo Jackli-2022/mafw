@@ -24,7 +24,7 @@ import { Type } from '@sinclair/typebox'
 // ── models.get ──────────────────────────────────────────────────────────────
 
 /** `ModelRef`：recall worker / goal 节点模型的完整 provider+model 对。 */
-const ModelRefSchema = Type.Object({
+export const ModelRefSchema = Type.Object({
   providerID: Type.String(),
   modelID: Type.String(),
 })
@@ -39,7 +39,7 @@ const MediaModelRefSchema = Type.Object({
  * media 段（owner = 外部媒体引擎）：顶层 provider/model 是默认对，
  * image/video/audio 是逐模态覆盖；值域由媒体引擎插件决定。
  */
-const MediaConfigSchema = Type.Object({
+export const MediaConfigSchema = Type.Object({
   provider: Type.Optional(Type.String()),
   model: Type.Optional(Type.String()),
   image: Type.Optional(MediaModelRefSchema),
@@ -48,7 +48,7 @@ const MediaConfigSchema = Type.Object({
 })
 
 /** goal 编排模型覆盖（owner = runtime 身份模型通道；空对 = 身份内置模型）。 */
-const GoalModelConfigSchema = Type.Object({
+export const GoalModelConfigSchema = Type.Object({
   nodeModel: Type.Optional(Type.Union([ModelRefSchema, Type.Null()])),
   techLeadModel: Type.Optional(Type.Union([ModelRefSchema, Type.Null()])),
 })
@@ -235,8 +235,11 @@ export const MediaResolveTaskResponse = Type.Object({
 
 // ── embedding.get ───────────────────────────────────────────────────────────
 
-/** `EmbeddingConfigState`（routes/embedding-config.ts）：config.yaml 的有效 embedding 段。 */
-const EmbeddingConfigStateSchema = Type.Object({
+/**
+ * `EmbeddingConfigState`（routes/embedding-config.ts）：config.yaml 的有效 embedding 段。
+ * E10h-R6：`embedding.update` 的 `current` 段是写后读回的同一投影 → 加 export 复用。
+ */
+export const EmbeddingConfigStateSchema = Type.Object({
   provider: Type.Union([Type.Literal('off'), Type.Literal('local'), Type.Literal('dashscope')]),
   engine: Type.Union([Type.Literal('onnx'), Type.Literal('llamacpp')]),
   model: Type.String(),
@@ -252,8 +255,11 @@ const EmbeddingConfigStateSchema = Type.Object({
   }),
 })
 
-/** `EmbeddingRuntimeState`：live provider 状态（provider 关闭时 active/dims 为 null）。 */
-const EmbeddingRuntimeStateSchema = Type.Object({
+/**
+ * `EmbeddingRuntimeState`：live provider 状态（provider 关闭时 active/dims 为 null）。
+ * E10h-R6：`embedding.update` 的 `runtime` 段同形 → 加 export 复用。
+ */
+export const EmbeddingRuntimeStateSchema = Type.Object({
   active: Type.Union([Type.String(), Type.Null()]),
   providerId: Type.Union([Type.String(), Type.Null()]),
   modelTag: Type.Union([Type.String(), Type.Null()]),

@@ -133,7 +133,12 @@ const DecisionKindSchema = Type.Union([
   Type.Literal('other'),
 ])
 
-const DecisionRecordSchema = Type.Object({
+/**
+ * E10h-R3：`export`（本波唯一改动）——三个 decision 写接口（draft / confirm /
+ * shelve / reopen）的 200 是 `{record}`，record 与列表 item 是同一个 DTO，
+ * 由 `schemas/decision-write-responses.ts` 直接复用，避免第二份转写。
+ */
+export const DecisionRecordSchema = Type.Object({
   id: Type.String(),
   projectDir: Type.String(),
   goalId: Type.Union([Type.String(), Type.Null()]),

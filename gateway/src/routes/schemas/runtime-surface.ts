@@ -22,7 +22,7 @@ import { Type } from '@sinclair/typebox'
  * `RuntimeCapabilities` 是 runtime 自声明的布尔位（键集随 runtime 版本演进）。
  * gateway 原样下发，不在这里枚举键名。
  */
-const RuntimeCapabilitiesSchema = Type.Record(Type.String(), Type.Boolean())
+export const RuntimeCapabilitiesSchema = Type.Record(Type.String(), Type.Boolean())
 
 // ── runtime.get ─────────────────────────────────────────────────────────────
 
@@ -34,8 +34,11 @@ const RuntimeCoverageSchema = Type.Object({
   behavioral: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
 })
 
-/** `RuntimePluginState`（runtime/loader.ts）：扫描结果行（builtin/package 前缀在 `file`）。 */
-const RuntimePluginStateSchema = Type.Object({
+/**
+ * `RuntimePluginState`（runtime/loader.ts）：扫描结果行（builtin/package 前缀在 `file`）。
+ * E10h-R5 起 `runtime.reload` 的 200 响应复用本行（`loader.getState()` 原样下发）。
+ */
+export const RuntimePluginStateSchema = Type.Object({
   file: Type.String(),
   name: Type.Optional(Type.String()),
   status: Type.Union([Type.Literal('ok'), Type.Literal('error')]),

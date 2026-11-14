@@ -28,6 +28,11 @@
  *
  * E10d-1：`pods.goals.worktree.diff` / `pods.transcript` 追加在末尾；`pods.lookup`
  * 与 `pods.get` 同 wire（复用 `PodDetailResponse`）。
+ *
+ * E10h-R2：写响应模块（`pod-write-responses.ts`）要复用读侧条目骨架，故把
+ * `PodGoalStatusSchema` / `PodQueueReasonSchema` / `PodMessageSchema` /
+ * `PodReviewItemSchema` / `PodGoalRevisionStatusSchema` 加 `export`——只放开可见性，
+ * 已覆盖读接口的 wire 形状与必填面不变。
  */
 import { Type } from '@sinclair/typebox'
 import { GoalSourceRefSchema } from './goals'
@@ -54,7 +59,7 @@ const PodMemberStatusSchema = Type.Union([
   Type.Literal('retired'),
 ])
 
-const PodGoalStatusSchema = Type.Union([
+export const PodGoalStatusSchema = Type.Union([
   Type.Literal('queued'),
   Type.Literal('active'),
   Type.Literal('done'),
@@ -77,7 +82,7 @@ const PodWorkBucketSchema = Type.Union([
   Type.Literal('ended'),
 ])
 
-const PodQueueReasonSchema = Type.Union([
+export const PodQueueReasonSchema = Type.Union([
   Type.Literal('active_goal'),
   Type.Literal('paused'),
   Type.Literal('archived'),
@@ -375,7 +380,7 @@ export const PodTasksResponse = Type.Object({
  * `GET /api/pods/:podId/messages` → `{items: PodMessageRow[]}`。
  * `partsJson`（A2A 多段原文）是存储列，DTO 不暴露；投递列恒为 `string | null`。
  */
-const PodMessageSchema = Type.Object({
+export const PodMessageSchema = Type.Object({
   id: Type.String(),
   podId: Type.String(),
   fromMemberId: Type.String(),
@@ -522,7 +527,7 @@ const PodReviewAnchorSchema = Type.Union([
   }),
 ])
 
-const PodReviewItemSchema = Type.Object({
+export const PodReviewItemSchema = Type.Object({
   id: Type.String(),
   podId: Type.String(),
   goalId: Type.String(),
@@ -656,7 +661,7 @@ export const PodProbesResponse = Type.Object({
   items: Type.Array(PodProbeSchema),
 })
 
-const PodGoalRevisionStatusSchema = Type.Union([
+export const PodGoalRevisionStatusSchema = Type.Union([
   Type.Literal('discussing'),
   Type.Literal('direction_review'),
   Type.Literal('planning'),

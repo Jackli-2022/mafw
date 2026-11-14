@@ -55,7 +55,7 @@ export const EventReplayResponse = Type.Object({
  * `routes/events.ts` `EventSourceView`（`sourceView()` 投影：丢掉 projectDir /
  * config / createdAt，只留客户端需要的游标面）。与 SDK `EventSourceView` 逐字段等价。
  */
-const EventSourceViewSchema = Type.Object({
+export const EventSourceViewSchema = Type.Object({
   id: Type.String(),
   kind: Type.Union([
     Type.Literal('github'),
@@ -123,7 +123,7 @@ export const EventTriggersResponse = Type.Object({
 })
 
 /** `core/events/event-types.ts` `EventSubscriptionRow` —— 订阅者（standing goal / goal / lead）。 */
-const EventSubscriptionRowSchema = Type.Object({
+export const EventSubscriptionRowSchema = Type.Object({
   id: Type.String(),
   threadId: Type.String(),
   subscriberType: Type.Union([
