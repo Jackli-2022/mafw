@@ -80,3 +80,26 @@ test("history commands are wired", () => {
     "redo must check canUnrevert before calling unrevert",
   )
 })
+
+test("plan and build commands use DTO flags only", () => {
+  for (const trigger of ["/plan", "/build"]) {
+    assert.match(chat, new RegExp(`trigger: "${trigger}"`))
+  }
+
+  const plan = commandBlock("plan")
+  assert.match(plan, /planningAgent\(props\.primaryAgents\(\) as any\)/)
+  assert.match(plan, /applyAgentSelection/)
+  assert.match(plan, /没有规划 Agent/)
+
+  const build = commandBlock("build")
+  assert.match(build, /defaultAgentKey\(props\.primaryAgents\(\) as any\)/)
+  assert.match(build, /findAgentEntry/)
+  assert.match(build, /applyAgentSelection/)
+  assert.match(build, /没有默认执行 Agent/)
+
+  assert.match(chat, /const applyAgentSelection = \(entry: AgentEntry\)/)
+  assert.match(
+    chat,
+    /const onSessionAgentSelect = \(id: string\) => \{[\s\S]{0,240}?applyAgentSelection\(entry\)/,
+  )
+})

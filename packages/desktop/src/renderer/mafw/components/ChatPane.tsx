@@ -20,7 +20,15 @@ import { AskCard, type AskCardData } from "./AskCard"
 import { PermissionCard, type PermissionCardData } from "./PermissionCard"
 import { ModelPicker, type ModelEntry } from "./pickers/ModelPicker"
 import { SessionConfigMenu } from "./pickers/SessionConfigMenu"
-import { agentBadge, agentMenuOptions, findAgentEntry, nextRuntimeAgent, thinkingBadge } from "../session-config-menu-model"
+import {
+  agentBadge,
+  agentMenuOptions,
+  defaultAgentKey,
+  findAgentEntry,
+  nextRuntimeAgent,
+  planningAgent,
+  thinkingBadge,
+} from "../session-config-menu-model"
 import { chatPaneTitle } from "../chat-pane-title"
 import { sessionTitle } from "../session-title"
 import { messageModel } from "../message-model"
@@ -1592,6 +1600,33 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           void doUnrevert()
         },
       },
+      {
+        id: "plan", trigger: "/plan", title: "规划模式",
+        description: "切换到 runtime 声明的规划 Agent", group: "local", source: "builtin",
+        run: () => {
+          closeCommandPicker()
+          const entry = planningAgent(props.primaryAgents() as any)
+          if (!entry) {
+            showToastV2({ description: "当前 runtime 没有规划 Agent", duration: 3000 })
+            return
+          }
+          applyAgentSelection(entry as unknown as AgentEntry)
+        },
+      },
+      {
+        id: "build", trigger: "/build", title: "执行模式",
+        description: "切换到 runtime 声明的默认执行 Agent", group: "local", source: "builtin",
+        run: () => {
+          closeCommandPicker()
+          const key = defaultAgentKey(props.primaryAgents() as any)
+          const entry = key ? findAgentEntry(props.primaryAgents() as AgentEntry[], key) : undefined
+          if (!entry) {
+            showToastV2({ description: "当前 runtime 没有默认执行 Agent", duration: 3000 })
+            return
+          }
+          applyAgentSelection(entry)
+        },
+      },
     ]
     const mafw: CommandItem[] = mafwRemote().items.length > 0
       ? mafwRemote().items
@@ -1785,15 +1820,19 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   /** 权限三档的图标/颜色/hover 解释（形状+颜色双编码，无文字）。 */
   const perm = createMemo(() => permissionPresentation(props.permissionMode))
 
-  const onSessionAgentSelect = (id: string) => {
+  const applyAgentSelection = (entry: AgentEntry) => {
     setPickerOpen(null)
-    const entry = findAgentEntry(props.primaryAgents() as AgentEntry[], id)
-    if (!entry) return
     if (busy()) {
       setSwitchConfirm(entry)
       return
     }
     props.onApplyAgentSwitch(entry)
+  }
+
+  const onSessionAgentSelect = (id: string) => {
+    const entry = findAgentEntry(props.primaryAgents() as AgentEntry[], id)
+    if (!entry) return
+    applyAgentSelection(entry)
   }
 
   // Scroll container: the outer .mafw-session-turn-container is the single
