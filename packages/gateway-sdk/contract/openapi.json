@@ -15921,6 +15921,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -16036,6 +16047,38 @@
         "tags": [
           "memory"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "id"
+                ],
+                "properties": {
+                  "id": {
+                    "minLength": 1,
+                    "description": "Harmonic memory id; unknown ids return 200 {success:false}.",
+                    "type": "string"
+                  },
+                  "pinned": {
+                    "description": "Only read when sticky is absent: pinned === true pins, anything else unpins.",
+                    "type": "boolean"
+                  },
+                  "sticky": {
+                    "description": "Presence of a boolean switches to note-board mode (true → expire at stickyDays).",
+                    "type": "boolean"
+                  },
+                  "stickyDays": {
+                    "description": "Note-board window in days when sticky is true; absent/<=0 → 7.",
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -16242,6 +16285,97 @@
         "tags": [
           "embedding"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "description": "At least one field is required ({} → 400). baseUrl is config-file only and is rejected here.",
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "anyOf": [
+                      {
+                        "const": "off",
+                        "type": "string"
+                      },
+                      {
+                        "const": "local",
+                        "type": "string"
+                      },
+                      {
+                        "const": "dashscope",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "engine": {
+                    "anyOf": [
+                      {
+                        "const": "onnx",
+                        "type": "string"
+                      },
+                      {
+                        "const": "llamacpp",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "model": {
+                    "description": "Provider model id (free-form; validated by the provider at runtime).",
+                    "type": "string"
+                  },
+                  "threads": {
+                    "minimum": 1,
+                    "maximum": 32,
+                    "description": "ONNX/llama.cpp thread count; out of 1..32 → 400.",
+                    "type": "integer"
+                  },
+                  "llamacpp": {
+                    "description": "llama.cpp-only knobs; ignored by the ONNX engine.",
+                    "type": "object",
+                    "properties": {
+                      "gpu": {
+                        "anyOf": [
+                          {
+                            "const": "cpu",
+                            "type": "string"
+                          },
+                          {
+                            "const": "vulkan",
+                            "type": "string"
+                          },
+                          {
+                            "const": "cuda",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "threads": {
+                        "minimum": 1,
+                        "maximum": 32,
+                        "description": "llama.cpp thread override; out of 1..32 → 400.",
+                        "type": "integer"
+                      },
+                      "contextSize": {
+                        "minimum": 256,
+                        "maximum": 32768,
+                        "description": "llama.cpp context size; out of 256..32768 → 400.",
+                        "type": "integer"
+                      },
+                      "batchSize": {
+                        "minimum": 32,
+                        "maximum": 32768,
+                        "description": "llama.cpp batch size; out of 32..32768 → 400.",
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -16742,6 +16876,22 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "description": "Why the skill is deopted; absent/blank → \"manual\". Truncated to 200 chars.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -17599,6 +17749,26 @@
         "tags": [
           "chat"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "message"
+                ],
+                "properties": {
+                  "message": {
+                    "minLength": 1,
+                    "description": "Prompt text (required; empty → 400). Sent as a single text part.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -17612,6 +17782,62 @@
         "tags": [
           "chat"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "description": "message or parts is required (both absent → 400).",
+                "type": "object",
+                "properties": {
+                  "message": {
+                    "description": "Prompt text (excluding parts). Required when parts is absent.",
+                    "type": "string"
+                  },
+                  "parts": {
+                    "description": "Extra runtime prompt parts (file/agent attachments); required when message is absent.",
+                    "type": "array",
+                    "items": {
+                      "additionalProperties": true,
+                      "type": "object",
+                      "required": [
+                        "type"
+                      ],
+                      "properties": {
+                        "type": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "sessionID": {
+                    "description": "Reuse this session; absent → a new session in the first registered project.",
+                    "type": "string"
+                  },
+                  "agent": {
+                    "description": "Runtime agent name override for this prompt.",
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "object",
+                    "required": [
+                      "providerID",
+                      "modelID"
+                    ],
+                    "properties": {
+                      "providerID": {
+                        "type": "string"
+                      },
+                      "modelID": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -17689,6 +17915,50 @@
         "tags": [
           "media"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "description": "At least one engine (top-level or per-modality) is required; none → 400.",
+                "type": "object",
+                "properties": {
+                  "engine": {
+                    "description": "Default media engine for every modality (absent → unchanged).",
+                    "type": "string"
+                  },
+                  "image": {
+                    "type": "object",
+                    "properties": {
+                      "engine": {
+                        "description": "Media engine plugin name, or \"pi\" (always available).",
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "video": {
+                    "type": "object",
+                    "properties": {
+                      "engine": {
+                        "description": "Media engine plugin name, or \"pi\" (always available).",
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "audio": {
+                    "type": "object",
+                    "properties": {
+                      "engine": {
+                        "description": "Media engine plugin name, or \"pi\" (always available).",
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -17770,6 +18040,34 @@
         "tags": [
           "tts"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "text"
+                ],
+                "properties": {
+                  "text": {
+                    "minLength": 1,
+                    "description": "Text to synthesize (trimmed; empty → 400).",
+                    "type": "string"
+                  },
+                  "voice": {
+                    "description": "Preset voice name; absent → media.tts.defaultVoice.",
+                    "type": "string"
+                  },
+                  "style": {
+                    "description": "Prosody/style instruction for engines that support it.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -17933,6 +18231,38 @@
         "tags": [
           "tts"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "text"
+                ],
+                "properties": {
+                  "text": {
+                    "minLength": 1,
+                    "description": "Text to synthesize sentence-by-sentence (trimmed; empty → 400).",
+                    "type": "string"
+                  },
+                  "voice": {
+                    "description": "Preset voice name; absent → media.tts.defaultVoice.",
+                    "type": "string"
+                  },
+                  "style": {
+                    "description": "Prosody/style instruction for engines that support it.",
+                    "type": "string"
+                  },
+                  "sessionId": {
+                    "description": "Session key for the in-flight set (barge-in target); absent → untracked stream.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -17948,6 +18278,26 @@
         "tags": [
           "tts"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "sessionId"
+                ],
+                "properties": {
+                  "sessionId": {
+                    "minLength": 1,
+                    "description": "Session whose in-flight TTS streams are aborted (required; empty → 400).",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -18549,6 +18899,110 @@
         "tags": [
           "models"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "description": "At least one of recall / goal / media is required (none → 400).",
+                "type": "object",
+                "properties": {
+                  "recall": {
+                    "description": "Worker model; flat pair in the request (workerModel envelope is response-only).",
+                    "type": "object",
+                    "required": [
+                      "providerID",
+                      "modelID"
+                    ],
+                    "properties": {
+                      "providerID": {
+                        "description": "Worker model provider id (required within recall).",
+                        "type": "string"
+                      },
+                      "modelID": {
+                        "description": "Worker model id (required within recall).",
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "goal": {
+                    "type": "object",
+                    "properties": {
+                      "providerID": {
+                        "description": "Goal node model provider; both providerID and modelID empty = reset to identity model.",
+                        "type": "string"
+                      },
+                      "modelID": {
+                        "description": "Goal node model id; half-empty pair → 400.",
+                        "type": "string"
+                      },
+                      "techLeadModel": {
+                        "description": "Tech Lead model override; both empty = reset; half-empty pair → 400.",
+                        "type": "object",
+                        "properties": {
+                          "providerID": {
+                            "type": "string"
+                          },
+                          "modelID": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "media": {
+                    "type": "object",
+                    "properties": {
+                      "provider": {
+                        "description": "Default media provider; both provider and model empty = reset to built-in default.",
+                        "type": "string"
+                      },
+                      "model": {
+                        "type": "string"
+                      },
+                      "image": {
+                        "description": "Empty pair (both \"\") = reset to the built-in default; partial pairs fall back for validation.",
+                        "type": "object",
+                        "properties": {
+                          "provider": {
+                            "type": "string"
+                          },
+                          "model": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "video": {
+                        "description": "Empty pair (both \"\") = reset to the built-in default; partial pairs fall back for validation.",
+                        "type": "object",
+                        "properties": {
+                          "provider": {
+                            "type": "string"
+                          },
+                          "model": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "audio": {
+                        "description": "Empty pair (both \"\") = reset to the built-in default; partial pairs fall back for validation.",
+                        "type": "object",
+                        "properties": {
+                          "provider": {
+                            "type": "string"
+                          },
+                          "model": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -30515,6 +30969,36 @@
         "tags": [
           "internal"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "sessionID",
+                  "code"
+                ],
+                "properties": {
+                  "sessionID": {
+                    "minLength": 1,
+                    "description": "Session-scoped kernel key (required).",
+                    "type": "string"
+                  },
+                  "code": {
+                    "minLength": 1,
+                    "description": "Python source to execute in the persistent kernel (required).",
+                    "type": "string"
+                  },
+                  "timeoutMs": {
+                    "description": "Execution timeout override; non-number values are ignored.",
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -30528,6 +31012,26 @@
         "tags": [
           "internal"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "sessionID"
+                ],
+                "properties": {
+                  "sessionID": {
+                    "minLength": 1,
+                    "description": "Session-scoped kernel to restart (required).",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -30569,6 +31073,56 @@
         "tags": [
           "internal"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "description": "JSON observation envelope. Missing/invalid sessionID or source → 400; any other error → fail-open 200 {ok:false}.",
+                "type": "object",
+                "required": [
+                  "sessionID",
+                  "source"
+                ],
+                "properties": {
+                  "sessionID": {
+                    "minLength": 1,
+                    "description": "Originating session (required; missing → 400).",
+                    "type": "string"
+                  },
+                  "source": {
+                    "anyOf": [
+                      {
+                        "const": "user_input",
+                        "type": "string"
+                      },
+                      {
+                        "const": "assistant_reply",
+                        "type": "string"
+                      },
+                      {
+                        "const": "tool_result",
+                        "type": "string"
+                      },
+                      {
+                        "const": "reasoning",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "content": {
+                    "description": "Observation text; empty → 200 {deduped:true} without a T1 write. Truncated to 100k after redaction.",
+                    "type": "string"
+                  },
+                  "failure": {
+                    "description": "Mark the row as a failed/errored step (stored as 0/1).",
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -30848,6 +31402,110 @@
         "tags": [
           "internal"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "content"
+                ],
+                "properties": {
+                  "content": {
+                    "minLength": 1,
+                    "description": "Memory body (trimmed; empty → 400). Stored truncated to 4000 chars.",
+                    "type": "string"
+                  },
+                  "memoryType": {
+                    "anyOf": [
+                      {
+                        "const": "episodic",
+                        "type": "string"
+                      },
+                      {
+                        "const": "semantic",
+                        "type": "string"
+                      },
+                      {
+                        "const": "procedural",
+                        "type": "string"
+                      },
+                      {
+                        "const": "global",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "authority": {
+                    "anyOf": [
+                      {
+                        "const": "user",
+                        "type": "string"
+                      },
+                      {
+                        "const": "agent",
+                        "type": "string"
+                      },
+                      {
+                        "const": "tool",
+                        "type": "string"
+                      },
+                      {
+                        "const": "pipeline",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "importance": {
+                    "description": "Salience hint (1-10 recommended); any finite number is accepted, absent → judgeSalience().",
+                    "type": "number"
+                  },
+                  "primaryAbstraction": {
+                    "description": "6-8 word index abstraction; absent → the content, truncated to 200 chars.",
+                    "type": "string"
+                  },
+                  "cueAnchors": {
+                    "maxItems": 8,
+                    "description": "Retrieval keywords (identifiers kept verbatim); extra items are dropped.",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "pinned": {
+                    "description": "Pin to the per-turn <user-profile> disclosure layer.",
+                    "type": "boolean"
+                  },
+                  "sticky": {
+                    "description": "Put the memory on the note board (expires, never deleted).",
+                    "type": "boolean"
+                  },
+                  "stickyDays": {
+                    "description": "Note-board window in days when sticky is true; absent/<=0 → 7.",
+                    "type": "number"
+                  },
+                  "sessionID": {
+                    "description": "Originating session; pipeline worker ids resolve back to their source session.",
+                    "type": "string"
+                  },
+                  "sourceTraceIds": {
+                    "maxItems": 20,
+                    "description": "Exact T1 trace ids (unknown ids are dropped, not rejected).",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "supersedes": {
+                    "description": "Harmonic id to soft-supersede (missing target → 200 {success:false}).",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -31759,6 +32417,17 @@
         "tags": [
           "internal"
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -32046,6 +32715,34 @@
         "tags": [
           "internal"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "artifactId"
+                ],
+                "properties": {
+                  "artifactId": {
+                    "minLength": 1,
+                    "description": "Artifact id returned by media.upload / media.uploadAndCreate.",
+                    "type": "string"
+                  },
+                  "question": {
+                    "description": "Follow-up question appended as a text part; absent → media-only task.",
+                    "type": "string"
+                  },
+                  "mediaType": {
+                    "description": "Override the artifact content type; absent → recorded type or application/octet-stream.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -32104,6 +32801,34 @@
         "tags": [
           "internal"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "dataUrl"
+                ],
+                "properties": {
+                  "dataUrl": {
+                    "minLength": 1,
+                    "description": "data: URL of the audio payload (required; empty → 400).",
+                    "type": "string"
+                  },
+                  "mediaType": {
+                    "description": "MIME type; absent → audio/wav.",
+                    "type": "string"
+                  },
+                  "prompt": {
+                    "description": "Custom analysis prompt; absent → the narrative (content + prosody + intent) pass.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -32117,6 +32842,17 @@
         "tags": [
           "internal"
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -32857,6 +33593,26 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "question"
+                ],
+                "properties": {
+                  "question": {
+                    "minLength": 1,
+                    "description": "Follow-up question (required; blank → 400). External URLs are rejected.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -32973,6 +33729,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -32986,6 +33753,36 @@
         "tags": [
           "internal"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "token",
+                  "platform"
+                ],
+                "properties": {
+                  "token": {
+                    "minLength": 1,
+                    "description": "FCM push token reported by the app (required); never a gateway credential.",
+                    "type": "string"
+                  },
+                  "platform": {
+                    "minLength": 1,
+                    "description": "Client platform label, e.g. android / ios (required).",
+                    "type": "string"
+                  },
+                  "deviceName": {
+                    "description": "Human-readable label; ignored by the mobile alias path (persisted by pairing instead).",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -33027,6 +33824,46 @@
         "tags": [
           "internal"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "nonce"
+                ],
+                "properties": {
+                  "nonce": {
+                    "minLength": 1,
+                    "description": "Single-use pairing nonce from GET /api/mobile/pairing-code (required).",
+                    "type": "string"
+                  },
+                  "deviceId": {
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9._:-]+$",
+                    "description": "Stable device id; absent → a generated uuid. Invalid chars/length → 400.",
+                    "type": "string"
+                  },
+                  "platform": {
+                    "maxLength": 40,
+                    "description": "Client platform label (too long → 400).",
+                    "type": "string"
+                  },
+                  "deviceName": {
+                    "maxLength": 100,
+                    "description": "Human-readable device label (too long → 400).",
+                    "type": "string"
+                  },
+                  "rotate": {
+                    "description": "Required true to re-pair a device that already holds a credential (else 409).",
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -33040,6 +33877,42 @@
         "tags": [
           "internal"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "fcmToken",
+                  "platform",
+                  "token"
+                ],
+                "properties": {
+                  "id": {
+                    "description": "Device id; absent → the transport-resolved principal.deviceId (legacy fallback).",
+                    "type": "string"
+                  },
+                  "fcmToken": {
+                    "minLength": 1,
+                    "description": "FCM push token (required).",
+                    "type": "string"
+                  },
+                  "platform": {
+                    "minLength": 1,
+                    "description": "Client platform label (required).",
+                    "type": "string"
+                  },
+                  "token": {
+                    "minLength": 1,
+                    "description": "Presented token; the server derives apiTokenHash from it (required).",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -33118,6 +33991,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -33132,6 +34016,17 @@
           "auth"
         ],
         "summary": "Rotate the human token and bind it live",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK",
@@ -34008,6 +34903,61 @@
         "tags": [
           "internal"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "description": "OpenAI-compatible chat completion request (unknown fields tolerated).",
+                "type": "object",
+                "required": [
+                  "messages"
+                ],
+                "properties": {
+                  "model": {
+                    "description": "Echoed back in the completion; absent → the configured main-agent model.",
+                    "type": "string"
+                  },
+                  "messages": {
+                    "description": "Chat history (a user message with text or media is required).",
+                    "type": "array",
+                    "items": {
+                      "additionalProperties": true,
+                      "description": "Chat message; unknown fields are ignored by the adapter.",
+                      "type": "object",
+                      "required": [
+                        "role"
+                      ],
+                      "properties": {
+                        "role": {
+                          "description": "OpenAI role (system | user | assistant | …); the last user message drives the run.",
+                          "type": "string"
+                        },
+                        "content": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "additionalProperties": true,
+                                "description": "text | image_url | input_audio | video_url part (EvalScope shapes).",
+                                "type": "object",
+                                "properties": {}
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -34021,6 +34971,32 @@
         "tags": [
           "internal"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "observations"
+                ],
+                "properties": {
+                  "observations": {
+                    "description": "Observation texts to compress (must be an array; empty array is valid).",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "model": {
+                    "description": "Model id override for the compression run; absent → runtime default.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -34034,6 +35010,34 @@
         "tags": [
           "internal"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "sourceWorktree"
+                ],
+                "properties": {
+                  "sourceWorktree": {
+                    "minLength": 1,
+                    "description": "Absolute source worktree path (memory root is <worktree>/<paths.mafwDir>).",
+                    "type": "string"
+                  },
+                  "strategy": {
+                    "description": "manual | higher_energy | newer; unknown values behave like manual.",
+                    "type": "string"
+                  },
+                  "resolveStrategy": {
+                    "description": "Legacy alias, read only when strategy is absent; defaults to manual.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -34264,6 +35268,36 @@
         "tags": [
           "internal"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "minLength": 1,
+                    "description": "Tool name from GET /api/tools (unknown → 404 + available list).",
+                    "type": "string"
+                  },
+                  "sessionID": {
+                    "description": "Session the tool registration surface is built for; absent → empty id.",
+                    "type": "string"
+                  },
+                  "params": {
+                    "additionalProperties": true,
+                    "description": "Tool-defined argument object, passed through verbatim.",
+                    "type": "object",
+                    "properties": {}
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"

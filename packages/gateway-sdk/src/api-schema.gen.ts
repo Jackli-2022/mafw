@@ -10701,7 +10701,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10755,7 +10759,20 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Harmonic memory id; unknown ids return 200 {success:false}. */
+                    id: string;
+                    /** @description Only read when sticky is absent: pinned === true pins, anything else unpins. */
+                    pinned?: boolean;
+                    /** @description Presence of a boolean switches to note-board mode (true → expire at stickyDays). */
+                    sticky?: boolean;
+                    /** @description Note-board window in days when sticky is true; absent/<=0 → 7. */
+                    stickyDays?: number;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10822,7 +10839,28 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    provider?: "off" | "local" | "dashscope";
+                    engine?: "onnx" | "llamacpp";
+                    /** @description Provider model id (free-form; validated by the provider at runtime). */
+                    model?: string;
+                    /** @description ONNX/llama.cpp thread count; out of 1..32 → 400. */
+                    threads?: number;
+                    /** @description llama.cpp-only knobs; ignored by the ONNX engine. */
+                    llamacpp?: {
+                        gpu?: "cpu" | "vulkan" | "cuda";
+                        /** @description llama.cpp thread override; out of 1..32 → 400. */
+                        threads?: number;
+                        /** @description llama.cpp context size; out of 256..32768 → 400. */
+                        contextSize?: number;
+                        /** @description llama.cpp batch size; out of 32..32768 → 400. */
+                        batchSize?: number;
+                    };
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -11049,7 +11087,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Why the skill is deopted; absent/blank → "manual". Truncated to 200 chars. */
+                    reason?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -11478,7 +11523,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Prompt text (required; empty → 400). Sent as a single text part. */
+                    message: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -11496,7 +11548,28 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Prompt text (excluding parts). Required when parts is absent. */
+                    message?: string;
+                    /** @description Extra runtime prompt parts (file/agent attachments); required when message is absent. */
+                    parts?: ({
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    })[];
+                    /** @description Reuse this session; absent → a new session in the first registered project. */
+                    sessionID?: string;
+                    /** @description Runtime agent name override for this prompt. */
+                    agent?: string;
+                    model?: {
+                        providerID: string;
+                        modelID: string;
+                    };
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -11542,7 +11615,26 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Default media engine for every modality (absent → unchanged). */
+                    engine?: string;
+                    image?: {
+                        /** @description Media engine plugin name, or "pi" (always available). */
+                        engine?: string;
+                    };
+                    video?: {
+                        /** @description Media engine plugin name, or "pi" (always available). */
+                        engine?: string;
+                    };
+                    audio?: {
+                        /** @description Media engine plugin name, or "pi" (always available). */
+                        engine?: string;
+                    };
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -11634,7 +11726,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Text to synthesize (trimmed; empty → 400). */
+                    text: string;
+                    /** @description Preset voice name; absent → media.tts.defaultVoice. */
+                    voice?: string;
+                    /** @description Prosody/style instruction for engines that support it. */
+                    style?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -11696,7 +11799,20 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Text to synthesize sentence-by-sentence (trimmed; empty → 400). */
+                    text: string;
+                    /** @description Preset voice name; absent → media.tts.defaultVoice. */
+                    voice?: string;
+                    /** @description Prosody/style instruction for engines that support it. */
+                    style?: string;
+                    /** @description Session key for the in-flight set (barge-in target); absent → untracked stream. */
+                    sessionId?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -11714,7 +11830,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Session whose in-flight TTS streams are aborted (required; empty → 400). */
+                    sessionId: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -11923,7 +12046,50 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Worker model; flat pair in the request (workerModel envelope is response-only). */
+                    recall?: {
+                        /** @description Worker model provider id (required within recall). */
+                        providerID: string;
+                        /** @description Worker model id (required within recall). */
+                        modelID: string;
+                    };
+                    goal?: {
+                        /** @description Goal node model provider; both providerID and modelID empty = reset to identity model. */
+                        providerID?: string;
+                        /** @description Goal node model id; half-empty pair → 400. */
+                        modelID?: string;
+                        /** @description Tech Lead model override; both empty = reset; half-empty pair → 400. */
+                        techLeadModel?: {
+                            providerID?: string;
+                            modelID?: string;
+                        };
+                    };
+                    media?: {
+                        /** @description Default media provider; both provider and model empty = reset to built-in default. */
+                        provider?: string;
+                        model?: string;
+                        /** @description Empty pair (both "") = reset to the built-in default; partial pairs fall back for validation. */
+                        image?: {
+                            provider?: string;
+                            model?: string;
+                        };
+                        /** @description Empty pair (both "") = reset to the built-in default; partial pairs fall back for validation. */
+                        video?: {
+                            provider?: string;
+                            model?: string;
+                        };
+                        /** @description Empty pair (both "") = reset to the built-in default; partial pairs fall back for validation. */
+                        audio?: {
+                            provider?: string;
+                            model?: string;
+                        };
+                    };
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -14506,7 +14672,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Session-scoped kernel key (required). */
+                    sessionID: string;
+                    /** @description Python source to execute in the persistent kernel (required). */
+                    code: string;
+                    /** @description Execution timeout override; non-number values are ignored. */
+                    timeoutMs?: number;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -14524,7 +14701,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Session-scoped kernel to restart (required). */
+                    sessionID: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -14564,7 +14748,19 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Originating session (required; missing → 400). */
+                    sessionID: string;
+                    source: "user_input" | "assistant_reply" | "tool_result" | "reasoning";
+                    /** @description Observation text; empty → 200 {deduped:true} without a T1 write. Truncated to 100k after redaction. */
+                    content?: string;
+                    /** @description Mark the row as a failed/errored step (stored as 0/1). */
+                    failure?: boolean;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -14698,7 +14894,34 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Memory body (trimmed; empty → 400). Stored truncated to 4000 chars. */
+                    content: string;
+                    memoryType?: "episodic" | "semantic" | "procedural" | "global";
+                    authority?: "user" | "agent" | "tool" | "pipeline";
+                    /** @description Salience hint (1-10 recommended); any finite number is accepted, absent → judgeSalience(). */
+                    importance?: number;
+                    /** @description 6-8 word index abstraction; absent → the content, truncated to 200 chars. */
+                    primaryAbstraction?: string;
+                    /** @description Retrieval keywords (identifiers kept verbatim); extra items are dropped. */
+                    cueAnchors?: string[];
+                    /** @description Pin to the per-turn <user-profile> disclosure layer. */
+                    pinned?: boolean;
+                    /** @description Put the memory on the note board (expires, never deleted). */
+                    sticky?: boolean;
+                    /** @description Note-board window in days when sticky is true; absent/<=0 → 7. */
+                    stickyDays?: number;
+                    /** @description Originating session; pipeline worker ids resolve back to their source session. */
+                    sessionID?: string;
+                    /** @description Exact T1 trace ids (unknown ids are dropped, not rejected). */
+                    sourceTraceIds?: string[];
+                    /** @description Harmonic id to soft-supersede (missing target → 200 {success:false}). */
+                    supersedes?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -14939,7 +15162,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -15050,7 +15277,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Artifact id returned by media.upload / media.uploadAndCreate. */
+                    artifactId: string;
+                    /** @description Follow-up question appended as a text part; absent → media-only task. */
+                    question?: string;
+                    /** @description Override the artifact content type; absent → recorded type or application/octet-stream. */
+                    mediaType?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -15092,7 +15330,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description data: URL of the audio payload (required; empty → 400). */
+                    dataUrl: string;
+                    /** @description MIME type; absent → audio/wav. */
+                    mediaType?: string;
+                    /** @description Custom analysis prompt; absent → the narrative (content + prosody + intent) pass. */
+                    prompt?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -15110,7 +15359,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -15338,7 +15591,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Follow-up question (required; blank → 400). External URLs are rejected. */
+                    question: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -15425,7 +15685,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -15443,7 +15707,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description FCM push token reported by the app (required); never a gateway credential. */
+                    token: string;
+                    /** @description Client platform label, e.g. android / ios (required). */
+                    platform: string;
+                    /** @description Human-readable label; ignored by the mobile alias path (persisted by pairing instead). */
+                    deviceName?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -15483,7 +15758,22 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Single-use pairing nonce from GET /api/mobile/pairing-code (required). */
+                    nonce: string;
+                    /** @description Stable device id; absent → a generated uuid. Invalid chars/length → 400. */
+                    deviceId?: string;
+                    /** @description Client platform label (too long → 400). */
+                    platform?: string;
+                    /** @description Human-readable device label (too long → 400). */
+                    deviceName?: string;
+                    /** @description Required true to re-pair a device that already holds a credential (else 409). */
+                    rotate?: boolean;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -15530,7 +15820,20 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Device id; absent → the transport-resolved principal.deviceId (legacy fallback). */
+                    id?: string;
+                    /** @description FCM push token (required). */
+                    fcmToken: string;
+                    /** @description Client platform label (required). */
+                    platform: string;
+                    /** @description Presented token; the server derives apiTokenHash from it (required). */
+                    token: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -15550,7 +15853,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -15568,7 +15875,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -15987,7 +16298,26 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Echoed back in the completion; absent → the configured main-agent model. */
+                    model?: string;
+                    /** @description Chat history (a user message with text or media is required). */
+                    messages: ({
+                        /** @description OpenAI role (system | user | assistant | …); the last user message drives the run. */
+                        role: string;
+                        content?: string | {
+                            [key: string]: unknown;
+                        }[];
+                    } & {
+                        [key: string]: unknown;
+                    })[];
+                } & {
+                    [key: string]: unknown;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -16005,7 +16335,16 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Observation texts to compress (must be an array; empty array is valid). */
+                    observations: string[];
+                    /** @description Model id override for the compression run; absent → runtime default. */
+                    model?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -16023,7 +16362,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Absolute source worktree path (memory root is <worktree>/<paths.mafwDir>). */
+                    sourceWorktree: string;
+                    /** @description manual | higher_energy | newer; unknown values behave like manual. */
+                    strategy?: string;
+                    /** @description Legacy alias, read only when strategy is absent; defaults to manual. */
+                    resolveStrategy?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -16157,7 +16507,20 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Tool name from GET /api/tools (unknown → 404 + available list). */
+                    name: string;
+                    /** @description Session the tool registration surface is built for; absent → empty id. */
+                    sessionID?: string;
+                    /** @description Tool-defined argument object, passed through verbatim. */
+                    params?: {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {

@@ -3721,7 +3721,7 @@ describe('api-contract: E10g request bodies (W1 session writes)', () => {
     return body;
   }
 
-  test('write ops with a requestBody count matches the coverage ledger (150 = P0 3 + W1 35 + W2W3 33 + W4 29 + W5 24 + W6 26)', () => {
+  test('write ops with a requestBody count matches the coverage ledger (180 = P0 3 + W1 35 + W2W3 33 + W4 29 + W5 24 + W6 26 + W7 30)', () => {
     const withBody: string[] = [];
     for (const methods of Object.values<any>(contract.paths)) {
       for (const [method, op] of Object.entries<any>(methods)) {
@@ -3729,7 +3729,7 @@ describe('api-contract: E10g request bodies (W1 session writes)', () => {
         if (op.requestBody) withBody.push(op.operationId);
       }
     }
-    expect(withBody).toHaveLength(150);
+    expect(withBody).toHaveLength(180);
     expect(withBody).toEqual(expect.arrayContaining([
       'session.create', 'tasks.submit', 'pods.tasks.create',
       'session.config.set', 'session.promptAsync', 'structured.submit',
@@ -3743,10 +3743,26 @@ describe('api-contract: E10g request bodies (W1 session writes)', () => {
       'mcp.configApply', 'plugins.installPackage', 'runtime.switch',
       'config.set', 'project.setCurrent', 'manager.rotate',
       'mafwCommands.run',
+      'memory.add', 'memory.setSticky', 'memory.merge', 'embedding.update',
+      'media.switch', 'media.createTaskApi', 'tts.speak', 'chat.send',
+      'python.execute', 'obs.capture', 'models.update', 'tools.execute',
+      'eval.chatCompletions', 'llm.compress', 'mobile.devicesRegister',
+      'devices.register', 'humanToken.rotate', 'skills.deopt',
     ]));
-    // The binary upload has no JSON body schema: it stays out of the ledger
-    // (E10g spec §1.3; the final REQUEST_EXCLUDED ledger records it).
-    expect(withBody).not.toContain('plugins.install');
+    // Binary / multipart / A2A pass-through inputs have no JSON body schema:
+    // they stay out of the ledger (E10g spec §1.3; the closing REQUEST_EXCLUDED
+    // ledger records `media.upload`, `media.uploadAndCreate`, `media.createTask`,
+    // `mobile.mediaTaskUpload`, `pods.a2a` and W6's `plugins.install`).
+    for (const id of [
+      'plugins.install',
+      'media.upload',
+      'media.uploadAndCreate',
+      'media.createTask',
+      'mobile.mediaTaskUpload',
+      'pods.a2a',
+    ]) {
+      expect(`${id}:${withBody.includes(id)}`).toBe(`${id}:false`);
+    }
   });
 
   test('session.config.set: category+value required, category is a closed enum', () => {
@@ -4417,5 +4433,203 @@ describe('api-contract: E10g request bodies (W6 mcp, plugins, runtime, config, p
     expect(runSchema.required).toEqual(['command']);
     expect(runSchema.properties.command.minLength).toBe(1);
     expect(Object.keys(runSchema.properties).sort()).toEqual(['args', 'command', 'sessionID']);
+  });
+});
+
+describe('api-contract: E10g request bodies (W7 memory, media, tts, chat, python, mobile, a2a)', () => {
+  function bodyOf(operationId: string): any {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const op of Object.values<any>(methods)) {
+        if (op?.operationId === operationId) {
+          expect(`${operationId}:requestBody`).toBe(`${operationId}:${op.requestBody ? 'requestBody' : 'missing'}`);
+          return op.requestBody;
+        }
+      }
+    }
+    throw new Error(`operation not found: ${operationId}`);
+  }
+
+  function schemaOf(operationId: string): any {
+    return bodyOf(operationId).content['application/json'].schema;
+  }
+
+  test('memory.add requires content and pins the memoryType/authority vocabularies', () => {
+    const body = bodyOf('memory.add');
+    expect(body.required).toBe(true);
+    const schema = body.content['application/json'].schema;
+    expect(schema.required).toEqual(['content']);
+    expect(schema.properties.memoryType.anyOf.map((v: any) => v.const))
+      .toEqual(['episodic', 'semantic', 'procedural', 'global']);
+    expect(schema.properties.authority.anyOf.map((v: any) => v.const))
+      .toEqual(['user', 'agent', 'tool', 'pipeline']);
+    // Sticky/pin flags are optional: absent → plain note-board-free write.
+    expect(schema.properties.pinned.type).toBe('boolean');
+    expect(schema.properties.sticky.type).toBe('boolean');
+    expect(schema.properties.cueAnchors.maxItems).toBe(8);
+    expect(schema.properties.sourceTraceIds.maxItems).toBe(20);
+  });
+
+  test('memory.setSticky / memory.merge: id/sourceWorktree anchors, mode flags optional', () => {
+    const sticky = schemaOf('memory.setSticky');
+    expect(sticky.required).toEqual(['id']);
+    expect(sticky.properties.sticky.description).toContain('note-board');
+    expect(sticky.properties.pinned.description).toContain('sticky is absent');
+
+    const merge = bodyOf('memory.merge');
+    expect(merge.required).toBe(true);
+    expect(merge.content['application/json'].schema.required).toEqual(['sourceWorktree']);
+    // Unknown strategies degrade to manual in the handler, so the contract stays open.
+    expect(merge.content['application/json'].schema.properties.strategy.type).toBe('string');
+  });
+
+  test('embedding.update closes provider/engine/gpu and the llama.cpp bounds', () => {
+    const body = bodyOf('embedding.update');
+    expect(body.required).toBe(true);
+    const schema = body.content['application/json'].schema;
+    expect(schema.required).toBeUndefined();
+    expect(schema.properties.provider.anyOf.map((v: any) => v.const))
+      .toEqual(['off', 'local', 'dashscope']);
+    expect(schema.properties.engine.anyOf.map((v: any) => v.const)).toEqual(['onnx', 'llamacpp']);
+    expect(schema.properties.threads.minimum).toBe(1);
+    expect(schema.properties.threads.maximum).toBe(32);
+    expect(schema.properties.llamacpp.properties.gpu.anyOf.map((v: any) => v.const))
+      .toEqual(['cpu', 'vulkan', 'cuda']);
+    expect(schema.properties.llamacpp.properties.contextSize.minimum).toBe(256);
+    // baseUrl is rejected by the handler (SSRF/key sink) → never declared.
+    expect(schema.properties.baseUrl).toBeUndefined();
+  });
+
+  test('media.switch / createTaskApi / analyzeAudio anchor their required fields', () => {
+    const sw = bodyOf('media.switch');
+    expect(sw.required).toBe(true);
+    const swSchema = sw.content['application/json'].schema;
+    expect(swSchema.required).toBeUndefined();
+    expect(Object.keys(swSchema.properties).sort()).toEqual(['audio', 'engine', 'image', 'video']);
+
+    expect(schemaOf('media.createTaskApi').required).toEqual(['artifactId']);
+    const audio = schemaOf('media.analyzeAudio');
+    expect(audio.required).toEqual(['dataUrl']);
+    expect(audio.properties.mediaType.description).toContain('audio/wav');
+  });
+
+  test('tts.speak / speakStream / interrupt: text and sessionId anchors', () => {
+    for (const id of ['tts.speak', 'tts.speakStream']) {
+      const schema = schemaOf(id);
+      expect(`${id}:${JSON.stringify(schema.required)}`).toBe(`${id}:["text"]`);
+      expect(schema.properties.voice.type).toBe('string');
+      expect(schema.properties.style.type).toBe('string');
+    }
+    // Streaming tracks the in-flight set per session; speak does not need one.
+    expect(schemaOf('tts.speakStream').properties.sessionId).toBeDefined();
+    expect(schemaOf('tts.speak').properties.sessionId).toBeUndefined();
+    expect(schemaOf('tts.interrupt').required).toEqual(['sessionId']);
+  });
+
+  test('chat bodies: message anchor on send, message|parts on enriched', () => {
+    expect(schemaOf('chat.send').required).toEqual(['message']);
+
+    const enriched = bodyOf('chat.sendEnriched');
+    expect(enriched.required).toBe(true);
+    const schema = enriched.content['application/json'].schema;
+    expect(schema.required).toBeUndefined();
+    expect(schema.description).toContain('message or parts');
+    expect(schema.properties.parts.items.required).toEqual(['type']);
+    expect(schema.properties.parts.items.additionalProperties).toBe(true);
+    expect(schema.properties.model.required).toEqual(['providerID', 'modelID']);
+  });
+
+  test('python and obs bodies pin their required anchors and source enum', () => {
+    expect(schemaOf('python.execute').required).toEqual(['sessionID', 'code']);
+    expect(schemaOf('python.restart').required).toEqual(['sessionID']);
+
+    const obs = bodyOf('obs.capture');
+    expect(obs.required).toBe(true);
+    const obsSchema = obs.content['application/json'].schema;
+    expect(obsSchema.required).toEqual(['sessionID', 'source']);
+    expect(obsSchema.properties.source.anyOf.map((v: any) => v.const))
+      .toEqual(['user_input', 'assistant_reply', 'tool_result', 'reasoning']);
+    // Empty content is a valid deduped capture, not a 400.
+    expect(obsSchema.required).not.toContain('content');
+    expect(obsSchema.description).toContain('fail-open');
+  });
+
+  test('models.update: flat recall pair, goal overrides and per-modality media refs', () => {
+    const body = bodyOf('models.update');
+    expect(body.required).toBe(true);
+    const schema = body.content['application/json'].schema;
+    expect(schema.required).toBeUndefined();
+    expect(Object.keys(schema.properties).sort()).toEqual(['goal', 'media', 'recall']);
+    expect(schema.properties.recall.required).toEqual(['providerID', 'modelID']);
+    expect(schema.properties.goal.properties.techLeadModel).toBeDefined();
+    expect(Object.keys(schema.properties.media.properties).sort())
+      .toEqual(['audio', 'image', 'model', 'provider', 'video']);
+  });
+
+  test('tools.execute keeps params as a tool-defined open boundary', () => {
+    const body = bodyOf('tools.execute');
+    expect(body.required).toBe(true);
+    const schema = body.content['application/json'].schema;
+    expect(schema.required).toEqual(['name']);
+    expect(schema.properties.params.type).toBe('object');
+    expect(schema.properties.params.additionalProperties).toBe(true);
+    expect(Object.keys(schema.properties.params.properties ?? {})).toEqual([]);
+  });
+
+  test('eval.chatCompletions / llm.compress: OpenAI envelope and observations array', () => {
+    const evalBody = bodyOf('eval.chatCompletions');
+    expect(evalBody.required).toBe(true);
+    const evalSchema = evalBody.content['application/json'].schema;
+    expect(evalSchema.required).toEqual(['messages']);
+    expect(evalSchema.properties.messages.items.required).toEqual(['role']);
+    // Message content is either text or EvalScope media parts (open part boundary).
+    expect(evalSchema.properties.messages.items.properties.content.anyOf[0].type).toBe('string');
+    expect(evalSchema.additionalProperties).toBe(true);
+
+    const compress = schemaOf('llm.compress');
+    expect(compress.required).toEqual(['observations']);
+    expect(compress.properties.observations.items.type).toBe('string');
+  });
+
+  test('mobile/devices registration and pairing pin the credential anchors', () => {
+    expect(schemaOf('mobile.mediaTaskAsk').required).toEqual(['question']);
+
+    const mobileRegister = schemaOf('mobile.devicesRegister');
+    expect(mobileRegister.required).toEqual(['token', 'platform']);
+    expect(mobileRegister.properties.token.description).toContain('FCM');
+
+    const verify = schemaOf('mobile.pairingVerify');
+    expect(verify.required).toEqual(['nonce']);
+    expect(verify.properties.deviceId.pattern).toBe('^[A-Za-z0-9._:-]+$');
+    expect(verify.properties.deviceId.maxLength).toBe(128);
+    expect(verify.properties.rotate.type).toBe('boolean');
+
+    const legacy = schemaOf('devices.register');
+    expect(legacy.required).toEqual(['fcmToken', 'platform', 'token']);
+    // id can come from the transport principal instead of the body.
+    expect(legacy.required).not.toContain('id');
+    expect(legacy.properties.id.description).toContain('principal');
+  });
+
+  test('W7 body-ignored actions project to required:false with an empty object', () => {
+    for (const id of [
+      'memory.delete',
+      'memory.embeddingsBackfill',
+      'media.pluginsReload',
+      'devices.delete',
+      'mobile.devicesDelete',
+      'humanToken.rotate',
+    ]) {
+      const body = bodyOf(id);
+      expect(`${id}:${body.required}`).toBe(`${id}:false`);
+      expect(Object.keys(body.content['application/json'].schema.properties ?? {})).toEqual([]);
+    }
+  });
+
+  test('skills.deopt keeps an optional body (default reason) with a declared field', () => {
+    const body = bodyOf('skills.deopt');
+    expect(body.required).toBe(false);
+    const schema = body.content['application/json'].schema;
+    expect(Object.keys(schema.properties)).toEqual(['reason']);
+    expect(schema.properties.reason.description).toContain('manual');
   });
 });

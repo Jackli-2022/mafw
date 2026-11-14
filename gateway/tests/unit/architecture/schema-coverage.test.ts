@@ -533,6 +533,89 @@ const E10G_W6_EXCLUDED_OPS: Record<string, string> = {
   'plugins.install': 'raw .js byte stream (readBodyBuffer) + query filename/type/overwrite; no JSON body',
 };
 
+/**
+ * E10g-W7：memory / media / tts / chat / python / obs / models / embedding /
+ * tools / eval / llm / mobile / devices / a2a / skills（30 个已覆盖）。
+ * P0 3 + W1 35 + W2W3 33 + W4 29 + W5 24 + W6 26 + 这 30 = 180。
+ * 分母 188 = 180 covered + 8 excluded（W6 1 + W7 5 + cognition 2 未在批次范围）。
+ */
+const E10G_W7_REQUEST_OPS = [
+  // memory / embedding
+  'memory.add',
+  'memory.delete',
+  'memory.setSticky',
+  'memory.embeddingsBackfill',
+  'memory.merge',
+  'embedding.update',
+  // media / tts
+  'media.switch',
+  'media.createTaskApi',
+  'media.analyzeAudio',
+  'media.pluginsReload',
+  'tts.speak',
+  'tts.speakStream',
+  'tts.interrupt',
+  // chat / python / obs
+  'chat.send',
+  'chat.sendEnriched',
+  'python.execute',
+  'python.restart',
+  'obs.capture',
+  // models / tools / eval / llm
+  'models.update',
+  'tools.execute',
+  'eval.chatCompletions',
+  'llm.compress',
+  // mobile / devices
+  'mobile.mediaTaskAsk',
+  'mobile.devicesRegister',
+  'mobile.pairingVerify',
+  'devices.register',
+  'devices.delete',
+  'mobile.devicesDelete',
+  // auth / skills
+  'humanToken.rotate',
+  'skills.deopt',
+];
+
+/**
+ * W7 的「body 被忽略」动作（空对象 + `requestRequired:false`）：
+ * `memory.delete` / `devices.delete` / `mobile.devicesDelete`（DELETE 只读路径
+ * `:id`）、`memory.embeddingsBackfill`（只读 `?limit=N`）、
+ * `media.pluginsReload`（handler `_req`）、`humanToken.rotate`（凭据在头部，body 为空）。
+ */
+const E10G_W7_EMPTY_OPS = [
+  'devices.delete',
+  'humanToken.rotate',
+  'media.pluginsReload',
+  'memory.delete',
+  'memory.embeddingsBackfill',
+  'mobile.devicesDelete',
+];
+
+/**
+ * W7 的「body 可缺省但有字段」动作（`requestRequired:false` + 非空 properties）：
+ * `skills.deopt`（缺失/非法 body 回退默认 reason `manual`）。
+ */
+const E10G_W7_OPTIONAL_OPS = ['skills.deopt'];
+
+/**
+ * W7 的排除项（不入 request，由收口 `REQUEST_EXCLUDED` 台账记录原因）：
+ *   - `media.upload` / `media.uploadAndCreate`：原始媒体字节流 + query 元数据；
+ *   - `media.createTask`（`POST /a2a`）：A2A JSON-RPC 透传（agent.handleJsonRpc）；
+ *   - `mobile.mediaTaskUpload`：multipart/form-data 文件部；
+ *   - `pods.a2a`：A2A JSON-RPC 透传（raw body → agent.handleJsonRpc）。
+ * 每个 op 的 JSON 替代面都另有一条已覆盖路由（createTaskApi / mediaTaskAsk）。
+ */
+const E10G_W7_EXCLUDED_OPS: Record<string, string> = {
+  'media.createTask': 'A2A JSON-RPC pass-through on POST /a2a (agent.handleJsonRpc); envelope owned by the protocol',
+  'media.upload': 'raw media byte stream (for-await chunks) + query type; no JSON body',
+  'media.uploadAndCreate': 'raw media byte stream + query type/question; no JSON body',
+  'mobile.mediaTaskUpload': 'multipart/form-data file part (boundary parsed in mobile/media-proxy.ts); no JSON body',
+  'pods.a2a': 'A2A JSON-RPC pass-through (raw body → PodA2AAgent.handleJsonRpc); envelope owned by the protocol',
+};
+
+
 function catalogById(): Map<string, { hasRequest: boolean; request?: object; requestRequired?: boolean }> {
   return new Map(
     buildRouteCatalog().map((def) => [
@@ -629,12 +712,12 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
 
   // E10g-W1: session writes. Pinned per-op so a dropped `request:` fails by name,
   // and as a floor (>= 124 through W5) so the count can only grow with W6-W7.
-  it('every W1 session write op declares a request schema (catalog requests >= 124)', () => {
+  it('every W1 session write op declares a request schema (catalog requests >= 180)', () => {
     const byId = catalogById();
     const missing = E10G_W1_REQUEST_OPS.filter((id) => !byId.get(id)?.hasRequest);
     expect(missing).toEqual([]);
     const requests = catalogWriteOps().filter((op) => op.hasRequest).map((op) => op.operationId);
-    expect(requests.length).toBeGreaterThanOrEqual(124);
+    expect(requests.length).toBeGreaterThanOrEqual(180);
     expect(requests).toEqual(expect.arrayContaining([...E10G_P0_REQUEST_OPS, ...E10G_W1_REQUEST_OPS]));
   });
 
@@ -656,12 +739,12 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
 
   // E10g-W2/W3: tasks/terminal/background/fileHistory + pods. Same shape as W1:
   // pinned per-op by name, count floor at 124 (P0 3 + W1 35 + W2W3 33 + W4 29 + W5 24).
-  it('every W2/W3 write op declares a request schema (catalog requests >= 124)', () => {
+  it('every W2/W3 write op declares a request schema (catalog requests >= 180)', () => {
     const byId = catalogById();
     const missing = E10G_W2W3_REQUEST_OPS.filter((id) => !byId.get(id)?.hasRequest);
     expect(missing).toEqual([]);
     const requests = catalogWriteOps().filter((op) => op.hasRequest).map((op) => op.operationId);
-    expect(requests.length).toBeGreaterThanOrEqual(124);
+    expect(requests.length).toBeGreaterThanOrEqual(180);
     expect(requests).toEqual(expect.arrayContaining([
       ...E10G_P0_REQUEST_OPS,
       ...E10G_W1_REQUEST_OPS,
@@ -702,12 +785,12 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
 
   // E10g-W4: goals / decisions / lead / standing / goalRuns writes. Same shape as
   // W1/W2W3: pinned per-op by name, count floor at 124.
-  it('every W4 goal/decision/lead/standing write op declares a request schema (catalog requests >= 124)', () => {
+  it('every W4 goal/decision/lead/standing write op declares a request schema (catalog requests >= 180)', () => {
     const byId = catalogById();
     const missing = E10G_W4_REQUEST_OPS.filter((id) => !byId.get(id)?.hasRequest);
     expect(missing).toEqual([]);
     const requests = catalogWriteOps().filter((op) => op.hasRequest).map((op) => op.operationId);
-    expect(requests.length).toBeGreaterThanOrEqual(124);
+    expect(requests.length).toBeGreaterThanOrEqual(180);
     expect(requests).toEqual(expect.arrayContaining([
       ...E10G_P0_REQUEST_OPS,
       ...E10G_W1_REQUEST_OPS,
@@ -749,12 +832,12 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
 
   // E10g-W5: events / automations / approvals / questions / triage / permissions writes.
   // Same shape as W1-W4: pinned per-op by name, count floor at 124.
-  it('every W5 event/automation/human-gate write op declares a request schema (catalog requests >= 124)', () => {
+  it('every W5 event/automation/human-gate write op declares a request schema (catalog requests >= 180)', () => {
     const byId = catalogById();
     const missing = E10G_W5_REQUEST_OPS.filter((id) => !byId.get(id)?.hasRequest);
     expect(missing).toEqual([]);
     const requests = catalogWriteOps().filter((op) => op.hasRequest).map((op) => op.operationId);
-    expect(requests.length).toBeGreaterThanOrEqual(124);
+    expect(requests.length).toBeGreaterThanOrEqual(180);
     expect(requests).toEqual(expect.arrayContaining([
       ...E10G_P0_REQUEST_OPS,
       ...E10G_W1_REQUEST_OPS,
@@ -801,12 +884,12 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
   // E10g-W6: mcp / plugins / runtime / config / project / manager / commands writes.
   // Same shape as W1-W5: pinned per-op by name, count floor at 150
   // (P0 3 + W1 35 + W2W3 33 + W4 29 + W5 24 + W6 26).
-  it('every W6 mcp/plugin/runtime/config/project/manager/command write op declares a request schema (catalog requests >= 150)', () => {
+  it('every W6 mcp/plugin/runtime/config/project/manager/command write op declares a request schema (catalog requests >= 180)', () => {
     const byId = catalogById();
     const missing = E10G_W6_REQUEST_OPS.filter((id) => !byId.get(id)?.hasRequest);
     expect(missing).toEqual([]);
     const requests = catalogWriteOps().filter((op) => op.hasRequest).map((op) => op.operationId);
-    expect(requests.length).toBeGreaterThanOrEqual(150);
+    expect(requests.length).toBeGreaterThanOrEqual(180);
     expect(requests).toEqual(expect.arrayContaining([
       ...E10G_P0_REQUEST_OPS,
       ...E10G_W1_REQUEST_OPS,
@@ -895,5 +978,96 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     // The excluded op is neither covered nor double-counted.
     expect(ids.filter((id) => E10G_W6_REQUEST_OPS.includes(id))).toEqual([]);
     expect(catalogById().get('plugins.install')?.hasRequest).toBe(false);
+  });
+
+  // E10g-W7: memory / media / tts / chat / python / obs / models / tools / eval /
+  // llm / mobile / devices / a2a / skills writes. Floor at 180
+  // (P0 3 + W1 35 + W2W3 33 + W4 29 + W5 24 + W6 26 + W7 30).
+  it('every W7 memory/media/device write op declares a request schema (catalog requests >= 180)', () => {
+    const byId = catalogById();
+    const missing = E10G_W7_REQUEST_OPS.filter((id) => !byId.get(id)?.hasRequest);
+    expect(missing).toEqual([]);
+    const requests = catalogWriteOps().filter((op) => op.hasRequest).map((op) => op.operationId);
+    expect(requests.length).toBeGreaterThanOrEqual(180);
+    expect(requests).toEqual(expect.arrayContaining([
+      ...E10G_P0_REQUEST_OPS,
+      ...E10G_W1_REQUEST_OPS,
+      ...E10G_W2W3_REQUEST_OPS,
+      ...E10G_W4_REQUEST_OPS,
+      ...E10G_W5_REQUEST_OPS,
+      ...E10G_W6_REQUEST_OPS,
+      ...E10G_W7_REQUEST_OPS,
+    ]));
+    // No duplicate ids across batches (a typo would hide here otherwise).
+    expect(new Set(E10G_W7_REQUEST_OPS).size).toBe(E10G_W7_REQUEST_OPS.length);
+  });
+
+  it('W7 body-ignored actions use an empty object schema with requestRequired:false', () => {
+    const byId = catalogById();
+    const problems: string[] = [];
+    for (const id of E10G_W7_EMPTY_OPS) {
+      const def = byId.get(id);
+      if (!def?.hasRequest) { problems.push(`${id}: missing request`); continue; }
+      if (def.requestRequired !== false) problems.push(`${id}: requestRequired must be false`);
+      const props = (def.request as { properties?: Record<string, unknown> }).properties ?? {};
+      if (Object.keys(props).length !== 0) problems.push(`${id}: expected empty object, got ${Object.keys(props).join(',')}`);
+    }
+    expect(problems).toEqual([]);
+    expect(E10G_W7_EMPTY_OPS.filter((id) => !E10G_W7_REQUEST_OPS.includes(id))).toEqual([]);
+    expect(E10G_W7_EMPTY_OPS.filter((id) => E10G_W7_OPTIONAL_OPS.includes(id))).toEqual([]);
+  });
+
+  it('W7 optional-body actions declare fields but requestRequired:false', () => {
+    const byId = catalogById();
+    const problems: string[] = [];
+    for (const id of E10G_W7_OPTIONAL_OPS) {
+      const def = byId.get(id);
+      if (!def?.hasRequest) { problems.push(`${id}: missing request`); continue; }
+      if (def.requestRequired !== false) problems.push(`${id}: requestRequired must be false`);
+      const props = (def.request as { properties?: Record<string, unknown> }).properties ?? {};
+      if (Object.keys(props).length === 0) problems.push(`${id}: expected declared fields, got empty object`);
+    }
+    expect(problems).toEqual([]);
+    expect(E10G_W7_OPTIONAL_OPS.filter((id) => !E10G_W7_REQUEST_OPS.includes(id))).toEqual([]);
+  });
+
+  // W7 exclusions: binary / multipart / A2A pass-through. Each one must still be
+  // a catalog op, must carry a reason, and must NOT declare a request (that
+  // would inflate `requests` with a shape the gateway never parses).
+  it('W7 exclusions are named with a reason and stay out of the request ledger', () => {
+    const ids = Object.keys(E10G_W7_EXCLUDED_OPS);
+    const all = new Set(buildRouteCatalog().map((def) => def.operationId));
+    expect(ids.filter((id) => !all.has(id))).toEqual([]);
+    for (const [id, reason] of Object.entries(E10G_W7_EXCLUDED_OPS)) {
+      expect(`${id}:${reason.length > 0}`).toBe(`${id}:true`);
+      expect(`${id}:${catalogById().get(id)?.hasRequest === true}`).toBe(`${id}:false`);
+    }
+    expect(ids.filter((id) => E10G_W7_REQUEST_OPS.includes(id))).toEqual([]);
+  });
+
+  // Closing arithmetic for the W7 scope: 188 write ops = 180 declared requests +
+  // 6 excluded (W6 1 + W7 5) + 2 cognition writes that no batch owns (their
+  // envelope belongs to the cognition gate contract; E10g §2 has no cognition row).
+  it('W7 request arithmetic closes on 188 with the documented exclusions', () => {
+    const covered = new Set(catalogWriteOps().filter((op) => op.hasRequest).map((op) => op.operationId));
+    const excluded = new Set([
+      ...Object.keys(E10G_W6_EXCLUDED_OPS),
+      ...Object.keys(E10G_W7_EXCLUDED_OPS),
+    ]);
+    const withoutRequest = catalogWriteOps().map((op) => op.operationId).filter((id) => !covered.has(id));
+    expect(withoutRequest.sort()).toEqual([
+      'cognition.gate',
+      'cognition.rewrite',
+      'media.createTask',
+      'media.upload',
+      'media.uploadAndCreate',
+      'mobile.mediaTaskUpload',
+      'plugins.install',
+      'pods.a2a',
+    ]);
+    expect(covered.size).toBe(180);
+    expect(excluded.size).toBe(6);
+    expect(covered.size + excluded.size + 2).toBe(WRITE_OPS_TOTAL);
+    expect(catalogWriteOps()).toHaveLength(WRITE_OPS_TOTAL);
   });
 });

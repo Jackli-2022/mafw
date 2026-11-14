@@ -37,7 +37,7 @@
 - [E10d 契约覆盖第四批（2026-11-14）](#e10d-契约覆盖第四批2026-11-14)
 - [E10e 契约覆盖第五批（2026-11-14）](#e10e-契约覆盖第五批2026-11-14)
 - [E10f 全量读表面收口（2026-11-14）](#e10f-全量读表面收口2026-11-14)
-- [E10g 请求契约（进行中：P0 + W1 + W2/W3 + W4 + W5 + W6，2026-11-14）](#e10g-请求契约进行中p0--w1--w2w3--w4--w5--w62026-11-14)
+- [E10g 请求契约（P0 + W1 + W2/W3 + W4 + W5 + W6 + W7，2026-11-14）](#e10g-请求契约p0--w1--w2w3--w4--w5--w6--w72026-11-14)
 - [API 端点](#api-端点)
 - [UI 服务](#ui-服务)
 - [数据流全景](#数据流全景)
@@ -1561,13 +1561,14 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 
 ---
 
-## E10g 请求契约（进行中：P0 + W1 + W2/W3 + W4 + W5 + W6，2026-11-14）
+## E10g 请求契约（P0 + W1 + W2/W3 + W4 + W5 + W6 + W7，2026-11-14）
 
 > 承接 E10f（响应 125/318）。E10g 给 **188 个写 op** 补请求契约；本篇记录 P0 管线、
 > 3 个 pilot、W1（session 写接口 35 个）、W2/W3（tasks/terminal/background/fileHistory 8 个 +
 > pod 写接口 25 个）、W4（goals/decisions/lead/standing/goalRuns 29 个）、W5
-> （events/automations/approvals/questions/triage/permissions 24 个）与 W6
-> （mcp/plugins/runtime/config/project/manager/commands 26 个）。
+> （events/automations/approvals/questions/triage/permissions 24 个）、W6
+> （mcp/plugins/runtime/config/project/manager/commands 26 个）与 W7
+> （memory/media/tts/chat/python/obs/models/embedding/tools/eval/llm/mobile/devices/a2a 30 个）。
 > spec：`docs/superpowers/specs/2026-11-14-gateway-e10g-request-contracts-design.md`。
 
 - **`RouteDef` 新增三个声明位**：`request?: object`（TypeBox / JSON Schema，缺省 = 未建模）、
@@ -1682,7 +1683,45 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
     `type:'local'` 的 `command` 是适配器条件必填，契约只保留 optional + description。
   - `plugins.enable|disable|delete` 共用 `{package}` 或 `{type,filename}` 二选一形态：body 必填，
     字段全 optional 是**变体**而非自由形状（handler `assertBodyShape` 同时给两种 → 400）。
-- **残余**：其余 38 个写 op 按 W7 推进；`REQUEST_EXCLUDED` 清单与收口覆盖测试在 E10g 收口波落地。
+- **W7（memory / media / tts / chat / python / obs / models / embedding / tools / eval / llm /
+  mobile / devices / a2a / skills，30 个已覆盖 + 5 个排除）**：schema 在
+  `routes/schemas/memory-write.ts`（4 schema / 6 op）、`media-write.ts`（6 schema / 7 op）、
+  `misc-write.ts`（14 schema / 17 op）。**23 个 JSON body + 1 个可选 body + 6 个空对象动作 +
+  5 个排除**（空对象复用 `schemas/session-write.ts` 的 `EmptyRequest`）。
+  - 空对象（`requestRequired:false`）只给 handler 不读 body 的动作：`memory.delete` /
+    `devices.delete` / `mobile.devicesDelete`（DELETE 只读路径 `:id`）、
+    `memory.embeddingsBackfill`（只读 `?limit=N`）、`media.pluginsReload`（handler `_req`）、
+    `humanToken.rotate`（凭据在 `Authorization` 头，body 为空）。
+  - 可选 body（有字段 + `requestRequired:false`）：`skills.deopt`（缺失/非法 body 回退默认
+    reason `manual`）。
+  - **排除（binary / multipart / A2A 透传）**：`media.upload` / `media.uploadAndCreate`
+    （`for await (const chunk of req)` 原始字节 + query `type`/`question`）、
+    `mobile.mediaTaskUpload`（`multipart/form-data` 文件部）、`media.createTask`（`POST /a2a`
+    A2A JSON-RPC 透传，响应 `application/a2a+json`）、`pods.a2a`（raw body →
+    `PodA2AAgent.handleJsonRpc`）。JSON 替代面都另有已覆盖路由（`media.createTaskApi` /
+    `mobile.mediaTaskAsk`）。
+  - `obs.capture` 是 **JSON body 而非原始二进制**：handler 手写 chunked reader（1MB 上限）后
+    `JSON.parse`；`sessionID` + `source` 白名单失败 → 400，`content` 为空 → 200 `{deduped:true}`，
+    其余异常 fail-open 200 `{ok:false}`（schema 描述里注明，`content` 不设必填）。
+  - `models.update` 的 `recall` 是**扁平** `{providerID,modelID}`（响应才包 `recall.workerModel`）；
+    `goal` 顶层对 = nodeModel、`goal.techLeadModel` 是 Tech Lead 覆盖（双空串 = 恢复默认，半空对
+    → 400）；`media` 为顶层 provider/model + 逐模态覆盖。
+  - `embedding.update` 反向收窄：`baseUrl` 被 handler **显式拒绝**（防止 DashScope key 外发），
+    因此不写进契约；provider/engine/gpu 闭集与 llama.cpp 数值区间（threads 1..32、
+    contextSize 256..32768、batchSize 32..32768）逐项与 handler 校验一致。
+  - `tools.execute` 的 `params` 是工具自定义负载 → 开放对象边界（不枚举六件套参数）；
+    `chat.sendEnriched.parts` 同理（runtime part：`type` 必填 + 开放字段）。
+  - `eval.chatCompletions` 只钉 OpenAI 信封的 `messages`/`role`，content 是文本或 EvalScope
+    媒体 part（开放 part 边界），顶层 `additionalProperties:true`。
+  - `memory.add` 的 `content` 必填（trim 后为空 → 400）、`memoryType`/`authority` 闭集；
+    `cueAnchors`/`sourceTraceIds` 的超限是截断（8 / 20）而非拒绝。
+  - `mobile.pairingVerify` 的 `deviceId`/`platform`/`deviceName` 带上
+    `device-store.ts` 的 pattern + 长度上限；`devices.register` 的 `id` 可缺省（transport
+    注入 `principal.deviceId`），`fcmToken`/`platform`/`token` 恒必填。
+- **残余（2 个）**：`cognition.gate` / `cognition.rewrite` 不在 E10g 批次表内（body 归 cognition
+  gate 契约所有），当前 `requests: 180/188`；加上 6 个显式排除（`plugins.install` +
+  W7 五项）后 180 + 6 = 186，实际分母 188 由这 2 个 cognition op 补齐。`REQUEST_EXCLUDED`
+  清单与收口覆盖测试在 E10g 收口波落地。
 
 ---
 
