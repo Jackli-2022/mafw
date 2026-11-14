@@ -100,7 +100,7 @@ function normalizeContributions(raw) {
     if (!declaration || typeof declaration !== 'object') continue;
     const { handler, ...meta } = declaration;
     if (typeof handler === 'function') handlers.set(name, handler);
-    actions[name] = { ...meta, workerAction: name };
+    actions[name] = meta;
   }
   const events = {};
   const sourceEvents = raw.events && typeof raw.events === 'object' ? raw.events : {};

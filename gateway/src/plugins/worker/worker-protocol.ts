@@ -11,7 +11,10 @@ export type WorkerLogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 export type HostToWorker =
   | { t: 'invoke'; id: string; action: string; input: unknown; timeoutMs: number }
-  | { t: 'shutdown' };
+  | { t: 'shutdown' }
+  // Host -> child responses for the child's config RPC.
+  | { t: 'result'; id: string; ok: true; output: unknown }
+  | { t: 'result'; id: string; ok: false; error: { message: string; code?: string } };
 
 export type WorkerToHost =
   | {
