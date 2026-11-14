@@ -4,13 +4,24 @@ import { readFileSync } from "node:fs"
 
 const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8")
 
-test("MafwShell uses width for left dock mode", () => {
+test("MafwShell uses the layout container width for left dock mode", () => {
   const src = read("src/renderer/mafw/MafwShell.tsx")
-  assert.match(src, /resolveMode\(leftDock\(\)\.open,\s*viewportWidth\(\),\s*leftDockWidth\(\),\s*leftDockRequiredMainWidth\(\)\)/)
+  assert.match(src, /resolveMode\(\s*leftDock\(\)\.open,\s*viewportWidth\(\),\s*leftDockWidth\(\),\s*leftDockRequiredMainWidth\(\),\s*lastLeftDockMode\s*\)/)
   assert.doesNotMatch(src, /resolveMode\(leftDock\(\)\.open,\s*winMaximized\(\)\)/)
+  assert.match(src, /new ResizeObserver/)
+  assert.match(src, /bodyEl = el/)
+  assert.match(src, /setViewportWidth\(el\.clientWidth\)/)
+  assert.doesNotMatch(src, /setViewportWidth\(window\.innerWidth\)/)
   assert.match(src, /restoreLeftDockOpen\(/)
   assert.match(src, /effectiveLeftDockWidth\(/)
   assert.match(src, /shouldAutoRestoreLeftDock\(/)
+})
+
+test("left dock mode has 12px hysteresis", () => {
+  const dock = read("src/renderer/mafw/left-dock.ts")
+  assert.match(dock, /PUSH_HYSTERESIS = 12/)
+  assert.match(dock, /previousMode === "push" \? -PUSH_HYSTERESIS : previousMode === "overlay" \? PUSH_HYSTERESIS : 0/)
+  assert.match(dock, /leftDockPushBudget\(dockWidth, requiredMainWidth\) \+ PUSH_HYSTERESIS/)
 })
 
 test("narrow two-view mode evaluates push per visible column", () => {

@@ -54,6 +54,8 @@ export function closeLeftDockState(s: LeftDockState, io: LeftDockStorage): LeftD
 export const LEFT_RAIL_WIDTH = 46
 /** split 模式：两侧都放得下才 push（chat 舒适 520 + 工作台 720）。 */
 export const PUSH_PAIR_BUDGET = 1240
+/** 模式切换滞回：进入 / 退出各留 12px，避免贴阈值拖动时抖动。 */
+export const PUSH_HYSTERESIS = 12
 
 /**
  * 推挤预算：窗口宽 ≥ 此值才 push。
@@ -80,9 +82,13 @@ export function resolveMode(
   width: number,
   dockWidth: number,
   requiredMainWidth: number = PUSH_PAIR_BUDGET,
+  previousMode: "push" | "overlay" | null = null,
 ): LeftDockMode {
   if (!open) return "closed"
-  return width >= leftDockPushBudget(dockWidth, requiredMainWidth) ? "push" : "overlay"
+  const threshold = leftDockPushBudget(dockWidth, requiredMainWidth)
+  // 标准滞回：overlay → push 要高出 12px；push → overlay 要低于 12px 才退出。
+  const margin = previousMode === "push" ? -PUSH_HYSTERESIS : previousMode === "overlay" ? PUSH_HYSTERESIS : 0
+  return width >= threshold + margin ? "push" : "overlay"
 }
 
 /** 启动时存储为 open 的左 dock 只在可推挤宽度恢复；浮层态不自动展开。 */
@@ -122,7 +128,7 @@ export function effectiveLeftDockWidth(
   return Math.min(clampLeftDockWidth(width), Math.max(0, maxForViewport))
 }
 
-/** 启动时因窄幅被抑制的 open 偏好，在拉宽到推挤预算点后恢复。 */
+/** 启动时因窄幅被抑制的 open 偏好，在拉宽到推挤预算点 + 滞回后恢复。 */
 export function shouldAutoRestoreLeftDock(
   stored: string | null,
   open: boolean,
@@ -130,7 +136,8 @@ export function shouldAutoRestoreLeftDock(
   dockWidth: number,
   requiredMainWidth: number = PUSH_PAIR_BUDGET,
 ): boolean {
-  return stored === "1" && !open && viewportWidth >= leftDockPushBudget(dockWidth, requiredMainWidth)
+  return stored === "1" && !open &&
+    viewportWidth >= leftDockPushBudget(dockWidth, requiredMainWidth) + PUSH_HYSTERESIS
 }
 
 // 旧 Rail 宽度键严格一次性迁移：新键有效则忽略旧键；否则采用旧键。

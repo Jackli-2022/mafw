@@ -2050,6 +2050,8 @@ export function MafwShell() {
   const [switchLogs, setSwitchLogs] = createSignal<Record<string, string[]>>({})
   const [taskListOpen, setTaskListOpen] = createSignal(false)
   const [viewportWidth, setViewportWidth] = createSignal(window.innerWidth)
+  /** 主布局容器（rail + left dock + main + right dock）；用它的实际宽度做响应式判定。 */
+  let bodyEl: HTMLDivElement | undefined
   const [titlebarRef, setTitlebarRef] = createSignal<HTMLElement | null>(null)
   const [winMaximized, setWinMaximized] = createSignal(false)
   onMount(() => {
@@ -3710,7 +3712,13 @@ export function MafwShell() {
       localStorage.setItem("mafw-left-dock-face", leftDock().face)
     }
   } catch { /* ignore */ }
-  const leftDockMode = () => resolveMode(leftDock().open, viewportWidth(), leftDockWidth(), leftDockRequiredMainWidth())
+  let lastLeftDockMode: "push" | "overlay" | null = null
+  const leftDockMode = () =>
+    resolveMode(leftDock().open, viewportWidth(), leftDockWidth(), leftDockRequiredMainWidth(), lastLeftDockMode)
+  createEffect(() => {
+    const mode = leftDockMode()
+    if (mode !== "closed") lastLeftDockMode = mode
+  })
   const openLeftDockFace = (face: LeftDockFace) => {
     // Persist before state, same ordering rule as toggle/close.
     try {
@@ -3859,11 +3867,15 @@ export function MafwShell() {
     onCleanup(() => window.removeEventListener("keydown", onKey, true))
   })
 
-  // 宽度跟踪：左 dock 的 push/overlay 由 viewportWidth 决定。
-  createEffect(() => {
-    const onResize = () => setViewportWidth(window.innerWidth)
-    window.addEventListener("resize", onResize)
-    onCleanup(() => window.removeEventListener("resize", onResize))
+  // 宽度跟踪：量主布局容器（不是 window.innerWidth），窗口 / 侧栏变化都会触发。
+  onMount(() => {
+    const el = bodyEl
+    if (!el) return
+    const update = () => setViewportWidth(el.clientWidth)
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(el)
+    onCleanup(() => observer.disconnect())
   })
   // 启动时因窄幅被抑制的 open 偏好，在拉宽到 push 阈值后恢复。
   createEffect(() => {
@@ -4154,7 +4166,7 @@ export function MafwShell() {
         <WindowControls />
       </div>
       {/* 右列下行：left dock(push 列) | main | dock */}
-      <div class="mafw-body" style={{ "grid-template-columns": bodyColumns() }}>
+      <div ref={(el) => { bodyEl = el }} class="mafw-body" style={{ "grid-template-columns": bodyColumns() }}>
         <Show when={leftDockMode() !== "closed"}>
           <Show when={leftDockMode() === "overlay"}>
             <div class="mafw-left-dock-backdrop" onClick={closeLeftDock} />

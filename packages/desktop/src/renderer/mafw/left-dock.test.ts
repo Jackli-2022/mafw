@@ -94,6 +94,21 @@ describe("left-dock 状态模型", () => {
     })
   })
 
+  describe("resolveMode 滞回（12px）", () => {
+    test("overlay → push 要高于阈值 12px", () => {
+      expect(resolveMode(true, 1561, 264, 1240, "overlay")).toBe("overlay")
+      expect(resolveMode(true, 1562, 264, 1240, "overlay")).toBe("push")
+    })
+    test("push → overlay 要低于阈值 12px", () => {
+      expect(resolveMode(true, 1538, 264, 1240, "push")).toBe("push")
+      expect(resolveMode(true, 1537, 264, 1240, "push")).toBe("overlay")
+    })
+    test("首次判定（null）用原始阈值", () => {
+      expect(resolveMode(true, 1550, 264, 1240, null)).toBe("push")
+      expect(resolveMode(true, 1549, 264, 1240, null)).toBe("overlay")
+    })
+  })
+
   describe("restoreLeftDockOpen（启动时浮层态不自动展开）", () => {
     test("存储为 open 且宽度不足 → false", () => {
       expect(restoreLeftDockOpen("1", 1088, 264)).toBe(false)
@@ -134,14 +149,16 @@ describe("left-dock 状态模型", () => {
       expect(effectiveLeftDockWidth(400, 1030, 720)).toBe(264)
       expect(effectiveLeftDockWidth(400, 900, 720)).toBe(134)
     })
-    test("启动抑制后拉宽到预算点恢复存储为 open 的左 dock", () => {
-      expect(shouldAutoRestoreLeftDock("1", false, 1550, 264)).toBe(true)
-      expect(shouldAutoRestoreLeftDock("1", true, 1560, 264)).toBe(false)
-      expect(shouldAutoRestoreLeftDock("0", false, 1560, 264)).toBe(false)
-      expect(shouldAutoRestoreLeftDock("1", false, 1549, 264)).toBe(false)
-      expect(shouldAutoRestoreLeftDock("1", false, 830, 264, 520)).toBe(true)
-      expect(shouldAutoRestoreLeftDock("1", false, 829, 264, 520)).toBe(false)
-      expect(shouldAutoRestoreLeftDock("1", false, 1030, 264, 720)).toBe(true)
+    test("启动抑制后拉宽到预算点 + 滞回后恢复存储为 open 的左 dock", () => {
+      expect(shouldAutoRestoreLeftDock("1", false, 1562, 264)).toBe(true)
+      expect(shouldAutoRestoreLeftDock("1", false, 1561, 264)).toBe(false)
+      expect(shouldAutoRestoreLeftDock("1", true, 1562, 264)).toBe(false)
+      expect(shouldAutoRestoreLeftDock("0", false, 1562, 264)).toBe(false)
+      expect(shouldAutoRestoreLeftDock("1", false, 1550, 264)).toBe(false)
+      expect(shouldAutoRestoreLeftDock("1", false, 842, 264, 520)).toBe(true)
+      expect(shouldAutoRestoreLeftDock("1", false, 841, 264, 520)).toBe(false)
+      expect(shouldAutoRestoreLeftDock("1", false, 1042, 264, 720)).toBe(true)
+      expect(shouldAutoRestoreLeftDock("1", false, 1041, 264, 720)).toBe(false)
     })
   })
 

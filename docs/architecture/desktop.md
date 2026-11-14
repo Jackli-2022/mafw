@@ -345,10 +345,11 @@ chatview 是指挥列，左侧 rail 负责导航与团队状态。
   分段控件；chat 视图 `.mafw-main.mafw-narrow-chat .mafw-chat` 宽 `min(760px, 100%)` 居中，
   composer 全宽；隐藏 resize handle。320 只作为极端兜底。
 - **尺寸与字体**：chat 档位 `520/640/760`、默认/双击 **760**；`WORKBENCH_MIN_WIDTH=720`；
-  `PUSH_PAIR_BUDGET=1240`（520 chat + 720 工作台，split 默认 dock push 点约 1550）。
-  窄窗二选一不按整窗 split 预算：`resolveMode` 按当前可见栏算，Chat 用 520（默认 dock 264 → 830 可推）、
-  Workbench 用 720（→ 1030 可推）；切 Chat / Workbench 时左栏可在 push / overlay 之间切换。
-  默认窗口 1720×1000、硬下限 **900×600**。
+  `PUSH_PAIR_BUDGET=1240`（520 chat + 720 工作台，split 默认 dock push 点约 1550）；
+  模式切换有 **12px 滞回**（`PUSH_HYSTERESIS`）。宽度来自主布局容器的 `ResizeObserver`
+  （`.mafw-body`），不是 `window.innerWidth`。窄窗二选一按当前可见栏算，Chat 用 520
+  （默认 dock 264 → 830 可推）、Workbench 用 720（→ 1030 可推）；切 Chat / Workbench 时左栏
+  可在 push / overlay 之间切换。默认窗口 1720×1000、硬下限 **900×600**。
   chat 作用域 token `--mafw-chat-reading/--mafw-chat-composer: 16px`，composer max-height 220px；
   全局 UI base font 仍 14px。
 - **入口收敛**：`WorkspaceHome` 与全页 `goals` 路由退役；legacy `goals`/`workspace` deep link 经
