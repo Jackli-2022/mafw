@@ -11,8 +11,9 @@ const types = read("src/preload/mafw-types.ts")
 const commandBlock = (id: string) => {
   const start = chat.indexOf(`id: "${id}"`)
   assert.ok(start >= 0, `missing command ${id}`)
-  const end = chat.indexOf('id: "', start + 1)
-  return chat.slice(start, end > start ? end : undefined)
+  const end = chat.indexOf("\n      },", start)
+  assert.ok(end > start, `unterminated command ${id}`)
+  return chat.slice(start, end)
 }
 
 test("preload exposes session summarize", () => {
@@ -39,17 +40,27 @@ test("session commands are wired", () => {
   const compact = commandBlock("compact")
   assert.match(compact, /sessions\.summarize\(sid\)/)
   assert.match(compact, /if \(!sid\) return/)
+  assert.match(compact, /experienceStore\.supported\("session\.summarize"\)/)
+  assert.doesNotMatch(compact, /压缩失败: \$\{e/)
+  const compactBusy = compact.indexOf("sessionBusy()")
+  const compactSummarize = compact.indexOf("sessions.summarize")
+  assert.ok(compactBusy >= 0, "compact must check sessionBusy")
+  assert.ok(compactSummarize >= 0, "compact must call sessions.summarize")
   assert.ok(
-    compact.indexOf("sessionBusy()") < compact.indexOf("sessions.summarize"),
+    compactBusy < compactSummarize,
     "compact must guard a busy turn before calling summarize",
   )
 
   assert.match(chat, /props\.onExportCurrentSession/)
   assert.match(chat, /props\.onForkCurrentSession/)
-  assert.match(shell, /onExportCurrentSession=\{/)
-  assert.match(shell, /if \(sid\) void exportSession\(sid\)/)
-  assert.match(shell, /onForkCurrentSession=\{/)
-  assert.match(shell, /if \(sid\) void forkSessionFromMenu\(sid\)/)
+  assert.match(
+    shell,
+    /onExportCurrentSession=\{\(\) => \{ const sid = activeSessionId\(\); if \(sid\) void exportSession\(sid\) \}\}/,
+  )
+  assert.match(
+    shell,
+    /onForkCurrentSession=\{\(\) => \{ const sid = activeSessionId\(\); if \(sid\) void forkSessionFromMenu\(sid\) \}\}/,
+  )
 })
 
 test("navigation and config commands are wired", () => {
@@ -75,8 +86,12 @@ test("history commands are wired", () => {
   assert.match(undo, /loadServerCheckpoints\(\)/)
 
   const redo = commandBlock("redo")
+  const redoGuard = redo.indexOf("canUnrevert()")
+  const redoAction = redo.indexOf("doUnrevert()")
+  assert.ok(redoGuard >= 0, "redo must check canUnrevert")
+  assert.ok(redoAction >= 0, "redo must call doUnrevert")
   assert.ok(
-    redo.indexOf("canUnrevert()") < redo.indexOf("doUnrevert()"),
+    redoGuard < redoAction,
     "redo must check canUnrevert before calling unrevert",
   )
 })
@@ -98,6 +113,10 @@ test("plan and build commands use DTO flags only", () => {
   assert.match(build, /没有默认执行 Agent/)
 
   assert.match(chat, /const applyAgentSelection = \(entry: AgentEntry\)/)
+  assert.match(
+    chat,
+    /const applyAgentSelection = \(entry: AgentEntry\) => \{[\s\S]{0,400}?agentSwitchLockReason\(\{ isLead: isLead\(\), creatorLocked: creatorLocked\(\) \}\)/,
+  )
   assert.match(
     chat,
     /const onSessionAgentSelect = \(id: string\) => \{[\s\S]{0,240}?applyAgentSelection\(entry\)/,

@@ -23,6 +23,7 @@ import { SessionConfigMenu } from "./pickers/SessionConfigMenu"
 import {
   agentBadge,
   agentMenuOptions,
+  agentSwitchLockReason,
   defaultAgentKey,
   findAgentEntry,
   nextRuntimeAgent,
@@ -1537,9 +1538,16 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             showToastV2({ description: "回合进行中，结束后再压缩", duration: 2500 })
             return
           }
+          if (!experienceStore.supported("session.summarize")) {
+            showToastV2({ description: "当前环境暂不支持压缩上下文", duration: 3000 })
+            return
+          }
           void window.api.mafw.sessions.summarize(sid)
             .then(() => showToastV2({ description: "已压缩当前会话", duration: 2500 }))
-            .catch((e: any) => showToastV2({ description: `压缩失败: ${e?.message ?? e}`, duration: 4000 }))
+            .catch((e: any) => {
+              console.warn("[mafw] compact failed:", e?.message ?? e)
+              showToastV2({ description: "压缩失败，请稍后重试", duration: 4000 })
+            })
         },
       },
       {
@@ -1822,6 +1830,14 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
   const applyAgentSelection = (entry: AgentEntry) => {
     setPickerOpen(null)
+    const lock = agentSwitchLockReason({ isLead: isLead(), creatorLocked: creatorLocked() })
+    if (lock) {
+      showToastV2({
+        description: lock === "lead" ? "Lead 会话的 Agent 已锁定" : "Creator 会话的 Agent 已锁定",
+        duration: 3000,
+      })
+      return
+    }
     if (busy()) {
       setSwitchConfirm(entry)
       return

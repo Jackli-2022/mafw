@@ -4,6 +4,7 @@ import {
   THINKING_MENU_OPTIONS,
   agentBadge,
   agentMenuOptions,
+  agentSwitchLockReason,
   defaultAgentKey,
   findAgentEntry,
   nextRuntimeAgent,
@@ -38,6 +39,12 @@ describe("session config menu model", () => {
     expect(defaultAgentKey([{ id: "Plan", label: "Plan", source: "runtime", selectable: true }])).toBeNull()
     expect(planningAgent(agents)?.id).toBe("Planning")
     expect(planningAgent([{ id: "Plan", label: "Plan", source: "runtime", selectable: true }])).toBeNull()
+  })
+
+  test("agentSwitchLockReason: Lead 优先于 Creator，其余可切换", () => {
+    expect(agentSwitchLockReason({ isLead: true, creatorLocked: true })).toBe("lead")
+    expect(agentSwitchLockReason({ isLead: false, creatorLocked: true })).toBe("creator")
+    expect(agentSwitchLockReason({ isLead: false, creatorLocked: false })).toBeNull()
   })
 
   test("agentBadge: 默认 agent / 未选择不占位，其余显示 DTO label", () => {

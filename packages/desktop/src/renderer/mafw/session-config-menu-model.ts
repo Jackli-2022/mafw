@@ -52,6 +52,13 @@ export function planningAgent<T extends AgentRow>(agents: T[]): T | null {
   return (agents || []).find((a) => isRuntimeAgent(a) && a.planning === true) ?? null
 }
 
+/** 会话 Agent 是否被 Lead / Creator 身份锁住；Lead 优先。 */
+export function agentSwitchLockReason(input: { isLead: boolean; creatorLocked: boolean }): "lead" | "creator" | null {
+  if (input.isLead) return "lead"
+  if (input.creatorLocked) return "creator"
+  return null
+}
+
 /** Tab 循环：默认 → 其余 → 默认；单 agent / 无 agent 返回 null（不抢键）。 */
 export function nextRuntimeAgent<T extends AgentRow>(agents: T[], currentKey: string | null): T | null {
   const ordered = orderedRuntimeAgents(agents)
