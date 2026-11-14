@@ -312,6 +312,13 @@ export interface PackageManifest {
   name: string;
   version?: string;
   main?: string;
+  /** Phase 6 additive trust fields (legacy packages leave them undefined). */
+  apiVersion?: 1 | 2;
+  kind?: 'trusted' | 'untrusted';
+  permissions?: string[];
+  host?: string;
+  integrity?: { algorithm: 'sha256'; files: Record<string, string> };
+  deprecated?: string;
 }
 
 export interface PackageDescriptor {

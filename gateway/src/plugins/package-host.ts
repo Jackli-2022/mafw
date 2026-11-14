@@ -34,7 +34,9 @@ import type {
   PackageDescriptor,
   PackageManifest,
   PackageState,
+  PluginActionDeclaration,
   PluginContributions,
+  PluginEmitEvent,
   PluginObserverEntry,
   PluginPackageContext,
   PluginToolEntry,
@@ -44,6 +46,8 @@ import type {
   UsagePackageEntry,
 } from './package-types';
 import type { PcmChunk, TtsEngine, TtsOpts } from '../tts/types';
+import { parsePackageManifest, type NormalizedPackageManifest } from './package-manifest';
+import type { WorkerHost } from './worker/worker-host';
 
 const VALID_MODALITIES = new Set(['image', 'video', 'audio']);
 const EMPTY_CANONICAL_TYPES: ReadonlySet<string> = new Set();
@@ -86,6 +90,17 @@ export interface PluginHostOptions {
    * `/api/plugins/<pkg>/api*` and the `/ws/*` upgrade path.
    */
   httpRegistry?: PluginHttpRegistry;
+  /** Phase 6B: untrusted packages require a worker host. */
+  workerHostFactory?: (
+    desc: PackageDescriptor,
+    manifest: NormalizedPackageManifest,
+    hooks: { emit: (event: PluginEmitEvent) => void },
+  ) => WorkerHost;
+  /** False (default) keeps untrusted packages fail-closed. */
+  workerAvailable?: () => boolean;
+  /** Committed content fingerprint used to detect untrusted file drift. */
+  installedFingerprint?: (name: string) => string | undefined;
+  onUntrustedDrift?: (name: string, reason: string) => void;
 }
 
 export interface PluginPendingState {
@@ -365,6 +380,13 @@ export class PluginHost {
         pendingRevision: pending?.revision,
         fingerprint: active?.fingerprint,
       };
+      const manifest = active?.descriptor.manifest ?? pending?.descriptor.manifest;
+      if (manifest?.kind === 'untrusted') {
+        state.kind = 'untrusted';
+        state.apiVersion = manifest.apiVersion ?? 2;
+        state.permissions = manifest.permissions ?? [];
+        state.transport = 'worker';
+      }
       if (error) state.error = error;
       out.push(state);
     }
@@ -1100,6 +1122,93 @@ export class PluginHost {
     return out;
   }
 
+  private async activateWorker(
+    desc: PackageDescriptor,
+    bag: RegistrationBag,
+  ): Promise<ActivationResult> {
+    const parsed = desc.manifest ? parsePackageManifest(desc.manifest) : null;
+    if (!parsed?.ok || !parsed.manifest || parsed.manifest.kind !== 'untrusted') {
+      throw new Error('untrusted package manifest is invalid');
+    }
+    if (!this.options.workerHostFactory) {
+      throw new Error('worker_unavailable: no worker host factory');
+    }
+    const available = this.options.workerAvailable?.() ?? true;
+    if (!available) throw new Error('worker_unavailable: untrusted packages are not enabled');
+
+    const installed = this.options.installedFingerprint?.(desc.name);
+    if (installed) {
+      const current = fingerprintPackage(
+        desc.mainFile,
+        desc.pkgDir ? { rootDir: desc.pkgDir } : {},
+      );
+      if (current !== installed) {
+        this.options.onUntrustedDrift?.(desc.name, 'fingerprint changed on disk');
+        throw new Error('untrusted package changed on disk; reinstall or unquarantine explicitly');
+      }
+    }
+
+    const emitterToken = {};
+    const worker = this.options.workerHostFactory(desc, parsed.manifest, {
+      emit: (event) => this.events.emitFrom(desc.name, emitterToken, event),
+    });
+
+    try {
+      const ready = await worker.start();
+      const raw = ready.contributions ?? {};
+      const unsupported = Object.keys(raw).filter(
+        (key) => raw[key] !== undefined && key !== 'actions' && key !== 'events',
+      );
+      if (unsupported.length > 0) {
+        throw new Error(`not allowed in untrusted worker: ${unsupported.join(', ')}`);
+      }
+
+      const actions: Record<string, PluginActionDeclaration> = {};
+      const rawActions = raw.actions && typeof raw.actions === 'object'
+        ? raw.actions as Record<string, Record<string, unknown>>
+        : {};
+      for (const [name, declaration] of Object.entries(rawActions)) {
+        actions[name] = {
+          ...(declaration as unknown as PluginActionDeclaration),
+          handler: (input) => worker.invoke(
+            name,
+            input,
+            typeof declaration.timeoutMs === 'number' ? declaration.timeoutMs : undefined,
+          ),
+        };
+      }
+
+      const built = buildActivatedContributions(
+        desc.name,
+        {
+          actions,
+          events: Object.values(raw.events ?? {}) as UnifiedPluginContributions['events'],
+        },
+        this.canonicalTypes,
+      );
+      if (!built.ok) throw new Error(`invalid contributions: ${built.errors.join('; ')}`);
+
+      const httpRecorder = createPluginHttpRecorder(desc.name);
+      httpRecorder.seal();
+      bag.effect(() => worker.stop('dispose'));
+
+      const kinds: string[] = [];
+      if (Object.keys(actions).length > 0) kinds.push('actions');
+      if (Object.keys(raw.events ?? {}).length > 0) kinds.push('events');
+      return {
+        ...(ready.version !== undefined ? { version: ready.version } : {}),
+        contributions: kinds,
+        activated: built.value,
+        entries: {},
+        emitterToken,
+        http: httpRecorder,
+      };
+    } catch (err) {
+      await worker.stop('activate-failed').catch(() => {});
+      throw err;
+    }
+  }
+
   private async activate(desc: PackageDescriptor, bag: RegistrationBag): Promise<ActivationResult> {
     // One activate() result = one bag = one revision. Action/event registries
     // attach their cleanups to this bag at commit time
@@ -1107,6 +1216,9 @@ export class PluginHost {
     // exactly one owner from the first scan onwards.
     void bag;
     this.invalidatePackageCache(desc);
+    if (desc.manifest?.kind === 'untrusted') {
+      return this.activateWorker(desc, bag);
+    }
     const mod = require(desc.mainFile);
     const modName = mod?.name;
     if (typeof modName !== 'string' || !modName) throw new Error('missing name');

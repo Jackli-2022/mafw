@@ -99,6 +99,7 @@ import { PluginDoctor } from './plugins/plugin-doctor';
 import { PluginAuditStore } from './plugins/plugin-audit-store';
 import type { PluginClientSnapshot } from './plugins/client-descriptor';
 import { createPluginPackageContext } from './plugins/package-context';
+import { WorkerHost } from './plugins/worker/worker-host';
 import type { UsageStatsProvider } from './usage/plugin-context';
 import { TerminalService } from './terminal/terminal-service';
 import { ensureGlobalOfficeSkill } from './core/office/global-skill';
@@ -458,6 +459,37 @@ export async function bootKernel(kernel: BootKernel): Promise<void> {
       broadcast: (event) => kernel.broadcast(event as any),
       // 插件事件作为 automation external trigger 的只读入口。
       onEvent: (event) => kernel.handlePluginEvent(event),
+      workerAvailable: () => true,
+      installedFingerprint: (name) => kernel.packageStateStore?.getInstalled(name)?.fingerprint,
+      onUntrustedDrift: (name, reason) => {
+        try {
+          kernel.packageStateStore?.setQuarantine({
+            name,
+            reason,
+            at: new Date().toISOString(),
+          });
+        } catch { /* fail-open: the host still refuses activation */ }
+      },
+      workerHostFactory: (desc, manifest, hooks) => {
+        const packageDir = desc.pkgDir ?? path.dirname(desc.mainFile);
+        const packageCtx = createPluginPackageContext(desc.name, {
+          projectDir: kernel.projectDir,
+          gatewayPort: config.server.apiPort,
+          persistConfig: (overrides) => {
+            config.persistOverrides(overrides as unknown as Parameters<typeof config.persistOverrides>[0]);
+          },
+        });
+        return new WorkerHost({
+          name: desc.name,
+          packageDir,
+          entryFile: desc.mainFile,
+          manifest,
+          onEmit: hooks.emit,
+          getConfig: () => packageCtx.pluginConfig(),
+          updateConfig: (patch) => packageCtx.config.update(patch),
+          logger: log,
+        });
+      },
     },
   );
   kernel.bindPluginAutomation(kernel.pluginHost);
@@ -467,6 +499,7 @@ export async function bootKernel(kernel: BootKernel): Promise<void> {
     host: kernel.pluginHost,
     stateStore: kernel.packageStateStore,
     audit: pluginAudit,
+    workerAvailable: true,
   });
   const pluginSafety = new PluginSafety({
     state: kernel.packageStateStore,
