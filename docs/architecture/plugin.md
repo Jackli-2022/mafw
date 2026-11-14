@@ -164,3 +164,14 @@ re-export shim 已在 Task 7 删除）；驱动包不得 import `gateway/src`，
 
 - adapter 导出 `REGISTRATION`/dialect 描述符与 `getBridgeEventEntry`/`setBridgeEventEntry`（`entry-registry.ts`），dry-event/conformance 通过 gateway 的 provider seam 读取，不依赖 legacy bridge 实例。
 - opencode 的 `discovery.roots()` 暴露 skills/instruction 根目录；插件/技能安装不再由 gateway 猜测厂商路径。
+
+## Phase 6A trust surface（2026-11-14）
+
+- 统一包 manifest 增加 apiVersion/kind/permissions/host/integrity/deprecated；缺省 apiVersion=1 的 legacy 包按 trusted 处理。
+- 安装 v2 包需要 human/device principal 显式接受 permissions；v1 包、plugin-creator 草稿和 MCP 现有流程不变。
+- 安装后记录内容指纹与文件 hash；manifest 声明 integrity 时安装前严格校验。
+- 插件状态文件 v2 增加 safeMode/quarantine/installed/consecutiveFailures/pendingHealthCheck；文件损坏进入 safe mode。
+- 审计写入 gateway.db 的 plugin_audit_events 表；detail 只保留 allowlist 字段。
+- 新增 plugin doctor（12 项检查）、kill/resume、quarantine/unquarantine、audit 路由与 mafw plugins CLI。
+- kill switch 只停统一插件包；resume/unquarantine/v2 install 必须 human/device。
+

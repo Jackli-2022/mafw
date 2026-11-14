@@ -461,12 +461,13 @@ export async function bootKernel(kernel: BootKernel): Promise<void> {
     },
   );
   kernel.bindPluginAutomation(kernel.pluginHost);
+  const pluginAudit = new PluginAuditStore(kernel.getGatewayDb());
   kernel.packageManager = new PackageManager({
     pluginDir: pluginPackageDir,
     host: kernel.pluginHost,
     stateStore: kernel.packageStateStore,
+    audit: pluginAudit,
   });
-  const pluginAudit = new PluginAuditStore(kernel.getGatewayDb());
   const pluginSafety = new PluginSafety({
     state: kernel.packageStateStore,
     host: kernel.pluginHost,

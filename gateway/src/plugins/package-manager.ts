@@ -27,6 +27,7 @@ import type { PackageStateStore } from './package-state-store';
 import type { PluginKind, NormalizedPackageManifest } from './package-manifest';
 import { parsePackageManifest } from './package-manifest';
 import { computePackageIntegrity, verifyDeclaredIntegrity } from './package-integrity';
+import type { PluginAuditStore } from './plugin-audit-store';
 
 const SAFE_PACKAGE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const DEFAULT_MAX_REQUEST_IDS = 50;
@@ -100,6 +101,8 @@ export interface PackageManagerDeps {
   maxRequestIds?: number;
   /** Untrusted packages require a working worker host. Default false. */
   workerAvailable?: boolean;
+  /** Phase 6 trust audit (optional in headless hosts). */
+  audit?: PluginAuditStore;
 }
 
 function describeError(err: unknown): string {
@@ -133,6 +136,7 @@ export class PackageManager {
   private readonly stateStore: PackageStateStore;
   private readonly maxRequestIds: number;
   private readonly workerAvailable: boolean;
+  private readonly audit?: PluginAuditStore;
   private readonly requestResults = new Map<string, InstallResult>();
   /** Serializes mutations so two installs cannot interleave staging markers. */
   private queue: Promise<unknown> = Promise.resolve();
@@ -143,6 +147,7 @@ export class PackageManager {
     this.stateStore = deps.stateStore;
     this.maxRequestIds = deps.maxRequestIds ?? DEFAULT_MAX_REQUEST_IDS;
     this.workerAvailable = deps.workerAvailable === true;
+    this.audit = deps.audit;
   }
 
   /** Absolute plugin package root (`~/.mafw/plugins` by default). */
@@ -233,6 +238,20 @@ export class PackageManager {
         kind: manifest.kind,
         apiVersion: manifest.apiVersion,
       };
+      this.audit?.append({
+        action: 'install',
+        package: name,
+        ...(manifest.version !== undefined ? { version: manifest.version } : {}),
+        ...(this.stateStore.getInstalled(name)?.fingerprint
+          ? { fingerprint: this.stateStore.getInstalled(name)!.fingerprint }
+          : {}),
+        result: 'ok',
+        detail: {
+          apiVersion: manifest.apiVersion,
+          kind: manifest.kind,
+          permissions: manifest.permissions,
+        },
+      });
       if (requestId) this.remember(requestId, result);
       return result;
     });
@@ -257,6 +276,7 @@ export class PackageManager {
       this.assertInstalled(safeName);
       this.stateStore.setDisabled(safeName, true);
       await this.host.reload();
+      this.audit?.append({ action: 'disable', package: safeName, result: 'ok' });
       return {
         name: safeName,
         version: this.installedVersion(safeName),
@@ -278,6 +298,7 @@ export class PackageManager {
       // runtime either: the host stages it as pending when it applies.
       this.host.stageNewPackage(safeName);
       await this.host.reload();
+      this.audit?.append({ action: 'enable', package: safeName, result: 'ok' });
       const state = this.describe(safeName);
       return {
         ...state,
@@ -306,7 +327,9 @@ export class PackageManager {
 
       fs.rmSync(realTarget, { recursive: true, force: true });
       this.stateStore.setDisabled(safeName, false);
+      this.stateStore.removeInstalled(safeName);
       await this.host.reload();
+      this.audit?.append({ action: 'remove', package: safeName, result: 'ok' });
 
       return {
         name: safeName,
@@ -338,6 +361,7 @@ export class PackageManager {
         };
       }
       await this.host.reload();
+      this.audit?.append({ action: 'reload', package: safeName, result: 'ok' });
       const state = this.describe(safeName);
       return {
         ...state,
@@ -353,6 +377,9 @@ export class PackageManager {
     return this.enqueue(async () => {
       const safeName = this.validatePackageName(name);
       const result = await this.host.applyPending(safeName);
+      if (result.applied) {
+        this.audit?.append({ action: 'apply', package: safeName, result: 'ok' });
+      }
       if (!result.applied) {
         return {
           name: safeName,
