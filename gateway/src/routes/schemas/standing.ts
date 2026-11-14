@@ -25,7 +25,7 @@ const StandingTriggerTypeSchema = Type.Union([
  * `StandingTrigger`：`schedule`/`timezone` 只对 cron 有值，`eventKinds`/`filter`
  * 只对 event 有值；四者都是 optional（store 原样 JSON 解析，缺列即缺键）。
  */
-const StandingTriggerSchema = Type.Object({
+export const StandingTriggerSchema = Type.Object({
   id: Type.String(),
   type: StandingTriggerTypeSchema,
   schedule: Type.Optional(Type.String()),
@@ -38,7 +38,7 @@ const StandingTriggerSchema = Type.Object({
  * `StandingTemplate`：Goal 草稿模板。`planReview` 决定计划是否需要人工批准，
  * `acceptance` / `boundaries` 进入 Goal 的验收与边界。
  */
-const StandingTemplateSchema = Type.Object({
+export const StandingTemplateSchema = Type.Object({
   taskType: Type.Optional(Type.Union([
     Type.Literal('feature'),
     Type.Literal('bug'),
@@ -52,7 +52,7 @@ const StandingTemplateSchema = Type.Object({
 })
 
 /** `StandingBudget`：turns / 单次成本 / 日成本三档预算，单位由键名表达。 */
-const StandingBudgetSchema = Type.Object({
+export const StandingBudgetSchema = Type.Object({
   perRunTurns: Type.Optional(Type.Number()),
   perRunCostUsd: Type.Optional(Type.Number()),
   perDayCostUsd: Type.Optional(Type.Number()),

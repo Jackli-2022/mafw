@@ -4867,7 +4867,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -4887,7 +4891,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    goalId: string;
+                    revision: number;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -4905,7 +4916,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Absolute project directory path (drive, POSIX root, or UNC). */
+                    directory: string;
+                    worktree?: boolean | string;
+                    metadata?: {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -4923,7 +4945,24 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Session the gate decision is scoped to (required; loopback-only route). */
+                    sessionID: string;
+                    /** @description Interception point: 'tool_call' before a tool runs, 'prompt' before a prompt is submitted (closed enum; anything else → 400). */
+                    kind: "tool_call" | "prompt";
+                    /** @description Tool name. Required when kind is 'tool_call' (missing → 400); ignored for kind:'prompt'. */
+                    tool?: string;
+                    /** @description Tool arguments for kind:'tool_call' (absent → {}). Free-form: the rule engine interpolates {{field}} from it. */
+                    input?: {
+                        [key: string]: unknown;
+                    };
+                    /** @description Prompt text for kind:'prompt' (non-string values are evaluated as ''). Ignored for kind:'tool_call'. */
+                    text?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -4941,7 +4980,32 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Session used for internal-exemption / observability scoping (required). */
+                    sessionID: string;
+                    /** @description Tool whose output is being rewritten; matched against on:tool_result rules (required). */
+                    tool: string;
+                    /** @description Host envelope field from the cognition contract; the current gateway handler does not read it (redaction keys on tool + output.content). */
+                    input?: {
+                        [key: string]: unknown;
+                    };
+                    /** @description Tool result envelope. `content` is the only field the gateway reads. */
+                    output: {
+                        /** @description Tool result content parts. Required and must be an array (otherwise → 400); an empty array is valid. */
+                        content: ({
+                            /** @description Content part type ('text' / 'image' / runtime-specific). Only text parts are redacted; everything else passes through unchanged. */
+                            type: string;
+                        } & {
+                            [key: string]: unknown;
+                        })[];
+                        /** @description Host-side error flag; echoed by the host, not read by the gateway handler. */
+                        isError?: boolean;
+                    };
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5042,7 +5106,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5094,7 +5162,15 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    category: "mode" | "agent" | "model" | "model_config" | "thought_level";
+                    /** @description Shape depends on category; null clears thought_level. */
+                    value: unknown;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5115,7 +5191,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5235,7 +5315,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5255,7 +5339,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    title: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5435,7 +5525,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    agent: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5455,7 +5551,17 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    model: {
+                        providerID: string;
+                        modelID: string;
+                    };
+                    variant?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5473,7 +5579,15 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    sessionID: string;
+                    /** @description Validated against the session output schema at submit time. */
+                    data: unknown;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5533,7 +5647,34 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    kind: "shell" | "subagent";
+                    parentSessionID: string;
+                    title?: string;
+                    /** @description Required when kind is "shell". */
+                    command?: string;
+                    cwd?: string;
+                    timeout?: number;
+                    /** @description Required when kind is "subagent". */
+                    prompt?: string;
+                    agent?: string;
+                    description?: string;
+                    model?: {
+                        providerID: string;
+                        modelID: string;
+                    };
+                    outputSchema?: {
+                        name?: string;
+                        schema: {
+                            [key: string]: unknown;
+                        };
+                        retryCount?: number;
+                    };
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5595,7 +5736,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5615,7 +5760,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    message: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5788,7 +5939,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    messageID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5808,7 +5965,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    messageID: string;
+                    partID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5828,7 +5992,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5878,7 +6046,16 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    patches: {
+                        patch: string;
+                        hunkIndices: number[];
+                    }[];
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5898,7 +6075,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    messageID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5981,7 +6164,15 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    scope: "session" | "files" | "both";
+                    /** @constant */
+                    confirm: true;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -6001,7 +6192,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Free-form note stored with the suspended run; a non-string value is ignored, not rejected. */
+                    reason?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -6021,7 +6219,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Expected active run id; a mismatch is 404, absent accepts the active run. */
+                    runId?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -6081,7 +6286,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Expected active run id; a mismatch is 404, absent discards the active run. */
+                    runId?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -6101,7 +6313,19 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                    id?: string;
+                    /** @description JSON-serializable payload (<= 64KB after encoding). */
+                    data?: unknown;
+                    /** @description Not persisted; overrides an existing row for the same id. */
+                    transient?: boolean;
+                    messageID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -6192,7 +6416,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -6245,7 +6473,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    args?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -6265,7 +6499,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -6285,7 +6523,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    providerID?: string;
+                    modelID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -6305,7 +6550,28 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    parts?: ({
+                        type: string;
+                        text?: string;
+                    } & {
+                        [key: string]: unknown;
+                    })[];
+                    system?: string;
+                    outputSchema?: {
+                        name?: string;
+                        schema: {
+                            [key: string]: unknown;
+                        };
+                        retryCount?: number;
+                    };
+                    thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                    variant?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -6325,7 +6591,42 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Required when parts is absent. */
+                    message?: string;
+                    /** @description Required when message is absent. */
+                    parts?: ({
+                        type: string;
+                        text?: string;
+                    } & {
+                        [key: string]: unknown;
+                    })[];
+                    agent?: string;
+                    model?: {
+                        providerID: string;
+                        modelID: string;
+                    };
+                    /** @description Rejected when the prompt is queued or the run is suspended. */
+                    maxTurns?: number;
+                    /** @description Rejected when the prompt is queued or the run is suspended. */
+                    maxCostUsd?: number;
+                    delivery?: "steer" | "followup" | "queue";
+                    idempotencyKey?: string;
+                    expectReply?: boolean;
+                    thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                    variant?: string;
+                    outputSchema?: {
+                        name?: string;
+                        schema: {
+                            [key: string]: unknown;
+                        };
+                        retryCount?: number;
+                    };
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -6345,7 +6646,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -6365,7 +6670,17 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    command: string;
+                    arguments: string;
+                    agent?: string;
+                    model?: string;
+                    messageID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -6680,7 +6995,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -6728,7 +7047,17 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    directory: string;
+                    cwd?: string;
+                    cols?: number;
+                    rows?: number;
+                    title?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -6748,7 +7077,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -6768,7 +7101,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    directory?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7134,7 +7473,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7152,7 +7495,21 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Mutually exclusive with name+source. */
+                    template?: string;
+                    values?: {
+                        [key: string]: unknown;
+                    };
+                    /** @description Required for name+source; optional for templates. */
+                    name?: string;
+                    /** @description Required with name when template is absent. */
+                    source?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7197,7 +7554,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    source: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7217,7 +7580,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7237,7 +7604,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7288,7 +7659,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7308,7 +7683,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7326,7 +7705,24 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Configured server key; the adapter validates the accepted charset. */
+                    name: string;
+                    /** @description Determines which of url / command the adapter requires. */
+                    type: "remote" | "local";
+                    /** @description Required when type is 'remote'; the adapter validates the URL. */
+                    url?: string;
+                    /** @description Required (non-empty argv) when type is 'local'. */
+                    command?: string[];
+                    /** @description Replace an existing entry with the same name (absent → conflict error). */
+                    overwrite?: boolean;
+                    /** @description Explicitly allow a type change for an existing name (absent → conflict error). */
+                    replace?: boolean;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7344,7 +7740,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Configured server key to remove (preview only; nothing is written). */
+                    name: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7362,7 +7765,31 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Configured server key; the adapter validates the accepted charset. */
+                    name: string;
+                    /** @description Determines which of url / command the adapter requires. */
+                    type: "remote" | "local";
+                    /** @description Required when type is 'remote'; the adapter validates the URL. */
+                    url?: string;
+                    /** @description Required (non-empty argv) when type is 'local'. */
+                    command?: string[];
+                    /** @description Replace an existing entry with the same name (absent → conflict error). */
+                    overwrite?: boolean;
+                    /** @description Explicitly allow a type change for an existing name (absent → conflict error). */
+                    replace?: boolean;
+                    /** @description Optimistic-lock token returned by the matching preview call. */
+                    token: string;
+                    /**
+                     * @description Must be literally true; any other value is rejected with 400.
+                     * @constant
+                     */
+                    confirm: true;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7380,7 +7807,21 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Optimistic-lock token returned by the preview call. */
+                    token: string;
+                    /**
+                     * @description Must be literally true; any other value is rejected with 400.
+                     * @constant
+                     */
+                    confirm: true;
+                    /** @description Backup file to restore from; absent → the most recent backup. */
+                    backupPath?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7400,7 +7841,19 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Optimistic-lock token returned by the preview-remove call. */
+                    token: string;
+                    /**
+                     * @description Must be literally true; any other value is rejected with 400.
+                     * @constant
+                     */
+                    confirm: true;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7418,7 +7871,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Command name including the leading slash form the UI sends (resolved case-insensitively). */
+                    command: string;
+                    /** @description Raw argument string, trimmed and passed to the command handler. */
+                    args?: string;
+                    /** @description Session context; a suspended session short-circuits with 409 before running. */
+                    sessionID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7495,7 +7959,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Project whose manager (Lead) session should be rotated. */
+                    projectDir: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7564,7 +8035,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Absolute project directory to register. */
+                    projectDir: string;
+                    /** @description Project-level .mafw data directory. */
+                    mafwDir: string;
+                    /** @description Switch the current project (default false: registration only). */
+                    setCurrent?: boolean;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7582,7 +8064,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    sessionID: string;
+                    /** @description Required unless resolvable from sessionID. */
+                    directory?: string;
+                    paths: string[];
+                    /** @description Free-form label; the handler truncates it to 200 chars instead of rejecting longer values. */
+                    reason?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7633,7 +8126,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    sessionID: string;
+                    entryId: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7669,7 +8169,16 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Custom event name; recommended namespace 'plugin:<name>:<event>'. Reserved gateway/runtime names are 400. */
+                    type: string;
+                } & {
+                    [key: string]: unknown;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7817,7 +8326,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Runtime plugin name (loader key or alias); empty/absent rebuilds the configured runtime. */
+                    plugin?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7835,7 +8351,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7960,7 +8480,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Absolute local directory of the package to install. */
+                    path: string;
+                    /** @description Replace an installed package of the same name (default false). */
+                    overwrite?: boolean;
+                    /** @description Idempotency key; a new iteration must use a fresh value. */
+                    requestId?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7978,7 +8509,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Absolute local directory of the candidate package. */
+                    path: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7996,7 +8534,17 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Unified package name; mutually exclusive with type+filename. */
+                    package?: string;
+                    type?: "runtime" | "media" | "usage" | "ui";
+                    /** @description Legacy per-type plugin filename; requires type and excludes package. */
+                    filename?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8014,7 +8562,17 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Unified package name; mutually exclusive with type+filename. */
+                    package?: string;
+                    type?: "runtime" | "media" | "usage" | "ui";
+                    /** @description Legacy per-type plugin filename; requires type and excludes package. */
+                    filename?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8032,7 +8590,17 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Unified package name; mutually exclusive with type+filename. */
+                    package?: string;
+                    type?: "runtime" | "media" | "usage" | "ui";
+                    /** @description Legacy per-type plugin filename; requires type and excludes package. */
+                    filename?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8052,7 +8620,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8072,7 +8644,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8093,7 +8669,20 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Plugin-defined action payload, passed through verbatim to the committed action registry. */
+                    input?: {
+                        [key: string]: unknown;
+                    };
+                    /** @description Session the invocation is attributed to (plugin action context). */
+                    sessionID?: string;
+                    /** @description Client snapshot token; superseded tokens are rejected with 409 stale-revision. Falls back to ?revision=. */
+                    revision?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8111,7 +8700,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8131,7 +8724,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8149,7 +8746,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8167,7 +8768,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8187,7 +8792,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Why the package is being isolated; stored in state and the trust audit (empty → 400). */
+                    reason: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8207,7 +8819,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8232,7 +8848,31 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        events: {
+                            /** @description Audit row id (`pa_<uuid>`). */
+                            id: string;
+                            /** @description ISO timestamp written when the action ran. */
+                            at: string;
+                            action: "install" | "install.rejected" | "enable" | "disable" | "remove" | "reload" | "apply" | "activate.failed" | "quarantine" | "unquarantine" | "safe-mode.on" | "safe-mode.off" | "rollback" | "doctor";
+                            /** @description Package name; absent for gateway-wide actions (safe-mode.on/off). */
+                            package?: string;
+                            version?: string;
+                            fingerprint?: string;
+                            /** @description human | device | service | local (principal that acted). */
+                            principalKind?: string;
+                            principalMethod?: string;
+                            /** @description Originating session when the action came from a session-bound client. */
+                            sessionId?: string;
+                            result: "ok" | "failed" | "denied";
+                            /** @description Allowlisted diagnostic detail (reason / permissions / consent / versions / doctorSummary). */
+                            detail?: {
+                                [key: string]: unknown;
+                            };
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -8252,7 +8892,19 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        name: string;
+                        lastGood: {
+                            /** @description Snapshot version; absent for legacy single-file packages. */
+                            version?: string;
+                            /** @description Content fingerprint the snapshot was promoted with. */
+                            fingerprint: string;
+                            /** @description ISO timestamp of the snapshot (promotion time). */
+                            savedAt: string;
+                        };
+                    };
+                };
             };
         };
     };
@@ -8265,7 +8917,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8285,7 +8941,16 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Registered project, known worktree, or a directory below one (canonicalized before the scope check). */
+                    projectDir: string;
+                    /** @description Bind the ticket to one session; absent → project-scoped surface. */
+                    sessionID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8402,7 +9067,66 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description HTTP/CORS/serve ports and apiToken. */
+                    server?: unknown;
+                    /** @description Project and data-root paths (the data root is fixed to ~/.mafw). */
+                    paths?: unknown;
+                    /** @description serve / session / goal timeouts. */
+                    timeouts?: unknown;
+                    /** @description Loop round caps and degradation factors. */
+                    loop?: unknown;
+                    /** @description Goal node model overrides and eval switches. */
+                    goal?: unknown;
+                    /** @description Mobile pairing URL override. */
+                    mobile?: unknown;
+                    /** @description Default retriever / reranker / topK. */
+                    search?: unknown;
+                    /** @description Memory pipeline parameters. */
+                    memory?: unknown;
+                    /** @description CATD topology-weighted decay. */
+                    decay?: unknown;
+                    /** @description Default provider/model and token caps. */
+                    llm?: unknown;
+                    /** @description Log directory, rotation size and level. */
+                    logging?: unknown;
+                    /** @description MCP server metadata. */
+                    mcpserver?: unknown;
+                    /** @description In-memory metrics retention. */
+                    metrics?: unknown;
+                    /** @description Chat command keywords. */
+                    chat?: unknown;
+                    /** @description Manager session wake/report cadence. */
+                    manager?: unknown;
+                    /** @description Recall instruction surface, worker and boundary-recall parameters. */
+                    recall?: unknown;
+                    /** @description Usage accounting parameters. */
+                    usage?: unknown;
+                    /** @description Trajectory rebuild parameters. */
+                    trajectory?: unknown;
+                    /** @description Approval policy parameters. */
+                    approval?: unknown;
+                    /** @description Media / TTS engine configuration. */
+                    media?: unknown;
+                    /** @description Declarative cognition rules (validateRules is authoritative). */
+                    cognition?: unknown;
+                    /** @description Persistent event log switches and retention. */
+                    events?: unknown;
+                    /** @description Active runtime plugin name and per-plugin config index. */
+                    runtime?: unknown;
+                    /** @description Alignment weights file. */
+                    alignment?: unknown;
+                    /** @description Resource ledger watermarks and connection/quota limits (0 = unlimited). */
+                    resources?: unknown;
+                    /** @description Environment mirror (MAFW_* paths and switches). */
+                    env?: unknown;
+                } & {
+                    [key: string]: unknown;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8444,7 +9168,13 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8603,7 +9333,22 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description true approves; false/absent rejects, and feedback is then required (handler 400). */
+                    approve?: boolean;
+                    /** @description Rejection reason; required when approve is not true. */
+                    feedback?: string;
+                    /** @description Must equal the pending approval id; missing/stale → 409. */
+                    approvalId?: string;
+                    /** @description Declared plan-content hash; mismatch → 409 stale_plan. */
+                    planHash?: string;
+                    /** @description Declared Goal Eval hash; mismatch → 409 stale_plan. */
+                    evalHash?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8882,7 +9627,34 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Defaults to MAFW_PROJECT_DIR / cwd when absent (handler projectDirOf). */
+                    projectDir?: string;
+                    goalId?: string | null;
+                    revision?: number | null;
+                    kind: "direction" | "plan" | "scope" | "authorization" | "acceptance" | "priority" | "disposition" | "other";
+                    question: string;
+                    options?: {
+                        id: string;
+                        title: string;
+                        summary?: string;
+                        risks?: string[];
+                    }[];
+                    evidence?: {
+                        kind: "message" | "file" | "change" | "review_item" | "goal";
+                        ref: string;
+                        label?: string;
+                    }[];
+                    rationale?: string | null;
+                    consequences?: string | null;
+                    /** @description ISO date for the review reminder; invalid dates are 400. */
+                    reviewAt?: string | null;
+                    source?: "agent" | "user";
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8902,7 +9674,18 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Defaults to MAFW_PROJECT_DIR / cwd when absent (handler projectDirOf). */
+                    projectDir?: string;
+                    rationale?: string | null;
+                    consequences?: string | null;
+                    /** @description ISO date; null keeps the draft value. */
+                    reviewAt?: string | null;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8922,7 +9705,17 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Defaults to MAFW_PROJECT_DIR / cwd when absent (handler projectDirOf). */
+                    projectDir?: string;
+                    /** @description Required ISO date (when the shelved record resurfaces). */
+                    reviewAt: string;
+                    note?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8942,7 +9735,15 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Defaults to MAFW_PROJECT_DIR / cwd when absent (handler projectDirOf). */
+                    projectDir?: string;
+                    note?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -8992,7 +9793,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9012,7 +9817,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9032,7 +9841,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9052,7 +9865,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Failed node run to replay; absent = latest failed run in the active revision. */
+                    runId?: number;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9108,7 +9928,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9129,7 +9953,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9150,7 +9978,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9168,7 +10000,16 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Lead session id; absent/blank → proposed:false. */
+                    sessionID?: string;
+                    /** @description Utterance to observe; absent/blank → proposed:false. */
+                    text?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9217,7 +10058,20 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    kind: "github" | "cron" | "internal" | "webhook";
+                    name: string;
+                    /** @description Source-adapter specific config, stored verbatim (owner: each event source adapter). */
+                    config?: {
+                        [key: string]: unknown;
+                    };
+                    /** @description Defaults to MAFW_PROJECT_DIR / cwd when absent (handler projectDirOf). */
+                    projectDir?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9237,7 +10091,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    enabled: boolean;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9326,7 +10186,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9379,7 +10243,16 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    subscriberType: "standing_goal" | "goal" | "lead";
+                    subscriberId: string;
+                    /** @description work = wake the subscriber; context = inject context only. */
+                    mode: "work" | "context";
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9399,7 +10272,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9453,7 +10330,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9529,7 +10412,45 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Absolute path; absent falls back to MAFW_PROJECT_DIR / cwd (handler projectDirOf). */
+                    projectDir?: string;
+                    /** @description Defaults to "Standing Goal" (service). */
+                    title?: string;
+                    /** @description Defaults to title (service). */
+                    objective?: string;
+                    /** @description At least one trigger; parseStandingTriggers 400s on empty arrays or unknown types. */
+                    triggers: {
+                        id: string;
+                        type: "cron" | "event" | "manual";
+                        schedule?: string;
+                        timezone?: string;
+                        eventKinds?: string[];
+                        filter?: {
+                            [key: string]: unknown;
+                        };
+                    }[];
+                    template?: {
+                        taskType?: "feature" | "bug" | "research" | "refactor" | "ops";
+                        acceptance?: string[];
+                        boundaries?: string[];
+                        planReview?: "auto" | "manual";
+                    };
+                    /** @description Clamped/validated by the service (>= 1). */
+                    concurrency?: number;
+                    cooldownMs?: number;
+                    budget?: {
+                        perRunTurns?: number;
+                        perRunCostUsd?: number;
+                        perDayCostUsd?: number;
+                    };
+                    approval?: "auto" | "plan" | "confirm";
+                    createdBy?: string | null;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9549,7 +10470,38 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    title?: string;
+                    objective?: string;
+                    template?: {
+                        taskType?: "feature" | "bug" | "research" | "refactor" | "ops";
+                        acceptance?: string[];
+                        boundaries?: string[];
+                        planReview?: "auto" | "manual";
+                    };
+                    triggers?: {
+                        id: string;
+                        type: "cron" | "event" | "manual";
+                        schedule?: string;
+                        timezone?: string;
+                        eventKinds?: string[];
+                        filter?: {
+                            [key: string]: unknown;
+                        };
+                    }[];
+                    concurrency?: number;
+                    cooldownMs?: number;
+                    budget?: {
+                        perRunTurns?: number;
+                        perRunCostUsd?: number;
+                        perDayCostUsd?: number;
+                    };
+                    approval?: "auto" | "plan" | "confirm";
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9614,7 +10566,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9634,7 +10590,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9654,7 +10614,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9674,7 +10638,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9694,7 +10662,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9844,7 +10816,13 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    topicId: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9864,7 +10842,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9884,7 +10866,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Goal title for the forked topic; blank = derived default. */
+                    goalTitle?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9905,7 +10894,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Required (true) when the node is execute; other nodes can retry without a body. */
+                    confirm?: boolean;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9926,7 +10922,16 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description cancel abandons the question; answer (or any other value) forwards `answer` to the driver. */
+                    type: "answer" | "cancel";
+                    /** @description Required when type is answer. */
+                    answer?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9946,7 +10951,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Project hint for goal start; absent = resolve from the goal row. */
+                    projectDir?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -9964,7 +10976,17 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    action: "PAUSE" | "ABORT" | "FORCE_PHASE" | "RESET_PARAMETRIC";
+                    /** @description Target goal; not read for RESET_PARAMETRIC. */
+                    goalId?: string;
+                    /** @description Only FORCE_PHASE: next phase name (upper-cased by the handler). */
+                    targetPhase?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10114,7 +11136,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10168,7 +11194,20 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Harmonic memory id; unknown ids return 200 {success:false}. */
+                    id: string;
+                    /** @description Only read when sticky is absent: pinned === true pins, anything else unpins. */
+                    pinned?: boolean;
+                    /** @description Presence of a boolean switches to note-board mode (true → expire at stickyDays). */
+                    sticky?: boolean;
+                    /** @description Note-board window in days when sticky is true; absent/<=0 → 7. */
+                    stickyDays?: number;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10235,7 +11274,28 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    provider?: "off" | "local" | "dashscope";
+                    engine?: "onnx" | "llamacpp";
+                    /** @description Provider model id (free-form; validated by the provider at runtime). */
+                    model?: string;
+                    /** @description ONNX/llama.cpp thread count; out of 1..32 → 400. */
+                    threads?: number;
+                    /** @description llama.cpp-only knobs; ignored by the ONNX engine. */
+                    llamacpp?: {
+                        gpu?: "cpu" | "vulkan" | "cuda";
+                        /** @description llama.cpp thread override; out of 1..32 → 400. */
+                        threads?: number;
+                        /** @description llama.cpp context size; out of 256..32768 → 400. */
+                        contextSize?: number;
+                        /** @description llama.cpp batch size; out of 32..32768 → 400. */
+                        batchSize?: number;
+                    };
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10283,7 +11343,16 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Required unless answer is present. */
+                    decision?: "approve" | "reject";
+                    /** @description Free-text answer (MCP ask_user widget). Required unless decision is present; wins when both are given. */
+                    answer?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10351,7 +11420,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10371,7 +11444,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10391,7 +11468,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10411,7 +11492,17 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    suggestion: "confirm" | "reject";
+                    /** @description Defaults to ''. */
+                    reason?: string;
+                    /** @description Defaults to medium; unknown values are coerced to medium. */
+                    priority?: "high" | "medium" | "low";
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10431,7 +11522,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Why the skill is deopted; absent/blank → "manual". Truncated to 200 chars. */
+                    reason?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10531,7 +11629,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description One array of selected option labels per question, in question order. */
+                    answers: string[][];
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10551,7 +11656,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10612,7 +11721,17 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    reply: "once" | "always" | "reject";
+                    /** @description Optional note forwarded to the runtime reply. */
+                    message?: string;
+                    /** @description Only read for reply:'always' — rule scope for the auto-persisted allow rule. */
+                    persist?: boolean | "tool" | "prefix";
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10658,7 +11777,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description 'manual' is a legacy alias normalized to read-only. */
+                    mode: "read-only" | "auto" | "full-access" | "manual";
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10701,7 +11827,15 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    tool: string;
+                    /** @description Argument prefix scope; blank = tool-wide entry. */
+                    prefix?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10719,7 +11853,15 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    tool: string;
+                    /** @description Must match the stored prefix; blank = tool-wide entry. */
+                    prefix?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10764,7 +11906,15 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    tool: string;
+                    /** @description Argument pattern; trailing * is stripped. Blank = tool-wide rule. */
+                    pattern?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10782,7 +11932,15 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    tool: string;
+                    /** @description Must match the stored pattern; blank = tool-wide rule. */
+                    pattern?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10800,7 +11958,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Prompt text (required; empty → 400). Sent as a single text part. */
+                    message: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10818,7 +11983,28 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Prompt text (excluding parts). Required when parts is absent. */
+                    message?: string;
+                    /** @description Extra runtime prompt parts (file/agent attachments); required when message is absent. */
+                    parts?: ({
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    })[];
+                    /** @description Reuse this session; absent → a new session in the first registered project. */
+                    sessionID?: string;
+                    /** @description Runtime agent name override for this prompt. */
+                    agent?: string;
+                    model?: {
+                        providerID: string;
+                        modelID: string;
+                    };
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10864,7 +12050,26 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Default media engine for every modality (absent → unchanged). */
+                    engine?: string;
+                    image?: {
+                        /** @description Media engine plugin name, or "pi" (always available). */
+                        engine?: string;
+                    };
+                    video?: {
+                        /** @description Media engine plugin name, or "pi" (always available). */
+                        engine?: string;
+                    };
+                    audio?: {
+                        /** @description Media engine plugin name, or "pi" (always available). */
+                        engine?: string;
+                    };
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10956,7 +12161,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Text to synthesize (trimmed; empty → 400). */
+                    text: string;
+                    /** @description Preset voice name; absent → media.tts.defaultVoice. */
+                    voice?: string;
+                    /** @description Prosody/style instruction for engines that support it. */
+                    style?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -11018,7 +12234,20 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Text to synthesize sentence-by-sentence (trimmed; empty → 400). */
+                    text: string;
+                    /** @description Preset voice name; absent → media.tts.defaultVoice. */
+                    voice?: string;
+                    /** @description Prosody/style instruction for engines that support it. */
+                    style?: string;
+                    /** @description Session key for the in-flight set (barge-in target); absent → untracked stream. */
+                    sessionId?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -11036,7 +12265,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Session whose in-flight TTS streams are aborted (required; empty → 400). */
+                    sessionId: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -11245,7 +12481,50 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Worker model; flat pair in the request (workerModel envelope is response-only). */
+                    recall?: {
+                        /** @description Worker model provider id (required within recall). */
+                        providerID: string;
+                        /** @description Worker model id (required within recall). */
+                        modelID: string;
+                    };
+                    goal?: {
+                        /** @description Goal node model provider; both providerID and modelID empty = reset to identity model. */
+                        providerID?: string;
+                        /** @description Goal node model id; half-empty pair → 400. */
+                        modelID?: string;
+                        /** @description Tech Lead model override; both empty = reset; half-empty pair → 400. */
+                        techLeadModel?: {
+                            providerID?: string;
+                            modelID?: string;
+                        };
+                    };
+                    media?: {
+                        /** @description Default media provider; both provider and model empty = reset to built-in default. */
+                        provider?: string;
+                        model?: string;
+                        /** @description Empty pair (both "") = reset to the built-in default; partial pairs fall back for validation. */
+                        image?: {
+                            provider?: string;
+                            model?: string;
+                        };
+                        /** @description Empty pair (both "") = reset to the built-in default; partial pairs fall back for validation. */
+                        video?: {
+                            provider?: string;
+                            model?: string;
+                        };
+                        /** @description Empty pair (both "") = reset to the built-in default; partial pairs fall back for validation. */
+                        audio?: {
+                            provider?: string;
+                            model?: string;
+                        };
+                    };
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -11405,7 +12684,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Target enabled state; persisted verbatim by toggleRule (missing value is stored as unset). */
+                    enabled: boolean;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -11425,7 +12711,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -11443,7 +12733,53 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Rule id; draftRule always returns valid:false without it (200, not 400). */
+                    id: string;
+                    trigger: {
+                        /** @description Absent → cron (handler's else branch). */
+                        type?: "cron" | "event";
+                        /** @description Cron expression; required when type is cron/absent (validateRule error otherwise). */
+                        schedule?: string;
+                        /** @description IANA name; defaults to 'UTC'. */
+                        timezone?: string;
+                        /** @description Event kinds to subscribe; required (non-empty) when type is event. */
+                        on?: string[];
+                        /** @description Per-goal debounce window (e.g. 60s/5m); defaults to 5m, must match /^\d+(s|m|h)$/. */
+                        perGoalCooldown?: string;
+                    };
+                    /** @description Skill to run; at least one of skill/action is required by validateRule. */
+                    skill?: string;
+                    /** @description Skill / action input, owner: the action handler. */
+                    args?: {
+                        [key: string]: unknown;
+                    };
+                    /** @description External action payload; unresolved action types fail validateRule. */
+                    action?: {
+                        /** @description Builtin action type or a plugin-center registered external action. */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    onResult?: {
+                        type: "triage" | "goal";
+                        auto_confirm?: boolean;
+                        template?: string;
+                    };
+                    goal_defaults?: {
+                        maxLoops?: number;
+                        metrics?: {
+                            [key: string]: {
+                                target: number;
+                                unit: string;
+                            };
+                        };
+                    };
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -11979,7 +13315,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12331,7 +13671,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    status: "active" | "idle" | "paused" | "archived";
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12351,7 +13697,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12411,7 +13761,20 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    title: string;
+                    plan?: boolean;
+                    waveId?: string;
+                    /** @description Required for plan tasks (plan:true or waveId set). */
+                    goalId?: string;
+                    acceptance?: string[];
+                    ownerMemberId?: string;
+                    actorSessionID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12432,7 +13795,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Member session acting on behalf of a role; absent = human/local caller. */
+                    actorSessionID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12453,7 +13823,18 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    title?: string;
+                    acceptance?: string[];
+                    status?: "pending" | "in_progress" | "blocked" | "review" | "done" | "failed" | "skipped" | "reopened";
+                    ownerMemberId?: string;
+                    /** @description Member session acting on behalf of a role; absent = human/local caller. */
+                    actorSessionID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12510,7 +13891,21 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    kind: "note" | "request" | "review" | "decision" | "escalation";
+                    body: string;
+                    /** @description Required when actorSessionID is absent. */
+                    fromMemberId?: string;
+                    toMemberId?: string;
+                    /** @description Requires toMemberId; triggers immediate delivery. */
+                    notify?: boolean;
+                    /** @description Member session acting on behalf of a role; absent = human/local caller. */
+                    actorSessionID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12531,7 +13926,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12552,7 +13951,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Member session acting on behalf of a role; absent = human/local caller. */
+                    actorSessionID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12573,7 +13979,15 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    memberId: string;
+                    /** @description Member session acting on behalf of a role; absent = human/local caller. */
+                    actorSessionID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12593,7 +14007,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12613,7 +14031,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12744,7 +14166,52 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    title: string;
+                    /** @description Required unless charter is present. */
+                    objective?: string;
+                    /** @description Required unless objective is present. */
+                    charter?: string;
+                    source?: "desktop" | "lead" | "a2a" | "automation" | "user" | "tui" | "agent" | "mobile";
+                    sourceRef?: {
+                        sessionID?: string;
+                        messageID?: string;
+                        /** @description Snapshot text; required by handoff. */
+                        snapshot?: string;
+                        topicId?: string;
+                        capturedAt?: string;
+                        messageRange?: {
+                            from: string;
+                            to: string;
+                        };
+                    };
+                    acceptance?: string[];
+                    boundaries?: string[];
+                    metrics?: {
+                        [key: string]: {
+                            target?: number;
+                            unit?: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                    priority?: "low" | "medium" | "high" | "critical";
+                    maxLoops?: number;
+                    budget?: {
+                        maxTurns?: number;
+                        maxCostUsd?: number;
+                    };
+                    taskType?: "feature" | "bugfix" | "refactor" | "research" | "docs" | "test" | "other";
+                    planReview?: "manual" | "auto";
+                    handoff?: "current-topic" | "none";
+                    topicId?: string;
+                    /** @description Member session acting on behalf of a role; absent = human/local caller. */
+                    actorSessionID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12764,7 +14231,33 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    title: string;
+                    /** @description Required unless charter is present. */
+                    objective?: string;
+                    /** @description Required unless objective is present. */
+                    charter?: string;
+                    sourceRef: {
+                        sessionID?: string;
+                        messageID?: string;
+                        snapshot: string;
+                        topicId?: string;
+                        capturedAt?: string;
+                        messageRange?: {
+                            from: string;
+                            to: string;
+                        };
+                    };
+                    acceptance?: string[];
+                    boundaries?: string[];
+                    priority?: "low" | "medium" | "high" | "critical";
+                    taskType?: "feature" | "bugfix" | "refactor" | "research" | "docs" | "test" | "other";
+                    planReview?: "manual" | "auto";
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12785,7 +14278,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Member session acting on behalf of a role; absent = human/local caller. */
+                    actorSessionID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12941,7 +14441,22 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    items: {
+                        rel: string;
+                        comment: string;
+                        startLine?: number | null;
+                        endLine?: number | null;
+                        code?: string;
+                        /** @description PodReviewAnchor: quote / jsonPath / cell / region (stored verbatim). */
+                        anchor?: unknown;
+                    }[];
+                    revision?: number;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12963,7 +14478,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    note?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12985,7 +14506,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    note?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -13006,7 +14533,17 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @constant */
+                    confirm: true;
+                    revision?: number;
+                    force?: boolean;
+                    riskAcknowledged?: boolean;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -13112,7 +14649,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    file: "POD" | "MEMORY" | "GLOSSARY";
+                    content?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -13163,7 +14707,25 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Required unless message is present. */
+                    text?: string;
+                    /** @description Alias of text. */
+                    message?: string;
+                    /** @description Text parts only; the handler keeps the first 8 and drops the rest. */
+                    parts?: {
+                        /** @constant */
+                        type: "text";
+                        text: string;
+                        synthetic?: boolean;
+                    }[];
+                    /** @description Member session acting on behalf of a role; absent = human/local caller. */
+                    actorSessionID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -13184,7 +14746,25 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    mode?: "decided" | "clear" | "needs_user" | "request";
+                    revision?: number;
+                    reason?: string | null;
+                    userWords?: string;
+                    optionId?: string;
+                    options?: {
+                        id: string;
+                        title: string;
+                        summary?: string | null;
+                        risks?: string[] | null;
+                    }[];
+                    /** @description Member session acting on behalf of a role; absent = human/local caller. */
+                    actorSessionID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -13278,7 +14858,54 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    probes?: {
+                        question: string;
+                        hypothesis: string;
+                        scope: {
+                            paths: string[];
+                            commandClasses: string[];
+                            network: boolean;
+                            credentials: string[];
+                        };
+                        budget: {
+                            maxMinutes: number;
+                            maxUsd: number;
+                        };
+                        evidenceRequired?: string[];
+                        affects?: {
+                            planAssertions?: string[];
+                            evalMethods?: string[];
+                            options?: string[];
+                        };
+                        revision?: number;
+                    }[];
+                    question?: string;
+                    hypothesis?: string;
+                    scope?: {
+                        paths: string[];
+                        commandClasses: string[];
+                        network: boolean;
+                        credentials: string[];
+                    };
+                    budget?: {
+                        maxMinutes: number;
+                        maxUsd: number;
+                    };
+                    evidenceRequired?: string[];
+                    affects?: {
+                        planAssertions?: string[];
+                        evalMethods?: string[];
+                        options?: string[];
+                    };
+                    revision?: number;
+                    /** @description Member session acting on behalf of a role; absent = human/local caller. */
+                    actorSessionID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -13299,7 +14926,18 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Required unless reason is present. */
+                    feedback?: string;
+                    /** @description Required unless feedback is present. */
+                    reason?: string;
+                    /** @description Member session acting on behalf of a role; absent = human/local caller. */
+                    actorSessionID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -13470,7 +15108,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Session-scoped kernel key (required). */
+                    sessionID: string;
+                    /** @description Python source to execute in the persistent kernel (required). */
+                    code: string;
+                    /** @description Execution timeout override; non-number values are ignored. */
+                    timeoutMs?: number;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -13488,7 +15137,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Session-scoped kernel to restart (required). */
+                    sessionID: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -13528,7 +15184,19 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Originating session (required; missing → 400). */
+                    sessionID: string;
+                    source: "user_input" | "assistant_reply" | "tool_result" | "reasoning";
+                    /** @description Observation text; empty → 200 {deduped:true} without a T1 write. Truncated to 100k after redaction. */
+                    content?: string;
+                    /** @description Mark the row as a failed/errored step (stored as 0/1). */
+                    failure?: boolean;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -13662,7 +15330,34 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Memory body (trimmed; empty → 400). Stored truncated to 4000 chars. */
+                    content: string;
+                    memoryType?: "episodic" | "semantic" | "procedural" | "global";
+                    authority?: "user" | "agent" | "tool" | "pipeline";
+                    /** @description Salience hint (1-10 recommended); any finite number is accepted, absent → judgeSalience(). */
+                    importance?: number;
+                    /** @description 6-8 word index abstraction; absent → the content, truncated to 200 chars. */
+                    primaryAbstraction?: string;
+                    /** @description Retrieval keywords (identifiers kept verbatim); the pipeline keeps the first 8 and drops the rest. */
+                    cueAnchors?: string[];
+                    /** @description Pin to the per-turn <user-profile> disclosure layer. */
+                    pinned?: boolean;
+                    /** @description Put the memory on the note board (expires, never deleted). */
+                    sticky?: boolean;
+                    /** @description Note-board window in days when sticky is true; absent/<=0 → 7. */
+                    stickyDays?: number;
+                    /** @description Originating session; pipeline worker ids resolve back to their source session. */
+                    sessionID?: string;
+                    /** @description Exact T1 trace ids (unknown ids are dropped, not rejected); the pipeline keeps the first 20. */
+                    sourceTraceIds?: string[];
+                    /** @description Harmonic id to soft-supersede (missing target → 200 {success:false}). */
+                    supersedes?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -13903,7 +15598,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -13923,7 +15622,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -13941,7 +15644,17 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    action: "PAUSE" | "ABORT" | "FORCE_PHASE" | "RESET_PARAMETRIC";
+                    /** @description Target goal; not read for RESET_PARAMETRIC. */
+                    goalId?: string;
+                    /** @description Only FORCE_PHASE: next phase name (upper-cased by the handler). */
+                    targetPhase?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -14000,7 +15713,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Artifact id returned by media.upload / media.uploadAndCreate. */
+                    artifactId: string;
+                    /** @description Follow-up question appended as a text part; absent → media-only task. */
+                    question?: string;
+                    /** @description Override the artifact content type; absent → recorded type or application/octet-stream. */
+                    mediaType?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -14042,7 +15766,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description data: URL of the audio payload (required; empty → 400). */
+                    dataUrl: string;
+                    /** @description MIME type; absent → audio/wav. */
+                    mediaType?: string;
+                    /** @description Custom analysis prompt; absent → the narrative (content + prosody + intent) pass. */
+                    prompt?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -14060,7 +15795,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -14288,7 +16027,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Follow-up question (required; blank → 400). External URLs are rejected. */
+                    question: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -14375,7 +16121,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -14393,7 +16143,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description FCM push token reported by the app (required); never a gateway credential. */
+                    token: string;
+                    /** @description Client platform label, e.g. android / ios (required). */
+                    platform: string;
+                    /** @description Human-readable label; ignored by the mobile alias path (persisted by pairing instead). */
+                    deviceName?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -14433,7 +16194,22 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Single-use pairing nonce from GET /api/mobile/pairing-code (required). */
+                    nonce: string;
+                    /** @description Stable device id; absent → a generated uuid. Invalid chars/length → 400. */
+                    deviceId?: string;
+                    /** @description Client platform label (too long → 400). */
+                    platform?: string;
+                    /** @description Human-readable device label (too long → 400). */
+                    deviceName?: string;
+                    /** @description Required true to re-pair a device that already holds a credential (else 409). */
+                    rotate?: boolean;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -14480,7 +16256,20 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Device id; absent → the transport-resolved principal.deviceId (legacy fallback). */
+                    id?: string;
+                    /** @description FCM push token (required). */
+                    fcmToken: string;
+                    /** @description Client platform label (required). */
+                    platform: string;
+                    /** @description Presented token; the server derives apiTokenHash from it (required). */
+                    token: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -14500,7 +16289,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -14518,7 +16311,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -14645,7 +16442,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -14663,7 +16464,20 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Runtime-native event payload (adapter-owned). Omit to treat the top-level object itself as the event. */
+                    event?: {
+                        [key: string]: unknown;
+                    };
+                    /** @description Apply this runtime plugin’s event mapping table before normalization; absent → identity. */
+                    plugin?: string;
+                } & {
+                    [key: string]: unknown;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -14681,7 +16495,16 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Scenario ids to run (unknown ids are ignored); absent → every scenario. */
+                    scenarios?: string[];
+                    /** @description Per-scenario observation window; non-number values are ignored. */
+                    timeoutMs?: number;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -14702,7 +16525,19 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    reply?: "once" | "always" | "reject";
+                    /** @description Legacy boolean form, only read when reply is absent (true → once, false → reject). */
+                    approved?: boolean;
+                    /** @description Optional note forwarded to the runtime reply. */
+                    message?: string;
+                    /** @description Only read for reply:'always' — rule scope for the auto-persisted allow rule. */
+                    persist?: boolean | "tool" | "prefix";
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -14757,7 +16592,28 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    prompt: string;
+                    directory?: string;
+                    agent?: string;
+                    description?: string;
+                    background?: boolean;
+                    model?: {
+                        providerID: string;
+                        modelID: string;
+                    };
+                    outputSchema?: {
+                        name?: string;
+                        schema: {
+                            [key: string]: unknown;
+                        };
+                        retryCount?: number;
+                    };
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -14778,7 +16634,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    message: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -14799,7 +16661,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -14846,7 +16712,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -14864,7 +16734,26 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Echoed back in the completion; absent → the configured main-agent model. */
+                    model?: string;
+                    /** @description Chat history (a user message with text or media is required). */
+                    messages: ({
+                        /** @description OpenAI role (system | user | assistant | …); the last user message drives the run. */
+                        role: string;
+                        content?: string | {
+                            [key: string]: unknown;
+                        }[];
+                    } & {
+                        [key: string]: unknown;
+                    })[];
+                } & {
+                    [key: string]: unknown;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -14882,7 +16771,16 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Observation texts to compress (must be an array; empty array is valid). */
+                    observations: string[];
+                    /** @description Model id override for the compression run; absent → runtime default. */
+                    model?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -14900,7 +16798,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Absolute source worktree path (memory root is <worktree>/<paths.mafwDir>). */
+                    sourceWorktree: string;
+                    /** @description manual | higher_energy | newer; unknown values behave like manual. */
+                    strategy?: string;
+                    /** @description Legacy alias, read only when strategy is absent; defaults to manual. */
+                    resolveStrategy?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -15034,7 +16943,20 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Tool name from GET /api/tools (unknown → 404 + available list). */
+                    name: string;
+                    /** @description Session the tool registration surface is built for; absent → empty id. */
+                    sessionID?: string;
+                    /** @description Tool-defined argument object, passed through verbatim. */
+                    params?: {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {

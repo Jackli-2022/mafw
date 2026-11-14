@@ -130,6 +130,24 @@ const MafwMessageSchema = Type.Object({
   extensions: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
 })
 
+/**
+ * E10g-P0 `POST /api/session` 请求体（handler 事实源：routes/session-create.ts →
+ * createSessionWithWorktree()）。
+ *
+ * `directory` 必填且必须是绝对路径（AGENTS 硬不变量，handler 先判 400）；
+ * `worktree` 为 true 时建分支 worktree，字符串则作为 slug；`metadata` 原样
+ * 透传给 runtime session.create。只声明、不运行时校验。
+ */
+export const SessionCreateRequest = Type.Object({
+  directory: Type.String({
+    minLength: 1,
+    pattern: '^(?:[A-Za-z]:[\\\\/]|[\\\\/])',
+    description: 'Absolute project directory path (drive, POSIX root, or UNC).',
+  }),
+  worktree: Type.Optional(Type.Union([Type.Boolean(), Type.String()])),
+  metadata: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+})
+
 export const SessionMessagesResponse = Type.Object({
   data: Type.Array(MafwMessageSchema),
   // handler 的 flat 出口恒带 nextCursor（末页为 null）。

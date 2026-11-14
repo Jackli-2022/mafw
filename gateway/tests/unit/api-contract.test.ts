@@ -167,6 +167,7 @@ import {
   SessionSubagentResultResponse,
 } from '../../src/routes/schemas/observability';
 import { A2AAgentCardResponse } from '../../src/routes/schemas/a2a';
+import { PluginsAuditResponse, PluginLastGoodResponse } from '../../src/routes/schemas/plugin-recovery';
 import { handleAttention } from '../../src/routes/attention';
 import { handleDecisionList } from '../../src/routes/decisions';
 import type { PodGoalView } from '../../src/core/pod/pod-view';
@@ -3703,3 +3704,1127 @@ describe('api-contract: E10f-D observability / device / A2A read response schema
   });
 });
 
+describe('api-contract: E10g request bodies (W1 session writes)', () => {
+  function opById(operationId: string): any {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const op of Object.values<any>(methods)) {
+        if (op?.operationId === operationId) return op;
+      }
+    }
+    return null;
+  }
+
+  function bodyOf(operationId: string): any {
+    const op = opById(operationId);
+    expect(`${operationId}:${op ? 'present' : 'missing'}`).toBe(`${operationId}:present`);
+    const body = op.requestBody;
+    expect(`${operationId}:requestBody`).toBe(`${operationId}:${body ? 'requestBody' : 'missing'}`);
+    return body;
+  }
+
+  test('write ops with a requestBody count matches the coverage ledger (189 = P0 3 + W1 35 + W2W3 33 + W4 29 + W5 24 + W6 26 + W7 30 + W8 2 + P6 7)', () => {
+    const withBody: string[] = [];
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const [method, op] of Object.entries<any>(methods)) {
+        if (method === 'get' || !op?.operationId) continue;
+        if (op.requestBody) withBody.push(op.operationId);
+      }
+    }
+    expect(withBody).toHaveLength(189);
+    expect(withBody).toEqual(expect.arrayContaining([
+      // Phase 6 plugin recovery (E10g-fix): quarantine has a body, the rest are
+      // empty-object opt-in bodies, so all seven carry a requestBody.
+      'plugins.quarantine', 'plugins.doctor', 'plugins.doctorAll', 'plugins.kill',
+      'plugins.resume', 'plugins.unquarantine', 'plugins.rollback',
+      'session.create', 'tasks.submit', 'pods.tasks.create',
+      'session.config.set', 'session.promptAsync', 'structured.submit',
+      'tasks.message', 'terminal.create', 'fileHistory.snapshot',
+      'pods.update', 'pods.messages.create', 'pods.goals.accept',
+      'pod.events.seenAll',
+      'goals.planApproval', 'decisions.draft', 'standingGoals.create',
+      'lead.compact', 'goals.control', 'goalRuns.approve',
+      'event.publish', 'automations.draft', 'approvals.respond',
+      'questions.reply', 'triage.propose', 'permissions.reply',
+      'mcp.configApply', 'plugins.installPackage', 'runtime.switch',
+      'config.set', 'project.setCurrent', 'manager.rotate',
+      'mafwCommands.run',
+      'memory.add', 'memory.setSticky', 'memory.merge', 'embedding.update',
+      'media.switch', 'media.createTaskApi', 'tts.speak', 'chat.send',
+      'python.execute', 'obs.capture', 'models.update', 'tools.execute',
+      'eval.chatCompletions', 'llm.compress', 'mobile.devicesRegister',
+      'devices.register', 'humanToken.rotate', 'skills.deopt',
+      'cognition.gate', 'cognition.rewrite',
+    ]));
+    // Binary / multipart / A2A pass-through inputs have no JSON body schema:
+    // they stay out of the ledger (E10g spec §1.3; the closing REQUEST_EXCLUDED
+    // ledger records `media.upload`, `media.uploadAndCreate`, `media.createTask`,
+    // `mobile.mediaTaskUpload`, `pods.a2a` and W6's `plugins.install`).
+    for (const id of [
+      'plugins.install',
+      'media.upload',
+      'media.uploadAndCreate',
+      'media.createTask',
+      'mobile.mediaTaskUpload',
+      'pods.a2a',
+    ]) {
+      expect(`${id}:${withBody.includes(id)}`).toBe(`${id}:false`);
+    }
+  });
+
+  test('session.config.set: category+value required, category is a closed enum', () => {
+    const body = bodyOf('session.config.set');
+    expect(body.required).toBe(true);
+    const schema = body.content['application/json'].schema;
+    expect(schema.required).toEqual(['category', 'value']);
+    expect(schema.properties.category.anyOf.map((v: any) => v.const))
+      .toEqual(['mode', 'agent', 'model', 'model_config', 'thought_level']);
+    // value is required but its shape depends on category (null clears thought_level).
+    expect(schema.properties.value.description).toContain('null clears thought_level');
+    expect(schema.properties.value.type).toBeUndefined();
+  });
+
+  test('session.switchModel / switchAgent: required payload, variant optional', () => {
+    const model = bodyOf('session.switchModel');
+    expect(model.required).toBe(true);
+    const modelSchema = model.content['application/json'].schema;
+    expect(modelSchema.required).toEqual(['model']);
+    expect(modelSchema.properties.model.required).toEqual(['providerID', 'modelID']);
+    expect(modelSchema.properties.variant).toBeDefined();
+    expect(modelSchema.required).not.toContain('variant');
+
+    const agent = bodyOf('session.switchAgent');
+    expect(agent.content['application/json'].schema.required).toEqual(['agent']);
+  });
+
+  test('session.promptAsync: message/parts optional, delivery enum pinned', () => {
+    const body = bodyOf('session.promptAsync');
+    expect(body.required).toBe(true);
+    const schema = body.content['application/json'].schema;
+    expect(schema.required).toBeUndefined();
+    expect(schema.properties.message.description).toContain('parts is absent');
+    expect(schema.properties.parts.description).toContain('message is absent');
+    expect(schema.properties.delivery.anyOf.map((v: any) => v.const))
+      .toEqual(['steer', 'followup', 'queue']);
+    expect(schema.properties.maxTurns.type).toBe('number');
+  });
+
+  test('session.rename / session.revert / session.restoreCheckpoint: required fields', () => {
+    expect(bodyOf('session.rename').content['application/json'].schema.required).toEqual(['title']);
+    expect(bodyOf('session.revert').content['application/json'].schema.required).toEqual(['messageID']);
+    const restore = bodyOf('session.restoreCheckpoint').content['application/json'].schema;
+    expect(restore.required).toEqual(['scope', 'confirm']);
+    expect(restore.properties.scope.anyOf.map((v: any) => v.const)).toEqual(['session', 'files', 'both']);
+    expect(restore.properties.confirm.const).toBe(true);
+  });
+
+  test('session.revertDiff: non-empty patches with integer hunk indices', () => {
+    const schema = bodyOf('session.revertDiff').content['application/json'].schema;
+    expect(schema.required).toEqual(['patches']);
+    expect(schema.properties.patches.minItems).toBe(1);
+    expect(schema.properties.patches.items.required).toEqual(['patch', 'hunkIndices']);
+    expect(schema.properties.patches.items.properties.hunkIndices.minItems).toBe(1);
+    expect(schema.properties.patches.items.properties.hunkIndices.items.type).toBe('integer');
+  });
+
+  test('structured.submit / session.data / subagents.spawn keep their required anchors', () => {
+    expect(bodyOf('structured.submit').content['application/json'].schema.required).toEqual(['sessionID', 'data']);
+    const data = bodyOf('session.data').content['application/json'].schema;
+    expect(data.required).toEqual(['name']);
+    expect(data.properties.name.pattern).toBe('^[a-z0-9][a-z0-9_-]{0,31}$');
+    const spawn = bodyOf('session.subagents.spawn').content['application/json'].schema;
+    expect(spawn.required).toEqual(['prompt']);
+    expect(spawn.properties.background.type).toBe('boolean');
+    expect(bodyOf('session.subagents.message').content['application/json'].schema.required).toEqual(['message']);
+  });
+
+  test('session.command: proxied runtime body (optional body, required command+arguments)', () => {
+    const body = bodyOf('session.command');
+    expect(body.required).toBe(false);
+    expect(body.content['application/json'].schema.required).toEqual(['command', 'arguments']);
+  });
+
+  test('session run bodies are optional but declare their handler fields', () => {
+    // `routes/session-run.ts`: suspend reads `reason`, resume/discard read `runId`.
+    // Every read is guarded (`typeof x === 'string' && x`), so an empty body is valid.
+    const suspend = bodyOf('session.suspend');
+    expect(suspend.required).toBe(false);
+    const suspendSchema = suspend.content['application/json'].schema;
+    expect(Object.keys(suspendSchema.properties)).toEqual(['reason']);
+    expect(suspendSchema.properties.reason.type).toBe('string');
+    expect(suspendSchema.properties.reason.description).toContain('non-string');
+
+    for (const id of ['session.resume', 'session.discardRun']) {
+      const body = bodyOf(id);
+      expect(`${id}:${body.required}`).toBe(`${id}:false`);
+      const schema = body.content['application/json'].schema;
+      expect(Object.keys(schema.properties)).toEqual(['runId']);
+      expect(schema.properties.runId.type).toBe('string');
+    }
+  });
+
+  test('no-body actions declare an empty object with required:false', () => {
+    for (const id of [
+      'session.abort',
+      'session.background',
+      'session.unrevert',
+      'session.delete',
+      'session.deleteLegacy',
+      'session.queue.clear',
+      'session.queue.cancel',
+      'session.subagents.cancel',
+      'session.discoveryRefresh',
+      'session.usagePluginsReload',
+      'session.usagePluginsDelete',
+      'session.usagePluginTest',
+    ]) {
+      const body = bodyOf(id);
+      expect(`${id}:${body.required}`).toBe(`${id}:false`);
+      const schema = body.content['application/json'].schema;
+      expect(`${id}:${schema.type}`).toBe(`${id}:object`);
+      expect(Object.keys(schema.properties ?? {})).toEqual([]);
+    }
+  });
+});
+
+describe('api-contract: E10g request bodies (W2/W3 tasks, terminal, pods)', () => {
+  function bodyOf(operationId: string): any {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const op of Object.values<any>(methods)) {
+        if (op?.operationId === operationId) {
+          expect(`${operationId}:requestBody`).toBe(`${operationId}:${op.requestBody ? 'requestBody' : 'missing'}`);
+          return op.requestBody;
+        }
+      }
+    }
+    throw new Error(`operation not found: ${operationId}`);
+  }
+
+  function schemaOf(operationId: string): any {
+    return bodyOf(operationId).content['application/json'].schema;
+  }
+
+  test('tasks.message / terminal.create / fileHistory.snapshot: required anchors', () => {
+    expect(schemaOf('tasks.message').required).toEqual(['message']);
+    expect(schemaOf('terminal.create').required).toEqual(['directory']);
+    expect(schemaOf('terminal.create').properties.cols.type).toBe('number');
+
+    const snapshot = bodyOf('fileHistory.snapshot');
+    expect(snapshot.required).toBe(true);
+    const schema = snapshot.content['application/json'].schema;
+    expect(schema.required).toEqual(['sessionID', 'paths']);
+    // directory is resolved from sessionID when absent (office skill sends only sessionID).
+    expect(schema.required).not.toContain('directory');
+    expect(schema.properties.paths.minItems).toBe(1);
+    expect(schema.properties.paths.maxItems).toBe(200);
+    // `reason` is truncated to 200 chars by the handler, never rejected.
+    expect(schema.properties.reason.maxLength).toBeUndefined();
+    expect(schema.properties.reason.description).toContain('200');
+    expect(schemaOf('fileHistory.restore').required).toEqual(['sessionID', 'entryId']);
+  });
+
+  test('pods.goals.techLead.messages: parts are text-only and capped, not rejected', () => {
+    const schema = schemaOf('pods.goals.techLead.messages');
+    const parts = schema.properties.parts;
+    expect(parts.items.properties.type.const).toBe('text');
+    // `normalizeTechLeadParts` keeps the first 8; a longer array is not a 400.
+    expect(parts.maxItems).toBeUndefined();
+    expect(parts.description).toContain('first 8');
+  });
+
+  test('pods.update is a status-only PATCH with a closed status enum', () => {
+    const body = bodyOf('pods.update');
+    expect(body.required).toBe(true);
+    const schema = body.content['application/json'].schema;
+    expect(schema.required).toEqual(['status']);
+    expect(schema.properties.status.anyOf.map((v: any) => v.const))
+      .toEqual(['active', 'idle', 'paused', 'archived']);
+  });
+
+  test('pods.tasks.update: plan/state fields all optional (mixing is a handler 400)', () => {
+    const schema = schemaOf('pods.tasks.update');
+    expect(schema.required).toBeUndefined();
+    expect(Object.keys(schema.properties).sort()).toEqual([
+      'acceptance', 'actorSessionID', 'ownerMemberId', 'status', 'title',
+    ]);
+    expect(schema.properties.status.anyOf.map((v: any) => v.const))
+      .toEqual(['pending', 'in_progress', 'blocked', 'review', 'done', 'failed', 'skipped', 'reopened']);
+  });
+
+  test('pods.messages.create: kind + body required, actor/from are the auth pair', () => {
+    const schema = schemaOf('pods.messages.create');
+    expect(schema.required).toEqual(['kind', 'body']);
+    expect(schema.properties.kind.anyOf.map((v: any) => v.const))
+      .toEqual(['note', 'request', 'review', 'decision', 'escalation']);
+    expect(schema.properties.fromMemberId.description).toContain('actorSessionID');
+    expect(schema.properties.notify.type).toBe('boolean');
+  });
+
+  test('pods.goals.accept: confirm:true literal, optional revision/force/risk flags', () => {
+    const schema = schemaOf('pods.goals.accept');
+    expect(schema.required).toEqual(['confirm']);
+    expect(schema.properties.confirm.const).toBe(true);
+    expect(schema.properties.revision.minimum).toBe(1);
+    expect(schema.properties.force.type).toBe('boolean');
+  });
+
+  test('pods.goals.create / pods.goals.handoff: title anchors, handoff needs sourceRef.snapshot', () => {
+    const create = schemaOf('pods.goals.create');
+    expect(create.required).toEqual(['title']);
+    expect(create.properties.source.anyOf.map((v: any) => v.const))
+      .toEqual(['desktop', 'lead', 'a2a', 'automation', 'user', 'tui', 'agent', 'mobile']);
+
+    const handoff = schemaOf('pods.goals.handoff');
+    expect(handoff.required).toEqual(['title', 'sourceRef']);
+    expect(handoff.properties.sourceRef.required).toEqual(['snapshot']);
+  });
+
+  test('pod.events.seenAll: goalId + revision are required', () => {
+    expect(schemaOf('pod.events.seenAll').required).toEqual(['goalId', 'revision']);
+  });
+
+  test('W2/W3 empty and optional-body classifications project to required:false', () => {
+    for (const id of [
+      'tasks.cancel',
+      'terminal.remove',
+      'background.jobs.cancel',
+      'pods.create',
+      'pods.lead.ensure',
+      'pods.messages.read',
+      'pods.wake',
+      'pods.sleep',
+      'pod.events.seen',
+    ]) {
+      const body = bodyOf(id);
+      expect(`${id}:${body.required}`).toBe(`${id}:false`);
+      expect(Object.keys(body.content['application/json'].schema.properties ?? {})).toEqual([]);
+    }
+    // Optional body with declared fields: the actor / query fallback.
+    for (const id of ['pods.tasks.delete', 'pods.goals.cancel', 'terminal.connectTicket']) {
+      const body = bodyOf(id);
+      expect(`${id}:${body.required}`).toBe(`${id}:false`);
+      expect(Object.keys(body.content['application/json'].schema.properties).length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('api-contract: E10g request bodies (W4 goals, decisions, lead, standing)', () => {
+  function bodyOf(operationId: string): any {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const op of Object.values<any>(methods)) {
+        if (op?.operationId === operationId) {
+          expect(`${operationId}:requestBody`).toBe(`${operationId}:${op.requestBody ? 'requestBody' : 'missing'}`);
+          return op.requestBody;
+        }
+      }
+    }
+    throw new Error(`operation not found: ${operationId}`);
+  }
+
+  function schemaOf(operationId: string): any {
+    return bodyOf(operationId).content['application/json'].schema;
+  }
+
+  test('goals.planApproval: approver envelope, feedback is the reject anchor', () => {
+    const body = bodyOf('goals.planApproval');
+    expect(body.required).toBe(true);
+    const schema = body.content['application/json'].schema;
+    // Every field is conditional: approve+hashes for approve, feedback for reject.
+    expect(schema.required).toBeUndefined();
+    expect(schema.properties.approve.type).toBe('boolean');
+    expect(schema.properties.feedback.description).toContain('approve is not true');
+    expect(schema.properties.approvalId.description).toContain('409');
+    expect(schema.properties.planHash.description).toContain('stale_plan');
+  });
+
+  test('goals.retryNode / goals.retry: optional-body gates project to required:false', () => {
+    const retryNode = bodyOf('goals.retryNode');
+    expect(retryNode.required).toBe(false);
+    expect(retryNode.content['application/json'].schema.properties.confirm.description)
+      .toContain('execute');
+    const retry = bodyOf('goals.retry');
+    expect(retry.required).toBe(false);
+    expect(retry.content['application/json'].schema.properties.runId.minimum).toBe(1);
+    expect(bodyOf('goals.validate').required).toBe(false);
+  });
+
+  test('goals.respondQuestion / goals.control: closed discriminators', () => {
+    const question = schemaOf('goals.respondQuestion');
+    expect(question.required).toEqual(['type']);
+    expect(question.properties.type.anyOf.map((v: any) => v.const)).toEqual(['answer', 'cancel']);
+    expect(question.properties.answer.description).toContain('type is answer');
+
+    const control = schemaOf('goals.control');
+    expect(control.required).toEqual(['action']);
+    expect(control.properties.action.anyOf.map((v: any) => v.const))
+      .toEqual(['PAUSE', 'ABORT', 'FORCE_PHASE', 'RESET_PARAMETRIC']);
+    expect(control.properties.goalId.description).toContain('RESET_PARAMETRIC');
+    // Legacy alias /control shares the same request contract.
+    expect(schemaOf('goals.controlLegacy')).toEqual(control);
+  });
+
+  test('decisions: draft/shelve anchor required fields; confirm/reopen are optional bodies', () => {
+    const draft = bodyOf('decisions.draft');
+    expect(draft.required).toBe(true);
+    const draftSchema = draft.content['application/json'].schema;
+    expect(draftSchema.required).toEqual(['kind', 'question']);
+    expect(draftSchema.properties.question.maxLength).toBe(500);
+    expect(draftSchema.properties.kind.anyOf).toHaveLength(8);
+    expect(draftSchema.properties.options.maxItems).toBe(8);
+    expect(draftSchema.properties.evidence.maxItems).toBe(12);
+    // projectDir falls back to MAFW_PROJECT_DIR / cwd, so it is never required.
+    expect(draftSchema.required).not.toContain('projectDir');
+
+    expect(schemaOf('decisions.shelve').required).toEqual(['reviewAt']);
+    for (const id of ['decisions.confirm', 'decisions.reopen']) {
+      const body = bodyOf(id);
+      expect(`${id}:${body.required}`).toBe(`${id}:false`);
+      expect(Object.keys(body.content['application/json'].schema.properties).length).toBeGreaterThan(0);
+    }
+  });
+
+  test('lead.compact requires topicId; fork goalTitle is optional metadata', () => {
+    expect(schemaOf('lead.compact').required).toEqual(['topicId']);
+    const fork = bodyOf('lead.topics.fork');
+    expect(fork.required).toBe(false);
+    expect(fork.content['application/json'].schema.required).toBeUndefined();
+    expect(fork.content['application/json'].schema.properties.goalTitle).toBeDefined();
+    // observe body is the input carrier (fields stay optional: blank → proposed:false).
+    const observe = bodyOf('lead.boundaries.observe');
+    expect(observe.required).toBe(true);
+    expect(observe.content['application/json'].schema.required).toBeUndefined();
+  });
+
+  test('standingGoals.create anchors triggers; update is an all-optional PATCH', () => {
+    const create = bodyOf('standingGoals.create');
+    expect(create.required).toBe(true);
+    const createSchema = create.content['application/json'].schema;
+    expect(createSchema.required).toEqual(['triggers']);
+    expect(createSchema.properties.triggers.minItems).toBe(1);
+    expect(createSchema.properties.triggers.items.required).toEqual(['id', 'type']);
+    expect(createSchema.properties.approval.anyOf.map((v: any) => v.const))
+      .toEqual(['auto', 'plan', 'confirm']);
+    expect(createSchema.properties.concurrency.minimum).toBe(1);
+
+    const update = schemaOf('standingGoals.update');
+    expect(update.required).toBeUndefined();
+    expect(Object.keys(update.properties).sort()).toEqual([
+      'approval', 'budget', 'concurrency', 'cooldownMs', 'objective', 'template', 'title', 'triggers',
+    ]);
+  });
+
+  test('W4 body-ignored actions project to required:false with an empty object', () => {
+    for (const id of [
+      'goals.pause',
+      'goals.resume',
+      'goals.stop',
+      'goals.complete',
+      'lead.boundaries.accept',
+      'lead.boundaries.merge',
+      'lead.boundaries.undo',
+      'lead.topics.resume',
+      'standingGoals.pause',
+      'standingGoals.resume',
+      'standingGoals.stop',
+      'standingGoals.run',
+      'goalRuns.approve',
+    ]) {
+      const body = bodyOf(id);
+      expect(`${id}:${body.required}`).toBe(`${id}:false`);
+      expect(Object.keys(body.content['application/json'].schema.properties ?? {})).toEqual([]);
+    }
+  });
+});
+
+describe('api-contract: E10g request bodies (W5 events, automations, human gates, permissions)', () => {
+  function bodyOf(operationId: string): any {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const op of Object.values<any>(methods)) {
+        if (op?.operationId === operationId) {
+          expect(`${operationId}:requestBody`).toBe(`${operationId}:${op.requestBody ? 'requestBody' : 'missing'}`);
+          return op.requestBody;
+        }
+      }
+    }
+    throw new Error(`operation not found: ${operationId}`);
+  }
+
+  function schemaOf(operationId: string): any {
+    return bodyOf(operationId).content['application/json'].schema;
+  }
+
+  test('event.publish: flat envelope with a required type and open payload keys', () => {
+    const body = bodyOf('event.publish');
+    expect(body.required).toBe(true);
+    const schema = body.content['application/json'].schema;
+    expect(schema.required).toEqual(['type']);
+    expect(schema.properties.type.minLength).toBe(1);
+    expect(schema.properties.type.description).toContain('plugin:');
+    // The payload is an open key set: arbitrary plugin fields ride along.
+    expect(schema.additionalProperties).toBe(true);
+  });
+
+  test('event source create/patch anchor the handler-validated fields', () => {
+    const create = bodyOf('events.sources.create');
+    expect(create.required).toBe(true);
+    const createSchema = create.content['application/json'].schema;
+    expect(createSchema.required).toEqual(['kind', 'name']);
+    expect(createSchema.properties.kind.anyOf.map((v: any) => v.const))
+      .toEqual(['github', 'cron', 'internal', 'webhook']);
+    expect(createSchema.properties.name.minLength).toBe(1);
+    // projectDir falls back to MAFW_PROJECT_DIR / cwd.
+    expect(createSchema.required).not.toContain('projectDir');
+
+    const patch = schemaOf('events.sources.patch');
+    expect(patch.required).toEqual(['enabled']);
+    expect(patch.properties.enabled.type).toBe('boolean');
+  });
+
+  test('event subscription create: closed subscriber/mode sets', () => {
+    const schema = schemaOf('events.threads.subscriptions.create');
+    expect(schema.required).toEqual(['subscriberType', 'subscriberId', 'mode']);
+    expect(schema.properties.subscriberType.anyOf.map((v: any) => v.const))
+      .toEqual(['standing_goal', 'goal', 'lead']);
+    expect(schema.properties.mode.anyOf.map((v: any) => v.const)).toEqual(['work', 'context']);
+  });
+
+  test('events.webhook.receive: declared as an open-object protocol boundary', () => {
+    const body = bodyOf('events.webhook.receive');
+    // The source adapter owns the shape; gateway passes body + rawBody + headers through.
+    expect(body.required).toBe(false);
+    const schema = body.content['application/json'].schema;
+    expect(schema.properties ?? {}).toEqual({});
+    expect(schema.additionalProperties).toBe(true);
+  });
+
+  test('automations.toggle requires the target state; draft anchors id + trigger', () => {
+    const toggle = bodyOf('automations.toggle');
+    expect(toggle.required).toBe(true);
+    expect(toggle.content['application/json'].schema.required).toEqual(['enabled']);
+
+    const draft = bodyOf('automations.draft');
+    expect(draft.required).toBe(true);
+    const draftSchema = draft.content['application/json'].schema;
+    expect(draftSchema.required).toEqual(['id', 'trigger']);
+    expect(draftSchema.properties.trigger.properties.type.anyOf.map((v: any) => v.const))
+      .toEqual(['cron', 'event']);
+    // Validation failures come back as 200 {valid:false, errors}, so only the
+    // identity/mechanism fields are required.
+    expect(draftSchema.required).not.toContain('skill');
+    expect(draftSchema.properties.onResult.properties.type.anyOf.map((v: any) => v.const))
+      .toEqual(['triage', 'goal']);
+  });
+
+  test('approvals.respond / questions.reply / triage.propose: human-supplied fields only', () => {
+    const respond = bodyOf('approvals.respond');
+    expect(respond.required).toBe(true);
+    const respondSchema = respond.content['application/json'].schema;
+    expect(respondSchema.required).toBeUndefined();
+    expect(respondSchema.properties.decision.anyOf.map((v: any) => v.const)).toEqual(['approve', 'reject']);
+    expect(respondSchema.properties.answer.description).toContain('unless decision');
+    // actorSessionID is a forbidden field on human-only routes, never declared.
+    expect(respondSchema.properties.actorSessionID).toBeUndefined();
+
+    const reply = schemaOf('questions.reply');
+    expect(reply.required).toEqual(['answers']);
+    expect(reply.properties.answers.items.type).toBe('array');
+
+    const propose = schemaOf('triage.propose');
+    expect(propose.required).toEqual(['suggestion']);
+    expect(propose.properties.suggestion.anyOf.map((v: any) => v.const)).toEqual(['confirm', 'reject']);
+    expect(propose.properties.priority.anyOf.map((v: any) => v.const))
+      .toEqual(['high', 'medium', 'low']);
+  });
+
+  test('permissions: reply vocabulary, mode tiers and allowlist/rule bodies', () => {
+    const reply = bodyOf('permissions.reply');
+    expect(reply.required).toBe(true);
+    const replySchema = reply.content['application/json'].schema;
+    expect(replySchema.required).toEqual(['reply']);
+    expect(replySchema.properties.reply.anyOf.map((v: any) => v.const))
+      .toEqual(['once', 'always', 'reject']);
+    // persist is boolean | 'tool' | 'prefix' (the boolean branch has no const).
+    const persistBranches = replySchema.properties.persist.anyOf;
+    expect(persistBranches.map((v: any) => v.const).filter((v: unknown) => v !== undefined))
+      .toEqual(['tool', 'prefix']);
+    expect(persistBranches.some((v: any) => v.type === 'boolean')).toBe(true);
+
+    const runtime = bodyOf('permissions.replyRuntime');
+    expect(runtime.required).toBe(true);
+    const runtimeSchema = runtime.content['application/json'].schema;
+    // reply or the legacy approved boolean — either satisfies the handler.
+    expect(runtimeSchema.required).toBeUndefined();
+    expect(runtimeSchema.properties.approved.description).toContain('reply is absent');
+
+    const mode = schemaOf('permissions.setMode');
+    expect(mode.required).toEqual(['mode']);
+    expect(mode.properties.mode.anyOf.map((v: any) => v.const))
+      .toEqual(['read-only', 'auto', 'full-access', 'manual']);
+
+    for (const [id, scopeKey] of [
+      ['permissions.addAllowlist', 'prefix'],
+      ['permissions.removeAllowlist', 'prefix'],
+      ['permissions.addRule', 'pattern'],
+      ['permissions.removeRule', 'pattern'],
+    ] as const) {
+      const body = bodyOf(id);
+      expect(`${id}:${body.required}`).toBe(`${id}:true`);
+      const schema = body.content['application/json'].schema;
+      expect(schema.required).toEqual(['tool']);
+      expect(schema.properties.tool.minLength).toBe(1);
+      expect(schema.properties[scopeKey]).toBeDefined();
+    }
+  });
+
+  test('W5 body-ignored actions project to required:false with an empty object', () => {
+    for (const id of [
+      'events.threads.close',
+      'events.subscriptions.delete',
+      'automations.remove',
+      'questions.reject',
+      'triage.dismiss',
+      'triage.confirm',
+      'triage.reject',
+    ]) {
+      const body = bodyOf(id);
+      expect(`${id}:${body.required}`).toBe(`${id}:false`);
+      expect(Object.keys(body.content['application/json'].schema.properties ?? {})).toEqual([]);
+    }
+  });
+});
+
+describe('api-contract: E10g request bodies (W6 mcp, plugins, runtime, config, project, manager, commands)', () => {
+  function bodyOf(operationId: string): any {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const op of Object.values<any>(methods)) {
+        if (op?.operationId === operationId) {
+          expect(`${operationId}:requestBody`).toBe(`${operationId}:${op.requestBody ? 'requestBody' : 'missing'}`);
+          return op.requestBody;
+        }
+      }
+    }
+    throw new Error(`operation not found: ${operationId}`);
+  }
+
+  function schemaOf(operationId: string): any {
+    return bodyOf(operationId).content['application/json'].schema;
+  }
+
+  test('mcp config preview/apply/remove anchor the optimistic-lock contract', () => {
+    const preview = bodyOf('mcp.configPreview');
+    expect(preview.required).toBe(true);
+    const previewSchema = preview.content['application/json'].schema;
+    expect(previewSchema.required).toEqual(['name', 'type']);
+    expect(previewSchema.properties.type.anyOf.map((v: any) => v.const))
+      .toEqual(['remote', 'local']);
+    // url/command are conditionally required by the adapter, not by the contract.
+    expect(previewSchema.required).not.toContain('url');
+    expect(previewSchema.required).not.toContain('command');
+
+    // apply re-declares the config input and adds the preview token + confirm.
+    const apply = schemaOf('mcp.configApply');
+    expect(apply.required).toEqual(['name', 'type', 'token', 'confirm']);
+    expect(apply.properties.confirm.const).toBe(true);
+    expect(apply.properties.token.minLength).toBe(1);
+
+    const restore = schemaOf('mcp.configRestore');
+    expect(restore.required).toEqual(['token', 'confirm']);
+    expect(restore.properties.backupPath.type).toBe('string');
+
+    const remove = schemaOf('mcp.configRemove');
+    expect(remove.required).toEqual(['token', 'confirm']);
+
+    expect(schemaOf('mcp.configPreviewRemove').required).toEqual(['name']);
+  });
+
+  test('mcp connect/disconnect ignore the body (path + directory query only)', () => {
+    for (const id of ['mcp.connect', 'mcp.disconnect']) {
+      const body = bodyOf(id);
+      expect(`${id}:${body.required}`).toBe(`${id}:false`);
+      expect(Object.keys(body.content['application/json'].schema.properties ?? {})).toEqual([]);
+    }
+  });
+
+  test('plugin package/check bodies require an absolute path', () => {
+    const install = bodyOf('plugins.installPackage');
+    expect(install.required).toBe(true);
+    expect(install.content['application/json'].schema.required).toEqual(['path']);
+    expect(install.content['application/json'].schema.properties.overwrite.type).toBe('boolean');
+    expect(install.content['application/json'].schema.properties.requestId.type).toBe('string');
+
+    expect(schemaOf('plugins.check').required).toEqual(['path']);
+  });
+
+  test('plugin enable/disable/delete share the {package} | {type, filename} body', () => {
+    for (const id of ['plugins.enable', 'plugins.disable', 'plugins.delete']) {
+      const body = bodyOf(id);
+      expect(`${id}:${body.required}`).toBe(`${id}:true`);
+      const schema = body.content['application/json'].schema;
+      // Variants, not free-form: every field is optional but the shape is fixed.
+      expect(schema.required).toBeUndefined();
+      expect(Object.keys(schema.properties).sort()).toEqual(['filename', 'package', 'type']);
+      expect(schema.properties.type.anyOf.map((v: any) => v.const))
+        .toEqual(['runtime', 'media', 'usage', 'ui']);
+    }
+  });
+
+  test('plugin apply/reload ignore the body; invoke carries a plugin-defined input boundary', () => {
+    for (const id of ['plugins.apply', 'plugins.reload']) {
+      const body = bodyOf(id);
+      expect(`${id}:${body.required}`).toBe(`${id}:false`);
+      expect(Object.keys(body.content['application/json'].schema.properties ?? {})).toEqual([]);
+    }
+
+    const invoke = bodyOf('plugins.invoke');
+    expect(invoke.required).toBe(false);
+    const schema = invoke.content['application/json'].schema;
+    expect(Object.keys(schema.properties).sort()).toEqual(['input', 'revision', 'sessionID']);
+    // The action payload belongs to the plugin package author.
+    expect(schema.properties.input.type).toBe('object');
+    expect(schema.properties.input.additionalProperties).toBe(true);
+    expect(Object.keys(schema.properties.input.properties ?? {})).toEqual([]);
+  });
+
+  test('plugins.webTicket requires a registered projectDir, sessionID optional', () => {
+    const body = bodyOf('plugins.webTicket');
+    expect(body.required).toBe(true);
+    const schema = body.content['application/json'].schema;
+    expect(schema.required).toEqual(['projectDir']);
+    expect(schema.properties.sessionID.minLength).toBe(1);
+  });
+
+  test('plugins.install is excluded: raw byte upload, no JSON request schema', () => {
+    // Spec §1.3: binary/multipart inputs are not modeled; the op must not
+    // pretend to have a JSON body (that would inflate `requests`).
+    const withBody: string[] = [];
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const [method, op] of Object.entries<any>(methods)) {
+        if (method === 'get' || !op?.operationId) continue;
+        if (op.requestBody) withBody.push(op.operationId);
+      }
+    }
+    expect(withBody).not.toContain('plugins.install');
+  });
+
+  test('runtime.switch/dryEvent/config.update boundaries and conformance options', () => {
+    const sw = bodyOf('runtime.switch');
+    expect(sw.required).toBe(true);
+    expect(sw.content['application/json'].schema.required).toBeUndefined();
+    expect(sw.content['application/json'].schema.properties.plugin.type).toBe('string');
+
+    const dry = bodyOf('runtime.dryEvent');
+    expect(dry.required).toBe(true);
+    const drySchema = dry.content['application/json'].schema;
+    expect(drySchema.additionalProperties).toBe(true);
+    expect(drySchema.properties.event.additionalProperties).toBe(true);
+    expect(Object.keys(drySchema.properties.event.properties ?? {})).toEqual([]);
+
+    const update = bodyOf('runtime.config.update');
+    expect(update.required).toBe(true);
+    const updateSchema = update.content['application/json'].schema;
+    expect(updateSchema.additionalProperties).toBe(true);
+    expect(Object.keys(updateSchema.properties ?? {})).toEqual([]);
+
+    const conformance = bodyOf('runtime.conformance');
+    expect(conformance.required).toBe(false);
+    const conformanceSchema = conformance.content['application/json'].schema;
+    expect(conformanceSchema.properties.scenarios.items.type).toBe('string');
+    expect(conformanceSchema.properties.timeoutMs.type).toBe('number');
+  });
+
+  test('runtime restart/reload ignore the body', () => {
+    for (const id of ['runtime.restartAgent', 'runtime.reload']) {
+      const body = bodyOf(id);
+      expect(`${id}:${body.required}`).toBe(`${id}:false`);
+      expect(Object.keys(body.content['application/json'].schema.properties ?? {})).toEqual([]);
+    }
+  });
+
+  test('config.set declares known top-level sections and stays open for unknown keys', () => {
+    const body = bodyOf('config.set');
+    expect(body.required).toBe(true);
+    const schema = body.content['application/json'].schema;
+    expect(schema.additionalProperties).toBe(true);
+    expect(Object.keys(schema.properties)).toEqual(expect.arrayContaining([
+      'server', 'paths', 'timeouts', 'memory', 'llm', 'media', 'events', 'runtime', 'resources', 'env',
+    ]));
+    // No section is mandatory: omitted keys fall back to config defaults.
+    expect(schema.required).toBeUndefined();
+  });
+
+  test('project.setCurrent / manager.rotate / mafwCommands.run anchor their required fields', () => {
+    const register = bodyOf('project.setCurrent');
+    expect(register.required).toBe(true);
+    const registerSchema = register.content['application/json'].schema;
+    expect(registerSchema.required).toEqual(['projectDir', 'mafwDir']);
+    expect(registerSchema.properties.setCurrent.type).toBe('boolean');
+    expect(registerSchema.required).not.toContain('setCurrent');
+
+    expect(schemaOf('manager.rotate').required).toEqual(['projectDir']);
+
+    const run = bodyOf('mafwCommands.run');
+    expect(run.required).toBe(true);
+    const runSchema = run.content['application/json'].schema;
+    expect(runSchema.required).toEqual(['command']);
+    expect(runSchema.properties.command.minLength).toBe(1);
+    expect(Object.keys(runSchema.properties).sort()).toEqual(['args', 'command', 'sessionID']);
+  });
+});
+
+describe('api-contract: E10g request bodies (W7 memory, media, tts, chat, python, mobile, a2a)', () => {
+  function bodyOf(operationId: string): any {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const op of Object.values<any>(methods)) {
+        if (op?.operationId === operationId) {
+          expect(`${operationId}:requestBody`).toBe(`${operationId}:${op.requestBody ? 'requestBody' : 'missing'}`);
+          return op.requestBody;
+        }
+      }
+    }
+    throw new Error(`operation not found: ${operationId}`);
+  }
+
+  function schemaOf(operationId: string): any {
+    return bodyOf(operationId).content['application/json'].schema;
+  }
+
+  test('memory.add requires content and pins the memoryType/authority vocabularies', () => {
+    const body = bodyOf('memory.add');
+    expect(body.required).toBe(true);
+    const schema = body.content['application/json'].schema;
+    expect(schema.required).toEqual(['content']);
+    expect(schema.properties.memoryType.anyOf.map((v: any) => v.const))
+      .toEqual(['episodic', 'semantic', 'procedural', 'global']);
+    expect(schema.properties.authority.anyOf.map((v: any) => v.const))
+      .toEqual(['user', 'agent', 'tool', 'pipeline']);
+    // Sticky/pin flags are optional: absent → plain note-board-free write.
+    expect(schema.properties.pinned.type).toBe('boolean');
+    expect(schema.properties.sticky.type).toBe('boolean');
+    // Anchors are capped by the write pipeline (first 8 / first 20), never rejected:
+    // a maxItems here would advertise a 400 the handler never sends.
+    expect(schema.properties.cueAnchors.maxItems).toBeUndefined();
+    expect(schema.properties.sourceTraceIds.maxItems).toBeUndefined();
+    expect(schema.properties.cueAnchors.description).toContain('first 8');
+    expect(schema.properties.sourceTraceIds.description).toContain('first 20');
+  });
+
+  test('memory.setSticky / memory.merge: id/sourceWorktree anchors, mode flags optional', () => {
+    const sticky = schemaOf('memory.setSticky');
+    expect(sticky.required).toEqual(['id']);
+    expect(sticky.properties.sticky.description).toContain('note-board');
+    expect(sticky.properties.pinned.description).toContain('sticky is absent');
+
+    const merge = bodyOf('memory.merge');
+    expect(merge.required).toBe(true);
+    expect(merge.content['application/json'].schema.required).toEqual(['sourceWorktree']);
+    // Unknown strategies degrade to manual in the handler, so the contract stays open.
+    expect(merge.content['application/json'].schema.properties.strategy.type).toBe('string');
+  });
+
+  test('embedding.update closes provider/engine/gpu and the llama.cpp bounds', () => {
+    const body = bodyOf('embedding.update');
+    expect(body.required).toBe(true);
+    const schema = body.content['application/json'].schema;
+    expect(schema.required).toBeUndefined();
+    expect(schema.properties.provider.anyOf.map((v: any) => v.const))
+      .toEqual(['off', 'local', 'dashscope']);
+    expect(schema.properties.engine.anyOf.map((v: any) => v.const)).toEqual(['onnx', 'llamacpp']);
+    expect(schema.properties.threads.minimum).toBe(1);
+    expect(schema.properties.threads.maximum).toBe(32);
+    expect(schema.properties.llamacpp.properties.gpu.anyOf.map((v: any) => v.const))
+      .toEqual(['cpu', 'vulkan', 'cuda']);
+    expect(schema.properties.llamacpp.properties.contextSize.minimum).toBe(256);
+    // baseUrl is rejected by the handler (SSRF/key sink) → never declared.
+    expect(schema.properties.baseUrl).toBeUndefined();
+  });
+
+  test('media.switch / createTaskApi / analyzeAudio anchor their required fields', () => {
+    const sw = bodyOf('media.switch');
+    expect(sw.required).toBe(true);
+    const swSchema = sw.content['application/json'].schema;
+    expect(swSchema.required).toBeUndefined();
+    expect(Object.keys(swSchema.properties).sort()).toEqual(['audio', 'engine', 'image', 'video']);
+
+    expect(schemaOf('media.createTaskApi').required).toEqual(['artifactId']);
+    const audio = schemaOf('media.analyzeAudio');
+    expect(audio.required).toEqual(['dataUrl']);
+    expect(audio.properties.mediaType.description).toContain('audio/wav');
+  });
+
+  test('tts.speak / speakStream / interrupt: text and sessionId anchors', () => {
+    for (const id of ['tts.speak', 'tts.speakStream']) {
+      const schema = schemaOf(id);
+      expect(`${id}:${JSON.stringify(schema.required)}`).toBe(`${id}:["text"]`);
+      expect(schema.properties.voice.type).toBe('string');
+      expect(schema.properties.style.type).toBe('string');
+    }
+    // Streaming tracks the in-flight set per session; speak does not need one.
+    expect(schemaOf('tts.speakStream').properties.sessionId).toBeDefined();
+    expect(schemaOf('tts.speak').properties.sessionId).toBeUndefined();
+    expect(schemaOf('tts.interrupt').required).toEqual(['sessionId']);
+  });
+
+  test('chat bodies: message anchor on send, message|parts on enriched', () => {
+    expect(schemaOf('chat.send').required).toEqual(['message']);
+
+    const enriched = bodyOf('chat.sendEnriched');
+    expect(enriched.required).toBe(true);
+    const schema = enriched.content['application/json'].schema;
+    expect(schema.required).toBeUndefined();
+    expect(schema.description).toContain('message or parts');
+    expect(schema.properties.parts.items.required).toEqual(['type']);
+    expect(schema.properties.parts.items.additionalProperties).toBe(true);
+    expect(schema.properties.model.required).toEqual(['providerID', 'modelID']);
+  });
+
+  test('python and obs bodies pin their required anchors and source enum', () => {
+    expect(schemaOf('python.execute').required).toEqual(['sessionID', 'code']);
+    expect(schemaOf('python.restart').required).toEqual(['sessionID']);
+
+    const obs = bodyOf('obs.capture');
+    expect(obs.required).toBe(true);
+    const obsSchema = obs.content['application/json'].schema;
+    expect(obsSchema.required).toEqual(['sessionID', 'source']);
+    expect(obsSchema.properties.source.anyOf.map((v: any) => v.const))
+      .toEqual(['user_input', 'assistant_reply', 'tool_result', 'reasoning']);
+    // Empty content is a valid deduped capture, not a 400.
+    expect(obsSchema.required).not.toContain('content');
+    expect(obsSchema.description).toContain('fail-open');
+  });
+
+  test('models.update: flat recall pair, goal overrides and per-modality media refs', () => {
+    const body = bodyOf('models.update');
+    expect(body.required).toBe(true);
+    const schema = body.content['application/json'].schema;
+    expect(schema.required).toBeUndefined();
+    expect(Object.keys(schema.properties).sort()).toEqual(['goal', 'media', 'recall']);
+    expect(schema.properties.recall.required).toEqual(['providerID', 'modelID']);
+    expect(schema.properties.goal.properties.techLeadModel).toBeDefined();
+    expect(Object.keys(schema.properties.media.properties).sort())
+      .toEqual(['audio', 'image', 'model', 'provider', 'video']);
+  });
+
+  test('tools.execute keeps params as a tool-defined open boundary', () => {
+    const body = bodyOf('tools.execute');
+    expect(body.required).toBe(true);
+    const schema = body.content['application/json'].schema;
+    expect(schema.required).toEqual(['name']);
+    expect(schema.properties.params.type).toBe('object');
+    expect(schema.properties.params.additionalProperties).toBe(true);
+    expect(Object.keys(schema.properties.params.properties ?? {})).toEqual([]);
+  });
+
+  test('eval.chatCompletions / llm.compress: OpenAI envelope and observations array', () => {
+    const evalBody = bodyOf('eval.chatCompletions');
+    expect(evalBody.required).toBe(true);
+    const evalSchema = evalBody.content['application/json'].schema;
+    expect(evalSchema.required).toEqual(['messages']);
+    expect(evalSchema.properties.messages.items.required).toEqual(['role']);
+    // Message content is either text or EvalScope media parts (open part boundary).
+    expect(evalSchema.properties.messages.items.properties.content.anyOf[0].type).toBe('string');
+    expect(evalSchema.additionalProperties).toBe(true);
+
+    const compress = schemaOf('llm.compress');
+    expect(compress.required).toEqual(['observations']);
+    expect(compress.properties.observations.items.type).toBe('string');
+  });
+
+  test('mobile/devices registration and pairing pin the credential anchors', () => {
+    expect(schemaOf('mobile.mediaTaskAsk').required).toEqual(['question']);
+
+    const mobileRegister = schemaOf('mobile.devicesRegister');
+    expect(mobileRegister.required).toEqual(['token', 'platform']);
+    expect(mobileRegister.properties.token.description).toContain('FCM');
+
+    const verify = schemaOf('mobile.pairingVerify');
+    expect(verify.required).toEqual(['nonce']);
+    expect(verify.properties.deviceId.pattern).toBe('^[A-Za-z0-9._:-]+$');
+    expect(verify.properties.deviceId.maxLength).toBe(128);
+    expect(verify.properties.rotate.type).toBe('boolean');
+
+    const legacy = schemaOf('devices.register');
+    expect(legacy.required).toEqual(['fcmToken', 'platform', 'token']);
+    // id can come from the transport principal instead of the body.
+    expect(legacy.required).not.toContain('id');
+    expect(legacy.properties.id.description).toContain('principal');
+  });
+
+  test('W7 body-ignored actions project to required:false with an empty object', () => {
+    for (const id of [
+      'memory.delete',
+      'memory.embeddingsBackfill',
+      'media.pluginsReload',
+      'devices.delete',
+      'mobile.devicesDelete',
+      'humanToken.rotate',
+    ]) {
+      const body = bodyOf(id);
+      expect(`${id}:${body.required}`).toBe(`${id}:false`);
+      expect(Object.keys(body.content['application/json'].schema.properties ?? {})).toEqual([]);
+    }
+  });
+
+  test('skills.deopt keeps an optional body (default reason) with a declared field', () => {
+    const body = bodyOf('skills.deopt');
+    expect(body.required).toBe(false);
+    const schema = body.content['application/json'].schema;
+    expect(Object.keys(schema.properties)).toEqual(['reason']);
+    expect(schema.properties.reason.description).toContain('manual');
+  });
+});
+
+describe('api-contract: E10g request bodies (W8 cognition gate / rewrite)', () => {
+  function bodyOf(operationId: string): any {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const op of Object.values<any>(methods)) {
+        if (op?.operationId === operationId) {
+          expect(`${operationId}:requestBody`).toBe(`${operationId}:${op.requestBody ? 'requestBody' : 'missing'}`);
+          return op.requestBody;
+        }
+      }
+    }
+    throw new Error(`operation not found: ${operationId}`);
+  }
+
+  function schemaOf(operationId: string): any {
+    return bodyOf(operationId).content['application/json'].schema;
+  }
+
+  test('cognition.gate: sessionID+kind required, kind closed enum, tool conditional', () => {
+    const body = bodyOf('cognition.gate');
+    expect(body.required).toBe(true);
+    const schema = body.content['application/json'].schema;
+    expect(schema.required).toEqual(['sessionID', 'kind']);
+    expect(schema.properties.kind.anyOf.map((v: any) => v.const)).toEqual(['tool_call', 'prompt']);
+    // tool is needed only on the tool_call branch; the handler 400s there, but a
+    // prompt gate must stay valid without it → optional + description, no oneOf.
+    expect(schema.required).not.toContain('tool');
+    expect(schema.properties.tool.type).toBe('string');
+    expect(schema.properties.tool.description).toContain("kind is 'tool_call'");
+    expect(schema.properties.input.type).toBe('object');
+    expect(schema.properties.text.type).toBe('string');
+    expect(schema.description).toContain('conditionally required');
+  });
+
+  test('cognition.rewrite: sessionID+tool+output required, output.content is the anchor', () => {
+    const body = bodyOf('cognition.rewrite');
+    expect(body.required).toBe(true);
+    const schema = body.content['application/json'].schema;
+    expect(schema.required).toEqual(['sessionID', 'tool', 'output']);
+    expect(schema.properties.output.required).toEqual(['content']);
+    const content = schema.properties.output.properties.content;
+    expect(content.type).toBe('array');
+    // An empty array is a valid 200 ({content: []}), so no minItems.
+    expect(content.minItems).toBeUndefined();
+    // Runtime content parts: pin `type`, leave the rest open.
+    expect(content.items.required).toEqual(['type']);
+    expect(content.items.additionalProperties).toBe(true);
+    expect(schema.properties.output.required).not.toContain('isError');
+    expect(schema.properties.output.properties.isError.type).toBe('boolean');
+    // `input` is a host-envelope field the current handler ignores → declared
+    // optional (contract-cognition lists it, the handler does not read it).
+    expect(schema.required).not.toContain('input');
+    expect(schema.properties.input.type).toBe('object');
+  });
+
+  test('W8 closes the request ledger: cognition ops are covered, exclusions unchanged', () => {
+    const withBody: string[] = [];
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const [method, op] of Object.entries<any>(methods)) {
+        if (method === 'get' || !op?.operationId) continue;
+        if (op.requestBody) withBody.push(op.operationId);
+      }
+    }
+    expect(withBody).toHaveLength(189);
+    expect(withBody).toEqual(expect.arrayContaining(['cognition.gate', 'cognition.rewrite']));
+    for (const id of [
+      'plugins.install',
+      'media.upload',
+      'media.uploadAndCreate',
+      'media.createTask',
+      'mobile.mediaTaskUpload',
+      'pods.a2a',
+    ]) {
+      expect(`${id}:${withBody.includes(id)}`).toBe(`${id}:false`);
+    }
+  });
+});
+
+describe('api-contract: Phase 6 plugin recovery routes (E10g-fix)', () => {
+  function opOf(operationId: string): any {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const op of Object.values<any>(methods)) {
+        if (op?.operationId === operationId) return op;
+      }
+    }
+    throw new Error(`operation not found: ${operationId}`);
+  }
+
+  function schemaOf(operationId: string): any {
+    const body = opOf(operationId).requestBody;
+    expect(`${operationId}:requestBody`).toBe(`${operationId}:${body ? 'requestBody' : 'missing'}`);
+    return body.content['application/json'].schema;
+  }
+
+  test('quarantine requires a reason; the other six POSTs take no body', () => {
+    const quarantine = schemaOf('plugins.quarantine');
+    expect(quarantine.required).toEqual(['reason']);
+    expect(quarantine.properties.reason.type).toBe('string');
+    expect(quarantine.properties.reason.minLength).toBe(1);
+
+    // Handlers read only the path (`:name`) and the principal headers
+    // (`principalOf` / `assertHuman`), so there is no body field to declare.
+    for (const id of [
+      'plugins.doctorAll',
+      'plugins.doctor',
+      'plugins.kill',
+      'plugins.resume',
+      'plugins.unquarantine',
+      'plugins.rollback',
+    ]) {
+      const body = opOf(id).requestBody;
+      expect(`${id}:${body.required}`).toBe(`${id}:false`);
+      expect(`${id}:${JSON.stringify(Object.keys(body.content['application/json'].schema.properties ?? {}))}`)
+        .toBe(`${id}:[]`);
+    }
+    // Human-only actions must never advertise an actor field in the body.
+    expect(schemaOf('plugins.kill').additionalProperties).toBeUndefined();
+  });
+
+  test('plugins.audit / plugins.lastGood responses match the handler payloads', () => {
+    expect(Value.Check(PluginsAuditResponse, {
+      events: [{
+        id: 'pa_1',
+        at: '2026-11-14T00:00:00.000Z',
+        action: 'quarantine',
+        package: 'demo',
+        version: '1.0.0',
+        fingerprint: 'abc',
+        principalKind: 'human',
+        principalMethod: 'device',
+        result: 'ok',
+        detail: { reason: 'boom' },
+      }],
+    })).toBe(true);
+    // An empty audit table is a valid 200.
+    expect(Value.Check(PluginsAuditResponse, { events: [] })).toBe(true);
+    // `action` is the closed PluginAuditAction enum: a typo is not an audit event.
+    expect(Value.Check(PluginsAuditResponse, {
+      events: [{ id: 'pa_1', at: 'x', action: 'nope', result: 'ok' }],
+    })).toBe(false);
+
+    expect(Value.Check(PluginLastGoodResponse, {
+      name: 'demo',
+      lastGood: { version: '1.0.0', fingerprint: 'abc', savedAt: '2026-11-14T00:00:00.000Z' },
+    })).toBe(true);
+    // Legacy single-file packages have no manifest version.
+    expect(Value.Check(PluginLastGoodResponse, {
+      name: 'demo',
+      lastGood: { fingerprint: 'abc', savedAt: '2026-11-14T00:00:00.000Z' },
+    })).toBe(true);
+    // fingerprint is the store's only hard requirement.
+    expect(Value.Check(PluginLastGoodResponse, {
+      name: 'demo',
+      lastGood: { savedAt: 'x' },
+    })).toBe(false);
+  });
+});

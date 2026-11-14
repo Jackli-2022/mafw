@@ -66,3 +66,32 @@ export const TaskOutputResponse = Type.Object({
   size: Type.Optional(Type.Number()),
   truncated: Type.Optional(Type.Boolean()),
 }, { additionalProperties: true })
+
+/**
+ * E10g-P0 `POST /api/tasks` 请求体（handler 事实源：routes/tasks.ts
+ * `handleTaskSubmit` → `TaskService.submit`）。
+ *
+ * 顶层必填 `kind` + `parentSessionID`；`shell` 需要非空 `command`、`subagent`
+ * 需要非空 `prompt`——条件必填由 service 校验（400），声明面保留 optional +
+ * description，不伪造 oneOf，避免契约比 handler 更严。
+ */
+export const TaskSubmitRequest = Type.Object({
+  kind: TaskKindSchema,
+  parentSessionID: Type.String({ minLength: 1 }),
+  title: Type.Optional(Type.String()),
+  command: Type.Optional(Type.String({ description: 'Required when kind is "shell".' })),
+  cwd: Type.Optional(Type.String()),
+  timeout: Type.Optional(Type.Number()),
+  prompt: Type.Optional(Type.String({ description: 'Required when kind is "subagent".' })),
+  agent: Type.Optional(Type.String()),
+  description: Type.Optional(Type.String()),
+  model: Type.Optional(Type.Object({
+    providerID: Type.String(),
+    modelID: Type.String(),
+  })),
+  outputSchema: Type.Optional(Type.Object({
+    name: Type.Optional(Type.String()),
+    schema: Type.Record(Type.String(), Type.Unknown()),
+    retryCount: Type.Optional(Type.Number()),
+  })),
+})

@@ -32,7 +32,7 @@
 import { Type } from '@sinclair/typebox'
 import { GoalSourceRefSchema } from './goals'
 
-const PodStatusSchema = Type.Union([
+export const PodStatusSchema = Type.Union([
   Type.Literal('active'),
   Type.Literal('idle'),
   Type.Literal('paused'),
@@ -201,7 +201,7 @@ const PodTaskKindSchema = Type.Union([
   Type.Literal('external_request'),
 ])
 
-const PodTaskStatusSchema = Type.Union([
+export const PodTaskStatusSchema = Type.Union([
   Type.Literal('pending'),
   Type.Literal('in_progress'),
   Type.Literal('blocked'),
@@ -580,19 +580,19 @@ export const PodTechLeadHistoryResponse = Type.Object({
 })
 
 /** Spike 探针作用域（`core/goal/probe.ts` `ProbeScope`）。命令类别在白名单内，schema 按字符串数组承诺。 */
-const PodProbeScopeSchema = Type.Object({
+export const PodProbeScopeSchema = Type.Object({
   paths: Type.Array(Type.String()),
   commandClasses: Type.Array(Type.String()),
   network: Type.Boolean(),
   credentials: Type.Array(Type.String()),
 })
 
-const PodProbeBudgetSchema = Type.Object({
+export const PodProbeBudgetSchema = Type.Object({
   maxMinutes: Type.Number(),
   maxUsd: Type.Number(),
 })
 
-const PodProbeAffectsSchema = Type.Object({
+export const PodProbeAffectsSchema = Type.Object({
   planAssertions: Type.Optional(Type.Array(Type.String())),
   evalMethods: Type.Optional(Type.Array(Type.String())),
   options: Type.Optional(Type.Array(Type.String())),
@@ -757,3 +757,24 @@ export const PodMemoryResponse = Type.Union([
   Type.Object({ content: Type.Union([Type.String(), Type.Null()]) }),
   Type.Object({ context: Type.Union([Type.String(), Type.Null()]) }),
 ])
+
+// ── E10g-P0：Pod task 创建请求 ──────────────────────────────────────────────
+
+/**
+ * `POST /api/pods/:podId/tasks` 请求体（handler 事实源：routes/pods.ts 的
+ * `tasks` 分支）。
+ *
+ * 两种模式由 handler 分流（`plan === true || typeof waveId === 'string'`）：
+ *   - plan task：`goalId` 必填（缺 → 400），可选 `waveId` / `acceptance`；
+ *   - manual task：`title` 必填（service 400），可选 `goalId` / `ownerMemberId`。
+ * `actorSessionID` 是成员鉴权 actor（`access.requireMember`）。只声明，不校验。
+ */
+export const PodTaskCreateRequest = Type.Object({
+  title: Type.String({ minLength: 1 }),
+  plan: Type.Optional(Type.Boolean()),
+  waveId: Type.Optional(Type.String()),
+  goalId: Type.Optional(Type.String({ description: 'Required for plan tasks (plan:true or waveId set).' })),
+  acceptance: Type.Optional(Type.Array(Type.String())),
+  ownerMemberId: Type.Optional(Type.String()),
+  actorSessionID: Type.Optional(Type.String()),
+})
