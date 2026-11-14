@@ -741,3 +741,19 @@ export const PodWorktreeDiffResponse = Type.Object({
 export const PodTranscriptResponse = Type.Object({
   transcript: Type.Unknown(),
 })
+
+// ── E10f-C：Pod memory 读接口 ───────────────────────────────────────────────
+
+/**
+ * `GET /api/pods/:podId/memory` 的双形态（`handlePods` 的 memory 分支）：
+ *   - `?file=POD|MEMORY|GLOSSARY` → `{content}`：文件原文，缺失文件为 `null`
+ *   - 无 file（`?node=plan|execute|review`，默认 plan）→ `{context}`：
+ *     `PodMemoryService.renderContext()` 的拼接上下文，三份文件都缺失时为 `null`
+ *
+ * 两者都是 `string | null`（文件未生成不是 404）。与 SDK `pod.readMemoryFile()`
+ * / `pod.readMemory()` 的内联返回类型逐分支等价（AssertEq 用 Extract 取分支）。
+ */
+export const PodMemoryResponse = Type.Union([
+  Type.Object({ content: Type.Union([Type.String(), Type.Null()]) }),
+  Type.Object({ context: Type.Union([Type.String(), Type.Null()]) }),
+])

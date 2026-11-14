@@ -28,6 +28,7 @@ import {
   AttentionListResponse,
   DecisionListResponse,
   GoalViewSchema,
+  OrchestrationOutcomesResponse,
   PresenceResponse,
   ProjectListResponse,
   UsageSummaryResponse,
@@ -41,6 +42,7 @@ import {
   PodGoalResultResponse,
   PodGoalRevisionsResponse,
   PodGoalsResponse,
+  PodMemoryResponse,
   PodMessagesResponse,
   PodProbesResponse,
   PodReviewItemsResponse,
@@ -140,6 +142,24 @@ import {
   TtsVoicesResponse,
   VoiceStatusResponse,
 } from './schemas/media-voice';
+import {
+  LeadBoundariesResponse,
+  LeadTopicGetResponse,
+  LeadTopicsResponse,
+} from './schemas/lead';
+import {
+  EventDeliveriesResponse,
+  EventSourcesResponse,
+  EventSubscriptionsResponse,
+  EventThreadsResponse,
+  EventTriggersResponse,
+} from './schemas/events';
+import { StandingGoalListResponse, StandingGoalRunsResponse } from './schemas/standing';
+import {
+  AutomationGetResponse,
+  AutomationHistoryResponse,
+  AutomationsListResponse,
+} from './schemas/automations';
 
 /**
  * SDK-facing 端点（catalog → gateway-paths → openapi 单向生成；**在此新增**后必须重跑
@@ -286,33 +306,33 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/goals/:id/resume', operationId: 'goals.resume', tags: ['goals'] },
   { method: 'POST', path: '/api/goals/:id/stop', operationId: 'goals.stop', tags: ['goals'] },
   { method: 'POST', path: '/api/goals/:id/retry', operationId: 'goals.retry', tags: ['goals'] },
-  { method: 'GET', path: '/api/lead/topics/:id/boundaries', operationId: 'lead.boundaries.list', tags: ['lead'] },
+  { method: 'GET', path: '/api/lead/topics/:id/boundaries', operationId: 'lead.boundaries.list', tags: ['lead'], response: LeadBoundariesResponse },
   { method: 'POST', path: '/api/lead/topics/:id/boundaries/:bid/accept', operationId: 'lead.boundaries.accept', tags: ['lead'] },
   { method: 'POST', path: '/api/lead/topics/:id/boundaries/:bid/merge', operationId: 'lead.boundaries.merge', tags: ['lead'] },
   { method: 'POST', path: '/api/lead/topics/:id/boundaries/:bid/undo', operationId: 'lead.boundaries.undo', tags: ['lead'] },
   { method: 'POST', path: '/api/lead/boundaries/observe', operationId: 'lead.boundaries.observe', tags: ['internal'] },
-  { method: 'GET', path: '/api/event-sources', operationId: 'events.sources.list', tags: ['events'] },
+  { method: 'GET', path: '/api/event-sources', operationId: 'events.sources.list', tags: ['events'], response: EventSourcesResponse },
   { method: 'POST', path: '/api/event-sources', operationId: 'events.sources.create', tags: ['events'] },
   { method: 'PATCH', path: '/api/event-sources/:id', operationId: 'events.sources.patch', tags: ['events'] },
-  { method: 'GET', path: '/api/event-threads', operationId: 'events.threads.list', tags: ['events'] },
-  { method: 'GET', path: '/api/event-threads/:id/triggers', operationId: 'events.threads.triggers', tags: ['events'] },
+  { method: 'GET', path: '/api/event-threads', operationId: 'events.threads.list', tags: ['events'], response: EventThreadsResponse },
+  { method: 'GET', path: '/api/event-threads/:id/triggers', operationId: 'events.threads.triggers', tags: ['events'], response: EventTriggersResponse },
   { method: 'POST', path: '/api/event-threads/:id/close', operationId: 'events.threads.close', tags: ['events'] },
-  { method: 'GET', path: '/api/event-threads/:id/subscriptions', operationId: 'events.threads.subscriptions.list', tags: ['events'] },
+  { method: 'GET', path: '/api/event-threads/:id/subscriptions', operationId: 'events.threads.subscriptions.list', tags: ['events'], response: EventSubscriptionsResponse },
   { method: 'POST', path: '/api/event-threads/:id/subscriptions', operationId: 'events.threads.subscriptions.create', tags: ['events'] },
   { method: 'DELETE', path: '/api/event-subscriptions/:id', operationId: 'events.subscriptions.delete', tags: ['events'] },
-  { method: 'GET', path: '/api/event-deliveries', operationId: 'events.deliveries.list', tags: ['events'] },
+  { method: 'GET', path: '/api/event-deliveries', operationId: 'events.deliveries.list', tags: ['events'], response: EventDeliveriesResponse },
   { method: 'POST', path: '/api/event-sources/:id/webhook', operationId: 'events.webhook.receive', tags: ['internal'] },
-  { method: 'GET', path: '/api/standing-goals', operationId: 'standingGoals.list', tags: ['standing'] },
+  { method: 'GET', path: '/api/standing-goals', operationId: 'standingGoals.list', tags: ['standing'], response: StandingGoalListResponse },
   { method: 'POST', path: '/api/standing-goals', operationId: 'standingGoals.create', tags: ['standing'] },
   { method: 'PATCH', path: '/api/standing-goals/:id', operationId: 'standingGoals.update', tags: ['standing'] },
-  { method: 'GET', path: '/api/standing-goals/:id/runs', operationId: 'standingGoals.runs', tags: ['standing'] },
+  { method: 'GET', path: '/api/standing-goals/:id/runs', operationId: 'standingGoals.runs', tags: ['standing'], response: StandingGoalRunsResponse },
   { method: 'POST', path: '/api/standing-goals/:id/pause', operationId: 'standingGoals.pause', tags: ['standing'] },
   { method: 'POST', path: '/api/standing-goals/:id/resume', operationId: 'standingGoals.resume', tags: ['standing'] },
   { method: 'POST', path: '/api/standing-goals/:id/stop', operationId: 'standingGoals.stop', tags: ['standing'] },
   { method: 'POST', path: '/api/standing-goals/:id/run', operationId: 'standingGoals.run', tags: ['standing'] },
   { method: 'POST', path: '/api/goal-runs/:id/approve', operationId: 'goalRuns.approve', tags: ['standing'] },
-  { method: 'GET', path: '/api/lead/topics', operationId: 'lead.topics.list', tags: ['lead'] },
-  { method: 'GET', path: '/api/lead/topics/:id', operationId: 'lead.topics.get', tags: ['lead'] },
+  { method: 'GET', path: '/api/lead/topics', operationId: 'lead.topics.list', tags: ['lead'], response: LeadTopicsResponse },
+  { method: 'GET', path: '/api/lead/topics/:id', operationId: 'lead.topics.get', tags: ['lead'], response: LeadTopicGetResponse },
   { method: 'GET', path: '/api/lead/working-set', operationId: 'lead.workingSet', tags: ['lead'], response: LeadWorkingSetResponse },
   { method: 'GET', path: '/api/lead/recall', operationId: 'lead.recall', tags: ['lead'], response: LeadRecallResponse },
   { method: 'POST', path: '/api/lead/compact', operationId: 'lead.compact', tags: ['lead'] },
@@ -370,12 +390,12 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/agents', operationId: 'agents.list', tags: ['agents'], response: AgentListResponse },
   { method: 'GET', path: '/api/model-config', operationId: 'models.get', tags: ['models'], response: ModelConfigGetResponse },
   { method: 'POST', path: '/api/model-config', operationId: 'models.update', tags: ['models'] },
-  { method: 'GET', path: '/api/automations', operationId: 'automations.list', tags: ['automations'] },
+  { method: 'GET', path: '/api/automations', operationId: 'automations.list', tags: ['automations'], response: AutomationsListResponse },
   { method: 'PUT', path: '/api/automations/:id', operationId: 'automations.toggle', tags: ['automations'] },
   { method: 'DELETE', path: '/api/automations/:id', operationId: 'automations.remove', tags: ['automations'] },
   { method: 'POST', path: '/api/automations/draft', operationId: 'automations.draft', tags: ['automations'] },
   { method: 'GET', path: '/api/projects/:projectId/work', operationId: 'work.overview', tags: ['work'], response: WorkOverviewResponse },
-  { method: 'GET', path: '/api/projects/:projectId/pod', operationId: 'pods.ensure', tags: ['pods'] },
+  { method: 'GET', path: '/api/projects/:projectId/pod', operationId: 'pods.ensure', tags: ['pods'], response: PodDetailResponse },
   { method: 'GET', path: '/api/projects/:projectId/pod/lookup', operationId: 'pods.lookup', tags: ['pods'], response: PodDetailResponse },
   { method: 'POST', path: '/api/projects/:projectId/pod', operationId: 'pods.create', tags: ['pods'] },
   { method: 'GET', path: '/api/pods/:podId', operationId: 'pods.get', tags: ['pods'], response: PodDetailResponse },
@@ -405,7 +425,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/pods/:podId/goals/:goalId/accept', operationId: 'pods.goals.accept', tags: ['pods'] },
   { method: 'GET', path: '/api/pods/:podId/goals/:goalId/worktree/diff', operationId: 'pods.goals.worktree.diff', tags: ['pods'], response: PodWorktreeDiffResponse },
   { method: 'GET', path: '/api/pods/:podId/sessions/:sessionId/transcript', operationId: 'pods.transcript', tags: ['pods'], response: PodTranscriptResponse },
-  { method: 'GET', path: '/api/pods/:podId/memory', operationId: 'pods.memory.get', tags: ['pods'] },
+  { method: 'GET', path: '/api/pods/:podId/memory', operationId: 'pods.memory.get', tags: ['pods'], response: PodMemoryResponse },
   { method: 'POST', path: '/api/pods/:podId/memory', operationId: 'pods.memory.write', tags: ['pods'] },
   // Task 18：直接讨论 Goal 的协作面（Tech Lead 会话 / 方向裁定 / Spike / 打回 / revision）
   { method: 'GET', path: '/api/pods/:podId/goals/:goalId/tech-lead', operationId: 'pods.goals.techLead', tags: ['pods'], response: PodTechLeadHistoryResponse },
@@ -443,7 +463,7 @@ const NON_SDK_ROUTES: RouteDef[] = [
   // Goal / 编排（§5.20）
   { method: 'POST', path: '/api/work/:goalId/complete', operationId: 'goals.complete', tags: ['internal'] },
   { method: 'POST', path: '/control', operationId: 'goals.controlLegacy', summary: 'MCP 兼容别名，与 /api/goals/control 同 handler', tags: ['internal'] },
-  { method: 'GET', path: '/api/orchestration/outcomes', operationId: 'orchestration.outcomes', tags: ['internal'] },
+  { method: 'GET', path: '/api/orchestration/outcomes', operationId: 'orchestration.outcomes', tags: ['internal'], response: OrchestrationOutcomesResponse },
   // 媒体补充（media.upload / uploadAndCreate / switch / plugins GET / a2a / artifacts GET 已在 SDK-facing）
   { method: 'POST', path: '/api/media/create-task', operationId: 'media.createTaskApi', tags: ['internal'] },
   { method: 'GET', path: '/api/media/resolve-task/:id', operationId: 'media.resolveTask', tags: ['internal'], response: MediaResolveTaskResponse },
@@ -502,8 +522,8 @@ const NON_SDK_ROUTES: RouteDef[] = [
   // Task C1：单规则详情 GET /api/automations/:id 未进 @mafw/sdk 调用面
   // （SDK 只有 list/toggle/remove/draft）→ 与 automations.history 同放
   // NON_SDK 并标 internal，SDK 死契约门据此豁免。
-  { method: 'GET', path: '/api/automations/:id', operationId: 'automations.get', tags: ['internal'] },
-  { method: 'GET', path: '/api/automations/:id/history', operationId: 'automations.history', tags: ['internal'] },
+  { method: 'GET', path: '/api/automations/:id', operationId: 'automations.get', tags: ['internal'], response: AutomationGetResponse },
+  { method: 'GET', path: '/api/automations/:id/history', operationId: 'automations.history', tags: ['internal'], response: AutomationHistoryResponse },
   { method: 'POST', path: '/api/runtime/reload', operationId: 'runtime.reload', tags: ['internal'] },
   { method: 'POST', path: '/api/runtime/dry-event', operationId: 'runtime.dryEvent', tags: ['internal'] },
   { method: 'POST', path: '/api/runtime/conformance', operationId: 'runtime.conformance', tags: ['internal'] },

@@ -8763,7 +8763,22 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            projectDir: string;
+                            leadSessionId: string;
+                            fromTopicId: string;
+                            toTopicId: string | null;
+                            trigger: "explicit" | "semantic" | "idle" | "goal_closed" | "keyword";
+                            confidence: number;
+                            status: "proposed" | "accepted" | "merged" | "split" | "undone";
+                            text: string;
+                            createdAt: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -8862,7 +8877,20 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            kind: "github" | "cron" | "internal" | "webhook";
+                            name: string;
+                            enabled: boolean;
+                            cursor: {
+                                [key: string]: unknown;
+                            };
+                            updatedAt: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -8918,7 +8946,20 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            sourceId: string;
+                            projectDir: string;
+                            externalKey: string;
+                            title: string;
+                            state: "open" | "closed" | "archived";
+                            lastTriggerAt: string | null;
+                            createdAt: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -8938,7 +8979,25 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            sourceId: string;
+                            threadId: string;
+                            externalId: string;
+                            kind: string;
+                            actor: string | null;
+                            payload: {
+                                [key: string]: unknown;
+                            };
+                            occurredAt: string;
+                            receivedAt: string;
+                            idempotencyKey: string;
+                            disposition: "pending" | "evaluating" | "accepted" | "ignored" | "fanned_out" | "filtered";
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -8978,7 +9037,20 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            threadId: string;
+                            subscriberType: "standing_goal" | "goal" | "lead";
+                            subscriberId: string;
+                            mode: "work" | "context";
+                            createdAt: string;
+                            expiresAt: string | null;
+                            droppedAt: string | null;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -9036,7 +9108,23 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            triggerId: string;
+                            subscriptionId: string;
+                            state: "pending" | "delivered" | "read" | "acknowledged" | "answered" | "handed_back" | "failed" | "dropped";
+                            attempts: number;
+                            lastError: string | null;
+                            deliveredAt: string | null;
+                            readAt: string | null;
+                            ackAt: string | null;
+                            answeredAt: string | null;
+                            nextRetryAt: string | null;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -9074,7 +9162,47 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            projectDir: string;
+                            title: string;
+                            objective: string;
+                            template: {
+                                taskType?: "feature" | "bug" | "research" | "refactor" | "ops";
+                                acceptance?: string[];
+                                boundaries?: string[];
+                                planReview?: "auto" | "manual";
+                            };
+                            triggers: {
+                                id: string;
+                                type: "cron" | "event" | "manual";
+                                schedule?: string;
+                                timezone?: string;
+                                eventKinds?: string[];
+                                filter?: {
+                                    [key: string]: unknown;
+                                };
+                            }[];
+                            state: "active" | "paused" | "stopped";
+                            stateReason?: string | null;
+                            concurrency: number;
+                            cooldownMs: number;
+                            budget: {
+                                perRunTurns?: number;
+                                perRunCostUsd?: number;
+                                perDayCostUsd?: number;
+                            };
+                            approval: "auto" | "plan" | "confirm";
+                            createdBy: string | null;
+                            createdAt: string;
+                            updatedAt: string;
+                            lastRunAt: string | null;
+                            nextRunAt: string | null;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -9132,7 +9260,32 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            standingGoalId: string;
+                            triggerType: "cron" | "event" | "manual";
+                            triggerKey: string;
+                            payload: {
+                                [key: string]: unknown;
+                            };
+                            status: "queued" | "triaging" | "running" | "waiting_person" | "done" | "failed" | "skipped";
+                            mode: "goal" | "report" | "action" | "skip" | null;
+                            rationale: string | null;
+                            goalId: string | null;
+                            sessionId: string | null;
+                            worktree: string | null;
+                            result: {
+                                [key: string]: unknown;
+                            } | null;
+                            costUsd: number | null;
+                            tokens: number | null;
+                            startedAt: string | null;
+                            endedAt: string | null;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -9250,7 +9403,19 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            title: string;
+                            summary: string | null;
+                            state: "resident" | "warm" | "cold" | "archived";
+                            lastActiveAt: string;
+                            goalId: string;
+                            resumedFrom: string | null;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -9270,7 +9435,27 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        topic: {
+                            id: string;
+                            title: string;
+                            summary: string | null;
+                            state: "resident" | "warm" | "cold" | "archived";
+                            lastActiveAt: string;
+                            goalId: string;
+                            resumedFrom: string | null;
+                        };
+                        messages: {
+                            topicId: string;
+                            messageId: string;
+                            role: "user" | "assistant";
+                            text: string;
+                            tokenEstimate: number;
+                            createdAt: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -10773,14 +10958,51 @@ export interface operations {
                         rules: {
                             id: string;
                             enabled: boolean;
-                            name?: string;
-                            trigger?: {
+                            trigger: {
+                                /** @constant */
+                                type: "cron";
                                 schedule: string;
                                 timezone: string;
+                            } | {
+                                /** @constant */
+                                type: "event";
+                                on: string[];
+                                perGoalCooldown: string;
+                            };
+                            skill?: string;
+                            args?: {
+                                [key: string]: unknown;
+                            };
+                            onResult?: {
+                                type: "triage" | "goal";
+                                auto_confirm?: boolean;
+                                template?: string;
+                            };
+                            goal_defaults?: {
+                                maxLoops?: number;
+                                metrics?: {
+                                    [key: string]: {
+                                        target: number;
+                                        unit: string;
+                                    };
+                                };
                             };
                             action?: {
                                 type: string;
                             };
+                            nextTriggers: string[];
+                            recentHistory: {
+                                timestamp: string;
+                                event: string;
+                                goalId?: string;
+                                ruleId?: string;
+                                source?: "cron" | "event" | "llm" | "user";
+                                reason?: string;
+                                sessionId?: string;
+                                details?: {
+                                    [key: string]: unknown;
+                                };
+                            }[];
                         }[];
                     };
                 };
@@ -10803,7 +11025,57 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        enabled: boolean;
+                        trigger: {
+                            /** @constant */
+                            type: "cron";
+                            schedule: string;
+                            timezone: string;
+                        } | {
+                            /** @constant */
+                            type: "event";
+                            on: string[];
+                            perGoalCooldown: string;
+                        };
+                        skill?: string;
+                        args?: {
+                            [key: string]: unknown;
+                        };
+                        onResult?: {
+                            type: "triage" | "goal";
+                            auto_confirm?: boolean;
+                            template?: string;
+                        };
+                        goal_defaults?: {
+                            maxLoops?: number;
+                            metrics?: {
+                                [key: string]: {
+                                    target: number;
+                                    unit: string;
+                                };
+                            };
+                        };
+                        action?: {
+                            type: string;
+                        };
+                        nextTriggers: string[];
+                        history: {
+                            timestamp: string;
+                            event: string;
+                            goalId?: string;
+                            ruleId?: string;
+                            source?: "cron" | "event" | "llm" | "user";
+                            reason?: string;
+                            sessionId?: string;
+                            details?: {
+                                [key: string]: unknown;
+                            };
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -11231,7 +11503,153 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        pod: {
+                            id: string;
+                            projectDir: string;
+                            name: string;
+                            status: "active" | "idle" | "paused" | "archived";
+                            configJson: string;
+                            activeGoalId: string | null;
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                        members: {
+                            id: string;
+                            podId: string;
+                            role: "lead" | "tech_lead" | "builder" | "reviewer";
+                            displayName: string;
+                            agentName: string;
+                            modelProvider: string | null;
+                            modelId: string | null;
+                            status: "available" | "working" | "waiting" | "sleeping" | "retired";
+                            configJson: string | null;
+                            createdAt: string;
+                            updatedAt: string;
+                        }[];
+                        stageSupported?: boolean;
+                        goals: {
+                            id: string;
+                            podId: string;
+                            goalId: string;
+                            status: "queued" | "active" | "done" | "aborted";
+                            title: string;
+                            phase: string | null;
+                            verdict: ("PASS" | "FAIL" | "MAX_RETRIES" | "ERROR" | "CANCELLED") | null;
+                            stage: {
+                                owner: "person" | "team" | "system";
+                                kind: "plan_approval" | "direction_review" | "question" | "blocked" | "queued" | "discussing" | "planning" | "probing" | "implementing" | "reviewing" | "result_notified" | "working" | "waiting" | "ended";
+                                role?: "lead" | "tech_lead" | "builder" | "reviewer";
+                                queueReason?: "active_goal" | "paused" | "archived" | "budget" | "state_error";
+                                action?: {
+                                    type: "open_plan_review" | "open_direction_review" | "open_question" | "open_discussion" | "open_goal" | "open_result";
+                                    goalId: string;
+                                    questionId?: string;
+                                };
+                            };
+                            pendingQuestion?: {
+                                questionId: string;
+                                node: "plan" | "execute" | "review";
+                                questions: string[];
+                            } | null;
+                            bucket?: "needs_you" | "queued" | "in_progress" | "result_ready" | "ended";
+                            resultReady: boolean;
+                            accepted?: boolean;
+                            lastError?: string | null;
+                            progress?: {
+                                total: number;
+                                done: number;
+                                inProgress: number;
+                                review: number;
+                                failed: number;
+                                skipped: number;
+                            } | null;
+                            sourceRef?: {
+                                sessionID?: string;
+                                messageID?: string;
+                                snapshot: string;
+                                capturedAt: string;
+                                topicId?: string;
+                                messageRange?: {
+                                    from: string;
+                                    to: string;
+                                };
+                            } | null;
+                            strategy?: ("quick" | "collaborative") | null;
+                            goalMode?: "quick" | "standard" | "standing";
+                            assessment?: ("reviewed" | "unreviewed") | null;
+                            currentAssignment?: {
+                                assignmentId: string;
+                                role: "builder" | "reviewer";
+                                taskIds: string[];
+                                attempt: number;
+                            } | null;
+                            activeRevision?: number;
+                            revision?: number;
+                            priority?: number;
+                            enqueuedAt: string;
+                            startedAt: string | null;
+                            endedAt: string | null;
+                        }[];
+                        attention: {
+                            id: string;
+                            goalId: string;
+                            revision: number;
+                            kind: "plan_approval" | "direction_review" | "question" | "blocked" | "review" | "failed";
+                            title: string;
+                            action: {
+                                type: "open_plan_review" | "open_direction_review" | "open_question" | "open_discussion" | "open_goal" | "open_result";
+                                goalId: string;
+                                questionId?: string;
+                            };
+                            podId?: string;
+                            projectId?: string;
+                        }[];
+                        messageHealth: {
+                            messageId: string;
+                            podId: string;
+                            memberId: string;
+                            deliveredAt: string | null;
+                            deliveredSessionId: string | null;
+                            status: "pending" | "delivered" | "failed";
+                            attempts: number;
+                            lastError: string | null;
+                            nextRetryAt: string | null;
+                        }[];
+                        tasks: {
+                            id: string;
+                            podId: string;
+                            goalId: string | null;
+                            sourceKey: string;
+                            externalTaskId: string | null;
+                            kind: "plan" | "note" | "external_request";
+                            title: string;
+                            description: string | null;
+                            ownerMemberId: string | null;
+                            status: "pending" | "in_progress" | "blocked" | "review" | "done" | "failed" | "skipped" | "reopened";
+                            dependenciesJson: string | null;
+                            artifactRefsJson: string | null;
+                            acceptanceJson?: string | null;
+                            createdAt: string;
+                            updatedAt: string;
+                        }[];
+                        sessions: {
+                            id: string;
+                            podId: string;
+                            memberId: string;
+                            goalId: string | null;
+                            node: string | null;
+                            sessionId: string;
+                            runtime?: string;
+                            status: string;
+                            transcriptRef: string | null;
+                            scopeKind?: ("project" | "discussion" | "probe" | "implementation" | "review") | null;
+                            createdAt: string;
+                            endedAt: string | null;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -12358,7 +12776,13 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        content: string | null;
+                    } | {
+                        context: string | null;
+                    };
+                };
             };
         };
     };
@@ -13174,7 +13598,30 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        outcomes: {
+                            goal_id: string;
+                            project_id: string | null;
+                            verdict: string;
+                            rounds: number;
+                            duration_ms: number | null;
+                            tokens_input: number | null;
+                            tokens_output: number | null;
+                            total_cost: number | null;
+                            tool_error_count: number | null;
+                            thumbs_up: number;
+                            thumbs_down: number;
+                            policy_version: string;
+                            evolution_proposal_id: string | null;
+                            failure_kind: string | null;
+                            failure_signature: string | null;
+                            task_type?: string | null;
+                            created_at: string | null;
+                            archived_at: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -13705,7 +14152,22 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        history: {
+                            timestamp: string;
+                            event: string;
+                            goalId?: string;
+                            ruleId?: string;
+                            source?: "cron" | "event" | "llm" | "user";
+                            reason?: string;
+                            sessionId?: string;
+                            details?: {
+                                [key: string]: unknown;
+                            };
+                        }[];
+                    };
+                };
             };
         };
     };

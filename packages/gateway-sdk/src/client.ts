@@ -11,7 +11,7 @@ import {
   StickyNote, StickyNoteBudget, ModelUsageWindows, MemoryStats,
   MafwCommandResult, MafwCommandDef, ManagerSessionInfo, ManagerRotateResult,
   DiscoverySnapshot, DiscoverySkillContent,
-  Approval, TriageItem, AutomationRule, Todo,
+  Approval, TriageItem, AutomationRule, AutomationRuleListItem, Todo,
   QuestionRequest, MediaPluginState, PermissionRule, FileDiffInfo,
   SessionCheckpoint, SessionCheckpointListItem, CheckpointScope, CheckpointRestoreResult, RunState, DataPart,
   TaskEntity, TaskSubmitInput, TaskOutput, QueueItem,
@@ -2128,8 +2128,8 @@ export class MafwClient implements IMafwClient {
   // 鈹€鈹€ Automations 鈹€鈹€
 
   automations = {
-    list: async (): Promise<AutomationRule[]> => {
-      const data = await this.request<{ rules: AutomationRule[] }>('/api/automations')
+    list: async (): Promise<AutomationRuleListItem[]> => {
+      const data = await this.request<{ rules: AutomationRuleListItem[] }>('/api/automations')
       return data.rules || []
     },
 

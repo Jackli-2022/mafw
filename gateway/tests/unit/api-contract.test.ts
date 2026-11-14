@@ -27,7 +27,11 @@ import { RouteRegistry } from '../../src/routes/registry';
 import { buildRouteCatalog } from '../../src/routes/route-catalog';
 import { KernelStatsResponse } from '../../src/routes/schemas/resources';
 import { buildKernelStatsSnapshot, type KernelStatsInput } from '../../src/resources/stats';
-import { AttentionListResponse, DecisionListResponse } from '../../src/routes/schemas/read-models';
+import {
+  AttentionListResponse,
+  DecisionListResponse,
+  OrchestrationOutcomesResponse,
+} from '../../src/routes/schemas/read-models';
 import {
   SessionCheckpointsResponse,
   SessionChildrenResponse,
@@ -44,6 +48,7 @@ import {
   PodGoalResultResponse,
   PodGoalRevisionsResponse,
   PodGoalsResponse,
+  PodMemoryResponse,
   PodMessagesResponse,
   PodProbesResponse,
   PodReviewItemsResponse,
@@ -134,6 +139,27 @@ import {
   TtsVoicesResponse,
   VoiceStatusResponse,
 } from '../../src/routes/schemas/media-voice';
+import {
+  LeadBoundariesResponse,
+  LeadTopicGetResponse,
+  LeadTopicsResponse,
+} from '../../src/routes/schemas/lead';
+import {
+  EventDeliveriesResponse,
+  EventSourcesResponse,
+  EventSubscriptionsResponse,
+  EventThreadsResponse,
+  EventTriggersResponse,
+} from '../../src/routes/schemas/events';
+import {
+  StandingGoalListResponse,
+  StandingGoalRunsResponse,
+} from '../../src/routes/schemas/standing';
+import {
+  AutomationGetResponse,
+  AutomationHistoryResponse,
+  AutomationsListResponse,
+} from '../../src/routes/schemas/automations';
 import { handleAttention } from '../../src/routes/attention';
 import { handleDecisionList } from '../../src/routes/decisions';
 import type { PodGoalView } from '../../src/core/pod/pod-view';
@@ -2965,5 +2991,398 @@ describe('api-contract: E10f-B project / runtime / metadata read response schema
       runtime: { active: null, providerId: null, modelTag: null, dims: null, vectors: 0, indexEntries: 0, coverage: 1 },
       available: { providers: [], engines: [], gpus: [] },
     })).toBe(false);
+  });
+});
+
+describe('api-contract: E10f-C goal / lead / event / standing / automation / pod read response schema (16 ops)', () => {
+  const findOp = (operationId: string): any => {
+    for (const pathItem of Object.values(contract.paths || {}) as any[]) {
+      for (const op of Object.values(pathItem) as any[]) {
+        if (op?.operationId === operationId) return op;
+      }
+    }
+    return undefined;
+  };
+  const schemaOf = (operationId: string): any =>
+    findOp(operationId).responses['200'].content['application/json'].schema;
+
+  const ISO = '2026-11-14T00:00:00.000Z';
+
+  const EXPECTED: Record<string, {
+    fields: string[];
+    union?: true;
+    item?: { at: string; required: string[] };
+  }> = {
+    'lead.boundaries.list': {
+      fields: ['items'],
+      item: {
+        at: 'items',
+        required: [
+          'id', 'projectDir', 'leadSessionId', 'fromTopicId', 'toTopicId', 'trigger', 'confidence',
+          'status', 'text', 'createdAt',
+        ],
+      },
+    },
+    'lead.topics.list': {
+      fields: ['items'],
+      item: { at: 'items', required: ['id', 'title', 'summary', 'state', 'lastActiveAt', 'goalId', 'resumedFrom'] },
+    },
+    'lead.topics.get': {
+      fields: ['topic', 'messages'],
+      item: { at: 'messages', required: ['topicId', 'messageId', 'role', 'text', 'tokenEstimate', 'createdAt'] },
+    },
+    'events.sources.list': {
+      fields: ['items'],
+      item: { at: 'items', required: ['id', 'kind', 'name', 'enabled', 'cursor', 'updatedAt'] },
+    },
+    'events.threads.list': {
+      fields: ['items'],
+      item: {
+        at: 'items',
+        required: ['id', 'sourceId', 'projectDir', 'externalKey', 'title', 'state', 'lastTriggerAt', 'createdAt'],
+      },
+    },
+    'events.threads.triggers': {
+      fields: ['items'],
+      item: {
+        at: 'items',
+        required: [
+          'id', 'sourceId', 'threadId', 'externalId', 'kind', 'actor', 'payload', 'occurredAt',
+          'receivedAt', 'idempotencyKey', 'disposition',
+        ],
+      },
+    },
+    'events.threads.subscriptions.list': {
+      fields: ['items'],
+      item: {
+        at: 'items',
+        required: [
+          'id', 'threadId', 'subscriberType', 'subscriberId', 'mode', 'createdAt', 'expiresAt', 'droppedAt',
+        ],
+      },
+    },
+    'events.deliveries.list': {
+      fields: ['items'],
+      item: {
+        at: 'items',
+        required: [
+          'id', 'triggerId', 'subscriptionId', 'state', 'attempts', 'lastError', 'deliveredAt',
+          'readAt', 'ackAt', 'answeredAt', 'nextRetryAt',
+        ],
+      },
+    },
+    'standingGoals.list': {
+      fields: ['items'],
+      item: {
+        at: 'items',
+        required: [
+          'id', 'projectDir', 'title', 'objective', 'template', 'triggers', 'state', 'concurrency',
+          'cooldownMs', 'budget', 'approval', 'createdBy', 'createdAt', 'updatedAt', 'lastRunAt', 'nextRunAt',
+        ],
+      },
+    },
+    'standingGoals.runs': {
+      fields: ['items'],
+      item: {
+        at: 'items',
+        required: [
+          'id', 'standingGoalId', 'triggerType', 'triggerKey', 'payload', 'status', 'mode', 'rationale',
+          'goalId', 'sessionId', 'worktree', 'result', 'costUsd', 'tokens', 'startedAt', 'endedAt',
+        ],
+      },
+    },
+    'automations.list': {
+      fields: ['rules'],
+      item: { at: 'rules', required: ['id', 'enabled', 'trigger', 'nextTriggers', 'recentHistory'] },
+    },
+    'automations.get': { fields: ['id', 'enabled', 'trigger', 'nextTriggers', 'history'] },
+    'automations.history': { fields: ['history'], item: { at: 'history', required: ['timestamp', 'event'] } },
+    'pods.ensure': {
+      fields: ['pod', 'members', 'goals', 'attention', 'messageHealth', 'tasks', 'sessions'],
+    },
+    // ?file= → {content}；无 file → {context}（文件缺失时两者都是 null，不是 404）。
+    'pods.memory.get': { fields: [], union: true },
+    'orchestration.outcomes': {
+      fields: ['outcomes'],
+      item: {
+        at: 'outcomes',
+        required: [
+          'goal_id', 'project_id', 'verdict', 'rounds', 'duration_ms', 'tokens_input', 'tokens_output',
+          'total_cost', 'tool_error_count', 'thumbs_up', 'thumbs_down', 'policy_version',
+          'evolution_proposal_id', 'failure_kind', 'failure_signature', 'created_at', 'archived_at',
+        ],
+      },
+    },
+  };
+
+  test('all sixteen ops expose a 200 JSON schema with properties (not a whole-response widening)', () => {
+    expect(Object.keys(EXPECTED)).toHaveLength(16);
+    const problems: string[] = [];
+    for (const [operationId, spec] of Object.entries(EXPECTED)) {
+      const op = findOp(operationId);
+      if (!op) { problems.push(`${operationId}: missing from openapi.json`); continue; }
+      const schema = op.responses?.['200']?.content?.['application/json']?.schema;
+      if (!schema) { problems.push(`${operationId}: responses.200 missing application/json schema`); continue; }
+      if (spec.union) {
+        if ((schema.anyOf ?? []).length !== 2) problems.push(`${operationId}: expected a two-branch union`);
+        continue;
+      }
+      const properties = Object.keys(schema.properties ?? {});
+      if (properties.length === 0) { problems.push(`${operationId}: schema has no properties (widened)`); continue; }
+      for (const field of spec.fields) {
+        if (!properties.includes(field)) problems.push(`${operationId}: schema missing property '${field}'`);
+      }
+    }
+    if (problems.length) {
+      console.error('[api-contract] E10f-C response schema missing - run emit:openapi + gen:api:\n' + problems.join('\n'));
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test('array item required fields match the handler wire', () => {
+    const problems: string[] = [];
+    for (const [operationId, spec] of Object.entries(EXPECTED)) {
+      if (!spec.item) continue;
+      const required = schemaOf(operationId).properties?.[spec.item.at]?.items?.required ?? [];
+      for (const field of spec.item.required) {
+        if (!required.includes(field)) problems.push(`${operationId}: ${spec.item.at}.items missing required '${field}'`);
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test('lead topics / boundaries expose the full wire row (view projection + index rows)', () => {
+    const topics = schemaOf('lead.topics.list').properties.items.items;
+    expect(topics.properties.summary.anyOf.map((e: any) => e.type)).toEqual(['string', 'null']);
+    expect(topics.properties.resumedFrom.anyOf.map((e: any) => e.type)).toEqual(['string', 'null']);
+    expect(topics.properties.state.anyOf.map((e: any) => e.const))
+      .toEqual(['resident', 'warm', 'cold', 'archived']);
+    // topic detail carries the searchable index rows, not the transcript.
+    expect(Object.keys(schemaOf('lead.topics.get').properties).sort()).toEqual(['messages', 'topic']);
+    const boundary = schemaOf('lead.boundaries.list').properties.items.items;
+    // `text` is on the wire (`TopicBoundaryRow.text`) and was missing from the SDK DTO before E10f-C.
+    expect(boundary.required).toContain('text');
+    expect(boundary.properties.trigger.anyOf.map((e: any) => e.const))
+      .toEqual(['explicit', 'semantic', 'idle', 'goal_closed', 'keyword']);
+    expect(boundary.properties.toTopicId.anyOf.map((e: any) => e.type)).toEqual(['string', 'null']);
+  });
+
+  test('event layer rows keep storage columns; sources are the owned view projection', () => {
+    // sources: sourceView() drops projectDir/config/createdAt (SDK EventSourceView).
+    expect(Object.keys(schemaOf('events.sources.list').properties.items.items.properties).sort())
+      .toEqual(['cursor', 'enabled', 'id', 'kind', 'name', 'updatedAt']);
+    const cursor = schemaOf('events.sources.list').properties.items.items.properties.cursor;
+    // Cursor internals are per-adapter → boundary object (open index), not a whole-response widening.
+    expect(cursor.type).toBe('object');
+    expect(cursor.patternProperties).toEqual({ '^(.*)$': {} });
+
+    for (const op of ['events.threads.list', 'events.threads.triggers',
+      'events.threads.subscriptions.list', 'events.deliveries.list']) {
+      expect(Object.keys(schemaOf(op).properties)).toEqual(['items']);
+    }
+    expect(schemaOf('events.threads.list').properties.items.items.required).toContain('projectDir');
+    expect(schemaOf('events.threads.list').properties.items.items.properties.state.anyOf.map((e: any) => e.const))
+      .toEqual(['open', 'closed', 'archived']);
+    expect(schemaOf('events.deliveries.list').properties.items.items.properties.state.anyOf
+      .map((e: any) => e.const))
+      .toEqual(['pending', 'delivered', 'read', 'acknowledged', 'answered', 'handed_back', 'failed', 'dropped']);
+  });
+
+  test('standing goals keep optional template/budget facets and nullable run outcome', () => {
+    const goal = schemaOf('standingGoals.list').properties.items.items;
+    expect(goal.properties.state.anyOf.map((e: any) => e.const)).toEqual(['active', 'paused', 'stopped']);
+    expect(goal.properties.stateReason.anyOf.map((e: any) => e.type)).toEqual(['string', 'null']);
+    // stateReason is optional (legacy rows never wrote it).
+    expect(goal.required).not.toContain('stateReason');
+    expect(Object.keys(goal.properties.template.properties).sort())
+      .toEqual(['acceptance', 'boundaries', 'planReview', 'taskType']);
+    expect(Object.keys(goal.properties.budget.properties).sort())
+      .toEqual(['perDayCostUsd', 'perRunCostUsd', 'perRunTurns']);
+    expect(goal.properties.triggers.items.properties.type.anyOf.map((e: any) => e.const))
+      .toEqual(['cron', 'event', 'manual']);
+
+    const run = schemaOf('standingGoals.runs').properties.items.items;
+    expect(run.properties.mode.anyOf.map((e: any) => e.const ?? e.type))
+      .toEqual(['goal', 'report', 'action', 'skip', 'null']);
+    // result is an engine-owned summary object, nullable until the run finishes.
+    expect(run.properties.result.anyOf.map((e: any) => e.type)).toEqual(['object', 'null']);
+  });
+
+  test('automations.list is now handler truth (trigger union + enrichment, no stale override shape)', () => {
+    const rules = schemaOf('automations.list').properties.rules;
+    const item = rules.items;
+    // The deleted override marked only id/enabled required and had no name-less trigger union.
+    expect(item.required).toEqual(['id', 'enabled', 'trigger', 'nextTriggers', 'recentHistory']);
+    expect(item.properties.trigger.anyOf.map((branch: any) => branch.properties.type.const))
+      .toEqual(['cron', 'event']);
+    expect(item.properties.trigger.anyOf[0].required).toEqual(['type', 'schedule', 'timezone']);
+    expect(item.properties.trigger.anyOf[1].required).toEqual(['type', 'on', 'perGoalCooldown']);
+    // No writer emits `name`; it is gone from both schema and DTO.
+    expect(item.properties.name).toBeUndefined();
+    // automations.get shares the rule body + derives nextTriggers/history.
+    expect(Object.keys(schemaOf('automations.get').properties)).toEqual(expect.arrayContaining([
+      'id', 'enabled', 'trigger', 'skill', 'args', 'onResult', 'goal_defaults', 'action',
+      'nextTriggers', 'history',
+    ]));
+    expect(schemaOf('automations.history').properties.history.items.required)
+      .toEqual(['timestamp', 'event']);
+  });
+
+  test('automations.list override entry is deleted (code-first now)', () => {
+    const overrides = JSON.parse(readFileSync(
+      join(__dirname, '..', '..', '..', 'packages', 'gateway-sdk', 'contract', 'overrides.json'),
+      'utf-8',
+    ));
+    expect(overrides.operations['automations.list']).toBeUndefined();
+    // 12 -> 11 (E10f-C); session.list is still listed here until it is dropped as dead weight.
+    expect(Object.keys(overrides.operations)).toHaveLength(11);
+  });
+
+  test('pods.ensure reuses the pods.get detail shape; pods.memory.get is dual-shaped', () => {
+    expect(schemaOf('pods.ensure')).toEqual(schemaOf('pods.get'));
+    const memory = schemaOf('pods.memory.get');
+    expect(memory.anyOf.map((branch: any) => branch.required))
+      .toEqual([['content'], ['context']]);
+    expect(memory.anyOf.map((branch: any) => branch.properties.content?.anyOf?.[1]?.type
+      ?? branch.properties.context?.anyOf?.[1]?.type)).toEqual(['null', 'null']);
+  });
+
+  test('orchestration.outcomes keeps the gateway.db snake_case row', () => {
+    const row = schemaOf('orchestration.outcomes').properties.outcomes.items;
+    expect(row.properties.goal_id.type).toBe('string');
+    expect(row.properties.archived_at.type).toBe('string');
+    // legacy rows have no task_type value → optional/nullable, never required-as-string.
+    expect(row.properties.task_type.anyOf.map((e: any) => e.type)).toEqual(['string', 'null']);
+    expect(row.required).not.toContain('task_type');
+  });
+
+  test('error envelopes are not part of the 200 schema', () => {
+    expect(Value.Check(LeadBoundariesResponse, { error: 'topic id is required' })).toBe(false);
+    expect(Value.Check(LeadTopicGetResponse, { error: 'topic not found' })).toBe(false);
+    expect(Value.Check(EventSourcesResponse, { error: 'event layer disabled' })).toBe(false);
+    expect(Value.Check(StandingGoalListResponse, { error: 'standing goals disabled' })).toBe(false);
+    expect(Value.Check(StandingGoalRunsResponse, { error: 'standing goal not found: sg_1' })).toBe(false);
+    expect(Value.Check(AutomationGetResponse, { error: 'Rule not found' })).toBe(false);
+    expect(Value.Check(OrchestrationOutcomesResponse, { error: 'boom' })).toBe(false);
+  });
+
+  test('handler wire samples validate against each new schema (Value.Check)', () => {
+    const topic = {
+      id: 'tp_1', title: 'Goal intake', summary: null, state: 'warm',
+      lastActiveAt: ISO, goalId: 'g_1', resumedFrom: null,
+    };
+    expect(Value.Check(LeadTopicsResponse, { items: [topic] })).toBe(true);
+    expect(Value.Check(LeadTopicsResponse, { items: [{ ...topic, state: 'hot' }] })).toBe(false);
+
+    const message = {
+      topicId: 'tp_1', messageId: 'm_1', role: 'user', text: 'hi', tokenEstimate: 1, createdAt: ISO,
+    };
+    expect(Value.Check(LeadTopicGetResponse, { topic, messages: [message] })).toBe(true);
+    expect(Value.Check(LeadTopicGetResponse, { topic, messages: [{ ...message, role: 'system' }] })).toBe(false);
+
+    const boundary = {
+      id: 'bd_1', projectDir: '/p', leadSessionId: 'ses_1', fromTopicId: 'tp_1', toTopicId: null,
+      trigger: 'semantic', confidence: 0.62, status: 'proposed', text: 'let us switch', createdAt: ISO,
+    };
+    expect(Value.Check(LeadBoundariesResponse, { items: [boundary] })).toBe(true);
+    expect(Value.Check(LeadBoundariesResponse, { items: [{ ...boundary, trigger: 'manual' }] })).toBe(false);
+
+    const source = {
+      id: 'src_1', kind: 'webhook', name: 'hook', enabled: true, cursor: { etag: 'x' }, updatedAt: ISO,
+    };
+    expect(Value.Check(EventSourcesResponse, { items: [source] })).toBe(true);
+    expect(Value.Check(EventSourcesResponse, { items: [{ ...source, kind: 'slack' }] })).toBe(false);
+
+    const thread = {
+      id: 'th_1', sourceId: 'src_1', projectDir: '/p', externalKey: 'o/r#1', title: 'issue',
+      state: 'open', lastTriggerAt: null, createdAt: ISO,
+    };
+    expect(Value.Check(EventThreadsResponse, { items: [thread] })).toBe(true);
+    expect(Value.Check(EventThreadsResponse, { items: [{ ...thread, state: 'pending' }] })).toBe(false);
+
+    const trigger = {
+      id: 'tr_1', sourceId: 'src_1', threadId: 'th_1', externalId: 'evt_1', kind: 'issues.opened',
+      actor: null, payload: { number: 1 }, occurredAt: ISO, receivedAt: ISO,
+      idempotencyKey: 'src_1:evt_1', disposition: 'pending',
+    };
+    expect(Value.Check(EventTriggersResponse, { items: [trigger] })).toBe(true);
+    expect(Value.Check(EventTriggersResponse, { items: [{ ...trigger, disposition: 'done' }] })).toBe(false);
+
+    const subscription = {
+      id: 'sub_1', threadId: 'th_1', subscriberType: 'goal', subscriberId: 'g_1',
+      mode: 'work', createdAt: ISO, expiresAt: null, droppedAt: null,
+    };
+    expect(Value.Check(EventSubscriptionsResponse, { items: [subscription] })).toBe(true);
+    expect(Value.Check(EventSubscriptionsResponse, { items: [{ ...subscription, subscriberType: 'user' }] }))
+      .toBe(false);
+
+    const delivery = {
+      id: 'dl_1', triggerId: 'tr_1', subscriptionId: 'sub_1', state: 'delivered', attempts: 1,
+      lastError: null, deliveredAt: ISO, readAt: null, ackAt: null, answeredAt: null, nextRetryAt: null,
+    };
+    expect(Value.Check(EventDeliveriesResponse, { items: [delivery] })).toBe(true);
+    expect(Value.Check(EventDeliveriesResponse, { items: [{ ...delivery, state: 'ok' }] })).toBe(false);
+
+    const standingGoal = {
+      id: 'sg_1', projectDir: '/p', title: 'Nightly flake hunt', objective: 'Fix flaky tests',
+      template: { taskType: 'bug', acceptance: ['tests pass'], boundaries: ['no deps'], planReview: 'auto' },
+      triggers: [{ id: 'tg_1', type: 'cron', schedule: '0 3 * * *', timezone: 'UTC' }],
+      state: 'active', stateReason: null, concurrency: 1, cooldownMs: 60000,
+      budget: { perRunTurns: 20, perRunCostUsd: 1.5, perDayCostUsd: 5 },
+      approval: 'plan', createdBy: 'user', createdAt: ISO, updatedAt: ISO,
+      lastRunAt: null, nextRunAt: ISO,
+    };
+    expect(Value.Check(StandingGoalListResponse, { items: [standingGoal] })).toBe(true);
+    expect(Value.Check(StandingGoalListResponse, { items: [{ ...standingGoal, state: 'done' }] })).toBe(false);
+
+    const run = {
+      id: 'run_1', standingGoalId: 'sg_1', triggerType: 'event', triggerKey: 'tr_1', payload: { number: 1 },
+      status: 'queued', mode: null, rationale: null, goalId: null, sessionId: null, worktree: null,
+      result: null, costUsd: null, tokens: null, startedAt: null, endedAt: null,
+    };
+    expect(Value.Check(StandingGoalRunsResponse, { items: [run] })).toBe(true);
+    expect(Value.Check(StandingGoalRunsResponse, { items: [{ ...run, status: 'active' }] })).toBe(false);
+
+    const ledger = { timestamp: ISO, event: 'AUTOMATION_TRIGGERED', ruleId: 'rule_1', source: 'user', reason: 'enabled' };
+    const rule = {
+      id: 'rule_1', enabled: true,
+      trigger: { type: 'cron', schedule: '0 * * * *', timezone: 'UTC' },
+      skill: 'daily-triage', nextTriggers: [ISO], recentHistory: [ledger],
+    };
+    expect(Value.Check(AutomationsListResponse, { rules: [rule] })).toBe(true);
+    expect(Value.Check(AutomationsListResponse, {
+      rules: [{ ...rule, trigger: { type: 'event', on: ['issues.opened'], perGoalCooldown: '5m' }, nextTriggers: [] }],
+    })).toBe(true);
+    // Pre-E10f-C override shape (no discriminator, no enrichment) is no longer valid.
+    expect(Value.Check(AutomationsListResponse, {
+      rules: [{ id: 'rule_1', enabled: true, trigger: { schedule: '0 * * * *', timezone: 'UTC' } }],
+    })).toBe(false);
+
+    expect(Value.Check(AutomationGetResponse, {
+      id: 'rule_1', enabled: true,
+      trigger: { type: 'event', on: ['issues.opened'], perGoalCooldown: '5m' },
+      nextTriggers: [], history: [ledger],
+    })).toBe(true);
+    expect(Value.Check(AutomationHistoryResponse, { history: [ledger] })).toBe(true);
+    expect(Value.Check(AutomationHistoryResponse, { history: [{ event: 'x' }] })).toBe(false);
+
+    // pods.memory.get both branches; a missing file is null, not an error envelope.
+    expect(Value.Check(PodMemoryResponse, { content: '# POD' })).toBe(true);
+    expect(Value.Check(PodMemoryResponse, { content: null })).toBe(true);
+    expect(Value.Check(PodMemoryResponse, { context: '[POD CONTEXT]' })).toBe(true);
+    expect(Value.Check(PodMemoryResponse, { context: null })).toBe(true);
+    expect(Value.Check(PodMemoryResponse, {})).toBe(false);
+    expect(Value.Check(PodMemoryResponse, { content: 1 })).toBe(false);
+
+    const outcome = {
+      goal_id: 'g_1', project_id: 'proj_1', verdict: 'PASS', rounds: 3, duration_ms: 1200,
+      tokens_input: 10, tokens_output: 20, total_cost: 0.02, tool_error_count: 1,
+      thumbs_up: 0, thumbs_down: 0, policy_version: 'builtin-v1', evolution_proposal_id: null,
+      failure_kind: null, failure_signature: null, task_type: 'feature', created_at: ISO, archived_at: ISO,
+    };
+    expect(Value.Check(OrchestrationOutcomesResponse, { outcomes: [outcome] })).toBe(true);
+    expect(Value.Check(OrchestrationOutcomesResponse, { outcomes: [] })).toBe(true);
+    const { verdict: _verdict, ...withoutVerdict } = outcome;
+    expect(Value.Check(OrchestrationOutcomesResponse, { outcomes: [withoutVerdict] })).toBe(false);
   });
 });

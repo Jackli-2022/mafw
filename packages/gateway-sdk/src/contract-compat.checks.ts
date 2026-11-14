@@ -28,6 +28,9 @@ import type {
   // E10f-B project / runtime / metadata read surface
   MafwCommandDef, ManagerSessionInfo, Project, MediaPluginState, VoiceStatusResponse,
   ModelConfigState, ModelRef, EmbeddingConfigGetResponse, TtsNamespace, PluginClientSnapshot,
+  // E10f-C goal / lead / event / automation / pod read surface
+  AutomationRuleListItem, StandingGoalView, GoalRunView,
+  LeadTopicView, LeadTopicIndexMessage, LeadBoundaryView, EventSourceView,
 } from './types'
 import type { RuntimeContractResponse } from './runtime-contract'
 import type { MafwClient } from './client'
@@ -62,7 +65,7 @@ const CHECK_goals_sessions: AssertEq<GenGoalSession, GoalSessionInfo> = true
 const CHECK_memory_search: AssertEq<GenMemoryUnit, MemoryUnit> = true
 const CHECK_triage_list: AssertEq<GenTriageItem, TriageItem> = true
 const CHECK_approvals_list: AssertEq<GenApproval, Approval> = true
-const CHECK_automations_list: AssertEq<GenAutomationRule, AutomationRule> = true
+const CHECK_automations_list: AssertEq<GenAutomationRule, AutomationRuleListItem> = true
 const CHECK_questions_list: AssertEq<GenQuestionRequest, QuestionRequest> = true
 
 // E8-3: 核心读接口的 code-first response schema 与 SDK DTO 逐字段等价。
@@ -347,6 +350,67 @@ const CHECK_embedding_get: AssertEq<Resp<operations['embedding.get']>, Embedding
 // `{plugins:[{overridden}]}` 旧形状，`usagePluginSource()` 把 200/403/404 混成一个类型
 // → 三者 schema-only（tag: internal 之外没有可对齐的生成类型）。
 
+// ── E10f-C：goal / lead / event / automation / pod 读接口 ──────────────────
+
+/**
+ * `lead.topics.list` / `lead.topics.get` / `lead.boundaries.list`：wire 与 SDK
+ * `LeadTopicView` / `LeadTopicIndexMessage` / `LeadBoundaryView` 逐字段等价
+ * （`LeadBoundaryView.text` 是 E10f-C 补上的——该字段一直在 wire 上）。
+ */
+const CHECK_lead_topics_list_item: AssertEq<ItemOf<Resp<operations['lead.topics.list']>, 'items'>, LeadTopicView> = true
+const CHECK_lead_topic_get: AssertEq<
+  Resp<operations['lead.topics.get']>,
+  { topic: LeadTopicView; messages: LeadTopicIndexMessage[] }
+> = true
+const CHECK_lead_boundaries_item: AssertEq<ItemOf<Resp<operations['lead.boundaries.list']>, 'items'>, LeadBoundaryView> = true
+
+/**
+ * `standingGoals.list` / `standingGoals.runs`：行与 `StandingGoalView` / `GoalRunView`
+ * 逐字段等价；`payload` / `result` 是开放对象（触发源与执行器所有），两侧同形。
+ */
+const CHECK_standing_goals_list_item: AssertEq<
+  ItemOf<Resp<operations['standingGoals.list']>, 'items'>,
+  StandingGoalView
+> = true
+const CHECK_standing_goals_runs_item: AssertEq<
+  ItemOf<Resp<operations['standingGoals.runs']>, 'items'>,
+  GoalRunView
+> = true
+
+/**
+ * `automations.get`：规则段与 `automations.list` 共用同一本体 → Omit 掉派生字段后
+ * 必须与 SDK `AutomationRule` 等价（list 行另由 CHECK_automations_list 锁定）。
+ */
+type GenAutomationGet = Resp<operations['automations.get']>
+const CHECK_automations_get_rule: AssertEq<Omit<GenAutomationGet, 'nextTriggers' | 'history'>, AutomationRule> = true
+
+/**
+ * `events.sources.list` 行与 SDK `EventSourceView` 等价（handler 的 `sourceView()`
+ * 投影掉了 projectDir/config/createdAt）。thread/trigger/subscription/delivery 四个
+ * 读面是 store 行原样下发（带存储列），SDK 的 *View 是手写窄声明 → schema-only。
+ */
+const CHECK_events_sources_item: AssertEq<ItemOf<Resp<operations['events.sources.list']>, 'items'>, EventSourceView> = true
+
+/** `pods.ensure` 与 `pods.get` / `pods.lookup` 同 wire（`enrichPodDetail()`）→ 同一 PodDetail。 */
+const CHECK_pods_ensure: AssertEq<Resp<operations['pods.ensure']>, PodDetail> = true
+
+/**
+ * `pods.memory.get` 双分支：`{content}` ↔ `pod.readMemoryFile()`，`{context}` ↔
+ * `pod.readMemory()`（两者都是内联返回类型，故用 ReturnType 比较）。
+ */
+type GenPodMemory = Resp<operations['pods.memory.get']>
+const CHECK_pods_memory_file: AssertEq<
+  Extract<GenPodMemory, { content: unknown }>,
+  Awaited<ReturnType<PodNamespace['readMemoryFile']>>
+> = true
+const CHECK_pods_memory_context: AssertEq<
+  Extract<GenPodMemory, { context: unknown }>,
+  Awaited<ReturnType<PodNamespace['readMemory']>>
+> = true
+
+// orchestration.outcomes / automations.history 是 internal 运维面（SDK/desktop 不调用，
+// 行是 gateway.db 的 snake_case `SELECT *`）→ schema-only。
+
 /**
  * session.messages：`data` 的 part 判别联合由 view-dto 契约拥有，schema 只承诺
  * SDK 边界守卫 `MafwMessageShape` 认可的形状；游标必须与 client 的
@@ -404,4 +468,9 @@ export const CONTRACT_COMPAT_CHECKS = [
   CHECK_models_get_goal_node, CHECK_models_get_goal_tech_lead, CHECK_media_plugins_item,
   CHECK_tts_voices_voices, CHECK_tts_voices_models, CHECK_tts_voices_default_voice,
   CHECK_tts_voices_default_model, CHECK_voice_status, CHECK_embedding_get,
+  // E10f-C
+  CHECK_lead_topics_list_item, CHECK_lead_topic_get, CHECK_lead_boundaries_item,
+  CHECK_standing_goals_list_item, CHECK_standing_goals_runs_item,
+  CHECK_automations_get_rule, CHECK_events_sources_item, CHECK_pods_ensure,
+  CHECK_pods_memory_file, CHECK_pods_memory_context,
 ]
