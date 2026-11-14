@@ -1544,6 +1544,34 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
         description: "基于当前会话创建历史副本", group: "local", source: "builtin",
         run: () => { closeCommandPicker(); props.onForkCurrentSession?.() },
       },
+      {
+        id: "usage", trigger: "/usage", title: "用量与上下文",
+        description: "打开 Config › Usage", group: "local", source: "builtin",
+        run: () => { closeCommandPicker(); props.onOpenUsage?.() },
+      },
+      {
+        id: "permissions", trigger: "/permissions", title: "审批模式",
+        description: "选择手动 / 自动等审批模式", group: "local", source: "builtin",
+        run: () => { closeCommandPicker(); setPickerTrigger(textareaEl()); setPickerOpen("session-config") },
+      },
+      {
+        id: "diff", trigger: "/diff", title: "查看变更",
+        description: "打开当前会话的变更集", group: "local", source: "builtin",
+        run: () => { closeCommandPicker(); props.onOpenDiffReview?.() },
+      },
+      {
+        id: "skills", trigger: "/skills", title: "技能列表",
+        description: "打开 Config › 扩展", group: "local", source: "builtin",
+        run: () => {
+          closeCommandPicker()
+          window.dispatchEvent(new CustomEvent("mafw:open-config", { detail: "extensions" }))
+        },
+      },
+      {
+        id: "details", trigger: "/details", title: "展开细节",
+        description: "切换工具/编辑卡默认展开（Ctrl+O）", group: "local", source: "builtin",
+        run: () => { closeCommandPicker(); toggleDetails() },
+      },
     ]
     const mafw: CommandItem[] = mafwRemote().items.length > 0
       ? mafwRemote().items

@@ -51,3 +51,16 @@ test("session commands are wired", () => {
   assert.match(shell, /onForkCurrentSession=\{/)
   assert.match(shell, /if \(sid\) void forkSessionFromMenu\(sid\)/)
 })
+
+test("navigation and config commands are wired", () => {
+  for (const trigger of ["/usage", "/permissions", "/diff", "/skills", "/details"]) {
+    assert.match(chat, new RegExp(`trigger: "${trigger}"`))
+  }
+
+  assert.match(commandBlock("usage"), /props\.onOpenUsage/)
+  assert.match(commandBlock("permissions"), /setPickerOpen\("session-config"\)/)
+  assert.match(commandBlock("diff"), /props\.onOpenDiffReview/)
+  assert.match(commandBlock("skills"), /mafw:open-config/)
+  assert.match(commandBlock("skills"), /detail: "extensions"/)
+  assert.match(commandBlock("details"), /toggleDetails\(\)/)
+})
