@@ -35,6 +35,7 @@
 - [E10b 契约覆盖第二批（2026-11-13）](#e10b-契约覆盖第二批2026-11-13)
 - [E10c 契约覆盖第三批（2026-11-14）](#e10c-契约覆盖第三批2026-11-14)
 - [E10d 契约覆盖第四批（2026-11-14）](#e10d-契约覆盖第四批2026-11-14)
+- [E10e 契约覆盖第五批（2026-11-14）](#e10e-契约覆盖第五批2026-11-14)
 - [API 端点](#api-端点)
 - [UI 服务](#ui-服务)
 - [数据流全景](#数据流全景)
@@ -1426,6 +1427,51 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 
 ---
 
+## E10e 契约覆盖第五批（2026-11-14）
+
+> 承接 E10d（61/318）。本批覆盖 **8 个元数据 / 注册面读接口**，且**不新增 SDK DTO、不迁移 override**：
+> handler 输出零改动、catalog 仍是 318 ops（无新增路由）、override 不变（12）；
+> 规则与生成链沿用 E10 / E10b / E10c / E10d。
+> spec：`docs/superpowers/specs/2026-11-14-gateway-e10e-meta-coverage-design.md`；
+> plan：`docs/superpowers/plans/2026-11-14-gateway-e10e-meta-coverage.md`；
+> 交付记录：`docs/releases/2026-11-14-gateway-e10e-meta-coverage.md`。
+
+| # | 现状 | 边界 |
+|---|---|---|
+| E10e-1 | **元数据 / 注册面 8 ops** 的 200 response schema：`routes/schemas/meta.ts`（new，329 行）承载 `agents.list`（`{items: MafwAgent[]}`）、`providers.list`（`{items, connected?, default?}`）、`mcp.servers`（`{servers: McpServerEntry[]}`）、`plugins.list`（`PluginsListResult`：`plugins[]` + `packages?` + `revision?`）、`skills.list`（`{skills: SkillRegistryItem[]}`，DB 行 + 零行补齐的 `stats`）、`tools.list`（`{tools: MafwToolSpec[]}`）、`config.get`（`GatewayConfig` 26 section 视图）、`scheduler.status`（`{active, queued, capacity, plan}`，`plan` 四键恒在）；catalog 逐条挂 `response`。`AssertEq`：`agents.list.items` item ↔ `MafwAgent`、`providers.list.items` item ↔ `MafwProvider`（另加信封残余 `connected` / `default` 两条 ↔ client 返回类型）、`mcp.servers.servers` item ↔ `McpServerEntry`、`plugins.list` ↔ `PluginsListResult`。 | **`config.get` 是「外层信封封闭 + section 内容边界」的组合**：200 body = `config.raw`（内置 defaults + `config.yaml` 深合并 + env 覆盖），`deepMerge` 对未知键同样写入 → section 内键集是**运维可扩展的**，逐字段转写等于把 `GatewayConfig` 手抄成无编译期链接的第二副本（静默漂移）。因此 26 个 section 名 **required 且由编译期断言钉死 ≡ `keyof GatewayConfig`**（新增 / 改名 section 直接红 tsc），每个 section 的值是 owner = gateway config loader（`Config.buildData`）的**边界对象**；**不整响应放宽**（顶层无 `additionalProperties`）。若后续要 section 级精度，应从 `GatewayConfig` 单点派生而非手写第二份。**`tools.list.parameters` / `outputSchema` 同样是工具作者拥有的 JSON Schema 边界对象**（owner = 各 tool spec 声明），不逐键建模；`providers.list` 的 `connected` / `default` 是 runtime provider channel 的原生信封残余（gateway 只透传），显式建模（composer 默认模型唯一来源）。 |
+| E10e-1b | **零 DTO 改动**：4 个 SDK DTO（`MafwAgent` / `MafwProvider` / `McpServerEntry` / `PluginsListResult`）已与 handler wire 一致，`AssertEq` 一次通过；新增 **6 条编译期断言**（`CHECK_agents_list_item`、`CHECK_providers_list_item`、`CHECK_providers_list_connected`、`CHECK_providers_list_default`、`CHECK_mcp_servers_item`、`CHECK_plugins_list`）。 | 断言不是空转：负向探针把 `CHECK_agents_list_item` 改成 `AssertEq<GenAgentItem, { id: string }>` → tsc 报 `["MISMATCH", 生成形状, 手写形状]`（已还原）。`MafwAgent.extensions` / `MafwProvider.extensions` 当前投影不产出，但 DTO 声明 optional（AssertEq 要求等价）→ 契约面保留为可选扩展槽。 |
+
+### 台账口径（E10e）
+
+- **61 → 69/318（21.7%）**，剩余 **249** 个 op；by-tag 分区和恒等于 covered
+  （`npm run schema:coverage` 为准：`agents 1/1`、`config 1/2`、`mcp 1/8`、`plugins 1/12`、
+  `providers 1/1`、`internal 15/73` 含本批 +3：`skills.list` / `tools.list` / `scheduler.status`
+  三个 op 都挂 `internal` tag）。
+- **override 12 → 12**（本批不涉及）；生成物 `gateway-paths.json` / `openapi.json` / `api-schema.gen.ts`
+  的 diff **恰好**落在本批 8 个 op（added 0 / removed 0，318 ops / 284 paths 不变），`gen:api` 二次运行幂等；
+  `merge-contract` 仍只提示历史的 `session.list: catalog response schema wins over overrides`。
+- **AssertEq 拆分**：4 个 DTO op 全部有编译期断言（`providers.list` 贡献 3 条：item + 信封两键）；
+  `skills.list` / `tools.list` / `config.get` / `scheduler.status` 是 **schema-only**（`internal` tag；
+  skills / tools / scheduler 无 SDK client，`config.get()` 在 SDK 只回 `any`），等价性由 api-contract 的
+  8 例属性 / 线样断言钉住。
+
+### 残余（E10e 后仍 deferred）
+
+- 剩余约 **249** 个 op 的 response schema 覆盖（69/318，21.7%；台账 `npm run schema:coverage`，
+  见「E10 契约覆盖」/「E10b 契约覆盖第二批」/「E10c 契约覆盖第三批」/「E10d 契约覆盖第四批」/ 本节）。
+- POST/PUT/PATCH/DELETE 的请求 / 响应 schema；错误体仍不建模（`memory.get` 404 / `scheduler.status` 404
+  只在测试里反向断言，不进 schema）。
+- 强制版本协商 / SDK 全量 schema 类型化。
+- **TUI / mobile 的 triage phantom 字段渲染**（`reason` / `goalId` / `severity`；真实 wire 只有
+  `summary` / `source` / `state` / `proposedGoal`）。
+- **`memory.get` 的 HarmonicUnit 手工镜像漂移**（E10c 遗留）：`HarmonicUnitSchema` 仍无 gateway 侧
+  编译期 `AssertEq` 桥，新增 harmonic 字段不会打红任何测试。
+- **note-board budget 的 `perNoteCap` 未建模**（E10c `recall.pinned` / E10d `memory.listSticky` 同一选择）：
+  schema 与 SDK `StickyNoteBudget` 只声明 `max` / `maxChars` / `used`，补全会连带改 SDK 类型。
+- mobile 工作 tab 的其余增量 patch（E9-1 后 flat 帧已能触发 `goalId` 局部 patch，任务 / 消息仍是整页快照）。
+
+---
+
 ## E11 身份 / 配额硬化（2026-11-13）
 
 > E11 原清单里的设备生命周期（deviceName 校验、WS `?deviceId=` 凭据优先、`pruneStale`、rotate/revoke）
@@ -1453,8 +1499,9 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 ### 残余（E11 后仍 deferred）
 
 - 剩余 op 的 response schema 覆盖：E11 收口时 **273 未覆盖 / 45 已覆盖（14.2%）**，
-  E10c 后为 265 / 53（16.7%），**E10d 后为 257 / 61（19.2%）**（台账 `npm run schema:coverage`，见「E10 契约覆盖」/
-  「E10b 契约覆盖第二批」/「E10c 契约覆盖第三批」/「E10d 契约覆盖第四批」/ 本节 E11-1）。
+  E10c 后为 265 / 53（16.7%），E10d 后为 257 / 61（19.2%），**E10e 后为 249 / 69（21.7%）**
+  （台账 `npm run schema:coverage`，见「E10 契约覆盖」/
+  「E10b 契约覆盖第二批」/「E10c 契约覆盖第三批」/「E10d 契约覆盖第四批」/「E10e 契约覆盖第五批」/ 本节 E11-1）。
 - 强制版本协商 / SDK 全量 schema 类型化。
 - POST/PUT/PATCH/DELETE 的请求 / 响应 schema（E10 / E10b / E11 只建模读接口与单个 auth op 的 200 成功体，
   错误体不建模）。
