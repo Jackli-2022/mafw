@@ -801,6 +801,20 @@ SDK `TriageItem` 在 E10b-2 被重塑成磁盘 / wire 真形状
 - 测试：`triage-model.test.ts` 5 条（title 回退 / meta 非法日期 / 三种 state / llm 优先级 /
   页面不再读 phantom 字段守卫），`card.test.ts` 与 context-menu wiring 同步。
 
+### note-board 预算 `perNoteCap`（2026-11-14，E10f-E）
+
+gateway `memory.listSticky` 的 wire 一直是 `{...NOTE_BOARD_BUDGET, used}`（`perNoteCap: 240`，按条截断防
+单条长记忆饿死整板），但 OpenAPI schema / SDK `StickyNoteBudget` 只声明 `max` / `maxChars` / `used`。
+E10f-E 把契约补齐（gateway 侧见 `gateway.md` §「E10f 全量读表面收口」）：
+
+- `packages/desktop/src/preload/mafw-types.ts` 的**内联** `memory.listSticky()` 返回类型补
+  `perNoteCap: number`（这是 desktop 侧唯一一份 budget 副本；`mafw-api.ts` 是转发，无形状声明）。
+- **纯类型改动，无运行时行为变化**：wire 早就在发该键，preload 只是类型滞后。
+- `NotesDock` 的自有局部字面量 `{ max, maxChars, used }` **不改**：它只读 `budget().used / budget().max`，
+  结构化类型无需跟随；将来要展示按条上限时再补。
+- SDK `StickyNoteBudget` 同步为 required `perNoteCap`；`recall.pinned` 的 budget **不同形**（见 gateway 侧
+  E10f 节「残余」——pinned 不按条截断，schema 有意只有 `max/maxChars/used`）。
+
 ### human token 轮换后的 403 自动重读重试（2026-11-13，E11-1）
 
 gateway 新增 `POST /api/human-token/rotate`（见 `gateway.md` §「E11 身份 / 配额硬化」）：轮换成功后

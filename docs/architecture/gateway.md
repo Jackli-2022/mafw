@@ -36,6 +36,7 @@
 - [E10c 契约覆盖第三批（2026-11-14）](#e10c-契约覆盖第三批2026-11-14)
 - [E10d 契约覆盖第四批（2026-11-14）](#e10d-契约覆盖第四批2026-11-14)
 - [E10e 契约覆盖第五批（2026-11-14）](#e10e-契约覆盖第五批2026-11-14)
+- [E10f 全量读表面收口（2026-11-14）](#e10f-全量读表面收口2026-11-14)
 - [API 端点](#api-端点)
 - [UI 服务](#ui-服务)
 - [数据流全景](#数据流全景)
@@ -1370,10 +1371,14 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 - **已知漂移风险（deferred）**：`memory.get` 的 `HarmonicUnitSchema` 是 `core/memory/harmonic-types.ts`
   **手工镜像**（`HarmonicUnit` 不是 SDK DTO，没有 `AssertEq` 可钉）→ 新增 harmonic 字段不会打红任何测试。
   缓解：schema 只做描述、未关 `additionalProperties`，多余键不会判非法；要强约束需在 gateway 侧加
-  `AssertEq<typeof HarmonicUnitSchema, HarmonicUnit>` 编译期桥（本批范围外）。`memory.get` 若将来开 SDK
+  `AssertEq<typeof HarmonicUnitSchema, HarmonicUnit>` 编译期桥（本批范围外）。**E10f-E 已加该桥**
+  （对称 `Omit<'created_at'>` 双向等值 + `created_at` 单独断言，`npx tsc` 即门禁）。`memory.get` 若将来开 SDK
   client，返回类型会是三变体 union 而非扁平 `{memory}`。
 
 ### 残余（E10c 后仍 deferred）
+
+> 本节是 E10c 收口时的快照；其中 `memory.get` 的 HarmonicUnit 桥与 mobile triage phantom 已在
+> **E10f-E** 关闭（见「E10f 全量读表面收口」）。
 
 - 剩余约 **265** 个 op 的 response schema 覆盖（318 operations 中 53 个已带 200 schema，16.7%；
   台账 `npm run schema:coverage`，见「E10 契约覆盖」/「E10b 契约覆盖第二批」/「E10c 契约覆盖第三批」）。
@@ -1412,6 +1417,9 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 
 ### 残余（E10d 后仍 deferred）
 
+> 本节是 E10d 收口时的快照；其中 note-board `perNoteCap`、`memory.get` 的 HarmonicUnit 桥、
+> mobile triage phantom 已在 **E10f-E** 关闭（见「E10f 全量读表面收口」）。
+
 - 剩余约 **257** 个 op 的 response schema 覆盖（61/318，19.2%；台账 `npm run schema:coverage`，
   见「E10 契约覆盖」/「E10b 契约覆盖第二批」/「E10c 契约覆盖第三批」/ 本节）。
 - **note-board budget 的 `perNoteCap` 未建模**（E10c `recall.pinned` / E10d `memory.listSticky` 同一选择）：
@@ -1449,7 +1457,8 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
   三个 op 都挂 `internal` tag）。
 - **override 12 → 12**（本批不涉及）；生成物 `gateway-paths.json` / `openapi.json` / `api-schema.gen.ts`
   的 diff **恰好**落在本批 8 个 op（added 0 / removed 0，318 ops / 284 paths 不变），`gen:api` 二次运行幂等；
-  `merge-contract` 仍只提示历史的 `session.list: catalog response schema wins over overrides`。
+  `merge-contract` 仍只提示历史的 `session.list: catalog response schema wins over overrides`
+  （该 inert 条目已由 **E10f-E** 删除，命中 12 → 10）。
 - **AssertEq 拆分**：4 个 DTO op 全部有编译期断言（`providers.list` 贡献 3 条：item + 信封两键）；
   `skills.list` / `tools.list` / `config.get` / `scheduler.status` 是 **schema-only**（`internal` tag；
   skills / tools / scheduler 无 SDK client，`config.get()` 在 SDK 只回 `any`），等价性由 api-contract 的
@@ -1457,18 +1466,97 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 
 ### 残余（E10e 后仍 deferred）
 
-- 剩余约 **249** 个 op 的 response schema 覆盖（69/318，21.7%；台账 `npm run schema:coverage`，
+- 剩余约 **249** 个 op 的 response schema 覆盖（69/318，21.7%；**E10f 已把剩余 56 个 JSON GET 全部补齐，
+  终值 125/318，见下节**；台账 `npm run schema:coverage`，
   见「E10 契约覆盖」/「E10b 契约覆盖第二批」/「E10c 契约覆盖第三批」/「E10d 契约覆盖第四批」/ 本节）。
 - POST/PUT/PATCH/DELETE 的请求 / 响应 schema；错误体仍不建模（`memory.get` 404 / `scheduler.status` 404
   只在测试里反向断言，不进 schema）。
 - 强制版本协商 / SDK 全量 schema 类型化。
-- **TUI / mobile 的 triage phantom 字段渲染**（`reason` / `goalId` / `severity`；真实 wire 只有
-  `summary` / `source` / `state` / `proposedGoal`）。
-- **`memory.get` 的 HarmonicUnit 手工镜像漂移**（E10c 遗留）：`HarmonicUnitSchema` 仍无 gateway 侧
-  编译期 `AssertEq` 桥，新增 harmonic 字段不会打红任何测试。
-- **note-board budget 的 `perNoteCap` 未建模**（E10c `recall.pinned` / E10d `memory.listSticky` 同一选择）：
-  schema 与 SDK `StickyNoteBudget` 只声明 `max` / `maxChars` / `used`，补全会连带改 SDK 类型。
+- **TUI** 的 triage phantom 字段渲染（`reason` / `goalId` / `severity`；真实 wire 只有
+  `summary` / `source` / `state` / `proposedGoal`）。~~mobile 侧~~ **E10f-E 已收口**
+  （`mobile/lib/src/models/triage_card_model.dart`）。
+- ~~**`memory.get` 的 HarmonicUnit 手工镜像漂移**（E10c 遗留）~~ **E10f-E 已关闭**：
+  `schemas/memory.ts` 加 gateway 侧 `AssertEq` 桥（对称 `Omit<'created_at'>` + `created_at` 单独断言），
+  tsc 即门禁。
+- ~~**note-board budget 的 `perNoteCap` 未建模**（E10c `recall.pinned` / E10d `memory.listSticky` 同一选择）~~
+  **E10f-E 已关闭，但两个 budget 的处理不同**：`memory.listSticky` 补 required `perNoteCap`（SDK
+  `StickyNoteBudget` 同步）；`recall.pinned` **有意不补**——它走 `PINNED_BUDGET` 且不按条截断，
+  加 required 字段会拒绝 handler 自己的体（详见 E10f 节「残余」）。
 - mobile 工作 tab 的其余增量 patch（E9-1 后 flat 帧已能触发 `goalId` 局部 patch，任务 / 消息仍是整页快照）。
+
+---
+
+## E10f 全量读表面收口（2026-11-14）
+
+> 承接 E10e（69/318）。本波把 catalog 里**剩余全部 56 个 JSON GET** 补齐 200 response schema
+> （**JSON GET 125/131 = 100% 覆盖**），并清掉 E10 系列遗留的 4 个工程尾巴。
+> handler 输出零改动（唯二例外：`memory.listSticky` 降级体补发 `perNoteCap`、mobile triage 改读真实 wire），
+> catalog 仍是 318 ops、无新增路由；规则与生成链沿用 E10 / E10b / E10c / E10d / E10e。
+> spec：`docs/superpowers/specs/2026-11-14-gateway-e10f-read-completion-design.md`；
+> plan：`docs/superpowers/plans/2026-11-14-gateway-e10f-read-completion.md`；
+> 交付记录：`docs/releases/2026-11-14-gateway-e10f-read-completion.md`。
+
+| # | 现状 | 边界 |
+|---|---|---|
+| E10f-A | **会话 / 任务 / 终端 / usage 16 ops** 的 200 response schema：`routes/schemas/session-runtime.ts`（new：`session.structured` / `session.trajectory` / `session.run` / `session.discovery` / `session.discoverySkill`）、`routes/schemas/experience.ts`（new：`experience.actions` / `cognition.rules`）、`routes/schemas/tasks.ts`（new：`tasks.list` / `tasks.get` / `tasks.output`）、`routes/schemas/background.ts`（new：`background.jobs.list` / `background.jobs.output`）、`routes/schemas/terminal.ts`（new：`terminal.list`）、`routes/schemas/usage.ts`（new：`session.usage` / `session.usagePluginsList` / `session.usagePluginSourceGet`）。新增 **18 条**编译期断言：`tasks.list` item ≡ `TaskEntity`（`publicTask()` 旁路快照 `outputCursor` / `outputSize` / `outputTruncated` 用 `Omit` 剥离后各自单独断言）、`tasks.output` 只锁 SDK 认的四字段、`session.run` ≡ client 返回类型（run 可为 null）、`session.discovery` / `discoverySkill`、`experience.actions`（键集 ≡ `EXPERIENCE_ACTION_IDS`，描述符 `Omit<'operationId'>` 后 ≡ SDK DTO）、`background.jobs.*`、`terminal.list`。 | **`tasks.output` / `tasks.list` 的旁路快照是 runtime shell 的透传字段**：schema 发全量、SDK DTO 只声明稳定面 → 分别用 `Omit` + 单独类型断言，不做整响应放宽。`session.trajectory` 的 SDK `TrajectoryTurn` 是缺 `sessionID` / `provider` 的 legacy 子集 → schema 按 handler 全量建模，DTO 不追平。**三个 usage op 是 schema-only**：SDK `usage()` 把 summary/memory/providers 声明成 `any`、`usagePlugins()` 仍是 `{plugins:[{overridden}]}` 旧形状、`usagePluginSource()` 把 200/403/404 混成一个类型 → 无可信生成类型可对齐，等价性由 api-contract 线样钉住。`cognition.rules` / `session.structured` 同样 schema-only（internal 面）。 |
+| E10f-B | **项目 / manager / runtime / 元数据 16 ops**：`routes/schemas/project-meta.ts`（new：`mafwCommands.list` / `manager.session` / `project.current` / `fileHistory.list`）、`routes/schemas/runtime-surface.ts`（new：`runtime.get` / `runtime.contract` / `runtime.config.get` / `plugins.client`）、`routes/schemas/media-voice.ts`（new：`models.get` / `media.plugins` / `tts.voices` / `voice.status` / `python.status` / `agent.capabilities` / `media.resolveTask` / `embedding.get`）。新增 **23 条**编译期断言：`mafwCommands.list` item ≡ `MafwCommandDef`；`manager.session` 双形态 200（带 `?projectDir=` 单对象 / 无过滤数组）取单对象分支后「键集 ≡ `ManagerSessionInfo` + `createdAt ≡ string \| null`」；`project.current` `Omit<'mafwDir'>` 后 ≡ `Project`；`runtime.contract` ≡ runtime-contract 包的 `RuntimeContractResponse`；`plugins.client` 只锁外层键集 + `revision`；`models.get` 五段（recall / media / available / goal.nodeModel / goal.techLeadModel）；`media.plugins` item ≡ `MediaPluginState`；`tts.voices` 按 SDK 返回子集锁 voices / models / defaultVoice / defaultModel；`voice.status` / `embedding.get` 整响应等价。 | **`runtime.get` 的 `capabilities` 与 `unknownEvents` 是 runtime 拥有的开放键集**（值域不锁，只锁 `Record<string, boolean>` / `Record<string, Record<string, number>>` 形状）；`plugins.client` 的描述符内部归 `@mafw/plugin-contract` → 边界对象，契约只承诺外层快照。**`manager.session` 的数组分支不单独建 schema**（同一 `ManagerSessionInfo` 条目，双形态是 handler 的 query 语义而非两种实体）。`fileHistory.list` / `runtime.config.get` / `python.status` / `agent.capabilities` / `media.resolveTask` 是 schema-only（internal tag 或 handler 直接回 `any`）。 |
+| E10f-C | **Goal / Lead / Events / Standing / Automations / Pods 16 ops**：`routes/schemas/lead.ts`（扩展：`lead.topics.list` / `lead.topics.get` / `lead.boundaries.list`）、`routes/schemas/events.ts`（new：sources / threads / triggers / subscriptions / deliveries 五个读面）、`routes/schemas/standing.ts`（new：`standingGoals.list` / `standingGoals.runs`）、`routes/schemas/automations.ts`（new：`automations.list` / `automations.get` / `automations.history`）、`routes/schemas/pods.ts`（扩展：`pods.ensure` / `pods.memory.get`）、`routes/schemas/read-models.ts`（`orchestration.outcomes`）。新增 **11 条**断言：`LeadTopicView` / `LeadTopicIndexMessage` / `LeadBoundaryView`（DTO 补 `text`，wire 恒发）/ `StandingGoalView` / `GoalRunView` / `EventSourceView` / `PodDetail`（`pods.ensure` 复用 `pods.get` schema）/ pod memory 两个返回类型 / `AutomationRuleListItem`（list）/ `Omit<'nextTriggers'\|'history'>` 后的 `AutomationRule`（get）。**`automations.list` override → code-first**（删条目，12 → 11）。 | **SDK DTO 以 handler 为准修正**：`AutomationRule` 重写为 wire 真形（`trigger` 必填 cron/event 联合、无 `name`），新增 `AutomationTrigger` / `AutomationGoalDefaults` / `AutomationLedgerEntry` / `AutomationRuleListItem`，`AutomationsNamespace.list()` 改回 `AutomationRuleListItem[]`。事件四个读面是 **schema-only**：handler 原样下发存储列（`projectDir` / `createdAt` / `idempotencyKey` / `readAt`…），SDK `Event*View` 是手写收窄声明而非投影函数，等价断言会说谎。`automations.history` / `orchestration.outcomes` 是 internal（后者是 `gateway.db` 的 snake_case `SELECT *`）。`automations.list` 仍会把 `~/.mafw/automations/*.json` 的未知键透传（与 `triage.list` 同约定，schema 不关 `additionalProperties`）。 |
+| E10f-D | **观测 / 设备 / A2A 8 ops**：`routes/schemas/observability.ts`（new：`dashboard.stats` / `health.root` / `session.subagents.result`）、`routes/schemas/devices.ts`（new：`mobile.devicesList` / `devices.list` / `mobile.pairingCode`）、`routes/schemas/a2a.ts`（new：`a2a.agentCard` / `pods.a2aCard`）；`read-models.ts` 导出 `TokenCountsSchema` / `TokenSummarySchema` 供 `dashboard.stats.tokens` 复用 `usage.summary` 投影。两条 **gateway 侧** `AssertEq`（tsc 即门禁）：`PublicDeviceEntrySchema` ↔ `PublicDeviceEntry`（`Omit<DeviceEntry, 'deviceTokenHash' \| 'apiTokenHash'>`）、`SubagentStatusSchema` ↔ `SubagentStatus`。 | 八 op 全是 `internal`（无 SDK client）→ 断言面是上面两个稳定 wire 类型。**A2A card 是协议文档**（owner = A2A protocol，`@a2a-js/sdk` `AgentCard`）：顶层必填信封钉死（name / description / url / version / provider / capabilities / default*Modes / skills / securitySchemes / securityRequirements / signatures），嵌套 skill / capability / interface 条目保留稳定键 + `additionalProperties: true`；v0.3 card 级 `protocolVersion` 与 v1.0 `supportedInterfaces` optional（只有 Pod card 发）。**`devices.list` 与 `mobile.devicesList` 共用同一 schema**（同一 `listPublicDevices()`）。`health.root` 只描述 transport arm（`http/transport.ts`，唯一接线到主 server 的 arm）。`dashboard.stats` 的 `eventAppendFailures` / `tokens` 在 fail-open 路径缺席 → optional。 |
+| E10f-E | **四个工程尾巴收口**：① note-board budget 补 required `perNoteCap`（wire = `{...NOTE_BOARD_BUDGET, used}`；`emptyNoteBoardBudget()` 同步发该键，503 shell 与 200 同形；SDK `StickyNoteBudget` + desktop preload 内联返回类型跟进）；② `memory.get` 的 `HarmonicUnitSchema` 加 gateway 侧编译期桥（`Omit<…,'created_at'>` 双向 `AssertEq` + `created_at: string \| undefined` 单独断言）；③ 删除 `overrides.json` 中 inert 的 `session.list` 条目（11 → 10，`$comment` 更新，`merge-contract` 不再打印 "catalog wins"）；④ mobile triage 改读真实 wire（新 `mobile/lib/src/models/triage_card_model.dart`，`triage_page.dart` 不再读 `reason` / `type` / `origin` / `title` 等 phantom 字段）。 | **`recall.pinned` 有意不加 `perNoteCap`**：它渲染 `<user-profile>` 走 `PINNED_BUDGET`（20 / 2000），`formatPinnedProfile` **没有**按条截断（身份陈述必须完整）；加 required 字段会让 schema 拒绝 handler 自己的体。两个 budget 形状不同是**语义不同**，不是欠账（详见下「残余」）。桥用对称 `Omit`：`Omit<…> & { created_at?: string }` 交集形式不被条件类型恒等检查归一化，会产生假红（实测）。变异验证：`novelty` 改 `Type.String()` → `TS2322 ["MISMATCH", …]`。 |
+
+### 台账口径（E10f）
+
+- **69 → 125/318（39.3%）**，未覆盖 **193** = **187 个非 GET**（162 POST + 16 DELETE + 6 PATCH + 3 PUT）
+  + **6 个非 JSON GET**（见下「明确排除」）。也就是说：**56 个 JSON GET 全部覆盖，JSON GET 125/131 = 100%**；
+  剩余缺口全部是本节显式排除的面，不再有「同族读接口按 7–8 ops/批推进」的队列。
+- by-tag 分区和恒等于 covered（`npm run schema:coverage` 实测；本波主要增量落在
+  `internal 15→30/73`、`session 11→19/51`、`pods 13→15/39`、`events 0→5/10`、`lead 2→5/11`、
+  `standing 0→2/9`、`automations 0→1/4`、`task 0→3/6`、`runtime 0→3/6`、`project 1→2/3`、
+  `manager 0→1/2`、`mafwCommands 0→1/2`、`models 0→1/2`、`embedding 0→1/2`、`media 0→1/6`、
+  `tts 0→1/4`、`voice 0→1/1`、`experience 0→1/1`、`terminal 0→1/4`、`cognition 0→1/3`、
+  `background 1→2/3`、`plugins 1→2/12`）。仍为 **0** 的 tag 只有 `chat 0/2` 与 `event 0/2`
+  （前者是写面 `chat.send` / `chat.sendEnriched`，后者是 `event.publish` POST + `event.subscribe` SSE）。
+- **override 12 → 10**：`automations.list`（E10f-C：以 handler 为事实源重写 schema）与 `session.list`
+  （E10f-E：catalog 早已提供 schema，override 是 inert 的——`merge-contract` 每次都打印
+  `session.list: catalog response schema wins over overrides`）。删除后 `merge-contract` 命中 **10** 且
+  不再出现该提示行，即**每条剩余 override 都真正生效**。剩余 10 条是 E10b 之前的历史手写 overlay
+  （`session.messages` / `triage.dismiss` / `goals.control` / `event.subscribe` / `tts.speakStream` /
+  `media.upload` / `media.uploadAndCreate` / `media.artifact` / `project.setCurrent` / `goals.respondQuestion`）。
+- 生成物：`gateway-paths.json` / `openapi.json` / `api-schema.gen.ts` 按批入库，四个 schema 批的 diff
+  **各自恰好落在该批目标 op**（0 added / 0 removed；318 ops / 284 paths 不变）；`emit:openapi` + `gen:api`
+  二次运行幂等（batches C/D/E 都用 blob hash 比对过）。
+- **AssertEq 拆分**：A 18 条（10/16 op）、B 23 条（11/16 op）、C 11 条（10/16 op）落在
+  `contract-compat.checks.ts`；D 2 条 + E 3 条是 **gateway 侧** `AssertEq`（internal op 无 SDK DTO，
+  放在 schema 模块里由 `npx tsc --noEmit -p tsconfig.json` 守）。schema-only 的 op 都在源文件里写明原因
+  （runtime 透传 / internal / 手写收窄 DTO / 协议文档）。
+- **SDK DTO 改动只发生在 C 与 E**：C 重写 `AutomationRule` 家族（5 个类型 + `list()` 返回类型）并给
+  `LeadBoundaryView` 补 `text`；E 给 `StickyNoteBudget` 补 `perNoteCap`。A / B / D 零 DTO 改动
+  （生成物 + 编译期断言即可对齐）。
+
+### 明确排除（不建模，原因入库）
+
+- **6 个非 JSON GET**（不是 JSON 200 体，OpenAPI 的 `application/json` schema 不适用）：
+  `media.artifact`（二进制 artifact）、`pods.a2aArtifact`（二进制）、`mobile.ttsArtifact`（音频）、
+  `plugins.webAsset`（HTML / 静态资源）、`plugins.webEvents`（SSE）、`event.subscribe`（SSE）。
+  它们由各自的 transport 契约（content-type / SSE 帧）约束，不进 JSON schema。
+- **全部 POST / PUT / PATCH / DELETE 的请求体与响应**（187 ops）：本波只做读表面，写面 schema
+  需要先定「请求校验发生在 transport 还是 handler」的产品口径（当前 handler 各自解析，没有一个统一入口）。
+- **错误体不建模**（`memory.get` 404 / `scheduler.status` 404 / `usagePluginSource` 403/404 等只在测试里反向断言）。
+  200 成功体之外的语义由 `error` 信封的历史约定承载。
+
+### 残余（E10f 后仍 deferred）
+
+- **187 个写面 op**（POST / PUT / PATCH / DELETE）的请求 / 响应 schema；见上「明确排除」。
+- **强制版本协商 / SDK 全量 schema 类型化**（`minClientVersion` 已在 `experience.actions` 暴露，
+  但没有拒绝旧客户端的运行时策略；产品决策未定）。
+- **TUI triage phantom**（`reason` / `goalId` / `severity`）：TUI 消费面未改——`@earendil-works/pi-tui`
+  在本仓未安装，改了无法跑门禁验证（mobile 侧已在 E10f-E 收口，desktop 侧是 E10b-3）。
+- **note-board 与 pinned 预算的差异是有意保留的**（不是欠账）：`memory.listSticky` 的 budget 含
+  `perNoteCap: 240`（note-board 按条截断，防单条长记忆饿死整板）；`recall.pinned` 的 budget 只有
+  `max` / `maxChars` / `used`（`PINNED_BUDGET = 20 / 2000`，`formatPinnedProfile` 不按条截断——
+  身份陈述必须完整）。要对齐必须改披露层行为（把身份文本截到 240 字符），不在契约层解决。
+- mobile 工作 tab 的其余增量 patch（E9-1 后 flat 帧已能触发 `goalId` 局部 patch，任务 / 消息仍是整页快照）。
+- 6 个非 JSON GET 的 transport 级契约（content-type / SSE 帧格式）仍未声明为 OpenAPI 之外的机器可读产物。
 
 ---
 
@@ -1499,13 +1587,16 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 ### 残余（E11 后仍 deferred）
 
 - 剩余 op 的 response schema 覆盖：E11 收口时 **273 未覆盖 / 45 已覆盖（14.2%）**，
-  E10c 后为 265 / 53（16.7%），E10d 后为 257 / 61（19.2%），**E10e 后为 249 / 69（21.7%）**
+  E10c 后为 265 / 53（16.7%），E10d 后为 257 / 61（19.2%），E10e 后为 249 / 69（21.7%），
+  **E10f 后为 193 未覆盖 / 125 已覆盖（39.3%；JSON GET 已 100% 覆盖）**
   （台账 `npm run schema:coverage`，见「E10 契约覆盖」/
-  「E10b 契约覆盖第二批」/「E10c 契约覆盖第三批」/「E10d 契约覆盖第四批」/「E10e 契约覆盖第五批」/ 本节 E11-1）。
+  「E10b 契约覆盖第二批」/「E10c 契约覆盖第三批」/「E10d 契约覆盖第四批」/「E10e 契约覆盖第五批」/
+  「E10f 全量读表面收口」/ 本节 E11-1）。
 - 强制版本协商 / SDK 全量 schema 类型化。
 - POST/PUT/PATCH/DELETE 的请求 / 响应 schema（E10 / E10b / E11 只建模读接口与单个 auth op 的 200 成功体，
   错误体不建模）。
-- TUI / mobile 的 triage phantom 字段渲染（`reason` / `goalId` / `severity`；真实 wire 无这些字段）。
+- **TUI** triage phantom 字段渲染（`reason` / `goalId` / `severity`；真实 wire 无这些字段）。
+  mobile 侧已在 E10f-E 收口（`triage_card_model.dart`），desktop 侧是 E10b-3。
 - **won't do（本阶段，已有决策与缓解）**：OS keychain / 进程签名、MCP human 工具（E11-4）；
   `pod.updated` 记录级实体 payload（E9-3）；mobile 工作 tab 的其余增量渲染（E9-1 后 flat 帧已能触发
   `goalId` 局部 patch，任务 / 消息仍是整页快照）。
