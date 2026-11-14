@@ -34,6 +34,7 @@
 - [E10 契约覆盖第一批（2026-11-13）](#e10-契约覆盖第一批2026-11-13)
 - [E10b 契约覆盖第二批（2026-11-13）](#e10b-契约覆盖第二批2026-11-13)
 - [E10c 契约覆盖第三批（2026-11-14）](#e10c-契约覆盖第三批2026-11-14)
+- [E10d 契约覆盖第四批（2026-11-14）](#e10d-契约覆盖第四批2026-11-14)
 - [API 端点](#api-端点)
 - [UI 服务](#ui-服务)
 - [数据流全景](#数据流全景)
@@ -1384,6 +1385,44 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 
 ---
 
+## E10d 契约覆盖第四批（2026-11-14）
+
+> 承接 E10c（53/318）。本批覆盖 **8 个读接口**：memory 扩展 4 + `lead.context` 1 + pod 读 3。
+> handler 输出零改动、catalog 仍是 318 ops（无新增路由）、override 不变（12）；规则与生成链沿用 E10 / E10b / E10c。
+> spec：`docs/superpowers/specs/2026-11-14-gateway-e10d-memory-pods-coverage-design.md`；
+> plan：`docs/superpowers/plans/2026-11-14-gateway-e10d-memory-pods-coverage.md`；
+> 交付记录：`docs/releases/2026-11-14-gateway-e10d-memory-pods-coverage.md`。
+
+| # | 现状 | 边界 |
+|---|---|---|
+| E10d-1 | **memory 扩展 / `lead.context` / pod 读接口 8 ops** 的 200 response schema：`routes/schemas/memory-extra.ts`（new，`memory.mergedSearch` / `memory.getEnergyDistribution` / `memory.getL5Axioms` / `memory.listSticky`）、`routes/schemas/lead.ts`（扩展，`lead.context`）、`routes/schemas/pods.ts`（扩展，`pods.transcript` / `pods.goals.worktree.diff`）、catalog 挂 `pods.lookup`。`AssertEq`：`mergedSearch.results` item ↔ `MemoryFact`、`getEnergyDistribution` ↔ `EnergyDistribution`、`getL5Axioms` ×2（`Axiom` / `L5Heuristic`）、`listSticky` ↔ client `memory.listSticky` 返回类型、`pods.lookup` ↔ `PodDetail`、`pods.transcript` ↔ client `pod.transcript` 返回类型、`worktree.diff` ↔ `PodWorktreeDiff`。 | **`pods.lookup` 复用 `PodDetailResponse`**：`handlePods` 的 lookup 分支与 `pods.get` 共用 `enrichPodDetail()`，字段面完全一致（非 lead 成员只是 `sessions: []`）→ 不另立 schema，api-contract 用 `schemaOf('pods.lookup') toEqual schemaOf('pods.get')` 钉住。**`pods.transcript.transcript` 是 runtime-owned 边界**（owner = runtime session history，`PodRouteDeps.transcript()` 直接透传；part 判别联合随 runtime 演进）→ 只承诺「外层仅此一键 + 值任意 JSON（`Type.Unknown()`）」，不整响应放宽。`memory.listSticky` 的 503 / catch 分支回**同形** fail-open 体 `{entries: [], budget}`，故 200 schema 恰好也描述两个降级体。`lead.context` 四出口同形（非 Lead / working set 关闭 / 无 projectDir → `EMPTY_CONTEXT`），`topicId` / `title` 只有 recalled-topic 块带 → optional。 |
+| E10d-2 | **DTO 同步（仅类型面）**：`Axiom` 补 `source: 'manual' \| 'distilled'` 与 `created_at`；`L5Heuristic` 的 `success_rate` / `source_goal_ids` / `created_at` 由 optional 收紧为必填；`StickyNote.type` 从裸 `string` 收窄为 `MemoryUnit['type']`。三处都以 handler 写入面为事实源（`L5Store.addAxiom` / `addHeuristic` 恒写全列，note-board 条目来自 `HarmonicUnit`），零 handler 改动、wire 字节不变；desktop `NotesDock` 用自有 `type: string` 接口、TUI 只读 → 0 破坏性消费者。 | **历史数据可能比契约短**：`~/.mafw` 下更早版本 / 手工编辑过的 `axioms.json` / `heuristics.json` 若缺列，读路径 `JSON.parse` 不校验、wire 仍会缺键——OpenAPI 只是**元数据**（不运行时拒绝），契约描述的是当前 store 写入面。`memory.mergedSearch` 的 `MemoryFact.type` 仍是 `string`（接口未收窄：parametric 行恒 `'delta'`，harmonic 行取记忆词表），不枚举以免把开放度写进契约。 |
+
+### 台账口径（E10d）
+
+- **53 → 61/318（19.2%）**，剩余 **257** 个 op；by-tag 分区和恒等于 covered
+  （`npm run schema:coverage` 为准：`memory 5/7`、`lead 2/11`（`lead.context` 挂 `internal`）、
+  `pods 13/39`、`internal 12/73`）。
+- **override 12 → 12**（本批不涉及）；生成物 `gateway-paths.json` / `openapi.json` / `api-schema.gen.ts`
+  的 diff **恰好**落在本批 8 个 op（added 0 / removed 0），`gen:api` 二次运行幂等。
+- **AssertEq 拆分**：8 op 中 7 个有编译期断言（`getL5Axioms` 贡献 2 条——axiom + heuristic；
+  `listSticky` / `pods.transcript` 借 client 内联返回类型，不新增命名 DTO）；`lead.context` 是
+  **schema-only**（`internal` tag，host 每轮注入面，SDK 无 client / 无 DTO），等价性由 api-contract 钉住。
+
+### 残余（E10d 后仍 deferred）
+
+- 剩余约 **257** 个 op 的 response schema 覆盖（61/318，19.2%；台账 `npm run schema:coverage`，
+  见「E10 契约覆盖」/「E10b 契约覆盖第二批」/「E10c 契约覆盖第三批」/ 本节）。
+- POST/PUT/PATCH/DELETE 的请求 / 响应 schema；错误体仍不建模（`memory.get` 404 只在测试里反向断言）。
+- 强制版本协商 / SDK 全量 schema 类型化。
+- **`memory.get` 的 HarmonicUnit 手工镜像漂移**（E10c 遗留）：`HarmonicUnitSchema` 仍无 gateway 侧
+  编译期 `AssertEq` 桥，新增 harmonic 字段不会打红任何测试；要强约束需加 `AssertEq<typeof HarmonicUnitSchema, HarmonicUnit>`。
+- TUI / mobile 的 triage phantom 字段渲染（`reason` / `goalId` / `severity`；真实 wire 只有
+  `summary` / `source` / `state` / `proposedGoal`）。
+- mobile 工作 tab 的其余增量 patch（E9-1 后 flat 帧已能触发 `goalId` 局部 patch，任务 / 消息仍是整页快照）。
+
+---
+
 ## E11 身份 / 配额硬化（2026-11-13）
 
 > E11 原清单里的设备生命周期（deviceName 校验、WS `?deviceId=` 凭据优先、`pruneStale`、rotate/revoke）
@@ -1411,8 +1450,8 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 ### 残余（E11 后仍 deferred）
 
 - 剩余 op 的 response schema 覆盖：E11 收口时 **273 未覆盖 / 45 已覆盖（14.2%）**，
-  E10c 后为 **265 / 53（16.7%）**（台账 `npm run schema:coverage`，见「E10 契约覆盖」/
-  「E10b 契约覆盖第二批」/「E10c 契约覆盖第三批」/ 本节 E11-1）。
+  E10c 后为 265 / 53（16.7%），**E10d 后为 257 / 61（19.2%）**（台账 `npm run schema:coverage`，见「E10 契约覆盖」/
+  「E10b 契约覆盖第二批」/「E10c 契约覆盖第三批」/「E10d 契约覆盖第四批」/ 本节 E11-1）。
 - 强制版本协商 / SDK 全量 schema 类型化。
 - POST/PUT/PATCH/DELETE 的请求 / 响应 schema（E10 / E10b / E11 只建模读接口与单个 auth op 的 200 成功体，
   错误体不建模）。
