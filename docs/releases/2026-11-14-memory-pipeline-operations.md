@@ -10,7 +10,7 @@
 |---|---|---|
 | reflection 自 2026-11-02 后无成功 | `pipeline-heartbeat` `memory:reflect.lastSuccessAt=2026-11-02T03:51:25Z`；11-10 `failed=176` | 11-10 是 opencode serve 401 风暴（176 个 session 的 worker prompt 全部失败），catch 静默吞错，无法定位 |
 | 每晚 03:00 触发但从不落心跳 | 11-12/13/14 均在 03:30:3x 报 watchdog timeout；`lastRunAt` 仍停在 11-10 | `runAll` 无墙钟预算：逐 session × 最多 100 episode × 每批 2 次 LLM，每次 prompt 上限 300s；超过 30min watchdog 后进程被后续重启打断，永远走不到 `heartbeat.record` |
-| 每次 restore 都 `reviewed=N distilled=0 deduped=0` 且同一批反复出现 | 11-11～11-14 `[Reflection:restore]` 日志 | ① worker 输出解析过严：只接受纯 JSON，模型带解释文字时 `parseInsights` 返回空；② 空 insights 不推进游标 → 同一批 episode 每晚重跑；③ boot restore 对每个 pending session 并发启动，形成 prompt 惊群 |
+| 每次 restore 都 `reviewed=N distilled=0 deduped=0` 且同一批反复出现 | 11-11～11-14 `[Reflection:restore]` 日志；11-14 部署后复现 `batch failed: unparseable reflection output` | ① **worker 身份带写工具**：`memory-curator` 的 agent tools 允许 `mafw_add_memory`，模型把 reflection 当成策展任务，直接写记忆并回复 markdown，从不返回 JSON；② worker 输出解析过严（只接受纯 JSON）；③ 空 insights 不推进游标 → 同一批 episode 每晚重跑；④ boot restore 对每个 pending session 并发启动，形成 prompt 惊群 |
 | 周级任务 10-25 后未运行 | `memory:review` / `skillPromotion` / `axiomDistill` 心跳停在 10-25；11-01/11-08 周日 04:00–06:00 UTC gateway 不在线 | cron 无补跑机制，错过即永久错过 |
 | T1 覆盖率持续下滑 | archive 70,151 / vectors 26,266（37.4%）；archive 约 +485/天，回填 200/天 | 每日回填上限低于增长速度 |
 
@@ -25,6 +25,12 @@
    - worker 失败与不可解析输出记录 `sessionID + error`（默认 warn 日志，可注入 `onError`）。
    - `extractJsonPayload` 从解释性文字中提取首个平衡 JSON；`parseInsightsDetailed` 返回 `{ ok, insights }`。
    - 可解析的空 insights 视为合法结果并推进游标；不可解析/抛错保留 pending。修复“同一批 episode 永远重跑”。
+
+2b. **JSON 管线改用无工具身份**（`gateway/src/runtime/identity-registry.ts`）
+   - 新增 `memory-reflector` agent：`nativeTools: { '*': false }`，系统提示明确“无工具、只返回 JSON”。
+   - reflection（questions/distill/tentative）、reconsolidation、grace revisit、dream、axiom distill 全部从 `memory-curator` 切到 `memory-reflector`。
+   - `memory-curator` 保留记忆写工具与只读工具，仅供需要 `read` 核验的 stale-verify（`memory:review`）使用。
+   - 这是 11-14 首次部署后仍报 `unparseable reflection output` 的直接根因：模型在 `memory-curator` 下会直接调用 `mafw_add_memory` 并把结果写成 markdown。
 
 3. **cron 补跑**（`gateway/src/recall/pipeline-rules.ts`、`automation-engine.ts`、`boot.ts`、`kernel.ts`）
    - `findMissedPipelineRuns` 用 `cron.CronTime.getNextDateFrom(lastRunAt, timezone)` 判断自上次尝试后是否错过计划时刻。

@@ -2894,7 +2894,7 @@ class MafwScheduler {
             readMemory: (id: string) => store.read(id),
             worker: {
               prompt: (t: string, s: string) =>
-                this.getPool().getWorker('grace', 'reflect').prompt(t, s, config.recall.workerModel, 'memory-curator'),
+                this.getPool().getWorker('grace', 'reflect').prompt(t, s, config.recall.workerModel, 'memory-reflector'),
             },
             ...createGraceWriteOps(store),
             mode: mode === 'live' ? 'live' : 'shadow',
@@ -2973,7 +2973,7 @@ class MafwScheduler {
             readRelated: (id: string) => store.read(id),
             worker: {
               prompt: (t: string, s: string) =>
-                this.getPool().getWorker('reconsolidate', 'reflect').prompt(t, s, config.recall.workerModel, 'memory-curator'),
+                this.getPool().getWorker('reconsolidate', 'reflect').prompt(t, s, config.recall.workerModel, 'memory-reflector'),
             },
             writeSuperseding: async (oldId: string, content: string) => {
               const { generateHarmonicId } = require('./core/memory/harmonic-types');
@@ -3044,7 +3044,7 @@ class MafwScheduler {
               .slice(-3000);
             if (!tail.trim()) continue;
             const worker = this.getPool().getWorker(`dream-${sid}`, 'reflect');
-            const reply = await worker.prompt(`SESSION TAIL:\n${tail}`, DREAM_SYSTEM, config.recall.workerModel, 'memory-curator');
+            const reply = await worker.prompt(`SESSION TAIL:\n${tail}`, DREAM_SYSTEM, config.recall.workerModel, 'memory-reflector');
             const queries = parseDreamQueries(reply, 3);
             if (queries.length > 0) {
               db.kvSet('dream-queries', sid, { queries, generatedAt: Date.now() });
@@ -3072,7 +3072,7 @@ class MafwScheduler {
           if (sources.length >= 3 && this.getPipelineBudget().allow('axiomDistill')) {
             const evidence = sources.map((e: any) => `- [${e.id}] ${e.primary_abstraction}`).join('\n');
             const worker = this.getPool().getWorker('axiom-distill', 'reflect');
-            const reply = await worker.prompt(evidence, AXIOM_SYSTEM, config.recall.workerModel, 'memory-curator');
+            const reply = await worker.prompt(evidence, AXIOM_SYSTEM, config.recall.workerModel, 'memory-reflector');
             const candidates = parseAxiomCandidates(reply, 3);
             if (candidates.length > 0) {
               const triageDir = path.join(this.mafwDir, 'triage');
