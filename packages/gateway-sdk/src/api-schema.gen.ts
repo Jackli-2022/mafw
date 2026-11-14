@@ -12639,7 +12639,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        status: "deleted";
+                    };
+                };
             };
         };
     };
@@ -12706,7 +12711,30 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        success: true;
+                        /** @description Harmonic memory id that was updated. */
+                        id: string;
+                        /** @description Echo of the requested sticky flag. */
+                        sticky: boolean;
+                        /** @description Note-board expiry (ISO). Absent when sticky was set to false. */
+                        sticky_until?: string;
+                    } | {
+                        /** @constant */
+                        success: true;
+                        /** @description Harmonic memory id that was updated. */
+                        id: string;
+                        /** @description Echo of the resolved pinned flag (pinned === true pins). */
+                        pinned: boolean;
+                    } | {
+                        /** @constant */
+                        success: false;
+                        /** @description Unknown id / memoryService not ready / body parse error (still 200). */
+                        error: string;
+                    };
+                };
             };
         };
     };
@@ -12794,7 +12822,37 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        success: true;
+                        current: {
+                            provider: "off" | "local" | "dashscope";
+                            engine: "onnx" | "llamacpp";
+                            model: string;
+                            dimensions: number;
+                            baseUrl: string;
+                            threads: number;
+                            llamacpp: {
+                                gpu: string;
+                                threads: number;
+                                contextSize: number;
+                                batchSize: number;
+                            };
+                        };
+                        runtime: {
+                            active: string | null;
+                            providerId: string | null;
+                            modelTag: string | null;
+                            dims: number | null;
+                            vectors: number;
+                            indexEntries: number;
+                            coverage: number;
+                        };
+                        /** @description embedding runtime rebuilt (backfill scheduled) | provider off (dense channel disabled). */
+                        note: string;
+                    };
+                };
             };
         };
     };
@@ -13061,7 +13119,14 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        deopted: true;
+                        /** @description Archive directory for the deoptimized playbook (absent when nothing was archived). */
+                        archivedTo?: string;
+                    };
+                };
             };
         };
     };
@@ -13556,7 +13621,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @description Session the prompt was dispatched to; subscribe to its SSE stream. */
+                        sessionID: string;
+                    };
+                };
             };
         };
     };
@@ -13595,7 +13665,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @description Session the prompt was dispatched to; subscribe to its SSE stream. */
+                        sessionID: string;
+                    };
+                };
             };
         };
     };
@@ -13660,7 +13735,31 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        success: true;
+                        /** @description Effective media config after persist (per-modality overrides echoed verbatim). */
+                        media: {
+                            engine?: string;
+                            image?: {
+                                provider?: string;
+                                model?: string;
+                                engine?: string;
+                            };
+                            video?: {
+                                provider?: string;
+                                model?: string;
+                                engine?: string;
+                            };
+                            audio?: {
+                                provider?: string;
+                                model?: string;
+                                engine?: string;
+                            };
+                        };
+                    };
+                };
             };
         };
     };
@@ -13678,7 +13777,18 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @description Artifact id usable as a URL part in a later A2A task. */
+                        artifactId: string;
+                        /** @description Effective media type (query ?type= or application/octet-stream). */
+                        mediaType: string;
+                        /** @description Received byte count for this upload. */
+                        size: number;
+                        /** @description Absolute loopback artifact URL (http://127.0.0.1:<port>/a2a/artifacts/<id>). */
+                        url: string;
+                    };
+                };
             };
         };
     };
@@ -13696,7 +13806,21 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @description A2A task id (analysis still running in the background). */
+                        id: string;
+                        contextId: string;
+                        /**
+                         * @description Always the gateway-seeded working state; later transitions are observed via A2A.
+                         * @constant
+                         */
+                        state: "TASK_STATE_WORKING";
+                        artifactId: string;
+                        mediaType: string;
+                        size: number;
+                    };
+                };
             };
         };
     };
@@ -13714,7 +13838,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
             };
         };
     };
@@ -13763,7 +13891,21 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @description Artifact id of the synthesized wav. */
+                        artifactId: string;
+                        /** @description Effective voice (request value, else the configured default). */
+                        voice: string;
+                        /**
+                         * @description Always wav; the streaming endpoint is tts.speakStream.
+                         * @constant
+                         */
+                        mime: "audio/wav";
+                        /** @description Absolute loopback artifact URL (http://127.0.0.1:<port>/a2a/artifacts/<id>). */
+                        url: string;
+                    };
+                };
             };
         };
     };
@@ -13863,7 +14005,14 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        ok: true;
+                        /** @description Number of in-flight syntheses aborted for this session (0 is valid). */
+                        cancelled: number;
+                    };
+                };
             };
         };
     };
@@ -17938,7 +18087,31 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        stdout: string;
+                        stderr: string;
+                        /** @description repr of the last expression value, when the kernel reports one. */
+                        result?: string;
+                        error?: {
+                            ename: string;
+                            evalue: string;
+                            traceback: string[];
+                        };
+                        status: "ok" | "error" | "aborted";
+                        durationMs: number;
+                        /** @description Output hit maxOutputChars; a truncation note was appended to stdout. */
+                        truncated: boolean;
+                        /** @description display_data attachments emitted by this execution (usually empty). */
+                        attachments: {
+                            mimeType: string;
+                            /** @description base64 payload (no data: prefix). */
+                            data: string;
+                        }[];
+                        /** @description Present only when the kernel was restarted before this call (state lost). */
+                        kernelRestarted?: boolean;
+                    };
+                };
             };
         };
     };
@@ -17963,7 +18136,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        ok: true;
+                    };
+                };
             };
         };
     };
@@ -18015,7 +18193,35 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        ok: true;
+                        /** @description T1 row id; null when nothing was written (empty / internal / filtered / deduped). */
+                        id: number | null;
+                        /** @description Logical turn ordinal this observation belongs to. */
+                        turnId: number;
+                        /** @description Trace id of the turn; absent when nothing was written. */
+                        traceId?: string;
+                        /** @description id === null (including the database UNIQUE dedup). */
+                        deduped: boolean;
+                        /**
+                         * @description Internal pipeline session: the observation was dropped by recursion guard A.
+                         * @constant
+                         */
+                        internal?: true;
+                        /**
+                         * @description Content matched an extraction prompt: dropped by recursion guard B.
+                         * @constant
+                         */
+                        filtered?: true;
+                    } | {
+                        /** @constant */
+                        ok: false;
+                        /** @description Captured error, returned fail-open so the plugin never has to retry. */
+                        error: string;
+                    };
+                };
             };
         };
     };
@@ -18176,7 +18382,38 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        success: true;
+                        /** @description New (or updated) harmonic id; absent on the exact-hash dedup receipt. */
+                        id?: string;
+                        /**
+                         * @description Verbatim re-submit was skipped (routeAndWrite skip, or exact-hash guard).
+                         * @constant
+                         */
+                        deduped?: true;
+                        /**
+                         * @description Only present on the pre-write exact-hash dedup receipt.
+                         * @constant
+                         */
+                        reason?: "exact-hash";
+                        /** @description Target id when routeAndWrite merged into an existing unit. */
+                        updated?: string;
+                        /** @description Note-board expiry (ISO) when the unit was created with sticky:true. */
+                        sticky_until?: string;
+                    } | {
+                        /** @constant */
+                        success: false;
+                        /** @description Validation / service-not-ready / supersedes-miss / parse error (still 200). */
+                        error: string;
+                        /**
+                         * @description Disk pressure critical: the write was refused before dedup/disk side effects.
+                         * @constant
+                         */
+                        code?: "disk_low";
+                    };
+                };
             };
         };
     };
@@ -18421,7 +18658,20 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @description Entries that received a fresh vector in this run. */
+                        indexed: number;
+                        /** @description Entries already present in the new provider store (idempotent rerun). */
+                        skipped: number;
+                        /** @description Entries that could not be embedded (empty abstraction etc.). */
+                        missing: number;
+                        /** @description Total vectors in the active store after the run. */
+                        vectors: number;
+                        /** @description Total harmonic index entries (the backfill denominator). */
+                        indexEntries: number;
+                    };
+                };
             };
         };
     };
@@ -18555,7 +18805,15 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @description A2A task id. */
+                        id: string;
+                        contextId: string;
+                        /** @description A2A task state; empty string when the agent omitted it. */
+                        state: string;
+                    };
+                };
             };
         };
     };
@@ -18608,7 +18866,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @description Narrative analysis text (content + prosody/intent, natural language). */
+                        result: string;
+                    };
+                };
             };
         };
     };
@@ -18630,7 +18893,19 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        ok: true;
+                        plugins: {
+                            file: string;
+                            name?: string;
+                            status: "ok" | "error";
+                            error?: string;
+                            modalities?: string[];
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -18865,7 +19140,14 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @description Follow-up answer text (empty when the task carried no text part). */
+                        answer: string;
+                        /** @description Echoed A2A task id; absent when the agent returned no task. */
+                        taskId?: string;
+                    };
+                };
             };
         };
     };
@@ -18883,7 +19165,17 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @description A2A task id (analysis runs in the background). */
+                        id: string;
+                        contextId: string;
+                        /** @description A2A task state; empty string when the agent omitted it. */
+                        state: string;
+                        /** @description Artifact id created from the multipart file part. */
+                        artifactId: string;
+                    };
+                };
             };
         };
     };
@@ -18956,7 +19248,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        ok: true;
+                    };
+                };
             };
         };
     };
@@ -18985,7 +19282,20 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        ok: true;
+                        device?: {
+                            id: string;
+                            fcmToken: string;
+                            platform: string;
+                            lastSeen: string;
+                            deviceName?: string;
+                            tokenIssuedAt?: string;
+                        };
+                    };
+                };
             };
         };
     };
@@ -19040,7 +19350,16 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        ok: true;
+                        /** @description New device bearer credential (dev_…); shown once, stored hashed. */
+                        token: string;
+                        /** @description Stable device id the credential is bound to. */
+                        deviceId: string;
+                    };
+                };
             };
         };
     };
@@ -19100,7 +19419,20 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        ok: true;
+                        device?: {
+                            id: string;
+                            fcmToken: string;
+                            platform: string;
+                            lastSeen: string;
+                            deviceName?: string;
+                            tokenIssuedAt?: string;
+                        };
+                    };
+                };
             };
         };
     };
@@ -19124,7 +19456,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        ok: true;
+                    };
+                };
             };
         };
     };
@@ -19691,7 +20028,39 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @description eval-<sessionId>. */
+                        id: string;
+                        /** @constant */
+                        object: "chat.completion";
+                        /** @description Request model echo, else <provider>/<model> of the eval adapter. */
+                        model: string;
+                        /** @description Always exactly one choice (index 0). */
+                        choices: {
+                            index: number;
+                            /**
+                             * @description The adapter always reports stop; polling stops on settle/timeout.
+                             * @constant
+                             */
+                            finish_reason: "stop";
+                            message: {
+                                /** @constant */
+                                role: "assistant";
+                                /** @description Final assistant answer (empty string when the run settled with no text). */
+                                content: string;
+                            };
+                        }[];
+                        usage: {
+                            /** @description Always 0: the adapter does not meter tokens. */
+                            prompt_tokens: number;
+                            /** @description Always 0: the adapter does not meter tokens. */
+                            completion_tokens: number;
+                            /** @description Always 0: the adapter does not meter tokens. */
+                            total_tokens: number;
+                        };
+                    };
+                };
             };
         };
     };
@@ -19718,7 +20087,18 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @description Summary of what happened (raw text slice when the model reply was not JSON). */
+                        narrative: string;
+                        /** @description Model-emitted facts; elements are model-defined (gateway only guarantees an array). */
+                        facts: unknown[];
+                        /** @description Model-emitted keywords; elements are model-defined (gateway only guarantees an array). */
+                        concepts: unknown[];
+                        /** @description Model-reported salience weight; absent/non-numeric → 0.5. */
+                        energy: number;
+                    };
+                };
             };
         };
     };
@@ -19747,7 +20127,52 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        ok: true;
+                        /** @constant */
+                        success: true;
+                        /** @description Newly created units in the target store. */
+                        added: number;
+                        /** @description Similar units above the 0.6 similarity threshold. */
+                        conflicts: number;
+                        /** @description Byte-identical units that were skipped. */
+                        skipped: number;
+                        details: {
+                            added: {
+                                id: string;
+                                primary_abstraction?: string;
+                                energy?: number;
+                            }[];
+                            /** @description Conflict detail; empty unless strategy resolved to manual. */
+                            conflicts: {
+                                source: {
+                                    id: string;
+                                    primary_abstraction?: string;
+                                    memory_value?: string;
+                                    energy?: number;
+                                };
+                                target: {
+                                    id: string;
+                                    primary_abstraction?: string;
+                                    memory_value?: string;
+                                    energy?: number;
+                                };
+                                similarity: number;
+                            }[];
+                            /** @description manual | higher_energy | newer (unknown values behave like manual). */
+                            strategy: string;
+                        };
+                    } | {
+                        /** @constant */
+                        ok: false;
+                        /** @constant */
+                        success: false;
+                        /** @description Missing source worktree / unreadable source store / handler exception. */
+                        error: string;
+                    };
+                };
             };
         };
     };
@@ -19894,7 +20319,14 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @description Tool output text (may be empty). */
+                        text: string;
+                        /** @description Present only when the tool reported its own failure. */
+                        isError?: boolean;
+                    };
+                };
             };
         };
     };

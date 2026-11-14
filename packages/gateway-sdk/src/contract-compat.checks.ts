@@ -31,6 +31,8 @@ import type {
   // E10f-B project / runtime / metadata read surface
   MafwCommandDef, ManagerSessionInfo, Project, MediaPluginState, VoiceStatusResponse,
   ModelConfigState, ModelRef, EmbeddingConfigGetResponse, TtsNamespace, PluginClientSnapshot,
+  // E10h-R6 chat / media write responses
+  ChatNamespace, MediaNamespace, TtsResult,
   // E10f-C goal / lead / event / automation / pod read surface
   AutomationRuleListItem, StandingGoalView, GoalRunView,
   LeadTopicView, LeadTopicIndexMessage, LeadBoundaryView, EventSourceView, LeadCompactResult,
@@ -760,6 +762,77 @@ const CHECK_session_messages_cursor: AssertEq<GenMessages['nextCursor'], string 
 const CHECK_session_messages_role: AssertEq<GenMessage['role'], 'user' | 'assistant'> = true
 const CHECK_session_messages_part_type: AssertEq<NonNullable<GenMessage['content']>[number]['type'], string> = true
 
+// E10h-R6: memory / media / tts / chat / devices 写响应。
+// 大部分 op 在 SDK 侧没有可比 DTO（`memory.add|setSticky|delete|merge` 回
+// `void` 或 internal、`obs.capture` / `python.*` / `tools.execute` /
+// `eval.chatCompletions` / `llm.compress` / `devices.*` / `skills.deopt` /
+// `media.analyzeAudio` 都不经 SDK），保持 schema-only；下列几处可逐字段锁等价。
+
+/** chat 的两个入口都只 promise sessionID（SDK 的类型就是 wire 的全部）。 */
+const CHECK_chat_send: AssertEq<
+  Resp<operations['chat.send']>,
+  Awaited<ReturnType<ChatNamespace['send']>>
+> = true
+const CHECK_chat_send_enriched: AssertEq<
+  Resp<operations['chat.sendEnriched']>,
+  Awaited<ReturnType<ChatNamespace['sendEnriched']>>
+> = true
+
+/**
+ * `tts.speak` 的 wire ≡ SDK `TtsResult`，只有 `mime` 更精确：handler 写死
+ * `audio/wav`（SDK 声明的是 `string`），因此拆两半锁。
+ */
+const CHECK_tts_speak: AssertEq<
+  Omit<Resp<operations['tts.speak']>, 'mime'>,
+  Omit<TtsResult, 'mime'>
+> = true
+const CHECK_tts_speak_mime: AssertEq<Resp<operations['tts.speak']>['mime'], 'audio/wav'> = true
+
+/** SDK `upload()` 只读 artifactId（client 的返回类型就是这一把键）。 */
+const CHECK_media_upload_artifact: AssertEq<
+  Resp<operations['media.upload']>['artifactId'],
+  Awaited<ReturnType<MediaNamespace['upload']>>['artifactId']
+> = true
+
+/**
+ * `uploadAndCreate` handler 恒发六个键，SDK 把三份旁账声明成 optional →
+ * `Required` 把差额锁在「只多不少」的方向；`state` 单独锁（handler 写死
+ * `TASK_STATE_WORKING`，SDK 只声明 `string`）。
+ */
+const CHECK_media_upload_and_create: AssertEq<
+  Omit<Resp<operations['media.uploadAndCreate']>, 'state'>,
+  Omit<Required<Awaited<ReturnType<MediaNamespace['uploadAndCreate']>>>, 'state'>
+> = true
+const CHECK_media_upload_and_create_state: AssertEq<
+  Resp<operations['media.uploadAndCreate']>['state'],
+  'TASK_STATE_WORKING'
+> = true
+
+/**
+ * `media.createTaskApi` 与 SDK `createTask()` 是**同一个任务窄投影**
+ * （`{id,contextId,state}`；SDK 从 A2A 信封里解析出的也正是这三键）。
+ */
+const CHECK_media_create_task_api: AssertEq<
+  Resp<operations['media.createTaskApi']>,
+  Awaited<ReturnType<MediaNamespace['createTask']>>
+> = true
+
+/** reload 的 plugins 段 ≡ `media.plugins()` 的行（同一 `getState()` 投影）。 */
+const CHECK_media_plugins_reload: AssertEq<
+  Resp<operations['media.pluginsReload']>['plugins'],
+  MediaPluginState[]
+> = true
+
+/** `embedding.update` 的 current / runtime 是写后读回 → 与 `embedding.get` 等价。 */
+const CHECK_embedding_update_current: AssertEq<
+  Resp<operations['embedding.update']>['current'],
+  EmbeddingConfigGetResponse['current']
+> = true
+const CHECK_embedding_update_runtime: AssertEq<
+  Resp<operations['embedding.update']>['runtime'],
+  EmbeddingConfigGetResponse['runtime']
+> = true
+
 export const CONTRACT_COMPAT_CHECKS = [
   CHECK_session_list, CHECK_session_get, CHECK_goals_list, CHECK_goals_get, CHECK_goals_sessions,
   CHECK_memory_search, CHECK_triage_list, CHECK_approvals_list, CHECK_automations_list, CHECK_questions_list,
@@ -846,4 +919,9 @@ export const CONTRACT_COMPAT_CHECKS = [
   CHECK_runtime_switch_active, CHECK_runtime_switch_env_override, CHECK_runtime_restart_mode,
   CHECK_runtime_reload_plugins, CHECK_manager_rotate_fields,
   CHECK_models_update_recall, CHECK_models_update_media,
+  // E10h-R6
+  CHECK_chat_send, CHECK_chat_send_enriched, CHECK_tts_speak, CHECK_tts_speak_mime,
+  CHECK_media_upload_artifact, CHECK_media_upload_and_create, CHECK_media_upload_and_create_state,
+  CHECK_media_create_task_api,
+  CHECK_media_plugins_reload, CHECK_embedding_update_current, CHECK_embedding_update_runtime,
 ]

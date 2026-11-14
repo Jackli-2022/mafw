@@ -2035,6 +2035,61 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
   代表性断言；SDK `contract-compat.checks.ts` +22 条编译期等价。生成物 diff 恰好这 35 个 op
   （重跑幂等）。
 
+### E10h-R6（memory / media / tts / chat / python / obs / tools / eval / llm / mobile / devices / skills 写响应 31 个）
+
+- 覆盖写响应 163 → **194/195**，total response 台账 289 → **320/327**（97.9%）。catalog 的
+  31 个 entry 只加 `response:`，请求契约与 handler 零改动。
+- 六个新文件按域拆：`routes/schemas/memory-write-responses.ts`（6：memory + embedding）、
+  `media-write-responses.ts`（7：含 `/a2a`）、`tts-write-responses.ts`（2）、
+  `internal-write-responses.ts`（8：chat / python / obs / tools / eval / llm）、
+  `devices-write-responses.ts`（7：devices + mobile）、`skills-write-responses.ts`（1）。
+  `schemas/media-voice.ts` 的 `EmbeddingConfigStateSchema` / `EmbeddingRuntimeStateSchema`
+  加 `export`（无 wire 变化）：`embedding.update` 的 `current` / `runtime` 就是写后读回的
+  同一投影。
+- **唯一排除：`tts.speakStream`** —— 200 是 `text/event-stream` 的 PCM16 分块流
+  （`data: {data,voice}` … + `{"done":true}`），不是单个 JSON 文档；请求仍是已覆盖的 JSON
+  body。收口 `WRITE_RESPONSE_EXCLUDED` 以它为唯一来源项。
+- 复用读侧 DTO / 兄弟 op：`media.pluginsReload` 的 `plugins` ≡ `media.plugins` 列表段
+  （同一 `getState()` 五键投影）；`devices.register` / `mobile.devicesRegister` 共一份回执，
+  `device` ≡ `devices.list` item（`PublicDeviceEntrySchema`，两个 hash 永不出现）；
+  `devices.delete` / `mobile.devicesDelete` 共用 `{ok:true}`；`chat.send` /
+  `sendEnriched` 严格同形（`{sessionID}`）；`embedding.update` 的 `current`/`runtime` ≡
+  `embedding.get`。
+- **「未命中 / 失败也是 200」的分支必须进 schema**：`memory.add`（`{success:false,
+  error, code?:'disk_low'}` 与 exact-hash dedup 回执）、`memory.setSticky`（便签 / pin /
+  失败三支）、`memory.merge`（MCP handler 的 `{success:false,error}` 也走 200）、
+  `obs.capture`（fail-open `{ok:false,error}`）都是 2 支或 3 支联合，不收敛成一份带
+  optional 的对象（否则「两个模式都给」的 body 会被合法化）。
+- 常量回执按 handler 的唯一写出值：`memory.delete` `{status:'deleted'}`、
+  `media.uploadAndCreate.state:'TASK_STATE_WORKING'`（后台分析，先回 working）、
+  `tts.speak.mime:'audio/wav'`、`python.restart` / `tts.interrupt` / 设备删除的 `ok:true`、
+  `eval.chatCompletions.object:'chat.completion'` + `finish_reason:'stop'`。
+- 三个 op 的**请求**是原始字节 / multipart（E10g 已排除），**响应**仍是 JSON，故本波补
+  200：`media.upload`（`{artifactId,mediaType,size,url}`）、`media.uploadAndCreate`、
+  `mobile.mediaTaskUpload`（`{id,contextId,state,artifactId}`）。
+- `media.createTask`（`POST /a2a`）与 `pods.a2a` 同口径：**不排除**，按 A2A 协议边界声明
+  `additionalProperties:true` + owner 注释（仍是 JSON 200 schema）。
+- `media.analyzeAudio` 的 `result` 是 media-service 的叙述文本（`analyze()` /
+  `analyzeAudioNarrative()` 的真实返回 `Promise<string>`；路由 deps 为了可单测写宽成
+  `unknown`，契约按真实 service 声明）。
+- `obs.capture` 的 `id` 是 `number|null`（三种「不落盘」路径都为 null）、`deduped` = `id
+  === null`，`internal` / `filtered` 是两个递归守卫各自的字面量 true 标记。
+- `python.execute` 回 `PythonExecuteResult` 本体（`status:'ok'|'error'|'aborted'`，
+  `error` 只在 Python 异常时出现，`truncated` 时 handler 已把说明追加到 `stdout`）。
+- `llm.compress` 的 `facts` / `concepts` 是模型定义的元素（gateway 只保证数组 →
+  `Type.Array(Type.Unknown())`），`narrative` / `energy` 由 `parseLLMResponse` 兜底。
+- 本批**排除 1（`tts.speakStream`）、空体 200 为 0、顶层开放对象 1（`media.createTask`
+  的 A2A 信封，与 `pods.a2a` 同形）**。
+- 守卫：`schema-coverage.test.ts` 写响应下界 163 → **194**，`E10_COVERED_OPS` +31
+  （289 → 320），新增 R6 逐 op 清单（31）+「只有 A2A 信封是开放顶层对象」+
+  「复用读侧 DTO / 两个模式回执」+「排除项有原因且不声明 response」断言；
+  「写响应必有请求」「写响应 ⊆ 请求台账」两处具名例外扩到 6 个
+  （`pods.a2a` / `media.createTask` / `plugins.install` / `media.upload` /
+  `media.uploadAndCreate` / `mobile.mediaTaskUpload`）。`api-contract.test.ts` 新增 12 条
+  代表性断言 + 台账 194；SDK `contract-compat.checks.ts` +11 条编译期等价
+  （chat ×2、tts speak ×2、media upload/uploadAndCreate ×3、pluginsReload、
+  embedding.update ×2）。生成物 diff 恰好这 31 个 op（重跑幂等）。
+
 ---
 
 ## E11 身份 / 配额硬化（2026-11-13）

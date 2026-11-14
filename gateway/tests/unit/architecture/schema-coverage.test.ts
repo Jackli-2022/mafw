@@ -38,7 +38,7 @@ interface CoverageReport {
 const GATEWAY_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPT = path.join(GATEWAY_ROOT, 'scripts', 'schema-coverage.cjs');
 
-/** Baseline 分组 (E8 and earlier 13 + 8 session read (E10-1) + 8 pod/work read (E10-2) + 8 goal read (E10b-1) + 7 human-gate/permission read (E10b-2) + 1 human token rotate (E11-1) + 8 memory/recall/lead read (E10c-1) + 8 memory extra / lead.context / pod read (E10d-1) + 8 metadata/registry read (E10e-1) + 16 session/task/terminal/usage read (E10f-A) + 16 project/runtime/metadata read (E10f-B) + 16 goal/lead/event/standing/automation/pod read (E10f-C) + 8 observability/device/A2A read (E10f-D)) = 125 entries; E10f-D 收口时台账 127（含 humanToken.rotate 与 orchestration.outcomes），E10h-P0 +2 → 129，E10h-R1 的 35 个 session 写响应 → 164，E10h-R2 的 35 个 pod/task/terminal/fileHistory 写响应 → 199，E10h-R3 的 31 个 goal/decision/lead/standing/cognition 写响应 → 230，E10h-R4 的 24 个 event/automation/approvals/questions/triage/permissions 写响应 → 254，E10h-R5 的 35 个 mcp/plugins/runtime/config/project/manager/commands/models 写响应 → 289。 */
+/** Baseline 分组 (E8 and earlier 13 + 8 session read (E10-1) + 8 pod/work read (E10-2) + 8 goal read (E10b-1) + 7 human-gate/permission read (E10b-2) + 1 human token rotate (E11-1) + 8 memory/recall/lead read (E10c-1) + 8 memory extra / lead.context / pod read (E10d-1) + 8 metadata/registry read (E10e-1) + 16 session/task/terminal/usage read (E10f-A) + 16 project/runtime/metadata read (E10f-B) + 16 goal/lead/event/standing/automation/pod read (E10f-C) + 8 observability/device/A2A read (E10f-D)) = 125 entries; E10f-D 收口时台账 127（含 humanToken.rotate 与 orchestration.outcomes），E10h-P0 +2 → 129，E10h-R1 的 35 个 session 写响应 → 164，E10h-R2 的 35 个 pod/task/terminal/fileHistory 写响应 → 199，E10h-R3 的 31 个 goal/decision/lead/standing/cognition 写响应 → 230，E10h-R4 的 24 个 event/automation/approvals/questions/triage/permissions 写响应 → 254，E10h-R5 的 35 个 mcp/plugins/runtime/config/project/manager/commands/models 写响应 → 289，E10h-R6 的 31 个 memory/media/tts/chat/python/obs/tools/eval/llm/mobile/devices/skills 写响应 → 320（`tts.speakStream` 音频流排除）。 */
 const E10_COVERED_OPS = [
   'a2a.agentCard',
   'agent.capabilities',
@@ -55,6 +55,8 @@ const E10_COVERED_OPS = [
   'background.jobs.cancel',
   'background.jobs.list',
   'background.jobs.output',
+  'chat.send',
+  'chat.sendEnriched',
   'cognition.gate',
   'cognition.rewrite',
   'cognition.rules',
@@ -66,8 +68,12 @@ const E10_COVERED_OPS = [
   'decisions.list',
   'decisions.reopen',
   'decisions.shelve',
+  'devices.delete',
   'devices.list',
+  'devices.register',
   'embedding.get',
+  'embedding.update',
+  'eval.chatCompletions',
   'event.publish',
   'event.replay',
   'events.deliveries.list',
@@ -119,6 +125,7 @@ const E10_COVERED_OPS = [
   'lead.topics.list',
   'lead.topics.resume',
   'lead.workingSet',
+  'llm.compress',
   'mafwCommands.list',
   'mafwCommands.run',
   'manager.rotate',
@@ -131,19 +138,37 @@ const E10_COVERED_OPS = [
   'mcp.connect',
   'mcp.disconnect',
   'mcp.servers',
+  'media.analyzeAudio',
+  'media.createTask',
+  'media.createTaskApi',
   'media.plugins',
+  'media.pluginsReload',
   'media.resolveTask',
+  'media.switch',
+  'media.upload',
+  'media.uploadAndCreate',
+  'memory.add',
+  'memory.delete',
+  'memory.embeddingsBackfill',
   'memory.get',
   'memory.getEnergyDistribution',
   'memory.getL5Axioms',
   'memory.listSticky',
+  'memory.merge',
   'memory.mergedSearch',
   'memory.search',
+  'memory.setSticky',
   'memory.stats',
+  'mobile.devicesDelete',
   'mobile.devicesList',
+  'mobile.devicesRegister',
+  'mobile.mediaTaskAsk',
+  'mobile.mediaTaskUpload',
   'mobile.pairingCode',
+  'mobile.pairingVerify',
   'models.get',
   'models.update',
+  'obs.capture',
   'orchestration.outcomes',
   'permissions.addAllowlist',
   'permissions.addRule',
@@ -226,6 +251,8 @@ const E10_COVERED_OPS = [
   'project.list',
   'project.setCurrent',
   'providers.list',
+  'python.execute',
+  'python.restart',
   'python.status',
   'questions.list',
   'questions.reject',
@@ -300,6 +327,7 @@ const E10_COVERED_OPS = [
   'session.usagePluginsList',
   'session.usagePluginsReload',
   'session.usageSummary',
+  'skills.deopt',
   'skills.list',
   'standingGoals.create',
   'standingGoals.list',
@@ -320,12 +348,15 @@ const E10_COVERED_OPS = [
   'terminal.create',
   'terminal.list',
   'terminal.remove',
+  'tools.execute',
   'tools.list',
   'triage.confirm',
   'triage.dismiss',
   'triage.list',
   'triage.propose',
   'triage.reject',
+  'tts.interrupt',
+  'tts.speak',
   'tts.voices',
   'voice.status',
   'work.overview',
@@ -566,6 +597,55 @@ const E10H_R5_WRITE_RESPONSE_OPS = [
   'runtime.restartAgent',
   'runtime.switch',
 ];
+
+/**
+ * E10h-R6：memory / media / tts / chat / python / obs / embedding / tools /
+ * eval / llm / mobile / devices / skills 共 31 个写 op 的 200 响应
+ * （`tts.speakStream` 是音频流，按 spec §1.1 排除，见 `E10H_R6_EXCLUDED_OPS`）。
+ * 与 R1-R5 同一台账（163 → 194）；按名钉住，删一个 `response:` 立刻按名失败。
+ */
+const E10H_R6_WRITE_RESPONSE_OPS = [
+  'chat.send',
+  'chat.sendEnriched',
+  'devices.delete',
+  'devices.register',
+  'embedding.update',
+  'eval.chatCompletions',
+  'llm.compress',
+  'media.analyzeAudio',
+  'media.createTask',
+  'media.createTaskApi',
+  'media.pluginsReload',
+  'media.switch',
+  'media.upload',
+  'media.uploadAndCreate',
+  'memory.add',
+  'memory.delete',
+  'memory.embeddingsBackfill',
+  'memory.merge',
+  'memory.setSticky',
+  'mobile.devicesDelete',
+  'mobile.devicesRegister',
+  'mobile.mediaTaskAsk',
+  'mobile.mediaTaskUpload',
+  'mobile.pairingVerify',
+  'obs.capture',
+  'python.execute',
+  'python.restart',
+  'skills.deopt',
+  'tools.execute',
+  'tts.interrupt',
+  'tts.speak',
+];
+
+/**
+ * R6 的唯一排除项：`tts.speakStream` 的 200 是 `text/event-stream` 的 PCM16
+ * 分块流（`data: {data,voice}` … + `{"done":true}`），chunked 流上不是单个
+ * JSON 文档。收口 `WRITE_RESPONSE_EXCLUDED` 用它做台账来源。
+ */
+const E10H_R6_EXCLUDED_OPS: Record<string, string> = {
+  'tts.speakStream': 'audio byte stream (SSE PCM16 chunks on text/event-stream); not a single JSON document',
+};
 
 /**
  * E10g-W1：session 域写接口（35 个）。P0 的 session.create + 这 35 个 = 38。
@@ -1149,11 +1229,12 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(E10G_P0_REQUEST_OPS.filter((id) => !byId.get(id)?.hasRequest)).toEqual([]);
   });
 
-  // E10h-P0/R1/R2/R3/R4/R5: write-response ledger. Same parser, same 195 write-op
+  // E10h-P0/R1/R2/R3/R4/R5/R6: write-response ledger. Same parser, same 195 write-op
   // denominator; `humanToken.rotate` (E11-1) + 2 P0 pilots + 35 R1 session writes +
   // 35 R2 pod/task/terminal/fileHistory writes + 31 R3 goal/decision/lead/standing/
   // cognition writes + 24 R4 event/automation/human-gate writes + 35 R5
-  // mcp/plugin/runtime/platform writes = 163/195.
+  // mcp/plugin/runtime/platform writes + 31 R6 memory/media/tts/chat/python/obs/tools/
+  // eval/llm/mobile/devices/skills writes = 194/195 (tts.speakStream excluded).
   // Later batches only append, so the count is a floor.
   it('the script reports write-response coverage over the 195 write ops', () => {
     const report = runScript();
@@ -1163,15 +1244,25 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(write).toHaveLength(WRITE_OPS_TOTAL);
     expect(report.writeResponseTotal).toBe(WRITE_OPS_TOTAL);
     expect(report.writeResponses).toBe(covered.length);
-    expect(report.writeResponses).toBeGreaterThanOrEqual(163);
+    expect(report.writeResponses).toBeGreaterThanOrEqual(194);
     expect(report.writeResponseCovered).toEqual(covered);
     // Disjoint from the request ledger: the two scans are independent `response:`/
-    // `request:` hits on the same write ops — with two deliberate exceptions:
-    // `pods.a2a` (raw JSON-RPC body excluded by E10g; JSON 200 envelope modeled) and
-    // `plugins.install` (raw `.js` byte stream excluded by E10g; JSON `PluginEntry`).
+    // `request:` hits on the same write ops — with deliberate exceptions:
+    // `pods.a2a` / `media.createTask` (raw A2A JSON-RPC body excluded by E10g; JSON
+    // 200 envelope modeled), `plugins.install` (raw `.js` byte stream excluded by
+    // E10g; JSON `PluginEntry`), `media.upload` / `media.uploadAndCreate` (raw media
+    // bytes excluded; JSON references) and `mobile.mediaTaskUpload` (multipart
+    // excluded; JSON task projection).
     const requestCovered = new Set(report.requestCovered);
     expect(report.writeResponseCovered.filter((id) => !requestCovered.has(id)))
-      .toEqual(['plugins.install', 'pods.a2a']);
+      .toEqual([
+        'media.createTask',
+        'media.upload',
+        'media.uploadAndCreate',
+        'mobile.mediaTaskUpload',
+        'plugins.install',
+        'pods.a2a',
+      ]);
   });
 
   it('P0 write-response pilots declare a 200 response schema', () => {
@@ -1183,9 +1274,19 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(E10H_P0_WRITE_RESPONSE_OPS.filter((id) => !byId.get(id)?.hasRequest)).toEqual([]);
     // A write response for a write op that declared no request would be a shape
     // nobody can construct: every covered write response still has a request, except
-    // `pods.a2a` (E10g excluded its raw JSON-RPC body; the 200 envelope is still JSON)
-    // and `plugins.install` (E10g excluded the raw `.js` bytes; the 200 is a PluginEntry).
-    const noRequestButResponded = new Set(['pods.a2a', 'plugins.install']);
+    // `pods.a2a` / `media.createTask` (E10g excluded their raw A2A bodies; the 200
+    // envelopes are still JSON), `plugins.install` (raw `.js` bytes; 200 is a
+    // PluginEntry), `media.upload` / `media.uploadAndCreate` (raw media bytes; 200 is
+    // a JSON artifact reference) and `mobile.mediaTaskUpload` (multipart; 200 is a
+    // JSON task projection).
+    const noRequestButResponded = new Set([
+      'media.createTask',
+      'media.upload',
+      'media.uploadAndCreate',
+      'mobile.mediaTaskUpload',
+      'plugins.install',
+      'pods.a2a',
+    ]);
     expect(
       catalogWriteOps()
         .filter((op) => op.hasResponse && !noRequestButResponded.has(op.operationId))
@@ -2017,5 +2118,143 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     const dry = responses.get('runtime.dryEvent') as any;
     expect(dry.required).toEqual(['type', 'known', 'facets', 'warnings']);
     expect(dry.properties.type.anyOf.map((b: any) => b.type).sort()).toEqual(['null', 'string']);
+  });
+
+  // E10h-R6: memory / media / tts / chat / python / obs / tools / eval / llm /
+  // mobile / devices / skills 写响应（31 个）。与 R1-R5 同一台账（163 → 194）；
+  // 按名钉住，删一个 `response:` 立刻按名失败，而不是只掉一个计数。
+  it('R6 memory/media/internal/device write ops declare a 200 response schema (write responses >= 194)', () => {
+    const writes = catalogWriteOps();
+    const responded = new Set(writes.filter((op) => op.hasResponse).map((op) => op.operationId));
+
+    expect(E10H_R6_WRITE_RESPONSE_OPS.filter((id) => !responded.has(id))).toEqual([]);
+    expect(E10H_R6_WRITE_RESPONSE_OPS).toHaveLength(31);
+    // No duplicates inside the batch …
+    expect(new Set(E10H_R6_WRITE_RESPONSE_OPS).size).toBe(E10H_R6_WRITE_RESPONSE_OPS.length);
+    // … and no overlap with the earlier batches.
+    for (const earlier of [
+      E10H_P0_WRITE_RESPONSE_OPS,
+      E10H_R1_WRITE_RESPONSE_OPS,
+      E10H_R2_WRITE_RESPONSE_OPS,
+      E10H_R3_WRITE_RESPONSE_OPS,
+      E10H_R4_WRITE_RESPONSE_OPS,
+      E10H_R5_WRITE_RESPONSE_OPS,
+    ]) {
+      expect(E10H_R6_WRITE_RESPONSE_OPS.filter((id) => earlier.includes(id))).toEqual([]);
+    }
+    // 194 = humanToken.rotate + P0 2 + R1 35 + R2 35 + R3 31 + R4 24 + R5 35 + R6 31.
+    expect(responded.size).toBeGreaterThanOrEqual(194);
+    // 音频流那一支不在响应台账里（排除，不是漏项）。
+    expect(responded.has('tts.speakStream')).toBe(false);
+  });
+
+  // 本批的 200 全是「有定义的对象 / 多分支联合」；唯一不枚举字段的是
+  // `media.createTask` 的 A2A 信封（协议边界，与 R2 的 `pods.a2a` 同口径）。
+  it('R6 responses model real bodies (only the A2A envelope is an open top-level object)', () => {
+    const responses = catalogResponseById();
+    const problems: string[] = [];
+    for (const id of E10H_R6_WRITE_RESPONSE_OPS) {
+      if (id === 'media.createTask') continue; // asserted separately below
+      const schema = responses.get(id) as {
+        type?: string;
+        anyOf?: Array<{ type?: string; properties?: Record<string, unknown>; additionalProperties?: unknown }>;
+        properties?: Record<string, unknown>;
+        additionalProperties?: unknown;
+      } | undefined;
+      if (!schema) { problems.push(`${id}: missing response`); continue; }
+      // memory.add / memory.setSticky / memory.merge / obs.capture 是分支联合。
+      if (schema.anyOf) {
+        for (const branch of schema.anyOf) {
+          if (Object.keys(branch.properties ?? {}).length === 0) {
+            problems.push(`${id}: branch without declared fields`);
+          }
+          if (branch.additionalProperties !== undefined) problems.push(`${id}: branch must not be open`);
+        }
+        continue;
+      }
+      if (schema.type !== 'object') problems.push(`${id}: expected object`);
+      if (Object.keys(schema.properties ?? {}).length === 0) problems.push(`${id}: expected declared fields`);
+      if (schema.additionalProperties !== undefined) problems.push(`${id}: must not be open`);
+    }
+    expect(problems).toEqual([]);
+
+    // `media.createTask`（POST /a2a）与 `pods.a2a` 是同一个协议边界形态。
+    const a2a = responses.get('media.createTask') as {
+      additionalProperties?: unknown;
+      properties?: Record<string, unknown>;
+    } | undefined;
+    expect(a2a?.additionalProperties).toBe(true);
+    expect(Object.keys(a2a?.properties ?? {})).toEqual([]);
+  });
+
+  // 写响应复用读侧 DTO / 兄弟 op 的同一份 schema，不写第二份转写。
+  it('R6 reuses the read-side DTOs and pins the two-mode receipts', () => {
+    const responses = catalogResponseById();
+
+    // media.pluginsReload 的 plugins 段 ≡ media.plugins 的列表段（同一 getState() 投影）。
+    const reload = responses.get('media.pluginsReload') as any;
+    const plugins = responses.get('media.plugins') as any;
+    expect(reload.properties.plugins).toBe(plugins.properties.plugins);
+
+    // devices.register / mobile.devicesRegister 共用一份回执，device 段 ≡ devices.list item
+    // （`device` 是 Optional 包裹，Symbol 标记不同 → 按结构比较）。
+    expect(responses.get('mobile.devicesRegister')).toBe(responses.get('devices.register'));
+    const register = responses.get('devices.register') as any;
+    const deviceList = responses.get('devices.list') as any;
+    expect(JSON.stringify(register.properties.device))
+      .toBe(JSON.stringify(deviceList.properties.devices.items));
+    // 两个 DELETE 别名同一实现 → 同一份 `{ok:true}` 回执。
+    expect(responses.get('mobile.devicesDelete')).toBe(responses.get('devices.delete'));
+
+    // chat.send 与 chat.sendEnriched 的 200 严格同形（都只有 sessionID）。
+    expect(responses.get('chat.sendEnriched')).toBe(responses.get('chat.send'));
+
+    // embedding.update 的 current / runtime ≡ embedding.get 的同名段（写后读回）。
+    const embeddingUpdate = responses.get('embedding.update') as any;
+    const embeddingGet = responses.get('embedding.get') as any;
+    for (const key of ['current', 'runtime']) {
+      expect(`${key}:${JSON.stringify(embeddingUpdate.properties[key])}`)
+        .toBe(`${key}:${JSON.stringify(embeddingGet.properties[key])}`);
+    }
+
+    // setSticky 的两个模式分支（sticky / pinned）+ 失败分支，收敛成一份会合法化
+    // 「两个都给」的 body。
+    const setSticky = responses.get('memory.setSticky') as any;
+    expect(setSticky.anyOf).toHaveLength(3);
+    expect(setSticky.anyOf[0].required).toEqual(['success', 'id', 'sticky']);
+    expect(setSticky.anyOf[1].required).toEqual(['success', 'id', 'pinned']);
+    expect(setSticky.anyOf[2].required).toEqual(['success', 'error']);
+
+    // memory.add 的 dedup 回执没有 id，deduped 是字面量 true。
+    const add = responses.get('memory.add') as any;
+    const addSuccess = add.anyOf[0];
+    expect(addSuccess.required).toEqual(['success']);
+    expect(addSuccess.properties.deduped.const).toBe(true);
+    expect(add.anyOf[1].properties.code.const).toBe('disk_low');
+
+    // media.uploadAndCreate 的 state 是网关自己写死的 working 态。
+    expect((responses.get('media.uploadAndCreate') as any).properties.state.const)
+      .toBe('TASK_STATE_WORKING');
+    // memory.delete / tts.interrupt / python.restart 的常量回执。
+    expect((responses.get('memory.delete') as any).properties.status.const).toBe('deleted');
+    expect((responses.get('tts.interrupt') as any).properties.ok.const).toBe(true);
+    expect((responses.get('python.restart') as any).properties.ok.const).toBe(true);
+  });
+
+  // 排除项是台账条目，不是静默缺口：R6 恰好一个（tts.speakStream），它必须仍在
+  // catalog 里、必须有原因，且**不**声明 response。
+  it('R6 exclusions are named with a reason and stay out of the response ledger', () => {
+    const ids = Object.keys(E10H_R6_EXCLUDED_OPS);
+    const all = new Set(buildRouteCatalog().map((def) => def.operationId));
+    expect(ids.filter((id) => !all.has(id))).toEqual([]);
+    for (const [id, reason] of Object.entries(E10H_R6_EXCLUDED_OPS)) {
+      expect(`${id}:${reason.length > 0}`).toBe(`${id}:true`);
+      expect(`${id}:${catalogById().get(id) !== undefined}`).toBe(`${id}:true`);
+    }
+    // 排除项既不在响应台账，也不在响应批次的 op 清单里。
+    expect(ids.filter((id) => E10H_R6_WRITE_RESPONSE_OPS.includes(id))).toEqual([]);
+    expect(catalogWriteOps().find((op) => op.operationId === 'tts.speakStream')?.hasResponse).toBe(false);
+    // 请求面仍是已覆盖的 JSON body（排除只针对响应）。
+    expect(catalogById().get('tts.speakStream')?.hasRequest).toBe(true);
   });
 });

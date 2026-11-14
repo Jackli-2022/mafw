@@ -226,6 +226,46 @@ import {
   SkillsDeoptRequest,
   ToolsExecuteRequest,
 } from './schemas/misc-write';
+// E10h-R6：memory / media / tts / chat / python / obs / tools / eval / llm /
+// mobile / devices / skills 的 200 响应 schema（`response`）。
+import {
+  EmbeddingUpdateResponse,
+  MemoryAddResponse,
+  MemoryDeleteResponse,
+  MemoryEmbeddingsBackfillResponse,
+  MemoryMergeResponse,
+  MemorySetStickyResponse,
+} from './schemas/memory-write-responses';
+import {
+  MediaAnalyzeAudioResponse,
+  MediaCreateTaskApiResponse,
+  MediaCreateTaskResponse,
+  MediaPluginsReloadResponse,
+  MediaSwitchResponse,
+  MediaUploadAndCreateResponse,
+  MediaUploadResponse,
+} from './schemas/media-write-responses';
+import { TtsInterruptResponse, TtsSpeakResponse } from './schemas/tts-write-responses';
+import {
+  ChatSendEnrichedResponse,
+  ChatSendResponse,
+  EvalChatCompletionsResponse,
+  LlmCompressResponse,
+  ObsCaptureResponse,
+  PythonExecuteResponse,
+  PythonRestartResponse,
+  ToolsExecuteResponse,
+} from './schemas/internal-write-responses';
+import {
+  DevicesDeleteResponse,
+  DevicesRegisterResponse,
+  MobileDevicesDeleteResponse,
+  MobileDevicesRegisterResponse,
+  MobileMediaTaskAskResponse,
+  MobileMediaTaskUploadResponse,
+  MobilePairingVerifyResponse,
+} from './schemas/devices-write-responses';
+import { SkillsDeoptResponse } from './schemas/skills-write-responses';
 import { HumanTokenRotateResponse } from './schemas/human-token';
 import {
   SessionCheckpointsResponse,
@@ -697,11 +737,11 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/memory/merged-search', operationId: 'memory.mergedSearch', tags: ['memory'], response: MemoryMergedSearchResponse },
   { method: 'GET', path: '/api/memory/energy-distribution', operationId: 'memory.getEnergyDistribution', tags: ['memory'], response: MemoryEnergyDistributionResponse },
   { method: 'GET', path: '/api/l5/axioms', operationId: 'memory.getL5Axioms', tags: ['memory'], response: MemoryL5AxiomsResponse },
-  { method: 'DELETE', path: '/api/memory/:id', operationId: 'memory.delete', tags: ['memory'], request: EmptyRequest, requestRequired: false },
+  { method: 'DELETE', path: '/api/memory/:id', operationId: 'memory.delete', tags: ['memory'], request: EmptyRequest, requestRequired: false, response: MemoryDeleteResponse },
   { method: 'GET', path: '/api/memory/sticky', operationId: 'memory.listSticky', tags: ['memory'], response: MemoryStickyResponse },
-  { method: 'POST', path: '/api/memory/pin', operationId: 'memory.setSticky', tags: ['memory'], request: MemorySetStickyRequest },
+  { method: 'POST', path: '/api/memory/pin', operationId: 'memory.setSticky', tags: ['memory'], request: MemorySetStickyRequest, response: MemorySetStickyResponse },
   { method: 'GET', path: '/api/memory/embedding-config', operationId: 'embedding.get', tags: ['embedding'], response: EmbeddingGetResponse },
-  { method: 'POST', path: '/api/memory/embedding-config', operationId: 'embedding.update', tags: ['embedding'], request: EmbeddingUpdateRequest },
+  { method: 'POST', path: '/api/memory/embedding-config', operationId: 'embedding.update', tags: ['embedding'], request: EmbeddingUpdateRequest, response: EmbeddingUpdateResponse },
   { method: 'GET', path: '/api/approvals', operationId: 'approvals.list', tags: ['approvals'], response: ApprovalListResponse },
   { method: 'POST', path: '/api/approvals/:id/respond', operationId: 'approvals.respond', tags: ['approvals'], request: ApprovalRespondRequest, response: ApprovalRespondResponse },
   { method: 'GET', path: '/api/triage', operationId: 'triage.list', tags: ['triage'], response: TriageListResponse },
@@ -709,7 +749,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/triage/:id/confirm', operationId: 'triage.confirm', tags: ['triage'], request: EmptyRequest, requestRequired: false, response: TriageConfirmResponse },
   { method: 'POST', path: '/api/triage/:id/reject', operationId: 'triage.reject', tags: ['triage'], request: EmptyRequest, requestRequired: false, response: TriageRejectResponse },
   { method: 'POST', path: '/api/triage/:id/propose', operationId: 'triage.propose', tags: ['triage'], request: TriageProposeRequest, response: TriageProposeResponse },
-  { method: 'POST', path: '/api/skills/:name/deopt', operationId: 'skills.deopt', tags: ['internal'], request: SkillsDeoptRequest, requestRequired: false },
+  { method: 'POST', path: '/api/skills/:name/deopt', operationId: 'skills.deopt', tags: ['internal'], request: SkillsDeoptRequest, requestRequired: false, response: SkillsDeoptResponse },
   { method: 'GET', path: '/api/skills', operationId: 'skills.list', tags: ['internal'], response: SkillsListResponse },
   { method: 'GET', path: '/api/questions', operationId: 'questions.list', tags: ['questions'], response: QuestionListResponse },
   { method: 'POST', path: '/api/questions/:id/reply', operationId: 'questions.reply', tags: ['questions'], request: QuestionReplyRequest, response: QuestionReplyResponse },
@@ -724,24 +764,28 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/approvals/rules', operationId: 'permissions.listRules', tags: ['permissions'], response: PermissionRulesListResponse },
   { method: 'POST', path: '/api/approvals/rules', operationId: 'permissions.addRule', tags: ['permissions'], request: PermissionRuleAddRequest, response: PermissionAddRuleResponse },
   { method: 'DELETE', path: '/api/approvals/rules', operationId: 'permissions.removeRule', tags: ['permissions'], request: PermissionRuleRemoveRequest, response: PermissionRemoveRuleResponse },
-  { method: 'POST', path: '/api/chat', operationId: 'chat.send', tags: ['chat'], request: ChatSendRequest },
-  { method: 'POST', path: '/api/chat/enriched', operationId: 'chat.sendEnriched', tags: ['chat'], request: ChatSendEnrichedRequest },
+  { method: 'POST', path: '/api/chat', operationId: 'chat.send', tags: ['chat'], request: ChatSendRequest, response: ChatSendResponse },
+  { method: 'POST', path: '/api/chat/enriched', operationId: 'chat.sendEnriched', tags: ['chat'], request: ChatSendEnrichedRequest, response: ChatSendEnrichedResponse },
   { method: 'GET', path: '/api/media/plugins', operationId: 'media.plugins', tags: ['media'], response: MediaPluginsResponse },
-  { method: 'POST', path: '/api/media/switch', operationId: 'media.switch', tags: ['media'], request: MediaSwitchRequest },
+  { method: 'POST', path: '/api/media/switch', operationId: 'media.switch', tags: ['media'], request: MediaSwitchRequest, response: MediaSwitchResponse },
   // 原始媒体字节流（`for await (const chunk of req)`）+ query `type`：不是 JSON body，
   // 按 spec §1.3 排除（收口 `REQUEST_EXCLUDED` 记录原因）。建任务的 JSON 面是
-  // `media.createTaskApi`（已覆盖）。
-  { method: 'POST', path: '/api/media/upload', operationId: 'media.upload', tags: ['media'] },
-  // 原创字节流 + query `type`/`question`（上传后立即建任务），同上排除。
-  { method: 'POST', path: '/api/media/upload-and-create', operationId: 'media.uploadAndCreate', tags: ['media'] },
+  // `media.createTaskApi`（已覆盖）。**响应仍是 JSON**（工件引用），E10h-R6 补 200 schema。
+  { method: 'POST', path: '/api/media/upload', operationId: 'media.upload', tags: ['media'], response: MediaUploadResponse },
+  // 原创字节流 + query `type`/`question`（上传后立即建任务），同上排除；响应同样是 JSON。
+  { method: 'POST', path: '/api/media/upload-and-create', operationId: 'media.uploadAndCreate', tags: ['media'], response: MediaUploadAndCreateResponse },
   // A2A JSON-RPC 透传（`transport.ts` 只 JSON.parse 后交给 mediaAgent.handleJsonRpc，
-  // 响应 application/a2a+json；非法 JSON 也原样传字符串）：信封归协议所有，排除。
-  { method: 'POST', path: '/a2a', operationId: 'media.createTask', tags: ['media'] },
+  // 响应 application/a2a+json；非法 JSON 也原样传字符串）：**请求**信封归协议所有，
+  // 排除；200 仍是 JSON-RPC 信封 → 按协议边界开放对象建模（不排除响应）。
+  { method: 'POST', path: '/a2a', operationId: 'media.createTask', tags: ['media'], response: MediaCreateTaskResponse },
   { method: 'GET', path: '/a2a/artifacts/:id', operationId: 'media.artifact', tags: ['media'] },
-  { method: 'POST', path: '/api/tts', operationId: 'tts.speak', tags: ['tts'], request: TtsSpeakRequest },
+  { method: 'POST', path: '/api/tts', operationId: 'tts.speak', tags: ['tts'], request: TtsSpeakRequest, response: TtsSpeakResponse },
   { method: 'GET', path: '/api/tts/voices', operationId: 'tts.voices', tags: ['tts'], response: TtsVoicesResponse },
+  // E10h-R6 唯一排除的写响应：200 是 `text/event-stream` 的 PCM16 分块流
+  // （`data: {data,voice}` … + 终止帧 `{"done":true}`），不是单个 JSON 文档。
+  // 收口 `WRITE_RESPONSE_EXCLUDED` 记录原因；**不声明 `response`**。
   { method: 'POST', path: '/api/tts/stream', operationId: 'tts.speakStream', tags: ['tts'], request: TtsSpeakStreamRequest },
-  { method: 'POST', path: '/api/tts/interrupt', operationId: 'tts.interrupt', tags: ['tts'], request: TtsInterruptRequest },
+  { method: 'POST', path: '/api/tts/interrupt', operationId: 'tts.interrupt', tags: ['tts'], request: TtsInterruptRequest, response: TtsInterruptResponse },
   { method: 'GET', path: '/api/voice/status', operationId: 'voice.status', tags: ['voice'], response: VoiceStatusResponse },
   { method: 'GET', path: '/api/provider', operationId: 'providers.list', tags: ['providers'], response: ProviderListResponse },
   { method: 'GET', path: '/api/agents', operationId: 'agents.list', tags: ['agents'], response: AgentListResponse },
@@ -803,11 +847,11 @@ const NON_SDK_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/a2a/pods/:podId/.well-known/agent-card.json', operationId: 'pods.a2aCard', tags: ['internal'], response: A2AAgentCardResponse },
   { method: 'GET', path: '/a2a/pods/:podId/artifacts/:artifactId', operationId: 'pods.a2aArtifact', tags: ['internal'] },
   // Python 内核（§5.17）
-  { method: 'POST', path: '/api/python/execute', operationId: 'python.execute', tags: ['internal'], request: PythonExecuteRequest },
-  { method: 'POST', path: '/api/python/restart', operationId: 'python.restart', tags: ['internal'], request: PythonRestartRequest },
+  { method: 'POST', path: '/api/python/execute', operationId: 'python.execute', tags: ['internal'], request: PythonExecuteRequest, response: PythonExecuteResponse },
+  { method: 'POST', path: '/api/python/restart', operationId: 'python.restart', tags: ['internal'], request: PythonRestartRequest, response: PythonRestartResponse },
   { method: 'GET', path: '/api/python/status', operationId: 'python.status', tags: ['internal'], response: PythonStatusResponse },
   // 观察捕获 / 边界 recall / pinned 披露层（§5.11/§5.13）
-  { method: 'POST', path: '/api/obs/capture', operationId: 'obs.capture', tags: ['internal'], request: ObsCaptureRequest },
+  { method: 'POST', path: '/api/obs/capture', operationId: 'obs.capture', tags: ['internal'], request: ObsCaptureRequest, response: ObsCaptureResponse },
   { method: 'GET', path: '/api/recall/context', operationId: 'recall.context', tags: ['internal'], response: RecallContextResponse },
   { method: 'GET', path: '/api/recall/pinned', operationId: 'recall.pinned', tags: ['internal'], response: RecallPinnedResponse },
   // Task B3：T2-4 fallback 面 / W1 常驻先验块（plugin / pi host extension 消费；
@@ -815,22 +859,22 @@ const NON_SDK_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/recall/instructions', operationId: 'recall.instructions', tags: ['internal'], response: RecallInstructionsResponse },
   { method: 'GET', path: '/api/recall/priors', operationId: 'recall.priors', tags: ['internal'], response: RecallPriorsResponse },
   // 记忆补充（memory.mergedSearch 已在 SDK-facing，不重复）
-  { method: 'POST', path: '/api/memory/add', operationId: 'memory.add', tags: ['internal'], request: MemoryAddRequest },
+  { method: 'POST', path: '/api/memory/add', operationId: 'memory.add', tags: ['internal'], request: MemoryAddRequest, response: MemoryAddResponse },
   { method: 'GET', path: '/api/memory/get', operationId: 'memory.get', tags: ['internal'], response: MemoryGetResponse },
   { method: 'GET', path: '/api/memory/stats', operationId: 'memory.stats', tags: ['internal'], response: MemoryStatsResponse },
   // 只读 `?limit=N`（handler 不读 body）→ 空对象 + required:false。
-  { method: 'POST', path: '/api/memory/embeddings/backfill', operationId: 'memory.embeddingsBackfill', tags: ['internal'], request: EmptyRequest, requestRequired: false },
+  { method: 'POST', path: '/api/memory/embeddings/backfill', operationId: 'memory.embeddingsBackfill', tags: ['internal'], request: EmptyRequest, requestRequired: false, response: MemoryEmbeddingsBackfillResponse },
   // Goal / 编排（§5.20）
   { method: 'POST', path: '/api/work/:goalId/complete', operationId: 'goals.complete', tags: ['internal'], request: EmptyRequest, requestRequired: false, response: GoalCompleteResponse },
   { method: 'POST', path: '/control', operationId: 'goals.controlLegacy', summary: 'MCP 兼容别名，与 /api/goals/control 同 handler', tags: ['internal'], request: GoalControlRequest, response: GoalControlResponse },
   { method: 'GET', path: '/api/orchestration/outcomes', operationId: 'orchestration.outcomes', tags: ['internal'], response: OrchestrationOutcomesResponse },
   // 媒体补充（media.upload / uploadAndCreate 二进制排除见上；switch / plugins GET /
   // a2a / artifacts GET 已在 SDK-facing）
-  { method: 'POST', path: '/api/media/create-task', operationId: 'media.createTaskApi', tags: ['internal'], request: MediaCreateTaskApiRequest },
+  { method: 'POST', path: '/api/media/create-task', operationId: 'media.createTaskApi', tags: ['internal'], request: MediaCreateTaskApiRequest, response: MediaCreateTaskApiResponse },
   { method: 'GET', path: '/api/media/resolve-task/:id', operationId: 'media.resolveTask', tags: ['internal'], response: MediaResolveTaskResponse },
-  { method: 'POST', path: '/api/media/analyze-audio', operationId: 'media.analyzeAudio', tags: ['internal'], request: MediaAnalyzeAudioRequest },
+  { method: 'POST', path: '/api/media/analyze-audio', operationId: 'media.analyzeAudio', tags: ['internal'], request: MediaAnalyzeAudioRequest, response: MediaAnalyzeAudioResponse },
   // handler 不读 body（`_req`），只 reload 插件 → 空对象 + required:false。
-  { method: 'POST', path: '/api/media/plugins/reload', operationId: 'media.pluginsReload', tags: ['internal'], request: EmptyRequest, requestRequired: false },
+  { method: 'POST', path: '/api/media/plugins/reload', operationId: 'media.pluginsReload', tags: ['internal'], request: EmptyRequest, requestRequired: false, response: MediaPluginsReloadResponse },
   // 用量 dashboard（/api/stats 由 routes/dashboard.ts 挂 handler；其余旧 dashboard
   // 形状在 E3-1 清理：costs/alignment/feedback/userAnswer/session.metrics/health.check
   // 与 gateway.* 控制面只在已删除的死模块 src/dashboard/api.ts 里有实现，从不可达）。
@@ -855,20 +899,21 @@ const NON_SDK_ROUTES: RouteDef[] = [
     response: EventReplayResponse,
   },
   // 移动端（P5 Wave 2 反向审计后全量登记）
-  { method: 'POST', path: '/api/mobile/media/tasks/:id/ask', operationId: 'mobile.mediaTaskAsk', tags: ['internal'], request: MobileMediaTaskAskRequest },
+  { method: 'POST', path: '/api/mobile/media/tasks/:id/ask', operationId: 'mobile.mediaTaskAsk', tags: ['internal'], request: MobileMediaTaskAskRequest, response: MobileMediaTaskAskResponse },
   // multipart/form-data 文件部（`mobile/media-proxy.ts` 解析 boundary，不是 JSON body）
   // 按 spec §1.3 排除；追问的 JSON 面是 mobile.mediaTaskAsk（已覆盖）。
-  { method: 'POST', path: '/api/mobile/media/tasks', operationId: 'mobile.mediaTaskUpload', tags: ['internal'] },
+  // 响应仍是 JSON（任务窄投影：id/contextId/state/artifactId），E10h-R6 补 200 schema。
+  { method: 'POST', path: '/api/mobile/media/tasks', operationId: 'mobile.mediaTaskUpload', tags: ['internal'], response: MobileMediaTaskUploadResponse },
   { method: 'GET', path: '/api/mobile/tts/artifacts/:id', operationId: 'mobile.ttsArtifact', tags: ['internal'] },
   { method: 'GET', path: '/api/mobile/devices', operationId: 'mobile.devicesList', tags: ['internal'], response: DeviceListResponse },
-  { method: 'DELETE', path: '/api/mobile/devices/:id', operationId: 'mobile.devicesDelete', tags: ['internal'], request: EmptyRequest, requestRequired: false },
-  { method: 'POST', path: '/api/mobile/devices/register', operationId: 'mobile.devicesRegister', tags: ['internal'], request: MobileDevicesRegisterRequest },
+  { method: 'DELETE', path: '/api/mobile/devices/:id', operationId: 'mobile.devicesDelete', tags: ['internal'], request: EmptyRequest, requestRequired: false, response: MobileDevicesDeleteResponse },
+  { method: 'POST', path: '/api/mobile/devices/register', operationId: 'mobile.devicesRegister', tags: ['internal'], request: MobileDevicesRegisterRequest, response: MobileDevicesRegisterResponse },
   { method: 'GET', path: '/api/mobile/pairing-code', operationId: 'mobile.pairingCode', tags: ['internal'], response: PairingCodeResponse },
-  { method: 'POST', path: '/api/mobile/pairing/verify', operationId: 'mobile.pairingVerify', tags: ['internal'], request: MobilePairingVerifyRequest },
+  { method: 'POST', path: '/api/mobile/pairing/verify', operationId: 'mobile.pairingVerify', tags: ['internal'], request: MobilePairingVerifyRequest, response: MobilePairingVerifyResponse },
   // 设备注册（mobile 的 legacy 别名族）
-  { method: 'POST', path: '/api/devices', operationId: 'devices.register', tags: ['internal'], request: DevicesRegisterRequest },
+  { method: 'POST', path: '/api/devices', operationId: 'devices.register', tags: ['internal'], request: DevicesRegisterRequest, response: DevicesRegisterResponse },
   { method: 'GET', path: '/api/devices', operationId: 'devices.list', tags: ['internal'], response: DeviceListResponse },
-  { method: 'DELETE', path: '/api/devices/:id', operationId: 'devices.delete', tags: ['internal'], request: EmptyRequest, requestRequired: false },
+  { method: 'DELETE', path: '/api/devices/:id', operationId: 'devices.delete', tags: ['internal'], request: EmptyRequest, requestRequired: false, response: DevicesDeleteResponse },
   // E11-1：human token 轮换。只有 CLI（bin/mafw.js）与运维脚本直接打这个端点，
   // @mafw/sdk 不暴露（raw HTTP + 旧凭据证明占有）→ SDK 死契约门按 operationId
   // 显式豁免（packages/gateway-sdk/src/contract.test.ts 的 NON_SDK_EXEMPT）。
@@ -905,10 +950,10 @@ const NON_SDK_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/sessions/:id/subagents/:subId/result', operationId: 'session.subagents.result', tags: ['internal'], response: SessionSubagentResultResponse },
   { method: 'DELETE', path: '/api/session/:id', operationId: 'session.deleteLegacy', tags: ['internal'], request: EmptyRequest, requestRequired: false, response: SessionDeleteLegacyResponse },
   // Eval / LLM 压缩
-  { method: 'POST', path: '/api/eval/chat/completions', operationId: 'eval.chatCompletions', tags: ['internal'], request: EvalChatCompletionsRequest },
-  { method: 'POST', path: '/api/llm/compress', operationId: 'llm.compress', tags: ['internal'], request: LlmCompressRequest },
+  { method: 'POST', path: '/api/eval/chat/completions', operationId: 'eval.chatCompletions', tags: ['internal'], request: EvalChatCompletionsRequest, response: EvalChatCompletionsResponse },
+  { method: 'POST', path: '/api/llm/compress', operationId: 'llm.compress', tags: ['internal'], request: LlmCompressRequest, response: LlmCompressResponse },
   // 跨 worktree 记忆融合（§5.3）
-  { method: 'POST', path: '/api/merge-memory', operationId: 'memory.merge', tags: ['internal'], request: MemoryMergeRequest },
+  { method: 'POST', path: '/api/merge-memory', operationId: 'memory.merge', tags: ['internal'], request: MemoryMergeRequest, response: MemoryMergeResponse },
   // 根健康检查（dashboard/桌面探测用）
   { method: 'GET', path: '/health', operationId: 'health.root', tags: ['internal'], response: HealthResponse },
   // Plugin Web surfaces（spec 2026-11-09 §5.4-§5.6）：asset/events 由浏览器
@@ -918,7 +963,7 @@ const NON_SDK_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/plugins/:name/events', operationId: 'plugins.webEvents', tags: ['internal'] },
   // MAFW 基础工具面（out-of-process runtime 注册/执行通道；loopback-only）
   { method: 'GET', path: '/api/tools', operationId: 'tools.list', tags: ['internal'], response: ToolsListResponse },
-  { method: 'POST', path: '/api/tools/execute', operationId: 'tools.execute', tags: ['internal'], request: ToolsExecuteRequest },
+  { method: 'POST', path: '/api/tools/execute', operationId: 'tools.execute', tags: ['internal'], request: ToolsExecuteRequest, response: ToolsExecuteResponse },
   // Agent 自我认知只读面（L1 能力账本 + L2 失败谱；fail-open）
   { method: 'GET', path: '/api/agent/capabilities', operationId: 'agent.capabilities', tags: ['internal'], response: AgentCapabilitiesResponse },
 ];

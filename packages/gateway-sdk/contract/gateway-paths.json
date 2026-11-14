@@ -24134,7 +24134,23 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status"
+                  ],
+                  "properties": {
+                    "status": {
+                      "const": "deleted",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -24281,7 +24297,83 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "description": "Note-board mode: the body carried a boolean sticky flag.",
+                      "type": "object",
+                      "required": [
+                        "success",
+                        "id",
+                        "sticky"
+                      ],
+                      "properties": {
+                        "success": {
+                          "const": true,
+                          "type": "boolean"
+                        },
+                        "id": {
+                          "description": "Harmonic memory id that was updated.",
+                          "type": "string"
+                        },
+                        "sticky": {
+                          "description": "Echo of the requested sticky flag.",
+                          "type": "boolean"
+                        },
+                        "sticky_until": {
+                          "description": "Note-board expiry (ISO). Absent when sticky was set to false.",
+                          "type": "string"
+                        }
+                      }
+                    },
+                    {
+                      "description": "Pin mode: sticky was absent, so the body only carried pinned.",
+                      "type": "object",
+                      "required": [
+                        "success",
+                        "id",
+                        "pinned"
+                      ],
+                      "properties": {
+                        "success": {
+                          "const": true,
+                          "type": "boolean"
+                        },
+                        "id": {
+                          "description": "Harmonic memory id that was updated.",
+                          "type": "string"
+                        },
+                        "pinned": {
+                          "description": "Echo of the resolved pinned flag (pinned === true pins).",
+                          "type": "boolean"
+                        }
+                      }
+                    },
+                    {
+                      "description": "Failure receipt: this endpoint never uses 404 for a missing id.",
+                      "type": "object",
+                      "required": [
+                        "success",
+                        "error"
+                      ],
+                      "properties": {
+                        "success": {
+                          "const": false,
+                          "type": "boolean"
+                        },
+                        "error": {
+                          "description": "Unknown id / memoryService not ready / body parse error (still 200).",
+                          "type": "string"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -24578,7 +24670,170 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "current",
+                    "runtime",
+                    "note"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "current": {
+                      "type": "object",
+                      "required": [
+                        "provider",
+                        "engine",
+                        "model",
+                        "dimensions",
+                        "baseUrl",
+                        "threads",
+                        "llamacpp"
+                      ],
+                      "properties": {
+                        "provider": {
+                          "anyOf": [
+                            {
+                              "const": "off",
+                              "type": "string"
+                            },
+                            {
+                              "const": "local",
+                              "type": "string"
+                            },
+                            {
+                              "const": "dashscope",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "engine": {
+                          "anyOf": [
+                            {
+                              "const": "onnx",
+                              "type": "string"
+                            },
+                            {
+                              "const": "llamacpp",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "model": {
+                          "type": "string"
+                        },
+                        "dimensions": {
+                          "type": "number"
+                        },
+                        "baseUrl": {
+                          "type": "string"
+                        },
+                        "threads": {
+                          "type": "number"
+                        },
+                        "llamacpp": {
+                          "type": "object",
+                          "required": [
+                            "gpu",
+                            "threads",
+                            "contextSize",
+                            "batchSize"
+                          ],
+                          "properties": {
+                            "gpu": {
+                              "type": "string"
+                            },
+                            "threads": {
+                              "type": "number"
+                            },
+                            "contextSize": {
+                              "type": "number"
+                            },
+                            "batchSize": {
+                              "type": "number"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "runtime": {
+                      "type": "object",
+                      "required": [
+                        "active",
+                        "providerId",
+                        "modelTag",
+                        "dims",
+                        "vectors",
+                        "indexEntries",
+                        "coverage"
+                      ],
+                      "properties": {
+                        "active": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "providerId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "modelTag": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "dims": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "vectors": {
+                          "type": "number"
+                        },
+                        "indexEntries": {
+                          "type": "number"
+                        },
+                        "coverage": {
+                          "type": "number"
+                        }
+                      }
+                    },
+                    "note": {
+                      "description": "embedding runtime rebuilt (backfill scheduled) | provider off (dense channel disabled).",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -25248,7 +25503,27 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "deopted"
+                  ],
+                  "properties": {
+                    "deopted": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "archivedTo": {
+                      "description": "Archive directory for the deoptimized playbook (absent when nothing was archived).",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -26353,7 +26628,23 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "sessionID"
+                  ],
+                  "properties": {
+                    "sessionID": {
+                      "description": "Session the prompt was dispatched to; subscribe to its SSE stream.",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -26422,7 +26713,23 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "sessionID"
+                  ],
+                  "properties": {
+                    "sessionID": {
+                      "description": "Session the prompt was dispatched to; subscribe to its SSE stream.",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -26543,7 +26850,75 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "media"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "media": {
+                      "description": "Effective media config after persist (per-modality overrides echoed verbatim).",
+                      "type": "object",
+                      "properties": {
+                        "engine": {
+                          "type": "string"
+                        },
+                        "image": {
+                          "type": "object",
+                          "properties": {
+                            "provider": {
+                              "type": "string"
+                            },
+                            "model": {
+                              "type": "string"
+                            },
+                            "engine": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "video": {
+                          "type": "object",
+                          "properties": {
+                            "provider": {
+                              "type": "string"
+                            },
+                            "model": {
+                              "type": "string"
+                            },
+                            "engine": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "audio": {
+                          "type": "object",
+                          "properties": {
+                            "provider": {
+                              "type": "string"
+                            },
+                            "model": {
+                              "type": "string"
+                            },
+                            "engine": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -26556,7 +26931,38 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "artifactId",
+                    "mediaType",
+                    "size",
+                    "url"
+                  ],
+                  "properties": {
+                    "artifactId": {
+                      "description": "Artifact id usable as a URL part in a later A2A task.",
+                      "type": "string"
+                    },
+                    "mediaType": {
+                      "description": "Effective media type (query ?type= or application/octet-stream).",
+                      "type": "string"
+                    },
+                    "size": {
+                      "description": "Received byte count for this upload.",
+                      "type": "number"
+                    },
+                    "url": {
+                      "description": "Absolute loopback artifact URL (http://127.0.0.1:<port>/a2a/artifacts/<id>).",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -26569,7 +26975,45 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "contextId",
+                    "state",
+                    "artifactId",
+                    "mediaType",
+                    "size"
+                  ],
+                  "properties": {
+                    "id": {
+                      "description": "A2A task id (analysis still running in the background).",
+                      "type": "string"
+                    },
+                    "contextId": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "description": "Always the gateway-seeded working state; later transitions are observed via A2A.",
+                      "const": "TASK_STATE_WORKING",
+                      "type": "string"
+                    },
+                    "artifactId": {
+                      "type": "string"
+                    },
+                    "mediaType": {
+                      "type": "string"
+                    },
+                    "size": {
+                      "type": "number"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -26582,7 +27026,17 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "A2A JSON-RPC 2.0 envelope; fields are owned by the A2A protocol and forwarded verbatim.",
+                  "type": "object",
+                  "properties": {}
+                }
+              }
+            }
           }
         }
       }
@@ -26646,7 +27100,39 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "artifactId",
+                    "voice",
+                    "mime",
+                    "url"
+                  ],
+                  "properties": {
+                    "artifactId": {
+                      "description": "Artifact id of the synthesized wav.",
+                      "type": "string"
+                    },
+                    "voice": {
+                      "description": "Effective voice (request value, else the configured default).",
+                      "type": "string"
+                    },
+                    "mime": {
+                      "description": "Always wav; the streaming endpoint is tts.speakStream.",
+                      "const": "audio/wav",
+                      "type": "string"
+                    },
+                    "url": {
+                      "description": "Absolute loopback artifact URL (http://127.0.0.1:<port>/a2a/artifacts/<id>).",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -26874,7 +27360,28 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok",
+                    "cancelled"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "cancelled": {
+                      "description": "Number of in-flight syntheses aborted for this session (0 is valid).",
+                      "type": "number"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -48591,7 +49098,103 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "stdout",
+                    "stderr",
+                    "status",
+                    "durationMs",
+                    "truncated",
+                    "attachments"
+                  ],
+                  "properties": {
+                    "stdout": {
+                      "type": "string"
+                    },
+                    "stderr": {
+                      "type": "string"
+                    },
+                    "result": {
+                      "description": "repr of the last expression value, when the kernel reports one.",
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "ename",
+                        "evalue",
+                        "traceback"
+                      ],
+                      "properties": {
+                        "ename": {
+                          "type": "string"
+                        },
+                        "evalue": {
+                          "type": "string"
+                        },
+                        "traceback": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "status": {
+                      "anyOf": [
+                        {
+                          "const": "ok",
+                          "type": "string"
+                        },
+                        {
+                          "const": "error",
+                          "type": "string"
+                        },
+                        {
+                          "const": "aborted",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "durationMs": {
+                      "type": "number"
+                    },
+                    "truncated": {
+                      "description": "Output hit maxOutputChars; a truncation note was appended to stdout.",
+                      "type": "boolean"
+                    },
+                    "attachments": {
+                      "description": "display_data attachments emitted by this execution (usually empty).",
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "mimeType",
+                          "data"
+                        ],
+                        "properties": {
+                          "mimeType": {
+                            "type": "string"
+                          },
+                          "data": {
+                            "description": "base64 payload (no data: prefix).",
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "kernelRestarted": {
+                      "description": "Present only when the kernel was restarted before this call (state lost).",
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -48624,7 +49227,23 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "const": true,
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -48715,7 +49334,82 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "description": "Capture accepted (written, deduped, or intentionally dropped by a recursion guard).",
+                      "type": "object",
+                      "required": [
+                        "ok",
+                        "id",
+                        "turnId",
+                        "deduped"
+                      ],
+                      "properties": {
+                        "ok": {
+                          "const": true,
+                          "type": "boolean"
+                        },
+                        "id": {
+                          "description": "T1 row id; null when nothing was written (empty / internal / filtered / deduped).",
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "turnId": {
+                          "description": "Logical turn ordinal this observation belongs to.",
+                          "type": "number"
+                        },
+                        "traceId": {
+                          "description": "Trace id of the turn; absent when nothing was written.",
+                          "type": "string"
+                        },
+                        "deduped": {
+                          "description": "id === null (including the database UNIQUE dedup).",
+                          "type": "boolean"
+                        },
+                        "internal": {
+                          "description": "Internal pipeline session: the observation was dropped by recursion guard A.",
+                          "const": true,
+                          "type": "boolean"
+                        },
+                        "filtered": {
+                          "description": "Content matched an extraction prompt: dropped by recursion guard B.",
+                          "const": true,
+                          "type": "boolean"
+                        }
+                      }
+                    },
+                    {
+                      "description": "Fail-open receipt: capture errors never surface as 4xx/5xx.",
+                      "type": "object",
+                      "required": [
+                        "ok",
+                        "error"
+                      ],
+                      "properties": {
+                        "ok": {
+                          "const": false,
+                          "type": "boolean"
+                        },
+                        "error": {
+                          "description": "Captured error, returned fail-open so the plugin never has to retry.",
+                          "type": "string"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -49096,7 +49790,73 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "description": "Write accepted (created / updated / deduped / exactly-deduped).",
+                      "type": "object",
+                      "required": [
+                        "success"
+                      ],
+                      "properties": {
+                        "success": {
+                          "const": true,
+                          "type": "boolean"
+                        },
+                        "id": {
+                          "description": "New (or updated) harmonic id; absent on the exact-hash dedup receipt.",
+                          "type": "string"
+                        },
+                        "deduped": {
+                          "description": "Verbatim re-submit was skipped (routeAndWrite skip, or exact-hash guard).",
+                          "const": true,
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "description": "Only present on the pre-write exact-hash dedup receipt.",
+                          "const": "exact-hash",
+                          "type": "string"
+                        },
+                        "updated": {
+                          "description": "Target id when routeAndWrite merged into an existing unit.",
+                          "type": "string"
+                        },
+                        "sticky_until": {
+                          "description": "Note-board expiry (ISO) when the unit was created with sticky:true.",
+                          "type": "string"
+                        }
+                      }
+                    },
+                    {
+                      "description": "Failure receipt: this endpoint answers 200 even for rejected writes.",
+                      "type": "object",
+                      "required": [
+                        "success",
+                        "error"
+                      ],
+                      "properties": {
+                        "success": {
+                          "const": false,
+                          "type": "boolean"
+                        },
+                        "error": {
+                          "description": "Validation / service-not-ready / supersedes-miss / parse error (still 200).",
+                          "type": "string"
+                        },
+                        "code": {
+                          "description": "Disk pressure critical: the write was refused before dedup/disk side effects.",
+                          "const": "disk_low",
+                          "type": "string"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -50018,7 +50778,43 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "indexed",
+                    "skipped",
+                    "missing",
+                    "vectors",
+                    "indexEntries"
+                  ],
+                  "properties": {
+                    "indexed": {
+                      "description": "Entries that received a fresh vector in this run.",
+                      "type": "number"
+                    },
+                    "skipped": {
+                      "description": "Entries already present in the new provider store (idempotent rerun).",
+                      "type": "number"
+                    },
+                    "missing": {
+                      "description": "Entries that could not be embedded (empty abstraction etc.).",
+                      "type": "number"
+                    },
+                    "vectors": {
+                      "description": "Total vectors in the active store after the run.",
+                      "type": "number"
+                    },
+                    "indexEntries": {
+                      "description": "Total harmonic index entries (the backfill denominator).",
+                      "type": "number"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -50370,7 +51166,32 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "contextId",
+                    "state"
+                  ],
+                  "properties": {
+                    "id": {
+                      "description": "A2A task id.",
+                      "type": "string"
+                    },
+                    "contextId": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "description": "A2A task state; empty string when the agent omitted it.",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -50456,7 +51277,23 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "result"
+                  ],
+                  "properties": {
+                    "result": {
+                      "description": "Narrative analysis text (content + prosody/intent, natural language).",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -50480,7 +51317,63 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok",
+                    "plugins"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "plugins": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "file",
+                          "status"
+                        ],
+                        "properties": {
+                          "file": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "anyOf": [
+                              {
+                                "const": "ok",
+                                "type": "string"
+                              },
+                              {
+                                "const": "error",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "error": {
+                            "type": "string"
+                          },
+                          "modalities": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -51240,7 +52133,27 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "answer"
+                  ],
+                  "properties": {
+                    "answer": {
+                      "description": "Follow-up answer text (empty when the task carried no text part).",
+                      "type": "string"
+                    },
+                    "taskId": {
+                      "description": "Echoed A2A task id; absent when the agent returned no task.",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -51253,7 +52166,37 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "contextId",
+                    "state",
+                    "artifactId"
+                  ],
+                  "properties": {
+                    "id": {
+                      "description": "A2A task id (analysis runs in the background).",
+                      "type": "string"
+                    },
+                    "contextId": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "description": "A2A task state; empty string when the agent omitted it.",
+                      "type": "string"
+                    },
+                    "artifactId": {
+                      "description": "Artifact id created from the multipart file part.",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -51367,7 +52310,23 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "const": true,
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -51410,7 +52369,52 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "device": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "fcmToken",
+                        "platform",
+                        "lastSeen"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "fcmToken": {
+                          "type": "string"
+                        },
+                        "platform": {
+                          "type": "string"
+                        },
+                        "lastSeen": {
+                          "type": "string"
+                        },
+                        "deviceName": {
+                          "type": "string"
+                        },
+                        "tokenIssuedAt": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -51491,7 +52495,33 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok",
+                    "token",
+                    "deviceId"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "token": {
+                      "description": "New device bearer credential (dev_…); shown once, stored hashed.",
+                      "type": "string"
+                    },
+                    "deviceId": {
+                      "description": "Stable device id the credential is bound to.",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -51540,7 +52570,52 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "device": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "fcmToken",
+                        "platform",
+                        "lastSeen"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "fcmToken": {
+                          "type": "string"
+                        },
+                        "platform": {
+                          "type": "string"
+                        },
+                        "lastSeen": {
+                          "type": "string"
+                        },
+                        "deviceName": {
+                          "type": "string"
+                        },
+                        "tokenIssuedAt": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       },
@@ -51629,7 +52704,23 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "const": true,
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -53072,7 +54163,96 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "object",
+                    "model",
+                    "choices",
+                    "usage"
+                  ],
+                  "properties": {
+                    "id": {
+                      "description": "eval-<sessionId>.",
+                      "type": "string"
+                    },
+                    "object": {
+                      "const": "chat.completion",
+                      "type": "string"
+                    },
+                    "model": {
+                      "description": "Request model echo, else <provider>/<model> of the eval adapter.",
+                      "type": "string"
+                    },
+                    "choices": {
+                      "description": "Always exactly one choice (index 0).",
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "index",
+                          "finish_reason",
+                          "message"
+                        ],
+                        "properties": {
+                          "index": {
+                            "type": "number"
+                          },
+                          "finish_reason": {
+                            "description": "The adapter always reports stop; polling stops on settle/timeout.",
+                            "const": "stop",
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "object",
+                            "required": [
+                              "role",
+                              "content"
+                            ],
+                            "properties": {
+                              "role": {
+                                "const": "assistant",
+                                "type": "string"
+                              },
+                              "content": {
+                                "description": "Final assistant answer (empty string when the run settled with no text).",
+                                "type": "string"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "usage": {
+                      "type": "object",
+                      "required": [
+                        "prompt_tokens",
+                        "completion_tokens",
+                        "total_tokens"
+                      ],
+                      "properties": {
+                        "prompt_tokens": {
+                          "description": "Always 0: the adapter does not meter tokens.",
+                          "type": "number"
+                        },
+                        "completion_tokens": {
+                          "description": "Always 0: the adapter does not meter tokens.",
+                          "type": "number"
+                        },
+                        "total_tokens": {
+                          "description": "Always 0: the adapter does not meter tokens.",
+                          "type": "number"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -53111,7 +54291,40 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "narrative",
+                    "facts",
+                    "concepts",
+                    "energy"
+                  ],
+                  "properties": {
+                    "narrative": {
+                      "description": "Summary of what happened (raw text slice when the model reply was not JSON).",
+                      "type": "string"
+                    },
+                    "facts": {
+                      "description": "Model-emitted facts; elements are model-defined (gateway only guarantees an array).",
+                      "type": "array",
+                      "items": {}
+                    },
+                    "concepts": {
+                      "description": "Model-emitted keywords; elements are model-defined (gateway only guarantees an array).",
+                      "type": "array",
+                      "items": {}
+                    },
+                    "energy": {
+                      "description": "Model-reported salience weight; absent/non-numeric → 0.5.",
+                      "type": "number"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -53152,7 +54365,163 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "description": "Merge finished (added / updated / skipped counts + strategy).",
+                      "type": "object",
+                      "required": [
+                        "ok",
+                        "success",
+                        "added",
+                        "conflicts",
+                        "skipped",
+                        "details"
+                      ],
+                      "properties": {
+                        "ok": {
+                          "const": true,
+                          "type": "boolean"
+                        },
+                        "success": {
+                          "const": true,
+                          "type": "boolean"
+                        },
+                        "added": {
+                          "description": "Newly created units in the target store.",
+                          "type": "number"
+                        },
+                        "conflicts": {
+                          "description": "Similar units above the 0.6 similarity threshold.",
+                          "type": "number"
+                        },
+                        "skipped": {
+                          "description": "Byte-identical units that were skipped.",
+                          "type": "number"
+                        },
+                        "details": {
+                          "type": "object",
+                          "required": [
+                            "added",
+                            "conflicts",
+                            "strategy"
+                          ],
+                          "properties": {
+                            "added": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "required": [
+                                  "id"
+                                ],
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "primary_abstraction": {
+                                    "type": "string"
+                                  },
+                                  "energy": {
+                                    "type": "number"
+                                  }
+                                }
+                              }
+                            },
+                            "conflicts": {
+                              "description": "Conflict detail; empty unless strategy resolved to manual.",
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "required": [
+                                  "source",
+                                  "target",
+                                  "similarity"
+                                ],
+                                "properties": {
+                                  "source": {
+                                    "type": "object",
+                                    "required": [
+                                      "id"
+                                    ],
+                                    "properties": {
+                                      "id": {
+                                        "type": "string"
+                                      },
+                                      "primary_abstraction": {
+                                        "type": "string"
+                                      },
+                                      "memory_value": {
+                                        "type": "string"
+                                      },
+                                      "energy": {
+                                        "type": "number"
+                                      }
+                                    }
+                                  },
+                                  "target": {
+                                    "type": "object",
+                                    "required": [
+                                      "id"
+                                    ],
+                                    "properties": {
+                                      "id": {
+                                        "type": "string"
+                                      },
+                                      "primary_abstraction": {
+                                        "type": "string"
+                                      },
+                                      "memory_value": {
+                                        "type": "string"
+                                      },
+                                      "energy": {
+                                        "type": "number"
+                                      }
+                                    }
+                                  },
+                                  "similarity": {
+                                    "type": "number"
+                                  }
+                                }
+                              }
+                            },
+                            "strategy": {
+                              "description": "manual | higher_energy | newer (unknown values behave like manual).",
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "description": "Failure receipt: the MCP handler error is still transported as a 200 JSON body.",
+                      "type": "object",
+                      "required": [
+                        "ok",
+                        "success",
+                        "error"
+                      ],
+                      "properties": {
+                        "ok": {
+                          "const": false,
+                          "type": "boolean"
+                        },
+                        "success": {
+                          "const": false,
+                          "type": "boolean"
+                        },
+                        "error": {
+                          "description": "Missing source worktree / unreadable source store / handler exception.",
+                          "type": "string"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -53412,7 +54781,27 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "text"
+                  ],
+                  "properties": {
+                    "text": {
+                      "description": "Tool output text (may be empty).",
+                      "type": "string"
+                    },
+                    "isError": {
+                      "description": "Present only when the tool reported its own failure.",
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }

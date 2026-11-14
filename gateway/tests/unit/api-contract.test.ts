@@ -6072,3 +6072,225 @@ describe('api-contract: E10h-R5 mcp/plugin/runtime/platform write responses', ()
 });
 
 
+
+describe('api-contract: E10h-R6 memory/media/internal/device write responses', () => {
+  const findOp = (operationId: string): any => {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const candidate of Object.values<any>(methods)) {
+        if (candidate?.operationId === operationId) return candidate;
+      }
+    }
+    return null;
+  };
+
+  const schemaOf = (operationId: string): any => {
+    const op = findOp(operationId);
+    expect(`${operationId}:found`).toBe(`${operationId}:${op ? 'found' : 'missing'}`);
+    const schema = op.responses?.['200']?.content?.['application/json']?.schema;
+    expect(`${operationId}:200`).toBe(`${operationId}:${schema ? '200' : 'missing'}`);
+    return schema;
+  };
+
+  test('chat writes only promise the session id (fire-and-forget)', () => {
+    for (const id of ['chat.send', 'chat.sendEnriched']) {
+      const schema = schemaOf(id);
+      expect(schema.required).toEqual(['sessionID']);
+      expect(Object.keys(schema.properties)).toEqual(['sessionID']);
+      expect(schema.properties.sessionID.type).toBe('string');
+    }
+  });
+
+  test('memory receipts pin the two-mode setSticky and the fail-open add', () => {
+    expect(schemaOf('memory.delete').properties.status.const).toBe('deleted');
+
+    const setSticky = schemaOf('memory.setSticky');
+    expect(setSticky.anyOf).toHaveLength(3);
+    expect(setSticky.anyOf[0].required).toEqual(['success', 'id', 'sticky']);
+    expect(setSticky.anyOf[0].properties.sticky.type).toBe('boolean');
+    expect(setSticky.anyOf[1].required).toEqual(['success', 'id', 'pinned']);
+    expect(setSticky.anyOf[2].required).toEqual(['success', 'error']);
+    expect(setSticky.anyOf[2].properties.success.const).toBe(false);
+
+    const add = schemaOf('memory.add');
+    expect(add.anyOf).toHaveLength(2);
+    // dedup 命中没有 id，deduped 是字面量 true。
+    expect(add.anyOf[0].required).toEqual(['success']);
+    expect(add.anyOf[0].properties.deduped.const).toBe(true);
+    expect(add.anyOf[0].properties.updated.type).toBe('string');
+    expect(add.anyOf[1].properties.code.const).toBe('disk_low');
+
+    // backfill 是本次计数 + 整库覆盖率快照。
+    const backfill = schemaOf('memory.embeddingsBackfill');
+    expect(backfill.required).toEqual(['indexed', 'skipped', 'missing', 'vectors', 'indexEntries']);
+  });
+
+  test('memory.merge has one success branch (details) and one MCP failure branch', () => {
+    const merge = schemaOf('memory.merge');
+    expect(merge.anyOf).toHaveLength(2);
+    const [ok, failed] = merge.anyOf;
+    expect(ok.required).toEqual(['ok', 'success', 'added', 'conflicts', 'skipped', 'details']);
+    expect(ok.properties.details.required).toEqual(['added', 'conflicts', 'strategy']);
+    expect(ok.properties.details.properties.conflicts.items.required)
+      .toEqual(['source', 'target', 'similarity']);
+    expect(failed.properties.ok.const).toBe(false);
+    expect(failed.properties.success.const).toBe(false);
+  });
+
+  test('embedding.update returns the re-read config/runtime (same shape as embedding.get)', () => {
+    const update = schemaOf('embedding.update');
+    expect(update.required).toEqual(['success', 'current', 'runtime', 'note']);
+    expect(update.properties.success.const).toBe(true);
+    const get = schemaOf('embedding.get');
+    for (const key of ['current', 'runtime']) {
+      expect(JSON.stringify(update.properties[key])).toBe(JSON.stringify(get.properties[key]));
+    }
+  });
+
+  test('media writes keep the artifact reference and the A2A envelope boundary', () => {
+    const upload = schemaOf('media.upload');
+    expect(upload.required).toEqual(['artifactId', 'mediaType', 'size', 'url']);
+    // 请求是原始字节（无 requestBody），响应仍是 JSON。
+    expect(findOp('media.upload').requestBody).toBeUndefined();
+
+    const created = schemaOf('media.uploadAndCreate');
+    expect(created.required).toEqual(['id', 'contextId', 'state', 'artifactId', 'mediaType', 'size']);
+    expect(created.properties.state.const).toBe('TASK_STATE_WORKING');
+
+    const api = schemaOf('media.createTaskApi');
+    expect(api.required).toEqual(['id', 'contextId', 'state']);
+    expect(api.properties.state.type).toBe('string');
+
+    // POST /a2a：请求信封归协议（E10g 排除），200 按协议边界开放。
+    const a2a = schemaOf('media.createTask');
+    expect(a2a.additionalProperties).toBe(true);
+    expect(Object.keys(a2a.properties ?? {})).toEqual([]);
+    expect(findOp('media.createTask').requestBody).toBeUndefined();
+
+    // 分析结果一直是叙述文本。
+    expect(schemaOf('media.analyzeAudio').properties.result.type).toBe('string');
+
+    // reload 的 plugins 段 ≡ media.plugins 的列表段（同一 getState() 投影）。
+    const reload = schemaOf('media.pluginsReload');
+    expect(reload.required).toEqual(['ok', 'plugins']);
+    expect(reload.properties.ok.const).toBe(true);
+    expect(JSON.stringify(reload.properties.plugins))
+      .toBe(JSON.stringify(schemaOf('media.plugins').properties.plugins));
+  });
+
+  test('tts.speak returns a wav reference; the stream op stays excluded', () => {
+    const speak = schemaOf('tts.speak');
+    expect(speak.required).toEqual(['artifactId', 'voice', 'mime', 'url']);
+    expect(speak.properties.mime.const).toBe('audio/wav');
+    expect(schemaOf('tts.interrupt').required).toEqual(['ok', 'cancelled']);
+    expect(schemaOf('tts.interrupt').properties.ok.const).toBe(true);
+    // 音频流：200 只有 description，没有任何 JSON schema。
+    expect(findOp('tts.speakStream').responses['200'].content).toBeUndefined();
+    // 请求面没有被排除影响。
+    expect(findOp('tts.speakStream').requestBody).toBeDefined();
+  });
+
+  test('obs.capture is fail-open 200 and python.execute returns the kernel result itself', () => {
+    const obs = schemaOf('obs.capture');
+    expect(obs.anyOf).toHaveLength(2);
+    expect(obs.anyOf[0].required).toEqual(['ok', 'id', 'turnId', 'deduped']);
+    expect(obs.anyOf[0].properties.id.anyOf.map((b: any) => b.type).sort())
+      .toEqual(['null', 'number']);
+    expect(obs.anyOf[1].required).toEqual(['ok', 'error']);
+    expect(obs.anyOf[1].properties.ok.const).toBe(false);
+
+    const py = schemaOf('python.execute');
+    expect(py.required).toEqual(['stdout', 'stderr', 'status', 'durationMs', 'truncated', 'attachments']);
+    expect(py.properties.status.anyOf.map((b: any) => b.const).sort())
+      .toEqual(['aborted', 'error', 'ok']);
+    // 错误信封只在 Python 异常时出现。
+    expect(py.required).not.toContain('error');
+    expect(py.properties.error.required).toEqual(['ename', 'evalue', 'traceback']);
+    expect(schemaOf('python.restart').properties.ok.const).toBe(true);
+  });
+
+  test('tools / eval / llm receipts keep their handler shapes', () => {
+    const tools = schemaOf('tools.execute');
+    expect(tools.required).toEqual(['text']);
+    expect(tools.properties.isError.type).toBe('boolean');
+
+    const evalSchema = schemaOf('eval.chatCompletions');
+    expect(evalSchema.required).toEqual(['id', 'object', 'model', 'choices', 'usage']);
+    expect(evalSchema.properties.object.const).toBe('chat.completion');
+    expect(evalSchema.properties.choices.items.required)
+      .toEqual(['index', 'finish_reason', 'message']);
+    expect(evalSchema.properties.choices.items.properties.finish_reason.const).toBe('stop');
+    expect(evalSchema.properties.usage.required)
+      .toEqual(['prompt_tokens', 'completion_tokens', 'total_tokens']);
+
+    const compress = schemaOf('llm.compress');
+    expect(compress.required).toEqual(['narrative', 'facts', 'concepts', 'energy']);
+    expect(compress.properties.narrative.type).toBe('string');
+    expect(compress.properties.facts.type).toBe('array');
+    expect(compress.properties.energy.type).toBe('number');
+  });
+
+  test('device writes never expose credential hashes; pairing returns the token pair', () => {
+    const register = schemaOf('devices.register');
+    expect(register.required).toEqual(['ok']);
+    expect(register.properties.ok.const).toBe(true);
+    // device 是 PublicDeviceEntry（与 devices.list 的 item 同一投影）。
+    expect(JSON.stringify(register.properties.device))
+      .toBe(JSON.stringify(schemaOf('devices.list').properties.devices.items));
+    expect(JSON.stringify(schemaOf('mobile.devicesRegister')))
+      .toBe(JSON.stringify(register));
+
+    for (const id of ['devices.delete', 'mobile.devicesDelete']) {
+      expect(schemaOf(id).required).toEqual(['ok']);
+      expect(schemaOf(id).properties.ok.const).toBe(true);
+    }
+
+    const verify = schemaOf('mobile.pairingVerify');
+    expect(verify.required).toEqual(['ok', 'token', 'deviceId']);
+    expect(verify.properties.token.type).toBe('string');
+    expect(verify.properties.deviceId.type).toBe('string');
+
+    const ask = schemaOf('mobile.mediaTaskAsk');
+    expect(ask.required).toEqual(['answer']);
+    expect(ask.properties.taskId.type).toBe('string');
+
+    const uploadTask = schemaOf('mobile.mediaTaskUpload');
+    expect(uploadTask.required).toEqual(['id', 'contextId', 'state', 'artifactId']);
+    // 请求是 multipart（无 requestBody），响应仍是 JSON。
+    expect(findOp('mobile.mediaTaskUpload').requestBody).toBeUndefined();
+  });
+
+  test('skills.deopt keeps the 404 deopted:false apart from the 200 receipt', () => {
+    const deopt = schemaOf('skills.deopt');
+    expect(deopt.required).toEqual(['deopted']);
+    expect(deopt.properties.deopted.const).toBe(true);
+    expect(deopt.properties.archivedTo.type).toBe('string');
+  });
+
+  test('the R6 batch raises the write-response ledger to 194/195', () => {
+    const writeOps = new Set<string>();
+    const responded = new Set<string>();
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const [method, op] of Object.entries<any>(methods)) {
+        if (method === 'get' || !op?.operationId) continue;
+        writeOps.add(op.operationId);
+        if (op.responses?.['200']?.content?.['application/json']?.schema) responded.add(op.operationId);
+      }
+    }
+    expect(writeOps.size).toBe(195);
+    // humanToken.rotate + P0 2 + R1 35 + R2 35 + R3 31 + R4 24 + R5 35 + R6 31 = 194
+    //（195 - tts.speakStream 音频流）。
+    expect(responded.size).toBe(194);
+    for (const id of [
+      'memory.add', 'memory.delete', 'memory.setSticky', 'memory.embeddingsBackfill', 'memory.merge',
+      'embedding.update', 'media.switch', 'media.upload', 'media.uploadAndCreate', 'media.createTask',
+      'media.createTaskApi', 'media.analyzeAudio', 'media.pluginsReload', 'tts.speak', 'tts.interrupt',
+      'chat.send', 'chat.sendEnriched', 'python.execute', 'python.restart', 'obs.capture',
+      'tools.execute', 'eval.chatCompletions', 'llm.compress', 'mobile.mediaTaskAsk',
+      'mobile.mediaTaskUpload', 'mobile.devicesRegister', 'mobile.pairingVerify', 'mobile.devicesDelete',
+      'devices.register', 'devices.delete', 'skills.deopt',
+    ]) {
+      expect(`${id}:${responded.has(id)}`).toBe(`${id}:true`);
+    }
+    expect(responded.has('tts.speakStream')).toBe(false);
+  });
+});

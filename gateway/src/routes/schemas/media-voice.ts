@@ -235,8 +235,11 @@ export const MediaResolveTaskResponse = Type.Object({
 
 // ── embedding.get ───────────────────────────────────────────────────────────
 
-/** `EmbeddingConfigState`（routes/embedding-config.ts）：config.yaml 的有效 embedding 段。 */
-const EmbeddingConfigStateSchema = Type.Object({
+/**
+ * `EmbeddingConfigState`（routes/embedding-config.ts）：config.yaml 的有效 embedding 段。
+ * E10h-R6：`embedding.update` 的 `current` 段是写后读回的同一投影 → 加 export 复用。
+ */
+export const EmbeddingConfigStateSchema = Type.Object({
   provider: Type.Union([Type.Literal('off'), Type.Literal('local'), Type.Literal('dashscope')]),
   engine: Type.Union([Type.Literal('onnx'), Type.Literal('llamacpp')]),
   model: Type.String(),
@@ -252,8 +255,11 @@ const EmbeddingConfigStateSchema = Type.Object({
   }),
 })
 
-/** `EmbeddingRuntimeState`：live provider 状态（provider 关闭时 active/dims 为 null）。 */
-const EmbeddingRuntimeStateSchema = Type.Object({
+/**
+ * `EmbeddingRuntimeState`：live provider 状态（provider 关闭时 active/dims 为 null）。
+ * E10h-R6：`embedding.update` 的 `runtime` 段同形 → 加 export 复用。
+ */
+export const EmbeddingRuntimeStateSchema = Type.Object({
   active: Type.Union([Type.String(), Type.Null()]),
   providerId: Type.Union([Type.String(), Type.Null()]),
   modelTag: Type.Union([Type.String(), Type.Null()]),
