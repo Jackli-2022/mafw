@@ -45,6 +45,7 @@ describe('LLM GoalEval provider', () => {
       timeoutMs: 1234,
     });
     expect(provider).not.toBeNull();
+    expect(provider!.mode).toBe('advisory');
 
     const results = await provider!.evaluate(input());
     expect(results).toEqual([
