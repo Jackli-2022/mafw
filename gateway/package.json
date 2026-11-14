@@ -12,6 +12,7 @@
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
     "test": "jest --runInBand",
+  "drill:plugin-trust": "jest --runInBand tests/integration/plugin-trust-drill.test.ts",
     "deploy:local": "node scripts/deploy-local.mjs"
   },
   "dependencies": {

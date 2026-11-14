@@ -8,6 +8,8 @@ import {
   handlePluginDoctor,
   handlePluginDoctorAll,
   handlePluginAudit,
+  handlePluginLastGood,
+  handlePluginRollback,
   type PluginPackagesRouteDeps,
 } from '../../../src/routes/plugin-packages';
 
@@ -43,6 +45,12 @@ function makeDeps() {
     installFromPath: jest.fn(async () => ({
       name: 'acme', version: '1.0.0', saved: true, application: 'applied',
     })),
+    rollback: jest.fn(async (name: string) => ({
+      name, version: '0.9.0', saved: true, enabled: true, application: 'applied',
+    })),
+  };
+  const lastGood = {
+    read: jest.fn((name: string) => ({ version: '0.9.0', fingerprint: 'sha256:old', savedAt: '2026-11-14T00:00:00.000Z', name })),
   };
   const safety = {
     kill: jest.fn(async () => ({ safeMode: true, stopped: ['acme'] })),
@@ -65,10 +73,11 @@ function makeDeps() {
     safety: () => safety as any,
     doctor: () => doctor as any,
     audit: () => audit as any,
+    lastGood: () => lastGood as any,
     revokeWebTickets,
     reloadAll,
   };
-  return { deps, manager, safety, doctor, audit, revokeWebTickets, reloadAll };
+  return { deps, manager, safety, doctor, audit, lastGood, revokeWebTickets, reloadAll };
 }
 
 function serverFor(deps: PluginPackagesRouteDeps): http.Server {
@@ -100,6 +109,14 @@ function serverFor(deps: PluginPackagesRouteDeps): http.Server {
     const doctor = req.url?.match(/^\/api\/plugins\/([^/]+)\/doctor(?:\?|$)/);
     if (req.method === 'POST' && doctor) {
       await handlePluginDoctor(req, res, deps, { name: doctor[1] }); return;
+    }
+    const lastGood = req.url?.match(/^\/api\/plugins\/([^/]+)\/last-good(?:\?|$)/);
+    if (req.method === 'GET' && lastGood) {
+      await handlePluginLastGood(req, res, deps, { name: lastGood[1] }); return;
+    }
+    const rollback = req.url?.match(/^\/api\/plugins\/([^/]+)\/rollback(?:\?|$)/);
+    if (req.method === 'POST' && rollback) {
+      await handlePluginRollback(req, res, deps, { name: rollback[1] }); return;
     }
     if (req.method === 'GET' && req.url?.match(/^\/api\/plugins\/audit(?:\?|$)/)) {
       await handlePluginAudit(req, res, deps); return;
@@ -171,5 +188,17 @@ describe('plugin trust routes', () => {
     expect(ok.body.events[0].action).toBe('install');
     const bad = await request(server, 'GET', '/api/plugins/audit?limit=0', 'service');
     expect(bad.status).toBe(400);
+  });
+
+  it('last-good returns the snapshot metadata', async () => {
+    const res = await request(server, 'GET', '/api/plugins/acme/last-good', 'service');
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ name: 'acme', lastGood: { version: '0.9.0' } });
+  });
+
+  it('rollback requires human and calls the manager', async () => {
+    expect((await request(server, 'POST', '/api/plugins/acme/rollback', 'service')).status).toBe(403);
+    expect((await request(server, 'POST', '/api/plugins/acme/rollback', 'human')).status).toBe(200);
+    expect(deps.manager.rollback).toHaveBeenCalledWith('acme');
   });
 });

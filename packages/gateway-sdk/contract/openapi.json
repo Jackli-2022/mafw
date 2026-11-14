@@ -8498,6 +8498,52 @@
         }
       }
     },
+    "/api/plugins/{name}/last-good": {
+      "get": {
+        "operationId": "plugins.lastGood",
+        "tags": [
+          "plugins"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/plugins/{name}/rollback": {
+      "post": {
+        "operationId": "plugins.rollback",
+        "tags": [
+          "plugins"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/plugins/{name}/web-ticket": {
       "post": {
         "operationId": "plugins.webTicket",

@@ -19,6 +19,7 @@ import type { PluginClientSnapshot } from '../plugins/client-descriptor';
 import type { PluginSafety } from '../plugins/plugin-safety';
 import type { PluginDoctor } from '../plugins/plugin-doctor';
 import type { PluginAuditStore } from '../plugins/plugin-audit-store';
+import type { PackageLastGoodStore } from '../plugins/package-last-good';
 import type { InstallConsent } from '../plugins/package-manager';
 import { isHumanPrincipal } from '../core/auth';
 
@@ -63,6 +64,8 @@ export interface PluginPackagesRouteDeps {
   reloadAll?: () => Promise<void>;
   /** Kill switch closes this package's web surfaces. */
   revokeWebTickets?: (name: string) => void;
+  /** Phase 6C last-known-good snapshots. */
+  lastGood?: () => PackageLastGoodStore | undefined;
 }
 
 /** 400 for a malformed request body; never leaks parser internals. */
@@ -408,6 +411,41 @@ export async function handlePluginDoctorAll(
   deps: PluginPackagesRouteDeps,
 ): Promise<void> {
   await guarded(res, async () => requireDoctor(deps).checkAll());
+}
+
+/** GET /api/plugins/:name/last-good — rollback target metadata. */
+export async function handlePluginLastGood(
+  _req: http.IncomingMessage,
+  res: http.ServerResponse,
+  deps: PluginPackagesRouteDeps,
+  params: PluginPackageParams,
+): Promise<void> {
+  await guarded(res, async () => {
+    const name = requireName(params);
+    const store = deps.lastGood?.();
+    if (!store) {
+      throw new PackageManagerError(503, 'last-known-good store is not available', 'last_good_unavailable');
+    }
+    const meta = store.read(name);
+    if (!meta) {
+      throw new PackageManagerError(404, `no last-known-good snapshot for ${name}`, 'last_good_missing');
+    }
+    return { name, lastGood: meta };
+  });
+}
+
+/** POST /api/plugins/:name/rollback — restore last-known-good (human only). */
+export async function handlePluginRollback(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  deps: PluginPackagesRouteDeps,
+  params: PluginPackageParams,
+): Promise<void> {
+  await guarded(res, async () => {
+    assertHuman(req);
+    const name = requireName(params);
+    return requireManager(deps).rollback(name);
+  });
 }
 
 /** GET /api/plugins/audit — recent trust audit events. */

@@ -293,6 +293,8 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/plugins/:name/quarantine', operationId: 'plugins.quarantine', tags: ['plugins'] },
   { method: 'POST', path: '/api/plugins/:name/unquarantine', operationId: 'plugins.unquarantine', tags: ['plugins'] },
   { method: 'GET', path: '/api/plugins/audit', operationId: 'plugins.audit', tags: ['plugins'] },
+  { method: 'GET', path: '/api/plugins/:name/last-good', operationId: 'plugins.lastGood', tags: ['plugins'] },
+  { method: 'POST', path: '/api/plugins/:name/rollback', operationId: 'plugins.rollback', tags: ['plugins'] },
   // Plugin web surfaces (spec 2026-11-09 §5.5): the desktop main process mints
   // the package-bound ticket through the SDK; asset/events stay browser-only
   // (internal, see NON_SDK_ROUTES).

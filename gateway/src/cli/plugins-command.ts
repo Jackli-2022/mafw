@@ -164,6 +164,23 @@ export async function runPluginsCommand(
         true,
       );
     }
+    case 'rollback': {
+      const name = firstPositional(args);
+      if (!name) {
+        deps.print('usage: mafw plugins rollback <name>');
+        return 1;
+      }
+      const token = humanTokenOrFail(deps);
+      if (!token) return 1;
+      return send(
+        deps,
+        `/api/plugins/${encodeURIComponent(name)}/rollback`,
+        'POST',
+        undefined,
+        token,
+        true,
+      );
+    }
     case 'audit': {
       const packageName = takeFlag(args, '--package');
       const limit = takeFlag(args, '--limit');
@@ -174,7 +191,7 @@ export async function runPluginsCommand(
       return send(deps, `/api/plugins/audit${suffix}`, 'GET', undefined, undefined, true);
     }
     default:
-      deps.print('usage: mafw plugins <list|doctor|install|kill|resume|quarantine|unquarantine|audit>');
+      deps.print('usage: mafw plugins <list|doctor|install|kill|resume|quarantine|unquarantine|rollback|audit>');
       return 1;
   }
 }

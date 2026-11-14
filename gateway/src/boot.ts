@@ -181,6 +181,7 @@ export interface BootKernel {
     audit: PluginAuditStore;
     safety: PluginSafety;
     doctor: PluginDoctor;
+    lastGood?: PackageLastGoodStore;
     packageDir: string;
   }): void;
   pluginClientSnapshot?: PluginClientSnapshot;
@@ -524,6 +525,7 @@ export async function bootKernel(kernel: BootKernel): Promise<void> {
     audit: pluginAudit,
     safety: pluginSafety,
     doctor: pluginDoctor,
+    lastGood: pluginLastGood,
     packageDir: pluginPackageDir,
   });
   kernel.pluginHost.bindRuntime((entries) => kernel.runtimeLoader?.setPackageEntries(entries));

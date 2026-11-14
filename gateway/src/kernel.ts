@@ -348,6 +348,7 @@ import { PackageManager } from './plugins/package-manager';
 import { PluginSafety } from './plugins/plugin-safety';
 import { PluginDoctor } from './plugins/plugin-doctor';
 import { PluginAuditStore } from './plugins/plugin-audit-store';
+import type { PackageLastGoodStore } from './plugins/package-last-good';
 import { mergePackageInventory } from './plugins/package-inventory';
 import type { PluginClientSnapshot } from './plugins/client-descriptor';
 import { createPluginPackageContext } from './plugins/package-context';
@@ -768,6 +769,7 @@ class MafwScheduler {
   private pluginSafety?: PluginSafety;
   private pluginDoctor?: PluginDoctor;
   private pluginAuditStore?: PluginAuditStore;
+  private pluginLastGood?: PackageLastGoodStore;
   private pluginPackageDir?: string;
   /** 最近一次已提交的统一插件包 client 快照（Task 6 的 /api/plugins/client 直接读）。 */
   private pluginClientSnapshot?: PluginClientSnapshot;
@@ -2255,6 +2257,7 @@ class MafwScheduler {
       safety: () => this.pluginSafety,
       doctor: () => this.pluginDoctor,
       audit: () => this.pluginAuditStore,
+      lastGood: () => this.pluginLastGood,
       reloadAll: async () => { await this.pluginHost?.reload(); },
       revokeWebTickets: (name: string) => this.pluginWebTickets.revokePackage(name),
     };
@@ -2385,11 +2388,13 @@ class MafwScheduler {
     audit: PluginAuditStore;
     safety: PluginSafety;
     doctor: PluginDoctor;
+    lastGood?: PackageLastGoodStore;
     packageDir: string;
   }): void {
     this.pluginAuditStore = input.audit;
     this.pluginSafety = input.safety;
     this.pluginDoctor = input.doctor;
+    this.pluginLastGood = input.lastGood;
     this.pluginPackageDir = input.packageDir;
   }
 
