@@ -1572,6 +1572,26 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
         description: "切换工具/编辑卡默认展开（Ctrl+O）", group: "local", source: "builtin",
         run: () => { closeCommandPicker(); toggleDetails() },
       },
+      {
+        id: "undo", trigger: "/undo", title: "回退回滚",
+        description: "打开检查点面板，选择会话/文件回退", group: "local", source: "builtin",
+        run: () => {
+          closeCommandPicker()
+          if (!sidProp()) { showToastV2({ description: "打开一个会话后可回退", duration: 2500 }); return }
+          setCheckpointsOpen(true)
+          void loadServerCheckpoints()
+        },
+      },
+      {
+        id: "redo", trigger: "/redo", title: "恢复回退",
+        description: "撤销最近一次会话回退", group: "local", source: "builtin",
+        run: () => {
+          closeCommandPicker()
+          if (!sidProp()) { showToastV2({ description: "打开一个会话后可恢复", duration: 2500 }); return }
+          if (!canUnrevert()) { showToastV2({ description: "没有可恢复的回退", duration: 2500 }); return }
+          void doUnrevert()
+        },
+      },
     ]
     const mafw: CommandItem[] = mafwRemote().items.length > 0
       ? mafwRemote().items

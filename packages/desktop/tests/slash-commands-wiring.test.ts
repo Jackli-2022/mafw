@@ -64,3 +64,19 @@ test("navigation and config commands are wired", () => {
   assert.match(commandBlock("skills"), /detail: "extensions"/)
   assert.match(commandBlock("details"), /toggleDetails\(\)/)
 })
+
+test("history commands are wired", () => {
+  for (const trigger of ["/undo", "/redo"]) {
+    assert.match(chat, new RegExp(`trigger: "${trigger}"`))
+  }
+
+  const undo = commandBlock("undo")
+  assert.match(undo, /setCheckpointsOpen\(true\)/)
+  assert.match(undo, /loadServerCheckpoints\(\)/)
+
+  const redo = commandBlock("redo")
+  assert.ok(
+    redo.indexOf("canUnrevert()") < redo.indexOf("doUnrevert()"),
+    "redo must check canUnrevert before calling unrevert",
+  )
+})
