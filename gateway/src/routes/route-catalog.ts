@@ -64,6 +64,14 @@ import {
   TriageListResponse,
 } from './schemas/human-gate';
 import { WorkOverviewResponse } from './schemas/work';
+import { MemoryGetResponse, MemorySearchResponse } from './schemas/memory';
+import {
+  RecallContextResponse,
+  RecallInstructionsResponse,
+  RecallPinnedResponse,
+  RecallPriorsResponse,
+} from './schemas/recall';
+import { LeadRecallResponse, LeadWorkingSetResponse } from './schemas/lead';
 import { MemoryStatsResponse } from './schemas/memory-stats';
 import { HumanTokenRotateResponse } from './schemas/human-token';
 import {
@@ -249,8 +257,8 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/goal-runs/:id/approve', operationId: 'goalRuns.approve', tags: ['standing'] },
   { method: 'GET', path: '/api/lead/topics', operationId: 'lead.topics.list', tags: ['lead'] },
   { method: 'GET', path: '/api/lead/topics/:id', operationId: 'lead.topics.get', tags: ['lead'] },
-  { method: 'GET', path: '/api/lead/working-set', operationId: 'lead.workingSet', tags: ['lead'] },
-  { method: 'GET', path: '/api/lead/recall', operationId: 'lead.recall', tags: ['lead'] },
+  { method: 'GET', path: '/api/lead/working-set', operationId: 'lead.workingSet', tags: ['lead'], response: LeadWorkingSetResponse },
+  { method: 'GET', path: '/api/lead/recall', operationId: 'lead.recall', tags: ['lead'], response: LeadRecallResponse },
   { method: 'POST', path: '/api/lead/compact', operationId: 'lead.compact', tags: ['lead'] },
   { method: 'POST', path: '/api/lead/topics/:id/resume', operationId: 'lead.topics.resume', tags: ['lead'] },
   { method: 'POST', path: '/api/lead/topics/:id/fork', operationId: 'lead.topics.fork', tags: ['lead'] },
@@ -258,7 +266,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/goals/:goalId/questions/:questionId/respond', operationId: 'goals.respondQuestion', tags: ['goals'] },
   { method: 'POST', path: '/api/work/:goalId/validate', operationId: 'goals.validate', tags: ['goals'] },
   { method: 'POST', path: '/api/goals/control', operationId: 'goals.control', tags: ['goals'] },
-  { method: 'GET', path: '/api/memory/search', operationId: 'memory.search', tags: ['memory'] },
+  { method: 'GET', path: '/api/memory/search', operationId: 'memory.search', tags: ['memory'], response: MemorySearchResponse },
   { method: 'GET', path: '/api/memory/merged-search', operationId: 'memory.mergedSearch', tags: ['memory'] },
   { method: 'GET', path: '/api/memory/energy-distribution', operationId: 'memory.getEnergyDistribution', tags: ['memory'] },
   { method: 'GET', path: '/api/l5/axioms', operationId: 'memory.getL5Axioms', tags: ['memory'] },
@@ -365,15 +373,15 @@ const NON_SDK_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/python/status', operationId: 'python.status', tags: ['internal'] },
   // 观察捕获 / 边界 recall / pinned 披露层（§5.11/§5.13）
   { method: 'POST', path: '/api/obs/capture', operationId: 'obs.capture', tags: ['internal'] },
-  { method: 'GET', path: '/api/recall/context', operationId: 'recall.context', tags: ['internal'] },
-  { method: 'GET', path: '/api/recall/pinned', operationId: 'recall.pinned', tags: ['internal'] },
+  { method: 'GET', path: '/api/recall/context', operationId: 'recall.context', tags: ['internal'], response: RecallContextResponse },
+  { method: 'GET', path: '/api/recall/pinned', operationId: 'recall.pinned', tags: ['internal'], response: RecallPinnedResponse },
   // Task B3：T2-4 fallback 面 / W1 常驻先验块（plugin / pi host extension 消费；
   // 非 SDK 端点 → 与兄弟 NON_SDK 条目一致用 tags ['internal']，SDK 死契约检查据此豁免）
-  { method: 'GET', path: '/api/recall/instructions', operationId: 'recall.instructions', tags: ['internal'] },
-  { method: 'GET', path: '/api/recall/priors', operationId: 'recall.priors', tags: ['internal'] },
+  { method: 'GET', path: '/api/recall/instructions', operationId: 'recall.instructions', tags: ['internal'], response: RecallInstructionsResponse },
+  { method: 'GET', path: '/api/recall/priors', operationId: 'recall.priors', tags: ['internal'], response: RecallPriorsResponse },
   // 记忆补充（memory.mergedSearch 已在 SDK-facing，不重复）
   { method: 'POST', path: '/api/memory/add', operationId: 'memory.add', tags: ['internal'] },
-  { method: 'GET', path: '/api/memory/get', operationId: 'memory.get', tags: ['internal'] },
+  { method: 'GET', path: '/api/memory/get', operationId: 'memory.get', tags: ['internal'], response: MemoryGetResponse },
   { method: 'GET', path: '/api/memory/stats', operationId: 'memory.stats', tags: ['internal'], response: MemoryStatsResponse },
   { method: 'POST', path: '/api/memory/embeddings/backfill', operationId: 'memory.embeddingsBackfill', tags: ['internal'] },
   // Goal / 编排（§5.20）

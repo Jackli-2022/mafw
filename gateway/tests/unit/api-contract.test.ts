@@ -57,6 +57,14 @@ import {
   GoalSourceResponse,
   GoalTimelineResponse,
 } from '../../src/routes/schemas/goals';
+import { MemoryGetResponse, MemorySearchResponse } from '../../src/routes/schemas/memory';
+import {
+  RecallContextResponse,
+  RecallInstructionsResponse,
+  RecallPinnedResponse,
+  RecallPriorsResponse,
+} from '../../src/routes/schemas/recall';
+import { LeadRecallResponse, LeadWorkingSetResponse } from '../../src/routes/schemas/lead';
 import {
   AllowlistListResponse,
   ApprovalListResponse,
@@ -1365,5 +1373,222 @@ describe('api-contract: contract äº§ç‰©æ–°é²œåº¦', () => {
       console.error('[api-contract] å¥‘çº¦äº§ç‰©è¿‡æœŸ â€”â€” å…ˆè·‘: (gateway) npm run emit:openapi && (sdk) npm run merge-contract\n' + problems.join('\n'));
     }
     expect(problems).toEqual([]);
+  });
+});
+
+describe('api-contract: E10c-1 memory / recall / lead read response schema (8 ops)', () => {
+  const findOp = (operationId: string): any => {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const candidate of Object.values<any>(methods)) {
+        if (candidate?.operationId === operationId) return candidate;
+      }
+    }
+    return null;
+  };
+
+  const schemaOf = (operationId: string): any =>
+    findOp(operationId).responses['200']['content']['application/json'].schema;
+
+  /** Ã¿¸ö op µÄ³ÐÖØ property + Êý×éÔªËØ±ØÌî£¨handler ºã·¢µÄ×Ö¶Î£©¡£ */
+  const EXPECTED: Record<string, { fields: string[]; item?: { at: string; required: string[] } }> = {
+    'memory.search': {
+      fields: ['results', 't1Results'],
+      item: {
+        at: 'results',
+        required: ['id', 'type', 'primary_abstraction', 'cue_anchors', 'memory_value', 'energy'],
+      },
+    },
+    'recall.context': { fields: ['pointers'] },
+    'recall.pinned': {
+      fields: ['profile', 'entries', 'budget'],
+      item: { at: 'entries', required: ['id', 'type', 'primary_abstraction', 'memory_value', 'energy'] },
+    },
+    'recall.instructions': {
+      fields: ['managed', 'revision', 'missing', 'staleKeys', 'erroredKeys', 'blocks'],
+    },
+    'recall.priors': { fields: ['block', 'used', 'budget'] },
+    'lead.recall': {
+      fields: ['candidates'],
+      item: { at: 'candidates', required: ['topicId', 'title', 'score', 'matches'] },
+    },
+    'lead.workingSet': {
+      fields: ['resident', 'warm', 'cold', 'pinned', 'evicted', 'topics'],
+      item: {
+        at: 'topics',
+        required: ['id', 'title', 'summary', 'state', 'lastActiveAt', 'goalId', 'resumedFrom'],
+      },
+    },
+  };
+
+  test('seven flat ops expose a 200 JSON schema with properties (not a whole-response widening)', () => {
+    const problems: string[] = [];
+    for (const [operationId, spec] of Object.entries(EXPECTED)) {
+      const op = findOp(operationId);
+      if (!op) { problems.push(`${operationId}: missing from openapi.json`); continue; }
+      const schema = op.responses?.['200']?.content?.['application/json']?.schema;
+      if (!schema) { problems.push(`${operationId}: responses.200 missing application/json schema`); continue; }
+      const properties = Object.keys(schema.properties ?? {});
+      if (properties.length === 0) { problems.push(`${operationId}: schema has no properties (widened)`); continue; }
+      for (const field of spec.fields) {
+        if (!properties.includes(field)) problems.push(`${operationId}: schema missing property '${field}'`);
+      }
+    }
+    if (problems.length) {
+      console.error('[api-contract] E10c-1 response schema missing - run emit:openapi + merge-contract:\n' + problems.join('\n'));
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test('array item required fields match the handler wire', () => {
+    const problems: string[] = [];
+    for (const [operationId, spec] of Object.entries(EXPECTED)) {
+      if (!spec.item) continue;
+      const required = schemaOf(operationId).properties?.[spec.item.at]?.items?.required ?? [];
+      for (const field of spec.item.required) {
+        if (!required.includes(field)) problems.push(`${operationId}: ${spec.item.at}.items missing required '${field}'`);
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test('memory.search is code-first: override entry gone, layer-dependent t1Results stays optional', () => {
+    const overrides = JSON.parse(readFileSync(join(__dirname, '..', '..', '..', 'packages', 'gateway-sdk', 'contract', 'overrides.json'), 'utf-8'));
+    expect(overrides.operations['memory.search']).toBeUndefined();
+    const schema = schemaOf('memory.search');
+    expect(schema.required).toEqual(['results']);
+    // handler only emits t1Results for layer=t1|both -> optional, never required.
+    expect(schema.properties.t1Results).toBeDefined();
+    expect(schema.required).not.toContain('t1Results');
+    const unit = schema.properties.results.items;
+    expect(unit.properties.salience).toBeDefined();
+    expect(unit.required).not.toContain('salience');
+    expect(unit.properties.created_at).toBeDefined();
+    expect(unit.required).not.toContain('created_at');
+    expect(unit.properties.type.anyOf?.map((entry: any) => entry.const))
+      .toEqual(['episodic', 'semantic', 'procedural', 'global']);
+    const t1 = schema.properties.t1Results.items;
+    expect(t1.required).toEqual(expect.arrayContaining(['sessionId', 'turnId', 'cosine', 'excerpt']));
+    expect(t1.properties.traceId).toBeDefined();
+    expect(t1.required).not.toContain('traceId');
+  });
+
+  test('memory.get models the three success bodies as a union, 404 error envelope excluded', () => {
+    const schema = schemaOf('memory.get');
+    expect(schema.anyOf).toHaveLength(3);
+    // Variant 1: harmonic unit (+ optional latest / source).
+    const unit = schema.anyOf[0];
+    expect([...unit.required].sort()).toEqual(['memory', 'success']);
+    expect(unit.properties.memory.required).toEqual(expect.arrayContaining([
+      'id', 'type', 'primary_abstraction', 'cue_anchors', 'memory_value',
+      'energy', 'created_at', 'updated_at',
+    ]));
+    expect(unit.properties.latest).toBeDefined();
+    expect(unit.properties.source).toBeDefined();
+    // Variants 2/3: t1 pointer payloads (legacy session tail vs permanent trace).
+    const legacyRows = schema.anyOf[1].properties.t1.properties.rows.items.required;
+    expect(legacyRows).toEqual(['source', 'content']);
+    const trace = schema.anyOf[2].properties.t1;
+    expect(trace.required).toEqual(expect.arrayContaining([
+      'traceId', 'sessionId', 'turnId', 'archived', 'legacyAmbiguous', 'rows',
+    ]));
+    // The error envelope ({success:false,error,candidates?}) ships on 404, not on the 200 schema.
+    for (const variant of schema.anyOf) {
+      expect(variant.properties.error).toBeUndefined();
+    }
+  });
+
+  test('handler wire samples validate against each schema (Value.Check)', () => {
+    const unit = {
+      id: 'mem-1', type: 'semantic', primary_abstraction: 'abstraction',
+      cue_anchors: ['gateway/src/routes/recall.ts'], memory_value: 'value', energy: 0.7,
+    };
+    expect(Value.Check(MemorySearchResponse, { results: [unit] })).toBe(true);
+    expect(Value.Check(MemorySearchResponse, { results: [{ ...unit, salience: 1, created_at: 't' }] })).toBe(true);
+    // layer=both / t1: results + t1Results (raw dense hit without traceId).
+    expect(Value.Check(MemorySearchResponse, {
+      results: [],
+      t1Results: [
+        { sessionId: 's1', turnId: 3, cosine: 0.4, excerpt: 'raw' },
+        { sessionId: 's1', turnId: 4, traceId: null, cosine: 0, excerpt: 'lex', sources: ['lexical'], score: 0.03 },
+        { sessionId: 's1', turnId: 5, traceId: 'tr_1', cosine: 0.2, excerpt: 'fused', sources: ['dense', 'lexical'], score: 0.05 },
+      ],
+    })).toBe(true);
+    // memory_value is load-bearing: the degraded index row still carries it.
+    expect(Value.Check(MemorySearchResponse, { results: [{ ...unit, memory_value: undefined }] })).toBe(false);
+
+    const harmonic = {
+      id: 'mem-1', type: 'procedural', primary_abstraction: 'a', cue_anchors: ['c'],
+      memory_value: 'v', energy: 0.5, created_at: '2026-11-14T00:00:00.000Z',
+      updated_at: '2026-11-14T00:00:00.000Z', pinned: true, authority: 'user',
+      superseded_by: 'mem-2', distinct_from: ['mem-3'], novelty: 0.1,
+    };
+    expect(Value.Check(MemoryGetResponse, {
+      success: true, memory: harmonic,
+      latest: { ...harmonic, id: 'mem-2', superseded_by: undefined },
+      source: {
+        sessionId: 's1',
+        traces: [{ traceId: 'tr_1', sessionId: 's1', turnId: 7, archived: false, excerpt: 'e' }],
+      },
+    })).toBe(true);
+    // C0 fallback: evidence instead of traces.
+    expect(Value.Check(MemoryGetResponse, { success: true, memory: harmonic, source: { sessionId: 's1', evidence: 'raw' } })).toBe(true);
+    // t1 legacy pointer + permanent trace pointer.
+    expect(Value.Check(MemoryGetResponse, {
+      success: true,
+      t1: { sessionId: 's1', turnId: 7, rows: [{ source: 'user', content: 'hi' }] },
+    })).toBe(true);
+    expect(Value.Check(MemoryGetResponse, {
+      success: true,
+      t1: {
+        traceId: 'tr_1', sessionId: 's1', turnId: 7, archived: true, legacyAmbiguous: false,
+        rows: [{ source: 'user', content: 'hi', observationKey: 'obs_1' }],
+      },
+    })).toBe(true);
+    // The 404 error envelope is not a 200 body.
+    expect(Value.Check(MemoryGetResponse, { success: false, error: 'memory not found: x' })).toBe(false);
+
+    expect(Value.Check(RecallContextResponse, { pointers: null })).toBe(true);
+    expect(Value.Check(RecallContextResponse, { pointers: '<recall>¡­</recall>' })).toBe(true);
+    expect(Value.Check(RecallContextResponse, {})).toBe(false);
+
+    expect(Value.Check(RecallPinnedResponse, { profile: null, entries: [], budget: { max: 20, maxChars: 2000, used: 0 } })).toBe(true);
+    expect(Value.Check(RecallPinnedResponse, {
+      profile: '<user-profile>¡­</user-profile>',
+      entries: [{ id: 'mem-1', type: 'semantic', primary_abstraction: 'a', memory_value: 'v', energy: 0.9, salience: 2, created_at: 't' }],
+      budget: { max: 20, maxChars: 2000, used: 1 },
+    })).toBe(true);
+
+    expect(Value.Check(RecallInstructionsResponse, {
+      managed: false, revision: 'r1', missing: ['memory_guide'], staleKeys: [], erroredKeys: [],
+      blocks: { memoryGuide: '# guide' },
+    })).toBe(true);
+    // managed:true carries an empty blocks object (no duplicate injection) + optional reason.
+    expect(Value.Check(RecallInstructionsResponse, {
+      managed: true, revision: 'r1', missing: [], staleKeys: ['k'], erroredKeys: [], reason: 'stale', blocks: {},
+    })).toBe(true);
+    expect(Value.Check(RecallInstructionsResponse, { managed: true, revision: '', missing: [], staleKeys: [], erroredKeys: [] })).toBe(false);
+
+    expect(Value.Check(RecallPriorsResponse, { block: null, used: 0, budget: { maxChars: 800 } })).toBe(true);
+    expect(Value.Check(RecallPriorsResponse, { block: '<agent-priors>¡­', used: 5, budget: { maxChars: 800 } })).toBe(true);
+
+    expect(Value.Check(LeadRecallResponse, {
+      candidates: [{ topicId: 'topic_1', title: 'Ship E10c', score: 0.9, matches: ['e10c'] }],
+    })).toBe(true);
+    expect(Value.Check(LeadRecallResponse, { candidates: [] })).toBe(true);
+
+    const topic = {
+      id: 'topic_1', title: 'Ship E10c', summary: null, state: 'warm',
+      lastActiveAt: '2026-11-14T00:00:00.000Z', goalId: 'g1', resumedFrom: null,
+    };
+    expect(Value.Check(LeadWorkingSetResponse, {
+      resident: ['topic_1'], warm: [], cold: [], pinned: [], evicted: [], topics: [topic],
+    })).toBe(true);
+    expect(Value.Check(LeadWorkingSetResponse, {
+      resident: [], warm: [], cold: [], pinned: [], evicted: [], topics: [{ ...topic, summary: 's', state: 'resident' }],
+    })).toBe(true);
+    // state is a closed vocabulary (lead-topic-store normalizeState).
+    expect(Value.Check(LeadWorkingSetResponse, {
+      resident: [], warm: [], cold: [], pinned: [], evicted: [], topics: [{ ...topic, state: 'hot' }],
+    })).toBe(false);
   });
 });
