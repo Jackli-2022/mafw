@@ -214,6 +214,21 @@ export interface SessionDataPartRow {
   updated_at: string;
 }
 
+/** Phase 6 plugin trust audit row. `detail` is already allowlist-filtered. */
+export interface PluginAuditRow {
+  id: string;
+  at: string;
+  action: string;
+  package?: string;
+  version?: string;
+  fingerprint?: string;
+  principalKind?: string;
+  principalMethod?: string;
+  sessionId?: string;
+  result: string;
+  detail?: Record<string, unknown>;
+}
+
 export class GatewayDatabase {
   private db: Database.Database;
 
@@ -445,6 +460,22 @@ export class GatewayDatabase {
         updated_at INTEGER NOT NULL DEFAULT (unixepoch())
       );
       CREATE INDEX IF NOT EXISTS idx_skill_invocations_name ON skill_invocations(skill_name, created_at);
+
+      CREATE TABLE IF NOT EXISTS plugin_audit_events (
+        id TEXT PRIMARY KEY,
+        at TEXT NOT NULL,
+        action TEXT NOT NULL,
+        package TEXT,
+        version TEXT,
+        fingerprint TEXT,
+        principal_kind TEXT,
+        principal_method TEXT,
+        session_id TEXT,
+        result TEXT NOT NULL,
+        detail_json TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_plugin_audit_package_at
+        ON plugin_audit_events(package, at);
 
       CREATE TABLE IF NOT EXISTS goal_outcomes (
         goal_id TEXT PRIMARY KEY,
@@ -2185,6 +2216,79 @@ export class GatewayDatabase {
 
   deleteSessionDataParts(sessionId: string): void {
     this.db.prepare('DELETE FROM session_data_parts WHERE session_id = ?').run(sessionId);
+  }
+
+  /** Phase 6 plugin audit append; fail-soft (returns false, never throws). */
+  appendPluginAudit(row: PluginAuditRow): boolean {
+    try {
+      this.db.prepare(
+        `INSERT INTO plugin_audit_events
+           (id, at, action, package, version, fingerprint, principal_kind,
+            principal_method, session_id, result, detail_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        row.id,
+        row.at,
+        row.action,
+        row.package ?? null,
+        row.version ?? null,
+        row.fingerprint ?? null,
+        row.principalKind ?? null,
+        row.principalMethod ?? null,
+        row.sessionId ?? null,
+        row.result,
+        row.detail ? JSON.stringify(row.detail) : null,
+      );
+
+      const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+      this.db.prepare('DELETE FROM plugin_audit_events WHERE at < ?').run(cutoff);
+      this.db.prepare(
+        `DELETE FROM plugin_audit_events WHERE id NOT IN (
+           SELECT id FROM plugin_audit_events ORDER BY at DESC, rowid DESC LIMIT 5000
+         )`,
+      ).run();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Phase 6 plugin audit query, newest first. */
+  listPluginAudit(query: { package?: string; limit: number }): PluginAuditRow[] {
+    const limit = Math.max(1, Math.min(500, Math.floor(query.limit) || 100));
+    const rows = query.package
+      ? this.db.prepare(
+        `SELECT * FROM plugin_audit_events WHERE package = ?
+         ORDER BY at DESC, rowid DESC LIMIT ?`,
+      ).all(query.package, limit)
+      : this.db.prepare(
+        `SELECT * FROM plugin_audit_events ORDER BY at DESC, rowid DESC LIMIT ?`,
+      ).all(limit);
+
+    return (rows as any[]).map((raw) => {
+      let detail: Record<string, unknown> | undefined;
+      if (typeof raw.detail_json === 'string') {
+        try {
+          const parsed = JSON.parse(raw.detail_json);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) detail = parsed;
+        } catch { /* ignore malformed legacy detail */ }
+      }
+      return {
+        id: raw.id,
+        at: raw.at,
+        action: raw.action,
+        ...(typeof raw.package === 'string' ? { package: raw.package } : {}),
+        ...(typeof raw.version === 'string' ? { version: raw.version } : {}),
+        ...(typeof raw.fingerprint === 'string' ? { fingerprint: raw.fingerprint } : {}),
+        ...(typeof raw.principal_kind === 'string' ? { principalKind: raw.principal_kind } : {}),
+        ...(typeof raw.principal_method === 'string'
+          ? { principalMethod: raw.principal_method }
+          : {}),
+        ...(typeof raw.session_id === 'string' ? { sessionId: raw.session_id } : {}),
+        result: raw.result,
+        ...(detail !== undefined ? { detail } : {}),
+      } satisfies PluginAuditRow;
+    });
   }
 
   close(): void {
