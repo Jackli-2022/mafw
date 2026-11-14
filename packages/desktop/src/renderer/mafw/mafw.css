@@ -5912,6 +5912,32 @@ html[data-theme="light"] body {
 .mafw-ext-name { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-1); font-weight: 500; }
 .mafw-ext-badge { font-size: 10px; color: var(--text-4); background: var(--bg-inset); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 0 6px; }
 .mafw-ext-desc { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+
+/* MCP management page */
+.mafw-mcp-page { display: flex; flex-direction: column; gap: 12px; }
+.mafw-mcp-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.mafw-mcp-summary-card {
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-overlay);
+  padding: 10px 12px;
+}
+.mafw-mcp-summary-value { font-size: 20px; font-weight: 600; color: var(--text-strong); line-height: 1.2; }
+.mafw-mcp-summary-value--ok { color: var(--success); }
+.mafw-mcp-summary-value--warn { color: var(--warning); }
+.mafw-mcp-summary-label { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+.mafw-mcp-filters { display: flex; gap: 6px; }
+.mafw-mcp-status {
+  font-size: 10px;
+  padding: 0 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-4);
+}
+.mafw-mcp-status--ok { color: var(--success); border-color: var(--success); }
+.mafw-mcp-status--warn { color: var(--warning); border-color: var(--warning); }
+.mafw-mcp-status--fail { color: var(--danger); border-color: var(--danger); }
+.mafw-mcp-status--muted { color: var(--text-4); }
 .mafw-ext-actions { display: flex; gap: 6px; align-items: center; }
 .mafw-ext-content { flex-basis: 100%; margin: 4px 0 0; max-height: 260px; overflow: auto; padding: 8px 10px; border-radius: 6px; background: var(--bg-inset); font-size: 11px; font-family: var(--font-data); white-space: pre-wrap; word-break: break-word; }
 @media (prefers-reduced-motion: reduce) { .mafw-kb-combo.recording { animation: none } }

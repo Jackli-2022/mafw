@@ -1513,6 +1513,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       { id: "approvals", trigger: "/approvals", title: "Approvals 页", description: "打开审批页", group: "local", source: "builtin", run: () => { closeCommandPicker(); props.onNavigateTab?.("approvals") } },
       { id: "triage", trigger: "/triage", title: "Triage 页", description: "打开分诊页", group: "local", source: "builtin", run: () => { closeCommandPicker(); props.onNavigateTab?.("triage") } },
       { id: "automation", trigger: "/automation", title: "Automation 页", description: "打开自动化页", group: "local", source: "builtin", run: () => { closeCommandPicker(); props.onNavigateTab?.("automation") } },
+      { id: "mcp", trigger: "/mcp", title: "MCP 服务器", description: "查看 MCP 连接状态", group: "local", source: "builtin", run: () => { closeCommandPicker(); props.onNavigateTab?.("mcp") } },
     ]
     const mafw: CommandItem[] = mafwRemote().items.length > 0
       ? mafwRemote().items

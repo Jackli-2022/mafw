@@ -20,6 +20,7 @@ export type IconRailProps = {
   onTeam: () => void
   onApprovals: () => void
   onConfig: () => void
+  onMcp?: () => void
   /** 顶部动作：新建会话（单击）；右键菜单含「并行 worktree」 */
   onNewSession: () => void
   onNewWorktreeSession?: () => void
@@ -46,6 +47,7 @@ export type IconRailProps = {
   gatewayState?: string | null // stopped | starting | ready | failed（stopped 用中性色，不报红）
   approvalsActive?: boolean
   configActive?: boolean
+  mcpActive?: boolean
 }
 
 type RailItem = {
@@ -88,6 +90,9 @@ export function IconRail(props: IconRailProps) {
     },
   ]
   const metaItems = (): RailItem[] => [
+    ...(props.onMcp
+      ? [{ key: "mcp", icon: "mcp" as IconName, label: "MCP", onClick: props.onMcp, active: props.mcpActive }]
+      : []),
     { key: "approvals", icon: "checklist", label: "审批", onClick: props.onApprovals, active: props.approvalsActive, badge: props.approvals },
     { key: "config", icon: "settings-gear", label: "Config", onClick: props.onConfig, active: props.configActive, connDot: true },
   ]

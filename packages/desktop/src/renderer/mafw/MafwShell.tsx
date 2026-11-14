@@ -221,6 +221,7 @@ import { MemoryPage } from "./pages/Memory"
 import { ApprovalsPage } from "./pages/ApprovalsPage"
 import { TriagePage } from "./pages/TriagePage"
 import { AutomationsPage } from "./pages/Automations"
+import { McpPage } from "./pages/McpPage"
 import { ConfigPage, isNavKey, type NavKey } from "./pages/Config"
 import { creatorEntryState, reusableCreatorSession } from "./pages/creator-entry"
 import { QuestionWidget, type QuestionData } from "./components/QuestionWidget"
@@ -867,6 +868,7 @@ export function MafwShell() {
       nav("approvals", "审批", "Approvals"),
       nav("triage", "分诊", "Triage"),
       nav("automation", "自动化", "Automations"),
+      nav("mcp", "MCP 服务器", "MCP"),
       {
         id: "new-session", label: "新建会话", hint: "New session", group: "会话",
         run: () => { setShowConfig(false); void createSession().then(sid => { if (sid) openSessionTab(sid) }) },
@@ -4047,6 +4049,7 @@ export function MafwShell() {
           onToggleFace={toggleLeftDock}
           onTeam={() => openProjectTeam()}
           onApprovals={() => { closeLeftDockIfOverlay(); setShowConfig(false); setActiveTab("approvals") }}
+          onMcp={() => { closeLeftDockIfOverlay(); setShowConfig(false); setActiveTab("mcp") }}
           onConfig={() => { closeLeftDockIfOverlay(); setConfigSection(undefined); setShowConfig(true) }}
           onNewSession={() => { closeLeftDockIfOverlay(); void createSession().then((sid: any) => { if (sid) openSessionTab(sid) }) }}
           onNewWorktreeSession={() => createWorktreeSession()}
@@ -4062,6 +4065,7 @@ export function MafwShell() {
           connPhase={connPhaseLabel()}
           gatewayState={gwStatus()?.state ?? null}
           approvalsActive={activeTab() === "approvals" && !showConfig()}
+          mcpActive={activeTab() === "mcp" && !showConfig()}
           configActive={showConfig()}
         />
       </div>
@@ -4359,6 +4363,8 @@ export function MafwShell() {
               <TriagePage onOpenGoals={openProjectWork} />
             ) : activeTab() === "automation" ? (
               <AutomationsPage />
+            ) : activeTab() === "mcp" ? (
+              <McpPage />
             ) : null}
           </div>
           <Show when={chatSplit() && !focusActive() && !narrowZone()}>
