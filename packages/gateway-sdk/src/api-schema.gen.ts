@@ -13070,7 +13070,58 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        name: string;
+                        description: string;
+                        url: string;
+                        version: string;
+                        protocolVersion?: string;
+                        provider: {
+                            url: string;
+                            organization: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                        capabilities: {
+                            streaming: boolean;
+                            pushNotifications: boolean;
+                            extensions: unknown[];
+                        } & {
+                            [key: string]: unknown;
+                        };
+                        defaultInputModes: string[];
+                        defaultOutputModes: string[];
+                        skills: ({
+                            id: string;
+                            name: string;
+                            description: string;
+                            tags?: string[];
+                            examples?: string[];
+                            inputModes?: string[];
+                            outputModes?: string[];
+                            securityRequirements?: unknown[];
+                        } & {
+                            [key: string]: unknown;
+                        })[];
+                        supportedInterfaces?: ({
+                            url: string;
+                            protocolBinding: string;
+                            protocolVersion: string;
+                        } & {
+                            [key: string]: unknown;
+                        })[];
+                        documentationUrl?: string;
+                        iconUrl?: string;
+                        securitySchemes: {
+                            [key: string]: unknown;
+                        };
+                        securityRequirements: unknown[];
+                        signatures: unknown[];
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
             };
         };
     };
@@ -13717,7 +13768,29 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        activeGoals: number;
+                        registeredProjects: number;
+                        sseClients: number;
+                        serveRunning: boolean;
+                        eventAppendFailures?: number;
+                        tokens?: {
+                            totalTokens: {
+                                input: number;
+                                output: number;
+                                reasoning: number;
+                                cache: {
+                                    read: number;
+                                    write: number;
+                                };
+                            };
+                            totalCost: number;
+                            turnCount: number;
+                            sessionCount: number;
+                        };
+                    };
+                };
             };
         };
     };
@@ -13961,7 +14034,18 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        devices: {
+                            id: string;
+                            fcmToken: string;
+                            platform: string;
+                            lastSeen: string;
+                            deviceName?: string;
+                            tokenIssuedAt?: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -14017,7 +14101,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        url: string;
+                    };
+                };
             };
         };
     };
@@ -14053,7 +14141,18 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        devices: {
+                            id: string;
+                            fcmToken: string;
+                            platform: string;
+                            lastSeen: string;
+                            deviceName?: string;
+                            tokenIssuedAt?: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -14132,7 +14231,58 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        name: string;
+                        description: string;
+                        url: string;
+                        version: string;
+                        protocolVersion?: string;
+                        provider: {
+                            url: string;
+                            organization: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                        capabilities: {
+                            streaming: boolean;
+                            pushNotifications: boolean;
+                            extensions: unknown[];
+                        } & {
+                            [key: string]: unknown;
+                        };
+                        defaultInputModes: string[];
+                        defaultOutputModes: string[];
+                        skills: ({
+                            id: string;
+                            name: string;
+                            description: string;
+                            tags?: string[];
+                            examples?: string[];
+                            inputModes?: string[];
+                            outputModes?: string[];
+                            securityRequirements?: unknown[];
+                        } & {
+                            [key: string]: unknown;
+                        })[];
+                        supportedInterfaces?: ({
+                            url: string;
+                            protocolBinding: string;
+                            protocolVersion: string;
+                        } & {
+                            [key: string]: unknown;
+                        })[];
+                        documentationUrl?: string;
+                        iconUrl?: string;
+                        securitySchemes: {
+                            [key: string]: unknown;
+                        };
+                        securityRequirements: unknown[];
+                        signatures: unknown[];
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
             };
         };
     };
@@ -14360,7 +14510,13 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        status: "running" | "completed" | "failed" | "aborted";
+                        structured?: unknown;
+                        text?: string;
+                    };
+                };
             };
         };
     };
@@ -14452,7 +14608,26 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        status: "ok";
+                        serveRunning: boolean;
+                        registeredProjects: string[];
+                        activeGoals: string[];
+                        media: {
+                            configured: boolean;
+                        };
+                        gatewayVersion?: string;
+                        experienceVersion?: string;
+                        minimumClientExperienceVersion?: string;
+                        schemaEpoch?: number;
+                        instanceId?: string;
+                        distribution?: "desktop-managed" | "standalone";
+                        channel?: string;
+                        pid?: number;
+                    };
+                };
             };
         };
     };

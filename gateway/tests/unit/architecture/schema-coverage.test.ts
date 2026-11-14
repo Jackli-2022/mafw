@@ -3,8 +3,9 @@
 // `scripts/schema-coverage.cjs` parses `route-catalog.ts` (no TS import, no
 // generated SDK artifact) and reports how many catalog ops carry a 200
 // response schema. This test pins that report against the catalog:
-//   - the 117 ops covered through E10f-C (13 pre-E10 + 16 E10 + 8 E10b-1 + 7 E10b-2 +
-//     1 E11-1 + 8 E10c-1 + 8 E10d-1 + 8 E10e-1 + 16 E10f-A + 16 E10f-B + 16 E10f-C) must each
+//   - the 125 ops covered through E10f-D (13 pre-E10 + 16 E10 + 8 E10b-1 + 7 E10b-2 +
+//     1 E11-1 + 8 E10c-1 + 8 E10d-1 + 8 E10e-1 + 16 E10f-A + 16 E10f-B + 16 E10f-C +
+//     8 E10f-D) must each
 //     keep their `response` — a silent schema deletion fails here;
 //   - the catalog's covered set must equal this manifest exactly (both
 //     directions), so a new covered op cannot land without a ledger entry;
@@ -27,8 +28,9 @@ interface CoverageReport {
 const GATEWAY_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPT = path.join(GATEWAY_ROOT, 'scripts', 'schema-coverage.cjs');
 
-/** Baseline 13 (E8 and earlier) + 8 session read (E10-1) + 8 pod/work read (E10-2) + 8 goal read (E10b-1) + 7 human-gate/permission read (E10b-2) + 1 human token rotate (E11-1) + 8 memory/recall/lead read (E10c-1) + 8 memory extra / lead.context / pod read (E10d-1) + 8 metadata/registry read (E10e-1) + 16 session/task/terminal/usage read (E10f-A) + 16 project/runtime/metadata read (E10f-B) + 16 goal/lead/event/standing/automation/pod read (E10f-C) = 117. */
+/** Baseline 13 (E8 and earlier) + 8 session read (E10-1) + 8 pod/work read (E10-2) + 8 goal read (E10b-1) + 7 human-gate/permission read (E10b-2) + 1 human token rotate (E11-1) + 8 memory/recall/lead read (E10c-1) + 8 memory extra / lead.context / pod read (E10d-1) + 8 metadata/registry read (E10e-1) + 16 session/task/terminal/usage read (E10f-A) + 16 project/runtime/metadata read (E10f-B) + 16 goal/lead/event/standing/automation/pod read (E10f-C) + 8 observability/device/A2A read (E10f-D) = 125. */
 const E10_COVERED_OPS = [
+  'a2a.agentCard',
   'agent.capabilities',
   'agents.list',
   'approvals.list',
@@ -40,7 +42,9 @@ const E10_COVERED_OPS = [
   'background.jobs.output',
   'cognition.rules',
   'config.get',
+  'dashboard.stats',
   'decisions.list',
+  'devices.list',
   'embedding.get',
   'event.replay',
   'events.deliveries.list',
@@ -56,6 +60,7 @@ const E10_COVERED_OPS = [
   'goals.sessions',
   'goals.source',
   'goals.timeline',
+  'health.root',
   'humanToken.rotate',
   'kernel.stats',
   'lead.boundaries.list',
@@ -76,6 +81,8 @@ const E10_COVERED_OPS = [
   'memory.mergedSearch',
   'memory.search',
   'memory.stats',
+  'mobile.devicesList',
+  'mobile.pairingCode',
   'models.get',
   'orchestration.outcomes',
   'permissions.getMode',
@@ -85,6 +92,7 @@ const E10_COVERED_OPS = [
   'plugins.client',
   'plugins.list',
   'pod.events.list',
+  'pods.a2aCard',
   'pods.cost',
   'pods.ensure',
   'pods.get',
@@ -127,6 +135,7 @@ const E10_COVERED_OPS = [
   'session.run',
   'session.structured',
   'session.subagents.list',
+  'session.subagents.result',
   'session.todo',
   'session.tokenSummary',
   'session.trajectory',

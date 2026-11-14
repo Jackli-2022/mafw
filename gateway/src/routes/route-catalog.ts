@@ -160,6 +160,13 @@ import {
   AutomationHistoryResponse,
   AutomationsListResponse,
 } from './schemas/automations';
+import { DeviceListResponse, PairingCodeResponse } from './schemas/devices';
+import {
+  DashboardStatsResponse,
+  HealthResponse,
+  SessionSubagentResultResponse,
+} from './schemas/observability';
+import { A2AAgentCardResponse } from './schemas/a2a';
 
 /**
  * SDK-facing 端点（catalog → gateway-paths → openapi 单向生成；**在此新增**后必须重跑
@@ -441,7 +448,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
 const NON_SDK_ROUTES: RouteDef[] = [
   // Pod A2A endpoint（协议内部面，不进 SDK 契约）
   { method: 'POST', path: '/a2a/pods/:podId', operationId: 'pods.a2a', tags: ['internal'] },
-  { method: 'GET', path: '/a2a/pods/:podId/.well-known/agent-card.json', operationId: 'pods.a2aCard', tags: ['internal'] },
+  { method: 'GET', path: '/a2a/pods/:podId/.well-known/agent-card.json', operationId: 'pods.a2aCard', tags: ['internal'], response: A2AAgentCardResponse },
   { method: 'GET', path: '/a2a/pods/:podId/artifacts/:artifactId', operationId: 'pods.a2aArtifact', tags: ['internal'] },
   // Python 内核（§5.17）
   { method: 'POST', path: '/api/python/execute', operationId: 'python.execute', tags: ['internal'] },
@@ -472,7 +479,7 @@ const NON_SDK_ROUTES: RouteDef[] = [
   // 用量 dashboard（/api/stats 由 routes/dashboard.ts 挂 handler；其余旧 dashboard
   // 形状在 E3-1 清理：costs/alignment/feedback/userAnswer/session.metrics/health.check
   // 与 gateway.* 控制面只在已删除的死模块 src/dashboard/api.ts 里有实现，从不可达）。
-  { method: 'GET', path: '/api/stats', operationId: 'dashboard.stats', tags: ['internal'] },
+  { method: 'GET', path: '/api/stats', operationId: 'dashboard.stats', tags: ['internal'], response: DashboardStatsResponse },
   // E4-8 内核资源账本快照（internal：desktop/运维诊断面，不进 @mafw/sdk 调用面）。
   {
     method: 'GET',
@@ -496,14 +503,14 @@ const NON_SDK_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/mobile/media/tasks/:id/ask', operationId: 'mobile.mediaTaskAsk', tags: ['internal'] },
   { method: 'POST', path: '/api/mobile/media/tasks', operationId: 'mobile.mediaTaskUpload', tags: ['internal'] },
   { method: 'GET', path: '/api/mobile/tts/artifacts/:id', operationId: 'mobile.ttsArtifact', tags: ['internal'] },
-  { method: 'GET', path: '/api/mobile/devices', operationId: 'mobile.devicesList', tags: ['internal'] },
+  { method: 'GET', path: '/api/mobile/devices', operationId: 'mobile.devicesList', tags: ['internal'], response: DeviceListResponse },
   { method: 'DELETE', path: '/api/mobile/devices/:id', operationId: 'mobile.devicesDelete', tags: ['internal'] },
   { method: 'POST', path: '/api/mobile/devices/register', operationId: 'mobile.devicesRegister', tags: ['internal'] },
-  { method: 'GET', path: '/api/mobile/pairing-code', operationId: 'mobile.pairingCode', tags: ['internal'] },
+  { method: 'GET', path: '/api/mobile/pairing-code', operationId: 'mobile.pairingCode', tags: ['internal'], response: PairingCodeResponse },
   { method: 'POST', path: '/api/mobile/pairing/verify', operationId: 'mobile.pairingVerify', tags: ['internal'] },
   // 设备注册（mobile 的 legacy 别名族）
   { method: 'POST', path: '/api/devices', operationId: 'devices.register', tags: ['internal'] },
-  { method: 'GET', path: '/api/devices', operationId: 'devices.list', tags: ['internal'] },
+  { method: 'GET', path: '/api/devices', operationId: 'devices.list', tags: ['internal'], response: DeviceListResponse },
   { method: 'DELETE', path: '/api/devices/:id', operationId: 'devices.delete', tags: ['internal'] },
   // E11-1：human token 轮换。只有 CLI（bin/mafw.js）与运维脚本直接打这个端点，
   // @mafw/sdk 不暴露（raw HTTP + 旧凭据证明占有）→ SDK 死契约门按 operationId
@@ -518,7 +525,7 @@ const NON_SDK_ROUTES: RouteDef[] = [
     response: HumanTokenRotateResponse,
   },
   // P5 Wave 2 反向审计补遗
-  { method: 'GET', path: '/.well-known/agent-card.json', operationId: 'a2a.agentCard', tags: ['internal'] },
+  { method: 'GET', path: '/.well-known/agent-card.json', operationId: 'a2a.agentCard', tags: ['internal'], response: A2AAgentCardResponse },
   // Task C1：单规则详情 GET /api/automations/:id 未进 @mafw/sdk 调用面
   // （SDK 只有 list/toggle/remove/draft）→ 与 automations.history 同放
   // NON_SDK 并标 internal，SDK 死契约门据此豁免。
@@ -535,7 +542,7 @@ const NON_SDK_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/sessions/:id/subagents', operationId: 'session.subagents.list', tags: ['internal'], response: SessionSubagentsResponse },
   { method: 'POST', path: '/api/sessions/:id/subagents/:subId/message', operationId: 'session.subagents.message', tags: ['internal'] },
   { method: 'POST', path: '/api/sessions/:id/subagents/:subId/cancel', operationId: 'session.subagents.cancel', tags: ['internal'] },
-  { method: 'GET', path: '/api/sessions/:id/subagents/:subId/result', operationId: 'session.subagents.result', tags: ['internal'] },
+  { method: 'GET', path: '/api/sessions/:id/subagents/:subId/result', operationId: 'session.subagents.result', tags: ['internal'], response: SessionSubagentResultResponse },
   { method: 'DELETE', path: '/api/session/:id', operationId: 'session.deleteLegacy', tags: ['internal'] },
   // Eval / LLM 压缩
   { method: 'POST', path: '/api/eval/chat/completions', operationId: 'eval.chatCompletions', tags: ['internal'] },
@@ -543,7 +550,7 @@ const NON_SDK_ROUTES: RouteDef[] = [
   // 跨 worktree 记忆融合（§5.3）
   { method: 'POST', path: '/api/merge-memory', operationId: 'memory.merge', tags: ['internal'] },
   // 根健康检查（dashboard/桌面探测用）
-  { method: 'GET', path: '/health', operationId: 'health.root', tags: ['internal'] },
+  { method: 'GET', path: '/health', operationId: 'health.root', tags: ['internal'], response: HealthResponse },
   // Plugin Web surfaces（spec 2026-11-09 §5.4-§5.6）：asset/events 由浏览器
   // webview 直接消费（不经 SDK）；web-ticket 在 Task 6 起由桌面主进程经 SDK
   // 调用，已登记在 SDK_FACING_ROUTES（此前标 internal 以免 SDK 死契约）。

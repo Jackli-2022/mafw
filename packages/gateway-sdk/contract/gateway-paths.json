@@ -25605,7 +25605,189 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "required": [
+                    "name",
+                    "description",
+                    "url",
+                    "version",
+                    "provider",
+                    "capabilities",
+                    "defaultInputModes",
+                    "defaultOutputModes",
+                    "skills",
+                    "securitySchemes",
+                    "securityRequirements",
+                    "signatures"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "protocolVersion": {
+                      "type": "string"
+                    },
+                    "provider": {
+                      "additionalProperties": true,
+                      "type": "object",
+                      "required": [
+                        "url",
+                        "organization"
+                      ],
+                      "properties": {
+                        "url": {
+                          "type": "string"
+                        },
+                        "organization": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "capabilities": {
+                      "additionalProperties": true,
+                      "type": "object",
+                      "required": [
+                        "streaming",
+                        "pushNotifications",
+                        "extensions"
+                      ],
+                      "properties": {
+                        "streaming": {
+                          "type": "boolean"
+                        },
+                        "pushNotifications": {
+                          "type": "boolean"
+                        },
+                        "extensions": {
+                          "type": "array",
+                          "items": {}
+                        }
+                      }
+                    },
+                    "defaultInputModes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "defaultOutputModes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "skills": {
+                      "type": "array",
+                      "items": {
+                        "additionalProperties": true,
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "name",
+                          "description"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "tags": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "examples": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "inputModes": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "outputModes": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "securityRequirements": {
+                            "type": "array",
+                            "items": {}
+                          }
+                        }
+                      }
+                    },
+                    "supportedInterfaces": {
+                      "type": "array",
+                      "items": {
+                        "additionalProperties": true,
+                        "type": "object",
+                        "required": [
+                          "url",
+                          "protocolBinding",
+                          "protocolVersion"
+                        ],
+                        "properties": {
+                          "url": {
+                            "type": "string"
+                          },
+                          "protocolBinding": {
+                            "type": "string"
+                          },
+                          "protocolVersion": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "documentationUrl": {
+                      "type": "string"
+                    },
+                    "iconUrl": {
+                      "type": "string"
+                    },
+                    "securitySchemes": {
+                      "type": "object",
+                      "patternProperties": {
+                        "^(.*)$": {}
+                      }
+                    },
+                    "securityRequirements": {
+                      "type": "array",
+                      "items": {}
+                    },
+                    "signatures": {
+                      "type": "array",
+                      "items": {}
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -27210,7 +27392,92 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "activeGoals",
+                    "registeredProjects",
+                    "sseClients",
+                    "serveRunning"
+                  ],
+                  "properties": {
+                    "activeGoals": {
+                      "type": "number"
+                    },
+                    "registeredProjects": {
+                      "type": "number"
+                    },
+                    "sseClients": {
+                      "type": "number"
+                    },
+                    "serveRunning": {
+                      "type": "boolean"
+                    },
+                    "eventAppendFailures": {
+                      "type": "number"
+                    },
+                    "tokens": {
+                      "type": "object",
+                      "required": [
+                        "totalTokens",
+                        "totalCost",
+                        "turnCount",
+                        "sessionCount"
+                      ],
+                      "properties": {
+                        "totalTokens": {
+                          "type": "object",
+                          "required": [
+                            "input",
+                            "output",
+                            "reasoning",
+                            "cache"
+                          ],
+                          "properties": {
+                            "input": {
+                              "type": "number"
+                            },
+                            "output": {
+                              "type": "number"
+                            },
+                            "reasoning": {
+                              "type": "number"
+                            },
+                            "cache": {
+                              "type": "object",
+                              "required": [
+                                "read",
+                                "write"
+                              ],
+                              "properties": {
+                                "read": {
+                                  "type": "number"
+                                },
+                                "write": {
+                                  "type": "number"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "totalCost": {
+                          "type": "number"
+                        },
+                        "turnCount": {
+                          "type": "number"
+                        },
+                        "sessionCount": {
+                          "type": "number"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -27901,7 +28168,51 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "devices"
+                  ],
+                  "properties": {
+                    "devices": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "fcmToken",
+                          "platform",
+                          "lastSeen"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "fcmToken": {
+                            "type": "string"
+                          },
+                          "platform": {
+                            "type": "string"
+                          },
+                          "lastSeen": {
+                            "type": "string"
+                          },
+                          "deviceName": {
+                            "type": "string"
+                          },
+                          "tokenIssuedAt": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -27950,7 +28261,22 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "url"
+                  ],
+                  "properties": {
+                    "url": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -27987,7 +28313,51 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "devices"
+                  ],
+                  "properties": {
+                    "devices": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "fcmToken",
+                          "platform",
+                          "lastSeen"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "fcmToken": {
+                            "type": "string"
+                          },
+                          "platform": {
+                            "type": "string"
+                          },
+                          "lastSeen": {
+                            "type": "string"
+                          },
+                          "deviceName": {
+                            "type": "string"
+                          },
+                          "tokenIssuedAt": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -28056,7 +28426,189 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "required": [
+                    "name",
+                    "description",
+                    "url",
+                    "version",
+                    "provider",
+                    "capabilities",
+                    "defaultInputModes",
+                    "defaultOutputModes",
+                    "skills",
+                    "securitySchemes",
+                    "securityRequirements",
+                    "signatures"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "protocolVersion": {
+                      "type": "string"
+                    },
+                    "provider": {
+                      "additionalProperties": true,
+                      "type": "object",
+                      "required": [
+                        "url",
+                        "organization"
+                      ],
+                      "properties": {
+                        "url": {
+                          "type": "string"
+                        },
+                        "organization": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "capabilities": {
+                      "additionalProperties": true,
+                      "type": "object",
+                      "required": [
+                        "streaming",
+                        "pushNotifications",
+                        "extensions"
+                      ],
+                      "properties": {
+                        "streaming": {
+                          "type": "boolean"
+                        },
+                        "pushNotifications": {
+                          "type": "boolean"
+                        },
+                        "extensions": {
+                          "type": "array",
+                          "items": {}
+                        }
+                      }
+                    },
+                    "defaultInputModes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "defaultOutputModes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "skills": {
+                      "type": "array",
+                      "items": {
+                        "additionalProperties": true,
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "name",
+                          "description"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "tags": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "examples": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "inputModes": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "outputModes": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "securityRequirements": {
+                            "type": "array",
+                            "items": {}
+                          }
+                        }
+                      }
+                    },
+                    "supportedInterfaces": {
+                      "type": "array",
+                      "items": {
+                        "additionalProperties": true,
+                        "type": "object",
+                        "required": [
+                          "url",
+                          "protocolBinding",
+                          "protocolVersion"
+                        ],
+                        "properties": {
+                          "url": {
+                            "type": "string"
+                          },
+                          "protocolBinding": {
+                            "type": "string"
+                          },
+                          "protocolVersion": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "documentationUrl": {
+                      "type": "string"
+                    },
+                    "iconUrl": {
+                      "type": "string"
+                    },
+                    "securitySchemes": {
+                      "type": "object",
+                      "patternProperties": {
+                        "^(.*)$": {}
+                      }
+                    },
+                    "securityRequirements": {
+                      "type": "array",
+                      "items": {}
+                    },
+                    "signatures": {
+                      "type": "array",
+                      "items": {}
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -28429,7 +28981,43 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status"
+                  ],
+                  "properties": {
+                    "status": {
+                      "anyOf": [
+                        {
+                          "const": "running",
+                          "type": "string"
+                        },
+                        {
+                          "const": "completed",
+                          "type": "string"
+                        },
+                        {
+                          "const": "failed",
+                          "type": "string"
+                        },
+                        {
+                          "const": "aborted",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "structured": {},
+                    "text": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -28504,7 +29092,86 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "serveRunning",
+                    "registeredProjects",
+                    "activeGoals",
+                    "media"
+                  ],
+                  "properties": {
+                    "status": {
+                      "const": "ok",
+                      "type": "string"
+                    },
+                    "serveRunning": {
+                      "type": "boolean"
+                    },
+                    "registeredProjects": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "activeGoals": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "media": {
+                      "type": "object",
+                      "required": [
+                        "configured"
+                      ],
+                      "properties": {
+                        "configured": {
+                          "type": "boolean"
+                        }
+                      }
+                    },
+                    "gatewayVersion": {
+                      "type": "string"
+                    },
+                    "experienceVersion": {
+                      "type": "string"
+                    },
+                    "minimumClientExperienceVersion": {
+                      "type": "string"
+                    },
+                    "schemaEpoch": {
+                      "type": "number"
+                    },
+                    "instanceId": {
+                      "type": "string"
+                    },
+                    "distribution": {
+                      "anyOf": [
+                        {
+                          "const": "desktop-managed",
+                          "type": "string"
+                        },
+                        {
+                          "const": "standalone",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "channel": {
+                      "type": "string"
+                    },
+                    "pid": {
+                      "type": "number"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }

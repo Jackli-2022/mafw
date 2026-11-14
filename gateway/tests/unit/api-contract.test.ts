@@ -160,6 +160,13 @@ import {
   AutomationHistoryResponse,
   AutomationsListResponse,
 } from '../../src/routes/schemas/automations';
+import { DeviceListResponse, PairingCodeResponse } from '../../src/routes/schemas/devices';
+import {
+  DashboardStatsResponse,
+  HealthResponse,
+  SessionSubagentResultResponse,
+} from '../../src/routes/schemas/observability';
+import { A2AAgentCardResponse } from '../../src/routes/schemas/a2a';
 import { handleAttention } from '../../src/routes/attention';
 import { handleDecisionList } from '../../src/routes/decisions';
 import type { PodGoalView } from '../../src/core/pod/pod-view';
@@ -3386,3 +3393,280 @@ describe('api-contract: E10f-C goal / lead / event / standing / automation / pod
     expect(Value.Check(OrchestrationOutcomesResponse, { outcomes: [withoutVerdict] })).toBe(false);
   });
 });
+
+describe('api-contract: E10f-D observability / device / A2A read response schema (8 ops)', () => {
+  const findOp = (operationId: string): any => {
+    for (const pathItem of Object.values(contract.paths || {}) as any[]) {
+      for (const op of Object.values(pathItem) as any[]) {
+        if (op?.operationId === operationId) return op;
+      }
+    }
+    return undefined;
+  };
+  const schemaOf = (operationId: string): any =>
+    findOp(operationId).responses['200'].content['application/json'].schema;
+
+  const EXPECTED: Record<string, {
+    fields: string[];
+    item?: { at: string; required: string[] };
+  }> = {
+    'dashboard.stats': {
+      fields: [
+        'activeGoals', 'registeredProjects', 'sseClients', 'serveRunning',
+        'eventAppendFailures', 'tokens',
+      ],
+    },
+    'mobile.devicesList': {
+      fields: ['devices'],
+      item: { at: 'devices', required: ['id', 'fcmToken', 'platform', 'lastSeen'] },
+    },
+    'mobile.pairingCode': { fields: ['url'] },
+    'devices.list': {
+      fields: ['devices'],
+      item: { at: 'devices', required: ['id', 'fcmToken', 'platform', 'lastSeen'] },
+    },
+    'session.subagents.result': { fields: ['status', 'structured', 'text'] },
+    'health.root': {
+      fields: [
+        'status', 'serveRunning', 'registeredProjects', 'activeGoals', 'media',
+        'gatewayVersion', 'experienceVersion', 'minimumClientExperienceVersion',
+        'schemaEpoch', 'instanceId', 'distribution', 'channel', 'pid',
+      ],
+    },
+    'a2a.agentCard': {
+      fields: [
+        'name', 'description', 'url', 'version', 'provider', 'capabilities',
+        'defaultInputModes', 'defaultOutputModes', 'skills', 'securitySchemes',
+        'securityRequirements', 'signatures',
+      ],
+      item: { at: 'skills', required: ['id', 'name', 'description'] },
+    },
+    'pods.a2aCard': {
+      fields: [
+        'name', 'description', 'url', 'version', 'provider', 'capabilities',
+        'defaultInputModes', 'defaultOutputModes', 'skills', 'securitySchemes',
+        'securityRequirements', 'signatures',
+      ],
+      item: { at: 'skills', required: ['id', 'name', 'description'] },
+    },
+  };
+
+  test('all eight ops expose a 200 JSON schema with properties (not a whole-response widening)', () => {
+    expect(Object.keys(EXPECTED)).toHaveLength(8);
+    const problems: string[] = [];
+    for (const [operationId, spec] of Object.entries(EXPECTED)) {
+      const op = findOp(operationId);
+      if (!op) { problems.push(`${operationId}: missing from openapi.json`); continue; }
+      const schema = op.responses?.['200']?.content?.['application/json']?.schema;
+      if (!schema) { problems.push(`${operationId}: responses.200 missing application/json schema`); continue; }
+      const properties = Object.keys(schema.properties ?? {});
+      if (properties.length === 0) { problems.push(`${operationId}: schema has no properties (widened)`); continue; }
+      for (const field of spec.fields) {
+        if (!properties.includes(field)) problems.push(`${operationId}: schema missing property '${field}'`);
+      }
+    }
+    if (problems.length) {
+      console.error('[api-contract] E10f-D response schema missing - run emit:openapi + gen:api:\n' + problems.join('\n'));
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test('array item required fields match the handler wire (devices/skills)', () => {
+    const problems: string[] = [];
+    for (const [operationId, spec] of Object.entries(EXPECTED)) {
+      if (!spec.item) continue;
+      const required = schemaOf(operationId).properties?.[spec.item.at]?.items?.required ?? [];
+      for (const field of spec.item.required) {
+        if (!required.includes(field)) problems.push(`${operationId}: ${spec.item.at}.items missing required '${field}'`);
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test('dashboard.stats keeps the optional token/event facets out of required', () => {
+    const stats = schemaOf('dashboard.stats');
+    // E2-5 / trajectory fail-open: both facets are omitted on some 200 paths.
+    expect(stats.required).toEqual(['activeGoals', 'registeredProjects', 'sseClients', 'serveRunning']);
+    expect(stats.properties.eventAppendFailures.type).toBe('number');
+    // tokens reuses the usage.summary projection (getGlobalTokenSummary).
+    expect(stats.properties.tokens.required).toEqual(['totalTokens', 'totalCost', 'turnCount', 'sessionCount']);
+    expect(stats.properties.tokens.properties.totalTokens.required)
+      .toEqual(['input', 'output', 'reasoning', 'cache']);
+    expect(stats.properties.tokens.properties.totalTokens.properties.cache.required)
+      .toEqual(['read', 'write']);
+  });
+
+  test('health.root is the liveness envelope with all-or-nothing release identity', () => {
+    const health = schemaOf('health.root');
+    expect(health.required).toEqual([
+      'status', 'serveRunning', 'registeredProjects', 'activeGoals', 'media',
+    ]);
+    expect(health.properties.status.const).toBe('ok');
+    expect(health.properties.media.required).toEqual(['configured']);
+    expect(health.properties.registeredProjects.items.type).toBe('string');
+    expect(health.properties.activeGoals.items.type).toBe('string');
+    // gatewayHealthFields() returns all eight or {} -> provenance fields optional.
+    for (const field of ['gatewayVersion', 'experienceVersion', 'minimumClientExperienceVersion',
+      'schemaEpoch', 'instanceId', 'distribution', 'channel', 'pid']) {
+      expect(health.required).not.toContain(field);
+      expect(health.properties[field]).toBeDefined();
+    }
+    expect(health.properties.distribution.anyOf.map((e: any) => e.const))
+      .toEqual(['desktop-managed', 'standalone']);
+  });
+
+  test('device lists promise the PublicDeviceEntry projection only (no credential hashes)', () => {
+    const device = schemaOf('mobile.devicesList').properties.devices.items;
+    expect(device.required).toEqual(['id', 'fcmToken', 'platform', 'lastSeen']);
+    expect(Object.keys(device.properties).sort())
+      .toEqual(['deviceName', 'fcmToken', 'id', 'lastSeen', 'platform', 'tokenIssuedAt']);
+    expect(device.properties.apiTokenHash).toBeUndefined();
+    expect(device.properties.deviceTokenHash).toBeUndefined();
+    // legacy GET /api/devices is the same listPublicDevices() wire.
+    expect(schemaOf('devices.list')).toEqual(schemaOf('mobile.devicesList'));
+    expect(schemaOf('mobile.pairingCode').required).toEqual(['url']);
+  });
+
+  test('session.subagents.result pins the service status union and keeps structured/text exclusive', () => {
+    const result = schemaOf('session.subagents.result');
+    expect(result.required).toEqual(['status']);
+    expect(result.properties.status.anyOf.map((e: any) => e.const))
+      .toEqual(['running', 'completed', 'failed', 'aborted']);
+    // outputSchema-owned JSON / last assistant text: present one at a time.
+    expect(result.required).not.toContain('structured');
+    expect(result.required).not.toContain('text');
+  });
+
+  test('A2A agent cards are protocol boundary documents shared by both emitters', () => {
+    const card = schemaOf('a2a.agentCard');
+    expect(card.required).toEqual([
+      'name', 'description', 'url', 'version', 'provider', 'capabilities',
+      'defaultInputModes', 'defaultOutputModes', 'skills', 'securitySchemes',
+      'securityRequirements', 'signatures',
+    ]);
+    // owner = A2A protocol: v0.3 card-level version + v1.0 interfaces are optional.
+    expect(card.properties.protocolVersion.type).toBe('string');
+    expect(card.properties.supportedInterfaces.type).toBe('array');
+    expect(card.properties.supportedInterfaces.items.required)
+      .toEqual(['url', 'protocolBinding', 'protocolVersion']);
+    expect(card.properties.capabilities.required)
+      .toEqual(['streaming', 'pushNotifications', 'extensions']);
+    // Nested protocol-owned entries stay open (protocol evolution must not break).
+    expect(card.properties.skills.items.additionalProperties).toBe(true);
+    expect(card.properties.capabilities.additionalProperties).toBe(true);
+    expect(card.additionalProperties).toBe(true);
+    expect(card.properties.securitySchemes.type).toBe('object');
+    // pods.a2aCard is the same AgentCard document (Pod handoff agent).
+    expect(schemaOf('pods.a2aCard')).toEqual(card);
+  });
+
+  test('error envelopes are not part of the 200 schema', () => {
+    expect(Value.Check(PairingCodeResponse, { error: 'rate limit exceeded' })).toBe(false);
+    expect(Value.Check(DeviceListResponse, { error: 'push gateway unavailable' })).toBe(false);
+    expect(Value.Check(SessionSubagentResultResponse, { error: 'subagent not found: sub_1' })).toBe(false);
+    expect(Value.Check(HealthResponse, { error: 'boom' })).toBe(false);
+    expect(Value.Check(A2AAgentCardResponse, { error: 'pod not found' })).toBe(false);
+  });
+
+  test('handler wire samples validate against each new schema (Value.Check)', () => {
+    // dashboard.stats: base-only (no event store) and enriched with tokens.
+    expect(Value.Check(DashboardStatsResponse, {
+      activeGoals: 2, registeredProjects: 3, sseClients: 1, serveRunning: true,
+    })).toBe(true);
+    expect(Value.Check(DashboardStatsResponse, {
+      activeGoals: 0, registeredProjects: 0, sseClients: 0, serveRunning: false,
+      eventAppendFailures: 0,
+      tokens: {
+        totalTokens: { input: 10, output: 20, reasoning: 1, cache: { read: 3, write: 4 } },
+        totalCost: 0.25, turnCount: 7, sessionCount: 2,
+      },
+    })).toBe(true);
+    expect(Value.Check(DashboardStatsResponse, {
+      activeGoals: 0, registeredProjects: 0, sseClients: 0, serveRunning: true,
+      tokens: { totalTokens: { input: 1, output: 1, reasoning: 0 }, totalCost: 0, turnCount: 0, sessionCount: 0 },
+    })).toBe(false);
+
+    // health.root: release metadata not loaded yet -> envelope only.
+    expect(Value.Check(HealthResponse, {
+      status: 'ok', serveRunning: true, registeredProjects: ['/p'], activeGoals: ['g_1'],
+      media: { configured: false },
+    })).toBe(true);
+    // managed desktop payload carries the full release identity.
+    expect(Value.Check(HealthResponse, {
+      status: 'ok', serveRunning: true, registeredProjects: [], activeGoals: [],
+      media: { configured: true },
+      gatewayVersion: '4.16.1', experienceVersion: '1.0', minimumClientExperienceVersion: '1.0',
+      schemaEpoch: 3, instanceId: 'uuid', distribution: 'desktop-managed', channel: 'managed', pid: 123,
+    })).toBe(true);
+    expect(Value.Check(HealthResponse, {
+      status: 'ok', serveRunning: true, registeredProjects: [], activeGoals: [],
+      media: { configured: true }, distribution: 'cloud',
+    })).toBe(false);
+
+    // devices: listPublicDevices() rows (credential hashes already stripped).
+    const device = {
+      id: 'dev_1', fcmToken: 'fcm', platform: 'android', lastSeen: '2026-11-14T00:00:00.000Z',
+    };
+    expect(Value.Check(DeviceListResponse, { devices: [device] })).toBe(true);
+    expect(Value.Check(DeviceListResponse, { devices: [] })).toBe(true);
+    expect(Value.Check(DeviceListResponse, {
+      devices: [{ ...device, deviceName: 'Pixel', tokenIssuedAt: '2026-11-14T00:00:00.000Z' }],
+    })).toBe(true);
+    const { platform: _platform, ...withoutPlatform } = device;
+    expect(Value.Check(DeviceListResponse, { devices: [withoutPlatform] })).toBe(false);
+
+    expect(Value.Check(PairingCodeResponse, {
+      url: 'orcalore://pair?url=https%3A%2F%2Fx&v=2&exp=1&nonce=abc',
+    })).toBe(true);
+    expect(Value.Check(PairingCodeResponse, {})).toBe(false);
+
+    // subagent result: structured output branch / final assistant text branch.
+    expect(Value.Check(SessionSubagentResultResponse, { status: 'completed', text: 'done' })).toBe(true);
+    expect(Value.Check(SessionSubagentResultResponse, {
+      status: 'completed', structured: { answer: 42 },
+    })).toBe(true);
+    expect(Value.Check(SessionSubagentResultResponse, { status: 'running' })).toBe(true);
+    expect(Value.Check(SessionSubagentResultResponse, { status: 'cancelled' })).toBe(false);
+    expect(Value.Check(SessionSubagentResultResponse, {})).toBe(false);
+
+    // A2A media card (no protocolVersion / supportedInterfaces) and Pod card (both).
+    const mediaCard = {
+      name: 'MAFW MediaAgent',
+      description: 'multimodal agent',
+      url: 'http://127.0.0.1:3000/a2a',
+      version: '1.0.0',
+      provider: { url: 'http://127.0.0.1:3000', organization: 'MAFW' },
+      capabilities: { streaming: false, pushNotifications: false, extensions: [] },
+      defaultInputModes: ['text', 'image'],
+      defaultOutputModes: ['text'],
+      skills: [{
+        id: 'media_analyze', name: 'media_analyze', description: 'answer media questions',
+        tags: ['media'], examples: [], inputModes: ['text'], outputModes: ['text'],
+        securityRequirements: [],
+      }],
+      supportedInterfaces: [],
+      securitySchemes: {},
+      securityRequirements: [],
+      signatures: [],
+    };
+    expect(Value.Check(A2AAgentCardResponse, mediaCard)).toBe(true);
+    expect(Value.Check(A2AAgentCardResponse, {
+      ...mediaCard,
+      name: 'MAFW Pod pod_1',
+      protocolVersion: '1.0',
+      supportedInterfaces: [{
+        url: 'http://127.0.0.1:3000/a2a/pods/pod_1',
+        protocolBinding: 'JSONRPC',
+        protocolVersion: '1.0',
+      }],
+    })).toBe(true);
+    // Protocol-owned extension key is tolerated (boundary, not a closed shape).
+    expect(Value.Check(A2AAgentCardResponse, { ...mediaCard, futureProtocolField: true })).toBe(true);
+    const { skills: _skills, ...withoutSkills } = mediaCard;
+    expect(Value.Check(A2AAgentCardResponse, withoutSkills)).toBe(false);
+    expect(Value.Check(A2AAgentCardResponse, {
+      ...mediaCard, capabilities: { streaming: false },
+    })).toBe(false);
+  });
+});
+

@@ -71,7 +71,7 @@ export const PresenceResponse = Type.Object({
   }),
 })
 
-const TokenCountsSchema = Type.Object({
+export const TokenCountsSchema = Type.Object({
   input: Type.Number(),
   output: Type.Number(),
   reasoning: Type.Number(),
@@ -81,7 +81,7 @@ const TokenCountsSchema = Type.Object({
   }),
 })
 
-const TokenSummarySchema = Type.Object({
+export const TokenSummarySchema = Type.Object({
   totalTokens: TokenCountsSchema,
   totalCost: Type.Number(),
   turnCount: Type.Number(),
