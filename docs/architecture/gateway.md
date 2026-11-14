@@ -1547,7 +1547,8 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 
 ### 残余（E10f 后仍 deferred）
 
-- **187 个写面 op**（POST / PUT / PATCH / DELETE）的请求 / 响应 schema；见上「明确排除」。
+- ~~**187 个写面 op** 的请求 schema~~ → **E10g 收口**：182/188 已声明 + 6 个二进制 / multipart / A2A
+  显式排除（见「台账口径（E10g）」）。**写面 op 的 200 response schema 仍 deferred**（仍是 187 个非 GET）。
 - **强制版本协商 / SDK 全量 schema 类型化**（`minClientVersion` 已在 `experience.actions` 暴露，
   但没有拒绝旧客户端的运行时策略；产品决策未定）。
 - **TUI triage phantom**（`reason` / `goalId` / `severity`）：TUI 消费面未改——`@earendil-works/pi-tui`
@@ -1570,7 +1571,9 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 > （mcp/plugins/runtime/config/project/manager/commands 26 个）、W7
 > （memory/media/tts/chat/python/obs/models/embedding/tools/eval/llm/mobile/devices/a2a 30 个）
 > 与 W8（cognition gate/rewrite 2 个，写表面收口 182/188）。
-> spec：`docs/superpowers/specs/2026-11-14-gateway-e10g-request-contracts-design.md`。
+> spec：`docs/superpowers/specs/2026-11-14-gateway-e10g-request-contracts-design.md`；
+> plan：`docs/superpowers/plans/2026-11-14-gateway-e10g-request-contracts.md`；
+> 交付记录：`docs/releases/2026-11-14-gateway-e10g-request-contracts.md`。
 
 - **`RouteDef` 新增三个声明位**：`request?: object`（TypeBox / JSON Schema，缺省 = 未建模）、
   `requestContentType?: string`（默认 `application/json`）、`requestRequired?: boolean`
@@ -1735,6 +1738,56 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
     `mobile.mediaTaskUpload` / `pods.a2a`）。W7 遗留的 2 个 cognition op 至此归位，
     188 个写 op 全部有归属（覆盖或显式排除）。
 
+### 台账口径（E10g）
+
+| 批次 | 范围 | 新增 request | 累计 |
+|---|---|---|---|
+| P0 | `RouteDef` 三字段 + `toOpenApiPaths()` requestBody + coverage 脚本 + 3 pilot | 3 | 3/188 |
+| W1 | session 写接口（config/switch/prompt/queue/fork/revert/checkpoint/usage plugins/subagents） | 35 | 38/188 |
+| W2/W3 | tasks / terminal / background / fileHistory（8）+ pod 写接口（25） | 33 | 71/188 |
+| W4 | goals / decisions / lead / standing / goalRuns | 29 | 100/188 |
+| W5 | events / automations / approvals / questions / triage / permissions | 24 | 124/188 |
+| W6 | mcp / plugins / runtime / config / project / manager / commands | 26 | 150/188 |
+| W7 | memory / media / tts / chat / python / obs / models / embedding / tools / eval / llm / mobile / devices / a2a | 30 | 180/188 |
+| W8 | cognition gate / rewrite | 2 | **182/188（96.8%）** |
+
+- **请求 schema 分类**（每个写 op 恰好一类，实测分类计数和 = 182 covered）：
+
+  | 类别 | 声明 | 数量 | 判据 |
+  |---|---|---|---|
+  | JSON body | `request` + `requestRequired` 缺省（true） | **105** | handler 读 body 字段；缺失 → 400 |
+  | 空对象动作 | `request: EmptyRequest`（`Type.Object({})`）+ `requestRequired:false` | **56** | 输入只在 path / query；语义是「无字段」，不是「任意 body」（15 session / 9 task-pod / 13 goal-lead-standing / 7 human-gate / 6 mcp-plugin-runtime / 6 memory-device-token） |
+  | 可选 body | 有 `properties` + `requestRequired:false` | **20** | body 可缺省：有缺省值（`session.fork` / `session.checkpoint` / `session.command` / `session.summarize` / `session.discoverySkillInvoke` / `goals.retry` / `decisions.confirm` …）或只用于 actor 鉴权 / query 回退（`pods.tasks.delete` / `terminal.connectTicket`） |
+  | 协议透传边界 | `Type.Object({}, {additionalProperties:true})` + `requestRequired:false` | **1** | `events.webhook.receive`：body 由上游源定义，adapter 校验签名 / 幂等 |
+  | 显式排除 | `REQUEST_EXCLUDED`（不入 catalog `request`） | **6** | 见下表：原始字节 / multipart / A2A 透传 |
+
+- **响应口径不变**：`npm run schema:coverage` 仍报 **125/318 responses**（E10f 终值）。
+  未覆盖 193 = **187 个非 GET 的 response** + **6 个非 JSON GET**；请求侧不再是缺口，
+  `requests: 182/188` 与 responses 是两个独立分母（182 的分母是 188 个非 GET op）。
+- **收口守卫** `gateway/tests/unit/architecture/request-coverage.test.ts`（本波唯一新增测试文件）：
+  ① 每个非 GET op **恰好**满足 `request` 或 `REQUEST_EXCLUDED` 之一（覆盖又排除 / 两者皆无都按 operationId 报错）；
+  ② 排除项必须在 catalog 中、理由非空、且**不得**声明 `request`；
+  ③ 算术 `182 + 6 = 188`；④ 空对象动作必须 `requestRequired:false`（56 个，开放对象边界 `additionalProperties:true` 不计入）；
+  ⑤ GET 不得声明 request。逐批台账（`schema-coverage.test.ts` 的 `E10G_W*_REQUEST_OPS` + `E10G_W*_EMPTY_OPS`）继续钉住每批 op。
+- **生成物**：318 ops / 284 paths 不变；`gateway-paths.json` / `openapi.json` / `api-schema.gen.ts` 每批 diff 恰好是该批 op 的 `requestBody` 新增（0 added / 0 removed 路由），`emit:openapi` + `gen:api` 二次运行幂等。
+- **运行时校验有意缺席**（spec §4 非目标）：`request` 只是声明式契约，gateway **不**在 transport 层校验 body；
+  handler 仍是事实源（400 / 截断 / fail-open 的语义在 handler 里，schema 描述只做说明）。因此把 body 改坏不会在
+  gateway 层被拒——这是与 response 相同的策略，不是遗漏。
+
+### 明确排除（E10g：6 个，原因入库）
+
+| op | transport | 排除原因 | JSON 替代面 |
+|---|---|---|---|
+| `plugins.install` | `POST /api/plugins/install` | 原始 `.js` 字节流（`readBodyBuffer`）+ query `filename`/`type`/`overwrite` | `plugins.installPackage`（`{path}`） |
+| `media.upload` | `POST /api/media/upload` | 原始媒体字节流（`for await (const chunk of req)`）+ query `type` | `media.createTaskApi` / `media.analyzeAudio` |
+| `media.uploadAndCreate` | `POST /api/media/upload-and-create` | 原始字节流 + query `type`/`question` | 同上 |
+| `media.createTask` | `POST /a2a` | A2A JSON-RPC 透传（`agent.handleJsonRpc`，响应 `application/a2a+json`），信封归协议 | `media.createTaskApi` |
+| `mobile.mediaTaskUpload` | `POST /api/mobile/media/tasks` | `multipart/form-data`（boundary 在 `mobile/media-proxy.ts` 手解） | `mobile.mediaTaskAsk` |
+| `pods.a2a` | `POST /a2a/pods/:podId` | A2A JSON-RPC 透传（raw body → `PodA2AAgent.handleJsonRpc`），信封归协议 | `pods.a2aCard`（读）+ pod 写接口 |
+
+- 六项都**不**声明 `request`（声明一个 gateway 从不解析的形状会虚增 `requests`）。
+  二进制 / multipart 的 multipart schema 建模、A2A 信封的机器可读产物皆不在本波（spec §4 非目标）。
+
 ---
 
 ## E11 身份 / 配额硬化（2026-11-13）
@@ -1769,9 +1822,12 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
   （台账 `npm run schema:coverage`，见「E10 契约覆盖」/
   「E10b 契约覆盖第二批」/「E10c 契约覆盖第三批」/「E10d 契约覆盖第四批」/「E10e 契约覆盖第五批」/
   「E10f 全量读表面收口」/ 本节 E11-1）。
+  **E10g 后**：**读表面已收口**（125/318 response，JSON GET 100%）、**请求表面已收口**
+  （182/188，剩余 6 个二进制 / multipart / A2A 显式排除）。剩下的 response 缺口 = **187 个写 op 的 200 体**
+  + **6 个非 JSON GET**（二进制 / SSE，不进 JSON schema）。
 - 强制版本协商 / SDK 全量 schema 类型化。
-- POST/PUT/PATCH/DELETE 的请求 / 响应 schema（E10 / E10b / E11 只建模读接口与单个 auth op 的 200 成功体，
-  错误体不建模）。
+- **写面 response schema**（POST/PUT/PATCH/DELETE 的 200 成功体）：E10g 只补了请求体，
+  响应仍只覆盖读面；错误体一律不建模。
 - **TUI** triage phantom 字段渲染（`reason` / `goalId` / `severity`；真实 wire 无这些字段）。
   mobile 侧已在 E10f-E 收口（`triage_card_model.dart`），desktop 侧是 E10b-3。
 - **won't do（本阶段，已有决策与缓解）**：OS keychain / 进程签名、MCP human 工具（E11-4）；
