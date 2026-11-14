@@ -78,6 +78,63 @@ describe('RouteRegistry', () => {
       expect(goal.delete.operationId).toBe('goals.delete');
       expect((paths['/api/triage'] as any).get.parameters).toBeUndefined();
     });
+
+    // E10g-P0: requestBody projection. `request` is declarative only (no runtime
+    // validation); it lands verbatim under the content-type key.
+    it('request 投影为 requestBody（默认 application/json + required:true）', () => {
+      const schema = { type: 'object', properties: { title: { type: 'string' } } };
+      const r = new RouteRegistry().register(
+        def({ method: 'POST', path: '/api/tasks', operationId: 'tasks.submit', request: schema }),
+      );
+      const op = (r.toOpenApiPaths()['/api/tasks'] as any).post;
+      expect(op.requestBody).toEqual({
+        required: true,
+        content: { 'application/json': { schema } },
+      });
+    });
+
+    it('requestContentType 覆盖 content-type（二进制上传）', () => {
+      const schema = { type: 'string', format: 'binary' };
+      const r = new RouteRegistry().register(
+        def({
+          method: 'POST',
+          path: '/api/media/upload',
+          operationId: 'media.upload',
+          request: schema,
+          requestContentType: 'application/octet-stream',
+        }),
+      );
+      const body = (r.toOpenApiPaths()['/api/media/upload'] as any).post.requestBody;
+      expect(body.content['application/octet-stream'].schema).toEqual(schema);
+      expect(body.content['application/json']).toBeUndefined();
+      expect(body.required).toBe(true);
+    });
+
+    it('requestRequired:false 表示无 body 动作（空对象 schema）', () => {
+      const schema = { type: 'object', properties: {} };
+      const r = new RouteRegistry().register(
+        def({
+          method: 'POST',
+          path: '/api/goals/:id/pause',
+          operationId: 'goals.pause',
+          request: schema,
+          requestRequired: false,
+        }),
+      );
+      const body = (r.toOpenApiPaths()['/api/goals/{id}/pause'] as any).post.requestBody;
+      expect(body.required).toBe(false);
+      expect(body.content['application/json'].schema).toEqual(schema);
+    });
+
+    it('没有 request 的 op 不生成 requestBody（含有 response 的 GET）', () => {
+      const r = new RouteRegistry().register(
+        def({ path: '/api/goals', operationId: 'goals.list', response: { type: 'object' } }),
+        def({ method: 'DELETE', path: '/api/goals/:id', operationId: 'goals.cancel' }),
+      );
+      const paths = r.toOpenApiPaths();
+      expect((paths['/api/goals'] as any).get.requestBody).toBeUndefined();
+      expect((paths['/api/goals/{id}'] as any).delete.requestBody).toBeUndefined();
+    });
   });
 
   it('toOpenApiPath 转换', () => {

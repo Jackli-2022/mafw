@@ -1,5 +1,7 @@
 // E10-3 schema coverage ledger: how many catalog operations declare a 200
 // response schema, sliced by tag, plus the uncovered operation list.
+// E10g extends the same scan with request bodies: `requests: X/188` counts
+// non-GET ops that declare `request:` (the 188 write-op denominator).
 //
 // Source of truth is `src/routes/route-catalog.ts` itself (text scan, not a TS
 // import) so this stays a plain `node` script with no ts-node/jest dependency
@@ -97,13 +99,21 @@ function analyze(catalogPath = CATALOG_PATH) {
   const ops = objectBlocks(src)
     .map((block) => ({
       operationId: field(block, 'operationId'),
+      method: field(block, 'method'),
       tags: tags(block),
       hasResponse: /\bresponse\s*:/.test(block),
+      hasRequest: /\brequest\s*:/.test(block),
     }))
     .filter((op) => op.operationId);
 
   const coveredOps = ops.filter((op) => op.hasResponse).map((op) => op.operationId).sort();
   const uncoveredOps = ops.filter((op) => !op.hasResponse).map((op) => op.operationId).sort();
+
+  // E10g: write ops (non-GET) are the request-body denominator. A GET with a
+  // body is not a thing we model, so it never counts as covered or uncovered.
+  const writeOps = ops.filter((op) => op.method !== 'GET');
+  const requestCovered = writeOps.filter((op) => op.hasRequest).map((op) => op.operationId).sort();
+  const requestUncovered = writeOps.filter((op) => !op.hasRequest).map((op) => op.operationId).sort();
 
   const buckets = new Map();
   for (const op of ops) {
@@ -116,7 +126,17 @@ function analyze(catalogPath = CATALOG_PATH) {
   }
   const byTag = [...buckets.values()].sort((a, b) => a.tag.localeCompare(b.tag));
 
-  return { total: ops.length, covered: coveredOps.length, coveredOps, byTag, uncoveredOps };
+  return {
+    total: ops.length,
+    covered: coveredOps.length,
+    coveredOps,
+    byTag,
+    uncoveredOps,
+    requests: requestCovered.length,
+    requestCovered,
+    requestTotal: writeOps.length,
+    requestUncovered,
+  };
 }
 
 function printReport(report) {
@@ -128,6 +148,10 @@ function printReport(report) {
   for (const t of report.byTag) {
     console.log(`  ${t.tag.padEnd(16)} ${String(t.covered).padStart(3)}/${String(t.total).padEnd(3)}`);
   }
+  const requestPct = report.requestTotal ? ((report.requests / report.requestTotal) * 100).toFixed(1) : '0.0';
+  console.log(
+    `requests: ${report.requests}/${report.requestTotal} write operations declare a request body schema (${requestPct}%)`,
+  );
   console.log(`uncovered operations (${report.uncoveredOps.length}):`);
   for (const id of report.uncoveredOps) console.log(`  - ${id}`);
 }

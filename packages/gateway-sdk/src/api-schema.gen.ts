@@ -4761,7 +4761,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Absolute project directory path (drive, POSIX root, or UNC). */
+                    directory: string;
+                    worktree?: boolean | string;
+                    metadata?: {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5389,7 +5400,34 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    kind: "shell" | "subagent";
+                    parentSessionID: string;
+                    title?: string;
+                    /** @description Required when kind is "shell". */
+                    command?: string;
+                    cwd?: string;
+                    timeout?: number;
+                    /** @description Required when kind is "subagent". */
+                    prompt?: string;
+                    agent?: string;
+                    description?: string;
+                    model?: {
+                        providerID: string;
+                        modelID: string;
+                    };
+                    outputSchema?: {
+                        name?: string;
+                        schema: {
+                            [key: string]: unknown;
+                        };
+                        retryCount?: number;
+                    };
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12095,7 +12133,20 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    title: string;
+                    plan?: boolean;
+                    waveId?: string;
+                    /** @description Required for plan tasks (plan:true or waveId set). */
+                    goalId?: string;
+                    acceptance?: string[];
+                    ownerMemberId?: string;
+                    actorSessionID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {

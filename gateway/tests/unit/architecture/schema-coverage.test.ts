@@ -23,6 +23,10 @@ interface CoverageReport {
   coveredOps: string[];
   byTag: Array<{ tag: string; covered: number; total: number }>;
   uncoveredOps: string[];
+  requests: number;
+  requestCovered: string[];
+  requestTotal: number;
+  requestUncovered: string[];
 }
 
 const GATEWAY_ROOT = path.join(__dirname, '..', '..', '..');
@@ -168,6 +172,19 @@ function catalogOps(): Array<{ operationId: string; hasResponse: boolean }> {
   }));
 }
 
+/** E10g: write ops = everything that is not a GET (query-only surface). */
+const WRITE_OPS_TOTAL = 188;
+
+function catalogWriteOps(): Array<{ operationId: string; hasRequest: boolean }> {
+  return buildRouteCatalog()
+    .filter((def) => def.method !== 'GET')
+    .map((def) => ({
+      operationId: def.operationId,
+      // RouteDef.request is the catalog's single source for the request body.
+      hasRequest: Boolean((def as { request?: unknown }).request),
+    }));
+}
+
 function runScript(): CoverageReport {
   const out = execFileSync(process.execPath, [SCRIPT, '--json'], {
     cwd: GATEWAY_ROOT,
@@ -216,5 +233,26 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect([...report.uncoveredOps].sort()).toEqual(report.uncoveredOps);
     const coveredSet = new Set(report.coveredOps);
     expect(report.uncoveredOps.some((id) => coveredSet.has(id))).toBe(false);
+  });
+
+  // E10g-P0: request ledger shares the same parser so the write-op denominator
+  // (188) and the grown coverage set stay pinned while W1-W7 land.
+  it('the script reports request coverage over the 188 write ops', () => {
+    const report = runScript();
+    const write = catalogWriteOps();
+    const covered = write.filter((op) => op.hasRequest).map((op) => op.operationId).sort();
+
+    expect(write).toHaveLength(WRITE_OPS_TOTAL);
+    expect(report.requestTotal).toBe(WRITE_OPS_TOTAL);
+    expect(report.requests).toBe(covered.length);
+    expect(report.requestCovered).toEqual(covered);
+    expect(report.requestUncovered).toHaveLength(WRITE_OPS_TOTAL - covered.length);
+    expect(new Set(report.requestCovered).size).toBe(report.requestCovered.length);
+    expect(report.requestUncovered.some((id) => covered.includes(id))).toBe(false);
+  });
+
+  it('P0 pilots are the only write ops with a request schema', () => {
+    expect(catalogWriteOps().filter((op) => op.hasRequest).map((op) => op.operationId).sort())
+      .toEqual(['pods.tasks.create', 'session.create', 'tasks.submit']);
   });
 });

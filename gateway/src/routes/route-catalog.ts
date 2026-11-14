@@ -23,7 +23,7 @@
  */
 
 import type { RouteDef } from './registry';
-import { SessionListResponse, SessionMessagesResponse, SessionSchema } from './schemas/session';
+import { SessionCreateRequest, SessionListResponse, SessionMessagesResponse, SessionSchema } from './schemas/session';
 import {
   AttentionListResponse,
   DecisionListResponse,
@@ -46,6 +46,7 @@ import {
   PodMessagesResponse,
   PodProbesResponse,
   PodReviewItemsResponse,
+  PodTaskCreateRequest,
   PodTasksResponse,
   PodTechLeadHistoryResponse,
   PodTranscriptResponse,
@@ -104,7 +105,7 @@ import {
   SkillsListResponse,
   ToolsListResponse,
 } from './schemas/meta';
-import { TaskGetResponse, TaskListResponse, TaskOutputResponse } from './schemas/tasks';
+import { TaskGetResponse, TaskListResponse, TaskOutputResponse, TaskSubmitRequest } from './schemas/tasks';
 import {
   SessionDiscoveryResponse,
   SessionDiscoverySkillResponse,
@@ -177,7 +178,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/pods/:podId/events', operationId: 'pod.events.list', tags: ['pod'], response: PodEventsResponse },
   { method: 'POST', path: '/api/pods/:podId/events/:id/seen', operationId: 'pod.events.seen', tags: ['pod'] },
   { method: 'POST', path: '/api/pods/:podId/events/seen', operationId: 'pod.events.seenAll', tags: ['pod'] },
-  { method: 'POST', path: '/api/session', operationId: 'session.create', tags: ['session'] },
+  { method: 'POST', path: '/api/session', operationId: 'session.create', tags: ['session'], request: SessionCreateRequest },
   { method: 'POST', path: '/api/cognition/gate', operationId: 'cognition.gate', tags: ['cognition'] },
   { method: 'POST', path: '/api/cognition/rewrite', operationId: 'cognition.rewrite', tags: ['cognition'] },
   { method: 'GET', path: '/api/cognition/rules', operationId: 'cognition.rules', tags: ['cognition'], response: CognitionRulesResponse },
@@ -198,7 +199,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/sessions/:id/agent', operationId: 'session.switchAgent', tags: ['session'] },
   { method: 'POST', path: '/api/sessions/:id/model', operationId: 'session.switchModel', tags: ['session'] },
   { method: 'POST', path: '/api/structured/submit', operationId: 'structured.submit', tags: ['session'] },
-  { method: 'POST', path: '/api/tasks', operationId: 'tasks.submit', tags: ['task'] },
+  { method: 'POST', path: '/api/tasks', operationId: 'tasks.submit', tags: ['task'], request: TaskSubmitRequest },
   { method: 'GET', path: '/api/tasks', operationId: 'tasks.list', tags: ['task'], response: TaskListResponse },
   { method: 'GET', path: '/api/tasks/:id', operationId: 'tasks.get', tags: ['task'], response: TaskGetResponse },
   { method: 'POST', path: '/api/tasks/:id/cancel', operationId: 'tasks.cancel', tags: ['task'] },
@@ -409,7 +410,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'PATCH', path: '/api/pods/:podId', operationId: 'pods.update', tags: ['pods'] },
   { method: 'POST', path: '/api/pods/:podId/lead/ensure', operationId: 'pods.lead.ensure', tags: ['pods'] },
   { method: 'GET', path: '/api/pods/:podId/tasks', operationId: 'pods.tasks.list', tags: ['pods'], response: PodTasksResponse },
-  { method: 'POST', path: '/api/pods/:podId/tasks', operationId: 'pods.tasks.create', tags: ['pods'] },
+  { method: 'POST', path: '/api/pods/:podId/tasks', operationId: 'pods.tasks.create', tags: ['pods'], request: PodTaskCreateRequest },
   { method: 'PATCH', path: '/api/pods/:podId/tasks/:taskId', operationId: 'pods.tasks.update', tags: ['pods'] },
   { method: 'DELETE', path: '/api/pods/:podId/tasks/:taskId', operationId: 'pods.tasks.delete', tags: ['pods'] },
   { method: 'GET', path: '/api/pods/:podId/messages', operationId: 'pods.messages.list', tags: ['pods'], response: PodMessagesResponse },

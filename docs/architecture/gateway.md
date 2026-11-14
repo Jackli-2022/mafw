@@ -37,6 +37,7 @@
 - [E10d 契约覆盖第四批（2026-11-14）](#e10d-契约覆盖第四批2026-11-14)
 - [E10e 契约覆盖第五批（2026-11-14）](#e10e-契约覆盖第五批2026-11-14)
 - [E10f 全量读表面收口（2026-11-14）](#e10f-全量读表面收口2026-11-14)
+- [E10g 请求契约（进行中：P0，2026-11-14）](#e10g-请求契约进行中p02026-11-14)
 - [API 端点](#api-端点)
 - [UI 服务](#ui-服务)
 - [数据流全景](#数据流全景)
@@ -1557,6 +1558,29 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
   身份陈述必须完整）。要对齐必须改披露层行为（把身份文本截到 240 字符），不在契约层解决。
 - mobile 工作 tab 的其余增量 patch（E9-1 后 flat 帧已能触发 `goalId` 局部 patch，任务 / 消息仍是整页快照）。
 - 6 个非 JSON GET 的 transport 级契约（content-type / SSE 帧格式）仍未声明为 OpenAPI 之外的机器可读产物。
+
+---
+
+## E10g 请求契约（进行中：P0，2026-11-14）
+
+> 承接 E10f（响应 125/318）。E10g 给 **188 个写 op** 补请求契约；本篇只记录 P0 管线与 3 个 pilot。
+> spec：`docs/superpowers/specs/2026-11-14-gateway-e10g-request-contracts-design.md`。
+
+- **`RouteDef` 新增三个声明位**：`request?: object`（TypeBox / JSON Schema，缺省 = 未建模）、
+  `requestContentType?: string`（默认 `application/json`）、`requestRequired?: boolean`
+  （默认 `true`；无 body 动作用 `request: Type.Object({})` + `false`，语义是「无字段」而不是「任意 body」）。
+- **`toOpenApiPaths()`** 在 `def.request` 存在时投影
+  `requestBody: { required, content: { [contentType]: { schema } } }`；**不生成运行时 body 校验**
+  （与 response 同策略：声明式契约，handler 是事实源）。
+- **台账**：`scripts/schema-coverage.cjs` 解析每个 catalog entry 的 `request:`，输出
+  `requests: X/188 write operations`（分母 = 非 GET op；GET 不参与），`--json` 增
+  `requests` / `requestCovered` / `requestTotal` / `requestUncovered`。response 口径不变（125/318）。
+- **P0 pilot（3）**：`session.create`（`directory` 必填绝对路径 + `worktree` / `metadata`）、
+  `tasks.submit`（`kind` / `parentSessionID` 必填；shell→`command`、subagent→`prompt` 的条件必填由
+  service 校验，schema 用 optional + description 表达）、`pods.tasks.create`（`title` 必填；
+  plan 模式 `goalId` 必填，manual 可选 `goalId` / `ownerMemberId`，`actorSessionID` 是鉴权 actor）。
+  生成物 diff 恰好这 3 个 op 从 `requestBody?: never` 变为请求体 schema，`gen:api` 幂等。
+- **残余**：其余 185 个写 op 按 W1-W7 分批推进；`REQUEST_EXCLUDED` 清单与收口覆盖测试在 E10g 收口波落地。
 
 ---
 

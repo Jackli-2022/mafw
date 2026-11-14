@@ -512,6 +512,43 @@
         "tags": [
           "session"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "directory"
+                ],
+                "properties": {
+                  "directory": {
+                    "minLength": 1,
+                    "pattern": "^(?:[A-Za-z]:[\\\\/]|[\\\\/])",
+                    "description": "Absolute project directory path (drive, POSIX root, or UNC).",
+                    "type": "string"
+                  },
+                  "worktree": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "metadata": {
+                    "type": "object",
+                    "patternProperties": {
+                      "^(.*)$": {}
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -1858,6 +1895,96 @@
         "tags": [
           "task"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "kind",
+                  "parentSessionID"
+                ],
+                "properties": {
+                  "kind": {
+                    "anyOf": [
+                      {
+                        "const": "shell",
+                        "type": "string"
+                      },
+                      {
+                        "const": "subagent",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "parentSessionID": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "command": {
+                    "description": "Required when kind is \"shell\".",
+                    "type": "string"
+                  },
+                  "cwd": {
+                    "type": "string"
+                  },
+                  "timeout": {
+                    "type": "number"
+                  },
+                  "prompt": {
+                    "description": "Required when kind is \"subagent\".",
+                    "type": "string"
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "object",
+                    "required": [
+                      "providerID",
+                      "modelID"
+                    ],
+                    "properties": {
+                      "providerID": {
+                        "type": "string"
+                      },
+                      "modelID": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "outputSchema": {
+                    "type": "object",
+                    "required": [
+                      "schema"
+                    ],
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "schema": {
+                        "type": "object",
+                        "patternProperties": {
+                          "^(.*)$": {}
+                        }
+                      },
+                      "retryCount": {
+                        "type": "number"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -22700,6 +22827,47 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "title"
+                ],
+                "properties": {
+                  "title": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "plan": {
+                    "type": "boolean"
+                  },
+                  "waveId": {
+                    "type": "string"
+                  },
+                  "goalId": {
+                    "description": "Required for plan tasks (plan:true or waveId set).",
+                    "type": "string"
+                  },
+                  "acceptance": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "ownerMemberId": {
+                    "type": "string"
+                  },
+                  "actorSessionID": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"

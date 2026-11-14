@@ -23,6 +23,16 @@ export interface RouteDef {
    */
   response?: object | null;
   /**
+   * E10g：请求 body schema（TypeBox / JSON Schema）。缺省 = 未建模请求体
+   * （openapi 不生成 requestBody）；`null` 不用——排除项直接不写本字段。
+   * 只声明、不运行时校验：handler 仍是请求形状的事实源。
+   */
+  request?: object;
+  /** 请求 content-type（默认 'application/json'；二进制上传用 'application/octet-stream'）。 */
+  requestContentType?: string;
+  /** 请求体是否必填（默认 true；无 body 的动作用 `request: Type.Object({})` + false）。 */
+  requestRequired?: boolean;
+  /**
    * Phase 3 dispatch；shadow 登记阶段缺省。返回 false 表示"实际未处理"
    * （模块内部正则未命中，如 query 形状差异）→ dispatch 放行回退 legacy 链；
    * 返回 void/true 视为已处理。
@@ -145,6 +155,13 @@ export class RouteRegistry {
         schema: { type: 'string' },
       }));
       if (params.length) op.parameters = params;
+      // E10g code-first：RouteDef.request 直接投影成 requestBody（只声明，不校验）。
+      if (def.request) {
+        op.requestBody = {
+          required: def.requestRequired !== false,
+          content: { [def.requestContentType ?? 'application/json']: { schema: def.request } },
+        };
+      }
       // code-first：RouteDef.response 直接投影成 OpenAPI 200 content schema。
       op.responses = def.response
         ? { 200: { description: 'OK', content: { 'application/json': { schema: def.response } } } }
