@@ -1846,6 +1846,8 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 > 承接 E10g（请求 **189/195**）。E10h 给 **195 个写 op**（非 GET）补 200 响应契约：
 > 写响应 **0 → 194/195（99.5%）+ 1 排除（`tts.speakStream`）**，total response
 > **127 → 320/327（97.9%）**；GET 侧 126/132 已全部覆盖（6 个非 JSON GET 不进 JSON schema）。
+> 注：E10g 段落里的「JSON GET 127/133」是混合口径（127 含 `humanToken.rotate` POST、133 含该 POST），
+> E10h 起统一用 126/132。
 > spec：`docs/superpowers/specs/2026-11-15-gateway-e10h-write-responses-design.md`；
 > plan：`docs/superpowers/plans/2026-11-15-gateway-e10h-write-responses.md`；
 > 交付记录：`docs/releases/2026-11-15-gateway-e10h-write-responses.md`。

@@ -68,4 +68,3 @@ export const BackgroundJobOutputResponse = Type.Object({
  * （task 源 `jobFromTask`，子代理源 `mergeSubagents`）。
  */
 export const BackgroundJobCancelResponse = BackgroundJobSchema
-

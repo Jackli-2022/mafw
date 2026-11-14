@@ -56,4 +56,3 @@ export const TerminalConnectTicketResponse = Type.Object({
 export const TerminalRemoveResponse = Type.Object({
   ok: Type.Literal(true),
 })
-

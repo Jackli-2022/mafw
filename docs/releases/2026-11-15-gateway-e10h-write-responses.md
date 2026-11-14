@@ -198,7 +198,7 @@ Time:        357.294 s
 | 文件 | 基线 → 终值 | 增量 | 依据 |
 |---|---|---|---|
 | `gateway/tests/unit/api-contract.test.ts` | 159 → **231** | **+72** | P0 +4 / R1 +9 / R2 +13 / R3 +11 / R4 +8 / R5 +16 / R6 +11（逐批 200 形状 + 复用等价 + 常量回执 + 台账锚） |
-| `gateway/tests/unit/architecture/schema-coverage.test.ts` | 31 → **35** 声明（**52 passed**） | **+4 声明 / +21 passed** | P0 +2（写响应台账 / pilot 具名）、R3 +1、R4 +1；R1/R2/R5/R6 用既有用例改写下界与逐 op 清单（`test.each` 展开后 passed +21） |
+| `gateway/tests/unit/architecture/schema-coverage.test.ts` | 31 → **52** | **+21** | P0 +2 / R1 +2 / R2 +2 / R3 +3 / R4 +3 / R5 +5 / R6 +4（逐批更新下界与逐 op 清单；无 `test.each`） |
 | `gateway/tests/unit/architecture/write-response-coverage.test.ts` | 0 → **7**（**new suite**） | **+7** | E10h-close 收口守卫（恰好其一 / 排除台账 / 195 算术 / 320-327 对账 / 无 GET / 形状清单 / mutation） |
 | **gateway 合计** | — | **+100** | 可执行 test case：93（P0–R6）+ 7（closeout） |
 | SDK / desktop / mobile | — | **0** | 本波无 SDK 手写类型、无 desktop、无 mobile 代码改动（SDK 226、mobile 定向测试不变） |

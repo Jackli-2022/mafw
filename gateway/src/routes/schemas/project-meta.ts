@@ -142,4 +142,3 @@ export const FileHistoryRestoreResponse = Type.Object({
   ok: Type.Literal(true),
   rel: Type.String(),
 })
-
