@@ -4723,7 +4723,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -4743,7 +4747,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    goalId: string;
+                    revision: number;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5539,7 +5550,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5559,7 +5574,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    message: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -6779,7 +6800,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -6827,7 +6852,17 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    directory: string;
+                    cwd?: string;
+                    cols?: number;
+                    rows?: number;
+                    title?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -6847,7 +6882,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -6867,7 +6906,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    directory?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7713,7 +7758,17 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    sessionID: string;
+                    /** @description Required unless resolvable from sessionID. */
+                    directory?: string;
+                    paths: string[];
+                    reason?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -7764,7 +7819,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    sessionID: string;
+                    entryId: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -11938,7 +12000,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12290,7 +12356,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    status: "active" | "idle" | "paused" | "archived";
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12310,7 +12382,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12404,7 +12480,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Member session acting on behalf of a role; absent = human/local caller. */
+                    actorSessionID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12425,7 +12508,18 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    title?: string;
+                    acceptance?: string[];
+                    status?: "pending" | "in_progress" | "blocked" | "review" | "done" | "failed" | "skipped" | "reopened";
+                    ownerMemberId?: string;
+                    /** @description Member session acting on behalf of a role; absent = human/local caller. */
+                    actorSessionID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12482,7 +12576,21 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    kind: "note" | "request" | "review" | "decision" | "escalation";
+                    body: string;
+                    /** @description Required when actorSessionID is absent. */
+                    fromMemberId?: string;
+                    toMemberId?: string;
+                    /** @description Requires toMemberId; triggers immediate delivery. */
+                    notify?: boolean;
+                    /** @description Member session acting on behalf of a role; absent = human/local caller. */
+                    actorSessionID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12503,7 +12611,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12524,7 +12636,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Member session acting on behalf of a role; absent = human/local caller. */
+                    actorSessionID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12545,7 +12664,15 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    memberId: string;
+                    /** @description Member session acting on behalf of a role; absent = human/local caller. */
+                    actorSessionID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12565,7 +12692,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12585,7 +12716,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12716,7 +12851,52 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    title: string;
+                    /** @description Required unless charter is present. */
+                    objective?: string;
+                    /** @description Required unless objective is present. */
+                    charter?: string;
+                    source?: "desktop" | "lead" | "a2a" | "automation" | "user" | "tui" | "agent" | "mobile";
+                    sourceRef?: {
+                        sessionID?: string;
+                        messageID?: string;
+                        /** @description Snapshot text; required by handoff. */
+                        snapshot?: string;
+                        topicId?: string;
+                        capturedAt?: string;
+                        messageRange?: {
+                            from: string;
+                            to: string;
+                        };
+                    };
+                    acceptance?: string[];
+                    boundaries?: string[];
+                    metrics?: {
+                        [key: string]: {
+                            target?: number;
+                            unit?: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                    priority?: "low" | "medium" | "high" | "critical";
+                    maxLoops?: number;
+                    budget?: {
+                        maxTurns?: number;
+                        maxCostUsd?: number;
+                    };
+                    taskType?: "feature" | "bugfix" | "refactor" | "research" | "docs" | "test" | "other";
+                    planReview?: "manual" | "auto";
+                    handoff?: "current-topic" | "none";
+                    topicId?: string;
+                    /** @description Member session acting on behalf of a role; absent = human/local caller. */
+                    actorSessionID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12736,7 +12916,33 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    title: string;
+                    /** @description Required unless charter is present. */
+                    objective?: string;
+                    /** @description Required unless objective is present. */
+                    charter?: string;
+                    sourceRef: {
+                        sessionID?: string;
+                        messageID?: string;
+                        snapshot: string;
+                        topicId?: string;
+                        capturedAt?: string;
+                        messageRange?: {
+                            from: string;
+                            to: string;
+                        };
+                    };
+                    acceptance?: string[];
+                    boundaries?: string[];
+                    priority?: "low" | "medium" | "high" | "critical";
+                    taskType?: "feature" | "bugfix" | "refactor" | "research" | "docs" | "test" | "other";
+                    planReview?: "manual" | "auto";
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12757,7 +12963,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Member session acting on behalf of a role; absent = human/local caller. */
+                    actorSessionID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12913,7 +13126,22 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    items: {
+                        rel: string;
+                        comment: string;
+                        startLine?: number | null;
+                        endLine?: number | null;
+                        code?: string;
+                        /** @description PodReviewAnchor: quote / jsonPath / cell / region (stored verbatim). */
+                        anchor?: unknown;
+                    }[];
+                    revision?: number;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12935,7 +13163,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    note?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12957,7 +13191,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    note?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -12978,7 +13218,17 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @constant */
+                    confirm: true;
+                    revision?: number;
+                    force?: boolean;
+                    riskAcknowledged?: boolean;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -13084,7 +13334,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    file: "POD" | "MEMORY" | "GLOSSARY";
+                    content?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -13135,7 +13392,24 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Required unless message is present. */
+                    text?: string;
+                    /** @description Alias of text. */
+                    message?: string;
+                    parts?: {
+                        /** @constant */
+                        type: "text";
+                        text: string;
+                        synthetic?: boolean;
+                    }[];
+                    /** @description Member session acting on behalf of a role; absent = human/local caller. */
+                    actorSessionID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -13156,7 +13430,25 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    mode?: "decided" | "clear" | "needs_user" | "request";
+                    revision?: number;
+                    reason?: string | null;
+                    userWords?: string;
+                    optionId?: string;
+                    options?: {
+                        id: string;
+                        title: string;
+                        summary?: string | null;
+                        risks?: string[] | null;
+                    }[];
+                    /** @description Member session acting on behalf of a role; absent = human/local caller. */
+                    actorSessionID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -13250,7 +13542,54 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    probes?: {
+                        question: string;
+                        hypothesis: string;
+                        scope: {
+                            paths: string[];
+                            commandClasses: string[];
+                            network: boolean;
+                            credentials: string[];
+                        };
+                        budget: {
+                            maxMinutes: number;
+                            maxUsd: number;
+                        };
+                        evidenceRequired?: string[];
+                        affects?: {
+                            planAssertions?: string[];
+                            evalMethods?: string[];
+                            options?: string[];
+                        };
+                        revision?: number;
+                    }[];
+                    question?: string;
+                    hypothesis?: string;
+                    scope?: {
+                        paths: string[];
+                        commandClasses: string[];
+                        network: boolean;
+                        credentials: string[];
+                    };
+                    budget?: {
+                        maxMinutes: number;
+                        maxUsd: number;
+                    };
+                    evidenceRequired?: string[];
+                    affects?: {
+                        planAssertions?: string[];
+                        evalMethods?: string[];
+                        options?: string[];
+                    };
+                    revision?: number;
+                    /** @description Member session acting on behalf of a role; absent = human/local caller. */
+                    actorSessionID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -13271,7 +13610,18 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Required unless reason is present. */
+                    feedback?: string;
+                    /** @description Required unless feedback is present. */
+                    reason?: string;
+                    /** @description Member session acting on behalf of a role; absent = human/local caller. */
+                    actorSessionID?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {

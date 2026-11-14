@@ -3721,7 +3721,7 @@ describe('api-contract: E10g request bodies (W1 session writes)', () => {
     return body;
   }
 
-  test('write ops with a requestBody count matches the coverage ledger (38 = P0 3 + W1 35)', () => {
+  test('write ops with a requestBody count matches the coverage ledger (71 = P0 3 + W1 35 + W2W3 33)', () => {
     const withBody: string[] = [];
     for (const methods of Object.values<any>(contract.paths)) {
       for (const [method, op] of Object.entries<any>(methods)) {
@@ -3729,10 +3729,13 @@ describe('api-contract: E10g request bodies (W1 session writes)', () => {
         if (op.requestBody) withBody.push(op.operationId);
       }
     }
-    expect(withBody).toHaveLength(38);
+    expect(withBody).toHaveLength(71);
     expect(withBody).toEqual(expect.arrayContaining([
       'session.create', 'tasks.submit', 'pods.tasks.create',
       'session.config.set', 'session.promptAsync', 'structured.submit',
+      'tasks.message', 'terminal.create', 'fileHistory.snapshot',
+      'pods.update', 'pods.messages.create', 'pods.goals.accept',
+      'pod.events.seenAll',
     ]));
   });
 
@@ -3831,6 +3834,115 @@ describe('api-contract: E10g request bodies (W1 session writes)', () => {
       const schema = body.content['application/json'].schema;
       expect(`${id}:${schema.type}`).toBe(`${id}:object`);
       expect(Object.keys(schema.properties ?? {})).toEqual([]);
+    }
+  });
+});
+
+describe('api-contract: E10g request bodies (W2/W3 tasks, terminal, pods)', () => {
+  function bodyOf(operationId: string): any {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const op of Object.values<any>(methods)) {
+        if (op?.operationId === operationId) {
+          expect(`${operationId}:requestBody`).toBe(`${operationId}:${op.requestBody ? 'requestBody' : 'missing'}`);
+          return op.requestBody;
+        }
+      }
+    }
+    throw new Error(`operation not found: ${operationId}`);
+  }
+
+  function schemaOf(operationId: string): any {
+    return bodyOf(operationId).content['application/json'].schema;
+  }
+
+  test('tasks.message / terminal.create / fileHistory.snapshot: required anchors', () => {
+    expect(schemaOf('tasks.message').required).toEqual(['message']);
+    expect(schemaOf('terminal.create').required).toEqual(['directory']);
+    expect(schemaOf('terminal.create').properties.cols.type).toBe('number');
+
+    const snapshot = bodyOf('fileHistory.snapshot');
+    expect(snapshot.required).toBe(true);
+    const schema = snapshot.content['application/json'].schema;
+    expect(schema.required).toEqual(['sessionID', 'paths']);
+    // directory is resolved from sessionID when absent (office skill sends only sessionID).
+    expect(schema.required).not.toContain('directory');
+    expect(schema.properties.paths.minItems).toBe(1);
+    expect(schema.properties.paths.maxItems).toBe(200);
+    expect(schemaOf('fileHistory.restore').required).toEqual(['sessionID', 'entryId']);
+  });
+
+  test('pods.update is a status-only PATCH with a closed status enum', () => {
+    const body = bodyOf('pods.update');
+    expect(body.required).toBe(true);
+    const schema = body.content['application/json'].schema;
+    expect(schema.required).toEqual(['status']);
+    expect(schema.properties.status.anyOf.map((v: any) => v.const))
+      .toEqual(['active', 'idle', 'paused', 'archived']);
+  });
+
+  test('pods.tasks.update: plan/state fields all optional (mixing is a handler 400)', () => {
+    const schema = schemaOf('pods.tasks.update');
+    expect(schema.required).toBeUndefined();
+    expect(Object.keys(schema.properties).sort()).toEqual([
+      'acceptance', 'actorSessionID', 'ownerMemberId', 'status', 'title',
+    ]);
+    expect(schema.properties.status.anyOf.map((v: any) => v.const))
+      .toEqual(['pending', 'in_progress', 'blocked', 'review', 'done', 'failed', 'skipped', 'reopened']);
+  });
+
+  test('pods.messages.create: kind + body required, actor/from are the auth pair', () => {
+    const schema = schemaOf('pods.messages.create');
+    expect(schema.required).toEqual(['kind', 'body']);
+    expect(schema.properties.kind.anyOf.map((v: any) => v.const))
+      .toEqual(['note', 'request', 'review', 'decision', 'escalation']);
+    expect(schema.properties.fromMemberId.description).toContain('actorSessionID');
+    expect(schema.properties.notify.type).toBe('boolean');
+  });
+
+  test('pods.goals.accept: confirm:true literal, optional revision/force/risk flags', () => {
+    const schema = schemaOf('pods.goals.accept');
+    expect(schema.required).toEqual(['confirm']);
+    expect(schema.properties.confirm.const).toBe(true);
+    expect(schema.properties.revision.minimum).toBe(1);
+    expect(schema.properties.force.type).toBe('boolean');
+  });
+
+  test('pods.goals.create / pods.goals.handoff: title anchors, handoff needs sourceRef.snapshot', () => {
+    const create = schemaOf('pods.goals.create');
+    expect(create.required).toEqual(['title']);
+    expect(create.properties.source.anyOf.map((v: any) => v.const))
+      .toEqual(['desktop', 'lead', 'a2a', 'automation', 'user', 'tui', 'agent', 'mobile']);
+
+    const handoff = schemaOf('pods.goals.handoff');
+    expect(handoff.required).toEqual(['title', 'sourceRef']);
+    expect(handoff.properties.sourceRef.required).toEqual(['snapshot']);
+  });
+
+  test('pod.events.seenAll: goalId + revision are required', () => {
+    expect(schemaOf('pod.events.seenAll').required).toEqual(['goalId', 'revision']);
+  });
+
+  test('W2/W3 empty and optional-body classifications project to required:false', () => {
+    for (const id of [
+      'tasks.cancel',
+      'terminal.remove',
+      'background.jobs.cancel',
+      'pods.create',
+      'pods.lead.ensure',
+      'pods.messages.read',
+      'pods.wake',
+      'pods.sleep',
+      'pod.events.seen',
+    ]) {
+      const body = bodyOf(id);
+      expect(`${id}:${body.required}`).toBe(`${id}:false`);
+      expect(Object.keys(body.content['application/json'].schema.properties ?? {})).toEqual([]);
+    }
+    // Optional body with declared fields: the actor / query fallback.
+    for (const id of ['pods.tasks.delete', 'pods.goals.cancel', 'terminal.connectTicket']) {
+      const body = bodyOf(id);
+      expect(`${id}:${body.required}`).toBe(`${id}:false`);
+      expect(Object.keys(body.content['application/json'].schema.properties).length).toBeGreaterThan(0);
     }
   });
 });

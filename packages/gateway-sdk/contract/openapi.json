@@ -481,6 +481,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -504,6 +515,29 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "goalId",
+                  "revision"
+                ],
+                "properties": {
+                  "goalId": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -2433,6 +2467,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -2456,6 +2501,25 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "message"
+                ],
+                "properties": {
+                  "message": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -6082,6 +6146,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -6166,6 +6241,37 @@
         "tags": [
           "terminal"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "directory"
+                ],
+                "properties": {
+                  "directory": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "cwd": {
+                    "type": "string"
+                  },
+                  "cols": {
+                    "type": "number"
+                  },
+                  "rows": {
+                    "type": "number"
+                  },
+                  "title": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -6189,6 +6295,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -6212,6 +6329,21 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "directory": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -8344,6 +8476,42 @@
         "tags": [
           "internal"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "sessionID",
+                  "paths"
+                ],
+                "properties": {
+                  "sessionID": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "directory": {
+                    "description": "Required unless resolvable from sessionID.",
+                    "type": "string"
+                  },
+                  "paths": {
+                    "minItems": 1,
+                    "maxItems": 200,
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "reason": {
+                    "maxLength": 200,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -8432,6 +8600,30 @@
         "tags": [
           "internal"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "sessionID",
+                  "entryId"
+                ],
+                "properties": {
+                  "sessionID": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "entryId": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -20870,6 +21062,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -23389,6 +23592,41 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "anyOf": [
+                      {
+                        "const": "active",
+                        "type": "string"
+                      },
+                      {
+                        "const": "idle",
+                        "type": "string"
+                      },
+                      {
+                        "const": "paused",
+                        "type": "string"
+                      },
+                      {
+                        "const": "archived",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -23412,6 +23650,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -23704,6 +23953,70 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "acceptance": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "status": {
+                    "anyOf": [
+                      {
+                        "const": "pending",
+                        "type": "string"
+                      },
+                      {
+                        "const": "in_progress",
+                        "type": "string"
+                      },
+                      {
+                        "const": "blocked",
+                        "type": "string"
+                      },
+                      {
+                        "const": "review",
+                        "type": "string"
+                      },
+                      {
+                        "const": "done",
+                        "type": "string"
+                      },
+                      {
+                        "const": "failed",
+                        "type": "string"
+                      },
+                      {
+                        "const": "skipped",
+                        "type": "string"
+                      },
+                      {
+                        "const": "reopened",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "ownerMemberId": {
+                    "type": "string"
+                  },
+                  "actorSessionID": {
+                    "description": "Member session acting on behalf of a role; absent = human/local caller.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -23733,6 +24046,22 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "actorSessionID": {
+                    "description": "Member session acting on behalf of a role; absent = human/local caller.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -23889,6 +24218,65 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "kind",
+                  "body"
+                ],
+                "properties": {
+                  "kind": {
+                    "anyOf": [
+                      {
+                        "const": "note",
+                        "type": "string"
+                      },
+                      {
+                        "const": "request",
+                        "type": "string"
+                      },
+                      {
+                        "const": "review",
+                        "type": "string"
+                      },
+                      {
+                        "const": "decision",
+                        "type": "string"
+                      },
+                      {
+                        "const": "escalation",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "body": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "fromMemberId": {
+                    "description": "Required when actorSessionID is absent.",
+                    "type": "string"
+                  },
+                  "toMemberId": {
+                    "type": "string"
+                  },
+                  "notify": {
+                    "description": "Requires toMemberId; triggers immediate delivery.",
+                    "type": "boolean"
+                  },
+                  "actorSessionID": {
+                    "description": "Member session acting on behalf of a role; absent = human/local caller.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -23920,6 +24308,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -23951,6 +24350,22 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "actorSessionID": {
+                    "description": "Member session acting on behalf of a role; absent = human/local caller.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -23982,6 +24397,29 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "memberId"
+                ],
+                "properties": {
+                  "memberId": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "actorSessionID": {
+                    "description": "Member session acting on behalf of a role; absent = human/local caller.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -24005,6 +24443,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -24028,6 +24477,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -24687,6 +25147,232 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "title"
+                ],
+                "properties": {
+                  "title": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "objective": {
+                    "description": "Required unless charter is present.",
+                    "type": "string"
+                  },
+                  "charter": {
+                    "description": "Required unless objective is present.",
+                    "type": "string"
+                  },
+                  "source": {
+                    "anyOf": [
+                      {
+                        "const": "desktop",
+                        "type": "string"
+                      },
+                      {
+                        "const": "lead",
+                        "type": "string"
+                      },
+                      {
+                        "const": "a2a",
+                        "type": "string"
+                      },
+                      {
+                        "const": "automation",
+                        "type": "string"
+                      },
+                      {
+                        "const": "user",
+                        "type": "string"
+                      },
+                      {
+                        "const": "tui",
+                        "type": "string"
+                      },
+                      {
+                        "const": "agent",
+                        "type": "string"
+                      },
+                      {
+                        "const": "mobile",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "sourceRef": {
+                    "type": "object",
+                    "properties": {
+                      "sessionID": {
+                        "type": "string"
+                      },
+                      "messageID": {
+                        "type": "string"
+                      },
+                      "snapshot": {
+                        "description": "Snapshot text; required by handoff.",
+                        "type": "string"
+                      },
+                      "topicId": {
+                        "type": "string"
+                      },
+                      "capturedAt": {
+                        "type": "string"
+                      },
+                      "messageRange": {
+                        "type": "object",
+                        "required": [
+                          "from",
+                          "to"
+                        ],
+                        "properties": {
+                          "from": {
+                            "type": "string"
+                          },
+                          "to": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "acceptance": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "boundaries": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "metrics": {
+                    "type": "object",
+                    "patternProperties": {
+                      "^(.*)$": {
+                        "additionalProperties": true,
+                        "type": "object",
+                        "properties": {
+                          "target": {
+                            "type": "number"
+                          },
+                          "unit": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "priority": {
+                    "anyOf": [
+                      {
+                        "const": "low",
+                        "type": "string"
+                      },
+                      {
+                        "const": "medium",
+                        "type": "string"
+                      },
+                      {
+                        "const": "high",
+                        "type": "string"
+                      },
+                      {
+                        "const": "critical",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "maxLoops": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "budget": {
+                    "type": "object",
+                    "properties": {
+                      "maxTurns": {
+                        "type": "number"
+                      },
+                      "maxCostUsd": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "taskType": {
+                    "anyOf": [
+                      {
+                        "const": "feature",
+                        "type": "string"
+                      },
+                      {
+                        "const": "bugfix",
+                        "type": "string"
+                      },
+                      {
+                        "const": "refactor",
+                        "type": "string"
+                      },
+                      {
+                        "const": "research",
+                        "type": "string"
+                      },
+                      {
+                        "const": "docs",
+                        "type": "string"
+                      },
+                      {
+                        "const": "test",
+                        "type": "string"
+                      },
+                      {
+                        "const": "other",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "planReview": {
+                    "anyOf": [
+                      {
+                        "const": "manual",
+                        "type": "string"
+                      },
+                      {
+                        "const": "auto",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "handoff": {
+                    "anyOf": [
+                      {
+                        "const": "current-topic",
+                        "type": "string"
+                      },
+                      {
+                        "const": "none",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "topicId": {
+                    "type": "string"
+                  },
+                  "actorSessionID": {
+                    "description": "Member session acting on behalf of a role; absent = human/local caller.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -24710,6 +25396,149 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "title",
+                  "sourceRef"
+                ],
+                "properties": {
+                  "title": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "objective": {
+                    "description": "Required unless charter is present.",
+                    "type": "string"
+                  },
+                  "charter": {
+                    "description": "Required unless objective is present.",
+                    "type": "string"
+                  },
+                  "sourceRef": {
+                    "type": "object",
+                    "required": [
+                      "snapshot"
+                    ],
+                    "properties": {
+                      "sessionID": {
+                        "type": "string"
+                      },
+                      "messageID": {
+                        "type": "string"
+                      },
+                      "snapshot": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "topicId": {
+                        "type": "string"
+                      },
+                      "capturedAt": {
+                        "type": "string"
+                      },
+                      "messageRange": {
+                        "type": "object",
+                        "required": [
+                          "from",
+                          "to"
+                        ],
+                        "properties": {
+                          "from": {
+                            "type": "string"
+                          },
+                          "to": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "acceptance": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "boundaries": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "priority": {
+                    "anyOf": [
+                      {
+                        "const": "low",
+                        "type": "string"
+                      },
+                      {
+                        "const": "medium",
+                        "type": "string"
+                      },
+                      {
+                        "const": "high",
+                        "type": "string"
+                      },
+                      {
+                        "const": "critical",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "taskType": {
+                    "anyOf": [
+                      {
+                        "const": "feature",
+                        "type": "string"
+                      },
+                      {
+                        "const": "bugfix",
+                        "type": "string"
+                      },
+                      {
+                        "const": "refactor",
+                        "type": "string"
+                      },
+                      {
+                        "const": "research",
+                        "type": "string"
+                      },
+                      {
+                        "const": "docs",
+                        "type": "string"
+                      },
+                      {
+                        "const": "test",
+                        "type": "string"
+                      },
+                      {
+                        "const": "other",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "planReview": {
+                    "anyOf": [
+                      {
+                        "const": "manual",
+                        "type": "string"
+                      },
+                      {
+                        "const": "auto",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -24741,6 +25570,22 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "actorSessionID": {
+                    "description": "Member session acting on behalf of a role; absent = human/local caller.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -25442,6 +26287,73 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "items": {
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "rel",
+                        "comment"
+                      ],
+                      "properties": {
+                        "rel": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "comment": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "startLine": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "endLine": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "anchor": {
+                          "description": "PodReviewAnchor: quote / jsonPath / cell / region (stored verbatim)."
+                        }
+                      }
+                    }
+                  },
+                  "revision": {
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -25481,6 +26393,21 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -25520,6 +26447,21 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -25551,6 +26493,35 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "confirm"
+                ],
+                "properties": {
+                  "confirm": {
+                    "const": true,
+                    "type": "boolean"
+                  },
+                  "revision": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "force": {
+                    "type": "boolean"
+                  },
+                  "riskAcknowledged": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -25772,6 +26743,40 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "anyOf": [
+                      {
+                        "const": "POD",
+                        "type": "string"
+                      },
+                      {
+                        "const": "MEMORY",
+                        "type": "string"
+                      },
+                      {
+                        "const": "GLOSSARY",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "content": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -25875,6 +26880,53 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "description": "Required unless message is present.",
+                    "type": "string"
+                  },
+                  "message": {
+                    "description": "Alias of text.",
+                    "type": "string"
+                  },
+                  "parts": {
+                    "maxItems": 8,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "type",
+                        "text"
+                      ],
+                      "properties": {
+                        "type": {
+                          "const": "text",
+                          "type": "string"
+                        },
+                        "text": {
+                          "type": "string"
+                        },
+                        "synthetic": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  },
+                  "actorSessionID": {
+                    "description": "Member session acting on behalf of a role; absent = human/local caller.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -25906,6 +26958,105 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "anyOf": [
+                      {
+                        "const": "decided",
+                        "type": "string"
+                      },
+                      {
+                        "const": "clear",
+                        "type": "string"
+                      },
+                      {
+                        "const": "needs_user",
+                        "type": "string"
+                      },
+                      {
+                        "const": "request",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "revision": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "userWords": {
+                    "type": "string"
+                  },
+                  "optionId": {
+                    "type": "string"
+                  },
+                  "options": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "title"
+                      ],
+                      "properties": {
+                        "id": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "title": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "summary": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "risks": {
+                          "anyOf": [
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "actorSessionID": {
+                    "description": "Member session acting on behalf of a role; absent = human/local caller.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -26266,6 +27417,211 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "probes": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "question",
+                        "hypothesis",
+                        "scope",
+                        "budget"
+                      ],
+                      "properties": {
+                        "question": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "hypothesis": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "scope": {
+                          "type": "object",
+                          "required": [
+                            "paths",
+                            "commandClasses",
+                            "network",
+                            "credentials"
+                          ],
+                          "properties": {
+                            "paths": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "commandClasses": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "network": {
+                              "type": "boolean"
+                            },
+                            "credentials": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        },
+                        "budget": {
+                          "type": "object",
+                          "required": [
+                            "maxMinutes",
+                            "maxUsd"
+                          ],
+                          "properties": {
+                            "maxMinutes": {
+                              "type": "number"
+                            },
+                            "maxUsd": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        "evidenceRequired": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "affects": {
+                          "type": "object",
+                          "properties": {
+                            "planAssertions": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "evalMethods": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "options": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        },
+                        "revision": {
+                          "minimum": 1,
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  },
+                  "question": {
+                    "type": "string"
+                  },
+                  "hypothesis": {
+                    "type": "string"
+                  },
+                  "scope": {
+                    "type": "object",
+                    "required": [
+                      "paths",
+                      "commandClasses",
+                      "network",
+                      "credentials"
+                    ],
+                    "properties": {
+                      "paths": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "commandClasses": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "network": {
+                        "type": "boolean"
+                      },
+                      "credentials": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "budget": {
+                    "type": "object",
+                    "required": [
+                      "maxMinutes",
+                      "maxUsd"
+                    ],
+                    "properties": {
+                      "maxMinutes": {
+                        "type": "number"
+                      },
+                      "maxUsd": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "evidenceRequired": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "affects": {
+                    "type": "object",
+                    "properties": {
+                      "planAssertions": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "evalMethods": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "options": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "revision": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "actorSessionID": {
+                    "description": "Member session acting on behalf of a role; absent = human/local caller.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -26297,6 +27653,30 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "feedback": {
+                    "description": "Required unless reason is present.",
+                    "type": "string"
+                  },
+                  "reason": {
+                    "description": "Required unless feedback is present.",
+                    "type": "string"
+                  },
+                  "actorSessionID": {
+                    "description": "Member session acting on behalf of a role; absent = human/local caller.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"

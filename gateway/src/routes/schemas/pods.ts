@@ -32,7 +32,7 @@
 import { Type } from '@sinclair/typebox'
 import { GoalSourceRefSchema } from './goals'
 
-const PodStatusSchema = Type.Union([
+export const PodStatusSchema = Type.Union([
   Type.Literal('active'),
   Type.Literal('idle'),
   Type.Literal('paused'),
@@ -201,7 +201,7 @@ const PodTaskKindSchema = Type.Union([
   Type.Literal('external_request'),
 ])
 
-const PodTaskStatusSchema = Type.Union([
+export const PodTaskStatusSchema = Type.Union([
   Type.Literal('pending'),
   Type.Literal('in_progress'),
   Type.Literal('blocked'),
@@ -580,19 +580,19 @@ export const PodTechLeadHistoryResponse = Type.Object({
 })
 
 /** Spike 探针作用域（`core/goal/probe.ts` `ProbeScope`）。命令类别在白名单内，schema 按字符串数组承诺。 */
-const PodProbeScopeSchema = Type.Object({
+export const PodProbeScopeSchema = Type.Object({
   paths: Type.Array(Type.String()),
   commandClasses: Type.Array(Type.String()),
   network: Type.Boolean(),
   credentials: Type.Array(Type.String()),
 })
 
-const PodProbeBudgetSchema = Type.Object({
+export const PodProbeBudgetSchema = Type.Object({
   maxMinutes: Type.Number(),
   maxUsd: Type.Number(),
 })
 
-const PodProbeAffectsSchema = Type.Object({
+export const PodProbeAffectsSchema = Type.Object({
   planAssertions: Type.Optional(Type.Array(Type.String())),
   evalMethods: Type.Optional(Type.Array(Type.String())),
   options: Type.Optional(Type.Array(Type.String())),

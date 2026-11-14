@@ -240,6 +240,79 @@ const E10G_W1_EMPTY_OPS = [
   'session.usagePluginsReload',
 ];
 
+/**
+ * E10g-W2/W3：tasks / terminal / background / fileHistory（8）+ pod 写接口（25）= 33。
+ * P0 3 + W1 35 + 这 33 = 71。后续 W4-W7 只会追加，因此总数断言是下界（`>= 71`）。
+ */
+const E10G_W2W3_REQUEST_OPS = [
+  // W2
+  'tasks.cancel',
+  'tasks.message',
+  'terminal.create',
+  'terminal.connectTicket',
+  'terminal.remove',
+  'background.jobs.cancel',
+  'fileHistory.snapshot',
+  'fileHistory.restore',
+  // W3
+  'pods.create',
+  'pods.update',
+  'pods.lead.ensure',
+  'pods.tasks.update',
+  'pods.tasks.delete',
+  'pods.messages.create',
+  'pods.messages.read',
+  'pods.messages.delivery.retry',
+  'pods.messages.delivery.dismiss',
+  'pods.wake',
+  'pods.sleep',
+  'pods.goals.create',
+  'pods.goals.handoff',
+  'pods.goals.cancel',
+  'pods.goals.reviewItems.create',
+  'pods.goals.reviewItems.resolve',
+  'pods.goals.reviewItems.reopen',
+  'pods.goals.accept',
+  'pods.memory.write',
+  'pods.goals.techLead.messages',
+  'pods.goals.direction',
+  'pods.goals.probes.create',
+  'pods.goals.reject',
+  'pod.events.seen',
+  'pod.events.seenAll',
+];
+
+/**
+ * W2/W3 的「body 被完全忽略」动作（空对象 + `required:false`）：
+ * tasks.cancel / terminal.remove / background.jobs.cancel（只有 path+query）、
+ * pods.create（按 projectId ensure）/ pods.lead.ensure / pods.messages.read /
+ * pods.wake / pods.sleep / pod.events.seen（只有路径参数）。
+ */
+const E10G_W2W3_EMPTY_OPS = [
+  'background.jobs.cancel',
+  'pod.events.seen',
+  'pods.create',
+  'pods.lead.ensure',
+  'pods.messages.read',
+  'pods.sleep',
+  'pods.wake',
+  'tasks.cancel',
+  'terminal.remove',
+];
+
+/**
+ * W2/W3 的「body 可缺省但有字段」动作（`required:false` + 非空 properties）：
+ * 只用于 actor 鉴权（pod）或 query 回退（terminal.connectTicket）。
+ */
+const E10G_W2W3_OPTIONAL_OPS = [
+  'pods.goals.cancel',
+  'pods.goals.reviewItems.reopen',
+  'pods.goals.reviewItems.resolve',
+  'pods.messages.delivery.retry',
+  'pods.tasks.delete',
+  'terminal.connectTicket',
+];
+
 function catalogById(): Map<string, { hasRequest: boolean; request?: object; requestRequired?: boolean }> {
   return new Map(
     buildRouteCatalog().map((def) => [
@@ -335,13 +408,13 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
   });
 
   // E10g-W1: session writes. Pinned per-op so a dropped `request:` fails by name,
-  // and as a floor (`>= 38`) so the count can only grow with W2-W7.
-  it('every W1 session write op declares a request schema (catalog requests >= 38)', () => {
+  // and as a floor (>= 71 through W2/W3) so the count can only grow with W4-W7.
+  it('every W1 session write op declares a request schema (catalog requests >= 71)', () => {
     const byId = catalogById();
     const missing = E10G_W1_REQUEST_OPS.filter((id) => !byId.get(id)?.hasRequest);
     expect(missing).toEqual([]);
     const requests = catalogWriteOps().filter((op) => op.hasRequest).map((op) => op.operationId);
-    expect(requests.length).toBeGreaterThanOrEqual(38);
+    expect(requests.length).toBeGreaterThanOrEqual(71);
     expect(requests).toEqual(expect.arrayContaining([...E10G_P0_REQUEST_OPS, ...E10G_W1_REQUEST_OPS]));
   });
 
@@ -359,5 +432,51 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     // The two classifications are disjoint: an empty-object action cannot be
     // one of the JSON-body ops in the W1 list.
     expect(E10G_W1_EMPTY_OPS.filter((id) => !E10G_W1_REQUEST_OPS.includes(id))).toEqual([]);
+  });
+
+  // E10g-W2/W3: tasks/terminal/background/fileHistory + pods. Same shape as W1:
+  // pinned per-op by name, count floor at 71 (P0 3 + W1 35 + W2W3 33).
+  it('every W2/W3 write op declares a request schema (catalog requests >= 71)', () => {
+    const byId = catalogById();
+    const missing = E10G_W2W3_REQUEST_OPS.filter((id) => !byId.get(id)?.hasRequest);
+    expect(missing).toEqual([]);
+    const requests = catalogWriteOps().filter((op) => op.hasRequest).map((op) => op.operationId);
+    expect(requests.length).toBeGreaterThanOrEqual(71);
+    expect(requests).toEqual(expect.arrayContaining([
+      ...E10G_P0_REQUEST_OPS,
+      ...E10G_W1_REQUEST_OPS,
+      ...E10G_W2W3_REQUEST_OPS,
+    ]));
+  });
+
+  it('W2/W3 body-ignored actions use an empty object schema with requestRequired:false', () => {
+    const byId = catalogById();
+    const problems: string[] = [];
+    for (const id of E10G_W2W3_EMPTY_OPS) {
+      const def = byId.get(id);
+      if (!def?.hasRequest) { problems.push(`${id}: missing request`); continue; }
+      if (def.requestRequired !== false) problems.push(`${id}: requestRequired must be false`);
+      const props = (def.request as { properties?: Record<string, unknown> }).properties ?? {};
+      if (Object.keys(props).length !== 0) problems.push(`${id}: expected empty object, got ${Object.keys(props).join(',')}`);
+    }
+    expect(problems).toEqual([]);
+    // Empty-object ops must also be part of the W2/W3 request ledger, and the
+    // optional-body ops must be disjoint from them (fields exist there).
+    expect(E10G_W2W3_EMPTY_OPS.filter((id) => !E10G_W2W3_REQUEST_OPS.includes(id))).toEqual([]);
+    expect(E10G_W2W3_EMPTY_OPS.filter((id) => E10G_W2W3_OPTIONAL_OPS.includes(id))).toEqual([]);
+  });
+
+  it('W2/W3 optional-body actions declare fields but requestRequired:false', () => {
+    const byId = catalogById();
+    const problems: string[] = [];
+    for (const id of E10G_W2W3_OPTIONAL_OPS) {
+      const def = byId.get(id);
+      if (!def?.hasRequest) { problems.push(`${id}: missing request`); continue; }
+      if (def.requestRequired !== false) problems.push(`${id}: requestRequired must be false`);
+      const props = (def.request as { properties?: Record<string, unknown> }).properties ?? {};
+      if (Object.keys(props).length === 0) problems.push(`${id}: expected declared fields, got empty object`);
+    }
+    expect(problems).toEqual([]);
+    expect(E10G_W2W3_OPTIONAL_OPS.filter((id) => !E10G_W2W3_REQUEST_OPS.includes(id))).toEqual([]);
   });
 });

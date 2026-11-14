@@ -37,7 +37,7 @@
 - [E10d 契约覆盖第四批（2026-11-14）](#e10d-契约覆盖第四批2026-11-14)
 - [E10e 契约覆盖第五批（2026-11-14）](#e10e-契约覆盖第五批2026-11-14)
 - [E10f 全量读表面收口（2026-11-14）](#e10f-全量读表面收口2026-11-14)
-- [E10g 请求契约（进行中：P0 + W1，2026-11-14）](#e10g-请求契约进行中p0--w12026-11-14)
+- [E10g 请求契约（进行中：P0 + W1 + W2/W3，2026-11-14）](#e10g-请求契约进行中p0--w1--w2w32026-11-14)
 - [API 端点](#api-端点)
 - [UI 服务](#ui-服务)
 - [数据流全景](#数据流全景)
@@ -1561,10 +1561,11 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 
 ---
 
-## E10g 请求契约（进行中：P0 + W1，2026-11-14）
+## E10g 请求契约（进行中：P0 + W1 + W2/W3，2026-11-14）
 
 > 承接 E10f（响应 125/318）。E10g 给 **188 个写 op** 补请求契约；本篇记录 P0 管线、
-> 3 个 pilot 与 W1（session 写接口 35 个）。
+> 3 个 pilot、W1（session 写接口 35 个）与 W2/W3（tasks/terminal/background/fileHistory 8 个 +
+> pod 写接口 25 个）。
 > spec：`docs/superpowers/specs/2026-11-14-gateway-e10g-request-contracts-design.md`。
 
 - **`RouteDef` 新增三个声明位**：`request?: object`（TypeBox / JSON Schema，缺省 = 未建模）、
@@ -1590,7 +1591,23 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
   background / usage plugins reload/delete/test），空对象统一 `EmptyRequest` + `requestRequired:false`。
   `session.command` 无 gateway handler（尾部反代 runtime serve），按 `@opencode-ai/sdk`
   `SessionCommandData.body` 声明（body 可缺省，`command`/`arguments` 必填）。
-- **残余**：其余 150 个写 op 按 W2-W7 分批推进；`REQUEST_EXCLUDED` 清单与收口覆盖测试在 E10g 收口波落地。
+- **W2/W3（33 个）**：schema 在 `routes/schemas/task-write.ts`（W2：8 个）与
+  `routes/schemas/pod-write.ts`（W3：25 个，复用 `schemas/pods.ts` 的 status/probe 子 schema）。
+  **18 个 JSON body + 6 个可选 body + 9 个空对象动作**。空对象（`requestRequired:false`）只给
+  handler 完全不读 body 的动作：`tasks.cancel` / `terminal.remove` / `background.jobs.cancel`
+  （三者的输入只在 path/query）、`pods.create`（按 projectId `ensure`）/ `pods.lead.ensure` /
+  `pods.messages.read` / `pods.wake` / `pods.sleep` / `pod.events.seen`（只用路径 id）。
+  可选 body（有字段但 `requestRequired:false`）是只用于 actor 鉴权或 query 回退的动作：
+  `pods.tasks.delete` / `pods.goals.cancel` / `pods.messages.delivery.retry`（`actorSessionID`）、
+  `pods.goals.reviewItems.resolve` / `reopen`（可选 `note`）、`terminal.connectTicket`
+  （可选 `directory`，缺省回退 query）。逐 op 分类理由写在两个 schema 文件的头注释里。
+  - `pods.a2a` **不在**本批：A2A 协议透传按 spec §1 排除（W7 的 `REQUEST_EXCLUDED`）。
+  - `pods.update` 是 status-only PATCH：只有 `status`（active/idle/paused/archived，handler 400 收窄）。
+  - `pods.tasks.update` 的 title/acceptance（计划面，Lead）与 status/ownerMemberId（状态面）在
+    handler 里互斥（混用 400）；schema 全部 optional，不伪造 oneOf。
+  - `pod.events.seenAll` 是 JSON body（`goalId` + `revision` 缺一 400），与 `pod.events.seen`
+    的空 body 不同——以 handler 为事实源，没有按「seen 类一律空对象」硬套。
+- **残余**：其余 117 个写 op 按 W4-W7 分批推进；`REQUEST_EXCLUDED` 清单与收口覆盖测试在 E10g 收口波落地。
 
 ---
 
