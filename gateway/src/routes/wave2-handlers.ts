@@ -38,6 +38,8 @@ import {
   handlePluginDoctor,
   handlePluginDoctorAll,
   handlePluginAudit,
+  handlePluginLastGood,
+  handlePluginRollback,
 } from './plugin-packages';
 import type { PluginWebRouteDeps } from './plugin-web';
 import {
@@ -154,6 +156,10 @@ export function attachWave2Handlers(registry: RouteRegistry, gw: Wave2Gateway): 
     handlePluginUnquarantine(req, res, gw.pluginPackageDeps(), { name: params.name })));
   registry.attachHandler('plugins.audit', H(async (req, res) =>
     handlePluginAudit(req, res, gw.pluginPackageDeps())));
+  registry.attachHandler('plugins.lastGood', H(async (req, res, params) =>
+    handlePluginLastGood(req, res, gw.pluginPackageDeps(), { name: params.name })));
+  registry.attachHandler('plugins.rollback', H(async (req, res, params) =>
+    handlePluginRollback(req, res, gw.pluginPackageDeps(), { name: params.name })));
 
   // Task 4：Plugin Web surfaces。catalog 只登记三个精确路径；`ui/*` 与 `api/*`
   // 的通配匹配在 index.ts 的请求链（registry 只支持精确段数）。SSE 事件过滤器

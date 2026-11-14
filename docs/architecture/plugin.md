@@ -186,3 +186,16 @@ re-export shim 已在 Task 7 删除）；驱动包不得 import `gateway/src`，
 - worker 启动失败或无 permission flag → 拒绝 untrusted，绝不 in-process fallback。
 - net 仍是 defense-in-depth（Module._load + global stub），不是 OS 级 hermetic 隔离。
 
+
+## Phase 6C compatible rollback（2026-11-14）
+
+- 宿主只接受 apiVersion 1/2；apiVersion 3+ 只跳过该包，不进 safe mode。
+- manifest host range 比较 MAFW 产品版本；不兼容只跳过该包。
+- deprecated 只产生 doctor warn。
+- 覆盖安装前把当前健康版本快照到 \.last-good/<name>/\；安装失败恢复，首次失败保留目录并 quarantine。
+- 新版本 commit 后写 pendingHealthCheck；健康窗口（默认 5 分钟）通过才提升为 lastKnownGood。
+- 进程在窗口内退出时，下次 boot 在激活前 reconcile：恢复 last-good 或 quarantine。
+- 手动回滚 \POST /api/plugins/:name/rollback\（human only）；last-good 元数据 \GET /api/plugins/:name/last-good\。
+- 10 个 drill 场景由 \
+pm run drill:plugin-trust\ 固化。
+
