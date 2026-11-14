@@ -141,6 +141,7 @@ export type MafwAPI = {
     openUsagePluginsDir: () => Promise<void>
     promptAsync: (opts: { sessionID: string; message?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string }; delivery?: 'queue' | 'steer' | 'followup'; idempotencyKey?: string; expectReply?: boolean; thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'; variant?: string }) => Promise<void>
     command: (opts: { sessionID: string; command: string; arguments?: string; agent?: string; model?: { providerID: string; modelID: string } }) => Promise<void>
+    summarize: (sessionID: string) => Promise<void>
   }
 
   /** T2-5 能力发现（commands/skills/AGENTS 单一来源；唯一命令/技能读取面）。 */
