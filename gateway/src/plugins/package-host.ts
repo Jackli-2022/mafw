@@ -46,7 +46,11 @@ import type {
   UsagePackageEntry,
 } from './package-types';
 import type { PcmChunk, TtsEngine, TtsOpts } from '../tts/types';
-import { parsePackageManifest, type NormalizedPackageManifest } from './package-manifest';
+import {
+  parsePackageManifest,
+  isHostRangeCompatible,
+  type NormalizedPackageManifest,
+} from './package-manifest';
 import type { WorkerHost } from './worker/worker-host';
 
 const VALID_MODALITIES = new Set(['image', 'video', 'audio']);
@@ -101,6 +105,8 @@ export interface PluginHostOptions {
   /** Committed content fingerprint used to detect untrusted file drift. */
   installedFingerprint?: (name: string) => string | undefined;
   onUntrustedDrift?: (name: string, reason: string) => void;
+  /** Product version used by manifest `host` ranges (default MAFW_HOST_VERSION / 5.1.0). */
+  hostVersion?: string;
 }
 
 export interface PluginPendingState {
@@ -1216,6 +1222,19 @@ export class PluginHost {
     // exactly one owner from the first scan onwards.
     void bag;
     this.invalidatePackageCache(desc);
+    const parsedManifest = desc.manifest ? parsePackageManifest(desc.manifest) : null;
+    if (parsedManifest && !parsedManifest.ok) {
+      throw new Error(parsedManifest.errors.join('; '));
+    }
+    const hostVersion = this.options.hostVersion
+      ?? process.env.MAFW_HOST_VERSION
+      ?? '5.1.0';
+    if (parsedManifest?.manifest?.host
+      && !isHostRangeCompatible(parsedManifest.manifest.host, hostVersion)) {
+      throw new Error(
+        `host range ${parsedManifest.manifest.host} does not include ${hostVersion}`,
+      );
+    }
     if (desc.manifest?.kind === 'untrusted') {
       return this.activateWorker(desc, bag);
     }
