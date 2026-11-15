@@ -2205,10 +2205,10 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
   3. catalog 的 `errors: [status…]` 逐项追加，`errorSchemas[status]` 覆盖该状态形状、
      `errorDescription[status]` 覆盖描述；显式状态排在 401/403 之后，故可自定义同名状态。
 - **显式状态码按域取「handler 真有的分支」**，不是按状态码调色板穷举：session 400/404/409/429/503、
-  pods 400/403/404/409、goals/decisions/lead/standing 400/403/404/409、plugins/runtime/config/mcp
-  400/404/409/503、memory/media/tts/mobile/devices 400/404/413/429/503、
-  events/automations/approvals/questions/triage/permissions 400/403/404/409。
-  其中 403 只出现在 human-only / 边界 accept 这类**业务 403**（transport 403 已全局覆盖，不重列）。
+  pods 400/404/409/503、goals/decisions/lead/standing 400/404/409/503、plugins/runtime/config/mcp
+  400/404/409/413/429/503、memory/media/tts/mobile/devices 400/404/409/413/429/503、
+  events/automations/approvals/questions/triage/permissions 400/404/409/503。
+  403 只由 transport 全局（所有 `/api/*`）与 human-only 业务面覆盖，**不逐个显式声明**（显式 403 条目为 0）。
 - **特殊形状只有一类是具名豁免**：`goals.respondQuestion` 的 404/409 用
   `QuestionLedgerErrorSchema`（`{status:'not_found'|'conflict', currentState?}`，**没有 `error` 字段**）——
   handler（`routes/goals-inline.ts`）直接写 question ledger 状态体，套 `ErrorEnvelope` 会宣称一个

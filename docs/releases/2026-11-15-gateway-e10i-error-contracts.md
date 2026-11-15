@@ -55,8 +55,8 @@ errorResponsesFor(def): {
   `prompt` / `promptAsync`（400/404/409/429/503）、queue 三件（404）、`config.set`（400/503）、
   `delete` / `rename` / `summarize` / `revert` / `unrevert` / `abandon` / `resume` / `suspend`
   （400/404/503 按 handler 有的分支）、subagents 四件（400/404）。
-- pods：`create` / `update` / `wake` / `sleep`（400/404/409）、tasks（400/404/409）、messages（400/404）、
-  goals（400/403/404/409，accept 面 403 = human-only 业务 403）、reviewItems（400/404/409）。
+- pods：`create` / `update` / `wake` / `sleep`（400/404/409）、tasks（400/404/409/503）、messages（400/404/503）、
+  goals（400/404/409/503；accept 的 human-only 403 由 transport 全局声明覆盖）、reviewItems（400/404/409/503）。
 - 503 集中出现在 session 写接口的 runtime 缺失面（30 条），对应 handler 的
   `Runtime unavailable` 分支。
 
