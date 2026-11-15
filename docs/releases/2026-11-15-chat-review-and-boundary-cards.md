@@ -5,6 +5,10 @@
 - **范围**：desktop Chat；gateway / SDK / 运行时契约零改动
 - **前置**：`docs/releases/2026-11-15-agent-native-chat-intent.md`（P1 + P2）
 
+> **后续（同日）**：inline BoundaryCard 已移除。Lead 改为在 `mafw_create_goal` 里用
+> `contextSummary` 选择 Goal 来源上下文；话题边界只在「话题」面板 / 后台保留。见
+> `docs/releases/2026-11-15-lead-selected-goal-context.md`。
+
 ## P3：Tech Lead chat 内联评审项
 
 - 当前 tab 是 Goal 的 Tech Lead 讨论、且该 Goal 仍 `active` 时，composer 上方显示最多 3 条未解决

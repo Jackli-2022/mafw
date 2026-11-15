@@ -73,11 +73,13 @@
   撤销，撤销只对 live `active + discussing` 开放并走 `goals.stop`），legacy / running / error
   结果不进入动作卡。自由讨论保留「交给 Lead」交接。Tech Lead chat 在 composer 上方内联最多 3 条
   未解决评审项（`PodReviewItems`，确认解决 / 重新打开仍是 human-only，全部入口在左栏改动面）。
-  Lead chat 内联 `BoundaryCard`（分开 / 合并 / 忽略），数据来自 `lead.topics.boundaries`；进入
-  Lead 会话与消息发送后节流刷新（10s）。Episode 仍按会话存
+  Lead 通过 `mafw_create_goal` 的 `contextSummary` 选择 Goal 来源上下文；不再在 chat 内联
+  `BoundaryCard`。话题边界提案仅在「话题」面板（`TopicIndexPanel`）里可见，
+  `LeadBoundaryService` 作为后台 hint 保留。Episode 仍按会话存
   `localStorage['mafw-episodes:v1:<sessionID>']`（仅分组视图），「标记 Episode」已从 composer
-  移到 transcript header。详见 `docs/releases/2026-11-15-agent-native-chat-intent.md` 与
-  `docs/releases/2026-11-15-chat-review-and-boundary-cards.md`。
+  移到 transcript header。详见 `docs/releases/2026-11-15-agent-native-chat-intent.md`、
+  `docs/releases/2026-11-15-chat-review-and-boundary-cards.md` 与
+  `docs/releases/2026-11-15-lead-selected-goal-context.md`。
 - **Workbench 焦点收口（2026-11-12 Plan 5）**：`WorkbenchShell` 只剩 `FrameBar` /
   `LensBar` / `FocusStage` / `InstrumentRail` / `SubjectPicker` + 壳级
   `PluginSurfaceStage`；`WorkbenchContext`、四 context 持久化、全局 L2、执行抽屉与

@@ -24,7 +24,7 @@
 | `mafw_get_axioms` | 获取 L5 公理 |
 | `mafw_merge_memory` | ★ 跨 worktree 记忆融合 |
 | `mafw_resolve_merge` | 解决记忆融合冲突 |
-| `mafw_create_goal` | 创建 Goal（Lead 专用；`handoff` / `sourceRef` / `topicId`，默认移交 Lead 当前话题） |
+| `mafw_create_goal` | 创建 Goal（Lead 专用；`handoff` / `sourceRef` / `contextSummary` / `topicId`；`contextSummary` 由 Lead 选择来源上下文，替代自动 current-topic 快照） |
 | `mafw_lead_goal_status` | Lead 的 Goal 状态投影（阶段 / 进度 / 阻塞 / 待处理 attention）；只读，不读 Tech Lead 原始 transcript |
 | `mafw_pod_goal_direction` | Tech Lead 方向裁定（`clear` / `needs_user` / `decided`；`goalMode` 选 quick/standard） |
 | `mafw_pod_goal_context` | Lead 为 Goal 选择上下文（可选文件 / 跨 Goal allowlist） |
