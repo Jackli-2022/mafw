@@ -18,6 +18,8 @@ import { HARD_BOUNDARIES } from '../skills/memory-curator-agent';
 import { log } from '../core/utils/logger';
 import { replayPriority, sampleByPriority } from './replay-sampling';
 import { extractTurnFeature } from './t1-features';
+import { readSessionTimeline } from './session-timeline';
+import { buildReplayBlock } from './replay-block';
 import { PipelineBudgetLike } from './pipeline-budget';
 import { topClusters, Cluster } from '../memory/schema-clusters';
 
@@ -334,10 +336,26 @@ export class TurnPipeline {
     );
     const observations: T1Observation[] = [];
     for (const x of sampledTurns) observations.push(...x.obs);
-    const transcript = capTranscript(
+    let transcript = capTranscript(
       observationsToTranscript(observations.slice(0, this.opts.maxObservationsPerSession ?? 200)),
       this.opts.transcriptMaxChars ?? 40_000,
     );
+
+    // Phase B: prefer the ordered T1 timeline (active + archive) over the
+    // priority-sampled transcript. The replay block carries [trace] markers and
+    // the sparse event code; fake DBs / legacy turns fall back to the transcript.
+    try {
+      const timeline = readSessionTimeline(this.opts.t1db, sessionID, {
+        turnSeqs: sessionTurns.map((turn) => turn.turn_id),
+        maxChars: this.opts.transcriptMaxChars ?? 40_000,
+      });
+      const replay = buildReplayBlock(timeline.turns, {
+        mode: 'forward',
+        maxChars: this.opts.transcriptMaxChars ?? 40_000,
+        perTurnChars: 800,
+      });
+      if (replay.block.trim()) transcript = replay.block;
+    } catch { /* fail-open: raw priority transcript remains */ }
 
     // 1b) schema interleave (S2): surface related existing clusters so the
     //     worker integrates into a schema (UPDATE) rather than appending.
@@ -357,9 +375,12 @@ export class TurnPipeline {
     // 2) ask the session's persistent worker agent to save memories itself
     if (transcript.trim()) {
       const context = sessionContext(this.opts.index, sessionID, this.opts.contextEpisodes ?? 10);
+      const transcriptLabel = transcript.includes('--- REPLAY START')
+        ? 'T1 timeline replay (ordered, bounded):'
+        : 'Observations of the last hour:';
       const base = context
-        ? `Prior episodes of this conversation:\n${context}\n\nObservations of the last hour:\n${transcript}`
-        : `Observations of the last hour:\n${transcript}`;
+        ? `Prior episodes of this conversation:\n${context}\n\n${transcriptLabel}\n${transcript}`
+        : `${transcriptLabel}\n${transcript}`;
       const prior = priorKnowledgeFor(this.opts.index, sessionID, transcript, this.opts.replayK ?? 5, {
         needFor: this.opts.needFor,
       });

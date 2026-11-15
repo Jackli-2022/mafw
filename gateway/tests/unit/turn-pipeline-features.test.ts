@@ -45,7 +45,13 @@ describe('TurnPipeline writes the T1 sparse event code', () => {
     });
 
     const index: any = { getIndex: () => ({ entries: [] }) };
-    const worker: any = { prompt: async () => '[EXTRACTED: 0]' };
+    const prompts: string[] = [];
+    const worker: any = {
+      prompt: async (message: string) => {
+        prompts.push(message);
+        return '[EXTRACTED: 0]';
+      },
+    };
     const pipeline = new TurnPipeline({
       t1db: db,
       index,
@@ -60,5 +66,8 @@ describe('TurnPipeline writes the T1 sparse event code', () => {
     expect(feature!.intent).toContain('修一下 reflection');
     expect(feature!.action).toContain('reflection.ts');
     expect(feature!.decision).toContain('adapter 前置 system');
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain('--- REPLAY START');
+    expect(prompts[0]).toContain(`[trace:${turn.trace_id}][INTENT]`);
   });
 });
