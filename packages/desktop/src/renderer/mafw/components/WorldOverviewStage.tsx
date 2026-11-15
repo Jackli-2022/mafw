@@ -46,8 +46,6 @@ export function WorldOverviewStage(props: {
   projectName?: string | null
   refreshTick: () => number
   composerRequest?: number
-  composerInitial?: { title: string; objective?: string } | null
-  onComposerToggle?: () => void
   active: boolean
   team?: WorldTeamProps
   teamFocusRequest?: number
@@ -201,7 +199,6 @@ export function WorldOverviewStage(props: {
             icon="target"
             onClick={() => {
               setComposerOpen((open) => !open)
-              props.onComposerToggle?.()
             }}
           >
             新建 Goal
@@ -243,7 +240,6 @@ export function WorldOverviewStage(props: {
               activeGoalId={activeGoalId()}
               autofocus
               projectName={props.projectName ?? props.projectDir ?? "当前项目"}
-              initial={props.composerInitial ?? undefined}
               onCreate={createGoal}
             />
           </section>

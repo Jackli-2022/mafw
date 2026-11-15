@@ -7,6 +7,7 @@ import { MafwDeltasCard } from "./interact"
 import { MafwRuleCard } from "./automation"
 import { MafwPythonCard, MafwPythonRestartCard } from "./python"
 import { MafwExecuteCard } from "./execute"
+import { MafwGoalCreatedCard } from "./goal-created"
 import { REGISTERED_TOOLS, RULE_TOOLS, aliasKeys } from "./registered-tools"
 
 export { REGISTERED_TOOLS }
@@ -31,4 +32,7 @@ export function registerMafwToolCards() {
   }
   registerAliased("mafw_python", MafwPythonCard)
   registerAliased("mafw_python_restart", MafwPythonRestartCard)
+  // Lead-created discussion Goals get an actionable card; legacy intake keeps
+  // the generic family card through the component's fallback.
+  registerAliased("mafw_create_goal", MafwGoalCreatedCard)
 }

@@ -1,0 +1,52 @@
+/* Lead-created discussion Goal: the inline next-action card. */
+.mafw-goal-created {
+  display: grid;
+  gap: 8px;
+}
+
+.mafw-goal-created-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.mafw-goal-created-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.mafw-goal-created-badge {
+  border-radius: 4px;
+  padding: 1px 6px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.mafw-goal-created-badge[data-tone="muted"] {
+  background: var(--bg-inset);
+  color: var(--text-3);
+}
+
+.mafw-goal-created-meta {
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.mafw-goal-created-warn {
+  color: var(--warning-text);
+}
+
+.mafw-goal-created-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}

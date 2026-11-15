@@ -5,7 +5,6 @@ import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { mimeOf } from "./use-attachments"
 import { enqueueTurn, takeFirstTurn } from "../components/turn-queue"
 import { VOICE_ORIGIN_MARKER_TEXT, appendVoiceOriginMarker } from "./voice-origin-marker"
-import { modeDirective, modeSendsMessage, type ChatMode } from "./composer-mode"
 import { agentKey } from "../agent-identity"
 import type { Annotation } from "../../../shared/annotation-types"
 import type { PendingCapture } from "./pending-captures"
@@ -205,14 +204,8 @@ export function useSendMessage(deps: SendMessageDeps) {
    * synthetic 标记 part；忙时 steer/网关队列内联进文本；本地队列带 flag 重放时
    * 重新标记。slash 命令与 Tech Lead 发送不标记（spec D7）。
    */
-  async function sendMessage(mode: "send" | "queue" = "send", opts?: { voiceOrigin?: boolean; chatMode?: ChatMode }) {
+  async function sendMessage(mode: "send" | "queue" = "send", opts?: { voiceOrigin?: boolean }) {
     const voiceOrigin = opts?.voiceOrigin === true
-    const chatMode = opts?.chatMode
-    if (chatMode && !modeSendsMessage(chatMode)) return
-    const directive = chatMode ? modeDirective(chatMode) : null
-    const modePart = directive
-      ? { type: "text", id: `prt_mode_${Date.now()}`, text: directive, synthetic: true }
-      : null
     const text = input()
     const atts = attachments()
     const agents = mentionedAgents()
@@ -270,7 +263,7 @@ export function useSendMessage(deps: SendMessageDeps) {
         // Task 20：Tech Lead 讨论只能经 sendTechLeadMessage 发送（保留身份/ContextManifest），
         // 忙时一律本地排队，等 idle 后由 sendMessage 走同一条通道。
         const techLeadBusy = !!(await deps.techLeadTarget?.())
-        const deliveryKind = techLeadBusy || !!modePart ? "local-queue" : decideBusyDelivery({
+        const deliveryKind = techLeadBusy ? "local-queue" : decideBusyDelivery({
           mode,
           steerSupported: deps.steerSupported ? deps.steerSupported() === true : false,
           hasMedia: atts.length > 0 || queuedAnnotationImages.length > 0,
@@ -307,7 +300,7 @@ export function useSendMessage(deps: SendMessageDeps) {
           }
         }
         // 本地队列存干净文本 + voiceOrigin flag；flushQueue 重放时重新标记。
-        setQueuedItems(prev => enqueueTurn(prev, { text: queuedText, atts: [...atts, ...queuedAnnotationImages], agents, voiceOrigin: voiceOrigin || undefined, chatMode }))
+        setQueuedItems(prev => enqueueTurn(prev, { text: queuedText, atts: [...atts, ...queuedAnnotationImages], agents, voiceOrigin: voiceOrigin || undefined }))
         // 排队发出的消息同样进输入历史（↑ 可召回——与即时发送路径一致）
         finishBusySend()
         return
@@ -513,14 +506,13 @@ export function useSendMessage(deps: SendMessageDeps) {
           techLead.podId,
           techLead.goalId,
           techLeadText,
-          modePart ? { parts: [modePart] } : undefined,
         )
         console.log("[mafw] sendTechLeadMessage", techLead.goalId, "revision", sent?.revision)
       } else {
         // Plan 2 D3：语音来源标记以 synthetic part 随行（首个非 synthetic part
         // 展示规则保证气泡干净）；message 字段不内联。
         const voicePart = voiceOrigin ? composeVoiceOriginPart(ts) : null
-        const sendParts = [...visionParts, ...fileParts, ...agentParts, ...(voicePart ? [voicePart] : []), ...(modePart ? [modePart] : [])]
+        const sendParts = [...visionParts, ...fileParts, ...agentParts, ...(voicePart ? [voicePart] : [])]
         const result = await window.api.mafw.chat.sendEnriched({
           message: [filePrefix, text.trim(), annotationBlock, reviewBlock, captureBlock, failureNote].filter(Boolean).join("\n"),
           sessionID: sid,
@@ -570,7 +562,7 @@ export function useSendMessage(deps: SendMessageDeps) {
     setAttachments(first.atts as any[])
     setMentionedAgents(() => first.agents)
     // Plan 2：语音来源的排队回合重放时恢复标记。
-    void sendMessage("send", { voiceOrigin: first.voiceOrigin === true, chatMode: first.chatMode })
+    void sendMessage("send", { voiceOrigin: first.voiceOrigin === true })
   }
 
   return { sendMessage, interrupt, flushQueue }

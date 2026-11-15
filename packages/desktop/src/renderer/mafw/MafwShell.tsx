@@ -203,6 +203,7 @@ import { PopoverShell } from "./components/pickers/PopoverShell"
 import { type NavTab } from "./components/nav-tab"
 import { WindowControls } from "./components/WindowControls"
 import { registerMafwToolCards } from "./components/tool-cards"
+import { configureGoalCreatedActions } from "./components/tool-cards/goal-created"
 import { registerUserPluginCards } from "./components/UserPluginCards"
 import { registerUnifiedToolCards } from "./plugins/PluginToolCard"
 import { registerThinkingBlock } from "./components/ThinkingBlock"
@@ -314,10 +315,6 @@ export function MafwShell() {
   const [goalDetailFocus, setGoalDetailFocus] = createSignal<GoalDetailFocus>("timeline")
   let goalDiscussSeq = 0
   const [goalComposerRequest, setGoalComposerRequest] = createSignal(0)
-  const [goalComposerInitial, setGoalComposerInitial] = createSignal<{
-    title: string
-    objective?: string
-  } | null>(null)
   /** 打开统一 Goal 详情，并按 attention action 指定落点（计划/问题/方向/结果）。 */
   const openGoalDetail = (goalId: string, focus: GoalDetailFocus = "timeline"): void => {
     setGoalDetailFocus(focus)
@@ -449,7 +446,6 @@ export function MafwShell() {
   // Registered projects + current selection (welcome pane project switcher).
   const [projects, setProjects] = createSignal<{ id: string; worktree: string }[]>([])
   const [currentProject, setCurrentProject] = createSignal<string | null>(null)
-  createEffect(on(() => currentProject(), () => setGoalComposerInitial(null), { defer: true }))
   // Tabs are project-scoped: layoutProject is the project whose tab strip is
   // currently loaded/safe to persist; null while switching/restoring.
   const [layoutProject, setLayoutProject] = createSignal<string | null>(null)
@@ -683,19 +679,12 @@ export function MafwShell() {
     openProjectWork()
     setTeamFocusRequest((seq) => seq + 1)
   }
-  const openGoalComposer = (initial: { title: string; objective?: string } | null): void => {
+  const openGoalComposer = (): void => {
     openProjectWork()
-    setGoalComposerInitial(initial)
     setGoalComposerRequest((seq) => seq + 1)
   }
   const openNewGoalComposer = (): void => {
-    openGoalComposer(null)
-  }
-  const openGoalComposerWithDraft = (draft: { text: string }): void => {
-    const text = draft.text.trim()
-    if (!text) return
-    const [first] = text.split(/\r?\n/)
-    openGoalComposer({ title: first.slice(0, 120), objective: text })
+    openGoalComposer()
   }
   // 旧 goals / workspace 目的地兼容：不再渲染全页工作空间，统一进右工作台「工作」。
   createEffect(() => {
@@ -1304,6 +1293,25 @@ export function MafwShell() {
     registerThinkingBlock()   // reasoning part → dsh 式可折叠思考块
     // Use the modern session-ui rendering branch (rounded bubbles, v2 tokens).
     document.body.setAttribute("data-new-layout", "")
+    // Increase inline-action cards navigate through the shell, not window events.
+    configureGoalCreatedActions({
+      open: (goalId) => { void openGoalAndDiscuss(goalId, "timeline") },
+      cancel: async (goalId) => {
+        try {
+          await window.api.mafw.goals.control({ goalId, action: "ABORT" })
+          await podStore.refresh()
+          showToastV2({ description: "已撤销刚创建的 Goal", duration: 2500 })
+          return true
+        } catch (err: any) {
+          showToastV2({
+            description: `撤销失败：${String(err?.message ?? err).slice(0, 120)}`,
+            duration: 3500,
+          })
+          return false
+        }
+      },
+    })
+    onCleanup(() => configureGoalCreatedActions(null))
   })
 
   // Listen for UsageDock "go to Config > Usage" link. ConfigPage also listens
@@ -3492,9 +3500,6 @@ export function MafwShell() {
       setGoalPlanOpenRequest({ nonce: (goalPlanOpenRequest()?.nonce ?? 0) + 1, goalId })
     }
   }
-  const openReviewFromChat = (): void => {
-    openChangesFace({ section: "review" })
-  }
   /** Episode 关闭时用的 Goal 身份：Pod 会话身份优先，其次 Tech Lead 映射/工作台焦点。 */
   const episodeGoalReference = (sessionID: string) => {
     const detail = podStore.detail()
@@ -4309,10 +4314,6 @@ export function MafwShell() {
                           onDecisionConfirm={confirmDecisionRecord}
                           onDecisionShelve={shelveDecisionRecord}
                           onDecisionReopen={reopenDecisionRecord}
-                          canDelegate={() => !!currentProject()}
-                          canResolve={() => activeFocus()?.scope.kind === "goal" || contentScopeIsGoal()}
-                          onDelegateDraft={openGoalComposerWithDraft}
-                          onResolveRequest={openReviewFromChat}
                           onCloseEpisode={closeEpisodeToDecision}
                           techLeadTarget={activeTechLeadTarget}
                           sendBlocked={activeTechLeadBlocked}
@@ -4475,8 +4476,6 @@ export function MafwShell() {
                       projectName={railProjectName(currentProject(), true)}
                       refreshTick={() => Math.max(goalsRev(), podStore.revision())}
                       composerRequest={goalComposerRequest()}
-                      composerInitial={goalComposerInitial()}
-                      onComposerToggle={() => setGoalComposerInitial(null)}
                       active={dockPresent() && activeFocus()?.subject.kind === "world"}
                       team={{
                         detail: podStore.detail(),
@@ -4494,7 +4493,7 @@ export function MafwShell() {
                       podPanelRequest={podPanelRequest()}
                       onOpenPodSession={(sid, title) => { void openPodSession(sid, title) }}
                       onOpenGoal={(goal, focus) => { openGoalFocus(goal.goalId, focus) }}
-                      onGoalCreated={(goalId) => { setGoalComposerInitial(null); openGoalFocus(goalId, "timeline") }}
+                      onGoalCreated={(goalId) => { openGoalFocus(goalId, "timeline") }}
                     />
                   )}
                   onDocumentSelect={focusDocumentTab}

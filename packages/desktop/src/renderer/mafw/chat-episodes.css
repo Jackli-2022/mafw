@@ -1,19 +1,6 @@
 /* Episode 头：一段讨论的边界与状态，保持在 transcript 流内。 */
-.mafw-chat-mode-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  padding: 0 2px 4px;
-}
-.mafw-chat-mode-row .mafw-chat-mode-bar {
-  flex: 1;
-  min-width: 0;
-  padding-bottom: 0;
-}
 .mafw-episode-mark {
   flex: none;
-  margin-left: auto;
   color: var(--text-3);
   font-size: 10px;
 }

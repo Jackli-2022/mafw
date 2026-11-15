@@ -65,11 +65,9 @@ import { countUserTurns, shouldKeepPaging } from "./history-paging"
 import { worktreeBadge } from "./worktree-label"
 import { ApprovalSummaryLine } from "./ApprovalSummaryLine"
 import { DecisionBoard } from "./DecisionBoard"
-import { ChatModeBar } from "./ChatModeBar"
 import { EpisodeHeader } from "./EpisodeHeader"
 import { closeEpisode, createEpisode, groupTurnsByEpisode, reopenEpisode, resolvedCloseStartId, type ChatEpisode } from "../chat/episode-model"
 import { createEpisodeStore } from "../chat/episode-store"
-import { modeActionLabel, modeAvailability, modeSendsMessage, type ChatMode } from "../chat/composer-mode"
 import type { DecisionBoardView, DecisionItem } from "../focus/decision-model"
 import type { DecisionRecord } from "@mafw/sdk"
 import { permissionAriaLabel, permissionPresentation } from "./composer-permission"
@@ -260,11 +258,6 @@ export type ChatPaneProps = {
   onDecisionConfirm?: (id: string, input: { rationale: string; consequences: string; reviewAt?: string }) => void
   onDecisionShelve?: (id: string, input: { reviewAt: string; note?: string }) => void
   onDecisionReopen?: (id: string) => void
-  /** Composer 四模式：委托 / 解决是否可用；模式本身是瞬态。 */
-  canDelegate?: () => boolean
-  canResolve?: () => boolean
-  onDelegateDraft?: (draft: { text: string }) => void
-  onResolveRequest?: () => void
   /** Episode 关闭并记录决定：返回 draft record id；只起草，确认仍在决定板。 */
   onCloseEpisode?: (input: {
     episode: ChatEpisode
@@ -351,7 +344,6 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const [runsOpen, setRunsOpen] = createSignal(false)
   const [sending, setSending] = createSignal(false)
   const [phase, setPhase] = createSignal<'idle' | 'searching' | 'writing'>('idle')
-  const [composerMode, setComposerMode] = createSignal<ChatMode>("discuss")
   const episodeStore = createMemo(() => createEpisodeStore(window.localStorage, sidProp()))
   const [episodes, setEpisodes] = createSignal<ChatEpisode[]>([])
   const [episodeCollapseOverrides, setEpisodeCollapseOverrides] = createSignal<ReadonlyMap<string, boolean>>(new Map())
@@ -1217,23 +1209,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   })
 
   const submitComposer = (mode: "send" | "queue" = "send", opts?: { voiceOrigin?: boolean }) => {
-    const chatMode = composerMode()
-    if (!modeSendsMessage(chatMode)) {
-      if (chatMode === "delegate") {
-        if (!(props.canDelegate?.() ?? false) || !input().trim()) return
-        props.onDelegateDraft?.({ text: input() })
-        setInput("")
-        clearDraft(sidProp())
-        return
-      }
-      if (chatMode === "resolve") {
-        if (!(props.canResolve?.() ?? false)) return
-        props.onResolveRequest?.()
-        return
-      }
-      return
-    }
-    void sendMessage(mode, { ...opts, chatMode })
+    void sendMessage(mode, opts)
   }
 
   // ── Plan 2：duplex final → 输入栏 → 自动发送（语音来源标记随行）──
@@ -1324,15 +1300,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     if (!sid) return false
     return pendingFor(sid).length > 0 || getPendingCaptures().pendingFor(sid).length > 0
   }
-  /** resolve 是导航动作，不需要正文；delegate 需要可用的 Goal 目标和正文。 */
-  const composerActionEnabled = () => {
-    if (connPhase() === "down") return false
-    if (composerMode() === "resolve") return props.canResolve?.() ?? false
-    if (composerMode() === "delegate") {
-      return (props.canDelegate?.() ?? false) && input().trim().length > 0
-    }
-    return hasSendableContent()
-  }
+  const composerActionEnabled = () => connPhase() !== "down" && hasSendableContent()
   // G2：BrowserDock 的元素截图经 sink 进 attachments（与 G1 同一媒体管道）
   onMount(() => {
     const off = registerCaptureSink((f) => void addPastedFile(f))
@@ -2322,6 +2290,15 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                     }}
                   >时间线</ButtonV2>
                 </TooltipV2>
+                <TooltipV2 value="把当前回合标为一段讨论的起点" openDelay={300}>
+                  <ButtonV2
+                    variant="ghost"
+                    size="small"
+                    class="mafw-episode-mark"
+                    disabled={!visibleTurns().length}
+                    onClick={(e: MouseEvent) => { e.stopPropagation(); startEpisode() }}
+                  >标记 Episode</ButtonV2>
+                </TooltipV2>
                 <TooltipV2 value="展开全部细节：工具/编辑卡默认展开 (Ctrl+O)" openDelay={300}>
                   <ButtonV2
                     variant={detailsMode() ? "outline" : "ghost"}
@@ -2662,25 +2639,6 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             />
           )}
         </Show>
-        <div class="mafw-chat-mode-row">
-          <ChatModeBar
-            mode={composerMode()}
-            availability={modeAvailability({
-              canDelegate: props.canDelegate?.() ?? false,
-              canResolve: props.canResolve?.() ?? false,
-            })}
-            onMode={setComposerMode}
-          />
-          <ButtonV2
-            variant="ghost"
-            size="small"
-            class="mafw-episode-mark"
-            disabled={!visibleTurns().length}
-            onClick={startEpisode}
-          >
-            标记 Episode
-          </ButtonV2>
-        </div>
         <div
           class="mafw-composer"
           classList={{ "mafw-composer-dragging": dragging() }}
@@ -2921,10 +2879,10 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   disabled={!composerActionEnabled()}
                   class="mafw-send"
                   classList={{ "mafw-send-disabled": !composerActionEnabled() }}
-                  data-action-label={modeActionLabel(composerMode())}
-                  aria-label={connPhase() === "down" ? "Gateway 已断开" : modeActionLabel(composerMode())}
+                  data-action-label="发送"
+                  aria-label={connPhase() === "down" ? "Gateway 已断开" : "发送"}
                 >
-                  <span class="mafw-send-label">{modeActionLabel(composerMode())}</span>
+                  <span class="mafw-send-label">发送</span>
                   <Icon name="arrow-up" size="small" />
                 </ButtonV2>
               }>
