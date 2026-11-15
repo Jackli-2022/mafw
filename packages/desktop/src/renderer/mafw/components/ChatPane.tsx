@@ -41,6 +41,7 @@ import { buildLeadGoalStatusCards, type LeadGoalStatusSource } from "../lead-goa
 import { LeadGoalStatusCard } from "./LeadGoalStatusCard"
 import { TopicIndexPanel } from "./TopicIndexPanel"
 import type { LeadTopicListItem } from "../lead-topics"
+import { currentLeadTopicId } from "../lead-topics"
 import type { LeadBoundaryView } from "@mafw/sdk"
 import { CommandPicker, type CommandItem } from "./pickers/CommandPicker"
 import { PopoverShell } from "./pickers/PopoverShell"
@@ -365,7 +366,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const [reviewTick, setReviewTick] = createSignal(0)
   const visibleReviewItems = createMemo(() => visibleChatReviewItems(reviewItems(), 3))
   const unresolvedReviewItems = createMemo(() => unresolvedReviewCount(reviewItems()))
-  const currentTopicId = createMemo(() => props.topicItems?.[0]?.id ?? null)
+  const currentTopicId = createMemo(() => currentLeadTopicId(props.topicItems ?? []))
   const proposedBoundaryCards = createMemo(() =>
     currentTopicBoundaries(currentTopicId(), props.topicBoundaries ?? []))
   onMount(() => setEpisodes(episodeStore().load()))

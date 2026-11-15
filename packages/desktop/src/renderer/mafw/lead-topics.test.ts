@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { buildTopicList, leadTopicStateLabel, proposedBoundaries } from './lead-topics';
+import { buildTopicList, currentLeadTopicId, leadTopicStateLabel, proposedBoundaries } from './lead-topics';
 
 describe('lead topic list model', () => {
   test('labels states and hides session ids', () => {
@@ -18,6 +18,15 @@ describe('lead topic list model', () => {
     expect(leadTopicStateLabel('cold')).toBe('更早');
     expect(leadTopicStateLabel('archived')).toBe('已归档');
     expect(leadTopicStateLabel('custom')).toBe('custom');
+  });
+
+  test('current topic is the latest active topic', () => {
+    const items = buildTopicList([
+      { id: 't1', title: 'older', summary: null, state: 'warm', lastActiveAt: '2026-11-10T00:00:00.000Z', goalId: '', resumedFrom: null },
+      { id: 't2', title: 'newer', summary: null, state: 'warm', lastActiveAt: '2026-11-11T00:00:00.000Z', goalId: '', resumedFrom: null },
+    ] as any);
+    expect(currentLeadTopicId(items)).toBe('t2');
+    expect(currentLeadTopicId([])).toBeNull();
   });
 
   test('only proposed boundaries stay actionable', () => {

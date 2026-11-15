@@ -36,6 +36,21 @@ export function buildTopicList(topics: readonly LeadTopicView[]): LeadTopicListI
   }))
 }
 
+/** The inline boundary card belongs to the most recently active topic. */
+export function currentLeadTopicId(items: readonly LeadTopicListItem[]): string | null {
+  let current: LeadTopicListItem | null = null
+  for (const item of items) {
+    if (!current) {
+      current = item
+      continue
+    }
+    const at = Date.parse(item.lastActiveAt)
+    const previous = Date.parse(current.lastActiveAt)
+    if (Number.isFinite(at) && (!Number.isFinite(previous) || at > previous)) current = item
+  }
+  return current?.id ?? null
+}
+
 /** Only open proposals are actionable; accepted/merged/undone stay as history. */
 export function proposedBoundaries(items: readonly LeadBoundaryView[]): LeadBoundaryView[] {
   return items.filter((item) => item.status === "proposed")
