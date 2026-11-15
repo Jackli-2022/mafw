@@ -62,6 +62,28 @@ export interface T1TraceRead {
   archived: boolean;
 }
 
+/**
+ * Sparse event code for one T1 turn. This is a derived, rebuildable index over
+ * raw T1 — never a replacement for the immutable observations. It gives replay
+ * a small, typed state sequence (intent/action/error/decision) without dumping
+ * the full transcript into the prompt.
+ */
+export interface T1TurnFeature {
+  traceId: string;
+  sessionId: string;
+  turnSeq: number;
+  intent?: string;
+  action?: string;
+  tool?: string;
+  target?: string;
+  result?: string;
+  error?: string;
+  decision?: string;
+  entities: string[];
+  outcome: 'pass' | 'fail' | 'unknown';
+  confidence: number;
+}
+
 export type T1RetrievalKind = 'search' | 'recall' | 'redeem';
 
 /** One lexical T1 hit (best row per trace, ordered by FTS bm25). */
@@ -394,6 +416,28 @@ export class GatewayDatabase {
         UNIQUE(session_id, turn_seq)
       );
       CREATE INDEX IF NOT EXISTS idx_t1_turns_session ON t1_turns(session_id, turn_seq);
+
+      -- Sparse event code per turn (derived/rebuildable). Raw T1 remains the
+      -- source of truth; this table only feeds replay/timeline compression.
+      CREATE TABLE IF NOT EXISTS t1_turn_features (
+        trace_id      TEXT PRIMARY KEY,
+        session_id    TEXT NOT NULL,
+        turn_seq      INTEGER NOT NULL,
+        intent        TEXT,
+        action        TEXT,
+        tool          TEXT,
+        target        TEXT,
+        result        TEXT,
+        error         TEXT,
+        decision      TEXT,
+        entities_json TEXT,
+        outcome       TEXT,
+        confidence    REAL,
+        created_at    INTEGER NOT NULL DEFAULT (unixepoch()),
+        updated_at    INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+      CREATE INDEX IF NOT EXISTS idx_t1_turn_features_session
+        ON t1_turn_features(session_id, turn_seq);
 
       -- Lexical derivative of T1 (rebuildable): trigram tokenizer supports
       -- identifier/path/error-code substring matching that dense retrieval
@@ -1049,6 +1093,122 @@ export class GatewayDatabase {
     return this.db
       .prepare('SELECT * FROM t1_archive WHERE session_id = ? AND turn_id = ? ORDER BY id')
       .all(session_id, turn_id) as T1Observation[];
+  }
+
+  /** Upsert the sparse event code for one logical turn. Derived/rebuildable. */
+  upsertTurnFeature(feature: T1TurnFeature): void {
+    this.db
+      .prepare(
+        `INSERT INTO t1_turn_features (
+           trace_id, session_id, turn_seq, intent, action, tool, target,
+           result, error, decision, entities_json, outcome, confidence, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())
+         ON CONFLICT(trace_id) DO UPDATE SET
+           session_id = excluded.session_id,
+           turn_seq = excluded.turn_seq,
+           intent = excluded.intent,
+           action = excluded.action,
+           tool = excluded.tool,
+           target = excluded.target,
+           result = excluded.result,
+           error = excluded.error,
+           decision = excluded.decision,
+           entities_json = excluded.entities_json,
+           outcome = excluded.outcome,
+           confidence = excluded.confidence,
+           updated_at = unixepoch()`,
+      )
+      .run(
+        feature.traceId,
+        feature.sessionId,
+        feature.turnSeq,
+        feature.intent ?? null,
+        feature.action ?? null,
+        feature.tool ?? null,
+        feature.target ?? null,
+        feature.result ?? null,
+        feature.error ?? null,
+        feature.decision ?? null,
+        JSON.stringify(feature.entities ?? []),
+        feature.outcome ?? 'unknown',
+        feature.confidence ?? 0,
+      );
+  }
+
+  /** Read the sparse event code for a turn, or null when it was never built. */
+  getTurnFeature(traceId: string): T1TurnFeature | null {
+    const row = this.db
+      .prepare('SELECT * FROM t1_turn_features WHERE trace_id = ?')
+      .get(String(traceId || '')) as any;
+    if (!row) return null;
+    return {
+      traceId: row.trace_id,
+      sessionId: row.session_id,
+      turnSeq: row.turn_seq,
+      intent: row.intent ?? undefined,
+      action: row.action ?? undefined,
+      tool: row.tool ?? undefined,
+      target: row.target ?? undefined,
+      result: row.result ?? undefined,
+      error: row.error ?? undefined,
+      decision: row.decision ?? undefined,
+      entities: parseJsonStringArray(row.entities_json),
+      outcome: row.outcome === 'pass' || row.outcome === 'fail' ? row.outcome : 'unknown',
+      confidence: Number(row.confidence ?? 0),
+    };
+  }
+
+  /** All logical turns for a session, ordered by turn_seq (active + archived). */
+  listSessionTurns(session_id: string): T1Turn[] {
+    return this.db
+      .prepare('SELECT * FROM t1_turns WHERE session_id = ? ORDER BY turn_seq')
+      .all(session_id) as T1Turn[];
+  }
+
+  /**
+   * Turns that still need a sparse event code and have at least one raw row
+   * (active or archived). Turns with no observations are skipped so a backfill
+   * cursor cannot spin forever on empty legacy turns.
+   */
+  listTurnsMissingFeatures(limit: number): T1Turn[] {
+    const n = Math.max(0, Math.trunc(limit));
+    if (n <= 0) return [];
+    return this.db
+      .prepare(
+        `SELECT t.*
+           FROM t1_turns t
+          WHERE NOT EXISTS (
+                  SELECT 1 FROM t1_turn_features f WHERE f.trace_id = t.trace_id
+                )
+            AND (
+                  EXISTS (SELECT 1 FROM t1_observations o WHERE o.trace_id = t.trace_id)
+               OR EXISTS (SELECT 1 FROM t1_archive a WHERE a.trace_id = t.trace_id)
+                )
+          ORDER BY t.session_id, t.turn_seq
+          LIMIT ?`,
+      )
+      .all(n) as T1Turn[];
+  }
+
+  /**
+   * Read one turn's observations from active + archive in replay order. This is
+   * the timeline primitive: unlike listTurns()/readTurn() it can see archived
+   * turns, so reflection/replay can reconstruct a session after extraction.
+   */
+  readTurnRows(session_id: string, turn_id: number): T1Observation[] {
+    return this.db
+      .prepare(
+        `SELECT id, session_id, turn_id, trace_id, observation_key, source, content, failure, salience, created_at
+         FROM (
+           SELECT id, session_id, turn_id, trace_id, observation_key, source, content, failure, salience, created_at, 0 AS src
+             FROM t1_archive WHERE session_id = ? AND turn_id = ?
+           UNION ALL
+           SELECT id, session_id, turn_id, trace_id, observation_key, source, content, failure, salience, created_at, 1 AS src
+             FROM t1_observations WHERE session_id = ? AND turn_id = ?
+         )
+         ORDER BY created_at, src, id`,
+      )
+      .all(session_id, turn_id, session_id, turn_id) as T1Observation[];
   }
 
   /** Cheap existence check for provenance validation (never loads rows). */

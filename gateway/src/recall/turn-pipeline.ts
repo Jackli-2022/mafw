@@ -17,6 +17,7 @@ import { completeTurns, TurnEval } from './turn-completion';
 import { HARD_BOUNDARIES } from '../skills/memory-curator-agent';
 import { log } from '../core/utils/logger';
 import { replayPriority, sampleByPriority } from './replay-sampling';
+import { extractTurnFeature } from './t1-features';
 import { PipelineBudgetLike } from './pipeline-budget';
 import { topClusters, Cluster } from '../memory/schema-clusters';
 
@@ -302,6 +303,23 @@ export class TurnPipeline {
       turn: t,
       obs: this.opts.t1db.readTurn(t.session_id, t.turn_id),
     }));
+
+    // Phase A: persist the sparse event code before archiving. Raw T1 remains
+    // the source of truth; this is a derived index used by replay/timeline.
+    // Fake DBs in older tests may not implement the method — keep it optional.
+    for (const { turn, obs } of turnObs) {
+      const traceId = obs.find((o) => o.trace_id)?.trace_id;
+      if (!traceId) continue;
+      try {
+        const feature = extractTurnFeature(
+          { trace_id: traceId, session_id: turn.session_id, turn_seq: turn.turn_id },
+          obs,
+        );
+        if (feature && typeof this.opts.t1db.upsertTurnFeature === 'function') {
+          this.opts.t1db.upsertTurnFeature(feature);
+        }
+      } catch { /* fail-open: raw T1 remains the source of truth */ }
+    }
     const nowSec = Date.now() / 1000;
     const scoredTurns = turnObs.map((x) => {
       const salience = x.obs.reduce((m, o) => Math.max(m, o.salience ?? 0.5), 0);
