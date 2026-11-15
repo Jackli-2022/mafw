@@ -28,11 +28,11 @@
 - **I10** 状态 v2 缺 safety 字段视为损坏 → safe mode。
 - **I13** trusted/v1 重装成功后清 quarantine；remove 清 quarantine；unquarantine 重置失败计数与 degraded。
 - **I16** boot 用 `permissionFlagFor(process.execPath)` 探测 worker；不可用则 install 409 / host 拒绝。
+- **I11（2026-11-15 补齐）** desktop 信任操作面：全局 `safeMode`、trust/transport/permissions、隔离/降级原因、doctor 面板、kill/resume/quarantine/unquarantine/rollback、v2 consent 安装。
 
 ## 明确未修复（Important，需后续）
 
 - **I9 审计 principal / install.rejected / activate.failed / doctor**：manager 仍没有 principal 上下文；部分事件未写。
-- **I11 Desktop trust surface**：只加了 safe-mode banner；没有 kill/resume/doctor/quarantine/rollback 控件，没有 v2 consent 安装；list DTO 仍缺 trust 字段，safe mode 下列表可能为空。
 - **I12 drill 真实性**：多数场景仍是模块级/桩级；`boot-loop-rollback` 与 `update-rollback-in-window` 共用函数；worker crash 场景未起真实 worker；报告缺 `commit`。
 - **I14 kill switch runtime fallback**：停掉 runtime-owning 包后没有切回默认 runtime。
 - **I15 健康窗口细节**：applyPending 仍用 state fingerprint；`lastGood.snapshot` 失败仍写 lastKnownGood；pending 版本可能被再次快照。
@@ -43,12 +43,13 @@
 ## 验证
 
 - 定向插件套件：42 suites / 376 tests pass。
-- gateway typecheck：0。
-- gateway 全量：**7422 passed / 2 skipped / 7424 total**（946 suites，`--testTimeout=20000`）。
-- desktop：3868 / 3868；SDK：226 / 226；plugin-contract：44 / 44。
+- gateway typecheck：0；desktop typecheck：0；SDK typecheck：0。
+- gateway 全量（desktop 信任面补齐后）：**7623 passed / 2 skipped / 7625 total**（948 suites，`--testTimeout=20000`）。
+- desktop：**3875 / 3875**；SDK：226 / 226；plugin-contract：44 / 44。
 - drill：10/10（注意：部分场景仍是模块级，见 I12）。
+- desktop 信任面 commit：`b49b702d`。
 
 ## 结论
 
 Phase 6 的**安全边界**（safe mode / quarantine / worker 隔离 / 覆盖失败恢复 / 崩溃隔离）在 review 后已补上关键 wiring。  
-但 **Desktop 信任操作面、审计完整性、drill 真实性和 runtime fallback** 仍是 Important 缺口；在这些补齐前，不应把 Phase 6 标成“生产就绪”。
+Desktop 信任操作面已于 2026-11-15 补齐。**审计完整性、drill 真实性和 runtime fallback** 仍是 Important 缺口；在这些补齐前，不应把 Phase 6 标成“生产就绪”。
