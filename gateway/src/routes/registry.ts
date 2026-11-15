@@ -6,6 +6,8 @@
  * Phase 3 逐步给 def 挂 handler 并接线 index.ts 主循环，路由器行为由本文件单测锁定。
  */
 
+import { ErrorEnvelope } from './schemas/errors';
+
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 export interface RouteDef {
@@ -33,6 +35,15 @@ export interface RouteDef {
   /** 请求体是否必填（默认 true；无 body 的动作用 `request: Type.Object({})` + false）。 */
   requestRequired?: boolean;
   /**
+   * E10i：显式声明的错误状态码（使用统一 `ErrorEnvelope`）。`default` 始终存在
+   * 作兜底；`/api/*` 的 401/403 由 transport 层自动补齐。只声明不校验。
+   */
+  errors?: number[];
+  /** E10i：按状态码覆盖错误 schema（429 quota / 503 capability / 409 / 404 等）。 */
+  errorSchemas?: Record<number, object>;
+  /** E10i：按状态码覆盖错误描述（缺省按状态码标准短语）。 */
+  errorDescription?: Record<number, string>;
+  /**
    * Phase 3 dispatch；shadow 登记阶段缺省。返回 false 表示"实际未处理"
    * （模块内部正则未命中，如 query 形状差异）→ dispatch 放行回退 legacy 链；
    * 返回 void/true 视为已处理。
@@ -46,6 +57,59 @@ export interface MatchedRoute {
 }
 
 const HTTP_METHODS: readonly HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
+
+/** 状态码 → OpenAPI 默认描述（显式 errorDescription 覆盖）。 */
+const STATUS_DESCRIPTION: Record<number, string> = {
+  400: 'Bad Request',
+  401: 'Unauthorized',
+  402: 'Payment Required',
+  403: 'Forbidden',
+  404: 'Not Found',
+  405: 'Method Not Allowed',
+  408: 'Request Timeout',
+  409: 'Conflict',
+  410: 'Gone',
+  412: 'Precondition Failed',
+  413: 'Payload Too Large',
+  415: 'Unsupported Media Type',
+  422: 'Unprocessable Entity',
+  423: 'Locked',
+  425: 'Too Early',
+  429: 'Quota Exceeded',
+  500: 'Internal Server Error',
+  501: 'Not Implemented',
+  502: 'Bad Gateway',
+  503: 'Service Unavailable',
+  504: 'Gateway Timeout',
+};
+
+function errorResponse(schema: object, description: string): Record<string, unknown> {
+  return { description, content: { 'application/json': { schema } } };
+}
+
+/**
+ * E10i-P0：一个 op 的非 2xx 响应投影。
+ *
+ * - `default` 恒存在（统一 `ErrorEnvelope` 兜底）；
+ * - `/api/*` 追加 transport 鉴权层的 401/403（非 /api 的 health / .well-known /
+ *   a2a / control / register 没有该层）；
+ * - `def.errors` 逐项追加，`errorSchemas[status]` 覆盖形状、`errorDescription`
+ *   覆盖描述。显式状态码排在 401/403 之后，因此可以自定义同名状态。
+ */
+export function errorResponsesFor(def: RouteDef): Record<string, unknown> {
+  const out: Record<string, unknown> = {
+    default: errorResponse(ErrorEnvelope, 'Error'),
+  };
+  if (def.path.startsWith('/api/')) {
+    out[401] = errorResponse(ErrorEnvelope, STATUS_DESCRIPTION[401]);
+    out[403] = errorResponse(ErrorEnvelope, STATUS_DESCRIPTION[403]);
+  }
+  for (const status of def.errors ?? []) {
+    const description = def.errorDescription?.[status] ?? STATUS_DESCRIPTION[status] ?? 'Error';
+    out[status] = errorResponse(def.errorSchemas?.[status] ?? ErrorEnvelope, description);
+  }
+  return out;
+}
 
 /** ':param' 形式 → OpenAPI '{param}' 形式。 */
 export function toOpenApiPath(path: string): string {
@@ -166,6 +230,9 @@ export class RouteRegistry {
       op.responses = def.response
         ? { 200: { description: 'OK', content: { 'application/json': { schema: def.response } } } }
         : { 200: { description: 'OK' } };
+      // E10i：非 2xx 契约。`default` 是所有未列出 4xx/5xx 的兜底包；
+      // `/api/*` 额外带 transport 鉴权层的 401/403；显式 errors 逐项追加。
+      Object.assign(op.responses as Record<string, unknown>, errorResponsesFor(def));
       entry[def.method.toLowerCase()] = op;
     }
     return out;

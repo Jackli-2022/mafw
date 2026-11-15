@@ -1,4 +1,9 @@
 import { RouteRegistry, toOpenApiPath, type RouteDef } from '../../src/routes/registry';
+import {
+  CapabilityUnavailableErrorSchema,
+  ErrorEnvelope,
+  QuotaExceededErrorSchema,
+} from '../../src/routes/schemas/errors';
 
 function def(over: Partial<RouteDef> & { path: string; operationId: string }): RouteDef {
   return { method: 'GET', ...over } as RouteDef;
@@ -140,5 +145,138 @@ describe('RouteRegistry', () => {
   it('toOpenApiPath 转换', () => {
     expect(toOpenApiPath('/api/goals/:id/sessions')).toBe('/api/goals/{id}/sessions');
     expect(toOpenApiPath('/a2a/artifacts/:id')).toBe('/a2a/artifacts/{id}');
+  });
+
+  // E10i-P0：非 2xx 错误响应的统一投影（只声明，不运行时校验）。
+  describe('E10i-P0 error response plumbing', () => {
+    const DEFAULT_ERROR = {
+      description: 'Error',
+      content: { 'application/json': { schema: ErrorEnvelope } },
+    };
+    const errorResponses = (op: any) => Object.keys(op.responses).filter((s) => s !== '200');
+
+    it('每个 op（含非 /api 路径）都有 default 错误包', () => {
+      const r = new RouteRegistry().register(
+        def({ path: '/api/goals', operationId: 'goals.list', response: { type: 'object' } }),
+        def({ method: 'POST', path: '/api/goals/:id/pause', operationId: 'goals.pause' }),
+        def({ path: '/health', operationId: 'health.root', response: { type: 'object' } }),
+      );
+      const paths = r.toOpenApiPaths();
+      const ops: any[] = [];
+      for (const methods of Object.values<any>(paths)) ops.push(...Object.values<any>(methods));
+      expect(ops).toHaveLength(3);
+      for (const op of ops) {
+        expect(op.responses.default).toEqual(DEFAULT_ERROR);
+        // 统一包的承重字段：error 必填，code/message/success 都是 additive。
+        expect(op.responses.default.content['application/json'].schema.required).toEqual(['error']);
+        expect(op.responses.default.content['application/json'].schema.properties.code).toBeDefined();
+        expect(op.responses.default.content['application/json'].schema.properties.success).toBeDefined();
+        expect(op.responses.default.content['application/json'].schema.additionalProperties).toBe(true);
+      }
+    });
+
+    it('/api/ op 自动获得 401 与 403（transport 鉴权层）', () => {
+      const r = new RouteRegistry().register(
+        def({ path: '/api/goals', operationId: 'goals.list' }),
+        def({ method: 'DELETE', path: '/api/goals/:id', operationId: 'goals.delete' }),
+      );
+      const paths = r.toOpenApiPaths();
+      for (const op of [paths['/api/goals'].get, paths['/api/goals/{id}'].delete] as any[]) {
+        expect(op.responses['401']).toEqual({
+          description: 'Unauthorized',
+          content: { 'application/json': { schema: ErrorEnvelope } },
+        });
+        expect(op.responses['403']).toEqual({
+          description: 'Forbidden',
+          content: { 'application/json': { schema: ErrorEnvelope } },
+        });
+      }
+    });
+
+    it('非 /api/ 路径不加 401/403（health / well-known / a2a / control / register）', () => {
+      const r = new RouteRegistry().register(
+        def({ path: '/health', operationId: 'health.root' }),
+        def({ path: '/.well-known/agent-card.json', operationId: 'a2a.agentCard' }),
+        def({ method: 'POST', path: '/a2a/artifacts/:id', operationId: 'media.artifact' }),
+        def({ method: 'POST', path: '/control', operationId: 'goals.controlLegacy' }),
+        def({ method: 'POST', path: '/register', operationId: 'project.setCurrent' }),
+      );
+      const paths = r.toOpenApiPaths();
+      for (const methods of Object.values<any>(paths)) {
+        for (const op of Object.values<any>(methods)) {
+          expect(errorResponses(op)).toEqual(['default']);
+        }
+      }
+    });
+
+    it('显式 errors 状态码：errorSchemas 覆盖该状态的特殊形状（429 quota）', () => {
+      const r = new RouteRegistry().register(
+        def({
+          method: 'POST',
+          path: '/api/sessions/:id/prompt',
+          operationId: 'session.prompt',
+          errors: [400, 404, 429],
+          errorSchemas: { 429: QuotaExceededErrorSchema },
+          errorDescription: { 429: 'Quota Exceeded' },
+        }),
+      );
+      const op = (r.toOpenApiPaths()['/api/sessions/{id}/prompt'] as any).post;
+      expect(op.responses['429']).toEqual({
+        description: 'Quota Exceeded',
+        content: { 'application/json': { schema: QuotaExceededErrorSchema } },
+      });
+      expect(op.responses['429'].content['application/json'].schema.properties.code.const)
+        .toBe('quota_exceeded');
+      // 没有 errorSchemas 的状态回落到统一包，描述按状态码默认。
+      expect(op.responses['400']).toEqual({
+        description: 'Bad Request',
+        content: { 'application/json': { schema: ErrorEnvelope } },
+      });
+      expect(op.responses['404'].content['application/json'].schema).toBe(ErrorEnvelope);
+      expect(op.responses.default.content['application/json'].schema).toBe(ErrorEnvelope);
+    });
+
+    it('503 capability 用特殊包；显式错误不与 transport 401/403 冲突', () => {
+      const r = new RouteRegistry().register(
+        def({
+          method: 'POST',
+          path: '/api/plugins/x/invoke',
+          operationId: 'plugins.invoke',
+          errors: [503],
+          errorSchemas: { 503: CapabilityUnavailableErrorSchema },
+        }),
+      );
+      const op = (r.toOpenApiPaths()['/api/plugins/x/invoke'] as any).post;
+      expect(op.responses['503'].content['application/json'].schema.properties.code.const)
+        .toBe('capability_unavailable');
+      expect(op.responses['401'].content['application/json'].schema).toBe(ErrorEnvelope);
+      expect(op.responses['403']).toBeDefined();
+    });
+
+    it('只声明不校验：任意显式状态码原样投影（不做运行时拒绝）', () => {
+      const r = new RouteRegistry().register(
+        def({ path: '/api/odd', operationId: 'odd.get', errors: [418, 599] }),
+      );
+      expect(() => r.toOpenApiPaths()).not.toThrow();
+      const op = (r.toOpenApiPaths()['/api/odd'] as any).get;
+      expect(op.responses['418'].description).toBe('Error');
+      expect(op.responses['599'].content['application/json'].schema).toBe(ErrorEnvelope);
+    });
+
+    it('200 行为不变（有 schema / 无 schema 两条分支保持原样）', () => {
+      const schema = { type: 'object', properties: { ok: { type: 'boolean' } } };
+      const r = new RouteRegistry().register(
+        def({ path: '/api/with-schema', operationId: 'x.with', response: schema }),
+        def({ path: '/api/no-schema', operationId: 'x.without' }),
+        def({ path: '/api/stream', operationId: 'x.stream', response: null }),
+      );
+      const paths = r.toOpenApiPaths();
+      expect((paths['/api/with-schema'] as any).get.responses['200']).toEqual({
+        description: 'OK',
+        content: { 'application/json': { schema } },
+      });
+      expect((paths['/api/no-schema'] as any).get.responses['200']).toEqual({ description: 'OK' });
+      expect((paths['/api/stream'] as any).get.responses['200']).toEqual({ description: 'OK' });
+    });
   });
 });

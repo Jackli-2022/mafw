@@ -1519,6 +1519,78 @@ describe('api-contract: contract 产物新鲜度', () => {
   });
 });
 
+describe('api-contract: E10i-P0 error response plumbing', () => {
+  const findOp = (operationId: string): any => {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const candidate of Object.values<any>(methods)) {
+        if (candidate?.operationId === operationId) return candidate;
+      }
+    }
+    return null;
+  };
+
+  /** 抽样：一个读接口、一个写接口、一个非 /api 传输端点。 */
+  const API_SAMPLES = ['goals.list', 'session.create'];
+
+  test('每个 op 的 responses.default 都是统一错误包（error 必填）', () => {
+    const problems: string[] = [];
+    let ops = 0;
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const op of Object.values<any>(methods)) {
+        if (!op?.operationId) continue;
+        ops++;
+        const fallback = op.responses?.default;
+        const schema = fallback?.content?.['application/json']?.schema;
+        if (!fallback) { problems.push(`${op.operationId}: responses.default 缺失`); continue; }
+        if (fallback.description !== 'Error') problems.push(`${op.operationId}: default description 不是 'Error'`);
+        if (!schema) { problems.push(`${op.operationId}: default 缺 application/json schema`); continue; }
+        if (!(schema.required ?? []).includes('error')) problems.push(`${op.operationId}: 错误包 schema 缺 required 'error'`);
+        if (schema.properties?.error?.type !== 'string') problems.push(`${op.operationId}: error 不是 string`);
+      }
+    }
+    expect(ops).toBeGreaterThanOrEqual(327);
+    expect(problems).toEqual([]);
+  });
+
+  test('/api/ 抽样 op 带 401/403（transport 鉴权层，同一错误包）', () => {
+    for (const operationId of API_SAMPLES) {
+      const op = findOp(operationId);
+      expect({ operationId, present: op !== null }).toEqual({ operationId, present: true });
+      for (const status of ['401', '403']) {
+        const schema = op.responses?.[status]?.content?.['application/json']?.schema;
+        expect({ operationId, status, ok: (schema?.required ?? []).includes('error') })
+          .toEqual({ operationId, status, ok: true });
+      }
+    }
+    // 非 /api 端点只有 default（/health 是 transport 手写分支，无 /api 前缀）。
+    const health = findOp('health.root');
+    expect(health.responses.default).toBeDefined();
+    expect(health.responses['401']).toBeUndefined();
+    expect(health.responses['403']).toBeUndefined();
+  });
+
+  test('401/403 只出现在 /api/ 路径上（全量投影断言）', () => {
+    const problems: string[] = [];
+    for (const [p, methods] of Object.entries<any>(contract.paths)) {
+      for (const op of Object.values<any>(methods)) {
+        if (!op?.operationId) continue;
+        const hasAuth = op.responses?.['401'] !== undefined || op.responses?.['403'] !== undefined;
+        if (p.startsWith('/api/') && !hasAuth) problems.push(`${op.operationId}: /api 路径缺 401/403`);
+        if (!p.startsWith('/api/') && hasAuth) problems.push(`${op.operationId}: 非 /api 路径不应有 401/403`);
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test('error schemas 只是声明：200 分支原样保留（default 不吞 200）', () => {
+    for (const operationId of API_SAMPLES) {
+      const op = findOp(operationId);
+      expect(op.responses['200']).toBeDefined();
+      expect(op.responses['200'].description).not.toBe('Error');
+    }
+  });
+});
+
 describe('api-contract: E10c-1 memory / recall / lead read response schema (8 ops)', () => {
   const findOp = (operationId: string): any => {
     for (const methods of Object.values<any>(contract.paths)) {
