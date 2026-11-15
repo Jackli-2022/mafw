@@ -39,7 +39,10 @@ describe('code-first route (P0)', () => {
       method: 'GET', path: '/api/legacy', operationId: 'legacy.get',
     });
     const op: any = (registry.toOpenApiPaths() as any)['/api/legacy'].get;
-    expect(op.responses).toEqual({ 200: { description: 'OK' } });
+    // E10i-P0: the 200 shape is untouched; error plumbing only adds non-2xx
+    // (`default` for every op, 401/403 for `/api/*`).
+    expect(op.responses['200']).toEqual({ description: 'OK' });
+    expect(Object.keys(op.responses).sort()).toEqual(['200', '401', '403', 'default']);
   });
 
   test('attachTypedRoute serializes handler data and returns true', async () => {
