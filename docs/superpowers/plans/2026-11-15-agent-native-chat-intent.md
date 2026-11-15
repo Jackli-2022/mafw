@@ -149,8 +149,9 @@ git commit -m "refactor(desktop): move episode marking to the transcript header"
 
 **Interfaces:**
 - Produces: `goalCreatedView(input, output, status): GoalCreatedView`
-- Produces: `configureGoalCreatedActions(actions: { open(goalId): void; cancel(goalId): Promise<boolean> } | null): void`
-- Consumes: `window.api.mafw.goals.control({ goalId, action: "ABORT" })`
+- Produces: `goalCreatedActionState(view, live, cancelled): GoalCreatedActionState`
+- Produces: `configureGoalCreatedActions(actions: { open(goalId): void; status(goalId): Promise<GoalLiveState | null>; cancel(goalId): Promise<boolean> } | null): void`
+- Consumes: `window.api.mafw.goals.stop(goalId)` (terminal-guarded)
 
 - [ ] **Step 1: Write the failing pure test**
 
@@ -189,11 +190,11 @@ Expected: FAIL with `goalCreatedView is not defined`.
 
 - [ ] **Step 3: Implement `goalCreatedView` and the card**
 
-`goalCreatedView` returns `{ kind, title, goalId, stage, sessionID, hasHandoff, warning }`. The component uses `BasicTool` + `ButtonV2`, shows “讨论中（未执行）”, “打开 Tech Lead 讨论”, and an inline “撤销 → 确认撤销” two-step. Non-`tech_lead` results fall back to `familyCard(TOOL_SPECS.mafw_create_goal)`.
+`goalCreatedView` returns `{ kind, title, goalId, sessionID, hasHandoff, warning }`. The component uses `BasicTool` + `ButtonV2`, fetches live Goal state on mount, shows the live stage label, and only offers “撤销 → 确认撤销” while the Goal is `active + discussing`. Non-`tech_lead` results fall back to `familyCard(TOOL_SPECS.mafw_create_goal)`.
 
 - [ ] **Step 4: Register the card and wire actions**
 
-In `registerMafwToolCards`, call `registerAliased("mafw_create_goal", MafwGoalCreatedCard)` after the generic loop. In `MafwShell` `onMount`, call `configureGoalCreatedActions` with `open = openGoalAndDiscuss(goalId, "timeline")` and `cancel = goals.control({ goalId, action: "ABORT" })`; clear on cleanup.
+In `registerMafwToolCards`, call `registerAliased("mafw_create_goal", MafwGoalCreatedCard)` after the generic loop. In `MafwShell` `onMount`, call `configureGoalCreatedActions` with `open = openGoalAndDiscuss(goalId, "timeline")`, `status` from `podStore.detail()` (status/stage/label/canCancel), and `cancel = goals.stop(goalId)`; clear on cleanup.
 
 - [ ] **Step 5: Run tests**
 

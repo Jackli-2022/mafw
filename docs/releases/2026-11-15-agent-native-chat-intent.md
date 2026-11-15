@@ -1,7 +1,7 @@
 # 2026-11-15 · Agent-native Chat 意图
 
 - **版本**：`v5.1.0`（交互行为修订，不升版本号）
-- **提交**：`3210334f`
+- **提交**：`3210334f`（主变更）、`a44715a3`（审查修复：live 状态守卫 / `goals.stop`）
 - **范围**：desktop Chat composer 与工具卡；gateway / SDK / 运行时契约零改动
 - **前置**：`docs/superpowers/plans/2026-11-15-agent-native-chat-intent.md`（方案 D）
 
@@ -23,7 +23,10 @@ composer 上方的「讨论 / 提议 / 委托 / 解决」四模式，与 Lead �
 - **一个发送面**：删除 `ChatModeBar`、`composer-mode.ts`、`composerMode` 状态和
   `[[mode:propose]]` synthetic part；`QueuedTurn` 不再携带 `chatMode`。
 - **Lead 直接建 Goal**：`mafw_create_goal` 的 `tech_lead` 结果渲染为 `GoalCreatedCard`
-  （打开 Tech Lead 讨论 / 两步确认撤销），legacy / running / error 结果回退通用工具卡。
+  （打开 Tech Lead 讨论 / 两步确认撤销）；legacy / running / error 结果不进入动作卡
+  （error part 仍由通用 `ToolErrorCard` 处理）。卡片不以创建时的快照判断状态：mount 时向
+  `podStore` 取 live stage，只有 `active + discussing` 才显示撤销；撤销走带 404/409 守卫的
+  `goals.stop`，不使用无守卫的 `goals.control ABORT`。
 - **Episode 归位**：「标记 Episode」从 composer 行移到 transcript header，仍以当前最后一条
   turn 为起点；Episode 的 localStorage 分组模型不变。
 - **自由讨论交接保留**：`onHandoffToLead` 仍在 header，只在可交接会话显示。
@@ -42,9 +45,9 @@ composer 上方的「讨论 / 提议 / 委托 / 解决」四模式，与 Lead �
 
 ## 测试与门禁
 
-- desktop 全量：**3862 / 3862** pass（736 suites）
+- desktop 全量：**3864 / 3864** pass（736 suites）
 - 新增：`agent-native-chat-wiring` 3、`goal-created-card-wiring` 3、
-  `goal-created-model` 5；`use-send-message` 的 4 个模式用例替换为 1 个“旧调用方不能注入
+  `goal-created-model` 7；`use-send-message` 的 4 个模式用例替换为 1 个“旧调用方不能注入
   mode directive”回归用例
 - 删除：`composer-mode` 5、`chat-mode-bar-wiring` 4、`chat-mode-delegate-wiring` 3、
   `chat-mode-resolve-wiring` 2
