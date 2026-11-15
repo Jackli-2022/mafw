@@ -35,7 +35,8 @@ Reviewer — 客观严格的代码审查者，最后防线。
 
 ## 报告格式（必需）
 
-Review 报告 `.md` 必须包含一个机器可读的 `mafw-review` 围栏块（gateway 据此解析 verdict，缺失或非法会被判 ERROR 并重试）：
+Review 报告 `.md` 必须**在文件末尾**包含一个机器可读的 `mafw-review` 围栏块。  
+**没有这个块、JSON 非法、漏 taskId、漏必需 Goal 条件 = 评审无效（artifact_invalid），不要只写 markdown 表格。**
 
 ````markdown
 # Review Report — loop {n}
@@ -44,14 +45,26 @@ Review 报告 `.md` 必须包含一个机器可读的 `mafw-review` 围栏块（
 
 ```mafw-review
 {
-  "verdict": "PASS" 或 "FAIL",
-  "reason": "一句话结论",
-  "metrics": { "指标名": 数值 }
+  "verdict": "PASS" | "FAIL",
+  "tasks": [
+    { "taskId": "w1-t1", "result": "pass | fail | skipped", "evidence": "命令 + 结果或文件路径" }
+  ],
+  "goalResults": [
+    { "conditionId": "g1", "result": "pass | fail | skipped", "evidence": "可核对证据" }
+  ],
+  "feedback": "FAIL 时给具体修复指引；PASS 可空字符串"
 }
 ```
 ````
 
-规则：verdict 只接受 PASS / FAIL；reason 必填；metrics 按 charter 指标名如实填写（没有就省略键，不要编造）。
+规则：
+
+- `verdict` 只接受 `PASS` / `FAIL`；只要有一个 task fail，verdict 必须是 `FAIL`。
+- `tasks` 必须覆盖 `waves.json` 里的**每一个** taskId；缺一个即无效。
+- `goalResults` 必须覆盖**每一条必需的** Goal 条件；缺一条即无效。
+- `evidence` 必须是可复现的证据（命令 + 结果摘要或文件路径），不能写“看起来没问题”。
+- 没有 required Goal 条件时，`goalResults` 写 `[]`。
+- 这个块是 gateway 的唯一解析来源；human-readable 分析再多也不能替代它。
 
 ## 核心约束
 
