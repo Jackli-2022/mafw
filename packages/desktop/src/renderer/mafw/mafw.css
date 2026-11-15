@@ -8431,6 +8431,64 @@ html[data-theme="light"] body {
 .mafw-pod-review-response-label { font-size: 9.5px; color: var(--text-4); }
 .mafw-pod-review-actions { display: flex; gap: 6px; padding-top: 2px; }
 
+/* Tech Lead chat: unresolved review items sit directly above the composer. */
+.mafw-chat-review-inline { margin: 0 0 8px; }
+.mafw-chat-review-inline .mafw-pod-review { margin: 0 0 4px; padding: 8px 10px; }
+.mafw-chat-review-error {
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  background: var(--danger-dim);
+  color: var(--danger-text);
+  font-size: 11px;
+}
+.mafw-chat-review-more {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 2px;
+  color: var(--text-3);
+  font-size: 10px;
+}
+
+/* Lead chat: inline topic-boundary proposal card. */
+.mafw-boundary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--bg-raised);
+}
+.mafw-boundary-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.mafw-boundary-card-title { font-size: 12px; font-weight: 600; color: var(--text-1); }
+.mafw-boundary-card-count { font-size: 10px; color: var(--text-3); font-family: var(--font-data); }
+.mafw-boundary-card-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 7px 9px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  background: var(--bg-inset);
+}
+.mafw-boundary-card-text {
+  color: var(--text-1);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mafw-boundary-card-meta { color: var(--text-3); font-size: 10px; }
+.mafw-boundary-card-actions { display: flex; gap: 6px; padding-top: 2px; }
+
 /* ── frame bar ─────────────────────────────────────────────── */
 .mafw-frame-bar {
   flex: none;

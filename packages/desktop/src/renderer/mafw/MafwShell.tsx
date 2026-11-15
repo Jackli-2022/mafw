@@ -3391,16 +3391,21 @@ export function MafwShell() {
     setTopicBusy(false)
   }
   const refreshTopics = async (projectDir: string): Promise<void> => {
-    const result = await window.api.mafw.lead.topics.list({ projectDir })
-    setTopicItems(buildTopicList(result.items))
-    const items = await Promise.all(result.items.map(async (topic) => {
-      try {
-        return (await window.api.mafw.lead.topics.boundaries(topic.id)).items
-      } catch {
-        return []
-      }
-    }))
-    setTopicBoundaries(proposedBoundaries(items.flat()))
+    setTopicBusy(true)
+    try {
+      const result = await window.api.mafw.lead.topics.list({ projectDir })
+      setTopicItems(buildTopicList(result.items))
+      const items = await Promise.all(result.items.map(async (topic) => {
+        try {
+          return (await window.api.mafw.lead.topics.boundaries(topic.id)).items
+        } catch {
+          return []
+        }
+      }))
+      setTopicBoundaries(proposedBoundaries(items.flat()))
+    } finally {
+      setTopicBusy(false)
+    }
   }
   const resumeTopic = async (id: string): Promise<void> => {
     setTopicBusy(true)
@@ -3439,6 +3444,23 @@ export function MafwShell() {
     }
     setTopicBusy(false)
   }
+  let lastTopicsRefreshAt = 0
+  const refreshTopicsThrottled = (projectDir: string): void => {
+    const now = Date.now()
+    if (now - lastTopicsRefreshAt < 10_000) return
+    lastTopicsRefreshAt = now
+    void refreshTopics(projectDir).catch((err: any) => {
+      console.warn("[mafw] topics refresh failed", err)
+    })
+  }
+  // Lead chat: boundary proposals are written on intake. Refresh on session
+  // entry and after each sent message, throttled so topic/boundary fan-out
+  // never becomes a per-token cost.
+  createEffect(() => {
+    const projectDir = currentProject()
+    if (!projectDir || !activeSessionIsLead()) return
+    refreshTopicsThrottled(projectDir)
+  })
   const activeLeadGoalInvite = (): { goalId: string; title: string; stageLabel: string; sourceLabel?: string } | null => {
     if (!activeSessionIsLead()) return null
     // 2026-11-04：非终态 Goal 都保留邀请位；discussing 优先占位（刚建完的引导）。
@@ -4342,6 +4364,12 @@ export function MafwShell() {
                           onDecisionReopen={reopenDecisionRecord}
                           onCloseEpisode={closeEpisodeToDecision}
                           techLeadTarget={activeTechLeadTarget}
+                          reviewRefreshKey={() => Math.max(goalsRev(), podStore.revision())}
+                          onOpenReview={() => openChangesFace({ section: "review" })}
+                          onMessageSent={() => {
+                            const projectDir = currentProject()
+                            if (projectDir && activeSessionIsLead()) refreshTopicsThrottled(projectDir)
+                          }}
                           sendBlocked={activeTechLeadBlocked}
                           onOpenFile={(root, rel) => openFileInScope(rel, root, focusScopeFromContent(contentScope()))}
                           onOpenDiffReview={openCurrentSessionChangeSet}

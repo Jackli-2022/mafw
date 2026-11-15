@@ -66,10 +66,14 @@ import { worktreeBadge } from "./worktree-label"
 import { ApprovalSummaryLine } from "./ApprovalSummaryLine"
 import { DecisionBoard } from "./DecisionBoard"
 import { EpisodeHeader } from "./EpisodeHeader"
+import { PodReviewItems } from "./PodReviewItems"
+import { BoundaryCard } from "./BoundaryCard"
 import { closeEpisode, createEpisode, groupTurnsByEpisode, reopenEpisode, resolvedCloseStartId, type ChatEpisode } from "../chat/episode-model"
 import { createEpisodeStore } from "../chat/episode-store"
+import { visibleBoundaryProposals } from "../chat/boundary-card"
+import { unresolvedReviewCount, visibleChatReviewItems } from "../chat/chat-review"
 import type { DecisionBoardView, DecisionItem } from "../focus/decision-model"
-import type { DecisionRecord } from "@mafw/sdk"
+import type { DecisionRecord, PodReviewItem } from "@mafw/sdk"
 import { permissionAriaLabel, permissionPresentation } from "./composer-permission"
 import { type PermissionMode } from "./permission-card-mapping"
 import { getSessionTurnDiffs } from "../session-turn-diffs"
@@ -265,6 +269,11 @@ export type ChatPaneProps = {
   }) => Promise<string | null>
   /** Task 20：当前 tab 是某个 Goal 的 Tech Lead 讨论时，发送走 sendTechLeadMessage。 */
   techLeadTarget?: () => { podId: string; goalId: string } | null | Promise<{ podId: string; goalId: string } | null>
+  /** 评审项在 Tech Lead chat 内联；refresh key 由 shell 的 pod/goal 版本驱动。 */
+  reviewRefreshKey?: () => number
+  onOpenReview?: () => void
+  /** Lead 消息发出后刷新话题边界（boundary service 在 intake 时写入）。 */
+  onMessageSent?: () => void
   /** Task 20 review：非讨论的 Tech Lead 节点会话禁止直接发送，返回原因（保留草稿）。 */
   sendBlocked?: () => string | null | Promise<string | null>
   onCreateSession: () => Promise<string | null>
@@ -348,6 +357,13 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const [episodes, setEpisodes] = createSignal<ChatEpisode[]>([])
   const [episodeCollapseOverrides, setEpisodeCollapseOverrides] = createSignal<ReadonlyMap<string, boolean>>(new Map())
   const [decisionRecordFocus, setDecisionRecordFocus] = createSignal<{ id: string } | null>(null)
+  const [reviewItems, setReviewItems] = createSignal<PodReviewItem[]>([])
+  const [reviewBusy, setReviewBusy] = createSignal(false)
+  const [reviewError, setReviewError] = createSignal<string | null>(null)
+  const [reviewTick, setReviewTick] = createSignal(0)
+  const visibleReviewItems = createMemo(() => visibleChatReviewItems(reviewItems(), 3))
+  const unresolvedReviewItems = createMemo(() => unresolvedReviewCount(reviewItems()))
+  const proposedBoundaryCards = createMemo(() => visibleBoundaryProposals(props.topicBoundaries ?? []))
   onMount(() => setEpisodes(episodeStore().load()))
   const persistEpisodes = (next: ChatEpisode[]) => {
     setEpisodes(next)
@@ -1210,6 +1226,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
   const submitComposer = (mode: "send" | "queue" = "send", opts?: { voiceOrigin?: boolean }) => {
     void sendMessage(mode, opts)
+      .then(() => props.onMessageSent?.())
+      .catch(() => { /* sendMessage surfaces its own errors */ })
   }
 
   // ── Plan 2：duplex final → 输入栏 → 自动发送（语音来源标记随行）──
@@ -1333,6 +1351,72 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       })
       .catch(() => { /* fail-open */ })
   }))
+
+  // Tech Lead chat 内联评审项：只在当前 tab 是 Goal 的 Tech Lead 讨论时拉取。
+  createEffect(() => {
+    sidProp()
+    props.reviewRefreshKey?.()
+    reviewTick()
+    let live = true
+    setReviewBusy(true)
+    setReviewError(null)
+    void Promise.resolve(props.techLeadTarget?.() ?? null)
+      .then(async (target) => {
+        if (!live) return
+        if (!target) {
+          setReviewItems([])
+          return
+        }
+        try {
+          const list = await window.api.mafw.pod.reviewItems(target.podId, target.goalId, {})
+          if (!live) return
+          setReviewItems(Array.isArray(list?.items) ? list.items : [])
+        } catch {
+          if (!live) return
+          setReviewItems([])
+          setReviewError("评审意见加载失败")
+        }
+      })
+      .catch(() => {
+        if (!live) return
+        setReviewItems([])
+        setReviewError("评审意见加载失败")
+      })
+      .finally(() => { if (live) setReviewBusy(false) })
+    onCleanup(() => { live = false })
+  })
+
+  const reviewTarget = async () => await Promise.resolve(props.techLeadTarget?.() ?? null)
+  const resolveReview = async (item: PodReviewItem) => {
+    const target = await reviewTarget()
+    if (!target || reviewBusy()) return
+    setReviewBusy(true)
+    setReviewError(null)
+    try {
+      await window.api.mafw.pod.resolveReviewItem(target.podId, target.goalId, item.id)
+      setReviewTick((value) => value + 1)
+      showToastV2({ description: "已确认解决", duration: 2200 })
+    } catch (error: any) {
+      setReviewError(String(error?.message ?? error).slice(0, 160) || "确认解决失败")
+    } finally {
+      setReviewBusy(false)
+    }
+  }
+  const reopenReview = async (item: PodReviewItem) => {
+    const target = await reviewTarget()
+    if (!target || reviewBusy()) return
+    setReviewBusy(true)
+    setReviewError(null)
+    try {
+      await window.api.mafw.pod.reopenReviewItem(target.podId, target.goalId, item.id)
+      setReviewTick((value) => value + 1)
+      showToastV2({ description: "已重新打开评审项", duration: 2200 })
+    } catch (error: any) {
+      setReviewError(String(error?.message ?? error).slice(0, 160) || "重新打开失败")
+    } finally {
+      setReviewBusy(false)
+    }
+  }
 
   // T2-3：回合终态清 transient（busy true → false）。
   createEffect(on(sessionBusy, (busyNow, prev) => {
@@ -2638,6 +2722,37 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
               onOpen={(goalId) => props.onOpenTechLead?.(goalId)}
             />
           )}
+        </Show>
+        <Show when={isLead() && proposedBoundaryCards().length > 0}>
+          <BoundaryCard
+            boundaries={proposedBoundaryCards()}
+            busy={props.topicBusy}
+            onAction={(id, action) => props.onBoundaryAction?.(id, action)}
+          />
+        </Show>
+        <Show when={unresolvedReviewItems() > 0 || reviewError()}>
+          <div class="mafw-chat-review-inline" aria-label="评审意见">
+            <Show when={reviewError()}>
+              {(error) => <div class="mafw-chat-review-error">{error()}</div>}
+            </Show>
+            <Show when={visibleReviewItems().length > 0}>
+              <PodReviewItems
+                items={visibleReviewItems()}
+                busy={reviewBusy()}
+                accepted={false}
+                onResolve={(item) => void resolveReview(item)}
+                onReopen={(item) => void reopenReview(item)}
+              />
+            </Show>
+            <Show when={unresolvedReviewItems() > visibleReviewItems().length}>
+              <div class="mafw-chat-review-more">
+                <span>还有 {unresolvedReviewItems() - visibleReviewItems().length} 条未解决</span>
+                <ButtonV2 variant="ghost" size="small" onClick={() => props.onOpenReview?.()}>
+                  在改动面查看全部
+                </ButtonV2>
+              </div>
+            </Show>
+          </div>
         </Show>
         <div
           class="mafw-composer"
