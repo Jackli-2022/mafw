@@ -1,7 +1,7 @@
 # 2026-11-15 · Chat 内联评审项与话题边界卡
 
 - **版本**：`v5.1.0`（交互行为修订，不升版本号）
-- **提交**：`153e6c32`（P3 + P4）、`1519bcac`（边界卡 topic scoping）、`b5a267db`（latest topic / review 上下文守卫）
+- **提交**：`153e6c32`（P3 + P4）、`1519bcac`（边界卡 topic scoping）、`b5a267db`（latest topic / review 上下文守卫）、`6e644915`（显式选择最新 Lead 话题）
 - **范围**：desktop Chat；gateway / SDK / 运行时契约零改动
 - **前置**：`docs/releases/2026-11-15-agent-native-chat-intent.md`（P1 + P2）
 
@@ -31,12 +31,13 @@
 
 ## 测试与门禁
 
-- desktop 全量：**3876 / 3876** pass（736 suites）
-- 新增 9 个用例：
+- desktop 全量：**3877 / 3877** pass（736 suites）
+- 新增 10 个用例：
   - `chat-review.test` 2（过滤 / 截断 / 计数）
   - `chat-review-inline-wiring` 2（chat 内联 + shell 接线）
   - `boundary-card.test` 3（proposed 过滤 / trigger 文案 / 先过滤后截断）
   - `boundary-card-wiring` 2（Lead 内联 + 刷新节流 / 项目守卫）
+  - `lead-topics.test` +1（显式选择最新 Lead 话题）
 - `npx electron-vite build`：rc=0
 - `npx tsgo --noEmit -p tsconfig.json`：本轮被并行进行的 plugin 改动阻断
   （`PluginDoctorReport` / `PluginAuditEvent` / `PluginSafetyResult` 等未导出）；本变更涉及
