@@ -33,6 +33,7 @@ import {
   planTaskOnly,
   noteTasksOnly,
   goalQueueRow,
+  parsePodDirectionState,
   previousTechLeadTranscript,
 } from "./pod-model"
 
@@ -130,6 +131,24 @@ describe("pod-model", () => {
     builderLive.transcriptRef = "/live.json"
     assert.deepEqual(memberOpenTarget(d, "m_builder"), { kind: "transcript", sessionId: "live" })
     assert.deepEqual(memberOpenTarget(d, "m_lead"), { kind: "session", sessionId: "lead_live" })
+  })
+
+  test("direction state preserves 'none' instead of treating it as pending", () => {
+    const parse = (status: string) => parsePodDirectionState(JSON.stringify({
+      version: 1,
+      goalId: "g1",
+      revision: 2,
+      status,
+      options: [],
+      requests: [],
+      decisions: [],
+      updatedAt: null,
+    }), 2)
+
+    assert.equal(parse("none")?.status, "none")
+    assert.equal(parse("pending")?.status, "pending")
+    assert.equal(parse("decided")?.status, "decided")
+    assert.equal(parsePodDirectionState("{bad json", 2), null)
   })
 
   test("finds the previous revision's Tech Lead discussion snapshot", () => {

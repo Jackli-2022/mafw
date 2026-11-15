@@ -63,6 +63,18 @@ test("blocked and failing Goals expose real first-screen actions, not technical 
   assert.doesNotMatch(goalDetailSrc, /summary\?\.needsPerson[\s\S]{0,160}setTechnicalOpen\(true\)/)
 })
 
+test("the direction action focuses the direction input instead of only scrolling", () => {
+  const reviewDirection = between(
+    goalDetailSrc,
+    'if (intent === "review_direction")',
+    'if (intent === "view_result")',
+  )
+  assert.match(reviewDirection, /focusDirectionInput\b/)
+  assert.match(goalDetailSrc, /const focusDirectionInput = /)
+  assert.match(goalDetailSrc, /querySelector\("textarea"\)/)
+  assert.match(goalDetailSrc, /\.focus\(/)
+})
+
 test("Goal opening carries a snapshot and guards stale async requests", () => {
   assert.match(mafwShellSrc, /goalSnapshot\?: PodGoal/)
   assert.match(mafwShellSrc, /goalDiscussSeq/)

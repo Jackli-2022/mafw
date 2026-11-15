@@ -235,6 +235,11 @@ test("primary Goal action intent never falls through to technical details", () =
     stage: { owner: "person", kind: "blocked" },
   }), empty), "blocker")
   assert.equal(goalUserActionIntent(goal({ goalId: "healthy" }), empty), null)
+  // 普通讨论（没有 pending 方向裁定）不能冒充「裁定方向」动作。
+  assert.equal(goalUserActionIntent(goal({
+    goalId: "discussing-no-request",
+    stage: { owner: "team", kind: "discussing", action: { type: "open_discussion", goalId: "g" } },
+  } as any), empty), null)
 })
 
 test("execution badge prefers blockers over progress", () => {

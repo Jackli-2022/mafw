@@ -1,5 +1,6 @@
 import type {
   PodDetail,
+  PodDirectionState,
   PodGoal,
   PodGoalRevision,
   PodGoalRevisionStatus,
@@ -341,6 +342,33 @@ export function goalSessionIdentity(
     title,
     ended,
     transcript: ended && !!session.transcriptRef,
+  }
+}
+
+/** revision.directionJson 是 DirectionState 的镜像；坏 JSON 只当没有（fail-open）。 */
+export function parsePodDirectionState(
+  json: string | null | undefined,
+  revision: number | null,
+): PodDirectionState | null {
+  if (!json) return null
+  try {
+    const state = JSON.parse(json)
+    if (!state || typeof state !== "object") return null
+    return {
+      version: 1,
+      goalId: String(state.goalId ?? ""),
+      revision: typeof state.revision === "number" ? state.revision : (revision ?? 1),
+      // 只有真正请求过方向裁定才是 pending；none/缺省 = 方向已明确，不能强制用户确认。
+      status: state.status === "decided"
+        ? "decided"
+        : state.status === "pending" ? "pending" : "none",
+      options: Array.isArray(state.options) ? state.options : [],
+      requests: Array.isArray(state.requests) ? state.requests : [],
+      decisions: Array.isArray(state.decisions) ? state.decisions : [],
+      updatedAt: typeof state.updatedAt === "string" ? state.updatedAt : null,
+    } as PodDirectionState
+  } catch {
+    return null
   }
 }
 

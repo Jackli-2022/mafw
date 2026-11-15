@@ -24,6 +24,7 @@ import {
   planEditGate,
   podHttpStatus,
   podStageLabel,
+  parsePodDirectionState,
   previousTechLeadTranscript,
   revisionHistory,
   revisionStatusLabel,
@@ -38,27 +39,6 @@ import { goalUserActionIntent, summarizeGoalForUser } from "../goal-user-view"
 import { shouldOpenPlan, type PlanOpenRequest } from "../plan-open"
 
 const TERMINAL_ACTIONS = new Set(["COMPLETED", "FAILED", "CANCELLED", "ARCHIVED"])
-
-/** revision.directionJson 是 DirectionState 的镜像；坏 JSON 只当没有（fail-open）。 */
-function parseDirectionState(json: string | null | undefined, revision: number | null): PodDirectionState | null {
-  if (!json) return null
-  try {
-    const state = JSON.parse(json)
-    if (!state || typeof state !== "object") return null
-    return {
-      version: 1,
-      goalId: String(state.goalId ?? ""),
-      revision: typeof state.revision === "number" ? state.revision : (revision ?? 1),
-      status: state.status === "decided" ? "decided" : "pending",
-      options: Array.isArray(state.options) ? state.options : [],
-      requests: Array.isArray(state.requests) ? state.requests : [],
-      decisions: Array.isArray(state.decisions) ? state.decisions : [],
-      updatedAt: typeof state.updatedAt === "string" ? state.updatedAt : null,
-    } as PodDirectionState
-  } catch {
-    return null
-  }
-}
 
 function artifactName(value: string): string {
   return value.split(/[\\/]/).filter(Boolean).pop() ?? value
@@ -116,6 +96,22 @@ export function GoalDetailPanel(props: {
   let resultRef: HTMLDivElement | undefined
   let disposed = false
   onCleanup(() => { disposed = true })
+
+  /**
+   * 「裁定方向」不能只滚动：面板已经可见时 scrollIntoView 没有任何视觉反馈。
+   * 直接 focus 方向输入框，用户能看到光标/焦点环，下一步「记录方向决定」才明确。
+   */
+  const focusDirectionInput = () => {
+    const section = directionRef
+    section?.scrollIntoView({ block: "start", behavior: "smooth" })
+    const input = section?.querySelector("textarea") as HTMLTextAreaElement | null
+    if (!input) return
+    try {
+      input.focus({ preventScroll: true })
+    } catch {
+      input.focus()
+    }
+  }
 
   async function load(id: string) {
     setLoading(true); setError(null)
@@ -380,7 +376,7 @@ export function GoalDetailPanel(props: {
   const revisionRows = () => revisionHistory(revisions(), activeRevision())
   const directionState = (): PodDirectionState | null => {
     const revision = currentRevision()
-    const parsed = parseDirectionState(revision?.directionJson, revision?.revision ?? null)
+    const parsed = parsePodDirectionState(revision?.directionJson, revision?.revision ?? null)
     if (parsed) return parsed
     const status = revision?.directionStatus
     if (status === "pending" || status === "decided") {
@@ -625,7 +621,7 @@ export function GoalDetailPanel(props: {
     }
     if (intent === "review_direction") {
       return showDirection()
-        ? { label: "裁定方向", run: () => directionRef?.scrollIntoView({ block: "start", behavior: "smooth" }) }
+        ? { label: "裁定方向", run: focusDirectionInput }
         : null
     }
     if (intent === "view_result") {
@@ -664,8 +660,11 @@ export function GoalDetailPanel(props: {
     void directionState()
     void hasResult()
     const timer = setTimeout(() => {
+      if (focus === "direction") {
+        focusDirectionInput()
+        return
+      }
       const target = focus === "question" ? questionRef
-        : focus === "direction" ? directionRef
         : focus === "result" ? resultRef
         : undefined
       target?.scrollIntoView({ block: "start", behavior: "smooth" })
