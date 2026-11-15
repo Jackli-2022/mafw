@@ -6607,3 +6607,306 @@ describe('api-contract: E10h-R6 memory/media/internal/device write responses', (
     expect(responded.has('tts.speakStream')).toBe(false);
   });
 });
+
+describe('api-contract: E10i-E3 plugin / media explicit error statuses', () => {
+  const findOp = (operationId: string): any => {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const candidate of Object.values<any>(methods)) {
+        if (candidate?.operationId === operationId) return candidate;
+      }
+    }
+    return null;
+  };
+
+  const errorSchema = (operationId: string, status: string): any =>
+    findOp(operationId)?.responses?.[status]?.content?.['application/json']?.schema;
+
+  test('mcp config writes declare 400/404/409/503 (body / not_found / etag / surface gate)', () => {
+    // statusFor() in mcp-config.ts: invalid|exists|type_mismatch|too_large -> 400,
+    // not_found -> 404, etag_mismatch -> 409; the surface gate answers 503.
+    for (const operationId of [
+      'mcp.configPreview',
+      'mcp.configPreviewRemove',
+      'mcp.configApply',
+      'mcp.configRestore',
+      'mcp.configRemove',
+    ]) {
+      const op = findOp(operationId);
+      for (const status of ['400', '404', '409', '503']) {
+        expect({ operationId, status, declared: op.responses?.[status] !== undefined })
+          .toEqual({ operationId, status, declared: true });
+        expect({ operationId, status, required: errorSchema(operationId, status).required })
+          .toEqual({ operationId, status, required: ['error'] });
+      }
+    }
+    expect(findOp('mcp.configRemove').responses['409'].description).toBe('Conflict');
+    // connect/disconnect only gate on the surface (503); their 502 (transport
+    // failure) is not part of the declared status palette -> stays on default.
+    expect(errorSchema('mcp.connect', '503').properties.code?.const).toBeUndefined();
+    expect(findOp('mcp.connect').responses['502']).toBeUndefined();
+  });
+
+  test('plugins.install declares the upload cap 413 and the name conflict 409', () => {
+    const op = findOp('plugins.install');
+    for (const status of ['400', '409', '413']) {
+      expect({ status, declared: op.responses?.[status] !== undefined }).toEqual({ status, declared: true });
+      expect({ status, required: errorSchema('plugins.install', status).required }).toEqual({ status, required: ['error'] });
+    }
+    // HubError(413) is the byte cap, not a body parser failure.
+    expect(op.responses['413'].description).toBe('Payload Too Large');
+    // No manager gate on the legacy single-file upload.
+    expect(op.responses['503']).toBeUndefined();
+  });
+
+  test('plugins package ops carry the PackageManagerError statuses they throw', () => {
+    for (const [operationId, statuses] of [
+      ['plugins.installPackage', ['400', '404', '409', '503']],
+      ['plugins.enable', ['400', '404', '409', '503']],
+      ['plugins.disable', ['400', '404', '409', '503']],
+      ['plugins.reload', ['400', '404', '409', '503']],
+      ['plugins.rollback', ['400', '404', '409', '503']],
+      ['plugins.check', ['400', '404', '503']],
+      ['plugins.delete', ['400', '404', '503']],
+      ['plugins.apply', ['400', '409', '503']],
+      ['plugins.invoke', ['400', '404', '409']],
+    ] as const) {
+      const op = findOp(operationId);
+      for (const status of statuses) {
+        expect({ operationId, status, declared: op.responses?.[status] !== undefined })
+          .toEqual({ operationId, status, declared: true });
+        expect({ operationId, status, required: errorSchema(operationId, status).required })
+          .toEqual({ operationId, status, required: ['error'] });
+      }
+    }
+    // remove() never runs assertNotBlocked -> no 409; applyPending() never runs
+    // assertInstalled -> no 404.
+    expect(findOp('plugins.delete').responses['409']).toBeUndefined();
+    expect(findOp('plugins.apply').responses['404']).toBeUndefined();
+    // PluginActionError: 400 invalid-input, 404 unknown package/action, 409
+    // aborted|unloaded|stale-revision. 408/502 stay on default.
+    expect(findOp('plugins.invoke').responses['408']).toBeUndefined();
+    expect(findOp('plugins.invoke').responses['502']).toBeUndefined();
+  });
+
+  test('plugins safety / doctor / web-ticket declare their gates (503 / 400 / 404 / 413)', () => {
+    for (const [operationId, statuses] of [
+      ['plugins.doctorAll', ['503']],
+      ['plugins.doctor', ['400', '503']],
+      ['plugins.kill', ['503']],
+      ['plugins.resume', ['503']],
+      ['plugins.quarantine', ['400', '503']],
+      ['plugins.unquarantine', ['400', '503']],
+      ['plugins.webTicket', ['400', '404', '413']],
+    ] as const) {
+      const op = findOp(operationId);
+      for (const status of statuses) {
+        expect({ operationId, status, declared: op.responses?.[status] !== undefined })
+          .toEqual({ operationId, status, declared: true });
+      }
+    }
+    // 503 here is "safety/doctor/manager not initialized", never the capability body.
+    for (const operationId of ['plugins.doctorAll', 'plugins.kill', 'plugins.resume']) {
+      expect(errorSchema(operationId, '503').properties.code?.const).toBeUndefined();
+    }
+  });
+
+  test('runtime.switch / restartAgent / reload / dryEvent declare only real branches', () => {
+    for (const [operationId, statuses] of [
+      ['runtime.switch', ['400', '409']],
+      ['runtime.restartAgent', ['409', '503']],
+      ['runtime.reload', ['503']],
+      ['runtime.dryEvent', ['400']],
+      ['runtime.config.update', ['503']],
+    ] as const) {
+      const op = findOp(operationId);
+      for (const status of statuses) {
+        expect({ operationId, status, declared: op.responses?.[status] !== undefined })
+          .toEqual({ operationId, status, declared: true });
+        expect({ operationId, status, required: errorSchema(operationId, status).required })
+          .toEqual({ operationId, status, required: ['error'] });
+      }
+    }
+    // switch: invalid JSON + unknown plugin (400), guard/blocked (409).
+    expect(findOp('runtime.switch').responses['404']).toBeUndefined();
+    // runtime.config.update 503 has two handler branches: capGuard
+    // ({error, code:'capability_unavailable'}) and the missing-LLM-client
+    // branch ({error} only). Only the optional-code envelope is true for both.
+    expect(errorSchema('runtime.config.update', '503').properties.code?.const).toBeUndefined();
+    // conformance always answers 200 (scenario failures live in the body).
+    for (const status of ['400', '404', '409', '503']) {
+      expect(findOp('runtime.conformance').responses[status]).toBeUndefined();
+    }
+  });
+
+  test('config / project / manager / commands / models declare their validation statuses', () => {
+    for (const operationId of ['config.set', 'manager.rotate', 'models.update', 'embedding.update', 'media.switch', 'llm.compress']) {
+      expect({ operationId, declared: findOp(operationId).responses['400'] !== undefined })
+        .toEqual({ operationId, declared: true });
+    }
+    expect(findOp('mafwCommands.run').responses['400']).toBeDefined();
+    // hold-queue precheck answers 409 before delegating to the command registry.
+    expect(errorSchema('mafwCommands.run', '409').required).toEqual(['error']);
+
+    // /register: project cap is a capacity refusal with the quota triple.
+    const quota = errorSchema('project.setCurrent', '429');
+    expect(quota.required).toEqual(['error', 'code', 'resource', 'limit', 'current']);
+    expect(quota.properties.code.const).toBe('quota_exceeded');
+    expect(errorSchema('project.setCurrent', '400').properties.code?.const).toBeUndefined();
+  });
+
+  test('memory ops declare what they actually write (200-only writers stay bare)', () => {
+    expect(errorSchema('memory.delete', '404').required).toEqual(['error']);
+    for (const status of ['400', '503']) {
+      expect({ status, declared: findOp('memory.embeddingsBackfill').responses[status] !== undefined })
+        .toEqual({ status, declared: true });
+      expect(errorSchema('memory.embeddingsBackfill', status).required).toEqual(['error']);
+    }
+    // 503 carries code:'disk_low' — a plain envelope, not the capability body.
+    expect(errorSchema('memory.embeddingsBackfill', '503').properties.code?.const).toBeUndefined();
+    expect(findOp('memory.merge').responses['400']).toBeDefined();
+
+    // memory.add / memory.setSticky always answer 200 ({success:false,error}
+    // in the body), so they must not claim a 4xx contract.
+    for (const operationId of ['memory.add', 'memory.setSticky']) {
+      for (const status of ['400', '404', '409', '413', '429', '503']) {
+        expect({ operationId, status, declared: findOp(operationId).responses[status] !== undefined })
+          .toEqual({ operationId, status, declared: false });
+      }
+    }
+  });
+
+  test('media uploads declare the 413 byte cap; /a2a has no transport 401/403', () => {
+    for (const operationId of ['media.upload', 'media.uploadAndCreate']) {
+      const op = findOp(operationId);
+      for (const status of ['400', '413', '503']) {
+        expect({ operationId, status, declared: op.responses?.[status] !== undefined })
+          .toEqual({ operationId, status, declared: true });
+      }
+      expect(op.responses['413'].description).toBe('Payload Too Large');
+      // 415 Unsupported media type is not in the declared palette -> default.
+      expect(op.responses['415']).toBeUndefined();
+    }
+    // MediaAgent gate only; the loopback 403 stays on default because the
+    // (non-/api) path must not carry the transport auth pair.
+    expect(findOp('media.createTask').responses['503']).toBeDefined();
+    expect(findOp('media.createTask').responses['403']).toBeUndefined();
+    expect(findOp('media.createTask').responses['401']).toBeUndefined();
+    expect(findOp('media.analyzeAudio').responses['400']).toBeDefined();
+    expect(findOp('media.analyzeAudio').responses['503']).toBeDefined();
+    expect(findOp('media.createTaskApi').responses['400']).toBeDefined();
+    // reload always answers 200 {ok:true,plugins}.
+    expect(findOp('media.pluginsReload').responses['400']).toBeUndefined();
+  });
+
+  test('tts / chat / python / obs / tools / eval declare their branch statuses', () => {
+    for (const [operationId, statuses] of [
+      ['tts.speak', ['400', '503']],
+      ['tts.speakStream', ['400']],
+      ['tts.interrupt', ['400']],
+      ['chat.send', ['400', '503']],
+      ['chat.sendEnriched', ['400', '409', '503']],
+      ['python.execute', ['400', '429', '503']],
+      ['python.restart', ['400', '503']],
+      ['obs.capture', ['400']],
+      ['tools.execute', ['400', '404']],
+      ['eval.chatCompletions', ['400']],
+    ] as const) {
+      const op = findOp(operationId);
+      for (const status of statuses) {
+        expect({ operationId, status, declared: op.responses?.[status] !== undefined })
+          .toEqual({ operationId, status, declared: true });
+      }
+    }
+    // Streaming op keeps its 200 SSE shape and still declares the JSON 400.
+    expect(findOp('tts.speakStream').responses['200'].content).toBeUndefined();
+    // python.execute concurrency cap: QuotaExceededError -> quota triple.
+    const quota = errorSchema('python.execute', '429');
+    expect(quota.required).toEqual(['error', 'code', 'resource', 'limit', 'current']);
+    expect(quota.properties.code.const).toBe('quota_exceeded');
+    // obs.capture is fail-open: no 5xx/4xx beyond the input-validation 400.
+    for (const status of ['404', '409', '413', '429', '503']) {
+      expect(findOp('obs.capture').responses[status]).toBeUndefined();
+    }
+  });
+
+  test('mobile / devices / skills declare pairing + revocation statuses', () => {
+    for (const [operationId, statuses] of [
+      ['mobile.pairingVerify', ['400', '409', '413', '503']],
+      ['mobile.devicesRegister', ['400']],
+      ['mobile.devicesDelete', ['404']],
+      ['devices.register', ['400']],
+      ['devices.delete', ['404']],
+      ['mobile.mediaTaskAsk', ['400']],
+      ['mobile.mediaTaskUpload', ['400', '413']],
+      ['skills.deopt', ['404']],
+    ] as const) {
+      const op = findOp(operationId);
+      for (const status of statuses) {
+        expect({ operationId, status, declared: op.responses?.[status] !== undefined })
+          .toEqual({ operationId, status, declared: true });
+      }
+    }
+    // 409 = already paired without rotate; 413 = pairing body cap.
+    expect(errorSchema('mobile.pairingVerify', '409').properties.code?.const).toBeUndefined();
+    expect(findOp('mobile.pairingVerify').responses['413'].description).toBe('Payload Too Large');
+    // mediaTaskUpload has no service gate (the agent is created at handler build).
+    expect(findOp('mobile.mediaTaskUpload').responses['503']).toBeUndefined();
+  });
+
+  test('the E3 batch raises the explicit-status ledger to 157 ops / 131 new responses', () => {
+    let opsWithErrors = 0;
+    const byStatus: Record<string, number> = {};
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const op of Object.values<any>(methods)) {
+        if (!op?.operationId) continue;
+        const explicit = Object.keys(op.responses ?? {}).filter(
+          (status) => !['200', '201', '202', '204', '401', '403', 'default'].includes(status),
+        );
+        if (explicit.length === 0) continue;
+        opsWithErrors++;
+        for (const status of explicit) byStatus[status] = (byStatus[status] ?? 0) + 1;
+      }
+    }
+    // E1 43 + E2 51 + E3 63 = 157 ops carry explicit non-2xx responses.
+    expect(opsWithErrors).toBe(157);
+    expect(byStatus).toEqual({ 400: 124, 404: 78, 409: 54, 413: 6, 429: 3, 503: 91 });
+  });
+
+  test('every E3 explicit status uses a documented error shape', () => {
+    const problems: string[] = [];
+    const E3_OPS = new Set([
+      'mcp.connect', 'mcp.disconnect', 'mcp.configPreview', 'mcp.configPreviewRemove',
+      'mcp.configApply', 'mcp.configRestore', 'mcp.configRemove',
+      'plugins.install', 'plugins.installPackage', 'plugins.check', 'plugins.enable',
+      'plugins.disable', 'plugins.delete', 'plugins.apply', 'plugins.reload', 'plugins.invoke',
+      'plugins.doctorAll', 'plugins.doctor', 'plugins.kill', 'plugins.resume',
+      'plugins.quarantine', 'plugins.unquarantine', 'plugins.rollback', 'plugins.webTicket',
+      'runtime.switch', 'runtime.restartAgent', 'runtime.reload', 'runtime.dryEvent',
+      'runtime.config.update', 'config.set', 'project.setCurrent', 'manager.rotate',
+      'mafwCommands.run', 'models.update', 'memory.delete', 'memory.embeddingsBackfill',
+      'memory.merge', 'embedding.update', 'media.switch', 'media.upload',
+      'media.uploadAndCreate', 'media.createTask', 'media.createTaskApi', 'media.analyzeAudio',
+      'tts.speak', 'tts.speakStream', 'tts.interrupt', 'chat.send', 'chat.sendEnriched',
+      'python.execute', 'python.restart', 'obs.capture', 'tools.execute', 'eval.chatCompletions',
+      'llm.compress', 'mobile.mediaTaskAsk', 'mobile.mediaTaskUpload', 'mobile.devicesRegister',
+      'mobile.pairingVerify', 'mobile.devicesDelete', 'devices.register', 'devices.delete',
+      'skills.deopt',
+    ]);
+    for (const operationId of E3_OPS) {
+      const op = findOp(operationId);
+      expect({ operationId, present: op !== null }).toEqual({ operationId, present: true });
+      const explicit = Object.keys(op.responses ?? {}).filter(
+        (status) => !['200', '401', '403', 'default'].includes(status),
+      );
+      for (const status of explicit) {
+        const schema = op.responses[status].content?.['application/json']?.schema;
+        const required: string[] = schema?.required ?? [];
+        if (status === '429' && required.includes('code') && schema.properties.code.const === 'quota_exceeded') continue;
+        if (!required.includes('error')) {
+          problems.push(`${operationId}: ${status} is not an ErrorEnvelope`);
+        }
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+});

@@ -623,20 +623,20 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'DELETE', path: '/api/usage/plugins/:name', operationId: 'session.usagePluginsDelete', tags: ['session'], request: EmptyRequest, requestRequired: false, response: SessionUsagePluginsDeleteResponse },
   { method: 'POST', path: '/api/usage/plugins/:name/test', operationId: 'session.usagePluginTest', tags: ['session'], request: EmptyRequest, requestRequired: false, response: SessionUsagePluginTestResponse },
   { method: 'GET', path: '/api/mcp/servers', operationId: 'mcp.servers', tags: ['mcp'], response: McpServersResponse },
-  { method: 'POST', path: '/api/mcp/:name/connect', operationId: 'mcp.connect', tags: ['mcp'], request: EmptyRequest, requestRequired: false, response: McpConnectResponse },
-  { method: 'POST', path: '/api/mcp/:name/disconnect', operationId: 'mcp.disconnect', tags: ['mcp'], request: EmptyRequest, requestRequired: false, response: McpDisconnectResponse },
-  { method: 'POST', path: '/api/mcp/config/preview', operationId: 'mcp.configPreview', tags: ['mcp'], request: McpConfigPreviewRequest, response: McpConfigPreviewResponse },
-  { method: 'POST', path: '/api/mcp/config/preview-remove', operationId: 'mcp.configPreviewRemove', tags: ['mcp'], request: McpConfigPreviewRemoveRequest, response: McpConfigPreviewRemoveResponse },
-  { method: 'POST', path: '/api/mcp/config/apply', operationId: 'mcp.configApply', tags: ['mcp'], request: McpConfigApplyRequest, response: McpConfigApplyResponse },
-  { method: 'POST', path: '/api/mcp/config/restore', operationId: 'mcp.configRestore', tags: ['mcp'], request: McpConfigRestoreRequest, response: McpConfigRestoreResponse },
-  { method: 'DELETE', path: '/api/mcp/config/servers/:name', operationId: 'mcp.configRemove', tags: ['mcp'], request: McpConfigRemoveRequest, response: McpConfigRemoveResponse },
-  { method: 'POST', path: '/api/mafw-commands/run', operationId: 'mafwCommands.run', tags: ['mafwCommands'], request: MafwCommandRunRequest, response: MafwCommandRunResponse },
+  { method: 'POST', path: '/api/mcp/:name/connect', operationId: 'mcp.connect', tags: ['mcp'], request: EmptyRequest, requestRequired: false, response: McpConnectResponse, errors: [503] },
+  { method: 'POST', path: '/api/mcp/:name/disconnect', operationId: 'mcp.disconnect', tags: ['mcp'], request: EmptyRequest, requestRequired: false, response: McpDisconnectResponse, errors: [503] },
+  { method: 'POST', path: '/api/mcp/config/preview', operationId: 'mcp.configPreview', tags: ['mcp'], request: McpConfigPreviewRequest, response: McpConfigPreviewResponse, errors: [400, 404, 409, 503] },
+  { method: 'POST', path: '/api/mcp/config/preview-remove', operationId: 'mcp.configPreviewRemove', tags: ['mcp'], request: McpConfigPreviewRemoveRequest, response: McpConfigPreviewRemoveResponse, errors: [400, 404, 409, 503] },
+  { method: 'POST', path: '/api/mcp/config/apply', operationId: 'mcp.configApply', tags: ['mcp'], request: McpConfigApplyRequest, response: McpConfigApplyResponse, errors: [400, 404, 409, 503] },
+  { method: 'POST', path: '/api/mcp/config/restore', operationId: 'mcp.configRestore', tags: ['mcp'], request: McpConfigRestoreRequest, response: McpConfigRestoreResponse, errors: [400, 404, 409, 503] },
+  { method: 'DELETE', path: '/api/mcp/config/servers/:name', operationId: 'mcp.configRemove', tags: ['mcp'], request: McpConfigRemoveRequest, response: McpConfigRemoveResponse, errors: [400, 404, 409, 503] },
+  { method: 'POST', path: '/api/mafw-commands/run', operationId: 'mafwCommands.run', tags: ['mafwCommands'], request: MafwCommandRunRequest, response: MafwCommandRunResponse, errors: [400, 409] },
   { method: 'GET', path: '/api/mafw-commands', operationId: 'mafwCommands.list', tags: ['mafwCommands'], response: MafwCommandsListResponse },
   { method: 'GET', path: '/api/manager/session', operationId: 'manager.session', tags: ['manager'], response: ManagerSessionResponse },
-  { method: 'POST', path: '/api/manager/session/rotate', operationId: 'manager.rotate', tags: ['manager'], request: ManagerRotateRequest, response: ManagerRotateResponse },
+  { method: 'POST', path: '/api/manager/session/rotate', operationId: 'manager.rotate', tags: ['manager'], request: ManagerRotateRequest, response: ManagerRotateResponse, errors: [400] },
   { method: 'GET', path: '/api/projects', operationId: 'project.list', tags: ['project'], response: ProjectListResponse },
   { method: 'GET', path: '/api/projects/current', operationId: 'project.current', tags: ['project'], response: ProjectCurrentResponse },
-  { method: 'POST', path: '/register', operationId: 'project.setCurrent', tags: ['project'], request: ProjectSetCurrentRequest, response: ProjectSetCurrentResponse },
+  { method: 'POST', path: '/register', operationId: 'project.setCurrent', tags: ['project'], request: ProjectSetCurrentRequest, response: ProjectSetCurrentResponse, errors: [400, 429], errorSchemas: { 429: QuotaExceededErrorSchema } },
   { method: 'POST', path: '/api/file-history/snapshot', operationId: 'fileHistory.snapshot', tags: ['internal'], request: FileHistorySnapshotRequest, response: FileHistorySnapshotResponse },
   { method: 'GET', path: '/api/file-history', operationId: 'fileHistory.list', tags: ['internal'], response: FileHistoryListResponse },
   { method: 'POST', path: '/api/file-history/restore', operationId: 'fileHistory.restore', tags: ['internal'], request: FileHistoryRestoreRequest, response: FileHistoryRestoreResponse },
@@ -644,41 +644,41 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/events', operationId: 'event.publish', tags: ['event'], request: EventPublishRequest, response: EventPublishResponse, errors: [400] },
   { method: 'GET', path: '/api/runtime', operationId: 'runtime.get', tags: ['runtime'], response: RuntimeGetResponse },
   { method: 'GET', path: '/api/runtime/contract', operationId: 'runtime.contract', tags: ['runtime'], response: RuntimeContractResponse },
-  { method: 'POST', path: '/api/runtime/switch', operationId: 'runtime.switch', tags: ['runtime'], request: RuntimeSwitchRequest, response: RuntimeSwitchResponse },
-  { method: 'POST', path: '/api/runtime/restart-agent', operationId: 'runtime.restartAgent', tags: ['runtime'], request: EmptyRequest, requestRequired: false, response: RuntimeRestartAgentResponse },
+  { method: 'POST', path: '/api/runtime/switch', operationId: 'runtime.switch', tags: ['runtime'], request: RuntimeSwitchRequest, response: RuntimeSwitchResponse, errors: [400, 409] },
+  { method: 'POST', path: '/api/runtime/restart-agent', operationId: 'runtime.restartAgent', tags: ['runtime'], request: EmptyRequest, requestRequired: false, response: RuntimeRestartAgentResponse, errors: [409, 503] },
   // runtime.reload（POST /api/runtime/reload）在下方 NON_SDK 补遗块登记（SDK 不调用 → internal）
   { method: 'GET', path: '/api/plugins', operationId: 'plugins.list', tags: ['plugins'], response: PluginsListResponse },
   { method: 'GET', path: '/api/plugins/client', operationId: 'plugins.client', tags: ['plugins'], response: PluginsClientResponse },
   // `plugins.install` 刻意不声明 request：输入是原始 `.js` 字节流 + query
   // （filename/type/overwrite），不是 JSON body —— 见 schemas/plugin-write.ts 尾注。
   // 但 200 响应仍是 JSON（`PluginEntry`），见 schemas/plugin-write-responses.ts。
-  { method: 'POST', path: '/api/plugins/install', operationId: 'plugins.install', tags: ['plugins'], response: PluginInstallResponse },
-  { method: 'POST', path: '/api/plugins/packages/install', operationId: 'plugins.installPackage', tags: ['plugins'], request: PluginInstallPackageRequest, response: PluginInstallPackageResponse },
-  { method: 'POST', path: '/api/plugins/check', operationId: 'plugins.check', tags: ['plugins'], request: PluginCheckRequest, response: PluginCheckResponse },
-  { method: 'POST', path: '/api/plugins/enable', operationId: 'plugins.enable', tags: ['plugins'], request: PluginToggleRequest, response: PluginEnableResponse },
-  { method: 'POST', path: '/api/plugins/disable', operationId: 'plugins.disable', tags: ['plugins'], request: PluginToggleRequest, response: PluginDisableResponse },
-  { method: 'POST', path: '/api/plugins/delete', operationId: 'plugins.delete', tags: ['plugins'], request: PluginToggleRequest, response: PluginDeleteResponse },
-  { method: 'POST', path: '/api/plugins/:name/apply', operationId: 'plugins.apply', tags: ['plugins'], request: EmptyRequest, requestRequired: false, response: PluginApplyResponse },
-  { method: 'POST', path: '/api/plugins/:name/reload', operationId: 'plugins.reload', tags: ['plugins'], request: EmptyRequest, requestRequired: false, response: PluginReloadResponse },
-  { method: 'POST', path: '/api/plugins/:name/actions/:action', operationId: 'plugins.invoke', tags: ['plugins'], request: PluginInvokeRequest, requestRequired: false, response: PluginInvokeResponse },
+  { method: 'POST', path: '/api/plugins/install', operationId: 'plugins.install', tags: ['plugins'], response: PluginInstallResponse, errors: [400, 409, 413] },
+  { method: 'POST', path: '/api/plugins/packages/install', operationId: 'plugins.installPackage', tags: ['plugins'], request: PluginInstallPackageRequest, response: PluginInstallPackageResponse, errors: [400, 404, 409, 503] },
+  { method: 'POST', path: '/api/plugins/check', operationId: 'plugins.check', tags: ['plugins'], request: PluginCheckRequest, response: PluginCheckResponse, errors: [400, 404, 503] },
+  { method: 'POST', path: '/api/plugins/enable', operationId: 'plugins.enable', tags: ['plugins'], request: PluginToggleRequest, response: PluginEnableResponse, errors: [400, 404, 409, 503] },
+  { method: 'POST', path: '/api/plugins/disable', operationId: 'plugins.disable', tags: ['plugins'], request: PluginToggleRequest, response: PluginDisableResponse, errors: [400, 404, 409, 503] },
+  { method: 'POST', path: '/api/plugins/delete', operationId: 'plugins.delete', tags: ['plugins'], request: PluginToggleRequest, response: PluginDeleteResponse, errors: [400, 404, 503] },
+  { method: 'POST', path: '/api/plugins/:name/apply', operationId: 'plugins.apply', tags: ['plugins'], request: EmptyRequest, requestRequired: false, response: PluginApplyResponse, errors: [400, 409, 503] },
+  { method: 'POST', path: '/api/plugins/:name/reload', operationId: 'plugins.reload', tags: ['plugins'], request: EmptyRequest, requestRequired: false, response: PluginReloadResponse, errors: [400, 404, 409, 503] },
+  { method: 'POST', path: '/api/plugins/:name/actions/:action', operationId: 'plugins.invoke', tags: ['plugins'], request: PluginInvokeRequest, requestRequired: false, response: PluginInvokeResponse, errors: [400, 404, 409] },
   // Phase 6 自愈面（main 合并进来的 9 个 op）：contract 见 schemas/plugin-recovery.ts
-  { method: 'POST', path: '/api/plugins/doctor', operationId: 'plugins.doctorAll', tags: ['plugins'], request: EmptyRequest, requestRequired: false, response: PluginDoctorAllResponse },
-  { method: 'POST', path: '/api/plugins/:name/doctor', operationId: 'plugins.doctor', tags: ['plugins'], request: EmptyRequest, requestRequired: false, response: PluginDoctorResponse },
-  { method: 'POST', path: '/api/plugins/kill', operationId: 'plugins.kill', tags: ['plugins'], request: EmptyRequest, requestRequired: false, response: PluginKillResponse },
-  { method: 'POST', path: '/api/plugins/resume', operationId: 'plugins.resume', tags: ['plugins'], request: EmptyRequest, requestRequired: false, response: PluginResumeResponse },
-  { method: 'POST', path: '/api/plugins/:name/quarantine', operationId: 'plugins.quarantine', tags: ['plugins'], request: PluginQuarantineRequest, response: PluginQuarantineResponse },
-  { method: 'POST', path: '/api/plugins/:name/unquarantine', operationId: 'plugins.unquarantine', tags: ['plugins'], request: EmptyRequest, requestRequired: false, response: PluginUnquarantineResponse },
+  { method: 'POST', path: '/api/plugins/doctor', operationId: 'plugins.doctorAll', tags: ['plugins'], request: EmptyRequest, requestRequired: false, response: PluginDoctorAllResponse, errors: [503] },
+  { method: 'POST', path: '/api/plugins/:name/doctor', operationId: 'plugins.doctor', tags: ['plugins'], request: EmptyRequest, requestRequired: false, response: PluginDoctorResponse, errors: [400, 503] },
+  { method: 'POST', path: '/api/plugins/kill', operationId: 'plugins.kill', tags: ['plugins'], request: EmptyRequest, requestRequired: false, response: PluginKillResponse, errors: [503] },
+  { method: 'POST', path: '/api/plugins/resume', operationId: 'plugins.resume', tags: ['plugins'], request: EmptyRequest, requestRequired: false, response: PluginResumeResponse, errors: [503] },
+  { method: 'POST', path: '/api/plugins/:name/quarantine', operationId: 'plugins.quarantine', tags: ['plugins'], request: PluginQuarantineRequest, response: PluginQuarantineResponse, errors: [400, 503] },
+  { method: 'POST', path: '/api/plugins/:name/unquarantine', operationId: 'plugins.unquarantine', tags: ['plugins'], request: EmptyRequest, requestRequired: false, response: PluginUnquarantineResponse, errors: [400, 503] },
   { method: 'GET', path: '/api/plugins/audit', operationId: 'plugins.audit', tags: ['plugins'], response: PluginsAuditResponse },
   { method: 'GET', path: '/api/plugins/:name/last-good', operationId: 'plugins.lastGood', tags: ['plugins'], response: PluginLastGoodResponse },
-  { method: 'POST', path: '/api/plugins/:name/rollback', operationId: 'plugins.rollback', tags: ['plugins'], request: EmptyRequest, requestRequired: false, response: PluginRollbackResponse },
+  { method: 'POST', path: '/api/plugins/:name/rollback', operationId: 'plugins.rollback', tags: ['plugins'], request: EmptyRequest, requestRequired: false, response: PluginRollbackResponse, errors: [400, 404, 409, 503] },
   // Plugin web surfaces (spec 2026-11-09 §5.5): the desktop main process mints
   // the package-bound ticket through the SDK; asset/events stay browser-only
   // (internal, see NON_SDK_ROUTES).
-  { method: 'POST', path: '/api/plugins/:name/web-ticket', operationId: 'plugins.webTicket', tags: ['plugins'], request: PluginWebTicketRequest, response: PluginWebTicketResponse },
+  { method: 'POST', path: '/api/plugins/:name/web-ticket', operationId: 'plugins.webTicket', tags: ['plugins'], request: PluginWebTicketRequest, response: PluginWebTicketResponse, errors: [400, 404, 413] },
   { method: 'GET', path: '/api/config', operationId: 'config.get', tags: ['config'], response: ConfigGetResponse },
-  { method: 'PUT', path: '/api/config', operationId: 'config.set', tags: ['config'], request: ConfigSetRequest, response: ConfigSetResponse },
+  { method: 'PUT', path: '/api/config', operationId: 'config.set', tags: ['config'], request: ConfigSetRequest, response: ConfigSetResponse, errors: [400] },
   { method: 'GET', path: '/api/runtime-config', operationId: 'runtime.config.get', tags: ['runtime'], response: RuntimeConfigGetResponse },
-  { method: 'PATCH', path: '/api/runtime-config', operationId: 'runtime.config.update', tags: ['runtime'], request: RuntimeConfigUpdateRequest, response: RuntimeConfigUpdateResponse },
+  { method: 'PATCH', path: '/api/runtime-config', operationId: 'runtime.config.update', tags: ['runtime'], request: RuntimeConfigUpdateRequest, response: RuntimeConfigUpdateResponse, errors: [503] },
   { method: 'GET', path: '/api/goals', operationId: 'goals.list', tags: ['goals'], response: GoalListResponse },
   { method: 'GET', path: '/api/goals/:id', operationId: 'goals.get', tags: ['goals'], response: GoalViewSchema },
   { method: 'GET', path: '/api/goals/:id/plan', operationId: 'goals.plan', tags: ['goals'], response: GoalPlanResponse },
@@ -738,11 +738,11 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/memory/merged-search', operationId: 'memory.mergedSearch', tags: ['memory'], response: MemoryMergedSearchResponse },
   { method: 'GET', path: '/api/memory/energy-distribution', operationId: 'memory.getEnergyDistribution', tags: ['memory'], response: MemoryEnergyDistributionResponse },
   { method: 'GET', path: '/api/l5/axioms', operationId: 'memory.getL5Axioms', tags: ['memory'], response: MemoryL5AxiomsResponse },
-  { method: 'DELETE', path: '/api/memory/:id', operationId: 'memory.delete', tags: ['memory'], request: EmptyRequest, requestRequired: false, response: MemoryDeleteResponse },
+  { method: 'DELETE', path: '/api/memory/:id', operationId: 'memory.delete', tags: ['memory'], request: EmptyRequest, requestRequired: false, response: MemoryDeleteResponse, errors: [404] },
   { method: 'GET', path: '/api/memory/sticky', operationId: 'memory.listSticky', tags: ['memory'], response: MemoryStickyResponse },
   { method: 'POST', path: '/api/memory/pin', operationId: 'memory.setSticky', tags: ['memory'], request: MemorySetStickyRequest, response: MemorySetStickyResponse },
   { method: 'GET', path: '/api/memory/embedding-config', operationId: 'embedding.get', tags: ['embedding'], response: EmbeddingGetResponse },
-  { method: 'POST', path: '/api/memory/embedding-config', operationId: 'embedding.update', tags: ['embedding'], request: EmbeddingUpdateRequest, response: EmbeddingUpdateResponse },
+  { method: 'POST', path: '/api/memory/embedding-config', operationId: 'embedding.update', tags: ['embedding'], request: EmbeddingUpdateRequest, response: EmbeddingUpdateResponse, errors: [400] },
   { method: 'GET', path: '/api/approvals', operationId: 'approvals.list', tags: ['approvals'], response: ApprovalListResponse },
   { method: 'POST', path: '/api/approvals/:id/respond', operationId: 'approvals.respond', tags: ['approvals'], request: ApprovalRespondRequest, response: ApprovalRespondResponse, errors: [400, 404] },
   { method: 'GET', path: '/api/triage', operationId: 'triage.list', tags: ['triage'], response: TriageListResponse },
@@ -750,7 +750,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/triage/:id/confirm', operationId: 'triage.confirm', tags: ['triage'], request: EmptyRequest, requestRequired: false, response: TriageConfirmResponse, errors: [400, 404] },
   { method: 'POST', path: '/api/triage/:id/reject', operationId: 'triage.reject', tags: ['triage'], request: EmptyRequest, requestRequired: false, response: TriageRejectResponse },
   { method: 'POST', path: '/api/triage/:id/propose', operationId: 'triage.propose', tags: ['triage'], request: TriageProposeRequest, response: TriageProposeResponse, errors: [400, 404] },
-  { method: 'POST', path: '/api/skills/:name/deopt', operationId: 'skills.deopt', tags: ['internal'], request: SkillsDeoptRequest, requestRequired: false, response: SkillsDeoptResponse },
+  { method: 'POST', path: '/api/skills/:name/deopt', operationId: 'skills.deopt', tags: ['internal'], request: SkillsDeoptRequest, requestRequired: false, response: SkillsDeoptResponse, errors: [404] },
   { method: 'GET', path: '/api/skills', operationId: 'skills.list', tags: ['internal'], response: SkillsListResponse },
   { method: 'GET', path: '/api/questions', operationId: 'questions.list', tags: ['questions'], response: QuestionListResponse },
   { method: 'POST', path: '/api/questions/:id/reply', operationId: 'questions.reply', tags: ['questions'], request: QuestionReplyRequest, response: QuestionReplyResponse, errors: [400, 503] },
@@ -765,33 +765,33 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/approvals/rules', operationId: 'permissions.listRules', tags: ['permissions'], response: PermissionRulesListResponse },
   { method: 'POST', path: '/api/approvals/rules', operationId: 'permissions.addRule', tags: ['permissions'], request: PermissionRuleAddRequest, response: PermissionAddRuleResponse, errors: [400] },
   { method: 'DELETE', path: '/api/approvals/rules', operationId: 'permissions.removeRule', tags: ['permissions'], request: PermissionRuleRemoveRequest, response: PermissionRemoveRuleResponse, errors: [400, 404] },
-  { method: 'POST', path: '/api/chat', operationId: 'chat.send', tags: ['chat'], request: ChatSendRequest, response: ChatSendResponse },
-  { method: 'POST', path: '/api/chat/enriched', operationId: 'chat.sendEnriched', tags: ['chat'], request: ChatSendEnrichedRequest, response: ChatSendEnrichedResponse },
+  { method: 'POST', path: '/api/chat', operationId: 'chat.send', tags: ['chat'], request: ChatSendRequest, response: ChatSendResponse, errors: [400, 503] },
+  { method: 'POST', path: '/api/chat/enriched', operationId: 'chat.sendEnriched', tags: ['chat'], request: ChatSendEnrichedRequest, response: ChatSendEnrichedResponse, errors: [400, 409, 503] },
   { method: 'GET', path: '/api/media/plugins', operationId: 'media.plugins', tags: ['media'], response: MediaPluginsResponse },
-  { method: 'POST', path: '/api/media/switch', operationId: 'media.switch', tags: ['media'], request: MediaSwitchRequest, response: MediaSwitchResponse },
+  { method: 'POST', path: '/api/media/switch', operationId: 'media.switch', tags: ['media'], request: MediaSwitchRequest, response: MediaSwitchResponse, errors: [400] },
   // 原始媒体字节流（`for await (const chunk of req)`）+ query `type`：不是 JSON body，
   // 按 spec §1.3 排除（收口 `REQUEST_EXCLUDED` 记录原因）。建任务的 JSON 面是
   // `media.createTaskApi`（已覆盖）。**响应仍是 JSON**（工件引用），E10h-R6 补 200 schema。
-  { method: 'POST', path: '/api/media/upload', operationId: 'media.upload', tags: ['media'], response: MediaUploadResponse },
+  { method: 'POST', path: '/api/media/upload', operationId: 'media.upload', tags: ['media'], response: MediaUploadResponse, errors: [400, 413, 503] },
   // 原创字节流 + query `type`/`question`（上传后立即建任务），同上排除；响应同样是 JSON。
-  { method: 'POST', path: '/api/media/upload-and-create', operationId: 'media.uploadAndCreate', tags: ['media'], response: MediaUploadAndCreateResponse },
+  { method: 'POST', path: '/api/media/upload-and-create', operationId: 'media.uploadAndCreate', tags: ['media'], response: MediaUploadAndCreateResponse, errors: [400, 413, 503] },
   // A2A JSON-RPC 透传（`transport.ts` 只 JSON.parse 后交给 mediaAgent.handleJsonRpc，
   // 响应 application/a2a+json；非法 JSON 也原样传字符串）：**请求**信封归协议所有，
   // 排除；200 仍是 JSON-RPC 信封 → 按协议边界开放对象建模（不排除响应）。
-  { method: 'POST', path: '/a2a', operationId: 'media.createTask', tags: ['media'], response: MediaCreateTaskResponse },
+  { method: 'POST', path: '/a2a', operationId: 'media.createTask', tags: ['media'], response: MediaCreateTaskResponse, errors: [503] },
   { method: 'GET', path: '/a2a/artifacts/:id', operationId: 'media.artifact', tags: ['media'] },
-  { method: 'POST', path: '/api/tts', operationId: 'tts.speak', tags: ['tts'], request: TtsSpeakRequest, response: TtsSpeakResponse },
+  { method: 'POST', path: '/api/tts', operationId: 'tts.speak', tags: ['tts'], request: TtsSpeakRequest, response: TtsSpeakResponse, errors: [400, 503] },
   { method: 'GET', path: '/api/tts/voices', operationId: 'tts.voices', tags: ['tts'], response: TtsVoicesResponse },
   // E10h-R6 唯一排除的写响应：200 是 `text/event-stream` 的 PCM16 分块流
   // （`data: {data,voice}` … + 终止帧 `{"done":true}`），不是单个 JSON 文档。
   // 收口 `WRITE_RESPONSE_EXCLUDED` 记录原因；**不声明 `response`**。
-  { method: 'POST', path: '/api/tts/stream', operationId: 'tts.speakStream', tags: ['tts'], request: TtsSpeakStreamRequest },
-  { method: 'POST', path: '/api/tts/interrupt', operationId: 'tts.interrupt', tags: ['tts'], request: TtsInterruptRequest, response: TtsInterruptResponse },
+  { method: 'POST', path: '/api/tts/stream', operationId: 'tts.speakStream', tags: ['tts'], request: TtsSpeakStreamRequest, errors: [400] },
+  { method: 'POST', path: '/api/tts/interrupt', operationId: 'tts.interrupt', tags: ['tts'], request: TtsInterruptRequest, response: TtsInterruptResponse, errors: [400] },
   { method: 'GET', path: '/api/voice/status', operationId: 'voice.status', tags: ['voice'], response: VoiceStatusResponse },
   { method: 'GET', path: '/api/provider', operationId: 'providers.list', tags: ['providers'], response: ProviderListResponse },
   { method: 'GET', path: '/api/agents', operationId: 'agents.list', tags: ['agents'], response: AgentListResponse },
   { method: 'GET', path: '/api/model-config', operationId: 'models.get', tags: ['models'], response: ModelConfigGetResponse },
-  { method: 'POST', path: '/api/model-config', operationId: 'models.update', tags: ['models'], request: ModelsUpdateRequest, response: ModelsUpdateResponse },
+  { method: 'POST', path: '/api/model-config', operationId: 'models.update', tags: ['models'], request: ModelsUpdateRequest, response: ModelsUpdateResponse, errors: [400] },
   { method: 'GET', path: '/api/automations', operationId: 'automations.list', tags: ['automations'], response: AutomationsListResponse },
   { method: 'PUT', path: '/api/automations/:id', operationId: 'automations.toggle', tags: ['automations'], request: AutomationToggleRequest, response: AutomationToggleResponse, errors: [400] },
   { method: 'DELETE', path: '/api/automations/:id', operationId: 'automations.remove', tags: ['automations'], request: EmptyRequest, requestRequired: false, response: AutomationRemoveResponse },
@@ -848,11 +848,11 @@ const NON_SDK_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/a2a/pods/:podId/.well-known/agent-card.json', operationId: 'pods.a2aCard', tags: ['internal'], response: A2AAgentCardResponse },
   { method: 'GET', path: '/a2a/pods/:podId/artifacts/:artifactId', operationId: 'pods.a2aArtifact', tags: ['internal'] },
   // Python 内核（§5.17）
-  { method: 'POST', path: '/api/python/execute', operationId: 'python.execute', tags: ['internal'], request: PythonExecuteRequest, response: PythonExecuteResponse },
-  { method: 'POST', path: '/api/python/restart', operationId: 'python.restart', tags: ['internal'], request: PythonRestartRequest, response: PythonRestartResponse },
+  { method: 'POST', path: '/api/python/execute', operationId: 'python.execute', tags: ['internal'], request: PythonExecuteRequest, response: PythonExecuteResponse, errors: [400, 429, 503], errorSchemas: { 429: QuotaExceededErrorSchema } },
+  { method: 'POST', path: '/api/python/restart', operationId: 'python.restart', tags: ['internal'], request: PythonRestartRequest, response: PythonRestartResponse, errors: [400, 503] },
   { method: 'GET', path: '/api/python/status', operationId: 'python.status', tags: ['internal'], response: PythonStatusResponse },
   // 观察捕获 / 边界 recall / pinned 披露层（§5.11/§5.13）
-  { method: 'POST', path: '/api/obs/capture', operationId: 'obs.capture', tags: ['internal'], request: ObsCaptureRequest, response: ObsCaptureResponse },
+  { method: 'POST', path: '/api/obs/capture', operationId: 'obs.capture', tags: ['internal'], request: ObsCaptureRequest, response: ObsCaptureResponse, errors: [400] },
   { method: 'GET', path: '/api/recall/context', operationId: 'recall.context', tags: ['internal'], response: RecallContextResponse },
   { method: 'GET', path: '/api/recall/pinned', operationId: 'recall.pinned', tags: ['internal'], response: RecallPinnedResponse },
   // Task B3：T2-4 fallback 面 / W1 常驻先验块（plugin / pi host extension 消费；
@@ -864,16 +864,16 @@ const NON_SDK_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/memory/get', operationId: 'memory.get', tags: ['internal'], response: MemoryGetResponse },
   { method: 'GET', path: '/api/memory/stats', operationId: 'memory.stats', tags: ['internal'], response: MemoryStatsResponse },
   // 只读 `?limit=N`（handler 不读 body）→ 空对象 + required:false。
-  { method: 'POST', path: '/api/memory/embeddings/backfill', operationId: 'memory.embeddingsBackfill', tags: ['internal'], request: EmptyRequest, requestRequired: false, response: MemoryEmbeddingsBackfillResponse },
+  { method: 'POST', path: '/api/memory/embeddings/backfill', operationId: 'memory.embeddingsBackfill', tags: ['internal'], request: EmptyRequest, requestRequired: false, response: MemoryEmbeddingsBackfillResponse, errors: [400, 503] },
   // Goal / 编排（§5.20）
   { method: 'POST', path: '/api/work/:goalId/complete', operationId: 'goals.complete', tags: ['internal'], request: EmptyRequest, requestRequired: false, response: GoalCompleteResponse, errors: [400] },
   { method: 'POST', path: '/control', operationId: 'goals.controlLegacy', summary: 'MCP 兼容别名，与 /api/goals/control 同 handler', tags: ['internal'], request: GoalControlRequest, response: GoalControlResponse, errors: [400] },
   { method: 'GET', path: '/api/orchestration/outcomes', operationId: 'orchestration.outcomes', tags: ['internal'], response: OrchestrationOutcomesResponse },
   // 媒体补充（media.upload / uploadAndCreate 二进制排除见上；switch / plugins GET /
   // a2a / artifacts GET 已在 SDK-facing）
-  { method: 'POST', path: '/api/media/create-task', operationId: 'media.createTaskApi', tags: ['internal'], request: MediaCreateTaskApiRequest, response: MediaCreateTaskApiResponse },
+  { method: 'POST', path: '/api/media/create-task', operationId: 'media.createTaskApi', tags: ['internal'], request: MediaCreateTaskApiRequest, response: MediaCreateTaskApiResponse, errors: [400, 503] },
   { method: 'GET', path: '/api/media/resolve-task/:id', operationId: 'media.resolveTask', tags: ['internal'], response: MediaResolveTaskResponse },
-  { method: 'POST', path: '/api/media/analyze-audio', operationId: 'media.analyzeAudio', tags: ['internal'], request: MediaAnalyzeAudioRequest, response: MediaAnalyzeAudioResponse },
+  { method: 'POST', path: '/api/media/analyze-audio', operationId: 'media.analyzeAudio', tags: ['internal'], request: MediaAnalyzeAudioRequest, response: MediaAnalyzeAudioResponse, errors: [400, 503] },
   // handler 不读 body（`_req`），只 reload 插件 → 空对象 + required:false。
   { method: 'POST', path: '/api/media/plugins/reload', operationId: 'media.pluginsReload', tags: ['internal'], request: EmptyRequest, requestRequired: false, response: MediaPluginsReloadResponse },
   // 用量 dashboard（/api/stats 由 routes/dashboard.ts 挂 handler；其余旧 dashboard
@@ -900,21 +900,21 @@ const NON_SDK_ROUTES: RouteDef[] = [
     response: EventReplayResponse,
   },
   // 移动端（P5 Wave 2 反向审计后全量登记）
-  { method: 'POST', path: '/api/mobile/media/tasks/:id/ask', operationId: 'mobile.mediaTaskAsk', tags: ['internal'], request: MobileMediaTaskAskRequest, response: MobileMediaTaskAskResponse },
+  { method: 'POST', path: '/api/mobile/media/tasks/:id/ask', operationId: 'mobile.mediaTaskAsk', tags: ['internal'], request: MobileMediaTaskAskRequest, response: MobileMediaTaskAskResponse, errors: [400] },
   // multipart/form-data 文件部（`mobile/media-proxy.ts` 解析 boundary，不是 JSON body）
   // 按 spec §1.3 排除；追问的 JSON 面是 mobile.mediaTaskAsk（已覆盖）。
   // 响应仍是 JSON（任务窄投影：id/contextId/state/artifactId），E10h-R6 补 200 schema。
-  { method: 'POST', path: '/api/mobile/media/tasks', operationId: 'mobile.mediaTaskUpload', tags: ['internal'], response: MobileMediaTaskUploadResponse },
+  { method: 'POST', path: '/api/mobile/media/tasks', operationId: 'mobile.mediaTaskUpload', tags: ['internal'], response: MobileMediaTaskUploadResponse, errors: [400, 413] },
   { method: 'GET', path: '/api/mobile/tts/artifacts/:id', operationId: 'mobile.ttsArtifact', tags: ['internal'] },
   { method: 'GET', path: '/api/mobile/devices', operationId: 'mobile.devicesList', tags: ['internal'], response: DeviceListResponse },
-  { method: 'DELETE', path: '/api/mobile/devices/:id', operationId: 'mobile.devicesDelete', tags: ['internal'], request: EmptyRequest, requestRequired: false, response: MobileDevicesDeleteResponse },
-  { method: 'POST', path: '/api/mobile/devices/register', operationId: 'mobile.devicesRegister', tags: ['internal'], request: MobileDevicesRegisterRequest, response: MobileDevicesRegisterResponse },
+  { method: 'DELETE', path: '/api/mobile/devices/:id', operationId: 'mobile.devicesDelete', tags: ['internal'], request: EmptyRequest, requestRequired: false, response: MobileDevicesDeleteResponse, errors: [404] },
+  { method: 'POST', path: '/api/mobile/devices/register', operationId: 'mobile.devicesRegister', tags: ['internal'], request: MobileDevicesRegisterRequest, response: MobileDevicesRegisterResponse, errors: [400] },
   { method: 'GET', path: '/api/mobile/pairing-code', operationId: 'mobile.pairingCode', tags: ['internal'], response: PairingCodeResponse },
-  { method: 'POST', path: '/api/mobile/pairing/verify', operationId: 'mobile.pairingVerify', tags: ['internal'], request: MobilePairingVerifyRequest, response: MobilePairingVerifyResponse },
+  { method: 'POST', path: '/api/mobile/pairing/verify', operationId: 'mobile.pairingVerify', tags: ['internal'], request: MobilePairingVerifyRequest, response: MobilePairingVerifyResponse, errors: [400, 409, 413, 503] },
   // 设备注册（mobile 的 legacy 别名族）
-  { method: 'POST', path: '/api/devices', operationId: 'devices.register', tags: ['internal'], request: DevicesRegisterRequest, response: DevicesRegisterResponse },
+  { method: 'POST', path: '/api/devices', operationId: 'devices.register', tags: ['internal'], request: DevicesRegisterRequest, response: DevicesRegisterResponse, errors: [400] },
   { method: 'GET', path: '/api/devices', operationId: 'devices.list', tags: ['internal'], response: DeviceListResponse },
-  { method: 'DELETE', path: '/api/devices/:id', operationId: 'devices.delete', tags: ['internal'], request: EmptyRequest, requestRequired: false, response: DevicesDeleteResponse },
+  { method: 'DELETE', path: '/api/devices/:id', operationId: 'devices.delete', tags: ['internal'], request: EmptyRequest, requestRequired: false, response: DevicesDeleteResponse, errors: [404] },
   // E11-1：human token 轮换。只有 CLI（bin/mafw.js）与运维脚本直接打这个端点，
   // @mafw/sdk 不暴露（raw HTTP + 旧凭据证明占有）→ SDK 死契约门按 operationId
   // 显式豁免（packages/gateway-sdk/src/contract.test.ts 的 NON_SDK_EXEMPT）。
@@ -937,8 +937,8 @@ const NON_SDK_ROUTES: RouteDef[] = [
   // NON_SDK 并标 internal，SDK 死契约门据此豁免。
   { method: 'GET', path: '/api/automations/:id', operationId: 'automations.get', tags: ['internal'], response: AutomationGetResponse },
   { method: 'GET', path: '/api/automations/:id/history', operationId: 'automations.history', tags: ['internal'], response: AutomationHistoryResponse },
-  { method: 'POST', path: '/api/runtime/reload', operationId: 'runtime.reload', tags: ['internal'], request: EmptyRequest, requestRequired: false, response: RuntimeReloadResponse },
-  { method: 'POST', path: '/api/runtime/dry-event', operationId: 'runtime.dryEvent', tags: ['internal'], request: RuntimeDryEventRequest, response: RuntimeDryEventResponse },
+  { method: 'POST', path: '/api/runtime/reload', operationId: 'runtime.reload', tags: ['internal'], request: EmptyRequest, requestRequired: false, response: RuntimeReloadResponse, errors: [503] },
+  { method: 'POST', path: '/api/runtime/dry-event', operationId: 'runtime.dryEvent', tags: ['internal'], request: RuntimeDryEventRequest, response: RuntimeDryEventResponse, errors: [400] },
   { method: 'POST', path: '/api/runtime/conformance', operationId: 'runtime.conformance', tags: ['internal'], request: RuntimeConformanceRequest, requestRequired: false, response: RuntimeConformanceResponse },
   { method: 'POST', path: '/api/sessions/:sid/permissions/:rid', operationId: 'permissions.replyRuntime', tags: ['internal'], request: PermissionReplyRuntimeRequest, response: PermissionReplyRuntimeResponse, errors: [400, 404, 503] },
   // Task E2：subagent 面对不上 SDK 调用面（packages/gateway-sdk/src/client.ts 无
@@ -951,10 +951,10 @@ const NON_SDK_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/sessions/:id/subagents/:subId/result', operationId: 'session.subagents.result', tags: ['internal'], response: SessionSubagentResultResponse },
   { method: 'DELETE', path: '/api/session/:id', operationId: 'session.deleteLegacy', tags: ['internal'], request: EmptyRequest, requestRequired: false, response: SessionDeleteLegacyResponse },
   // Eval / LLM 压缩
-  { method: 'POST', path: '/api/eval/chat/completions', operationId: 'eval.chatCompletions', tags: ['internal'], request: EvalChatCompletionsRequest, response: EvalChatCompletionsResponse },
-  { method: 'POST', path: '/api/llm/compress', operationId: 'llm.compress', tags: ['internal'], request: LlmCompressRequest, response: LlmCompressResponse },
+  { method: 'POST', path: '/api/eval/chat/completions', operationId: 'eval.chatCompletions', tags: ['internal'], request: EvalChatCompletionsRequest, response: EvalChatCompletionsResponse, errors: [400] },
+  { method: 'POST', path: '/api/llm/compress', operationId: 'llm.compress', tags: ['internal'], request: LlmCompressRequest, response: LlmCompressResponse, errors: [400] },
   // 跨 worktree 记忆融合（§5.3）
-  { method: 'POST', path: '/api/merge-memory', operationId: 'memory.merge', tags: ['internal'], request: MemoryMergeRequest, response: MemoryMergeResponse },
+  { method: 'POST', path: '/api/merge-memory', operationId: 'memory.merge', tags: ['internal'], request: MemoryMergeRequest, response: MemoryMergeResponse, errors: [400] },
   // 根健康检查（dashboard/桌面探测用）
   { method: 'GET', path: '/health', operationId: 'health.root', tags: ['internal'], response: HealthResponse },
   // Plugin Web surfaces（spec 2026-11-09 §5.4-§5.6）：asset/events 由浏览器
@@ -964,7 +964,7 @@ const NON_SDK_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/plugins/:name/events', operationId: 'plugins.webEvents', tags: ['internal'] },
   // MAFW 基础工具面（out-of-process runtime 注册/执行通道；loopback-only）
   { method: 'GET', path: '/api/tools', operationId: 'tools.list', tags: ['internal'], response: ToolsListResponse },
-  { method: 'POST', path: '/api/tools/execute', operationId: 'tools.execute', tags: ['internal'], request: ToolsExecuteRequest, response: ToolsExecuteResponse },
+  { method: 'POST', path: '/api/tools/execute', operationId: 'tools.execute', tags: ['internal'], request: ToolsExecuteRequest, response: ToolsExecuteResponse, errors: [400, 404] },
   // Agent 自我认知只读面（L1 能力账本 + L2 失败谱；fail-open）
   { method: 'GET', path: '/api/agent/capabilities', operationId: 'agent.capabilities', tags: ['internal'], response: AgentCapabilitiesResponse },
 ];
