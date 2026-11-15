@@ -9,9 +9,8 @@ const shell = read("src/renderer/mafw/MafwShell.tsx")
 
 test("Lead chat renders proposed topic boundaries inline", () => {
   assert.match(chat, /BoundaryCard/)
-  assert.match(chat, /visibleBoundaryProposals/)
-  assert.match(chat, /residentTopicId/)
-  assert.match(chat, /item\.state === "resident"/)
+  assert.match(chat, /currentTopicBoundaries/)
+  assert.match(chat, /topicItems\?\.\[0\]\?\.id/)
   assert.match(chat, /isLead\(\) && proposedBoundaryCards\(\)\.length > 0/)
   assert.match(card, /分开/)
   assert.match(card, /合并/)
@@ -22,6 +21,9 @@ test("Lead chat renders proposed topic boundaries inline", () => {
 
 test("shell refreshes boundaries on Lead entry and after sending", () => {
   assert.match(shell, /refreshTopicsThrottled/)
+  assert.match(shell, /scheduleTopicsTrailingRefresh/)
+  assert.match(shell, /currentProject\(\) !== projectDir/)
+  assert.match(shell, /setTopicItems\(\[\]\)/)
   assert.match(shell, /onMessageSent=/)
   assert.match(shell, /lastTopicsRefreshAt/)
   assert.match(shell, /topicBusy=\{topicBusy\(\)\}/)

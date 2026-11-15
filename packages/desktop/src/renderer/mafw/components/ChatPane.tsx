@@ -70,7 +70,7 @@ import { PodReviewItems } from "./PodReviewItems"
 import { BoundaryCard } from "./BoundaryCard"
 import { closeEpisode, createEpisode, groupTurnsByEpisode, reopenEpisode, resolvedCloseStartId, type ChatEpisode } from "../chat/episode-model"
 import { createEpisodeStore } from "../chat/episode-store"
-import { visibleBoundaryProposals } from "../chat/boundary-card"
+import { currentTopicBoundaries } from "../chat/boundary-card"
 import { unresolvedReviewCount, visibleChatReviewItems } from "../chat/chat-review"
 import type { DecisionBoardView, DecisionItem } from "../focus/decision-model"
 import type { DecisionRecord, PodReviewItem } from "@mafw/sdk"
@@ -269,8 +269,10 @@ export type ChatPaneProps = {
   }) => Promise<string | null>
   /** Task 20：当前 tab 是某个 Goal 的 Tech Lead 讨论时，发送走 sendTechLeadMessage。 */
   techLeadTarget?: () => { podId: string; goalId: string } | null | Promise<{ podId: string; goalId: string } | null>
-  /** 评审项在 Tech Lead chat 内联；refresh key 由 shell 的 pod/goal 版本驱动。 */
+  /** 评审项在 Tech Lead chat 内联；refresh key 由 shell 的 reviewRevision 驱动。 */
   reviewRefreshKey?: () => number
+  reviewActive?: () => boolean
+  reviewAccepted?: () => boolean
   onOpenReview?: () => void
   /** Lead 消息发出后刷新话题边界（boundary service 在 intake 时写入）。 */
   onMessageSent?: () => void
@@ -363,14 +365,9 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const [reviewTick, setReviewTick] = createSignal(0)
   const visibleReviewItems = createMemo(() => visibleChatReviewItems(reviewItems(), 3))
   const unresolvedReviewItems = createMemo(() => unresolvedReviewCount(reviewItems()))
-  const residentTopicId = createMemo(() =>
-    props.topicItems?.find((item) => item.state === "resident")?.id ?? null)
-  const proposedBoundaryCards = createMemo(() => {
-    const topicId = residentTopicId()
-    if (!topicId) return []
-    return visibleBoundaryProposals(props.topicBoundaries ?? [])
-      .filter((item) => item.fromTopicId === topicId)
-  })
+  const currentTopicId = createMemo(() => props.topicItems?.[0]?.id ?? null)
+  const proposedBoundaryCards = createMemo(() =>
+    currentTopicBoundaries(currentTopicId(), props.topicBoundaries ?? []))
   onMount(() => setEpisodes(episodeStore().load()))
   const persistEpisodes = (next: ChatEpisode[]) => {
     setEpisodes(next)
@@ -1365,8 +1362,13 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     props.reviewRefreshKey?.()
     reviewTick()
     let live = true
-    setReviewBusy(true)
+    setReviewItems([])
     setReviewError(null)
+    if (props.reviewActive && !props.reviewActive()) {
+      setReviewBusy(false)
+      return
+    }
+    setReviewBusy(true)
     void Promise.resolve(props.techLeadTarget?.() ?? null)
       .then(async (target) => {
         if (!live) return
@@ -2738,15 +2740,22 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           />
         </Show>
         <Show when={unresolvedReviewItems() > 0 || reviewError()}>
-          <div class="mafw-chat-review-inline" aria-label="评审意见">
+          <div class="mafw-chat-review-inline">
             <Show when={reviewError()}>
-              {(error) => <div class="mafw-chat-review-error">{error()}</div>}
+              {(error) => (
+                <div class="mafw-chat-review-error" role="alert">
+                  <span>{error()}</span>
+                  <ButtonV2 variant="ghost" size="small" onClick={() => setReviewTick((value) => value + 1)}>
+                    重试
+                  </ButtonV2>
+                </div>
+              )}
             </Show>
             <Show when={visibleReviewItems().length > 0}>
               <PodReviewItems
                 items={visibleReviewItems()}
                 busy={reviewBusy()}
-                accepted={false}
+                accepted={props.reviewAccepted?.() ?? false}
                 onResolve={(item) => void resolveReview(item)}
                 onReopen={(item) => void reopenReview(item)}
               />

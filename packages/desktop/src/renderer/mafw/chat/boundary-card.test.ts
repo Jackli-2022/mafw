@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { boundaryTriggerLabel, visibleBoundaryProposals } from "./boundary-card"
+import { boundaryTriggerLabel, currentTopicBoundaries, visibleBoundaryProposals } from "./boundary-card"
 
 const boundary = (id: string, status: "proposed" | "accepted" | "merged") => ({
   id,
@@ -28,4 +28,14 @@ test("boundary triggers get human labels", () => {
   assert.equal(boundaryTriggerLabel("goal_closed"), "Goal 已结束")
   assert.equal(boundaryTriggerLabel("keyword"), "关键词")
   assert.equal(boundaryTriggerLabel("custom"), "custom")
+})
+
+test("current-topic boundaries filter before the cap", () => {
+  const items = [
+    { ...boundary("other", "proposed"), fromTopicId: "t2" },
+    { ...boundary("b", "proposed"), fromTopicId: "t1" },
+    { ...boundary("c", "proposed"), fromTopicId: "t1" },
+  ]
+  assert.deepEqual(currentTopicBoundaries("t1", items, 1).map((row) => row.id), ["b"])
+  assert.deepEqual(currentTopicBoundaries(null, items), [])
 })

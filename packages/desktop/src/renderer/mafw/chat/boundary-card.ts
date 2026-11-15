@@ -19,3 +19,18 @@ export function visibleBoundaryProposals(
 ): LeadBoundaryView[] {
   return items.filter((item) => item.status === "proposed").slice(0, limit)
 }
+
+/**
+ * The inline card belongs to one topic. Filter first so proposals from other
+ * topics cannot consume the cap.
+ */
+export function currentTopicBoundaries(
+  topicId: string | null,
+  items: readonly LeadBoundaryView[],
+  limit = 2,
+): LeadBoundaryView[] {
+  if (!topicId) return []
+  return items
+    .filter((item) => item.status === "proposed" && item.fromTopicId === topicId)
+    .slice(0, limit)
+}

@@ -19,7 +19,10 @@ test("Tech Lead chat surfaces unresolved review items inline", () => {
 })
 
 test("shell supplies the review refresh key and full-review entry", () => {
-  assert.match(shell, /reviewRefreshKey=/)
-  assert.match(shell, /onOpenReview=/)
+  assert.match(shell, /reviewRefreshKey=\{\(\) => podStore\.reviewRevision\(\)\}/)
+  assert.match(shell, /reviewActive=\{/)
+  assert.match(shell, /reviewAccepted=\{/)
+  assert.match(shell, /onOpenReview=\{/)
+  assert.match(shell, /setPodGoalId\(goalId\)/)
   assert.match(shell, /openChangesFace\(\{ section: "review" \}\)/)
 })

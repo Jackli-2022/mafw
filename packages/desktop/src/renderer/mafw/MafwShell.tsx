@@ -3394,6 +3394,7 @@ export function MafwShell() {
     setTopicBusy(true)
     try {
       const result = await window.api.mafw.lead.topics.list({ projectDir })
+      if (currentProject() !== projectDir) return
       setTopicItems(buildTopicList(result.items))
       const items = await Promise.all(result.items.map(async (topic) => {
         try {
@@ -3402,6 +3403,7 @@ export function MafwShell() {
           return []
         }
       }))
+      if (currentProject() !== projectDir) return
       setTopicBoundaries(proposedBoundaries(items.flat()))
     } finally {
       setTopicBusy(false)
@@ -3433,7 +3435,7 @@ export function MafwShell() {
   }
   const boundaryAction = async (boundaryId: string, action: "accept" | "merge" | "undo"): Promise<void> => {
     const boundary = topicBoundaries().find((item) => item.id === boundaryId)
-    if (!boundary) return
+    if (!boundary || boundary.projectDir !== currentProject()) return
     setTopicBusy(true)
     try {
       await window.api.mafw.lead.boundaries[action](boundary.fromTopicId, boundaryId)
@@ -3445,6 +3447,7 @@ export function MafwShell() {
     setTopicBusy(false)
   }
   let lastTopicsRefreshAt = 0
+  let topicsRefreshTimer: ReturnType<typeof setTimeout> | null = null
   const refreshTopicsThrottled = (projectDir: string): void => {
     const now = Date.now()
     if (now - lastTopicsRefreshAt < 10_000) return
@@ -3453,6 +3456,29 @@ export function MafwShell() {
       console.warn("[mafw] topics refresh failed", err)
     })
   }
+  /** Boundary proposals are written after intake; one trailing read catches them. */
+  const scheduleTopicsTrailingRefresh = (projectDir: string): void => {
+    if (topicsRefreshTimer) clearTimeout(topicsRefreshTimer)
+    topicsRefreshTimer = setTimeout(() => {
+      topicsRefreshTimer = null
+      if (currentProject() !== projectDir) return
+      void refreshTopics(projectDir).catch((err: any) => {
+        console.warn("[mafw] topics trailing refresh failed", err)
+      })
+    }, 1500)
+  }
+  createEffect(on(() => currentProject(), () => {
+    setTopicItems([])
+    setTopicBoundaries([])
+    lastTopicsRefreshAt = 0
+    if (topicsRefreshTimer) {
+      clearTimeout(topicsRefreshTimer)
+      topicsRefreshTimer = null
+    }
+  }, { defer: true }))
+  onCleanup(() => {
+    if (topicsRefreshTimer) clearTimeout(topicsRefreshTimer)
+  })
   // Lead chat: boundary proposals are written on intake. Refresh on session
   // entry and after each sent message, throttled so topic/boundary fan-out
   // never becomes a per-token cost.
@@ -4364,11 +4390,26 @@ export function MafwShell() {
                           onDecisionReopen={reopenDecisionRecord}
                           onCloseEpisode={closeEpisodeToDecision}
                           techLeadTarget={activeTechLeadTarget}
-                          reviewRefreshKey={() => Math.max(goalsRev(), podStore.revision())}
-                          onOpenReview={() => openChangesFace({ section: "review" })}
+                          reviewRefreshKey={() => podStore.reviewRevision()}
+                          reviewActive={() => {
+                            const goalId = activeTechLeadGoalId()
+                            const goal = podStore.detail()?.goals.find((item) => item.goalId === goalId)
+                            return !!goal && goal.status === "active"
+                          }}
+                          reviewAccepted={() => {
+                            const goalId = activeTechLeadGoalId()
+                            return !!podStore.detail()?.goals.find((item) => item.goalId === goalId)?.accepted
+                          }}
+                          onOpenReview={() => {
+                            const goalId = activeTechLeadGoalId()
+                            if (goalId) setPodGoalId(goalId)
+                            openChangesFace({ section: "review" })
+                          }}
                           onMessageSent={() => {
                             const projectDir = currentProject()
-                            if (projectDir && activeSessionIsLead()) refreshTopicsThrottled(projectDir)
+                            if (!projectDir || !activeSessionIsLead()) return
+                            refreshTopicsThrottled(projectDir)
+                            scheduleTopicsTrailingRefresh(projectDir)
                           }}
                           sendBlocked={activeTechLeadBlocked}
                           onOpenFile={(root, rel) => openFileInScope(rel, root, focusScopeFromContent(contentScope()))}

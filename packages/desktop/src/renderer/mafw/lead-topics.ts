@@ -4,7 +4,6 @@ export interface LeadTopicListItem {
   id: string
   title: string
   summary: string
-  state: string
   stateLabel: string
   lastActiveAt: string
   goalId: string
@@ -30,7 +29,6 @@ export function buildTopicList(topics: readonly LeadTopicView[]): LeadTopicListI
     id: topic.id,
     title: topic.title || "未命名话题",
     summary: topic.summary?.trim() ?? "",
-    state: topic.state,
     stateLabel: leadTopicStateLabel(topic.state),
     lastActiveAt: topic.lastActiveAt,
     goalId: topic.goalId,

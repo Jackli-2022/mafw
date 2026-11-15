@@ -8,8 +8,8 @@ describe('lead topic list model', () => {
       { id: 't2', title: 'UI', summary: null, state: 'resident', lastActiveAt: '2026-11-10T01:00:00.000Z', goalId: 'g2', resumedFrom: 't1' },
     ] as any);
 
-    expect(model[0]).toMatchObject({ id: 't1', state: 'warm', stateLabel: '近期' });
-    expect(model[1]).toMatchObject({ id: 't2', state: 'resident', stateLabel: '当前', summary: '' });
+    expect(model[0]).toMatchObject({ id: 't1', stateLabel: '近期' });
+    expect(model[1]).toMatchObject({ id: 't2', stateLabel: '当前', summary: '' });
     expect(JSON.stringify(model)).not.toContain('ses_');
   });
 
