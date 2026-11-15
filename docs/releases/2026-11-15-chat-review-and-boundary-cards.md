@@ -1,7 +1,7 @@
 # 2026-11-15 · Chat 内联评审项与话题边界卡
 
 - **版本**：`v5.1.0`（交互行为修订，不升版本号）
-- **提交**：`153e6c32`
+- **提交**：`153e6c32`（P3 + P4）、`1519bcac`（边界卡只显示当前 resident topic）
 - **范围**：desktop Chat；gateway / SDK / 运行时契约零改动
 - **前置**：`docs/releases/2026-11-15-agent-native-chat-intent.md`（P1 + P2）
 
