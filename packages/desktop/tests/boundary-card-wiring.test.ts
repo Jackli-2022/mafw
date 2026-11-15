@@ -10,6 +10,8 @@ const shell = read("src/renderer/mafw/MafwShell.tsx")
 test("Lead chat renders proposed topic boundaries inline", () => {
   assert.match(chat, /BoundaryCard/)
   assert.match(chat, /visibleBoundaryProposals/)
+  assert.match(chat, /residentTopicId/)
+  assert.match(chat, /item\.state === "resident"/)
   assert.match(chat, /isLead\(\) && proposedBoundaryCards\(\)\.length > 0/)
   assert.match(card, /分开/)
   assert.match(card, /合并/)

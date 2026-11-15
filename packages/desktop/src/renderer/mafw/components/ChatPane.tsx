@@ -363,7 +363,14 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const [reviewTick, setReviewTick] = createSignal(0)
   const visibleReviewItems = createMemo(() => visibleChatReviewItems(reviewItems(), 3))
   const unresolvedReviewItems = createMemo(() => unresolvedReviewCount(reviewItems()))
-  const proposedBoundaryCards = createMemo(() => visibleBoundaryProposals(props.topicBoundaries ?? []))
+  const residentTopicId = createMemo(() =>
+    props.topicItems?.find((item) => item.state === "resident")?.id ?? null)
+  const proposedBoundaryCards = createMemo(() => {
+    const topicId = residentTopicId()
+    if (!topicId) return []
+    return visibleBoundaryProposals(props.topicBoundaries ?? [])
+      .filter((item) => item.fromTopicId === topicId)
+  })
   onMount(() => setEpisodes(episodeStore().load()))
   const persistEpisodes = (next: ChatEpisode[]) => {
     setEpisodes(next)
