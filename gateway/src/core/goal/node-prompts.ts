@@ -627,8 +627,8 @@ function renderNodePromptBody(node: ExecutableGoalNode, ctx: NodePromptCtx): str
       ? `Goal 验收条件（逐条判定，任务全部通过不能代替）：\n${goalLines.join('\n')}`
       : '',
     '',
-    `把评审报告（markdown）写入 ${a.review}，文件末尾必须包含：`,
-    '没有这个 `mafw-review` 块或 JSON 非法 = 评审无效（artifact_invalid）；不要只写 markdown 表格。',
+    `把评审报告（markdown）写入 ${a.review}：**第一段必须是 \`\`\`mafw-review 块（放在最前面）**，然后再写人读分析。`,
+    '长报告可能被输出上限截断；块放末尾会丢失。没有这个块或 JSON 非法 = 评审无效（artifact_invalid）；不要只写 markdown 表格。',
     '```mafw-review',
     '{"verdict":"PASS|FAIL","tasks":[{"taskId":"w1-t1","result":"pass|fail|skipped","evidence":"跑了什么命令/看了哪个文件"}],"feedback":"FAIL 时给具体修复指引"}',
     '```',

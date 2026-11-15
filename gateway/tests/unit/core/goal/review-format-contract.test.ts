@@ -21,6 +21,7 @@ describe('review report format contract', () => {
     expect(prompt).toContain('"goalResults"');
     expect(prompt).toContain('缺一个即判为无效评审');
     expect(prompt).toContain('评审无效');
+    expect(prompt).toContain('第一段');
   });
 
   it('the mafw-review skill documents the same schema as the parser', () => {
@@ -32,6 +33,7 @@ describe('review report format contract', () => {
     expect(skill).toContain('"tasks"');
     expect(skill).toContain('"goalResults"');
     expect(skill).toContain('"feedback"');
+    expect(skill).toContain('第一段');
     expect(skill).not.toContain('"metrics"');
   });
 });

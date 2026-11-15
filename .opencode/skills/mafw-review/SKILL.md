@@ -35,14 +35,11 @@ Reviewer — 客观严格的代码审查者，最后防线。
 
 ## 报告格式（必需）
 
-Review 报告 `.md` 必须**在文件末尾**包含一个机器可读的 `mafw-review` 围栏块。  
+Review 报告 `.md` 的**第一段**必须是一个机器可读的 `mafw-review` 围栏块，然后才是人读分析。  
+块放在末尾时，长报告可能被输出上限截断而丢失。  
 **没有这个块、JSON 非法、漏 taskId、漏必需 Goal 条件 = 评审无效（artifact_invalid），不要只写 markdown 表格。**
 
 ````markdown
-# Review Report — loop {n}
-
-（人读的分析叙述）
-
 ```mafw-review
 {
   "verdict": "PASS" | "FAIL",
@@ -55,6 +52,10 @@ Review 报告 `.md` 必须**在文件末尾**包含一个机器可读的 `mafw-r
   "feedback": "FAIL 时给具体修复指引；PASS 可空字符串"
 }
 ```
+
+# Review Report — loop {n}
+
+（人读的分析叙述）
 ````
 
 规则：
