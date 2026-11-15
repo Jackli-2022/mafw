@@ -1,9 +1,4 @@
 /* Episode 头：一段讨论的边界与状态，保持在 transcript 流内。 */
-.mafw-episode-mark {
-  flex: none;
-  color: var(--text-3);
-  font-size: 10px;
-}
 .mafw-episode-header {
   display: flex;
   flex-wrap: wrap;

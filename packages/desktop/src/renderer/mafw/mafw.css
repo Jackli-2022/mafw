@@ -958,6 +958,10 @@ html[data-theme="light"] body {
    按钮不设 shrink:0 会被同步压缩变形（并行按钮被顶变形根因） */
 .mafw-session-titlebar-inner > * { flex-shrink: 0; }
 .mafw-session-titlebar-inner > .mafw-session-titlebar-text { flex-shrink: 1; }
+.mafw-episode-mark {
+  color: var(--text-3);
+  font-size: 10px;
+}
 .mafw-chat-header-divider {
   width: 1px;
   height: 14px;

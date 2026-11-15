@@ -26,6 +26,8 @@ test("only a completed tech_lead result gets the card", () => {
 test("the shell owns Goal navigation and cancellation", () => {
   assert.match(shell, /configureGoalCreatedActions\(\{/)
   assert.match(shell, /openGoalAndDiscuss\(goalId, "timeline"\)/)
-  assert.match(shell, /goals\.control\(\{ goalId, action: "ABORT" \}\)/)
+  assert.match(shell, /status: async \(goalId\)/)
+  assert.match(shell, /goals\.stop\(goalId\)/)
+  assert.match(shell, /canCancel: goal\.status === "active" && goal\.stage\.kind === "discussing"/)
   assert.match(shell, /configureGoalCreatedActions\(null\)/)
 })

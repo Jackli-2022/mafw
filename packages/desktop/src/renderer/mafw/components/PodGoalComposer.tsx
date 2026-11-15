@@ -1,4 +1,4 @@
-import { Show, createEffect, createSignal } from "solid-js"
+import { Show, createSignal } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { TextareaV2 } from "@mafw/ui/v2/textarea-v2"
@@ -12,7 +12,6 @@ export function PodGoalComposer(props: {
   activeGoalId: string | null
   autofocus?: boolean
   projectName?: string
-  initial?: { title: string; objective?: string; acceptance?: string[] }
   onCreate(input: {
     title: string
     objective: string
@@ -21,32 +20,14 @@ export function PodGoalComposer(props: {
     planReview: "auto" | "manual"
   }): Promise<boolean>
 }) {
-  const [title, setTitle] = createSignal(props.initial?.title ?? "")
-  const [objective, setObjective] = createSignal(props.initial?.objective ?? "")
-  const [acceptance, setAcceptance] = createSignal((props.initial?.acceptance ?? []).join("\n"))
+  const [title, setTitle] = createSignal("")
+  const [objective, setObjective] = createSignal("")
+  const [acceptance, setAcceptance] = createSignal("")
   const [boundaries, setBoundaries] = createSignal("")
   const [manual, setManual] = createSignal(false)
   const [submitError, setSubmitError] = createSignal<string | null>(null)
   const [submitting, setSubmitting] = createSignal(false)
   const [preview, setPreview] = createSignal<DelegationPreviewView | null>(null)
-
-  createEffect(() => {
-    const initial = props.initial
-    if (!initial) {
-      setTitle("")
-      setObjective("")
-      setAcceptance("")
-      setBoundaries("")
-      setManual(false)
-      setPreview(null)
-      return
-    }
-    setTitle(initial.title)
-    setObjective(initial.objective ?? "")
-    setAcceptance((initial.acceptance ?? []).join("\n"))
-    setManual(false)
-    setPreview(null)
-  })
 
   const canSubmit = () =>
     title().trim().length > 0

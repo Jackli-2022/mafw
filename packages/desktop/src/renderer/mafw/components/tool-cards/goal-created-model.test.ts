@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { goalCreatedView } from "./goal-created-model"
+import { goalCreatedActionState, goalCreatedView } from "./goal-created-model"
 
 test("tech_lead result becomes an open-discussion card", () => {
   const view = goalCreatedView(
@@ -20,7 +20,6 @@ test("tech_lead result becomes an open-discussion card", () => {
   assert.equal(view.kind, "tech_lead")
   assert.equal(view.title, "修复登录")
   assert.equal(view.goalId, "g1")
-  assert.equal(view.stage, "discussing")
   assert.equal(view.sessionID, "ses_1")
   assert.equal(view.hasHandoff, true)
 })
@@ -66,4 +65,25 @@ test("tech lead session failure is surfaced as a warning", () => {
   )
   assert.equal(view.kind, "tech_lead")
   assert.equal(view.warning, "runtime unavailable")
+})
+
+test("failed and malformed outputs are errors, not actionable cards", () => {
+  assert.equal(goalCreatedView({ title: "失败" }, JSON.stringify({ success: false }), "completed").kind, "error")
+  assert.equal(goalCreatedView({ title: "坏 JSON" }, "{not-json", "completed").kind, "error")
+})
+
+test("only a live, active, discussing Goal can be cancelled", () => {
+  const view = goalCreatedView(
+    { title: "修复登录" },
+    JSON.stringify({ success: true, routedTo: "tech_lead", goalId: "g1", stage: "discussing" }),
+    "completed",
+  )
+  const discussing = { status: "active", stage: "discussing", label: "Tech Lead 讨论中", canCancel: true }
+  assert.equal(goalCreatedActionState(view, discussing, false).canCancel, true)
+  assert.equal(goalCreatedActionState(view, { ...discussing, stage: "planning", canCancel: false }, false).canCancel, false)
+  assert.equal(goalCreatedActionState(view, { ...discussing, status: "done", canCancel: false }, false).canCancel, false)
+  assert.equal(goalCreatedActionState(view, { ...discussing, status: "aborted", canCancel: false }, false).canOpen, false)
+  assert.equal(goalCreatedActionState(view, null, false).canCancel, false)
+  assert.equal(goalCreatedActionState(view, undefined, false).canCancel, false)
+  assert.equal(goalCreatedActionState(view, discussing, true).canOpen, false)
 })

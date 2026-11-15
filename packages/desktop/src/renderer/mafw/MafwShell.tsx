@@ -1296,15 +1296,31 @@ export function MafwShell() {
     // Increase inline-action cards navigate through the shell, not window events.
     configureGoalCreatedActions({
       open: (goalId) => { void openGoalAndDiscuss(goalId, "timeline") },
+      status: async (goalId) => {
+        try {
+          await podStore.refresh()
+        } catch { /* fall back to the cached projection */ }
+        const goal = podStore.detail()?.goals.find((item) => item.goalId === goalId)
+        if (!goal) return null
+        return {
+          status: goal.status,
+          stage: goal.stage.kind,
+          label: podStageLabel(goal.stage),
+          canCancel: goal.status === "active" && goal.stage.kind === "discussing",
+        }
+      },
       cancel: async (goalId) => {
         try {
-          await window.api.mafw.goals.control({ goalId, action: "ABORT" })
+          await window.api.mafw.goals.stop(goalId)
           await podStore.refresh()
           showToastV2({ description: "已撤销刚创建的 Goal", duration: 2500 })
           return true
         } catch (err: any) {
+          const message = String(err?.message ?? err)
           showToastV2({
-            description: `撤销失败：${String(err?.message ?? err).slice(0, 120)}`,
+            description: message.includes("409")
+              ? "Goal 已进入执行或已结束，不能撤销"
+              : `撤销失败：${message.slice(0, 120)}`,
             duration: 3500,
           })
           return false

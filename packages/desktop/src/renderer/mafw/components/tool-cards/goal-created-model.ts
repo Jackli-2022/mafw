@@ -3,10 +3,43 @@ export type GoalCreatedView = {
   kind: "tech_lead" | "legacy" | "pending" | "error"
   title: string
   goalId: string
-  stage: string
   sessionID: string | null
   hasHandoff: boolean
   warning: string | null
+}
+
+/** Live Pod projection used to decide whether "撤销" is still legal. */
+export type GoalLiveState = {
+  status: string
+  stage: string
+  label: string
+  canCancel: boolean
+}
+
+export type GoalCreatedActionState = {
+  statusLabel: string
+  canOpen: boolean
+  canCancel: boolean
+}
+
+/**
+ * The tool payload is an immutable creation snapshot. Never trust it for
+ * destructive actions: the Goal may have advanced or finished since. The card
+ * asks the shell for live state and only cancels a still-discussing Goal.
+ */
+export function goalCreatedActionState(
+  view: GoalCreatedView,
+  live: GoalLiveState | null | undefined,
+  cancelled: boolean,
+): GoalCreatedActionState {
+  const canOpenBase = !!view.goalId
+  if (cancelled) return { statusLabel: "已撤销", canOpen: false, canCancel: false }
+  if (live === undefined) return { statusLabel: "正在确认 Goal 状态…", canOpen: canOpenBase, canCancel: false }
+  if (live === null) return { statusLabel: "状态未知，仅可打开 Goal", canOpen: canOpenBase, canCancel: false }
+  if (live.status === "aborted") return { statusLabel: "已撤销", canOpen: false, canCancel: false }
+  if (live.status === "done") return { statusLabel: "已结束", canOpen: canOpenBase, canCancel: false }
+  if (!live.canCancel) return { statusLabel: live.label || "已进入执行", canOpen: canOpenBase, canCancel: false }
+  return { statusLabel: "Tech Lead 讨论中 · 尚未执行", canOpen: canOpenBase, canCancel: true }
 }
 
 function parseOutput(output: string | undefined): any {
@@ -38,7 +71,6 @@ export function goalCreatedView(
     kind: "pending",
     title,
     goalId,
-    stage: "",
     sessionID: null,
     hasHandoff: false,
     warning: null,
@@ -58,7 +90,6 @@ export function goalCreatedView(
     kind: "tech_lead",
     title: title || text(payload.title) || routedGoalId,
     goalId: routedGoalId,
-    stage: text(payload.stage),
     sessionID: text(payload.sessionID) || null,
     hasHandoff: !!payload.sourceRef || !!payload.handoffPath,
     warning: warning || null,
