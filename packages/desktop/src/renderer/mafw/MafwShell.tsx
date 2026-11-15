@@ -1311,6 +1311,12 @@ export function MafwShell() {
       },
       cancel: async (goalId) => {
         try {
+          await podStore.refresh()
+          const goal = podStore.detail()?.goals.find((item) => item.goalId === goalId)
+          if (!goal || goal.status !== "active" || goal.stage.kind !== "discussing") {
+            showToastV2({ description: "Goal 已进入执行或已结束，不能撤销", duration: 3500 })
+            return false
+          }
           await window.api.mafw.goals.stop(goalId)
           await podStore.refresh()
           showToastV2({ description: "已撤销刚创建的 Goal", duration: 2500 })

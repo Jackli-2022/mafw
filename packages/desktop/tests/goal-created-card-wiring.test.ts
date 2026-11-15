@@ -29,5 +29,6 @@ test("the shell owns Goal navigation and cancellation", () => {
   assert.match(shell, /status: async \(goalId\)/)
   assert.match(shell, /goals\.stop\(goalId\)/)
   assert.match(shell, /canCancel: goal\.status === "active" && goal\.stage\.kind === "discussing"/)
+  assert.match(shell, /goal\.status !== "active" \|\| goal\.stage\.kind !== "discussing"/)
   assert.match(shell, /configureGoalCreatedActions\(null\)/)
 })
