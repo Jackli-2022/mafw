@@ -1,7 +1,7 @@
 # 2026-11-15 · Agent-native Chat 意图
 
 - **版本**：`v5.1.0`（交互行为修订，不升版本号）
-- **提交**：`3210334f`（主变更）、`a44715a3`（审查修复：live 状态守卫 / `goals.stop`）
+- **提交**：`3210334f`（主变更）、`a44715a3`（live 状态守卫 / `goals.stop`）、`2ad06925`（撤销前二次校验 stage）
 - **范围**：desktop Chat composer 与工具卡；gateway / SDK / 运行时契约零改动
 - **前置**：`docs/superpowers/plans/2026-11-15-agent-native-chat-intent.md`（方案 D）
 
