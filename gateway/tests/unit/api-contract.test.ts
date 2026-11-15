@@ -1591,6 +1591,85 @@ describe('api-contract: E10i-P0 error response plumbing', () => {
   });
 });
 
+describe('api-contract: E10i-E1 session / pod explicit error statuses', () => {
+  const findOp = (operationId: string): any => {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const candidate of Object.values<any>(methods)) {
+        if (candidate?.operationId === operationId) return candidate;
+      }
+    }
+    return null;
+  };
+
+  const errorSchema = (operationId: string, status: string): any =>
+    findOp(operationId)?.responses?.[status]?.content?.['application/json']?.schema;
+
+  test('session.create declares the quota 429 with the handler envelope (400/409 use ErrorEnvelope)', () => {
+    const quota = errorSchema('session.create', '429');
+    expect(quota).toBeDefined();
+    // core handler: QuotaExceededError -> { error, code:'quota_exceeded', resource, limit, current }
+    expect(quota.required).toEqual(['error', 'code', 'resource', 'limit', 'current']);
+    expect(quota.properties.code.const).toBe('quota_exceeded');
+    for (const status of ['400', '409']) {
+      const schema = errorSchema('session.create', status);
+      expect({ status, ok: (schema?.required ?? []).includes('error') }).toEqual({ status, ok: true });
+      // The plain envelope must not pretend to carry the quota triple.
+      expect({ status, code: schema.properties.code?.const }).toEqual({ status, code: undefined });
+    }
+  });
+
+  test('session.prompt 409 (suspended) and session.queue.cancel 404 (miss) are declared', () => {
+    for (const [operationId, status] of [['session.prompt', '409'], ['session.queue.cancel', '404']] as const) {
+      const schema = errorSchema(operationId, status);
+      expect({ operationId, status, declared: schema !== undefined }).toEqual({ operationId, status, declared: true });
+      expect({ operationId, status, required: schema.required }).toEqual({ operationId, status, required: ['error'] });
+    }
+    // A suspended session is a state conflict, not a generic error.
+    expect(findOp('session.prompt').responses['409'].description).toBe('Conflict');
+    expect(findOp('session.queue.cancel').responses['404'].description).toBe('Not Found');
+  });
+
+  test('pods.goals.accept declares 400/404/409/503 (confirm / missing / state / unavailable)', () => {
+    const op = findOp('pods.goals.accept');
+    for (const status of ['400', '404', '409', '503']) {
+      expect({ status, declared: op.responses?.[status] !== undefined }).toEqual({ status, declared: true });
+      const schema = op.responses[status].content['application/json'].schema;
+      expect({ status, required: schema.required }).toEqual({ status, required: ['error'] });
+    }
+  });
+
+  test('pod write ops carry the statuses their handlers throw (tasks.create 400/404/503, messages.read 404)', () => {
+    for (const [operationId, statuses] of [
+      ['pods.tasks.create', ['400', '404', '503']],
+      ['pods.messages.read', ['404', '503']],
+      ['pods.memory.write', ['400', '404', '503']],
+    ] as const) {
+      const op = findOp(operationId);
+      for (const status of statuses) {
+        expect({ operationId, status, declared: op.responses?.[status] !== undefined })
+          .toEqual({ operationId, status, declared: true });
+        expect({ operationId, status, required: op.responses[status].content['application/json'].schema.required })
+          .toEqual({ operationId, status, required: ['error'] });
+      }
+    }
+  });
+
+  test('statuses are only listed where the handler emits them (no blanket 4xx on clean ops)', () => {
+    const problems: string[] = [];
+    for (const operationId of ['session.list', 'pods.get', 'session.queue.list', 'pods.tasks.list']) {
+      const op = findOp(operationId);
+      for (const status of ['400', '404', '409', '429', '503']) {
+        if (op.responses?.[status] !== undefined) problems.push(`${operationId}: unexpected ${status}`);
+      }
+    }
+    // queue.clear has no explicit non-2xx branch in sessions-core.ts (catch-all -> default).
+    if (findOp('session.queue.clear').responses?.['400'] !== undefined) {
+      problems.push('session.queue.clear: unexpected 400 (no handler branch)');
+    }
+    expect(problems).toEqual([]);
+  });
+});
+
 describe('api-contract: E10c-1 memory / recall / lead read response schema (8 ops)', () => {
   const findOp = (operationId: string): any => {
     for (const methods of Object.values<any>(contract.paths)) {
