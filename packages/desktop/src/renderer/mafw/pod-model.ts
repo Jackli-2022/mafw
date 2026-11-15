@@ -344,6 +344,41 @@ export function goalSessionIdentity(
   }
 }
 
+/**
+ * 打回后的上一轮 Tech Lead 讨论快照：只挑「已结束 + 有 transcript」的
+ * discussion 租约，并且要求 revision < 当前 active revision。
+ * 当前 revision 的讨论是 live（或会被 ensure 重建），不能被当成上一轮。
+ */
+export function previousTechLeadTranscript(
+  detail: PodDetail | null,
+  goalId: string,
+  activeRevision: number | null,
+): string | null {
+  if (!detail || !goalId) return null
+  const techLead = (detail.members ?? []).find((member) => member.role === "tech_lead")
+  if (!techLead) return null
+  const previous = (detail.sessions ?? [])
+    .filter((session) => {
+      const row = session as PodSession & { revision?: number | null }
+      const revision = typeof row.revision === "number" ? row.revision : null
+      return row.memberId === techLead.id
+        && row.goalId === goalId
+        && (row.node === "discussion" || row.scopeKind === "discussion")
+        && !!row.endedAt
+        && !!row.transcriptRef
+        && revision !== null
+        && (activeRevision === null || revision < activeRevision)
+    })
+    .sort((a, b) => {
+      const ar = (a as PodSession & { revision?: number | null }).revision ?? 0
+      const br = (b as PodSession & { revision?: number | null }).revision ?? 0
+      if (ar !== br) return br - ar
+      return (b.endedAt ?? "").localeCompare(a.endedAt ?? "")
+        || b.createdAt.localeCompare(a.createdAt)
+    })[0]
+  return previous?.sessionId ?? null
+}
+
 /** 把已打开（含从布局恢复）的 Pod 会话 tab 升级为同一种 Goal 身份。 */
 export function reconcileGoalSessionTabs<T extends {
   id: string

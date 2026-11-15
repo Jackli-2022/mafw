@@ -64,7 +64,7 @@ describe('PodGoal result notification and reject', () => {
   let mafwDir: string;
   let events: EmittedEvent[];
   let result: PodGoalResult | null;
-  let techLead: { ensureSession: jest.Mock };
+  let techLead: { ensureSession: jest.Mock; prompt: jest.Mock };
   let sessions: { retireRevision: jest.Mock };
   let revisions: PodGoalRevisionService;
   let directions: PodDirectionService;
@@ -140,7 +140,14 @@ describe('PodGoal result notification and reject', () => {
     store.ensurePod({ id: 'pod_1', projectDir: '/proj/a', name: 'A', now: NOW });
     events = [];
     result = null;
-    techLead = { ensureSession: jest.fn(async () => 'sess_tl') };
+    const ensureSession = jest.fn(async () => 'sess_tl');
+    techLead = {
+      ensureSession,
+      prompt: jest.fn(async (goalId: string) => {
+        await ensureSession(goalId);
+        return { sessionID: 'sess_tl' };
+      }),
+    };
     sessions = { retireRevision: jest.fn(async () => true) };
 
     revisions = new PodGoalRevisionService({
@@ -298,8 +305,16 @@ describe('PodGoal result notification and reject', () => {
     expect(JSON.parse(fs.readFileSync(revisionStatePathFor(mafwDir, 'g1', 1), 'utf-8')))
       .toMatchObject({ nextAction: 'COMPLETED', reviewVerdict: 'PASS' });
     expect(loadGoalState(mafwDir, 'g1')?.revision).toBe(2);
-    // Tech Lead 讨论立即恢复。
+    // Tech Lead 讨论立即恢复，并带上打回反馈开场（新 revision 不再空白）。
     expect(techLead.ensureSession).toHaveBeenCalledWith('g1');
+    expect(techLead.prompt).toHaveBeenCalledWith(
+      'g1',
+      expect.stringContaining('方向不对，重新讨论'),
+    );
+    expect(techLead.prompt).toHaveBeenCalledWith(
+      'g1',
+      expect.stringContaining('revision 1'),
+    );
     // 打回反馈作为方向决定的输入记录在新 revision（原话逐字保留，不推动阶段）。
     const artifact = JSON.parse(fs.readFileSync(directionArtifactPath(mafwDir, 'g1'), 'utf-8'));
     expect(artifact.revisions['2'].decisions[0]).toMatchObject({
@@ -309,6 +324,29 @@ describe('PodGoal result notification and reject', () => {
       optionId: null,
     });
     expect(store.getGoalRevision('pod_1', 'g1', 2)?.directionStatus).toBe('none');
+  });
+
+  test('a failed Tech Lead opening prompt does not undo the reject', async () => {
+    seedGoal({ status: 'done', verdict: 'PASS' });
+    seedRevision(1, 'completed', { verdict: 'PASS', endedAt: NOW });
+    seedCompletedState(1);
+    result = goalResult('PASS');
+    techLead.prompt.mockRejectedValueOnce(new Error('session unavailable'));
+
+    const rejected = await service.rejectResult('pod_1', 'g1', '再讨论一次');
+
+    expect(rejected).toMatchObject({
+      revision: 2,
+      status: 'discussing',
+      sessionID: 'sess_tl',
+      promptError: 'session unavailable',
+    });
+    // 打回本身已提交：新 revision 仍是 discussing，旧 revision 证据不被回滚。
+    expect(store.getGoal('pod_1', 'g1')?.activeRevision).toBe(2);
+    expect(store.getGoalRevision('pod_1', 'g1', 1)).toMatchObject({
+      status: 'completed',
+      verdict: 'PASS',
+    });
   });
 
   test('a quick UNREVIEWED result can be rejected without rewriting old evidence', async () => {
@@ -426,7 +464,8 @@ describe('PodGoal result notification and reject', () => {
     const source = fs.readFileSync(path.join(__dirname, '../../../src/kernel.ts'), 'utf-8');
     expect(source).toContain('new PodGoalRevisionService(');
     expect(source).toMatch(/revisions: this\.podGoalRevisionService/);
-    expect(source).toMatch(/techLead: \{ ensureSession:/);
+    expect(source).toMatch(/techLead: \{[\s\S]{0,200}ensureSession:/);
+    expect(source).toMatch(/prompt: \(goalId, text\) => this\.podTechLeadService\.prompt\(goalId, text\)/);
     expect(source).toMatch(/directions: \{ recordRejectInput:/);
     // PASS 归档后发一条结果通知（无 attention / 无二次验收）。
     expect(source).toMatch(/outcome\?\.verdict === 'PASS'[\s\S]{0,300}notifyResult\(podId, goalId\)/);

@@ -256,7 +256,10 @@ describe('pod collaborative goal loop (Task 22 e2e)', () => {
       notify: () => {},
       resultForGoal,
       revisions,
-      techLead: { ensureSession: (goalId) => techLead.ensureSession(goalId) },
+      techLead: {
+        ensureSession: (goalId) => techLead.ensureSession(goalId),
+        prompt: (goalId, text) => techLead.prompt(goalId, text),
+      },
       directions: { recordRejectInput: (input) => directions.recordRejectInput(input) },
       log: () => {},
     });
@@ -488,6 +491,10 @@ describe('pod collaborative goal loop (Task 22 e2e)', () => {
       (decision) => decision.source === 'reject_feedback'
         && decision.userWords.includes('方向不对'),
     )).toBe(true);
+
+    // 新 revision 的讨论不是空会话：开场 prompt 必须带上打回原话。
+    expect(techPrompts.at(-1)?.text).toContain('方向不对，继续讨论');
+    expect(techPrompts.at(-1)?.agent).toBe('mafw-tech-lead');
 
     // ── 9. ContextManifest never leaks another Goal ──────────────────────────
     expect(isHiddenSession({ id: 'ses_tech_1', agent: 'mafw-tech-lead' })).toBe(true);

@@ -33,6 +33,7 @@ import {
   planTaskOnly,
   noteTasksOnly,
   goalQueueRow,
+  previousTechLeadTranscript,
 } from "./pod-model"
 
 const task = (id: string, status: PodTaskStatus, extra: Partial<PodTask> = {}): PodTask => ({
@@ -129,6 +130,36 @@ describe("pod-model", () => {
     builderLive.transcriptRef = "/live.json"
     assert.deepEqual(memberOpenTarget(d, "m_builder"), { kind: "transcript", sessionId: "live" })
     assert.deepEqual(memberOpenTarget(d, "m_lead"), { kind: "session", sessionId: "lead_live" })
+  })
+
+  test("finds the previous revision's Tech Lead discussion snapshot", () => {
+    const d = detail()
+    d.members.push({
+      id: "m_tl", podId: "pod_1", role: "tech_lead", displayName: "Tech Lead",
+      agentName: "mafw-tech-lead", modelProvider: null, modelId: null, status: "available",
+      configJson: null, createdAt: "2026-10-30T00:00:00.000Z", updatedAt: "2026-10-30T00:00:00.000Z",
+    })
+    d.sessions.push(
+      {
+        id: "s_tl_r1", podId: "pod_1", memberId: "m_tl", goalId: "g1", node: null,
+        sessionId: "tl_r1", status: "ended", transcriptRef: "/tl-r1.json",
+        createdAt: "2026-10-30T00:00:00.000Z", endedAt: "2026-10-30T00:10:00.000Z",
+        scopeKind: "discussion", revision: 1,
+      } as any,
+      {
+        id: "s_tl_r2", podId: "pod_1", memberId: "m_tl", goalId: "g1", node: null,
+        sessionId: "tl_r2", status: "active", transcriptRef: null,
+        createdAt: "2026-10-30T00:11:00.000Z", endedAt: null,
+        scopeKind: "discussion", revision: 2,
+      } as any,
+    )
+    assert.equal(previousTechLeadTranscript(d, "g1", 2), "tl_r1")
+    assert.equal(previousTechLeadTranscript(d, "g1", 1), null)
+    assert.equal(previousTechLeadTranscript(d, "g_missing", 2), null)
+
+    const older = d.sessions.find((session) => session.sessionId === "tl_r1")!
+    older.transcriptRef = null
+    assert.equal(previousTechLeadTranscript(d, "g1", 2), null)
   })
 
   test("leadSessionIdFromPod only returns the live lead coordination session", () => {

@@ -4300,7 +4300,10 @@ class MafwScheduler {
       sessions: { retireRevision: (goalId, revision) => this.podSessionLifecycle.retireRevision(goalId, revision) },
       // 打回需要立刻恢复 Tech Lead 讨论、并把反馈记进方向输入：这两者在本函数稍后
       // 才构造，因此用惰性适配器（调用时才解析到真实服务）。
-      techLead: { ensureSession: (goalId) => this.podTechLeadService.ensureSession(goalId) },
+      techLead: {
+        ensureSession: (goalId) => this.podTechLeadService.ensureSession(goalId),
+        prompt: (goalId, text) => this.podTechLeadService.prompt(goalId, text),
+      },
       directions: { recordRejectInput: (input) => this.podDirectionService.recordRejectInput(input) },
       goalState: (goalId) => {
         const found = this.findGoalStatePath(goalId);

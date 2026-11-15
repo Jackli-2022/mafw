@@ -24,6 +24,7 @@ import {
   planEditGate,
   podHttpStatus,
   podStageLabel,
+  previousTechLeadTranscript,
   revisionHistory,
   revisionStatusLabel,
   techLeadEntryMode,
@@ -368,6 +369,12 @@ export function GoalDetailPanel(props: {
         requestPodTechLeadOpen(id, activeRevision())
       },
     }
+  }
+  // 打回后新 revision 的讨论是全新会话；旧 revision 的 transcript 仍可查。
+  const previousTechLeadDiscussion = (): string | null => {
+    const id = props.goalId
+    if (!id) return null
+    return previousTechLeadTranscript(podDetail(), id, activeRevision())
   }
   // Task 21：版本历史（新→旧）。旧 revision 的 verdict/feedback 是审计事实，永不丢。
   const revisionRows = () => revisionHistory(revisions(), activeRevision())
@@ -761,6 +768,13 @@ export function GoalDetailPanel(props: {
                 {(entry) => (
                   <ButtonV2 variant="outline" size="small" onClick={entry().open}>
                     {entry().mode === "transcript" ? "查看 Tech Lead 讨论" : "与 Tech Lead 讨论"}
+                  </ButtonV2>
+                )}
+              </Show>
+              <Show when={techLeadEntry()?.mode === "discuss" && previousTechLeadDiscussion()}>
+                {(sessionId) => (
+                  <ButtonV2 variant="ghost" size="small" onClick={() => props.onOpenSession(sessionId())}>
+                    上一轮讨论
                   </ButtonV2>
                 )}
               </Show>

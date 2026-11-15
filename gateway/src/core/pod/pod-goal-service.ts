@@ -54,6 +54,32 @@ export interface PodRejectResult {
   /** Tech Lead 闁荤姳闄嶉崝蹇涱敊閹寸偛顕辨慨妯虹－濡牓鏌ㄥ☉妯煎ⅵ闁革絿顭堥?婵犮垼娉涚粔鍫曞极閵堝鍎?scoped session闂佹寧绋戦ˇ顓㈠焵?*/
   sessionID: string | null;
   sessionError?: string;
+  /** 打回后给新 revision 的 Tech Lead 发开场 prompt 失败（非致命）。 */
+  promptError?: string;
+}
+
+/**
+ * 打回后的 Tech Lead 开场 prompt：spec 2026-11-02 §8.2 要求「自动带上旧结果、
+ * 证据和用户反馈」。只建空会话会让新 revision 的讨论 tab 一片空白，用户以为
+ * 消息丢了；这里把打回原话显式交给 Tech Lead，并要求先确认方向再规划。
+ */
+export function buildRejectOpeningPrompt(input: {
+  rejectedRevision: number;
+  revision: number;
+  feedback: string;
+  verdict?: string | null;
+}): string {
+  const feedback = String(input.feedback ?? '').trim();
+  const verdict = input.verdict ? `（${input.verdict}）` : '';
+  return [
+    `用户打回了 revision ${input.rejectedRevision} 的结果${verdict}，同一 Goal 现在进入 revision ${input.revision} 继续讨论。`,
+    '',
+    '打回反馈（用户原话）：',
+    feedback,
+    '',
+    '先和用户确认这次要调整的方向与范围，不要直接开始规划；方向确认后调用 mafw_pod_goal_direction 记录（明确用 "clear"，有真实分歧用 "needs_user"）。',
+    `上一轮的实现与证据保留在 revision ${input.rejectedRevision}，需要时读取，不要重做已通过的部分。`,
+  ].join('\n');
 }
 
 export interface PodGoalAcceptResult {
@@ -116,7 +142,11 @@ export interface PodGoalServiceDeps {
   /** Revision session retirement (Tech Lead discussion lease). */
   sessions?: { retireRevision(goalId: string, revision: number): Promise<boolean> };
   /** Task 10闂佹寧绋掔喊宥嗘櫠閿曞倸鐐婇柣鎰级閸婄數绱掗弬娆惧剰鐎规挸妫濋獮渚€濮€閻欌偓濡插鎮?Goal 闂?Tech Lead 闁荤姳闄嶉崝蹇涱敊閹寸偛顕辨慨妯虹－濡牓鏌?*/
-  techLead?: { ensureSession(goalId: string): Promise<string> };
+  techLead?: {
+    ensureSession(goalId: string): Promise<string>;
+    /** 新 revision 恢复讨论后发送开场 prompt（失败非致命，打回本身已提交）。 */
+    prompt(goalId: string, text: string): Promise<{ sessionID: string }>;
+  };
   /** Task 6闂佹寧绋掔喊宥嗘櫠閿曞倸鐐婇柣鎰絻閸愨偓婵☆偓绲介悧鍛礊閺冣偓缁嬪鎮滃Ο鑽ゅ幍闂佸憡纰嶉崹鐢稿窗閸涱垪鍋撶憴鍕殤婵炲牊鍨跺蹇涘箻閸愭彃姹查梺鎸庣☉濞煎pend-only闂佹寧绋戞總鏃傜箔婢舵劕绠抽柕濞垮劚琚熼梻鍌氬暢閸╂牠顢欏畝鍕櫖濠㈣泛鐗冮崑?*/
   directions?: { recordRejectInput(input: {
     goalId: string;
@@ -820,6 +850,10 @@ export class PodGoalService {
     const row = this.requireGoalRow(podId, goalId);
     if (!this.deps.revisions) throw new PodError(503, 'goal revisions unavailable');
     const rejectedRevision = row.activeRevision;
+    const rejectedResult = this.deps.resultForGoal?.(goalId) ?? null;
+    const rejectedVerdict = rejectedResult && rejectedResult.revision === rejectedRevision
+      ? rejectedResult.verdict
+      : null;
     const worktree = this.deps.worktrees?.get(podId, goalId, rejectedRevision) ?? null;
     if (worktree?.status === 'merged') {
       throw new PodError(409, `goal revision is already accepted and merged: ${goalId}#${rejectedRevision}`);
@@ -871,15 +905,39 @@ export class PodGoalService {
 
     let sessionID: string | null = null;
     let sessionError: string | undefined;
+    let promptError: string | undefined;
     try {
       // New revision inherits from the rejected one: provision its checkout before discussion.
       await this.deps.worktrees?.ensure(podId, goalId, reopened.revision);
-      sessionID = (await this.deps.techLead?.ensureSession(goalId)) ?? null;
     } catch (err: any) {
       sessionError = String(err?.message ?? err);
       this.deps.log?.(
         `[Pod] Tech Lead session restore failed for ${goalId}#${reopened.revision}: ${sessionError}`,
       );
+    }
+    if (!sessionError && this.deps.techLead) {
+      try {
+        // 新 revision 的讨论不能是空会话：prompt() 同时 ensure 会话并带上打回原话。
+        const prompted = await this.deps.techLead.prompt(goalId, buildRejectOpeningPrompt({
+          rejectedRevision,
+          revision: reopened.revision,
+          feedback: reason,
+          verdict: rejectedVerdict,
+        }));
+        sessionID = prompted?.sessionID ?? null;
+      } catch (err: any) {
+        promptError = String(err?.message ?? err);
+        this.deps.log?.(
+          `[Pod] Tech Lead reopen prompt failed for ${goalId}#${reopened.revision}`
+          + ` (non-fatal): ${promptError}`,
+        );
+        // 开场失败不阻断会话恢复：至少保留可继续讨论的会话。
+        try {
+          sessionID = (await this.deps.techLead.ensureSession(goalId)) ?? null;
+        } catch (ensureErr: any) {
+          sessionError = String(ensureErr?.message ?? ensureErr);
+        }
+      }
     }
 
     this.deps.notify(podId, 'revision', goalId);
@@ -894,6 +952,7 @@ export class PodGoalService {
       previous: reopened.previous,
       sessionID,
       ...(sessionError ? { sessionError } : {}),
+      ...(promptError ? { promptError } : {}),
     };
     });
   }

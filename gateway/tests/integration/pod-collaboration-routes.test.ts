@@ -192,7 +192,10 @@ describe('pod collaboration routes (Task 18)', () => {
       newId: (() => { let n = 0; return () => `pg_${++n}`; })(),
       notify: () => {},
       revisions,
-      techLead: { ensureSession: (goalId) => techLead.ensureSession(goalId) },
+      techLead: {
+        ensureSession: (goalId) => techLead.ensureSession(goalId),
+        prompt: (goalId, text) => techLead.prompt(goalId, text),
+      },
       directions: { recordRejectInput: (input) => directions.recordRejectInput(input) },
       log: () => {},
     });

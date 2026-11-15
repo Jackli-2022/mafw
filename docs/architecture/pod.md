@@ -82,7 +82,10 @@ spec `docs/superpowers/specs/2026-11-02-pod-collaborative-goal-loop-design.md`�
   `pod.updated {kind:'result', goalId}`，不制造人工 attention；`rejectResult` 必须先读到真实结果
   证据（result 视图 > revision 行 > goal 根记录），再 `finishRevision(evidence)` +
   `openNextRevision(expectedRevision)`；旧 revision 行/state 快照/产物永不重写或反归档；新 revision
-  从 `discussing` 开始并恢复 Tech Lead 会话，打回反馈以 `reject_feedback` 方向输入 append-only 记录。
+  从 `discussing` 开始并恢复 Tech Lead 会话，**立即发送带打回原话 + 上一轮 verdict 的开场 prompt**
+  （`buildRejectOpeningPrompt`；失败写 `promptError` 非致命，会话仍保留），打回反馈以 `reject_feedback`
+  方向输入 append-only 记录；桌面 Goal 详情对非终态 Goal 提供「上一轮讨论」快照入口（选
+  `revision < activeRevision` 且 `endedAt + transcriptRef` 的 discussion 会话），旧讨论不会在界面上消失。
 - **API / SDK / 桌面**：`POST/GET /api/pods/:podId/goals`（直接讨论 Goal / 列表）、
   `/goals/:goalId/tech-lead(/messages)`、`/direction-decision`、`/probes`、`/revisions`、
   `/result`、`/reject`；MCP `mafw_pod_goal_direction`（Tech Lead 方向）与

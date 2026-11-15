@@ -114,7 +114,13 @@ describe('quick Goal result -> Tech Lead rejection', () => {
       }),
       revisions,
       sessions: { retireRevision: jest.fn(async () => true) },
-      techLead: { ensureSession } as any,
+      techLead: {
+        ensureSession,
+        prompt: async (goalId: string) => {
+          await ensureSession(goalId);
+          return { sessionID: 'ses_tl' };
+        },
+      } as any,
     });
 
     const rejected = await service.rejectResult('pod_1', 'gq', '这个修法不行，Tech Lead 重做');

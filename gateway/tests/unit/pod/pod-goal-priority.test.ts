@@ -125,7 +125,7 @@ describe('PodGoal revision priority', () => {
       describeGoal: (goalId) => describeGoal(goalId),
       resultForGoal: () => result,
       revisions,
-      techLead: { ensureSession: async () => 'sess_tl' },
+      techLead: { ensureSession: async () => 'sess_tl', prompt: async () => ({ sessionID: 'sess_tl' }) },
       directions: directions as any,
     });
   });
