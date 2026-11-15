@@ -70,11 +70,14 @@
 - **Agent-native Chat 意图（2026-11-15 起）**：composer 只保留一个发送面，讨论 / 提议 / 委托 / 解决
   四模式已移除。Lead 按系统提示直接调用 `mafw_create_goal` 建立 `discussing` Goal（带当前话题
   快照，不启动 NodeDriver）；桌面把该工具结果渲染成 `GoalCreatedCard`（打开 Tech Lead 讨论 /
-  撤销），legacy 结果回退通用工具卡。自由讨论保留「交给 Lead」交接；评审项解决、验收、合并
-  仍是 human-only，后续用 inline `ReviewItemCard` 承接。Episode 仍按会话存
-  `localStorage['mafw-episodes:v1:<sessionID>']`（仅分组视图），但「标记 Episode」已从 composer
-  移到 transcript header；自动 boundary 提案后续接入。详见
-  `docs/releases/2026-11-15-agent-native-chat-intent.md`。
+  撤销，撤销只对 live `active + discussing` 开放并走 `goals.stop`），legacy / running / error
+  结果不进入动作卡。自由讨论保留「交给 Lead」交接。Tech Lead chat 在 composer 上方内联最多 3 条
+  未解决评审项（`PodReviewItems`，确认解决 / 重新打开仍是 human-only，全部入口在左栏改动面）。
+  Lead chat 内联 `BoundaryCard`（分开 / 合并 / 忽略），数据来自 `lead.topics.boundaries`；进入
+  Lead 会话与消息发送后节流刷新（10s）。Episode 仍按会话存
+  `localStorage['mafw-episodes:v1:<sessionID>']`（仅分组视图），「标记 Episode」已从 composer
+  移到 transcript header。详见 `docs/releases/2026-11-15-agent-native-chat-intent.md` 与
+  `docs/releases/2026-11-15-chat-review-and-boundary-cards.md`。
 - **Workbench 焦点收口（2026-11-12 Plan 5）**：`WorkbenchShell` 只剩 `FrameBar` /
   `LensBar` / `FocusStage` / `InstrumentRail` / `SubjectPicker` + 壳级
   `PluginSurfaceStage`；`WorkbenchContext`、四 context 持久化、全局 L2、执行抽屉与
