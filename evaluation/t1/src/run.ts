@@ -26,6 +26,7 @@ interface QueryRow {
   expected: string[];
   fts: string[];
   dense: string[];
+  feature: string[];
   fused: string[];
 }
 
@@ -47,20 +48,22 @@ async function main(): Promise<void> {
         .filter((id): id is string => Boolean(id));
       const lexical = db.searchT1Lexical(query.query, K);
       const dense = await denseSearch(query.query, K);
-      const fused = fuseT1Hits(dense, lexical, K);
+      const feature = db.searchT1Features(query.query, K);
+      const fused = fuseT1Hits(dense, lexical, K, feature);
       rows.push({
         id: query.id,
         query: query.query,
         expected,
         fts: lexical.map((hit) => hit.traceId),
         dense: dense.map((hit) => hit.traceId ?? '').filter(Boolean),
+        feature: feature.map((hit) => hit.traceId),
         fused: fused.map((hit) => hit.traceId ?? '').filter(Boolean),
       });
     }
 
-    const channel = (key: 'fts' | 'dense' | 'fused') =>
+    const channel = (key: 'fts' | 'dense' | 'feature' | 'fused') =>
       summarize(rows.map((row) => ({ expected: row.expected, actual: row[key] })), K);
-    const misses = (key: 'fts' | 'dense' | 'fused') =>
+    const misses = (key: 'fts' | 'dense' | 'feature' | 'fused') =>
       rows
         .filter((row) => recallAtK(row.expected, row[key], K) < 1)
         .map((row) => row.id);
@@ -77,11 +80,13 @@ async function main(): Promise<void> {
       channels: {
         fts: channel('fts'),
         dense: channel('dense'),
+        feature: channel('feature'),
         fused: channel('fused'),
       },
       misses: {
         fts: misses('fts'),
         dense: misses('dense'),
+        feature: misses('feature'),
         fused: misses('fused'),
       },
       perQuery: rows.map((row) => ({
@@ -96,6 +101,10 @@ async function main(): Promise<void> {
         dense: {
           recall: recallAtK(row.expected, row.dense, K),
           mrr: mrr(row.expected, row.dense),
+        },
+        feature: {
+          recall: recallAtK(row.expected, row.feature, K),
+          mrr: mrr(row.expected, row.feature),
         },
         fused: {
           recall: recallAtK(row.expected, row.fused, K),

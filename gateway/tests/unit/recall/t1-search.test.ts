@@ -169,6 +169,16 @@ describe('fuseT1Hits', () => {  test('ranks a hit present in both channels above
     expect(fused).toHaveLength(1);
     expect(fused[0].traceId).toBe('b');
   });
+
+  test('includes a feature-only hit and marks its source', () => {
+    const feature = [
+      { traceId: 't1t_f', sessionId: 's1', turnId: 3, source: 'feature', excerpt: 'feature f', rank: -2 },
+    ];
+    const fused = fuseT1Hits([], [], 3, feature as any);
+    expect(fused).toHaveLength(1);
+    expect(fused[0].traceId).toBe('t1t_f');
+    expect(fused[0].sources).toEqual(['feature']);
+  });
 });
 
 describe('applyT1ActivationRanking', () => {

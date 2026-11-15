@@ -18,7 +18,7 @@ export interface T1Hit {
   cosine: number;
   excerpt: string;
   /** Retrieval channels that produced this fused hit. */
-  sources?: Array<'dense' | 'lexical'>;
+  sources?: Array<'dense' | 'lexical' | 'feature'>;
   /** Fused RRF score (higher is better); absent on raw dense hits. */
   score?: number;
 }

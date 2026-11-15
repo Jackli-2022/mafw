@@ -1,5 +1,6 @@
 import { GatewayDatabase } from '../../../gateway/src/memory/gateway-db';
 import { t1VectorKey } from '../../../gateway/src/recall/verbatim-recall';
+import { extractTurnFeature } from '../../../gateway/src/recall/t1-features';
 import type { FakeVectorRow } from './fake-embedding';
 
 export interface FixtureTurn {
@@ -110,6 +111,11 @@ export function seedT1Fixtures(db: GatewayDatabase): {
         text: row.content,
       });
     }
+    const feature = extractTurnFeature(
+      { trace_id: turn.trace_id, session_id: fixture.session, turn_seq: turn.turn_seq },
+      db.readTurn(fixture.session, turn.turn_seq),
+    );
+    if (feature) db.upsertTurnFeature(feature);
     if (fixture.archive) db.archiveTurn(fixture.session, turn.turn_seq);
   }
 

@@ -73,10 +73,21 @@ function hitKey(hit: { traceId?: string | null; sessionId: string; turnId: numbe
  * Lexical excerpts are preferred (they contain the matched literal), while
  * the dense cosine is preserved for scoring/observability.
  */
-export function fuseT1Hits(dense: T1Hit[], lexical: T1LexicalHit[], k: number): T1Hit[] {
+export function fuseT1Hits(
+  dense: T1Hit[],
+  lexical: T1LexicalHit[],
+  k: number,
+  feature: T1LexicalHit[] = [],
+): T1Hit[] {
   const fused = new Map<
     string,
-    { hit: T1Hit; score: number; sources: Set<'dense' | 'lexical'>; lexicalExcerpt?: string }
+    {
+      hit: T1Hit;
+      score: number;
+      sources: Set<'dense' | 'lexical' | 'feature'>;
+      lexicalExcerpt?: string;
+      featureExcerpt?: string;
+    }
   >();
 
   dense.forEach((hit, rank) => {
@@ -109,12 +120,33 @@ export function fuseT1Hits(dense: T1Hit[], lexical: T1LexicalHit[], k: number): 
     fused.set(key, entry);
   });
 
+  feature.forEach((hit, rank) => {
+    if (!hit.excerpt) return;
+    const key = hitKey(hit);
+    const entry = fused.get(key) ?? {
+      hit: {
+        sessionId: hit.sessionId,
+        turnId: hit.turnId,
+        traceId: hit.traceId,
+        cosine: 0,
+        excerpt: hit.excerpt,
+      },
+      score: 0,
+      sources: new Set(),
+    };
+    entry.score += 1 / (RRF_K + rank);
+    entry.sources.add('feature');
+    entry.featureExcerpt = hit.excerpt;
+    if (!entry.hit.traceId) entry.hit.traceId = hit.traceId;
+    fused.set(key, entry);
+  });
+
   return [...fused.values()]
-    .map(({ hit, score, sources, lexicalExcerpt }) => ({
+    .map(({ hit, score, sources, lexicalExcerpt, featureExcerpt }) => ({
       ...hit,
-      excerpt: lexicalExcerpt || hit.excerpt,
+      excerpt: lexicalExcerpt || featureExcerpt || hit.excerpt,
       score,
-      sources: (['dense', 'lexical'] as const).filter((s) => sources.has(s)),
+      sources: (['dense', 'lexical', 'feature'] as const).filter((s) => sources.has(s)),
     }))
     .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
     .slice(0, Math.max(0, k));
@@ -157,7 +189,13 @@ export function createGatewayT1Search(
         lexical = [];
       }
     }
-    const fused = fuseT1Hits(dense, lexical, k);
+    let feature: T1LexicalHit[] = [];
+    try {
+      feature = (db as any).searchT1Features?.(query, Math.max(k * 2, 12)) ?? [];
+    } catch {
+      feature = [];
+    }
+    const fused = fuseT1Hits(dense, lexical, k, feature);
     const t1Cfg = config.recall.t1Recall;
     const mode: ActivationRankingMode = t1Cfg?.activationRanking ?? 'shadow';
     if (mode === 'off' || fused.length < 2) return fused;

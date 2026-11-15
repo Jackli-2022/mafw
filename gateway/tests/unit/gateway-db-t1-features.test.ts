@@ -174,4 +174,36 @@ describe('GatewayDatabase T1 turn features', () => {
     expect(db.getTurnFeature(turn.trace_id)!.intent).toContain('fix s1');
     expect(backfillT1Features(deps, { limit: 10 }).scanned).toBe(0);
   });
+
+  test('searchT1Features indexes intent/action/error/entities and stays in sync', () => {
+    const turn = seedTurn('s1');
+    db.upsertTurnFeature({
+      traceId: turn.trace_id,
+      sessionId: 's1',
+      turnSeq: turn.turn_seq,
+      intent: 'fix reflection',
+      action: 'read reflection.ts',
+      error: 'unparseable JSON',
+      decision: 'adapter 前置 system',
+      entities: ['reflection.ts', 'parseInsights'],
+      outcome: 'unknown',
+      confidence: 0.8,
+    });
+
+    expect(db.searchT1Features('reflection', 5).map((h) => h.traceId)).toContain(turn.trace_id);
+    expect(db.searchT1Features('unparseable', 5).map((h) => h.traceId)).toContain(turn.trace_id);
+    expect(db.searchT1Features('parseInsights', 5).map((h) => h.traceId)).toContain(turn.trace_id);
+
+    db.upsertTurnFeature({
+      traceId: turn.trace_id,
+      sessionId: 's1',
+      turnSeq: turn.turn_seq,
+      intent: 'coverage backlog',
+      entities: ['coverage'],
+      outcome: 'unknown',
+      confidence: 0.8,
+    });
+    expect(db.searchT1Features('reflection', 5)).toHaveLength(0);
+    expect(db.searchT1Features('coverage', 5).map((h) => h.traceId)).toContain(turn.trace_id);
+  });
 });

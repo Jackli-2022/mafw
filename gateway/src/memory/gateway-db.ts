@@ -439,6 +439,21 @@ export class GatewayDatabase {
       CREATE INDEX IF NOT EXISTS idx_t1_turn_features_session
         ON t1_turn_features(session_id, turn_seq);
 
+      -- Feature-channel FTS (derived/rebuildable). Noun-phrase / action / error
+      -- lookups hit here even when the raw turn's wording differs.
+      CREATE VIRTUAL TABLE IF NOT EXISTS t1_feature_fts USING fts5(
+        intent,
+        action,
+        target,
+        error,
+        decision,
+        entities,
+        trace_id UNINDEXED,
+        session_id UNINDEXED,
+        turn_seq UNINDEXED,
+        tokenize='trigram'
+      );
+
       -- Lexical derivative of T1 (rebuildable): trigram tokenizer supports
       -- identifier/path/error-code substring matching that dense retrieval
       -- misses. Metadata columns are UNINDEXED so deletes can target keys.
@@ -1133,6 +1148,31 @@ export class GatewayDatabase {
         feature.outcome ?? 'unknown',
         feature.confidence ?? 0,
       );
+
+    // Keep the feature FTS in sync. Fail-open: the feature table remains the
+    // source of truth; a broken derivative can be rebuilt later.
+    try {
+      this.db.prepare('DELETE FROM t1_feature_fts WHERE trace_id = ?').run(feature.traceId);
+      this.db
+        .prepare(
+          `INSERT INTO t1_feature_fts
+             (intent, action, target, error, decision, entities, trace_id, session_id, turn_seq)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          feature.intent ?? '',
+          feature.action ?? '',
+          feature.target ?? '',
+          feature.error ?? '',
+          feature.decision ?? '',
+          (feature.entities ?? []).join(' '),
+          feature.traceId,
+          feature.sessionId,
+          feature.turnSeq,
+        );
+    } catch (err: any) {
+      log.warn(`[T1FeatureFTS] sync failed (feature row kept): ${err?.message || err}`);
+    }
   }
 
   /** Read the sparse event code for a turn, or null when it was never built. */
@@ -1986,6 +2026,65 @@ export class GatewayDatabase {
       return hits;
     } catch (err: any) {
       log.warn(`[T1FTS] search failed: ${err?.message || err}`);
+      return [];
+    }
+  }
+
+  /**
+   * Feature-channel lexical search over the sparse event code. The feature FTS
+   * is a derived index (intent/action/target/error/decision/entities); raw T1
+   * remains the source of truth.
+   */
+  searchT1Features(query: string, topK: number): T1LexicalHit[] {
+    const match = buildT1FtsQuery(query);
+    if (!match || !Number.isFinite(topK) || topK <= 0) return [];
+    try {
+      const rows = this.db
+        .prepare(
+          `SELECT trace_id, session_id, turn_seq, bm25(t1_feature_fts) AS rank
+             FROM t1_feature_fts
+            WHERE t1_feature_fts MATCH ?
+            ORDER BY rank
+            LIMIT ?`,
+        )
+        .all(match, Math.max(topK * 4, 12)) as Array<{
+        trace_id: string;
+        session_id: string;
+        turn_seq: number;
+        rank: number;
+      }>;
+      const seen = new Set<string>();
+      const hits: T1LexicalHit[] = [];
+      for (const row of rows) {
+        if (!row.trace_id || seen.has(row.trace_id)) continue;
+        seen.add(row.trace_id);
+        const feature = this.getTurnFeature(row.trace_id);
+        const excerpt = feature
+          ? [
+              feature.intent,
+              feature.action,
+              feature.error,
+              feature.decision,
+              (feature.entities ?? []).join(' '),
+            ]
+              .filter(Boolean)
+              .join(' | ')
+              .slice(0, 220)
+          : '';
+        if (!excerpt) continue;
+        hits.push({
+          traceId: row.trace_id,
+          sessionId: row.session_id,
+          turnId: row.turn_seq,
+          source: 'feature',
+          excerpt,
+          rank: row.rank,
+        });
+        if (hits.length >= topK) break;
+      }
+      return hits;
+    } catch (err: any) {
+      log.warn(`[T1FeatureFTS] search failed: ${err?.message || err}`);
       return [];
     }
   }
