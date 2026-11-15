@@ -5,6 +5,11 @@
 // E10h adds the write-response slice: `write responses: X/195` counts non-GET
 // ops that declare `response:` (the 195 write-op denominator from E10g; till
 // E10h-P0 only `humanToken.rotate` was covered).
+// E10i adds the error slice: `errors: default X/Y; explicit ops N` counts the
+// ops that get a `default` ErrorEnvelope from `errorResponsesFor()` (all of
+// them, by P0 policy — the count is a ledger, not a per-op declaration) plus
+// the ops that declare explicit `errors: [...]` status codes, with their
+// status-entry total and per-status split.
 //
 // Source of truth is `src/routes/route-catalog.ts` itself (text scan, not a TS
 // import) so this stays a plain `node` script with no ts-node/jest dependency
@@ -95,6 +100,13 @@ function tags(block) {
   return [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]);
 }
 
+/** E10i: the explicit error statuses of one op (`errors: [400, 404, 409]`). */
+function errorStatuses(block) {
+  const m = /\berrors:\s*\[([^\]]*)\]/.exec(block);
+  if (!m) return [];
+  return [...m[1].matchAll(/\b(\d{3})\b/g)].map((x) => Number(x[1]));
+}
+
 /** Parse the catalog into `{ total, covered, coveredOps, byTag, uncoveredOps }`. */
 function analyze(catalogPath = CATALOG_PATH) {
   const raw = fs.readFileSync(catalogPath, 'utf-8');
@@ -106,6 +118,7 @@ function analyze(catalogPath = CATALOG_PATH) {
       tags: tags(block),
       hasResponse: /\bresponse\s*:/.test(block),
       hasRequest: /\brequest\s*:/.test(block),
+      errors: errorStatuses(block),
     }))
     .filter((op) => op.operationId);
 
@@ -137,6 +150,18 @@ function analyze(catalogPath = CATALOG_PATH) {
   }
   const byTag = [...buckets.values()].sort((a, b) => a.tag.localeCompare(b.tag));
 
+  // E10i: `default` is projected for every op by `errorResponsesFor()`, so the
+  // default ledger is whole-catalog by construction; the interesting number is
+  // how many ops went further and declared explicit non-2xx statuses.
+  const errorOps = ops.filter((op) => op.errors.length > 0).map((op) => op.operationId).sort();
+  const errorEntries = ops.reduce((sum, op) => sum + op.errors.length, 0);
+  const errorStatusSplit = {};
+  for (const op of ops) {
+    for (const status of op.errors) {
+      errorStatusSplit[status] = (errorStatusSplit[status] ?? 0) + 1;
+    }
+  }
+
   return {
     total: ops.length,
     covered: coveredOps.length,
@@ -151,6 +176,12 @@ function analyze(catalogPath = CATALOG_PATH) {
     writeResponseCovered,
     writeResponseTotal: writeOps.length,
     writeResponseUncovered,
+    errorDefaults: ops.length,
+    errorDefaultTotal: ops.length,
+    explicitErrorOps: errorOps.length,
+    errorOps,
+    errorEntries,
+    errorStatusSplit,
   };
 }
 
@@ -172,6 +203,14 @@ function printReport(report) {
     : '0.0';
   console.log(
     `write responses: ${report.writeResponses}/${report.writeResponseTotal} write operations declare a 200 response schema (${writePct}%)`,
+  );
+  const split = Object.entries(report.errorStatusSplit)
+    .sort((a, b) => Number(a[0]) - Number(b[0]))
+    .map(([status, n]) => `${status}x${n}`)
+    .join(' / ');
+  console.log(
+    `errors: default ${report.errorDefaults}/${report.errorDefaultTotal} operations declare a default error envelope; ` +
+      `explicit ops ${report.explicitErrorOps} (${report.errorEntries} status entries${split ? `: ${split}` : ''})`,
   );
   console.log(`uncovered operations (${report.uncoveredOps.length}):`);
   for (const id of report.uncoveredOps) console.log(`  - ${id}`);

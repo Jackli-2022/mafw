@@ -38,6 +38,8 @@
 - [E10e 契约覆盖第五批（2026-11-14）](#e10e-契约覆盖第五批2026-11-14)
 - [E10f 全量读表面收口（2026-11-14）](#e10f-全量读表面收口2026-11-14)
 - [E10g 请求契约（P0 + W1 + W2/W3 + W4 + W5 + W6 + W7 + W8，2026-11-14）](#e10g-请求契约p0--w1--w2w3--w4--w5--w6--w7--w82026-11-14)
+- [E10h 写响应契约（P0 + R1–R6，2026-11-15）](#e10h-写响应契约p0--r1r62026-11-15)
+- [E10i 错误响应契约（P0 + E1 + E2 + E3，2026-11-15）](#e10i-错误响应契约p0--e1--e2--e32026-11-15)
 - [API 端点](#api-端点)
 - [UI 服务](#ui-服务)
 - [数据流全景](#数据流全景)
@@ -1873,7 +1875,8 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
      `{status:'paused'}` / `{ok:true}` / `state:'TASK_STATE_WORKING'` / `mime:'audio/wav'`）。
   3. **排除**：200 不是单个 JSON 文档 → `WRITE_RESPONSE_EXCLUDED`（本波唯一项 `tts.speakStream`）。
 - **声明式契约为界**：`toOpenApiPaths()` 只投影 `responses.200.content['application/json']`，
-  **无运行时响应校验**（与请求面、E10f 同策略）。错误体（4xx/5xx）一律不建模。
+  **无运行时响应校验**（与请求面、E10f 同策略）。错误体（4xx/5xx）在 E10h 时不建模，
+  **E10i 起统一建模**（`default` + 显式状态码，见「E10i 错误响应契约」）。
 - **200 分支必须如实联合**：「未命中 / 失败也是 200」的 handler 事实用判别联合表达，不收敛成
   带 optional 的对象（`session.promptAsync` 三态、`memory.add` / `setSticky` / `merge`、
   `obs.capture`、`triage.confirm` 三分支、`plugins.enable|disable|delete` 的
@@ -2171,8 +2174,74 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
   mobile 定向 **31** + `flutter analyze` **0**；TUI env-red（`pi-tui` 未安装）；
   `kernel-split-guards` **7/7**（定向四套 297 passed：api-contract 231 + coverage 52 + 本守卫 7 + 7）。
   明细见 `docs/releases/2026-11-15-gateway-e10h-write-responses.md`。
-- **残余**：见「残余（E11 后仍 deferred）」——写响应只剩 `tts.speakStream`；错误体、版本协商、
-  TUI triage phantom、mobile 工作 tab 增量 patch 仍 out of scope。
+- **残余**：见「残余（E11 后仍 deferred）」——写响应只剩 `tts.speakStream`；错误体由 **E10i** 收口
+  （统一 `default` + 高价值显式状态码），版本协商、TUI triage phantom、mobile 工作 tab 增量 patch 仍 out of scope。
+
+---
+
+## E10i 错误响应契约（P0 + E1 + E2 + E3，2026-11-15）
+
+> 承接 E10h（写响应 **194/195**、total **320/327**）。E10i 补**非 2xx 错误体**：此前 327 op 只建模 200，
+> 客户端无法从 OpenAPI 得知错误形状。收口账：**`default` 327/327**、**`/api/*` 的 401/403 各 318 个 op**、
+> **显式状态码 157 op / 356 条状态条目**（400×124 / 404×78 / 409×54 / 413×6 / 429×3 / 503×91）。
+> spec：`docs/superpowers/specs/2026-11-15-gateway-e10i-error-contracts-design.md`；
+> plan：`docs/superpowers/plans/2026-11-15-gateway-e10i-error-contracts.md`；
+> 交付记录：`docs/releases/2026-11-15-gateway-e10i-error-contracts.md`。
+
+| 批次 | 范围 | 显式 op | 状态条目 |
+|---|---|---|---|
+| P0 | `ErrorEnvelope` + `RouteDef.errors/errorSchemas/errorDescription` + `toOpenApiPaths()` 投影（全局 `default` + `/api` 401/403） | 0 | 0 |
+| E1 | session（create/fork/checkpoint/prompt/queue/config/delete/rename/subagents）+ pods（create/tasks/messages/goals/reviewItems/accept） | 43 | 98（400×24 / 404×27 / 409×16 / 429×1 / 503×30） |
+| E2 | goals / decisions / lead / standing + events / automations / approvals / questions / triage / permissions | 51 | 127（400×50 / 404×32 / 409×20 / 503×25） |
+| E3 | plugins / runtime / config / mcp + memory / media / tts / mobile / devices / skills + chat / python / obs / tools / eval / llm | 63 | 131（400×50 / 404×19 / 409×18 / 413×6 / 429×2 / 503×36） |
+
+- **统一信封**（`routes/schemas/errors.ts#ErrorEnvelope`）：
+  `{ error: string, code?: string, message?: string, success?: false }`，`additionalProperties: true`。
+  `error` 必填（既有客户端按字符串消费），`code` 是 additive 机器可读字段，与 `core/http/api-error.ts`
+  的 `API_ERROR_CODES` 同源。**只声明不校验**：handler 仍是错误形状的事实源，无运行时校验。
+- **三层投影**（`registry.ts#errorResponsesFor()`，由 `toOpenApiPaths()` 逐 op 写入 `responses`）：
+  1. **所有 op** 恒有 `default`（`ErrorEnvelope`）——未列出的 4xx/5xx 兜底；
+  2. **`/api/*` 的 op** 自动获得 **401 / 403**（transport 鉴权层，与 tag / 权限语义无关）；
+  3. catalog 的 `errors: [status…]` 逐项追加，`errorSchemas[status]` 覆盖该状态形状、
+     `errorDescription[status]` 覆盖描述；显式状态排在 401/403 之后，故可自定义同名状态。
+- **显式状态码按域取「handler 真有的分支」**，不是按状态码调色板穷举：session 400/404/409/429/503、
+  pods 400/403/404/409、goals/decisions/lead/standing 400/403/404/409、plugins/runtime/config/mcp
+  400/404/409/503、memory/media/tts/mobile/devices 400/404/413/429/503、
+  events/automations/approvals/questions/triage/permissions 400/403/404/409。
+  其中 403 只出现在 human-only / 边界 accept 这类**业务 403**（transport 403 已全局覆盖，不重列）。
+- **特殊形状只有一类是具名豁免**：`goals.respondQuestion` 的 404/409 用
+  `QuestionLedgerErrorSchema`（`{status:'not_found'|'conflict', currentState?}`，**没有 `error` 字段**）——
+  handler（`routes/goals-inline.ts`）直接写 question ledger 状态体，套 `ErrorEnvelope` 会宣称一个
+  不存在的 `error`。其余非信封形状仍兼容信封：429 用 `QuotaExceededErrorSchema`
+  （`{error, code:'quota_exceeded', resource, limit, current}`，`session.create` / `project.setCurrent` /
+  `python.execute` 三处），`error` 仍在必填集里。
+- **非 `/api` 路径不带 401/403**（P0 守卫反向约束）：9 个 op —— `health.root`（`/health`）、
+  `a2a.agentCard`（`/.well-known/agent-card.json`）、`project.setCurrent`（`/register`）、
+  `media.createTask` / `media.artifact` / `pods.a2a` / `pods.a2aCard` / `pods.a2aArtifact`（`/a2a/*`）、
+  `goals.controlLegacy`（`/control`）。这些入口没有 transport 鉴权层（loopback / A2A / CLI 专用），
+  声明 401/403 会广告一扇不存在的门；它们的业务错误（如 `/a2a` 的 loopback 403）落 `default`。
+- **500 / 502 / 405 等仍留在 `default`**（有意）：`mcp.connect|disconnect` 502、`tts.*` / `media.*` 502、
+  `plugins.invoke` 408/502、`media.upload|uploadAndCreate` 415、各 handler 的 500 catch-all 都是
+  **实现故障面**而非可承诺的契约分支——逐个建模只会把「网关崩了」写成 API；`default` 已保证
+  「任何未列出状态至少带 `error: string`」。同理 `405` 属路由层，不进 op 契约。
+- **收口守卫**：`tests/unit/architecture/error-coverage.test.ts`（**8 tests / 1 suite**）——
+  ① 327/327 `default` 信封（含 `required:['error']` / 开放体）；② 全量 `toOpenApiPaths()` 投影与
+  `errorResponsesFor()` 逐 op 一致（327 唯一 method+path）；③ `/api` op **318** 全部有 401+403、
+  非 `/api` op 一个都没有；④ 9 个非 `/api` op 的 id+method+path 钉死；⑤ `errors` 中每个状态都投影为
+  `errorSchemas[status] ?? ErrorEnvelope`（无「有状态无 schema」，也无「有 `errorSchemas` 却不在
+  `errors`」的死配置）；⑥ 账目 **157 op / 356 条目** +
+  逐状态分布钉死；⑦ 非信封形状 = 三处 quota 429 + `respondQuestion` 豁免（豁免双向：列出的状态必须
+  用该 schema、无 `error` 的体必须有豁免 + 原因）；⑧ **mutation test**（抽掉一个 `default`、抽掉一个 401、
+  给 `health.root` 加 401 → 各按 operationId 报错；恢复后归零，审计是纯函数）。
+- **台账**：`npm run schema:coverage` 新增 `errors: default 327/327 operations …; explicit ops 157
+  (356 status entries: 400x124 / 404x78 / 409x54 / 413x6 / 429x3 / 503x91)`。
+- **客户端可见**：`openapi.json` / `gateway-paths.json` / `api-schema.gen.ts` 每个 op 多了 `default`
+  （+ `/api` op 的 401/403 + 显式状态码）；wire 字节、handler、路由集合、SDK 手写类型零变化。
+- **门禁**：见交付记录（gateway tsc **0**；全量 jest **7669 tests / 7657 passed / 9 条已知 env-red / 3 skipped**，
+  零契约红；`schema:coverage` responses 320/327 + write responses 194/195 + requests 189/195 +
+  errors default 327/327 / explicit 157；`analyze-routes` **TOTAL 0**；`emit:openapi` + `gen:api` 幂等无 diff；
+  SDK 226 + contract 4/4 + tsc 0；desktop 3868 tests 仅 resolver env-red + `tsgo` 2 条 `node:tls`；
+  mobile 31 + analyze 0；TUI env-red；定向 381 passed / 13 suites，kernel-split 7/7）。
 
 ---
 
@@ -2218,8 +2287,12 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
   当前 OpenAPI 3.1 投影只描述 JSON content）。请求面维持 **189/195**（6 个二进制 /
   multipart / A2A 显式排除）。
 - 强制版本协商 / SDK 全量 schema 类型化。
-- **错误体（4xx/5xx）不建模**：读写两面都只声明 200 成功体（声明式契约，handler 是事实源，
-  无运行时响应校验）。
+- **错误体（4xx/5xx）：已收口（E10i）**：**`default` 327/327** + `/api/*` 的 **401/403 各 318** +
+  **显式状态码 157 op / 356 条**（400/404/409/413/429/503；特殊形状只有
+  `QuestionLedgerErrorSchema` 与 quota 429）。仍留在 `default` 的是**实现故障面**
+  （500 catch-all / 502 / 408 / 415 / 405）与 9 个非 `/api` 入口的业务错误 —— 有意不建模，
+  理由见「E10i 错误响应契约」。仍是声明式契约：handler 是事实源，无运行时校验。
+  台账 `npm run schema:coverage` 的 `errors:` 行。
 - **TUI** triage phantom 字段渲染（`reason` / `goalId` / `severity`；真实 wire 无这些字段）。
   mobile 侧已在 E10f-E 收口（`triage_card_model.dart`），desktop 侧是 E10b-3。
 - **won't do（本阶段，已有决策与缓解）**：OS keychain / 进程签名、MCP human 工具（E11-4）；
