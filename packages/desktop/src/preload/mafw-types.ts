@@ -20,6 +20,7 @@ import type {
   MafwMessage, DiscoverySnapshot, DiscoverySkillContent,
   MafwAgent, MafwProvider,
   PluginClientSnapshot, PluginsListResult, PluginPackageInstallResult, PluginPackageUpdateResult,
+  PluginDoctorReport, PluginAuditEvent, PluginLastGoodMeta, PluginSafetyResult,
   PluginCheckResult,
   VoiceStatusResponse,
 } from "@mafw/sdk"
@@ -456,8 +457,22 @@ export type MafwAPI = {
     }): Promise<{ partition: string; url: string; expiresAt: number }>
     /** Native directory picker for package install (main owns the dialog). */
     chooseDirectory(): Promise<{ path: string | null; error?: string }>
-    installPackage(input: { path: string; overwrite?: boolean; requestId?: string }): Promise<PluginPackageInstallResult>
+    installPackage(input: {
+      path: string
+      overwrite?: boolean
+      requestId?: string
+      accept?: { trust: 'trusted' | 'untrusted'; permissions: string[] }
+    }): Promise<PluginPackageInstallResult>
     check(input: { path: string }): Promise<PluginCheckResult>
+    kill(): Promise<PluginSafetyResult>
+    resume(): Promise<PluginSafetyResult>
+    doctor(name: string): Promise<PluginDoctorReport>
+    doctorAll(): Promise<PluginDoctorReport[]>
+    quarantine(name: string, reason: string): Promise<{ name: string; quarantined: boolean; reason: string }>
+    unquarantine(name: string): Promise<{ name: string; quarantined: boolean }>
+    audit(query?: { package?: string; limit?: number }): Promise<{ events: PluginAuditEvent[] }>
+    lastGood(name: string): Promise<{ name: string; lastGood: PluginLastGoodMeta }>
+    rollback(name: string): Promise<PluginPackageUpdateResult>
     apply(name: string): Promise<PluginPackageUpdateResult>
     reload(name: string): Promise<PluginPackageUpdateResult>
     invoke(name: string, action: string, input?: unknown, sessionID?: string): Promise<unknown>

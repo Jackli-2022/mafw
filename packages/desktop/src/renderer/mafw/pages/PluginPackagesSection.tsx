@@ -10,7 +10,7 @@
 // a generic filesystem API.
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import { Portal } from "solid-js/web"
-import type { PluginsPackageEntry } from "@mafw/sdk"
+import type { PluginDoctorReport, PluginsPackageEntry } from "@mafw/sdk"
 import type { PluginConfigPageDescriptor } from "@mafw/plugin-contract"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { Icon } from "@mafw/ui/v2/icon"
@@ -33,8 +33,8 @@ import {
   deleteConfirmation,
   disableConfirmation,
   enableConfirmation,
-  installConfirmation,
   installPickResult,
+  installReviewConfirmation,
   planInstallPreview,
   type ConfirmationRequest,
   type InstallPreview,
@@ -64,6 +64,8 @@ export interface CreatorEntryControl {
 
 export function PluginPackagesSection(props: { sessionID?: string; creatorEntry?: CreatorEntryControl }) {
   const [inventory, setInventory] = createSignal<PluginsPackageEntry[]>([])
+  const [safeMode, setSafeMode] = createSignal(false)
+  const [doctorReport, setDoctorReport] = createSignal<PluginDoctorReport | null>(null)
   const [loading, setLoading] = createSignal(false)
   const [loadError, setLoadError] = createSignal("")
   const [busy, setBusy] = createSignal<string | null>(null)
@@ -91,6 +93,7 @@ export function PluginPackagesSection(props: { sessionID?: string; creatorEntry?
       const result = await window.api.mafw.plugins.list()
       if (sequence !== loadSequence) return
       setInventory(Array.isArray(result?.packages) ? result.packages : [])
+      setSafeMode(result?.safeMode === true)
       setLoadError("")
     } catch (err) {
       if (sequence !== loadSequence) return
@@ -180,7 +183,7 @@ export function PluginPackagesSection(props: { sessionID?: string; creatorEntry?
     const current = preview()
     const path = checkedPath()
     if (!current || current.status !== "ready" || !path) return
-    const confirmation = installConfirmation(current)
+    const confirmation = installReviewConfirmation(current)
     if (confirmation) {
       askConfirmation(confirmation, () => void installPackage(path))
       return
@@ -197,6 +200,14 @@ export function PluginPackagesSection(props: { sessionID?: string; creatorEntry?
       const result = await window.api.mafw.plugins.installPackage({
         path,
         overwrite: current.overwrite,
+        ...(current.requiresConsent
+          ? {
+              accept: {
+                trust: current.kind ?? "trusted",
+                permissions: current.permissions ?? [],
+              },
+            }
+          : {}),
       })
       if (result.application === "failed") {
         const message = result.error ?? "安装失败"
@@ -289,6 +300,84 @@ export function PluginPackagesSection(props: { sessionID?: string; creatorEntry?
     })
   }
 
+  function requestKillAll(): void {
+    askConfirmation({
+      title: "停止所有插件包？",
+      message: "所有非核心插件包会立即停止，并持久保持安全模式；需要人类凭据才能恢复。",
+      confirmLabel: "停止全部",
+      danger: true,
+    }, () => {
+      void runPackageAction("kill", "全部插件包", "停止", () =>
+        window.api.mafw.plugins.kill().then(() => undefined),
+      );
+    })
+  }
+
+  function requestResumeAll(): void {
+    askConfirmation({
+      title: "恢复插件包？",
+      message: "将退出安全模式并重新扫描未隔离、未停用的插件包。此操作需要人类凭据。",
+      confirmLabel: "恢复",
+      danger: false,
+    }, () => {
+      void runPackageAction("resume", "全部插件包", "恢复", () =>
+        window.api.mafw.plugins.resume().then(() => undefined),
+      );
+    })
+  }
+
+  function runDoctor(view: PackageRowView): void {
+    void (async () => {
+      setBusy(`doctor:${view.name}`)
+      try {
+        setDoctorReport(await window.api.mafw.plugins.doctor(view.name))
+      } catch (err) {
+        showToastV2({ description: `诊断 ${view.name} 失败：${errorText(err)}`, duration: 4000 })
+      } finally {
+        setBusy(null)
+      }
+    })()
+  }
+
+  function requestQuarantine(view: PackageRowView): void {
+    askConfirmation({
+      title: `隔离插件包 ${view.name}？`,
+      message: "该包会立即停止并从贡献列表移除，直到人类解除隔离。",
+      confirmLabel: "隔离",
+      danger: true,
+    }, () => {
+      void runPackageAction(`quarantine:${view.name}`, view.name, "隔离", () =>
+        window.api.mafw.plugins.quarantine(view.name, "manual quarantine from desktop"),
+      )
+    })
+  }
+
+  function requestUnquarantine(view: PackageRowView): void {
+    askConfirmation({
+      title: `解除隔离 ${view.name}？`,
+      message: "解除后该包会被重新扫描并可能立即激活。此操作需要人类凭据。",
+      confirmLabel: "解除隔离",
+      danger: false,
+    }, () => {
+      void runPackageAction(`unquarantine:${view.name}`, view.name, "解除隔离", () =>
+        window.api.mafw.plugins.unquarantine(view.name),
+      )
+    })
+  }
+
+  function requestRollback(view: PackageRowView): void {
+    askConfirmation({
+      title: `回滚插件包 ${view.name}？`,
+      message: "将恢复上一个 last-known-good 版本并重新加载。此操作需要人类凭据。",
+      confirmLabel: "回滚",
+      danger: true,
+    }, () => {
+      void runPackageAction(`rollback:${view.name}`, view.name, "回滚", () =>
+        window.api.mafw.plugins.rollback(view.name),
+      )
+    })
+  }
+
   async function revealSource(view: PackageRowView): Promise<void> {
     if (!view.source) return
     try {
@@ -317,8 +406,9 @@ export function PluginPackagesSection(props: { sessionID?: string; creatorEntry?
   })
 
   const configOptions = createMemo<PluginConfigPageDescriptor[]>(() => configView()?.pages ?? [])
-  const safeMode = createMemo(() =>
-    inventory().some((entry) => (entry as PluginsPackageEntry & { state?: string }).state === "safe-mode"),
+  const safeModeActive = createMemo(() =>
+    safeMode()
+      || inventory().some((entry) => (entry as PluginsPackageEntry & { state?: string }).state === "safe-mode"),
   )
 
   return (
@@ -343,6 +433,26 @@ export function PluginPackagesSection(props: { sessionID?: string; creatorEntry?
           >
             {pickerBusy() ? "选择中…" : "安装本地目录"}
           </ButtonV2>
+          <Show when={!safeModeActive()}>
+            <ButtonV2
+              variant="outline"
+              size="small"
+              disabled={busy() !== null}
+              onClick={requestKillAll}
+            >
+              停止全部
+            </ButtonV2>
+          </Show>
+          <Show when={safeModeActive()}>
+            <ButtonV2
+              variant="contrast"
+              size="small"
+              disabled={busy() !== null}
+              onClick={requestResumeAll}
+            >
+              恢复插件
+            </ButtonV2>
+          </Show>
           {/* Creator entry (spec §15.7): opens an ordinary Session whose agent
               is `mafw-create`. Availability is derived by the shell; the
               inline reason keeps a disabled button from failing silently. */}
@@ -374,7 +484,7 @@ export function PluginPackagesSection(props: { sessionID?: string; creatorEntry?
             统一插件包（目录内含 plugin.json）。安装前先检查候选包；覆盖已安装包会显示版本与贡献差异并要求确认。
           </div>
 
-          <Show when={safeMode()}>
+          <Show when={safeModeActive()}>
             <div class="mafw-hub-empty">
               安全模式：所有插件包已停止。确认问题后由人类凭据恢复。
             </div>
@@ -526,6 +636,15 @@ export function PluginPackagesSection(props: { sessionID?: string; creatorEntry?
                     <Show when={view.retainsActiveRevision}>
                       <span class="mafw-hub-tag">保留 active 版本</span>
                     </Show>
+                    <Show when={view.kind}>
+                      <span class="mafw-hub-tag">{view.kind}</span>
+                    </Show>
+                    <Show when={view.transport}>
+                      <span class="mafw-hub-tag">{view.transport}</span>
+                    </Show>
+                    <Show when={(view.permissions ?? []).length > 0}>
+                      <span class="mafw-hub-tag">权限 {view.permissions.join(", ")}</span>
+                    </Show>
                   </div>
 
                   <Show when={view.contributions.length > 0}>
@@ -571,6 +690,12 @@ export function PluginPackagesSection(props: { sessionID?: string; creatorEntry?
                       <span class="mafw-hub-error-text">{view.error}</span>
                     </div>
                   </Show>
+                  <Show when={view.quarantinedReason}>
+                    <div class="mafw-config-hint">隔离原因：{view.quarantinedReason}</div>
+                  </Show>
+                  <Show when={view.degradedReason}>
+                    <div class="mafw-config-hint">降级原因：{view.degradedReason}</div>
+                  </Show>
 
                   <Show when={view.diagnostics.length > 0}>
                     <div style={{ display: "flex", "flex-direction": "column", gap: "2px" }}>
@@ -580,7 +705,7 @@ export function PluginPackagesSection(props: { sessionID?: string; creatorEntry?
                             classList={{
                               "mafw-hub-error-text": diagnostic.level === "error",
                               "mafw-config-hint": diagnostic.level !== "error",
-                              "mafw-config-hint-warn": diagnostic.level === "warning",
+                              "mafw-config-hint": diagnostic.level === "warning",
                             }}
                           >
                             [{diagnostic.code}] {diagnostic.message}
@@ -622,6 +747,27 @@ export function PluginPackagesSection(props: { sessionID?: string; creatorEntry?
                       定位
                     </ButtonV2>
                   </Show>
+                  <ButtonV2
+                    variant="ghost"
+                    size="small"
+                    disabled={busy() === `doctor:${view.name}`}
+                    onClick={() => runDoctor(view)}
+                  >
+                    诊断
+                  </ButtonV2>
+                  <Show when={view.actions.quarantine}>
+                    <ButtonV2 variant="ghost" size="small" onClick={() => requestQuarantine(view)}>
+                      隔离
+                    </ButtonV2>
+                  </Show>
+                  <Show when={view.actions.unquarantine}>
+                    <ButtonV2 variant="outline" size="small" onClick={() => requestUnquarantine(view)}>
+                      解除隔离
+                    </ButtonV2>
+                  </Show>
+                  <ButtonV2 variant="ghost" size="small" onClick={() => requestRollback(view)}>
+                    回滚
+                  </ButtonV2>
                   <Show when={view.actions.disable}>
                     <ButtonV2 variant="ghost" size="small" onClick={() => requestDisable(view)}>
                       停用
@@ -639,6 +785,36 @@ export function PluginPackagesSection(props: { sessionID?: string; creatorEntry?
               </div>
             )}
           </For>
+
+          <Show when={doctorReport()}>
+            {(report) => (
+              <div class="mafw-hub-install">
+                <div class="mafw-hub-row-top">
+                  <span class="mafw-hub-name">诊断 · {report().name}</span>
+                  <span class={report().ok ? "mafw-hub-pill mafw-hub-pill-enabled" : "mafw-hub-pill mafw-hub-pill-error"}>
+                    {report().ok ? "通过" : "需处理"}
+                  </span>
+                  <ButtonV2 variant="ghost" size="small" onClick={() => setDoctorReport(null)}>
+                    关闭
+                  </ButtonV2>
+                </div>
+                <For each={report().checks}>
+                  {(check) => (
+                    <div
+                      classList={{
+                        "mafw-hub-error-text": check.status === "fail",
+                        "mafw-config-hint": check.status === "warn",
+                        "mafw-config-hint": check.status === "pass",
+                      }}
+                    >
+                      [{check.status}] {check.id} · {check.message}
+                      {check.fix ? ` · 修复：${check.fix}` : ""}
+                    </div>
+                  )}
+                </For>
+              </div>
+            )}
+          </Show>
 
           <Show when={!loading() && !loadError() && rows().length === 0}>
             <div class="mafw-hub-empty">

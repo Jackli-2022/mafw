@@ -479,6 +479,19 @@ describe('plugin hub routes — package mode', () => {
     expect(res.status).toBe(400);
   });
 
+  test('GET /api/plugins exposes global safe mode', async () => {
+    const deps: PluginsRouteDeps = {
+      hub: { dirs: {} as any } as any,
+      packages: () => [],
+      packageRevision: () => 'boot:2',
+      safeMode: () => true,
+    };
+    await listen(deps);
+    const res = await request(server, 'GET', '/api/plugins');
+    expect(res.status).toBe(200);
+    expect(res.body.safeMode).toBe(true);
+  });
+
   test('GET /api/plugins merges disabled packages and exposes revision', async () => {
     const deps: PluginsRouteDeps = {
       hub: { dirs: {} as any } as any,

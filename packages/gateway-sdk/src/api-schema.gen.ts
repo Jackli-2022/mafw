@@ -9094,8 +9094,16 @@ export interface operations {
                             revision?: string;
                             pendingRevision?: string;
                             fingerprint?: string;
+                            apiVersion?: number;
+                            kind?: "trusted" | "untrusted";
+                            transport?: "in-process" | "worker";
+                            permissions?: string[];
+                            state?: "active" | "pending" | "error" | "disabled" | "quarantined" | "safe-mode" | "degraded";
+                            quarantinedReason?: string;
+                            degradedReason?: string;
                         }[];
                         revision?: string;
+                        safeMode?: boolean;
                     };
                 };
             };
@@ -9257,6 +9265,11 @@ export interface operations {
                             count: number;
                             rail: boolean;
                         };
+                        /** @description Phase 6 manifest apiVersion. */
+                        apiVersion?: number;
+                        kind?: "trusted" | "untrusted";
+                        /** @description Declared permissions shown by the install consent step. */
+                        permissions?: string[];
                         error?: string;
                     };
                 };

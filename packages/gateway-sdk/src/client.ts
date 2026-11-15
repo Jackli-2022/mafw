@@ -30,7 +30,8 @@ import {
   SessionConfigState, SessionConfigCategory, SessionNamespace,
   VoiceStatusResponse,
   PluginClientSnapshot, PluginsListResult, PluginPackageInstallResult, PluginPackageUpdateResult,
-  PluginCheckResult, PluginWebTicket,
+  PluginCheckResult, PluginWebTicket, PluginDoctorReport, PluginAuditEvent, PluginLastGoodMeta,
+  PluginSafetyResult,
   MethodNotSupportedError,
 } from './types'
 import { SSEConnection } from './sse'
@@ -805,7 +806,12 @@ export class MafwClient implements IMafwClient {
     },
 
     /** Install an absolute local package directory into `~/.mafw/plugins`. */
-    installPackage: async (input: { path: string; overwrite?: boolean; requestId?: string }): Promise<PluginPackageInstallResult> => {
+    installPackage: async (input: {
+      path: string
+      overwrite?: boolean
+      requestId?: string
+      accept?: { trust: 'trusted' | 'untrusted'; permissions: string[] }
+    }): Promise<PluginPackageInstallResult> => {
       return this.request('/api/plugins/packages/install', {
         method: 'POST',
         body: JSON.stringify(input),
@@ -864,6 +870,51 @@ export class MafwClient implements IMafwClient {
         method: 'POST',
         body: JSON.stringify({ package: name }),
       })
+    },
+
+    /** Phase 6 kill switch: stop every package and persist safe mode. */
+    kill: async (): Promise<PluginSafetyResult> => {
+      return this.request('/api/plugins/kill', { method: 'POST' })
+    },
+
+    /** Leave safe mode (human/device credential required). */
+    resume: async (): Promise<PluginSafetyResult> => {
+      return this.request('/api/plugins/resume', { method: 'POST' })
+    },
+
+    doctor: async (name: string): Promise<PluginDoctorReport> => {
+      return this.request(`/api/plugins/${encodeURIComponent(name)}/doctor`, { method: 'POST' })
+    },
+
+    doctorAll: async (): Promise<PluginDoctorReport[]> => {
+      return this.request('/api/plugins/doctor', { method: 'POST' })
+    },
+
+    quarantine: async (name: string, reason: string): Promise<{ name: string; quarantined: boolean; reason: string }> => {
+      return this.request(`/api/plugins/${encodeURIComponent(name)}/quarantine`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      })
+    },
+
+    unquarantine: async (name: string): Promise<{ name: string; quarantined: boolean }> => {
+      return this.request(`/api/plugins/${encodeURIComponent(name)}/unquarantine`, { method: 'POST' })
+    },
+
+    audit: async (query: { package?: string; limit?: number } = {}): Promise<{ events: PluginAuditEvent[] }> => {
+      const params = new URLSearchParams()
+      if (query.package) params.set('package', query.package)
+      if (query.limit) params.set('limit', String(query.limit))
+      if (params.toString().length === 0) return this.request('/api/plugins/audit')
+      return this.request(`/api/plugins/audit?${params.toString()}`)
+    },
+
+    lastGood: async (name: string): Promise<{ name: string; lastGood: PluginLastGoodMeta }> => {
+      return this.request(`/api/plugins/${encodeURIComponent(name)}/last-good`)
+    },
+
+    rollback: async (name: string): Promise<PluginPackageUpdateResult> => {
+      return this.request(`/api/plugins/${encodeURIComponent(name)}/rollback`, { method: 'POST' })
     },
 
     install: async (input: { filename: string; type?: 'runtime' | 'media' | 'usage' | 'ui'; bytes: Uint8Array; overwrite?: boolean }): Promise<any> => {

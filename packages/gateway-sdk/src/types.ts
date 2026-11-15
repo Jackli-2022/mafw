@@ -2732,6 +2732,14 @@ export interface PluginsPackageEntry {
   /** Staged candidate revision awaiting `apply`. */
   pendingRevision?: string
   fingerprint?: string
+  /** Phase 6 trust metadata. */
+  apiVersion?: number
+  kind?: 'trusted' | 'untrusted'
+  transport?: 'in-process' | 'worker'
+  permissions?: string[]
+  state?: 'active' | 'pending' | 'error' | 'disabled' | 'quarantined' | 'safe-mode' | 'degraded'
+  quarantinedReason?: string
+  degradedReason?: string
 }
 
 export interface PluginsListResult {
@@ -2749,6 +2757,8 @@ export interface PluginsListResult {
   }>
   packages?: PluginsPackageEntry[]
   revision?: string
+  /** Phase 6 global safe mode; independent of the visible package rows. */
+  safeMode?: boolean
 }
 
 /** `POST /api/plugins/packages/install`. */
@@ -2796,6 +2806,50 @@ export interface PluginCheckResult {
    * `ok:false` diagnostics, so old clients keep the previous shape.
    */
   webSurfaces?: { count: number; rail: boolean }
+  /** Phase 6 install-consent metadata for v2 packages. */
+  apiVersion?: number
+  kind?: 'trusted' | 'untrusted'
+  permissions?: string[]
   error?: string
+}
+
+export interface PluginDoctorCheck {
+  id: string
+  status: 'pass' | 'warn' | 'fail'
+  message: string
+  fix?: string
+}
+
+export interface PluginDoctorReport {
+  name: string
+  version?: string
+  apiVersion: number
+  kind: 'trusted' | 'untrusted' | 'unknown'
+  fingerprint?: string
+  ok: boolean
+  checks: PluginDoctorCheck[]
+  generatedAt: string
+}
+
+export interface PluginAuditEvent {
+  id: string
+  at: string
+  action: string
+  package?: string
+  version?: string
+  result: 'ok' | 'failed' | 'denied'
+  detail?: Record<string, unknown>
+}
+
+export interface PluginLastGoodMeta {
+  version?: string
+  fingerprint: string
+  savedAt: string
+}
+
+export interface PluginSafetyResult {
+  safeMode: boolean
+  stopped?: string[]
+  activated?: string[]
 }
 

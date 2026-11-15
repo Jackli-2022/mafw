@@ -33,6 +33,10 @@ export interface PackageActionFlags {
   remove: boolean
   config: boolean
   reveal: boolean
+  doctor: boolean
+  quarantine: boolean
+  unquarantine: boolean
+  rollback: boolean
 }
 
 export interface PackageNotice {
@@ -91,6 +95,11 @@ export interface InstallPreview {
   contributions: string[]
   overwrite: boolean
   diff?: OverwriteDiff
+  /** Phase 6 trust metadata shown by the install consent step. */
+  apiVersion?: number
+  kind?: "trusted" | "untrusted"
+  permissions?: string[]
+  requiresConsent?: boolean
 }
 
 export interface ConfirmationRequest {
@@ -223,6 +232,10 @@ export function packageActions(
     remove: true,
     config: enabled && configPages > 0,
     reveal: typeof row.source === "string" && row.source.length > 0,
+    doctor: true,
+    quarantine: packageStatus(row) !== "quarantined",
+    unquarantine: packageStatus(row) === "quarantined",
+    rollback: true,
   }
 }
 
@@ -418,6 +431,7 @@ export function planInstallPreview(
   for (const label of webLabels) {
     if (!contributions.includes(label)) contributions.push(label)
   }
+  const requiresConsent = typeof check.apiVersion === "number" && check.apiVersion >= 2
   const preview: InstallPreview = {
     status: "ready",
     name,
@@ -426,6 +440,10 @@ export function planInstallPreview(
       : {}),
     contributions,
     overwrite: Boolean(existing),
+    ...(typeof check.apiVersion === "number" ? { apiVersion: check.apiVersion } : {}),
+    ...(check.kind ? { kind: check.kind } : {}),
+    ...(Array.isArray(check.permissions) ? { permissions: [...check.permissions] } : {}),
+    ...(requiresConsent ? { requiresConsent: true } : {}),
   }
   if (!existing) return preview
 
@@ -465,6 +483,43 @@ export function installConfirmation(preview: InstallPreview): ConfirmationReques
     message: parts.join("；"),
     confirmLabel: "覆盖安装",
     danger: true,
+  }
+}
+
+/**
+ * One confirmation for both overwrite and v2 consent.
+ *
+ * A trusted v2 package is allowed to execute arbitrary Node code in the
+ * gateway process, so the copy must say that plainly. Untrusted packages run
+ * in the worker and list the capabilities the user is granting.
+ */
+export function installReviewConfirmation(preview: InstallPreview): ConfirmationRequest | null {
+  if (preview.status !== "ready" || !preview.name) return null
+  const parts: string[] = []
+  if (preview.diff) {
+    parts.push(`版本：${preview.diff.existingVersion ?? "未知"} → ${preview.diff.nextVersion ?? "未知"}`)
+    if (preview.diff.added.length > 0) parts.push(`新增贡献：${preview.diff.added.join(", ")}`)
+    if (preview.diff.removed.length > 0) parts.push(`移除贡献：${preview.diff.removed.join(", ")}`)
+    if (preview.diff.existingActiveRevision) {
+      parts.push(`当前运行 revision ${preview.diff.existingActiveRevision} 将被替换`)
+    }
+  }
+  if (preview.requiresConsent) {
+    const trust = preview.kind ?? "trusted"
+    const permissions = (preview.permissions ?? []).join(", ") || "无"
+    parts.push(trust === "trusted"
+      ? "该包可在 gateway 主进程内执行任意 Node 代码；只安装你信任的来源。"
+      : "该包在受限 worker 中执行，只获得下列声明能力。")
+    parts.push(`权限：${permissions}`)
+  }
+  if (parts.length === 0) return null
+  return {
+    title: preview.requiresConsent
+      ? `安装 ${preview.kind ?? "trusted"} 插件包 ${preview.name}？`
+      : `覆盖安装插件包 ${preview.name}？`,
+    message: parts.join("；"),
+    confirmLabel: preview.overwrite ? "覆盖安装" : "安装",
+    danger: preview.kind !== "untrusted",
   }
 }
 

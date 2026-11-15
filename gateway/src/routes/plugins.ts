@@ -40,7 +40,13 @@ async function guarded(res: http.ServerResponse, fn: () => Promise<unknown>): Pr
     send(res, 200, result);
   } catch (err: any) {
     if (err instanceof HubError) { send(res, err.status, { error: err.message }); return; }
-    if (err instanceof PackageManagerError) { send(res, err.status, { error: err.message }); return; }
+    if (err instanceof PackageManagerError) {
+      send(res, err.status, {
+        error: err.message,
+        ...(err.code !== undefined ? { code: err.code } : {}),
+      });
+      return;
+    }
     log.error(`[PluginsHub] unexpected error: ${err.message}`);
     send(res, 500, { error: err.message });
   }
@@ -65,6 +71,8 @@ export interface PluginsRouteDeps {
   packageRevision?: () => string;
   /** Unified package manager thunk (package-mode enable/disable/delete). */
   getManager?: () => PackageManager | undefined;
+  /** Phase 6 global safe mode (independent of the visible package rows). */
+  safeMode?: () => boolean;
 }
 
 function isPackageBody(body: any): body is { package: string } {
@@ -99,6 +107,7 @@ export async function handlePluginsList(_req: http.IncomingMessage, res: http.Se
       plugins: listPlugins(deps.hub),
       packages,
       ...(revision ? { revision } : {}),
+      ...(deps.safeMode ? { safeMode: deps.safeMode() } : {}),
     };
   });
 }

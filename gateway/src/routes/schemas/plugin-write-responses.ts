@@ -98,6 +98,11 @@ export const PluginCheckResultSchema = Type.Object({
   }, {
     description: 'Validated Web surface summary; absent when the candidate declares none.',
   })),
+  apiVersion: Type.Optional(Type.Number({ description: 'Phase 6 manifest apiVersion.' })),
+  kind: Type.Optional(Type.Union([Type.Literal('trusted'), Type.Literal('untrusted')])),
+  permissions: Type.Optional(Type.Array(Type.String(), {
+    description: 'Declared permissions shown by the install consent step.',
+  })),
   error: Type.Optional(Type.String()),
 })
 

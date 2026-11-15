@@ -12,6 +12,7 @@ import {
   enableConfirmation,
   installConfirmation,
   installPickResult,
+  installReviewConfirmation,
   packageActions,
   packageDiagnosticsFor,
   packageStatus,
@@ -539,6 +540,34 @@ describe("plugin package confirmations", () => {
     assert.deepEqual(model.rows.map((entry) => entry.name), ["acme", "beta"])
     assert.match(model.rows[0].badge ?? "", /safe-mode/)
     assert.match(model.banner ?? "", /safe mode|安全模式/)
+  })
+
+  it("requires consent for a v2 candidate and names its permissions", () => {
+    const preview = planInstallPreview([], {
+      ok: true,
+      name: "acme",
+      version: "2.0.0",
+      apiVersion: 2,
+      kind: "trusted",
+      permissions: ["actions", "config.read"],
+      contributions: ["actions"],
+    } as any)
+    assert.equal(preview.requiresConsent, true)
+    assert.equal(preview.kind, "trusted")
+    assert.deepEqual(preview.permissions, ["actions", "config.read"])
+
+    const confirmation = installReviewConfirmation(preview)
+    assert.match(confirmation?.title ?? "", /trusted/)
+    assert.match(confirmation?.message ?? "", /actions, config\.read/)
+    assert.match(confirmation?.message ?? "", /任意 Node 代码/)
+  })
+
+  it("does not ask for consent for a v1 candidate", () => {
+    const preview = planInstallPreview([], {
+      ok: true, name: "legacy", version: "1.0.0", contributions: [],
+    } as any)
+    assert.equal(preview.requiresConsent, undefined)
+    assert.equal(installReviewConfirmation(preview), null)
   })
 
   it("maps trust and transport fields", () => {

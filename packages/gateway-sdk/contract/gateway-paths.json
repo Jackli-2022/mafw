@@ -12734,12 +12734,86 @@
                           },
                           "fingerprint": {
                             "type": "string"
+                          },
+                          "apiVersion": {
+                            "type": "number"
+                          },
+                          "kind": {
+                            "anyOf": [
+                              {
+                                "const": "trusted",
+                                "type": "string"
+                              },
+                              {
+                                "const": "untrusted",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "transport": {
+                            "anyOf": [
+                              {
+                                "const": "in-process",
+                                "type": "string"
+                              },
+                              {
+                                "const": "worker",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "permissions": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "state": {
+                            "anyOf": [
+                              {
+                                "const": "active",
+                                "type": "string"
+                              },
+                              {
+                                "const": "pending",
+                                "type": "string"
+                              },
+                              {
+                                "const": "error",
+                                "type": "string"
+                              },
+                              {
+                                "const": "disabled",
+                                "type": "string"
+                              },
+                              {
+                                "const": "quarantined",
+                                "type": "string"
+                              },
+                              {
+                                "const": "safe-mode",
+                                "type": "string"
+                              },
+                              {
+                                "const": "degraded",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "quarantinedReason": {
+                            "type": "string"
+                          },
+                          "degradedReason": {
+                            "type": "string"
                           }
                         }
                       }
                     },
                     "revision": {
                       "type": "string"
+                    },
+                    "safeMode": {
+                      "type": "boolean"
                     }
                   }
                 }
@@ -13125,6 +13199,29 @@
                         "rail": {
                           "type": "boolean"
                         }
+                      }
+                    },
+                    "apiVersion": {
+                      "description": "Phase 6 manifest apiVersion.",
+                      "type": "number"
+                    },
+                    "kind": {
+                      "anyOf": [
+                        {
+                          "const": "trusted",
+                          "type": "string"
+                        },
+                        {
+                          "const": "untrusted",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "permissions": {
+                      "description": "Declared permissions shown by the install consent step.",
+                      "type": "array",
+                      "items": {
+                        "type": "string"
                       }
                     },
                     "error": {

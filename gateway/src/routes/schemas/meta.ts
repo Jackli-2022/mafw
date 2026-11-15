@@ -169,6 +169,17 @@ const PluginsPackageEntrySchema = Type.Object({
   revision: Type.Optional(Type.String()),
   pendingRevision: Type.Optional(Type.String()),
   fingerprint: Type.Optional(Type.String()),
+  apiVersion: Type.Optional(Type.Number()),
+  kind: Type.Optional(Type.Union([Type.Literal('trusted'), Type.Literal('untrusted')])),
+  transport: Type.Optional(Type.Union([Type.Literal('in-process'), Type.Literal('worker')])),
+  permissions: Type.Optional(Type.Array(Type.String())),
+  state: Type.Optional(Type.Union([
+    Type.Literal('active'), Type.Literal('pending'), Type.Literal('error'),
+    Type.Literal('disabled'), Type.Literal('quarantined'),
+    Type.Literal('safe-mode'), Type.Literal('degraded'),
+  ])),
+  quarantinedReason: Type.Optional(Type.String()),
+  degradedReason: Type.Optional(Type.String()),
 })
 
 /**
@@ -179,6 +190,7 @@ export const PluginsListResponse = Type.Object({
   plugins: Type.Array(PluginsEntrySchema),
   packages: Type.Optional(Type.Array(PluginsPackageEntrySchema)),
   revision: Type.Optional(Type.String()),
+  safeMode: Type.Optional(Type.Boolean()),
 })
 
 // ── skills.list ─────────────────────────────────────────────────────────────

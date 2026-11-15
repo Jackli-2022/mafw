@@ -2462,6 +2462,7 @@ class MafwScheduler {
       packages: () => this.pluginPackageInventory(),
       packageRevision: () => this.getPluginClientSnapshot().revision,
       getManager: () => this.packageManager,
+      safeMode: () => this.packageStateStore?.isSafeMode() ?? false,
     };
   }
 

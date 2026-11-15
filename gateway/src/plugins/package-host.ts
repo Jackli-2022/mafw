@@ -155,6 +155,10 @@ export interface PluginCheckResult {
    * unreadable `web/` entry fails the whole check instead of lowering it).
    */
   webSurfaces?: { count: number; rail: boolean };
+  /** Phase 6 trust metadata for the install consent UI. */
+  apiVersion?: 1 | 2;
+  kind?: 'trusted' | 'untrusted';
+  permissions?: string[];
   error?: string;
 }
 
@@ -393,11 +397,11 @@ export class PluginHost {
         fingerprint: active?.fingerprint,
       };
       const manifest = active?.descriptor.manifest ?? pending?.descriptor.manifest;
-      if (manifest?.kind === 'untrusted') {
-        state.kind = 'untrusted';
-        state.apiVersion = manifest.apiVersion ?? 2;
+      if (manifest && (manifest.apiVersion === 2 || manifest.kind === 'untrusted')) {
+        state.kind = manifest.kind ?? 'trusted';
+        state.apiVersion = manifest.apiVersion ?? 1;
         state.permissions = manifest.permissions ?? [];
-        state.transport = 'worker';
+        state.transport = manifest.kind === 'untrusted' ? 'worker' : 'in-process';
       }
       if (error) state.error = error;
       out.push(state);
@@ -793,6 +797,9 @@ export class PluginHost {
           name,
           version: activation.version ?? manifest?.version,
           contributions: activation.contributions,
+          ...(manifest?.apiVersion !== undefined ? { apiVersion: manifest.apiVersion } : {}),
+          ...(manifest?.kind !== undefined ? { kind: manifest.kind } : {}),
+          ...(manifest?.permissions !== undefined ? { permissions: manifest.permissions } : {}),
         };
         if (webSurfaces.length > 0) {
           result.webSurfaces = {
