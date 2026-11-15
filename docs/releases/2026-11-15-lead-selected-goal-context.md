@@ -34,6 +34,7 @@ P4 把话题边界做成了 Lead chat 里的 `BoundaryCard`，让用户回答“
 
 ## 测试与门禁
 
+- gateway 全量：**7670 passed / 2 skipped / 7672 total**（949 suites）
 - gateway 定向：**21 / 21** pass
   - `create-goal-direct` 10（新增 contextSummary → sourceRef 用例）
   - `session-visibility` 11（新增 Lead prompt contextSummary 契约）
