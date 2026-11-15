@@ -104,6 +104,32 @@ describe('mafw_create_goal routed through the Tech Lead', () => {
     }));
   });
 
+  test('Lead-selected context becomes the sourceRef and replaces auto handoff', async () => {
+    const createGoal = jest.fn(async () => ({ goalId: 'g1' }));
+    const tool = createCreateGoalTool({
+      techLead: {
+        isLeadSession: () => true,
+        createGoal,
+      },
+      now: () => NOW,
+    });
+
+    await tool.execute({
+      title: 'T',
+      objective: 'O',
+      sessionID: 'lead_1',
+      contextSummary: '用户要求先修登录；约束：不改数据库。',
+    }, { sessionID: 'lead_1' });
+
+    expect(createGoal).toHaveBeenCalledWith(expect.objectContaining({
+      sourceRef: expect.objectContaining({
+        sessionID: 'lead_1',
+        snapshot: '用户要求先修登录；约束：不改数据库。',
+        capturedAt: NOW,
+      }),
+    }));
+  });
+
   test('a non-Lead caller is rejected even before a Pod exists', async () => {
     const techLead = {
       isLeadSession: jest.fn(() => false),

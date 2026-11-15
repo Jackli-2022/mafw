@@ -2,6 +2,7 @@ import * as path from "path";
 import { ToolHandler } from "../../types";
 import {
   createGoalIntake,
+  GOAL_SOURCE_SNAPSHOT_MAX,
   GoalConflictError,
   normalizeGoalSourceRef,
   type GoalIntakeResult,
@@ -77,7 +78,15 @@ export function createCreateGoalTool(deps: CreateGoalToolDeps = {}) {
       const title = clean(args?.title);
       const objective = typeof args?.objective === "string" ? args.objective : "";
       const charter = typeof args?.charter === "string" ? args.charter : "";
-      const sourceRef = normalizeGoalSourceRef(args?.sourceRef, now());
+      const requestedSourceRef = normalizeGoalSourceRef(args?.sourceRef, now());
+      const contextSummary = clean(args?.contextSummary);
+      const sourceRef = requestedSourceRef ?? (contextSummary
+        ? {
+            ...(sessionID ? { sessionID } : {}),
+            snapshot: contextSummary.replace(/\r\n/g, "\n").slice(0, GOAL_SOURCE_SNAPSHOT_MAX),
+            capturedAt: now(),
+          }
+        : undefined);
       const targetProjectDir = requestedProjectDir
         ?? process.env.MAFW_PROJECT_DIR
         ?? process.cwd();

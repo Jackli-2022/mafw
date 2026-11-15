@@ -41,7 +41,6 @@ import { buildLeadGoalStatusCards, type LeadGoalStatusSource } from "../lead-goa
 import { LeadGoalStatusCard } from "./LeadGoalStatusCard"
 import { TopicIndexPanel } from "./TopicIndexPanel"
 import type { LeadTopicListItem } from "../lead-topics"
-import { currentLeadTopicId } from "../lead-topics"
 import type { LeadBoundaryView } from "@mafw/sdk"
 import { CommandPicker, type CommandItem } from "./pickers/CommandPicker"
 import { PopoverShell } from "./pickers/PopoverShell"
@@ -68,10 +67,8 @@ import { ApprovalSummaryLine } from "./ApprovalSummaryLine"
 import { DecisionBoard } from "./DecisionBoard"
 import { EpisodeHeader } from "./EpisodeHeader"
 import { PodReviewItems } from "./PodReviewItems"
-import { BoundaryCard } from "./BoundaryCard"
 import { closeEpisode, createEpisode, groupTurnsByEpisode, reopenEpisode, resolvedCloseStartId, type ChatEpisode } from "../chat/episode-model"
 import { createEpisodeStore } from "../chat/episode-store"
-import { currentTopicBoundaries } from "../chat/boundary-card"
 import { unresolvedReviewCount, visibleChatReviewItems } from "../chat/chat-review"
 import type { DecisionBoardView, DecisionItem } from "../focus/decision-model"
 import type { DecisionRecord, PodReviewItem } from "@mafw/sdk"
@@ -275,8 +272,6 @@ export type ChatPaneProps = {
   reviewActive?: () => boolean
   reviewAccepted?: () => boolean
   onOpenReview?: () => void
-  /** Lead 消息发出后刷新话题边界（boundary service 在 intake 时写入）。 */
-  onMessageSent?: () => void
   /** Task 20 review：非讨论的 Tech Lead 节点会话禁止直接发送，返回原因（保留草稿）。 */
   sendBlocked?: () => string | null | Promise<string | null>
   onCreateSession: () => Promise<string | null>
@@ -366,9 +361,6 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const [reviewTick, setReviewTick] = createSignal(0)
   const visibleReviewItems = createMemo(() => visibleChatReviewItems(reviewItems(), 3))
   const unresolvedReviewItems = createMemo(() => unresolvedReviewCount(reviewItems()))
-  const currentTopicId = createMemo(() => currentLeadTopicId(props.topicItems ?? []))
-  const proposedBoundaryCards = createMemo(() =>
-    currentTopicBoundaries(currentTopicId(), props.topicBoundaries ?? []))
   onMount(() => setEpisodes(episodeStore().load()))
   const persistEpisodes = (next: ChatEpisode[]) => {
     setEpisodes(next)
@@ -1231,8 +1223,6 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
   const submitComposer = (mode: "send" | "queue" = "send", opts?: { voiceOrigin?: boolean }) => {
     void sendMessage(mode, opts)
-      .then(() => props.onMessageSent?.())
-      .catch(() => { /* sendMessage surfaces its own errors */ })
   }
 
   // ── Plan 2：duplex final → 输入栏 → 自动发送（语音来源标记随行）──
@@ -2732,13 +2722,6 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
               onOpen={(goalId) => props.onOpenTechLead?.(goalId)}
             />
           )}
-        </Show>
-        <Show when={isLead() && proposedBoundaryCards().length > 0}>
-          <BoundaryCard
-            boundaries={proposedBoundaryCards()}
-            busy={props.topicBusy}
-            onAction={(id, action) => props.onBoundaryAction?.(id, action)}
-          />
         </Show>
         <Show when={unresolvedReviewItems() > 0 || reviewError()}>
           <div class="mafw-chat-review-inline">

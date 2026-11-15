@@ -109,8 +109,8 @@ function GoalCreatedBody(props: { view: () => GoalCreatedView; status?: string }
         </div>
         <div class="mafw-goal-created-meta">
           <span>{state().statusLabel}</span>
-          <Show when={state().canCancel && view().hasHandoff}>
-            <span> · 已带当前话题快照</span>
+          <Show when={view().hasHandoff}>
+            <span> · 已带来源上下文</span>
           </Show>
           <Show when={view().warning}>
             {(warning) => <span class="mafw-goal-created-warn"> · {warning()}</span>}

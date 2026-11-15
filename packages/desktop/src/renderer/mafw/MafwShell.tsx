@@ -3446,47 +3446,10 @@ export function MafwShell() {
     }
     setTopicBusy(false)
   }
-  let lastTopicsRefreshAt = 0
-  let topicsRefreshTimer: ReturnType<typeof setTimeout> | null = null
-  const refreshTopicsThrottled = (projectDir: string): void => {
-    const now = Date.now()
-    if (now - lastTopicsRefreshAt < 10_000) return
-    lastTopicsRefreshAt = now
-    void refreshTopics(projectDir).catch((err: any) => {
-      console.warn("[mafw] topics refresh failed", err)
-    })
-  }
-  /** Boundary proposals are written after intake; one trailing read catches them. */
-  const scheduleTopicsTrailingRefresh = (projectDir: string): void => {
-    if (topicsRefreshTimer) clearTimeout(topicsRefreshTimer)
-    topicsRefreshTimer = setTimeout(() => {
-      topicsRefreshTimer = null
-      if (currentProject() !== projectDir) return
-      void refreshTopics(projectDir).catch((err: any) => {
-        console.warn("[mafw] topics trailing refresh failed", err)
-      })
-    }, 1500)
-  }
   createEffect(on(() => currentProject(), () => {
     setTopicItems([])
     setTopicBoundaries([])
-    lastTopicsRefreshAt = 0
-    if (topicsRefreshTimer) {
-      clearTimeout(topicsRefreshTimer)
-      topicsRefreshTimer = null
-    }
   }, { defer: true }))
-  onCleanup(() => {
-    if (topicsRefreshTimer) clearTimeout(topicsRefreshTimer)
-  })
-  // Lead chat: boundary proposals are written on intake. Refresh on session
-  // entry and after each sent message, throttled so topic/boundary fan-out
-  // never becomes a per-token cost.
-  createEffect(() => {
-    const projectDir = currentProject()
-    if (!projectDir || !activeSessionIsLead()) return
-    refreshTopicsThrottled(projectDir)
-  })
   const activeLeadGoalInvite = (): { goalId: string; title: string; stageLabel: string; sourceLabel?: string } | null => {
     if (!activeSessionIsLead()) return null
     // 2026-11-04：非终态 Goal 都保留邀请位；discussing 优先占位（刚建完的引导）。
@@ -4404,12 +4367,6 @@ export function MafwShell() {
                             const goalId = activeTechLeadGoalId()
                             if (goalId) setPodGoalId(goalId)
                             openChangesFace({ section: "review" })
-                          }}
-                          onMessageSent={() => {
-                            const projectDir = currentProject()
-                            if (!projectDir || !activeSessionIsLead()) return
-                            refreshTopicsThrottled(projectDir)
-                            scheduleTopicsTrailingRefresh(projectDir)
                           }}
                           sendBlocked={activeTechLeadBlocked}
                           onOpenFile={(root, rel) => openFileInScope(rel, root, focusScopeFromContent(contentScope()))}

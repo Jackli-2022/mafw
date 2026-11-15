@@ -17,6 +17,10 @@ export const DEFINITIONS: ToolDefinition[] = [
         title: { type: "string", description: "Human-readable goal title" },
         objective: { type: "string", description: "Objective for a Lead-created discussion goal (alternative to charter)" },
         charter: { type: "string", description: "Goal charter content in markdown" },
+        contextSummary: {
+          type: "string",
+          description: "Lead-selected context snapshot for this Goal. When set, it replaces the automatic current-topic handoff; include only the discussion that belongs to this Goal.",
+        },
         source: { type: "string", description: "Source of the goal request", default: "user" },
         sessionID: { type: "string", description: "Caller session; required for Lead routing through the Tech Lead" },
         projectDir: { type: "string", description: "Registered project directory (defaults to MAFW_PROJECT_DIR/current)" },

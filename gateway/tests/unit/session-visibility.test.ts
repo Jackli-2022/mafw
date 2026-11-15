@@ -59,4 +59,10 @@ describe('LEAD_IDENTITY_SYSTEM_PROMPT: Lead 不讨论技术方案、只建 Goal 
     expect(LEAD_IDENTITY_SYSTEM_PROMPT).toMatch(/Tech Lead/);
     expect(LEAD_IDENTITY_SYSTEM_PROMPT).toMatch(/Tech Lead(?: 入口| 讨论|页|讨论入口)/);
   });
+
+  it('selects the Goal context instead of handing over the whole Lead topic', () => {
+    expect(LEAD_IDENTITY_SYSTEM_PROMPT).toContain('contextSummary');
+    expect(LEAD_IDENTITY_SYSTEM_PROMPT).toMatch(/无关话题|不要复制/);
+    expect(LEAD_IDENTITY_SYSTEM_PROMPT).toMatch(/换话题/);
+  });
 });
