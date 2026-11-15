@@ -33,6 +33,13 @@ function GoalCreatedBody(props: { view: () => GoalCreatedView; status?: string }
   const [live, setLive] = createSignal<GoalLiveState | null | undefined>(undefined)
   const view = () => props.view()
   const state = () => goalCreatedActionState(view(), live(), cancelled())
+  const badge = () => {
+    const next = state()
+    if (next.statusLabel === "已撤销") return { text: "已撤销", tone: "muted" }
+    if (next.canCancel) return { text: "讨论中", tone: "accent" }
+    if (next.statusLabel === "已结束") return { text: "已结束", tone: "muted" }
+    return { text: "进行中", tone: "muted" }
+  }
 
   onMount(() => {
     const goalId = view().goalId
@@ -87,8 +94,8 @@ function GoalCreatedBody(props: { view: () => GoalCreatedView; status?: string }
         title: "创建 Goal",
         subtitle: view().title || view().goalId,
         action: (
-          <span class="mafw-goal-created-badge" data-tone={cancelled() ? "muted" : "accent"}>
-            {cancelled() ? "已撤销" : "讨论中"}
+          <span class="mafw-goal-created-badge" data-tone={badge().tone}>
+            {badge().text}
           </span>
         ),
       }}

@@ -72,6 +72,17 @@ test("failed and malformed outputs are errors, not actionable cards", () => {
   assert.equal(goalCreatedView({ title: "坏 JSON" }, "{not-json", "completed").kind, "error")
 })
 
+test("wrapped MCP results still find the structured payload", () => {
+  const payload = { success: true, routedTo: "tech_lead", goalId: "g5", stage: "discussing" }
+  const withStructured = JSON.stringify({
+    content: [{ type: "text", text: JSON.stringify(payload) }],
+    structuredContent: payload,
+  })
+  const withTextOnly = JSON.stringify({ content: [{ type: "text", text: JSON.stringify(payload) }] })
+  assert.equal(goalCreatedView({ title: "包装" }, withStructured, "completed").kind, "tech_lead")
+  assert.equal(goalCreatedView({ title: "包装" }, withTextOnly, "completed").goalId, "g5")
+})
+
 test("only a live, active, discussing Goal can be cancelled", () => {
   const view = goalCreatedView(
     { title: "修复登录" },

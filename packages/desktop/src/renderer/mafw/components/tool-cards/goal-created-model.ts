@@ -45,7 +45,23 @@ export function goalCreatedActionState(
 function parseOutput(output: string | undefined): any {
   if (!output) return undefined
   try {
-    return JSON.parse(output)
+    const parsed = JSON.parse(output)
+    // MCP results may arrive wrapped as { content, structuredContent } or only
+    // { content: [{ type: "text", text: "<json>" }] }. The card wants the
+    // structured goal payload, not the transport envelope.
+    if (parsed && typeof parsed === "object") {
+      if (parsed.structuredContent && typeof parsed.structuredContent === "object") {
+        return parsed.structuredContent
+      }
+      if (Array.isArray(parsed.content)) {
+        const textPart = parsed.content.find((part: any) =>
+          part?.type === "text" && typeof part.text === "string")
+        if (textPart) {
+          try { return JSON.parse(textPart.text) } catch { /* keep outer */ }
+        }
+      }
+    }
+    return parsed
   } catch {
     return undefined
   }

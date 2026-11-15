@@ -1297,10 +1297,14 @@ export function MafwShell() {
     configureGoalCreatedActions({
       open: (goalId) => { void openGoalAndDiscuss(goalId, "timeline") },
       status: async (goalId) => {
-        try {
-          await podStore.refresh()
-        } catch { /* fall back to the cached projection */ }
-        const goal = podStore.detail()?.goals.find((item) => item.goalId === goalId)
+        const read = () => podStore.detail()?.goals.find((item) => item.goalId === goalId)
+        let goal = read()
+        if (!goal) {
+          try {
+            await podStore.refresh()
+            goal = read()
+          } catch { /* leave as unknown */ }
+        }
         if (!goal) return null
         return {
           status: goal.status,
