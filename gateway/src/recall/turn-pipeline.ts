@@ -18,6 +18,8 @@ import { HARD_BOUNDARIES } from '../skills/memory-curator-agent';
 import { log } from '../core/utils/logger';
 import { replayPriority, sampleByPriority } from './replay-sampling';
 import { extractTurnFeature } from './t1-features';
+import { encodeT1Turn } from './t1-encode';
+import type { T1SparseAtom } from './t1-sparse';
 import { readSessionTimeline } from './session-timeline';
 import { buildReplayBlock } from './replay-block';
 import { PipelineBudgetLike } from './pipeline-budget';
@@ -41,6 +43,15 @@ export interface TurnPipelineOptions {
   /** Interleaved replay: recall cross-session prior knowledge into the worker prompt. */
   replayK?: number;
   replayMaxChars?: number;
+  /** Phase C: trajectory actor metadata (agent / tool) for T1 episode encode. */
+  readTrajectoryEvents?: (
+    sessionID: string,
+    turnSeq: number,
+  ) => Array<{ toolName?: string; agent?: string }>;
+  /** Phase C: embedding → sparse semantic atoms, batched per session. */
+  semanticAtomsFor?: (
+    turns: Array<{ traceId: string; text: string }>,
+  ) => Promise<Map<string, T1SparseAtom[]>>;
   /** B1: 7-day retrieval hit count per id — the "need" term of the replay
    *  priority (need × gain × 1/energy). Wired to the retrieval event buffer. */
   needFor?: (id: string) => number;
@@ -306,21 +317,73 @@ export class TurnPipeline {
       obs: this.opts.t1db.readTurn(t.session_id, t.turn_id),
     }));
 
-    // Phase A: persist the sparse event code before archiving. Raw T1 remains
-    // the source of truth; this is a derived index used by replay/timeline.
-    // Fake DBs in older tests may not implement the method — keep it optional.
+    // Phase A/C: persist the sparse event code and the episode sparse code
+    // (actors / concepts / terms) before archiving. Raw T1 remains the source
+    // of truth; these are derived, rebuildable indexes used by replay and
+    // retrieval. Fake DBs in older tests may not implement the methods — keep
+    // the whole stage optional and fail-open.
+    const readTrajectoryEvents =
+      this.opts.readTrajectoryEvents ??
+      (typeof (this.opts.t1db as any).readTrajectoryEvents === 'function'
+        ? (sessionID: string, turnSeq: number) =>
+            (this.opts.t1db as any).readTrajectoryEvents(sessionID, turnSeq)
+        : undefined);
+    const db = this.opts.t1db as any;
+    const canEncode =
+      typeof db.upsertTurnActors === 'function' &&
+      typeof db.upsertTurnConcepts === 'function' &&
+      typeof db.upsertSparseTerms === 'function' &&
+      typeof db.upsertTurnEncoding === 'function';
+
+    // Embedding → sparse atoms runs once per session batch (not per turn); the
+    // encoder caches anchor vectors. Fail-open: no atoms → lexical code only.
+    let atomsByTrace = new Map<string, T1SparseAtom[]>();
+    if (canEncode && this.opts.semanticAtomsFor) {
+      try {
+        const inputs = turnObs
+          .map(({ turn, obs }) => {
+            const traceId = obs.find((o) => o.trace_id)?.trace_id;
+            if (!traceId) return null;
+            return {
+              traceId,
+              text: obs.map((o) => o.content ?? '').join('\n'),
+            };
+          })
+          .filter((input): input is { traceId: string; text: string } => Boolean(input));
+        if (inputs.length > 0) {
+          atomsByTrace = await this.opts.semanticAtomsFor(inputs);
+        }
+      } catch { /* fail-open: lexical/concept code only */ }
+    }
+
     for (const { turn, obs } of turnObs) {
       const traceId = obs.find((o) => o.trace_id)?.trace_id;
       if (!traceId) continue;
+      const ref = { trace_id: traceId, session_id: turn.session_id, turn_seq: turn.turn_id };
+
+      let feature: ReturnType<typeof extractTurnFeature> = null;
       try {
-        const feature = extractTurnFeature(
-          { trace_id: traceId, session_id: turn.session_id, turn_seq: turn.turn_id },
-          obs,
-        );
+        feature = extractTurnFeature(ref, obs);
         if (feature && typeof this.opts.t1db.upsertTurnFeature === 'function') {
           this.opts.t1db.upsertTurnFeature(feature);
         }
       } catch { /* fail-open: raw T1 remains the source of truth */ }
+
+      try {
+        if (!canEncode) continue;
+        encodeT1Turn(
+          ref,
+          {
+            readTurnRows: () => obs,
+            readTrajectoryEvents,
+            upsertTurnActors: (id, actors) => db.upsertTurnActors(id, actors),
+            upsertTurnConcepts: (id, concepts) => db.upsertTurnConcepts(id, concepts),
+            upsertSparseTerms: (id, terms) => db.upsertSparseTerms(id, terms),
+            upsertTurnEncoding: (marker) => db.upsertTurnEncoding(marker),
+          },
+          { feature, atoms: atomsByTrace.get(traceId) },
+        );
+      } catch { /* fail-open: feature-only / raw T1 path remains */ }
     }
     const nowSec = Date.now() / 1000;
     const scoredTurns = turnObs.map((x) => {

@@ -1,12 +1,17 @@
 import { GatewayDatabase } from '../../../gateway/src/memory/gateway-db';
 import { t1VectorKey } from '../../../gateway/src/recall/verbatim-recall';
 import { extractTurnFeature } from '../../../gateway/src/recall/t1-features';
+import { extractTurnActors, type T1ActorEvent } from '../../../gateway/src/recall/t1-actors';
+import { extractTurnConcepts } from '../../../gateway/src/recall/t1-concepts';
+import { encodeTurnSparseTerms } from '../../../gateway/src/recall/t1-sparse';
 import type { FakeVectorRow } from './fake-embedding';
 
 export interface FixtureTurn {
   key: string;
   session: string;
   rows: Array<{ source: 'user_input' | 'tool_result' | 'assistant_reply'; content: string }>;
+  /** Trajectory actor metadata (agent / tool) for the same turn. */
+  events?: T1ActorEvent[];
   archive?: boolean;
 }
 
@@ -72,6 +77,26 @@ export const FIXTURE_TURNS: FixtureTurn[] = [
       { source: 'assistant_reply', content: 'retry with backoff' },
     ],
   },
+  {
+    key: 'review',
+    session: 's3',
+    events: [{ agent: 'reviewer' }, { toolName: 'read' }],
+    rows: [
+      { source: 'user_input', content: 'reviewer 说 embedding 改动不行' },
+      { source: 'tool_result', content: 'read embedding-runtime.ts' },
+      { source: 'assistant_reply', content: 'reviewer 要求补 baseline 证据。' },
+    ],
+  },
+  {
+    key: 'review-fix',
+    session: 's3',
+    events: [{ agent: 'builder' }, { toolName: 'edit' }],
+    rows: [
+      { source: 'user_input', content: 'builder 补了 baseline' },
+      { source: 'tool_result', content: 'edit embedding-runtime.ts' },
+      { source: 'assistant_reply', content: 'builder 加了 concept 通道。' },
+    ],
+  },
 ];
 
 export const BASELINE_QUERIES: BaselineQuery[] = [
@@ -84,6 +109,10 @@ export const BASELINE_QUERIES: BaselineQuery[] = [
   { id: 'q-deploy', query: 'deployment restart', expected: ['deployment'] },
   { id: 'q-merge', query: '合并 太多', expected: ['consolidation'] },
   { id: 'q-code', query: 'ECONNRESET', expected: ['network'] },
+  { id: 'q-synonym-net', query: '连接重置', expected: ['network'] },
+  { id: 'q-actor-pair', query: 'reviewer builder embedding', expected: ['review-fix'] },
+  { id: 'q-actor-cn', query: '评审说构建者的 embedding 改动', expected: ['review-fix'] },
+  { id: 'q-parse-holdout', query: '解码失败', expected: ['reflection'] },
   { id: 'q-none', query: 'weather tomorrow', expected: [] },
 ];
 
@@ -111,11 +140,53 @@ export function seedT1Fixtures(db: GatewayDatabase): {
         text: row.content,
       });
     }
-    const feature = extractTurnFeature(
-      { trace_id: turn.trace_id, session_id: fixture.session, turn_seq: turn.turn_seq },
-      db.readTurn(fixture.session, turn.turn_seq),
-    );
+    // Seed trajectory events so actor extraction exercises the real join.
+    fixture.events?.forEach((event, index) => {
+      db.getStore()
+        .prepare(
+          `INSERT INTO trajectory_events
+             (project_id, session_id, turn_id, seq, event_type, tool_name, agent, time_ms)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          'eval',
+          fixture.session,
+          turn.turn_seq,
+          index + 1,
+          'tool',
+          event.toolName ?? null,
+          event.agent ?? null,
+          Date.now(),
+        );
+    });
+
+    const rows = db.readTurn(fixture.session, turn.turn_seq);
+    const ref = {
+      trace_id: turn.trace_id,
+      session_id: fixture.session,
+      turn_seq: turn.turn_seq,
+    };
+    const feature = extractTurnFeature(ref, rows);
     if (feature) db.upsertTurnFeature(feature);
+
+    const actors = extractTurnActors(
+      ref,
+      rows,
+      db.readTrajectoryEvents(fixture.session, turn.turn_seq),
+    );
+    const concepts = extractTurnConcepts(ref, rows, feature);
+    const sparse = encodeTurnSparseTerms({ turn: ref, rows, feature, concepts, actors });
+    db.upsertTurnActors(turn.trace_id, actors);
+    db.upsertTurnConcepts(turn.trace_id, concepts);
+    db.upsertSparseTerms(turn.trace_id, sparse);
+    db.upsertTurnEncoding({
+      traceId: turn.trace_id,
+      model: sparse[0]?.model ?? 'sparse-lex-v1',
+      actorCount: actors.length,
+      conceptCount: concepts.length,
+      sparseCount: sparse.length,
+    });
+
     if (fixture.archive) db.archiveTurn(fixture.session, turn.turn_seq);
   }
 

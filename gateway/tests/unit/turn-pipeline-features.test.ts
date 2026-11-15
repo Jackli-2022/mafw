@@ -43,6 +43,13 @@ describe('TurnPipeline writes the T1 sparse event code', () => {
       content: '决定 adapter 前置 system。',
       failure: 0,
     });
+    db.getStore()
+      .prepare(
+        `INSERT INTO trajectory_events
+           (project_id, session_id, turn_id, seq, event_type, tool_name, agent, time_ms)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run('p', 's1', turn.turn_seq, 1, 'tool', 'read', 'reviewer', Date.now());
 
     const index: any = { getIndex: () => ({ entries: [] }) };
     const prompts: string[] = [];
@@ -57,6 +64,13 @@ describe('TurnPipeline writes the T1 sparse event code', () => {
       index,
       workerFor: () => worker,
       staleMs: 60_000,
+      semanticAtomsFor: async (turns) =>
+        new Map(
+          turns.map((turn) => [
+            turn.traceId,
+            [{ termId: 'error:json_parse', cosine: 0.9 }],
+          ]),
+        ),
     });
 
     await pipeline.runOnce();
@@ -66,6 +80,32 @@ describe('TurnPipeline writes the T1 sparse event code', () => {
     expect(feature!.intent).toContain('修一下 reflection');
     expect(feature!.action).toContain('reflection.ts');
     expect(feature!.decision).toContain('adapter 前置 system');
+
+    // Phase C: the same pass writes the episode code (actors/concepts/sparse)
+    // by joining trajectory metadata, and marks the turn as encoded.
+    expect(db.getTurnActors(turn.trace_id)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ actorId: 'user:local', role: 'requester' }),
+        expect.objectContaining({ actorId: 'agent:reviewer', role: 'reviewer' }),
+        expect.objectContaining({ actorId: 'tool:read', role: 'instrument' }),
+      ]),
+    );
+    expect(db.getTurnConcepts(turn.trace_id)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ conceptId: 'error:json_parse' }),
+      ]),
+    );
+    expect(db.getSparseTerms(turn.trace_id)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          termId: 'sem:error:json_parse',
+          kind: 'semantic',
+          model: 'sparse-embed-v1',
+        }),
+      ]),
+    );
+    expect(db.listTurnsMissingEncoding(10)).toEqual([]);
+
     expect(prompts).toHaveLength(1);
     expect(prompts[0]).toContain('--- REPLAY START');
     expect(prompts[0]).toContain(`[trace:${turn.trace_id}][INTENT]`);

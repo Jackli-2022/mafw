@@ -11,6 +11,15 @@ export interface T1Row {
   source: string;
   content: string;
 }
+/** Retrieval channels that can produce a T1 hit. */
+export type T1HitSource =
+  | 'dense'
+  | 'lexical'
+  | 'feature'
+  | 'concept'
+  | 'actor'
+  | 'sparse'
+  | 'neighbor';
 export interface T1Hit {
   sessionId: string;
   turnId: number;
@@ -18,7 +27,7 @@ export interface T1Hit {
   cosine: number;
   excerpt: string;
   /** Retrieval channels that produced this fused hit. */
-  sources?: Array<'dense' | 'lexical' | 'feature'>;
+  sources?: T1HitSource[];
   /** Fused RRF score (higher is better); absent on raw dense hits. */
   score?: number;
 }

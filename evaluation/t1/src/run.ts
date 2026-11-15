@@ -27,8 +27,14 @@ interface QueryRow {
   fts: string[];
   dense: string[];
   feature: string[];
+  concept: string[];
+  actor: string[];
+  sparse: string[];
   fused: string[];
 }
+
+const CHANNELS = ['fts', 'dense', 'feature', 'concept', 'actor', 'sparse', 'fused'] as const;
+type Channel = (typeof CHANNELS)[number];
 
 async function main(): Promise<void> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-t1-eval-'));
@@ -49,7 +55,10 @@ async function main(): Promise<void> {
       const lexical = db.searchT1Lexical(query.query, K);
       const dense = await denseSearch(query.query, K);
       const feature = db.searchT1Features(query.query, K);
-      const fused = fuseT1Hits(dense, lexical, K, feature);
+      const concept = db.searchT1Concepts(query.query, K);
+      const actor = db.searchT1Actors(query.query, K);
+      const sparse = db.searchT1Sparse(query.query, K);
+      const fused = fuseT1Hits(dense, lexical, K, { feature, concept, actor, sparse });
       rows.push({
         id: query.id,
         query: query.query,
@@ -57,19 +66,22 @@ async function main(): Promise<void> {
         fts: lexical.map((hit) => hit.traceId),
         dense: dense.map((hit) => hit.traceId ?? '').filter(Boolean),
         feature: feature.map((hit) => hit.traceId),
+        concept: concept.map((hit) => hit.traceId),
+        actor: actor.map((hit) => hit.traceId),
+        sparse: sparse.map((hit) => hit.traceId),
         fused: fused.map((hit) => hit.traceId ?? '').filter(Boolean),
       });
     }
 
-    const channel = (key: 'fts' | 'dense' | 'feature' | 'fused') =>
+    const channel = (key: Channel) =>
       summarize(rows.map((row) => ({ expected: row.expected, actual: row[key] })), K);
-    const misses = (key: 'fts' | 'dense' | 'feature' | 'fused') =>
+    const misses = (key: Channel) =>
       rows
         .filter((row) => recallAtK(row.expected, row[key], K) < 1)
         .map((row) => row.id);
 
     const report = {
-      fixtureVersion: 1,
+      fixtureVersion: 2,
       embedding: 'synthetic-concept-v1',
       note: 'Synthetic deterministic concept embedding: validates channel wiring/fusion, not model quality.',
       k: K,
@@ -77,39 +89,22 @@ async function main(): Promise<void> {
         turns: Object.keys(traceIds).length,
         queries: rows.length,
       },
-      channels: {
-        fts: channel('fts'),
-        dense: channel('dense'),
-        feature: channel('feature'),
-        fused: channel('fused'),
-      },
-      misses: {
-        fts: misses('fts'),
-        dense: misses('dense'),
-        feature: misses('feature'),
-        fused: misses('fused'),
-      },
+      channels: Object.fromEntries(CHANNELS.map((key) => [key, channel(key)])),
+      misses: Object.fromEntries(CHANNELS.map((key) => [key, misses(key)])),
       perQuery: rows.map((row) => ({
         id: row.id,
         query: row.query,
         expectedKeys: BASELINE_QUERIES.find((query) => query.id === row.id)?.expected ?? [],
         expectedCount: row.expected.length,
-        fts: {
-          recall: recallAtK(row.expected, row.fts, K),
-          mrr: mrr(row.expected, row.fts),
-        },
-        dense: {
-          recall: recallAtK(row.expected, row.dense, K),
-          mrr: mrr(row.expected, row.dense),
-        },
-        feature: {
-          recall: recallAtK(row.expected, row.feature, K),
-          mrr: mrr(row.expected, row.feature),
-        },
-        fused: {
-          recall: recallAtK(row.expected, row.fused, K),
-          mrr: mrr(row.expected, row.fused),
-        },
+        ...Object.fromEntries(
+          CHANNELS.map((key) => [
+            key,
+            {
+              recall: recallAtK(row.expected, row[key], K),
+              mrr: mrr(row.expected, row[key]),
+            },
+          ]),
+        ),
       })),
     };
 

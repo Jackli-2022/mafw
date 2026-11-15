@@ -225,6 +225,7 @@ import { withInstructionSync } from './runtime/instruction-wrapper';
 import { InstructionSyncService } from './core/instructions/instruction-sync-service';
 import { DiscoveryService } from './core/discovery/discovery-service';
 import { renderInstructionBlocks, type InstructionBlocks } from './recall/instruction-blocks';
+import { getT1SemanticEncoder } from './recall/t1-semantic-atoms';
 import { isHiddenSession, selectVisibleSessions } from './core/session-visibility';
 
 import { mafwBroadcast, projectRegisteredEvent } from './runtime/event-broadcast';
@@ -3500,6 +3501,12 @@ class MafwScheduler {
       // 7-day retrieval hit counts from the shared event buffer.
       needFor: (id) => getRetrievalEventBuffer().needFor(id),
       transcriptMaxChars: config.recall.workerTranscriptMaxChars,
+      // Phase C: embedding → sparse semantic atoms for the episode code.
+      semanticAtomsFor: async (turns) => {
+        const rt = getEmbeddingRuntime();
+        if (!rt?.provider) return new Map();
+        return getT1SemanticEncoder(rt.provider).encodeMany(turns);
+      },
       // S2: schema-cluster interleaving (integrate into schemas, not append).
       schemaClusters: () => this.getSchemaClusters(),
       clusterVector: async (obs) => {
