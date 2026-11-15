@@ -1,7 +1,7 @@
 # 2026-11-16 · T1 sparse-first（Phase A：稀疏事件码）
 
 - **分支**：`feat/t1-sparse-first`（基于 main `0065a111`）
-- **状态**：Phase A 数据层完成；Phase B（timeline / replay / T1 检索）待做
+- **状态**：Phase A 数据层 + T1 retrieval baseline 完成；Phase B（timeline / replay / T1 检索）待做
 - **范围**：只改 memory；不引入 project/session 隔离，不改 runtime 契约
 
 ## 背景
@@ -32,9 +32,25 @@ T1 是未固化的 episode 证据，主表示应是 `raw + 稀疏事件码 + tra
 ## 已知限制
 
 - 回填函数已就绪，但还没有 CLI/HTTP 入口；生产回填待接。
-- Phase A 未做 T1 检索 baseline / feature channel；dense 仍按现状使用。
+- T1 检索的 feature channel 未接；dense 仍按现状使用（baseline 见下）。
 - `should_encode` 尚未移除（Phase C 处理）。
 - feature 抽取是确定性的，长/模糊 turn 可能需要后续 LLM 摘要补强。
+
+## T1 retrieval baseline（Phase A）
+
+`npm run eval:t1`：`evaluation/t1/`，10 queries / 6 turns，合成 concept embedding（离线、确定性、只验证管线，不代表真实模型质量）。
+
+| channel | recall@3 | MRR | no-answer |
+|---|---:|---:|---:|
+| FTS | 0.70 | 0.70 | 1.00 |
+| dense | 0.90 | 0.90 | 1.00 |
+| fused | 1.00 | 1.00 | 1.00 |
+
+- FTS 漏中文同义查询（`解析失败` / `覆盖率` / `合并`）
+- dense 漏精确错误码（`ECONNRESET`）
+- fused 全中
+
+结论：T1 应保留 lexical + dense 双通道，fused 作为默认；这也为后续 `t1.denseIndex` 决策提供基线。
 
 ## 下一步
 

@@ -1,0 +1,241 @@
+{
+  "fixtureVersion": 1,
+  "embedding": "synthetic-concept-v1",
+  "note": "Synthetic deterministic concept embedding: validates channel wiring/fusion, not model quality.",
+  "k": 3,
+  "fixtures": {
+    "turns": 6,
+    "queries": 10
+  },
+  "channels": {
+    "fts": {
+      "recall": 0.7,
+      "mrr": 0.7,
+      "noAnswer": 1,
+      "cases": 10
+    },
+    "dense": {
+      "recall": 0.9,
+      "mrr": 0.9,
+      "noAnswer": 1,
+      "cases": 10
+    },
+    "fused": {
+      "recall": 1,
+      "mrr": 1,
+      "noAnswer": 1,
+      "cases": 10
+    }
+  },
+  "misses": {
+    "fts": [
+      "q-parse-cn",
+      "q-coverage-cn",
+      "q-merge"
+    ],
+    "dense": [
+      "q-code"
+    ],
+    "fused": []
+  },
+  "perQuery": [
+    {
+      "id": "q-reflection",
+      "query": "reflection unparseable",
+      "expectedKeys": [
+        "reflection"
+      ],
+      "expectedCount": 1,
+      "fts": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "dense": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "fused": {
+        "recall": 1,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "q-parse-cn",
+      "query": "解析失败",
+      "expectedKeys": [
+        "reflection"
+      ],
+      "expectedCount": 1,
+      "fts": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "dense": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "fused": {
+        "recall": 1,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "q-coverage",
+      "query": "T1 coverage",
+      "expectedKeys": [
+        "coverage"
+      ],
+      "expectedCount": 1,
+      "fts": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "dense": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "fused": {
+        "recall": 1,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "q-coverage-cn",
+      "query": "覆盖率",
+      "expectedKeys": [
+        "coverage"
+      ],
+      "expectedCount": 1,
+      "fts": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "dense": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "fused": {
+        "recall": 1,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "q-provenance",
+      "query": "provenance 缺失",
+      "expectedKeys": [
+        "provenance"
+      ],
+      "expectedCount": 1,
+      "fts": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "dense": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "fused": {
+        "recall": 1,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "q-source",
+      "query": "来源 trace",
+      "expectedKeys": [
+        "provenance"
+      ],
+      "expectedCount": 1,
+      "fts": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "dense": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "fused": {
+        "recall": 1,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "q-deploy",
+      "query": "deployment restart",
+      "expectedKeys": [
+        "deployment"
+      ],
+      "expectedCount": 1,
+      "fts": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "dense": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "fused": {
+        "recall": 1,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "q-merge",
+      "query": "合并 太多",
+      "expectedKeys": [
+        "consolidation"
+      ],
+      "expectedCount": 1,
+      "fts": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "dense": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "fused": {
+        "recall": 1,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "q-code",
+      "query": "ECONNRESET",
+      "expectedKeys": [
+        "network"
+      ],
+      "expectedCount": 1,
+      "fts": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "dense": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "fused": {
+        "recall": 1,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "q-none",
+      "query": "weather tomorrow",
+      "expectedKeys": [],
+      "expectedCount": 0,
+      "fts": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "dense": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "fused": {
+        "recall": 1,
+        "mrr": 1
+      }
+    }
+  ]
+}
