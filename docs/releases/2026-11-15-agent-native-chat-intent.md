@@ -1,7 +1,7 @@
 # 2026-11-15 · Agent-native Chat 意图
 
 - **版本**：`v5.1.0`（交互行为修订，不升版本号）
-- **提交**：`3210334f`（主变更）、`a44715a3`（live 状态守卫 / `goals.stop`）、`2ad06925`（撤销前二次校验 stage）
+- **提交**：`3210334f`（主变更）、`a44715a3`（live 状态守卫 / `goals.stop`）、`2ad06925`（撤销前二次校验 stage）、`9fc8750e`（解包 MCP 结果 / 缓存 live 状态）
 - **范围**：desktop Chat composer 与工具卡；gateway / SDK / 运行时契约零改动
 - **前置**：`docs/superpowers/plans/2026-11-15-agent-native-chat-intent.md`（方案 D）
 
@@ -45,9 +45,9 @@ composer 上方的「讨论 / 提议 / 委托 / 解决」四模式，与 Lead �
 
 ## 测试与门禁
 
-- desktop 全量：**3864 / 3864** pass（736 suites）
+- desktop 全量：**3865 / 3865** pass（736 suites）
 - 新增：`agent-native-chat-wiring` 3、`goal-created-card-wiring` 3、
-  `goal-created-model` 7；`use-send-message` 的 4 个模式用例替换为 1 个“旧调用方不能注入
+  `goal-created-model` 8；`use-send-message` 的 4 个模式用例替换为 1 个“旧调用方不能注入
   mode directive”回归用例
 - 删除：`composer-mode` 5、`chat-mode-bar-wiring` 4、`chat-mode-delegate-wiring` 3、
   `chat-mode-resolve-wiring` 2
