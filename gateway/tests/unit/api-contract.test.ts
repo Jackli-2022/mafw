@@ -1670,6 +1670,168 @@ describe('api-contract: E10i-E1 session / pod explicit error statuses', () => {
   });
 });
 
+describe('api-contract: E10i-E2 goal / event explicit error statuses', () => {
+  const findOp = (operationId: string): any => {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const candidate of Object.values<any>(methods)) {
+        if (candidate?.operationId === operationId) return candidate;
+      }
+    }
+    return null;
+  };
+
+  const errorSchema = (operationId: string, status: string): any =>
+    findOp(operationId)?.responses?.[status]?.content?.['application/json']?.schema;
+
+  test('goals.planApproval declares 400/404/409 (missing feedback / missing state / not pending)', () => {
+    const op = findOp('goals.planApproval');
+    for (const status of ['400', '404', '409']) {
+      expect({ status, declared: op.responses?.[status] !== undefined }).toEqual({ status, declared: true });
+      expect({ status, required: errorSchema('goals.planApproval', status).required }).toEqual({ status, required: ['error'] });
+    }
+    expect(op.responses['409'].description).toBe('Conflict');
+    expect(op.responses['404'].description).toBe('Not Found');
+  });
+
+  test('decisions.confirm carries all four DecisionRecordError statuses (400/404/409/503)', () => {
+    for (const operationId of ['decisions.confirm', 'decisions.shelve', 'decisions.reopen']) {
+      const op = findOp(operationId);
+      for (const status of ['400', '404', '409', '503']) {
+        expect({ operationId, status, declared: op.responses?.[status] !== undefined })
+          .toEqual({ operationId, status, declared: true });
+        expect({ operationId, status, required: errorSchema(operationId, status).required })
+          .toEqual({ operationId, status, required: ['error'] });
+      }
+    }
+    // 503 = "project is not registered" — plain envelope, not the capability shape.
+    const decision503 = errorSchema('decisions.confirm', '503');
+    expect(decision503.properties.code?.const).toBeUndefined();
+    expect(errorSchema('decisions.draft', '503').properties.code?.const).toBeUndefined();
+  });
+
+  test('standingGoals / goalRuns.approve declare the lifecycle + waiting_person conflicts', () => {
+    for (const operationId of ['standingGoals.run', 'goalRuns.approve', 'standingGoals.pause']) {
+      const op = findOp(operationId);
+      for (const status of ['400', '404', '409', '503']) {
+        expect({ operationId, status, declared: op.responses?.[status] !== undefined })
+          .toEqual({ operationId, status, declared: true });
+      }
+    }
+    // create only validates triggers (400) and the feature gate (503).
+    expect(findOp('standingGoals.create').responses['400']).toBeDefined();
+    expect(findOp('standingGoals.create').responses['409']).toBeUndefined();
+  });
+
+  test('goals.respondQuestion 404/409 use the ledger body (handler emits {status}, not {error})', () => {
+    expect(errorSchema('goals.respondQuestion', '400').required).toEqual(['error']);
+    for (const status of ['404', '409']) {
+      const schema = errorSchema('goals.respondQuestion', status);
+      expect({ status, required: schema.required }).toEqual({ status, required: ['status'] });
+      expect({ status, hasError: schema.properties.error !== undefined }).toEqual({ status, hasError: false });
+    }
+  });
+
+  test('goals.control / goals.controlLegacy declare 400 (Invalid JSON only; actions fail-open 200)', () => {
+    for (const operationId of ['goals.control', 'goals.controlLegacy']) {
+      const op = findOp(operationId);
+      expect({ operationId, declared: op.responses?.['400'] !== undefined })
+        .toEqual({ operationId, declared: true });
+      expect({ operationId, conflict: op.responses?.['409'] !== undefined })
+        .toEqual({ operationId, conflict: false });
+    }
+  });
+
+  test('event layer ops declare 400/404/503 from EventLayerError + the disabled gate', () => {
+    for (const [operationId, statuses] of [
+      ['events.webhook.receive', ['400', '404', '503']],
+      ['events.sources.patch', ['400', '404', '503']],
+      ['events.threads.close', ['400', '404', '503']],
+      ['events.subscriptions.delete', ['400', '404', '503']],
+      ['events.sources.create', ['400', '503']],
+      ['event.publish', ['400']],
+    ] as const) {
+      const op = findOp(operationId);
+      for (const status of statuses) {
+        expect({ operationId, status, declared: op.responses?.[status] !== undefined })
+          .toEqual({ operationId, status, declared: true });
+      }
+    }
+    // webhook 429 (ingress refusal) is not an EventLayerError branch reachable
+    // through the route's result statuses -> stays on `default`.
+    expect(findOp('events.webhook.receive').responses['429']).toBeUndefined();
+  });
+
+  test('questions / permissions / triage / automations declare only the statuses their handlers write', () => {
+    for (const [operationId, statuses] of [
+      ['questions.reply', ['400', '503']],
+      ['questions.reject', ['400', '503']],
+      ['permissions.reply', ['400', '404', '503']],
+      ['permissions.replyRuntime', ['400', '404', '503']],
+      ['permissions.removeRule', ['400', '404']],
+      ['permissions.removeAllowlist', ['400', '404']],
+      ['permissions.setMode', ['400']],
+      ['triage.confirm', ['400', '404']],
+      ['triage.propose', ['400', '404']],
+      ['approvals.respond', ['400', '404']],
+      ['automations.toggle', ['400']],
+      ['automations.draft', ['400', '503']],
+    ] as const) {
+      const op = findOp(operationId);
+      for (const status of statuses) {
+        expect({ operationId, status, declared: op.responses?.[status] !== undefined })
+          .toEqual({ operationId, status, declared: true });
+        expect({ operationId, status, required: errorSchema(operationId, status).required })
+          .toEqual({ operationId, status, required: ['error'] });
+      }
+    }
+    // 503 here is a missing runtime surface, not `code:'capability_unavailable'`.
+    expect(errorSchema('questions.reply', '503').properties.code?.const).toBeUndefined();
+  });
+
+  test('no explicit statuses on ops whose handlers only return 200 (observe / remove / reject / dismiss)', () => {
+    const problems: string[] = [];
+    for (const operationId of [
+      'lead.boundaries.observe',
+      'automations.remove',
+      'triage.reject',
+      'triage.dismiss',
+      'lead.boundaries.list',
+      'standingGoals.list',
+      'events.sources.list',
+      'goals.list',
+      'decisions.list',
+      'approvals.list',
+      'questions.list',
+      'permissions.list',
+    ]) {
+      const op = findOp(operationId);
+      for (const status of ['400', '404', '409', '429', '503']) {
+        if (op.responses?.[status] !== undefined) problems.push(`${operationId}: unexpected ${status}`);
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test('every E2 explicit status except respondQuestion ledger uses the shared envelope', () => {
+    const problems: string[] = [];
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const op of Object.values<any>(methods)) {
+        if (!op?.operationId) continue;
+        for (const [status, response] of Object.entries<any>(op.responses ?? {})) {
+          if (['200', '401', '403', 'default'].includes(status)) continue;
+          const schema = response?.content?.['application/json']?.schema;
+          if (!schema) continue;
+          const required: string[] = schema.required ?? [];
+          if (required.includes('error')) continue;
+          if (op.operationId === 'goals.respondQuestion' && (status === '404' || status === '409')) continue;
+          problems.push(`${op.operationId}: ${status} is neither ErrorEnvelope nor the documented ledger body`);
+        }
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+});
+
 describe('api-contract: E10c-1 memory / recall / lead read response schema (8 ops)', () => {
   const findOp = (operationId: string): any => {
     for (const methods of Object.values<any>(contract.paths)) {

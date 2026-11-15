@@ -32,3 +32,15 @@ export const CapabilityUnavailableErrorSchema = Type.Object({
   error: Type.String(),
   code: Type.Literal('capability_unavailable'),
 }, { additionalProperties: true });
+
+/**
+ * `goals.respondQuestion` 的 404 / 409：question ledger 的状态体。
+ *
+ * handler（`routes/goals-inline.ts`）直接写 `{ status: 'not_found' }` /
+ * `{ status: 'conflict', currentState }`，**没有** `error` 字段，所以不能套
+ * `ErrorEnvelope`（其 `required` 含 `error`）——这里如实描述真实形状。
+ */
+export const QuestionLedgerErrorSchema = Type.Object({
+  status: Type.Union([Type.Literal('not_found'), Type.Literal('conflict')]),
+  currentState: Type.Optional(Type.String()),
+}, { additionalProperties: true });
