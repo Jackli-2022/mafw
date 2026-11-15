@@ -67,13 +67,14 @@
   评审项锚点或计划审阅。决定记录由 MCP 起草、人确认 / 搁置 / 重开，落在 `<project>/.mafw/decisions/`；
   新 Goal 先看委托单预览（12 字段 + 授权级别），Goal 总览显示代理契约，框显示执行 badge。详见
   `docs/releases/2026-11-12-workbench-chat-decisions.md`。
-- **Chat 模式与 Episode（2026-11-12 Plan 4）**：composer 四模式（讨论 / 提议 / 委托 / 解决）是瞬态
-  意图，不改权限；提议把 `[[mode:propose]]` 作为 synthetic text part 发送，用户正文保持干净；委托
-  打开预填的 New Goal composer，解决打开 Goal 评审 lens / review 上下文，两者都不发消息。Episode
-  按会话存 `localStorage['mafw-episodes:v1:<sessionID>']`（仅分组视图，不新增 session/topic 模型），
-  关闭默认折叠，边界用 `startMessageId` + `startAt`/`endAt` 兼容乐观 id 对账；关闭并记录只起草
-  用户来源的决定记录，确认仍在决定板由人完成。详见
-  `docs/releases/2026-11-12-workbench-chat-modes-episodes.md`。
+- **Agent-native Chat 意图（2026-11-15 起）**：composer 只保留一个发送面，讨论 / 提议 / 委托 / 解决
+  四模式已移除。Lead 按系统提示直接调用 `mafw_create_goal` 建立 `discussing` Goal（带当前话题
+  快照，不启动 NodeDriver）；桌面把该工具结果渲染成 `GoalCreatedCard`（打开 Tech Lead 讨论 /
+  撤销），legacy 结果回退通用工具卡。自由讨论保留「交给 Lead」交接；评审项解决、验收、合并
+  仍是 human-only，后续用 inline `ReviewItemCard` 承接。Episode 仍按会话存
+  `localStorage['mafw-episodes:v1:<sessionID>']`（仅分组视图），但「标记 Episode」已从 composer
+  移到 transcript header；自动 boundary 提案后续接入。详见
+  `docs/releases/2026-11-15-agent-native-chat-intent.md`。
 - **Workbench 焦点收口（2026-11-12 Plan 5）**：`WorkbenchShell` 只剩 `FrameBar` /
   `LensBar` / `FocusStage` / `InstrumentRail` / `SubjectPicker` + 壳级
   `PluginSurfaceStage`；`WorkbenchContext`、四 context 持久化、全局 L2、执行抽屉与
