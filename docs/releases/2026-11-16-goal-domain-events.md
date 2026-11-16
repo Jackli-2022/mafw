@@ -77,9 +77,9 @@
   `lead-outbox-read-ack`。
 - 定向：`tests/unit/events` + `tests/unit/lead` + `tests/unit/pod` =
   **116 suites / 865 tests**（Task 6 收口时）。
-- gateway 全量：**1001 / 1001 suites**，**7965 passed / 2 skipped / 0 failed**（二次全量）。
-  首跑有 5 个既有 flake（`restore-git` / `routes-session-worktree` 超时、`t1-sample-turn-texts`、
-  `v2-live`），4 suites / 32 tests 单独复跑全绿，二次全量全绿。
+- gateway 全量（最终，review 修复后）：**1001 / 1001 suites**，**7973 passed / 2 skipped / 0 failed**。
+  首跑曾有 5 个既有 flake（`restore-git` / `routes-session-worktree` 超时、`t1-sample-turn-texts`、
+  `v2-live`），4 suites / 32 tests 单独复跑全绿；最终全量全绿。
 - gateway `tsc`：rc=0。
 - gateway `npm run build`：通过（`dist/release.json` v5.1.0）。
 
