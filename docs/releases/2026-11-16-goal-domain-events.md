@@ -3,7 +3,7 @@
 - **版本**：`v5.1.0`（行为增强，不升版本号）
 - **提交**：`7b8adba9`（domain event store）+ `097ccfe8`（GoalState → SQLite）+
   `7db12806`（生命周期事件）+ `e469b1ca`（归档同事务）+ `98e615d6`（投影 parity）+
-  `d77da1f9`（read / ack）
+  `d77da1f9`（read / ack）+ `2094fb9c`（review 修复）+ `0bf3c166`（最终测试数字）
 - **计划**：`docs/superpowers/plans/2026-11-16-phase2-goal-domain-events.md`
 - **前置**：`docs/releases/2026-11-16-lead-inbox-unification.md`（Phase 1）
 - **范围**：gateway 事件层与 Goal 状态；desktop / SDK / runtime 零改动
