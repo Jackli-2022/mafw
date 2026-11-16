@@ -16,6 +16,11 @@ import type {
 } from './pod-store';
 
 export type PodGoalVerdict = 'PASS' | 'FAIL' | 'MAX_RETRIES' | 'ERROR' | 'CANCELLED';
+
+/** Terminal verdicts that mean the Goal needs a failure decision, not acceptance. */
+export function isFailedVerdict(verdict: string | null | undefined): boolean {
+  return verdict === 'FAIL' || verdict === 'MAX_RETRIES' || verdict === 'ERROR';
+}
 export type PodQueueReason = 'active_goal' | 'paused' | 'archived' | 'budget' | 'state_error';
 export type PodGoalStageOwner = 'person' | 'team' | 'system';
 export type PodGoalStageKind =
@@ -290,15 +295,33 @@ export function projectPodGoalStage(input: PodGoalStageInput): PodGoalStage {
 }
 
 export function projectPodAttention(
-  goals: Array<{ goalId: string; title: string; revision?: number; stage: PodGoalStage }>,
+  goals: Array<{
+    goalId: string;
+    title: string;
+    revision?: number;
+    stage: PodGoalStage;
+    /** Terminal failure from the Goal view; not derivable from stage alone. */
+    failed?: boolean;
+  }>,
 ): PodAttentionItem[] {
   const out: PodAttentionItem[] = [];
   for (const goal of goals) {
+    const revision = goal.revision ?? 1;
+    if (goal.failed) {
+      out.push({
+        id: `${goal.goalId}:failed:r${revision}`,
+        goalId: goal.goalId,
+        revision,
+        kind: 'failed',
+        title: goal.title,
+        action: { type: 'open_result', goalId: goal.goalId },
+      });
+      continue;
+    }
     const stage = goal.stage;
     if (stage.owner !== 'person') continue;
     if (!PERSON_ATTENTION_KINDS.has(stage.kind)) continue;
     if (!stage.action) continue;
-    const revision = goal.revision ?? 1;
     out.push({
       // Revision-scoped: a rejected plan re-asks for approval in r2 and must
       // not be deduped against r1's attention item.

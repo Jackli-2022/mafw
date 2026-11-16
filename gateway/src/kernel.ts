@@ -97,6 +97,7 @@ import { PodTaskService } from './core/pod/pod-task-service';
 import { PodMessageService } from './core/pod/pod-message-service';
 import { PodMemoryService } from './core/pod/pod-memory-service';
 import { PodGoalService } from './core/pod/pod-goal-service';
+import { isFailedVerdict } from './core/pod/pod-stage';
 import { PodReviewService } from './core/pod/pod-review-service';
 import { PodGoalRevisionService } from './core/pod/pod-goal-revision-service';
 import { PodSessionSupervisor } from './core/pod/pod-session-supervisor';
@@ -6243,6 +6244,17 @@ class MafwScheduler {
     reviewFeedback?: string | null;
   }) {
     log.info(`[Scheduler] Archiving goal ${goalId}`);
+    if (outcome && isFailedVerdict(outcome.verdict)) {
+      try {
+        await this.podTechLeadService?.notifyFailure(goalId, {
+          verdict: outcome.verdict,
+          lastError: outcome.lastError ?? null,
+          reviewFeedback: outcome.reviewFeedback ?? null,
+        });
+      } catch (err: any) {
+        log.warn(`[Pod] Tech Lead failure handoff failed for ${goalId} (non-fatal): ${err?.message ?? err}`);
+      }
+    }
     await this.destroyAllSessions(goalId);
 
     let projectDir: string | null = null;

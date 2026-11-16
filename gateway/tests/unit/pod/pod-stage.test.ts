@@ -67,7 +67,19 @@ describe('projectPodGoalStage', () => {
       expect(stage).toMatchObject({ owner: 'system', kind: 'ended' });
       expect(stage.action).toEqual({ type: 'open_result', goalId: 'g1' });
     }
-    expect(projectPodAttention([{ goalId: 'g1', title: 'Fix Pod', stage: projectPodGoalStage({ ...base, terminal: true, goalStatus: 'done', verdict: 'FAIL', nextAction: 'FAILED' }) }])).toEqual([]);
+    expect(projectPodAttention([{
+      goalId: 'g1',
+      title: 'Fix Pod',
+      failed: true,
+      stage: projectPodGoalStage({ ...base, terminal: true, goalStatus: 'done', verdict: 'FAIL', nextAction: 'FAILED' }),
+    }])).toEqual([{
+      id: 'g1:failed:r1',
+      goalId: 'g1',
+      revision: 1,
+      kind: 'failed',
+      title: 'Fix Pod',
+      action: { type: 'open_result', goalId: 'g1' },
+    }]);
   });
 
   test('queue reasons are explicit and state errors are person/blocked', () => {

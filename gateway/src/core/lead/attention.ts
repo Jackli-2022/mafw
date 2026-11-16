@@ -1,4 +1,5 @@
 import type { PodGoalView } from '../pod/pod-view';
+import { isFailedVerdict } from '../pod/pod-stage';
 import type { DecisionRecord } from '../decision/decision-record';
 
 export type AttentionKind =
@@ -50,7 +51,7 @@ const PRIORITY: Record<AttentionKind, number> = {
   answer: 80,
   review_item: 75,
   review: 70,
-  failed: 60,
+  failed: 85,
   blocked: 50,
 };
 
@@ -64,8 +65,12 @@ export function deriveAttention(views: PodGoalView[]): AttentionItem[] {
   for (const view of views) {
     let kind: AttentionKind | null = null;
     let action: AttentionItem['action'] = { type: 'open_goal', goalId: view.goalId };
+    const terminalFailure = !!view.endedAt && !view.accepted && isFailedVerdict(view.verdict);
 
-    if (view.resultReady && !view.accepted) {
+    if (terminalFailure) {
+      kind = 'failed';
+      action = { type: 'open_result', goalId: view.goalId };
+    } else if (view.resultReady && !view.accepted) {
       kind = 'review';
       action = { type: 'open_result', goalId: view.goalId };
     } else if (view.endedAt) {
@@ -113,6 +118,7 @@ export function deriveAttention(views: PodGoalView[]): AttentionItem[] {
       priority: PRIORITY[kind],
       coalesceKey,
       title: view.title,
+      ...(terminalFailure ? { detail: view.lastError ?? undefined } : {}),
       action,
     });
   }

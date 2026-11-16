@@ -101,6 +101,33 @@ describe('deriveAttention', () => {
     expect(items.map((item) => `${item.goalId}:${item.kind}`)).toEqual(['failed:failed']);
   });
 
+  test('terminal failures surface as failed, not review', () => {
+    const ended = { status: 'done' as const, endedAt: '2026-11-10T01:00:00.000Z' };
+    const terminal = (verdict: 'PASS' | 'FAIL' | 'MAX_RETRIES' | 'ERROR', lastError: string | null = null) => ({
+      terminal: true,
+      verdict,
+      hasResultEvidence: true,
+      nextAction: verdict === 'PASS' ? 'COMPLETED' : 'FAILED',
+      nodeSession: null,
+      lastError,
+    });
+    const items = deriveAttention([
+      view('error', { ...ended, verdict: 'ERROR' }, terminal('ERROR', 'artifact_invalid')),
+      view('fail', { ...ended, verdict: 'FAIL' }, terminal('FAIL')),
+      view('max', { ...ended, verdict: 'MAX_RETRIES' }, terminal('MAX_RETRIES')),
+      view('pass', { ...ended, verdict: 'PASS' }, terminal('PASS')),
+    ]);
+
+    expect(items.map((item) => `${item.goalId}:${item.kind}`)).toEqual([
+      'error:failed',
+      'fail:failed',
+      'max:failed',
+      'pass:review',
+    ]);
+    expect(items[0].action).toEqual({ type: 'open_result', goalId: 'error' });
+    expect(items[0].detail).toBe('artifact_invalid');
+  });
+
   test('coalesces same goal+kind and sorts by priority', () => {
     const items = deriveAttention([
       view('plan', {}, { planApproval: { status: 'pending' } }),
@@ -109,7 +136,7 @@ describe('deriveAttention', () => {
     ]);
 
     expect(items.map((item) => item.goalId)).toEqual(['plan', 'failed']);
-    expect(items.map((item) => item.priority)).toEqual([100, 60]);
+    expect(items.map((item) => item.priority)).toEqual([100, 85]);
     expect(items.every((item) => item.coalesceKey.includes(item.goalId))).toBe(true);
   });
 });

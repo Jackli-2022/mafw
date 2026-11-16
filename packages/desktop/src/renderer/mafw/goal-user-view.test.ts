@@ -42,6 +42,13 @@ test("Goal user face follows direction, progress, result and history", () => {
     goalId: "history",
     endedAt: "2026-11-11T00:00:00.000Z",
   })), "history")
+  assert.equal(goalUserFace(goal({
+    goalId: "failed",
+    endedAt: "2026-11-11T00:00:00.000Z",
+    verdict: "ERROR",
+    resultReady: true,
+    bucket: "result_ready",
+  })), "result")
 })
 
 test("plan approval is a direction decision with a person action", () => {
@@ -144,6 +151,30 @@ test("results surface acceptance even without an explicit stage action", () => {
   assert.equal(summary.nextActionLabel, "查看结果")
   assert.equal(summary.needsPerson, true)
   assert.equal(summary.resultReady, true)
+})
+
+test("terminal failures are red failure results, not pending acceptance", () => {
+  for (const [verdict, label] of [["FAIL", "失败"], ["ERROR", "异常"], ["MAX_RETRIES", "重试耗尽"]] as const) {
+    const failed = summarizeGoalForUser(goal({
+      goalId: `failed-${verdict}`,
+      verdict,
+      resultReady: true,
+      bucket: "result_ready",
+      endedAt: "2026-11-11T00:00:00.000Z",
+      lastError: verdict === "ERROR" ? "artifact_invalid" : null,
+    }))
+    assert.equal(failed.face, "result")
+    assert.equal(failed.statusLabel, label)
+    assert.equal(failed.nextActionLabel, "查看失败原因")
+    assert.equal(failed.needsPerson, true)
+    assert.deepEqual(executionBadgeFor(goal({
+      goalId: `failed-${verdict}`,
+      verdict,
+      resultReady: true,
+      bucket: "result_ready",
+      endedAt: "2026-11-11T00:00:00.000Z",
+    })), { label, tone: "red" })
+  }
 })
 
 test("ended goals are history and never claim to need a person", () => {

@@ -10,7 +10,7 @@ export function LeadGoalStatusCard(props: { goals: LeadGoalStatusCardModel[] }) 
     <div class="mafw-queue-bar mafw-lead-status-card">
       <Show
         when={props.goals.length > 0}
-        fallback={<span class="mafw-card-meta">暂无进行中的 Goal</span>}
+        fallback={<span class="mafw-card-meta">暂无进行中或最近失败的 Goal</span>}
       >
         <For each={props.goals}>
           {(goal) => (

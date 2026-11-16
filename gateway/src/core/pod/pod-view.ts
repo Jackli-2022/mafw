@@ -10,6 +10,7 @@ import type { PodDetail } from './pod-service';
 import { projectPodWorkBucket, type PodWorkBucket } from './pod-work-stage';
 import type { PodGoalProgress } from './pod-goal-progress';
 import {
+  isFailedVerdict,
   projectPodAttention,
   projectPodGoalStage,
   type PodAttentionItem,
@@ -252,5 +253,6 @@ export function buildPodAttention(views: PodGoalView[]): PodAttentionItem[] {
     title: view.title,
     revision: view.revision,
     stage: view.stage,
+    failed: !!view.endedAt && !view.accepted && isFailedVerdict(view.verdict),
   })));
 }

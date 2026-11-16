@@ -26,6 +26,18 @@ export type GoalUserActionIntent =
   | "blocker"
   | null
 
+const FAILED_VERDICTS = new Set(["FAIL", "ERROR", "MAX_RETRIES"])
+
+function isFailedVerdict(verdict: string | null | undefined): boolean {
+  return !!verdict && FAILED_VERDICTS.has(verdict)
+}
+
+function failureLabel(verdict: string | null | undefined): string {
+  if (verdict === "ERROR") return "异常"
+  if (verdict === "MAX_RETRIES") return "重试耗尽"
+  return "失败"
+}
+
 export function goalUserActionIntent(
   goal: PodGoal,
   context: {
@@ -75,6 +87,9 @@ const STAGE_STATUS: Record<string, string> = {
 }
 
 export function goalUserFace(goal: PodGoal): GoalUserFace {
+  if (isFailedVerdict(goal.verdict)) {
+    return goal.resultReady || goal.bucket === "result_ready" ? "result" : "history"
+  }
   if (goal.endedAt) return "history"
   if (goal.resultReady || goal.bucket === "result_ready") return "result"
   const kind = String((goal.stage as any)?.kind ?? "")
@@ -97,12 +112,14 @@ function progressOf(goal: PodGoal): { text: string | null; percent: number | nul
 
 function nextActionOf(input: {
   ended: boolean
+  endedFailure: boolean
   resultReady: boolean
   stageKind: string
   actionType: string
   owner: string
   hasError: boolean
 }): string | null {
+  if (input.endedFailure) return "查看失败原因"
   if (input.ended) return input.resultReady ? "查看结果" : "查看历史"
   const known = ACTION_COPY[input.actionType]
   if (known) return known.action
@@ -114,12 +131,15 @@ function nextActionOf(input: {
 
 function statusOf(input: {
   ended: boolean
+  endedFailure: boolean
+  verdict: string | null
   resultReady: boolean
   stageKind: string
   actionType: string
   owner: string
   hasError: boolean
 }): string {
+  if (input.endedFailure) return failureLabel(input.verdict)
   if (input.ended) return "已结束"
   if (input.stageKind === "blocked" && input.hasError) return "执行失败"
   const known = ACTION_COPY[input.actionType]
@@ -135,6 +155,7 @@ function statusOf(input: {
 
 export function summarizeGoalForUser(goal: PodGoal): GoalUserSummary {
   const ended = !!goal.endedAt
+  const endedFailure = ended && isFailedVerdict(goal.verdict)
   const resultReady = !!goal.resultReady || goal.bucket === "result_ready"
   const stage = goal.stage as any
   const stageKind = String(stage?.kind ?? "")
@@ -151,10 +172,10 @@ export function summarizeGoalForUser(goal: PodGoal): GoalUserSummary {
   return {
     goalId: goal.goalId,
     face,
-    statusLabel: statusOf({ ended, resultReady, stageKind, actionType, owner, hasError }),
+    statusLabel: statusOf({ ended, endedFailure, verdict: goal.verdict, resultReady, stageKind, actionType, owner, hasError }),
     ownerLabel: ended ? "已结束" : "Tech Lead",
-    nextActionLabel: nextActionOf({ ended, resultReady, stageKind, actionType, owner, hasError }),
-    needsPerson: !ended && (owner === "person" || resultReady || hasError),
+    nextActionLabel: nextActionOf({ ended, endedFailure, resultReady, stageKind, actionType, owner, hasError }),
+    needsPerson: endedFailure || (!ended && (owner === "person" || resultReady || hasError)),
     progressText: progress.text,
     progressPercent: progress.percent,
     revision,
@@ -170,6 +191,9 @@ export function summarizeGoalForUser(goal: PodGoal): GoalUserSummary {
 export function executionBadgeFor(
   goal: PodGoal,
 ): { label: string; tone: "neutral" | "amber" | "red" | "green" } | null {
+  if (goal.endedAt && isFailedVerdict(goal.verdict)) {
+    return { label: failureLabel(goal.verdict), tone: "red" }
+  }
   if (goal.lastError) return { label: "blocked", tone: "red" }
   const stage = goal.stage as any
   const stageKind = String(stage?.kind ?? "")

@@ -187,6 +187,36 @@ describe('PodTechLeadService', () => {
     expect(second.parts[0].text).toContain('先调研现有 Pod');
   });
 
+  test('writes a durable failure handoff and includes it in the next Tech Lead manifest', async () => {
+    const created = await service.createGoal({
+      podId: 'pod_1',
+      projectDir: dir,
+      title: 'Pod loop',
+      objective: '实现协作 loop',
+      createdBy: 'ses_lead',
+    });
+    const file = path.join(mafwDir, 'goals', created.goalId, 'context', 'tech-lead-failure.md');
+
+    await service.notifyFailure(created.goalId, { verdict: 'PASS' });
+    expect(fs.existsSync(file)).toBe(false);
+
+    await service.notifyFailure(created.goalId, {
+      verdict: 'ERROR',
+      lastError: 'artifact_invalid: bad payload',
+      reviewFeedback: 'fix the review block',
+    });
+    expect(fs.existsSync(file)).toBe(true);
+    const text = fs.readFileSync(file, 'utf8');
+    expect(text).toContain('verdict: ERROR');
+    expect(text).toContain('artifact_invalid: bad payload');
+    expect(text).toContain('fix the review block');
+
+    await service.prompt(created.goalId, '开始复盘');
+    const last = runtime.promptAsync.mock.calls.at(-1)![0];
+    expect(last.parts[0].text).toContain('tech-lead-failure.md');
+    expect(last.parts[0].text).toContain('Tech Lead failure handoff');
+  });
+
   test('queues a second Lead goal when maxConcurrent is one', async () => {
     let goalSeq = 0;
     let rowSeq = 0;

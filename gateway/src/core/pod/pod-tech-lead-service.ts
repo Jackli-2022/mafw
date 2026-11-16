@@ -433,6 +433,35 @@ export class PodTechLeadService {
     return this.ensureScopedSession(goal.podId, techLead.id, goal.goalId, revision, pod.projectDir);
   }
 
+  /**
+   * 失败归档前的持久 handoff：写 `context/tech-lead-failure.md`，并让下一次
+   * Tech Lead 会话的 ContextManifest 自动带上它。归档会销毁实时会话，因此
+   * 不能只靠 prompt——否则通知随会话一起消失。
+   */
+  async notifyFailure(
+    goalId: string,
+    outcome: { verdict: string; lastError?: string | null; reviewFeedback?: string | null },
+  ): Promise<void> {
+    if (outcome.verdict !== 'FAIL' && outcome.verdict !== 'MAX_RETRIES' && outcome.verdict !== 'ERROR') return;
+    const goal = this.requireGoal(goalId);
+    const pod = this.requirePod(goal.podId);
+    const resolved = this.deps.resolveProject(pod.projectDir);
+    if (!resolved) return;
+    const file = path.join(resolved.mafwDir, 'goals', goalId, 'context', 'tech-lead-failure.md');
+    const text = [
+      `# Goal failure · ${goalId}`,
+      '',
+      `- verdict: ${outcome.verdict}`,
+      `- at: ${this.deps.now?.() ?? new Date().toISOString()}`,
+      `- lastError: ${outcome.lastError || '(none)'}`,
+      `- reviewFeedback: ${outcome.reviewFeedback || '(none)'}`,
+      '',
+      '复盘失败原因；如果需要继续，提出新的 revision，或请 Lead 决定重试 / 新建 Goal。',
+    ].join('\n') + '\n';
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, text, 'utf8');
+  }
+
   /** 发送一条 Tech Lead 消息；正文前永远拼上当前 revision 的 ContextManifest。 */
   async prompt(
     goalId: string,
@@ -590,16 +619,21 @@ export class PodTechLeadService {
     const pod = goal ? this.deps.store.getPod(goal.podId) : null;
     const resolved = pod ? this.deps.resolveProject(pod.projectDir) : null;
     const handoffRel = 'context/lead-handoff.md';
+    const failureRel = 'context/tech-lead-failure.md';
     const hasHandoff = !!resolved
       && fs.existsSync(path.join(resolved.mafwDir, 'goals', goalId, handoffRel));
+    const hasFailure = !!resolved
+      && fs.existsSync(path.join(resolved.mafwDir, 'goals', goalId, failureRel));
+    const optional = [
+      ...(hasHandoff ? [{ path: handoffRel, label: 'Lead handoff', scope: 'goal' as const }] : []),
+      ...(hasFailure ? [{ path: failureRel, label: 'Tech Lead failure handoff', scope: 'goal' as const }] : []),
+    ];
     const manifest = buildContextManifest({
       goalId,
       revision,
       stage: 'discussing',
       role: TECH_LEAD_INTERNAL_ROLE,
-      ...(hasHandoff ? {
-        optional: [{ path: handoffRel, label: 'Lead handoff', scope: 'goal' }],
-      } : {}),
+      ...(optional.length > 0 ? { optional } : {}),
     });
     const rendered = renderContextManifest(manifest);
     return body ? `${rendered}\n\n${body}` : rendered;
