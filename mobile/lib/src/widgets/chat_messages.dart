@@ -47,19 +47,18 @@ class MafwMessageBubble extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
           constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.82),
           decoration: BoxDecoration(
-            color: MafwPalette.badgeBg,
-            // 尾角收窄 6dp：仍是中性 ink，但读起来像「一句话」而不是系统弹窗。
+            color: MafwPalette.surface,
+            // 尾角收窄 6dp：读起来像「一句话」，不是系统弹窗。
             borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(18),
-              topRight: Radius.circular(18),
-              bottomLeft: Radius.circular(18),
+              topLeft: Radius.circular(20),
+              topRight: Radius.circular(20),
+              bottomLeft: Radius.circular(20),
               bottomRight: Radius.circular(6),
             ),
-            border: Border.all(color: MafwPalette.border),
           ),
           child: SelectableText(
             text,
-            style: const TextStyle(color: MafwPalette.text, fontSize: 15, height: 1.45),
+            style: const TextStyle(color: MafwPalette.text, fontSize: 15.5, height: 1.5),
           ),
         ),
       );

@@ -416,7 +416,7 @@ void main() {
     });
   });
 
-  group('WorkTab FAB → composer', () {
+  group('WorkTab header new-discussion → composer', () {
     testWidgets(
         'no Pod (404) → podEnsure → composer → onCreated → onOpenGoal(projectId, goalId)',
         (tester) async {
@@ -439,7 +439,7 @@ void main() {
         onOpenGoal: (projectId, goalId) => opened.add('$projectId|$goalId'),
       );
 
-      await tester.tap(find.byKey(const Key('work-fab')));
+      await tester.tap(find.byKey(const Key('work-new-discussion')));
       await tester.pumpAndSettle();
 
       // 404 → ensure → 带着后端返回的 podId 打开 composer。
@@ -470,7 +470,7 @@ void main() {
       expect(created.json['title'], '修 CI');
       // composer 已退回工作 tab（详情页由外壳导航，不在本测试范围）。
       expect(find.byKey(const Key('goal-composer-title')), findsNothing);
-      expect(find.byKey(const Key('work-fab')), findsOneWidget);
+      expect(find.byKey(const Key('work-new-discussion')), findsOneWidget);
     });
 
     testWidgets('ensuring a missing Pod refreshes the work surface right away',
@@ -494,7 +494,7 @@ void main() {
           .where((call) => call.path == '/api/projects/$_dirA/work')
           .length;
 
-      await tester.tap(find.byKey(const Key('work-fab')));
+      await tester.tap(find.byKey(const Key('work-new-discussion')));
       await tester.pumpAndSettle();
 
       // Pod 刚建好就重拉五桶：取消 composer 也不会继续看到「还没有鲸群」。
@@ -520,7 +520,7 @@ void main() {
         store: await _storeFor(_dirA),
       );
 
-      await tester.tap(find.byKey(const Key('work-fab')));
+      await tester.tap(find.byKey(const Key('work-new-discussion')));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('goal-composer-title')), findsOneWidget);
@@ -552,7 +552,7 @@ void main() {
         store: await _storeFor(_dirA),
       );
 
-      await tester.tap(find.byKey(const Key('work-fab')));
+      await tester.tap(find.byKey(const Key('work-new-discussion')));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('goal-composer-title')), findsNothing);
@@ -581,7 +581,7 @@ void main() {
         store: await _storeFor(_dirA),
       );
 
-      await tester.tap(find.byKey(const Key('work-fab')));
+      await tester.tap(find.byKey(const Key('work-new-discussion')));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('goal-composer-title')), findsNothing);
@@ -598,7 +598,7 @@ void main() {
         store: await _storeFor(_dirA),
       );
 
-      await tester.tap(find.byKey(const Key('work-fab')));
+      await tester.tap(find.byKey(const Key('work-new-discussion')));
       await tester.pumpAndSettle();
 
       expect(find.textContaining('未配置 Gateway'), findsWidgets);
@@ -616,7 +616,7 @@ void main() {
         store: ActiveProjectStore(prefsKey: 'goal-composer-test-empty'),
       );
 
-      await tester.tap(find.byKey(const Key('work-fab')));
+      await tester.tap(find.byKey(const Key('work-new-discussion')));
       await tester.pumpAndSettle();
 
       expect(

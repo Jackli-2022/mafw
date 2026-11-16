@@ -712,47 +712,34 @@ class _WorkTabState extends State<WorkTab> {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Stack(
-        children: [
-          RefreshIndicator(
-            onRefresh: () => _refresh(),
-            color: MafwPalette.accent,
-            backgroundColor: MafwPalette.surface,
-            child: ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
-              children: _buildChildren(),
-            ),
-          ),
-          Positioned(
-            right: 16,
-            bottom: 16,
-            child: FloatingActionButton(
-              key: const Key('work-fab'),
-              tooltip: '新建讨论',
-              onPressed: () => unawaited(_onCreateDiscussion()),
-              child: const Icon(Icons.add, size: 24),
-            ),
-          ),
-        ],
+    return RefreshIndicator(
+      onRefresh: () => _refresh(),
+      color: MafwPalette.accent,
+      backgroundColor: MafwPalette.black,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(MafwSpace.xl, 20, MafwSpace.xl, MafwSpace.xxl),
+        children: _buildChildren(),
       ),
     );
   }
 
   List<Widget> _buildChildren() {
-    final children = <Widget>[_buildBrandRow(), const SizedBox(height: MafwSpace.lg)];
+    final children = <Widget>[
+      _buildMasthead(),
+      const SizedBox(height: MafwSpace.xxl),
+    ];
 
     final presence = _presence;
     final attention = presence?.attention ?? const <AttentionItem>[];
     final unread = presence?.unreadResultsCount ?? 0;
     if (attention.isNotEmpty || unread > 0) {
       children.addAll(_buildAttentionSection(attention, unread));
-      children.add(const SizedBox(height: MafwSpace.xs));
+      children.add(const SizedBox(height: MafwSpace.xxl));
     }
 
     children.add(_buildLeadEntry());
-    children.add(const SizedBox(height: MafwSpace.lg));
+    children.add(const SizedBox(height: MafwSpace.xxl));
 
     if (_status == WorkTabStatus.loading && _overview == null) {
       children.add(const _WorkSkeleton());
@@ -767,173 +754,397 @@ class _WorkTabState extends State<WorkTab> {
     return children;
   }
 
-  Widget _buildBrandRow() {
+  String _dateLabel() {
+    final now = DateTime.now();
+    const days = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+    final mm = now.month.toString().padLeft(2, '0');
+    final dd = now.day.toString().padLeft(2, '0');
+    return '$mm.$dd  ${days[now.weekday - 1]}';
+  }
+
+  Widget _buildMasthead() {
     final active = _activeDir;
     final name = active == null || active.isEmpty ? '未选择项目' : projectBasename(active);
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ClipOval(
-          child: Image.asset(
-            'assets/lore/Lore_avatar_20.png',
-            width: 24,
-            height: 24,
-            filterQuality: FilterQuality.medium,
-            // fail-open：资源缺失时品牌位仍可用（测试另有 asset bundle 断言）。
-            errorBuilder: (_, _, _) =>
-                const Icon(Icons.spa_outlined, size: 20, color: MafwPalette.accent),
-          ),
-        ),
-        const SizedBox(width: MafwSpace.sm),
-        const Text(
-          'Orcalore',
-          style: TextStyle(
-            fontSize: MafwType.title,
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.4,
-            height: 1.1,
-            color: MafwPalette.text,
-          ),
-        ),
-        const Spacer(),
-        Flexible(
-          // 项目 pill 是唯一导航入口：给读屏一句完整的动作描述。
-          child: Semantics(
-            // container: 独立语义节点，避免和左侧字标合并成一个不可聚焦的整体。
-            container: true,
-            button: true,
-            label: '切换项目，当前 $name',
-            // excludeSemantics 会连同 InkWell 的 tap 动作一起裁掉，必须显式补回，
-            // 否则读屏能听到名字却无法激活项目切换。
-            onTap: _openProjectPicker,
-            excludeSemantics: true,
-            child: InkWell(
-              key: const Key('work-project-switcher'),
-              onTap: _openProjectPicker,
-              borderRadius: BorderRadius.circular(MafwRadius.pill),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: MafwPalette.badgeBg,
-                  borderRadius: BorderRadius.circular(MafwRadius.pill),
-                  border: Border.all(color: MafwPalette.border),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Flexible(
-                      child: Text(
-                        name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: MafwType.meta,
-                          color: MafwPalette.badgeText,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: MafwSpace.xs),
-                    const Icon(Icons.unfold_more, size: 14, color: MafwPalette.dim),
-                  ],
+        Row(
+          children: [
+            ClipOval(
+              child: Image.asset(
+                'assets/lore/Lore_avatar_20.png',
+                width: 18,
+                height: 18,
+                filterQuality: FilterQuality.medium,
+                // fail-open：资源缺失时品牌位仍可用（测试另有 asset bundle 断言）。
+                errorBuilder: (_, _, _) =>
+                    const Icon(Icons.spa_outlined, size: 16, color: MafwPalette.accent),
+              ),
+            ),
+            const SizedBox(width: MafwSpace.sm),
+            const Text(
+              'ORCALORE',
+              style: TextStyle(
+                fontSize: 9,
+                letterSpacing: 2.2,
+                color: MafwPalette.faint,
+              ),
+            ),
+            const Spacer(),
+            Text(
+              _dateLabel(),
+              style: const TextStyle(
+                fontSize: 9,
+                letterSpacing: 1.2,
+                color: MafwPalette.faint,
+                fontFamily: 'monospace',
+              ),
+            ),
+            const SizedBox(width: 12),
+            Semantics(
+              button: true,
+              label: '新建讨论',
+              child: InkWell(
+                key: const Key('work-new-discussion'),
+                onTap: () => unawaited(_onCreateDiscussion()),
+                customBorder: const CircleBorder(),
+                child: Container(
+                  width: 26,
+                  height: 26,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: MafwPalette.border),
+                  ),
+                  child: const Icon(Icons.add, size: 14, color: MafwPalette.text),
                 ),
               ),
             ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        const Text(
+          'Orcalore',
+          style: TextStyle(
+            fontFamily: MafwFonts.serif,
+            fontSize: MafwType.display,
+            height: 1.0,
+            letterSpacing: -1.6,
+            color: MafwPalette.text,
           ),
         ),
-      ],
-    );
-  }
-
-  List<Widget> _buildAttentionSection(List<AttentionItem> items, int unread) {
-    final widgets = <Widget>[
-      Row(
-        children: [
-          const Text(
-            '现在需要你',
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: MafwPalette.text),
-          ),
-          const SizedBox(width: 8),
-          if (items.isNotEmpty) _CountBadge(count: items.length, accent: true),
-        ],
-      ),
-      const SizedBox(height: 8),
-    ];
-
-    for (final item in items) {
-      final project = item.projectId;
-      final crossProject = project != null && project.isNotEmpty && project != _activeDir;
-      final subtitle = crossProject
-          ? '${workAttentionKindLabel(item.kind)} · ${projectBasename(project)}'
-          : workAttentionKindLabel(item.kind);
-      widgets.add(_AttentionCard(
-        item: item,
-        subtitle: subtitle,
-        onTap: () => unawaited(_openGoal(goalId: item.goalId, projectId: item.projectId)),
-      ));
-    }
-
-    if (unread > 0) {
-      widgets.add(Padding(
-        padding: const EdgeInsets.only(top: 2, bottom: MafwSpace.md),
-        child: Material(
-          color: MafwPalette.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-            side: const BorderSide(color: MafwPalette.border),
-          ),
-          clipBehavior: Clip.antiAlias,
+        const SizedBox(height: 13),
+        Semantics(
+          // container: 独立语义节点，避免和左侧字标合并成一个不可聚焦的整体。
+          container: true,
+          button: true,
+          label: '切换项目，当前 $name',
+          // excludeSemantics 会连同 InkWell 的 tap 动作一起裁掉，必须显式补回。
+          onTap: _openProjectPicker,
+          excludeSemantics: true,
           child: InkWell(
-            key: const Key('work-unread-row'),
-            onTap: () => unawaited(_openResultsSheet()),
+            key: const Key('work-project-switcher'),
+            onTap: _openProjectPicker,
+            borderRadius: BorderRadius.circular(4),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+              padding: const EdgeInsets.symmetric(vertical: 3),
               child: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.inbox_outlined, size: 15, color: MafwPalette.dim),
-                  const SizedBox(width: MafwSpace.sm),
-                  Expanded(
+                  Flexible(
                     child: Text(
-                      '$unread 个结果待查看',
-                      style: const TextStyle(fontSize: MafwType.meta, color: MafwPalette.dim),
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: MafwType.meta,
+                        fontWeight: FontWeight.w500,
+                        color: MafwPalette.text,
+                      ),
                     ),
                   ),
-                  const Icon(Icons.chevron_right, size: 16, color: MafwPalette.faint),
+                  const SizedBox(width: 6),
+                  const Text(
+                    '›',
+                    style: TextStyle(fontSize: 17, height: 1, color: MafwPalette.faint),
+                  ),
                 ],
               ),
             ),
           ),
         ),
-      ));
+        const SizedBox(height: 15),
+        const Divider(height: 1, color: MafwPalette.border),
+      ],
+    );
+  }
+
+  List<Widget> _buildAttentionSection(List<AttentionItem> items, int unread) {
+    if (items.isEmpty) {
+      return [_buildUnreadRow(unread)];
+    }
+    final widgets = <Widget>[
+      _Overline(label: '现在需要你', count: items.length, accent: true),
+      const SizedBox(height: MafwSpace.sm),
+      Container(
+        decoration: const BoxDecoration(
+          border: Border(left: BorderSide(color: MafwPalette.accent, width: 2)),
+        ),
+        padding: const EdgeInsets.only(left: 14),
+        child: Column(
+          children: [
+            for (var i = 0; i < items.length; i++) ...[
+              _AttentionRow(
+                item: items[i],
+                subtitle: _attentionSubtitle(items[i]),
+                onTap: () => unawaited(_openGoal(
+                  goalId: items[i].goalId,
+                  projectId: items[i].projectId,
+                )),
+              ),
+              if (i != items.length - 1)
+                const Divider(height: 1, color: MafwPalette.border),
+            ],
+          ],
+        ),
+      ),
+    ];
+    if (unread > 0) {
+      widgets.add(_buildUnreadRow(unread));
     }
     return widgets;
   }
 
-  /// 结果待查看入口：列出当前项目 result_ready 桶的 Goal；点开详情会触发
-  /// `markPodEventsSeenAll`（E 批后的结果已读链路），角标随之回落。
+  String _attentionSubtitle(AttentionItem item) {
+    final project = item.projectId;
+    final crossProject = project != null && project.isNotEmpty && project != _activeDir;
+    return crossProject
+        ? '${workAttentionKindLabel(item.kind)} · ${projectBasename(project)}'
+        : workAttentionKindLabel(item.kind);
+  }
+
+  Widget _buildUnreadRow(int unread) {
+    return InkWell(
+      key: const Key('work-unread-row'),
+      onTap: () => unawaited(_openResultsSheet()),
+      child: Padding(
+        padding: const EdgeInsets.only(top: 14, bottom: 4, left: 14),
+        child: Row(
+          children: [
+            Text(
+              '$unread 个结果待查看',
+              style: const TextStyle(fontSize: MafwType.meta, color: MafwPalette.dim),
+            ),
+            const SizedBox(width: 6),
+            const Text(
+              '›',
+              style: TextStyle(fontSize: 15, height: 1, color: MafwPalette.faint),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLeadEntry() {
+    return InkWell(
+      key: const Key('work-lead-entry'),
+      onTap: _onOpenLead,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: const BoxDecoration(
+          border: Border(
+            top: BorderSide(color: MafwPalette.border),
+            bottom: BorderSide(color: MafwPalette.border),
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 26,
+              height: 26,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: MafwPalette.border),
+              ),
+              child: _leadBusy
+                  ? const SizedBox(
+                      width: 12,
+                      height: 12,
+                      child: CircularProgressIndicator(strokeWidth: 1.5),
+                    )
+                  : const Text(
+                      'L',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontFamily: 'monospace',
+                        color: MafwPalette.dim,
+                      ),
+                    ),
+            ),
+            const SizedBox(width: MafwSpace.md),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '跟 Lead 说件事',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: MafwPalette.text,
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    '讨论，或交给 Lead 推进',
+                    style: TextStyle(fontSize: 11, color: MafwPalette.dim),
+                  ),
+                ],
+              ),
+            ),
+            const Text(
+              '›',
+              style: TextStyle(fontSize: 18, height: 1, color: MafwPalette.faint),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildBuckets() {
+    final overview = _overview!;
+    final widgets = <Widget>[];
+    for (final bucket in const ['needs_you', 'in_progress', 'result_ready', 'queued']) {
+      final rows = overview.bucket(bucket);
+      if (rows.isEmpty) continue;
+      final count = overview.counts[bucket] ?? rows.length;
+      widgets.add(_BucketHeader(label: kWorkBucketLabels[bucket] ?? bucket, count: count));
+      for (final goal in rows) {
+        widgets.add(_GoalRow(
+          key: ValueKey('work-goal:${goal.goalId}'),
+          goal: goal,
+          bucket: bucket,
+          onTap: () => unawaited(_openGoal(goalId: goal.goalId)),
+        ));
+      }
+      widgets.add(const SizedBox(height: MafwSpace.xxl));
+    }
+
+    final ended = overview.bucket('ended');
+    final endedCount = overview.counts['ended'] ?? ended.length;
+    if (endedCount > 0) {
+      widgets.add(_HistoryRow(count: endedCount, onTap: () => unawaited(_openHistorySheet())));
+    }
+    if (widgets.isEmpty) {
+      widgets.add(const _QuietEmpty());
+    }
+    return widgets;
+  }
+
+  Widget _buildEmptyState() {
+    switch (_status) {
+      case WorkTabStatus.unconfigured:
+        return _EmptyPanel(
+          title: '未配置 Gateway',
+          body: '在「我的」里填写地址或扫码配对后，这里会显示项目工作流。',
+          actionLabel: widget.onOpenSettings == null ? null : '去设置',
+          onAction: widget.onOpenSettings,
+        );
+      case WorkTabStatus.noProject:
+        return const _EmptyPanel(
+          title: '还没有已注册的项目',
+          body: '在桌面端注册一个项目，或在「我的」里重新配对连接。',
+        );
+      case WorkTabStatus.noPod:
+        return const _EmptyPanel(
+          title: '这个项目还没有鲸群',
+          body: '在桌面端为该项目创建鲸群（Pod）；创建后这里会显示 Goal 活动流。',
+        );
+      case WorkTabStatus.gatewayOutdated:
+        return _EmptyPanel(
+          title: '网关版本过旧',
+          body: '当前 gateway 还没有工作视图路由，请升级后再试（桌面端自更新或 `mafw update`）。',
+          actionLabel: '重试',
+          onAction: () => unawaited(_reloadAll()),
+        );
+      case WorkTabStatus.error:
+        return _EmptyPanel(
+          title: '无法连接 Gateway',
+          body: _error ?? '请求失败，请检查连接后重试。',
+          actionLabel: '重试',
+          onAction: () => unawaited(_reloadAll()),
+        );
+      case WorkTabStatus.loading:
+      case WorkTabStatus.ready:
+        return const SizedBox.shrink();
+    }
+  }
+
   Future<void> _openResultsSheet() async {
     final results = _overview?.groups['result_ready'] ?? const <PodGoalView>[];
+    await _openGoalSheet(
+      title: '结果待查看',
+      goals: results,
+      emptyText: '当前项目没有可打开的结果；未读结果可能在其它项目。',
+      keyPrefix: 'work-unread-goal',
+    );
+  }
+
+  Future<void> _openHistorySheet() async {
+    final ended = _overview?.groups['ended'] ?? const <PodGoalView>[];
+    await _openGoalSheet(
+      title: '历史',
+      goals: ended,
+      emptyText: '这个项目还没有已结束的 Goal。',
+      keyPrefix: 'work-history-goal',
+    );
+  }
+
+  Future<void> _openGoalSheet({
+    required String title,
+    required List<PodGoalView> goals,
+    required String emptyText,
+    required String keyPrefix,
+  }) async {
     await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: MafwPalette.surface,
+      backgroundColor: MafwPalette.black,
       isScrollControlled: true,
       builder: (sheetContext) {
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            padding: const EdgeInsets.fromLTRB(
+              MafwSpace.xl,
+              MafwSpace.xl,
+              MafwSpace.xl,
+              MafwSpace.sm,
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  '结果待查看',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: MafwPalette.text),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontFamily: MafwFonts.serif,
+                    fontSize: 26,
+                    height: 1.1,
+                    color: MafwPalette.text,
+                  ),
                 ),
-                const SizedBox(height: 8),
-                if (results.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 12),
+                const SizedBox(height: MafwSpace.md),
+                if (goals.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: MafwSpace.md),
                     child: Text(
-                      '当前项目没有可打开的结果；未读结果可能在其它项目。',
-                      style: TextStyle(fontSize: 12, color: MafwPalette.dim),
+                      emptyText,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        height: 1.5,
+                        color: MafwPalette.dim,
+                      ),
                     ),
                   )
                 else
@@ -941,22 +1152,10 @@ class _WorkTabState extends State<WorkTab> {
                     child: ListView(
                       shrinkWrap: true,
                       children: [
-                        for (final goal in results)
-                          ListTile(
-                            key: Key('work-unread-goal-${goal.goalId}'),
-                            contentPadding: EdgeInsets.zero,
-                            title: Text(
-                              goal.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 13, color: MafwPalette.text),
-                            ),
-                            subtitle: Text(
-                              'r${goal.revision}'
-                              '${goal.verdict != null && goal.verdict!.isNotEmpty ? ' · ${goal.verdict}' : ''}',
-                              style: const TextStyle(fontSize: 11, color: MafwPalette.dim),
-                            ),
-                            trailing: const Icon(Icons.chevron_right, size: 18, color: MafwPalette.faint),
+                        for (final goal in goals)
+                          _SheetGoalRow(
+                            key: Key('$keyPrefix-${goal.goalId}'),
+                            goal: goal,
                             onTap: () {
                               Navigator.of(sheetContext).pop();
                               unawaited(_openGoal(goalId: goal.goalId));
@@ -972,146 +1171,44 @@ class _WorkTabState extends State<WorkTab> {
       },
     );
   }
-
-  Widget _buildLeadEntry() {
-    return Card(
-      margin: EdgeInsets.zero,
-      clipBehavior: Clip.antiAlias,
-      child: ListTile(
-        key: const Key('work-lead-entry'),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        horizontalTitleGap: 10,
-        leading: Container(
-          width: 30,
-          height: 30,
-          decoration: BoxDecoration(
-            color: MafwPalette.badgeBg,
-            borderRadius: BorderRadius.circular(9),
-            border: Border.all(color: MafwPalette.border),
-          ),
-          alignment: Alignment.center,
-          child: const Text(
-            'L',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              height: 1,
-              color: MafwPalette.text,
-            ),
-          ),
-        ),
-        title: const Text(
-          '跟 Lead 说件事',
-          style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: MafwPalette.text),
-        ),
-        subtitle: const Text(
-          '和项目 Lead 直接聊，讨论或交给 Lead 推进',
-          style: TextStyle(fontSize: 11.5, height: 1.4, color: MafwPalette.dim),
-        ),
-        trailing: _leadBusy
-            ? const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Icon(Icons.chevron_right, size: 18, color: MafwPalette.faint),
-        onTap: _onOpenLead,
-      ),
-    );
-  }
-
-  List<Widget> _buildBuckets() {
-    final overview = _overview!;
-    final widgets = <Widget>[];
-    for (final bucket in workBuckets) {
-      final rows = overview.bucket(bucket);
-      final count = overview.counts[bucket] ?? rows.length;
-      widgets.add(_BucketHeader(label: kWorkBucketLabels[bucket] ?? bucket, count: count));
-      for (final goal in rows) {
-        widgets.add(_GoalCard(
-          key: ValueKey('work-goal:${goal.goalId}'),
-          goal: goal,
-          bucket: bucket,
-          onTap: () => unawaited(_openGoal(goalId: goal.goalId)),
-        ));
-      }
-      widgets.add(const SizedBox(height: MafwSpace.md));
-    }
-    return widgets;
-  }
-
-  Widget _buildEmptyState() {
-    switch (_status) {
-      case WorkTabStatus.unconfigured:
-        return _EmptyPanel(
-          icon: Icons.cloud_off_outlined,
-          title: '未配置 Gateway',
-          body: '在「我的」里填写地址或扫码配对后，这里会显示项目工作流。',
-          actionLabel: widget.onOpenSettings == null ? null : '去设置',
-          onAction: widget.onOpenSettings,
-        );
-      case WorkTabStatus.noProject:
-        return const _EmptyPanel(
-          icon: Icons.folder_open_outlined,
-          title: '还没有已注册的项目',
-          body: '在桌面端注册一个项目，或在「我的」里重新配对连接。',
-        );
-      case WorkTabStatus.noPod:
-        return const _EmptyPanel(
-          icon: Icons.workspaces_outline,
-          title: '这个项目还没有鲸群',
-          body: '在桌面端为该项目创建鲸群（Pod）；创建后这里会显示 Goal 活动流。',
-        );
-      case WorkTabStatus.gatewayOutdated:
-        return _EmptyPanel(
-          icon: Icons.system_update_alt,
-          title: '网关版本过旧',
-          body: '当前 gateway 还没有工作视图路由，请升级后再试（桌面端自更新或 `mafw update`）。',
-          actionLabel: '重试',
-          onAction: () => unawaited(_reloadAll()),
-        );
-      case WorkTabStatus.error:
-        return _EmptyPanel(
-          icon: Icons.cloud_off_outlined,
-          title: '无法连接 Gateway',
-          body: _error ?? '请求失败，请检查连接后重试。',
-          actionLabel: '重试',
-          onAction: () => unawaited(_reloadAll()),
-        );
-      case WorkTabStatus.loading:
-      case WorkTabStatus.ready:
-        return const SizedBox.shrink();
-    }
-  }
 }
 
-// ── 小组件 ──────────────────────────────────────────────────────────────────
-
-class _CountBadge extends StatelessWidget {
-  final int count;
+class _Overline extends StatelessWidget {
+  final String label;
+  final int? count;
   final bool accent;
 
-  const _CountBadge({required this.count, this.accent = false});
+  const _Overline({
+    required this.label,
+    this.count,
+    this.accent = false,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
-      decoration: BoxDecoration(
-        color: accent ? MafwPalette.accentDim : MafwPalette.badgeBg,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: accent ? MafwPalette.accent.withValues(alpha: 0.45) : MafwPalette.border,
+    return Row(
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: MafwType.overline,
+            letterSpacing: 1.9,
+            color: accent ? MafwPalette.accent : MafwPalette.dim,
+          ),
         ),
-      ),
-      child: Text(
-        '$count',
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w600,
-          color: accent ? MafwPalette.accent : MafwPalette.badgeText,
-        ),
-      ),
+        if (count != null) ...[
+          const SizedBox(width: MafwSpace.sm),
+          Text(
+            count!.toString().padLeft(2, '0'),
+            style: const TextStyle(
+              fontSize: 9,
+              letterSpacing: 0.5,
+              fontFamily: 'monospace',
+              color: MafwPalette.faint,
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
@@ -1125,63 +1222,73 @@ class _BucketHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: MafwSpace.sm),
-      child: Row(
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.3,
-              color: MafwPalette.badgeText,
-            ),
-          ),
-          const SizedBox(width: MafwSpace.sm),
-          _CountBadge(count: count),
-          const SizedBox(width: 10),
-          const Expanded(
-            child: Divider(height: 1, thickness: 1, color: MafwPalette.border),
-          ),
-        ],
-      ),
+      padding: const EdgeInsets.only(bottom: MafwSpace.xs),
+      child: _Overline(label: label, count: count),
     );
   }
 }
 
-class _MetaChip extends StatelessWidget {
-  final String text;
-  final bool emphasized;
+class _AttentionRow extends StatelessWidget {
+  final AttentionItem item;
+  final String subtitle;
+  final VoidCallback onTap;
 
-  const _MetaChip({required this.text, this.emphasized = false});
+  const _AttentionRow({
+    required this.item,
+    required this.subtitle,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: MafwPalette.badgeBg,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: MafwPalette.border),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: emphasized ? FontWeight.w700 : FontWeight.w500,
-          color: MafwPalette.badgeText,
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 13),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.title.isEmpty ? '需要你' : item.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      height: 1.3,
+                      color: MafwPalette.text,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(fontSize: 11, color: MafwPalette.dim),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: MafwSpace.sm),
+            const Text(
+              '›',
+              style: TextStyle(fontSize: 18, height: 1, color: MafwPalette.faint),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _GoalCard extends StatelessWidget {
+class _GoalRow extends StatelessWidget {
   final PodGoalView goal;
   final String bucket;
   final VoidCallback onTap;
 
-  const _GoalCard({
+  const _GoalRow({
     super.key,
     required this.goal,
     required this.bucket,
@@ -1190,165 +1297,202 @@ class _GoalCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final active = bucket == 'in_progress';
     final stage = kWorkStageLabels[goal.stageKind ?? ''] ?? (goal.stageKind ?? '');
     final strategy = goal.strategy ?? '';
     final verdict = goal.verdict ?? '';
-    return Padding(
-      padding: const EdgeInsets.only(bottom: MafwSpace.sm),
-      child: Material(
-        color: MafwPalette.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(MafwRadius.md),
-          side: const BorderSide(color: MafwPalette.border),
+    final meta = [
+      if (stage.isNotEmpty) stage,
+      'r${goal.revision}',
+      if (strategy.isNotEmpty) strategy,
+    ].join(' · ');
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 13),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: MafwPalette.border)),
         ),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // mint 只表示「进行中」这一种激活态（徽标本身保持中性）。
-                    if (bucket == 'in_progress') ...[
-                      Container(
-                        margin: const EdgeInsets.only(top: 6),
-                        width: 6,
-                        height: 6,
-                        decoration: const BoxDecoration(
-                          color: MafwPalette.accent,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                    ],
-                    Expanded(
-                      child: Text(
-                        goal.title.isEmpty ? '未命名目标' : goal.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 14.5,
-                          fontWeight: FontWeight.w600,
-                          height: 1.35,
-                          color: MafwPalette.text,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: MafwSpace.xs),
-                    const Padding(
-                      padding: EdgeInsets.only(top: 2),
-                      child: Icon(Icons.chevron_right, size: 16, color: MafwPalette.faint),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: MafwSpace.sm),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    if (stage.isNotEmpty) _MetaChip(text: stage),
-                    _MetaChip(text: 'r${goal.revision}'),
-                    if (strategy.isNotEmpty) _MetaChip(text: strategy),
-                    if (verdict.isNotEmpty) _MetaChip(text: verdict, emphasized: true),
-                  ],
-                ),
-              ],
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 6,
+              height: 6,
+              margin: const EdgeInsets.only(top: 7),
+              decoration: BoxDecoration(
+                color: active ? MafwPalette.accent : Colors.transparent,
+                shape: BoxShape.circle,
+              ),
             ),
-          ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    goal.title.isEmpty ? '未命名目标' : goal.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      height: 1.3,
+                      color: MafwPalette.text,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          meta,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 11, color: MafwPalette.dim),
+                        ),
+                      ),
+                      if (verdict.isNotEmpty) ...[
+                        const SizedBox(width: MafwSpace.sm),
+                        Text(
+                          verdict,
+                          style: const TextStyle(
+                            fontSize: 9,
+                            letterSpacing: 0.8,
+                            color: MafwPalette.badgeText,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 6),
+            const Text(
+              '›',
+              style: TextStyle(fontSize: 18, height: 1, color: MafwPalette.faint),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _AttentionCard extends StatelessWidget {
-  final AttentionItem item;
-  final String subtitle;
+class _HistoryRow extends StatelessWidget {
+  final int count;
   final VoidCallback onTap;
 
-  const _AttentionCard({
-    required this.item,
-    required this.subtitle,
-    required this.onTap,
-  });
+  const _HistoryRow({required this.count, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Material(
-        color: MafwPalette.accentDim,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-          side: BorderSide(color: MafwPalette.accent.withValues(alpha: 0.45)),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            child: Row(
-              children: [
-                Container(
-                  width: 26,
-                  height: 26,
-                  decoration: BoxDecoration(
-                    color: MafwPalette.accent.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(MafwRadius.sm),
-                  ),
-                  child: const Icon(
-                    Icons.priority_high,
-                    size: 16,
-                    color: MafwPalette.accent,
-                  ),
-                ),
-                const SizedBox(width: MafwSpace.sm),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        item.title.isEmpty ? '需要你' : item.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w600,
-                          height: 1.35,
-                          color: MafwPalette.text,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        subtitle,
-                        style: const TextStyle(fontSize: 11, color: MafwPalette.dim),
-                      ),
-                    ],
-                  ),
-                ),
-                const Icon(Icons.chevron_right, size: 18, color: MafwPalette.faint),
-              ],
+    return InkWell(
+      key: const Key('work-history-row'),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 15),
+        child: Row(
+          children: [
+            const Text(
+              '历史',
+              style: TextStyle(fontSize: MafwType.meta, color: MafwPalette.dim),
             ),
-          ),
+            const Spacer(),
+            Text(
+              count.toString().padLeft(2, '0'),
+              style: const TextStyle(
+                fontSize: 9,
+                fontFamily: 'monospace',
+                color: MafwPalette.faint,
+              ),
+            ),
+            const SizedBox(width: 6),
+            const Text(
+              '›',
+              style: TextStyle(fontSize: 16, height: 1, color: MafwPalette.faint),
+            ),
+          ],
         ),
+      ),
+    );
+  }
+}
+
+class _SheetGoalRow extends StatelessWidget {
+  final PodGoalView goal;
+  final VoidCallback onTap;
+
+  const _SheetGoalRow({super.key, required this.goal, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final stage = kWorkStageLabels[goal.stageKind ?? ''] ?? (goal.stageKind ?? '');
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 13),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: MafwPalette.border)),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    goal.title.isEmpty ? '未命名目标' : goal.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 14, color: MafwPalette.text),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    [
+                      if (stage.isNotEmpty) stage,
+                      'r${goal.revision}',
+                      if ((goal.verdict ?? '').isNotEmpty) goal.verdict!,
+                    ].join(' · '),
+                    style: const TextStyle(fontSize: 11, color: MafwPalette.dim),
+                  ),
+                ],
+              ),
+            ),
+            const Text(
+              '›',
+              style: TextStyle(fontSize: 18, height: 1, color: MafwPalette.faint),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _QuietEmpty extends StatelessWidget {
+  const _QuietEmpty();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: MafwSpace.xl),
+      child: Text(
+        '这个项目暂时没有活动中的 Goal。',
+        style: TextStyle(fontSize: 12, color: MafwPalette.dim),
       ),
     );
   }
 }
 
 class _EmptyPanel extends StatelessWidget {
-  final IconData icon;
   final String title;
   final String body;
   final String? actionLabel;
   final VoidCallback? onAction;
 
   const _EmptyPanel({
-    required this.icon,
     required this.title,
     required this.body,
     this.actionLabel,
@@ -1358,24 +1502,21 @@ class _EmptyPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 48, horizontal: MafwSpace.sm),
+      padding: const EdgeInsets.symmetric(vertical: MafwSpace.xxl, horizontal: 2),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 空态是一个「安静的仪表盘」：圆形 ink 徽标，不抢主内容。
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: MafwPalette.surface,
-              shape: BoxShape.circle,
-              border: Border.all(color: MafwPalette.border),
+          const Text(
+            'STATUS',
+            style: TextStyle(
+              fontSize: 9,
+              letterSpacing: 2.2,
+              color: MafwPalette.faint,
             ),
-            child: Icon(icon, size: 26, color: MafwPalette.dim),
           ),
-          const SizedBox(height: MafwSpace.lg),
+          const SizedBox(height: MafwSpace.md),
           Text(
             title,
-            textAlign: TextAlign.center,
             style: const TextStyle(
               fontSize: MafwType.heading,
               fontWeight: FontWeight.w600,
@@ -1387,24 +1528,20 @@ class _EmptyPanel extends StatelessWidget {
             constraints: const BoxConstraints(maxWidth: 300),
             child: Text(
               body,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 12.5,
-                height: 1.55,
-                color: MafwPalette.dim,
-              ),
+              style: const TextStyle(fontSize: 12, height: 1.6, color: MafwPalette.dim),
             ),
           ),
           if (actionLabel != null && onAction != null) ...[
-            const SizedBox(height: MafwSpace.xl),
-            OutlinedButton(
+            const SizedBox(height: MafwSpace.lg),
+            TextButton(
               onPressed: onAction,
-              style: OutlinedButton.styleFrom(
+              style: TextButton.styleFrom(
                 foregroundColor: MafwPalette.text,
-                side: const BorderSide(color: MafwPalette.border),
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 6),
+                minimumSize: const Size(0, 36),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
-              child: Text(actionLabel!),
+              child: Text('$actionLabel  ›'),
             ),
           ],
         ],
@@ -1413,8 +1550,6 @@ class _EmptyPanel extends StatelessWidget {
   }
 }
 
-/// 首屏加载骨架：与 Goal 卡片同构（标题条 + 两个 chip 条），
-/// 用静态占位替代 spinner，避免加载完成时的布局跳动。
 class _WorkSkeleton extends StatelessWidget {
   const _WorkSkeleton();
 
@@ -1426,46 +1561,23 @@ class _WorkSkeleton extends StatelessWidget {
         key: const Key('work-loading-skeleton'),
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (var group = 0; group < 2; group++) ...[
-            _SkeletonBar(width: group == 0 ? 76 : 60),
-            const SizedBox(height: MafwSpace.md),
-            for (var card = 0; card < (group == 0 ? 2 : 1); card++) ...[
-              const _SkeletonCard(),
-              const SizedBox(height: MafwSpace.sm),
-            ],
-            const SizedBox(height: MafwSpace.md),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _SkeletonCard extends StatelessWidget {
-  const _SkeletonCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 62,
-      padding: const EdgeInsets.fromLTRB(14, 13, 14, 12),
-      decoration: BoxDecoration(
-        color: MafwPalette.surface,
-        borderRadius: BorderRadius.circular(MafwRadius.md),
-        border: Border.all(color: MafwPalette.border),
-      ),
-      child: const Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _SkeletonBar(width: 168, height: 12),
-          Spacer(),
-          Row(
-            children: [
-              _SkeletonBar(width: 54, height: 16, radius: 6),
-              SizedBox(width: 6),
-              _SkeletonBar(width: 36, height: 16, radius: 6),
-            ],
-          ),
+          const _SkeletonBar(width: 82, height: 9),
+          const SizedBox(height: 14),
+          for (var i = 0; i < 4; i++)
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 15),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: MafwPalette.border)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const _SkeletonBar(width: 190, height: 12),
+                  const SizedBox(height: 8),
+                  const _SkeletonBar(width: 110, height: 8),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -1475,13 +1587,8 @@ class _SkeletonCard extends StatelessWidget {
 class _SkeletonBar extends StatelessWidget {
   final double width;
   final double height;
-  final double radius;
 
-  const _SkeletonBar({
-    required this.width,
-    this.height = 10,
-    this.radius = 4,
-  });
+  const _SkeletonBar({required this.width, this.height = 10});
 
   @override
   Widget build(BuildContext context) {
@@ -1490,7 +1597,7 @@ class _SkeletonBar extends StatelessWidget {
       height: height,
       decoration: BoxDecoration(
         color: MafwPalette.badgeBg,
-        borderRadius: BorderRadius.circular(radius),
+        borderRadius: BorderRadius.circular(3),
       ),
     );
   }

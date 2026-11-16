@@ -36,6 +36,7 @@ import 'package:orcalore_mobile/src/pages/work_tab.dart';
 import 'package:orcalore_mobile/src/services/active_project.dart';
 import 'package:orcalore_mobile/src/services/work_refresh_bus.dart';
 import 'package:orcalore_mobile/src/theme.dart';
+import 'package:orcalore_mobile/src/widgets/mafw_bottom_nav.dart';
 
 const String _dirA = r'C:\work\projA';
 const String _dirB = r'C:\work\projB';
@@ -211,7 +212,7 @@ Future<ActiveProjectStore> _pumpChatTab(
   ));
   await tester.pumpAndSettle();
   await tester.tap(
-    find.descendant(of: find.byType(NavigationBar), matching: find.text('聊天')),
+    find.descendant(of: find.byType(MafwBottomNav), matching: find.text('聊天')),
   );
   await tester.pumpAndSettle();
   return store;
@@ -249,7 +250,7 @@ void main() {
       await _pumpChatTab(tester, client: client, activeDir: _dirA);
 
       // Two Lead badges: the current role and the legacy manager row.
-      expect(find.text('Lead'), findsNWidgets(2));
+      expect(find.text('LEAD'), findsNWidgets(2));
     });
   });
 
@@ -396,7 +397,7 @@ void main() {
       // 用户重新进入聊天 tab = 显式动作，允许重试。
       await tester.tap(
         find.descendant(
-          of: find.byType(NavigationBar),
+          of: find.byType(MafwBottomNav),
           matching: find.text('聊天'),
         ),
       );
@@ -419,7 +420,7 @@ void main() {
         onOpen: (session) => opened = session,
       );
 
-      await tester.tap(find.byType(FloatingActionButton));
+      await tester.tap(find.byKey(const Key('chat-new-topic')));
       await tester.pumpAndSettle();
 
       expect(client.createDirectories, [_dirA]);
@@ -434,10 +435,10 @@ void main() {
 
       await _pumpChatTab(tester, client: client, activeDir: null);
 
-      final fab = tester.widget<FloatingActionButton>(
-        find.byType(FloatingActionButton),
+      final newTopic = tester.widget<IconButton>(
+        find.byKey(const Key('chat-new-topic')),
       );
-      expect(fab.onPressed, isNull);
+      expect(newTopic.onPressed, isNull);
       expect(find.text('未选择项目 · 显示全部'), findsOneWidget);
       expect(client.createDirectories, isEmpty);
     });

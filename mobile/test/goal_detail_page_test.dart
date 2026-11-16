@@ -456,7 +456,7 @@ void main() {
         of: find.byKey(const Key('goal-stage-badge')),
         matching: find.byType(Text),
       ));
-      expect(badge.style?.color, MafwPalette.badgeText);
+      expect(badge.style?.color, MafwPalette.dim);
       expect(badge.style?.color, isNot(MafwPalette.accent));
     });
 
@@ -483,8 +483,11 @@ void main() {
       expect(find.byKey(const Key('goal-node:1:execute')), findsOneWidget);
       expect(find.byKey(const Key('goal-node:1:review')), findsOneWidget);
 
-      // done = 白实心（cream 填充）
-      expect(_decorationOf(tester, 'goal-node-marker:1:plan').color, MafwPalette.text);
+      // done = 灰描边 + 灰勾（verdict 纪律：不引入白底/绿红）
+      expect(
+        _decorationOf(tester, 'goal-node-marker:1:plan').border?.top.color,
+        MafwPalette.dim,
+      );
       // active = mint 环
       expect(
         _decorationOf(tester, 'goal-node-marker:1:execute').border?.top.color,
@@ -495,13 +498,13 @@ void main() {
         _decorationOf(tester, 'goal-node-marker:1:review').border?.top.color,
         MafwPalette.faint,
       );
-      // done 的勾是白底上的黑勾（不引入绿色）
+      // done 的勾是灰描边上的灰勾（不引入白色/绿色）
       final check = tester.widget<Icon>(find.descendant(
         of: find.byKey(const Key('goal-node-marker:1:plan')),
         matching: find.byType(Icon),
       ));
       expect(check.icon, Icons.check);
-      expect(check.color, MafwPalette.black);
+      expect(check.color, MafwPalette.dim);
     });
 
     testWidgets('expanding a node shows attempt number, duration and verdict', (tester) async {
@@ -777,7 +780,7 @@ void main() {
         },
       );
 
-      expect(find.text('需要你'), findsOneWidget);
+      expect(find.text('现在需要你'), findsOneWidget);
       expect(find.text('计划批准卡（Task 9 挂入）'), findsOneWidget);
       // 组件位拿到解析后的 Pod / 当前 revision（Task 9/13 据此取计划与问题）。
       expect(slotContext?.podId, _podId);

@@ -11,6 +11,7 @@ import '../services/diagnostics.dart';
 import '../services/lead_handoff.dart';
 import '../services/work_refresh_bus.dart';
 import '../theme.dart';
+import '../widgets/mafw_bottom_nav.dart';
 import 'debug_page.dart';
 import 'work_tab.dart';
 
@@ -508,62 +509,19 @@ class _SessionsPageState extends State<SessionsPage> {
     });
   }
 
-  String get _title {
-    switch (_tab) {
-      case SessionsTab.work:
-        return 'Orcalore';
-      case SessionsTab.chat:
-        return '聊天';
-      case SessionsTab.me:
-        return '我的';
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // 「工作」tab 自带品牌行（Task 7），壳不再压一条 AppBar 在它上面。
-      appBar: _tab == SessionsTab.work
-          ? null
-          : AppBar(
-              title: Text(_title),
-              actions: [
-                if (_tab == SessionsTab.chat) ...[
-                  if (widget.onScan != null)
-                    IconButton(
-                      icon: const Icon(Icons.qr_code_scanner),
-                      tooltip: '扫码配对',
-                      onPressed: widget.onScan,
-                    ),
-                  IconButton(
-                    icon: const Icon(Icons.settings),
-                    tooltip: '连接设置',
-                    onPressed: widget.onSettings,
-                  ),
-                ],
-              ],
-            ),
-      body: Column(
-        children: [
-          if (widget.isOffline) _buildOfflineBanner(context),
-          Expanded(child: _buildTabBody(context)),
-        ],
+      // 三个 tab 都有自己的编辑式 masthead；壳不再压 AppBar。
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            if (widget.isOffline) _buildOfflineBanner(context),
+            Expanded(child: _buildTabBody(context)),
+          ],
+        ),
       ),
-      // 新建会话（新话题入口）属于「聊天」tab；按 active 项目目录创建。
-      floatingActionButton: _tab == SessionsTab.chat
-          ? FloatingActionButton(
-              key: const Key('chat-new-topic'),
-              tooltip: _canCreateTopic ? '新话题' : '先在「工作」选择项目',
-              onPressed: _canCreateTopic && !_creatingTopic ? _onCreateTopic : null,
-              child: _creatingTopic
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.add),
-            )
-          : null,
       bottomNavigationBar: _buildBottomNav(context),
     );
   }
@@ -571,33 +529,42 @@ class _SessionsPageState extends State<SessionsPage> {
   Widget _buildOfflineBanner(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Material(
-      color: scheme.error,
+      color: MafwPalette.black,
       child: InkWell(
         onTap: widget.onSettings,
-        child: SafeArea(
-          bottom: false,
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
-              children: [
-                Icon(Icons.cloud_off, size: 14, color: scheme.onError),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    (widget.baseUrl ?? '').isEmpty
-                        ? 'Gateway 未配置 — 点此去设置'
-                        : 'Gateway 未连接（${widget.baseUrl}）— 点此去设置',
-                    style: TextStyle(color: scheme.onError, fontSize: 12),
-                  ),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(
+            horizontal: MafwSpace.xl,
+            vertical: 9,
+          ),
+          decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: MafwPalette.border)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 5,
+                height: 5,
+                decoration: BoxDecoration(color: scheme.error, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: MafwSpace.sm),
+              Expanded(
+                child: Text(
+                  (widget.baseUrl ?? '').isEmpty
+                      ? 'Gateway 未配置'
+                      : 'Gateway 未连接 · ${widget.baseUrl}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 10.5, color: MafwPalette.dim),
                 ),
-                Icon(
-                  Icons.chevron_right,
-                  size: 16,
-                  color: scheme.onError.withValues(alpha: 0.7),
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(width: MafwSpace.sm),
+              const Text(
+                '去设置  ›',
+                style: TextStyle(fontSize: 10.5, color: MafwPalette.text),
+              ),
+            ],
           ),
         ),
       ),
@@ -605,10 +572,9 @@ class _SessionsPageState extends State<SessionsPage> {
   }
 
   Widget _buildBottomNav(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return NavigationBar(
+    return MafwBottomNav(
       selectedIndex: _tab.index,
-      onDestinationSelected: (i) {
+      onSelected: (i) {
         setState(() => _tab = SessionsTab.values[i]);
         if (_tab == SessionsTab.chat) {
           // 显式进入聊天 tab = 重拉一次（列表可能被其它端改动/新建过）。
@@ -616,25 +582,6 @@ class _SessionsPageState extends State<SessionsPage> {
           _ensureChatLoaded();
         }
       },
-      backgroundColor: scheme.surface,
-      indicatorColor: MafwPalette.accentDim,
-      destinations: const [
-        NavigationDestination(
-          icon: Icon(Icons.space_dashboard_outlined),
-          selectedIcon: Icon(Icons.space_dashboard),
-          label: '工作',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.chat_bubble_outline),
-          selectedIcon: Icon(Icons.chat_bubble),
-          label: '聊天',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.person_outline),
-          selectedIcon: Icon(Icons.person),
-          label: '我的',
-        ),
-      ],
     );
   }
 
@@ -662,14 +609,73 @@ class _SessionsPageState extends State<SessionsPage> {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          padding: const EdgeInsets.fromLTRB(MafwSpace.xl, 16, 12, 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'CHATS',
+                      style: TextStyle(
+                        fontSize: 9,
+                        letterSpacing: 2.2,
+                        color: MafwPalette.faint,
+                      ),
+                    ),
+                    SizedBox(height: 6),
+                    Text(
+                      '会话',
+                      style: TextStyle(
+                        fontSize: 28,
+                        height: 1.1,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: -0.8,
+                        color: MafwPalette.text,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (widget.onScan != null)
+                IconButton(
+                  icon: const Icon(Icons.qr_code_scanner, size: 20),
+                  tooltip: '扫码配对',
+                  style: IconButton.styleFrom(foregroundColor: MafwPalette.dim),
+                  onPressed: widget.onScan,
+                ),
+              IconButton(
+                icon: const Icon(Icons.settings, size: 20),
+                tooltip: '连接设置',
+                style: IconButton.styleFrom(foregroundColor: MafwPalette.dim),
+                onPressed: widget.onSettings,
+              ),
+              IconButton(
+                key: const Key('chat-new-topic'),
+                icon: _creatingTopic
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 1.5),
+                      )
+                    : const Icon(Icons.add, size: 20),
+                tooltip: _canCreateTopic ? '新话题' : '先在「工作」选择项目',
+                style: IconButton.styleFrom(foregroundColor: MafwPalette.text),
+                onPressed: _canCreateTopic && !_creatingTopic ? _onCreateTopic : null,
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(MafwSpace.xl, 0, MafwSpace.xl, MafwSpace.sm),
           child: TextField(
             onChanged: (v) => setState(() => _query = v),
             decoration: const InputDecoration(
               hintText: '搜索会话…',
-              prefixIcon: Icon(Icons.search),
+              prefixIcon: Icon(Icons.search, size: 18),
               isDense: true,
-              border: OutlineInputBorder(),
             ),
           ),
         ),
@@ -686,11 +692,12 @@ class _SessionsPageState extends State<SessionsPage> {
                           ? '点右上角扫码或设置连接地址'
                           : _showAllProjectsNote
                               ? '未选择项目，显示全部会话；在「工作」选择项目后可新建话题'
-                              : '点击右下角 + 新建会话',
+                              : '点右下角 + 新建会话',
                       actionLabel: widget.isOffline ? '去设置连接' : null,
                       onAction: widget.isOffline ? widget.onSettings : null,
                     )
                   : ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: MafwSpace.xl),
                       itemCount: _filtered.length,
                       itemBuilder: (ctx, i) => _SessionTile(
                         session: _filtered[i],
@@ -709,15 +716,14 @@ class _SessionsPageState extends State<SessionsPage> {
     return Container(
       key: const Key('chat-all-projects-note'),
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      color: MafwPalette.badgeBg,
+      padding: const EdgeInsets.fromLTRB(MafwSpace.xl, 2, MafwSpace.xl, 6),
       child: const Row(
         children: [
-          Icon(Icons.info_outline, size: 14, color: MafwPalette.dim),
+          Icon(Icons.info_outline, size: 12, color: MafwPalette.faint),
           SizedBox(width: 6),
           Text(
             '未选择项目 · 显示全部',
-            style: TextStyle(fontSize: 11, color: MafwPalette.dim),
+            style: TextStyle(fontSize: 10, letterSpacing: 0.5, color: MafwPalette.dim),
           ),
         ],
       ),
@@ -726,195 +732,137 @@ class _SessionsPageState extends State<SessionsPage> {
 
   // ── 我的 Tab（记忆检索 + 连接设置 / 扫码配对 / 调试）──
   Widget _buildMeTab(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      padding: const EdgeInsets.fromLTRB(MafwSpace.xl, 20, MafwSpace.xl, MafwSpace.xxl),
       children: [
         _buildMeBrandHeader(),
-        const SizedBox(height: MafwSpace.xl),
+        const SizedBox(height: MafwSpace.xxl),
         _sectionLabel('记忆'),
-        const SizedBox(height: 8),
+        const SizedBox(height: MafwSpace.sm),
         TextField(
           controller: _memSearchCtrl,
           onChanged: _onMemoryQuery,
           decoration: const InputDecoration(
             hintText: '搜索记忆…',
-            prefixIcon: Icon(Icons.search),
+            prefixIcon: Icon(Icons.search, size: 18),
             isDense: true,
-            border: OutlineInputBorder(),
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: MafwSpace.sm),
         if (_loadingMemories)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 16),
             child: Center(child: CircularProgressIndicator()),
           )
         else if (_memories.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 10),
             child: Text(
               '输入关键词，从谐波记忆召回相关条目',
-              style: TextStyle(fontSize: 12, color: MafwPalette.faint),
+              style: TextStyle(fontSize: 11, color: MafwPalette.faint),
             ),
           )
         else
           for (final mem in _memories) _MemoryCard(mem: mem),
-        const SizedBox(height: 20),
+        const SizedBox(height: MafwSpace.xxl),
         _sectionLabel('连接'),
-        const SizedBox(height: 8),
-        Card(
-          color: scheme.surfaceContainerHighest,
-          child: ListTile(
-            leading: const CircleAvatar(
-              // 装饰性入口一律中性 ink；mint 只留给激活态/CTA。
-              backgroundColor: MafwPalette.badgeBg,
-              foregroundColor: MafwPalette.dim,
-              child: Icon(Icons.dns, size: 20),
-            ),
-            title: const Text('Gateway'),
-            subtitle: Text(widget.baseUrl ?? '未配置'),
-            trailing: Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
-            onTap: widget.onSettings,
-          ),
+        const SizedBox(height: MafwSpace.sm),
+        _MeMenuRow(
+          icon: Icons.dns_outlined,
+          title: 'Gateway',
+          subtitle: widget.baseUrl ?? '未配置',
+          onTap: widget.onSettings,
         ),
-        const SizedBox(height: 8),
         if (widget.onScan != null)
-          Card(
-            color: scheme.surfaceContainerHighest,
-            child: ListTile(
-              leading: const CircleAvatar(
-                backgroundColor: MafwPalette.badgeBg,
-                foregroundColor: MafwPalette.dim,
-                child: Icon(Icons.qr_code_scanner, size: 20),
-              ),
-              title: const Text('扫码配对'),
-              subtitle: const Text('扫描桌面端的配对二维码'),
-              trailing: Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
-              onTap: widget.onScan,
-            ),
+          _MeMenuRow(
+            icon: Icons.qr_code_scanner,
+            title: '扫码配对',
+            subtitle: '扫描桌面端的配对二维码',
+            onTap: widget.onScan,
           ),
-        // Triage 入口随旧 Goal tab 退役迁到这里（spec §9：保持现状入口）。
-        if (widget.onTriage != null) ...[
-          const SizedBox(height: 8),
-          Card(
-            color: scheme.surfaceContainerHighest,
-            child: ListTile(
-              leading: const CircleAvatar(
-                backgroundColor: MafwPalette.badgeBg,
-                foregroundColor: MafwPalette.dim,
-                child: Icon(Icons.pending_actions, size: 20),
-              ),
-              title: const Text('Triage 待决项'),
-              subtitle: const Text('审批 / 待决项列表'),
-              trailing: Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
-              onTap: widget.onTriage,
-            ),
+        if (widget.onTriage != null)
+          _MeMenuRow(
+            icon: Icons.pending_actions,
+            title: 'Triage 待决项',
+            subtitle: '审批 / 待决项列表',
+            onTap: widget.onTriage,
           ),
-        ],
-        if (debugPanelEnabled) ...[
-          const SizedBox(height: 8),
-          Card(
-            color: scheme.surfaceContainerHighest,
-            child: ListTile(
-              leading: const CircleAvatar(
-                backgroundColor: MafwPalette.badgeBg,
-                foregroundColor: MafwPalette.dim,
-                child: Icon(Icons.bug_report, size: 20),
+        if (debugPanelEnabled)
+          _MeMenuRow(
+            icon: Icons.bug_report_outlined,
+            title: '调试',
+            subtitle: '连接诊断 · 事件检查器 · 诊断包（dev-only）',
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => DebugPage(
+                diagnostics: widget.diagnostics,
+                client: widget.client,
+                baseUrl: widget.baseUrl,
+                wsConnected: widget.wsConnected,
               ),
-              title: const Text('调试'),
-              subtitle: const Text('连接诊断 · 事件检查器 · 诊断包（dev-only）'),
-              trailing: Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
-              onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => DebugPage(
-                  diagnostics: widget.diagnostics,
-                  client: widget.client,
-                  baseUrl: widget.baseUrl,
-                  wsConnected: widget.wsConnected,
-                ),
-              )),
-            ),
+            )),
           ),
-        ],
-        const SizedBox(height: MafwSpace.xl),
+        const SizedBox(height: MafwSpace.xxl),
         _sectionLabel('关于'),
         const SizedBox(height: MafwSpace.sm),
-        Card(
-          color: scheme.surfaceContainerHighest,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            child: Row(
-              children: [
-                const Icon(Icons.info_outline, size: 18, color: MafwPalette.dim),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Orcalore Mobile',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: MafwPalette.text,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'v$kAppVersion · MAFW Gateway 客户端',
-                        style: const TextStyle(fontSize: 11, color: MafwPalette.dim),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
+        _MeMenuRow(
+          icon: Icons.info_outline,
+          title: 'Orcalore Mobile',
+          subtitle: 'v$kAppVersion · MAFW Gateway 客户端',
+          onTap: null,
         ),
       ],
     );
   }
 
-  /// 「我的」页顶部品牌 lockup：Lore 40px + 字标 + 一句定位。
+  /// 「我的」页顶部品牌 lockup：小 Lore + 字标 + 一句定位。
   Widget _buildMeBrandHeader() {
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ClipOval(
-          child: Image.asset(
-            'assets/lore/Lore_avatar_40.png',
-            width: 44,
-            height: 44,
-            filterQuality: FilterQuality.medium,
-            errorBuilder: (_, _, _) => const Icon(
-              Icons.spa_outlined,
-              size: 30,
-              color: MafwPalette.accent,
-            ),
-          ),
-        ),
-        const SizedBox(width: MafwSpace.md),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                kAppName,
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.4,
-                  height: 1.1,
-                  color: MafwPalette.text,
+        Row(
+          children: [
+            ClipOval(
+              child: Image.asset(
+                'assets/lore/Lore_avatar_20.png',
+                width: 18,
+                height: 18,
+                filterQuality: FilterQuality.medium,
+                errorBuilder: (_, _, _) => const Icon(
+                  Icons.spa_outlined,
+                  size: 16,
+                  color: MafwPalette.accent,
                 ),
               ),
-              const SizedBox(height: 3),
-              const Text(
-                kAppTagline,
-                style: TextStyle(fontSize: 11.5, height: 1.4, color: MafwPalette.dim),
+            ),
+            const SizedBox(width: MafwSpace.sm),
+            const Text(
+              'ORCALORE / PROFILE',
+              style: TextStyle(
+                fontSize: 9,
+                letterSpacing: 2.2,
+                color: MafwPalette.faint,
               ),
-            ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        const Text(
+          kAppName,
+          style: TextStyle(
+            fontFamily: MafwFonts.serif,
+            fontSize: 32,
+            height: 1.0,
+            letterSpacing: -1.2,
+            color: MafwPalette.text,
           ),
         ),
+        const SizedBox(height: 10),
+        const Text(
+          kAppTagline,
+          style: TextStyle(fontSize: 11, color: MafwPalette.dim),
+        ),
+        const SizedBox(height: 15),
+        const Divider(height: 1, color: MafwPalette.border),
       ],
     );
   }
@@ -923,10 +871,70 @@ class _SessionsPageState extends State<SessionsPage> {
     return Text(
       text,
       style: const TextStyle(
-        fontSize: 12,
-        fontWeight: FontWeight.w600,
-        letterSpacing: 0.4,
+        fontSize: 10,
+        letterSpacing: 1.9,
         color: MafwPalette.dim,
+      ),
+    );
+  }
+}
+
+/// 「我的」里的编辑式入口行：细线图标 + 标题/说明 + hairline，无卡片。
+class _MeMenuRow extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback? onTap;
+
+  const _MeMenuRow({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: MafwPalette.border)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: MafwPalette.dim),
+            const SizedBox(width: MafwSpace.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: MafwPalette.text,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 11, height: 1.4, color: MafwPalette.dim),
+                  ),
+                ],
+              ),
+            ),
+            if (onTap != null)
+              const Text(
+                '›',
+                style: TextStyle(fontSize: 18, height: 1, color: MafwPalette.faint),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -949,54 +957,78 @@ class _SessionTile extends StatelessWidget {
     final s = session;
     final isLead = s.isLead;
     final isSubagent = !isLead && s.parentID != null;
-    final scheme = Theme.of(context).colorScheme;
-    return ListTile(
-      leading: CircleAvatar(
-        radius: 16,
-        backgroundColor: isLead
-            ? kMafwManager.withValues(alpha: 0.2)
-            : isSubagent
-                ? kMafwSubagent.withValues(alpha: 0.2)
-                : scheme.surfaceContainerHighest,
-        child: Text(
-          isLead ? 'L' : (s.displayTitle.isEmpty ? '?' : s.displayTitle[0].toUpperCase()),
-          style: TextStyle(
-            color: isLead ? kMafwManager : (isSubagent ? kMafwSubagent : scheme.onSurfaceVariant),
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-          ),
+    return InkWell(
+      onTap: () => onOpen(s),
+      onLongPress: onLongPress == null ? null : () => onLongPress!(s),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: MafwPalette.border)),
         ),
-      ),
-      title: Text(
-        s.displayTitle,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(fontWeight: isLead ? FontWeight.w700 : FontWeight.w500),
-      ),
-      subtitle: Padding(
-        padding: const EdgeInsets.only(top: 2),
         child: Row(
           children: [
-            if (isLead) ...[
-              const _StatusChip(text: 'Lead', color: kMafwManager),
-              const SizedBox(width: 6),
-            ] else if (isSubagent) ...[
-              const _StatusChip(text: '子代理', color: kMafwSubagent),
-              const SizedBox(width: 6),
-            ],
             Expanded(
-              child: Text(
-                s.id,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      if (isLead) ...[
+                        const Text(
+                          'LEAD',
+                          style: TextStyle(
+                            fontSize: 8,
+                            letterSpacing: 1.2,
+                            fontFamily: 'monospace',
+                            color: MafwPalette.dim,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                      ] else if (isSubagent) ...[
+                        const Text(
+                          'SUB',
+                          style: TextStyle(
+                            fontSize: 8,
+                            letterSpacing: 1.2,
+                            fontFamily: 'monospace',
+                            color: MafwPalette.faint,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      Expanded(
+                        child: Text(
+                          s.displayTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: isLead ? FontWeight.w600 : FontWeight.w500,
+                            height: 1.3,
+                            color: MafwPalette.text,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    s.id,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 11, color: MafwPalette.dim),
+                  ),
+                ],
               ),
+            ),
+            const SizedBox(width: 8),
+            const Text(
+              '›',
+              style: TextStyle(fontSize: 18, height: 1, color: MafwPalette.faint),
             ),
           ],
         ),
       ),
-      onTap: () => onOpen(s),
-      onLongPress: onLongPress == null ? null : () => onLongPress!(s),
     );
   }
 }
@@ -1008,7 +1040,6 @@ class _MemoryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final abstraction = (mem['primary_abstraction'] ?? mem['abstraction'] ?? '').toString();
     final value = (mem['memory_value'] ?? mem['value'] ?? mem['content'] ?? '').toString();
     final anchors = mem['cue_anchors'] is List
@@ -1017,110 +1048,74 @@ class _MemoryCard extends StatelessWidget {
     final energy = (mem['energy'] is num) ? (mem['energy'] as num).toDouble() : null;
     final type = (mem['type'] ?? mem['memory_type'] ?? '').toString();
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      color: scheme.surfaceContainerHighest,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    abstraction,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: scheme.onSurface,
-                      height: 1.4,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: MafwPalette.border)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  abstraction,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: MafwPalette.text,
+                    height: 1.4,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (type.isNotEmpty) ...[
+                const SizedBox(width: MafwSpace.sm),
+                Text(
+                  type,
+                  style: const TextStyle(
+                    fontSize: 8,
+                    letterSpacing: 1,
+                    fontFamily: 'monospace',
+                    color: MafwPalette.faint,
                   ),
                 ),
-                if (type.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 6),
-                    child: _StatusChip(text: type, color: kMafwSubagent),
-                  ),
               ],
+            ],
+          ),
+          if (value.isNotEmpty) ...[
+            const SizedBox(height: 5),
+            Text(
+              value,
+              style: const TextStyle(fontSize: 11.5, color: MafwPalette.dim, height: 1.5),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
             ),
-            if (value.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Text(
-                value,
-                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant, height: 1.4),
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-            if (anchors.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 4,
-                runSpacing: 4,
-                children: anchors.map((a) => _AnchorChip(text: a)).toList(),
-              ),
-            ],
-            if (energy != null) ...[
-              const SizedBox(height: 8),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(2),
-                child: LinearProgressIndicator(
-                  value: energy.clamp(0.0, 1.0),
-                  minHeight: 3,
-                  backgroundColor: scheme.surfaceContainer,
-                  color: mafwEnergyColor(energy),
-                ),
-              ),
-            ],
           ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── 通用小组件 ──
-class _StatusChip extends StatelessWidget {
-  final String text;
-  final Color color;
-  const _StatusChip({required this.text, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: color),
-      ),
-    );
-  }
-}
-
-class _AnchorChip extends StatelessWidget {
-  final String text;
-  const _AnchorChip({required this.text});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainer,
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        '#$text',
-        style: TextStyle(fontSize: 10, color: scheme.onSurfaceVariant),
+          if (anchors.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              anchors.join(' · '),
+              style: const TextStyle(fontSize: 10, height: 1.4, color: MafwPalette.faint),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+          if (energy != null) ...[
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(1),
+              child: LinearProgressIndicator(
+                value: energy.clamp(0.0, 1.0),
+                minHeight: 2,
+                backgroundColor: MafwPalette.border,
+                color: mafwEnergyColor(energy),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -1143,47 +1138,46 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
+    return Align(
+      alignment: Alignment.topLeft,
       child: Padding(
-        padding: const EdgeInsets.all(MafwSpace.xl),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                color: MafwPalette.surface,
-                shape: BoxShape.circle,
-                border: Border.all(color: MafwPalette.border),
+        padding: const EdgeInsets.fromLTRB(MafwSpace.xl, 48, MafwSpace.xl, MafwSpace.xl),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 300),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, size: 18, color: MafwPalette.faint),
+              const SizedBox(height: MafwSpace.md),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: MafwType.heading,
+                  fontWeight: FontWeight.w600,
+                  color: MafwPalette.text,
+                ),
               ),
-              child: Icon(icon, size: 26, color: MafwPalette.dim),
-            ),
-            const SizedBox(height: MafwSpace.lg),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: MafwType.heading,
-                fontWeight: FontWeight.w600,
-                color: MafwPalette.text,
+              const SizedBox(height: MafwSpace.sm),
+              Text(
+                subtitle,
+                style: const TextStyle(fontSize: 12, height: 1.6, color: MafwPalette.dim),
               ),
-            ),
-            const SizedBox(height: MafwSpace.sm),
-            Text(
-              subtitle,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 12, height: 1.5, color: MafwPalette.dim),
-            ),
-            if (actionLabel != null && onAction != null) ...[
-              const SizedBox(height: MafwSpace.lg),
-              FilledButton.icon(
-                onPressed: onAction,
-                icon: const Icon(Icons.settings, size: 16),
-                label: Text(actionLabel!),
-              ),
+              if (actionLabel != null && onAction != null) ...[
+                const SizedBox(height: MafwSpace.md),
+                TextButton(
+                  onPressed: onAction,
+                  style: TextButton.styleFrom(
+                    foregroundColor: MafwPalette.text,
+                    padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 6),
+                    minimumSize: const Size(0, 36),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: Text('$actionLabel  ›'),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

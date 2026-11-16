@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -482,9 +483,20 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
     return MaterialApp(
       navigatorKey: _navigatorKey,
       title: 'Orcalore',
+      debugShowCheckedModeBanner: false,
       theme: mafwLightTheme(),
       darkTheme: mafwDarkTheme(),
       themeMode: ThemeMode.system,
+      builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
+        value: const SystemUiOverlayStyle(
+          statusBarColor: MafwPalette.black,
+          statusBarIconBrightness: Brightness.light,
+          systemNavigationBarColor: MafwPalette.black,
+          systemNavigationBarIconBrightness: Brightness.light,
+          systemNavigationBarDividerColor: MafwPalette.black,
+        ),
+        child: child ?? const SizedBox.shrink(),
+      ),
       home: SessionsPage(
         sessions: _sessions,
         onOpen: _openChat,

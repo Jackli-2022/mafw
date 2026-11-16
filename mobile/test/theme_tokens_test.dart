@@ -8,6 +8,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:orcalore_mobile/main.dart';
 import 'package:orcalore_mobile/src/config/app_info.dart';
@@ -22,60 +23,61 @@ void main() {
   });
 
   group('MafwPalette token table (Orcalore B-mint)', () {
-    test('black is the OLED base background', () {
-      expect(MafwPalette.black, const Color(0xFF000000));
+    test('black is the warm near-black Editorial Ink canvas', () {
+      expect(MafwPalette.black, const Color(0xFF0A0A0B));
     });
 
-    test('surface is ink #1D1F25', () {
-      expect(MafwPalette.surface, const Color(0xFF1D1F25));
+    test('surface is ink #141416', () {
+      expect(MafwPalette.surface, const Color(0xFF141416));
     });
 
-    test('border is #2A2D36', () {
-      expect(MafwPalette.border, const Color(0xFF2A2D36));
+    test('border is hairline #232326', () {
+      expect(MafwPalette.border, const Color(0xFF232326));
     });
 
-    test('text is cream #FCF8F1', () {
-      expect(MafwPalette.text, const Color(0xFFFCF8F1));
+    test('text is warm cream #F4EFE6', () {
+      expect(MafwPalette.text, const Color(0xFFF4EFE6));
     });
 
-    test('dim is #9CA3AF', () {
-      expect(MafwPalette.dim, const Color(0xFF9CA3AF));
+    test('dim is #8B8B90', () {
+      expect(MafwPalette.dim, const Color(0xFF8B8B90));
     });
 
-    test('faint is #6B6B72', () {
-      expect(MafwPalette.faint, const Color(0xFF6B6B72));
+    test('faint is #58585E', () {
+      expect(MafwPalette.faint, const Color(0xFF58585E));
     });
 
-    test('accent is mint #4FD388 (the only chromatic accent)', () {
-      expect(MafwPalette.accent, const Color(0xFF4FD388));
+    test('accent is mint #63E6A4 (the only chromatic accent)', () {
+      expect(MafwPalette.accent, const Color(0xFF63E6A4));
     });
 
-    test('accentDim is 13% mint (desktop --accent-dim parity)', () {
-      // rgba(79,211,136,.13) -> 0x21 alpha.
-      expect(MafwPalette.accentDim, const Color(0x214FD388));
+    test('accentDim is 12% mint', () {
+      expect(MafwPalette.accentDim, const Color(0x1F63E6A4));
     });
 
-    test('badgeBg is the neutral phase-badge surface #24272F', () {
-      expect(MafwPalette.badgeBg, const Color(0xFF24272F));
+    test('badgeBg is the neutral surface #17171A', () {
+      expect(MafwPalette.badgeBg, const Color(0xFF17171A));
     });
 
-    test('badgeText is the neutral phase-badge foreground #C9C9D4', () {
-      expect(MafwPalette.badgeText, const Color(0xFFC9C9D4));
+    test('badgeText is warm neutral #C9C4BA', () {
+      expect(MafwPalette.badgeText, const Color(0xFFC9C4BA));
     });
 
     test('kMafwPrimary is the mint accent (AI purple retired)', () {
-      expect(kMafwPrimary, const Color(0xFF4FD388));
+      expect(kMafwPrimary, const Color(0xFF63E6A4));
       expect(kMafwPrimary, MafwPalette.accent);
     });
   });
 
   group('MafwType / MafwSpace / MafwRadius scale', () {
-    test('type scale is six ordered steps', () {
+    test('type scale is ordered with a display jump', () {
       expect(MafwType.display, greaterThan(MafwType.title));
       expect(MafwType.title, greaterThan(MafwType.heading));
       expect(MafwType.heading, greaterThan(MafwType.body));
       expect(MafwType.body, greaterThan(MafwType.meta));
       expect(MafwType.meta, greaterThan(MafwType.caption));
+      expect(MafwType.overline, MafwType.caption);
+      expect(MafwType.display, 40);
     });
 
     test('spacing follows the 4pt grid', () {
@@ -133,6 +135,13 @@ void main() {
   });
 
   group('app identity files', () {
+    test('Instrument Serif wordmark font is bundled', () async {
+      final pubspec = File('pubspec.yaml').readAsStringSync();
+      expect(pubspec, contains('InstrumentSerif-Regular.ttf'));
+      final data = await rootBundle.load('assets/fonts/InstrumentSerif-Regular.ttf');
+      expect(data.lengthInBytes, greaterThan(1000));
+    });
+
     test('kAppVersion matches pubspec.yaml', () {
       final pubspec = File('pubspec.yaml').readAsStringSync();
       final match = RegExp(r'^version:\s*(\d+\.\d+\.\d+)\+?\d*$', multiLine: true)

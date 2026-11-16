@@ -16,6 +16,7 @@ import 'package:orcalore_mobile/src/network/gateway_client.dart';
 import 'package:orcalore_mobile/src/pages/sessions_page.dart';
 import 'package:orcalore_mobile/src/pages/work_tab.dart';
 import 'package:orcalore_mobile/src/theme.dart';
+import 'package:orcalore_mobile/src/widgets/mafw_bottom_nav.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Offline-safe client: only the memory search is exercised by these tests.
@@ -56,19 +57,24 @@ Future<void> _pumpShell(
   await tester.pumpAndSettle();
 }
 
-/// Taps a bottom destination by its label (the AppBar may repeat the label,
-/// so the lookup is scoped to the NavigationBar).
+/// Taps a bottom destination by its label (the work tab may repeat the label,
+/// so the lookup is scoped to the custom nav).
 Future<void> _tapTab(WidgetTester tester, String label) async {
   await tester.tap(
-    find.descendant(of: find.byType(NavigationBar), matching: find.text(label)),
+    find.descendant(of: find.byType(MafwBottomNav), matching: find.text(label)),
   );
   await tester.pumpAndSettle();
 }
 
 /// Bottom destination labels in order (structural, immune to body text).
-List<String?> _navLabels(WidgetTester tester) => tester
-    .widgetList<NavigationDestination>(find.byType(NavigationDestination))
-    .map((d) => d.label)
+List<String> _navLabels(WidgetTester tester) => tester
+    .widgetList<Text>(
+      find.descendant(
+        of: find.byType(MafwBottomNav),
+        matching: find.byType(Text),
+      ),
+    )
+    .map((t) => t.data ?? '')
     .toList();
 
 void main() {
@@ -82,8 +88,7 @@ void main() {
     testWidgets('bottom navigation is exactly 工作 / 聊天 / 我的', (tester) async {
       await _pumpShell(tester);
 
-      final bar = tester.widget<NavigationBar>(find.byType(NavigationBar));
-      expect(bar.destinations.length, 3);
+      expect(MafwBottomNav.labels.length, 3);
       expect(_navLabels(tester), ['工作', '聊天', '我的']);
     });
 
@@ -156,17 +161,14 @@ void main() {
       expect(find.textContaining('v$kAppVersion'), findsOneWidget);
     });
 
-    testWidgets('工作 owns the discussion FAB; 聊天 keeps the new-session FAB; 我的 has none',
-        (tester) async {
+    testWidgets('no FABs; chat new-topic lives in the header', (tester) async {
       await _pumpShell(tester);
-      // 工作 tab 自带「＋ 新建讨论」圆形 FAB（Task 7；Task 11 接 composer）。
-      expect(find.byType(FloatingActionButton), findsOneWidget);
-      expect(find.byKey(const Key('work-fab')), findsOneWidget);
+      // Editorial Ink：工作/聊天都不再用 FAB；新话题收进聊天页头。
+      expect(find.byType(FloatingActionButton), findsNothing);
 
       await _tapTab(tester, '聊天');
-      expect(find.byType(FloatingActionButton), findsOneWidget);
-      // 工作 tab 的 FAB 不能漏进聊天 tab。
-      expect(find.byKey(const Key('work-fab')), findsNothing);
+      expect(find.byType(FloatingActionButton), findsNothing);
+      expect(find.byKey(const Key('chat-new-topic')), findsOneWidget);
 
       await _tapTab(tester, '我的');
       expect(find.byType(FloatingActionButton), findsNothing);
@@ -190,7 +192,7 @@ void main() {
 
       expect(client.queries, ['shell']);
       expect(find.text('mobile shell decision'), findsOneWidget);
-      expect(find.text('#task-6'), findsOneWidget);
+      expect(find.textContaining('task-6'), findsOneWidget);
     });
   });
 }

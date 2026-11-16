@@ -85,6 +85,12 @@ flutter:
   assets:
     - assets/lore/
 
+  # Editorial Ink（2026-11-16）：Latin 字标 / 大数字用 Instrument Serif（OFL）。
+  fonts:
+    - family: InstrumentSerif
+      fonts:
+        - asset: assets/fonts/InstrumentSerif-Regular.ttf
+
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg

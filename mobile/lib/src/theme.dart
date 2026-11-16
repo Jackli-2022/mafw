@@ -1,11 +1,12 @@
 /// Orcalore Mobile 主题（spec
 /// `docs/superpowers/specs/2026-11-05-mobile-tailscale-pod-app-design.md` §3/§3.1）。
 ///
-/// 设计语言 = 裁定 B「Grok 单色极简」+ Orcalore 品牌修订：
-/// - 中性主导：底色纯黑、surface ink `#1D1F25`、正文 cream `#FCF8F1`
-/// - accent mint `#4FD388`（与桌面 accent 同源）是**唯一彩色**，只用于
+/// 设计语言 = 裁定 B「Grok 单色极简」+ Orcalore 品牌修订，2026-11-16 起为
+/// **Editorial Ink**（编辑式排版）：
+/// - 中性主导：底色暖近黑、surface ink `#141416`、正文 warm cream `#F4EFE6`
+/// - accent mint `#63E6A4` 是**唯一彩色**，只用于
 ///   ① 需要你 ② 激活态 ③ CTA ④ 进行中的时间线节点/进度焦点
-/// - 阶段徽标全部中性：`badgeBg #24272F` 底 + `badgeText #C9C9D4` 字
+/// - 阶段徽标全部中性：`badgeBg #17171A` 底 + `badgeText #C9C4BA` 字
 /// - PASS/FAIL 不引入绿/红（verdict 用白 ✓ / 灰 ✕）；粉/青/琥珀已从 UI 语义色退役
 ///
 /// v1 只有一套深色主题（spec §3「深色极简」）。`mafwLightTheme()` 保留为
@@ -19,35 +20,35 @@ import 'package:flutter/material.dart';
 class MafwPalette {
   const MafwPalette._();
 
-  /// 应用底色（OLED 真黑）。
-  static const Color black = Color(0xFF000000);
+  /// 应用底色（Editorial Ink：暖近黑，不再是纯 OLED #000）。
+  static const Color black = Color(0xFF0A0A0B);
 
-  /// 卡片 / 浮层 / 导航表面（ink）。
-  static const Color surface = Color(0xFF1D1F25);
+  /// 卡片 / 浮层 / 输入面（ink）。
+  static const Color surface = Color(0xFF141416);
 
-  /// 分隔线与卡片描边。
-  static const Color border = Color(0xFF2A2D36);
+  /// 分隔线与卡片描边（hairline）。
+  static const Color border = Color(0xFF232326);
 
-  /// 主文本（cream）。
-  static const Color text = Color(0xFFFCF8F1);
+  /// 主文本（warm cream）。
+  static const Color text = Color(0xFFF4EFE6);
 
   /// 次级文本。
-  static const Color dim = Color(0xFF9CA3AF);
+  static const Color dim = Color(0xFF8B8B90);
 
   /// 三级文本 / 占位。
-  static const Color faint = Color(0xFF6B6B72);
+  static const Color faint = Color(0xFF58585E);
 
   /// 唯一彩色：mint accent（需要你 / 激活态 / CTA / 进行中）。
-  static const Color accent = Color(0xFF4FD388);
+  static const Color accent = Color(0xFF63E6A4);
 
-  /// accent 的弱化底（mint 13%，对齐桌面 `--accent-dim`：`rgba(79,211,136,.13)`）。
-  static const Color accentDim = Color(0x214FD388);
+  /// accent 的弱化底（mint 12%）。
+  static const Color accentDim = Color(0x1F63E6A4);
 
   /// 阶段徽标 / 中性 chip 底。
-  static const Color badgeBg = Color(0xFF24272F);
+  static const Color badgeBg = Color(0xFF17171A);
 
   /// 阶段徽标 / 中性 chip 字。
-  static const Color badgeText = Color(0xFFC9C9D4);
+  static const Color badgeText = Color(0xFFC9C4BA);
 }
 
 /// 字阶（Orcalore 只有 6 级；UI 不写裸 fontSize）。
@@ -57,12 +58,21 @@ class MafwPalette {
 class MafwType {
   const MafwType._();
 
-  static const double display = 28;
-  static const double title = 20;
-  static const double heading = 15;
-  static const double body = 14;
+  static const double display = 40;
+  static const double title = 28;
+  static const double heading = 17;
+  static const double body = 15;
   static const double meta = 12;
-  static const double caption = 11;
+  static const double caption = 10;
+  static const double overline = 10;
+}
+
+/// 字体族：Latin 字标 / 大数字用随包 Instrument Serif（OFL）；
+/// 中文与正文继续系统 sans，避免 CJK serif 体积与低字号可读性问题。
+class MafwFonts {
+  const MafwFonts._();
+
+  static const String serif = 'InstrumentSerif';
 }
 
 /// 间距刻度（4 的倍数；UI 不写裸 padding 数字）。
@@ -174,10 +184,19 @@ ThemeData _build(ColorScheme scheme) {
       ),
       iconTheme: IconThemeData(color: cream),
     ),
-    // 正文排版：16pt / 行高 1.5（全宽文档感）；二级文本走 dim。
+    // 正文排版：15pt / 行高 1.55（编辑式阅读面）；二级文本走 dim。
     textTheme: TextTheme(
-      bodyMedium: TextStyle(fontSize: 16, height: 1.5, color: cream),
-      bodySmall: TextStyle(fontSize: 12, height: 1.4, color: MafwPalette.dim),
+      displaySmall: TextStyle(
+        fontFamily: MafwFonts.serif,
+        fontSize: MafwType.display,
+        height: 1.0,
+        letterSpacing: -1.4,
+        color: cream,
+      ),
+      titleLarge: TextStyle(fontSize: 22, height: 1.2, fontWeight: FontWeight.w600, color: cream),
+      titleMedium: TextStyle(fontSize: 15, height: 1.35, fontWeight: FontWeight.w600, color: cream),
+      bodyMedium: TextStyle(fontSize: MafwType.body, height: 1.55, color: cream),
+      bodySmall: TextStyle(fontSize: MafwType.meta, height: 1.5, color: MafwPalette.dim),
     ),
     cardTheme: CardThemeData(
       color: MafwPalette.surface,
@@ -186,7 +205,7 @@ ThemeData _build(ColorScheme scheme) {
       margin: const EdgeInsets.symmetric(vertical: 4),
       shape: RoundedRectangleBorder(
         borderRadius: borderRadius,
-        side: BorderSide(color: MafwPalette.border),
+        side: BorderSide.none,
       ),
     ),
     dividerTheme: DividerThemeData(
@@ -197,26 +216,26 @@ ThemeData _build(ColorScheme scheme) {
     iconTheme: IconThemeData(color: cream),
     chipTheme: ChipThemeData(
       backgroundColor: MafwPalette.badgeBg,
-      labelStyle: TextStyle(color: MafwPalette.badgeText, fontSize: 12),
-      side: BorderSide(color: MafwPalette.border),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      labelStyle: TextStyle(color: MafwPalette.badgeText, fontSize: 11),
+      side: BorderSide.none,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(MafwRadius.pill)),
     ),
     inputDecorationTheme: InputDecorationThemeData(
       isDense: true,
       filled: true,
       fillColor: MafwPalette.surface,
-      hintStyle: TextStyle(color: MafwPalette.faint),
+      hintStyle: TextStyle(color: MafwPalette.faint, fontSize: 14),
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       border: OutlineInputBorder(
-        borderRadius: borderRadius,
+        borderRadius: BorderRadius.circular(10),
         borderSide: BorderSide(color: MafwPalette.border),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: borderRadius,
+        borderRadius: BorderRadius.circular(10),
         borderSide: BorderSide(color: MafwPalette.border),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: borderRadius,
+        borderRadius: BorderRadius.circular(10),
         borderSide: BorderSide(color: MafwPalette.accent),
       ),
     ),

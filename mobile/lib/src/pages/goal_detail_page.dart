@@ -747,7 +747,7 @@ class _GoalDetailPageState extends State<GoalDetailPage> {
           backgroundColor: MafwPalette.surface,
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+            padding: const EdgeInsets.fromLTRB(MafwSpace.xl, 12, MafwSpace.xl, MafwSpace.xxl),
             children: _buildChildren(),
           ),
         ),
@@ -803,39 +803,42 @@ class _GoalDetailPageState extends State<GoalDetailPage> {
     final stage = _stageLabel;
     final verdict = _verdict;
     final strategy = _goal?.strategy ?? '';
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              _title,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                height: 1.3,
-                color: MafwPalette.text,
-              ),
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'GOAL',
+            style: TextStyle(fontSize: 9, letterSpacing: 2.2, color: MafwPalette.faint),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            _title,
+            style: const TextStyle(
+              fontSize: 26,
+              fontWeight: FontWeight.w600,
+              height: 1.2,
+              letterSpacing: -0.6,
+              color: MafwPalette.text,
             ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                if (stage.isNotEmpty)
-                  _Tag(
-                    key: const Key('goal-stage-badge'),
-                    text: stage,
-                  ),
-                _Tag(text: 'r$_revision'),
-                if (strategy.isNotEmpty) _Tag(text: strategy),
-                if (verdict != null) _Tag(text: verdict, emphasized: true),
-              ],
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              if (stage.isNotEmpty)
+                _Tag(
+                  key: const Key('goal-stage-badge'),
+                  text: stage,
+                ),
+              _Tag(text: 'r$_revision'),
+              if (strategy.isNotEmpty) _Tag(text: strategy),
+              if (verdict != null) _Tag(text: verdict, emphasized: true),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -1015,28 +1018,20 @@ class _GoalDetailPageState extends State<GoalDetailPage> {
   Widget _buildAttention(List<Widget> slots) {
     return Container(
       key: const Key('goal-attention-slot'),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: MafwPalette.accentDim,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: MafwPalette.accent.withValues(alpha: 0.45)),
+      padding: const EdgeInsets.only(left: 14, top: 2, bottom: 2),
+      decoration: const BoxDecoration(
+        border: Border(left: BorderSide(color: MafwPalette.accent, width: 2)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
-            children: [
-              Icon(Icons.priority_high, size: 16, color: MafwPalette.accent),
-              SizedBox(width: 6),
-              Text(
-                '需要你',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: MafwPalette.text,
-                ),
-              ),
-            ],
+          const Text(
+            '现在需要你',
+            style: TextStyle(
+              fontSize: 10,
+              letterSpacing: 1.9,
+              color: MafwPalette.accent,
+            ),
           ),
           const SizedBox(height: 8),
           for (var i = 0; i < slots.length; i++) ...[
@@ -1059,19 +1054,13 @@ class _GoalDetailPageState extends State<GoalDetailPage> {
       children.add(_timelineEmpty());
       return children;
     }
-    children.add(Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        child: Column(
-          children: [
-            for (var i = 0; i < rows.length; i++) ...[
-              if (i > 0) const Divider(height: 1),
-              _buildNodeRow(rows[i]),
-            ],
-          ],
-        ),
-      ),
+    children.add(Column(
+      children: [
+        for (var i = 0; i < rows.length; i++) ...[
+          if (i > 0) const Divider(height: 1),
+          _buildNodeRow(rows[i]),
+        ],
+      ],
     ));
     return children;
   }
@@ -1203,11 +1192,12 @@ class _GoalDetailPageState extends State<GoalDetailPage> {
       const SizedBox(height: 14),
       Container(
         key: const Key('goal-action-bar'),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: MafwPalette.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: MafwPalette.border),
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: const BoxDecoration(
+          border: Border(
+            top: BorderSide(color: MafwPalette.border),
+            bottom: BorderSide(color: MafwPalette.border),
+          ),
         ),
         child: Row(
           children: [
@@ -1250,19 +1240,13 @@ class _GoalDetailPageState extends State<GoalDetailPage> {
 
     return [
       const _SectionTitle('版本历史'),
-      Card(
-        margin: EdgeInsets.zero,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          child: Column(
-            children: [
-              for (var i = 0; i < sorted.length; i++) ...[
-                if (i > 0) const Divider(height: 1),
-                _buildRevisionRow(sorted[i]),
-              ],
-            ],
-          ),
-        ),
+      Column(
+        children: [
+          for (var i = 0; i < sorted.length; i++) ...[
+            if (i > 0) const Divider(height: 1),
+            _buildRevisionRow(sorted[i]),
+          ],
+        ],
       ),
     ];
   }
@@ -1325,22 +1309,19 @@ class _GoalDetailPageState extends State<GoalDetailPage> {
 
     return [
       const _SectionTitle('结果'),
-      Card(
+      Column(
         key: const Key('goal-result-card'),
-        margin: EdgeInsets.zero,
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
               Row(
                 children: [
                   Text(
                     verdict,
                     key: const Key('goal-result-verdict'),
                     style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
+                      fontFamily: MafwFonts.serif,
+                      fontSize: 28,
+                      height: 1.0,
                       color: MafwPalette.text,
                     ),
                   ),
@@ -1391,9 +1372,7 @@ class _GoalDetailPageState extends State<GoalDetailPage> {
                 ),
               ],
               if (_canReject) ..._buildRejectControls(),
-            ],
-          ),
-        ),
+        ],
       ),
     ];
   }
@@ -1595,20 +1574,13 @@ class _Tag extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: MafwPalette.badgeBg,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: MafwPalette.border),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontSize: 10.5,
-          fontWeight: emphasized ? FontWeight.w700 : FontWeight.w500,
-          color: MafwPalette.badgeText,
-        ),
+    return Text(
+      text,
+      style: TextStyle(
+        fontSize: 11,
+        fontWeight: emphasized ? FontWeight.w600 : FontWeight.w400,
+        letterSpacing: 0.2,
+        color: emphasized ? MafwPalette.badgeText : MafwPalette.dim,
       ),
     );
   }
@@ -1628,11 +1600,11 @@ class _NodeMarker extends StatelessWidget {
         return Container(
           width: 18,
           height: 18,
-          decoration: const BoxDecoration(
-            color: MafwPalette.text,
+          decoration: BoxDecoration(
             shape: BoxShape.circle,
+            border: Border.all(color: MafwPalette.dim, width: 1.2),
           ),
-          child: const Icon(Icons.check, size: 12, color: MafwPalette.black),
+          child: const Icon(Icons.check, size: 11, color: MafwPalette.dim),
         );
       case GoalTimelineNodeState.active:
         return Container(
@@ -1685,13 +1657,13 @@ class _SectionTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(top: 16, bottom: 8),
+      padding: const EdgeInsets.only(top: 26, bottom: 10),
       child: Text(
         text,
         style: const TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w700,
-          color: MafwPalette.text,
+          fontSize: 10,
+          letterSpacing: 1.9,
+          color: MafwPalette.dim,
         ),
       ),
     );

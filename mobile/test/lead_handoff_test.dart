@@ -31,6 +31,7 @@ import 'package:orcalore_mobile/src/pages/sessions_page.dart';
 import 'package:orcalore_mobile/src/services/active_project.dart';
 import 'package:orcalore_mobile/src/services/lead_handoff.dart';
 import 'package:orcalore_mobile/src/theme.dart';
+import 'package:orcalore_mobile/src/widgets/mafw_bottom_nav.dart';
 
 const String _dirA = r'C:\work\projA';
 const String _podId = 'pod-1';
@@ -229,7 +230,7 @@ Future<ActiveProjectStore> _pumpChatTab(
   ));
   await tester.pumpAndSettle();
   await tester.tap(
-    find.descendant(of: find.byType(NavigationBar), matching: find.text('聊天')),
+    find.descendant(of: find.byType(MafwBottomNav), matching: find.text('聊天')),
   );
   await tester.pumpAndSettle();
   return store;

@@ -389,37 +389,38 @@ void main() {
   });
 
   group('five buckets', () {
-    testWidgets('renders every bucket, count badge, stage chip, revision, strategy and verdict',
-        (tester) async {
+    testWidgets('renders non-empty buckets with count, meta and verdict', (tester) async {
       await _pumpWorkTab(tester, client: _FakeWorkClient());
 
       for (final label in ['需要你', '排队中', '进行中', '结果待看', '历史']) {
         expect(find.text(label), findsOneWidget, reason: 'bucket header $label');
       }
-      for (final title in ['修 CI', '排队的', '跑着的', '完成的', '取消的']) {
-        expect(find.text(title), findsOneWidget, reason: 'goal card $title');
+      for (final title in ['修 CI', '排队的', '跑着的', '完成的']) {
+        expect(find.text(title), findsOneWidget, reason: 'goal row $title');
       }
-      // Neutral count badges: one per bucket (all counts are 1).
-      expect(find.text('1'), findsNWidgets(5));
-      // Card metadata (spec §7.3).
-      expect(find.text('计划待批准'), findsOneWidget);
-      expect(find.text('实施中'), findsOneWidget);
-      expect(find.text('r2'), findsOneWidget);
-      expect(find.text('r1'), findsNWidgets(4));
-      expect(find.text('collaborative'), findsOneWidget);
-      expect(find.text('quick'), findsOneWidget);
+      // Ended goals collapse into the history row (opened as a sheet).
+      expect(find.text('取消的'), findsNothing);
+
+      // Two-digit editorial counts: four bucket headers + the history row.
+      expect(find.text('01'), findsNWidgets(5));
+      // Meta is one quiet line per row, not a row of chips.
+      expect(find.textContaining('计划待批准 · r2 · collaborative'), findsOneWidget);
+      expect(find.textContaining('实施中 · r1 · quick'), findsOneWidget);
+      expect(find.textContaining('排队 · r1'), findsOneWidget);
+      expect(find.textContaining('结果已通知 · r1'), findsOneWidget);
       expect(find.text('PASS'), findsOneWidget);
-      expect(find.text('CANCELLED'), findsOneWidget);
+      expect(find.text('CANCELLED'), findsNothing);
     });
 
-    testWidgets('stage chips stay neutral (mint is reserved for 需要你/active)', (tester) async {
+    testWidgets('meta stays neutral (mint is reserved for 需要你/active)', (tester) async {
       await _pumpWorkTab(tester, client: _FakeWorkClient());
 
-      final chip = tester.widget<Text>(find.text('计划待批准'));
-      expect(chip.style?.color, MafwPalette.badgeText);
+      final meta = tester.widget<Text>(find.textContaining('计划待批准 · r2'));
+      expect(meta.style?.color, MafwPalette.dim);
     });
 
-    testWidgets('empty buckets still render their header with a zero badge', (tester) async {
+    testWidgets('empty buckets are omitted and the quiet empty state explains why',
+        (tester) async {
       final empty = WorkOverview.fromJson({
         'projectDir': _dirA,
         'podId': 'pod-a',
@@ -429,10 +430,21 @@ void main() {
       });
       await _pumpWorkTab(tester, client: _FakeWorkClient(fallbackOverview: empty));
 
-      for (final label in ['需要你', '排队中', '进行中', '结果待看', '历史']) {
-        expect(find.text(label), findsOneWidget);
+      expect(find.text('这个项目暂时没有活动中的 Goal。'), findsOneWidget);
+      expect(find.byKey(const Key('work-new-discussion')), findsOneWidget);
+      for (final label in ['需要你', '排队中', '进行中', '结果待看']) {
+        expect(find.text(label), findsNothing);
       }
-      expect(find.text('0'), findsNWidgets(5));
+    });
+
+    testWidgets('ended goals collapse into a history sheet', (tester) async {
+      await _pumpWorkTab(tester, client: _FakeWorkClient());
+
+      await tester.tap(find.byKey(const Key('work-history-row')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('取消的'), findsOneWidget);
+      expect(find.textContaining('CANCELLED'), findsOneWidget);
     });
   });
 
@@ -492,14 +504,16 @@ void main() {
       expect(client.workCalls, 1); // no cross-project refetch
     });
 
-    testWidgets('unread results surface next to the attention section', (tester) async {
+    testWidgets('unread results surface even when attention is empty', (tester) async {
       await _pumpWorkTab(
         tester,
         client: _FakeWorkClient(presence: _presence(unreadResults: 2)),
       );
 
-      expect(find.text('现在需要你'), findsOneWidget);
       expect(find.text('2 个结果待查看'), findsOneWidget);
+      expect(find.byKey(const Key('work-unread-row')), findsOneWidget);
+      // No attention items -> no decorative “现在需要你” header.
+      expect(find.text('现在需要你'), findsNothing);
     });
 
     testWidgets('section is hidden when nothing needs a human', (tester) async {
@@ -756,19 +770,15 @@ void main() {
     });
   });
 
-  group('FAB + Lead placeholder', () {
-    testWidgets('the FAB is a plain circular FAB (not extended) — label clipping regression',
-        (tester) async {
+  group('new discussion + Lead entry', () {
+    testWidgets('new discussion is a quiet header action, not a FAB', (tester) async {
       await _pumpWorkTab(tester, client: _FakeWorkClient());
-      final fab = tester.widget<FloatingActionButton>(
-        find.byKey(const Key('work-fab')),
-      );
-      // Theme sets CircleBorder; an extended FAB would draw its label outside
-      // the circle (real-device smoke: white circle with overflowing text).
-      expect(fab.isExtended, isFalse);
+
+      expect(find.byKey(const Key('work-new-discussion')), findsOneWidget);
+      expect(find.byType(FloatingActionButton), findsNothing);
     });
 
-    testWidgets('the FAB calls the discussion placeholder', (tester) async {
+    testWidgets('the new discussion action calls the placeholder', (tester) async {
       var taps = 0;
       await _pumpWorkTab(
         tester,
@@ -776,7 +786,7 @@ void main() {
         onCreateDiscussion: () => taps++,
       );
 
-      await tester.tap(find.byKey(const Key('work-fab')));
+      await tester.tap(find.byKey(const Key('work-new-discussion')));
       await tester.pump();
 
       expect(taps, 1);
@@ -850,7 +860,7 @@ void main() {
       );
 
       expect(find.text('无法连接 Gateway'), findsOneWidget);
-      expect(find.text('重试'), findsOneWidget);
+      expect(find.textContaining('重试'), findsOneWidget);
     });
   });
 

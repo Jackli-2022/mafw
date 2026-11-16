@@ -424,9 +424,20 @@ class _ChatPageState extends State<ChatPage> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(widget.session.displayTitle, style: const TextStyle(fontSize: 16)),
+            Text(
+              widget.session.displayTitle,
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+            ),
             if (widget.session.isLead)
-              const Text('Lead', style: TextStyle(fontSize: 11, color: kMafwManager)),
+              const Text(
+                'LEAD',
+                style: TextStyle(
+                  fontSize: 8,
+                  letterSpacing: 1.4,
+                  fontFamily: 'monospace',
+                  color: MafwPalette.dim,
+                ),
+              ),
           ],
         ),
       ),
@@ -438,8 +449,8 @@ body: Column(
                 : _messages.isEmpty
                     ? const Center(child: Text('暂无消息'))
                     : ListView.builder(
-                        controller: _scrollCtrl,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    controller: _scrollCtrl,
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                         itemCount: _messages.length,
                         itemBuilder: (ctx, i) => GestureDetector(
                           onLongPress: () => _showMessageActions(_messages[i]),
@@ -496,7 +507,7 @@ body: Column(
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -531,7 +542,7 @@ body: Column(
                 icon: _sending ? const Icon(Icons.stop_rounded) : const Icon(Icons.arrow_upward_rounded),
                 tooltip: _sending ? '停止' : '发送',
                 style: IconButton.styleFrom(
-                  backgroundColor: kMafwPrimary,
+                  backgroundColor: MafwPalette.text,
                   foregroundColor: MafwPalette.black,
                   disabledBackgroundColor: MafwPalette.badgeBg,
                   disabledForegroundColor: MafwPalette.faint,

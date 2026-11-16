@@ -31,6 +31,7 @@ import 'package:orcalore_mobile/src/network/gateway_client.dart';
 import 'package:orcalore_mobile/src/pages/sessions_page.dart';
 import 'package:orcalore_mobile/src/services/active_project.dart';
 import 'package:orcalore_mobile/src/theme.dart';
+import 'package:orcalore_mobile/src/widgets/mafw_bottom_nav.dart';
 
 const String _dirA = '/work/a';
 const String _dirB = '/work/b';
@@ -148,7 +149,7 @@ Future<ActiveProjectStore> _pumpChat(
   await tester.pumpAndSettle();
 
   await tester.tap(
-    find.descendant(of: find.byType(NavigationBar), matching: find.text('聊天')),
+    find.descendant(of: find.byType(MafwBottomNav), matching: find.text('聊天')),
   );
   await tester.pumpAndSettle();
 
@@ -400,11 +401,11 @@ void main() {
       expect(client.listCalls, 1);
       // Re-entering the tab still refetches (unchanged legacy behaviour).
       await tester.tap(
-        find.descendant(of: find.byType(NavigationBar), matching: find.text('工作')),
+        find.descendant(of: find.byType(MafwBottomNav), matching: find.text('工作')),
       );
       await tester.pumpAndSettle();
       await tester.tap(
-        find.descendant(of: find.byType(NavigationBar), matching: find.text('聊天')),
+        find.descendant(of: find.byType(MafwBottomNav), matching: find.text('聊天')),
       );
       await tester.pumpAndSettle();
       expect(client.listCalls, 2);
