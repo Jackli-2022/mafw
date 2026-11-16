@@ -43,8 +43,27 @@ Lead 有两条唤醒路径：
 - 定向：`tests/unit/lead` + `pod-event-wake` + `pod-event-service` = **28 suites / 147 tests**。
 - gateway `tsc`：rc=0。
 - gateway 全量：**988 / 988 suites**，**7895 passed / 2 skipped / 0 failed**。
-- Phase 1 定向套件 `tests/unit/lead` + `pod-event-wake` + `pod-event-service`：
-  **28 suites / 147 tests** 全绿。
+
+## 真机验收（2026-11-16，gateway pid 41632 / v5.1.0）
+
+库：`~/.mafw/memory/gateway.db`（WAL）。用合成事件验证生产端，未打扰真实 Lead。
+
+1. **生产端**：注入 `audience='lead'` / `severity='p1'` / `wake_state='pending'` 的 `goal.failed`
+   事件（不存在的 Pod），等 60s `pod:event-wake` timer：
+   - `pod_events.wake_state='delivered'`，`wake_session_id='outbox:<outboxId>'`；
+   - `event_outbox` 恰好 1 行，`dedupe_key='pod-event:<eventId>'`，channel `lead:<podId>`。
+2. **dispatcher**：该行被 5s dispatcher 取走，`ensureLead` 因 Pod 不存在返回 404 →
+   `state='failed'`、`attempts=1`、`last_error='pod not found: ...'`、写入 `next_retry_at`；
+   全程没有 prompt 任何真实 session。
+3. **重扫幂等**：把同一事件改回 `pending` 再扫一次 → 复用同一 `outboxId`，
+   `dedupe_key` 计数仍为 1，`attempts` 继续累加。
+4. **A2A 短路**：对真实 Pod 的 Lead 造一条 `status='delivered'` 的 A2A 消息 + 引用它的
+   lead 事件 → `wake_session_id='a2a:<messageId>'`，**不产生** outbox 行。
+5. **清理**：合成的 `pod_events` / `event_outbox` / `pod_messages` /
+   `pod_message_deliveries` 全部删除，残余计数均为 0；库恢复为 1 行已发送 decision。
+
+未覆盖：真实 `goal.failed` 端到端（会真的驱动 agent）、以及“只发一条 Lead 消息”的
+prompt 计数——两者分别由 `goal.failed` 路由测试与 `lead-outbox` 批量测试覆盖。
 
 ## 边界
 
