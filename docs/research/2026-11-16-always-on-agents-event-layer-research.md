@@ -223,7 +223,7 @@ DeepSeek 的起点不是“模型不够强”，而是：
 1. **Lead 消息统一走 outbox**：`deliverContext` 不再直接 `promptAsync`，而是写 `event_outbox`（channel=`chat`，address=`podId/lead`，dedupeKey=`decision:<recordId>` / `pod-event:<eventId>`），由 dispatcher 统一发送。
 2. **一个 Lead dispatcher**：按 Pod/项目串行；Lead busy 时排队；合并同一轮的多条消息；失败退避；记录 delivered/read/ack。
 3. **统一注意力预算**：p1 立即、p2 下一轮、p3 只进 digest；每 Pod 每小时上限；dedupe 窗口；先安静。
-4. **read/ack 语义**：Lead 在 chat 里回复/引用某条消息 = ack；超时未 ack 的 p2 可以进 digest，不重复打断。
+4. **delivered / sent 语义**：P0 先记录 outbox 的 `sent` / `failed`；`read` / `ack` 需要把 Lead 的回复与具体 outbox 消息关联，放 P1。
 5. **event_outbox 接线**：目前 `EventOutbox` 只有类，没有 dispatcher/worker；这是最小可用的“结果交付”层。
 
 ### P1：合并 PodEventWake 与 event layer
