@@ -15,6 +15,11 @@ import { ensureEventLayerSchema } from '../core/events/event-store';
 import { ensureStandingSchema } from '../core/standing/standing-store';
 import { DEFAULT_CONCEPT_ALIASES, expandQueryConcepts } from '../recall/t1-concepts';
 import { actorKind, parseActorQuery, type T1TurnActor } from '../recall/t1-actors';
+import type {
+  T1EpisodeBoundary,
+  T1EpisodeMember,
+  T1EpisodeRecord,
+} from '../recall/t1-episodes';
 import {
   querySparseTermIds,
   type T1SparseTerm,
@@ -160,6 +165,16 @@ function parseJsonStringArray(raw: unknown): string[] {
   try {
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseJsonArray<T>(raw: unknown): T[] {
+  if (typeof raw !== 'string' || !raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as T[]) : [];
   } catch {
     return [];
   }
@@ -527,6 +542,59 @@ export class GatewayDatabase {
         sparse_count  INTEGER NOT NULL DEFAULT 0,
         encoded_at    INTEGER NOT NULL DEFAULT (unixepoch())
       );
+
+      -- Episode boundaries are append-only declarations. after_turn is the
+      -- canonical edge: turn N stays in the old episode, N+1 starts a new one.
+      CREATE TABLE IF NOT EXISTS t1_episode_boundaries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        after_turn INTEGER NOT NULL,
+        source TEXT NOT NULL,
+        reason TEXT,
+        intent TEXT,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        UNIQUE(session_id, after_turn, source)
+      );
+      CREATE INDEX IF NOT EXISTS idx_t1_episode_boundaries_session
+        ON t1_episode_boundaries(session_id, after_turn);
+
+      -- Derived episode index. end_turn is mutable while an episode is open;
+      -- episode_id depends only on session + start_turn.
+      CREATE TABLE IF NOT EXISTS t1_episodes (
+        episode_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        start_turn INTEGER NOT NULL,
+        end_turn INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'open',
+        started_at INTEGER,
+        ended_at INTEGER,
+        goal_id TEXT,
+        boundary_source TEXT NOT NULL,
+        boundary_reason TEXT,
+        confidence REAL NOT NULL DEFAULT 0,
+        intent TEXT,
+        outcome TEXT,
+        actors_json TEXT,
+        concept_ids_json TEXT,
+        source_trace_ids_json TEXT,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+      CREATE INDEX IF NOT EXISTS idx_t1_episodes_session
+        ON t1_episodes(session_id, start_turn);
+      CREATE INDEX IF NOT EXISTS idx_t1_episodes_time
+        ON t1_episodes(started_at);
+      CREATE INDEX IF NOT EXISTS idx_t1_episodes_status
+        ON t1_episodes(status, ended_at);
+
+      CREATE TABLE IF NOT EXISTS t1_episode_members (
+        episode_id TEXT NOT NULL,
+        trace_id TEXT NOT NULL,
+        turn_seq INTEGER NOT NULL,
+        PRIMARY KEY (episode_id, trace_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_t1_episode_members_trace
+        ON t1_episode_members(trace_id);
 
       -- Lexical derivative of T1 (rebuildable): trigram tokenizer supports
       -- identifier/path/error-code substring matching that dense retrieval
@@ -2354,6 +2422,229 @@ export class GatewayDatabase {
       toolName: row.tool_name ?? undefined,
       agent: row.agent ?? undefined,
     }));
+  }
+
+  // ── T1 episodes (derived index) ─────────────────────────────────────────
+
+  recordEpisodeBoundary(boundary: T1EpisodeBoundary): void {
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO t1_episode_boundaries
+           (session_id, after_turn, source, reason, intent, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        boundary.sessionId,
+        Math.max(0, Math.trunc(boundary.afterTurn)),
+        boundary.source,
+        boundary.reason ?? null,
+        boundary.intent ?? null,
+        Math.trunc(boundary.createdAt),
+      );
+  }
+
+  listEpisodeBoundaries(sessionId: string): T1EpisodeBoundary[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM t1_episode_boundaries
+          WHERE session_id = ?
+          ORDER BY after_turn, id`,
+      )
+      .all(String(sessionId || '')) as any[];
+    return rows.map((row) => ({
+      sessionId: row.session_id,
+      afterTurn: Number(row.after_turn),
+      source: row.source,
+      reason: row.reason ?? undefined,
+      intent: row.intent ?? undefined,
+      createdAt: Number(row.created_at),
+    }));
+  }
+
+  /** Queue a boundary for the next user turn (`/new-episode`). */
+  setPendingEpisodeBoundary(
+    sessionId: string,
+    payload: { reason?: string; intent?: string; createdAt: number },
+  ): void {
+    this.kvSet('episode-boundary-pending', sessionId, payload);
+  }
+
+  /**
+   * Consume a queued boundary when the next user turn is captured. The edge is
+   * `newTurnSeq - 1`, so the new turn starts the episode regardless of capture
+   * timing. A second call returns null.
+   */
+  consumePendingEpisodeBoundary(
+    sessionId: string,
+    newTurnSeq: number,
+  ): T1EpisodeBoundary | null {
+    const pending = this.kvGet<{ reason?: string; intent?: string; createdAt: number }>(
+      'episode-boundary-pending',
+      sessionId,
+    );
+    if (!pending) return null;
+    this.kvDelete('episode-boundary-pending', sessionId);
+    const afterTurn = Math.trunc(newTurnSeq) - 1;
+    if (!Number.isFinite(afterTurn) || afterTurn < 0) return null;
+    const boundary: T1EpisodeBoundary = {
+      sessionId,
+      afterTurn,
+      source: 'user',
+      reason: (pending.reason as T1EpisodeBoundary['reason']) ?? 'user_declared',
+      intent: pending.intent,
+      createdAt: pending.createdAt ?? Math.floor(Date.now() / 1000),
+    };
+    this.recordEpisodeBoundary(boundary);
+    return boundary;
+  }
+
+  /** Replace all derived episodes/members for one session in a transaction. */
+  replaceSessionEpisodes(
+    sessionId: string,
+    episodes: T1EpisodeRecord[],
+    members: T1EpisodeMember[],
+  ): void {
+    const txn = this.db.transaction(() => {
+      this.db
+        .prepare(
+          `DELETE FROM t1_episode_members
+            WHERE episode_id IN (SELECT episode_id FROM t1_episodes WHERE session_id = ?)`,
+        )
+        .run(sessionId);
+      this.db.prepare('DELETE FROM t1_episodes WHERE session_id = ?').run(sessionId);
+
+      const insertEpisode = this.db.prepare(
+        `INSERT INTO t1_episodes
+           (episode_id, session_id, start_turn, end_turn, status, started_at,
+            ended_at, goal_id, boundary_source, boundary_reason, confidence,
+            intent, outcome, actors_json, concept_ids_json, source_trace_ids_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      for (const episode of episodes) {
+        insertEpisode.run(
+          episode.episodeId,
+          episode.sessionId,
+          episode.startTurn,
+          episode.endTurn,
+          episode.status,
+          episode.startedAt,
+          episode.endedAt,
+          episode.goalId ?? null,
+          episode.boundarySource,
+          episode.boundaryReason,
+          episode.confidence,
+          episode.intent ?? null,
+          episode.outcome ?? null,
+          JSON.stringify(episode.actors ?? []),
+          JSON.stringify(episode.conceptIds ?? []),
+          JSON.stringify(episode.sourceTraceIds ?? []),
+        );
+      }
+
+      const insertMember = this.db.prepare(
+        `INSERT OR REPLACE INTO t1_episode_members (episode_id, trace_id, turn_seq)
+         VALUES (?, ?, ?)`,
+      );
+      for (const member of members) {
+        insertMember.run(member.episodeId, member.traceId, member.turnSeq);
+      }
+    });
+    txn();
+  }
+
+  getEpisode(episodeId: string): T1EpisodeRecord | null {
+    const row = this.db
+      .prepare('SELECT * FROM t1_episodes WHERE episode_id = ?')
+      .get(String(episodeId || '')) as any;
+    return row ? this.episodeFromRow(row) : null;
+  }
+
+  listEpisodes(opts: {
+    sessionId?: string;
+    limit: number;
+    cursor?: string;
+    since?: number;
+  }): { episodes: T1EpisodeRecord[]; nextCursor?: string } {
+    const limit = Math.max(0, Math.trunc(opts.limit));
+    if (limit === 0) return { episodes: [] };
+    const where: string[] = [];
+    const params: any[] = [];
+    if (opts.sessionId) {
+      where.push('session_id = ?');
+      params.push(opts.sessionId);
+    }
+    if (Number.isFinite(opts.since)) {
+      where.push('COALESCE(started_at, 0) >= ?');
+      params.push(Number(opts.since));
+    }
+    if (opts.cursor) {
+      const separator = opts.cursor.indexOf('|');
+      const started = Number(opts.cursor.slice(0, separator));
+      const episodeId = separator >= 0 ? opts.cursor.slice(separator + 1) : '';
+      if (Number.isFinite(started) && episodeId) {
+        where.push(
+          '(COALESCE(started_at, 0) < ? OR (COALESCE(started_at, 0) = ? AND episode_id < ?))',
+        );
+        params.push(started, started, episodeId);
+      }
+    }
+    const sql = `SELECT * FROM t1_episodes
+      ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+      ORDER BY COALESCE(started_at, 0) DESC, episode_id DESC
+      LIMIT ?`;
+    const rows = this.db.prepare(sql).all(...params, limit + 1) as any[];
+    const page = rows.slice(0, limit).map((row) => this.episodeFromRow(row));
+    if (rows.length <= limit || page.length === 0) return { episodes: page };
+    const last = page[page.length - 1];
+    return {
+      episodes: page,
+      nextCursor: `${last.startedAt ?? 0}|${last.episodeId}`,
+    };
+  }
+
+  listEpisodeMembers(episodeId: string): T1EpisodeMember[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM t1_episode_members
+          WHERE episode_id = ?
+          ORDER BY turn_seq`,
+      )
+      .all(String(episodeId || '')) as any[];
+    return rows.map((row) => ({
+      episodeId: row.episode_id,
+      traceId: row.trace_id,
+      turnSeq: Number(row.turn_seq),
+    }));
+  }
+
+  findEpisodeByTrace(traceId: string): string | null {
+    const row = this.db
+      .prepare('SELECT episode_id FROM t1_episode_members WHERE trace_id = ? LIMIT 1')
+      .get(String(traceId || '')) as { episode_id?: string } | undefined;
+    return row?.episode_id ?? null;
+  }
+
+  private episodeFromRow(row: any): T1EpisodeRecord {
+    return {
+      episodeId: row.episode_id,
+      sessionId: row.session_id,
+      startTurn: Number(row.start_turn),
+      endTurn: Number(row.end_turn),
+      status: row.status === 'closed' ? 'closed' : 'open',
+      startedAt: row.started_at == null ? null : Number(row.started_at),
+      endedAt: row.ended_at == null ? null : Number(row.ended_at),
+      goalId: row.goal_id ?? undefined,
+      boundarySource: row.boundary_source,
+      boundaryReason: row.boundary_reason,
+      confidence: Number(row.confidence ?? 0),
+      intent: row.intent ?? undefined,
+      outcome: row.outcome ?? undefined,
+      actors: parseJsonArray<{ actorId: string; role: string; weight: number }>(
+        row.actors_json,
+      ),
+      conceptIds: parseJsonStringArray(row.concept_ids_json),
+      sourceTraceIds: parseJsonStringArray(row.source_trace_ids_json),
+    };
   }
 
   /** Concept-channel lookup: query aliases → turns carrying those concepts. */
