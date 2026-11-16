@@ -187,13 +187,47 @@ async function adaptToolExecute(
   };
   const result = await def.execute(input, toolCtx);
   if (result == null) return { content: '' };
-  if (typeof result === 'string') return { content: result };
-  const content = result.content ?? result.output ?? result.text ?? JSON.stringify(result);
+  const content = toolResultText(result);
   return {
     content,
     ...(result.metadata ? { metadata: result.metadata } : {}),
     ...(result.isError ? { isError: true } : {}),
   };
+}
+
+function partText(part: any): string {
+  if (part == null) return '';
+  if (typeof part === 'string') return part;
+  if (typeof part.text === 'string') return part.text;
+  if (typeof part.content === 'string') return part.content;
+  try {
+    return JSON.stringify(part);
+  } catch {
+    return String(part);
+  }
+}
+
+/**
+ * OpenCode tool results may carry `content` as an array of parts. Joining that
+ * array with String() produced "[object Object]" observations, which then
+ * polluted every text-derived signal (E2 audit).
+ */
+export function toolResultText(result: any): string {
+  if (result == null) return '';
+  if (typeof result === 'string') return result;
+  if (Array.isArray(result)) {
+    return result.map(partText).filter((part) => part.length > 0).join('\n');
+  }
+  if (typeof result === 'object') {
+    const content = result.content ?? result.output ?? result.text;
+    if (content != null) return toolResultText(content);
+    try {
+      return JSON.stringify(result);
+    } catch {
+      return String(result);
+    }
+  }
+  return String(result);
 }
 
 export default {
@@ -326,11 +360,9 @@ export default {
           return;
         }
         const result = event?.result;
-        const text = typeof result === 'string'
-          ? result
-          : result?.content ?? result?.output
-            ?? (result && Object.keys(result).length > 0 ? JSON.stringify(result) : '');
-        void pushObservation(sessionID, 'tool_result', String(text));
+        const text = toolResultText(result);
+        if (!text) return;
+        void pushObservation(sessionID, 'tool_result', text);
       } catch { /* fail-open */ }
     });
 

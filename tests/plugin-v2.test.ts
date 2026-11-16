@@ -641,8 +641,28 @@ describe('tool execute.after hook', () => {
     expect(obs?.body).toMatchObject({ sessionID: 'ses_ta', source: 'tool_result', content: 'file body' });
   });
 
-  it('captures failed tool executions with failure=true', async () => {
+  it('captures structured content parts instead of [object Object]', async () => {
     const dir = mkdtempDir();
+    const { fetchMock, calls } = makeFetch([]);
+    global.fetch = fetchMock as any;
+    const { ctx, regs } = makeCtx(dir);
+    await (mafwPlugin as any).setup(ctx);
+    await regs.toolHooks['execute.after']({
+      tool: 'read',
+      sessionID: 'ses_tc',
+      status: 'completed',
+      result: {
+        content: [
+          { type: 'text', text: 'line one' },
+          { type: 'text', text: 'line two' },
+        ],
+      },
+    });
+    const obs = calls.find((c) => c.url.includes('/api/obs/capture'));
+    expect(obs?.body?.content).toBe('line one\nline two');
+  });
+
+  it('captures failed tool executions with failure=true', async () => {    const dir = mkdtempDir();
     const { fetchMock, calls } = makeFetch([]);
     global.fetch = fetchMock as any;
     const { ctx, regs } = makeCtx(dir);
