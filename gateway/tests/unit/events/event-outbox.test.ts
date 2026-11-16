@@ -40,4 +40,16 @@ describe('EventOutbox', () => {
     expect(second.id).toBe(first.id);
     expect(outbox.markSent(first.id).state).toBe('sent');
   });
+
+  test('markSent clears the previous failure state', () => {
+    const db = new Database(':memory:');
+    const store = new EventStore(db);
+    const outbox = new EventOutbox({ store, now: () => '2026-11-10T00:00:00.000Z' });
+    const row = outbox.enqueue({ channelId: 'ch1', dedupeKey: 'retry', payload: { body: 'hi' } });
+    const failed = outbox.markFailed(row.id, 'offline');
+    expect(failed.nextRetryAt).toBeTruthy();
+
+    const sent = outbox.markSent(row.id);
+    expect(sent).toMatchObject({ state: 'sent', lastError: null, nextRetryAt: null });
+  });
 });

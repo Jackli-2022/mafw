@@ -134,42 +134,60 @@ export class LeadOutbox {
       }
 
       for (const [channelId, rows] of byChannel) {
-        const recent = (this.batchTimes.get(channelId) ?? []).filter((time) => time > now - BUDGET_WINDOW_MS);
-        this.batchTimes.set(channelId, recent);
-        const lastSentAt = recent.length > 0 ? recent[recent.length - 1] : null;
-
-        const selection = selectLeadOutboxBatch({
-          rows,
-          now,
-          policy: this.policy,
-          sentBatchesLastHour: recent.length,
-          lastSentAt,
-        });
-        if (selection.reason === 'empty') continue;
-        if (selection.reason === 'budget' || selection.reason === 'interval') {
-          result.deferred += rows.length;
-          continue;
-        }
-
-        const batch = selection.rows;
-        const podId = leadOutboxPayload(batch[0])!.podId;
-        const text = renderLeadOutboxBatch(batch);
-        if (!text) {
-          this.failRows(batch, 'empty lead outbox message');
-          result.failed += batch.length;
-          continue;
-        }
-
         try {
-          const lead = await this.deps.ensureLead(podId);
-          await this.deps.promptAsync({ sessionID: lead.sessionId, text });
-          for (const row of batch) this.deps.outbox.markSent(row.id);
+          const recent = (this.batchTimes.get(channelId) ?? []).filter((time) => time > now - BUDGET_WINDOW_MS);
+          this.batchTimes.set(channelId, recent);
+          const lastSentAt = recent.length > 0 ? recent[recent.length - 1] : null;
+
+          const selection = selectLeadOutboxBatch({
+            rows,
+            now,
+            policy: this.policy,
+            sentBatchesLastHour: recent.length,
+            lastSentAt,
+          });
+          if (selection.reason === 'empty') continue;
+          if (selection.reason === 'budget' || selection.reason === 'interval') {
+            result.deferred += rows.length;
+            continue;
+          }
+
+          const batch = selection.rows;
+          const podId = leadOutboxPayload(batch[0])!.podId;
+          const text = renderLeadOutboxBatch(batch);
+          if (!text) {
+            result.failed += this.failRows(batch, 'empty lead outbox message');
+            continue;
+          }
+
+          try {
+            const lead = await this.deps.ensureLead(podId);
+            await this.deps.promptAsync({ sessionID: lead.sessionId, text });
+          } catch (error) {
+            result.failed += this.failRows(batch, errorMessage(error));
+            this.log(`lead outbox send failed for ${channelId}: ${errorMessage(error)}`);
+            continue;
+          }
+
+          // prompt 已经送达：即使下面的 DB 标记失败，也计入预算，避免 60s 内重发。
           recent.push(now);
-          result.sent += batch.length;
+          const sentIds: string[] = [];
+          try {
+            for (const row of batch) {
+              this.deps.outbox.markSent(row.id);
+              sentIds.push(row.id);
+            }
+            result.sent += batch.length;
+          } catch (error) {
+            // markSent 部分失败：已 sent 的行保持 sent，只把剩余行按失败重试。
+            const remaining = batch.filter((row) => !sentIds.includes(row.id));
+            result.sent += sentIds.length;
+            result.failed += this.failRows(remaining, errorMessage(error));
+            this.log(`lead outbox mark sent failed for ${channelId}: ${errorMessage(error)}`);
+          }
         } catch (error) {
-          this.failRows(batch, errorMessage(error));
-          result.failed += batch.length;
-          this.log(`lead outbox send failed for ${channelId}: ${errorMessage(error)}`);
+          // failRows 自身也可能失败（行被删 / DB 关闭）；不能让它拖垮其他 channel。
+          this.log(`lead outbox channel ${channelId} dispatch failed: ${errorMessage(error)}`);
         }
       }
 
@@ -179,8 +197,8 @@ export class LeadOutbox {
     }
   }
 
-  status(): { pending: number; sent: number; failed: number } {
-    const count = (state: 'pending' | 'sent' | 'failed'): number =>
+  status(): { pending: number; sent: number; failed: number; dropped: number } {
+    const count = (state: 'pending' | 'sent' | 'failed' | 'dropped'): number =>
       this.deps.store.listOutbox(state)
         .filter((row) => row.channelId.startsWith(LEAD_CHANNEL_PREFIX))
         .length;
@@ -188,11 +206,23 @@ export class LeadOutbox {
       pending: count('pending'),
       sent: count('sent'),
       failed: count('failed'),
+      dropped: count('dropped'),
     };
   }
 
-  private failRows(rows: EventOutboxRow[], error: string): void {
-    for (const row of rows) this.deps.outbox.markFailed(row.id, error);
+  private failRows(rows: EventOutboxRow[], error: string): number {
+    let failed = 0;
+    for (const row of rows) {
+      try {
+        const current = this.deps.store.getOutbox(row.id);
+        if (!current || current.state === 'sent' || current.state === 'dropped') continue;
+        this.deps.outbox.markFailed(row.id, error);
+        failed += 1;
+      } catch (markError) {
+        this.log(`lead outbox mark failed failed for ${row.id}: ${errorMessage(markError)}`);
+      }
+    }
+    return failed;
   }
 
   private log(message: string): void {

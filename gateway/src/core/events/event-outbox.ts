@@ -29,6 +29,8 @@ export class EventOutbox {
   markSent(id: string): EventOutboxRow {
     return this.deps.store.updateOutbox(id, {
       state: 'sent',
+      lastError: null,
+      nextRetryAt: null,
       updatedAt: this.deps.now(),
     });
   }

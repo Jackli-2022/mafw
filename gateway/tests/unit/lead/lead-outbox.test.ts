@@ -53,6 +53,43 @@ test('a failed prompt marks every row failed and retryable', async () => {
   expect(h.store.listOutbox()[0].nextRetryAt).toBeTruthy();
 });
 
+test('a partial markSent failure keeps earlier rows sent', async () => {
+  const h = harness();
+  h.lead.enqueueDecision({ podId: 'pod1', recordId: 'rec1', text: '[LEAD EVENT] one' });
+  h.lead.enqueueDecision({ podId: 'pod1', recordId: 'rec2', text: '[LEAD EVENT] two' });
+  const [first, second] = [...h.store.listOutbox()].sort((a, b) => a.id.localeCompare(b.id));
+  const realUpdate = h.store.updateOutbox.bind(h.store);
+  jest.spyOn(h.store, 'updateOutbox').mockImplementation((id, patch) => {
+    if (id === second.id && patch.state === 'sent') throw new Error('disk full');
+    return realUpdate(id, patch);
+  });
+
+  const result = await h.lead.dispatch();
+
+  expect(result).toEqual({ sent: 1, deferred: 0, failed: 1 });
+  expect(h.store.getOutbox(first.id)?.state).toBe('sent');
+  expect(h.store.getOutbox(second.id)?.state).toBe('failed');
+});
+
+test('a row that cannot be marked failed does not block other channels', async () => {
+  const h = harness();
+  h.lead.enqueueDecision({ podId: 'pod1', recordId: 'rec1', text: '[LEAD EVENT] one' });
+  h.lead.enqueueDecision({ podId: 'pod2', recordId: 'rec2', text: '[LEAD EVENT] two' });
+  const poisoned = h.store.listOutbox().find((row) => row.channelId === 'lead:pod1')!;
+  const realUpdate = h.store.updateOutbox.bind(h.store);
+  jest.spyOn(h.store, 'updateOutbox').mockImplementation((id, patch) => {
+    if (id === poisoned.id) throw new Error('row locked');
+    return realUpdate(id, patch);
+  });
+
+  const result = await h.lead.dispatch();
+
+  expect(h.promptAsync).toHaveBeenCalledTimes(2);
+  expect(h.store.getOutboxByKey('lead:pod2', 'decision:rec2')).toMatchObject({ state: 'sent' });
+  expect(h.store.getOutbox(poisoned.id)?.state).toBe('pending');
+  expect(result.sent).toBe(1);
+});
+
 test('budget defers the channel without dropping its rows', async () => {
   const h = harness({ maxPerHour: 1, minIntervalMs: 0 });
   h.lead.enqueueDecision({ podId: 'pod1', recordId: 'rec1', text: '[LEAD EVENT] one' });
@@ -113,6 +150,14 @@ test('dispatch skips rows owned by non-Lead channels', async () => {
   expect(h.promptAsync).not.toHaveBeenCalled();
 });
 
+test('status counts every Lead row state, including dropped', () => {
+  const h = harness();
+  h.lead.enqueueDecision({ podId: 'pod1', recordId: 'rec1', text: '[LEAD EVENT] one' });
+  const row = h.store.listOutbox()[0];
+  h.store.updateOutbox(row.id, { state: 'dropped', updatedAt: NOW });
+  expect(h.lead.status()).toEqual({ pending: 0, sent: 0, failed: 0, dropped: 1 });
+});
+
 test('start is idempotent and stop clears the timer', () => {
   const h = harness();
   h.lead.start();
@@ -120,5 +165,5 @@ test('start is idempotent and stop clears the timer', () => {
   expect(h.timers.every).toHaveBeenCalledTimes(1);
   expect(h.timers.every.mock.calls[0][0]).toBe('lead:outbox');
   h.lead.stop();
-  expect(h.lead.status()).toEqual({ pending: 0, sent: 0, failed: 0 });
+  expect(h.lead.status()).toEqual({ pending: 0, sent: 0, failed: 0, dropped: 0 });
 });
