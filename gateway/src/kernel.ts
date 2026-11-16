@@ -4081,24 +4081,16 @@ class MafwScheduler {
     // E8-1: 两个长驻 interval 收进 TimerService（pod:event-prune / pod:event-wake）。
     this.podEventWake = new PodEventWake({
       events: this.podEventService,
-      leadMemberId: (podId) => this.podStore?.getMemberByRole(podId, 'lead')?.id ?? null,
-      ensureLead: async (podId) => ({
-        sessionId: (await this.podService!.ensureLead(podId)).sessionId,
-      }),
-      isBusy: (sessionId) => this.busySessions.has(sessionId),
-      isSuspended: (sessionId) => this.runStateService?.active(sessionId)?.status === 'suspended',
-      isPodPaused: (podId) => this.podStore?.getPod(podId)?.status === 'paused',
-      promptAsync: async (input) => {
-        await this.runtime!.session.promptAsync({
-          sessionID: input.sessionID,
-          parts: [{ type: 'text', text: input.message }],
-        });
+      // The Lead outbox is constructed later in initServices; read it lazily so
+      // the wake relay can start before the outbox without capturing undefined.
+      enqueue: async ({ podId, eventId, goalId, text, priority }) => {
+        const outbox = this.leadOutbox;
+        if (!outbox) throw new Error('lead outbox unavailable');
+        return outbox.enqueuePodEvent({ podId, eventId, goalId, text, priority });
       },
-      deliveryDelivered: (messageId, memberId) => this.podStore?.hasDelivery(messageId, memberId) ?? false,
-      commitDelivered: (ids, sessionId) => this.podMessageDelivery?.commitDelivered(ids, sessionId),
+      isPodPaused: (podId) => this.podStore?.getPod(podId)?.status === 'paused',
       // B2: coalesce scans via the unified scheduler — the 60s timer scan and a
-      // p2-notify scan landing together join the in-flight one (no double delivery).
-      // No task id: the scheduler's auto-id (task_<seq>) is collision-free.
+      // p2-notify scan landing together join the in-flight one.
       runScan: (fn) => this.scheduler.submit(
         { priority: 'midground', mutexKey: 'pod-event-wake', strategy: 'coalesce' },
         fn,

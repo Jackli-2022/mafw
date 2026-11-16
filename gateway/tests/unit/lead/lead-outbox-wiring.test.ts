@@ -12,6 +12,17 @@ test('decision context delivery enqueues into the Lead outbox', () => {
   expect(block).not.toMatch(/promptAsync/);
 });
 
+test('PodEventWake enqueues into the Lead outbox and never prompts directly', () => {
+  const start = kernel.indexOf('new PodEventWake(');
+  expect(start).toBeGreaterThanOrEqual(0);
+  const end = kernel.indexOf('startPodEventTimers', start);
+  expect(end).toBeGreaterThan(start);
+  const block = kernel.slice(start, end);
+  expect(block).toMatch(/enqueuePodEvent/);
+  expect(block).toMatch(/isPodPaused/);
+  expect(block).not.toMatch(/promptAsync/);
+});
+
 test('kernel constructs and starts/stops the Lead outbox', () => {
   expect(kernel).toMatch(/new LeadOutbox\(/);
   expect(kernel).toMatch(/leadOutbox\.start\(\)/);

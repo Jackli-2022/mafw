@@ -95,6 +95,14 @@ export class PodEventService {
     });
   }
 
+  markWakeQueued(id: string, outboxId: string): void {
+    this.deps.store.updateEventWake(id, {
+      wakeState: 'delivered',
+      wakeAt: this.now(),
+      wakeSessionId: `outbox:${outboxId}`,
+    });
+  }
+
   markWakeSuppressed(id: string): void {
     this.deps.store.updateEventWake(id, { wakeState: 'suppressed' });
   }

@@ -1,7 +1,7 @@
 // gateway/tests/unit/pod/pod-event-wake.test.ts
-// Lead wake: budget, dedupe, pause/suspend gates, real merge, and the
-// "already delivered by A2A" shortcut that prevents double injection.
-import { PodEventWake } from '../../../src/core/pod/pod-event-wake';
+// Pod event relay: every pending wake becomes one durable Lead outbox row.
+// Pacing/batching/Lead delivery live in LeadOutbox, not here.
+import { PodEventWake, renderPodEvent } from '../../../src/core/pod/pod-event-wake';
 
 const ev = (over: any = {}) => ({
   id: 'e1', podId: 'p', goalId: 'g1', kind: 'member.escalation', title: 'blocked',
@@ -9,104 +9,61 @@ const ev = (over: any = {}) => ({
 });
 
 function harness(over: Partial<any> = {}) {
-  const prompts: any[] = [];
-  const suppressed: string[] = [];
-  const delivered: string[] = [];
-  const committed: string[][] = [];
-  const led = new Set<string>();
+  const enqueued: any[] = [];
+  const queued: Array<[string, string]> = [];
   const wake = new PodEventWake({
     events: {
       pendingWakes: () => over.pending ?? [ev()],
-      markWakeDelivered: (id: string) => { delivered.push(id); },
-      markWakeSuppressed: (id: string) => { suppressed.push(id); },
+      markWakeQueued: (id: string, outboxId: string) => { queued.push([id, outboxId]); },
+      markWakeSuppressed: () => {},
       markWakeAttempt: () => {},
     } as any,
-    leadMemberId: () => 'lead',
-    ensureLead: async (podId: string) => {
-      if (!led.has(podId)) led.add(podId);
-      return { sessionId: 'ses_lead' };
-    },
-    isBusy: () => over.busy ?? false,
-    isSuspended: () => over.suspended ?? false,
+    enqueue: over.enqueue ?? (async (input: any) => {
+      enqueued.push(input);
+      return { id: `outbox_${enqueued.length}` };
+    }),
     isPodPaused: () => over.paused ?? false,
-    promptAsync: async (i: any) => { prompts.push(i); },
-    deliveryDelivered: () => over.alreadyDelivered ?? false,
-    commitDelivered: (ids: string[]) => { committed.push(ids); },
     now: () => over.now ?? 1_000_000,
-    budget: { perHour: 6, dedupeMs: 600_000 },
     runScan: over.runScan,
   });
-  return { wake, prompts, suppressed, delivered, committed };
+  return { wake, enqueued, queued };
 }
 
-it('merges every pending event into one prompt', async () => {
-  const h = harness({ pending: [ev({ id: 'e1', title: 'a' }), ev({ id: 'e2', title: 'b' })] });
+test('enqueues every pending event and marks it queued', async () => {
+  const h = harness({ pending: [ev({ id: 'e1' }), ev({ id: 'e2', title: 'other' })] });
   const out = await h.wake.scan('p');
-  expect(h.prompts).toHaveLength(1);
-  expect(h.prompts[0].message).toContain('2 条待处理');
+  expect(h.enqueued.map((item) => item.eventId)).toEqual(['e1', 'e2']);
+  expect(h.enqueued[0].text).toContain('[POD EVENT]');
+  expect(h.enqueued[0].text).toContain('title: blocked');
+  expect(h.queued).toEqual([['e1', 'outbox_1'], ['e2', 'outbox_2']]);
   expect(out.delivered).toBe(2);
-  expect(h.delivered).toEqual(['e1', 'e2']);
 });
 
-it('skips injection when the message was already delivered (A2A won)', async () => {
-  const h = harness({ alreadyDelivered: true, pending: [ev({ refsJson: JSON.stringify([{ kind: 'message', id: 'm1' }]) })] });
+test('maps pod severity to outbox priority', async () => {
+  const h = harness({ pending: [ev({ severity: 'p1' }), ev({ id: 'e2', severity: 'p3' })] });
   await h.wake.scan('p');
-  expect(h.prompts).toHaveLength(0);
-  expect(h.delivered).toEqual(['e1']);
+  expect(h.enqueued.map((item) => item.priority)).toEqual(['p1', 'p3']);
 });
 
-it('stays pending while paused, suspended or busy', async () => {
-  for (const flag of ['paused', 'suspended', 'busy'] as const) {
-    const h = harness({ [flag]: true } as any);
-    await h.wake.scan('p');
-    expect(h.prompts).toHaveLength(0);
-    expect(h.delivered).toHaveLength(0);
-  }
+test('paused pod leaves events pending', async () => {
+  const h = harness({ paused: true });
+  await h.wake.scan('p');
+  expect(h.enqueued).toHaveLength(0);
+  expect(h.queued).toHaveLength(0);
 });
 
-it('suppresses only after repeated budget rejections', async () => {
-  const h = harness({ pending: Array.from({ length: 8 }, (_, i) => ev({ id: `e${i}` })) });
-  const out = await h.wake.scan('p');
-  expect(out.delivered).toBe(6);
-  expect(out.suppressed).toBe(0); // stays pending; attempts bumped instead
-});
-
-it('gives up after three budget rejections', async () => {
+test('enqueue failure leaves the event pending', async () => {
   const h = harness({
-    pending: Array.from({ length: 7 }, (_, i) => ev({ id: `e${i}`, wakeAttempts: i === 6 ? 2 : 0 })),
+    pending: [ev({ id: 'e1' })],
+    enqueue: async () => { throw new Error('offline'); },
   });
-  const out = await h.wake.scan('p');
-  expect(out.delivered).toBe(6);
-  expect(out.suppressed).toBe(1);
-});
-
-it('different escalations do not collapse into one dedupe key', async () => {
-  const h = harness({ pending: [ev({ id: 'e1' }), ev({ id: 'e2', kind: 'member.request' })] });
   await h.wake.scan('p');
-  const lines = h.prompts[0].message as string;
-  expect(lines).toContain('2 条待处理');
+  expect(h.enqueued).toHaveLength(0);
+  expect(h.queued).toHaveLength(0);
 });
 
-it('dedupes the same goal+kind inside the window', async () => {
-  const h = harness({ pending: [ev({ id: 'e1' }), ev({ id: 'e2' })] });
-  await h.wake.scan('p');
-  expect(h.prompts).toHaveLength(1);
-  const second = await h.wake.scan('p');
-  expect(second.delivered).toBe(0);
-});
-
-it('a fresh instance still sees pending wakes (restart recovery)', async () => {
-  const first = harness({ pending: [] as any });
-  await first.wake.scan('p');
-  const second = harness({ pending: [ev()] });
-  await second.wake.scan('p');
-  expect(second.prompts).toHaveLength(1);
-  expect(second.delivered).toEqual(['e1']);
-});
-
-it('coalesces concurrent scans through the injected runScan (B2 Task 3)', async () => {
+test('coalesces concurrent scans through the injected runScan', async () => {
   let scanFnRuns = 0;
-  // promise-caching single-flight — what the scheduler's coalesce strategy provides
   let inflight: Promise<any> | null = null;
   const runScan = (fn: () => Promise<any>) => {
     if (!inflight) {
@@ -119,18 +76,30 @@ it('coalesces concurrent scans through the injected runScan (B2 Task 3)', async 
     pending: [ev({ id: 'e1' }), ev({ id: 'e2' })],
     runScan: runScan as any,
   });
-  // Both scans submitted synchronously — the second joins before the first settles.
   const p1 = h.wake.scan('p');
-  const p2 = h.wake.scan(); // notify-style all-pods scan while the first is in flight
+  const p2 = h.wake.scan();
   const [r1, r2] = await Promise.all([p1, p2]);
-  expect(scanFnRuns).toBe(1);            // underlying scan ran once
-  expect(r1).toEqual(r2);                // both callers share the result
-  expect(h.prompts).toHaveLength(1);     // no double injection
-  expect(h.delivered).toEqual(['e1', 'e2']);
+  expect(scanFnRuns).toBe(1);
+  expect(r1).toEqual(r2);
+  expect(h.enqueued).toHaveLength(2);
+  expect(h.queued).toEqual([['e1', 'outbox_1'], ['e2', 'outbox_2']]);
 });
 
-it('scan without runScan dep still runs directly (back-compat)', async () => {
+test('scan without runScan still runs directly', async () => {
   const h = harness({ pending: [ev()] });
   const out = await h.wake.scan('p');
   expect(out.delivered).toBe(1);
+});
+
+test('renderPodEvent includes goal, kind, title, summary and message ref', () => {
+  const text = renderPodEvent(ev({
+    title: 'blocked',
+    summary: 'needs review',
+    refsJson: JSON.stringify([{ kind: 'message', id: 'm1' }]),
+  }) as any);
+  expect(text).toContain('[POD EVENT]');
+  expect(text).toContain('goal=g1 kind=member.escalation');
+  expect(text).toContain('title: blocked');
+  expect(text).toContain('summary: needs review');
+  expect(text).toContain('message: m1');
 });
