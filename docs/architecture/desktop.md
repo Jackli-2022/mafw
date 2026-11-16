@@ -159,6 +159,8 @@
   可见时，从编辑器 morph 回原行；深层历史或行已滚出视口则走普通返回。
 - **业界对照与升级建议（2026-11-16）**：`docs/research/2026-11-16-desktop-premium-ui-motion-research.md`
   （Hermes / OpenCode / Linear / Carbon / Material 3 的视觉与动效基准，以及 MAFW 的减法/编排优先级）。
+- **批注交互调研（2026-11-16）**：`docs/research/2026-11-16-desktop-annotation-ux-research.md`
+  （Google Docs / Figma / GitHub 的 anchored comment 模式、MAFW 现状审计与 P0/P1 切片）。
 - **Precision Instrument 局部落地（2026-11-16）**：topstrip 非活动 session tab 不再显示身份点，
   活动 tab 改为 `--bg-raised` + accent 下划线；Goal 详情 hero / section / 技术结果不再层层套卡片，
   区块只用一条 hairline 分隔；失败提示改为中性底 + 2px danger 左轨；右 dock 的 Goal inline
