@@ -758,6 +758,7 @@ describe('PluginHost kernel-v2 entries', () => {
 
 describe('PluginHost contributes enforcement', () => {
   let dir: string;
+  let host: PluginHost | undefined;
 
   function writeDirPackage(manifest: Record<string, unknown>, body: string): void {
     const root = path.join(dir, String(manifest.name));
@@ -767,16 +768,19 @@ describe('PluginHost contributes enforcement', () => {
   }
 
   beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-contributes-')); });
-  afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
+  afterEach(() => {
+    host?.stop();
+    host = undefined;
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
 
   it('activates a v1 package that declares no contributes', async () => {
     writeDirPackage({ name: 'legacy' }, `
 module.exports = { name: 'legacy', async activate() { return { actions: { any: { handler: () => null } } }; } };
 `);
-    const host = mkHost(dir);
+    host = mkHost(dir);
     await host.init();
     expect(host.getState()[0]).toMatchObject({ status: 'ok' });
-    host.stop();
   });
 
   it('rejects http routes when contributes.gateway.http is false', async () => {
@@ -786,12 +790,11 @@ module.exports = { name: 'noroute', async activate(ctx) {
   return { actions: { ping: { handler: () => null } } };
 } };
 `);
-    const host = mkHost(dir);
+    host = mkHost(dir);
     await host.init();
     const state = host.getState().find((entry) => entry.name === 'noroute');
     expect(state).toMatchObject({ status: 'error' });
     expect(state?.error).toContain('http routes are not declared');
-    host.stop();
   });
 
   it('accepts http routes when contributes.gateway.http is true', async () => {
@@ -801,9 +804,32 @@ module.exports = { name: 'routed', async activate(ctx) {
   return { actions: { ping: { handler: () => null } } };
 } };
 `);
-    const host = mkHost(dir);
+    host = mkHost(dir);
     await host.init();
     expect(host.getState().find((entry) => entry.name === 'routed')).toMatchObject({ status: 'ok' });
-    host.stop();
+  });
+
+  it('activates when http is disabled and no routes are registered', async () => {
+    writeDirPackage({ name: 'quiet', apiVersion: 2, contributes: { gateway: { http: false } } }, `
+module.exports = { name: 'quiet', async activate() {
+  return { actions: { ping: { handler: () => null } } };
+} };
+`);
+    host = mkHost(dir);
+    await host.init();
+    expect(host.getState().find((entry) => entry.name === 'quiet')).toMatchObject({ status: 'ok' });
+  });
+
+  it('rejects a trusted action that the manifest does not declare', async () => {
+    writeDirPackage({ name: 'bound', apiVersion: 2, contributes: { gateway: { actions: ['ping'] } } }, `
+module.exports = { name: 'bound', async activate() {
+  return { actions: { pong: { handler: () => null } } };
+} };
+`);
+    host = mkHost(dir);
+    await host.init();
+    const state = host.getState().find((entry) => entry.name === 'bound');
+    expect(state).toMatchObject({ status: 'error' });
+    expect(state?.error).toContain('action "pong" is not declared');
   });
 });

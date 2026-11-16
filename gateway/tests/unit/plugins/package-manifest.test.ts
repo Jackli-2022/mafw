@@ -90,4 +90,13 @@ describe('package manifest v2', () => {
     expect(result.manifest?.contributes).toBeUndefined();
     expect(result.warnings.some((w) => w.includes('legacy-contributes'))).toBe(true);
   });
+
+  it('stores a valid contributes block at apiVersion 1 so it can bind', () => {
+    const result = parsePackageManifest({
+      name: 'demo',
+      contributes: { gateway: { actions: ['ping'] } },
+    });
+    expect(result.ok).toBe(true);
+    expect(result.manifest?.contributes?.gateway?.actions).toEqual(['ping']);
+  });
 });

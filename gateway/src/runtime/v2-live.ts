@@ -48,7 +48,9 @@ export interface KernelV2LiveOptions {
 
 /** Phase 3 flags shipped; they are now kill switches, not opt-ins. */
 function disabled(value: string | undefined): boolean {
-  return value === '0' || value === 'false';
+  if (typeof value !== 'string') return false;
+  const normalized = value.trim().toLowerCase();
+  return normalized === '0' || normalized === 'false';
 }
 
 export function readKernelV2LiveFlags(env: NodeJS.ProcessEnv = process.env): KernelV2LiveFlags {

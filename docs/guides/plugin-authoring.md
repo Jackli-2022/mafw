@@ -68,7 +68,7 @@
 - `contributes.gateway.http: false` 时，`ctx.http.route()` / `ctx.http.ws()` 一旦被调用，激活失败（即使 `activate()` 本身正常返回）。
 - 声明的 `events` 必须写**完整命名空间** `plugin:<package>:<event>`；只写短名会被判为未声明。
 - 声明的 `tools` 必须重复 `name` / `description` / `inputSchema`（`name` 与 `activate()` 里的声明一致即可，`description` 与 schema 自由填写）；比对只按 `name`。
-- `apiVersion: 1` 的包：`contributes` 校验失败只产生 `legacy-contributes` warning，不影响激活，也不构成任何约束。未声明 `contributes` 的包行为与旧版完全一致。
+- `apiVersion: 1` 的包：`contributes` **校验失败**只产生 `legacy-contributes` warning，不影响激活，也不构成任何约束；**合法**的 v1 块会照常存储并像 v2 一样构成约束。未声明 `contributes` 的包行为与旧版完全一致。
 
 ## 2. 最小可运行包
 

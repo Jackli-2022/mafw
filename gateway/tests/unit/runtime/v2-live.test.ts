@@ -20,6 +20,9 @@ test('flags default on and accept 0/false as the kill switch', () => {
   expect(
     readKernelV2LiveFlags({ MAFW_KERNEL_V2_OBSERVERS: '1', MAFW_KERNEL_V2_TOOLS: 'true' }),
   ).toEqual({ observers: true, tools: true });
+  expect(
+    readKernelV2LiveFlags({ MAFW_KERNEL_V2_TOOLS: ' FALSE ', MAFW_KERNEL_V2_OBSERVERS: '0' }),
+  ).toEqual({ observers: false, tools: false });
 });
 
 test('the bridge is live without any env', async () => {
