@@ -50,6 +50,19 @@ Source → Trigger → Thread → Subscription → Decision → Delivery → Cha
 - 投影：`goal-view-projector.ts` 从事件重建 `GoalLifecycleProjection`；Phase 2 只做 parity，
   读路径仍是 `buildPodGoalView`（Phase 3 接管）。
 
+### Goal history / snapshots（Phase 3，2026-11-16）
+
+- 每次 `writeGoalState` 在同一 SQLite 事务里追加 `goal.state.changed`
+  （payload 带 `patch`、`round`/`loop`、`stateVersion`、`updatedAt`；新 revision 的 reset
+  事件带完整 `resetState`）。
+- `goal_snapshots(goal_id, version, state_json, created_at)`：首个事件、每次 reset、以及每
+  20 条 `goal.state.changed` 写一行快照；语义事件（`goal.node.*`）不计入节奏。
+- `replayGoalState` = 最新快照 + 之后 patch 的**纯回放**：不调 runtime/LLM、不写文件。
+  可传 `atVersion` 做诊断。
+- 默认读路径仍是 `goal_state` 行；`MAFW_GOAL_REPLAY_READ=1` 时读快照+回放，与行不一致
+  记 `[GoalHistory] divergence` 并计数（`GoalStateStore.replayStats()`）。
+- 行与 legacy JSON 都缺失时，`load` 从 history 回放并恢复 `goal_state` 行（不追加事件）。
+
 ### Lead read / ack（2026-11-16 定案）
 
 - **read**：客户端把某个 Goal 的 Pod event 标记 seen 后，该 goal 的 lead outbox 行写
