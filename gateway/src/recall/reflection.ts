@@ -75,7 +75,7 @@ export interface ReflectionOptions {
   reflectionInput?: 'episodes' | 'legacy-episodic';
   /** Episode source; absent → legacy path only. */
   episodeSource?: {
-    list(opts: { limit: number; lookbackDays: number; now: number }): T1EpisodeRecord[];
+    list(opts: { limit: number; lookbackDays: number; now: number; sessionId?: string }): T1EpisodeRecord[];
     isInternalSession?: (sessionID: string) => boolean;
   };
   /** Max episodes per run (default 10). */
@@ -440,7 +440,7 @@ export class ReflectionPipeline {
   }
 
   /** Pending reflection units, grouped by session, from episodes or legacy rows. */
-  private pendingBySession(): Map<string, ReflectEpisode[]> {
+  private pendingBySession(sessionID?: string): Map<string, ReflectEpisode[]> {
     if (!this.usingEpisodes()) {
       return unreflectedBySession(
         this.opts.index,
@@ -453,6 +453,7 @@ export class ReflectionPipeline {
       limit: Math.max(1, this.opts.maxEpisodesPerRun ?? 10),
       lookbackDays: Math.max(0, this.opts.lookbackDays ?? 30),
       now: this.clock(),
+      ...(sessionID ? { sessionId: sessionID } : {}),
     });
     const bySession = new Map<string, ReflectEpisode[]>();
     for (const episode of episodes) {
@@ -757,7 +758,7 @@ export class ReflectionPipeline {
 
   /** Reflect a single session (restoreWorkerState / shouldReflect path). */
   async runSession(sessionID: string): Promise<ReflectionResult> {
-    const bySession = this.pendingBySession();
+    const bySession = this.pendingBySession(sessionID);
     const episodes = bySession.get(sessionID);
     if (!episodes || episodes.length === 0) return { sessions: 0, reviewed: 0, distilled: 0, deduped: 0, superseded: 0, failed: 0, pendingSessions: 0, replayedTraces: 0, replayChars: 0 };
     const budgetMs = this.runBudgetMs();
@@ -767,7 +768,7 @@ export class ReflectionPipeline {
 
   /** Number of unreflected episodes for a session (shouldReflect gate). */
   pendingFor(sessionID: string): number {
-    const bySession = this.pendingBySession();
+    const bySession = this.pendingBySession(sessionID);
     return bySession.get(sessionID)?.length ?? 0;
   }
 }

@@ -206,6 +206,7 @@ const HarmonicUnitSchema = Type.Object({
   sticky_until: Type.Optional(Type.String()),
   source_session_id: Type.Optional(Type.String()),
   source_trace_ids: Type.Optional(Type.Array(Type.String())),
+  episode_id: Type.Optional(Type.String()),
   authority: Type.Optional(Type.Union([
     Type.Literal('user'),
     Type.Literal('agent'),

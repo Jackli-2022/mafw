@@ -38478,6 +38478,7 @@ export interface operations {
                             sticky_until?: string;
                             source_session_id?: string;
                             source_trace_ids?: string[];
+                            episode_id?: string;
                             authority?: "user" | "agent" | "tool" | "pipeline";
                             distilled_by?: string[];
                             commitment_capped_at?: string;
@@ -38505,6 +38506,7 @@ export interface operations {
                             sticky_until?: string;
                             source_session_id?: string;
                             source_trace_ids?: string[];
+                            episode_id?: string;
                             authority?: "user" | "agent" | "tool" | "pipeline";
                             distilled_by?: string[];
                             commitment_capped_at?: string;

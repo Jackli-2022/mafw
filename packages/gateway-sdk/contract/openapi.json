@@ -84570,6 +84570,9 @@
                                 "type": "string"
                               }
                             },
+                            "episode_id": {
+                              "type": "string"
+                            },
                             "authority": {
                               "anyOf": [
                                 {
@@ -84724,6 +84727,9 @@
                               "items": {
                                 "type": "string"
                               }
+                            },
+                            "episode_id": {
+                              "type": "string"
                             },
                             "authority": {
                               "anyOf": [

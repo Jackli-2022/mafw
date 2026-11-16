@@ -2677,20 +2677,23 @@ export class GatewayDatabase {
     limit: number;
     lookbackDays: number;
     now: number;
+    sessionId?: string;
   }): T1EpisodeRecord[] {
     const limit = Math.max(0, Math.trunc(opts.limit));
     if (limit === 0) return [];
     const cutoff = Math.trunc(opts.now) - Math.max(0, opts.lookbackDays) * 86400_000;
+    const sessionId = opts.sessionId ?? null;
     const rows = this.db
       .prepare(
         `SELECT * FROM t1_episodes
           WHERE status = 'closed'
             AND (end_turn - start_turn + 1) >= 2
             AND COALESCE(ended_at, 0) >= ?
+            AND (? IS NULL OR session_id = ?)
           ORDER BY COALESCE(ended_at, 0) ASC
           LIMIT ?`,
       )
-      .all(cutoff, limit) as any[];
+      .all(cutoff, sessionId, sessionId, limit) as any[];
     return rows.map((row) => this.episodeFromRow(row));
   }
 

@@ -117,6 +117,25 @@ describe('computeEpisodeRanges', () => {
     expect(out[1].boundaryReason).toBe('intent_shift');
   });
 
+  test('intent shift works for CJK intents', () => {
+    const out = ranges([
+      turn(1, {
+        isUserTurn: true,
+        conceptIds: ['concept:shared'],
+        semanticAtoms: ['parse'],
+        intent: '修复解析器',
+      }),
+      turn(2),
+      turn(3, {
+        isUserTurn: true,
+        conceptIds: ['concept:shared'],
+        semanticAtoms: ['deploy'],
+        intent: '部署网关',
+      }),
+    ]);
+    expect(out.map((r) => r.boundaryReason)).toContain('intent_shift');
+  });
+
   test('max length closes the episode', () => {
     const turns = Array.from({ length: 4 }, (_, i) => turn(i + 1, { isUserTurn: true }));
     const out = ranges(turns, { maxTurns: 2 });

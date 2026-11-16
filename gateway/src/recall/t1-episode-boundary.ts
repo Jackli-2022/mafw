@@ -51,11 +51,20 @@ export interface EpisodeRange {
 }
 
 function tokensOf(text: string | undefined): Set<string> {
-  return new Set(
-    String(text ?? '')
-      .toLowerCase()
-      .match(/[\p{L}\p{N}_-]{2,}/gu) ?? [],
-  );
+  const value = String(text ?? '').toLowerCase();
+  const out = new Set<string>();
+  for (const match of value.matchAll(/[\p{L}\p{N}_-]{2,}/gu)) {
+    const token = match[0];
+    if (/[\u4e00-\u9fff]/.test(token)) {
+      // CJK has no spaces: use characters so two Chinese intents can differ.
+      for (const char of token) {
+        if (/[\u4e00-\u9fff]/.test(char)) out.add(char);
+      }
+    } else {
+      out.add(token);
+    }
+  }
+  return out;
 }
 
 function jaccard(a: Set<string>, b: Set<string>): number {
