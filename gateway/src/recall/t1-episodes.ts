@@ -6,12 +6,14 @@ import { createHash } from 'crypto';
 export type T1EpisodeStatus = 'open' | 'closed';
 
 export type T1EpisodeBoundarySource =
+  | 'session_start'
   | 'declared'
   | 'inferred'
   | 'session_end'
   | 'max_length';
 
 export type T1EpisodeBoundaryReason =
+  | 'session_start'
   | 'user_declared'
   | 'agent_declared'
   | 'actor_shift'
