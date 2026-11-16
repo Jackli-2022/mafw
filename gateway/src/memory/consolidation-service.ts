@@ -365,6 +365,7 @@ export class ConsolidationService {
       cue_anchors: dedupeCap([...(incoming.cue_anchors || []), ...(target.cue_anchors || [])], 8),
       merged_from: [...(incoming.merged_from || []), target.id],
       source_trace_ids: unionSourceTraceIds(incoming.source_trace_ids, target.source_trace_ids),
+      episode_id: incoming.episode_id ?? target.episode_id,
       // G1: authority only rises across a merge — user is never demoted and
       // pipeline inference never elevates the result.
       authority: higherAuthority(incoming.authority, target.authority),

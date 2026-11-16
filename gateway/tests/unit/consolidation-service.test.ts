@@ -79,7 +79,7 @@ describe('ConsolidationService', () => {
     vectors.upsert('u1', [1, 0]);
     vectors.upsert('old', [0.99, 0.1]);
 
-    const target = unit('old', 'Existing memory', 'existing value');
+    const target = { ...unit('old', 'Existing memory', 'existing value'), episode_id: 't1ep_a' };
     const store = stubStore([target]);
 
     const fetchFn = (async (_url: any, init: any) => ({
@@ -111,6 +111,7 @@ describe('ConsolidationService', () => {
     expect(merged.memory_value).toContain('new value');
     expect(merged.memory_value).toContain('existing value');
     expect(merged.merged_from).toContain('old');
+    expect(merged.episode_id).toBe('t1ep_a');
     expect(store.superseded).toEqual([{ id: 'old', byId: 'u1' }]);
     expect(vectors.get('old')).toBeUndefined();
     expect(svc.getStats().updates).toBe(1);
