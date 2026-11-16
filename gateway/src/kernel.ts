@@ -3541,7 +3541,9 @@ class MafwScheduler {
         if (config.recall.t1Recall?.semanticAtoms === 'off') return new Map();
         const rt = getEmbeddingRuntime();
         if (!rt?.provider) return new Map();
-        return getT1SemanticEncoder(rt.provider).encodeMany(turns);
+        return getT1SemanticEncoder(rt.provider, {
+          referenceTexts: () => this.getGatewayDb().sampleTurnTexts(24),
+        }).encodeMany(turns);
       },
       // S2: schema-cluster interleaving (integrate into schemas, not append).
       schemaClusters: () => this.getSchemaClusters(),

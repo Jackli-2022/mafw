@@ -26,8 +26,10 @@ function setup() {
 
 describe('T1 denseIndex modes', () => {
   const previous = config.recall.t1Recall.denseIndex;
+  const previousAtoms = config.recall.t1Recall.semanticAtoms;
   afterEach(() => {
     config.recall.t1Recall.denseIndex = previous;
+    config.recall.t1Recall.semanticAtoms = previousAtoms;
     resetT1DenseStats();
   });
 
@@ -47,12 +49,24 @@ describe('T1 denseIndex modes', () => {
     expect(getT1DenseStats()).toMatchObject({ evaluations: 1, withDenseHits: 1 });
   });
 
-  test('off skips the embedding runtime entirely', async () => {
+  test('off skips dense retrieval; query atoms are independent', async () => {
     config.recall.t1Recall.denseIndex = 'off';
+    config.recall.t1Recall.semanticAtoms = 'on';
+    const { db, runtime, embed } = setup();
+    const hits = await createGatewayT1Search(db, () => runtime)('row', 3);
+    expect(hits.every((h) => !h.sources?.includes('dense'))).toBe(true);
+    expect(hits.some((h) => h.traceId === 't1t_lex')).toBe(true);
+    expect(getT1DenseStats()).toEqual({ evaluations: 0, withDenseHits: 0 });
+    // Semantic atoms have their own switch; dense off does not disable them.
+    expect(embed).toHaveBeenCalled();
+  });
+
+  test('dense off + atoms off skips the embedding runtime entirely', async () => {
+    config.recall.t1Recall.denseIndex = 'off';
+    config.recall.t1Recall.semanticAtoms = 'off';
     const { db, runtime, embed } = setup();
     const hits = await createGatewayT1Search(db, () => runtime)('row', 3);
     expect(embed).not.toHaveBeenCalled();
     expect(hits.some((h) => h.traceId === 't1t_lex')).toBe(true);
-    expect(getT1DenseStats()).toEqual({ evaluations: 0, withDenseHits: 0 });
   });
 });

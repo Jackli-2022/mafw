@@ -3,6 +3,8 @@ import type { EmbeddingRuntime } from '../memory/embedding-runtime';
 import { getEmbeddingRuntime } from '../memory/embedding-runtime';
 import { config } from '../config';
 import { makeT1Search, T1Hit, type T1HitSource } from './verbatim-recall';
+import { getT1SemanticEncoder } from './t1-semantic-atoms';
+import type { T1SparseAtom } from './t1-sparse';
 
 const RRF_K = 60;
 
@@ -185,13 +187,22 @@ export function applyT1ActivationRanking(
  * Dense rows are archive-first with active fallback; the lexical channel uses
  * the FTS5 trigram index. Either channel failing leaves the other usable.
  */
+export interface T1SearchOptions {
+  /** Test seam: query atom encoder (defaults to the shared calibrated encoder). */
+  atomsForQuery?: (query: string) => Promise<T1SparseAtom[]>;
+}
+
 export function createGatewayT1Search(
   db: GatewayDatabase,
   getRuntime: () => EmbeddingRuntime | null = getEmbeddingRuntime,
+  opts: T1SearchOptions = {},
 ): (query: string, k: number) => Promise<T1Hit[]> {
-  const denseSearch = async (query: string, k: number): Promise<T1Hit[]> => {
+  const denseSearch = async (
+    query: string,
+    k: number,
+    runtime: EmbeddingRuntime | null,
+  ): Promise<T1Hit[]> => {
     try {
-      const runtime = getRuntime();
       if (!runtime?.t1Vectors) return [];
       return await makeT1Search({
         runtime,
@@ -205,15 +216,38 @@ export function createGatewayT1Search(
     }
   };
 
+  const atomsEnabled = () => config.recall.t1Recall?.semanticAtoms !== 'off';
+
+  const queryAtomIds = async (
+    query: string,
+    runtime: EmbeddingRuntime | null,
+  ): Promise<string[]> => {
+    if (!atomsEnabled()) return [];
+    try {
+      const atoms = opts.atomsForQuery
+        ? await opts.atomsForQuery(query)
+        : runtime?.provider
+          ? (await getT1SemanticEncoder(runtime.provider, {
+              referenceTexts: () => db.sampleTurnTexts(24),
+            }).encodeMany([{ traceId: '__query__', text: query }])).get('__query__') ?? []
+          : [];
+      return atoms.filter((atom) => atom.score > 0).map((atom) => `sem:${atom.termId}`);
+    } catch {
+      return [];
+    }
+  };
+
   return async (query: string, k: number): Promise<T1Hit[]> => {
     if (!query.trim() || k <= 0) return [];
+    const runtime = getRuntime();
     const denseMode = config.recall.t1Recall?.denseIndex ?? 'shadow';
-    const dense = denseMode === 'off' ? [] : await denseSearch(query, k);
+    const dense = denseMode === 'off' ? [] : await denseSearch(query, k, runtime);
     if (denseMode !== 'off') {
       denseStats.evaluations++;
       if (dense.length > 0) denseStats.withDenseHits++;
     }
     const denseForFusion = denseMode === 'on' ? dense : [];
+    const semIds = await queryAtomIds(query, runtime);
     let lexical: T1LexicalHit[] = [];
     if (config.recall.t1Recall?.lexical !== false) {
       try {
@@ -242,7 +276,7 @@ export function createGatewayT1Search(
       actor = [];
     }
     try {
-      sparse = db.searchT1Sparse?.(query, Math.max(k * 2, 12)) ?? [];
+      sparse = db.searchT1Sparse?.(query, Math.max(k * 2, 12), semIds) ?? [];
     } catch {
       sparse = [];
     }

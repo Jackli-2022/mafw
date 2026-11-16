@@ -2970,8 +2970,8 @@ export class GatewayDatabase {
   }
 
   /** Sparse-channel lookup over the stored term code (inverted index). */
-  searchT1Sparse(query: string, topK: number): T1LexicalHit[] {
-    const termIds = querySparseTermIds(query);
+  searchT1Sparse(query: string, topK: number, extraTermIds: string[] = []): T1LexicalHit[] {
+    const termIds = [...new Set([...querySparseTermIds(query), ...(extraTermIds ?? [])])].slice(0, 64);
     if (termIds.length === 0 || !Number.isFinite(topK) || topK <= 0) return [];
     try {
       const placeholders = termIds.map(() => '?').join(',');
