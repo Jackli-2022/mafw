@@ -45,6 +45,7 @@ export async function backfillT1Atoms(
     readTurnRows: (sessionId, turnSeq) => db.readTurnRows(sessionId, turnSeq),
     readTrajectoryEvents: (sessionId, turnSeq) =>
       db.readTrajectoryEvents(sessionId, turnSeq),
+    getSparseTerms: (traceId) => db.getSparseTerms(traceId),
     upsertTurnFeature: (feature) => db.upsertTurnFeature(feature),
     upsertTurnActors: (traceId, actors) => db.upsertTurnActors(traceId, actors),
     upsertTurnConcepts: (traceId, concepts) =>

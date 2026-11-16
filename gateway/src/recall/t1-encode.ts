@@ -34,6 +34,8 @@ export interface T1EncodeDeps {
   readTrajectoryEvents?(sessionId: string, turnSeq: number): T1ActorEvent[];
   /** Optional: persist the derived feature (backfill path); the turn pipeline writes it separately. */
   upsertTurnFeature?(feature: T1TurnFeature): void;
+  /** Optional: existing sparse code, used to preserve atoms on a failed re-encode. */
+  getSparseTerms?(traceId: string): T1SparseTerm[];
   upsertTurnActors(traceId: string, actors: T1TurnActor[]): void;
   upsertTurnConcepts(traceId: string, concepts: T1TurnConcept[]): void;
   upsertSparseTerms(traceId: string, terms: T1SparseTerm[]): void;
@@ -80,13 +82,22 @@ export function encodeT1Turn(
     { projectId: opts.projectId, userActorId: opts.userActorId },
   );
   const concepts = extractTurnConcepts(turn, rows, feature);
+  // T1 raw text is immutable, so a re-encode that produced no atoms (embedding
+  // sidecar down, calibration not ready) must not delete the prior atom code.
+  const existingAtoms: T1SparseAtom[] = (deps.getSparseTerms?.(turn.trace_id) ?? [])
+    .filter((term) => term.kind === 'semantic')
+    .map((term) => ({
+      termId: term.termId.replace(/^sem:/, ''),
+      score: term.weight,
+    }));
+  const atoms = opts.atoms && opts.atoms.length > 0 ? opts.atoms : existingAtoms;
   const sparse = encodeTurnSparseTerms({
     turn,
     rows,
     feature,
     concepts,
     actors,
-    atoms: opts.atoms,
+    atoms,
   });
   const model = opts.atomsAttempted
     ? SPARSE_EMBED_MODEL

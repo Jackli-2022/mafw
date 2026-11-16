@@ -210,4 +210,65 @@ describe('encodeT1Turn', () => {
       sparseCount: result.sparse,
     });
   });
+
+  test('a re-encode with no new atoms keeps the existing semantic atoms', () => {
+    const store = new Map<string, any[]>();
+    const markers: any[] = [];
+    const deps = {
+      readTurnRows: () => [row('user_input', 'unparseable JSON')],
+      upsertTurnActors: () => {},
+      upsertTurnConcepts: () => {},
+      upsertSparseTerms: (id: string, terms: any[]) => {
+        store.set(id, terms);
+      },
+      getSparseTerms: (id: string) => store.get(id) ?? [],
+      upsertTurnEncoding: (marker: any) => {
+        markers.push(marker);
+      },
+    };
+
+    encodeT1Turn(turn, deps, {
+      atoms: [{ termId: 'error:json_parse', score: 0.2 }],
+    });
+    expect(store.get(turn.trace_id)!.some((term) => term.kind === 'semantic')).toBe(true);
+
+    // The live pipeline can re-encode an active turn while the embedding
+    // sidecar is down; an empty atom list must not delete the prior code.
+    encodeT1Turn(turn, deps, { atoms: [] });
+    const terms = store.get(turn.trace_id)!;
+    expect(terms).toContainEqual(
+      expect.objectContaining({
+        termId: 'sem:error:json_parse',
+        kind: 'semantic',
+        model: 'sparse-embed-v1',
+      }),
+    );
+    expect(markers[markers.length - 1].model).toBe('sparse-embed-v1');
+  });
+
+  test('new atoms replace the old semantic set', () => {
+    const store = new Map<string, any[]>();
+    const deps = {
+      readTurnRows: () => [row('user_input', 'unparseable JSON')],
+      upsertTurnActors: () => {},
+      upsertTurnConcepts: () => {},
+      upsertSparseTerms: (id: string, terms: any[]) => {
+        store.set(id, terms);
+      },
+      getSparseTerms: (id: string) => store.get(id) ?? [],
+      upsertTurnEncoding: () => {},
+    };
+
+    encodeT1Turn(turn, deps, {
+      atoms: [{ termId: 'error:json_parse', score: 0.2 }],
+    });
+    encodeT1Turn(turn, deps, {
+      atoms: [{ termId: 'metric:coverage', score: 0.3 }],
+    });
+    const terms = store.get(turn.trace_id)!;
+    expect(terms.some((term) => term.termId === 'sem:error:json_parse')).toBe(false);
+    expect(terms).toContainEqual(
+      expect.objectContaining({ termId: 'sem:metric:coverage', kind: 'semantic' }),
+    );
+  });
 });

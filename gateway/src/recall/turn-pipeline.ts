@@ -387,6 +387,7 @@ export class TurnPipeline {
           {
             readTurnRows: () => obs,
             readTrajectoryEvents,
+            getSparseTerms: (id) => db.getSparseTerms(id),
             upsertTurnActors: (id, actors) => db.upsertTurnActors(id, actors),
             upsertTurnConcepts: (id, concepts) => db.upsertTurnConcepts(id, concepts),
             upsertSparseTerms: (id, terms) => db.upsertSparseTerms(id, terms),
