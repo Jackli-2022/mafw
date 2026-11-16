@@ -2,7 +2,8 @@
 
 - **版本**：`v5.1.0`（行为增强，不升版本号）
 - **提交**：`c75b932e`（state patch → domain log）+ `1dfd655a`（快照 + 纯回放）+
-  `cd06a62c`（行缺失恢复 + flag）+ `c46b9725`（前缀 parity）
+  `cd06a62c`（行缺失恢复 + flag）+ `c46b9725`（前缀 parity）+ `2af5e125`（review 修复）+
+  `ae238494`（附带修复 `sampleTurnTexts` 去重顺序）
 - **计划**：`docs/superpowers/plans/2026-11-16-phase3-goal-history-replay.md`
 - **前置**：`docs/releases/2026-11-16-goal-domain-events.md`（Phase 2）
 - **范围**：gateway GoalState 持久化与恢复；desktop / SDK / runtime 零改动
@@ -27,9 +28,14 @@
 ## 测试
 
 - 新增套件：`goal-state-history`、`goal-history`、`goal-history-load`、`goal-history-parity`
-  （共 4 suites / 13 tests：每写一条事件、快照 cadence、reset 替换、中间版本回放、
-  行缺失恢复、flag divergence、任意前缀 parity、回放零写副作用）。
-- gateway 全量：**1005 / 1005 suites**，**7997 passed / 2 skipped / 0 failed**。
+  （共 4 suites / 14 tests：每写一条事件、快照 cadence、reset 替换、中间版本回放、
+  行缺失恢复、flag divergence、任意前缀 parity、回放零写副作用、undefined patch 清理、
+  跨页回放）。
+- review 修复：`undefined` patch 键用 `unset` 记录并在回放删除；发现路径会把只有 history
+  的 Goal 回放恢复成 `goal_state` 行；回放分页避免 10k 截断；回放结果统一 normalize。
+- 附带修复：`sampleTurnTexts` 之前在 `LIMIT` 之后去重，trace_id 顺序变化时可能少返回；
+  现在先分页去重再取 limit（此前全量两次都因此失败）。
+- gateway 全量：**1005 / 1005 suites**，**8002 passed / 2 skipped / 0 failed**。
 - `tsc`：rc=0；`npm run build`：通过（`dist/release.json` v5.1.0）。
 
 ## 边界
