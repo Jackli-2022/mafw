@@ -251,7 +251,7 @@ export class HarmonicIndexManager {
   }
 
   addEntry(unit: HarmonicUnit, tier: string): void {
-    this.index.entries.push({
+    const entry = {
       id: unit.id,
       type: unit.type || (unit as any).memory_type || 'semantic',
       primary_abstraction: unit.primary_abstraction,
@@ -282,7 +282,13 @@ export class HarmonicIndexManager {
       distilled_by: (unit as any).distilled_by,
       commitment_capped_at: (unit as any).commitment_capped_at,
       novelty: (unit as any).novelty,
-    });
+    };
+    // Upsert: route-write/consolidation/backfill re-write existing units, and a
+    // blind push duplicated every index entry (2026-11-18 grounding backfill
+    // doubled 715 entries). One entry per id.
+    const existing = this.index.entries.findIndex((item) => item.id === unit.id);
+    if (existing >= 0) this.index.entries[existing] = entry;
+    else this.index.entries.push(entry);
     this.save();
     this.hookManager?.execute('memory.write', {
       unit,
