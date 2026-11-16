@@ -287,8 +287,13 @@ export class HarmonicIndexManager {
     // blind push duplicated every index entry (2026-11-18 grounding backfill
     // doubled 715 entries). One entry per id.
     const existing = this.index.entries.findIndex((item) => item.id === unit.id);
-    if (existing >= 0) this.index.entries[existing] = entry;
-    else this.index.entries.push(entry);
+    if (existing >= 0) {
+      // Preserve fields owned by the existing entry (last_decay_at, future
+      // additions); the rewritten unit only owns the fields it carries.
+      this.index.entries[existing] = { ...this.index.entries[existing], ...entry };
+    } else {
+      this.index.entries.push(entry);
+    }
     this.save();
     this.hookManager?.execute('memory.write', {
       unit,

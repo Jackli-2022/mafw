@@ -79,6 +79,30 @@ describe('HarmonicUnitFileStore provenance', () => {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  test('rewriting a unit preserves fields owned by the existing index entry', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'okf-prov-'));
+    try {
+      const store = new HarmonicUnitFileStore(dir);
+      await store.write(unit());
+      const entry = store.indexManager_()
+        .getIndex()
+        .entries.find((item) => item.id === 'mem_1_abc')!;
+      (entry as any).last_decay_at = '2026-11-01T00:00:00.000Z';
+      (entry as any).custom_field = 'keep';
+      await store.write(unit({ episode_id: 't1ep_a' }));
+      const updated = store.indexManager_()
+        .getIndex()
+        .entries.find((item) => item.id === 'mem_1_abc')!;
+      expect((updated as any).last_decay_at).toBe('2026-11-01T00:00:00.000Z');
+      expect((updated as any).custom_field).toBe('keep');
+      expect((updated as any).episode_id).toBe('t1ep_a');
+      expect(store.indexManager_().getIndex().entries.filter((item) => item.id === 'mem_1_abc'))
+        .toHaveLength(1);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('unionSourceTraceIds', () => {
