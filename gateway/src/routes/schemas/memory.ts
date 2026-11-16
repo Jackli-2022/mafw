@@ -51,6 +51,8 @@ const MemoryUnitSchema = Type.Object({
   energy: Type.Number(),
   salience: Type.Optional(Type.Number()),
   created_at: Type.Optional(Type.String()),
+  source_trace_ids: Type.Optional(Type.Array(Type.String())),
+  episode_id: Type.Optional(Type.String()),
 })
 
 /**

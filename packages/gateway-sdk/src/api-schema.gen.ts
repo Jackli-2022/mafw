@@ -25212,6 +25212,8 @@ export interface operations {
                             energy: number;
                             salience?: number;
                             created_at?: string;
+                            source_trace_ids?: string[];
+                            episode_id?: string;
                         }[];
                         t1Results?: {
                             sessionId: string;
@@ -25249,6 +25251,8 @@ export interface operations {
                             energy: number;
                             salience?: number;
                             created_at?: string;
+                            source_trace_ids?: string[];
+                            episode_id?: string;
                         }[];
                     };
                 };

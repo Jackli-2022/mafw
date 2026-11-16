@@ -45539,6 +45539,15 @@
                           },
                           "created_at": {
                             "type": "string"
+                          },
+                          "source_trace_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "episode_id": {
+                            "type": "string"
                           }
                         }
                       }
@@ -45770,6 +45779,15 @@
                             "type": "number"
                           },
                           "created_at": {
+                            "type": "string"
+                          },
+                          "source_trace_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "episode_id": {
                             "type": "string"
                           }
                         }
