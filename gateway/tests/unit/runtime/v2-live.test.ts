@@ -12,18 +12,46 @@ function tool(over: Partial<ToolContribution> = {}): ToolContribution {
   };
 }
 
-test('flags default off and parse 1/true', () => {
-  expect(readKernelV2LiveFlags({})).toEqual({ observers: false, tools: false });
+test('flags default on and accept 0/false as the kill switch', () => {
+  expect(readKernelV2LiveFlags({})).toEqual({ observers: true, tools: true });
   expect(
-    readKernelV2LiveFlags({
-      MAFW_KERNEL_V2_OBSERVERS: '1',
-      MAFW_KERNEL_V2_TOOLS: 'true',
-    }),
+    readKernelV2LiveFlags({ MAFW_KERNEL_V2_TOOLS: '0', MAFW_KERNEL_V2_OBSERVERS: 'false' }),
+  ).toEqual({ observers: false, tools: false });
+  expect(
+    readKernelV2LiveFlags({ MAFW_KERNEL_V2_OBSERVERS: '1', MAFW_KERNEL_V2_TOOLS: 'true' }),
   ).toEqual({ observers: true, tools: true });
 });
 
-test('disabled bridge is null', () => {
-  expect(createKernelV2Live({ env: {} })).toBeNull();
+test('the bridge is live without any env', async () => {
+  const live = createKernelV2Live({ env: {} })!;
+  expect(live).not.toBeNull();
+  expect(live.toolsEnabled).toBe(true);
+  expect(live.observersEnabled).toBe(true);
+  await live.dispose();
+});
+
+test('an explicit 0 disables one plane and keeps the other live', () => {
+  const live = createKernelV2Live({ env: { MAFW_KERNEL_V2_TOOLS: '0' } })!;
+  expect(live.toolsEnabled).toBe(false);
+  expect(live.observersEnabled).toBe(true);
+  expect(live.toolFactory()).toBeUndefined();
+  expect(() => live.registerTool(tool())).toThrow(/MAFW_KERNEL_V2_TOOLS/);
+  return live.dispose();
+});
+
+test('events dispatched before registration are not replayed', async () => {
+  const live = createKernelV2Live({ env: {} })!;
+  const seen: string[] = [];
+  live.observe({ type: 'turn.completed', sessionID: 's1' });
+  const unregister = live.registerObserver({
+    id: 'a',
+    onEvent: (event) => { seen.push(event.type); },
+  });
+  live.observe({ type: 'turn.completed', sessionID: 's1' });
+  await live.drain();
+  expect(seen).toEqual(['turn.completed']);
+  unregister();
+  await live.dispose();
 });
 
 test('observer bridge sanitizes and dispatches', async () => {
@@ -120,14 +148,12 @@ test('syncs package tools/observers, replaces on revision change, clears on remo
 });
 
 test('disabled feature APIs throw a clear error', () => {
-  const observersOnly = createKernelV2Live({
-    env: { MAFW_KERNEL_V2_OBSERVERS: '1' },
-  })!;
-  expect(() => observersOnly.registerTool(tool())).toThrow(/MAFW_KERNEL_V2_TOOLS/);
-  expect(observersOnly.toolFactory()).toBeUndefined();
+  const toolsOff = createKernelV2Live({ env: { MAFW_KERNEL_V2_TOOLS: '0' } })!;
+  expect(() => toolsOff.registerTool(tool())).toThrow(/MAFW_KERNEL_V2_TOOLS/);
+  expect(toolsOff.toolFactory()).toBeUndefined();
 
-  const toolsOnly = createKernelV2Live({ env: { MAFW_KERNEL_V2_TOOLS: '1' } })!;
+  const observersOff = createKernelV2Live({ env: { MAFW_KERNEL_V2_OBSERVERS: '0' } })!;
   expect(() =>
-    toolsOnly.registerObserver({ id: 'a', onEvent: () => {} }),
+    observersOff.registerObserver({ id: 'a', onEvent: () => {} }),
   ).toThrow(/MAFW_KERNEL_V2_OBSERVERS/);
 });

@@ -199,3 +199,7 @@ re-export shim 已在 Task 7 删除）；驱动包不得 import `gateway/src`，
 - 10 个 drill 场景由 \
 pm run drill:plugin-trust\ 固化。
 
+## 插件插入点默认生效（2026-11-16）
+
+- 统一包 tools / observers 两个插入点默认生效（无需 env）；`MAFW_KERNEL_V2_TOOLS=0` / `MAFW_KERNEL_V2_OBSERVERS=0` 是 kill switch，关闭时 `registerTool` / `registerObserver` 直接抛错而不是静默 no-op。
+

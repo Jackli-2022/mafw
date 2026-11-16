@@ -35,9 +35,7 @@ test('package tools and observers auto-register into the live bridge', async () 
   delete (globalThis as any).__mafwObserverHits;
   delete (globalThis as any).__mafwObserverType;
 
-  const live = createKernelV2Live({
-    env: { MAFW_KERNEL_V2_OBSERVERS: '1', MAFW_KERNEL_V2_TOOLS: '1' },
-  })!;
+  const live = createKernelV2Live({ env: {} })!;
   const host = new PluginHost(
     dir,
     (name, bag) =>

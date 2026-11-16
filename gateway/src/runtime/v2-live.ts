@@ -2,12 +2,12 @@
  * Phase 3.5 live bridge.
  *
  * This is the **only** live module allowed to import `kernel-v2/**`.
- * Everything is opt-in:
+ * Both insertion points are live by default; the env vars are kill switches:
  *
- *   MAFW_KERNEL_V2_OBSERVERS=1   canonical observers on the event pipeline
- *   MAFW_KERNEL_V2_TOOLS=1       plugin tools merged into runtime registration
+ *   MAFW_KERNEL_V2_OBSERVERS=0|false   turn canonical observers off
+ *   MAFW_KERNEL_V2_TOOLS=0|false       turn plugin tool merge off
  *
- * With both flags off the bridge is `null` and v1 behavior is unchanged.
+ * With both planes killed the bridge is `null` and v1 behavior is unchanged.
  */
 
 import { CanonicalObserverRegistry } from '../kernel-v2/observer';
@@ -46,14 +46,15 @@ export interface KernelV2LiveOptions {
   log?: { info(message: string): void; warn(message: string): void };
 }
 
-function enabled(value: string | undefined): boolean {
-  return value === '1' || value === 'true';
+/** Phase 3 flags shipped; they are now kill switches, not opt-ins. */
+function disabled(value: string | undefined): boolean {
+  return value === '0' || value === 'false';
 }
 
 export function readKernelV2LiveFlags(env: NodeJS.ProcessEnv = process.env): KernelV2LiveFlags {
   return {
-    observers: enabled(env.MAFW_KERNEL_V2_OBSERVERS),
-    tools: enabled(env.MAFW_KERNEL_V2_TOOLS),
+    observers: !disabled(env.MAFW_KERNEL_V2_OBSERVERS),
+    tools: !disabled(env.MAFW_KERNEL_V2_TOOLS),
   };
 }
 
@@ -192,7 +193,7 @@ export function createKernelV2Live(
       if (disposed) throw new Error('kernel-v2 live bridge is disposed');
       if (!observers) {
         throw new Error(
-          'kernel-v2 observers are disabled (set MAFW_KERNEL_V2_OBSERVERS=1)',
+          'kernel-v2 observers are disabled (MAFW_KERNEL_V2_OBSERVERS=0)',
         );
       }
       return observers.register(observer);
@@ -205,7 +206,7 @@ export function createKernelV2Live(
     registerTool(tool: ToolContribution): () => void {
       if (disposed) throw new Error('kernel-v2 live bridge is disposed');
       if (!tools) {
-        throw new Error('kernel-v2 tools are disabled (set MAFW_KERNEL_V2_TOOLS=1)');
+        throw new Error('kernel-v2 tools are disabled (MAFW_KERNEL_V2_TOOLS=0)');
       }
       return tools.register(tool);
     },

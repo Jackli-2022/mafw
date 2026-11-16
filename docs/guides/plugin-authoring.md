@@ -280,7 +280,7 @@ tools: [{
 - tool 只会注册进 gateway 的 `RuntimeTools.registerTools`；handler 永远不进入 Desktop。
 - handler 抛错、超时、health failed 都只返回 `isError: true` 的 tool 结果，不拖垮 turn。
 - 本阶段包 tool 只支持 `scope: 'global'`；`scope: 'session'` 会在 candidate 校验阶段失败。需要按会话区分时，在 handler 内读 `call.sessionID`。
-- tool 执行需要 `MAFW_KERNEL_V2_TOOLS=1`；flag 关闭时包仍可安装/校验，但 tool 不执行。
+- tool 默认生效；需要关闭时设 `MAFW_KERNEL_V2_TOOLS=0`，关闭后包仍可安装/校验，但 tool 不执行。
 - 包 reload/disable/remove 时按 revision 自动退订；旧 handler 不会继续被调用。
 
 ## 5.2 Canonical event observers
@@ -302,7 +302,7 @@ observers: [{
 - `types` 支持精确名或尾部 `*` 前缀；不写 filter = 全收。
 - observer 失败/超时只丢该次观察，不影响 SSE、recall、turn；不能 veto/rewrite。
 - 工具三原语（`tool.call` / `tool.delta` / `tool.result`）在 observer 之前已被丢弃；工具事件请观察 `part.updated` 的 tool part。
-- observer 执行需要 `MAFW_KERNEL_V2_OBSERVERS=1`；flag 关闭时只校验声明，不投递事件。
+- observer 默认生效；需要关闭时设 `MAFW_KERNEL_V2_OBSERVERS=0`，关闭后只校验声明，不投递事件。
 
 ## 5.3 Context menu items
 
