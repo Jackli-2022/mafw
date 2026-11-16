@@ -9,11 +9,13 @@
 The T1 side is now a working hippocampal loop: raw trace + turn code + sparse
 atoms + episode index + replay. The cortical side has the functions (semantic /
 procedural abstraction, consolidation, forgetting), but the **index between the
-two layers is weak**. Live audit of `~/.mafw/memory/.harmonic_index.json`:
+two layers is weak**. Live audit of `~/.mafw/memory/.harmonic_index.json`
+(pre-dedupe; the E1 backfill later revealed ~1,300 historical duplicate
+index entries, leaving 16,251 unique units):
 
 | metric | value |
 |---|---:|
-| Harmonic units | 17,559 |
+| Harmonic units | 17,559 (pre-dedupe) |
 | semantic / procedural / global | 8,648 / 6,809 / 88 |
 | legacy `episodic` still stored | 2,014 (11.5%) |
 | superseded (soft) | 5,099 (29%) |
