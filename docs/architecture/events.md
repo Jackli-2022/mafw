@@ -67,6 +67,8 @@ Source → Trigger → Thread → Subscription → Decision → Delivery → Cha
   等待在飞 dispatch 落盘（5s 上限），避免同一决定重启后重复播报。
 - 多条决定合并成一条消息（`[LEAD EVENT] N 条待确认` + 编号块），单条保持原文；
   同一 `recordId` 重复 enqueue 只留一行。Lead 只负责转达，确认 / 搁置仍是 human-only。
+- `event_deliveries.delivered` 只表示 context 已成功写入 outbox，**不代表 Lead 已收到**；
+  实际发送状态看 `event_outbox.state`（`pending` / `sent` / `failed` / `dropped`）。
 - P0 不做：`PodEventWake` 合并、read / ack、agent-set timers、watchdog；这些留在后续阶段。
 - `internal` / `cron` 系统 source 在事件层启动时 ensure；外部 GitHub / webhook source 仍需显式创建。
 

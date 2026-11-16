@@ -2,7 +2,8 @@
 
 - **版本**：`v5.1.0`（gateway 行为变更，不升版本号）
 - **提交**：`e16a1a50`（batch model）、`39cff8f4`（dispatcher）、`eb068633`（kernel 接线）、
-  `6229f2aa`（清理未使用的 id factory）、`ed1ff11c`（review 修复：channel 作用域 + shutdown drain）
+  `6229f2aa`（清理未使用的 id factory）、`ed1ff11c`（review 修复：channel 作用域 + shutdown drain）、
+  `752ad155`（review minors：失败路径加固 + `markSent` 清理旧错误）
 - **范围**：gateway 事件层 + Lead 播报；桌面 / SDK / runtime 契约零改动
 - **计划**：`docs/superpowers/plans/2026-11-16-lead-outbox-dispatcher.md`
 - **依据**：`docs/research/2026-11-16-always-on-agents-event-layer-research.md` §6 P0
@@ -20,6 +21,9 @@
 - P0 明确不做：`PodEventWake` 合并、read / ack、agent-set timers、watchdog、per-run memory。
 - dispatcher 只处理 `lead:*` channel，其他生产者的 outbox rows 原样保留；kernel shutdown
   在关闭 DB 前等待在飞 dispatch（`isIdle`，5s 上限）。
+- 失败路径加固：`markSent` 部分失败时已 `sent` 的行保持 `sent`，只重试剩余行；`failRows`
+  逐行兜底，单行/单 channel 失败不会中断其他 channel；`markSent` 清空旧 `lastError` /
+  `nextRetryAt`；`status()` 统计 `dropped`。
 
 ## 实现
 
@@ -33,14 +37,16 @@
 
 ## 测试
 
-- 新增 3 个测试文件、17 个测试：
+- 新增 21 个测试：
   - `gateway/tests/unit/lead/lead-outbox-model.test.ts`（6）
-  - `gateway/tests/unit/lead/lead-outbox.test.ts`（8）
+  - `gateway/tests/unit/lead/lead-outbox.test.ts`（11）
   - `gateway/tests/unit/lead/lead-outbox-wiring.test.ts`（3）
+  - `gateway/tests/unit/events/event-outbox.test.ts`（新增 1：`markSent` 清理失败状态）
 - 覆盖：payload 拒绝、优先级排序、maxBatch、预算/间隔 defer、合并渲染、去重、批量成功
   全标 sent、失败整批 failed + 退避、并发单飞、非 Lead channel 不被动、`isIdle` 在飞状态、
-  timer 幂等、kernel 不再直连 `promptAsync`、shutdown settle 等待在飞 dispatch。
-- 全量门禁：gateway **980 suites / 7830 passed / 2 skipped / 7832 total**；
+  timer 幂等、kernel 不再直连 `promptAsync`、shutdown settle 等待在飞 dispatch、
+  `markSent` 部分失败不重排已发送行、坏行不阻塞其他 channel、`status` 含 `dropped`。
+- 全量门禁（2026-11-16 本次运行）：gateway **984 suites / 7859 passed / 2 skipped / 7861 total**；
   `npx tsc --noEmit -p tsconfig.json` exit 0。
 
 ## 真机验证
