@@ -600,9 +600,10 @@ attention 通知链整体移交 `2026-11-04-pod-event-layer-ambient-attention-de
 - `/` 菜单按 Experience 能力置灰而不是按 runtime 名分支：`/compact` → `session.summarize`，
   `/fork` → `branch.fork`，`/diff` → `branch.diff`，`/undo` → `branch.revert` /
   `checkpoint.restore`，`/redo` → `branch.unrevert`，`/rename` → `session.rename`，
-  `/plan` `/build` → `MafwAgent.planning` / `default`，`/skills` → `session.discovery`。
-  不可用时保留行并显示中性原因，不改变菜单形状；`session.rename` 是新增的
-  Experience Action（映射 `session.update` surface）。
+  `/plan` `/build` → `MafwAgent.planning` / `default`，`/skills` → `session.discovery`，
+  `/pause` → `run.control`。不可用时保留行并显示中性原因，不改变菜单形状；Experience
+  尚未 ready 时不把未知状态当作“不支持”。`session.rename` 是新增的 Experience Action
+  （映射 `session.update` surface），会话右键 / tab 菜单同样按它置灰。
 
 ### Pod 事件层与常驻注意力（2026-11-04，进行中）
 

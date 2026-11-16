@@ -24,8 +24,12 @@ runtime 上会返回 503、打开空面板或显示内部 surface 名。本批�
   - `/rename` → `session.rename`
   - `/plan` / `/build` → `MafwAgent.planning` / `default`
   - `/skills` → `session.discovery`
+  - `/pause` → `run.control`
+- Experience 尚未 ready 时不把未知状态当作“不支持”，避免切会话时 9 行全部闪灰。
+- 会话右键 / tab 菜单的 rename 也按 `session.rename` 置灰；tab rename 改为成功后
+  才写 entity/tab，失败不留下乐观标题。
 - Experience contract 新增 `session.rename` action，映射 `session.update` surface；
-  SDK、OpenAPI、experience JSON、projector 与契约测试同步。
+  SDK、TUI 标题表、OpenAPI、experience JSON、projector 与契约测试同步。
 
 ## 运行时矩阵
 
@@ -42,9 +46,9 @@ runtime 上会返回 503、打开空面板或显示内部 surface 名。本批�
 
 ## 验证
 
-- desktop 全量：**3890 / 3890**（738 suites）
-- 本轮新增测试：**4**
-  - `chat/command-availability.test.ts`：2
+- desktop 全量：**3891 / 3891**（738 suites）
+- 本轮新增测试：**5**
+  - `chat/command-availability.test.ts`：3
   - `tests/command-capability-wiring.test.ts`：2
 - gateway 定向：experience contract / action binding / experience JSON **31/31**；
   api-contract **261/261**
