@@ -24,7 +24,7 @@
 | commit | 任务 | 一句话 |
 |---|---|---|
 | `428653cb` | E10j-J1 | `fix(tui)`: 新纯函数 `ui/triage-view-model.ts#triageView(t)` + `triage-tab.ts` 改渲染真实 wire（6 条纯函数测试），不带 pi-tui 依赖 |
-| `21e4b850` | E10j-J2 | `feat(sdk)`: `MafwClientOptions.schemaEpoch?: number \| 'auto'`（响应学习 + 409 刷新重试一次）；desktop `createGatewayClient` / TUI `createTuiClient` opt-in；SDK +11 / desktop +1 / TUI +1 测试 |
+| `21e4b850` | E10j-J2 | `feat(sdk)`: `MafwClientOptions.schemaEpoch?: number \| 'auto'`（响应学习 + 已知 epoch 的 409 刷新重试一次；未知 epoch 不重试）；desktop `createGatewayClient` / TUI `createTuiClient` opt-in；SDK +13 / desktop +1 / TUI +1 测试（含 J2-fix 的防重放用例） |
 | 本记录 | E10j-J3 | `docs(gateway)`: 架构现状（gateway / desktop / tui / mobile）+ 本记录 + 全量门禁（docs-only） |
 
 ## 1. TUI triage 对齐真实 wire（J1）
@@ -57,17 +57,18 @@ transport 早已双向实现（`X-MAFW-Schema-Epoch` / 409 `schema_epoch_mismatc
 |---|---|---|---|---|
 | 未配置 | 从不发 | 忽略 | 原样抛 | 旧行为（向后兼容） |
 | `number: N` | 恒发 `N` | 忽略（永不改写） | 原样抛 | 钉死契约 |
-| `'auto'`，尚未学到 | 不发 | 缓存 | 无 epoch → 抛；带 epoch E → 采用并**重试一次** | 首次协商 |
+| `'auto'`，尚未学到 | 不发 | 缓存 | 无 epoch → 抛；带 epoch E → 记录 E，**不重试**（无法证明是 epoch 拒绝，可能已到 handler） | 首次协商 |
 | `'auto'`，已知 `E` | 发 `E` | 有数字就缓存 | 响应 epoch `F !== E` → 采用 `F` 重试一次；`F === E` / 无 / 非数字 → 抛 | 重新协商 |
 
 - 请求头合并顺序：`Content-Type` → `options.headers` → `clientToken` → **schema epoch** → 调用点 headers
   （`buildHeaders()` 单一出口；重试用同一 path/init 重新构造头）。
-- **重试上限 1 次**，无循环；第二次仍 409 直接抛。重放的请求在 transport 的 header 校验处就被拒，
-  **不达 handler**（不产生第二次副作用）。
+- **重试上限 1 次**，无循环；第二次仍 409 直接抛。重试只发生在**已发送已知 epoch** 且被 transport
+  前置拒绝的请求上（不达 handler，不产生第二次副作用）；未知 epoch 的首请求 409 不重试。
 - `fetchPath`（SSE / 二进制 / 媒体流 / 裸 `Response`）**不带头、不重试**——与 `clientToken` 同规则；
   所以 SSE 订阅维持「不发头 = 放行」，不会因 epoch 漂移反复重连。
 - 判定是**状态码 + 响应 epoch 与已知值不同**，不解析 body 的 `code`（`httpError()` 需要读流）；
-  代价：极少数非 epoch 的 409 若恰带不同 epoch 会被重试一次（同 path/init，至多一次额外请求）。
+  已知 epoch 下，409 带不同 epoch 只可能来自 transport 的 header 校验（前置），因此重试安全；
+  同值 / 无 / 非数字 409 一律不重试。
 - opt-in：desktop `src/main/human-token.ts#createGatewayClient`（唯一 client 构造入口，
   `mafw-ipc.ts` / `mafw-sidecar.ts` 都经它）与 TUI `src/store/human-token.ts#createTuiClient`。
   桌面 409（契约漂移）与 `withHumanTokenRetry` 的 403 + `human_principal_required`（凭据轮换）是
@@ -103,7 +104,7 @@ transport 早已双向实现（`X-MAFW-Schema-Epoch` / 409 `schema_epoch_mismatc
 | 路由分析 | `node scripts/analyze-routes.cjs` | **`TOTAL 0 (match 0, equals 0)`** |
 | 契约产物新鲜度 | `npm run emit:openapi`（gateway）→ `npm run gen:api`（SDK） | **327 routes → 293 paths / 327 operations**，overrides 命中 **10**；两次运行 `git status` 无生成物 diff |
 | SDK 类型 | `npx tsc --noEmit -p tsconfig.json`（`packages/gateway-sdk`） | **0 errors** |
-| SDK 全量 | `npm test` | **237 / 237 passed（0 fail）**（基线 226，本波 +11） |
+| SDK 全量 | `npm test` | **239 / 239 passed（0 fail）**（基线 226，本波 +13） |
 | SDK contract | `node --import tsx --require ../../packages/test-shim/require-hook.cjs --test src/contract.test.ts` | **4 / 4 passed** |
 | desktop 全量 | `npm run test:desktop`（worktree root） | **3875 tests / 736 suites（3874 passed / 1 failed / 0 skipped）**；唯一红 = `src/main/mafw-gateway-resolver.test.ts` dev-path（worktree 未构建 `gateway/dist`，已知 env-red） |
 | desktop 类型 | `npx tsgo --noEmit -p tsconfig.json`（`packages/desktop`） | 只剩已知 `node:tls` **2 条**（`getCACertificates` / `setDefaultCACertificates`） |
@@ -120,7 +121,7 @@ transport 早已双向实现（`X-MAFW-Schema-Epoch` / 409 `schema_epoch_mismatc
 | 文件 | 基线 → 终值 | 增量 | 依据 |
 |---|---|---|---|
 | `packages/tui/tests/triage-view-model.test.ts` | 0 → **6**（new file） | **+6** | J1 纯函数：title 回退 / meta 日期 / 三态 badge / 最高 priority / 无 phantom 泄漏 |
-| `packages/gateway-sdk/src/client.test.ts` | 226 → **237** | **+11** | J2：首请求无头 → 缓存 → 次请求带头；409 刷新重试一次；同值 409 不重试；数字模式恒带；未配置不带头；`fetchPath` 不带不带重试 |
+| `packages/gateway-sdk/src/client.test.ts` | 226 → **239** | **+13** | J2：首请求无头 → 缓存 → 次请求带头；已知 epoch 的 409 刷新重试一次；未知 epoch 的 409 不重试（防重放已分发请求）；同值 409 不重试；非 409 失败不重试；数字模式恒带；未配置不带头；`fetchPath` 不带不带重试（J2-fix 补 2 例） |
 | `packages/desktop/src/main/human-token.test.ts` | 26 → **27** | **+1** | 端到端：`createGatewayClient` 的 `'auto'` 在真实 SDK client 上生效（epoch 回声 fake fetch） |
 | `packages/tui/tests/human-token.test.ts` | 8 → **9** | **+1** | 同上（TUI `createTuiClient`） |
 | gateway | 7675 → 7675 | **0** | 本波 gateway 零代码改动 |
@@ -161,7 +162,10 @@ transport 早已双向实现（`X-MAFW-Schema-Epoch` / 409 `schema_epoch_mismatc
 ## 9. 与 spec / plan 的差异（有意 deviation）
 
 1. spec §2 写「收到 409 + `schema_epoch_mismatch`」才处理；实现按**状态码 409 + 响应 epoch 不同于已知值**
-   判定（不解析 body，避免与 `httpError()` 争抢响应流）。副作用最多一次额外请求，见 §2。
+   判定（不解析 body，避免与 `httpError()` 争抢响应流）。只有已发送已知 epoch 的请求会重试（transport
+   前置拒绝），未知 epoch 的首请求不重试，见 §2。
 2. spec §1 的 badge 描述为「state + 最高 priority 后缀」：实现还带 `建议确认` / `建议拒绝` 动作词
    （与桌面 badge 同构，信息量更高），文档已按实现记录。
 3. TUI title 回退比桌面少两级（`skillDraft` / `axiomDraft`），见 §1 末。
+4. `triageView()` 返回 `{ title, meta, badge: { label, tone } }`（tone 在 badge 内），不是 spec §1 写的
+   顶层 `tone`；文档按实现记录。

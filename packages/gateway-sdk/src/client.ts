@@ -126,7 +126,10 @@ export class MafwClient implements IMafwClient {
       // *different* value means the gateway moved on: adopt it and retry once
       // (same path/init). Same/absent epoch → nothing to negotiate, surface it.
       const offered = readSchemaEpoch(res)
-      if (offered !== null && offered !== this.schemaEpoch) {
+      // Only a request that actually carried a known epoch can be refused by
+      // the transport's epoch check; with no known epoch the 409 came from a
+      // handler that already ran, so retrying would replay a dispatched request.
+      if (offered !== null && this.schemaEpoch !== null && offered !== this.schemaEpoch) {
         this.schemaEpoch = offered
         res = await this.fetchImpl(`${this.baseUrl}${path}`, { ...init, headers: this.buildHeaders(init) })
       }

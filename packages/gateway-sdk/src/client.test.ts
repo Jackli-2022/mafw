@@ -1500,20 +1500,46 @@ test("schemaEpoch 'auto': learns the epoch from the first response, sends it aft
   expect(epochOf(1)).toBe("7") // cached from response #1
 })
 
-test("schemaEpoch 'auto': a 409 offering a new epoch updates and retries exactly once", async () => {
+test("schemaEpoch 'auto': an unknown-epoch 409 is surfaced without replaying the request", async () => {
+  fetchMock.mockResolvedValue(epochMismatch(9))
+  const c = new MafwClient({ baseUrl: "http://gw:3000", schemaEpoch: "auto" })
+
+  // Without a known epoch the header was absent, so the gateway could not have
+  // rejected it pre-dispatch: the 409 may come from a handler that already ran.
+  await expect(c.session.list()).rejects.toThrow(/HTTP 409/)
+  expect((fetchMock as any).mock.calls.length).toBe(1)
+  expect(epochOf(0)).toBe(null)
+})
+
+test("schemaEpoch 'auto': a known-epoch 409 adopts the offered epoch and retries exactly once", async () => {
   fetchMock
+    .mockResolvedValueOnce(epochResponse({ sessions: [] }, 8))
     .mockResolvedValueOnce(epochMismatch(9))
     .mockResolvedValueOnce(epochResponse({ id: "s1" }, 9))
   const c = new MafwClient({ baseUrl: "http://gw:3000", schemaEpoch: "auto" })
 
+  await c.session.list() // learns 8
   const session = await c.session.get({ path: { id: "s1" } })
 
   expect(session.id).toBe("s1")
-  expect((fetchMock as any).mock.calls.length).toBe(2)
-  // same path + same init on the retry — only the epoch header differs
-  expect((fetchMock as any).mock.calls[1][0]).toBe((fetchMock as any).mock.calls[0][0])
+  expect((fetchMock as any).mock.calls.length).toBe(3)
   expect(epochOf(0)).toBe(null)
-  expect(epochOf(1)).toBe("9")
+  expect(epochOf(1)).toBe("8")
+  expect(epochOf(2)).toBe("9")
+})
+
+test("schemaEpoch 'auto': a non-409 failure never retries", async () => {
+  fetchMock
+    .mockResolvedValueOnce(epochResponse({ sessions: [] }, 4))
+    .mockResolvedValueOnce({
+      ok: false, status: 500, statusText: "Server Error",
+      headers: { get: () => "9" }, text: () => Promise.resolve("{}"),
+    } as unknown as Response)
+  const c = new MafwClient({ baseUrl: "http://gw:3000", schemaEpoch: "auto" })
+
+  await c.session.list()
+  await expect(c.session.list()).rejects.toThrow(/HTTP 500/)
+  expect((fetchMock as any).mock.calls.length).toBe(2)
 })
 
 test("schemaEpoch 'auto': a 409 without an epoch header is thrown (no guess, no retry)", async () => {
@@ -1538,13 +1564,15 @@ test("schemaEpoch 'auto': a 409 re-offering the cached epoch does not retry", as
 
 test("schemaEpoch 'auto': never retries more than once (no infinite loop)", async () => {
   fetchMock
+    .mockResolvedValueOnce(epochResponse({ sessions: [] }, 0))
     .mockResolvedValueOnce(epochMismatch(1))
     .mockResolvedValueOnce(epochMismatch(2))
     .mockResolvedValue(epochMismatch(3))
   const c = new MafwClient({ baseUrl: "http://gw:3000", schemaEpoch: "auto" })
 
+  await c.session.list() // learns 0
   await expect(c.session.list()).rejects.toThrow(/HTTP 409/)
-  expect((fetchMock as any).mock.calls.length).toBe(2)
+  expect((fetchMock as any).mock.calls.length).toBe(3) // learn + rejected attempt + one retry
 })
 
 test("schemaEpoch 'auto': ignores a non-numeric epoch header", async () => {
