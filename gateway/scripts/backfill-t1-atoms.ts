@@ -7,6 +7,7 @@
  * Opens its own llama.cpp embedding sidecar through the normal provider factory,
  * so the dynamic port is resolved exactly like the gateway does.
  */
+import * as os from 'os';
 import * as path from 'path';
 import { config } from '../src/config';
 import { GatewayDatabase } from '../src/memory/gateway-db';
@@ -30,9 +31,10 @@ async function main() {
   let runtime: ReturnType<typeof initEmbeddingRuntime> = null;
   try {
     runtime = initEmbeddingRuntime({
-      baseDir: config.resolvePath(),
+      // Isolated store dir: the script only needs the provider, not the
+      // gateway's 32k T1 vectors or harmonic index.
+      baseDir: path.join(os.tmpdir(), 'mafw-atom-backfill-runtime'),
       cfg: config.memory.embedding,
-      vectorDb: db.getStore(),
     });
     if (!runtime?.provider) {
       console.error('embedding runtime unavailable; cannot encode atoms');
