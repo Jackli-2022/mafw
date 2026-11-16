@@ -439,6 +439,9 @@ summary, proposedGoal?, state, userAction, deadline, llmSuggestions?, updatedAt?
 
 ### 7.13 UI 高级化（U 批，2026-11-16）
 
+> 注意：本节的卡片式视觉已被 §7.14 的 Editorial Ink 重做取代；`MafwType` / `MafwSpace` /
+> `MafwRadius` 令牌名继续有效。
+
 功能打磨（F 批，commit `61cbbaf2`）之后的一轮纯视觉 / 可达性收口，不改业务契约：
 
 - **令牌化**：`theme.dart` 新增 `MafwType`（6 级字阶）/ `MafwSpace`（4pt 网格）/ `MafwRadius`（8/14/18/999），
@@ -459,6 +462,33 @@ summary, proposedGoal?, state, userAction, deadline, llmSuggestions?, updatedAt?
   tab_shell 8/8、sessions 11/11、pairing 45/45、chat render 6/6、tech lead 12/12、plan 18/18、
   lead entry 13/13、lead handoff 20/20、goal detail 29/29；`flutter analyze` 0。聚合 `flutter test`
   仍有既有 flutter_tester 原生崩溃，逐文件为门禁。
+
+### 7.14 Editorial Ink 视觉重做（2026-11-16）
+
+对照 Grok / Claude / Linear 的公开设计资料后的结论：上一版显丑的根因不是配色，而是
+“每个条目都是带边框卡片 + mint 装饰 + 字号层级扁平”。本次把主界面改成编辑式排版：
+
+- **画布 / 令牌**：暖近黑 `#0A0A0B`、ink `#141416`、hairline `#232326`、cream `#F4EFE6`、
+  三档中性灰、唯一 mint `#63E6A4`；`MafwType` 6 级字阶（40/28/17/15/12/10）；
+  `MafwFonts.serif = InstrumentSerif`（OFL，随包 70KB），中文与正文继续系统 sans。
+- **导航**：删除 Material `NavigationBar`，改 `widgets/mafw_bottom_nav.dart`：
+  64px、细线图标 19px + 9px 标签 + 激活项 3px mint 点；三个 tab 都不再使用 AppBar / FAB。
+- **工作 tab**：masthead = Lore 18 + `ORCALORE` 9px overline + 日期 + 新建＋；40px serif 字标；
+  项目名是文字选择器。需要你 = 10px mint overline + 2px mint 竖线 + hairline 行；
+  五桶只渲染非空桶，Goal 行无卡片 / 无 chip（title 15 + 一行 meta + 右侧 verdict）；历史折叠为
+  `work-history-row` sheet；首屏是 hairline 骨架屏。
+- **聊天**：`CHATS` overline + 28px「会话」+ 页头扫码 / 设置 / 新话题；会话列表是无头像的
+  hairline 索引（LEAD/SUB 8px mono）；聊天页 composer 顶部 hairline，发送按钮 cream（不再 mint），
+  用户气泡 20dp + 6dp 尾角、无边框。
+- **我的**：`ORCALORE / PROFILE` + 32px serif 字标；记忆 / 连接 / 关于全部 hairline 行，
+  装饰图标 18px dim，无卡片、无 mint 圆底。
+- **Goal 详情**：`GOAL` overline + 26px 标题 + 单行 meta；时间线 / 版本 / 结果去掉 Card，
+  done 节点改为灰描边勾（不再白实心）；结果 verdict 用 28px serif；需要你槽位改为 mint 竖线。
+- **系统 chrome**：`debugShowCheckedModeBanner=false`；`SystemUiOverlayStyle` 把状态栏 / 导航栏
+  设为 app 黑底浅色图标。
+- 契约更新：work_tab 的“非空桶 / 历史 sheet / 页头新建”、tab_shell 的“无 FAB + 自定义底栏”、
+  sessions 的“无头像索引”、goal detail 的“灰描边 done / 单行 meta”均已有测试；
+  全量逐文件数字见 `docs/releases/2026-11-16-mobile-editorial-ink.md`。
 
 ---
 
