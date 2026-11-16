@@ -31,6 +31,17 @@ describe('parseReviewVerdict (review-parser)', () => {
     expect(result.feedback).toBe('tests missing');
   });
 
+  it('parses a double-encoded JSON object', () => {
+    const content = [
+      '```mafw-review',
+      JSON.stringify(JSON.stringify({ verdict: 'PASS', reason: 'double encoded' })),
+      '```',
+    ].join('\n');
+    const result = parseReviewVerdict(content);
+    expect(result.verdict).toBe('PASS');
+    expect(result.feedback).toBe('double encoded');
+  });
+
   it('maps any non-PASS JSON verdict to FAIL', () => {
     const content = JSON.stringify({ verdict: 'FAIL', reason: 'x' });
     expect(parseReviewVerdict(content).verdict).toBe('FAIL');

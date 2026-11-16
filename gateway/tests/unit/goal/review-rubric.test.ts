@@ -89,6 +89,22 @@ describe('parseReviewRubric', () => {
     expect(() => parseReviewRubric('# Review\n\nno block here', ['w1-t1'])).toThrow(RubricError);
   });
 
+  test('accepts a double-encoded JSON object (stringified twice)', () => {
+    const payload = {
+      verdict: 'PASS',
+      tasks: [{ taskId: 'w1-t1', result: 'pass', evidence: 'npm test -- pod' }],
+      feedback: 'ok',
+    };
+    // reviewFile() stringifies once more => the block contains a JSON string, not an object.
+    const rubric = parseReviewRubric(reviewFile(JSON.stringify(payload)), ['w1-t1']);
+    expect(rubric.verdict).toBe('PASS');
+    expect(rubric.tasks[0].evidence).toBe('npm test -- pod');
+  });
+
+  test('still rejects a JSON string that does not decode to an object', () => {
+    expect(() => parseReviewRubric(reviewFile('not-an-object'), ['w1-t1'])).toThrow(RubricError);
+  });
+
   test('evidence is required for pass/fail but not for skipped', () => {
     // 缺证据的 pass 不可能通过：降级为 fail 并进入修复/下一轮。
     const missingEvidence = parseReviewRubric(reviewFile({

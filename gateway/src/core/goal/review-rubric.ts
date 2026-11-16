@@ -55,12 +55,26 @@ export class RubricError extends Error {
 
 const FENCED_BLOCK_RE = /```mafw-review\s*\n([\s\S]*?)```/;
 
+/** 评审模型偶尔会把对象再 stringify 一层（json.dumps(JSON.stringify(obj))）：
+ *  parse 出字符串时继续解一层，最多 3 层；真正非对象的载荷仍由调用方拒绝。 */
+function decodePayload(value: unknown): unknown {
+  let payload = value;
+  for (let i = 0; i < 3 && typeof payload === 'string'; i++) {
+    try {
+      payload = JSON.parse(payload);
+    } catch {
+      break;
+    }
+  }
+  return payload;
+}
+
 function extractPayload(markdown: string): any {
   const fenced = markdown.match(FENCED_BLOCK_RE);
   const raw = fenced ? fenced[1].trim() : markdown.trim();
   if (!raw) throw new RubricError('invalid', 'review report is empty');
   try {
-    return JSON.parse(raw);
+    return decodePayload(JSON.parse(raw));
   } catch {
     throw new RubricError('invalid', 'review report has no machine-readable mafw-review JSON block');
   }

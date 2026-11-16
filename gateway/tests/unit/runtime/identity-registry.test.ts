@@ -121,6 +121,15 @@ describe('toAgentDefinition (materialization derivation parity)', () => {
       expect(toAgentDefinition(spec).model).toBe('gateway/volcengine/deepseek-v4.1-flash');
     }
   });
+
+  it('mafw-review prompt aligns with the node prompt: machine block first, no double encoding', () => {
+    const review = registry.get('mafw-review')!;
+    expect(review.systemPrompt).toContain('第一段必须是');
+    expect(review.systemPrompt).toContain('不要二次 JSON.stringify');
+    expect(review.systemPrompt).toContain('tasks');
+    expect(review.systemPrompt).toContain('goalResults');
+    expect(review.systemPrompt).not.toContain('末尾必须');
+  });
 });
 
 describe('resolveToolCategory', () => {
