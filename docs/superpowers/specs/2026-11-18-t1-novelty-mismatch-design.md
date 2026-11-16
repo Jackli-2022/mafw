@@ -1,6 +1,6 @@
 # T1 编码期 novelty / mismatch（E2）设计
 
-- **状态**：待批准
+- **状态**：已交付（Phase 1，2026-11-18）
 - **日期**：2026-11-18
 - **范围**：`gateway/src/recall/turn-pipeline.ts`、`t1_turn_features`、`replay-sampling`、consolidation 预筛
 - **前置**：`2026-11-18-cortex-grounding-design.md`（E1）、`2026-10-08-brain-like-roadmap.md`（D3）
@@ -197,7 +197,15 @@ ALTER TABLE t1_turn_features ADD COLUMN mismatch REAL;
   release note 记录；换模型必须重跑回填（`--apply` 覆盖全部分数）并重定阈值，不能沿用旧分布。
 - **mismatch 可能是噪声**：见 §9 第 5 条，审计不通过就只保留 novelty。
 
-## 12. 回滚
+## 12. 交付修订（2026-11-18）
+
+- 增加了“cue 与 content 必须补全到同一条记忆”的约束（CA1 是一次检索的比较）；没有它时 mismatch 主要反映短线索的泛化匹配。
+- 审计后 mismatch 仍偏噪声（AUC 0.484）。按 §9 第 5 条本应记 null；实际选择**保留存储、禁止消费**，因为删掉分数会让后续改进定义失去对照数据。代价：库里存在一个低精度字段，靠 release note 与本节的“禁止消费”约束管理。
+- `recall.t1Signals` 默认 `on` 只表示“计算”，Phase 2/3 均未实现。
+- 阈值按首轮回填分位数落到 `config.recall.t1SignalThresholds`（0.45 / 0.085 / 0.25 / 0.95）。
+- 交付记录：`docs/releases/2026-11-18-t1-novelty-mismatch.md`。
+
+## 13. 回滚
 
 - 关 flag → 行为回到常数 0.5；两列留在表里不影响任何读路径。
 - 删除两列或置 null 即可清除；回填脚本可重放。
