@@ -182,7 +182,7 @@ import {
   TriageListResponse,
 } from './schemas/human-gate';
 import { WorkOverviewResponse } from './schemas/work';
-import { MemoryGetResponse, MemorySearchResponse } from './schemas/memory';
+import { MemoryEpisodeResponse, MemoryEpisodesResponse, MemoryGetResponse, MemorySearchResponse } from './schemas/memory';
 import {
   MemoryEnergyDistributionResponse,
   MemoryL5AxiomsResponse,
@@ -222,6 +222,7 @@ import {
   MobilePairingVerifyRequest,
   ModelsUpdateRequest,
   ObsCaptureRequest,
+  ObsEpisodeBoundaryRequest,
   PythonExecuteRequest,
   PythonRestartRequest,
   SkillsDeoptRequest,
@@ -253,6 +254,7 @@ import {
   EvalChatCompletionsResponse,
   LlmCompressResponse,
   ObsCaptureResponse,
+  ObsEpisodeBoundaryResponse,
   PythonExecuteResponse,
   PythonRestartResponse,
   ToolsExecuteResponse,
@@ -735,6 +737,8 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/work/:goalId/validate', operationId: 'goals.validate', tags: ['goals'], request: GoalValidateRequest, requestRequired: false, response: GoalValidateResponse, errors: [400] },
   { method: 'POST', path: '/api/goals/control', operationId: 'goals.control', tags: ['goals'], request: GoalControlRequest, response: GoalControlResponse, errors: [400] },
   { method: 'GET', path: '/api/memory/search', operationId: 'memory.search', tags: ['memory'], response: MemorySearchResponse },
+  { method: 'GET', path: '/api/memory/episodes', operationId: 'memory.episodes', tags: ['memory'], response: MemoryEpisodesResponse },
+  { method: 'GET', path: '/api/memory/episodes/:id', operationId: 'memory.getEpisode', tags: ['memory'], response: MemoryEpisodeResponse, errors: [404] },
   { method: 'GET', path: '/api/memory/merged-search', operationId: 'memory.mergedSearch', tags: ['memory'], response: MemoryMergedSearchResponse },
   { method: 'GET', path: '/api/memory/energy-distribution', operationId: 'memory.getEnergyDistribution', tags: ['memory'], response: MemoryEnergyDistributionResponse },
   { method: 'GET', path: '/api/l5/axioms', operationId: 'memory.getL5Axioms', tags: ['memory'], response: MemoryL5AxiomsResponse },
@@ -853,6 +857,7 @@ const NON_SDK_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/python/status', operationId: 'python.status', tags: ['internal'], response: PythonStatusResponse },
   // 观察捕获 / 边界 recall / pinned 披露层（§5.11/§5.13）
   { method: 'POST', path: '/api/obs/capture', operationId: 'obs.capture', tags: ['internal'], request: ObsCaptureRequest, response: ObsCaptureResponse, errors: [400] },
+  { method: 'POST', path: '/api/obs/episode-boundary', operationId: 'obs.episodeBoundary', tags: ['internal'], request: ObsEpisodeBoundaryRequest, response: ObsEpisodeBoundaryResponse, errors: [400] },
   { method: 'GET', path: '/api/recall/context', operationId: 'recall.context', tags: ['internal'], response: RecallContextResponse },
   { method: 'GET', path: '/api/recall/pinned', operationId: 'recall.pinned', tags: ['internal'], response: RecallPinnedResponse },
   // Task B3：T2-4 fallback 面 / W1 常驻先验块（plugin / pi host extension 消费；

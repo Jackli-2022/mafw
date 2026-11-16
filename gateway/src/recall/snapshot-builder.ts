@@ -10,6 +10,7 @@ import { RecallSnapshot, snapshotQueryFromTurns, SNAPSHOT_DEFAULTS, SnapshotConf
 import { renderT1Lines, T1Hit, T1_POINTER_HEADER } from './verbatim-recall';
 import type { RecallMemory } from './recall-context';
 import type { FokZone } from './fok-gate';
+import type { EpisodeHit } from './t1-episode-search';
 
 export const SNAPSHOT_SCOPE = 'recall-snapshot';
 
@@ -32,9 +33,71 @@ export interface SnapshotDeps {
   /** V1 verbatim layer: dense search over t1 rounds (fail-open — absence
    *  keeps the snapshot harmonic-only). */
   searchT1?: (query: string, k: number) => Promise<T1Hit[]> | T1Hit[];
+  /** Episode channel ("what happened"). Kernel only supplies this in live mode. */
+  searchEpisodes?: (query: string, k: number) => Promise<EpisodeHit[]>;
   /** kv write (fail-open by the caller). */
   store: (sessionID: string, snapshot: RecallSnapshot) => void;
   now?: () => Date;
+}
+
+/**
+ * Render the two recall layers as separate sections: episodes first ("what
+ * happened"), knowledge second ("what it means"). Empty sections are omitted;
+ * lines are appended until the char budget is exhausted.
+ */
+export function renderLayeredRecall(input: {
+  episodes: EpisodeHit[];
+  memories: Array<{ id: string; primary_abstraction: string }>;
+  maxChars: number;
+}): string {
+  const maxChars = Math.max(0, Math.trunc(input.maxChars));
+  if (maxChars === 0) return '';
+  const sections: string[] = [];
+  const lines: string[] = [];
+  let used = 0;
+  const push = (line: string): boolean => {
+    const cost = line.length + (lines.length > 0 ? 1 : 0);
+    if (used + cost > maxChars) return false;
+    lines.push(line);
+    used += cost;
+    return true;
+  };
+  const flush = () => {
+    if (lines.length > 0) sections.push(lines.join('\n'));
+    lines.length = 0;
+    used = 0;
+  };
+
+  if (input.episodes.length > 0) {
+    push('## Episodes — what happened');
+    for (const episode of input.episodes) {
+      const date = episode.startedAt
+        ? new Date(episode.startedAt).toISOString().slice(0, 10)
+        : 'unknown';
+      const actors = episode.actors
+        .map((actor) => actor.replace(/^agent:/, ''))
+        .join(',');
+      const turns = episode.endTurn - episode.startTurn + 1;
+      const head = `[t1ep:${episode.episodeId}] ${date}`;
+      const rest = [actors, episode.intent ?? '', `(${turns} turns)`]
+        .filter(Boolean)
+        .join(' · ');
+      const line = rest ? `${head} · ${rest}` : head;
+      if (!push(line)) break;
+    }
+    flush();
+  }
+
+  if (input.memories.length > 0) {
+    push('## Knowledge — what it means');
+    for (const memory of input.memories) {
+      if (!push(`- [${memory.id}] ${memory.primary_abstraction}`)) break;
+    }
+    flush();
+  }
+
+  const rendered = sections.join('\n\n');
+  return rendered.length > maxChars ? rendered.slice(0, maxChars) : rendered;
 }
 
 /**
@@ -52,6 +115,15 @@ export async function buildSnapshot(
   const texts = deps.recentTurnTexts(sessionID, maxTurns);
   const query = snapshotQueryFromTurns(texts, cfg.maxChars ?? SNAPSHOT_DEFAULTS.maxChars);
   if (!query.trim()) return null;
+
+  // Episode channel: only supplied by the kernel when episodes are live.
+  let episodes: EpisodeHit[] | undefined;
+  if (deps.searchEpisodes) {
+    try {
+      const hits = await deps.searchEpisodes(query, cfg.t1K ?? SNAPSHOT_DEFAULTS.t1K ?? 3);
+      if (hits.length > 0) episodes = hits;
+    } catch { /* fail-open: harmonic-only snapshot */ }
+  }
 
   // V1: T1 is an independent channel. Search it even when Harmonic has no
   // hits — verbatim evidence must be able to rescue an extraction miss.
@@ -85,7 +157,16 @@ export async function buildSnapshot(
     } catch { /* fail-open: keep the un-reranked ranking, no gate */ }
   }
   let block = memories.length > 0 ? deps.render(memories, fokStatus) : null;
-  if (t1Lines) {
+  if (episodes) {
+    block = renderLayeredRecall({
+      episodes,
+      memories: memories.slice(0, topK).map((memory) => ({
+        id: memory.id,
+        primary_abstraction: memory.primary_abstraction,
+      })),
+      maxChars: cfg.t1MaxChars ?? 1200,
+    }) || null;
+  } else if (t1Lines) {
     block = block ? `${block}\n${t1Lines}` : `${T1_POINTER_HEADER}\n${t1Lines}`;
   }
   if (!block) return null;
@@ -98,6 +179,7 @@ export async function buildSnapshot(
     fokStatus,
     top1prob,
     t1Hits,
+    ...(episodes ? { episodes } : {}),
   };
   deps.store(sessionID, snapshot);
   return snapshot;

@@ -35,6 +35,11 @@ export interface Services {
   resolveT1?: (sessionTail: string, turnId: number) => import('./memory/gateway-db').T1Observation[];
   /** T1 dense retrieval over active/archive verbatim rows. */
   searchT1?: (query: string, k: number) => Promise<import('./recall/verbatim-recall').T1Hit[]>;
+  /** Episode-channel retrieval (turn hits aggregated by episode). */
+  searchEpisodes?: (query: string, k: number) => Promise<import('./recall/t1-episode-search').EpisodeHit[]>;
+  /** Episode metadata / members for `mafw_get_memory("t1ep:<id>")`. */
+  getEpisode?: (episodeId: string) => import('./recall/t1-episodes').T1EpisodeRecord | null;
+  listEpisodeMembers?: (episodeId: string) => import('./recall/t1-episodes').T1EpisodeMember[];
   /** Observe-only T1 access event (never mutates energy/ranking). */
   recordT1Retrieval?: (
     traceId: string,

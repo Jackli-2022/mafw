@@ -45584,6 +45584,9 @@
                               }
                             ]
                           },
+                          "episodeId": {
+                            "type": "string"
+                          },
                           "cosine": {
                             "type": "number"
                           },
@@ -45601,11 +45604,657 @@
                                 {
                                   "const": "lexical",
                                   "type": "string"
+                                },
+                                {
+                                  "const": "feature",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "concept",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "actor",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "sparse",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "neighbor",
+                                  "type": "string"
                                 }
                               ]
                             }
                           },
                           "score": {
+                            "type": "number"
+                          }
+                        }
+                      }
+                    },
+                    "episodes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "episodeId",
+                          "sessionId",
+                          "startTurn",
+                          "endTurn",
+                          "status",
+                          "startedAt",
+                          "boundarySource",
+                          "actors",
+                          "conceptIds",
+                          "score",
+                          "sources",
+                          "topTraceIds"
+                        ],
+                        "properties": {
+                          "episodeId": {
+                            "type": "string"
+                          },
+                          "sessionId": {
+                            "type": "string"
+                          },
+                          "startTurn": {
+                            "type": "number"
+                          },
+                          "endTurn": {
+                            "type": "number"
+                          },
+                          "status": {
+                            "anyOf": [
+                              {
+                                "const": "open",
+                                "type": "string"
+                              },
+                              {
+                                "const": "closed",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "startedAt": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "boundarySource": {
+                            "type": "string"
+                          },
+                          "boundaryReason": {
+                            "type": "string"
+                          },
+                          "intent": {
+                            "type": "string"
+                          },
+                          "outcome": {
+                            "type": "string"
+                          },
+                          "actors": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "conceptIds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "score": {
+                            "type": "number"
+                          },
+                          "sources": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "topTraceIds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "legacyEpisodic": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "type",
+                          "primary_abstraction",
+                          "cue_anchors",
+                          "memory_value",
+                          "energy"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "anyOf": [
+                              {
+                                "const": "episodic",
+                                "type": "string"
+                              },
+                              {
+                                "const": "semantic",
+                                "type": "string"
+                              },
+                              {
+                                "const": "procedural",
+                                "type": "string"
+                              },
+                              {
+                                "const": "global",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "primary_abstraction": {
+                            "type": "string"
+                          },
+                          "cue_anchors": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "memory_value": {
+                            "type": "string"
+                          },
+                          "energy": {
+                            "type": "number"
+                          },
+                          "salience": {
+                            "type": "number"
+                          },
+                          "created_at": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "success": {
+                      "const": false,
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "success": {
+                      "const": false,
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "success": {
+                      "const": false,
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/memory/episodes": {
+      "get": {
+        "operationId": "memory.episodes",
+        "tags": [
+          "memory"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "episodes"
+                  ],
+                  "properties": {
+                    "episodes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "episodeId",
+                          "sessionId",
+                          "startTurn",
+                          "endTurn",
+                          "status",
+                          "startedAt",
+                          "boundarySource",
+                          "actors",
+                          "conceptIds",
+                          "score",
+                          "sources",
+                          "topTraceIds"
+                        ],
+                        "properties": {
+                          "episodeId": {
+                            "type": "string"
+                          },
+                          "sessionId": {
+                            "type": "string"
+                          },
+                          "startTurn": {
+                            "type": "number"
+                          },
+                          "endTurn": {
+                            "type": "number"
+                          },
+                          "status": {
+                            "anyOf": [
+                              {
+                                "const": "open",
+                                "type": "string"
+                              },
+                              {
+                                "const": "closed",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "startedAt": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "boundarySource": {
+                            "type": "string"
+                          },
+                          "boundaryReason": {
+                            "type": "string"
+                          },
+                          "intent": {
+                            "type": "string"
+                          },
+                          "outcome": {
+                            "type": "string"
+                          },
+                          "actors": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "conceptIds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "score": {
+                            "type": "number"
+                          },
+                          "sources": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "topTraceIds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "nextCursor": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "success": {
+                      "const": false,
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "success": {
+                      "const": false,
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "success": {
+                      "const": false,
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/memory/episodes/{id}": {
+      "get": {
+        "operationId": "memory.getEpisode",
+        "tags": [
+          "memory"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "episode",
+                    "members"
+                  ],
+                  "properties": {
+                    "episode": {
+                      "type": "object",
+                      "required": [
+                        "episodeId",
+                        "sessionId",
+                        "startTurn",
+                        "endTurn",
+                        "status",
+                        "startedAt",
+                        "endedAt",
+                        "boundarySource",
+                        "boundaryReason",
+                        "confidence",
+                        "actors",
+                        "conceptIds",
+                        "sourceTraceIds"
+                      ],
+                      "properties": {
+                        "episodeId": {
+                          "type": "string"
+                        },
+                        "sessionId": {
+                          "type": "string"
+                        },
+                        "startTurn": {
+                          "type": "number"
+                        },
+                        "endTurn": {
+                          "type": "number"
+                        },
+                        "status": {
+                          "anyOf": [
+                            {
+                              "const": "open",
+                              "type": "string"
+                            },
+                            {
+                              "const": "closed",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "startedAt": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "endedAt": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "goalId": {
+                          "type": "string"
+                        },
+                        "boundarySource": {
+                          "type": "string"
+                        },
+                        "boundaryReason": {
+                          "type": "string"
+                        },
+                        "confidence": {
+                          "type": "number"
+                        },
+                        "intent": {
+                          "type": "string"
+                        },
+                        "outcome": {
+                          "type": "string"
+                        },
+                        "actors": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "actorId",
+                              "role",
+                              "weight"
+                            ],
+                            "properties": {
+                              "actorId": {
+                                "type": "string"
+                              },
+                              "role": {
+                                "type": "string"
+                              },
+                              "weight": {
+                                "type": "number"
+                              }
+                            }
+                          }
+                        },
+                        "conceptIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "sourceTraceIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "members": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "episodeId",
+                          "traceId",
+                          "turnSeq"
+                        ],
+                        "properties": {
+                          "episodeId": {
+                            "type": "string"
+                          },
+                          "traceId": {
+                            "type": "string"
+                          },
+                          "turnSeq": {
                             "type": "number"
                           }
                         }
@@ -45647,6 +46296,35 @@
           },
           "403": {
             "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "success": {
+                      "const": false,
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
             "content": {
               "application/json": {
                 "schema": {
@@ -82468,6 +83146,49 @@
                           "description": "Content matched an extraction prompt: dropped by recursion guard B.",
                           "const": true,
                           "type": "boolean"
+                        },
+                        "episodeBoundary": {
+                          "type": "object",
+                          "required": [
+                            "sessionId",
+                            "afterTurn",
+                            "source",
+                            "createdAt"
+                          ],
+                          "properties": {
+                            "sessionId": {
+                              "type": "string"
+                            },
+                            "afterTurn": {
+                              "description": "Canonical edge: turn N stays in the old episode, N+1 starts the new one.",
+                              "type": "number"
+                            },
+                            "source": {
+                              "anyOf": [
+                                {
+                                  "const": "agent",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "user",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "system",
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "reason": {
+                              "type": "string"
+                            },
+                            "intent": {
+                              "type": "string"
+                            },
+                            "createdAt": {
+                              "type": "number"
+                            }
+                          }
                         }
                       }
                     },
@@ -82490,6 +83211,259 @@
                       }
                     }
                   ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "success": {
+                      "const": false,
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "success": {
+                      "const": false,
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "success": {
+                      "const": false,
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "success": {
+                      "const": false,
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/obs/episode-boundary": {
+      "post": {
+        "operationId": "obs.episodeBoundary",
+        "tags": [
+          "internal"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "sessionID"
+                ],
+                "properties": {
+                  "sessionID": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "scope": {
+                    "description": "start_new = current turn opens a new episode; end_current = current turn closes it; next_user_turn = queue for the next captured user turn.",
+                    "anyOf": [
+                      {
+                        "const": "start_new",
+                        "type": "string"
+                      },
+                      {
+                        "const": "end_current",
+                        "type": "string"
+                      },
+                      {
+                        "const": "next_user_turn",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "afterTurn": {
+                    "minimum": 0,
+                    "description": "Explicit canonical edge; wins over scope.",
+                    "type": "integer"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "intent": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "anyOf": [
+                      {
+                        "const": "agent",
+                        "type": "string"
+                      },
+                      {
+                        "const": "user",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "pending": {
+                      "type": "boolean"
+                    },
+                    "ignored": {
+                      "type": "boolean"
+                    },
+                    "boundary": {
+                      "type": "object",
+                      "required": [
+                        "sessionId",
+                        "afterTurn",
+                        "source",
+                        "createdAt"
+                      ],
+                      "properties": {
+                        "sessionId": {
+                          "type": "string"
+                        },
+                        "afterTurn": {
+                          "description": "Canonical edge: turn N stays in the old episode, N+1 starts the new one.",
+                          "type": "number"
+                        },
+                        "source": {
+                          "anyOf": [
+                            {
+                              "const": "agent",
+                              "type": "string"
+                            },
+                            {
+                              "const": "user",
+                              "type": "string"
+                            },
+                            {
+                              "const": "system",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "reason": {
+                          "type": "string"
+                        },
+                        "intent": {
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "number"
+                        }
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -83374,6 +84348,13 @@
                         "sticky_until": {
                           "description": "Note-board expiry (ISO) when the unit was created with sticky:true.",
                           "type": "string"
+                        },
+                        "warnings": {
+                          "description": "Retired-type notices (e.g. episodic coerced to semantic).",
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
                         }
                       }
                     },
@@ -83640,6 +84621,9 @@
                                 "type": "string"
                               }
                             },
+                            "episode_id": {
+                              "type": "string"
+                            },
                             "authority": {
                               "anyOf": [
                                 {
@@ -83794,6 +84778,9 @@
                               "items": {
                                 "type": "string"
                               }
+                            },
+                            "episode_id": {
+                              "type": "string"
                             },
                             "authority": {
                               "anyOf": [

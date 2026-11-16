@@ -311,6 +311,8 @@ describe('memory registry wiring (D1 Task F1)', () => {
         provenance: { memories: 0, withExact: 0, coverage: 0 },
         activation: { traces: 0, mean: 0, max: 0 },
         activationRanking: { mode: 'shadow', evaluations: 0, wouldReorder: 0, applied: 0 },
+        denseIndex: { mode: 'shadow', evaluations: 0, withDenseHits: 0 },
+        semanticAtoms: 'on',
       });
     } finally {
       setEmbeddingRuntime(null);

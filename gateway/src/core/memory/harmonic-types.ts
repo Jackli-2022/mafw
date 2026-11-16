@@ -52,6 +52,8 @@ export interface HarmonicUnit {
   source_session_id?: string;
   /** Exact T1 provenance: permanent trace ids the memory was extracted from. */
   source_trace_ids?: string[];
+  /** Optional T1 episode hint derived from source_trace_ids at write time. */
+  episode_id?: string;
   /** G1: provenance authority. Absent = legacy → treated as 'pipeline' (lowest). */
   authority?: Authority;
   /** A5: ids of gist units distilled FROM this entry. NOT a supersede chain —
@@ -87,6 +89,8 @@ export interface HarmonicIndexEntry {
   source_session_id?: string;
   /** Exact T1 provenance (see HarmonicUnit.source_trace_ids). */
   source_trace_ids?: string[];
+  /** Optional T1 episode hint derived from source_trace_ids at write time. */
+  episode_id?: string;
   /** Abstraction degree (orthogonal to type): 1=episodic, 2=semantic/procedural, 3=global. */
   abstraction_level?: number;
   superseded_by?: string;

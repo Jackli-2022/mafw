@@ -1,8 +1,8 @@
 // E10h closeout: the write-response ledger.
 //
-// Every non-GET catalog op (195 of them) must close on *exactly one* of:
+// Every non-GET catalog op (196 of them) must close on *exactly one* of:
 //
-//   194 covered  +  1 excluded (tts.speakStream)  =  195
+//   195 covered  +  1 excluded (tts.speakStream)  =  196
 //
 // `RouteDef.response` is the catalog's single source for a write op's 200 body
 // (`toOpenApiPaths()` projects it to `responses.200.content['application/json']`;
@@ -24,14 +24,14 @@
 import { buildRouteCatalog } from '../../../src/routes/route-catalog';
 
 /** Every non-GET catalog op (the write-response denominator, same set as E10g requests). */
-const WRITE_OPS_TOTAL = 195;
+const WRITE_OPS_TOTAL = 196;
 
 /** Write ops that declare a `response` schema (all but `tts.speakStream`). */
-const COVERED_TOTAL = 194;
+const COVERED_TOTAL = 195;
 
-/** Whole-catalog size and response coverage after E10h (127 pre-wave → 320). */
-const CATALOG_OPS_TOTAL = 327;
-const CATALOG_RESPONSES_TOTAL = 320;
+/** Whole-catalog size and response coverage after E10h (127 pre-wave → 323). */
+const CATALOG_OPS_TOTAL = 330;
+const CATALOG_RESPONSES_TOTAL = 323;
 
 /**
  * Write ops whose 200 is *not* a JSON body, with the reason it is excluded.
@@ -143,7 +143,7 @@ describe('write-response-coverage: ledger for catalog write responses (E10h)', (
     expect(Object.keys(WRITE_RESPONSE_EXCLUDED)).toEqual(['tts.speakStream']);
   });
 
-  it('closes on 195 write ops = 194 covered + 1 excluded', () => {
+  it('closes on 196 write ops = 195 covered + 1 excluded', () => {
     const ops = writeOps();
     const covered = ops.filter((op) => Boolean(op.response)).map((op) => op.operationId);
     expect(ops).toHaveLength(WRITE_OPS_TOTAL);
@@ -159,7 +159,7 @@ describe('write-response-coverage: ledger for catalog write responses (E10h)', (
     expect(unaccounted).toEqual([]);
   });
 
-  it('whole-catalog arithmetic: 320/327 with the 7 gaps fully accounted for', () => {
+  it('whole-catalog arithmetic: 323/330 with the 7 gaps fully accounted for', () => {
     const ops = opViews();
     expect(ops).toHaveLength(CATALOG_OPS_TOTAL);
     const covered = ops.filter((op) => Boolean(op.response)).map((op) => op.operationId);

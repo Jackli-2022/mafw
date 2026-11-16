@@ -1,4 +1,4 @@
-import { createSignal, onMount } from "solid-js"
+import { createSignal, onMount, Show } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { PageHeader } from "../components/PageHeader"
@@ -11,6 +11,9 @@ import { menuController } from "../context-menu/controller"
 import { buildMemoryCardMenu } from "../context-menu/builders/card"
 import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
 import { openMenuOnKey } from "../context-menu/menu-key"
+import { MemoryEpisodes } from "../components/MemoryEpisodes"
+import { MemoryEpisodeDetail, type EpisodeDetailData } from "../components/MemoryEpisodeDetail"
+import type { EpisodeHit } from "@mafw/sdk"
 
 interface EnergyDistribution { critical: number; high: number; medium: number; low: number; total: number }
 interface L5Axiom { id: string; content: string; energy: number; created_at?: string }
@@ -18,7 +21,11 @@ interface L5Heuristic { id: string; pattern: string; trigger_context: string[]; 
 
 export function MemoryPage() {
   const [query, setQuery] = createSignal("")
+  const [tab, setTab] = createSignal<"knowledge" | "episodes">("knowledge")
   const [results, setResults] = createSignal<any[]>([])
+  const [episodeResults, setEpisodeResults] = createSignal<EpisodeHit[]>([])
+  const [episodeDetail, setEpisodeDetail] = createSignal<EpisodeDetailData | null>(null)
+  const [episodeLoading, setEpisodeLoading] = createSignal(false)
   const [searching, setSearching] = createSignal(false)
   const [loaded, setLoaded] = createSignal(false)
   const [dist, setDist] = createSignal<EnergyDistribution | null>(null)
@@ -40,15 +47,44 @@ export function MemoryPage() {
   const loadResults = async (q: string) => {
     setSearching(true)
     try {
-      const items = await window.api.mafw.memory.search({ query: q, topK: 100 })
-      setResults(Array.isArray(items) ? items : [])
-      setLoaded(true)
+      if (tab() === "episodes") {
+        setEpisodeLoading(true)
+        const data = q.trim()
+          ? await window.api.mafw.memory.searchEpisodes(q, 100)
+          : await window.api.mafw.memory.episodes({ limit: 50 })
+        setEpisodeResults(Array.isArray(data?.episodes) ? data.episodes : [])
+        setLoaded(true)
+      } else {
+        const items = await window.api.mafw.memory.search({ query: q, topK: 100 })
+        setResults(Array.isArray(items) ? items : [])
+        setLoaded(true)
+      }
     } catch (e) {
       console.warn("[mafw] memory search failed:", e)
-      setResults([])
+      if (tab() === "episodes") setEpisodeResults([])
+      else setResults([])
       setLoaded(true)
+    } finally {
+      setSearching(false)
+      setEpisodeLoading(false)
     }
-    setSearching(false)
+  }
+
+  const switchTab = (next: "knowledge" | "episodes") => {
+    if (tab() === next) return
+    setTab(next)
+    setEpisodeDetail(null)
+    void loadResults(query())
+  }
+
+  const openEpisode = async (episodeId: string) => {
+    try {
+      const detail = await window.api.mafw.memory.episode(episodeId)
+      setEpisodeDetail(detail)
+    } catch (e) {
+      console.warn("[mafw] episode detail failed:", e)
+      showToastV2({ description: "Episode 详情加载失败", duration: 3000 })
+    }
   }
 
   const loadAll = async () => {
@@ -112,7 +148,26 @@ export function MemoryPage() {
 
   return (
     <div>
-      <PageHeader title="Memory" subtitle="谐波记忆检索与便签板" />
+      <PageHeader title="Memory" subtitle="皮层知识 / 海马体 episode" />
+
+      <div class="mafw-mem-tabs">
+        <ButtonV2
+          variant={tab() === "knowledge" ? "contrast" : "ghost"}
+          size="small"
+          aria-selected={tab() === "knowledge"}
+          onClick={() => switchTab("knowledge")}
+        >
+          Knowledge
+        </ButtonV2>
+        <ButtonV2
+          variant={tab() === "episodes" ? "contrast" : "ghost"}
+          size="small"
+          aria-selected={tab() === "episodes"}
+          onClick={() => switchTab("episodes")}
+        >
+          Episodes
+        </ButtonV2>
+      </div>
 
       {/* Energy distribution badges */}
       {dist() && (
@@ -132,7 +187,7 @@ export function MemoryPage() {
           value={query()}
           onInput={e => setQuery(e.currentTarget.value)}
           onKeyDown={e => e.key === "Enter" && handleSearch()}
-          placeholder="Search memories... (empty = show all)"
+          placeholder={tab() === "episodes" ? "Search episodes... (empty = recent)" : "Search memories... (empty = show all)"}
           class="flex-1"
         />
         <ButtonV2 variant="contrast" size="small" onClick={handleSearch} disabled={searching()}>
@@ -140,7 +195,8 @@ export function MemoryPage() {
         </ButtonV2>
       </div>
 
-      {/* L5 block */}
+      {/* L5 block (knowledge layer only) */}
+      <Show when={tab() === "knowledge"}>
       {(axioms().length > 0 || heuristics().length > 0) && (
         <div class="mafw-card" style={{ "flex-direction": "column", "align-items": "stretch", "margin-bottom": "16px" }}>
           <div class="mafw-card-title">L5 Axioms & Heuristics</div>
@@ -164,10 +220,24 @@ export function MemoryPage() {
           ))}
         </div>
       )}
+      </Show>
 
       {/* Results */}
       <div>
-        {searching() ? (
+        {tab() === "episodes" ? (
+          <>
+            <Show when={episodeDetail()}>
+              <MemoryEpisodeDetail detail={episodeDetail()} onClose={() => setEpisodeDetail(null)} />
+            </Show>
+            {episodeLoading() ? (
+              <SkeletonRows rows={3} h="52px" />
+            ) : episodeResults().length > 0 ? (
+              <MemoryEpisodes episodes={episodeResults()} onSelect={openEpisode} />
+            ) : loaded() ? (
+              <EmptyState glyph="⌕" title="没有 episode" hint="先声明一个边界，或等 T1 turn 完成编码。" />
+            ) : null}
+          </>
+        ) : searching() ? (
           <SkeletonRows rows={3} h="52px" />
         ) : results().length > 0 ? results().map(unit => {
           return (
@@ -178,8 +248,8 @@ export function MemoryPage() {
                     <span class="mafw-tool-tag" classList={{
                       "mafw-tag-semantic": unit.type === "semantic" || unit.type === "global",
                       "mafw-tag-procedural": unit.type === "procedural",
-                      "mafw-tag-episodic": unit.type === "episodic",
-                    }}>{unit.type ?? "?"}</span>
+                      "mafw-tag-legacy": unit.type === "episodic",
+                    }}>{unit.type === "episodic" ? "legacy episode" : unit.type ?? "?"}</span>
                     <span class="mafw-card-meta">E: {typeof unit.energy === "number" ? unit.energy.toFixed(2) : unit.energy}</span>
                   </div>
                 </div>

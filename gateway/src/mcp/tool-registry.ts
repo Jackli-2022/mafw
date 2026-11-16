@@ -236,10 +236,12 @@ export const DEFINITIONS: ToolDefinition[] = [
         hint: { type: "string" },
         t1Results: { type: "array", items: { type: "object" } },
         t1Count: { type: "number" },
+        episodes: { type: "array", items: { type: "object" } },
+        episodeCount: { type: "number" },
       },
       required: ["results", "canExpand", "round", "count", "hint"],
     },
-    description: "Search memory. layer=gist (default) searches Harmonic knowledge; layer=t1 searches raw T1 verbatim turns; layer=both returns both. T1 hits carry traceId and are redeemed with mafw_get_memory(\"t1:<traceId>\").",
+    description: "Search memory. layer=gist (default) searches Harmonic knowledge; layer=t1 searches raw T1 verbatim turns; layer=both returns both; layer=episodes returns T1 episodes (what happened); layer=auto returns episodes + knowledge when episodes are live. Expand an episode with mafw_get_memory(\"t1ep:<episodeId>\") or a turn with mafw_get_memory(\"t1:<traceId>\").",
     inputSchema: {
       type: "object",
       properties: {
@@ -248,7 +250,7 @@ export const DEFINITIONS: ToolDefinition[] = [
         memoryType: { type: "string", enum: ["episodic", "semantic", "procedural", "global"], description: "Optional filter" },
         policy: { type: "string", enum: ["guided", "oneshot"], default: "guided", description: "Retrieval strategy (reserved)" },
         retriever: { type: "string", enum: ["bm25", "hybrid", "token", "guided"], description: "Retrieval engine: bm25 (default), hybrid = BM25 + embedding RRF fusion (requires memory.embedding.provider), guided = multi-hop query expansion, token = legacy substring" },
-        layer: { type: "string", enum: ["gist", "t1", "both"], default: "gist", description: "Search layer: gist (default) = Harmonic knowledge, t1 = raw verbatim turns, both = both result sets" },
+        layer: { type: "string", enum: ["gist", "t1", "both", "episodes", "auto"], default: "gist", description: "Search layer: gist (default) = Harmonic knowledge, t1 = raw verbatim turns, both = both, episodes = T1 episodes (what happened), auto = episodes + knowledge when live" },
         state: { type: "string", description: "Iteration state from a previous call; pass to continue expanding" },
       },
       required: ["query"],
@@ -328,7 +330,7 @@ export const DEFINITIONS: ToolDefinition[] = [
       type: "object",
       properties: {
         content: { type: "string", description: "Memory content text to remember" },
-        memoryType: { type: "string", enum: ["semantic", "episodic", "procedural", "global"], description: "Memory type" },
+        memoryType: { type: "string", enum: ["semantic", "procedural", "global"], description: "Memory type. semantic=fact/preference/constraint, procedural=lesson/pattern, global=cross-project. Episodes live in T1; episodic is retired." },
         cueAnchors: { type: "array", items: { type: "string" }, description: "Tags/keywords for retrieval (max 8)" },
         primaryAbstraction: { type: "string", description: "6-8 word summary (auto-generated from content if omitted)" },
         supersedes: { type: "array", items: { type: "string" }, description: "IDs of existing memories this new memory replaces/updates. The old memories will be marked superseded (energy halved, search penalty applied)." },
@@ -380,7 +382,7 @@ export const DEFINITIONS: ToolDefinition[] = [
       },
       required: ["success"],
     },
-    description: "Fetch a memory's full content by id. Accepts mem_... / #mem-xxxxxx for Harmonic memories, t1:<traceId> for a permanent T1 verbatim turn, or legacy t1:<sessionTail>:<turnId>. Superseded memories include the latest version. Use this to expand a recall pointer before relying on it.",
+    description: "Fetch a memory's full content by id. Accepts mem_... / #mem-xxxxxx for Harmonic memories, t1:<traceId> for a permanent T1 verbatim turn, t1ep:<episodeId> for a T1 episode + member turns, or legacy t1:<sessionTail>:<turnId>. Superseded memories include the latest version. Use this to expand a recall pointer before relying on it.",
     inputSchema: {
       type: "object",
       properties: {

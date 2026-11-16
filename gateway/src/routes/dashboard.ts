@@ -28,6 +28,7 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import { config } from '../config';
 import { log } from '../core/utils/logger';
 import { abstractionLevelFor } from '../core/memory/abstraction-level';
+import { isKnownMemoryType, memoryTypeWarnings, normalizeMemoryType } from '../core/memory/memory-type';
 import { getRouteWriteDeps, routeAndWrite } from '../memory/route-write';
 import type { MemoryService } from '../memory/service';
 import type { TrajectoryStore } from '../trajectory/trajectory-store';
@@ -55,6 +56,8 @@ export interface DashboardRouteDeps {
   pressure?: () => { disk: string; degraded: string[] } | null;
   /** Exact T1 provenance validation for memory.add (defaults to drop all). */
   hasTrace?: (traceId: string) => boolean;
+  /** Map a source trace to its T1 episode (optional; soft hint on the memory). */
+  findEpisodeByTrace?: (traceId: string) => string | null;
 }
 
 export function attachDashboardRoutes(registry: RouteRegistry, deps: DashboardRouteDeps): void {
@@ -105,8 +108,10 @@ export function attachDashboardRoutes(registry: RouteRegistry, deps: DashboardRo
     try {
       const data = JSON.parse(body);
       const content = String(data?.content || '').trim();
-      const memoryType = String(data?.memoryType || 'semantic');
-      if (!content || !['episodic', 'semantic', 'procedural', 'global'].includes(memoryType)) {
+      const requestedType = String(data?.memoryType || 'semantic');
+      const memoryType = normalizeMemoryType(requestedType);
+      const warnings = memoryTypeWarnings(requestedType);
+      if (!content || !isKnownMemoryType(requestedType)) {
         res.end(JSON.stringify({ success: false, error: 'content and valid memoryType required' }));
         return;
       }
@@ -159,6 +164,9 @@ export function attachDashboardRoutes(registry: RouteRegistry, deps: DashboardRo
         data?.sourceTraceIds,
         (id: string) => (deps.hasTrace ? deps.hasTrace(id) : false),
       );
+      const episodeId = sourceTraceIds.length > 0 && deps.findEpisodeByTrace
+        ? deps.findEpisodeByTrace(sourceTraceIds[0])
+        : null;
       const unit = {
         id: generateHarmonicId(),
         type: memoryType,
@@ -183,6 +191,7 @@ export function attachDashboardRoutes(registry: RouteRegistry, deps: DashboardRo
         // session id — map back to the source session for C0 reconstruction.
         source_session_id: (data?.sessionID && require('../recall/worker-origin').resolveWorkerOrigin(String(data.sessionID))) || (data?.sessionID ? String(data.sessionID) : undefined),
         ...(sourceTraceIds.length > 0 ? { source_trace_ids: sourceTraceIds } : {}),
+        ...(episodeId ? { episode_id: episodeId } : {}),
       };
       let supersedesTarget: any = null;
       if (data?.supersedes) {
@@ -221,6 +230,7 @@ export function attachDashboardRoutes(registry: RouteRegistry, deps: DashboardRo
           deduped: routed.action === 'skip' ? true : undefined,
           updated: routed.action === 'update' ? routed.targetId : undefined,
           sticky_until: routed.action === 'create' ? (unit as any).sticky_until : undefined,
+          ...(warnings.length > 0 ? { warnings } : {}),
         }));
         return;
       }
@@ -228,7 +238,7 @@ export function attachDashboardRoutes(registry: RouteRegistry, deps: DashboardRo
       if (supersedesTarget && !supersedesTarget.superseded_by) {
         store.markSuperseded(supersedesTarget.id, unit.id);
       }
-      res.end(JSON.stringify({ success: true, id: unit.id, sticky_until: (unit as any).sticky_until }));
+      res.end(JSON.stringify({ success: true, id: unit.id, sticky_until: (unit as any).sticky_until, ...(warnings.length > 0 ? { warnings } : {}) }));
     } catch (err: any) {
       log.warn(`[Scheduler] /api/memory/add failed: ${err.message}`);
       res.end(JSON.stringify({ success: false, error: err.message }));

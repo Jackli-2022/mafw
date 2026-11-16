@@ -98,14 +98,8 @@ function startHealthMonitor() {
  * IPC 方法解析：支持 `"jobs.list"` 这种嵌套命名空间（Task 3 background.jobs）。
  * 单层方法名行为不变（`ns[method]`）。
  */
-export function resolveIpcMethod(ns: Record<string, any>, method: string): ((...a: unknown[]) => unknown) | undefined {
-  let cur: any = ns
-  for (const part of method.split(".")) {
-    if (cur == null) return undefined
-    cur = cur[part]
-  }
-  return typeof cur === "function" ? (cur as (...a: unknown[]) => unknown) : undefined
-}
+export { resolveIpcMethod } from "./ipc-method"
+import { resolveIpcMethod } from "./ipc-method"
 
 // 外部终端出口（终端面板 unavailable 时）：wt 优先，缺则 cmd start（Win）。
 function spawnDetached(cmd: string, args: string[], cwd?: string): Promise<void> {

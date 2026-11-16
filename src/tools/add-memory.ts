@@ -15,7 +15,7 @@ export interface AddMemoryTool {
   execute: (
     args: {
       content: string;
-      memoryType?: 'semantic' | 'episodic' | 'procedural' | 'global';
+      memoryType?: 'semantic' | 'procedural' | 'global';
       cueAnchors?: string[];
       primaryAbstraction?: string;
       importance?: number;
@@ -29,13 +29,14 @@ export interface AddMemoryTool {
 export const addMemoryTool: AddMemoryTool = {
   description:
     '保存一条记忆到谐波记忆系统。用于需要跨会话存续的事实、决定、偏好、教训、模式与洞察。' +
-    '一次调用保存一条，memory_value 简洁，附 cueAnchors 关键词；按内容选择 memoryType（semantic=事实/偏好/约束，episodic=叙事，procedural=教训/模式，global=跨项目）。',
+    '一次调用保存一条，memory_value 简洁，附 cueAnchors 关键词；按内容选择 memoryType（semantic=事实/偏好/约束，procedural=教训/模式，global=跨项目）。' +
+    'episodic 已退役：发生过什么由 T1 episode 记录，不要写叙事。',
   args: {
     content: z.string().describe('记忆内容（一句话）'),
     memoryType: z
-      .enum(['semantic', 'episodic', 'procedural', 'global'])
+      .enum(['semantic', 'procedural', 'global'])
       .optional()
-      .describe('semantic=事实/偏好/约束，episodic=叙事，procedural=教训/模式，global=跨项目'),
+      .describe('semantic=事实/偏好/约束，procedural=教训/模式，global=跨项目；episodic 已退役'),
     cueAnchors: z.array(z.string()).max(8).optional().describe('检索关键词'),
     primaryAbstraction: z.string().optional().describe('6-8 词摘要（缺省自动生成）'),
     importance: z.number().int().min(1).max(10).optional().describe('重要性打分 1-10：1=琐碎日常，5=普通事实，9-10=架构级决定/严重事故。缺省自动判定'),

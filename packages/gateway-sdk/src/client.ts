@@ -7,7 +7,7 @@ import {
   LeadBoundaryView, LeadBoundaryDecision,
   EventsNamespace, EventSourceView, EventThreadView, EventTriggerView, EventSubscriptionView, EventDeliveryView,
   StandingGoalsNamespace, StandingGoalView, StandingGoalCreateInput, StandingGoalUpdateInput, GoalRunView,
-  MemoryUnit, MemorySearchOptions, MemoryLayer, MemoryLayeredSearchOptions, MemoryLayeredSearchResult, T1SearchHit, MergedSearchOptions, MemoryFact, EnergyDistribution, Axiom, L5Heuristic,
+  MemoryUnit, MemorySearchOptions, MemoryLayer, MemoryLayeredSearchOptions, MemoryLayeredSearchResult, T1SearchHit, EpisodeHit, MemoryEpisodesOptions, T1EpisodeRecord, MergedSearchOptions, MemoryFact, EnergyDistribution, Axiom, L5Heuristic,
   StickyNote, StickyNoteBudget, ModelUsageWindows, MemoryStats,
   MafwCommandResult, MafwCommandDef, ManagerSessionInfo, ManagerRotateResult,
   DiscoverySnapshot, DiscoverySkillContent,
@@ -1174,6 +1174,7 @@ export class MafwClient implements IMafwClient {
       if (opts.topK) params.set('topK', String(opts.topK))
       if (opts.goalId) params.set('goalId', opts.goalId)
       if (opts.retriever) params.set('retriever', opts.retriever)
+      if (opts.includeLegacyEpisodic) params.set('includeLegacyEpisodic', 'true')
       const data = await this.request<{ results: MemoryUnit[] }>(`/api/memory/search?${params}`)
       return data.results || []
     },
@@ -1184,10 +1185,37 @@ export class MafwClient implements IMafwClient {
       if (opts.topK) params.set('topK', String(opts.topK))
       if (opts.goalId) params.set('goalId', opts.goalId)
       if (opts.retriever) params.set('retriever', opts.retriever)
-      const data = await this.request<{ results?: MemoryUnit[]; t1Results?: T1SearchHit[] }>(
-        `/api/memory/search?${params}`,
+      if (opts.includeLegacyEpisodic) params.set('includeLegacyEpisodic', 'true')
+      const data = await this.request<{
+        results?: MemoryUnit[]
+        t1Results?: T1SearchHit[]
+        episodes?: EpisodeHit[]
+        legacyEpisodic?: MemoryUnit[]
+      }>(`/api/memory/search?${params}`)
+      return {
+        layer,
+        results: data.results || [],
+        t1Results: data.t1Results || [],
+        ...(data.episodes ? { episodes: data.episodes } : {}),
+        ...(data.legacyEpisodic ? { legacyEpisodic: data.legacyEpisodic } : {}),
+      }
+    },
+
+    episodes: async (opts: MemoryEpisodesOptions = {}): Promise<{ episodes: EpisodeHit[]; nextCursor?: string }> => {
+      const params = new URLSearchParams()
+      if (opts.limit) params.set('limit', String(opts.limit))
+      if (opts.cursor) params.set('cursor', opts.cursor)
+      if (opts.sessionId) params.set('sessionId', opts.sessionId)
+      if (opts.since) params.set('since', String(opts.since))
+      const suffix = params.toString()
+      const data = await this.request<{ episodes?: EpisodeHit[]; nextCursor?: string }>(
+        `/api/memory/episodes${suffix ? `?${suffix}` : ''}`,
       )
-      return { layer, results: data.results || [], t1Results: data.t1Results || [] }
+      return { episodes: data.episodes || [], ...(data.nextCursor ? { nextCursor: data.nextCursor } : {}) }
+    },
+
+    episode: async (id: string): Promise<{ episode: T1EpisodeRecord; members: Array<{ episodeId: string; traceId: string; turnSeq: number }> }> => {
+      return this.request(`/api/memory/episodes/${encodeURIComponent(id)}`)
     },
 
     mergedSearch: async (opts: MergedSearchOptions): Promise<MemoryFact[]> => {

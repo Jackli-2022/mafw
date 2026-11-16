@@ -17,6 +17,11 @@ import { completeTurns, TurnEval } from './turn-completion';
 import { HARD_BOUNDARIES } from '../skills/memory-curator-agent';
 import { log } from '../core/utils/logger';
 import { replayPriority, sampleByPriority } from './replay-sampling';
+import { extractTurnFeature } from './t1-features';
+import { encodeT1Turn } from './t1-encode';
+import type { T1SparseAtom } from './t1-sparse';
+import { readSessionTimeline } from './session-timeline';
+import { buildReplayBlock } from './replay-block';
 import { PipelineBudgetLike } from './pipeline-budget';
 import { topClusters, Cluster } from '../memory/schema-clusters';
 
@@ -38,6 +43,17 @@ export interface TurnPipelineOptions {
   /** Interleaved replay: recall cross-session prior knowledge into the worker prompt. */
   replayK?: number;
   replayMaxChars?: number;
+  /** Phase C: trajectory actor metadata (agent / tool) for T1 episode encode. */
+  readTrajectoryEvents?: (
+    sessionID: string,
+    turnSeq: number,
+  ) => Array<{ toolName?: string; agent?: string }>;
+  /** Phase 1: rebuild derived T1 episodes after the per-turn encode pass. */
+  rebuildEpisodes?: (sessionID: string) => void;
+  /** Phase C: embedding → sparse semantic atoms, batched per session. */
+  semanticAtomsFor?: (
+    turns: Array<{ traceId: string; text: string }>,
+  ) => Promise<Map<string, T1SparseAtom[]>>;
   /** B1: 7-day retrieval hit count per id — the "need" term of the replay
    *  priority (need × gain × 1/energy). Wired to the retrieval event buffer. */
   needFor?: (id: string) => number;
@@ -95,9 +111,9 @@ export function abAssignment(sessionID: string, now: number): boolean {
 export const TOOL_EXTRACTION_SYSTEM = `You are a memory curator for a coding agent. Review the conversation observations of this session and record durable memories.
 Use the mafw_add_memory tool to save every entry worth remembering long-term:
 - semantic: durable facts, decisions, preferences, user constraints
-- episodic: what happened (task narratives, outcomes)
 - procedural: reusable lessons, patterns, mistakes to avoid
 Rules:
+- episodes already live in T1 (raw trace + episode index). Do NOT restate "what happened" as a narrative and do NOT use memoryType=episodic — it is retired.
 - one memory per mafw_add_memory call; memory_value concise; attach cue_anchors keywords
 - every transcript line may start with a permanent [trace:<id>] marker. For each memory, pass sourceTraceIds with the exact trace ids of the lines that support it (max 20). Copy ids verbatim — never invent or guess trace ids; omit the field only when no marker applies.
 - every cue_anchors list MUST include the topic entity names (project, module, person, API, feature) so the memory can be retrieved across sessions
@@ -166,7 +182,16 @@ export function sessionContext(
   index: HarmonicIndexManager,
   sessionID: string,
   maxEpisodes: number = 10,
+  opts?: { episodes?: Array<{ intent?: string }> },
 ): string {
+  if (opts?.episodes) {
+    const intents = opts.episodes
+      .map((episode) => episode.intent)
+      .filter((intent): intent is string => Boolean(intent && intent.trim()))
+      .slice(-maxEpisodes)
+      .map((intent) => `- ${intent}`);
+    return intents.length > 0 ? intents.join('\n') : '';
+  }
   const prior = index
     .getIndex()
     .entries.filter((e) => e.type === 'episodic' && e.source_session_id === sessionID)
@@ -302,6 +327,83 @@ export class TurnPipeline {
       turn: t,
       obs: this.opts.t1db.readTurn(t.session_id, t.turn_id),
     }));
+
+    // Phase A/C: persist the sparse event code and the episode sparse code
+    // (actors / concepts / terms) before archiving. Raw T1 remains the source
+    // of truth; these are derived, rebuildable indexes used by replay and
+    // retrieval. Fake DBs in older tests may not implement the methods — keep
+    // the whole stage optional and fail-open.
+    const readTrajectoryEvents =
+      this.opts.readTrajectoryEvents ??
+      (typeof (this.opts.t1db as any).readTrajectoryEvents === 'function'
+        ? (sessionID: string, turnSeq: number) =>
+            (this.opts.t1db as any).readTrajectoryEvents(sessionID, turnSeq)
+        : undefined);
+    const db = this.opts.t1db as any;
+    const canEncode =
+      typeof db.upsertTurnActors === 'function' &&
+      typeof db.upsertTurnConcepts === 'function' &&
+      typeof db.upsertSparseTerms === 'function' &&
+      typeof db.upsertTurnEncoding === 'function';
+
+    // Embedding → sparse atoms runs once per session batch (not per turn); the
+    // encoder caches anchor vectors. Fail-open: no atoms → lexical code only.
+    let atomsByTrace = new Map<string, T1SparseAtom[]>();
+    if (canEncode && this.opts.semanticAtomsFor) {
+      try {
+        const inputs = turnObs
+          .map(({ turn, obs }) => {
+            const traceId = obs.find((o) => o.trace_id)?.trace_id;
+            if (!traceId) return null;
+            return {
+              traceId,
+              text: obs.map((o) => o.content ?? '').join('\n'),
+            };
+          })
+          .filter((input): input is { traceId: string; text: string } => Boolean(input));
+        if (inputs.length > 0) {
+          atomsByTrace = await this.opts.semanticAtomsFor(inputs);
+        }
+      } catch { /* fail-open: lexical/concept code only */ }
+    }
+
+    for (const { turn, obs } of turnObs) {
+      const traceId = obs.find((o) => o.trace_id)?.trace_id;
+      if (!traceId) continue;
+      const ref = { trace_id: traceId, session_id: turn.session_id, turn_seq: turn.turn_id };
+
+      let feature: ReturnType<typeof extractTurnFeature> = null;
+      try {
+        feature = extractTurnFeature(ref, obs);
+        if (feature && typeof this.opts.t1db.upsertTurnFeature === 'function') {
+          this.opts.t1db.upsertTurnFeature(feature);
+        }
+      } catch { /* fail-open: raw T1 remains the source of truth */ }
+
+      try {
+        if (!canEncode) continue;
+        encodeT1Turn(
+          ref,
+          {
+            readTurnRows: () => obs,
+            readTrajectoryEvents,
+            upsertTurnActors: (id, actors) => db.upsertTurnActors(id, actors),
+            upsertTurnConcepts: (id, concepts) => db.upsertTurnConcepts(id, concepts),
+            upsertSparseTerms: (id, terms) => db.upsertSparseTerms(id, terms),
+            upsertTurnEncoding: (marker) => db.upsertTurnEncoding(marker),
+          },
+          { feature, atoms: atomsByTrace.get(traceId) },
+        );
+      } catch { /* fail-open: feature-only / raw T1 path remains */ }
+    }
+
+    // Phase 1: refresh the derived episode index after this batch's per-turn
+    // code is written. Shadow/live both write; recall consumption is gated
+    // elsewhere. Failure never blocks archiving.
+    try {
+      this.opts.rebuildEpisodes?.(sessionID);
+    } catch { /* fail-open: episodes converge on a later batch */ }
+
     const nowSec = Date.now() / 1000;
     const scoredTurns = turnObs.map((x) => {
       const salience = x.obs.reduce((m, o) => Math.max(m, o.salience ?? 0.5), 0);
@@ -316,10 +418,26 @@ export class TurnPipeline {
     );
     const observations: T1Observation[] = [];
     for (const x of sampledTurns) observations.push(...x.obs);
-    const transcript = capTranscript(
+    let transcript = capTranscript(
       observationsToTranscript(observations.slice(0, this.opts.maxObservationsPerSession ?? 200)),
       this.opts.transcriptMaxChars ?? 40_000,
     );
+
+    // Phase B: prefer the ordered T1 timeline (active + archive) over the
+    // priority-sampled transcript. The replay block carries [trace] markers and
+    // the sparse event code; fake DBs / legacy turns fall back to the transcript.
+    try {
+      const timeline = readSessionTimeline(this.opts.t1db, sessionID, {
+        turnSeqs: sessionTurns.map((turn) => turn.turn_id),
+        maxChars: this.opts.transcriptMaxChars ?? 40_000,
+      });
+      const replay = buildReplayBlock(timeline.turns, {
+        mode: 'forward',
+        maxChars: this.opts.transcriptMaxChars ?? 40_000,
+        perTurnChars: 800,
+      });
+      if (replay.block.trim()) transcript = replay.block;
+    } catch { /* fail-open: raw priority transcript remains */ }
 
     // 1b) schema interleave (S2): surface related existing clusters so the
     //     worker integrates into a schema (UPDATE) rather than appending.
@@ -338,10 +456,29 @@ export class TurnPipeline {
 
     // 2) ask the session's persistent worker agent to save memories itself
     if (transcript.trim()) {
-      const context = sessionContext(this.opts.index, sessionID, this.opts.contextEpisodes ?? 10);
+      const contextLimit = this.opts.contextEpisodes ?? 10;
+      let recentEpisodes: Array<{ intent?: string }> | undefined;
+      try {
+        const list = (this.opts.t1db as any).listEpisodes;
+        if (typeof list === 'function') {
+          recentEpisodes = list.call(this.opts.t1db, {
+            sessionId: sessionID,
+            limit: contextLimit,
+          }).episodes;
+        }
+      } catch { /* fail-open: legacy episodic context */ }
+      const context = sessionContext(
+        this.opts.index,
+        sessionID,
+        contextLimit,
+        recentEpisodes ? { episodes: recentEpisodes } : undefined,
+      );
+      const transcriptLabel = transcript.includes('--- REPLAY START')
+        ? 'T1 timeline replay (ordered, bounded):'
+        : 'Observations of the last hour:';
       const base = context
-        ? `Prior episodes of this conversation:\n${context}\n\nObservations of the last hour:\n${transcript}`
-        : `Observations of the last hour:\n${transcript}`;
+        ? `Prior episodes of this conversation:\n${context}\n\n${transcriptLabel}\n${transcript}`
+        : `${transcriptLabel}\n${transcript}`;
       const prior = priorKnowledgeFor(this.opts.index, sessionID, transcript, this.opts.replayK ?? 5, {
         needFor: this.opts.needFor,
       });

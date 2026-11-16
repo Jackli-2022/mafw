@@ -197,6 +197,9 @@ export function createMafwApi(): MafwAPI {
 
     memory: {
       search: (opts) => invoke("memory", "search", opts),
+      searchEpisodes: (query, topK) => invoke("memory", "searchLayered", { query, layer: "episodes", topK }),
+      episodes: (opts) => invoke("memory", "episodes", opts),
+      episode: (id) => invoke("memory", "episode", id),
       mergedSearch: (opts) => invoke("memory", "mergedSearch", opts),
       delete: (id) => invoke("memory", "delete", id),
       getEnergyDistribution: () => invoke("memory", "getEnergyDistribution"),

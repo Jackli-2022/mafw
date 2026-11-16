@@ -9,11 +9,40 @@ import { reconstructSource } from "../../recall/source-reconstruction";
  * guessing. Superseded memories report the supersede chain with the latest
  * version attached so the agent never acts on stale notes.
  */
-export const handleGetMemory: ToolHandler = async (args, { memory, mafwDir, searchArchive, resolveT1, readTrace, recordT1Retrieval, propagateT1Activation }) => {
+export const handleGetMemory: ToolHandler = async (args, { memory, mafwDir, searchArchive, resolveT1, readTrace, recordT1Retrieval, propagateT1Activation, getEpisode, listEpisodeMembers }) => {
   try {
     // V1: t1 pointer redemption — ids of the form `t1:<sessionTail>:<turnId>`
     // resolve to raw archived round rows (verbatim layer).
     const rawId = String(args?.id || '').trim();
+    const episodeMatch = rawId.replace(/^#/, '').match(/^t1ep:(.+)$/);
+    if (episodeMatch) {
+      const episodeId = episodeMatch[1];
+      if (!getEpisode) {
+        return { content: [{ type: "text", text: JSON.stringify({ success: false, error: 't1ep pointer resolution unavailable (gateway service missing)' }) }], isError: true };
+      }
+      const episode = getEpisode(episodeId);
+      if (!episode) {
+        return { content: [{ type: "text", text: JSON.stringify({ success: false, error: `no episode for ${episodeId}` }) }], isError: true };
+      }
+      const members = (listEpisodeMembers?.(episodeId) ?? []).slice(0, 20);
+      const payload = {
+        success: true as const,
+        episode,
+        members: members.map((member) => {
+          recordT1Retrieval?.(member.traceId, 'redeem');
+          const trace = readTrace?.(member.traceId);
+          return {
+            traceId: member.traceId,
+            turnSeq: member.turnSeq,
+            ...(trace ? {
+              archived: trace.archived,
+              rows: trace.rows.slice(0, 20).map((row) => ({ source: row.source, content: row.content })),
+            } : {}),
+          };
+        }),
+      };
+      return { content: [{ type: "text", text: JSON.stringify(payload) }], structuredContent: payload as Record<string, unknown> };
+    }
     if (/^#?t1:[^:]+:\d+$/.test(rawId)) {
       const body = rawId.replace(/^#/, '');
       const [, tail, turnStr] = body.split(':');

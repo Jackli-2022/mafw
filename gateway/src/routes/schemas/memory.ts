@@ -62,11 +62,17 @@ const T1SearchHitSchema = Type.Object({
   sessionId: Type.String(),
   turnId: Type.Number(),
   traceId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  episodeId: Type.Optional(Type.String()),
   cosine: Type.Number(),
   excerpt: Type.String(),
   sources: Type.Optional(Type.Array(Type.Union([
     Type.Literal('dense'),
     Type.Literal('lexical'),
+    Type.Literal('feature'),
+    Type.Literal('concept'),
+    Type.Literal('actor'),
+    Type.Literal('sparse'),
+    Type.Literal('neighbor'),
   ]))),
   score: Type.Optional(Type.Number()),
 })
@@ -83,6 +89,77 @@ const T1SearchHitSchema = Type.Object({
 export const MemorySearchResponse = Type.Object({
   results: Type.Array(MemoryUnitSchema),
   t1Results: Type.Optional(Type.Array(T1SearchHitSchema)),
+  episodes: Type.Optional(Type.Array(Type.Object({
+    episodeId: Type.String(),
+    sessionId: Type.String(),
+    startTurn: Type.Number(),
+    endTurn: Type.Number(),
+    status: Type.Union([Type.Literal('open'), Type.Literal('closed')]),
+    startedAt: Type.Union([Type.Number(), Type.Null()]),
+    boundarySource: Type.String(),
+    boundaryReason: Type.Optional(Type.String()),
+    intent: Type.Optional(Type.String()),
+    outcome: Type.Optional(Type.String()),
+    actors: Type.Array(Type.String()),
+    conceptIds: Type.Array(Type.String()),
+    score: Type.Number(),
+    sources: Type.Array(Type.String()),
+    topTraceIds: Type.Array(Type.String()),
+  }))),
+  legacyEpisodic: Type.Optional(Type.Array(MemoryUnitSchema)),
+})
+
+const EpisodeRecordSchema = Type.Object({
+  episodeId: Type.String(),
+  sessionId: Type.String(),
+  startTurn: Type.Number(),
+  endTurn: Type.Number(),
+  status: Type.Union([Type.Literal('open'), Type.Literal('closed')]),
+  startedAt: Type.Union([Type.Number(), Type.Null()]),
+  endedAt: Type.Union([Type.Number(), Type.Null()]),
+  goalId: Type.Optional(Type.String()),
+  boundarySource: Type.String(),
+  boundaryReason: Type.String(),
+  confidence: Type.Number(),
+  intent: Type.Optional(Type.String()),
+  outcome: Type.Optional(Type.String()),
+  actors: Type.Array(Type.Object({
+    actorId: Type.String(),
+    role: Type.String(),
+    weight: Type.Number(),
+  })),
+  conceptIds: Type.Array(Type.String()),
+  sourceTraceIds: Type.Array(Type.String()),
+})
+
+export const MemoryEpisodesResponse = Type.Object({
+  episodes: Type.Array(Type.Object({
+    episodeId: Type.String(),
+    sessionId: Type.String(),
+    startTurn: Type.Number(),
+    endTurn: Type.Number(),
+    status: Type.Union([Type.Literal('open'), Type.Literal('closed')]),
+    startedAt: Type.Union([Type.Number(), Type.Null()]),
+    boundarySource: Type.String(),
+    boundaryReason: Type.Optional(Type.String()),
+    intent: Type.Optional(Type.String()),
+    outcome: Type.Optional(Type.String()),
+    actors: Type.Array(Type.String()),
+    conceptIds: Type.Array(Type.String()),
+    score: Type.Number(),
+    sources: Type.Array(Type.String()),
+    topTraceIds: Type.Array(Type.String()),
+  })),
+  nextCursor: Type.Optional(Type.String()),
+})
+
+export const MemoryEpisodeResponse = Type.Object({
+  episode: EpisodeRecordSchema,
+  members: Type.Array(Type.Object({
+    episodeId: Type.String(),
+    traceId: Type.String(),
+    turnSeq: Type.Number(),
+  })),
 })
 
 // ── memory.get ──────────────────────────────────────────────────────────────
@@ -129,6 +206,7 @@ const HarmonicUnitSchema = Type.Object({
   sticky_until: Type.Optional(Type.String()),
   source_session_id: Type.Optional(Type.String()),
   source_trace_ids: Type.Optional(Type.Array(Type.String())),
+  episode_id: Type.Optional(Type.String()),
   authority: Type.Optional(Type.Union([
     Type.Literal('user'),
     Type.Literal('agent'),

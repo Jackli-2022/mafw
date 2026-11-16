@@ -89,7 +89,7 @@ export const PythonRestartResponse = Type.Object({
   ok: Type.Literal(true),
 })
 
-// ── obs.capture ─────────────────────────────────────────────────────────────
+// ── obs.capture / obs.episodeBoundary ───────────────────────────────────────
 
 /**
  * `POST /api/obs/capture`（handler：`routes/obs.ts` `obs.capture`）。
@@ -106,6 +106,15 @@ export const PythonRestartResponse = Type.Object({
  * 插件侧永远不需要重试。超 1MB 时 handler 直接 `req.destroy()`（不写响应），
  * 不属于 200 形态。
  */
+const EpisodeBoundarySchema = Type.Object({
+  sessionId: Type.String(),
+  afterTurn: Type.Number({ description: 'Canonical edge: turn N stays in the old episode, N+1 starts the new one.' }),
+  source: Type.Union([Type.Literal('agent'), Type.Literal('user'), Type.Literal('system')]),
+  reason: Type.Optional(Type.String()),
+  intent: Type.Optional(Type.String()),
+  createdAt: Type.Number(),
+})
+
 export const ObsCaptureResponse = Type.Union([
   Type.Object({
     ok: Type.Literal(true),
@@ -121,6 +130,7 @@ export const ObsCaptureResponse = Type.Union([
     filtered: Type.Optional(Type.Literal(true, {
       description: 'Content matched an extraction prompt: dropped by recursion guard B.',
     })),
+    episodeBoundary: Type.Optional(EpisodeBoundarySchema),
   }, {
     description: 'Capture accepted (written, deduped, or intentionally dropped by a recursion guard).',
   }),
@@ -131,6 +141,17 @@ export const ObsCaptureResponse = Type.Union([
     description: 'Fail-open receipt: capture errors never surface as 4xx/5xx.',
   }),
 ])
+
+/**
+ * `POST /api/obs/episode-boundary` — 200 receipts for an appended edge, a
+ * queued next-user-turn flag, or a no-op (no completed turn yet).
+ */
+export const ObsEpisodeBoundaryResponse = Type.Object({
+  ok: Type.Literal(true),
+  pending: Type.Optional(Type.Boolean()),
+  ignored: Type.Optional(Type.Boolean()),
+  boundary: Type.Optional(EpisodeBoundarySchema),
+})
 
 // ── tools.execute ───────────────────────────────────────────────────────────
 

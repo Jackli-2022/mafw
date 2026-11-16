@@ -1,0 +1,753 @@
+{
+  "fixtureVersion": 3,
+  "embedding": "synthetic-concept-v1",
+  "note": "Synthetic deterministic concept embedding: validates channel wiring/fusion, not model quality.",
+  "k": 3,
+  "fixtures": {
+    "turns": 10,
+    "queries": 16
+  },
+  "channels": {
+    "fts": {
+      "recall": 0.625,
+      "mrr": 0.5625,
+      "noAnswer": 1,
+      "cases": 16
+    },
+    "dense": {
+      "recall": 0.625,
+      "mrr": 0.59375,
+      "noAnswer": 1,
+      "cases": 16
+    },
+    "feature": {
+      "recall": 0.625,
+      "mrr": 0.5625,
+      "noAnswer": 1,
+      "cases": 16
+    },
+    "concept": {
+      "recall": 0.9375,
+      "mrr": 0.9375,
+      "noAnswer": 1,
+      "cases": 16
+    },
+    "actor": {
+      "recall": 0.1875,
+      "mrr": 0.1875,
+      "noAnswer": 1,
+      "cases": 16
+    },
+    "sparse": {
+      "recall": 0.9375,
+      "mrr": 0.875,
+      "noAnswer": 1,
+      "cases": 16
+    },
+    "episodes": {
+      "recall": 0.9375,
+      "mrr": 0.9375,
+      "noAnswer": 1,
+      "cases": 16
+    },
+    "fused": {
+      "recall": 0.9375,
+      "mrr": 0.9375,
+      "noAnswer": 1,
+      "cases": 16
+    }
+  },
+  "misses": {
+    "fts": [
+      "q-parse-cn",
+      "q-coverage-cn",
+      "q-merge",
+      "q-synonym-net",
+      "q-episode-cn",
+      "q-parse-holdout"
+    ],
+    "dense": [
+      "q-code",
+      "q-synonym-net",
+      "q-actor-pair",
+      "q-actor-cn",
+      "q-episode-cn",
+      "q-parse-holdout"
+    ],
+    "feature": [
+      "q-parse-cn",
+      "q-coverage-cn",
+      "q-merge",
+      "q-synonym-net",
+      "q-episode-cn",
+      "q-parse-holdout"
+    ],
+    "concept": [
+      "q-parse-holdout"
+    ],
+    "actor": [
+      "q-reflection",
+      "q-parse-cn",
+      "q-coverage",
+      "q-coverage-cn",
+      "q-provenance",
+      "q-source",
+      "q-deploy",
+      "q-merge",
+      "q-code",
+      "q-synonym-net",
+      "q-episode-deploy",
+      "q-episode-cn",
+      "q-parse-holdout"
+    ],
+    "sparse": [
+      "q-parse-holdout"
+    ],
+    "episodes": [
+      "q-parse-holdout"
+    ],
+    "fused": [
+      "q-parse-holdout"
+    ]
+  },
+  "perQuery": [
+    {
+      "id": "q-reflection",
+      "query": "reflection unparseable",
+      "expectedKeys": [
+        "reflection"
+      ],
+      "expectedCount": 1,
+      "fts": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "dense": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "feature": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "concept": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "actor": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "sparse": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "episodes": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "fused": {
+        "recall": 1,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "q-parse-cn",
+      "query": "解析失败",
+      "expectedKeys": [
+        "reflection"
+      ],
+      "expectedCount": 1,
+      "fts": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "dense": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "feature": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "concept": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "actor": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "sparse": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "episodes": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "fused": {
+        "recall": 1,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "q-coverage",
+      "query": "T1 coverage",
+      "expectedKeys": [
+        "coverage"
+      ],
+      "expectedCount": 1,
+      "fts": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "dense": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "feature": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "concept": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "actor": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "sparse": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "episodes": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "fused": {
+        "recall": 1,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "q-coverage-cn",
+      "query": "覆盖率",
+      "expectedKeys": [
+        "coverage"
+      ],
+      "expectedCount": 1,
+      "fts": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "dense": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "feature": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "concept": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "actor": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "sparse": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "episodes": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "fused": {
+        "recall": 1,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "q-provenance",
+      "query": "provenance 缺失",
+      "expectedKeys": [
+        "provenance"
+      ],
+      "expectedCount": 1,
+      "fts": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "dense": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "feature": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "concept": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "actor": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "sparse": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "episodes": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "fused": {
+        "recall": 1,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "q-source",
+      "query": "来源 trace",
+      "expectedKeys": [
+        "provenance"
+      ],
+      "expectedCount": 1,
+      "fts": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "dense": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "feature": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "concept": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "actor": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "sparse": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "episodes": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "fused": {
+        "recall": 1,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "q-deploy",
+      "query": "deployment restart",
+      "expectedKeys": [
+        "deployment"
+      ],
+      "expectedCount": 1,
+      "fts": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "dense": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "feature": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "concept": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "actor": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "sparse": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "episodes": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "fused": {
+        "recall": 1,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "q-merge",
+      "query": "合并 太多",
+      "expectedKeys": [
+        "consolidation"
+      ],
+      "expectedCount": 1,
+      "fts": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "dense": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "feature": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "concept": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "actor": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "sparse": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "episodes": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "fused": {
+        "recall": 1,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "q-code",
+      "query": "ECONNRESET",
+      "expectedKeys": [
+        "network"
+      ],
+      "expectedCount": 1,
+      "fts": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "dense": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "feature": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "concept": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "actor": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "sparse": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "episodes": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "fused": {
+        "recall": 1,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "q-synonym-net",
+      "query": "连接重置",
+      "expectedKeys": [
+        "network"
+      ],
+      "expectedCount": 1,
+      "fts": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "dense": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "feature": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "concept": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "actor": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "sparse": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "episodes": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "fused": {
+        "recall": 1,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "q-actor-pair",
+      "query": "reviewer builder embedding",
+      "expectedKeys": [
+        "review-fix"
+      ],
+      "expectedCount": 1,
+      "fts": {
+        "recall": 1,
+        "mrr": 0.5
+      },
+      "dense": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "feature": {
+        "recall": 1,
+        "mrr": 0.5
+      },
+      "concept": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "actor": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "sparse": {
+        "recall": 1,
+        "mrr": 0.5
+      },
+      "episodes": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "fused": {
+        "recall": 1,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "q-actor-cn",
+      "query": "评审说构建者的 embedding 改动",
+      "expectedKeys": [
+        "review-fix"
+      ],
+      "expectedCount": 1,
+      "fts": {
+        "recall": 1,
+        "mrr": 0.5
+      },
+      "dense": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "feature": {
+        "recall": 1,
+        "mrr": 0.5
+      },
+      "concept": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "actor": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "sparse": {
+        "recall": 1,
+        "mrr": 0.5
+      },
+      "episodes": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "fused": {
+        "recall": 1,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "q-episode-deploy",
+      "query": "上次的 deploy plan",
+      "expectedKeys": [
+        "plan"
+      ],
+      "expectedCount": 1,
+      "fts": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "dense": {
+        "recall": 1,
+        "mrr": 0.5
+      },
+      "feature": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "concept": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "actor": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "sparse": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "episodes": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "fused": {
+        "recall": 1,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "q-episode-cn",
+      "query": "上次的部署计划",
+      "expectedKeys": [
+        "plan"
+      ],
+      "expectedCount": 1,
+      "fts": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "dense": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "feature": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "concept": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "actor": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "sparse": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "episodes": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "fused": {
+        "recall": 1,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "q-parse-holdout",
+      "query": "解码失败",
+      "expectedKeys": [
+        "reflection"
+      ],
+      "expectedCount": 1,
+      "fts": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "dense": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "feature": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "concept": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "actor": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "sparse": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "episodes": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "fused": {
+        "recall": 0,
+        "mrr": 0
+      }
+    },
+    {
+      "id": "q-none",
+      "query": "weather tomorrow",
+      "expectedKeys": [],
+      "expectedCount": 0,
+      "fts": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "dense": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "feature": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "concept": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "actor": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "sparse": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "episodes": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "fused": {
+        "recall": 1,
+        "mrr": 1
+      }
+    }
+  ]
+}

@@ -14,6 +14,10 @@ function fakeRuntime(rowsByTurn: Record<string, any[]>, cosine = 0.9) {
 }
 
 describe('createGatewayT1Search', () => {
+  const previousDenseMode = config.recall.t1Recall.denseIndex;
+  beforeEach(() => { config.recall.t1Recall.denseIndex = 'on'; });
+  afterEach(() => { config.recall.t1Recall.denseIndex = previousDenseMode; });
+
   test('no embedding runtime → empty and fail-open', async () => {
     const db = {
       readArchiveTurn: jest.fn(),
@@ -86,6 +90,53 @@ describe('createGatewayT1Search', () => {
       sources: ['lexical'],
     });
     expect(hits[0].score).toBeGreaterThan(0);
+  });
+
+  test('queries concept/actor/sparse channels and fuses their hits', async () => {
+    const db = {
+      searchT1Lexical: () => [],
+      searchT1Features: () => [],
+      searchT1Concepts: jest.fn(() => [
+        { traceId: 't1t_c', sessionId: 's1', turnId: 1, source: 'concept', excerpt: 'concept a', rank: -1 },
+      ]),
+      searchT1Actors: jest.fn(() => []),
+      searchT1Sparse: jest.fn(() => [
+        { traceId: 't1t_c', sessionId: 's1', turnId: 1, source: 'sparse', excerpt: 'sparse a', rank: -1 },
+      ]),
+      expandT1Neighbors: () => [],
+      readArchiveTurn: () => [],
+      readTurn: () => [],
+    } as any;
+    const search = createGatewayT1Search(db, () => null);
+    const hits = await search('解析失败', 3);
+    expect(db.searchT1Concepts).toHaveBeenCalled();
+    expect(db.searchT1Sparse).toHaveBeenCalled();
+    expect(hits).toHaveLength(1);
+    expect(hits[0].traceId).toBe('t1t_c');
+    expect(hits[0].sources).toEqual(['concept', 'sparse']);
+    expect(hits[0].excerpt).toBe('concept a');
+  });
+
+  test('fills remaining slots with 1-hop pattern-completion neighbors', async () => {
+    const db = {
+      searchT1Lexical: () => [
+        { traceId: 't1t_direct', sessionId: 's1', turnId: 1, source: 'user_input', excerpt: 'direct', rank: -1 },
+      ],
+      searchT1Features: () => [],
+      searchT1Concepts: () => [],
+      searchT1Actors: () => [],
+      searchT1Sparse: () => [],
+      expandT1Neighbors: jest.fn(() => [
+        { traceId: 't1t_neighbor', sessionId: 's1', turnId: 2, source: 'neighbor', excerpt: 'neighbor', rank: 1 },
+      ]),
+      readArchiveTurn: () => [],
+      readTurn: () => [],
+    } as any;
+    const search = createGatewayT1Search(db, () => null);
+    const hits = await search('direct', 3);
+    expect(db.expandT1Neighbors).toHaveBeenCalledWith(['t1t_direct'], 2);
+    expect(hits.map((h) => h.traceId)).toEqual(['t1t_direct', 't1t_neighbor']);
+    expect(hits[1].sources).toEqual(['neighbor']);
   });
 
   test('dense and lexical hits on the same trace fuse into one result', async () => {
@@ -168,6 +219,51 @@ describe('fuseT1Hits', () => {  test('ranks a hit present in both channels above
     );
     expect(fused).toHaveLength(1);
     expect(fused[0].traceId).toBe('b');
+  });
+
+  test('includes a feature-only hit and marks its source', () => {
+    const feature = [
+      { traceId: 't1t_f', sessionId: 's1', turnId: 3, source: 'feature', excerpt: 'feature f', rank: -2 },
+    ];
+    const fused = fuseT1Hits([], [], 3, feature as any);
+    expect(fused).toHaveLength(1);
+    expect(fused[0].traceId).toBe('t1t_f');
+    expect(fused[0].sources).toEqual(['feature']);
+  });
+
+  test('fuses concept/actor/sparse channels and preserves provenance', () => {
+    const hit = (traceId: string, sessionId: string, source: string) => ({
+      traceId,
+      sessionId,
+      turnId: 1,
+      source,
+      excerpt: `${source} excerpt`,
+      rank: -1,
+    });
+    const fused = fuseT1Hits([], [], 3, {
+      concept: [hit('t1t_c', 's1', 'concept') as any],
+      actor: [hit('t1t_a', 's1', 'actor') as any],
+      sparse: [hit('t1t_s', 's2', 'sparse') as any],
+    });
+    expect(fused.map((h) => h.traceId)).toEqual(
+      expect.arrayContaining(['t1t_c', 't1t_a', 't1t_s']),
+    );
+    expect(fused.find((h) => h.traceId === 't1t_c')!.sources).toEqual(['concept']);
+    expect(fused.find((h) => h.traceId === 't1t_a')!.sources).toEqual(['actor']);
+    expect(fused.find((h) => h.traceId === 't1t_s')!.sources).toEqual(['sparse']);
+  });
+
+  test('same trace across channels accumulates score and merges sources', () => {
+    const fused = fuseT1Hits(
+      [{ sessionId: 's1', turnId: 1, traceId: 't1t_x', cosine: 0.9, excerpt: 'dense x' }] as any,
+      [{ traceId: 't1t_x', sessionId: 's1', turnId: 1, source: 'user_input', excerpt: 'lex x', rank: -1 }] as any,
+      2,
+      {
+        concept: [{ traceId: 't1t_x', sessionId: 's1', turnId: 1, source: 'concept', excerpt: 'concept x', rank: -1 }] as any,
+      },
+    );
+    expect(fused[0].sources).toEqual(['dense', 'lexical', 'concept']);
+    expect(fused[0].excerpt).toBe('lex x');
   });
 });
 

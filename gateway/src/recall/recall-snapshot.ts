@@ -38,6 +38,8 @@ export interface RecallSnapshot {
   top1prob?: number;
   /** V1: verbatim t1 hits fused into this snapshot (trace-aware). */
   t1Hits?: T1Hit[];
+  /** Episode hits fused into this snapshot when episodes are live. */
+  episodes?: import('./t1-episode-search').EpisodeHit[];
 }
 
 export interface SnapshotConfig {

@@ -146,6 +146,24 @@ export const ObsCaptureRequest = Type.Object({
   description: 'JSON observation envelope. Missing/invalid sessionID or source → 400; any other error → fail-open 200 {ok:false}.',
 })
 
+/**
+ * `POST /api/obs/episode-boundary` — append an episode edge or queue one for
+ * the next user turn. Canonical storage is `after_turn`: turn N stays in the
+ * old episode, N+1 starts the new one.
+ */
+export const ObsEpisodeBoundaryRequest = Type.Object({
+  sessionID: Type.String({ minLength: 1 }),
+  scope: Type.Optional(Type.Union([
+    Type.Literal('start_new'),
+    Type.Literal('end_current'),
+    Type.Literal('next_user_turn'),
+  ], { description: 'start_new = current turn opens a new episode; end_current = current turn closes it; next_user_turn = queue for the next captured user turn.' })),
+  afterTurn: Type.Optional(Type.Integer({ minimum: 0, description: 'Explicit canonical edge; wins over scope.' })),
+  reason: Type.Optional(Type.String()),
+  intent: Type.Optional(Type.String()),
+  source: Type.Optional(Type.Union([Type.Literal('agent'), Type.Literal('user')])),
+})
+
 // ── models.update ─────────────────────────────────────────────────────────
 
 /** 媒体模型对（`provider` 省略时沿用顶层 media.provider）。 */

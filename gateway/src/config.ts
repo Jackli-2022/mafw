@@ -355,7 +355,7 @@ export interface GatewayConfig {
     /** Source-turn reconstruction for mafw_get_memory (C0). */
     sourceEvidence: { enabled: boolean; k: number; maxChars: number };
     /** V1 verbatim dense layer: fuse t1 round hits into R8 snapshots. */
-    t1Recall: { enabled: boolean; k: number; maxChars: number; retentionDays: number; lexical: boolean; t1BackfillLimit: number; activationHalfLifeDays: number; activationRanking: 'off' | 'shadow' | 'on'; activationRankWeight: number; activationRankBand: number };
+    t1Recall: { enabled: boolean; k: number; maxChars: number; retentionDays: number; lexical: boolean; t1BackfillLimit: number; activationHalfLifeDays: number; activationRanking: 'off' | 'shadow' | 'on'; activationRankWeight: number; activationRankBand: number; denseIndex: 'on' | 'shadow' | 'off'; semanticAtoms: 'on' | 'off' };
     /** Phase 4A: bounded raw-T1 replay during reflection. */
     t1Replay: { enabled: boolean; exactK: number; activatedK: number; maxChars: number; perTraceChars: number };
     /** Phase 4B: episodes per reflection batch (small-step consolidation). */
@@ -366,6 +366,13 @@ export interface GatewayConfig {
     /** Max sessions reflected in one pass (default 50); the rest wait for the
      *  next run. */
     reflectionMaxSessionsPerRun: number;
+    /** Phase 5: reflection input. `episodes` (default) reflects T1 episodes;
+     *  `legacy-episodic` is the rollback path. */
+    reflectionInput?: 'episodes' | 'legacy-episodic';
+    /** Episode reflection lookback window (default 30 days). */
+    reflectionLookbackDays?: number;
+    /** Max episodes per reflection run (default 10). */
+    maxEpisodesPerReflect?: number;
     /** Max sessions the boot-time restore path reflects (default 3, sequential). */
     restoreReflectMaxSessions: number;
     /** V2 ⑦: commitment gradient — pipeline first-pass semantic/procedural
@@ -382,6 +389,14 @@ export interface GatewayConfig {
     graceRevisit?: 'off' | 'shadow' | 'live';
     /** V2 ①c: GLiNER entity harvest into cue_anchors (fail-open). */
     entityHarvest?: boolean;
+    /** T1 episode index. Derived; shadow writes without changing recall. */
+    t1Episodes: {
+      enabled: boolean;
+      mode: 'off' | 'shadow' | 'live';
+      maxTurns: number;
+      idleCloseMs: number;
+      timeGapWeakMs: number;
+    };
   };
   usage: {
     pollIntervalMs: number;
@@ -713,7 +728,7 @@ function defaults(projectDir: string): GatewayConfig {
       scanTimeoutMs: 60_000,
       pipelineBudgetUsdPerDay: 0,
       sourceEvidence: { enabled: true, k: 5, maxChars: 1500 },
-      t1Recall: { enabled: true, k: 3, maxChars: 600, retentionDays: 90, lexical: true, t1BackfillLimit: 3000, activationHalfLifeDays: 14, activationRanking: 'shadow', activationRankWeight: 0.1, activationRankBand: 0.6 },
+      t1Recall: { enabled: true, k: 3, maxChars: 600, retentionDays: 90, lexical: true, t1BackfillLimit: 3000, activationHalfLifeDays: 14, activationRanking: 'shadow', activationRankWeight: 0.1, activationRankBand: 0.6, denseIndex: 'shadow', semanticAtoms: 'on' },
       t1Replay: { enabled: true, exactK: 8, activatedK: 3, maxChars: 6000, perTraceChars: 400 },
       reflectionBatchSize: 10,
       // Leave 15min of watchdog headroom: one batch can burn two 300s worker
@@ -722,6 +737,9 @@ function defaults(projectDir: string): GatewayConfig {
       // heartbeat — the 2026-11 reflection stall).
       reflectionMaxRunMs: 15 * 60_000,
       reflectionMaxSessionsPerRun: 50,
+      reflectionInput: 'episodes',
+      reflectionLookbackDays: 30,
+      maxEpisodesPerReflect: 10,
       restoreReflectMaxSessions: 3,
       commitmentGradient: true,
       segmentation: 'shadow',
@@ -731,6 +749,13 @@ function defaults(projectDir: string): GatewayConfig {
       // its only consumer is the V3 N1 entity layer; enable (with a real-
       // model smoke run) when N1 lands. Fail-open regardless.
       entityHarvest: false,
+      t1Episodes: {
+        enabled: true,
+        mode: 'shadow',
+        maxTurns: 30,
+        idleCloseMs: 6 * 3600_000,
+        timeGapWeakMs: 2 * 3600_000,
+      },
     },
     usage: {
       pollIntervalMs: 60000,

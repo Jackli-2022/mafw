@@ -84,10 +84,24 @@ export interface SearchResult {
   source?: string
   title: string
   energy?: string | number
+  legacyEpisodic?: boolean
 }
 
-/** mafw_search_hybrid output = { results:[...], fok, hint, count, ... }（顶层是对象，results 才是数组）。 */
-export function searchResults(output: string | undefined): { results: SearchResult[]; fok?: string; hint?: string } {
+export interface EpisodeResult {
+  episodeId: string
+  title: string
+  actors: string[]
+  turns: number
+  boundarySource: string
+}
+
+/** mafw_search_hybrid output = { results:[...], episodes?, fok, hint, count, ... }. */
+export function searchResults(output: string | undefined): {
+  results: SearchResult[]
+  episodes: EpisodeResult[]
+  fok?: string
+  hint?: string
+} {
   const p = parseOut(output)
   const raw = Array.isArray(p) ? p : (p && typeof p === "object" ? (p as any).results : undefined)
   const arr = Array.isArray(raw) ? raw : []
@@ -97,12 +111,23 @@ export function searchResults(output: string | undefined): { results: SearchResu
     source: r?.source,
     title: trunc(r?.primary_abstraction ?? r?.content ?? r?.memory_value ?? r?.id ?? JSON.stringify(r), 200),
     energy: typeof r?.energy === "number" ? r.energy.toFixed(1) : r?.energy,
+    legacyEpisodic: r?.legacyEpisodic === true || r?.type === "episodic",
+  }))
+  const rawEpisodes = p && typeof p === "object" && Array.isArray((p as any).episodes)
+    ? (p as any).episodes
+    : []
+  const episodes: EpisodeResult[] = rawEpisodes.map((e: any) => ({
+    episodeId: String(e?.episodeId ?? ""),
+    title: trunc(e?.intent ?? e?.outcome ?? e?.episodeId ?? "", 200),
+    actors: Array.isArray(e?.actors) ? e.actors.map(String) : [],
+    turns: Math.max(1, Number(e?.endTurn ?? 0) - Number(e?.startTurn ?? 0) + 1),
+    boundarySource: String(e?.boundarySource ?? "inferred"),
   }))
   const fok = p?.fok?.zone
     ? `${p.fok.zone}${typeof p.fok.top1prob === "number" ? `（top1 ${p.fok.top1prob.toFixed(2)}）` : ""}`
     : undefined
   const hint = typeof p?.hint === "string" ? p.hint : undefined
-  return { results, fok, hint }
+  return { results, episodes, fok, hint }
 }
 
 /** mafw_add_memory：输入是 camelCase（content/memoryType/cueAnchors/primaryAbstraction/importance），

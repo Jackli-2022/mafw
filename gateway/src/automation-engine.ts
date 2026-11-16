@@ -14,6 +14,7 @@ import { actrBonus } from './core/memory/retrieval-bonus';
 import { getEmbeddingRuntime } from './memory/embedding-runtime';
 import { runEmbeddingBackfill } from './memory/embedding-backfill';
 import { backfillT1Vectors } from './memory/t1-backfill';
+import { backfillT1Episodes, closeIdleEpisodes } from './recall/t1-episode-rebuild';
 import { Scheduler, TaskSkippedError, TaskTimeoutError, BudgetExceededError, TaskBudget } from './scheduler';
 
 import { SchedulerLedger } from './ledger';
@@ -262,6 +263,22 @@ function registerBuiltinActionsOn(engine: AutomationEngine): void {
           });
         }
       } catch { t1ActivationDecayed = 0; }
+      if (t1ActivationDecayed > 0) {
+        log.info(`[AutomationEngine] Decayed activation on ${t1ActivationDecayed} T1 trace(s)`);
+      }
+      // T1 episode index: close idle tails, then bounded backfill of sessions
+      // that have no episodes yet (turn pipeline keeps live sessions current).
+      let episodesClosedIdle = 0;
+      let episodeBackfill = { scanned: 0, rebuilt: 0, failed: 0 };
+      try {
+        const db = eng.getGatewayDb?.();
+        if (db && config.recall.t1Episodes?.enabled !== false) {
+          episodesClosedIdle = closeIdleEpisodes(db, {
+            idleMs: config.recall.t1Episodes.idleCloseMs,
+          });
+          episodeBackfill = backfillT1Episodes(db, { limit: 500, sinceDays: 90 });
+        }
+      } catch { /* fail-open: episodes converge on a later run */ }
       if (res.migrated > 0) {
         log.info(`[AutomationEngine] Migrated ${res.migrated} entries to incremental decay baseline (v2)`);
       } else {
@@ -281,6 +298,9 @@ function registerBuiltinActionsOn(engine: AutomationEngine): void {
           t1BackfillMissing: t1Backfill.missing,
           t1BackfillFailed: t1Backfill.failed,
           t1ActivationDecayed,
+          episodesClosedIdle,
+          episodesRebuilt: episodeBackfill.rebuilt,
+          episodeRebuildFailed: episodeBackfill.failed,
         },
       });
     } catch (err: any) {

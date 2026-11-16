@@ -13,6 +13,20 @@ import Database from 'better-sqlite3';
 import { log } from '../core/utils/logger';
 import { ensureEventLayerSchema } from '../core/events/event-store';
 import { ensureStandingSchema } from '../core/standing/standing-store';
+import { DEFAULT_CONCEPT_ALIASES, expandQueryConcepts } from '../recall/t1-concepts';
+import { actorKind, parseActorQuery, type T1TurnActor } from '../recall/t1-actors';
+import type {
+  T1EpisodeBoundary,
+  T1EpisodeMember,
+  T1EpisodeRecord,
+} from '../recall/t1-episodes';
+import type { EpisodeTurnInput } from '../recall/t1-episode-boundary';
+import {
+  querySparseTermIds,
+  type T1SparseTerm,
+  type T1SparseKind,
+} from '../recall/t1-sparse';
+import type { T1TurnConcept } from '../recall/t1-concepts';
 
 export type ObservationSource = 'user_input' | 'assistant_reply' | 'tool_result' | 'reasoning';
 
@@ -60,6 +74,28 @@ export interface T1TraceRead {
   rows: T1Observation[];
   /** Whether the turn is currently archived (from `t1_turns.archived_at`). */
   archived: boolean;
+}
+
+/**
+ * Sparse event code for one T1 turn. This is a derived, rebuildable index over
+ * raw T1 — never a replacement for the immutable observations. It gives replay
+ * a small, typed state sequence (intent/action/error/decision) without dumping
+ * the full transcript into the prompt.
+ */
+export interface T1TurnFeature {
+  traceId: string;
+  sessionId: string;
+  turnSeq: number;
+  intent?: string;
+  action?: string;
+  tool?: string;
+  target?: string;
+  result?: string;
+  error?: string;
+  decision?: string;
+  entities: string[];
+  outcome: 'pass' | 'fail' | 'unknown';
+  confidence: number;
 }
 
 export type T1RetrievalKind = 'search' | 'recall' | 'redeem';
@@ -130,6 +166,16 @@ function parseJsonStringArray(raw: unknown): string[] {
   try {
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseJsonArray<T>(raw: unknown): T[] {
+  if (typeof raw !== 'string' || !raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as T[]) : [];
   } catch {
     return [];
   }
@@ -394,6 +440,162 @@ export class GatewayDatabase {
         UNIQUE(session_id, turn_seq)
       );
       CREATE INDEX IF NOT EXISTS idx_t1_turns_session ON t1_turns(session_id, turn_seq);
+
+      -- Sparse event code per turn (derived/rebuildable). Raw T1 remains the
+      -- source of truth; this table only feeds replay/timeline compression.
+      CREATE TABLE IF NOT EXISTS t1_turn_features (
+        trace_id      TEXT PRIMARY KEY,
+        session_id    TEXT NOT NULL,
+        turn_seq      INTEGER NOT NULL,
+        intent        TEXT,
+        action        TEXT,
+        tool          TEXT,
+        target        TEXT,
+        result        TEXT,
+        error         TEXT,
+        decision      TEXT,
+        entities_json TEXT,
+        outcome       TEXT,
+        confidence    REAL,
+        created_at    INTEGER NOT NULL DEFAULT (unixepoch()),
+        updated_at    INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+      CREATE INDEX IF NOT EXISTS idx_t1_turn_features_session
+        ON t1_turn_features(session_id, turn_seq);
+
+      -- Feature-channel FTS (derived/rebuildable). Noun-phrase / action / error
+      -- lookups hit here even when the raw turn's wording differs.
+      CREATE VIRTUAL TABLE IF NOT EXISTS t1_feature_fts USING fts5(
+        intent,
+        action,
+        target,
+        error,
+        decision,
+        entities,
+        trace_id UNINDEXED,
+        session_id UNINDEXED,
+        turn_seq UNINDEXED,
+        tokenize='trigram'
+      );
+
+      -- Actor catalog + per-turn participation (derived/rebuildable). The
+      -- canonical ID is the key; roles are explicit, never inferred from
+      -- embedding proximity.
+      CREATE TABLE IF NOT EXISTS t1_actors (
+        actor_id   TEXT PRIMARY KEY,
+        kind       TEXT NOT NULL,
+        label      TEXT,
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+
+      CREATE TABLE IF NOT EXISTS t1_turn_actors (
+        trace_id   TEXT NOT NULL,
+        actor_id   TEXT NOT NULL,
+        role       TEXT NOT NULL,
+        weight     REAL NOT NULL DEFAULT 1,
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        PRIMARY KEY (trace_id, actor_id, role)
+      );
+      CREATE INDEX IF NOT EXISTS idx_t1_turn_actors_actor
+        ON t1_turn_actors(actor_id, trace_id);
+
+      -- Concept alias dictionary. Seeded from DEFAULT_CONCEPT_ALIASES but
+      -- runtime-extensible (INSERT OR IGNORE on boot never deletes rows).
+      CREATE TABLE IF NOT EXISTS t1_concepts (
+        term       TEXT NOT NULL,
+        concept_id TEXT NOT NULL,
+        weight     REAL NOT NULL DEFAULT 1,
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        PRIMARY KEY (term, concept_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_t1_concepts_concept ON t1_concepts(concept_id);
+
+      CREATE TABLE IF NOT EXISTS t1_turn_concepts (
+        trace_id   TEXT NOT NULL,
+        concept_id TEXT NOT NULL,
+        weight     REAL NOT NULL DEFAULT 1,
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        PRIMARY KEY (trace_id, concept_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_t1_turn_concepts_concept
+        ON t1_turn_concepts(concept_id, trace_id);
+
+      -- Sparse semantic/lexical code (embedding + decomposition output).
+      -- Inverted by term_id; the model column makes encoder upgrades rebuildable.
+      CREATE TABLE IF NOT EXISTS t1_sparse_terms (
+        trace_id   TEXT NOT NULL,
+        term_id    TEXT NOT NULL,
+        kind       TEXT NOT NULL,
+        weight     REAL NOT NULL,
+        model      TEXT NOT NULL,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        PRIMARY KEY (trace_id, term_id, model)
+      );
+      CREATE INDEX IF NOT EXISTS idx_t1_sparse_term ON t1_sparse_terms(term_id, weight);
+
+      -- Encoder completion marker: makes backfill idempotent even when a turn
+      -- legitimately has zero actors/concepts.
+      CREATE TABLE IF NOT EXISTS t1_turn_encoding (
+        trace_id      TEXT PRIMARY KEY,
+        model         TEXT NOT NULL,
+        actor_count   INTEGER NOT NULL DEFAULT 0,
+        concept_count INTEGER NOT NULL DEFAULT 0,
+        sparse_count  INTEGER NOT NULL DEFAULT 0,
+        encoded_at    INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+
+      -- Episode boundaries are append-only declarations. after_turn is the
+      -- canonical edge: turn N stays in the old episode, N+1 starts a new one.
+      CREATE TABLE IF NOT EXISTS t1_episode_boundaries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        after_turn INTEGER NOT NULL,
+        source TEXT NOT NULL,
+        reason TEXT,
+        intent TEXT,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        UNIQUE(session_id, after_turn, source)
+      );
+      CREATE INDEX IF NOT EXISTS idx_t1_episode_boundaries_session
+        ON t1_episode_boundaries(session_id, after_turn);
+
+      -- Derived episode index. end_turn is mutable while an episode is open;
+      -- episode_id depends only on session + start_turn.
+      CREATE TABLE IF NOT EXISTS t1_episodes (
+        episode_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        start_turn INTEGER NOT NULL,
+        end_turn INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'open',
+        started_at INTEGER,
+        ended_at INTEGER,
+        goal_id TEXT,
+        boundary_source TEXT NOT NULL,
+        boundary_reason TEXT,
+        confidence REAL NOT NULL DEFAULT 0,
+        intent TEXT,
+        outcome TEXT,
+        actors_json TEXT,
+        concept_ids_json TEXT,
+        source_trace_ids_json TEXT,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+      CREATE INDEX IF NOT EXISTS idx_t1_episodes_session
+        ON t1_episodes(session_id, start_turn);
+      CREATE INDEX IF NOT EXISTS idx_t1_episodes_time
+        ON t1_episodes(started_at);
+      CREATE INDEX IF NOT EXISTS idx_t1_episodes_status
+        ON t1_episodes(status, ended_at);
+
+      CREATE TABLE IF NOT EXISTS t1_episode_members (
+        episode_id TEXT NOT NULL,
+        trace_id TEXT NOT NULL,
+        turn_seq INTEGER NOT NULL,
+        PRIMARY KEY (episode_id, trace_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_t1_episode_members_trace
+        ON t1_episode_members(trace_id);
 
       -- Lexical derivative of T1 (rebuildable): trigram tokenizer supports
       -- identifier/path/error-code substring matching that dense retrieval
@@ -672,6 +874,30 @@ export class GatewayDatabase {
     this.migrateT1Identity();
     // Lexical index is a rebuildable derivative of the immutable T1 rows.
     this.rebuildT1FtsIfEmpty();
+    // Concept aliases are a dictionary, not turn data: seed idempotently and
+    // never delete runtime additions.
+    this.seedConceptAliases();
+  }
+
+  /** Seed the curated alias dictionary without clobbering runtime entries. */
+  private seedConceptAliases(): void {
+    try {
+      const stmt = this.db.prepare(
+        `INSERT INTO t1_concepts (term, concept_id, weight)
+         VALUES (?, ?, ?)
+         ON CONFLICT(term, concept_id) DO UPDATE SET
+           weight = excluded.weight,
+           updated_at = unixepoch()`,
+      );
+      const run = this.db.transaction((aliases: typeof DEFAULT_CONCEPT_ALIASES) => {
+        for (const alias of aliases) {
+          stmt.run(alias.term.toLowerCase(), alias.conceptId, alias.weight);
+        }
+      });
+      run(DEFAULT_CONCEPT_ALIASES);
+    } catch (err: any) {
+      log.warn(`[T1Concepts] seed failed (retrieval degrades to lexical): ${err?.message || err}`);
+    }
   }
 
   /**
@@ -1049,6 +1275,147 @@ export class GatewayDatabase {
     return this.db
       .prepare('SELECT * FROM t1_archive WHERE session_id = ? AND turn_id = ? ORDER BY id')
       .all(session_id, turn_id) as T1Observation[];
+  }
+
+  /** Upsert the sparse event code for one logical turn. Derived/rebuildable. */
+  upsertTurnFeature(feature: T1TurnFeature): void {
+    this.db
+      .prepare(
+        `INSERT INTO t1_turn_features (
+           trace_id, session_id, turn_seq, intent, action, tool, target,
+           result, error, decision, entities_json, outcome, confidence, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())
+         ON CONFLICT(trace_id) DO UPDATE SET
+           session_id = excluded.session_id,
+           turn_seq = excluded.turn_seq,
+           intent = excluded.intent,
+           action = excluded.action,
+           tool = excluded.tool,
+           target = excluded.target,
+           result = excluded.result,
+           error = excluded.error,
+           decision = excluded.decision,
+           entities_json = excluded.entities_json,
+           outcome = excluded.outcome,
+           confidence = excluded.confidence,
+           updated_at = unixepoch()`,
+      )
+      .run(
+        feature.traceId,
+        feature.sessionId,
+        feature.turnSeq,
+        feature.intent ?? null,
+        feature.action ?? null,
+        feature.tool ?? null,
+        feature.target ?? null,
+        feature.result ?? null,
+        feature.error ?? null,
+        feature.decision ?? null,
+        JSON.stringify(feature.entities ?? []),
+        feature.outcome ?? 'unknown',
+        feature.confidence ?? 0,
+      );
+
+    // Keep the feature FTS in sync. Fail-open: the feature table remains the
+    // source of truth; a broken derivative can be rebuilt later.
+    try {
+      this.db.prepare('DELETE FROM t1_feature_fts WHERE trace_id = ?').run(feature.traceId);
+      this.db
+        .prepare(
+          `INSERT INTO t1_feature_fts
+             (intent, action, target, error, decision, entities, trace_id, session_id, turn_seq)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          feature.intent ?? '',
+          feature.action ?? '',
+          feature.target ?? '',
+          feature.error ?? '',
+          feature.decision ?? '',
+          (feature.entities ?? []).join(' '),
+          feature.traceId,
+          feature.sessionId,
+          feature.turnSeq,
+        );
+    } catch (err: any) {
+      log.warn(`[T1FeatureFTS] sync failed (feature row kept): ${err?.message || err}`);
+    }
+  }
+
+  /** Read the sparse event code for a turn, or null when it was never built. */
+  getTurnFeature(traceId: string): T1TurnFeature | null {
+    const row = this.db
+      .prepare('SELECT * FROM t1_turn_features WHERE trace_id = ?')
+      .get(String(traceId || '')) as any;
+    if (!row) return null;
+    return {
+      traceId: row.trace_id,
+      sessionId: row.session_id,
+      turnSeq: row.turn_seq,
+      intent: row.intent ?? undefined,
+      action: row.action ?? undefined,
+      tool: row.tool ?? undefined,
+      target: row.target ?? undefined,
+      result: row.result ?? undefined,
+      error: row.error ?? undefined,
+      decision: row.decision ?? undefined,
+      entities: parseJsonStringArray(row.entities_json),
+      outcome: row.outcome === 'pass' || row.outcome === 'fail' ? row.outcome : 'unknown',
+      confidence: Number(row.confidence ?? 0),
+    };
+  }
+
+  /** All logical turns for a session, ordered by turn_seq (active + archived). */
+  listSessionTurns(session_id: string): T1Turn[] {
+    return this.db
+      .prepare('SELECT * FROM t1_turns WHERE session_id = ? ORDER BY turn_seq')
+      .all(session_id) as T1Turn[];
+  }
+
+  /**
+   * Turns that still need a sparse event code and have at least one raw row
+   * (active or archived). Turns with no observations are skipped so a backfill
+   * cursor cannot spin forever on empty legacy turns.
+   */
+  listTurnsMissingFeatures(limit: number): T1Turn[] {
+    const n = Math.max(0, Math.trunc(limit));
+    if (n <= 0) return [];
+    return this.db
+      .prepare(
+        `SELECT t.*
+           FROM t1_turns t
+          WHERE NOT EXISTS (
+                  SELECT 1 FROM t1_turn_features f WHERE f.trace_id = t.trace_id
+                )
+            AND (
+                  EXISTS (SELECT 1 FROM t1_observations o WHERE o.trace_id = t.trace_id)
+               OR EXISTS (SELECT 1 FROM t1_archive a WHERE a.trace_id = t.trace_id)
+                )
+          ORDER BY t.session_id, t.turn_seq
+          LIMIT ?`,
+      )
+      .all(n) as T1Turn[];
+  }
+
+  /**
+   * Read one turn's observations from active + archive in replay order. This is
+   * the timeline primitive: unlike listTurns()/readTurn() it can see archived
+   * turns, so reflection/replay can reconstruct a session after extraction.
+   */
+  readTurnRows(session_id: string, turn_id: number): T1Observation[] {
+    return this.db
+      .prepare(
+        `SELECT id, session_id, turn_id, trace_id, observation_key, source, content, failure, salience, created_at
+         FROM (
+           SELECT id, session_id, turn_id, trace_id, observation_key, source, content, failure, salience, created_at, 0 AS src
+             FROM t1_archive WHERE session_id = ? AND turn_id = ?
+           UNION ALL
+           SELECT id, session_id, turn_id, trace_id, observation_key, source, content, failure, salience, created_at, 1 AS src
+             FROM t1_observations WHERE session_id = ? AND turn_id = ?
+         )
+         ORDER BY created_at, src, id`,
+      )
+      .all(session_id, turn_id, session_id, turn_id) as T1Observation[];
   }
 
   /** Cheap existence check for provenance validation (never loads rows). */
@@ -1827,6 +2194,908 @@ export class GatewayDatabase {
     } catch (err: any) {
       log.warn(`[T1FTS] search failed: ${err?.message || err}`);
       return [];
+    }
+  }
+
+  /**
+   * Feature-channel lexical search over the sparse event code. The feature FTS
+   * is a derived index (intent/action/target/error/decision/entities); raw T1
+   * remains the source of truth.
+   */
+  searchT1Features(query: string, topK: number): T1LexicalHit[] {
+    const match = buildT1FtsQuery(query);
+    if (!match || !Number.isFinite(topK) || topK <= 0) return [];
+    try {
+      const rows = this.db
+        .prepare(
+          `SELECT trace_id, session_id, turn_seq, bm25(t1_feature_fts) AS rank
+             FROM t1_feature_fts
+            WHERE t1_feature_fts MATCH ?
+            ORDER BY rank
+            LIMIT ?`,
+        )
+        .all(match, Math.max(topK * 4, 12)) as Array<{
+        trace_id: string;
+        session_id: string;
+        turn_seq: number;
+        rank: number;
+      }>;
+      const seen = new Set<string>();
+      const hits: T1LexicalHit[] = [];
+      for (const row of rows) {
+        if (!row.trace_id || seen.has(row.trace_id)) continue;
+        seen.add(row.trace_id);
+        const feature = this.getTurnFeature(row.trace_id);
+        const excerpt = feature
+          ? [
+              feature.intent,
+              feature.action,
+              feature.error,
+              feature.decision,
+              (feature.entities ?? []).join(' '),
+            ]
+              .filter(Boolean)
+              .join(' | ')
+              .slice(0, 220)
+          : '';
+        if (!excerpt) continue;
+        hits.push({
+          traceId: row.trace_id,
+          sessionId: row.session_id,
+          turnId: row.turn_seq,
+          source: 'feature',
+          excerpt,
+          rank: row.rank,
+        });
+        if (hits.length >= topK) break;
+      }
+      return hits;
+    } catch (err: any) {
+      log.warn(`[T1FeatureFTS] search failed: ${err?.message || err}`);
+      return [];
+    }
+  }
+
+  // ── Sparse episode code (actors / concepts / terms) ─────────────────────
+  // Every writer below replaces the turn's previous code, so re-encoding is
+  // idempotent and stale terms cannot linger after an alias or model change.
+
+  /** Replace a turn's actor participation set. */
+  upsertTurnActors(traceId: string, actors: T1TurnActor[]): void {
+    const txn = this.db.transaction(() => {
+      this.db.prepare('DELETE FROM t1_turn_actors WHERE trace_id = ?').run(traceId);
+      const catalog = this.db.prepare(
+        `INSERT INTO t1_actors (actor_id, kind, label)
+         VALUES (?, ?, ?)
+         ON CONFLICT(actor_id) DO UPDATE SET
+           kind = excluded.kind,
+           label = COALESCE(excluded.label, t1_actors.label),
+           updated_at = unixepoch()`,
+      );
+      const link = this.db.prepare(
+        `INSERT INTO t1_turn_actors (trace_id, actor_id, role, weight)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(trace_id, actor_id, role) DO UPDATE SET
+           weight = excluded.weight,
+           updated_at = unixepoch()`,
+      );
+      for (const actor of actors ?? []) {
+        catalog.run(actor.actorId, actorKind(actor.actorId), actor.actorId);
+        link.run(traceId, actor.actorId, actor.role, actor.weight);
+      }
+    });
+    txn();
+  }
+
+  getTurnActors(traceId: string): T1TurnActor[] {
+    const rows = this.db
+      .prepare('SELECT * FROM t1_turn_actors WHERE trace_id = ? ORDER BY weight DESC, actor_id')
+      .all(String(traceId || '')) as any[];
+    return rows.map((row) => ({
+      traceId: row.trace_id,
+      actorId: row.actor_id,
+      role: row.role,
+      weight: Number(row.weight ?? 0),
+    }));
+  }
+
+  /** Replace a turn's concept set. */
+  upsertTurnConcepts(traceId: string, concepts: T1TurnConcept[]): void {
+    const txn = this.db.transaction(() => {
+      this.db.prepare('DELETE FROM t1_turn_concepts WHERE trace_id = ?').run(traceId);
+      const stmt = this.db.prepare(
+        `INSERT INTO t1_turn_concepts (trace_id, concept_id, weight)
+         VALUES (?, ?, ?)
+         ON CONFLICT(trace_id, concept_id) DO UPDATE SET
+           weight = excluded.weight,
+           updated_at = unixepoch()`,
+      );
+      for (const concept of concepts ?? []) {
+        stmt.run(traceId, concept.conceptId, concept.weight);
+      }
+    });
+    txn();
+  }
+
+  getTurnConcepts(traceId: string): T1TurnConcept[] {
+    const rows = this.db
+      .prepare('SELECT * FROM t1_turn_concepts WHERE trace_id = ? ORDER BY weight DESC, concept_id')
+      .all(String(traceId || '')) as any[];
+    return rows.map((row) => ({
+      traceId: row.trace_id,
+      conceptId: row.concept_id,
+      weight: Number(row.weight ?? 0),
+    }));
+  }
+
+  /** Replace a turn's sparse term code. */
+  upsertSparseTerms(traceId: string, terms: T1SparseTerm[]): void {
+    const txn = this.db.transaction(() => {
+      this.db.prepare('DELETE FROM t1_sparse_terms WHERE trace_id = ?').run(traceId);
+      const stmt = this.db.prepare(
+        `INSERT INTO t1_sparse_terms (trace_id, term_id, kind, weight, model)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(trace_id, term_id, model) DO UPDATE SET
+           kind = excluded.kind,
+           weight = excluded.weight,
+           created_at = unixepoch()`,
+      );
+      for (const term of terms ?? []) {
+        stmt.run(traceId, term.termId, term.kind, term.weight, term.model);
+      }
+    });
+    txn();
+  }
+
+  getSparseTerms(traceId: string): T1SparseTerm[] {
+    const rows = this.db
+      .prepare('SELECT * FROM t1_sparse_terms WHERE trace_id = ? ORDER BY weight DESC, term_id')
+      .all(String(traceId || '')) as any[];
+    return rows.map((row) => ({
+      traceId: row.trace_id,
+      termId: row.term_id,
+      kind: row.kind as T1SparseKind,
+      weight: Number(row.weight ?? 0),
+      model: row.model,
+    }));
+  }
+
+  upsertTurnEncoding(marker: {
+    traceId: string;
+    model: string;
+    actorCount: number;
+    conceptCount: number;
+    sparseCount: number;
+  }): void {
+    this.db
+      .prepare(
+        `INSERT INTO t1_turn_encoding
+           (trace_id, model, actor_count, concept_count, sparse_count)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(trace_id) DO UPDATE SET
+           model = excluded.model,
+           actor_count = excluded.actor_count,
+           concept_count = excluded.concept_count,
+           sparse_count = excluded.sparse_count,
+           encoded_at = unixepoch()`,
+      )
+      .run(
+        marker.traceId,
+        marker.model,
+        Math.max(0, Math.trunc(marker.actorCount)),
+        Math.max(0, Math.trunc(marker.conceptCount)),
+        Math.max(0, Math.trunc(marker.sparseCount)),
+      );
+  }
+
+  /** Turns that have raw rows but no encoding marker yet. */
+  listTurnsMissingEncoding(limit: number): T1Turn[] {
+    const n = Math.max(0, Math.trunc(limit));
+    if (n <= 0) return [];
+    return this.db
+      .prepare(
+        `SELECT t.*
+           FROM t1_turns t
+          WHERE NOT EXISTS (SELECT 1 FROM t1_turn_encoding e WHERE e.trace_id = t.trace_id)
+            AND (
+                  EXISTS (SELECT 1 FROM t1_observations o WHERE o.trace_id = t.trace_id)
+               OR EXISTS (SELECT 1 FROM t1_archive a WHERE a.trace_id = t.trace_id)
+                )
+          ORDER BY t.session_id, t.turn_seq
+          LIMIT ?`,
+      )
+      .all(n) as T1Turn[];
+  }
+
+  /** Trajectory actor metadata for one turn (agent / tool), in event order. */
+  readTrajectoryEvents(
+    sessionId: string,
+    turnSeq: number,
+  ): Array<{ toolName?: string; agent?: string }> {
+    const rows = this.db
+      .prepare(
+        `SELECT tool_name, agent FROM trajectory_events
+          WHERE session_id = ? AND turn_id = ?
+          ORDER BY seq`,
+      )
+      .all(String(sessionId || ''), Number(turnSeq)) as any[];
+    return rows.map((row) => ({
+      toolName: row.tool_name ?? undefined,
+      agent: row.agent ?? undefined,
+    }));
+  }
+
+  // ── T1 episodes (derived index) ─────────────────────────────────────────
+
+  /**
+   * Join one session's turn identity with its derived feature/actor/concept/
+   * sparse code. Times are epoch milliseconds; `t1_turns.created_at` is seconds.
+   */
+  readSessionEpisodeTurns(sessionId: string): EpisodeTurnInput[] {
+    const turns = this.db
+      .prepare('SELECT * FROM t1_turns WHERE session_id = ? ORDER BY turn_seq')
+      .all(String(sessionId || '')) as any[];
+    if (turns.length === 0) return [];
+
+    let goalId: string | undefined;
+    try {
+      const goal = this.db
+        .prepare('SELECT goal_id FROM goal_sessions WHERE session_id = ? LIMIT 1')
+        .get(sessionId) as { goal_id?: string } | undefined;
+      goalId = goal?.goal_id ?? undefined;
+    } catch {
+      goalId = undefined;
+    }
+
+    return turns.map((row) => {
+      const feature = this.getTurnFeature(row.trace_id);
+      const actors = this.getTurnActors(row.trace_id).filter(
+        (actor) => !actor.actorId.startsWith('user:'),
+      );
+      const concepts = this.getTurnConcepts(row.trace_id);
+      const terms = this.getSparseTerms(row.trace_id);
+      const isUserTurn = this.readTurnRows(sessionId, row.turn_seq).some(
+        (observation) => observation.source === 'user_input',
+      );
+      return {
+        turnSeq: Number(row.turn_seq),
+        traceId: row.trace_id,
+        createdAt: Number(row.created_at) * 1000,
+        isUserTurn,
+        intent: feature?.intent,
+        specificActors: actors.map((actor) => actor.actorId),
+        conceptIds: concepts.map((concept) => concept.conceptId),
+        entities: feature?.entities ?? [],
+        semanticAtoms: terms
+          .filter((term) => term.kind === 'semantic')
+          .map((term) => term.termId.replace(/^sem:/, '')),
+        goalId,
+        structuralBreak: Boolean(feature?.error),
+        actorRoles: actors.map((actor) => ({
+          actorId: actor.actorId,
+          role: actor.role,
+          weight: actor.weight,
+        })),
+        outcome: feature?.result ?? feature?.decision,
+      };
+    });
+  }
+
+  recordEpisodeBoundary(boundary: T1EpisodeBoundary): void {
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO t1_episode_boundaries
+           (session_id, after_turn, source, reason, intent, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        boundary.sessionId,
+        Math.max(0, Math.trunc(boundary.afterTurn)),
+        boundary.source,
+        boundary.reason ?? null,
+        boundary.intent ?? null,
+        Math.trunc(boundary.createdAt),
+      );
+  }
+
+  listEpisodeBoundaries(sessionId: string): T1EpisodeBoundary[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM t1_episode_boundaries
+          WHERE session_id = ?
+          ORDER BY after_turn, id`,
+      )
+      .all(String(sessionId || '')) as any[];
+    return rows.map((row) => ({
+      sessionId: row.session_id,
+      afterTurn: Number(row.after_turn),
+      source: row.source,
+      reason: row.reason ?? undefined,
+      intent: row.intent ?? undefined,
+      createdAt: Number(row.created_at),
+    }));
+  }
+
+  /** Queue a boundary for the next user turn (`/new-episode`). */
+  setPendingEpisodeBoundary(
+    sessionId: string,
+    payload: { reason?: string; intent?: string; createdAt: number },
+  ): void {
+    this.kvSet('episode-boundary-pending', sessionId, payload);
+  }
+
+  /**
+   * Consume a queued boundary when the next user turn is captured. The edge is
+   * `newTurnSeq - 1`, so the new turn starts the episode regardless of capture
+   * timing. A second call returns null.
+   */
+  consumePendingEpisodeBoundary(
+    sessionId: string,
+    newTurnSeq: number,
+  ): T1EpisodeBoundary | null {
+    const pending = this.kvGet<{ reason?: string; intent?: string; createdAt: number }>(
+      'episode-boundary-pending',
+      sessionId,
+    );
+    if (!pending) return null;
+    this.kvDelete('episode-boundary-pending', sessionId);
+    const afterTurn = Math.trunc(newTurnSeq) - 1;
+    if (!Number.isFinite(afterTurn) || afterTurn < 0) return null;
+    const boundary: T1EpisodeBoundary = {
+      sessionId,
+      afterTurn,
+      source: 'user',
+      reason: (pending.reason as T1EpisodeBoundary['reason']) ?? 'user_declared',
+      intent: pending.intent,
+      createdAt: pending.createdAt ?? Math.floor(Date.now() / 1000),
+    };
+    this.recordEpisodeBoundary(boundary);
+    return boundary;
+  }
+
+  /** Replace all derived episodes/members for one session in a transaction. */
+  replaceSessionEpisodes(
+    sessionId: string,
+    episodes: T1EpisodeRecord[],
+    members: T1EpisodeMember[],
+  ): void {
+    const txn = this.db.transaction(() => {
+      this.db
+        .prepare(
+          `DELETE FROM t1_episode_members
+            WHERE episode_id IN (SELECT episode_id FROM t1_episodes WHERE session_id = ?)`,
+        )
+        .run(sessionId);
+      this.db.prepare('DELETE FROM t1_episodes WHERE session_id = ?').run(sessionId);
+
+      const insertEpisode = this.db.prepare(
+        `INSERT INTO t1_episodes
+           (episode_id, session_id, start_turn, end_turn, status, started_at,
+            ended_at, goal_id, boundary_source, boundary_reason, confidence,
+            intent, outcome, actors_json, concept_ids_json, source_trace_ids_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      for (const episode of episodes) {
+        insertEpisode.run(
+          episode.episodeId,
+          episode.sessionId,
+          episode.startTurn,
+          episode.endTurn,
+          episode.status,
+          episode.startedAt,
+          episode.endedAt,
+          episode.goalId ?? null,
+          episode.boundarySource,
+          episode.boundaryReason,
+          episode.confidence,
+          episode.intent ?? null,
+          episode.outcome ?? null,
+          JSON.stringify(episode.actors ?? []),
+          JSON.stringify(episode.conceptIds ?? []),
+          JSON.stringify(episode.sourceTraceIds ?? []),
+        );
+      }
+
+      const insertMember = this.db.prepare(
+        `INSERT OR REPLACE INTO t1_episode_members (episode_id, trace_id, turn_seq)
+         VALUES (?, ?, ?)`,
+      );
+      for (const member of members) {
+        insertMember.run(member.episodeId, member.traceId, member.turnSeq);
+      }
+    });
+    txn();
+  }
+
+  getEpisode(episodeId: string): T1EpisodeRecord | null {
+    const row = this.db
+      .prepare('SELECT * FROM t1_episodes WHERE episode_id = ?')
+      .get(String(episodeId || '')) as any;
+    return row ? this.episodeFromRow(row) : null;
+  }
+
+  listEpisodes(opts: {
+    sessionId?: string;
+    limit: number;
+    cursor?: string;
+    since?: number;
+  }): { episodes: T1EpisodeRecord[]; nextCursor?: string } {
+    const limit = Math.max(0, Math.trunc(opts.limit));
+    if (limit === 0) return { episodes: [] };
+    const where: string[] = [];
+    const params: any[] = [];
+    if (opts.sessionId) {
+      where.push('session_id = ?');
+      params.push(opts.sessionId);
+    }
+    if (Number.isFinite(opts.since)) {
+      where.push('COALESCE(started_at, 0) >= ?');
+      params.push(Number(opts.since));
+    }
+    if (opts.cursor) {
+      const separator = opts.cursor.indexOf('|');
+      const started = Number(opts.cursor.slice(0, separator));
+      const episodeId = separator >= 0 ? opts.cursor.slice(separator + 1) : '';
+      if (Number.isFinite(started) && episodeId) {
+        where.push(
+          '(COALESCE(started_at, 0) < ? OR (COALESCE(started_at, 0) = ? AND episode_id < ?))',
+        );
+        params.push(started, started, episodeId);
+      }
+    }
+    const sql = `SELECT * FROM t1_episodes
+      ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+      ORDER BY COALESCE(started_at, 0) DESC, episode_id DESC
+      LIMIT ?`;
+    const rows = this.db.prepare(sql).all(...params, limit + 1) as any[];
+    const page = rows.slice(0, limit).map((row) => this.episodeFromRow(row));
+    if (rows.length <= limit || page.length === 0) return { episodes: page };
+    const last = page[page.length - 1];
+    return {
+      episodes: page,
+      nextCursor: `${last.startedAt ?? 0}|${last.episodeId}`,
+    };
+  }
+
+  listEpisodeMembers(episodeId: string): T1EpisodeMember[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM t1_episode_members
+          WHERE episode_id = ?
+          ORDER BY turn_seq`,
+      )
+      .all(String(episodeId || '')) as any[];
+    return rows.map((row) => ({
+      episodeId: row.episode_id,
+      traceId: row.trace_id,
+      turnSeq: Number(row.turn_seq),
+    }));
+  }
+
+  /** Closed, multi-turn episodes eligible for reflection, oldest first. */
+  listReflectableEpisodes(opts: {
+    limit: number;
+    lookbackDays: number;
+    now: number;
+    sessionId?: string;
+  }): T1EpisodeRecord[] {
+    const limit = Math.max(0, Math.trunc(opts.limit));
+    if (limit === 0) return [];
+    const cutoff = Math.trunc(opts.now) - Math.max(0, opts.lookbackDays) * 86400_000;
+    const sessionId = opts.sessionId ?? null;
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM t1_episodes
+          WHERE status = 'closed'
+            AND (end_turn - start_turn + 1) >= 2
+            AND COALESCE(ended_at, 0) >= ?
+            AND (? IS NULL OR session_id = ?)
+          ORDER BY COALESCE(ended_at, 0) ASC
+          LIMIT ?`,
+      )
+      .all(cutoff, sessionId, sessionId, limit) as any[];
+    return rows.map((row) => this.episodeFromRow(row));
+  }
+
+  findEpisodeByTrace(traceId: string): string | null {
+    const row = this.db
+      .prepare('SELECT episode_id FROM t1_episode_members WHERE trace_id = ? LIMIT 1')
+      .get(String(traceId || '')) as { episode_id?: string } | undefined;
+    return row?.episode_id ?? null;
+  }
+
+  /** Distinct sessions that have T1 turns, for bounded episode backfill. */
+  listEpisodeSessionIds(opts: { limit: number; since?: number }): string[] {
+    const limit = Math.max(0, Math.trunc(opts.limit));
+    if (limit === 0) return [];
+    const sinceSec =
+      Number.isFinite(opts.since) && opts.since != null
+        ? Math.floor(Number(opts.since) / 1000)
+        : null;
+    const rows = this.db
+      .prepare(
+        `SELECT DISTINCT t.session_id
+           FROM t1_turns t
+          WHERE (? IS NULL OR t.created_at >= ?)
+            AND NOT EXISTS (
+                  SELECT 1 FROM t1_episodes e WHERE e.session_id = t.session_id
+                )
+          ORDER BY t.session_id
+          LIMIT ?`,
+      )
+      .all(sinceSec, sinceSec, limit) as Array<{ session_id: string }>;
+    return rows.map((row) => row.session_id);
+  }
+
+  /** Last turn time of an episode in epoch milliseconds, or null. */
+  getEpisodeLastTurnAt(episodeId: string): number | null {
+    const row = this.db
+      .prepare(
+        `SELECT MAX(t.created_at) AS at
+           FROM t1_episode_members m
+           JOIN t1_turns t ON t.trace_id = m.trace_id
+          WHERE m.episode_id = ?`,
+      )
+      .get(String(episodeId || '')) as { at?: number | null } | undefined;
+    return row?.at == null ? null : Number(row.at) * 1000;
+  }
+
+  closeEpisode(episodeId: string, endedAt: number, reason: string): void {
+    this.db
+      .prepare(
+        `UPDATE t1_episodes
+            SET status = 'closed',
+                boundary_source = 'session_end',
+                boundary_reason = ?,
+                ended_at = ?,
+                updated_at = unixepoch()
+          WHERE episode_id = ?`,
+      )
+      .run(reason, Math.trunc(endedAt), String(episodeId || ''));
+  }
+
+  private episodeFromRow(row: any): T1EpisodeRecord {
+    return {
+      episodeId: row.episode_id,
+      sessionId: row.session_id,
+      startTurn: Number(row.start_turn),
+      endTurn: Number(row.end_turn),
+      status: row.status === 'closed' ? 'closed' : 'open',
+      startedAt: row.started_at == null ? null : Number(row.started_at),
+      endedAt: row.ended_at == null ? null : Number(row.ended_at),
+      goalId: row.goal_id ?? undefined,
+      boundarySource: row.boundary_source,
+      boundaryReason: row.boundary_reason,
+      confidence: Number(row.confidence ?? 0),
+      intent: row.intent ?? undefined,
+      outcome: row.outcome ?? undefined,
+      actors: parseJsonArray<{ actorId: string; role: string; weight: number }>(
+        row.actors_json,
+      ),
+      conceptIds: parseJsonStringArray(row.concept_ids_json),
+      sourceTraceIds: parseJsonStringArray(row.source_trace_ids_json),
+    };
+  }
+
+  /** Concept-channel lookup: query aliases → turns carrying those concepts. */
+  searchT1Concepts(query: string, topK: number): T1LexicalHit[] {
+    const conceptIds = expandQueryConcepts(query);
+    if (conceptIds.length === 0 || !Number.isFinite(topK) || topK <= 0) return [];
+    try {
+      const placeholders = conceptIds.map(() => '?').join(',');
+      const rows = this.db
+        .prepare(
+          `SELECT c.trace_id, t.session_id, t.turn_seq, SUM(c.weight) AS score
+             FROM t1_turn_concepts c
+             JOIN t1_turns t ON t.trace_id = c.trace_id
+            WHERE c.concept_id IN (${placeholders})
+            GROUP BY c.trace_id, t.session_id, t.turn_seq
+            ORDER BY score DESC
+            LIMIT ?`,
+        )
+        .all(...conceptIds, Math.max(topK * 2, 8)) as Array<{
+        trace_id: string;
+        session_id: string;
+        turn_seq: number;
+        score: number;
+      }>;
+      return rows
+        .map((row) => ({
+          traceId: row.trace_id,
+          sessionId: row.session_id,
+          turnId: row.turn_seq,
+          source: 'concept',
+          excerpt: this.t1Excerpt(row.trace_id, row.session_id, row.turn_seq),
+          rank: -Number(row.score ?? 0),
+        }))
+        .filter((hit) => Boolean(hit.excerpt))
+        .slice(0, topK);
+    } catch (err: any) {
+      log.warn(`[T1Concepts] search failed: ${err?.message || err}`);
+      return [];
+    }
+  }
+
+  /**
+   * Actor-channel lookup. Multiple actors in the query are AND semantics: a
+   * turn must carry every named participant (e.g. "reviewer 和 builder" only
+   * matches a turn in which both took part).
+   *
+   * When no single turn contains every actor, fall back to a bounded session
+   * window (default 12 turns): an episode may span the reviewer's comment and
+   * the builder's reply. The anchor is the turn where the last participant
+   * appears; exact same-turn matches always rank first.
+   */
+  searchT1Actors(query: string, topK: number): T1LexicalHit[] {
+    const actorIds = parseActorQuery(query);
+    if (actorIds.length === 0 || !Number.isFinite(topK) || topK <= 0) return [];
+    try {
+      const placeholders = actorIds.map(() => '?').join(',');
+      const rows = this.db
+        .prepare(
+          `SELECT a.trace_id, t.session_id, t.turn_seq, a.actor_id
+             FROM t1_turn_actors a
+             JOIN t1_turns t ON t.trace_id = a.trace_id
+            WHERE a.actor_id IN (${placeholders})
+            ORDER BY t.session_id, t.turn_seq
+            LIMIT 500`,
+        )
+        .all(...actorIds) as Array<{
+        trace_id: string;
+        session_id: string;
+        turn_seq: number;
+        actor_id: string;
+      }>;
+
+      const byTrace = new Map<
+        string,
+        { sessionId: string; turnSeq: number; actors: Set<string> }
+      >();
+      for (const row of rows) {
+        const entry = byTrace.get(row.trace_id) ?? {
+          sessionId: row.session_id,
+          turnSeq: row.turn_seq,
+          actors: new Set<string>(),
+        };
+        entry.actors.add(row.actor_id);
+        byTrace.set(row.trace_id, entry);
+      }
+
+      const exact = [...byTrace.entries()]
+        .filter(([, entry]) => entry.actors.size === actorIds.length)
+        .map(([traceId, entry]) => ({
+          traceId,
+          sessionId: entry.sessionId,
+          turnId: entry.turnSeq,
+          source: 'actor',
+          excerpt: this.t1Excerpt(traceId, entry.sessionId, entry.turnSeq),
+          rank: -entry.actors.size,
+        }))
+        .filter((hit) => Boolean(hit.excerpt));
+      if (exact.length >= topK) return exact.slice(0, topK);
+
+      const required = new Set(actorIds);
+      const sessions = new Map<
+        string,
+        { turnsByActor: Map<string, number[]>; traceByTurn: Map<number, string> }
+      >();
+      for (const row of rows) {
+        const entry = sessions.get(row.session_id) ?? {
+          turnsByActor: new Map<string, number[]>(),
+          traceByTurn: new Map<number, string>(),
+        };
+        const turns = entry.turnsByActor.get(row.actor_id) ?? [];
+        turns.push(row.turn_seq);
+        entry.turnsByActor.set(row.actor_id, turns);
+        entry.traceByTurn.set(row.turn_seq, row.trace_id);
+        sessions.set(row.session_id, entry);
+      }
+
+      const seen = new Set(exact.map((hit) => hit.traceId));
+      const episode: T1LexicalHit[] = [];
+      for (const [sessionId, entry] of sessions) {
+        if (entry.turnsByActor.size < required.size) continue;
+        const events: Array<{ turn: number; actorId: string }> = [];
+        for (const [actorId, turns] of entry.turnsByActor) {
+          for (const turn of turns) events.push({ turn, actorId });
+        }
+        events.sort((a, b) => a.turn - b.turn);
+
+        let window: { start: number; end: number } | null = null;
+        for (let i = 0; i < events.length; i++) {
+          const missing = new Set(required);
+          for (let j = i; j < events.length; j++) {
+            missing.delete(events[j].actorId);
+            if (missing.size > 0) continue;
+            const span = events[j].turn - events[i].turn;
+            if (!window || span < window.end - window.start) {
+              window = { start: events[i].turn, end: events[j].turn };
+            }
+            break;
+          }
+        }
+        if (!window || window.end - window.start > 12) continue;
+
+        const anchorTurn = window.end;
+        const traceId = entry.traceByTurn.get(anchorTurn);
+        if (!traceId || seen.has(traceId)) continue;
+        const excerpt = this.t1Excerpt(traceId, sessionId, anchorTurn);
+        if (!excerpt) continue;
+        seen.add(traceId);
+        episode.push({
+          traceId,
+          sessionId,
+          turnId: anchorTurn,
+          source: 'actor',
+          excerpt,
+          rank: 1,
+        });
+      }
+
+      return [...exact, ...episode].slice(0, topK);
+    } catch (err: any) {
+      log.warn(`[T1Actors] search failed: ${err?.message || err}`);
+      return [];
+    }
+  }
+
+  /** Sparse-channel lookup over the stored term code (inverted index). */
+  searchT1Sparse(query: string, topK: number): T1LexicalHit[] {
+    const termIds = querySparseTermIds(query);
+    if (termIds.length === 0 || !Number.isFinite(topK) || topK <= 0) return [];
+    try {
+      const placeholders = termIds.map(() => '?').join(',');
+      const rows = this.db
+        .prepare(
+          `SELECT s.trace_id, t.session_id, t.turn_seq, SUM(s.weight) AS score
+             FROM t1_sparse_terms s
+             JOIN t1_turns t ON t.trace_id = s.trace_id
+            WHERE s.term_id IN (${placeholders})
+            GROUP BY s.trace_id, t.session_id, t.turn_seq
+            ORDER BY score DESC
+            LIMIT ?`,
+        )
+        .all(...termIds, Math.max(topK * 2, 8)) as Array<{
+        trace_id: string;
+        session_id: string;
+        turn_seq: number;
+        score: number;
+      }>;
+      return rows
+        .map((row) => ({
+          traceId: row.trace_id,
+          sessionId: row.session_id,
+          turnId: row.turn_seq,
+          source: 'sparse',
+          excerpt: this.t1Excerpt(row.trace_id, row.session_id, row.turn_seq),
+          rank: -Number(row.score ?? 0),
+        }))
+        .filter((hit) => Boolean(hit.excerpt))
+        .slice(0, topK);
+    } catch (err: any) {
+      log.warn(`[T1Sparse] search failed: ${err?.message || err}`);
+      return [];
+    }
+  }
+
+  /**
+   * Bounded pattern completion: turns that share a concept, a non-generic
+   * actor, or (weakest cue) a same-session turn within ±2 of a seed.
+   * `user:*` / `project:*` actors are excluded — they connect everything and
+   * would turn completion into a full scan.
+   */
+  expandT1Neighbors(seedTraceIds: string[], limit: number): T1LexicalHit[] {
+    const seeds = Array.from(new Set((seedTraceIds ?? []).filter(Boolean)));
+    const cap = Math.max(0, Math.trunc(limit));
+    if (seeds.length === 0 || cap === 0) return [];
+    const scores = new Map<string, { sessionId: string; turnSeq: number; score: number }>();
+
+    const merge = (rows: Array<{ trace_id: string; session_id: string; turn_seq: number; score: number }>) => {
+      for (const row of rows) {
+        if (seeds.includes(row.trace_id)) continue;
+        const prev = scores.get(row.trace_id);
+        if (prev) prev.score += Number(row.score ?? 0);
+        else {
+          scores.set(row.trace_id, {
+            sessionId: row.session_id,
+            turnSeq: row.turn_seq,
+            score: Number(row.score ?? 0),
+          });
+        }
+      }
+    };
+
+    try {
+      const placeholders = seeds.map(() => '?').join(',');
+      const conceptRows = this.db
+        .prepare(
+          `SELECT n.trace_id, t.session_id, t.turn_seq, SUM(n.weight) AS score
+             FROM t1_turn_concepts n
+             JOIN t1_turn_concepts s ON s.concept_id = n.concept_id
+             JOIN t1_turns t ON t.trace_id = n.trace_id
+            WHERE s.trace_id IN (${placeholders})
+              AND n.trace_id NOT IN (${placeholders})
+            GROUP BY n.trace_id, t.session_id, t.turn_seq
+            ORDER BY score DESC
+            LIMIT ?`,
+        )
+        .all(...seeds, ...seeds, Math.max(cap * 3, 9)) as any[];
+      merge(conceptRows);
+
+      const actorRows = this.db
+        .prepare(
+          `SELECT n.trace_id, t.session_id, t.turn_seq, SUM(n.weight) AS score
+             FROM t1_turn_actors n
+             JOIN t1_turn_actors s ON s.actor_id = n.actor_id
+             JOIN t1_turns t ON t.trace_id = n.trace_id
+            WHERE s.trace_id IN (${placeholders})
+              AND n.trace_id NOT IN (${placeholders})
+              AND n.actor_id NOT LIKE 'user:%'
+              AND n.actor_id NOT LIKE 'project:%'
+            GROUP BY n.trace_id, t.session_id, t.turn_seq
+            ORDER BY score DESC
+            LIMIT ?`,
+        )
+        .all(...seeds, ...seeds, Math.max(cap * 3, 9)) as any[];
+      merge(actorRows);
+
+      // Weakest cue: same-session adjacency. This is what completes an
+      // episode when the participants appear in neighbouring turns rather
+      // than the same turn (reviewer comment → builder reply).
+      const adjacentRows = this.db
+        .prepare(
+          `SELECT t.trace_id, t.session_id, t.turn_seq, 0.25 AS score
+             FROM t1_turns t
+             JOIN t1_turns s ON s.session_id = t.session_id
+            WHERE s.trace_id IN (${placeholders})
+              AND t.trace_id NOT IN (${placeholders})
+              AND ABS(t.turn_seq - s.turn_seq) BETWEEN 1 AND 2
+            GROUP BY t.trace_id, t.session_id, t.turn_seq
+            ORDER BY score DESC
+            LIMIT ?`,
+        )
+        .all(...seeds, ...seeds, Math.max(cap * 3, 9)) as any[];
+      merge(adjacentRows);
+    } catch (err: any) {
+      log.warn(`[T1Neighbors] expansion failed: ${err?.message || err}`);
+      return [];
+    }
+
+    return [...scores.entries()]
+      .sort(([, a], [, b]) => b.score - a.score)
+      .slice(0, cap)
+      .map(([traceId, entry]) => ({
+        traceId,
+        sessionId: entry.sessionId,
+        turnId: entry.turnSeq,
+        source: 'neighbor',
+        excerpt: this.t1Excerpt(traceId, entry.sessionId, entry.turnSeq),
+        rank: -entry.score,
+      }))
+      .filter((hit) => Boolean(hit.excerpt));
+  }
+
+  /** Shared excerpt: structured feature first, raw T1 row as fallback. */
+  private t1Excerpt(traceId: string, sessionId: string, turnSeq: number): string {
+    const feature = this.getTurnFeature(traceId);
+    if (feature) {
+      const excerpt = [
+        feature.intent,
+        feature.action,
+        feature.error,
+        feature.decision,
+        (feature.entities ?? []).join(' '),
+      ]
+        .filter(Boolean)
+        .join(' | ')
+        .slice(0, 220);
+      if (excerpt) return excerpt;
+    }
+    try {
+      const rows = this.readTurnRows(sessionId, turnSeq);
+      return (rows[0]?.content ?? '').replace(/\s+/g, ' ').slice(0, 220);
+    } catch {
+      return '';
     }
   }
 

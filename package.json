@@ -23,6 +23,7 @@
     "sync:view-dto": "node scripts/sync-view-dto.mjs",
     "emit:view-dto": "npm run emit:view-dto -w @mafw/sdk",
     "test": "npm test --prefix gateway",
+    "eval:t1": "ts-node --project evaluation/t1/tsconfig.json evaluation/t1/src/run.ts",
     "test:unit": "npm test --prefix gateway",
     "typecheck:gateway-tests": "cd gateway && npx tsc --noEmit -p tsconfig.test-types.json",
     "test:tui": "node --test packages/tui/tests/*.test.ts",

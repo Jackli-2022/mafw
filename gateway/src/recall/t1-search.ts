@@ -2,9 +2,125 @@ import type { GatewayDatabase, T1LexicalHit } from '../memory/gateway-db';
 import type { EmbeddingRuntime } from '../memory/embedding-runtime';
 import { getEmbeddingRuntime } from '../memory/embedding-runtime';
 import { config } from '../config';
-import { makeT1Search, T1Hit } from './verbatim-recall';
+import { makeT1Search, T1Hit, type T1HitSource } from './verbatim-recall';
 
 const RRF_K = 60;
+
+/** Dense-channel A/B counters (shadow/off observability). */
+const denseStats = { evaluations: 0, withDenseHits: 0 };
+export function getT1DenseStats(): { evaluations: number; withDenseHits: number } {
+  return { ...denseStats };
+}
+export function resetT1DenseStats(): void {
+  denseStats.evaluations = 0;
+  denseStats.withDenseHits = 0;
+}
+
+export interface T1FusionChannels {
+  feature?: T1LexicalHit[];
+  concept?: T1LexicalHit[];
+  actor?: T1LexicalHit[];
+  sparse?: T1LexicalHit[];
+}
+
+function hitKey(hit: { traceId?: string | null; sessionId: string; turnId: number }): string {
+  return hit.traceId || `${hit.sessionId}:${hit.turnId}`;
+}
+
+type FusionEntry = {
+  hit: T1Hit;
+  score: number;
+  sources: Set<T1HitSource>;
+  excerpts: Partial<Record<T1HitSource, string>>;
+};
+
+/**
+ * Fuse every T1 channel with reciprocal-rank fusion. A hit present in several
+ * channels outranks a single-channel hit at the same rank, and channel
+ * provenance is preserved in `sources` for observability.
+ *
+ * `channels` accepts a bare `T1LexicalHit[]` for backwards compatibility
+ * (treated as the feature channel).
+ */
+export function fuseT1Hits(
+  dense: T1Hit[],
+  lexical: T1LexicalHit[],
+  k: number,
+  channels: T1LexicalHit[] | T1FusionChannels = {},
+): T1Hit[] {
+  const channelMap: T1FusionChannels = Array.isArray(channels)
+    ? { feature: channels }
+    : channels;
+  const fused = new Map<string, FusionEntry>();
+  const excerptOrder: T1HitSource[] = [
+    'lexical',
+    'feature',
+    'concept',
+    'actor',
+    'sparse',
+    'neighbor',
+  ];
+
+  const merge = (
+    hit: {
+      sessionId: string;
+      turnId: number;
+      traceId?: string | null;
+      cosine?: number;
+      excerpt: string;
+    },
+    source: T1HitSource,
+    rank: number,
+  ) => {
+    if (!hit.excerpt) return;
+    const key = hitKey(hit);
+    const entry = fused.get(key) ?? {
+      hit: {
+        sessionId: hit.sessionId,
+        turnId: hit.turnId,
+        traceId: hit.traceId,
+        cosine: hit.cosine ?? 0,
+        excerpt: hit.excerpt,
+      },
+      score: 0,
+      sources: new Set<T1HitSource>(),
+      excerpts: {},
+    };
+    entry.score += 1 / (RRF_K + rank);
+    entry.sources.add(source);
+    entry.excerpts[source] = hit.excerpt;
+    if (!entry.hit.traceId) entry.hit.traceId = hit.traceId;
+    fused.set(key, entry);
+  };
+
+  dense.forEach((hit, rank) => merge(hit, 'dense', rank));
+  lexical.forEach((hit, rank) => merge(hit, 'lexical', rank));
+
+  for (const source of ['feature', 'concept', 'actor', 'sparse'] as const) {
+    (channelMap[source] ?? []).forEach((hit, rank) => merge(hit, source, rank));
+  }
+
+  return [...fused.values()]
+    .map(({ hit, score, sources, excerpts }) => {
+      const preferred = excerptOrder.find((source) => excerpts[source]);
+      return {
+        ...hit,
+        excerpt: (preferred && excerpts[preferred]) || hit.excerpt,
+        score,
+        sources: [
+          'dense',
+          'lexical',
+          'feature',
+          'concept',
+          'actor',
+          'sparse',
+          'neighbor',
+        ].filter((source): source is T1HitSource => sources.has(source as T1HitSource)),
+      };
+    })
+    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+    .slice(0, Math.max(0, k));
+}
 
 export type ActivationRankingMode = 'off' | 'shadow' | 'on';
 
@@ -63,63 +179,6 @@ export function applyT1ActivationRanking(
 }
 
 
-function hitKey(hit: { traceId?: string | null; sessionId: string; turnId: number }): string {
-  return hit.traceId || `${hit.sessionId}:${hit.turnId}`;
-}
-
-/**
- * Fuse dense and lexical T1 rankings with reciprocal-rank fusion. A hit
- * present in both channels outranks a single-channel hit at the same rank.
- * Lexical excerpts are preferred (they contain the matched literal), while
- * the dense cosine is preserved for scoring/observability.
- */
-export function fuseT1Hits(dense: T1Hit[], lexical: T1LexicalHit[], k: number): T1Hit[] {
-  const fused = new Map<
-    string,
-    { hit: T1Hit; score: number; sources: Set<'dense' | 'lexical'>; lexicalExcerpt?: string }
-  >();
-
-  dense.forEach((hit, rank) => {
-    if (!hit.excerpt) return;
-    const key = hitKey(hit);
-    const entry = fused.get(key) ?? { hit: { ...hit }, score: 0, sources: new Set() };
-    entry.score += 1 / (RRF_K + rank);
-    entry.sources.add('dense');
-    fused.set(key, entry);
-  });
-
-  lexical.forEach((hit, rank) => {
-    if (!hit.excerpt) return;
-    const key = hitKey(hit);
-    const entry = fused.get(key) ?? {
-      hit: {
-        sessionId: hit.sessionId,
-        turnId: hit.turnId,
-        traceId: hit.traceId,
-        cosine: 0,
-        excerpt: hit.excerpt,
-      },
-      score: 0,
-      sources: new Set(),
-    };
-    entry.score += 1 / (RRF_K + rank);
-    entry.sources.add('lexical');
-    entry.lexicalExcerpt = hit.excerpt;
-    if (!entry.hit.traceId) entry.hit.traceId = hit.traceId;
-    fused.set(key, entry);
-  });
-
-  return [...fused.values()]
-    .map(({ hit, score, sources, lexicalExcerpt }) => ({
-      ...hit,
-      excerpt: lexicalExcerpt || hit.excerpt,
-      score,
-      sources: (['dense', 'lexical'] as const).filter((s) => sources.has(s)),
-    }))
-    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-    .slice(0, Math.max(0, k));
-}
-
 /**
  * Shared gateway T1 search. Resolves the embedding runtime lazily so a
  * hot-swapped embedding engine cannot leave a stale provider wired here.
@@ -148,7 +207,13 @@ export function createGatewayT1Search(
 
   return async (query: string, k: number): Promise<T1Hit[]> => {
     if (!query.trim() || k <= 0) return [];
-    const dense = await denseSearch(query, k);
+    const denseMode = config.recall.t1Recall?.denseIndex ?? 'shadow';
+    const dense = denseMode === 'off' ? [] : await denseSearch(query, k);
+    if (denseMode !== 'off') {
+      denseStats.evaluations++;
+      if (dense.length > 0) denseStats.withDenseHits++;
+    }
+    const denseForFusion = denseMode === 'on' ? dense : [];
     let lexical: T1LexicalHit[] = [];
     if (config.recall.t1Recall?.lexical !== false) {
       try {
@@ -157,7 +222,67 @@ export function createGatewayT1Search(
         lexical = [];
       }
     }
-    const fused = fuseT1Hits(dense, lexical, k);
+    let feature: T1LexicalHit[] = [];
+    try {
+      feature = db.searchT1Features?.(query, Math.max(k * 2, 12)) ?? [];
+    } catch {
+      feature = [];
+    }
+    let concept: T1LexicalHit[] = [];
+    let actor: T1LexicalHit[] = [];
+    let sparse: T1LexicalHit[] = [];
+    try {
+      concept = db.searchT1Concepts?.(query, Math.max(k * 2, 12)) ?? [];
+    } catch {
+      concept = [];
+    }
+    try {
+      actor = db.searchT1Actors?.(query, Math.max(k * 2, 12)) ?? [];
+    } catch {
+      actor = [];
+    }
+    try {
+      sparse = db.searchT1Sparse?.(query, Math.max(k * 2, 12)) ?? [];
+    } catch {
+      sparse = [];
+    }
+
+    let fused = fuseT1Hits(denseForFusion, lexical, k, { feature, concept, actor, sparse });
+
+    // CA3-style bounded pattern completion: a strong cue activates turns that
+    // share a concept or a non-generic actor with the seeds. Neighbours can
+    // only fill remaining slots, never displace a direct hit.
+    try {
+      if (fused.length > 0 && fused.length < k) {
+        const seeds = fused
+          .slice(0, 3)
+          .map((hit) => hit.traceId)
+          .filter((id): id is string => Boolean(id));
+        const neighbors = seeds.length > 0
+          ? db.expandT1Neighbors?.(seeds, k - fused.length) ?? []
+          : [];
+        if (neighbors.length > 0) {
+          const known = new Set(fused.map((hit) => hit.traceId));
+          const floor = fused[fused.length - 1]?.score ?? 0;
+          neighbors.forEach((hit, index) => {
+            if (!hit.traceId || known.has(hit.traceId)) return;
+            known.add(hit.traceId);
+            fused.push({
+              sessionId: hit.sessionId,
+              turnId: hit.turnId,
+              traceId: hit.traceId,
+              cosine: 0,
+              excerpt: hit.excerpt,
+              score: (floor * 0.9) / (index + 1),
+              sources: ['neighbor'],
+            });
+          });
+        }
+      }
+    } catch {
+      /* fail-open: direct hits remain */
+    }
+
     const t1Cfg = config.recall.t1Recall;
     const mode: ActivationRankingMode = t1Cfg?.activationRanking ?? 'shadow';
     if (mode === 'off' || fused.length < 2) return fused;

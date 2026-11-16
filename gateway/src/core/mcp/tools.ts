@@ -8,6 +8,7 @@ import { recordFeedback } from '../tools/run-record-feedback';
 import { CognitiveRouter } from '../cost/cognitive-router';
 import { HarmonicUnit, generateHarmonicId } from '../memory/harmonic-types';
 import { abstractionLevelFor } from '../memory/abstraction-level';
+import { isKnownMemoryType, memoryTypeWarnings, normalizeMemoryType } from '../memory/memory-type';
 import { HarmonicIndexManager } from '../memory/harmonic-index';
 import { calculateSalience } from '../memory/salience-perceptor';
 
@@ -163,7 +164,7 @@ export function registerTools(): { definitions: ToolDefinition[]; handlers: Reco
         type: 'object',
         properties: {
           content: { type: 'string', description: 'Memory content text to remember' },
-          memoryType: { type: 'string', enum: ['semantic', 'episodic', 'procedural', 'global'], description: 'Memory type. semantic=fact, episodic=narrative, procedural=pattern, global=cross-project' },
+          memoryType: { type: 'string', enum: ['semantic', 'procedural', 'global'], description: 'Memory type. semantic=fact, procedural=pattern, global=cross-project. Episodes live in T1; episodic is retired.' },
           cueAnchors: { type: 'array', items: { type: 'string' }, description: 'Tags/keywords for retrieval (max 8)' },
           primaryAbstraction: { type: 'string', description: '6-8 word summary (auto-generated from content if omitted)' },
           pinned: { type: 'boolean', description: 'Pin to disclosure layer: injected into system prompt every turn. ONLY for user identity/profile and long-term preferences/constraints. Never for task-specific or volatile content.' },
@@ -446,13 +447,15 @@ export function registerTools(): { definitions: ToolDefinition[]; handlers: Reco
     mafw_add_memory: async (args) => {
       try {
         const content = args.content as string;
-        const memoryType = (args.memoryType as string) || 'semantic';
+        const requestedType = (args.memoryType as string) || 'semantic';
+        const memoryType = normalizeMemoryType(requestedType);
+        const warnings = memoryTypeWarnings(requestedType);
         const cueAnchors = (args.cueAnchors as string[]) || [];
         const primaryAbstraction = (args.primaryAbstraction as string) || content.slice(0, 80);
         const granularity = args.granularity as string | undefined;
 
-        if (!['episodic', 'semantic', 'procedural', 'global'].includes(memoryType)) {
-          return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: `Invalid memoryType: ${memoryType}` }) }], isError: true };
+        if (!isKnownMemoryType(requestedType)) {
+          return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: `Invalid memoryType: ${requestedType}` }) }], isError: true };
         }
 
         const now = new Date().toISOString();
@@ -488,7 +491,7 @@ export function registerTools(): { definitions: ToolDefinition[]; handlers: Reco
         }
 
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: true, id: unit.id }) }],
+          content: [{ type: 'text', text: JSON.stringify({ success: true, id: unit.id, ...(warnings.length > 0 ? { warnings } : {}) }) }],
         };
       } catch (err: any) {
         return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: err.message }) }], isError: true };
