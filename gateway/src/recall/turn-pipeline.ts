@@ -182,7 +182,16 @@ export function sessionContext(
   index: HarmonicIndexManager,
   sessionID: string,
   maxEpisodes: number = 10,
+  opts?: { episodes?: Array<{ intent?: string }> },
 ): string {
+  if (opts?.episodes) {
+    const intents = opts.episodes
+      .map((episode) => episode.intent)
+      .filter((intent): intent is string => Boolean(intent && intent.trim()))
+      .slice(-maxEpisodes)
+      .map((intent) => `- ${intent}`);
+    return intents.length > 0 ? intents.join('\n') : '';
+  }
   const prior = index
     .getIndex()
     .entries.filter((e) => e.type === 'episodic' && e.source_session_id === sessionID)
@@ -447,7 +456,23 @@ export class TurnPipeline {
 
     // 2) ask the session's persistent worker agent to save memories itself
     if (transcript.trim()) {
-      const context = sessionContext(this.opts.index, sessionID, this.opts.contextEpisodes ?? 10);
+      const contextLimit = this.opts.contextEpisodes ?? 10;
+      let recentEpisodes: Array<{ intent?: string }> | undefined;
+      try {
+        const list = (this.opts.t1db as any).listEpisodes;
+        if (typeof list === 'function') {
+          recentEpisodes = list.call(this.opts.t1db, {
+            sessionId: sessionID,
+            limit: contextLimit,
+          }).episodes;
+        }
+      } catch { /* fail-open: legacy episodic context */ }
+      const context = sessionContext(
+        this.opts.index,
+        sessionID,
+        contextLimit,
+        recentEpisodes ? { episodes: recentEpisodes } : undefined,
+      );
       const transcriptLabel = transcript.includes('--- REPLAY START')
         ? 'T1 timeline replay (ordered, bounded):'
         : 'Observations of the last hour:';
