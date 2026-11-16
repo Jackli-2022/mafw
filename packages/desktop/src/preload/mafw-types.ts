@@ -222,6 +222,7 @@ export type MafwAPI = {
 
   memory: {
     search: (opts: MemorySearchOptions) => Promise<MemoryUnit[]>
+    searchEpisodes: (query: string, topK?: number) => Promise<{ episodes: EpisodeHit[]; nextCursor?: string }>
     episodes: (opts?: MemoryEpisodesOptions) => Promise<{ episodes: EpisodeHit[]; nextCursor?: string }>
     episode: (id: string) => Promise<{ episode: T1EpisodeRecord; members: Array<{ episodeId: string; traceId: string; turnSeq: number }> }>
     mergedSearch: (opts: MergedSearchOptions) => Promise<any[]>

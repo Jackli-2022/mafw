@@ -32,6 +32,8 @@ export interface EpisodeHit {
   endTurn: number;
   status: 'open' | 'closed';
   startedAt: number | null;
+  boundarySource: string;
+  boundaryReason?: string;
   intent?: string;
   outcome?: string;
   actors: string[];
@@ -115,6 +117,8 @@ export async function searchT1Episodes(
       endTurn: bucket.episode.endTurn,
       status: bucket.episode.status,
       startedAt: bucket.episode.startedAt,
+      boundarySource: bucket.episode.boundarySource,
+      boundaryReason: bucket.episode.boundaryReason,
       intent: bucket.episode.intent,
       outcome: bucket.episode.outcome,
       actors: bucket.episode.actors.map((actor) => actor.actorId),

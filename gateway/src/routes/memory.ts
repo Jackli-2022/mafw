@@ -392,6 +392,8 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
         endTurn: episode.endTurn,
         status: episode.status,
         startedAt: episode.startedAt,
+        boundarySource: episode.boundarySource,
+        boundaryReason: episode.boundaryReason,
         intent: episode.intent,
         outcome: episode.outcome,
         actors: episode.actors.map((actor) => actor.actorId),

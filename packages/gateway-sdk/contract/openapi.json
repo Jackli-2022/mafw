@@ -45594,6 +45594,7 @@
                           "endTurn",
                           "status",
                           "startedAt",
+                          "boundarySource",
                           "actors",
                           "conceptIds",
                           "score",
@@ -45634,6 +45635,12 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "boundarySource": {
+                            "type": "string"
+                          },
+                          "boundaryReason": {
+                            "type": "string"
                           },
                           "intent": {
                             "type": "string"
@@ -45854,6 +45861,7 @@
                           "endTurn",
                           "status",
                           "startedAt",
+                          "boundarySource",
                           "actors",
                           "conceptIds",
                           "score",
@@ -45894,6 +45902,12 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "boundarySource": {
+                            "type": "string"
+                          },
+                          "boundaryReason": {
+                            "type": "string"
                           },
                           "intent": {
                             "type": "string"

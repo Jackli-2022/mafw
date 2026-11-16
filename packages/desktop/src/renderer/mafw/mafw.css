@@ -8618,3 +8618,14 @@ html[data-theme="light"] body {
   text-align: right;
 }
 /* ── end subject picker ────────────────────────────────────── */
+
+/* Memory layers: T1 episodes vs cortical knowledge */
+.mafw-mem-tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+.mafw-episode-card { cursor: pointer; flex-direction: column; align-items: stretch; margin-bottom: 6px; }
+.mafw-episode-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mafw-episode-meta { margin-top: 4px; }
+.mafw-episode-outcome { margin-top: 2px; color: var(--text-weak); }
+.mafw-episode-members { margin-top: 8px; max-height: 240px; overflow: auto; }
+.mafw-episode-detail { margin-bottom: 12px; }
+.mafw-tag-episode { background: var(--accent-dim); color: var(--accent); }
+.mafw-tag-legacy { background: var(--surface-raised-base); color: var(--text-weak); }

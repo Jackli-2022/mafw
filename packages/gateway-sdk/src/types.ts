@@ -1179,6 +1179,8 @@ export interface EpisodeHit {
   endTurn: number
   status: 'open' | 'closed'
   startedAt: number | null
+  boundarySource: string
+  boundaryReason?: string
   intent?: string
   outcome?: string
   actors: string[]
