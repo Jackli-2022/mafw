@@ -227,6 +227,7 @@ import { InstructionSyncService } from './core/instructions/instruction-sync-ser
 import { DiscoveryService } from './core/discovery/discovery-service';
 import { renderInstructionBlocks, type InstructionBlocks } from './recall/instruction-blocks';
 import { getT1SemanticEncoder } from './recall/t1-semantic-atoms';
+import { computeTurnSignals } from './recall/t1-signals';
 import { rebuildSessionEpisodes } from './recall/t1-episode-rebuild';
 import { isHiddenSession, selectVisibleSessions } from './core/session-visibility';
 
@@ -3545,6 +3546,31 @@ class MafwScheduler {
         return getT1SemanticEncoder(rt.provider, {
           referenceTexts: () => this.getGatewayDb().sampleTurnTexts(24),
         }).encodeMany(turns);
+      },
+      // E2: encode-time novelty/mismatch (Phase 1: measured, not yet consumed).
+      signalsFor: async (turns) => {
+        if (config.recall.t1Signals === 'off') return new Map();
+        const rt = getEmbeddingRuntime();
+        if (!rt?.provider) return new Map();
+        const index = this.memoryService?.harmonicIndex;
+        if (!index) return new Map();
+        const entries = new Map(
+          index.getIndex().entries.map((entry) => [entry.id, entry]),
+        );
+        return computeTurnSignals(turns, {
+          embedder: rt.provider,
+          vectors: rt.vectors,
+          unitFor: (id) => {
+            const entry = entries.get(id);
+            if (!entry) return undefined;
+            return {
+              createdAt: entry.created_at,
+              type: entry.type,
+              supersededBy: entry.superseded_by,
+              traceIds: (entry as any).source_trace_ids,
+            };
+          },
+        });
       },
       // S2: schema-cluster interleaving (integrate into schemas, not append).
       schemaClusters: () => this.getSchemaClusters(),

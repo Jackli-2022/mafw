@@ -20,6 +20,7 @@ import { replayPriority, sampleByPriority } from './replay-sampling';
 import { extractTurnFeature } from './t1-features';
 import { encodeT1Turn } from './t1-encode';
 import type { T1SparseAtom } from './t1-sparse';
+import type { TurnSignalInput, TurnSignals } from './t1-signals';
 import { readSessionTimeline } from './session-timeline';
 import { buildReplayBlock } from './replay-block';
 import { PipelineBudgetLike } from './pipeline-budget';
@@ -54,6 +55,8 @@ export interface TurnPipelineOptions {
   semanticAtomsFor?: (
     turns: Array<{ traceId: string; text: string }>,
   ) => Promise<Map<string, T1SparseAtom[]>>;
+  /** E2: encode-time novelty/mismatch; fail-open, never blocks archiving. */
+  signalsFor?: (turns: TurnSignalInput[]) => Promise<Map<string, TurnSignals>>;
   /** B1: 7-day retrieval hit count per id — the "need" term of the replay
    *  priority (need × gain × 1/energy). Wired to the retrieval event buffer. */
   needFor?: (id: string) => number;
@@ -367,6 +370,7 @@ export class TurnPipeline {
       } catch { /* fail-open: lexical/concept code only */ }
     }
 
+    const signalInputs: Array<{ input: TurnSignalInput; feature: ReturnType<typeof extractTurnFeature> }> = [];
     for (const { turn, obs } of turnObs) {
       const traceId = obs.find((o) => o.trace_id)?.trace_id;
       if (!traceId) continue;
@@ -379,6 +383,21 @@ export class TurnPipeline {
           this.opts.t1db.upsertTurnFeature(feature);
         }
       } catch { /* fail-open: raw T1 remains the source of truth */ }
+
+      if (feature && this.opts.signalsFor) {
+        signalInputs.push({
+          feature,
+          input: {
+            traceId,
+            text: obs.map((o) => o.content ?? '').join('\n'),
+            cue: [feature.intent, ...(feature.entities ?? []), feature.tool, feature.target]
+              .filter(Boolean)
+              .join(' '),
+            lastTs: turn.last_ts,
+            anchorCount: feature.entities?.length ?? 0,
+          },
+        });
+      }
 
       try {
         if (!canEncode) continue;
@@ -396,6 +415,23 @@ export class TurnPipeline {
           { feature, atoms: atomsByTrace.get(traceId) },
         );
       } catch { /* fail-open: feature-only / raw T1 path remains */ }
+    }
+
+    // E2: score novelty/mismatch after the batch encoded. Second feature write
+    // only adds the two scalars; upsert merges, so nothing else is lost.
+    if (this.opts.signalsFor && signalInputs.length > 0) {
+      try {
+        const signals = await this.opts.signalsFor(signalInputs.map((item) => item.input));
+        for (const item of signalInputs) {
+          const scored = signals.get(item.input.traceId);
+          if (!scored || !item.feature) continue;
+          this.opts.t1db.upsertTurnFeature({
+            ...item.feature,
+            novelty: scored.novelty,
+            mismatch: scored.mismatch,
+          });
+        }
+      } catch { /* fail-open: signals are derived, never block archiving */ }
     }
 
     // Phase 1: refresh the derived episode index after this batch's per-turn
