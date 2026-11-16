@@ -294,6 +294,8 @@ import { DEFAULT_BUILTIN_RUNTIME, builtinDiscoveryRoots } from './runtime/builti
 // P2.4 event layer: domain ingress / threads / decisions / delivery.
 import { EventLayerService } from './core/events/event-layer-service';
 import { EventStore as EventLayerStore } from './core/events/event-store';
+import { EventOutbox } from './core/events/event-outbox';
+import { LeadOutbox } from './core/lead/lead-outbox';
 import { StandingGoalService as StandingGoals } from './core/standing/standing-service';
 import { StandingGoalStore } from './core/standing/standing-store';
 import { StandingActionExecutor } from './core/standing/standing-actions';
@@ -803,6 +805,7 @@ class MafwScheduler {
   private automationEngine?: AutomationEngine;
   private eventLayerStore?: EventLayerStore;
   private eventLayer?: EventLayerService;
+  private leadOutbox?: LeadOutbox;
   private standingGoals?: StandingGoals;
   private standingGoalStore?: StandingGoalStore;
   private ledger?: SchedulerLedger;
@@ -3787,6 +3790,9 @@ class MafwScheduler {
     this.governorUnsub = undefined;
     this.governor?.stop();
     this.governor = undefined;
+    // Lead outbox 自己持有 timer handle；先显式停掉再统一 dispose，避免字段悬空。
+    this.leadOutbox?.stop();
+    this.leadOutbox = undefined;
     this.timers.disposeAll();
     // E8-1: disposeAll 只清定时器；handle 字段一并归零，避免再次 start() 时
     // 幂等 guard 误判为"已注册"而跳过重建。
@@ -4808,6 +4814,28 @@ class MafwScheduler {
     // subscriptions are accepted; P2.5 wires the Standing Goal evaluator.
     const eventStore = new EventLayerStore(this.getGatewayDb().getStore());
     this.eventLayerStore = eventStore;
+    // Lead announcements: durable outbox + one dispatcher. P0 deliberately
+    // keeps PodEventWake on its own path (merged in P1).
+    this.leadOutbox = new LeadOutbox({
+      store: eventStore,
+      outbox: new EventOutbox({ store: eventStore, now: () => new Date().toISOString() }),
+      now: () => new Date().toISOString(),
+      newId: (prefix) => `${prefix}_${randomUUID()}`,
+      ensureLead: async (podId) => {
+        const podService = this.podService;
+        if (!podService) throw new Error('lead outbox unavailable: pod service not ready');
+        return podService.ensureLead(podId);
+      },
+      promptAsync: async ({ sessionID, text }) => {
+        const runtime = this.runtime;
+        if (!runtime) throw new Error('lead outbox unavailable: runtime not ready');
+        await runtime.session.promptAsync({ sessionID, parts: [{ type: 'text', text }] });
+      },
+      timers: this.timers,
+      log: (message) => log.info(message),
+    });
+    this.leadOutbox.start();
+
     this.eventLayer = new EventLayerService({
       store: eventStore,
       now: () => new Date().toISOString(),
@@ -4853,20 +4881,27 @@ class MafwScheduler {
           },
         });
       },
-      deliverContext: async ({ thread, trigger, subscription }) => {
+      deliverContext: async ({ trigger, subscription }) => {
         // Lead 只收只读上下文：可以主动告知用户，但确认/搁置仍是 human-only。
+        // P0: 这里不直接调用模型 session；只写耐久 outbox，发送/批量/预算/重试
+        // 由 LeadOutbox dispatcher 统一负责，重启后可恢复。
         if (subscription.subscriberType !== 'lead' || subscription.mode !== 'context') return;
         if (!trigger.kind.startsWith('decision.')) return;
-        const podService = this.podService;
-        const runtime = this.runtime;
-        if (!podService || !runtime) throw new Error('lead event delivery unavailable');
-        const detail = await podService.ensure(thread.projectDir);
-        const lead = await podService.ensureLead(detail.pod.id);
         const message = renderLeadDecisionEvent(trigger);
         if (!message) return;
-        await runtime.session.promptAsync({
-          sessionID: lead.sessionId,
-          parts: [{ type: 'text', text: message }],
+        const leadOutbox = this.leadOutbox;
+        if (!leadOutbox) throw new Error('lead outbox unavailable');
+        const payload = trigger.payload && typeof trigger.payload === 'object'
+          ? trigger.payload as Record<string, unknown>
+          : {};
+        const recordId = typeof payload.recordId === 'string' && payload.recordId.trim()
+          ? payload.recordId
+          : trigger.externalId;
+        leadOutbox.enqueueDecision({
+          podId: subscription.subscriberId,
+          recordId,
+          goalId: typeof payload.goalId === 'string' ? payload.goalId : null,
+          text: message,
         });
       },
       log: (message) => log.warn(message),
