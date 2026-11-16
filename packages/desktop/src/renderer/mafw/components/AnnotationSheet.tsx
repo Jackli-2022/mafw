@@ -1,4 +1,5 @@
-// 批注抽屉（2026-10-27 rev2）：停靠在工作台底部，不遮挡被批注内容；Enter 发送 / Ctrl+Enter 攒草稿。
+// 批注 composer（2026-11-16 rev5 · ADE 模式）：300px 小纸条，引文 + 位置 + 输入；
+// 保存后进入 pending，随下一条消息发送。Enter 换行，Ctrl/Cmd+Enter 保存，Esc 取消。
 import { createSignal, onCleanup, onMount, Show } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TextareaV2 } from "@mafw/ui/v2/textarea-v2"
@@ -7,12 +8,12 @@ import { placeAnnotationBox, type BoxRect } from "../annotation-placement"
 export function AnnotationSheet(props: {
   /** 锚点矩形（相对 editor-body）：用于锚点旁定位 */
   anchor: BoxRect
-  /** 锚点描述（文件 › 引文/路径/单元格/区域） */
+  /** 被批注的原文/区域摘要（ADE 的 quote 预览） */
+  quote?: string
+  /** 人类可读位置：`desktop.md · L42–48` */
   meta: string
   placeholder?: string
-  /** B2：引用到输入框（不发送）；提供时头部显示「引用」按钮。 */
-  onQuote?: () => void
-  onSubmit: (comment: string, mode: "send" | "draft") => void
+  onSubmit: (comment: string) => void
   onCancel: () => void
 }) {
   const [value, setValue] = createSignal("")
@@ -20,10 +21,10 @@ export function AnnotationSheet(props: {
   let host: HTMLDivElement | undefined
 
   const canSubmit = () => value().trim().length > 0
-  const submit = (mode: "send" | "draft") => {
+  const submit = () => {
     const v = value().trim()
     if (!v) return
-    props.onSubmit(v, mode)
+    props.onSubmit(v)
   }
 
   const place = () => {
@@ -55,46 +56,45 @@ export function AnnotationSheet(props: {
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
-        if (e.key === "Escape") {
-          e.preventDefault()
-          e.stopPropagation()
-          props.onCancel()
-        }
+        if (e.key !== "Escape") return
+        e.preventDefault()
+        e.stopPropagation()
+        props.onCancel()
       }}
     >
-      <div class="mafw-annot-sheet-head">
-        <span class="mafw-annot-sheet-title">批注</span>
-        <span class="mafw-annot-sheet-meta" title={props.meta}>{props.meta}</span>
-        <Show when={props.onQuote}>
-          <ButtonV2 variant="ghost" size="small" onClick={() => props.onQuote!()}>引用</ButtonV2>
-        </Show>
-        <ButtonV2 variant="ghost" size="small" onClick={props.onCancel}>取消</ButtonV2>
-      </div>
+      <Show when={props.quote?.trim()}>
+        {(quote) => (
+          <div class="mafw-annot-sheet-quote" aria-label="被批注的原文">
+            {quote()}
+          </div>
+        )}
+      </Show>
+      <div class="mafw-annot-sheet-meta">{props.meta}</div>
       <TextareaV2
         class="mafw-annot-sheet-input"
-        rows={1}
-        placeholder={props.placeholder ?? "说明要改什么…"}
+        rows={2}
+        placeholder={props.placeholder ?? "这条批注会随下一条消息发给 Agent"}
         value={value()}
         onInput={(e) => setValue(e.currentTarget.value)}
         onKeyDown={(e) => {
           e.stopPropagation()
           if (e.isComposing || e.keyCode === 229) return
-          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+          if (e.key === "Escape") {
             e.preventDefault()
-            submit("draft")
+            props.onCancel()
             return
           }
-          if (e.key === "Enter" && !e.shiftKey) {
+          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
             e.preventDefault()
-            submit("send")
+            submit()
           }
         }}
       />
       <div class="mafw-annot-sheet-foot">
-        <span class="mafw-annot-sheet-hint">Enter 发送 · Ctrl+Enter 攒草稿 · Shift+Enter 换行</span>
+        <span class="mafw-annot-sheet-hint">Ctrl/⌘↵ 保存 · Esc 取消</span>
         <div class="mafw-annot-sheet-actions">
-          <ButtonV2 variant="neutral" size="small" disabled={!canSubmit()} onClick={() => submit("draft")}>攒草稿</ButtonV2>
-          <ButtonV2 variant="contrast" size="small" disabled={!canSubmit()} onClick={() => submit("send")}>发送</ButtonV2>
+          <ButtonV2 variant="ghost" size="small" onClick={props.onCancel}>取消</ButtonV2>
+          <ButtonV2 variant="contrast" size="small" disabled={!canSubmit()} onClick={submit}>批注</ButtonV2>
         </div>
       </div>
     </div>

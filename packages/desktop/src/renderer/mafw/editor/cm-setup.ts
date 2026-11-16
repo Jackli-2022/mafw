@@ -3,6 +3,7 @@
 import type { Decoration as CmDecoration, DecorationSet } from "@codemirror/view"
 import { langForFile } from "./cm-lang"
 import type { InlineDiffRange } from "./inline-diff"
+import type { AnnotationLineHighlight } from "../annotation-highlight"
 
 export type EditorSelection = { anchor: number; head: number }
 
@@ -14,6 +15,8 @@ export interface MountedEditor {
   measure(): void
   /** 只读内联 diff 行装饰（agent 改动；行号 1-based）。 */
   setInlineDiff(ranges: InlineDiffRange[]): void
+  /** 批注行高亮（pending / held；行号 1-based）。 */
+  setAnnotationHighlights(ranges: AnnotationLineHighlight[]): void
   /** 滚动并聚焦到某一行（1-based）。 */
   gotoLine(line: number): void
   /** 当前滚动位置（px）；用于切换 tab/scope 后恢复阅读位置。 */
@@ -80,6 +83,33 @@ export async function mountEditor(host: HTMLElement, opts: {
     provide: (f) => EditorView.decorations.from(f),
   })
 
+  // ── 批注行高亮（ADE 三态）：pending 实线 / held 虚线；不改文档 DOM ─────
+  const setAnnotationHighlightEffect = StateEffect.define<AnnotationLineHighlight[]>()
+  const annotPendingDeco = Decoration.line({ class: "cm-annot-highlight-pending" })
+  const annotHeldDeco = Decoration.line({ class: "cm-annot-highlight-held" })
+  const annotationHighlightField = StateField.define<DecorationSet>({
+    create: () => Decoration.none,
+    update(value, tr) {
+      value = value.map(tr.changes)
+      for (const effect of tr.effects) {
+        if (!effect.is(setAnnotationHighlightEffect)) continue
+        const builder = new RangeSetBuilder<CmDecoration>()
+        const doc = tr.state.doc
+        for (const range of effect.value) {
+          const from = Math.max(1, Math.min(range.startLine, doc.lines))
+          const to = Math.max(from, Math.min(range.endLine, doc.lines))
+          for (let n = from; n <= to; n++) {
+            const line = doc.line(n)
+            builder.add(line.from, line.from, range.status === "held" ? annotHeldDeco : annotPendingDeco)
+          }
+        }
+        value = builder.finish()
+      }
+      return value
+    },
+    provide: (f) => EditorView.decorations.from(f),
+  })
+
   const theme = EditorView.theme({
     "&": {
       height: "100%",
@@ -123,6 +153,7 @@ export async function mountEditor(host: HTMLElement, opts: {
       highlight,
       saveKeymap,
       inlineDiffField,
+      annotationHighlightField,
       ...(Array.isArray(support) ? support : [support]),
       EditorState.readOnly.of(opts.readOnly),
       EditorView.editable.of(!opts.readOnly),
@@ -182,6 +213,9 @@ export async function mountEditor(host: HTMLElement, opts: {
     },
     setInlineDiff(ranges: InlineDiffRange[]) {
       try { view.dispatch({ effects: setInlineDiffEffect.of(ranges) }) } catch { /* view 已销毁 */ }
+    },
+    setAnnotationHighlights(ranges: AnnotationLineHighlight[]) {
+      try { view.dispatch({ effects: setAnnotationHighlightEffect.of(ranges) }) } catch { /* view 已销毁 */ }
     },
     gotoLine(line: number) {
       try {

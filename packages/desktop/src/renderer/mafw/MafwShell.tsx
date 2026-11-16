@@ -3023,30 +3023,12 @@ export function MafwShell() {
     if (next) focusDocumentTab(next)
     else showWorkbenchLanding()
   }
-  const sendAnnotation = (text: string, opts?: { imageDataUrl?: string }) => {
-    const sid = currentSessionID()
-    if (!sid) return
-    const run = (async () => {
-      if (!opts?.imageDataUrl) {
-        return window.api.mafw.sessions.promptAsync({ sessionID: sid, message: text })
-      }
-      const task = await window.api.mafw.media.createTask({
-        dataUrl: opts.imageDataUrl,
-        mediaType: "image/png",
-        question: text,
-      })
-      const pointer = `[媒体附件 taskID: ${task.id} contextID: ${task.contextId}（媒体: annotation.png），这是用户批注的区域截图——调用 mafw_media_ask 工具获取其内容后直接回应（taskID 填 ${task.id}）]`
-      return window.api.mafw.sessions.promptAsync({ sessionID: sid, message: `${text}\n\n${pointer}` })
-    })()
-    void run
-      .then(() => showToastV2({ description: "批注已发送给 agent", duration: 2000 } as any))
-      .catch((e: any) => showToastV2({ description: `发送失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 4000 } as any))
-  }
   const addAnnotation = (a: any) => {
     const sid = currentSessionID()
     if (!sid) return
-    addPending({ sessionID: sid, ...a })
-    showToastV2({ description: "已加入批注", duration: 1600 } as any)
+    const saved = addPending({ sessionID: sid, ...a })
+    showToastV2({ description: "已加入批注 · 随下一条消息发送", duration: 1600 } as any)
+    return saved
   }
 
   // 焦点 → tab 条激活项：文档靠 id，场景靠 subject id；entry 可能稍后同步进来。
@@ -4616,7 +4598,6 @@ export function MafwShell() {
                   liveDiffs={store.session_diff?.[currentSessionID() ?? ""]}
                   activeTabId={activeDocumentTabId()}
                   onActiveFileChange={setActiveContentDocument}
-                  onSendAnnotation={sendAnnotation}
                   onAddAnnotation={addAnnotation}
                   onOpenFile={(rel, line) => {
                     const doc = activeChangeSetDocument()

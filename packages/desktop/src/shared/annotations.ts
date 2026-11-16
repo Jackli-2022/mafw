@@ -20,6 +20,14 @@ export function clearAnnotations(db: AnnotationDb, sessionID: string): Annotatio
   return { ...db, [sessionID]: [] }
 }
 
+/** 设置单条批注的 held（保留但不随下一条消息发送）。 */
+export function setAnnotationHeld(db: AnnotationDb, sessionID: string, id: string, held: boolean): AnnotationDb {
+  return {
+    ...db,
+    [sessionID]: (db[sessionID] ?? []).map((a) => (a.id === id ? { ...a, held } : a)),
+  }
+}
+
 type KvStore = {
   get(key: string): unknown
   set(key: string, value: unknown): void
@@ -57,6 +65,12 @@ export function createAnnotationRepo(store: KvStore) {
     },
     clear(sessionID: string): void {
       save(clearAnnotations(readDb(store), sessionID))
+    },
+    setHeld(sessionID: string, id: string, held: boolean): boolean {
+      const before = listAnnotations(readDb(store), sessionID)
+      if (!before.some((a) => a.id === id)) return false
+      save(setAnnotationHeld(readDb(store), sessionID, id, held))
+      return true
     },
   }
 }

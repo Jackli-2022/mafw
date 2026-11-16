@@ -131,6 +131,10 @@ export function registerIpcHandlers(deps: Deps) {
     annotations.remove(sessionID, id),
   )
   ipcMain.handle("annotations-clear", (_event: IpcMainInvokeEvent, sessionID: string) => annotations.clear(sessionID))
+  ipcMain.handle(
+    "annotations-set-held",
+    (_event: IpcMainInvokeEvent, sessionID: string, id: string, held: boolean) => annotations.setHeld(sessionID, id, held),
+  )
 
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())
   ipcMain.handle("await-initialization", () => deps.awaitInitialization())

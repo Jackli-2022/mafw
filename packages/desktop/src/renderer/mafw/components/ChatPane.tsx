@@ -80,11 +80,11 @@ import type { PodReviewItem } from "@mafw/sdk"
 import { permissionAriaLabel, permissionPresentation } from "./composer-permission"
 import { type PermissionMode } from "./permission-card-mapping"
 import { getSessionTurnDiffs } from "../session-turn-diffs"
-import { PendingAnnotations } from "./PendingAnnotations"
+import { CommentsPill } from "./CommentsPill"
 import { PendingCaptures } from "./PendingCaptures"
 import { buildAnnotationBatch } from "../editor-annotation"
 import { reviewInputsFromAnnotations, reviewItemPromptBlock } from "../review-item-input"
-import { hydrateAnnotations, pendingFor, takeForSend, takeForSendById } from "../annotation-store"
+import { hydrateAnnotations, sendableFor, takeForSend, takeForSendById } from "../annotation-store"
 import { formatCaptureBatch, captureAttachmentName, getPendingCaptures } from "../chat/pending-captures"
 
 import { createInputHistory, shouldNavigateHistory, shouldHintEmptyHistory } from "./input-history"
@@ -1224,8 +1224,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     steerBoundary: () => experienceStore.action('prompt.steer')?.semantics?.boundary as any,
     techLeadTarget: () => props.techLeadTarget?.() ?? null,
     sendBlocked: () => props.sendBlocked?.() ?? null,
-    pendingAnnotationCount: (sid) => pendingFor(sid).length,
-    peekAnnotations: (sid) => pendingFor(sid),
+    pendingAnnotationCount: (sid) => sendableFor(sid).length,
+    peekAnnotations: (sid) => sendableFor(sid),
     takeAnnotations: (sid) => takeForSend(sid),
     takeAnnotationsById: (sid, ids) => takeForSendById(sid, ids),
     formatAnnotations: (items) => buildAnnotationBatch(items),
@@ -1332,7 +1332,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     if (input().trim() || attachments().length > 0) return true
     const sid = sidProp()
     if (!sid) return false
-    return pendingFor(sid).length > 0 || getPendingCaptures().pendingFor(sid).length > 0
+    return sendableFor(sid).length > 0 || getPendingCaptures().pendingFor(sid).length > 0
   }
   const composerActionEnabled = () => connPhase() !== "down" && hasSendableContent()
   // G2：BrowserDock 的元素截图经 sink 进 attachments（与 G1 同一媒体管道）
@@ -2740,7 +2740,6 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             />
           </div>
         </Show>
-        <PendingAnnotations sessionID={sidProp()} />
         <PendingCaptures
           sessionID={sidProp()}
           onRemove={(c) => {
@@ -3115,6 +3114,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   onClick={handleMicClick}
                 ><Icon name={micStopActive() ? "stop" : "microphone"} size="small" /></ButtonV2>
               </TooltipV2>
+              <CommentsPill sessionID={sidProp()} />
               <Show when={sending()} fallback={
                 <ButtonV2
                   variant="contrast"

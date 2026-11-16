@@ -6,6 +6,7 @@
 // - 草稿/基准存 editor-drafts（root-scoped 模块单例）：卸载（关 dock/connDown）不丢。
 import { createSignal, createEffect, createMemo, onCleanup, onMount, untrack, For, Show } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
+import { CheckboxV2 } from "@mafw/ui/v2/checkbox-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { menuController } from "../context-menu/controller"
@@ -44,7 +45,7 @@ import { JsonPreview } from "./JsonPreview"
 import { OfficePreview } from "./OfficePreview"
 import { langForFile } from "../editor/cm-lang"
 import { mountEditor, type MountedEditor } from "../editor/mount-editor"
-import { annotationApplies, buildAnnotationPrompt, buildAnnotationPromptAnchored, lineRangeOf } from "../editor-annotation"
+import { annotationApplies, lineRangeOf } from "../editor-annotation"
 import { activationRefreshAction } from "../editor-activation"
 import { inlineDiffRanges } from "../editor/inline-diff"
 import { diffEntryFor } from "../editor-diff"
@@ -54,9 +55,22 @@ import { pushComposerInsert } from "../composer-insert"
 import { buildFileQuote } from "../file-quote"
 import { describeAnchor, jsonPathOf, a1Ref } from "../annotation-anchor"
 import { dragRectPx, cropImageDataUrl, type Rect01 } from "../region-capture"
-import { addMark, clearMarks, marksFor, type MarkVisual } from "../annotation-marks"
+import { addMark, clearMarks, marksFor, marksForSession, removeMarkByAnnotation, type MarkVisual } from "../annotation-marks"
+import { pendingFor, removePending, setAnnotationHeld } from "../annotation-store"
+import { placeSelectionToolbar } from "../annotation-selection"
+import { lineHighlightsFor } from "../annotation-highlight"
+import {
+  clearQuoteHighlights,
+  findQuoteRange,
+  quoteHighlightRange,
+  quoteHighlightState,
+  removeQuoteHighlight,
+  setQuoteHighlight,
+  supportsQuoteHighlights,
+  updateQuoteHighlightState,
+} from "../annotation-highlights"
 import { isAnnotationHotkey } from "../annotation-hotkey"
-import type { AnnotationAnchor } from "../../../shared/annotation-types"
+import type { Annotation, AnnotationAnchor } from "../../../shared/annotation-types"
 import type { FileDiffEntry } from "./DiffReviewPanel"
 import { openModeForTab } from "../content-intent"
 import type { FocusOpenRequest } from "../focus/focus-open"
@@ -81,7 +95,6 @@ export function EditorDock(props: {
   /** 焦点栈驱动的显式打开请求；back / crumb / restore 都落在这里。 */
   openRequest?: FocusOpenRequest | null
   diffs?: FileDiffEntry[]
-  onSendAnnotation?: (text: string, opts?: { imageDataUrl?: string }) => void
   /** 加入批注草稿（v2：草稿优先，发送时随消息打包） */
   onAddAnnotation?: (a: {
     rel: string
@@ -93,7 +106,7 @@ export function EditorDock(props: {
     imageDataUrl?: string
     scopeKey?: string
     root?: string
-  }) => void
+  }) => Annotation | void
   onSendComment?: (sid: string, text: string) => void
   /** 批注标记点击 → 切到审阅面（回路闭合）。 */
   onOpenReview?: () => void
@@ -108,7 +121,12 @@ export function EditorDock(props: {
   const [saving, setSaving] = createSignal(false)
   const [sel, setSel] = createSignal<SelectionState | null>(null)
   const [annotOpen, setAnnotOpen] = createSignal(false)
-  /** 选中即批注（rev4）：无模式开关，文本选区/节点/单元格/落框直接打开输入。 */
+  /** 选区浮动 toolbar（ADE 模式）：选中只出现「引用 / 批注」，不自动打开表单。 */
+  const [selectionBar, setSelectionBar] = createSignal<{ left: number; top: number; kind: "source" | "quote" } | null>(null)
+  /** 当前高亮的批注（margin card 点击 → active 态）。 */
+  const [activeAnnotationID, setActiveAnnotationID] = createSignal<string | null>(null)
+  /** 选区已被 composer 消费：避免关闭 composer 时 selectionchange 又把 toolbar 弹回来。 */
+  const [selectionConsumed, setSelectionConsumed] = createSignal(false)
   /** 预览划选批注（md/docx）：锚点 + 浮层坐标（相对 editor-body）。 */
   const [quoteSel, setQuoteSel] = createSignal<{
     anchor: AnnotationAnchor
@@ -116,6 +134,7 @@ export function EditorDock(props: {
     top: number
     rects: { x: number; y: number; w: number; h: number }[]
     box: { left: number; top: number; width: number; height: number }
+    range?: Range
   } | null>(null)
   const [quoteOpen, setQuoteOpen] = createSignal(false)
   /** 预览锚点批注（json 节点 / 表格单元格 / 图片区域 / pptx 图钉）：标记即输入。 */
@@ -328,6 +347,67 @@ export function EditorDock(props: {
     return props.sessionID && f ? marksFor(props.sessionID, f.rel) : []
   }
 
+  /** 当前文件的待发送批注（ADE：高亮 + margin card 的数据源）。 */
+  const fileAnnotations = () => {
+    const f = activeFile()
+    return props.sessionID && f ? pendingFor(props.sessionID).filter((a) => a.rel === f.rel) : []
+  }
+
+  const annotationByID = () => new Map(fileAnnotations().map((a) => [a.id, a] as const))
+
+  const markStatus = (m: { annotationID?: string; status: "pending" | "responded" }) => {
+    const a = m.annotationID ? annotationByID().get(m.annotationID) : undefined
+    if (a?.held) return "held"
+    return m.status === "pending" ? "pending" : "responded"
+  }
+
+  const quoteOfAnnotation = (a: Annotation) => {
+    if (a.anchor?.kind === "quote") return a.anchor.quote
+    if (a.anchor?.kind === "jsonPath") return a.anchor.path
+    if (a.anchor?.kind === "cell") return `${a.anchor.ref} · ${a.anchor.value}`
+    if (a.anchor?.kind === "region") return `区域 ${Math.round(a.anchor.x * 100)}%,${Math.round(a.anchor.y * 100)}%`
+    return a.code || `第 ${a.startLine} 行`
+  }
+
+  const locationOfAnnotation = (a: Annotation) => {
+    if (a.anchor) return `${a.rel} · ${describeAnchor(a.anchor)}`
+    return `${a.rel} · L${a.startLine}${a.endLine !== a.startLine ? `–${a.endLine}` : ""}`
+  }
+
+  function focusAnnotation(a: Annotation) {
+    setActiveAnnotationID(a.id)
+    const qr = quoteHighlightRange(a.id)
+    if (qr) {
+      const r = qr.getBoundingClientRect()
+      const host = bodyEl?.getBoundingClientRect()
+      if (host) {
+        revealAnchor({
+          left: r.left - host.left,
+          top: r.top - host.top,
+          width: Math.max(1, r.width),
+          height: Math.max(1, r.height),
+        })
+        return
+      }
+    }
+    const mark = fileMarks().find((m) => m.annotationID === a.id)
+    const rect = mark?.visual?.rects?.[0]
+    const point = mark?.visual?.point
+    const box = rect
+      ? { left: rect.x, top: rect.y, width: rect.w, height: rect.h }
+      : point
+        ? { left: Math.max(0, point.x - 6), top: Math.max(0, point.y - 6), width: 12, height: 12 }
+        : null
+    if (box) revealAnchor(box)
+  }
+
+  function dropAnnotation(a: Annotation) {
+    removePending(a.sessionID, a.id)
+    removeMarkByAnnotation(a.sessionID, a.id)
+    removeQuoteHighlight(a.id)
+    if (activeAnnotationID() === a.id) setActiveAnnotationID(null)
+  }
+
   /** 当前 Office kind（非 Office → null）。 */
   const officeKind = (): "xlsx" | "docx" | "pptx" | null => {
     const k = activeFile()?.kind
@@ -347,6 +427,8 @@ export function EditorDock(props: {
     setQuoteOpen(false)
     setAnchorSel(null)
     setAnchorOpen(false)
+    setSelectionBar(null)
+    setActiveAnnotationID(null)
     setDrag(null)
     dragStart = null
   }
@@ -697,6 +779,7 @@ export function EditorDock(props: {
       if (savedSelection) h.setSelection(savedSelection.anchor, savedSelection.head)
       h.setScroll(readingPositionFor(scopeState, f.rel) ?? 0)
       h.setInlineDiff(!previewing() ? inlineRanges() : [])
+      h.setAnnotationHighlights(lineHighlightsFor(fileAnnotations()))
       if (!f.readOnly) {
         const key = `${root}\u0000${f.rel}`
         watched.add(key)
@@ -894,9 +977,22 @@ export function EditorDock(props: {
     if (!res.ok) setIoError("无法在外部编辑器打开")
   }
 
+  /** 选区 toolbar 定位（相对 editor-body）。 */
+  function showSelectionBar(kind: "source" | "quote", box: { left: number; top: number; width: number; height: number }) {
+    if (selectionConsumed()) return
+    const body = bodyEl
+    if (!body) return
+    const pos = placeSelectionToolbar(box, { w: 176, h: 30 }, { w: body.clientWidth, h: body.clientHeight })
+    setSelectionBar({ kind, ...pos })
+  }
+
+  function showSourceBar(s: SelectionState) {
+    showSelectionBar("source", { left: s.left, top: Math.max(0, s.top - 18), width: 8, height: 18 })
+  }
+
   /** 预览面划选（md/docx）：选区落在 [data-annotatable="quote"] 内 → quote 锚 + 浮钮。 */
   function captureQuoteFromSelection(): boolean {
-    if (quoteOpen()) return false
+    if (quoteOpen() || annotOpen() || anchorOpen()) return false
     const selection = window.getSelection()
     if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
       setQuoteSel(null)
@@ -922,43 +1018,60 @@ export function EditorDock(props: {
     const minY = Math.min(...rects.map((r) => r.y))
     const maxX = Math.max(...rects.map((r) => r.x + r.w))
     const maxY = Math.max(...rects.map((r) => r.y + r.h))
+    const box = { left: minX, top: minY, width: Math.max(1, maxX - minX), height: Math.max(1, maxY - minY) }
     setQuoteSel({
       anchor,
       left: Math.max(8, rect.left - host.left),
       top: Math.max(8, rect.bottom - host.top + 4),
       rects,
-      box: { left: minX, top: minY, width: Math.max(1, maxX - minX), height: Math.max(1, maxY - minY) },
+      box,
+      range: range.cloneRange(),
     })
-    // 选中即批注（rev4）：无需模式开关，选区完成即打开输入。
-    setQuoteOpen(true)
-    // 输入框占据空间后，把锚点滚回视野。
-    const anchorEl = (container as HTMLElement)
-    requestAnimationFrame(() => anchorEl.scrollIntoView({ block: "nearest" }))
+    // ADE 模式：选中只出现「引用 / 批注」，不自动打开 composer。
+    showSelectionBar("quote", box)
     return true
   }
 
   function handlePreviewSelection(_e: MouseEvent) {
+    setSelectionConsumed(false)
     const gotQuote = captureQuoteFromSelection()
-    // 选中即批注（rev4）：源码选区 mouseup 直接打开输入。
-    if (!gotQuote && !previewing() && !annotOpen() && !quoteOpen() && sel() && props.onSendAnnotation) {
-      setAnnotOpen(true)
+    if (gotQuote) return
+    if (!previewing() && sel() && !annotOpen() && !quoteOpen() && !anchorOpen()) {
+      showSourceBar(sel()!)
+      return
     }
+    if (!sel()) setSelectionBar(null)
   }
+
+  // 源码编辑器选区（键盘/鼠标）→ toolbar；不自动打开 composer。
+  createEffect(() => {
+    const s = sel()
+    if (!s || previewing() || annotOpen() || quoteOpen() || anchorOpen()) return
+    showSourceBar(s)
+  })
 
   // I1：预览面焦点不在 editor-body 内 —— 键盘路径挂 document；选区变化（含 Shift+方向键）也走同一捕获。
   onMount(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!isAnnotationHotkey(e, IS_MAC)) return
-      if (sel() && !annotOpen()) {
+      if (quoteSel()) {
         e.preventDefault()
         e.stopPropagation()
+        setSelectionBar(null)
+        setQuoteOpen(true)
+        return
+      }
+      if (!previewing() && sel()) {
+        e.preventDefault()
+        e.stopPropagation()
+        setSelectionBar(null)
         setAnnotOpen(true)
         return
       }
-      const hasQuote = !!quoteSel() || captureQuoteFromSelection()
-      if (hasQuote && !quoteOpen()) {
+      if (captureQuoteFromSelection()) {
         e.preventDefault()
         e.stopPropagation()
+        setSelectionBar(null)
         setQuoteOpen(true)
       }
     }
@@ -971,13 +1084,22 @@ export function EditorDock(props: {
     const onKeyUp = (e: KeyboardEvent) => {
       if (!(e.key === "Shift" || e.key.startsWith("Arrow"))) return
       if (annotOpen() || quoteOpen() || anchorOpen()) return
-      if (!captureQuoteFromSelection() && !previewing() && sel() && props.onSendAnnotation) setAnnotOpen(true)
+      setSelectionConsumed(false)
+      if (!captureQuoteFromSelection() && !previewing() && sel()) showSourceBar(sel()!)
+    }
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as Element | null
+      if (!target?.closest(".mafw-editor-body")) return
+      if (target.closest(".mafw-annot-toolbar, .mafw-annot-sheet, .mafw-annot-rail")) return
+      setSelectionConsumed(false)
     }
     document.addEventListener("keyup", onKeyUp)
+    document.addEventListener("pointerdown", onPointerDown, true)
     document.addEventListener("selectionchange", onSelectionChange)
     onCleanup(() => {
       document.removeEventListener("keydown", onKey, true)
       document.removeEventListener("keyup", onKeyUp)
+      document.removeEventListener("pointerdown", onPointerDown, true)
       document.removeEventListener("selectionchange", onSelectionChange)
       window.clearTimeout(timer)
     })
@@ -1133,64 +1255,156 @@ export function EditorDock(props: {
   function submitAnnotationAnchored(
     anchor: AnnotationAnchor | undefined,
     comment: string,
-    action: "draft" | "send",
-    extra?: { imageDataUrl?: string; visual?: MarkVisual },
+    extra?: { imageDataUrl?: string; visual?: MarkVisual; range?: Range },
   ) {
     const f = activeFile()
-    if (!f || !comment.trim()) return
+    if (!f || !comment.trim() || !props.onAddAnnotation) return
     if (anchor) {
-      if (action === "send") {
-        if (!props.onSendAnnotation) return
-        props.onSendAnnotation(buildAnnotationPromptAnchored(f.rel, anchor, comment.trim(), {
-          hasImage: !!extra?.imageDataUrl,
-          root: props.contentRoot ?? undefined,
-        }), extra)
-        if (props.sessionID) addMark(props.sessionID, f.rel, anchor, extra?.visual)
-      } else {
-        props.onAddAnnotation?.({
-          rel: f.rel,
-          startLine: 1,
-          endLine: 1,
-          code: "",
-          comment: comment.trim(),
-          anchor,
-          imageDataUrl: extra?.imageDataUrl,
-          scopeKey: props.scopeKey ?? undefined,
-          root: props.contentRoot ?? undefined,
-        })
+      const saved = props.onAddAnnotation({
+        rel: f.rel,
+        startLine: 1,
+        endLine: 1,
+        code: "",
+        comment: comment.trim(),
+        anchor,
+        imageDataUrl: extra?.imageDataUrl,
+        scopeKey: props.scopeKey ?? undefined,
+        root: props.contentRoot ?? undefined,
+      })
+      if (saved && props.sessionID) addMark(props.sessionID, f.rel, anchor, extra?.visual, saved.id)
+      if (saved && anchor.kind === "quote" && extra?.range) {
+        setQuoteHighlight(saved.id, extra.range, "pending")
       }
+      setSelectionConsumed(true)
       setAnnotOpen(false)
+      setQuoteOpen(false)
+      setAnchorOpen(false)
+      setQuoteSel(null)
+      setAnchorSel(null)
+      setSelectionBar(null)
       return
     }
     const s = sel()
     const range = selRange()
     if (!s || !range) return
     if (!annotationApplies(f.rel, s.rel)) { clearSelection(); return }
-    if (action === "send") {
-      if (!props.onSendAnnotation) return
-      props.onSendAnnotation(buildAnnotationPrompt(
-        f.rel,
-        range.startLine,
-        range.endLine,
-        s.text,
-        comment.trim(),
-        { root: props.contentRoot ?? undefined },
-      ))
-      if (props.sessionID) addMark(props.sessionID, f.rel, undefined, { point: { x: s.left, y: s.top } })
-    } else {
-      if (!props.onAddAnnotation) return
-      props.onAddAnnotation({
-        rel: f.rel,
-        startLine: range.startLine,
-        endLine: range.endLine,
-        code: s.text,
-        comment: comment.trim(),
-        scopeKey: props.scopeKey ?? undefined,
-        root: props.contentRoot ?? undefined,
-      })
+    const saved = props.onAddAnnotation({
+      rel: f.rel,
+      startLine: range.startLine,
+      endLine: range.endLine,
+      code: s.text,
+      comment: comment.trim(),
+      scopeKey: props.scopeKey ?? undefined,
+      root: props.contentRoot ?? undefined,
+    })
+    if (saved && props.sessionID) {
+      addMark(props.sessionID, f.rel, undefined, { point: { x: s.left, y: s.top } }, saved.id)
     }
+    setSelectionConsumed(true)
     clearSelection()
   }
+
+  /** pending 批注被删除/发送后，移除对应高亮（ADE：发送后高亮消失）。 */
+  createEffect(() => {
+    const sid = props.sessionID
+    if (!sid) return
+    const ids = new Set(pendingFor(sid).map((a) => a.id))
+    for (const mark of marksForSession(sid)) {
+      if (mark.annotationID && !ids.has(mark.annotationID)) {
+        removeMarkByAnnotation(sid, mark.annotationID)
+        removeQuoteHighlight(mark.annotationID)
+      }
+    }
+  })
+
+  /** quote 批注三态（pending / held / active）同步到 CSS Highlight。 */
+  createEffect(() => {
+    const active = activeAnnotationID()
+    for (const a of fileAnnotations()) {
+      if (a.anchor?.kind !== "quote") continue
+      updateQuoteHighlightState(a.id, quoteHighlightState(active === a.id, !!a.held))
+    }
+  })
+
+  /** 刷新/切回文件后按引文找回 Range，让高亮跟内容一起恢复。 */
+  createEffect(() => {
+    if (!previewing()) return
+    const rel = activeFile()?.rel
+    const text = activeSourceText()
+    const items = fileAnnotations()
+    if (!rel || !text || items.length === 0) return
+    const timer = window.setTimeout(() => {
+      const root = bodyEl?.querySelector(".mafw-md-preview, .mafw-office-host, .mafw-json-preview-wrap")
+      if (!root) return
+      for (const a of items) {
+        if (a.anchor?.kind !== "quote" || !a.anchor.quote) continue
+        const existing = quoteHighlightRange(a.id)
+        if (existing?.startContainer.isConnected) continue
+        if (existing) removeQuoteHighlight(a.id)
+        const range = findQuoteRange(root, a.anchor.quote)
+        if (range) setQuoteHighlight(a.id, range, quoteHighlightState(activeAnnotationID() === a.id, !!a.held))
+      }
+    }, 60)
+    onCleanup(() => window.clearTimeout(timer))
+  })
+
+  onCleanup(() => clearQuoteHighlights())
+
+  /** 源码面行高亮：pending 实线 / held 虚线（预览面用 DOM rect，不走这里）。 */
+  createEffect(() => {
+    const ranges = lineHighlightsFor(fileAnnotations())
+    editor?.setAnnotationHighlights(ranges)
+  })
+
+  const quoteOfAnchor = (a: AnnotationAnchor) => {
+    if (a.kind === "quote") return a.quote
+    if (a.kind === "jsonPath") return a.path
+    if (a.kind === "cell") return `${a.ref} · ${a.value}`
+    return `区域 ${Math.round(a.x * 100)}%,${Math.round(a.y * 100)}%`
+  }
+
+  /** toolbar「引用」：把选区作为引文放进聊天输入框（不发送）。 */
+  function quoteCurrentSelection() {
+    const sid = props.sessionID
+    if (!sid) return
+    let quote = ""
+    if (selectionBar()?.kind === "quote" && quoteSel()) {
+      const a = quoteSel()!.anchor
+      if (a.kind !== "quote") return
+      quote = buildFileQuote(activeFile()?.rel ?? "", a.quote)
+    } else {
+      const s = sel()
+      if (!s) return
+      const range = selRange()
+      quote = buildFileQuote(s.rel, s.text, range ? { startLine: range.startLine, endLine: range.endLine } : undefined)
+    }
+    if (!quote) return
+    pushComposerInsert(sid, quote)
+    showToastV2({ description: "已引用到输入框", duration: 2000 })
+    setSelectionBar(null)
+  }
+
+  /** toolbar「批注」：按选区来源打开对应 composer。 */
+  function openAnnotationFromBar() {
+    const bar = selectionBar()
+    if (!bar) return
+    setSelectionConsumed(true)
+    setSelectionBar(null)
+    if (bar.kind === "quote") setQuoteOpen(true)
+    else setAnnotOpen(true)
+  }
+
+  // 点击 toolbar / margin card / composer 以外的位置 → 收起浮层。
+  createEffect(() => {
+    if (!selectionBar()) return
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as Element | null
+      if (target?.closest(".mafw-annot-toolbar, .mafw-annot-sheet, .mafw-annot-rail")) return
+      setSelectionBar(null)
+    }
+    document.addEventListener("pointerdown", onPointerDown, true)
+    onCleanup(() => document.removeEventListener("pointerdown", onPointerDown, true))
+  })
 
   const toolbarSlots = (): DocumentToolbarSlots => ({
     ariaLabel: "编辑器工具栏",
@@ -1446,35 +1660,16 @@ export function EditorDock(props: {
             />
           </Show>
 
-          {/* 批注反馈标记条（回路闭合：待回应 → 已回应，点击进审阅） */}
-          <Show when={fileMarks().length > 0}>
-            <div class="mafw-annot-marks">
-              <For each={fileMarks()}>
-                {(m) => (
-                  <ButtonV2
-                    variant="ghost"
-                    size="small"
-                    class="mafw-annot-mark"
-                    onClick={() => props.onOpenReview?.()}
-                  >
-                    <span class="mafw-annot-mark-dot" data-status={m.status} aria-hidden="true" />
-                    <span>{m.anchor ? describeAnchor(m.anchor) : "文本批注"} · {m.status === "pending" ? "待回应" : "已回应"}</span>
-                  </ButtonV2>
-                )}
-              </For>
-            </div>
-          </Show>
-
-          {/* 批注标记层（rev2）：锚点原地反馈（文字高亮 / 点标记），不再只靠角落条 */}
+          {/* 批注高亮层（ADE 三态）：pending 实线 / held 虚线 / active 加亮；不做无限 pulse */}
           <div class="mafw-annot-layer" aria-hidden="true">
             <For each={fileMarks()}>
               {(m) => (
-                <div class="mafw-annot-mark-group">
-                  <For each={m.visual?.rects ?? []}>
+                <div class="mafw-annot-mark-group" data-active={activeAnnotationID() === m.annotationID || undefined}>
+                  <For each={m.anchor?.kind === "quote" && supportsQuoteHighlights() ? [] : (m.visual?.rects ?? [])}>
                     {(r) => (
                       <div
                         class="mafw-annot-rect"
-                        data-status={m.status}
+                        data-status={markStatus(m)}
                         style={{ left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px` }}
                       />
                     )}
@@ -1482,7 +1677,7 @@ export function EditorDock(props: {
                   <Show when={m.visual?.point}>
                     <div
                       class="mafw-annot-dot"
-                      data-status={m.status}
+                      data-status={markStatus(m)}
                       style={{ left: `${m.visual!.point!.x}px`, top: `${m.visual!.point!.y}px` }}
                     />
                   </Show>
@@ -1491,52 +1686,124 @@ export function EditorDock(props: {
             </For>
           </div>
 
-          {/* 选中即批注（rev4）：无浮钮、无模式；选中/落点直接出输入框 */}
+          {/* margin rail：当前文件的待发送批注（ADE：评论卡跟在高亮旁边） */}
+          <Show when={fileAnnotations().length > 0}>
+            <aside class="mafw-annot-rail" aria-label="当前文件批注">
+              <div class="mafw-annot-rail-head">
+                <span>批注</span>
+                <span class="mafw-annot-rail-count">{fileAnnotations().length}</span>
+              </div>
+              <For each={fileAnnotations()}>
+                {(a) => (
+                  <div
+                    class="mafw-annot-card"
+                    classList={{ "is-held": !!a.held, "is-active": activeAnnotationID() === a.id }}
+                  >
+                    <ButtonV2
+                      variant="ghost"
+                      size="small"
+                      class="mafw-annot-card-main"
+                      onClick={() => focusAnnotation(a)}
+                    >
+                      <span class="mafw-annot-card-quote">{quoteOfAnnotation(a)}</span>
+                      <span class="mafw-annot-card-note">{a.comment}</span>
+                      <span class="mafw-annot-card-where">{locationOfAnnotation(a)}</span>
+                    </ButtonV2>
+                    <div class="mafw-annot-card-foot">
+                      <CheckboxV2
+                        class="mafw-annot-card-check"
+                        label="随下一条发送"
+                        checked={!a.held}
+                        onChange={(checked) => setAnnotationHeld(a.sessionID, a.id, !checked)}
+                      />
+                      <ButtonV2
+                        variant="ghost"
+                        size="small"
+                        class="mafw-annot-card-x"
+                        aria-label="删除批注"
+                        onClick={() => dropAnnotation(a)}
+                      >
+                        <Icon name="close" size="small" />
+                      </ButtonV2>
+                    </div>
+                  </div>
+                )}
+              </For>
+            </aside>
+          </Show>
+
+          {/* 选区 toolbar（ADE 模式）：选中只出现「引用 / 批注」 */}
+          <Show when={selectionBar()}>
+            <div
+              class="mafw-annot-toolbar"
+              style={{ left: `${selectionBar()!.left}px`, top: `${selectionBar()!.top}px` }}
+              onMouseDown={(e) => e.preventDefault()}
+            >
+              <ButtonV2
+                variant="ghost"
+                size="small"
+                class="mafw-annot-toolbar-btn"
+                onClick={quoteCurrentSelection}
+              >
+                <Icon name="speech-bubble" size="small" />
+                引用
+              </ButtonV2>
+              <span class="mafw-annot-toolbar-sep" aria-hidden="true" />
+              <ButtonV2
+                variant="ghost"
+                size="small"
+                class="mafw-annot-toolbar-btn is-primary"
+                onClick={openAnnotationFromBar}
+              >
+                <Icon name="comment" size="small" />
+                批注
+              </ButtonV2>
+            </div>
+          </Show>
+
+          {/* 批注 composer（ADE：300px 小纸条；保存后进入 pending） */}
           <Show when={annotOpen() && sel()}>
             <AnnotationSheet
               anchor={{ left: Math.max(8, sel()!.left), top: sel()!.top, width: 8, height: 18 }}
-              meta={`${sel()!.rel}:L${selRange()?.startLine}-${selRange()?.endLine}`}
-              onSubmit={(comment, action) => submitAnnotationAnchored(undefined, comment, action)}
-              onCancel={() => setAnnotOpen(false)}
+              quote={sel()!.text}
+              meta={`${sel()!.rel} · L${selRange()?.startLine}${selRange()?.endLine !== selRange()?.startLine ? `–${selRange()?.endLine}` : ""}`}
+              onSubmit={(comment) => submitAnnotationAnchored(undefined, comment)}
+              onCancel={() => { setSelectionConsumed(true); setAnnotOpen(false); setSelectionBar(null) }}
             />
           </Show>
           <Show when={quoteOpen() && quoteSel()}>
             <AnnotationSheet
               anchor={quoteSel()!.box}
-              meta={`${activeFile()?.rel ?? ""} › ${describeAnchor(quoteSel()!.anchor)}`}
-              placeholder="这段要改成什么…"
-              onQuote={props.sessionID ? () => {
-                // B2：引用到输入框（不发送）——引文块进 composer 草稿，可编辑后再发。
-                const a = quoteSel()?.anchor
-                if (!a || a.kind !== "quote") return
-                pushComposerInsert(props.sessionID!, buildFileQuote(activeFile()?.rel ?? "", a.quote))
-                showToastV2({ description: "已引用到输入框", duration: 2000 })
-                setQuoteOpen(false)
-                setQuoteSel(null)
-              } : undefined}
-              onSubmit={(comment, action) => {
-                submitAnnotationAnchored(quoteSel()?.anchor, comment, action, { visual: { rects: quoteSel()?.rects } })
+              quote={quoteOfAnchor(quoteSel()!.anchor)}
+              meta={`${activeFile()?.rel ?? ""} · ${describeAnchor(quoteSel()!.anchor)}`}
+              placeholder="这条批注会随下一条消息发给 Agent"
+              onSubmit={(comment) => {
+                submitAnnotationAnchored(quoteSel()?.anchor, comment, {
+                  visual: { rects: quoteSel()?.rects },
+                  range: quoteSel()?.range,
+                })
                 setQuoteOpen(false)
                 setQuoteSel(null)
               }}
-              onCancel={() => { setQuoteOpen(false); setQuoteSel(null) }}
+              onCancel={() => { setSelectionConsumed(true); setQuoteOpen(false); setQuoteSel(null); setSelectionBar(null) }}
             />
           </Show>
           <Show when={anchorOpen() ? anchorSel() : null} keyed>
             {(sel) => (
               <AnnotationSheet
                 anchor={sel.box}
-                meta={`${activeFile()?.rel ?? ""} › ${describeAnchor(sel.anchor)}`}
-                placeholder="这处要改成什么…"
-                onSubmit={(comment, action) => {
-                  submitAnnotationAnchored(sel.anchor, comment, action, {
+                quote={quoteOfAnchor(sel.anchor)}
+                meta={`${activeFile()?.rel ?? ""} · ${describeAnchor(sel.anchor)}`}
+                placeholder="这条批注会随下一条消息发给 Agent"
+                onSubmit={(comment) => {
+                  submitAnnotationAnchored(sel.anchor, comment, {
                     imageDataUrl: sel.imageDataUrl,
                     visual: sel.imageDataUrl ? undefined : { point: { x: sel.left, y: sel.top } },
                   })
                   setAnchorOpen(false)
                   setAnchorSel(null)
                 }}
-                onCancel={() => { setAnchorOpen(false); setAnchorSel(null) }}
+                onCancel={() => { setSelectionConsumed(true); setAnchorOpen(false); setAnchorSel(null) }}
               />
             )}
           </Show>

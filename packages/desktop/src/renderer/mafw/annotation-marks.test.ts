@@ -1,6 +1,6 @@
 import { describe, test } from "node:test"
 import assert from "node:assert/strict"
-import { addMark, clearMarks, markResponded, marksFor, noteTurnActivity, resetMarks } from "./annotation-marks"
+import { addMark, clearMarks, markResponded, marksFor, marksForSession, noteTurnActivity, removeMarkByAnnotation, resetMarks } from "./annotation-marks"
 
 describe("annotation-marks（批注反馈态）", () => {
   test("按 sessionID 隔离 + 按 rel 过滤", () => {
@@ -28,6 +28,24 @@ describe("annotation-marks（批注反馈态）", () => {
     addMark("s1", "a.md")
     clearMarks("s1")
     assert.equal(marksFor("s1", "a.md").length, 0)
+  })
+
+  test("removeMarkByAnnotation 只删对应批注的 mark", () => {
+    resetMarks()
+    addMark("s1", "a.md", undefined, undefined, "ann-1")
+    addMark("s1", "a.md", undefined, undefined, "ann-2")
+    removeMarkByAnnotation("s1", "ann-1")
+    const marks = marksFor("s1", "a.md")
+    assert.equal(marks.length, 1)
+    assert.equal(marks[0].annotationID, "ann-2")
+  })
+
+  test("marksForSession 返回会话全部文件", () => {
+    resetMarks()
+    addMark("s1", "a.md", undefined, undefined, "ann-1")
+    addMark("s1", "b.md", undefined, undefined, "ann-2")
+    addMark("s2", "a.md")
+    assert.deepEqual(marksForSession("s1").map((m) => m.rel).sort(), ["a.md", "b.md"])
   })
 })
 

@@ -11,6 +11,8 @@ export type MarkVisual = {
 }
 export type AnnotationMark = {
   id: string
+  /** 关联的 pending Annotation id；用于删除/发送后同步移除高亮。 */
+  annotationID?: string
   rel: string
   anchor?: AnnotationAnchor
   status: AnnotationMarkStatus
@@ -34,9 +36,16 @@ export function noteTurnActivity(sessionID: string): void {
   turnSeq.set(sessionID, (turnSeq.get(sessionID) ?? 0) + 1)
 }
 
-export function addMark(sessionID: string, rel: string, anchor?: AnnotationAnchor, visual?: MarkVisual): AnnotationMark {
+export function addMark(
+  sessionID: string,
+  rel: string,
+  anchor?: AnnotationAnchor,
+  visual?: MarkVisual,
+  annotationID?: string,
+): AnnotationMark {
   const mark: AnnotationMark = {
     id: `mk-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    annotationID,
     rel,
     anchor,
     status: "pending",
@@ -49,9 +58,25 @@ export function addMark(sessionID: string, rel: string, anchor?: AnnotationAncho
   return mark
 }
 
+/** 删除某条 pending 批注的高亮（删除/发送后调用）。 */
+export function removeMarkByAnnotation(sessionID: string, annotationID: string): void {
+  const list = bySession.get(sessionID)
+  if (!list) return
+  const next = list.filter((m) => m.annotationID !== annotationID)
+  if (next.length === list.length) return
+  bySession.set(sessionID, next)
+  bump()
+}
+
 export function marksFor(sessionID: string, rel: string): AnnotationMark[] {
   rev() // 订阅
   return (bySession.get(sessionID) ?? []).filter((m) => m.rel === rel)
+}
+
+/** 会话内全部文件的 mark（发送/删除批注后清理高亮用）。 */
+export function marksForSession(sessionID: string): AnnotationMark[] {
+  rev() // 订阅
+  return [...(bySession.get(sessionID) ?? [])]
 }
 
 export function markResponded(sessionID: string): void {

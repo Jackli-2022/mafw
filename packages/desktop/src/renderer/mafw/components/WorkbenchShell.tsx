@@ -38,7 +38,6 @@ export type WorkbenchShellProps = {
   diffs: FileDiffEntry[]
   liveDiffs?: unknown
   onActiveFileChange?: (rel: string | null) => void
-  onSendAnnotation?: (text: string, opts?: { imageDataUrl?: string }) => void
   onAddAnnotation?: (a: {
     rel: string
     startLine: number
@@ -119,7 +118,6 @@ export function WorkbenchShell(props: WorkbenchShellProps): JSX.Element {
             liveDiffs={props.liveDiffs}
             onActiveFileChange={props.onActiveFileChange}
             openRequest={props.focusOpenRequest}
-            onSendAnnotation={props.onSendAnnotation}
             onAddAnnotation={props.onAddAnnotation}
             onSendComment={props.onSendComment}
             onOpenReview={props.onOpenReview}

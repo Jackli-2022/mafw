@@ -128,9 +128,12 @@
   行内 diff 装饰、Ctrl/Cmd+S、MAFW 主题 token 映射、minimap ≥720px。详情见本文件 Monaco 段。
 - **文件预览**：md（session-ui markdown）、json 折叠树、csv/tsv 表格、svg 预览/源码、图片、pdf（Chromium
   viewer）、docx/xlsx/pptx（懒加载）、legacy office 外部打开；HTML 走 `mafw-file://` 在浏览器面打开。
-- **批注/审阅**：预览选区 = quote 锚、json 节点路径、表格单元格、图片区域、pptx 页码；Enter 直发 /
-  Ctrl+Enter 攒草稿；锚点原地高亮 + 已回应状态。改动审阅 = 左栏 Goal-first 改动面 + 每 turn / 每
-  Goal revision 的改动集 tab。
+- **批注/审阅（2026-11-16 rev5 · ADE 模式）**：选中/落点只出现浮动 toolbar（引用 / 批注），不再自动弹表单；
+  composer 300px（引文 + 位置 + 取消 / 批注，Ctrl/⌘↵ 保存，Esc 取消）；quote 高亮走 CSS Custom Highlight API
+  三态（pending 22% 实线 / held 9% 虚线 / active 38%），源码行走 CodeMirror/Monaco 行装饰；右侧 margin rail
+  显示当前文件待发送批注，composer 旁 comments pill 逐条勾选「随下一条发送」（held 保留不发）。发送后 pending
+  出清、高亮/卡片消失；刷新或切回文件后按引文重新锚定。预览锚点仍支持 json 节点路径、表格单元格、图片区域、
+  pptx 页码。改动审阅 = 左栏 Goal-first 改动面 + 每 turn / 每 Goal revision 的改动集 tab。
 - **检查点**：`CheckpointOverlay` 时间线（会话回滚 / 文件回滚 / both）；服务端检查点支持只读预览。
 - **托盘与存在感**：15s 轮询 `/api/presence` → tooltip / 菜单状态 / 任务栏进度；attention 差集通知
   持久化防重发；点击通知 `navigateToGoal` 跨项目打开。**OS 通知只来自这一层（事务层）**：

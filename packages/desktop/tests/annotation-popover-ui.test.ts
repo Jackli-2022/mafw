@@ -7,25 +7,29 @@ import { dirname, join } from "node:path"
 const root = join(dirname(fileURLToPath(import.meta.url)), "..")
 const read = (rel: string) => readFileSync(join(root, rel), "utf8")
 
-test("AnnotationSheet: 底部抽屉 + Enter 发送 / Ctrl+Enter 攒草稿", () => {
+test("AnnotationSheet: ADE 300px composer + 引文 + Ctrl/⌘Enter 保存", () => {
   const src = read("src/renderer/mafw/components/AnnotationSheet.tsx")
   assert.match(src, /TextareaV2/)
   assert.match(src, /ButtonV2/)
   assert.match(src, /mafw-annot-sheet/)
   assert.match(src, /ctrlKey \|\| e\.metaKey/)
-  assert.match(src, /Enter 发送 · Ctrl\+Enter 攒草稿/)
-  assert.match(src, /"draft"/)
-  assert.match(src, /"send"/)
+  assert.match(src, /Ctrl\/⌘↵ 保存/)
+  assert.match(src, /props\.quote/)
+  assert.match(src, /onSubmit: \(comment: string\)/)
+  assert.ok(!src.includes('"draft"'))
+  assert.ok(!src.includes('"send"'))
   // 面板禁 emoji + 禁裸 button
   assert.ok(!/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(src))
   assert.ok(!/<button[\s>]/.test(src))
 })
 
-test("PendingAnnotations: anchor 标签 + kind 标记", () => {
-  const src = read("src/renderer/mafw/components/PendingAnnotations.tsx")
+test("CommentsPill: anchor 标签 + 勾选/删除", () => {
+  const src = read("src/renderer/mafw/components/CommentsPill.tsx")
   assert.match(src, /describeAnchor/)
-  assert.match(src, /data-kind/)
-  assert.match(src, /mafw-pending-annotation-kind/)
+  assert.match(src, /pendingFor/)
+  assert.match(src, /setAnnotationHeld/)
+  assert.match(src, /mafw-comments-row/)
+  assert.match(src, /CheckboxV2/)
 })
 
 test("源码面交互：Ctrl+M 直达 + AnnotationSheet + 双按钮退役", () => {
@@ -91,11 +95,13 @@ test("PPTX 图钉批注：slide wrapper 识别 + 页码锚", () => {
   assert.match(editor, /onAnnotateRegion/)
 })
 
-test("批注反馈态：发送登记 mark + 会话回合结束翻已回应 + 本地面板条", () => {
+test("批注高亮：addMark + pending 同步 + margin rail", () => {
   const editor = read("src/renderer/mafw/components/EditorDock.tsx")
   assert.match(editor, /addMark/)
-  assert.match(editor, /marksFor/)
-  assert.match(editor, /mafw-annot-marks/)
+  assert.match(editor, /marksForSession/)
+  assert.match(editor, /removeMarkByAnnotation/)
+  assert.match(editor, /mafw-annot-rail/)
+  assert.match(editor, /mafw-annot-layer/)
   assert.match(editor, /onOpenReview/)
   const stream = read("src/renderer/mafw/sse/handlers/chat-stream.ts")
   assert.match(stream, /markResponded/)
@@ -113,8 +119,7 @@ test("review 修复：C1 接线 / I1 键盘路径 / I2 媒体管道 / I3 只在 
   assert.match(editor, /document\.addEventListener\("keydown"/)
   const send = read("src/renderer/mafw/chat/use-send-message.ts")
   assert.match(send, /annotationAtts/)
-  const mafw = read("src/renderer/mafw/MafwShell.tsx")
-  assert.match(mafw, /media\.createTask/)
+  assert.match(send, /dataUrl: a\.imageDataUrl/)
   const stream = read("src/renderer/mafw/sse/handlers/chat-stream.ts")
   const count = (stream.match(/markResponded\(/g) ?? []).length
   assert.equal(count, 1)
@@ -137,12 +142,13 @@ test("minors 修复：M1 删死代码 / M2 clearMarks / M4 pptx 钉 / M5 页码 
   assert.ok(!sheet.includes('setValue("")'))
 })
 
-test("rev4 交互：选中即批注（无模式） + 锚点旁定位 + 原地标记", () => {
+test("rev5 交互：选中出 toolbar（不自动弹表单） + 锚点旁定位 + 原地高亮", () => {
   const editor = read("src/renderer/mafw/components/EditorDock.tsx")
   assert.ok(!editor.includes("annotMode"))
   assert.ok(!editor.includes("批注模式"))
   assert.ok(!editor.includes("mafw-editor-annot-anchor"))
-  assert.match(editor, /setQuoteOpen\(true\)/)
+  assert.match(editor, /setSelectionBar\(/)
+  assert.match(editor, /placeSelectionToolbar/)
   assert.match(editor, /addEventListener\("keyup"/)
   assert.match(editor, /mafw-annot-layer/)
   assert.match(editor, /mafw-annot-rect/)

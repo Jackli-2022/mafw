@@ -78,6 +78,7 @@ export type AnnotationsAPI = {
   add(a: import("../shared/annotation-types").Annotation): Promise<unknown>
   remove(sessionID: string, id: string): Promise<unknown>
   clear(sessionID: string): Promise<unknown>
+  setHeld(sessionID: string, id: string, held: boolean): Promise<unknown>
 }
 /** G1 截屏：整屏捕获（裁剪在 renderer 浮层）；G2 元素截图经 main 截屏裁剪（窗口内容区矩形）。 */
 export type CaptureAPI = {

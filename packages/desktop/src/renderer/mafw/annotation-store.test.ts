@@ -6,6 +6,8 @@ import {
   pendingFor,
   removePending,
   resetAnnotationStore,
+  sendableFor,
+  setAnnotationHeld,
   takeForSend,
   takeForSendById,
 } from "./annotation-store"
@@ -24,6 +26,7 @@ const fakeApi = {
   add: async (a: any) => { calls.push({ m: "add", args: [a] }) },
   remove: async (sid: string, id: string) => { calls.push({ m: "remove", args: [sid, id] }) },
   clear: async (sid: string) => { calls.push({ m: "clear", args: [sid] }) },
+  setHeld: async (sid: string, id: string, held: boolean) => { calls.push({ m: "setHeld", args: [sid, id, held] }) },
 }
 
 beforeEach(() => {
@@ -75,6 +78,30 @@ describe("annotation-store", () => {
     const taken = takeForSendById("s1", [first.id])
     expect(taken.map(a => a.id)).toEqual([first.id])
     expect(pendingFor("s1").map(a => a.comment)).toEqual(["2"])
+  })
+
+  test("held：留在 pending，但不随下一条消息发送", () => {
+    addPending({ sessionID: "s1", rel: "a.ts", startLine: 1, endLine: 1, code: "x", comment: "保留" })
+    addPending({ sessionID: "s1", rel: "a.ts", startLine: 2, endLine: 2, code: "y", comment: "发送" })
+    const [held, send] = pendingFor("s1")
+    setAnnotationHeld("s1", held.id, true)
+    expect(pendingFor("s1").map(a => a.id)).toEqual([held.id, send.id])
+    expect(sendableFor("s1").map(a => a.id)).toEqual([send.id])
+    expect(calls.some(c => c.m === "setHeld" && c.args[1] === held.id && c.args[2] === true)).toBe(true)
+
+    const taken = takeForSend("s1")
+    expect(taken.map(a => a.id)).toEqual([send.id])
+    expect(pendingFor("s1").map(a => a.id)).toEqual([held.id])
+  })
+
+  test("takeForSendById 不取 held 批注", () => {
+    addPending({ sessionID: "s1", rel: "a.ts", startLine: 1, endLine: 1, code: "x", comment: "保留" })
+    addPending({ sessionID: "s1", rel: "a.ts", startLine: 2, endLine: 2, code: "y", comment: "发送" })
+    const [held, send] = pendingFor("s1")
+    setAnnotationHeld("s1", held.id, true)
+    const taken = takeForSendById("s1", [held.id, send.id])
+    expect(taken.map(a => a.id)).toEqual([send.id])
+    expect(pendingFor("s1").map(a => a.id)).toEqual([held.id])
   })
 
   test("hydrate 与本地新增竞态：不吞掉水合期间加入的批注", async () => {

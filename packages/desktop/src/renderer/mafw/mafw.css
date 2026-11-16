@@ -5081,6 +5081,17 @@ html[data-theme="light"] body {
 /* Monaco 内联 diff 行装饰（只读） */
 .mafw-monaco-diff-add { background: color-mix(in srgb, var(--success) 14%, transparent); }
 .mafw-monaco-diff-del { background: color-mix(in srgb, var(--danger, #E06C75) 14%, transparent); }
+/* 批注行高亮（ADE 三态）：pending 22% 实线 / held 9% 虚线 */
+.cm-annot-highlight-pending,
+.mafw-monaco-annot-pending {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 75%, transparent);
+}
+.cm-annot-highlight-held,
+.mafw-monaco-annot-held {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  border-left: 2px dashed color-mix(in srgb, var(--accent) 45%, transparent);
+}
 .mafw-editor-host > .monaco-editor { height: 100% !important; }
 .mafw-notes-card {
   display: flex;
@@ -6409,21 +6420,8 @@ html[data-theme="light"] body {
   .mafw-host-form-grid.is-address { grid-template-columns: minmax(0, 1fr); }
 }
 
-/* ── 批注草稿（composer 上方，spec 2026-10-22 §5） ── */
-.mafw-pending-annotations { margin: 0 0 6px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg-inset); overflow: hidden; }
-.mafw-pending-annotations-head { display: flex; align-items: center; justify-content: space-between; padding: 2px 8px; font-size: 10px; color: var(--text-4); border-bottom: 1px solid var(--border); }
-.mafw-pending-annotation { display: flex; align-items: center; gap: 8px; padding: 3px 8px; font-size: 11px; }
-.mafw-pending-annotation + .mafw-pending-annotation { border-top: 1px dashed var(--border); }
-.mafw-pending-annotation-where { color: var(--accent); flex: 0 0 auto; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mafw-pending-annotation-scope {
-  flex: none;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: var(--bg-inset);
-  color: var(--text-3);
-  font-size: 9.5px;
-}
-.mafw-pending-annotation-text { color: var(--text-2); flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* ── 批注草稿（composer 上方，spec 2026-10-22 §5）──
+   2026-11-16 rev5：列表升级为 composer 右侧 CommentsPill；旧 pending 列表样式退役。 */
 .mafw-pending-captures { margin: 0 0 6px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg-inset); overflow: hidden; }
 .mafw-pending-captures-head { display: flex; align-items: center; justify-content: space-between; padding: 2px 8px; font-size: 10px; color: var(--text-4); border-bottom: 1px solid var(--border); }
 .mafw-pending-capture-row { display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 11px; }
@@ -6707,39 +6705,73 @@ html[data-theme="light"] body {
   color: var(--text-1);
 }
 
-/* 批注浮层（rev3）：锚点旁智能定位（下方→上方→右侧→左侧，clamp 到容器） */
+/* 批注 composer（rev5 · ADE）：300px 小纸条；引文 + 位置 + 输入；保存进 pending */
 .mafw-annot-sheet {
   position: absolute;
   z-index: 40;
-  width: min(420px, calc(100% - 16px));
+  width: min(300px, calc(100% - 16px));
   max-height: calc(100% - 16px);
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px;
+  gap: 6px;
+  padding: 8px 10px;
   background: var(--bg-overlay);
   border: 1px solid var(--border-strong, var(--border));
-  border-radius: var(--r-lg, var(--r-md));
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.38);
-  animation: mafw-annot-sheet-in var(--dur-fast, 160ms) var(--ease-standard, ease-out);
+  border-radius: var(--r-md, 10px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.32);
+  animation: mafw-annot-sheet-in 160ms var(--ease-standard, ease-out);
 }
 @keyframes mafw-annot-sheet-in {
-  from { opacity: 0; transform: translateY(6px) scale(0.98); }
+  from { opacity: 0; transform: translateY(4px) scale(0.99); }
   to { opacity: 1; transform: none; }
 }
-.mafw-annot-sheet-head { display: flex; align-items: center; gap: 8px; }
-.mafw-annot-sheet-title { font-size: 12px; font-weight: 600; color: var(--text-1); flex: none; }
+.mafw-annot-sheet-quote {
+  padding: 6px 8px;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  border-radius: 5px;
+  background: var(--bg-inset);
+  color: var(--text-2);
+  font-size: 11.5px;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 .mafw-annot-sheet-meta {
-  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--text-4);
-  font-family: var(--font-data, ui-monospace, monospace);
 }
-.mafw-annot-sheet-input { max-height: 30vh; overflow: auto; }
+.mafw-annot-sheet .mafw-annot-sheet-input {
+  width: 100%;
+  min-height: 0;
+  max-height: 180px;
+  padding: 0;
+  flex: none;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+  overflow: auto;
+}
+.mafw-annot-sheet .mafw-annot-sheet-input:focus-within { outline-color: transparent; box-shadow: none; }
+.mafw-annot-sheet .mafw-annot-sheet-input [data-slot="textarea-v2-textarea"] {
+  width: 100%;
+  min-height: 52px;
+  max-height: 180px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+  font-size: 12.5px;
+  line-height: 1.55;
+  resize: none;
+  field-sizing: content;
+}
 .mafw-annot-sheet-foot { display: flex; align-items: center; gap: 8px; }
 .mafw-annot-sheet-hint {
   flex: 1;
@@ -6747,7 +6779,7 @@ html[data-theme="light"] body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 10px;
+  font-size: 9.5px;
   color: var(--text-4);
 }
 .mafw-annot-sheet-actions { display: flex; gap: 6px; flex: none; }
@@ -6755,21 +6787,82 @@ html[data-theme="light"] body {
   .mafw-annot-sheet { animation: none; }
 }
 
-/* 锚点原地标记层（rev2）：文字高亮 / 点标记，锚点处直接反馈状态 */
+/* 选区 toolbar（ADE）：选中只出现「引用 / 批注」 */
+.mafw-annot-toolbar {
+  position: absolute;
+  z-index: 42;
+  display: inline-flex;
+  align-items: stretch;
+  padding: 2px;
+  border-radius: 7px;
+  background: var(--bg-float);
+  border: 1px solid var(--border-subtle, var(--border));
+  box-shadow: var(--shadow-float);
+  animation: mafw-annot-toolbar-in 120ms var(--ease-standard, ease-out);
+}
+@keyframes mafw-annot-toolbar-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: none; }
+}
+.mafw-annot-toolbar [data-component="button-v2"].mafw-annot-toolbar-btn {
+  height: 26px;
+  padding: 0 8px;
+  gap: 5px;
+  border-radius: 5px;
+  color: var(--text-2);
+  font-size: 11px;
+}
+.mafw-annot-toolbar [data-component="button-v2"].mafw-annot-toolbar-btn:hover { color: var(--text-1); background: var(--hover); }
+.mafw-annot-toolbar [data-component="button-v2"].mafw-annot-toolbar-btn.is-primary { color: var(--accent-text, var(--accent)); }
+.mafw-annot-toolbar-sep { width: 1px; margin: 3px 1px; background: var(--border-subtle, var(--border)); }
+@media (prefers-reduced-motion: reduce) {
+  .mafw-annot-toolbar { animation: none; }
+}
+
+/* quote 批注：CSS Custom Highlight API（随内容滚动，不改 DOM；ADE 同款三态） */
+::highlight(mafw-annot-pending) {
+  background-color: color-mix(in srgb, var(--accent) 22%, transparent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 75%, transparent);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+}
+::highlight(mafw-annot-held) {
+  background-color: color-mix(in srgb, var(--accent) 9%, transparent);
+  text-decoration: underline dashed;
+  text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+::highlight(mafw-annot-active) {
+  background-color: color-mix(in srgb, var(--accent) 38%, transparent);
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
+/* 锚点原地标记层（rev5 · ADE 三态）：pending 实线 / held 虚线 / responded 灰；无无限 pulse */
 .mafw-annot-layer { position: absolute; inset: 0; pointer-events: none; z-index: 6; }
 .mafw-annot-rect {
   position: absolute;
   border-radius: 3px;
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
-  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--accent) 70%, transparent);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  box-shadow: inset 0 -1.5px 0 color-mix(in srgb, var(--accent) 75%, transparent);
   animation: mafw-annot-rect-in 180ms var(--ease-standard, ease-out);
 }
-.mafw-annot-rect[data-status="pending"] {
-  animation: mafw-annot-rect-in 180ms var(--ease-standard, ease-out), mafw-annot-pulse 1.6s ease-in-out infinite;
+.mafw-annot-rect[data-status="held"] {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  box-shadow: none;
+  border-bottom: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent);
 }
 .mafw-annot-rect[data-status="responded"] {
   background: color-mix(in srgb, var(--text-4) 14%, transparent);
-  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--text-4) 55%, transparent);
+  box-shadow: inset 0 -1.5px 0 color-mix(in srgb, var(--text-4) 55%, transparent);
+}
+.mafw-annot-mark-group[data-active] .mafw-annot-rect[data-status="pending"] {
+  background: color-mix(in srgb, var(--accent) 38%, transparent);
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 @keyframes mafw-annot-rect-in {
   from { opacity: 0; }
@@ -6785,34 +6878,19 @@ html[data-theme="light"] body {
   border: 2px solid var(--bg-overlay);
   animation: mafw-annot-dot-in 160ms var(--ease-standard, ease-out);
 }
-.mafw-annot-dot[data-status="pending"] {
-  animation: mafw-annot-dot-in 160ms var(--ease-standard, ease-out), mafw-annot-pulse 1.6s ease-in-out infinite;
-}
+.mafw-annot-dot[data-status="held"] { background: color-mix(in srgb, var(--accent) 45%, transparent); }
 .mafw-annot-dot[data-status="responded"] { background: var(--text-4); }
+.mafw-annot-mark-group[data-active] .mafw-annot-dot[data-status="pending"] {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+}
 @keyframes mafw-annot-dot-in {
   from { opacity: 0; transform: scale(0.6); }
   to { opacity: 1; transform: scale(1); }
 }
 @media (prefers-reduced-motion: reduce) {
   .mafw-annot-rect,
-  .mafw-annot-dot,
-  .mafw-annot-rect[data-status="pending"],
-  .mafw-annot-dot[data-status="pending"] { animation: none; }
+  .mafw-annot-dot { animation: none; }
 }
-
-/* 批注卡锚点类型点 */
-.mafw-pending-annotation-kind {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--text-4);
-  flex: none;
-  align-self: center;
-}
-.mafw-pending-annotation-kind[data-kind="quote"],
-.mafw-pending-annotation-kind[data-kind="jsonPath"],
-.mafw-pending-annotation-kind[data-kind="cell"],
-.mafw-pending-annotation-kind[data-kind="region"] { background: var(--accent); }
 
 /* JSON 节点批注入口（hover 显现） */
 .mafw-json-annot { opacity: 0; margin-left: auto; flex: none; }
@@ -6839,34 +6917,7 @@ html[data-theme="light"] body {
   pointer-events: none;
 }
 
-/* 批注反馈标记（2026-10-27）：marks 条 + 图片图钉 + 处理中脉冲 */
-.mafw-annot-marks {
-  position: absolute;
-  top: 8px;
-  right: 12px;
-  z-index: 30;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  background: var(--bg-overlay);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  padding: 4px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-  max-width: 260px;
-}
-.mafw-annot-mark { justify-content: flex-start; gap: 6px; font-size: 10px; }
-.mafw-annot-mark-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: none; }
-.mafw-annot-mark-dot[data-status="pending"] { animation: mafw-annot-pulse 1.6s ease-in-out infinite; }
-.mafw-annot-mark-dot[data-status="responded"] { background: var(--text-4); }
-@keyframes mafw-annot-pulse {
-  0%, 100% { opacity: 0.35; }
-  50% { opacity: 1; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .mafw-annot-mark-dot[data-status="pending"],
-  .mafw-annot-pin-pending { animation: none; }
-}
+/* 批注图钉（图片/区域）：静态状态，无无限脉冲 */
 .mafw-annot-pin {
   position: absolute;
   width: 16px;
@@ -6878,7 +6929,223 @@ html[data-theme="light"] body {
   cursor: pointer;
   z-index: 5;
 }
-.mafw-annot-pin-pending { animation: mafw-annot-pulse 1.6s ease-in-out infinite; }
+.mafw-annot-pin-pending { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 24%, transparent); }
+
+/* margin rail（rev5 · ADE）：当前文件批注卡；窄容器自动隐藏（pill 仍可访问） */
+.mafw-annot-rail {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 20;
+  width: 224px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--bg-overlay) 92%, transparent);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(8px);
+  animation: mafw-annot-rail-in 160ms var(--ease-standard, ease-out);
+}
+@keyframes mafw-annot-rail-in {
+  from { opacity: 0; transform: translateX(4px); }
+  to { opacity: 1; transform: none; }
+}
+.mafw-annot-rail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-4);
+}
+.mafw-annot-rail-count {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  background: var(--accent-dim);
+  color: var(--accent-text, var(--accent));
+  font-size: 9.5px;
+  letter-spacing: 0;
+}
+.mafw-annot-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-float);
+  padding: 8px;
+  transition: border-color var(--dur-fast) var(--ease-standard), opacity var(--dur-fast) var(--ease-standard);
+}
+.mafw-annot-card.is-active { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+.mafw-annot-card.is-held { opacity: 0.72; }
+.mafw-annot-card [data-component="button-v2"].mafw-annot-card-main {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 4px;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  white-space: normal;
+}
+.mafw-annot-card [data-component="button-v2"].mafw-annot-card-main:hover { background: transparent; }
+.mafw-annot-card-quote {
+  width: 100%;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--text-3);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.mafw-annot-card-note {
+  width: 100%;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-1);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.mafw-annot-card-where {
+  width: 100%;
+  font-size: 9.5px;
+  line-height: 1.4;
+  color: var(--text-4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mafw-annot-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 6px;
+}
+.mafw-annot-card-check [data-slot="checkbox-v2-row"] { gap: 5px; align-items: center; }
+.mafw-annot-card-check [data-slot="checkbox-v2-label-text"] { font-size: 9.5px; line-height: 14px; color: var(--text-4); }
+.mafw-annot-card [data-component="button-v2"].mafw-annot-card-x { width: 20px; height: 20px; padding: 0; color: var(--text-4); }
+.mafw-annot-card [data-component="button-v2"].mafw-annot-card-x:hover { color: var(--text-1); }
+
+.mafw-editor-body { container-type: inline-size; }
+@container (max-width: 720px) {
+  .mafw-annot-rail { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mafw-annot-rail { animation: none; }
+}
+
+/* comments pill（rev5 · ADE）：composer 右侧、Send 左边 */
+.mafw-comments-pill-wrap { position: relative; display: inline-flex; flex: none; }
+.mafw-comments-pill-wrap [data-component="button-v2"].mafw-comments-pill {
+  height: 28px;
+  padding: 0 8px;
+  gap: 5px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text-3);
+  font-size: 10.5px;
+}
+.mafw-comments-pill-wrap [data-component="button-v2"].mafw-comments-pill:hover { color: var(--text-1); background: var(--hover); }
+.mafw-comments-pill-wrap [data-component="button-v2"].mafw-comments-pill.has {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  color: var(--text-1);
+}
+.mafw-comments-count {
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  background: var(--accent-dim);
+  color: var(--accent-text, var(--accent));
+  font-size: 9.5px;
+  font-weight: 600;
+}
+.mafw-comments-pop {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 45;
+  width: min(340px, calc(100vw - 32px));
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: 10px;
+  background: var(--bg-overlay);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+  animation: mafw-comments-pop-in 160ms var(--ease-standard, ease-out);
+}
+@keyframes mafw-comments-pop-in {
+  from { opacity: 0; transform: translateY(3px) scale(0.99); }
+  to { opacity: 1; transform: none; }
+}
+.mafw-comments-pop-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 2px 8px;
+}
+.mafw-comments-pop-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mafw-comments-pop-title b { font-size: 12px; color: var(--text-1); }
+.mafw-comments-pop-title span { font-size: 10px; color: var(--text-4); }
+.mafw-comments-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 8px 2px;
+  border-top: 1px solid var(--border);
+}
+.mafw-comments-row.is-held { opacity: 0.6; }
+.mafw-comments-check { flex: none; margin-top: 1px; }
+.mafw-comments-check [data-slot="checkbox-v2-label-text"] { font-size: 10px; }
+.mafw-comments-row-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
+.mafw-comments-row-quote {
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--text-4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mafw-comments-row-note {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-1);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.mafw-comments-row-where { font-size: 9.5px; color: var(--text-4); }
+.mafw-comments-row [data-component="button-v2"].mafw-comments-row-x { width: 20px; height: 20px; padding: 0; flex: none; color: var(--text-4); }
+.mafw-comments-row [data-component="button-v2"].mafw-comments-row-x:hover { color: var(--text-1); }
+@container (max-width: 420px) {
+  .mafw-comments-label { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mafw-comments-pop { animation: none; }
+}
 
 
 /* rev2：抽屉输入框自适应高度（1 行起步，随内容长高，上限 30vh） */

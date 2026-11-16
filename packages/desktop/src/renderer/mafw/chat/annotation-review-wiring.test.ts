@@ -7,7 +7,7 @@ const read = (path: string) => readFileSync(join(import.meta.dirname, path), 'ut
 
 test('ChatPane stages annotations as review items only for Goal-bound Tech Lead sends', () => {
   const chat = read('../components/ChatPane.tsx');
-  assert.match(chat, /peekAnnotations: \(sid\) => pendingFor\(sid\)/);
+  assert.match(chat, /peekAnnotations: \(sid\) => sendableFor\(sid\)/);
   assert.match(chat, /persistAnnotations: async \(items\) =>/);
   assert.match(chat, /createReviewItems\(target\.podId, target\.goalId/);
   assert.match(chat, /reviewInputsFromAnnotations/);

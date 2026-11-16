@@ -25,6 +25,8 @@ export type Annotation = {
   anchor?: AnnotationAnchor
   /** region 批注的裁剪截图（仅内存，不落 electron-store；发送时转附件）。 */
   imageDataUrl?: string
+  /** 保留但不随下一条消息发送（ADE 的 held）。 */
+  held?: boolean
 }
 
 /** 持久化形状：sessionID → 批注列表。 */

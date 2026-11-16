@@ -15,6 +15,7 @@ function api() {
         add(a: Annotation): Promise<unknown>
         remove(sessionID: string, id: string): Promise<unknown>
         clear(sessionID: string): Promise<unknown>
+        setHeld?(sessionID: string, id: string, held: boolean): Promise<unknown>
       }
     | undefined
 }
@@ -24,6 +25,11 @@ const bump = () => setRev((v) => v + 1)
 export function pendingFor(sessionID: string): Annotation[] {
   rev() // 订阅
   return [...(db[sessionID] ?? [])].sort((a, b) => a.createdAt - b.createdAt)
+}
+
+/** 会随下一条消息发送的批注（held 不参与）。 */
+export function sendableFor(sessionID: string): Annotation[] {
+  return pendingFor(sessionID).filter((a) => !a.held)
 }
 
 export async function hydrateAnnotations(sessionID: string): Promise<void> {
@@ -69,17 +75,27 @@ export function clearPending(sessionID: string): void {
   void api()?.clear(sessionID).catch(() => {})
 }
 
-/** 发送时取走该会话全部批注并清空（同一条消息不重复携带）。 */
+/** 设置 held：本地立即生效，IPC 落盘（旧 preload 无 setHeld 时仅本地）。 */
+export function setAnnotationHeld(sessionID: string, id: string, held: boolean): void {
+  db = {
+    ...db,
+    [sessionID]: (db[sessionID] ?? []).map((a) => (a.id === id ? { ...a, held } : a)),
+  }
+  bump()
+  void api()?.setHeld?.(sessionID, id, held).catch(() => {})
+}
+
+/** 发送时取走可发送批注并清空（held 保留；同一条消息不重复携带）。 */
 export function takeForSend(sessionID: string): Annotation[] {
-  const items = pendingFor(sessionID)
-  if (items.length > 0) clearPending(sessionID)
+  const items = sendableFor(sessionID)
+  for (const item of items) removePending(sessionID, item.id)
   return items
 }
 
-/** 只取走快照里的批注；落库期间新增的批注留给下一条消息。 */
+/** 只取走快照里的可发送批注；落库期间新增的、以及 held 都留给下一条消息。 */
 export function takeForSendById(sessionID: string, ids: readonly string[]): Annotation[] {
   const wanted = new Set(ids)
-  const taken = pendingFor(sessionID).filter((item) => wanted.has(item.id))
+  const taken = sendableFor(sessionID).filter((item) => wanted.has(item.id))
   for (const item of taken) removePending(sessionID, item.id)
   return taken
 }

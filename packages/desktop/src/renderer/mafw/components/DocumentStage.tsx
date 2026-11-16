@@ -16,7 +16,6 @@ export function DocumentStage(props: {
   openRequest?: FocusOpenRequest | null
   diffs?: FileDiffEntry[]
   onActiveFileChange?: (rel: string | null) => void
-  onSendAnnotation?: (text: string, opts?: { imageDataUrl?: string }) => void
   onAddAnnotation?: (a: any) => void
   onSendComment?: (sid: string, text: string) => void
   onOpenReview?: () => void
@@ -59,7 +58,6 @@ export function DocumentStage(props: {
             openRequest={props.openRequest ?? null}
             diffs={props.diffs}
             onActiveFileChange={props.onActiveFileChange}
-            onSendAnnotation={props.onSendAnnotation}
             onAddAnnotation={props.onAddAnnotation}
             onSendComment={props.onSendComment}
             onOpenReview={props.onOpenReview}

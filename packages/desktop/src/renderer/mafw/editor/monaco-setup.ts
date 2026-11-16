@@ -1,5 +1,6 @@
 import type { EditorSelection, MountedEditor } from "./cm-setup"
 import type { InlineDiffRange } from "./inline-diff"
+import type { AnnotationLineHighlight } from "../annotation-highlight"
 import { monacoLanguage } from "./monaco-lang"
 
 // monaco-editor 0.57 的 package.json `exports` 形如 "./*.js" -> "./esm/vs/*.js"，
@@ -141,6 +142,7 @@ export async function mountMonacoEditor(host: HTMLElement, opts: {
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => opts.onSave());
 
   const decorations = editor.createDecorationsCollection();
+  const annotationDecorations = editor.createDecorationsCollection();
   const contentSub = editor.onDidChangeModelContent(() => opts.onDocChanged());
   const selectionSub = editor.onDidChangeCursorSelection(() => {
     if (!opts.onSelectionChange) return;
@@ -238,6 +240,7 @@ export async function mountMonacoEditor(host: HTMLElement, opts: {
       themeObserver.disconnect();
       for (const timer of layoutTimers) clearTimeout(timer);
       decorations.clear();
+      annotationDecorations.clear();
       editor.dispose();
       model.dispose();
     },
@@ -262,6 +265,24 @@ export async function mountMonacoEditor(host: HTMLElement, opts: {
           }
         }
         decorations.set(list);
+      } catch { /* disposed */ }
+    },
+    setAnnotationHighlights(ranges: AnnotationLineHighlight[]) {
+      try {
+        const lineCount = model.getLineCount();
+        const list: any[] = [];
+        for (const range of ranges) {
+          const from = Math.max(1, Math.min(range.startLine, lineCount));
+          const to = Math.max(from, Math.min(range.endLine, lineCount));
+          list.push({
+            range: new monaco.Range(from, 1, to, 1),
+            options: {
+              isWholeLine: true,
+              className: range.status === "held" ? "mafw-monaco-annot-held" : "mafw-monaco-annot-pending",
+            },
+          });
+        }
+        annotationDecorations.set(list);
       } catch { /* disposed */ }
     },
     gotoLine(line: number) {

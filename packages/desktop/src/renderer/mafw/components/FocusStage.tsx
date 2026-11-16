@@ -22,7 +22,6 @@ export function FocusStage(props: {
   liveDiffs?: unknown
   onActiveFileChange?: (rel: string | null) => void
   openRequest?: FocusOpenRequest | null
-  onSendAnnotation?: (text: string, opts?: { imageDataUrl?: string }) => void
   onAddAnnotation?: (a: {
     rel: string
     startLine: number
@@ -69,7 +68,6 @@ export function FocusStage(props: {
           openRequest={props.openRequest}
           diffs={props.diffs}
           onActiveFileChange={props.onActiveFileChange}
-          onSendAnnotation={props.onSendAnnotation}
           onAddAnnotation={props.onAddAnnotation}
           onSendComment={props.onSendComment}
           onOpenReview={props.onOpenReview}

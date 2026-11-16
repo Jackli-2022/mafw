@@ -17,15 +17,18 @@ describe("批注草稿接线", () => {
     const types = read("src/preload/types.ts")
     expect(types).toContain("AnnotationsAPI")
   })
-  test("composer 挂载待发送批注列表", () => {
+  test("composer 挂载 comments pill（待发送批注）", () => {
     const chat = read("src/renderer/mafw/components/ChatPane.tsx")
-    expect(chat).toContain("PendingAnnotations")
+    expect(chat).toContain("CommentsPill")
+    expect(chat).toContain("sendableFor")
   })
-  test("编辑器批注交互（Enter 发送 / Ctrl+Enter 攒草稿）", () => {
+  test("编辑器批注交互（选区 toolbar → 300px composer → 高亮 + margin rail）", () => {
     const editor = read("src/renderer/mafw/components/EditorDock.tsx")
     expect(editor).toContain("onAddAnnotation")
     expect(editor).toContain("AnnotationSheet")
     expect(editor).toContain("submitAnnotationAnchored")
+    expect(editor).toContain("selectionBar")
+    expect(editor).toContain("mafw-annot-rail")
   })
   test("diff 行评论同样可加入草稿", () => {
     const diff = read("src/renderer/mafw/components/DiffReviewPanel.tsx")

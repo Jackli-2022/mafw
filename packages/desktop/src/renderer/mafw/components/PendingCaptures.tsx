@@ -1,5 +1,5 @@
 // PendingCaptures：composer 上方的截图/元素点选待发草稿（G1/G2）。
-// 与 PendingAnnotations 并列；发送时由 useSendMessage 打包（formatCaptureBatch）。
+// 与 CommentsPill 并列；发送时由 useSendMessage 打包（formatCaptureBatch）。
 // 用 Index 保持输入框 DOM/焦点稳定（For 按引用重建会在每次输入后丢焦点）。
 import { Index, Show } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
