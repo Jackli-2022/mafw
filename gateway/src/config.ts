@@ -734,7 +734,7 @@ function defaults(projectDir: string): GatewayConfig {
       sourceEvidence: { enabled: true, k: 5, maxChars: 1500 },
       t1Recall: { enabled: true, k: 3, maxChars: 600, retentionDays: 90, lexical: true, t1BackfillLimit: 3000, activationHalfLifeDays: 14, activationRanking: 'shadow', activationRankWeight: 0.1, activationRankBand: 0.6, denseIndex: 'shadow', semanticAtoms: 'on' },
       t1Signals: 'on',
-      t1SignalThresholds: { highNovelty: 0.45, highMismatch: 0.085, redundant: 0.25, dup: 0.95 },
+      t1SignalThresholds: { highNovelty: 0.41, highMismatch: 0.025, redundant: 0.24, dup: 0.95 },
       t1Replay: { enabled: true, exactK: 8, activatedK: 3, maxChars: 6000, perTraceChars: 400 },
       reflectionBatchSize: 10,
       // Leave 15min of watchdog headroom: one batch can burn two 300s worker
