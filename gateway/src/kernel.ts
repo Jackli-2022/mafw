@@ -90,8 +90,10 @@ import {
   BackgroundJobService,
   jobFromTask,
 } from './core/background/background-jobs';
-import { PodStore } from './core/pod/pod-store';
+import { PodStore, type PodEventRow } from './core/pod/pod-store';
 import { PodEventService } from './core/pod/pod-event-service';
+import { renderPodEvent } from './core/pod/pod-event-wake';
+import { archiveDomainEvent } from './core/goal/goal-archive-events';
 import { PodEventWake } from './core/pod/pod-event-wake';
 import { buildPodPresence, type PodPresence } from './core/pod/pod-presence';
 import { dispatchAuthorized } from './routes/registry-dispatch';
@@ -6448,34 +6450,66 @@ class MafwScheduler {
     }
     // Event layer: the human hears about every terminal Goal — including FAIL /
     // MAX_RETRIES / ERROR, which the PASS-only notifyResult path never covered.
-    if (podId && outcome && this.podEventService) {
-      try {
+    // Domain event + pod event + lead outbox commit with the goal status in one
+    // transaction; a throwing writer rolls the archive back.
+    const captured: { event: PodEventRow | null } = { event: null };
+    try {
+      if (podId && outcome && this.podEventService) {
         const goal = this.podStore?.getGoalByGoalId(goalId);
         const revision = goal?.activeRevision ?? 1;
         const cls = classifyGoalArchive({ verdict: (outcome.verdict as any) ?? null });
         const pod = this.podStore?.getPod(podId);
         const title = this.describePodGoal(goalId)?.title || goalId;
         const summary = [outcome.lastError, outcome.reviewFeedback].filter(Boolean).join(' · ') || null;
-        const evt = this.podEventService.record({
-          ...cls,
-          podId,
-          projectId: pod?.projectDir ?? '',
+        const domainInput = archiveDomainEvent({
           goalId,
           revision,
-          title: `${title} · ${outcome.verdict}`,
-          summary,
-          dedupeKey: goalDedupeKey(goalId, revision, cls.kind),
+          verdict: outcome.verdict,
+          status: outcome.verdict === 'CANCELLED' ? 'aborted' : 'done',
+          lastError: outcome.lastError ?? null,
+          projectDir: pod?.projectDir ?? '',
+          occurredAt: new Date().toISOString(),
         });
-        this.broadcast({
-          type: 'pod.event',
-          properties: {
-            podId: evt.podId, eventId: evt.id, goalId: evt.goalId,
-            revision: evt.revision, kind: evt.kind, severity: evt.severity,
+        await this.podGoalService?.onGoalArchived(goalId, { verdict: outcome.verdict }, {
+          inTransaction: () => {
+            this.domainEvents?.append(domainInput);
+            const evt = this.podEventService!.recordRow({
+              ...cls,
+              podId,
+              projectId: pod?.projectDir ?? '',
+              goalId,
+              revision,
+              title: `${title} · ${outcome.verdict}`,
+              summary,
+              dedupeKey: goalDedupeKey(goalId, revision, cls.kind),
+            });
+            captured.event = evt;
+            if (evt.audience === 'lead' && this.leadOutbox) {
+              this.leadOutbox.enqueuePodEvent({
+                podId,
+                eventId: evt.id,
+                goalId,
+                text: renderPodEvent(evt),
+                priority: 'p1',
+              });
+            }
           },
         });
-      } catch (err: any) {
-        log.warn(`[Pod] event write failed for ${goalId} (non-fatal): ${err?.message ?? err}`);
+      } else {
+        await this.podGoalService?.onGoalArchived(goalId, { verdict: outcome?.verdict });
       }
+    } catch (err: any) {
+      log.warn(`[Pod] goal archive hook failed for ${goalId} (non-fatal): ${err?.message ?? err}`);
+    }
+    if (captured.event) {
+      this.podEventService?.writeAudit(captured.event);
+      this.broadcast({
+        type: 'pod.event',
+        properties: {
+          podId: captured.event.podId, eventId: captured.event.id, goalId: captured.event.goalId,
+          revision: captured.event.revision, kind: captured.event.kind, severity: captured.event.severity,
+        },
+      });
     }
     // 完成通知（spec §8.1）：Reviewer 判 PASS 后由 Lead 通知用户——revision 保持
     // 真实完成结果，只广播一条结果事件；不创建人类 attention，也不需要用户再点
@@ -6486,11 +6520,6 @@ class MafwScheduler {
       } catch (err: any) {
         log.warn(`[Pod] result notification failed for ${goalId} (non-fatal): ${err?.message ?? err}`);
       }
-    }
-    try {
-      await this.podGoalService?.onGoalArchived(goalId, { verdict: outcome?.verdict });
-    } catch (err: any) {
-      log.warn(`[Pod] goal archive hook failed for ${goalId} (non-fatal): ${err?.message ?? err}`);
     }
   }
 

@@ -43,9 +43,16 @@ export class PodEventService {
   constructor(private readonly deps: PodEventServiceDeps) {}
 
   record(input: PodEventRecordInput): PodEventRow {
+    const row = this.recordRow(input);
+    this.writeAudit(row);
+    return row;
+  }
+
+  /** DB-only insert. Used inside a caller-owned transaction (goal archive). */
+  recordRow(input: PodEventRecordInput): PodEventRow {
     const now = this.now();
     const id = `evt_${Date.parse(now) || Date.now()}_${randomSuffix()}`;
-    const row = this.deps.store.insertEvent({
+    return this.deps.store.insertEvent({
       id,
       podId: input.podId,
       projectId: input.projectId,
@@ -64,8 +71,6 @@ export class PodEventService {
       state: input.audience === 'human' ? 'unread' : 'seen',
       now,
     });
-    this.writeAuditFile(row);
-    return row;
   }
 
   list(podId: string, opts?: { state?: 'unread'; limit?: number }): { items: PodEventRow[]; unread: number } {
@@ -165,7 +170,7 @@ export class PodEventService {
     return this.deps.now?.() ?? new Date().toISOString();
   }
 
-  private writeAuditFile(row: PodEventRow): void {
+  writeAudit(row: PodEventRow): void {
     const root = this.deps.mafwDir;
     if (!root) return;
     try {

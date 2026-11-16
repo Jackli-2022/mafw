@@ -265,6 +265,7 @@ export class PodGoalService {
   async onGoalArchived(
     goalId: string,
     outcome?: { verdict?: string },
+    opts?: { inTransaction?: (goal: PodGoalRow) => void },
   ): Promise<void> {
     const goal = this.deps.store.getGoalByGoalId(goalId);
     if (!goal) return;
@@ -272,14 +273,36 @@ export class PodGoalService {
     const pod = this.deps.store.getPod(goal.podId);
     if (!pod) return;
 
-    const wasActive = pod.status !== 'paused' && pod.status !== 'archived'
-      && (pod.activeGoalId === goal.goalId || this.deps.store.listActiveGoals(pod.id).length > 0);
     const verdict = normalizeVerdict(outcome?.verdict);
     const nextStatus = verdict === 'CANCELLED' ? 'aborted' : 'done';
-    this.deps.store.setGoalStatus(goal.id, nextStatus, {
-      endedAt: this.deps.now(),
-      ...(verdict ? { verdict } : {}),
+    const now = this.deps.now();
+    let wasActive = false;
+
+    // State + archive event + pod event + outbox commit together. A throwing
+    // `inTransaction` rolls the goal back to active.
+    this.deps.store.transaction(() => {
+      wasActive = pod.status !== 'paused' && pod.status !== 'archived'
+        && (pod.activeGoalId === goal.goalId || this.deps.store.listActiveGoals(pod.id).length > 0);
+      this.deps.store.setGoalStatus(goal.id, nextStatus, {
+        endedAt: now,
+        ...(verdict ? { verdict } : {}),
+      });
+
+      const remaining = this.deps.store.listActiveGoals(pod.id);
+      const pointerStillValid = remaining.some((candidate) => candidate.goalId === pod.activeGoalId);
+      const nextPointer = pointerStillValid ? pod.activeGoalId : (remaining[0]?.goalId ?? null);
+      if (pod.activeGoalId === goal.goalId || !pointerStillValid) {
+        this.deps.store.updatePod(pod.id, {
+          activeGoalId: nextPointer,
+          status: pod.status === 'paused' || pod.status === 'archived'
+            ? pod.status
+            : (remaining.length > 0 ? 'active' : 'idle'),
+        }, now);
+      }
+
+      opts?.inTransaction?.(goal);
     });
+
     try {
       if (outcome) this.deps.onGoalCompleted?.(goalId, outcome);
       else this.deps.onGoalCompleted?.(goalId);
@@ -287,17 +310,6 @@ export class PodGoalService {
       /* fail-open: memory promotion must not block Goal archival */
     }
 
-    const remaining = this.deps.store.listActiveGoals(pod.id);
-    const pointerStillValid = remaining.some((candidate) => candidate.goalId === pod.activeGoalId);
-    const nextPointer = pointerStillValid ? pod.activeGoalId : (remaining[0]?.goalId ?? null);
-    if (pod.activeGoalId === goal.goalId || !pointerStillValid) {
-      this.deps.store.updatePod(pod.id, {
-        activeGoalId: nextPointer,
-        status: pod.status === 'paused' || pod.status === 'archived'
-          ? pod.status
-          : (remaining.length > 0 ? 'active' : 'idle'),
-      }, this.deps.now());
-    }
     if (!wasActive) {
       this.deps.notify(pod.id);
       return;
