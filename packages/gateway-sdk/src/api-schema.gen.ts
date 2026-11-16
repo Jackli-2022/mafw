@@ -38493,6 +38493,11 @@ export interface operations {
                             source_session_id?: string;
                             source_trace_ids?: string[];
                             episode_id?: string;
+                            episode_hint?: {
+                                episodeId: string;
+                                basis: "session_single" | "session_latest_after";
+                                confidence: number;
+                            };
                             authority?: "user" | "agent" | "tool" | "pipeline";
                             distilled_by?: string[];
                             commitment_capped_at?: string;
@@ -38521,6 +38526,11 @@ export interface operations {
                             source_session_id?: string;
                             source_trace_ids?: string[];
                             episode_id?: string;
+                            episode_hint?: {
+                                episodeId: string;
+                                basis: "session_single" | "session_latest_after";
+                                confidence: number;
+                            };
                             authority?: "user" | "agent" | "tool" | "pipeline";
                             distilled_by?: string[];
                             commitment_capped_at?: string;

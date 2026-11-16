@@ -45,6 +45,12 @@ describe('OKF episode_id', () => {
     const parsed = parseOKF(buildOKF(unit()));
     expect(parsed.unit).not.toHaveProperty('episode_id');
   });
+
+  test('roundtrips the episode hint through frontmatter', () => {
+    const hint = { episodeId: 't1ep_a', basis: 'session_single' as const, confidence: 0.8 };
+    const parsed = parseOKF(buildOKF(unit({ episode_id: 't1ep_a', episode_hint: hint })));
+    expect(parsed.unit.episode_hint).toEqual(hint);
+  });
 });
 
 describe('HarmonicUnitFileStore provenance', () => {
@@ -52,13 +58,19 @@ describe('HarmonicUnitFileStore provenance', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'okf-prov-'));
     try {
       const store = new HarmonicUnitFileStore(dir);
-      await store.write(unit({ source_trace_ids: ['t1t_a'], episode_id: 't1ep_a' }));
+      await store.write(unit({
+        source_trace_ids: ['t1t_a'],
+        episode_id: 't1ep_a',
+        episode_hint: { episodeId: 't1ep_a', basis: 'session_single', confidence: 0.8 },
+      }));
       const entry = store.indexManager_().getIndex().entries.find((e) => e.id === 'mem_1_abc')!;
       expect((entry as any).source_trace_ids).toEqual(['t1t_a']);
       expect((entry as any).episode_id).toBe('t1ep_a');
+      expect((entry as any).episode_hint).toMatchObject({ basis: 'session_single' });
       const read = await store.read('mem_1_abc');
       expect((read as any).source_trace_ids).toEqual(['t1t_a']);
       expect((read as any).episode_id).toBe('t1ep_a');
+      expect((read as any).episode_hint).toMatchObject({ basis: 'session_single' });
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

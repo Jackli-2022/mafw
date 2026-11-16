@@ -209,6 +209,11 @@ const HarmonicUnitSchema = Type.Object({
   source_session_id: Type.Optional(Type.String()),
   source_trace_ids: Type.Optional(Type.Array(Type.String())),
   episode_id: Type.Optional(Type.String()),
+  episode_hint: Type.Optional(Type.Object({
+    episodeId: Type.String(),
+    basis: Type.Union([Type.Literal('session_single'), Type.Literal('session_latest_after')]),
+    confidence: Type.Number(),
+  })),
   authority: Type.Optional(Type.Union([
     Type.Literal('user'),
     Type.Literal('agent'),

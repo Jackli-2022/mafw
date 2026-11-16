@@ -84642,6 +84642,34 @@
                             "episode_id": {
                               "type": "string"
                             },
+                            "episode_hint": {
+                              "type": "object",
+                              "required": [
+                                "episodeId",
+                                "basis",
+                                "confidence"
+                              ],
+                              "properties": {
+                                "episodeId": {
+                                  "type": "string"
+                                },
+                                "basis": {
+                                  "anyOf": [
+                                    {
+                                      "const": "session_single",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "session_latest_after",
+                                      "type": "string"
+                                    }
+                                  ]
+                                },
+                                "confidence": {
+                                  "type": "number"
+                                }
+                              }
+                            },
                             "authority": {
                               "anyOf": [
                                 {
@@ -84799,6 +84827,34 @@
                             },
                             "episode_id": {
                               "type": "string"
+                            },
+                            "episode_hint": {
+                              "type": "object",
+                              "required": [
+                                "episodeId",
+                                "basis",
+                                "confidence"
+                              ],
+                              "properties": {
+                                "episodeId": {
+                                  "type": "string"
+                                },
+                                "basis": {
+                                  "anyOf": [
+                                    {
+                                      "const": "session_single",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "session_latest_after",
+                                      "type": "string"
+                                    }
+                                  ]
+                                },
+                                "confidence": {
+                                  "type": "number"
+                                }
+                              }
                             },
                             "authority": {
                               "anyOf": [

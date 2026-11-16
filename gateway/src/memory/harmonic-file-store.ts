@@ -113,6 +113,7 @@ export class HarmonicUnitFileStore {
         source_session_id: targetUnit.source_session_id,
         source_trace_ids: targetUnit.source_trace_ids,
     episode_id: (targetUnit as any).episode_id,
+    episode_hint: (targetUnit as any).episode_hint,
         authority: targetUnit.authority,
         distilled_by: targetUnit.distilled_by,
         commitment_capped_at: (targetUnit as any).commitment_capped_at,

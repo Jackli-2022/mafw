@@ -25,6 +25,7 @@ export function buildOKF(unit: HarmonicUnit): string {
   if (unit.source_session_id) frontmatter.source_session_id = unit.source_session_id;
   if (unit.source_trace_ids?.length) frontmatter.source_trace_ids = unit.source_trace_ids;
   if (unit.episode_id) frontmatter.episode_id = unit.episode_id;
+  if (unit.episode_hint) frontmatter.episode_hint = unit.episode_hint;
   if (unit.authority) frontmatter.authority = unit.authority;
   if (unit.distilled_by?.length) frontmatter.distilled_by = unit.distilled_by;
   if (unit.novelty !== undefined) frontmatter.novelty = unit.novelty;

@@ -3,6 +3,14 @@
  *  Ranking: user > agent ≈ tool > pipeline. Absent = legacy → lowest. */
 export type Authority = 'user' | 'agent' | 'tool' | 'pipeline';
 
+/** Hedged session-based episode link; never replaces the exact `episode_id`. */
+export type EpisodeHintBasis = 'session_single' | 'session_latest_after';
+export interface EpisodeHint {
+  episodeId: string;
+  basis: EpisodeHintBasis;
+  confidence: number;
+}
+
 const AUTHORITY_RANK: Record<Authority, number> = { pipeline: 1, tool: 2, agent: 2, user: 3 };
 
 /** Parse an untrusted value into an Authority. undefined/absent → undefined
@@ -54,6 +62,8 @@ export interface HarmonicUnit {
   source_trace_ids?: string[];
   /** Optional T1 episode hint derived from source_trace_ids at write time. */
   episode_id?: string;
+  /** Hedged session-based link (shadow-only; exact `episode_id` wins). */
+  episode_hint?: EpisodeHint;
   /** G1: provenance authority. Absent = legacy → treated as 'pipeline' (lowest). */
   authority?: Authority;
   /** A5: ids of gist units distilled FROM this entry. NOT a supersede chain —
@@ -91,6 +101,8 @@ export interface HarmonicIndexEntry {
   source_trace_ids?: string[];
   /** Optional T1 episode hint derived from source_trace_ids at write time. */
   episode_id?: string;
+  /** Hedged session-based link (shadow-only; exact `episode_id` wins). */
+  episode_hint?: EpisodeHint;
   /** Abstraction degree (orthogonal to type): 1=episodic, 2=semantic/procedural, 3=global. */
   abstraction_level?: number;
   superseded_by?: string;
