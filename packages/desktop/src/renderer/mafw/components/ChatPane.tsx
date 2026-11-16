@@ -59,6 +59,11 @@ import { useAttachments, mimeOf } from "../chat/use-attachments"
 import { useSendMessage } from "../chat/use-send-message"
 import { resolveSlash } from "../chat/slash-resolve"
 import { INIT_AGENTS_PROMPT } from "../chat/init-prompt"
+import {
+  commandDisabledReason,
+  type CommandCapabilities,
+  type CommandGateId,
+} from "../chat/command-availability"
 import { TtsPicker } from "../chat/TtsPicker"
 import { MessageNav } from "./MessageNav"
 import { enqueueTurn, removeTurnAt, takeFirstTurn, type QueuedTurn } from "./turn-queue"
@@ -1552,6 +1557,37 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     })
   }
 
+  const commandCapabilities = (): CommandCapabilities => ({
+    summarize: experienceStore.supported("session.summarize"),
+    fork: experienceStore.supported("branch.fork"),
+    diff: experienceStore.supported("branch.diff"),
+    undo: experienceStore.supported("branch.revert") || experienceStore.supported("checkpoint.restore"),
+    redo: experienceStore.supported("branch.unrevert"),
+    rename: experienceStore.supported("session.rename"),
+    planning: !!planningAgent(props.primaryAgents() as any),
+    build: !!defaultAgentKey(props.primaryAgents() as any),
+    discovery: experienceStore.supported("session.discovery"),
+  })
+
+  const gateCommand = (item: CommandItem, id: CommandGateId): CommandItem => {
+    const reason = commandDisabledReason(id, commandCapabilities())
+    return reason ? { ...item, disabled: true, disabledReason: reason } : item
+  }
+
+  // Commands whose runtime surface may be absent. Unsupported rows stay visible
+  // with a neutral reason so the menu does not change shape between runtimes.
+  const COMMAND_GATES: Partial<Record<string, CommandGateId>> = {
+    compact: "compact",
+    fork: "fork",
+    diff: "diff",
+    undo: "undo",
+    redo: "redo",
+    rename: "rename",
+    plan: "plan",
+    build: "build",
+    skills: "skills",
+  }
+
   const buildCommands = (): CommandItem[] => {
     const local: CommandItem[] = [
       { id: "new", trigger: "/new", title: "新建会话", description: "创建新会话", group: "local", source: "builtin", run: () => { closeCommandPicker(); void props.onCreateSession() } },
@@ -1755,7 +1791,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           source: "skill" as const,
         }))
       : []
-    return [...local, ...mafw, ...skills, ...custom]
+    const localWithGates = local.map((item) => {
+      const gate = COMMAND_GATES[item.id]
+      return gate ? gateCommand(item, gate) : item
+    })
+    return [...localWithGates, ...mafw, ...skills, ...custom]
   }
 
   const cmdItems = createMemo(() => buildCommands())
@@ -1833,6 +1873,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   }
 
   const onCommandSelect = (item: CommandItem) => {
+    if (item.disabled) return
     if (item.run) { runLocalCommand(item.run); return }
     insertCommandText(item.trigger)
   }

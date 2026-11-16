@@ -10678,6 +10678,16 @@ export interface operations {
                                     [key: string]: unknown;
                                 };
                             };
+                            "session.rename"?: {
+                                supported: boolean;
+                                enabled: boolean;
+                                reason?: "unsupported" | "busy" | "missing-data" | "non-invertible-patch" | "unsafe";
+                                warningKey?: string;
+                                operationId?: string;
+                                semantics?: {
+                                    [key: string]: unknown;
+                                };
+                            };
                             "session.switch-agent"?: {
                                 supported: boolean;
                                 enabled: boolean;

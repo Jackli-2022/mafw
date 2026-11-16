@@ -17,6 +17,7 @@ export const EXPERIENCE_ACTION_IDS = [
   'run.control',
   'session.worktree',
   'session.summarize',
+  'session.rename',
   'session.switch-agent',
   'session.switch-model',
   'session.discovery',

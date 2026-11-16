@@ -9,6 +9,8 @@ export type CommandItem = {
   group: "local" | "mafw" | "custom" | "skill"
   source?: "skill" | "mcp" | "command" | "builtin"
   run?: () => void         // local commands execute immediately
+  disabled?: boolean
+  disabledReason?: string
 }
 
 const SOURCE_BADGE: Record<string, string> = {
@@ -62,7 +64,7 @@ export function CommandPicker(props: {
   const onKey = (e: KeyboardEvent) => {
     if (e.key === "ArrowDown") { e.preventDefault(); setHi(h => Math.min(h + 1, filtered().length - 1)) }
     else if (e.key === "ArrowUp") { e.preventDefault(); setHi(h => Math.max(h - 1, 0)) }
-    else if (e.key === "Enter") { e.preventDefault(); const it = filtered()[hi()]; if (it) props.onSelect(it) }
+    else if (e.key === "Enter") { e.preventDefault(); const it = filtered()[hi()]; if (it && !it.disabled) props.onSelect(it) }
   }
 
   return (
@@ -101,14 +103,22 @@ export function CommandPicker(props: {
 
 function CommandRow(props: { it: CommandItem; hi: boolean; onClick: () => void }) {
   return (
-    <div class="mafw-picker-row" classList={{ hi: props.hi }} onClick={props.onClick}>
+    <div
+      class="mafw-picker-row"
+      classList={{ hi: props.hi, disabled: props.it.disabled }}
+      aria-disabled={props.it.disabled ? "true" : undefined}
+      onClick={() => { if (!props.it.disabled) props.onClick() }}
+    >
       <span class="mafw-picker-row-name">
         <span class="mafw-picker-row-title">{props.it.trigger}</span>
-        <Show when={props.it.description}>
-          <span class="mafw-picker-row-id">{props.it.description}</span>
+        <Show when={props.it.disabled ? props.it.disabledReason : props.it.description}>
+          <span class="mafw-picker-row-id">{props.it.disabled ? props.it.disabledReason : props.it.description}</span>
         </Show>
       </span>
       <span class="mafw-picker-row-meta">
+        <Show when={props.it.disabled}>
+          <span class="mafw-command-badge mafw-command-badge--disabled">不可用</span>
+        </Show>
         <Show when={props.it.source && SOURCE_BADGE[props.it.source!]}>
           <span class="mafw-command-badge">{SOURCE_BADGE[props.it.source!]}</span>
         </Show>

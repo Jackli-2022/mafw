@@ -2717,8 +2717,9 @@ describe('api-contract: E10f-A session / task / terminal / usage read response s
     expect(schema.required).toEqual(['experienceVersion', 'minClientVersion', 'actions']);
     // actions is a Partial map: every action id is optional, unknown ids are not in the schema.
     const ids = Object.keys(schema.properties.actions.properties ?? {});
-    expect(ids).toHaveLength(20);
+    expect(ids).toHaveLength(21);
     expect(ids).toContain('checkpoint.restore');
+    expect(ids).toContain('session.rename');
     expect(ids).toContain('mcp.config.write');
     expect(schema.properties.actions.required ?? []).toEqual([]);
     expect(schema.properties.actions.additionalProperties).toBeFalsy();

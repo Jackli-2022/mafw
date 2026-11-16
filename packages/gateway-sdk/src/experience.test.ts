@@ -39,7 +39,7 @@ test('SDK version stays in sync with the generated contract', () => {
 test('SDK action ids match the generated contract exactly', () => {
   const file = new URL('../contract/experience-contract.json', import.meta.url);
   const contract = JSON.parse(readFileSync(file, 'utf8'));
-  expect(EXPERIENCE_ACTION_IDS).toHaveLength(20);
+  expect(EXPERIENCE_ACTION_IDS).toHaveLength(21);
   expect([...EXPERIENCE_ACTION_IDS]).toEqual(contract.actions.map((a: { id: string }) => a.id));
 });
 

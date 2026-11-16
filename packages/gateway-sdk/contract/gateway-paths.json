@@ -13194,6 +13194,57 @@
                             }
                           }
                         },
+                        "session.rename": {
+                          "type": "object",
+                          "required": [
+                            "supported",
+                            "enabled"
+                          ],
+                          "properties": {
+                            "supported": {
+                              "type": "boolean"
+                            },
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "reason": {
+                              "anyOf": [
+                                {
+                                  "const": "unsupported",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "busy",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "missing-data",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "non-invertible-patch",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "unsafe",
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "warningKey": {
+                              "type": "string"
+                            },
+                            "operationId": {
+                              "type": "string"
+                            },
+                            "semantics": {
+                              "type": "object",
+                              "patternProperties": {
+                                "^(.*)$": {}
+                              }
+                            }
+                          }
+                        },
                         "session.switch-agent": {
                           "type": "object",
                           "required": [

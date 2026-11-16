@@ -62,6 +62,7 @@ describe('Experience contract', () => {
       'run.control',
       'session.worktree',
       'session.summarize',
+      'session.rename',
       'session.switch-agent',
       'session.switch-model',
       'session.discovery',
@@ -74,7 +75,7 @@ describe('Experience contract', () => {
       'mcp.manage',
       'mcp.config.write',
     ]);
-    expect(new Set(EXPERIENCE_ACTION_IDS).size).toBe(20);
+    expect(new Set(EXPERIENCE_ACTION_IDS).size).toBe(21);
   });
 
   it('normalizes the supported/enabled invariant through the action helper', () => {
@@ -133,6 +134,7 @@ describe('Experience contract', () => {
       'branch.diff',
       'run.control',
       'session.discovery',
+      'session.rename',
       'session.switch-agent',
       'session.switch-model',
       'session.worktree',
@@ -251,6 +253,8 @@ describe('Experience contract', () => {
     expect(projectExperienceActions(only('discovery.list'), {})['session.discovery'].supported).toBe(true);
     expect(projectExperienceActions(only('session.worktree'), {})['session.worktree'].supported).toBe(true);
     expect(projectExperienceActions(only('session.summarize'), {})['session.summarize'].supported).toBe(true);
+    expect(projectExperienceActions(only('session.update'), {})['session.rename'].supported).toBe(true);
+    expect(projectExperienceActions(only('discovery.list'), {})['session.rename'].supported).toBe(false);
     expect(projectExperienceActions(only('branch.checkpoint'), {})['checkpoint.create'].supported).toBe(true);
     expect(projectExperienceActions(only('discovery.list'), {})['session.worktree'].supported).toBe(false);
   });

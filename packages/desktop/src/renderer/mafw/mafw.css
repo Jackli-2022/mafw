@@ -1940,6 +1940,9 @@ html[data-theme="light"] body {
 }
 .mafw-picker-row:hover, .mafw-picker-row.hi { background: var(--hover); }
 .mafw-picker-row.current { background: var(--accent-dim); }
+.mafw-picker-row.disabled { opacity: .55; cursor: not-allowed; }
+.mafw-picker-row.disabled:hover { background: transparent; }
+.mafw-command-badge--disabled { color: var(--text-4); border-color: var(--border-subtle); }
 .mafw-picker-row-name { display: flex; align-items: baseline; gap: 6px; min-width: 0; overflow: hidden; }
 .mafw-picker-row-title { font-size: 13px; color: var(--text-2); white-space: nowrap; }
 .mafw-picker-row-id {

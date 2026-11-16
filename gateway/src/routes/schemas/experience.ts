@@ -8,7 +8,7 @@
  *   - cognition.rules    → routes/cognition.ts `handleCognitionRules` + core/cognition/rules.ts
  *                          `validateRules()`（规则是 **config 作者的数据**，非法条目只进 errors）
  *
- * experience 的 20 个 action id 是封闭词表：`actions` 的键集由常量派生（新增动作必须同时
+ * experience 的 21 个 action id 是封闭词表：`actions` 的键集由常量派生（新增动作必须同时
  * 改 `EXPERIENCE_ACTION_IDS`），每个值仍是完整的 `ActionDescriptor`。
  */
 import { Type, type TSchema } from '@sinclair/typebox'
@@ -34,7 +34,7 @@ const ActionDescriptorSchema = Type.Object({
 })
 
 /**
- * `actions` 是 **Partial** 映射（contract 类型如此；投影当前填满 20 个 key）。
+ * `actions` 是 **Partial** 映射（contract 类型如此；投影当前填满 21 个 key）。
  * 键集仍封闭：新动作必须先进 `EXPERIENCE_ACTION_IDS`，否则不会出现在契约面。
  */
 const ActionProperties: Record<string, TSchema> = {}

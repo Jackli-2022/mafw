@@ -48,6 +48,11 @@
       "description": "Compact the session history"
     },
     {
+      "id": "session.rename",
+      "scope": "session",
+      "description": "Rename the session title"
+    },
+    {
       "id": "session.switch-agent",
       "scope": "session",
       "description": "Switch the session agent"
