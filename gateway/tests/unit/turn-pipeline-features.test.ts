@@ -68,7 +68,7 @@ describe('TurnPipeline writes the T1 sparse event code', () => {
         new Map(
           turns.map((turn) => [
             turn.traceId,
-            [{ termId: 'error:json_parse', cosine: 0.9 }],
+            [{ termId: 'error:json_parse', score: 0.9 }],
           ]),
         ),
     });

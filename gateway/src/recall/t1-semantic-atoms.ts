@@ -9,6 +9,9 @@
 // Failure is fail-open: no runtime, no vectors, or a provider error leaves the
 // turn with its lexical/concept code and raw T1 intact.
 import type { T1SparseAtom } from './t1-sparse';
+import { cosineSimilarity } from './t1-atom-calibration';
+
+export { cosineSimilarity };
 import { DEFAULT_CONCEPT_ALIASES } from './t1-concepts';
 
 export interface SemanticEmbedder {
@@ -41,20 +44,6 @@ export function buildConceptAnchors(
     if (!seen.has(alias.conceptId)) seen.set(alias.conceptId, alias.term);
   }
   return [...seen.entries()].map(([termId, text]) => ({ termId, text }));
-}
-
-export function cosineSimilarity(a: number[], b: number[]): number {
-  if (!a?.length || !b?.length || a.length !== b.length) return 0;
-  let dot = 0;
-  let na = 0;
-  let nb = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    na += a[i] * a[i];
-    nb += b[i] * b[i];
-  }
-  if (na === 0 || nb === 0) return 0;
-  return dot / (Math.sqrt(na) * Math.sqrt(nb));
 }
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -122,7 +111,8 @@ export class T1SemanticEncoder {
             }))
             .filter((atom) => Number.isFinite(atom.cosine) && atom.cosine >= minCosine)
             .sort((a, b) => b.cosine - a.cosine)
-            .slice(0, maxAtoms);
+            .slice(0, maxAtoms)
+            .map((atom) => ({ termId: atom.termId, score: atom.cosine }));
           if (atoms.length > 0) result.set(turn.traceId, atoms);
         });
       }

@@ -33,7 +33,8 @@ export interface T1SparseTerm {
 /** One embedding-derived atom supplied by the encoder pipeline. */
 export interface T1SparseAtom {
   termId: string;
-  cosine: number;
+  /** Calibrated atom weight (centered score), not a raw cosine. */
+  score: number;
 }
 
 export interface T1SparseEncodeInput {
@@ -52,7 +53,6 @@ export const SPARSE_EMBED_MODEL = 'sparse-embed-v1';
 const TOKEN_RE = /[\p{L}\p{N}_./:\\-]{3,}/gu;
 const MAX_TOKENS = 24;
 const MAX_TERMS = 64;
-const MIN_SEMANTIC_COSINE = 0.35;
 const MAX_SEMANTIC_TERMS = 8;
 
 /** Stable term ID for one lexical atom (FNV-1a over the lowercased token). */
@@ -120,11 +120,11 @@ export function encodeTurnSparseTerms(input: T1SparseEncodeInput): T1SparseTerm[
   }
 
   const semantic = (input.atoms ?? [])
-    .filter((atom) => Number.isFinite(atom.cosine) && atom.cosine >= MIN_SEMANTIC_COSINE)
-    .sort((a, b) => b.cosine - a.cosine)
+    .filter((atom) => Number.isFinite(atom.score))
+    .sort((a, b) => b.score - a.score)
     .slice(0, MAX_SEMANTIC_TERMS);
   for (const atom of semantic) {
-    put(`sem:${atom.termId}`, 'semantic', atom.cosine);
+    put(`sem:${atom.termId}`, 'semantic', atom.score);
   }
 
   const model = semantic.length > 0 ? SPARSE_EMBED_MODEL : SPARSE_LEX_MODEL;

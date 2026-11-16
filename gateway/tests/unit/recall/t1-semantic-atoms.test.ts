@@ -49,13 +49,13 @@ describe('T1 semantic atoms', () => {
       { traceId: 't1t_b', text: 'weather tomorrow' },
     ]);
 
-    expect(map.get('t1t_a')).toContainEqual({ termId: 'error:json_parse', cosine: 1 });
+    expect(map.get('t1t_a')).toContainEqual({ termId: 'error:json_parse', score: 1 });
     expect(map.has('t1t_b')).toBe(false);
     // One embed call for the anchors, one for the two turn texts.
     expect(embedder.calls).toEqual([2, 2]);
 
     const second = await encoder.encodeMany([{ traceId: 't1t_c', text: 'coverage' }]);
-    expect(second.get('t1t_c')).toContainEqual({ termId: 'metric:coverage', cosine: 1 });
+    expect(second.get('t1t_c')).toContainEqual({ termId: 'metric:coverage', score: 1 });
     // Anchor vectors are cached; only the new turn is embedded.
     expect(embedder.calls).toEqual([2, 2, 1]);
     expect(encoder.cachedAnchors).toBe(2);

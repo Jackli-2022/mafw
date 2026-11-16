@@ -147,24 +147,25 @@ describe('sparse encoder', () => {
     expect(querySparseTermIds('解析失败')).toContain('concept:error:json_parse');
   });
 
-  test('embedding atoms become sparse semantic terms above the threshold', () => {
+  test('embedding atoms become sparse semantic terms without re-filtering', () => {
     const terms = encodeTurnSparseTerms({
       turn,
       rows: [row('user_input', 'network reset')],
       atoms: [
-        { termId: 'error:connection_reset', cosine: 0.8 },
-        { termId: 'noise', cosine: 0.1 },
+        { termId: 'error:connection_reset', score: 0.1 },
+        { termId: 'noise', score: 0.05 },
       ],
     });
     expect(terms).toContainEqual(
       expect.objectContaining({
         termId: 'sem:error:connection_reset',
         kind: 'semantic',
-        weight: 0.8,
+        weight: 0.1,
         model: 'sparse-embed-v1',
       }),
     );
-    expect(terms.some((t) => t.termId === 'sem:noise')).toBe(false);
+    // Selection happens upstream; a calibrated low score must not be dropped here.
+    expect(terms.some((t) => t.termId === 'sem:noise')).toBe(true);
   });
 
   test('empty rows produce an empty code', () => {
