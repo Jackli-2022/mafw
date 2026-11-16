@@ -144,6 +144,14 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
         const withEpisode = indexEntries.filter(
           (e: any) => typeof e.episode_id === 'string' && e.episode_id.length > 0,
         ).length;
+        const withHint = indexEntries.filter(
+          (e: any) => Boolean(e.episode_hint && e.episode_hint.episodeId),
+        ).length;
+        const activeCortex = indexEntries.filter(
+          (e: any) => !e.superseded_by && e.type !== 'episodic',
+        ).length;
+        const legacyEpisodic = indexEntries.filter((e: any) => e.type === 'episodic').length;
+        const superseded = indexEntries.filter((e: any) => Boolean(e.superseded_by)).length;
         let activationRanking = {
           mode: config.recall.t1Recall?.activationRanking ?? 'shadow',
           evaluations: 0,
@@ -204,6 +212,14 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
             features: code.features,
             actors: code.actors,
             concepts: code.concepts,
+          },
+          cortex: {
+            total: indexEntries.length,
+            active: activeCortex,
+            legacyEpisodic,
+            superseded,
+            exactGrounding: withEpisode,
+            hintGrounding: withHint,
           },
         };
       })();

@@ -318,6 +318,14 @@ describe('memory registry wiring (D1 Task F1)', () => {
         semanticAtoms: 'on',
         atoms: { turns: 2, atoms: 3, avgPerTurn: 1.5, calibrated: false },
         code: { turns: 3, features: 3, actors: 2, concepts: 3 },
+        cortex: {
+          total: 0,
+          active: 0,
+          legacyEpisodic: 0,
+          superseded: 0,
+          exactGrounding: 0,
+          hintGrounding: 0,
+        },
       });
     } finally {
       setEmbeddingRuntime(null);
@@ -356,6 +364,14 @@ describe('memory registry wiring (D1 Task F1)', () => {
       coverage: 0.5,
       withEpisode: 2,
       episodeCoverage: 0.5,
+    });
+    expect(body.t1.cortex).toEqual({
+      total: 4,
+      active: 4,
+      legacyEpisodic: 0,
+      superseded: 0,
+      exactGrounding: 2,
+      hintGrounding: 0,
     });
     expect(body.t1.activation).toEqual({ traces: 2, mean: 0.15, max: 0.2 });
   });
