@@ -31,6 +31,7 @@ import type { MemoryService } from '../memory/service';
 import type { PipelineHeartbeat } from '../recall/pipeline-heartbeat';
 import type { CoactivationGraphStore } from '../graph/coactivation-store';
 import type { RouteRegistry } from './registry';
+import type { EpisodeHit } from '../recall/t1-episode-search';
 
 export interface FokStatsCache {
   at: number;
@@ -56,6 +57,8 @@ export interface MemoryRouteDeps {
   pressure?: () => { disk: string; degraded: string[] } | null;
   /** T1 dense search over active/archive verbatim rows. */
   searchT1?: (query: string, k: number) => Promise<import('../recall/verbatim-recall').T1Hit[]>;
+  /** Episode-channel search (T1 turn hits aggregated by episode). */
+  searchEpisodes?: (query: string, k: number) => Promise<EpisodeHit[]>;
 }
 
 export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDeps): void {
@@ -288,13 +291,26 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
       const query = parsedUrl.searchParams.get('query') || '';
       const topK = parseInt(parsedUrl.searchParams.get('topK') || '50', 10);
       const layer = parsedUrl.searchParams.get('layer') || 'gist';
-      if (!['gist', 't1', 'both'].includes(layer)) {
+      if (!['gist', 't1', 'both', 'episodes', 'auto'].includes(layer)) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'invalid layer: use gist|t1|both' }));
+        res.end(JSON.stringify({ error: 'invalid layer: use gist|t1|both|episodes|auto' }));
+        return;
+      }
+      const wantsEpisodes = layer === 'episodes' || layer === 'auto';
+      const episodesLive = config.recall.t1Episodes?.mode === 'live';
+      let episodes: EpisodeHit[] | undefined;
+      if (wantsEpisodes && (layer === 'episodes' || episodesLive)) {
+        try {
+          episodes = deps.searchEpisodes ? await deps.searchEpisodes(query, topK) : [];
+        } catch { episodes = []; }
+      }
+      if (layer === 'episodes') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ results: [], t1Results: [], episodes: episodes ?? [] }));
         return;
       }
       let t1Results: any[] | undefined;
-      if (layer !== 'gist') {
+      if (layer === 't1' || layer === 'both') {
         t1Results = [];
         try {
           const hits = deps.searchT1 ? await deps.searchT1(query, topK) : [];
@@ -348,10 +364,65 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
         }
       }
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(layer === 'both' ? { results, t1Results } : { results }));
+      res.end(JSON.stringify({
+        results,
+        ...(layer === 'both' ? { t1Results } : {}),
+        ...(layer === 'auto' ? { t1Results: [], episodes: episodes ?? [] } : {}),
+      }));
     } catch (err: any) {
       res.writeHead(500);
       res.end(JSON.stringify({ error: err.message }));
+    }
+  });
+
+  // GET /api/memory/episodes — browse recent derived episodes (empty query ok).
+  registry.attachHandler('memory.episodes', async (req: IncomingMessage, res: ServerResponse) => {
+    try {
+      const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
+      const limit = Math.min(200, Math.max(1, parseInt(parsedUrl.searchParams.get('limit') || '50', 10)));
+      const cursor = parsedUrl.searchParams.get('cursor') || undefined;
+      const sessionId = parsedUrl.searchParams.get('sessionId') || undefined;
+      const sinceRaw = Number(parsedUrl.searchParams.get('since'));
+      const since = Number.isFinite(sinceRaw) && sinceRaw > 0 ? sinceRaw : undefined;
+      const page = deps.getGatewayDb().listEpisodes({ limit, cursor, sessionId, since });
+      const episodes: EpisodeHit[] = page.episodes.map((episode) => ({
+        episodeId: episode.episodeId,
+        sessionId: episode.sessionId,
+        startTurn: episode.startTurn,
+        endTurn: episode.endTurn,
+        status: episode.status,
+        startedAt: episode.startedAt,
+        intent: episode.intent,
+        outcome: episode.outcome,
+        actors: episode.actors.map((actor) => actor.actorId),
+        conceptIds: episode.conceptIds,
+        score: 0,
+        sources: [],
+        topTraceIds: episode.sourceTraceIds.slice(0, 3),
+      }));
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ episodes, ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}) }));
+    } catch (err: any) {
+      res.writeHead(500);
+      res.end(JSON.stringify({ error: err?.message || String(err) }));
+    }
+  });
+
+  // GET /api/memory/episodes/:id — episode metadata + member turn ids.
+  registry.attachHandler('memory.getEpisode', async (_req: IncomingMessage, res: ServerResponse, params: Record<string, string>) => {
+    try {
+      const episode = deps.getGatewayDb().getEpisode(params.id);
+      if (!episode) {
+        res.writeHead(404);
+        res.end(JSON.stringify({ error: 'episode not found' }));
+        return;
+      }
+      const members = deps.getGatewayDb().listEpisodeMembers(episode.episodeId);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ episode, members }));
+    } catch (err: any) {
+      res.writeHead(500);
+      res.end(JSON.stringify({ error: err?.message || String(err) }));
     }
   });
 

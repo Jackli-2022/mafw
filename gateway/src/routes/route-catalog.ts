@@ -182,7 +182,7 @@ import {
   TriageListResponse,
 } from './schemas/human-gate';
 import { WorkOverviewResponse } from './schemas/work';
-import { MemoryGetResponse, MemorySearchResponse } from './schemas/memory';
+import { MemoryEpisodeResponse, MemoryEpisodesResponse, MemoryGetResponse, MemorySearchResponse } from './schemas/memory';
 import {
   MemoryEnergyDistributionResponse,
   MemoryL5AxiomsResponse,
@@ -737,6 +737,8 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/work/:goalId/validate', operationId: 'goals.validate', tags: ['goals'], request: GoalValidateRequest, requestRequired: false, response: GoalValidateResponse, errors: [400] },
   { method: 'POST', path: '/api/goals/control', operationId: 'goals.control', tags: ['goals'], request: GoalControlRequest, response: GoalControlResponse, errors: [400] },
   { method: 'GET', path: '/api/memory/search', operationId: 'memory.search', tags: ['memory'], response: MemorySearchResponse },
+  { method: 'GET', path: '/api/memory/episodes', operationId: 'memory.episodes', tags: ['memory'], response: MemoryEpisodesResponse },
+  { method: 'GET', path: '/api/memory/episodes/:id', operationId: 'memory.getEpisode', tags: ['memory'], response: MemoryEpisodeResponse, errors: [404] },
   { method: 'GET', path: '/api/memory/merged-search', operationId: 'memory.mergedSearch', tags: ['memory'], response: MemoryMergedSearchResponse },
   { method: 'GET', path: '/api/memory/energy-distribution', operationId: 'memory.getEnergyDistribution', tags: ['memory'], response: MemoryEnergyDistributionResponse },
   { method: 'GET', path: '/api/l5/axioms', operationId: 'memory.getL5Axioms', tags: ['memory'], response: MemoryL5AxiomsResponse },

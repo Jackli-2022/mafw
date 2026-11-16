@@ -1149,22 +1149,62 @@ export interface MemorySearchOptions {
   goalId?: string
   /** 检索器：默认 bm25；'token' 子串回退；'hybrid' BM25+dense RRF（需 embedding 开启） */
   retriever?: 'bm25' | 'token' | 'hybrid'
+  /** 显式包含 legacy `episodic` 皮层条目（默认 false）。 */
+  includeLegacyEpisodic?: boolean
 }
 
-/** 记忆检索层级：gist = Harmonic 抽象知识（默认）；t1 = 原始回合；both = 两路。 */
-export type MemoryLayer = 'gist' | 't1' | 'both'
+/** 记忆检索层级：gist = Harmonic 抽象知识（默认）；t1 = 原始回合；both = 两路；episodes = 海马体 episode；auto = episodes + knowledge。 */
+export type MemoryLayer = 'gist' | 't1' | 'both' | 'episodes' | 'auto'
 
 /** T1 verbatim 命中；traceId 用于 mafw_get_memory("t1:<traceId>") 取全文。 */
 export interface T1SearchHit {
   sessionId: string
   turnId: number
   traceId?: string | null
+  /** 该 trace 所属 episode（若已建立）。 */
+  episodeId?: string
   cosine: number
   excerpt: string
   /** 产生该融合命中的检索通道。 */
-  sources?: Array<'dense' | 'lexical'>
+  sources?: Array<'dense' | 'lexical' | 'feature' | 'concept' | 'actor' | 'sparse' | 'neighbor'>
   /** 融合后的 RRF 分数（高于 0；原始 dense 命中可能缺省）。 */
   score?: number
+}
+
+/** 海马体 episode 命中：索引 + 派生 intent/outcome，不承载叙事。 */
+export interface EpisodeHit {
+  episodeId: string
+  sessionId: string
+  startTurn: number
+  endTurn: number
+  status: 'open' | 'closed'
+  startedAt: number | null
+  intent?: string
+  outcome?: string
+  actors: string[]
+  conceptIds: string[]
+  score: number
+  sources: Array<'turn' | 'actor' | 'concept' | 'sparse' | 'declared'>
+  topTraceIds: string[]
+}
+
+export interface T1EpisodeRecord {
+  episodeId: string
+  sessionId: string
+  startTurn: number
+  endTurn: number
+  status: 'open' | 'closed'
+  startedAt: number | null
+  endedAt: number | null
+  goalId?: string
+  boundarySource: string
+  boundaryReason: string
+  confidence: number
+  intent?: string
+  outcome?: string
+  actors: Array<{ actorId: string; role: string; weight: number }>
+  conceptIds: string[]
+  sourceTraceIds: string[]
 }
 
 export interface MemoryLayeredSearchOptions extends MemorySearchOptions {
@@ -1177,12 +1217,26 @@ export interface MemoryLayeredSearchResult {
   layer: MemoryLayer
   results: MemoryUnit[]
   t1Results: T1SearchHit[]
+  episodes?: EpisodeHit[]
+  legacyEpisodic?: MemoryUnit[]
+}
+
+export interface MemoryEpisodesOptions {
+  limit?: number
+  cursor?: string
+  sessionId?: string
+  /** Epoch milliseconds. */
+  since?: number
 }
 
 export interface MemoryNamespace {
   search(opts: MemorySearchOptions): Promise<MemoryUnit[]>
-  /** 分层检索：gist/t1/both，同时返回两路结果（缺失时为空数组）。 */
+  /** 分层检索：gist/t1/both/episodes/auto，同时返回各路结果（缺失时为空数组）。 */
   searchLayered(opts: MemoryLayeredSearchOptions): Promise<MemoryLayeredSearchResult>
+  /** 海马体 episode 列表（空 query 也可浏览）。 */
+  episodes(opts?: MemoryEpisodesOptions): Promise<{ episodes: EpisodeHit[]; nextCursor?: string }>
+  /** 单个 episode + 成员 turn id。 */
+  episode(id: string): Promise<{ episode: T1EpisodeRecord; members: Array<{ episodeId: string; traceId: string; turnSeq: number }> }>
   mergedSearch(opts: MergedSearchOptions): Promise<MemoryFact[]>
   getEnergyDistribution(): Promise<EnergyDistribution>
   getL5Axioms(topK?: number): Promise<{ axioms: Axiom[]; heuristics: L5Heuristic[] }>

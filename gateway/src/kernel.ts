@@ -4945,11 +4945,24 @@ class MafwScheduler {
       log.info('[Scheduler] Desktop automation client connected');
     }
 
+    const t1Search = require('./recall/t1-search').createGatewayT1Search(this.getGatewayDb());
     const services: Services & Record<string, unknown> = {
       memory: this.memoryService,
       searchArchive: (sid: string, anchors: string[], k: number) => this.getGatewayDb().searchArchive(sid, anchors, k),
       resolveT1: (tail: string, turnId: number) => this.getGatewayDb().findT1BySessionTail(tail, turnId),
-      searchT1: require('./recall/t1-search').createGatewayT1Search(this.getGatewayDb()),
+      searchT1: t1Search,
+      searchEpisodes: async (query: string, k: number) => {
+        const db = this.getGatewayDb();
+        const { searchT1Episodes } = require('./recall/t1-episode-search');
+        return searchT1Episodes({
+          searchTurns: t1Search,
+          findEpisodeByTrace: (traceId: string) => db.findEpisodeByTrace(traceId),
+          getEpisode: (episodeId: string) => db.getEpisode(episodeId),
+          listMembers: (episodeId: string) => db.listEpisodeMembers(episodeId),
+        }, query, k);
+      },
+      getEpisode: (episodeId: string) => this.getGatewayDb().getEpisode(episodeId),
+      listEpisodeMembers: (episodeId: string) => this.getGatewayDb().listEpisodeMembers(episodeId),
       recordT1Retrieval: (traceId: string, kind: any, score?: number) =>
         this.getGatewayDb().recordT1RetrievalEvent({ traceId, kind, score }),
       readTrace: (traceId: string) => this.getGatewayDb().readTrace(traceId),

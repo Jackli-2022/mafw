@@ -38,7 +38,7 @@ function getIndexEntries(memory: any) {
   return memory?.harmonicIndex?.getIndex?.()?.entries ?? memory?.getIndex?.()?.entries ?? [];
 }
 
-const SEARCH_LAYERS = ['gist', 't1', 'both'] as const;
+const SEARCH_LAYERS = ['gist', 't1', 'both', 'episodes', 'auto'] as const;
 type SearchLayer = typeof SEARCH_LAYERS[number];
 
 async function searchT1Hits(
@@ -73,11 +73,34 @@ export const handleSearchHybrid: ToolHandler = async (args, services) => {
     const layer = String(args.layer ?? 'gist') as SearchLayer;
     if (!SEARCH_LAYERS.includes(layer)) {
       return {
-        content: [{ type: 'text', text: JSON.stringify({ error: 'invalid layer: use gist|t1|both' }) }],
+        content: [{ type: 'text', text: JSON.stringify({ error: 'invalid layer: use gist|t1|both|episodes|auto' }) }],
         isError: true,
       };
     }
-    const t1Results = layer === 'gist' ? undefined : await searchT1Hits(services, query, topK);
+    const wantsEpisodes = layer === 'episodes' || layer === 'auto';
+    const episodesLive = config.recall.t1Episodes?.mode === 'live';
+    let episodes: import('../../recall/t1-episode-search').EpisodeHit[] = [];
+    if (wantsEpisodes && (layer === 'episodes' || episodesLive)) {
+      try {
+        episodes = services.searchEpisodes ? await services.searchEpisodes(query, topK) : [];
+      } catch { episodes = []; }
+    }
+    if (layer === 'episodes') {
+      const payload = {
+        results: [],
+        episodes,
+        episodeCount: episodes.length,
+        canExpand: false,
+        state: null,
+        round: 0,
+        count: 0,
+        hint: 'Episodes are T1 “what happened”; expand a member turn with mafw_get_memory("t1ep:<episodeId>").',
+      };
+      return { content: [{ type: 'text', text: JSON.stringify(payload) }], structuredContent: payload };
+    }
+    const t1Results = layer === 't1' || layer === 'both'
+      ? await searchT1Hits(services, query, topK)
+      : undefined;
     if (layer === 't1') {
       const payload = {
         results: [],
@@ -244,6 +267,7 @@ export const handleSearchHybrid: ToolHandler = async (args, services) => {
     const searchPayload = {
       results: enriched,
       ...(t1Results !== undefined ? { t1Results, t1Count: t1Results.length } : {}),
+      ...(layer === 'auto' ? { episodes, episodeCount: episodes.length } : {}),
       canExpand,
       state,
       round,

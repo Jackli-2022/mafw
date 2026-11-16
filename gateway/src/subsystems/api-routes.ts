@@ -831,6 +831,7 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
   });
   // Phase D1 Task F1：memory 查询/统计面迁 registry dispatch（9 分支；sticky 的
   // 503-空壳与 fail-open 200、stats 的 10s fok 缓存直写逐字保留）。
+  const t1Search = require('../recall/t1-search').createGatewayT1Search(deps.getGatewayDb());
   attachMemoryRoutes(deps.routeRegistry, {
     memoryService: () => deps.memoryService,
     consolidationService: () => deps.consolidationService,
@@ -842,7 +843,17 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
     getGatewayDb: () => deps.getGatewayDb(),
     backfillEmbeddings: (limit) => deps.backfillEmbeddings(limit),
     pressure: () => deps.resourcePressure(),
-    searchT1: require('../recall/t1-search').createGatewayT1Search(deps.getGatewayDb()),
+    searchT1: t1Search,
+    searchEpisodes: async (query, k) => {
+      const db = deps.getGatewayDb();
+      const { searchT1Episodes } = require('../recall/t1-episode-search');
+      return searchT1Episodes({
+        searchTurns: t1Search,
+        findEpisodeByTrace: (traceId: string) => db.findEpisodeByTrace(traceId),
+        getEpisode: (episodeId: string) => db.getEpisode(episodeId),
+        listMembers: (episodeId: string) => db.listEpisodeMembers(episodeId),
+      }, query, k);
+    },
   });
   // Phase D1 Task F2：goals inline 面迁 registry dispatch（6 分支 → 7 op；plan /
   // plan-approval 仍以原始 req.url 交给 handleGoalPlan 内部分流）。

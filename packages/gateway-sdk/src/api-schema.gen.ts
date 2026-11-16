@@ -2632,6 +2632,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/memory/episodes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["memory.episodes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memory/episodes/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["memory.getEpisode"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/memory/merged-search": {
         parameters: {
             query?: never;
@@ -3942,6 +3974,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["obs.capture"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/obs/episode-boundary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["obs.episodeBoundary"];
         delete?: never;
         options?: never;
         head?: never;
@@ -25159,10 +25207,36 @@ export interface operations {
                             sessionId: string;
                             turnId: number;
                             traceId?: string | null;
+                            episodeId?: string;
                             cosine: number;
                             excerpt: string;
                             sources?: ("dense" | "lexical")[];
                             score?: number;
+                        }[];
+                        episodes?: {
+                            episodeId: string;
+                            sessionId: string;
+                            startTurn: number;
+                            endTurn: number;
+                            status: "open" | "closed";
+                            startedAt: number | null;
+                            intent?: string;
+                            outcome?: string;
+                            actors: string[];
+                            conceptIds: string[];
+                            score: number;
+                            sources: string[];
+                            topTraceIds: string[];
+                        }[];
+                        legacyEpisodic?: {
+                            id: string;
+                            type: "episodic" | "semantic" | "procedural" | "global";
+                            primary_abstraction: string;
+                            cue_anchors: string[];
+                            memory_value: string;
+                            energy: number;
+                            salience?: number;
+                            created_at?: string;
                         }[];
                     };
                 };
@@ -25186,6 +25260,212 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                        code?: string;
+                        message?: string;
+                        /** @constant */
+                        success?: false;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                        code?: string;
+                        message?: string;
+                        /** @constant */
+                        success?: false;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    "memory.episodes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        episodes: {
+                            episodeId: string;
+                            sessionId: string;
+                            startTurn: number;
+                            endTurn: number;
+                            status: "open" | "closed";
+                            startedAt: number | null;
+                            intent?: string;
+                            outcome?: string;
+                            actors: string[];
+                            conceptIds: string[];
+                            score: number;
+                            sources: string[];
+                            topTraceIds: string[];
+                        }[];
+                        nextCursor?: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                        code?: string;
+                        message?: string;
+                        /** @constant */
+                        success?: false;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                        code?: string;
+                        message?: string;
+                        /** @constant */
+                        success?: false;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                        code?: string;
+                        message?: string;
+                        /** @constant */
+                        success?: false;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    "memory.getEpisode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        episode: {
+                            episodeId: string;
+                            sessionId: string;
+                            startTurn: number;
+                            endTurn: number;
+                            status: "open" | "closed";
+                            startedAt: number | null;
+                            endedAt: number | null;
+                            goalId?: string;
+                            boundarySource: string;
+                            boundaryReason: string;
+                            confidence: number;
+                            intent?: string;
+                            outcome?: string;
+                            actors: {
+                                actorId: string;
+                                role: string;
+                                weight: number;
+                            }[];
+                            conceptIds: string[];
+                            sourceTraceIds: string[];
+                        };
+                        members: {
+                            episodeId: string;
+                            traceId: string;
+                            turnSeq: number;
+                        }[];
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                        code?: string;
+                        message?: string;
+                        /** @constant */
+                        success?: false;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                        code?: string;
+                        message?: string;
+                        /** @constant */
+                        success?: false;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -37503,11 +37783,135 @@ export interface operations {
                          * @constant
                          */
                         filtered?: true;
+                        episodeBoundary?: {
+                            sessionId: string;
+                            /** @description Canonical edge: turn N stays in the old episode, N+1 starts the new one. */
+                            afterTurn: number;
+                            source: "agent" | "user" | "system";
+                            reason?: string;
+                            intent?: string;
+                            createdAt: number;
+                        };
                     } | {
                         /** @constant */
                         ok: false;
                         /** @description Captured error, returned fail-open so the plugin never has to retry. */
                         error: string;
+                    };
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                        code?: string;
+                        message?: string;
+                        /** @constant */
+                        success?: false;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                        code?: string;
+                        message?: string;
+                        /** @constant */
+                        success?: false;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                        code?: string;
+                        message?: string;
+                        /** @constant */
+                        success?: false;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                        code?: string;
+                        message?: string;
+                        /** @constant */
+                        success?: false;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    "obs.episodeBoundary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    sessionID: string;
+                    /** @description start_new = current turn opens a new episode; end_current = current turn closes it; next_user_turn = queue for the next captured user turn. */
+                    scope?: "start_new" | "end_current" | "next_user_turn";
+                    /** @description Explicit canonical edge; wins over scope. */
+                    afterTurn?: number;
+                    reason?: string;
+                    intent?: string;
+                    source?: "agent" | "user";
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        ok: true;
+                        pending?: boolean;
+                        ignored?: boolean;
+                        boundary?: {
+                            sessionId: string;
+                            /** @description Canonical edge: turn N stays in the old episode, N+1 starts the new one. */
+                            afterTurn: number;
+                            source: "agent" | "user" | "system";
+                            reason?: string;
+                            intent?: string;
+                            createdAt: number;
+                        };
                     };
                 };
             };

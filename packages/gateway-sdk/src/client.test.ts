@@ -617,6 +617,39 @@ test("memory.searchLayered defaults to gist and normalizes missing arrays", asyn
   expect(res).toEqual({ layer: "gist", results: [], t1Results: [] })
 })
 
+test("memory.searchLayered returns episodes and legacy episodic when present", async () => {
+  const episode = {
+    episodeId: "t1ep_a", sessionId: "s1", startTurn: 1, endTurn: 3, status: "closed",
+    startedAt: 1, actors: ["agent:reviewer"], conceptIds: [], score: 1, sources: ["turn"], topTraceIds: ["t1t_a"],
+  }
+  fetchMock.mockResolvedValue(okJson({ results: [], t1Results: [], episodes: [episode], legacyEpisodic: [] }))
+  const c = new MafwClient()
+  const res = await c.memory.searchLayered({ query: "q", layer: "auto" })
+  expect(res.episodes).toEqual([episode])
+  expect(res.legacyEpisodic).toEqual([])
+})
+
+test("memory.episodes forwards paging params", async () => {
+  fetchMock.mockResolvedValue(okJson({ episodes: [], nextCursor: "c2" }))
+  const c = new MafwClient()
+  const res = await c.memory.episodes({ limit: 10, sessionId: "s1", cursor: "c1", since: 5 })
+  const url = (fetchMock as any).mock.calls[0][0] as string
+  expect(url).toContain("limit=10")
+  expect(url).toContain("sessionId=s1")
+  expect(url).toContain("cursor=c1")
+  expect(url).toContain("since=5")
+  expect(res.nextCursor).toBe("c2")
+})
+
+test("memory.episode fetches episode detail", async () => {
+  fetchMock.mockResolvedValue(okJson({ episode: { episodeId: "t1ep_a" }, members: [{ traceId: "t1t_a", turnSeq: 1 }] }))
+  const c = new MafwClient()
+  const res = await c.memory.episode("t1ep_a")
+  const url = (fetchMock as any).mock.calls[0][0] as string
+  expect(url).toContain("/api/memory/episodes/t1ep_a")
+  expect(res.members).toHaveLength(1)
+})
+
 test("memory.mergedSearch returns facts", async () => {
   fetchMock.mockResolvedValue(okJson({ results: [{ source: "harmonic", type: "fact", content: "x", energy: 1 }] }))
   const c = new MafwClient()
