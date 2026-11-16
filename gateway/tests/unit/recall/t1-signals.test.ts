@@ -1,5 +1,6 @@
 import {
   computeTurnSignals,
+  createTurnSignalScorer,
   isInformativeTurn,
   normalizeObservationText,
   scoreTurnSignals,
@@ -33,6 +34,7 @@ const input = (over: Record<string, unknown> = {}) => ({
   traceId: 't1t_a',
   text: BODY,
   cue: 'fix reflection',
+  intent: 'fix reflection boundary recall',
   lastTs: Date.parse('2026-02-01T00:00:00.000Z') / 1000,
   anchorCount: 2,
   ...over,
@@ -194,5 +196,45 @@ describe('t1 signals', () => {
       traceIds: ['t1t_x'],
     });
     expect(lookup('missing')).toBeUndefined();
+  });
+
+  test('a one-word intent never produces a mismatch', async () => {
+    const d = deps({ [BODY]: 0.4, 'fix reflection': 0.9 });
+    const map = await computeTurnSignals([input({ intent: 'ok' })], d);
+    expect(map.get('t1t_a')!.novelty).toBeCloseTo(0.6);
+    expect(map.get('t1t_a')!.mismatch).toBe(0);
+  });
+
+  test('machine logs without prose are not scored', () => {    const log =
+      '【眼】f#688 moved #661 [36, 950, 96, 962] dxy=[-18, 0] f#688 appeared #1029 [81, 975, 88, 984]';
+    expect(isInformativeTurn(log, 3)).toBe(false);
+    expect(isInformativeTurn('const parsed = parseInsights(text); // 解析结果', 2)).toBe(true);
+    expect(isInformativeTurn('修复 reflection 的边界 recall，先把 hint 的过滤补上', 2)).toBe(true);
+  });
+
+  test('a disabled scorer returns no signals', async () => {    const d = deps({ [BODY]: 0.95, 'fix reflection': 0.9 });
+    const scorer = createTurnSignalScorer({
+      enabled: false,
+      embedder: d.embedder,
+      vectors: d.vectors,
+      unitFor: d.unitFor,
+    });
+    expect((await scorer([input()])).size).toBe(0);
+  });
+
+  test('an enabled scorer delegates to computeTurnSignals', async () => {
+    const d = deps({ [BODY]: 0.95, 'fix reflection': 0.9 });
+    const scorer = createTurnSignalScorer({
+      enabled: true,
+      embedder: d.embedder,
+      vectors: d.vectors,
+      unitFor: d.unitFor,
+    });
+    expect((await scorer([input()])).get('t1t_a')!.novelty).toBeCloseTo(0.05);
+  });
+
+  test('a scorer without an embedder or vectors is inert', async () => {
+    const scorer = createTurnSignalScorer({ enabled: true, unitFor: () => undefined });
+    expect((await scorer([input()])).size).toBe(0);
   });
 });

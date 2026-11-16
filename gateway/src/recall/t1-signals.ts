@@ -12,6 +12,8 @@ export interface TurnSignalInput {
   traceId: string;
   text: string;
   cue: string;
+  /** Extracted turn intent; one-word intents ("ok", "继续") are not a cue. */
+  intent?: string;
   /** Turn end time in epoch seconds (T1 `last_ts`). */
   lastTs?: number;
   anchorCount: number;
@@ -36,8 +38,7 @@ export interface TurnSignalDeps {
 }
 
 /** Shared cortex lookup for the pipeline (kernel) and the backfill script. */
-export function unitLookupFromEntries(
-  entries: Array<{
+export function unitLookupFromEntries(  entries: Array<{
     id: string;
     created_at?: string;
     type?: string;
@@ -83,12 +84,23 @@ export function normalizeObservationText(rows: Array<{ content?: unknown }>): st
     .join('\n');
 }
 
-/** Short greetings, empty turns and agent boilerplate carry no cue to compare. */
+const LETTER_CHARS = /[A-Za-z\u00C0-\u024F\u3400-\u9FFF\uF900-\uFAFF\u3040-\u30FF\uAC00-\uD7AF]/g;
+
+/** Letters/CJK over non-space chars; machine dumps are mostly digits/brackets. */
+function proseRatio(text: string): number {
+  const compact = text.replace(/\s+/g, '');
+  if (compact.length === 0) return 0;
+  const letters = compact.match(LETTER_CHARS)?.length ?? 0;
+  return letters / compact.length;
+}
+
+/** Short greetings, empty turns, agent boilerplate and machine logs carry no cue. */
 export function isInformativeTurn(text: string, anchorCount: number): boolean {
   const body = String(text ?? '').trim();
   if (!body) return false;
   if (body === '[object Object]') return false;
   if (SYSTEM_PROMPT.test(body)) return false;
+  if (proseRatio(body) < 0.35) return false;
   return body.length >= 120 || anchorCount > 0;
 }
 
@@ -125,11 +137,28 @@ export function scoreTurnSignals(  contentSim: number | null,
   return best;
 }
 
+export interface TurnSignalScorerDeps {
+  enabled: boolean;
+  embedder?: TurnSignalDeps['embedder'];
+  vectors?: TurnSignalDeps['vectors'];
+  unitFor: TurnSignalDeps['unitFor'];
+}
+
+/** Config/capability gate around `computeTurnSignals` (used by the kernel). */
+export function createTurnSignalScorer(
+  deps: TurnSignalScorerDeps,
+): (turns: TurnSignalInput[]) => Promise<Map<string, TurnSignals>> {
+  if (!deps.enabled || !deps.embedder || !deps.vectors) {
+    return async () => new Map<string, TurnSignals>();
+  }
+  const { embedder, vectors, unitFor } = deps;
+  return (turns) => computeTurnSignals(turns, { embedder, vectors, unitFor });
+}
+
 export async function computeTurnSignals(
   inputs: TurnSignalInput[],
   deps: TurnSignalDeps,
-): Promise<Map<string, TurnSignals>> {
-  const scored = new Map<string, TurnSignals>();
+): Promise<Map<string, TurnSignals>> {  const scored = new Map<string, TurnSignals>();
   try {
     const eligible = inputs.filter((i) => isInformativeTurn(i.text, i.anchorCount));
     if (eligible.length === 0) return scored;
@@ -163,7 +192,10 @@ export async function computeTurnSignals(
       // CA1 compares one retrieved memory against the input: the cue must
       // complete to the SAME memory the content does, otherwise the two
       // maxima belong to different situations and the difference is noise.
-      const cueVector = input.text.trim().length >= 120 ? cueByIndex.get(idx) : undefined;
+      const cueVector =
+        input.text.trim().length >= 120 && String(input.intent ?? '').trim().length >= 12
+          ? cueByIndex.get(idx)
+          : undefined;
       const cueMatch = cueVector ? bestCandidate(input, cueVector, deps) : null;
       const cueSim = cueMatch && cueMatch.id === matched.id ? cueMatch.cosine : null;
       const signals = scoreTurnSignals(matched.cosine, cueSim);

@@ -99,6 +99,7 @@ async function main() {
         traceId: row.trace_id,
         text,
         cue: [row.intent, ...entities, row.tool, row.target].filter(Boolean).join(' '),
+        intent: row.intent ?? '',
         lastTs: turnLastTs(observations as Array<{ created_at?: number }>),
         anchorCount: entities.length,
       });

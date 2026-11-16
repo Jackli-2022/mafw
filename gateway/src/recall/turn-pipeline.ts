@@ -393,6 +393,7 @@ export class TurnPipeline {
             cue: [feature.intent, ...(feature.entities ?? []), feature.tool, feature.target]
               .filter(Boolean)
               .join(' '),
+            intent: feature.intent ?? '',
             lastTs: turn.last_ts,
             anchorCount: feature.entities?.length ?? 0,
           },

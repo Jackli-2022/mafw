@@ -49,6 +49,7 @@ import { createLlmGoalEvalProvider } from './core/goal/goal-eval-llm-provider';
 import { parseReviewRubric, taskIdsFromWavePlan } from './core/goal/review-rubric';
 import { ensureGoalState, effectiveRevision, effectiveRound, isTerminalState, listGoalStateSummaries, loadGoalState, setGoalStateBackend, writeGoalState } from './core/goal/state-v3';
 import { GoalStateStore } from './core/goal/goal-state-store';
+import { GoalSnapshotStore } from './core/goal/goal-history';
 import { DomainEventStore } from './core/events/domain-event-store';
 import type { DomainEventInput } from './core/events/domain-event';
 import {
@@ -239,7 +240,7 @@ import { InstructionSyncService } from './core/instructions/instruction-sync-ser
 import { DiscoveryService } from './core/discovery/discovery-service';
 import { renderInstructionBlocks, type InstructionBlocks } from './recall/instruction-blocks';
 import { getT1SemanticEncoder } from './recall/t1-semantic-atoms';
-import { computeTurnSignals, unitLookupFromEntries } from './recall/t1-signals';
+import { createTurnSignalScorer, unitLookupFromEntries } from './recall/t1-signals';
 import { rebuildSessionEpisodes } from './recall/t1-episode-rebuild';
 import { isHiddenSession, selectVisibleSessions } from './core/session-visibility';
 
@@ -579,6 +580,7 @@ class MafwScheduler {
   private goalDriver: NodeDriver | null = null;
   private goalDriverMafwDirCache = new Map<string, string>();
   private goalStateStore: GoalStateStore | null = null;
+  private goalSnapshots: GoalSnapshotStore | null = null;
   /** Phase 2: append-only goal/domain facts (independent of `pod_events`). */
   private domainEvents: DomainEventStore | null = null;
   private getReflectCursor(): ReflectCursor {
@@ -3583,17 +3585,15 @@ class MafwScheduler {
         }).encodeMany(turns);
       },
       // E2: encode-time novelty/mismatch (Phase 1: measured, not yet consumed).
-      signalsFor: async (turns) => {
-        if (config.recall.t1Signals === 'off') return new Map();
+      signalsFor: (turns) => {
         const rt = getEmbeddingRuntime();
-        if (!rt?.provider) return new Map();
         const index = this.memoryService?.harmonicIndex;
-        if (!index) return new Map();
-        return computeTurnSignals(turns, {
-          embedder: rt.provider,
-          vectors: rt.vectors,
-          unitFor: unitLookupFromEntries(index.getIndex().entries),
-        });
+        return createTurnSignalScorer({
+          enabled: config.recall.t1Signals !== 'off',
+          embedder: rt?.provider,
+          vectors: rt?.vectors,
+          unitFor: index ? unitLookupFromEntries(index.getIndex().entries) : () => undefined,
+        })(turns);
       },
       // S2: schema-cluster interleaving (integrate into schemas, not append).
       schemaClusters: () => this.getSchemaClusters(),
@@ -3849,6 +3849,7 @@ class MafwScheduler {
     this.leadOutbox = undefined;
     setGoalStateBackend(null);
     this.goalStateStore = null;
+    this.goalSnapshots = null;
     this.domainEvents = null;
     this.timers.disposeAll();
     // E8-1: disposeAll 只清定时器；handle 字段一并归零，避免再次 start() 时
@@ -4129,9 +4130,15 @@ class MafwScheduler {
     this.podStore = new PodStore(this.getGatewayDb().getStore());
     // Phase 2: GoalState write authority lives in the shared gateway DB. The
     // JSON file stays a mirror; a legacy file is imported on first read.
-    this.goalStateStore = new GoalStateStore(this.getGatewayDb().getStore());
-    setGoalStateBackend(this.goalStateStore);
+    // Phase 3: every state write appends `goal.state.changed`; snapshots +
+    // pure replay can rebuild a missing state row.
     this.domainEvents = new DomainEventStore(this.getGatewayDb().getStore());
+    this.goalSnapshots = new GoalSnapshotStore(this.getGatewayDb().getStore());
+    this.goalStateStore = new GoalStateStore(this.getGatewayDb().getStore(), {
+      events: this.domainEvents,
+      snapshots: this.goalSnapshots,
+    });
+    setGoalStateBackend(this.goalStateStore);
     this.podEventService = new PodEventService({
       store: this.podStore,
       mafwDir: this.mafwDir,
