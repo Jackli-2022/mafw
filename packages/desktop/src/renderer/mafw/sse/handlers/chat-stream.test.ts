@@ -17,7 +17,6 @@ function makeDeps(store: any = { message: {}, part: {}, session_status: {} }) {
     parentFallback: () => "u1",
     phase: rec("phase"),
     onTurnSettled: rec("onTurnSettled"),
-    notifyIdle: rec("notifyIdle"),
     mediaSpeak: rec("mediaSpeak"),
   }
   return { deps: { chat } as unknown as ShellEventDeps, calls }
@@ -113,12 +112,11 @@ describe("handleChatStreamEvent", () => {
     expect(calls.map(c => c.name)).toContain("flushToolParts")
   })
 
-  test("turn.completed → idle + done + onTurnSettled(expireCards: true) + notifyIdle", () => {
+  test("turn.completed → idle + done + onTurnSettled(expireCards: true)", () => {
     const { deps, calls } = makeDeps()
     handleChatStreamEvent({ type: "turn.completed", sessionID: "s1" }, "s1", deps)
     expect(calls.find(c => c.name === "setSessionStatus")!.args).toEqual(["s1", "idle"])
     expect(calls.map(c => c.name)).toContain("markSessionDone")
-    expect(calls.map(c => c.name)).toContain("notifyIdle")
     expect(calls.find(c => c.name === "onTurnSettled")!.args[1]).toEqual({ expireCards: true })
   })
 
@@ -128,17 +126,15 @@ describe("handleChatStreamEvent", () => {
     expect(calls.find(c => c.name === "onTurnSettled")!.args[1]).toEqual({ expireCards: false })
   })
 
-  test("turn.failed → settle，不 notifyIdle", () => {
+  test("turn.failed → settle", () => {
     const { deps, calls } = makeDeps()
     handleChatStreamEvent({ type: "turn.failed", sessionID: "s1" }, "s1", deps)
-    expect(calls.map(c => c.name)).not.toContain("notifyIdle")
     expect(calls.map(c => c.name)).toContain("onTurnSettled")
   })
 
-  test("turn.aborted → settle，不 notifyIdle", () => {
+  test("turn.aborted → settle", () => {
     const { deps, calls } = makeDeps()
     handleChatStreamEvent({ type: "turn.aborted", sessionID: "s1" }, "s1", deps)
-    expect(calls.map(c => c.name)).not.toContain("notifyIdle")
     expect(calls.map(c => c.name)).toContain("onTurnSettled")
   })
 

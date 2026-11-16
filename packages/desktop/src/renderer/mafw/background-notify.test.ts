@@ -12,21 +12,20 @@ const job = (over: Partial<BackgroundJob> = {}): BackgroundJob => ({
   ...over,
 })
 
-describe("buildBackgroundNotice", () => {
-  test("completed：toast 恒有；hidden 时附 OS", () => {
-    expect(buildBackgroundNotice(job(), { hidden: false })).toEqual({ toast: "后台任务完成：npm run dev" })
-    expect(buildBackgroundNotice(job(), { hidden: true })!.os).toEqual({ title: "MAFW：后台任务完成", body: "npm run dev" })
+describe("buildBackgroundNotice（应用内 toast；OS 通知归事务层）", () => {
+  test("completed：完成文案", () => {
+    expect(buildBackgroundNotice(job())).toBe("后台任务完成：npm run dev")
   })
   test("failed：失败语义文案", () => {
-    expect(buildBackgroundNotice(job({ status: "failed" }), { hidden: false })!.toast).toBe("后台任务失败：npm run dev")
+    expect(buildBackgroundNotice(job({ status: "failed" }))).toBe("后台任务失败：npm run dev")
   })
   test("cancelled / running / input_required：null（静默）", () => {
-    expect(buildBackgroundNotice(job({ status: "cancelled" }), { hidden: true })).toBeNull()
-    expect(buildBackgroundNotice(job({ status: "running" }), { hidden: true })).toBeNull()
-    expect(buildBackgroundNotice(job({ status: "input_required" }), { hidden: true })).toBeNull()
+    expect(buildBackgroundNotice(job({ status: "cancelled" }))).toBeNull()
+    expect(buildBackgroundNotice(job({ status: "running" }))).toBeNull()
+    expect(buildBackgroundNotice(job({ status: "input_required" }))).toBeNull()
   })
   test("falls back to command then id", () => {
-    expect(buildBackgroundNotice(job({ title: undefined, command: "npm test" }), { hidden: false })!.toast).toBe("后台任务完成：npm test")
-    expect(buildBackgroundNotice(job({ title: undefined, command: undefined }), { hidden: false })!.toast).toBe("后台任务完成：sh1")
+    expect(buildBackgroundNotice(job({ title: undefined, command: "npm test" }))).toBe("后台任务完成：npm test")
+    expect(buildBackgroundNotice(job({ title: undefined, command: undefined }))).toBe("后台任务完成：sh1")
   })
 })

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { applySubagentEvent, collectNewTerminals, parseAgentFromTitle, isTrackedChildSession, childrenNeedingProbe, type SubagentRow } from "./subagent-tracker"
+import { applySubagentEvent, collectNewTerminals, parseAgentFromTitle, childrenNeedingProbe, type SubagentRow } from "./subagent-tracker"
 
 const created = (id: string, parent: string, title?: string) =>
   ({ kind: "session-created", info: { id, parentID: parent, title } }) as const
@@ -126,11 +126,10 @@ describe("collectNewTerminals（通知来源）", () => {
   })
 })
 
-describe("isTrackedChildSession / childrenNeedingProbe", () => {
+describe("childrenNeedingProbe", () => {
   const rows: SubagentRow[] = [
     { childID: "c1", parentID: "p", title: "t", agent: "x", status: "running", startedAt: 1 },
     { childID: "c2", parentID: "p", title: "t", agent: "x", status: "completed", startedAt: 0, endedAt: 2 },
   ]
-  test("tracked child 判定", () => { expect(isTrackedChildSession(rows, "c1")).toBe(true); expect(isTrackedChildSession(rows, "zz")).toBe(false) })
   test("probe 只含 running 行", () => { expect(childrenNeedingProbe(rows)).toEqual(["c1"]) })
 })

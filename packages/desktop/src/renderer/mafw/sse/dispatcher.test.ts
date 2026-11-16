@@ -60,7 +60,6 @@ function makeDeps() {
       parentFallback: () => null,
       phase: rec("phase"),
       onTurnSettled: rec("onTurnSettled"),
-      notifyIdle: rec("notifyIdle"),
       mediaSpeak: rec("mediaSpeak"),
     },
     diff: {

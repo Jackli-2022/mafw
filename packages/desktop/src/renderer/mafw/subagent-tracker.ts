@@ -129,11 +129,6 @@ export function collectNewTerminals(prev: SubagentRow[], next: SubagentRow[]): S
   return next.filter(r => r.status !== "running" && prevById.get(r.childID)?.status === "running")
 }
 
-/** 任意已追踪的子代理会话（childID）判定——notifyIdle 抑制用。 */
-export function isTrackedChildSession(rows: SubagentRow[], sid: string): boolean {
-  return rows.some(r => r.childID === sid)
-}
-
 /** 需要查最后一条消息自愈的运行中子代理。 */
 export function childrenNeedingProbe(rows: SubagentRow[]): string[] {
   return rows.filter(r => r.status === "running").map(r => r.childID)

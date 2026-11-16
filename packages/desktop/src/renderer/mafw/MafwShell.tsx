@@ -48,9 +48,9 @@ import { backgroundApiAvailable, resetBackgroundCapability } from "./background-
 import { ingestHistoryPage } from "./ingest/messages"
 import { reconcileBackgroundOnce } from "./background-reconcile"
 import { buildBackgroundNotice } from "./background-notify"
-import { childrenNeedingProbe, isTrackedChildSession } from "./subagent-tracker"
+import { childrenNeedingProbe } from "./subagent-tracker"
 import { reconcileSubagentsOnce } from "./subagent-reconcile"
-import { buildTerminalNotice, createNotifyGate, shouldNotifyIdle } from "./subagent-notify"
+import { buildTerminalNotice } from "./subagent-notify"
 import { mapAskCard as mapAskCardPure } from "./sse/handlers/flow-cards"
 import { EventInspector } from "./components/EventInspector"
 import { ImageLightbox } from "./components/ImageLightbox"
@@ -789,7 +789,6 @@ export function MafwShell() {
     if (!document.hidden) return
     void window.api.mafw.notify?.({ title, body }).catch(() => { /* fail-open */ })
   }
-  const lastIdleNotify: Record<string, number> = {}
 
   // Per-session approval mode (Manual/Auto-lite)。真相源在 gateway（kv perm-mode，
   // 25 次预算 + 危险正则判定）；desktop 只缓存 UI 态：开 tab 拉取 + SSE
@@ -1568,18 +1567,6 @@ export function MafwShell() {
         if (o.expireCards) expireSessionCards(sid)
         queueFlushers[sid]?.()
       },
-      notifyIdle: (sid) => {
-        // 决策抽 shouldNotifyIdle（spec §4.5 rev2：被追踪子会话让位给 subagents 新通道）
-        if (!shouldNotifyIdle({
-          trackedChild: isTrackedChildSession(subagentRows(), sid),
-          hidden: document.hidden,
-          lastNotifyAt: lastIdleNotify[sid] || 0,
-          now: Date.now(),
-        })) return
-        lastIdleNotify[sid] = Date.now()
-        const title = sessionTitle(sid, sessions().find(x => x.id === sid)?.title) || "会话"
-        notifyIfHidden("MAFW：回合完成", `「${title}」已回复`)
-      },
       mediaSpeak: (sid, text, voice) => mediaSpeakHandlers[sid]?.(text, voice),
     },
     diff: {
@@ -1726,23 +1713,19 @@ export function MafwShell() {
     // Task 7：committed plugin descriptors 的初始拉取（重连时 onopen 再拉一次，
     // 两次并发由 refreshPluginClient 的 in-flight 合并）。
     void refreshPluginClient()
-    // 子代理 + 后台任务终态通知（spec §4.5/§6.3）：toast 恒发；OS 通知共享同一个
-    // 10s 全局门（两类合计限频，防 #11716 洪泛）
-    const bgWorkNotifyGate = createNotifyGate(10_000)
+    // 子代理 + 后台任务终态：应用内 toast（OS 通知只来自事务层 presence）
     const offSubagentNotify = onSubagentTerminal((row) => {
-      const notice = buildTerminalNotice(row, { hidden: document.hidden })
-      if (!notice) return
-      showToastV2({ description: notice.toast, duration: 3000 })
-      if (notice.os && bgWorkNotifyGate(Date.now())) notifyIfHidden(notice.os.title, notice.os.body)
+      const toast = buildTerminalNotice(row)
+      if (!toast) return
+      showToastV2({ description: toast, duration: 3000 })
     })
     // 后台任务终态通知：只发 shell 类——subagent 终态归 P0-1 子代理通道（防双响）
     const offBackgroundNotify = onBackgroundTerminal((job) => {
       // runtime-shell only：subagent 归 P0-1，mafw-task 有任务通道（防双响）。
       if (job.kind !== "shell" || job.source !== "runtime-shell") return
-      const notice = buildBackgroundNotice(job, { hidden: document.hidden })
-      if (!notice) return
-      showToastV2({ description: notice.toast, duration: 3000 })
-      if (notice.os && bgWorkNotifyGate(Date.now())) notifyIfHidden(notice.os.title, notice.os.body)
+      const toast = buildBackgroundNotice(job)
+      if (!toast) return
+      showToastV2({ description: toast, duration: 3000 })
     })
     // 子代理对账轮询（spec §4.6）：有 running 行才跑
     const subagentTimer = setInterval(() => {

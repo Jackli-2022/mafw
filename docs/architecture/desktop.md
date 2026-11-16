@@ -133,7 +133,9 @@
   Goal revision 的改动集 tab。
 - **检查点**：`CheckpointOverlay` 时间线（会话回滚 / 文件回滚 / both）；服务端检查点支持只读预览。
 - **托盘与存在感**：15s 轮询 `/api/presence` → tooltip / 菜单状态 / 任务栏进度；attention 差集通知
-  持久化防重发；点击通知 `navigateToGoal` 跨项目打开。
+  持久化防重发；点击通知 `navigateToGoal` 跨项目打开。**OS 通知只来自这一层（事务层）**：
+  「需要你」+ Goal 结果就绪；回合完成 / 子代理完成 / 后台任务完成只在应用内 toast，不发系统通知
+  （2026-11-16，`completion-notify-wiring.test.ts` 钉扎）。
 - **视觉语言**：单一 token 集（`.mafw-shell, body` 三个主题块键集一致），按 primitive →
   semantic → component 三层消费。石墨中性表面；`--action-primary-*` 独立承担实心主操作，
   `--accent` 只负责选中/链接/focus/运行，`--success` 只负责通过/完成；禁止把三者混用。

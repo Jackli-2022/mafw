@@ -37,8 +37,6 @@ export interface ChatDeps {
   phase(sid: string, p: "writing"): void
   /** 回合收束：sendingResetters + queueFlushers（+ 可选卡片过期）。 */
   onTurnSettled(sid: string, opts: { expireCards: boolean }): void
-  /** session.idle 隐藏页通知（60s 节流 + document.hidden 封装在 shell 侧）。 */
-  notifyIdle(sid: string): void
   mediaSpeak(sid: string, text: string, voice?: string): void
 }
 
@@ -129,7 +127,6 @@ export const handleChatStreamEvent: SidHandler = (event, sid, deps) => {
     d.setSessionStatus(sid, "idle")
     d.markSessionDone(sid)
     d.onTurnSettled(sid, { expireCards: true })
-    d.notifyIdle(sid)
     markResponded(sid)
   } else if (event.type === "part.complete") {
     d.setSessionStatus(sid, "idle")
