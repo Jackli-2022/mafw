@@ -3791,7 +3791,9 @@ class MafwScheduler {
     this.governor?.stop();
     this.governor = undefined;
     // Lead outbox 自己持有 timer handle；先显式停掉再统一 dispose，避免字段悬空。
-    this.leadOutbox?.stop();
+    // 保留局部引用：settle 还要等它把在飞的 prompt 落盘，避免 DB 关闭后 row 仍是 pending。
+    const leadOutbox = this.leadOutbox;
+    leadOutbox?.stop();
     this.leadOutbox = undefined;
     this.timers.disposeAll();
     // E8-1: disposeAll 只清定时器；handle 字段一并归零，避免再次 start() 时
@@ -3819,11 +3821,16 @@ class MafwScheduler {
     // extraction on next start), then dispose workers best-effort.
     // Scheduler stats are at least as strict as the old pipelineGuard: running
     // covers every in-flight task (pipeline actions, compact flushes, snapshot
-    // builds); the 5s cap bounds the wait either way.
+    // builds); the 5s cap bounds the wait either way. Lead outbox dispatch is
+    // not a scheduler task, so include its idle state explicitly: a prompt that
+    // resolves after the DB closes leaves rows pending → duplicate announcement.
     const settle = new Promise<void>((resolve) => {
       const started = Date.now();
       const check = () => {
-        if (this.scheduler.stats().running === 0 || Date.now() - started > 5000) resolve();
+        if (
+          (this.scheduler.stats().running === 0 && (leadOutbox?.isIdle() ?? true))
+          || Date.now() - started > 5000
+        ) resolve();
         else setTimeout(check, 100);
       };
       check();

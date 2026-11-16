@@ -16,6 +16,7 @@ test('kernel constructs and starts/stops the Lead outbox', () => {
   expect(kernel).toMatch(/new LeadOutbox\(/);
   expect(kernel).toMatch(/leadOutbox\.start\(\)/);
   expect(kernel).toMatch(/leadOutbox\?\.stop\(\)/);
+  expect(kernel).toMatch(/isIdle\(\)/);
 });
 
 test('the dispatcher owns the lead:outbox timer', () => {

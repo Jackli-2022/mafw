@@ -81,6 +81,38 @@ test('concurrent dispatch is single-flight', async () => {
   expect(h.promptAsync).toHaveBeenCalledTimes(1);
 });
 
+test('isIdle reports an in-flight dispatch', async () => {
+  const h = harness();
+  let idleDuringPrompt: boolean | undefined;
+  h.promptAsync.mockImplementationOnce(async () => {
+    idleDuringPrompt = h.lead.isIdle();
+  });
+  h.lead.enqueueDecision({ podId: 'pod1', recordId: 'rec1', text: '[LEAD EVENT] one' });
+  await h.lead.dispatch();
+  expect(idleDuringPrompt).toBe(false);
+  expect(h.lead.isIdle()).toBe(true);
+});
+
+test('dispatch skips rows owned by non-Lead channels', async () => {
+  const h = harness();
+  h.store.insertChannel({
+    id: 'github:1',
+    threadId: '*',
+    kind: 'github_comment',
+    address: {},
+    now: NOW,
+  });
+  h.outbox.enqueue({
+    channelId: 'github:1',
+    dedupeKey: 'comment:1',
+    payload: { kind: 'comment', text: 'external producer' },
+  });
+  const result = await h.lead.dispatch();
+  expect(result).toEqual({ sent: 0, deferred: 0, failed: 0 });
+  expect(h.store.getOutboxByKey('github:1', 'comment:1')).toMatchObject({ state: 'pending' });
+  expect(h.promptAsync).not.toHaveBeenCalled();
+});
+
 test('start is idempotent and stop clears the timer', () => {
   const h = harness();
   h.lead.start();

@@ -42,6 +42,8 @@ export interface LeadOutboxDispatchResult {
 const TIMER_NAME = 'lead:outbox';
 const TIMER_INTERVAL_MS = 5_000;
 const BUDGET_WINDOW_MS = 60 * 60 * 1000;
+/** 本 dispatcher 只拥有 `lead:*` channel；其他生产者的 outbox rows 必须原样保留。 */
+const LEAD_CHANNEL_PREFIX = 'lead:';
 
 export class LeadOutbox {
   private readonly policy: LeadOutboxPolicy;
@@ -67,6 +69,11 @@ export class LeadOutbox {
     this.timer = null;
   }
 
+  /** 供 kernel shutdown settle 使用：timer 已停后仍在飞的那一批必须等它落盘。 */
+  isIdle(): boolean {
+    return !this.dispatching;
+  }
+
   /**
    * 写一条 decision 播报。channel 固定 `lead:<podId>`，dedupeKey 固定
    * `decision:<recordId>`，因此同一条决定重复 enqueue 只会得到一条 row。
@@ -79,7 +86,7 @@ export class LeadOutbox {
     priority?: LeadOutboxPriority;
   }): EventOutboxRow {
     const now = this.deps.now();
-    const channelId = `lead:${input.podId}`;
+    const channelId = `${LEAD_CHANNEL_PREFIX}${input.podId}`;
     this.deps.store.insertChannel({
       id: channelId,
       threadId: '*',
@@ -110,6 +117,8 @@ export class LeadOutbox {
       const now = Date.parse(this.deps.now());
       const byChannel = new Map<string, EventOutboxRow[]>();
       for (const row of this.deps.outbox.pending()) {
+        // `event_outbox` 是共享基础设施；只处理本 dispatcher 拥有的 Lead channel。
+        if (!row.channelId.startsWith(LEAD_CHANNEL_PREFIX)) continue;
         if (leadOutboxPayload(row) === null) {
           // Poison row: 不属于任何已知 payload，重试永远不会成功，直接下架。
           this.deps.store.updateOutbox(row.id, {
@@ -171,10 +180,14 @@ export class LeadOutbox {
   }
 
   status(): { pending: number; sent: number; failed: number } {
+    const count = (state: 'pending' | 'sent' | 'failed'): number =>
+      this.deps.store.listOutbox(state)
+        .filter((row) => row.channelId.startsWith(LEAD_CHANNEL_PREFIX))
+        .length;
     return {
-      pending: this.deps.store.listOutbox('pending').length,
-      sent: this.deps.store.listOutbox('sent').length,
-      failed: this.deps.store.listOutbox('failed').length,
+      pending: count('pending'),
+      sent: count('sent'),
+      failed: count('failed'),
     };
   }
 
