@@ -18,6 +18,8 @@ export function ChatHelpOverlay(props: { open: boolean; commands: CommandItem[];
   onMount(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!props.open) return
+      // Modal: swallow keys before ChatPane's global ESC / shortcut handlers.
+      e.stopImmediatePropagation()
       if (e.key === "Escape") {
         e.preventDefault()
         props.onClose()

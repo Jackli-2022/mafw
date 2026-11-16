@@ -1,19 +1,20 @@
 # 2026-11-16 · Desktop 标准 Slash 指令（第二批）
 
 - **版本**：desktop `5.1.0`（未 bump）
-- **Commit**：`7c36ac8e`（功能提交）
+- **Commit**：`7c36ac8e`（功能提交；本批功能提交 `6f8ad925` / `7429eb0f` / `2c8e9ddf` / `7c36ac8e`）
 - **范围**：Desktop Chat `/` 本地命令
 
 ## 交付
 
-- 新增 `/rename`：`RenameSessionDialog` 输入浮层，写 `sessions.rename` 并更新 workspace store。
+- 新增 `/rename`：`RenameSessionDialog` 输入浮层，写 `sessions.rename`，用
+  `retitleSessionEntity` 更新 entity cache，并同步 workspace store。
 - 新增 `/help`：`ChatHelpOverlay` 列出当前本地命令与快捷键，Esc / 点背景 / 关闭按钮可关。
 - 新增 `/init`：发送固定 `INIT_AGENTS_PROMPT`，要求保留已有 `AGENTS.md` 且不提交 git。
 - 新增 `/clear`：新建会话并保留当前会话，复用 `createSession`。
 
 ## 验证
 
-- desktop 全量：**3876 / 3876**（737 suites）
+- desktop 全量：**3884 / 3884**（737 suites）
 - 本轮新增测试：**5**
   - `tests/slash-command-batch2-wiring.test.ts`：4
   - `src/renderer/mafw/chat/init-prompt.test.ts`：1

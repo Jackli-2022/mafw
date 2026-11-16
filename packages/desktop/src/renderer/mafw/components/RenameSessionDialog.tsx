@@ -42,11 +42,14 @@ export function RenameSessionDialog(props: {
   onMount(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!props.open) return
-      if (e.key === "Escape" && !busy()) {
+      if (e.isComposing || e.keyCode === 229) return
+      if (e.key === "Escape") {
         e.preventDefault()
-        props.onClose()
+        e.stopImmediatePropagation()
+        if (!busy()) props.onClose()
       } else if (e.key === "Enter") {
         e.preventDefault()
+        e.stopImmediatePropagation()
         void submit()
       }
     }

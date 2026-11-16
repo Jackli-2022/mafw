@@ -32,6 +32,7 @@ import {
 } from "../session-config-menu-model"
 import { chatPaneTitle } from "../chat-pane-title"
 import { sessionTitle } from "../session-title"
+import { retitleSessionEntity } from "../session-title-writer"
 import { messageModel } from "../message-model"
 import { useConnPhase } from "../connection-state"
 import { AgentPicker, type AgentEntry } from "./pickers/AgentPicker"
@@ -265,7 +266,7 @@ export type ChatPaneProps = {
   onOpenReview?: () => void
   /** Task 20 review：非讨论的 Tech Lead 节点会话禁止直接发送，返回原因（保留草稿）。 */
   sendBlocked?: () => string | null | Promise<string | null>
-  onCreateSession: () => Promise<string | null>
+  onCreateSession: (opts?: { requirePersisted?: boolean }) => Promise<string | null>
   onSetUserMsgId: (sid: string, userMsgId: string) => void
   onRegisterPhaseUpdater?: (sid: string, fn: (p: 'idle' | 'searching' | 'writing') => void) => void
   onUnregisterPhaseUpdater?: (sid: string) => void
@@ -1689,25 +1690,34 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
         description: "让 agent 分析仓库并生成/更新 AGENTS.md", group: "local", source: "builtin",
         run: () => {
           closeCommandPicker()
-          const sid = sidProp()
-          if (!sid) return
-          if (props.readOnly) {
-            showToastV2({ description: "当前会话只读", duration: 2500 })
-            return
-          }
-          if (sessionBusy()) {
-            showToastV2({ description: "回合进行中，结束后再初始化", duration: 2500 })
-            return
-          }
-          setSending(true)
-          setPhase("searching")
-          void window.api.mafw.sessions.promptAsync({ sessionID: sid, message: INIT_AGENTS_PROMPT })
-            .then(() => showToastV2({ description: "已开始生成 AGENTS.md", duration: 3000 }))
-            .catch((e: any) => {
+          void (async () => {
+            const sid = sidProp()
+            if (!sid) return
+            if (props.readOnly) {
+              showToastV2({ description: "当前会话只读", duration: 2500 })
+              return
+            }
+            if (sessionBusy()) {
+              showToastV2({ description: "回合进行中，结束后再初始化", duration: 2500 })
+              return
+            }
+            const blocked = await Promise.resolve(props.sendBlocked?.() ?? null)
+            if (blocked) {
+              showToastV2({ description: blocked, duration: 3500 })
+              return
+            }
+            setSending(true)
+            setPhase("searching")
+            try {
+              await window.api.mafw.sessions.promptAsync({ sessionID: sid, message: INIT_AGENTS_PROMPT })
+              showToastV2({ description: "已开始生成 AGENTS.md", duration: 3000 })
+            } catch (e: any) {
               setSending(false)
+              setPhase("idle")
               console.warn("[mafw] init failed:", e?.message ?? e)
               showToastV2({ description: "初始化失败，请稍后重试", duration: 4000 })
-            })
+            }
+          })()
         },
       },
       {
@@ -1715,7 +1725,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
         description: "新建会话；当前会话保留", group: "local", source: "builtin",
         run: () => {
           closeCommandPicker()
-          void props.onCreateSession()
+          void props.onCreateSession({ requirePersisted: true })
             .then((sid) => {
               if (sid) showToastV2({ description: "已新建会话，当前会话已保留", duration: 2500 })
             })
@@ -1830,6 +1840,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     const sid = sidProp()
     if (!sid) return
     await window.api.mafw.sessions.rename(sid, title)
+    retitleSessionEntity(sid, title)
     setStore(prev => ({
       ...prev,
       session: prev.session.map(s => s.id === sid ? { ...s, title } : s),
@@ -2106,9 +2117,10 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
   // Lead 是角色会话：头部恒显示角色名，runtime 自动标题（如「问候」）不得改写它。
   // E6-2：头部标题同样只读实体缓存（store.session 的 tab 占位仅作兜底）。
+  const rawSessionTitle = () => sessionTitle(sidProp(), store.session.find(s => s.id === sidProp())?.title)
   const title = () => chatPaneTitle({
     lead: isLead(),
-    title: sessionTitle(sidProp(), store.session.find(s => s.id === sidProp())?.title),
+    title: rawSessionTitle(),
   })
 
   // Render window: mount only the newest N turns; scrolling up expands locally
@@ -3132,7 +3144,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
         />
         <RenameSessionDialog
           open={renameOpen()}
-          initialTitle={title()}
+          initialTitle={rawSessionTitle()}
           onClose={() => setRenameOpen(false)}
           onConfirm={renameCurrentSession}
         />
