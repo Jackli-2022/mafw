@@ -3579,6 +3579,13 @@ class MafwScheduler {
       workerFor: (sessionID) => pool.getWorker(sessionID, 'reflect'),
       cursor: this.getReflectCursor(),
       maxEpisodicPerSession: config.recall.maxEpisodicPerReflect,
+      reflectionInput: config.recall.reflectionInput ?? 'episodes',
+      maxEpisodesPerRun: config.recall.maxEpisodesPerReflect ?? 10,
+      lookbackDays: config.recall.reflectionLookbackDays ?? 30,
+      episodeSource: {
+        list: (opts) => this.getGatewayDb().listReflectableEpisodes(opts),
+        isInternalSession: (sid) => this.internalSessionRoles.has(sid),
+      },
       reflectionBatchSize: config.recall.reflectionBatchSize,
       maxRunMs: config.recall.reflectionMaxRunMs,
       maxSessionsPerRun: config.recall.reflectionMaxSessionsPerRun,

@@ -17,6 +17,7 @@ import { PipelineBudgetLike } from './pipeline-budget';
 import { collectT1ReplayEvidence, T1ReplayDeps } from './t1-replay';
 import { normalizeSourceTraceIds } from '../core/memory/provenance';
 import { log } from '../core/utils/logger';
+import type { T1EpisodeRecord } from './t1-episodes';
 
 /** Session key for episodic memories with no source_session_id (legacy data). */
 export const ORPHAN_SESSION = '__orphan__';
@@ -69,6 +70,18 @@ export interface ReflectionOptions {
   /** Max sessions per runAll pass (default 50). Remaining sessions keep their
    *  pending episodes for the next run. */
   maxSessionsPerRun?: number;
+  /** Phase 5: reflect T1 episodes (default when a source is supplied) or the
+   *  legacy Harmonic `episodic` rows (rollback path). */
+  reflectionInput?: 'episodes' | 'legacy-episodic';
+  /** Episode source; absent → legacy path only. */
+  episodeSource?: {
+    list(opts: { limit: number; lookbackDays: number; now: number }): T1EpisodeRecord[];
+    isInternalSession?: (sessionID: string) => boolean;
+  };
+  /** Max episodes per run (default 10). */
+  maxEpisodesPerRun?: number;
+  /** Episode lookback window in days (default 30). */
+  lookbackDays?: number;
   /** Injectable clock (tests). */
   now?: () => number;
   /** Error sink; defaults to a warning log with the session id. */
@@ -317,12 +330,19 @@ export function parseInsightsDetailed(text: string): { ok: boolean; insights: In
  * Groups index episodic entries by session (source_session_id; legacy entries
  * without one go to the ORPHAN group). Returns only unreflected ids.
  */
+export interface ReflectEpisode {
+  id: string;
+  text: string;
+  /** Episode mode: exact traces already stored on the episode. */
+  traceIds?: string[];
+}
+
 export function unreflectedBySession(
   index: HarmonicIndexManager,
   cursor: ReflectCursor,
   maxPerSession: number,
-): Map<string, { id: string; text: string }[]> {
-  const bySession = new Map<string, { id: string; text: string }[]>();
+): Map<string, ReflectEpisode[]> {
+  const bySession = new Map<string, ReflectEpisode[]>();
   for (const entry of index.getIndex().entries) {
     if (entry.type !== 'episodic') continue;
     const session = entry.source_session_id || ORPHAN_SESSION;
@@ -415,6 +435,42 @@ export class ReflectionPipeline {
     return message;
   }
 
+  private usingEpisodes(): boolean {
+    return this.opts.reflectionInput !== 'legacy-episodic' && Boolean(this.opts.episodeSource);
+  }
+
+  /** Pending reflection units, grouped by session, from episodes or legacy rows. */
+  private pendingBySession(): Map<string, ReflectEpisode[]> {
+    if (!this.usingEpisodes()) {
+      return unreflectedBySession(
+        this.opts.index,
+        this.opts.cursor,
+        this.opts.maxEpisodicPerSession ?? 100,
+      );
+    }
+    const source = this.opts.episodeSource!;
+    const episodes = source.list({
+      limit: Math.max(1, this.opts.maxEpisodesPerRun ?? 10),
+      lookbackDays: Math.max(0, this.opts.lookbackDays ?? 30),
+      now: this.clock(),
+    });
+    const bySession = new Map<string, ReflectEpisode[]>();
+    for (const episode of episodes) {
+      if (source.isInternalSession?.(episode.sessionId)) continue;
+      if (this.opts.cursor.isReflected(episode.sessionId, episode.episodeId)) continue;
+      const list = bySession.get(episode.sessionId) ?? [];
+      list.push({
+        id: episode.episodeId,
+        text:
+          [episode.intent, episode.outcome].filter(Boolean).join(' → ') ||
+          episode.episodeId,
+        traceIds: episode.sourceTraceIds.slice(0, 20),
+      });
+      bySession.set(episode.sessionId, list);
+    }
+    return bySession;
+  }
+
   /**
    * Reflect one session's unreflected episodes. Returns the number of
    * reviewed episodes (0 when nothing pending). Marks ids reflected only
@@ -423,7 +479,7 @@ export class ReflectionPipeline {
    */
   private async reflectSession(
     sessionID: string,
-    episodes: { id: string; text: string }[],
+    episodes: ReflectEpisode[],
     deadline?: number,
   ): Promise<ReflectionResult> {
     const result: ReflectionResult = { sessions: 0, reviewed: 0, distilled: 0, deduped: 0, superseded: 0, failed: 0, pendingSessions: 0, replayedTraces: 0, replayChars: 0 };
@@ -456,11 +512,15 @@ export class ReflectionPipeline {
     for (let i = 0; i < episodes.length; i++) {
       const ep = episodes[i];
       let text = ep.text;
-      try {
-        const unit = await this.store.read(ep.id);
-        if (unit?.memory_value) text = unit.memory_value.slice(0, 2000);
-        if (unit?.source_trace_ids?.length) episodeTraceIds.push(...unit.source_trace_ids);
-      } catch { /* fall back to summary line */ }
+      if (ep.traceIds && ep.traceIds.length > 0) {
+        episodeTraceIds.push(...ep.traceIds);
+      } else {
+        try {
+          const unit = await this.store.read(ep.id);
+          if (unit?.memory_value) text = unit.memory_value.slice(0, 2000);
+          if (unit?.source_trace_ids?.length) episodeTraceIds.push(...unit.source_trace_ids);
+        } catch { /* fall back to summary line */ }
+      }
       promptLines.push(`${i + 1}. ${text}`);
     }
     const prompt = promptLines.join('\n');
@@ -661,11 +721,7 @@ export class ReflectionPipeline {
   async runAll(): Promise<ReflectionResult> {
     const total: ReflectionResult = { sessions: 0, reviewed: 0, distilled: 0, deduped: 0, superseded: 0, failed: 0, pendingSessions: 0, replayedTraces: 0, replayChars: 0, deferredSessions: 0 };
     if (this.opts.budget && !this.opts.budget.allow('reflect')) return total;
-    const bySession = unreflectedBySession(
-      this.opts.index,
-      this.opts.cursor,
-      this.opts.maxEpisodicPerSession ?? 100,
-    );
+    const bySession = this.pendingBySession();
     const exclusive =
       this.opts.exclusive ?? ((_sessionID: string, fn: () => Promise<unknown>) => fn());
     const startedAt = this.clock();
@@ -691,18 +747,17 @@ export class ReflectionPipeline {
     }
     total.deferredSessions = Math.max(0, bySession.size - processed);
     // Maintenance: drop reflected ids that no longer exist in the index so the
-    // bounded per-session list never re-exposes stale episodes.
-    this.opts.cursor.prune(new Set(this.opts.index.getIndex().entries.map((e) => e.id)));
+    // bounded per-session list never re-exposes stale episodes. Episode ids are
+    // not in the Harmonic index, so this prune is legacy-only.
+    if (!this.usingEpisodes()) {
+      this.opts.cursor.prune(new Set(this.opts.index.getIndex().entries.map((e) => e.id)));
+    }
     return total;
   }
 
   /** Reflect a single session (restoreWorkerState / shouldReflect path). */
   async runSession(sessionID: string): Promise<ReflectionResult> {
-    const bySession = unreflectedBySession(
-      this.opts.index,
-      this.opts.cursor,
-      this.opts.maxEpisodicPerSession ?? 100,
-    );
+    const bySession = this.pendingBySession();
     const episodes = bySession.get(sessionID);
     if (!episodes || episodes.length === 0) return { sessions: 0, reviewed: 0, distilled: 0, deduped: 0, superseded: 0, failed: 0, pendingSessions: 0, replayedTraces: 0, replayChars: 0 };
     const budgetMs = this.runBudgetMs();
@@ -712,11 +767,7 @@ export class ReflectionPipeline {
 
   /** Number of unreflected episodes for a session (shouldReflect gate). */
   pendingFor(sessionID: string): number {
-    const bySession = unreflectedBySession(
-      this.opts.index,
-      this.opts.cursor,
-      this.opts.maxEpisodicPerSession ?? 100,
-    );
+    const bySession = this.pendingBySession();
     return bySession.get(sessionID)?.length ?? 0;
   }
 }

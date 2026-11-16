@@ -366,6 +366,13 @@ export interface GatewayConfig {
     /** Max sessions reflected in one pass (default 50); the rest wait for the
      *  next run. */
     reflectionMaxSessionsPerRun: number;
+    /** Phase 5: reflection input. `episodes` (default) reflects T1 episodes;
+     *  `legacy-episodic` is the rollback path. */
+    reflectionInput?: 'episodes' | 'legacy-episodic';
+    /** Episode reflection lookback window (default 30 days). */
+    reflectionLookbackDays?: number;
+    /** Max episodes per reflection run (default 10). */
+    maxEpisodesPerReflect?: number;
     /** Max sessions the boot-time restore path reflects (default 3, sequential). */
     restoreReflectMaxSessions: number;
     /** V2 ⑦: commitment gradient — pipeline first-pass semantic/procedural
@@ -730,6 +737,9 @@ function defaults(projectDir: string): GatewayConfig {
       // heartbeat — the 2026-11 reflection stall).
       reflectionMaxRunMs: 15 * 60_000,
       reflectionMaxSessionsPerRun: 50,
+      reflectionInput: 'episodes',
+      reflectionLookbackDays: 30,
+      maxEpisodesPerReflect: 10,
       restoreReflectMaxSessions: 3,
       commitmentGradient: true,
       segmentation: 'shadow',

@@ -104,6 +104,27 @@ describe('GatewayDatabase T1 episodes', () => {
     expect(db.listEpisodes({ sessionId: 's1', limit: 10 }).episodes.map((e) => e.episodeId)).toEqual([c, a]);
   });
 
+  test('listReflectableEpisodes returns only closed, multi-turn, in-window episodes', () => {
+    const ok = episodeIdFor('s1', 1);
+    const open = episodeIdFor('s1', 10);
+    const short = episodeIdFor('s1', 20);
+    const old = episodeIdFor('s1', 30);
+    db.replaceSessionEpisodes('s1', [
+      ep({ episodeId: ok, startTurn: 1, endTurn: 3, status: 'closed', endedAt: 90 * 86400_000 }),
+      ep({ episodeId: open, startTurn: 10, endTurn: 12, status: 'open', endedAt: null }),
+      ep({ episodeId: short, startTurn: 20, endTurn: 20, status: 'closed', endedAt: 90 * 86400_000 }),
+      ep({ episodeId: old, startTurn: 30, endTurn: 32, status: 'closed', endedAt: 10 * 86400_000 }),
+    ], [
+      { episodeId: ok, traceId: 't1t_1', turnSeq: 1 },
+      { episodeId: open, traceId: 't1t_10', turnSeq: 10 },
+      { episodeId: short, traceId: 't1t_20', turnSeq: 20 },
+      { episodeId: old, traceId: 't1t_30', turnSeq: 30 },
+    ]);
+
+    const rows = db.listReflectableEpisodes({ limit: 10, lookbackDays: 30, now: 100 * 86400_000 });
+    expect(rows.map((r) => r.episodeId)).toEqual([ok]);
+  });
+
   test('episodeIdFor is deterministic and scoped by session + startTurn', () => {
     expect(episodeIdFor('s1', 2)).toBe(episodeIdFor('s1', 2));
     expect(episodeIdFor('s1', 2)).not.toBe(episodeIdFor('s1', 3));

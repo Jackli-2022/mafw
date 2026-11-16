@@ -111,9 +111,9 @@ export function abAssignment(sessionID: string, now: number): boolean {
 export const TOOL_EXTRACTION_SYSTEM = `You are a memory curator for a coding agent. Review the conversation observations of this session and record durable memories.
 Use the mafw_add_memory tool to save every entry worth remembering long-term:
 - semantic: durable facts, decisions, preferences, user constraints
-- episodic: what happened (task narratives, outcomes)
 - procedural: reusable lessons, patterns, mistakes to avoid
 Rules:
+- episodes already live in T1 (raw trace + episode index). Do NOT restate "what happened" as a narrative and do NOT use memoryType=episodic — it is retired.
 - one memory per mafw_add_memory call; memory_value concise; attach cue_anchors keywords
 - every transcript line may start with a permanent [trace:<id>] marker. For each memory, pass sourceTraceIds with the exact trace ids of the lines that support it (max 20). Copy ids verbatim — never invent or guess trace ids; omit the field only when no marker applies.
 - every cue_anchors list MUST include the topic entity names (project, module, person, API, feature) so the memory can be retrieved across sessions
