@@ -297,6 +297,14 @@ export function SessionTurn(
     { equals: same },
   )
 
+  const timefmt = createMemo(() => new Intl.DateTimeFormat(i18n.locale(), { timeStyle: "short" }))
+  /** 通用回合时间：壳层可自行决定是否展示 / 如何加身份，session-ui 不感知品牌。 */
+  const assistantTime = createMemo(() => {
+    const created = assistantMessages()[0]?.time?.created
+    if (typeof created !== "number") return ""
+    return timefmt().format(created)
+  })
+
   const interrupted = createMemo(() => assistantMessages().some((m) => isAbortMessageError(m.error)))
   const divider = createMemo(() => {
     if (compaction()) return i18n.t("ui.messagePart.compaction")
@@ -436,6 +444,7 @@ export function SessionTurn(
                   data-slot="session-turn-assistant-content"
                   data-message-role="assistant"
                   data-message-ids={assistantMessages().map((m) => m.id).join(",")}
+                  data-turn-time={assistantTime() || undefined}
                   aria-hidden={working()}
                 >
                   <AssistantParts

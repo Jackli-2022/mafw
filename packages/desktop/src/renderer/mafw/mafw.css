@@ -1107,27 +1107,6 @@ html[data-theme="light"] body {
   white-space: nowrap;
   min-width: 0;
 }
-.mafw-session-titlebar-name {
-  color: var(--text-strong);
-  font-size: 14px;
-  font-weight: 600;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.mafw-session-titlebar-name-sep {
-  color: var(--text-4);
-  font-size: 11px;
-  flex-shrink: 0;
-}
-.mafw-agent-avatar-lore {
-  object-fit: cover;
-  background: transparent;
-  padding: 0;
-}
-@container (max-width: 700px) {
-  .mafw-session-titlebar-text,
-  .mafw-session-titlebar-name-sep { display: none; }
-}
 .mafw-session-token-badge {
   display: inline-flex;
   align-items: center;
@@ -1222,39 +1201,86 @@ html[data-theme="light"] body {
 .mafw-shell [data-component="user-message"] [data-slot="user-message-body"] {
   max-width: min(70%, 64ch);
 }
+/* 用户消息时间常显：时间与气泡右缘对齐；hover / focus 时操作按钮在原位覆盖时间，
+   不改变时间或气泡的布局位置。 */
+.mafw-shell [data-component="user-message"] [data-slot="user-message-copy-wrapper"] {
+  position: relative;
+  opacity: 1;
+  pointer-events: none;
+  min-height: 20px;
+  margin-top: 2px;
+}
+.mafw-shell [data-component="user-message"] [data-slot="user-message-actions"] {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-1) var(--ease);
+}
+.mafw-shell [data-component="user-message"]:hover [data-slot="user-message-meta-wrap"] {
+  opacity: 0;
+}
+.mafw-shell [data-component="user-message"]:hover [data-slot="user-message-actions"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+.mafw-shell [data-component="user-message"]:focus-within [data-slot="user-message-meta-wrap"] {
+  opacity: 0;
+}
+.mafw-shell [data-component="user-message"]:focus-within [data-slot="user-message-actions"] {
+  opacity: 1;
+  pointer-events: auto;
+}
 
 /* changed files 移出 chat 流：回合级 diffs 块由 dock changes tab + 审阅抽屉承载 */
 .mafw-shell [data-component="session-turn-diffs-group"] { display: none; }
 
-/* ── 聊天流 Lore 标记（2026-11-05，用户裁决「Lore = 产品的声音」）──
-   每个 assistant 回合开头出现一次，16px 圆标走左侧 28px 留白（Claude 式）；
-   ::before 绝对定位可脱离 session-ui 的 flex column，不占一行；纯装饰、无角色语义。 */
+/* ── 聊天流 Lore 身份（2026-11-16，A 案）：每条 assistant 回复上方一行 ──
+   `[Lore 头像] Lore · 回合时间`，绝对定位成头部；正文不缩进、不参与身份行的 flex 布局。
+   session-ui 只提供通用 data-turn-time，Lore 品牌只存在于桌面壳层。 */
 .mafw-session-turn-container [data-slot="session-turn-assistant-content"] {
   position: relative;
   box-sizing: border-box;
-  padding-left: 28px;
+  padding-top: 22px;
+  padding-left: 0;
 }
 .mafw-session-turn-container [data-slot="session-turn-assistant-content"]::before {
-  content: "";
+  content: "Lore";
   position: absolute;
+  top: 0;
   left: 0;
-  top: 4px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: url("./assets/lore/lead-avatar-20.png") center / 16px 16px no-repeat;
-  opacity: .92;
+  display: flex;
+  align-items: center;
+  height: 18px;
+  padding-left: 22px;
+  background-image: url("./assets/lore/lead-avatar-20.png");
+  background-position: left center;
+  background-repeat: no-repeat;
+  background-size: 16px 16px;
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: .02em;
   pointer-events: none;
 }
-/* 回合以正文开头时对齐第一行（text-part 顶距 12px + 行盒 27.2px 居中 ≈ 18px） */
-.mafw-session-turn-container [data-slot="session-turn-assistant-content"]:has(> [data-component="text-part"]:first-child)::before {
-  top: 18px;
+.mafw-session-turn-container [data-slot="session-turn-assistant-content"][data-turn-time]::before {
+  content: "Lore · " attr(data-turn-time);
+}
+/* 首段不再叠加 text-part 的 12px 顶距：身份行 18px + 4px 间距 */
+.mafw-session-turn-container [data-slot="session-turn-assistant-content"] > [data-component="text-part"]:first-child {
+  margin-top: 0;
 }
 
-/* 回合级附加块（流程卡 / 审批汇总）与回复正文的左边界对齐 */
+/* 回合级附加块（流程卡 / 审批汇总）与回复正文同一条左边界 */
 .mafw-session-turn-container :is(.mafw-turn-cards, .mafw-approval-summary) {
   box-sizing: border-box;
-  padding-left: 28px;
+  padding-left: 0;
 }
 
 /* v5.1 消息正文：16px/1.7（业界 AI 对话标准），仅 assistant text part；reasoning 块不波及 */

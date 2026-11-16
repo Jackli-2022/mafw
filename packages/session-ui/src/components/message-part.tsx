@@ -1400,7 +1400,7 @@ export function UserMessageDisplay(props: {
         </div>
       </Show>
       <Show when={props.useV2Actions}>{renderAttachments()}</Show>
-      <Show when={text() || (props.useV2Actions && messageComments().length > 0)}>
+      <Show when={text() || stamp() || (props.useV2Actions && messageComments().length > 0)}>
         <div data-slot="user-message-copy-wrapper">
           <Show when={metaHead() || metaTail()}>
             <span data-slot="user-message-meta-wrap">
@@ -1421,59 +1421,61 @@ export function UserMessageDisplay(props: {
               </Show>
             </span>
           </Show>
-          <Show when={props.actions?.fork}>
-            <MessageActionButton
-              icon="branch"
-              label={i18n.t("ui.message.forkMessage")}
-              useV2={props.useV2Actions}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={(event) => {
-                event.stopPropagation()
-                fork()
-              }}
-              aria-label={i18n.t("ui.message.forkMessage")}
-            />
-          </Show>
-          <Show when={props.actions?.revert}>
-            <MessageActionButton
-              icon="reset"
-              label={i18n.t("ui.message.revertMessage")}
-              useV2={props.useV2Actions}
-              disabled={!!busy()}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={(event) => {
-                event.stopPropagation()
-                revert()
-              }}
-              aria-label={i18n.t("ui.message.revertMessage")}
-            />
-          </Show>
-          <Show when={props.actions?.diffReview}>
-            <MessageActionButton
-              icon="file"
-              label="审阅改动"
-              useV2={props.useV2Actions}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={(event) => {
-                event.stopPropagation()
-                props.actions?.diffReview?.()
-              }}
-              aria-label="审阅改动"
-            />
-          </Show>
-          <Show when={text()}>
-            <MessageActionButton
-              icon={copied() ? "check" : "copy"}
-              label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyMessage")}
-              useV2={props.useV2Actions}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={(event) => {
-                event.stopPropagation()
-                void handleCopy()
-              }}
-              aria-label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyMessage")}
-            />
-          </Show>
+          <span data-slot="user-message-actions">
+            <Show when={props.actions?.fork}>
+              <MessageActionButton
+                icon="branch"
+                label={i18n.t("ui.message.forkMessage")}
+                useV2={props.useV2Actions}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  fork()
+                }}
+                aria-label={i18n.t("ui.message.forkMessage")}
+              />
+            </Show>
+            <Show when={props.actions?.revert}>
+              <MessageActionButton
+                icon="reset"
+                label={i18n.t("ui.message.revertMessage")}
+                useV2={props.useV2Actions}
+                disabled={!!busy()}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  revert()
+                }}
+                aria-label={i18n.t("ui.message.revertMessage")}
+              />
+            </Show>
+            <Show when={props.actions?.diffReview}>
+              <MessageActionButton
+                icon="file"
+                label="审阅改动"
+                useV2={props.useV2Actions}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  props.actions?.diffReview?.()
+                }}
+                aria-label="审阅改动"
+              />
+            </Show>
+            <Show when={text()}>
+              <MessageActionButton
+                icon={copied() ? "check" : "copy"}
+                label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyMessage")}
+                useV2={props.useV2Actions}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  void handleCopy()
+                }}
+                aria-label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyMessage")}
+              />
+            </Show>
+          </span>
         </div>
       </Show>
     </div>
