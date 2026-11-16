@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { formatEpisodeSummary } from "./episode-view"
+import { episodeBoundaryLabel, formatEpisodeSummary } from "./episode-view"
 
 test("episode summary names date, actors, intent, turns and boundary source", () => {
   const line = formatEpisodeSummary({
@@ -31,4 +31,10 @@ test("episode summary tolerates missing intent and actors", () => {
   assert.match(line, /unknown/)
   assert.match(line, /1 turn/)
   assert.doesNotMatch(line, /undefined/)
+})
+
+test("episode boundary labels distinguish start and close", () => {
+  assert.equal(episodeBoundaryLabel("session_start"), "start")
+  assert.equal(episodeBoundaryLabel("declared"), "declared")
+  assert.equal(episodeBoundaryLabel("session_end"), "idle-close")
 })

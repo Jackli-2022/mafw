@@ -31,6 +31,7 @@ export function formatEpisodeSummary(episode: EpisodeSummaryInput): string {
 /** Short badge label for the episode's origin. */
 export function episodeBoundaryLabel(source: string): string {
   if (source === "declared") return "declared"
+  if (source === "session_start") return "start"
   if (source === "max_length") return "auto-split"
   if (source === "session_end") return "idle-close"
   return "inferred"
