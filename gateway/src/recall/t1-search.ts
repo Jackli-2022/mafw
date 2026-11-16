@@ -4,7 +4,7 @@ import { getEmbeddingRuntime } from '../memory/embedding-runtime';
 import { config } from '../config';
 import { makeT1Search, T1Hit, type T1HitSource } from './verbatim-recall';
 import { getT1SemanticEncoder } from './t1-semantic-atoms';
-import type { T1SparseAtom } from './t1-sparse';
+import { MIN_RETRIEVAL_ATOM_SCORE, type T1SparseAtom } from './t1-sparse';
 
 const RRF_K = 60;
 
@@ -231,7 +231,9 @@ export function createGatewayT1Search(
               referenceTexts: () => db.sampleTurnTexts(24),
             }).encodeMany([{ traceId: '__query__', text: query }])).get('__query__') ?? []
           : [];
-      return atoms.filter((atom) => atom.score > 0).map((atom) => `sem:${atom.termId}`);
+      return atoms
+        .filter((atom) => atom.score >= MIN_RETRIEVAL_ATOM_SCORE)
+        .map((atom) => `sem:${atom.termId}`);
     } catch {
       return [];
     }

@@ -22,6 +22,7 @@ import type {
 } from '../recall/t1-episodes';
 import type { EpisodeTurnInput } from '../recall/t1-episode-boundary';
 import {
+  MIN_RETRIEVAL_ATOM_SCORE,
   querySparseTermIds,
   type T1SparseTerm,
   type T1SparseKind,
@@ -3028,11 +3029,12 @@ export class GatewayDatabase {
              FROM t1_sparse_terms s
              JOIN t1_turns t ON t.trace_id = s.trace_id
             WHERE s.term_id IN (${placeholders})
+              AND (s.kind <> 'semantic' OR s.weight >= ?)
             GROUP BY s.trace_id, t.session_id, t.turn_seq
             ORDER BY score DESC
             LIMIT ?`,
         )
-        .all(...termIds, Math.max(topK * 2, 8)) as Array<{
+        .all(...termIds, MIN_RETRIEVAL_ATOM_SCORE, Math.max(topK * 2, 8)) as Array<{
         trace_id: string;
         session_id: string;
         turn_seq: number;

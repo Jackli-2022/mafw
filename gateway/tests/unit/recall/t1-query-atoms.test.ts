@@ -32,13 +32,13 @@ describe('T1 query-side atoms', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  function storeSemAtom(termId = 'error:json_parse') {
+  function storeSemAtom(termId = 'error:json_parse', weight = 0.2) {
     db.upsertSparseTerms(traceId, [
       {
         traceId,
         termId: `sem:${termId}`,
         kind: 'semantic',
-        weight: 0.2,
+        weight,
         model: 'sparse-embed-v1',
       },
     ]);
@@ -52,6 +52,11 @@ describe('T1 query-side atoms', () => {
     expect(hits[0].traceId).toBe(traceId);
   });
 
+  test('weak sem: atoms are ignored by retrieval', () => {
+    storeSemAtom('noise', 0.05);
+    expect(db.searchT1Sparse('weather', 5, ['sem:noise'])).toHaveLength(0);
+  });
+
   test('search passes query atoms into the sparse channel', async () => {
     storeSemAtom();
     const seen: string[][] = [];
@@ -63,10 +68,30 @@ describe('T1 query-side atoms', () => {
       });
 
     const search = createGatewayT1Search(db, () => null, {
-      atomsForQuery: async () => [{ termId: 'error:json_parse', score: 0.2 }],
+      atomsForQuery: async () => [
+        { termId: 'weak', score: 0.05 },
+        { termId: 'error:json_parse', score: 0.2 },
+      ],
     });
     await search('解码失败', 3);
     expect(seen[0]).toContain('sem:error:json_parse');
+    expect(seen[0]).not.toContain('sem:weak');
+    spy.mockRestore();
+  });
+
+  test('all-weak query atoms abstain', async () => {
+    const seen: string[][] = [];
+    const spy = jest
+      .spyOn(db, 'searchT1Sparse')
+      .mockImplementation((_query, _k, extra = []) => {
+        seen.push(extra);
+        return [];
+      });
+    const search = createGatewayT1Search(db, () => null, {
+      atomsForQuery: async () => [{ termId: 'action:reflection', score: 0.057 }],
+    });
+    await search('明天天气', 3);
+    expect(seen[0]).toEqual([]);
     spy.mockRestore();
   });
 

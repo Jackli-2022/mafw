@@ -50,6 +50,13 @@ export interface T1SparseEncodeInput {
 export const SPARSE_LEX_MODEL = 'sparse-lex-v1';
 export const SPARSE_EMBED_MODEL = 'sparse-embed-v1';
 
+/**
+ * Calibrated atoms below this score are too weak for retrieval. They stay in
+ * the code (episode boundaries use the full set) but never reach the inverted
+ * lookup, where a 0.05 atom on both sides would otherwise match unrelated text.
+ */
+export const MIN_RETRIEVAL_ATOM_SCORE = 0.08;
+
 const TOKEN_RE = /[\p{L}\p{N}_./:\\-]{3,}/gu;
 const MAX_TOKENS = 24;
 const MAX_TERMS = 64;

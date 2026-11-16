@@ -134,7 +134,9 @@ async function main() {
       const misses: string[] = [];
       for (const query of BASELINE_QUERIES) {
         const atoms = mode.query(query.id);
-        const extra = atoms.map((atom) => `sem:${atom.termId}`);
+        const extra = atoms
+          .filter((atom) => atom.score >= 0.08)
+          .map((atom) => `sem:${atom.termId}`);
         const ids = [...new Set([...querySparseTermIds(query.query), ...extra])].slice(0, 64);
         let ranked: string[] = [];
         if (ids.length > 0) {
@@ -143,6 +145,7 @@ async function main() {
             .prepare(
               `SELECT s.trace_id, SUM(s.weight) AS score FROM t1_sparse_terms s
                 WHERE s.term_id IN (${placeholders})
+                  AND (s.kind <> 'semantic' OR s.weight >= 0.08)
                 GROUP BY s.trace_id ORDER BY score DESC LIMIT ?`,
             )
             .all(...ids, K) as Array<{ trace_id: string }>;
