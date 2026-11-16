@@ -1,5 +1,6 @@
 export const MENU_SURFACES = [
   "rail.new",
+  "rail.lead",
   "session.row",
   "session.tab",
   "project.row",

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { buildRailNewMenu } from "./rail"
+import { buildRailLeadMenu, buildRailNewMenu } from "./rail"
 import { ids } from "../test-helpers"
 import { validateMenu } from "../model"
 
@@ -11,4 +11,10 @@ test("worktree item is hidden when unsupported", () => {
   const withoutWorktree = buildRailNewMenu({ worktreeEnabled: false })
   expect(ids(withoutWorktree)).toEqual(["rail.newSession"])
   expect(validateMenu(withoutWorktree)).toEqual([])
+})
+
+test("Lead context menu keeps the team view reachable", () => {
+  const menu = buildRailLeadMenu()
+  expect(ids(menu)).toEqual(["rail.viewTeam"])
+  expect(validateMenu(menu)).toEqual([])
 })

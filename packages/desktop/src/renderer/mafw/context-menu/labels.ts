@@ -1,5 +1,5 @@
 export const L = {
-  rail: { newSession: "新建会话", newWorktree: "并行 worktree" },
+  rail: { newSession: "新建会话", newWorktree: "并行 worktree", viewTeam: "查看团队" },
   session: {
     open: "打开",
     rename: "重命名",

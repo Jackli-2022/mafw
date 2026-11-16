@@ -6,8 +6,8 @@ const rail = readFileSync(new URL("../src/renderer/mafw/components/IconRail.tsx"
 const dock = readFileSync(new URL("../src/renderer/mafw/components/LeftDock.tsx", import.meta.url), "utf8")
 const icons = readFileSync(new URL("../../ui/src/components/icon.tsx", import.meta.url), "utf8")
 
-test("rail exposes the team destination with a badge in its accessible name", () => {
-  assert.match(rail, /"team"/)
+test("rail exposes the Lead destination with a badge in its accessible name", () => {
+  assert.match(rail, /key: "lead"/)
   assert.match(rail, /team-three/)
   assert.match(rail, /podBadge/)
   assert.match(rail, /formatRailBadge/)
@@ -17,9 +17,10 @@ test("rail exposes the team destination with a badge in its accessible name", ()
   assert.match(icons, /"team-three":/)
 })
 
-test("rail names the free-discussion face and the team shortcut truthfully", () => {
+test("rail names the free-discussion face and the Lead entry truthfully", () => {
   assert.match(rail, /\"讨论 \(Ctrl\+B\)\"/)
-  assert.match(rail, /"团队"/)
+  assert.match(rail, /label: "Lead"/)
+  assert.match(rail, /buildRailLeadMenu/)
   assert.doesNotMatch(rail, /"Pod"/)
   assert.doesNotMatch(rail, /"工作空间"/)
   assert.match(rail, /"审批"/)

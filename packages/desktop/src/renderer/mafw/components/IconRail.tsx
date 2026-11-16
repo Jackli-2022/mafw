@@ -3,7 +3,7 @@ import { Icon } from "@mafw/ui/icon"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { menuController } from "../context-menu/controller"
-import { buildRailNewMenu } from "../context-menu/builders/rail"
+import { buildRailLeadMenu, buildRailNewMenu } from "../context-menu/builders/rail"
 import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
 import type { LeftDockFace } from "../left-dock"
 import { connDotState, railAriaLabel } from "../left-dock"
@@ -16,8 +16,12 @@ type IconName = ComponentProps<typeof Icon>["name"]
 export type IconRailProps = {
   face: LeftDockFace | null
   onToggleFace: (face: LeftDockFace) => void
-  /** 团队是项目属性：打开项目首页并定位团队条，不再切换左 dock face。 */
-  onTeam: () => void
+  /** 项目 Lead 是常驻对话入口；左键直接打开 Lead。 */
+  onLead: () => void
+  /** 右键「查看团队」：打开项目首页并定位团队条。 */
+  onTeam?: () => void
+  /** 当前会话是项目 Lead 时高亮。 */
+  leadActive?: boolean
   onApprovals: () => void
   onConfig: () => void
   onMcp?: () => void
@@ -65,11 +69,12 @@ type RailItem = {
   dot?: boolean
   dotLabel?: string
   connDot?: boolean
+  contextMenu?: (event: MouseEvent) => void
 }
 
 // 左栏图标轨（spec 2026-11-04-agent-workbench-right-primary）：
-// 顶部动作（新建）→ 目的地组连排（讨论/搜索/便签/团队）→ spacer → meta 组（审批/Config）。
-// 团队是项目属性：图标只是项目首页团队条的快捷入口，不再有独立 Pod 面。
+// 顶部动作（新建）→ 目的地组连排（讨论/搜索/便签/Lead）→ spacer → meta 组（审批/Config）。
+// Lead 是项目级对话入口；团队条仍可从右键「查看团队」进入。不再有独立 Pod 面。
 export function IconRail(props: IconRailProps) {
   const connClass = () => connDotState(props.connPhase, props.gatewayState)
 
@@ -80,13 +85,15 @@ export function IconRail(props: IconRailProps) {
     { key: "search", icon: "magnifying-glass", label: props.face === "search" ? "收起搜索" : "搜索", onClick: () => props.onToggleFace("search"), active: props.face === "search" },
     { key: "notes", icon: "sticky-note", label: props.face === "notes" ? "收起便签" : "便签", onClick: () => props.onToggleFace("notes"), active: props.face === "notes" },
     {
-      key: "team",
+      key: "lead",
       icon: "team-three",
-      label: "团队",
-      onClick: () => props.onTeam(),
+      label: "Lead",
+      onClick: () => props.onLead(),
+      active: !!props.leadActive,
       badge: props.podBadge,
       badgeLabel: formatRailBadge(props.podBadge ?? 0) || undefined,
       resultDot: !!props.podResultDot,
+      contextMenu: props.onTeam ? openTeamMenu : undefined,
     },
   ]
   const metaItems = (): RailItem[] => [
@@ -126,6 +133,7 @@ export function IconRail(props: IconRailProps) {
         }`}
         aria-pressed={item.active}
         onClick={item.onClick}
+        onContextMenu={item.contextMenu}
       >
         <Icon name={item.icon} size="small" />
         <Show when={(item.badge ?? 0) > 0}>
@@ -140,6 +148,19 @@ export function IconRail(props: IconRailProps) {
       </ButtonV2>
     </TooltipV2>
   )
+
+  const openTeamMenu = (event: MouseEvent) => {
+    if (shouldUseNativeMenu(guardFactsFromEvent(event))) return
+    event.preventDefault()
+    menuController.request(
+      () => buildRailLeadMenu(),
+      {},
+      (id) => {
+        if (id === "rail.viewTeam") props.onTeam?.()
+      },
+      { point: { x: event.clientX, y: event.clientY } },
+    )
+  }
 
   const openNewMenu = (event: MouseEvent) => {
     if (shouldUseNativeMenu(guardFactsFromEvent(event))) return

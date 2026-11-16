@@ -35,7 +35,9 @@ test("project home mounts the team strip and focuses it on request", () => {
   assert.match(shell, /const openProjectTeam/)
   assert.match(shell, /teamFocusRequest/)
   assert.match(shell, /team=\{\{/)
-  assert.match(shell, /onTeam=/)
+  assert.match(shell, /onLead=\{/)
+  assert.match(shell, /leadActive=\{/)
+  assert.match(shell, /onTeam=\{/)
 })
 
 test("the left dock no longer owns a Pod face", () => {
@@ -47,10 +49,12 @@ test("the left dock no longer owns a Pod face", () => {
   assert.equal(normalizeLeftDockFace("bogus"), "sessions")
 })
 
-test("the rail exposes a team shortcut instead of a Pod face toggle", () => {
-  assert.match(rail, /key: "team"/)
+test("the rail exposes a Lead shortcut with a team context action", () => {
+  assert.match(rail, /key: "lead"/)
+  assert.match(rail, /onLead/)
+  assert.match(rail, /leadActive/)
   assert.match(rail, /onTeam/)
-  assert.match(rail, /团队/)
+  assert.match(rail, /label: "Lead"/)
   assert.doesNotMatch(rail, /onToggleFace\("pod"\)/)
   assert.match(rail, /podBadge/)
   assert.match(rail, /podResultDot/)

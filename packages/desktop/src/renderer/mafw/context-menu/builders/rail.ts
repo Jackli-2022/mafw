@@ -11,3 +11,8 @@ export function buildRailNewMenu(target: RailNewMenuTarget): MenuModel {
   if (target.worktreeEnabled) items.push(item("rail.newWorktree", L.rail.newWorktree))
   return { surface: "rail.new", items }
 }
+
+/** Lead is the primary click target; the team view stays available on right-click. */
+export function buildRailLeadMenu(): MenuModel {
+  return { surface: "rail.lead", items: [item("rail.viewTeam", L.rail.viewTeam)] }
+}

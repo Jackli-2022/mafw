@@ -46,6 +46,8 @@ test("MafwShell wires rail actions, drops theme prop", () => {
   assert.match(block, /onNewWorktreeSession=/)
   assert.match(block, /worktreeEnabled=/)
   assert.match(block, /onApprovals=/)
+  assert.match(block, /onLead=/)
+  assert.match(block, /leadActive=/)
   assert.match(block, /onTeam=/)
   assert.match(block, /approvalsActive=/)
   assert.doesNotMatch(block, /onDashboard|dashboardActive/)

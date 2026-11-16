@@ -4081,7 +4081,9 @@ export function MafwShell() {
         <IconRail
           face={leftDock().open ? leftDock().face : null}
           onToggleFace={toggleLeftDock}
+          onLead={() => { void openLeadEntry() }}
           onTeam={() => openProjectTeam()}
+          leadActive={activeSessionIsLead()}
           onApprovals={() => { closeLeftDockIfOverlay(); setShowConfig(false); setActiveTab("approvals") }}
           onMcp={() => { closeLeftDockIfOverlay(); setShowConfig(false); setActiveTab("mcp") }}
           onConfig={() => { closeLeftDockIfOverlay(); setConfigSection(undefined); setShowConfig(true) }}
