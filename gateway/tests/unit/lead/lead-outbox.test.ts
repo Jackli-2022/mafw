@@ -32,6 +32,18 @@ test('enqueueDecision creates one channel row and dedupes by record id', () => {
   expect(h.store.getChannel('lead:pod1')).toMatchObject({ kind: 'chat' });
 });
 
+test('enqueuePodEvent dedupes by event id and dispatches with decisions', async () => {
+  const h = harness();
+  h.lead.enqueuePodEvent({ podId: 'pod1', eventId: 'evt1', text: '[POD EVENT] failed', goalId: 'g1', priority: 'p1' });
+  h.lead.enqueuePodEvent({ podId: 'pod1', eventId: 'evt1', text: '[POD EVENT] failed', goalId: 'g1', priority: 'p1' });
+  h.lead.enqueueDecision({ podId: 'pod1', recordId: 'rec1', text: '[LEAD EVENT] decision' });
+  expect(h.store.listOutbox()).toHaveLength(2);
+  await h.lead.dispatch();
+  expect(h.promptAsync).toHaveBeenCalledTimes(1);
+  expect(h.promptAsync.mock.calls[0][0].text).toContain('[POD EVENT] failed');
+  expect(h.promptAsync.mock.calls[0][0].text).toContain('[LEAD EVENT] decision');
+});
+
 test('dispatch batches pending decisions into one Lead prompt and marks all sent', async () => {
   const h = harness();
   h.lead.enqueueDecision({ podId: 'pod1', recordId: 'rec1', text: '[LEAD EVENT] one' });

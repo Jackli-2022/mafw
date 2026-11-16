@@ -103,6 +103,26 @@ test('defers on budget or interval without dropping rows', () => {
   ).toBe('empty');
 });
 
+test('parses a pod-event payload and renders a mixed batch', () => {
+  const decision = row({ payload: { ...(row().payload as object), kind: 'decision', recordId: 'dec_1', text: '[LEAD EVENT] decision' } });
+  const pod = row({
+    id: 'o2',
+    dedupeKey: 'pod-event:evt_1',
+    payload: {
+      ...(row().payload as object),
+      kind: 'pod-event',
+      recordId: 'evt_1',
+      text: '[POD EVENT] failed',
+    },
+  });
+  expect(leadOutboxPayload(decision)).toMatchObject({ kind: 'decision' });
+  expect(leadOutboxPayload(pod)).toMatchObject({ kind: 'pod-event' });
+  const text = renderLeadOutboxBatch([decision, pod]);
+  expect(text).toContain('2 条待确认');
+  expect(text).toContain('[LEAD EVENT] decision');
+  expect(text).toContain('[POD EVENT] failed');
+});
+
 test('renders one message for a batch and labels multiple decisions', () => {
   expect(renderLeadOutboxBatch([row()])).toBe('[LEAD EVENT] one');
   const merged = renderLeadOutboxBatch([

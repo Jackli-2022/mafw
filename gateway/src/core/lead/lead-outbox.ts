@@ -109,6 +109,41 @@ export class LeadOutbox {
     });
   }
 
+  /**
+   * 写一条 Pod 事件播报。与 decision 共用同一个 Lead channel 和 dispatcher，
+   * 但 dedupeKey 固定 `pod-event:<eventId>`，重复 scan 只保留一条。
+   */
+  enqueuePodEvent(input: {
+    podId: string;
+    eventId: string;
+    text: string;
+    goalId?: string | null;
+    priority?: LeadOutboxPriority;
+  }): EventOutboxRow {
+    const now = this.deps.now();
+    const channelId = `${LEAD_CHANNEL_PREFIX}${input.podId}`;
+    this.deps.store.insertChannel({
+      id: channelId,
+      threadId: '*',
+      kind: 'chat',
+      address: { podId: input.podId },
+      now,
+    });
+    return this.deps.outbox.enqueue({
+      channelId,
+      dedupeKey: `pod-event:${input.eventId}`,
+      payload: {
+        kind: 'pod-event',
+        priority: input.priority ?? 'p2',
+        text: input.text,
+        podId: input.podId,
+        goalId: input.goalId ?? null,
+        recordId: input.eventId,
+        createdAt: now,
+      },
+    });
+  }
+
   async dispatch(): Promise<LeadOutboxDispatchResult> {
     if (this.dispatching) return { sent: 0, deferred: 0, failed: 0 };
     this.dispatching = true;

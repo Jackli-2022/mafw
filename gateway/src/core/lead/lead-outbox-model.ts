@@ -9,9 +9,10 @@ import type { EventOutboxRow } from '../events/event-types';
  */
 
 export type LeadOutboxPriority = 'p1' | 'p2' | 'p3';
+export type LeadOutboxKind = 'decision' | 'pod-event';
 
 export interface LeadOutboxPayload {
-  kind: 'decision';
+  kind: LeadOutboxKind;
   priority: LeadOutboxPriority;
   text: string;
   podId: string;
@@ -51,7 +52,7 @@ function nonEmptyString(value: unknown): value is string {
 export function leadOutboxPayload(row: EventOutboxRow): LeadOutboxPayload | null {
   const payload = row.payload;
   if (!payload || typeof payload !== 'object') return null;
-  if (payload.kind !== 'decision') return null;
+  if (payload.kind !== 'decision' && payload.kind !== 'pod-event') return null;
 
   const priority = payload.priority === undefined ? 'p2' : payload.priority;
   if (priority !== 'p1' && priority !== 'p2' && priority !== 'p3') return null;
@@ -69,7 +70,7 @@ export function leadOutboxPayload(row: EventOutboxRow): LeadOutboxPayload | null
   }
 
   return {
-    kind: 'decision',
+    kind: payload.kind,
     priority,
     text: payload.text,
     podId: payload.podId,
@@ -128,5 +129,9 @@ export function renderLeadOutboxBatch(rows: EventOutboxRow[]): string {
   const blocks = payloads.map(
     (payload, index) => `--- ${index + 1} --- ${payload.recordId}\n${payload.text}`,
   );
-  return `[LEAD EVENT] ${payloads.length} 条待确认\n\n${blocks.join('\n\n')}`;
+  const allPodEvents = payloads.every((payload) => payload.kind === 'pod-event');
+  const header = allPodEvents
+    ? `[POD EVENT] ${payloads.length} 条待处理`
+    : `[LEAD EVENT] ${payloads.length} 条待确认`;
+  return `${header}\n\n${blocks.join('\n\n')}`;
 }
