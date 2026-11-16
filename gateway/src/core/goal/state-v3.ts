@@ -1,9 +1,31 @@
 // gateway/src/core/goal/state-v3.ts
 // GoalStateV3 —— NodeDriver 的唯一状态真相源（spec §5）。
 // 写入方：NodeDriver（唯一）；读取方：驱动器/timeline/dashboard（双读兼容 round/loop）。
-import * as fs from 'fs';
-import * as path from 'path';
+// Phase 2：SQLite（`GoalStateStore`）是写权威；JSON 文件是兼容镜像与旧数据导入源。
+import {
+  archiveGoalStateFile,
+  effectiveRound,
+  listGoalStateFiles,
+  loadGoalStateFile,
+  normalizeGoalState,
+  normalizeRevision,
+  saveGoalStateFile,
+  isTerminalState,
+  revisionStateDirFor,
+  revisionStatePathFor,
+  statePathFor,
+} from './goal-state-file';
+import type { GoalStateBackend } from './goal-state-store';
 import type { FailureClass } from './failure-class';
+
+export {
+  effectiveRound,
+  isTerminalState,
+  normalizeGoalState,
+  revisionStateDirFor,
+  revisionStatePathFor,
+  statePathFor,
+};
 
 export interface NodeSessionRef {
   id: string;
@@ -123,25 +145,11 @@ export interface GoalStateV3 {
   updatedAt: string;
 }
 
-const TERMINAL_ACTIONS = new Set(['COMPLETED', 'FAILED', 'CANCELLED', 'ARCHIVED']);
+let goalStateBackend: GoalStateBackend | null = null;
 
-export function statePathFor(mafwDir: string, goalId: string): string {
-  return path.join(mafwDir, 'state', `${goalId}.json`);
-}
-
-/** revision 快照目录（`state/revisions/<goalId>/`）。 */
-export function revisionStateDirFor(mafwDir: string, goalId: string): string {
-  return path.join(mafwDir, 'state', 'revisions', goalId);
-}
-
-/** 归档的 revision state 路径（`state/revisions/<goalId>/rev-<n>.json`）。 */
-export function revisionStatePathFor(mafwDir: string, goalId: string, revision: number): string {
-  return path.join(revisionStateDirFor(mafwDir, goalId), `rev-${normalizeRevision(revision)}.json`);
-}
-
-function normalizeRevision(value: unknown): number {
-  const n = Number(value);
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 1;
+/** kernel bootstrap registers the SQLite store; tests/CLI stay file-backed. */
+export function setGoalStateBackend(backend: GoalStateBackend | null): void {
+  goalStateBackend = backend;
 }
 
 /** 读取侧 revision（旧状态缺字段 → 1）。 */
@@ -149,91 +157,18 @@ export function effectiveRevision(s: { revision?: number }): number {
   return normalizeRevision(s.revision);
 }
 
-export function effectiveRound(s: { round?: number; loop?: number }): number {
-  return s.round ?? s.loop ?? 0;
-}
-
-export function isTerminalState(s: GoalStateV3): boolean {
-  return TERMINAL_ACTIONS.has(s.nextAction);
-}
-
-/** 读 state（v3 或旧 v2 均可；旧格式不重写，读取侧规范化）。 */
+/** 读 state（DB 优先；未注册 backend 或测试环境走文件）。 */
 export function loadGoalState(mafwDir: string, goalId: string): GoalStateV3 | null {
-  const p = statePathFor(mafwDir, goalId);
-  if (!fs.existsSync(p)) return null;
-  try {
-    const raw = JSON.parse(fs.readFileSync(p, 'utf-8'));
-    return normalize(raw, mafwDir, goalId);
-  } catch {
-    return null;
-  }
+  if (goalStateBackend) return goalStateBackend.load(mafwDir, goalId);
+  return loadGoalStateFile(mafwDir, goalId);
 }
 
-function normalize(raw: any, mafwDir: string, goalId: string): GoalStateV3 {
-  const round = effectiveRound(raw);
-  return {
-    version: '3',
-    goalId: raw.goalId ?? goalId,
-    revision: normalizeRevision(raw.revision),
-    projectDir: raw.projectDir ?? '',
-    mafwDir: raw.mafwDir ?? mafwDir,
-    phase: raw.phase ?? null,
-    round,
-    loop: round,
-    maxRounds: raw.maxRounds ?? 3,
-    reviewVerdict: raw.reviewVerdict ?? null,
-    reviewReportPath: raw.reviewReportPath ?? null,
-    reviewFeedback: raw.reviewFeedback ?? '',
-    wavePlanPath: raw.wavePlanPath ?? null,
-    receiptPath: raw.receiptPath ?? null,
-    lastError: raw.lastError ?? raw.error ?? null,
-    lastFailure: raw.lastFailure ?? null,
-    noProgressCount: raw.noProgressCount ?? 0,
-    lastArtifactDigest: raw.lastArtifactDigest ?? {},
-    nodeSession: raw.nodeSession
-      ? { ...raw.nodeSession, revision: normalizeRevision(raw.nodeSession.revision ?? raw.revision) }
-      : null,
-    pendingQuestion: raw.pendingQuestion
-      ? {
-        ...raw.pendingQuestion,
-        resumeNode: raw.pendingQuestion.resumeNode
-          ?? (raw.pendingQuestion.node === 'review' ? 'plan' : raw.pendingQuestion.node ?? 'plan'),
-      }
-      : null,
-    userResponse: raw.userResponse
-      ? {
-        ...raw.userResponse,
-        resumeNode: raw.userResponse.resumeNode ?? 'plan',
-      }
-      : null,
-    sameSigCount: raw.sameSigCount ?? 0,
-    stateVersion: raw.stateVersion ?? 0,
-    nextNode: raw.nextNode ?? 'plan',
-    nextAction: raw.nextAction ?? 'RUNNING_plan',
-    artifacts: raw.artifacts ?? {},
-    currentWave: raw.currentWave ?? 0,
-    totalWaves: raw.totalWaves ?? null,
-    sessions: raw.sessions ?? {},
-    policySnapshot: raw.policySnapshot,
-    taskType: raw.taskType,
-    planReview: (raw as any).planReview === 'manual' ? 'manual' : ((raw as any).planReview === 'auto' ? 'auto' : undefined),
-    strategy: (raw as any).strategy === 'quick' || (raw as any).strategy === 'collaborative'
-      ? (raw as any).strategy
-      : undefined,
-    assessment: (raw as any).assessment === 'reviewed' || (raw as any).assessment === 'unreviewed'
-      ? (raw as any).assessment
-      : undefined,
-    quickRepairCount: typeof (raw as any).quickRepairCount === 'number' ? (raw as any).quickRepairCount : undefined,
-    currentAssignmentId: typeof (raw as any).currentAssignmentId === 'string'
-      ? (raw as any).currentAssignmentId
-      : undefined,
-    planApproval: (raw as any).planApproval ?? undefined,
-    planFeedback: (raw as any).planFeedback ?? null,
-    reviewFix: (raw as any).reviewFix ?? null,
-    probeRefs: Array.isArray((raw as any).probeRefs) ? (raw as any).probeRefs : [],
-    probeQueue: Array.isArray((raw as any).probeQueue) ? (raw as any).probeQueue : [],
-    updatedAt: raw.updatedAt ?? new Date().toISOString(),
-  };
+function saveGoalState(mafwDir: string, goalId: string, state: GoalStateV3): void {
+  if (goalStateBackend) {
+    goalStateBackend.save(mafwDir, goalId, state);
+    return;
+  }
+  saveGoalStateFile(mafwDir, goalId, state);
 }
 
 /** 原子合并写入（.tmp + rename；round/loop 双写）。 */
@@ -243,9 +178,8 @@ export function writeGoalState(
   patch: Partial<GoalStateV3>,
   opts?: { bumpVersion?: boolean },
 ): GoalStateV3 {
-  const p = statePathFor(mafwDir, goalId);
   const current = loadGoalState(mafwDir, goalId);
-  if (!current) throw new Error(`State file not found: ${p}`);
+  if (!current) throw new Error(`State file not found: ${statePathFor(mafwDir, goalId)}`);
   const round = patch.round ?? current.round;
   const next: GoalStateV3 = {
     ...current,
@@ -255,11 +189,7 @@ export function writeGoalState(
     stateVersion: opts?.bumpVersion ? (current.stateVersion ?? 0) + 1 : current.stateVersion ?? 0,
     updatedAt: new Date().toISOString(),
   };
-  const dir = path.dirname(p);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  const tmp = `${p}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(next, null, 2), 'utf-8');
-  fs.renameSync(tmp, p);
+  saveGoalState(mafwDir, goalId, next);
   return next;
 }
 
@@ -274,32 +204,21 @@ export interface EnsureGoalStateInit {
 }
 
 /**
- * 把当前 active state 归档到 `state/revisions/<goalId>/rev-<n>.json`。
- *
- * - `revision` 缺省 = active state 自身的 revision（旧状态 → 1）。
- * - **append-only**：目标文件已存在时原样保留，绝不重写（旧 revision 的快照
- *   必须一直等于它收尾时的样子）。返回归档路径；无 active state 时返回 null。
+ * 把当前 active state 归档到 `state/revisions/<goalId>/rev-<n>.json`（或 DB 归档表）。
+ * append-only：已有快照原样保留。返回归档文件路径；DB 模式返回 null。
  */
 export function archiveGoalStateForRevision(
   mafwDir: string,
   goalId: string,
   revision?: number,
 ): string | null {
-  const activePath = statePathFor(mafwDir, goalId);
-  if (!fs.existsSync(activePath)) return null;
-  let raw: any;
-  try {
-    raw = JSON.parse(fs.readFileSync(activePath, 'utf-8'));
-  } catch {
+  if (goalStateBackend) {
+    const current = goalStateBackend.load(mafwDir, goalId);
+    if (!current) return null;
+    goalStateBackend.archiveRevision(mafwDir, goalId, normalizeRevision(revision ?? current.revision));
     return null;
   }
-  const target = revisionStatePathFor(mafwDir, goalId, revision ?? normalizeRevision(raw?.revision));
-  if (fs.existsSync(target)) return target;
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  const tmp = `${target}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify({ ...raw, revision: normalizeRevision(revision ?? raw?.revision) }, null, 2), 'utf-8');
-  fs.renameSync(tmp, target);
-  return target;
+  return archiveGoalStateFile(mafwDir, goalId, revision);
 }
 
 /** 新 revision 的干净 state（旧 revision 的进度绝不带过来；stateVersion 跨 revision 单调）。 */
@@ -331,10 +250,9 @@ function freshState(
  * starter 用：无 state 则建（含 policySnapshot），同一 revision 幂等返回现有 state。
  *
  * 传入更高的 `revision` = 开启新 revision：先把旧 active state 归档（幂等、
- * 不覆盖已有快照），再在 `state/<goalId>.json` 重建干净 state——归档文件与
- * 更高 revision 的进度完全隔离；传入更低/相同的 revision 绝不降级、不改写。
- * 新 revision 的 `stateVersion` 从旧 revision 的末值 +1 起算（跨 revision 单调，
- * 保证 milestone 去重键不碰撞）。
+ * 不覆盖已有快照），再重建干净 state——归档文件与更高 revision 的进度完全隔离；
+ * 传入更低/相同的 revision 绝不降级、不改写。新 revision 的 `stateVersion`
+ * 从旧 revision 的末值 +1 起算（跨 revision 单调，保证 milestone 去重键不碰撞）。
  */
 export function ensureGoalState(
   mafwDir: string,
@@ -348,16 +266,36 @@ export function ensureGoalState(
     const currentRevision = effectiveRevision(existing);
     if (targetRevision <= currentRevision) return existing;
     archiveGoalStateForRevision(mafwDir, goalId, currentRevision);
-    // milestone 去重键 = `<goalId>:<phase>:<stateVersion>`（不含 revision）：
-    // stateVersion 必须跨 revision 单调递增，否则新 revision 从 0 开始会命中旧
-    // revision 的键，manager 里程碑通知被静默吞掉。
     stateVersion = (existing.stateVersion ?? 0) + 1;
   }
   const s = freshState(mafwDir, goalId, targetRevision, init, stateVersion);
-  const p = statePathFor(mafwDir, goalId);
-  fs.mkdirSync(path.dirname(p), { recursive: true });
-  const tmp = `${p}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(s, null, 2), 'utf-8');
-  fs.renameSync(tmp, p);
+  saveGoalState(mafwDir, goalId, s);
   return s;
+}
+
+/**
+ * Goal 发现（recovery / scheduler 用）。DB 模式列出全部行；文件模式扫描
+ * `<mafwDir>/state/*.json`。返回项保持旧的 `{ goalId, mafwDir, projectDir }` 形状。
+ */
+export function listGoalStateSummaries(
+  workspaces: Array<{ projectDir: string; mafwDir: string }>,
+): Array<{ goalId: string; mafwDir: string; projectDir: string }> {
+  if (goalStateBackend) {
+    return goalStateBackend.list().map((state) => ({
+      goalId: state.goalId,
+      mafwDir: state.mafwDir,
+      projectDir: state.projectDir,
+    }));
+  }
+  const out: Array<{ goalId: string; mafwDir: string; projectDir: string }> = [];
+  for (const workspace of workspaces) {
+    for (const file of listGoalStateFiles(workspace.mafwDir)) {
+      out.push({
+        goalId: file.replace(/\.json$/, ''),
+        mafwDir: workspace.mafwDir,
+        projectDir: workspace.projectDir,
+      });
+    }
+  }
+  return out;
 }

@@ -47,7 +47,8 @@ import { errorBody, API_ERROR_CODES } from './core/http/api-error';
 import { NodeDriver } from './core/goal/driver';
 import { createLlmGoalEvalProvider } from './core/goal/goal-eval-llm-provider';
 import { parseReviewRubric, taskIdsFromWavePlan } from './core/goal/review-rubric';
-import { ensureGoalState, effectiveRevision, isTerminalState, loadGoalState } from './core/goal/state-v3';
+import { ensureGoalState, effectiveRevision, isTerminalState, listGoalStateSummaries, loadGoalState, setGoalStateBackend } from './core/goal/state-v3';
+import { GoalStateStore } from './core/goal/goal-state-store';
 import { isTaskType } from './orchestration/capability-ledger';
 import {
   resolveGoalRefFromEntries,
@@ -566,6 +567,7 @@ class MafwScheduler {
   // Goal 编排 P1：NodeDriver（state 文件 + 事件驱动重入，替代 langgraph invoke）。
   private goalDriver: NodeDriver | null = null;
   private goalDriverMafwDirCache = new Map<string, string>();
+  private goalStateStore: GoalStateStore | null = null;
   private getReflectCursor(): ReflectCursor {
     return new ReflectCursor(this.getGatewayDb());
   }
@@ -3824,6 +3826,8 @@ class MafwScheduler {
     const leadOutbox = this.leadOutbox;
     leadOutbox?.stop();
     this.leadOutbox = undefined;
+    setGoalStateBackend(null);
+    this.goalStateStore = null;
     this.timers.disposeAll();
     // E8-1: disposeAll 只清定时器；handle 字段一并归零，避免再次 start() 时
     // 幂等 guard 误判为"已注册"而跳过重建。
@@ -4101,6 +4105,10 @@ class MafwScheduler {
     });
 
     this.podStore = new PodStore(this.getGatewayDb().getStore());
+    // Phase 2: GoalState write authority lives in the shared gateway DB. The
+    // JSON file stays a mirror; a legacy file is imported on first read.
+    this.goalStateStore = new GoalStateStore(this.getGatewayDb().getStore());
+    setGoalStateBackend(this.goalStateStore);
     this.podEventService = new PodEventService({ store: this.podStore, mafwDir: this.mafwDir });
     // Retention: p3 is informational; drop old seen p3 rows + audit files once a day
     // (and once at startup so a long-idle install catches up immediately).
@@ -6233,28 +6241,25 @@ class MafwScheduler {
         await this.persistRegistry();
         continue;
       }
+    }
 
-      const stateDir = path.join(info.mafwDir, 'state');
-      if (!fs.existsSync(stateDir)) continue;
-
-      const stateFiles = fs.readdirSync(stateDir).filter(f => f.endsWith('.json'));
-      for (const file of stateFiles) {
-        try {
-          const statePath = path.join(stateDir, file);
-          const state: StateFile = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
-
-          if (!this.activeGoals.has(state.goalId) &&
-              state.nextAction !== 'COMPLETED' &&
-              state.nextAction !== 'FAILED') {
-            this.activeGoals.set(state.goalId, state);
-            log.info(`[Scheduler] Discovered new goal ${state.goalId} at ${state.phase}`);
-          } else if (this.activeGoals.has(state.goalId)) {
-            // 更新缓存中的状态
-            this.activeGoals.set(state.goalId, state);
-          }
-        } catch (err: any) {
-          log.warn(`[Scheduler] Failed to read state ${file}: ${err.message}`);
+    // Phase 2: discovery reads the SQLite authority (falls back to files when
+    // no backend is registered, e.g. early boot).
+    for (const entry of this.listGoalStates()) {
+      try {
+        const state = loadGoalState(entry.mafwDir, entry.goalId);
+        if (!state) continue;
+        if (!this.activeGoals.has(state.goalId) &&
+            state.nextAction !== 'COMPLETED' &&
+            state.nextAction !== 'FAILED') {
+          this.activeGoals.set(state.goalId, state as any);
+          log.info(`[Scheduler] Discovered new goal ${state.goalId} at ${state.phase}`);
+        } else if (this.activeGoals.has(state.goalId)) {
+          // 更新缓存中的状态
+          this.activeGoals.set(state.goalId, state as any);
         }
+      } catch (err: any) {
+        log.warn(`[Scheduler] Failed to read state ${entry.goalId}: ${err.message}`);
       }
     }
   }
@@ -6283,7 +6288,7 @@ class MafwScheduler {
 
     let projectDir: string | null = null;
     for (const [pDir, info] of this.registeredProjects) {
-      if (fs.existsSync(path.join(info.mafwDir, 'state', `${goalId}.json`))) {
+      if (loadGoalState(info.mafwDir, goalId)) {
         projectDir = pDir;
         break;
       }
@@ -6609,40 +6614,29 @@ class MafwScheduler {
 
   /** 收集所有注册项目的 state 引用（NodeDriver 恢复/watchdog 用）。 */
   private listGoalStates(): Array<{ goalId: string; mafwDir: string; projectDir: string }> {
-    const out: Array<{ goalId: string; mafwDir: string; projectDir: string }> = [];
-    for (const [projectDir, info] of this.registeredProjects) {
-      const stateDir = path.join(info.mafwDir, 'state');
-      if (!fs.existsSync(stateDir)) continue;
-      for (const f of fs.readdirSync(stateDir)) {
-        if (f.endsWith('.json')) out.push({ goalId: f.replace(/\.json$/, ''), mafwDir: info.mafwDir, projectDir });
-      }
-    }
-    return out;
+    return listGoalStateSummaries(
+      [...this.registeredProjects].map(([projectDir, info]) => ({ projectDir, mafwDir: info.mafwDir })),
+    );
   }
 
   private async recoverState() {
-    for (const [projectDir, info] of this.registeredProjects) {
-      const stateDir = path.join(info.mafwDir, 'state');
-      if (!fs.existsSync(stateDir)) continue;
-
-      const stateFiles = fs.readdirSync(stateDir).filter(f => f.endsWith('.json'));
-      for (const file of stateFiles) {
-        try {
-          const statePath = path.join(stateDir, file);
-          const state: StateFile = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
-          if (state.nextAction !== 'COMPLETED' && state.nextAction !== 'FAILED') {
-            this.activeGoals.set(state.goalId, state);
-            log.info(`[Scheduler] Recovered goal ${state.goalId} at ${state.phase}`);
-          }
-        } catch (err: any) {
-          log.warn(`[Scheduler] Failed to recover ${file}: ${err.message}`);
+    const entries = this.listGoalStates();
+    for (const entry of entries) {
+      try {
+        const state = loadGoalState(entry.mafwDir, entry.goalId);
+        if (!state) continue;
+        if (state.nextAction !== 'COMPLETED' && state.nextAction !== 'FAILED') {
+          this.activeGoals.set(state.goalId, state as any);
+          log.info(`[Scheduler] Recovered goal ${state.goalId} at ${state.phase}`);
         }
+      } catch (err: any) {
+        log.warn(`[Scheduler] Failed to recover ${entry.goalId}: ${err.message}`);
       }
     }
 
     // NodeDriver 崩溃恢复（spec §6）：产物优先 → 会话探测 → 节点重试/归档。
     if (this.goalDriver) {
-      const states = this.listGoalStates();
+      const states = entries;
       for (const s of states) {
         this.goalDriverMafwDirCache.set(s.goalId, s.mafwDir);
         this.goalDriver.registerGoalDir(s.goalId, s.mafwDir);
