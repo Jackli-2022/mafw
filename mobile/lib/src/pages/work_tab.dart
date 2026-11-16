@@ -798,8 +798,13 @@ class _WorkTabState extends State<WorkTab> {
         Flexible(
           // 项目 pill 是唯一导航入口：给读屏一句完整的动作描述。
           child: Semantics(
+            // container: 独立语义节点，避免和左侧字标合并成一个不可聚焦的整体。
+            container: true,
             button: true,
             label: '切换项目，当前 $name',
+            // excludeSemantics 会连同 InkWell 的 tap 动作一起裁掉，必须显式补回，
+            // 否则读屏能听到名字却无法激活项目切换。
+            onTap: _openProjectPicker,
             excludeSemantics: true,
             child: InkWell(
               key: const Key('work-project-switcher'),

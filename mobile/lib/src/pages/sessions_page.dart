@@ -767,8 +767,9 @@ class _SessionsPageState extends State<SessionsPage> {
           color: scheme.surfaceContainerHighest,
           child: ListTile(
             leading: const CircleAvatar(
-              backgroundColor: kMafwPrimary,
-              foregroundColor: MafwPalette.black,
+              // 装饰性入口一律中性 ink；mint 只留给激活态/CTA。
+              backgroundColor: MafwPalette.badgeBg,
+              foregroundColor: MafwPalette.dim,
               child: Icon(Icons.dns, size: 20),
             ),
             title: const Text('Gateway'),
@@ -783,8 +784,8 @@ class _SessionsPageState extends State<SessionsPage> {
             color: scheme.surfaceContainerHighest,
             child: ListTile(
               leading: const CircleAvatar(
-                backgroundColor: kMafwAccent,
-                foregroundColor: MafwPalette.black,
+                backgroundColor: MafwPalette.badgeBg,
+                foregroundColor: MafwPalette.dim,
                 child: Icon(Icons.qr_code_scanner, size: 20),
               ),
               title: const Text('扫码配对'),
@@ -800,8 +801,8 @@ class _SessionsPageState extends State<SessionsPage> {
             color: scheme.surfaceContainerHighest,
             child: ListTile(
               leading: const CircleAvatar(
-                backgroundColor: kMafwGoalActive,
-                foregroundColor: MafwPalette.black,
+                backgroundColor: MafwPalette.badgeBg,
+                foregroundColor: MafwPalette.dim,
                 child: Icon(Icons.pending_actions, size: 20),
               ),
               title: const Text('Triage 待决项'),
@@ -817,8 +818,8 @@ class _SessionsPageState extends State<SessionsPage> {
             color: scheme.surfaceContainerHighest,
             child: ListTile(
               leading: const CircleAvatar(
-                backgroundColor: kMafwSubagent,
-                foregroundColor: MafwPalette.black,
+                backgroundColor: MafwPalette.badgeBg,
+                foregroundColor: MafwPalette.dim,
                 child: Icon(Icons.bug_report, size: 20),
               ),
               title: const Text('调试'),

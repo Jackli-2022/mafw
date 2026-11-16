@@ -444,19 +444,21 @@ summary, proposedGoal?, state, userAction, deadline, llmSuggestions?, updatedAt?
 - **令牌化**：`theme.dart` 新增 `MafwType`（6 级字阶）/ `MafwSpace`（4pt 网格）/ `MafwRadius`（8/14/18/999），
   UI 不再散落裸字号与魔数；`onError` 改为黑色（error 红上 5.4:1，cream 只有 3.9:1）。
 - **工作 tab**：首屏 loading 由 spinner 换成与 Goal 卡片同构的静态骨架（`work-loading-skeleton`）；
-  品牌行 24px Lore + 字标 + 带 `Semantics` 的项目 pill；五桶标题改为「小标题 + 计数 + hairline」；
+  品牌行 24px Lore + 字标 + 独立语义节点（`container` + `onTap`）的项目 pill；五桶标题改为「小标题 + 计数 + hairline」；
   Goal 卡片用 ink + hairline + 按压态 + chevron，进行中保留唯一 mint 圆点；「需要你」图标加 mint 弱底方框；
   「结果待查看」从纯文本行变为可点的 surface 条；空态改为圆形 ink 徽标 + 居中说明 + 描边 CTA。
 - **我的 tab**：顶部加 Lore 40px + `Orcalore` 字标 + 定位语；底部新增「关于」区（`config/app_info.dart`，
-  `kAppVersion` 由 `test/theme_tokens_test.dart` 读 `pubspec.yaml` 校验，避免版本漂移）。
+  `kAppVersion` 由 `test/theme_tokens_test.dart` 读 `pubspec.yaml` 校验，避免版本漂移）；装饰性入口
+  图标统一 `badgeBg` 底 + `dim` 图标（mint 只留给激活态/CTA）。
 - **聊天 / 讨论**：composer 改为顶部 hairline 分隔、继承 14dp 输入框圆角、附件/语音降为 dim、发送仍为唯一
   mint CTA；用户气泡加 hairline + 尾角 6dp（`MafwMessageBubble`），assistant 保持全宽文档排版。
 - **色彩纪律**：连接设置的 URL 提示（warn → dim，阻断错误 → 主题 error）、Triage / 会话空态、配对页 AppBar
   （`inversePrimary` mint 底 + cream 字 → 真黑）全部回到 token；移动端 `lib` 不再有 `Colors.*` 语义色残留
   （相机 overlay 的 black54/white 与透明色除外）。
-- 门禁：新增 **7 例**（主题 5 / 骨架 1 / 我的 1），主题 23/23、work_tab 34/34、tab_shell 8/8、sessions 11/11、
-  pairing 45/45、chat render 6/6、tech lead 12/12、plan 18/18、lead entry 13/13、lead handoff 20/20、
-  goal detail 29/29；`flutter analyze` 0。聚合 `flutter test` 仍有既有 flutter_tester 原生崩溃，逐文件为门禁。
+- 门禁：新增 **8 例**（主题 5 / 骨架 1 / 我的 1 / 项目 pill 语义 1），主题 23/23、work_tab 35/35、
+  tab_shell 8/8、sessions 11/11、pairing 45/45、chat render 6/6、tech lead 12/12、plan 18/18、
+  lead entry 13/13、lead handoff 20/20、goal detail 29/29；`flutter analyze` 0。聚合 `flutter test`
+  仍有既有 flutter_tester 原生崩溃，逐文件为门禁。
 
 ---
 

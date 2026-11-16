@@ -21,6 +21,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -340,6 +341,17 @@ void main() {
       // The asset is declared in pubspec.yaml, so the bundle can serve it.
       final data = await rootBundle.load('assets/lore/Lore_avatar_20.png');
       expect(data.lengthInBytes, greaterThan(0));
+    });
+
+    testWidgets('project switcher exposes a tap action to screen readers', (tester) async {
+      final handle = tester.ensureSemantics();
+      await _pumpWorkTab(tester, client: _FakeWorkClient());
+
+      final node = tester.getSemantics(
+        find.bySemanticsLabel('切换项目，当前 projA'),
+      );
+      expect(node.getSemanticsData().hasAction(SemanticsAction.tap), isTrue);
+      handle.dispose();
     });
 
     testWidgets('project switcher shows the active project basename', (tester) async {
