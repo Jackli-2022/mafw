@@ -626,6 +626,18 @@ attention 通知链整体移交 `2026-11-04-pod-event-layer-ambient-attention-de
 - `/help` 打开 `ChatHelpOverlay`，列出本地命令和当前快捷键。
 - `/init` 发送固定 `INIT_AGENTS_PROMPT`，要求保留已有 `AGENTS.md` 且不提交 git。
 - `/clear` 新建会话并保留当前会话（复用 `createSession`）。
+
+### Composer `@web` / `@docs`（2026-11-16）
+
+- `@docs` 把 `docs/**`、根 `README.md`、任意 `AGENTS.md` / `CLAUDE.md` 标为 Docs 来源；
+  选中后仍走普通文件提及，由 agent 用自己的 read 工具读取。
+- `@web` 打开 `WebUrlDialog`，只接受 http/https，生成 URL chip；发送时在 prompt 前追加
+  `Web context:` 块。Desktop 不抓取网页，网络访问仍由 agent 的 webfetch/websearch 工具
+  和既有审批链负责，避免复制 SSRF / HTML 提取逻辑。
+- Web / docs 提及随即时、忙时网关队列、本地队列和 enriched send 全路径传递。
+
+### `/` 菜单能力门（2026-11-16）
+
 - `/` 菜单按 Experience 能力置灰而不是按 runtime 名分支：`/compact` → `session.summarize`，
   `/fork` → `branch.fork`，`/diff` → `branch.diff`，`/undo` → `branch.revert` /
   `checkpoint.restore`，`/redo` → `branch.unrevert`，`/rename` → `session.rename`，
