@@ -408,7 +408,8 @@ domain_events
 ## 8. 需要产品/架构确认的问题
 
 1. 我们说的“事件层中心”，是 **集成中心**（推荐）还是 **唯一真相/全量 event sourcing**？
-2. GoalState 是继续留在文件系统，还是迁进 SQLite 以支持 state+event 同事务？
+2. **已定（2026-11-16）：GoalState 迁进 SQLite**，与 PodStore / `domain_events` 同库，
+   以支持 state + event 同事务/outbox；现有 `.mafw/state/*.json` 一次性迁移 + 兼容读取。
 3. `pod_events` 是保留为 inbox 投影，还是并入统一 `domain_events`？
 4. Lead / Tech Lead 的唤醒是否统一走一个 outbox dispatcher（推荐）？
 5. 是否需要“任意时点重放 Goal”作为产品能力，还是只需要崩溃恢复 + 投影重建？

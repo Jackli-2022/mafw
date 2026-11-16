@@ -525,7 +525,8 @@ git commit -m "docs: record lead inbox/outbox unification"
 
 ## 开放问题（进入 Phase 2 前确认）
 
-1. GoalState 是否迁进 SQLite，以支持 state + event 同事务？
+1. **已定（2026-11-16）：GoalState 迁进 SQLite**。GoalState / PodStore / `domain_events` 同库，
+   state + event 同事务/outbox；现有 `.mafw/state/*.json` 做一次性迁移 + 兼容读取。
 2. `domain_events` 与 `pod_events` 是两表还是 `pod_events` 迁为投影？
 3. Lead 的 read/ack 语义：Lead 回复算 ack，还是人看到算 read？
 4. 是否需要“任意时点 replay Goal”作为产品能力，还是只做崩溃恢复 + 投影重建？
@@ -533,5 +534,7 @@ git commit -m "docs: record lead inbox/outbox unification"
 
 ## 执行建议
 
-- **Phase 1 用 subagent-driven**：任务之间接口耦合高（outbox payload → enqueue → kernel wiring），每个 task 有独立测试，适合 fresh subagent + reviewer。
-- Phase 2-4 进入前各自写独立 task 计划；不要在 Phase 1 未验证前提前改 domain event 接口。
+- **Phase 1 已按 native 在 main 执行**：outbox payload → PodEventWake producer → kernel wiring，
+  含 A2A dedupe 与 p1 保留通道；gateway 全量 988/988 绿。
+- Phase 2-4 进入前各自写独立 task 计划；Phase 2 先做 SQLite GoalState + domain event store，
+  不要在 schema 未定前改投影。
