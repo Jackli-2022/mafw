@@ -2483,18 +2483,24 @@ export class GatewayDatabase {
     features: number;
     actors: number;
     concepts: number;
+    atomTurns: number;
     atoms: number;
   } {
     const count = (sql: string): number =>
       Number((this.db.prepare(sql).get() as { n?: number } | undefined)?.n ?? 0);
+    const atom = this.db
+      .prepare(
+        `SELECT COUNT(DISTINCT trace_id) AS turns, COUNT(*) AS atoms
+           FROM t1_sparse_terms WHERE kind = 'semantic'`,
+      )
+      .get() as { turns?: number; atoms?: number } | undefined;
     return {
       turns: count('SELECT COUNT(*) AS n FROM t1_turns'),
       features: count('SELECT COUNT(DISTINCT trace_id) AS n FROM t1_turn_features'),
       actors: count('SELECT COUNT(DISTINCT trace_id) AS n FROM t1_turn_actors'),
       concepts: count('SELECT COUNT(DISTINCT trace_id) AS n FROM t1_turn_concepts'),
-      atoms: count(
-        "SELECT COUNT(*) AS n FROM t1_sparse_terms WHERE kind = 'semantic'",
-      ),
+      atomTurns: Number(atom?.turns ?? 0),
+      atoms: Number(atom?.atoms ?? 0),
     };
   }
 

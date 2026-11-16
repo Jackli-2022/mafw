@@ -295,6 +295,9 @@ describe('memory registry wiring (D1 Task F1)', () => {
           t1RetrievalStats: (_o: any) => ({
             total: 2, byKind: { search: 1, recall: 1, redeem: 0 }, uniqueTraces: 2, lastAt: 123,
           }),
+          t1CodeStats: () => ({
+            turns: 3, features: 3, actors: 2, concepts: 3, atomTurns: 2, atoms: 3,
+          }),
         }) as any,
       });
       const r = fakeRes();
@@ -313,6 +316,8 @@ describe('memory registry wiring (D1 Task F1)', () => {
         activationRanking: { mode: 'shadow', evaluations: 0, wouldReorder: 0, applied: 0 },
         denseIndex: { mode: 'shadow', evaluations: 0, withDenseHits: 0 },
         semanticAtoms: 'on',
+        atoms: { turns: 2, atoms: 3, avgPerTurn: 1.5, calibrated: false },
+        code: { turns: 3, features: 3, actors: 2, concepts: 3 },
       });
     } finally {
       setEmbeddingRuntime(null);

@@ -156,6 +156,23 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
           const { getT1DenseStats } = require('../recall/t1-search');
           denseIndex = { mode: config.recall.t1Recall?.denseIndex ?? 'shadow', ...getT1DenseStats() };
         } catch { /* fail-open: zero counters */ }
+        let code = {
+          turns: 0,
+          features: 0,
+          actors: 0,
+          concepts: 0,
+          atomTurns: 0,
+          atoms: 0,
+        };
+        try {
+          const dbStats = (deps.getGatewayDb() as any).t1CodeStats;
+          if (typeof dbStats === 'function') code = { ...code, ...dbStats.call(deps.getGatewayDb()) };
+        } catch { /* fail-open: zero coverage */ }
+        let calibrated = false;
+        try {
+          const { getT1AtomCalibration } = require('../recall/t1-semantic-atoms');
+          calibrated = Boolean(getT1AtomCalibration());
+        } catch { /* fail-open */ }
         return {
           vectors,
           activeRows,
@@ -171,6 +188,18 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
           activationRanking,
           denseIndex,
           semanticAtoms: config.recall.t1Recall?.semanticAtoms ?? 'on',
+          atoms: {
+            turns: code.atomTurns,
+            atoms: code.atoms,
+            avgPerTurn: code.atomTurns > 0 ? code.atoms / code.atomTurns : 0,
+            calibrated,
+          },
+          code: {
+            turns: code.turns,
+            features: code.features,
+            actors: code.actors,
+            concepts: code.concepts,
+          },
         };
       })();
       res.writeHead(200, { 'Content-Type': 'application/json' });
