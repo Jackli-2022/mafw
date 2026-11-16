@@ -1,6 +1,7 @@
 # 事件层默认开启 + Decision → Lead 播报（2026-11-16）
 
 - Commit: `eacd468d`（`feat(events): announce decision drafts to Lead by default`）
+  + `096edd90`（`fix(events): only announce agent-drafted decisions`）
 - 背景：Chat 决定板移除后，决定需要由 Lead 在对话里主动说明；事件层本来已有
   `subscriberType:'lead'`，但只声明未接线，且事件层默认关闭。
 
@@ -12,9 +13,9 @@
 - **系统 source**：事件层启动时 `ensureSystemSource('internal' | 'cron')`，避免
   internal 事件因缺 source 静默 404。
 - **Decision → Lead**：
-  - `DecisionRecordService.emit('drafted')` → kernel `ingestDecisionEvent` →
-    `internal` source 的 `decision.drafted` trigger；`externalKey=decision:<recordId>`，
-    幂等键 `internal:decision.drafted:<recordId>`。
+  - `DecisionRecordService.emit('drafted')`（仅 `agent` 起草且 `status:'draft'`）→
+    kernel `ingestDecisionEvent` → `internal` source 的 `decision.drafted` trigger；
+    `externalKey=decision:<recordId>`，幂等键 `internal:decision.drafted:<recordId>`。
   - 为该线程建 `subscriberType:'lead'` + `mode:'context'` 订阅；evaluator 对
     `decision.*` + Lead context 返回 `accept/report`（不创建 GoalRun）。
   - `deliverContext` → `PodService.ensureLead` → `promptAsync` 一条

@@ -48,8 +48,9 @@ Source → Trigger → Thread → Subscription → Decision → Delivery → Cha
 
 ### Decision → Lead 播报（2026-11-16）
 
-- `DecisionRecordService.emit('drafted')` → kernel `ingestDecisionEvent` → `internal` source 的
-  `decision.drafted` trigger：`externalKey=decision:<recordId>`（一 record 一线程），幂等键
+- `DecisionRecordService.emit('drafted')`（仅 `agent` 起草的 draft）→ kernel
+  `ingestDecisionEvent` → `internal` source 的 `decision.drafted` trigger：
+  `externalKey=decision:<recordId>`（一 record 一线程），幂等键
   `internal:decision.drafted:<recordId>`。
 - ingest 后为该线程建 `subscriberType:'lead'` + `mode:'context'` 订阅；kernel evaluator 对
   `decision.*` + Lead context 返回 `accept` / `report`。
