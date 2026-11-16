@@ -47,8 +47,17 @@ import { errorBody, API_ERROR_CODES } from './core/http/api-error';
 import { NodeDriver } from './core/goal/driver';
 import { createLlmGoalEvalProvider } from './core/goal/goal-eval-llm-provider';
 import { parseReviewRubric, taskIdsFromWavePlan } from './core/goal/review-rubric';
-import { ensureGoalState, effectiveRevision, isTerminalState, listGoalStateSummaries, loadGoalState, setGoalStateBackend } from './core/goal/state-v3';
+import { ensureGoalState, effectiveRevision, effectiveRound, isTerminalState, listGoalStateSummaries, loadGoalState, setGoalStateBackend } from './core/goal/state-v3';
 import { GoalStateStore } from './core/goal/goal-state-store';
+import { DomainEventStore } from './core/events/domain-event-store';
+import type { DomainEventInput } from './core/events/domain-event';
+import {
+  goalCreatedEvent,
+  goalNodeFailedEvent,
+  goalNodeFinishedEvent,
+  goalNodeStartedEvent,
+  goalPhaseChangedEvent,
+} from './core/goal/goal-lifecycle-events';
 import { isTaskType } from './orchestration/capability-ledger';
 import {
   resolveGoalRefFromEntries,
@@ -568,6 +577,8 @@ class MafwScheduler {
   private goalDriver: NodeDriver | null = null;
   private goalDriverMafwDirCache = new Map<string, string>();
   private goalStateStore: GoalStateStore | null = null;
+  /** Phase 2: append-only goal/domain facts (independent of `pod_events`). */
+  private domainEvents: DomainEventStore | null = null;
   private getReflectCursor(): ReflectCursor {
     return new ReflectCursor(this.getGatewayDb());
   }
@@ -3828,6 +3839,7 @@ class MafwScheduler {
     this.leadOutbox = undefined;
     setGoalStateBackend(null);
     this.goalStateStore = null;
+    this.domainEvents = null;
     this.timers.disposeAll();
     // E8-1: disposeAll 只清定时器；handle 字段一并归零，避免再次 start() 时
     // 幂等 guard 误判为"已注册"而跳过重建。
@@ -4109,6 +4121,7 @@ class MafwScheduler {
     // JSON file stays a mirror; a legacy file is imported on first read.
     this.goalStateStore = new GoalStateStore(this.getGatewayDb().getStore());
     setGoalStateBackend(this.goalStateStore);
+    this.domainEvents = new DomainEventStore(this.getGatewayDb().getStore());
     this.podEventService = new PodEventService({ store: this.podStore, mafwDir: this.mafwDir });
     // Retention: p3 is informational; drop old seen p3 rows + audit files once a day
     // (and once at startup so a long-idle install catches up immediately).
@@ -6549,8 +6562,54 @@ class MafwScheduler {
     node?: string;
     transition?: string;
     outcome?: string;
+    attempt?: number;
+    revision?: number;
   }): void {
     if (p?.type !== 'goal_node' || !p.goalId || !p.node) return;
+    const mafwDir = this.goalDriverMafwDirCache.get(p.goalId);
+    const state: any = mafwDir ? loadGoalState(mafwDir, p.goalId) : this.activeGoals.get(p.goalId);
+    const revision = p.revision ?? this.podStore?.getGoalByGoalId(p.goalId)?.activeRevision ?? effectiveRevision(state ?? {});
+    // Domain facts cover every Goal (Pod or CLI), so they are recorded before
+    // the Pod gate below. NodeDriver stays the execution authority.
+    const occurredAt = new Date().toISOString();
+    if (p.transition === 'started') {
+      this.recordDomainEvent(goalNodeStartedEvent({
+        goalId: p.goalId,
+        node: p.node,
+        round: p.loop ?? effectiveRound(state ?? { round: 1 }),
+        attempt: p.attempt ?? state?.nodeSession?.attempt ?? 1,
+        revision,
+        projectDir: state?.projectDir ?? '',
+        occurredAt,
+      }));
+    } else if (p.transition === 'finished') {
+      const failure = state?.lastFailure;
+      if (p.outcome === 'failed') {
+        this.recordDomainEvent(goalNodeFailedEvent({
+          goalId: p.goalId,
+          node: p.node,
+          round: p.loop ?? effectiveRound(state ?? { round: 1 }),
+          attempt: p.attempt ?? 1,
+          revision,
+          projectDir: state?.projectDir ?? '',
+          failureClass: failure?.class ?? 'unknown',
+          code: failure?.code ?? 'unknown',
+          message: failure?.message ?? state?.lastError ?? 'unknown',
+          occurredAt,
+        }));
+      } else {
+        this.recordDomainEvent(goalNodeFinishedEvent({
+          goalId: p.goalId,
+          node: p.node,
+          round: p.loop ?? effectiveRound(state ?? { round: 1 }),
+          attempt: p.attempt ?? 1,
+          revision,
+          projectDir: state?.projectDir ?? '',
+          outcome: p.outcome,
+          occurredAt,
+        }));
+      }
+    }
     const podId = this.podService?.getPodIdForGoal(p.goalId);
     if (!podId) return;
     if (p.transition === 'started') {
@@ -6563,8 +6622,6 @@ class MafwScheduler {
       return;
     }
     if (p.transition !== 'finished') return;
-    const mafwDir = this.goalDriverMafwDirCache.get(p.goalId);
-    const state: any = mafwDir ? loadGoalState(mafwDir, p.goalId) : this.activeGoals.get(p.goalId);
     if (!state) return;
     try {
       if (p.node === 'plan' && state.wavePlanPath) {
@@ -6588,6 +6645,38 @@ class MafwScheduler {
     } catch (err: any) {
       log.warn(`[Pod] goal node projection failed for ${p.goalId}/${p.node} (non-fatal): ${err?.message ?? err}`);
     }
+  }
+
+  /** Domain append is observational: a failure never blocks node execution. */
+  private recordDomainEvent(input: DomainEventInput): void {
+    try {
+      this.domainEvents?.append(input);
+    } catch (err: any) {
+      log.warn(`[DomainEvent] append failed for ${input.type}/${input.aggregateId} (non-fatal): ${err?.message ?? err}`);
+    }
+  }
+
+  /** `phase_transition` → `goal.phase.changed`; wired in boot next to goal_node. */
+  onGoalPhaseTransition(p: {
+    type?: string;
+    goalId?: string;
+    phase?: string;
+    loop?: number;
+    projectDir?: string;
+    revision?: number;
+  }): void {
+    if (p?.type !== 'phase_transition' || !p.goalId || !p.phase) return;
+    const revision = p.revision
+      ?? this.podStore?.getGoalByGoalId(p.goalId)?.activeRevision
+      ?? 1;
+    this.recordDomainEvent(goalPhaseChangedEvent({
+      goalId: p.goalId,
+      phase: p.phase,
+      round: p.loop ?? 1,
+      revision,
+      projectDir: p.projectDir ?? '',
+      occurredAt: new Date().toISOString(),
+    }));
   }
 
   /** 读 review 报告并按 waves 任务清单解析 rubric；缺失/不合法 → null（回退旧行为）。 */
@@ -7094,6 +7183,7 @@ class MafwScheduler {
     const request = readGoalRequest(found.mafwDir, goalId);
     this.goalDriverMafwDirCache.set(goalId, found.mafwDir);
     this.goalDriver?.registerGoalDir(goalId, found.mafwDir);
+    const priorState = loadGoalState(found.mafwDir, goalId);
     ensureGoalState(found.mafwDir, goalId, {
       projectDir: found.projectDir,
       maxRounds: config.loop.maxRounds,
@@ -7109,7 +7199,19 @@ class MafwScheduler {
       // D4b: creation-time task type declaration (plan node write-back wins).
       taskType: isTaskType(request?.taskType) ? (request!.taskType as any) : undefined,
     });
-    this.activeGoals.set(goalId, loadGoalState(found.mafwDir, goalId) as any);
+    const state = loadGoalState(found.mafwDir, goalId);
+    this.activeGoals.set(goalId, state as any);
+    const priorRevision = priorState ? effectiveRevision(priorState) : 0;
+    if (state && (!priorState || effectiveRevision(state) > priorRevision)) {
+      this.recordDomainEvent(goalCreatedEvent({
+        goalId,
+        revision: effectiveRevision(state),
+        maxRounds: state.maxRounds,
+        taskType: state.taskType,
+        planReview: state.planReview,
+        occurredAt: new Date().toISOString(),
+      }));
+    }
     await this.goalDriver?.advance(goalId);
   }
 

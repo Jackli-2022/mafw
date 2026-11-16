@@ -227,6 +227,7 @@ export interface BootKernel {
   getGatewayDb(): GatewayDatabase;
   getTerminalService(): TerminalService;
   onPodGoalNode(p: any): void;
+  onGoalPhaseTransition(p: any): void;
   readManagerSessionEntry(projectDir: string): { sessionId: string; createdAt?: string | null } | null;
   recordTranslationDrop(runtime: string, type: string, kind: 'unmatched' | 'suppressed'): void;
   recordTranslationError(runtime: string, kind: 'transformEvent' | 'normalizeMessages', reason: string): void;
@@ -737,7 +738,10 @@ export async function bootKernel(kernel: BootKernel): Promise<void> {
       kernel.broadcast(p as any);
       kernel.onPodGoalNode(p as any);
     }, // 扁平顶层广播（事件信封契约 §5.6）
-    emitPhaseTransition: (p) => eventBus.emit('phase_transition', p),
+    emitPhaseTransition: (p) => {
+      eventBus.emit('phase_transition', p);
+      kernel.onGoalPhaseTransition(p as any);
+    },
     onSessionCreated: (info) => {
       recordSessionInDb(kernel.getGatewayDb(), info);
       kernel.podService?.bindSession(info.goalId, info.phase as 'plan' | 'probe' | 'execute' | 'review', info.sessionId);
