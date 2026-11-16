@@ -311,7 +311,7 @@ describe('memory registry wiring (D1 Task F1)', () => {
         archiveRows: 7,
         coverage: 0.5,
         retrieval: { total: 2, byKind: { search: 1, recall: 1, redeem: 0 }, uniqueTraces: 2, lastAt: 123 },
-        provenance: { memories: 0, withExact: 0, coverage: 0 },
+        provenance: { memories: 0, withExact: 0, coverage: 0, withEpisode: 0, episodeCoverage: 0 },
         activation: { traces: 0, mean: 0, max: 0 },
         activationRanking: { mode: 'shadow', evaluations: 0, wouldReorder: 0, applied: 0 },
         denseIndex: { mode: 'shadow', evaluations: 0, withDenseHits: 0 },
@@ -330,8 +330,8 @@ describe('memory registry wiring (D1 Task F1)', () => {
         harmonicIndex: {
           getIndex: () => ({
             entries: [
-              { id: 'a', source_trace_ids: ['t1t_a'] },
-              { id: 'b', source_trace_ids: ['t1t_b', 't1t_c'] },
+              { id: 'a', source_trace_ids: ['t1t_a'], episode_id: 't1ep_a' },
+              { id: 'b', source_trace_ids: ['t1t_b', 't1t_c'], episode_id: 't1ep_b' },
               { id: 'c' },
               { id: 'd', source_trace_ids: [] },
             ],
@@ -350,7 +350,13 @@ describe('memory registry wiring (D1 Task F1)', () => {
       fakeReq({ method: 'GET', url: '/api/memory/stats' }), r.res,
     );
     const body = JSON.parse(r.body);
-    expect(body.t1.provenance).toEqual({ memories: 4, withExact: 2, coverage: 0.5 });
+    expect(body.t1.provenance).toEqual({
+      memories: 4,
+      withExact: 2,
+      coverage: 0.5,
+      withEpisode: 2,
+      episodeCoverage: 0.5,
+    });
     expect(body.t1.activation).toEqual({ traces: 2, mean: 0.15, max: 0.2 });
   });
 

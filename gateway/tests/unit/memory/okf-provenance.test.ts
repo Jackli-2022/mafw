@@ -33,16 +33,32 @@ describe('OKF source_trace_ids', () => {
   });
 });
 
+describe('OKF episode_id', () => {
+  test('roundtrips the episode hint through frontmatter', () => {
+    const parsed = parseOKF(
+      buildOKF(unit({ source_trace_ids: ['t1t_a'], episode_id: 't1ep_a' })),
+    );
+    expect(parsed.unit.episode_id).toBe('t1ep_a');
+  });
+
+  test('omits the key when the unit is ungrounded', () => {
+    const parsed = parseOKF(buildOKF(unit()));
+    expect(parsed.unit).not.toHaveProperty('episode_id');
+  });
+});
+
 describe('HarmonicUnitFileStore provenance', () => {
   test('writes ids to the index entry and reads them back', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'okf-prov-'));
     try {
       const store = new HarmonicUnitFileStore(dir);
-      await store.write(unit({ source_trace_ids: ['t1t_a'] }));
+      await store.write(unit({ source_trace_ids: ['t1t_a'], episode_id: 't1ep_a' }));
       const entry = store.indexManager_().getIndex().entries.find((e) => e.id === 'mem_1_abc')!;
       expect((entry as any).source_trace_ids).toEqual(['t1t_a']);
+      expect((entry as any).episode_id).toBe('t1ep_a');
       const read = await store.read('mem_1_abc');
       expect((read as any).source_trace_ids).toEqual(['t1t_a']);
+      expect((read as any).episode_id).toBe('t1ep_a');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

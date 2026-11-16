@@ -141,6 +141,9 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
         const withExact = indexEntries.filter(
           (e: any) => Array.isArray(e.source_trace_ids) && e.source_trace_ids.length > 0,
         ).length;
+        const withEpisode = indexEntries.filter(
+          (e: any) => typeof e.episode_id === 'string' && e.episode_id.length > 0,
+        ).length;
         let activationRanking = {
           mode: config.recall.t1Recall?.activationRanking ?? 'shadow',
           evaluations: 0,
@@ -183,6 +186,8 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
             memories: indexEntries.length,
             withExact,
             coverage: indexEntries.length > 0 ? withExact / indexEntries.length : 0,
+            withEpisode,
+            episodeCoverage: indexEntries.length > 0 ? withEpisode / indexEntries.length : 0,
           },
           activation,
           activationRanking,
