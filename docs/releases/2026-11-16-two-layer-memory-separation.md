@@ -70,7 +70,7 @@
 
 ## 测试
 
-新增 **60** 个测试，覆盖：
+新增 **61** 个测试，覆盖：
 
 - episode schema/ID/pagination/reflectable 查询
 - 边界纯函数（declared/pending/user-turn/actor/topic/intent/max/idle/session-delete）
@@ -85,7 +85,7 @@
 门禁：
 
 ```text
-gateway full     974/974 suites；7798 tests（7796 passed，2 skipped，0 failed）
+gateway full     974/974 suites；7799 tests（7797 passed，2 skipped，0 failed）
 desktop tests    3875 tests / 736 suites，0 failed
 gateway tsc      rc=0
 desktop tsgo     rc=0
