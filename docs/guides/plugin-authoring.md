@@ -70,6 +70,11 @@
 - 声明的 `tools` 必须重复 `name` / `description` / `inputSchema`（`name` 与 `activate()` 里的声明一致即可，`description` 与 schema 自由填写）；比对只按 `name`。
 - `apiVersion: 1` 的包：`contributes` **校验失败**只产生 `legacy-contributes` warning，不影响激活，也不构成任何约束；**合法**的 v1 块会照常存储并像 v2 一样构成约束。未声明 `contributes` 的包行为与旧版完全一致。
 
+两条容易踩的边界：
+
+- 只注册 http 路由、没有任何其它贡献的包仍会被 host 的「零贡献」检查拒绝（`http` 不计入 contributions 类别）：`contributes.gateway.http: true` 不等于「可以只做路由」。零贡献判据是 `usage/media/runtime/tts/uiTools/ui/actions/events/tools/observers`，至少要命中其中一项。
+- `contributes.desktop.*`（`ui` / `web` / `main`）目前只做契约形状校验，**尚未强制**：声明了什么并不约束 `activate()` 的返回，Desktop 侧也不因声明而放宽/收紧。本节列出的全部注册约束只覆盖 `contributes.gateway`。
+
 ## 2. 最小可运行包
 
 ```js

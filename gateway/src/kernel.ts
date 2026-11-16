@@ -688,7 +688,12 @@ class MafwScheduler {
   private translationDrops = new Map<string, { unmatched: Record<string, number>; suppressed: Record<string, number> }>();
   /** Conformance event tap：per-session 临时观察者（POST /api/runtime/conformance 用）。 */
   private eventTaps = new TtlMap<string, Set<(e: { type: string; sessionID?: string; at: number }) => void>>(5 * 60_000); // 5min TTL (conformance observers)
-  /** Phase 3.5: opt-in live bridge (MAFW_KERNEL_V2_OBSERVERS / _TOOLS). */
+  /**
+   * Phase 3.5: live bridge for canonical observers / plugin tools. Both planes
+   * are live by default; `MAFW_KERNEL_V2_OBSERVERS=0|false` and `_TOOLS` are
+   * kill switches. Only with **both** killed is this null — then the register*
+   * entrances below throw instead of silently dropping the contribution.
+   */
   private kernelV2Live: KernelV2Live | null = null;
   private serveSupervisor: ServeSupervisor;
   private switchingRuntime = false;
@@ -2105,8 +2110,9 @@ class MafwScheduler {
   }
 
   /**
-   * Phase 3.5: register a read-only canonical observer. Requires
-   * `MAFW_KERNEL_V2_OBSERVERS=1`; returns an unsubscribe function.
+   * Phase 3.5: register a read-only canonical observer. Live by default; with
+   * `MAFW_KERNEL_V2_OBSERVERS=0` the bridge is gone (both planes killed) or
+   * observer-less, and this throws. Returns an unsubscribe function.
    */
   registerCanonicalObserver(observer: CanonicalObserver): () => void {
     if (!this.kernelV2Live) {
@@ -2118,8 +2124,9 @@ class MafwScheduler {
   }
 
   /**
-   * Phase 3.5: register a plugin agent tool. Requires
-   * `MAFW_KERNEL_V2_TOOLS=1`; returns an unregister function.
+   * Phase 3.5: register a plugin agent tool. Live by default; with
+   * `MAFW_KERNEL_V2_TOOLS=0` the bridge is gone (both planes killed) or
+   * tool-less, and this throws. Returns an unregister function.
    */
   registerPluginTool(tool: ToolContribution): () => void {
     if (!this.kernelV2Live) {

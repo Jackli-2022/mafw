@@ -114,6 +114,15 @@ export class PluginDoctor {
       checks.push(check('manifest', 'pass', 'plugin.json is valid'));
     }
 
+    // 1b. manifest-warnings
+    // `parsePackageManifest` keeps non-fatal findings (legacy-permissions /
+    // legacy-contributes) out of `errors` so legacy packages still load. They
+    // are diagnostic-only: recording them as `warn` keeps `report.ok` untouched
+    // (it is derived from `fail` statuses alone) while making them visible.
+    if (parsed?.ok && parsed.warnings.length > 0) {
+      checks.push(check('manifest-warnings', 'warn', parsed.warnings.join('; ')));
+    }
+
     // 2. api-version
     const rawApiVersion = rawRecord?.apiVersion;
     if (rawApiVersion === undefined || rawApiVersion === 1 || rawApiVersion === 2) {

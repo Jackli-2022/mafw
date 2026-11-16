@@ -205,4 +205,5 @@ pm run drill:plugin-trust\ 固化。
 - `plugin.json` 的 `contributes.gateway` 是**注册面上界**：`actions` / `events` / `tools` / `http` 每个声明的 plane 都是独立约束——`activate()` 注册的条目必须是声明集合的子集；未声明的 plane 完全不受约束，声明多于注册也合法。越界让整包激活失败。
 - `contributes.gateway.http: false` 时，任何一次 `ctx.http.route()` / `ctx.http.ws()` 都让激活失败（即使 `activate()` 正常返回）。
 - `apiVersion 2` 下 `contributes` 非法 → 激活失败；`apiVersion 1` 下非法块只产生 warning 且不构成约束，但**合法**的 v1 块与 v2 一样构成约束。
+- plugin doctor 把 `parsePackageManifest` 的 warnings（`legacy-permissions` / `legacy-contributes`）暴露成独立的 `manifest-warnings` 检查（status `warn`，多种 warning 以 `; ` 连接）；`report.ok` 只由 `fail` 派生，warn 不翻转它。
 

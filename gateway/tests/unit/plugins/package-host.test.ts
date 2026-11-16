@@ -794,7 +794,7 @@ module.exports = { name: 'noroute', async activate(ctx) {
     await host.init();
     const state = host.getState().find((entry) => entry.name === 'noroute');
     expect(state).toMatchObject({ status: 'error' });
-    expect(state?.error).toContain('http routes are not declared');
+    expect(state?.error).toContain('http routes are not declared (contributes.gateway.http is false)');
   });
 
   it('accepts http routes when contributes.gateway.http is true', async () => {

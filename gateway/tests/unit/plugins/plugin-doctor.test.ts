@@ -43,6 +43,24 @@ describe('PluginDoctor', () => {
     });
   });
 
+  it('surfaces manifest warnings such as legacy-contributes', async () => {
+    const { doctor, dir } = makeDoctor();
+    writePackage(dir, 'acme', { contributes: { gateway: { actions: 'ping' } } });
+    const report = await doctor.check('acme');
+    const warnings = report.checks.find((entry) => entry.id === 'manifest-warnings');
+    expect(warnings?.status).toBe('warn');
+    expect(warnings?.message).toContain('legacy-contributes');
+    // warn is diagnostic only: report.ok is derived from `fail` statuses.
+    expect(report.ok).toBe(true);
+  });
+
+  it('adds no manifest-warnings check for a clean manifest', async () => {
+    const { doctor, dir } = makeDoctor();
+    writePackage(dir, 'acme', { version: '1.0.0' });
+    const report = await doctor.check('acme');
+    expect(report.checks.find((entry) => entry.id === 'manifest-warnings')).toBeUndefined();
+  });
+
   it('fails an unsupported apiVersion without throwing', async () => {
     const { doctor, dir } = makeDoctor();
     writePackage(dir, 'acme', { apiVersion: 3 });

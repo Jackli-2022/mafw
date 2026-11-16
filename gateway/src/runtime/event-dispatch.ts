@@ -235,10 +235,11 @@ const conformanceTap: DispatchStage = {
 const canonicalObserverTap: DispatchStage = {
   name: 'canonicalObserverTap',
   matches: () => true,
-  // Live bridge only exists when MAFW_KERNEL_V2_OBSERVERS=1. The bridge
-  // sanitizes the facet snapshot and enqueues it; a broken observer can never
-  // halt the pipeline. Placed after conformanceTap and before internalFilter
-  // so observers see the same pre-drop canonical surface as conformance.
+  // The live bridge exists by default; it is only absent when both planes are
+  // killed via MAFW_KERNEL_V2_OBSERVERS=0 / _TOOLS=0. The bridge sanitizes the
+  // facet snapshot and enqueues it; a broken observer can never halt the
+  // pipeline. Placed after conformanceTap and before internalFilter so
+  // observers see the same pre-drop canonical surface as conformance.
   run: (f, _evt, ctx) => {
     try {
       ctx.canonicalObserverTap?.(f);

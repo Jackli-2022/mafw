@@ -8,6 +8,7 @@ import type {
   PluginActionDescriptor,
   PluginEventDescriptor,
   PluginJsonSchema,
+  PluginManifestContributes,
   PluginUiContribution,
 } from '@mafw/plugin-contract';
 
@@ -316,6 +317,8 @@ export interface PackageManifest {
   apiVersion?: 1 | 2;
   kind?: 'trusted' | 'untrusted';
   permissions?: string[];
+  /** plugin.json `contributes` 原样保留：扫描阶段不丢声明，激活期以它为注册上界。 */
+  contributes?: PluginManifestContributes;
   host?: string;
   integrity?: { algorithm: 'sha256'; files: Record<string, string> };
   deprecated?: string;

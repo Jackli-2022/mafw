@@ -656,6 +656,9 @@ function analyze(
  *
  * @param canonicalTypes Runtime canonical event vocabulary — any name in this
  *   set is rejected even if a package tries to claim it inside its namespace.
+ * @param declared Static `plugin.json` `contributes` block, when the package has
+ *   one. Same upper bound as `buildActivatedContributions`; omitted means every
+ *   plane stays unconstrained, so existing callers keep their behaviour.
  * @returns Human-readable diagnostics; empty array means the contribution set
  *   is publishable.
  */
@@ -663,8 +666,9 @@ export function validateUnifiedContributions(
   packageName: string,
   contributions: UnifiedPluginContributions,
   canonicalTypes: ReadonlySet<string>,
+  declared?: PluginManifestContributes,
 ): string[] {
-  return analyze(packageName, contributions, canonicalTypes).errors;
+  return analyze(packageName, contributions, canonicalTypes, declared).errors;
 }
 
 export type BuildActivatedContributionsResult =

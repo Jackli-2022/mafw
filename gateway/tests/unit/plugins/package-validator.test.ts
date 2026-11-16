@@ -487,6 +487,14 @@ describe('contributes enforcement', () => {
     );
     expect(built.ok).toBe(true);
   });
+
+  it('honours the declared bound on the validateUnifiedContributions entry point', () => {
+    const contributions = { actions: { ping: { handler: () => null } } };
+    expect(validateUnifiedContributions('example', contributions, CANONICAL, declared({ actions: ['pong'] })))
+      .toContain('action "ping" is not declared in plugin.json contributes.gateway.actions');
+    // Omitting the fourth argument keeps the legacy "unconstrained" contract.
+    expect(validateUnifiedContributions('example', contributions, CANONICAL)).toEqual([]);
+  });
 });
 
 describe('ctx.config.update', () => {
