@@ -330,7 +330,7 @@ export const DEFINITIONS: ToolDefinition[] = [
       type: "object",
       properties: {
         content: { type: "string", description: "Memory content text to remember" },
-        memoryType: { type: "string", enum: ["semantic", "episodic", "procedural", "global"], description: "Memory type" },
+        memoryType: { type: "string", enum: ["semantic", "procedural", "global"], description: "Memory type. semantic=fact/preference/constraint, procedural=lesson/pattern, global=cross-project. Episodes live in T1; episodic is retired." },
         cueAnchors: { type: "array", items: { type: "string" }, description: "Tags/keywords for retrieval (max 8)" },
         primaryAbstraction: { type: "string", description: "6-8 word summary (auto-generated from content if omitted)" },
         supersedes: { type: "array", items: { type: "string" }, description: "IDs of existing memories this new memory replaces/updates. The old memories will be marked superseded (energy halved, search penalty applied)." },

@@ -894,6 +894,7 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
     trajectoryStore: () => deps.trajectoryStore,
     memoryService: () => deps.memoryService,
     hasTrace: (traceId: string) => deps.getGatewayDb().hasTrace(traceId),
+  findEpisodeByTrace: (traceId: string) => deps.getGatewayDb().findEpisodeByTrace(traceId),
     eventAppendFailures: () => {
       const store = deps.eventStore;
       return store ? store.appendFailures() : null;

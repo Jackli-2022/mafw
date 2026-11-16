@@ -133,7 +133,7 @@ npm run smoke:packaged-gateway -- --app-root dist/win-unpacked
 ## 5. Agent 工作约定
 
 ### 记忆
-- 学到新知识 / 用户偏好 / 重要决定 / 踩坑 → `mafw_add_memory`（semantic / episodic / procedural），附 `cueAnchors`；
+- 学到新知识 / 用户偏好 / 重要决定 / 踩坑 → `mafw_add_memory`（semantic / procedural / global；episodic 已退役，episode 由 T1 记录），附 `cueAnchors`；
   **标识符原样**写进锚点（函数名 / 路径 / 命令 / 错误码 / 配置键）。
 - 内容已被 repo 文件承载 → 记**指针**（路径 + 一句 gist），不复述全文；文件是真相源，记忆是索引。
 - procedural 结尾带「→ 下次用：<skill/工具/命令>」。
