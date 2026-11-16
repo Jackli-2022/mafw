@@ -248,8 +248,8 @@ export function MemoryPage() {
                     <span class="mafw-tool-tag" classList={{
                       "mafw-tag-semantic": unit.type === "semantic" || unit.type === "global",
                       "mafw-tag-procedural": unit.type === "procedural",
-                      "mafw-tag-episodic": unit.type === "episodic",
-                    }}>{unit.type ?? "?"}</span>
+                      "mafw-tag-legacy": unit.type === "episodic",
+                    }}>{unit.type === "episodic" ? "legacy episode" : unit.type ?? "?"}</span>
                     <span class="mafw-card-meta">E: {typeof unit.energy === "number" ? unit.energy.toFixed(2) : unit.energy}</span>
                   </div>
                 </div>
