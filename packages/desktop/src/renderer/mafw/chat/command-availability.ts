@@ -8,6 +8,7 @@ export type CommandGateId =
   | "plan"
   | "build"
   | "skills"
+  | "pause"
 
 export interface CommandCapabilities {
   summarize: boolean
@@ -19,6 +20,7 @@ export interface CommandCapabilities {
   planning: boolean
   build: boolean
   discovery: boolean
+  runControl: boolean
 }
 
 const CAPABILITY_KEY: Record<CommandGateId, keyof CommandCapabilities> = {
@@ -31,6 +33,7 @@ const CAPABILITY_KEY: Record<CommandGateId, keyof CommandCapabilities> = {
   plan: "planning",
   build: "build",
   skills: "discovery",
+  pause: "runControl",
 }
 
 const DISABLED_REASON: Record<CommandGateId, string> = {
@@ -40,9 +43,10 @@ const DISABLED_REASON: Record<CommandGateId, string> = {
   undo: "当前环境不支持回退",
   redo: "当前环境不支持撤销回退",
   rename: "当前环境不支持重命名",
-  plan: "当前 runtime 没有规划 Agent",
-  build: "当前 runtime 没有默认执行 Agent",
+  plan: "当前环境没有规划 Agent",
+  build: "当前环境没有默认执行 Agent",
   skills: "当前环境不支持技能发现",
+  pause: "当前环境不支持暂停回合",
 }
 
 /** Null = available; otherwise a neutral, user-facing reason. */

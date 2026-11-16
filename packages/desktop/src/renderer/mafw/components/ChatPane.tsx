@@ -80,7 +80,6 @@ import type { PodReviewItem } from "@mafw/sdk"
 import { permissionAriaLabel, permissionPresentation } from "./composer-permission"
 import { type PermissionMode } from "./permission-card-mapping"
 import { getSessionTurnDiffs } from "../session-turn-diffs"
-import leadAvatar20 from "../assets/lore/lead-avatar-20.png"
 import { PendingAnnotations } from "./PendingAnnotations"
 import { PendingCaptures } from "./PendingCaptures"
 import { buildAnnotationBatch } from "../editor-annotation"
@@ -1567,10 +1566,18 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     planning: !!planningAgent(props.primaryAgents() as any),
     build: !!defaultAgentKey(props.primaryAgents() as any),
     discovery: experienceStore.supported("session.discovery"),
+    runControl: experienceStore.supported("run.control"),
   })
 
-  const gateCommand = (item: CommandItem, id: CommandGateId): CommandItem => {
-    const reason = commandDisabledReason(id, commandCapabilities())
+  const gateCommand = (
+    item: CommandItem,
+    id: CommandGateId,
+    capabilities: CommandCapabilities = commandCapabilities(),
+  ): CommandItem => {
+    // Unknown capability state is not "unsupported": keep the row usable until
+    // the Experience snapshot is ready, instead of flashing 9 disabled rows.
+    if (experienceStore.state().status !== "ready") return item
+    const reason = commandDisabledReason(id, capabilities)
     return reason ? { ...item, disabled: true, disabledReason: reason } : item
   }
 
@@ -1586,9 +1593,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     plan: "plan",
     build: "build",
     skills: "skills",
+    pause: "pause",
   }
 
   const buildCommands = (): CommandItem[] => {
+    const capabilities = commandCapabilities()
     const local: CommandItem[] = [
       { id: "new", trigger: "/new", title: "新建会话", description: "创建新会话", group: "local", source: "builtin", run: () => { closeCommandPicker(); void props.onCreateSession() } },
       { id: "agent", trigger: "/agent", title: "会话配置", description: "选择执行身份 / 模型 / 思考档位", group: "local", source: "builtin", run: () => { closeCommandPicker(); setPickerTrigger(textareaEl()); setPickerOpen("session-config") } },
@@ -1793,7 +1802,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       : []
     const localWithGates = local.map((item) => {
       const gate = COMMAND_GATES[item.id]
-      return gate ? gateCommand(item, gate) : item
+      return gate ? gateCommand(item, gate, capabilities) : item
     })
     return [...localWithGates, ...mafw, ...skills, ...custom]
   }
@@ -2373,9 +2382,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           <Show when={sidProp()}>
             <div class="mafw-session-titlebar">
               <div class="mafw-session-titlebar-inner" ref={setTitlebarEl}>
-                <img class="mafw-agent-avatar mafw-agent-avatar-lore" src={leadAvatar20} alt="" aria-hidden="true" />
-                <span class="mafw-session-titlebar-name">Lore</span>
-                <span class="mafw-session-titlebar-name-sep" aria-hidden="true">·</span>
+                <span class="mafw-agent-avatar">{title().charAt(0)}</span>
                 <span class="mafw-session-titlebar-text">{title()}</span>
                 <Show when={sessionTokenSummary().turns > 0 ? sessionTokenSummary() : undefined}>
                   {(s) => (

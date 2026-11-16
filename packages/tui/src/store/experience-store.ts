@@ -64,6 +64,7 @@ export const EXPERIENCE_ACTION_TITLES: Record<ExperienceActionId, string> = {
   'run.control': '暂停/恢复回合',
   'session.worktree': '并行工作区',
   'session.summarize': '压缩会话',
+  'session.rename': '重命名会话',
   'session.switch-agent': '切换 Agent',
   'session.switch-model': '切换模型',
   'session.discovery': '读取命令与技能',

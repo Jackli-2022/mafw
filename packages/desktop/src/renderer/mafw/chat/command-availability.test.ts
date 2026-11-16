@@ -11,6 +11,7 @@ const allSupported: CommandCapabilities = {
   planning: true,
   build: true,
   discovery: true,
+  runControl: true,
 }
 
 describe("commandDisabledReason", () => {
@@ -31,6 +32,7 @@ describe("commandDisabledReason", () => {
       planning: false,
       build: false,
       discovery: false,
+      runControl: false,
     }
     expect(commandDisabledReason("compact", missing)).toContain("压缩")
     expect(commandDisabledReason("fork", missing)).toContain("分叉")
@@ -41,5 +43,25 @@ describe("commandDisabledReason", () => {
     expect(commandDisabledReason("plan", missing)).toContain("规划")
     expect(commandDisabledReason("build", missing)).toContain("默认执行")
     expect(commandDisabledReason("skills", missing)).toContain("技能")
+    expect(commandDisabledReason("pause", missing)).toContain("暂停")
+  })
+
+  test("each gate reads its own capability key", () => {
+    const cases = [
+      ["compact", "summarize"],
+      ["fork", "fork"],
+      ["diff", "diff"],
+      ["undo", "undo"],
+      ["redo", "redo"],
+      ["rename", "rename"],
+      ["plan", "planning"],
+      ["build", "build"],
+      ["skills", "discovery"],
+      ["pause", "runControl"],
+    ] as const
+    for (const [id, key] of cases) {
+      const caps = { ...allSupported, [key]: false } as CommandCapabilities
+      expect(commandDisabledReason(id, caps)).not.toBeNull()
+    }
   })
 })

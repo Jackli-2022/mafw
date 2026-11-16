@@ -111,8 +111,8 @@ function CommandRow(props: { it: CommandItem; hi: boolean; onClick: () => void }
     >
       <span class="mafw-picker-row-name">
         <span class="mafw-picker-row-title">{props.it.trigger}</span>
-        <Show when={props.it.disabled ? props.it.disabledReason : props.it.description}>
-          <span class="mafw-picker-row-id">{props.it.disabled ? props.it.disabledReason : props.it.description}</span>
+        <Show when={props.it.disabled ? (props.it.disabledReason ?? props.it.description) : props.it.description}>
+          <span class="mafw-picker-row-id">{props.it.disabled ? (props.it.disabledReason ?? props.it.description) : props.it.description}</span>
         </Show>
       </span>
       <span class="mafw-picker-row-meta">

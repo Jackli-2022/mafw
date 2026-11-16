@@ -29,6 +29,7 @@ export function SessionStrip(props: {
   /** 点击左侧品牌位回 Welcome 首页 */
   onHome: () => void
   forkEnabled?: boolean
+  renameEnabled?: boolean
   onFork?: (id: string) => void
   /** 当前 Pod Lead 的权威 session id；历史 Lead 会话不能被当成 Lead tab。 */
   leadSessionId?: string | null
@@ -100,6 +101,7 @@ export function SessionStrip(props: {
         title: labelOf(session),
         kind: "tab" as const,
         canFork: props.forkEnabled !== false,
+        canRename: props.renameEnabled !== false,
       },
       (id) => {
         if (id === "session.open") props.onSelect(session.id)
@@ -165,7 +167,7 @@ export function SessionStrip(props: {
             <span class="mafw-agent-dot" style={{ background: s.lead ? "var(--accent)" : "var(--text-4)" }} />
             <span
               class="mafw-session-title"
-              onDblClick={e => { e.stopPropagation(); if (isLeadTab(s)) return; setRenamingId(s.id); setRenameDraft(labelOf(s)) }}
+              onDblClick={e => { e.stopPropagation(); if (isLeadTab(s) || props.renameEnabled === false) return; setRenamingId(s.id); setRenameDraft(labelOf(s)) }}
             >
               <Show when={renamingId() !== s.id} fallback={
                 <TextInputV2

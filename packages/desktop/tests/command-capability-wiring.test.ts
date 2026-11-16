@@ -18,17 +18,22 @@ test("ChatPane gates runtime-dependent commands through Experience capabilities"
   assert.match(chat, /experienceStore\.supported\("session\.rename"\)/)
   assert.match(chat, /experienceStore\.supported\("session\.discovery"\)/)
   assert.match(chat, /COMMAND_GATES/)
-  assert.match(chat, /gateCommand\(item, gate\)/)
-  for (const id of ["compact", "fork", "diff", "undo", "redo", "rename", "plan", "build", "skills"]) {
+  assert.match(chat, /gateCommand\(item, gate, capabilities\)/)
+  for (const id of ["compact", "fork", "diff", "undo", "redo", "rename", "plan", "build", "skills", "pause"]) {
     assert.match(chat, new RegExp(`${id}: "${id}"`))
   }
   assert.match(chat, /if \(item\.disabled\) return/)
+  assert.match(chat, /experienceStore\.state\(\)\.status !== "ready"/)
+  assert.match(chat, /pause: "pause"/)
+  assert.match(chat, /experienceStore\.supported\("run\.control"\)/)
 })
 
 test("CommandPicker renders and blocks disabled command rows", () => {
   assert.match(picker, /disabled\?: boolean/)
   assert.match(picker, /disabledReason\?: string/)
   assert.match(picker, /if \(it && !it\.disabled\)/)
+  assert.match(picker, /if \(!props\.it\.disabled\) props\.onClick\(\)/)
+  assert.match(picker, /props\.it\.disabledReason/)
   assert.match(picker, /aria-disabled/)
   assert.match(picker, /disabled/)
   assert.match(css, /\.mafw-picker-row\.disabled/)

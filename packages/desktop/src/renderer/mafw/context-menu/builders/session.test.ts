@@ -32,12 +32,15 @@ describe("buildSessionMenu", () => {
     expect(validateMenu(m)).toEqual([])
   })
 
-  test("fork is disabled with a reason when unavailable; delete is danger", () => {
-    const m = buildSessionMenu({ ...row, canFork: false })
+  test("fork/rename are disabled with neutral reasons when unavailable; delete is danger", () => {
+    const m = buildSessionMenu({ ...row, canFork: false, canRename: false })
     const fork = m.items.find((i) => i.type === "item" && i.id === "session.fork") as any
+    const rename = m.items.find((i) => i.type === "item" && i.id === "session.rename") as any
     const del = m.items.find((i) => i.type === "item" && i.id === "session.delete") as any
     expect(fork.disabled).toBe(true)
     expect(fork.disabledReason).toBe("当前运行时不支持分叉")
+    expect(rename.disabled).toBe(true)
+    expect(rename.disabledReason).toBe("当前环境不支持重命名")
     expect(del.danger).toBe(true)
     expect(del.confirms).toBe(true)
   })

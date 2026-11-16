@@ -65,6 +65,7 @@ type Props = {
   onSelectSession: (id: string, title?: string, lead?: boolean, metadata?: { mafw?: { role?: string } }) => void
   onSessionDeleted?: (id: string) => void
   forkEnabled?: boolean
+  renameEnabled?: boolean
   onForkSession?: (id: string) => void
   onExportSession?: (id: string) => void
 }
@@ -189,8 +190,8 @@ export function LeftDock(props: Props) {
     try {
       await window.api.mafw.sessions.rename(id, title)
       sessionStore.invalidate(pid)
-    } catch (e: any) {
-      showToastV2({ description: `重命名失败: ${e?.message || e}`, duration: 3000 })
+    } catch {
+      showToastV2({ description: "重命名失败，请稍后重试", duration: 3000 })
     }
   }
 
@@ -237,6 +238,7 @@ export function LeftDock(props: Props) {
         title: node.title,
         kind: "row" as const,
         canFork: props.forkEnabled !== false,
+        canRename: props.renameEnabled !== false,
       },
       (id) => {
         if (id === "session.open") openNode(node)

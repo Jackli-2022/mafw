@@ -7,13 +7,20 @@ export interface SessionMenuTarget {
   title: string
   kind: "row" | "tab"
   canFork?: boolean
+  canRename?: boolean
   canDelete?: boolean
 }
 
 export function buildSessionMenu(target: SessionMenuTarget): MenuModel {
   const items: MenuItem[] = [
     item("session.open", L.session.open),
-    item("session.rename", L.session.rename),
+    item(
+      "session.rename",
+      L.session.rename,
+      target.canRename === false
+        ? { disabled: true, disabledReason: "当前环境不支持重命名" }
+        : {},
+    ),
     item(
       "session.fork",
       L.session.fork,

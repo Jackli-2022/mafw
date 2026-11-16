@@ -4189,11 +4189,13 @@ export function MafwShell() {
           onSelect={(id) => { closeLeftDockIfOverlay(); setShowConfig(false); setActiveTab("chat"); setShowWelcome(false); setActiveSessionId(id); setActiveViewId(id) }}
           onClose={closeSession}
           onRename={(id, next) => {
-            // 用户重命名是显式意图：实体是展示真值，tab 只保留持久化兜底。
-            setSessions(prev => prev.map(x => x.id === id ? { ...x, title: next } : x))
-            if (!sessionEntities.patch(id, { title: next })) sessionEntities.upsert({ id, title: next })
-            window.api.mafw.sessions.rename(id, next)
-              .catch((err: any) => showToastV2({ description: `重命名失败: ${err?.message || err}`, duration: 3000 }))
+            void window.api.mafw.sessions.rename(id, next)
+              .then(() => {
+                // 用户重命名是显式意图：成功后才写实体缓存和 tab 展示。
+                setSessions(prev => prev.map(x => x.id === id ? { ...x, title: next } : x))
+                retitleSessionEntity(id, next)
+              })
+              .catch(() => showToastV2({ description: "重命名失败，请稍后重试", duration: 3000 }))
           }}
           onExport={(id) => void exportSession(id)}
           onCopyId={copyText}
@@ -4201,6 +4203,7 @@ export function MafwShell() {
           podRoleOf={(id) => podRoleForSession(podStore.detail(), id)}
           leadSessionId={currentLeadId(currentProject())}
           forkEnabled={experienceStore.supported("branch.fork")}
+          renameEnabled={experienceStore.state().status !== "ready" || experienceStore.supported("session.rename")}
           onFork={(id) => void forkSessionFromMenu(id)}
           onHome={() => {
             closeLeftDockIfOverlay()
@@ -4297,6 +4300,7 @@ export function MafwShell() {
             onSelectSession={openSessionTab}
             onSessionDeleted={closeSession}
             forkEnabled={experienceStore.supported("branch.fork")}
+            renameEnabled={experienceStore.state().status !== "ready" || experienceStore.supported("session.rename")}
             onForkSession={(id) => void forkSessionFromMenu(id)}
             onExportSession={(id) => void exportSession(id)}
           />
