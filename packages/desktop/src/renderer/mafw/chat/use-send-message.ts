@@ -8,6 +8,7 @@ import { VOICE_ORIGIN_MARKER_TEXT, appendVoiceOriginMarker } from "./voice-origi
 import { agentKey } from "../agent-identity"
 import type { Annotation } from "../../../shared/annotation-types"
 import type { PendingCapture } from "./pending-captures"
+import { formatWebContext } from "./mention-sources"
 
 /** 解析 "/cmd args" 形态（不做命令表匹配——那由 deps.matchSlash 注入）。 */
 export function parseSlashShape(text: string): { name: string; args: string } | null {
@@ -77,6 +78,9 @@ export interface SendMessageDeps {
   setMentionedAgents: (fn: (prev: any[]) => any[]) => void
   mentionedFiles: () => any[]
   setMentionedFiles: (v: any[]) => void
+  /** `@web` URL context; optional so existing tests/callers stay valid. */
+  webLinks?: () => { url: string }[]
+  setWebLinks?: (v: { url: string }[]) => void
   queuedItems: () => any[]
   setQueuedItems: (fn: (prev: any[]) => any[]) => void
   textareaEl: () => HTMLTextAreaElement | null
@@ -209,9 +213,11 @@ export function useSendMessage(deps: SendMessageDeps) {
     const text = input()
     const atts = attachments()
     const agents = mentionedAgents()
+    const webLinks = deps.webLinks?.() ?? []
+    const webBlock = formatWebContext(webLinks)
     const pendingCount = sidProp() ? pendingAnnotationCount(sidProp()) : 0
     const captureCount = sidProp() && pendingCaptureCount ? pendingCaptureCount(sidProp()) : 0
-    if (!text.trim() && atts.length === 0 && pendingCount === 0 && captureCount === 0) return
+    if (!text.trim() && atts.length === 0 && pendingCount === 0 && captureCount === 0 && webLinks.length === 0) return
     // Task 20 review：非讨论的 Tech Lead 节点会话不能静默走普通 prompt；保留草稿并提示。
     const blocked = (await deps.sendBlocked?.()) ?? null
     if (blocked) {
@@ -234,6 +240,7 @@ export function useSendMessage(deps: SendMessageDeps) {
       })),
       agents: mentionedAgents(),
       files: mentionedFiles(),
+      webLinks,
       agent: agentSel(),
       model: model(),
       annotations: annotationSnapshot.map((a) => a.id),
@@ -253,7 +260,7 @@ export function useSendMessage(deps: SendMessageDeps) {
         const queuedAnnotations = staged.annotations
         const queuedCaptures = takeCaptures ? takeCaptures(sid) : []
         const queuedCaptureBlock = queuedCaptures.length > 0 && formatCaptures ? formatCaptures(queuedCaptures) : ""
-        const queuedText = [text.trim(), queuedAnnotations.length > 0 ? formatAnnotations(queuedAnnotations) : "", reviewBlock, queuedCaptureBlock]
+        const queuedText = [webBlock, text.trim(), queuedAnnotations.length > 0 ? formatAnnotations(queuedAnnotations) : "", reviewBlock, queuedCaptureBlock]
           .filter(Boolean)
           .join("\n\n")        // region 批注截图随队列入列（同即时路径）
         const queuedAnnotationImages = queuedAnnotations
@@ -274,6 +281,7 @@ export function useSendMessage(deps: SendMessageDeps) {
           setAttachments([])
           setMentionedAgents(() => [])
           setMentionedFiles([])
+          deps.setWebLinks?.([])
           clearDraft(sidProp())
           const ta = textareaEl()
           if (ta) ta.style.height = "auto"
@@ -367,6 +375,7 @@ export function useSendMessage(deps: SendMessageDeps) {
     setAttachments([])
     setMentionedAgents(() => [])
     setMentionedFiles([])
+    deps.setWebLinks?.([])
     // 批注草稿随本条消息打包（slash 命令不消耗批注；纯批注消息 text 为空）
     const pendingAnnotations = staged.annotations
     const annotationBlock = pendingAnnotations.length > 0 ? formatAnnotations(pendingAnnotations) : ""
@@ -477,7 +486,7 @@ export function useSendMessage(deps: SendMessageDeps) {
     // empty user message. Pointers still reach the server via `parts` only.
     const pointerTexts = visionParts.map(p => p.text)
     const failureNote = visionFailed.length > 0 ? `[媒体附件未送达 Media Agent] ${visionFailed.join("; ")}` : ""
-    const bodyMessage = [filePrefix, text.trim(), annotationBlock, reviewBlock, captureBlock, ...pointerTexts, failureNote].filter(Boolean).join("\n\n")
+    const bodyMessage = [webBlock, filePrefix, text.trim(), annotationBlock, reviewBlock, captureBlock, ...pointerTexts, failureNote].filter(Boolean).join("\n\n")
     const optimisticParts = buildOptimisticParts({ userMsgId, ts, sid, bodyMessage, visionThumbs, fileParts, agentParts })
     setStore(prev => {
       const msgs = { ...prev.message }
@@ -514,7 +523,7 @@ export function useSendMessage(deps: SendMessageDeps) {
         const voicePart = voiceOrigin ? composeVoiceOriginPart(ts) : null
         const sendParts = [...visionParts, ...fileParts, ...agentParts, ...(voicePart ? [voicePart] : [])]
         const result = await window.api.mafw.chat.sendEnriched({
-          message: [filePrefix, text.trim(), annotationBlock, reviewBlock, captureBlock, failureNote].filter(Boolean).join("\n"),
+          message: [webBlock, filePrefix, text.trim(), annotationBlock, reviewBlock, captureBlock, failureNote].filter(Boolean).join("\n"),
           sessionID: sid,
           parts: sendParts.length ? sendParts : undefined,
           agent: agentKey(agentSel()) === "manager" ? undefined : (agentKey(agentSel()) || undefined),

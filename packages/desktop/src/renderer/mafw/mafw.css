@@ -2120,6 +2120,8 @@ html[data-theme="light"] body {
 }
 .mafw-rename-field { margin: 12px 0 8px; }
 .mafw-rename-error { color: var(--danger); font-size: 12px; margin-bottom: 8px; }
+.mafw-web-field { margin: 12px 0 8px; }
+.mafw-web-error { color: var(--danger); font-size: 12px; margin-bottom: 8px; }
 
 .mafw-help-backdrop {
   position: fixed; inset: 0; z-index: 90; padding: 16px;

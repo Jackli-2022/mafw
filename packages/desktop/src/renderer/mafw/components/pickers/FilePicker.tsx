@@ -1,7 +1,7 @@
 import { For, Show } from "solid-js"
 import { PopoverShell } from "./PopoverShell"
 
-export type FilePickerItem = { kind: "agent" | "file"; label: string; value: string }
+export type FilePickerItem = { kind: "agent" | "file" | "doc" | "web"; label: string; value: string }
 
 // @-mention picker: pure presentational list (fuzzy files + matching
 // agents). Keyboard navigation (↑/↓/Enter) stays in the composer textarea
@@ -27,8 +27,18 @@ export function FilePicker(props: {
               classList={{ sel: i() === props.hi }}
               onClick={() => props.onSelect(item)}
             >
-              <span class="mafw-file-icon">{item.kind === "agent" ? "🤖" : "📄"}</span>
-              <span class="mafw-file-label">{item.kind === "agent" ? `@${item.label}（agent）` : item.label}</span>
+              <span class="mafw-file-icon">
+                {item.kind === "agent" ? "🤖" : item.kind === "doc" ? "📘" : item.kind === "web" ? "🌐" : "📄"}
+              </span>
+              <span class="mafw-file-label">
+                {item.kind === "agent"
+                  ? `@${item.label}（agent）`
+                  : item.kind === "web"
+                    ? "Web 页面…"
+                    : item.kind === "doc"
+                      ? `Docs · ${item.label}`
+                      : item.label}
+              </span>
             </div>
           )}
         </For>

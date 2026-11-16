@@ -121,6 +121,8 @@ import { mergeRemoteCommands, mergeDiscoveryCommands, type RuntimeCommandMeta } 
 import { getDraft, setDraft, clearDraft } from "./session-drafts"
 import { fuzzyMatchFiles } from "./file-fuzzy"
 import { FilePicker, type FilePickerItem } from "./pickers/FilePicker"
+import { WebUrlDialog } from "./WebUrlDialog"
+import { isDocsPath } from "../chat/mention-sources"
 import { TranscriptSearchOverlay } from "./TranscriptSearchOverlay"
 import { CompressionDivider } from "./CompressionDivider"
 import { useVoiceBinding, extractVoiceReplies } from "../chat/use-voice-binding"
@@ -600,6 +602,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     history.replace(sid ? loadInputHistory(localStorage, sid) : [])
   })
   const [mentionedFiles, setMentionedFiles] = createSignal<{ rel: string }[]>([])
+  const [webLinks, setWebLinks] = createSignal<{ url: string }[]>([])
+  const [webDialogOpen, setWebDialogOpen] = createSignal(false)
   const [projectFiles, setProjectFiles] = createSignal<string[]>([])
   const [fileHi, setFileHi] = createSignal(0)
   const [searchOpen, setSearchOpen] = createSignal(false)
@@ -619,17 +623,25 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
   const filePickerItems = createMemo(() => {
     const q = atMentionQuery() ?? ""
+    const qLower = q.toLowerCase()
     const agents = (props.primaryAgents() || [])
-      .filter((a: any) => !q || a.name.toLowerCase().includes(q.toLowerCase()))
+      .filter((a: any) => !q || a.name.toLowerCase().includes(qLower))
       .slice(0, 5)
       .map((a: any) => ({ kind: "agent" as const, label: a.name, value: a.name }))
-    const files = fuzzyMatchFiles(projectFiles(), q, 12).map(f => ({ kind: "file" as const, label: f, value: f }))
-    return [...agents, ...files]
+    const web = qLower && "web".startsWith(qLower)
+      ? [{ kind: "web" as const, label: "Web 页面…", value: "" }]
+      : []
+    const docsQuery = qLower === "docs" || qLower.startsWith("docs/")
+    const pool = docsQuery ? projectFiles().filter(isDocsPath) : projectFiles()
+    const files = fuzzyMatchFiles(pool, q, 12).map(f => ({
+      kind: isDocsPath(f) ? "doc" as const : "file" as const,
+      label: f,
+      value: f,
+    }))
+    return [...web, ...agents, ...files]
   })
 
-  const addFileMention = (rel: string) => {
-    setMentionedFiles(prev => prev.some(f => f.rel === rel) ? prev : [...prev, { rel }])
-    // strip the trailing "@query" token from the input
+  const stripAtMention = () => {
     const ta = textareaEl()
     const v = input()
     const sel = ta?.selectionStart ?? v.length
@@ -638,7 +650,22 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     const next = before + after
     setInput(next)
     setDraft(sidProp(), next)
+  }
+
+  const addFileMention = (rel: string) => {
+    setMentionedFiles(prev => prev.some(f => f.rel === rel) ? prev : [...prev, { rel }])
+    stripAtMention()
     setPickerOpen(p => p === "file" ? null : p)
+  }
+
+  const openWebDialog = () => {
+    stripAtMention()
+    setPickerOpen(p => p === "file" ? null : p)
+    setWebDialogOpen(true)
+  }
+
+  const addWebLink = (url: string) => {
+    setWebLinks(prev => prev.some(w => w.url === url) ? prev : [...prev, { url }])
   }
 
   // Draft restore: keyed Show destroys the pane on tab switch; the draft
@@ -1180,6 +1207,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     attachments, setAttachments,
     mentionedAgents, setMentionedAgents,
     mentionedFiles, setMentionedFiles,
+    webLinks, setWebLinks,
     queuedItems, setQueuedItems,
     textareaEl,
     history,
@@ -2863,7 +2891,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             />
           </Show>
           {/* Attachment + @agent chips row */}
-          <Show when={attachments().length > 0 || mentionedAgents().length > 0}>
+          <Show when={attachments().length > 0 || mentionedAgents().length > 0 || mentionedFiles().length > 0 || webLinks().length > 0}>
             <div class="mafw-composer-chips">
               <For each={attachments()}>
                 {(a, i) => (
@@ -2891,6 +2919,15 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                     <Icon name="file" size="small" />
                     <span class="mafw-chip-label" title={f.rel}>{f.rel}</span>
                     <ButtonV2 variant="ghost" size="small" class="mafw-chip-x" onClick={() => setMentionedFiles(prev => prev.filter(x => x.rel !== f.rel))} aria-label="移除文件引用"><Icon name="close" size="small" /></ButtonV2>
+                  </span>
+                )}
+              </For>
+              <For each={webLinks()}>
+                {(w) => (
+                  <span class="mafw-chip">
+                    <Icon name="globe" size="small" />
+                    <span class="mafw-chip-label">{w.url}</span>
+                    <ButtonV2 variant="ghost" size="small" class="mafw-chip-x" onClick={() => setWebLinks(prev => prev.filter(x => x.url !== w.url))} aria-label="移除网页引用"><Icon name="close" size="small" /></ButtonV2>
                   </span>
                 )}
               </For>
@@ -2936,7 +2973,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 e.preventDefault()
                 const item: FilePickerItem | undefined = filePickerItems()[fileHi()]
                 if (!item) return
-                if (item.kind === "agent") { addAgent(item.value); setPickerOpen(null) }
+                if (item.kind === "web") openWebDialog()
+                else if (item.kind === "agent") { addAgent(item.value); setPickerOpen(null) }
                 else addFileMention(item.value)
               }
               else if (e.key === "Tab" && !pickerOpen() && agentCycleGate()) {
@@ -3173,7 +3211,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           items={filePickerItems()}
           hi={fileHi()}
           onSelect={(item) => {
-            if (item.kind === "agent") { addAgent(item.value); setPickerOpen(null) }
+            if (item.kind === "web") openWebDialog()
+            else if (item.kind === "agent") { addAgent(item.value); setPickerOpen(null) }
             else addFileMention(item.value)
           }}
           onClose={() => setPickerOpen(p => p === "file" ? null : p)}
@@ -3198,6 +3237,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           initialTitle={rawSessionTitle()}
           onClose={() => setRenameOpen(false)}
           onConfirm={renameCurrentSession}
+        />
+        <WebUrlDialog
+          open={webDialogOpen()}
+          onClose={() => setWebDialogOpen(false)}
+          onAdd={addWebLink}
         />
         <ChatHelpOverlay
           open={helpOpen()}
