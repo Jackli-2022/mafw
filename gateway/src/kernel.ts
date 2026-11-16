@@ -2614,6 +2614,13 @@ class MafwScheduler {
     const { getReranker } = require('./core/memory/reranker-singleton');
     const { applyReranker } = require('./core/memory/reranker');
     const t0 = Date.now();
+    const { createGatewayT1Search } = require('./recall/t1-search');
+    const t1Search = config.recall.t1Recall?.enabled !== false
+      ? createGatewayT1Search(db)
+      : undefined;
+    const episodesLive =
+      config.recall.t1Episodes?.enabled !== false &&
+      config.recall.t1Episodes?.mode === 'live';
     const snap = await buildSnapshot({
       recentTurnTexts: (sid: string, maxTurns: number) => {
         const out: string[] = [];
@@ -2644,11 +2651,20 @@ class MafwScheduler {
         } as any);
       },
       // V1 verbatim layer: dense t1 round hits fused into the snapshot block.
-      ...(config.recall.t1Recall?.enabled !== false
-        ? (() => {
-            const { createGatewayT1Search } = require('./recall/t1-search');
-            return { searchT1: createGatewayT1Search(db) };
-          })()
+      ...(t1Search ? { searchT1: t1Search } : {}),
+      // Episode layer: only live mode consumes episodes in the snapshot.
+      ...(t1Search && episodesLive
+        ? {
+            searchEpisodes: async (q: string, n: number) => {
+              const { searchT1Episodes } = require('./recall/t1-episode-search');
+              return searchT1Episodes({
+                searchTurns: t1Search,
+                findEpisodeByTrace: (traceId: string) => db.findEpisodeByTrace(traceId),
+                getEpisode: (episodeId: string) => db.getEpisode(episodeId),
+                listMembers: (episodeId: string) => db.listEpisodeMembers(episodeId),
+              }, q, n);
+            },
+          }
         : {}),
       rerank: async (q: string, ms: any[]) => {
         const reranker = getReranker();
