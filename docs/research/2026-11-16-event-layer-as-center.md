@@ -160,6 +160,101 @@ Confluent / StreamNative / Microsoft 的多 Agent 参考架构都把事件总线
 - 一个 `goal.failed` 事实应该同时被 Lead、Tech Lead、human inbox、presence、memory 订阅，
   各自做自己的投影。
 
+### 2.5 架构对比：MAFW vs Claude always-on vs DeepSeek Super-agent
+
+> Claude 的 always-on 是产品/平台模式（Anthropic 文章 + Duet / Dispatch / Channels），
+> 不是开源架构；Super-agent 是 DeepSeek 的 research prototype；MAFW 是我们当前代码。
+> 下表比较的是**架构形状**，不是功能清单。
+
+#### 2.5.1 中心与角色
+
+| 维度 | MAFW 现在 | Claude always-on | DeepSeek Super-agent |
+|---|---|---|---|
+| **架构中心** | NodeDriver 状态机 + PodStore/GoalState | **event inbox + run + outbox** | **持久 Router + Worker pool** |
+| **事件层角色** | 三个下游侧车：`event_log` / `pod_events` / P2.4 `event_*` | 中心 inbox：耐久入队、单 active worker、快速 ack | 中心 trigger/thread/subscription：后续事件直达 Worker |
+| **执行单元** | Goal node run（plan / execute / review / probe） | agent run（可 sandbox / VM / browser） | 隔离 Worker 执行任务 |
+| **协调者** | Lead：聊天对象 + 协调者 + 转达者，边界模糊 | 产品 run 调度 + outbox；不是常驻“总管家” | Router：只做交互/路由/全局记忆，不干重活 |
+| **状态** | `GoalStateV3` + `pod_goals`/revisions + `goal_node_runs` | session state + 持久 memory | task state + Chain of Recall |
+| **记忆** | 谐波记忆、T1、pinned/sticky、100ms recall | instructions / notes / past messages / task progress 四类文件 | 跨 run task state + recall chain |
+| **人的注意力** | attention + `PodEventWake` + decision Lead outbox（两条路径、两套预算） | outbox pacing；只在需要时打扰 | 注意力预算 + 批处理/digest；Router 不刷屏 |
+| **权限** | human-only 验收/计划批准/方向裁定；强 | permission primitives、deferred tool call、auto-mode | mandate / admission / human gate / watchdog |
+| **交付** | Lead 直接 `promptAsync`；`event_outbox` 未真正接线 | outbox dispatcher | outbox + channel |
+| **恢复/审计** | `event_log` + `pod_events` + `goal_node_runs`；无统一 domain replay | 持久 inbox/run 状态 + 产品审计 | event log + task state + watchdog |
+| **扩展** | `event_sources/threads/triggers` 已有骨架 | Channels（IM/CI/webhook 注入） | Trigger sources + Thread/Subscription |
+
+#### 2.5.2 强项 / 弱项（相对评估）
+
+| 能力 | MAFW | Claude | Super-agent | 说明 |
+|---|---|---|---|---|
+| 确定性工作流 | **强** | 中 | 中 | NodeDriver + state machine + 重试/恢复 |
+| 独立评审 / 验收 | **强** | 中 | 中 | 独立 Reviewer + 逐任务 rubric + human-only accept |
+| 角色隔离 | **强** | 中 | **强** | Pod Lead/Tech Lead/Builder/Reviewer |
+| 记忆系统 | **强** | 中 | 中 | 谐波 + T1 + pinned/sticky + recall |
+| 事件层中心性 | **弱** | **强** | **强** | MAFW 是三套侧车 |
+| 统一 inbox / outbox | **弱** | **强** | **强** | MAFW 两条 Lead 唤醒路径 |
+| Agent-set timers | **弱** | **强** | 中 | MAFW 只有 cron/automation |
+| Deferred approval | **弱** | **强** | 中 | MAFW 停下等人，但没有“回答作为事件恢复” |
+| Run ledger / watchdog | 中 | 中 | **强** | MAFW 有 node trace，无 Lead-run/dispatcher watchdog |
+| 注意力预算 | 中 | **强** | **强** | MAFW 的预算只在 PodEventWake |
+
+#### 2.5.3 一句话对照
+
+| 问题 | Claude | Super-agent | MAFW 现在 | MAFW 目标 |
+|---|---|---|---|---|
+| Agent 什么时候醒？ | event inbox + timers | trigger + 程序快筛 | `PodEventWake` + event layer 两条路 | 统一 inbox + timers |
+| 谁跟人说话？ | outbox / 产品界面 | 持久 Router | Lead（直连 promptAsync） | Lead 走 outbox |
+| 谁干活？ | agent run / sandbox | Worker | NodeDriver + Pod 角色 | 保留（强项） |
+| 后续事件去哪？ | 续 session 或新 session | thread subscription 直达 Worker | event layer subscription；work/context 分流 | 统一 domain event + subscription |
+| 怎么防噪音？ | 只在需要时发 | 两级过滤 + 注意力预算 | 两套预算 | 统一预算 + p1/p2/p3 + digest |
+| 怎么防失控？ | permissions / approval | mandate / admission / watchdog | human-only 门（强） | + deferred approval + watchdog |
+| 跨 run 记什么？ | memory 四类文件 | task state + recall chain | 谐波记忆（强） | + per-run 指针快照 |
+| 事件层在中心吗？ | **是** | **是** | **否** | **是（集成中心）** |
+
+#### 2.5.4 架构模式命名
+
+- **MAFW 现在**：*workflow-centric + notification sidecar*。
+  优点是确定性、评审、human gate、记忆都很强；缺点是事件层不中心、协调规则分散。
+- **Claude always-on**：*event-inbox + durable run + outbox*。
+  把“事件先入耐久 inbox”作为 source of truth，run 醒来处理，结果走 outbox；产品侧用
+  Duet / Dispatch / Channels 承载不同通道。
+- **DeepSeek Super-agent**：*Router/Worker + thread/subscription + event bus*。
+  Router 只路由和记忆，Worker 隔离执行；事件由 trigger 快筛后进 thread，后续事件直接投给
+  Worker；强调注意力预算和 watchdog。
+- **MAFW 目标**：*event-centric workflow*。
+  以统一 domain event 为集成中心，NodeDriver 作为确定性工作流执行器，Pod 角色作为消费者/
+  生产者，outbox 作为交付，projection 作为读模型。
+
+#### 2.5.5 该借什么、不该借什么
+
+**借 Claude：**
+- 事件先入耐久 inbox，handler 快速 ack；inbox 是 source of truth；
+- 一个 active worker / 一个 dispatcher；
+- outbox pacing：先安静，再逐步赢得注意力；
+- per-run memory 文件（instructions / notes / progress / reported）；
+- deferred tool call：run 挂起，人回答后以事件恢复。
+
+**借 Super-agent：**
+- Router / Worker 边界：Lead 不应变成通用 Worker；
+- Thread / Subscription：后续事件直达对应 Worker，不反复经过 Router；
+- 程序快筛 + 模型慢判：不是每条事件都跑 LLM；
+- 注意力预算 + 批处理 / digest；
+- Mandate / admission / watchdog；
+- task state + Chain of Recall（但复用现有谐波记忆，不另造一套）。
+
+**保留 MAFW：**
+- 确定性 NodeDriver（不把工作流交给 Router 临场判断）；
+- 独立 Reviewer + 逐任务 rubric + 必需 Goal 条件；
+- human-only 验收 / 计划批准 / 方向裁定；
+- 谐波记忆 / soft supersede / pinned-sticky / 100ms recall；
+- Pod / Goal / revision 状态机（事件层是入口，不是替代品）。
+
+**不要借：**
+- 不要给 Lead 默认 Bash/文件写权限；
+- 不要把所有事件都广播给 Lead；
+- 不要为了 always-on 另造一套 memory；
+- 不要自动接受 inferred 工作或自动 merge/purge；
+- 不要把 Super-agent 的 research prototype 直接当生产架构。
+
 ---
 
 ## 3. 判断：事件层应该是中心吗？
