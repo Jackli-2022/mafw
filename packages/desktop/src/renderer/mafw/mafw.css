@@ -2024,6 +2024,8 @@ html[data-theme="light"] body {
   transform: scale(.98);
   transition: opacity var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
 }
+.mafw-rename-field { margin: 12px 0 8px; }
+.mafw-rename-error { color: var(--danger); font-size: 12px; margin-bottom: 8px; }
 
 /* Agent switch trace (ChatGPT-style centered divider) */
 .mafw-switch-trace {

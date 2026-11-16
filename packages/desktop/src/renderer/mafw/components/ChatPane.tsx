@@ -91,6 +91,7 @@ import { ScreenshotCropper, type CaptureShot } from "./ScreenshotCropper"
 import { dataUrlToFile } from "../capture/data-url"
 import { registerCaptureSink } from "../capture/attach-sink"
 import { CheckpointOverlay } from "./CheckpointOverlay"
+import { RenameSessionDialog } from "./RenameSessionDialog"
 import { checkpointRev } from "../checkpoint-rev"
 import { keybindingFor } from "../keybinding-store"
 import { matchesCombo } from "../keybindings"
@@ -535,6 +536,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const [revertConfirm, setRevertConfirm] = createSignal<{ messageID: string } | null>(null)
   const [canUnrevert, setCanUnrevert] = createSignal(false)
   const [checkpointsOpen, setCheckpointsOpen] = createSignal(false)
+  const [renameOpen, setRenameOpen] = createSignal(false)
 
   // C2：空历史提示一次性闸（pane 按 sid keyed，切换会话自然重置）。
   let emptyHistHinted = false
@@ -1669,6 +1671,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           applyAgentSelection(entry)
         },
       },
+      {
+        id: "rename", trigger: "/rename", title: "重命名会话",
+        description: "修改当前会话标题", group: "local", source: "builtin",
+        run: () => { closeCommandPicker(); setRenameOpen(true) },
+      },
     ]
     const mafw: CommandItem[] = mafwRemote().items.length > 0
       ? mafwRemote().items
@@ -1771,6 +1778,17 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const onCommandSelect = (item: CommandItem) => {
     if (item.run) { runLocalCommand(item.run); return }
     insertCommandText(item.trigger)
+  }
+
+  const renameCurrentSession = async (title: string) => {
+    const sid = sidProp()
+    if (!sid) return
+    await window.api.mafw.sessions.rename(sid, title)
+    setStore(prev => ({
+      ...prev,
+      session: prev.session.map(s => s.id === sid ? { ...s, title } : s),
+    }))
+    showToastV2({ description: "会话已重命名", duration: 2000 })
   }
 
   // ── TTS 音色选择器（列表/风格/试听 → ../chat/TtsPicker.tsx；宿主持有 voice 信号）──
@@ -3065,6 +3083,12 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           speakText={() => void speakText()}
           stopActivePlayback={stopActivePlayback}
           previewSpeak={(text, voice) => voiceSession.speak(text, voice)}
+        />
+        <RenameSessionDialog
+          open={renameOpen()}
+          initialTitle={title()}
+          onClose={() => setRenameOpen(false)}
+          onConfirm={renameCurrentSession}
         />
         <Show when={checkpointsOpen() && sidProp()}>
           <CheckpointOverlay
