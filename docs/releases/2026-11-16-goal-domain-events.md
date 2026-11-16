@@ -27,7 +27,11 @@
   仍走文件（测试 / CLI）。
 - 旧 `.mafw/state/<goalId>.json` **惰性导入**：DB 未命中时读文件、写库、继续返回；
   JSON 仍是尽力镜像（写失败只 warn）。`listGoalStates` / `recoverState` / `discoverNewGoals`
-  / `archiveGoal` 的项目定位都改走 DB（无 backend 时回退文件扫描）。
+  / `archiveGoal` 的项目定位都改走 DB；DB 模式下的发现会**同时扫描注册工作区的
+  `state/*.json` 并导入**（首启升级不会漏掉 active Goal），且只返回注册工作区内的行。
+- 所有 state 写入都收口到 `writeGoalState`：kernel `patchState`（pause/resume/stop/force-phase/
+  archive terminal）、`core/utils/state.ts:updateState`、MCP `mafw_update_state`、
+  `recovery.restoreLoop` 不再直接改 JSON。
 
 ### 生命周期事件
 
@@ -44,6 +48,9 @@
   `pod_events` 行 + lead outbox 行；`inTransaction` 抛错则整体回滚，Goal 仍是 active。
 - `PodEventService` 拆出 `recordRow`（仅 DB）与 `writeAudit`（仅文件），审计文件在事务提交后写。
 - kernel `finishPodGoal` 不再单独 `podEventService.record`；广播与审计在提交后执行。
+  `captured.event` 只在 outbox enqueue 成功后赋值，回滚时不会广播幽灵事件。
+- Pod-less（CLI）Goal 没有 pod event / outbox，但仍写终止 domain event
+  （`goal.result` / `goal.failed`），由 `recordDomainEvent` fail-open 提交。
 
 ### 投影 parity
 
@@ -56,7 +63,8 @@
 
 - `event_outbox` 新增 `read_at`、`ack_at`、`sent_session_id`（additive）。
 - **read**：客户端把某个 Goal 的 Pod event 标记 seen 后，该 goal 的 lead outbox 行写
-  `read_at`（`markOutboxReadByGoal`）；`wake_session_id='outbox:<id>'` 的行也可按 id 精确回写。
+  `read_at`（`markOutboxReadByGoal`）；只命中 `state='sent'` 且 payload 无 `messageId` 的行
+  （未发送 / A2A 镜像行不算已读）。`wake_session_id='outbox:<id>'` 的行也可按 id 精确回写。
 - **ack**：Lead 会话 `turn.completed` 且成员角色是 `lead` 时，只 ack
   `sent_session_id` 匹配的行——同一 Lead 会话服务多个 Pod 也不会跨 Pod 误 ack。
 - read / ack 都幂等；`a2a:<messageId>` 行不参与 read。
@@ -86,6 +94,14 @@
 - read 的定义是「人看到该 Goal 的 inbox」而不是「人看到 Lead 的聊天消息」；后者没有
   可观测的客户端信号，留到 Phase 3/4 的会话已读。
 - 外部事件（GitHub / cron / webhook）仍走旧 `event_*` 表，Phase 4 才并入 domain log。
+- `goal_state` 的主键是 `goal_id`（沿用 goalId 全局唯一的既有假设）；跨项目同 ID 会合并，
+  Phase 3 若引入多租户再改成 `(project_dir, goal_id)`。
+- projector parity 用的是手写 payload fixture，证明的是「事件 → 投影」映射，不是
+  producer → projector 的端到端回放；Phase 3 的 replay 测试补这一段。
+- 生产者不显式传 `eventId`（store 自动生成）；归档重试的幂等靠 `onGoalArchived`
+  的早返回（已 done/aborted 直接跳过），不是靠 eventId 重放。
+- read / ack 只覆盖 `lead:*` channel 的已发送行；decision 的「打开即已读」没有客户端信号，
+  留到 Phase 3/4。
 
 ## 回滚
 

@@ -81,17 +81,24 @@ test('bulk seen reports each outbox-backed event once', () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('markOutboxReadByGoal only marks the matching goal', () => {
+test('markOutboxReadByGoal only marks delivered rows without an A2A message', () => {
   const store = new EventStore(new Database(':memory:'));
   const outbox = new EventOutbox({ store, now: () => NOW });
   store.insertChannel({ id: 'lead:p1', threadId: '*', kind: 'chat', address: {}, now: NOW });
-  const g1 = outbox.enqueue({
+  const sent = outbox.enqueue({
     channelId: 'lead:p1', dedupeKey: 'pod-event:e1', payload: { kind: 'pod-event', goalId: 'g1' },
   });
-  const g2 = outbox.enqueue({
-    channelId: 'lead:p1', dedupeKey: 'pod-event:e2', payload: { kind: 'pod-event', goalId: 'g2' },
+  outbox.markSent(sent.id, 'ses_a');
+  const pending = outbox.enqueue({
+    channelId: 'lead:p1', dedupeKey: 'pod-event:e2', payload: { kind: 'pod-event', goalId: 'g1' },
   });
+  const a2a = outbox.enqueue({
+    channelId: 'lead:p1', dedupeKey: 'pod-event:e3',
+    payload: { kind: 'pod-event', goalId: 'g1', messageId: 'm1' },
+  });
+  outbox.markSent(a2a.id, 'ses_a');
   expect(store.markOutboxReadByGoal('p1', 'g1', '2026-11-16T00:01:00.000Z')).toBe(1);
-  expect(store.getOutbox(g1.id)?.readAt).toBe('2026-11-16T00:01:00.000Z');
-  expect(store.getOutbox(g2.id)?.readAt).toBeNull();
+  expect(store.getOutbox(sent.id)?.readAt).toBe('2026-11-16T00:01:00.000Z');
+  expect(store.getOutbox(pending.id)?.readAt).toBeNull();
+  expect(store.getOutbox(a2a.id)?.readAt).toBeNull();
 });

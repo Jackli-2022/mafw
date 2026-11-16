@@ -49,3 +49,11 @@ test('out-of-order input still replays by aggregate version', () => {
   ]);
   expect(p).toMatchObject({ revision: 2, phase: 'REVIEW', round: 2, verdict: 'FAIL' });
 });
+
+test('revision advances from node and phase payloads when creation is missing', () => {
+  const p = projectGoalLifecycle([
+    evt('goal.phase.changed', 1, { phase: 'EXECUTING', round: 1, revision: 2 }),
+    evt('goal.failed', 2, { verdict: 'FAIL', revision: 2 }),
+  ]);
+  expect(p).toMatchObject({ revision: 2, verdict: 'FAIL' });
+});

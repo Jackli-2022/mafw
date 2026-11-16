@@ -2,6 +2,7 @@
 // GoalStateV3 —— NodeDriver 的唯一状态真相源（spec §5）。
 // 写入方：NodeDriver（唯一）；读取方：驱动器/timeline/dashboard（双读兼容 round/loop）。
 // Phase 2：SQLite（`GoalStateStore`）是写权威；JSON 文件是兼容镜像与旧数据导入源。
+import * as fs from 'fs';
 import {
   archiveGoalStateFile,
   effectiveRound,
@@ -215,8 +216,11 @@ export function archiveGoalStateForRevision(
   if (goalStateBackend) {
     const current = goalStateBackend.load(mafwDir, goalId);
     if (!current) return null;
-    goalStateBackend.archiveRevision(mafwDir, goalId, normalizeRevision(revision ?? current.revision));
-    return null;
+    const target = normalizeRevision(revision ?? current.revision);
+    goalStateBackend.archiveRevision(mafwDir, goalId, target);
+    // Keep the API contract: callers still get the mirror path when it exists.
+    const mirrorPath = revisionStatePathFor(mafwDir, goalId, target);
+    return fs.existsSync(mirrorPath) ? mirrorPath : null;
   }
   return archiveGoalStateFile(mafwDir, goalId, revision);
 }
@@ -281,11 +285,32 @@ export function listGoalStateSummaries(
   workspaces: Array<{ projectDir: string; mafwDir: string }>,
 ): Array<{ goalId: string; mafwDir: string; projectDir: string }> {
   if (goalStateBackend) {
-    return goalStateBackend.list().map((state) => ({
-      goalId: state.goalId,
-      mafwDir: state.mafwDir,
-      projectDir: state.projectDir,
-    }));
+    const registered = new Set(workspaces.map((workspace) => workspace.mafwDir));
+    const summaries = new Map<string, { goalId: string; mafwDir: string; projectDir: string }>();
+    for (const state of goalStateBackend.list()) {
+      if (workspaces.length > 0 && !registered.has(state.mafwDir)) continue;
+      summaries.set(state.goalId, {
+        goalId: state.goalId,
+        mafwDir: state.mafwDir,
+        projectDir: state.projectDir,
+      });
+    }
+    // First boot after the upgrade: the DB is empty but legacy JSON files are
+    // not. Import them here so active goals are not stranded by recovery.
+    for (const workspace of workspaces) {
+      for (const file of listGoalStateFiles(workspace.mafwDir)) {
+        const goalId = file.replace(/\.json$/, '');
+        if (summaries.has(goalId)) continue;
+        const imported = goalStateBackend.load(workspace.mafwDir, goalId);
+        if (!imported) continue;
+        summaries.set(goalId, {
+          goalId,
+          mafwDir: imported.mafwDir || workspace.mafwDir,
+          projectDir: imported.projectDir || workspace.projectDir,
+        });
+      }
+    }
+    return [...summaries.values()];
   }
   const out: Array<{ goalId: string; mafwDir: string; projectDir: string }> = [];
   for (const workspace of workspaces) {

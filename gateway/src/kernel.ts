@@ -47,7 +47,7 @@ import { errorBody, API_ERROR_CODES } from './core/http/api-error';
 import { NodeDriver } from './core/goal/driver';
 import { createLlmGoalEvalProvider } from './core/goal/goal-eval-llm-provider';
 import { parseReviewRubric, taskIdsFromWavePlan } from './core/goal/review-rubric';
-import { ensureGoalState, effectiveRevision, effectiveRound, isTerminalState, listGoalStateSummaries, loadGoalState, setGoalStateBackend } from './core/goal/state-v3';
+import { ensureGoalState, effectiveRevision, effectiveRound, isTerminalState, listGoalStateSummaries, loadGoalState, setGoalStateBackend, writeGoalState } from './core/goal/state-v3';
 import { GoalStateStore } from './core/goal/goal-state-store';
 import { DomainEventStore } from './core/events/domain-event-store';
 import type { DomainEventInput } from './core/events/domain-event';
@@ -6329,13 +6329,8 @@ class MafwScheduler {
     }
     await this.destroyAllSessions(goalId);
 
-    let projectDir: string | null = null;
-    for (const [pDir, info] of this.registeredProjects) {
-      if (loadGoalState(info.mafwDir, goalId)) {
-        projectDir = pDir;
-        break;
-      }
-    }
+    const entry = this.listGoalStates().find((candidate) => candidate.goalId === goalId);
+    let projectDir: string | null = entry?.projectDir ?? null;
 
     if (projectDir) {
       try {
@@ -6481,6 +6476,21 @@ class MafwScheduler {
     // Domain event + pod event + lead outbox commit with the goal status in one
     // transaction; a throwing writer rolls the archive back.
     const captured: { event: PodEventRow | null } = { event: null };
+    // Pod-less goals still need a terminal domain fact; there is no pod event
+    // or lead outbox row to write for them.
+    if (outcome && !podId) {
+      const mafwDir = this.goalDriverMafwDirCache.get(goalId);
+      const state: any = mafwDir ? loadGoalState(mafwDir, goalId) : this.activeGoals.get(goalId);
+      this.recordDomainEvent(archiveDomainEvent({
+        goalId,
+        revision: effectiveRevision(state ?? {}),
+        verdict: outcome.verdict,
+        status: outcome.verdict === 'CANCELLED' ? 'aborted' : 'done',
+        lastError: outcome.lastError ?? null,
+        projectDir: state?.projectDir ?? '',
+        occurredAt: new Date().toISOString(),
+      }));
+    }
     try {
       if (podId && outcome && this.podEventService) {
         const goal = this.podStore?.getGoalByGoalId(goalId);
@@ -6511,7 +6521,6 @@ class MafwScheduler {
               summary,
               dedupeKey: goalDedupeKey(goalId, revision, cls.kind),
             });
-            captured.event = evt;
             if (evt.audience === 'lead' && this.leadOutbox) {
               this.leadOutbox.enqueuePodEvent({
                 podId,
@@ -6521,6 +6530,9 @@ class MafwScheduler {
                 priority: 'p1',
               });
             }
+            // Set only after the outbox enqueue succeeded: a throw rolls the
+            // transaction back, and we must not broadcast a phantom event.
+            captured.event = evt;
           },
         });
       } else {
@@ -6901,31 +6913,23 @@ class MafwScheduler {
   }
 
   private async patchState(goalId: string, patch: Partial<StateFile>) {
-    // 找到 state 文件路径
-    let statePath: string | null = null;
-    for (const [, info] of this.registeredProjects) {
-      const p = path.join(info.mafwDir, 'state', `${goalId}.json`);
-      if (fs.existsSync(p)) {
-        statePath = p;
-        break;
-      }
-    }
-
-    if (!statePath) {
+    const entry = this.listGoalStates().find((candidate) => candidate.goalId === goalId);
+    if (!entry) {
       log.error(`[Scheduler] State file not found for ${goalId}`);
       return;
     }
 
-    const current: StateFile = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
-    const updated: StateFile = { ...current, ...patch, updatedAt: new Date().toISOString() };
-
-    // 原子写入
-    const tmpPath = `${statePath}.tmp`;
-    fs.writeFileSync(tmpPath, JSON.stringify(updated, null, 2), 'utf-8');
-    fs.renameSync(tmpPath, statePath);
+    let updated: any;
+    try {
+      // SQLite authority + JSON mirror; never write the file behind its back.
+      updated = writeGoalState(entry.mafwDir, goalId, patch as any);
+    } catch (err: any) {
+      log.error(`[Scheduler] State patch failed for ${goalId}: ${err?.message ?? err}`);
+      return;
+    }
 
     // 更新内存缓存
-    this.activeGoals.set(goalId, updated);
+    this.activeGoals.set(goalId, updated as StateFile);
 
     // 广播 state_change 事件到 Dashboard
     this.broadcast({

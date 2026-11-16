@@ -22,3 +22,18 @@ test('node lifecycle appends domain events', () => {
 test('phase transitions are wired to the kernel', () => {
   expect(boot).toMatch(/onGoalPhaseTransition/);
 });
+
+test('patchState goes through the writeGoalState authority', () => {
+  const start = kernel.indexOf('private async patchState(');
+  const end = kernel.indexOf('private readGoalStateFile(', start);
+  const block = kernel.slice(start, end > start ? end : start + 2000);
+  expect(block).toMatch(/writeGoalState/);
+  expect(block).not.toMatch(/fs\.writeFileSync/);
+});
+
+test('terminal domain events are also recorded for pod-less goals', () => {
+  const start = kernel.indexOf('private async finishPodGoal(');
+  const block = kernel.slice(start, start + 14000);
+  expect(block).toMatch(/!podId/);
+  expect(block).toMatch(/archiveDomainEvent/);
+});

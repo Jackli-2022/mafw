@@ -40,6 +40,11 @@ function verdictOf(value: unknown): GoalLifecycleVerdict | null {
     : null;
 }
 
+function applyRevision(projection: GoalLifecycleProjection, payload: Record<string, unknown>): void {
+  const revision = positiveInt(payload.revision, 0);
+  if (revision > 0) projection.revision = revision;
+}
+
 export function projectGoalLifecycle(events: DomainEvent[]): GoalLifecycleProjection | null {
   const goalEvents = events
     .filter((event) => event.aggregateType === 'goal')
@@ -71,20 +76,24 @@ export function projectGoalLifecycle(events: DomainEvent[]): GoalLifecycleProjec
       case 'goal.phase.changed':
         if (typeof payload.phase === 'string') projection.phase = payload.phase;
         projection.round = positiveInt(payload.round, projection.round);
+        applyRevision(projection, payload);
         break;
       case 'goal.node.started':
         projection.round = positiveInt(payload.round, projection.round);
+        applyRevision(projection, payload);
         break;
       case 'goal.node.failed':
         if (typeof payload.message === 'string' && payload.message) {
           projection.lastError = payload.message;
         }
+        applyRevision(projection, payload);
         break;
       case 'goal.result':
         projection.status = 'done';
         projection.verdict = verdictOf(payload.verdict) ?? 'PASS';
         projection.resultReady = true;
         projection.failed = false;
+        applyRevision(projection, payload);
         break;
       case 'goal.failed': {
         const verdict = verdictOf(payload.verdict);
@@ -92,6 +101,7 @@ export function projectGoalLifecycle(events: DomainEvent[]): GoalLifecycleProjec
         projection.verdict = verdict;
         projection.failed = true;
         projection.resultReady = false;
+        applyRevision(projection, payload);
         if (typeof payload.lastError === 'string' && payload.lastError) {
           projection.lastError = payload.lastError;
         }

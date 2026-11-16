@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { writeGoalState } from '../goal/state-v3';
 
 /**
  * State Machine Utilities — v3.5
@@ -76,25 +77,9 @@ export async function updateState(
   patch: Partial<StateFile>,
   projectDir: string = '.'
 ): Promise<StateFile> {
-  const statePath = path.join(projectDir, '.mafw/state', `${goalId}.json`);
-
-  if (!fs.existsSync(statePath)) {
-    throw new Error(`State file not found: ${statePath}`);
-  }
-
-  const current: StateFile = safeJsonParse<StateFile>(statePath);
-  const updated: StateFile = {
-    ...current,
-    ...patch,
-    updatedAt: new Date().toISOString()
-  };
-
-  // 原子写入：先写临时文件，再重命名
-  const tmpPath = `${statePath}.tmp`;
-  fs.writeFileSync(tmpPath, JSON.stringify(updated, null, 2), 'utf-8');
-  fs.renameSync(tmpPath, statePath);
-
-  return updated;
+  const mafwDir = path.join(projectDir, '.mafw');
+  // Phase 2: SQLite is the authority; writeGoalState also keeps the JSON mirror.
+  return writeGoalState(mafwDir, goalId, patch as any) as unknown as StateFile;
 }
 
 function safeJsonParse<T>(filePath: string): T {

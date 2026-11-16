@@ -1,6 +1,7 @@
 ﻿import { log } from './core/utils/logger';
 import * as fs from 'fs';
 import * as path from 'path';
+import { writeGoalState } from './core/goal/state-v3';
 
 const MAFW_DIR = '.mafw';
 
@@ -80,15 +81,15 @@ export class RecoveryManager {
     const checkpoint = this.loadCheckpoint(cpPath);
     if (!checkpoint) return false;
 
-    // Restore state file
+    // Restore state file (SQLite authority + JSON mirror).
     const statePath = path.join(this.mafwDir, 'state', `${goalId}.json`);
     if (fs.existsSync(statePath)) {
       const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
-      state.phase = checkpoint.phase || 'PLANNING';
-      state.currentWave = targetWaveNum ?? state.currentWave;
-      state.updatedAt = new Date().toISOString();
-      state.error = undefined;
-      fs.writeFileSync(statePath, JSON.stringify(state, null, 2), 'utf-8');
+      writeGoalState(this.mafwDir, goalId, {
+        phase: checkpoint.phase || 'PLANNING',
+        currentWave: targetWaveNum ?? state.currentWave,
+        lastError: null,
+      } as any);
     }
 
     // Truncate waves.json to remove waves after the rollback point

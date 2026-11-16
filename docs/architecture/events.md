@@ -52,9 +52,9 @@ Source → Trigger → Thread → Subscription → Decision → Delivery → Cha
 
 ### Lead read / ack（2026-11-16 定案）
 
-- **read = 人看到**：客户端把某个 Goal 的 Pod event 标记 seen
-  （`POST /api/pods/:podId/events/:id/seen` 或 `.../events/seen`）后，该 goal 的 lead outbox
-  行写 `read_at`；`wake_session_id='outbox:<id>'` 的行也可按 id 精确回写。
+- **read**：客户端把某个 Goal 的 Pod event 标记 seen 后，该 goal 的 lead outbox 行写
+  `read_at`（`markOutboxReadByGoal`）；只命中 `state='sent'` 且 payload 无 `messageId` 的行。
+  `wake_session_id='outbox:<id>'` 的行也可按 id 精确回写。
 - **ack = Lead 回复**：Lead 会话 `turn.completed` 且成员角色是 `lead` 时，只 ack
   `sent_session_id` 等于该会话的行（`ack_at`）；同一会话服务多个 Pod 也不会跨 Pod 误 ack。
 - read / ack 都是幂等的；`a2a:<messageId>` 行不参与 read。

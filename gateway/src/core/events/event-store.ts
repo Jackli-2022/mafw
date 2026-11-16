@@ -743,13 +743,14 @@ export class EventStore {
     return Number(result.changes ?? 0);
   }
 
-  /** Human opened the goal: its lead notifications count as read. */
+  /** Human opened the goal: its delivered lead notifications count as read. */
   markOutboxReadByGoal(podId: string, goalId: string, now: string): number {
     if (!podId || !goalId) return 0;
     const result = this.db.prepare(`
       UPDATE event_outbox SET read_at = ?, updated_at = ?
-      WHERE channel_id = ? AND read_at IS NULL
+      WHERE channel_id = ? AND read_at IS NULL AND state = 'sent'
         AND json_extract(payload, '$.goalId') = ?
+        AND json_extract(payload, '$.messageId') IS NULL
     `).run(now, now, `lead:${podId}`, goalId);
     return Number(result.changes ?? 0);
   }
