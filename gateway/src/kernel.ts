@@ -226,6 +226,7 @@ import { InstructionSyncService } from './core/instructions/instruction-sync-ser
 import { DiscoveryService } from './core/discovery/discovery-service';
 import { renderInstructionBlocks, type InstructionBlocks } from './recall/instruction-blocks';
 import { getT1SemanticEncoder } from './recall/t1-semantic-atoms';
+import { rebuildSessionEpisodes } from './recall/t1-episode-rebuild';
 import { isHiddenSession, selectVisibleSessions } from './core/session-visibility';
 
 import { mafwBroadcast, projectRegisteredEvent } from './runtime/event-broadcast';
@@ -3488,6 +3489,18 @@ class MafwScheduler {
       index: this.memoryService.harmonicIndex,
       workerFor: (sessionID) => this.getPool().getWorker(sessionID, 'extract'),
       staleMs: config.recall.turnStaleMs,
+      // Phase 1: derived episode index. Shadow writes without recall changes.
+      rebuildEpisodes: (sessionID) => {
+        const cfg = config.recall.t1Episodes;
+        if (!cfg?.enabled || cfg.mode === 'off') return;
+        rebuildSessionEpisodes(
+          this.getGatewayDb(),
+          sessionID,
+          cfg.mode === 'shadow'
+            ? { shadowLogPath: config.resolvePath('logs/episode-boundary-shadow.jsonl') }
+            : {},
+        );
+      },
       workerModel: config.recall.workerModel,
       // V2 ②/③: TCM boundary shadow log + event-segment verbatim input
       // (A/B day parity) — flags from config.recall.

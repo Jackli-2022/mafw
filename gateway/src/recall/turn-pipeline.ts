@@ -48,6 +48,8 @@ export interface TurnPipelineOptions {
     sessionID: string,
     turnSeq: number,
   ) => Array<{ toolName?: string; agent?: string }>;
+  /** Phase 1: rebuild derived T1 episodes after the per-turn encode pass. */
+  rebuildEpisodes?: (sessionID: string) => void;
   /** Phase C: embedding → sparse semantic atoms, batched per session. */
   semanticAtomsFor?: (
     turns: Array<{ traceId: string; text: string }>,
@@ -385,6 +387,14 @@ export class TurnPipeline {
         );
       } catch { /* fail-open: feature-only / raw T1 path remains */ }
     }
+
+    // Phase 1: refresh the derived episode index after this batch's per-turn
+    // code is written. Shadow/live both write; recall consumption is gated
+    // elsewhere. Failure never blocks archiving.
+    try {
+      this.opts.rebuildEpisodes?.(sessionID);
+    } catch { /* fail-open: episodes converge on a later batch */ }
+
     const nowSec = Date.now() / 1000;
     const scoredTurns = turnObs.map((x) => {
       const salience = x.obs.reduce((m, o) => Math.max(m, o.salience ?? 0.5), 0);
