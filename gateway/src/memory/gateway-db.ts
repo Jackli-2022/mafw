@@ -2530,6 +2530,73 @@ export class GatewayDatabase {
   }
 
   /**
+   * Encode-time signal distribution for /api/memory/stats. Thresholds are
+   * passed by the route so the DB layer stays config-free.
+   */
+  t1SignalStats(
+    thresholds: { highNovelty: number; highMismatch: number; redundant: number } = {
+      highNovelty: 0.8,
+      highMismatch: 0.2,
+      redundant: 0.05,
+    },
+  ): {
+    scored: number;
+    unscored: number;
+    novelty: { p50: number; p90: number; p99: number; max: number };
+    mismatch: { p50: number; p90: number; p99: number; max: number };
+    highNovelty: number;
+    highMismatch: number;
+    redundant: number;
+  } {
+    const count = (sql: string, ...params: unknown[]): number =>
+      Number((this.db.prepare(sql).get(...params) as { n?: number } | undefined)?.n ?? 0);
+    const percentile = (column: 'novelty' | 'mismatch', p: number): number => {
+      const n = count(`SELECT COUNT(*) AS n FROM t1_turn_features WHERE ${column} IS NOT NULL`);
+      if (n === 0) return 0;
+      const offset = Math.min(n - 1, Math.max(0, Math.floor((n - 1) * p)));
+      const row = this.db
+        .prepare(
+          `SELECT ${column} AS v FROM t1_turn_features WHERE ${column} IS NOT NULL
+            ORDER BY ${column} LIMIT 1 OFFSET ?`,
+        )
+        .get(offset) as { v?: number } | undefined;
+      return Number(row?.v ?? 0);
+    };
+    const maxOf = (column: 'novelty' | 'mismatch'): number =>
+      Number(
+        (
+          this.db
+            .prepare(`SELECT MAX(${column}) AS v FROM t1_turn_features WHERE ${column} IS NOT NULL`)
+            .get() as { v?: number } | undefined
+        )?.v ?? 0,
+      );
+    const dist = (column: 'novelty' | 'mismatch') => ({
+      p50: percentile(column, 0.5),
+      p90: percentile(column, 0.9),
+      p99: percentile(column, 0.99),
+      max: maxOf(column),
+    });
+    return {
+      scored: count('SELECT COUNT(*) AS n FROM t1_turn_features WHERE novelty IS NOT NULL'),
+      unscored: count('SELECT COUNT(*) AS n FROM t1_turn_features WHERE novelty IS NULL'),
+      novelty: dist('novelty'),
+      mismatch: dist('mismatch'),
+      highNovelty: count(
+        'SELECT COUNT(*) AS n FROM t1_turn_features WHERE novelty >= ?',
+        thresholds.highNovelty,
+      ),
+      highMismatch: count(
+        'SELECT COUNT(*) AS n FROM t1_turn_features WHERE mismatch >= ?',
+        thresholds.highMismatch,
+      ),
+      redundant: count(
+        'SELECT COUNT(*) AS n FROM t1_turn_features WHERE novelty <= ?',
+        thresholds.redundant,
+      ),
+    };
+  }
+
+  /**
    * Join one session's turn identity with its derived feature/actor/concept/
    * sparse code. Times are epoch milliseconds; `t1_turns.created_at` is seconds.
    */

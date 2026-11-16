@@ -179,6 +179,24 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
           const dbStats = (deps.getGatewayDb() as any).t1CodeStats;
           if (typeof dbStats === 'function') code = { ...code, ...dbStats.call(deps.getGatewayDb()) };
         } catch { /* fail-open: zero coverage */ }
+        let signals = {
+          scored: 0,
+          unscored: 0,
+          novelty: { p50: 0, p90: 0, p99: 0, max: 0 },
+          mismatch: { p50: 0, p90: 0, p99: 0, max: 0 },
+          highNovelty: 0,
+          highMismatch: 0,
+          redundant: 0,
+        };
+        try {
+          const dbStats = (deps.getGatewayDb() as any).t1SignalStats;
+          if (typeof dbStats === 'function') {
+            signals = {
+              ...signals,
+              ...dbStats.call(deps.getGatewayDb(), config.recall.t1SignalThresholds),
+            };
+          }
+        } catch { /* fail-open: zero signals */ }
         let calibrated = false;
         try {
           const { getT1AtomCalibration } = require('../recall/t1-semantic-atoms');
@@ -221,6 +239,7 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
             exactGrounding: withEpisode,
             hintGrounding: withHint,
           },
+          signals,
         };
       })();
       res.writeHead(200, { 'Content-Type': 'application/json' });

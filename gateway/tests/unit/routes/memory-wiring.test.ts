@@ -326,6 +326,15 @@ describe('memory registry wiring (D1 Task F1)', () => {
           exactGrounding: 0,
           hintGrounding: 0,
         },
+        signals: {
+          scored: 0,
+          unscored: 0,
+          novelty: { p50: 0, p90: 0, p99: 0, max: 0 },
+          mismatch: { p50: 0, p90: 0, p99: 0, max: 0 },
+          highNovelty: 0,
+          highMismatch: 0,
+          redundant: 0,
+        },
       });
     } finally {
       setEmbeddingRuntime(null);
@@ -374,6 +383,40 @@ describe('memory registry wiring (D1 Task F1)', () => {
       hintGrounding: 0,
     });
     expect(body.t1.activation).toEqual({ traces: 2, mean: 0.15, max: 0.2 });
+  });
+
+  it('stats reports turn signal distribution', async () => {
+    const { registry } = setup({
+      memoryService: () => ({ harmonicIndex: { getIndex: () => ({ entries: [] }) } }) as any,
+      getGatewayDb: () => ({
+        count: () => 0,
+        archiveCount: () => 0,
+        t1RetrievalStats: () => ({ total: 0, byKind: { search: 0, recall: 0, redeem: 0 }, uniqueTraces: 0, lastAt: null }),
+        t1SignalStats: () => ({
+          scored: 2,
+          unscored: 1,
+          novelty: { p50: 0.4, p90: 0.55, p99: 0.58, max: 0.6 },
+          mismatch: { p50: 0.1, p90: 0.18, p99: 0.19, max: 0.2 },
+          highNovelty: 0,
+          highMismatch: 0,
+          redundant: 0,
+        }),
+      }) as any,
+    });
+    const r = fakeRes();
+    await handlerFor(registry, 'GET', '/api/memory/stats')!(
+      fakeReq({ method: 'GET', url: '/api/memory/stats' }), r.res,
+    );
+    const body = JSON.parse(r.body);
+    expect(body.t1.signals).toEqual({
+      scored: 2,
+      unscored: 1,
+      novelty: { p50: 0.4, p90: 0.55, p99: 0.58, max: 0.6 },
+      mismatch: { p50: 0.1, p90: 0.18, p99: 0.19, max: 0.2 },
+      highNovelty: 0,
+      highMismatch: 0,
+      redundant: 0,
+    });
   });
 
   it('sticky: no memory service → 503 with the empty note-board budget', async () => {
