@@ -3,6 +3,7 @@
 /// This is a simplified version of the GatewayClient for testing purposes.
 library;
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -1010,11 +1011,17 @@ class GatewayException implements Exception {
 }
 
 /// Transport timeout（弱网/黑洞网络）：统一 20s 兜底，避免页面无限转圈。
-class GatewayTimeoutException extends GatewayException {
+///
+/// 同时实现 [TimeoutException]：E5b replay 等既有调用点按标准超时异常捕获，
+/// 不必为了统一文案改掉所有 catch。
+class GatewayTimeoutException extends GatewayException implements TimeoutException {
   final Duration timeout;
 
   GatewayTimeoutException(this.timeout)
       : super('请求超时（${timeout.inSeconds} 秒），请检查网络与 Gateway 状态');
+
+  @override
+  Duration? get duration => timeout;
 }
 
 /// The project has no Pod yet — the gateway `/work` route exists and answered

@@ -13,14 +13,15 @@
 ## F 批：功能打磨（`61cbbaf2`）
 
 - **统一请求超时**：`GatewayClient` 默认 20s（`requestTimeout` 可注入），GET/POST 超时抛
-  `GatewayTimeoutException`；health 等探测仍可传更短值。弱网不再无限转圈。
+  `GatewayTimeoutException`；它同时实现标准 `TimeoutException`，E5b replay 等既有 catch 无需改写。
+  health 等探测仍可传更短值。弱网不再无限转圈。
 - **结果待查看可操作**：工作 tab 的未读行改为可点 surface 条，打开 `result_ready` 桶 sheet；
   点 Goal 进入详情并沿用 `markPodEventsSeenAll` 已读链路。
 - **Tech Lead 启动错误不再误报归档**：200 + `sessionID:null` + `sessionError` 显示可重试错误，
   只有真正的归档才走只读 transcript。
 - **Plan stale 预判**：服务端 `stale=true` 时提前提示、禁批并提供「重新加载计划」，
   避免按钮永远 409。
-- 新增测试 6 例：timeout 3、unread sheet 1、sessionError 1、server stale 1。
+- 新增测试 7 例：timeout 4（含 `TimeoutException` 兼容）、unread sheet 1、sessionError 1、server stale 1。
 
 ## U 批：UI 高级化（`afb23695`）
 
@@ -40,11 +41,12 @@
 ## 门禁
 
 - `flutter analyze` **0**。
-- 定向套件：theme_tokens 23/23、work_tab 34/34、tab_shell 8/8、sessions 11/11、pairing 45/45、
-  chat render 6/6、tech lead 12/12、plan 18/18、lead entry 13/13、lead handoff 20/20、
-  goal detail 29/29、widget 2/2。
+- 全量逐文件 **593/593（41 文件）**：theme_tokens 23、work_tab 34、tab_shell 8、sessions 11、
+  pairing 45、chat render 6、tech lead 12、plan 18、lead entry 13、lead handoff 20、goal detail 29、
+  event replay 23、gateway timeout 4、widget 2；其余文件同样逐文件通过。
 - 本机聚合 `flutter test` 仍会随机触发 `flutter_tester` 原生崩溃（"did not complete" /
-  "Connection closed before test suite loaded"）；逐文件 + `--concurrency=1` 恒过，作为门禁。
+  "Connection closed before test suite loaded"）；逐文件 + `--concurrency=1` 为门禁，
+  崩溃文件单独复跑均通过。
 
 ## 未做 / 后续
 

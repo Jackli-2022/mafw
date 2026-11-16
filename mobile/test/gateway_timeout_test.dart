@@ -24,6 +24,15 @@ void main() {
     );
   });
 
+  test('the timeout stays catchable as the standard TimeoutException', () async {
+    final client = _client(requestTimeout: const Duration(milliseconds: 40));
+
+    await expectLater(
+      client.listSessions(),
+      throwsA(isA<TimeoutException>()),
+    );
+  });
+
   test('POST times out with the same exception', () async {
     final client = _client(requestTimeout: const Duration(milliseconds: 40));
 
