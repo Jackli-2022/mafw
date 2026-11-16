@@ -181,7 +181,9 @@ export function createKernelV2Live(
     toolsEnabled: flags.tools,
 
     observe(facets: EventFacetLike): void {
-      if (!observers) return;
+      // Zero observers is the common case: skip canonical-event construction
+      // (and its deep sanitize) entirely.
+      if (!observers || observers.size === 0) return;
       try {
         observers.dispatch(toCanonicalEvent(facets));
       } catch {

@@ -39,6 +39,25 @@ test('an explicit 0 disables one plane and keeps the other live', () => {
   return live.dispose();
 });
 
+test('killing both planes leaves no bridge', () => {
+  expect(
+    createKernelV2Live({ env: { MAFW_KERNEL_V2_TOOLS: '0', MAFW_KERNEL_V2_OBSERVERS: '0' } }),
+  ).toBeNull();
+});
+
+test('with no observers, dispatch does not build a canonical event', () => {
+  const live = createKernelV2Live({ env: {} })!;
+  let reads = 0;
+  const facets = {
+    type: 'turn.completed',
+    sessionID: 's1',
+    get properties() { reads += 1; return { a: 1 }; },
+  };
+  live.observe(facets as any);
+  expect(reads).toBe(0);
+  return live.dispose();
+});
+
 test('events dispatched before registration are not replayed', async () => {
   const live = createKernelV2Live({ env: {} })!;
   const seen: string[] = [];
