@@ -1710,6 +1710,18 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             })
         },
       },
+      {
+        id: "clear", trigger: "/clear", title: "新建会话",
+        description: "新建会话；当前会话保留", group: "local", source: "builtin",
+        run: () => {
+          closeCommandPicker()
+          void props.onCreateSession()
+            .then((sid) => {
+              if (sid) showToastV2({ description: "已新建会话，当前会话已保留", duration: 2500 })
+            })
+            .catch((e: any) => showToastV2({ description: `新建会话失败: ${e?.message ?? e}`, duration: 3500 }))
+        },
+      },
     ]
     const mafw: CommandItem[] = mafwRemote().items.length > 0
       ? mafwRemote().items

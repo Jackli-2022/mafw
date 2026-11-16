@@ -51,3 +51,9 @@ test("init command sends the fixed prompt through promptAsync", () => {
   assert.ok(init.indexOf("sessionBusy()") < init.indexOf("promptAsync"))
   assert.match(chat, /from "\.\.\/chat\/init-prompt"/)
 })
+
+test("clear command creates a new session and keeps the current one", () => {
+  assert.match(chat, /trigger: "\/clear"/)
+  assert.match(commandBlock("clear"), /props\.onCreateSession\(\)/)
+  assert.match(commandBlock("clear"), /已新建会话，当前会话已保留/)
+})
