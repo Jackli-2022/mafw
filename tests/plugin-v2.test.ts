@@ -187,7 +187,7 @@ describe('setup(ctx) registration', () => {
     expect(names).toContain('mafw_plugin_inspect');
     expect(names).toContain('mafw_plugin_manager');
     expect(names).toEqual([
-      'mafw_add_memory', 'mafw_media_ask', 'mafw_media_speak',
+      'mafw_add_memory', 'mafw_mark_episode_boundary', 'mafw_media_ask', 'mafw_media_speak',
       'mafw_media_upload', 'mafw_message_subagent', 'mafw_plugin_inspect',
       'mafw_plugin_manager', 'mafw_pod_memory_read', 'mafw_pod_memory_write',
       'mafw_pod_message', 'mafw_pod_status', 'mafw_pod_task_create',
@@ -376,13 +376,13 @@ describe('setup(ctx) registration', () => {
     });
   });
 
-  it('registers five slash commands and retires new-topic', async () => {
+  it('registers six slash commands and retires new-topic', async () => {
     const dir = mkdtempDir();
     global.fetch = makeFetch([]).fetchMock as any;
     const { ctx, regs } = makeCtx(dir);
     await (mafwPlugin as any).setup(ctx);
     const names = regs.commands.map((c) => c.name).sort();
-    expect(names).toEqual(['btw', 'goal', 'merge-memory', 'status', 'waitwhat']);
+    expect(names).toEqual(['btw', 'goal', 'merge-memory', 'new-episode', 'status', 'waitwhat']);
   });
 
   it('returns a cleanup function that aborts the event subscription', async () => {
