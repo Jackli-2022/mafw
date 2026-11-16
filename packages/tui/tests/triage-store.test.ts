@@ -3,7 +3,10 @@ import assert from 'node:assert/strict'
 import { TriageStore } from '../src/store/triage-store.ts'
 
 const APPROVAL = { id: 'a1', goalId: 'g', question: 'ok?', status: 'pending', createdAt: '' }
-const TRIAGE = { id: 't1', goalId: 'g', reason: 'r', severity: 'high', createdAt: '' }
+const TRIAGE = {
+  id: 't1', automationId: 'a1', discoveredAt: '2026-11-16T09:00:00.000Z', source: 'manual',
+  summary: {}, state: 'PENDING_CONFIRMATION', userAction: null, deadline: '2026-11-20T09:00:00.000Z',
+}
 
 async function settle() { await Promise.resolve(); await Promise.resolve(); await Promise.resolve() }
 
