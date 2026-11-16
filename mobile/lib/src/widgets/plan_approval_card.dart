@@ -72,6 +72,10 @@ class _PlanApprovalCardState extends State<PlanApprovalCard> {
   String? _error;
   String? _rejectError;
 
+  /// 服务端 `stale=true`：stored approval 绑定的哈希已与当前内容不一致，此时
+  /// 批准必 409。本地 409 后置的 [_stale] 与它合并，避免「按钮永远点不动」。
+  bool get _effectiveStale => _stale || widget.plan.stale;
+
   @override
   void didUpdateWidget(covariant PlanApprovalCard oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -187,13 +191,28 @@ class _PlanApprovalCardState extends State<PlanApprovalCard> {
             text: '上一轮驳回：${plan.planFeedback}',
             color: MafwPalette.dim,
           ),
-        if (_stale)
+        if (_effectiveStale) ...[
           _notice(
             key: const Key('plan-stale-notice'),
             text: '计划已更新，请重拉最新计划后再批准。',
             color: MafwPalette.text,
             icon: Icons.refresh,
           ),
+          if (widget.onRefresh != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: OutlinedButton.icon(
+                key: const Key('plan-stale-refresh'),
+                onPressed: _busy ? null : () => widget.onRefresh!.call(),
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text('重新加载计划'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: MafwPalette.text,
+                  side: const BorderSide(color: MafwPalette.border),
+                ),
+              ),
+            ),
+        ],
         if (_error != null)
           _notice(
             key: const Key('plan-error'),
@@ -449,7 +468,7 @@ class _PlanApprovalCardState extends State<PlanApprovalCard> {
                   disabledForegroundColor: MafwPalette.faint,
                   padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
-                onPressed: (_busy || _stale || !plan.hasContent)
+                onPressed: (_busy || _effectiveStale || !plan.hasContent)
                     ? null
                     : () => unawaited(_submit(approve: true)),
                 child: Text(_busy && !_rejectOpen ? '提交中…' : '批准计划'),

@@ -57,6 +57,7 @@ Map<String, dynamic> _techLeadJson({
   String? sessionID = _sessionId,
   List<Map<String, dynamic>>? messages,
   int revision = 1,
+  String? sessionError,
 }) =>
     {
       'goalId': _goalId,
@@ -67,6 +68,7 @@ Map<String, dynamic> _techLeadJson({
             _msgJson('m1', 'user', '先看 CI 为什么红'),
             _msgJson('m2', 'assistant', '看了日志，是依赖升级导致的'),
           ],
+      'sessionError': ?sessionError,
     };
 
 /// `pod_member_sessions` 行（`PodSessionRow`，`gateway/src/core/pod/pod-store.ts`）。
@@ -455,6 +457,27 @@ void main() {
       await tester.pump();
       await tester.pump();
       expect(attempts, 2);
+    });
+
+    testWidgets('200 with sessionID:null + sessionError is retryable, not archived',
+        (tester) async {
+      final gateway = _FakeGateway()
+        ..on(
+          'GET',
+          '/api/pods/$_podId/goals/$_goalId/tech-lead',
+          (_) => _json(_techLeadJson(
+            sessionID: null,
+            messages: const [],
+            sessionError: 'ensureSession failed: provider down',
+          )),
+        );
+
+      await _pumpPage(tester, gateway);
+
+      expect(find.byKey(const Key('tech-lead-archived-banner')), findsNothing);
+      expect(find.textContaining('讨论会话启动失败'), findsOneWidget);
+      expect(find.textContaining('provider down'), findsOneWidget);
+      expect(find.byKey(const Key('tech-lead-retry')), findsOneWidget);
     });
 
     testWidgets('a missing gateway client is honest, not a crash', (tester) async {

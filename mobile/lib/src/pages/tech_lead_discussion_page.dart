@@ -203,6 +203,20 @@ class _TechLeadDiscussionPageState extends State<TechLeadDiscussionPage> {
       return;
     }
 
+    // 200 + sessionID:null + sessionError：ensureSession 失败，不是「讨论已归档」。
+    // 退出重进 / 重试可能恢复；把启动失败说成归档会让用户放弃本可继续的讨论。
+    if (history.sessionError != null && history.sessionError!.trim().isNotEmpty) {
+      setState(() {
+        _loading = false;
+        _archived = false;
+        _transcriptMissing = false;
+        _sessionID = null;
+        _messages = history.messages;
+        _error = '讨论会话启动失败：${history.sessionError}';
+      });
+      return;
+    }
+
     // 归档：取最新 discussion 会话的 transcript（只读）。
     final archived = await _loadArchivedTranscript(client);
     if (!mounted || seq != _seq) return;

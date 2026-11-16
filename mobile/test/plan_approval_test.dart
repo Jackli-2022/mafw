@@ -702,5 +702,26 @@ void main() {
       // 整页不是错误页：头部与时间线照常可用。
       expect(find.text('修 CI'), findsOneWidget);
     });
+
+    testWidgets('server-side stale disables approve and offers refresh', (tester) async {
+      final gateway = _FakeGateway();
+      var refreshes = 0;
+
+      await _pumpCard(
+        tester,
+        gateway,
+        plan: GoalPlanInfo.fromJson(_planJson(stale: true)),
+        onRefresh: () => refreshes++,
+      );
+
+      expect(find.byKey(const Key('plan-stale-notice')), findsOneWidget);
+      final approve = tester.widget<FilledButton>(
+        find.byKey(const Key('plan-approve')),
+      );
+      expect(approve.onPressed, isNull);
+
+      await tester.tap(find.byKey(const Key('plan-stale-refresh')));
+      expect(refreshes, 1);
+    });
   });
 }

@@ -849,4 +849,29 @@ void main() {
       expect(restored.current(), _dirB);
     });
   });
+
+  group('unread results entry', () {
+    testWidgets('the unread row opens a sheet and a result goal', (tester) async {
+      final client = _FakeWorkClient(presence: _presence(unreadResults: 1));
+      String? openedProject;
+      String? openedGoal;
+      await _pumpWorkTab(
+        tester,
+        client: client,
+        onOpenGoal: (projectId, goalId) {
+          openedProject = projectId;
+          openedGoal = goalId;
+        },
+      );
+
+      await tester.tap(find.byKey(const Key('work-unread-row')));
+      await tester.pumpAndSettle();
+      expect(find.text('结果待查看'), findsWidgets);
+
+      await tester.tap(find.byKey(const Key('work-unread-goal-g-done')));
+      await tester.pumpAndSettle();
+      expect(openedGoal, 'g-done');
+      expect(openedProject, _dirA);
+    });
+  });
 }

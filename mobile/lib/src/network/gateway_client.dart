@@ -16,10 +16,16 @@ import '../services/diagnostics.dart';
 class GatewayClient {
   final ConnectionConfig config;
   final DiagnosticsSink? diagnostics;
+  /// 统一请求超时（弱网兜底）。health 等短探测会显式传更小值覆盖。
+  final Duration requestTimeout;
   final http.Client _http;
 
-  GatewayClient(this.config, {http.Client? httpClient, this.diagnostics})
-      : _http = httpClient ?? http.Client();
+  GatewayClient(
+    this.config, {
+    http.Client? httpClient,
+    this.diagnostics,
+    this.requestTimeout = const Duration(seconds: 20),
+  }) : _http = httpClient ?? http.Client();
 
   Uri _uri(String path, [Map<String, String>? query]) {
     var u = Uri.parse('${config.normalizedBaseUrl}$path');
@@ -36,14 +42,21 @@ class GatewayClient {
   String _displayPath(Uri uri) => uri.hasQuery ? '${uri.path}?${uri.query}' : uri.path;
 
   Future<http.Response> _get(Uri uri, {Duration? timeout}) {
+    final effective = timeout ?? requestTimeout;
     return _record('GET', uri, () {
-      final future = _http.get(uri, headers: _headers);
-      return timeout == null ? future : future.timeout(timeout);
+      return _http
+          .get(uri, headers: _headers)
+          .timeout(effective, onTimeout: () => throw GatewayTimeoutException(effective));
     });
   }
 
-  Future<http.Response> _post(Uri uri, {Object? body}) {
-    return _record('POST', uri, () => _http.post(uri, headers: _headers, body: body));
+  Future<http.Response> _post(Uri uri, {Object? body, Duration? timeout}) {
+    final effective = timeout ?? requestTimeout;
+    return _record('POST', uri, () {
+      return _http
+          .post(uri, headers: _headers, body: body)
+          .timeout(effective, onTimeout: () => throw GatewayTimeoutException(effective));
+    });
   }
 
   Future<http.Response> _record(
@@ -994,6 +1007,14 @@ class GatewayException implements Exception {
   GatewayException(this.message, {this.statusCode, this.errorBody});
   @override
   String toString() => message;
+}
+
+/// Transport timeout（弱网/黑洞网络）：统一 20s 兜底，避免页面无限转圈。
+class GatewayTimeoutException extends GatewayException {
+  final Duration timeout;
+
+  GatewayTimeoutException(this.timeout)
+      : super('请求超时（${timeout.inSeconds} 秒），请检查网络与 Gateway 状态');
 }
 
 /// The project has no Pod yet — the gateway `/work` route exists and answered

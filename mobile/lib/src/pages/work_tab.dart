@@ -862,19 +862,96 @@ class _WorkTabState extends State<WorkTab> {
     if (unread > 0) {
       widgets.add(Padding(
         padding: const EdgeInsets.only(top: 2, bottom: 10),
-        child: Row(
-          children: [
-            const Icon(Icons.inbox_outlined, size: 14, color: MafwPalette.dim),
-            const SizedBox(width: 6),
-            Text(
-              '$unread 个结果待查看',
-              style: const TextStyle(fontSize: 12, color: MafwPalette.dim),
+        child: InkWell(
+          key: const Key('work-unread-row'),
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => unawaited(_openResultsSheet()),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+            child: Row(
+              children: [
+                const Icon(Icons.inbox_outlined, size: 14, color: MafwPalette.dim),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    '$unread 个结果待查看',
+                    style: const TextStyle(fontSize: 12, color: MafwPalette.dim),
+                  ),
+                ),
+                const Icon(Icons.chevron_right, size: 16, color: MafwPalette.faint),
+              ],
             ),
-          ],
+          ),
         ),
       ));
     }
     return widgets;
+  }
+
+  /// 结果待查看入口：列出当前项目 result_ready 桶的 Goal；点开详情会触发
+  /// `markPodEventsSeenAll`（E 批后的结果已读链路），角标随之回落。
+  Future<void> _openResultsSheet() async {
+    final results = _overview?.groups['result_ready'] ?? const <PodGoalView>[];
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: MafwPalette.surface,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '结果待查看',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: MafwPalette.text),
+                ),
+                const SizedBox(height: 8),
+                if (results.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    child: Text(
+                      '当前项目没有可打开的结果；未读结果可能在其它项目。',
+                      style: TextStyle(fontSize: 12, color: MafwPalette.dim),
+                    ),
+                  )
+                else
+                  Flexible(
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: [
+                        for (final goal in results)
+                          ListTile(
+                            key: Key('work-unread-goal-${goal.goalId}'),
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(
+                              goal.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 13, color: MafwPalette.text),
+                            ),
+                            subtitle: Text(
+                              'r${goal.revision}'
+                              '${goal.verdict != null && goal.verdict!.isNotEmpty ? ' · ${goal.verdict}' : ''}',
+                              style: const TextStyle(fontSize: 11, color: MafwPalette.dim),
+                            ),
+                            trailing: const Icon(Icons.chevron_right, size: 18, color: MafwPalette.faint),
+                            onTap: () {
+                              Navigator.of(sheetContext).pop();
+                              unawaited(_openGoal(goalId: goal.goalId));
+                            },
+                          ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Widget _buildLeadEntry() {
