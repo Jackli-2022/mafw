@@ -54,7 +54,7 @@
 ```ts
 export interface SelectAtomOptions {
   topK?: number;     // default 2
-  minScore?: number; // default 0.03
+  minScore?: number; // default 0.02
   minTop1?: number;  // default 0.05
 }
 export function computeAnchorBaselines(
@@ -358,11 +358,11 @@ git commit -am "feat(memory): split episodes on atom Jaccard"
 
 ---
 
-### Task 5: Atom backfill
+### Task 5: Turn-code + atom backfill
 
 **Files:**
 - Create: `gateway/src/recall/t1-atom-backfill.ts`
-- Modify: `gateway/src/memory/gateway-db.ts` (`listTurnsMissingAtomEncoding`, `t1AtomStats`)
+- Modify: `gateway/src/memory/gateway-db.ts` (`listTurnsMissingTurnCode`, `t1CodeStats`)
 - Modify: `gateway/src/recall/t1-encode.ts` (`atomsAttempted` marker)
 - Modify: `gateway/src/automation-engine.ts` (`memory:decay` bounded pass)
 - Create: `gateway/scripts/backfill-t1-atoms.ts`
@@ -377,9 +377,12 @@ export async function backfillT1Atoms(
   opts?: { limit?: number; batchSize?: number },
 ): Promise<{ scanned: number; encoded: number; failed: number; sessionIds: string[] }>;
 
-listTurnsMissingAtomEncoding(limit: number): Array<{ trace_id: string; session_id: string; turn_seq: number }>;
-t1AtomStats(): { turns: number; atoms: number };
+listTurnsMissingTurnCode(limit: number): Array<{ trace_id: string; session_id: string; turn_seq: number }>;
+t1CodeStats(): { turns: number; features: number; actors: number; concepts: number; atoms: number };
 ```
+
+The live DB has **zero** turn code for 4,380 turns, so this pass writes the whole
+code (features, actors, concepts, lexical sparse, `sem:` atoms), not just atoms.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -405,7 +408,7 @@ test('a turn with zero atoms is marked and not rescanned', async () => {
 - [ ] **Step 2: Run; expect failure.**
 
 - [ ] **Step 3: Implement**
-  - Select turns with no `t1_turn_encoding` row whose `model='sparse-embed-v1'`.
+  - Select turns with no `t1_turn_encoding` row at all (covers historical turns with no features/actors/concepts either).
   - Join observation/archive content per turn, truncate 2000.
   - Encode in batches; call `encodeT1Turn(turn, deps, { atoms, atomsAttempted: true })`.
   - In `encodeT1Turn`, `model = opts.atomsAttempted ? SPARSE_EMBED_MODEL : (sparse[0]?.model ?? SPARSE_LEX_MODEL)`.
@@ -435,10 +438,11 @@ test('a turn with zero atoms is marked and not rescanned', async () => {
 
 ```ts
 atoms: { turns: 2, atoms: 3, avgPerTurn: 1.5, calibrated: true },
+code: { turns: 3, features: 3, actors: 2, concepts: 3 },
 ```
 
 - [ ] **Step 2: Run; fail.**
-- [ ] **Step 3: Implement** `t1AtomStats()` + `getT1AtomCalibration()`; fail-open `{turns:0, atoms:0, avgPerTurn:0, calibrated:false}` when the table is absent.
+- [ ] **Step 3: Implement** `t1CodeStats()` + `getT1AtomCalibration()`; fail-open `{turns:0, atoms:0, avgPerTurn:0, calibrated:false}` and `{turns:0, features:0, actors:0, concepts:0}` when the tables are absent.
 - [ ] **Step 4: Run; pass; commit.**
 
 ---
@@ -477,18 +481,21 @@ node -e "const D=require('better-sqlite3');const db=new D(process.env.USERPROFIL
 ```
 Expected: both tables. Then `curl http://127.0.0.1:3000/api/memory/stats` → `t1.atoms`, `t1.episodes` present.
 
-- [ ] **Step 4: Backfill atoms**
+- [ ] **Step 4: Backfill turn code + atoms**
 
 ```bash
 cd gateway && npx ts-node --transpile-only --project tsconfig.json scripts/backfill-t1-atoms.ts --limit 5000
 ```
-Expected: `scanned` 4,373 total, `encoded` ≈ all, `failed` 0, `sem:` rows > 0, atoms/turn ≈ 1–2.
+Expected: `scanned` 4,380 total, `encoded` ≈ all, `failed` 0.
+Before: `features=0 actors=0 concepts=0 atoms=0`; after: all > 0, atoms/turn ≈ 1.2,
+`sem:` rows > 0.
 
 - [ ] **Step 5: Rebuild episodes** (the script does it per pass; verify counts):
 ```bash
-node -e "... SELECT COUNT(*) FROM t1_episodes ..."
+node -e "... SELECT boundary_source, boundary_reason, COUNT(*) FROM t1_episodes GROUP BY 1,2 ..."
 ```
-Expected: > 0, boundary_source distribution includes `declared`/`inferred`/`session_end`.
+Expected: > 0 episodes, and after turn code exists the distribution can include
+`declared`/`inferred`; before the backfill it is only `session_end`/`max_length`/`session_start`.
 
 - [ ] **Step 6: Measure real recall**
 

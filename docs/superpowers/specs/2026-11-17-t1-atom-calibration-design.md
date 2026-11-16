@@ -25,20 +25,47 @@ The embedding is good; the dictionary projection and the read path are not.
 
 ## Evidence
 
-Probe on 5 turns + 6 queries, real model:
+### Toy probe (5 turns + 6 queries, real model)
 
 | rule | atoms/turn | query→turn hits | pairwise atom overlap |
 |---|---:|---:|---:|
 | raw `0.35 / top8` (shipped) | 8.0 | 2/6 | 5–7 of 8 |
-| raw `0.45 / top1` | 1.0 | 5/6 | 0–1 |
 | per-anchor baseline `top1` | 1.0 | 5/6 | 0.00 |
 | per-text centering `top2 / 0.03` | 1.8 | 6/6 | 0.30 |
 | double centering `top2 / 0.03` | 1.8 | 5/6 | 0.20 |
 | dense cosine (reference) | 1024 | 6/6 | — |
 
-Per-anchor baselines measured on 24 generic zh/en sentences:
-`0.366` (connection_reset) … `0.455` (metric:coverage). The model's unrelated-text
-floor is above the shipped `0.35` threshold, which is the root cause.
+### Real corpus (398 sampled T1 turns, 56 reference turns)
+
+Baselines from real turns: `0.340` (timeout) … `0.377` (builder).
+
+| rule | zero atoms | avg atoms | p90 | pairwise overlap |
+|---|---:|---:|---:|---:|
+| raw `0.35 / top8` | 12% | 5.36 | 8 | 2.87 |
+| raw `0.35 / top2` | 12% | 1.70 | 2 | 0.36 |
+| cal `top2 / top1≥0.03` | 3% | 1.90 | 2 | 0.38 |
+| **cal `top2 / top1≥0.05`** | **38%** | **1.21** | **2** | **0.15** |
+| cal `top2 / top1≥0.08` | 82% | 0.34 | 2 | 0.01 |
+
+### Fixture sparse recall@3 (16 queries, same real model, same baselines)
+
+| sparse mode | hits | note |
+|---|---:|---|
+| off (lexical/alias only) | 14/16 | misses `q-parse-holdout` |
+| raw `0.35 / top8` | 12/16 | **regresses** `q-parse-cn`, `q-deploy` |
+| cal `top1 / 0.05` | 15/16 | only `q-none` (no-answer) |
+| **cal `top2 / 0.05`** | **15/16** | only `q-none` (no-answer) |
+| cal `top3 / 0.05` | 15/16 | overlap rises to 0.26 |
+
+`q-parse-holdout` (`解码失败`) is the proof point: raw atoms miss it; calibrated atoms
+hit it through `sem:error:json_parse` (turn 0.552, query 0.577, selected 0.168/0.152).
+
+### Live state (2026-11-16, after the merge)
+
+- `t1_turns` = 4,380; `t1_turn_features` = 0; `t1_turn_actors` = 0; `t1_turn_concepts` = 0; `t1_sparse_terms` = 0.
+- `t1_episodes` = 1,015, but 989 are `session_end/idle_timeout`, 14 `max_length`, 12 `session_start`; **0 `declared`, 0 `inferred`**.
+- Meaning: the episode index was built from turn identity only. The rollout needs a
+  **turn-code backfill** (features + actors + concepts + sparse + atoms), not just atoms.
 
 Research: sentence embeddings are anisotropic; mean/background correction is the
 standard training-free remedy (Ethayarajh 2019; R2/ABTT; CSLS/background
@@ -71,10 +98,11 @@ but it needs an MLM head and a separate model — out of scope here.
    persistence: recomputation is cheap (36 embeddings once) and a model change
    must not reuse old baselines.
 
-2. **Selection = top-2, `minScore 0.03`, `minTop1 0.05`.** `minTop1` lets
-   out-of-domain text produce **zero** atoms instead of a forced nearest
-   concept. Zero atoms is a valid state: the sparse channel abstains and the
-   lexical/dense channels carry the turn.
+2. **Selection = top-2, `minScore 0.02`, `minTop1 0.05`.** The real-corpus sweep
+   gives 1.21 atoms/turn and 0.15 pairwise overlap; 38% of turns abstain, which is
+   intentional: a pure code/tool-output turn has no concept, and forcing a nearest
+   anchor is what produced the 5–7/8 overlap. The fixture recall is 15/16 (only the
+   no-answer query is "missed"), versus 14/16 lexical-only and 12/16 with raw atoms.
 
 3. **Query side uses the same encoder instance** (`getT1SemanticEncoder`
    caches per provider), so write and query share anchors and baselines. The
@@ -88,9 +116,11 @@ but it needs an MLM head and a separate model — out of scope here.
    correct when an episode's union grows.
 
 5. **Backfill is a bounded, idempotent pass** that reuses `encodeT1Turn` with
-   atoms (so lexical terms are recomputed, not lost). It runs from a one-off
-   script for the initial history and is also wired into the daily
-   `memory:decay` action for stragglers.
+   atoms, so it also fills the missing turn code (`t1_turn_features`,
+   `t1_turn_actors`, `t1_turn_concepts`, lexical sparse). The live DB currently has
+   **zero** turn code for 4,380 historical turns; atoms alone would leave the
+   episode index identity-only. It runs from a one-off script for the initial
+   history and is also wired into the daily `memory:decay` action for stragglers.
 
 6. **No new HTTP route.** The backfill is a script + a decay hook; the only
    API change is a stats field.
