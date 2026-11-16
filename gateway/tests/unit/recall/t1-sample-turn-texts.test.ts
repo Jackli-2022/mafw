@@ -29,7 +29,21 @@ describe('GatewayDatabase.sampleTurnTexts', () => {
     return turn;
   }
 
-  test('returns [] on a fresh database', () => {
+  test('dedupes before applying the limit', () => {
+  const raw = db.getStore();
+  const insertTurn = raw.prepare(
+    'INSERT INTO t1_turns (trace_id, session_id, turn_seq, created_at) VALUES (?, ?, ?, unixepoch())',
+  );
+  insertTurn.run('aaa', 's1', 1);
+  insertTurn.run('aab', 's2', 1);
+  insertTurn.run('zzz', 's3', 1);
+  db.append({ session_id: 's1', turn_id: 1, trace_id: 'aaa', source: 'user_input', content: 'alpha', failure: 0 });
+  db.append({ session_id: 's2', turn_id: 1, trace_id: 'aab', source: 'user_input', content: 'alpha', failure: 0 });
+  db.append({ session_id: 's3', turn_id: 1, trace_id: 'zzz', source: 'user_input', content: 'beta', failure: 0 });
+  expect(db.sampleTurnTexts(2)).toEqual(['alpha', 'beta']);
+});
+
+test('returns [] on a fresh database', () => {
     expect(db.sampleTurnTexts(10)).toEqual([]);
   });
 
