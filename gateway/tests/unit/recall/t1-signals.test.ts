@@ -3,6 +3,7 @@ import {
   isInformativeTurn,
   normalizeObservationText,
   scoreTurnSignals,
+  unitLookupFromEntries,
 } from '../../../src/recall/t1-signals';
 
 const units: Record<string, any> = {
@@ -174,5 +175,24 @@ describe('t1 signals', () => {
     const map = await computeTurnSignals([input()], d as any);
     expect(map.get('t1t_a')!.novelty).toBeCloseTo(0.6);
     expect(map.get('t1t_a')!.mismatch).toBe(0);
+  });
+
+  test('unit lookup maps index entries', () => {
+    const lookup = unitLookupFromEntries([
+      {
+        id: 'm1',
+        created_at: '2026-01-01T00:00:00.000Z',
+        type: 'semantic',
+        superseded_by: 'm2',
+        source_trace_ids: ['t1t_x'],
+      },
+    ]);
+    expect(lookup('m1')).toEqual({
+      createdAt: '2026-01-01T00:00:00.000Z',
+      type: 'semantic',
+      supersededBy: 'm2',
+      traceIds: ['t1t_x'],
+    });
+    expect(lookup('missing')).toBeUndefined();
   });
 });

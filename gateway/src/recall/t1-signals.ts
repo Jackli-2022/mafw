@@ -1,8 +1,9 @@
 /**
  * Encode-time replay signals (E2): DG novelty + CA1 mismatch.
  *
- * novelty  = 1 − max cosine(content, active cortex memory)
- * mismatch = max(0, max cosine(cue, memory) − max cosine(content, memory))
+ * novelty  = 1 − cos(content, best active cortex memory)
+ * mismatch = cos(cue, M) − cos(content, M), only when both complete to the
+ *            same memory M and the turn is substantive (≥120 chars)
  *
  * Both are derived scalars used for ordering only; they never gate ingestion
  * and never touch raw T1. Fail-open: any embed/search error yields no score.
@@ -32,6 +33,29 @@ export interface TurnSignalDeps {
   embedder: { embed(texts: string[], kind: 'query' | 'document'): Promise<number[][]> };
   vectors: { searchByCosine(query: number[], topK: number): Array<{ id: string; cosine: number }> };
   unitFor: (id: string) => TurnSignalUnit | undefined;
+}
+
+/** Shared cortex lookup for the pipeline (kernel) and the backfill script. */
+export function unitLookupFromEntries(
+  entries: Array<{
+    id: string;
+    created_at?: string;
+    type?: string;
+    superseded_by?: string;
+    source_trace_ids?: string[];
+  }>,
+): (id: string) => TurnSignalUnit | undefined {
+  const byId = new Map(entries.map((entry) => [entry.id, entry]));
+  return (id) => {
+    const entry = byId.get(id);
+    if (!entry) return undefined;
+    return {
+      createdAt: entry.created_at,
+      type: entry.type,
+      supersededBy: entry.superseded_by,
+      traceIds: entry.source_trace_ids,
+    };
+  };
 }
 
 /** Enough candidates to survive active/self/time filtering. */
@@ -68,8 +92,7 @@ export function isInformativeTurn(text: string, anchorCount: number): boolean {
   return body.length >= 120 || anchorCount > 0;
 }
 
-export function scoreTurnSignals(
-  contentSim: number | null,
+export function scoreTurnSignals(  contentSim: number | null,
   cueSim: number | null,
 ): TurnSignals | null {
   if (contentSim == null || !Number.isFinite(contentSim)) return null;
@@ -79,8 +102,7 @@ export function scoreTurnSignals(
   return { novelty, mismatch };
 }
 
-/** Best candidate that may legitimately explain this turn. */
-function bestCandidate(
+/** Best candidate that may legitimately explain this turn. */function bestCandidate(
   input: TurnSignalInput,
   vector: number[],
   deps: TurnSignalDeps,

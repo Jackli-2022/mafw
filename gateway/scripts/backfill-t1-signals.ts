@@ -17,8 +17,8 @@ import { HarmonicUnitFileStore } from '../src/memory/harmonic-file-store';
 import {
   computeTurnSignals,
   normalizeObservationText,
+  unitLookupFromEntries,
   type TurnSignalInput,
-  type TurnSignalUnit,
 } from '../src/recall/t1-signals';
 
 interface Row {
@@ -63,19 +63,9 @@ async function main() {
     }
 
     const store = new HarmonicUnitFileStore(config.resolvePath());
-    const indexEntries = new Map(
-      store.indexManager_().getIndex().entries.map((entry) => [entry.id, entry]),
+    const unitFor = unitLookupFromEntries(
+      store.indexManager_().getIndex().entries,
     );
-    const unitFor = (id: string): TurnSignalUnit | undefined => {
-      const entry = indexEntries.get(id);
-      if (!entry) return undefined;
-      return {
-        createdAt: entry.created_at,
-        type: entry.type,
-        supersededBy: entry.superseded_by,
-        traceIds: (entry as any).source_trace_ids,
-      };
-    };
 
     if (reset && apply) {
       db.getStore().prepare('UPDATE t1_turn_features SET novelty = NULL, mismatch = NULL').run();
