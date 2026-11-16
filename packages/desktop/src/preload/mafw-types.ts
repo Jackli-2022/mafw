@@ -1,6 +1,6 @@
 import type {
   Session, Project, Goal, GoalCreateInput, GoalControlAction, GoalSessionInfo, GoalTimeline, GoalPlanInfo,
-  MemoryUnit, MemorySearchOptions, MergedSearchOptions,
+  MemoryUnit, MemorySearchOptions, MergedSearchOptions, EpisodeHit, MemoryEpisodesOptions, T1EpisodeRecord,
   EnergyDistribution, Axiom, L5Heuristic, StickyNote, ModelUsageWindows, MemoryStats,
   Approval, TriageItem, AutomationRule, GatewayStatus,
   QuestionRequest, MafwPermissionRequest,
@@ -222,6 +222,8 @@ export type MafwAPI = {
 
   memory: {
     search: (opts: MemorySearchOptions) => Promise<MemoryUnit[]>
+    episodes: (opts?: MemoryEpisodesOptions) => Promise<{ episodes: EpisodeHit[]; nextCursor?: string }>
+    episode: (id: string) => Promise<{ episode: T1EpisodeRecord; members: Array<{ episodeId: string; traceId: string; turnSeq: number }> }>
     mergedSearch: (opts: MergedSearchOptions) => Promise<any[]>
     delete: (id: string) => Promise<void>
     getEnergyDistribution: () => Promise<EnergyDistribution>

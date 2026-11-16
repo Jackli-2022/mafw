@@ -25210,7 +25210,7 @@ export interface operations {
                             episodeId?: string;
                             cosine: number;
                             excerpt: string;
-                            sources?: ("dense" | "lexical")[];
+                            sources?: ("dense" | "lexical" | "feature" | "concept" | "actor" | "sparse" | "neighbor")[];
                             score?: number;
                         }[];
                         episodes?: {

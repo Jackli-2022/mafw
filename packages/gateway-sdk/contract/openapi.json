@@ -45553,6 +45553,26 @@
                                 {
                                   "const": "lexical",
                                   "type": "string"
+                                },
+                                {
+                                  "const": "feature",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "concept",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "actor",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "sparse",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "neighbor",
+                                  "type": "string"
                                 }
                               ]
                             }

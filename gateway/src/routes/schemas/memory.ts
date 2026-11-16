@@ -68,6 +68,11 @@ const T1SearchHitSchema = Type.Object({
   sources: Type.Optional(Type.Array(Type.Union([
     Type.Literal('dense'),
     Type.Literal('lexical'),
+    Type.Literal('feature'),
+    Type.Literal('concept'),
+    Type.Literal('actor'),
+    Type.Literal('sparse'),
+    Type.Literal('neighbor'),
   ]))),
   score: Type.Optional(Type.Number()),
 })
