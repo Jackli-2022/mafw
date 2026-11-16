@@ -52,6 +52,24 @@
 - 包内可以 `require` 自己的模块；它们只在 gateway 执行，不会进入 Desktop。
 - `web/` 只在声明了 `ui.webSurfaces` 时被服务；入口文件缺失/逃逸会让**整包激活失败**（fail-closed）。单文件包没有 `web/` 目录，不能声明 Web 页面。
 
+### 1.1 `contributes`：声明的上界
+
+`plugin.json` 的 `contributes` 是对注册面的**静态上界，不是运行清单**：声明了某个面，`activate()` 注册的条目就必须落在声明集合内；没有声明的面完全不受约束；声明了却没有注册也合法（包可以按能力、配置或 host 版本条件注册）。违反上界会让**整包激活失败**。
+
+`contributes.gateway` 支持：
+
+| 字段 | 含义 | 违反时的错误 |
+|---|---|---|
+| `actions` | 允许注册的 action 名数组 | `action "<name>" is not declared in plugin.json contributes.gateway.actions` |
+| `events` | 允许发射的事件类型数组 | `event "<type>" is not declared in plugin.json contributes.gateway.events` |
+| `tools` | 允许注册的 tool 描述符数组 | `tool "<name>" is not declared in plugin.json contributes.gateway.tools` |
+| `http` | 是否允许使用 `ctx.http`（`false` 即禁用 http 面） | `http routes are not declared (contributes.gateway.http is false)` |
+
+- `contributes.gateway.http: false` 时，`ctx.http.route()` / `ctx.http.ws()` 一旦被调用，激活失败（即使 `activate()` 本身正常返回）。
+- 声明的 `events` 必须写**完整命名空间** `plugin:<package>:<event>`；只写短名会被判为未声明。
+- 声明的 `tools` 必须重复 `name` / `description` / `inputSchema`（`name` 与 `activate()` 里的声明一致即可，`description` 与 schema 自由填写）；比对只按 `name`。
+- `apiVersion: 1` 的包：`contributes` 校验失败只产生 `legacy-contributes` warning，不影响激活，也不构成任何约束。未声明 `contributes` 的包行为与旧版完全一致。
+
 ## 2. 最小可运行包
 
 ```js

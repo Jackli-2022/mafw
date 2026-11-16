@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { PluginHost } from '../../../src/plugins/package-host';
 
-function writePackage(dir: string, name: string, kind = 'untrusted'): string {
+function writePackage(dir: string, name: string, contributes?: Record<string, unknown>): string {
   const root = path.join(dir, name);
   fs.mkdirSync(root, { recursive: true });
   fs.writeFileSync(path.join(root, 'plugin.json'), JSON.stringify({
@@ -11,8 +11,9 @@ function writePackage(dir: string, name: string, kind = 'untrusted'): string {
     version: '1.0.0',
     main: 'index.js',
     apiVersion: 2,
-    kind,
+    kind: 'untrusted',
     permissions: ['actions'],
+    ...(contributes !== undefined ? { contributes } : {}),
   }));
   fs.writeFileSync(path.join(root, 'index.js'), "throw new Error('must not require untrusted entry in the gateway process');");
   return root;
@@ -82,6 +83,26 @@ describe('PluginHost untrusted activation', () => {
     writePackage(dir, 'acme');
     await host.reload();
     expect(host.getState().find((entry) => entry.name === 'acme')).toMatchObject({ status: 'error' });
+    host.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('rejects a worker action that the manifest does not declare', async () => {
+    const { host, dir } = makeHost({ contributions: { actions: { echo: {}, nope: {} } } });
+    writePackage(dir, 'acme', { gateway: { actions: ['echo'] } });
+    await host.reload();
+    const state = host.getState().find((entry) => entry.name === 'acme');
+    expect(state).toMatchObject({ status: 'error' });
+    expect(state?.error).toContain('action "nope" is not declared');
+    host.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('accepts a worker whose declared actions match', async () => {
+    const { host, dir } = makeHost({ contributions: { actions: { echo: {} } } });
+    writePackage(dir, 'acme', { gateway: { actions: ['echo'] } });
+    await host.reload();
+    expect(host.getState().find((entry) => entry.name === 'acme')).toMatchObject({ status: 'ok' });
     host.stop();
     fs.rmSync(dir, { recursive: true, force: true });
   });

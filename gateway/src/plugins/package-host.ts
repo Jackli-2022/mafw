@@ -1243,6 +1243,7 @@ export class PluginHost {
           events: Object.values(raw.events ?? {}) as UnifiedPluginContributions['events'],
         },
         this.canonicalTypes,
+        parsed.manifest.contributes,
       );
       if (!built.ok) throw new Error(`invalid contributions: ${built.errors.join('; ')}`);
 
@@ -1320,9 +1321,22 @@ export class PluginHost {
       httpRecorder.seal();
     }
 
+    // `contributes.gateway.http` is a static opt-out of the http plane; routes
+    // are only observable after activate() returns, so the bound is checked once
+    // the recorder is sealed.
+    if (parsedManifest?.manifest?.contributes?.gateway?.http === false
+      && httpRecorder.entries.length > 0) {
+      throw new Error('http routes are not declared (contributes.gateway.http is false)');
+    }
+
     // Declarative half is validated before anything is published; legacy
     // contributions are the same object with `ui`/`actions`/`events` removed.
-    const built = buildActivatedContributions(modName, raw, this.canonicalTypes);
+    const built = buildActivatedContributions(
+      modName,
+      raw,
+      this.canonicalTypes,
+      parsedManifest?.manifest?.contributes,
+    );
     if (!built.ok) throw new Error(`invalid contributions: ${built.errors.join('; ')}`);
     const activated = built.value;
     // Web surfaces are the one UI slot with on-disk assets: the shared contract
