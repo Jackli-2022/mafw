@@ -44,6 +44,9 @@ export interface SearchOptions {
    * top hits into the candidate set. Overrides config.search.temporalNeighbors.enabled.
    */
   temporalNeighbors?: boolean;
+  /** Include legacy `type='episodic'` rows (retired cortex layer). Pinned/sticky
+   *  rows are always kept; default false. */
+  includeLegacyEpisodic?: boolean;
 }
 
 export interface ScoredEntry {
@@ -564,6 +567,15 @@ export class HarmonicIndexManager {
         }
         if (added.length > 0) scored = [...scored, ...added].sort((a, b) => b.score - a.score);
       }
+    }
+
+    // Retired cortex layer: legacy `episodic` narratives are hidden from
+    // default recall/search. Pinned/sticky rows are explicit user choices and
+    // remain visible; direct get-by-id is never filtered here.
+    if (!options.includeLegacyEpisodic) {
+      scored = scored.filter(
+        (s) => !(s.entry.type === 'episodic' && !s.entry.pinned && !s.entry.sticky_until),
+      );
     }
 
     scored = scored.slice(0, topK);

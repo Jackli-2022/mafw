@@ -188,6 +188,8 @@ export interface SearchRecallOptions {
   scanSnapshot?: ScanResult | null
   /** R2 dense channel: fused inside searchScored via RRF (boundary/snapshot paths). */
   denseScores?: Map<string, number>
+  /** Include retired cortical `episodic` rows (admin/legacy UI only). */
+  includeLegacyEpisodic?: boolean
 }
 
 /** Multi-topic blob abstraction (chained MinHash merges) 鈥?dilutes precision. */
@@ -295,6 +297,7 @@ function fetchScored(index: any, query: string, topK: number, options: SearchRec
     return index.searchScored(query, topK, {
       retriever: options.retriever ?? 'bm25',
       ...(options.denseScores ? { denseScores: options.denseScores } : {}),
+      ...(options.includeLegacyEpisodic ? { includeLegacyEpisodic: true } : {}),
     }) || []
   }
   return (index.search(query, topK, options) || []).map((e: any) => ({ entry: e, score: 0.5 }))

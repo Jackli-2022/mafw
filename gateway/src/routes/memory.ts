@@ -332,17 +332,26 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
         res.writeHead(503); res.end(JSON.stringify({ error: 'Memory service not available' })); return;
       }
       const retrieverParam = parsedUrl.searchParams.get('retriever');
+      const includeLegacyEpisodic = parsedUrl.searchParams.get('includeLegacyEpisodic') === 'true';
       const store = new HarmonicUnitFileStore(deps.mafwDir());
       const index = store.indexManager_();
       let entries;
       if (query && retrieverParam === 'hybrid') {
         const dense = await computeDenseScores(query, topK, index);
-        entries = index.search(query, topK, dense ? { retriever: 'bm25', denseScores: dense } : { retriever: 'bm25' });
+        entries = index.search(query, topK, {
+          retriever: 'bm25',
+          ...(dense ? { denseScores: dense } : {}),
+          ...(includeLegacyEpisodic ? { includeLegacyEpisodic: true } : {}),
+        });
       } else if (query) {
         const retriever = retrieverParam === 'bm25' ? 'bm25' : 'token';
-        entries = index.search(query, topK, { retriever });
+        entries = index.search(query, topK, {
+          retriever,
+          ...(includeLegacyEpisodic ? { includeLegacyEpisodic: true } : {}),
+        });
       } else {
         entries = [...index.getIndex().entries]
+            .filter((entry: any) => includeLegacyEpisodic || !(entry.type === 'episodic' && !entry.pinned && !entry.sticky_until))
             .sort((a, b) => b.energy - a.energy)
             .slice(0, topK);
       }
@@ -363,9 +372,13 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
           });
         }
       }
+      const legacyEpisodic = includeLegacyEpisodic
+        ? results.filter((unit: any) => unit.type === 'episodic')
+        : undefined;
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         results,
+        ...(legacyEpisodic ? { legacyEpisodic } : {}),
         ...(layer === 'both' ? { t1Results } : {}),
         ...(layer === 'auto' ? { t1Results: [], episodes: episodes ?? [] } : {}),
       }));
