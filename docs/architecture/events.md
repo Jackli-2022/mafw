@@ -62,7 +62,9 @@ Source → Trigger → Thread → Subscription → Decision → Delivery → Cha
 - `LeadOutbox` dispatcher 每 5s 取 pending（含到期 failed）：按 channel 批量，
   p1 → p2 → p3 再按 createdAt；`maxBatch=5`、`maxPerHour=6`、两批最小间隔 60s。
   成功逐行 `sent`，失败逐行 `failed` 并按既有 outbox 退避重试；预算/间隔只延迟，
-  不丢行，重启后 pending / 到期 failed 继续。
+  不丢行，重启后 pending / 到期 failed 继续。dispatcher 只拥有 `lead:*` channel；
+  `event_outbox` 其他生产者的行原样保留。kernel shutdown 先停 timer，并在关闭 DB 前
+  等待在飞 dispatch 落盘（5s 上限），避免同一决定重启后重复播报。
 - 多条决定合并成一条消息（`[LEAD EVENT] N 条待确认` + 编号块），单条保持原文；
   同一 `recordId` 重复 enqueue 只留一行。Lead 只负责转达，确认 / 搁置仍是 human-only。
 - P0 不做：`PodEventWake` 合并、read / ack、agent-set timers、watchdog；这些留在后续阶段。
