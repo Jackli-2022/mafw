@@ -74,6 +74,12 @@ describe('reflection over T1 episodes', () => {
     expect(prompts[0]).toContain('review embedding');
     expect(prompts[0]).toContain('baseline missing');
     expect(c.reflected.has('s1:t1ep_a')).toBe(true);
+
+    const files = fs.readdirSync(dir, { recursive: true }).map(String);
+    const markdown = files.find((file) => file.endsWith('.md'));
+    expect(markdown).toBeTruthy();
+    const content = fs.readFileSync(path.join(dir, markdown!), 'utf-8');
+    expect(content).toContain('episode_id: t1ep_a');
   });
 
   test('skips internal sessions', async () => {

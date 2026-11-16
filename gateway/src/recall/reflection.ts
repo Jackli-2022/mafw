@@ -15,7 +15,7 @@ import { HARD_BOUNDARIES } from '../skills/memory-curator-agent';
 import { getRouteWriteDeps, routeAndWrite } from '../memory/route-write';
 import { PipelineBudgetLike } from './pipeline-budget';
 import { collectT1ReplayEvidence, T1ReplayDeps } from './t1-replay';
-import { normalizeSourceTraceIds } from '../core/memory/provenance';
+import { deriveEpisodeId, normalizeSourceTraceIds } from '../core/memory/provenance';
 import { log } from '../core/utils/logger';
 import type { T1EpisodeRecord } from './t1-episodes';
 
@@ -272,7 +272,12 @@ export function selectionFeedbackBlock(items: Array<{ text: string; need: number
   return `### 你此前蒸馏洞察的使用反馈（按 need 校准：未被检索的考虑合并或删除）\n${lines.join('\n')}`;
 }
 
-export function buildInsightUnit(insight: Insight, sessionID: string, now: string): HarmonicUnit {
+export function buildInsightUnit(
+  insight: Insight,
+  sessionID: string,
+  now: string,
+  episodeId?: string,
+): HarmonicUnit {
   return {
     id: generateHarmonicId(),
     type: CATEGORY_TO_TYPE[insight.category],
@@ -286,6 +291,7 @@ export function buildInsightUnit(insight: Insight, sessionID: string, now: strin
     updated_at: now,
     source_session_id: sessionID === ORPHAN_SESSION ? undefined : sessionID,
     ...(insight.source_trace_ids?.length ? { source_trace_ids: insight.source_trace_ids } : {}),
+    ...(episodeId ? { episode_id: episodeId } : {}),
     // G1: distilled insights are pipeline inferences — never self-elevate.
     authority: 'pipeline',
   };
@@ -510,6 +516,12 @@ export class ReflectionPipeline {
 
     const promptLines: string[] = [];
     const episodeTraceIds: string[] = [];
+    const episodeByTrace = new Map<string, string>();
+    for (const episode of episodes) {
+      for (const traceId of episode.traceIds ?? []) {
+        episodeByTrace.set(traceId, episode.id);
+      }
+    }
     for (let i = 0; i < episodes.length; i++) {
       const ep = episodes[i];
       let text = ep.text;
@@ -625,10 +637,16 @@ export class ReflectionPipeline {
         insight.source_trace_ids,
         (id) => injected.has(id),
       );
+      const episodeId =
+        deriveEpisodeId(
+          { findEpisodeByTrace: (traceId) => episodeByTrace.get(traceId) ?? null },
+          validatedTraceIds,
+        ) ?? episodes[episodes.length - 1]?.id;
       const unit = buildInsightUnit(
         { ...insight, source_trace_ids: validatedTraceIds },
         sessionID,
         now,
+        episodeId,
       );
       // V2 ⑦: reflection insights are pipeline writes — same gradient cap
       // (config.recall.commitmentGradient, default on).
