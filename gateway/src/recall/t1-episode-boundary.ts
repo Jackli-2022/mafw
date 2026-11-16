@@ -23,6 +23,10 @@ export interface EpisodeTurnInput {
   goalId?: string;
   /** Directory / tool-failure / goal structural flag (confidence only). */
   structuralBreak?: boolean;
+  /** Structured actor rows when available (roles/weights preserved). */
+  actorRoles?: Array<{ actorId: string; role: string; weight: number }>;
+  /** Last feature result/decision for the episode outcome. */
+  outcome?: string;
 }
 
 export interface ComputeEpisodeRangesInput {

@@ -20,6 +20,7 @@ import type {
   T1EpisodeMember,
   T1EpisodeRecord,
 } from '../recall/t1-episodes';
+import type { EpisodeTurnInput } from '../recall/t1-episode-boundary';
 import {
   querySparseTermIds,
   type T1SparseTerm,
@@ -2425,6 +2426,60 @@ export class GatewayDatabase {
   }
 
   // ── T1 episodes (derived index) ─────────────────────────────────────────
+
+  /**
+   * Join one session's turn identity with its derived feature/actor/concept/
+   * sparse code. Times are epoch milliseconds; `t1_turns.created_at` is seconds.
+   */
+  readSessionEpisodeTurns(sessionId: string): EpisodeTurnInput[] {
+    const turns = this.db
+      .prepare('SELECT * FROM t1_turns WHERE session_id = ? ORDER BY turn_seq')
+      .all(String(sessionId || '')) as any[];
+    if (turns.length === 0) return [];
+
+    let goalId: string | undefined;
+    try {
+      const goal = this.db
+        .prepare('SELECT goal_id FROM goal_sessions WHERE session_id = ? LIMIT 1')
+        .get(sessionId) as { goal_id?: string } | undefined;
+      goalId = goal?.goal_id ?? undefined;
+    } catch {
+      goalId = undefined;
+    }
+
+    return turns.map((row) => {
+      const feature = this.getTurnFeature(row.trace_id);
+      const actors = this.getTurnActors(row.trace_id).filter(
+        (actor) => !actor.actorId.startsWith('user:'),
+      );
+      const concepts = this.getTurnConcepts(row.trace_id);
+      const terms = this.getSparseTerms(row.trace_id);
+      const isUserTurn = this.readTurnRows(sessionId, row.turn_seq).some(
+        (observation) => observation.source === 'user_input',
+      );
+      return {
+        turnSeq: Number(row.turn_seq),
+        traceId: row.trace_id,
+        createdAt: Number(row.created_at) * 1000,
+        isUserTurn,
+        intent: feature?.intent,
+        specificActors: actors.map((actor) => actor.actorId),
+        conceptIds: concepts.map((concept) => concept.conceptId),
+        entities: feature?.entities ?? [],
+        semanticAtoms: terms
+          .filter((term) => term.kind === 'semantic')
+          .map((term) => term.termId.replace(/^sem:/, '')),
+        goalId,
+        structuralBreak: Boolean(feature?.error),
+        actorRoles: actors.map((actor) => ({
+          actorId: actor.actorId,
+          role: actor.role,
+          weight: actor.weight,
+        })),
+        outcome: feature?.result ?? feature?.decision,
+      };
+    });
+  }
 
   recordEpisodeBoundary(boundary: T1EpisodeBoundary): void {
     this.db

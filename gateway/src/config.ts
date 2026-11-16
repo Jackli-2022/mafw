@@ -382,6 +382,14 @@ export interface GatewayConfig {
     graceRevisit?: 'off' | 'shadow' | 'live';
     /** V2 ①c: GLiNER entity harvest into cue_anchors (fail-open). */
     entityHarvest?: boolean;
+    /** T1 episode index. Derived; shadow writes without changing recall. */
+    t1Episodes: {
+      enabled: boolean;
+      mode: 'off' | 'shadow' | 'live';
+      maxTurns: number;
+      idleCloseMs: number;
+      timeGapWeakMs: number;
+    };
   };
   usage: {
     pollIntervalMs: number;
@@ -731,6 +739,13 @@ function defaults(projectDir: string): GatewayConfig {
       // its only consumer is the V3 N1 entity layer; enable (with a real-
       // model smoke run) when N1 lands. Fail-open regardless.
       entityHarvest: false,
+      t1Episodes: {
+        enabled: true,
+        mode: 'shadow',
+        maxTurns: 30,
+        idleCloseMs: 6 * 3600_000,
+        timeGapWeakMs: 2 * 3600_000,
+      },
     },
     usage: {
       pollIntervalMs: 60000,
