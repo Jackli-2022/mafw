@@ -704,7 +704,6 @@ export function PluginPackagesSection(props: { sessionID?: string; creatorEntry?
                           <div
                             classList={{
                               "mafw-hub-error-text": diagnostic.level === "error",
-                              "mafw-config-hint": diagnostic.level !== "error",
                               "mafw-config-hint": diagnostic.level === "warning",
                             }}
                           >
@@ -804,7 +803,6 @@ export function PluginPackagesSection(props: { sessionID?: string; creatorEntry?
                       classList={{
                         "mafw-hub-error-text": check.status === "fail",
                         "mafw-config-hint": check.status === "warn",
-                        "mafw-config-hint": check.status === "pass",
                       }}
                     >
                       [{check.status}] {check.id} · {check.message}

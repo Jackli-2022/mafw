@@ -1,54 +1,60 @@
 {
-  "fixtureVersion": 2,
+  "fixtureVersion": 3,
   "embedding": "synthetic-concept-v1",
   "note": "Synthetic deterministic concept embedding: validates channel wiring/fusion, not model quality.",
   "k": 3,
   "fixtures": {
-    "turns": 8,
-    "queries": 14
+    "turns": 10,
+    "queries": 16
   },
   "channels": {
     "fts": {
-      "recall": 0.6428571428571429,
-      "mrr": 0.5714285714285714,
+      "recall": 0.625,
+      "mrr": 0.5625,
       "noAnswer": 1,
-      "cases": 14
+      "cases": 16
     },
     "dense": {
-      "recall": 0.6428571428571429,
-      "mrr": 0.6428571428571429,
+      "recall": 0.625,
+      "mrr": 0.59375,
       "noAnswer": 1,
-      "cases": 14
+      "cases": 16
     },
     "feature": {
-      "recall": 0.6428571428571429,
-      "mrr": 0.6071428571428571,
+      "recall": 0.625,
+      "mrr": 0.5625,
       "noAnswer": 1,
-      "cases": 14
+      "cases": 16
     },
     "concept": {
-      "recall": 0.9285714285714286,
-      "mrr": 0.8571428571428571,
+      "recall": 0.9375,
+      "mrr": 0.9375,
       "noAnswer": 1,
-      "cases": 14
+      "cases": 16
     },
     "actor": {
-      "recall": 0.21428571428571427,
-      "mrr": 0.21428571428571427,
+      "recall": 0.1875,
+      "mrr": 0.1875,
       "noAnswer": 1,
-      "cases": 14
+      "cases": 16
     },
     "sparse": {
-      "recall": 0.9285714285714286,
-      "mrr": 0.8571428571428571,
+      "recall": 0.9375,
+      "mrr": 0.875,
       "noAnswer": 1,
-      "cases": 14
+      "cases": 16
+    },
+    "episodes": {
+      "recall": 0.9375,
+      "mrr": 0.9375,
+      "noAnswer": 1,
+      "cases": 16
     },
     "fused": {
-      "recall": 0.9285714285714286,
-      "mrr": 0.9285714285714286,
+      "recall": 0.9375,
+      "mrr": 0.9375,
       "noAnswer": 1,
-      "cases": 14
+      "cases": 16
     }
   },
   "misses": {
@@ -57,6 +63,7 @@
       "q-coverage-cn",
       "q-merge",
       "q-synonym-net",
+      "q-episode-cn",
       "q-parse-holdout"
     ],
     "dense": [
@@ -64,6 +71,7 @@
       "q-synonym-net",
       "q-actor-pair",
       "q-actor-cn",
+      "q-episode-cn",
       "q-parse-holdout"
     ],
     "feature": [
@@ -71,6 +79,7 @@
       "q-coverage-cn",
       "q-merge",
       "q-synonym-net",
+      "q-episode-cn",
       "q-parse-holdout"
     ],
     "concept": [
@@ -87,9 +96,14 @@
       "q-merge",
       "q-code",
       "q-synonym-net",
+      "q-episode-deploy",
+      "q-episode-cn",
       "q-parse-holdout"
     ],
     "sparse": [
+      "q-parse-holdout"
+    ],
+    "episodes": [
       "q-parse-holdout"
     ],
     "fused": [
@@ -125,6 +139,10 @@
         "mrr": 0
       },
       "sparse": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "episodes": {
         "recall": 1,
         "mrr": 1
       },
@@ -164,6 +182,10 @@
         "recall": 1,
         "mrr": 1
       },
+      "episodes": {
+        "recall": 1,
+        "mrr": 1
+      },
       "fused": {
         "recall": 1,
         "mrr": 1
@@ -197,6 +219,10 @@
         "mrr": 0
       },
       "sparse": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "episodes": {
         "recall": 1,
         "mrr": 1
       },
@@ -236,6 +262,10 @@
         "recall": 1,
         "mrr": 1
       },
+      "episodes": {
+        "recall": 1,
+        "mrr": 1
+      },
       "fused": {
         "recall": 1,
         "mrr": 1
@@ -269,6 +299,10 @@
         "mrr": 0
       },
       "sparse": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "episodes": {
         "recall": 1,
         "mrr": 1
       },
@@ -308,6 +342,10 @@
         "recall": 1,
         "mrr": 1
       },
+      "episodes": {
+        "recall": 1,
+        "mrr": 1
+      },
       "fused": {
         "recall": 1,
         "mrr": 1
@@ -341,6 +379,10 @@
         "mrr": 0
       },
       "sparse": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "episodes": {
         "recall": 1,
         "mrr": 1
       },
@@ -380,6 +422,10 @@
         "recall": 1,
         "mrr": 1
       },
+      "episodes": {
+        "recall": 1,
+        "mrr": 1
+      },
       "fused": {
         "recall": 1,
         "mrr": 1
@@ -413,6 +459,10 @@
         "mrr": 0
       },
       "sparse": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "episodes": {
         "recall": 1,
         "mrr": 1
       },
@@ -452,6 +502,10 @@
         "recall": 1,
         "mrr": 1
       },
+      "episodes": {
+        "recall": 1,
+        "mrr": 1
+      },
       "fused": {
         "recall": 1,
         "mrr": 1
@@ -474,11 +528,11 @@
       },
       "feature": {
         "recall": 1,
-        "mrr": 1
+        "mrr": 0.5
       },
       "concept": {
         "recall": 1,
-        "mrr": 0.5
+        "mrr": 1
       },
       "actor": {
         "recall": 1,
@@ -487,6 +541,10 @@
       "sparse": {
         "recall": 1,
         "mrr": 0.5
+      },
+      "episodes": {
+        "recall": 1,
+        "mrr": 1
       },
       "fused": {
         "recall": 1,
@@ -514,7 +572,7 @@
       },
       "concept": {
         "recall": 1,
-        "mrr": 0.5
+        "mrr": 1
       },
       "actor": {
         "recall": 1,
@@ -523,6 +581,90 @@
       "sparse": {
         "recall": 1,
         "mrr": 0.5
+      },
+      "episodes": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "fused": {
+        "recall": 1,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "q-episode-deploy",
+      "query": "上次的 deploy plan",
+      "expectedKeys": [
+        "plan"
+      ],
+      "expectedCount": 1,
+      "fts": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "dense": {
+        "recall": 1,
+        "mrr": 0.5
+      },
+      "feature": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "concept": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "actor": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "sparse": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "episodes": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "fused": {
+        "recall": 1,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "q-episode-cn",
+      "query": "上次的部署计划",
+      "expectedKeys": [
+        "plan"
+      ],
+      "expectedCount": 1,
+      "fts": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "dense": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "feature": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "concept": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "actor": {
+        "recall": 0,
+        "mrr": 0
+      },
+      "sparse": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "episodes": {
+        "recall": 1,
+        "mrr": 1
       },
       "fused": {
         "recall": 1,
@@ -560,6 +702,10 @@
         "recall": 0,
         "mrr": 0
       },
+      "episodes": {
+        "recall": 0,
+        "mrr": 0
+      },
       "fused": {
         "recall": 0,
         "mrr": 0
@@ -591,6 +737,10 @@
         "mrr": 1
       },
       "sparse": {
+        "recall": 1,
+        "mrr": 1
+      },
+      "episodes": {
         "recall": 1,
         "mrr": 1
       },

@@ -97,6 +97,9 @@ export const MemoryAddResponse = Type.Union([
     sticky_until: Type.Optional(Type.String({
       description: 'Note-board expiry (ISO) when the unit was created with sticky:true.',
     })),
+    warnings: Type.Optional(Type.Array(Type.String(), {
+      description: 'Retired-type notices (e.g. episodic coerced to semantic).',
+    })),
   }, {
     description: 'Write accepted (created / updated / deduped / exactly-deduped).',
   }),

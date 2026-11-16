@@ -8,6 +8,7 @@ const episode: EpisodeHit = {
   endTurn: 3,
   status: 'closed',
   startedAt: Date.UTC(2026, 10, 16),
+  boundarySource: 'declared',
   intent: 'review embedding',
   actors: ['agent:reviewer', 'agent:builder'],
   conceptIds: [],

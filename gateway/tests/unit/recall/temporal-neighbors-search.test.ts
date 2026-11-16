@@ -11,7 +11,7 @@ import * as path from 'path';
 
 function unit(id: string, abstraction: string, session: string, created_at: string): HarmonicUnit {
   return {
-    id, type: 'episodic', primary_abstraction: abstraction, cue_anchors: [], memory_value: abstraction,
+    id, type: 'semantic', primary_abstraction: abstraction, cue_anchors: [], memory_value: abstraction,
     energy: 0.8, created_at, updated_at: created_at, source_session_id: session,
   } as HarmonicUnit;
 }
@@ -22,9 +22,9 @@ function build(): HarmonicIndexManager {
   const index = new HarmonicIndexManager(dir);
   // Only 'h' matches the query; n1 is the same-session predecessor, c is the
   // first entry of the next session (the cross-session bridge, h being last of A).
-  index.addEntry(unit('n1', 'gardening tips', 'A', '2024-01-01T00:00:00Z'), 'episodic');
-  index.addEntry(unit('h', 'kubernetes deployment rollout', 'A', '2024-02-01T00:00:00Z'), 'episodic');
-  index.addEntry(unit('c', 'cooking pasta recipes', 'B', '2024-03-01T00:00:00Z'), 'episodic');
+  index.addEntry(unit('n1', 'gardening tips', 'A', '2024-01-01T00:00:00Z'), 'semantic');
+  index.addEntry(unit('h', 'kubernetes deployment rollout', 'A', '2024-02-01T00:00:00Z'), 'semantic');
+  index.addEntry(unit('c', 'cooking pasta recipes', 'B', '2024-03-01T00:00:00Z'), 'semantic');
   return index;
 }
 

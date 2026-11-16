@@ -4,6 +4,7 @@ import { extractTurnFeature } from '../../../gateway/src/recall/t1-features';
 import { extractTurnActors, type T1ActorEvent } from '../../../gateway/src/recall/t1-actors';
 import { extractTurnConcepts } from '../../../gateway/src/recall/t1-concepts';
 import { encodeTurnSparseTerms } from '../../../gateway/src/recall/t1-sparse';
+import { rebuildSessionEpisodes } from '../../../gateway/src/recall/t1-episode-rebuild';
 import type { FakeVectorRow } from './fake-embedding';
 
 export interface FixtureTurn {
@@ -97,6 +98,23 @@ export const FIXTURE_TURNS: FixtureTurn[] = [
       { source: 'assistant_reply', content: 'builder 加了 concept 通道。' },
     ],
   },
+  {
+    key: 'plan',
+    session: 's4',
+    rows: [
+      { source: 'user_input', content: 'deploy plan 定一下' },
+      { source: 'tool_result', content: 'read plan.md' },
+      { source: 'assistant_reply', content: '计划周五 deploy。' },
+    ],
+  },
+  {
+    key: 'plan-confirm',
+    session: 's4',
+    rows: [
+      { source: 'user_input', content: 'deploy plan 再确认一下' },
+      { source: 'assistant_reply', content: '确认周五 deploy。' },
+    ],
+  },
 ];
 
 export const BASELINE_QUERIES: BaselineQuery[] = [
@@ -112,6 +130,8 @@ export const BASELINE_QUERIES: BaselineQuery[] = [
   { id: 'q-synonym-net', query: '连接重置', expected: ['network'] },
   { id: 'q-actor-pair', query: 'reviewer builder embedding', expected: ['review-fix'] },
   { id: 'q-actor-cn', query: '评审说构建者的 embedding 改动', expected: ['review-fix'] },
+  { id: 'q-episode-deploy', query: '上次的 deploy plan', expected: ['plan'] },
+  { id: 'q-episode-cn', query: '上次的部署计划', expected: ['plan'] },
   { id: 'q-parse-holdout', query: '解码失败', expected: ['reflection'] },
   { id: 'q-none', query: 'weather tomorrow', expected: [] },
 ];
@@ -188,6 +208,11 @@ export function seedT1Fixtures(db: GatewayDatabase): {
     });
 
     if (fixture.archive) db.archiveTurn(fixture.session, turn.turn_seq);
+  }
+
+  // Derived episode index for the episode-level queries.
+  for (const session of new Set(FIXTURE_TURNS.map((fixture) => fixture.session))) {
+    rebuildSessionEpisodes(db, session, { now: Date.now() });
   }
 
   return { traceIds, vectorRows };

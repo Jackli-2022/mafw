@@ -28,7 +28,7 @@ function buildMixed(): HarmonicIndexManager {
 }
 
 function answerRank(index: HarmonicIndexManager): number {
-  const res = index.searchScored('kubernetes deployment', 10, { retriever: 'bm25' });
+  const res = index.searchScored('kubernetes deployment', 10, { retriever: 'bm25', includeLegacyEpisodic: true });
   return res.findIndex(r => r.entry.id === 'answer');
 }
 

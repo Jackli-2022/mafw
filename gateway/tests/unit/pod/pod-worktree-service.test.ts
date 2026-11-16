@@ -8,6 +8,9 @@ import { PodWorktreeService } from '../../../src/core/pod/pod-worktree-service';
 import { simpleGit } from 'simple-git';
 import { tmpGitRepo } from '../worktree/tmp-git';
 
+// Full-suite load can push real git merge/remove work past Jest's 5s default.
+jest.setTimeout(15_000);
+
 function git(cwd: string, command: string): string {
   return execSync(`git ${command}`, { cwd, encoding: 'utf-8' }).trim();
 }

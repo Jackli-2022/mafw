@@ -14,6 +14,7 @@ import * as path from 'path';
 import { GatewayDatabase } from '../../../gateway/src/memory/gateway-db';
 import { makeT1Search } from '../../../gateway/src/recall/verbatim-recall';
 import { fuseT1Hits } from '../../../gateway/src/recall/t1-search';
+import { searchT1Episodes } from '../../../gateway/src/recall/t1-episode-search';
 import { BASELINE_QUERIES, seedT1Fixtures } from './fixtures';
 import { createFakeT1Runtime } from './fake-embedding';
 import { recallAtK, mrr, summarize } from './metrics';
@@ -30,10 +31,11 @@ interface QueryRow {
   concept: string[];
   actor: string[];
   sparse: string[];
+  episodes: string[];
   fused: string[];
 }
 
-const CHANNELS = ['fts', 'dense', 'feature', 'concept', 'actor', 'sparse', 'fused'] as const;
+const CHANNELS = ['fts', 'dense', 'feature', 'concept', 'actor', 'sparse', 'episodes', 'fused'] as const;
 type Channel = (typeof CHANNELS)[number];
 
 async function main(): Promise<void> {
@@ -59,6 +61,17 @@ async function main(): Promise<void> {
       const actor = db.searchT1Actors(query.query, K);
       const sparse = db.searchT1Sparse(query.query, K);
       const fused = fuseT1Hits(dense, lexical, K, { feature, concept, actor, sparse });
+      const episodes = await searchT1Episodes(
+        {
+          searchTurns: async () => fused,
+          findEpisodeByTrace: (traceId) => db.findEpisodeByTrace(traceId),
+          getEpisode: (episodeId) => db.getEpisode(episodeId),
+          listMembers: (episodeId) => db.listEpisodeMembers(episodeId),
+        },
+        query.query,
+        K,
+      );
+      const episodeTraces = [...new Set(episodes.flatMap((episode) => episode.topTraceIds))].slice(0, K);
       rows.push({
         id: query.id,
         query: query.query,
@@ -69,6 +82,7 @@ async function main(): Promise<void> {
         concept: concept.map((hit) => hit.traceId),
         actor: actor.map((hit) => hit.traceId),
         sparse: sparse.map((hit) => hit.traceId),
+        episodes: episodeTraces,
         fused: fused.map((hit) => hit.traceId ?? '').filter(Boolean),
       });
     }
@@ -81,7 +95,7 @@ async function main(): Promise<void> {
         .map((row) => row.id);
 
     const report = {
-      fixtureVersion: 2,
+      fixtureVersion: 3,
       embedding: 'synthetic-concept-v1',
       note: 'Synthetic deterministic concept embedding: validates channel wiring/fusion, not model quality.',
       k: K,

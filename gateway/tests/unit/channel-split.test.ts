@@ -28,14 +28,14 @@ describe('channelSplit', () => {
   test('关闭时按 BM25（episodic 可居首）', () => {
     config.search.channelSplit.enabled = false;
     const index = build();
-    const res = index.searchScored('kubernetes deployment', 4, { retriever: 'bm25' });
+    const res = index.searchScored('kubernetes deployment', 4, { retriever: 'bm25', includeLegacyEpisodic: true });
     expect(res[0].entry.id).toBe('e1');
   });
 
   test('开启时 semantic 优先于 episodic', () => {
     config.search.channelSplit.enabled = true;
     const index = build();
-    const res = index.searchScored('kubernetes deployment', 4, { retriever: 'bm25' });
+    const res = index.searchScored('kubernetes deployment', 4, { retriever: 'bm25', includeLegacyEpisodic: true });
     const ids = res.map(r => r.entry.id);
     expect(['s1', 's2']).toContain(ids[0]);
     expect(ids.indexOf('s1')).toBeLessThan(ids.indexOf('e1'));

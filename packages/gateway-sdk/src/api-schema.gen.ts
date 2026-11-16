@@ -38370,6 +38370,8 @@ export interface operations {
                         updated?: string;
                         /** @description Note-board expiry (ISO) when the unit was created with sticky:true. */
                         sticky_until?: string;
+                        /** @description Retired-type notices (e.g. episodic coerced to semantic). */
+                        warnings?: string[];
                     } | {
                         /** @constant */
                         success: false;

@@ -57,6 +57,7 @@ const episodeHit: EpisodeHit = {
   endTurn: 3,
   status: 'closed',
   startedAt: 1000,
+  boundarySource: 'declared',
   intent: 'review embedding',
   actors: ['agent:reviewer'],
   conceptIds: ['concept:embedding'],

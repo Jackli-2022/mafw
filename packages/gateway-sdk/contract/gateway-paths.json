@@ -84273,6 +84273,13 @@
                         "sticky_until": {
                           "description": "Note-board expiry (ISO) when the unit was created with sticky:true.",
                           "type": "string"
+                        },
+                        "warnings": {
+                          "description": "Retired-type notices (e.g. episodic coerced to semantic).",
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
                         }
                       }
                     },

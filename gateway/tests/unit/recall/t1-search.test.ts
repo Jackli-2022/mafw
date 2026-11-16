@@ -14,6 +14,10 @@ function fakeRuntime(rowsByTurn: Record<string, any[]>, cosine = 0.9) {
 }
 
 describe('createGatewayT1Search', () => {
+  const previousDenseMode = config.recall.t1Recall.denseIndex;
+  beforeEach(() => { config.recall.t1Recall.denseIndex = 'on'; });
+  afterEach(() => { config.recall.t1Recall.denseIndex = previousDenseMode; });
+
   test('no embedding runtime → empty and fail-open', async () => {
     const db = {
       readArchiveTurn: jest.fn(),

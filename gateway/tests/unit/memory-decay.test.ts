@@ -312,6 +312,9 @@ describe('memory:decay incremental decay', () => {
       t1BackfillMissing: 0,
       t1BackfillFailed: 0,
       t1ActivationDecayed: 0,
+      episodesClosedIdle: 0,
+      episodesRebuilt: 0,
+      episodeRebuildFailed: 0,
     });
   });
 
