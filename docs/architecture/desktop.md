@@ -69,8 +69,11 @@
   决定记录仍由 MCP 起草、人确认 / 搁置 / 重开，落在 `<project>/.mafw/decisions/`；goal-less
   draft 不进 attention（由 Lead 后续消息转达）。新 Goal 先看委托单预览（12 字段 + 授权级别），
   Goal 总览显示代理契约，框显示执行 badge。
-- **Chat 头部身份（2026-11-16）**：头像使用 Lore 图标（`assets/lore/lead-avatar-20.png`），右边固定显示
-  `Lore`；宽容器显示 `Lore · 会话标题`，容器 ≤700px 时隐藏冗余标题、只留 Lore + token + actions。
+- **Chat 消息身份与时间（2026-11-16）**：Lore 身份只在 assistant 回复内容里——每个 assistant
+  回合上方一行 `[Lore 头像] Lore · 回合时间`（头像 `assets/lore/lead-avatar-20.png`，正文不缩进）；
+  标题栏保持「会话首字母 + 会话标题」。用户消息气泡右下角常显时间，hover / focus 时操作按钮
+  在原位覆盖时间，不挤动布局。assistant 时间由 session-ui 通用 `data-turn-time` 提供，
+  Lore 样式只在桌面壳层 `mafw.css`。
 - **Agent-native Chat 意图（2026-11-15 起）**：composer 只保留一个发送面，讨论 / 提议 / 委托 / 解决
   四模式已移除。Lead 按系统提示直接调用 `mafw_create_goal` 建立 `discussing` Goal（带当前话题
   快照，不启动 NodeDriver）；桌面把该工具结果渲染成 `GoalCreatedCard`（打开 Tech Lead 讨论 /
