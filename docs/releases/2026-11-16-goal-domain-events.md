@@ -83,6 +83,23 @@
 - gateway `tsc`：rc=0。
 - gateway `npm run build`：通过（`dist/release.json` v5.1.0）。
 
+## 真机验收（2026-11-16，gateway pid 16292 / instance 922d7453）
+
+- **启动迁移**：重启后 `goal_state` 自动导入 5 条 legacy Goal（`ARCHIVED`/`COMPLETED`），
+  `goal_state_revisions` 为空（尚无 revision 归档）。
+- **schema**：`domain_events` 可建表（当前 0 行，重启后尚未跑新 Goal）；
+  `event_outbox` 的 `read_at` / `ack_at` / `sent_session_id` 三列存在。
+- **read 回执（live）**：合成一条 human Pod event + 两条 lead outbox 行
+  （一条 `sent`、一条非 `sent`），`POST /api/pods/:podId/events/:id/seen` 返回
+  `{ok:true,changed:true}`；`sent` 行 `read_at` 落库，非 `sent` 行保持 `null`。
+- **ack**：`turn.completed` → `sent_session_id` 匹配行才 ack；本轮没有可安全触发的
+  Lead 回合，未做 live 触发，由 `lead-outbox-read-ack` 单测覆盖。
+- **清理**：合成 `pod_events` / `event_outbox` / `event_channels` 行全部删除，残余 0；
+  重启后日志无新增 ERROR。
+
+未做：真实 `goal.failed` 归档端到端（会驱动 agent）——同事务语义由
+`goal-archive-tx` 的回滚测试覆盖。
+
 ## 边界与偏差
 
 - **Desktop 统一投影推迟到 Phase 3**：Phase 2 的 projector 只做 parity，读路径仍是
