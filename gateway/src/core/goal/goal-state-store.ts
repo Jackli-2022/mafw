@@ -4,6 +4,7 @@
 // missing DB row lazily imports the legacy file on first read.
 import type Database from 'better-sqlite3';
 import type { DomainEventStore } from '../events/domain-event-store';
+import type { GoalSnapshotStore } from './goal-history';
 import {
   archiveGoalStateFile,
   loadGoalStateFile,
@@ -25,6 +26,7 @@ export interface GoalStateHistoryMeta {
 
 export interface GoalStateStoreOptions {
   events?: DomainEventStore;
+  snapshots?: GoalSnapshotStore;
   snapshotEvery?: number;
   now?(): string;
 }
@@ -47,11 +49,13 @@ interface GoalStateDbRow {
 
 export class GoalStateStore implements GoalStateBackend {
   private readonly events?: DomainEventStore;
+  private readonly snapshots?: GoalSnapshotStore;
   private readonly snapshotEvery: number;
   private readonly now: () => string;
 
   constructor(private readonly db: Database.Database, opts: GoalStateStoreOptions = {}) {
     this.events = opts.events;
+    this.snapshots = opts.snapshots;
     this.snapshotEvery = Math.max(1, Math.trunc(opts.snapshotEvery ?? 20));
     this.now = opts.now ?? (() => new Date().toISOString());
     this.initSchema();
@@ -124,7 +128,7 @@ export class GoalStateStore implements GoalStateBackend {
 
       if (this.events) {
         const reset = meta?.reset === true;
-        this.events.append({
+        const appended = this.events.append({
           type: 'goal.state.changed',
           aggregateType: 'goal',
           aggregateId: goalId,
@@ -142,6 +146,15 @@ export class GoalStateStore implements GoalStateBackend {
             ...(meta?.patch ? { patch: meta.patch } : {}),
           },
         });
+        if (this.snapshots) {
+          const last = this.snapshots.latest(goalId);
+          const changes = this.snapshots.countStateChangesAfter(goalId, last?.version ?? 0);
+          // Baseline snapshot on the first event, on every reset, then every N
+          // state changes (semantic goal.* events do not shift the cadence).
+          if (!last || reset || changes >= this.snapshotEvery) {
+            this.snapshots.save(goalId, appended.aggregateVersion, state, now);
+          }
+        }
       }
     })();
 
