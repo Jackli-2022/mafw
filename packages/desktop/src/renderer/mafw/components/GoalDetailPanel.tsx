@@ -50,7 +50,7 @@ export function GoalDetailPanel(props: {
   podId?: string | null
   /** shell 打开 attention 时指定要展开/滚动到的区域。 */
   focus?: GoalDetailFocus | null
-  /** 决定板请求直接打开计划审阅浮层；带目标 Goal 的 nonce。 */
+  /** 计划入口请求直接打开计划审阅浮层；带目标 Goal 的 nonce。 */
   planOpenRequest?: PlanOpenRequest | null
   onClose: () => void
   onOpenSession: (sid: string) => void
@@ -672,7 +672,7 @@ export function GoalDetailPanel(props: {
     onCleanup(() => clearTimeout(timer))
   })
 
-  // 决定板「批准计划」：nonce 变化时直接打开审阅浮层；等计划加载完成再开。
+  // 计划入口：nonce 变化时直接打开审阅浮层；等计划加载完成再开。
   let lastPlanOpenRequest = 0
   createEffect(() => {
     const request = props.planOpenRequest

@@ -17,12 +17,14 @@ test("MafwShell drafts a user-sourced decision when an episode closes", () => {
   assert.match(shell, /onCloseEpisode=\{closeEpisodeToDecision\}/)
 })
 
-test("ChatPane keeps the draft record id on the episode and expands the board", () => {
+test("ChatPane keeps the draft record id on the episode without a chat board", () => {
   assert.match(chat, /onCloseEpisode\?:/)
   assert.match(chat, /closeEpisodeWithRecord/)
-  assert.match(chat, /decisionRecordId/)
-  assert.match(chat, /openDecisionRecord/)
-  assert.match(chat, /focusRecord=\{decisionRecordFocus\(\)\}/)
+  assert.match(chat, /const recordId = await props\.onCloseEpisode/)
+  assert.match(chat, /closeEpisode\(/)
+  assert.doesNotMatch(chat, /openDecisionRecord/)
+  assert.doesNotMatch(chat, /decisionRecordFocus/)
+  assert.doesNotMatch(chat, /DecisionBoard/)
 })
 
 test("EpisodeHeader offers close-only and close-with-record", () => {

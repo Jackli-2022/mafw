@@ -1,4 +1,4 @@
-// 决定板的数据源：唯一读取 attention 投影，rail badge 与 Chat 决定板共用。
+// 决定记录的数据源：唯一读取 attention 投影，rail badge 与 Goal 详情的决定记录共用。
 import { createSignal } from "solid-js"
 import type {
   AttentionItem,

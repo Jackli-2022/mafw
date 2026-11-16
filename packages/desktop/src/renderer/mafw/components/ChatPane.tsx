@@ -64,14 +64,12 @@ import { queueForSession, fetchQueue, cancelQueueItem, clearGatewayQueue, queueI
 import { countUserTurns, shouldKeepPaging } from "./history-paging"
 import { worktreeBadge } from "./worktree-label"
 import { ApprovalSummaryLine } from "./ApprovalSummaryLine"
-import { DecisionBoard } from "./DecisionBoard"
 import { EpisodeHeader } from "./EpisodeHeader"
 import { PodReviewItems } from "./PodReviewItems"
 import { closeEpisode, createEpisode, groupTurnsByEpisode, reopenEpisode, resolvedCloseStartId, type ChatEpisode } from "../chat/episode-model"
 import { createEpisodeStore } from "../chat/episode-store"
 import { unresolvedReviewCount, visibleChatReviewItems } from "../chat/chat-review"
-import type { DecisionBoardView, DecisionItem } from "../focus/decision-model"
-import type { DecisionRecord, PodReviewItem } from "@mafw/sdk"
+import type { PodReviewItem } from "@mafw/sdk"
 import { permissionAriaLabel, permissionPresentation } from "./composer-permission"
 import { type PermissionMode } from "./permission-card-mapping"
 import { getSessionTurnDiffs } from "../session-turn-diffs"
@@ -250,17 +248,7 @@ export type ChatPaneProps = {
   /** 当前 Goal 的 Tech Lead 讨论中显示；规则由 shell 的 goal-chat-context 决定。 */
   showReturnLead?: () => boolean
   onReturnLead?: () => void
-  /** Chat 决定板：由 shell 的 decisionStore 投影；为空时不渲染。 */
-  decisionBoard?: () => DecisionBoardView
-  decisionBoardCollapsed?: () => boolean
-  onToggleDecisionBoard?: (collapsed: boolean) => void
-  onDecisionAction?: (item: DecisionItem) => void
-  decisionRecords?: () => readonly DecisionRecord[]
-  decisionRecordBusy?: () => string | null
-  onDecisionConfirm?: (id: string, input: { rationale: string; consequences: string; reviewAt?: string }) => void
-  onDecisionShelve?: (id: string, input: { reviewAt: string; note?: string }) => void
-  onDecisionReopen?: (id: string) => void
-  /** Episode 关闭并记录决定：返回 draft record id；只起草，确认仍在决定板。 */
+  /** Episode 关闭并记录决定：返回 draft record id；只起草，确认由 Lead 跟进。 */
   onCloseEpisode?: (input: {
     episode: ChatEpisode
     summary: string
@@ -354,7 +342,6 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const episodeStore = createMemo(() => createEpisodeStore(window.localStorage, sidProp()))
   const [episodes, setEpisodes] = createSignal<ChatEpisode[]>([])
   const [episodeCollapseOverrides, setEpisodeCollapseOverrides] = createSignal<ReadonlyMap<string, boolean>>(new Map())
-  const [decisionRecordFocus, setDecisionRecordFocus] = createSignal<{ id: string } | null>(null)
   const [reviewItems, setReviewItems] = createSignal<PodReviewItem[]>([])
   const [reviewBusy, setReviewBusy] = createSignal(false)
   const [reviewError, setReviewError] = createSignal<string | null>(null)
@@ -506,13 +493,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       ? closeEpisode({ ...item, startMessageId: startId }, end?.id ?? startId, recordId, end?.time?.created)
       : item))
     resetEpisodeCollapse(episode.id)
-    showToastV2({ description: "已起草决定记录，去决定板确认", duration: 3200 })
+    showToastV2({ description: "已起草决定记录", duration: 3200 })
     return recordId
-  }
-  /** 展开决定板并定位到记录；新对象保证重复点击也能重新展开。 */
-  const openDecisionRecord = (id: string) => {
-    props.onToggleDecisionBoard?.(false)
-    setDecisionRecordFocus({ id })
   }
   const {
     attachments, setAttachments, dragging, setDragging,
@@ -2403,20 +2385,6 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 </Show>
               </div>
             </div>
-            <Show when={props.decisionBoard}>
-              <DecisionBoard
-                board={props.decisionBoard!()}
-                collapsed={props.decisionBoardCollapsed?.() ?? false}
-                onToggle={(collapsed) => props.onToggleDecisionBoard?.(collapsed)}
-                onAction={(item) => props.onDecisionAction?.(item)}
-                records={props.decisionRecords?.() ?? []}
-                recordBusy={props.decisionRecordBusy?.() ?? null}
-                focusRecord={decisionRecordFocus()}
-                onDecisionConfirm={(id, input) => props.onDecisionConfirm?.(id, input)}
-                onDecisionShelve={(id, input) => props.onDecisionShelve?.(id, input)}
-                onDecisionReopen={(id) => props.onDecisionReopen?.(id)}
-              />
-            </Show>
             <Show when={hiddenTurnCount() > 0 || props.pageState[sidProp()]?.hasMore}>
               <div class="mafw-load-earlier" style="display:flex;justify-content:center;padding:8px 0;">
                 <ButtonV2 variant="ghost" size="small" onClick={() => { if (hiddenTurnCount() > 0) { expandRendered() } else { const el2 = containerRef(); const ph = el2?.scrollHeight || 0; void loadOlder(sidProp()).then(() => { setRenderLimit(l => l + 10); if (el2) requestAnimationFrame(() => { el2.scrollTop += el2.scrollHeight - ph; lastScrollTop = el2.scrollTop }) }) } }}>{hiddenTurnCount() > 0 ? `加载更早（还有 ${hiddenTurnCount()} 轮）` : "加载更早的历史"}</ButtonV2>
@@ -2441,10 +2409,6 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                         onClose={() => closeEpisodeById(episode().id)}
                         onCloseWithRecord={(input) => closeEpisodeWithRecord(episode(), input.summary)}
                         onReopen={() => reopenEpisodeById(episode().id)}
-                        onOpenRecord={() => {
-                          const id = episode().decisionRecordId
-                          if (id) openDecisionRecord(id)
-                        }}
                       />
                     )}
                   </Show>

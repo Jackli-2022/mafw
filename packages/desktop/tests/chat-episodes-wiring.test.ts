@@ -24,7 +24,7 @@ test("EpisodeHeader renders status, title and human actions", () => {
   assert.match(header, /TextInputV2/)
   assert.match(header, /已关闭/)
   assert.match(header, /重新打开/)
-  assert.match(header, /查看决定记录/)
+  assert.doesNotMatch(header, /查看决定记录/)
   assert.doesNotMatch(header, /<button/)
 })
 

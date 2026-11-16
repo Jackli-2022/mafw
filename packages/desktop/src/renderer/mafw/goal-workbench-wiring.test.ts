@@ -63,6 +63,24 @@ test("blocked and failing Goals expose real first-screen actions, not technical 
   assert.doesNotMatch(goalDetailSrc, /summary\?\.needsPerson[\s\S]{0,160}setTechnicalOpen\(true\)/)
 })
 
+test("chat no longer renders the decision board card", () => {
+  assert.doesNotMatch(chatPaneSrc, /DecisionBoard/)
+  assert.doesNotMatch(chatPaneSrc, /决定板/)
+  assert.doesNotMatch(mafwShellSrc, /decisionBoard=/)
+})
+
+test("Goal detail still opens plan review from planOpenRequest", () => {
+  assert.match(mafwShellSrc, /planOpenRequest=\{goalPlanOpenRequest\(\)\}/)
+  assert.match(goalDetailSrc, /planOpenRequest\?: PlanOpenRequest \| null/)
+  assert.match(goalDetailSrc, /shouldOpenPlan/)
+  assert.match(goalDetailSrc, /setPlanOpen\(true\)/)
+})
+
+test("Goal frame keeps revision in the badge only", () => {
+  assert.match(mafwShellSrc, /scope\.kind === "world" \? "项目文件" : "Goal"/)
+  assert.doesNotMatch(mafwShellSrc, /Goal · rev \$\{scope\.revision\}/)
+})
+
 test("the direction action focuses the direction input instead of only scrolling", () => {
   const reviewDirection = between(
     goalDetailSrc,

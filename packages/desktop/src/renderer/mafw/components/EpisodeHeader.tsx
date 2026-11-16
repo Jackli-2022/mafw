@@ -15,7 +15,6 @@ export function EpisodeHeader(props: {
   onClose: () => void
   onCloseWithRecord?: (input: { summary: string }) => Promise<string | null>
   onReopen: () => void
-  onOpenRecord: () => void
 }): JSX.Element {
   const [closing, setClosing] = createSignal(false)
   const [summary, setSummary] = createSignal("")
@@ -69,11 +68,6 @@ export function EpisodeHeader(props: {
         >
           <ButtonV2 variant="outline" size="small" onClick={() => setClosing(true)}>
             关闭
-          </ButtonV2>
-        </Show>
-        <Show when={props.episode.decisionRecordId}>
-          <ButtonV2 variant="ghost" size="small" onClick={() => props.onOpenRecord()}>
-            查看决定记录
           </ButtonV2>
         </Show>
       </div>

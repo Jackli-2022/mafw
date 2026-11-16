@@ -169,7 +169,6 @@ import {
 import { stageActionFor } from "./focus/stage-dispatch"
 import { openGoalFocus as applyGoalFocus } from "./focus/goal-focus"
 import type { FocusOpenRequest } from "./focus/focus-open"
-import type { DecisionItem } from "./focus/decision-model"
 import {
   configureFocusStorage,
   flushFocusPersistence,
@@ -454,7 +453,7 @@ export function MafwShell() {
   // fetches (here + Rail) refetch when a new project registers.
   const [projectsRev, setProjectsRev] = createSignal(0)
 
-  // 决定板 / rail badge 的唯一数据源：attention 投影 + 后续 decision records。
+  // 决定记录 / rail badge 的唯一数据源：attention 投影 + 后续 decision records。
   const decisionStore = createDecisionStore({
     api: {
       attention: (dir) => window.api.mafw.attention.list(dir),
@@ -465,7 +464,6 @@ export function MafwShell() {
     },
     projectDir: () => currentProject(),
   })
-  const [decisionBoardCollapsed, setDecisionBoardCollapsed] = createSignal(false)
   const [decisionRecordBusy, setDecisionRecordBusy] = createSignal<string | null>(null)
   const runDecisionRecord = async (id: string, action: () => Promise<void>) => {
     setDecisionRecordBusy(id)
@@ -3528,15 +3526,6 @@ export function MafwShell() {
     if (identity?.role === "tech_lead" && identity.goalId) return identity.goalId
     return techLeadGoalBySession[sid] ?? null
   }
-  const openDecisionGoal = (goalId: string, target: GoalDetailFocus) => {
-    setShowConfig(false)
-    applyRightDock(true)
-    if (narrowZone()) applyNarrowView("workbench")
-    openGoalFocus(goalId, target)
-    if (target === "plan") {
-      setGoalPlanOpenRequest({ nonce: (goalPlanOpenRequest()?.nonce ?? 0) + 1, goalId })
-    }
-  }
   /** Episode 关闭时用的 Goal 身份：Pod 会话身份优先，其次 Tech Lead 映射/工作台焦点。 */
   const episodeGoalReference = (sessionID: string) => {
     const detail = podStore.detail()
@@ -3559,7 +3548,7 @@ export function MafwShell() {
         : null,
     })
   }
-  /** 关闭 Episode → 起草一条用户来源的决定记录；确认仍由决定板里的人类完成。 */
+  /** 关闭 Episode → 起草一条用户来源的决定记录；确认仍由人类完成。 */
   const closeEpisodeToDecision = async (input: {
     episode: ChatEpisode
     summary: string
@@ -3594,25 +3583,6 @@ export function MafwShell() {
         duration: 3600,
       } as any)
       return null
-    }
-  }
-  const handleDecisionAction = (item: DecisionItem) => {
-    const action = item.action
-    if (action.kind === "goal") {
-      openDecisionGoal(action.goalId, action.target)
-      return
-    }
-    if (action.kind === "reviewItem") {
-      const goal = podStore.detail()?.goals.find((item) => item.goalId === action.goalId)
-      if (goal) {
-        openGoalChangeSetFromGoal(goal, goal.activeRevision ?? goal.revision ?? 1, {
-          rel: action.rel,
-          line: action.line,
-        })
-        openChangesFace({ section: "review", rel: action.rel, line: action.line })
-        return
-      }
-      openChangesFace({ section: "review", rel: action.rel, line: action.line })
     }
   }
   /** 非讨论的 Tech Lead 节点会话 / Pod 不可解析：发送必须被拦住并给出指引。 */
@@ -4342,15 +4312,6 @@ export function MafwShell() {
                             activeSessionId: activeSessionId(),
                           })}
                           onReturnLead={() => { void openLeadEntry() }}
-                          decisionBoard={() => decisionStore.board(activeTechLeadGoalId())}
-                          decisionBoardCollapsed={() => decisionBoardCollapsed()}
-                          onToggleDecisionBoard={setDecisionBoardCollapsed}
-                          onDecisionAction={handleDecisionAction}
-                          decisionRecords={() => decisionStore.records()}
-                          decisionRecordBusy={() => decisionRecordBusy()}
-                          onDecisionConfirm={confirmDecisionRecord}
-                          onDecisionShelve={shelveDecisionRecord}
-                          onDecisionReopen={reopenDecisionRecord}
                           onCloseEpisode={closeEpisodeToDecision}
                           techLeadTarget={activeTechLeadTarget}
                           reviewRefreshKey={() => podStore.reviewRevision()}
