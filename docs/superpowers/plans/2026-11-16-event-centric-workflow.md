@@ -527,8 +527,13 @@ git commit -m "docs: record lead inbox/outbox unification"
 
 1. **已定（2026-11-16）：GoalState 迁进 SQLite**。GoalState / PodStore / `domain_events` 同库，
    state + event 同事务/outbox；现有 `.mafw/state/*.json` 做一次性迁移 + 兼容读取。
-2. `domain_events` 与 `pod_events` 是两表还是 `pod_events` 迁为投影？
-3. Lead 的 read/ack 语义：Lead 回复算 ack，还是人看到算 read？
+2. **已定（2026-11-16）：`domain_events` 独立表**。`pod_events` 保留为 inbox 投影
+   （unread / seen / attention 输入），不回写 domain log。
+3. **已定（2026-11-16）：人看到 = read，Lead 回复 = ack**。
+   - read：`POST /api/pods/:podId/events/:id/seen`（或批量 seen）命中带
+     `wake_session_id='outbox:<id>'` 的 Pod event → `event_outbox.read_at`；
+   - ack：Lead 会话 `turn.completed` 且该 outbox 行记录了 `sent_session_id` →
+     `event_outbox.ack_at`；Lead 自己写的 lead→lead 摘要不算 ack。
 4. 是否需要“任意时点 replay Goal”作为产品能力，还是只做崩溃恢复 + 投影重建？
 5. Phase 3 是否引入 Temporal 式 Activity/Command 抽象，还是保持 NodeDriver 现有节点函数？
 
