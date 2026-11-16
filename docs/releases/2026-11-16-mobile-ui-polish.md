@@ -1,7 +1,7 @@
 # 2026-11-16 · Mobile F/U 批：功能打磨 + UI 高级化
 
 - **分支**：`main`
-- **提交**：`61cbbaf2`（F 批功能）、`afb23695`（U 批 UI）
+- **提交**：`61cbbaf2`（F 批功能）、`afb23695`（U 批 UI）、`d86a3e69`（超时兼容）、`3df99308`（冒烟修正）
 - **范围**：`mobile/` 客户端；不改 gateway 契约
 - **Spec**：`docs/superpowers/specs/2026-11-05-mobile-tailscale-pod-app-design.md`
 
@@ -31,22 +31,34 @@
   五桶标题「小标题 + 计数 + hairline」；Goal 卡片 ink + hairline + chevron；需要你图标加 mint 弱底；
   结果行、空态圆形徽标与描边 CTA。
 - **我的 tab**：顶部 Lore 40px + `Orcalore` 字标 + 定位语；底部「关于」区，
-  `kAppVersion` 由测试读取 `pubspec.yaml` 校验。
+  `kAppVersion` 由测试读取 `pubspec.yaml` 校验；四个装饰性入口图标统一 ink + dim
+  （mint 只留给激活态/CTA）。
+- **项目 pill 可达性**：`Semantics(container, onTap)` 独立节点；真机 uiautomator 验证
+  `clickable=true`（此前 `excludeSemantics` 把 InkWell 的 tap 动作一起裁掉）。
 - **聊天 / 讨论**：composer 顶部 hairline、输入框继承 14dp 圆角、附件/语音降为 dim；
   用户气泡 hairline + 6dp 尾角，assistant 保持全宽文档排版。
 - **色彩纪律**：连接设置 URL 提示、Triage / 会话空态、配对页 AppBar（inversePrimary → 真黑）
   全部回到 token；`lib` 不再有 `Colors.*` 语义色残留（相机 overlay 除外）。
-- 新增测试 7 例：主题令牌 5、骨架屏 1、我的品牌/关于 1。
+- 新增测试 8 例：主题令牌 5、骨架屏 1、我的品牌/关于 1、项目 pill 语义 1。
 
 ## 门禁
 
 - `flutter analyze` **0**。
-- 全量逐文件 **593/593（41 文件）**：theme_tokens 23、work_tab 34、tab_shell 8、sessions 11、
+- 全量逐文件 **594/594（41 文件）**：theme_tokens 23、work_tab 35、tab_shell 8、sessions 11、
   pairing 45、chat render 6、tech lead 12、plan 18、lead entry 13、lead handoff 20、goal detail 29、
   event replay 23、gateway timeout 4、widget 2；其余文件同样逐文件通过。
 - 本机聚合 `flutter test` 仍会随机触发 `flutter_tester` 原生崩溃（"did not complete" /
   "Connection closed before test suite loaded"）；逐文件 + `--concurrency=1` 为门禁，
   崩溃文件单独复跑均通过。
+
+## 模拟器冒烟（2026-11-16）
+
+- AVD `Pixel_9a` + `adb reverse tcp:3000` + `run-as` prefs 注入（§7.8）；核对工作 tab、
+  我的、聊天会话与 composer 截图。
+- 冒烟发现并修复：我的四个装饰性 mint 圆底 → 统一 ink + dim；项目 pill 语义节点缺 tap 动作
+  → `Semantics(container: true, onTap:)`，uiautomator 复验 `clickable=true`。
+- 环境注意：模拟器默认息屏，`screencap` 前先 `input keyevent KEYCODE_WAKEUP`；
+  debug 包右上角 `DEBUG` 斜标属正常构建标记。
 
 ## 未做 / 后续
 
