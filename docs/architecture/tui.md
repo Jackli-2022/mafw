@@ -15,10 +15,15 @@
   **2026-11-16（E10j-J1）已收口 TUI 渲染漂移**：`ui/triage-view-model.ts` 纯函数
   `triageView(t)` 与桌面 `triage-model.ts` 同构（title 取 `proposedGoal.title` →
   `summary.title` → `id`；meta 为 `source · discoveredAt · 截止 deadline`，非法日期省略；
-  badge 为 state 三态 + `llmSuggestions` 最高 priority 后缀），`ui/triage-tab.ts` 不再读
+  badge 为 state 三态（待确认/已确认/已拒绝）+ `llmSuggestions` 最高 priority 条目的
+  `建议确认`/`建议拒绝` 后缀），`ui/triage-tab.ts` 不再读
   phantom `reason` / `goalId` / `severity`，颜色只由 badge tone（neutral/warn/danger）决定。
   纯函数测试 `tests/triage-view-model.test.ts` 可跑；TUI 整包仍因缺 `@earendil-works/pi-tui`
-  env-red。`--hybrid` 检索 flag 待 SDK `memory.search` 加 retriever 参数后接（v1 固定 bm25）
+  env-red。
+  **schema epoch（E10j-J2）**：`store/human-token.ts#createTuiClient` opt-in `schemaEpoch: 'auto'`
+  （SDK 自动学习并携带 `X-MAFW-Schema-Epoch`，epoch 漂移的 409 刷新后重试一次），gateway 升级后
+  TUI 不再静默沿用旧契约；与「human token 403 不自动重试」的取舍互不影响（SSE `fetchPath` 不带 epoch）。
+  `--hybrid` 检索 flag 待 SDK `memory.search` 加 retriever 参数后接（v1 固定 bm25）
 
 #### TUI v2 能力批（2026-09-14，对标 Claude Code/Codex/opencode/Hermes 调研缺口）
 

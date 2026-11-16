@@ -401,6 +401,10 @@ gateway 给 `work.overview`（`GET /api/projects/:projectId/work`）加了 200 r
   用到的字段，`PodGoalSchema` 的必填面更宽不影响解析。
 - 门禁：`pod_models_test.dart` + `work_tab_test.dart` 51 条与 `dart analyze lib test` 均绿（本波无 mobile
   代码变更，只做契约对齐核对）。
+- **E10j §3 won't do（2026-11-16）**：不再为任务 / 消息做**按实体的增量 patch**——work overview 只有
+  「整页快照」一个接口，没有按 goal 取 task/message 增量的端点，为局部 patch 造新端点属于新 API 设计。
+  现行一致性策略保留：flat 帧带 `goalId` 时局部替换该 Goal 卡，否则（含任务 / 消息变化）由 15s 全量
+  轮询兜底（`WorkRefreshBus` 不变）。
 
 
 ---
