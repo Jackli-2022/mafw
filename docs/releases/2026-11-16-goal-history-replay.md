@@ -38,6 +38,17 @@
 - gateway 全量：**1005 / 1005 suites**，**8002 passed / 2 skipped / 0 failed**。
 - `tsc`：rc=0；`npm run build`：通过（`dist/release.json` v5.1.0）。
 
+## 真机验收（2026-11-16，gateway pid 31412 / instance 926b7c08）
+
+用 `dist` 模块对运行中的 `gateway.db` 做一次合成 Goal 验证（结束后清理，残余 0）：
+
+- `ensureGoalState` + 3 次 `writeGoalState` → `domain_events` 里 4 条 `goal.state.changed`，
+  `goal_snapshots` 2 行（baseline + 第 2 条 state change）。
+- `replayGoalState` 结果与 `goal_state` 行 **deep-equal**。
+- `planApproval: undefined` 的 patch 在回放后确实被清除。
+- 删除 `goal_state` 行 + JSON 镜像后，`load` 从 history 回放恢复（phase / cleared field 一致）。
+- 清理后 `goal_state` / `goal_snapshots` / `domain_events` 的合成行均为 0；重启后日志无新增 ERROR。
+
 ## 边界
 
 - 事件量随 state 写入线性增长；Phase 3 不做事件裁剪，先观察 `domain_events` 体积。
