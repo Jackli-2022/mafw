@@ -4,7 +4,7 @@
 // missing DB row lazily imports the legacy file on first read.
 import type Database from 'better-sqlite3';
 import type { DomainEventStore } from '../events/domain-event-store';
-import type { GoalSnapshotStore } from './goal-history';
+import { replayGoalState, type GoalSnapshotStore } from './goal-history';
 import {
   archiveGoalStateFile,
   loadGoalStateFile,
@@ -47,11 +47,24 @@ interface GoalStateDbRow {
   updated_at: string;
 }
 
+function stableJson(value: any): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
 export class GoalStateStore implements GoalStateBackend {
   private readonly events?: DomainEventStore;
   private readonly snapshots?: GoalSnapshotStore;
   private readonly snapshotEvery: number;
   private readonly now: () => string;
+  private replays = 0;
+  private divergences = 0;
+  private failures = 0;
 
   constructor(private readonly db: Database.Database, opts: GoalStateStoreOptions = {}) {
     this.events = opts.events;
@@ -96,35 +109,98 @@ export class GoalStateStore implements GoalStateBackend {
       .get(goalId) as GoalStateDbRow | undefined;
     if (row) {
       const parsed = this.parse(row);
-      if (parsed) return parsed;
+      if (parsed) {
+        const replayed = this.replayIfEnabled(goalId);
+        if (replayed) {
+          this.replays += 1;
+          if (stableJson(replayed.state) !== stableJson(parsed)) {
+            this.divergences += 1;
+            console.warn(`[GoalHistory] divergence for ${goalId}: replay != goal_state`);
+          }
+          return replayed.state;
+        }
+        return parsed;
+      }
     }
 
     const legacy = loadGoalStateFile(mafwDir, goalId);
-    if (!legacy) return null;
-    this.save(mafwDir, goalId, legacy, { reset: true });
-    return legacy;
+    if (legacy) {
+      this.save(mafwDir, goalId, legacy, { reset: true });
+      return legacy;
+    }
+
+    // Row and legacy file are both gone: rebuild from history (pure replay).
+    const replayed = this.replayFromHistory(goalId);
+    if (replayed) {
+      this.replays += 1;
+      this.persistRow(goalId, replayed.state, this.now());
+      try {
+        saveGoalStateFile(mafwDir, goalId, replayed.state);
+      } catch {
+        /* mirror only */
+      }
+      return replayed.state;
+    }
+    return null;
+  }
+
+  replayStats(): { replays: number; divergences: number; failures: number } {
+    return {
+      replays: this.replays,
+      divergences: this.divergences,
+      failures: this.failures,
+    };
+  }
+
+  private replayIfEnabled(goalId: string): { state: GoalStateV3 } | null {
+    if (process.env.MAFW_GOAL_REPLAY_READ !== '1') return null;
+    return this.replayFromHistory(goalId);
+  }
+
+  private replayFromHistory(goalId: string): { state: GoalStateV3 } | null {
+    if (!this.events || !this.snapshots) return null;
+    try {
+      const replayed = replayGoalState({
+        goalId,
+        events: this.events,
+        snapshots: this.snapshots,
+      });
+      if (!replayed) {
+        this.failures += 1;
+        return null;
+      }
+      return replayed;
+    } catch (error: any) {
+      this.failures += 1;
+      console.warn(`[GoalHistory] replay failed for ${goalId}: ${error?.message ?? error}`);
+      return null;
+    }
+  }
+
+  private persistRow(goalId: string, state: GoalStateV3, now: string): void {
+    this.db.prepare(`
+      INSERT INTO goal_state (goal_id, revision, phase, next_action, state_json, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(goal_id) DO UPDATE SET
+        revision = excluded.revision,
+        phase = excluded.phase,
+        next_action = excluded.next_action,
+        state_json = excluded.state_json,
+        updated_at = excluded.updated_at
+    `).run(
+      goalId,
+      normalizeRevision(state.revision),
+      state.phase ?? null,
+      state.nextAction,
+      JSON.stringify(state),
+      now,
+    );
   }
 
   save(mafwDir: string, goalId: string, state: GoalStateV3, meta?: GoalStateHistoryMeta): void {
     const now = this.now();
     this.db.transaction(() => {
-      this.db.prepare(`
-        INSERT INTO goal_state (goal_id, revision, phase, next_action, state_json, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(goal_id) DO UPDATE SET
-          revision = excluded.revision,
-          phase = excluded.phase,
-          next_action = excluded.next_action,
-          state_json = excluded.state_json,
-          updated_at = excluded.updated_at
-      `).run(
-        goalId,
-        normalizeRevision(state.revision),
-        state.phase ?? null,
-        state.nextAction,
-        JSON.stringify(state),
-        now,
-      );
+      this.persistRow(goalId, state, now);
 
       if (this.events) {
         const reset = meta?.reset === true;
