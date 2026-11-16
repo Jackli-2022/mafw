@@ -106,7 +106,7 @@ import { dropOtherLeadTabs, mergeTabIdentity, pinLeadTabTitle } from "./session-
 import { sessionEntities } from "./session-entities"
 import { resolveOpenSessionTitle, sessionSnapshotTabs, sessionTabTitle, sessionTitle } from "./session-title"
 import { retitleSessionEntity } from "./session-title-writer"
-import { isLeadRole, leadTabMetadata, resolveLeadSession, tabSessionRole } from "./lead-session"
+import { isLeadRole, leadTabMetadata, planLeadTabRestore, resolveLeadSession, tabSessionRole } from "./lead-session"
 import { readSavedTheme, nextTheme, applyTheme } from "./theme"
 import { createPresence, SURFACE_MS } from "./components/presence"
 import { fetchTasks, ingestTask } from "./task-store"
@@ -595,10 +595,13 @@ export function MafwShell() {
 
   // Open a session as a tab (single pane; v6 removed the split-view model).
   // Welcome-page entries (manager / new session / recent session) go through here.
-  const openSessionTab = (sid: string, title?: string, lead?: boolean, metadata?: any) => {
-    setShowConfig(false)
-    setActiveTab("chat")
-    setShowWelcome(false)
+  const openSessionTab = (sid: string, title?: string, lead?: boolean, metadata?: any, options?: { activate?: boolean }) => {
+    const activate = options?.activate !== false
+    if (activate) {
+      setShowConfig(false)
+      setActiveTab("chat")
+      setShowWelcome(false)
+    }
     // E6-2：先 upsert 实体（唯一元数据源），tab 里的 title 只作为实体缺失时的
     // 首帧兜底（持久化布局只存 {id,title}）。session.updated 只改实体，不回写 tab。
     const known = untrack(() => sessionEntities.get(sid))
@@ -637,14 +640,16 @@ export function MafwShell() {
     // store.session 占位一起钉住，仅作为实体缺失时的兜底。
     if (lead === true) setStore(prev => ({ ...prev, session: pinLeadTabTitle(prev.session as any, sid, true) }))
     if (lead === true) setSessions(prev => dropOtherLeadTabs(prev, sid))
-    setActiveSessionId(sid)
-    setActiveViewId(sid)
+    if (activate) {
+      setActiveSessionId(sid)
+      setActiveViewId(sid)
+    }
     if (shouldRetitleTab(sessions().find(s => s.id === sid), entityTitle)) {
       setSessions(prev => retitleTab(prev, sid, entityTitle))
       setStore(prev => ({ ...prev, session: retitleTab(prev.session, sid, entityTitle) }))
     }
     syncPermissionMode(sid) // 🛡 徽标初始态（kv 真相源拉取）
-    closeLeftDockIfOverlay()
+    if (activate) closeLeftDockIfOverlay()
   }
 
   // Project-level Lead is the project conversation. Opening it is the explicit
@@ -983,6 +988,8 @@ export function MafwShell() {
   // old project, incoming tabs restored from the target project's snapshot.
   const layoutIO = { getItem: (k: string) => localStorage.getItem(k), setItem: (k: string, v: string) => localStorage.setItem(k, v), removeItem: (k: string) => localStorage.removeItem(k) }
   let layoutSaveTimer: ReturnType<typeof setTimeout> | null = null
+  /** A persisted Lead tab was skipped because the Pod had not resolved its current id yet. */
+  let pendingLeadRestore: { active: boolean } | null = null
 
   type LayoutHistorySession = { id: string; title?: string; metadata?: { mafw?: { role?: string } } }
 
@@ -1004,18 +1011,49 @@ export function MafwShell() {
       return
     }
     const byId = new Map(history.map(s => [s.id, s]))
-    // 持久化布局只存 {id,title}：隐藏的 Lead 会话不在 history 里，角色标记会丢，
-    // 靠 kv 权威 id 认回来（否则恢复后新话题/agent 锁失效）。
+    // 持久化布局只存 {id,title}：隐藏的 Lead 会话不在 history 里，角色标记会丢。
+    // Lead 是身份不是固定 session：旧 id 可能已被轮换/归档，绝不能按旧 id 恢复成 Lead。
+    const savedLeadTabs = pruned.tabs
+      .map((t) => {
+        const info = byId.get(t.id)
+        const isLead = (!!leadId && t.id === leadId)
+          || isLeadRole(info?.metadata?.mafw?.role)
+          || podRoleForSession(podStore.detail(), t.id) === "lead"
+        return isLead ? { id: t.id, active: pruned.activeViewId === t.id } : null
+      })
+      .filter((tab): tab is { id: string; active: boolean } => !!tab)
+    const leadPlan = planLeadTabRestore({ currentLeadId: leadId, savedLeadTabs })
+    pendingLeadRestore = leadPlan.pending ? { active: leadPlan.activate } : null
+    const skip = new Set(leadPlan.skip)
+    let openedCurrentLead = false
     for (const t of pruned.tabs) {
       const info = byId.get(t.id)
-      const lead = (!!leadId && t.id === leadId) || isLeadRole(info?.metadata?.mafw?.role)
-      // F1：恢复时以 gateway 最新标题为先（entity 内部还会再判一次「已知标题
-      // 优先于占位标题」），持久化快照的旧标题只能是兜底。
-      openSessionTab(t.id, info?.title || t.title, lead, info?.metadata ?? (lead ? leadTabMetadata() : undefined))
+      const isLead = !!leadId && t.id === leadId
+      if (skip.has(t.id)) {
+        // Put the current Lead at the stale Lead tab's position once.
+        if (leadPlan.open && !openedCurrentLead) {
+          openSessionTab(leadPlan.open, "Lead", true, leadTabMetadata(), { activate: leadPlan.activate })
+          openedCurrentLead = true
+        }
+        continue
+      }
+      openSessionTab(
+        t.id,
+        info?.title || t.title,
+        isLead,
+        info?.metadata ?? (isLead ? leadTabMetadata() : undefined),
+        { activate: pruned.activeViewId === t.id },
+      )
     }
-    const active = pruned.activeViewId && pruned.tabs.some(t => t.id === pruned.activeViewId)
-      ? pruned.activeViewId
-      : pruned.tabs[0]?.id ?? null
+    if (leadPlan.open && !openedCurrentLead) {
+      openSessionTab(leadPlan.open, "Lead", true, leadTabMetadata(), { activate: leadPlan.activate })
+      openedCurrentLead = true
+    }
+    const active = leadPlan.activate && leadId
+      ? leadId
+      : pruned.activeViewId && !skip.has(pruned.activeViewId) && pruned.tabs.some(t => t.id === pruned.activeViewId)
+        ? pruned.activeViewId
+        : pruned.tabs[0]?.id ?? null
     if (active) {
       setActiveSessionId(active)
       setActiveViewId(active)
@@ -1023,6 +1061,36 @@ export function MafwShell() {
     }
     console.log("[mafw] layout restored:", project, pruned.tabs.length, "tabs")
   }
+
+  // Lead tab reconciliation: once the Pod resolves the current Lead id, replace
+  // any restored Lead tab that still points at a dead/rotated session.
+  createEffect(() => {
+    const project = currentProject()
+    const leadId = project ? currentLeadId(project) : null
+    if (!project || !leadId) return
+    const leadTabs = sessions().filter((tab) =>
+      tabSessionRole(tab) === "lead" || podRoleForSession(podStore.detail(), tab.id) === "lead")
+    const pending = pendingLeadRestore
+    if (leadTabs.length === 0 && !pending) return
+    const stale = leadTabs.filter((tab) => tab.id !== leadId)
+    if (stale.length === 0 && leadTabs.some((tab) => tab.id === leadId) && !pending) {
+      pendingLeadRestore = null
+      return
+    }
+    const activate = !!pending?.active || stale.some((tab) => tab.id === activeSessionId())
+    const previousActive = activeSessionId()
+    openSessionTab(leadId, "Lead", true, leadTabMetadata(), { activate })
+    if (stale.length > 0) {
+      const staleIds = new Set(stale.map((tab) => tab.id))
+      setSessions((prev) => prev.filter((tab) => !staleIds.has(tab.id)))
+      setStore((prev) => ({ ...prev, session: prev.session.filter((tab: any) => !staleIds.has(tab.id)) }))
+    }
+    if (!activate && previousActive && previousActive !== leadId) {
+      setActiveSessionId(previousActive)
+      setActiveViewId(previousActive)
+    }
+    pendingLeadRestore = null
+  })
 
   createEffect(() => {
     const project = layoutProject()
@@ -3779,7 +3847,7 @@ export function MafwShell() {
       }
       setWorkbenchFocus(false)
     }
-    if (dir) void podStore.open(dir)
+    if (dir) void podStore.open(dir).then(() => podStore.refresh()).catch(() => {})
   }))
   // Task 9：事件 inbox 跟随当前 Pod。只按 pod id 变化触发（detail 每次刷新都是新对象，
   // 直接读 detail 会让 refresh 自触发）。
@@ -4131,6 +4199,7 @@ export function MafwShell() {
           onCopyId={copyText}
           onNew={createSession}
           podRoleOf={(id) => podRoleForSession(podStore.detail(), id)}
+          leadSessionId={currentLeadId(currentProject())}
           forkEnabled={experienceStore.supported("branch.fork")}
           onFork={(id) => void forkSessionFromMenu(id)}
           onHome={() => {

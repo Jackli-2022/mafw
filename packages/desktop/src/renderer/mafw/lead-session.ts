@@ -44,3 +44,42 @@ export function resolveLeadSession(input: {
   if (!id) return null
   return { id, title: "Lead", lead: true, metadata: leadTabMetadata() }
 }
+
+export type RestoredLeadTab = { id: string; active: boolean }
+
+export type LeadTabRestorePlan = {
+  /** Stored Lead tab ids that must not be restored. */
+  skip: string[]
+  /** Current Lead tab to open after the saved tabs are restored. */
+  open: string | null
+  /** Whether opening the current Lead should take focus. */
+  activate: boolean
+  /** Lead is known to have been in the layout, but the Pod has not resolved it yet. */
+  pending: boolean
+}
+
+/**
+ * Lead is an identity, not a fixed runtime session. A saved tab may point at a
+ * dead/rotated session id; restoring it by id would show an unrelated or empty
+ * transcript. Keep the tab only when it is the authoritative current Lead.
+ */
+export function planLeadTabRestore(input: {
+  currentLeadId: string | null
+  savedLeadTabs: readonly RestoredLeadTab[]
+}): LeadTabRestorePlan {
+  const saved = input.savedLeadTabs
+  if (saved.length === 0) {
+    return { skip: [], open: null, activate: false, pending: false }
+  }
+  const activate = saved.some((tab) => tab.active)
+  if (!input.currentLeadId) {
+    return { skip: saved.map((tab) => tab.id), open: null, activate: false, pending: true }
+  }
+  const current = input.currentLeadId
+  return {
+    skip: saved.filter((tab) => tab.id !== current).map((tab) => tab.id),
+    open: saved.some((tab) => tab.id === current) ? null : current,
+    activate,
+    pending: false,
+  }
+}

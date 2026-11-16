@@ -30,6 +30,8 @@ export function SessionStrip(props: {
   onHome: () => void
   forkEnabled?: boolean
   onFork?: (id: string) => void
+  /** 当前 Pod Lead 的权威 session id；历史 Lead 会话不能被当成 Lead tab。 */
+  leadSessionId?: string | null
   podRoleOf?: (sessionId: string) => PodMemberRole | null
 }) {
   const [renamingId, setRenamingId] = createSignal<string | null>(null)
@@ -44,7 +46,7 @@ export function SessionStrip(props: {
 
   /** Lead tab 的身份是角色名，不参与 runtime 自动标题，也不支持双击改名。 */
   const isLeadTab = (s: { id: string; lead?: boolean }) =>
-    s.lead === true || props.podRoleOf?.(s.id) === "lead"
+    s.lead === true || (!!props.leadSessionId && s.id === props.leadSessionId)
 
   // 溢出检测：尺寸变化（ResizeObserver）+ tab 集合变化都重算
   let ro: ResizeObserver | undefined
