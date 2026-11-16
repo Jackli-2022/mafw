@@ -411,6 +411,84 @@ describe('buildActivatedContributions', () => {
   });
 });
 
+describe('contributes enforcement', () => {
+  const declared = (gateway: Record<string, unknown>) => ({ gateway } as any);
+
+  it('rejects an action that is not declared', () => {
+    const built = buildActivatedContributions(
+      'example',
+      { actions: { ping: { handler: () => null }, pong: { handler: () => null } } },
+      CANONICAL,
+      declared({ actions: ['ping'] }),
+    );
+    expect(built.ok).toBe(false);
+    expect(built.ok ? [] : built.errors).toContain(
+      'action "pong" is not declared in plugin.json contributes.gateway.actions',
+    );
+  });
+
+  it('rejects an event that is not declared', () => {
+    const built = buildActivatedContributions(
+      'example',
+      { events: [{ type: 'plugin:example:other' }] },
+      CANONICAL,
+      declared({ events: ['plugin:example:ping'] }),
+    );
+    expect(built.ok).toBe(false);
+    expect(built.ok ? [] : built.errors).toContain(
+      'event "plugin:example:other" is not declared in plugin.json contributes.gateway.events',
+    );
+  });
+
+  it('rejects a tool that is not declared', () => {
+    const built = buildActivatedContributions(
+      'example',
+      { tools: [{ name: 'nope', description: 'x', inputSchema: { type: 'object' }, handler: () => null }] },
+      CANONICAL,
+      declared({ tools: [{ name: 'ghost', description: 'g', inputSchema: { type: 'object' } }] }),
+    );
+    expect(built.ok).toBe(false);
+    expect(built.ok ? [] : built.errors).toContain(
+      'tool "nope" is not declared in plugin.json contributes.gateway.tools',
+    );
+  });
+
+  it('allows a declared tool that is not registered (conditional registration)', () => {
+    const built = buildActivatedContributions(
+      'example',
+      { actions: { ping: { handler: () => null } } },
+      CANONICAL,
+      declared({
+        actions: ['ping'],
+        tools: [{ name: 'ghost', description: 'g', inputSchema: { type: 'object' } }],
+      }),
+    );
+    expect(built.ok).toBe(true);
+  });
+
+  it('leaves every plane unconstrained when nothing is declared', () => {
+    const built = buildActivatedContributions(
+      'example',
+      { actions: { anything: { handler: () => null } } },
+      CANONICAL,
+    );
+    expect(built.ok).toBe(true);
+  });
+
+  it('leaves a plane unconstrained while another plane is declared', () => {
+    const built = buildActivatedContributions(
+      'example',
+      {
+        actions: { ping: { handler: () => null } },
+        events: [{ type: 'plugin:example:other' }],
+      },
+      CANONICAL,
+      declared({ actions: ['ping'] }),
+    );
+    expect(built.ok).toBe(true);
+  });
+});
+
 describe('ctx.config.update', () => {
   const savedData = (config as any).data;
   afterEach(() => { (config as any).data = savedData; });

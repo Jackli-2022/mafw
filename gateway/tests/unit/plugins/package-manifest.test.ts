@@ -61,4 +61,33 @@ describe('package manifest v2', () => {
     expect(isHostRangeCompatible(undefined, '5.1.0')).toBe(true);
     expect(isHostRangeCompatible('not a range', '5.1.0')).toBe(false);
   });
+
+  it('normalizes a valid contributes block', () => {
+    const result = parsePackageManifest({
+      name: 'demo', apiVersion: 2,
+      contributes: { gateway: { actions: ['ping'], http: false } },
+    });
+    expect(result.ok).toBe(true);
+    expect(result.manifest?.contributes?.gateway?.actions).toEqual(['ping']);
+    expect(result.manifest?.contributes?.gateway?.http).toBe(false);
+  });
+
+  it('rejects an invalid contributes block at apiVersion 2', () => {
+    const result = parsePackageManifest({
+      name: 'demo', apiVersion: 2,
+      contributes: { gateway: { actions: 'ping' } },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.errors.join('; ')).toContain('contributes');
+  });
+
+  it('downgrades an invalid contributes block to a warning at apiVersion 1', () => {
+    const result = parsePackageManifest({
+      name: 'demo',
+      contributes: { gateway: { actions: 'ping' } },
+    });
+    expect(result.ok).toBe(true);
+    expect(result.manifest?.contributes).toBeUndefined();
+    expect(result.warnings.some((w) => w.includes('legacy-contributes'))).toBe(true);
+  });
 });

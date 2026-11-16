@@ -6,6 +6,11 @@
  * (apiVersion 2) packages are normalized exactly once.
  */
 
+import {
+  validatePluginManifestContributes,
+  type PluginManifestContributes,
+} from '@mafw/plugin-contract';
+
 export const SUPPORTED_PLUGIN_API_VERSIONS = [1, 2] as const;
 export type PluginApiVersion = (typeof SUPPORTED_PLUGIN_API_VERSIONS)[number];
 export type PluginKind = 'trusted' | 'untrusted';
@@ -22,6 +27,8 @@ export interface NormalizedPackageManifest {
   apiVersion: PluginApiVersion;
   kind: PluginKind;
   permissions: string[];
+  /** Static plane declarations from `plugin.json`; absent when not declared. */
+  contributes?: PluginManifestContributes;
   host?: string;
   integrity?: PluginIntegrity;
   deprecated?: string;
@@ -237,6 +244,17 @@ export function parsePackageManifest(raw: unknown): PackageManifestParseResult {
 
   const permissions = readPermissions(raw.permissions, apiVersion, errors, warnings);
 
+  // `contributes` declares plane ownership statically. An invalid block is
+  // fatal at apiVersion 2 (its whole purpose is to bound registration) but only
+  // a warning for legacy packages, which must keep activating.
+  let contributes: PluginManifestContributes | undefined;
+  if (raw.contributes !== undefined) {
+    const validated = validatePluginManifestContributes(raw.contributes);
+    if (validated.ok) contributes = validated.value;
+    else if (apiVersion === 1) warnings.push(`legacy-contributes: ${validated.error}`);
+    else errors.push(`contributes: ${validated.error}`);
+  }
+
   let host: string | undefined;
   if (raw.host !== undefined) {
     if (typeof raw.host !== 'string') {
@@ -272,6 +290,7 @@ export function parsePackageManifest(raw: unknown): PackageManifestParseResult {
       apiVersion,
       kind,
       permissions,
+      ...(contributes !== undefined ? { contributes } : {}),
       ...(host !== undefined ? { host } : {}),
       ...(integrity !== undefined ? { integrity } : {}),
       ...(deprecated !== undefined ? { deprecated } : {}),

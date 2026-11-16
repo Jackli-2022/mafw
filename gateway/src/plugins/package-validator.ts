@@ -21,6 +21,7 @@ import {
   type PluginClientDescriptor,
   type PluginEventDescriptor,
   type PluginJsonSchema,
+  type PluginManifestContributes,
   type PluginUiContribution,
 } from '@mafw/plugin-contract';
 import type {
@@ -539,10 +540,62 @@ interface Analysis {
   descriptor?: PluginClientDescriptor;
 }
 
+/**
+ * Treats `plugin.json` `contributes` as an upper bound on registration.
+ *
+ * Only "registered ⊆ declared" is checked. Declared-but-unregistered names stay
+ * legal because packages register conditionally (capabilities, config, host
+ * version), and an undeclared plane is left completely unconstrained so legacy
+ * packages keep activating. The reverse direction is never enforced: a
+ * declaration is a permission, not a manifest of what will run.
+ */
+function enforceDeclared(
+  declared: PluginManifestContributes | undefined,
+  actions: CollectedActions,
+  events: CollectedEvents,
+  tools: CollectedTools,
+  errors: string[],
+): void {
+  const gateway = declared?.gateway;
+  if (gateway === undefined) return;
+
+  if (gateway.actions !== undefined) {
+    const allowed = new Set(gateway.actions);
+    for (const name of Object.keys(actions.declarations)) {
+      if (!allowed.has(name)) {
+        errors.push(`action "${name}" is not declared in plugin.json contributes.gateway.actions`);
+      }
+    }
+  }
+
+  if (gateway.events !== undefined) {
+    const allowed = new Set(gateway.events);
+    for (const declaration of events.declarations) {
+      if (!allowed.has(declaration.type)) {
+        errors.push(
+          `event "${declaration.type}" is not declared in plugin.json contributes.gateway.events`,
+        );
+      }
+    }
+  }
+
+  if (gateway.tools !== undefined) {
+    const allowed = new Set(gateway.tools.map((tool) => tool.name));
+    for (const declaration of tools.declarations) {
+      if (!allowed.has(declaration.name)) {
+        errors.push(
+          `tool "${declaration.name}" is not declared in plugin.json contributes.gateway.tools`,
+        );
+      }
+    }
+  }
+}
+
 function analyze(
   packageName: string,
   contributions: UnifiedPluginContributions,
   canonicalTypes: ReadonlySet<string>,
+  declared?: PluginManifestContributes,
 ): Analysis {
   const errors: string[] = [];
   if (typeof packageName !== 'string' || !NAME_PATTERN.test(packageName)) {
@@ -570,6 +623,7 @@ function analyze(
   const events = collectEvents(packageName, contributions.events, canonicalTypes, errors);
   const tools = collectTools(contributions.tools, errors);
   const observers = collectObservers(contributions.observers, errors);
+  enforceDeclared(declared, actions, events, tools, errors);
 
   // Delegate cross-reference, id, size and config-form-subset validation to the
   // shared contract so gateway and Desktop cannot drift.
@@ -620,6 +674,8 @@ export type BuildActivatedContributionsResult =
 /**
  * Validation + projection for a candidate package.
  *
+ * @param declared Static `plugin.json` `contributes` block, when the package
+ *   has one. Treated as an upper bound on the registered actions/events/tools.
  * @returns `ok: true` with client-safe DTOs and Host declarations, or
  *   `ok: false` with every diagnostic collected in one pass.
  */
@@ -627,8 +683,9 @@ export function buildActivatedContributions(
   packageName: string,
   contributions: UnifiedPluginContributions,
   canonicalTypes: ReadonlySet<string>,
+  declared?: PluginManifestContributes,
 ): BuildActivatedContributionsResult {
-  const analysis = analyze(packageName, contributions, canonicalTypes);
+  const analysis = analyze(packageName, contributions, canonicalTypes, declared);
   const { errors, ui, actions, events, tools, observers, descriptor } = analysis;
   if (errors.length > 0) return { ok: false, errors };
   if (!descriptor) {
