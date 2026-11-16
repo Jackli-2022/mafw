@@ -63,7 +63,7 @@ export function EventLayerSection(props: { projectDir?: string }) {
         <div class="mafw-config-section-desc">
           来源 {sources().length} · 线程 {threads().length} · 投递 {deliveries().length}
         </div>
-        <Show when={sources().length > 0} fallback={<div class="mafw-config-hint">事件层未启用或没有来源。</div>}>
+        <Show when={sources().length > 0} fallback={<div class="mafw-config-hint">当前项目没有外部事件来源（internal / cron 为系统来源，不在此列表）。</div>}>
           <For each={sources()}>
             {(source) => (
               <div class="mafw-config-grid-row">
