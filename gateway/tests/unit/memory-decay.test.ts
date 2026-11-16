@@ -315,6 +315,9 @@ describe('memory:decay incremental decay', () => {
       episodesClosedIdle: 0,
       episodesRebuilt: 0,
       episodeRebuildFailed: 0,
+      turnCodeScanned: 0,
+      turnCodeEncoded: 0,
+      turnCodeFailed: 0,
     });
   });
 

@@ -2428,8 +2428,7 @@ export class GatewayDatabase {
   /**
    * Deterministic reference population for atom calibration: turn/observation
    * text sampled from both active and archived rows. Returns [] on a fresh DB.
-   */
-  sampleTurnTexts(limit: number): string[] {
+   */  sampleTurnTexts(limit: number): string[] {
     const n = Math.max(0, Math.trunc(limit));
     if (n === 0) return [];
     const rows = this.db
@@ -2456,6 +2455,48 @@ export class GatewayDatabase {
   }
 
   // ── T1 episodes (derived index) ─────────────────────────────────────────
+
+  /** Turns with no encoding marker at all: the backfill's work queue. */
+  listTurnsMissingTurnCode(limit: number): Array<{
+    trace_id: string;
+    session_id: string;
+    turn_seq: number;
+  }> {
+    const n = Math.max(0, Math.trunc(limit));
+    if (n === 0) return [];
+    return this.db
+      .prepare(
+        `SELECT t.trace_id, t.session_id, t.turn_seq
+           FROM t1_turns t
+          WHERE NOT EXISTS (
+                  SELECT 1 FROM t1_turn_encoding e WHERE e.trace_id = t.trace_id
+                )
+          ORDER BY t.trace_id
+          LIMIT ?`,
+      )
+      .all(n) as Array<{ trace_id: string; session_id: string; turn_seq: number }>;
+  }
+
+  /** Turn-code coverage for /api/memory/stats. */
+  t1CodeStats(): {
+    turns: number;
+    features: number;
+    actors: number;
+    concepts: number;
+    atoms: number;
+  } {
+    const count = (sql: string): number =>
+      Number((this.db.prepare(sql).get() as { n?: number } | undefined)?.n ?? 0);
+    return {
+      turns: count('SELECT COUNT(*) AS n FROM t1_turns'),
+      features: count('SELECT COUNT(DISTINCT trace_id) AS n FROM t1_turn_features'),
+      actors: count('SELECT COUNT(DISTINCT trace_id) AS n FROM t1_turn_actors'),
+      concepts: count('SELECT COUNT(DISTINCT trace_id) AS n FROM t1_turn_concepts'),
+      atoms: count(
+        "SELECT COUNT(*) AS n FROM t1_sparse_terms WHERE kind = 'semantic'",
+      ),
+    };
+  }
 
   /**
    * Join one session's turn identity with its derived feature/actor/concept/

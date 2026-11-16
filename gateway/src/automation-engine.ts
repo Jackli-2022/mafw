@@ -14,7 +14,9 @@ import { actrBonus } from './core/memory/retrieval-bonus';
 import { getEmbeddingRuntime } from './memory/embedding-runtime';
 import { runEmbeddingBackfill } from './memory/embedding-backfill';
 import { backfillT1Vectors } from './memory/t1-backfill';
-import { backfillT1Episodes, closeIdleEpisodes } from './recall/t1-episode-rebuild';
+import { backfillT1Episodes, closeIdleEpisodes, rebuildSessionEpisodes } from './recall/t1-episode-rebuild';
+import { backfillT1Atoms } from './recall/t1-atom-backfill';
+import { getT1SemanticEncoder } from './recall/t1-semantic-atoms';
 import { Scheduler, TaskSkippedError, TaskTimeoutError, BudgetExceededError, TaskBudget } from './scheduler';
 
 import { SchedulerLedger } from './ledger';
@@ -279,6 +281,27 @@ function registerBuiltinActionsOn(engine: AutomationEngine): void {
           episodeBackfill = backfillT1Episodes(db, { limit: 500, sinceDays: 90 });
         }
       } catch { /* fail-open: episodes converge on a later run */ }
+      // Turn code + atoms: bounded pass over turns with no encoding marker.
+      // This is the only path that fills historical features/actors/concepts.
+      let turnCode = { scanned: 0, encoded: 0, failed: 0 };
+      try {
+        const db = eng.getGatewayDb?.();
+        const rt = getEmbeddingRuntime();
+        if (db && rt?.provider && config.recall.t1Recall?.semanticAtoms !== 'off') {
+          const encoder = getT1SemanticEncoder(rt.provider, {
+            referenceTexts: () => db.sampleTurnTexts(24),
+          });
+          const pass = await backfillT1Atoms(db, (turns) => encoder.encodeMany(turns), {
+            limit: 128,
+          });
+          turnCode = { scanned: pass.scanned, encoded: pass.encoded, failed: pass.failed };
+          for (const sessionId of pass.sessionIds) {
+            try {
+              rebuildSessionEpisodes(db, sessionId, { now: Date.now() });
+            } catch { /* fail-open */ }
+          }
+        }
+      } catch { /* fail-open: turn code converges on a later run */ }
       if (res.migrated > 0) {
         log.info(`[AutomationEngine] Migrated ${res.migrated} entries to incremental decay baseline (v2)`);
       } else {
@@ -301,6 +324,9 @@ function registerBuiltinActionsOn(engine: AutomationEngine): void {
           episodesClosedIdle,
           episodesRebuilt: episodeBackfill.rebuilt,
           episodeRebuildFailed: episodeBackfill.failed,
+          turnCodeScanned: turnCode.scanned,
+          turnCodeEncoded: turnCode.encoded,
+          turnCodeFailed: turnCode.failed,
         },
       });
     } catch (err: any) {

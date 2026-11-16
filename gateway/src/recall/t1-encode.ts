@@ -15,6 +15,8 @@ import {
 import { extractTurnConcepts, type T1TurnConcept } from './t1-concepts';
 import {
   encodeTurnSparseTerms,
+  SPARSE_EMBED_MODEL,
+  SPARSE_LEX_MODEL,
   type T1SparseAtom,
   type T1SparseTerm,
 } from './t1-sparse';
@@ -30,6 +32,8 @@ export interface T1EncodingMarker {
 export interface T1EncodeDeps {
   readTurnRows(sessionId: string, turnSeq: number): T1Observation[];
   readTrajectoryEvents?(sessionId: string, turnSeq: number): T1ActorEvent[];
+  /** Optional: persist the derived feature (backfill path); the turn pipeline writes it separately. */
+  upsertTurnFeature?(feature: T1TurnFeature): void;
   upsertTurnActors(traceId: string, actors: T1TurnActor[]): void;
   upsertTurnConcepts(traceId: string, concepts: T1TurnConcept[]): void;
   upsertSparseTerms(traceId: string, terms: T1SparseTerm[]): void;
@@ -49,6 +53,8 @@ export interface T1EncodeOptions {
   feature?: T1TurnFeature | null;
   /** Optional embedding-derived semantic atoms. */
   atoms?: T1SparseAtom[];
+  /** The caller attempted atom encoding; marks the turn even when it produced zero atoms. */
+  atomsAttempted?: boolean;
   projectId?: string;
   userActorId?: string;
 }
@@ -82,8 +88,11 @@ export function encodeT1Turn(
     actors,
     atoms: opts.atoms,
   });
-  const model = sparse[0]?.model ?? 'sparse-lex-v1';
+  const model = opts.atomsAttempted
+    ? SPARSE_EMBED_MODEL
+    : sparse[0]?.model ?? SPARSE_LEX_MODEL;
 
+  if (feature) deps.upsertTurnFeature?.(feature);
   deps.upsertTurnActors(turn.trace_id, actors);
   deps.upsertTurnConcepts(turn.trace_id, concepts);
   deps.upsertSparseTerms(turn.trace_id, sparse);
