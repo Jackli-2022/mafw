@@ -166,3 +166,9 @@ test("Goal user hero is accessible and never renders the internal Goal id", () =
   assert.match(goalDetailSrc, /id="mafw-goal-technical"/)
   assert.match(goalUserHeroSrc, /summary\.revision \?\? "—"/)
 })
+
+test("Goal detail keeps content mounted during background refresh", () => {
+  assert.match(goalDetailSrc, /const firstLoad = loadedFor\(\) !== id/)
+  assert.match(goalDetailSrc, /if \(firstLoad\) \{ setLoading\(true\)/)
+  assert.match(goalDetailSrc, /if \(firstLoad\) setLoading\(false\)/)
+})

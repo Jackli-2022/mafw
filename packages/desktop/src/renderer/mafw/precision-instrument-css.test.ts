@@ -87,4 +87,9 @@ describe("precision instrument direction", () => {
     const left = padding!.length >= 4 ? padding![3] : padding![1] ?? padding![0]
     expect(parseFloat(left)).toBeGreaterThanOrEqual(16)
   })
+
+  test("Goal inline detail does not replay an entrance on every data refresh", () => {
+    const inline = lastBlock(".mafw-goal-inline {")
+    expect(inline).not.toContain("animation:")
+  })
 })

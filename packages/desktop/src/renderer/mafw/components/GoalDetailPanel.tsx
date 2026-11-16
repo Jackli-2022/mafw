@@ -79,6 +79,7 @@ export function GoalDetailPanel(props: {
   const [tableBusy, setTableBusy] = createSignal(false)
   const [directionBusy, setDirectionBusy] = createSignal(false)
   const [loading, setLoading] = createSignal(false)
+  const [loadedFor, setLoadedFor] = createSignal<string | null>(null)
   const [error, setError] = createSignal<string | null>(null)
   const [retrying, setRetrying] = createSignal(false)
   const [planOpen, setPlanOpen] = createSignal(false)
@@ -114,11 +115,16 @@ export function GoalDetailPanel(props: {
   }
 
   async function load(id: string) {
-    setLoading(true); setError(null)
+    // Background refreshes (SSE/poll) must not hide the mounted detail behind a
+    // loader; only the first load for this Goal shows one.
+    const firstLoad = loadedFor() !== id
+    if (firstLoad) { setLoading(true); setError(null) }
     try {
       const t = await window.api.mafw.goals.timeline(id)
       if (disposed) return
       setTimeline(t)
+      setLoadedFor(id)
+      if (!firstLoad) setError(null)
     } catch (e: any) {
       if (disposed) return
       const failure = timelineFailure(e)
@@ -127,11 +133,13 @@ export function GoalDetailPanel(props: {
         // 阶段/版本/方向/探针协作面照常渲染。
         setTimeline(null)
         setError(null)
-      } else {
+      } else if (firstLoad) {
         setError(failure.error)
       }
+      setLoadedFor(id)
+    } finally {
+      if (firstLoad) setLoading(false)
     }
-    setLoading(false)
   }
 
   // 显式 podId → 已加载的 Pod store → 按项目目录 lookup（Pod 面板没开也能拿到证据）。
@@ -197,7 +205,7 @@ export function GoalDetailPanel(props: {
   createEffect(() => {
     const id = props.goalId
     void goalsRev() // 订阅信号
-    if (!id) { setTimeline(null); setError(null); setRevisions([]); setProbes([]); setTasks([]); setPendingQuestions([]); return }
+    if (!id) { setTimeline(null); setError(null); setRevisions([]); setProbes([]); setTasks([]); setPendingQuestions([]); setLoadedFor(null); return }
     void load(id)
   })
 

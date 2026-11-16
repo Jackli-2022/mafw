@@ -8536,7 +8536,6 @@ html[data-theme="light"] body {
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  animation: mafw-enter var(--dur-enter) var(--ease-surface) both;
 }
 .mafw-goal-inline-back { display: flex; justify-content: flex-start; margin-bottom: 8px; }
 .mafw-goal-inline-title { outline: none; }

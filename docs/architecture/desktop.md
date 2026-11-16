@@ -150,6 +150,9 @@
   面板 220ms 落位，关闭由 `usePresence` 保留 DOM 140ms 做 exit；session tab 选中 180ms；
   work item 按下 `scale(.985)` / 80ms；Goal inline 220ms 进入。空间动效才允许 overshoot，
   颜色/透明度不用 spring。
+- **Goal 详情刷新不闪（2026-11-16）**：只在 Goal 首次加载时显示 loader；15s 轮询 / SSE
+  `goalsRev` 的后台刷新保留已挂载内容，不再先卸载再重挂；`.mafw-goal-inline` 也移除了
+  每次重挂都会重播的入场动画。
 - **文件树 → 编辑器 shared element（2026-11-16）**：点击文件行用 View Transition 把行 morph 到
   `.mafw-editor-dock` / `.mafw-file-preview`，340ms `cubic-bezier(.32,.72,0,1)`；reduced motion、
   browser 类文件或旧运行时直接打开，不启用。反向 `focusBack` 在返回 world landing 且文件树行
