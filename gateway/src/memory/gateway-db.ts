@@ -97,6 +97,10 @@ export interface T1TurnFeature {
   entities: string[];
   outcome: 'pass' | 'fail' | 'unknown';
   confidence: number;
+  /** DG pattern-separation score vs active cortex memory; null = unscored. */
+  novelty?: number | null;
+  /** CA1 comparator: familiar cue + unfamiliar content; null = unscored. */
+  mismatch?: number | null;
 }
 
 export type T1RetrievalKind = 'search' | 'recall' | 'redeem';
@@ -849,6 +853,19 @@ export class GatewayDatabase {
       // Column already exists, ignore
     }
 
+    // Migration: encode-time replay signals (DG novelty / CA1 mismatch) on
+    // t1_turn_features. Null = not scored; legacy rows read back null.
+    try {
+      this.db.exec(`ALTER TABLE t1_turn_features ADD COLUMN novelty REAL`);
+    } catch {
+      // Column already exists, ignore
+    }
+    try {
+      this.db.exec(`ALTER TABLE t1_turn_features ADD COLUMN mismatch REAL`);
+    } catch {
+      // Column already exists, ignore
+    }
+
     // Migration: D4b task-type dimension on goal_outcomes (legacy rows NULL →
     // aggregate into the global/'other' bucket).
     try {
@@ -1284,8 +1301,9 @@ export class GatewayDatabase {
       .prepare(
         `INSERT INTO t1_turn_features (
            trace_id, session_id, turn_seq, intent, action, tool, target,
-           result, error, decision, entities_json, outcome, confidence, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())
+           result, error, decision, entities_json, outcome, confidence,
+           novelty, mismatch, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())
          ON CONFLICT(trace_id) DO UPDATE SET
            session_id = excluded.session_id,
            turn_seq = excluded.turn_seq,
@@ -1299,6 +1317,8 @@ export class GatewayDatabase {
            entities_json = excluded.entities_json,
            outcome = excluded.outcome,
            confidence = excluded.confidence,
+           novelty = COALESCE(excluded.novelty, novelty),
+           mismatch = COALESCE(excluded.mismatch, mismatch),
            updated_at = unixepoch()`,
       )
       .run(
@@ -1315,6 +1335,8 @@ export class GatewayDatabase {
         JSON.stringify(feature.entities ?? []),
         feature.outcome ?? 'unknown',
         feature.confidence ?? 0,
+        feature.novelty ?? null,
+        feature.mismatch ?? null,
       );
 
     // Keep the feature FTS in sync. Fail-open: the feature table remains the
@@ -1363,6 +1385,8 @@ export class GatewayDatabase {
       entities: parseJsonStringArray(row.entities_json),
       outcome: row.outcome === 'pass' || row.outcome === 'fail' ? row.outcome : 'unknown',
       confidence: Number(row.confidence ?? 0),
+      novelty: row.novelty == null ? null : Number(row.novelty),
+      mismatch: row.mismatch == null ? null : Number(row.mismatch),
     };
   }
 
