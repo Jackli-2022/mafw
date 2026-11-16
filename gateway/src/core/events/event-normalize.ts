@@ -95,12 +95,15 @@ export function normalizeInternalEvent(input: {
   receivedAt: string;
 }): EventEnvelope {
   const goalEvent = input.kind.startsWith('goal.');
+  const decisionEvent = input.kind.startsWith('decision.');
   return {
     projectDir: input.projectDir,
     sourceId: input.sourceId,
     sourceKind: 'internal',
     externalId: input.eventId,
-    externalKey: goalEvent ? `goal:${input.aggregateId}` : `project:${input.projectDir}`,
+    externalKey: goalEvent
+      ? `goal:${input.aggregateId}`
+      : decisionEvent ? `decision:${input.aggregateId}` : `project:${input.projectDir}`,
     kind: input.kind,
     actor: input.actor,
     payload: input.payload,

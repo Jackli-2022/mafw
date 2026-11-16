@@ -2,7 +2,7 @@
 
 > 状态：2026-11-10。设计：`docs/superpowers/specs/2026-11-10-event-layer-design.md`；
 > 计划：`docs/superpowers/plans/2026-11-10-event-layer.md`。
-> 开关：`MAFW_EVENT_LAYER=1` 才启用；默认关闭。
+> 开关：默认开启；显式 `MAFW_EVENT_LAYER=0` 才关闭（关闭后事件层路由返回 503）。
 
 ## 职责
 
@@ -39,12 +39,23 @@ Source → Trigger → Thread → Subscription → Decision → Delivery → Cha
    `fanned_out`。没有 Subscription 时 Trigger 记为 `filtered`；后续订阅会把它复活为
    `pending`，再 fan-out 一次，避免丢事件。
 3. **Decision**：同一批 Trigger 只评估一次；并发 `evaluate(threadId)` 共享同一个在飞
-   Promise；`work` 订阅才调用 `deliverWork`，`context` 永不创建 run。决定写
-   `event_decisions` 并广播 `event.decision.made`。
+   Promise；`work` 订阅调用 `deliverWork`，`context` 订阅调用 `deliverContext`（只读，永不创建
+   run）。决定写 `event_decisions` 并广播 `event.decision.made`。
 4. **Delivery / Channel**：Delivery 状态机流转，每次状态变化广播
    `event.delivery.changed`；需要写回时经 `event_outbox`，失败保留 `last_error` 并按退避重试。
 5. **Thread close**：`POST /api/event-threads/:id/close` 把线程置为 `closed`；已投递/已读/
    已确认/失败的 Delivery 收口为 `handed_back`，未投递的 `pending` 记为 `dropped`。
+
+### Decision → Lead 播报（2026-11-16）
+
+- `DecisionRecordService.emit('drafted')` → kernel `ingestDecisionEvent` → `internal` source 的
+  `decision.drafted` trigger：`externalKey=decision:<recordId>`（一 record 一线程），幂等键
+  `internal:decision.drafted:<recordId>`。
+- ingest 后为该线程建 `subscriberType:'lead'` + `mode:'context'` 订阅；kernel evaluator 对
+  `decision.*` + Lead context 返回 `accept` / `report`。
+- `deliverContext` → `PodService.ensureLead` → `promptAsync` 一条
+  `[LEAD EVENT] 决定待确认 …` 给 Lead 会话；Lead 只负责转达，确认 / 搁置仍是 human-only。
+- `internal` / `cron` 系统 source 在事件层启动时 ensure；外部 GitHub / webhook source 仍需显式创建。
 
 ## GitHub 来源
 

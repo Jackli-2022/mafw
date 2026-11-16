@@ -26,6 +26,13 @@ export interface EventLayerDeps {
     subscription: EventSubscriptionRow;
     decision: EventDecision;
   }): Promise<void>;
+  /** Context subscribers (Lead / Goal) receive read-only context; never get execution rights. */
+  deliverContext?(input: {
+    thread: EventThreadRow;
+    trigger: EventTriggerRow;
+    subscription: EventSubscriptionRow;
+    decision: EventDecision;
+  }): Promise<void>;
   log?(message: string): void;
 }
 
@@ -75,6 +82,27 @@ export class EventLayerService {
       config: input.config,
       now: this.deps.now(),
     });
+  }
+
+  /** System-owned sources (`internal`, `cron`) are global and created once. */
+  ensureSystemSource(kind: 'internal' | 'cron'): EventSourceRow {
+    const id = kind;
+    const existing = this.deps.store.getSource(id);
+    if (existing) return existing;
+    try {
+      return this.deps.store.insertSource({
+        id,
+        projectDir: '*',
+        kind,
+        name: id,
+        config: { system: true },
+        now: this.deps.now(),
+      });
+    } catch (err) {
+      const row = this.deps.store.getSource(id);
+      if (row) return row;
+      throw err;
+    }
   }
 
   setSourceEnabled(id: string, enabled: boolean): EventSourceRow {
@@ -276,30 +304,33 @@ export class EventLayerService {
       for (const subscription of subscriptions) {
         const delivery = this.deps.store.getDeliveryByTrigger(trigger.id, subscription.id);
         if (!delivery) continue;
-        if (subscription.mode === 'work' && this.deps.deliverWork) {
-          try {
-            await this.deps.deliverWork({ thread, trigger, subscription, decision });
-            this.updateDelivery(delivery.id, {
-              state: 'delivered',
-              deliveredAt: now,
-              nextRetryAt: null,
-              lastError: null,
-            });
-          } catch (err: any) {
-            const attempts = delivery.attempts + 1;
-            this.updateDelivery(delivery.id, {
-              state: 'failed',
-              attempts,
-              lastError: String(err?.message ?? err),
-              nextRetryAt: new Date(Date.parse(now) + nextRetryDelayMs(attempts)).toISOString(),
-            });
-          }
-        } else {
+        const deliver = subscription.mode === 'work'
+          ? this.deps.deliverWork
+          : subscription.mode === 'context' ? this.deps.deliverContext : undefined;
+        if (!deliver) {
           this.updateDelivery(delivery.id, {
             state: 'delivered',
             deliveredAt: now,
             nextRetryAt: null,
             lastError: null,
+          });
+          continue;
+        }
+        try {
+          await deliver({ thread, trigger, subscription, decision });
+          this.updateDelivery(delivery.id, {
+            state: 'delivered',
+            deliveredAt: now,
+            nextRetryAt: null,
+            lastError: null,
+          });
+        } catch (err: any) {
+          const attempts = delivery.attempts + 1;
+          this.updateDelivery(delivery.id, {
+            state: 'failed',
+            attempts,
+            lastError: String(err?.message ?? err),
+            nextRetryAt: new Date(Date.parse(now) + nextRetryDelayMs(attempts)).toISOString(),
           });
         }
       }
@@ -328,9 +359,12 @@ export class EventLayerService {
     for (const delivery of due) {
       const subscription = subscriptions.find((item) => item.id === delivery.subscriptionId);
       const trigger = triggers.find((item) => item.id === delivery.triggerId);
-      if (!subscription || !trigger || subscription.mode !== 'work' || !this.deps.deliverWork) continue;
+      const deliver = subscription?.mode === 'work'
+        ? this.deps.deliverWork
+        : subscription?.mode === 'context' ? this.deps.deliverContext : undefined;
+      if (!subscription || !trigger || !deliver) continue;
       try {
-        await this.deps.deliverWork({
+        await deliver({
           thread,
           trigger,
           subscription,

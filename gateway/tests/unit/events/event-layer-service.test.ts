@@ -77,6 +77,15 @@ describe('EventLayerService ingress', () => {
       .toMatchObject({ ok: false, reason: 'rate_limited' });
   });
 
+  test('ensureSystemSource creates the internal source once', () => {
+    const h = harness();
+    const first = h.service.ensureSystemSource('internal');
+    const second = h.service.ensureSystemSource('internal');
+    expect(first).toMatchObject({ id: 'internal', kind: 'internal', enabled: true });
+    expect(second.id).toBe('internal');
+    expect(h.store.getSource('internal')).toMatchObject({ id: 'internal', enabled: true });
+  });
+
   test('creates sources and stores work/context subscriptions', () => {
     const h = harness();
     const source = h.service.createSource({ projectDir: '/p', kind: 'webhook', name: 'hooks', config: {} });

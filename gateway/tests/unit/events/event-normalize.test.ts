@@ -75,6 +75,22 @@ describe('event normalize', () => {
       sourceKind: 'internal',
     });
 
+    expect(normalizeInternalEvent({
+      projectDir: '/p',
+      sourceId: 'internal',
+      eventId: 'decision.drafted:rec1',
+      kind: 'decision.drafted',
+      aggregateId: 'rec1',
+      actor: 'agent',
+      payload: { question: 'A or B?' },
+      occurredAt: '2026-11-10T00:00:00.000Z',
+      receivedAt: '2026-11-10T00:00:01.000Z',
+    })).toMatchObject({
+      externalKey: 'decision:rec1',
+      idempotencyKey: 'internal:decision.drafted:rec1',
+      sourceKind: 'internal',
+    });
+
     expect(normalizeWebhookEvent({
       projectDir: '/p',
       sourceId: 'hooks',

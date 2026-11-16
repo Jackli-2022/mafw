@@ -9,7 +9,7 @@
 | 环境变量 | 作用 | 默认 |
 |---|---|---|
 | `MAFW_STANDING_GOALS=1` | 启用 Standing Goal 服务、HTTP 路由与 MCP 工具；关闭时路由返回 503 | 关闭 |
-| `MAFW_EVENT_LAYER=1` | 启用事件层；只有开启后 `event` 触发才会订阅 P2.4 事件 | 关闭 |
+| `MAFW_EVENT_LAYER=0` | 关闭事件层（默认开启）；关闭后 `event` 触发不会订阅 P2.4 事件 | 开启 |
 
 关闭事件层时，`cron` 与 `manual` 触发仍可工作；`event` 触发不会创建订阅，也不会产生运行。
 

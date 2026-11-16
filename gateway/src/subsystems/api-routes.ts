@@ -72,6 +72,7 @@ import { attachConfigRoutes } from '../routes/config';
 import { attachRuntimeConfigRoutes } from '../routes/runtime-config';
 import { attachEventRoutes } from '../routes/events';
 import { normalizeGitHubEvent, normalizeWebhookEvent } from '../core/events/event-normalize';
+import { eventLayerEnabled } from '../core/events/event-flags';
 import type { EventLayerService } from '../core/events/event-layer-service';
 import type { EventStore as EventLayerStore } from '../core/events/event-store';
 import type { StandingGoalService } from '../core/standing/standing-service';
@@ -478,7 +479,7 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
   // P2.4 事件层：source / thread / trigger / subscription / delivery + GitHub
   // webhook ingress（HMAC 校验逐字随迁）。禁用时 `enabled()` 返回 false → 503。
   attachEventRoutes(deps.routeRegistry, {
-    enabled: () => process.env.MAFW_EVENT_LAYER === '1',
+    enabled: () => eventLayerEnabled(),
     sources: {
       list: (projectDir) => deps.eventLayer!.listSources(projectDir),
       create: (input: any) => deps.eventLayer!.createSource({

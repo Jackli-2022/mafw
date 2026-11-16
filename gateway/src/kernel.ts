@@ -303,6 +303,9 @@ import {
   normalizeWebhookEvent,
 } from './core/events/event-normalize';
 import { pollGitHubSource } from './core/events/sources/github-source';
+import { eventLayerEnabled } from './core/events/event-flags';
+import { isLeadDecisionContext, renderLeadDecisionEvent } from './core/events/lead-event';
+import type { DecisionRecordEvent } from './core/decision/decision-record';
 import type { RuntimeDefinition } from '@mafw/runtime-contract';
 
 import { createRuntimeFacade, type RuntimeFacade, type RuntimeHost } from './runtime/runtime-facade';
@@ -3256,7 +3259,7 @@ class MafwScheduler {
   /** Event-layer + Standing Goal host actions (survive automation reloads). */
   private registerHostAutomationActions(engine: AutomationEngine): void {
     engine.registerAction('event:github_poll', async (rule) => {
-      if (process.env.MAFW_EVENT_LAYER !== '1') return;
+      if (!eventLayerEnabled()) return;
       const sourceId = String(rule.args?.sourceId ?? '');
       const store = this.eventLayerStore;
       const layer = this.eventLayer;
@@ -3291,7 +3294,7 @@ class MafwScheduler {
     });
 
     engine.registerAction('event:cron_tick', async (rule) => {
-      if (process.env.MAFW_EVENT_LAYER !== '1' || !this.eventLayer) return;
+      if (!eventLayerEnabled() || !this.eventLayer) return;
       const standingGoalId = String(rule.args?.standingGoalId ?? '');
       const projectDir = String(rule.args?.projectDir ?? '');
       if (!standingGoalId || !projectDir) return;
@@ -4368,7 +4371,19 @@ class MafwScheduler {
     this.decisionRecords = new DecisionRecordService({
       mafwDir: (projectDir) => findMafwDirForProject(this.registeredProjects, projectDir, canonicalProjectDir),
       warn: (message) => log.warn(message),
-      notify: (event) => this.broadcast({ type: 'decision.updated', properties: event }),
+      notify: (event) => {
+        this.broadcast({ type: 'decision.updated', properties: event });
+        // Draft decisions are announced through the event layer; confirmed /
+        // shelved records don't need another Lead prompt.
+        if (event.action === 'drafted' && event.record.status === 'draft') {
+          void this.ingestDecisionEvent(event).catch((err: any) => {
+            log.warn(
+              `[EventLayer] decision ingest failed for ${event.recordId}`
+              + ` (non-fatal): ${err?.message ?? err}`,
+            );
+          });
+        }
+      },
     });
     const leadTopicIndex = new TopicMessageIndexStore(this.getGatewayDb().getStore());
     const topicForks = new TopicForkStore(this.getGatewayDb().getStore());
@@ -4751,8 +4766,8 @@ class MafwScheduler {
       now: () => new Date().toISOString(),
       newId: (prefix) => `${prefix}_${randomUUID()}`,
       broadcast: (event) => this.broadcast(event as any),
-      enabled: () => process.env.MAFW_EVENT_LAYER === '1',
-      evaluate: async ({ thread, subscriptions }) => {
+      enabled: () => eventLayerEnabled(),
+      evaluate: async ({ thread, triggers, subscriptions }) => {
         const relevant = subscriptions.filter((subscription) => {
           if (subscription.subscriberType !== 'standing_goal') return true;
           if (process.env.MAFW_STANDING_GOALS !== '1') return false;
@@ -4760,6 +4775,10 @@ class MafwScheduler {
           if (!goal || goal.state !== 'active') return false;
           return canonicalProjectDir(goal.projectDir) === canonicalProjectDir(thread.projectDir);
         });
+        // Decision drafts are announced to the Lead as read-only context; no GoalRun.
+        if (isLeadDecisionContext({ triggers, subscriptions: relevant })) {
+          return { decision: 'accept', mode: 'report', rationale: 'lead decision context' };
+        }
         return relevant.some((subscription) => subscription.mode === 'work')
           ? { decision: 'accept', mode: 'full', rationale: 'work subscription' }
           : { decision: 'ignore', rationale: 'no work subscription' };
@@ -4787,8 +4806,28 @@ class MafwScheduler {
           },
         });
       },
+      deliverContext: async ({ thread, trigger, subscription }) => {
+        // Lead 只收只读上下文：可以主动告知用户，但确认/搁置仍是 human-only。
+        if (subscription.subscriberType !== 'lead' || subscription.mode !== 'context') return;
+        if (!trigger.kind.startsWith('decision.')) return;
+        const podService = this.podService;
+        const runtime = this.runtime;
+        if (!podService || !runtime) throw new Error('lead event delivery unavailable');
+        const detail = await podService.ensure(thread.projectDir);
+        const lead = await podService.ensureLead(detail.pod.id);
+        const message = renderLeadDecisionEvent(trigger);
+        if (!message) return;
+        await runtime.session.promptAsync({
+          sessionID: lead.sessionId,
+          parts: [{ type: 'text', text: message }],
+        });
+      },
       log: (message) => log.warn(message),
     });
+    // System sources are global; internal goal/decision events and cron ticks
+    // need them even before any user-created GitHub/webhook source exists.
+    this.eventLayer.ensureSystemSource('internal');
+    this.eventLayer.ensureSystemSource('cron');
 
     // P2.5 Standing Goals: lifecycle + GoalRun triage. Default off.
     const standingStore = new StandingGoalStore(this.getGatewayDb().getStore());
@@ -4858,7 +4897,7 @@ class MafwScheduler {
       unsubscribeEvents: (standingGoalId) => {
         this.eventLayer?.unsubscribeSubscriber(standingGoalId);
       },
-      eventLayerEnabled: () => process.env.MAFW_EVENT_LAYER === '1',
+      eventLayerEnabled: () => eventLayerEnabled(),
     });
     this.standingGoals = standingGoals;
     void this.standingGoals.reconcile().catch((err: any) => {
@@ -5108,11 +5147,53 @@ class MafwScheduler {
   }
 
   /**
+   * Decision draft → event layer → Lead 会话。每一步都去重：
+   * eventId 固定为 `decision.drafted:<recordId>`，重复 ingest 直接返回 duplicate。
+   */
+  private async ingestDecisionEvent(event: DecisionRecordEvent): Promise<void> {
+    if (!this.eventLayer || !eventLayerEnabled()) return;
+    const projectDir = event.projectDir;
+    if (!projectDir || !this.podService) return;
+    const detail = await this.podService.ensure(projectDir);
+    this.eventLayer.ensureSystemSource('internal');
+    const now = new Date().toISOString();
+    const ingested = this.eventLayer.ingest(normalizeInternalEvent({
+      projectDir,
+      sourceId: 'internal',
+      eventId: `decision.drafted:${event.recordId}`,
+      kind: 'decision.drafted',
+      aggregateId: event.recordId,
+      actor: 'agent',
+      payload: {
+        recordId: event.recordId,
+        goalId: event.goalId,
+        revision: event.revision,
+        question: event.record.question,
+        options: event.record.options,
+        evidence: event.record.evidence,
+        rationale: event.record.rationale,
+        consequences: event.record.consequences,
+        status: event.record.status,
+      },
+      occurredAt: now,
+      receivedAt: now,
+    }));
+    if (ingested.duplicate) return;
+    this.eventLayer.subscribe({
+      threadId: ingested.thread.id,
+      subscriberType: 'lead',
+      subscriberId: detail.pod.id,
+      mode: 'context',
+    });
+    await this.processEventThread(ingested.thread.id);
+  }
+
+  /**
    * P2.4 event layer: internal domain events (goal lifecycle, memory pipeline)
-   * are ingested as event-layer envelopes. Inert unless `MAFW_EVENT_LAYER=1`.
+   * are ingested as event-layer envelopes. On by default; `MAFW_EVENT_LAYER=0` disables.
    */
   private ingestInternalEvent(kind: string, data: any) {
-    if (!this.eventLayer || process.env.MAFW_EVENT_LAYER !== '1') return;
+    if (!this.eventLayer || !eventLayerEnabled()) return;
     try {
       const goalId = typeof data?.goalId === 'string' ? data.goalId : '';
       const resolved = goalId ? this.resolveGoalProject(goalId) : null;

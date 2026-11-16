@@ -35,6 +35,7 @@ function harness(over: Record<string, any> = {}, nowFn = () => '2026-11-10T00:00
   const broadcast = jest.fn();
   const evaluate = over.evaluate ?? jest.fn(async () => ({ decision: 'accept' as const, mode: 'full' as const, rationale: 'new PR' }));
   const deliverWork = over.deliverWork ?? jest.fn(async () => {});
+  const deliverContext = over.deliverContext ?? jest.fn(async () => {});
   let seq = 0;
   const service = new EventLayerService({
     store,
@@ -44,8 +45,9 @@ function harness(over: Record<string, any> = {}, nowFn = () => '2026-11-10T00:00
     enabled: () => true,
     evaluate,
     deliverWork,
+    deliverContext,
   });
-  return { store, service, broadcast, evaluate, deliverWork };
+  return { store, service, broadcast, evaluate, deliverWork, deliverContext };
 }
 
 describe('EventLayerService fan-out and evaluation', () => {
@@ -63,6 +65,23 @@ describe('EventLayerService fan-out and evaluation', () => {
     expect(h.deliverWork.mock.calls[0][0].subscription.mode).toBe('work');
     expect(h.store.latestDecision('t1')).toMatchObject({ decision: 'accept', mode: 'full' });
     expect(h.service.listDeliveries('t1').every((delivery) => delivery.state === 'delivered')).toBe(true);
+  });
+
+  test('lead context delivery runs without work execution', async () => {
+    const h = harness({
+      evaluate: jest.fn(async () => ({ decision: 'accept' as const, mode: 'report' as const, rationale: 'lead decision' })),
+    });
+    h.service.subscribe({ threadId: 't1', subscriberType: 'lead', subscriberId: 'lead1', mode: 'context' });
+    h.service.ingest(envelope({ idempotencyKey: 'k1', kind: 'decision.drafted' }));
+
+    const deliveries = h.service.fanOut('t1');
+    expect(deliveries).toHaveLength(1);
+
+    await h.service.evaluate('t1');
+    expect(h.deliverContext).toHaveBeenCalledTimes(1);
+    expect(h.deliverContext.mock.calls[0][0].subscription.mode).toBe('context');
+    expect(h.deliverWork).not.toHaveBeenCalled();
+    expect(h.service.listDeliveries('t1')[0]).toMatchObject({ state: 'delivered' });
   });
 
   test('same trigger set is evaluated once', async () => {
