@@ -92,6 +92,7 @@ import { dataUrlToFile } from "../capture/data-url"
 import { registerCaptureSink } from "../capture/attach-sink"
 import { CheckpointOverlay } from "./CheckpointOverlay"
 import { RenameSessionDialog } from "./RenameSessionDialog"
+import { ChatHelpOverlay } from "./ChatHelpOverlay"
 import { checkpointRev } from "../checkpoint-rev"
 import { keybindingFor } from "../keybinding-store"
 import { matchesCombo } from "../keybindings"
@@ -537,6 +538,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const [canUnrevert, setCanUnrevert] = createSignal(false)
   const [checkpointsOpen, setCheckpointsOpen] = createSignal(false)
   const [renameOpen, setRenameOpen] = createSignal(false)
+  const [helpOpen, setHelpOpen] = createSignal(false)
 
   // C2：空历史提示一次性闸（pane 按 sid keyed，切换会话自然重置）。
   let emptyHistHinted = false
@@ -1675,6 +1677,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
         id: "rename", trigger: "/rename", title: "重命名会话",
         description: "修改当前会话标题", group: "local", source: "builtin",
         run: () => { closeCommandPicker(); setRenameOpen(true) },
+      },
+      {
+        id: "help", trigger: "/help", title: "帮助",
+        description: "查看 Chat 指令与快捷键", group: "local", source: "builtin",
+        run: () => { closeCommandPicker(); setHelpOpen(true) },
       },
     ]
     const mafw: CommandItem[] = mafwRemote().items.length > 0
@@ -3089,6 +3096,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           initialTitle={title()}
           onClose={() => setRenameOpen(false)}
           onConfirm={renameCurrentSession}
+        />
+        <ChatHelpOverlay
+          open={helpOpen()}
+          commands={cmdItems().filter(c => c.group === "local")}
+          onClose={() => setHelpOpen(false)}
         />
         <Show when={checkpointsOpen() && sidProp()}>
           <CheckpointOverlay
