@@ -40,3 +40,14 @@ test("help command opens the overlay with commands and keybindings", () => {
   assert.match(css, /\.mafw-help-backdrop/)
   assert.match(css, /\.mafw-help \{/)
 })
+
+test("init command sends the fixed prompt through promptAsync", () => {
+  assert.match(chat, /trigger: "\/init"/)
+  assert.match(commandBlock("init"), /INIT_AGENTS_PROMPT/)
+  assert.match(commandBlock("init"), /sessions\.promptAsync/)
+  assert.match(commandBlock("init"), /setSending\(true\)/)
+  const init = commandBlock("init")
+  assert.ok(init.indexOf("sessionBusy()") >= 0)
+  assert.ok(init.indexOf("sessionBusy()") < init.indexOf("promptAsync"))
+  assert.match(chat, /from "\.\.\/chat\/init-prompt"/)
+})

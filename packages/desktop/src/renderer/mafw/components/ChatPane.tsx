@@ -57,6 +57,7 @@ import {
 import { useAttachments, mimeOf } from "../chat/use-attachments"
 import { useSendMessage } from "../chat/use-send-message"
 import { resolveSlash } from "../chat/slash-resolve"
+import { INIT_AGENTS_PROMPT } from "../chat/init-prompt"
 import { TtsPicker } from "../chat/TtsPicker"
 import { MessageNav } from "./MessageNav"
 import { enqueueTurn, removeTurnAt, takeFirstTurn, type QueuedTurn } from "./turn-queue"
@@ -1682,6 +1683,32 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
         id: "help", trigger: "/help", title: "帮助",
         description: "查看 Chat 指令与快捷键", group: "local", source: "builtin",
         run: () => { closeCommandPicker(); setHelpOpen(true) },
+      },
+      {
+        id: "init", trigger: "/init", title: "初始化 AGENTS.md",
+        description: "让 agent 分析仓库并生成/更新 AGENTS.md", group: "local", source: "builtin",
+        run: () => {
+          closeCommandPicker()
+          const sid = sidProp()
+          if (!sid) return
+          if (props.readOnly) {
+            showToastV2({ description: "当前会话只读", duration: 2500 })
+            return
+          }
+          if (sessionBusy()) {
+            showToastV2({ description: "回合进行中，结束后再初始化", duration: 2500 })
+            return
+          }
+          setSending(true)
+          setPhase("searching")
+          void window.api.mafw.sessions.promptAsync({ sessionID: sid, message: INIT_AGENTS_PROMPT })
+            .then(() => showToastV2({ description: "已开始生成 AGENTS.md", duration: 3000 }))
+            .catch((e: any) => {
+              setSending(false)
+              console.warn("[mafw] init failed:", e?.message ?? e)
+              showToastV2({ description: "初始化失败，请稍后重试", duration: 4000 })
+            })
+        },
       },
     ]
     const mafw: CommandItem[] = mafwRemote().items.length > 0
