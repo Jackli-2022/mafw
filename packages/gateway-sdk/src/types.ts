@@ -91,6 +91,10 @@ export interface MemoryUnit {
   energy: number
   salience?: number
   created_at?: string
+  /** Soft link to the T1 episode that produced this unit (server-derived). */
+  episode_id?: string
+  /** Exact T1 traces this unit cites (server-validated, capped at 20). */
+  source_trace_ids?: string[]
 }
 
 export interface MemoryFact {
