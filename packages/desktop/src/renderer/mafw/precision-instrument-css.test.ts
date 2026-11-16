@@ -79,4 +79,12 @@ describe("precision instrument direction", () => {
     expect(condition).not.toMatch(/border:\s*1px solid/)
     expect(condition).not.toContain("background: var(--bg-inset)")
   })
+
+  test("Goal inline detail keeps horizontal breathing room in the right dock", () => {
+    const inline = lastBlock(".mafw-goal-inline {")
+    const padding = inline.match(/padding:\s*([^;]+);/)?.[1]?.trim().split(/\s+/)
+    expect(padding).toBeTruthy()
+    const left = padding!.length >= 4 ? padding![3] : padding![1] ?? padding![0]
+    expect(parseFloat(left)).toBeGreaterThanOrEqual(16)
+  })
 })
