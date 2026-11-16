@@ -3,6 +3,7 @@
 // best-effort mirror: a mirror failure never blocks a state transition, and a
 // missing DB row lazily imports the legacy file on first read.
 import type Database from 'better-sqlite3';
+import type { DomainEventStore } from '../events/domain-event-store';
 import {
   archiveGoalStateFile,
   loadGoalStateFile,
@@ -15,9 +16,22 @@ import {
   type GoalStateV3 as GoalState,
 } from './state-v3';
 
+export interface GoalStateHistoryMeta {
+  /** Fields changed by this write (writeGoalState). */
+  patch?: Partial<GoalStateV3>;
+  /** New revision / brand-new state: replay must replace, not merge. */
+  reset?: boolean;
+}
+
+export interface GoalStateStoreOptions {
+  events?: DomainEventStore;
+  snapshotEvery?: number;
+  now?(): string;
+}
+
 export interface GoalStateBackend {
   load(mafwDir: string, goalId: string): GoalStateV3 | null;
-  save(mafwDir: string, goalId: string, state: GoalStateV3): void;
+  save(mafwDir: string, goalId: string, state: GoalStateV3, meta?: GoalStateHistoryMeta): void;
   archiveRevision(mafwDir: string, goalId: string, revision: number): void;
   list(): GoalStateV3[];
 }
@@ -32,7 +46,14 @@ interface GoalStateDbRow {
 }
 
 export class GoalStateStore implements GoalStateBackend {
-  constructor(private readonly db: Database.Database) {
+  private readonly events?: DomainEventStore;
+  private readonly snapshotEvery: number;
+  private readonly now: () => string;
+
+  constructor(private readonly db: Database.Database, opts: GoalStateStoreOptions = {}) {
+    this.events = opts.events;
+    this.snapshotEvery = Math.max(1, Math.trunc(opts.snapshotEvery ?? 20));
+    this.now = opts.now ?? (() => new Date().toISOString());
     this.initSchema();
   }
 
@@ -76,29 +97,53 @@ export class GoalStateStore implements GoalStateBackend {
 
     const legacy = loadGoalStateFile(mafwDir, goalId);
     if (!legacy) return null;
-    this.save(mafwDir, goalId, legacy);
+    this.save(mafwDir, goalId, legacy, { reset: true });
     return legacy;
   }
 
-  save(mafwDir: string, goalId: string, state: GoalStateV3): void {
-    const now = new Date().toISOString();
-    this.db.prepare(`
-      INSERT INTO goal_state (goal_id, revision, phase, next_action, state_json, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(goal_id) DO UPDATE SET
-        revision = excluded.revision,
-        phase = excluded.phase,
-        next_action = excluded.next_action,
-        state_json = excluded.state_json,
-        updated_at = excluded.updated_at
-    `).run(
-      goalId,
-      normalizeRevision(state.revision),
-      state.phase ?? null,
-      state.nextAction,
-      JSON.stringify(state),
-      now,
-    );
+  save(mafwDir: string, goalId: string, state: GoalStateV3, meta?: GoalStateHistoryMeta): void {
+    const now = this.now();
+    this.db.transaction(() => {
+      this.db.prepare(`
+        INSERT INTO goal_state (goal_id, revision, phase, next_action, state_json, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(goal_id) DO UPDATE SET
+          revision = excluded.revision,
+          phase = excluded.phase,
+          next_action = excluded.next_action,
+          state_json = excluded.state_json,
+          updated_at = excluded.updated_at
+      `).run(
+        goalId,
+        normalizeRevision(state.revision),
+        state.phase ?? null,
+        state.nextAction,
+        JSON.stringify(state),
+        now,
+      );
+
+      if (this.events) {
+        const reset = meta?.reset === true;
+        this.events.append({
+          type: 'goal.state.changed',
+          aggregateType: 'goal',
+          aggregateId: goalId,
+          occurredAt: state.updatedAt || now,
+          audience: 'none',
+          payload: {
+            goalId,
+            revision: normalizeRevision(state.revision),
+            stateVersion: state.stateVersion ?? 0,
+            round: state.round,
+            loop: state.loop,
+            updatedAt: state.updatedAt || now,
+            reset,
+            ...(reset ? { resetState: state } : {}),
+            ...(meta?.patch ? { patch: meta.patch } : {}),
+          },
+        });
+      }
+    })();
 
     try {
       saveGoalStateFile(mafwDir, goalId, state);

@@ -16,7 +16,7 @@ import {
   revisionStatePathFor,
   statePathFor,
 } from './goal-state-file';
-import type { GoalStateBackend } from './goal-state-store';
+import type { GoalStateBackend, GoalStateHistoryMeta } from './goal-state-store';
 import type { FailureClass } from './failure-class';
 
 export {
@@ -164,9 +164,14 @@ export function loadGoalState(mafwDir: string, goalId: string): GoalStateV3 | nu
   return loadGoalStateFile(mafwDir, goalId);
 }
 
-function saveGoalState(mafwDir: string, goalId: string, state: GoalStateV3): void {
+function saveGoalState(
+  mafwDir: string,
+  goalId: string,
+  state: GoalStateV3,
+  meta?: GoalStateHistoryMeta,
+): void {
   if (goalStateBackend) {
-    goalStateBackend.save(mafwDir, goalId, state);
+    goalStateBackend.save(mafwDir, goalId, state, meta);
     return;
   }
   saveGoalStateFile(mafwDir, goalId, state);
@@ -190,7 +195,7 @@ export function writeGoalState(
     stateVersion: opts?.bumpVersion ? (current.stateVersion ?? 0) + 1 : current.stateVersion ?? 0,
     updatedAt: new Date().toISOString(),
   };
-  saveGoalState(mafwDir, goalId, next);
+  saveGoalState(mafwDir, goalId, next, { patch });
   return next;
 }
 
@@ -273,7 +278,7 @@ export function ensureGoalState(
     stateVersion = (existing.stateVersion ?? 0) + 1;
   }
   const s = freshState(mafwDir, goalId, targetRevision, init, stateVersion);
-  saveGoalState(mafwDir, goalId, s);
+  saveGoalState(mafwDir, goalId, s, { reset: true });
   return s;
 }
 
