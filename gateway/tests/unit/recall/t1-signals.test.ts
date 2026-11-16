@@ -161,4 +161,18 @@ describe('t1 signals', () => {
   test('the "[object Object]" ingestion artifact is not scored', () => {
     expect(isInformativeTurn('[object Object]', 3)).toBe(false);
   });
+
+  test('cue and content completing different memories is not a mismatch', async () => {
+    const d = {
+      embedder: { embed: async (texts: string[]) => texts.map((t) => [t.length, t.charCodeAt(0)]) },
+      vectors: {
+        searchByCosine: (q: number[]) =>
+          q[0] === BODY.length ? [{ id: 'm1', cosine: 0.4 }] : [{ id: 'm2', cosine: 0.9 }],
+      },
+      unitFor: () => ({ createdAt: '2026-01-01T00:00:00.000Z', type: 'semantic' }),
+    };
+    const map = await computeTurnSignals([input()], d as any);
+    expect(map.get('t1t_a')!.novelty).toBeCloseTo(0.6);
+    expect(map.get('t1t_a')!.mismatch).toBe(0);
+  });
 });

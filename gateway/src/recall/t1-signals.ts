@@ -79,13 +79,13 @@ export function scoreTurnSignals(
   return { novelty, mismatch };
 }
 
-/** Best similarity among candidates that may legitimately explain this turn. */
-function bestCandidateSim(
+/** Best candidate that may legitimately explain this turn. */
+function bestCandidate(
   input: TurnSignalInput,
   vector: number[],
   deps: TurnSignalDeps,
-): number | null {
-  let best: number | null = null;
+): { id: string; cosine: number } | null {
+  let best: { id: string; cosine: number } | null = null;
   for (const hit of deps.vectors.searchByCosine(vector, TOP_K)) {
     const unit = deps.unitFor(hit.id);
     if (!unit) continue;
@@ -98,7 +98,7 @@ function bestCandidateSim(
       if (Number.isFinite(created) && created > input.lastTs * 1000) continue;
     }
     if (!Number.isFinite(hit.cosine)) continue;
-    if (best == null || hit.cosine > best) best = hit.cosine;
+    if (best == null || hit.cosine > best.cosine) best = { id: hit.id, cosine: hit.cosine };
   }
   return best;
 }
@@ -136,13 +136,15 @@ export async function computeTurnSignals(
       const input = eligible[idx];
       const contentVector = contentVectors[idx];
       if (!contentVector) continue;
-      const contentSim = bestCandidateSim(input, contentVector, deps);
-      if (contentSim == null) continue;
-      // CA1 comparison needs a real input; short turns have no "details" to
-      // diverge, and their generic cue matches everything.
+      const matched = bestCandidate(input, contentVector, deps);
+      if (!matched) continue;
+      // CA1 compares one retrieved memory against the input: the cue must
+      // complete to the SAME memory the content does, otherwise the two
+      // maxima belong to different situations and the difference is noise.
       const cueVector = input.text.trim().length >= 120 ? cueByIndex.get(idx) : undefined;
-      const cueSim = cueVector ? bestCandidateSim(input, cueVector, deps) : null;
-      const signals = scoreTurnSignals(contentSim, cueSim);
+      const cueMatch = cueVector ? bestCandidate(input, cueVector, deps) : null;
+      const cueSim = cueMatch && cueMatch.id === matched.id ? cueMatch.cosine : null;
+      const signals = scoreTurnSignals(matched.cosine, cueSim);
       if (signals) scored.set(input.traceId, signals);
     }
     return scored;
