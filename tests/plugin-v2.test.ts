@@ -12,7 +12,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { z } from 'zod';
 
-import mafwPlugin from '../src/plugin';
+import mafwPlugin, { toolResultText } from '../src/plugin';
 import { pluginInspectTool } from '../src/tools/plugin-inspect';
 import { pluginManagerTool } from '../src/tools/plugin-manager';
 import { zodToJsonSchema, toV1Views, captureAssistantOutput } from '../src/utils/v2-compat';
@@ -785,5 +785,12 @@ describe('commands', () => {
     expect(arg.sessionID).toBe('ses_cmd3');
     expect(arg.text).toContain('重构记忆检索');
     expect(arg.text).toContain('mafw_create_goal');
+  });
+});
+
+describe('toolResultText', () => {
+  it('marks non-text parts instead of dumping their payload', () => {
+    expect(toolResultText([{ type: 'text', text: 'hello' }, { type: 'image', data: 'x'.repeat(10) }]))
+      .toBe('hello\n[image]');
   });
 });

@@ -200,6 +200,8 @@ function partText(part: any): string {
   if (typeof part === 'string') return part;
   if (typeof part.text === 'string') return part.text;
   if (typeof part.content === 'string') return part.content;
+  // Never dump binary payloads (base64 images/audio) into raw T1.
+  if (typeof part.type === 'string' && part.type !== 'text') return `[${part.type}]`;
   try {
     return JSON.stringify(part);
   } catch {

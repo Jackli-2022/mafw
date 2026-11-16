@@ -16,6 +16,7 @@ import { initEmbeddingRuntime } from '../src/memory/embedding-runtime';
 import { HarmonicUnitFileStore } from '../src/memory/harmonic-file-store';
 import {
   computeTurnSignals,
+  isInformativeTurn,
   normalizeObservationText,
   unitLookupFromEntries,
   type TurnSignalInput,
@@ -149,6 +150,7 @@ async function main() {
         model: runtime.providerId,
         features: rows.length,
         eligible: inputs.length,
+        informative: inputs.filter((input) => isInformativeTurn(input.text, input.anchorCount)).length,
         scored: scores.size,
         failed,
         applied,

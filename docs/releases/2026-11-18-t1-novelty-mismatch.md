@@ -39,7 +39,7 @@ Phase 1 只测量，不改回放：`replayPriority` 仍用常数 `0.5`，反思�
  "highNovelty":124,"highMismatch":122,"redundant":123}
 ```
 
-覆盖率 1,223 / 4,465 = **27.4%**。未评分的 3,245 条里大头是机器遥测（`【眼】` 感知日志）、agent 系统提示、短寒暄与历史 `[object Object]` 残留——这些不是可比较的人类经历。
+覆盖率：**1,222 / 1,225 条“可评分回合” = 99.8%**（3 条没有可解释的记忆候选）。其余 3,240 条被判为非 cue：机器遥测（`【眼】` 感知日志）、agent 系统提示、短寒暄与历史 `[object Object]` 残留——这些不是可比较的人类经历。
 
 阈值按实测分布取分位数（`config.recall.t1SignalThresholds`）：
 `highNovelty 0.40`（≈p90）、`highMismatch 0.023`（≈p90）、`redundant 0.23`（≈p10）、`dup 0.95`（Phase 3 未启用）。
@@ -74,13 +74,13 @@ mismatch 名义上过了 0.55，但 21 个正例不足以支撑任何结论；no
 
 ## 测试
 
-新增 **29** 个测试（gateway 28 + host 插件 1）：
+新增 **30** 个测试（gateway 28 + host 插件 2）：
 
 - `tests/unit/memory/t1-feature-signals.test.ts`（3）：roundtrip、merge 保留、显式覆盖。
 - `tests/unit/recall/t1-signals.test.ts`（21）：复述/失配/无关、短轮、系统提示、遥测、`[object Object]`、superseded/episodic、未来记忆、空记忆池、embed 失败、clamp、同记忆约束、cortex lookup、scorer 工厂 3 例。
 - `tests/unit/recall/turn-pipeline-signals.test.ts`（3）：写回、失败不阻塞、默认开启。
 - `tests/unit/routes/memory-wiring.test.ts`（+1）：`t1.signals` 分布。
-- `tests/plugin-v2.test.ts`（+1）：结构化 `content` parts 序列化。
+- `tests/plugin-v2.test.ts`（+2）：结构化 `content` parts 序列化、非文本 part 不落原始 payload。
 
 门禁：
 
@@ -89,7 +89,7 @@ gateway full     1005/1005 suites；8003 tests（8001 passed，2 skipped，0 fai
 gateway tsc      rc=0
 gateway build    rc=0
 root tsc         rc=0
-plugin tests     35/35
+plugin tests     36/36
 api contract     313/313
 ```
 
