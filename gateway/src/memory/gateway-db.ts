@@ -2679,6 +2679,56 @@ export class GatewayDatabase {
     return row?.episode_id ?? null;
   }
 
+  /** Distinct sessions that have T1 turns, for bounded episode backfill. */
+  listEpisodeSessionIds(opts: { limit: number; since?: number }): string[] {
+    const limit = Math.max(0, Math.trunc(opts.limit));
+    if (limit === 0) return [];
+    const sinceSec =
+      Number.isFinite(opts.since) && opts.since != null
+        ? Math.floor(Number(opts.since) / 1000)
+        : null;
+    const rows = this.db
+      .prepare(
+        `SELECT DISTINCT t.session_id
+           FROM t1_turns t
+          WHERE (? IS NULL OR t.created_at >= ?)
+            AND NOT EXISTS (
+                  SELECT 1 FROM t1_episodes e WHERE e.session_id = t.session_id
+                )
+          ORDER BY t.session_id
+          LIMIT ?`,
+      )
+      .all(sinceSec, sinceSec, limit) as Array<{ session_id: string }>;
+    return rows.map((row) => row.session_id);
+  }
+
+  /** Last turn time of an episode in epoch milliseconds, or null. */
+  getEpisodeLastTurnAt(episodeId: string): number | null {
+    const row = this.db
+      .prepare(
+        `SELECT MAX(t.created_at) AS at
+           FROM t1_episode_members m
+           JOIN t1_turns t ON t.trace_id = m.trace_id
+          WHERE m.episode_id = ?`,
+      )
+      .get(String(episodeId || '')) as { at?: number | null } | undefined;
+    return row?.at == null ? null : Number(row.at) * 1000;
+  }
+
+  closeEpisode(episodeId: string, endedAt: number, reason: string): void {
+    this.db
+      .prepare(
+        `UPDATE t1_episodes
+            SET status = 'closed',
+                boundary_source = 'session_end',
+                boundary_reason = ?,
+                ended_at = ?,
+                updated_at = unixepoch()
+          WHERE episode_id = ?`,
+      )
+      .run(reason, Math.trunc(endedAt), String(episodeId || ''));
+  }
+
   private episodeFromRow(row: any): T1EpisodeRecord {
     return {
       episodeId: row.episode_id,

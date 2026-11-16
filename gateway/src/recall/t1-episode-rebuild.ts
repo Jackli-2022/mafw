@@ -8,6 +8,8 @@ import {
   type T1EpisodeMember,
   type T1EpisodeRecord,
 } from './t1-episodes';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export type EpisodeTurnRow = EpisodeTurnInput;
 
@@ -47,6 +49,8 @@ export function rebuildSessionEpisodes(
     idleCloseMs?: number;
     now?: number;
     sessionDeleted?: boolean;
+    /** Shadow-mode observation sink; one JSON line per derived episode. */
+    shadowLogPath?: string;
   } = {},
 ): { episodes: T1EpisodeRecord[]; members: T1EpisodeMember[] } | null {
   const turns = readSessionEpisodeTurns(db, sessionId);
@@ -119,5 +123,90 @@ export function rebuildSessionEpisodes(
   }
 
   db.replaceSessionEpisodes(sessionId, episodes, members);
+  if (opts.shadowLogPath) {
+    try {
+      fs.mkdirSync(path.dirname(opts.shadowLogPath), { recursive: true });
+      const lines = episodes
+        .map((episode) =>
+          JSON.stringify({
+            ts: Date.now(),
+            sessionId,
+            episodeId: episode.episodeId,
+            startTurn: episode.startTurn,
+            endTurn: episode.endTurn,
+            boundarySource: episode.boundarySource,
+            boundaryReason: episode.boundaryReason,
+            confidence: episode.confidence,
+            actors: episode.actors.map((actor) => actor.actorId),
+            conceptIds: episode.conceptIds,
+          }),
+        )
+        .join('\n');
+      if (lines) fs.appendFileSync(opts.shadowLogPath, `${lines}\n`, 'utf-8');
+    } catch {
+      /* fail-open: shadow logging never blocks the rebuild */
+    }
+  }
   return { episodes, members };
+}
+
+export interface T1EpisodeBackfillResult {
+  scanned: number;
+  rebuilt: number;
+  failed: number;
+}
+
+/**
+ * One bounded backfill pass over sessions with T1 turns. Repeat until
+ * `scanned === 0`. A bad session increments `failed` and does not abort the
+ * pass.
+ */
+export function backfillT1Episodes(
+  db: GatewayDatabase,
+  opts: { limit?: number; sinceDays?: number; now?: number } = {},
+): T1EpisodeBackfillResult {
+  const result: T1EpisodeBackfillResult = { scanned: 0, rebuilt: 0, failed: 0 };
+  const limit = Math.max(0, Math.trunc(opts.limit ?? 500));
+  if (limit === 0) return result;
+  const now = opts.now ?? Date.now();
+  const since =
+    opts.sinceDays && opts.sinceDays > 0
+      ? now - opts.sinceDays * 86400_000
+      : undefined;
+  const sessions = db.listEpisodeSessionIds({ limit, since });
+  result.scanned = sessions.length;
+  for (const sessionId of sessions) {
+    try {
+      const rebuilt = rebuildSessionEpisodes(db, sessionId, { now });
+      if (rebuilt) result.rebuilt++;
+    } catch {
+      result.failed++;
+    }
+  }
+  return result;
+}
+
+/** Close open episodes whose last turn is older than `idleMs`. */
+export function closeIdleEpisodes(
+  db: GatewayDatabase,
+  opts: { idleMs?: number; now?: number } = {},
+): number {
+  const now = opts.now ?? Date.now();
+  const idleMs = Math.max(0, Math.trunc(opts.idleMs ?? config.recall.t1Episodes.idleCloseMs));
+  if (idleMs === 0) return 0;
+  const open = db
+    .listEpisodes({ limit: 5000 })
+    .episodes.filter((episode) => episode.status === 'open');
+  let closed = 0;
+  for (const episode of open) {
+    const last = db.getEpisodeLastTurnAt(episode.episodeId);
+    if (last == null || now - last < idleMs) continue;
+    try {
+      db.closeEpisode(episode.episodeId, last, 'idle_timeout');
+      closed++;
+    } catch {
+      /* fail-open: a later pass retries */
+    }
+  }
+  return closed;
 }

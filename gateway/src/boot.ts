@@ -39,6 +39,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { randomUUID } from 'crypto';
 import { config } from './config';
+import { backfillT1Episodes } from './recall/t1-episode-rebuild';
 import { log } from './core/utils/logger';
 import {
   createGatewayRuntimeIdentity,
@@ -403,6 +404,17 @@ export async function bootKernel(kernel: BootKernel): Promise<void> {
     await releaseInstanceOwnership(kernel);
     process.exit(1);
     return;
+  }
+  // T1 episodes are derived: seed history in the background after the API is
+  // up. Never block startup and never fail it.
+  if (config.recall.t1Episodes?.enabled !== false && config.recall.t1Episodes?.mode !== 'off') {
+    setImmediate(() => {
+      try {
+        backfillT1Episodes(kernel.getGatewayDb(), { limit: 1000, sinceDays: 90 });
+      } catch (err: any) {
+        log.warn(`[Boot] T1 episode backfill failed: ${err?.message || err}`);
+      }
+    });
   }
   try {
     await publishInstanceDiscovery(kernel);
