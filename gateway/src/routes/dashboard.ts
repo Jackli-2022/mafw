@@ -160,12 +160,13 @@ export function attachDashboardRoutes(registry: RouteRegistry, deps: DashboardRo
       const salience = typeof data?.importance === 'number' && Number.isFinite(data.importance)
         ? importanceToSalience(data.importance)
         : judgeSalience({ text: content, novelty }).score;
-      const sourceTraceIds = require('../core/memory/provenance.js').normalizeSourceTraceIds(
+      const provenance = require('../core/memory/provenance.js');
+      const sourceTraceIds = provenance.normalizeSourceTraceIds(
         data?.sourceTraceIds,
         (id: string) => (deps.hasTrace ? deps.hasTrace(id) : false),
       );
-      const episodeId = sourceTraceIds.length > 0 && deps.findEpisodeByTrace
-        ? deps.findEpisodeByTrace(sourceTraceIds[0])
+      const episodeId = deps.findEpisodeByTrace
+        ? provenance.deriveEpisodeId({ findEpisodeByTrace: deps.findEpisodeByTrace }, sourceTraceIds)
         : null;
       const unit = {
         id: generateHarmonicId(),

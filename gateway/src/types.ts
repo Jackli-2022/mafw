@@ -50,6 +50,8 @@ export interface Services {
   readTrace?: (traceId: string) => import('./memory/gateway-db').T1TraceRead | null;
   /** Cheap existence check for exact T1 provenance validation on write. */
   hasTrace?: (traceId: string) => boolean;
+  /** Map a source trace to its T1 episode (soft grounding hint). */
+  findEpisodeByTrace?: (traceId: string) => string | null;
   /** Bounded abstract→T1 activation propagation (never fails the read). */
   propagateT1Activation?: (traceIds: string[]) => void;
   /** Plan C: human review items and their store (MCP respond handler). */

@@ -9,7 +9,7 @@ import { schemaFastPath } from "../../judge/schema";
 import { getEmbeddingRuntime } from "../../memory/embedding-runtime";
 import { getRouteWriteDeps, routeAndWrite } from "../../memory/route-write";
 import { importanceToSalience } from "../../core/memory/salience-perceptor";
-import { normalizeSourceTraceIds } from "../../core/memory/provenance";
+import { deriveEpisodeId, normalizeSourceTraceIds } from "../../core/memory/provenance";
 
 /** Mark each old id as superseded by `byId`; return only the ids actually marked. */
 function markSupersedes(
@@ -24,7 +24,7 @@ function markSupersedes(
   return marked;
 }
 
-export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir, hasTrace, pressure }) => {
+export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir, hasTrace, findEpisodeByTrace, pressure }) => {
   try {
     const content = args.content as string;
     const memoryType = (args.memoryType as string) || config.memory.defaultMemoryType;
@@ -36,6 +36,10 @@ export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir, hasT
     // Exact T1 provenance: validate against the live identity table; unknown
     // ids are dropped (worker non-compliance must never fail the write).
     const sourceTraceIds = normalizeSourceTraceIds(args.sourceTraceIds, (id) => (hasTrace ? hasTrace(id) : false));
+    const episodeId = deriveEpisodeId(
+      findEpisodeByTrace ? { findEpisodeByTrace } : null,
+      sourceTraceIds,
+    );
 
     if (!["episodic", "semantic", "procedural", "global"].includes(memoryType)) {
       return { content: [{ type: "text", text: JSON.stringify({ success: false, error: `Invalid memoryType: ${memoryType}` }) }], isError: true };
@@ -109,6 +113,7 @@ export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir, hasT
       // passes; expiry only removes it from the board, never deletes the memory.
       ...(sticky ? { sticky_until: new Date(Date.now() + stickyDays * 86400e3).toISOString() } : {}),
       ...(sourceTraceIds.length > 0 ? { source_trace_ids: sourceTraceIds } : {}),
+      ...(episodeId ? { episode_id: episodeId } : {}),
     };
 
     const { HarmonicUnitFileStore } = await import("../../memory/harmonic-file-store.js");

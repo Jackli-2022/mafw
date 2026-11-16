@@ -93,6 +93,39 @@ describe('handleAddMemory disk pressure gate (E7-4)', () => {
     expect(mockWrite).toHaveBeenCalledTimes(1);
   });
 
+  test('validated source traces derive an episode id', async () => {
+    const dir = tmp();
+    const res: any = await handleAddMemory(
+      { ...args, sourceTraceIds: ['t1t_a'] },
+      {
+        mafwDir: dir,
+        hasTrace: () => true,
+        findEpisodeByTrace: () => 't1ep_a',
+        pressure: () => null,
+      } as any,
+    );
+
+    expect(res.isError).toBeUndefined();
+    expect(mockWrite).toHaveBeenCalledWith(
+      expect.objectContaining({ episode_id: 't1ep_a' }),
+    );
+  });
+
+  test('an unresolvable trace leaves episode_id absent', async () => {
+    const dir = tmp();
+    await handleAddMemory(
+      { ...args, sourceTraceIds: ['t1t_a'] },
+      {
+        mafwDir: dir,
+        hasTrace: () => true,
+        findEpisodeByTrace: () => null,
+        pressure: () => null,
+      } as any,
+    );
+
+    expect(mockWrite.mock.calls[0][0].episode_id).toBeUndefined();
+  });
+
   test('validation still wins over pressure (invalid memoryType reported first)', async () => {
     const dir = tmp();
     const res: any = await handleAddMemory(
