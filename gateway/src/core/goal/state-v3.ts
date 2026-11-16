@@ -195,7 +195,8 @@ export function writeGoalState(
     stateVersion: opts?.bumpVersion ? (current.stateVersion ?? 0) + 1 : current.stateVersion ?? 0,
     updatedAt: new Date().toISOString(),
   };
-  saveGoalState(mafwDir, goalId, next, { patch });
+  const unset = Object.keys(patch).filter((key) => (patch as any)[key] === undefined);
+  saveGoalState(mafwDir, goalId, next, { patch, ...(unset.length ? { unset } : {}) });
   return next;
 }
 

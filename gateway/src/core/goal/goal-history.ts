@@ -83,39 +83,64 @@ export function replayGoalState(input: {
   let state: GoalStateV3 | null = snapshot?.state ?? null;
   let applied = 0;
 
-  const events = input.events
-    .listAggregate('goal', input.goalId, { afterVersion: snapshot?.version ?? 0 })
-    .filter((event) => event.type === 'goal.state.changed'
-      && (input.atVersion === undefined || event.aggregateVersion <= input.atVersion));
+  const events = input.events;
+  const PAGE = 500;
+  let afterVersion = snapshot?.version ?? 0;
+  let reachedEnd = false;
 
-  for (const event of events) {
-    const payload = event.payload as Record<string, any>;
-    if (payload.reset === true && payload.resetState && typeof payload.resetState === 'object') {
-      state = normalizeGoalState(payload.resetState, payload.resetState.mafwDir ?? '', input.goalId);
+  while (!reachedEnd) {
+    const page = events.listAggregate('goal', input.goalId, {
+      afterVersion,
+      limit: PAGE,
+    });
+    if (!page.length) break;
+
+    for (const event of page) {
+      if (input.atVersion !== undefined && event.aggregateVersion > input.atVersion) {
+        reachedEnd = true;
+        break;
+      }
+      if (event.type !== 'goal.state.changed') continue;
+      const payload = event.payload as Record<string, any>;
+      if (payload.reset === true && payload.resetState && typeof payload.resetState === 'object') {
+        state = normalizeGoalState(payload.resetState, payload.resetState.mafwDir ?? '', input.goalId);
+        applied += 1;
+        continue;
+      }
+      // A patch without a baseline cannot be reconstructed (history must start
+      // with a reset/snapshot). Fail closed instead of returning a partial state.
+      if (!state) return null;
+      if (!payload.patch || typeof payload.patch !== 'object') continue;
+
+      const patch = payload.patch as Partial<GoalStateV3>;
+      const base: any = { ...state };
+      // `undefined` values are dropped by JSON; the writer records them as
+      // `unset` so replay clears the same keys the live merge cleared.
+      if (Array.isArray(payload.unset)) {
+        for (const key of payload.unset) delete base[key];
+      }
+      const round = typeof payload.round === 'number'
+        ? payload.round
+        : (typeof patch.round === 'number' ? patch.round : base.round);
+      state = {
+        ...base,
+        ...patch,
+        round,
+        loop: round,
+        stateVersion: typeof payload.stateVersion === 'number' ? payload.stateVersion : base.stateVersion,
+        updatedAt: typeof payload.updatedAt === 'string' ? payload.updatedAt : base.updatedAt,
+      } as GoalStateV3;
       applied += 1;
-      continue;
     }
-    // A patch without a baseline cannot be reconstructed (history must start
-    // with a reset/snapshot). Fail closed instead of returning a partial state.
-    if (!state) return null;
-    if (!payload.patch || typeof payload.patch !== 'object') continue;
 
-    const patch = payload.patch as Partial<GoalStateV3>;
-    const round = typeof payload.round === 'number'
-      ? payload.round
-      : (typeof patch.round === 'number' ? patch.round : state.round);
-    state = {
-      ...state,
-      ...patch,
-      round,
-      loop: round,
-      stateVersion: typeof payload.stateVersion === 'number' ? payload.stateVersion : state.stateVersion,
-      updatedAt: typeof payload.updatedAt === 'string' ? payload.updatedAt : state.updatedAt,
-    } as GoalStateV3;
-    applied += 1;
+    afterVersion = page[page.length - 1].aggregateVersion;
+    if (reachedEnd || page.length < PAGE) break;
   }
 
   if (!state) return null;
+  // Normalize derived fields (`nodeSession.revision`, `pendingQuestion.resumeNode`,
+  // round/loop aliases) exactly like `load()` does, so replay == live row.
+  state = normalizeGoalState(state, state.mafwDir ?? '', input.goalId);
   return {
     state,
     stats: {

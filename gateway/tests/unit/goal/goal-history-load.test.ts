@@ -6,7 +6,7 @@ import { DomainEventStore } from '../../../src/core/events/domain-event-store';
 import { GoalSnapshotStore } from '../../../src/core/goal/goal-history';
 import { GoalStateStore } from '../../../src/core/goal/goal-state-store';
 import {
-  ensureGoalState, setGoalStateBackend, statePathFor, writeGoalState,
+  ensureGoalState, listGoalStateSummaries, setGoalStateBackend, statePathFor, writeGoalState,
 } from '../../../src/core/goal/state-v3';
 
 function setup() {
@@ -42,8 +42,22 @@ test('load replays when the state row is missing but history exists', () => {
   }
 });
 
-test('replay-read flag returns history state and counts divergence', () => {
+test('list recovers a goal whose row and mirror are gone', () => {
   const h = setup();
+  try {
+    ensureGoalState(h.dir, 'g1', { projectDir: '/p', maxRounds: 3 });
+    writeGoalState(h.dir, 'g1', { phase: 'EXECUTING' });
+    h.db.prepare('DELETE FROM goal_state WHERE goal_id = ?').run('g1');
+    fs.rmSync(statePathFor(h.dir, 'g1'), { force: true });
+    const summaries = listGoalStateSummaries([{ projectDir: '/p', mafwDir: h.dir }]);
+    expect(summaries.map((entry) => entry.goalId)).toContain('g1');
+    expect(h.store.load(h.dir, 'g1')?.phase).toBe('EXECUTING');
+  } finally {
+    teardown(h);
+  }
+});
+
+test('replay-read flag returns history state and counts divergence', () => {  const h = setup();
   const prev = process.env.MAFW_GOAL_REPLAY_READ;
   process.env.MAFW_GOAL_REPLAY_READ = '1';
   try {

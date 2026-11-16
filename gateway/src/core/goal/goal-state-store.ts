@@ -20,6 +20,8 @@ import {
 export interface GoalStateHistoryMeta {
   /** Fields changed by this write (writeGoalState). */
   patch?: Partial<GoalStateV3>;
+  /** Keys explicitly cleared by the patch (`undefined` values do not survive JSON). */
+  unset?: string[];
   /** New revision / brand-new state: replay must replace, not merge. */
   reset?: boolean;
 }
@@ -220,6 +222,7 @@ export class GoalStateStore implements GoalStateBackend {
             reset,
             ...(reset ? { resetState: state } : {}),
             ...(meta?.patch ? { patch: meta.patch } : {}),
+            ...(meta?.unset?.length ? { unset: meta.unset } : {}),
           },
         });
         if (this.snapshots) {
@@ -264,9 +267,36 @@ export class GoalStateStore implements GoalStateBackend {
     const rows = this.db.prepare('SELECT * FROM goal_state ORDER BY updated_at ASC')
       .all() as GoalStateDbRow[];
     const out: GoalStateV3[] = [];
+    const known = new Set<string>();
     for (const row of rows) {
       const parsed = this.parse(row);
-      if (parsed) out.push(parsed);
+      if (!parsed) continue;
+      out.push(parsed);
+      known.add(parsed.goalId);
+    }
+
+    // History-only goals (row + mirror both gone) must still be discovered so
+    // boot recovery can rebuild them. Replay-recover them here.
+    if (this.events && this.snapshots) {
+      const ids = this.db.prepare(`
+        SELECT DISTINCT aggregate_id AS id FROM domain_events
+        WHERE aggregate_type = 'goal' AND type = 'goal.state.changed'
+      `).all() as Array<{ id: string }>;
+      for (const { id } of ids) {
+        if (known.has(id)) continue;
+        const replayed = this.replayFromHistory(id);
+        if (!replayed) continue;
+        this.persistRow(id, replayed.state, this.now());
+        if (replayed.state.mafwDir) {
+          try {
+            saveGoalStateFile(replayed.state.mafwDir, id, replayed.state);
+          } catch {
+            /* mirror only */
+          }
+        }
+        out.push(replayed.state);
+        known.add(id);
+      }
     }
     return out;
   }

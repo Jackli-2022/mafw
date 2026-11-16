@@ -76,8 +76,74 @@ test('prefix parity across a revision reset', () => {
   }
 });
 
-test('replay performs no writes and never touches the state row', () => {
+test('undefined patch keys clear the field on replay', () => {
   const h = setup();
+  try {
+    ensureGoalState(h.dir, 'g1', { projectDir: '/p', maxRounds: 3 });
+    writeGoalState(h.dir, 'g1', {
+      planApproval: { id: 'a1', status: 'pending', round: 1 } as any,
+    });
+    writeGoalState(h.dir, 'g1', { planApproval: undefined });
+    const live = h.store.load(h.dir, 'g1')!;
+    const replayed = replayGoalState({ goalId: 'g1', events: h.events, snapshots: h.snapshots })!;
+    expect(live.planApproval).toBeUndefined();
+    expect(replayed.state).toStrictEqual(live);
+  } finally {
+    teardown(h);
+  }
+});
+
+test('replays beyond one page of events', () => {
+  const h = setup();
+  try {
+    ensureGoalState(h.dir, 'g1', { projectDir: '/p', maxRounds: 3 });
+    for (let i = 0; i < 650; i += 1) {
+      writeGoalState(h.dir, 'g1', { currentWave: i });
+    }
+    const replayed = replayGoalState({ goalId: 'g1', events: h.events, snapshots: h.snapshots })!;
+    expect(replayed.state.currentWave).toBe(649);
+    expect(replayed.state).toStrictEqual(h.store.load(h.dir, 'g1'));
+  } finally {
+    teardown(h);
+  }
+});
+
+test('paginates history instead of truncating at one page', () => {
+  const events: any[] = [{
+    eventId: 'e1', type: 'goal.state.changed', aggregateType: 'goal', aggregateId: 'g1',
+    aggregateVersion: 1, occurredAt: '2026-11-16T00:00:00.000Z',
+    recordedAt: '2026-11-16T00:00:00.000Z', actor: null, correlationId: null,
+    causationId: null, audience: 'none', schemaVersion: 1,
+    payload: {
+      goalId: 'g1', revision: 1, stateVersion: 0, round: 1, loop: 1,
+      updatedAt: '2026-11-16T00:00:00.000Z', reset: true,
+      resetState: { version: '3', goalId: 'g1', revision: 1, projectDir: '/p', mafwDir: '/m', phase: 'PLANNING', round: 1, loop: 1, maxRounds: 3, nextAction: 'RUNNING_plan', currentWave: 0, updatedAt: '2026-11-16T00:00:00.000Z' },
+    },
+  }];
+  for (let i = 0; i < 650; i += 1) {
+    events.push({
+      eventId: `e${i + 2}`, type: 'goal.state.changed', aggregateType: 'goal', aggregateId: 'g1',
+      aggregateVersion: i + 2, occurredAt: '2026-11-16T00:00:00.000Z',
+      recordedAt: '2026-11-16T00:00:00.000Z', actor: null, correlationId: null,
+      causationId: null, audience: 'none', schemaVersion: 1,
+      payload: {
+        goalId: 'g1', revision: 1, stateVersion: 0, round: 1, loop: 1,
+        updatedAt: '2026-11-16T00:00:00.000Z', reset: false, patch: { currentWave: i },
+      },
+    });
+  }
+  const fakeEvents = {
+    listAggregate: (_type: string, _id: string, opts: { afterVersion?: number; limit?: number } = {}) => {
+      const after = opts.afterVersion ?? 0;
+      return events.filter((e) => e.aggregateVersion > after).slice(0, 500);
+    },
+  } as any;
+  const fakeSnapshots = { latest: () => null } as any;
+  const replayed = replayGoalState({ goalId: 'g1', events: fakeEvents, snapshots: fakeSnapshots });
+  expect(replayed!.state.currentWave).toBe(649);
+});
+
+test('replay performs no writes and never touches the state row', () => {  const h = setup();
   try {
     ensureGoalState(h.dir, 'g1', { projectDir: '/p', maxRounds: 3 });
     writeGoalState(h.dir, 'g1', { phase: 'EXECUTING' });
