@@ -15,6 +15,7 @@ import { getEmbeddingRuntime } from '../memory/embedding-runtime';
 import { redactSecrets } from '../recall/redact';
 import { obsSalience } from '../recall/obs-salience';
 import type { GatewayDatabase } from '../memory/gateway-db';
+import type { T1EpisodeBoundary } from '../recall/t1-episodes';
 import type { IndexScanService } from '../recall/index-scan';
 import type { RouteRegistry } from './registry';
 
@@ -100,6 +101,14 @@ export function attachObsRoutes(registry: RouteRegistry, deps: ObsRouteDeps): vo
           failure,
           salience,
         });
+        // A queued `/new-episode` boundary binds to this new user turn. The
+        // edge is `turnSeq - 1`, so capture timing cannot move completed turns.
+        let episodeBoundary: unknown = null;
+        if (source === 'user_input' && typeof db.consumePendingEpisodeBoundary === 'function') {
+          try {
+            episodeBoundary = db.consumePendingEpisodeBoundary(sessionID, turn.turn_seq);
+          } catch { /* fail-open: boundary can be declared again */ }
+        }
         // V1 verbatim layer: fire-and-forget dense embedding of the raw
         // row. Key = session:turn:contentHash — stable across the
         // obs→archive move, idempotent on identical content. Fail-open.
@@ -130,12 +139,105 @@ export function attachObsRoutes(registry: RouteRegistry, deps: ObsRouteDeps): vo
           } catch { /* fail-open */ }
         }
         res.writeHead(200);
-        res.end(JSON.stringify({ ok: true, id, turnId: turn.turn_seq, traceId: turn.trace_id, deduped: id === null }));
+        res.end(JSON.stringify({
+          ok: true,
+          id,
+          turnId: turn.turn_seq,
+          traceId: turn.trace_id,
+          deduped: id === null,
+          ...(episodeBoundary ? { episodeBoundary } : {}),
+        }));
       } catch (err: any) {
         // fail-open: never let capture errors surface to the plugin
         log.warn(`[Scheduler] /api/obs/capture failed: ${err.message}`);
         res.writeHead(200);
         res.end(JSON.stringify({ ok: false, error: err.message }));
+      }
+    });
+  });
+
+  // POST /api/obs/episode-boundary — append-only episode edge declaration.
+  // `next_user_turn` only queues a flag; capture consumes it later.
+  registry.attachHandler('obs.episodeBoundary', async (req: IncomingMessage, res: ServerResponse) => {
+    let body = '';
+    let aborted = false;
+    req.on('data', (chunk: Buffer) => {
+      body += chunk.toString('utf-8');
+      if (body.length > 1_000_000) {
+        aborted = true;
+        req.destroy();
+      }
+    });
+    req.on('end', () => {
+      if (aborted) return;
+      try {
+        const data = JSON.parse(body || '{}');
+        const sessionID = String(data?.sessionID || '');
+        if (!sessionID) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ ok: false, error: 'sessionID required' }));
+          return;
+        }
+        const scope = data?.scope == null ? undefined : String(data.scope);
+        if (
+          scope !== undefined &&
+          !['start_new', 'end_current', 'next_user_turn'].includes(scope)
+        ) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ ok: false, error: 'invalid scope: use start_new|end_current|next_user_turn' }));
+          return;
+        }
+        const reason = typeof data?.reason === 'string' ? data.reason : undefined;
+        const intent = typeof data?.intent === 'string' ? data.intent : undefined;
+        const source = data?.source === 'user' ? 'user' : 'agent';
+        const nowSec = Math.floor(Date.now() / 1000);
+        const db = deps.getGatewayDb();
+
+        if (scope === 'next_user_turn') {
+          db.setPendingEpisodeBoundary(sessionID, {
+            reason: reason ?? 'user_declared',
+            intent,
+            createdAt: nowSec,
+          });
+          res.writeHead(200);
+          res.end(JSON.stringify({ ok: true, pending: true }));
+          return;
+        }
+
+        const current = db.currentTurn(sessionID);
+        const currentMax = current?.turn_seq ?? 0;
+        const explicit = Number(data?.afterTurn);
+        const hasExplicit = Number.isFinite(explicit) && explicit >= 0;
+        if (!hasExplicit && currentMax < 1) {
+          res.writeHead(200);
+          res.end(JSON.stringify({ ok: true, ignored: true }));
+          return;
+        }
+        const afterTurn = hasExplicit
+          ? Math.trunc(explicit)
+          : scope === 'end_current'
+            ? currentMax
+            : currentMax - 1;
+        if (!hasExplicit && afterTurn <= 0) {
+          res.writeHead(200);
+          res.end(JSON.stringify({ ok: true, ignored: true }));
+          return;
+        }
+
+        const boundary: T1EpisodeBoundary = {
+          sessionId: sessionID,
+          afterTurn,
+          source,
+          reason: reason as T1EpisodeBoundary['reason'] | undefined,
+          intent,
+          createdAt: nowSec,
+        };
+        db.recordEpisodeBoundary(boundary);
+        res.writeHead(200);
+        res.end(JSON.stringify({ ok: true, boundary }));
+      } catch (err: any) {
+        res.writeHead(500);
+        res.end(JSON.stringify({ ok: false, error: err?.message || String(err) }));
       }
     });
   });
