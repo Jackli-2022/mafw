@@ -250,7 +250,7 @@ export class HarmonicIndexManager {
     return result;
   }
 
-  addEntry(unit: HarmonicUnit, tier: string): void {
+  addEntry(unit: HarmonicUnit, tier: string, opts: { save?: boolean } = {}): void {
     const entry = {
       id: unit.id,
       type: unit.type || (unit as any).memory_type || 'semantic',
@@ -294,7 +294,7 @@ export class HarmonicIndexManager {
     } else {
       this.index.entries.push(entry);
     }
-    this.save();
+    if (opts.save !== false) this.save();
     this.hookManager?.execute('memory.write', {
       unit,
       tier,

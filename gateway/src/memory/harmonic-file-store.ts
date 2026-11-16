@@ -56,7 +56,7 @@ export class HarmonicUnitFileStore {
     return this.coactivationStore;
   }
 
-  async write(unit: HarmonicUnit, tier?: string): Promise<string> {
+  async write(unit: HarmonicUnit, tier?: string, opts: { save?: boolean } = {}): Promise<string> {
     let fileName = '';
     let writtenUnit: HarmonicUnit = unit;
     // C: auto-fill missing cue_anchors from the abstraction so every memory
@@ -117,7 +117,7 @@ export class HarmonicUnitFileStore {
         distilled_by: targetUnit.distilled_by,
         commitment_capped_at: (targetUnit as any).commitment_capped_at,
         novelty: (targetUnit as any).novelty,
-      } as any, entryTier);
+      } as any, entryTier, opts);
 
       // 閿氱偣鍥撅紙澶氳烦妫€绱級澧為噺鏇存柊鈥斺€斿け璐ヤ笉褰卞搷璁板繂鍐欏叆锛堥檷绾э級
       try {
