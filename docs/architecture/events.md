@@ -31,7 +31,33 @@ Source → Trigger → Thread → Subscription → Decision → Delivery → Cha
 - `event_decisions`：Tech Lead accept / ignore / unavailable + mode + rationale。
 - `event_deliveries`：per-subscriber 状态机 pending → delivered → read → acknowledged → answered；
   失败/丢弃可见。
-- `event_channels` / `event_outbox`：频道与先存后发的 outbox，失败重试 5s→300s。
+- `event_channels` / `event_outbox`：频道与先存后发的 outbox，失败重试 5s→300s；
+  Phase 2 起 outbox 行带 `read_at` / `ack_at` / `sent_session_id`（Lead inbox 回执）。
+
+## Domain event log（Phase 2，2026-11-16）
+
+- `domain_events` 是独立 append-only 表（`gateway/src/core/events/domain-event-store.ts`），
+  与 `pod_events` 分工：
+  - `domain_events` 存事实（`goal.*` 生命周期，后续 `external.*`）；
+    `UNIQUE(aggregate_type, aggregate_id, aggregate_version)` 保证同一 aggregate 版本单调；
+  - `pod_events` 保持「事件 → 人」的 inbox 投影（unread / seen / attention），不并入 domain log。
+- `append` 在单事务内取 `MAX(aggregate_version)+1`；`eventId` 幂等；`expectedVersion`
+  不匹配抛 `DomainEventConflictError`。
+- 当前生产者全部在 kernel（NodeDriver 仍是执行权威）：`goal.created`、`goal.phase.changed`、
+  `goal.node.started`、`goal.node.completed`、`goal.node.failed`、`goal.result`、`goal.failed`。
+- 归档：`PodGoalService.onGoalArchived(..., { inTransaction })` 在同一个 SQLite 事务里写
+  goal 状态 + domain event + pod event + lead outbox；任一失败整体回滚。
+- 投影：`goal-view-projector.ts` 从事件重建 `GoalLifecycleProjection`；Phase 2 只做 parity，
+  读路径仍是 `buildPodGoalView`（Phase 3 接管）。
+
+### Lead read / ack（2026-11-16 定案）
+
+- **read = 人看到**：客户端把某个 Goal 的 Pod event 标记 seen
+  （`POST /api/pods/:podId/events/:id/seen` 或 `.../events/seen`）后，该 goal 的 lead outbox
+  行写 `read_at`；`wake_session_id='outbox:<id>'` 的行也可按 id 精确回写。
+- **ack = Lead 回复**：Lead 会话 `turn.completed` 且成员角色是 `lead` 时，只 ack
+  `sent_session_id` 等于该会话的行（`ack_at`）；同一会话服务多个 Pod 也不会跨 Pod 误 ack。
+- read / ack 都是幂等的；`a2a:<messageId>` 行不参与 read。
 
 ## 流程
 

@@ -337,6 +337,9 @@ spec `docs/superpowers/specs/2026-11-10-lead-techlead-p2-scheduler-design.md`；
   只入 LeadOutbox，由同一 dispatcher 唤醒 Lead），并在
   `<mafwDir>/goals/<goalId>/context/tech-lead-failure.md` 留 Tech Lead handoff；下一次
   Tech Lead 会话的 ContextManifest 自动带上。`stateMissing` 且无错误的 blocked 不再冒充人类阻塞。
+  `wake_session_id` 有三种形态：`outbox:<id>`（已入 outbox）、`a2a:<messageId>`（A2A 已投递、
+  不再入 outbox）、或旧版直接送达的 session id。read = 人把这个 goal 的事件标 seen；
+  ack = Lead 会话 `turn.completed`（按 `event_outbox.sent_session_id` 收敛）。
 - **Pause / Resume**：`pause` 把 `phase/nextAction` 存进 `_resumePhase/_resumeNextAction` 后写 PAUSED；
   `POST /api/goals/:id/resume` 恢复并 `advance`。`retry` 只接受 active revision 内 failed/aborted/
   timed-out run，显式 runId 跨 revision 或成功 run 返回 409/404。
