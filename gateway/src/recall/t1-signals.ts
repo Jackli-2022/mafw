@@ -63,6 +63,7 @@ export function normalizeObservationText(rows: Array<{ content?: unknown }>): st
 export function isInformativeTurn(text: string, anchorCount: number): boolean {
   const body = String(text ?? '').trim();
   if (!body) return false;
+  if (body === '[object Object]') return false;
   if (SYSTEM_PROMPT.test(body)) return false;
   return body.length >= 120 || anchorCount > 0;
 }
@@ -137,7 +138,9 @@ export async function computeTurnSignals(
       if (!contentVector) continue;
       const contentSim = bestCandidateSim(input, contentVector, deps);
       if (contentSim == null) continue;
-      const cueVector = cueByIndex.get(idx);
+      // CA1 comparison needs a real input; short turns have no "details" to
+      // diverge, and their generic cue matches everything.
+      const cueVector = input.text.trim().length >= 120 ? cueByIndex.get(idx) : undefined;
       const cueSim = cueVector ? bestCandidateSim(input, cueVector, deps) : null;
       const signals = scoreTurnSignals(contentSim, cueSim);
       if (signals) scored.set(input.traceId, signals);

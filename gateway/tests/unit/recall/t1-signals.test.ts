@@ -25,9 +25,12 @@ function deps(cosByText: Record<string, number>) {
   };
 }
 
+const BODY =
+  'a long enough turn body that passes the informative gate and carries enough detail about reflection boundary recall behavior';
+
 const input = (over: Record<string, unknown> = {}) => ({
   traceId: 't1t_a',
-  text: 'a long enough turn body that passes the informative gate',
+  text: BODY,
   cue: 'fix reflection',
   lastTs: Date.parse('2026-02-01T00:00:00.000Z') / 1000,
   anchorCount: 2,
@@ -39,7 +42,7 @@ describe('t1 signals', () => {
     const map = await computeTurnSignals(
       [input()],
       deps({
-        'a long enough turn body that passes the informative gate': 0.95,
+        'a long enough turn body that passes the informative gate and carries enough detail about reflection boundary recall behavior': 0.95,
         'fix reflection': 0.9,
       }),
     );
@@ -51,7 +54,7 @@ describe('t1 signals', () => {
     const map = await computeTurnSignals(
       [input()],
       deps({
-        'a long enough turn body that passes the informative gate': 0.4,
+        [BODY]: 0.4,
         'fix reflection': 0.9,
       }),
     );
@@ -63,7 +66,7 @@ describe('t1 signals', () => {
     const map = await computeTurnSignals(
       [input()],
       deps({
-        'a long enough turn body that passes the informative gate': 0.1,
+        [BODY]: 0.1,
         'fix reflection': 0.05,
       }),
     );
@@ -81,7 +84,7 @@ describe('t1 signals', () => {
     units.m1 = { ...units.m1, supersededBy: 'm2' };
     const map = await computeTurnSignals(
       [input()],
-      deps({ 'a long enough turn body that passes the informative gate': 0.99 }),
+      deps({ [BODY]: 0.99 }),
     );
     expect(map.has('t1t_a')).toBe(false);
     units.m1 = { createdAt: '2026-01-01T00:00:00.000Z', type: 'semantic' };
@@ -91,7 +94,7 @@ describe('t1 signals', () => {
     units.m1 = { ...units.m1, createdAt: '2027-01-01T00:00:00.000Z' };
     const map = await computeTurnSignals(
       [input()],
-      deps({ 'a long enough turn body that passes the informative gate': 0.99 }),
+      deps({ [BODY]: 0.99 }),
     );
     expect(map.has('t1t_a')).toBe(false);
     units.m1 = { createdAt: '2026-01-01T00:00:00.000Z', type: 'semantic' };
@@ -108,7 +111,7 @@ describe('t1 signals', () => {
     units.m1 = { createdAt: '2026-01-01T00:00:00.000Z', type: 'episodic' };
     const map = await computeTurnSignals(
       [input()],
-      deps({ 'a long enough turn body that passes the informative gate': 0.99 }),
+      deps({ [BODY]: 0.99 }),
     );
     expect(map.has('t1t_a')).toBe(false);
     units.m1 = { createdAt: '2026-01-01T00:00:00.000Z', type: 'semantic' };
@@ -146,5 +149,16 @@ describe('t1 signals', () => {
       deps({}),
     );
     expect(map.size).toBe(0);
+  });
+
+  test('short anchored turns get novelty but no mismatch', async () => {
+    const short = input({ text: '继续', cue: '继续 gateway', anchorCount: 2 });
+    const map = await computeTurnSignals([short], deps({ 继续: 0.9, '继续 gateway': 0.95 }));
+    expect(map.get('t1t_a')!.novelty).toBeCloseTo(0.1);
+    expect(map.get('t1t_a')!.mismatch).toBe(0);
+  });
+
+  test('the "[object Object]" ingestion artifact is not scored', () => {
+    expect(isInformativeTurn('[object Object]', 3)).toBe(false);
   });
 });
