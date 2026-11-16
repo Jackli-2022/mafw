@@ -41,7 +41,7 @@ T1 已经是可用的海马体闭环，但皮层条目几乎指不回去：
 - 修复：`addEntry` 按 id upsert（新增 RED→GREEN 测试）。
 - 第二层修复：upsert 若直接替换 entry 会丢掉 index 既有字段（`last_decay_at` 等）；改为 merge spread，并从备份恢复 **464 条**被回填覆盖的衰减基线（新增测试）。
 - 一次性去重：18,300 → **16,251** 条唯一 unit（移除 2,049 条重复）。
-- 去重后 `withEpisode = 701`、`episodeCoverage = 4.31%`；14 条被回填的 unit 在去重前已因 supersede/清理不在索引里。
+- 去重后 `withEpisode = 701`、`episodeCoverage = 4.31%`；715 次回填写入对应 **701 个唯一 id**，另外 14 条是重复索引条目，不是丢失的 unit。
 - 结论：之前 stats 的 17,559 条高估了约 1,300 条；真实皮层 unit 数是 **16,251**。
 
 ## 测试
@@ -75,7 +75,7 @@ api contract     320/320
 
 ## 已知限制
 
-- 15,550 条无 trace 的旧 unit 仍未接地；不做 session/time 猜测。
+- 15,564 条无 trace 的旧 unit 仍未接地；按设计不猜。可用的高置信后备：677 个 session 只有 1 个 episode（4,761 条 unit），以及 2,178 条写于该 session 最后一个 episode 之后；这些应作为 `episode_hint`（带 basis/confidence）而不是 `episode_id`。
 - 一个 unit 可能来自多个 episode，字段只存一个软提示（首条可解析 trace）。
 - 去重后仍有 1,998 条 legacy episodic、5,025 条 superseded（读时过滤）；属于 E3 卫生计划。
 - 真正提升召回还需要 E2 的 novelty/mismatch 和 E4 的 surprise 驱动 replay。
