@@ -2527,6 +2527,24 @@ export function MafwShell() {
     )
     recordRecentFile(rel, contentScopeFromFocus(scope))
   }
+  const prefersReducedMotion = (): boolean =>
+    typeof window.matchMedia === "function"
+    && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+
+  const fileMorphTarget = (): HTMLElement | null =>
+    document.querySelector<HTMLElement>(".mafw-file-preview, .mafw-editor-host, .mafw-editor-dock")
+
+  const fileTreeRowFor = (rel: string): HTMLElement | null =>
+    Array.from(document.querySelectorAll<HTMLElement>(".mafw-file-tree-row"))
+      .find((row) => row.getAttribute("title") === rel) ?? null
+
+  const isOnScreen = (el: HTMLElement): boolean => {
+    const rect = el.getBoundingClientRect()
+    return rect.width > 0 && rect.height > 0
+      && rect.bottom > 0 && rect.top < window.innerHeight
+      && rect.right > 0 && rect.left < window.innerWidth
+  }
+
   /**
    * File tree → editor shared element. The clicked row is the source; the
    * editor host is the target. Native View Transitions only; reduced motion
@@ -2540,11 +2558,9 @@ export function MafwShell() {
     source?: HTMLElement,
   ): void => {
     if (!root) return
-    const reduceMotion = typeof window.matchMedia === "function"
-      && window.matchMedia("(prefers-reduced-motion: reduce)").matches
     if (
       !source
-      || reduceMotion
+      || prefersReducedMotion()
       || typeof document.startViewTransition !== "function"
       || fileOpenPlan(rel) !== "editor"
     ) {
@@ -2559,9 +2575,7 @@ export function MafwShell() {
       // Solid applies the focus update synchronously, but the editor host may
       // mount a tick later; wait one microtask before naming the target.
       await Promise.resolve()
-      const target = document.querySelector<HTMLElement>(
-        ".mafw-file-preview, .mafw-editor-host, .mafw-editor-dock",
-      )
+      const target = fileMorphTarget()
       if (target) {
         target.style.viewTransitionName = name
         target.dataset.fileMorphTarget = "1"
@@ -2898,7 +2912,7 @@ export function MafwShell() {
       requestBrowserNavigate(action.url)
     }
   }
-  const focusBack = () => {
+  const focusBackNow = () => {
     const state = focusState()
     if (state.stack.length > 1) {
       const next = popFocus(state)
@@ -2910,6 +2924,43 @@ export function MafwShell() {
     if (focusState().stack.length === 1) {
       showWorkbenchLanding()
     }
+  }
+  /**
+   * Editor → file tree reverse morph. Only when back lands on the world
+   * landing (no previous file/goal); deeper history and hidden tree rows fall
+   * through to the normal back behavior.
+   */
+  const focusBack = () => {
+    const state = focusState()
+    const top = state.stack.at(-1)?.subject
+    const next = state.stack.length > 1 ? state.stack[state.stack.length - 2] : null
+    const returnsToLanding = !next || next.subject.kind === "world"
+    if (
+      top?.kind !== "file"
+      || !returnsToLanding
+      || prefersReducedMotion()
+      || typeof document.startViewTransition !== "function"
+    ) {
+      focusBackNow()
+      return
+    }
+    const source = fileMorphTarget()
+    const target = fileTreeRowFor(top.rel)
+    if (!source || !target || !isOnScreen(target)) {
+      focusBackNow()
+      return
+    }
+    const name = "mafw-file-morph"
+    source.style.viewTransitionName = name
+    const transition = document.startViewTransition(async () => {
+      focusBackNow()
+      await Promise.resolve()
+      target.style.viewTransitionName = name
+    })
+    transition.finished.finally(() => {
+      source.style.viewTransitionName = ""
+      target.style.viewTransitionName = ""
+    })
   }
   const focusCrumb = (index: number) => {
     const next = jumpTo(focusState(), index)

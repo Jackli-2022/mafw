@@ -152,7 +152,8 @@
   颜色/透明度不用 spring。
 - **文件树 → 编辑器 shared element（2026-11-16）**：点击文件行用 View Transition 把行 morph 到
   `.mafw-editor-dock` / `.mafw-file-preview`，340ms `cubic-bezier(.32,.72,0,1)`；reduced motion、
-  browser 类文件或旧运行时直接打开，不启用。
+  browser 类文件或旧运行时直接打开，不启用。反向 `focusBack` 在返回 world landing 且文件树行
+  可见时，从编辑器 morph 回原行；深层历史或行已滚出视口则走普通返回。
 - **业界对照与升级建议（2026-11-16）**：`docs/research/2026-11-16-desktop-premium-ui-motion-research.md`
   （Hermes / OpenCode / Linear / Carbon / Material 3 的视觉与动效基准，以及 MAFW 的减法/编排优先级）。
 - **Precision Instrument 局部落地（2026-11-16）**：topstrip 非活动 session tab 不再显示身份点，

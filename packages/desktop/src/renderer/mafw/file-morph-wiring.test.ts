@@ -26,4 +26,10 @@ describe("file tree → preview shared element", () => {
     expect(css).toContain("::view-transition-group(mafw-file-morph)")
     expect(shell).toContain("transition.finished")
   })
+
+  test("editor back reverse-morphs into the file tree row", () => {
+    expect(shell).toContain("focusBackNow")
+    expect(shell).toMatch(/const focusBack = \(\) => \{[\s\S]*startViewTransition/)
+    expect(shell).toContain("fileTreeRowFor")
+  })
 })
