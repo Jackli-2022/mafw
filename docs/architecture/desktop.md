@@ -74,6 +74,9 @@
   标题栏保持「会话首字母 + 会话标题」。用户消息气泡右下角常显时间，hover / focus 时操作按钮
   在原位覆盖时间，不挤动布局。assistant 时间由 session-ui 通用 `data-turn-time` 提供，
   Lore 样式只在桌面壳层 `mafw.css`。
+- **Chat 阅读密度（2026-11-16）**：正文 16px / 1.6（`--mafw-chat-leading`，对齐 ChatGPT
+  1.5–1.63 / Claude 1.5–1.6 / Gemini 1.55），段距保持 16px；「已思考」到正文只保留
+  assistant content 的 12px flex gap，取消 text-part 12px 顶距与 thinking 2px 底距叠加。
 - **Agent-native Chat 意图（2026-11-15 起）**：composer 只保留一个发送面，讨论 / 提议 / 委托 / 解决
   四模式已移除。Lead 按系统提示直接调用 `mafw_create_goal` 建立 `discussing` Goal（带当前话题
   快照，不启动 NodeDriver）；桌面把该工具结果渲染成 `GoalCreatedCard`（打开 Tech Lead 讨论 /
