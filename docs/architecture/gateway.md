@@ -449,6 +449,8 @@ kernel.ts 的 7 个管线 action 经 `setActionsProvider` 注册，`start()`/`re
   Singleflight），不是调度闸门。
 - **PodEventWake**：B2 已迁移——scan 经 scheduler `midground` + `coalesce`
   （`mutexKey: 'pod-event-wake'`），定时器 + notify 并发合流，关闭双投递竞态。
+  2026-11-16 起它只做 outbox producer（每个 Pod event 一行 `pod-event:<eventId>`），
+  预算/批量/重试统一由 `LeadOutbox` 负责，不再直接 `promptAsync`。
 - **边界 recall 100ms 路径**：最敏感延迟路径零改动（零新增延迟风险）；foreground 通道
   在生产中由 user/llm 触发的 automation 消费。
 - HTTP 诊断端点（`/api/scheduler/stats`）留给 Phase D 诊断面合并。

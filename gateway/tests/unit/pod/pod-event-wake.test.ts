@@ -22,6 +22,8 @@ function harness(over: Partial<any> = {}) {
       enqueued.push(input);
       return { id: `outbox_${enqueued.length}` };
     }),
+    leadMemberId: () => over.leadMemberId ?? 'lead',
+    deliveryDelivered: () => over.alreadyDelivered ?? false,
     isPodPaused: () => over.paused ?? false,
     now: () => over.now ?? 1_000_000,
     runScan: over.runScan,
@@ -50,6 +52,16 @@ test('paused pod leaves events pending', async () => {
   await h.wake.scan('p');
   expect(h.enqueued).toHaveLength(0);
   expect(h.queued).toHaveLength(0);
+});
+
+test('skips enqueue when the mirrored message was already delivered by A2A', async () => {
+  const h = harness({
+    alreadyDelivered: true,
+    pending: [ev({ refsJson: JSON.stringify([{ kind: 'message', id: 'm1' }]) })],
+  });
+  await h.wake.scan('p');
+  expect(h.enqueued).toHaveLength(0);
+  expect(h.queued).toEqual([['e1', 'a2a:m1']]);
 });
 
 test('enqueue failure leaves the event pending', async () => {

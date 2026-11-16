@@ -4088,6 +4088,8 @@ class MafwScheduler {
         if (!outbox) throw new Error('lead outbox unavailable');
         return outbox.enqueuePodEvent({ podId, eventId, goalId, text, priority });
       },
+      leadMemberId: (podId) => this.podStore?.getMemberByRole(podId, 'lead')?.id ?? null,
+      deliveryDelivered: (messageId, memberId) => this.podStore?.hasDelivery(messageId, memberId) ?? false,
       isPodPaused: (podId) => this.podStore?.getPod(podId)?.status === 'paused',
       // B2: coalesce scans via the unified scheduler — the 60s timer scan and a
       // p2-notify scan landing together join the in-flight one.

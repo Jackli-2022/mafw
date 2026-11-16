@@ -22,6 +22,9 @@ export interface PodEventWakeDeps {
     text: string;
     priority?: 'p1' | 'p2' | 'p3';
   }): { id: string } | Promise<{ id: string }>;
+  /** A2A may have already delivered the mirrored member message to Lead. */
+  leadMemberId?(podId: string): string | null;
+  deliveryDelivered?(messageId: string, memberId: string): boolean;
   isPodPaused(podId: string): boolean;
   now?(): number;
   /** Single-flight wrapper for scans: concurrent scan() calls join the
@@ -96,6 +99,15 @@ export class PodEventWake {
     for (const [currentPod, events] of byPod) {
       if (this.deps.isPodPaused(currentPod)) continue;
       for (const event of events) {
+        const messageId = messageIdOf(event);
+        const lead = this.deps.leadMemberId?.(event.podId) ?? null;
+        if (messageId && lead && this.deps.deliveryDelivered?.(messageId, lead)) {
+          // The A2A bridge already delivered the mirrored message; do not
+          // enqueue a second Lead notice. Record it as queued with an a2a marker.
+          this.deps.events.markWakeQueued(event.id, `a2a:${messageId}`);
+          delivered += 1;
+          continue;
+        }
         try {
           const row = await this.deps.enqueue({
             podId: event.podId,

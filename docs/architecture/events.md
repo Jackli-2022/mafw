@@ -48,7 +48,7 @@ Source → Trigger → Thread → Subscription → Decision → Delivery → Cha
 5. **Thread close**：`POST /api/event-threads/:id/close` 把线程置为 `closed`；已投递/已读/
    已确认/失败的 Delivery 收口为 `handed_back`，未投递的 `pending` 记为 `dropped`。
 
-### Decision → Lead 播报（2026-11-16）
+### Decision / Pod event → Lead 播报（2026-11-16）
 
 - `DecisionRecordService.emit('drafted')`（仅 `agent` 起草的 draft）→ kernel
   `ingestDecisionEvent` → `internal` source 的 `decision.drafted` trigger：
@@ -59,17 +59,22 @@ Source → Trigger → Thread → Subscription → Decision → Delivery → Cha
 - `deliverContext` 只做 **耐久入队**，不再直接调模型 session：每个 Pod 一个 `chat`
   channel（`lead:<podId>`），`dedupeKey = decision:<recordId>`，payload 保存渲染好的
   `[LEAD EVENT]` 文本、priority、podId / goalId / recordId。
+- `PodEventWake` 2026-11-16 起也不再直接 `promptAsync`：每个 pending `pod_events` 行写成
+  同 channel 的 `pod-event:<eventId>` outbox 行；`wake_state='delivered'` 只表示已入
+  outbox（`wake_session_id='outbox:<id>'`），**不代表 Lead 已收到**。
 - `LeadOutbox` dispatcher 每 5s 取 pending（含到期 failed）：按 channel 批量，
   p1 → p2 → p3 再按 createdAt；`maxBatch=5`、`maxPerHour=6`、两批最小间隔 60s。
   成功逐行 `sent`，失败逐行 `failed` 并按既有 outbox 退避重试；预算/间隔只延迟，
   不丢行，重启后 pending / 到期 failed 继续。dispatcher 只拥有 `lead:*` channel；
   `event_outbox` 其他生产者的行原样保留。kernel shutdown 先停 timer，并在关闭 DB 前
   等待在飞 dispatch 落盘（5s 上限），避免同一决定重启后重复播报。
-- 多条决定合并成一条消息（`[LEAD EVENT] N 条待确认` + 编号块），单条保持原文；
-  同一 `recordId` 重复 enqueue 只留一行。Lead 只负责转达，确认 / 搁置仍是 human-only。
-- `event_deliveries.delivered` 只表示 context 已成功写入 outbox，**不代表 Lead 已收到**；
-  实际发送状态看 `event_outbox.state`（`pending` / `sent` / `failed` / `dropped`）。
-- P0 不做：`PodEventWake` 合并、read / ack、agent-set timers、watchdog；这些留在后续阶段。
+- 多条 decision / pod-event 合并成一条消息（`[LEAD EVENT] N 条待确认` 或
+  `[POD EVENT] N 条待处理` + 编号块），单条保持原文；同一 `recordId` / `eventId`
+  重复 enqueue 只留一行。Lead 只负责转达，确认 / 搁置仍是 human-only。
+- `event_deliveries.delivered` 与 `pod_events.wake_state='delivered'` 都只表示已成功写入
+  outbox，**不代表 Lead 已收到**；实际发送状态看 `event_outbox.state`
+  （`pending` / `sent` / `failed` / `dropped`）。
+- 仍不做：read / ack、agent-set timers、dispatcher watchdog；这些留在后续阶段。
 - `internal` / `cron` 系统 source 在事件层启动时 ensure；外部 GitHub / webhook source 仍需显式创建。
 
 ## GitHub 来源

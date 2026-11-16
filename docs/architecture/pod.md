@@ -333,8 +333,9 @@ spec `docs/superpowers/specs/2026-11-10-lead-techlead-p2-scheduler-design.md`；
 - **Attention 可达性（2026-11-16 修订）**：`review` 只由 `PASS/UNREVIEWED` 的
   `resultReady && !accepted` 派生（`open_result`）；终态 `FAIL/MAX_RETRIES/ERROR`（`!accepted`）
   派生 `failed`（`open_result`），同时进入 Pod detail attention 与 `/api/attention`，不再冒充
-  “待验收”。归档同时写 `goal.failed` p1 / audience=lead 的 Pod event（`PodEventWake` 唤醒 Lead），
-  并在 `<mafwDir>/goals/<goalId>/context/tech-lead-failure.md` 留 Tech Lead handoff；下一次
+  “待验收”。归档同时写 `goal.failed` p1 / audience=lead 的 Pod event（`PodEventWake`
+  只入 LeadOutbox，由同一 dispatcher 唤醒 Lead），并在
+  `<mafwDir>/goals/<goalId>/context/tech-lead-failure.md` 留 Tech Lead handoff；下一次
   Tech Lead 会话的 ContextManifest 自动带上。`stateMissing` 且无错误的 blocked 不再冒充人类阻塞。
 - **Pause / Resume**：`pause` 把 `phase/nextAction` 存进 `_resumePhase/_resumeNextAction` 后写 PAUSED；
   `POST /api/goals/:id/resume` 恢复并 `advance`。`retry` 只接受 active revision 内 failed/aborted/
