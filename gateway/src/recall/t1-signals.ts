@@ -66,8 +66,11 @@ function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
 
-/** Agent/system boilerplate: same template, different payload — not a memory cue. */
-const SYSTEM_PROMPT = /^(you are (a|an)\b|\[MAFW SYSTEM\]|research task\b|research only\b)/i;
+/**
+ * Non-cue bodies: agent boilerplate and machine telemetry (perception logs).
+ * They are real raw T1 rows but carry no human experience to compare.
+ */
+const NON_CUE_PREFIX = /^(you are (a|an)\b|\[MAFW SYSTEM\]|research task\b|research only\b|【眼】)/i;
 
 /** Join raw T1 rows without turning structured content into "[object Object]". */
 export function normalizeObservationText(rows: Array<{ content?: unknown }>): string {
@@ -98,8 +101,8 @@ function proseRatio(text: string): number {
 export function isInformativeTurn(text: string, anchorCount: number): boolean {
   const body = String(text ?? '').trim();
   if (!body) return false;
-  if (body === '[object Object]') return false;
-  if (SYSTEM_PROMPT.test(body)) return false;
+  if (body.includes('[object Object]')) return false;
+  if (NON_CUE_PREFIX.test(body)) return false;
   if (proseRatio(body) < 0.35) return false;
   return body.length >= 120 || anchorCount > 0;
 }

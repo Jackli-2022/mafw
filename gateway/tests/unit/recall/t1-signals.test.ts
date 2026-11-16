@@ -163,6 +163,7 @@ describe('t1 signals', () => {
 
   test('the "[object Object]" ingestion artifact is not scored', () => {
     expect(isInformativeTurn('[object Object]', 3)).toBe(false);
+    expect(isInformativeTurn('tool result: [object Object] partial', 3)).toBe(false);
   });
 
   test('cue and content completing different memories is not a mismatch', async () => {
@@ -208,6 +209,9 @@ describe('t1 signals', () => {
   test('machine logs without prose are not scored', () => {    const log =
       '【眼】f#688 moved #661 [36, 950, 96, 962] dxy=[-18, 0] f#688 appeared #1029 [81, 975, 88, 984]';
     expect(isInformativeTurn(log, 3)).toBe(false);
+    expect(
+      isInformativeTurn('【眼】新事件: f#77 appeared #1201 and f#77 moved #958 with a long tail', 3),
+    ).toBe(false);
     expect(isInformativeTurn('const parsed = parseInsights(text); // 解析结果', 2)).toBe(true);
     expect(isInformativeTurn('修复 reflection 的边界 recall，先把 hint 的过滤补上', 2)).toBe(true);
   });
