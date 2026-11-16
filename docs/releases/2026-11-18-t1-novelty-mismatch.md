@@ -65,17 +65,17 @@ mismatch  AUC 0.484
 
 ## 测试
 
-新增 **22** 个 gateway 测试：
+新增 **23** 个 gateway 测试：
 
 - `tests/unit/memory/t1-feature-signals.test.ts`（3）：roundtrip、merge 保留、显式覆盖。
-- `tests/unit/recall/t1-signals.test.ts`（15）：复述/失配/无关、短轮、系统提示、`[object Object]`、superseded/episodic、未来记忆、空记忆池、embed 失败、clamp、同记忆约束。
+- `tests/unit/recall/t1-signals.test.ts`（16）：复述/失配/无关、短轮、系统提示、`[object Object]`、superseded/episodic、未来记忆、空记忆池、embed 失败、clamp、同记忆约束、cortex lookup。
 - `tests/unit/recall/turn-pipeline-signals.test.ts`（3）：写回、失败不阻塞、默认开启。
 - `tests/unit/routes/memory-wiring.test.ts`（+1）：`t1.signals` 分布。
 
 门禁：
 
 ```text
-gateway full     1001/1001 suites；7983 tests（7981 passed，2 skipped，0 failed）
+gateway full     1001/1001 suites；7984 tests（7982 passed，2 skipped，0 failed）
 gateway tsc      rc=0
 gateway build    rc=0
 api contract     313/313
