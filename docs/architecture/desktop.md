@@ -431,6 +431,10 @@ spec §5.1/§5.2/§5.3/§6.1/§7.5，plan `docs/superpowers/plans/2026-11-11-pro
 - **最近内容**：`recent-content.ts` 按项目持久化 `mafw-recent-content:<normalized projectDir>`，最多 8 条、同 scope+rel 去重并置顶；D2 只展示项目主目录条目，Goal revision 条目留给 D3 意图视图。
 - **双文件树 watcher**：`dir-watch-pool.ts` 对 `(root, rel)` 做 renderer 侧引用计数；项目首页树与内容树同时挂载时，任一方卸载不会误关另一方的目录监听。
 - **团队属性**：左栏删除 `pod` face；`IconRail` 的 Pod 目的地改为「Lead」入口：左键直接打开项目 Lead（当前会话是 Lead 时高亮），右键「查看团队」打开项目首页并定位团队条（attention badge / result dot 保留）。Lead / Tech Lead / 团队 / 邮箱 / 记忆入口进入项目首页团队条；`ProjectResources` 退役，`PodDock` 仍保留在执行抽屉。
+- **Lead tab 恢复（2026-11-16）**：Lead 是身份不是固定 runtime session；布局恢复只认
+  `currentLeadId(project)`，旧 Lead id / `lead-archived` 会话不再恢复成 Lead tab；Pod detail
+  刷新后 `reconcileLeadTabs` 用当前 id 替换并保持用户当前 tab 焦点。`SessionStrip.isLeadTab`
+  只认 `s.lead` 或 `leadSessionId`，不再用 Pod role 推断历史会话。
 - 旧 `mafw-left-dock-face=pod` 启动时回落 `sessions` 并重写键。
 - **左栏文件 face（2026-11-13）**：`LeftDockFace` 增加 `files`；`IconRail` 用文件夹按钮切换，
   `LeftDock` 内部不放 face 切换按钮。`FilesDock` 以 `showHeader={false}` 嵌入左 dock，
@@ -586,7 +590,8 @@ attention 通知链整体移交 `2026-11-04-pod-event-layer-ambient-attention-de
 
 ### Chat `/` 指令第二批（2026-11-16）
 
-- `/rename` 打开 `RenameSessionDialog`，写 `sessions.rename` 并更新 workspace store。
+- `/rename` 打开 `RenameSessionDialog`，写 `sessions.rename`，用 `retitleSessionEntity`
+  更新 entity cache，并同步 workspace store。
 - `/help` 打开 `ChatHelpOverlay`，列出本地命令和当前快捷键。
 - `/init` 发送固定 `INIT_AGENTS_PROMPT`，要求保留已有 `AGENTS.md` 且不提交 git。
 - `/clear` 新建会话并保留当前会话（复用 `createSession`）。
