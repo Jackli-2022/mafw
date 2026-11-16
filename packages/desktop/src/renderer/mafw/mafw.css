@@ -622,6 +622,7 @@ html[data-theme="light"] body {
   box-shadow: none;
   /* 对话阅读/输入专属字号：业界 16px，但不放大全局 UI base（spec 2026-11-04 §5.1）。 */
   --mafw-chat-reading: 16px;
+  --mafw-chat-leading: 1.6;
   --mafw-chat-composer: 16px;
 }
 
@@ -1195,7 +1196,7 @@ html[data-theme="light"] body {
   padding: 10px 14px;
   font-family: var(--font-ui);
   font-size: var(--mafw-chat-reading, 16px);
-  line-height: 1.7;
+  line-height: var(--mafw-chat-leading, 1.6);
   color: var(--text-1);
 }
 .mafw-shell [data-component="user-message"] [data-slot="user-message-body"] {
@@ -1283,10 +1284,11 @@ html[data-theme="light"] body {
   padding-left: 0;
 }
 
-/* v5.1 消息正文：16px/1.7（业界 AI 对话标准），仅 assistant text part；reasoning 块不波及 */
+/* v5.1 消息正文：16px / 1.6（ChatGPT 1.5–1.63、Claude 1.5–1.6、Gemini 1.55 区间），
+   仅 assistant text part；reasoning 块不波及 */
 .mafw-shell [data-component="text-part"] [data-component="markdown"] {
   font-size: var(--mafw-chat-reading, 16px);
-  line-height: 1.7;
+  line-height: var(--mafw-chat-leading, 1.6);
 }
 
 /* v5.2 排版节奏（业界对齐调研 2026-09-21）：
@@ -1401,6 +1403,10 @@ html[data-theme="light"] body {
 
 /* Thinking block (dsh-style collapsible reasoning) */
 .mafw-thinking { margin: 2px 0; }
+/* 思考摘要只是 metadata 行：到正文只保留 assistant content 的 12px flex gap，
+   不再叠加 text-part 的 12px 顶距与 thinking 的 2px 底距（2026-11-16）。 */
+.mafw-session-turn-container .mafw-thinking { margin-bottom: 0; }
+.mafw-session-turn-container .mafw-thinking + [data-component="text-part"] { margin-top: 0; }
 .mafw-thinking .mafw-thinking-head {
   height: 26px;
   padding: 0 4px;

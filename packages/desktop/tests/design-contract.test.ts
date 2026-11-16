@@ -108,11 +108,11 @@ describe("token v6 — 字体分层", () => {
     expect(entry).toContain("@fontsource-variable/inter")
     expect(entry).toContain("@fontsource-variable/jetbrains-mono")
   })
-  test("用户气泡与回复同字体同字号（sans 阅读 token 16px/1.7）", () => {
+  test("用户气泡与回复同字体同字号（sans 阅读 token 16px/1.6）", () => {
     const rule = cssBlock('[data-component="user-message"] [data-slot="user-message-text"] {')
     expect(rule).toContain("font-family: var(--font-ui)")
     expect(rule).toContain("font-size: var(--mafw-chat-reading, 16px)")
-    expect(rule).toContain("line-height: 1.7")
+    expect(rule).toContain("line-height: var(--mafw-chat-leading, 1.6)")
   })
 })
 
@@ -523,10 +523,10 @@ describe("token v5.1 — 双字体契约", () => {
 
 describe("token v5.1 — 消息排版", () => {
   test("列宽 720px", () => expect(dark).toContain("--msg-col-width: 720px"))
-  test("text-part 内 markdown 使用 chat 阅读 token（16px / 行高 1.7）", () => {
+  test("text-part 内 markdown 使用 chat 阅读 token（16px / 行高 1.6）", () => {
     const b = cssBlock('.mafw-shell [data-component="text-part"] [data-component="markdown"]')
     expect(b).toContain("font-size: var(--mafw-chat-reading, 16px)")
-    expect(b).toContain("line-height: 1.7")
+    expect(b).toContain("line-height: var(--mafw-chat-leading, 1.6)")
   })
 })
 
