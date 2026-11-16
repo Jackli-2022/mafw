@@ -534,8 +534,11 @@ git commit -m "docs: record lead inbox/outbox unification"
      `wake_session_id='outbox:<id>'` 的 Pod event → `event_outbox.read_at`；
    - ack：Lead 会话 `turn.completed` 且该 outbox 行记录了 `sent_session_id` →
      `event_outbox.ack_at`；Lead 自己写的 lead→lead 摘要不算 ack。
-4. 是否需要“任意时点 replay Goal”作为产品能力，还是只做崩溃恢复 + 投影重建？
-5. Phase 3 是否引入 Temporal 式 Activity/Command 抽象，还是保持 NodeDriver 现有节点函数？
+4. **已定（2026-11-16）：任意时点 replay 只做诊断/恢复能力**，不做时间旅行 UI；
+   产品面只承诺崩溃恢复 + 投影/状态重建。
+5. **已定（2026-11-16）：不引入 Temporal 式 Activity/Command 抽象**。NodeDriver 保留现有
+   节点函数；每个 `writeGoalState` 的 patch 作为 `goal.state.changed` 进入 history，
+   快照 + patch 回放即可重建状态，回放是纯函数（不调 LLM、不写文件）。
 
 ## 执行建议
 

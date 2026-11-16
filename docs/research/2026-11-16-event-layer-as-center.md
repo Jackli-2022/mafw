@@ -413,7 +413,8 @@ domain_events
 3. **已定（2026-11-16）：`domain_events` 独立表**；`pod_events` 保留为「事件 → 人」的
    inbox 投影（含 unread/seen/attention 输入），不并入 domain log。
 4. Lead / Tech Lead 的唤醒是否统一走一个 outbox dispatcher（推荐）？
-5. 是否需要“任意时点重放 Goal”作为产品能力，还是只需要崩溃恢复 + 投影重建？
+5. **已定（2026-11-16）：不需要任意时点重放作为产品能力**（只做崩溃恢复 + 投影重建），
+   也不引入 Temporal 式 Activity/Command 抽象——`goal.state.changed` patch + 快照的纯回放足够。
 
 ---
 
