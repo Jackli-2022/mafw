@@ -3,6 +3,7 @@ import assert from "node:assert/strict"
 import type { PodGoal, PodGoalStage } from "@mafw/sdk"
 import type { PodEventItem } from "./pod-events"
 import {
+  buildAttentionList,
   buildWorkPriority,
   filterWorkGoals,
   goalModeLabel,
@@ -60,6 +61,29 @@ test("important items use only the current revision", () => {
     goal: current,
     createdAt: "2026-11-09T01:00:00.000Z",
   }])
+})
+
+test("terminal failures are attention, not unseen results", () => {
+  const failed = goal({
+    goalId: "failed",
+    status: "done",
+    endedAt: "2026-11-16T00:00:00.000Z",
+    verdict: "ERROR",
+    resultReady: true,
+    bucket: "result_ready",
+  })
+  const priority = buildWorkPriority({
+    goals: [failed],
+    events: [event({ goalId: "failed", revision: 1 })],
+    isResultViewed: () => false,
+  })
+  assert.equal(priority.length, 1)
+  assert.equal(priority[0].kind, "attention")
+  assert.equal(priority[0].kind === "attention" ? priority[0].label : null, "查看失败原因")
+
+  const attention = buildAttentionList({ goals: [failed], attention: [], isResultViewed: () => false })
+  assert.deepEqual(attention.map((item) => `${item.goal.goalId}:${item.kind}`), ["failed:failed"])
+  assert.equal(attention[0].label, "查看失败原因")
 })
 
 test("attention wins over an unseen result for the same goal", () => {

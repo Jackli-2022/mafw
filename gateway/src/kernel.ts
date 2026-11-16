@@ -6343,7 +6343,7 @@ class MafwScheduler {
 
   private async finishPodGoal(
     goalId: string,
-    outcome?: { verdict: string; reviewFeedback?: string | null },
+    outcome?: { verdict: string; lastError?: string | null; reviewFeedback?: string | null },
   ): Promise<void> {
     const podId = this.podService?.getPodIdForGoal(goalId);
     const existingGoal = podId ? this.podStore?.getGoalByGoalId(goalId) : null;
@@ -6414,6 +6414,7 @@ class MafwScheduler {
         const cls = classifyGoalArchive({ verdict: (outcome.verdict as any) ?? null });
         const pod = this.podStore?.getPod(podId);
         const title = this.describePodGoal(goalId)?.title || goalId;
+        const summary = [outcome.lastError, outcome.reviewFeedback].filter(Boolean).join(' · ') || null;
         const evt = this.podEventService.record({
           ...cls,
           podId,
@@ -6421,7 +6422,8 @@ class MafwScheduler {
           goalId,
           revision,
           title: `${title} · ${outcome.verdict}`,
-          dedupeKey: goalDedupeKey(goalId, revision),
+          summary,
+          dedupeKey: goalDedupeKey(goalId, revision, cls.kind),
         });
         this.broadcast({
           type: 'pod.event',

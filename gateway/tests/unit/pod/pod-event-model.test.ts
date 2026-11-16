@@ -9,14 +9,26 @@ import {
 } from '../../../src/core/pod/pod-event-model';
 
 describe('classifyGoalArchive', () => {
-  it.each(['PASS', 'FAIL', 'MAX_RETRIES', 'ERROR', 'UNREVIEWED'] as const)(
-    '%s is p1 (resultReady is irrelevant)',
+  it.each(['PASS', 'UNREVIEWED'] as const)(
+    '%s is a p1 human result',
     (verdict) => {
       expect(classifyGoalArchive({ verdict })).toMatchObject({
         kind: 'goal.result',
         severity: 'p1',
         audience: 'human',
         reason: 'result',
+      });
+    },
+  );
+
+  it.each(['FAIL', 'MAX_RETRIES', 'ERROR'] as const)(
+    '%s is a p1 Lead failure event',
+    (verdict) => {
+      expect(classifyGoalArchive({ verdict })).toMatchObject({
+        kind: 'goal.failed',
+        severity: 'p1',
+        audience: 'lead',
+        reason: 'blocked',
       });
     },
   );
@@ -79,9 +91,11 @@ describe('classifyMemberMessage', () => {
 });
 
 describe('dedupe keys', () => {
-  it('goal key carries revision', () => {
+  it('goal key carries revision and event kind', () => {
     expect(goalDedupeKey('g1', 2)).toBe('goal.result:g1:r2');
     expect(goalDedupeKey('g1', 1)).not.toBe(goalDedupeKey('g1', 2));
+    expect(goalDedupeKey('g1', 2, 'goal.failed')).toBe('goal.failed:g1:r2');
+    expect(goalDedupeKey('g1', 2, 'goal.failed')).not.toBe(goalDedupeKey('g1', 2));
   });
 
   it('member key carries message id', () => {

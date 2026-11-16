@@ -70,7 +70,7 @@ describe("buildAttentionList", () => {
       isResultViewed: () => false,
     })
     expect(items.map((item) => `${item.goal.goalId}:${item.kind}`)).toEqual([
-      "plan:plan_approval", "direction:direction_review", "question:answer", "failed:failed",
+      "plan:plan_approval", "direction:direction_review", "failed:failed", "question:answer",
     ])
   })
 })

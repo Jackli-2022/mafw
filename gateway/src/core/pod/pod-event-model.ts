@@ -1,6 +1,7 @@
 // gateway/src/core/pod/pod-event-model.ts
 // Deterministic severity rules for Pod events. No LLM: which channel hears
 // about an event is a fixed table, so it is predictable and free to evaluate.
+import { isFailedVerdict } from './pod-stage';
 
 export type PodEventSeverity = 'p1' | 'p2' | 'p3';
 export type PodEventReason = 'decision' | 'result' | 'blocked' | 'progress' | 'message';
@@ -21,10 +22,14 @@ export type PodGoalArchiveVerdict =
   | 'UNREVIEWED'
   | 'CANCELLED';
 
-/** A terminal Goal always reaches the human — except when the user cancelled it. */
+/** A terminal Goal always reaches a person or the Lead — except when the user cancelled it.
+ *  Failures wake the Lead (p1/lead); successful/unreviewed results reach the human inbox. */
 export function classifyGoalArchive(input: { verdict: PodGoalArchiveVerdict | null }): PodEventClass {
   if (input.verdict === null || input.verdict === 'CANCELLED') {
     return { kind: 'goal.ended', severity: 'p3', audience: 'none', reason: 'progress' };
+  }
+  if (isFailedVerdict(input.verdict)) {
+    return { kind: 'goal.failed', severity: 'p1', audience: 'lead', reason: 'blocked' };
   }
   return { kind: 'goal.result', severity: 'p1', audience: 'human', reason: 'result' };
 }
@@ -43,9 +48,10 @@ export function classifyMemberMessage(input: {
   return { kind: `member.${input.kind}`, severity: 'p3', audience: 'none', reason: 'message' };
 }
 
-/** Revision is part of a Goal result's identity: a rejected plan re-runs into r2. */
-export function goalDedupeKey(goalId: string, revision: number): string {
-  return `goal.result:${goalId}:r${revision}`;
+/** Revision is part of a Goal result's identity: a rejected plan re-runs into r2.
+ *  The event kind is included so goal.failed and goal.result never dedupe each other. */
+export function goalDedupeKey(goalId: string, revision: number, kind = 'goal.result'): string {
+  return `${kind}:${goalId}:r${revision}`;
 }
 
 export function memberDedupeKey(kind: string, messageId: string, toMemberId: string | null): string {

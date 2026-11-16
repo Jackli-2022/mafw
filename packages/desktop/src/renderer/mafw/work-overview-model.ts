@@ -3,6 +3,12 @@ import type { PodEventItem } from "./pod-events"
 
 export type WorkFilter = "all" | "active" | "results" | "history"
 
+const FAILED_VERDICTS = new Set(["FAIL", "ERROR", "MAX_RETRIES"])
+
+function isFailedVerdict(verdict: string | null | undefined): boolean {
+  return !!verdict && FAILED_VERDICTS.has(verdict)
+}
+
 const GOAL_MODE_LABELS: Record<string, string> = {
   quick: "Quick",
   standard: "Standard",
@@ -110,6 +116,17 @@ export function buildWorkPriority(input: {
   for (const goal of input.goals) {
     const revision = currentRevisionOf(goal)
     const identity = `${goal.goalId}:r${revision}`
+    if (goal.endedAt && isFailedVerdict(goal.verdict)) {
+      attention.push({
+        kind: "attention",
+        key: `${identity}:attention`,
+        goal,
+        actionType: "open_result",
+        label: "查看失败原因",
+      })
+      claimed.add(identity)
+      continue
+    }
     if (goal.stage?.owner === "person" || goal.bucket === "needs_you") {
       const actionType = goal.stage?.action?.type ?? null
       attention.push({
@@ -160,15 +177,15 @@ const ATTENTION_LABELS: Record<AttentionListKind, string> = {
   direction_review: "裁定方向",
   review: "查看结果",
   blocked: "处理阻塞",
-  failed: "重试",
+  failed: "查看失败原因",
 }
 
 const ATTENTION_PRIORITY: Record<AttentionListKind, number> = {
   plan_approval: 100,
   direction_review: 90,
+  failed: 85,
   answer: 80,
   review: 70,
-  failed: 60,
   blocked: 50,
 }
 
@@ -183,7 +200,19 @@ export function buildAttentionList(input: {
 }): AttentionListItem[] {
   const byGoal = new Map<string, AttentionListItem & { person: boolean }>()
   for (const goal of input.goals) {
-    if (goal.endedAt) continue
+    if (goal.endedAt) {
+      if (isFailedVerdict(goal.verdict)) {
+        byGoal.set(goal.goalId, {
+          key: `${goal.goalId}:${currentRevisionOf(goal)}:failed`,
+          goal,
+          kind: "failed",
+          label: ATTENTION_LABELS.failed,
+          actionType: "open_result",
+          person: true,
+        })
+      }
+      continue
+    }
     const stage = goal.stage
     let kind: AttentionListKind | null = null
     let person = false
