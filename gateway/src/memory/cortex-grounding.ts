@@ -44,6 +44,7 @@ export function planCortexGrounding(
 export interface HintEpisode {
   episodeId: string;
   endedAt: number | null;
+  intent?: string;
 }
 
 export interface HintEntry {
@@ -60,6 +61,18 @@ export interface HintPlan {
   noSession: number;
   noEpisode: number;
   ambiguous: number;
+  unusable: number;
+}
+
+/** System-prompt / trivial-intent episodes make useless grounding hints. */
+export function isUsableEpisodeIntent(intent?: string): boolean {
+  const text = String(intent ?? '').trim();
+  if (!text) return true;
+  if (/you are a subagent spawned|another session|system prompt|^instructions\b|^\[MAFW SYSTEM\]/i.test(text)) {
+    return false;
+  }
+  if (text.length < 3) return false;
+  return true;
 }
 
 /**
@@ -75,6 +88,7 @@ export function planEpisodeHints(
   let noSession = 0;
   let noEpisode = 0;
   let ambiguous = 0;
+  let unusable = 0;
 
   for (const entry of entries) {
     if (entry.episode_id || entry.episode_hint) {
@@ -92,6 +106,10 @@ export function planEpisodeHints(
       continue;
     }
     if (episodes.length === 1) {
+      if (!isUsableEpisodeIntent(episodes[0].intent)) {
+        unusable++;
+        continue;
+      }
       updates.push({
         id: entry.id,
         hint: {
@@ -105,6 +123,10 @@ export function planEpisodeHints(
     const latest = episodes.reduce((best, episode) =>
       (episode.endedAt ?? 0) > (best.endedAt ?? 0) ? episode : best,
     );
+    if (!isUsableEpisodeIntent(latest.intent)) {
+      unusable++;
+      continue;
+    }
     const created = entry.created_at ? Date.parse(entry.created_at) : NaN;
     if (Number.isFinite(created) && latest.endedAt != null && created >= latest.endedAt) {
       updates.push({
@@ -120,5 +142,5 @@ export function planEpisodeHints(
     }
   }
 
-  return { updates, skippedExisting, noSession, noEpisode, ambiguous };
+  return { updates, skippedExisting, noSession, noEpisode, ambiguous, unusable };
 }

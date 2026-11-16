@@ -5,12 +5,15 @@ import {
 } from '../../../src/memory/cortex-grounding';
 
 const episodesBySession = new Map<string, HintEpisode[]>([
-  ['s1', [{ episodeId: 't1ep_a', endedAt: 100_000 }]],
+  ['s1', [{ episodeId: 't1ep_a', endedAt: 100_000, intent: 'review embedding' }]],
   ['s2', [
-    { episodeId: 't1ep_b', endedAt: 200_000 },
-    { episodeId: 't1ep_c', endedAt: 300_000 },
+    { episodeId: 't1ep_b', endedAt: 200_000, intent: 'first task' },
+    { episodeId: 't1ep_c', endedAt: 300_000, intent: 'second task' },
   ]],
   ['s3', []],
+  ['s4', [{ episodeId: 't1ep_sys', endedAt: 1, intent: 'You are a subagent spawned by another session.' }]],
+  ['s5', [{ episodeId: 't1ep_short', endedAt: 1, intent: '可以' }]],
+  ['s6', [{ episodeId: 't1ep_system', endedAt: 1, intent: '[MAFW SYSTEM] Gateway 自更新已完成' }]],
 ]);
 
 const entry = (over: Partial<HintEntry> & { id: string }): HintEntry => ({
@@ -64,5 +67,18 @@ describe('planEpisodeHints', () => {
     );
     expect(plan.updates).toEqual([]);
     expect(plan.ambiguous).toBe(1);
+  });
+
+  test('system-prompt and trivial episodes are not usable hints', () => {
+    const plan = planEpisodeHints(
+      [
+        entry({ id: 'sys', source_session_id: 's4' }),
+        entry({ id: 'short', source_session_id: 's5' }),
+        entry({ id: 'system-event', source_session_id: 's6' }),
+      ],
+      episodesBySession,
+    );
+    expect(plan.updates).toEqual([]);
+    expect(plan.unusable).toBe(3);
   });
 });
