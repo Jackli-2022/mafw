@@ -1,5 +1,6 @@
 import { createSignal, createMemo, For, Show, onMount, onCleanup } from "solid-js"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
+import { usePresence } from "./use-presence"
 
 export type PaletteItem = {
   id: string
@@ -19,6 +20,7 @@ export function CommandPalette(props: {
 }) {
   const [query, setQuery] = createSignal("")
   const [hi, setHi] = createSignal(0)
+  const presence = usePresence(() => props.open)
 
   const filtered = createMemo(() => {
     const q = query().trim().toLowerCase()
@@ -57,8 +59,12 @@ export function CommandPalette(props: {
   })
 
   return (
-    <Show when={props.open}>
-      <div class="mafw-palette-backdrop" onClick={e => { if (e.target === e.currentTarget) props.onClose() }}>
+    <Show when={presence.rendered()}>
+      <div
+        class="mafw-palette-backdrop"
+        classList={{ closing: presence.closing() }}
+        onClick={e => { if (e.target === e.currentTarget) props.onClose() }}
+      >
         <div class="mafw-palette">
           <TextInputV2
             value={query()}

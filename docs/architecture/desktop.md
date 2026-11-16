@@ -146,6 +146,10 @@
   `cubic-bezier(.2,.8,.2,1)`。循环只用于真实 running/recording/streaming/voice/waiting
   状态，同一区域最多一个，在线/空闲不加环境呼吸或 glow；`prefers-reduced-motion` 直达终态并保留
   状态文字。`createPresence` 折叠面过渡期挂载，规则相同。
+- **Motion v8（2026-11-16）**：补 `--dur-exit: 140ms` / `--ease-exit`；命令面板遮罩 180ms 淡入、
+  面板 220ms 落位，关闭由 `usePresence` 保留 DOM 140ms 做 exit；session tab 选中 180ms；
+  work item 按下 `scale(.985)` / 80ms；Goal inline 220ms 进入。空间动效才允许 overshoot，
+  颜色/透明度不用 spring。
 - **业界对照与升级建议（2026-11-16）**：`docs/research/2026-11-16-desktop-premium-ui-motion-research.md`
   （Hermes / OpenCode / Linear / Carbon / Material 3 的视觉与动效基准，以及 MAFW 的减法/编排优先级）。
 - **Precision Instrument 局部落地（2026-11-16）**：topstrip 非活动 session tab 不再显示身份点，

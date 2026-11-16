@@ -135,6 +135,8 @@
   --dur-progress: 320ms;
   --ease-standard: cubic-bezier(.2,.8,.2,1);
   --ease-surface: cubic-bezier(.16,1,.3,1);
+  --dur-exit: 140ms;
+  --ease-exit: cubic-bezier(.4,0,1,1);
   /* 循环动画时长（不属 token 尺度，集中建档）：mafw-breathe 2s|1s · mafw-spin 1s · mafw-think-spin 1.2s
      · mafw-phase-pulse 1.2s|0.8s · mafw-shimmer 1.2s · mafw-eq 0.8s · mafw-voice-pulse 1.5s */
   /* v5.1 双字体契约：sans 管 UI、mono 管数据（复用 ui 包既有变量，像素零变化） */
@@ -275,6 +277,8 @@ html[data-theme="light"] body {
   --dur-progress: 320ms;
   --ease-standard: cubic-bezier(.2,.8,.2,1);
   --ease-surface: cubic-bezier(.16,1,.3,1);
+  --dur-exit: 140ms;
+  --ease-exit: cubic-bezier(.4,0,1,1);
   --msg-col-width: 720px;
   --font-family-sans: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
   --font-family-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, Menlo, monospace;
@@ -347,6 +351,7 @@ html[data-theme="light"] body {
     /* v7 两级动效 + 列宽（三主题块键集一致）*/
     --dur-press: 80ms; --dur-fast: 120ms; --dur-select: 180ms; --dur-enter: 220ms; --dur-surface: 240ms; --dur-progress: 320ms;
     --ease-standard: cubic-bezier(.2,.8,.2,1); --ease-surface: cubic-bezier(.16,1,.3,1);
+    --dur-exit: 140ms; --ease-exit: cubic-bezier(.4,0,1,1);
     --msg-col-width: 720px;
     --font-family-sans: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
     --font-family-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, Menlo, monospace;
@@ -385,6 +390,22 @@ html[data-theme="light"] body {
 @keyframes mafw-modal-in {
   from { opacity: 0; transform: scale(.98); }
   to   { opacity: 1; transform: scale(1); }
+}
+@keyframes mafw-backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes mafw-palette-in {
+  from { opacity: 0; transform: translateY(-6px) scale(.985); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes mafw-backdrop-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+@keyframes mafw-palette-out {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to   { opacity: 0; transform: translateY(-4px) scale(.99); }
 }
 /* 无障碍：系统"减弱动态效果"时压制全部动画/过渡（保留终态帧） */
 @media (prefers-reduced-motion: reduce) {
@@ -734,7 +755,7 @@ html[data-theme="light"] body {
   min-width: 104px;
   /* 窄 tab 藏 × 的 container query 容器（Chrome：先藏关闭钮保标题） */
   container-type: inline-size;
-  transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+  transition: background var(--dur-select) var(--ease-standard), color var(--dur-fast) var(--ease-standard), box-shadow var(--dur-select) var(--ease-standard);
 }
 /* Precision Instrument: identity dots only on the active tab; background
    sessions keep their title and state without adding color noise. */
@@ -3796,8 +3817,20 @@ html[data-theme="light"] body {
 .mafw-tsearch-snippet { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Global command palette (Ctrl+P, P2 batch) */
-.mafw-palette-backdrop { position: fixed; inset: 0; z-index: 300; background: rgba(0,0,0,.45); display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; }
-.mafw-palette { width: min(520px, 90vw); background: var(--surface-base); border: 1px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--elev-prominent); }
+.mafw-palette-backdrop {
+  position: fixed; inset: 0; z-index: 300; background: rgba(0,0,0,.45);
+  display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh;
+  animation: mafw-backdrop-in var(--dur-select) var(--ease-standard) both;
+}
+.mafw-palette-backdrop.closing { animation: mafw-backdrop-out var(--dur-exit) var(--ease-exit) both; pointer-events: none; }
+.mafw-palette-backdrop.closing .mafw-palette { animation: mafw-palette-out var(--dur-exit) var(--ease-exit) both; }
+.mafw-palette {
+  width: min(520px, 90vw); background: var(--surface-base);
+  border: 1px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 12px;
+  padding: 10px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--elev-prominent);
+  transform-origin: top center;
+  animation: mafw-palette-in var(--dur-enter) var(--ease-surface) both;
+}
 .mafw-palette-list { max-height: 380px; overflow-y: auto; }
 .mafw-palette-group { font-size: 10px; color: var(--text-4); padding: 8px 8px 4px; text-transform: uppercase; letter-spacing: .05em; }
 .mafw-palette-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; }
@@ -7898,9 +7931,10 @@ html[data-theme="light"] body {
   padding: 9px 8px;
   border-radius: var(--r-md);
   text-align: left;
-  transition: background var(--dur-fast) var(--ease-standard);
+  transition: background var(--dur-fast) var(--ease-standard), transform var(--dur-press) var(--ease-standard);
 }
 .mafw-work-item:hover { background: var(--bg-hover); }
+.mafw-work-item:active { transform: scale(.985); }
 /* ButtonV2 small 的 24px 固定高度只适用于单行；工作项是「标题 + 可换行 chips」两段式，
    必须由内容撑高——否则 hover 背景只覆盖 24px，溢出文字压到下一行/下一组。 */
 .mafw-shell .mafw-work-item[data-size="small"] {
@@ -8492,6 +8526,7 @@ html[data-theme="light"] body {
   border-radius: 0;
   background: transparent;
   box-shadow: none;
+  animation: mafw-enter var(--dur-enter) var(--ease-surface) both;
 }
 .mafw-goal-inline-back { display: flex; justify-content: flex-start; margin-bottom: 8px; }
 .mafw-goal-inline-title { outline: none; }
