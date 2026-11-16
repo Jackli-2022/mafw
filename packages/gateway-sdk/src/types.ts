@@ -2569,6 +2569,21 @@ export interface MafwClientOptions {
    *  applied to `request()` JSON calls only — `fetchPath` (SSE / binary / raw
    *  Response) requests keep exactly the caller's headers. */
   headers?: Record<string, string>
+  /**
+   * E10j-J2: gateway contract epoch (`X-MAFW-Schema-Epoch`).
+   *
+   * - `number`: sent verbatim on every JSON request; responses never rewrite it
+   *   and a 409 is surfaced as an error (caller pinned the contract).
+   * - `'auto'`: start without the header, learn the epoch from responses, send
+   *   it afterwards, and on a 409 that offers a different epoch adopt it and
+   *   retry the request **once**.
+   * - unset: legacy behaviour — no header, no retry.
+   *
+   * Desktop main and the TUI opt into `'auto'` so a gateway upgrade renegotiates
+   * instead of silently keeping an old contract. Raw `fetchPath` calls never
+   * carry it (same rule as `clientToken`).
+   */
+  schemaEpoch?: number | 'auto'
 }
 
 // ============================================================

@@ -108,3 +108,32 @@ test('createTuiClient sends no header when the token is missing or malformed', a
   await createTuiClient('http://gw:3000', fakeFetch(malformed)).project.current()
   assert.equal(headersOf(malformed[0]).get('x-mafw-human-token'), null)
 })
+
+// ── E10j-J2: schema epoch negotiation (opt-in 'auto') ──
+
+test('createTuiClient negotiates the schema epoch automatically', async () => {
+  process.env[ENV_KEY] = writeTokenFile(`${TOKEN}\n`)
+  const calls: Captured[] = []
+  const epochFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({ url: String(input), init })
+    return {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: {
+        get: (name: string) =>
+          String(name).toLowerCase() === 'x-mafw-schema-epoch' ? '7' : 'application/json',
+      },
+      json: async () => ({ project: { id: 'p1', worktree: '/proj' } }),
+    } as unknown as Response
+  }) as typeof fetch
+
+  const client = createTuiClient('http://127.0.0.1:4321', epochFetch)
+  await client.project.current()
+  await client.project.current()
+
+  assert.equal(calls.length, 2)
+  assert.equal(headersOf(calls[0]).get('x-mafw-schema-epoch'), null)
+  assert.equal(headersOf(calls[1]).get('x-mafw-schema-epoch'), '7')
+  assert.equal(headersOf(calls[1]).get('x-mafw-human-token'), TOKEN)
+})
