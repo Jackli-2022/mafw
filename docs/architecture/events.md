@@ -3,6 +3,8 @@
 > 状态：2026-11-10。设计：`docs/superpowers/specs/2026-11-10-event-layer-design.md`；
 > 计划：`docs/superpowers/plans/2026-11-10-event-layer.md`。
 > 开关：默认开启；显式 `MAFW_EVENT_LAYER=0` 才关闭（关闭后事件层路由返回 503）。
+>
+> 业界对照：`docs/research/2026-11-16-always-on-agents-event-layer-research.md`（Claude / DeepSeek 的 always-on 架构与 MAFW 缺口）。
 
 ## 职责
 
