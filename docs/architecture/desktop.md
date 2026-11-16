@@ -851,3 +851,22 @@ gateway 新增 `POST /api/human-token/rotate`（见 `gateway.md` §「E11 身份
   12 条（`isStaleHumanTokenError` 6：403+码 / 文本形态 / 403 无码 / 401·429·500 / 网络 / 结构化 code；
   `withHumanTokenRetry` 5：成功不刷新、stale 刷新后重试一次、二次失败上抛、刷新抛错、非 stale 不重试；
   1 条 IPC 接线守卫）。
+
+### 自动 schema epoch 协商（2026-11-16，E10j-J2）
+
+gateway 每个响应都带 `X-MAFW-Schema-Epoch`（`releaseMetadata` 未加载时省略），客户端**主动携带**旧值会被
+409 `schema_epoch_mismatch` 拒绝（见 `gateway.md` §「E10j 交互与版本协商补齐」/ E3-5）。桌面主进程此前
+从不发这个头，也就是 gateway 升级后仍按旧契约说话——不报错，只是静默错位。E10j-J2 把协商放进 SDK，桌面只 opt-in：
+
+- `packages/desktop/src/main/human-token.ts#createGatewayClient` 传 `schemaEpoch: 'auto'`。
+  它是**唯一**构造 SDK client 的入口（`mafw-ipc.ts` / `mafw-sidecar.ts` 都经它，守卫测试断言
+  main 入口不出现 `new MafwClient(`），所以 renderer / preload / 插件 web 仍然不接触 epoch。
+- SDK 语义：首个请求不带头 → 从**每个**响应（成功或失败）读取 `X-MAFW-Schema-Epoch` 并缓存 →
+  之后请求自动携带；收到「响应 epoch 与本地已知值**不同**」的 409 时采用新值并**重试一次**
+  （同 path/init），同值 / 无 epoch / 非数字 → 原样上抛（不猜、不循环）。
+- 与 `withHumanTokenRetry` 是**两条互不重叠**的通道：409 是契约漂移，403 +
+  `human_principal_required` 是凭据轮换；各自最多重试一次，不叠加。
+- `fetchPath`（SSE / 二进制 / 媒体流 / 裸 Response）**不带** epoch、不重试（与 `clientToken` 同规则）。
+  所以 SSE 订阅不受影响：不发头 = gateway 放行，不会因 epoch 漂移反复重连。
+- 测试：`src/main/human-token.test.ts` 新增 1 条行为用例（epoch 回声 fake fetch：首请求无头、
+  第二请求带上学到的值，human token 仍在），文件 **27/27**。

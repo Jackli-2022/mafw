@@ -238,8 +238,8 @@ test('goals tab click selects goal row / question row; header not clickable', ()
 function makeTriageTab() {
   const approvals = [{ id: 'a1', question: '审批一', goalId: 'g1' }]
   const items = [
-    { id: 't1', severity: 'high', reason: '原因一', goalId: 'g1' },
-    { id: 't2', severity: 'low', reason: '原因二', goalId: 'g2' },
+    { id: 't1', automationId: 'a1', discoveredAt: '2026-11-16T09:00:00.000Z', source: 'manual', summary: {}, state: 'PENDING_CONFIRMATION', userAction: null, deadline: '2026-11-20T09:00:00.000Z' },
+    { id: 't2', automationId: 'a2', discoveredAt: '2026-11-16T09:00:00.000Z', source: 'manual', summary: {}, state: 'PENDING_CONFIRMATION', userAction: null, deadline: '2026-11-20T09:00:00.000Z' },
   ]
   const store = { approvals, items, start: () => {}, stop: () => {}, act: async () => {} } as unknown as TriageStore
   const tab = new TriageTab({ tui: fakeGoalsTui(), store, client: {}, setStatus: () => {} } as any)

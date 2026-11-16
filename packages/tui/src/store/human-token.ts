@@ -30,10 +30,16 @@ export function readHumanToken(filePath: string = humanTokenPath()): string {
   }
 }
 
-/** Single entrypoint for the TUI gateway client (base URL + human token). */
+/**
+ * Single entrypoint for the TUI gateway client (base URL + human token).
+ *
+ * E10j-J2: `schemaEpoch: 'auto'` mirrors the desktop main process — the client
+ * learns the gateway's contract epoch and renegotiates once after an upgrade.
+ */
 export function createTuiClient(baseUrl: string, fetchImpl?: typeof fetch): MafwClient {
   return new MafwClient(baseUrl, {
     clientToken: readHumanToken(),
+    schemaEpoch: 'auto',
     ...(fetchImpl ? { fetchImpl } : {}),
   })
 }

@@ -2,11 +2,17 @@ import {
   Text, matchesKey, Key, truncateToWidth, SelectList,
   type Component, type TUI,
 } from '@earendil-works/pi-tui'
-import type { MafwClient } from '@mafw/sdk'
+import type { MafwClient, TriageItem } from '@mafw/sdk'
 import { TriageStore, type TriageAction } from '../store/triage-store.ts'
 import { theme } from '../theme.ts'
 import { selectListTheme } from './chat-tab.ts'
 import { showModal } from './overlay-surface.ts'
+import { triageView, type TriageTone } from './triage-view-model.ts'
+
+/** E10j-J1: tone → theme。不自造 severity 颜色，只用 wire badge 的语义三态。 */
+function toneColor(tone: TriageTone): (s: string) => string {
+  return tone === 'danger' ? theme.err : tone === 'warn' ? theme.warn : theme.dim
+}
 
 /** Triage 面板：approvals 区块 + triage 列表（selection 跨两区）。 */
 export class TriageTab implements Component {
@@ -49,8 +55,9 @@ export class TriageTab implements Component {
     store.items.forEach((t, i) => {
       const idx = this.approvalCount + i
       const mark = idx === this.selected ? theme.accent('› ') : '  '
-      const sev = t.severity === 'high' ? theme.err(t.severity) : t.severity === 'medium' ? theme.warn(t.severity) : theme.dim(t.severity)
-      lines.push(truncateToWidth(`${mark}[${sev}] ${t.reason} ${theme.dim(t.goalId)}`, width))
+      const view = triageView(t)
+      const badge = toneColor(view.badge.tone)(view.badge.label)
+      lines.push(truncateToWidth(`${mark}[${badge}] ${view.title} ${theme.dim(view.meta)}`, width))
     })
     return lines
   }
@@ -123,9 +130,14 @@ export class TriageTab implements Component {
       ? this.deps.store.approvals.find((a) => a.id === id)
       : this.deps.store.items.find((t) => t.id === id)
     if (!item) return
-    const body = isApproval
-      ? `类型: approval\nquestion: ${(item as any).question}\ngoalId: ${(item as any).goalId}\n\na 批准 · r 拒绝`
-      : `类型: triage\nseverity: ${(item as any).severity}\nreason: ${(item as any).reason}\ngoalId: ${(item as any).goalId}\n\nc 确认 · r 拒绝 · d 忽略`
+    let body: string
+    if (isApproval) {
+      const approval = item as { question?: string; goalId?: string }
+      body = `类型: approval\nquestion: ${approval.question}\ngoalId: ${approval.goalId}\n\na 批准 · r 拒绝`
+    } else {
+      const view = triageView(item as TriageItem)
+      body = `类型: triage\n标题: ${view.title}\n状态: ${view.badge.label}\nmeta: ${view.meta}\n\nc 确认 · r 拒绝 · d 忽略`
+    }
     const overlay = showModal(this.deps.tui,new Text(body, 1, 1), { width: 64, maxHeight: 12, anchor: 'center' })
     const close = () => { off(); overlay.hide() }
     const off = this.deps.tui.addInputListener((data) => {

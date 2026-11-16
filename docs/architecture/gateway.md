@@ -40,6 +40,7 @@
 - [E10g 请求契约（P0 + W1 + W2/W3 + W4 + W5 + W6 + W7 + W8，2026-11-14）](#e10g-请求契约p0--w1--w2w3--w4--w5--w6--w7--w82026-11-14)
 - [E10h 写响应契约（P0 + R1–R6，2026-11-15）](#e10h-写响应契约p0--r1r62026-11-15)
 - [E10i 错误响应契约（P0 + E1 + E2 + E3，2026-11-15）](#e10i-错误响应契约p0--e1--e2--e32026-11-15)
+- [E10j 交互与版本协商补齐（2026-11-16）](#e10j-交互与版本协商补齐2026-11-16)
 - [API 端点](#api-端点)
 - [UI 服务](#ui-服务)
 - [数据流全景](#数据流全景)
@@ -868,7 +869,7 @@ Phase 3.6 plugin host 自动注册（2026-11-13，默认关闭）：
 | E3-2 | **Mode B 删除**：`?sessionID=` 的 per-session SSE 分支与 `ChatSessionManager` 移除；`event.subscribe` 现在忽略该参数、一律走 Mode A 全局流（SSE 头 + greeting + 回放 + `sseClients`）。`event-dispatch` 24 → 23 段（删 `modeBDelta`），kernel/api-routes 的 `chatSessions` 接线删除。**Breaking**：SDK `event.subscribeToSession` 删除（`?sessionID` 仍被接受并降级为 Mode A）。 | ~~SDK `sessions.events()` 与 `event.url(sessionID?)` 仍构造 `?sessionID`~~（E7-2 已清理：两者与 `SSEConnection.connectToSession` 全部删除）。 |
 | E3-3 | 框架边界错误带机器码：`core/http/api-error.ts` 的 `API_ERROR_CODES` / `errorBody()`（`unauthorized` / `forbidden` / `capability_unavailable` / `internal`，预留 `schema_epoch_mismatch` / `not_found`）。应用点：transport 401/403/outer 500、registry-dispatch 401、kernel `capGuard`/`capGuardQuestion` 503。既有 `error` 字符串逐字保留。 | 路由内业务错误继续用原信封（错误格式按层）；客户端必须容忍可选 `code`。A2A/MCP 分支内 500 未迁移。 |
 | E3-4 | Experience `ActionDescriptor` 新增可选 `operationId`；projector 用 `EXPERIENCE_ACTION_OPERATIONS` 把 20 个动作绑定到 catalog op（复合动作取入口路由，如 `run.control → session.suspend`）。无路由动作省略该字段。 | 单 operationId 不是完整 verb 集合（run.control 也含 resume/discardRun）；路由改名时绑定测试会红。 |
-| E3-5 | **opt-in schema epoch**：所有响应带 `X-MAFW-Schema-Epoch`（`releaseMetadata.schemaEpoch`，未加载时省略）；客户端**主动携带**且不匹配 → 409 `{error, code:'schema_epoch_mismatch'}`（auth 之后、registry 之前）。不携带 / 匹配 / 服务端未知 → 正常放行。 | 不引入强制拒绝；SDK 尚未主动发送该头。 |
+| E3-5 | **opt-in schema epoch**：所有响应带 `X-MAFW-Schema-Epoch`（`releaseMetadata.schemaEpoch`，未加载时省略）；客户端**主动携带**且不匹配 → 409 `{error, code:'schema_epoch_mismatch'}`（auth 之后、registry 之前）。不携带 / 匹配 / 服务端未知 → 正常放行。**E10j-J2 客户端侧已闭合**：SDK `MafwClientOptions.schemaEpoch?: number \| 'auto'` —— 数字恒带且从不重试；`'auto'` 从**每个**响应学习 epoch、之后请求自动携带，**已在请求中携带本地 epoch** 且收到「响应 epoch 不同」的 409 时刷新并**重试一次**（同 path/init；transport 前置拒绝，重放安全）；未知 epoch 的首请求 409 不重试，同值/无 epoch 的 409 直接抛；未配置维持旧行为（不带头、不重试）。`fetchPath`（SSE/二进制/裸 Response）不带头、不重试。desktop `createGatewayClient` 与 TUI `createTuiClient` 均 opt-in `'auto'`。 | 不引入强制拒绝；gateway 侧行为未变（仍是 opt-in 校验）。`'auto'` 的 409 判定只按**状态码 + 响应 epoch 不同于已知值**，不解析响应体 `code`；服务端不回声 epoch 时（metadata 未加载）无法协商，错误原样上抛。 |
 | E3-6 | 四个读 op 的 200 response schema（`routes/schemas/read-models.ts`，只加 OpenAPI 元数据，不改 handler）：`goals.get`、`project.list`、`presence.get`、`session.usageSummary`。`emit:openapi` 后 272 paths / 304 operations。 | 其余 ~300 ops 仍无 response schema（渐进补齐）。 |
 | E3-7 | 收口：本节 + release 记录 + 全量门禁（gateway / SDK / desktop / TUI / analyzer / kernel-split）。收口修复轮：SDK `Goal` DTO 对齐 `projectGoalView`（phase/error/updatedAt 可空），`goals.list` override 同步、删除陈旧 `goals.get` override；删除 dashboard-residue 两个 phantom op；同步 23 段/25 DispatchCtx 成员的文档漂移。 | ~~deferred：SDK `sessions.events()`/`event.url(sessionID?)` 清理~~（E7-2 已清理）。剩余 op 的 response schema 覆盖仍渐进补齐（E7 后仍约 300 ops）。 |
 
@@ -1034,7 +1035,8 @@ E8-1 之后 kernel/boot 的长驻 interval 已全部在台账内；短命 retry/
 - 原子写：`.tmp`（`open(w, 0o600)`）→ `write` → `fsync` → `rename` → `chmod 0600`（POSIX 尽力）；Windows 依赖用户目录 ACL。写失败抛错，kernel `initServices` `log.warn` 后以**空 token** 继续——human-only fail-closed（403），普通 API 不受影响。
 - desktop：`packages/desktop/src/main/human-token.ts` 的 `readHumanToken()`（trim + 64 hex 校验，失败返回 `''`，不抛不日志）+ `createGatewayClient()` 统一构造 `MafwClient({ clientToken })`；token **不进入 renderer / preload / 插件 web / 日志**。`MAFW_HUMAN_TOKEN_FILE` 只是测试/隔离 dev 的路径覆盖。
 - TUI：`packages/tui/src/store/human-token.ts` 同语义 + `createTuiClient()`；human-only 动作失败时直接显示 gateway 403。
-- SDK：`MafwClientOptions.clientToken?` / `headers?`；`request()` 合并顺序 `Content-Type` → `options.headers` → `clientToken` → 调用点 headers；空/空白 `clientToken` 不发头；`fetchPath`（SSE / 二进制 / 媒体流）**不带** token 与 base headers。
+- SDK：`MafwClientOptions.clientToken?` / `headers?`；`request()` 合并顺序 `Content-Type` → `options.headers` → `clientToken` → schema epoch → 调用点 headers；空/空白 `clientToken` 不发头；`fetchPath`（SSE / 二进制 / 媒体流）**不带** token 与 base headers。
+- **schema epoch 协商（E10j-J2）**：`MafwClientOptions.schemaEpoch?: number | 'auto'`。数字 = 请求恒带该值、响应不改写、409 直接抛；`'auto'` = 首个响应前不带头，之后从**每个**响应（成功或失败）缓存 `X-MAFW-Schema-Epoch` 并在后续请求携带；`!res.ok && status === 409` 且**本次请求已携带已知 epoch**、响应 epoch 与之**不同** → 采用新值并**重试一次**（同 path/init；只有这类请求会被 transport 前置拒绝，重放安全）；未知 epoch / 同值 / 无 epoch / 非数字 → `httpError(res)`（不重试，避免重放已分发的请求）。未配置 = 旧行为（不带头、不重试）。重试上限是一次，不存在循环。desktop `createGatewayClient`、TUI `createTuiClient` 均 opt-in `'auto'`（gateway 升级后自动重新协商，不静默沿用旧契约）。
 - **轮换（E11-1）**：`POST /api/human-token/rotate` 是唯一能把该凭据原地换掉的入口——只认
   `method === 'human-token'` 的 human principal（device token / service / loopback 一律 403
   `human_principal_required`）。成功即写盘并 live rebind kernel `this.humanToken`，**旧 token 立刻失效**；
@@ -2175,7 +2177,8 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
   `kernel-split-guards` **7/7**（定向四套 297 passed：api-contract 231 + coverage 52 + 本守卫 7 + 7）。
   明细见 `docs/releases/2026-11-15-gateway-e10h-write-responses.md`。
 - **残余**：见「残余（E11 后仍 deferred）」——写响应只剩 `tts.speakStream`；错误体由 **E10i** 收口
-  （统一 `default` + 高价值显式状态码），版本协商、TUI triage phantom、mobile 工作 tab 增量 patch 仍 out of scope。
+  （统一 `default` + 高价值显式状态码）；**版本协商的客户端侧与 TUI triage phantom 由 E10j 收口**，
+  mobile 工作 tab 的任务 / 消息级 patch 在 E10j 定为 won't do。
 
 ---
 
@@ -2245,6 +2248,49 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 
 ---
 
+## E10j 交互与版本协商补齐（2026-11-16）
+
+> 承接 E10i：E10 的三层契约（请求 / 200 / 错误体）闭合后，还剩两处**可执行**缺口——
+> TUI triage 仍在渲染已退役的 phantom 字段；transport 的 `X-MAFW-Schema-Epoch` 只有服务端一半
+> （客户端从不发送 → gateway 升级后静默按旧契约说话）。本波各补一半，其余三项明确 won't do。
+> spec：`docs/superpowers/specs/2026-11-16-gateway-e10j-interaction-version-design.md`；
+> plan：`docs/superpowers/plans/2026-11-16-gateway-e10j-interaction-version.md`；
+> 交付记录：`docs/releases/2026-11-16-gateway-e10j-interaction-version.md`。
+
+| 批次 | 范围 | 边界 |
+|---|---|---|
+| J1 | **TUI triage 对齐真实 wire**：新增纯函数 `packages/tui/src/ui/triage-view-model.ts#triageView(t)`（与桌面 `triage-model.ts` 同构，title / meta / badge 一套规则），`ui/triage-tab.ts` 的行渲染与 Enter 详情都改用它 | 纯 UI 渲染；无 wire / SDK 类型改动，布局、行映射、键位（`a/r/c/d/Enter`）不变 |
+| J2 | **自动 schema epoch 协商**：SDK `MafwClientOptions.schemaEpoch?: number \| 'auto'`；desktop `createGatewayClient` 与 TUI `createTuiClient` opt-in `'auto'` | gateway 侧零改动（仍是 opt-in 校验，不引入强制拒绝）；`fetchPath` 不参与 |
+| J3 | 收口：本节 + `desktop.md` / `tui.md` / `mobile.md` 现状 + release 记录 + 全量门禁 | docs-only |
+
+- **transport epoch 契约现由客户端自动协商（opt-in）**：gateway 行为**未变**——响应恒带
+  `X-MAFW-Schema-Epoch`（metadata 未加载时省略）；客户端主动携带且不匹配 → 409
+  `{error, code:'schema_epoch_mismatch'}`（auth 之后、registry 之前）；未携带 / 匹配 / 服务端未知 → 放行。
+  客户端侧：数字 = 钉死契约（恒带、不重试）；`'auto'` = 从**每个**响应学习、之后自动携带，收到
+  「epoch 与本地已知值不同」的 409 时刷新并**重试一次**（同 path/init）；未配置 = 旧行为（不带头、不重试）。
+  桌面与 TUI 均已 opt-in，因此 **gateway 升级后两端会自动重新协商**，不再静默沿用旧契约。
+  `fetchPath`（SSE / 二进制 / 裸 Response）不带头、不重试 —— SSE 订阅维持「不发头 = 放行」，不会因
+  epoch 漂移反复重连。详见 `desktop.md` §「自动 schema epoch 协商」与 `tui.md`。
+- **明确 won't do（本阶段定案，均非欠账）**：
+  - **mobile 工作 tab 的任务 / 消息级增量 patch**：work overview 只有「整页快照」一个接口，没有
+    「按 goal 取 task/message 增量」的端点；为局部 patch 新增端点属新 API 设计。现行一致性策略
+    （flat 帧带 `goalId` → 只替换该 Goal 卡；其余变化 15s 全量兜底）已满足需要，见 `mobile.md` §7.11。
+  - **`tts.speakStream` 的响应 schema**：wire 是 `text/event-stream`（PCM16 分块事件），不是 JSON；
+    当前 OpenAPI 3.1 投影只描述 JSON content，硬塞会产出错误的 `application/json` 声明。错误面已由
+    E10i 覆盖（400 + `default`）。
+  - **500 / 502 / 408 / 415 显式状态**：与 `default` 同形（实现故障面），逐 op 展开只是 description
+    噪声；继续留在 `default`（`ErrorEnvelope`）。
+- **门禁**（worktree @ `21e4b850`）：gateway `tsc` **0**；全量 jest **7675 tests / 7663 passed /
+  9 条已知 env-red（3 suites）/ 3 skipped**，零契约红；`schema:coverage` **逐字不变**
+  （responses 320/327 + write responses 194/195 + requests 189/195 + errors default 327/327 /
+  explicit 157）；`analyze-routes` **TOTAL 0**；`emit:openapi` **327 routes / 293 paths / 327 ops** +
+  `gen:api`（overrides 10）幂等无 diff；SDK `tsc` **0** + 全量 **237**（+11）+ contract **4/4**；
+  desktop 全量 **3875（3874 passed / 1 条 resolver env-red）** + `tsgo -p` 只剩 `node:tls` **2** 条；
+  mobile 定向 **31** + `flutter analyze` **0**；TUI 纯函数 **6/6** + human-token **9/9**，
+  整包 208（188/19/1）仍 env-red（`pi-tui`）；`kernel-split-guards` **7/7**。明细见交付记录。
+
+---
+
 ## E11 身份 / 配额硬化（2026-11-13）
 
 > E11 原清单里的设备生命周期（deviceName 校验、WS `?deviceId=` 凭据优先、`pruneStale`、rotate/revoke）
@@ -2286,18 +2332,25 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
   `WRITE_RESPONSE_EXCLUDED` 的唯一项；要建模只能换 `text/event-stream` 帧 schema，
   当前 OpenAPI 3.1 投影只描述 JSON content）。请求面维持 **189/195**（6 个二进制 /
   multipart / A2A 显式排除）。
-- 强制版本协商 / SDK 全量 schema 类型化。
+- 强制版本协商 / SDK 全量 schema 类型化。**协商的客户端侧已由 E10j-J2 收口**：SDK
+  `schemaEpoch: 'auto'` + desktop/TUI opt-in（学 epoch、epoch 漂移的 409 刷新后重试一次）。
+  仍未做的是**强制拒绝**模式（gateway 只校验客户端主动携带的头，未携带永远放行）与 SDK 全量 schema 类型化。
 - **错误体（4xx/5xx）：已收口（E10i）**：**`default` 327/327** + `/api/*` 的 **401/403 各 318** +
   **显式状态码 157 op / 356 条**（400/404/409/413/429/503；特殊形状只有
   `QuestionLedgerErrorSchema` 与 quota 429）。仍留在 `default` 的是**实现故障面**
   （500 catch-all / 502 / 408 / 415 / 405）与 9 个非 `/api` 入口的业务错误 —— 有意不建模，
   理由见「E10i 错误响应契约」。仍是声明式契约：handler 是事实源，无运行时校验。
   台账 `npm run schema:coverage` 的 `errors:` 行。
-- **TUI** triage phantom 字段渲染（`reason` / `goalId` / `severity`；真实 wire 无这些字段）。
-  mobile 侧已在 E10f-E 收口（`triage_card_model.dart`），desktop 侧是 E10b-3。
+- ~~**TUI** triage phantom 字段渲染（`reason` / `goalId` / `severity`）~~ ——**E10j-J1 已收口**：
+  `packages/tui/src/ui/triage-view-model.ts#triageView()` 只读真实 wire 形状，`triage-tab.ts` 的
+  行与详情都不再引用 phantom 字段（mobile 是 E10f-E，desktop 是 E10b-3）。TUI 整包仍缺
+  `@earendil-works/pi-tui`，门禁 env-red。
 - **won't do（本阶段，已有决策与缓解）**：OS keychain / 进程签名、MCP human 工具（E11-4）；
-  `pod.updated` 记录级实体 payload（E9-3）；mobile 工作 tab 的其余增量渲染（E9-1 后 flat 帧已能触发
-  `goalId` 局部 patch，任务 / 消息仍是整页快照）。
+  `pod.updated` 记录级实体 payload（E9-3）；**mobile 工作 tab 的任务 / 消息级增量 patch**
+  （E9-1 后 flat 帧已能触发 `goalId` 局部 patch，任务 / 消息仍是整页快照；E10j §3 定案 won't do：
+  work overview 只有整页快照接口，没有「按 goal 取 task/message 增量」的端点，新增端点属新 API 设计，
+  当前 `goalId` 局部 patch + 15s 全量兜底已满足一致性）；`tts.speakStream` 的响应 schema（SSE 帧，
+  E10j §3 再次确认排除）。
 - E10 有意保留的松口：`PodGoal` 的可选性（`bucket` / `accepted` / `progress` / `revision` / `priority`…）
   仍比 handler 实际输出宽（收紧要动约 12 个 DTO 字段并打破桌面测试夹具，E8 先例）；`FileDiffInfo.file`
   仍可选，而 `session.diff` schema 的 `MafwDiff.file` 必填。

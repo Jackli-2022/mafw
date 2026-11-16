@@ -163,6 +163,36 @@ describe("createGatewayClient", () => {
     expect(headersOf(first[0]).get("x-mafw-human-token")).toBe(TOKEN)
     expect(headersOf(second[0]).get("x-mafw-human-token")).toBe(rotated)
   })
+
+  // E10j-J2: every desktop client negotiates the contract epoch automatically.
+  test("negotiates the schema epoch automatically (opt-in 'auto')", async () => {
+    process.env[ENV_KEY] = writeTokenFile(TOKEN)
+    const calls: Captured[] = []
+    const fakeEpochFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), init })
+      return {
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        headers: {
+          get: (name: string) =>
+            String(name).toLowerCase() === "x-mafw-schema-epoch" ? "7" : "application/json",
+        },
+        json: async () => ({ project: { id: "p1", worktree: "/proj" } }),
+      } as unknown as Response
+    }) as typeof fetch
+
+    const client = createGatewayClient("http://127.0.0.1:4321", fakeEpochFetch)
+    await client.project.current()
+    await client.project.current()
+
+    expect(calls.length).toBe(2)
+    // First request has nothing to send …
+    expect(headersOf(calls[0]).get("x-mafw-schema-epoch")).toBe(null)
+    // … the response epoch is learned and carried from then on.
+    expect(headersOf(calls[1]).get("x-mafw-schema-epoch")).toBe("7")
+    expect(headersOf(calls[1]).get("x-mafw-human-token")).toBe(TOKEN)
+  })
 })
 
 // ── E11-1: stale credential detection + one-shot retry ──

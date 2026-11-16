@@ -11,11 +11,19 @@
 - 测试：`node --test tests/*.test.ts`（Node 22+ 类型剥离）；**源码禁用 TS parameter properties**（strip-only 不支持）；相对 import 用 `.ts` 后缀 + tsconfig `rewriteRelativeImportExtensions`（tsc 编译时改写为 .js）；UI 组件直接 `render(width)`/`handleTabKey` 断言（pi-tui **不导出 VirtualTerminal**）；冒烟测 cli 退出码（`MAFW_TUI_SMOKE=1` 启用）；冒烟与轮询注意 interval cleanup（store.stop() 必须清 schedule handle，否则 node 进程挂住）
 - 发布注意：`@earendil-works/pi-tui` + `chalk` 在 **root dependencies**（发布后全局解析），root `files` 含 `packages/tui/dist/`；SDK `event.connected()` 为 TUI 监督器新增
 - 已知类型缺口：SDK `TriageItem` 缺 `id` 字段（wire 实际有，TUI 用 `TriageItem & { id: string }`）；
-  **2026-11-13（E10b-2）已收口 `id`**（`TriageItem` 重塑为磁盘 wire 形状，`id` 必填），但
-  `ui/triage-tab.ts` 仍读 phantom `reason` / `goalId` / `severity`（真实 wire 无这些字段，渲染为
-  空 / `undefined`），且 TUI 测试因缺 `@earendil-works/pi-tui` 处于 env-red，类型漂移无法用门禁验证；
-  对齐桌面 `triage-model` 的做法留待后续 TUI 批次。`--hybrid` 检索 flag 待 SDK `memory.search`
-  加 retriever 参数后接（v1 固定 bm25）
+  **2026-11-13（E10b-2）已收口 `id`**（`TriageItem` 重塑为磁盘 wire 形状，`id` 必填）；
+  **2026-11-16（E10j-J1）已收口 TUI 渲染漂移**：`ui/triage-view-model.ts` 纯函数
+  `triageView(t)` 与桌面 `triage-model.ts` 同构（title 取 `proposedGoal.title` →
+  `summary.title` → `id`；meta 为 `source · discoveredAt · 截止 deadline`，非法日期省略；
+  badge 为 state 三态（待确认/已确认/已拒绝）+ `llmSuggestions` 最高 priority 条目的
+  `建议确认`/`建议拒绝` 后缀），`ui/triage-tab.ts` 不再读
+  phantom `reason` / `goalId` / `severity`，颜色只由 badge tone（neutral/warn/danger）决定。
+  纯函数测试 `tests/triage-view-model.test.ts` 可跑；TUI 整包仍因缺 `@earendil-works/pi-tui`
+  env-red。
+  **schema epoch（E10j-J2）**：`store/human-token.ts#createTuiClient` opt-in `schemaEpoch: 'auto'`
+  （SDK 自动学习并携带 `X-MAFW-Schema-Epoch`，epoch 漂移的 409 刷新后重试一次），gateway 升级后
+  TUI 不再静默沿用旧契约；与「human token 403 不自动重试」的取舍互不影响（SSE `fetchPath` 不带 epoch）。
+  `--hybrid` 检索 flag 待 SDK `memory.search` 加 retriever 参数后接（v1 固定 bm25）
 
 #### TUI v2 能力批（2026-09-14，对标 Claude Code/Codex/opencode/Hermes 调研缺口）
 

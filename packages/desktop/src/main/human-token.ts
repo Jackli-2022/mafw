@@ -37,10 +37,16 @@ export function readHumanToken(filePath: string = humanTokenPath()): string {
 /**
  * Single entrypoint for every desktop gateway client: base URL + the human
  * credential (+ injectable fetch for probes/tests).
+ *
+ * E10j-J2: `schemaEpoch: 'auto'` — the client learns the gateway's contract
+ * epoch from responses and renegotiates (one 409 retry) after a gateway
+ * upgrade instead of silently speaking the old contract. Raw `fetchPath`
+ * calls (SSE / binary / media) stay untouched.
  */
 export function createGatewayClient(baseUrl: string, fetchImpl?: typeof fetch): MafwClient {
   return new MafwClient(baseUrl, {
     clientToken: readHumanToken(),
+    schemaEpoch: 'auto',
     ...(fetchImpl ? { fetchImpl } : {}),
   })
 }

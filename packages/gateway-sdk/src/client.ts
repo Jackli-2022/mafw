@@ -65,6 +65,17 @@ async function httpError(res: Response): Promise<Error> {
 /** E5a: header carrying the human credential (spec §5.1). */
 const HUMAN_TOKEN_HEADER = 'X-MAFW-Human-Token'
 
+/** E3-5/E10j-J2: gateway contract epoch (both directions — transport.ts). */
+const SCHEMA_EPOCH_HEADER = 'X-MAFW-Schema-Epoch'
+
+/** Response epoch as a number, or null when the header is absent/unparseable. */
+function readSchemaEpoch(res: Response): number | null {
+  const raw = (res.headers as any)?.get?.(SCHEMA_EPOCH_HEADER)
+  if (typeof raw !== 'string' || raw.trim() === '') return null
+  const value = Number(raw)
+  return Number.isFinite(value) ? value : null
+}
+
 export class MafwClient implements IMafwClient {
   private baseUrl: string
   private _sse: SSEConnection
@@ -73,6 +84,10 @@ export class MafwClient implements IMafwClient {
   private clientToken: string
   /** Extra headers applied beneath the token and per-call headers. */
   private baseHeaders: Record<string, string>
+  /** E10j-J2: `schemaEpoch: 'auto'` — learn from responses, retry once on 409. */
+  private schemaEpochAuto: boolean
+  /** Last known epoch (fixed mode: the configured number; auto: last seen). */
+  private schemaEpoch: number | null
 
   constructor(opts?: string | MafwClientOptions, overrides?: Omit<MafwClientOptions, 'baseUrl'>) {
     // Two accepted forms: `new MafwClient(options)` and the ergonomic
@@ -83,17 +98,48 @@ export class MafwClient implements IMafwClient {
     // Never send a padded credential: gateway compares the raw header value.
     this.clientToken = (overrides?.clientToken ?? base?.clientToken ?? '').trim()
     this.baseHeaders = { ...(base?.headers ?? {}), ...(overrides?.headers ?? {}) }
+    // E10j-J2: unset → no header at all (legacy behaviour); number → constant
+    // (never rewritten, never retried); 'auto' → negotiate with the gateway
+    // (learn from responses + one-shot retry on 409).
+    const epoch = overrides?.schemaEpoch ?? base?.schemaEpoch
+    this.schemaEpochAuto = epoch === 'auto'
+    this.schemaEpoch = typeof epoch === 'number' && Number.isFinite(epoch) ? epoch : null
     this._sse = new SSEConnection()
+  }
+
+  /** Headers for one `request()` attempt (merge order documented in request). */
+  private buildHeaders(init?: RequestInit): Headers {
+    const headers = new Headers({ 'Content-Type': 'application/json' })
+    for (const [name, value] of Object.entries(this.baseHeaders)) headers.set(name, value)
+    if (this.clientToken) headers.set(HUMAN_TOKEN_HEADER, this.clientToken)
+    if (this.schemaEpoch !== null) headers.set(SCHEMA_EPOCH_HEADER, String(this.schemaEpoch))
+    if (init?.headers) new Headers(init.headers).forEach((value, name) => headers.set(name, value))
+    return headers
   }
 
   private async request<T>(path: ApiPath, init?: RequestInit): Promise<T> {
     // Merge order (spec §5.1): default Content-Type → options.headers →
-    // clientToken → per-call headers (call site wins).
-    const headers = new Headers({ 'Content-Type': 'application/json' })
-    for (const [name, value] of Object.entries(this.baseHeaders)) headers.set(name, value)
-    if (this.clientToken) headers.set(HUMAN_TOKEN_HEADER, this.clientToken)
-    if (init?.headers) new Headers(init.headers).forEach((value, name) => headers.set(name, value))
-    const res = await this.fetchImpl(`${this.baseUrl}${path}`, { ...init, headers })
+    // clientToken → schema epoch → per-call headers (call site wins).
+    let res = await this.fetchImpl(`${this.baseUrl}${path}`, { ...init, headers: this.buildHeaders(init) })
+    if (!res.ok && this.schemaEpochAuto && res.status === 409) {
+      // The transport echoes its epoch on every response, so a 409 offering a
+      // *different* value means the gateway moved on: adopt it and retry once
+      // (same path/init). Same/absent epoch → nothing to negotiate, surface it.
+      const offered = readSchemaEpoch(res)
+      // Only a request that actually carried a known epoch can be refused by
+      // the transport's epoch check; with no known epoch the 409 came from a
+      // handler that already ran, so retrying would replay a dispatched request.
+      if (offered !== null && this.schemaEpoch !== null && offered !== this.schemaEpoch) {
+        this.schemaEpoch = offered
+        res = await this.fetchImpl(`${this.baseUrl}${path}`, { ...init, headers: this.buildHeaders(init) })
+      }
+    }
+    // 'auto' tracks the epoch from every response (success or not) so later
+    // requests carry the gateway's current contract revision.
+    if (this.schemaEpochAuto) {
+      const seen = readSchemaEpoch(res)
+      if (seen !== null) this.schemaEpoch = seen
+    }
     if (!res.ok) throw await httpError(res)
     // Old gateways serve dashboard HTML for unknown routes (SPA fallback).
     // Surface a clean, actionable error instead of a JSON parse SyntaxError.
