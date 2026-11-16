@@ -97,12 +97,12 @@ violation 丢弃的是整次 candidate：已记录的 http 路由、actions/even
    `tests/unit/lead/lead-outbox-read-ack.test.ts`。运行途中另一会话提交了 `2094fb9c`（goal 状态发现与
    read receipts），源码被中途替换；两个文件都不 import 本波任何模块，在稳定 HEAD 上重跑
    **2 suites / 11 tests 全绿**。本波定向 suite 始终全绿。
-3. **kill switch 错误文案两种措辞**：`v2-live.ts` 在单平面被关时抛 `(MAFW_KERNEL_V2_*=0)`；
-   `kernel.ts` 只在两平面都关、bridge 为 `null` 时抛 `(set MAFW_KERNEL_V2_*=1)`。两者各自描述的是
-   当前状态与唯一可行修复，均成立；保留原状以免改动已在用的错误文案。
 2. **`contributes.desktop.*` 只校验、不强制**：desktop 贡献仍在桌面进程侧按 `ui` 快照加载，
    manifest 的静态 desktop 声明暂无执行点；后续接 desktop 侧校验时再收紧。
 3. **worker 路径的声明层是叠加不是替代**：worker 自带 actions/events 白名单，`contributes` 是它上面的
    又一层上界；两层都过才提交。
 4. **v1 非法块 = warning-only 是刻意选择**：不能让存量包因为新引入的校验而突然下线；但合法块必须生效，
    否则「声明即约束」在 v1 上就是空话。
+5. **kill switch 错误文案两种措辞**：`v2-live.ts` 在单平面被关时抛 `(MAFW_KERNEL_V2_*=0)`；
+   `kernel.ts` 只在两平面都关、bridge 为 `null` 时抛 `(set MAFW_KERNEL_V2_*=1)`。两者各自描述的是
+   当前状态与唯一可行修复，均成立；保留原状以免改动已在用的错误文案。
