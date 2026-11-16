@@ -9,7 +9,12 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { GatewayDatabase } from '../../../gateway/src/memory/gateway-db';
-import { encodeTurnSparseTerms, querySparseTermIds, type T1SparseAtom } from '../../../gateway/src/recall/t1-sparse';
+import {
+  encodeTurnSparseTerms,
+  MIN_RETRIEVAL_ATOM_SCORE,
+  querySparseTermIds,
+  type T1SparseAtom,
+} from '../../../gateway/src/recall/t1-sparse';
 import { extractTurnFeature } from '../../../gateway/src/recall/t1-features';
 import { extractTurnActors } from '../../../gateway/src/recall/t1-actors';
 import { extractTurnConcepts } from '../../../gateway/src/recall/t1-concepts';
@@ -135,7 +140,7 @@ async function main() {
       for (const query of BASELINE_QUERIES) {
         const atoms = mode.query(query.id);
         const extra = atoms
-          .filter((atom) => atom.score >= 0.08)
+          .filter((atom) => atom.score >= MIN_RETRIEVAL_ATOM_SCORE)
           .map((atom) => `sem:${atom.termId}`);
         const ids = [...new Set([...querySparseTermIds(query.query), ...extra])].slice(0, 64);
         let ranked: string[] = [];
@@ -145,10 +150,10 @@ async function main() {
             .prepare(
               `SELECT s.trace_id, SUM(s.weight) AS score FROM t1_sparse_terms s
                 WHERE s.term_id IN (${placeholders})
-                  AND (s.kind <> 'semantic' OR s.weight >= 0.08)
+                  AND (s.kind <> 'semantic' OR s.weight >= ?)
                 GROUP BY s.trace_id ORDER BY score DESC LIMIT ?`,
             )
-            .all(...ids, K) as Array<{ trace_id: string }>;
+            .all(...ids, MIN_RETRIEVAL_ATOM_SCORE, K) as Array<{ trace_id: string }>;
           ranked = rows.map((row) => keyOf.get(row.trace_id) ?? '').filter(Boolean);
         }
         recall += recallAt(ranked, query.expected);
