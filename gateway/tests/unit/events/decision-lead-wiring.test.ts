@@ -12,6 +12,7 @@ describe('decision -> Lead event wiring', () => {
     expect(kernel).toMatch(/normalizeInternalEvent/);
     expect(kernel).toMatch(/kind: 'decision\.drafted'/);
     expect(kernel).toMatch(/sourceId: 'internal'/);
+    expect(kernel).toMatch(/history\.at\(-1\)\?\.by === 'agent'/);
   });
 
   test('decision events create a Lead context subscription and prompt', () => {

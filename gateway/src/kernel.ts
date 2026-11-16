@@ -4374,8 +4374,11 @@ class MafwScheduler {
       notify: (event) => {
         this.broadcast({ type: 'decision.updated', properties: event });
         // Draft decisions are announced through the event layer; confirmed /
-        // shelved records don't need another Lead prompt.
-        if (event.action === 'drafted' && event.record.status === 'draft') {
+        // shelved records don't need another Lead prompt. User-authored drafts
+        // already came from the human, so only agent drafts are announced.
+        if (event.action === 'drafted'
+          && event.record.status === 'draft'
+          && event.record.history.at(-1)?.by === 'agent') {
           void this.ingestDecisionEvent(event).catch((err: any) => {
             log.warn(
               `[EventLayer] decision ingest failed for ${event.recordId}`
