@@ -4820,7 +4820,6 @@ class MafwScheduler {
       store: eventStore,
       outbox: new EventOutbox({ store: eventStore, now: () => new Date().toISOString() }),
       now: () => new Date().toISOString(),
-      newId: (prefix) => `${prefix}_${randomUUID()}`,
       ensureLead: async (podId) => {
         const podService = this.podService;
         if (!podService) throw new Error('lead outbox unavailable: pod service not ready');

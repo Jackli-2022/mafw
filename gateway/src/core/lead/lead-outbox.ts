@@ -26,7 +26,6 @@ export interface LeadOutboxDeps {
   store: EventStore;
   outbox: EventOutbox;
   now(): string;
-  newId(prefix: string): string;
   ensureLead(podId: string): Promise<{ sessionId: string }>;
   promptAsync(input: { sessionID: string; text: string }): Promise<void>;
   timers: { every(name: string, ms: number, fn: () => void): { clear(): void } };

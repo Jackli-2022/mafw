@@ -16,7 +16,6 @@ function harness(policy?: Partial<LeadOutboxPolicy>) {
     store,
     outbox,
     now: () => NOW,
-    newId: (prefix) => `${prefix}_1`,
     ensureLead: async () => ({ sessionId: 'ses_lead' }),
     promptAsync,
     timers,
