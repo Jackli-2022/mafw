@@ -4,7 +4,7 @@
 
 **Goal:** 把 Goal 生命周期事实写进独立 `domain_events` 表，把 GoalState 迁进同一个 SQLite 库，并让归档动作的 state + event + outbox 真正同事务。
 
-**Architecture:** `domain_events` 是 append-only 的 domain log（独立表，按 aggregate 版本单调）；`pod_events` 保持「事件 → 人」的 inbox 投影不变。`GoalStateV3` 的模块 API（`loadGoalState` / `writeGoalState` / `ensureGoalState`）通过可插拔 backend 委托给 SQLite，JSON 文件降级为兼容镜像（Phase 3 再移除）。`PodGoalService.onGoalArchived` 接受一个事务内回调，k嵌入式在同一个 `db.transaction` 里写 goal 状态、归档 domain event、写 pod event 和 lead outbox。
+**Architecture:** `domain_events` 是 append-only 的 domain log（独立表，按 aggregate 版本单调）；`pod_events` 保持「事件 → 人」的 inbox 投影不变。`GoalStateV3` 的模块 API（`loadGoalState` / `writeGoalState` / `ensureGoalState`）通过可插拔 backend 委托给 SQLite，JSON 文件降级为兼容镜像（Phase 3 再移除）。`PodGoalService.onGoalArchived` 接受一个事务内回调，kernel 在同一个 `db.transaction` 里写 goal 状态、归档 domain event、写 pod event 和 lead outbox。
 
 **Tech Stack:** TypeScript、better-sqlite3（单连接、`db.transaction`）、Jest（`--runInBand --forceExit`）、现有 `PodStore` / `EventStore` / `PodEventService`。
 
