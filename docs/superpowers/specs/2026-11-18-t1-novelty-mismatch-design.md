@@ -193,7 +193,8 @@ ALTER TABLE t1_turn_features ADD COLUMN mismatch REAL;
 - **回填自我泄漏**：用「该轮之后才写出的记忆」判断早期轮次，会让 novelty 偏低（保守方向）。
   时间过滤 + `source_trace_ids` 过滤只能挡住一部分；审计时要看历史轮是否整体偏「不新颖」。
 - **cue 过短**：`intent` 为空时 cue 只剩 entities，向量可能不稳；这种情况按「信息量不足」记 null。
-- **换 embedding 模型**：阈值与分布全部失效；信号绑定 `modelTag`，换模型必须重算，不能沿用。
+- **换 embedding 模型**：阈值与分布全部失效。信号绑定当前 embedder：回填脚本输出 `model`，
+  release note 记录；换模型必须重跑回填（`--apply` 覆盖全部分数）并重定阈值，不能沿用旧分布。
 - **mismatch 可能是噪声**：见 §9 第 5 条，审计不通过就只保留 novelty。
 
 ## 12. 回滚
