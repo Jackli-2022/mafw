@@ -1,7 +1,8 @@
 # 2026-11-16 · Lead inbox 统一：PodEventWake 只入 LeadOutbox
 
 - **版本**：`v5.1.0`（行为修复，不升版本号）
-- **提交**：`0a72c7a8`（outbox payload）+ `8fe22f46`（PodEventWake producer / kernel）
+- **提交**：`0a72c7a8`（outbox payload）+ `8fe22f46`（PodEventWake producer / kernel）+
+  `ea9d2490`（A2A dedupe）
 - **范围**：gateway Lead 唤醒路径；desktop / SDK / runtime 零改动
 - **前置**：`docs/releases/2026-11-16-goal-failure-routing.md`
 
@@ -30,13 +31,19 @@ Lead 有两条唤醒路径：
 - kernel 的 `PodEventWake` 不再持有 `promptAsync` / Lead session / busy / suspended /
   delivery 去重逻辑；只保留 `pendingWakes`、`isPodPaused`、`markWakeQueued`、`enqueue`。
 - 失败 enqueue 保持 pending，下一次 scan 重试；durable outbox 按 `eventId` 去重。
+- 保留 A2A 已投递短路：如果镜像 `pod_message` 已经由 A2A 送达 Lead，则只把
+  `wake_state` 标成 `delivered`（`wake_session_id='a2a:<messageId>'`），不再入 outbox，
+  避免同一成员消息二次触达。
 
 ## 测试
 
 - 定向：`lead-outbox-model` + `lead-outbox` = 19 tests；`pod-event-wake` + wiring +
   `pod-event-service` = 19 tests。
 - gateway `tsc`：rc=0。
-- gateway 全量：`TO_FILL_FULL`.
+- gateway 全量：**987 / 988 suites**，**7890 passed / 2 skipped / 1 failed**；唯一失败是
+  `tests/unit/recall/t1-sample-turn-texts.test.ts`（并行 memory 改动，单跑 2/2 pass；
+  前一次全量是另一个 memory flake `cortex-hints`，单跑 5/5 pass）。Phase 1 定向套件
+  `lead-outbox*` + `pod-event-*` 全部 green。
 
 ## 边界
 
