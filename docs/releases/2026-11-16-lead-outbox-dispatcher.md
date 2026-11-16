@@ -63,6 +63,8 @@
   - 已用 human token 将自检决定 `shelve`（`reviewAt=2026-11-23`）。
 - 最终 build 重启到 `573eb37c`（review 修复后）再等一个 dispatcher tick + 8s：同 recordId
   仍只有 1 条 Lead 消息、outbox 行仍为 `sent`（`attempts=0`），确认 `sent` 不会因重启重发。
+- minors 修复后再次 build 重启到 `0dba07ab`：同 recordId 仍为 1 条 Lead 消息、1 条 `sent`
+  outbox 行，失败路径加固未改变已发送行的重启语义。
 
 ## 部署说明
 
