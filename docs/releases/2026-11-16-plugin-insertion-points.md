@@ -22,6 +22,7 @@
 | `c08c9918` | E12 默认生效 | `feat(plugin)`: `readKernelV2LiveFlags()` 改为「显式 `0` / `false` 才关闭」，未设置即开启；`kernel-v2-plugin-host` 集成用例去掉显式 flag；4 条 switch 层用例（含 2 条重写） |
 | `db4025ce` | E12 零 observer 快路径 | `fix(plugin)`: `observe()` 在 `observers.size === 0` 时直接返回，跳过 `toCanonicalEvent` 的深度脱敏；2 条用例 |
 | 本记录 | E12 修复波 | 终审 A–H：两条激活路径的 trusted 侧补测试、`http: false` 零路由补测试、v1 合法块补测试、kill switch trim/大小写、docs 与 release 记录；+3 条用例 +1 条断言 |
+| `76d376d6` | E12 minor 收尾 | `chore(plugin)`: `PackageManifest.contributes` 类型、`validateUnifiedContributions` 认识 `declared`、doctor 新增 `manifest-warnings` 检查（`legacy-contributes` 不再只写不读）、http 错误断言收紧到全文、guide 补两条边界、`kernel.ts` / `event-dispatch.ts` 注释纠偏；+3 条用例 |
 
 ## 1. `contributes` 语义：上界，不是清单
 
@@ -71,26 +72,34 @@ violation 丢弃的是整次 candidate：已记录的 http 路由、actions/even
 | 门 | 命令 | 结果 |
 |---|---|---|
 | gateway 定向 | `npx jest --runInBand --forceExit tests/unit/plugins/package-host.test.ts tests/unit/plugins/package-manifest.test.ts tests/unit/runtime/v2-live.test.ts tests/unit/plugins/package-validator.test.ts`（`gateway/`） | **4 suites / 94 tests passed**（0 fail，7.9s） |
+| gateway 定向（minor 收尾后） | 同上 + `tests/unit/plugins/plugin-doctor.test.ts` | **3 suites / 83 tests passed**（doctor + host + validator） |
 | gateway 类型 | `npx tsc --noEmit -p tsconfig.json`（`gateway/`） | **0 errors（exit 0）** |
-| gateway 全量（controller 跑） | `npx jest --runInBand --forceExit` | **1001 suites / 7967 tests**：**7964 passed / 2 skipped / 1 failed**；唯一红 = `tests/unit/recall/t1-sample-turn-texts.test.ts`（T1 recall，本波未触及，另一会话负责） |
+| gateway 全量（controller 跑） | `npx jest --runInBand --forceExit` | **1001 suites / 7975 tests**：**7971 passed / 2 skipped / 2 failed**；两条红（`pod/goal-view-projector`、`lead/lead-outbox-read-ack`）源于另一会话在运行途中提交 `2094fb9c`（源码被中途替换），两者在稳定 HEAD 重跑 **2 suites / 11 tests 全绿**，且均不 import 本波任何模块 |
 
 ## 5. 新增测试（对 `c4ff3e47^` 的增量）
 
 | 文件 | 基线 → 终值 | 增量 | 依据 |
 |---|---|---|---|
-| `gateway/tests/unit/plugins/package-validator.test.ts` | 38 → **44** | **+6** | 纯层：actions / events / tools 越界、未声明 plane 放行、声明多于注册合法、`http: false` |
+| `gateway/tests/unit/plugins/package-validator.test.ts` | 38 → **45** | **+7** | 纯层：actions / events / tools 越界、未声明 plane 放行、声明多于注册合法、`http: false`；minor 收尾 ×1：`validateUnifiedContributions(..., declared)` 透传 |
+| `gateway/tests/unit/plugins/plugin-doctor.test.ts` | 6 → **8** | **+2** | minor 收尾：`legacy-contributes` 进入 `manifest-warnings` 检查、干净 manifest 不产生该检查 |
 | `gateway/tests/unit/plugins/package-manifest.test.ts` | 6 → **10** | **+4** | 纯层 ×3：合法块归一化、v2 非法 = error、v1 非法 = warning；修复波 ×1：v1 合法块被存储（可构成约束） |
 | `gateway/tests/unit/plugins/package-host.test.ts` | 25 → **30** | **+5** | 接线 ×3：v1 无 contributes 回归、`http: false` 拒路由、`http: true` 放行；修复波 ×2：trusted 路径未声明 action 被拒、`http: false` 且零路由可激活 |
 | `gateway/tests/unit/plugins/package-host-worker.test.ts` | 4 → **6** | **+2** | 接线：worker 未声明 action 被拒、声明匹配的 worker 放行 |
 | `gateway/tests/unit/runtime/v2-live.test.ts` | 6 → **10** | **+4** | switch 层：无 env 即 live、单 plane `0` 只关一个、两 plane 全关 = `null`、零 observer 不构造 canonical event；修复波在既有 flag 用例里加一条 `' FALSE '` 断言（不新增 case） |
 
-**本波新增可执行 test case：21** = 纯层 9 + 接线 5 + switch 层 4（18，初始交付）+ 修复波 3
-（trusted 未声明 action、`http: false` 零路由、v1 合法块）。另有 1 条既有用例新增断言（kill switch trim/大小写）。
+**本波新增可执行 test case：24** = 纯层 9 + 接线 5 + switch 层 4（18，初始交付）+ 修复波 3
+（trusted 未声明 action、`http: false` 零路由、v1 合法块）+ minor 收尾 3（doctor 2、validator 1）。
+另有 1 条既有用例新增断言（kill switch trim/大小写）。
 
 ## 6. 已知红 / 边界
 
-1. **gateway 全量 1 条红**：`tests/unit/recall/t1-sample-turn-texts.test.ts`（T1 recall），
-   与本波文件集无交集，属另一会话负责；本波定向 4 个 suite 全绿。
+1. **gateway 全量 2 条红（非本波）**：`tests/unit/pod/goal-view-projector.test.ts` 与
+   `tests/unit/lead/lead-outbox-read-ack.test.ts`。运行途中另一会话提交了 `2094fb9c`（goal 状态发现与
+   read receipts），源码被中途替换；两个文件都不 import 本波任何模块，在稳定 HEAD 上重跑
+   **2 suites / 11 tests 全绿**。本波定向 suite 始终全绿。
+3. **kill switch 错误文案两种措辞**：`v2-live.ts` 在单平面被关时抛 `(MAFW_KERNEL_V2_*=0)`；
+   `kernel.ts` 只在两平面都关、bridge 为 `null` 时抛 `(set MAFW_KERNEL_V2_*=1)`。两者各自描述的是
+   当前状态与唯一可行修复，均成立；保留原状以免改动已在用的错误文案。
 2. **`contributes.desktop.*` 只校验、不强制**：desktop 贡献仍在桌面进程侧按 `ui` 快照加载，
    manifest 的静态 desktop 声明暂无执行点；后续接 desktop 侧校验时再收紧。
 3. **worker 路径的声明层是叠加不是替代**：worker 自带 actions/events 白名单，`contributes` 是它上面的
