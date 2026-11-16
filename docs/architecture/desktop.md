@@ -62,11 +62,13 @@
   `fs.listDir` 探测，失败回退项目目录。详见
   `docs/releases/2026-11-12-workbench-goal-review-focus.md` 与
   `docs/releases/2026-11-13-workbench-tabs-and-changes-face.md`。
-- **Chat 决定面（2026-11-12 Plan 3）**：Chat transcript 上方是决定板（需要你定 / 待确认 / 已定 / 已搁置），
-  与 rail Pod badge 共用 `decisionStore`；`/api/attention` 投影未解决评审项，决定动作可打开 Goal face、
-  评审项锚点或计划审阅。决定记录由 MCP 起草、人确认 / 搁置 / 重开，落在 `<project>/.mafw/decisions/`；
-  新 Goal 先看委托单预览（12 字段 + 授权级别），Goal 总览显示代理契约，框显示执行 badge。详见
-  `docs/releases/2026-11-12-workbench-chat-decisions.md`。
+- **Chat 决定面（2026-11-12 Plan 3；2026-11-16 移除）**：Chat transcript 上方的决定板
+  （需要你定 / 待确认 / 已定 / 已搁置）已删除——它把决定做成一张大卡片，用户期望由 Lead
+  在对话里主动说明。`decisionStore` 仍保留：rail Pod badge 与 Goal 详情（`DecisionRecordCard`）
+  继续使用同一份 attention / 记录数据；chat 不再渲染决定板，也不再提供「查看决定记录」跳转。
+  决定记录仍由 MCP 起草、人确认 / 搁置 / 重开，落在 `<project>/.mafw/decisions/`；goal-less
+  draft 不进 attention（由 Lead 后续消息转达）。新 Goal 先看委托单预览（12 字段 + 授权级别），
+  Goal 总览显示代理契约，框显示执行 badge。
 - **Agent-native Chat 意图（2026-11-15 起）**：composer 只保留一个发送面，讨论 / 提议 / 委托 / 解决
   四模式已移除。Lead 按系统提示直接调用 `mafw_create_goal` 建立 `discussing` Goal（带当前话题
   快照，不启动 NodeDriver）；桌面把该工具结果渲染成 `GoalCreatedCard`（打开 Tech Lead 讨论 /
@@ -88,8 +90,8 @@
   路由（`fileOpenPlan` 分流）。`FocusStage` 的 Goal 变更集由 `GoalChangeSetStage`
   读 Pod revision worktree diff（「查看本版变更」）。`contentScope` 从 active focus
   派生，旧 `mafw-content-scope` 一次性迁移。后台任务在 Chat 内联，团队 / 记忆在
-  世界总览的 Pod 面板。决定板由 `decision.updated` SSE 定向刷新，记录每 25 条分批
-  渲染。详见 `docs/releases/2026-11-12-workbench-world-overview-cleanup.md`。
+  世界总览的 Pod 面板。决定记录由 `decision.updated` SSE 定向刷新；chat 决定板已移除，
+  记录只在 Goal 详情按 Goal 过滤展示。详见 `docs/releases/2026-11-12-workbench-world-overview-cleanup.md`。
 - **WorkbenchTabs / 统一文档条（2026-11-13）**：`WorkbenchTabs` 渲染全工作台唯一的
   `DocumentTabs`，顺序为打开顺序（文件 id 带 root，浏览器 id 带 tab id，场景 id 带 subject）；
   `EditorDock` / `BrowserDock` 以 `embedded` 模式常挂载，按 active kind 用 wrapper 的 `display`
@@ -728,7 +730,8 @@ spec `docs/superpowers/specs/2026-11-13-gateway-e6-interaction-model-design.md`�
 - **已知残留（E6 接受）**：
   1. ~~`/api/attention` 不投影 decision 记录~~ **E9-2 已落地**：带 `goalId` 的 draft 现在出现在
      `items` 里（`kind:'decision'`、`action.type:'open_decision'`、`itemId` = record id），
-     `ingest` 的 attention patch 与决定板去重都真正生效；goal-less draft 仍只在决定板（见 E9-2 节）。
+     `ingest` 的 attention patch 真正生效；**chat 决定板于 2026-11-16 移除**，goal-less draft
+     仍不进 attention，由 Lead 通过对话转达。
   2. 持久化 tab 的 `{id,title}` 仍是首帧兜底：实体未取到（离线/桶被裁剪）时显示旧标题，直到
      bucket fetch 或 `session.updated` patch 到实体。
   3. foreign-project guard 只看 `record.projectDir`（规范化后比较）；记录里缺 `projectDir` 时按本项目处理。
@@ -743,6 +746,9 @@ E7-2 把 SDK 的 `event.url(sessionID?)` 收成零参后，desktop 的 preload �
 统一入口 `mafw-invoke` → `resolveIpcMethod` → SDK `events.url()` 行为逐字不变。
 
 ### Attention decision 投影与决定板去重（2026-11-13，E9-2）
+
+> 2026-11-16：Chat 决定板已移除（`f185559b`）。`focus/decision-model.ts` 的投影仍保留为
+> `decisionStore` 的数据层，供 rail badge 与 Goal 详情使用；chat 不再渲染决定板。
 
 E6 留下的第一条残留（`/api/attention` 不投影 decision）在 E9-2 收口：gateway 现在把**带 `goalId`
 的 draft** 作为 `kind:'decision'` 的 attention item 发出（gateway 侧见 `gateway.md` §「E9 交互补齐」）。
