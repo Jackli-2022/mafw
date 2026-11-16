@@ -55,6 +55,8 @@
     Lead 回复确认“这条 `[LEAD EVENT]` 我确实收到了”；
   - 再等一个 dispatcher tick 后：同 recordId 的 Lead 消息仍为 1 条、outbox 行仍为 1 条；
   - 已用 human token 将自检决定 `shelve`（`reviewAt=2026-11-23`）。
+- 最终 build 重启到 `573eb37c`（review 修复后）再等一个 dispatcher tick + 8s：同 recordId
+  仍只有 1 条 Lead 消息、outbox 行仍为 `sent`（`attempts=0`），确认 `sent` 不会因重启重发。
 
 ## 部署说明
 
