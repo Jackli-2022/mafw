@@ -2425,6 +2425,36 @@ export class GatewayDatabase {
     }));
   }
 
+  /**
+   * Deterministic reference population for atom calibration: turn/observation
+   * text sampled from both active and archived rows. Returns [] on a fresh DB.
+   */
+  sampleTurnTexts(limit: number): string[] {
+    const n = Math.max(0, Math.trunc(limit));
+    if (n === 0) return [];
+    const rows = this.db
+      .prepare(
+        `SELECT content FROM (
+           SELECT content, trace_id, id FROM t1_observations
+           UNION ALL
+           SELECT content, trace_id, id FROM t1_archive
+         )
+         WHERE content IS NOT NULL AND length(content) > 0
+         ORDER BY trace_id, id
+         LIMIT ?`,
+      )
+      .all(n) as Array<{ content: string }>;
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const row of rows) {
+      const text = String(row.content ?? '').trim().slice(0, 500);
+      if (!text || seen.has(text)) continue;
+      seen.add(text);
+      out.push(text);
+    }
+    return out;
+  }
+
   // ── T1 episodes (derived index) ─────────────────────────────────────────
 
   /**
