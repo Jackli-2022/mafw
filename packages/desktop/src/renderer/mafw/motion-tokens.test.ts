@@ -16,6 +16,7 @@ describe("visual language motion tokens", () => {
     expect(shellBlock).toMatch(/--dur-surface:\s*240ms/)
     expect(shellBlock).toMatch(/--dur-progress:\s*320ms/)
     expect(shellBlock).toMatch(/--dur-exit:\s*140ms/)
+    expect(shellBlock).toMatch(/--dur-morph:\s*340ms/)
     expect(shellBlock).toMatch(/--ease-standard:\s*cubic-bezier\(\.2,\s*\.8,\s*\.2,\s*1\)/)
     expect(shellBlock).toMatch(/--ease-surface:\s*cubic-bezier\(\.16,1,\.3,1\)/)
     expect(shellBlock).toMatch(/--ease-exit:\s*cubic-bezier\(\.4,0,1,1\)/)

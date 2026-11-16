@@ -58,7 +58,7 @@ type Props = {
   contentRoot?: string | null
   contentScopeKey?: string | null
   sessionID?: string | null
-  onOpenFile?: (rel: string) => void
+  onOpenFile?: (rel: string, source?: HTMLElement) => void
   /** 「改动」face 的渲染器；数据与动作由 shell 注入。 */
   renderChanges?: () => JSX.Element
   onNewSession: () => void
@@ -401,7 +401,7 @@ export function LeftDock(props: Props) {
             sessionID={props.sessionID ?? null}
             showHeader={false}
             refreshNonce={filesRefreshNonce()}
-            onOpenFile={(rel) => props.onOpenFile?.(rel)}
+            onOpenFile={(rel, source) => props.onOpenFile?.(rel, source)}
           />
         </div>
       </Show>

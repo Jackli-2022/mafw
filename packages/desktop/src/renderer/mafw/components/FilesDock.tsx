@@ -35,7 +35,7 @@ export function FilesDock(props: {
   showHeader?: boolean
   /** 左 dock 头部的手动刷新信号；每次递增触发一次根目录重载。 */
   refreshNonce?: number
-  onOpenFile: (rel: string) => void
+  onOpenFile: (rel: string, source?: HTMLElement) => void
 }) {
   const [rootEntries, setRootEntries] = createSignal<FsEntry[]>([])
   const [expanded, setExpanded] = createSignal<Set<string>>(new Set())
@@ -232,14 +232,14 @@ export function FilesDock(props: {
     persistScope((state) => setTreeExpanded(state, row.rel, true))
   }
 
-  const activate = (row: TreeRow) => {
+  const activate = (row: TreeRow, source?: HTMLElement) => {
     if (row.kind === "dir") {
       void toggleDir(row)
       return
     }
     setSelectedRel(row.rel)
     persistScope((state) => selectTreeFile(state, row.rel))
-    props.onOpenFile(row.rel)
+    props.onOpenFile(row.rel, source)
   }
 
   const absPath = (rel: string) => {
@@ -312,11 +312,11 @@ export function FilesDock(props: {
                 role="button"
                 tabIndex={0}
                 title={row.rel}
-                onClick={() => activate(row)}
+                onClick={(event) => activate(row, event.currentTarget as HTMLElement)}
                 onContextMenu={(event) => requestRowMenu(row, event)}
                 onKeyDown={(e: KeyboardEvent) => {
                   openMenuOnKey(e)
-                  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); activate(row) }
+                  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); activate(row, e.currentTarget as HTMLElement) }
                 }}
               >
                 <span class="mafw-file-tree-icon">

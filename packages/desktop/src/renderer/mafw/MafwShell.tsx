@@ -2482,7 +2482,7 @@ export function MafwShell() {
     return openSubject({ ...state, worldId: scope.worldId }, worldScope, { kind: "world" })
   }
   /** 文件统一入口：按 fileOpenPlan 分流浏览器 / 编辑器，并记录 recent。 */
-  const openFileInScope = (
+  const openFileInScopeNow = (
     rel: string,
     root: string | null,
     scope: Scope,
@@ -2526,6 +2526,55 @@ export function MafwShell() {
       ),
     )
     recordRecentFile(rel, contentScopeFromFocus(scope))
+  }
+  /**
+   * File tree → editor shared element. The clicked row is the source; the
+   * editor host is the target. Native View Transitions only; reduced motion
+   * and older runtimes open immediately.
+   */
+  const openFileInScope = (
+    rel: string,
+    root: string | null,
+    scope: Scope,
+    opts?: { persist?: boolean; line?: number },
+    source?: HTMLElement,
+  ): void => {
+    if (!root) return
+    const reduceMotion = typeof window.matchMedia === "function"
+      && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    if (
+      !source
+      || reduceMotion
+      || typeof document.startViewTransition !== "function"
+      || fileOpenPlan(rel) !== "editor"
+    ) {
+      openFileInScopeNow(rel, root, scope, opts)
+      return
+    }
+    const name = "mafw-file-morph"
+    source.style.viewTransitionName = name
+    const transition = document.startViewTransition(async () => {
+      source.style.visibility = "hidden"
+      openFileInScopeNow(rel, root, scope, opts)
+      // Solid applies the focus update synchronously, but the editor host may
+      // mount a tick later; wait one microtask before naming the target.
+      await Promise.resolve()
+      const target = document.querySelector<HTMLElement>(
+        ".mafw-file-preview, .mafw-editor-host, .mafw-editor-dock",
+      )
+      if (target) {
+        target.style.viewTransitionName = name
+        target.dataset.fileMorphTarget = "1"
+      }
+    })
+    transition.finished.finally(() => {
+      source.style.viewTransitionName = ""
+      source.style.visibility = ""
+      document.querySelectorAll<HTMLElement>("[data-file-morph-target]").forEach((target) => {
+        target.style.viewTransitionName = ""
+        delete target.dataset.fileMorphTarget
+      })
+    })
   }
   /** 左栏插件入口：把插件 surface 作为焦点对象打开（spec 2026-11-09 §6.4）。 */
   const openPluginSurface = (surfaceId: PluginSurfaceId) => {
@@ -4269,11 +4318,11 @@ export function MafwShell() {
             contentRoot={contentRoot()}
             contentScopeKey={currentContentScopeKey()}
             sessionID={currentSessionID()}
-            onOpenFile={(rel) => {
+            onOpenFile={(rel, source) => {
               const root = contentRoot()
               if (!root) return
+              openFileInScope(rel, root, focusScopeFromContent(contentScope()), { persist: true }, source)
               closeLeftDockIfOverlay()
-              openFileInScope(rel, root, focusScopeFromContent(contentScope()), { persist: true })
             }}
             renderChanges={() => (
               <ChangesFace
