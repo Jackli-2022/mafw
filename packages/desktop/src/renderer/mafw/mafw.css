@@ -719,23 +719,26 @@ html[data-theme="light"] body {
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 26px;
-  padding: 0 10px;
-  border-radius: 10px;
-  font-size: 13px;
-  color: var(--text-4);
+  height: 27px;
+  padding: 0 9px;
+  border-radius: 6px 6px 0 0;
+  font-size: 12.5px;
+  color: var(--text-3);
   background: transparent;
   cursor: pointer;
   white-space: nowrap;
   /* 收缩到下限（Chrome ~76px 语义），再溢出才走内滚 + ⋯ 菜单。
-     地板 104px：padding(20)+dot(8)+close(~16)+gap(12) 固定占 ~56px，
-     给标题留 ≥48px 可读宽——低于此值标题不可读，等于"假装装得下" */
+     地板 104px：padding(18)+dot(8)+close(~16)+gap(12) 固定占 ~54px，
+     给标题留 ≥50px 可读宽——低于此值标题不可读，等于"假装装得下" */
   flex-shrink: 1;
   min-width: 104px;
   /* 窄 tab 藏 × 的 container query 容器（Chrome：先藏关闭钮保标题） */
   container-type: inline-size;
   transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
 }
+/* Precision Instrument: identity dots only on the active tab; background
+   sessions keep their title and state without adding color noise. */
+.mafw-session-tab:not(.active) .mafw-agent-dot { display: none; }
 /* 窄（≤120px）非活跃 tab：× 消失保标题；悬停换回 ×（藏圆点）——Chrome 窄 tab 语义 */
 @container (max-width: 120px) {
   .mafw-session-tab:not(.active) .mafw-session-close { display: none; }
@@ -743,7 +746,11 @@ html[data-theme="light"] body {
   .mafw-session-tab:not(.active):hover .mafw-agent-dot { display: none; }
 }
 .mafw-session-tab:hover { background: var(--hover); color: var(--text-2); }
-.mafw-session-tab.active { background: var(--bg-overlay); color: var(--text-1); }
+.mafw-session-tab.active {
+  background: var(--bg-raised);
+  color: var(--text-1);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
 .mafw-agent-dot {
   width: 8px;
   height: 8px;
@@ -8069,12 +8076,12 @@ html[data-theme="light"] body {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin: 0 0 14px;
-  padding: 14px;
-  border: 1px solid var(--accent-border);
-  border-left-width: 3px;
-  border-radius: var(--r-lg);
-  background: var(--bg-raised);
+  margin: 0 0 16px;
+  padding: 0 0 16px;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
 }
 .mafw-goal-user-status {
   display: flex;
@@ -8085,12 +8092,22 @@ html[data-theme="light"] body {
   font-size: 11px;
 }
 .mafw-goal-user-state {
-  padding: 2px 8px;
-  border: 1px solid var(--accent-border);
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent-text);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-1);
   font-weight: 600;
+}
+.mafw-goal-user-state::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
 }
 .mafw-goal-user-owner,
 .mafw-goal-user-revision { color: var(--text-3); }
@@ -8129,11 +8146,12 @@ html[data-theme="light"] body {
 }
 .mafw-goal-user-actions { margin-top: -4px; }
 .mafw-goal-technical {
-  margin: 14px 0;
-  padding: 14px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-lg);
-  background: var(--bg-inset);
+  margin: 16px 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-2);
 }
 .mafw-return-lead {
   flex: none;
@@ -8184,11 +8202,12 @@ html[data-theme="light"] body {
 }
 .mafw-goal-current-hint { margin-top: 3px; color: var(--text-3); font-size: 11px; }
 .mafw-goal-section {
-  margin: 14px 0;
-  padding: 14px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-lg);
-  background: var(--bg-raised);
+  margin: 0;
+  padding: 16px 0;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
 }
 .mafw-goal-section .mafw-pod-section-head { margin-bottom: 10px; }
 .mafw-goal-hint { padding: 8px 10px; border-radius: var(--r-sm); background: var(--bg-inset); color: var(--text-3); font-size: 11px; }
@@ -8233,8 +8252,25 @@ html[data-theme="light"] body {
   border-radius: var(--r-sm);
 }
 .mafw-goal-section .mafw-pod-result-revision.is-current { background: var(--bg-inset); }
-.mafw-pod-result-worktree { display: flex; flex-direction: column; gap: 3px; padding: 8px 10px; border: 1px solid var(--border-subtle); border-radius: var(--r-sm); background: var(--bg-inset); }
-.mafw-pod-result-worktree-row { display: grid; grid-template-columns: 64px 1fr; gap: 8px; align-items: baseline; font-size: 12px; }
+.mafw-pod-result-worktree {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.mafw-pod-result-worktree-row {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 8px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 12px;
+}
+.mafw-pod-result-worktree-row:last-child { border-bottom: 0; }
 .mafw-pod-result-worktree-key { color: var(--text-4); }
 .mafw-pod-result-worktree-value { color: var(--text-2); font-family: var(--font-data); overflow-wrap: anywhere; }
 .mafw-pod-result-worktree-row.is-warning .mafw-pod-result-worktree-value { color: var(--warning-text); }
@@ -8244,12 +8280,14 @@ html[data-theme="light"] body {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 4px 10px;
-  padding: 8px 10px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-sm);
-  background: var(--bg-inset);
+  padding: 8px 0;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
   font-size: 12px;
 }
+.mafw-pod-result-condition:last-child { border-bottom: 0; }
 .mafw-pod-result-condition-statement { display: flex; align-items: center; gap: 6px; color: var(--text-2); }
 .mafw-pod-result-condition-required { flex: 0 0 auto; padding: 0 5px; border: 1px solid var(--border-strong, var(--border-subtle)); border-radius: 999px; color: var(--text-4); font-size: 12px; letter-spacing: 0.04em; white-space: nowrap; }
 .mafw-pod-result-condition-result { font-weight: 600; }
@@ -8285,9 +8323,18 @@ html[data-theme="light"] body {
 .mafw-pod-result-force-list code { color: var(--accent); font-family: var(--font-data); }
 .mafw-pod-result-forced-note { color: var(--warning-text); font-size: 11px; }
 .mafw-pod-result-worktree-note { margin-top: 4px; padding-top: 6px; border-top: 1px solid var(--border-subtle); color: var(--text-3); font-size: 10.5px; line-height: 1.5; }
-.mafw-pod-result-failure { display: flex; flex-direction: column; gap: 3px; padding: 9px 10px; border: 1px solid color-mix(in srgb, var(--danger-text) 28%, var(--border-subtle)); border-radius: var(--r-sm); background: color-mix(in srgb, var(--danger-text) 7%, transparent); }
+.mafw-pod-result-failure {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 0 9px 12px;
+  border: 0;
+  border-left: 2px solid var(--danger);
+  border-radius: 0;
+  background: transparent;
+}
 .mafw-pod-result-failure strong { color: var(--danger-text); font-size: 11px; }
-.mafw-pod-result-failure span { color: var(--text-3); font-size: 11px; line-height: 1.5; white-space: pre-wrap; }
+.mafw-pod-result-failure span { color: var(--text-2); font-size: 11.5px; line-height: 1.55; white-space: pre-wrap; }
 .mafw-pod-result-diff-actions { display: flex; justify-content: flex-start; }
 .mafw-pod-result-diff { max-height: 380px; overflow: auto; padding: 8px; border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-inset); }
 .mafw-workspace-composer .mafw-pod-composer [data-component="text-input-v2"],

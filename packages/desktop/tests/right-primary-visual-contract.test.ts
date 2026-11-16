@@ -39,12 +39,14 @@ test("团队条：头像/状态/资源动作，团队细节进执行抽屉", () 
   assert.match(resources, /创建团队/)
 })
 
-test("Goal 详情：头部/状态/区块统一为卡片层级", () => {
+test("Goal 详情：头部/状态/区块统一为编辑台式层级", () => {
   assert.match(detail, /mafw-goal-head-main/)
   assert.match(detail, /mafw-goal-chip/)
   assert.match(css, /\.mafw-goal-head-main \.mafw-card-title \{[^}]*font-size: 22px/)
   assert.match(css, /\.mafw-goal-chip \{[^}]*border-radius: 999px/)
-  assert.match(css, /\.mafw-goal-section \{[^}]*border-radius: var\(--r-lg\);[^}]*background: var\(--bg-raised\)/)
+  // 2026-11-16 Precision Instrument：区块分隔靠一条 hairline，不再每块套卡片。
+  assert.match(css, /\.mafw-goal-section \{[^}]*border-top: 1px solid var\(--border-subtle\);/)
+  assert.doesNotMatch(css, /\.mafw-goal-section \{[^}]*border: 1px solid var\(--border-subtle\)/)
 })
 
 test("右工作台「工作」面：kicker/提示/composer 有独立结构", () => {

@@ -148,6 +148,9 @@
   状态文字。`createPresence` 折叠面过渡期挂载，规则相同。
 - **业界对照与升级建议（2026-11-16）**：`docs/research/2026-11-16-desktop-premium-ui-motion-research.md`
   （Hermes / OpenCode / Linear / Carbon / Material 3 的视觉与动效基准，以及 MAFW 的减法/编排优先级）。
+- **Precision Instrument 局部落地（2026-11-16）**：topstrip 非活动 session tab 不再显示身份点，
+  活动 tab 改为 `--bg-raised` + accent 下划线；Goal 详情 hero / section / 技术结果不再层层套卡片，
+  区块只用一条 hairline 分隔；失败提示改为中性底 + 2px danger 左轨。方向依据见上方调研文档。
 - **语音**：duplex v1（`/ws/voice` 持续 PCM + partial/final）、自动发送静默窗、TTS 流式 + 打断 +
   播放端背压；语音回复走 `mafw_media_speak` 标记与去重。
 - **测试**：`npm test`（node --test + `@mafw/test-shim`）；必须 `--conditions=browser`，否则 solid effect 是 no-op。
