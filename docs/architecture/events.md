@@ -56,8 +56,16 @@ Source → Trigger → Thread → Subscription → Decision → Delivery → Cha
   `internal:decision.drafted:<recordId>`。
 - ingest 后为该线程建 `subscriberType:'lead'` + `mode:'context'` 订阅；kernel evaluator 对
   `decision.*` + Lead context 返回 `accept` / `report`。
-- `deliverContext` → `PodService.ensureLead` → `promptAsync` 一条
-  `[LEAD EVENT] 决定待确认 …` 给 Lead 会话；Lead 只负责转达，确认 / 搁置仍是 human-only。
+- `deliverContext` 只做 **耐久入队**，不再直接调模型 session：每个 Pod 一个 `chat`
+  channel（`lead:<podId>`），`dedupeKey = decision:<recordId>`，payload 保存渲染好的
+  `[LEAD EVENT]` 文本、priority、podId / goalId / recordId。
+- `LeadOutbox` dispatcher 每 5s 取 pending（含到期 failed）：按 channel 批量，
+  p1 → p2 → p3 再按 createdAt；`maxBatch=5`、`maxPerHour=6`、两批最小间隔 60s。
+  成功逐行 `sent`，失败逐行 `failed` 并按既有 outbox 退避重试；预算/间隔只延迟，
+  不丢行，重启后 pending / 到期 failed 继续。
+- 多条决定合并成一条消息（`[LEAD EVENT] N 条待确认` + 编号块），单条保持原文；
+  同一 `recordId` 重复 enqueue 只留一行。Lead 只负责转达，确认 / 搁置仍是 human-only。
+- P0 不做：`PodEventWake` 合并、read / ack、agent-set timers、watchdog；这些留在后续阶段。
 - `internal` / `cron` 系统 source 在事件层启动时 ensure；外部 GitHub / webhook source 仍需显式创建。
 
 ## GitHub 来源
@@ -109,6 +117,9 @@ SDK：`@mafw/sdk` 的 `events.sources/threads/subscriptions/deliveries`；桌面
 - `gateway/tests/unit/events/event-fanout.test.ts`
 - `gateway/tests/unit/events/event-delivery.test.ts`
 - `gateway/tests/unit/events/event-outbox.test.ts`
+- `gateway/tests/unit/lead/lead-outbox-model.test.ts`
+- `gateway/tests/unit/lead/lead-outbox.test.ts`
+- `gateway/tests/unit/lead/lead-outbox-wiring.test.ts`
 - `gateway/tests/unit/events/github-source.test.ts`
 - `gateway/tests/unit/routes/events.test.ts`
 - `gateway/tests/integration/event-layer.test.ts`
