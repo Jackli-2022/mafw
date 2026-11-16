@@ -355,7 +355,7 @@ export interface GatewayConfig {
     /** Source-turn reconstruction for mafw_get_memory (C0). */
     sourceEvidence: { enabled: boolean; k: number; maxChars: number };
     /** V1 verbatim dense layer: fuse t1 round hits into R8 snapshots. */
-    t1Recall: { enabled: boolean; k: number; maxChars: number; retentionDays: number; lexical: boolean; t1BackfillLimit: number; activationHalfLifeDays: number; activationRanking: 'off' | 'shadow' | 'on'; activationRankWeight: number; activationRankBand: number };
+    t1Recall: { enabled: boolean; k: number; maxChars: number; retentionDays: number; lexical: boolean; t1BackfillLimit: number; activationHalfLifeDays: number; activationRanking: 'off' | 'shadow' | 'on'; activationRankWeight: number; activationRankBand: number; denseIndex: 'on' | 'shadow' | 'off'; semanticAtoms: 'on' | 'off' };
     /** Phase 4A: bounded raw-T1 replay during reflection. */
     t1Replay: { enabled: boolean; exactK: number; activatedK: number; maxChars: number; perTraceChars: number };
     /** Phase 4B: episodes per reflection batch (small-step consolidation). */
@@ -728,7 +728,7 @@ function defaults(projectDir: string): GatewayConfig {
       scanTimeoutMs: 60_000,
       pipelineBudgetUsdPerDay: 0,
       sourceEvidence: { enabled: true, k: 5, maxChars: 1500 },
-      t1Recall: { enabled: true, k: 3, maxChars: 600, retentionDays: 90, lexical: true, t1BackfillLimit: 3000, activationHalfLifeDays: 14, activationRanking: 'shadow', activationRankWeight: 0.1, activationRankBand: 0.6 },
+      t1Recall: { enabled: true, k: 3, maxChars: 600, retentionDays: 90, lexical: true, t1BackfillLimit: 3000, activationHalfLifeDays: 14, activationRanking: 'shadow', activationRankWeight: 0.1, activationRankBand: 0.6, denseIndex: 'shadow', semanticAtoms: 'on' },
       t1Replay: { enabled: true, exactK: 8, activatedK: 3, maxChars: 6000, perTraceChars: 400 },
       reflectionBatchSize: 10,
       // Leave 15min of watchdog headroom: one batch can burn two 300s worker

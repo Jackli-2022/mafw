@@ -151,6 +151,11 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
           const { getT1RankingStats } = require('../recall/t1-search');
           activationRanking = { mode: config.recall.t1Recall?.activationRanking ?? 'shadow', ...getT1RankingStats() };
         } catch { /* fail-open: zero counters */ }
+        let denseIndex = { mode: 'shadow', evaluations: 0, withDenseHits: 0 };
+        try {
+          const { getT1DenseStats } = require('../recall/t1-search');
+          denseIndex = { mode: config.recall.t1Recall?.denseIndex ?? 'shadow', ...getT1DenseStats() };
+        } catch { /* fail-open: zero counters */ }
         return {
           vectors,
           activeRows,
@@ -164,6 +169,8 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
           },
           activation,
           activationRanking,
+          denseIndex,
+          semanticAtoms: config.recall.t1Recall?.semanticAtoms ?? 'on',
         };
       })();
       res.writeHead(200, { 'Content-Type': 'application/json' });

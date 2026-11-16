@@ -6,6 +6,16 @@ import { makeT1Search, T1Hit, type T1HitSource } from './verbatim-recall';
 
 const RRF_K = 60;
 
+/** Dense-channel A/B counters (shadow/off observability). */
+const denseStats = { evaluations: 0, withDenseHits: 0 };
+export function getT1DenseStats(): { evaluations: number; withDenseHits: number } {
+  return { ...denseStats };
+}
+export function resetT1DenseStats(): void {
+  denseStats.evaluations = 0;
+  denseStats.withDenseHits = 0;
+}
+
 export interface T1FusionChannels {
   feature?: T1LexicalHit[];
   concept?: T1LexicalHit[];
@@ -197,7 +207,13 @@ export function createGatewayT1Search(
 
   return async (query: string, k: number): Promise<T1Hit[]> => {
     if (!query.trim() || k <= 0) return [];
-    const dense = await denseSearch(query, k);
+    const denseMode = config.recall.t1Recall?.denseIndex ?? 'shadow';
+    const dense = denseMode === 'off' ? [] : await denseSearch(query, k);
+    if (denseMode !== 'off') {
+      denseStats.evaluations++;
+      if (dense.length > 0) denseStats.withDenseHits++;
+    }
+    const denseForFusion = denseMode === 'on' ? dense : [];
     let lexical: T1LexicalHit[] = [];
     if (config.recall.t1Recall?.lexical !== false) {
       try {
@@ -231,7 +247,7 @@ export function createGatewayT1Search(
       sparse = [];
     }
 
-    let fused = fuseT1Hits(dense, lexical, k, { feature, concept, actor, sparse });
+    let fused = fuseT1Hits(denseForFusion, lexical, k, { feature, concept, actor, sparse });
 
     // CA3-style bounded pattern completion: a strong cue activates turns that
     // share a concept or a non-generic actor with the seeds. Neighbours can

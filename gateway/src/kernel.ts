@@ -3532,6 +3532,7 @@ class MafwScheduler {
       transcriptMaxChars: config.recall.workerTranscriptMaxChars,
       // Phase C: embedding → sparse semantic atoms for the episode code.
       semanticAtomsFor: async (turns) => {
+        if (config.recall.t1Recall?.semanticAtoms === 'off') return new Map();
         const rt = getEmbeddingRuntime();
         if (!rt?.provider) return new Map();
         return getT1SemanticEncoder(rt.provider).encodeMany(turns);
