@@ -321,7 +321,7 @@ Lead/Builder/Reviewer/Tech Lead 都是内部会话（`session-visibility.ts`）�
 |---|---|---|
 | p1 | Goal 归档 PASS/UNREVIEWED（`goal.result`，audience human） | 结果通知 / inbox / presence |
 | p1 | Goal 归档 FAIL/MAX_RETRIES/ERROR（`goal.failed`，audience lead） | Lead 唤醒 + `failed` attention；同时写 Tech Lead failure handoff |
-| p2 | 成员 `request` / `escalation` 发给 Lead | Lead 唤醒（闸门：暂停/忙/预算/10min 去重） |
+| p2 | 成员 `request` / `escalation` 发给 Lead | LeadOutbox 批量/预算/重试（p1 保留通道可绕过预算） |
 | p3 | 其他成员消息（note/decision/review） | 审计；已读 7 天后 prune |
 
 `goal.result` 与 `goal.failed` 的 dedupe key 都带 event kind

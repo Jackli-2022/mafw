@@ -62,7 +62,10 @@ Source → Trigger → Thread → Subscription → Decision → Delivery → Cha
 - `PodEventWake` 2026-11-16 起也不再直接 `promptAsync`：每个 pending `pod_events` 行写成
   同 channel 的 `pod-event:<eventId>` outbox 行；`wake_state='delivered'` 只表示已入
   outbox（`wake_session_id='outbox:<id>'`），**不代表 Lead 已收到**。如果镜像
-  `pod_message` 已由 A2A 送达 Lead，则只标记 `a2a:<messageId>`，不再入 outbox。
+  `pod_message` 已由 A2A 送达 Lead，则只标记 `a2a:<messageId>`，不再入 outbox；
+  dispatch 前还会再次检查 A2A 状态，成功后回写 `commitDelivered`。
+- **p1 保留通道**：`LeadOutbox` 选择批次时，p1 行在有预算/最小间隔压力时仍优先发送；
+  没有 p1 时才应用常规 `maxPerHour` / `minIntervalMs`。p1 仍受 `maxBatch` 限制。
 - `LeadOutbox` dispatcher 每 5s 取 pending（含到期 failed）：按 channel 批量，
   p1 → p2 → p3 再按 createdAt；`maxBatch=5`、`maxPerHour=6`、两批最小间隔 60s。
   成功逐行 `sent`，失败逐行 `failed` 并按既有 outbox 退避重试；预算/间隔只延迟，
