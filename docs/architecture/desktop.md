@@ -584,6 +584,13 @@ attention 通知链整体移交 `2026-11-04-pod-event-layer-ambient-attention-de
 - `/plan` / `/build` 只消费 `MafwAgent.planning` / `MafwAgent.default`，不硬编码 runtime
   原生 agent 名；复用 Lead / Creator Agent 锁定与忙时切换确认。
 
+### Chat `/` 指令第二批（2026-11-16）
+
+- `/rename` 打开 `RenameSessionDialog`，写 `sessions.rename` 并更新 workspace store。
+- `/help` 打开 `ChatHelpOverlay`，列出本地命令和当前快捷键。
+- `/init` 发送固定 `INIT_AGENTS_PROMPT`，要求保留已有 `AGENTS.md` 且不提交 git。
+- `/clear` 新建会话并保留当前会话（复用 `createSession`）。
+
 ### Pod 事件层与常驻注意力（2026-11-04，进行中）
 
 spec `docs/superpowers/specs/2026-11-04-pod-event-layer-ambient-attention-design.md`，plan
