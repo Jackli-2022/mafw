@@ -105,6 +105,9 @@ interface OutboxDbRow {
   attempts: number;
   next_retry_at: string | null;
   last_error: string | null;
+  read_at: string | null;
+  ack_at: string | null;
+  sent_session_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -224,6 +227,9 @@ function toOutbox(row: OutboxDbRow): EventOutboxRow {
     attempts: Number(row.attempts ?? 0),
     nextRetryAt: row.next_retry_at,
     lastError: row.last_error,
+    readAt: row.read_at ?? null,
+    ackAt: row.ack_at ?? null,
+    sentSessionId: row.sent_session_id ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -331,6 +337,9 @@ export function ensureEventLayerSchema(db: Database): void {
       attempts INTEGER NOT NULL DEFAULT 0,
       next_retry_at TEXT,
       last_error TEXT,
+      read_at TEXT,
+      ack_at TEXT,
+      sent_session_id TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       UNIQUE(channel_id, dedupe_key)
@@ -341,6 +350,15 @@ export function ensureEventLayerSchema(db: Database): void {
   if (!deliveryColumns.some((column) => column.name === 'next_retry_at')) {
     db.exec('ALTER TABLE event_deliveries ADD COLUMN next_retry_at TEXT');
   }
+  const outboxColumns = db.prepare('PRAGMA table_info(event_outbox)').all() as Array<{ name: string }>;
+  const ensureOutboxColumn = (name: string, ddl: string): void => {
+    if (!outboxColumns.some((column) => column.name === name)) {
+      db.exec(`ALTER TABLE event_outbox ADD COLUMN ${ddl}`);
+    }
+  };
+  ensureOutboxColumn('read_at', 'read_at TEXT');
+  ensureOutboxColumn('ack_at', 'ack_at TEXT');
+  ensureOutboxColumn('sent_session_id', 'sent_session_id TEXT');
 }
 
 export class EventStore {
@@ -642,7 +660,10 @@ export class EventStore {
   }
 
   insertOutbox(
-    input: Omit<EventOutboxRow, 'attempts' | 'nextRetryAt' | 'lastError' | 'createdAt' | 'updatedAt'> & { now: string },
+    input: Omit<
+      EventOutboxRow,
+      'attempts' | 'nextRetryAt' | 'lastError' | 'createdAt' | 'updatedAt' | 'readAt' | 'ackAt' | 'sentSessionId'
+    > & { now: string },
   ): EventOutboxRow {
     this.db.prepare(`
       INSERT OR IGNORE INTO event_outbox (
@@ -681,15 +702,55 @@ export class EventStore {
 
   updateOutbox(
     id: string,
-    patch: Partial<Pick<EventOutboxRow, 'state' | 'attempts' | 'nextRetryAt' | 'lastError' | 'updatedAt'>>,
+    patch: Partial<Pick<
+      EventOutboxRow,
+      'state' | 'attempts' | 'nextRetryAt' | 'lastError' | 'updatedAt' | 'readAt' | 'ackAt' | 'sentSessionId'
+    >>,
   ): EventOutboxRow {
     const row = this.db.prepare('SELECT * FROM event_outbox WHERE id = ?').get(id) as OutboxDbRow | undefined;
     if (!row) throw new Error(`outbox not found: ${id}`);
     const next = { ...toOutbox(row), ...patch };
     this.db.prepare(`
-      UPDATE event_outbox SET state = ?, attempts = ?, next_retry_at = ?, last_error = ?, updated_at = ?
+      UPDATE event_outbox
+      SET state = ?, attempts = ?, next_retry_at = ?, last_error = ?, updated_at = ?,
+          read_at = ?, ack_at = ?, sent_session_id = ?
       WHERE id = ?
-    `).run(next.state, next.attempts, next.nextRetryAt, next.lastError, next.updatedAt, id);
-    return this.listOutbox().find((item) => item.id === id)!;
+    `).run(
+      next.state, next.attempts, next.nextRetryAt, next.lastError, next.updatedAt,
+      next.readAt, next.ackAt, next.sentSessionId, id,
+    );
+    return this.getOutbox(id)!;
+  }
+
+  /** Human saw the delivered item. Idempotent: already-read rows stay untouched. */
+  markOutboxRead(ids: string[], now: string): number {
+    if (!ids.length) return 0;
+    const placeholders = ids.map(() => '?').join(', ');
+    const result = this.db.prepare(`
+      UPDATE event_outbox SET read_at = ?, updated_at = ?
+      WHERE id IN (${placeholders}) AND read_at IS NULL
+    `).run(now, now, ...ids);
+    return Number(result.changes ?? 0);
+  }
+
+  /** Lead completed a turn in the session that received the batch. */
+  markOutboxAckedBySession(sessionId: string, now: string): number {
+    if (!sessionId) return 0;
+    const result = this.db.prepare(`
+      UPDATE event_outbox SET ack_at = ?, updated_at = ?
+      WHERE sent_session_id = ? AND state = 'sent' AND ack_at IS NULL
+    `).run(now, now, sessionId);
+    return Number(result.changes ?? 0);
+  }
+
+  /** Human opened the goal: its lead notifications count as read. */
+  markOutboxReadByGoal(podId: string, goalId: string, now: string): number {
+    if (!podId || !goalId) return 0;
+    const result = this.db.prepare(`
+      UPDATE event_outbox SET read_at = ?, updated_at = ?
+      WHERE channel_id = ? AND read_at IS NULL
+        AND json_extract(payload, '$.goalId') = ?
+    `).run(now, now, `lead:${podId}`, goalId);
+    return Number(result.changes ?? 0);
   }
 }

@@ -26,11 +26,12 @@ export class EventOutbox {
     });
   }
 
-  markSent(id: string): EventOutboxRow {
+  markSent(id: string, sessionId?: string): EventOutboxRow {
     return this.deps.store.updateOutbox(id, {
       state: 'sent',
       lastError: null,
       nextRetryAt: null,
+      ...(sessionId ? { sentSessionId: sessionId } : {}),
       updatedAt: this.deps.now(),
     });
   }

@@ -28,6 +28,8 @@ export interface PodEventServiceDeps {
   mafwDir?: string;
   now?(): string;
   log?(message: string): void;
+  /** Human marked the event seen (read receipt → lead outbox `read_at`). */
+  onSeen?(row: PodEventRow): void;
 }
 
 /** `2026-11-04T10:00:00.000Z` → filename-safe. */
@@ -81,11 +83,21 @@ export class PodEventService {
   }
 
   markSeen(podId: string, id: string): boolean {
-    return this.deps.store.markEventSeen(podId, id, this.now());
+    const row = this.deps.store.getEvent(podId, id);
+    const changed = this.deps.store.markEventSeen(podId, id, this.now());
+    // Fire even when already seen: the client may be confirming a goal the
+    // human just opened, and outbox read receipts are idempotent.
+    if (row) this.deps.onSeen?.(row);
+    return changed;
   }
 
   markSeenAll(podId: string, goalId: string, revision: number): number {
-    return this.deps.store.markEventsSeenForGoal(podId, goalId, revision, this.now());
+    const rows = this.deps.store.listUnreadEventsForGoal(podId, goalId, revision);
+    const changed = this.deps.store.markEventsSeenForGoal(podId, goalId, revision, this.now());
+    if (changed > 0) {
+      for (const row of rows) this.deps.onSeen?.(row);
+    }
+    return changed;
   }
 
   pendingWakes(podId?: string): PodEventRow[] {

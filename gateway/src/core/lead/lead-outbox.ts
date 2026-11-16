@@ -221,8 +221,10 @@ export class LeadOutbox {
             continue;
           }
 
+          let leadSessionId = '';
           try {
             const lead = await this.deps.ensureLead(podId);
+            leadSessionId = lead.sessionId;
             await this.deps.promptAsync({ sessionID: lead.sessionId, text });
             if (deliveredMessageIds.length) {
               try {
@@ -244,7 +246,7 @@ export class LeadOutbox {
           const sentIds: string[] = [];
           try {
             for (const row of deliverable) {
-              this.deps.outbox.markSent(row.id);
+              this.deps.outbox.markSent(row.id, leadSessionId);
               sentIds.push(row.id);
             }
             result.sent += deliverable.length;

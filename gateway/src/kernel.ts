@@ -1183,6 +1183,19 @@ class MafwScheduler {
     // 由 24 段降为 23）。数组位置即执行顺序；仅 nativeDrop / toolPrimitiveDrop /
     // internalFilter 三段可 HALT（legacy early return）。
     runEventPipeline(f, evt, this.buildDispatchCtx());
+    // Lead reply = ack: only rows delivered to this exact session are acked.
+    if (f.type === 'turn.completed') this.ackLeadOutboxForSession(f.sessionID);
+  }
+
+  private ackLeadOutboxForSession(sessionId: string | null | undefined): void {
+    if (!sessionId || !this.podStore || !this.eventLayerStore) return;
+    try {
+      const member = this.podStore.getMemberBySession(sessionId);
+      if (member?.role !== 'lead') return;
+      this.eventLayerStore.markOutboxAckedBySession(sessionId, new Date().toISOString());
+    } catch (err: any) {
+      log.warn(`[LeadOutbox] ack failed for ${sessionId} (non-fatal): ${err?.message ?? err}`);
+    }
   }
 
   /**
@@ -4124,7 +4137,22 @@ class MafwScheduler {
     this.goalStateStore = new GoalStateStore(this.getGatewayDb().getStore());
     setGoalStateBackend(this.goalStateStore);
     this.domainEvents = new DomainEventStore(this.getGatewayDb().getStore());
-    this.podEventService = new PodEventService({ store: this.podStore, mafwDir: this.mafwDir });
+    this.podEventService = new PodEventService({
+      store: this.podStore,
+      mafwDir: this.mafwDir,
+      // Human "seen" is the read receipt for outbox-backed pod events.
+      onSeen: (row) => {
+        try {
+          const hit = /^outbox:(.+)$/.exec(row.wakeSessionId ?? '');
+          if (hit) this.eventLayerStore?.markOutboxRead([hit[1]], new Date().toISOString());
+          if (row.goalId) {
+            this.eventLayerStore?.markOutboxReadByGoal(row.podId, row.goalId, new Date().toISOString());
+          }
+        } catch (err: any) {
+          log.warn(`[LeadOutbox] read receipt failed for ${row.id} (non-fatal): ${err?.message ?? err}`);
+        }
+      },
+    });
     // Retention: p3 is informational; drop old seen p3 rows + audit files once a day
     // (and once at startup so a long-idle install catches up immediately).
     // E8-1: 两个长驻 interval 收进 TimerService（pod:event-prune / pod:event-wake）。

@@ -2100,6 +2100,16 @@ export class PodStore {
     return Number(row?.n ?? 0);
   }
 
+  /** Rows `markEventsSeenForGoal` will flip; used for read receipts. */
+  listUnreadEventsForGoal(podId: string, goalId: string, revision: number): PodEventRow[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM pod_events
+      WHERE pod_id = ? AND goal_id = ? AND revision = ? AND state = 'unread'
+      ORDER BY created_at ASC
+    `).all(podId, goalId, revision) as any[];
+    return rows.map((row) => this.mapEvent(row));
+  }
+
   listPendingWakeEvents(podId?: string): PodEventRow[] {
     const sql = podId
       ? "SELECT * FROM pod_events WHERE pod_id = ? AND wake_state = 'pending' ORDER BY created_at ASC, rowid ASC"
