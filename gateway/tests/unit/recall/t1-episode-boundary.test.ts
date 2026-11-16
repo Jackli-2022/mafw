@@ -136,6 +136,47 @@ describe('computeEpisodeRanges', () => {
     expect(out.map((r) => r.boundaryReason)).toContain('intent_shift');
   });
 
+  test('one shared atom out of a large episode profile still splits', () => {
+    const out = ranges([
+      turn(1, {
+        isUserTurn: true,
+        conceptIds: ['concept:shared'],
+        semanticAtoms: ['a', 'b', 'c', 'd', 'e', 'f'],
+        intent: 'fix parser bug',
+      }),
+      turn(2, { semanticAtoms: ['a', 'f'] }),
+      turn(3, {
+        isUserTurn: true,
+        conceptIds: ['concept:shared'],
+        semanticAtoms: ['a', 'z'],
+        intent: 'ship release now',
+      }),
+    ]);
+    // Jaccard = |{a}| / |{a,b,c,d,e,f,z}| = 1/7 < 0.2
+    expect(out.map((r) => r.startTurn)).toEqual([1, 3]);
+    expect(out[1].boundaryReason).toBe('intent_shift');
+  });
+
+  test('half-overlapping atom sets do not split', () => {
+    const out = ranges([
+      turn(1, {
+        isUserTurn: true,
+        conceptIds: ['concept:shared'],
+        semanticAtoms: ['a', 'b'],
+        intent: 'fix the parser',
+      }),
+      turn(2),
+      turn(3, {
+        isUserTurn: true,
+        conceptIds: ['concept:shared'],
+        semanticAtoms: ['b', 'c'],
+        intent: 'ship the release',
+      }),
+    ]);
+    // Jaccard = 1/3 = 0.33 > 0.2
+    expect(out.map((r) => r.startTurn)).toEqual([1]);
+  });
+
   test('max length closes the episode', () => {
     const turns = Array.from({ length: 4 }, (_, i) => turn(i + 1, { isUserTurn: true }));
     const out = ranges(turns, { maxTurns: 2 });

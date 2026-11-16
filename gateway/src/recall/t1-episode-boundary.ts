@@ -166,7 +166,7 @@ export function computeEpisodeRanges(input: ComputeEpisodeRangesInput): EpisodeR
           !topicShift &&
           atoms.size > 0 &&
           turnAtoms.size > 0 &&
-          !intersects(atoms, turnAtoms) &&
+          jaccard(atoms, turnAtoms) < 0.2 &&
           jaccard(tokensOf(turn.intent), intentTokens) < 0.15 &&
           tokensOf(turn.intent).size >= 3;
 
