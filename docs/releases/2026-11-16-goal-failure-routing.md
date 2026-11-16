@@ -1,7 +1,7 @@
 # 2026-11-16 · Goal 失败路由：Lead attention / 用户面 / Tech Lead handoff
 
 - **版本**：`v5.1.0`（行为修复，不升版本号）
-- **提交**：`926bd092`
+- **提交**：`926bd092`（路由 / 用户面）+ `109be83a`（事件层）
 - **范围**：gateway attention 投影 + desktop Goal 用户面 + Tech Lead 失败 handoff
 - **前置**：`docs/releases/2026-11-16-review-artifact-double-encoding.md`
 
@@ -19,12 +19,15 @@
 
 ## 现在的规则
 
-| 终态 | attention | 用户面 | Tech Lead |
-|---|---|---|---|
-| `PASS` / `UNREVIEWED` + resultReady | `review`（待验收，`open_result`） | 结果待验收 | 不需要 |
-| `FAIL` / `MAX_RETRIES` / `ERROR` + 未验收 | `failed`（`open_result`，priority 85） | 红色「失败 / 异常 / 重试耗尽」，`needsPerson=true`，「查看失败原因」 | 归档前写 durable handoff |
-| `CANCELLED` | 不打扰 | 已结束 | 不需要 |
+| 终态 | 事件层 | attention | 用户面 | Tech Lead |
+|---|---|---|---|---|
+| `PASS` / `UNREVIEWED` + resultReady | `goal.result` p1 / human | `review`（待验收，`open_result`） | 结果待验收 | 不需要 |
+| `FAIL` / `MAX_RETRIES` / `ERROR` + 未验收 | `goal.failed` p1 / lead | `failed`（`open_result`，priority 85） | 红色「失败 / 异常 / 重试耗尽」，`needsPerson=true`，「查看失败原因」 | 归档前写 durable handoff |
+| `CANCELLED` | `goal.ended` p3 / none | 不打扰 | 已结束 | 不需要 |
 
+- 失败首先进入事件层：`goal.failed` 是 p1 / audience=lead，`PodEventWake` 直接唤醒 Lead；
+  event summary 带 `lastError` / `reviewFeedback`；
+- `goal.failed` 与 `goal.result` 的 dedupe key 都带 kind，互不顶账；
 - `failed` 同时进入 Pod detail attention（rail / 需要你处理）与 `/api/attention`；
 - Lead 状态卡保留终态失败（PASS 历史不占位），并显示失败原因；
 - `context/tech-lead-failure.md` 写入 `<mafwDir>/goals/<goalId>/context/`，下一次
@@ -32,6 +35,12 @@
 
 ## 实现
 
+- `gateway/src/core/pod/pod-event-model.ts`
+  - `classifyGoalArchive`：PASS/UNREVIEWED → `goal.result` p1/human；FAIL/MAX_RETRIES/ERROR →
+    `goal.failed` p1/lead；`goalDedupeKey` 增加 kind 维度。
+- `gateway/src/kernel.ts`
+  - 归档事件写 `summary`（lastError / reviewFeedback）并按 kind 生成 dedupe key；
+  - `archiveGoal` 在销毁会话前调用 `notifyFailure`（仅失败 verdict，fail-open）。
 - `gateway/src/core/pod/pod-stage.ts`
   - 新增 `isFailedVerdict`；`projectPodAttention` 支持 `failed` 输入并输出 `failed` 项。
 - `gateway/src/core/pod/pod-view.ts`
@@ -40,8 +49,8 @@
   - 终态失败先于 `review` 判定；`failed` priority 85；`detail` 带 `lastError`。
 - `gateway/src/core/pod/pod-tech-lead-service.ts`
   - 新增 `notifyFailure`：写 durable failure handoff；`withManifest` 自动附加。
-- `gateway/src/kernel.ts`
-  - `archiveGoal` 在销毁会话前调用 `notifyFailure`（仅失败 verdict，fail-open）。
+- `packages/desktop/src/renderer/mafw/work-overview-model.ts`
+  - 终态失败进入 attention list，优先于 unseen result；failed priority 85。
 - `packages/desktop/src/renderer/mafw/lead-goal-status.ts`
   - 包含终态失败、排在 person 之后、team 之前；显示「失败 / 异常 / 重试耗尽」。
 - `packages/desktop/src/renderer/mafw/goal-user-view.ts`
@@ -50,8 +59,8 @@
 
 ## 验证
 
-- gateway 全量：**984 / 984 suites**，**7869 passed / 2 skipped / 0 failed**
-- desktop 全量：**740 / 740 suites**，**3908 / 3908 passed**
+- gateway 全量：**986 / 986 suites**，**7880 passed / 2 skipped / 0 failed**
+- desktop 全量：**740 / 740 suites**，**3909 / 3909 passed**
 - gateway `tsc`：rc=0
 - desktop `tsgo`：rc=0
 - `gateway npm run build` / `desktop electron-vite build`：通过

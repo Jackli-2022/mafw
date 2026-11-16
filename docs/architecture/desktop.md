@@ -422,7 +422,8 @@ Project Agent Workbench 的 Plan A 已完成（Goal / Chat 垂直切片）：
 - `goal-user-view.ts` 把 `PodGoal` 统一投影为方向 / 进度 / 结果 / 历史四种用户面；列表与详情共用，不伪造进度，不暴露 Goal ID、phase、Loop、verdict 等内部状态于主视觉。
 - 终态失败（`FAIL` / `ERROR` / `MAX_RETRIES`）在用户面显示红色「失败 / 异常 / 重试耗尽」，
   `needsPerson=true`，下一动作是「查看失败原因」；Lead 状态卡保留这类最近失败（PASS 历史不占位），
-  不再把失败当作「待验收」。
+  不再把失败当作「待验收」。`work-overview-model.ts` 的 attention list 也把终态失败排在
+  unseen result 之前，label 为「查看失败原因」。
 - Goal 详情头部只展示当前状态、负责人、revision、真实进度与下一动作；技术详情默认折叠。
 - 进入非终态 Goal 走 `openGoalAndDiscuss`：先打开右侧 Goal，再恢复 Tech Lead 讨论；终态 Goal 不 ensure live Tech Lead。
 - 从 Goal 打开 Tech Lead 讨论、打回、打开 timeline 会话不再关闭右侧 Goal；「返回项目 Lead」只切 Chat，不清空当前 Goal。

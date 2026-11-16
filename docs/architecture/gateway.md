@@ -319,9 +319,13 @@ Lead/Builder/Reviewer/Tech Lead 都是内部会话（`session-visibility.ts`）�
 
 | 分级 | 触发 | 去向 |
 |---|---|---|
-| p1 | Goal 归档（PASS/FAIL/MAX_RETRIES/ERROR/UNREVIEWED） | 结果通知 / inbox / presence |
+| p1 | Goal 归档 PASS/UNREVIEWED（`goal.result`，audience human） | 结果通知 / inbox / presence |
+| p1 | Goal 归档 FAIL/MAX_RETRIES/ERROR（`goal.failed`，audience lead） | Lead 唤醒 + `failed` attention；同时写 Tech Lead failure handoff |
 | p2 | 成员 `request` / `escalation` 发给 Lead | Lead 唤醒（闸门：暂停/忙/预算/10min 去重） |
 | p3 | 其他成员消息（note/decision/review） | 审计；已读 7 天后 prune |
+
+`goal.result` 与 `goal.failed` 的 dedupe key 都带 event kind
+（`goal.result:<goalId>:r<N>` / `goal.failed:<goalId>:r<N>`），互不顶账。
 
 `GET /api/presence` 跨项目聚合 running / attention / unreadResults；worktree Pod 折叠到父项目并
 按 `(projectId, goalId, revision)` 去重。桌面 main 15s 轮询（`pod.event` 到达即时催一次），
