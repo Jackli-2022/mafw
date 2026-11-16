@@ -18,6 +18,8 @@
 ///   minor: an over-old gateway also 404s, so it gets its own message.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -177,6 +179,7 @@ class _FakeWorkClient extends GatewayClient {
     WorkOverview? fallbackOverview,
     PresenceInfo? presence,
     this.workError,
+    this.workGate,
   })  : projectDirs = projectDirs ?? const <String>[_dirA],
         overviews = overviews ?? const <String, WorkOverview>{},
         fallbackOverview = fallbackOverview ?? _overviewA(),
@@ -191,6 +194,9 @@ class _FakeWorkClient extends GatewayClient {
   final WorkOverview fallbackOverview;
   final PresenceInfo presenceInfo;
   final Object? workError;
+
+  /// 首屏加载门槛：非 null 时 `workOverview` 挂起，直到测试放行。
+  final Completer<WorkOverview>? workGate;
 
   int projectCalls = 0;
   int workCalls = 0;
@@ -209,6 +215,8 @@ class _FakeWorkClient extends GatewayClient {
     workCalls++;
     lastDir = projectDir;
     dirsRequested.add(projectDir);
+    final gate = workGate;
+    if (gate != null) return gate.future;
     final error = workError;
     if (error != null) throw error;
     return overviews[projectDir] ?? fallbackOverview;
@@ -344,6 +352,27 @@ void main() {
         ),
         findsOneWidget,
       );
+    });
+  });
+
+  group('loading skeleton', () {
+    testWidgets('first load shows quiet skeleton cards, not a spinner', (tester) async {
+      final gate = Completer<WorkOverview>();
+      await _pumpWorkTab(
+        tester,
+        client: _FakeWorkClient(workGate: gate),
+        settle: false,
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byKey(const Key('work-loading-skeleton')), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+
+      gate.complete(_overviewA());
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('work-loading-skeleton')), findsNothing);
+      expect(find.text('修 CI'), findsOneWidget);
     });
   });
 

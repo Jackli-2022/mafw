@@ -741,24 +741,21 @@ class _WorkTabState extends State<WorkTab> {
   }
 
   List<Widget> _buildChildren() {
-    final children = <Widget>[_buildBrandRow(), const SizedBox(height: 18)];
+    final children = <Widget>[_buildBrandRow(), const SizedBox(height: MafwSpace.lg)];
 
     final presence = _presence;
     final attention = presence?.attention ?? const <AttentionItem>[];
     final unread = presence?.unreadResultsCount ?? 0;
     if (attention.isNotEmpty || unread > 0) {
       children.addAll(_buildAttentionSection(attention, unread));
-      children.add(const SizedBox(height: 4));
+      children.add(const SizedBox(height: MafwSpace.xs));
     }
 
     children.add(_buildLeadEntry());
-    children.add(const SizedBox(height: 18));
+    children.add(const SizedBox(height: MafwSpace.lg));
 
     if (_status == WorkTabStatus.loading && _overview == null) {
-      children.add(const Padding(
-        padding: EdgeInsets.symmetric(vertical: 48),
-        child: Center(child: CircularProgressIndicator()),
-      ));
+      children.add(const _WorkSkeleton());
       return children;
     }
     if (_overview == null) {
@@ -778,51 +775,61 @@ class _WorkTabState extends State<WorkTab> {
         ClipOval(
           child: Image.asset(
             'assets/lore/Lore_avatar_20.png',
-            width: 22,
-            height: 22,
+            width: 24,
+            height: 24,
             filterQuality: FilterQuality.medium,
             // fail-open：资源缺失时品牌位仍可用（测试另有 asset bundle 断言）。
             errorBuilder: (_, _, _) =>
                 const Icon(Icons.spa_outlined, size: 20, color: MafwPalette.accent),
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: MafwSpace.sm),
         const Text(
           'Orcalore',
           style: TextStyle(
-            fontSize: 20,
+            fontSize: MafwType.title,
             fontWeight: FontWeight.w700,
-            letterSpacing: -0.2,
+            letterSpacing: -0.4,
+            height: 1.1,
             color: MafwPalette.text,
           ),
         ),
         const Spacer(),
         Flexible(
-          child: InkWell(
-            key: const Key('work-project-switcher'),
-            onTap: _openProjectPicker,
-            borderRadius: BorderRadius.circular(999),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: MafwPalette.badgeBg,
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: MafwPalette.border),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Flexible(
-                    child: Text(
-                      name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 12, color: MafwPalette.badgeText),
+          // 项目 pill 是唯一导航入口：给读屏一句完整的动作描述。
+          child: Semantics(
+            button: true,
+            label: '切换项目，当前 $name',
+            excludeSemantics: true,
+            child: InkWell(
+              key: const Key('work-project-switcher'),
+              onTap: _openProjectPicker,
+              borderRadius: BorderRadius.circular(MafwRadius.pill),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: MafwPalette.badgeBg,
+                  borderRadius: BorderRadius.circular(MafwRadius.pill),
+                  border: Border.all(color: MafwPalette.border),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: MafwType.meta,
+                          color: MafwPalette.badgeText,
+                        ),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 4),
-                  const Icon(Icons.unfold_more, size: 14, color: MafwPalette.dim),
-                ],
+                    const SizedBox(width: MafwSpace.xs),
+                    const Icon(Icons.unfold_more, size: 14, color: MafwPalette.dim),
+                  ],
+                ),
               ),
             ),
           ),
@@ -861,25 +868,32 @@ class _WorkTabState extends State<WorkTab> {
 
     if (unread > 0) {
       widgets.add(Padding(
-        padding: const EdgeInsets.only(top: 2, bottom: 10),
-        child: InkWell(
-          key: const Key('work-unread-row'),
-          borderRadius: BorderRadius.circular(8),
-          onTap: () => unawaited(_openResultsSheet()),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-            child: Row(
-              children: [
-                const Icon(Icons.inbox_outlined, size: 14, color: MafwPalette.dim),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    '$unread 个结果待查看',
-                    style: const TextStyle(fontSize: 12, color: MafwPalette.dim),
+        padding: const EdgeInsets.only(top: 2, bottom: MafwSpace.md),
+        child: Material(
+          color: MafwPalette.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: const BorderSide(color: MafwPalette.border),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            key: const Key('work-unread-row'),
+            onTap: () => unawaited(_openResultsSheet()),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+              child: Row(
+                children: [
+                  const Icon(Icons.inbox_outlined, size: 15, color: MafwPalette.dim),
+                  const SizedBox(width: MafwSpace.sm),
+                  Expanded(
+                    child: Text(
+                      '$unread 个结果待查看',
+                      style: const TextStyle(fontSize: MafwType.meta, color: MafwPalette.dim),
+                    ),
                   ),
-                ),
-                const Icon(Icons.chevron_right, size: 16, color: MafwPalette.faint),
-              ],
+                  const Icon(Icons.chevron_right, size: 16, color: MafwPalette.faint),
+                ],
+              ),
             ),
           ),
         ),
@@ -957,14 +971,28 @@ class _WorkTabState extends State<WorkTab> {
   Widget _buildLeadEntry() {
     return Card(
       margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
       child: ListTile(
         key: const Key('work-lead-entry'),
-        leading: const CircleAvatar(
-          radius: 14,
-          backgroundColor: MafwPalette.badgeBg,
-          child: Text(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        horizontalTitleGap: 10,
+        leading: Container(
+          width: 30,
+          height: 30,
+          decoration: BoxDecoration(
+            color: MafwPalette.badgeBg,
+            borderRadius: BorderRadius.circular(9),
+            border: Border.all(color: MafwPalette.border),
+          ),
+          alignment: Alignment.center,
+          child: const Text(
             'L',
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: MafwPalette.text),
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              height: 1,
+              color: MafwPalette.text,
+            ),
           ),
         ),
         title: const Text(
@@ -973,7 +1001,7 @@ class _WorkTabState extends State<WorkTab> {
         ),
         subtitle: const Text(
           '和项目 Lead 直接聊，讨论或交给 Lead 推进',
-          style: TextStyle(fontSize: 11, color: MafwPalette.dim),
+          style: TextStyle(fontSize: 11.5, height: 1.4, color: MafwPalette.dim),
         ),
         trailing: _leadBusy
             ? const SizedBox(
@@ -1002,7 +1030,7 @@ class _WorkTabState extends State<WorkTab> {
           onTap: () => unawaited(_openGoal(goalId: goal.goalId)),
         ));
       }
-      widgets.add(const SizedBox(height: 10));
+      widgets.add(const SizedBox(height: MafwSpace.md));
     }
     return widgets;
   }
@@ -1092,19 +1120,24 @@ class _BucketHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: MafwSpace.sm),
       child: Row(
         children: [
           Text(
             label,
             style: const TextStyle(
-              fontSize: 13,
+              fontSize: 12.5,
               fontWeight: FontWeight.w600,
-              color: MafwPalette.text,
+              letterSpacing: 0.3,
+              color: MafwPalette.badgeText,
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: MafwSpace.sm),
           _CountBadge(count: count),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Divider(height: 1, thickness: 1, color: MafwPalette.border),
+          ),
         ],
       ),
     );
@@ -1155,57 +1188,71 @@ class _GoalCard extends StatelessWidget {
     final stage = kWorkStageLabels[goal.stageKind ?? ''] ?? (goal.stageKind ?? '');
     final strategy = goal.strategy ?? '';
     final verdict = goal.verdict ?? '';
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  // mint 只表示「进行中」这一种激活态（徽标本身保持中性）。
-                  if (bucket == 'in_progress') ...[
-                    Container(
-                      width: 6,
-                      height: 6,
-                      decoration: const BoxDecoration(
-                        color: MafwPalette.accent,
-                        shape: BoxShape.circle,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: MafwSpace.sm),
+      child: Material(
+        color: MafwPalette.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(MafwRadius.md),
+          side: const BorderSide(color: MafwPalette.border),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // mint 只表示「进行中」这一种激活态（徽标本身保持中性）。
+                    if (bucket == 'in_progress') ...[
+                      Container(
+                        margin: const EdgeInsets.only(top: 6),
+                        width: 6,
+                        height: 6,
+                        decoration: const BoxDecoration(
+                          color: MafwPalette.accent,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                    Expanded(
+                      child: Text(
+                        goal.title.isEmpty ? '未命名目标' : goal.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w600,
+                          height: 1.35,
+                          color: MafwPalette.text,
+                        ),
                       ),
                     ),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: MafwSpace.xs),
+                    const Padding(
+                      padding: EdgeInsets.only(top: 2),
+                      child: Icon(Icons.chevron_right, size: 16, color: MafwPalette.faint),
+                    ),
                   ],
-                  Expanded(
-                    child: Text(
-                      goal.title.isEmpty ? '未命名目标' : goal.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        height: 1.35,
-                        color: MafwPalette.text,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  if (stage.isNotEmpty) _MetaChip(text: stage),
-                  _MetaChip(text: 'r${goal.revision}'),
-                  if (strategy.isNotEmpty) _MetaChip(text: strategy),
-                  if (verdict.isNotEmpty) _MetaChip(text: verdict, emphasized: true),
-                ],
-              ),
-            ],
+                ),
+                const SizedBox(height: MafwSpace.sm),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    if (stage.isNotEmpty) _MetaChip(text: stage),
+                    _MetaChip(text: 'r${goal.revision}'),
+                    if (strategy.isNotEmpty) _MetaChip(text: strategy),
+                    if (verdict.isNotEmpty) _MetaChip(text: verdict, emphasized: true),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1241,8 +1288,20 @@ class _AttentionCard extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             child: Row(
               children: [
-                const Icon(Icons.priority_high, size: 18, color: MafwPalette.accent),
-                const SizedBox(width: 8),
+                Container(
+                  width: 26,
+                  height: 26,
+                  decoration: BoxDecoration(
+                    color: MafwPalette.accent.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(MafwRadius.sm),
+                  ),
+                  child: const Icon(
+                    Icons.priority_high,
+                    size: 16,
+                    color: MafwPalette.accent,
+                  ),
+                ),
+                const SizedBox(width: MafwSpace.sm),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1294,31 +1353,139 @@ class _EmptyPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 8),
+      padding: const EdgeInsets.symmetric(vertical: 48, horizontal: MafwSpace.sm),
       child: Column(
         children: [
-          Icon(icon, size: 36, color: MafwPalette.faint),
-          const SizedBox(height: 12),
+          // 空态是一个「安静的仪表盘」：圆形 ink 徽标，不抢主内容。
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: MafwPalette.surface,
+              shape: BoxShape.circle,
+              border: Border.all(color: MafwPalette.border),
+            ),
+            child: Icon(icon, size: 26, color: MafwPalette.dim),
+          ),
+          const SizedBox(height: MafwSpace.lg),
           Text(
             title,
             textAlign: TextAlign.center,
             style: const TextStyle(
-              fontSize: 14,
+              fontSize: MafwType.heading,
               fontWeight: FontWeight.w600,
               color: MafwPalette.text,
             ),
           ),
-          const SizedBox(height: 6),
-          Text(
-            body,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 12, height: 1.5, color: MafwPalette.dim),
+          const SizedBox(height: MafwSpace.sm),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 300),
+            child: Text(
+              body,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 12.5,
+                height: 1.55,
+                color: MafwPalette.dim,
+              ),
+            ),
           ),
           if (actionLabel != null && onAction != null) ...[
-            const SizedBox(height: 16),
-            OutlinedButton(onPressed: onAction, child: Text(actionLabel!)),
+            const SizedBox(height: MafwSpace.xl),
+            OutlinedButton(
+              onPressed: onAction,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: MafwPalette.text,
+                side: const BorderSide(color: MafwPalette.border),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              ),
+              child: Text(actionLabel!),
+            ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// 首屏加载骨架：与 Goal 卡片同构（标题条 + 两个 chip 条），
+/// 用静态占位替代 spinner，避免加载完成时的布局跳动。
+class _WorkSkeleton extends StatelessWidget {
+  const _WorkSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: '正在加载项目工作流',
+      child: Column(
+        key: const Key('work-loading-skeleton'),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var group = 0; group < 2; group++) ...[
+            _SkeletonBar(width: group == 0 ? 76 : 60),
+            const SizedBox(height: MafwSpace.md),
+            for (var card = 0; card < (group == 0 ? 2 : 1); card++) ...[
+              const _SkeletonCard(),
+              const SizedBox(height: MafwSpace.sm),
+            ],
+            const SizedBox(height: MafwSpace.md),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _SkeletonCard extends StatelessWidget {
+  const _SkeletonCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 62,
+      padding: const EdgeInsets.fromLTRB(14, 13, 14, 12),
+      decoration: BoxDecoration(
+        color: MafwPalette.surface,
+        borderRadius: BorderRadius.circular(MafwRadius.md),
+        border: Border.all(color: MafwPalette.border),
+      ),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _SkeletonBar(width: 168, height: 12),
+          Spacer(),
+          Row(
+            children: [
+              _SkeletonBar(width: 54, height: 16, radius: 6),
+              SizedBox(width: 6),
+              _SkeletonBar(width: 36, height: 16, radius: 6),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SkeletonBar extends StatelessWidget {
+  final double width;
+  final double height;
+  final double radius;
+
+  const _SkeletonBar({
+    required this.width,
+    this.height = 10,
+    this.radius = 4,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: MafwPalette.badgeBg,
+        borderRadius: BorderRadius.circular(radius),
       ),
     );
   }

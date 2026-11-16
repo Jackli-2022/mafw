@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../config/app_info.dart';
 import '../models/mafw_models.dart';
 import '../models/session_list_events.dart';
 import '../network/gateway_client.dart';
@@ -729,6 +730,8 @@ class _SessionsPageState extends State<SessionsPage> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       children: [
+        _buildMeBrandHeader(),
+        const SizedBox(height: MafwSpace.xl),
         _sectionLabel('记忆'),
         const SizedBox(height: 8),
         TextField(
@@ -832,6 +835,85 @@ class _SessionsPageState extends State<SessionsPage> {
             ),
           ),
         ],
+        const SizedBox(height: MafwSpace.xl),
+        _sectionLabel('关于'),
+        const SizedBox(height: MafwSpace.sm),
+        Card(
+          color: scheme.surfaceContainerHighest,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              children: [
+                const Icon(Icons.info_outline, size: 18, color: MafwPalette.dim),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Orcalore Mobile',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: MafwPalette.text,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'v$kAppVersion · MAFW Gateway 客户端',
+                        style: const TextStyle(fontSize: 11, color: MafwPalette.dim),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 「我的」页顶部品牌 lockup：Lore 40px + 字标 + 一句定位。
+  Widget _buildMeBrandHeader() {
+    return Row(
+      children: [
+        ClipOval(
+          child: Image.asset(
+            'assets/lore/Lore_avatar_40.png',
+            width: 44,
+            height: 44,
+            filterQuality: FilterQuality.medium,
+            errorBuilder: (_, _, _) => const Icon(
+              Icons.spa_outlined,
+              size: 30,
+              color: MafwPalette.accent,
+            ),
+          ),
+        ),
+        const SizedBox(width: MafwSpace.md),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                kAppName,
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.4,
+                  height: 1.1,
+                  color: MafwPalette.text,
+                ),
+              ),
+              const SizedBox(height: 3),
+              const Text(
+                kAppTagline,
+                style: TextStyle(fontSize: 11.5, height: 1.4, color: MafwPalette.dim),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -1062,17 +1144,38 @@ class _EmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(MafwSpace.xl),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 36, color: Colors.grey.shade400),
-            const SizedBox(height: 10),
-            Text(title, style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
-            const SizedBox(height: 6),
-            Text(subtitle, style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: MafwPalette.surface,
+                shape: BoxShape.circle,
+                border: Border.all(color: MafwPalette.border),
+              ),
+              child: Icon(icon, size: 26, color: MafwPalette.dim),
+            ),
+            const SizedBox(height: MafwSpace.lg),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: MafwType.heading,
+                fontWeight: FontWeight.w600,
+                color: MafwPalette.text,
+              ),
+            ),
+            const SizedBox(height: MafwSpace.sm),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12, height: 1.5, color: MafwPalette.dim),
+            ),
             if (actionLabel != null && onAction != null) ...[
-              const SizedBox(height: 14),
+              const SizedBox(height: MafwSpace.lg),
               FilledButton.icon(
                 onPressed: onAction,
                 icon: const Icon(Icons.settings, size: 16),

@@ -487,46 +487,59 @@ body: Column(
   }
 
   Widget _composer() {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.attach_file),
-              tooltip: '附件',
-              onPressed: _sending ? null : _pickAndUploadMedia,
-            ),
-            IconButton(
-              icon: const Icon(Icons.mic),
-              tooltip: '语音输入',
-              onPressed: _sending ? null : widget.onSpeak,
-            ),
-            Expanded(
-              child: TextField(
-                controller: _inputCtrl,
-                minLines: 1,
-                maxLines: 6,
-                textInputAction: TextInputAction.send,
-                onSubmitted: (_) => _send(),
-                decoration: const InputDecoration(
-                  hintText: '输入消息…',
-                  isDense: true,
-                  border: OutlineInputBorder(),
+    return Container(
+      decoration: const BoxDecoration(
+        color: MafwPalette.black,
+        // 输入区与消息流之间用一条 hairline 分隔，避免 composer 悬浮感。
+        border: Border(top: BorderSide(color: MafwPalette.border)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.attach_file),
+                tooltip: '附件',
+                style: IconButton.styleFrom(foregroundColor: MafwPalette.dim),
+                onPressed: _sending ? null : _pickAndUploadMedia,
+              ),
+              IconButton(
+                icon: const Icon(Icons.mic),
+                tooltip: '语音输入',
+                style: IconButton.styleFrom(foregroundColor: MafwPalette.dim),
+                onPressed: _sending ? null : widget.onSpeak,
+              ),
+              Expanded(
+                child: TextField(
+                  controller: _inputCtrl,
+                  minLines: 1,
+                  maxLines: 6,
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) => _send(),
+                  decoration: const InputDecoration(
+                    hintText: '输入消息…',
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  ),
                 ),
               ),
-            ),
-            IconButton(
-              icon: _sending ? const Icon(Icons.stop_rounded) : const Icon(Icons.arrow_upward_rounded),
-              tooltip: _sending ? '停止' : '发送',
-              style: IconButton.styleFrom(
-                backgroundColor: kMafwPrimary,
-                foregroundColor: MafwPalette.black,
+              const SizedBox(width: MafwSpace.xs),
+              IconButton(
+                icon: _sending ? const Icon(Icons.stop_rounded) : const Icon(Icons.arrow_upward_rounded),
+                tooltip: _sending ? '停止' : '发送',
+                style: IconButton.styleFrom(
+                  backgroundColor: kMafwPrimary,
+                  foregroundColor: MafwPalette.black,
+                  disabledBackgroundColor: MafwPalette.badgeBg,
+                  disabledForegroundColor: MafwPalette.faint,
+                ),
+                onPressed: _sending ? _stop : _send,
               ),
-              onPressed: _sending ? _stop : _send,
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

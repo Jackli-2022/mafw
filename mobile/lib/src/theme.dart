@@ -50,6 +50,43 @@ class MafwPalette {
   static const Color badgeText = Color(0xFFC9C9D4);
 }
 
+/// 字阶（Orcalore 只有 6 级；UI 不写裸 fontSize）。
+///
+/// display 用于品牌/大数字，title 用于页面标题，heading 用于区块标题，
+/// body 用于卡片正文，meta 用于次级信息，caption 用于最小标注。
+class MafwType {
+  const MafwType._();
+
+  static const double display = 28;
+  static const double title = 20;
+  static const double heading = 15;
+  static const double body = 14;
+  static const double meta = 12;
+  static const double caption = 11;
+}
+
+/// 间距刻度（4 的倍数；UI 不写裸 padding 数字）。
+class MafwSpace {
+  const MafwSpace._();
+
+  static const double xs = 4;
+  static const double sm = 8;
+  static const double md = 12;
+  static const double lg = 16;
+  static const double xl = 24;
+  static const double xxl = 32;
+}
+
+/// 圆角刻度：小控件 8 / 卡片 14 / 面板 18 / 胶囊 999。
+class MafwRadius {
+  const MafwRadius._();
+
+  static const double sm = 8;
+  static const double md = 14;
+  static const double lg = 18;
+  static const double pill = 999;
+}
+
 /// 品牌主色（mint accent；语义 = `MafwPalette.accent`）。
 const Color kMafwPrimary = MafwPalette.accent;
 /// 强调/CTA 色（与 primary 同源，mint 是唯一彩色）。
@@ -83,7 +120,8 @@ const ColorScheme _orcaloreScheme = ColorScheme.dark(
   tertiaryContainer: MafwPalette.badgeBg,
   onTertiaryContainer: MafwPalette.text,
   error: Color(0xFFE5484D),
-  onError: MafwPalette.text,
+  // 黑字在 error 红上 5.4:1（cream 只有 3.9:1），小字号也可读。
+  onError: MafwPalette.black,
   errorContainer: Color(0xFF3A1113),
   onErrorContainer: Color(0xFFF0757A),
   surface: MafwPalette.surface,
@@ -114,7 +152,7 @@ ThemeData mafwDarkTheme() => _build(_orcaloreScheme);
 
 ThemeData _build(ColorScheme scheme) {
   final cream = MafwPalette.text;
-  final borderRadius = BorderRadius.circular(14);
+  final borderRadius = BorderRadius.circular(MafwRadius.md);
   return ThemeData(
     colorScheme: scheme,
     brightness: Brightness.dark,

@@ -79,9 +79,29 @@ class _TriagePageState extends State<TriagePage> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.check_circle_outline, size: 48, color: Colors.grey.shade400),
-                      const SizedBox(height: 12),
-                      Text('暂无待决项', style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
+                      Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: MafwPalette.surface,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: MafwPalette.border),
+                        ),
+                        child: const Icon(
+                          Icons.check_circle_outline,
+                          size: 26,
+                          color: MafwPalette.dim,
+                        ),
+                      ),
+                      const SizedBox(height: MafwSpace.lg),
+                      const Text(
+                        '暂无待决项',
+                        style: TextStyle(
+                          fontSize: MafwType.heading,
+                          fontWeight: FontWeight.w600,
+                          color: MafwPalette.text,
+                        ),
+                      ),
                     ],
                   ),
                 )

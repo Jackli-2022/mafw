@@ -12,6 +12,7 @@ import '../config/pairing_link.dart';
 import '../services/background_credentials.dart';
 import '../services/mdns_discovery.dart';
 import '../services/secure_config_store.dart';
+import '../theme.dart';
 
 /// QR code scanner page for gateway pairing.
 ///
@@ -271,7 +272,9 @@ class _PairingPageState extends State<PairingPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('扫描配对码'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        // 品牌 AppBar 一律真黑；mint 只留给 CTA/激活态（inversePrimary 曾把
+        // cream 文字压在本就偏亮的 mint 上，对比度不足）。
+        backgroundColor: MafwPalette.black,
       ),
       body: Column(
         children: [

@@ -538,39 +538,45 @@ class _TechLeadDiscussionPageState extends State<TechLeadDiscussionPage> {
 
   /// text-only composer（无附件 / 无语音：Tech Lead allowlist 解不了媒体指针）。
   Widget _buildComposer() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Expanded(
-            child: TextField(
-              key: const Key('tech-lead-input'),
-              controller: _inputCtrl,
-              minLines: 1,
-              maxLines: 6,
-              textInputAction: TextInputAction.send,
-              onSubmitted: (_) => unawaited(_send()),
-              style: const TextStyle(fontSize: 14, color: MafwPalette.text),
-              decoration: const InputDecoration(
-                hintText: '和 Tech Lead 讨论…',
-                isDense: true,
-                border: OutlineInputBorder(),
+    return Container(
+      decoration: const BoxDecoration(
+        color: MafwPalette.black,
+        border: Border(top: BorderSide(color: MafwPalette.border)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(
+              child: TextField(
+                key: const Key('tech-lead-input'),
+                controller: _inputCtrl,
+                minLines: 1,
+                maxLines: 6,
+                textInputAction: TextInputAction.send,
+                onSubmitted: (_) => unawaited(_send()),
+                style: const TextStyle(fontSize: 14, color: MafwPalette.text),
+                decoration: const InputDecoration(
+                  hintText: '和 Tech Lead 讨论…',
+                  isDense: true,
+                  contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                ),
               ),
             ),
-          ),
-          const SizedBox(width: 6),
-          IconButton(
-            key: const Key('tech-lead-send'),
-            icon: const Icon(Icons.arrow_upward_rounded),
-            tooltip: '发送',
-            style: IconButton.styleFrom(
-              backgroundColor: kMafwPrimary,
-              foregroundColor: MafwPalette.black,
+            const SizedBox(width: MafwSpace.sm),
+            IconButton(
+              key: const Key('tech-lead-send'),
+              icon: const Icon(Icons.arrow_upward_rounded),
+              tooltip: '发送',
+              style: IconButton.styleFrom(
+                backgroundColor: kMafwPrimary,
+                foregroundColor: MafwPalette.black,
+              ),
+              onPressed: () => unawaited(_send()),
             ),
-            onPressed: () => unawaited(_send()),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

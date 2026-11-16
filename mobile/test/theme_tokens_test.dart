@@ -10,6 +10,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:orcalore_mobile/main.dart';
+import 'package:orcalore_mobile/src/config/app_info.dart';
 import 'package:orcalore_mobile/src/theme.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -68,6 +69,36 @@ void main() {
     });
   });
 
+  group('MafwType / MafwSpace / MafwRadius scale', () {
+    test('type scale is six ordered steps', () {
+      expect(MafwType.display, greaterThan(MafwType.title));
+      expect(MafwType.title, greaterThan(MafwType.heading));
+      expect(MafwType.heading, greaterThan(MafwType.body));
+      expect(MafwType.body, greaterThan(MafwType.meta));
+      expect(MafwType.meta, greaterThan(MafwType.caption));
+    });
+
+    test('spacing follows the 4pt grid', () {
+      for (final value in [
+        MafwSpace.xs,
+        MafwSpace.sm,
+        MafwSpace.md,
+        MafwSpace.lg,
+        MafwSpace.xl,
+        MafwSpace.xxl,
+      ]) {
+        expect(value % 4, 0);
+      }
+    });
+
+    test('radii are the component scale', () {
+      expect(MafwRadius.sm, 8);
+      expect(MafwRadius.md, 14);
+      expect(MafwRadius.lg, 18);
+      expect(MafwRadius.pill, 999);
+    });
+  });
+
   group('Orcalore Material theme wiring', () {
     test('dark theme paints mint primary on ink surfaces', () {
       final theme = mafwDarkTheme();
@@ -78,6 +109,10 @@ void main() {
       expect(theme.scaffoldBackgroundColor, MafwPalette.black);
       expect(theme.floatingActionButtonTheme.backgroundColor, MafwPalette.text);
       expect(theme.floatingActionButtonTheme.foregroundColor, MafwPalette.black);
+    });
+
+    test('onError stays black for 5.4:1 contrast on error red', () {
+      expect(mafwDarkTheme().colorScheme.onError, MafwPalette.black);
     });
 
     test('light hook also returns the single dark Orcalore theme (v1)', () {
@@ -98,6 +133,14 @@ void main() {
   });
 
   group('app identity files', () {
+    test('kAppVersion matches pubspec.yaml', () {
+      final pubspec = File('pubspec.yaml').readAsStringSync();
+      final match = RegExp(r'^version:\s*(\d+\.\d+\.\d+)\+?\d*$', multiLine: true)
+          .firstMatch(pubspec);
+      expect(match, isNotNull, reason: 'pubspec.yaml has no semver version');
+      expect(kAppVersion, match!.group(1));
+    });
+
     test('pubspec declares the orcalore_mobile package name', () {
       final pubspec = File('pubspec.yaml').readAsStringSync();
       expect(

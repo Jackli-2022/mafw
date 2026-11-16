@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import '../config/connection_config.dart';
 import '../network/gateway_client.dart';
 import '../services/secure_config_store.dart';
+import '../theme.dart';
 
 /// Connection setup: gateway base URL + API token, with a connectivity test.
 class ConnectionSettingsPage extends StatefulWidget {
@@ -59,10 +60,12 @@ class _ConnectionSettingsPageState extends State<ConnectionSettingsPage> {
     };
   }
 
-  Color get _urlHintColor => switch (_urlCheck) {
-        UrlCheck.ok => Colors.green.shade700,
-        UrlCheck.bareIpWarn || UrlCheck.plaintextLanWarn => Colors.orange.shade800,
-        UrlCheck.publicPlaintext || UrlCheck.invalid => Colors.red.shade700,
+  /// 警告用中性灰（品牌只有 mint 一个彩色）；真正阻断的错误用主题 error。
+  Color _urlHintColor(BuildContext context) => switch (_urlCheck) {
+        UrlCheck.ok => MafwPalette.dim,
+        UrlCheck.bareIpWarn || UrlCheck.plaintextLanWarn => MafwPalette.dim,
+        UrlCheck.publicPlaintext || UrlCheck.invalid =>
+          Theme.of(context).colorScheme.error,
       };
 
   Future<void> _test() async {
@@ -103,7 +106,7 @@ class _ConnectionSettingsPageState extends State<ConnectionSettingsPage> {
         padding: const EdgeInsets.all(16),
         children: [
           const Text('电脑上的 Orcalore Gateway 地址',
-              style: TextStyle(fontSize: 13, color: Colors.grey)),
+              style: TextStyle(fontSize: 13, color: MafwPalette.dim)),
           const SizedBox(height: 6),
           TextField(
             controller: _urlCtrl,
@@ -117,7 +120,7 @@ class _ConnectionSettingsPageState extends State<ConnectionSettingsPage> {
           ),
           if (_urlHint != null) ...[
             const SizedBox(height: 6),
-            Text(_urlHint!, style: TextStyle(fontSize: 12, color: _urlHintColor)),
+            Text(_urlHint!, style: TextStyle(fontSize: 12, color: _urlHintColor(context))),
           ],
           const SizedBox(height: 16),
           TextField(
@@ -159,7 +162,7 @@ class _ConnectionSettingsPageState extends State<ConnectionSettingsPage> {
             '· 应用层策略：仅允许 https / ts.net / 局域网与 loopback 明文；公网明文 http 会被拒绝\n'
             '· 原生媒体（TTS 等）走 Android 网络栈，ts.net 子域由 network_security_config 放行\n'
             '· 远程访问必须在 gateway 配置 MAFW_SERVER_API_TOKEN（或 server.apiToken）',
-            style: TextStyle(fontSize: 12, color: Colors.grey),
+            style: TextStyle(fontSize: 12, height: 1.5, color: MafwPalette.faint),
           ),
         ],
       ),

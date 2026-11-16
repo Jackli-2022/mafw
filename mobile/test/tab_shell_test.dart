@@ -9,6 +9,7 @@
 // - 聊天 keeps the plain session list; 我的 hosts the memory search entry
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:orcalore_mobile/src/config/app_info.dart';
 import 'package:orcalore_mobile/src/config/connection_config.dart';
 import 'package:orcalore_mobile/src/models/mafw_models.dart';
 import 'package:orcalore_mobile/src/network/gateway_client.dart';
@@ -137,6 +138,22 @@ void main() {
       // Chat-only chrome must not leak into 我的.
       expect(find.text('搜索会话…'), findsNothing);
       expect(find.byType(FloatingActionButton), findsNothing);
+    });
+
+    testWidgets('我的 shows the Orcalore lockup and about section', (tester) async {
+      await _pumpShell(tester);
+      await _tapTab(tester, '我的');
+
+      expect(find.text('Orcalore'), findsOneWidget);
+      expect(find.text(kAppTagline), findsOneWidget);
+
+      // About 在列表尾部：滚到底再断言（ListView 懒构建）。
+      await tester.drag(find.byType(ListView), const Offset(0, -600));
+      await tester.pumpAndSettle();
+
+      expect(find.text('关于'), findsOneWidget);
+      expect(find.text('Orcalore Mobile'), findsOneWidget);
+      expect(find.textContaining('v$kAppVersion'), findsOneWidget);
     });
 
     testWidgets('工作 owns the discussion FAB; 聊天 keeps the new-session FAB; 我的 has none',
