@@ -64,7 +64,7 @@
 - `PodEventWake.scanInner` 仍然直接 `promptAsync`，有自己的 6/hour + 10min 去重；
 - 两条路径互不知道对方是否已经叫过 Lead。
 
-### Task 1.1：Lead outbox payload 支持 pod-event
+### Task 1：Lead outbox payload 支持 pod-event
 
 **Files:**
 - Modify: `gateway/src/core/lead/lead-outbox-model.ts`
@@ -188,7 +188,7 @@ git add gateway/src/core/lead/lead-outbox-model.ts gateway/src/core/lead/lead-ou
 git commit -m "feat(lead): support pod events in the unified outbox"
 ```
 
-### Task 1.2：PodEventWake 变成 outbox producer
+### Task 2：PodEventWake 变成 outbox producer
 
 **Files:**
 - Modify: `gateway/src/core/pod/pod-event-wake.ts`
@@ -307,7 +307,7 @@ git add gateway/src/core/pod/pod-event-wake.ts gateway/src/core/pod/pod-event-se
 git commit -m "feat(pod): enqueue wake events into the lead outbox"
 ```
 
-### Task 1.3：kernel 接线与 wiring test
+### Task 3：kernel 接线与 wiring test
 
 **Files:**
 - Modify: `gateway/src/kernel.ts`（`PodEventWake` 构造块）
@@ -364,7 +364,7 @@ git add gateway/src/kernel.ts gateway/tests/unit/lead/lead-outbox-wiring.test.ts
 git commit -m "feat(kernel): route pod event wakes through the lead outbox"
 ```
 
-### Task 1.4：Phase 1 门禁与文档
+### Task 4：Phase 1 门禁与文档
 
 - [ ] **Step 1: 跑 gateway 定向测试**
 
