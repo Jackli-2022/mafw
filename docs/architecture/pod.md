@@ -301,10 +301,10 @@ spec `docs/superpowers/specs/2026-11-10-lead-techlead-p2-scheduler-design.md`；
 `docs/superpowers/plans/2026-11-10-lead-techlead-p2-scheduler.md`。
 
 - **Attention v2**：`deriveAttention(views)` 从结构化 stage 派生 person-first 列表（plan_approval 100 /
-  direction_review 90 / answer 80 / review 70 / failed 60 / blocked 50），同一 goal+kind 用
+  direction_review 90 / decision 85 / failed 85 / answer 80 / review 70 / blocked 50），同一 goal+kind 用
   `coalesceKey` 合并；健康/进行中的 Goal 不进 person；`GET /api/attention` 的 count 即列表长度。
-  （E9-2 起 `decision` 85 插在 direction_review 与 answer 之间，且 reviews / draft decisions 是
-  route 层追加而非 `deriveAttention` 内联；见 `gateway.md` §「E9 交互补齐」。）
+  （E9-2 起 reviews / draft decisions 是 route 层追加而非 `deriveAttention` 内联；
+  见 `gateway.md` §「E9 交互补齐」。）
 - **调度**：`planPromotions` 按 priority + enqueuedAt 排序，`capacity = maxConcurrent + 1`（人类槽
   仅在已有 active person Goal 时开启）；`PodGoalService.promote` 一次填满可用槽位，
   `startQueued` 只在新 Pod 无 activeGoalId 时写指针。`MAFW_POD_MAX_GOALS` 默认 1；
@@ -330,8 +330,11 @@ spec `docs/superpowers/specs/2026-11-10-lead-techlead-p2-scheduler-design.md`；
 - **统一准入**：`PodGoalService.canAdmitGoal` / `admitReadyGoal` 是唯一入口；`PodTechLeadService.createGoal`
   在槽位不足时保持 `queued`（Tech Lead 仍可讨论），direction 决定后的 `startPlanning` 也走准入，
   不再直接 `startGoalDirect`。
-- **Attention 可达性**：`review` 由终态 `resultReady && !accepted` 派生（`open_result`），`failed` 由
-  `lastError` 派生；`stateMissing` 且无错误的 blocked 不再冒充人类阻塞。
+- **Attention 可达性（2026-11-16 修订）**：`review` 只由 `PASS/UNREVIEWED` 的
+  `resultReady && !accepted` 派生（`open_result`）；终态 `FAIL/MAX_RETRIES/ERROR`（`!accepted`）
+  派生 `failed`（`open_result`），同时进入 Pod detail attention 与 `/api/attention`，不再冒充
+  “待验收”。归档前写 `<mafwDir>/goals/<goalId>/context/tech-lead-failure.md`，下一次 Tech Lead
+  会话的 ContextManifest 自动带上；`stateMissing` 且无错误的 blocked 不再冒充人类阻塞。
 - **Pause / Resume**：`pause` 把 `phase/nextAction` 存进 `_resumePhase/_resumeNextAction` 后写 PAUSED；
   `POST /api/goals/:id/resume` 恢复并 `advance`。`retry` 只接受 active revision 内 failed/aborted/
   timed-out run，显式 runId 跨 revision 或成功 run 返回 409/404。
