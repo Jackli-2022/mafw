@@ -16,6 +16,7 @@ import { initEmbeddingRuntime } from '../src/memory/embedding-runtime';
 import { HarmonicUnitFileStore } from '../src/memory/harmonic-file-store';
 import {
   computeTurnSignals,
+  normalizeObservationText,
   type TurnSignalInput,
   type TurnSignalUnit,
 } from '../src/recall/t1-signals';
@@ -46,6 +47,7 @@ function percentiles(values: number[]): { p50: number; p90: number; p99: number;
 
 async function main() {
   const apply = process.argv.includes('--apply');
+  const reset = process.argv.includes('--reset');
   const db = new GatewayDatabase(path.join(config.resolvePath('memory'), 'gateway.db'));
   let runtime: ReturnType<typeof initEmbeddingRuntime> = null;
   try {
@@ -75,6 +77,11 @@ async function main() {
       };
     };
 
+    if (reset && apply) {
+      db.getStore().prepare('UPDATE t1_turn_features SET novelty = NULL, mismatch = NULL').run();
+      process.stderr.write('[signals] reset previous scores\n');
+    }
+
     const rows = db
       .getStore()
       .prepare(
@@ -90,7 +97,7 @@ async function main() {
       // Archived turns only resolve through readTrace (active + archive).
       const trace = db.readTrace(row.trace_id);
       const observations = trace?.rows ?? [];
-      const text = observations.map((o) => o.content ?? '').join('\n');
+      const text = normalizeObservationText(observations);
       if (!text.trim()) continue;
       let entities: string[] = [];
       try {

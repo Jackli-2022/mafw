@@ -41,9 +41,29 @@ function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
 
-/** Short greetings and empty turns score high novelty without carrying information. */
+/** Agent/system boilerplate: same template, different payload — not a memory cue. */
+const SYSTEM_PROMPT = /^(you are (a|an)\b|\[MAFW SYSTEM\]|research task\b|research only\b)/i;
+
+/** Join raw T1 rows without turning structured content into "[object Object]". */
+export function normalizeObservationText(rows: Array<{ content?: unknown }>): string {
+  return rows
+    .map((row) => {
+      if (typeof row.content === 'string') return row.content;
+      if (row.content == null) return '';
+      try {
+        return JSON.stringify(row.content);
+      } catch {
+        return String(row.content);
+      }
+    })
+    .join('\n');
+}
+
+/** Short greetings, empty turns and agent boilerplate carry no cue to compare. */
 export function isInformativeTurn(text: string, anchorCount: number): boolean {
   const body = String(text ?? '').trim();
+  if (!body) return false;
+  if (SYSTEM_PROMPT.test(body)) return false;
   return body.length >= 120 || anchorCount > 0;
 }
 

@@ -1,4 +1,9 @@
-import { computeTurnSignals, isInformativeTurn, scoreTurnSignals } from '../../../src/recall/t1-signals';
+import {
+  computeTurnSignals,
+  isInformativeTurn,
+  normalizeObservationText,
+  scoreTurnSignals,
+} from '../../../src/recall/t1-signals';
 
 const units: Record<string, any> = {
   m1: { createdAt: '2026-01-01T00:00:00.000Z', type: 'semantic' },
@@ -122,5 +127,24 @@ describe('t1 signals', () => {
     expect(scoreTurnSignals(1.2, 0.5)!.novelty).toBe(0);
     expect(scoreTurnSignals(-0.3, 0.2)!.novelty).toBe(1);
     expect(scoreTurnSignals(null, 0.5)).toBeNull();
+  });
+
+  test('non-string observation content is serialized, not "[object Object]"', () => {
+    expect(
+      normalizeObservationText([{ content: 'plain' }, { content: { tool: 'read' } }]),
+    ).toBe('plain\n{"tool":"read"}');
+  });
+
+  test('agent system prompts are not scored', async () => {
+    const long = 'You are a subagent spawned by another session. ' + 'x'.repeat(200);
+    expect(isInformativeTurn(long, 3)).toBe(false);
+    expect(isInformativeTurn('[MAFW SYSTEM] gateway updated', 1)).toBe(false);
+    // A user turn that merely starts with "you are asking" still scores.
+    expect(isInformativeTurn('You are asking about a ' + 'x'.repeat(150), 0)).toBe(true);
+    const map = await computeTurnSignals(
+      [input({ text: long, cue: 'You are a subagent spawned by another session.' })],
+      deps({}),
+    );
+    expect(map.size).toBe(0);
   });
 });

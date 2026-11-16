@@ -20,7 +20,7 @@ import { replayPriority, sampleByPriority } from './replay-sampling';
 import { extractTurnFeature } from './t1-features';
 import { encodeT1Turn } from './t1-encode';
 import type { T1SparseAtom } from './t1-sparse';
-import type { TurnSignalInput, TurnSignals } from './t1-signals';
+import { normalizeObservationText, type TurnSignalInput, type TurnSignals } from './t1-signals';
 import { readSessionTimeline } from './session-timeline';
 import { buildReplayBlock } from './replay-block';
 import { PipelineBudgetLike } from './pipeline-budget';
@@ -389,7 +389,7 @@ export class TurnPipeline {
           feature,
           input: {
             traceId,
-            text: obs.map((o) => o.content ?? '').join('\n'),
+            text: normalizeObservationText(obs),
             cue: [feature.intent, ...(feature.entities ?? []), feature.tool, feature.target]
               .filter(Boolean)
               .join(' '),
