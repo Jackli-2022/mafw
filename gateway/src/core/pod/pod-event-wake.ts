@@ -7,7 +7,7 @@ import type { PodEventRow } from './pod-store';
 export interface PodEventWakeEvents {
   pendingWakes(podId?: string): PodEventRow[];
   /** Mark the pod event as handed to the Lead outbox. `outboxId` is durable. */
-  markWakeQueued(id: string, outboxId: string): void;
+  markWakeQueued(id: string, outboxId: string, kind?: 'outbox' | 'a2a'): void;
   markWakeSuppressed(id: string): void;
   markWakeAttempt?(id: string): void;
 }
@@ -19,6 +19,8 @@ export interface PodEventWakeDeps {
     podId: string;
     eventId: string;
     goalId?: string | null;
+    /** Mirrored pod_message id, when the event carries a message ref. */
+    messageId?: string | null;
     text: string;
     priority?: 'p1' | 'p2' | 'p3';
   }): { id: string } | Promise<{ id: string }>;
@@ -104,7 +106,7 @@ export class PodEventWake {
         if (messageId && lead && this.deps.deliveryDelivered?.(messageId, lead)) {
           // The A2A bridge already delivered the mirrored message; do not
           // enqueue a second Lead notice. Record it as queued with an a2a marker.
-          this.deps.events.markWakeQueued(event.id, `a2a:${messageId}`);
+          this.deps.events.markWakeQueued(event.id, messageId, 'a2a');
           delivered += 1;
           continue;
         }
@@ -113,6 +115,7 @@ export class PodEventWake {
             podId: event.podId,
             eventId: event.id,
             goalId: event.goalId ?? null,
+            messageId,
             text: renderPodEvent(event),
             priority: priorityOf(event),
           });

@@ -14,7 +14,9 @@ function harness(over: Partial<any> = {}) {
   const wake = new PodEventWake({
     events: {
       pendingWakes: () => over.pending ?? [ev()],
-      markWakeQueued: (id: string, outboxId: string) => { queued.push([id, outboxId]); },
+      markWakeQueued: (id: string, outboxId: string, kind: 'outbox' | 'a2a' = 'outbox') => {
+        queued.push([id, `${kind}:${outboxId}`]);
+      },
       markWakeSuppressed: () => {},
       markWakeAttempt: () => {},
     } as any,
@@ -37,7 +39,7 @@ test('enqueues every pending event and marks it queued', async () => {
   expect(h.enqueued.map((item) => item.eventId)).toEqual(['e1', 'e2']);
   expect(h.enqueued[0].text).toContain('[POD EVENT]');
   expect(h.enqueued[0].text).toContain('title: blocked');
-  expect(h.queued).toEqual([['e1', 'outbox_1'], ['e2', 'outbox_2']]);
+  expect(h.queued).toEqual([['e1', 'outbox:outbox_1'], ['e2', 'outbox:outbox_2']]);
   expect(out.delivered).toBe(2);
 });
 
@@ -94,7 +96,7 @@ test('coalesces concurrent scans through the injected runScan', async () => {
   expect(scanFnRuns).toBe(1);
   expect(r1).toEqual(r2);
   expect(h.enqueued).toHaveLength(2);
-  expect(h.queued).toEqual([['e1', 'outbox_1'], ['e2', 'outbox_2']]);
+  expect(h.queued).toEqual([['e1', 'outbox:outbox_1'], ['e2', 'outbox:outbox_2']]);
 });
 
 test('scan without runScan still runs directly', async () => {

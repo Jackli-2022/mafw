@@ -72,6 +72,26 @@ test('p1 rows sort before p3 rows', () => {
   expect(picked.rows.map((r) => r.id)).toEqual(['p1', 'p3']);
 });
 
+test('p1 bypasses budget and interval', () => {
+  const p2 = row({
+    id: 'p2',
+    payload: { ...(row().payload as object), priority: 'p2' },
+  });
+  const p1 = row({
+    id: 'p1',
+    payload: { ...(row().payload as object), priority: 'p1' },
+  });
+  const picked = selectLeadOutboxBatch({
+    rows: [p2, p1],
+    now: 1000,
+    policy: { ...DEFAULT_LEAD_OUTBOX_POLICY, maxPerHour: 1 },
+    sentBatchesLastHour: 1,
+    lastSentAt: 999,
+  });
+  expect(picked.reason).toBe('ok');
+  expect(picked.rows.map((r) => r.id)).toEqual(['p1']);
+});
+
 test('defers on budget or interval without dropping rows', () => {
   const rows = [row()];
   expect(
@@ -112,11 +132,12 @@ test('parses a pod-event payload and renders a mixed batch', () => {
       ...(row().payload as object),
       kind: 'pod-event',
       recordId: 'evt_1',
+      messageId: 'm1',
       text: '[POD EVENT] failed',
     },
   });
   expect(leadOutboxPayload(decision)).toMatchObject({ kind: 'decision' });
-  expect(leadOutboxPayload(pod)).toMatchObject({ kind: 'pod-event' });
+  expect(leadOutboxPayload(pod)).toMatchObject({ kind: 'pod-event', messageId: 'm1' });
   const text = renderLeadOutboxBatch([decision, pod]);
   expect(text).toContain('2 条待确认');
   expect(text).toContain('[LEAD EVENT] decision');

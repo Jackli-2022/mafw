@@ -27,6 +27,11 @@ export interface LeadOutboxDeps {
   outbox: EventOutbox;
   now(): string;
   ensureLead(podId: string): Promise<{ sessionId: string }>;
+  /** Lead member id, used with deliveryDelivered for A2A dedupe. */
+  leadMemberId?(podId: string): string | null;
+  deliveryDelivered?(messageId: string, memberId: string): boolean;
+  /** Mark the mirrored pod_message delivered after a successful Lead prompt. */
+  commitDelivered?(ids: string[], sessionId: string): void;
   promptAsync(input: { sessionID: string; text: string }): Promise<void>;
   timers: { every(name: string, ms: number, fn: () => void): { clear(): void } };
   policy?: Partial<LeadOutboxPolicy>;
@@ -118,6 +123,8 @@ export class LeadOutbox {
     eventId: string;
     text: string;
     goalId?: string | null;
+    /** Mirrored pod_message id; dispatch re-checks A2A delivery. */
+    messageId?: string | null;
     priority?: LeadOutboxPriority;
   }): EventOutboxRow {
     const now = this.deps.now();
@@ -139,6 +146,7 @@ export class LeadOutbox {
         podId: input.podId,
         goalId: input.goalId ?? null,
         recordId: input.eventId,
+        ...(input.messageId ? { messageId: input.messageId } : {}),
         createdAt: now,
       },
     });
@@ -189,17 +197,44 @@ export class LeadOutbox {
 
           const batch = selection.rows;
           const podId = leadOutboxPayload(batch[0])!.podId;
-          const text = renderLeadOutboxBatch(batch);
+          const leadMember = this.deps.leadMemberId?.(podId) ?? null;
+          const deliverable: EventOutboxRow[] = [];
+          const deliveredMessageIds: string[] = [];
+          for (const row of batch) {
+            const payload = leadOutboxPayload(row)!;
+            if (payload.messageId && leadMember
+              && this.deps.deliveryDelivered?.(payload.messageId, leadMember)) {
+              // A2A delivered the mirrored message while this row waited in the
+              // outbox. Do not narrate it a second time.
+              this.deps.outbox.markSent(row.id);
+              result.sent += 1;
+              continue;
+            }
+            if (payload.messageId) deliveredMessageIds.push(payload.messageId);
+            deliverable.push(row);
+          }
+          if (!deliverable.length) continue;
+
+          const text = renderLeadOutboxBatch(deliverable);
           if (!text) {
-            result.failed += this.failRows(batch, 'empty lead outbox message');
+            result.failed += this.failRows(deliverable, 'empty lead outbox message');
             continue;
           }
 
           try {
             const lead = await this.deps.ensureLead(podId);
             await this.deps.promptAsync({ sessionID: lead.sessionId, text });
+            if (deliveredMessageIds.length) {
+              try {
+                this.deps.commitDelivered?.(deliveredMessageIds, lead.sessionId);
+              } catch (error) {
+                // The prompt already landed; keep the row sent and surface the
+                // delivery-ledger failure instead of replaying the message.
+                this.log(`lead outbox commit delivered failed for ${channelId}: ${errorMessage(error)}`);
+              }
+            }
           } catch (error) {
-            result.failed += this.failRows(batch, errorMessage(error));
+            result.failed += this.failRows(deliverable, errorMessage(error));
             this.log(`lead outbox send failed for ${channelId}: ${errorMessage(error)}`);
             continue;
           }
@@ -208,14 +243,14 @@ export class LeadOutbox {
           recent.push(now);
           const sentIds: string[] = [];
           try {
-            for (const row of batch) {
+            for (const row of deliverable) {
               this.deps.outbox.markSent(row.id);
               sentIds.push(row.id);
             }
-            result.sent += batch.length;
+            result.sent += deliverable.length;
           } catch (error) {
             // markSent 部分失败：已 sent 的行保持 sent，只把剩余行按失败重试。
-            const remaining = batch.filter((row) => !sentIds.includes(row.id));
+            const remaining = deliverable.filter((row) => !sentIds.includes(row.id));
             result.sent += sentIds.length;
             result.failed += this.failRows(remaining, errorMessage(error));
             this.log(`lead outbox mark sent failed for ${channelId}: ${errorMessage(error)}`);

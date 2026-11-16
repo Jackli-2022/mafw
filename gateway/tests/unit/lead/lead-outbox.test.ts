@@ -11,17 +11,22 @@ function harness(policy?: Partial<LeadOutboxPolicy>) {
   const store = new EventStore(db);
   const outbox = new EventOutbox({ store, now: () => NOW });
   const promptAsync = jest.fn(async (_input: { sessionID: string; text: string }) => {});
+  const deliveryDelivered = jest.fn(() => false);
+  const commitDelivered = jest.fn();
   const timers = { every: jest.fn((_name: string, _ms: number, _fn: () => void) => ({ clear: jest.fn() })) };
   const lead = new LeadOutbox({
     store,
     outbox,
     now: () => NOW,
     ensureLead: async () => ({ sessionId: 'ses_lead' }),
+    leadMemberId: () => 'lead',
+    deliveryDelivered,
+    commitDelivered,
     promptAsync,
     timers,
     policy,
   });
-  return { store, outbox, lead, promptAsync, timers };
+  return { store, outbox, lead, promptAsync, deliveryDelivered, commitDelivered, timers };
 }
 
 test('enqueueDecision creates one channel row and dedupes by record id', () => {
@@ -42,6 +47,34 @@ test('enqueuePodEvent dedupes by event id and dispatches with decisions', async 
   expect(h.promptAsync).toHaveBeenCalledTimes(1);
   expect(h.promptAsync.mock.calls[0][0].text).toContain('[POD EVENT] failed');
   expect(h.promptAsync.mock.calls[0][0].text).toContain('[LEAD EVENT] decision');
+});
+
+test('skips a pod-event at dispatch when A2A already delivered its message', async () => {
+  const h = harness();
+  h.deliveryDelivered.mockReturnValue(true);
+  h.lead.enqueuePodEvent({
+    podId: 'pod1',
+    eventId: 'evt1',
+    messageId: 'm1',
+    text: '[POD EVENT] failed',
+  });
+  const result = await h.lead.dispatch();
+  expect(result.sent).toBe(1);
+  expect(h.promptAsync).not.toHaveBeenCalled();
+  expect(h.store.listOutbox()[0].state).toBe('sent');
+});
+
+test('commits pod message delivery after a successful Lead prompt', async () => {
+  const h = harness();
+  h.lead.enqueuePodEvent({
+    podId: 'pod1',
+    eventId: 'evt1',
+    messageId: 'm1',
+    text: '[POD EVENT] failed',
+  });
+  await h.lead.dispatch();
+  expect(h.promptAsync).toHaveBeenCalledTimes(1);
+  expect(h.commitDelivered).toHaveBeenCalledWith(['m1'], 'ses_lead');
 });
 
 test('dispatch batches pending decisions into one Lead prompt and marks all sent', async () => {

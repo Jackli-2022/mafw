@@ -18,6 +18,8 @@ export interface LeadOutboxPayload {
   podId: string;
   goalId: string | null;
   recordId: string;
+  /** For pod-event: mirrored pod_message id (A2A delivery dedupe). */
+  messageId?: string | null;
   createdAt: string;
 }
 
@@ -59,6 +61,8 @@ export function leadOutboxPayload(row: EventOutboxRow): LeadOutboxPayload | null
 
   const goalId = payload.goalId;
   if (goalId !== undefined && goalId !== null && typeof goalId !== 'string') return null;
+  const messageId = payload.messageId;
+  if (messageId !== undefined && messageId !== null && typeof messageId !== 'string') return null;
 
   if (
     !nonEmptyString(payload.text) ||
@@ -76,6 +80,7 @@ export function leadOutboxPayload(row: EventOutboxRow): LeadOutboxPayload | null
     podId: payload.podId,
     goalId: typeof goalId === 'string' ? goalId : null,
     recordId: payload.recordId,
+    ...(typeof messageId === 'string' ? { messageId } : {}),
     createdAt: payload.createdAt,
   };
 }
@@ -96,15 +101,7 @@ export function selectLeadOutboxBatch(input: {
   const valid = input.rows.filter((row) => leadOutboxPayload(row) !== null);
   if (valid.length === 0) return { rows: [], reason: 'empty' };
 
-  if (input.sentBatchesLastHour >= input.policy.maxPerHour) {
-    return { rows: [], reason: 'budget' };
-  }
-
-  if (input.lastSentAt !== null && input.now - input.lastSentAt < input.policy.minIntervalMs) {
-    return { rows: [], reason: 'interval' };
-  }
-
-  const sorted = [...valid].sort((a, b) => {
+  const compare = (a: EventOutboxRow, b: EventOutboxRow) => {
     const pa = leadOutboxPayload(a)!;
     const pb = leadOutboxPayload(b)!;
     const byPriority = PRIORITY_RANK[pa.priority] - PRIORITY_RANK[pb.priority];
@@ -112,8 +109,25 @@ export function selectLeadOutboxBatch(input: {
     const byCreatedAt = Date.parse(pa.createdAt) - Date.parse(pb.createdAt);
     if (byCreatedAt !== 0) return byCreatedAt;
     return a.id.localeCompare(b.id);
-  });
+  };
 
+  // p1 is a reserved lane: a Goal failure must not wait for the hourly budget
+  // or the min-interval window used by routine decision/p2 narration.
+  const p1 = valid.filter((row) => leadOutboxPayload(row)!.priority === 'p1');
+  const overBudget = input.sentBatchesLastHour >= input.policy.maxPerHour;
+  const inInterval = input.lastSentAt !== null
+    && input.now - input.lastSentAt < input.policy.minIntervalMs;
+  if (p1.length > 0 && (overBudget || inInterval)) {
+    return {
+      rows: [...p1].sort(compare).slice(0, Math.max(1, input.policy.maxBatch)),
+      reason: 'ok',
+    };
+  }
+
+  if (overBudget) return { rows: [], reason: 'budget' };
+  if (inInterval) return { rows: [], reason: 'interval' };
+
+  const sorted = [...valid].sort(compare);
   return { rows: sorted.slice(0, Math.max(1, input.policy.maxBatch)), reason: 'ok' };
 }
 

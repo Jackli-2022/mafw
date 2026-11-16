@@ -57,6 +57,36 @@ it('revision 2 of the same goal produces a new event', () => {
   expect(svc.list('pod_1').items).toHaveLength(2);
 });
 
+it('markWakeQueued records outbox/a2a markers and removes the pending wake', () => {
+  const { svc } = make(tmpDir());
+  const outbox = svc.record({
+    ...base,
+    audience: 'lead',
+    severity: 'p2',
+    kind: 'goal.failed',
+    dedupeKey: 'goal.failed:g1:r1',
+  });
+  expect(svc.pendingWakes('pod_1')).toHaveLength(1);
+  svc.markWakeQueued(outbox.id, 'outbox_1');
+  expect(svc.pendingWakes('pod_1')).toHaveLength(0);
+  expect(svc.list('pod_1').items.find((item) => item.id === outbox.id)).toMatchObject({
+    wakeState: 'delivered',
+    wakeSessionId: 'outbox:outbox_1',
+  });
+
+  const a2a = svc.record({
+    ...base,
+    audience: 'lead',
+    severity: 'p2',
+    kind: 'member.escalation',
+    dedupeKey: 'member.escalation:m1',
+  });
+  svc.markWakeQueued(a2a.id, 'm1', 'a2a');
+  expect(svc.list('pod_1').items.find((item) => item.id === a2a.id)).toMatchObject({
+    wakeSessionId: 'a2a:m1',
+  });
+});
+
 it('seen is idempotent and scoped to one revision', () => {
   const { svc } = make(tmpDir());
   svc.record(base);

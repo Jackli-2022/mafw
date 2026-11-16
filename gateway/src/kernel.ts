@@ -4083,10 +4083,10 @@ class MafwScheduler {
       events: this.podEventService,
       // The Lead outbox is constructed later in initServices; read it lazily so
       // the wake relay can start before the outbox without capturing undefined.
-      enqueue: async ({ podId, eventId, goalId, text, priority }) => {
+      enqueue: async ({ podId, eventId, goalId, messageId, text, priority }) => {
         const outbox = this.leadOutbox;
         if (!outbox) throw new Error('lead outbox unavailable');
-        return outbox.enqueuePodEvent({ podId, eventId, goalId, text, priority });
+        return outbox.enqueuePodEvent({ podId, eventId, goalId, messageId, text, priority });
       },
       leadMemberId: (podId) => this.podStore?.getMemberByRole(podId, 'lead')?.id ?? null,
       deliveryDelivered: (messageId, memberId) => this.podStore?.hasDelivery(messageId, memberId) ?? false,
@@ -4818,8 +4818,8 @@ class MafwScheduler {
     // subscriptions are accepted; P2.5 wires the Standing Goal evaluator.
     const eventStore = new EventLayerStore(this.getGatewayDb().getStore());
     this.eventLayerStore = eventStore;
-    // Lead announcements: durable outbox + one dispatcher. P0 deliberately
-    // keeps PodEventWake on its own path (merged in P1).
+    // Lead announcements: durable outbox + one dispatcher. PodEventWake is an
+    // outbox producer (2026-11-16); decisions and pod events share pacing.
     this.leadOutbox = new LeadOutbox({
       store: eventStore,
       outbox: new EventOutbox({ store: eventStore, now: () => new Date().toISOString() }),
@@ -4829,6 +4829,9 @@ class MafwScheduler {
         if (!podService) throw new Error('lead outbox unavailable: pod service not ready');
         return podService.ensureLead(podId);
       },
+      leadMemberId: (podId) => this.podStore?.getMemberByRole(podId, 'lead')?.id ?? null,
+      deliveryDelivered: (messageId, memberId) => this.podStore?.hasDelivery(messageId, memberId) ?? false,
+      commitDelivered: (ids, sessionId) => this.podMessageDelivery?.commitDelivered(ids, sessionId),
       promptAsync: async ({ sessionID, text }) => {
         const runtime = this.runtime;
         if (!runtime) throw new Error('lead outbox unavailable: runtime not ready');
