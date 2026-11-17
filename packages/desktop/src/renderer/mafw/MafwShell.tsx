@@ -13,6 +13,14 @@ import { MarkedProvider } from "@mafw/ui/context/marked"
 import { FileComponentProvider } from "@mafw/ui/context/file"
 import { FileSSR } from "@mafw/session-ui/file-ssr"
 import { IconRail } from "./components/IconRail"
+import { NotificationCenter } from "./components/NotificationCenter"
+import {
+  disposeNotifications,
+  ensureNotifications,
+  markNotificationRead,
+  notificationState,
+} from "./notifications/notification-store"
+import { navigateNotificationTarget } from "./notifications/target-router"
 import { LeftDock } from "./components/LeftDock"
 import { ChangesFace } from "./components/ChangesFace"
 import { type GoalRef } from "./changes/changes-context"
@@ -258,6 +266,7 @@ if (typeof window !== "undefined") {
 export function MafwShell() {
   const [activeTab, setActiveTab] = createSignal<NavTab>("chat")
   const [showConfig, setShowConfig] = createSignal(false)
+  const [notificationsOpen, setNotificationsOpen] = createSignal(false)
   const [configSection, setConfigSection] = createSignal<NavKey | undefined>(undefined)
   const [gwStatus, setGwStatus] = createSignal<{ state: string; port: number | null; url?: string | null } | null>(null)
   const [theme, setTheme] = createSignal<string | null>(null)
@@ -2593,6 +2602,15 @@ export function MafwShell() {
 
   // External links: chat/workbench-visible links go to a new browser tab;
   // links from non-chat views stay visible via the system browser.
+  // 自绘通知中心：hub 快照 + 统一 target 路由（中心面板 / 悬浮窗共用）。
+  const notificationNavDeps = {
+    currentProject: () => currentProject(),
+    selectProject: (dir: string) => handleSelectProject(dir),
+    openSession: (sid: string) => openSessionTab(sid),
+    openGoal: (goalId: string, focus: GoalDetailFocus) => openGoalAndDiscuss(goalId, focus),
+    openWork: () => openProjectWork(),
+    openConfig: () => { setConfigSection(undefined); setShowConfig(true) },
+  }
   onMount(() => {
     const off = window.api.browser.onOpenUrl((req) => {
       if (!chatActive()) {
@@ -2613,9 +2631,16 @@ export function MafwShell() {
         await openGoalAndDiscuss(goalId, "result")
       })()
     })
+    // 自绘通知中心：hub 快照 + 统一 target 路由（中心面板 / 悬浮窗共用）。
+    ensureNotifications()
+    const offNotificationNav = window.api.mafw.navigate.onNotification((target) => {
+      void navigateNotificationTarget(target, notificationNavDeps).catch(() => {})
+    })
     onCleanup(() => {
       off()
       offNavigate()
+      offNotificationNav()
+      disposeNotifications()
     })
   })
   // 文件/编辑器根：会话目录属于项目（含 worktree）才采用，否则回退项目目录
@@ -4195,6 +4220,15 @@ export function MafwShell() {
       <PluginMenuWiring sessionID={activeSessionId()} />
       <TextMenuBridge />
       <ToastV2.Region />
+      <NotificationCenter
+        open={notificationsOpen()}
+        onClose={() => setNotificationsOpen(false)}
+        onOpen={(item) => {
+          setNotificationsOpen(false)
+          if (item.readAt === undefined) void markNotificationRead([item.id])
+          if (item.target) void navigateNotificationTarget(item.target, notificationNavDeps).catch(() => {})
+        }}
+      />
       <UpdaterBanner />
       <CommandPalette
         open={paletteOpen()}
@@ -4219,11 +4253,14 @@ export function MafwShell() {
           leadActive={activeSessionIsLead()}
           onApprovals={() => { closeLeftDockIfOverlay(); setShowConfig(false); setActiveTab("approvals") }}
           onMcp={() => { closeLeftDockIfOverlay(); setShowConfig(false); setActiveTab("mcp") }}
+          onNotifications={() => { closeLeftDockIfOverlay(); setNotificationsOpen((open) => !open) }}
           onConfig={() => { closeLeftDockIfOverlay(); setConfigSection(undefined); setShowConfig(true) }}
           onNewSession={() => { closeLeftDockIfOverlay(); void createSession().then((sid: any) => { if (sid) openSessionTab(sid) }) }}
           onNewWorktreeSession={() => createWorktreeSession()}
           worktreeEnabled={worktreeEnabled()}
           approvals={pendingPermissionCount()}
+          notificationsUnread={notificationState.unread}
+          notificationsActive={notificationsOpen()}
           changesBadge={changesBadge()}
           changesDot={changesDot()}
           podBadge={podBadgeCount()}

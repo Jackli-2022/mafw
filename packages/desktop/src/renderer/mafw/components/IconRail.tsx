@@ -25,6 +25,11 @@ export type IconRailProps = {
   onApprovals: () => void
   onConfig: () => void
   onMcp?: () => void
+  /** 通知中心（rail 铃铛）：打开/关闭通知面板。 */
+  onNotifications: () => void
+  /** 未读通知数（角标；>9 显示 9+）。 */
+  notificationsUnread?: number
+  notificationsActive?: boolean
   /** 顶部动作：新建会话（单击）；右键菜单含「并行 worktree」 */
   onNewSession: () => void
   onNewWorktreeSession?: () => void
@@ -100,6 +105,15 @@ export function IconRail(props: IconRailProps) {
     ...(props.onMcp
       ? [{ key: "mcp", icon: "mcp" as IconName, label: "MCP", onClick: props.onMcp, active: props.mcpActive }]
       : []),
+    {
+      key: "notifications",
+      icon: "bell",
+      label: props.notificationsActive ? "收起通知" : "通知",
+      onClick: props.onNotifications,
+      active: !!props.notificationsActive,
+      badge: props.notificationsUnread ?? 0,
+      badgeLabel: formatRailBadge(props.notificationsUnread ?? 0) || undefined,
+    },
     { key: "approvals", icon: "checklist", label: "审批", onClick: props.onApprovals, active: props.approvalsActive, badge: props.approvals },
     { key: "config", icon: "settings-gear", label: "Config", onClick: props.onConfig, active: props.configActive, connDot: true },
   ]

@@ -1,9 +1,12 @@
-// 托盘/OS 通知 → 打开 Goal 的接线契约（2026-11-05 deferred 收口）。
+// 托盘/通知 → 打开 Goal 的接线契约（2026-11-17 自绘通知中心版）。
 // 关键不变量：
-//   1. main 的托盘状态行与结果通知点击都能发出 mafw-navigate-goal（带 projectId）。
-//   2. preload 暴露 navigate.onGoal，且只注册一个 IPC 监听。
-//   3. renderer 收到后先切项目（跨项目）再打开统一 Goal 详情。
-//   4. pod.event 到达时催一次 presence 轮询（完成通知不等 15s）。
+//   1. main 的托盘状态行点击仍发 mafw-navigate-goal（navigateToGoal 保留）。
+//   2. presence 快照进通知 hub（publishPresenceNotifications），不再有原生
+//      notification.on("click") —— 通知点击统一走 navigateToNotificationTarget
+//      → mafw-notification-open（悬浮窗/中心面板共用）。
+//   3. preload 暴露 navigate.onGoal + navigate.onNotification。
+//   4. renderer 收到后先切项目（跨项目）再打开统一 Goal 详情。
+//   5. pod.event 到达时催一次 presence 轮询（完成通知不等 15s）。
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
@@ -15,25 +18,28 @@ const tray = read("../src/main/tray.ts")
 const preload = read("../src/preload/mafw-api.ts")
 const shell = read("../src/renderer/mafw/MafwShell.tsx")
 
-test("main: tray and result-notification clicks navigate to the goal", () => {
+test("main: presence goes to the hub; notification clicks navigate via the target router", () => {
   assert.match(main, /function navigateToGoal\(target: NavigateGoalTarget\)/)
   assert.match(main, /setTrayNavigateHandler\(navigateToGoal\)/)
-  assert.match(main, /notification\.on\("click"/)
-  assert.match(main, /webContents\.send\("mafw-navigate-goal", target\)/)
-  assert.match(main, /projectId: latest\.projectId/)
+  assert.match(main, /publishPresenceNotifications\(notificationHub, payload\)/)
+  assert.match(main, /function navigateToNotificationTarget\(target: NotificationTarget\)/)
+  assert.match(main, /webContents\.send\("mafw-notification-open", target\)/)
+  assert.doesNotMatch(main, /notification\.on\("click"/)
   assert.match(tray, /NavigateGoalTarget/)
 })
 
-test("preload: navigate.onGoal subscribes and unsubscribes the IPC channel", () => {
+test("preload: navigate.onGoal and navigate.onNotification subscribe to their channels", () => {
   assert.match(preload, /navigate: \{/)
   assert.match(preload, /ipcRenderer\.on\("mafw-navigate-goal", handler\)/)
   assert.match(preload, /removeListener\("mafw-navigate-goal", handler\)/)
+  assert.match(preload, /ipcRenderer\.on\("mafw-notification-open", handler\)/)
   assert.match(preload, /presence: \{[\s\S]{0,120}?mafw-presence-refresh/)
 })
 
-test("renderer: switch project then open Goal detail; pod.event pokes presence", () => {
+test("renderer: switch project then open the target; pod.event pokes presence", () => {
   assert.match(shell, /mafw\.navigate\.onGoal\(/)
   assert.match(shell, /handleSelectProject\(projectDir\)/)
   assert.match(shell, /openGoalAndDiscuss\(goalId, "result"\)/)
+  assert.match(shell, /mafw\.navigate\.onNotification\(/)
   assert.match(shell, /mafw\.presence\.refresh\(\)/)
 })

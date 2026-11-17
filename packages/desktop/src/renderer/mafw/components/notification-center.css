@@ -1,0 +1,186 @@
+/* In-app notification center: anchored popover next to the rail bell. */
+
+.mafw-notification-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: transparent;
+}
+
+.mafw-notification-panel {
+  position: fixed;
+  left: 52px;
+  bottom: 16px;
+  z-index: 61;
+  display: flex;
+  flex-direction: column;
+  width: min(380px, calc(100vw - 64px));
+  max-height: min(60vh, 560px);
+  overflow: hidden;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-float);
+  outline: none;
+}
+
+.mafw-notification-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.mafw-notification-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.mafw-notification-count {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--bg-base);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+.mafw-notification-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.mafw-notification-filters {
+  display: flex;
+  gap: 2px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.mafw-notification-filters [aria-pressed="true"] {
+  color: var(--text-1);
+  background: var(--bg-hover);
+}
+
+.mafw-notification-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.mafw-notification-empty {
+  padding: 28px 12px;
+  color: var(--text-4);
+  font-size: 12px;
+  text-align: center;
+}
+
+.mafw-notification-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: pointer;
+  outline: none;
+}
+
+.mafw-notification-card:last-child {
+  border-bottom: none;
+}
+
+.mafw-notification-card:hover,
+.mafw-notification-card.active {
+  background: var(--bg-hover);
+}
+
+.mafw-notification-card.active {
+  box-shadow: inset 0 0 0 1px var(--accent-border);
+}
+
+.mafw-notification-card.unread {
+  background: var(--accent-soft);
+}
+
+.mafw-notification-card-icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-top: 1px;
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  background: var(--bg-inset);
+}
+
+.mafw-notification-card.unread .mafw-notification-card-icon {
+  color: var(--accent-text);
+}
+
+.mafw-notification-card-content {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.mafw-notification-card-title {
+  overflow: hidden;
+  color: var(--text-1);
+  font-size: 13px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mafw-notification-card.unread .mafw-notification-card-title {
+  font-weight: 600;
+}
+
+.mafw-notification-card-text {
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mafw-notification-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+  color: var(--text-4);
+  font-size: 11px;
+}
+
+.mafw-notification-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  margin-top: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.mafw-notification-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 8px;
+  border-top: 1px solid var(--border-subtle);
+}
