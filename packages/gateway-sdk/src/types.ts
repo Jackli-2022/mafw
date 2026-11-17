@@ -2435,6 +2435,8 @@ export interface EventsNamespace {
   subscribe(threadId: string, input: { subscriberType: string; subscriberId: string; mode: 'work' | 'context' }): Promise<EventSubscriptionView>
   unsubscribe(id: string): Promise<{ ok: boolean }>
   deliveries(threadId: string): Promise<{ items: EventDeliveryView[] }>
+  readDelivery(id: string): Promise<{ delivery: EventDeliveryView }>
+  answerDelivery(id: string): Promise<{ delivery: EventDeliveryView }>
 }
 
 export type StandingGoalState = 'active' | 'paused' | 'stopped'

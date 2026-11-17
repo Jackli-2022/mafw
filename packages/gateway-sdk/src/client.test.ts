@@ -1668,6 +1668,26 @@ test("schemaEpoch unset: no header on any request and no retry on 409", async ()
   expect((mismatch as any).mock.calls.length).toBe(1)
 })
 
+test("events.readDelivery posts to the receipt route", async () => {
+  fetchMock.mockResolvedValueOnce(okJson({ delivery: { id: "d1", state: "read" } }))
+  const c = new MafwClient("http://x")
+  const out = await c.events.readDelivery("d1")
+  expect(out.delivery.id).toBe("d1")
+  const [url, init] = fetchMock.mock.calls[0] as any[]
+  expect(String(url)).toBe("http://x/api/event-deliveries/d1/read")
+  expect(init.method).toBe("POST")
+})
+
+test("events.answerDelivery posts to the answer route", async () => {
+  fetchMock.mockResolvedValueOnce(okJson({ delivery: { id: "d1", state: "answered" } }))
+  const c = new MafwClient("http://x")
+  const out = await c.events.answerDelivery("d1")
+  expect(out.delivery.state).toBe("answered")
+  const [url, init] = fetchMock.mock.calls[0] as any[]
+  expect(String(url)).toBe("http://x/api/event-deliveries/d1/answer")
+  expect(init.method).toBe("POST")
+})
+
 test("schemaEpoch 'auto': the second-argument constructor form carries the option", async () => {
   fetchMock
     .mockResolvedValueOnce(epochResponse({ project: { id: "p1", worktree: "/proj" } }, 11))

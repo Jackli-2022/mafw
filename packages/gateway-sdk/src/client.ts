@@ -1561,6 +1561,10 @@ export class MafwClient implements IMafwClient {
       this.request(`/api/event-subscriptions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     deliveries: async (threadId: string): Promise<{ items: EventDeliveryView[] }> =>
       this.request(`/api/event-deliveries?threadId=${encodeURIComponent(threadId)}`),
+    readDelivery: async (id: string): Promise<{ delivery: EventDeliveryView }> =>
+      this.request(`/api/event-deliveries/${encodeURIComponent(id)}/read`, { method: 'POST' }),
+    answerDelivery: async (id: string): Promise<{ delivery: EventDeliveryView }> =>
+      this.request(`/api/event-deliveries/${encodeURIComponent(id)}/answer`, { method: 'POST' }),
   }
 
   standingGoals: StandingGoalsNamespace = {
