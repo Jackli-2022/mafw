@@ -18,23 +18,13 @@ function topicTokens(text: string): Set<string> {
  * topic. Show it only when the current query/topic shares enough meaningful
  * anchors, or when the user explicitly asks about reminders/sticky notes.
  */
-const GENERIC_NOTE_TOKENS = new Set([
-  '个人', 'agent', '记忆', '系统', '工具', '当前', '主题', '召回', '验证', '上线',
-  '长期', '意图', '后续', '方向', 'topic', 'state', 'mafw', 'prompt',
-]);
-
-function normalizeText(text: string): string {
-  return text.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
-}
-
 export function isNoteBoardRelevant(
   note: { primary_abstraction?: string; memory_value?: string; cue_anchors?: string[] },
   topic: TopicState | null,
   query: string,
 ): boolean {
   if (REMINDER_QUERY.test(query)) return true;
-
-  const context = normalizeText([
+  const context = [
     topic?.topic,
     topic?.summary,
     ...(topic?.entities ?? []),
@@ -42,32 +32,17 @@ export function isNoteBoardRelevant(
     ...(topic?.openLoops ?? []),
     ...(topic?.retrievalKeys ?? []),
     query,
-  ].filter(Boolean).join(' '));
-  if (!context) return false;
-
-  // Exact user-authored anchors are strong evidence, but generic words such as
-  // "agent" or "个人" must not put every personal-agent note on every topic.
-  for (const anchor of note.cue_anchors ?? []) {
-    const normalized = normalizeText(anchor);
-    if (normalized.length >= 3 && context.includes(normalized)) return true;
-  }
-
-  const title = normalizeText(note.primary_abstraction ?? '');
-  const currentTopic = normalizeText(topic?.topic ?? '');
-  if (title.length >= 6 && (context.includes(title) || (currentTopic.length >= 6 && title.includes(currentTopic)))) {
-    return true;
-  }
-
+  ].filter(Boolean).join(' ');
   const contextTokens = topicTokens(context);
+  if (contextTokens.size === 0) return false;
+
   const noteTokens = topicTokens([
     note.primary_abstraction,
     note.memory_value,
     ...(note.cue_anchors ?? []),
   ].filter(Boolean).join(' '));
-  const overlap = [...noteTokens].filter(
-    (token) => contextTokens.has(token) && !GENERIC_NOTE_TOKENS.has(token),
-  );
-  if (overlap.length >= 3) return true;
+  const overlap = [...noteTokens].filter((token) => contextTokens.has(token));
+  if (overlap.length >= 2) return true;
   return overlap.some((token) => /[a-z0-9]/.test(token) && token.length >= 6);
 }
 
