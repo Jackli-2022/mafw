@@ -35,13 +35,17 @@
 - Lead 会话 `turn.completed` → `markOutboxAckedBySession` 后，
   `ackDeliveriesForSession` 把对应同步到 `acknowledged`（只动 `delivered` / `read`）。
 - 无效状态转移抛 `invalid delivery transition`，不写任何一行。
+- 找不到对应 outbox 行的 external receipt 会记录
+  `[EventLayer] no outbox row matched ...` 警告；decision 通知本来就用 `recordId`，不告警。
 
 ### 死信与恢复
 
-- `maxDeliveryAttempts`（默认 5）：第 N 次失败进入 `dropped`，`lastError` 前缀
-  `dead-letter:`，`nextRetryAt = null`。
+- `maxDeliveryAttempts`（默认 5，可用 `MAFW_EVENT_MAX_DELIVERY_ATTEMPTS` 覆盖）：
+  第 N 次失败进入 `dropped`，`lastError` 前缀 `dead-letter:`，`nextRetryAt = null`。
 - 未达阈值保持 `failed` + 2s→60s 退避；重启后到期的 failed delivery 由
   `retryDueDeliveries` 继续重试。
+- boot 时 `resumeIncompleteDeliveries` 也会续跑 pending 的 context / work delivery；
+  work 消费者按 trigger id 幂等。
 
 ## 测试
 
@@ -53,9 +57,10 @@
   - `delivered → acknowledged` 成为合法转移，ack 同时补 `read_at`；
   - receipt 只命中订阅者自己的 `lead:<podId>` 且 `state='sent'` 的行；
   - 补 fail-open append、receipt 事务回滚、跨 Pod 隔离、pending 重启恢复测试。
-- gateway 全量：**1010 / 1010 suites**，**8035 passed / 2 skipped / 0 failed**。
-  期间多次全量各有一个既有 flake（`restore-git` 超时、`instance-ownership`、
-  `package-host`、`plugin-doctor`），四个套件单独复跑均全绿。
+- gateway 全量：**1016 / 1016 suites**，**8072 passed / 2 skipped / 0 failed**。
+  期间多次全量各有一个既有/并行 flake（`restore-git` 超时、`instance-ownership`、
+  `package-host`、`plugin-doctor`、`pod-review-*`），均单独复跑全绿；另有一个并行提交
+  引入的 `api-contract` fixture 缺字段，已补 `source` / `clientRef`。
 - `tsc`：rc=0；`npm run build`：通过（`dist/release.json` v5.1.0）。
 
 ## 真机验收（2026-11-17，gateway pid 59848 / instance 341c5318）
@@ -79,17 +84,19 @@
 
 - read/ack/answered 的 **HTTP 路由与 SDK 契约未做**：本阶段只有 service 级 API，
   客户端接入需要单独的 API 计划（route catalog / schemas / SDK / 桌面按钮）。
+- 外部事件 payload 超过 16 KB 时 domain event 只记 `dataOmitted: true` + `dataBytes`，
+  不存原文。
 - 订阅机制未改：外部事件的线程/订阅/决策仍由 `event_*` 承担，Tech Lead evaluate 语义不变；
   domain log 是统一事实面与 Lead inbox 入口，不是订阅消费者的唯一来源。
 - `event_deliveries` 的 read 目前没有真实触发源（人看到外部事件没有客户端信号）；
   ack 由 Lead 回合驱动，answered 留给后续 UI。
-- 死信阈值固定 5，暂不可配置（deps 可注入，但没有 env/API 入口）。
-- 重启恢复只自动续跑 **context** 订阅的 pending delivery；`work` 模式需要自己的
-  triggerId 幂等键，本阶段不自动重放。
-- 外部事件 payload 原样进 domain event（审计），大 payload 会放大 `domain_events`；后续可按需裁剪。
+- 死信阈值默认 5，`MAFW_EVENT_MAX_DELIVERY_ATTEMPTS` 可覆盖（没有 API 入口）。
 
 ## 回滚
 
 - 不注入 `domainEvents`、不调用 `enqueueExternal` 即回到旧行为；新表/列是 additive。
 - delivery receipt 是 service 级调用，旧路径不受影响。
 - 死信只影响连续失败的 delivery；回滚代码后 failed 行会继续按旧逻辑重试。
+- 回滚注意：Phase 4 的部分 `kernel.ts` 接线曾被并行提交 `6c156d96` 卷入；回退时应按
+  内容删除 `deliverContext` 的 external 分支与 `renderExternalEvent` 引用，不要直接
+  revert 该提交（它同时包含无关的 memory 改动）。

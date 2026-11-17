@@ -70,6 +70,8 @@ Source → Trigger → Thread → Subscription → Decision → Delivery → Cha
   `eventId = external:<idempotencyKey>`，因此重复投递不会产生第二条事件。
   `internal` source 不在此追加（`goal.*` / `decision.*` 已由各自生产者负责）。
 - domain event append 是 fail-open：日志写失败只记录，不拒绝 ingest。
+- 外部 payload 超过 16 KB 时，domain event 不存原文：payload 带 `dataOmitted: true` +
+  `dataBytes`（`external-domain-event.ts` 的 `EXTERNAL_EVENT_PAYLOAD_LIMIT_BYTES`）。
 - `deliverContext` 对外部事件也写 `LeadOutbox`：`dedupeKey = external:<triggerId>`，
   批量头 `[EVENT] N 条待处理`；decision / Pod event / external 共用同一 dispatcher 的
   batch / budget / retry。
@@ -79,7 +81,12 @@ Source → Trigger → Thread → Subscription → Decision → Delivery → Cha
 - Lead 会话 `turn.completed` ack 通过 `sent_session_id` 反查 outbox payload 的 `triggerId`，
   把对应 `delivered` / `read` delivery 置为 `acknowledged`。
 - 失败 delivery：默认 5 次后进入 `dropped`（`dead-letter: ...`），未达阈值按 2s→60s
-  退避；重启后到期的 failed delivery 继续重试。
+  退避；重启后到期的 failed delivery 继续重试。阈值可用
+  `MAFW_EVENT_MAX_DELIVERY_ATTEMPTS` 覆盖。
+- 重启恢复：boot 时 `resumeIncompleteDeliveries` 扫 pending（context 与 work）以及到期的
+  failed delivery；work 消费者按 trigger id（eventId）幂等。
+- receipt 找不到对应 outbox 行时（external trigger 且订阅者是 Lead），记录
+  `[EventLayer] no outbox row matched ...` 警告；decision 通知本来就用 `recordId`，不告警。
 - `event_sources` / `event_threads` / `event_triggers` / `event_subscriptions` /
   `event_decisions` / `event_deliveries` 仍是外部事件的线程、决策与投递审计；
   read/ack/answered 的 HTTP 路由未在本阶段暴露。
