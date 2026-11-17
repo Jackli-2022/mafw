@@ -152,3 +152,9 @@ P(m,g) = (ε_n + N̂)(ε_g + Ĝ₊) × salience / max(0.2, energy)
 **现在只做 P1：learned k-WTA shadow，双基线（直接 k-WTA + dense）。**
 如果它不能在独立测试集稳定击败直接 k-WTA，正确结论是**停止复杂化**，
 把精力转向结果标签与反事实价值测量，而不是继续堆“更像大脑”的部件。
+
+## 7. P1 实测结果（2026-11-19）
+
+P1 已执行：learned k-WTA（M=4096, r=64, k=16）在 2,595 turns / 133 sessions 上训练失败——
+val matched AUC 0.475 < 直接 k-WTA 0.490，test R@10 0.323 vs 0.463，码塌缩到 36–40 个有效位。
+按预先约定 **停止复杂化**，不进入 shadow 存储。详见 `docs/releases/2026-11-19-engram-p1-result.md`。
