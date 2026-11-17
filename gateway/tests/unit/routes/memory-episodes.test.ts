@@ -84,7 +84,13 @@ function setup(opts: { episodes?: EpisodeHit[] } = {}) {
   } as any;
   const registry = new RouteRegistry().register(...buildRouteCatalog());
   attachMemoryRoutes(registry, {
-    memoryService: () => ({}) as any,
+    memoryService: () => ({
+      harmonicIndex: {
+        getIndex: () => ({ entries: [] }),
+        searchScored: () => [],
+        search: () => [],
+      },
+    }) as any,
     consolidationService: () => null,
     heartbeat: () => null,
     coactivationGraphStore: () => null,

@@ -418,22 +418,28 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
       }
       const retrieverParam = parsedUrl.searchParams.get('retriever');
       const includeLegacyEpisodic = parsedUrl.searchParams.get('includeLegacyEpisodic') === 'true';
-      const store = new HarmonicUnitFileStore(deps.mafwDir());
-      const index = store.indexManager_();
+      const index = deps.memoryService()!.harmonicIndex;
+      const store = new HarmonicUnitFileStore(deps.mafwDir(), index);
       let entries;
-      if (query && retrieverParam === 'hybrid') {
-        const dense = await computeDenseScores(query, topK, index);
-        entries = index.search(query, topK, {
-          retriever: 'bm25',
+      if (query) {
+        const retriever = retrieverParam === 'hybrid'
+          ? 'bm25'
+          : retrieverParam === 'token' || retrieverParam === 'guided'
+            ? retrieverParam
+            : retrieverParam === 'bm25'
+              ? 'bm25'
+              : config.search.defaultRetriever;
+        const dense = retrieverParam === 'hybrid'
+          ? await computeDenseScores(query, topK, index)
+          : undefined;
+        const searchOptions = {
+          retriever,
           ...(dense ? { denseScores: dense } : {}),
           ...(includeLegacyEpisodic ? { includeLegacyEpisodic: true } : {}),
-        });
-      } else if (query) {
-        const retriever = retrieverParam === 'bm25' ? 'bm25' : 'token';
-        entries = index.search(query, topK, {
-          retriever,
-          ...(includeLegacyEpisodic ? { includeLegacyEpisodic: true } : {}),
-        });
+        } as const;
+        entries = typeof (index as any).searchScored === 'function'
+          ? index.searchScored(query, topK, searchOptions).map((scored) => scored.entry)
+          : index.search(query, topK, searchOptions);
       } else {
         entries = [...index.getIndex().entries]
             .filter((entry: any) => includeLegacyEpisodic || !(entry.type === 'episodic' && !entry.pinned && !entry.sticky_until))

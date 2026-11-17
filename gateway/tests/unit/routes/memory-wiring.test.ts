@@ -249,7 +249,11 @@ describe('memory registry wiring (D1 Task F1)', () => {
   it('search layer=both keeps Harmonic results and appends T1', async () => {
     const { registry } = setup({
       memoryService: () => ({
-        harmonicIndex: { getIndex: () => ({ entries: [] }) },
+        harmonicIndex: {
+          getIndex: () => ({ entries: [] }),
+          searchScored: () => [],
+          search: () => [],
+        },
       }) as any,
       searchT1: async () => [{ sessionId: 's1', turnId: 1, traceId: 't1t_a', cosine: 0.8, excerpt: 'raw' }],
     });
@@ -263,9 +267,41 @@ describe('memory registry wiring (D1 Task F1)', () => {
     expect(body.t1Results).toHaveLength(1);
   });
 
+  it('search uses the shared harmonic index and configured retriever default', async () => {
+    const searchScored = jest.fn(() => [{
+      entry: { id: 'mem_shared', type: 'semantic', primary_abstraction: 'shared', cue_anchors: [], energy: 0.8 },
+      score: 9,
+    }]);
+    const { registry } = setup({
+      memoryService: () => ({
+        harmonicIndex: {
+          searchScored,
+          getIndex: () => ({ entries: [] }),
+        },
+      }) as any,
+    });
+    const r = fakeRes();
+    await handlerFor(registry, 'GET', '/api/memory/search?query=shared')!(
+      fakeReq({ method: 'GET', url: '/api/memory/search?query=shared' }), r.res,
+    );
+    expect(r.status).toBe(200);
+    expect(searchScored).toHaveBeenCalledWith(
+      'shared',
+      50,
+      expect.objectContaining({ retriever: config.search.defaultRetriever }),
+    );
+    expect(JSON.parse(r.body).results[0].id).toBe('mem_shared');
+  });
+
   it('search default shape stays gist-only and invalid layers are rejected', async () => {
     const { registry } = setup({
-      memoryService: () => ({ harmonicIndex: { getIndex: () => ({ entries: [] }) } }) as any,
+      memoryService: () => ({
+        harmonicIndex: {
+          getIndex: () => ({ entries: [] }),
+          searchScored: () => [],
+          search: () => [],
+        },
+      }) as any,
     });
     let r = fakeRes();
     await handlerFor(registry, 'GET', '/api/memory/search?query=x')!(
