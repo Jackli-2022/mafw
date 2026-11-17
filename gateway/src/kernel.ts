@@ -4950,6 +4950,13 @@ class MafwScheduler {
         if (isLeadDecisionContext({ triggers, subscriptions: relevant })) {
           return { decision: 'accept', mode: 'report', rationale: 'lead decision context' };
         }
+        // External events subscribed by the Lead as context also need a delivery
+        // (the delivery path writes the durable Lead outbox row).
+        const hasLeadContext = relevant.some((subscription) =>
+          subscription.subscriberType === 'lead' && subscription.mode === 'context');
+        if (hasLeadContext) {
+          return { decision: 'accept', mode: 'report', rationale: 'lead context' };
+        }
         return relevant.some((subscription) => subscription.mode === 'work')
           ? { decision: 'accept', mode: 'full', rationale: 'work subscription' }
           : { decision: 'ignore', rationale: 'no work subscription' };
