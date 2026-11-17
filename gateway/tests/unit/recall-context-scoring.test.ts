@@ -56,6 +56,19 @@ describe('boundary recall scoring', () => {
     expect(res[0].cue_anchors).toEqual(['mafw_topic_set', 'session-topic']);
   });
 
+  test('scan snapshot from a different topic is not injected', async () => {
+    const index: any = {
+      searchScored: () => [],
+      getIndex: () => ({ entries: [entry('old-topic', 'kubernetes deployment failure')] }),
+    };
+    const snapshot: any = {
+      relevantIds: ['old-topic'], confidence: 0.99,
+      query: 'kubernetes deployment rollout',
+    };
+    const res = await searchRecallMemories(index, 'pasta recipe tomato sauce', new Set(), 3, { scanSnapshot: snapshot });
+    expect(res).toEqual([]);
+  });
+
   test('multi-topic blob abstraction is penalized even at near-equal BM25 score', async () => {
     const blob = 'A | B | C | D | E';
     const index: any = {

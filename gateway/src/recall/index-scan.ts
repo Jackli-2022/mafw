@@ -32,6 +32,10 @@ export interface ScanResult {
   relevantIds: string[];
   confidence: number;
   reasoning?: string;
+  /** Query that produced this prefetched scan (provenance for safe merging). */
+  query?: string;
+  /** ISO timestamp for diagnostics. */
+  builtAt?: string;
 }
 
 export interface IndexScanOptions {
@@ -486,7 +490,13 @@ export class IndexScanService {
     this.lastPrefetchAt.set(sessionID, now);
     void this.scan(query)
       .then((result) => {
-        if (result) this.setSnapshot(sessionID, result);
+        if (result) {
+          this.setSnapshot(sessionID, {
+            ...result,
+            query,
+            builtAt: new Date().toISOString(),
+          });
+        }
       })
       .catch(() => {});
   }

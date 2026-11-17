@@ -5,6 +5,7 @@ import type { HarmonicIndexManager } from '../core/memory/harmonic-index'
 import type { ScanResult } from './index-scan'
 import { computeFokFeatures, classifyFok, FokThresholds, FokZone } from './fok-gate'
 import { computeTemporalNeighbors, chronologicalOrder, TemporalNeighborOptions } from './temporal-neighbors'
+import { SNAPSHOT_DEFAULTS, snapshotContainment } from './recall-snapshot'
 import { config } from '../config'
 import { log } from '../core/utils/logger'
 
@@ -369,7 +370,7 @@ export async function searchRecallMemories(
   // snapshots are precomputed, so this is a pure in-memory operation).
   const scanSnapshot = options.scanSnapshot
   if (scanSnapshot && scanSnapshot.relevantIds.length > 0) {
-    const expanded = mergeScanResults(resultMap, scanSnapshot, index, pushed)
+    const expanded = mergeScanResults(resultMap, scanSnapshot, index, pushed, query)
     log.info(`[Recall] bm25=${scored.length} scan=${scanSnapshot.relevantIds.length} expanded=${expanded} union=${resultMap.size} confidence=${scanSnapshot.confidence}`)
   }
 
@@ -392,7 +393,16 @@ export function mergeScanResults(
   scanResult: ScanResult,
   index: any,
   pushed: Set<string>,
+  currentQuery?: string,
 ): number {
+  if (scanResult.query && currentQuery) {
+    const containment = snapshotContainment(scanResult.query, currentQuery)
+    const threshold = SNAPSHOT_DEFAULTS.topicShiftThreshold
+    if (containment < threshold) {
+      log.info(`[Recall] scan snapshot rejected (topic-shift containment=${containment.toFixed(2)})`)
+      return 0
+    }
+  }
   const indexEntries = index?.getIndex?.()?.entries || []
 
   // Anchor graph 1-hop expansion: for each scan-selected ID, bring in its

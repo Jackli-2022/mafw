@@ -118,6 +118,20 @@ describe('IndexScanService direct-HTTP scan', () => {
     expect(res).toBeNull();
   });
 
+  it('prefetch remembers which query built the scan snapshot', async () => {
+    const svc = new IndexScanService(
+      fakeIndex,
+      { providerID: 'alibaba-cn', modelID: 'qwen3.7-max' },
+      { apiKey: 'sk-test' },
+    );
+    (svc as any).scan = async () => ({ relevantIds: [fullId], confidence: 0.9 });
+    svc.prefetch('ses_provenance', 'find my preference');
+    await new Promise(resolve => setImmediate(resolve));
+    const snap = svc.getSnapshot('ses_provenance');
+    expect(snap?.query).toBe('find my preference');
+    expect(typeof snap?.builtAt).toBe('string');
+  });
+
   it('maps known providers to their OpenAI-compatible endpoints', () => {
     expect(resolveScanBaseUrl('alibaba-cn')).toContain('dashscope.aliyuncs.com');
     expect(resolveScanBaseUrl('alibaba')).toContain('dashscope.aliyuncs.com');
