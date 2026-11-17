@@ -176,6 +176,7 @@ export interface RecallMemory {
   score: number
   type?: string
   created_at?: string
+  cue_anchors?: string[]
   /** A5: gist ids distilled from this entry (schema write-back pointer). */
   distilled_by?: string[]
   /** Source: 'bm25', 'expansion', 'scan', 'scan+graph', or 'both'. */
@@ -336,6 +337,7 @@ export async function searchRecallMemories(
       score: norms[i] * blobPenalty(s.entry.primary_abstraction),
       type: s.entry.type,
       created_at: s.entry.created_at,
+      cue_anchors: s.entry.cue_anchors ?? [],
       distilled_by: s.entry.distilled_by,
       source: 'bm25',
     })
@@ -358,6 +360,7 @@ export async function searchRecallMemories(
       distilled_by: entry.distilled_by,
       type: entry.type,
       created_at: entry.created_at,
+      cue_anchors: entry.cue_anchors ?? [],
       source: 'expansion',
     })
   }
@@ -430,6 +433,7 @@ export function mergeScanResults(
       score: boost * blobPenalty(entry.primary_abstraction),
       type: entry.type,
       created_at: entry.created_at,
+      cue_anchors: entry.cue_anchors ?? [],
       source: isDirectScan ? 'scan' : 'scan+graph',
     })
   }

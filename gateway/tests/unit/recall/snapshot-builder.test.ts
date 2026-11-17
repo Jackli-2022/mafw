@@ -2,7 +2,7 @@
  * R8 snapshot builder: builds the expensive (reranked) pointer block in the
  * background and stores it for the boundary path; fails open at every step.
  */
-import { buildSnapshot, SnapshotDeps } from '../../../src/recall/snapshot-builder';
+import { buildSnapshot, rerankerEntryFromRecall, SnapshotDeps } from '../../../src/recall/snapshot-builder';
 import { RecallMemory } from '../../../src/recall/recall-context';
 
 function mem(id: string, score: number): RecallMemory {
@@ -19,6 +19,16 @@ function deps(over: Partial<SnapshotDeps> = {}): SnapshotDeps {
     ...over,
   };
 }
+
+describe('snapshot reranker input', () => {
+  test('keeps cue anchors from the retrieved memory', () => {
+    const mapped = rerankerEntryFromRecall({
+      id: 'mem_a', primary_abstraction: 'mafw_topic_set', memory_value: '',
+      energy: 0.8, score: 1, cue_anchors: ['mafw_topic_set', 'session-topic'],
+    });
+    expect(mapped.cue_anchors).toEqual(['mafw_topic_set', 'session-topic']);
+  });
+});
 
 describe('buildSnapshot', () => {
   test('builds and stores a snapshot with the rolling-window query', async () => {

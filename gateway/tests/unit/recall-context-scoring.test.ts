@@ -45,6 +45,17 @@ describe('boundary recall scoring', () => {
     expect(res.map(r => r.id)).toEqual(['strong-bm25', 'scan-hit', 'weak-bm25']);
   });
 
+  test('retrieved memories carry cue anchors into the reranker stage', async () => {
+    const index: any = {
+      searchScored: () => [{
+        entry: entry('anchored', 'mafw_topic_set', { cue_anchors: ['mafw_topic_set', 'session-topic'] }),
+        score: 9,
+      }],
+    };
+    const res = await searchRecallMemories(index, 'q', new Set(), 3);
+    expect(res[0].cue_anchors).toEqual(['mafw_topic_set', 'session-topic']);
+  });
+
   test('multi-topic blob abstraction is penalized even at near-equal BM25 score', async () => {
     const blob = 'A | B | C | D | E';
     const index: any = {

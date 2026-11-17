@@ -2662,7 +2662,7 @@ class MafwScheduler {
   private async refreshSnapshotInner(sessionID: string): Promise<void> {
     if (!this.memoryService) return;
     const db = this.getGatewayDb();
-    const { buildSnapshot } = require('./recall/snapshot-builder');
+    const { buildSnapshot, rerankerEntryFromRecall } = require('./recall/snapshot-builder');
     const { searchRecallMemoriesSync, recallNeighbors } = require('./recall/recall-context');
     const { formatRecallContext } = require('./recall/inject-format');
     const { getReranker } = require('./core/memory/reranker-singleton');
@@ -2727,7 +2727,7 @@ class MafwScheduler {
         const scored = await applyReranker(
           q,
           ms.map((m: any) => ({
-            entry: { id: m.id, primary_abstraction: m.primary_abstraction, cue_anchors: [], created_at: m.created_at } as any,
+            entry: rerankerEntryFromRecall(m),
             score: m.score,
           })),
           reranker,
@@ -2755,7 +2755,7 @@ class MafwScheduler {
             if (!r || ms.length === 0) return { memories: ms };
             const byId = new Map(ms.map((m: any) => [m.id, m]));
             const toScored = (m: any) => ({
-              entry: { id: m.id, primary_abstraction: m.primary_abstraction, cue_anchors: [], created_at: m.created_at } as any,
+              entry: rerankerEntryFromRecall(m),
               score: m.score,
             });
             if (typeof r.rerankDetailed === 'function') {

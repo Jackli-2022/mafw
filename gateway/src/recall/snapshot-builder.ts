@@ -14,6 +14,21 @@ import type { EpisodeHit } from './t1-episode-search';
 
 export const SNAPSHOT_SCOPE = 'recall-snapshot';
 
+/** Reranker input must match the MCP path: abstraction + cue anchors. */
+export function rerankerEntryFromRecall(memory: RecallMemory): {
+  id: string;
+  primary_abstraction: string;
+  cue_anchors: string[];
+  created_at?: string;
+} {
+  return {
+    id: memory.id,
+    primary_abstraction: memory.primary_abstraction,
+    cue_anchors: memory.cue_anchors ?? [],
+    created_at: memory.created_at,
+  };
+}
+
 export interface SnapshotDeps {
   /** Recent turn texts, oldest → newest (from T1 observations). */
   recentTurnTexts: (sessionID: string, maxTurns: number) => string[];
