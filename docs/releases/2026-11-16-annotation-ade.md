@@ -58,6 +58,10 @@
 - 手工验证（dev workbench，CDP 驱动）：markdown 引文 → toolbar → composer → 高亮 + rail +
   pill；held 勾选切换 22% → 9% 虚线；源码 CodeMirror 行高亮；整页 reload 后按引文恢复高亮；
   删除/清空后高亮、rail、pill 同步消失。
+- Live drill（2026-11-17）：Lead 会话 `ses_e62c4d612ffeMEMsCQq7V3snek` 发送
+  `Live drill：请只回复「收到」…` + 1 条 quote 批注；网关历史确认用户消息包含
+  `【批注 1】`、引文、`我的批注：…`，Agent 回复「收到」；发送后 pending / rail / CSS highlight
+  全部清空。
 
 ## 已知边界
 
