@@ -453,6 +453,11 @@ test("manifest contributes: rejects unknown plane keys", () => {
   assert.match(desktop.error, /desktop/i)
 })
 
+test("manifest contributes: rejects an unknown key inside gateway", () => {
+  // Guards the widened allow-list: `observer` is not a plane, only `observers` is.
+  assert.equal(validatePluginManifestContributes({ gateway: { observer: [] } }).ok, false)
+})
+
 test("manifest contributes: rejects non-object ui and invalid main", () => {
   const ui = validatePluginManifestContributes({ desktop: { ui: [] } })
   assert.equal(ui.ok, false)

@@ -727,8 +727,8 @@ describe('PluginHost kernel-v2 entries', () => {
   });
 
   it('publishes tool/observer entries on commit and clears them on remove', async () => {
-    // Tools/observers are a manifest package's surface only: a single-file
-    // package is denied them, so this fixture ships a directory package.
+    // Tools/observers are a manifest package's surface only: a package without
+    // plugin.json is denied them, so this fixture ships a directory package.
     const root = path.join(dir, 'toolful');
     fs.mkdirSync(root, { recursive: true });
     fs.writeFileSync(path.join(root, 'plugin.json'), JSON.stringify({ name: 'toolful' }));
@@ -836,9 +836,26 @@ module.exports = { name: 'bound', async activate() {
     expect(state).toMatchObject({ status: 'error' });
     expect(state?.error).toContain('action "pong" is not declared');
   });
+
+  it('enforces a legal v1 contributes.gateway.observers block', async () => {
+    // No apiVersion means v1: the block is not fatal at parse time, but a legal
+    // v1 block still bounds registration exactly like apiVersion 2.
+    writeDirPackage({ name: 'vone', contributes: { gateway: { observers: ['audit'] } } }, `
+module.exports = { name: 'vone', async activate() {
+  return { observers: [{ id: 'other', onEvent: () => {} }] };
+} };
+`);
+    host = mkHost(dir);
+    await host.init();
+    const state = host.getState().find((entry) => entry.name === 'vone');
+    expect(state).toMatchObject({ status: 'error' });
+    expect(state?.error).toContain(
+      'observer "other" is not declared in plugin.json contributes.gateway.observers',
+    );
+  });
 });
 
-describe('PluginHost single-file boundaries', () => {
+describe('PluginHost manifest boundaries', () => {
   let dir: string;
   let host: PluginHost | undefined;
 
@@ -859,7 +876,22 @@ module.exports = { name: 'solo', async activate() {
     await host.init();
     const state = host.getState().find((entry) => entry.name === 'solo');
     expect(state).toMatchObject({ status: 'error' });
-    expect(state?.error).toContain('single-file packages cannot contribute tools');
+    expect(state?.error).toContain('packages without plugin.json cannot contribute tools');
+  });
+
+  it('rejects tools from a directory package without plugin.json', async () => {
+    const root = path.join(dir, 'nomanifest');
+    fs.mkdirSync(root, { recursive: true });
+    fs.writeFileSync(path.join(root, 'index.js'), `
+module.exports = { name: 'nomanifest', async activate() {
+  return { tools: [{ name: 'echo', description: 'e', inputSchema: { type: 'object' }, handler: () => null }] };
+} };
+`);
+    host = mkHost(dir);
+    await host.init();
+    const state = host.getState().find((entry) => entry.name === 'nomanifest');
+    expect(state).toMatchObject({ status: 'error' });
+    expect(state?.error).toContain('packages without plugin.json cannot contribute tools');
   });
 
   it('rejects http routes from a single-file package', async () => {
@@ -873,7 +905,21 @@ module.exports = { name: 'routed', async activate(ctx) {
     await host.init();
     const state = host.getState().find((entry) => entry.name === 'routed');
     expect(state).toMatchObject({ status: 'error' });
-    expect(state?.error).toContain('single-file packages cannot contribute http');
+    expect(state?.error).toContain('packages without plugin.json cannot contribute http');
+  });
+
+  it('rejects a ws-only http plane from a package without plugin.json', async () => {
+    fs.writeFileSync(path.join(dir, 'sock.js'), `
+module.exports = { name: 'sock', async activate(ctx) {
+  ctx.http.ws('/x', () => {});
+  return { actions: { ping: { handler: () => null } } };
+} };
+`);
+    host = mkHost(dir);
+    await host.init();
+    const state = host.getState().find((entry) => entry.name === 'sock');
+    expect(state).toMatchObject({ status: 'error' });
+    expect(state?.error).toContain('packages without plugin.json cannot contribute http');
   });
 
   it('names every denied plane in one message', async () => {
@@ -890,7 +936,9 @@ module.exports = { name: 'both', async activate(ctx) {
     await host.init();
     const state = host.getState().find((entry) => entry.name === 'both');
     expect(state).toMatchObject({ status: 'error' });
-    expect(state?.error).toContain('single-file packages cannot contribute tools, observers, http');
+    expect(state?.error).toContain(
+      'packages without plugin.json cannot contribute tools, observers, http',
+    );
   });
 
   it('still activates a single-file package with ui and actions', async () => {
@@ -903,6 +951,23 @@ module.exports = { name: 'viewer', async activate() {
     host = mkHost(dir);
     await host.init();
     expect(host.getState().find((entry) => entry.name === 'viewer')).toMatchObject({ status: 'ok' });
+    expect(host.getClientSnapshot().plugins).toHaveLength(1);
+  });
+
+  it('still activates a directory package without plugin.json with ui and actions', async () => {
+    const root = path.join(dir, 'folderonly');
+    fs.mkdirSync(root, { recursive: true });
+    fs.writeFileSync(path.join(root, 'index.js'), `
+module.exports = { name: 'folderonly', async activate() {
+  return { ui: { panels: [{ id: 'view', title: 'View', viewAction: 'load' }] },
+           actions: { load: { handler: async () => ({ ok: true }) } } };
+} };
+`);
+    host = mkHost(dir);
+    await host.init();
+    expect(host.getState().find((entry) => entry.name === 'folderonly')).toMatchObject({
+      status: 'ok',
+    });
     expect(host.getClientSnapshot().plugins).toHaveLength(1);
   });
 });

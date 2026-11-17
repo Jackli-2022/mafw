@@ -697,7 +697,9 @@ export type BuildActivatedContributionsResult =
  * @param declared Static `plugin.json` `contributes` block, when the package
  *   has one. Treated as an upper bound on the registered actions/events/tools.
  * @returns `ok: true` with client-safe DTOs and Host declarations, or
- *   `ok: false` with every diagnostic collected in one pass.
+ *   `ok: false` with the diagnostics that explain the first cause. Derived
+ *   `contributes` bound errors are withheld while any shape error exists, so
+ *   the reported set is not the union of every possible diagnostic.
  */
 export function buildActivatedContributions(
   packageName: string,

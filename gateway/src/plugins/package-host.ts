@@ -1339,18 +1339,21 @@ export class PluginHost {
     );
     if (!built.ok) throw new Error(`invalid contributions: ${built.errors.join('; ')}`);
     const activated = built.value;
-    // A single-file package has no manifest: no `contributes`, no declared
-    // permissions, no install-time consent. It may keep contributing data
-    // planes (ui/actions/events/legacy) but must not widen the agent's tool
-    // surface, subscribe to canonical events, or publish HTTP routes.
-    if (desc.pkgDir === undefined) {
+    // The risk is *no manifest*, not the file form: without `plugin.json` there
+    // is no `contributes`, no declared permissions and no install-time consent.
+    // A single `.js` file and a directory without `plugin.json` both satisfy
+    // that, so the gate keys on manifest absence. Such a package may keep
+    // contributing data planes (ui/actions/events/legacy) but must not widen the
+    // agent's tool surface, subscribe to canonical events, or publish HTTP
+    // routes.
+    if (parsedManifest?.manifest === undefined) {
       const denied: string[] = [];
       if (activated.tools.length > 0) denied.push('tools');
       if (activated.observers.length > 0) denied.push('observers');
       if (httpRecorder.entries.length > 0) denied.push('http');
       if (denied.length > 0) {
         throw new Error(
-          `single-file packages cannot contribute ${denied.join(', ')}; `
+          `packages without plugin.json cannot contribute ${denied.join(', ')}; `
           + 'ship a directory package with plugin.json',
         );
       }
@@ -1531,6 +1534,7 @@ const README_CONTENT = `# MAFW Plugin Packages
 
 - 单文件包：\`my-vendor.js\`（包名 = 文件名）
 - 目录包：\`my-vendor/plugin.json\`（\`{ "name", "version"?, "main"? }\`，main 缺省 index.js）
+- \`tools\` / \`observers\` / \`http\` 三个面需要带 \`plugin.json\` 的目录包；单文件包与缺 \`plugin.json\` 的目录包只能用 ui / actions / events / legacy。详见 \`docs/guides/plugin-authoring.md\`。
 
 ## 模块形状（二选一）
 

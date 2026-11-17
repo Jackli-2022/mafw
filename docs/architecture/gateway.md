@@ -804,7 +804,7 @@ Phase 3.6 plugin host 自动注册（2026-11-13；2026-11-16 起默认生效）�
 - `runtime/v2-live.ts` 的 `syncPluginContributions()` 按 `package:name` / `package:id` diff：新 revision 替换旧 handler，消失的条目退订。
 - Tool 命名空间 `plugin:<package>:<tool>`；observer id `plugin:<package>:<observer>`；handler 永不进入 client descriptor。
 - 包 tool 本阶段只允许 `scope: 'global'`；`scope: 'session'` 在校验阶段失败。
-- `plugin.json` 的静态 `contributes` 是**注册面的上界**（2026-11-16 起强制执行）：`actions` / `events` / `tools` / `http` 四个 plane 各自独立，`activate()` 注册的集合必须是声明集合的子集；未声明的 plane 不受约束；声明多于注册合法。`apiVersion 2` 下 `contributes` 非法 → 整包激活失败；`apiVersion 1` 下非法块降级为 warning 且不构成约束（合法块照样构成约束）。`contributes.desktop.*` 只校验、暂不强制。
+- `plugin.json` 的静态 `contributes` 是**注册面的上界**（2026-11-16 起强制执行）：`actions` / `events` / `tools` / `observers` / `http` 五个 plane 各自独立，`activate()` 注册的集合必须是声明集合的子集；未声明的 plane 不受约束；声明多于注册合法。`apiVersion 2` 下 `contributes` 非法 → 整包激活失败；`apiVersion 1` 下非法块降级为 warning 且不构成约束（合法块照样构成约束）。`contributes.desktop.*` 只校验、暂不强制。边界是 **manifest 缺失**而非文件形态：`tools` / `observers` / `http` 三个 plane 需要带 `plugin.json` 的目录包；`.js` 单文件形态与没有 `plugin.json` 的目录包同为受限形态，只能用 `ui` / `actions` / `events` / legacy。
 
 门禁：Phase 3.6 定向 **531 / 531**；gateway 全量 **7005 passed / 1 skipped / 7006 total**，run 4/5 连续 clean（run 1/3 的 worktree 5s timeout 在负载下偶发，单文件重跑通过）；typecheck 通过。各 phase 交付记录见 `docs/releases/2026-11-12-capability-kernel-phase{1,2,3,3-5}.md` 与 `docs/releases/2026-11-13-capability-kernel-phase3-6.md`。runbook 见 `docs/guides/kernel-v2-cutover.md`。
 
