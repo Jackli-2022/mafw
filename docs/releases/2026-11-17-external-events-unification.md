@@ -2,7 +2,8 @@
 
 - **版本**：`v5.1.0`（行为增强，不升版本号）
 - **提交**：`646f4eb2`（external domain events）+ `a0ce91e1`（Lead inbox）+
-  `528676d4`（delivery receipts）+ `06d3676b`（死信）
+  `528676d4`（delivery receipts）+ `06d3676b`（死信）+ `0b451132`（lead-context 评估）+
+  `badc5170`（outbox payload triggerId）
 - **计划**：`docs/superpowers/plans/2026-11-17-phase4-external-events-unification.md`
 - **前置**：`docs/releases/2026-11-16-goal-history-replay.md`（Phase 3）
 - **范围**：gateway 事件层；desktop / SDK / runtime 零改动
@@ -19,8 +20,10 @@
 
 ### 一条 Lead 唤醒路径
 
+- evaluator：当线程有 `lead` + `context` 订阅时返回 `accept/report`（否则 context-only
+  的外部线程会被 ignore，Lead 永远收不到）。
 - `deliverContext` 对外部事件写 `LeadOutbox`：`dedupeKey = external:<triggerId>`，
-  `[EVENT]` 单条文本 / `[EVENT] N 条待处理` 批量头。
+  payload 带 `triggerId`（receipt 反查用），`[EVENT]` 单条文本 / `[EVENT] N 条待处理` 批量头。
 - decision / Pod event / external 共用同一 dispatcher 的 batch、`maxPerHour`、
   `minIntervalMs`、retry 与 p1 保留通道。
 
@@ -43,11 +46,28 @@
 ## 测试
 
 - 新增套件：`external-domain-event`、`lead-outbox-external`、`event-delivery-receipts`、
-  `event-delivery-deadletter`（4 suites / 10 tests）。
-- gateway 全量：**1009 / 1009 suites**，**8022 passed / 2 skipped / 0 failed**。
+  `event-delivery-deadletter`、`external-lead-wiring`（5 suites / 12 tests）。
+- gateway 全量：**1010 / 1010 suites**，**8024 passed / 2 skipped / 0 failed**。
   前两次全量各有一个既有 flake（`checkpoint/restore-git` 超时、`runtime/instance-ownership`），
   两个套件单独复跑均全绿。
 - `tsc`：rc=0；`npm run build`：通过（`dist/release.json` v5.1.0）。
+
+## 真机验收（2026-11-17，gateway pid 59848 / instance 341c5318）
+
+用临时 webhook source + 签名请求验证（结束后清理，残余 0）：
+
+- `POST /api/event-sources` 建 source，`POST /api/event-sources/:id/webhook` 同一
+  `x-github-delivery` 两次 → 第二次 `duplicate: true`；DB 里 1 个 thread、1 个 trigger、
+  1 条 `external.webhook.issue`（`event_id=external:webhook:<delivery>`）。
+- 加一条 `lead` + `context` 订阅（subscriberId 用不存在的 Pod，避免真的 prompt Lead）后
+  重复投递触发 evaluate → trigger `accepted`、delivery `delivered`、
+  `event_outbox` 出现 `external:<triggerId>`（payload 带 `triggerId`）。
+- service 级 receipt（dist 对运行库）：
+  - `read` → delivery `read`、outbox `read_at` 落库；
+  - 模拟 Lead 回合（`sentSessionId` + `ackAt`）→ `ackDeliveriesForSession` = 1，
+    delivery `acknowledged`、outbox `ack_at` 同步；
+  - `answered` → delivery `answered`、outbox `answered_at` 同步。
+- 清理后 outbox/source 残余均为 0；日志无新增 ERROR。
 
 ## 边界
 
