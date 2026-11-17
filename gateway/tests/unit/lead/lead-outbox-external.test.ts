@@ -27,6 +27,7 @@ test('external items dedupe by trigger and render as [EVENT]', () => {
   expect(h.store.listOutbox()).toHaveLength(2);
   expect(a.dedupeKey).toBe('external:t1');
   expect(leadOutboxPayload(a)).toMatchObject({ kind: 'external', recordId: 't1' });
+  expect(a.payload).toMatchObject({ triggerId: 't1' });
   expect(renderLeadOutboxBatch([a, b])).toContain('[EVENT] 2 条待处理');
 });
 

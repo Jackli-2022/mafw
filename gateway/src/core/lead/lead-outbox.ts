@@ -178,6 +178,7 @@ export class LeadOutbox {
         podId: input.podId,
         goalId: null,
         recordId: input.triggerId,
+        triggerId: input.triggerId,
         createdAt: now,
       },
     });
