@@ -1695,6 +1695,11 @@ export interface PodGoalAcceptResult {
 
 export type PodReviewItemStatus = 'pending' | 'responded' | 'resolved'
 
+/** Immutable origin of a human review opinion (annotation spec 2026-11-17). */
+export type PodReviewSource =
+  | { kind: 'project'; projectDir: string; root: string; contentVersion: string | null }
+  | { kind: 'goal'; projectDir: string; goalId: string; revision: number; root: string; contentVersion: string | null }
+
 export type PodReviewAnchor =
   | { kind: 'quote'; quote: string }
   | { kind: 'jsonPath'; path: string; valueSummary: string }
@@ -1713,6 +1718,8 @@ export interface PodReviewItem {
   code: string
   comment: string
   anchor: PodReviewAnchor | null
+  source: PodReviewSource | null
+  clientRef: string | null
   response: string | null
   originItemId: string | null
   originRevision: number | null
@@ -1729,6 +1736,8 @@ export interface PodReviewItemInput {
   code?: string
   comment: string
   anchor?: PodReviewAnchor
+  source?: PodReviewSource
+  clientRef?: string
 }
 
 export interface PodReviewItemList {

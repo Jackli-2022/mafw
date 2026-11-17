@@ -16,6 +16,7 @@ import {
   PodProbeAffectsSchema,
   PodProbeBudgetSchema,
   PodProbeScopeSchema,
+  PodReviewSourceSchema,
   PodStatusSchema,
   PodTaskStatusSchema,
 } from './pods'
@@ -327,6 +328,8 @@ export const PodReviewItemsCreateRequest = Type.Object({
     endLine: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
     code: Type.Optional(Type.String()),
     anchor: Type.Optional(Type.Unknown({ description: 'PodReviewAnchor: quote / jsonPath / cell / region (stored verbatim).' })),
+    source: Type.Optional(PodReviewSourceSchema),
+    clientRef: Type.Optional(Type.String({ maxLength: 200 })),
   }), { minItems: 1, maxItems: 50 }),
   revision: Type.Optional(Type.Integer({ minimum: 1 })),
 })

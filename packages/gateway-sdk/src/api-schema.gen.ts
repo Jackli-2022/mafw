@@ -35201,6 +35201,22 @@ export interface operations {
                                 h: number;
                                 slide?: number;
                             }) | null;
+                            source: ({
+                                /** @constant */
+                                kind: "project";
+                                projectDir: string;
+                                root: string;
+                                contentVersion: string | null;
+                            } | {
+                                /** @constant */
+                                kind: "goal";
+                                projectDir: string;
+                                root: string;
+                                contentVersion: string | null;
+                                goalId: string;
+                                revision: number;
+                            }) | null;
+                            clientRef: string | null;
                             response: string | null;
                             originItemId: string | null;
                             originRevision: number | null;
@@ -35286,6 +35302,22 @@ export interface operations {
                         code?: string;
                         /** @description PodReviewAnchor: quote / jsonPath / cell / region (stored verbatim). */
                         anchor?: unknown;
+                        source?: {
+                            /** @constant */
+                            kind: "project";
+                            projectDir: string;
+                            root: string;
+                            contentVersion: string | null;
+                        } | {
+                            /** @constant */
+                            kind: "goal";
+                            projectDir: string;
+                            root: string;
+                            contentVersion: string | null;
+                            goalId: string;
+                            revision: number;
+                        };
+                        clientRef?: string;
                     }[];
                     revision?: number;
                 };
@@ -35334,6 +35366,22 @@ export interface operations {
                                 h: number;
                                 slide?: number;
                             }) | null;
+                            source: ({
+                                /** @constant */
+                                kind: "project";
+                                projectDir: string;
+                                root: string;
+                                contentVersion: string | null;
+                            } | {
+                                /** @constant */
+                                kind: "goal";
+                                projectDir: string;
+                                root: string;
+                                contentVersion: string | null;
+                                goalId: string;
+                                revision: number;
+                            }) | null;
+                            clientRef: string | null;
                             response: string | null;
                             originItemId: string | null;
                             originRevision: number | null;
@@ -35527,6 +35575,22 @@ export interface operations {
                                 h: number;
                                 slide?: number;
                             }) | null;
+                            source: ({
+                                /** @constant */
+                                kind: "project";
+                                projectDir: string;
+                                root: string;
+                                contentVersion: string | null;
+                            } | {
+                                /** @constant */
+                                kind: "goal";
+                                projectDir: string;
+                                root: string;
+                                contentVersion: string | null;
+                                goalId: string;
+                                revision: number;
+                            }) | null;
+                            clientRef: string | null;
                             response: string | null;
                             originItemId: string | null;
                             originRevision: number | null;
@@ -35703,6 +35767,22 @@ export interface operations {
                                 h: number;
                                 slide?: number;
                             }) | null;
+                            source: ({
+                                /** @constant */
+                                kind: "project";
+                                projectDir: string;
+                                root: string;
+                                contentVersion: string | null;
+                            } | {
+                                /** @constant */
+                                kind: "goal";
+                                projectDir: string;
+                                root: string;
+                                contentVersion: string | null;
+                                goalId: string;
+                                revision: number;
+                            }) | null;
+                            clientRef: string | null;
                             response: string | null;
                             originItemId: string | null;
                             originRevision: number | null;

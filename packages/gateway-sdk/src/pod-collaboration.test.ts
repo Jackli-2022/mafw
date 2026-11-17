@@ -115,6 +115,20 @@ test("pod.acceptResult posts the one-click acceptance body", async () => {
   expect(res.mergeCommit).toBe("abc123")
 })
 
+test("createReviewItems forwards revision, source, and clientRef", async () => {
+  fetchMock.mockResolvedValue(okJson({ items: [] }))
+  const c = new MafwClient("http://gw:3000")
+  const source = { kind: "project" as const, projectDir: "C:/repo", root: "C:/repo", contentVersion: "v1" }
+  await c.pod.createReviewItems("pod_1", "g1", {
+    revision: 2,
+    items: [{ rel: "src/a.ts", comment: "x", source, clientRef: "ann-1" }],
+  })
+  expect(JSON.parse(lastCall()[1].body)).toEqual({
+    revision: 2,
+    items: [{ rel: "src/a.ts", comment: "x", source, clientRef: "ann-1" }],
+  })
+})
+
 test("pod.reviewItems/create/resolve/reopen use the review routes", async () => {
   fetchMock.mockResolvedValue(okJson({ revision: 2, items: [], item: { id: "review_1" } }))
   const c = new MafwClient("http://gw:3000")

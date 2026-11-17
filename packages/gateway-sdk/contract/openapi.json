@@ -76444,6 +76444,8 @@
                           "code",
                           "comment",
                           "anchor",
+                          "source",
+                          "clientRef",
                           "response",
                           "originItemId",
                           "originRevision",
@@ -76605,6 +76607,98 @@
                                     }
                                   }
                                 ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "source": {
+                            "anyOf": [
+                              {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "required": [
+                                      "kind",
+                                      "projectDir",
+                                      "root",
+                                      "contentVersion"
+                                    ],
+                                    "properties": {
+                                      "kind": {
+                                        "const": "project",
+                                        "type": "string"
+                                      },
+                                      "projectDir": {
+                                        "type": "string"
+                                      },
+                                      "root": {
+                                        "type": "string"
+                                      },
+                                      "contentVersion": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "type": "object",
+                                    "required": [
+                                      "kind",
+                                      "projectDir",
+                                      "root",
+                                      "contentVersion",
+                                      "goalId",
+                                      "revision"
+                                    ],
+                                    "properties": {
+                                      "kind": {
+                                        "const": "goal",
+                                        "type": "string"
+                                      },
+                                      "projectDir": {
+                                        "type": "string"
+                                      },
+                                      "root": {
+                                        "type": "string"
+                                      },
+                                      "contentVersion": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "goalId": {
+                                        "type": "string"
+                                      },
+                                      "revision": {
+                                        "minimum": 1,
+                                        "type": "integer"
+                                      }
+                                    }
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "clientRef": {
+                            "anyOf": [
+                              {
+                                "type": "string"
                               },
                               {
                                 "type": "null"
@@ -76841,6 +76935,85 @@
                         },
                         "anchor": {
                           "description": "PodReviewAnchor: quote / jsonPath / cell / region (stored verbatim)."
+                        },
+                        "source": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "required": [
+                                "kind",
+                                "projectDir",
+                                "root",
+                                "contentVersion"
+                              ],
+                              "properties": {
+                                "kind": {
+                                  "const": "project",
+                                  "type": "string"
+                                },
+                                "projectDir": {
+                                  "type": "string"
+                                },
+                                "root": {
+                                  "type": "string"
+                                },
+                                "contentVersion": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              }
+                            },
+                            {
+                              "type": "object",
+                              "required": [
+                                "kind",
+                                "projectDir",
+                                "root",
+                                "contentVersion",
+                                "goalId",
+                                "revision"
+                              ],
+                              "properties": {
+                                "kind": {
+                                  "const": "goal",
+                                  "type": "string"
+                                },
+                                "projectDir": {
+                                  "type": "string"
+                                },
+                                "root": {
+                                  "type": "string"
+                                },
+                                "contentVersion": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "goalId": {
+                                  "type": "string"
+                                },
+                                "revision": {
+                                  "minimum": 1,
+                                  "type": "integer"
+                                }
+                              }
+                            }
+                          ]
+                        },
+                        "clientRef": {
+                          "maxLength": 200,
+                          "type": "string"
                         }
                       }
                     }
@@ -76881,6 +77054,8 @@
                           "code",
                           "comment",
                           "anchor",
+                          "source",
+                          "clientRef",
                           "response",
                           "originItemId",
                           "originRevision",
@@ -77042,6 +77217,98 @@
                                     }
                                   }
                                 ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "source": {
+                            "anyOf": [
+                              {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "required": [
+                                      "kind",
+                                      "projectDir",
+                                      "root",
+                                      "contentVersion"
+                                    ],
+                                    "properties": {
+                                      "kind": {
+                                        "const": "project",
+                                        "type": "string"
+                                      },
+                                      "projectDir": {
+                                        "type": "string"
+                                      },
+                                      "root": {
+                                        "type": "string"
+                                      },
+                                      "contentVersion": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "type": "object",
+                                    "required": [
+                                      "kind",
+                                      "projectDir",
+                                      "root",
+                                      "contentVersion",
+                                      "goalId",
+                                      "revision"
+                                    ],
+                                    "properties": {
+                                      "kind": {
+                                        "const": "goal",
+                                        "type": "string"
+                                      },
+                                      "projectDir": {
+                                        "type": "string"
+                                      },
+                                      "root": {
+                                        "type": "string"
+                                      },
+                                      "contentVersion": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "goalId": {
+                                        "type": "string"
+                                      },
+                                      "revision": {
+                                        "minimum": 1,
+                                        "type": "integer"
+                                      }
+                                    }
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "clientRef": {
+                            "anyOf": [
+                              {
+                                "type": "string"
                               },
                               {
                                 "type": "null"
@@ -77390,6 +77657,8 @@
                         "code",
                         "comment",
                         "anchor",
+                        "source",
+                        "clientRef",
                         "response",
                         "originItemId",
                         "originRevision",
@@ -77551,6 +77820,98 @@
                                   }
                                 }
                               ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "source": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "required": [
+                                    "kind",
+                                    "projectDir",
+                                    "root",
+                                    "contentVersion"
+                                  ],
+                                  "properties": {
+                                    "kind": {
+                                      "const": "project",
+                                      "type": "string"
+                                    },
+                                    "projectDir": {
+                                      "type": "string"
+                                    },
+                                    "root": {
+                                      "type": "string"
+                                    },
+                                    "contentVersion": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  }
+                                },
+                                {
+                                  "type": "object",
+                                  "required": [
+                                    "kind",
+                                    "projectDir",
+                                    "root",
+                                    "contentVersion",
+                                    "goalId",
+                                    "revision"
+                                  ],
+                                  "properties": {
+                                    "kind": {
+                                      "const": "goal",
+                                      "type": "string"
+                                    },
+                                    "projectDir": {
+                                      "type": "string"
+                                    },
+                                    "root": {
+                                      "type": "string"
+                                    },
+                                    "contentVersion": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "goalId": {
+                                      "type": "string"
+                                    },
+                                    "revision": {
+                                      "minimum": 1,
+                                      "type": "integer"
+                                    }
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "clientRef": {
+                          "anyOf": [
+                            {
+                              "type": "string"
                             },
                             {
                               "type": "null"
@@ -77869,6 +78230,8 @@
                         "code",
                         "comment",
                         "anchor",
+                        "source",
+                        "clientRef",
                         "response",
                         "originItemId",
                         "originRevision",
@@ -78030,6 +78393,98 @@
                                   }
                                 }
                               ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "source": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "required": [
+                                    "kind",
+                                    "projectDir",
+                                    "root",
+                                    "contentVersion"
+                                  ],
+                                  "properties": {
+                                    "kind": {
+                                      "const": "project",
+                                      "type": "string"
+                                    },
+                                    "projectDir": {
+                                      "type": "string"
+                                    },
+                                    "root": {
+                                      "type": "string"
+                                    },
+                                    "contentVersion": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  }
+                                },
+                                {
+                                  "type": "object",
+                                  "required": [
+                                    "kind",
+                                    "projectDir",
+                                    "root",
+                                    "contentVersion",
+                                    "goalId",
+                                    "revision"
+                                  ],
+                                  "properties": {
+                                    "kind": {
+                                      "const": "goal",
+                                      "type": "string"
+                                    },
+                                    "projectDir": {
+                                      "type": "string"
+                                    },
+                                    "root": {
+                                      "type": "string"
+                                    },
+                                    "contentVersion": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "goalId": {
+                                      "type": "string"
+                                    },
+                                    "revision": {
+                                      "minimum": 1,
+                                      "type": "integer"
+                                    }
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "clientRef": {
+                          "anyOf": [
+                            {
+                              "type": "string"
                             },
                             {
                               "type": "null"

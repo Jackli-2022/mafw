@@ -10,7 +10,8 @@ import type {
   // E10-1 session read surface
   QueueItem, SessionConfigState, Todo, SessionCheckpointListItem, SubagentList, SessionNamespace,
   // E10-2 pod / work read surface
-  PodGoal, PodTask, PodMessage, PodEventItem, PodGoalResult, PodReviewItemList, PodWorkOverview,
+  PodGoal, PodTask, PodMessage, PodEventItem, PodGoalResult, PodReviewItem, PodReviewItemInput,
+  PodReviewItemList, PodReviewSource, PodWorkOverview,
   PodNamespace,
   // E10b-1 goal / pod-goal read surface
   GoalPlanInfo, GoalTimeline, GoalNodeRunInfo, PodTechLeadHistory, PodProbe, PodGoalRevision,
@@ -925,3 +926,17 @@ export const CONTRACT_COMPAT_CHECKS = [
   CHECK_media_create_task_api,
   CHECK_media_plugins_reload, CHECK_embedding_update_current, CHECK_embedding_update_runtime,
 ]
+
+// Annotation provenance is a type-only contract; tests transpile without type-checking,
+// so keep a compile-time fixture in the SDK build as the RED/GREEN gate.
+const REVIEW_SOURCE_CONTRACT: PodReviewSource = {
+  kind: 'project', projectDir: 'C:/repo', root: 'C:/repo', contentVersion: 'v1',
+}
+const REVIEW_INPUT_CONTRACT: PodReviewItemInput = {
+  rel: 'src/a.ts', comment: 'x', source: REVIEW_SOURCE_CONTRACT, clientRef: 'ann-1',
+}
+const REVIEW_ITEM_CONTRACT: Pick<PodReviewItem, 'source' | 'clientRef'> = {
+  source: REVIEW_SOURCE_CONTRACT, clientRef: 'ann-1',
+}
+void REVIEW_INPUT_CONTRACT
+void REVIEW_ITEM_CONTRACT

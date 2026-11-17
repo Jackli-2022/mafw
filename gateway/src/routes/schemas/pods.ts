@@ -527,6 +527,23 @@ const PodReviewAnchorSchema = Type.Union([
   }),
 ])
 
+export const PodReviewSourceSchema = Type.Union([
+  Type.Object({
+    kind: Type.Literal('project'),
+    projectDir: Type.String(),
+    root: Type.String(),
+    contentVersion: Type.Union([Type.String(), Type.Null()]),
+  }),
+  Type.Object({
+    kind: Type.Literal('goal'),
+    projectDir: Type.String(),
+    root: Type.String(),
+    contentVersion: Type.Union([Type.String(), Type.Null()]),
+    goalId: Type.String(),
+    revision: Type.Integer({ minimum: 1 }),
+  }),
+])
+
 export const PodReviewItemSchema = Type.Object({
   id: Type.String(),
   podId: Type.String(),
@@ -543,6 +560,8 @@ export const PodReviewItemSchema = Type.Object({
   code: Type.String(),
   comment: Type.String(),
   anchor: Type.Union([PodReviewAnchorSchema, Type.Null()]),
+  source: Type.Union([PodReviewSourceSchema, Type.Null()]),
+  clientRef: Type.Union([Type.String(), Type.Null()]),
   response: Type.Union([Type.String(), Type.Null()]),
   originItemId: Type.Union([Type.String(), Type.Null()]),
   originRevision: Type.Union([Type.Number(), Type.Null()]),
