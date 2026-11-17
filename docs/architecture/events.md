@@ -91,6 +91,18 @@ Source → Trigger → Thread → Subscription → Decision → Delivery → Cha
   `event_decisions` / `event_deliveries` 仍是外部事件的线程、决策与投递审计；
   read/ack/answered 的 HTTP 路由未在本阶段暴露。
 
+### 回执路由与 domain event 消费者（2026-11-17）
+
+- `POST /api/event-deliveries/:id/read` 与 `POST /api/event-deliveries/:id/answer`
+  是 **human-only** 路由（`x-mafw-human-token` / device token）：拒绝 service/local/agent
+  principal，返回 `403 human_principal_required`。成功返回 `{ delivery }`，并同步
+  `event_outbox.read_at` / `answered_at`。
+- `ack` **没有 HTTP 路由**：只由 Lead 会话 `turn.completed` 写入，避免人类伪造 Lead 回复。
+- Lead 的外部播报与 Standing Goal 的投递内容优先读 `external:<idempotencyKey>` 的
+  domain event（`domainEventForTrigger` / `consumerEnvelope`）；decision/internal 没有
+  对应事件，回退 trigger。Standing 的幂等键保持 `trigger.id`，切换内容来源不会重复执行。
+- Tech Lead 的 evaluate / decision 仍由 `event_*` 承担。
+
 ### Lead read / ack（2026-11-16 定案）
 
 - **read**：客户端把某个 Goal 的 Pod event 标记 seen 后，该 goal 的 lead outbox 行写
