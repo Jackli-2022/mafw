@@ -17,7 +17,7 @@ mafw plugin init my-plugin
 #    <cwd>/.mafw/plugin-drafts/my-plugin/plugin.json
 #    <cwd>/.mafw/plugin-drafts/my-plugin/index.js
 
-# 3) 自检（必须绝对路径；网关不需要运行，也不需要 human token、不联网）
+# 3) 自检（必须绝对路径；网关不需要运行，也不需要 human token；ctx 差异见 §8）
 mafw plugin check --strict "C:/abs/path/.mafw/plugin-drafts/my-plugin"
 
 # 4) 把第 3 步打印出的这一行原样交给人类（不要自己执行）
@@ -25,6 +25,8 @@ mafw plugin check --strict "C:/abs/path/.mafw/plugin-drafts/my-plugin"
 ```
 
 **完成标准**：`mafw plugin check --strict "<abs path>"` 退出码 `0`（首行 `ok <name> ...`），**并且**你已经把 `install:` 行交给人类。agent 的终点不是安装，是「check 通过 + 交出安装命令」；安装**由人执行**（§9）。
+
+**`untrusted` 包不适用上面的第 3 步**：本地 check host 没有 worker，`kind: "untrusted"` 的包无法完成 dry-run，会返回 `worker_unavailable: no worker host factory`。按 §7 的 restricted 形状写（只有 actions / events / config），把包与 §9 的安装命令交给人在真实 host 上安装验证。
 
 四条会立刻决定成败的规则：
 
@@ -135,7 +137,7 @@ module.exports = {
 
 **`permissions` 是安装时同意清单，不是运行时开关。** 对 `trusted` 包，`activate()` 注册任何面都不按 `permissions` 放行或拒绝；只有 `untrusted` worker 会按 token 检查 `actions` / `events` / `config.read` / `config.write`（§7）。但安装仍然要求 `--permission` 集合与 `permissions` **完全一致**（§9），所以把用到的面都写上。
 
-字段级错误文案（`check` 的 `error:` 行 / 安装 400）：`invalid plugin.json: …` → `plugin.json must be an object`、`version must be a non-empty string`、`invalid kind: <v>`、`untrusted requires apiVersion 2`、`host must be a string`、`invalid host range: <v>`、`integrity must be an object`、`integrity.algorithm must be "sha256"`、`integrity.files must be an object`、`integrity.files["<path>"] must be a non-empty string`、`deprecated must be a non-empty string`、`standardVersion must be a positive integer`。
+字段级错误文案：真实激活 / `check` 的 `error:` 行**直接是解析器消息本身**（多条以 `; ` 连接；`check` 没有 `invalid plugin.json:` 前缀），**安装**（400）才在外层包 `invalid plugin.json: `。消息逐字：`plugin.json must be an object`、`version must be a non-empty string`、`invalid kind: <v>`、`untrusted requires apiVersion 2`、`host must be a string`、`invalid host range: <v>`、`integrity must be an object`、`integrity.algorithm must be "sha256"`、`integrity.files must be an object`、`integrity.files["<path>"] must be a non-empty string`、`deprecated must be a non-empty string`、`standardVersion must be a positive integer`。（`check` 对目录包还有一个更早的短路：manifest 是对象但缺 `name` 时报 `plugin.json is missing "name"`，此时还没进解析器。）
 
 ---
 
@@ -159,7 +161,7 @@ module.exports = { name: 'my-plugin', usage: { /* … */ } };
 - 激活失败 = **整包不生效**（错误留在 pending / failure 记录里，`check`、`plugins list`、Desktop 可见）；已提交的旧 revision 不会被失败的新候选替换。
 - 零贡献会被拒绝：`no contributions (usage/media/runtime/tts/uiTools/ui/actions/events/tools/observers)`。`contributes.gateway.http: true` 本身不算贡献——只注册路由的包也过不了这一关。
 
-`trusted` 包的 `ctx`（全部能力）：
+`trusted` 包的 `ctx`（真实 gateway host 的全部能力；`mafw plugin check` 的 ctx 是它的子集，差异见 §8）：
 
 | 能力 | 签名 / 说明 |
 |---|---|
@@ -183,6 +185,8 @@ module.exports = { name: 'my-plugin', usage: { /* … */ } };
 ## 4. 五个 plane（actions / events / tools / observers / http）
 
 Handler 永远来自 `activate()` 的返回值；`plugin.json` 只声明**名字**（`tools` 是半个例外：声明项本身必须是一个合法描述符，但与本包注册项的匹配只按 `name`）。
+
+以下片段都取自 `examples/plugins/`，**里面的包名/命名空间是示例的**：复制时把 `hello-plugin` / `kitchen-sink` / `plugin:<package>:*` 换成你自己的包名，否则事件命名空间与 `contributes` 的声明比对都会失败。
 
 四个声明式 plane（actions / events / tools / observers）的越界诊断形式是：
 
@@ -231,6 +235,8 @@ return {
 
 - `action "<name>" is not declared in plugin.json contributes.gateway.actions`
 - `action "<name>" name must not contain ":" or whitespace`（名字 ≤128 字符，`^[A-Za-z0-9][A-Za-z0-9._-]*$`）
+- `action "<name>" name is not allowed`（`__proto__` / `prototype` / `constructor`）
+- `action "<name>" declaration must be an object`
 - `action "<name>" handler must be a function`
 - `action "<name>" has unknown field "<key>"`（只允许 `title` / `description` / `inputSchema` / `outputSchema` / `timeoutMs` / `handler`）
 - `action "<name>" timeoutMs must be a positive integer`
@@ -412,7 +418,7 @@ ctx.http.route(
 ctx.http.ws(path: string, handler(ws, ctx: { sessionID?: string; projectDir: string }): void): void;
 ```
 
-可复制片段（`examples/plugins/kitchen-sink/index.js`）：
+可复制片段（`examples/plugins/kitchen-sink/index.js` 的 http 片段；返回值里补了一个最小 action，否则只注册路由会被零贡献检查拒绝。复制进你自己的包时，把 `ping` 加进 `contributes.gateway.actions`、并声明 `"http": true`）：
 
 ```js
 module.exports = {
@@ -422,7 +428,12 @@ module.exports = {
     // be registered while activate() runs; they are retired with this revision.
     ctx.http.route('GET', '/ping', () => ({ body: 'pong' }));
 
-    return { /* … */ };
+    return {
+      // 一个真实贡献：只有 http 路由不算贡献（§3）。
+      actions: {
+        ping: { title: 'Ping', handler: () => ({ pong: true }) },
+      },
+    };
   },
 };
 ```
@@ -437,12 +448,13 @@ module.exports = {
 - `http routes are not declared (contributes.gateway.http is false)`
 - `ctx.http is only available during activate() (package "<name>")`
 - `unsupported route method "<method>" (allowed: GET, POST, PUT, PATCH, DELETE)`
-- `route path "<path>" must be '' or start with '/'` / `route path "<path>" must not contain ".."` / `route path "<path>" must not contain ":" (path params are not supported)` / `route path "<path>" must not contain a query or fragment`
+- `route path "<path>" must be '' or start with '/'` / `route path "<path>" must not contain ".."` / `route path "<path>" must not contain ":" (path params are not supported)` / `route path "<path>" must not contain a query or fragment` / `route path "<path>" contains an invalid character`
+- `maxBodyBytes must be a positive integer`
 - `duplicate http route <METHOD> <path> in package "<name>"` / `duplicate ws route <path> in package "<name>"`
 
 上限：请求体默认 **32 MiB**（`33554432` 字节，`opts.maxBodyBytes` 可按路由改写该上限，正整数），超限 413 `request body too large`；handler 抛错 500 `plugin handler failed`；handler 返回 `undefined` body → **204**，返回字符串默认 `content-type: text/plain; charset=utf-8`；只支持精确路径匹配（无路径参数）。
 
-**`contributes.gateway.http: true` 必须写在 `plugin.json` 里**：`false` 时任何一次 `ctx.http.route()` / `ctx.http.ws()` 都让激活失败（即使 `activate()` 正常返回）；反之 `true` 也必须伴随至少一个非 http 的贡献，否则零贡献拒绝（§3）。
+**只有显式的 `http: false` 会禁止路由**：此时任何一次 `ctx.http.route()` / `ctx.http.ws()` 都让激活失败（即使 `activate()` 正常返回）。**省略 `http` 键 = 该 plane 不受上界约束**（与 §6 一致，`check` 会打印 `http (unbounded)`）；**建议显式写 `http: true`**，让安装同意时能审到「这个包要开路由」。无论声明与否，`http` 本身都不算贡献：仍必须至少返回一个非 http 贡献，否则零贡献拒绝（§3）。
 
 ---
 
@@ -461,7 +473,7 @@ module.exports = {
 | `webSurfaces` | `id`、`title` | 沙箱 Web 页（右工作台 surface） | `entry` 默认 `index.html`，必须在包 `web/` 内真实存在，否则整包激活失败；`scope` ∈ `session`/`project`/`global`（默认 `session`）；`reloadOnSessionChange` 默认 `true`；≤32 项 |
 
 - 所有 `id` 与 action 名共用命名空间规则：`^[A-Za-z0-9][A-Za-z0-9._-]*$`，≤128 字符，不能含 `:` 或空白；`viewAction` / `action` 只能引用**同包** action（跨包引用报 `cross-package action reference "…"`）。
-- 需要图标的字段（`panels[].rail.icon`、`webSurfaces[].icon`、`webSurfaces[].rail.icon`）只能取注册过的名字（`packages/plugin-contract/src/icons.ts` 的 14 个：`bubble-5`、`magnifying-glass`、`sticky-note`、`team-three`、`checklist`、`layout-grid`、`square-arrow-top-right`、`refresh`、`plus`、`file`、`folder`、`terminal`、`branch`、`globe`）；`panels[].icon` 是自由字符串（契约不做图标注册校验）。
+- 需要图标的字段（`panels[].rail.icon`、`webSurfaces[].icon`、`webSurfaces[].rail.icon`、`menuItems[].icon`、`composerActions[].icon`）只能取注册过的名字（`packages/plugin-contract/src/icons.ts` 的 14 个：`bubble-5`、`magnifying-glass`、`sticky-note`、`team-three`、`checklist`、`layout-grid`、`square-arrow-top-right`、`refresh`、`plus`、`file`、`folder`、`terminal`、`branch`、`globe`）；`panels[].icon` 是自由字符串（契约不做图标注册校验）。
 - Web 页的 URL 由宿主投影为 `/api/plugins/<package>/ui/<entry>`；资产扩展名不在白名单内一律 404；入口缺失/逃逸让整包激活失败（`invalid web surfaces: web surface "<id>" entry "<entry>" does not resolve to a readable file under …`）。
 - `viewAction` 返回的 `PluginView` 由契约的 `normalizePluginView` 归一化，上限是**256** 个 widget 节点、嵌套深度 **12**、任一文本字段 **64 KiB**、image data URL **2 MiB**、action input **256 KiB**；超限返回 `null`（不是截断），未知 widget 类型降级为 `text`。
 - 例子：`examples/plugins/kitchen-sink/index.js` 的 `ui.panels`（面板）；Web surface 的完整写法见 `docs/guides/plugin-authoring.md` §6.5（`examples/plugins/` 里没有 web surface 参考包）。
@@ -474,10 +486,10 @@ module.exports = {
 
 - **plane 缺失 = 不设上界**（老包照常激活）；**显式 `[]` = 零上界**（一个也不许）。渲染与判断都必须区分这两者。
 - **声明多于注册是合法的**：包可以按能力/配置/host 版本条件注册。`check` 只会打印 `note: declared but not registered: action "x", …`，**永不**因此失败。
-- 被强制的是四个名字集合（`actions` / `events` / `tools` / `observers`）与一个布尔（`http`）。`contributes.desktop` 不参与上界。
+- 被强制的是四个名字集合（`actions` / `events` / `tools` / `observers`）与一个布尔开关（`http`，**只有显式 `false` 生效**；缺省或 `true` 都不设上界）。`contributes.desktop` 不参与上界。
 - 诊断顺序：先形状/身份校验；有形状错误时只报那些错误，修好之后才报越界（判决都是激活失败）。`http: false` 的检查在派生贡献构建之前，不受这个顺序影响。
 - `contributes` 本身非法时：`apiVersion: 2` → 激活失败（`contributes: <detail>`）；`apiVersion: 1` → warning `legacy-contributes: <detail>`，块被丢弃且**不构成约束**（合法的 v1 块则和 v2 一样构成约束）。
-- 每条越界消息都在 §4 逐字列出；它们都以 `invalid contributions: ` 前缀出现在 `check` 的 `error:` 行。
+- 每条越界消息都在 §4 逐字列出；四个声明式 plane 的消息以 `invalid contributions: ` 前缀出现在 `check` 的 `error:` 行，**`http` 那条是裸的**（§4.5，在派生贡献构建之前单独抛出）。
 
 ---
 
@@ -518,10 +530,10 @@ packages without plugin.json cannot contribute <planes>; ship a directory packag
 mafw plugin check <absolute-path> [--json] [--strict]
 ```
 
-- **必须绝对路径**（相对路径直接拒绝：`path must be absolute: <path>`）。它在本进程内跑一次**真实激活的 dry-run**（`PluginHost.checkPackage`）：不起网关、不读 human token、不联网、不注册任何东西。所以网关停着也能用。
+- **必须绝对路径**（相对路径直接拒绝：`path must be absolute: <path>`）。它在本进程内用**同一个判定函数**跑一次真实激活的 dry-run（`PluginHost.checkPackage`）：不起网关、不读 human token、不注册任何东西，网关停着也能用。但**它不是沙箱、也不是 §3 的 ctx**——见本节末尾「check 的 ctx 与真实 host 的差异」。
 - 人读输出：首行 `ok <name> (<path>)` 或 `not ok …`，随后 `version:` / `apiVersion N, kind K` / `permissions:` / `contributions:` / `declared:` / `registered:` / `note: declared but not registered: …`（合法）/ `warning: …` / `error: …`，最后在判决通过时打印 `install: <可粘贴命令>`。
 - `--json`：**一行**可解析 JSON。`ok` 是**命令判决**（不是原始 check 结果），另有 `verdict`（`"ok"` / `"fail"`）、`strictFailed`，以及 `name` / `version` / `contributions` / `apiVersion` / `kind` / `permissions` / `declared` / `registered` / `warnings` / `error` / `webSurfaces`（存在时）。退出码 `0` = 通过，`1` = 不通过。
-- `declared` 缺失 = 没有 `contributes.gateway`（无上界）；`declared.actions` 缺失 = 该 plane 无上界；`"actions": []` 会原样出现（零上界）。`registered` 永远存在，且是**尝试注册**的内容——失败时也能看到差集。
+- `declared` 缺失 = 没有可用的 `contributes.gateway`（未声明，或 manifest 解析失败——后者同时给出 `error:`）；`declared.actions` 缺失 = 该 plane 无上界；`"actions": []` 会原样出现（零上界）。`registered` 永远存在，且是**尝试注册**的内容——失败时也能看到差集。
 - `--strict` 只把 **manifest warning** 变成失败（`not ok: --strict turned the manifest warnings above into failures`）。warning 来自 `plugin.json` 归一化：`legacy-permissions`（apiVersion 2 未声明 `permissions`）、`legacy-contributes: …`（apiVersion 1 的非法 `contributes` 块）。**`--strict` 不会因「声明了没注册」失败**。
 - `check` 也接受单文件包路径（`…/foo.js`），但单文件包不能有 tools/observers/http（§7）。
 - 失败时 `next:` 行会指名下一步（未声明 → 去补 `contributes.gateway`；缺 permission → 去补 `permissions`），然后让你重跑 check。
@@ -533,6 +545,8 @@ mafw plugin check <absolute-path> [--json] [--strict]
 ```
 
 `mafw plugin schema` 打印同一份契约的人类可读形式（带缩进的 JSON，无外层信封）；编辑器/agent 拿它当字段真源，比任何文档都准。
+
+**check 的 ctx 与真实 host 的差异**：本地 check host 只给 `projectDir`（= check 的 cwd）、`gatewayPort`（占位 `3000`）和 registration bag。`ctx.config.update()` 抛 `ctx.config.update is not available in this host`；`ctx.terminal.create/bridge/resize` 抛 `ctx.terminal is not available: this host did not provide a terminal service`（`kill` 对未拥有的 id 静默返回）；`ctx.apiKey()` 返回 `null`，`ctx.usage` 是空统计。`ctx.fetch` / `ctx.files` / `ctx.effect` 是真的——**check 不是沙箱**，`activate()` 里的网络或文件副作用会真的发生；别把「check 通过」当成隔离证明。
 
 ---
 
@@ -548,7 +562,7 @@ mafw plugins install "C:/abs/path/to/my-plugin" \
   --permission actions --permission events
 ```
 
-`apiVersion: 1`（legacy）——不接受也不要求同意参数：
+`apiVersion: 1`（legacy）——不要求同意参数；`--trust` / `--permission` 会被 CLI 接受但**被忽略**（v1 的 consent 检查直接放行），写上既不生效也不报错：
 
 ```bash
 mafw plugins install "C:/abs/path/to/my-plugin"
@@ -556,7 +570,7 @@ mafw plugins install "C:/abs/path/to/my-plugin"
 
 规则：
 
-- 集合必须**完全一致**（顺序无关，重复的 `--permission` 无意义）；不一致或缺 `--trust` → `400` `permission consent required: <按字母排序的声明集合>`（code `permission_consent_required`）。
+- （v2）集合必须**完全一致**（顺序无关，重复的 `--permission` 无意义）；不一致或缺 `--trust` → `400` `permission consent required: <按字母排序的声明集合>`（code `permission_consent_required`）。
 - 同名已安装 → `409 package already installed: <name>`；人类确认要替换时加 `--overwrite`（网关会先把旧版本快照进 last-good）。
 - human token 来源：环境变量 `MAFW_HUMAN_TOKEN`，或文件 `~/.mafw/human.token`（路径可用 `MAFW_HUMAN_TOKEN_FILE` 覆盖）；文件不存在时先 `mafw start` 让网关生成一次。**不要把 token 交给 agent，也不要打印它**；agent 交付的是 §0 打印出的 `install:` 行。
 - 装完人类可以自查：`mafw plugins list`、`mafw plugins doctor <name>`。
@@ -597,12 +611,12 @@ mafw plugins install "C:/abs/path/to/my-plugin"
 | 字段 | 回答的问题 | 取值 | 违反时 |
 |---|---|---|---|
 | `apiVersion` | manifest 的**代际**：这个包用哪一套信任/同意语义？ | `1`（缺省，legacy）或 `2` | 其它整数 → `unsupported apiVersion: <n>`（非整数 → `invalid apiVersion: <value>`），该包不激活 |
-| `host` | 这个包要求**哪个产品版本范围**的网关？ | `*`、空串，或空格分隔的比较器，如 `>=5.1.0 <6.0.0` | 不满足 → `host range <range> does not include <version>`，该包不激活 |
+| `host` | 这个包要求**哪个产品版本范围**的网关？ | `*`，或空格分隔的比较器，如 `>=5.1.0 <6.0.0`；**省略该字段**表示不限制 | 不满足 → `host range <range> does not include <version>`，该包不激活；显式空串 `""` 也是非法值 → `invalid host range: ` |
 | `standardVersion` | 写这个包时对照的是**哪一版规范文本**（本文 = `1`） | 正整数（≥1） | 非正整数 → `standardVersion must be a positive integer` |
 
 `host` 语法细节（逐字对照解析器）：
 
-- `*` 或空串 = 任意版本；缺省字段 = 任意版本。
+- `*` = 任意版本；**省略该字段** = 任意版本。**不要写空串**：`host: ""` 会被解析器拒绝（`invalid host range: `），省略才是「不限制」。
 - 比较器：`>=`、`<=`、`>`、`<`、`=`（缺省 `=`），紧跟 `x.y.z`（可带 `-`/`+` 后缀），多个比较器用空白分隔、全部满足才算兼容。
 - 操作符与版本之间**不能有空格**：`>= 5.1.0` 会被拆成两个 token 而判为非法（`invalid host range: >= 5.1.0`）。
 - 参与比较的宿主版本取 `MAFW_HOST_VERSION`，无该环境变量时回退 `5.1.0`。
