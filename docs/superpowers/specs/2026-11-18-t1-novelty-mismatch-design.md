@@ -204,7 +204,7 @@ ALTER TABLE t1_turn_features ADD COLUMN mismatch REAL;
 - 审计后 mismatch 仍缺验证集（21 个正例，AUC 0.590，样本不足）。按 §9 第 5 条本应记 null；实际选择**保留存储、禁止消费**，因为删掉分数会让后续改进定义失去对照数据。代价：库里存在一个低精度字段，靠 release note 与本节的“禁止消费”约束管理。
 - `recall.t1Signals` 默认 `on` 只表示“计算”，Phase 2/3 均未实现。
 - 阈值按最终回填分位数落到 `config.recall.t1SignalThresholds`（0.404 / 0.016 / 0.233 / 0.95）。
-- 交付记录：`docs/releases/2026-11-18-t1-novelty-mismatch.md`。
+- 交付记录：`docs/releases/2026-11-18-t1-novelty-mismatch.md`（含 Phase 2/3 的可行性测量：novelty 两个标签 AUC 0.43/0.43、mismatch 0.57/0.59；episode outcome 全为 unknown；active unit 抽样 ≥0.99 近重仅 0.5%，且安全阈值下仍有跨轮误折叠）。
 
 ## 13. 回滚
 
