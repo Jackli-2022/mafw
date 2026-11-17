@@ -121,3 +121,8 @@ api contract     313/313
 - **验证集**：正例只有 79（实质子集 9），任何 AUC 都缺置信度；需要更宽或人工标注的“值得记住”标签。
 - **信号定义**：若继续，应比较 **intent/cue** 而不是整轮正文（工具输出会把短命令抬成高 surprise），但那需要重新测量。
 - **Phase 2/3**：均未启用。
+
+## 后续调研
+
+`docs/research/2026-11-19-memory-worthiness-and-replay-signals.md`：对照 A-MAC（多因子 + 学习权重）、EM-LLM（surprise 用于分段）、
+MemoryArena / ACL 2026（结果标签与代理标签的偏差），给出 P0–P3 建议（episode 级排序 → 结果标签 → 多因子准入 → 环境探测）。
