@@ -240,7 +240,7 @@ import { InstructionSyncService } from './core/instructions/instruction-sync-ser
 import { DiscoveryService } from './core/discovery/discovery-service';
 import { renderInstructionBlocks, type InstructionBlocks } from './recall/instruction-blocks';
 import { getT1SemanticEncoder } from './recall/t1-semantic-atoms';
-import { createTurnSignalScorer, unitLookupFromEntries } from './recall/t1-signals';
+import { createTurnSignalScorer, createTurnSurpriseScorer, unitLookupFromEntries } from './recall/t1-signals';
 import { rebuildSessionEpisodes } from './recall/t1-episode-rebuild';
 import { isHiddenSession, selectVisibleSessions } from './core/session-visibility';
 
@@ -323,7 +323,7 @@ import {
 } from './core/events/event-normalize';
 import { pollGitHubSource } from './core/events/sources/github-source';
 import { eventLayerEnabled } from './core/events/event-flags';
-import { isLeadDecisionContext, renderLeadDecisionEvent } from './core/events/lead-event';
+import { isLeadDecisionContext, renderExternalEvent, renderLeadDecisionEvent } from './core/events/lead-event';
 import type { DecisionRecordEvent } from './core/decision/decision-record';
 import type { RuntimeDefinition } from '@mafw/runtime-contract';
 
@@ -3595,6 +3595,14 @@ class MafwScheduler {
           unitFor: index ? unitLookupFromEntries(index.getIndex().entries) : () => undefined,
         })(turns);
       },
+      // E2 v2: session-local surprise (measured; not consumed).
+      surpriseFor: (turns) => {
+        const rt = getEmbeddingRuntime();
+        return createTurnSurpriseScorer({
+          enabled: config.recall.t1Surprise !== 'off',
+          embedder: rt?.provider,
+        })(turns);
+      },
       // S2: schema-cluster interleaving (integrate into schemas, not append).
       schemaClusters: () => this.getSchemaClusters(),
       clusterVector: async (obs) => {
@@ -4967,16 +4975,26 @@ class MafwScheduler {
           },
         });
       },
-      deliverContext: async ({ trigger, subscription }) => {
+      deliverContext: async ({ thread, trigger, subscription }) => {
         // Lead 只收只读上下文：可以主动告知用户，但确认/搁置仍是 human-only。
         // P0: 这里不直接调用模型 session；只写耐久 outbox，发送/批量/预算/重试
         // 由 LeadOutbox dispatcher 统一负责，重启后可恢复。
         if (subscription.subscriberType !== 'lead' || subscription.mode !== 'context') return;
-        if (!trigger.kind.startsWith('decision.')) return;
-        const message = renderLeadDecisionEvent(trigger);
-        if (!message) return;
         const leadOutbox = this.leadOutbox;
         if (!leadOutbox) throw new Error('lead outbox unavailable');
+
+        if (!trigger.kind.startsWith('decision.')) {
+          // External events share the same durable inbox as decisions/pod events.
+          leadOutbox.enqueueExternal({
+            podId: subscription.subscriberId,
+            triggerId: trigger.id,
+            text: renderExternalEvent(trigger, thread),
+          });
+          return;
+        }
+
+        const message = renderLeadDecisionEvent(trigger);
+        if (!message) return;
         const payload = trigger.payload && typeof trigger.payload === 'object'
           ? trigger.payload as Record<string, unknown>
           : {};

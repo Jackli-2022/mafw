@@ -20,7 +20,7 @@ import { replayPriority, sampleByPriority } from './replay-sampling';
 import { extractTurnFeature } from './t1-features';
 import { encodeT1Turn } from './t1-encode';
 import type { T1SparseAtom } from './t1-sparse';
-import { normalizeObservationText, type TurnSignalInput, type TurnSignals } from './t1-signals';
+import { normalizeObservationText, type SurpriseInput, type TurnSignalInput, type TurnSignals } from './t1-signals';
 import { readSessionTimeline } from './session-timeline';
 import { buildReplayBlock } from './replay-block';
 import { PipelineBudgetLike } from './pipeline-budget';
@@ -57,6 +57,8 @@ export interface TurnPipelineOptions {
   ) => Promise<Map<string, T1SparseAtom[]>>;
   /** E2: encode-time novelty/mismatch; fail-open, never blocks archiving. */
   signalsFor?: (turns: TurnSignalInput[]) => Promise<Map<string, TurnSignals>>;
+  /** E2 v2: session-local surprise vs the previous turn; fail-open. */
+  surpriseFor?: (turns: SurpriseInput[]) => Promise<Map<string, number>>;
   /** B1: 7-day retrieval hit count per id — the "need" term of the replay
    *  priority (need × gain × 1/energy). Wired to the retrieval event buffer. */
   needFor?: (id: string) => number;
@@ -371,6 +373,7 @@ export class TurnPipeline {
     }
 
     const signalInputs: Array<{ input: TurnSignalInput; feature: ReturnType<typeof extractTurnFeature> }> = [];
+    const surpriseInputs: Array<{ input: SurpriseInput; feature: ReturnType<typeof extractTurnFeature> }> = [];
     for (const { turn, obs } of turnObs) {
       const traceId = obs.find((o) => o.trace_id)?.trace_id;
       if (!traceId) continue;
@@ -398,6 +401,23 @@ export class TurnPipeline {
             anchorCount: feature.entities?.length ?? 0,
           },
         });
+      }
+
+      // E2 v2: session surprise needs the immediately previous turn's text.
+      if (feature && this.opts.surpriseFor) {
+        try {
+          const prevTrace = this.opts.t1db.getPrevTurnTrace(turn.session_id, turn.turn_id);
+          if (prevTrace) {
+            const prev = this.opts.t1db.readTrace(prevTrace);
+            const prevText = prev?.rows ? normalizeObservationText(prev.rows) : '';
+            if (prevText.trim()) {
+              surpriseInputs.push({
+                feature,
+                input: { traceId, text: normalizeObservationText(obs), prevText },
+              });
+            }
+          }
+        } catch { /* fail-open: no predecessor → no surprise */ }
       }
 
       try {
@@ -433,6 +453,17 @@ export class TurnPipeline {
           });
         }
       } catch { /* fail-open: signals are derived, never block archiving */ }
+    }
+
+    if (this.opts.surpriseFor && surpriseInputs.length > 0) {
+      try {
+        const scores = await this.opts.surpriseFor(surpriseInputs.map((item) => item.input));
+        for (const item of surpriseInputs) {
+          const value = scores.get(item.input.traceId);
+          if (value == null || !item.feature) continue;
+          this.opts.t1db.upsertTurnFeature({ ...item.feature, surprise: value });
+        }
+      } catch { /* fail-open: surprise is derived, never block archiving */ }
     }
 
     // Phase 1: refresh the derived episode index after this batch's per-turn

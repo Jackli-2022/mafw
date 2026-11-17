@@ -1,4 +1,4 @@
-import * as fs from 'fs';
+﻿import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { GatewayDatabase } from '../../../src/memory/gateway-db';
@@ -25,7 +25,7 @@ describe('TurnPipeline signals wiring', () => {
       turn_id: turn.turn_seq,
       trace_id: turn.trace_id,
       source: 'user_input',
-      content: '修一下 reflection 的边界 recall',
+      content: '淇竴涓?reflection 鐨勮竟鐣?recall',
       failure: 0,
     });
     db.append({
@@ -39,13 +39,14 @@ describe('TurnPipeline signals wiring', () => {
     return turn;
   }
 
-  function pipeline(signalsFor: any) {
+  function pipeline(signalsFor: any, surpriseFor?: any) {
     return new TurnPipeline({
       t1db: db,
       index: { getIndex: () => ({ entries: [] }) } as any,
       workerFor: () => ({ prompt: async () => '[EXTRACTED: 0]' }) as any,
       staleMs: 60_000,
       signalsFor,
+      surpriseFor,
     });
   }
 
@@ -77,5 +78,62 @@ describe('TurnPipeline signals wiring', () => {
 
   test('signals are on by default', () => {
     expect(config.recall.t1Signals).toBe('on');
+  });
+
+  test('writes session surprise for the turn with a predecessor', async () => {
+    const first = seed();
+    const second = db.beginTurn('s1');
+    db.append({
+      session_id: 's1',
+      turn_id: second.turn_seq,
+      trace_id: second.trace_id,
+      source: 'user_input',
+      content: '继续修 reflection 的边界 recall',
+      failure: 0,
+    });
+    db.append({
+      session_id: 's1',
+      turn_id: second.turn_seq,
+      trace_id: second.trace_id,
+      source: 'tool_result',
+      content: 'read reflection.ts again',
+      failure: 0,
+    });
+    let seen: any[] = [];
+    await pipeline(undefined, async (turns: any[]) => {
+      seen = turns;
+      return new Map([[second.trace_id, 0.42]]);
+    }).runSession('s1');
+
+    expect(db.getTurnFeature(second.trace_id)!.surprise).toBeCloseTo(0.42);
+    expect(db.getTurnFeature(first.trace_id)!.surprise ?? null).toBeNull();
+    expect(seen[0].prevText).toContain('reflection');
+  });
+
+  test('a failing surprise scorer does not fail the run', async () => {
+    const first = seed();
+    const second = db.beginTurn('s1');
+    db.append({
+      session_id: 's1',
+      turn_id: second.turn_seq,
+      trace_id: second.trace_id,
+      source: 'user_input',
+      content: '再修一次 reflection',
+      failure: 0,
+    });
+    db.append({
+      session_id: 's1',
+      turn_id: second.turn_seq,
+      trace_id: second.trace_id,
+      source: 'tool_result',
+      content: 'read reflection.ts once more',
+      failure: 0,
+    });
+    const result = await pipeline(undefined, async () => {
+      throw new Error('surprise down');
+    }).runSession('s1');
+    expect(result.archived).toBe(2);
+    expect(result.failed).toBe(0);
+    expect(db.getTurnFeature(second.trace_id)!.surprise ?? null).toBeNull();
   });
 });

@@ -358,8 +358,10 @@ export interface GatewayConfig {
     t1Recall: { enabled: boolean; k: number; maxChars: number; retentionDays: number; lexical: boolean; t1BackfillLimit: number; activationHalfLifeDays: number; activationRanking: 'off' | 'shadow' | 'on'; activationRankWeight: number; activationRankBand: number; denseIndex: 'on' | 'shadow' | 'off'; semanticAtoms: 'on' | 'off' };
     /** E2: encode-time novelty/mismatch signals. Phase 1 only measures. */
     t1Signals: 'on' | 'off';
+    /** E2 v2: session-local surprise. Phase 1 only measures. */
+    t1Surprise: 'on' | 'off';
     /** E2 thresholds (provisional until the live dry-run re-tunes them). */
-    t1SignalThresholds: { highNovelty: number; highMismatch: number; redundant: number; dup: number };
+    t1SignalThresholds: { highNovelty: number; highMismatch: number; highSurprise: number; redundant: number; dup: number };
     /** Phase 4A: bounded raw-T1 replay during reflection. */
     t1Replay: { enabled: boolean; exactK: number; activatedK: number; maxChars: number; perTraceChars: number };
     /** Phase 4B: episodes per reflection batch (small-step consolidation). */
@@ -734,7 +736,8 @@ function defaults(projectDir: string): GatewayConfig {
       sourceEvidence: { enabled: true, k: 5, maxChars: 1500 },
       t1Recall: { enabled: true, k: 3, maxChars: 600, retentionDays: 90, lexical: true, t1BackfillLimit: 3000, activationHalfLifeDays: 14, activationRanking: 'shadow', activationRankWeight: 0.1, activationRankBand: 0.6, denseIndex: 'shadow', semanticAtoms: 'on' },
       t1Signals: 'on',
-      t1SignalThresholds: { highNovelty: 0.404, highMismatch: 0.016, redundant: 0.233, dup: 0.95 },
+      t1Surprise: 'on',
+      t1SignalThresholds: { highNovelty: 0.404, highMismatch: 0.016, highSurprise: 0.6, redundant: 0.233, dup: 0.95 },
       t1Replay: { enabled: true, exactK: 8, activatedK: 3, maxChars: 6000, perTraceChars: 400 },
       reflectionBatchSize: 10,
       // Leave 15min of watchdog headroom: one batch can burn two 300s worker
