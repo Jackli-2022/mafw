@@ -112,8 +112,9 @@ ALTER TABLE t1_turn_features ADD COLUMN surprise REAL;   -- null = 未评分
 ## 11. 交付结果（2026-11-19）
 
 - Phase 1 已上线：`surpriseScored 535`，分布 p50 0.462 / p90 0.657 / p99 0.762 / max 0.865。
-- 效度：标签 A（产出 unit）AUC 0.595（79 正例）；标签 B（被检索）0.530（22 正例）。
-- 审计：top surprise 全是短命令轮（`修`、`继续`、`提交`）；把两边 intent 都要求 ≥12 字符后只剩 129 回合 / 9 正例，AUC 0.523。
+- 扩充验证集（`scripts/eval-t1-signals.ts`）：精确 unit 91、被检索 86、并集 152、hint 95、session 478 个正例。
+- 效度：并集 152 正例上 novelty 0.417 / mismatch 0.525 / surprise 0.523；最大的精确-unit 标签下 surprise 0.559。**没有任何信号稳定超过随机**。
+- 审计：top surprise 全是短命令轮（`修`、`继续`、`提交`）；两边 intent ≥12 字符后只剩 129 回合 / 9 正例，AUC 0.523。
 - 决定：**Phase 2 不启用**；字段保留为 shadow 数据。
 - 修复：`getPrevTurnTrace` 的 off-by-one（曾查当前轮）。
 - 交付记录：`docs/releases/2026-11-19-session-surprise.md`。
