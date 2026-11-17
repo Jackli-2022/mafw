@@ -13,6 +13,9 @@ import type { ServerReadyData } from "../preload/types"
 import { checkAppExists, resolveAppPath } from "./apps"
 import { CHANNEL } from "./constants"
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand } from "./ipc"
+import { getStore } from "./store"
+import { NotificationHub } from "./notification-hub"
+import { registerNotificationIpc } from "./notification-ipc"
 
 import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog } from "./logging"
 import { startMafwGw } from "./mafw-bootstrap"
@@ -311,6 +314,19 @@ const main = Effect.gen(function* () {
   )
   setDockIcon()
   createTray()
+
+  // Self-drawn notifications: main-process hub is the single source of truth.
+  const notificationHub = new NotificationHub(getStore("mafw-notifications"))
+  registerNotificationIpc({
+    ipcMain,
+    hub: notificationHub,
+    store: getStore(),
+    broadcast: (snapshot) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) win.webContents.send("mafw-notifications:changed", snapshot)
+      }
+    },
+  })
 
   // Quick entry: global hotkey shows the window and focuses the composer.
   // Takes over the accelerator the dead mafw-menu once reserved.

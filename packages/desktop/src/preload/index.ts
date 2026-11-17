@@ -125,6 +125,8 @@ const api: ElectronAPI = {
   setPinchZoomEnabled: (enabled) => ipcRenderer.invoke("set-pinch-zoom-enabled", enabled),
   getTrayPrefs: () => ipcRenderer.invoke("get-tray-prefs"),
   setTrayPrefs: (prefs) => ipcRenderer.invoke("set-tray-prefs", prefs),
+  getNotificationPrefs: () => ipcRenderer.invoke("get-notification-prefs"),
+  setNotificationPrefs: (prefs) => ipcRenderer.invoke("set-notification-prefs", prefs),
   onPinchZoomEnabledChanged: (cb) => {
     const handler = (_: unknown, enabled: boolean) => cb(enabled)
     ipcRenderer.on("pinch-zoom-enabled-changed", handler)

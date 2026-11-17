@@ -3,6 +3,12 @@ import type { MafwAPI } from "./mafw-types"
 import type { PluginEntry, RenderRequest, RenderResponse } from "../shared/ui-plugins"
 import type { TerminalEvent, TerminalProbe, TerminalSessionInfo } from "../shared/terminal-session"
 import type { SshHostProfile, SshHostProfileInput, SshSecretInput } from "../shared/ssh-host"
+import type {
+  MafwNotification,
+  NotificationInput,
+  NotificationSnapshot,
+  NotificationTarget,
+} from "../shared/notifications"
 
 function invoke<T = unknown>(namespace: string, method: string, ...args: unknown[]): Promise<T> {
   return ipcRenderer.invoke("mafw-invoke", namespace, method, ...args) as Promise<T>
@@ -37,8 +43,48 @@ export function createMafwApi(): MafwAPI {
     for (const cb of sessionCallbacks) cb(ev)
   }
 
+  // Notification snapshots: one listener for the shell + center + HMR remounts.
+  const notificationCallbacks = new Set<(snapshot: NotificationSnapshot) => void>()
+  let notificationChannelActive = false
+  const notificationRelay = (_event: any, snapshot: NotificationSnapshot) => {
+    for (const cb of notificationCallbacks) cb(snapshot)
+  }
+
   return {
-    notify: (opts: { title: string; body: string }) => ipcRenderer.invoke("mafw-notify", opts) as Promise<boolean>,
+    notify: (opts: { title: string; body: string }) =>
+      ipcRenderer.invoke("mafw-notifications:publish", {
+        kind: "attention",
+        severity: "p2",
+        title: opts.title,
+        body: opts.body,
+        reason: "通知",
+      }) as Promise<MafwNotification | null>,
+
+    notifications: {
+      list: () => ipcRenderer.invoke("mafw-notifications:list") as Promise<NotificationSnapshot>,
+      markRead: (ids) => ipcRenderer.invoke("mafw-notifications:markRead", ids) as Promise<void>,
+      markAllRead: () => ipcRenderer.invoke("mafw-notifications:markAllRead") as Promise<void>,
+      markReadByDedupe: (keys) =>
+        ipcRenderer.invoke("mafw-notifications:markReadByDedupe", keys) as Promise<void>,
+      clearRead: () => ipcRenderer.invoke("mafw-notifications:clearRead") as Promise<void>,
+      remove: (id) => ipcRenderer.invoke("mafw-notifications:remove", id) as Promise<void>,
+      publish: (input: NotificationInput) =>
+        ipcRenderer.invoke("mafw-notifications:publish", input) as Promise<MafwNotification | null>,
+      onChanged: (cb) => {
+        notificationCallbacks.add(cb)
+        if (!notificationChannelActive) {
+          ipcRenderer.on("mafw-notifications:changed", notificationRelay)
+          notificationChannelActive = true
+        }
+        return () => {
+          notificationCallbacks.delete(cb)
+          if (notificationCallbacks.size === 0 && notificationChannelActive) {
+            ipcRenderer.removeListener("mafw-notifications:changed", notificationRelay)
+            notificationChannelActive = false
+          }
+        }
+      },
+    },
 
     gateway: {
       info: () => ipcRenderer.invoke("mafw-gateway-info"),
@@ -353,6 +399,11 @@ export function createMafwApi(): MafwAPI {
         const handler = (_event: unknown, target: any) => cb(target)
         ipcRenderer.on("mafw-navigate-goal", handler)
         return () => { ipcRenderer.removeListener("mafw-navigate-goal", handler) }
+      },
+      onNotification: (cb) => {
+        const handler = (_event: unknown, target: NotificationTarget) => cb(target)
+        ipcRenderer.on("mafw-notification-open", handler)
+        return () => { ipcRenderer.removeListener("mafw-notification-open", handler) }
       },
     },
 

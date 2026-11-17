@@ -183,6 +183,10 @@ export type ElectronAPI = {
   setPinchZoomEnabled: (enabled: boolean) => Promise<void>
   getTrayPrefs: () => Promise<TrayPrefs>
   setTrayPrefs: (prefs: Partial<TrayPrefs>) => Promise<void>
+  getNotificationPrefs: () => Promise<import("../shared/notifications").NotificationPrefs>
+  setNotificationPrefs: (
+    prefs: Partial<import("../shared/notifications").NotificationPrefs>,
+  ) => Promise<import("../shared/notifications").NotificationPrefs>
   onPinchZoomEnabledChanged: (cb: (enabled: boolean) => void) => () => void
   onZoomFactorChanged: (cb: (factor: number) => void) => () => void
   platform: string

@@ -27,6 +27,12 @@ import type {
 import type { PluginEntry, RenderRequest, RenderResponse } from "../shared/ui-plugins"
 import type { TerminalEvent, TerminalProbe, TerminalSessionInfo } from "../shared/terminal-session"
 import type { SshHostProfile, SshHostProfileInput, SshSecretInput } from "../shared/ssh-host"
+import type {
+  MafwNotification,
+  NotificationInput,
+  NotificationSnapshot,
+  NotificationTarget,
+} from "../shared/notifications"
 
 /** B4：MCP 配置写入 DTO（与 @mafw/sdk 对齐） */
 export interface McpServerConfigInput {
@@ -55,7 +61,19 @@ export interface McpConfigResult {
 }
 
 export type MafwAPI = {
-  notify: (opts: { title: string; body: string }) => Promise<boolean>
+  /** 兼容薄别名：generic p2 通知（kind=attention）；新代码用 notifications.publish。 */
+  notify: (opts: { title: string; body: string }) => Promise<MafwNotification | null>
+
+  notifications: {
+    list: () => Promise<NotificationSnapshot>
+    markRead: (ids: string[] | "all") => Promise<void>
+    markAllRead: () => Promise<void>
+    markReadByDedupe: (keys: string[]) => Promise<void>
+    clearRead: () => Promise<void>
+    remove: (id: string) => Promise<void>
+    publish: (input: NotificationInput) => Promise<MafwNotification | null>
+    onChanged: (cb: (snapshot: NotificationSnapshot) => void) => () => void
+  }
 
   gateway: {
     info: () => Promise<GatewayStatus>
@@ -306,6 +324,7 @@ export type MafwAPI = {
   /** 托盘/OS 通知点击 → 打开 Goal（跨项目时先切项目）。 */
   navigate: {
     onGoal: (cb: (target: import("../shared/navigate-goal").NavigateGoalTarget) => void) => () => void
+    onNotification: (cb: (target: NotificationTarget) => void) => () => void
   }
 
   /** 常驻 presence 的立即轮询（renderer 收到 pod.event 时催一次，不等 15s）。 */
