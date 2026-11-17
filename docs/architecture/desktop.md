@@ -140,6 +140,12 @@
   标记 `discussedAt` 而非物理删除。只有显式交给 Goal 的独立委托批次才持久化 review item。发送后 pending 高亮/
   卡片消失；刷新或切回文件后按引文重新锚定。预览锚点仍支持 json 节点路径、表格单元格、图片区域、pptx 页码。
   改动审阅 = 左栏 Goal-first 改动面 + 每 turn / 每 Goal revision 的改动集 tab。
+- **批注去向（2026-11-17）**：草稿按 `(origin session, scopeKey)` 隔离并携带不可变 `source`
+  （project / goal+revision）、`contentVersion`、`capturedDirty`；无 Chat 时落到
+  `draft:<scopeKey>`，只剩编辑器 rail 也可继续处理。普通 composer 发送是**讨论**（Lead / 当前会话 /
+  所属 Goal Tech Lead），不建 Goal、不建评审项；`AnnotationActionDialog` 的另一个显式动作才把一批
+  草稿交给一个 Goal。Goal revision diff 的批注也进入同一草稿池，不走 session `promptAsync` 旁路。
+  设计：`docs/superpowers/specs/2026-11-17-annotation-goal-collaboration-design.md`。
 - **检查点**：`CheckpointOverlay` 时间线（会话回滚 / 文件回滚 / both）；服务端检查点支持只读预览。
 - **托盘与存在感**：15s 轮询 `/api/presence` → tooltip / 菜单状态 / 任务栏进度；
   点击托盘状态行 `navigateToGoal` 跨项目打开（差集通知链已由通知 hub 取代）。

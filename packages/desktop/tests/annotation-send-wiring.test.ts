@@ -35,10 +35,15 @@ describe("批注草稿接线", () => {
     expect(diff).toContain("onAddAnnotation")
     expect(diff).toContain("加入批注")
   })
-  test("发送打包收敛在 use-send-message（入队前打包 + 纯批注可发）", () => {
+  test("发送打包收敛在 use-send-message（讨论消息 + 成功后标记已讨论）", () => {
     const hook = read("src/renderer/mafw/chat/use-send-message.ts")
-    expect(hook).toContain("takeAnnotations")
+    expect(hook).toContain("peekAnnotations")
     expect(hook).toContain("formatAnnotations")
-    expect(hook).toMatch(/pendingAnnotationCount[\s\S]{0,200}atts\.length/)
+    expect(hook).toContain("annotationRefPart")
+    expect(hook).toContain("markAnnotationsDiscussed")
+    expect(hook).toContain("hasAnnotations")
+    expect(hook).not.toContain("persistAnnotations")
+    expect(hook).not.toContain("takeAnnotations")
+    expect(hook).not.toContain("createReviewItems")
   })
 })

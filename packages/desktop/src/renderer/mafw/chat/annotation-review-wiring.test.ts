@@ -5,22 +5,21 @@ import { join } from 'node:path';
 
 const read = (path: string) => readFileSync(join(import.meta.dirname, path), 'utf8');
 
-test('ChatPane stages annotations as review items only for Goal-bound Tech Lead sends', () => {
+test('ChatPane sends annotations as discussion and marks them after transport', () => {
   const chat = read('../components/ChatPane.tsx');
-  assert.match(chat, /peekAnnotations: \(sid\) => sendableFor\(sid\)/);
-  assert.match(chat, /persistAnnotations: async \(items\) =>/);
-  assert.match(chat, /createReviewItems\(target\.podId, target\.goalId/);
-  assert.match(chat, /reviewInputsFromAnnotations/);
-  assert.match(chat, /reviewItemPromptBlock/);
+  assert.match(chat, /peekAnnotations: \(\) => visibleAnnotations\(\)/);
+  assert.match(chat, /markAnnotationsDiscussed: \(ownerKey, ids\) =>/);
+  assert.doesNotMatch(chat, /persistAnnotations/);
+  assert.doesNotMatch(chat, /createReviewItems/);
+  assert.doesNotMatch(chat, /reviewItemPromptBlock/);
 });
 
-test('send pipeline persists before clearing drafts and aborts on failure', () => {
+test('send pipeline never persists review items and marks drafts only on success', () => {
   const send = read('./use-send-message.ts');
-  assert.match(send, /peekAnnotations/);
-  assert.match(send, /persistAnnotations/);
-  assert.match(send, /评审项保存失败/);
-  const failure = send.indexOf('评审项保存失败');
-  const persist = send.indexOf('persistAnnotations(items)');
-  const clear = send.indexOf('takeAnnotations(sid)', persist);
-  assert.ok(failure >= 0 && persist >= 0 && clear > persist, 'annotation persistence must run before takeAnnotations');
+  assert.match(send, /annotationRefPart/);
+  assert.match(send, /markAnnotationsDiscussed\(sid, annotationIDs/);
+  assert.match(send, /hasAnnotations/);
+  assert.doesNotMatch(send, /persistAnnotations/);
+  assert.doesNotMatch(send, /takeAnnotations/);
+  assert.doesNotMatch(send, /createReviewItems/);
 });
