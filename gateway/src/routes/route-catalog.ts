@@ -351,6 +351,7 @@ import {
 } from './schemas/lead';
 import {
   EventDeliveriesResponse,
+  EventDeliveryReceiptResponse,
   EventSourcesResponse,
   EventSubscriptionsResponse,
   EventThreadsResponse,
@@ -715,6 +716,8 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/event-threads/:id/subscriptions', operationId: 'events.threads.subscriptions.create', tags: ['events'], request: EventSubscriptionCreateRequest, response: EventSubscriptionCreateResponse, errors: [400, 503] },
   { method: 'DELETE', path: '/api/event-subscriptions/:id', operationId: 'events.subscriptions.delete', tags: ['events'], request: EmptyRequest, requestRequired: false, response: EventSubscriptionDeleteResponse, errors: [400, 404, 503] },
   { method: 'GET', path: '/api/event-deliveries', operationId: 'events.deliveries.list', tags: ['events'], response: EventDeliveriesResponse },
+  { method: 'POST', path: '/api/event-deliveries/:id/read', operationId: 'events.deliveries.read', tags: ['events'], request: EmptyRequest, requestRequired: false, response: EventDeliveryReceiptResponse, errors: [400, 403, 404, 409, 503] },
+  { method: 'POST', path: '/api/event-deliveries/:id/answer', operationId: 'events.deliveries.answer', tags: ['events'], request: EmptyRequest, requestRequired: false, response: EventDeliveryReceiptResponse, errors: [400, 403, 404, 409, 503] },
   { method: 'POST', path: '/api/event-sources/:id/webhook', operationId: 'events.webhook.receive', tags: ['internal'], request: EventWebhookReceiveRequest, requestRequired: false, response: EventWebhookReceiveResponse, errors: [400, 404, 503] },
   { method: 'GET', path: '/api/standing-goals', operationId: 'standingGoals.list', tags: ['standing'], response: StandingGoalListResponse },
   { method: 'POST', path: '/api/standing-goals', operationId: 'standingGoals.create', tags: ['standing'], request: StandingGoalCreateRequest, response: StandingGoalResponse, errors: [400, 503] },

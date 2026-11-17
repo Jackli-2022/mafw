@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import type { RouteRegistry } from './registry';
 import { readRouteBody } from './cognition';
+import { humanOnlyDenied, isHumanPrincipal } from '../core/auth';
 import type {
   EventDeliveryRow,
   EventSourceKind,
@@ -48,6 +49,7 @@ export interface EventRouteDeps {
   subscribe(input: unknown): EventSubscriptionRow;
   unsubscribe(id: string): boolean;
   deliveries(threadId: string): EventDeliveryRow[];
+  markReceipt?(id: string, next: 'read' | 'answered'): EventDeliveryRow;
   webhook(
     sourceId: string,
     headers: Record<string, string | undefined>,
@@ -58,6 +60,25 @@ export interface EventRouteDeps {
 
 function clean(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+/** Human-only receipt for one external delivery (read / answered). */
+export function handleDeliveryReceipt(
+  input: { id: string; next: 'read' | 'answered' },
+  deps: EventRouteDeps,
+): { status: number; body: any } {
+  const denied = gate(deps);
+  if (denied) return denied;
+  if (!input.id) return { status: 400, body: { error: 'delivery id is required' } };
+  if (!deps.markReceipt) return { status: 503, body: { error: 'event layer disabled' } };
+  try {
+    return { status: 200, body: { delivery: deps.markReceipt(input.id, input.next) } };
+  } catch (err: any) {
+    const message = String(err?.message ?? err);
+    if (message.includes('delivery not found')) return { status: 404, body: { error: message } };
+    if (message.includes('invalid delivery transition')) return { status: 409, body: { error: message } };
+    throw err;
+  }
 }
 
 function projectDirOf(value: unknown): string {
@@ -233,8 +254,7 @@ function send(res: ServerResponse, out: { status: number; body: unknown }): void
   res.end(JSON.stringify(out.body));
 }
 
-export function attachEventRoutes(registry: RouteRegistry, deps: EventRouteDeps): void {
-  registry.attachHandler('events.sources.list', async (req: IncomingMessage, res: ServerResponse) => {
+export function attachEventRoutes(registry: RouteRegistry, deps: EventRouteDeps): void {  registry.attachHandler('events.sources.list', async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
     send(res, handleListSources({ projectDir: url.searchParams.get('projectDir') ?? undefined }, deps));
   });
@@ -276,6 +296,19 @@ export function attachEventRoutes(registry: RouteRegistry, deps: EventRouteDeps)
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
     send(res, handleListDeliveries({ threadId: url.searchParams.get('threadId') ?? undefined }, deps));
   });
+  const receiptHandler = (next: 'read' | 'answered') => async (
+    req: IncomingMessage,
+    res: ServerResponse,
+    params: Record<string, string>,
+  ) => {
+    if (!isHumanPrincipal((req as any).mafwPrincipal)) {
+      send(res, humanOnlyDenied());
+      return;
+    }
+    send(res, handleDeliveryReceipt({ id: params.id, next }, deps));
+  };
+  registry.attachHandler('events.deliveries.read', receiptHandler('read'));
+  registry.attachHandler('events.deliveries.answer', receiptHandler('answered'));
   registry.attachHandler('events.webhook.receive', async (req: IncomingMessage, res: ServerResponse, params: Record<string, string>) => {
     let rawBody = '';
     let body: any = {};

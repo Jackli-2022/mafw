@@ -145,7 +145,7 @@ export const EventSubscriptionsResponse = Type.Object({
 })
 
 /** `core/events/event-types.ts` `EventDeliveryRow` —— 投递重试状态机行。 */
-const EventDeliveryRowSchema = Type.Object({
+export const EventDeliveryRowSchema = Type.Object({
   id: Type.String(),
   triggerId: Type.String(),
   subscriptionId: Type.String(),
@@ -171,4 +171,9 @@ const EventDeliveryRowSchema = Type.Object({
 /** `GET /api/event-deliveries?threadId=`（缺 threadId 时 400 `{error}`）。 */
 export const EventDeliveriesResponse = Type.Object({
   items: Type.Array(EventDeliveryRowSchema),
+})
+
+/** `POST /api/event-deliveries/:id/read|answer`（human-only）。 */
+export const EventDeliveryReceiptResponse = Type.Object({
+  delivery: EventDeliveryRowSchema,
 })

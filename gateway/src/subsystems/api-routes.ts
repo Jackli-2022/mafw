@@ -508,6 +508,9 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
     }),
     unsubscribe: (id) => deps.eventLayerStore?.removeSubscription(id, new Date().toISOString()) ?? false,
     deliveries: (threadId) => deps.eventLayer!.listDeliveries(threadId),
+    markReceipt: deps.eventLayer
+      ? (id, next) => deps.eventLayer!.markDeliveryReceipt(id, next)
+      : undefined,
     webhook: async (sourceId, headers, body: any, rawBody?: string) => {
       const source = deps.eventLayerStore?.getSource(sourceId);
       if (!source) return { accepted: false, status: 404 };
