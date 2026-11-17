@@ -1,8 +1,8 @@
 // E10h closeout: the write-response ledger.
 //
-// Every non-GET catalog op (196 of them) must close on *exactly one* of:
+// Every non-GET catalog op (198 of them) must close on *exactly one* of:
 //
-//   195 covered  +  1 excluded (tts.speakStream)  =  196
+//   197 covered  +  1 excluded (tts.speakStream)  =  198
 //
 // `RouteDef.response` is the catalog's single source for a write op's 200 body
 // (`toOpenApiPaths()` projects it to `responses.200.content['application/json']`;
@@ -24,14 +24,14 @@
 import { buildRouteCatalog } from '../../../src/routes/route-catalog';
 
 /** Every non-GET catalog op (the write-response denominator, same set as E10g requests). */
-const WRITE_OPS_TOTAL = 196;
+const WRITE_OPS_TOTAL = 198;
 
 /** Write ops that declare a `response` schema (all but `tts.speakStream`). */
-const COVERED_TOTAL = 195;
+const COVERED_TOTAL = 197;
 
 /** Whole-catalog size and response coverage after E10h (127 pre-wave → 323). */
-const CATALOG_OPS_TOTAL = 330;
-const CATALOG_RESPONSES_TOTAL = 323;
+const CATALOG_OPS_TOTAL = 332;
+const CATALOG_RESPONSES_TOTAL = 325;
 
 /**
  * Write ops whose 200 is *not* a JSON body, with the reason it is excluded.
@@ -143,7 +143,7 @@ describe('write-response-coverage: ledger for catalog write responses (E10h)', (
     expect(Object.keys(WRITE_RESPONSE_EXCLUDED)).toEqual(['tts.speakStream']);
   });
 
-  it('closes on 196 write ops = 195 covered + 1 excluded', () => {
+  it('closes on 198 write ops = 197 covered + 1 excluded', () => {
     const ops = writeOps();
     const covered = ops.filter((op) => Boolean(op.response)).map((op) => op.operationId);
     expect(ops).toHaveLength(WRITE_OPS_TOTAL);
@@ -159,7 +159,7 @@ describe('write-response-coverage: ledger for catalog write responses (E10h)', (
     expect(unaccounted).toEqual([]);
   });
 
-  it('whole-catalog arithmetic: 323/330 with the 7 gaps fully accounted for', () => {
+  it('whole-catalog arithmetic: 325/332 with the 7 gaps fully accounted for', () => {
     const ops = opViews();
     expect(ops).toHaveLength(CATALOG_OPS_TOTAL);
     const covered = ops.filter((op) => Boolean(op.response)).map((op) => op.operationId);
@@ -186,7 +186,7 @@ describe('write-response-coverage: ledger for catalog write responses (E10h)', (
 
   it('does not require GET coverage here (GET is the read-surface ledger)', () => {
     // The write denominator must not contain a single GET: if one leaked in, the
-    // 194/195 arithmetic would silently change meaning.
+    // 196/197 arithmetic would silently change meaning.
     const getIds = new Set(opViews().filter((op) => op.method === 'GET').map((op) => op.operationId));
     const coveredIds = writeOps().filter((op) => Boolean(op.response)).map((op) => op.operationId);
     expect(coveredIds.filter((id) => getIds.has(id))).toEqual([]);

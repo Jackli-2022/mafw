@@ -22,12 +22,12 @@ import { buildRouteCatalog } from '../../../src/routes/route-catalog';
 
 /**
  * Every non-GET catalog op (the request-body denominator established in E10g-P0).
- * 188 through E10g-W8, +7 Phase 6 plugin recovery POSTs (E10g-fix) = 195.
+ * 188 through E10g-W8, +7 Phase 6 plugin recovery POSTs (E10g-fix) + 2 receipt routes = 197.
  */
-const WRITE_OPS_TOTAL = 196;
+const WRITE_OPS_TOTAL = 198;
 
 /** Ops that declare a `request` schema (JSON body, optional body, or empty object). */
-const COVERED_TOTAL = 190;
+const COVERED_TOTAL = 192;
 
 /**
  * Declared request bodies with no enumerable fields (`EmptyRequest` / bare
@@ -37,13 +37,13 @@ const COVERED_TOTAL = 190;
  *
  * 12 session + 9 task/terminal/pod + 13 goal/lead/standing + 7 event/human-gate
  * + 6 mcp/plugin/runtime + 6 memory/device/token + 6 Phase 6 plugin recovery
- * (doctorAll / doctor / kill / resume / unquarantine / rollback) = 59.
+ * (doctorAll / doctor / kill / resume / unquarantine / rollback) = 61.
  *
  * `session.suspend` / `session.resume` / `session.discardRun` are *not* fieldless:
  * `routes/session-run.ts` reads `reason` / `runId`, so they moved to the
  * optional-body class (E10g-fix F1).
  */
-const CLOSED_EMPTY_TOTAL = 59;
+const CLOSED_EMPTY_TOTAL = 61;
 
 /**
  * Write ops whose body is *not* a JSON body, with the reason it is excluded.
@@ -110,7 +110,7 @@ describe('request-coverage: ledger for catalog request bodies (E10g)', () => {
     expect(Object.keys(REQUEST_EXCLUDED)).toHaveLength(6);
   });
 
-  it('closes on 196 = 190 covered + 6 excluded', () => {
+  it('closes on 198 = 192 covered + 6 excluded', () => {
     const ops = writeOps();
     const covered = ops.filter((op) => Boolean(op.request)).map((op) => op.operationId);
     expect(ops).toHaveLength(WRITE_OPS_TOTAL);

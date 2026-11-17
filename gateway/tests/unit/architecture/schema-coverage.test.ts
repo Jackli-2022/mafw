@@ -77,6 +77,8 @@ const E10_COVERED_OPS = [
   'event.publish',
   'event.replay',
   'events.deliveries.list',
+  'events.deliveries.read',
+  'events.deliveries.answer',
   'events.sources.create',
   'events.sources.list',
   'events.sources.patch',
@@ -367,7 +369,7 @@ const E10_COVERED_OPS = [
 
 // Pinned: 317 through E10b, +1 for `humanToken.rotate` (E11-1) = 318,
 // +7 Phase 6 device-trust routes = 325, +2 last-good/rollback = 327.
-const TOTAL_OPS = 330;
+const TOTAL_OPS = 332;
 
 function catalogOps(): Array<{ operationId: string; hasResponse: boolean }> {
   return buildRouteCatalog().map((def) => ({
@@ -379,9 +381,9 @@ function catalogOps(): Array<{ operationId: string; hasResponse: boolean }> {
 
 /**
  * E10g: write ops = everything that is not a GET (query-only surface).
- * 188 before main's Phase 6 merge, +7 plugin recovery POSTs = 195.
+ * 188 before main's Phase 6 merge, +7 plugin recovery POSTs + 2 receipt routes = 197.
  */
-const WRITE_OPS_TOTAL = 196;
+const WRITE_OPS_TOTAL = 198;
 
 /** P0 pilots：requestBody 管线的第一批（始终保留，不随批次回退）。 */
 const E10G_P0_REQUEST_OPS = ['pods.tasks.create', 'session.create', 'tasks.submit'];
@@ -1177,7 +1179,7 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(lost).toEqual([]);
   });
 
-  it('the catalog covered set equals the ledger exactly, and the catalog still has 330 ops', () => {
+  it('the catalog covered set equals the ledger exactly, and the catalog still has 332 ops', () => {
     const ops = catalogOps();
     const covered = ops
       .filter((op) => op.hasResponse)
@@ -1212,8 +1214,8 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
   });
 
   // E10g-P0: request ledger shares the same parser so the write-op denominator
-  // (195 after the Phase 6 merge) and the grown coverage set stay pinned while W1-W7 land.
-  it('the script reports request coverage over the 196 write ops', () => {
+  // (197 after the Phase 6 merge) and the grown coverage set stay pinned while W1-W7 land.
+  it('the script reports request coverage over the 198 write ops', () => {
     const report = runScript();
     const write = catalogWriteOps();
     const covered = write.filter((op) => op.hasRequest).map((op) => op.operationId).sort();
@@ -1232,14 +1234,14 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(E10G_P0_REQUEST_OPS.filter((id) => !byId.get(id)?.hasRequest)).toEqual([]);
   });
 
-  // E10h-P0/R1/R2/R3/R4/R5/R6: write-response ledger. Same parser, same 195 write-op
+  // E10h-P0/R1/R2/R3/R4/R5/R6: write-response ledger. Same parser, same 197 write-op
   // denominator; `humanToken.rotate` (E11-1) + 2 P0 pilots + 35 R1 session writes +
   // 35 R2 pod/task/terminal/fileHistory writes + 31 R3 goal/decision/lead/standing/
   // cognition writes + 24 R4 event/automation/human-gate writes + 35 R5
   // mcp/plugin/runtime/platform writes + 31 R6 memory/media/tts/chat/python/obs/tools/
-  // eval/llm/mobile/devices/skills writes = 194/195 (tts.speakStream excluded).
+  // eval/llm/mobile/devices/skills writes = 196/197 (tts.speakStream excluded).
   // Later batches only append, so the count is a floor.
-  it('the script reports write-response coverage over the 196 write ops', () => {
+  it('the script reports write-response coverage over the 198 write ops', () => {
     const report = runScript();
     const write = catalogWriteOps();
     const covered = write.filter((op) => op.hasResponse).map((op) => op.operationId).sort();
@@ -1247,7 +1249,7 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(write).toHaveLength(WRITE_OPS_TOTAL);
     expect(report.writeResponseTotal).toBe(WRITE_OPS_TOTAL);
     expect(report.writeResponses).toBe(covered.length);
-    expect(report.writeResponses).toBeGreaterThanOrEqual(195);
+    expect(report.writeResponses).toBeGreaterThanOrEqual(197);
     expect(report.writeResponseCovered).toEqual(covered);
     // Disjoint from the request ledger: the two scans are independent `response:`/
     // `request:` hits on the same write ops — with deliberate exceptions:
@@ -1931,14 +1933,14 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(rewriteSchema.properties.input.type).toBe('object');
   });
 
-  // E10g-fix: main's Phase 6 plugin recovery writes join the ledger. 196 write
-  // ops = 190 covered + 6 excluded.
-  it('every Phase 6 plugin recovery write op declares a request schema (catalog requests >= 190)', () => {
+  // E10g-fix: main's Phase 6 plugin recovery writes join the ledger. 198 write
+  // ops = 192 covered + 6 excluded.
+  it('every Phase 6 plugin recovery write op declares a request schema (catalog requests >= 192)', () => {
     const byId = catalogById();
     const missing = E10G_P6_REQUEST_OPS.filter((id) => !byId.get(id)?.hasRequest);
     expect(missing).toEqual([]);
     const requests = catalogWriteOps().filter((op) => op.hasRequest).map((op) => op.operationId);
-    expect(requests.length).toBeGreaterThanOrEqual(190);
+    expect(requests.length).toBeGreaterThanOrEqual(192);
     // No duplicate ids in the batch (a typo would hide here otherwise).
     expect(new Set(E10G_P6_REQUEST_OPS).size).toBe(E10G_P6_REQUEST_OPS.length);
   });
@@ -1962,9 +1964,9 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(quarantine.requestRequired).toBeUndefined();
   });
 
-  // Closing arithmetic for the E10g(-fix) scope: 196 write ops = 190 declared
+  // Closing arithmetic for the E10g(-fix) scope: 198 write ops = 192 declared
   // requests + 6 excluded (W6 1 + W7 5). Nothing is left unaccounted for.
-  it('E10g request arithmetic closes on 196 (190 covered + 6 excluded)', () => {
+  it('E10g request arithmetic closes on 198 (192 covered + 6 excluded)', () => {
     const covered = new Set(catalogWriteOps().filter((op) => op.hasRequest).map((op) => op.operationId));
     const excluded = new Set([
       ...Object.keys(E10G_W6_EXCLUDED_OPS),
@@ -1979,7 +1981,7 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
       'plugins.install',
       'pods.a2a',
     ]);
-    expect(covered.size).toBe(190);
+    expect(covered.size).toBe(192);
     expect(excluded.size).toBe(6);
     expect([...covered].filter((id) => excluded.has(id))).toEqual([]);
     expect(covered.size + excluded.size).toBe(WRITE_OPS_TOTAL);
@@ -2126,7 +2128,7 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
   // E10h-R6: memory / media / tts / chat / python / obs / tools / eval / llm /
   // mobile / devices / skills 写响应（31 个）。与 R1-R5 同一台账（163 → 194）；
   // 按名钉住，删一个 `response:` 立刻按名失败，而不是只掉一个计数。
-  it('R6 memory/media/internal/device write ops declare a 200 response schema (write responses >= 195)', () => {
+  it('R6 memory/media/internal/device write ops declare a 200 response schema (write responses >= 197)', () => {
     const writes = catalogWriteOps();
     const responded = new Set(writes.filter((op) => op.hasResponse).map((op) => op.operationId));
 
@@ -2146,7 +2148,7 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
       expect(E10H_R6_WRITE_RESPONSE_OPS.filter((id) => earlier.includes(id))).toEqual([]);
     }
     // 194 = humanToken.rotate + P0 2 + R1 35 + R2 35 + R3 31 + R4 24 + R5 35 + R6 31.
-    expect(responded.size).toBeGreaterThanOrEqual(195);
+    expect(responded.size).toBeGreaterThanOrEqual(197);
     // 音频流那一支不在响应台账里（排除，不是漏项）。
     expect(responded.has('tts.speakStream')).toBe(false);
   });

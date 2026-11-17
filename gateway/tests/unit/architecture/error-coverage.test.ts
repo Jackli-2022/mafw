@@ -36,25 +36,26 @@ import {
 } from '../../../src/routes/schemas/errors';
 
 /** Whole catalog after E10h/E10i (330 ops / 296 paths). */
-const CATALOG_OPS_TOTAL = 330;
+const CATALOG_OPS_TOTAL = 332;
 
 /** Ops whose path starts with `/api/` — the set that carries transport 401/403. */
-const API_PREFIX_OPS_TOTAL = 321;
+const API_PREFIX_OPS_TOTAL = 323;
 
 /** Ops that declare at least one explicit error status. */
-const EXPLICIT_ERROR_OPS_TOTAL = 159;
+const EXPLICIT_ERROR_OPS_TOTAL = 161;
 
 /** Sum of `errors.length` over those ops (individual status entries, not distinct statuses). */
-const EXPLICIT_ERROR_ENTRIES_TOTAL = 358;
+const EXPLICIT_ERROR_ENTRIES_TOTAL = 368;
 
 /** Explicit status distribution after E10i (pinned; a status may only move by editing this). */
 const EXPLICIT_STATUS_SPLIT: Record<number, number> = {
-  400: 125,
-  404: 79,
-  409: 54,
+  400: 127,
+  403: 2,
+  404: 81,
+  409: 56,
   413: 6,
   429: 3,
-  503: 91,
+  503: 93,
 };
 
 /**
@@ -252,7 +253,7 @@ describe('error-coverage: ledger for catalog error responses (E10i)', () => {
     }
   });
 
-  it('/api/* ops carry 401 + 403 and non-/api ops carry neither (321 / 9)', () => {
+  it('/api/* ops carry 401 + 403 and non-/api ops carry neither (323 / 9)', () => {
     const ops = errorOpViews();
     const api = ops.filter((op) => op.path.startsWith('/api/'));
     const nonApi = ops.filter((op) => !op.path.startsWith('/api/'));
@@ -299,7 +300,7 @@ describe('error-coverage: ledger for catalog error responses (E10i)', () => {
     }
   });
 
-  it('ledger arithmetic: 159 ops / 358 entries with the pinned status split', () => {
+  it('ledger arithmetic: 161 ops / 368 entries with the pinned status split', () => {
     const ops = errorOpViews();
     const withErrors = ops.filter((op) => op.errors.length > 0);
     expect(withErrors).toHaveLength(EXPLICIT_ERROR_OPS_TOTAL);
