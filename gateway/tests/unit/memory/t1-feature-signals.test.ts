@@ -48,4 +48,11 @@ describe('t1 turn signal columns', () => {
     expect(row.novelty).toBeCloseTo(0.9);
     expect(row.mismatch).toBeCloseTo(0.3);
   });
+
+  test('roundtrips surprise and preserves it on re-upsert', () => {
+    db.upsertTurnFeature(feature({ surprise: 0.37 }) as any);
+    expect(db.getTurnFeature('t1t_a')!.surprise).toBeCloseTo(0.37);
+    db.upsertTurnFeature(feature({ intent: 're-encoded' }) as any);
+    expect(db.getTurnFeature('t1t_a')!.surprise).toBeCloseTo(0.37);
+  });
 });

@@ -101,6 +101,8 @@ export interface T1TurnFeature {
   novelty?: number | null;
   /** CA1 comparator: familiar cue + unfamiliar content; null = unscored. */
   mismatch?: number | null;
+  /** Session-local prediction error vs the previous turn; null = unscored. */
+  surprise?: number | null;
 }
 
 export type T1RetrievalKind = 'search' | 'recall' | 'redeem';
@@ -865,6 +867,11 @@ export class GatewayDatabase {
     } catch {
       // Column already exists, ignore
     }
+    try {
+      this.db.exec(`ALTER TABLE t1_turn_features ADD COLUMN surprise REAL`);
+    } catch {
+      // Column already exists, ignore
+    }
 
     // Migration: D4b task-type dimension on goal_outcomes (legacy rows NULL →
     // aggregate into the global/'other' bucket).
@@ -1302,8 +1309,8 @@ export class GatewayDatabase {
         `INSERT INTO t1_turn_features (
            trace_id, session_id, turn_seq, intent, action, tool, target,
            result, error, decision, entities_json, outcome, confidence,
-           novelty, mismatch, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())
+           novelty, mismatch, surprise, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())
          ON CONFLICT(trace_id) DO UPDATE SET
            session_id = excluded.session_id,
            turn_seq = excluded.turn_seq,
@@ -1319,6 +1326,7 @@ export class GatewayDatabase {
            confidence = excluded.confidence,
            novelty = COALESCE(excluded.novelty, novelty),
            mismatch = COALESCE(excluded.mismatch, mismatch),
+           surprise = COALESCE(excluded.surprise, surprise),
            updated_at = unixepoch()`,
       )
       .run(
@@ -1337,6 +1345,7 @@ export class GatewayDatabase {
         feature.confidence ?? 0,
         feature.novelty ?? null,
         feature.mismatch ?? null,
+        feature.surprise ?? null,
       );
 
     // Keep the feature FTS in sync. Fail-open: the feature table remains the
@@ -1387,6 +1396,7 @@ export class GatewayDatabase {
       confidence: Number(row.confidence ?? 0),
       novelty: row.novelty == null ? null : Number(row.novelty),
       mismatch: row.mismatch == null ? null : Number(row.mismatch),
+      surprise: row.surprise == null ? null : Number(row.surprise),
     };
   }
 
