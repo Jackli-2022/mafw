@@ -144,7 +144,8 @@
   （project / goal+revision）、`contentVersion`、`capturedDirty`；无 Chat 时落到
   `draft:<scopeKey>`，只剩编辑器 rail 也可继续处理。普通 composer 发送是**讨论**（Lead / 当前会话 /
   所属 Goal Tech Lead），不建 Goal、不建评审项；`AnnotationActionDialog` 的另一个显式动作才把一批
-  草稿交给一个 Goal。Goal revision diff 的批注也进入同一草稿池，不走 session `promptAsync` 旁路。
+  草稿交给一个 Goal。Goal revision diff 与 session diff 的批注也进入同一草稿池：前者带 goal
+  source，后者带 project source，均不走 session `promptAsync` 旁路，session diff 批注同样可讨论或委托。
   设计：`docs/superpowers/specs/2026-11-17-annotation-goal-collaboration-design.md`。
 - **检查点**：`CheckpointOverlay` 时间线（会话回滚 / 文件回滚 / both）；服务端检查点支持只读预览。
 - **托盘与存在感**：15s 轮询 `/api/presence` → tooltip / 菜单状态 / 任务栏进度；

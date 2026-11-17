@@ -244,7 +244,7 @@ spec `docs/superpowers/specs/2026-11-17-annotation-goal-collaboration-design.md`
 
 - **来源与幂等**：review item 可带 `source_json`（project / goal + root + contentVersion）与
   `client_ref`；同一 active revision 内 `client_ref` 唯一，批次重试复用原行，不重复 append
-  `created` 事件。老行缺字段按 null 兼容。
+  `created` 事件。老行缺字段或 `source_json` 结构非法按 null 兼容，不把半截对象当来源。
 - **计划快照**：plan 节点把当前 revision 的未解决 item IDs 原子写到 revision 产物旁的
   `review-work.json`；execute 只读同一快照并按当前未解决状态过滤。计划发出后晚到的意见进入
   下一 eligible plan/rework，不扩当前执行范围。
