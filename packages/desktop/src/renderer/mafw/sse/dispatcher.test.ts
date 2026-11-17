@@ -17,7 +17,7 @@ function makeDeps() {
   const deps: ShellEventDeps = {
     core: {
       trace: rec("trace"),
-      notify: rec("notify"),
+      publish: rec("publish"),
       warn: rec("warn"),
       setActiveQuestion: rec("setActiveQuestion"),
       bumpProjectsRev: rec("bumpProjectsRev"),
@@ -37,7 +37,8 @@ function makeDeps() {
       resolveCard: rec("resolveCard"),
       setPermissionMode: rec("setPermissionMode"),
       setCompactionMark: rec("setCompactionMark"),
-      notify: rec("notify"),
+      publish: rec("publish"),
+      markNotificationRead: rec("markNotificationRead"),
       trace: rec("trace"),
       scheduleReconcile: rec("scheduleReconcile"),
       agentTitleOf: () => "Agent",
@@ -97,11 +98,14 @@ function makeDeps() {
 }
 
 describe("dispatchShellEvent: core events", () => {
-  test("user_question → setActiveQuestion + notify", () => {
+  test("user_question → setActiveQuestion + publish(goal question)", () => {
     const { deps, calls } = makeDeps()
-    dispatchShellEvent({ type: "user_question", question: "去哪？" }, deps)
-    expect(calls.map(c => c.name)).toEqual(["trace", "setActiveQuestion", "notify"])
+    dispatchShellEvent({ type: "user_question", question: "去哪？", goalId: "g1", questionId: "q1" }, deps)
+    expect(calls.map(c => c.name)).toEqual(["trace", "setActiveQuestion", "publish"])
     expect(calls[1].args[0]).toMatchObject({ type: "user_question" })
+    const published = calls.find(c => c.name === "publish")!.args[0] as any
+    expect(published.target).toEqual({ type: "goal", goalId: "g1", focus: "question" })
+    expect(published.dedupeKey).toBe("user-question:q1")
   })
 
   test("project_registered → bumpProjectsRev", () => {

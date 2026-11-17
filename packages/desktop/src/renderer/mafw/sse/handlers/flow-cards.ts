@@ -4,6 +4,7 @@
 // 闭包读取的 agentTitleOf / flowCards 查找改为 deps 注入。
 import { mapPermissionCard as mapPermissionCardPure, shouldNotify } from "../../components/permission-card-mapping"
 import type { AskCardData } from "../../components/AskCard"
+import type { NotificationInput } from "../../../../shared/notifications"
 import type { SidHandler, ShellEventDeps } from "../dispatcher"
 
 export interface FlowCardDeps {
@@ -13,7 +14,12 @@ export interface FlowCardDeps {
   setCompactionMark(sid: string, mark: { at: number; summary?: string }): void
   /** session.config 增量（会话菜单的 agent/model/thinking 状态源）。 */
   onSessionConfig(sid: string, config: unknown, category: string): void
-  notify(title: string, body: string): void
+  /** 发布到通知 hub（自绘通知中心 + 悬浮窗）。 */
+  publish(input: NotificationInput): void
+  /** 权限/提问已答复 → 对应通知自动已读。 */
+  markNotificationRead(keys: string[]): void
+  /** 会话 → 项目目录（跨项目通知路由用）。 */
+  projectOf?(sid: string): string | undefined
   trace(event: { type?: string }, channel: string): void
   /** auto 决策兜底 5s 后对账（原 setTimeout 语义，注入便于测试）。 */
   scheduleReconcile(delayMs: number): void
@@ -71,7 +77,16 @@ export const handleFlowCardEvent: SidHandler = (event, sid, deps) => {
   if (event.type === "question.asked") {
     d.trace(event, "card:ask")
     d.upsertCard(sid, { kind: "ask", data: mapAskCard(event.properties || {}, Date.now(), d.agentTitleOf(sid)) })
-    d.notify("MAFW：Agent 提问", String(event.properties?.question || "").slice(0, 80))
+    const id = String((event.properties as any)?.id ?? "")
+    d.publish({
+      kind: "question",
+      severity: "p2",
+      title: "MAFW：Agent 提问",
+      body: String(event.properties?.question || "").slice(0, 80),
+      reason: "需要你",
+      target: { type: "question", sessionID: sid, requestId: id || undefined, projectId: d.projectOf?.(sid) },
+      dedupeKey: id ? `question:${id}` : undefined,
+    })
     return true
   }
   if (event.type === "permission.asked") {
@@ -79,9 +94,17 @@ export const handleFlowCardEvent: SidHandler = (event, sid, deps) => {
     const card = mapPermissionCardPure(event.properties || {}, Date.now(), d.agentTitleOf(sid))
     d.upsertCard(sid, { kind: "permission", data: card })
     if (shouldNotify(card)) {
-      // 通知正文用规范卡片载荷（kind + targets，gateway 投影）；旧 opencode
-      // `properties.permission.tool` 在 pi 下恒缺，曾一律显示「工具调用」。
-      d.notify("MAFW：需要权限审批", String(card.action.payload || "工具调用").slice(0, 80))
+      d.publish({
+        kind: "permission",
+        severity: "p2",
+        title: "MAFW：需要权限审批",
+        // 通知正文用规范卡片载荷（kind + targets，gateway 投影）；旧 opencode
+        // `properties.permission.tool` 在 pi 下恒缺，曾一律显示「工具调用」。
+        body: String(card.action.payload || "工具调用").slice(0, 80),
+        reason: "需要你",
+        target: { type: "approval", sessionID: sid, requestId: card.id || undefined, projectId: d.projectOf?.(sid) },
+        dedupeKey: card.id ? `permission:${card.id}` : undefined,
+      })
     } else {
       // auto 决策兜底：5s 后对账服务端真值（gateway auto-reply 失败时，卡片被
       // reconcile 重新映射回 pending，用户仍可手动答复）。
@@ -121,6 +144,7 @@ export const handleFlowCardEvent: SidHandler = (event, sid, deps) => {
     const id = props.requestID || props.id
     const answers = props.answers || []
     if (id) d.resolveCard(sid, id, { status: "answered", answers: answersToRecord(answers, d.getAskCard(sid, id)) })
+    if (id) d.markNotificationRead([`question:${id}`])
     return true
   }
   if (event.type === "question.rejected") {
@@ -128,6 +152,7 @@ export const handleFlowCardEvent: SidHandler = (event, sid, deps) => {
     const props = event.properties || {}
     const id = props.requestID || props.id
     if (id) d.resolveCard(sid, id, { status: "cancelled" })
+    if (id) d.markNotificationRead([`question:${id}`])
     return true
   }
   if (event.type === "permission.replied") {
@@ -144,6 +169,7 @@ export const handleFlowCardEvent: SidHandler = (event, sid, deps) => {
         ?? (props.approved === false ? "reject" : undefined)
       const status = verdict === "always" ? "allowed-always" : verdict === "reject" ? "denied" : "allowed-once"
       d.resolveCard(sid, id, { status })
+      d.markNotificationRead([`permission:${id}`])
     }
     return true
   }

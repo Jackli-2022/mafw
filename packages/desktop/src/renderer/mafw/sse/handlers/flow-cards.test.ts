@@ -2,14 +2,16 @@ import { describe, expect, test } from "bun:test"
 import { handleFlowCardEvent, answersToRecord, mapAskCard, type FlowCardDeps } from "./flow-cards"
 import type { ShellEventDeps } from "../dispatcher"
 
-function makeDeps() {
+function makeDeps(projectOf?: (sid: string) => string | undefined) {
   const calls: { name: string; args: unknown[] }[] = []
   const rec = (name: string) => (...args: unknown[]) => { calls.push({ name, args }) }
   const flowCards: FlowCardDeps = {
     upsertCard: rec("upsertCard"), resolveCard: rec("resolveCard"),
     setPermissionMode: rec("setPermissionMode"), setCompactionMark: rec("setCompactionMark"),
     onSessionConfig: rec("onSessionConfig"),
-    notify: rec("notify"), trace: rec("trace"), scheduleReconcile: rec("scheduleReconcile"),
+    publish: rec("publish"), markNotificationRead: rec("markNotificationRead"),
+    projectOf,
+    trace: rec("trace"), scheduleReconcile: rec("scheduleReconcile"),
     agentTitleOf: () => "Agent",
     getAskCard: () => undefined,
   }
@@ -62,22 +64,34 @@ describe("handleFlowCardEvent", () => {
     expect(calls.find(c => c.name === "onSessionConfig")!.args[0]).toBe("s2")
   })
 
-  test("question.asked → upsertCard(ask) + notify", () => {
-    const { deps, calls } = makeDeps()
+  test("question.asked → upsertCard(ask) + publish(question)", () => {
+    const { deps, calls } = makeDeps(() => "C:/proj")
     const consumed = handleFlowCardEvent({ type: "question.asked", properties: { id: "q1", question: "哪个文件？" } }, "s1", deps)
     expect(consumed).toBe(true)
-    expect(calls.map(c => c.name)).toEqual(["trace", "upsertCard", "notify"])
+    expect(calls.map(c => c.name)).toEqual(["trace", "upsertCard", "publish"])
+    const published = calls.find(c => c.name === "publish")!.args[0] as any
+    expect(published).toMatchObject({
+      kind: "question",
+      severity: "p2",
+      reason: "需要你",
+      dedupeKey: "question:q1",
+    })
+    expect(published.target).toEqual({ type: "question", sessionID: "s1", requestId: "q1", projectId: "C:/proj" })
   })
 
-  test("permission.asked 需人工 → notify；auto 兜底 → scheduleReconcile(5000)", () => {
+  test("permission.asked 需人工 → publish(permission)；auto 兜底 → scheduleReconcile(5000)", () => {
     const { deps, calls } = makeDeps()
     handleFlowCardEvent({ type: "permission.asked", properties: { id: "p1", permission: "bash", tool: { messageID: "m1", callID: "c1" } } }, "s1", deps)
-    expect(calls.map(c => c.name)).toContain("notify")
+    expect(calls.map(c => c.name)).toContain("publish")
+    const published = calls.find(c => c.name === "publish")!.args[0] as any
+    expect(published.kind).toBe("permission")
+    expect(published.dedupeKey).toBe("permission:p1")
+    expect(published.target).toMatchObject({ type: "approval", sessionID: "s1" })
 
     const d2 = makeDeps()
-    // mafwPolicy action auto-approve → autoResolved → 不 notify，走对账
+    // mafwPolicy action auto-approve → autoResolved → 不 publish，走对账
     handleFlowCardEvent({ type: "permission.asked", properties: { id: "p2", permission: "bash", mafwPolicy: { action: "auto-approve", verdict: "safe", reason: "auto" } } }, "s1", d2.deps)
-    expect(d2.calls.map(c => c.name)).not.toContain("notify")
+    expect(d2.calls.map(c => c.name)).not.toContain("publish")
     expect(d2.calls.find(c => c.name === "scheduleReconcile")!.args[0]).toBe(5000)
   })
 
@@ -137,8 +151,8 @@ describe("handleFlowCardEvent", () => {
       { type: "permission.asked", properties: { id: "p9", kind: "bash", targets: ["rm -rf build"] } },
       "s1", deps,
     )
-    const body = String(calls.find(c => c.name === "notify")!.args[1])
-    expect(body).toContain("rm -rf build")
+    const published = calls.find(c => c.name === "publish")!.args[0] as any
+    expect(String(published.body)).toContain("rm -rf build")
   })
 
   test("question.replied → answered + answersToRecord", () => {

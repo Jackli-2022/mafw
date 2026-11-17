@@ -12,6 +12,7 @@ import {
   resultViewedKey,
 } from "./pod-rail-badge"
 import { isResultViewed, podEvents, type PodEventsStore } from "./pod-events"
+import { markNotificationsReadByDedupe } from "./notifications/notification-store"
 
 export const VIEWED_RESULTS_STORAGE_KEY = "mafw-pod-result-viewed:v1"
 
@@ -93,6 +94,8 @@ export function markResultViewedAfterLoad(input: {
   const revision = positiveRevision(input.result.revision) ?? positiveRevision(input.fallbackRevision)
   if (revision === null) return false
   const goalId = (input.result.goalId ?? input.goalId ?? "").trim() || input.goalId
+  // 结果被查看 → 自绘通知中心里的 p1 结果条目同步已读（同一事件，同一落点）。
+  void markNotificationsReadByDedupe([`${goalId}:r${revision}`])
   const markLegacy = input.mark ?? markPodResultViewed
   // 注入 mark 视为「测试里的 legacy 写点」；只有注入 events 才走事件路由。
   // 生产调用（PodResultView）两者都不传 → 默认全局 podEvents。

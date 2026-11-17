@@ -12,10 +12,12 @@ import { handleBackgroundEvent } from "./handlers/background"
 import { handlePluginSseEvent } from "./handlers/plugins"
 import type { TrackerEvent } from "../subagent-tracker"
 import type { BackgroundJob } from "../background-jobs"
+import type { NotificationInput } from "../../../shared/notifications"
 
 export interface CoreDeps {
   trace(event: { type?: string }, channel: string): void
-  notify(title: string, body: string): void
+  /** 发布到通知 hub（自绘通知中心 + 悬浮窗）。 */
+  publish(input: NotificationInput): void
   warn(message: string): void
   setActiveQuestion(q: unknown): void
   bumpProjectsRev(): void
@@ -156,7 +158,16 @@ export function dispatchShellEvent(event: any, deps: ShellEventDeps): void {
   if (event.type === "user_question") {
     deps.core.trace(event, "notify:question")
     deps.core.setActiveQuestion(event)
-    deps.core.notify("MAFW：Agent 需要你的回答", String(event.question || "").slice(0, 80))
+    // Goal 级 askUser 只有 goalId（无 sessionID）→ Goal 详情的问题面板。
+    deps.core.publish({
+      kind: "question",
+      severity: "p2",
+      title: "MAFW：Agent 需要你的回答",
+      body: String(event.question || "").slice(0, 80),
+      reason: "需要你",
+      target: { type: "goal", goalId: String(event.goalId || ""), focus: "question" },
+      dedupeKey: event.questionId ? `user-question:${String(event.questionId)}` : undefined,
+    })
     return
   }
 

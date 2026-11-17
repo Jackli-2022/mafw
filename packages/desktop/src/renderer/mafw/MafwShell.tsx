@@ -18,6 +18,7 @@ import {
   disposeNotifications,
   ensureNotifications,
   markNotificationRead,
+  markNotificationsReadByDedupe,
   notificationState,
 } from "./notifications/notification-store"
 import { navigateNotificationTarget } from "./notifications/target-router"
@@ -793,13 +794,6 @@ export function MafwShell() {
   const sendingResetters = workspace.records.sendingReset
   const queueFlushers = workspace.records.queueFlush
 
-  // OS notification only when the window is hidden (tray/minimized); the
-  // in-app toasts remain the primary feedback while the window is visible.
-  const notifyIfHidden = (title: string, body: string) => {
-    if (!document.hidden) return
-    void window.api.mafw.notify?.({ title, body }).catch(() => { /* fail-open */ })
-  }
-
   // Per-session approval mode (Manual/Auto-lite)。真相源在 gateway（kv perm-mode，
   // 25 次预算 + 危险正则判定）；desktop 只缓存 UI 态：开 tab 拉取 + SSE
   // permission_mode 事件驱动 + toggle 乐观更新失败回滚。
@@ -1516,7 +1510,7 @@ export function MafwShell() {
   const sseDeps: ShellEventDeps = {
     core: {
       trace: traceEvent,
-      notify: notifyIfHidden,
+      publish: (input) => { void window.api.mafw.notifications.publish(input).catch(() => {}) },
       warn: (m) => console.warn(m),
       setActiveQuestion: (q) => setActiveQuestion(q as QuestionData),
       bumpProjectsRev: () => setProjectsRev(v => v + 1),
@@ -1548,7 +1542,9 @@ export function MafwShell() {
       setPermissionMode: (sid, mode) => setPermissionModes(sid, mode),
       setCompactionMark: (sid, mark) => setCompactionMarks(prev => ({ ...prev, [sid]: mark })),
       onSessionConfig: (sid, config) => setSessionConfigs(sid, config as any),
-      notify: notifyIfHidden,
+      publish: (input) => { void window.api.mafw.notifications.publish(input).catch(() => {}) },
+      markNotificationRead: (keys) => { void markNotificationsReadByDedupe(keys) },
+      projectOf: (sid) => sessionEntities.get(sid)?.directory,
       trace: traceEvent,
       scheduleReconcile: (delayMs) => { setTimeout(() => reconcileFlowCards(), delayMs) },
       agentTitleOf,

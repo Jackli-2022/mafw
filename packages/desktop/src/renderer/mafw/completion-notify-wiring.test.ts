@@ -1,6 +1,6 @@
-// 设计契约：OS 通知只来自事务层（main process 的 presence 轮询：
-// 「需要你」+ Goal 结果就绪）。回合完成 / 子代理完成 / 后台任务完成
-// 只在应用内 toast，绝不再发系统通知——这类"完成"不是用户事务。
+// 设计契约：OS 通知只来自事务层（2026-11-17 起连"需要你"也走自绘通知中心 /
+// 悬浮窗——main presence + hub）。回合完成 / 子代理完成 / 后台任务完成
+// 只在应用内 toast；renderer 不再发任何系统通知。
 //
 // 源码级断言与其他 design-contract 套件一致（本包没有 jsdom renderer）。
 import { readFileSync } from "node:fs"
@@ -13,7 +13,7 @@ const backgroundNotify = readFileSync(new URL("./background-notify.ts", import.m
 const flowCards = readFileSync(new URL("./sse/handlers/flow-cards.ts", import.meta.url), "utf8")
 
 describe("completion notifications stay in-app", () => {
-  test("turn completion no longer wires an OS notification", () => {
+  test("turn completion no longer wires a notification", () => {
     expect(chatStream).not.toContain("notifyIdle")
     expect(shell).not.toContain("notifyIdle")
     expect(shell).not.toContain("MAFW：回合完成")
@@ -26,8 +26,9 @@ describe("completion notifications stay in-app", () => {
     expect(backgroundNotify).not.toContain("os:")
   })
 
-  test("renderer OS notifications remain only for blocking 'needs you' asks", () => {
-    expect(shell).toContain("notifyIfHidden")
+  test("renderer needs-you asks publish to the self-drawn hub", () => {
+    expect(shell).not.toContain("notifyIfHidden")
+    expect(shell).toContain("notifications.publish(input)")
     expect(flowCards).toContain("MAFW：需要权限审批")
     expect(flowCards).toContain("MAFW：Agent 提问")
   })

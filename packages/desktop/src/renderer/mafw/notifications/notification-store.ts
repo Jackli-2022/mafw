@@ -9,6 +9,11 @@ let unsubscribe: (() => void) | null = null
 
 export const notificationState = state
 
+function notificationsApi() {
+  if (typeof window === "undefined") return undefined
+  return window.api?.mafw?.notifications
+}
+
 function unreadOf(items: readonly MafwNotification[]): number {
   return items.reduce((count, item) => (item.readAt === undefined ? count + 1 : count), 0)
 }
@@ -19,7 +24,7 @@ function apply(items: MafwNotification[]): void {
 }
 
 export function ensureNotifications(): void {
-  const api = window.api?.mafw?.notifications
+  const api = notificationsApi()
   if (!api || started) return
   started = true
   void api.list().then((snapshot) => setState(snapshot)).catch(() => {})
@@ -27,7 +32,7 @@ export function ensureNotifications(): void {
 }
 
 export function refreshNotifications(): void {
-  const api = window.api?.mafw?.notifications
+  const api = notificationsApi()
   if (!api) return
   void api.list().then((snapshot) => setState(snapshot)).catch(() => {})
 }
@@ -40,7 +45,7 @@ export function disposeNotifications(): void {
 }
 
 export async function markNotificationRead(ids: string[]): Promise<void> {
-  const api = window.api?.mafw?.notifications
+  const api = notificationsApi()
   if (!api || ids.length === 0) return
   const now = Date.now()
   const selected = new Set(ids)
@@ -57,7 +62,7 @@ export async function markNotificationRead(ids: string[]): Promise<void> {
 }
 
 export async function markAllNotificationsRead(): Promise<void> {
-  const api = window.api?.mafw?.notifications
+  const api = notificationsApi()
   if (!api) return
   const now = Date.now()
   apply(state.items.map((item) => (item.readAt === undefined ? { ...item, readAt: now } : item)))
@@ -69,7 +74,7 @@ export async function markAllNotificationsRead(): Promise<void> {
 }
 
 export async function markNotificationsReadByDedupe(keys: string[]): Promise<void> {
-  const api = window.api?.mafw?.notifications
+  const api = notificationsApi()
   if (!api || keys.length === 0) return
   const now = Date.now()
   const selected = new Set(keys)
@@ -88,7 +93,7 @@ export async function markNotificationsReadByDedupe(keys: string[]): Promise<voi
 }
 
 export async function clearNotificationRead(): Promise<void> {
-  const api = window.api?.mafw?.notifications
+  const api = notificationsApi()
   if (!api) return
   apply(state.items.filter((item) => item.readAt === undefined))
   try {
@@ -99,7 +104,7 @@ export async function clearNotificationRead(): Promise<void> {
 }
 
 export async function removeNotification(id: string): Promise<void> {
-  const api = window.api?.mafw?.notifications
+  const api = notificationsApi()
   if (!api) return
   apply(state.items.filter((item) => item.id !== id))
   try {
