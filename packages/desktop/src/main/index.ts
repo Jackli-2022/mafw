@@ -5,7 +5,7 @@ import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import type { Event } from "electron"
-import { app, BrowserWindow, globalShortcut, ipcMain, nativeTheme, net, session } from "electron"
+import { app, BrowserWindow, globalShortcut, ipcMain, nativeTheme, net, Notification, screen, session } from "electron"
 
 import { Deferred, Effect } from "effect"
 
@@ -18,6 +18,8 @@ import { getStore } from "./store"
 import { NotificationHub } from "./notification-hub"
 import { registerNotificationIpc } from "./notification-ipc"
 import { publishPresenceNotifications } from "./presence-notifications"
+import { readNotificationPrefs } from "./notification-prefs"
+import { createNotificationWindowController, type FloatingWindowLike } from "./notification-window"
 
 import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog } from "./logging"
 import { startMafwGw } from "./mafw-bootstrap"
@@ -42,6 +44,7 @@ import { setupAutoUpdater, showUpdaterDialog } from "./updater"
 import {
   createMainWindow,
   getLastFocusedWindow,
+  loadWindow,
   registerRendererProtocol,
   setRelaunchHandler,
   setAppQuitting,
@@ -317,6 +320,7 @@ const main = Effect.gen(function* () {
 
   // Self-drawn notifications: main-process hub is the single source of truth.
   const notificationHub = new NotificationHub(getStore("mafw-notifications"))
+  let notificationWindowRefresh: (() => void) | null = null
   registerNotificationIpc({
     ipcMain,
     hub: notificationHub,
@@ -326,6 +330,7 @@ const main = Effect.gen(function* () {
         if (!win.isDestroyed()) win.webContents.send("mafw-notifications:changed", snapshot)
       }
     },
+    onPrefsChanged: () => notificationWindowRefresh?.(),
   })
 
   // Quick entry: global hotkey shows the window and focuses the composer.
@@ -464,7 +469,7 @@ const main = Effect.gen(function* () {
       win.focus()
       win.webContents.send("mafw-navigate-goal", target)
     }
-    function navigateToNotificationTarget(target: NotificationTarget): void {
+    function navigateToNotificationTarget(target: NotificationTarget | undefined): void {
       if (!target) return
       const win = getLastFocusedWindow()
       if (!win || win.isDestroyed()) {
@@ -479,6 +484,90 @@ const main = Effect.gen(function* () {
       win.webContents.send("mafw-notification-open", target)
     }
     setTrayNavigateHandler(navigateToGoal)
+
+    // 自绘悬浮通知窗（只 p1/p2；不抢焦点；点击 → 聚焦主窗口 + target 路由）。
+    let notificationWindow: BrowserWindow | null = null
+    const notificationWindowController = createNotificationWindowController({
+      hub: notificationHub,
+      getPrefs: () => readNotificationPrefs(getStore()),
+      getWorkArea: () => {
+        const focused = getLastFocusedWindow()
+        const display =
+          focused && !focused.isDestroyed()
+            ? screen.getDisplayMatching(focused.getBounds())
+            : screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
+        return display.workArea
+      },
+      getTheme: () => (nativeTheme.shouldUseDarkColors ? "dark" : "light"),
+      ensureWindow: (handlers) => {
+        const win = new BrowserWindow({
+          width: 360,
+          height: 92,
+          show: false,
+          frame: false,
+          transparent: true,
+          resizable: false,
+          movable: false,
+          minimizable: false,
+          maximizable: false,
+          fullscreenable: false,
+          skipTaskbar: true,
+          focusable: false,
+          alwaysOnTop: true,
+          hasShadow: false,
+          webPreferences: {
+            preload: join(__dirname, "../preload/notification.js"),
+            contextIsolation: true,
+            sandbox: true,
+            nodeIntegration: false,
+          },
+        })
+        win.setAlwaysOnTop(true, "screen-saver")
+        notificationWindow = win
+        const fromThisWindow = (event: { sender: unknown }) =>
+          !win.isDestroyed() && event.sender === win.webContents
+        ipcMain.on("notification:dismiss", (event, id) => {
+          if (fromThisWindow(event) && typeof id === "string") handlers.dismiss(id)
+        })
+        ipcMain.on("notification:hover", (event, id, hovering) => {
+          if (fromThisWindow(event) && typeof id === "string") handlers.hover(id, !!hovering)
+        })
+        ipcMain.on("notification:open", (event, id) => {
+          if (fromThisWindow(event) && typeof id === "string") handlers.open(id)
+        })
+        win.on("closed", () => {
+          if (notificationWindow === win) notificationWindow = null
+        })
+        loadWindow(win, "notification/index.html")
+        const floating: FloatingWindowLike = {
+          webContents: win.webContents,
+          setBounds: (bounds) => { if (!win.isDestroyed()) win.setBounds(bounds) },
+          showInactive: () => { if (!win.isDestroyed()) win.showInactive() },
+          hide: () => { if (!win.isDestroyed()) win.hide() },
+          isDestroyed: () => win.isDestroyed(),
+        }
+        return floating
+      },
+      navigate: navigateToNotificationTarget,
+      nativeNotify: (item) => {
+        if (!Notification.isSupported()) return
+        try {
+          const native = new Notification({ title: item.title, body: item.body ?? "" })
+          native.on("click", () => {
+            notificationHub.markRead([item.id])
+            navigateToNotificationTarget(item.target)
+          })
+          native.show()
+        } catch {
+          // fail-open: the in-app center still has the item
+        }
+      },
+    })
+    notificationWindowRefresh = () => notificationWindowController.refreshPrefs()
+    app.once("will-quit", () => {
+      notificationWindowController.dispose()
+      if (notificationWindow && !notificationWindow.isDestroyed()) notificationWindow.destroy()
+    })
   } else {
     logger.error("MAFW Gateway failed to start")
     yield* Deferred.fail(serverReady, new Error("MAFW Gateway failed to start"))

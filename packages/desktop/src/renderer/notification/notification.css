@@ -1,0 +1,120 @@
+/* Floating notification window. The BrowserWindow is transparent and
+   positioned by main; this sheet only styles the card stack. Tokens are
+   local (the entry does not load the full shell stylesheet). */
+
+html,
+body {
+  margin: 0;
+  background: transparent;
+  overflow: hidden;
+  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+:root {
+  --n-bg: #f0f1f2;
+  --n-border: #dfe3e7;
+  --n-text: #181a1d;
+  --n-text-weak: #606a74;
+  --n-accent: #2b54d8;
+  --n-accent-text: #1f45c0;
+  --n-shadow: 0 8px 24px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.06);
+  color-scheme: light;
+}
+
+html[data-color-scheme="dark"] {
+  --n-bg: #181b1e;
+  --n-border: #30363c;
+  --n-text: #f2f4f5;
+  --n-text-weak: #939da6;
+  --n-accent: #9db4ff;
+  --n-accent-text: #c3d0ff;
+  --n-shadow: 0 8px 24px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  color-scheme: dark;
+}
+
+.nwin-card {
+  position: relative;
+  box-sizing: border-box;
+  width: 360px;
+  max-width: 100%;
+  padding: 12px 14px 10px 16px;
+  background: var(--n-bg);
+  border: 1px solid var(--n-border);
+  border-radius: 10px;
+  box-shadow: var(--n-shadow);
+  cursor: pointer;
+  user-select: none;
+  -webkit-app-region: no-drag;
+}
+
+.nwin-card::before {
+  content: "";
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 6px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--n-accent);
+}
+
+.nwin-card.is-p1::before {
+  background: var(--n-accent);
+}
+
+.nwin-title {
+  color: var(--n-text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.nwin-body {
+  margin-top: 2px;
+  color: var(--n-text-weak);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.nwin-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.nwin-reason {
+  overflow: hidden;
+  color: var(--n-text-weak);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nwin-close {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  color: var(--n-text-weak);
+  opacity: 0.75;
+}
+
+.nwin-close:hover {
+  background: var(--n-border);
+  opacity: 1;
+}
+
+.nwin-card:hover .nwin-title {
+  color: var(--n-accent-text);
+}

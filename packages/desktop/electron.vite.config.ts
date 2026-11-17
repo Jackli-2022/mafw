@@ -104,6 +104,8 @@ const require = __cjs_mod__.createRequire(import.meta.url);
           // Key (not the file name) becomes the emitted `out/preload/plugin-web.js`
           // that main/plugin-web-session.ts force-attaches to plugin webviews.
           "plugin-web": "src/preload/plugin-web.ts",
+          // Floating notification window preload (`out/preload/notification.js`).
+          notification: "src/preload/notification.ts",
         },
         output: {
           format: "cjs",
@@ -137,6 +139,8 @@ const require = __cjs_mod__.createRequire(import.meta.url);
       rollupOptions: {
         input: {
           main: "src/renderer/index.html",
+          // Floating notification window entry (`out/renderer/notification/index.html`).
+          notification: "src/renderer/notification/index.html",
         },
         output: {
           // Silero VAD assets must keep their original names: the Emscripten

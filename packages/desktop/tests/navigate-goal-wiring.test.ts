@@ -22,7 +22,7 @@ test("main: presence goes to the hub; notification clicks navigate via the targe
   assert.match(main, /function navigateToGoal\(target: NavigateGoalTarget\)/)
   assert.match(main, /setTrayNavigateHandler\(navigateToGoal\)/)
   assert.match(main, /publishPresenceNotifications\(notificationHub, payload\)/)
-  assert.match(main, /function navigateToNotificationTarget\(target: NotificationTarget\)/)
+  assert.match(main, /function navigateToNotificationTarget\(target/)
   assert.match(main, /webContents\.send\("mafw-notification-open", target\)/)
   assert.doesNotMatch(main, /notification\.on\("click"/)
   assert.match(tray, /NavigateGoalTarget/)
