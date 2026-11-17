@@ -3,7 +3,7 @@
 - **版本**：`v5.1.0`（行为增强，不升版本号）
 - **提交**：`646f4eb2`（external domain events）+ `a0ce91e1`（Lead inbox）+
   `528676d4`（delivery receipts）+ `06d3676b`（死信）+ `0b451132`（lead-context 评估）+
-  `badc5170`（outbox payload triggerId）
+  `badc5170`（outbox payload triggerId）+ `d56f5a60`（review 修复）
 - **计划**：`docs/superpowers/plans/2026-11-17-phase4-external-events-unification.md`
 - **前置**：`docs/releases/2026-11-16-goal-history-replay.md`（Phase 3）
 - **范围**：gateway 事件层；desktop / SDK / runtime 零改动
@@ -46,10 +46,16 @@
 ## 测试
 
 - 新增套件：`external-domain-event`、`lead-outbox-external`、`event-delivery-receipts`、
-  `event-delivery-deadletter`、`external-lead-wiring`（5 suites / 12 tests）。
-- gateway 全量：**1010 / 1010 suites**，**8024 passed / 2 skipped / 0 failed**。
-  前两次全量各有一个既有 flake（`checkpoint/restore-git` 超时、`runtime/instance-ownership`），
-  两个套件单独复跑均全绿。
+  `event-delivery-deadletter`、`external-lead-wiring`（5 suites / 17 tests）。
+- review 修复：
+  - `evaluate` 在决策已接受但 delivery 仍 pending 时可恢复（context 模式），并在 boot 时
+    用 `resumeIncompleteDeliveries` 扫一遍 pending / 到期 failed 的线程；
+  - `delivered → acknowledged` 成为合法转移，ack 同时补 `read_at`；
+  - receipt 只命中订阅者自己的 `lead:<podId>` 且 `state='sent'` 的行；
+  - 补 fail-open append、receipt 事务回滚、跨 Pod 隔离、pending 重启恢复测试。
+- gateway 全量：**1010 / 1010 suites**，**8035 passed / 2 skipped / 0 failed**。
+  期间多次全量各有一个既有 flake（`restore-git` 超时、`instance-ownership`、
+  `package-host`、`plugin-doctor`），四个套件单独复跑均全绿。
 - `tsc`：rc=0；`npm run build`：通过（`dist/release.json` v5.1.0）。
 
 ## 真机验收（2026-11-17，gateway pid 59848 / instance 341c5318）
@@ -78,6 +84,8 @@
 - `event_deliveries` 的 read 目前没有真实触发源（人看到外部事件没有客户端信号）；
   ack 由 Lead 回合驱动，answered 留给后续 UI。
 - 死信阈值固定 5，暂不可配置（deps 可注入，但没有 env/API 入口）。
+- 重启恢复只自动续跑 **context** 订阅的 pending delivery；`work` 模式需要自己的
+  triggerId 幂等键，本阶段不自动重放。
 - 外部事件 payload 原样进 domain event（审计），大 payload 会放大 `domain_events`；后续可按需裁剪。
 
 ## 回滚
