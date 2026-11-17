@@ -11,6 +11,8 @@ import type {
 import type { EventStore } from './event-store';
 import type { EventDecision, EventEvaluator } from './event-evaluator';
 import { nextRetryDelayMs } from './event-delivery';
+import { externalDomainEvent } from './external-domain-event';
+import type { DomainEventInput } from './domain-event';
 
 export interface EventLayerDeps {
   store: EventStore;
@@ -33,6 +35,8 @@ export interface EventLayerDeps {
     subscription: EventSubscriptionRow;
     decision: EventDecision;
   }): Promise<void>;
+  /** Domain log for external ingests; append failures are fail-open. */
+  domainEvents?: { append(input: DomainEventInput): unknown };
   log?(message: string): void;
 }
 
@@ -161,6 +165,19 @@ export class EventLayerService {
           externalKey: envelope.externalKey,
         },
       });
+    }
+    // External facts enter the shared domain log. Internal sources are already
+    // covered by goal.* / decision.* producers; appending here would duplicate.
+    if (source.kind !== 'internal' && this.deps.domainEvents) {
+      try {
+        this.deps.domainEvents.append(externalDomainEvent({
+          envelope,
+          triggerId: inserted.row.id,
+        }));
+      } catch (err: any) {
+        // Fail-open: an audit/log failure must never reject an external ingest.
+        this.deps.log?.(`[EventLayer] domain event append failed: ${err?.message ?? err}`);
+      }
     }
     return { trigger: inserted.row, thread, duplicate: inserted.duplicate };
   }

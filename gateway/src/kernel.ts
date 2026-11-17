@@ -4923,6 +4923,7 @@ class MafwScheduler {
 
     this.eventLayer = new EventLayerService({
       store: eventStore,
+      domainEvents: this.domainEvents ?? undefined,
       now: () => new Date().toISOString(),
       newId: (prefix) => `${prefix}_${randomUUID()}`,
       broadcast: (event) => this.broadcast(event as any),
