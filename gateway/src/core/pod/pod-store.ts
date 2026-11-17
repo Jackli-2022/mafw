@@ -456,12 +456,36 @@ function goalWorktreeFromRow(row: any): PodGoalWorktreeRow {
 
 function reviewSourceFromRow(raw: unknown): PodReviewSource | null {
   if (typeof raw !== 'string' || !raw.trim()) return null;
+  let parsed: any;
   try {
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? parsed as PodReviewSource : null;
+    parsed = JSON.parse(raw);
   } catch {
     return null;
   }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  const projectDir = parsed.projectDir;
+  const root = parsed.root;
+  const contentVersion = parsed.contentVersion;
+  if (typeof projectDir !== 'string' || !projectDir.trim()) return null;
+  if (typeof root !== 'string' || !root.trim()) return null;
+  if (contentVersion != null && typeof contentVersion !== 'string') return null;
+  const version = typeof contentVersion === 'string' ? contentVersion : null;
+  if (parsed.kind === 'project') {
+    return { kind: 'project', projectDir, root, contentVersion: version };
+  }
+  if (parsed.kind === 'goal') {
+    if (typeof parsed.goalId !== 'string' || !parsed.goalId.trim()) return null;
+    if (!Number.isInteger(parsed.revision) || parsed.revision < 1) return null;
+    return {
+      kind: 'goal',
+      projectDir,
+      goalId: parsed.goalId,
+      revision: parsed.revision,
+      root,
+      contentVersion: version,
+    };
+  }
+  return null;
 }
 
 function reviewItemFromRow(row: any): PodReviewItemRow {

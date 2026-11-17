@@ -64,6 +64,18 @@ export function goalChangeSetAnnotationScope(input: {
   }
 }
 
+/** Session change sets still originate in the project working tree. */
+export function projectChangeSetAnnotationScope(input: {
+  projectDir: string
+  root: string | null
+}): { source: AnnotationSource; scopeKey: string; root: string } {
+  return {
+    source: { kind: "project", projectDir: input.projectDir },
+    scopeKey: `project:${normalizePath(input.projectDir)}`,
+    root: input.root ?? input.projectDir,
+  }
+}
+
 export function annotationsVisibleInChat(
   annotations: readonly Annotation[],
   input: {

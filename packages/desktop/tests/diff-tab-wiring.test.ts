@@ -42,9 +42,12 @@ test("deep-link context is applied before the face mounts", () => {
   assert.match(face, /lastRequestSeq/)
 })
 
-test("session diff annotations use the change-set session, not the current tab", () => {
+test("session diff annotations use the change-set session and keep project provenance", () => {
   const shell = read("src/renderer/mafw/MafwShell.tsx")
   assert.match(shell, /doc\?\.source\.kind === "session" \? doc\.source\.sessionID/)
+  assert.match(shell, /projectChangeSetAnnotationScope\(/)
+  assert.match(shell, /addAnnotation\(\{ \.\.\.a, sessionID: sid, \.\.\.scope \}\)/)
+  assert.doesNotMatch(shell, /addPending\(\{ sessionID: sid, \.\.\.a \}\)/)
 })
 
 test("goal change sets capture annotation drafts instead of promptAsync", () => {

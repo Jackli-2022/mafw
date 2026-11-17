@@ -24,6 +24,20 @@ function norm(value: string): string {
   return value.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase()
 }
 
+/** User-facing outcome copy; record-only must not promise this result round. */
+export function delegationToastLabel(followUp: DelegationFollowUp | null): string {
+  switch (followUp?.kind) {
+    case "rework":
+      return "已写入评审项并请求按批注修改"
+    case "replan":
+      return "已写入评审项，当前计划将重新生成"
+    case "record-only":
+      return "已记录评审项，将在下一次计划/修改中处理"
+    default:
+      return "已交给 Tech Lead 处理"
+  }
+}
+
 export function delegationFollowUp(
   goal: Pick<PodGoal, "goalId" | "status" | "stage" | "resultReady" | "accepted">,
 ): DelegationFollowUp {
@@ -188,7 +202,7 @@ export async function delegateAnnotationBatch(input: {
   sendTechLead(input: { podId: string; goalId: string; text: string }): Promise<unknown>
   rejectResult(podId: string, goalId: string, feedback: string): Promise<{ revision?: number }>
   verifyTarget?(target: { podId: string; goalId: string; revision: number }): Promise<string | null>
-  markDelegated(ids: readonly string[], reviewItemIDs: readonly string[]): void
+  markDelegated(pairs: ReadonlyArray<{ annotationID: string; reviewItemID: string }>): void
 }): Promise<DelegationResult> {
   const target = { ...input.target }
   const annotations = input.annotations.filter((annotation) => !annotation.delegatedAt)
@@ -274,7 +288,16 @@ export async function delegateAnnotationBatch(input: {
         `用户提交了 ${items.length} 条评审意见，请按批注修改并逐条回应。`,
       )
     }
-    deps.markDelegated(annotations.map((annotation) => annotation.id), items.map((item) => item.id))
+    // Map by the stable clientRef, never by position: the server may return
+    // reused or reordered rows for a retried batch.
+    const itemByRef = new Map<string, string>()
+    for (const item of items) {
+      if (item.clientRef) itemByRef.set(item.clientRef, item.id)
+    }
+    deps.markDelegated(annotations.flatMap((annotation, index) => {
+      const reviewItemID = itemByRef.get(annotation.id) ?? items[index]?.id
+      return reviewItemID ? [{ annotationID: annotation.id, reviewItemID }] : []
+    }))
     return { goalId, revision, items, followUp, error: null }
   } catch (err: any) {
     return { goalId, revision, items, followUp, error: String(err?.message ?? err) }

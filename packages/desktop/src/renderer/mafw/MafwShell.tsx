@@ -122,9 +122,14 @@ import { fetchTasks, ingestTask } from "./task-store"
 import { fetchQueue, ingestQueueEvent } from "./queue-store"
 import { setRun } from "./run-store"
 import { addPending, patchPending } from "./annotation-store"
-import { annotationSourceFromScopeKey, draftOwnerKey, goalChangeSetAnnotationScope } from "./annotation-scope"
+import {
+  annotationSourceFromScopeKey,
+  draftOwnerKey,
+  goalChangeSetAnnotationScope,
+  projectChangeSetAnnotationScope,
+} from "./annotation-scope"
 import { deliverAnnotationDiscussion, type DiscussionTarget } from "./annotation-discussion"
-import { delegateAnnotationBatch, targetVersionProblem } from "./annotation-delegation"
+import { delegateAnnotationBatch, delegationToastLabel, targetVersionProblem } from "./annotation-delegation"
 import { anchorOccursIn, annotationSourceProblem, sourceAnchorMatches } from "./annotation-source"
 import { fileModelFor } from "./documents/file-documents"
 import { AnnotationActionDialog } from "./components/AnnotationActionDialog"
@@ -3068,7 +3073,7 @@ export function MafwShell() {
     const scope = contentScope()
     const scopeKey = a.scopeKey ?? currentContentScopeKey() ?? null
     const root = a.root ?? contentScopeRoot(scope) ?? null
-    const ownerKey = draftOwnerKey(currentSessionID(), scopeKey)
+    const ownerKey = draftOwnerKey(a.sessionID ?? currentSessionID(), scopeKey)
     const source = a.source ?? annotationSourceFromScopeKey(scopeKey, root) ?? undefined
     const saved = addPending({
       ...a,
@@ -3279,17 +3284,17 @@ export function MafwShell() {
         rejectResult: (targetPodId, goalId, feedback) =>
           window.api.mafw.pod.rejectResult(targetPodId, goalId, feedback),
         verifyTarget: (reviewTarget) => verifyDelegationTarget(annotations, reviewTarget),
-        markDelegated: (ids, reviewItemIDs) => {
+        markDelegated: (pairs) => {
           const at = Date.now()
-          ids.forEach((id, index) => {
-            const annotation = annotationsByID.get(id)
+          for (const { annotationID, reviewItemID } of pairs) {
+            const annotation = annotationsByID.get(annotationID)
             if (annotation) {
-              patchPending(annotation.sessionID, id, {
+              patchPending(annotation.sessionID, annotationID, {
                 delegatedAt: at,
-                reviewItemIDs: reviewItemIDs[index] ? [reviewItemIDs[index]] : undefined,
+                reviewItemIDs: [reviewItemID],
               })
             }
-          })
+          }
         },
       })
       if (result.error) {
@@ -3312,13 +3317,7 @@ export function MafwShell() {
         throw new Error(result.error)
       }
       if (pendingDelegationBatch?.key === batchKey) pendingDelegationBatch = null
-      const label = result.followUp?.kind === "rework"
-        ? "已写入评审项并请求按批注修改"
-        : result.followUp?.kind === "replan"
-          ? "已写入评审项，当前计划将重新生成"
-          : result.followUp?.kind === "record-only"
-            ? "已记录评审项，将在本版结果后统一处理"
-            : "已交给 Tech Lead 处理";
+      const label = delegationToastLabel(result.followUp)
       showToastV2({ description: label, duration: 2800 } as any)
       setAnnotationActions(null)
     } catch (err: any) {
@@ -4968,10 +4967,14 @@ export function MafwShell() {
                       addAnnotation({ ...a, ...scope })
                       return
                     }
+                    const projectDir = doc?.scope.worldId ?? currentProject()
                     const sid = doc?.source.kind === "session" ? doc.source.sessionID : currentSessionID()
-                    if (!sid) return
-                    addPending({ sessionID: sid, ...a })
-                    showToastV2({ description: "已加入批注", duration: 1600 } as any)
+                    if (!projectDir || !sid) return
+                    const scope = projectChangeSetAnnotationScope({
+                      projectDir,
+                      root: doc?.root ?? null,
+                    })
+                    addAnnotation({ ...a, sessionID: sid, ...scope })
                   }}
                   onOpenReview={() => openChangesFace({ section: "review" })}
                   renderWorld={() => (

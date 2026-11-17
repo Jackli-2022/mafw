@@ -99,4 +99,36 @@ describe('PodStore review provenance', () => {
     `).run(now, now);
     expect(store.getReviewItem('review_bad')?.source).toBeNull();
   });
+
+  test('structurally invalid source JSON is exposed as null', () => {
+    const db = legacyDb();
+    const store = new PodStore(db);
+    const insert = db.prepare(`
+      INSERT INTO pod_goal_review_items (
+        id, pod_id, goal_id, revision, status, rel, comment, source_json, created_at, updated_at
+      ) VALUES (?, 'pod_1', 'g1', 1, 'pending', 'a.ts', 'x', ?, ?, ?)
+    `);
+    const cases: Array<[string, string]> = [
+      ['review_missing_project', JSON.stringify({ kind: 'project', root: 'C:/r' })],
+      ['review_bad_version', JSON.stringify({
+        kind: 'project', projectDir: 'C:/r', root: 'C:/r', contentVersion: 5,
+      })],
+      ['review_goal_no_rev', JSON.stringify({
+        kind: 'goal', projectDir: 'C:/r', root: 'C:/r', goalId: 'g1',
+      })],
+      ['review_bad_kind', JSON.stringify({ kind: 'other', projectDir: 'C:/r', root: 'C:/r' })],
+      ['review_non_object', JSON.stringify('C:/r')],
+    ];
+    for (const [id, json] of cases) insert.run(id, json, now, now);
+    for (const [id] of cases) {
+      expect(store.getReviewItem(id)?.source).toBeNull();
+    }
+
+    const valid = {
+      kind: 'goal', projectDir: 'C:/r', goalId: 'g1', revision: 2,
+      root: 'C:/r', contentVersion: null,
+    };
+    insert.run('review_valid', JSON.stringify(valid), now, now);
+    expect(store.getReviewItem('review_valid')?.source).toEqual(valid);
+  });
 });

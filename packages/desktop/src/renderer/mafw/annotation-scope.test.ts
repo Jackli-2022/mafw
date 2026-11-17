@@ -5,6 +5,7 @@ import {
   annotationSourceFromScopeKey,
   draftOwnerKey,
   goalChangeSetAnnotationScope,
+  projectChangeSetAnnotationScope,
 } from "./annotation-scope"
 import type { Annotation } from "../../shared/annotation-types"
 
@@ -87,6 +88,18 @@ describe("annotation scope", () => {
       chatKind: "techlead",
       chatGoalId: "g2",
     })).toHaveLength(1)
+  })
+
+  test("session change-set annotations carry a project source and root", () => {
+    expect(projectChangeSetAnnotationScope({ projectDir: "C:\\Repo", root: null })).toEqual({
+      source: { kind: "project", projectDir: "C:\\Repo" },
+      scopeKey: "project:c:/repo",
+      root: "C:\\Repo",
+    })
+    expect(projectChangeSetAnnotationScope({
+      projectDir: "C:/Repo",
+      root: "C:/Repo-worktree",
+    }).root).toBe("C:/Repo-worktree")
   })
 
   test("reserved review actions do not alter owner identity", () => {

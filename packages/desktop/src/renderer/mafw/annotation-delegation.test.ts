@@ -3,6 +3,7 @@ import {
   buildNewGoalDraft,
   delegateAnnotationBatch,
   delegationFollowUp,
+  delegationToastLabel,
   eligibleDelegationGoals,
   reviewInputsForDelegation,
   targetVersionProblem,
@@ -101,8 +102,8 @@ function fakeDeps() {
       log.push(`rejectResult:${podId}:${goalId}`)
       return { revision: 2 }
     },
-    markDelegated: (ids: readonly string[], reviewItemIDs: readonly string[]) => {
-      log.push(`markDelegated:${ids.join(",")}:${reviewItemIDs.join(",")}`)
+    markDelegated: (pairs: ReadonlyArray<{ annotationID: string; reviewItemID: string }>) => {
+      log.push(`markDelegated:${pairs.map((pair) => `${pair.annotationID}=${pair.reviewItemID}`).join(",")}`)
     },
   }
 }
@@ -130,12 +131,54 @@ describe("annotation delegation", () => {
     expect(out.goalId).toBe("g1")
     expect(out.error).toBeNull()
     expect(deps.log.filter((line) => line.startsWith("createReviewItems"))).toHaveLength(1)
-    expect(deps.log).toContain("markDelegated:a1,a2:review_1,review_2")
+    expect(deps.log).toContain("markDelegated:a1=review_1,a2=review_2")
     const inputs = reviewInputsForDelegation([annotation("a1"), annotation("a2")])
     expect(inputs.map((input) => input.clientRef)).toEqual(["a1", "a2"])
     expect(inputs[0].source).toEqual({
       kind: "project", projectDir: "C:/repo", root: "C:/repo", contentVersion: "hash",
     })
+  })
+
+  test("review item ids map by clientRef even when the server reorders rows", async () => {
+    const deps = fakeDeps()
+    deps.createReviewItems = async (target: any, body: any) => ({
+      items: [...body.items].reverse().map((item: any) => ({
+        id: `review_${item.clientRef}`,
+        podId: target.podId,
+        goalId: target.goalId,
+        revision: target.revision,
+        status: "pending" as const,
+        rel: item.rel,
+        startLine: item.startLine ?? null,
+        endLine: item.endLine ?? null,
+        code: item.code ?? "",
+        comment: item.comment,
+        anchor: item.anchor ?? null,
+        source: item.source ?? null,
+        clientRef: item.clientRef,
+        response: null,
+        originItemId: null,
+        originRevision: null,
+        createdAt: "2026-11-17T00:00:00.000Z",
+        updatedAt: "2026-11-17T00:00:00.000Z",
+        respondedAt: null,
+        resolvedAt: null,
+      })),
+    })
+    const out = await delegateAnnotationBatch({
+      annotations: [annotation("a1"), annotation("a2")],
+      projectDir: "C:/repo",
+      target: { podId: "pod_1", goalId: "g1", revision: 1 },
+      goal: goal(),
+    }, deps)
+    expect(out.error).toBeNull()
+    expect(deps.log).toContain("markDelegated:a1=review_a1,a2=review_a2")
+  })
+
+  test("record-only toast says the next plan/rework, not this result", () => {
+    const label = delegationToastLabel({ kind: "record-only" })
+    expect(label).toContain("下一次计划/修改")
+    expect(label).not.toContain("本版结果")
   })
 
   test("goal-source batch cannot target another or terminal goal", () => {
@@ -227,7 +270,7 @@ describe("annotation delegation", () => {
     expect(first.goalId).toBe("g_new")
     expect(first.error).toMatch(/notify failed/)
     expect(deps.createdGoals).toBe(1)
-    expect(deps.log).not.toContain("markDelegated:a1:review_1")
+    expect(deps.log).not.toContain("markDelegated:a1=review_1")
 
     failNotify = false
     const retry = await delegateAnnotationBatch({
@@ -239,7 +282,7 @@ describe("annotation delegation", () => {
     expect(retry.goalId).toBe("g_new")
     expect(retry.error).toBeNull()
     expect(deps.createdGoals).toBe(1)
-    expect(deps.log.filter((line) => line === "markDelegated:a1:review_1")).toHaveLength(1)
+    expect(deps.log.filter((line) => line === "markDelegated:a1=review_1")).toHaveLength(1)
   })
 
   test("retry can reuse an existing target with the original follow-up", async () => {
@@ -252,7 +295,7 @@ describe("annotation delegation", () => {
     }, deps)
     expect(out.error).toBeNull()
     expect(deps.log).toContain("rejectResult:pod_1:g1")
-    expect(deps.log).toContain("markDelegated:a1:review_1")
+    expect(deps.log).toContain("markDelegated:a1=review_1")
   })
 
   test("new Goal item failure still returns the created goal id", async () => {
