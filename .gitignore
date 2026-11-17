@@ -52,3 +52,5 @@ tsconfig.tsbuildinfo
 
 # spike/probe artifacts
 **/.spike-*.txt
+
+gateway/scripts/fixtures/engram-p1/
