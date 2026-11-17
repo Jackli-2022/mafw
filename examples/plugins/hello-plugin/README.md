@@ -15,20 +15,26 @@ The gateway validates a candidate directory without installing it (load, dry
 mafw plugin check <absolute path to this folder>
 ```
 
-Exit 0 with `actions` and `events` in the reported inventory means the package
-is publishable. Pass an absolute path: the gateway resolves it in its own
-working directory, not in your shell's.
+Requires `mafw plugin check` (plugin standard v1, same delivery). Exit 0 with
+`actions` and `events` in the reported inventory means the package activates and
+stays inside its declared bounds; install consent and name collisions are
+checked at install time. Relative paths are rejected — pass an absolute path.
 
 ## Install it
 
-**A human runs this** — an `apiVersion: 2` package needs install consent, and
-`mafw plugins install` reads the human credential (`MAFW_HUMAN_TOKEN` or
-`~/.mafw/human.token`):
+**A human runs this** — an `apiVersion: 2` package needs explicit trust and
+permission consent, and `mafw plugins install` reads the human credential
+(`MAFW_HUMAN_TOKEN` or `~/.mafw/human.token`):
 
 ```bash
-mafw plugins install <absolute path to this folder>
+mafw plugins install "<absolute path to hello-plugin>" --trust trusted \
+  --permission actions --permission events
 mafw plugins doctor hello-plugin   # full diagnosis after install
 ```
+
+`--trust` must equal `plugin.json`'s `kind`, and the `--permission` list must
+match `plugin.json`'s `permissions` exactly; any mismatch is rejected with
+`permission_consent_required`. Relative paths are rejected too.
 
 Installed packages live in `~/.mafw/plugins/<name>/`; remove one from the
 desktop Plugin Center (or delete that directory while the gateway is stopped).

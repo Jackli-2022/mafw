@@ -1,11 +1,9 @@
-let timer;
-
 module.exports = {
   name: 'hello-plugin',
   async activate(ctx) {
-    // Broadcast one tick per second; the cleanup is owned by ctx.effect, so
-    // unload / replace / failed check all stop it.
-    timer = setInterval(() => {
+    // Broadcast one tick per second. The timer lives in this activation's
+    // closure, so the cleanup below can only ever stop this activation's timer.
+    const timer = setInterval(() => {
       ctx.emit({ type: 'plugin:hello-plugin:tick', properties: { at: Date.now() } });
     }, 1000);
     ctx.effect(() => clearInterval(timer));

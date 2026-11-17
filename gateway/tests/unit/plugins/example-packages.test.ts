@@ -74,11 +74,17 @@ describe('example packages', () => {
       expect(host.getEventRegistry().has('kitchen-sink', 'plugin:kitchen-sink:ping')).toBe(true);
       expect(tools.map((tool) => tool.name)).toContain('lookup');
       expect(observers.map((observer) => observer.id)).toContain('audit');
-      expect(host.getHttpRegistry().routes()).toEqual(
+      const routes = host.getHttpRegistry().routes();
+      expect(routes.filter((route) => route.package === 'kitchen-sink')).toHaveLength(1);
+      expect(routes).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ package: 'kitchen-sink', method: 'GET', path: '/ping', ws: false }),
         ]),
       );
+      const descriptor = host
+        .getClientSnapshot()
+        .plugins.find((plugin) => plugin.name === 'kitchen-sink');
+      expect(descriptor?.ui.panels?.map((panel) => panel.id)).toContain('sink');
     } finally {
       host.stop();
       fs.rmSync(root, { recursive: true, force: true });
