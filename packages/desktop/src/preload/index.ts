@@ -219,6 +219,8 @@ const api: ElectronAPI = {
     remove: (sessionID, id) => ipcRenderer.invoke("annotations-remove", sessionID, id),
     clear: (sessionID) => ipcRenderer.invoke("annotations-clear", sessionID),
     setHeld: (sessionID, id, held) => ipcRenderer.invoke("annotations-set-held", sessionID, id, held),
+    patch: (sessionID, id, patch) => ipcRenderer.invoke("annotations-patch", sessionID, id, patch),
+    findByIds: (ids) => ipcRenderer.invoke("annotations-find-by-ids", ids),
   },
 
   onNavigateMafw: (cb) => {

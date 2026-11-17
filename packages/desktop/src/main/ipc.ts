@@ -138,6 +138,14 @@ export function registerIpcHandlers(deps: Deps) {
     "annotations-set-held",
     (_event: IpcMainInvokeEvent, sessionID: string, id: string, held: boolean) => annotations.setHeld(sessionID, id, held),
   )
+  ipcMain.handle(
+    "annotations-patch",
+    (_event: IpcMainInvokeEvent, sessionID: string, id: string, patch: any) => annotations.patch(sessionID, id, patch),
+  )
+  ipcMain.handle(
+    "annotations-find-by-ids",
+    (_event: IpcMainInvokeEvent, ids: readonly string[]) => annotations.findByIds(ids),
+  )
 
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())
   ipcMain.handle("await-initialization", () => deps.awaitInitialization())

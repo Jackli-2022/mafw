@@ -13,3 +13,15 @@ test("held 批注的 IPC 在 main 与 preload 都已接线", () => {
   const preload = read("../preload/index.ts")
   assert.match(preload, /setHeld: \(sessionID, id, held\) => ipcRenderer\.invoke\("annotations-set-held"/)
 })
+
+test("patch/findByIds annotation IPC is wired", () => {
+  const ipc = read("../main/ipc.ts")
+  assert.match(ipc, /"annotations-patch"/)
+  assert.match(ipc, /"annotations-find-by-ids"/)
+  assert.match(ipc, /annotations\.patch\(/)
+  assert.match(ipc, /annotations\.findByIds\(/)
+
+  const preload = read("../preload/index.ts")
+  assert.match(preload, /patch: \(sessionID, id, patch\) => ipcRenderer\.invoke\("annotations-patch"/)
+  assert.match(preload, /findByIds: \(ids\) => ipcRenderer\.invoke\("annotations-find-by-ids"/)
+})

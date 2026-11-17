@@ -1,6 +1,6 @@
 // 批注草稿的纯逻辑 + 可注入 store 的仓库（electron 无关，main/测试共用）。
 // main 侧装配在 ipc.ts：createAnnotationRepo(getStore("mafw-annotations"))。
-import type { Annotation, AnnotationDb } from "./annotation-types"
+import type { Annotation, AnnotationDb, AnnotationPatch } from "./annotation-types"
 
 const DB_KEY = "bySession"
 
@@ -26,6 +26,43 @@ export function setAnnotationHeld(db: AnnotationDb, sessionID: string, id: strin
     ...db,
     [sessionID]: (db[sessionID] ?? []).map((a) => (a.id === id ? { ...a, held } : a)),
   }
+}
+
+/** Apply only lifecycle/source fields; identity and authored content are immutable. */
+export function patchAnnotation(
+  db: AnnotationDb,
+  sessionID: string,
+  id: string,
+  patch: AnnotationPatch,
+): AnnotationDb {
+  const allowed: AnnotationPatch = {}
+  for (const key of [
+    "held", "source", "contentVersion", "capturedDirty",
+    "discussedAt", "delegatedAt", "reviewItemIDs",
+  ] as const) {
+    if (Object.prototype.hasOwnProperty.call(patch ?? {}, key)) {
+      (allowed as any)[key] = (patch as any)[key]
+    }
+  }
+  return {
+    ...db,
+    [sessionID]: (db[sessionID] ?? []).map((a) => (a.id === id ? { ...a, ...allowed } : a)),
+  }
+}
+
+/** Find annotations across every owner bucket, preserving the requested id order. */
+export function findAnnotationsByIds(db: AnnotationDb, ids: readonly string[]): Annotation[] {
+  const wanted = new Set(ids)
+  const byId = new Map<string, Annotation>()
+  for (const list of Object.values(db)) {
+    for (const annotation of list) {
+      if (wanted.has(annotation.id)) byId.set(annotation.id, annotation)
+    }
+  }
+  return ids.flatMap((id) => {
+    const found = byId.get(id)
+    return found ? [found] : []
+  })
 }
 
 type KvStore = {
@@ -71,6 +108,15 @@ export function createAnnotationRepo(store: KvStore) {
       if (!before.some((a) => a.id === id)) return false
       save(setAnnotationHeld(readDb(store), sessionID, id, held))
       return true
+    },
+    patch(sessionID: string, id: string, patch: AnnotationPatch): boolean {
+      const before = listAnnotations(readDb(store), sessionID)
+      if (!before.some((a) => a.id === id)) return false
+      save(patchAnnotation(readDb(store), sessionID, id, patch))
+      return true
+    },
+    findByIds(ids: readonly string[]): Annotation[] {
+      return findAnnotationsByIds(readDb(store), ids)
     },
   }
 }

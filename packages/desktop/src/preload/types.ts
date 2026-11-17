@@ -79,6 +79,8 @@ export type AnnotationsAPI = {
   remove(sessionID: string, id: string): Promise<unknown>
   clear(sessionID: string): Promise<unknown>
   setHeld(sessionID: string, id: string, held: boolean): Promise<unknown>
+  patch(sessionID: string, id: string, patch: import("../shared/annotation-types").AnnotationPatch): Promise<boolean>
+  findByIds(ids: readonly string[]): Promise<import("../shared/annotation-types").Annotation[]>
 }
 /** G1 截屏：整屏捕获（裁剪在 renderer 浮层）；G2 元素截图经 main 截屏裁剪（窗口内容区矩形）。 */
 export type CaptureAPI = {

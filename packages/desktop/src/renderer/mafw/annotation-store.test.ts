@@ -1,8 +1,12 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import {
   addPending,
+  annotationsByIDs,
   clearPending,
+  draftsFor,
   hydrateAnnotations,
+  hydrateAnnotationsByIDs,
+  patchPending,
   pendingFor,
   removePending,
   resetAnnotationStore,
@@ -13,9 +17,13 @@ import {
 } from "./annotation-store"
 
 const calls: Array<{ m: string; args: any[] }> = []
+const remote: any[] = []
 const fakeApi = {
   list: async (sid: string) => {
     calls.push({ m: "list", args: [sid] })
+    if (sid === "draft:project:C:/repo") {
+      return [{ id: "draft-1", sessionID: sid, rel: "a.ts", startLine: 1, endLine: 1, code: "x", comment: "draft", createdAt: 1 }]
+    }
     return sid === "s1"
       ? [
           { id: "a2", sessionID: "s1", rel: "a.ts", startLine: 1, endLine: 1, code: "x", comment: "c2", createdAt: 2000 },
@@ -27,6 +35,11 @@ const fakeApi = {
   remove: async (sid: string, id: string) => { calls.push({ m: "remove", args: [sid, id] }) },
   clear: async (sid: string) => { calls.push({ m: "clear", args: [sid] }) },
   setHeld: async (sid: string, id: string, held: boolean) => { calls.push({ m: "setHeld", args: [sid, id, held] }) },
+  patch: async (sid: string, id: string, patch: any) => { calls.push({ m: "patch", args: [sid, id, patch] }) },
+  findByIds: async (ids: readonly string[]) => {
+    calls.push({ m: "findByIds", args: [ids] })
+    return remote.filter((a) => ids.includes(a.id))
+  },
 }
 
 beforeEach(() => {
@@ -116,6 +129,34 @@ describe("annotation-store", () => {
   test("会话隔离", async () => {
     await hydrateAnnotations("s1")
     expect(pendingFor("s2")).toEqual([])
+  })
+
+  test("discussed and delegated drafts are no longer sendable", () => {
+    addPending({ sessionID: "s1", scopeKey: "project:C:/r", rel: "a.ts", startLine: 1, endLine: 1, code: "x", comment: "a" })
+    const id = pendingFor("s1")[0].id
+    patchPending("s1", id, { discussedAt: 10 })
+    expect(sendableFor("s1")).toEqual([])
+    expect(draftsFor("s1").map((a) => a.id)).toEqual([id])
+    expect(annotationsByIDs([id])[0].discussedAt).toBe(10)
+    expect(calls.some((call) => call.m === "patch" && call.args[1] === id)).toBe(true)
+
+    patchPending("s1", id, { discussedAt: undefined, delegatedAt: 20, reviewItemIDs: ["review_1"] })
+    expect(sendableFor("s1")).toEqual([])
+  })
+
+  test("hydrateAnnotationsByIDs loads refs across session buckets", async () => {
+    remote.push({
+      id: "remote-1", sessionID: "s2", rel: "b.ts", startLine: 1, endLine: 1,
+      code: "y", comment: "remote", createdAt: 3, discussedAt: 4,
+    })
+    await hydrateAnnotationsByIDs(["remote-1"])
+    expect(annotationsByIDs(["remote-1"])[0]).toMatchObject({ sessionID: "s2", discussedAt: 4 })
+    expect(pendingFor("s2").map((a) => a.id)).toEqual(["remote-1"])
+  })
+
+  test("no-session draft owner hydrates after restart", async () => {
+    await hydrateAnnotations("draft:project:C:/repo")
+    expect(pendingFor("draft:project:C:/repo").map((a) => a.id)).toEqual(["draft-1"])
   })
 })
 

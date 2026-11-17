@@ -5,6 +5,11 @@ export type AnnotationAnchor =
   | { kind: "cell"; sheet?: string; ref: string; value: string }
   | { kind: "region"; x: number; y: number; w: number; h: number; slide?: number }
 
+/** Immutable origin of an annotation draft (annotation spec 2026-11-17). */
+export type AnnotationSource =
+  | { kind: "project"; projectDir: string }
+  | { kind: "goal"; projectDir: string; goalId: string; revision: number }
+
 /** 批注草稿（桌面端持久；main 与 renderer 共用同一形状）。 */
 export type Annotation = {
   id: string
@@ -27,7 +32,23 @@ export type Annotation = {
   imageDataUrl?: string
   /** 保留但不随下一条消息发送（ADE 的 held）。 */
   held?: boolean
+  /** Immutable source scope captured when the annotation is created. */
+  source?: AnnotationSource
+  /** File content fingerprint at capture; null when the file could not be read. */
+  contentVersion?: string | null
+  /** True when the visible editor buffer differed from disk at capture. */
+  capturedDirty?: boolean
+  /** Set after the annotation was sent as discussion; excluded from future sends. */
+  discussedAt?: number
+  /** Set after the annotation batch became Goal review items. */
+  delegatedAt?: number
+  reviewItemIDs?: string[]
 }
+
+export type AnnotationPatch = Partial<Pick<
+  Annotation,
+  "held" | "source" | "contentVersion" | "capturedDirty" | "discussedAt" | "delegatedAt" | "reviewItemIDs"
+>>
 
 /** 持久化形状：sessionID → 批注列表。 */
 export type AnnotationDb = Record<string, Annotation[]>
