@@ -1,7 +1,23 @@
-import type { EventTriggerRow } from './event-types';
+import type { EventThreadRow, EventTriggerRow } from './event-types';
 
 function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+export function renderExternalEvent(trigger: EventTriggerRow, thread: EventThreadRow): string {
+  const lines = [
+    '[EVENT]',
+    `kind=${trigger.kind}`,
+    `key=${thread.externalKey}`,
+  ];
+  if (thread.title) lines.push(`title: ${thread.title}`);
+  if (trigger.actor) lines.push(`actor=${trigger.actor}`);
+  const headline = trigger.payload && typeof trigger.payload.title === 'string'
+    ? trigger.payload.title.trim()
+    : '';
+  if (headline && headline !== thread.title) lines.push(`headline: ${headline}`);
+  lines.push('处理完即可；需要用户拍板时走 ask 流程。');
+  return lines.join('\n');
 }
 
 /**

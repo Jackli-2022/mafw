@@ -152,6 +152,37 @@ export class LeadOutbox {
     });
   }
 
+  /** External event broadcast; dedupeKey `external:<triggerId>`. */
+  enqueueExternal(input: {
+    podId: string;
+    triggerId: string;
+    text: string;
+    priority?: LeadOutboxPriority;
+  }): EventOutboxRow {
+    const now = this.deps.now();
+    const channelId = `${LEAD_CHANNEL_PREFIX}${input.podId}`;
+    this.deps.store.insertChannel({
+      id: channelId,
+      threadId: '*',
+      kind: 'chat',
+      address: { podId: input.podId },
+      now,
+    });
+    return this.deps.outbox.enqueue({
+      channelId,
+      dedupeKey: `external:${input.triggerId}`,
+      payload: {
+        kind: 'external',
+        priority: input.priority ?? 'p2',
+        text: input.text,
+        podId: input.podId,
+        goalId: null,
+        recordId: input.triggerId,
+        createdAt: now,
+      },
+    });
+  }
+
   async dispatch(): Promise<LeadOutboxDispatchResult> {
     if (this.dispatching) return { sent: 0, deferred: 0, failed: 0 };
     this.dispatching = true;
