@@ -3,7 +3,7 @@
 - **分支**：`main`
 - **设计**：`docs/superpowers/specs/2026-11-17-personal-memory-first-principles-design.md`
 - **计划**：`docs/superpowers/plans/2026-11-17-proactive-topic-recall.md`
-- **提交**：`4f59871`（Topic State）→ `f4defb3`（recall 头部）→ `a3c03b1`（工具）→ `f1d954f`（并发 package 编码修复）→ 本文档提交
+- **提交**：`4f59871`（Topic State）→ `f4defb3`（recall 头部）→ `a3c03b1`（工具）→ `f1d954f`（并发 package 编码修复）→ `a52c66c`（review 修复）→ `794f73e`（不可靠召回抑制）→ 本文档提交
 
 ## 交付
 
