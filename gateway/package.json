@@ -1,6 +1,6 @@
 {
   "name": "mafw-gateway",
-  "version": "4.16.1",
+  "version": "4.17.0",
   "description": "MAFW Gateway v5.0 —SSE Event-Driven Scheduler",
   "main": "dist/index.js",
   "scripts": {
