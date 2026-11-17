@@ -13,14 +13,14 @@ describe("notificationWindowBounds", () => {
     })
   })
 
-  test("three cards stack upward", () => {
+  test("three cards stack upward with zero gap", () => {
     const bounds = notificationWindowBounds({ workArea, count: 3 })
-    expect(bounds.height).toBe(3 * 92 + 2 * 10)
+    expect(bounds.height).toBe(3 * 92)
     expect(bounds.y).toBe(1080 - 16 - bounds.height)
   })
 
   test("more than maxVisible clamps to three", () => {
-    expect(notificationWindowBounds({ workArea, count: 5 }).height).toBe(3 * 92 + 2 * 10)
+    expect(notificationWindowBounds({ workArea, count: 5 }).height).toBe(3 * 92)
   })
 
   test("zero cards has zero height and stays bottom-right", () => {

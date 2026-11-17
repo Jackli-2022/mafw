@@ -14,7 +14,47 @@ import {
 } from "./notification-prefs"
 
 const KINDS = new Set<NotificationKind>(["goal_result", "attention", "permission", "question"])
-const SEVERITIES = new Set<NotificationSeverity>(["p1", "p2", "p3"])
+// p3（工作台进度）不进中心/不计未读（spec §2）——IPC 出口 fail-closed。
+const PUBLISHABLE_SEVERITIES = new Set<NotificationSeverity>(["p1", "p2"])
+
+/** 长度上限：坏 renderer 不能用超长字段撑爆 store。 */
+export const NOTIFICATION_FIELD_LIMITS = {
+  title: 200,
+  body: 500,
+  reason: 100,
+  dedupeKey: 200,
+} as const
+
+function asString(value: unknown, limit: number): string | undefined {
+  if (typeof value !== "string" || value.length === 0) return undefined
+  return value.length > limit ? value.slice(0, limit) : value
+}
+
+/** Renderer publishes are fail-closed: malformed input never reaches the hub. */
+export function sanitizeNotificationInput(value: unknown): NotificationInput | null {
+  if (!value || typeof value !== "object") return null
+  const raw = value as Record<string, unknown>
+  if (!KINDS.has(raw.kind as NotificationKind)) return null
+  if (!PUBLISHABLE_SEVERITIES.has(raw.severity as NotificationSeverity)) return null
+  const title = asString(raw.title, NOTIFICATION_FIELD_LIMITS.title)
+  const reason = asString(raw.reason, NOTIFICATION_FIELD_LIMITS.reason)
+  if (!title || !reason) return null
+
+  const input: NotificationInput = {
+    kind: raw.kind as NotificationKind,
+    severity: raw.severity as NotificationSeverity,
+    title,
+    reason,
+  }
+  const body = asString(raw.body, NOTIFICATION_FIELD_LIMITS.body)
+  const projectId = asString(raw.projectId, NOTIFICATION_FIELD_LIMITS.dedupeKey)
+  const dedupeKey = asString(raw.dedupeKey, NOTIFICATION_FIELD_LIMITS.dedupeKey)
+  if (body) input.body = body
+  if (projectId) input.projectId = projectId
+  if (dedupeKey) input.dedupeKey = dedupeKey
+  if (isNotificationTarget(raw.target)) input.target = raw.target
+  return input
+}
 
 export interface NotificationIpcMain {
   handle(channel: string, listener: (event: unknown, ...args: any[]) => any): void
@@ -29,36 +69,6 @@ export interface NotificationIpcDeps {
   onPrefsChanged?: (prefs: ReturnType<typeof readNotificationPrefs>) => void
   /** 主窗口上报 effective theme → 悬浮窗卡片跟应用主题。 */
   onThemeReported?: (theme: "light" | "dark") => void
-}
-
-function asString(value: unknown): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined
-}
-
-/** Renderer publishes are fail-closed: malformed input never reaches the hub. */
-export function sanitizeNotificationInput(value: unknown): NotificationInput | null {
-  if (!value || typeof value !== "object") return null
-  const raw = value as Record<string, unknown>
-  if (!KINDS.has(raw.kind as NotificationKind)) return null
-  if (!SEVERITIES.has(raw.severity as NotificationSeverity)) return null
-  const title = asString(raw.title)
-  const reason = asString(raw.reason)
-  if (!title || !reason) return null
-
-  const input: NotificationInput = {
-    kind: raw.kind as NotificationKind,
-    severity: raw.severity as NotificationSeverity,
-    title,
-    reason,
-  }
-  const body = asString(raw.body)
-  const projectId = asString(raw.projectId)
-  const dedupeKey = asString(raw.dedupeKey)
-  if (body) input.body = body
-  if (projectId) input.projectId = projectId
-  if (dedupeKey) input.dedupeKey = dedupeKey
-  if (isNotificationTarget(raw.target)) input.target = raw.target
-  return input
 }
 
 export function registerNotificationIpc(deps: NotificationIpcDeps): () => void {

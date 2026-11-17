@@ -16,7 +16,7 @@ import { CHANNEL } from "./constants"
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand } from "./ipc"
 import { getStore } from "./store"
 import { NotificationHub } from "./notification-hub"
-import { registerNotificationIpc } from "./notification-ipc"
+import { registerNotificationIpc, sanitizeNotificationInput } from "./notification-ipc"
 import { publishPresenceNotifications } from "./presence-notifications"
 import { readNotificationPrefs } from "./notification-prefs"
 import { createNotificationWindowController, type FloatingWindowLike } from "./notification-window"
@@ -408,7 +408,12 @@ const main = Effect.gen(function* () {
     setBackgroundColor: (color) => setBackgroundColor(color),
     exportDebugLogs: () => exportDebugLogs(),
     recordFatalRendererError: (error) => writeLog("renderer", "fatal renderer error", { ...error }, "error"),
-    publishNotification: (input) => notificationHub.publish(input),
+    // 旧通道（show-notification / mafw-notify）也过 sanitize：非字符串/超长
+    // title 不得进 hub，p3 一律拒绝。
+    publishNotification: (input) => {
+      const sanitized = sanitizeNotificationInput(input)
+      return sanitized ? notificationHub.publish(sanitized) : null
+    },
   })
   registerWslIpcHandlers(wslServers)
   void updater.start()
@@ -531,16 +536,28 @@ const main = Effect.gen(function* () {
         notificationWindow = win
         const fromThisWindow = (event: { sender: unknown }) =>
           !win.isDestroyed() && event.sender === win.webContents
-        ipcMain.on("notification:dismiss", (event, id) => {
+        type Listener = (event: { sender: unknown }, ...args: any[]) => void
+        const listeners: Array<[string, Listener]> = []
+        const addListener = (channel: string, listener: Listener) => {
+          listeners.push([channel, listener])
+          ipcMain.on(channel, listener as never)
+        }
+        addListener("notification:dismiss", (event, id) => {
           if (fromThisWindow(event) && typeof id === "string") handlers.dismiss(id)
         })
-        ipcMain.on("notification:hover", (event, id, hovering) => {
+        addListener("notification:hover", (event, id, hovering) => {
           if (fromThisWindow(event) && typeof id === "string") handlers.hover(id, !!hovering)
         })
-        ipcMain.on("notification:open", (event, id) => {
+        addListener("notification:open", (event, id) => {
           if (fromThisWindow(event) && typeof id === "string") handlers.open(id)
         })
         win.on("closed", () => {
+          // 窗口销毁即解绑：悬浮窗重建（reload/renderer 崩溃恢复）时旧监听
+          // 不随 ipcMain 累积（M-4）。
+          for (const [channel, listener] of listeners) {
+            ipcMain.removeListener(channel, listener as never)
+          }
+          listeners.length = 0
           if (notificationWindow === win) notificationWindow = null
         })
         loadWindow(win, "notification/index.html")

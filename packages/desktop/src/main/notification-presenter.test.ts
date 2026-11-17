@@ -50,17 +50,22 @@ describe("NotificationPresenter", () => {
     expect(seen.at(-1)).toEqual([])
   })
 
-  test("hover pauses the dismiss timer and leaving restarts it", () => {
+  test("hover pauses the dismiss timer and leaving resumes the remaining time", () => {
     const timers = fakeTimers()
+    let clock = 0
     const presenter = new NotificationPresenter({
       setTimer: timers.setTimer,
       clearTimer: timers.clearTimer,
+      now: () => clock,
     })
     presenter.push(item("a"))
+    expect(timers.delays()).toEqual([6000])
+    clock = 2000
     presenter.hover("a", true)
     expect(timers.size()).toBe(0)
     presenter.hover("a", false)
-    expect(timers.delays()).toEqual([6000])
+    // 只跑剩余的 4000ms，而不是重开满 6000ms。
+    expect(timers.delays()).toEqual([4000])
   })
 
   test("keeps at most three cards and drops the oldest", () => {

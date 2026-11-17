@@ -14,6 +14,8 @@ describe("notification center wiring", () => {
     expect(rail).toContain("onNotifications: () => void")
     expect(rail).toContain("notificationsUnread?: number")
     expect(rail).toContain('icon: "bell"')
+    // 铃铛 aria 用 spec 字面（通知（N 条未读）），非通用 rail 组合文案。
+    expect(rail).toContain("notificationBellAria(props.notificationsUnread ?? 0)")
     expect(icons).toContain("bell:")
   })
 

@@ -87,6 +87,22 @@ export function normalizeNotificationState(raw: unknown): NotificationState {
   return capState({ items: [...byId.values()], seenKeys })
 }
 
+function sameNotification(a: MafwNotification, b: MafwNotification): boolean {
+  return (
+    a.id === b.id &&
+    a.kind === b.kind &&
+    a.severity === b.severity &&
+    a.title === b.title &&
+    a.reason === b.reason &&
+    a.createdAt === b.createdAt &&
+    a.readAt === b.readAt &&
+    a.body === b.body &&
+    a.projectId === b.projectId &&
+    a.dedupeKey === b.dedupeKey &&
+    JSON.stringify(a.target ?? null) === JSON.stringify(b.target ?? null)
+  )
+}
+
 export interface PublishResult {
   state: NotificationState
   item: MafwNotification | null
@@ -121,6 +137,12 @@ export function publishNotification(
   if (input.target !== undefined) item.target = input.target
   if (key !== undefined) item.dedupeKey = key
   if (existing?.readAt !== undefined) item.readAt = existing.readAt
+
+  // 内容没有变化 → 返回原 state（hub 不落盘不广播）：
+  // presence 每 15s 重报同一 attention，避免同步写 + 双窗口广播风暴。
+  if (existing && sameNotification(existing, item)) {
+    return { state, item: existing, isNew: false }
+  }
 
   const items = [item, ...state.items.filter((entry) => entry.id !== item.id)]
   const seenKeys = key

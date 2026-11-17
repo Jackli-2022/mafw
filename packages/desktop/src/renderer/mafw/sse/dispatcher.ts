@@ -14,6 +14,15 @@ import type { TrackerEvent } from "../subagent-tracker"
 import type { BackgroundJob } from "../background-jobs"
 import type { NotificationInput } from "../../../shared/notifications"
 
+/** 无 questionId 的 user_question 帧用内容哈希去重（djb2，确定性跨重放）。 */
+function djb2(text: string): string {
+  let hash = 5381
+  for (let i = 0; i < text.length; i++) {
+    hash = ((hash << 5) + hash + text.charCodeAt(i)) | 0
+  }
+  return (hash >>> 0).toString(36)
+}
+
 export interface CoreDeps {
   trace(event: { type?: string }, channel: string): void
   /** 发布到通知 hub（自绘通知中心 + 悬浮窗）。 */
@@ -159,14 +168,22 @@ export function dispatchShellEvent(event: any, deps: ShellEventDeps): void {
     deps.core.trace(event, "notify:question")
     deps.core.setActiveQuestion(event)
     // Goal 级 askUser 只有 goalId（无 sessionID）→ Goal 详情的问题面板。
+    // dedupeKey：questionId 优先；缺失时用 goalId+问题的确定性哈希兜底，
+    // SSE 重连回放同一帧不得产出重复中心条目。
+    const goalId = String(event.goalId || "")
+    const question = String(event.question || "")
+    const questionId = event.questionId ? String(event.questionId) : ""
+    let dedupeKey: string | undefined
+    if (questionId) dedupeKey = `user-question:${questionId}`
+    else if (goalId) dedupeKey = `user-question:${goalId}:${djb2(goalId + "\0" + question)}`
     deps.core.publish({
       kind: "question",
       severity: "p2",
       title: "MAFW：Agent 需要你的回答",
-      body: String(event.question || "").slice(0, 80),
+      body: question.slice(0, 80),
       reason: "需要你",
-      target: { type: "goal", goalId: String(event.goalId || ""), focus: "question" },
-      dedupeKey: event.questionId ? `user-question:${String(event.questionId)}` : undefined,
+      target: { type: "goal", goalId, focus: "question" },
+      dedupeKey,
     })
     return
   }

@@ -108,6 +108,23 @@ describe("dispatchShellEvent: core events", () => {
     expect(published.dedupeKey).toBe("user-question:q1")
   })
 
+  test("user_question 无 questionId → goalId+内容哈希兜底 key（重放去重）", () => {
+    const { deps, calls } = makeDeps()
+    dispatchShellEvent({ type: "user_question", question: "去哪？", goalId: "g1" }, deps)
+    const first = calls.find(c => c.name === "publish")!.args[0] as any
+    expect(first.dedupeKey).toMatch(/^user-question:g1:[0-9a-z]+$/)
+
+    const again = makeDeps()
+    dispatchShellEvent({ type: "user_question", question: "去哪？", goalId: "g1" }, again.deps)
+    const second = again.calls.find(c => c.name === "publish")!.args[0] as any
+    expect(second.dedupeKey).toBe(first.dedupeKey)
+
+    const other = makeDeps()
+    dispatchShellEvent({ type: "user_question", question: "别的？", goalId: "g1" }, other.deps)
+    const third = other.calls.find(c => c.name === "publish")!.args[0] as any
+    expect(third.dedupeKey).not.toBe(first.dedupeKey)
+  })
+
   test("project_registered → bumpProjectsRev", () => {
     const { deps, calls } = makeDeps()
     dispatchShellEvent({ type: "project_registered", projectDir: "C:\\p" }, deps)

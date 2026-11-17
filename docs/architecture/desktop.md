@@ -139,8 +139,8 @@
   出清、高亮/卡片消失；刷新或切回文件后按引文重新锚定。预览锚点仍支持 json 节点路径、表格单元格、图片区域、
   pptx 页码。改动审阅 = 左栏 Goal-first 改动面 + 每 turn / 每 Goal revision 的改动集 tab。
 - **检查点**：`CheckpointOverlay` 时间线（会话回滚 / 文件回滚 / both）；服务端检查点支持只读预览。
-- **托盘与存在感**：15s 轮询 `/api/presence` → tooltip / 菜单状态 / 任务栏进度；attention 差集
-  持久化防重发；点击托盘状态行 `navigateToGoal` 跨项目打开。
+- **托盘与存在感**：15s 轮询 `/api/presence` → tooltip / 菜单状态 / 任务栏进度；
+  点击托盘状态行 `navigateToGoal` 跨项目打开（差集通知链已由通知 hub 取代）。
 - **通知（2026-11-17，自绘）**：主进程 `NotificationHub`（`electron-store("mafw-notifications")`）
   是唯一数据源——presence（attention + Goal 结果）、`permission.asked`、`question.asked`、
   `user_question` 都 publish 进 hub；原生 `new Notification` 只作为悬浮窗失败/关闭时的兜底。

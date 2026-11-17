@@ -13,7 +13,9 @@ test("rail exposes the Lead destination with a badge in its accessible name", ()
   assert.match(rail, /formatRailBadge/)
   assert.match(rail, /badgeLabel/)
   assert.match(rail, /railAriaLabel/)
-  assert.match(rail, /value=\{railAriaLabel\(/)
+  // 2026-11-17：aria-label 改为「基础文案 + 后缀」组合（铃铛可自定义基础文案），
+  // Tooltip 与按钮共用同一个 fullLabel。
+  assert.match(rail, /TooltipV2 value=\{fullLabel\}/)
   assert.match(icons, /"team-three":/)
 })
 

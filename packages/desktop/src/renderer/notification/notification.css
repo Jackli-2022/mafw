@@ -14,7 +14,7 @@ body {
 #root {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 0;
 }
 
 :root {
@@ -47,11 +47,20 @@ html[data-color-scheme="dark"] {
   padding: 12px 14px 10px 16px;
   background: var(--n-bg);
   border: 1px solid var(--n-border);
-  border-radius: 10px;
-  box-shadow: var(--n-shadow);
+  /* 无 box-shadow：窗口 bounds 等于卡片栈，阴影画在窗口外必被裁剪；
+     层次感用边框 + 相邻卡片对比（零间隙堆叠，间隙是吃点击的死区）。 */
+  border-radius: 8px;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
   cursor: pointer;
   user-select: none;
   -webkit-app-region: no-drag;
+}
+
+.nwin-card + .nwin-card {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  margin-top: -1px; /* 相邻边框合并，不留缝隙 */
 }
 
 .nwin-card::before {

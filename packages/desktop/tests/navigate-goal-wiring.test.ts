@@ -24,6 +24,9 @@ test("main: presence goes to the hub; notification clicks navigate via the targe
   assert.match(main, /publishPresenceNotifications\(notificationHub, payload\)/)
   assert.match(main, /function navigateToNotificationTarget\(target/)
   assert.match(main, /webContents\.send\("mafw-notification-open", target\)/)
+  // 旧通道也过 sanitize；悬浮窗销毁时解绑 ipcMain 监听（M-3/M-4）。
+  assert.match(main, /sanitizeNotificationInput/)
+  assert.match(main, /ipcMain\.removeListener\(channel/)
   assert.doesNotMatch(main, /notification\.on\("click"/)
   assert.match(tray, /NavigateGoalTarget/)
 })

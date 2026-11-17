@@ -79,6 +79,23 @@ describe("handleFlowCardEvent", () => {
     expect(published.target).toEqual({ type: "question", sessionID: "s1", requestId: "q1", projectId: "C:/proj" })
   })
 
+  test("question.asked 用 requestID 兜底（旧网关载荷）→ replied 同 key 自动已读", () => {
+    const asked = makeDeps()
+    handleFlowCardEvent(
+      { type: "question.asked", properties: { requestID: "legacy-q", question: "去？" } },
+      "s1", asked.deps,
+    )
+    const published = asked.calls.find(c => c.name === "publish")!.args[0] as any
+    expect(published.dedupeKey).toBe("question:legacy-q")
+
+    const replied = makeDeps()
+    handleFlowCardEvent(
+      { type: "question.replied", properties: { requestID: "legacy-q", answers: [] } },
+      "s1", replied.deps,
+    )
+    expect(replied.calls.find(c => c.name === "markNotificationRead")!.args[0]).toEqual(["question:legacy-q"])
+  })
+
   test("permission.asked 需人工 → publish(permission)；auto 兜底 → scheduleReconcile(5000)", () => {
     const { deps, calls } = makeDeps()
     handleFlowCardEvent({ type: "permission.asked", properties: { id: "p1", permission: "bash", tool: { messageID: "m1", callID: "c1" } } }, "s1", deps)

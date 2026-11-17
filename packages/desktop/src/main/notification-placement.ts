@@ -20,7 +20,9 @@ export interface NotificationPlacementInput {
 
 export const NOTIFICATION_CARD_WIDTH = 360
 export const NOTIFICATION_CARD_HEIGHT = 92
-export const NOTIFICATION_GAP = 10
+// 卡片零间距堆叠：透明窗口尺寸=卡片栈，任何窗口内非卡片像素都会吃掉点击
+// （always-on-top + focusable:false），间隙是死区；分隔靠卡片自身边框。
+export const NOTIFICATION_GAP = 0
 export const NOTIFICATION_MARGIN = 16
 export const NOTIFICATION_MAX_VISIBLE = 3
 

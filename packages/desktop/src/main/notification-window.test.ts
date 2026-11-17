@@ -99,7 +99,7 @@ describe("notification window controller", () => {
     hub.publish({ kind: "attention", severity: "p2", title: "B", reason: "需要你", dedupeKey: "b" })
     expect(fake.sent.at(-1)?.items.map((item) => item.title)).toEqual(["A", "B"])
     expect(fake.sent.at(-1)?.theme).toBe("dark")
-    expect(fake.calls).toContain(`bounds:360x${2 * 92 + 10}@${1920 - 16 - 360},${1080 - 16 - (2 * 92 + 10)}`)
+    expect(fake.calls).toContain(`bounds:360x${2 * 92}@${1920 - 16 - 360},${1080 - 16 - 2 * 92}`)
     expect(fake.calls).toContain("show")
   })
 

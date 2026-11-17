@@ -129,6 +129,37 @@ describe("publishPresenceNotifications", () => {
     expect(hub.snapshot().unread).toBe(0)
   })
 
+  test("failed attention published before the result is auto-read when the result lands", () => {
+    const hub = new NotificationHub(memoryStore(), () => 100)
+    // poll 1：只看到 failed attention，结果还没进 unreadResults。
+    publishPresenceNotifications(hub, payload({
+      attention: {
+        items: [{
+          id: "g1:failed:r1",
+          goalId: "g1",
+          revision: 1,
+          kind: "failed",
+          title: "失败",
+          projectId: "C:/p",
+        }],
+      },
+    }) as any)
+    expect(hub.snapshot().unread).toBe(1)
+
+    // poll 2：p1 结果就绪 → 同 goal+revision 的 failed attention 自动已读。
+    publishPresenceNotifications(hub, payload({
+      unreadResults: {
+        count: 1,
+        latest: { goalId: "g1", revision: 1, title: "登录页", projectId: "C:/p" },
+      },
+    }) as any)
+    const failed = hub.snapshot().items.find((i) => i.id === "g1:failed:r1")
+    const result = hub.snapshot().items.find((i) => i.id === "g1:r1")
+    expect(failed?.readAt).toBe(100)
+    expect(result?.readAt).toBeUndefined()
+    expect(hub.snapshot().unread).toBe(1)
+  })
+
   test("null payload is a no-op", () => {
     const hub = new NotificationHub(memoryStore(), () => 100)
     publishPresenceNotifications(hub, null)

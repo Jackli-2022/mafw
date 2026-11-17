@@ -55,6 +55,19 @@ describe("NotificationHub", () => {
     expect(new NotificationHub(store, () => 200).snapshot().unread).toBe(0)
   })
 
+  test("hub skips persist and broadcast when a re-publish changes nothing", () => {
+    const store = memoryStore()
+    const hub = new NotificationHub(store, () => 100)
+    let changes = 0
+    let news = 0
+    hub.onChange(() => changes++)
+    hub.onNew(() => news++)
+    hub.publish(input({ dedupeKey: "a", title: "A" }))
+    hub.publish(input({ dedupeKey: "a", title: "A" }))
+    expect(changes).toBe(1)
+    expect(news).toBe(1)
+  })
+
   test("clearRead keeps unread and tombstones removed keys", () => {
     const hub = new NotificationHub(memoryStore(), () => 100)
     const read = hub.publish(input({ dedupeKey: "a" }))!

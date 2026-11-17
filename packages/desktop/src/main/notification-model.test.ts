@@ -38,6 +38,14 @@ describe("notification model", () => {
     expect(unreadNotificationCount(second.state)).toBe(1)
   })
 
+  test("identical re-publish is a no-op returning the same state reference", () => {
+    const first = publishNotification(emptyNotificationState(), input({ dedupeKey: "a", title: "A" }), 100)
+    const again = publishNotification(first.state, input({ dedupeKey: "a", title: "A" }), 5000)
+    expect(again.isNew).toBe(false)
+    expect(again.state).toBe(first.state)
+    expect(again.item).toBe(first.state.items[0])
+  })
+
   test("mark read keeps the item but clears unread", () => {
     const { state, item } = publishNotification(emptyNotificationState(), input({ dedupeKey: "a" }), 100)
     const read = markNotificationRead(state, [item!.id], 150)

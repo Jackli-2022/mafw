@@ -83,6 +83,30 @@ describe("notification IPC", () => {
   test("invalid publish is rejected", () => {
     const { ipc } = harness()
     expect(ipc.invoke("mafw-notifications:publish", { kind: "nope" })).toBeNull()
+    expect(
+      ipc.invoke("mafw-notifications:publish", { kind: "attention", severity: "p3", title: "A", reason: "r" }),
+    ).toBeNull()
+  })
+
+  test("over-long fields are truncated, empty title/reason rejected", () => {
+    const { ipc, hub } = harness()
+    const long = "x".repeat(5000)
+    const item = ipc.invoke("mafw-notifications:publish", {
+      kind: "attention",
+      severity: "p2",
+      title: long,
+      body: long,
+      reason: long,
+      dedupeKey: long,
+    })
+    expect(item.title).toHaveLength(200)
+    expect(item.body).toHaveLength(500)
+    expect(item.reason).toHaveLength(100)
+    expect(item.dedupeKey).toHaveLength(200)
+    expect(hub.snapshot().unread).toBe(1)
+    expect(
+      ipc.invoke("mafw-notifications:publish", { kind: "attention", severity: "p2", title: 123, reason: "r" }),
+    ).toBeNull()
   })
 
   test("mark read / all / by dedupe and clear", () => {

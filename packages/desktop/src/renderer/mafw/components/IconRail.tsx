@@ -8,6 +8,7 @@ import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
 import type { LeftDockFace } from "../left-dock"
 import { connDotState, railAriaLabel } from "../left-dock"
 import { formatRailBadge } from "../pod-rail-badge"
+import { notificationBellAria } from "../notifications/notification-view-model"
 import type { PluginRailItemState } from "../plugins/plugin-surface-state"
 import type { PluginSurfaceId } from "../plugins/surface-id"
 
@@ -68,6 +69,8 @@ type RailItem = {
   badge?: number
   /** 覆盖 badge 的显示文案（如 9+）；aria 仍用数字 badge。 */
   badgeLabel?: string
+  /** 自定义 aria-label（铃铛「通知（N 条未读）」）；缺省走 railAriaLabel。 */
+  ariaLabel?: string
   /** 未查看结果圆点（与数字 badge 视觉/语义分开）。 */
   resultDot?: boolean
   /** 通用小圆点（如「改动」有内容），aria 文案由 dotLabel 决定。 */
@@ -113,6 +116,7 @@ export function IconRail(props: IconRailProps) {
       active: !!props.notificationsActive,
       badge: props.notificationsUnread ?? 0,
       badgeLabel: formatRailBadge(props.notificationsUnread ?? 0) || undefined,
+      ariaLabel: notificationBellAria(props.notificationsUnread ?? 0),
     },
     { key: "approvals", icon: "checklist", label: "审批", onClick: props.onApprovals, active: props.approvalsActive, badge: props.approvals },
     { key: "config", icon: "settings-gear", label: "Config", onClick: props.onConfig, active: props.configActive, connDot: true },
@@ -135,16 +139,18 @@ export function IconRail(props: IconRailProps) {
       }
     })
 
-  const renderItem = (item: RailItem) => (
-    <TooltipV2 value={railAriaLabel(item.label, item.badge)} openDelay={300}>
+  const renderItem = (item: RailItem) => {
+    const fullLabel = `${item.ariaLabel ?? railAriaLabel(item.label, item.badge)}${
+      item.resultDot ? "（有新结果）" : item.dot ? `（${item.dotLabel ?? "有新结果"}）` : ""
+    }`
+    return (
+    <TooltipV2 value={fullLabel} openDelay={300}>
       <ButtonV2
         variant="ghost"
         size="small"
         class="mafw-icon-rail-icon"
         classList={{ active: !!item.active }}
-        aria-label={`${railAriaLabel(item.label, item.badge)}${
-          item.resultDot ? "（有新结果）" : item.dot ? `（${item.dotLabel ?? "有新结果"}）` : ""
-        }`}
+        aria-label={fullLabel}
         aria-pressed={item.active}
         onClick={item.onClick}
         onContextMenu={item.contextMenu}
@@ -161,7 +167,8 @@ export function IconRail(props: IconRailProps) {
         </Show>
       </ButtonV2>
     </TooltipV2>
-  )
+    )
+  }
 
   const openTeamMenu = (event: MouseEvent) => {
     if (shouldUseNativeMenu(guardFactsFromEvent(event))) return

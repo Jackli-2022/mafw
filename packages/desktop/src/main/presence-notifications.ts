@@ -133,6 +133,9 @@ export function publishPresenceNotifications(
       target: { type: "goal", goalId: latest.goalId, projectId: latest.projectId, focus: "result" },
       dedupeKey: `${latest.goalId}:r${latest.revision}`,
     })
+    // 跨快照防双通知：failed attention 若先于结果发布（两个 poll 各到一半），
+    // p1 结果就绪后把它标已读——bell 只催一次（历史保留，不删除）。
+    hub.markReadByDedupe([`${latest.goalId}:failed:r${latest.revision}`])
   }
 
   // Presence is authoritative for "still needs you"; anything absent resolved.

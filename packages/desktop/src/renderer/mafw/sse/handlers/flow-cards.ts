@@ -77,12 +77,15 @@ export const handleFlowCardEvent: SidHandler = (event, sid, deps) => {
   if (event.type === "question.asked") {
     d.trace(event, "card:ask")
     d.upsertCard(sid, { kind: "ask", data: mapAskCard(event.properties || {}, Date.now(), d.agentTitleOf(sid)) })
-    const id = String((event.properties as any)?.id ?? "")
+    // 与 replied 分支同一判定链（id ?? requestID）：旧网关 requestID-only 载荷
+    // 的 dedupeKey 也要能被答复路径 `question:${id}` 命中自动已读。
+    const props = event.properties || {}
+    const id = String(props.id ?? props.requestID ?? "")
     d.publish({
       kind: "question",
       severity: "p2",
       title: "MAFW：Agent 提问",
-      body: String(event.properties?.question || "").slice(0, 80),
+      body: String(props.question || "").slice(0, 80),
       reason: "需要你",
       target: { type: "question", sessionID: sid, requestId: id || undefined, projectId: d.projectOf?.(sid) },
       dedupeKey: id ? `question:${id}` : undefined,

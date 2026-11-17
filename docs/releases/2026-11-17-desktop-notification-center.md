@@ -39,17 +39,38 @@
 
 ## 验证
 
-- 新增测试：model 9、hub 7、prefs 3、placement 6、presenter 4、IPC 6、target 3、
-  router 6、view-model 4、window controller 8、window model 2、config wiring 2、
-  source wiring 6、center wiring 5（更新 completion-notify 3 + navigate-goal 3）。
-- desktop 全量 **4016/4016（764 suites）**；`tsgo --noEmit -p tsconfig.json` rc=0；
+- 新增测试：model 10、hub 8、prefs 3、placement 6、presenter 4、IPC 9、target 3、
+  router 6、view-model 4、window controller 11、window model 2、config wiring 2、
+  source wiring 6、store quarantine 3、center wiring 6（更新 completion-notify 3 +
+  navigate-goal 3 + flow-cards/dispatcher 扩充）。
+- desktop 全量（最终门禁见下）；`tsgo --noEmit -p tsconfig.json` rc=0；
   `electron-vite build` rc=0（`out/renderer/notification/index.html` +
   `out/preload/notification.js` 多入口产物确认）。
+- 真机冒烟（dev app + CDP）：presence→hub→铃铛角标；hub 跨重启持久化；悬浮窗
+  p1/p2 卡片 + 主题；6s 自动消失；点击→已读+聚焦+导航（work/goal）；前台不弹/
+  最小化弹；中心面板全交互 + 墓碑；DND；原生兜底。
+
+## 终审与 minors（2026-11-17 第二批）
+
+- 终审（fresh reviewer）：0 Critical / 3 Important / 14 Minor。
+- Important 全修：前台门（悬浮窗只在主窗口后台弹）、残缺 presence 快照不
+  reconcile、悬浮窗主题跟应用（reportTheme + MutationObserver）。
+- Minor 全修：hub 无变化重发不落盘不广播（sameNotification）；hover 恢复跑剩余
+  时间；悬浮窗零间隙堆叠 + 去阴影（消吃点击死区）；sanitize 拒 p3 + 字段长度上限
+  + 旧通道（show-notification/mafw-notify）过 sanitize；ipcMain 浮窗监听随窗口
+  销毁解绑；question asked/replied id 判定链对称；结果发布把同 goal+rev 的 failed
+  attention 自动已读；user_question 无 id 时内容哈希去重；铃铛 aria 用
+  notificationBellAria（通知（N 条未读））；中心 ↑↓ 焦点跟随高亮；store 文件损坏
+  隔离重试（quarantineUnreadableStore）；attention-diff 孤儿删除 + 文档矛盾修正；
+  面板 max-height 60vh 对齐 spec。
+- 最终门禁：desktop **4034/4034（766 suites）**，`tsgo` rc=0，build rc=0。
 
 ## 已知边界
 
 - `notifyIfHidden` 已删除：renderer 完全不发系统通知（含"需要你"），全部经 hub。
 - 通知中心面板锚定 `left:52px`（rail 右缘），覆盖在左 dock 之上（点外部/Esc 关闭）。
-- 悬浮窗主题跟 `nativeTheme`（light/dark），不跟随应用内强制主题。
+- 悬浮窗主题跟主窗口上报的 `data-color-scheme`（MutationObserver 实时上报；缺省回落系统外观）。
 - presence attention 字段在 `presence-model.ts` 仍窄类型为 `{id}`——运行时校验
   （`normalizeAttention`），升级 gateway 后可放宽类型。
+- 悬浮窗只 p1/p2 且主窗口后台时弹出（前台交给应用内 toast）；残缺 presence 快照
+  （count > items）跳过 attention reconcile，防网关抖动把待批准项永久标已读。

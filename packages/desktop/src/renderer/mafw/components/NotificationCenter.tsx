@@ -57,7 +57,13 @@ export function NotificationCenter(props: {
       if (list.length === 0) return
       event.preventDefault()
       const step = event.key === "ArrowDown" ? 1 : -1
-      setActive((index) => (index + step + list.length) % list.length)
+      const next = (active() + step + list.length) % list.length
+      setActive(next)
+      // 焦点跟随高亮：Enter/屏幕阅读器作用在可见焦点元素上，二者不得分叉。
+      queueMicrotask(() => {
+        const el = panel?.querySelector<HTMLElement>(`.mafw-notification-card[data-index="${next}"]`)
+        el?.focus()
+      })
       return
     }
     if (event.key === "Enter") {
@@ -131,6 +137,7 @@ export function NotificationCenter(props: {
                   classList={{ unread: item.readAt === undefined, active: active() === index() }}
                   role="button"
                   tabIndex={0}
+                  data-index={index()}
                   aria-label={`${item.title}，${notificationReasonLabel(item)}`}
                   onClick={() => props.onOpen(item)}
                   onPointerEnter={() => setActive(index())}
