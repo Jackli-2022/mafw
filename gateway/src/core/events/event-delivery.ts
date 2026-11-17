@@ -13,7 +13,7 @@ export const DELIVERY_STATES: readonly EventDeliveryState[] = [
 
 const TRANSITIONS: Record<EventDeliveryState, readonly EventDeliveryState[]> = {
   pending: ['delivered', 'failed', 'dropped'],
-  delivered: ['read', 'handed_back', 'failed', 'dropped'],
+  delivered: ['read', 'acknowledged', 'handed_back', 'failed', 'dropped'],
   read: ['acknowledged', 'handed_back', 'failed', 'dropped'],
   acknowledged: ['answered', 'handed_back', 'failed', 'dropped'],
   answered: [],

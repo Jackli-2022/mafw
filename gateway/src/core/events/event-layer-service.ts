@@ -265,8 +265,10 @@ export class EventLayerService {
     if (!delivery) throw new Error(`delivery not found: ${deliveryId}`);
     const now = this.deps.now();
     const patch = applyDeliveryTransition(delivery, next, now);
+    const subscription = this.deps.store.getSubscription(delivery.subscriptionId);
+    const podId = subscription?.subscriberId ?? '';
     const row = this.deps.store.transaction(() => {
-      this.deps.store.updateOutboxReceiptByTrigger(delivery.triggerId, next, now);
+      this.deps.store.updateOutboxReceiptByTrigger(delivery.triggerId, podId, next, now);
       return this.deps.store.updateDelivery(deliveryId, patch);
     });
     this.deps.broadcast({
@@ -415,16 +417,25 @@ export class EventLayerService {
 
   private async retryDueDeliveries(threadId: string): Promise<void> {
     const now = this.deps.now();
-    const due = this.deps.store.listDeliveries(threadId).filter((delivery) =>
-      delivery.state === 'failed'
-      && !!delivery.nextRetryAt
-      && Date.parse(delivery.nextRetryAt) <= Date.parse(now));
-    if (due.length === 0) return;
     const latest = this.deps.store.latestDecision(threadId);
     if (!latest || latest.decision !== 'accept') return;
+    const allowed = new Set(latest.triggerIds);
     const thread = this.deps.store.getThread(threadId);
     if (!thread) return;
     const subscriptions = this.subscriptionsFor(threadId);
+    const subById = new Map(subscriptions.map((subscription) => [subscription.id, subscription]));
+    const due = this.deps.store.listDeliveries(threadId).filter((delivery) => {
+      if (!allowed.has(delivery.triggerId)) return false;
+      if (delivery.state === 'pending') {
+        // Crash between "decision accepted" and the delivery write: resume
+        // context deliveries. Work deliveries need their own idempotency key.
+        return subById.get(delivery.subscriptionId)?.mode === 'context';
+      }
+      return delivery.state === 'failed'
+        && !!delivery.nextRetryAt
+        && Date.parse(delivery.nextRetryAt) <= Date.parse(now);
+    });
+    if (due.length === 0) return;
     const triggers = this.deps.store.listTriggers(threadId);
     for (const delivery of due) {
       const subscription = subscriptions.find((item) => item.id === delivery.subscriptionId);
@@ -458,6 +469,24 @@ export class EventLayerService {
 
   unsubscribeSubscriber(subscriberId: string): number {
     return this.deps.store.removeSubscriptionsBySubscriber(subscriberId, this.deps.now());
+  }
+
+  /**
+   * Boot/restart sweep: threads with pending context deliveries or due failed
+   * deliveries are re-evaluated, so a crash cannot strand the Lead inbox.
+   */
+  async resumeIncompleteDeliveries(): Promise<number> {
+    const ids = this.deps.store.listThreadsWithIncompleteDeliveries(this.deps.now());
+    let resumed = 0;
+    for (const threadId of ids) {
+      try {
+        await this.evaluate(threadId);
+        resumed += 1;
+      } catch (err: any) {
+        this.deps.log?.(`[EventLayer] resume failed for ${threadId}: ${err?.message ?? err}`);
+      }
+    }
+    return resumed;
   }
 
   closeThread(threadId: string): { closed: boolean; handedBack: number; dropped: number } {

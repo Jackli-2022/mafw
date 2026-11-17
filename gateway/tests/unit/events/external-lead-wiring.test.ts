@@ -17,3 +17,10 @@ test('external delivery context goes through the lead outbox', () => {
   expect(block).toMatch(/enqueueExternal/);
   expect(block).toMatch(/renderExternalEvent/);
 });
+
+test('lead ack and boot sweep are wired', () => {
+  const ack = kernel.slice(kernel.indexOf('ackLeadOutboxForSession('), kernel.indexOf('ackLeadOutboxForSession(') + 800);
+  expect(ack).toMatch(/ackDeliveriesForSession/);
+  const boot = kernel.slice(kernel.indexOf("ensureSystemSource('cron')"), kernel.indexOf("ensureSystemSource('cron')") + 500);
+  expect(boot).toMatch(/resumeIncompleteDeliveries/);
+});

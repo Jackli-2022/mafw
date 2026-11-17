@@ -5023,6 +5023,10 @@ class MafwScheduler {
     // need them even before any user-created GitHub/webhook source exists.
     this.eventLayer.ensureSystemSource('internal');
     this.eventLayer.ensureSystemSource('cron');
+    // Restart sweep: pending/failed context deliveries must not be stranded.
+    void this.eventLayer.resumeIncompleteDeliveries().catch((err: any) => {
+      log.warn(`[EventLayer] resume incomplete deliveries failed: ${err?.message ?? err}`);
+    });
 
     // P2.5 Standing Goals: lifecycle + GoalRun triage. Default off.
     const standingStore = new StandingGoalStore(this.getGatewayDb().getStore());

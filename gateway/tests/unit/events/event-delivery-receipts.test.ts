@@ -60,6 +60,32 @@ test('invalid transitions throw and change nothing', () => {
   expect(h.store.getOutbox(h.outbox.id)?.answeredAt).toBeNull();
 });
 
+test('receipts are scoped to the subscriber pod and sent rows', () => {
+  const h = setup();
+  h.store.insertChannel({ id: 'lead:p2', threadId: '*', kind: 'chat', address: {}, now: NOW });
+  const other = h.store.insertOutbox({
+    id: 'o2', channelId: 'lead:p2', dedupeKey: 'external:t1',
+    payload: { kind: 'external', triggerId: 't1' }, state: 'sent', now: NOW,
+  });
+  h.service.markDeliveryReceipt('d1', 'read');
+  expect(h.store.getOutbox(h.outbox.id)?.readAt).toBe(NOW);
+  expect(h.store.getOutbox(other.id)?.readAt).toBeNull();
+});
+
+test('a receipt whose outbox write fails rolls the delivery back', () => {
+  const h = setup();
+  const spy = jest.spyOn(h.store, 'updateDelivery').mockImplementation(() => {
+    throw new Error('write failed');
+  });
+  try {
+    expect(() => h.service.markDeliveryReceipt('d1', 'read')).toThrow('write failed');
+  } finally {
+    spy.mockRestore();
+  }
+  expect(h.store.getOutbox(h.outbox.id)?.readAt).toBeNull();
+  expect(h.store.getDelivery('d1')?.state).toBe('delivered');
+});
+
 test('lead session ack propagates to the delivery audit', () => {
   const h = setup();
   h.store.updateOutbox(h.outbox.id, {
@@ -68,4 +94,5 @@ test('lead session ack propagates to the delivery audit', () => {
   expect(h.store.ackDeliveriesForSession('ses_a', '2026-11-17T00:01:00.000Z')).toBe(1);
   expect(h.store.getDelivery('d1')?.state).toBe('acknowledged');
   expect(h.store.getDelivery('d1')?.ackAt).toBe('2026-11-17T00:01:00.000Z');
+  expect(h.store.getDelivery('d1')?.readAt).toBe('2026-11-17T00:01:00.000Z');
 });

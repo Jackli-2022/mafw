@@ -54,6 +54,27 @@ test('a delivery drops as dead-letter after max attempts', async () => {
   expect(h.store.getDelivery(delivery.id)?.lastError).toContain('dead-letter');
 });
 
+test('a pending context delivery resumes after restart', async () => {
+  const h = setup({ deliverContext: async () => {} });
+  const delivery = prepareDelivery(h);
+  await h.service.evaluate(h.threadId);
+  expect(h.store.getDelivery(delivery.id)?.state).toBe('delivered');
+  // Simulate a crash after the decision was accepted but before the delivery write.
+  h.store.updateDelivery(delivery.id, { state: 'pending', deliveredAt: null });
+  let seq = 0;
+  const restarted = new EventLayerService({
+    store: h.store,
+    now: () => NOW,
+    newId: (prefix) => `${prefix}_p${++seq}`,
+    broadcast: () => {},
+    enabled: () => true,
+    evaluate: async () => ({ decision: 'accept', mode: 'report', rationale: 'test' }),
+    deliverContext: async () => {},
+  });
+  await restarted.evaluate(h.threadId);
+  expect(h.store.getDelivery(delivery.id)?.state).toBe('delivered');
+});
+
 test('an overdue failed delivery retries once after restart', async () => {
   let failures = 1;
   const h = setup({

@@ -55,6 +55,32 @@ test('duplicate ingest keeps one trigger and one domain event', () => {
   expect(first.trigger.id).toBe(second.trigger.id);
 });
 
+test('domain event append failure does not reject ingest', () => {
+  const db = new Database(':memory:');
+  const store = new EventStore(db);
+  store.insertSource({
+    id: 'gh', projectDir: '/p', kind: 'github', name: 'gh',
+    config: {}, now: '2026-11-17T00:00:00.000Z',
+  });
+  const logs: string[] = [];
+  let seq = 0;
+  const layer = new EventLayerService({
+    store,
+    domainEvents: { append: () => { throw new Error('disk full'); } },
+    now: () => '2026-11-17T00:00:00.000Z',
+    newId: (prefix) => `${prefix}_${++seq}`,
+    broadcast: () => {},
+    enabled: () => true,
+    evaluate: async () => ({ decision: 'ignore', rationale: 'test' }),
+    log: (message) => logs.push(message),
+  });
+  const ingested = layer.ingest(envelope);
+  expect(ingested.duplicate).toBe(false);
+  expect(ingested.trigger.id).toBeTruthy();
+  expect(logs.some((line) => line.includes('append failed'))).toBe(true);
+  db.close();
+});
+
 test('internal sources do not append external events', () => {
   const h = setup();
   h.store.insertSource({

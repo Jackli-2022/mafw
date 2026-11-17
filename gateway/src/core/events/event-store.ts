@@ -552,6 +552,24 @@ export class EventStore {
     ).all(threadId) as SubscriptionDbRow[]).map(toSubscription);
   }
 
+  getSubscription(id: string): EventSubscriptionRow | null {
+    const row = this.db.prepare('SELECT * FROM event_subscriptions WHERE id = ?')
+      .get(id) as SubscriptionDbRow | undefined;
+    return row ? toSubscription(row) : null;
+  }
+
+  /** Threads with work that a restart must resume: pending context deliveries or due failed ones. */
+  listThreadsWithIncompleteDeliveries(now: string): string[] {
+    const rows = this.db.prepare(`
+      SELECT DISTINCT t.thread_id AS threadId
+      FROM event_deliveries d
+      JOIN event_triggers t ON t.id = d.trigger_id
+      WHERE d.state = 'pending'
+        OR (d.state = 'failed' AND (d.next_retry_at IS NULL OR d.next_retry_at <= ?))
+    `).all(now) as Array<{ threadId: string }>;
+    return rows.map((row) => row.threadId);
+  }
+
   removeSubscription(id: string, now: string): boolean {
     const result = this.db.prepare('UPDATE event_subscriptions SET dropped_at = ? WHERE id = ? AND dropped_at IS NULL')
       .run(now, id);
@@ -766,21 +784,23 @@ export class EventStore {
 
   /**
    * Mirror a delivery receipt onto the outbox row that carried the trigger.
-   * Only the lead channel and only rows that carry `payload.triggerId`.
+   * Scoped to the subscriber's lead channel and to rows already sent, so a
+   * receipt can never mark another pod (or an unsent row) as read.
    */
   updateOutboxReceiptByTrigger(
     triggerId: string,
+    podId: string,
     next: 'read' | 'acknowledged' | 'answered',
     now: string,
   ): number {
-    if (!triggerId) return 0;
+    if (!triggerId || !podId) return 0;
     const column = next === 'read' ? 'read_at' : next === 'acknowledged' ? 'ack_at' : 'answered_at';
     const result = this.db.prepare(`
       UPDATE event_outbox
       SET ${column} = COALESCE(${column}, ?), updated_at = ?
-      WHERE channel_id LIKE 'lead:%' AND ${column} IS NULL
+      WHERE channel_id = ? AND state = 'sent' AND ${column} IS NULL
         AND json_extract(payload, '$.triggerId') = ?
-    `).run(now, now, triggerId);
+    `).run(now, now, `lead:${podId}`, triggerId);
     return Number(result.changes ?? 0);
   }
 
@@ -789,14 +809,15 @@ export class EventStore {
     if (!sessionId) return 0;
     const result = this.db.prepare(`
       UPDATE event_deliveries
-      SET state = 'acknowledged', ack_at = ?, next_retry_at = NULL
+      SET state = 'acknowledged', read_at = COALESCE(read_at, ?), ack_at = ?,
+          next_retry_at = NULL
       WHERE state IN ('delivered', 'read')
         AND trigger_id IN (
           SELECT json_extract(payload, '$.triggerId') FROM event_outbox
           WHERE sent_session_id = ? AND ack_at IS NOT NULL
             AND json_extract(payload, '$.triggerId') IS NOT NULL
         )
-    `).run(now, sessionId);
+    `).run(now, now, sessionId);
     return Number(result.changes ?? 0);
   }
 }
