@@ -22,6 +22,8 @@
 
 recency 只能是同分候选的次级信号；有效性由 `active/superseded_by/retracted/valid_time` 等语义决定，不能由时间新旧代替。
 
+> **实施进展（2026-11-17）**：路径一致性、MCP 分数保真、REST 共享索引、snapshot cue anchors 与 scan query provenance 已修复，见 `docs/releases/2026-11-17-retrieval-path-parity.md`。固定 40 条真实查询与注入准入评测尚未实施；线上精确查询仍未命中，不能据 parity 修复宣称质量达标。
+
 ## 1. 本轮线上症状说明了什么
 
 查询 `看看现在记忆系统效果·` 的实际注入包含：

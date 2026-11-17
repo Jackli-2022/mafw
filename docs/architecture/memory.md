@@ -57,6 +57,8 @@ LongMemEval 基准（session 粒度 R@10）：token 0.474 → **bm25 0.949**（6
 
 Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约的 `completion.complete()`（`completionApi` 能力，thunk 现读热切换安全），缺能力/失败时回退直连 HTTP（`runtime/completion-http.ts` 共享实现，`cacheable` 块映射 DashScope `cache_control: ephemeral`）。
 
+**检索入口一致性（2026-11-17）**：`searchScored` 省略 retriever 时按 `bm25` 分支执行；REST `/api/memory/search` 使用共享 `memoryService.harmonicIndex`（保留图状态）并默认 `config.search.defaultRetriever`；MCP `mafw_search_hybrid` 保留真实候选分数，不再把首轮/迭代轮分数压成常数 1；snapshot reranker 输入保留 `cue_anchors`。scan 预取结果携带构建时的 `query/builtAt`，自动 recall 合并前用 containment 做 topic-shift 校验；无 `query` 的旧快照保持兼容。
+
 ### 压缩
 
 `HarmonicUnitFileStore.write()` 输出 `HarmonicUnit` 并自动：
