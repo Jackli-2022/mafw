@@ -53,7 +53,7 @@
 - root native/fallback tool + prompt：**5/5 passed**
 - TUI chat-store 真实注入 payload：**30/30 passed**
 - 定向合计：**487/487 passed**
-- `gateway` 全量（相关性抑制后最终重跑）：**1029 suites / 8196 tests；8194 passed，2 skipped，0 failed**。
+- `gateway` 全量（note-board 作用域后最终重跑）：**1029 suites / 8198 tests；8196 passed，2 skipped，0 failed**。
 - 类型门禁：`gateway tsc --noEmit -p tsconfig.json` 与根 `tsc --noEmit` 均通过。
 - TUI 定向 `node --test tests/chat-store.test.ts`：30/30。完整 TUI typecheck 仍受本机未安装 `@earendil-works/pi-tui` 依赖阻塞，与本切片无关。
 
