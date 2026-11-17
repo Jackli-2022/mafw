@@ -54,7 +54,9 @@ describe('topic recall header', () => {
   test('related memories are derived from a reliable recall body only', () => {
     expect(hasRelatedRecallBody('<recall>pointer</recall>', 'inject')).toBe(true);
     expect(hasRelatedRecallBody('<recall status="no-reliable-memory">…</recall>', 'no-memory')).toBe(false);
+    expect(hasRelatedRecallBody('<recall status="low">…</recall>', 'low-confidence')).toBe(false);
     expect(hasRelatedRecallBody(null, 'inject')).toBe(false);
     expect(hasRelatedRecallBody('<snapshot>', 'inject', 'snap-block', 'no-memory')).toBe(false);
+    expect(hasRelatedRecallBody('<snapshot>', 'inject', 'snap-block', 'low-confidence')).toBe(false);
   });
 });

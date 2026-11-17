@@ -37,16 +37,22 @@
 - 增加旧 recall 本体逐字相等断言、主题包裹字符转义和 HTTP `active` 类型测试。
 - 修正文档中的工具数量与新增测试计数。
 
+## 相关性抑制 follow-up
+
+- FOK `no-memory` / `low-confidence` 的 snapshot 不再 served，也不记录 T1 exposure；回退到 live 检索。
+- live 检索只有 `inject` 才暴露旧 `<recall>` 本体；`no-memory` / `low-confidence` 时隐藏旧指针、arbiter 注记、T1 和知识更新尾注，只保留主题头。
+- note-board 与 goal snapshot 是显式 must-surface，不冒充“相关记忆”，仍按原机制附加在主题头之后。
+
 ## 测试
 
-新增测试 **29 个**，覆盖 Topic State、HTTP route、recall 头部、原生工具、MCP handler、canonical/fallback prompt，以及 review 修复的主题边界/TUI 真实 payload。
+新增测试 **30 个**，覆盖 Topic State、HTTP route、recall 头部、原生工具、MCP handler、canonical/fallback prompt，以及 review 修复的主题边界/TUI 真实 payload 与相关性抑制。
 
-- Gateway 本功能 + recall/MCP/API contract + 架构 ledger + human-boundary 定向：**386/386 passed**
+- Gateway 本功能 + recall/MCP/API contract + 架构 ledger + human-boundary 定向：**387/387 passed**
 - runtime-core：**50/50 passed**
 - root native/fallback tool + prompt：**5/5 passed**
 - TUI chat-store 真实注入 payload：**30/30 passed**
-- 定向合计：**471/471 passed**
-- `gateway` 全量（review 修复后最终重跑）：**1029 suites / 8195 tests；8193 passed，2 skipped，0 failed**。
+- 定向合计：**472/472 passed**
+- `gateway` 全量（相关性抑制后最终重跑）：**1029 suites / 8196 tests；8194 passed，2 skipped，0 failed**。
 - 类型门禁：`gateway tsc --noEmit -p tsconfig.json` 与根 `tsc --noEmit` 均通过。
 - TUI 定向 `node --test tests/chat-store.test.ts`：30/30。完整 TUI typecheck 仍受本机未安装 `@earendil-works/pi-tui` 依赖阻塞，与本切片无关。
 

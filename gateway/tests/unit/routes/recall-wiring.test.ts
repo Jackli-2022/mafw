@@ -105,6 +105,33 @@ describe('recall thin three registry wiring (D1 Task B3)', () => {
     expect(recorded).toEqual([{ traceId: 't1t_a', kind: 'recall', score: 0.81 }]);
   });
 
+  it('does not expose or record a no-memory snapshot body', async () => {
+    const recorded: any[] = [];
+    const now = new Date().toISOString();
+    const { handlerFor } = setup({
+      db: {
+        kvGet: () => ({
+          query: 'hello',
+          block: '<recall status="no-reliable-memory">old weak links</recall>',
+          ids: ['mem_weak'],
+          builtAt: now,
+          fokStatus: 'no-memory',
+          t1Hits: [{ sessionId: 's1', turnId: 1, traceId: 't1t_weak', cosine: 0.3 }],
+        }),
+        recordT1RetrievalEvent: (e: any) => recorded.push(e),
+      },
+    });
+    const r = fakeRes();
+    await handlerFor('GET', '/api/recall/context?sessionID=s1&query=hello')!(
+      fakeReq({ url: '/api/recall/context?sessionID=s1&query=hello', method: 'GET' }), r.res,
+    );
+    expect(r.status).toBe(200);
+    expect(JSON.parse(r.body).pointers).toBe(
+      '<topic-recall>\n主题：未设置\n相关记忆：无\nAgent：理解当前对话后，使用 mafw_topic_set 设置主题\n</topic-recall>',
+    );
+    expect(recorded).toEqual([]);
+  });
+
   it('thin three + context catalog routes have handlers attached', () => {
     const { handlerFor } = setup();
     expect(handlerFor('GET', '/api/recall/instructions')).toBeDefined();

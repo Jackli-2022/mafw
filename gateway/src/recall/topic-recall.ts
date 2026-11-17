@@ -11,8 +11,8 @@ export function hasRelatedRecallBody(
   snapshotPointers?: string | null,
   snapshotFokStatus?: string,
 ): boolean {
-  if (snapshotPointers) return snapshotFokStatus !== 'no-memory';
-  return Boolean(formattedPointers) && fokStatus !== 'no-memory';
+  if (snapshotPointers) return (snapshotFokStatus ?? 'inject') === 'inject';
+  return Boolean(formattedPointers) && (fokStatus ?? 'inject') === 'inject';
 }
 
 /**

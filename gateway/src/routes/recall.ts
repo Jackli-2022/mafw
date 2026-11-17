@@ -172,8 +172,10 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
           const snap = deps.getGatewayDb().kvGet('recall-snapshot', sessionID) as any;
           const decision = decideSnapshotUse(snap, query, new Date(), snapCfg);
           if (decision === 'use' && snap) {
+            const snapFok = snap.fokStatus ?? 'inject';
+            if (snapFok === 'inject') {
             snapshotPointers = snap.block;
-            snapshotFokStatus = snap.fokStatus ?? 'inject';
+            snapshotFokStatus = snapFok;
             // A3: a served snapshot is a real injection — record exposure
             // for the daily ACT-R settlement (fail-open, in-memory only).
             try {
@@ -209,6 +211,9 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
               }
             } catch { /* fail-open */ }
             log.info(`[Recall] snapshot served for ${sessionID} (age=${Date.now() - Date.parse(snap.builtAt)}ms, fok=${snap.fokStatus ?? 'inject'})`);
+            } else {
+              log.info(`[Recall] snapshot skipped (fok=${snapFok}, no reliable recall body) for ${sessionID}`);
+            }
           } else if (decision !== 'no-snapshot') {
             // Log the containment score: short instruction-style user turns
             // ("继续", "可以") legitimately score 0 against a content window,
@@ -306,10 +311,6 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
       const formatted = snapshotPointers
         ? { pointers: snapshotPointers }
         : formatRecallContext(memories, { status: fokStatus, neighbors });
-      if (arbiterNote && formatted.pointers) {
-        formatted.pointers = `${arbiterNote}\n${formatted.pointers}`;
-      }
-      const blocks = [formatted.pointers, noteBoard, goalSnap].filter(Boolean);
       const { hasRelatedRecallBody, renderTopicRecallHeader } = require('../recall/topic-recall');
       const hasRelated = hasRelatedRecallBody(
         formatted.pointers,
@@ -317,6 +318,11 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
         snapshotPointers,
         snapshotFokStatus,
       );
+      const relatedBody = hasRelated ? (snapshotPointers ?? formatted.pointers) : null;
+      const arbiterWithBody = arbiterNote && relatedBody
+        ? `${arbiterNote}\n${relatedBody}`
+        : relatedBody;
+      const blocks = [arbiterWithBody, noteBoard, goalSnap].filter(Boolean);
       const header = renderTopicRecallHeader(topicState, hasRelated);
       const pointers = [header, ...blocks].join('\n\n');
       // Latency breakdown (debug): the boundary path has a 100ms contract.
