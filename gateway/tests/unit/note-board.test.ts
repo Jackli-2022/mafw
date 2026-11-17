@@ -48,23 +48,6 @@ describe('handleNoteBoard', () => {
     expect(result.board).not.toContain('mem_expired');
   });
 
-  test('includeUnit filters automatic recall without changing the structured board API default', async () => {
-    const base = deps([
-      entry({ id: 'mem_match', sticky_until: inDays(2) }),
-      entry({ id: 'mem_other', sticky_until: inDays(3) }),
-    ]);
-    const filtered = await handleNoteBoard({
-      ...base,
-      includeUnit: (unit: any) => unit.id === 'mem_match',
-    }, NOW);
-    expect(filtered.entries.map((e: any) => e.id)).toEqual(['mem_match']);
-    expect(filtered.board).toContain('内容:mem_match');
-    expect(filtered.board).not.toContain('mem_other');
-
-    const unfiltered = await handleNoteBoard(base, NOW);
-    expect(unfiltered.entries.map((e: any) => e.id)).toEqual(['mem_match', 'mem_other']);
-  });
-
   test('malformed sticky_until fails open (stays on board)', async () => {
     const result = await handleNoteBoard(deps([
       entry({ id: 'mem_bad', sticky_until: 'not-a-date' }),

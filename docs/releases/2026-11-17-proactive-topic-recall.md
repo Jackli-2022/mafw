@@ -41,19 +41,18 @@
 
 - FOK `no-memory` / `low-confidence` 的 snapshot 不再 served，也不记录 T1 exposure；回退到 live 检索。
 - live 检索只有 `inject` 才暴露旧 `<recall>` 本体；`no-memory` / `low-confidence` 时隐藏旧指针、arbiter 注记、T1 和知识更新尾注，只保留主题头。
-- note-board 只在当前主题/查询有足够锚点重叠，或用户明确询问提醒/便签时浮现；`/api/memory/sticky` 的完整列表不受影响。
-- goal snapshot 仍是 manager 会话的显式上下文，不冒充“相关记忆”。
+- note-board 与 goal snapshot 是显式 must-surface，不冒充“相关记忆”，仍按原机制附加在主题头之后。
 
 ## 测试
 
-新增测试 **32 个**，覆盖 Topic State、HTTP route、recall 头部、原生工具、MCP handler、canonical/fallback prompt、主题边界/TUI 真实 payload、相关性抑制与 note-board 作用域。
+新增测试 **30 个**，覆盖 Topic State、HTTP route、recall 头部、原生工具、MCP handler、canonical/fallback prompt，以及 review 修复的主题边界/TUI 真实 payload 与相关性抑制。
 
-- Gateway 本功能 + recall/MCP/API contract + 架构 ledger + human-boundary + note-board 定向：**402/402 passed**
+- Gateway 本功能 + recall/MCP/API contract + 架构 ledger + human-boundary 定向：**387/387 passed**
 - runtime-core：**50/50 passed**
 - root native/fallback tool + prompt：**5/5 passed**
 - TUI chat-store 真实注入 payload：**30/30 passed**
-- 定向合计：**487/487 passed**
-- `gateway` 全量（note-board 作用域后最终重跑）：**1029 suites / 8198 tests；8196 passed，2 skipped，0 failed**。
+- 定向合计：**472/472 passed**
+- `gateway` 全量（相关性抑制后最终重跑）：**1029 suites / 8196 tests；8194 passed，2 skipped，0 failed**。
 - 类型门禁：`gateway tsc --noEmit -p tsconfig.json` 与根 `tsc --noEmit` 均通过。
 - TUI 定向 `node --test tests/chat-store.test.ts`：30/30。完整 TUI typecheck 仍受本机未安装 `@earendil-works/pi-tui` 依赖阻塞，与本切片无关。
 
