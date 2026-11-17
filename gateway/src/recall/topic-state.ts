@@ -47,13 +47,31 @@ export class TopicRevisionConflict extends Error {
   }
 }
 
+const LIMITS = {
+  topic: 200,
+  summary: 1_000,
+  listItem: 200,
+  listCount: 32,
+  matterId: 200,
+} as const;
+
 function clean(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function list(value: unknown, fallback: string[]): string[] {
+function bounded(value: unknown, max: number, field: string): string {
+  const text = clean(value);
+  if (text.length > max) throw new Error(`${field} too long (max ${max})`);
+  return text;
+}
+
+function list(value: unknown, fallback: string[], field: string): string[] {
   if (!Array.isArray(value)) return fallback;
-  return [...new Set(value.map(clean).filter(Boolean))].slice(0, 32);
+  if (value.length > LIMITS.listCount) throw new Error(`${field} has too many items`);
+  return [...new Set(value.map((item) => {
+    const text = bounded(item, LIMITS.listItem, field);
+    return text;
+  }).filter(Boolean))];
 }
 
 function stored(db: TopicDb, sessionID: string): Partial<TopicState> | null {
@@ -69,10 +87,10 @@ export function readTopicState(db: TopicDb, sessionID: string): TopicState | nul
     sessionId: sessionID,
     topic: String(value.topic),
     ...(value.summary ? { summary: String(value.summary) } : {}),
-    entities: list(value.entities, []),
-    aliases: list(value.aliases, []),
-    openLoops: list(value.openLoops, []),
-    retrievalKeys: list(value.retrievalKeys, []),
+    entities: list(value.entities, [], 'entities'),
+    aliases: list(value.aliases, [], 'aliases'),
+    openLoops: list(value.openLoops, [], 'openLoops'),
+    retrievalKeys: list(value.retrievalKeys, [], 'retrievalKeys'),
     ...(value.matterId ? { matterId: String(value.matterId) } : {}),
     active: true,
     revision: Number(value.revision) || 0,
@@ -87,27 +105,34 @@ export function setTopicState(db: TopicDb, input: SetTopicInput): TopicState {
 
   const previous = stored(db, sessionID);
   const currentRevision = Number(previous?.revision) || 0;
+  if (
+    input.expectedRevision !== undefined &&
+    (!Number.isInteger(input.expectedRevision) || input.expectedRevision < 0)
+  ) {
+    throw new Error('expectedRevision must be a non-negative integer');
+  }
   if (input.expectedRevision !== undefined && input.expectedRevision !== currentRevision) {
     throw new TopicRevisionConflict(input.expectedRevision, currentRevision);
   }
+  if (input.active !== undefined && typeof input.active !== 'boolean') {
+    throw new Error('active must be boolean');
+  }
 
-  const topic = clean(input.topic) || clean(previous?.topic);
+  const topic = bounded(input.topic, LIMITS.topic, 'topic') || clean(previous?.topic);
   const active = input.active ?? true;
   if (active && !topic) throw new Error('topic required when active');
+  const summary = bounded(input.summary, LIMITS.summary, 'summary') || clean(previous?.summary);
+  const matterId = bounded(input.matterId, LIMITS.matterId, 'matterId') || clean(previous?.matterId);
 
   const state: TopicState = {
     sessionId: sessionID,
     topic,
-    ...(clean(input.summary) || clean(previous?.summary)
-      ? { summary: clean(input.summary) || clean(previous?.summary) }
-      : {}),
-    entities: list(input.entities, list(previous?.entities, [])),
-    aliases: list(input.aliases, list(previous?.aliases, [])),
-    openLoops: list(input.openLoops, list(previous?.openLoops, [])),
-    retrievalKeys: list(input.retrievalKeys, list(previous?.retrievalKeys, [])),
-    ...(clean(input.matterId) || clean(previous?.matterId)
-      ? { matterId: clean(input.matterId) || clean(previous?.matterId) }
-      : {}),
+    ...(summary ? { summary } : {}),
+    entities: list(input.entities, list(previous?.entities, [], 'entities'), 'entities'),
+    aliases: list(input.aliases, list(previous?.aliases, [], 'aliases'), 'aliases'),
+    openLoops: list(input.openLoops, list(previous?.openLoops, [], 'openLoops'), 'openLoops'),
+    retrievalKeys: list(input.retrievalKeys, list(previous?.retrievalKeys, [], 'retrievalKeys'), 'retrievalKeys'),
+    ...(matterId ? { matterId } : {}),
     active,
     revision: currentRevision + 1,
     updatedAt: new Date().toISOString(),

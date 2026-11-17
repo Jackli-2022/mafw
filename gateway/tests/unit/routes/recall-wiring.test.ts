@@ -97,10 +97,11 @@ describe('recall thin three registry wiring (D1 Task B3)', () => {
     );
     expect(r.status).toBe(200);
     const pointers = JSON.parse(r.body).pointers;
-    expect(pointers).toContain('主题：未设置');
-    expect(pointers).toContain('mafw_topic_set');
-    expect(pointers).toContain('T1-only block');
-    expect(pointers.indexOf('<topic-recall>')).toBeLessThan(pointers.indexOf('T1-only block'));
+    expect(pointers).toBe(
+      '<topic-recall>\n主题：未设置\n相关记忆：见下方\n' +
+      'Agent：理解当前对话后，使用 mafw_topic_set 设置主题\n</topic-recall>\n\n' +
+      'T1-only block',
+    );
     expect(recorded).toEqual([{ traceId: 't1t_a', kind: 'recall', score: 0.81 }]);
   });
 
@@ -237,6 +238,23 @@ describe('recall thin three registry wiring (D1 Task B3)', () => {
     const r = fakeRes();
     await handlerFor('POST', '/api/recall/topic')!(
       fakeReq({ url: '/api/recall/topic', method: 'POST', body: JSON.stringify({ topic: 'x' }) }),
+      r.res,
+    );
+    await flushRequest();
+    expect(r.status).toBe(400);
+    expect(JSON.parse(r.body)).toMatchObject({ ok: false });
+  });
+
+  it('topic route rejects a non-boolean active instead of publishing an invalid state', async () => {
+    const db = topicDb();
+    const { handlerFor } = setup({ db });
+    const r = fakeRes();
+    await handlerFor('POST', '/api/recall/topic')!(
+      fakeReq({
+        url: '/api/recall/topic',
+        method: 'POST',
+        body: JSON.stringify({ sessionID: 's1', topic: '主题', active: 'false' }),
+      }),
       r.res,
     );
     await flushRequest();

@@ -1,9 +1,24 @@
 import type { TopicState } from './topic-state';
 
 /**
+ * Whether the body immediately below the header contains related recall
+ * memories. Note-board and goal snapshots are rendered separately and are not
+ * "相关记忆"; a FOK no-memory block also does not count as related.
+ */
+export function hasRelatedRecallBody(
+  formattedPointers: string | null | undefined,
+  fokStatus: string,
+  snapshotPointers?: string | null,
+  snapshotFokStatus?: string,
+): boolean {
+  if (snapshotPointers) return snapshotFokStatus !== 'no-memory';
+  return Boolean(formattedPointers) && fokStatus !== 'no-memory';
+}
+
+/**
  * A small, stable header above the legacy recall body. It reports attention
  * state honestly; it does not upgrade existing candidates into verified
- * relevance. `hasRecallBody` only says whether anything follows below.
+ * relevance. `hasRecallBody` only says whether related recall memories follow.
  */
 export function renderTopicRecallHeader(
   state: TopicState | null,
@@ -11,7 +26,9 @@ export function renderTopicRecallHeader(
 ): string {
   const topic = String(state?.topic ?? '')
     .replace(/\s+/g, ' ')
-    .trim();
+    .replace(/[<>]/g, (char) => (char === '<' ? '‹' : '›'))
+    .trim()
+    .slice(0, 200);
   const lines = [
     '<topic-recall>',
     `主题：${topic || '未设置'}`,

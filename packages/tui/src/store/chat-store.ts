@@ -434,7 +434,7 @@ export function historyToTurns(messages: MafwMessage[]): ChatTurn[] {
 }
 
 /** 系统注入块（boundary recall / 便签板 / goal 快照等）会在 manager 会话历史里持久化，渲染时过滤。 */
-const INJECTION_TAGS = ['<recall>', '<note-board>', '<goal-snapshot>', '<user-profile>', '<memory-guide>']
+const INJECTION_TAGS = ['<topic-recall>', '<recall>', '<note-board>', '<goal-snapshot>', '<user-profile>', '<memory-guide>']
 
 /** 不承载可渲染内容的 part 类型（step 边界 / 压缩标记）；data-* 另行按前缀跳过。 */
 const NON_RENDERABLE_PART_TYPES = new Set(['step-start', 'step-finish', 'compaction'])

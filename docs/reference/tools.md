@@ -3,7 +3,7 @@
 > 迁移自根 `AGENTS.md`（2026-11-10），原文搬迁（未改写）；章节号沿用迁移前编号，
 > 交叉引用以标题为准。后续变更记录写 `docs/releases/`，不再回填本文件。
 
-## Tools 清单（2026-11-10：42 个 Gateway MCP 工具 + 14 个插件侧工具）
+## Tools 清单（2026-11-17：43 个 Gateway MCP 工具 + 15 个插件侧工具）
 
 ### Gateway MCP 工具（43 个，`gateway/src/mcp/tool-registry.ts`）
 
@@ -61,7 +61,7 @@
 >
 > **双传输端点（2026-09-09，commit 1fa8c304）**：`/mcp` 同时承载两种传输，客户端按形态自动分流——`POST /mcp`（无 sessionId）→ **无状态 StreamableHTTP**（官方 transport，`sessionIdGenerator: undefined` + `enableJsonResponse`，响应随 POST 内联返回；opencode 客户端优先此路径）；`POST /mcp?sessionId=` → legacy SSE 消息通道；`GET /mcp`（带 `mcp-protocol-version` 头）→ 405（无独立流，StreamableHTTP 客户端视为预期）；`GET /mcp`（无该头）→ legacy SSE 会话建立。**每条 SSE 连接独立 `Server` 实例**（SDK Protocol 单传输，共享会导致响应路由到"最后连接"的客户端——2026-09-09 间歇性 -32001 超时事故根因，回归测试 `gateway/tests/unit/mcp-sse-multi-client.test.ts`）+ 15s `: ping` 心跳（防 ~305s 客户端 idle-abort 重连轮转）+ 会话生命周期日志（`[MCP]` 前缀）。SDK `@modelcontextprotocol/sdk@^1.30`。
 
-### 插件侧工具（14 个，`src/tools/`）
+### 插件侧工具（15 个，`src/tools/`）
 
 | Tool | 用途 |
 |---|---|

@@ -182,6 +182,7 @@ test('loadHistory filters injected blocks (recall/note-board/goal-snapshot)', as
         data: [
           flatMessage('m1', 'assistant', [
             textPart('p1', 'm1', '正常回复'),
+            textPart('p0', 'm1', '<topic-recall>\n主题：测试\n相关记忆：见下方\n</topic-recall>\n\n<recall>\n[联想线索]\n  - #mem-xxx [semantic] ...'),
             textPart('p2', 'm1', '<recall>\n[联想线索]\n  - #mem-xxx [semantic] ...'),
             textPart('p3', 'm1', '<note-board>\n[用户叮嘱 · 到期自动下架]'),
             textPart('p4', 'm1', '<goal-snapshot>\n<goal id="g1">...'),

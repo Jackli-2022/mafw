@@ -154,7 +154,7 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
       if (!query.trim()) {
         const only = [noteBoard, goalSnap].filter(Boolean);
         const { renderTopicRecallHeader } = require('../recall/topic-recall');
-        const header = renderTopicRecallHeader(topicState, only.length > 0);
+        const header = renderTopicRecallHeader(topicState, false);
         res.writeHead(200);
         res.end(JSON.stringify({ pointers: [header, ...only].join('\n\n') }));
         return;
@@ -164,6 +164,7 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
       // R8: serve the precomputed snapshot when it still matches the topic
       // (falls back to the live cheap search otherwise).
       let snapshotPointers: string | null = null;
+      let snapshotFokStatus: string | undefined;
       const snapCfg = config.search.snapshot;
       if (snapCfg?.enabled && sessionID) {
         try {
@@ -172,6 +173,7 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
           const decision = decideSnapshotUse(snap, query, new Date(), snapCfg);
           if (decision === 'use' && snap) {
             snapshotPointers = snap.block;
+            snapshotFokStatus = snap.fokStatus ?? 'inject';
             // A3: a served snapshot is a real injection — record exposure
             // for the daily ACT-R settlement (fail-open, in-memory only).
             try {
@@ -308,8 +310,14 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
         formatted.pointers = `${arbiterNote}\n${formatted.pointers}`;
       }
       const blocks = [formatted.pointers, noteBoard, goalSnap].filter(Boolean);
-      const { renderTopicRecallHeader } = require('../recall/topic-recall');
-      const header = renderTopicRecallHeader(topicState, blocks.length > 0);
+      const { hasRelatedRecallBody, renderTopicRecallHeader } = require('../recall/topic-recall');
+      const hasRelated = hasRelatedRecallBody(
+        formatted.pointers,
+        fokStatus,
+        snapshotPointers,
+        snapshotFokStatus,
+      );
+      const header = renderTopicRecallHeader(topicState, hasRelated);
       const pointers = [header, ...blocks].join('\n\n');
       // Latency breakdown (debug): the boundary path has a 100ms contract.
       log.debug(`[Recall] timing session=${sessionID || '-'} search=${snapshotPointers ? 0 : Date.now() - tSearch0}ms noteBoard=${tNoteBoard}ms goal=${tGoal}ms neighbours=${tNeighbors}ms`);

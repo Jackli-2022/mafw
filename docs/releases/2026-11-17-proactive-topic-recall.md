@@ -29,14 +29,23 @@
    - OpenCode fallback：`src/hooks/memory-guide.ts`。
    - 主 Agent：未设置主题时主动设置；主题偏移先核实再纠偏；`相关记忆：无` 不用无关内容补位；子代理不得调用主题工具。
 
+## Review 修复 pass
+
+- TUI 注入过滤加入 `<topic-recall>`，并用真实 `topic-recall + recall` payload 固定回归。
+- Topic State 域层统一限制 topic 200 / summary 1000 / list item 200 / list 32，校验 `active` boolean 与 `expectedRevision` 非负整数；HTTP/MCP/原生入口共享该约束。
+- header 的 `相关记忆` 只由可靠 recall 本体决定；note-board/goal 快照和 FOK `no-memory` 不再被误报为相关记忆。
+- 增加旧 recall 本体逐字相等断言、主题包裹字符转义和 HTTP `active` 类型测试。
+- 修正文档中的工具数量与新增测试计数。
+
 ## 测试
 
-新增测试 **26 个**，覆盖 Topic State、HTTP route、recall 头部、原生工具、MCP handler、canonical/fallback prompt。
+新增测试 **29 个**，覆盖 Topic State、HTTP route、recall 头部、原生工具、MCP handler、canonical/fallback prompt，以及 review 修复的主题边界/TUI 真实 payload。
 
-- Gateway 本功能 + recall/MCP/API contract + 架构 ledger + human-boundary 定向：**383/383 passed**
+- Gateway 本功能 + recall/MCP/API contract + 架构 ledger + human-boundary 定向：**386/386 passed**
 - runtime-core：**50/50 passed**
 - root native/fallback tool + prompt：**5/5 passed**
-- 定向合计：**438/438 passed**
+- TUI chat-store 真实注入 payload：**30/30 passed**
+- 定向合计：**471/471 passed**
 - `gateway` 全量：**1029 suites / 8192 tests；8184 passed，2 skipped，6 failed**
   - 6 个失败集中在 3 个非本功能 suite：`search-t1-layer`（full-run 5s timeout）、`plugin-standard-command`、`instance-ownership`。
   - 三个 suite 单独运行 **3 suites / 58 tests 全绿**，判断为 full-run 下的超时/并发 git 分支干扰。

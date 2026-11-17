@@ -85,4 +85,15 @@ describe('topic-state', () => {
     const db = fakeDb();
     expect(() => setTopicState(db, { sessionID: 's1' })).toThrow(/topic/i);
   });
+
+  test('bounds topic, summary, list items and boolean active at the domain layer', () => {
+    const db = fakeDb();
+    expect(() => setTopicState(db, { sessionID: 's1', topic: 'x'.repeat(201) })).toThrow(/topic/i);
+    expect(() => setTopicState(db, { sessionID: 's1', topic: 'ok', summary: 'x'.repeat(1001) })).toThrow(/summary/i);
+    expect(() =>
+      setTopicState(db, { sessionID: 's1', topic: 'ok', entities: ['x'.repeat(201)] }),
+    ).toThrow(/entities/i);
+    expect(() => setTopicState(db, { sessionID: 's1', topic: 'ok', active: 1 as any })).toThrow(/active/i);
+    expect(() => setTopicState(db, { sessionID: 's1', topic: 'ok', expectedRevision: 1.5 })).toThrow(/revision/i);
+  });
 });
