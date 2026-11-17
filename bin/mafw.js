@@ -52,6 +52,9 @@ Runtime Plugin Commands:
                      --audit cross-checks eventMappings/samples against the runtime contract
                      (wrong translations, missing required fields, no-output, API surface gaps).
   plugin-test        Online conformance scenarios against the active runtime (uses LLM roundtrips)
+  plugin check <path> [--json] [--strict]
+                     In-process package check (no gateway, no token): declared-vs-registered
+                     inventory + paste-ready install command. --strict = warnings are errors.
 
 Office Commands:
   office setup       Install the Python kernel venv + global office-editing skill
@@ -73,7 +76,7 @@ const COMMANDS = [
   'start', 'daemon', 'stop', 'status', 'restart', 'logs',
     'health', 'stats', 'projects', 'goals', 'register',
     'sessions', 'control', 'memory-search',
-    'automations', 'approvals', 'triage', 'restart-agent', 'plugin-test', 'plugin-check', 'plugins', 'route-check',
+    'automations', 'approvals', 'triage', 'restart-agent', 'plugin-test', 'plugin-check', 'plugin', 'plugins', 'route-check',
   'rotate-human-token',
   'office',
   'service-register', 'service-unregister',
@@ -243,6 +246,28 @@ async function pluginsCommand(args) {
     ),
     readHumanToken,
     print: (text) => console.log(text),
+  });
+}
+
+async function pluginStandardCommand(args) {
+  let standard;
+  let local;
+  try {
+    const cliDir = path.join(__dirname, '..', 'gateway', 'dist', 'cli');
+    standard = require(path.join(cliDir, 'plugin-standard-command.js'));
+    local = require(path.join(cliDir, 'plugin-check-local.js'));
+  } catch (err) {
+    console.error(`plugin command is not built: ${err.message}`);
+    console.error('Run: npm run build');
+    process.exitCode = 1;
+    return;
+  }
+  // In-process by design: `plugin check` must work with the gateway stopped and
+  // must never read the human token or reach the network.
+  process.exitCode = await standard.runPluginStandardCommand(args, {
+    check: local.createLocalCheck(),
+    print: (text) => console.log(text),
+    cwd: process.cwd(),
   });
 }
 
@@ -527,6 +552,7 @@ async function main() {
     case 'restart-agent': await callApi('restart-agent', 'POST', '/api/runtime/restart-agent'); break;
     case 'rotate-human-token': await runHumanTokenRotation(); break;
     case 'plugin-test': await runConformance(); break;
+    case 'plugin': await pluginStandardCommand(process.argv.slice(3)); break;
     case 'plugins': await pluginsCommand(process.argv.slice(3)); break;
     case 'route-check': await runRouteCheck(); break;
     case 'stats': await callApi('stats', 'GET', '/api/stats'); break;

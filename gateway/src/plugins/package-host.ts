@@ -140,6 +140,41 @@ export interface PluginApplyResult {
   runtimeName?: string;
 }
 
+/**
+ * Static plane declarations from `plugin.json` (`contributes.gateway`).
+ *
+ * This is an upper bound, not a plan: `registered ⊆ declared` is enforced,
+ * the reverse direction never is (packages register conditionally).
+ */
+export interface PluginCheckDeclared {
+  /**
+   * Names listed for this plane. An **empty list** means the plane is not
+   * declared (so it stays unconstrained), not that zero registrations are
+   * allowed.
+   */
+  actions: string[];
+  events: string[];
+  tools: string[];
+  observers: string[];
+  /** `contributes.gateway.http` when the manifest opts in or out explicitly. */
+  http?: boolean;
+}
+
+/** Planes a candidate actually tried to register while it was checked. */
+export interface PluginCheckRegistered {
+  actions: string[];
+  events: string[];
+  tools: string[];
+  observers: string[];
+  /** HTTP + WebSocket routes recorded through `ctx.http`. */
+  http: number;
+}
+
+/** Mutable accumulator handed to a probe activation. */
+interface PluginCheckInventory {
+  registered: PluginCheckRegistered;
+}
+
 /** Result of an offline candidate check (nothing is published). */
 export interface PluginCheckResult {
   ok: boolean;
@@ -147,6 +182,18 @@ export interface PluginCheckResult {
   version?: string;
   /** Contribution kinds of the candidate (`ui`, `actions`, `runtime`, …). */
   contributions?: string[];
+  /**
+   * Declared-vs-registered inventory: the manifest's static planes next to what
+   * `activate()` tried to register. `declared` is absent for legacy packages
+   * without a `contributes.gateway` block; `registered` is always reported.
+   */
+  declared?: PluginCheckDeclared;
+  registered?: PluginCheckRegistered;
+  /**
+   * Non-fatal manifest diagnostics (`legacy-permissions`, …). `mafw plugin
+   * check --strict` turns a non-empty list into a failure.
+   */
+  warnings?: string[];
   /**
    * Validated Web surface summary for the pre-install preview.
    *
@@ -222,6 +269,55 @@ function describeError(err: unknown): string {
 
 function hasUiSlots(ui: ActivatedContributions['ui']): boolean {
   return Object.values(ui).some((slot) => Array.isArray(slot) && slot.length > 0);
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+/** Pulls one string identity field out of a declaration array, ignoring junk. */
+function namesIn(value: unknown, key: 'type' | 'name' | 'id'): string[] {
+  if (!Array.isArray(value)) return [];
+  const names: string[] = [];
+  for (const entry of value) {
+    const name = asRecord(entry)?.[key];
+    if (typeof name === 'string' && name.length > 0) names.push(name);
+  }
+  return names;
+}
+
+/**
+ * Reads the planes a candidate *tried* to register from its raw `activate()`
+ * result, before validation drops anything.
+ *
+ * A failing check is exactly the case the inventory exists for: the rejected
+ * registration is what the author has to see next to the declaration it broke.
+ */
+function registeredFromRaw(raw: unknown, http: number): PluginCheckRegistered {
+  const contributions = asRecord(raw) ?? {};
+  return {
+    actions: Object.keys(asRecord(contributions.actions) ?? {}),
+    events: namesIn(contributions.events, 'type'),
+    tools: namesIn(contributions.tools, 'name'),
+    observers: namesIn(contributions.observers, 'id'),
+    http,
+  };
+}
+
+/** Static upper bound from `plugin.json`; absent when nothing is declared. */
+function describeDeclared(
+  gateway: NonNullable<NormalizedPackageManifest['contributes']>['gateway'],
+): PluginCheckDeclared | undefined {
+  if (!gateway) return undefined;
+  return {
+    actions: gateway.actions ?? [],
+    events: gateway.events ?? [],
+    tools: (gateway.tools ?? []).map((tool) => tool.name),
+    observers: gateway.observers ?? [],
+    ...(gateway.http !== undefined ? { http: gateway.http } : {}),
+  };
 }
 
 export class PluginHost {
@@ -764,6 +860,13 @@ export class PluginHost {
     let name = path.basename(pkgDir).replace(/\.js$/i, '');
     let mainFile = pkgDir;
     let packageDir: string | undefined;
+    let declared: PluginCheckDeclared | undefined;
+    let warnings: string[] = [];
+    // Filled by the activation below; a candidate that never loads reports an
+    // empty inventory instead of omitting the field.
+    const inventory: PluginCheckInventory = {
+      registered: { actions: [], events: [], tools: [], observers: [], http: 0 },
+    };
     try {
       const stat = fs.statSync(pkgDir);
       if (stat.isDirectory()) {
@@ -780,6 +883,11 @@ export class PluginHost {
       } else if (!stat.isFile()) {
         throw new Error('candidate is not a file or directory');
       }
+      // Reuse the manifest normalizer so the inventory quotes exactly the bound
+      // that activation enforces (defaults and warnings included).
+      const parsedManifest = manifest === undefined ? null : parsePackageManifest(manifest);
+      declared = describeDeclared(parsedManifest?.manifest?.contributes?.gateway);
+      warnings = parsedManifest?.warnings ?? [];
       const desc: PackageDescriptor = {
         name,
         mainFile,
@@ -788,7 +896,7 @@ export class PluginHost {
       };
       const bag = this.createBag();
       try {
-        const activation = await this.activate(desc, bag, true);
+        const activation = await this.activate(desc, bag, true, inventory);
         // Web surfaces are the only slot with on-disk assets; activation already
         // validated them, so the summary is authoritative for the install preview.
         const webSurfaces = activation.activated.ui.webSurfaces ?? [];
@@ -800,6 +908,9 @@ export class PluginHost {
           ...(manifest?.apiVersion !== undefined ? { apiVersion: manifest.apiVersion } : {}),
           ...(manifest?.kind !== undefined ? { kind: manifest.kind } : {}),
           ...(manifest?.permissions !== undefined ? { permissions: manifest.permissions } : {}),
+          ...(declared !== undefined ? { declared } : {}),
+          registered: inventory.registered,
+          ...(warnings.length > 0 ? { warnings } : {}),
         };
         if (webSurfaces.length > 0) {
           result.webSurfaces = {
@@ -815,7 +926,15 @@ export class PluginHost {
         this.invalidatePackageCache(desc);
       }
     } catch (err) {
-      return { ok: false, name, version: manifest?.version, error: describeError(err) };
+      return {
+        ok: false,
+        name,
+        version: manifest?.version,
+        error: describeError(err),
+        ...(declared !== undefined ? { declared } : {}),
+        registered: inventory.registered,
+        ...(warnings.length > 0 ? { warnings } : {}),
+      };
     }
   }
 
@@ -1175,6 +1294,7 @@ export class PluginHost {
     desc: PackageDescriptor,
     bag: RegistrationBag,
     probe = false,
+    inventory?: PluginCheckInventory,
   ): Promise<ActivationResult> {
     const parsed = desc.manifest ? parsePackageManifest(desc.manifest) : null;
     if (!parsed?.ok || !parsed.manifest || parsed.manifest.kind !== 'untrusted') {
@@ -1206,6 +1326,9 @@ export class PluginHost {
     try {
       const ready = await worker.start();
       const raw = ready.contributions ?? {};
+      // Untrusted packages cannot own HTTP routes (the worker protocol does not
+      // expose `ctx.http`), so the recorded count stays 0.
+      if (inventory) inventory.registered = registeredFromRaw(raw, 0);
       const unsupported = Object.keys(raw).filter(
         (key) => raw[key] !== undefined && key !== 'actions' && key !== 'events',
       );
@@ -1272,6 +1395,7 @@ export class PluginHost {
     desc: PackageDescriptor,
     bag: RegistrationBag,
     probe = false,
+    inventory?: PluginCheckInventory,
   ): Promise<ActivationResult> {
     // One activate() result = one bag = one revision. Action/event registries
     // attach their cleanups to this bag at commit time
@@ -1293,7 +1417,7 @@ export class PluginHost {
       );
     }
     if (desc.manifest?.kind === 'untrusted') {
-      return this.activateWorker(desc, bag, probe);
+      return this.activateWorker(desc, bag, probe, inventory);
     }
     const mod = require(desc.mainFile);
     const modName = mod?.name;
@@ -1320,6 +1444,10 @@ export class PluginHost {
       // late timer/async callback fails loudly instead of disappearing.
       httpRecorder.seal();
     }
+
+    // Record what the candidate tried to register before validation can drop
+    // it: a rejected registration is the half of the diff an author needs.
+    if (inventory) inventory.registered = registeredFromRaw(raw, httpRecorder.entries.length);
 
     // `contributes.gateway.http` is a static opt-out of the http plane; routes
     // are only observable after activate() returns, so the bound is checked once
