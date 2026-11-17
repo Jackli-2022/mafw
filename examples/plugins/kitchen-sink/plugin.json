@@ -1,0 +1,23 @@
+{
+  "name": "kitchen-sink",
+  "version": "1.0.0",
+  "main": "index.js",
+  "apiVersion": 2,
+  "kind": "trusted",
+  "permissions": ["actions", "events", "tools", "observers", "http"],
+  "contributes": {
+    "gateway": {
+      "actions": ["echo"],
+      "events": ["plugin:kitchen-sink:ping"],
+      "tools": [
+        {
+          "name": "lookup",
+          "description": "Return a fixed value: the reference shape of an agent tool.",
+          "inputSchema": { "type": "object" }
+        }
+      ],
+      "observers": ["audit"],
+      "http": true
+    }
+  }
+}

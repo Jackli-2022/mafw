@@ -1,0 +1,11 @@
+{
+  "name": "hello-plugin",
+  "version": "1.0.0",
+  "main": "index.js",
+  "apiVersion": 2,
+  "kind": "trusted",
+  "permissions": ["actions", "events"],
+  "contributes": {
+    "gateway": { "actions": ["now"], "events": ["plugin:hello-plugin:tick"] }
+  }
+}
