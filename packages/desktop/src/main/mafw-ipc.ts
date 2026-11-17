@@ -2,6 +2,7 @@ import { BrowserWindow, Notification, app, ipcMain, safeStorage, session } from 
 import type { IpcMainInvokeEvent } from "electron"
 import { join } from "path"
 import { readdir } from "node:fs/promises"
+import type { NotificationInput } from "../shared/notifications"
 import {
   getGatewaySourcePreference,
   getGatewayStatus,
@@ -122,7 +123,12 @@ async function openExternalTerminal(directory: string): Promise<void> {
 
 // ── IPC Handlers ──
 
-export function registerMafwIpcHandlers() {
+export interface MafwIpcOptions {
+  /** Self-drawn notification sink. Omitted in tests / legacy harnesses. */
+  publishNotification?: (input: NotificationInput) => unknown
+}
+
+export function registerMafwIpcHandlers(options: MafwIpcOptions = {}) {
   // G1 截屏（spec 2026-10-26）：整屏捕获 → renderer 裁剪浮层。
   installCaptureIpc(ipcMain)
   // 内嵌终端（Task 11）：gateway 中性 terminal 面（CRUD + ticket + mafw-terminal/1
@@ -285,9 +291,23 @@ export function registerMafwIpcHandlers() {
       preparePluginWebSession.prepare(input),
   )
 
-  // OS-level notification for away-from-window moments (close-to-tray).
-  // The renderer decides relevance (document.hidden) and throttling.
+  // Renderer's compatibility `notify` alias: route to the self-drawn hub when
+  // wired; native Notification stays only as the legacy fallback.
   ipcMain.handle("mafw-notify", (_event: IpcMainInvokeEvent, opts: { title: string; body: string }) => {
+    if (options.publishNotification) {
+      try {
+        options.publishNotification({
+          kind: "attention",
+          severity: "p2",
+          title: opts.title,
+          body: opts.body,
+          reason: "通知",
+        })
+        return true
+      } catch {
+        // fall through to the native fallback
+      }
+    }
     if (!Notification.isSupported()) return false
     try {
       const n = new Notification({ title: opts.title, body: opts.body, icon: trayIconPath() })

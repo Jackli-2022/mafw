@@ -5,7 +5,7 @@ import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import type { Event } from "electron"
-import { app, BrowserWindow, globalShortcut, ipcMain, nativeTheme, net, Notification, session } from "electron"
+import { app, BrowserWindow, globalShortcut, ipcMain, nativeTheme, net, session } from "electron"
 
 import { Deferred, Effect } from "effect"
 
@@ -17,6 +17,7 @@ import { registerIpcHandlers, sendDeepLinks, sendMenuCommand } from "./ipc"
 import { getStore } from "./store"
 import { NotificationHub } from "./notification-hub"
 import { registerNotificationIpc } from "./notification-ipc"
+import { publishPresenceNotifications } from "./presence-notifications"
 
 import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog } from "./logging"
 import { startMafwGw } from "./mafw-bootstrap"
@@ -52,8 +53,6 @@ import { createTray, updateTrayPending, updateTrayPresence, setTrayNavigateHandl
 import { startTrayStatusPolling } from "./tray-status"
 import { podPresence } from "./presence-model"
 import { startPresencePolling } from "./presence-poller"
-import { diffAttention } from "./attention-diff"
-import { NotifyState } from "./notify-state"
 import type { NavigateGoalTarget } from "../shared/navigate-goal"
 import { createWslServersController } from "./wsl/servers"
 import { registerWslIpcHandlers } from "./wsl/ipc"
@@ -399,6 +398,7 @@ const main = Effect.gen(function* () {
     setBackgroundColor: (color) => setBackgroundColor(color),
     exportDebugLogs: () => exportDebugLogs(),
     recordFatalRendererError: (error) => writeLog("renderer", "fatal renderer error", { ...error }, "error"),
+    publishNotification: (input) => notificationHub.publish(input),
   })
   registerWslIpcHandlers(wslServers)
   void updater.start()
@@ -432,9 +432,7 @@ const main = Effect.gen(function* () {
     })
     app.once("will-quit", stopTrayStatus)
 
-    // Cross-project Goal presence → tray icon state + taskbar progress.
-    const notifyState = new NotifyState(join(app.getPath("userData"), "mafw-notify.json"))
-    let prevAttentionIds: string[] = []
+    // Cross-project Goal presence → tray icon state + taskbar progress + hub.
     const presencePoll = startPresencePolling({
       getBaseUrl: () => gwUrl,
       onSnapshot: (payload) => {
@@ -444,34 +442,7 @@ const main = Effect.gen(function* () {
           if (win.isDestroyed()) continue
           win.setProgressBar(view.progress)
         }
-
-        const items = payload?.attention?.items ?? []
-        const { added } = diffAttention(prevAttentionIds, items)
-        prevAttentionIds = items.map((item) => item.id)
-        for (const item of added) {
-          if (notifyState.hasAttention(item.id)) continue
-          notifyState.markAttention(item.id)
-          const notification = new Notification({ title: "需要你", body: (item as any).title ?? "Pod 需要你的决定" })
-          notification.on("click", () => {
-            // attention 项没有 projectId：先在当前项目里找这个 Goal，找不到就只聚焦窗口。
-            navigateToGoal({ goalId: (item as any).goalId })
-          })
-          notification.show()
-        }
-        notifyState.pruneAttention(items.map((item) => item.id))
-
-        const latest = payload?.unreadResults?.latest
-        if (latest && !notifyState.hasResult(latest.goalId, latest.revision)) {
-          notifyState.markResult(latest.goalId, latest.revision)
-          const notification = new Notification({
-            title: `${latest.title} · 已完成`,
-            body: "Goal 已归档，点击查看结果",
-          })
-          notification.on("click", () => {
-            navigateToGoal({ podId: latest.podId, projectId: latest.projectId, goalId: latest.goalId })
-          })
-          notification.show()
-        }
+        publishPresenceNotifications(notificationHub, payload)
       },
       log: (msg) => logger.warn(msg),
     })

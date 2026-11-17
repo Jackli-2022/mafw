@@ -6,6 +6,7 @@ import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 import type { DesktopMenuAction } from "../types/desktop-menu"
 
 import type { FatalRendererError, ServerReadyData, TitlebarTheme } from "../preload/types"
+import type { NotificationInput } from "../shared/notifications"
 import { registerMafwIpcHandlers } from "./mafw-ipc"
 import { listDir, readTextFile, resolveDirInRoot, resolveInRoot, statFile, writeTextFile, type FsIO } from "./fs-workspace"
 import { mafwFileRoots, registerRootDir } from "./mafw-file-protocol"
@@ -50,6 +51,8 @@ type Deps = {
   setBackgroundColor: (color: string) => void
   exportDebugLogs: () => Promise<string>
   recordFatalRendererError: (error: FatalRendererError) => Promise<void> | void
+  /** Self-drawn notifications; native Notification is the legacy fallback. */
+  publishNotification?: (input: NotificationInput) => unknown
 }
 
 export function registerIpcHandlers(deps: Deps) {
@@ -304,6 +307,20 @@ export function registerIpcHandlers(deps: Deps) {
   })
 
   ipcMain.on("show-notification", (_event: IpcMainEvent, title: string, body?: string) => {
+    if (deps.publishNotification) {
+      try {
+        deps.publishNotification({
+          kind: "attention",
+          severity: "p2",
+          title,
+          body,
+          reason: "通知",
+        })
+        return
+      } catch {
+        // fall through to native
+      }
+    }
     new Notification({ title, body }).show()
   })
 
@@ -389,7 +406,7 @@ export function registerIpcHandlers(deps: Deps) {
     })
   })
 
-  registerMafwIpcHandlers()
+  registerMafwIpcHandlers({ publishNotification: deps.publishNotification })
 }
 
 export function sendMenuCommand(win: BrowserWindow, id: string) {
