@@ -38,11 +38,7 @@
 - gateway：`domain-event-consumer`、`domain-event-consumer-wiring`、
   `event-delivery-receipt-routes` 新增 8 tests；api-contract ledger 更新（+2 POST ops）。
 - SDK：新增 2 个 client 测试；`npm test` 245/245。
-- gateway 全量：**1022 / 1022 suites**，**8093 passed / 2 skipped / 0 failed**（review 修复前）。
-  review 修复后多次全量各命中一个并行/环境 flake（`mcp/search-t1-layer`、
-  `cli/plugin-standard-command`、`file-history-route`），均单独复跑全绿；最后一次
-  1023/1024 suites、8113 passed / 2 skipped / 4 failed，失败全部来自
-  `cli/plugin-standard-command`（与工作树里未提交的 plugin 改动相关）。
+- gateway 全量：**1024 / 1024 suites**，**8117 passed / 2 skipped / 0 failed**。
 - Desktop `tsgo`：rc=0（补上 preload 的 `readDelivery` / `answerDelivery` 后）。
 - `tsc`：gateway + SDK rc=0；gateway / SDK build 均通过。
 
