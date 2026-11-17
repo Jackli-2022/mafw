@@ -71,6 +71,8 @@ import { PodGoalService } from './core/pod/pod-goal-service';
 import { PodSessionLifecycle } from './core/pod/pod-session-lifecycle';
 import { PodWorktreeService } from './core/pod/pod-worktree-service';
 import { PodMessageDelivery } from './core/pod/pod-message-delivery';
+import type { PodReviewService } from './core/pod/pod-review-service';
+import { GoalReviewWorkService } from './core/pod/goal-review-work-service';
 import { PodContextSelectionService } from './mcp/handlers/pod-context-select';
 import { canonicalProjectDir, podInternalSessionRoleForNode } from './core/pod/pod-identity';
 import { recordSessionInDb } from './core/engine/phase-orchestrator';
@@ -826,6 +828,19 @@ export async function bootKernel(kernel: BootKernel): Promise<void> {
       if (!kernel.podContextSelectionService) return null;
       if (!kernel.podService?.getPodIdForGoal(goalId)) return null;
       return kernel.podContextSelectionService.renderForNode({ goalId, node, revision });
+    },
+    // Annotation spec 2026-11-17: freeze unresolved review-item IDs at plan,
+    // reuse that exact set at execute. The snapshot lives beside revision
+    // artifacts; provider failures are handled fail-closed by NodeDriver.
+    reviewItemsContext: (goalId: string, node: 'plan' | 'execute', revision: number) => {
+      const podId = kernel.podService?.getPodIdForGoal(goalId);
+      const reviews = (kernel as unknown as { podReviewService?: PodReviewService }).podReviewService;
+      if (!podId || !reviews) return null;
+      return new GoalReviewWorkService({
+        reviews,
+        mafwDirForGoal: (id) => kernel.goalDriverMafwDirCache.get(id) ?? null,
+        now: () => new Date().toISOString(),
+      }).render({ podId, goalId, revision, node });
     },
     onPromptDispatched: (sessionId: string) => {
       const ids = kernel.podPendingHandoffs.get(sessionId);

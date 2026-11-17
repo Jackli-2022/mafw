@@ -293,6 +293,12 @@ export interface DriverDeps {
     node: ExecutableGoalNode,
     revision: number,
   ) => Promise<string | null> | string | null;
+  /** Frozen unresolved review-item context for plan / execute (annotation spec 2026-11-17). */
+  reviewItemsContext?: (
+    goalId: string,
+    node: 'plan' | 'execute',
+    revision: number,
+  ) => Promise<string | null> | string | null;
   /** Pod handoff：promptAsync 被接受后提交 pending 投递状态。 */
   onPromptDispatched?: (sessionId: string) => void;
   /** Pod 暂停自动推进：false 时不创建新节点；askUser/archive 仍可执行。 */
