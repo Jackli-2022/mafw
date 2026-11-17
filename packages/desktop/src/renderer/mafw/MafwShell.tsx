@@ -2630,6 +2630,17 @@ export function MafwShell() {
     })
     // 自绘通知中心：hub 快照 + 统一 target 路由（中心面板 / 悬浮窗共用）。
     ensureNotifications()
+    // 悬浮窗主题上报：跟 data-color-scheme（手动主题与系统跟随都覆盖）。
+    const reportTheme = () => {
+      const mode = document.documentElement.dataset.colorScheme === "light" ? "light" : "dark"
+      void window.api.mafw.notifications.reportTheme(mode).catch(() => {})
+    }
+    reportTheme()
+    const themeObserver = new MutationObserver(reportTheme)
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-color-scheme", "data-theme"],
+    })
     const offNotificationNav = window.api.mafw.navigate.onNotification((target) => {
       void navigateNotificationTarget(target, notificationNavDeps).catch(() => {})
     })
@@ -2637,6 +2648,7 @@ export function MafwShell() {
       off()
       offNavigate()
       offNotificationNav()
+      themeObserver.disconnect()
       disposeNotifications()
     })
   })

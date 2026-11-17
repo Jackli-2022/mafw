@@ -61,6 +61,7 @@ describe("notification IPC", () => {
       "mafw-notifications:markReadByDedupe",
       "mafw-notifications:publish",
       "mafw-notifications:remove",
+      "mafw-notifications:theme",
       "set-notification-prefs",
     ])
   })
@@ -107,6 +108,24 @@ describe("notification IPC", () => {
       doNotDisturb: true,
     })
     expect(prefs).toHaveLength(1)
+  })
+
+  test("theme reports reach the controller and reject invalid values", () => {
+    const themes: string[] = []
+    const ipc = fakeIpcMain()
+    const hub = new NotificationHub(memoryStore(), () => 100)
+    registerNotificationIpc({
+      ipcMain: ipc,
+      hub,
+      store: memoryStore(),
+      broadcast: () => {},
+      onThemeReported: (theme) => themes.push(theme),
+    })
+    ipc.invoke("mafw-notifications:theme", "dark")
+    ipc.invoke("mafw-notifications:theme", "light")
+    ipc.invoke("mafw-notifications:theme", "nope")
+    ipc.invoke("mafw-notifications:theme", 42)
+    expect(themes).toEqual(["dark", "light"])
   })
 
   test("cleanup removes every handler", () => {

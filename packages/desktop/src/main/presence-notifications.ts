@@ -20,7 +20,7 @@ export interface PresenceResultLike {
 
 export interface PresencePayloadLike {
   // Older gateways type attention items as `{ id }`; validate at runtime.
-  attention?: { items?: Array<Partial<PresenceAttentionLike> & { id: string }> }
+  attention?: { count?: number; items?: Array<Partial<PresenceAttentionLike> & { id: string }> }
   unreadResults?: { latest?: Partial<PresenceResultLike> | null }
 }
 
@@ -90,7 +90,8 @@ export function publishPresenceNotifications(
   payload: PresencePayloadLike | null,
 ): void {
   if (!payload) return
-  const items = (payload.attention?.items ?? [])
+  const attention = payload.attention
+  const items = (attention?.items ?? [])
     .map(normalizeAttention)
     .filter((item): item is PresenceAttentionLike => !!item)
   const latest = normalizeLatest(payload.unreadResults?.latest)
@@ -135,5 +136,11 @@ export function publishPresenceNotifications(
   }
 
   // Presence is authoritative for "still needs you"; anything absent resolved.
+  // 但不完整的快照不能当权威：count 交代了 N 条而 items 少于 N（网关抖动 /
+  // 冷启动 / 旧网关缺字段被 normalize 丢弃）时跳过 reconcile，防止把仍在
+  // 等待批准的 attention 永久标成已读（bell 不再催）。
+  const count = attention?.count
+  if (!attention) return
+  if (typeof count === "number" && items.length < count) return
   hub.reconcileAttention(items.map((item) => item.id))
 }

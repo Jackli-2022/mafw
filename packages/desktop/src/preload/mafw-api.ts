@@ -70,6 +70,9 @@ export function createMafwApi(): MafwAPI {
       remove: (id) => ipcRenderer.invoke("mafw-notifications:remove", id) as Promise<void>,
       publish: (input: NotificationInput) =>
         ipcRenderer.invoke("mafw-notifications:publish", input) as Promise<MafwNotification | null>,
+      /** 主窗口上报 effective theme（悬浮窗卡片跟应用主题，非系统外观）。 */
+      reportTheme: (theme: "light" | "dark") =>
+        ipcRenderer.invoke("mafw-notifications:theme", theme) as Promise<void>,
       onChanged: (cb) => {
         notificationCallbacks.add(cb)
         if (!notificationChannelActive) {

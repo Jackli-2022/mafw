@@ -25,6 +25,12 @@ describe("notification center wiring", () => {
     expect(shell).toContain("navigateNotificationTarget(item.target, notificationNavDeps)")
   })
 
+  test("the shell reports the effective theme for the floating window", () => {
+    expect(shell).toContain("notifications.reportTheme(mode)")
+    expect(shell).toContain("MutationObserver(reportTheme)")
+    expect(shell).toContain('attributeFilter: ["data-color-scheme", "data-theme"]')
+  })
+
   test("the panel has filters, triage actions and keyboard support", () => {
     expect(center).toContain("全部已读")
     expect(center).toContain("清空已读")

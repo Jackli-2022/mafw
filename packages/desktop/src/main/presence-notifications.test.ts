@@ -101,6 +101,34 @@ describe("publishPresenceNotifications", () => {
     expect(hub.snapshot().unread).toBe(0)
   })
 
+  test("a partial snapshot (count > items) never reconciles attention read", () => {
+    const hub = new NotificationHub(memoryStore(), () => 100)
+    const withAttention = payload({
+      attention: {
+        count: 1,
+        items: [{
+          id: "g1:plan_approval:r1",
+          goalId: "g1",
+          revision: 1,
+          kind: "plan_approval",
+          title: "待批准",
+          projectId: "C:/p",
+        }],
+      },
+    })
+    publishPresenceNotifications(hub, withAttention as any)
+    expect(hub.snapshot().unread).toBe(1)
+
+    // 网关抖动 / 冷启动：count 说有 1 条在等待，items 却为空 → 不当作已解决。
+    const flapping = payload({ attention: { count: 1, items: [] } })
+    publishPresenceNotifications(hub, flapping as any)
+    expect(hub.snapshot().unread).toBe(1)
+
+    // 恢复健康的快照才是权威。
+    publishPresenceNotifications(hub, payload({ attention: { count: 0, items: [] } }) as any)
+    expect(hub.snapshot().unread).toBe(0)
+  })
+
   test("null payload is a no-op", () => {
     const hub = new NotificationHub(memoryStore(), () => 100)
     publishPresenceNotifications(hub, null)

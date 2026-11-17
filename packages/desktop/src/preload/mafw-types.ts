@@ -72,6 +72,8 @@ export type MafwAPI = {
     clearRead: () => Promise<void>
     remove: (id: string) => Promise<void>
     publish: (input: NotificationInput) => Promise<MafwNotification | null>
+    /** 主窗口上报 effective theme（悬浮窗卡片跟应用主题，非系统外观）。 */
+    reportTheme: (theme: "light" | "dark") => Promise<void>
     onChanged: (cb: (snapshot: NotificationSnapshot) => void) => () => void
   }
 

@@ -323,6 +323,8 @@ const main = Effect.gen(function* () {
   // Self-drawn notifications: main-process hub is the single source of truth.
   const notificationHub = new NotificationHub(getStore("mafw-notifications"))
   let notificationWindowRefresh: (() => void) | null = null
+  // 悬浮窗主题跟主窗口上报的 effective theme；缺省回落系统外观。
+  let notificationTheme: "light" | "dark" | null = null
   registerNotificationIpc({
     ipcMain,
     hub: notificationHub,
@@ -333,6 +335,7 @@ const main = Effect.gen(function* () {
       }
     },
     onPrefsChanged: () => notificationWindowRefresh?.(),
+    onThemeReported: (theme) => { notificationTheme = theme },
   })
 
   // Quick entry: global hotkey shows the window and focuses the composer.
@@ -495,7 +498,11 @@ const main = Effect.gen(function* () {
             : screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
         return display.workArea
       },
-      getTheme: () => (nativeTheme.shouldUseDarkColors ? "dark" : "light"),
+      getTheme: () => notificationTheme ?? (nativeTheme.shouldUseDarkColors ? "dark" : "light"),
+      mainWindowBackgrounded: () => {
+        const win = getNavigationWindow()
+        return !win || !win.isVisible() || win.isMinimized() || !win.isFocused()
+      },
       ensureWindow: (handlers) => {
         const win = new BrowserWindow({
           width: 360,

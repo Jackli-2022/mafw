@@ -33,6 +33,8 @@ export interface NotificationWindowControllerDeps {
   getPrefs(): NotificationPrefs
   getWorkArea(): NotificationRect
   getTheme(): "light" | "dark"
+  /** 主窗口是否在后台（最小化/隐藏/失焦）——悬浮窗只在这个状态弹出。 */
+  mainWindowBackgrounded?(): boolean
   /** Creates (once) the transparent always-on-top window and wires its IPC. */
   ensureWindow(handlers: FloatingWindowHandlers): FloatingWindowLike
   navigate(target: NotificationTarget | undefined): void
@@ -116,7 +118,10 @@ export function createNotificationWindowController(
   const offNew = deps.hub.onNew((item) => {
     const prefs = deps.getPrefs()
     if (shouldShowFloatingWindow(prefs)) {
-      presenter.push(item)
+      // 前台（主窗口可见且聚焦）时不弹悬浮窗——应用内 toast 已覆盖感知，
+      // 双通道同屏会打断正在操作的用户（spec §4「窗口在后台时出现」）。
+      const backgrounded = deps.mainWindowBackgrounded?.() ?? true
+      if (backgrounded) presenter.push(item)
       return
     }
     if (!prefs.selfDrawn && prefs.fallbackToNative) deps.nativeNotify(item)

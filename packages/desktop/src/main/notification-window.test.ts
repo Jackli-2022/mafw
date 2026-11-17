@@ -51,10 +51,16 @@ function fakeWindow(readyDelay = false) {
 const WORK_AREA = { x: 0, y: 0, width: 1920, height: 1080 }
 const PREFS: NotificationPrefs = { selfDrawn: true, doNotDisturb: false, fallbackToNative: true }
 
-function harness(over: { prefs?: Partial<NotificationPrefs>; ensureWindow?: (h: FloatingWindowHandlers) => FloatingWindowLike; readyDelay?: boolean } = {}) {
+function harness(over: {
+  prefs?: Partial<NotificationPrefs>
+  ensureWindow?: (h: FloatingWindowHandlers) => FloatingWindowLike
+  readyDelay?: boolean
+  backgrounded?: boolean
+} = {}) {
   const hub = new NotificationHub(memoryStore(), () => 100)
   const fake = fakeWindow(over.readyDelay ?? false)
   let prefs = { ...PREFS, ...over.prefs }
+  let backgrounded = over.backgrounded ?? true
   const navigated: Array<NotificationTarget | undefined> = []
   const natives: MafwNotification[] = []
   const controller = createNotificationWindowController({
@@ -62,6 +68,7 @@ function harness(over: { prefs?: Partial<NotificationPrefs>; ensureWindow?: (h: 
     getPrefs: () => prefs,
     getWorkArea: () => WORK_AREA,
     getTheme: () => "dark",
+    mainWindowBackgrounded: () => backgrounded,
     ensureWindow: over.ensureWindow ?? ((handlers) => { fake.wire(handlers); return fake.win }),
     navigate: (target) => navigated.push(target),
     nativeNotify: (item) => natives.push(item),
@@ -72,6 +79,7 @@ function harness(over: { prefs?: Partial<NotificationPrefs>; ensureWindow?: (h: 
     controller,
     navigated,
     natives,
+    setBackgrounded: (value: boolean) => { backgrounded = value },
     setPrefs: (patch: Partial<NotificationPrefs>) => { prefs = { ...prefs, ...patch } },
   }
 }
@@ -164,5 +172,16 @@ describe("notification window controller", () => {
     fake.ready()
     expect(fake.sent.at(-1)?.items.map((item) => item.title)).toEqual(["A"])
     expect(fake.calls).toContain("show")
+  })
+
+  test("no floating card while the main window is foregrounded; the center still collects", () => {
+    const { hub, fake, setBackgrounded } = harness({ backgrounded: false })
+    hub.publish({ kind: "attention", severity: "p2", title: "前台", reason: "需要你", dedupeKey: "fg:1" })
+    expect(fake.calls).not.toContain("show")
+    expect(hub.snapshot().unread).toBe(1)
+
+    setBackgrounded(true)
+    hub.publish({ kind: "attention", severity: "p2", title: "后台", reason: "需要你", dedupeKey: "bg:1" })
+    expect(fake.sent.at(-1)?.items.map((item) => item.title)).toEqual(["后台"])
   })
 })

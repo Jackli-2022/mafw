@@ -27,6 +27,8 @@ export interface NotificationIpcDeps {
   store: NotificationPrefsStore
   broadcast: (snapshot: NotificationSnapshot) => void
   onPrefsChanged?: (prefs: ReturnType<typeof readNotificationPrefs>) => void
+  /** 主窗口上报 effective theme → 悬浮窗卡片跟应用主题。 */
+  onThemeReported?: (theme: "light" | "dark") => void
 }
 
 function asString(value: unknown): string | undefined {
@@ -90,6 +92,9 @@ export function registerNotificationIpc(deps: NotificationIpcDeps): () => void {
     const prefs = writeNotificationPrefs(store, (patch ?? {}) as Partial<NotificationPrefs>)
     deps.onPrefsChanged?.(prefs)
     return prefs
+  })
+  handle("mafw-notifications:theme", (_event, theme: unknown) => {
+    if (theme === "light" || theme === "dark") deps.onThemeReported?.(theme)
   })
 
   const offChange = hub.onChange(deps.broadcast)
