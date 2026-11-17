@@ -34,6 +34,7 @@ export function FocusStage(props: {
     scopeKey?: string
     root?: string
   }) => void
+  onDiscussAnnotations?: (items: import("../../../shared/annotation-types").Annotation[]) => void
   onSendComment?: (sid: string, text: string) => void
   onInlineEdit?: (input: import("../editor/inline-edit").InlineEditSubmission) => void
   onOpenReview?: () => void
@@ -72,6 +73,7 @@ export function FocusStage(props: {
           diffs={props.diffs}
           onActiveFileChange={props.onActiveFileChange}
           onAddAnnotation={props.onAddAnnotation}
+          onDiscussAnnotations={props.onDiscussAnnotations}
           onSendComment={props.onSendComment}
           onInlineEdit={props.onInlineEdit}
           onOpenReview={props.onOpenReview}

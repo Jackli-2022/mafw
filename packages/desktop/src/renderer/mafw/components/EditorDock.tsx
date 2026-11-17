@@ -121,6 +121,8 @@ export function EditorDock(props: {
   onInlineEdit?: (input: InlineEditSubmission) => void
   /** 批注标记点击 → 切到审阅面（回路闭合）。 */
   onOpenReview?: () => void
+  /** 显式讨论/处理当前文件的批注草稿。 */
+  onDiscussAnnotations?: (items: Annotation[]) => void
 }) {
   const model = () => fileModelFor(props.contentRoot)
   const setModel = (update: EditorModel | ((current: EditorModel) => EditorModel)) => {
@@ -1768,6 +1770,17 @@ export function EditorDock(props: {
               <div class="mafw-annot-rail-head">
                 <span>批注</span>
                 <span class="mafw-annot-rail-count">{fileAnnotations().length}</span>
+                <ButtonV2
+                  variant="ghost"
+                  size="small"
+                  class="mafw-annot-rail-action"
+                  disabled={fileAnnotations().filter((annotation) => !annotation.held).length === 0}
+                  onClick={() => props.onDiscussAnnotations?.(
+                    fileAnnotations().filter((annotation) => !annotation.held),
+                  )}
+                >
+                  讨论 / 处理
+                </ButtonV2>
               </div>
               <For each={fileAnnotations()}>
                 {(a) => (

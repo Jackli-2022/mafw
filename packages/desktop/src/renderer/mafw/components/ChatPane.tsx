@@ -3131,6 +3131,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 ownerKey={annotationOwner()}
                 scopeKey={props.annotationScopeKey}
                 root={props.annotationRoot}
+                onOpenActions={(items) => props.onProcessAnnotations?.(items)}
               />
               <Show when={sending()} fallback={
                 <ButtonV2

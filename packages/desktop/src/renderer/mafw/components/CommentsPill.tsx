@@ -26,6 +26,7 @@ export function CommentsPill(props: {
   ownerKey: string | null
   scopeKey?: string | null
   root?: string | null
+  onOpenActions?: (items: Annotation[]) => void
 }) {
   const [open, setOpen] = createSignal(false)
   const items = () => (props.ownerKey
@@ -84,6 +85,23 @@ export function CommentsPill(props: {
                 清空
               </ButtonV2>
             </div>
+            <Show when={sendable() > 0}>
+              <div class="mafw-comments-pop-actions">
+                <ButtonV2
+                  variant="contrast"
+                  size="small"
+                  onMouseDown={(event: MouseEvent) => event.preventDefault()}
+                  onClick={() => {
+                    const selected = items().filter((item) => !item.held)
+                    if (selected.length === 0) return
+                    setOpen(false)
+                    props.onOpenActions?.(selected)
+                  }}
+                >
+                  讨论 / 处理
+                </ButtonV2>
+              </div>
+            </Show>
             <For each={items()}>
               {(a) => (
                 <div class="mafw-comments-row" classList={{ "is-held": !!a.held }}>

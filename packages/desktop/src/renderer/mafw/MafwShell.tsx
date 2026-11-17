@@ -123,6 +123,9 @@ import { fetchQueue, ingestQueueEvent } from "./queue-store"
 import { setRun } from "./run-store"
 import { addPending, patchPending } from "./annotation-store"
 import { annotationSourceFromScopeKey, draftOwnerKey } from "./annotation-scope"
+import { deliverAnnotationDiscussion, type DiscussionTarget } from "./annotation-discussion"
+import { AnnotationActionDialog } from "./components/AnnotationActionDialog"
+import type { Annotation } from "../../shared/annotation-types"
 import { getSessionTurnDiffs } from "./session-turn-diffs"
 import { defaultDockOpen } from "./workbench-defaults"
 import type { ChatEpisode } from "./chat/episode-model"
@@ -3085,6 +3088,78 @@ export function MafwShell() {
     return saved
   }
 
+  const [annotationActions, setAnnotationActions] = createSignal<Annotation[] | null>(null)
+  const [annotationActionBusy, setAnnotationActionBusy] = createSignal(false)
+  const openAnnotationActions = (items: Annotation[]) => {
+    const visible = items.filter((annotation) => !annotation.delegatedAt)
+    if (visible.length === 0) return
+    setAnnotationActions(visible)
+  }
+
+  const ensureAnnotationPodId = async (preferred: string | null): Promise<string> => {
+    if (preferred) return preferred
+    const loaded = podStore.detail()?.pod.id
+    if (loaded) return loaded
+    const dir = currentProject()
+    if (!dir) throw new Error("没有当前项目，无法找到 Lead")
+    const detail = await window.api.mafw.pod.ensure(dir)
+    return detail.pod.id
+  }
+
+  const deliverDiscussionFor = async (annotations: Annotation[], target: DiscussionTarget) => {
+    setAnnotationActionBusy(true)
+    try {
+      const resolvedTarget = target.kind === "lead" || target.kind === "techlead"
+        ? { ...target, podId: await ensureAnnotationPodId(target.podId) }
+        : target
+      await deliverAnnotationDiscussion({ annotations, target: resolvedTarget }, {
+        ensureLead: async (podId) => {
+          const result = await window.api.mafw.pod.ensureLead(podId)
+          return { sessionId: result.sessionId }
+        },
+        ensureTechLead: async (goalId) => {
+          const history = await podStore.techLead(goalId)
+          if (!history?.sessionID) throw new Error("Tech Lead 会话暂不可用")
+          return { sessionID: history.sessionID, revision: history.revision }
+        },
+        sendChat: async ({ sessionID, message, parts }) => {
+          const result = await window.api.mafw.chat.sendEnriched({ sessionID, message, parts }) as any
+          if (!result?.sessionID) throw new Error(result?.error || "发送失败")
+        },
+        sendTechLead: async ({ podId, goalId, text, parts }) => {
+          await window.api.mafw.pod.sendTechLeadMessage(podId, goalId, text, { parts })
+        },
+        markDiscussed: (ids, at) => {
+          const byId = new Map(annotations.map((annotation) => [annotation.id, annotation]))
+          for (const id of ids) {
+            const annotation = byId.get(id)
+            if (annotation) patchPending(annotation.sessionID, id, { discussedAt: at })
+          }
+        },
+      })
+      showToastV2({ description: "批注已发送，未创建 Goal 或评审项", duration: 2400 } as any)
+    } catch (err: any) {
+      showToastV2({ description: `发送批注失败：${err?.message || err}`, duration: 4200 } as any)
+      throw err
+    } finally {
+      setAnnotationActionBusy(false)
+    }
+  }
+
+  const discussAnnotationAction = async (target: DiscussionTarget) => {
+    const annotations = annotationActions()
+    if (!annotations) return
+    await deliverDiscussionFor(annotations, target)
+  }
+
+  const newFreeDiscussionForAnnotations = async () => {
+    const annotations = annotationActions()
+    if (!annotations) return
+    const sessionID = await createSession({ noReveal: true })
+    if (!sessionID) return
+    await deliverDiscussionFor(annotations, { kind: "free", sessionID })
+  }
+
   // 焦点 → tab 条激活项：文档靠 id，场景靠 subject id；entry 可能稍后同步进来。
   createEffect(() => {
     documentTabs()
@@ -4455,6 +4530,7 @@ export function MafwShell() {
                           annotationOwnerKey={activeSessionId()}
                           annotationScopeKey={currentContentScopeKey()}
                           annotationRoot={contentScopeRoot(contentScope())}
+                          onProcessAnnotations={openAnnotationActions}
                           focused
                           canClosePane={false}
                           todos={todos}
@@ -4669,6 +4745,7 @@ export function MafwShell() {
                   activeTabId={activeDocumentTabId()}
                   onActiveFileChange={setActiveContentDocument}
                   onAddAnnotation={addAnnotation}
+                  onDiscussAnnotations={openAnnotationActions}
                   onOpenFile={(rel, line) => {
                     const doc = activeChangeSetDocument()
                     if (doc?.root) {
@@ -4813,6 +4890,21 @@ export function MafwShell() {
         <EventInspector onClose={() => setShowInspector(false)} />
       </Show>
       <ImageLightbox />
+      <Show when={annotationActions()}>
+        {(items) => (
+          <AnnotationActionDialog
+            annotations={items()}
+            goals={podStore.detail()?.goals ?? []}
+            podId={podStore.detail()?.pod.id ?? null}
+            currentSessionID={activeSessionId()}
+            currentChatGoalId={activeTechLeadGoalId()}
+            busy={annotationActionBusy()}
+            onDiscuss={discussAnnotationAction}
+            onNewFreeDiscussion={newFreeDiscussionForAnnotations}
+            onClose={() => setAnnotationActions(null)}
+          />
+        )}
+      </Show>
       {/* 统一插件包消息小窗：主窗口 DOM 内 overlay，绝不创建 BrowserWindow。 */}
       <PluginWindowHost />
     </div>

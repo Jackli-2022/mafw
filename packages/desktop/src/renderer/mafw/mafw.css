@@ -9108,3 +9108,46 @@ html[data-theme="light"] body {
   font-size: 12px;
 }
 .mafw-annotation-message-refs-label { color: var(--text-3); }
+
+/* Shared annotation discussion/delegation dialog */
+.mafw-annotation-action-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg-base) 72%, transparent);
+}
+.mafw-annotation-action-dialog {
+  width: min(420px, calc(100vw - 32px));
+  max-height: min(640px, calc(100vh - 64px));
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg);
+  background: var(--bg-overlay);
+  box-shadow: var(--shadow-float);
+}
+.mafw-annotation-action-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.mafw-annotation-action-head > div { display: flex; flex-direction: column; gap: 4px; }
+.mafw-annotation-action-head b { font-size: 14px; }
+.mafw-annotation-action-head span { font-size: 12px; color: var(--text-3); }
+.mafw-annotation-action-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 14px 0 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 8px;
+}
+.mafw-annotation-action-tabs [aria-selected="true"] { color: var(--text-1); background: var(--surface-raised-base); }
+.mafw-annotation-action-body { display: flex; flex-direction: column; gap: 8px; }
+.mafw-annotation-action-note { margin: 0 0 4px; font-size: 12px; color: var(--text-3); line-height: 1.5; }
+.mafw-annotation-action-empty { margin: 0; font-size: 12px; color: var(--text-4); }
+.mafw-comments-pop-actions { padding: 6px 10px 8px; border-top: 1px solid var(--border-subtle); }
+.mafw-annot-rail-action { margin-left: auto; }
