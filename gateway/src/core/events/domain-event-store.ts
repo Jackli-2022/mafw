@@ -79,7 +79,7 @@ export class DomainEventStore {
     `);
   }
 
-  private getByEventId(eventId: string): DomainEvent | null {
+  getByEventId(eventId: string): DomainEvent | null {
     const row = this.db.prepare('SELECT * FROM domain_events WHERE event_id = ?')
       .get(eventId) as DomainEventDbRow | undefined;
     return row ? toEvent(row) : null;

@@ -1,7 +1,25 @@
+import type { DomainEvent } from './domain-event';
 import type { EventThreadRow, EventTriggerRow } from './event-types';
 
 function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+export function renderDomainEvent(event: DomainEvent): string {
+  const payload = event.payload ?? {};
+  const lines = [
+    '[EVENT]',
+    `type=${event.type}`,
+    `key=${event.aggregateId}`,
+  ];
+  const source = text(payload.sourceKind);
+  if (source) lines.push(`source=${source}`);
+  const title = text(payload.title);
+  if (title) lines.push(`title: ${title}`);
+  const actor = text(payload.actor);
+  if (actor) lines.push(`actor=${actor}`);
+  lines.push('处理完即可；需要用户拍板时走 ask 流程。');
+  return lines.join('\n');
 }
 
 export function renderExternalEvent(trigger: EventTriggerRow, thread: EventThreadRow): string {
