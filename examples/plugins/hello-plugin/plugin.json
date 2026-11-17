@@ -6,6 +6,12 @@
   "kind": "trusted",
   "permissions": ["actions", "events"],
   "contributes": {
-    "gateway": { "actions": ["now"], "events": ["plugin:hello-plugin:tick"] }
+    "gateway": {
+      "actions": ["now"],
+      "events": ["plugin:hello-plugin:tick"],
+      "tools": [],
+      "observers": [],
+      "http": false
+    }
   }
 }

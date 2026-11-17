@@ -56,11 +56,14 @@ mafw plugin check --strict "C:/abs/path/.mafw/plugin-drafts/my-plugin"
 ~/.mafw/plugins/my-plugin/
   plugin.json          # 元数据 + contributes（唯一必填文件）
   index.js             # main，默认 index.js；必须在包目录内
+  README.md            # 可选：init 会生成一份；check 不要求
   lib/…                # 可选：包内模块，只在 gateway 进程执行
   web/…                # 可选：只有声明 ui.webSurfaces 时才有意义，入口文件必须存在
 ```
 
 安装目标是 `~/.mafw/plugins/<name>/`（`MAFW_PLUGINS_DIR` 可覆盖根目录；数据根固定 `~/.mafw`）。安装**只走 CLI**（§9）：手工拷贝会绕过安装时同意、指纹基线与审计。
+
+**包目录可以放在磁盘任意位置**：`<cwd>/.mafw/plugin-drafts/` 只是 `mafw plugin init` 的便利默认值，不是 `check` / `install` 的约束。`init --dir <parent>` 生成 `<parent>/<name>`（相对路径按 cwd 解析，缺失的父目录会被递归创建）。`check` **不**比对目录 basename 与 manifest `name`；只有 `install` 会按 manifest `name` 创建安装目录 `~/.mafw/plugins/<name>/`，所以源目录叫什么都可以。
 
 身份规则（逐字）：
 
@@ -115,6 +118,8 @@ module.exports = {
 
 解析器只读它认识的键；额外顶层元数据允许存在（发布 schema 因此没有 `additionalProperties: false`）。
 
+`plugin.json` 必须是 **UTF-8 无 BOM**：解析器直接 `JSON.parse(readFileSync(path, 'utf-8'))`，BOM 会让 `check` / 安装报 JSON token 错误（形如 `Unexpected token` 后跟不可见字符），Windows 编辑器可能自动加 BOM。
+
 | 字段 | 类型 | 必填 | 默认 | 说明 |
 |---|---|---|---|---|
 | `name` | string | ✅ | — | 包名 + 事件命名空间。规则见 §1。 |
@@ -156,7 +161,8 @@ module.exports = { name: 'my-plugin', usage: { /* … */ } };
 生命周期要点：
 
 - `activate()` 在安装提交、启用、以及**内容指纹变化**（热重载）时执行。一次激活 = 一个 revision；handler 闭包里的状态随该 revision 生死，不要往模块级全局塞状态。
-- 你打开的 timer / listener / watcher / socket **必须**经 `ctx.effect(dispose)` 释放（LIFO 执行）。否则替换 revision 后旧副作用继续跑。
+- 你打开的 timer / listener / watcher / socket **必须**经 `ctx.effect(dispose)` 释放（LIFO 执行）。否则替换 revision 后旧副作用继续跑。只是不想让 timer 撑住网关进程时，可以额外 `timer.unref()`——**`unref()` 不能代替 `ctx.effect`**，被替换的 revision 的 unref timer 仍然会跑。
+- `ctx.emit` 在 `activate()` **返回之前发不出去**：事件只在 revision commit 时才进 registry，所以激活期间的 `ctx.emit` 会被丢弃并记诊断（首次激活是 `unloaded`「not active」，替换旧 revision 时是 `stale-emitter`），不会抛错。**在 commit 之后发**：在 `activate()` 里起 timer，回调触发时本 revision 已经生效（`hello-plugin` 就是这种写法）。
 - `ctx.http` 只在 `activate()` 运行期间可用：激活返回后 recorder 被 seal，再注册抛 `ctx.http is only available during activate() (package "<name>")`。
 - 激活失败 = **整包不生效**（错误留在 pending / failure 记录里，`check`、`plugins list`、Desktop 可见）；已提交的旧 revision 不会被失败的新候选替换。
 - 零贡献会被拒绝：`no contributions (usage/media/runtime/tts/uiTools/ui/actions/events/tools/observers)`。`contributes.gateway.http: true` 本身不算贡献——只注册路由的包也过不了这一关。
@@ -245,6 +251,8 @@ return {
 
 上限：`timeoutMs` 缺省 **15000 ms**，硬顶 **60000 ms**；input / output payload 各 **262144 字节**（256 KiB）；input 在调用前按 `inputSchema` 校验，output 在返回后按 `outputSchema` 校验（失败是调用错误，不是激活错误）。超时报 `plugin action "<package>:<name>" exceeded <ms>ms`。
 
+**handler 约定**：handler 可以是同步函数，也可以 `async`（返回值是 Promise 时宿主 await 它）；返回值必须 **JSON 可序列化**，否则调用错误 `output of plugin action "<package>:<name>" must be JSON-serializable`；`outputSchema` 在 handler 返回**之后**才校验，不匹配是调用错误 `invalid output from plugin action "<package>:<name>"`（`invalid-output`，502），不是激活错误。`call.signal` 是宿主给的 `AbortSignal`：超时（`timeout`，408）、调用方取消（`aborted`）、或本 revision 被替换 / 卸载（`stale-revision` / `unloaded`，均 409）时被 abort，handler 应尽快停下。
+
 **声明必须出现在 `contributes.gateway.actions` 里**（平面存在即约束；显式 `[]` 表示一个也不许），否则整包激活失败。
 
 ### 4.2 events
@@ -260,6 +268,8 @@ events: Array<{
   scope?: 'global' | 'session';  // 缺省 global；session 作用域要求 sessionID
 }>
 ```
+
+**发射信封只有 `{ type, properties?, sessionID? }`**：包决定的就是这三样，负载只能放 `properties`（并且必须写进 `schema` 才会被校验；旧的扁平写法 `ctx.emit({ type, ...payload })` 仍被兼容，新包不要用）。**`at` 不是信封字段**——宿主在把 canonical 事件交给 observer 时才盖自己的 `at`（epoch ms，见 §4.4）。想在广播里带时间戳，就自己放进 `properties`（如 `{ at: Date.now() }`）并声明在 `schema` 里。
 
 可复制片段（`examples/plugins/kitchen-sink/index.js`）：
 
@@ -363,6 +373,8 @@ observers: Array<{
 }>
 ```
 
+注意 `onEvent` 参数里的 `at: number` 是**宿主**构造 canonical 事件时盖的（`toCanonicalEvent` 的 `Date.now()`），与包自己的 `ctx.emit` 没有关系；包在 `properties` 里带不带 `at` 由你自己决定（§4.2）。
+
 可复制片段（`examples/plugins/kitchen-sink/index.js`）：
 
 ```js
@@ -454,7 +466,7 @@ module.exports = {
 
 上限：请求体默认 **32 MiB**（`33554432` 字节，`opts.maxBodyBytes` 可按路由改写该上限，正整数），超限 413 `request body too large`；handler 抛错 500 `plugin handler failed`；handler 返回 `undefined` body → **204**，返回字符串默认 `content-type: text/plain; charset=utf-8`；只支持精确路径匹配（无路径参数）。
 
-**只有显式的 `http: false` 会禁止路由**：此时任何一次 `ctx.http.route()` / `ctx.http.ws()` 都让激活失败（即使 `activate()` 正常返回）。**省略 `http` 键 = 该 plane 不受上界约束**（与 §6 一致，`check` 会打印 `http (unbounded)`）；**建议显式写 `http: true`**，让安装同意时能审到「这个包要开路由」。无论声明与否，`http` 本身都不算贡献：仍必须至少返回一个非 http 贡献，否则零贡献拒绝（§3）。
+**只有显式的 `http: false` 会禁止路由**：此时任何一次 `ctx.http.route()` / `ctx.http.ws()` 都让激活失败（即使 `activate()` 正常返回）。**省略 `http` 键 = 该 plane 不受上界约束**（与 §6 一致，`check` 会打印 `http (unbounded)`）；**建议显式写 `http: true`**，让声明面在 `check` 的 inventory 里可见（安装同意看的是 `permissions`——要路由就同时声明 `http` 权限 token，两者不是一回事）。无论声明与否，`http` 本身都不算贡献：仍必须至少返回一个非 http 贡献，否则零贡献拒绝（§3）。
 
 ---
 
@@ -536,7 +548,17 @@ mafw plugin check <absolute-path> [--json] [--strict]
 - `declared` 缺失 = 没有可用的 `contributes.gateway`（未声明，或 manifest 解析失败——后者同时给出 `error:`）；`declared.actions` 缺失 = 该 plane 无上界；`"actions": []` 会原样出现（零上界）。`registered` 永远存在，且是**尝试注册**的内容——失败时也能看到差集。
 - `--strict` 只把 **manifest warning** 变成失败（`not ok: --strict turned the manifest warnings above into failures`）。warning 来自 `plugin.json` 归一化：`legacy-permissions`（apiVersion 2 未声明 `permissions`）、`legacy-contributes: …`（apiVersion 1 的非法 `contributes` 块）。**`--strict` 不会因「声明了没注册」失败**。
 - `check` 也接受单文件包路径（`…/foo.js`），但单文件包不能有 tools/observers/http（§7）。
-- 失败时 `next:` 行会指名下一步（未声明 → 去补 `contributes.gateway`；缺 permission → 去补 `permissions`），然后让你重跑 check。
+- 失败时 `next:` 行按错误给出下一步：`is not declared in …` → 把名字补进 `contributes.gateway`；`permission denied`（只可能来自 `untrusted` worker）→ 补 `permissions`；其余 → 先修错误再按提示重跑 check。
+
+**`ok: true` 覆盖哪些判定**（别把它读成「包一定对」）：
+
+1. `plugin.json` 解析成功并归一化：字段形状、`apiVersion`、`host` 范围、`permissions` token；
+2. 模块身份：`main` 文件存在、`require` 成功、导出 `name` 存在且与 manifest 一致；
+3. 一次真实 `activate()` dry-run：贡献形状与跨包引用、零贡献、web surface 落盘、`http: false` 越界；
+4. 四个声明式 plane 的 registered ⊆ declared（§6）；
+5. `--strict` 时 manifest warning 变成失败。
+
+**`ok` 不覆盖什么**：`permissions` 与注册面之间**没有任何交叉校验**——`trusted` 包声明 `permissions: ["events"]` 却注册 action，`check` 仍然 `ok`。`permissions` 与 `--permission` 的一致性只在 install 时检查（§9）；token 只在 `untrusted` worker 里当运行时开关（§7）。
 
 示例（`--json --strict`，一个 apiVersion 2 但未声明 `permissions` 的包）：
 
@@ -547,6 +569,21 @@ mafw plugin check <absolute-path> [--json] [--strict]
 `mafw plugin schema` 打印同一份契约的人类可读形式（带缩进的 JSON，无外层信封）；编辑器/agent 拿它当字段真源，比任何文档都准。
 
 **check 的 ctx 与真实 host 的差异**：本地 check host 只给 `projectDir`（= check 的 cwd）、`gatewayPort`（占位 `3000`）和 registration bag。`ctx.config.update()` 抛 `ctx.config.update is not available in this host`；`ctx.terminal.create/bridge/resize` 抛 `ctx.terminal is not available: this host did not provide a terminal service`（`kill` 对未拥有的 id 静默返回）；`ctx.apiKey()` 返回 `null`，`ctx.usage` 是空统计。`ctx.fetch` / `ctx.files` / `ctx.effect` 是真的——**check 不是沙箱**，`activate()` 里的网络或文件副作用会真的发生；别把「check 通过」当成隔离证明。
+
+### 验证行为（安装后）
+
+`check` 只证明包能激活；真正的行为要装上之后自己验（本机 loopback 直连网关，不需要 token）：
+
+```bash
+# 调 action（body 可省略；返回 { package, action, revision, output }）
+curl -s -X POST http://127.0.0.1:3000/api/plugins/hello-plugin/actions/now \
+  -H 'content-type: application/json' -d '{"input":{}}'
+
+# 看事件（SSE）：每帧 data: <JSON>，顶层 type 就是 plugin:<package>:<event>
+curl -N http://127.0.0.1:3000/api/events
+```
+
+事件帧形如 `{"type":"plugin:hello-plugin:tick","properties":{"at":…},"timestamp":…}`。action 失败时响应是 `{ error, code }`：`unknown-action`（404）/ `invalid-input`（400）/ `timeout`（408）/ `aborted`（409）/ `invalid-output`（502）等。
 
 ---
 
@@ -561,6 +598,8 @@ mafw plugins install "C:/abs/path/to/my-plugin" \
   --trust trusted \
   --permission actions --permission events
 ```
+
+（上面为了可读性折行；`check` / `init` 打印的 `install:` 是**单行**，整行原样粘贴即可。）
 
 `apiVersion: 1`（legacy）——不要求同意参数；`--trust` / `--permission` 会被 CLI 接受但**被忽略**（v1 的 consent 检查直接放行），写上既不生效也不报错：
 
@@ -612,7 +651,7 @@ mafw plugins install "C:/abs/path/to/my-plugin"
 |---|---|---|---|
 | `apiVersion` | manifest 的**代际**：这个包用哪一套信任/同意语义？ | `1`（缺省，legacy）或 `2` | 其它整数 → `unsupported apiVersion: <n>`（非整数 → `invalid apiVersion: <value>`），该包不激活 |
 | `host` | 这个包要求**哪个产品版本范围**的网关？ | `*`，或空格分隔的比较器，如 `>=5.1.0 <6.0.0`；**省略该字段**表示不限制 | 不满足 → `host range <range> does not include <version>`，该包不激活；显式空串 `""` 也是非法值 → `invalid host range: ` |
-| `standardVersion` | 写这个包时对照的是**哪一版规范文本**（本文 = `1`） | 正整数（≥1） | 非正整数 → `standardVersion must be a positive integer` |
+| `standardVersion` | 写这个包时对照的是**哪一版规范文本**（本文 = `1`） | 正整数（≥1）；**可省略**（省略 = 未声明） | 非正整数 → `standardVersion must be a positive integer` |
 
 `host` 语法细节（逐字对照解析器）：
 
@@ -627,4 +666,4 @@ mafw plugins install "C:/abs/path/to/my-plugin"
 - `2`：安装必须显式 `--trust` + 逐项 `--permission`；`contributes` 形状非法是硬错误；`untrusted` 只能出现在这里。
 - 未来代际：解析器只接受 `1` / `2`，更大整数按 `unsupported apiVersion` 处理（不会静默降级成 1）。
 
-`standardVersion` 目前**不被宿主用来放行或拒绝任何东西**——它只是作者声明「我按标准 v1 写的」，供人/工具判断。写新包时填 `1`，不要指望它触发任何兼容行为。
+`standardVersion` 目前**不被宿主用来放行或拒绝任何东西**——它只是作者声明「我按标准 v1 写的」，供人/工具判断。它是**可选的**：省略没有任何后果（`check` / 安装 / 激活都不会因此变化），要写就写 `1`，但别指望它触发任何兼容行为；本文的最小示例与两个参考包都省略它。

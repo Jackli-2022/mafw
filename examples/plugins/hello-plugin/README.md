@@ -45,6 +45,9 @@ desktop Plugin Center (or delete that directory while the gateway is stopped).
   planes the package uses, and `contributes.gateway` listing the exact action
   and event registered at runtime. **The declaration is the upper bound**:
   registering an action or event that is not listed fails the whole package.
+  It also carries the explicit zero bounds `tools: []`, `observers: []` and
+  `http: false` (the same shape `plugin init` writes): those planes are opted
+  out, not left unbounded.
 - `index.js` — `activate(ctx)` returns `actions` and `events`. The interval is
   cleaned up through `ctx.effect(...)`, which is the only supported way to
   release timers/listeners; it runs on unload, replace, disable and after a
