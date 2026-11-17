@@ -156,6 +156,33 @@ describe('mafw plugin check', () => {
     expect(warning).toContain('package path');
   });
 
+  it('omits the line when the path would be expanded by a shell', async () => {
+    // `$`, backtick and `!` all expand *inside* POSIX double quotes, so a
+    // directory named `$(calc)` would execute when the line is pasted.
+    const targets = [
+      '/tmp/$(calc)/hello-plugin',
+      '/home/$HOME/hello-plugin',
+      '/tmp/`id`/hello-plugin',
+      '/tmp/a!b/hello-plugin',
+    ];
+    for (const target of targets) {
+      const out: string[] = [];
+      const code = await runPluginStandardCommand(['check', target], {
+        check: async () => ({ ok: true, kind: 'trusted', permissions: ['actions'] }),
+        print: (t) => out.push(t),
+      });
+      expect(code).toBe(0);                    // the check itself is unaffected
+      const text = out.join('\n');
+      expect(text).not.toContain('install: mafw');
+      expect(text).toContain('install: (omitted');
+      expect(text).toContain('package path');  // path side is named, not the package
+      expect(text).not.toContain('package declares tokens');
+      const warning = out.find((line) => line.startsWith('warning:'));
+      expect(warning).toContain('package path');
+      expect(warning).toContain(target);
+    }
+  });
+
   it('flattens a newline in a token so it cannot forge a second install line', async () => {
     const out: string[] = [];
     await runPluginStandardCommand(['check', '/abs/p'], {

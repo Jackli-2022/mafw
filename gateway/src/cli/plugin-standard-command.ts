@@ -50,11 +50,19 @@ const CHECK_FLAGS = new Set(['--json', '--strict']);
 const SAFE_COMMAND_TOKEN = /^[A-Za-z0-9._:/@-]+$/;
 
 /**
- * What can end a double-quoted token early: the quote itself, a control/newline
- * byte, or a trailing backslash (POSIX `sh` treats `\"` as an escaped quote, so
- * a path like `/tmp/a\` would swallow the closing one).
+ * What a quoted path may not contain, because the quoting cannot neutralise it:
+ *
+ * - `"` ends the token, and a trailing backslash escapes the closing quote
+ *   (POSIX `sh` reads `\"` as a literal quote, so `/tmp/a\` swallows the quote);
+ * - control/newline bytes can start a new line;
+ * - `$`, `` ` `` and `!` are still *expanded inside* double quotes: `"$(calc)"`,
+ *   `` "`id`" `` and (interactive bash) `"!x"` run, so a directory named
+ *   `$(calc)` would execute when the printed line is pasted.
+ *
+ * Spaces, `&`, parentheses and non-ASCII stay allowed — double quotes make them
+ * literal, and a common Windows/macOS path must not lose its install line.
  */
-const UNQUOTABLE = /["\u0000-\u001f\u007f-\u009f]/;
+const UNQUOTABLE = /["$`!\u0000-\u001f\u007f-\u009f]/;
 
 /** C0 + DEL + C1 — the characters that can forge a line or drive a terminal. */
 const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/g;
@@ -85,9 +93,10 @@ function isSafeCommandToken(value: string): boolean {
 }
 
 /**
- * The path is printed inside double quotes, so only quote-breaking characters
- * matter: spaces, CJK, `&`, `(` … are literal there. Accepting them keeps
- * `C:/Program Files/mafw/pkg` and non-ASCII home directories installable.
+ * The path is printed inside double quotes, so only characters the quoting can
+ * NOT neutralise matter: quote-breakers, control bytes, and shell expansion
+ * (`$`, `` ` ``, `!`). Spaces, punctuation and CJK are literal there, so
+ * `C:/Program Files/mafw/pkg` and non-ASCII home directories stay installable.
  */
 function isQuotablePath(value: string): boolean {
   if (value.length === 0) return false;
@@ -357,7 +366,8 @@ export async function runPluginStandardCommand(
       deps.print(INSTALL_OMITTED_PATH);
       deps.print(
         'warning: the package path cannot be printed inside double quotes '
-        + `(it contains a quote, a control character or ends with a backslash): ${text(plan.path)}`,
+        + '(it contains a shell-expandable character, a quote or a control character, '
+        + `or ends with a backslash): ${text(plan.path)}`,
       );
     } else {
       deps.print(INSTALL_OMITTED_TOKENS);
