@@ -254,7 +254,8 @@ function send(res: ServerResponse, out: { status: number; body: unknown }): void
   res.end(JSON.stringify(out.body));
 }
 
-export function attachEventRoutes(registry: RouteRegistry, deps: EventRouteDeps): void {  registry.attachHandler('events.sources.list', async (req: IncomingMessage, res: ServerResponse) => {
+export function attachEventRoutes(registry: RouteRegistry, deps: EventRouteDeps): void {
+  registry.attachHandler('events.sources.list', async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
     send(res, handleListSources({ projectDir: url.searchParams.get('projectDir') ?? undefined }, deps));
   });

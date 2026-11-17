@@ -89,7 +89,7 @@ Source → Trigger → Thread → Subscription → Decision → Delivery → Cha
   `[EventLayer] no outbox row matched ...` 警告；decision 通知本来就用 `recordId`，不告警。
 - `event_sources` / `event_threads` / `event_triggers` / `event_subscriptions` /
   `event_decisions` / `event_deliveries` 仍是外部事件的线程、决策与投递审计；
-  read/ack/answered 的 HTTP 路由未在本阶段暴露。
+  read/answered 的 HTTP 路由见下节，ack 仍无公共路由。
 
 ### 回执路由与 domain event 消费者（2026-11-17）
 

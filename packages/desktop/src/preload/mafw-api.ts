@@ -333,6 +333,8 @@ export function createMafwApi(): MafwAPI {
       subscribe: (threadId, input) => invoke("events", "subscribe", threadId, input),
       unsubscribe: (id) => invoke("events", "unsubscribe", id),
       deliveries: (threadId) => invoke("events", "deliveries", threadId),
+      readDelivery: (id) => invoke("events", "readDelivery", id),
+      answerDelivery: (id) => invoke("events", "answerDelivery", id),
     },
 
     standingGoals: {

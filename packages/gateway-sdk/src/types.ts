@@ -2579,10 +2579,14 @@ export interface EventSubscriptionView {
 }
 export interface EventDeliveryView {
   id: string
+  triggerId: string
+  subscriptionId: string
   state: string
   attempts: number
   lastError: string | null
   deliveredAt: string | null
+  readAt: string | null
+  ackAt: string | null
   answeredAt: string | null
 }
 

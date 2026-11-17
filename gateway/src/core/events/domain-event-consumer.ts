@@ -9,13 +9,24 @@ export function domainEventForTrigger(
   trigger: EventTriggerRow,
 ): DomainEvent | null {
   if (!events || !trigger.idempotencyKey) return null;
-  return events.getByEventId(`external:${trigger.idempotencyKey}`);
+  const event = events.getByEventId(`external:${trigger.idempotencyKey}`);
+  if (!event) return null;
+  const eventTriggerId = event.payload?.triggerId;
+  if (typeof eventTriggerId === 'string' && eventTriggerId !== trigger.id) return null;
+  return event;
 }
 
 export function consumerEnvelope(
   trigger: EventTriggerRow,
   event: DomainEvent | null,
 ): { payload: Record<string, unknown>; kind: string } {
+  // Standing Goal filters keep the raw trigger kind (e.g. `pr_opened`); only
+  // the content comes from the domain event. The event payload wraps the raw
+  // webhook body under `data`; oversized bodies are omitted and fall back.
   if (!event) return { payload: trigger.payload, kind: trigger.kind };
-  return { payload: event.payload, kind: event.type };
+  const data = event.payload?.data;
+  const payload = data && typeof data === 'object' && !event.payload.dataOmitted
+    ? data as Record<string, unknown>
+    : trigger.payload;
+  return { payload, kind: trigger.kind };
 }
