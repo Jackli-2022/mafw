@@ -1,8 +1,11 @@
 import {
   computeTurnSignals,
+  computeTurnSurprise,
   createTurnSignalScorer,
+  createTurnSurpriseScorer,
   isInformativeTurn,
   normalizeObservationText,
+  scoreSurprise,
   scoreTurnSignals,
   unitLookupFromEntries,
 } from '../../../src/recall/t1-signals';
@@ -250,5 +253,59 @@ describe('t1 signals', () => {
   test('a scorer without an embedder or vectors is inert', async () => {
     const scorer = createTurnSignalScorer({ enabled: true, unitFor: () => undefined });
     expect((await scorer([input()])).size).toBe(0);
+  });
+});
+
+describe('session surprise', () => {
+  test('identical consecutive turns have zero surprise', async () => {
+    const map = await computeTurnSurprise(
+      [{ traceId: 't', text: BODY, prevText: BODY }],
+      { embedder: { embed: async (texts: string[]) => texts.map(() => [1, 0]) } },
+    );
+    expect(map.get('t')!).toBeCloseTo(0);
+  });
+
+  test('different consecutive turns have positive surprise', async () => {
+    const map = await computeTurnSurprise(
+      [{ traceId: 't', text: `${BODY} changed detail`, prevText: `${BODY} previous detail` }],
+      {
+        embedder: {
+          embed: async (texts: string[]) =>
+            texts.map((t) => (t.includes('changed') ? [1, 0] : [0, 1])),
+        },
+      },
+    );
+    expect(map.get('t')!).toBeCloseTo(1);
+  });
+
+  test('no previous text or an uninformative previous turn yields no score', async () => {
+    const map = await computeTurnSurprise(
+      [
+        { traceId: 'a', text: BODY },
+        { traceId: 'b', text: BODY, prevText: 'You are a subagent spawned by another session.' },
+      ],
+      { embedder: { embed: async (texts: string[]) => texts.map(() => [1, 0]) } },
+    );
+    expect(map.size).toBe(0);
+  });
+
+  test('embed failure yields an empty map', async () => {
+    await expect(
+      computeTurnSurprise(
+        [{ traceId: 't', text: BODY, prevText: BODY }],
+        { embedder: { embed: async () => { throw new Error('down'); } } },
+      ),
+    ).resolves.toEqual(new Map());
+  });
+
+  test('scoreSurprise clamps and rejects null', () => {
+    expect(scoreSurprise(1)).toBe(0);
+    expect(scoreSurprise(-0.2)).toBe(1);
+    expect(scoreSurprise(null)).toBeNull();
+  });
+
+  test('a disabled surprise scorer is inert', async () => {
+    const scorer = createTurnSurpriseScorer({ enabled: false });
+    expect((await scorer([{ traceId: 't', text: BODY, prevText: BODY }])).size).toBe(0);
   });
 });

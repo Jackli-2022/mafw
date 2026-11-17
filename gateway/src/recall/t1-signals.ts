@@ -108,7 +108,8 @@ export function isInformativeTurn(text: string, anchorCount: number): boolean {
   return body.length >= 120 || anchorCount > 0;
 }
 
-export function scoreTurnSignals(  contentSim: number | null,
+export function scoreTurnSignals(
+  contentSim: number | null,
   cueSim: number | null,
 ): TurnSignals | null {
   if (contentSim == null || !Number.isFinite(contentSim)) return null;
@@ -118,7 +119,74 @@ export function scoreTurnSignals(  contentSim: number | null,
   return { novelty, mismatch };
 }
 
-/** Best candidate that may legitimately explain this turn. */function bestCandidate(
+export interface SurpriseInput {
+  traceId: string;
+  text: string;
+  /** Same-session previous turn; absent when the turn is first in its session. */
+  prevText?: string;
+}
+
+export function scoreSurprise(cosine: number | null): number | null {
+  if (cosine == null || !Number.isFinite(cosine)) return null;
+  return clamp01(1 - cosine);
+}
+
+/** Embed the turn and its predecessor, then compare them. */
+export async function computeTurnSurprise(
+  inputs: SurpriseInput[],
+  deps: Pick<TurnSignalDeps, 'embedder'>,
+): Promise<Map<string, number>> {
+  const scored = new Map<string, number>();
+  try {
+    const eligible = inputs.filter(
+      (input) =>
+        Boolean(input.prevText) &&
+        isInformativeTurn(input.text, 0) &&
+        isInformativeTurn(input.prevText!, 0),
+    );
+    if (eligible.length === 0) return scored;
+
+    const [current, previous] = await Promise.all([
+      deps.embedder.embed(eligible.map((input) => input.text), 'document'),
+      deps.embedder.embed(eligible.map((input) => input.prevText!), 'document'),
+    ]);
+
+    for (let idx = 0; idx < eligible.length; idx++) {
+      const a = current[idx];
+      const b = previous[idx];
+      if (!a || !b || a.length !== b.length) continue;
+      let dot = 0;
+      let normA = 0;
+      let normB = 0;
+      for (let k = 0; k < a.length; k++) {
+        dot += a[k] * b[k];
+        normA += a[k] * a[k];
+        normB += b[k] * b[k];
+      }
+      const cosine = dot / (Math.sqrt(normA) * Math.sqrt(normB) || 1);
+      const value = scoreSurprise(cosine);
+      if (value != null) scored.set(eligible[idx].traceId, value);
+    }
+    return scored;
+  } catch {
+    return new Map();
+  }
+}
+
+/** Config/capability gate around `computeTurnSurprise` (used by the kernel). */
+export function createTurnSurpriseScorer(deps: {
+  enabled: boolean;
+  embedder?: TurnSignalDeps['embedder'];
+}): (turns: SurpriseInput[]) => Promise<Map<string, number>> {
+  if (!deps.enabled || !deps.embedder) {
+    return async () => new Map<string, number>();
+  }
+  const { embedder } = deps;
+  return (turns) => computeTurnSurprise(turns, { embedder });
+}
+
+/** Best candidate that may legitimately explain this turn. */
+function bestCandidate(
   input: TurnSignalInput,
   vector: number[],
   deps: TurnSignalDeps,
