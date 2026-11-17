@@ -13,6 +13,14 @@ const GUIDE_BODY = `## 记忆
 你的长期记忆由 MAFW 谐波记忆系统管理，跨会话、压缩与模型更替存续。
 不主动记录，你将无法记得过去的决定、偏好与教训。
 
+### 主题管理（proactive）
+- 每轮先读召回块顶部的主题。主题：未设置 → 理解当前对话后调用 mafw_topic_set；不要捏造主题。
+- 当前意图与主题或当前记忆不一致 → 不硬续旧话题；先核实，再用 mafw_topic_set 纠偏。
+- 相关记忆：无 → 接受“没有相关记忆”，不得用无关内容补位或假装记得。
+- 主题偏移时，需要核实记忆就走 mafw_search_hybrid / mafw_get_memory；事实变化走 mafw_add_memory 的新版本 + supersedes。
+- 主题是当前注意力状态，不是长期事实，也不授予执行权限；设置主题不替代 mafw_mark_episode_boundary。
+- 子代理不得调用 mafw_topic_set。
+
 ### 工作中：主动写入（必做）
 - 学到新知识、用户明确陈述的偏好与约束、完成的重要工作、踩过的坑
   → 调用 mafw_add_memory（按内容选择 semantic / procedural / global，附 cueAnchors 关键词，每条一句话；episodic 已退役——发生过什么由 T1 episode 记录）

@@ -1,6 +1,6 @@
 # Proactive Topic Recall Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 给现有 recall 上方增加 per-session 主题状态与相关记忆标题，提供 `mafw_topic_set`，并让主 Agent 通过 proactive memory guide 主动设置和纠正主题。
 
@@ -53,7 +53,7 @@
   - MCP Services：`getTopic(sessionID)` / `setTopic(input)`，供 Task 3 使用。
 - `setTopicState` 从 `db.currentTurn(sessionID)?.trace_id` 附加 `sourceTraceId`；input 不接受该字段。
 
-- [ ] **Step 1: 写状态与路由失败测试**
+- [x] **Step 1: 写状态与路由失败测试**
   - 首次设置得到 revision=1；同 session 更新 revision=2。
   - 两个 session 可持不同主题；新 session 返回 null。
   - `active:false` 保留记录但 `readTopicState` 返回 null。
@@ -61,19 +61,19 @@
   - 当前 turn 为 `t1t_real` 时 state 自动带它；payload 伪造字段被忽略。
   - HTTP 缺 sessionID=400、冲突=409、正常响应 `{ok:true,state}`。
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `cd gateway; npx jest --runInBand tests/unit/recall/topic-state.test.ts tests/unit/routes/recall-wiring.test.ts`
 
 Expected: FAIL，模块/路由尚不存在。
 
-- [ ] **Step 3: 实现最小状态模块、HTTP route、catalog/schema 与 Services wiring**
+- [x] **Step 3: 实现最小状态模块、HTTP route、catalog/schema 与 Services wiring**
   - kv scope 固定 `session-topic`；只存当前 session 状态。
   - `active:false` 不清除历史记录；读取视为未设置。
   - route body 限制 64KiB；字符串/数组做有界校验。
   - 新增 TypeBox schema 并登记 `errors:[400,409]`。
 
-- [ ] **Step 4: 跑测试确认通过并刷新契约产物**
+- [x] **Step 4: 跑测试确认通过并刷新契约产物**
 
 Run: `cd gateway; npx jest --runInBand tests/unit/recall/topic-state.test.ts tests/unit/routes/recall-wiring.test.ts`
 
@@ -83,7 +83,7 @@ Run: `npm run gen:api -w @mafw/sdk`
 
 Expected: 测试 PASS；生成物与 catalog 一致。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add gateway/src/recall/topic-state.ts gateway/src/routes/{recall.ts,route-catalog.ts,schemas/recall.ts} gateway/src/{types.ts,kernel.ts} gateway/tests/unit/recall/topic-state.test.ts gateway/tests/unit/routes/recall-wiring.test.ts packages/gateway-sdk/contract packages/gateway-sdk/src/api-schema.gen.ts
@@ -103,30 +103,30 @@ git commit -m "feat(memory): add per-session topic state contract"
 - Produces: `renderTopicRecallHeader(state: TopicState | null, hasRecallBody: boolean): string`。
 - 正常响应的 `pointers` = `topicHeader + 原有 blocks`；异常仍保持 fail-open `{pointers:null}`。
 
-- [ ] **Step 1: 写头部失败测试**
+- [x] **Step 1: 写头部失败测试**
   - 有主题有本体：`主题：X` + `相关记忆：见下方`，且位于旧 `<recall>` 前。
   - 有主题无本体：`相关记忆：无`。
   - 未设置：`主题：未设置`，并包含 `mafw_topic_set` 提示。
   - 空 query 正常路径也返回头部；旧 note-board/goal 顺序不变。
   - route 抛错仍 `{pointers:null}`。
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `cd gateway; npx jest --runInBand tests/unit/recall/topic-recall.test.ts tests/unit/routes/recall-wiring.test.ts`
 
 Expected: FAIL，头部尚未生成。
 
-- [ ] **Step 3: 实现纯 formatter，并在 empty-query 与正常最终响应（snapshot/live 共用）统一 prepend**
+- [x] **Step 3: 实现纯 formatter，并在 empty-query 与正常最终响应（snapshot/live 共用）统一 prepend**
   - 不改 `inject-format.ts`，旧 recall 文本保持原样。
   - `hasRecallBody` 只表示是否存在旧召回本体，不宣称已通过新的语义相关门。
 
-- [ ] **Step 4: 跑相关测试确认通过**
+- [x] **Step 4: 跑相关测试确认通过**
 
 Run: `cd gateway; npx jest --runInBand tests/unit/recall/topic-recall.test.ts tests/unit/routes/recall-wiring.test.ts tests/unit/session-recall-hook.test.ts`
 
 Expected: PASS。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add gateway/src/recall/topic-recall.ts gateway/src/routes/recall.ts gateway/tests/unit/recall/topic-recall.test.ts gateway/tests/unit/routes/recall-wiring.test.ts
@@ -148,12 +148,12 @@ git commit -m "feat(memory): prepend topic state to every recall"
 - Produces: 工具名 `mafw_topic_set`；参数 `topic?/matterId?/summary?/entities?/aliases?/openLoops?/retrievalKeys?/active?/expectedRevision?`。
 - OpenCode 自动附加 `ctx.sessionID`；MCP 缺 sessionID 返回结构化错误，不写全局状态。
 
-- [ ] **Step 1: 写工具失败测试**
+- [x] **Step 1: 写工具失败测试**
   - OpenCode POST body 含当前 sessionID 与全部字段，不含 sourceTraceId。
   - 成功返回主题与 revision；HTTP 409/网络失败不 throw，返回 `metadata.ok=false`。
   - MCP 有 sessionID 时调用 Task 1 Services；缺失时 `isError=true` 且零写入。
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `npx jest --runInBand tests/topic-set.test.ts`
 
@@ -161,12 +161,12 @@ Run: `cd gateway; npx jest --runInBand tests/unit/mcp/topic-set.test.ts`
 
 Expected: FAIL，工具尚未注册/实现。
 
-- [ ] **Step 3: 实现两个适配器并注册工具**
+- [x] **Step 3: 实现两个适配器并注册工具**
   - 复用 add-memory/episode-boundary 的 timeout 与非抛出错误风格。
   - MCP input/output schema 照实声明；annotations 为写状态、非人类审批面。
   - 子代理限制由 Task 4 prompt 与 per-session 隔离共同约束，本刀不新增全局内部会话判定。
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `npx jest --runInBand tests/topic-set.test.ts`
 
@@ -174,7 +174,7 @@ Run: `cd gateway; npx jest --runInBand tests/unit/mcp/topic-set.test.ts`
 
 Expected: PASS。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/tools/topic-set.ts src/plugin.ts tests/topic-set.test.ts gateway/src/mcp/handlers/topic-set.ts gateway/src/mcp/tool-registry.ts gateway/tests/unit/mcp/topic-set.test.ts
@@ -195,12 +195,12 @@ git commit -m "feat(memory): expose mafw_topic_set to agents"
 - Consumes: 已注册的 `mafw_topic_set` 与现有 search/get/add/supersede 工具。
 - Produces: canonical/fallback 相同的“主题管理（proactive）”规则。
 
-- [ ] **Step 1: 写 prompt 失败测试**
+- [x] **Step 1: 写 prompt 失败测试**
   - 两份 guide 都包含：未设置时调用 `mafw_topic_set`；主题偏移主动纠正；相关记忆与当前对话不一致先核实；无相关记忆不补位。
   - 子代理条款明确不调用 `mafw_topic_set`。
   - 不包含不存在的 retract/clarify 工具指令。
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `npm run test:core`
 
@@ -208,11 +208,11 @@ Run: `npx jest --runInBand tests/memory-guide.test.ts`
 
 Expected: 新增断言 FAIL。
 
-- [ ] **Step 3: 同步修改 canonical/fallback prompt 与架构文档**
+- [x] **Step 3: 同步修改 canonical/fallback prompt 与架构文档**
   - 主题管理放在现有记忆指南前部；不改现有 pinned/sticky/episode 语义。
   - `memory.md` 记录 Topic State 是 per-session 注意力状态，首刀不改变检索门控。
 
-- [ ] **Step 4: 跑定向、类型与全量门禁**
+- [x] **Step 4: 跑定向、类型与全量门禁**
 
 Run: `npm run test:core`
 
@@ -228,7 +228,7 @@ Run: `cd gateway; npm test -- --forceExit`
 
 Expected: 全部 PASS；记录新增测试数与 gateway 全量 suite/test/pass/skip 数。
 
-- [ ] **Step 5: 写交付记录并 Commit**
+- [x] **Step 5: 写交付记录并 Commit**
   - release 文档记录范围、非目标、实际 commit、测试数量；不 bump 版本、不宣称完成完整记忆重设计。
 
 ```bash

@@ -266,6 +266,7 @@ const E10_COVERED_OPS = [
   'recall.instructions',
   'recall.pinned',
   'recall.priors',
+  'recall.topicSet',
   'runtime.config.get',
   'runtime.config.update',
   'runtime.conformance',
@@ -369,7 +370,7 @@ const E10_COVERED_OPS = [
 
 // Pinned: 317 through E10b, +1 for `humanToken.rotate` (E11-1) = 318,
 // +7 Phase 6 device-trust routes = 325, +2 last-good/rollback = 327.
-const TOTAL_OPS = 332;
+const TOTAL_OPS = 333;
 
 function catalogOps(): Array<{ operationId: string; hasResponse: boolean }> {
   return buildRouteCatalog().map((def) => ({
@@ -383,7 +384,7 @@ function catalogOps(): Array<{ operationId: string; hasResponse: boolean }> {
  * E10g: write ops = everything that is not a GET (query-only surface).
  * 188 before main's Phase 6 merge, +7 plugin recovery POSTs + 2 receipt routes = 197.
  */
-const WRITE_OPS_TOTAL = 198;
+const WRITE_OPS_TOTAL = 199;
 
 /** P0 pilots：requestBody 管线的第一批（始终保留，不随批次回退）。 */
 const E10G_P0_REQUEST_OPS = ['pods.tasks.create', 'session.create', 'tasks.submit'];
@@ -1179,7 +1180,7 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(lost).toEqual([]);
   });
 
-  it('the catalog covered set equals the ledger exactly, and the catalog still has 332 ops', () => {
+  it('the catalog covered set equals the ledger exactly, and the catalog still has 333 ops', () => {
     const ops = catalogOps();
     const covered = ops
       .filter((op) => op.hasResponse)
@@ -1215,7 +1216,7 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
 
   // E10g-P0: request ledger shares the same parser so the write-op denominator
   // (197 after the Phase 6 merge) and the grown coverage set stay pinned while W1-W7 land.
-  it('the script reports request coverage over the 198 write ops', () => {
+  it('the script reports request coverage over the 199 write ops', () => {
     const report = runScript();
     const write = catalogWriteOps();
     const covered = write.filter((op) => op.hasRequest).map((op) => op.operationId).sort();
@@ -1241,7 +1242,7 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
   // mcp/plugin/runtime/platform writes + 31 R6 memory/media/tts/chat/python/obs/tools/
   // eval/llm/mobile/devices/skills writes = 196/197 (tts.speakStream excluded).
   // Later batches only append, so the count is a floor.
-  it('the script reports write-response coverage over the 198 write ops', () => {
+  it('the script reports write-response coverage over the 199 write ops', () => {
     const report = runScript();
     const write = catalogWriteOps();
     const covered = write.filter((op) => op.hasResponse).map((op) => op.operationId).sort();
@@ -1249,7 +1250,7 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(write).toHaveLength(WRITE_OPS_TOTAL);
     expect(report.writeResponseTotal).toBe(WRITE_OPS_TOTAL);
     expect(report.writeResponses).toBe(covered.length);
-    expect(report.writeResponses).toBeGreaterThanOrEqual(197);
+    expect(report.writeResponses).toBeGreaterThanOrEqual(198);
     expect(report.writeResponseCovered).toEqual(covered);
     // Disjoint from the request ledger: the two scans are independent `response:`/
     // `request:` hits on the same write ops — with deliberate exceptions:
@@ -1933,14 +1934,14 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(rewriteSchema.properties.input.type).toBe('object');
   });
 
-  // E10g-fix: main's Phase 6 plugin recovery writes join the ledger. 198 write
-  // ops = 192 covered + 6 excluded.
-  it('every Phase 6 plugin recovery write op declares a request schema (catalog requests >= 192)', () => {
+  // E10g-fix: main's Phase 6 plugin recovery writes join the ledger. 199 write
+  // ops = 193 covered + 6 excluded.
+  it('every Phase 6 plugin recovery write op declares a request schema (catalog requests >= 193)', () => {
     const byId = catalogById();
     const missing = E10G_P6_REQUEST_OPS.filter((id) => !byId.get(id)?.hasRequest);
     expect(missing).toEqual([]);
     const requests = catalogWriteOps().filter((op) => op.hasRequest).map((op) => op.operationId);
-    expect(requests.length).toBeGreaterThanOrEqual(192);
+    expect(requests.length).toBeGreaterThanOrEqual(193);
     // No duplicate ids in the batch (a typo would hide here otherwise).
     expect(new Set(E10G_P6_REQUEST_OPS).size).toBe(E10G_P6_REQUEST_OPS.length);
   });
@@ -1964,9 +1965,9 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(quarantine.requestRequired).toBeUndefined();
   });
 
-  // Closing arithmetic for the E10g(-fix) scope: 198 write ops = 192 declared
+  // Closing arithmetic for the E10g(-fix) scope: 199 write ops = 193 declared
   // requests + 6 excluded (W6 1 + W7 5). Nothing is left unaccounted for.
-  it('E10g request arithmetic closes on 198 (192 covered + 6 excluded)', () => {
+  it('E10g request arithmetic closes on 199 (193 covered + 6 excluded)', () => {
     const covered = new Set(catalogWriteOps().filter((op) => op.hasRequest).map((op) => op.operationId));
     const excluded = new Set([
       ...Object.keys(E10G_W6_EXCLUDED_OPS),
@@ -1981,7 +1982,7 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
       'plugins.install',
       'pods.a2a',
     ]);
-    expect(covered.size).toBe(192);
+    expect(covered.size).toBe(193);
     expect(excluded.size).toBe(6);
     expect([...covered].filter((id) => excluded.has(id))).toEqual([]);
     expect(covered.size + excluded.size).toBe(WRITE_OPS_TOTAL);

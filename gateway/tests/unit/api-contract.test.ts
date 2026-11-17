@@ -4087,7 +4087,7 @@ describe('api-contract: E10g request bodies (W1 session writes)', () => {
     return body;
   }
 
-  test('write ops with a requestBody count matches the coverage ledger (192 = P0 3 + W1 35 + W2W3 33 + W4 29 + W5 24 + W6 26 + W7 30 + W8 2 + P6 7 + P7 1 + RCPT 2)', () => {
+  test('write ops with a requestBody count matches the coverage ledger (193 = P0 3 + W1 35 + W2W3 33 + W4 29 + W5 24 + W6 26 + W7 30 + W8 2 + P6 7 + P7 1 + RCPT 2 + recall.topicSet)', () => {
     const withBody: string[] = [];
     for (const methods of Object.values<any>(contract.paths)) {
       for (const [method, op] of Object.entries<any>(methods)) {
@@ -4095,7 +4095,7 @@ describe('api-contract: E10g request bodies (W1 session writes)', () => {
         if (op.requestBody) withBody.push(op.operationId);
       }
     }
-    expect(withBody).toHaveLength(192);
+    expect(withBody).toHaveLength(193);
     expect(withBody).toEqual(expect.arrayContaining([
       // Phase 6 plugin recovery (E10g-fix): quarantine has a body, the rest are
       // empty-object opt-in bodies, so all seven carry a requestBody.
@@ -5099,7 +5099,7 @@ describe('api-contract: E10g request bodies (W8 cognition gate / rewrite)', () =
         if (op.requestBody) withBody.push(op.operationId);
       }
     }
-    expect(withBody).toHaveLength(192);
+    expect(withBody).toHaveLength(193);
     expect(withBody).toEqual(expect.arrayContaining(['cognition.gate', 'cognition.rewrite']));
     for (const id of [
       'plugins.install',
@@ -5301,7 +5301,7 @@ describe('api-contract: E10h write responses (P0 pilots)', () => {
         if (method !== 'get' && op?.operationId) writeOps.add(op.operationId);
       }
     }
-    expect(writeOps.size).toBe(198);
+    expect(writeOps.size).toBe(199);
     for (const id of ['session.create', 'tasks.submit', 'humanToken.rotate']) {
       expect(`${id}:${writeOps.has(id)}`).toBe(`${id}:true`);
       expect(schemaOf(id)).toBeDefined();
@@ -5456,7 +5456,7 @@ describe('api-contract: E10h-R1 session write responses', () => {
     expect(Value.Check(SessionCommandResponse, null)).toBe(false);
   });
 
-  test('the R1 batch keeps the write-response ledger at or above 38/198', () => {
+  test('the R1 batch keeps the write-response ledger at or above 38/199', () => {
     const writeOps = new Set<string>();
     const responded = new Set<string>();
     for (const methods of Object.values<any>(contract.paths)) {
@@ -5466,7 +5466,7 @@ describe('api-contract: E10h-R1 session write responses', () => {
         if (op.responses?.['200']?.content?.['application/json']?.schema) responded.add(op.operationId);
       }
     }
-    expect(writeOps.size).toBe(198);
+    expect(writeOps.size).toBe(199);
     // humanToken.rotate + session.create + tasks.submit + 35 R1 ops. Later batches
     // (R2+) only append, so this is a floor; the exact total is pinned per batch.
     expect(responded.size).toBeGreaterThanOrEqual(38);
@@ -5753,7 +5753,7 @@ describe('api-contract: E10h-R2 pod/task/terminal/fileHistory write responses', 
     expect(Value.Check(PodA2AResponse, null)).toBe(false);
   });
 
-  test('the R2 batch keeps the write-response ledger at or above 73/198', () => {
+  test('the R2 batch keeps the write-response ledger at or above 73/199', () => {
     const writeOps = new Set<string>();
     const responded = new Set<string>();
     for (const methods of Object.values<any>(contract.paths)) {
@@ -5763,7 +5763,7 @@ describe('api-contract: E10h-R2 pod/task/terminal/fileHistory write responses', 
         if (op.responses?.['200']?.content?.['application/json']?.schema) responded.add(op.operationId);
       }
     }
-    expect(writeOps.size).toBe(198);
+    expect(writeOps.size).toBe(199);
     // humanToken.rotate + session.create + tasks.submit + 35 R1 + 35 R2. Later
     // batches (R3+) only append, so this is a floor.
     expect(responded.size).toBeGreaterThanOrEqual(73);
@@ -5947,7 +5947,7 @@ describe('api-contract: E10h-R3 goal/decision/lead/standing/cognition write resp
     expect(item.additionalProperties).toBe(true);
   });
 
-  test('the R3 batch raises the write-response ledger to 104/198', () => {
+  test('the R3 batch raises the write-response ledger to 104/199', () => {
     const writeOps = new Set<string>();
     const responded = new Set<string>();
     for (const methods of Object.values<any>(contract.paths)) {
@@ -5957,7 +5957,7 @@ describe('api-contract: E10h-R3 goal/decision/lead/standing/cognition write resp
         if (op.responses?.['200']?.content?.['application/json']?.schema) responded.add(op.operationId);
       }
     }
-    expect(writeOps.size).toBe(198);
+    expect(writeOps.size).toBe(199);
     // humanToken.rotate + P0 2 + R1 35 + R2 35 + R3 31 = 104.
     expect(responded.size).toBeGreaterThanOrEqual(104);
     for (const id of [
@@ -6135,7 +6135,7 @@ describe('api-contract: E10h-R4 event/automation/human-gate write responses', ()
       .toBe(JSON.stringify(schemaOf('permissions.addRule').properties.entries));
   });
 
-  test('the R4 batch raises the write-response ledger to 128/198', () => {
+  test('the R4 batch raises the write-response ledger to 128/199', () => {
     const writeOps = new Set<string>();
     const responded = new Set<string>();
     for (const methods of Object.values<any>(contract.paths)) {
@@ -6145,7 +6145,7 @@ describe('api-contract: E10h-R4 event/automation/human-gate write responses', ()
         if (op.responses?.['200']?.content?.['application/json']?.schema) responded.add(op.operationId);
       }
     }
-    expect(writeOps.size).toBe(198);
+    expect(writeOps.size).toBe(199);
     // humanToken.rotate + P0 2 + R1 35 + R2 35 + R3 31 + R4 24 = 128.
     expect(responded.size).toBeGreaterThanOrEqual(128);
     for (const id of [
@@ -6361,7 +6361,7 @@ describe('api-contract: E10h-R5 mcp/plugin/runtime/platform write responses', ()
     }
   });
 
-  test('the R5 batch raises the write-response ledger to 163/198', () => {
+  test('the R5 batch raises the write-response ledger to 163/199', () => {
     const writeOps = new Set<string>();
     const responded = new Set<string>();
     for (const methods of Object.values<any>(contract.paths)) {
@@ -6371,7 +6371,7 @@ describe('api-contract: E10h-R5 mcp/plugin/runtime/platform write responses', ()
         if (op.responses?.['200']?.content?.['application/json']?.schema) responded.add(op.operationId);
       }
     }
-    expect(writeOps.size).toBe(198);
+    expect(writeOps.size).toBe(199);
     // humanToken.rotate + P0 2 + R1 35 + R2 35 + R3 31 + R4 24 + R5 35 = 163.
     expect(responded.size).toBeGreaterThanOrEqual(163);
     for (const id of [
@@ -6581,7 +6581,7 @@ describe('api-contract: E10h-R6 memory/media/internal/device write responses', (
     expect(deopt.properties.archivedTo.type).toBe('string');
   });
 
-  test('the R6 batch raises the write-response ledger to 197/198', () => {
+  test('the R6 batch raises the write-response ledger to 197/199', () => {
     const writeOps = new Set<string>();
     const responded = new Set<string>();
     for (const methods of Object.values<any>(contract.paths)) {
@@ -6591,10 +6591,10 @@ describe('api-contract: E10h-R6 memory/media/internal/device write responses', (
         if (op.responses?.['200']?.content?.['application/json']?.schema) responded.add(op.operationId);
       }
     }
-    expect(writeOps.size).toBe(198);
-    // humanToken.rotate + P0 2 + R1 35 + R2 35 + R3 31 + R4 24 + R5 35 + R6 31 + P7 1 + RCPT 2 = 197
-    //（198 - tts.speakStream 音频流）。
-    expect(responded.size).toBe(197);
+    expect(writeOps.size).toBe(199);
+    // humanToken.rotate + P0 2 + R1 35 + R2 35 + R3 31 + R4 24 + R5 35 + R6 31 + P7 1 + RCPT 2 + recall.topicSet = 198
+    //（199 - tts.speakStream 音频流）。
+    expect(responded.size).toBe(198);
     for (const id of [
       'memory.add', 'memory.delete', 'memory.setSticky', 'memory.embeddingsBackfill', 'memory.merge',
       'embedding.update', 'media.switch', 'media.upload', 'media.uploadAndCreate', 'media.createTask',
@@ -6869,9 +6869,9 @@ describe('api-contract: E10i-E3 plugin / media explicit error statuses', () => {
         for (const status of explicit) byStatus[status] = (byStatus[status] ?? 0) + 1;
       }
     }
-    // E1 43 + E2 51 + E3 63 + E4 2 + RCPT 2 = 161 ops carry explicit non-2xx responses.
-    expect(opsWithErrors).toBe(161);
-    expect(byStatus).toEqual({ 400: 127, 404: 81, 409: 56, 413: 6, 429: 3, 503: 93 });
+    // E1 43 + E2 51 + E3 63 + E4 2 + RCPT 2 + recall.topicSet = 162 ops carry explicit non-2xx responses.
+    expect(opsWithErrors).toBe(162);
+    expect(byStatus).toEqual({ 400: 128, 404: 81, 409: 57, 413: 6, 429: 3, 503: 93 });
   });
 
   test('every E3 explicit status uses a documented error shape', () => {

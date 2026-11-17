@@ -333,3 +333,11 @@ Response: { pointers: string|null }
 - **D5 PPR 增强 + CATD（2026-10-09）**：检索层 `searchScored` 的 association PPR（`graph/diffusion.ts`）增 **Hebbian need 调制**（`diffusion.needModulation` 默认 on——转移权重 ×(1+ln(1+need7d))，被检索过的通路更易再走）+ **Macro-Hub 抑制**（`diffusion.hubFloor` 默认 50——入边 ÷(1+ln(deg/floor))，hub 是通路非终点）。能量衰减增 **CATD**（`abstraction-level.ts:catdDecayRate` + `AnchorGraphStore.weightedDegree`；`decay.catd` 默认 on，β=0.5——承重条目半衰期随拓扑负载延长，孤立条目不变）。spec `docs/superpowers/specs/2026-10-09-d5-ppr-catd-design.md`（测量门 LongMemEval multi-session 0.375→≥0.55 待跑）。
 - **D4b 反事实模拟（2026-10-09）**：goal 增 **taskType 维度**（`TASK_TYPES` 七值枚举；创建时声明（`mafw_create_goal`/`mafw_set_goal` 参数）→ plan 节点 `waves.taskType` 回写**优先**（规划者判断更准，`completeNode` 校验回写 state v3）；`goal_outcomes` 加 `task_type` 列（幂等 ALTER，legacy NULL → other 池））。L1 账本增 `byTaskType` 聚合 + `ledgerForTaskType`（同类型 ≥3 样本才分桶，小样本退全局防外推）。plan prompt 注入 **`counterfactualBlock` pre-mortem**（同类任务失败率/最常见 failure_kind/平均损失 + L2 踩坑对照 + 每 wave `riskNote` 要求——要求本身不依赖历史数据）。`DriverDeps.capabilityPrior` 签名改 `(goalId)`，新增 `counterfactualPrior`。spec `docs/superpowers/specs/2026-10-09-d4b-counterfactual-design.md`。
 - **A5 抽象写回 schema（2026-10-09）**：`HarmonicUnit.distilled_by`（gist 指针数组，**非 supersede**——成员保留可检索，多 gist 共享成员；与 D1b 降能同趟共存）。写入：reflection 蒸馏成功 → `HarmonicUnitFileStore.stampDistilled(episodeIds, gistId)`（**直写 OKF 镜像 setSticky 模式，不走 store.write 防 MinHash 自合并**；追加去重 cap 3，fail-open）。读出：边界 recall 指针行尾 `↳ gist 已蒸馏：<id 尾 6>` 提示（get_memory 按需取，不占预算）；`RecallMemory`/`MemoryUnit` 透传字段。consolidation merge 不 stamp（`merged_from` 等价）。spec `docs/superpowers/specs/2026-10-09-a5-schema-writeback-design.md`。
+
+## 会话主题状态（Topic State，2026-11-17）
+
+- `POST /api/recall/topic` 与工具 `mafw_topic_set` 维护 **per-session** 主题，存于 `gateway.db` kv scope `session-topic`；新会话默认未设置，同一会话跨 gateway 重启保留。
+- `mafw_topic_set` 是当前注意力状态，不是长期事实，也不替代 `mafw_mark_episode_boundary`。`active:false` 关闭主题；不自动继承其他会话。
+- `GET /api/recall/context` 始终在旧召回本体的上方返回 `<topic-recall>`：主题 + `相关记忆：见下方|无`；未设置时明确提示调用 `mafw_topic_set`。旧 BM25/dense/FOK/快照算法本版未改。
+- 首版 MCP 直接调用必须显式传 `sessionID`；OpenCode 原生工具由 host 自动注入 `ctx.sessionID`，不接受 agent 伪造 `sourceTraceId`，gateway 从当前 turn 附加真实 trace。
+- proactive 规则同时写在 `packages/runtime-core/src/host-adapter.ts`（canonical）与 `src/hooks/memory-guide.ts`（gateway-unreachable fallback）；子代理不得调用主题工具。

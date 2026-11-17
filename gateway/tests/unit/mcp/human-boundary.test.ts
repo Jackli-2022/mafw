@@ -72,6 +72,7 @@ const TOOL_NAME_SNAPSHOT = [
   'mafw_search_hybrid',
   'mafw_set_goal',
   'mafw_supersede_memory',
+  'mafw_topic_set',
   'mafw_update_standing_goal',
   'mafw_update_state',
   'mafw_validate_rule',

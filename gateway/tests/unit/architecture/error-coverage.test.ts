@@ -36,23 +36,23 @@ import {
 } from '../../../src/routes/schemas/errors';
 
 /** Whole catalog after E10h/E10i (330 ops / 296 paths). */
-const CATALOG_OPS_TOTAL = 332;
+const CATALOG_OPS_TOTAL = 333;
 
 /** Ops whose path starts with `/api/` — the set that carries transport 401/403. */
-const API_PREFIX_OPS_TOTAL = 323;
+const API_PREFIX_OPS_TOTAL = 324;
 
 /** Ops that declare at least one explicit error status. */
-const EXPLICIT_ERROR_OPS_TOTAL = 161;
+const EXPLICIT_ERROR_OPS_TOTAL = 162;
 
 /** Sum of `errors.length` over those ops (individual status entries, not distinct statuses). */
-const EXPLICIT_ERROR_ENTRIES_TOTAL = 368;
+const EXPLICIT_ERROR_ENTRIES_TOTAL = 370;
 
 /** Explicit status distribution after E10i (pinned; a status may only move by editing this). */
 const EXPLICIT_STATUS_SPLIT: Record<number, number> = {
-  400: 127,
+  400: 128,
   403: 2,
   404: 81,
-  409: 56,
+  409: 57,
   413: 6,
   429: 3,
   503: 93,
@@ -212,7 +212,7 @@ function auditErrorCoverage(ops: ErrorOpView[] = errorOpViews()): string[] {
 }
 
 describe('error-coverage: ledger for catalog error responses (E10i)', () => {
-  it('every catalog op projects a `default` ErrorEnvelope (330/330)', () => {
+  it('every catalog op projects a `default` ErrorEnvelope (333/333)', () => {
     const ops = errorOpViews();
     expect(ops).toHaveLength(CATALOG_OPS_TOTAL);
     expect(auditErrorCoverage(ops)).toEqual([]);
@@ -253,7 +253,7 @@ describe('error-coverage: ledger for catalog error responses (E10i)', () => {
     }
   });
 
-  it('/api/* ops carry 401 + 403 and non-/api ops carry neither (323 / 9)', () => {
+  it('/api/* ops carry 401 + 403 and non-/api ops carry neither (324 / 9)', () => {
     const ops = errorOpViews();
     const api = ops.filter((op) => op.path.startsWith('/api/'));
     const nonApi = ops.filter((op) => !op.path.startsWith('/api/'));
@@ -300,7 +300,7 @@ describe('error-coverage: ledger for catalog error responses (E10i)', () => {
     }
   });
 
-  it('ledger arithmetic: 161 ops / 368 entries with the pinned status split', () => {
+  it('ledger arithmetic: 162 ops / 370 entries with the pinned status split', () => {
     const ops = errorOpViews();
     const withErrors = ops.filter((op) => op.errors.length > 0);
     expect(withErrors).toHaveLength(EXPLICIT_ERROR_OPS_TOTAL);

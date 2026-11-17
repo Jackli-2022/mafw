@@ -5,7 +5,7 @@
 
 ## Tools 清单（2026-11-10：42 个 Gateway MCP 工具 + 14 个插件侧工具）
 
-### Gateway MCP 工具（42 个，`gateway/src/mcp/tool-registry.ts`）
+### Gateway MCP 工具（43 个，`gateway/src/mcp/tool-registry.ts`）
 
 | Tool | 用途 |
 |---|---|
@@ -17,6 +17,7 @@
 | `mafw_record_feedback` | 记录用户点赞/点踩 |
 | `mafw_get_model_route` | 动态模型选择（基于预算） |
 | `mafw_add_memory` | 写入记忆单元（`supersedes` 显式取代旧条目——HTTP 表单串 / MCP 收数组，仅 create 后标记；`pinned` 披露层；`sticky`/`stickyDays` 便签板；`cueAnchors` 多跳线索；`authority` 权威标签） |
+| `mafw_topic_set` | 设置/纠正当前会话主题（per-session Topic State，非长期事实；`active:false` 关闭；直接 MCP 调用必须显式 `sessionID`） |
 | `mafw_get_memory` | 按 id 取记忆全文（支持 `<recall>` 指针尾 6 位；superseded 自动附 supersede 链最新版） |
 | `mafw_supersede_memory` | 标记已有记忆为 superseded（不写新条目，仅降能+惩罚检索排序） |
 | `mafw_pin_memory` | pin/unpin 披露层（`<user-profile>` 每轮注入）；`sticky`/`stickyDays` 上板/续期/下架便签板 |
@@ -70,6 +71,7 @@
 | `mafw_python` | 持久 Python 内核执行（变量/导入跨调用保持；matplotlib 图表返回图片附件） |
 | `mafw_python_restart` | 重启 Python 内核（内核崩溃或内存泄漏时调用） |
 | `mafw_add_memory` | 写入记忆单元（HTTP 直连 `/api/memory/add`——serve 派生的 worker 会话无 MCP 连接，故不走 MCP 通道） |
+| `mafw_topic_set` | 设置/纠正当前会话主题（HTTP 直连 `/api/recall/topic`；原生工具自动携带 `ctx.sessionID`） |
 | `mafw_submit_result` | Batch 1：结构化交卷（JSON Schema 校验/重试） |
 | `mafw_spawn_subagent` | Batch 3：派生 gateway 追踪的子代理（parentID/depth） |
 | `mafw_message_subagent` | Batch 3：给子代理续聊 |
