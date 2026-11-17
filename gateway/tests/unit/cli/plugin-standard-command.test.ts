@@ -105,9 +105,55 @@ describe('mafw plugin check', () => {
     expect(code).toBe(0);                      // the package itself is still valid
     expect(text).not.toContain('install: mafw');
     expect(text).toContain('install: (omitted');
+    expect(text).toContain('package declares tokens');   // package side is named
     expect(text).toContain(injected);          // named for review, never executed
     const warning = out.find((line) => line.startsWith('warning:'));
     expect(warning).toContain(injected);
+  });
+
+  it('keeps a quoted path containing a space in the install command', async () => {
+    const out: string[] = [];
+    const target = '/Program Files/mafw/hello-plugin';
+    const code = await runPluginStandardCommand(['check', target], {
+      check: async () => ({ ok: true, kind: 'trusted', permissions: ['actions'] }),
+      print: (t) => out.push(t),
+    });
+    expect(code).toBe(0);
+    const install = out.find((line) => line.startsWith('install:'));
+    // The path is inert inside the quotes, so it must not suppress the line.
+    expect(install).toBe(
+      `install: mafw plugins install "${target}" --trust trusted --permission actions`,
+    );
+  });
+
+  it('keeps a non-ASCII path in the install command', async () => {
+    const out: string[] = [];
+    const target = '/Users/开发者/插件/hello-plugin';
+    const code = await runPluginStandardCommand(['check', target], {
+      check: async () => ({ ok: true, kind: 'trusted', permissions: ['actions'] }),
+      print: (t) => out.push(t),
+    });
+    expect(code).toBe(0);
+    const install = out.find((line) => line.startsWith('install:'));
+    expect(install).toContain(`"${target}"`);
+    expect(install).not.toContain('omitted');
+  });
+
+  it('omits the line and blames the path when the path cannot be quoted', async () => {
+    const out: string[] = [];
+    const target = '/tmp/a"b/hello-plugin';
+    const code = await runPluginStandardCommand(['check', target], {
+      check: async () => ({ ok: true, kind: 'trusted', permissions: ['actions'] }),
+      print: (t) => out.push(t),
+    });
+    expect(code).toBe(0);                      // the check itself is unaffected
+    const text = out.join('\n');
+    expect(text).not.toContain('install: mafw');
+    expect(text).toContain('install: (omitted');
+    expect(text).toContain('package path');    // path side is named, not the package
+    expect(text).not.toContain('package declares tokens');
+    const warning = out.find((line) => line.startsWith('warning:'));
+    expect(warning).toContain('package path');
   });
 
   it('flattens a newline in a token so it cannot forge a second install line', async () => {

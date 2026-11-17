@@ -39,11 +39,22 @@ const USAGE = [
 const CHECK_FLAGS = new Set(['--json', '--strict']);
 
 /**
- * What may appear in a printed, paste-ready command. Deliberately narrower than
- * a shell: paths, package names and permission tokens (`net.fetch:host`) fit;
- * quoting, separators and newlines do not.
+ * What may appear in a printed, paste-ready command for an **unquoted** token
+ * (`--trust <kind>`, `--permission <token>`). Deliberately narrower than a
+ * shell: package names and permission tokens (`net.fetch:host`) fit; quoting,
+ * separators and newlines do not.
+ *
+ * Quoted tokens (the package path) use `isQuotablePath()` instead: a space or a
+ * CJK character is inert inside double quotes and must not suppress the line.
  */
 const SAFE_COMMAND_TOKEN = /^[A-Za-z0-9._:/@-]+$/;
+
+/**
+ * What can end a double-quoted token early: the quote itself, a control/newline
+ * byte, or a trailing backslash (POSIX `sh` treats `\"` as an escaped quote, so
+ * a path like `/tmp/a\` would swallow the closing one).
+ */
+const UNQUOTABLE = /["\u0000-\u001f\u007f-\u009f]/;
 
 /** C0 + DEL + C1 — the characters that can forge a line or drive a terminal. */
 const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/g;
@@ -52,8 +63,10 @@ const CONTROL_MARKER = '␤';
 /** Per-value render budget: package text must not swallow the report. */
 const MAX_FIELD_CHARS = 200;
 
-const INSTALL_OMITTED =
+const INSTALL_OMITTED_TOKENS =
   'install: (omitted — package declares tokens that are unsafe to paste; install manually after review)';
+const INSTALL_OMITTED_PATH =
+  'install: (omitted — the package path cannot be printed in a shell command; install manually after review)';
 
 /**
  * Flattens package-derived text: control characters become a visible marker
@@ -69,6 +82,17 @@ function text(value: unknown, max = MAX_FIELD_CHARS): string {
 
 function isSafeCommandToken(value: string): boolean {
   return SAFE_COMMAND_TOKEN.test(value);
+}
+
+/**
+ * The path is printed inside double quotes, so only quote-breaking characters
+ * matter: spaces, CJK, `&`, `(` … are literal there. Accepting them keeps
+ * `C:/Program Files/mafw/pkg` and non-ASCII home directories installable.
+ */
+function isQuotablePath(value: string): boolean {
+  if (value.length === 0) return false;
+  if (UNQUOTABLE.test(value)) return false;
+  return !value.endsWith('\\');
 }
 
 function messageOf(err: unknown): string {
@@ -144,19 +168,19 @@ function formatRegistered(registered: RegisteredView | undefined): string {
   ].join(', ');
 }
 
-interface InstallPlan {
-  command: string;
-  /** Tokens that are not safe to paste; non-empty means no command is printed. */
-  unsafe: string[];
-}
+/** Why the install line could not be printed; the notice names the culprit. */
+type InstallPlan =
+  | { kind: 'ready'; command: string }
+  | { kind: 'path-unsafe'; path: string }
+  | { kind: 'tokens-unsafe'; tokens: string[] };
 
 /**
- * Windows separators are normalized before the charset check: `\` is literal
- * inside the quotes every shell we target, but it is not in the safe charset,
- * so an un-normalized `C:\…` path would omit the command on every Windows host.
+ * Windows separators are normalized **only on Windows**: `path.sep` says which
+ * separator this platform passes to argv, so a POSIX directory literally named
+ * `a\b` keeps its name instead of pointing somewhere else.
  */
 function commandPath(target: string): string {
-  return target.replace(/\\/g, '/');
+  return path.sep === '\\' ? target.replace(/\\/g, '/') : target;
 }
 
 /**
@@ -166,28 +190,31 @@ function commandPath(target: string): string {
  * per declared permission token (the manager compares the accepted set with the
  * manifest set). Legacy (v1) packages take neither flag.
  *
- * Nothing is assembled unless every token — path, kind and each permission —
- * matches `SAFE_COMMAND_TOKEN`. Permission tokens are deduped because
- * `assertConsent` compares sets: a repeated flag can never match a manifest that
- * lists the token once.
+ * Two different rules apply: the path is quoted, so it only has to be quotable;
+ * `kind` and every permission are unquoted, so they must match
+ * `SAFE_COMMAND_TOKEN`. Permission tokens are deduped because `assertConsent`
+ * compares sets: a repeated flag can never match a manifest that lists the token
+ * once.
  */
 function installPlan(target: string, result: PluginCheckResult): InstallPlan {
   const pathToken = commandPath(target);
+  if (!isQuotablePath(pathToken)) return { kind: 'path-unsafe', path: pathToken };
+
   const v2 = result.apiVersion === 2 || typeof result.kind === 'string';
   const kind = typeof result.kind === 'string' && result.kind.length > 0 ? result.kind : 'trusted';
   const permissions = [...new Set(
     (result.permissions ?? []).filter((permission): permission is string => typeof permission === 'string'),
   )];
-  const tokens = v2 ? [pathToken, kind, ...permissions] : [pathToken];
-  const unsafe = tokens.filter((token) => !isSafeCommandToken(token));
-  if (unsafe.length > 0) return { command: '', unsafe };
+  const unquoted = v2 ? [kind, ...permissions] : [];
+  const unsafeTokens = unquoted.filter((token) => !isSafeCommandToken(token));
+  if (unsafeTokens.length > 0) return { kind: 'tokens-unsafe', tokens: unsafeTokens };
 
   const command = ['mafw', 'plugins', 'install', `"${pathToken}"`];
   if (v2) {
     command.push('--trust', kind);
     for (const permission of permissions) command.push('--permission', permission);
   }
-  return { command: command.join(' '), unsafe: [] };
+  return { kind: 'ready', command: command.join(' ') };
 }
 
 /** Planes the manifest allows but `activate()` did not register (legal). */
@@ -322,13 +349,21 @@ export async function runPluginStandardCommand(
 
   if (verdictOk) {
     const plan = installPlan(target, result);
-    if (plan.unsafe.length === 0) {
+    if (plan.kind === 'ready') {
       deps.print(`install: ${plan.command}`);
-    } else {
-      deps.print(INSTALL_OMITTED);
+    } else if (plan.kind === 'path-unsafe') {
+      // The path is operator input, not package text: say so, so the fix is
+      // "quote/move the package", not "edit plugin.json".
+      deps.print(INSTALL_OMITTED_PATH);
       deps.print(
-        'warning: tokens with characters that are unsafe to paste were left out of that '
-        + `command: ${plan.unsafe.map((token) => text(token)).join(', ')}`,
+        'warning: the package path cannot be printed inside double quotes '
+        + `(it contains a quote, a control character or ends with a backslash): ${text(plan.path)}`,
+      );
+    } else {
+      deps.print(INSTALL_OMITTED_TOKENS);
+      deps.print(
+        'warning: package tokens with characters that are unsafe to paste were left out of that '
+        + `command: ${plan.tokens.map((token) => text(token)).join(', ')}`,
       );
     }
   } else if (strictFailed && checkOk) {
