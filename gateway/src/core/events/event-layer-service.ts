@@ -267,10 +267,29 @@ export class EventLayerService {
     const patch = applyDeliveryTransition(delivery, next, now);
     const subscription = this.deps.store.getSubscription(delivery.subscriptionId);
     const podId = subscription?.subscriberId ?? '';
-    const row = this.deps.store.transaction(() => {
-      this.deps.store.updateOutboxReceiptByTrigger(delivery.triggerId, podId, next, now);
-      return this.deps.store.updateDelivery(deliveryId, patch);
+    const result = this.deps.store.transaction(() => {
+      const mirrored = this.deps.store.updateOutboxReceiptByTrigger(
+        delivery.triggerId,
+        podId,
+        next,
+        now,
+      );
+      return {
+        row: this.deps.store.updateDelivery(deliveryId, patch),
+        mirrored,
+      };
     });
+    if (result.mirrored === 0 && subscription?.subscriberType === 'lead') {
+      const trigger = this.deps.store.getTrigger(delivery.triggerId);
+      // Decision notifications carry `recordId` instead of `triggerId`; only
+      // external triggers are expected to have an outbox row to mirror.
+      if (trigger && !trigger.kind.startsWith('decision.')) {
+        this.deps.log?.(
+          `[EventLayer] no outbox row matched delivery ${deliveryId} (trigger ${delivery.triggerId})`,
+        );
+      }
+    }
+    const row = result.row;
     this.deps.broadcast({
       type: 'event.delivery.changed',
       properties: {
@@ -427,9 +446,9 @@ export class EventLayerService {
     const due = this.deps.store.listDeliveries(threadId).filter((delivery) => {
       if (!allowed.has(delivery.triggerId)) return false;
       if (delivery.state === 'pending') {
-        // Crash between "decision accepted" and the delivery write: resume
-        // context deliveries. Work deliveries need their own idempotency key.
-        return subById.get(delivery.subscriptionId)?.mode === 'context';
+        // Crash between "decision accepted" and the delivery write: resume both
+        // modes. Work consumers dedupe by eventId (trigger id) already.
+        return true;
       }
       return delivery.state === 'failed'
         && !!delivery.nextRetryAt

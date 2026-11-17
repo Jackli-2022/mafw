@@ -4938,6 +4938,12 @@ class MafwScheduler {
       newId: (prefix) => `${prefix}_${randomUUID()}`,
       broadcast: (event) => this.broadcast(event as any),
       enabled: () => eventLayerEnabled(),
+      maxDeliveryAttempts: (() => {
+        const configured = Number(process.env.MAFW_EVENT_MAX_DELIVERY_ATTEMPTS);
+        return Number.isFinite(configured) && configured > 0
+          ? Math.trunc(configured)
+          : undefined;
+      })(),
       evaluate: async ({ thread, triggers, subscriptions }) => {
         const relevant = subscriptions.filter((subscription) => {
           if (subscription.subscriberType !== 'standing_goal') return true;

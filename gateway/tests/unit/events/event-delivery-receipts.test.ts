@@ -7,6 +7,7 @@ const NOW = '2026-11-17T00:00:00.000Z';
 function setup() {
   const db = new Database(':memory:');
   const store = new EventStore(db);
+  const logs: string[] = [];
   store.insertSource({ id: 'wh', projectDir: '/p', kind: 'webhook', name: 'wh', config: {}, now: NOW });
   const thread = store.ensureThread({
     id: 'th1', sourceId: 'wh', projectDir: '/p', externalKey: 'k1', title: 'Thread', now: NOW,
@@ -35,8 +36,9 @@ function setup() {
     broadcast: () => {},
     enabled: () => true,
     evaluate: async () => ({ decision: 'ignore', rationale: 'test' }),
+    log: (message) => logs.push(message),
   });
-  return { store, service, delivery, outbox };
+  return { db, store, service, delivery, outbox, logs };
 }
 
 test('receipts move the delivery and mirror the outbox timestamps', () => {
@@ -84,6 +86,14 @@ test('a receipt whose outbox write fails rolls the delivery back', () => {
   }
   expect(h.store.getOutbox(h.outbox.id)?.readAt).toBeNull();
   expect(h.store.getDelivery('d1')?.state).toBe('delivered');
+});
+
+test('logs when an external receipt has no outbox row', () => {
+  const h = setup();
+  h.db.prepare('DELETE FROM event_outbox WHERE id = ?').run(h.outbox.id);
+  h.service.markDeliveryReceipt('d1', 'read');
+  expect(h.logs.some((line) => line.includes('no outbox row'))).toBe(true);
+  expect(h.store.getDelivery('d1')?.state).toBe('read');
 });
 
 test('lead session ack propagates to the delivery audit', () => {

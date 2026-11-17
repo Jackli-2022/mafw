@@ -7,6 +7,7 @@ const NOW = '2026-11-17T00:00:00.000Z';
 function setup(opts: {
   maxDeliveryAttempts?: number;
   deliverContext?: () => Promise<void>;
+  deliverWork?: () => Promise<void>;
 } = {}) {
   const db = new Database(':memory:');
   const store = new EventStore(db);
@@ -27,14 +28,15 @@ function setup(opts: {
     enabled: () => true,
     evaluate: async () => ({ decision: 'accept', mode: 'report', rationale: 'test' }),
     deliverContext: opts.deliverContext ?? (async () => {}),
+    deliverWork: opts.deliverWork ?? (async () => {}),
     maxDeliveryAttempts: opts.maxDeliveryAttempts,
   });
   return { db, store, service, threadId: thread.id };
 }
 
-function prepareDelivery(h: ReturnType<typeof setup>) {
+function prepareDelivery(h: ReturnType<typeof setup>, mode: 'context' | 'work' = 'context') {
   h.service.subscribe({
-    threadId: h.threadId, subscriberType: 'lead', subscriberId: 'p1', mode: 'context',
+    threadId: h.threadId, subscriberType: 'lead', subscriberId: 'p1', mode,
   });
   const deliveries = h.service.fanOut(h.threadId);
   return deliveries[0];
@@ -73,6 +75,29 @@ test('a pending context delivery resumes after restart', async () => {
   });
   await restarted.evaluate(h.threadId);
   expect(h.store.getDelivery(delivery.id)?.state).toBe('delivered');
+});
+
+test('a pending work delivery resumes after restart', async () => {
+  let workCalls = 0;
+  const h = setup({ deliverWork: async () => { workCalls += 1; } });
+  const delivery = prepareDelivery(h, 'work');
+  await h.service.evaluate(h.threadId);
+  expect(h.store.getDelivery(delivery.id)?.state).toBe('delivered');
+  h.store.updateDelivery(delivery.id, { state: 'pending', deliveredAt: null });
+  let seq = 0;
+  const restarted = new EventLayerService({
+    store: h.store,
+    now: () => NOW,
+    newId: (prefix) => `${prefix}_w${++seq}`,
+    broadcast: () => {},
+    enabled: () => true,
+    evaluate: async () => ({ decision: 'accept', mode: 'report', rationale: 'test' }),
+    deliverContext: async () => {},
+    deliverWork: async () => { workCalls += 1; },
+  });
+  await restarted.evaluate(h.threadId);
+  expect(h.store.getDelivery(delivery.id)?.state).toBe('delivered');
+  expect(workCalls).toBe(2);
 });
 
 test('an overdue failed delivery retries once after restart', async () => {

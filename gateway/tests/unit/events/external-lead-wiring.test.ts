@@ -24,3 +24,7 @@ test('lead ack and boot sweep are wired', () => {
   const boot = kernel.slice(kernel.indexOf("ensureSystemSource('cron')"), kernel.indexOf("ensureSystemSource('cron')") + 500);
   expect(boot).toMatch(/resumeIncompleteDeliveries/);
 });
+
+test('dead-letter attempt ceiling is configurable', () => {
+  expect(kernel).toMatch(/MAFW_EVENT_MAX_DELIVERY_ATTEMPTS/);
+});

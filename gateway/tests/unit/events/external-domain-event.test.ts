@@ -81,6 +81,16 @@ test('domain event append failure does not reject ingest', () => {
   db.close();
 });
 
+test('large external payloads are omitted from the domain event', () => {
+  const e = externalDomainEvent({
+    envelope: { ...envelope, payload: { blob: 'x'.repeat(20_000) } },
+    triggerId: 't1',
+  });
+  expect(e.payload).toMatchObject({ dataOmitted: true });
+  expect(e.payload).not.toHaveProperty('data');
+  expect(Number(e.payload.dataBytes)).toBeGreaterThan(16_384);
+});
+
 test('internal sources do not append external events', () => {
   const h = setup();
   h.store.insertSource({

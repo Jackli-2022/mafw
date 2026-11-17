@@ -558,6 +558,12 @@ export class EventStore {
     return row ? toSubscription(row) : null;
   }
 
+  getTrigger(id: string): EventTriggerRow | null {
+    const row = this.db.prepare('SELECT * FROM event_triggers WHERE id = ?')
+      .get(id) as TriggerDbRow | undefined;
+    return row ? toTrigger(row) : null;
+  }
+
   /** Threads with work that a restart must resume: pending context deliveries or due failed ones. */
   listThreadsWithIncompleteDeliveries(now: string): string[] {
     const rows = this.db.prepare(`

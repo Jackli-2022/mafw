@@ -5,6 +5,22 @@
 import type { DomainEventInput } from './domain-event';
 import type { EventEnvelope, EventSourceKind } from './event-types';
 
+/** External payloads above this size are summarized in the domain log. */
+export const EXTERNAL_EVENT_PAYLOAD_LIMIT_BYTES = 16_384;
+
+function packedData(payload: Record<string, unknown> | undefined): Record<string, unknown> {
+  const safe = payload && typeof payload === 'object' ? payload : {};
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(safe);
+  } catch {
+    return { dataOmitted: true, dataBytes: 0 };
+  }
+  const bytes = Buffer.byteLength(serialized, 'utf8');
+  if (bytes <= EXTERNAL_EVENT_PAYLOAD_LIMIT_BYTES) return { data: safe };
+  return { dataOmitted: true, dataBytes: bytes };
+}
+
 export function externalEventType(sourceKind: EventSourceKind, kind: string): string {
   const normalized = String(kind ?? '').trim() || 'event';
   if (sourceKind === 'cron') {
@@ -36,7 +52,7 @@ export function externalDomainEvent(input: {
       title: envelope.title,
       projectDir: envelope.projectDir,
       occurredAt: envelope.occurredAt,
-      data: envelope.payload,
+      ...packedData(envelope.payload),
     },
   };
 }
