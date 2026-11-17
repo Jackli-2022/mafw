@@ -1,8 +1,26 @@
-// Annotation drafts -> persistent Goal review items (Plan C).
-// Keep only content/anchor fields: session, image payload, and scope metadata
-// stay local.
-import type { PodReviewItem, PodReviewItemInput, PodReviewAnchor } from "@mafw/sdk"
+// Annotation drafts -> persistent Goal review items.
+// Preserve immutable source provenance + the stable client ref used for
+// idempotent retries; image payloads stay local to the annotation draft.
+import type { PodReviewItem, PodReviewItemInput, PodReviewAnchor, PodReviewSource } from "@mafw/sdk"
 import type { Annotation } from "../../shared/annotation-types"
+
+export function annotationReviewSource(item: Annotation): PodReviewSource | undefined {
+  if (!item.source) return undefined
+  const root = String(item.root ?? "").trim()
+  if (!root) return undefined
+  const contentVersion = item.contentVersion ?? null
+  if (item.source.kind === "project") {
+    return { kind: "project", projectDir: item.source.projectDir, root, contentVersion }
+  }
+  return {
+    kind: "goal",
+    projectDir: item.source.projectDir,
+    root,
+    contentVersion,
+    goalId: item.source.goalId,
+    revision: item.source.revision,
+  }
+}
 
 export function reviewInputsFromAnnotations(items: readonly Annotation[]): PodReviewItemInput[] {
   const inputs: PodReviewItemInput[] = []
@@ -10,6 +28,7 @@ export function reviewInputsFromAnnotations(items: readonly Annotation[]): PodRe
     const comment = String(item?.comment ?? "").trim()
     const rel = String(item?.rel ?? "").trim()
     if (!comment || !rel) continue
+    const source = annotationReviewSource(item)
     inputs.push({
       rel,
       startLine: item.startLine ?? null,
@@ -17,6 +36,8 @@ export function reviewInputsFromAnnotations(items: readonly Annotation[]): PodRe
       code: item.code ?? "",
       comment,
       ...(item.anchor ? { anchor: item.anchor as PodReviewAnchor } : {}),
+      ...(source ? { source } : {}),
+      clientRef: item.id,
     })
   }
   return inputs

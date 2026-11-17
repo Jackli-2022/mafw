@@ -12,6 +12,10 @@ export function PodGoalComposer(props: {
   activeGoalId: string | null
   autofocus?: boolean
   projectName?: string
+  initialTitle?: string
+  initialObjective?: string
+  initialAcceptance?: readonly string[]
+  heading?: string
   onCreate(input: {
     title: string
     objective: string
@@ -20,9 +24,9 @@ export function PodGoalComposer(props: {
     planReview: "auto" | "manual"
   }): Promise<boolean>
 }) {
-  const [title, setTitle] = createSignal("")
-  const [objective, setObjective] = createSignal("")
-  const [acceptance, setAcceptance] = createSignal("")
+  const [title, setTitle] = createSignal(props.initialTitle ?? "")
+  const [objective, setObjective] = createSignal(props.initialObjective ?? "")
+  const [acceptance, setAcceptance] = createSignal((props.initialAcceptance ?? []).join("\n"))
   const [boundaries, setBoundaries] = createSignal("")
   const [manual, setManual] = createSignal(false)
   const [submitError, setSubmitError] = createSignal<string | null>(null)
@@ -81,7 +85,7 @@ export function PodGoalComposer(props: {
         fallback={
           <>
             <div class="mafw-pod-composer-head">
-              <span>交给团队一个目标</span>
+              <span>{props.heading ?? "交给团队一个目标"}</span>
               <span class="mafw-pod-composer-hint">
                 {props.activeGoalId ? "新目标会排到队尾" : "当前没有执行中的目标"}
               </span>

@@ -4,6 +4,8 @@ import { Icon } from "@mafw/ui/icon"
 import type { PodGoal } from "@mafw/sdk"
 import type { Annotation } from "../../../shared/annotation-types"
 import { chatAcceptsAnnotation, type DiscussionTarget } from "../annotation-discussion"
+import { buildNewGoalDraft, eligibleDelegationGoals } from "../annotation-delegation"
+import { PodGoalComposer } from "./PodGoalComposer"
 
 export function AnnotationActionDialog(props: {
   annotations: Annotation[]
@@ -14,10 +16,21 @@ export function AnnotationActionDialog(props: {
   busy: boolean
   onDiscuss: (target: DiscussionTarget) => Promise<void>
   onNewFreeDiscussion: () => Promise<void>
+  onDelegateGoal: (goal: PodGoal) => Promise<void>
+  onCreateGoal: (input: {
+    title: string
+    objective: string
+    acceptance: string[]
+    boundaries: string[]
+    planReview: "auto" | "manual"
+  }) => Promise<boolean>
   onClose: () => void
 }) {
   const [tab, setTab] = createSignal<"discussion" | "goal">("discussion")
   const [acting, setActing] = createSignal(false)
+  const [newGoal, setNewGoal] = createSignal(false)
+  const draft = () => buildNewGoalDraft(props.annotations)
+  const goals = () => eligibleDelegationGoals(props.goals, props.annotations)
 
   onMount(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -143,7 +156,49 @@ export function AnnotationActionDialog(props: {
         <Show when={tab() === "goal"}>
           <div class="mafw-annotation-action-body">
             <p class="mafw-annotation-action-note">交给 Goal 会形成持久评审项，并在下一次计划/修改中处理。</p>
-            <p class="mafw-annotation-action-empty">Goal 委托将在下一批接线中启用。</p>
+            <Show
+              when={newGoal()}
+              fallback={
+                <>
+                  <For each={goals()}>
+                    {(goal) => (
+                      <ButtonV2
+                        variant="contrast"
+                        size="small"
+                        disabled={acting() || props.busy}
+                        onClick={() => void run(() => props.onDelegateGoal(goal))}
+                      >
+                        加入 Goal「{goal.title}」· rev {goal.activeRevision ?? 1}
+                      </ButtonV2>
+                    )}
+                  </For>
+                  <Show when={goals().length === 0}>
+                    <p class="mafw-annotation-action-empty">没有可加入的现有 Goal。</p>
+                  </Show>
+                  <ButtonV2
+                    variant="ghost"
+                    size="small"
+                    disabled={acting() || props.busy}
+                    onClick={() => setNewGoal(true)}
+                  >
+                    新建 Goal
+                  </ButtonV2>
+                </>
+              }
+            >
+              <ButtonV2 variant="ghost" size="small" onClick={() => setNewGoal(false)}>
+                返回现有 Goal
+              </ButtonV2>
+              <PodGoalComposer
+                busy={acting() || props.busy}
+                activeGoalId={null}
+                heading="为这批批注新建 Goal"
+                initialTitle={draft().title}
+                initialObjective={draft().objective}
+                initialAcceptance={draft().acceptance}
+                onCreate={props.onCreateGoal}
+              />
+            </Show>
           </div>
         </Show>
       </div>

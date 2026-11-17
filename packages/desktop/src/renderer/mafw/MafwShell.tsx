@@ -124,6 +124,8 @@ import { setRun } from "./run-store"
 import { addPending, patchPending } from "./annotation-store"
 import { annotationSourceFromScopeKey, draftOwnerKey } from "./annotation-scope"
 import { deliverAnnotationDiscussion, type DiscussionTarget } from "./annotation-discussion"
+import { delegateAnnotationBatch, targetVersionProblem } from "./annotation-delegation"
+import { anchorOccursIn, annotationSourceProblem } from "./annotation-source"
 import { AnnotationActionDialog } from "./components/AnnotationActionDialog"
 import type { Annotation } from "../../shared/annotation-types"
 import { getSessionTurnDiffs } from "./session-turn-diffs"
@@ -3160,6 +3162,167 @@ export function MafwShell() {
     await deliverDiscussionFor(annotations, { kind: "free", sessionID })
   }
 
+  const verifyDelegationTarget = async (
+    annotations: Annotation[],
+    target: { podId: string; goalId: string; revision: number },
+  ): Promise<string | null> => {
+    let result: any = null
+    try {
+      result = await window.api.mafw.pod.result(target.podId, target.goalId)
+    } catch {
+      // Discussing Goals have no result DTO yet; source/anchor checks still run
+      // and the Tech Lead handles revision reconciliation during planning.
+      return null
+    }
+    const targetRoot = result?.worktree?.dir
+    if (!targetRoot) return null
+    for (const annotation of annotations) {
+      const sourceProblem = annotationSourceProblem(annotation)
+      if (sourceProblem) return sourceProblem
+      const sourceRoot = annotation.root
+      if (!sourceRoot) return `${annotation.rel}: 来源文件根不可用`
+      const [sourceVersion, targetVersion] = await Promise.all([
+        window.api.fs.version(sourceRoot, annotation.rel),
+        window.api.fs.version(targetRoot, annotation.rel),
+      ])
+      if (!sourceVersion.ok || !targetVersion.ok) {
+        return `${annotation.rel}: 无法读取来源或目标版本`
+      }
+      let textAnchorAvailable = false
+      if (sourceVersion.sha256 !== targetVersion.sha256) {
+        const targetRead = await window.api.fs.readFile(targetRoot, annotation.rel)
+        textAnchorAvailable = targetRead.ok && anchorOccursIn(targetRead.content, annotation)
+      }
+      const problem = targetVersionProblem({
+        sourceHash: sourceVersion.sha256,
+        targetHash: targetVersion.sha256,
+        textAnchorAvailable,
+      })
+      if (problem) return `${annotation.rel}: ${problem}`
+    }
+    return null
+  }
+
+  const delegateAnnotationAction = async (
+    goal?: PodGoal | null,
+    newGoalDraft?: {
+      title: string
+      objective: string
+      acceptance: string[]
+      boundaries?: string[]
+      planReview?: "auto" | "manual"
+    },
+  ) => {
+    const annotations = (annotationActions() ?? []).filter((annotation) => !annotation.delegatedAt)
+    if (annotations.length === 0) return
+    const projectDir = currentProject()
+    if (!projectDir) throw new Error("没有当前项目")
+    setAnnotationActionBusy(true)
+    try {
+      const podId = await ensureAnnotationPodId(podStore.detail()?.pod.id ?? null)
+      const targetGoal = goal ? { ...goal } : null
+      const target = targetGoal
+        ? {
+          podId,
+          goalId: targetGoal.goalId,
+          revision: targetGoal.activeRevision ?? targetGoal.revision ?? 1,
+        }
+        : { podId, newGoal: true }
+      const annotationsByID = new Map(annotations.map((annotation) => [annotation.id, annotation]))
+      const result = await delegateAnnotationBatch({
+        annotations,
+        projectDir,
+        target,
+        goal: targetGoal,
+        newGoalDraft,
+      }, {
+        createGoal: async (input) => {
+          const detail = await window.api.mafw.pod.ensure(projectDir)
+          const created = await window.api.mafw.pod.createGoal(detail.pod.id, {
+            ...input,
+            source: "desktop",
+          })
+          return { goalId: created.goalId, revision: created.revision ?? 1 }
+        },
+        createReviewItems: (reviewTarget, body) =>
+          window.api.mafw.pod.createReviewItems(reviewTarget.podId, reviewTarget.goalId, body),
+        getPlan: (goalId) => window.api.mafw.goals.plan(goalId) as any,
+        rejectPlan: (goalId, approvalId, feedback) =>
+          window.api.mafw.goals.rejectPlan(goalId, approvalId, feedback),
+        sendTechLead: ({ podId: targetPodId, goalId, text }) =>
+          window.api.mafw.pod.sendTechLeadMessage(targetPodId, goalId, text),
+        rejectResult: (targetPodId, goalId, feedback) =>
+          window.api.mafw.pod.rejectResult(targetPodId, goalId, feedback),
+        verifyTarget: (reviewTarget) => verifyDelegationTarget(annotations, reviewTarget),
+        markDelegated: (ids, reviewItemIDs) => {
+          const at = Date.now()
+          ids.forEach((id, index) => {
+            const annotation = annotationsByID.get(id)
+            if (annotation) {
+              patchPending(annotation.sessionID, id, {
+                delegatedAt: at,
+                reviewItemIDs: reviewItemIDs[index] ? [reviewItemIDs[index]] : undefined,
+              })
+            }
+          })
+        },
+      })
+      if (result.error) {
+        const partial = !!result.goalId
+        showToastV2({
+          description: partial
+            ? `Goal ${result.goalId} 已建立，但后续动作失败：${result.error}`
+            : `提交评审失败：${result.error}`,
+          duration: 5200,
+        } as any)
+        if (partial) {
+          setAnnotationActions(null)
+          return
+        }
+        throw new Error(result.error)
+      }
+      const label = result.followUp?.kind === "rework"
+        ? "已写入评审项并请求按批注修改"
+        : result.followUp?.kind === "replan"
+          ? "已写入评审项，当前计划将重新生成"
+          : result.followUp?.kind === "record-only"
+            ? "已记录评审项，将在本版结果后统一处理"
+            : "已交给 Tech Lead 处理";
+      showToastV2({ description: label, duration: 2800 } as any)
+      setAnnotationActions(null)
+    } catch (err: any) {
+      showToastV2({ description: `提交评审失败：${err?.message || err}`, duration: 5200 } as any)
+      throw err
+    } finally {
+      setAnnotationActionBusy(false)
+    }
+  }
+
+  const delegateToGoalAction = async (goal: PodGoal) => {
+    await delegateAnnotationAction(goal)
+  }
+
+  const createGoalForAnnotations = async (input: {
+    title: string
+    objective: string
+    acceptance: string[]
+    boundaries: string[]
+    planReview: "auto" | "manual"
+  }): Promise<boolean> => {
+    try {
+      await delegateAnnotationAction(null, {
+        title: input.title,
+        objective: input.objective,
+        acceptance: input.acceptance,
+        boundaries: input.boundaries,
+        planReview: input.planReview,
+      })
+      return true
+    } catch {
+      return false
+    }
+  }
+
   // 焦点 → tab 条激活项：文档靠 id，场景靠 subject id；entry 可能稍后同步进来。
   createEffect(() => {
     documentTabs()
@@ -4901,6 +5064,8 @@ export function MafwShell() {
             busy={annotationActionBusy()}
             onDiscuss={discussAnnotationAction}
             onNewFreeDiscussion={newFreeDiscussionForAnnotations}
+            onDelegateGoal={delegateToGoalAction}
+            onCreateGoal={createGoalForAnnotations}
             onClose={() => setAnnotationActions(null)}
           />
         )}

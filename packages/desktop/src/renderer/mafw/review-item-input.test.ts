@@ -14,17 +14,21 @@ const base: Annotation = {
   createdAt: 1,
 };
 
-test('annotations map to review inputs without session-only fields', () => {
+test('annotations map to review inputs with source and clientRef, without session-only fields', () => {
   const inputs = reviewInputsFromAnnotations([{
     ...base,
     anchor: { kind: 'quote', quote: '原文' },
     imageDataUrl: 'data:image/png;base64,xxx',
     scopeKey: 'project:x',
     root: 'C:\\x',
+    source: { kind: 'project', projectDir: 'C:/repo' },
+    contentVersion: 'hash',
   }]);
   assert.deepEqual(inputs, [{
     rel: 'src/a.ts', startLine: 3, endLine: 5, code: 'x()',
     comment: '这里要改', anchor: { kind: 'quote', quote: '原文' },
+    source: { kind: 'project', projectDir: 'C:/repo', root: 'C:\\x', contentVersion: 'hash' },
+    clientRef: 'ann-1',
   }]);
 });
 
