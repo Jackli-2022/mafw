@@ -107,6 +107,7 @@ interface OutboxDbRow {
   last_error: string | null;
   read_at: string | null;
   ack_at: string | null;
+  answered_at: string | null;
   sent_session_id: string | null;
   created_at: string;
   updated_at: string;
@@ -229,6 +230,7 @@ function toOutbox(row: OutboxDbRow): EventOutboxRow {
     lastError: row.last_error,
     readAt: row.read_at ?? null,
     ackAt: row.ack_at ?? null,
+    answeredAt: row.answered_at ?? null,
     sentSessionId: row.sent_session_id ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -339,6 +341,7 @@ export function ensureEventLayerSchema(db: Database): void {
       last_error TEXT,
       read_at TEXT,
       ack_at TEXT,
+      answered_at TEXT,
       sent_session_id TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
@@ -358,12 +361,18 @@ export function ensureEventLayerSchema(db: Database): void {
   };
   ensureOutboxColumn('read_at', 'read_at TEXT');
   ensureOutboxColumn('ack_at', 'ack_at TEXT');
+  ensureOutboxColumn('answered_at', 'answered_at TEXT');
   ensureOutboxColumn('sent_session_id', 'sent_session_id TEXT');
 }
 
 export class EventStore {
   constructor(private readonly db: Database) {
     ensureEventLayerSchema(db);
+  }
+
+  /** Run `fn` in one SQLite transaction on the shared connection. */
+  transaction<T>(fn: () => T): T {
+    return this.db.transaction(fn)();
   }
 
   insertSource(input: {
@@ -662,7 +671,7 @@ export class EventStore {
   insertOutbox(
     input: Omit<
       EventOutboxRow,
-      'attempts' | 'nextRetryAt' | 'lastError' | 'createdAt' | 'updatedAt' | 'readAt' | 'ackAt' | 'sentSessionId'
+      'attempts' | 'nextRetryAt' | 'lastError' | 'createdAt' | 'updatedAt' | 'readAt' | 'ackAt' | 'answeredAt' | 'sentSessionId'
     > & { now: string },
   ): EventOutboxRow {
     this.db.prepare(`
@@ -704,7 +713,7 @@ export class EventStore {
     id: string,
     patch: Partial<Pick<
       EventOutboxRow,
-      'state' | 'attempts' | 'nextRetryAt' | 'lastError' | 'updatedAt' | 'readAt' | 'ackAt' | 'sentSessionId'
+      'state' | 'attempts' | 'nextRetryAt' | 'lastError' | 'updatedAt' | 'readAt' | 'ackAt' | 'answeredAt' | 'sentSessionId'
     >>,
   ): EventOutboxRow {
     const row = this.db.prepare('SELECT * FROM event_outbox WHERE id = ?').get(id) as OutboxDbRow | undefined;
@@ -713,11 +722,11 @@ export class EventStore {
     this.db.prepare(`
       UPDATE event_outbox
       SET state = ?, attempts = ?, next_retry_at = ?, last_error = ?, updated_at = ?,
-          read_at = ?, ack_at = ?, sent_session_id = ?
+          read_at = ?, ack_at = ?, answered_at = ?, sent_session_id = ?
       WHERE id = ?
     `).run(
       next.state, next.attempts, next.nextRetryAt, next.lastError, next.updatedAt,
-      next.readAt, next.ackAt, next.sentSessionId, id,
+      next.readAt, next.ackAt, next.answeredAt, next.sentSessionId, id,
     );
     return this.getOutbox(id)!;
   }
@@ -752,6 +761,42 @@ export class EventStore {
         AND json_extract(payload, '$.goalId') = ?
         AND json_extract(payload, '$.messageId') IS NULL
     `).run(now, now, `lead:${podId}`, goalId);
+    return Number(result.changes ?? 0);
+  }
+
+  /**
+   * Mirror a delivery receipt onto the outbox row that carried the trigger.
+   * Only the lead channel and only rows that carry `payload.triggerId`.
+   */
+  updateOutboxReceiptByTrigger(
+    triggerId: string,
+    next: 'read' | 'acknowledged' | 'answered',
+    now: string,
+  ): number {
+    if (!triggerId) return 0;
+    const column = next === 'read' ? 'read_at' : next === 'acknowledged' ? 'ack_at' : 'answered_at';
+    const result = this.db.prepare(`
+      UPDATE event_outbox
+      SET ${column} = COALESCE(${column}, ?), updated_at = ?
+      WHERE channel_id LIKE 'lead:%' AND ${column} IS NULL
+        AND json_extract(payload, '$.triggerId') = ?
+    `).run(now, now, triggerId);
+    return Number(result.changes ?? 0);
+  }
+
+  /** Lead ack by session also acknowledges the external deliveries it covered. */
+  ackDeliveriesForSession(sessionId: string, now: string): number {
+    if (!sessionId) return 0;
+    const result = this.db.prepare(`
+      UPDATE event_deliveries
+      SET state = 'acknowledged', ack_at = ?, next_retry_at = NULL
+      WHERE state IN ('delivered', 'read')
+        AND trigger_id IN (
+          SELECT json_extract(payload, '$.triggerId') FROM event_outbox
+          WHERE sent_session_id = ? AND ack_at IS NOT NULL
+            AND json_extract(payload, '$.triggerId') IS NOT NULL
+        )
+    `).run(now, sessionId);
     return Number(result.changes ?? 0);
   }
 }

@@ -10,7 +10,7 @@ import type {
 } from './event-types';
 import type { EventStore } from './event-store';
 import type { EventDecision, EventEvaluator } from './event-evaluator';
-import { nextRetryDelayMs } from './event-delivery';
+import { applyDeliveryTransition, nextRetryDelayMs } from './event-delivery';
 import { externalDomainEvent } from './external-domain-event';
 import type { DomainEventInput } from './domain-event';
 
@@ -210,6 +210,35 @@ export class EventLayerService {
     patch: Parameters<EventStore['updateDelivery']>[1],
   ): EventDeliveryRow {
     const row = this.deps.store.updateDelivery(id, patch);
+    this.deps.broadcast({
+      type: 'event.delivery.changed',
+      properties: {
+        deliveryId: row.id,
+        triggerId: row.triggerId,
+        subscriptionId: row.subscriptionId,
+        state: row.state,
+      },
+    });
+    return row;
+  }
+
+  /**
+   * Record a receipt on one delivery and mirror it onto the outbox row that
+   * carried the trigger. Both writes share one transaction; an invalid
+   * transition throws before anything is written.
+   */
+  markDeliveryReceipt(
+    deliveryId: string,
+    next: 'read' | 'acknowledged' | 'answered',
+  ): EventDeliveryRow {
+    const delivery = this.deps.store.getDelivery(deliveryId);
+    if (!delivery) throw new Error(`delivery not found: ${deliveryId}`);
+    const now = this.deps.now();
+    const patch = applyDeliveryTransition(delivery, next, now);
+    const row = this.deps.store.transaction(() => {
+      this.deps.store.updateOutboxReceiptByTrigger(delivery.triggerId, next, now);
+      return this.deps.store.updateDelivery(deliveryId, patch);
+    });
     this.deps.broadcast({
       type: 'event.delivery.changed',
       properties: {

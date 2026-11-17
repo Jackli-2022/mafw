@@ -1199,7 +1199,9 @@ class MafwScheduler {
     try {
       const member = this.podStore.getMemberBySession(sessionId);
       if (member?.role !== 'lead') return;
-      this.eventLayerStore.markOutboxAckedBySession(sessionId, new Date().toISOString());
+      const now = new Date().toISOString();
+      this.eventLayerStore.markOutboxAckedBySession(sessionId, now);
+      this.eventLayerStore.ackDeliveriesForSession(sessionId, now);
     } catch (err: any) {
       log.warn(`[LeadOutbox] ack failed for ${sessionId} (non-fatal): ${err?.message ?? err}`);
     }

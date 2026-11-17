@@ -115,6 +115,8 @@ export interface EventOutboxRow {
   readAt: string | null;
   /** Lead session completed a turn after the item was sent. */
   ackAt: string | null;
+  /** Human answered the external item (delivery state machine). */
+  answeredAt: string | null;
   /** Session that received the batch (ack scoping across shared Lead sessions). */
   sentSessionId: string | null;
   createdAt: string;
