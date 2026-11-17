@@ -56,6 +56,16 @@
 
 因此本切片**只证明路径与分数语义已修正，不宣称检索质量已达标**。下一步仍是固定真实查询集与候选/采纳门控。
 
+## Review 结论与 follow-up
+
+独立 review（`gateway/volcengine/deepseek-v4.1-flash`）结论：**ship**，5/5 Review Focus 通过，无 Critical / Important 缺陷。
+
+需要后续测量或小修：
+
+- cue anchors 改变 reranker 输入，可能改变 snapshot FOK zone 分布；需用 `fok-samples` 统计修复前后 zone 比例，不能假设不变。
+- scan topic-shift guard 当前是全有全无；需统计 rejection rate，再决定是否改为逐条 admission。
+- 低优先：scan guard 读取固定默认阈值而非配置；补 matching-query accept 测试；`searchRecallMemoriesSync` 尚未带 cue anchors（当前无 reranker 消费者）；补 kernel→snapshot 的 join 测试；MCP helper 的冗余 sort/facade 绕过；REST 对缺失 harmonicIndex 的测试双兼容。
+
 ## 范围外
 
 - 未改 recency 主排序、top-k、FOK 阈值或邻居策略。
