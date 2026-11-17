@@ -1493,11 +1493,11 @@ export class GatewayDatabase {
     return { turn, rows, archived: turn.archived_at != null };
   }
 
-  /** Trace id of the previous turn in the same session (for session surprise). */
+  /** Trace id of the turn immediately before `turnSeq` in the same session. */
   getPrevTurnTrace(sessionId: string, turnSeq: number): string | null {
     const row = this.db
       .prepare('SELECT trace_id FROM t1_turns WHERE session_id = ? AND turn_seq = ?')
-      .get(String(sessionId || ''), Math.trunc(turnSeq)) as { trace_id?: string } | undefined;
+      .get(String(sessionId || ''), Math.trunc(turnSeq) - 1) as { trace_id?: string } | undefined;
     return row?.trace_id ?? null;
   }
 

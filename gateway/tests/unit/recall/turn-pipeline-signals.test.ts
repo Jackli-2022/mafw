@@ -88,7 +88,7 @@ describe('TurnPipeline signals wiring', () => {
       turn_id: second.turn_seq,
       trace_id: second.trace_id,
       source: 'user_input',
-      content: '继续修 reflection 的边界 recall',
+      content: '继续修边界 recall',
       failure: 0,
     });
     db.append({
@@ -96,7 +96,7 @@ describe('TurnPipeline signals wiring', () => {
       turn_id: second.turn_seq,
       trace_id: second.trace_id,
       source: 'tool_result',
-      content: 'read reflection.ts again',
+      content: 'read boundary.ts again',
       failure: 0,
     });
     let seen: any[] = [];
@@ -108,6 +108,7 @@ describe('TurnPipeline signals wiring', () => {
     expect(db.getTurnFeature(second.trace_id)!.surprise).toBeCloseTo(0.42);
     expect(db.getTurnFeature(first.trace_id)!.surprise ?? null).toBeNull();
     expect(seen[0].prevText).toContain('reflection');
+    expect(seen[0].text).not.toContain('reflection');
   });
 
   test('a failing surprise scorer does not fail the run', async () => {
