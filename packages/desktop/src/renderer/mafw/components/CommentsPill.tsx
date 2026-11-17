@@ -5,6 +5,7 @@ import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { CheckboxV2 } from "@mafw/ui/v2/checkbox-v2"
 import { Icon } from "@mafw/ui/icon"
 import { clearPending, pendingFor, removePending, setAnnotationHeld } from "../annotation-store"
+import { annotationInScope } from "../annotation-scope"
 import { describeAnchor } from "../annotation-anchor"
 import type { Annotation } from "../../../shared/annotation-types"
 
@@ -21,9 +22,18 @@ const whereOf = (a: Annotation) => {
   return `${a.rel} · L${a.startLine}${a.endLine !== a.startLine ? `–${a.endLine}` : ""}`
 }
 
-export function CommentsPill(props: { sessionID: string | null }) {
+export function CommentsPill(props: {
+  ownerKey: string | null
+  scopeKey?: string | null
+  root?: string | null
+}) {
   const [open, setOpen] = createSignal(false)
-  const items = () => (props.sessionID ? pendingFor(props.sessionID) : [])
+  const items = () => (props.ownerKey
+    ? pendingFor(props.ownerKey).filter((a) =>
+      !a.discussedAt
+      && !a.delegatedAt
+      && annotationInScope(a, props.scopeKey, props.root))
+    : [])
   const sendable = () => items().filter((a) => !a.held).length
   const held = () => items().length - sendable()
 
@@ -69,7 +79,7 @@ export function CommentsPill(props: { sessionID: string | null }) {
               <ButtonV2
                 variant="ghost"
                 size="small"
-                onClick={() => props.sessionID && clearPending(props.sessionID)}
+                onClick={() => props.ownerKey && clearPending(props.ownerKey)}
               >
                 清空
               </ButtonV2>

@@ -121,7 +121,8 @@ import { createPresence, SURFACE_MS } from "./components/presence"
 import { fetchTasks, ingestTask } from "./task-store"
 import { fetchQueue, ingestQueueEvent } from "./queue-store"
 import { setRun } from "./run-store"
-import { addPending } from "./annotation-store"
+import { addPending, patchPending } from "./annotation-store"
+import { annotationSourceFromScopeKey, draftOwnerKey } from "./annotation-scope"
 import { getSessionTurnDiffs } from "./session-turn-diffs"
 import { defaultDockOpen } from "./workbench-defaults"
 import type { ChatEpisode } from "./chat/episode-model"
@@ -3058,10 +3059,29 @@ export function MafwShell() {
     else showWorkbenchLanding()
   }
   const addAnnotation = (a: any) => {
-    const sid = currentSessionID()
-    if (!sid) return
-    const saved = addPending({ sessionID: sid, ...a })
-    showToastV2({ description: "已加入批注 · 随下一条消息发送", duration: 1600 } as any)
+    const scope = contentScope()
+    const scopeKey = a.scopeKey ?? currentContentScopeKey() ?? null
+    const root = a.root ?? contentScopeRoot(scope) ?? null
+    const ownerKey = draftOwnerKey(currentSessionID(), scopeKey)
+    const source = a.source ?? annotationSourceFromScopeKey(scopeKey, root) ?? undefined
+    const saved = addPending({
+      ...a,
+      sessionID: ownerKey,
+      scopeKey: scopeKey ?? undefined,
+      root: root ?? undefined,
+      source,
+    })
+    // Binary / preview tabs do not have an editor buffer fingerprint; hash the
+    // saved file asynchronously. A dirty editor still records the disk version
+    // but stays blocked for delegation until it is saved again.
+    if (saved.root && saved.rel && saved.contentVersion == null) {
+      void window.api.fs.version(saved.root, saved.rel)
+        .then((result) => {
+          if (result?.ok) patchPending(ownerKey, saved.id, { contentVersion: result.sha256 })
+        })
+        .catch(() => {})
+    }
+    showToastV2({ description: "已加入批注 · 可讨论或交给 Goal", duration: 1600 } as any)
     return saved
   }
 
@@ -4432,6 +4452,9 @@ export function MafwShell() {
                     <div class="mafw-chat-panes">
                         <ChatPane
                           sessionID={activeSessionId()!}
+                          annotationOwnerKey={activeSessionId()}
+                          annotationScopeKey={currentContentScopeKey()}
+                          annotationRoot={contentScopeRoot(contentScope())}
                           focused
                           canClosePane={false}
                           todos={todos}
@@ -4636,6 +4659,7 @@ export function MafwShell() {
                   onClosePicker={() => setPickerOpen(false)}
                   onPick={pickSubject}
                   sessionID={currentSessionID() || null}
+                  annotationOwnerKey={draftOwnerKey(currentSessionID() || null, currentContentScopeKey())}
                   sessionDirectory={store.session.find((s: any) => s.id === currentSessionID())?.directory ?? null}
                   contentRoot={contentRoot()}
                   contentScopeKey={currentContentScopeKey()}

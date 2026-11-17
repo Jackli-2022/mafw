@@ -85,6 +85,7 @@ import { PendingCaptures } from "./PendingCaptures"
 import { buildAnnotationBatch } from "../editor-annotation"
 import { reviewInputsFromAnnotations, reviewItemPromptBlock } from "../review-item-input"
 import { hydrateAnnotations, sendableFor, takeForSend, takeForSendById } from "../annotation-store"
+import { annotationInScope } from "../annotation-scope"
 import { formatCaptureBatch, captureAttachmentName, getPendingCaptures } from "../chat/pending-captures"
 
 import { createInputHistory, shouldNavigateHistory, shouldHintEmptyHistory } from "./input-history"
@@ -162,6 +163,11 @@ type StoreShape = {
 
 export type ChatPaneProps = {
   sessionID: string
+  /** Local annotation owner when the composer is showing a draft bucket
+   *  captured before this chat session existed. */
+  annotationOwnerKey?: string | null
+  annotationScopeKey?: string | null
+  annotationRoot?: string | null
   focused: boolean
   canClosePane: boolean
   todos: Record<string, any[]>
@@ -328,6 +334,9 @@ function MediaHistoryAttachment(props: { artifactId: string; name: string; media
 
 function PaneInner(props: ChatPaneProps & { sid: string }) {
   const sidProp = () => props.sid
+  const annotationOwner = () => props.annotationOwnerKey || sidProp()
+  const visibleAnnotations = () => sendableFor(annotationOwner()).filter((annotation) =>
+    annotationInScope(annotation, props.annotationScopeKey, props.annotationRoot))
   // workspace 单例直连（store 单一所有权；注册表显式化，不再经 props 穿透）
   const store = workspace.store
   const setStore = workspace.setStore as unknown as (fn: (prev: typeof store) => typeof store) => typeof store
@@ -1224,10 +1233,10 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     steerBoundary: () => experienceStore.action('prompt.steer')?.semantics?.boundary as any,
     techLeadTarget: () => props.techLeadTarget?.() ?? null,
     sendBlocked: () => props.sendBlocked?.() ?? null,
-    pendingAnnotationCount: (sid) => sendableFor(sid).length,
-    peekAnnotations: (sid) => sendableFor(sid),
-    takeAnnotations: (sid) => takeForSend(sid),
-    takeAnnotationsById: (sid, ids) => takeForSendById(sid, ids),
+    pendingAnnotationCount: () => visibleAnnotations().length,
+    peekAnnotations: () => visibleAnnotations(),
+    takeAnnotations: () => takeForSend(annotationOwner()),
+    takeAnnotationsById: (_sid, ids) => takeForSendById(annotationOwner(), ids),
     formatAnnotations: (items) => buildAnnotationBatch(items),
     persistAnnotations: async (items) => {
       const target = await Promise.resolve(props.techLeadTarget?.() ?? null)
@@ -1332,7 +1341,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     if (input().trim() || attachments().length > 0) return true
     const sid = sidProp()
     if (!sid) return false
-    return sendableFor(sid).length > 0 || getPendingCaptures().pendingFor(sid).length > 0
+    return visibleAnnotations().length > 0 || getPendingCaptures().pendingFor(sid).length > 0
   }
   const composerActionEnabled = () => connPhase() !== "down" && hasSendableContent()
   // G2：BrowserDock 的元素截图经 sink 进 attachments（与 G1 同一媒体管道）
@@ -3114,7 +3123,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   onClick={handleMicClick}
                 ><Icon name={micStopActive() ? "stop" : "microphone"} size="small" /></ButtonV2>
               </TooltipV2>
-              <CommentsPill sessionID={sidProp()} />
+              <CommentsPill
+                ownerKey={annotationOwner()}
+                scopeKey={props.annotationScopeKey}
+                root={props.annotationRoot}
+              />
               <Show when={sending()} fallback={
                 <ButtonV2
                   variant="contrast"

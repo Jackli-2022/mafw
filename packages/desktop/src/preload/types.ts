@@ -39,6 +39,10 @@ export type FsAPI = {
   listDir(root: string, rel: string): Promise<FsEntryDTO[] | null>
   readFile(root: string, rel: string): Promise<FsReadResult>
   statFile(root: string, rel: string): Promise<FsStatResult>
+  version(root: string, rel: string): Promise<
+    | { ok: true; sha256: string; size: number; mtimeMs: number }
+    | { ok: false; reason: "jail" | "not-found" | "too-large" | "io" }
+  >
   writeFile(root: string, rel: string, content: string, opts?: { ifMtimeMs?: number; eol?: "\n" | "\r\n" }): Promise<FsWriteResult>
   /** 为 mafw-file:// 预览协议注册会话根（幂等）；返回不透明 token，失败 null。 */
   registerRoot(absDir: string): Promise<string | null>

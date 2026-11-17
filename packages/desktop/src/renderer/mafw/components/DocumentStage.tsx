@@ -11,6 +11,7 @@ import type { FileDiffEntry } from "./DiffReviewPanel"
 
 export function DocumentStage(props: {
   sessionID: string | null
+  annotationOwnerKey?: string | null
   contentRoot: string | null
   contentScopeKey?: string | null
   openRequest?: FocusOpenRequest | null
@@ -54,6 +55,7 @@ export function DocumentStage(props: {
           <EditorDock
             embedded
             sessionID={props.sessionID}
+            annotationOwnerKey={props.annotationOwnerKey}
             contentRoot={props.contentRoot}
             scopeKey={props.contentScopeKey ?? null}
             openRequest={props.openRequest ?? null}

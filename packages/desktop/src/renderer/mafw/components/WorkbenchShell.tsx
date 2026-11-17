@@ -30,6 +30,7 @@ export type WorkbenchShellProps = {
   onClosePicker: () => void
   onPick: (item: PickerItem) => void
   sessionID: string | null
+  annotationOwnerKey?: string | null
   sessionDirectory?: string | null
   contentRoot: string | null
   contentScopeKey: string | null
@@ -112,6 +113,7 @@ export function WorkbenchShell(props: WorkbenchShellProps): JSX.Element {
             focus={props.focusView!}
             active={props.open}
             sessionID={props.sessionID}
+            annotationOwnerKey={props.annotationOwnerKey}
             sessionDirectory={props.sessionDirectory}
             contentRoot={props.contentRoot}
             contentScopeKey={props.contentScopeKey}

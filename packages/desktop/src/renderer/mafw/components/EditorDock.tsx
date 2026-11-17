@@ -58,7 +58,9 @@ import { buildFileQuote } from "../file-quote"
 import { describeAnchor, jsonPathOf, a1Ref } from "../annotation-anchor"
 import { dragRectPx, cropImageDataUrl, type Rect01 } from "../region-capture"
 import { addMark, clearMarks, marksFor, marksForSession, removeMarkByAnnotation, type MarkVisual } from "../annotation-marks"
-import { pendingFor, removePending, setAnnotationHeld } from "../annotation-store"
+import { draftsFor, removePending, setAnnotationHeld } from "../annotation-store"
+import { annotationInScope, annotationSourceFromScopeKey } from "../annotation-scope"
+import { textFingerprint } from "../annotation-source"
 import { placeSelectionToolbar } from "../annotation-selection"
 import { lineHighlightsFor } from "../annotation-highlight"
 import {
@@ -72,7 +74,7 @@ import {
   updateQuoteHighlightState,
 } from "../annotation-highlights"
 import { isAnnotationHotkey } from "../annotation-hotkey"
-import type { Annotation, AnnotationAnchor } from "../../../shared/annotation-types"
+import type { Annotation, AnnotationAnchor, AnnotationSource } from "../../../shared/annotation-types"
 import type { FileDiffEntry } from "./DiffReviewPanel"
 import { openModeForTab } from "../content-intent"
 import type { FocusOpenRequest } from "../focus/focus-open"
@@ -88,6 +90,8 @@ interface SelectionState {
 
 export function EditorDock(props: {
   sessionID: string | null
+  /** Local draft/mark owner; falls back to sessionID for legacy callers. */
+  annotationOwnerKey?: string | null
   contentRoot: string | null
   scopeKey?: string | null
   /** 统一文档舞台内嵌：不渲染自己的 tab 条。 */
@@ -108,6 +112,9 @@ export function EditorDock(props: {
     imageDataUrl?: string
     scopeKey?: string
     root?: string
+    source?: AnnotationSource
+    contentVersion?: string | null
+    capturedDirty?: boolean
   }) => Annotation | void
   onSendComment?: (sid: string, text: string) => void
   /** AI 编辑：选区 + 指令交给 agent 改文件；Desktop 不直接应用模型文本。 */
@@ -346,16 +353,24 @@ export function EditorDock(props: {
   })
 
   /** djb2：Markdown 缓存键随内容变化（避免同 tab 内旧渲染被缓存命中）。 */
+  const annotationOwner = () => props.annotationOwnerKey ?? props.sessionID ?? ""
+  const markOwner = () => `${annotationOwner()}::${props.scopeKey ?? ""}`
+
   /** 当前文件的批注反馈标记（pending → responded）。 */
   const fileMarks = () => {
     const f = activeFile()
-    return props.sessionID && f ? marksFor(props.sessionID, f.rel) : []
+    return markOwner() && f ? marksFor(markOwner(), f.rel) : []
   }
 
-  /** 当前文件的待发送批注（ADE：高亮 + margin card 的数据源）。 */
+  /** 当前文件、当前作用域的待处理批注（ADE margin card 的数据源）。 */
   const fileAnnotations = () => {
     const f = activeFile()
-    return props.sessionID && f ? pendingFor(props.sessionID).filter((a) => a.rel === f.rel) : []
+    if (!annotationOwner() || !f) return []
+    return draftsFor(annotationOwner()).filter((a) =>
+      a.rel === f.rel
+      && !a.discussedAt
+      && !a.delegatedAt
+      && annotationInScope(a, props.scopeKey, props.contentRoot))
   }
 
   const annotationByID = () => new Map(fileAnnotations().map((a) => [a.id, a] as const))
@@ -1282,6 +1297,8 @@ export function EditorDock(props: {
   ) {
     const f = activeFile()
     if (!f || !comment.trim() || !props.onAddAnnotation) return
+    const source = annotationSourceFromScopeKey(props.scopeKey, props.contentRoot) ?? undefined
+    const contentVersion = !f.dirty && f.savedContent.length > 0 ? textFingerprint(f.savedContent) : null
     if (anchor) {
       const saved = props.onAddAnnotation({
         rel: f.rel,
@@ -1293,8 +1310,11 @@ export function EditorDock(props: {
         imageDataUrl: extra?.imageDataUrl,
         scopeKey: props.scopeKey ?? undefined,
         root: props.contentRoot ?? undefined,
+        source,
+        contentVersion,
+        capturedDirty: f.dirty,
       })
-      if (saved && props.sessionID) addMark(props.sessionID, f.rel, anchor, extra?.visual, saved.id)
+      if (saved && markOwner()) addMark(markOwner(), f.rel, anchor, extra?.visual, saved.id)
       if (saved && anchor.kind === "quote" && extra?.range) {
         setQuoteHighlight(saved.id, extra.range, "pending")
       }
@@ -1319,9 +1339,12 @@ export function EditorDock(props: {
       comment: comment.trim(),
       scopeKey: props.scopeKey ?? undefined,
       root: props.contentRoot ?? undefined,
+      source,
+      contentVersion,
+      capturedDirty: f.dirty,
     })
-    if (saved && props.sessionID) {
-      addMark(props.sessionID, f.rel, undefined, { point: { x: s.left, y: s.top } }, saved.id)
+    if (saved && markOwner()) {
+      addMark(markOwner(), f.rel, undefined, { point: { x: s.left, y: s.top } }, saved.id)
     }
     setSelectionConsumed(true)
     clearSelection()
@@ -1329,12 +1352,16 @@ export function EditorDock(props: {
 
   /** pending 批注被删除/发送后，移除对应高亮（ADE：发送后高亮消失）。 */
   createEffect(() => {
-    const sid = props.sessionID
-    if (!sid) return
-    const ids = new Set(pendingFor(sid).map((a) => a.id))
-    for (const mark of marksForSession(sid)) {
+    const owner = markOwner()
+    if (!owner) return
+    const ids = new Set(
+      draftsFor(annotationOwner())
+        .filter((a) => !a.discussedAt && !a.delegatedAt && annotationInScope(a, props.scopeKey, props.contentRoot))
+        .map((a) => a.id),
+    )
+    for (const mark of marksForSession(owner)) {
       if (mark.annotationID && !ids.has(mark.annotationID)) {
-        removeMarkByAnnotation(sid, mark.annotationID)
+        removeMarkByAnnotation(owner, mark.annotationID)
         removeQuoteHighlight(mark.annotationID)
       }
     }

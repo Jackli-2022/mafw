@@ -15,6 +15,7 @@ export function FocusStage(props: {
   focus: Focus
   active: boolean
   sessionID: string | null
+  annotationOwnerKey?: string | null
   contentRoot: string | null
   contentScopeKey: string | null
   sessionDirectory?: string | null
@@ -64,6 +65,7 @@ export function FocusStage(props: {
       <div class="mafw-focus-document" style={{ display: isDocument() ? "contents" : "none" }}>
         <DocumentStage
           sessionID={props.sessionID}
+          annotationOwnerKey={props.annotationOwnerKey}
           contentRoot={props.contentRoot}
           contentScopeKey={props.contentScopeKey}
           openRequest={props.openRequest}
