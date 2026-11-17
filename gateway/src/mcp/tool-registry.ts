@@ -343,6 +343,26 @@ export const DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
+    name: "mafw_topic_set",
+    description: "Set or correct the current session's attention topic. Recall reports this topic every turn. This is not a long-term fact write and does not replace mafw_mark_episode_boundary. Use active:false to close it.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionID: { type: "string", description: "Current session id. Required for direct MCP calls so no global topic is overwritten." },
+        topic: { type: "string", description: "Current topic; set on first use or when correcting drift" },
+        matterId: { type: "string", description: "Optional opaque id linking an existing matter" },
+        summary: { type: "string", description: "Optional one-line description of the current topic" },
+        entities: { type: "array", items: { type: "string" }, description: "Entities/objects currently involved" },
+        aliases: { type: "array", items: { type: "string" }, description: "Alternative names useful for later reference resolution" },
+        openLoops: { type: "array", items: { type: "string" }, description: "Unresolved items under this topic" },
+        retrievalKeys: { type: "array", items: { type: "string" }, description: "Keywords useful for automatic retrieval" },
+        active: { type: "boolean", description: "false closes the current topic" },
+        expectedRevision: { type: "number", description: "Optimistic concurrency revision; stale values fail with topic_revision_conflict" },
+      },
+      required: ["sessionID"],
+    },
+  },
+  {
     name: "mafw_supersede_memory",
     description: "Mark existing memories as superseded (outdated/contradicted) without writing a new replacement. Use when the user explicitly retracts a fact or preference. For the common case of 'new memory replaces old', use mafw_add_memory with the supersedes field instead.",
     inputSchema: {
@@ -854,6 +874,7 @@ import { handleAskUser } from "./handlers/ask-user";
 import { handleRecordFeedback } from "./handlers/record-feedback";
 import { handleGetModelRoute } from "./handlers/get-model-route";
 import { handleAddMemory } from "./handlers/add-memory";
+import { handleTopicSet } from "./handlers/topic-set";
 import { handleSupersedeMemory } from "./handlers/supersede-memory";
 import { handlePinMemory } from "./handlers/pin-memory";
 import { handleGetMemory } from "./handlers/get-memory";
@@ -907,6 +928,7 @@ export function createToolRegistry(): ToolRegistry {
       mafw_record_feedback: handleRecordFeedback,
       mafw_get_model_route: handleGetModelRoute,
       mafw_add_memory: handleAddMemory,
+      mafw_topic_set: handleTopicSet,
       mafw_supersede_memory: handleSupersedeMemory,
       mafw_pin_memory: handlePinMemory,
       mafw_get_memory: handleGetMemory,
