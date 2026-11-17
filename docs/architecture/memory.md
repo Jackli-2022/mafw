@@ -57,7 +57,9 @@ LongMemEval 基准（session 粒度 R@10）：token 0.474 → **bm25 0.949**（6
 
 Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约的 `completion.complete()`（`completionApi` 能力，thunk 现读热切换安全），缺能力/失败时回退直连 HTTP（`runtime/completion-http.ts` 共享实现，`cacheable` 块映射 DashScope `cache_control: ephemeral`）。
 
-**检索入口一致性（2026-11-17）**：`searchScored` 省略 retriever 时按 `bm25` 分支执行；REST `/api/memory/search` 使用共享 `memoryService.harmonicIndex`（保留图状态）并默认 `config.search.defaultRetriever`；MCP `mafw_search_hybrid` 保留真实候选分数，不再把首轮/迭代轮分数压成常数 1；snapshot reranker 输入保留 `cue_anchors`。scan 预取结果携带构建时的 `query/builtAt`，自动 recall 合并前用 containment 做 topic-shift 校验；无 `query` 的旧快照保持兼容。
+**检索入口一致性（2026-11-17）**：`searchScored` 省略 retriever 时按 `bm25` 分支执行；REST `/api/memory/search` 使用共享 `memoryService.harmonicIndex` 并默认 `config.search.defaultRetriever`；MCP `mafw_search_hybrid` 保留真实候选分数，不再把首轮/迭代轮分数压成常数 1；snapshot reranker 输入保留 `cue_anchors`。scan 预取结果携带构建时的 `query/builtAt`，自动 recall 合并前用 containment 做 topic-shift 校验；无 `query` 的旧快照保持兼容。
+
+**图扩展通道分离（2026-11-18）**：`searchScored` 的图扩展（PPR 与 legacy hop-greedy）只为**新增的 graph-only 候选**写 `score: 0, graphScore: gs`——它们没有词面证据，只保留图通道，单条最高为 `rerankGraphWeight` 档，因此不可能压过最强字面 seed，主要用于尾部补全；经过归一化后 `nbv` 偏低的弱 seed 仍可能被其超过。已在 `scored` 里的词面候选（包括超出 `candidateCap`、未进 seed 窗口的条目）只追加 `graphScore`，不会被降级成 graph-only。REST `/api/memory/search` 额外显式 `graphExpand: false`：它是原始索引面，排序不随共享 index 上挂的图存储状态漂移（parity 前该路由每请求新建无图 index）；MCP 与 boundary recall 按各自路径消费图扩展。
 
 ### 压缩
 

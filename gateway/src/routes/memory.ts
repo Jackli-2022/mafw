@@ -434,6 +434,14 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
           : undefined;
         const searchOptions = {
           retriever,
+          // REST is the raw index surface: its order must not depend on the
+          // anchor/coactivation stores that boot attaches to the shared index
+          // (pre-parity this route built a fresh graph-free index per request).
+          // Graph expansion therefore stays out of REST; it remains available
+          // to boundary recall / MCP. The core double-counting bug that made
+          // graph-only neighbours outrank literal hits is fixed in
+          // HarmonicIndexManager.searchScored.
+          graphExpand: false,
           ...(dense ? { denseScores: dense } : {}),
           ...(includeLegacyEpisodic ? { includeLegacyEpisodic: true } : {}),
         } as const;

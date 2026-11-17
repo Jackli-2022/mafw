@@ -14,6 +14,7 @@ import { buildRouteCatalog } from '../../../src/routes/route-catalog';
 import { attachMemoryRoutes, type MemoryRouteDeps } from '../../../src/routes/memory';
 import { emptyNoteBoardBudget } from '../../../src/routes/note-board';
 import { setEmbeddingRuntime } from '../../../src/memory/embedding-runtime';
+import { HarmonicIndexManager } from '../../../src/core/memory/harmonic-index';
 
 function fakeReq(opts: { method: string; url: string; body?: string }): IncomingMessage {
   const listeners: Record<string, Array<(c?: unknown) => void>> = {};
@@ -288,9 +289,54 @@ describe('memory registry wiring (D1 Task F1)', () => {
     expect(searchScored).toHaveBeenCalledWith(
       'shared',
       50,
-      expect.objectContaining({ retriever: config.search.defaultRetriever }),
+      expect.objectContaining({
+        retriever: config.search.defaultRetriever,
+        // REST is the raw index surface: the live shared index carries the
+        // anchor/coactivation stores, and graph expansion replaces the BM25
+        // ranking with a min-max blend that swamps literal identifier hits
+        // (measured 2026-11-18: hit@1 55% → 3%). The pre-parity route's fresh
+        // index had no graph stores, so REST must keep that graph-free order.
+        graphExpand: false,
+      }),
     );
     expect(JSON.parse(r.body).results[0].id).toBe('mem_shared');
+  });
+
+  it('REST search does not graph-expand (raw index surface)', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-mem-search-graph-'));
+    fs.mkdirSync(path.join(dir, 'memory'), { recursive: true });
+    const index = new HarmonicIndexManager(dir);
+    const now = new Date().toISOString();
+    const unit = (id: string, abstraction: string, anchors: string[] = []) => ({
+      id, type: 'semantic', primary_abstraction: abstraction, cue_anchors: anchors,
+      memory_value: abstraction, energy: 0.8, created_at: now, updated_at: now,
+    });
+    index.addEntry(unit('mem_strong', 'isServeHealthy isServeHealthy isServeHealthy') as any, 'semantic');
+    index.addEntry(unit('mem_literal', 'serve sidecar health check', ['isServeHealthy']) as any, 'semantic');
+    index.addEntry(unit('mem_graph_only', 'incident postmortem unrelated') as any, 'semantic');
+    // Every BM25 hit is strongly co-activated with an entry that has no query
+    // token at all — the shape of the live divergence.
+    index.setCoactivationGraphStore({
+      getNeighbors: (ids: string[]) => {
+        const out = new Map<string, Map<string, number>>();
+        for (const id of ids) if (id !== 'mem_graph_only') out.set(id, new Map([['mem_graph_only', 1]]));
+        return out;
+      },
+    } as any);
+    try {
+      const { registry } = setup({
+        memoryService: () => ({ harmonicIndex: index }) as any,
+      });
+      const r = fakeRes();
+      await handlerFor(registry, 'GET', '/api/memory/search?query=isServeHealthy&retriever=bm25&topK=10')!(
+        fakeReq({ method: 'GET', url: '/api/memory/search?query=isServeHealthy&retriever=bm25&topK=10' }), r.res,
+      );
+      const ids = JSON.parse(r.body).results.map((u: any) => u.id);
+      expect(ids).toContain('mem_literal');
+      expect(ids).not.toContain('mem_graph_only');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('search default shape stays gist-only and invalid layers are rejected', async () => {

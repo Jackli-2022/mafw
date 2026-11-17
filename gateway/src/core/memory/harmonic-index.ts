@@ -469,7 +469,22 @@ export class HarmonicIndexManager {
           if (seedSet.has(id)) continue;
           const entry = this.index.entries.find(e => e.id === id);
           if (!entry || entry.superseded_by) continue;
-          byId.set(id, { entry, score: gs, graphScore: gs });
+          const existing = byId.get(id);
+          if (existing) {
+            // `byId` starts from the whole `scored` list, which can be longer
+            // than candidateCap: such an entry is a lexical candidate that
+            // merely fell outside the seed window. Keep its BM25 score — the
+            // graph pass only adds the association channel (same guard the
+            // legacy hop-greedy branch has).
+            if ((existing.graphScore ?? 0) < gs) existing.graphScore = gs;
+            continue;
+          }
+          // Graph-only candidate: it has no lexical evidence, so it owns the
+          // graph channel only. Storing `score: gs` here (pre-2026-11-18) gave
+          // it the BM25 channel too — `nbv`/`ngv` below both normalized the
+          // same graph value, so a neighbour could reach 1.0 and outrank every
+          // literal hit on the shared live index.
+          byId.set(id, { entry, score: 0, graphScore: gs });
         }
       } else {
         // fallback: legacy hop-greedy
@@ -484,7 +499,9 @@ export class HarmonicIndexManager {
               if (!nbEntry || nbEntry.superseded_by) continue;
               const gs = w * (nbEntry.energy ?? 0.8) * (nbEntry.salience ?? 1) * Math.pow(damping, hop);
               const ex = byId.get(nbId);
-              if (!ex) { byId.set(nbId, { entry: nbEntry, score: gs, graphScore: gs }); expanded = true; }
+              // Same channel separation as the PPR branch: a newly expanded
+              // neighbour has no lexical evidence, so its BM25 score stays 0.
+              if (!ex) { byId.set(nbId, { entry: nbEntry, score: 0, graphScore: gs }); expanded = true; }
               else if ((ex.graphScore ?? 0) < gs) { ex.graphScore = gs; expanded = true; }
             }
           }
