@@ -184,8 +184,11 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
           unscored: 0,
           novelty: { p50: 0, p90: 0, p99: 0, max: 0 },
           mismatch: { p50: 0, p90: 0, p99: 0, max: 0 },
+          surprise: { p50: 0, p90: 0, p99: 0, max: 0 },
+          surpriseScored: 0,
           highNovelty: 0,
           highMismatch: 0,
+          highSurprise: 0,
           redundant: 0,
         };
         try {

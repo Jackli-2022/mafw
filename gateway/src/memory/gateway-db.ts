@@ -2561,9 +2561,15 @@ export class GatewayDatabase {
    * passed by the route so the DB layer stays config-free.
    */
   t1SignalStats(
-    thresholds: { highNovelty: number; highMismatch: number; redundant: number } = {
+    thresholds: {
+      highNovelty: number;
+      highMismatch: number;
+      highSurprise: number;
+      redundant: number;
+    } = {
       highNovelty: 0.8,
       highMismatch: 0.2,
+      highSurprise: 0.6,
       redundant: 0.05,
     },
   ): {
@@ -2571,13 +2577,16 @@ export class GatewayDatabase {
     unscored: number;
     novelty: { p50: number; p90: number; p99: number; max: number };
     mismatch: { p50: number; p90: number; p99: number; max: number };
+    surprise: { p50: number; p90: number; p99: number; max: number };
+    surpriseScored: number;
     highNovelty: number;
     highMismatch: number;
+    highSurprise: number;
     redundant: number;
   } {
     const count = (sql: string, ...params: unknown[]): number =>
       Number((this.db.prepare(sql).get(...params) as { n?: number } | undefined)?.n ?? 0);
-    const percentile = (column: 'novelty' | 'mismatch', p: number): number => {
+    const percentile = (column: 'novelty' | 'mismatch' | 'surprise', p: number): number => {
       const n = count(`SELECT COUNT(*) AS n FROM t1_turn_features WHERE ${column} IS NOT NULL`);
       if (n === 0) return 0;
       const offset = Math.min(n - 1, Math.max(0, Math.floor((n - 1) * p)));
@@ -2589,7 +2598,7 @@ export class GatewayDatabase {
         .get(offset) as { v?: number } | undefined;
       return Number(row?.v ?? 0);
     };
-    const maxOf = (column: 'novelty' | 'mismatch'): number =>
+    const maxOf = (column: 'novelty' | 'mismatch' | 'surprise'): number =>
       Number(
         (
           this.db
@@ -2597,7 +2606,7 @@ export class GatewayDatabase {
             .get() as { v?: number } | undefined
         )?.v ?? 0,
       );
-    const dist = (column: 'novelty' | 'mismatch') => ({
+    const dist = (column: 'novelty' | 'mismatch' | 'surprise') => ({
       p50: percentile(column, 0.5),
       p90: percentile(column, 0.9),
       p99: percentile(column, 0.99),
@@ -2608,6 +2617,10 @@ export class GatewayDatabase {
       unscored: count('SELECT COUNT(*) AS n FROM t1_turn_features WHERE novelty IS NULL'),
       novelty: dist('novelty'),
       mismatch: dist('mismatch'),
+      surprise: dist('surprise'),
+      surpriseScored: count(
+        'SELECT COUNT(*) AS n FROM t1_turn_features WHERE surprise IS NOT NULL',
+      ),
       highNovelty: count(
         'SELECT COUNT(*) AS n FROM t1_turn_features WHERE novelty >= ?',
         thresholds.highNovelty,
@@ -2615,6 +2628,10 @@ export class GatewayDatabase {
       highMismatch: count(
         'SELECT COUNT(*) AS n FROM t1_turn_features WHERE mismatch >= ?',
         thresholds.highMismatch,
+      ),
+      highSurprise: count(
+        'SELECT COUNT(*) AS n FROM t1_turn_features WHERE surprise >= ?',
+        thresholds.highSurprise,
       ),
       redundant: count(
         'SELECT COUNT(*) AS n FROM t1_turn_features WHERE novelty <= ?',
