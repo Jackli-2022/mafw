@@ -33,7 +33,8 @@ describe("notification model", () => {
     expect(second.isNew).toBe(false)
     expect(second.state.items).toHaveLength(1)
     expect(second.state.items[0].title).toBe("A2")
-    expect(second.state.items[0].createdAt).toBe(200)
+    // 更新保留原始 createdAt（presence 每 15s 重报同一 attention，不能永远「刚刚」）。
+    expect(second.state.items[0].createdAt).toBe(100)
     expect(unreadNotificationCount(second.state)).toBe(1)
   })
 

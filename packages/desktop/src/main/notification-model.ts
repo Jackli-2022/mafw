@@ -112,7 +112,9 @@ export function publishNotification(
     severity: input.severity,
     title: input.title,
     reason: input.reason,
-    createdAt: input.createdAt ?? now,
+    // 更新保留原始 createdAt：presence 每 15s 重报同一 attention，置顶/刷新
+    // 会让中心里的相对时间永远显示「刚刚」。
+    createdAt: existing?.createdAt ?? input.createdAt ?? now,
   }
   if (input.body !== undefined) item.body = input.body
   if (input.projectId !== undefined) item.projectId = input.projectId
