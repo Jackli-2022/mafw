@@ -27,6 +27,7 @@ import { PodDirectionService } from '../../src/core/pod/pod-direction-service';
 import { PodProbeService, probeReportPath } from '../../src/core/pod/pod-probe-service';
 import { PodGoalRevisionService } from '../../src/core/pod/pod-goal-revision-service';
 import { PodGoalService } from '../../src/core/pod/pod-goal-service';
+import { PodReviewService } from '../../src/core/pod/pod-review-service';
 import { buildPodGoalResult } from '../../src/core/pod/pod-result';
 import { PodContextSelectionService } from '../../src/mcp/handlers/pod-context-select';
 import { makeHarness } from '../unit/helpers/goal-driver-harness';
@@ -245,6 +246,12 @@ describe('pod collaborative goal loop (Task 22 e2e)', () => {
       resultForGoal,
       log: () => {},
     });
+    const reviews = new PodReviewService({
+      store,
+      now: () => NOW,
+      assertTechLeadSession: () => {},
+      isGoalMutating: () => false,
+    });
 
     const goals = new PodGoalService({
       store,
@@ -256,6 +263,7 @@ describe('pod collaborative goal loop (Task 22 e2e)', () => {
       notify: () => {},
       resultForGoal,
       revisions,
+      reviews,
       techLead: {
         ensureSession: (goalId) => techLead.ensureSession(goalId),
         prompt: (goalId, text) => techLead.prompt(goalId, text),
@@ -449,6 +457,9 @@ describe('pod collaborative goal loop (Task 22 e2e)', () => {
     const reviewBefore = fs.readFileSync(reviewPath, 'utf-8');
 
     // ── 8. reject → revision 2 discussing; revision 1 stays PASS ─────────────
+    const seedReview = reviews.createItems(podId, goalId, {
+      items: [{ rel: 'src/a.ts', comment: '按这条意见继续改' }],
+    })[0];
     const rejected = await goals.rejectResult(podId, goalId, '方向不对，继续讨论');
     expect(rejected).toMatchObject({ revision: 2, status: 'discussing' });
     expect(rejected.priority).toBeGreaterThan(0);
@@ -492,9 +503,13 @@ describe('pod collaborative goal loop (Task 22 e2e)', () => {
         && decision.userWords.includes('方向不对'),
     )).toBe(true);
 
-    // 新 revision 的讨论不是空会话：开场 prompt 必须带上打回原话。
+    // 新 revision 的讨论不是空会话：开场 prompt 必须带上打回原话与继承的评审项。
     expect(techPrompts.at(-1)?.text).toContain('方向不对，继续讨论');
     expect(techPrompts.at(-1)?.agent).toBe('mafw-tech-lead');
+    const carriedReview = reviews.list(podId, goalId, { revision: 2 }).items[0];
+    expect(carriedReview.originItemId).toBe(seedReview.id);
+    expect(techPrompts.at(-1)?.text).toContain(carriedReview.id);
+    expect(techPrompts.at(-1)?.text.match(new RegExp(carriedReview.id, 'g'))).toHaveLength(1);
 
     // ── 9. ContextManifest never leaks another Goal ──────────────────────────
     expect(isHiddenSession({ id: 'ses_tech_1', agent: 'mafw-tech-lead' })).toBe(true);

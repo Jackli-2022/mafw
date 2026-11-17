@@ -14,6 +14,7 @@ import type { PodWorktreeService, PodWorktreeDiff } from './pod-worktree-service
 import { podTaskKindOf } from './pod-task-service';
 import { summarizePodGoalProgress } from './pod-goal-progress';
 import type { PodReviewService } from './pod-review-service';
+import { renderReviewWorkBlock } from './goal-review-context';
 import { planPromotions } from './pod-scheduler';
 import { deriveAttention } from '../lead/attention';
 import type {
@@ -68,15 +69,18 @@ export function buildRejectOpeningPrompt(input: {
   revision: number;
   feedback: string;
   verdict?: string | null;
+  reviewItemsBlock?: string | null;
 }): string {
   const feedback = String(input.feedback ?? '').trim();
   const verdict = input.verdict ? `（${input.verdict}）` : '';
+  const reviewBlock = String(input.reviewItemsBlock ?? '').trim();
   return [
     `用户打回了 revision ${input.rejectedRevision} 的结果${verdict}，同一 Goal 现在进入 revision ${input.revision} 继续讨论。`,
     '',
     '打回反馈（用户原话）：',
     feedback,
     '',
+    ...(reviewBlock ? [reviewBlock, ''] : []),
     '先和用户确认这次要调整的方向与范围，不要直接开始规划；方向确认后调用 mafw_pod_goal_direction 记录（明确用 "clear"，有真实分歧用 "needs_user"）。',
     `上一轮的实现与证据保留在 revision ${input.rejectedRevision}，需要时读取，不要重做已通过的部分。`,
   ].join('\n');
@@ -927,6 +931,19 @@ export class PodGoalService {
         `[Pod] Tech Lead session restore failed for ${goalId}#${reopened.revision}: ${sessionError}`,
       );
     }
+    let reviewItemsBlock: string | null = null;
+    try {
+      reviewItemsBlock = renderReviewWorkBlock({
+        revision: reopened.revision,
+        items: this.deps.reviews?.unresolved(podId, goalId, reopened.revision) ?? [],
+        capturedAt: this.deps.now(),
+      });
+    } catch (err: any) {
+      // Never silently pretend there are no carried opinions: surface the
+      // failure in the opening message while keeping the review session alive.
+      reviewItemsBlock = `【评审项上下文不可用】${String(err?.message ?? err)}`;
+      this.deps.log?.(`[Pod] review context render failed for ${goalId}#${reopened.revision}: ${err?.message ?? err}`);
+    }
     if (!sessionError && this.deps.techLead) {
       try {
         // 新 revision 的讨论不能是空会话：prompt() 同时 ensure 会话并带上打回原话。
@@ -935,6 +952,7 @@ export class PodGoalService {
           revision: reopened.revision,
           feedback: reason,
           verdict: rejectedVerdict,
+          reviewItemsBlock,
         }));
         sessionID = prompted?.sessionID ?? null;
       } catch (err: any) {

@@ -237,6 +237,29 @@ spec `docs/superpowers/specs/2026-11-11-project-agent-workbench-experience-desig
   desktop `pod-review-model`/`pod-review-wiring`/`pod-result-review-wiring`/`review-item-input`/
   `use-send-message`/`preload-pod-review`。
 
+#### Goal Review Work Context（2026-11-17）
+
+spec `docs/superpowers/specs/2026-11-17-annotation-goal-collaboration-design.md`，plan
+`docs/superpowers/plans/2026-11-17-goal-review-work-context.md`。
+
+- **来源与幂等**：review item 可带 `source_json`（project / goal + root + contentVersion）与
+  `client_ref`；同一 active revision 内 `client_ref` 唯一，批次重试复用原行，不重复 append
+  `created` 事件。老行缺字段按 null 兼容。
+- **计划快照**：plan 节点把当前 revision 的未解决 item IDs 原子写到 revision 产物旁的
+  `review-work.json`；execute 只读同一快照并按当前未解决状态过滤。计划发出后晚到的意见进入
+  下一 eligible plan/rework，不扩当前执行范围。
+- **prompt 注入**：`NodeDriver` 专用 provider → `node-prompts`；plan / normal execute /
+  review-fix execute 注入同一份人类评审上下文；review 与 probe 不注入。不塞 ContextManifest、
+  `podContext`、planFeedback 或 reviewFix。
+- **失败语义**：快照损坏、revision 不匹配、mafw dir 缺失或渲染超过 128 KiB 都 fail closed；
+  不静默截断。默认只处理 pending + responded，resolved 不进入后续 prompt。
+- **rework**：打回新 revision 后，开场 prompt 读取 carry 后的未解决项并渲染一次；注入本身不
+  自动安排执行，人工打回 / 显式修改请求仍是触发点。Tech Lead 只能在已有可检查解释或关联修改后
+  标 `responded`，不能自行 resolved。
+- **测试**：`pod-review-provenance-store` / `pod-review-service` / `pod-review-routes` /
+  `goal-review-context` / `goal-review-work-service` / `node-prompts-review-items` /
+  `goal-driver-review-context` / `pod-reject-review-context` / `pod-collaboration-loop`。
+
 #### Lead 当前话题 Handoff 与 Goal 状态投影（2026-11-10）
 
 spec/plan：`docs/superpowers/specs/2026-11-10-lead-techlead-thread-handoff-design.md`、
