@@ -63,6 +63,17 @@ function setup(opts: { memoryService?: any; blocks?: any; sync?: any; db?: any }
 
 const EMPTY_PINNED = { profile: null, entries: [], budget: { max: 20, maxChars: 2000, used: 0 } };
 
+const flushRequest = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+function topicDb(currentTraceId = 't1t_real') {
+  const rows = new Map<string, unknown>();
+  return {
+    kvGet: (scope: string, key: string) => rows.get(`${scope}\0${key}`) ?? null,
+    kvSet: (scope: string, key: string, value: unknown) => rows.set(`${scope}\0${key}`, value),
+    currentTurn: (_sessionID: string) => ({ trace_id: currentTraceId, turn_seq: 1 }),
+  };
+}
+
 describe('recall thin three registry wiring (D1 Task B3)', () => {
   it('serving a T1-only snapshot records recall observations', async () => {
     const recorded: any[] = [];
@@ -200,5 +211,71 @@ describe('recall thin three registry wiring (D1 Task B3)', () => {
     await m!.def.handler!(fakeReq({ url: '/api/recall/context?sessionID=s1&query=hello', method: 'GET' }), r.res, m!.params);
     expect(r.status).toBe(200);
     expect(JSON.parse(r.body)).toEqual({ pointers: null });
+  });
+
+  it('topic route requires sessionID', async () => {
+    const { handlerFor } = setup({ db: topicDb() });
+    const r = fakeRes();
+    await handlerFor('POST', '/api/recall/topic')!(
+      fakeReq({ url: '/api/recall/topic', method: 'POST', body: JSON.stringify({ topic: 'x' }) }),
+      r.res,
+    );
+    await flushRequest();
+    expect(r.status).toBe(400);
+    expect(JSON.parse(r.body)).toMatchObject({ ok: false });
+  });
+
+  it('topic route sets and updates a per-session state with the real trace', async () => {
+    const db = topicDb();
+    const { handlerFor } = setup({ db });
+    const first = fakeRes();
+    await handlerFor('POST', '/api/recall/topic')!(
+      fakeReq({
+        url: '/api/recall/topic',
+        method: 'POST',
+        body: JSON.stringify({ sessionID: 's1', topic: '主题 A', sourceTraceId: 't1t_forged' }),
+      }),
+      first.res,
+    );
+    await flushRequest();
+    expect(first.status).toBe(200);
+    expect(JSON.parse(first.body)).toMatchObject({
+      ok: true,
+      state: { sessionId: 's1', topic: '主题 A', revision: 1, sourceTraceId: 't1t_real' },
+    });
+
+    const second = fakeRes();
+    await handlerFor('POST', '/api/recall/topic')!(
+      fakeReq({
+        url: '/api/recall/topic',
+        method: 'POST',
+        body: JSON.stringify({ sessionID: 's1', topic: '主题 B', expectedRevision: 1 }),
+      }),
+      second.res,
+    );
+    await flushRequest();
+    expect(JSON.parse(second.body)).toMatchObject({ ok: true, state: { topic: '主题 B', revision: 2 } });
+  });
+
+  it('topic route reports a revision conflict as 409', async () => {
+    const db = topicDb();
+    const { handlerFor } = setup({ db });
+    await handlerFor('POST', '/api/recall/topic')!(
+      fakeReq({ url: '/api/recall/topic', method: 'POST', body: JSON.stringify({ sessionID: 's1', topic: 'A' }) }),
+      fakeRes().res,
+    );
+    await flushRequest();
+    const conflict = fakeRes();
+    await handlerFor('POST', '/api/recall/topic')!(
+      fakeReq({
+        url: '/api/recall/topic',
+        method: 'POST',
+        body: JSON.stringify({ sessionID: 's1', topic: 'B', expectedRevision: 0 }),
+      }),
+      conflict.res,
+    );
+    await flushRequest();
+    expect(conflict.status).toBe(409);
+    expect(JSON.parse(conflict.body)).toMatchObject({ ok: false, code: 'topic_revision_conflict' });
   });
 });

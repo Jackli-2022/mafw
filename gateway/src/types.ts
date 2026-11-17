@@ -50,6 +50,9 @@ export interface Services {
   readTrace?: (traceId: string) => import('./memory/gateway-db').T1TraceRead | null;
   /** Cheap existence check for exact T1 provenance validation on write. */
   hasTrace?: (traceId: string) => boolean;
+  /** Per-session attention topic (not a long-term fact). */
+  getTopic?: (sessionID: string) => import('./recall/topic-state').TopicState | null;
+  setTopic?: (input: import('./recall/topic-state').SetTopicInput) => import('./recall/topic-state').TopicState;
   /** Map a source trace to its T1 episode (soft grounding hint). */
   findEpisodeByTrace?: (traceId: string) => string | null;
   /** Bounded abstract→T1 activation propagation (never fails the read). */

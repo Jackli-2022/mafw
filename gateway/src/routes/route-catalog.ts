@@ -194,6 +194,8 @@ import {
   RecallInstructionsResponse,
   RecallPinnedResponse,
   RecallPriorsResponse,
+  RecallTopicSetRequest,
+  RecallTopicSetResponse,
 } from './schemas/recall';
 import { LeadContextResponse, LeadRecallResponse, LeadWorkingSetResponse } from './schemas/lead';
 import { MemoryStatsResponse } from './schemas/memory-stats';
@@ -862,6 +864,7 @@ const NON_SDK_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/obs/capture', operationId: 'obs.capture', tags: ['internal'], request: ObsCaptureRequest, response: ObsCaptureResponse, errors: [400] },
   { method: 'POST', path: '/api/obs/episode-boundary', operationId: 'obs.episodeBoundary', tags: ['internal'], request: ObsEpisodeBoundaryRequest, response: ObsEpisodeBoundaryResponse, errors: [400] },
   { method: 'GET', path: '/api/recall/context', operationId: 'recall.context', tags: ['internal'], response: RecallContextResponse },
+  { method: 'POST', path: '/api/recall/topic', operationId: 'recall.topicSet', tags: ['internal'], request: RecallTopicSetRequest, response: RecallTopicSetResponse, errors: [400, 409] },
   { method: 'GET', path: '/api/recall/pinned', operationId: 'recall.pinned', tags: ['internal'], response: RecallPinnedResponse },
   // Task B3：T2-4 fallback 面 / W1 常驻先验块（plugin / pi host extension 消费；
   // 非 SDK 端点 → 与兄弟 NON_SDK 条目一致用 tags ['internal']，SDK 死契约检查据此豁免）

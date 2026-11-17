@@ -310,4 +310,62 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
       res.end(JSON.stringify({ pointers: null }));
     }
   });
+
+  // POST /api/recall/topic — set/correct the current per-session attention topic.
+  // This is not a fact write and does not mark an episode boundary.
+  registry.attachHandler('recall.topicSet', async (req: IncomingMessage, res: ServerResponse) => {
+    let body = '';
+    let aborted = false;
+    req.on('data', (chunk: Buffer) => {
+      body += chunk.toString('utf-8');
+      if (body.length > 64_000) {
+        aborted = true;
+        req.destroy();
+      }
+    });
+    req.on('end', () => {
+      if (aborted) return;
+      try {
+        const data = JSON.parse(body || '{}');
+        const sessionID = typeof data?.sessionID === 'string' ? data.sessionID.trim() : '';
+        if (!sessionID) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, code: 'sessionID_required' }));
+          return;
+        }
+        const {
+          TopicRevisionConflict,
+          setTopicState,
+        } = require('../recall/topic-state');
+        try {
+          const state = setTopicState(deps.getGatewayDb(), {
+            sessionID,
+            topic: data?.topic,
+            summary: data?.summary,
+            entities: data?.entities,
+            aliases: data?.aliases,
+            openLoops: data?.openLoops,
+            retrievalKeys: data?.retrievalKeys,
+            matterId: data?.matterId,
+            active: data?.active,
+            expectedRevision:
+              typeof data?.expectedRevision === 'number' ? data.expectedRevision : undefined,
+          });
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true, state }));
+        } catch (err: any) {
+          const conflict = err instanceof TopicRevisionConflict;
+          res.writeHead(conflict ? 409 : 400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            ok: false,
+            code: conflict ? 'topic_revision_conflict' : 'invalid_topic_state',
+            error: err?.message || String(err),
+          }));
+        }
+      } catch (err: any) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, code: 'invalid_json', error: err?.message || String(err) }));
+      }
+    });
+  });
 }

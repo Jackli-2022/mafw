@@ -38,6 +38,41 @@ export const RecallContextResponse = Type.Object({
   pointers: Type.Union([Type.String(), Type.Null()]),
 })
 
+// ── recall.topicSet ─────────────────────────────────────────────────────────
+
+export const RecallTopicSetRequest = Type.Object({
+  sessionID: Type.String(),
+  topic: Type.Optional(Type.String()),
+  summary: Type.Optional(Type.String()),
+  entities: Type.Optional(Type.Array(Type.String())),
+  aliases: Type.Optional(Type.Array(Type.String())),
+  openLoops: Type.Optional(Type.Array(Type.String())),
+  retrievalKeys: Type.Optional(Type.Array(Type.String())),
+  matterId: Type.Optional(Type.String()),
+  active: Type.Optional(Type.Boolean()),
+  expectedRevision: Type.Optional(Type.Number()),
+})
+
+export const RecallTopicState = Type.Object({
+  sessionId: Type.String(),
+  topic: Type.String(),
+  summary: Type.Optional(Type.String()),
+  entities: Type.Array(Type.String()),
+  aliases: Type.Array(Type.String()),
+  openLoops: Type.Array(Type.String()),
+  retrievalKeys: Type.Array(Type.String()),
+  matterId: Type.Optional(Type.String()),
+  active: Type.Boolean(),
+  revision: Type.Number(),
+  sourceTraceId: Type.Optional(Type.String()),
+  updatedAt: Type.String(),
+})
+
+export const RecallTopicSetResponse = Type.Object({
+  ok: Type.Boolean(),
+  state: RecallTopicState,
+})
+
 // ── recall.pinned ───────────────────────────────────────────────────────────
 
 /**

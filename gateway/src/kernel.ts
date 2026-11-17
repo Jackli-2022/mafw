@@ -5210,6 +5210,10 @@ class MafwScheduler {
         this.getGatewayDb().recordT1RetrievalEvent({ traceId, kind, score }),
       readTrace: (traceId: string) => this.getGatewayDb().readTrace(traceId),
       hasTrace: (traceId: string) => this.getGatewayDb().hasTrace(traceId),
+      getTopic: (sessionID: string) =>
+        require('./recall/topic-state').readTopicState(this.getGatewayDb(), sessionID),
+      setTopic: (input: import('./recall/topic-state').SetTopicInput) =>
+        require('./recall/topic-state').setTopicState(this.getGatewayDb(), input),
       findEpisodeByTrace: (traceId: string) => this.getGatewayDb().findEpisodeByTrace(traceId),
       propagateT1Activation: (traceIds: string[]) => this.getGatewayDb().propagateT1Activation(traceIds),
       cost,
