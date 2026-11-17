@@ -4,6 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import { RouteRegistry } from '../../../src/routes/registry';
 import { buildRouteCatalog } from '../../../src/routes/route-catalog';
 import { attachRecallRoutes } from '../../../src/routes/recall';
+import { setTopicState } from '../../../src/recall/topic-state';
 
 function fakeReq(opts: { url: string; method: string; body?: string }): IncomingMessage {
   const listeners: Record<string, Array<(c?: unknown) => void>> = {};
@@ -95,7 +96,11 @@ describe('recall thin three registry wiring (D1 Task B3)', () => {
       fakeReq({ url: '/api/recall/context?sessionID=s1&query=hello', method: 'GET' }), r.res,
     );
     expect(r.status).toBe(200);
-    expect(JSON.parse(r.body).pointers).toContain('T1-only block');
+    const pointers = JSON.parse(r.body).pointers;
+    expect(pointers).toContain('主题：未设置');
+    expect(pointers).toContain('mafw_topic_set');
+    expect(pointers).toContain('T1-only block');
+    expect(pointers.indexOf('<topic-recall>')).toBeLessThan(pointers.indexOf('T1-only block'));
     expect(recorded).toEqual([{ traceId: 't1t_a', kind: 'recall', score: 0.81 }]);
   });
 
@@ -181,14 +186,14 @@ describe('recall thin three registry wiring (D1 Task B3)', () => {
 
   // Plan Task 5: /api/recall/context envelope is a hard contract (points at null,
   // never a 500) — pinned by two envelope cases.
-  it('context empty-query early-out returns {pointers: null} with status 200', async () => {
+  it('context empty-query early-out still reports the topic header', async () => {
     const { handlerFor } = setup();
     const r = fakeRes();
     await handlerFor('GET', '/api/recall/context?sessionID=s1')!(
       fakeReq({ url: '/api/recall/context?sessionID=s1', method: 'GET' }), r.res,
     );
     expect(r.status).toBe(200);
-    expect(JSON.parse(r.body)).toEqual({ pointers: null });
+    expect(JSON.parse(r.body).pointers).toContain('主题：未设置');
   });
 
   it('context thrown error fails open: status 200 + {pointers: null}', async () => {
@@ -211,6 +216,20 @@ describe('recall thin three registry wiring (D1 Task B3)', () => {
     await m!.def.handler!(fakeReq({ url: '/api/recall/context?sessionID=s1&query=hello', method: 'GET' }), r.res, m!.params);
     expect(r.status).toBe(200);
     expect(JSON.parse(r.body)).toEqual({ pointers: null });
+  });
+
+  it('context reports the active topic with no related memory when retrieval is empty', async () => {
+    const db = topicDb();
+    setTopicState(db, { sessionID: 's1', topic: '个人 Agent 记忆' });
+    const { handlerFor } = setup({ db });
+    const r = fakeRes();
+    await handlerFor('GET', '/api/recall/context?sessionID=s1&query=hello')!(
+      fakeReq({ url: '/api/recall/context?sessionID=s1&query=hello', method: 'GET' }), r.res,
+    );
+    expect(r.status).toBe(200);
+    expect(JSON.parse(r.body).pointers).toBe(
+      '<topic-recall>\n主题：个人 Agent 记忆\n相关记忆：无\n</topic-recall>',
+    );
   });
 
   it('topic route requires sessionID', async () => {

@@ -106,6 +106,13 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
       const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
       const query = parsedUrl.searchParams.get('query') || '';
       const sessionID = parsedUrl.searchParams.get('sessionID') || '';
+      let topicState: import('../recall/topic-state').TopicState | null = null;
+      if (sessionID) {
+        try {
+          const { readTopicState } = require('../recall/topic-state');
+          topicState = readTopicState(deps.getGatewayDb(), sessionID);
+        } catch { /* fail-open: report unset below */ }
+      }
       // S4 认知一致性：记录 recall 触达（有界，conformance 消费）
       if (sessionID) {
         deps.recallCalledBySession().set(sessionID, Date.now());
@@ -146,8 +153,10 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
       const tNoteBoard = Date.now() - tNote0;
       if (!query.trim()) {
         const only = [noteBoard, goalSnap].filter(Boolean);
+        const { renderTopicRecallHeader } = require('../recall/topic-recall');
+        const header = renderTopicRecallHeader(topicState, only.length > 0);
         res.writeHead(200);
-        res.end(JSON.stringify({ pointers: only.length > 0 ? only.join('\n\n') : null }));
+        res.end(JSON.stringify({ pointers: [header, ...only].join('\n\n') }));
         return;
       }
       const { formatRecallContext } = require('../recall/inject-format');
@@ -299,7 +308,9 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
         formatted.pointers = `${arbiterNote}\n${formatted.pointers}`;
       }
       const blocks = [formatted.pointers, noteBoard, goalSnap].filter(Boolean);
-      const pointers = blocks.length > 0 ? blocks.join('\n\n') : null;
+      const { renderTopicRecallHeader } = require('../recall/topic-recall');
+      const header = renderTopicRecallHeader(topicState, blocks.length > 0);
+      const pointers = [header, ...blocks].join('\n\n');
       // Latency breakdown (debug): the boundary path has a 100ms contract.
       log.debug(`[Recall] timing session=${sessionID || '-'} search=${snapshotPointers ? 0 : Date.now() - tSearch0}ms noteBoard=${tNoteBoard}ms goal=${tGoal}ms neighbours=${tNeighbors}ms`);
       res.writeHead(200, { 'Content-Type': 'application/json' });
