@@ -431,7 +431,7 @@ describe('memory registry wiring (D1 Task F1)', () => {
   it('stats reports the live embedding provider id and dims', async () => {
     setEmbeddingRuntime({
       providerId: 'llamacpp:test.gguf',
-      provider: { dims: 1024 },
+      provider: { dims: 1024, name: 'llamacpp:test.gguf' },
       vectors: { size: () => 0 },
     } as any);
     try {
@@ -449,6 +449,8 @@ describe('memory registry wiring (D1 Task F1)', () => {
       );
       const body = JSON.parse(r.body);
       expect(body.embedding.providerId).toBe('llamacpp:test.gguf');
+      expect(body.embedding.model).toBe('llamacpp:test.gguf');
+      expect(body.embedding.configModel).toBe(config.memory.embedding.model);
       expect(body.embedding.dims).toBe(1024);
     } finally {
       setEmbeddingRuntime(null);

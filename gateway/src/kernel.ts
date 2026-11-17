@@ -3555,7 +3555,8 @@ class MafwScheduler {
       // Provenance: record the physical embedding provider on every atom marker.
       atomModel: (() => {
         const rt = getEmbeddingRuntime();
-        return rt?.providerId ? `${rt.providerId}@${rt.provider.dims}` : undefined;
+        const name = rt?.provider?.name ?? rt?.providerId;
+        return name ? `${name}@${rt!.provider.dims}` : undefined;
       })(),
       // Phase 1: derived episode index. Shadow writes without recall changes.
       rebuildEpisodes: (sessionID) => {

@@ -246,13 +246,16 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
         };
       })();
       res.writeHead(200, { 'Content-Type': 'application/json' });
+      const providerName = embeddingRuntime?.provider?.name ?? embeddingRuntime?.providerId ?? null;
       res.end(JSON.stringify({
         embedding: {
           provider: config.memory.embedding.provider,
-          model: config.memory.embedding.model,
-          providerId: getEmbeddingRuntime()?.providerId ?? null,
+          // `model` is what is actually running; `configModel` keeps the raw config.
+          model: providerName ?? config.memory.embedding.model,
+          configModel: config.memory.embedding.model,
+          providerId: providerName,
           engine: config.memory.embedding.engine ?? 'onnx',
-          dims: getEmbeddingRuntime()?.provider?.dims ?? config.memory.embedding.dimensions ?? null,
+          dims: embeddingRuntime?.provider?.dims ?? config.memory.embedding.dimensions ?? null,
           vectors: indexed,
           indexEntries: indexEntries.length,
           coverage: indexEntries.length > 0 ? indexed / indexEntries.length : 0,
