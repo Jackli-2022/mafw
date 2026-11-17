@@ -9,7 +9,7 @@ Copy the fragment you need; each one is marked `(1)`…`(5)` in `index.js`.
 | (1) `actions` | `index.js` → `actions.echo` | action `echo`, invoked from the UI |
 | (2) `events` | `index.js` → `events[0]` | `plugin:kitchen-sink:ping` |
 | (3) `tools` | `index.js` → `tools[0]` | agent tool `plugin:kitchen-sink:lookup` |
-| (4) `observers` | `index.js` → `observers[0]` | observer `audit` (read-only) |
+| (4) `observers` | `index.js` → `observers[0]` | observer `audit`, counting canonical `part.updated` |
 | (5) `http` | `index.js` → `ctx.http.route(...)` | `GET /api/plugins/kitchen-sink/api/ping` |
 | UI | `index.js` → `ui.panels[0]` | desktop panel `sink`, view action `echo` |
 
@@ -60,16 +60,20 @@ match `plugin.json`'s `permissions` exactly; any mismatch is rejected with
 - **events** — the type must be `plugin:<package-name>:<event>`. Only declared
   types are accepted by `ctx.emit`; emitting anything else is dropped with a
   diagnostic. This package emits its ping from `echo` so the action → event
-  direction is visible without a timer.
+  direction is visible without a timer. The ping goes to broadcast / automation
+  consumers; observers do **not** see it (see below).
 - **tools** — `name` + `description` + `inputSchema` are mandatory both in
   `plugin.json` and in the activation result. The host exposes the tool as
   `plugin:kitchen-sink:lookup`; **the description and schema are all an agent
   sees**, so describe the shape you accept — this reference accepts any object
   (`{ "type": "object" }`). Package tools are global scope only.
-- **observers** — read-only: count, sample, forward. `filter.types` bounds the
-  subscription (here only `plugin:kitchen-sink:ping`), and the `echo` action
-  reports the counter as `audited`. Never mutate the event or write back into
-  the session; this is the audit/inspection plane.
+- **observers** — read-only consumers of **canonical runtime events**
+  (`part.updated`, `message.updated`, `turn.completed`, …), delivered after the
+  broadcast; they never mutate the event and cannot veto or rewrite anything.
+  `filter.types` bounds the subscription (here `part.updated`), and the `echo`
+  action reports how many matching canonical events the observer has seen as
+  `audited`.
+  `plugin:*` 事件走广播/自动化，observer 面看不到它们；若想观察自己的事件，用 `events` + 外部消费者。
 - **http** — routes are registered only during `activate()` and are retired
   with that revision. The public URL is host-namespaced
   (`/api/plugins/<package>/api<path>`), so a package can never reach another

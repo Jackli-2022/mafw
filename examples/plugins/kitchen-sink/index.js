@@ -18,8 +18,8 @@ module.exports = {
             // Declared event types are the only ones ctx.emit accepts. Emitting
             // here shows the action -> event direction without a timer.
             ctx.emit({ type: 'plugin:kitchen-sink:ping', properties: { at: Date.now() } });
-            // `audited` is the observer's count; the observer never mutates the
-            // event, it only observes and reports through package-local state.
+            // `audited` is how many canonical `part.updated` events the observer
+            // has seen; the observer never mutates an event, it only counts.
             return { echo: input ?? null, audited: auditCount };
           },
         },
@@ -45,14 +45,15 @@ module.exports = {
         },
       ],
 
-      // (4) observers — read-only consumers of already-emitted events. The
-      // filter bounds what this observer receives; the handler never mutates it.
+      // (4) observers — read-only consumers of canonical runtime events. They
+      // are fed after broadcast, so they never see this package's own
+      // `plugin:*` events (those go to broadcast/automation consumers).
       observers: [
         {
           id: 'audit',
           title: 'Audit counter',
-          description: 'Counts ping events; never mutates them.',
-          filter: { types: ['plugin:kitchen-sink:ping'] },
+          description: 'Counts canonical part.updated events; never mutates them.',
+          filter: { types: ['part.updated'] },
           onEvent: () => {
             auditCount += 1;
           },
