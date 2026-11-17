@@ -18,16 +18,23 @@ function memoryStore(initial: Record<string, unknown> = {}): NotificationStoreLi
   }
 }
 
-function fakeWindow() {
+function fakeWindow(readyDelay = false) {
   const sent: Array<{ items: MafwNotification[]; theme: string }> = []
   const calls: string[] = []
   let handlers: FloatingWindowHandlers | null = null
+  let readyCb: (() => void) | null = null
   const win: FloatingWindowLike = {
-    webContents: { send: (_channel: string, payload: { items: MafwNotification[]; theme: string }) => sent.push(payload) },
+    webContents: {
+      send: (_channel: string, payload: { items: MafwNotification[]; theme: string }) => {
+        if (readyDelay && readyCb) return // pre-ready sends are lost (renderer not subscribed yet)
+        sent.push(payload)
+      },
+    },
     setBounds: (bounds) => calls.push(`bounds:${bounds.width}x${bounds.height}@${bounds.x},${bounds.y}`),
     showInactive: () => calls.push("show"),
     hide: () => calls.push("hide"),
     isDestroyed: () => false,
+    onceReady: (cb) => { readyCb = cb },
   }
   return {
     win,
@@ -37,15 +44,16 @@ function fakeWindow() {
     open: (id: string) => handlers?.open(id),
     dismiss: (id: string) => handlers?.dismiss(id),
     hover: (id: string, hovering: boolean) => handlers?.hover(id, hovering),
+    ready: () => { const cb = readyCb; readyCb = null; cb?.() },
   }
 }
 
 const WORK_AREA = { x: 0, y: 0, width: 1920, height: 1080 }
 const PREFS: NotificationPrefs = { selfDrawn: true, doNotDisturb: false, fallbackToNative: true }
 
-function harness(over: { prefs?: Partial<NotificationPrefs>; ensureWindow?: (h: FloatingWindowHandlers) => FloatingWindowLike } = {}) {
+function harness(over: { prefs?: Partial<NotificationPrefs>; ensureWindow?: (h: FloatingWindowHandlers) => FloatingWindowLike; readyDelay?: boolean } = {}) {
   const hub = new NotificationHub(memoryStore(), () => 100)
-  const fake = fakeWindow()
+  const fake = fakeWindow(over.readyDelay ?? false)
   let prefs = { ...PREFS, ...over.prefs }
   const navigated: Array<NotificationTarget | undefined> = []
   const natives: MafwNotification[] = []
@@ -147,5 +155,14 @@ describe("notification window controller", () => {
     setPrefs({ doNotDisturb: true })
     controller.refreshPrefs()
     expect(fake.calls).toContain("hide")
+  })
+
+  test("items pushed before the renderer subscribed are re-sent on did-finish-load", () => {
+    const { hub, fake } = harness({ readyDelay: true })
+    hub.publish({ kind: "attention", severity: "p2", title: "A", reason: "需要你", dedupeKey: "a" })
+    expect(fake.sent).toEqual([])
+    fake.ready()
+    expect(fake.sent.at(-1)?.items.map((item) => item.title)).toEqual(["A"])
+    expect(fake.calls).toContain("show")
   })
 })

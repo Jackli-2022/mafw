@@ -2,6 +2,7 @@
 import { resolveThemeVariant } from "@mafw/ui/theme/resolve"
 import type { DesktopTheme } from "@mafw/ui/theme/types"
 import oc2ThemeJson from "../../../ui/src/theme/themes/oc-2.json"
+import { pickNavigationWindow } from "./navigation-window-select"
 import { randomUUID } from "node:crypto"
 import { rmSync } from "node:fs"
 import { app, BrowserWindow, dialog, net, nativeImage, nativeTheme, protocol, screen, shell } from "electron"
@@ -162,6 +163,26 @@ export function getLastFocusedWindow() {
   const win = registry.lastFocused()
   if (!win || win.isDestroyed()) return null
   return win
+}
+
+// ── Auxiliary windows (floating notifications) ──
+// They never receive navigation targets: a click on a focusable:false window
+// can still surface as getFocusedWindow() on Windows, which would swallow
+// notification clicks if navigation used getLastFocusedWindow() unchecked.
+
+const auxiliaryWindows = new WeakSet<BrowserWindow>()
+
+export function markAuxiliaryWindow(win: BrowserWindow): void {
+  auxiliaryWindows.add(win)
+}
+
+export function getNavigationWindow(): BrowserWindow | null {
+  return pickNavigationWindow(BrowserWindow.getAllWindows(), {
+    isFocused: (win) => win.isFocused(),
+    isAuxiliary: (win) => auxiliaryWindows.has(win),
+    isDestroyed: (win) => win.isDestroyed(),
+    lastFocused: () => registry.lastFocused() ?? null,
+  })
 }
 
 export function restoreMainWindows() {

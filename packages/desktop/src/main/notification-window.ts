@@ -18,6 +18,8 @@ export interface FloatingWindowLike {
   showInactive(): void
   hide(): void
   isDestroyed(): boolean
+  /** 可选：renderer 加载完成回调（did-finish-load）。用于补发尚未订阅时丢失的栈。 */
+  onceReady?(cb: () => void): void
 }
 
 export interface FloatingWindowHandlers {
@@ -74,7 +76,7 @@ export function createNotificationWindowController(
         window = null
       } else {
         try {
-          window = deps.ensureWindow({
+          const created = deps.ensureWindow({
             dismiss: (id) => presenter.dismiss(id),
             hover: (id, hovering) => presenter.hover(id, hovering),
             open: (id) => {
@@ -84,6 +86,12 @@ export function createNotificationWindowController(
               deps.navigate(item.target)
             },
           })
+          // 竞态兜底：建窗后立刻 push 的条目可能在 renderer 订阅前被发送丢失；
+          // 加载完成后补发当前可见栈（reload 场景同样生效）。
+          created.onceReady?.(() => {
+            if (window === created && !created.isDestroyed()) render(presenter.visible())
+          })
+          window = created
         } catch {
           windowBroken = true
           window = null

@@ -44,7 +44,9 @@ import { setupAutoUpdater, showUpdaterDialog } from "./updater"
 import {
   createMainWindow,
   getLastFocusedWindow,
+  getNavigationWindow,
   loadWindow,
+  markAuxiliaryWindow,
   registerRendererProtocol,
   setRelaunchHandler,
   setAppQuitting,
@@ -455,33 +457,28 @@ const main = Effect.gen(function* () {
     // `pod.event` 到达时 renderer 立刻催一次，完成通知不再等 15s 轮询。
     ipcMain.removeHandler("mafw-presence-refresh")
     ipcMain.handle("mafw-presence-refresh", () => { presencePoll.poll() })
-    function navigateToGoal(target: NavigateGoalTarget): void {
-      if (!target?.goalId) return
-      const win = getLastFocusedWindow()
-      if (!win || win.isDestroyed()) {
+    // 导航窗口选择：悬浮通知窗是 auxiliary（点击它不能把导航吞进自己）。
+    const showNavigationWindow = (send: (win: BrowserWindow) => void): void => {
+      const win = getNavigationWindow()
+      if (!win) {
         const created = createMainWindow()
         created.webContents.once("did-finish-load", () => {
-          if (!created.isDestroyed()) created.webContents.send("mafw-navigate-goal", target)
+          if (!created.isDestroyed()) send(created)
         })
         return
       }
+      if (win.isMinimized()) win.restore()
       win.show()
       win.focus()
-      win.webContents.send("mafw-navigate-goal", target)
+      send(win)
+    }
+    function navigateToGoal(target: NavigateGoalTarget): void {
+      if (!target?.goalId) return
+      showNavigationWindow((win) => win.webContents.send("mafw-navigate-goal", target))
     }
     function navigateToNotificationTarget(target: NotificationTarget | undefined): void {
       if (!target) return
-      const win = getLastFocusedWindow()
-      if (!win || win.isDestroyed()) {
-        const created = createMainWindow()
-        created.webContents.once("did-finish-load", () => {
-          if (!created.isDestroyed()) created.webContents.send("mafw-notification-open", target)
-        })
-        return
-      }
-      win.show()
-      win.focus()
-      win.webContents.send("mafw-notification-open", target)
+      showNavigationWindow((win) => win.webContents.send("mafw-notification-open", target))
     }
     setTrayNavigateHandler(navigateToGoal)
 
@@ -491,7 +488,7 @@ const main = Effect.gen(function* () {
       hub: notificationHub,
       getPrefs: () => readNotificationPrefs(getStore()),
       getWorkArea: () => {
-        const focused = getLastFocusedWindow()
+        const focused = getNavigationWindow()
         const display =
           focused && !focused.isDestroyed()
             ? screen.getDisplayMatching(focused.getBounds())
@@ -523,6 +520,7 @@ const main = Effect.gen(function* () {
           },
         })
         win.setAlwaysOnTop(true, "screen-saver")
+        markAuxiliaryWindow(win)
         notificationWindow = win
         const fromThisWindow = (event: { sender: unknown }) =>
           !win.isDestroyed() && event.sender === win.webContents
@@ -545,6 +543,9 @@ const main = Effect.gen(function* () {
           showInactive: () => { if (!win.isDestroyed()) win.showInactive() },
           hide: () => { if (!win.isDestroyed()) win.hide() },
           isDestroyed: () => win.isDestroyed(),
+          onceReady: (cb) => {
+            win.webContents.once("did-finish-load", () => { if (!win.isDestroyed()) cb() })
+          },
         }
         return floating
       },
