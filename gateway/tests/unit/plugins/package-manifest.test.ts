@@ -99,4 +99,22 @@ describe('package manifest v2', () => {
     expect(result.ok).toBe(true);
     expect(result.manifest?.contributes?.gateway?.actions).toEqual(['ping']);
   });
+
+  // `standardVersion` names the manifest standard the package was written
+  // against. It is optional (legacy manifests predate it) and only carries a
+  // positive integer: the parser is the one place that decides, and the
+  // published JSON Schema mirrors this rule exactly.
+  it('accepts a positive integer standardVersion', () => {
+    const result = parsePackageManifest({ name: 'demo', standardVersion: 1 });
+    expect(result.ok).toBe(true);
+    expect(result.manifest?.standardVersion).toBe(1);
+  });
+
+  it('rejects a standardVersion that is not a positive integer', () => {
+    for (const standardVersion of [0, -1, 1.5, 'v1', null, true]) {
+      const result = parsePackageManifest({ name: 'demo', standardVersion });
+      expect(result.ok).toBe(false);
+      expect(result.errors).toContain('standardVersion must be a positive integer');
+    }
+  });
 });

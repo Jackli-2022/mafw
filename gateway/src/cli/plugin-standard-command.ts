@@ -12,6 +12,11 @@
  * inventory and a paste-ready install command, so an agent can self-verify a
  * package before asking a human for consent.
  *
+ * `schema` prints the machine-readable manifest contract
+ * (`MANIFEST_JSON_SCHEMA`) for editors and agents. It is deliberately the
+ * schema document itself, not a report about it: the caller asked for the
+ * contract, not for a verdict on it.
+ *
  * Everything here is a pure function over injected deps: the CLI entrypoint
  * (`bin/mafw.js`) owns process/fs wiring where it can, tests own the assertions.
  * `init` is the exception that necessarily touches fs — it writes only under
@@ -27,8 +32,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { PluginCheckResult } from '../plugins/package-host';
+import { MANIFEST_JSON_SCHEMA } from '../plugins/manifest-schema';
 import {
-  isValidPackageName,
+  PACKAGE_NAME_MAX_LENGTH,
+  packageNameError,
   pluginTemplates,
   PACKAGE_NAME_RULE,
   type PluginTemplateFiles,
@@ -45,19 +52,24 @@ export interface PluginStandardDeps {
 const USAGE = [
   'usage: mafw plugin init <name> [--dir <parent>] [--force] [--json]',
   '       mafw plugin check <absolute-path> [--json] [--strict]',
+  '       mafw plugin schema [--json]',
   '',
   '  init       Scaffold a package that already passes `plugin check`',
   '             (default target: <cwd>/.mafw/plugin-drafts/<name>)',
   '  check      Dry-run one package in this process (no gateway, no token, no network)',
+  '  schema     Print the plugin.json JSON Schema (editors/agents; never stricter',
+  '             than the parser)',
   '',
   '  --dir      Parent directory for init (default: <cwd>/.mafw/plugin-drafts)',
   '  --force    Overwrite the template files when the target already exists',
-  '  --json     Print one JSON line; its `ok` is the command verdict',
+  '  --json     Print one JSON line; its `ok` is the command verdict (schema is',
+  '             always plain JSON, so the flag changes nothing there)',
   '  --strict   Treat manifest warnings as failures (check only)',
 ].join('\n');
 
 const CHECK_FLAGS = new Set(['--json', '--strict']);
 const INIT_FLAGS = new Set(['--dir', '--force', '--json']);
+const SCHEMA_FLAGS = new Set(['--json']);
 
 /**
  * What may appear in a printed, paste-ready command for an **unquoted** token
@@ -348,9 +360,18 @@ async function runInit(
       USAGE,
     ]);
   }
-  if (!isValidPackageName(name)) {
-    return fail(deps, asJson, `invalid package name: ${name}`, [
+  // `init` is one rule stricter than the manifest: its own event type is
+  // `plugin:<name>:ping`, so it refuses names longer than 100 characters to keep
+  // that type inside the 128-character identifier ceiling with room to spare.
+  // The parser keeps the plain rule (a hand-written package may use a longer
+  // name), which is also why the published schema has no `maxLength` on `name`.
+  const nameError = packageNameError(name);
+  if (nameError !== null) {
+    return fail(deps, asJson, nameError, [
       `invalid package name: ${text(name)}`,
+      ...(name.length > PACKAGE_NAME_MAX_LENGTH
+        ? [`package name must be at most ${PACKAGE_NAME_MAX_LENGTH} characters`]
+        : []),
       `rule: ${PACKAGE_NAME_RULE}`,
       'next: pass a name like "my-plugin"',
     ]);
@@ -402,6 +423,32 @@ async function runInit(
   return 0;
 }
 
+/**
+ * `mafw plugin schema` — the `plugin.json` contract as one JSON document.
+ *
+ * No envelope: an editor or agent asked for the schema, so it gets the schema.
+ * `--json` is accepted for symmetry with the sibling subcommands (and changes
+ * nothing); any other flag would silently imply the flag did something.
+ */
+function runSchema(args: string[], deps: PluginStandardDeps, asJson: boolean): number {
+  const unknownFlag = args.find((arg) => arg.startsWith('--') && !SCHEMA_FLAGS.has(arg));
+  if (unknownFlag) {
+    return fail(deps, asJson, `unknown flag: ${unknownFlag}`, [
+      `unknown flag: ${text(unknownFlag)}`,
+      USAGE,
+    ]);
+  }
+  const extra = args.find((arg) => !arg.startsWith('--'));
+  if (extra !== undefined) {
+    return fail(deps, asJson, `unexpected argument: ${extra}`, [
+      `unexpected argument: ${text(extra)}`,
+      USAGE,
+    ]);
+  }
+  deps.print(JSON.stringify(MANIFEST_JSON_SCHEMA, null, 2));
+  return 0;
+}
+
 export async function runPluginStandardCommand(
   argv: string[],
   deps: PluginStandardDeps,
@@ -414,6 +461,10 @@ export async function runPluginStandardCommand(
 
   if (command === 'init') {
     return runInit(args, deps, asJson);
+  }
+
+  if (command === 'schema') {
+    return runSchema(args, deps, asJson);
   }
 
   if (command !== 'check') {

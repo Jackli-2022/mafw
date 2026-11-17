@@ -32,6 +32,8 @@ export interface NormalizedPackageManifest {
   host?: string;
   integrity?: PluginIntegrity;
   deprecated?: string;
+  /** Manifest standard the package was written against; absent for legacy. */
+  standardVersion?: number;
   legacy: boolean;
 }
 
@@ -42,8 +44,25 @@ export interface PackageManifestParseResult {
   warnings: string[];
 }
 
-const NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-const BASE_PERMISSIONS = new Set([
+/**
+ * The package-name rule as **one** source string, shared verbatim with the
+ * published JSON Schema (`manifest-schema.ts`) so the two can never drift.
+ *
+ * Reads as: start with a letter or digit, then any of `.`, `_`, `-`, letters
+ * and digits, and never end with `.` or ` `. The trailing rule is folded into
+ * the last character class (instead of a second `/[. ]$/` test) so a JSON
+ * Schema `pattern` can express the whole rule with this exact string.
+ */
+export const PACKAGE_NAME_PATTERN_SOURCE =
+  '^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9_-])?$';
+const NAME_PATTERN = new RegExp(PACKAGE_NAME_PATTERN_SOURCE);
+
+/**
+ * Tokens a manifest may declare verbatim. Exported because the published JSON
+ * Schema builds its `permissions` pattern from this list: a token added here is
+ * accepted by the schema in the same commit, never one release later.
+ */
+export const BASE_PERMISSION_TOKENS = [
   'actions',
   'events',
   'config.read',
@@ -53,8 +72,11 @@ const BASE_PERMISSIONS = new Set([
   'tools',
   'observers',
   'ui.web',
-]);
-const SCOPED_PERMISSION_PREFIXES = ['files.read:', 'files.write:', 'net.fetch:'];
+] as const;
+const BASE_PERMISSIONS = new Set<string>(BASE_PERMISSION_TOKENS);
+
+/** Prefixes whose remainder is package-defined (`files.read:<path>`). */
+export const SCOPED_PERMISSION_PREFIXES = ['files.read:', 'files.write:', 'net.fetch:'] as const;
 const SEMVER = /^(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?$/;
 const COMPARATOR = /^(>=|<=|>|<|=)?\s*(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)$/;
 
@@ -205,7 +227,8 @@ export function parsePackageManifest(raw: unknown): PackageManifestParseResult {
   const name = typeof raw.name === 'string' ? raw.name : '';
   if (!name) {
     errors.push('name is required');
-  } else if (!NAME_PATTERN.test(name) || /[. ]$/.test(name)) {
+  } else if (!NAME_PATTERN.test(name)) {
+    // `PACKAGE_NAME_PATTERN_SOURCE` already rejects a trailing "." or " ".
     errors.push(`invalid package name: ${name}`);
   }
 
@@ -277,6 +300,22 @@ export function parsePackageManifest(raw: unknown): PackageManifestParseResult {
     }
   }
 
+  // The manifest standard the package was authored against. Optional and
+  // deliberately the only structural rule: forward compatibility is expressed
+  // by refusing a bogus value, never by refusing an unknown future version.
+  let standardVersion: number | undefined;
+  if (raw.standardVersion !== undefined) {
+    if (
+      typeof raw.standardVersion !== 'number'
+      || !Number.isInteger(raw.standardVersion)
+      || raw.standardVersion < 1
+    ) {
+      errors.push('standardVersion must be a positive integer');
+    } else {
+      standardVersion = raw.standardVersion;
+    }
+  }
+
   if (errors.length > 0) {
     return { ok: false, errors, warnings };
   }
@@ -294,6 +333,7 @@ export function parsePackageManifest(raw: unknown): PackageManifestParseResult {
       ...(host !== undefined ? { host } : {}),
       ...(integrity !== undefined ? { integrity } : {}),
       ...(deprecated !== undefined ? { deprecated } : {}),
+      ...(standardVersion !== undefined ? { standardVersion } : {}),
       legacy: apiVersion === 1,
     },
     errors,

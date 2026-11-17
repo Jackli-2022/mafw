@@ -54,10 +54,15 @@ Runtime Plugin Commands:
   plugin-test        Online conformance scenarios against the active runtime (uses LLM roundtrips)
 
 Plugin Package Commands:
-  plugin <check>     package standard v1 (NOT the same as plugin-check)
+  plugin <check|init|schema>   package standard v1 (NOT the same as plugin-check)
   plugin check <path> [--json] [--strict]
                      In-process package check (no gateway, no token): declared-vs-registered
                      inventory + paste-ready install command. --strict = warnings are errors.
+  plugin init <name> [--dir <parent>] [--force] [--json]
+                     Scaffold a package that already passes "plugin check".
+  plugin schema [--json]
+                     Print the plugin.json JSON Schema (editors/agents; never stricter
+                     than the parser).
 
 Office Commands:
   office setup       Install the Python kernel venv + global office-editing skill

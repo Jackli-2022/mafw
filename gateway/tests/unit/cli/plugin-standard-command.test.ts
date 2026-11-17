@@ -12,6 +12,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { runPluginStandardCommand } from '../../../src/cli/plugin-standard-command';
 import { isValidPackageName, pluginTemplates } from '../../../src/cli/plugin-templates';
+import { createLocalCheck } from '../../../src/cli/plugin-check-local';
 import { parsePackageManifest } from '../../../src/plugins/package-manifest';
 
 describe('mafw plugin check', () => {
@@ -301,11 +302,53 @@ describe('mafw plugin check', () => {
   });
 });
 
-// ── init: the scaffold must be checkable the moment it is written ──────────
+// ── schema: the machine-readable contract, printed as-is ────────────────────
 
 const noCheck = async (): Promise<never> => {
-  throw new Error('init must never run the check host');
+  throw new Error('this command must never run the check host');
 };
+
+async function captureSchema(args: string[]): Promise<string[]> {
+  const out: string[] = [];
+  const code = await runPluginStandardCommand(['schema', ...args], {
+    check: noCheck,
+    print: (t) => out.push(t),
+  });
+  expect(code).toBe(0);
+  return out;
+}
+
+describe('mafw plugin schema', () => {
+  it('prints the manifest schema itself, with no envelope', async () => {
+    const out = await captureSchema([]);
+    expect(out).toHaveLength(1);
+    expect(out[0].split('\n')[0]).toBe('{');
+    const schema = JSON.parse(out[0]);
+    expect(schema.required).toEqual(['name']);
+    expect(schema.properties.standardVersion).toMatchObject({ type: 'integer', minimum: 1 });
+    // Unknown top-level keys are legal for the parser, so the object stays open;
+    // `contributes` is where the standard is strict.
+    expect(schema.additionalProperties).toBeUndefined();
+    expect(schema.$defs.contributes.additionalProperties).toBe(false);
+  });
+
+  it('prints the same document for --json, because the schema is already JSON', async () => {
+    expect(await captureSchema(['--json'])).toEqual(await captureSchema([]));
+  });
+
+  it('rejects an unknown flag with the usage', async () => {
+    const out: string[] = [];
+    const code = await runPluginStandardCommand(['schema', '--wat'], {
+      check: noCheck,
+      print: (t) => out.push(t),
+    });
+    expect(code).toBe(1);
+    expect(out.join('\n')).toContain('unknown flag: --wat');
+    expect(out.join('\n')).toContain('mafw plugin schema');
+  });
+});
+
+// ── init: the scaffold must be checkable the moment it is written ──────────
 
 function tempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-init-'));
@@ -379,8 +422,9 @@ describe('mafw plugin init', () => {
     expect(out.join('\n')).toContain('name');
   });
 
-  // The rule is not invented here: `init` must accept exactly what
-  // `parsePackageManifest` accepts, or the scaffold is dead on arrival.
+  // The rule is not invented here: `init` must accept what
+  // `parsePackageManifest` accepts, or the scaffold is dead on arrival. (The
+  // only delta is the 100-char cap below, which is strictly narrower.)
   it('accepts exactly the names the manifest parser accepts', async () => {
     const names = [
       'demo', 'a', 'A1', 'my-plugin', 'my.plugin', 'my_plugin', '0x', 'a.b-c_d9',
@@ -410,6 +454,45 @@ describe('mafw plugin init', () => {
     }
   });
 
+  // The one deliberate delta from the manifest rule: the scaffold's own event
+  // type is `plugin:<name>:ping`, so `init` refuses a name longer than 100
+  // characters to keep that type inside the 128-character identifier ceiling
+  // with room to spare. The *parser* keeps accepting such a name (a
+  // hand-written package is not the scaffold's problem), which is exactly why
+  // this cap lives here and not in `parsePackageManifest`.
+  it('caps the scaffold name at 100 characters without changing the parser', async () => {
+    const hundred = 'a'.repeat(100);
+    const tooLong = 'a'.repeat(101);
+    expect(isValidPackageName(hundred)).toBe(true);
+    expect(isValidPackageName(tooLong)).toBe(false);
+    expect(parsePackageManifest({ name: hundred }).ok).toBe(true);
+    expect(parsePackageManifest({ name: tooLong }).ok).toBe(true);
+
+    const out: string[] = [];
+    const code = await runPluginStandardCommand(['init', tooLong, '--dir', tempDir()], {
+      check: noCheck,
+      print: (t) => out.push(t),
+    });
+    expect(code).toBe(1);
+    expect(out.join('\n')).toContain('package name must be at most 100 characters');
+  });
+
+  it('scaffolds a 100-character name that already passes `check --strict`', async () => {
+    const name = 'a'.repeat(100);
+    const parent = tempDir();
+    expect(await runPluginStandardCommand(['init', name, '--dir', parent], {
+      check: noCheck,
+      print: () => {},
+    })).toBe(0);
+    const out: string[] = [];
+    const code = await runPluginStandardCommand(['check', path.join(parent, name), '--strict'], {
+      check: createLocalCheck(),
+      print: (t) => out.push(t),
+    });
+    expect(out.join('\n')).toContain('ok');
+    expect(code).toBe(0);
+  });
+
   it('declares exactly the planes the generated index.js registers', async () => {
     const cwd = tempDir();
     expect(await runPluginStandardCommand(['init', 'demo'], { check: noCheck, print: () => {}, cwd })).toBe(0);
@@ -424,11 +507,12 @@ describe('mafw plugin init', () => {
     expect(manifest.contributes?.gateway).toMatchObject({
       actions: ['ping'],
       events: ['plugin:demo:ping'],
+      // Explicit zero bounds: the scaffold teaches that a plane is declared
+      // *empty* until the author opts in, not silently unbounded.
+      tools: [],
+      observers: [],
       http: false,
     });
-    // Planes the scaffold never registers stay absent, not zero-bound.
-    expect(manifest.contributes?.gateway?.tools).toBeUndefined();
-    expect(manifest.contributes?.gateway?.observers).toBeUndefined();
 
     const mod = require(path.join(root, 'index.js')) as { name?: string; activate?: unknown };
     expect(mod.name).toBe('demo');
@@ -449,6 +533,9 @@ describe('mafw plugin init', () => {
     expect(readme).toContain('--permission actions');
     expect(readme).toContain('--permission events');
     expect(readme.toLowerCase()).toContain('human');
+    // The zero bounds are part of the lesson, not an accident of the template.
+    expect(readme).toContain('tools: []');
+    expect(readme).toContain('observers: []');
   });
 
   it('flattens a newline in a rejected name so it cannot forge a next line', async () => {

@@ -322,6 +322,8 @@ export interface PackageManifest {
   host?: string;
   integrity?: { algorithm: 'sha256'; files: Record<string, string> };
   deprecated?: string;
+  /** Manifest standard the package declares (optional; mirrors `plugin.json`). */
+  standardVersion?: number;
 }
 
 export interface PackageDescriptor {
