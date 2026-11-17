@@ -1596,7 +1596,7 @@ export type PluginManifestContributesValidation =
   | { ok: false; error: string }
 
 const MANIFEST_CONTRIBUTES_KEYS = ["gateway", "desktop"] as const
-const GATEWAY_CONTRIBUTES_KEYS = ["actions", "events", "tools", "http"] as const
+const GATEWAY_CONTRIBUTES_KEYS = ["actions", "events", "tools", "observers", "http"] as const
 const TOOL_DESCRIPTOR_KEYS = [
   "name",
   "title",
@@ -1731,9 +1731,11 @@ export function validatePluginManifestContributes(
       const actions = readStringList(value.gateway.actions, "manifest contributes.gateway.actions", errors)
       const events = readStringList(value.gateway.events, "manifest contributes.gateway.events", errors)
       const tools = readToolDescriptors(value.gateway.tools, "manifest contributes.gateway.tools", errors)
+      const observers = readStringList(value.gateway.observers, "manifest contributes.gateway.observers", errors)
       if (actions !== undefined) gateway.actions = actions
       if (events !== undefined) gateway.events = events
       if (tools !== undefined) gateway.tools = tools
+      if (observers !== undefined) gateway.observers = observers
       if (value.gateway.http !== undefined) {
         if (typeof value.gateway.http !== "boolean") {
           addError(errors, "manifest contributes.gateway.http must be a boolean")

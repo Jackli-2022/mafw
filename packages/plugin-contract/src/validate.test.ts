@@ -632,6 +632,17 @@ test("manifest contributes: rejects bad tool names, timeouts and unknown fields"
   assert.equal(scope.ok, true)
 })
 
+test("manifest contributes: accepts gateway observers", () => {
+  const result = validatePluginManifestContributes({ gateway: { observers: ["audit", "metrics"] } });
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.ok ? result.value.gateway?.observers : undefined, ["audit", "metrics"]);
+});
+
+test("manifest contributes: rejects a non-array observers value", () => {
+  const result = validatePluginManifestContributes({ gateway: { observers: "audit" } });
+  assert.equal(result.ok, false);
+});
+
 test("manifest contributes: existing client descriptor validation is unchanged", () => {
   const result = validateClientDescriptor(validDescriptor())
   assert.equal(result.ok, true)

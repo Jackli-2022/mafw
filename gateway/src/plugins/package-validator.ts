@@ -554,6 +554,7 @@ function enforceDeclared(
   actions: CollectedActions,
   events: CollectedEvents,
   tools: CollectedTools,
+  observers: CollectedObservers,
   errors: string[],
 ): void {
   const gateway = declared?.gateway;
@@ -585,6 +586,17 @@ function enforceDeclared(
       if (!allowed.has(declaration.name)) {
         errors.push(
           `tool "${declaration.name}" is not declared in plugin.json contributes.gateway.tools`,
+        );
+      }
+    }
+  }
+
+  if (gateway.observers !== undefined) {
+    const allowed = new Set(gateway.observers);
+    for (const declaration of observers.declarations) {
+      if (!allowed.has(declaration.id)) {
+        errors.push(
+          `observer "${declaration.id}" is not declared in plugin.json contributes.gateway.observers`,
         );
       }
     }
@@ -623,7 +635,7 @@ function analyze(
   const events = collectEvents(packageName, contributions.events, canonicalTypes, errors);
   const tools = collectTools(contributions.tools, errors);
   const observers = collectObservers(contributions.observers, errors);
-  enforceDeclared(declared, actions, events, tools, errors);
+  enforceDeclared(declared, actions, events, tools, observers, errors);
 
   // Delegate cross-reference, id, size and config-form-subset validation to the
   // shared contract so gateway and Desktop cannot drift.

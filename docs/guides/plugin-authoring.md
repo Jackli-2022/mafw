@@ -63,11 +63,13 @@
 | `actions` | 允许注册的 action 名数组 | `action "<name>" is not declared in plugin.json contributes.gateway.actions` |
 | `events` | 允许发射的事件类型数组 | `event "<type>" is not declared in plugin.json contributes.gateway.events` |
 | `tools` | 允许注册的 tool 描述符数组 | `tool "<name>" is not declared in plugin.json contributes.gateway.tools` |
+| `observers` | 允许订阅的 observer id 数组 | `observer "<id>" is not declared in plugin.json contributes.gateway.observers` |
 | `http` | 是否允许使用 `ctx.http`（`false` 即禁用 http 面） | `http routes are not declared (contributes.gateway.http is false)` |
 
 - `contributes.gateway.http: false` 时，`ctx.http.route()` / `ctx.http.ws()` 一旦被调用，激活失败（即使 `activate()` 本身正常返回）。
 - 声明的 `events` 必须写**完整命名空间** `plugin:<package>:<event>`；只写短名会被判为未声明。
 - 声明的 `tools` 必须重复 `name` / `description` / `inputSchema`（`name` 与 `activate()` 里的声明一致即可，`description` 与 schema 自由填写）；比对只按 `name`。
+- 声明的 `observers` 只写 observer **id**：`onEvent` / `filter` / `timeoutMs` 仍然只能来自 `activate()`，`contributes` 里写不了回调；声明 id 是为了让订阅面在安装时就可审查。
 - `apiVersion: 1` 的包：`contributes` **校验失败**只产生 `legacy-contributes` warning，不影响激活，也不构成任何约束；**合法**的 v1 块会照常存储并像 v2 一样构成约束。未声明 `contributes` 的包行为与旧版完全一致。
 
 两条容易踩的边界：

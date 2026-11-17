@@ -466,6 +466,34 @@ describe('contributes enforcement', () => {
     expect(built.ok).toBe(true);
   });
 
+  it('rejects an observer that is not declared', () => {
+    const built = buildActivatedContributions(
+      'example',
+      {
+        observers: [
+          { id: 'audit', onEvent: () => {} },
+          { id: 'metrics', onEvent: () => {} },
+        ],
+      },
+      CANONICAL,
+      declared({ observers: ['audit'] }),
+    );
+    expect(built.ok).toBe(false);
+    expect(built.ok ? [] : built.errors).toContain(
+      'observer "metrics" is not declared in plugin.json contributes.gateway.observers',
+    );
+  });
+
+  it('allows a declared observer that is not registered', () => {
+    const built = buildActivatedContributions(
+      'example',
+      { actions: { ping: { handler: () => null } } },
+      CANONICAL,
+      declared({ observers: ['ghost'] }),
+    );
+    expect(built.ok).toBe(true);
+  });
+
   it('leaves every plane unconstrained when nothing is declared', () => {
     const built = buildActivatedContributions(
       'example',

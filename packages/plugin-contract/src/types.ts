@@ -294,6 +294,11 @@ export interface PluginGatewayContributes {
   actions?: string[]
   events?: string[]
   tools?: PluginToolDescriptor[]
+  /**
+   * Observer ids the package may subscribe to canonical events with.
+   * Ids only: `onEvent` / `filter` / `timeoutMs` always come from `activate()`.
+   */
+  observers?: string[]
   http?: boolean
 }
 
