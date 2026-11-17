@@ -59,6 +59,12 @@ describe('topic recall header', () => {
     };
 
     expect(isNoteBoardRelevant(note, state({ topic: '个人记忆系统上线验证' }), '看看，重启了')).toBe(false);
+    expect(isNoteBoardRelevant(note, state({
+      topic: '个人记忆系统上线验证',
+      summary: '验证 agent 工具与记忆主题',
+      openLoops: ['确认当前 agent 工具已刷新'],
+      retrievalKeys: ['主题召回', 'mafw_topic_set'],
+    }), '看看，重启了')).toBe(false);
     expect(isNoteBoardRelevant(note, state({ topic: '个人 Agent 长期委托' }), '继续')).toBe(true);
     expect(isNoteBoardRelevant(note, null, '我之前让你记着什么')).toBe(true);
     expect(isNoteBoardRelevant(note, null, '继续')).toBe(false);

@@ -41,7 +41,7 @@
 
 - FOK `no-memory` / `low-confidence` 的 snapshot 不再 served，也不记录 T1 exposure；回退到 live 检索。
 - live 检索只有 `inject` 才暴露旧 `<recall>` 本体；`no-memory` / `low-confidence` 时隐藏旧指针、arbiter 注记、T1 和知识更新尾注，只保留主题头。
-- note-board 只在当前主题/查询有足够锚点重叠，或用户明确询问提醒/便签时浮现；`/api/memory/sticky` 的完整列表不受影响。
+- note-board 只在完整 cue anchor、标题包含关系、强标识符或 ≥3 个非泛化片段匹配，或用户明确询问提醒/便签时浮现；`agent`/`个人` 等泛词不计匹配；`/api/memory/sticky` 完整列表不受影响。
 - goal snapshot 仍是 manager 会话的显式上下文，不冒充“相关记忆”。
 
 ## 测试
