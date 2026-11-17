@@ -161,6 +161,7 @@ module.exports = { name: 'my-plugin', usage: { /* … */ } };
 生命周期要点：
 
 - `activate()` 在安装提交、启用、以及**内容指纹变化**（热重载）时执行。一次激活 = 一个 revision；handler 闭包里的状态随该 revision 生死，不要往模块级全局塞状态。
+- **同一次 `activate()` 返回的所有 handler 共享这一次激活的闭包**：actions 的 `handler`、tools 的 `handler`、observers 的 `onEvent` 与 events 的注册都是同一个 revision 的一部分；宿主按 revision 注册、按 revision 撤销，revision 被替换 / 停用 / 删除后旧闭包不再被调用。把状态放在 `activate()` 的局部变量里（如 `kitchen-sink` 的 `auditCount`）是正确的；模块级全局会在 revision 之间泄漏。
 - 你打开的 timer / listener / watcher / socket **必须**经 `ctx.effect(dispose)` 释放（LIFO 执行）。否则替换 revision 后旧副作用继续跑。只是不想让 timer 撑住网关进程时，可以额外 `timer.unref()`——**`unref()` 不能代替 `ctx.effect`**，被替换的 revision 的 unref timer 仍然会跑。
 - `ctx.emit` 在 `activate()` **返回之前发不出去**：事件只在 revision commit 时才进 registry，所以激活期间的 `ctx.emit` 会被丢弃并记诊断（首次激活是 `unloaded`「not active」，替换旧 revision 时是 `stale-emitter`），不会抛错。**在 commit 之后发**：在 `activate()` 里起 timer，回调触发时本 revision 已经生效（`hello-plugin` 就是这种写法）。
 - `ctx.http` 只在 `activate()` 运行期间可用：激活返回后 recorder 被 seal，再注册抛 `ctx.http is only available during activate() (package "<name>")`。
@@ -319,6 +320,8 @@ tools: Array<{
 }>
 ```
 
+**宿主不校验 `input`。** `inputSchema` 只是广告给 runtime / agent 的（`gateway/src/runtime/v2-live.ts` 把它作为工具的 `parameters` 注册），插件宿主的 tool registry 把调用方给的 `input` 原样传进 `handler`（`gateway/src/kernel-v2/tools.ts` 的 `invoke()` → `contribution.execute(input, …)`）：没有 schema 校验，也没有默认值。**别假设形状**——无参数调用时 `input` 可能是 `undefined` 或 `{}`；在 handler 里自己校验 / 归一化，非法输入自己返回错误（handler 抛出的异常会被宿主包成 `tool failed: <message>`）。
+
 可复制片段（`examples/plugins/kitchen-sink/index.js`）：
 
 ```js
@@ -373,6 +376,8 @@ observers: Array<{
 }>
 ```
 
+`filter` 的三个字段都可省略：**整个 `filter` 省略 = 匹配所有 canonical 事件**；给了 `types` 就只匹配其中列出的类型——精确名，或以 `*` 结尾的前缀（`part.*` 命中 `part.updated`、`part.delta`、`part.complete`）；`types` 必须是 1..32 个非空字符串（显式 `[]` 非法）。`sessionID` / `projectId` 是对应字段的精确匹配。
+
 注意 `onEvent` 参数里的 `at: number` 是**宿主**构造 canonical 事件时盖的（`toCanonicalEvent` 的 `Date.now()`），与包自己的 `ctx.emit` 没有关系；包在 `properties` 里带不带 `at` 由你自己决定（§4.2）。
 
 可复制片段（`examples/plugins/kitchen-sink/index.js`）：
@@ -393,7 +398,7 @@ return {
 };
 ```
 
-**observer 只接收 canonical 运行时事件**——由 runtime 事件翻译层产出的 canonical 名，如 `session.created`、`message.updated`、`part.updated`、`turn.started`、`turn.completed`、`permission.asked`、`task.updated`。它在事件管线的 `canonicalObserverTap` 段被喂入（位于 `internalFilter` 之前、`finalBroadcast` 之前），看到的是与 conformance 相同的 pre-drop canonical 面；它**收不到**任何 `plugin:*` 事件——自己的、别人的都收不到。`plugin:*` 只走广播 / 自动化消费者。想观察自己的事件：用 `events` 广播 + 外部消费者（例如 SSE 客户端），不要在 observer 里等它。
+**observer 只接收 canonical 运行时事件**——由 runtime 事件翻译层产出的 canonical 名，如 `session.created`、`message.updated`、`part.updated`、`turn.started`、`turn.completed`、`permission.asked`、`task.updated`。这份清单只是举例，**权威列表**是 `packages/runtime-contract/src/vocabulary.ts` 的 `MAFW`（全集为 `MAFW_RUNTIME_EVENT_NAMES`）。`check` **不能**校验 canonical 名：本地 check host 没有 canonical vocabulary，`filter.types` 也只校验形状（1..32 个非空字符串），所以名字写错不会让 `check` 失败——observer 只是永远不触发。它在事件管线的 `canonicalObserverTap` 段被喂入（位于 `internalFilter` 之前、`finalBroadcast` 之前），看到的是与 conformance 相同的 pre-drop canonical 面；它**收不到**任何 `plugin:*` 事件——自己的、别人的都收不到。`plugin:*` 只走广播 / 自动化消费者。想观察自己的事件：用 `events` 广播 + 外部消费者（例如 SSE 客户端），不要在 observer 里等它。
 
 （片段里的 `auditCount` 是示例 `activate()` 内的局部计数器。）
 
@@ -423,7 +428,7 @@ ctx.http.route(
   handler(req: {
     method: string; path: string; query: URLSearchParams; headers: IncomingHttpHeaders;
     sessionID?: string; projectDir: string; body: AsyncIterable<Buffer>;
-  }): { status?: number; headers?: Record<string, string>; body?: string | Buffer | AsyncIterable<Uint8Array> } | void,
+  }): { status?: number; headers?: Record<string, string>; body?: string | Buffer | NodeJS.ReadableStream | AsyncIterable<Uint8Array> } | void,
   opts?: { maxBodyBytes?: number },
 ): void;
 
@@ -465,6 +470,8 @@ module.exports = {
 - `duplicate http route <METHOD> <path> in package "<name>"` / `duplicate ws route <path> in package "<name>"`
 
 上限：请求体默认 **32 MiB**（`33554432` 字节，`opts.maxBodyBytes` 可按路由改写该上限，正整数），超限 413 `request body too large`；handler 抛错 500 `plugin handler failed`；handler 返回 `undefined` body → **204**，返回字符串默认 `content-type: text/plain; charset=utf-8`；只支持精确路径匹配（无路径参数）。
+
+**`body` 只能是字节或字节流**（`string` / `Buffer` / `NodeJS.ReadableStream` / `AsyncIterable<Uint8Array>`）——宿主**不做序列化**，也没有 JSON 编码器。要返回 JSON 就自己 `JSON.stringify(...)`（或 `Buffer.from(...)`）并显式给 `headers: { 'content-type': 'application/json' }`；只返回字符串且没写 content-type 时，宿主只会补 `text/plain; charset=utf-8`（`gateway/src/plugins/plugin-http.ts:572-573`）。
 
 **只有显式的 `http: false` 会禁止路由**：此时任何一次 `ctx.http.route()` / `ctx.http.ws()` 都让激活失败（即使 `activate()` 正常返回）。**省略 `http` 键 = 该 plane 不受上界约束**（与 §6 一致，`check` 会打印 `http (unbounded)`）；**建议显式写 `http: true`**，让声明面在 `check` 的 inventory 里可见（安装同意看的是 `permissions`——要路由就同时声明 `http` 权限 token，两者不是一回事）。无论声明与否，`http` 本身都不算贡献：仍必须至少返回一个非 http 贡献，否则零贡献拒绝（§3）。
 
@@ -543,9 +550,9 @@ mafw plugin check <absolute-path> [--json] [--strict]
 ```
 
 - **必须绝对路径**（相对路径直接拒绝：`path must be absolute: <path>`）。它在本进程内用**同一个判定函数**跑一次真实激活的 dry-run（`PluginHost.checkPackage`）：不起网关、不读 human token、不注册任何东西，网关停着也能用。但**它不是沙箱、也不是 §3 的 ctx**——见本节末尾「check 的 ctx 与真实 host 的差异」。
-- 人读输出：首行 `ok <name> (<path>)` 或 `not ok …`，随后 `version:` / `apiVersion N, kind K` / `permissions:` / `contributions:` / `declared:` / `registered:` / `note: declared but not registered: …`（合法）/ `warning: …` / `error: …`，最后在判决通过时打印 `install: <可粘贴命令>`。
+- 人读输出：首行 `ok <name> (<path>)` 或 `not ok …`，随后 `version:` / `apiVersion N, kind K` / `permissions:` / `contributions:` / `declared:` / `registered:` / `note: check is not a sandbox: …`（每次运行都打印，见下）/ `note: declared but not registered: …`（合法）/ `warning: …` / `error: …`，最后在判决通过时打印 `install: <可粘贴命令>`。`ok: false` 时同样打印 `apiVersion` / `kind` / `permissions`（结果里没有时回退读 `plugin.json`，读不到就不打印）；`contributions` 只有激活确实产出了贡献才有。
 - `--json`：**一行**可解析 JSON。`ok` 是**命令判决**（不是原始 check 结果），另有 `verdict`（`"ok"` / `"fail"`）、`strictFailed`，以及 `name` / `version` / `contributions` / `apiVersion` / `kind` / `permissions` / `declared` / `registered` / `warnings` / `error` / `webSurfaces`（存在时）。退出码 `0` = 通过，`1` = 不通过。
-- `declared` 缺失 = 没有可用的 `contributes.gateway`（未声明，或 manifest 解析失败——后者同时给出 `error:`）；`declared.actions` 缺失 = 该 plane 无上界；`"actions": []` 会原样出现（零上界）。`registered` 永远存在，且是**尝试注册**的内容——失败时也能看到差集。
+- `declared` 缺失 = 没有可用的 `contributes.gateway`（未声明，或 manifest 解析失败——后者同时给出 `error:`）；`declared.actions` 缺失 = 该 plane 无上界；`"actions": []` 会原样出现（零上界）。`registered` 永远存在，且是**尝试注册**的内容——失败时也能看到差集。两行的 `http` 用同一套写法：`declared` 是布尔开关（`http true` / `http false` / 缺省 `http (unbounded)`），`registered` 是路由计数（`http 0 route(s)` / `http 2 route(s)`）。
 - `--strict` 只把 **manifest warning** 变成失败（`not ok: --strict turned the manifest warnings above into failures`）。warning 来自 `plugin.json` 归一化：`legacy-permissions`（apiVersion 2 未声明 `permissions`）、`legacy-contributes: …`（apiVersion 1 的非法 `contributes` 块）。**`--strict` 不会因「声明了没注册」失败**。
 - `check` 也接受单文件包路径（`…/foo.js`），但单文件包不能有 tools/observers/http（§7）。
 - 失败时 `next:` 行按错误给出下一步：`is not declared in …` → 把名字补进 `contributes.gateway`；`permission denied`（只可能来自 `untrusted` worker）→ 补 `permissions`；其余 → 先修错误再按提示重跑 check。
@@ -568,7 +575,25 @@ mafw plugin check <absolute-path> [--json] [--strict]
 
 `mafw plugin schema` 打印同一份契约的人类可读形式（带缩进的 JSON，无外层信封）；编辑器/agent 拿它当字段真源，比任何文档都准。
 
-**check 的 ctx 与真实 host 的差异**：本地 check host 只给 `projectDir`（= check 的 cwd）、`gatewayPort`（占位 `3000`）和 registration bag。`ctx.config.update()` 抛 `ctx.config.update is not available in this host`；`ctx.terminal.create/bridge/resize` 抛 `ctx.terminal is not available: this host did not provide a terminal service`（`kill` 对未拥有的 id 静默返回）；`ctx.apiKey()` 返回 `null`，`ctx.usage` 是空统计。`ctx.fetch` / `ctx.files` / `ctx.effect` 是真的——**check 不是沙箱**，`activate()` 里的网络或文件副作用会真的发生；别把「check 通过」当成隔离证明。
+**check 的 ctx 与真实 host 的差异**：本地 check host 给的是 §3 能力的一个子集，**不是沙箱**。
+
+真实可用（`gateway/src/cli/plugin-check-local.ts` 只注入 `projectDir` / `gatewayPort` / registration bag，其余能力由 `createPluginPackageContext` 的默认实现提供）：
+
+- `ctx.log`；`ctx.fetch`（真实网络，默认 60 s 超时）；
+- `ctx.files.list/stat/read`（真实文件系统，只读，作用域按传入的 `projectDir`）；
+- `ctx.effect(dispose)`（挂到本次 candidate 的 bag；`check` 结束时会随 candidate 一起 dispose，回调真的会跑）；
+- `ctx.http.route/ws`（写进本次 candidate 的 recorder；`check` 结束后丢弃，路由**从未被服务**——`registered` 里的 `http <n> route(s)` 就来自这里）；
+- `ctx.emit`（走本进程的事件注册表；`check` 没有已提交的 revision，事件被丢弃并记诊断，不抛错）；
+- `ctx.pluginConfig()`（读当前 CLI 进程的 config，通常为空）；
+- `ctx.projectDir`（= check 进程的 cwd）、`ctx.gatewayPort`（占位 `3000`）；
+- `ctx.usage`（空统计，`modelStats()` 返回 `[]`）；`ctx.apiKey()` 返回 `null`。
+
+缺失或直接拒绝：
+
+- `ctx.config.update()` 抛 `ctx.config.update is not available in this host`；
+- `ctx.terminal.create/bridge/resize` 抛 `ctx.terminal is not available: this host did not provide a terminal service`（`kill` 对未拥有的 id 静默返回）。
+
+**check 不是沙箱**：`activate()` 真的执行了，`fetch` / `files` / timer / listener / watcher 等副作用已经发生（`ctx.effect` 只保证在 check 收尾时清理，不保证「没有发生」）；`ctx.http` 注册的路由也不会被服务。别把「check 通过」当成隔离证明。
 
 ### 验证行为（安装后）
 

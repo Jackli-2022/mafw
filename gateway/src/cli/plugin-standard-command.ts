@@ -184,7 +184,14 @@ function formatPlane(names: string[] | undefined, absent: string): string {
   return `[${names.map((name) => text(name)).join(', ')}]`;
 }
 
-/** `actions [a, b], events [], tools (unbounded), observers (unbounded), http true`. */
+/**
+ * `actions [a, b], events [], tools (unbounded), observers (unbounded), http true`.
+ *
+ * `declared` and `registered` are the two lines a human is told to compare, so
+ * the `http` field uses one vocabulary on both: a boolean flag on the manifest
+ * side (`true` / `false`, or `(unbounded)` when the key is absent) and a route
+ * count on the activation side (`N route(s)`). Never `declared` / `opted out`.
+ */
 function formatDeclared(declared: DeclaredView | undefined): string {
   if (!declared) return '(no contributes.gateway block — no static upper bound)';
   return [
@@ -192,13 +199,11 @@ function formatDeclared(declared: DeclaredView | undefined): string {
     `events ${formatPlane(declared.events, '(unbounded)')}`,
     `tools ${formatPlane(declared.tools, '(unbounded)')}`,
     `observers ${formatPlane(declared.observers, '(unbounded)')}`,
-    declared.http === undefined
-      ? 'http (unbounded)'
-      : `http ${declared.http ? 'declared' : 'opted out'}`,
+    declared.http === undefined ? 'http (unbounded)' : `http ${declared.http}`,
   ].join(', ');
 }
 
-/** `actions [a, b], events -, tools -, observers -, http 2`. */
+/** `actions [a, b], events -, tools -, observers -, http 2 route(s)`. */
 function formatRegistered(registered: RegisteredView | undefined): string {
   if (!registered) return '(not reported)';
   return [
@@ -206,7 +211,7 @@ function formatRegistered(registered: RegisteredView | undefined): string {
     `events ${formatPlane(registered.events, '-')}`,
     `tools ${formatPlane(registered.tools, '-')}`,
     `observers ${formatPlane(registered.observers, '-')}`,
-    `http ${typeof registered.http === 'number' ? registered.http : 0}`,
+    `http ${typeof registered.http === 'number' ? registered.http : 0} route(s)`,
   ].join(', ');
 }
 
@@ -279,7 +284,60 @@ function declaredOnly(result: PluginCheckResult): string[] {
   return out;
 }
 
-function nextSteps(target: string, result: PluginCheckResult, strictFailed: boolean): string[] {
+/** Identity fields a manifest can still supply when the check itself failed. */
+interface CheckFacts {
+  apiVersion?: number;
+  kind?: string;
+  permissions?: string[];
+}
+
+/**
+ * Best-effort identity block for a failed check.
+ *
+ * `checkPackage` only attaches `apiVersion` / `kind` / `permissions` to a
+ * candidate that activated; a package rejected earlier still has a readable
+ * `plugin.json`, and that manifest is exactly what the author is debugging.
+ * Display-only: never throws, never validated, never influences the verdict.
+ * A manifest that changed mid-check can only make the printed facts stale, not
+ * wrong about the file on disk at the moment it is read.
+ */
+function manifestFacts(target: string): CheckFacts {
+  try {
+    if (!fs.statSync(target).isDirectory()) return {};
+    const raw = JSON.parse(fs.readFileSync(path.join(target, 'plugin.json'), 'utf-8')) as unknown;
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return {};
+    const record = raw as Record<string, unknown>;
+    const facts: CheckFacts = {};
+    if (typeof record.apiVersion === 'number') facts.apiVersion = record.apiVersion;
+    if (typeof record.kind === 'string' && record.kind.length > 0) facts.kind = record.kind;
+    if (Array.isArray(record.permissions)) {
+      const permissions = record.permissions
+        .filter((permission): permission is string => typeof permission === 'string');
+      if (permissions.length > 0) facts.permissions = permissions;
+    }
+    return facts;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * The command a failing author should run next, carrying the flags they
+ * actually passed: a `--strict` run that prints a bare re-run command silently
+ * downgrades the gate on the next attempt (and can then return `ok` on a
+ * package that still has warnings).
+ */
+function recheckCommand(target: string, flags: readonly string[]): string {
+  const suffix = flags.length > 0 ? ` ${flags.join(' ')}` : '';
+  return `mafw plugin check "${target}"${suffix}`;
+}
+
+function nextSteps(
+  target: string,
+  result: PluginCheckResult,
+  strictFailed: boolean,
+  flags: readonly string[],
+): string[] {
   const steps: string[] = [];
   if (strictFailed) {
     steps.push('next: fix the manifest warnings above (they come from plugin.json normalization) or drop --strict');
@@ -291,7 +349,7 @@ function nextSteps(target: string, result: PluginCheckResult, strictFailed: bool
     } else if (error.includes('permission denied')) {
       steps.push('next: add the missing permission to plugin.json "permissions"');
     }
-    steps.push(`next: fix the error above, then re-run: mafw plugin check "${text(target)}"`);
+    steps.push(`next: fix the error above, then re-run: ${recheckCommand(text(target), flags)}`);
   }
   return steps;
 }
@@ -518,21 +576,40 @@ export async function runPluginStandardCommand(
   const strictFailed = strict && warnings.length > 0;
   const checkOk = result.ok === true;
   const verdictOk = checkOk && !strictFailed;
+  // Echo the gate the author actually chose into the re-run hint; only the
+  // human channel prints hints (so `--json` is unreachable here today, but the
+  // helper stays faithful to argv rather than assuming).
+  const echoedFlags = [...new Set(args.filter((arg) => CHECK_FLAGS.has(arg)))];
+  // A rejected candidate never activates, so the host's result carries no
+  // identity block; the manifest is still on disk and is what the author is
+  // debugging. Printer-only fallback (see `manifestFacts`).
+  const fallbackFacts: CheckFacts = checkOk ? {} : manifestFacts(target);
 
   if (asJson) {
     // `ok` here is the **command verdict**, not the raw check result: a strict
-    // failure must be visible without reading the exit code.
-    printJson(deps, { ...result, ok: verdictOk, verdict: verdictOk ? 'ok' : 'fail', strictFailed });
+    // failure must be visible without reading the exit code. Facts come first
+    // so a result field always wins over the disk fallback.
+    printJson(deps, {
+      ...fallbackFacts,
+      ...result,
+      ok: verdictOk,
+      verdict: verdictOk ? 'ok' : 'fail',
+      strictFailed,
+    });
     return verdictOk ? 0 : 1;
   }
 
   deps.print(`${checkOk ? 'ok' : 'not ok'} ${text(result.name ?? target)} (${text(target)})`);
   if (result.version) deps.print(`  version: ${text(result.version)}`);
-  const apiVersion = typeof result.apiVersion === 'number' ? `apiVersion ${result.apiVersion}` : null;
-  const kind = typeof result.kind === 'string' ? `kind ${text(result.kind)}` : null;
+  const apiVersionValue = typeof result.apiVersion === 'number'
+    ? result.apiVersion
+    : fallbackFacts.apiVersion;
+  const kindValue = typeof result.kind === 'string' ? result.kind : fallbackFacts.kind;
+  const apiVersion = typeof apiVersionValue === 'number' ? `apiVersion ${apiVersionValue}` : null;
+  const kind = typeof kindValue === 'string' ? `kind ${text(kindValue)}` : null;
   const facts = [apiVersion, kind].filter(Boolean);
   if (facts.length > 0) deps.print(`  ${facts.join(', ')}`);
-  const permissions = (result.permissions ?? [])
+  const permissions = (result.permissions ?? fallbackFacts.permissions ?? [])
     .filter((permission): permission is string => typeof permission === 'string');
   if (permissions.length > 0) {
     deps.print(`  permissions: ${permissions.map((permission) => text(permission)).join(', ')}`);
@@ -541,6 +618,12 @@ export async function runPluginStandardCommand(
   if (contributions.length > 0) deps.print(`  contributions: ${contributions.join(', ')}`);
   deps.print(`declared: ${formatDeclared(result.declared)}`);
   deps.print(`registered: ${formatRegistered(result.registered)}`);
+  // `check` is a dry-run activation, not a sandbox: the author must know the
+  // package's own side effects already happened.
+  deps.print(
+    'note: check is not a sandbox: the package\'s activate() really ran, '
+    + 'so any side effects it caused have already happened',
+  );
 
   const unregistered = declaredOnly(result);
   if (unregistered.length > 0) {
@@ -574,7 +657,7 @@ export async function runPluginStandardCommand(
     // Terminal verdict after the evidence, before any next steps.
     deps.print('not ok: --strict turned the manifest warnings above into failures');
   }
-  for (const step of nextSteps(target, result, strictFailed)) deps.print(step);
+  for (const step of nextSteps(target, result, strictFailed, echoedFlags)) deps.print(step);
 
   return verdictOk ? 0 : 1;
 }

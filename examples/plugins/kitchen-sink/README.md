@@ -68,7 +68,8 @@ match `plugin.json`'s `permissions` exactly; any mismatch is rejected with
   sees**, so describe the shape you accept — this reference accepts any object
   (`{ "type": "object" }`). Package tools are global scope only.
 - **observers** — read-only consumers of **canonical runtime events**
-  (`part.updated`, `message.updated`, `turn.completed`, …), delivered after the
+  (`part.updated`, `message.updated`, `turn.completed`, …), tapped at the
+  `canonicalObserverTap` stage — before `internalFilter` and before the final
   broadcast; they never mutate the event and cannot veto or rewrite anything.
   `filter.types` bounds the subscription (here `part.updated`), and the `echo`
   action reports how many matching canonical events the observer has seen as

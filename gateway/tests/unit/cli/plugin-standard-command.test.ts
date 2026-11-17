@@ -302,6 +302,139 @@ describe('mafw plugin check', () => {
   });
 });
 
+// ── acceptance regressions: the report survives a failing package ──────────
+
+describe('mafw plugin check — acceptance regressions', () => {
+  const failed = (error: string) => async () => ({ ok: false, error }) as const;
+
+  it('echoes --strict in the re-run hint instead of downgrading the gate', async () => {
+    const out: string[] = [];
+    const code = await runPluginStandardCommand(['check', '/abs/p', '--strict'], {
+      check: failed('version must be a non-empty string'),
+      print: (t) => out.push(t),
+    });
+    expect(code).toBe(1);
+    const recheck = out.find((line) => line.startsWith('next:') && line.includes('mafw plugin check'));
+    expect(recheck).toBeDefined();
+    expect(recheck).toContain('mafw plugin check "/abs/p" --strict');
+  });
+
+  it('does not invent flags the author did not pass', async () => {
+    const out: string[] = [];
+    await runPluginStandardCommand(['check', '/abs/p'], {
+      check: failed('version must be a non-empty string'),
+      print: (t) => out.push(t),
+    });
+    const recheck = out.find((line) => line.startsWith('next:') && line.includes('mafw plugin check'));
+    expect(recheck).toBe('next: fix the error above, then re-run: mafw plugin check "/abs/p"');
+  });
+
+  it('uses one http vocabulary on both inventory lines', async () => {
+    async function inventory(declaredHttp: boolean | undefined, registeredHttp: number) {
+      const out: string[] = [];
+      await runPluginStandardCommand(['check', '/abs/p'], {
+        check: async () => ({
+          ok: true,
+          declared: {
+            actions: ['ping'],
+            ...(declaredHttp === undefined ? {} : { http: declaredHttp }),
+          },
+          registered: {
+            actions: ['ping'], events: [], tools: [], observers: [], http: registeredHttp,
+          },
+        }),
+        print: (t) => out.push(t),
+      });
+      return {
+        declared: out.find((line) => line.startsWith('declared:')) ?? '',
+        registered: out.find((line) => line.startsWith('registered:')) ?? '',
+      };
+    }
+
+    const optedOut = await inventory(false, 0);
+    expect(optedOut.declared).toContain('http false');
+    expect(optedOut.registered).toContain('http 0 route(s)');
+    expect(optedOut.declared).not.toContain('opted out');
+
+    const declared = await inventory(true, 3);
+    expect(declared.declared).toContain('http true');
+    expect(declared.registered).toContain('http 3 route(s)');
+
+    const unbounded = await inventory(undefined, 1);
+    expect(unbounded.declared).toContain('http (unbounded)');
+    expect(unbounded.registered).toContain('http 1 route(s)');
+    expect(unbounded.registered).not.toContain('unbounded');
+  });
+
+  it('prints the identity block the result carries on failure', async () => {
+    const out: string[] = [];
+    const code = await runPluginStandardCommand(['check', '/abs/p'], {
+      check: async () => ({
+        ok: false,
+        name: 'broken',
+        apiVersion: 2,
+        kind: 'trusted',
+        permissions: ['actions'],
+        contributions: ['actions'],
+        error: 'invalid contributions: action "pong" is not declared in plugin.json contributes.gateway.actions',
+      }),
+      print: (t) => out.push(t),
+    });
+    const text = out.join('\n');
+    expect(code).toBe(1);
+    expect(out[0].startsWith('not ok broken ')).toBe(true);
+    expect(text).toContain('apiVersion 2, kind trusted');
+    expect(text).toContain('permissions: actions');
+    expect(text).toContain('contributions: actions');
+    expect(text).not.toContain('install:');
+  });
+
+  it('reads apiVersion/kind/permissions from the manifest when the check failed early', async () => {
+    const dir = tempDir();
+    fs.writeFileSync(path.join(dir, 'plugin.json'), JSON.stringify({
+      name: 'broken',
+      version: '1.0.0',
+      apiVersion: 2,
+      kind: 'trusted',
+      permissions: ['actions'],
+      contributes: { gateway: { actions: ['ping'] } },
+    }));
+    const out: string[] = [];
+    const code = await runPluginStandardCommand(['check', dir], {
+      check: async () => ({
+        ok: false,
+        name: 'broken',
+        error: 'version must be a non-empty string',
+        registered: { actions: [], events: [], tools: [], observers: [], http: 0 },
+      }),
+      print: (t) => out.push(t),
+    });
+    const text = out.join('\n');
+    expect(code).toBe(1);
+    expect(out[0].startsWith('not ok broken ')).toBe(true);
+    expect(text).toContain('apiVersion 2, kind trusted');
+    expect(text).toContain('permissions: actions');
+    expect(text).not.toContain('install:');
+  });
+
+  it('says activate() already ran on every run', async () => {
+    for (const result of [
+      { ok: true },
+      { ok: false, error: 'boom' },
+    ]) {
+      const out: string[] = [];
+      await runPluginStandardCommand(['check', '/abs/p'], {
+        check: async () => result,
+        print: (t) => out.push(t),
+      });
+      const note = out.find((line) => line.startsWith('note:') && line.includes('sandbox'));
+      expect(note).toBeDefined();
+      expect(note).toContain('activate()');
+      expect(note).toContain('already happened');
+    }
+  });
+});
+
 // ── schema: the machine-readable contract, printed as-is ────────────────────
 
 const noCheck = async (): Promise<never> => {

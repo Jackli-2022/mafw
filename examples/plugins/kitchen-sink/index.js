@@ -46,8 +46,10 @@ module.exports = {
       ],
 
       // (4) observers — read-only consumers of canonical runtime events. They
-      // are fed after broadcast, so they never see this package's own
-      // `plugin:*` events (those go to broadcast/automation consumers).
+      // are tapped at the `canonicalObserverTap` stage (before `internalFilter`
+      // and before the final broadcast), so they see the pre-drop canonical
+      // surface and never see this package's own `plugin:*` events (those go to
+      // broadcast / automation consumers).
       observers: [
         {
           id: 'audit',
