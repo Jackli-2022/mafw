@@ -1,16 +1,19 @@
 /**
- * The published `plugin.json` JSON Schema must be exactly as strict as the
- * runtime parser:
+ * The published `plugin.json` JSON Schema must never be stricter than the
+ * runtime parser, and is exact over the matrix and corpora below:
  *
- *   parsePackageManifest(m).ok === validateWithSchema(m)   for every m
+ *   never:  schemaRejects(m) ⇒ parserRejects(m)
+ *   exact:  parsePackageManifest(m).ok === validateWithSchema(m)   (matrix + corpora)
  *
- * Both directions matter. Too strict and an editor rejects the packages in
- * `examples/plugins` (and an agent writes something the parser would have
- * accepted); too loose and an agent ships a package the gateway refuses to
- * activate. So the schema is compared with a real Ajv compile, not eyeballed.
+ * Too strict and an editor rejects the packages in `examples/plugins` (and an
+ * agent writes something the parser would have accepted); too loose and an
+ * agent ships a package the gateway refuses to activate. So the schema is
+ * compared with a real Ajv compile, not eyeballed.
  *
- * The matrix below is the contract. The corpora after it pin the rules that are
- * easiest to over-tighten (name, main, host, permission tokens, tool shapes).
+ * One loose edge is known and pinned at the bottom of this file: JSON Schema
+ * `maxLength` counts code points while the contract counts UTF-16 code units,
+ * so an astral-character tool `description` can validate here and still be
+ * refused by the parser.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -281,5 +284,53 @@ describe('plugin.json JSON Schema parity', () => {
     expect(schema.properties.name.maxLength).toBeUndefined();
     // One source of truth: the schema reuses the parser's name pattern.
     expect(schema.properties.name.pattern).toBe(PACKAGE_NAME_PATTERN_SOURCE);
+  });
+
+  // ── known edges: one closed, one deliberately loose ──────────────────────
+
+  it('rejects a standardVersion that overflows to Infinity, as the parser does', () => {
+    // `1e400` is a legal JSON number token that JavaScript parses to Infinity.
+    // The parser rejects it (`Number.isInteger(Infinity)` is false), while Ajv's
+    // bare `integer` check accepted it — the schema was *looser* here.
+    const overflow = JSON.parse('{"name":"demo","standardVersion":1e400}') as {
+      standardVersion: number;
+    };
+    expect(overflow.standardVersion).toBe(Infinity);
+    expect(parity(overflow)).toEqual({ parser: false, schema: false });
+
+    // The bound is `Number.MAX_VALUE` ("finite"), not `Number.MAX_SAFE_INTEGER`:
+    // the values below are all integers the parser accepts, so a safe-integer cap
+    // would reject them — it would close the Infinity hole by becoming *stricter*
+    // than the parser, which is the one direction this contract forbids.
+    const schema = MANIFEST_JSON_SCHEMA as unknown as Record<string, any>;
+    expect(schema.properties.standardVersion.maximum).toBe(Number.MAX_VALUE);
+    for (const standardVersion of [2 ** 53, 1e21, 1e308, Number.MAX_VALUE]) {
+      expect({ standardVersion, ...parity({ name: 'demo', standardVersion }) })
+        .toEqual({ standardVersion, parser: true, schema: true });
+    }
+  });
+
+  it('is knowingly looser on code-point vs UTF-16 length limits (never stricter)', () => {
+    // `maxLength` counts code points; the contract's `requireString` counts
+    // UTF-16 code units. 300 astral characters are 300 code points (inside 512)
+    // but 600 code units (over it), so the parser refuses a manifest this schema
+    // accepts. The asymmetry is one-way by construction — over 512 code points
+    // implies over 512 code units — so the schema can never be *stricter* here.
+    const withDescription = (text: string) => ({
+      name: 'demo',
+      apiVersion: 2,
+      contributes: {
+        gateway: { tools: [{ name: 'lookup', description: text, inputSchema: {} }] },
+      },
+    });
+
+    const description = '🌟'.repeat(300);
+    expect([...description]).toHaveLength(300);
+    expect(description).toHaveLength(600);
+    expect(parity(withDescription(description))).toEqual({ parser: false, schema: true });
+
+    // At the exact boundary the two agree again: 256 astral characters are 512
+    // code units, which the contract accepts.
+    expect(parity(withDescription('🌟'.repeat(256)))).toEqual({ parser: true, schema: true });
   });
 });

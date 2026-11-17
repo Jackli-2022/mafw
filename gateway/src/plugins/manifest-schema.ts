@@ -2,17 +2,23 @@
  * The published `plugin.json` JSON Schema — the machine-readable half of the
  * package standard.
  *
- * One invariant governs this file: **it is never stricter than
- * `parsePackageManifest`**. For any candidate manifest,
+ * Parity, precisely:
  *
- *   parsePackageManifest(m).ok === validateWithSchema(m)
+ * - **Never stricter**: no manifest this schema rejects is one
+ *   `parsePackageManifest` accepts. An editor must not flag a package the
+ *   gateway loads.
+ * - **Exact over the published matrix and corpora** in
+ *   `manifest-schema-parity.test.ts`: every case there gets the same verdict
+ *   from this document and from the parser.
+ * - **One known loose edge**, pinned by that suite's "knowingly looser" case:
+ *   JSON Schema `maxLength` counts **code points** while the contract's
+ *   `requireString` counts **UTF-16 code units**. A tool `description` built
+ *   from astral characters can validate here and still be refused by the
+ *   parser (300 emoji = 300 code points but 600 code units). The asymmetry is
+ *   one-way — a string over 512 code points is over 512 code units too — so the
+ *   schema stays never-stricter.
  *
- * so an agent or editor writing to this schema cannot produce a package the
- * gateway refuses to activate, and a package the gateway accepts is never
- * flagged in an editor. `gateway/tests/unit/plugins/manifest-schema-parity.test.ts`
- * compiles this document with Ajv and holds both verdicts side by side.
- *
- * Two consequences worth stating, because they look like omissions:
+ * Two structural consequences worth stating, because they look like omissions:
  *
  * - **No top-level `additionalProperties: false`.** The parser lets vendors add
  *   their own top-level metadata and only reads the keys it knows.
@@ -72,8 +78,9 @@ export const MANIFEST_JSON_SCHEMA = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
   title: 'MAFW plugin.json',
   description:
-    'Unified plugin package manifest. This schema is never stricter than the gateway parser: '
-    + 'a manifest that validates here is one the gateway can parse.',
+    'Unified plugin package manifest. Never stricter than the gateway parser: every manifest it '
+    + 'rejects is one the runtime refuses. It can be looser where JSON Schema counts code points '
+    + 'and the runtime counts UTF-16 code units (a tool description of astral characters).',
   type: 'object',
   required: ['name'],
   properties: {
@@ -125,7 +132,14 @@ export const MANIFEST_JSON_SCHEMA = {
     standardVersion: {
       type: 'integer',
       minimum: 1,
-      description: 'Manifest standard the package was written against.',
+      // Bounded at `MAX_VALUE` ("finite") and deliberately not at
+      // `MAX_SAFE_INTEGER`: a JSON number such as `1e400` parses to `Infinity`,
+      // which the parser rejects but Ajv's bare `integer` check accepts, while
+      // `2 ** 53`, `1e21`, `1e308` and `MAX_VALUE` are all integers the parser
+      // *accepts*. A safe-integer bound would close the `Infinity` hole and open
+      // a stricter-than-parser edge; this bound closes it and widens nothing.
+      maximum: Number.MAX_VALUE,
+      description: 'Manifest standard the package was written against (finite integer ≥ 1).',
     },
     contributes: {
       description:
