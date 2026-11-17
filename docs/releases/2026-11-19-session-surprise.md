@@ -54,6 +54,27 @@ top 12 surprise 全是短命令：`修` → `继续`、`动手` → `提交`、`
 把两边 `intent` 都要求 ≥12 字符后：只剩 **129** 个回合、**9** 个正例，AUC 降到 **0.523**。
 也就是说 0.595 的优势由短命令轮驱动，不是由实质性工作驱动。
 
+## Episode 级评估（对齐写入粒度）
+
+`scripts/eval-t1-episodes.ts`：正例 = 被 active unit 引用的 episode（`episode_id` 或成员 trace），
+每项信号按 episode 取 mean/max。
+
+| 指标 | 正例 | 全局 AUC | 同 session 内 AUC |
+|---|---|---|---|
+| turns | 373 | 0.593 | 0.643 |
+| text_len | 373 | 0.519 | 0.665 |
+| novelty mean | 73 | 0.429 | 0.646 |
+| novelty max | 73 | 0.486 | **0.738** |
+| mismatch mean | 73 | 0.570 | 0.546 |
+| mismatch max | 73 | 0.574 | 0.562 |
+| surprise mean | 31 | 0.541 | 0.623 |
+| surprise max | 31 | 0.599 | **0.698** |
+
+读法：
+- 全局上仍然不行；但**同 session 内排序**时，`novelty max` 0.738、`surprise max` 0.698，高于体积基线（turns 0.643、length 0.665）。
+- 这正是反思排序的场景：同一 session 里先处理哪个 episode。
+- 样本仍小（novelty 73 正例、surprise 31），且只有“有人类内容的 episode”才有信号，存在选择偏差；不足以启用 Phase 2。
+
 ## 为什么失败（诊断）
 
 - 91 个正例分布在 **63 个 session**，不是少数会话聚集。
