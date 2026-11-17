@@ -206,7 +206,8 @@ describe('t1 signals', () => {
     expect(map.get('t1t_a')!.mismatch).toBe(0);
   });
 
-  test('machine logs without prose are not scored', () => {    const log =
+  test('machine logs without prose are not scored', () => {
+    const log =
       '【眼】f#688 moved #661 [36, 950, 96, 962] dxy=[-18, 0] f#688 appeared #1029 [81, 975, 88, 984]';
     expect(isInformativeTurn(log, 3)).toBe(false);
     expect(
@@ -216,7 +217,16 @@ describe('t1 signals', () => {
     expect(isInformativeTurn('修复 reflection 的边界 recall，先把 hint 的过滤补上', 2)).toBe(true);
   });
 
-  test('a disabled scorer returns no signals', async () => {    const d = deps({ [BODY]: 0.95, 'fix reflection': 0.9 });
+  test('injected context and tool-call instructions are not scored', () => {
+    expect(isInformativeTurn('<facts> ☑ repo plan is an active risk surface</facts>', 2)).toBe(false);
+    expect(
+      isInformativeTurn('Call the mafw_submit_result tool with data {"ok":true}. Do not answer in prose.', 2),
+    ).toBe(false);
+    expect(isInformativeTurn('Research the MAFW memory system configuration.', 2)).toBe(false);
+  });
+
+  test('a disabled scorer returns no signals', async () => {
+    const d = deps({ [BODY]: 0.95, 'fix reflection': 0.9 });
     const scorer = createTurnSignalScorer({
       enabled: false,
       embedder: d.embedder,

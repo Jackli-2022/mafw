@@ -70,7 +70,8 @@ function clamp01(value: number): number {
  * Non-cue bodies: agent boilerplate and machine telemetry (perception logs).
  * They are real raw T1 rows but carry no human experience to compare.
  */
-const NON_CUE_PREFIX = /^(you are (a|an)\b|\[MAFW SYSTEM\]|research task\b|research only\b|【眼】)/i;
+const NON_CUE_PREFIX =
+  /^(you are (a|an)\b|\[MAFW SYSTEM\]|research task\b|research only\b|research the\b|【眼】|<facts>|call the mafw_)/i;
 
 /** Join raw T1 rows without turning structured content into "[object Object]". */
 export function normalizeObservationText(rows: Array<{ content?: unknown }>): string {
