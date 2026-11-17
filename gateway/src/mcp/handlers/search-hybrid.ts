@@ -38,6 +38,20 @@ function getIndexEntries(memory: any) {
   return memory?.harmonicIndex?.getIndex?.()?.entries ?? memory?.getIndex?.()?.entries ?? [];
 }
 
+/** Preserve the retrieval score; entry-only fallbacks use a neutral score. */
+function searchScoredEntries(memory: any, query: string, topK: number, options: any): any[] {
+  const index = memory?.harmonicIndex ?? memory;
+  if (typeof index?.searchScored === 'function') {
+    return index.searchScored(query, topK, options)
+      .sort((a: any, b: any) => Number(b?.score ?? 0) - Number(a?.score ?? 0));
+  }
+  const entries = memory?.search?.(query, topK, options) ?? [];
+  return entries.map((entry: any) => ({
+    entry,
+    score: typeof entry?.score === 'number' ? entry.score : 0,
+  }));
+}
+
 const SEARCH_LAYERS = ['gist', 't1', 'both', 'episodes', 'auto'] as const;
 type SearchLayer = typeof SEARCH_LAYERS[number];
 
@@ -134,16 +148,17 @@ export const handleSearchHybrid: ToolHandler = async (args, services) => {
 
     if (!prev) {
       // ── 首轮：现有行为原样（searchScored 已含图扩展+融合）+ 计算 frontier ──
-      scored = memory.search(query, topK * 2, searchOpts).map((e: any) => ({ entry: e, score: 1, graphScore: 0 }));
+      scored = searchScoredEntries(memory, query, topK * 2, searchOpts)
+        .map((s: any) => ({ entry: s.entry, score: s.score, graphScore: 0 }));
       seen = scored.map(s => s.entry.id);
       frontier = computeFrontier(graphStore, scored.map(s => s.entry.id), new Set(seen));
       round = 0;
     } else if (prev.round >= maxRounds) {
       // ── 轮次已满：不扩展、不消费 frontier，仅返回 bm25 新命中增量 ──
       const seenSet = new Set(prev.seen);
-      scored = memory.search(query, topK * 2, searchOpts)
-        .filter((e: any) => !seenSet.has(e.id))
-        .map((e: any) => ({ entry: e, score: 1, graphScore: 0 }));
+      scored = searchScoredEntries(memory, query, topK * 2, searchOpts)
+        .filter((s: any) => !seenSet.has(s.entry.id))
+        .map((s: any) => ({ entry: s.entry, score: s.score, graphScore: 0 }));
       seen = prev.seen;
       frontier = prev.frontier;
       round = prev.round;
@@ -159,9 +174,9 @@ export const handleSearchHybrid: ToolHandler = async (args, services) => {
         if (!entry || entry.superseded_by) continue;
         frontierHits.push({ entry, score: 0, graphScore: f.weight * (entry.energy ?? 0.8) * (entry.salience ?? 1) });
       }
-      const freshHits = memory.search(query, topK * 2, searchOpts)
-        .filter((e: any) => !seenSet.has(e.id))
-        .map((e: any) => ({ entry: e, score: 1, graphScore: 0 }));
+      const freshHits = searchScoredEntries(memory, query, topK * 2, searchOpts)
+        .filter((s: any) => !seenSet.has(s.entry.id))
+        .map((s: any) => ({ entry: s.entry, score: s.score, graphScore: 0 }));
 
       const union = mergeById(frontierHits, freshHits);
       const norm = (vals: number[]) => {
