@@ -1,6 +1,6 @@
 # T1 novelty v2：session 内相对 surprise 设计
 
-- **状态**：待批准
+- **状态**：已交付（Phase 1，2026-11-19；Phase 2 未启用）
 - **日期**：2026-11-19
 - **前置**：`2026-11-18-t1-novelty-mismatch-design.md`（E2 Phase 1）
 - **证据**：`docs/releases/2026-11-18-t1-novelty-mismatch.md` §后续测量
@@ -102,10 +102,19 @@ ALTER TABLE t1_turn_features ADD COLUMN surprise REAL;   -- null = 未评分
 - `UPDATE t1_turn_features SET surprise = NULL` 清空；脚本可重放。
 
 ## 10. 验收标准
-
 - 纯函数测试：同文本 → 0；不同文本 → >0；无上一轮 → null；任一轮不满足信息门 → null；embed 失败 → 空 Map。
 - 管线测试：写入 `surprise`；缺上一轮时保持 null；失败不阻塞归档；重编码保留已有值。
 - `stats.t1.signals.surprise` 与 `surpriseScored` 有测试。
 - 回填 dry-run / apply 0 失败；线上 stats 与 dry-run 一致。
 - 全量 gateway suite、tsc、build 绿。
 - 报告同子集 AUC 与 top 20 审计；未达门槛时明确写“Phase 2 不启用”。
+
+## 11. 交付结果（2026-11-19）
+
+- Phase 1 已上线：`surpriseScored 535`，分布 p50 0.462 / p90 0.657 / p99 0.762 / max 0.865。
+- 效度：标签 A（产出 unit）AUC 0.595（79 正例）；标签 B（被检索）0.530（22 正例）。
+- 审计：top surprise 全是短命令轮（`修`、`继续`、`提交`）；把两边 intent 都要求 ≥12 字符后只剩 129 回合 / 9 正例，AUC 0.523。
+- 决定：**Phase 2 不启用**；字段保留为 shadow 数据。
+- 修复：`getPrevTurnTrace` 的 off-by-one（曾查当前轮）。
+- 交付记录：`docs/releases/2026-11-19-session-surprise.md`。
+
