@@ -19,7 +19,16 @@ export type ChangeSetViewProps = {
   doc: ChangeSetDocument
   onOpenFile: (rel: string, line?: number) => void
   onSendComment?: (sessionID: string, text: string) => void
-  onAddAnnotation?: (a: { rel: string; startLine: number; endLine: number; code: string; comment: string }) => void
+  onAddAnnotation?: (a: {
+    rel: string
+    startLine: number
+    endLine: number
+    code: string
+    comment: string
+    scopeKey?: string
+    root?: string
+    source?: import("../../../shared/annotation-types").AnnotationSource
+  }) => void
 }
 
 export function ChangeSetView(props: ChangeSetViewProps): JSX.Element {
@@ -246,13 +255,15 @@ export function ChangeSetView(props: ChangeSetViewProps): JSX.Element {
             fallback={
               <DiffReviewPanel
                 chrome="tab"
-                previewOnly
+                previewOnly={props.doc.source.kind !== "goal"}
                 sessionID=""
                 diffs={[file()]}
                 initialFile={currentRel()}
                 allowSessionFallback={false}
+                allowNonInvertibleRevert={false}
                 hint={null}
                 focusLine={props.doc.anchorLine}
+                onAddAnnotation={props.doc.source.kind === "goal" ? props.onAddAnnotation : undefined}
               />
             }
           >

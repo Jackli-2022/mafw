@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test"
-import { annotationInScope, annotationSourceFromScopeKey, draftOwnerKey } from "./annotation-scope"
+import {
+  annotationInScope,
+  annotationSourceFromScopeKey,
+  draftOwnerKey,
+  goalChangeSetAnnotationScope,
+} from "./annotation-scope"
 import type { Annotation } from "../../shared/annotation-types"
 
 const annotation = (over: Partial<Annotation> = {}): Annotation => ({
@@ -47,6 +52,19 @@ describe("annotation scope", () => {
     const legacy = annotation({ id: "ann-legacy" })
     expect(annotationInScope(legacy, "project:C:/repo", "C:/repo")).toBe(true)
     expect(annotationInScope(legacy, "goal:C:/repo:g2:r2", "C:/worktrees/g2-r2")).toBe(false)
+  })
+
+  test("goal change-set annotations carry goal source and normalized scope", () => {
+    expect(goalChangeSetAnnotationScope({
+      projectDir: "C:\\Repo",
+      goalId: "g1",
+      revision: 2,
+      root: "C:\\worktrees\\g1-r2",
+    })).toEqual({
+      source: { kind: "goal", projectDir: "C:\\Repo", goalId: "g1", revision: 2 },
+      scopeKey: "goal:c:/repo:g1:r2",
+      root: "C:\\worktrees\\g1-r2",
+    })
   })
 
   test("reserved review actions do not alter owner identity", () => {

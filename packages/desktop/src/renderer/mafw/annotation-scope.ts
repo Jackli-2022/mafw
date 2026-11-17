@@ -46,6 +46,24 @@ export function annotationSourceFromScopeKey(
   }
 }
 
+export function goalChangeSetAnnotationScope(input: {
+  projectDir: string
+  goalId: string
+  revision: number
+  root: string | null
+}): { source: AnnotationSource; scopeKey: string; root: string | null } {
+  return {
+    source: {
+      kind: "goal",
+      projectDir: input.projectDir,
+      goalId: input.goalId,
+      revision: input.revision,
+    },
+    scopeKey: `goal:${normalizePath(input.projectDir)}:${input.goalId}:r${input.revision}`,
+    root: input.root,
+  }
+}
+
 export function annotationInScope(
   annotation: Annotation,
   scopeKey: string | null | undefined,

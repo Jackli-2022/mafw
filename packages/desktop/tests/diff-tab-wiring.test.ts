@@ -47,6 +47,16 @@ test("session diff annotations use the change-set session, not the current tab",
   assert.match(shell, /doc\?\.source\.kind === "session" \? doc\.source\.sessionID/)
 })
 
+test("goal change sets capture annotation drafts instead of promptAsync", () => {
+  const view = read("src/renderer/mafw/components/ChangeSetView.tsx")
+  assert.match(view, /previewOnly=\{props\.doc\.source\.kind !== "goal"\}/)
+  assert.match(view, /onAddAnnotation=\{props\.doc\.source\.kind === "goal" \? props\.onAddAnnotation : undefined\}/)
+  const shell = read("src/renderer/mafw/MafwShell.tsx")
+  assert.match(shell, /doc\?\.source\.kind === "goal"/)
+  assert.match(shell, /goalChangeSetAnnotationScope\(/)
+  assert.match(shell, /addAnnotation\(\{ \.\.\.a, \.\.\.scope \}\)/)
+})
+
 test("review anchors and non-invertible revert guard are wired", () => {
   const view = read("src/renderer/mafw/components/ChangeSetView.tsx")
   assert.match(view, /allowNonInvertibleRevert=\{false\}/)

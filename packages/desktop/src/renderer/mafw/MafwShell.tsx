@@ -122,7 +122,7 @@ import { fetchTasks, ingestTask } from "./task-store"
 import { fetchQueue, ingestQueueEvent } from "./queue-store"
 import { setRun } from "./run-store"
 import { addPending, patchPending } from "./annotation-store"
-import { annotationSourceFromScopeKey, draftOwnerKey } from "./annotation-scope"
+import { annotationSourceFromScopeKey, draftOwnerKey, goalChangeSetAnnotationScope } from "./annotation-scope"
 import { deliverAnnotationDiscussion, type DiscussionTarget } from "./annotation-discussion"
 import { delegateAnnotationBatch, targetVersionProblem } from "./annotation-delegation"
 import { anchorOccursIn, annotationSourceProblem } from "./annotation-source"
@@ -4926,6 +4926,16 @@ export function MafwShell() {
                   }}
                   onAddDiffAnnotation={(a) => {
                     const doc = activeChangeSetDocument()
+                    if (doc?.source.kind === "goal") {
+                      const scope = goalChangeSetAnnotationScope({
+                        projectDir: doc.scope.worldId,
+                        goalId: doc.source.goalId,
+                        revision: doc.source.revision,
+                        root: doc.root,
+                      })
+                      addAnnotation({ ...a, ...scope })
+                      return
+                    }
                     const sid = doc?.source.kind === "session" ? doc.source.sessionID : currentSessionID()
                     if (!sid) return
                     addPending({ sessionID: sid, ...a })
