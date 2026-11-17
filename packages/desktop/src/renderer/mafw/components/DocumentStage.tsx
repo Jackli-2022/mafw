@@ -18,6 +18,7 @@ export function DocumentStage(props: {
   onActiveFileChange?: (rel: string | null) => void
   onAddAnnotation?: (a: any) => void
   onSendComment?: (sid: string, text: string) => void
+  onInlineEdit?: (input: import("../editor/inline-edit").InlineEditSubmission) => void
   onOpenReview?: () => void
   onOpenFile?: (rel: string, line?: number) => void
   onSendDiffComment?: (sid: string, text: string) => void
@@ -60,6 +61,7 @@ export function DocumentStage(props: {
             onActiveFileChange={props.onActiveFileChange}
             onAddAnnotation={props.onAddAnnotation}
             onSendComment={props.onSendComment}
+            onInlineEdit={props.onInlineEdit}
             onOpenReview={props.onOpenReview}
           />
         </div>

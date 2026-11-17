@@ -205,6 +205,7 @@ import {
   contentScopeStateFor,
 } from "./content-scope-state"
 import { configureEditorDraftStorage } from "./editor-drafts"
+import { buildInlineEditPrompt } from "./editor/inline-edit"
 import { readRecentContent, recordRecentContent, type RecentContentEntry } from "./recent-content"
 import { PopoverShell } from "./components/pickers/PopoverShell"
 import { type NavTab } from "./components/nav-tab"
@@ -4731,6 +4732,16 @@ export function MafwShell() {
                     void window.api.mafw.sessions.promptAsync({ sessionID: sid, message: text })
                       .then(() => showToastV2({ description: "评论已发送给 agent", duration: 2000 } as any))
                       .catch((e: any) => showToastV2({ description: `发送失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 4000 } as any))
+                  }}
+                  onInlineEdit={(input) => {
+                    const sid = currentSessionID()
+                    if (!sid) {
+                      showToastV2({ description: "打开一个会话后可发送 AI 编辑", duration: 3000 })
+                      return
+                    }
+                    void window.api.mafw.sessions.promptAsync({ sessionID: sid, message: buildInlineEditPrompt(input) })
+                      .then(() => showToastV2({ description: "已发送 AI 编辑请求", duration: 2500 }))
+                      .catch((e: any) => showToastV2({ description: `发送失败：${String(e?.message ?? e).slice(0, 60)}`, duration: 4000 }))
                   }}
                   webSurfaces={pluginWebSurfaces()}
                   gatewayUrl={gatewayUrl()}

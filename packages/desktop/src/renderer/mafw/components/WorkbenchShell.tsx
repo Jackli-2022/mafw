@@ -50,6 +50,7 @@ export type WorkbenchShellProps = {
     root?: string
   }) => void
   onSendComment?: (sid: string, text: string) => void
+  onInlineEdit?: (input: import("../editor/inline-edit").InlineEditSubmission) => void
   onOpenReview?: () => void
   onOpenFile?: (rel: string, line?: number) => void
   onSendDiffComment?: (sid: string, text: string) => void
@@ -120,6 +121,7 @@ export function WorkbenchShell(props: WorkbenchShellProps): JSX.Element {
             openRequest={props.focusOpenRequest}
             onAddAnnotation={props.onAddAnnotation}
             onSendComment={props.onSendComment}
+            onInlineEdit={props.onInlineEdit}
             onOpenReview={props.onOpenReview}
             onOpenFile={props.onOpenFile}
             onSendDiffComment={props.onSendDiffComment}

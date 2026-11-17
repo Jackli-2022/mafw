@@ -50,6 +50,8 @@ import { activationRefreshAction } from "../editor-activation"
 import { inlineDiffRanges } from "../editor/inline-diff"
 import { diffEntryFor } from "../editor-diff"
 import { AnnotationSheet } from "./AnnotationSheet"
+import { InlineEditSheet } from "./InlineEditSheet"
+import type { InlineEditSubmission } from "../editor/inline-edit"
 import { buildQuoteAnchor } from "../quote-anchor"
 import { pushComposerInsert } from "../composer-insert"
 import { buildFileQuote } from "../file-quote"
@@ -108,6 +110,8 @@ export function EditorDock(props: {
     root?: string
   }) => Annotation | void
   onSendComment?: (sid: string, text: string) => void
+  /** AI 编辑：选区 + 指令交给 agent 改文件；Desktop 不直接应用模型文本。 */
+  onInlineEdit?: (input: InlineEditSubmission) => void
   /** 批注标记点击 → 切到审阅面（回路闭合）。 */
   onOpenReview?: () => void
 }) {
@@ -121,6 +125,7 @@ export function EditorDock(props: {
   const [saving, setSaving] = createSignal(false)
   const [sel, setSel] = createSignal<SelectionState | null>(null)
   const [annotOpen, setAnnotOpen] = createSignal(false)
+  const [inlineEditOpen, setInlineEditOpen] = createSignal(false)
   /** 选区浮动 toolbar（ADE 模式）：选中只出现「引用 / 批注」，不自动打开表单。 */
   const [selectionBar, setSelectionBar] = createSignal<{ left: number; top: number; kind: "source" | "quote" } | null>(null)
   /** 当前高亮的批注（margin card 点击 → active 态）。 */
@@ -982,7 +987,7 @@ export function EditorDock(props: {
     if (selectionConsumed()) return
     const body = bodyEl
     if (!body) return
-    const pos = placeSelectionToolbar(box, { w: 176, h: 30 }, { w: body.clientWidth, h: body.clientHeight })
+    const pos = placeSelectionToolbar(box, { w: 270, h: 30 }, { w: body.clientWidth, h: body.clientHeight })
     setSelectionBar({ kind, ...pos })
   }
 
@@ -1046,13 +1051,30 @@ export function EditorDock(props: {
   // 源码编辑器选区（键盘/鼠标）→ toolbar；不自动打开 composer。
   createEffect(() => {
     const s = sel()
-    if (!s || previewing() || annotOpen() || quoteOpen() || anchorOpen()) return
+    if (!s || previewing() || annotOpen() || inlineEditOpen() || quoteOpen() || anchorOpen()) return
     showSourceBar(s)
   })
 
   // I1：预览面焦点不在 editor-body 内 —— 键盘路径挂 document；选区变化（含 Shift+方向键）也走同一捕获。
   onMount(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.isComposing) return
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        e.key.toLowerCase() === "k" &&
+        sel() &&
+        !previewing() &&
+        !annotOpen() &&
+        !quoteOpen() &&
+        !anchorOpen() &&
+        !inlineEditOpen() &&
+        bodyEl?.contains(document.activeElement)
+      ) {
+        e.preventDefault()
+        e.stopImmediatePropagation()
+        openInlineEditFromBar()
+        return
+      }
       if (!isAnnotationHotkey(e, IS_MAC)) return
       if (quoteSel()) {
         e.preventDefault()
@@ -1232,6 +1254,7 @@ export function EditorDock(props: {
   /** 点击批注框以外的任意位置 → 关闭（Esc/取消之外的第三条退出路径）。 */
   function closeAnnotationUi() {
     setAnnotOpen(false)
+    setInlineEditOpen(false)
     setQuoteOpen(false)
     setAnchorOpen(false)
     setQuoteSel(null)
@@ -1239,7 +1262,7 @@ export function EditorDock(props: {
   }
 
   createEffect(() => {
-    const open = annotOpen() || quoteOpen() || anchorOpen()
+    const open = annotOpen() || inlineEditOpen() || quoteOpen() || anchorOpen()
     if (!open) return
     const onPointerDown = (e: PointerEvent) => {
       const target = e.target as Node | null
@@ -1392,6 +1415,32 @@ export function EditorDock(props: {
     setSelectionBar(null)
     if (bar.kind === "quote") setQuoteOpen(true)
     else setAnnotOpen(true)
+  }
+
+  function openInlineEditFromBar() {
+    if (!sel() || previewing()) return
+    setSelectionConsumed(true)
+    setSelectionBar(null)
+    setInlineEditOpen(true)
+  }
+
+  function submitInlineEdit(instruction: string) {
+    const f = activeFile()
+    const s = sel()
+    const range = selRange()
+    if (!f || !s || !range) return
+    props.onInlineEdit?.({
+      rel: f.rel,
+      startLine: range.startLine,
+      endLine: range.endLine,
+      code: s.text,
+      instruction,
+      root: props.contentRoot ?? undefined,
+      scopeKey: props.scopeKey ?? undefined,
+    })
+    setInlineEditOpen(false)
+    setSelectionConsumed(true)
+    clearSelection()
   }
 
   // 点击 toolbar / margin card / composer 以外的位置 → 收起浮层。
@@ -1739,6 +1788,18 @@ export function EditorDock(props: {
               style={{ left: `${selectionBar()!.left}px`, top: `${selectionBar()!.top}px` }}
               onMouseDown={(e) => e.preventDefault()}
             >
+              <Show when={selectionBar()!.kind === "source"}>
+                <ButtonV2
+                  variant="ghost"
+                  size="small"
+                  class="mafw-annot-toolbar-btn is-primary"
+                  onClick={openInlineEditFromBar}
+                >
+                  <Icon name="pencil-line" size="small" />
+                  AI 编辑
+                </ButtonV2>
+                <span class="mafw-annot-toolbar-sep" aria-hidden="true" />
+              </Show>
               <ButtonV2
                 variant="ghost"
                 size="small"
@@ -1752,7 +1813,7 @@ export function EditorDock(props: {
               <ButtonV2
                 variant="ghost"
                 size="small"
-                class="mafw-annot-toolbar-btn is-primary"
+                class="mafw-annot-toolbar-btn"
                 onClick={openAnnotationFromBar}
               >
                 <Icon name="comment" size="small" />
@@ -1769,6 +1830,15 @@ export function EditorDock(props: {
               meta={`${sel()!.rel} · L${selRange()?.startLine}${selRange()?.endLine !== selRange()?.startLine ? `–${selRange()?.endLine}` : ""}`}
               onSubmit={(comment) => submitAnnotationAnchored(undefined, comment)}
               onCancel={() => { setSelectionConsumed(true); setAnnotOpen(false); setSelectionBar(null) }}
+            />
+          </Show>
+          <Show when={inlineEditOpen() && sel()}>
+            <InlineEditSheet
+              anchor={{ left: Math.max(8, sel()!.left), top: sel()!.top, width: 8, height: 18 }}
+              quote={sel()!.text}
+              meta={`${sel()!.rel} · L${selRange()?.startLine}${selRange()?.endLine !== selRange()?.startLine ? `–${selRange()?.endLine}` : ""}`}
+              onSubmit={submitInlineEdit}
+              onCancel={() => { setSelectionConsumed(true); setInlineEditOpen(false); setSelectionBar(null) }}
             />
           </Show>
           <Show when={quoteOpen() && quoteSel()}>

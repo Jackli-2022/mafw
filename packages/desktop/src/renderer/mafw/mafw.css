@@ -6783,6 +6783,14 @@ html[data-theme="light"] body {
   color: var(--text-4);
 }
 .mafw-annot-sheet-actions { display: flex; gap: 6px; flex: none; }
+.mafw-inline-edit-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.mafw-inline-edit-title { color: var(--text-strong); font-size: 12px; font-weight: 600; flex: none; }
+.mafw-inline-edit-meta {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--text-4); font-size: 10.5px;
+}
+.mafw-inline-edit-quick { display: flex; flex-wrap: wrap; gap: 4px; }
+.mafw-inline-edit-quick .mafw-button-v2 { font-size: 10.5px; }
 @media (prefers-reduced-motion: reduce) {
   .mafw-annot-sheet { animation: none; }
 }
