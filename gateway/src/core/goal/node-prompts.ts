@@ -391,6 +391,8 @@ export interface NodePromptCtx {
   reviewFeedback?: string;
   /** W1：上一版计划的驳回反馈（plan 重规划时注入；plan 成功兑现时由 driver 清除）。 */
   planFeedback?: string;
+  /** 本批人类评审意见快照（仅 plan / execute；snapshot 由 NodeDriver provider 冻结）。 */
+  reviewItemsBlock?: string;
   /** W4：能力账本 + 失败谱块（仅 plan 节点注入，规划时主动规避反复失败）。 */
   priorBlock?: string;
   /** D4b：反事实推演块（仅 plan 节点注入，pre-mortem）。 */
@@ -521,6 +523,7 @@ function renderNodePromptBody(node: ExecutableGoalNode, ctx: NodePromptCtx): str
   if (node === 'plan') {
     return [
       head, docs, retryContext, '',
+      ctx.reviewItemsBlock || '',
       ctx.goalAcceptance?.length
         ? `Goal acceptance（必须在 wave task acceptance 中 decompose，不能只复述）：\n${ctx.goalAcceptance.map((item) => `- ${item}`).join('\n')}`
         : '',
@@ -582,6 +585,7 @@ function renderNodePromptBody(node: ExecutableGoalNode, ctx: NodePromptCtx): str
       const omissions = (ctx.fixOmissions ?? []).map((item) => `- ${item}`).join('\n');
       return [
         head, docs, retryContext, '',
+        ctx.reviewItemsBlock || '',
         `任务：**同轮复核修复**。上一轮 review 判定以下任务未通过，只修这些，不要扩大范围：`,
         failed || '（没有逐任务失败项。）',
         omissions ? `评审缺口（必须补齐可验证证据，逐条覆盖）：\n${omissions}` : '',
@@ -597,6 +601,7 @@ function renderNodePromptBody(node: ExecutableGoalNode, ctx: NodePromptCtx): str
     }
     return [
       head, docs, retryContext, '',
+      ctx.reviewItemsBlock || '',
       `任务：读 ${a.waves}，逐 wave 执行。每完成一个任务把回执写入 ${a.receipt}（写完整个 JSON，覆盖式更新）。`,
       '',
       `产物契约（写入 ${a.receipt}）：`,

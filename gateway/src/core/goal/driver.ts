@@ -511,6 +511,21 @@ export class NodeDriver {
       projectDir: state.projectDir, revision,
     });
 
+    let reviewItemsBlock: string | undefined;
+    if (node === 'plan' || node === 'execute') {
+      try {
+        const block = await this.deps.reviewItemsContext?.(goalId, node, revision);
+        if (block?.trim()) reviewItemsBlock = block;
+      } catch (err: any) {
+        await this.failBeforeSession(
+          goalId,
+          'review_context_invalid',
+          `review context unavailable: ${err?.message ?? err}`,
+        );
+        return;
+      }
+    }
+
     // attempt 语义：同 (goal, revision, round, node) 既有行存在即 max+1——含驳回重跑
     // （上一行 succeeded）与失败重试两类（W1 修正：不再按状态过滤）。
     const prevRun = this.deps.db.latestNodeAttempt(goalId, revision, round, node);
@@ -637,6 +652,7 @@ export class NodeDriver {
     const basePrompt = renderNodePrompt(node, {
       goalId, projectDir: state.projectDir, mafwDir, round, maxRounds: state.maxRounds,
       revision,
+      reviewItemsBlock,
       goalMode: this.deps.goalMode?.(goalId, revision) ?? undefined,
       charterPath,
       requestPath,
