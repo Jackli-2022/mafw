@@ -208,4 +208,5 @@ pm run drill:plugin-trust\ 固化。
 - `contributes.gateway.http: false` 时，任何一次 `ctx.http.route()` / `ctx.http.ws()` 都让激活失败（即使 `activate()` 正常返回）。
 - `apiVersion 2` 下 `contributes` 非法 → 激活失败；`apiVersion 1` 下非法块只产生 warning 且不构成约束，但**合法**的 v1 块与 v2 一样构成约束。
 - plugin doctor 把 `parsePackageManifest` 的 warnings（`legacy-permissions` / `legacy-contributes`）暴露成独立的 `manifest-warnings` 检查（status `warn`，多种 warning 以 `; ` 连接）；`report.ok` 只由 `fail` 派生，warn 不翻转它。
+- 面向 agent 的**规范正文**在 `docs/guides/plugin-standard.md`（§0-§11：60 秒路径、`plugin.json` 字段表、五个 plane 的逐字错误文案与上限、声明上界、trusted/untrusted、`check --strict --json`、人类安装、失败修法、版本分工）；`mafw plugin init/check/schema` 与 `examples/plugins/` 是它的可执行部分。
 

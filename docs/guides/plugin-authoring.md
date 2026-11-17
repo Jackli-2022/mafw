@@ -9,6 +9,8 @@
 > 的普通会话，由 Agent 在 `<project>/.mafw/plugin-drafts/<name>/` 生成、检查、测试并请求安装。
 > 入口条件、草稿规则、逐次审批、固定测试命令、pending 与限制见
 > [插件 Creator 指南](./plugin-creator.md)。本指南其余部分仍是**手动 Phase 1 流程**与包契约的权威参考。
+>
+> **规范正文**：[`plugin-standard.md`](./plugin-standard.md) 是面向 agent 的标准（§0-§11：60 秒路径、字段表、五个 plane、声明上界、信任、自检、安装）。本文是细节参考。
 
 ## 0. 先明确边界
 
