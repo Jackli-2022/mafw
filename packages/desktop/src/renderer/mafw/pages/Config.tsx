@@ -87,6 +87,34 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
     }
   }
 
+  // 通知（自绘通知中心 + 悬浮窗）偏好；开关即时生效。
+  const [notificationPrefs, setNotificationPrefs] = createSignal<{
+    selfDrawn: boolean
+    doNotDisturb: boolean
+    fallbackToNative: boolean
+  } | null>(null)
+
+  async function loadNotificationPrefs() {
+    try {
+      setNotificationPrefs(await window.api.getNotificationPrefs())
+    } catch {
+      setNotificationPrefs(null)
+    }
+  }
+
+  async function updateNotificationPrefs(patch: { selfDrawn?: boolean; doNotDisturb?: boolean; fallbackToNative?: boolean }) {
+    const cur = notificationPrefs()
+    if (!cur) return
+    const next = { ...cur, ...patch }
+    setNotificationPrefs(next)
+    try {
+      setNotificationPrefs(await window.api.setNotificationPrefs(patch))
+    } catch {
+      setNotificationPrefs(cur)
+      showToastV2({ description: "通知设置保存失败", duration: 3000 })
+    }
+  }
+
   // ── Memory: search behavior (P1) + observability (P2) ──
   const [searchDraft, setSearchDraft] = createSignal<any | null>(null)
   const [searchSaving, setSearchSaving] = createSignal(false)
@@ -131,7 +159,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
     }
   }
 
-  onMount(() => { loadConfig(); loadOpenCodeConfig(); loadPluginState(); loadModelState(); loadEmbeddingConfig(); loadTrayPrefs(); loadSearchDraft(); loadMemStats(); void loadSkills(); void loadMcp() })
+  onMount(() => { loadConfig(); loadOpenCodeConfig(); loadPluginState(); loadModelState(); loadEmbeddingConfig(); loadTrayPrefs(); loadNotificationPrefs(); loadSearchDraft(); loadMemStats(); void loadSkills(); void loadMcp() })
 
   // W4 v1：进入「扩展」节时刷新技能与 MCP 状态（避免长时间陈旧）。
   createEffect(on(activeNav, (nav) => {
@@ -1136,6 +1164,35 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                       onChange={(v) => void updateTrayPrefs({ closeToTray: v })}
                       hideLabel
                     />
+                  </div>
+                </Show>
+                <div class="mafw-config-section-desc" style={{ "margin-top": "14px" }}>
+                  通知（自绘通知中心 + 悬浮窗）。左栏铃铛是可回看的收件箱；悬浮窗只在窗口
+                  后台时弹出 p1/p2（Goal 结果 / 需要你）。点击任何通知都会跳到对应位置。
+                </div>
+                <Show when={notificationPrefs()} fallback={<div class="mafw-empty" style={{ padding: "8px 0" }}>读取设置失败</div>}>
+                  <div class="mafw-card" style={{ "margin-bottom": "6px" }}>
+                    <div style={{ flex: 1 }}>
+                      <div class="mafw-card-title">自绘悬浮通知窗</div>
+                      <div class="mafw-card-meta">
+                        关闭后 p1/p2 退回系统原生通知（若下方兜底仍开启）；通知中心不受影响。
+                      </div>
+                    </div>
+                    <SwitchV2 checked={notificationPrefs()!.selfDrawn} onChange={(v) => void updateNotificationPrefs({ selfDrawn: v })} hideLabel />
+                  </div>
+                  <div class="mafw-card" style={{ "margin-bottom": "6px" }}>
+                    <div style={{ flex: 1 }}>
+                      <div class="mafw-card-title">勿扰</div>
+                      <div class="mafw-card-meta">不弹任何弹窗提醒；通知中心与铃铛角标照常收集。</div>
+                    </div>
+                    <SwitchV2 checked={notificationPrefs()!.doNotDisturb} onChange={(v) => void updateNotificationPrefs({ doNotDisturb: v })} hideLabel />
+                  </div>
+                  <div class="mafw-card" style={{ "margin-bottom": "6px" }}>
+                    <div style={{ flex: 1 }}>
+                      <div class="mafw-card-title">原生通知兜底</div>
+                      <div class="mafw-card-meta">悬浮窗创建失败或自绘关闭时，用系统通知提醒 p1/p2。</div>
+                    </div>
+                    <SwitchV2 checked={notificationPrefs()!.fallbackToNative} onChange={(v) => void updateNotificationPrefs({ fallbackToNative: v })} hideLabel />
                   </div>
                 </Show>
               </div>

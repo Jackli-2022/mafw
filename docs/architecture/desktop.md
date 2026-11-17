@@ -139,10 +139,19 @@
   出清、高亮/卡片消失；刷新或切回文件后按引文重新锚定。预览锚点仍支持 json 节点路径、表格单元格、图片区域、
   pptx 页码。改动审阅 = 左栏 Goal-first 改动面 + 每 turn / 每 Goal revision 的改动集 tab。
 - **检查点**：`CheckpointOverlay` 时间线（会话回滚 / 文件回滚 / both）；服务端检查点支持只读预览。
-- **托盘与存在感**：15s 轮询 `/api/presence` → tooltip / 菜单状态 / 任务栏进度；attention 差集通知
-  持久化防重发；点击通知 `navigateToGoal` 跨项目打开。**OS 通知只来自这一层（事务层）**：
-  「需要你」+ Goal 结果就绪；回合完成 / 子代理完成 / 后台任务完成只在应用内 toast，不发系统通知
-  （2026-11-16，`completion-notify-wiring.test.ts` 钉扎）。
+- **托盘与存在感**：15s 轮询 `/api/presence` → tooltip / 菜单状态 / 任务栏进度；attention 差集
+  持久化防重发；点击托盘状态行 `navigateToGoal` 跨项目打开。
+- **通知（2026-11-17，自绘）**：主进程 `NotificationHub`（`electron-store("mafw-notifications")`）
+  是唯一数据源——presence（attention + Goal 结果）、`permission.asked`、`question.asked`、
+  `user_question` 都 publish 进 hub；原生 `new Notification` 只作为悬浮窗失败/关闭时的兜底。
+  三个消费面：① rail 铃铛 → `NotificationCenter` 锚定面板（未读角标、全部/未读筛选、全部已读、
+  清空已读）；② `notification-window.ts` 自绘悬浮窗（无边框置顶、右下堆叠最多 3 张、6s 自动
+  消失、hover 暂停、不抢焦点，只收 p1/p2）；③ 点击任何通知走统一 target 路由
+  （`navigateNotificationTarget` → 会话 tab / Goal 详情（含 plan/direction/question 聚焦）/
+  Config）。已读闭环：权限/提问答复、presence attention 消失、Goal 结果被查看都自动标已读；
+  `dedupeKey + seenKeys` 墓碑保证清空/淘汰后同一事件不复活（`NotifyState` 已退役）。
+  子代理/后台任务完成（p3）保持应用内 toast，不进中心、不计角标。Config › 桌面集成 › 通知：
+  自绘悬浮窗 / 勿扰 / 原生兜底三个开关即时生效。
 - **视觉语言**：单一 token 集（`.mafw-shell, body` 三个主题块键集一致），按 primitive →
   semantic → component 三层消费。石墨中性表面；`--action-primary-*` 独立承担实心主操作，
   `--accent` 只负责选中/链接/focus/运行，`--success` 只负责通过/完成；禁止把三者混用。
