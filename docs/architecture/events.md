@@ -63,6 +63,27 @@ Source → Trigger → Thread → Subscription → Decision → Delivery → Cha
   记 `[GoalHistory] divergence` 并计数（`GoalStateStore.replayStats()`）。
 - 行与 legacy JSON 都缺失时，`load` 从 history 回放并恢复 `goal_state` 行（不追加事件）。
 
+### External events → domain log + Lead inbox（Phase 4，2026-11-17）
+
+- `EventLayerService.ingest` 对 `github` / `cron` / `webhook` 追加 `external.*` domain event：
+  `external.<sourceKind>.<kind>`（cron 去掉 `cron.` 前缀），`aggregateId = externalKey`，
+  `eventId = external:<idempotencyKey>`，因此重复投递不会产生第二条事件。
+  `internal` source 不在此追加（`goal.*` / `decision.*` 已由各自生产者负责）。
+- domain event append 是 fail-open：日志写失败只记录，不拒绝 ingest。
+- `deliverContext` 对外部事件也写 `LeadOutbox`：`dedupeKey = external:<triggerId>`，
+  批量头 `[EVENT] N 条待处理`；decision / Pod event / external 共用同一 dispatcher 的
+  batch / budget / retry。
+- delivery receipt：`EventLayerService.markDeliveryReceipt(deliveryId, 'read' |
+  'acknowledged' | 'answered')` 在同事务里写 `event_deliveries` 与对应 `event_outbox` 的
+  `read_at` / `ack_at` / `answered_at`；非法状态转移抛错且不写任何一行。
+- Lead 会话 `turn.completed` ack 通过 `sent_session_id` 反查 outbox payload 的 `triggerId`，
+  把对应 `delivered` / `read` delivery 置为 `acknowledged`。
+- 失败 delivery：默认 5 次后进入 `dropped`（`dead-letter: ...`），未达阈值按 2s→60s
+  退避；重启后到期的 failed delivery 继续重试。
+- `event_sources` / `event_threads` / `event_triggers` / `event_subscriptions` /
+  `event_decisions` / `event_deliveries` 仍是外部事件的线程、决策与投递审计；
+  read/ack/answered 的 HTTP 路由未在本阶段暴露。
+
 ### Lead read / ack（2026-11-16 定案）
 
 - **read**：客户端把某个 Goal 的 Pod event 标记 seen 后，该 goal 的 lead outbox 行写
