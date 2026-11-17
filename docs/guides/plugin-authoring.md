@@ -57,7 +57,7 @@
 
 `plugin.json` 的 `contributes` 是对注册面的**静态上界，不是运行清单**：声明了某个面，`activate()` 注册的条目就必须落在声明集合内；没有声明的面完全不受约束；声明了却没有注册也合法（包可以按能力、配置或 host 版本条件注册）。违反上界会让**整包激活失败**。
 
-诊断顺序：`contributes.gateway` 的 `actions` / `events` / `tools` / `observers` 四个 plane 的上界由 `enforceDeclared` 在形状 / 身份校验之后检查——包存在形状 / 身份错误时只报这些错误；把它们修好之后才会报告越界（两者都是激活失败，判决不变），这样派生的「未声明」错误不会掩盖第一个原因。例外：`contributes.gateway.http === false` 的检查在派生贡献构建之前就已执行，http 违例因此不受这个顺序约束（它可能与形状错误一同出现，也可能先于形状错误被报告）。
+诊断顺序：`contributes.gateway` 的 `actions` / `events` / `tools` / `observers` 四个 plane 的上界由 `enforceDeclared` 在形状 / 身份校验之后检查——包存在形状 / 身份错误时只报这些错误；把它们修好之后才会报告越界（两者都是激活失败，判决不变），这样派生的「未声明」错误不会掩盖第一个原因。例外：`contributes.gateway.http === false` 的检查在派生贡献构建之前就已执行，http 违例因此不受这个顺序约束（它在派生贡献校验之前单独报告：一旦 http 面越界，错误只有这一条，不会夹带形状错误）。
 
 `contributes.gateway` 支持：
 

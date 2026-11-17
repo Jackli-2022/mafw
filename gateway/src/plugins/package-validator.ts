@@ -695,7 +695,9 @@ export type BuildActivatedContributionsResult =
  * Validation + projection for a candidate package.
  *
  * @param declared Static `plugin.json` `contributes` block, when the package
- *   has one. Treated as an upper bound on the registered actions/events/tools.
+ *   has one. Treated as an upper bound on the registered
+ *   actions / events / tools / observers (`contributes.gateway.http` is
+ *   enforced by the host before this projection runs, not here).
  * @returns `ok: true` with client-safe DTOs and Host declarations, or
  *   `ok: false` with the diagnostics that explain the first cause. Derived
  *   `contributes` bound errors are withheld while any shape error exists, so
