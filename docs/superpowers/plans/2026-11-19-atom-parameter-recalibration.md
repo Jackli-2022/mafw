@@ -22,6 +22,20 @@
 - 换 embedding 模型必须重算 baseline 与阈值；参数集与 model tag 绑定。
 - 在 `main` 上 native 执行；不建 worktree；不 stage 其他会话文件。
 
+## 现状：检索时的“记忆联想”怎么走
+
+1. **六路召回**：dense / lexical / feature / concept / actor / sparse。
+2. **RRF 融合**：每个通道按名次贡献 `1 / (60 + rank)`；同一 trace 出现在多路会累加。
+3. **模式完成（1-hop）**：`expandT1Neighbors` 以融合结果为种子，补三类邻居：
+   - 共享 concept（按权重求和）；
+   - 共享 actor（排除 `user:` / `project:`）；
+   - 同 session 相邻 ±1–2 轮（固定 0.25）。
+4. **有界 activation 重排**：只允许“基础分 ≥ top × band（0.6）”的命中获得最多 10% 加成；默认 shadow。
+5. **没有** PPR、没有多跳、没有把 coactivation 边接进 T1 检索（16,866 条边存在于别处）。
+
+所以“联想”目前是**概念/演员/时间邻接的一跳补全**，不是图传播。
+Task 8/9 要测的就是这套路径里的参数，而不是再加一个分数。
+
 ## Review Focus
 
 - 参考文本必须随机/分层，不能是 `sampleTurnTexts` 的前 N 条。
@@ -161,6 +175,55 @@ export const DEFAULT_ATOM_PARAMS: AtomParams;   // 当前线上值
 - [ ] 提交 `docs(release): atom parameter recalibration`。
 
 ---
+
+### Task 0: 溯源护栏（先做，否则后面都不可信）
+
+**Files:**
+- Modify: `gateway/src/routes/memory.ts`（`embedding` 块）
+- Modify: `gateway/src/recall/t1-encode.ts`（`model` 写真实 providerId）
+- Modify: `gateway/src/config.ts`（启动时一致性校验）
+- Test: `gateway/tests/unit/routes/memory-wiring.test.ts`、`gateway/tests/unit/recall/t1-encode.test.ts`
+
+- [ ] `stats.embedding` 返回 `{ providerId, engine, model, dims }`，其中 `providerId/engine/dims` 来自运行时，不读配置字面量。
+- [ ] `t1_turn_encoding.model` 写 `providerId`（例如 `llamacpp:Qwen3-…gguf@1024`），替换常量 `sparse-embed-v1`。
+- [ ] 启动校验：`engine=llamacpp` 且 `model` 以 `-ONNX` 结尾 → 日志 warning；`providerId` 缺失 → 不静默。
+- [ ] 测试：配置冲突时 warning；marker 写 providerId；stats 不读 `config.model` 作为 provider 证据。
+- [ ] 提交 `fix(memory): make embedding provenance observable`。
+
+---
+
+### Task 8: 稀疏分解“效果”参数审计（只测量）
+
+**Files:**
+- Create: `gateway/scripts/audit-atom-effect.ts`
+- Create: `docs/releases/2026-11-19-atom-effect-audit.md`
+
+**要测的参数（不是选择阈值，而是影响效果的）：**
+- **anchor 词典**：12 个 anchor 覆盖了哪些 concept；有多少 concept 没有对应 anchor（OOV）；anchor 触发分布（是否 hub）。
+- **输入截断**：`MAX_TEXT = 2000`；对比 1000 / 2000 / 4000 时的 atom 覆盖与 recall。
+- **查询侧编码**：query 原子用 `document` kind；对比 `query` kind（或 Qwen 指令）对 recall 的影响。
+- **通道贡献**：全通道 vs 去掉 sparse、去掉 neighbor、去掉 activation 的 recall@3 / MRR 差值。
+- **RRF_K**：20 / 60 / 100。
+- **activation 重排**：weight 0 / 0.05 / 0.1 / 0.2，band 0.4 / 0.6 / 0.8（当前 shadow）。
+- **neighbor 扩展**：cap 0 / 5 / 10；concept/actor/adjacency 的边际贡献。
+
+方法：全部在 val 上；每项变更与当前做 paired bootstrap；test 不动。
+
+- [ ] 实现脚本，输出每个参数的边际贡献与 CI。
+- [ ] 报告哪些参数“有影响”、哪些“不可辨识”（CI 重叠）。
+- [ ] 提交 `feat(eval): audit atom effect parameters`。
+
+---
+
+### Task 9: 关联路径的参数（可选，需单独确认）
+
+当前关联是 1-hop：RRF 融合 → `expandT1Neighbors`（共享 concept/actor + 同 session 相邻 ±1–2 轮）→ 有界 activation 重排。
+不含 PPR、不含多跳、不含 coactivation 边（16,866 条已存在但不在 T1 search 路径）。
+如果要改，先回答：
+
+- [ ] neighbor 的 cap 与权重（concept/actor 权重、adjacency 0.25）是否有数据支持？
+- [ ] coactivation 边是否应该进入 T1 关联？先 shadow 记录“若加入会召回什么”，再评估。
+- [ ] 多跳（2-hop）是否值得？用 val 上的 recall@3 与延迟做帕累托。
 
 ### Task 7（可选，需单独确认）: 接入每日衰减/回填
 
