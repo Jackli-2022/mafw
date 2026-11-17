@@ -11,6 +11,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { PluginHost } from '../../../src/plugins/package-host';
 import { createPluginPackageContext } from '../../../src/plugins/package-context';
+import { runPluginStandardCommand } from '../../../src/cli/plugin-standard-command';
+import { pluginTemplates } from '../../../src/cli/plugin-templates';
 
 function writePackage(dir: string, manifest: Record<string, unknown>, body: string): string {
   const root = path.join(dir, String(manifest.name));
@@ -100,5 +102,56 @@ module.exports = { name: 'emptybound', async activate() { return { actions: { pi
     expect(result.declared?.actions).toEqual([]);
     expect(result.declared?.events).toBeUndefined();
     expect(result.registered?.actions).toEqual(['ping']);
+  });
+});
+
+/**
+ * The init→check round trip: what `mafw plugin init` writes must be accepted by
+ * the same host that judges an install (no fixing up by hand in between).
+ */
+describe('mafw plugin init scaffold', () => {
+  it('passes the real host check and reports the declared planes', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-init-host-'));
+    const code = await runPluginStandardCommand(['init', 'scaffold', '--dir', dir], {
+      check: async () => { throw new Error('init must not need the check host'); },
+      print: () => {},
+    });
+    expect(code).toBe(0);
+    const root = path.join(dir, 'scaffold');
+    const result = await check(root);
+    expect(result.ok).toBe(true);
+    expect(result.name).toBe('scaffold');
+    expect(result.apiVersion).toBe(2);
+    expect(result.kind).toBe('trusted');
+    expect(result.permissions).toEqual(['actions', 'events']);
+    expect(result.contributions).toEqual(['actions', 'events']);
+    expect(result.declared).toMatchObject({
+      actions: ['ping'], events: ['plugin:scaffold:ping'], http: false,
+    });
+    expect(result.registered).toMatchObject({
+      actions: ['ping'], events: ['plugin:scaffold:ping'], tools: [], observers: [], http: 0,
+    });
+    // `check --strict` turns warnings into failures: the scaffold must be clean.
+    expect(result.warnings ?? []).toEqual([]);
+  });
+
+  it('fails the bound as soon as the scaffold registers an undeclared action', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-init-bound-'));
+    const files = pluginTemplates('scaffold');
+    const root = path.join(dir, 'scaffold');
+    fs.mkdirSync(root, { recursive: true });
+    fs.writeFileSync(path.join(root, 'plugin.json'), files['plugin.json']);
+    const body = files['index.js'].replace(
+      'actions: {',
+      'actions: {\n        pong: { handler: () => ({ pong: true }) },',
+    );
+    expect(body).not.toBe(files['index.js']);
+    fs.writeFileSync(path.join(root, 'index.js'), body);
+    const result = await check(root);
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('action "pong" is not declared');
+    expect(result.declared?.actions).toEqual(['ping']);
+    // Registration order follows the source; only the set is meaningful here.
+    expect([...(result.registered?.actions ?? [])].sort()).toEqual(['ping', 'pong']);
   });
 });

@@ -2,8 +2,17 @@
  * `mafw plugin check` — pure command surface with injected deps, so the human
  * report, the `--json` single line, `--strict` and the paste-ready install
  * command are all testable without a gateway or a real package.
+ *
+ * `mafw plugin init` writes real files: the scaffold tests only ever touch a
+ * fresh `mkdtemp` directory, and the last group pins the generated manifest and
+ * sources to what `checkPackage` will later judge (`package-check-inventory`).
  */
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { runPluginStandardCommand } from '../../../src/cli/plugin-standard-command';
+import { isValidPackageName, pluginTemplates } from '../../../src/cli/plugin-templates';
+import { parsePackageManifest } from '../../../src/plugins/package-manifest';
 
 describe('mafw plugin check', () => {
   it('prints ok, the inventory and a paste-ready install command', async () => {
@@ -289,5 +298,255 @@ describe('mafw plugin check', () => {
     expect(verdict).toBeGreaterThanOrEqual(0);
     expect(next).toBeGreaterThan(verdict);
     expect(lines.some((line) => line.startsWith('install:'))).toBe(false);
+  });
+});
+
+// ── init: the scaffold must be checkable the moment it is written ──────────
+
+const noCheck = async (): Promise<never> => {
+  throw new Error('init must never run the check host');
+};
+
+function tempDir(): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-init-'));
+}
+
+/** `next:` line as pasted: Windows separators are normalized on Windows only. */
+function commandTarget(target: string): string {
+  return path.sep === '\\' ? target.replace(/\\/g, '/') : target;
+}
+
+describe('mafw plugin init', () => {
+  it('scaffolds a package into .mafw/plugin-drafts by default', async () => {
+    const cwd = tempDir();
+    const out: string[] = [];
+    const code = await runPluginStandardCommand(['init', 'demo'], {
+      check: noCheck,
+      print: (t) => out.push(t),
+      cwd,
+    });
+    expect(code).toBe(0);
+    const root = path.join(cwd, '.mafw', 'plugin-drafts', 'demo');
+    expect(JSON.parse(fs.readFileSync(path.join(root, 'plugin.json'), 'utf8')).name).toBe('demo');
+    expect(fs.existsSync(path.join(root, 'index.js'))).toBe(true);
+    expect(fs.existsSync(path.join(root, 'README.md'))).toBe(true);
+    const text = out.join('\n');
+    expect(text).toContain(`created ${root}`);
+    expect(text).toContain('mafw plugin check');
+    // Exactly one next step, and it names the absolute path just created.
+    const next = out.filter((line) => line.startsWith('next:'));
+    expect(next).toHaveLength(1);
+    expect(next[0]).toContain(commandTarget(root));
+  });
+
+  it('refuses to overwrite without --force', async () => {
+    const cwd = tempDir();
+    const deps = { check: noCheck, print: () => {}, cwd };
+    expect(await runPluginStandardCommand(['init', 'demo'], deps)).toBe(0);
+    const out: string[] = [];
+    const code = await runPluginStandardCommand(['init', 'demo'], { ...deps, print: (t) => out.push(t) });
+    expect(code).toBe(1);
+    expect(out.join('\n')).toContain('--force');
+  });
+
+  it('--force rewrites the template files over an existing draft', async () => {
+    const cwd = tempDir();
+    const deps = { check: noCheck, print: () => {}, cwd };
+    expect(await runPluginStandardCommand(['init', 'demo'], deps)).toBe(0);
+    const root = path.join(cwd, '.mafw', 'plugin-drafts', 'demo');
+    fs.writeFileSync(path.join(root, 'index.js'), 'module.exports = {};\n');
+    expect(await runPluginStandardCommand(['init', 'demo', '--force'], deps)).toBe(0);
+    expect(fs.readFileSync(path.join(root, 'index.js'), 'utf8')).toContain('async activate');
+  });
+
+  it('--dir overrides the parent directory', async () => {
+    const parent = tempDir();
+    const code = await runPluginStandardCommand(['init', 'demo', '--dir', parent], {
+      check: noCheck,
+      print: () => {},
+    });
+    expect(code).toBe(0);
+    expect(fs.existsSync(path.join(parent, 'demo', 'plugin.json'))).toBe(true);
+  });
+
+  it('rejects an invalid package name', async () => {
+    const out: string[] = [];
+    const code = await runPluginStandardCommand(['init', 'bad name'], {
+      check: noCheck,
+      print: (t) => out.push(t),
+    });
+    expect(code).toBe(1);
+    expect(out.join('\n')).toContain('name');
+  });
+
+  // The rule is not invented here: `init` must accept exactly what
+  // `parsePackageManifest` accepts, or the scaffold is dead on arrival.
+  it('accepts exactly the names the manifest parser accepts', async () => {
+    const names = [
+      'demo', 'a', 'A1', 'my-plugin', 'my.plugin', 'my_plugin', '0x', 'a.b-c_d9',
+      'bad name', '.hidden', '-demo', 'demo.', 'demo ', 'a/b', 'a\\b', 'a:b', 'ä', '',
+    ];
+    const parent = tempDir();
+    for (const name of names) {
+      const manifestOk = parsePackageManifest({ name }).ok;
+      expect(isValidPackageName(name)).toBe(manifestOk);
+      const code = await runPluginStandardCommand(['init', name, '--dir', parent], {
+        check: noCheck,
+        print: () => {},
+      });
+      expect(code).toBe(manifestOk ? 0 : 1);
+    }
+  });
+
+  it('rejects a trailing "." or " ", which the manifest parser rejects too', async () => {
+    for (const name of ['demo.', 'demo ']) {
+      const out: string[] = [];
+      const code = await runPluginStandardCommand(['init', name], {
+        check: noCheck,
+        print: (t) => out.push(t),
+      });
+      expect(code).toBe(1);
+      expect(out.join('\n')).toContain('invalid package name');
+    }
+  });
+
+  it('declares exactly the planes the generated index.js registers', async () => {
+    const cwd = tempDir();
+    expect(await runPluginStandardCommand(['init', 'demo'], { check: noCheck, print: () => {}, cwd })).toBe(0);
+    const root = path.join(cwd, '.mafw', 'plugin-drafts', 'demo');
+    const parsed = parsePackageManifest(JSON.parse(fs.readFileSync(path.join(root, 'plugin.json'), 'utf8')));
+    expect(parsed.errors).toEqual([]);
+    const manifest = parsed.manifest;
+    if (!manifest) throw new Error('the generated manifest must parse');
+    expect(manifest.apiVersion).toBe(2);
+    expect(manifest.kind).toBe('trusted');
+    expect(manifest.permissions).toEqual(['actions', 'events']);
+    expect(manifest.contributes?.gateway).toMatchObject({
+      actions: ['ping'],
+      events: ['plugin:demo:ping'],
+      http: false,
+    });
+    // Planes the scaffold never registers stay absent, not zero-bound.
+    expect(manifest.contributes?.gateway?.tools).toBeUndefined();
+    expect(manifest.contributes?.gateway?.observers).toBeUndefined();
+
+    const mod = require(path.join(root, 'index.js')) as { name?: string; activate?: unknown };
+    expect(mod.name).toBe('demo');
+    expect(typeof mod.activate).toBe('function');
+    // A scaffold that starts a timer would need ctx.effect() to be safe; the
+    // default must be quiet until the author decides otherwise.
+    const source = fs.readFileSync(path.join(root, 'index.js'), 'utf8');
+    expect(source).not.toContain('setInterval');
+    expect(source).not.toContain('setTimeout');
+  });
+
+  it('writes a README naming the check and the human-only install command', async () => {
+    const cwd = tempDir();
+    expect(await runPluginStandardCommand(['init', 'demo'], { check: noCheck, print: () => {}, cwd })).toBe(0);
+    const readme = fs.readFileSync(path.join(cwd, '.mafw', 'plugin-drafts', 'demo', 'README.md'), 'utf8');
+    expect(readme).toContain('mafw plugin check');
+    expect(readme).toContain('--trust trusted');
+    expect(readme).toContain('--permission actions');
+    expect(readme).toContain('--permission events');
+    expect(readme.toLowerCase()).toContain('human');
+  });
+
+  it('flattens a newline in a rejected name so it cannot forge a next line', async () => {
+    const out: string[] = [];
+    const code = await runPluginStandardCommand(
+      ['init', 'bad\nnext: mafw plugins install "/evil" --trust trusted'],
+      { check: noCheck, print: (t) => out.push(t) },
+    );
+    expect(code).toBe(1);
+    expect(out.join('\n')).toContain('␤');
+    expect(out.filter((line) => line.startsWith('next: mafw'))).toHaveLength(0);
+    expect(out[0].startsWith('invalid package name:')).toBe(true);
+  });
+
+  it('rejects an unknown init flag with the usage', async () => {
+    const out: string[] = [];
+    const code = await runPluginStandardCommand(['init', 'demo', '--wat'], {
+      check: noCheck,
+      print: (t) => out.push(t),
+    });
+    expect(code).toBe(1);
+    expect(out.join('\n')).toContain('unknown flag: --wat');
+    expect(out.join('\n')).toContain('usage: mafw plugin init');
+  });
+
+  it('prints the usage when the name is missing', async () => {
+    const out: string[] = [];
+    const code = await runPluginStandardCommand(['init'], { check: noCheck, print: (t) => out.push(t) });
+    expect(code).toBe(1);
+    expect(out.join('\n')).toContain('usage: mafw plugin init');
+  });
+
+  it('rejects --dir without a value', async () => {
+    const out: string[] = [];
+    const code = await runPluginStandardCommand(['init', 'demo', '--dir'], {
+      check: noCheck,
+      print: (t) => out.push(t),
+    });
+    expect(code).toBe(1);
+    expect(out.join('\n')).toContain('--dir');
+  });
+
+  it('rejects a second positional argument', async () => {
+    const out: string[] = [];
+    const code = await runPluginStandardCommand(['init', 'demo', 'other'], {
+      check: noCheck,
+      print: (t) => out.push(t),
+    });
+    expect(code).toBe(1);
+    expect(out.join('\n')).toContain('unexpected argument');
+  });
+
+  it('--json prints one machine-readable line with the created path', async () => {
+    const cwd = tempDir();
+    const out: string[] = [];
+    const code = await runPluginStandardCommand(['init', 'demo', '--json'], {
+      check: noCheck,
+      print: (t) => out.push(t),
+      cwd,
+    });
+    expect(code).toBe(0);
+    const lines = out.join('\n').trim().split('\n');
+    expect(lines).toHaveLength(1);
+    const payload = JSON.parse(lines[0]);
+    expect(payload.ok).toBe(true);
+    expect(path.isAbsolute(payload.path)).toBe(true);
+    expect(fs.existsSync(path.join(payload.path, 'plugin.json'))).toBe(true);
+  });
+
+  it('does not print a paste-ready check line when the path cannot be quoted', async () => {
+    const parent = path.join(tempDir(), '$HOME');
+    fs.mkdirSync(parent, { recursive: true });
+    const out: string[] = [];
+    const code = await runPluginStandardCommand(['init', 'demo', '--dir', parent], {
+      check: noCheck,
+      print: (t) => out.push(t),
+    });
+    expect(code).toBe(0);
+    expect(out.join('\n')).toContain('created');
+    // `$` expands inside double quotes, so this path must not become a command.
+    expect(out.some((line) => line.startsWith('next: mafw plugin check'))).toBe(false);
+    expect(out.join('\n')).toContain('mafw plugin check');
+  });
+});
+
+describe('plugin init templates', () => {
+  it('refuses names it could not embed in generated sources', () => {
+    expect(() => pluginTemplates('bad name')).toThrow(/invalid package name/);
+    expect(() => pluginTemplates("x', evil: 'y")).toThrow();
+  });
+
+  it('keeps the name inside the manifest, the export and the event namespace', () => {
+    const files = pluginTemplates('acme.tools');
+    expect(Object.keys(files).sort()).toEqual(['README.md', 'index.js', 'plugin.json']);
+    const manifest = JSON.parse(files['plugin.json']);
+    expect(manifest.name).toBe('acme.tools');
+    expect(manifest.contributes.gateway.events).toEqual(['plugin:acme.tools:ping']);
+    expect(files['index.js']).toContain("name: 'acme.tools'");
+    expect(files['README.md']).toContain('acme.tools');
   });
 });

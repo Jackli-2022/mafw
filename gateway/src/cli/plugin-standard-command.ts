@@ -1,6 +1,11 @@
 /**
  * `mafw plugin ...` — the in-process plugin standard surface.
  *
+ * `init` writes the smallest package that already passes `check` (inline
+ * templates, no build-time files): one action, one event, and a manifest whose
+ * `contributes.gateway` declares exactly what `activate()` registers. An author
+ * therefore starts inside the standard's bounds.
+ *
  * `check` runs the *same* judgement function as a real activation
  * (`PluginHost.checkPackage`, a dry-run activation) inside this CLI process:
  * no gateway, no human token, no network. It prints the declared-vs-registered
@@ -8,7 +13,9 @@
  * package before asking a human for consent.
  *
  * Everything here is a pure function over injected deps: the CLI entrypoint
- * (`bin/mafw.js`) owns process/fs wiring, tests own the assertions.
+ * (`bin/mafw.js`) owns process/fs wiring where it can, tests own the assertions.
+ * `init` is the exception that necessarily touches fs — it writes only under
+ * the given parent directory.
  *
  * Output safety: every package-derived value (name, permissions, warning and
  * error text, plane names) is flattened before it reaches the terminal, and the
@@ -17,26 +24,40 @@
  * `net.fetch:`, so a manifest can legally declare a token containing `;` or a
  * newline; pasting that line would execute whatever follows it.
  */
+import * as fs from 'fs';
 import * as path from 'path';
 import type { PluginCheckResult } from '../plugins/package-host';
+import {
+  isValidPackageName,
+  pluginTemplates,
+  PACKAGE_NAME_RULE,
+  type PluginTemplateFiles,
+} from './plugin-templates';
 
 export interface PluginStandardDeps {
   /** In-process check; the CLI passes `createLocalCheck()`. */
   check(path: string): Promise<PluginCheckResult>;
   print(text: string): void;
-  /** Used only to suggest an absolute path when one is not given. */
+  /** Used by `init` for the default target, and to suggest absolute paths. */
   cwd?: string;
 }
 
 const USAGE = [
-  'usage: mafw plugin check <absolute-path> [--json] [--strict]',
+  'usage: mafw plugin init <name> [--dir <parent>] [--force] [--json]',
+  '       mafw plugin check <absolute-path> [--json] [--strict]',
   '',
+  '  init       Scaffold a package that already passes `plugin check`',
+  '             (default target: <cwd>/.mafw/plugin-drafts/<name>)',
   '  check      Dry-run one package in this process (no gateway, no token, no network)',
+  '',
+  '  --dir      Parent directory for init (default: <cwd>/.mafw/plugin-drafts)',
+  '  --force    Overwrite the template files when the target already exists',
   '  --json     Print one JSON line; its `ok` is the command verdict',
-  '  --strict   Treat manifest warnings as failures',
+  '  --strict   Treat manifest warnings as failures (check only)',
 ].join('\n');
 
 const CHECK_FLAGS = new Set(['--json', '--strict']);
+const INIT_FLAGS = new Set(['--dir', '--force', '--json']);
 
 /**
  * What may appear in a printed, paste-ready command for an **unquoted** token
@@ -263,6 +284,124 @@ function nextSteps(target: string, result: PluginCheckResult, strictFailed: bool
   return steps;
 }
 
+/**
+ * The one command that verifies a freshly scaffolded package.
+ *
+ * Same quoting rule as the install line: a path holding a shell-expandable
+ * character (`$`, backtick, `!`) is *named*, not pasted — the operator chose
+ * the directory, the package is still fine.
+ */
+function nextCheckStep(target: string): string {
+  if (!isQuotablePath(target)) {
+    return 'next: run "mafw plugin check" on the path above — it contains characters '
+      + 'that cannot be printed inside a shell command safely';
+  }
+  return `next: mafw plugin check "${target}"`;
+}
+
+/**
+ * `mafw plugin init <name>` — writes the three template files, prints `created`
+ * plus the single command that verifies them.
+ *
+ * The name is operator input and must sit exactly inside the manifest's name
+ * rule: every template embeds it in generated source and it becomes a directory
+ * name, so an invalid one is rejected before anything touches disk.
+ */
+async function runInit(
+  args: string[],
+  deps: PluginStandardDeps,
+  asJson: boolean,
+): Promise<number> {
+  const unknownFlag = args.find((arg) => arg.startsWith('--') && !INIT_FLAGS.has(arg));
+  if (unknownFlag) {
+    return fail(deps, asJson, `unknown flag: ${unknownFlag}`, [
+      `unknown flag: ${text(unknownFlag)}`,
+      USAGE,
+    ]);
+  }
+
+  const dirIndex = args.indexOf('--dir');
+  let parentArg: string | undefined;
+  if (dirIndex >= 0) {
+    parentArg = args[dirIndex + 1];
+    // A following flag means the value is missing; never take `--force` as a path.
+    if (parentArg === undefined || parentArg.startsWith('--')) {
+      return fail(deps, asJson, 'missing value for --dir', [
+        'missing value for --dir <parent>',
+        USAGE,
+      ]);
+    }
+  }
+
+  const positional = args.filter(
+    (arg, index) => !arg.startsWith('--') && (dirIndex < 0 || index !== dirIndex + 1),
+  );
+  const name = positional[0];
+  if (name === undefined || name.length === 0) {
+    return fail(deps, asJson, 'missing package name', [USAGE]);
+  }
+  if (positional.length > 1) {
+    // `init a b` cannot mean "create b inside a" — `--dir` is the only way to
+    // choose a parent, and guessing here would write to the wrong place.
+    return fail(deps, asJson, `unexpected argument: ${positional[1]}`, [
+      `unexpected argument: ${text(positional[1])}`,
+      USAGE,
+    ]);
+  }
+  if (!isValidPackageName(name)) {
+    return fail(deps, asJson, `invalid package name: ${name}`, [
+      `invalid package name: ${text(name)}`,
+      `rule: ${PACKAGE_NAME_RULE}`,
+      'next: pass a name like "my-plugin"',
+    ]);
+  }
+
+  const base = deps.cwd ?? process.cwd();
+  const parent = parentArg === undefined
+    ? path.join(path.resolve(base), '.mafw', 'plugin-drafts')
+    : path.resolve(base, parentArg);
+  const target = path.join(parent, name);
+
+  if (fs.existsSync(target) && !args.includes('--force')) {
+    return fail(deps, asJson, `refusing to overwrite: ${target} (pass --force)`, [
+      `refusing to overwrite: ${text(target)} (pass --force)`,
+      'next: pass --force to rewrite the three template files, or pick another name',
+    ]);
+  }
+
+  let files: PluginTemplateFiles;
+  try {
+    // `pluginTemplates` is called inside the guard too: a name that slipped
+    // past validation must become "init failed", never an unhandled rejection.
+    files = pluginTemplates(name);
+    fs.mkdirSync(target, { recursive: true });
+    for (const [file, content] of Object.entries(files)) {
+      fs.writeFileSync(path.join(target, file), content, 'utf8');
+    }
+  } catch (err) {
+    return fail(deps, asJson, `init failed: ${messageOf(err)}`, [
+      `init failed: ${text(messageOf(err))}`,
+      `next: check that ${text(target)} is writable`,
+    ]);
+  }
+
+  const printedTarget = commandPath(target);
+  if (asJson) {
+    printJson(deps, {
+      ok: true,
+      verdict: 'ok',
+      name,
+      path: printedTarget,
+      files: Object.keys(files),
+    });
+    return 0;
+  }
+
+  deps.print(`created ${text(target)}`);
+  deps.print(nextCheckStep(printedTarget));
+  return 0;
+}
+
 export async function runPluginStandardCommand(
   argv: string[],
   deps: PluginStandardDeps,
@@ -272,6 +411,10 @@ export async function runPluginStandardCommand(
   // machine channel a single parseable line too.
   const asJson = args.includes('--json');
   const command = args.shift();
+
+  if (command === 'init') {
+    return runInit(args, deps, asJson);
+  }
 
   if (command !== 'check') {
     const missing = command === undefined || command.length === 0;
