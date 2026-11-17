@@ -74,10 +74,9 @@ test('roundtrips surprise and preserves it on re-upsert', () => {
   export function scoreSurprise(cosine: number | null): number | null
   export async function computeTurnSurprise(
     inputs: SurpriseInput[],
-    deps: TurnSignalDeps,
+    deps: Pick<TurnSignalDeps, 'embedder'>,
   ): Promise<Map<string, number>>
   ```
-  `deps` reuses `embedder`; `vectors`/`unitFor` are not needed but the type is shared.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -107,7 +106,7 @@ test('no previous text or an uninformative previous turn yields no score', async
       { traceId: 'a', text: BODY },
       { traceId: 'b', text: BODY, prevText: 'You are a subagent spawned by another session.' },
     ],
-    d as any,
+    { embedder: d.embedder } as any,
   );
   expect(map.size).toBe(0);
 });
