@@ -88,6 +88,14 @@ test('a receipt whose outbox write fails rolls the delivery back', () => {
   expect(h.store.getDelivery('d1')?.state).toBe('delivered');
 });
 
+test('a human can answer directly after reading', () => {
+  const h = setup();
+  h.service.markDeliveryReceipt('d1', 'read');
+  h.service.markDeliveryReceipt('d1', 'answered');
+  expect(h.store.getDelivery('d1')?.state).toBe('answered');
+  expect(h.store.getOutbox(h.outbox.id)?.answeredAt).toBe(NOW);
+});
+
 test('logs when an external receipt has no outbox row', () => {
   const h = setup();
   h.db.prepare('DELETE FROM event_outbox WHERE id = ?').run(h.outbox.id);
