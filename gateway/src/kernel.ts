@@ -323,7 +323,9 @@ import {
 } from './core/events/event-normalize';
 import { pollGitHubSource } from './core/events/sources/github-source';
 import { eventLayerEnabled } from './core/events/event-flags';
-import { isLeadDecisionContext, renderExternalEvent, renderLeadDecisionEvent } from './core/events/lead-event';
+import { isLeadDecisionContext, renderDomainEvent, renderExternalEvent, renderLeadDecisionEvent } from './core/events/lead-event';
+import { consumerEnvelope, domainEventForTrigger } from './core/events/domain-event-consumer';
+import type { EventTriggerRow } from './core/events/event-types';
 import type { DecisionRecordEvent } from './core/decision/decision-record';
 import type { RuntimeDefinition } from '@mafw/runtime-contract';
 
@@ -1192,6 +1194,11 @@ class MafwScheduler {
     runEventPipeline(f, evt, this.buildDispatchCtx());
     // Lead reply = ack: only rows delivered to this exact session are acked.
     if (f.type === 'turn.completed') this.ackLeadOutboxForSession(f.sessionID);
+  }
+
+  /** External domain fact for a trigger; null for decision/internal triggers. */
+  private externalDomainEventForTrigger(trigger: EventTriggerRow) {
+    return domainEventForTrigger(this.domainEvents ?? null, trigger);
   }
 
   private ackLeadOutboxForSession(sessionId: string | null | undefined): void {
@@ -4977,10 +4984,12 @@ class MafwScheduler {
         if (subscription.subscriberType === 'standing_goal'
           && this.standingGoals
           && process.env.MAFW_STANDING_GOALS === '1') {
+          const envelope = consumerEnvelope(trigger, this.externalDomainEventForTrigger(trigger));
           await this.standingGoals.handleEventTrigger(subscription.subscriberId, {
+            // Idempotency stays keyed by the trigger; only the content source moves.
             eventId: trigger.id,
-            payload: trigger.payload,
-            kind: trigger.kind,
+            payload: envelope.payload,
+            kind: envelope.kind,
             projectDir: thread.projectDir,
           });
         }
@@ -5006,10 +5015,11 @@ class MafwScheduler {
 
         if (!trigger.kind.startsWith('decision.')) {
           // External events share the same durable inbox as decisions/pod events.
+          const event = this.externalDomainEventForTrigger(trigger);
           leadOutbox.enqueueExternal({
             podId: subscription.subscriberId,
             triggerId: trigger.id,
-            text: renderExternalEvent(trigger, thread),
+            text: event ? renderDomainEvent(event) : renderExternalEvent(trigger, thread),
           });
           return;
         }
