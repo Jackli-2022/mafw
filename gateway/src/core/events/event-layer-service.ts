@@ -37,6 +37,8 @@ export interface EventLayerDeps {
   }): Promise<void>;
   /** Domain log for external ingests; append failures are fail-open. */
   domainEvents?: { append(input: DomainEventInput): unknown };
+  /** Failed deliveries drop as dead letters after this many attempts (default 5). */
+  maxDeliveryAttempts?: number;
   log?(message: string): void;
 }
 
@@ -222,6 +224,34 @@ export class EventLayerService {
     return row;
   }
 
+  private maxDeliveryAttempts(): number {
+    return Math.max(1, Math.trunc(this.deps.maxDeliveryAttempts ?? 5));
+  }
+
+  /** Failed → backoff; at the attempt ceiling → dropped (dead letter, no retry). */
+  private failDelivery(
+    delivery: EventDeliveryRow,
+    error: unknown,
+    now: string = this.deps.now(),
+  ): EventDeliveryRow {
+    const message = String((error as any)?.message ?? error);
+    const attempts = delivery.attempts + 1;
+    if (attempts >= this.maxDeliveryAttempts()) {
+      return this.updateDelivery(delivery.id, {
+        state: 'dropped',
+        attempts,
+        lastError: `dead-letter: ${message}`,
+        nextRetryAt: null,
+      });
+    }
+    return this.updateDelivery(delivery.id, {
+      state: 'failed',
+      attempts,
+      lastError: message,
+      nextRetryAt: new Date(Date.parse(now) + nextRetryDelayMs(attempts)).toISOString(),
+    });
+  }
+
   /**
    * Record a receipt on one delivery and mirror it onto the outbox row that
    * carried the trigger. Both writes share one transaction; an invalid
@@ -371,13 +401,7 @@ export class EventLayerService {
             lastError: null,
           });
         } catch (err: any) {
-          const attempts = delivery.attempts + 1;
-          this.updateDelivery(delivery.id, {
-            state: 'failed',
-            attempts,
-            lastError: String(err?.message ?? err),
-            nextRetryAt: new Date(Date.parse(now) + nextRetryDelayMs(attempts)).toISOString(),
-          });
+          this.failDelivery(delivery, err);
         }
       }
     }
@@ -427,13 +451,7 @@ export class EventLayerService {
           lastError: null,
         });
       } catch (err: any) {
-        const attempts = delivery.attempts + 1;
-        this.updateDelivery(delivery.id, {
-          state: 'failed',
-          attempts,
-          lastError: String(err?.message ?? err),
-          nextRetryAt: new Date(Date.parse(now) + nextRetryDelayMs(attempts)).toISOString(),
-        });
+        this.failDelivery(delivery, err, now);
       }
     }
   }
