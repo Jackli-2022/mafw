@@ -8,6 +8,8 @@ export type QueuedTurn = {
   atts: unknown[]
   agents: { name: string }[]
   voiceOrigin?: boolean
+  /** Exact annotation draft ids captured when this turn was queued. */
+  annotationIDs?: string[]
 }
 
 export function enqueueTurn(list: QueuedTurn[], turn: QueuedTurn): QueuedTurn[] {

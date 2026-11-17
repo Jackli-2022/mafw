@@ -9,6 +9,7 @@ import { agentKey } from "../agent-identity"
 import type { Annotation } from "../../../shared/annotation-types"
 import type { PendingCapture } from "./pending-captures"
 import { formatWebContext } from "./mention-sources"
+import { annotationRefPart } from "../annotation-message-part"
 
 /** 解析 "/cmd args" 形态（不做命令表匹配——那由 deps.matchSlash 注入）。 */
 export function parseSlashShape(text: string): { name: string; args: string } | null {
@@ -29,8 +30,9 @@ export function buildOptimisticParts(opts: {
   visionThumbs: Array<{ name: string; mime: string; dataUrl: string }>
   fileParts: any[]
   agentParts: any[]
+  annotationIDs?: readonly string[]
 }): any[] {
-  const { userMsgId, ts, sid, bodyMessage, visionThumbs, fileParts, agentParts } = opts
+  const { userMsgId, ts, sid, bodyMessage, visionThumbs, fileParts, agentParts, annotationIDs } = opts
   const optimisticParts: any[] = []
   if (bodyMessage) {
     optimisticParts.push({ type: "text", text: bodyMessage, id: `${userMsgId}-text`, sessionID: sid, messageID: userMsgId })
@@ -43,6 +45,9 @@ export function buildOptimisticParts(opts: {
   })))
   optimisticParts.push(...fileParts.map(p => ({ ...p, sessionID: sid, messageID: userMsgId })))
   optimisticParts.push(...agentParts.map(p => ({ ...p, sessionID: sid, messageID: userMsgId })))
+  if (annotationIDs && annotationIDs.length > 0) {
+    optimisticParts.push({ ...annotationRefPart(annotationIDs), sessionID: sid, messageID: userMsgId })
+  }
   return optimisticParts
 }
 
@@ -104,12 +109,9 @@ export interface SendMessageDeps {
   /** 批注草稿（可选注入；缺省视为无批注） */
   pendingAnnotationCount?: (sid: string) => number
   peekAnnotations?: (sid: string) => Annotation[]
-  takeAnnotations?: (sid: string) => Annotation[]
-  /** Take only the persisted snapshot; later drafts stay for the next send. */
-  takeAnnotationsById?: (sid: string, ids: readonly string[]) => Annotation[]
   formatAnnotations?: (items: Annotation[]) => string
-  /** Plan C：Goal-bound 发送前把批注落成评审项；返回随消息附带的评审项块。 */
-  persistAnnotations?: (items: Annotation[]) => Promise<string>
+  /** Mark drafts discussed only after the discussion transport succeeds. */
+  markAnnotationsDiscussed?: (ownerKey: string, ids: readonly string[], at: number) => void
   /** 截屏/元素点选草稿（可选注入；缺省视为无 capture） */
   pendingCaptureCount?: (sid: string) => number
   takeCaptures?: (sid: string) => PendingCapture[]
@@ -142,8 +144,13 @@ export function steerDeliveryHint(boundary?: string): string {
   if (boundary === "after-turn") return "已插话：本轮结束后优先送达"
   return "已插话：稍后送达"
 }
-export function decideBusyDelivery(opts: { mode: "send" | "queue"; steerSupported: boolean; hasMedia: boolean }): BusyDelivery {
-  if (opts.hasMedia) return "local-queue"
+export function decideBusyDelivery(opts: {
+  mode: "send" | "queue"
+  steerSupported: boolean
+  hasMedia: boolean
+  hasAnnotations?: boolean
+}): BusyDelivery {
+  if (opts.hasMedia || opts.hasAnnotations) return "local-queue"
   if (opts.mode === "queue") return "gateway-queue"
   return opts.steerSupported ? "steer" : "local-queue"
 }
@@ -159,46 +166,8 @@ export function useSendMessage(deps: SendMessageDeps) {
   const sidProp = deps.sid
   const pendingAnnotationCount = deps.pendingAnnotationCount ?? (() => 0)
   const peekAnnotations = deps.peekAnnotations ?? (() => [])
-  const takeAnnotations = deps.takeAnnotations ?? (() => [])
-  const takeAnnotationsById = deps.takeAnnotationsById
   const formatAnnotations = deps.formatAnnotations ?? (() => "")
-  const persistAnnotations = deps.persistAnnotations
-
-  /** Persist before clearing drafts; null means "abort this send" (drafts stay). */
-  type StageResult = { block: string; annotations: Annotation[] } | null
-  let stageTail: Promise<unknown> = Promise.resolve()
-  const stageKeys = new Set<string>()
-  const stageAnnotations = (sid: string, key: string, snapshot: Annotation[]): Promise<StageResult> => {
-    // Identical send already queued/in flight (double Enter): coalesce.
-    if (stageKeys.has(key)) return Promise.resolve(null)
-    stageKeys.add(key)
-    const run = async (): Promise<StageResult> => {
-      // Only annotations composed with this send; a later draft belongs to a
-      // later message even if an earlier queued stage runs first.
-      const wanted = new Set(snapshot.map((item) => item.id))
-      const items = peekAnnotations(sid).filter((item) => wanted.has(item.id))
-      if (items.length === 0) return { block: "", annotations: [] }
-      if (!persistAnnotations) return { block: "", annotations: takeAnnotations(sid) }
-      try {
-        const block = await persistAnnotations(items)
-        const annotations = takeAnnotationsById
-          ? takeAnnotationsById(sid, items.map((item) => item.id))
-          : takeAnnotations(sid)
-        return { block, annotations }
-      } catch (err: any) {
-        showToastV2({
-          description: `评审项保存失败，消息未发送：${String(err?.message ?? err).slice(0, 120)}`,
-          duration: 4200,
-        })
-        return null
-      }
-    }
-    // One persistence at a time per composer; a failed run leaves the drafts
-    // pending for the next queued send instead of letting waiters double-write.
-    const result = stageTail.then(run, run)
-    stageTail = result.then(() => undefined, () => undefined)
-    return result.finally(() => { stageKeys.delete(key) })
-  }
+  const markAnnotationsDiscussed = deps.markAnnotationsDiscussed ?? (() => {})
   const pendingCaptureCount = deps.pendingCaptureCount ?? (() => 0)
   const takeCaptures = deps.takeCaptures ?? (() => [])
   const formatCaptures = deps.formatCaptures ?? (() => "")
@@ -208,7 +177,30 @@ export function useSendMessage(deps: SendMessageDeps) {
    * synthetic 标记 part；忙时 steer/网关队列内联进文本；本地队列带 flag 重放时
    * 重新标记。slash 命令与 Tech Lead 发送不标记（spec D7）。
    */
-  async function sendMessage(mode: "send" | "queue" = "send", opts?: { voiceOrigin?: boolean }) {
+  const activeSendKeys = new Set<string>()
+  async function sendMessage(
+    mode: "send" | "queue" = "send",
+    opts?: { voiceOrigin?: boolean; annotationIDs?: readonly string[] },
+  ) {
+    const key = JSON.stringify({
+      sid: sidProp(),
+      text: input(),
+      annotations: opts?.annotationIDs ?? null,
+      captures: pendingCaptureCount(sidProp()),
+    })
+    if (activeSendKeys.has(key)) return
+    activeSendKeys.add(key)
+    try {
+      await sendMessageInner(mode, opts)
+    } finally {
+      activeSendKeys.delete(key)
+    }
+  }
+
+  async function sendMessageInner(
+    mode: "send" | "queue" = "send",
+    opts?: { voiceOrigin?: boolean; annotationIDs?: readonly string[] },
+  ) {
     const voiceOrigin = opts?.voiceOrigin === true
     const text = input()
     const atts = attachments()
@@ -226,41 +218,21 @@ export function useSendMessage(deps: SendMessageDeps) {
     }
     let sid: string | null = sidProp()
     if (!sid) { sid = await deps.onCreateSession(); if (!sid) return }
-    const annotationSnapshot = peekAnnotations(sid)
-    const stageKey = JSON.stringify({
-      sid,
-      text,
-      voiceOrigin,
-      attachments: atts.map((a: any) => ({
-        name: a.name, mime: a.mime, path: a.path, token: a.token,
-        size: a.size,
-        dataLength: a.dataUrl?.length ?? 0,
-        dataHead: a.dataUrl?.slice(0, 64),
-        dataTail: a.dataUrl?.slice(-64),
-      })),
-      agents: mentionedAgents(),
-      files: mentionedFiles(),
-      webLinks,
-      agent: agentSel(),
-      model: model(),
-      annotations: annotationSnapshot.map((a) => a.id),
-      captures: captureCount,
-    })
+    const wantedAnnotationIDs = opts?.annotationIDs ? new Set(opts.annotationIDs) : null
+    const annotationSnapshot = peekAnnotations(sid).filter((annotation) =>
+      !wantedAnnotationIDs || wantedAnnotationIDs.has(annotation.id))
+    const annotationIDs = annotationSnapshot.map((annotation) => annotation.id)
     const hasVoice = atts.some(a => a.name?.startsWith("voice-"))
     console.log("[mafw] sendMessage", sid.slice(-8), "| text:", text.trim().length, "chars | atts:", atts.length, "| sending:", sending(), "| voice:", hasVoice, "| mode:", mode)
     if (sending()) {
       // Voice messages (walkie-talkie) interrupt the in-flight reply; regular
       // messages queue for the next idle boundary instead of being dropped.
       if (!hasVoice) {
-        // Plan C：先落评审项；失败则整条消息不发送（草稿原样保留）。
-        const staged = await stageAnnotations(sid, stageKey, annotationSnapshot)
-        if (!staged) return
-        const reviewBlock = staged.block
-        // Review Focus 4：入队时打包批注快照；入队后新增的批注不跟这条。
-        const queuedAnnotations = staged.annotations
+        // 入队时冻结批注快照；入队后新增的批注不跟这条。讨论发送不落 review item。
+        const queuedAnnotations = annotationSnapshot
         const queuedCaptures = takeCaptures ? takeCaptures(sid) : []
         const queuedCaptureBlock = queuedCaptures.length > 0 && formatCaptures ? formatCaptures(queuedCaptures) : ""
-        const queuedText = [webBlock, text.trim(), queuedAnnotations.length > 0 ? formatAnnotations(queuedAnnotations) : "", reviewBlock, queuedCaptureBlock]
+        const queuedText = [webBlock, text.trim(), queuedAnnotations.length > 0 ? formatAnnotations(queuedAnnotations) : "", queuedCaptureBlock]
           .filter(Boolean)
           .join("\n\n")        // region 批注截图随队列入列（同即时路径）
         const queuedAnnotationImages = queuedAnnotations
@@ -274,6 +246,7 @@ export function useSendMessage(deps: SendMessageDeps) {
           mode,
           steerSupported: deps.steerSupported ? deps.steerSupported() === true : false,
           hasMedia: atts.length > 0 || queuedAnnotationImages.length > 0,
+          hasAnnotations: queuedAnnotations.length > 0,
         })
         const finishBusySend = () => {
           history.push(text)
@@ -308,7 +281,13 @@ export function useSendMessage(deps: SendMessageDeps) {
           }
         }
         // 本地队列存干净文本 + voiceOrigin flag；flushQueue 重放时重新标记。
-        setQueuedItems(prev => enqueueTurn(prev, { text: queuedText, atts: [...atts, ...queuedAnnotationImages], agents, voiceOrigin: voiceOrigin || undefined }))
+        setQueuedItems(prev => enqueueTurn(prev, {
+          text: queuedText,
+          atts: [...atts, ...queuedAnnotationImages],
+          agents,
+          voiceOrigin: voiceOrigin || undefined,
+          ...(queuedAnnotations.length > 0 ? { annotationIDs: queuedAnnotations.map((annotation) => annotation.id) } : {}),
+        }))
         // 排队发出的消息同样进输入历史（↑ 可召回——与即时发送路径一致）
         finishBusySend()
         return
@@ -358,17 +337,9 @@ export function useSendMessage(deps: SendMessageDeps) {
       }
     }
 
-    // Plan C：先落评审项；失败则消息不发送、输入与批注草稿都保留。
-    // Set sending before the await so a double-submit cannot start a second stage.
+    // Discussion-only path: annotations stay local until the transport succeeds.
     setSending(true)
     setPhase('searching')
-    const staged = await stageAnnotations(sid, stageKey, annotationSnapshot)
-    if (!staged) {
-      setSending(false)
-      setPhase('idle')
-      return
-    }
-    const reviewBlock = staged.block
     history.push(text)
     clearDraft(sidProp())
     setInput("")
@@ -377,7 +348,7 @@ export function useSendMessage(deps: SendMessageDeps) {
     setMentionedFiles([])
     deps.setWebLinks?.([])
     // 批注草稿随本条消息打包（slash 命令不消耗批注；纯批注消息 text 为空）
-    const pendingAnnotations = staged.annotations
+    const pendingAnnotations = annotationSnapshot
     const annotationBlock = pendingAnnotations.length > 0 ? formatAnnotations(pendingAnnotations) : ""
     // 截屏/元素点选草稿同批打包（G1/G2）
     const pendingCaptures = takeCaptures ? takeCaptures(sid) : []
@@ -486,8 +457,11 @@ export function useSendMessage(deps: SendMessageDeps) {
     // empty user message. Pointers still reach the server via `parts` only.
     const pointerTexts = visionParts.map(p => p.text)
     const failureNote = visionFailed.length > 0 ? `[媒体附件未送达 Media Agent] ${visionFailed.join("; ")}` : ""
-    const bodyMessage = [webBlock, filePrefix, text.trim(), annotationBlock, reviewBlock, captureBlock, ...pointerTexts, failureNote].filter(Boolean).join("\n\n")
-    const optimisticParts = buildOptimisticParts({ userMsgId, ts, sid, bodyMessage, visionThumbs, fileParts, agentParts })
+    const bodyMessage = [webBlock, filePrefix, text.trim(), annotationBlock, captureBlock, ...pointerTexts, failureNote].filter(Boolean).join("\n\n")
+    const optimisticParts = buildOptimisticParts({
+      userMsgId, ts, sid, bodyMessage, visionThumbs, fileParts, agentParts,
+      annotationIDs,
+    })
     setStore(prev => {
       const msgs = { ...prev.message }
       const sessionMsgs = [...(msgs[sid] || [])]
@@ -515,21 +489,29 @@ export function useSendMessage(deps: SendMessageDeps) {
           techLead.podId,
           techLead.goalId,
           techLeadText,
+          annotationIDs.length > 0 ? { parts: [annotationRefPart(annotationIDs)] } : undefined,
         )
+        if (annotationIDs.length > 0) markAnnotationsDiscussed(sid, annotationIDs, Date.now())
         console.log("[mafw] sendTechLeadMessage", techLead.goalId, "revision", sent?.revision)
       } else {
         // Plan 2 D3：语音来源标记以 synthetic part 随行（首个非 synthetic part
         // 展示规则保证气泡干净）；message 字段不内联。
         const voicePart = voiceOrigin ? composeVoiceOriginPart(ts) : null
-        const sendParts = [...visionParts, ...fileParts, ...agentParts, ...(voicePart ? [voicePart] : [])]
+        const refPart = annotationIDs.length > 0 ? annotationRefPart(annotationIDs) : null
+        const sendParts = [
+          ...visionParts, ...fileParts, ...agentParts,
+          ...(voicePart ? [voicePart] : []),
+          ...(refPart ? [refPart] : []),
+        ]
         const result = await window.api.mafw.chat.sendEnriched({
-          message: [webBlock, filePrefix, text.trim(), annotationBlock, reviewBlock, captureBlock, failureNote].filter(Boolean).join("\n"),
+          message: [webBlock, filePrefix, text.trim(), annotationBlock, captureBlock, failureNote].filter(Boolean).join("\n"),
           sessionID: sid,
           parts: sendParts.length ? sendParts : undefined,
           agent: agentKey(agentSel()) === "manager" ? undefined : (agentKey(agentSel()) || undefined),
           model: model() ? { providerID: model()!.providerID, modelID: model()!.modelID } : undefined,
         }) as any
         if (result?.sessionID) {
+          if (annotationIDs.length > 0) markAnnotationsDiscussed(sid, annotationIDs, Date.now())
           console.log("[mafw] sendEnriched result: session", result.sessionID)
         } else {
           const errMsg = result?.error || 'no session ID returned'
@@ -570,8 +552,11 @@ export function useSendMessage(deps: SendMessageDeps) {
     setInput(first.text)
     setAttachments(first.atts as any[])
     setMentionedAgents(() => first.agents)
-    // Plan 2：语音来源的排队回合重放时恢复标记。
-    void sendMessage("send", { voiceOrigin: first.voiceOrigin === true })
+    // Plan 2：语音来源的排队回合重放时恢复标记；批注只重放入队快照。
+    void sendMessage("send", {
+      voiceOrigin: first.voiceOrigin === true,
+      ...(first.annotationIDs?.length ? { annotationIDs: first.annotationIDs } : {}),
+    })
   }
 
   return { sendMessage, interrupt, flushQueue }

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { parseSlashShape, buildOptimisticParts, useSendMessage, decideBusyDelivery, steerDeliveryHint, composeVoiceOriginPart, busyQueuedText } from "./use-send-message"
 import { VOICE_ORIGIN_MARKER_TEXT, appendVoiceOriginMarker } from "./voice-origin-marker"
 import { createInputHistory } from "../components/input-history"
+import { parseAnnotationRefPart } from "../annotation-message-part"
 
 const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
 
@@ -46,6 +47,10 @@ describe("decideBusyDelivery（W5a steer 语义选择）", () => {
     expect(decideBusyDelivery({ mode: "send", steerSupported: true, hasMedia: true })).toBe("local-queue")
     expect(decideBusyDelivery({ mode: "queue", steerSupported: true, hasMedia: true })).toBe("local-queue")
   })
+  test("批注批次 → 本地队列（保留消息 ID 关联）", () => {
+    expect(decideBusyDelivery({ mode: "send", steerSupported: true, hasMedia: false, hasAnnotations: true }))
+      .toBe("local-queue")
+  })
 })
 
 describe("parseSlashShape", () => {
@@ -83,6 +88,118 @@ describe("buildOptimisticParts", () => {
       visionThumbs: [], fileParts: [], agentParts: [],
     })
     expect(parts).toEqual([])
+  })
+})
+
+describe("sendMessage annotation discussion", () => {
+  const depsFor = (over: any = {}) => {
+    const sent: any[] = []
+    let resolveSend: (() => void) | null = null
+    let rejectSend: ((err: Error) => void) | null = null
+    ;(globalThis as any).window = {
+      api: {
+        mafw: {
+          chat: {
+            sendEnriched: (req: any) => new Promise((resolve, reject) => {
+              sent.push(req)
+              resolveSend = () => resolve({ sessionID: "s1" })
+              rejectSend = reject
+            }),
+          },
+        },
+      },
+    }
+    const history = createInputHistory()
+    let inputValue = "要发的话"
+    let queued: any[] = []
+    let marks: any[] = []
+    const deps: any = {
+      sid: () => "s1",
+      onCreateSession: async () => "s1",
+      onSetUserMsgId: () => {},
+      input: () => inputValue,
+      setInput: (v: string) => { inputValue = v },
+      sending: () => false,
+      setSending: () => {},
+      setPhase: () => {},
+      attachments: () => [],
+      setAttachments: () => {},
+      mentionedAgents: () => [],
+      setMentionedAgents: () => {},
+      mentionedFiles: () => [],
+      setMentionedFiles: () => {},
+      queuedItems: () => queued,
+      setQueuedItems: (fn: (prev: any[]) => any[]) => { queued = fn(queued) },
+      textareaEl: () => null,
+      history,
+      clearDraft: () => {},
+      matchSlash: () => null,
+      agentSel: () => null,
+      model: () => null,
+      setStore: () => {},
+      forceAnchor: () => {},
+      imageToDataUrl: async () => undefined,
+      uploadMediaBinary: async () => "",
+      encodeFilePath: (p: string) => p,
+      pendingAnnotationCount: () => 1,
+      peekAnnotations: () => [{ id: "ann-1", rel: "a.ts", comment: "改这里" }],
+      formatAnnotations: () => "BLOCK",
+      markAnnotationsDiscussed: (owner: string, ids: readonly string[]) => { marks.push({ owner, ids }) },
+      ...over,
+    }
+    return {
+      deps, sent, marks: () => marks, queued: () => queued, input: () => inputValue,
+      resolve: () => resolveSend?.(), reject: (err: Error) => rejectSend?.(err),
+    }
+  }
+
+  test("discussion send appends a hidden ref part and marks only after success", async () => {
+    const f = depsFor()
+    try {
+      const { sendMessage } = useSendMessage(f.deps)
+      const pending = sendMessage()
+      await settle()
+      expect(f.marks()).toHaveLength(0)
+      expect(f.sent).toHaveLength(1)
+      expect(f.sent[0].message).toContain("BLOCK")
+      const refs = (f.sent[0].parts ?? []).flatMap((part: any) => parseAnnotationRefPart(part))
+      expect(refs).toEqual(["ann-1"])
+      f.resolve()
+      await pending
+      expect(f.marks()).toEqual([{ owner: "s1", ids: ["ann-1"] }])
+    } finally {
+      delete (globalThis as any).window
+    }
+  })
+
+  test("failed discussion send leaves drafts sendable and does not mark them", async () => {
+    let taken = 0
+    const f = depsFor({ takeAnnotations: () => { taken++; return [] } })
+    try {
+      const { sendMessage } = useSendMessage(f.deps)
+      const pending = sendMessage()
+      await settle()
+      f.reject(new Error("offline"))
+      await pending
+      expect(f.marks()).toHaveLength(0)
+      expect(taken).toBe(0)
+      expect(f.deps.peekAnnotations()).toHaveLength(1)
+    } finally {
+      delete (globalThis as any).window
+    }
+  })
+
+  test("busy annotation send stays local and carries exact annotation ids", async () => {
+    const f = depsFor({ sending: () => true, steerSupported: () => true })
+    try {
+      const { sendMessage } = useSendMessage(f.deps)
+      await sendMessage()
+      expect(f.queued()).toHaveLength(1)
+      expect(f.queued()[0].annotationIDs).toEqual(["ann-1"])
+      expect(f.marks()).toHaveLength(0)
+    } finally {
+      delete (globalThis as any).window
+    }
   })
 })
 
@@ -153,21 +270,19 @@ describe("sendMessage busy 排队路径", () => {
     }
   })
 
-  test("入队时打包批注（Review Focus 4：入队后新增不跟这条）", async () => {
-    let taken = 0
+  test("入队时冻结批注 ID（入队后新增不跟这条）", async () => {
     const f = baseDeps({
       pendingAnnotationCount: () => 1,
       peekAnnotations: () => [{ id: "a1" }],
-      takeAnnotations: () => { taken++; return [{ id: "a1" }] },
       formatAnnotations: () => "BLOCK",
     })
     const { sendMessage } = useSendMessage(f.deps)
     await sendMessage()
-    expect(taken).toBe(1)
     expect(f.queued()[0].text).toBe("排队的消息\n\nBLOCK")
+    expect(f.queued()[0].annotationIDs).toEqual(["a1"])
   })
 
-  test("空文本 + 纯批注：允许发送并打包（Review Focus 5）", async () => {
+  test("空文本 + 纯批注：允许发送并带隐藏 ref", async () => {
     const sent: any[] = []
     ;(globalThis as any).window = { api: { mafw: { chat: { sendEnriched: async (req: any) => { sent.push(req); return { sessionID: "s_test_session" } } } } } }
     try {
@@ -176,101 +291,35 @@ describe("sendMessage busy 排队路径", () => {
         sending: () => false,
         pendingAnnotationCount: () => 1,
         peekAnnotations: () => [{ id: "a1" }],
-        takeAnnotations: () => [{ id: "a1" }],
         formatAnnotations: () => "BLOCK",
       })
       const { sendMessage } = useSendMessage(f.deps)
       await sendMessage()
       expect(sent).toHaveLength(1)
       expect(sent[0].message).toContain("BLOCK")
+      expect((sent[0].parts ?? []).flatMap((part: any) => parseAnnotationRefPart(part))).toEqual(["a1"])
     } finally {
       delete (globalThis as any).window
     }
   })
 
-  test("批注落库失败：不发送、不清草稿、不取走批注", async () => {
+  test("same double-submit sends once", async () => {
     const sent: any[] = []
-    ;(globalThis as any).window = { api: { mafw: { chat: { sendEnriched: async (req: any) => { sent.push(req); return { sessionID: "s_test_session" } } } } } }
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    ;(globalThis as any).window = {
+      api: { mafw: { chat: { sendEnriched: async (req: any) => {
+        sent.push(req)
+        await gate
+        return { sessionID: "s_test_session" }
+      } } } },
+    }
     try {
-      let taken = 0
-      let inputValue = "要发的话"
-      const f = baseDeps({
-        input: () => inputValue,
-        setInput: (v: string) => { inputValue = v },
-        sending: () => false,
-        pendingAnnotationCount: () => 1,
-        peekAnnotations: () => [{ id: "a1", comment: "改这里" }],
-        persistAnnotations: async () => { throw new Error("db down") },
-        takeAnnotations: () => { taken++; return [{ id: "a1" }] },
-        formatAnnotations: () => "BLOCK",
-      })
-      const { sendMessage } = useSendMessage(f.deps)
-      await sendMessage()
-      expect(sent).toHaveLength(0)
-      expect(taken).toBe(0)
-      expect(inputValue).toBe("要发的话")
-    } finally { delete (globalThis as any).window }
-  })
-
-  test("忙时批注落库失败：不进队列、不取走批注、不清输入", async () => {
-    let taken = 0
-    const f = baseDeps({
-      pendingAnnotationCount: () => 1,
-      peekAnnotations: () => [{ id: "a1", comment: "改这里" }],
-      persistAnnotations: async () => { throw new Error("db down") },
-      takeAnnotations: () => { taken++; return [{ id: "a1" }] },
-      formatAnnotations: () => "BLOCK",
-    })
-    const { sendMessage } = useSendMessage(f.deps)
-    await sendMessage()
-    expect(f.queued()).toHaveLength(0)
-    expect(taken).toBe(0)
-    expect(f.input()).toBe("排队的消息")
-  })
-
-  test("批注落库成功：评审项块随消息发出，然后才清空草稿", async () => {
-    const sent: any[] = []
-    ;(globalThis as any).window = { api: { mafw: { chat: { sendEnriched: async (req: any) => { sent.push(req); return { sessionID: "s_test_session" } } } } } }
-    try {
-      let taken = 0
       const f = baseDeps({
         input: () => "要发的话",
         sending: () => false,
         pendingAnnotationCount: () => 1,
         peekAnnotations: () => [{ id: "a1", comment: "改这里" }],
-        persistAnnotations: async () => "已登记 1 条评审项：review_1",
-        takeAnnotations: () => { taken++; return [{ id: "a1" }] },
-        formatAnnotations: () => "BLOCK",
-      })
-      const { sendMessage } = useSendMessage(f.deps)
-      await sendMessage()
-      expect(taken).toBe(1)
-      expect(sent).toHaveLength(1)
-      expect(sent[0].message).toContain("review_1")
-      expect(sent[0].message).toContain("BLOCK")
-    } finally { delete (globalThis as any).window }
-  })
-
-  test("并发双击只落库并发送一次（批注不被重复持久化）", async () => {
-    const sent: any[] = []
-    ;(globalThis as any).window = { api: { mafw: { chat: { sendEnriched: async (req: any) => { sent.push(req); return { sessionID: "s_test_session" } } } } } }
-    try {
-      let sending = false
-      let persistCalls = 0
-      let release!: () => void
-      const gate = new Promise<void>((resolve) => { release = resolve })
-      const f = baseDeps({
-        input: () => "要发的话",
-        sending: () => sending,
-        setSending: (v: boolean) => { sending = v },
-        pendingAnnotationCount: () => 1,
-        peekAnnotations: () => [{ id: "a1", comment: "改这里" }],
-        persistAnnotations: async () => {
-          persistCalls++
-          await gate
-          return "已登记 1 条评审项：review_1"
-        },
-        takeAnnotations: () => [{ id: "a1" }],
         formatAnnotations: () => "BLOCK",
       })
       const { sendMessage } = useSendMessage(f.deps)
@@ -279,184 +328,30 @@ describe("sendMessage busy 排队路径", () => {
       await settle()
       release()
       await Promise.all([first, second])
-      expect(persistCalls).toBe(1)
       expect(sent).toHaveLength(1)
     } finally { delete (globalThis as any).window }
   })
 
-  test("并发不同消息：首个落库失败后第二个重试并排队", async () => {
+  test("flushQueue replays only the queued annotation ids", async () => {
     const sent: any[] = []
+    const marked: string[][] = []
     ;(globalThis as any).window = { api: { mafw: { chat: { sendEnriched: async (req: any) => { sent.push(req); return { sessionID: "s_test_session" } } } } } }
     try {
-      let sending = false
-      let persistCalls = 0
-      let release!: () => void
-      const gate = new Promise<void>((resolve) => { release = resolve })
-      let inputValue = "第一条"
-      let annotations = [{ id: "a1", comment: "改这里" }]
       const f = baseDeps({
-        input: () => inputValue,
-        setInput: (v: string) => { inputValue = v },
-        sending: () => sending,
-        setSending: (v: boolean) => { sending = v },
-        pendingAnnotationCount: () => annotations.length,
-        peekAnnotations: () => annotations,
-        persistAnnotations: async () => {
-          persistCalls++
-          if (persistCalls === 1) {
-            await gate
-            throw new Error("db down")
-          }
-          return "已登记 1 条评审项：review_1"
-        },
-        takeAnnotations: () => {
-          const taken = annotations
-          annotations = []
-          return taken
-        },
-        formatAnnotations: () => "BLOCK",
-      })
-      const { sendMessage } = useSendMessage(f.deps)
-      const first = sendMessage()
-      inputValue = "第二条"
-      const second = sendMessage()
-      await settle()
-      release()
-      await Promise.all([first, second])
-      expect(persistCalls).toBe(2)
-      expect(sent).toHaveLength(0)
-      expect(f.queued()).toHaveLength(1)
-      expect(f.queued()[0].text).toContain("第二条")
-    } finally { delete (globalThis as any).window }
-  })
-
-  test("落库期间新增的批注留给下一条消息", async () => {
-    const sent: any[] = []
-    ;(globalThis as any).window = { api: { mafw: { chat: { sendEnriched: async (req: any) => { sent.push(req); return { sessionID: "s_test_session" } } } } } }
-    try {
-      let release!: () => void
-      const gate = new Promise<void>((resolve) => { release = resolve })
-      let annotations = [{ id: "a1", comment: "第一条" }]
-      const f = baseDeps({
-        input: () => "要发的话",
+        input: () => "",
         sending: () => false,
-        pendingAnnotationCount: () => annotations.length,
-        peekAnnotations: () => annotations,
-        persistAnnotations: async (items: any[]) => {
-          annotations = [...annotations, { id: "a2", comment: "落库期间新增" }]
-          await gate
-          return `已登记 ${items.length} 条评审项`
-        },
-        takeAnnotationsById: (_sid: string, ids: readonly string[]) => {
-          const wanted = new Set(ids)
-          const taken = annotations.filter((item) => wanted.has(item.id))
-          annotations = annotations.filter((item) => !wanted.has(item.id))
-          return taken
-        },
+        queuedItems: () => [{ text: "排队", atts: [], agents: [], annotationIDs: ["a1"] }],
+        pendingAnnotationCount: () => 2,
+        peekAnnotations: () => [{ id: "a1", comment: "一" }, { id: "a2", comment: "二" }],
         formatAnnotations: () => "BLOCK",
+        markAnnotationsDiscussed: (_owner: string, ids: readonly string[]) => { marked.push([...ids]) },
       })
-      const { sendMessage } = useSendMessage(f.deps)
-      const pending = sendMessage()
+      const { flushQueue } = useSendMessage(f.deps)
+      flushQueue()
       await settle()
-      release()
-      await pending
-      expect(sent).toHaveLength(1)
-      expect(sent[0].message).toContain("BLOCK")
-      expect(annotations.map((item) => item.id)).toEqual(["a2"])
-    } finally { delete (globalThis as any).window }
-  })
-
-  test("排队中的较早消息不会取走之后新增的批注", async () => {
-    const sent: any[] = []
-    ;(globalThis as any).window = { api: { mafw: { chat: { sendEnriched: async (req: any) => { sent.push(req); return { sessionID: "s_test_session" } } } } } }
-    try {
-      let sending = false
-      let release!: () => void
-      const gate = new Promise<void>((resolve) => { release = resolve })
-      let inputValue = "第一条"
-      let annotations = [{ id: "a1", comment: "第一条的批注" }]
-      const persisted: string[][] = []
-      const f = baseDeps({
-        input: () => inputValue,
-        setInput: (v: string) => { inputValue = v },
-        sending: () => sending,
-        setSending: (v: boolean) => { sending = v },
-        pendingAnnotationCount: () => annotations.length,
-        peekAnnotations: () => annotations,
-        persistAnnotations: async (items: any[]) => {
-          persisted.push(items.map((item) => item.id))
-          await gate
-          return `已登记 ${items.length} 条评审项`
-        },
-        takeAnnotationsById: (_sid: string, ids: readonly string[]) => {
-          const wanted = new Set(ids)
-          const taken = annotations.filter((item) => wanted.has(item.id))
-          annotations = annotations.filter((item) => !wanted.has(item.id))
-          return taken
-        },
-        formatAnnotations: () => "BLOCK",
-      })
-      const { sendMessage } = useSendMessage(f.deps)
-      const first = sendMessage()
-      await settle()
-      inputValue = "第二条"
-      const second = sendMessage()
-      await settle()
-      annotations = [...annotations, { id: "a2", comment: "第二条之后新增" }]
-      inputValue = "第三条"
-      const third = sendMessage()
-      await settle()
-      release()
-      await Promise.all([first, second, third])
-      expect(persisted).toEqual([["a1"], ["a2"]])
-      expect(sent).toHaveLength(1)
-      expect(f.queued()).toHaveLength(2)
-      expect(f.queued()[0].text).not.toContain("BLOCK")
-      expect(f.queued()[1].text).toContain("BLOCK")
-      expect(annotations).toEqual([])
-    } finally { delete (globalThis as any).window }
-  })
-
-  test("并发不同消息：等待落库后排队，不静默丢弃", async () => {
-    const sent: any[] = []
-    ;(globalThis as any).window = { api: { mafw: { chat: { sendEnriched: async (req: any) => { sent.push(req); return { sessionID: "s_test_session" } } } } } }
-    try {
-      let sending = false
-      let persistCalls = 0
-      let release!: () => void
-      const gate = new Promise<void>((resolve) => { release = resolve })
-      let inputValue = "第一条"
-      let annotations = [{ id: "a1", comment: "改这里" }]
-      const f = baseDeps({
-        input: () => inputValue,
-        setInput: (v: string) => { inputValue = v },
-        sending: () => sending,
-        setSending: (v: boolean) => { sending = v },
-        pendingAnnotationCount: () => annotations.length,
-        peekAnnotations: () => annotations,
-        persistAnnotations: async () => {
-          persistCalls++
-          await gate
-          return "已登记 1 条评审项：review_1"
-        },
-        takeAnnotations: () => {
-          const taken = annotations
-          annotations = []
-          return taken
-        },
-        formatAnnotations: () => "BLOCK",
-      })
-      const { sendMessage } = useSendMessage(f.deps)
-      const first = sendMessage()
-      inputValue = "第二条"
-      const second = sendMessage()
-      await settle()
-      release()
-      await Promise.all([first, second])
-      expect(persistCalls).toBe(1)
-      expect(sent).toHaveLength(1)
-      expect(f.queued()).toHaveLength(1)
-      expect(f.queued()[0].text).toContain("第二条")
+      const refs = (sent[0]?.parts ?? []).flatMap((part: any) => parseAnnotationRefPart(part))
+      expect(refs).toEqual(["a1"])
+      expect(marked).toEqual([["a1"]])
     } finally { delete (globalThis as any).window }
   })
 

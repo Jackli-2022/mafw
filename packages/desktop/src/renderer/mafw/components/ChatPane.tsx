@@ -83,8 +83,7 @@ import { getSessionTurnDiffs } from "../session-turn-diffs"
 import { CommentsPill } from "./CommentsPill"
 import { PendingCaptures } from "./PendingCaptures"
 import { buildAnnotationBatch } from "../editor-annotation"
-import { reviewInputsFromAnnotations, reviewItemPromptBlock } from "../review-item-input"
-import { hydrateAnnotations, sendableFor, takeForSend, takeForSendById } from "../annotation-store"
+import { hydrateAnnotations, patchPending, sendableFor } from "../annotation-store"
 import { annotationInScope } from "../annotation-scope"
 import { formatCaptureBatch, captureAttachmentName, getPendingCaptures } from "../chat/pending-captures"
 
@@ -1235,16 +1234,10 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     sendBlocked: () => props.sendBlocked?.() ?? null,
     pendingAnnotationCount: () => visibleAnnotations().length,
     peekAnnotations: () => visibleAnnotations(),
-    takeAnnotations: () => takeForSend(annotationOwner()),
-    takeAnnotationsById: (_sid, ids) => takeForSendById(annotationOwner(), ids),
     formatAnnotations: (items) => buildAnnotationBatch(items),
-    persistAnnotations: async (items) => {
-      const target = await Promise.resolve(props.techLeadTarget?.() ?? null)
-      if (!target) return ""
-      const inputs = reviewInputsFromAnnotations(items)
-      if (inputs.length === 0) return ""
-      const created = await window.api.mafw.pod.createReviewItems(target.podId, target.goalId, { items: inputs })
-      return reviewItemPromptBlock(created.items)
+    markAnnotationsDiscussed: (ownerKey, ids) => {
+      const at = Date.now()
+      for (const id of ids) patchPending(ownerKey, id, { discussedAt: at })
     },
     pendingCaptureCount: (sid) => getPendingCaptures().pendingFor(sid).length,
     takeCaptures: (sid) => getPendingCaptures().take(sid),

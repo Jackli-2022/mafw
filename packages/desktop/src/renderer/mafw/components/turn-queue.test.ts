@@ -35,6 +35,12 @@ describe("turn queue", () => {
     expect(removeTurnAt(q, 99)).toEqual(q) // out of range is a no-op
   })
 
+  test("annotationIDs survive enqueue/take for exact batch replay", () => {
+    const turn: QueuedTurn = { text: "处理", atts: [], agents: [], annotationIDs: ["ann-1", "ann-2"] }
+    const { first } = takeFirstTurn(enqueueTurn([], turn))
+    expect(first?.annotationIDs).toEqual(["ann-1", "ann-2"])
+  })
+
   test("voiceOrigin flag 随队列项入队并经 takeFirstTurn 保留（Plan 2 D3 本地队列）", () => {
     const voiceTurn: QueuedTurn = { text: "你好", atts: [], agents: [], voiceOrigin: true }
     const q = enqueueTurn(enqueueTurn([], t("a")), voiceTurn)
