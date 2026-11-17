@@ -10,6 +10,7 @@ import { app, BrowserWindow, globalShortcut, ipcMain, nativeTheme, net, Notifica
 import { Deferred, Effect } from "effect"
 
 import type { ServerReadyData } from "../preload/types"
+import type { NotificationTarget } from "../shared/notifications"
 import { checkAppExists, resolveAppPath } from "./apps"
 import { CHANNEL } from "./constants"
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand } from "./ipc"
@@ -491,6 +492,20 @@ const main = Effect.gen(function* () {
       win.show()
       win.focus()
       win.webContents.send("mafw-navigate-goal", target)
+    }
+    function navigateToNotificationTarget(target: NotificationTarget): void {
+      if (!target) return
+      const win = getLastFocusedWindow()
+      if (!win || win.isDestroyed()) {
+        const created = createMainWindow()
+        created.webContents.once("did-finish-load", () => {
+          if (!created.isDestroyed()) created.webContents.send("mafw-notification-open", target)
+        })
+        return
+      }
+      win.show()
+      win.focus()
+      win.webContents.send("mafw-notification-open", target)
     }
     setTrayNavigateHandler(navigateToGoal)
   } else {
