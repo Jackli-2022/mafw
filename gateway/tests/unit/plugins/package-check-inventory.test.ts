@@ -85,4 +85,20 @@ module.exports = { name: 'legacy', async activate() { return { actions: { ping: 
     expect(result.ok).toBe(true);
     expect(result.warnings?.length ?? 0).toBeGreaterThan(0);
   });
+
+  it('keeps an explicit empty plane distinct from an absent one', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-inv-'));
+    const root = writePackage(dir, {
+      name: 'emptybound', apiVersion: 2, kind: 'trusted', permissions: ['actions'],
+      contributes: { gateway: { actions: [] } },   // zero bound, not "unbounded"
+    }, `
+module.exports = { name: 'emptybound', async activate() { return { actions: { ping: { handler: () => null } } }; } };
+`);
+    const result = await check(root);
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('action "ping" is not declared');
+    expect(result.declared?.actions).toEqual([]);
+    expect(result.declared?.events).toBeUndefined();
+    expect(result.registered?.actions).toEqual(['ping']);
+  });
 });

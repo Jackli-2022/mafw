@@ -52,6 +52,9 @@ Runtime Plugin Commands:
                      --audit cross-checks eventMappings/samples against the runtime contract
                      (wrong translations, missing required fields, no-output, API surface gaps).
   plugin-test        Online conformance scenarios against the active runtime (uses LLM roundtrips)
+
+Plugin Package Commands:
+  plugin <check>     package standard v1 (NOT the same as plugin-check)
   plugin check <path> [--json] [--strict]
                      In-process package check (no gateway, no token): declared-vs-registered
                      inventory + paste-ready install command. --strict = warnings are errors.

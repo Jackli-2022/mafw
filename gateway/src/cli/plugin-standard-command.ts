@@ -9,6 +9,13 @@
  *
  * Everything here is a pure function over injected deps: the CLI entrypoint
  * (`bin/mafw.js`) owns process/fs wiring, tests own the assertions.
+ *
+ * Output safety: every package-derived value (name, permissions, warning and
+ * error text, plane names) is flattened before it reaches the terminal, and the
+ * install line is only printed when *every* token in it matches
+ * `SAFE_COMMAND_TOKEN`. `isKnownPermissionToken` only prefix-checks
+ * `net.fetch:`, so a manifest can legally declare a token containing `;` or a
+ * newline; pasting that line would execute whatever follows it.
  */
 import * as path from 'path';
 import type { PluginCheckResult } from '../plugins/package-host';
@@ -25,19 +32,69 @@ const USAGE = [
   'usage: mafw plugin check <absolute-path> [--json] [--strict]',
   '',
   '  check      Dry-run one package in this process (no gateway, no token, no network)',
-  '  --json     Print the raw result as one JSON line',
+  '  --json     Print one JSON line; its `ok` is the command verdict',
   '  --strict   Treat manifest warnings as failures',
 ].join('\n');
 
 const CHECK_FLAGS = new Set(['--json', '--strict']);
 
-function isAbsolutePath(candidate: string): boolean {
-  return path.isAbsolute(candidate);
+/**
+ * What may appear in a printed, paste-ready command. Deliberately narrower than
+ * a shell: paths, package names and permission tokens (`net.fetch:host`) fit;
+ * quoting, separators and newlines do not.
+ */
+const SAFE_COMMAND_TOKEN = /^[A-Za-z0-9._:/@-]+$/;
+
+/** C0 + DEL + C1 — the characters that can forge a line or drive a terminal. */
+const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/g;
+const CONTROL_MARKER = '␤';
+
+/** Per-value render budget: package text must not swallow the report. */
+const MAX_FIELD_CHARS = 200;
+
+const INSTALL_OMITTED =
+  'install: (omitted — package declares tokens that are unsafe to paste; install manually after review)';
+
+/**
+ * Flattens package-derived text: control characters become a visible marker
+ * (so `\n` cannot start a second `install:` line) and over-long values are
+ * capped per field.
+ */
+function text(value: unknown, max = MAX_FIELD_CHARS): string {
+  const raw = typeof value === 'string' ? value : String(value);
+  const flattened = raw.replace(CONTROL_CHARS, CONTROL_MARKER);
+  const chars = [...flattened];
+  return chars.length > max ? `${chars.slice(0, max).join('')}…` : flattened;
+}
+
+function isSafeCommandToken(value: string): boolean {
+  return SAFE_COMMAND_TOKEN.test(value);
 }
 
 function messageOf(err: unknown): string {
   if (err instanceof Error) return err.message || err.name;
   return String(err);
+}
+
+/**
+ * JSON is a machine channel: `JSON.stringify` escapes control characters, so a
+ * payload is one physical line by construction and never needs the terminal
+ * sanitizer.
+ */
+function printJson(deps: PluginStandardDeps, payload: unknown): void {
+  deps.print(JSON.stringify(payload));
+}
+
+/** One failure shape for both channels: JSON gets one line, humans get text. */
+function fail(
+  deps: PluginStandardDeps,
+  asJson: boolean,
+  message: string,
+  humanLines: string[],
+): number {
+  if (asJson) printJson(deps, { ok: false, error: message });
+  else for (const line of humanLines) deps.print(line);
+  return 1;
 }
 
 /** Planes as a renderer sees them: partial after a JSON round-trip. */
@@ -51,56 +108,86 @@ interface PlaneNames {
 type DeclaredView = PlaneNames & { http?: boolean };
 type RegisteredView = PlaneNames & { http?: number };
 
-/** `actions [a, b], events -, tools -, observers -, http true`. */
+/**
+ * `[a, b]` / `[]` / the absent marker. Presence is per plane: `[]` is a zero
+ * bound and must never be described as unbounded.
+ */
+function formatPlane(names: string[] | undefined, absent: string): string {
+  if (!names) return absent;
+  if (names.length === 0) return '[]';
+  return `[${names.map((name) => text(name)).join(', ')}]`;
+}
+
+/** `actions [a, b], events [], tools (unbounded), observers (unbounded), http true`. */
 function formatDeclared(declared: DeclaredView | undefined): string {
   if (!declared) return '(no contributes.gateway block — no static upper bound)';
-  const planes = [
-    `actions ${formatNames(declared.actions)}`,
-    `events ${formatNames(declared.events)}`,
-    `tools ${formatNames(declared.tools)}`,
-    `observers ${formatNames(declared.observers)}`,
+  return [
+    `actions ${formatPlane(declared.actions, '(unbounded)')}`,
+    `events ${formatPlane(declared.events, '(unbounded)')}`,
+    `tools ${formatPlane(declared.tools, '(unbounded)')}`,
+    `observers ${formatPlane(declared.observers, '(unbounded)')}`,
     declared.http === undefined
-      ? 'http -'
+      ? 'http (unbounded)'
       : `http ${declared.http ? 'declared' : 'opted out'}`,
-  ];
-  // An empty plane is *undeclared*, not "nothing allowed": the validator only
-  // checks the planes the manifest actually lists.
-  return `${planes.join(', ')} (unlisted planes are unbounded)`;
+  ].join(', ');
 }
 
 /** `actions [a, b], events -, tools -, observers -, http 2`. */
 function formatRegistered(registered: RegisteredView | undefined): string {
   if (!registered) return '(not reported)';
   return [
-    `actions ${formatNames(registered.actions)}`,
-    `events ${formatNames(registered.events)}`,
-    `tools ${formatNames(registered.tools)}`,
-    `observers ${formatNames(registered.observers)}`,
-    `http ${registered.http ?? 0}`,
+    `actions ${formatPlane(registered.actions, '-')}`,
+    `events ${formatPlane(registered.events, '-')}`,
+    `tools ${formatPlane(registered.tools, '-')}`,
+    `observers ${formatPlane(registered.observers, '-')}`,
+    `http ${typeof registered.http === 'number' ? registered.http : 0}`,
   ].join(', ');
 }
 
-function formatNames(names: string[] | undefined): string {
-  return names && names.length > 0 ? `[${names.join(', ')}]` : '-';
+interface InstallPlan {
+  command: string;
+  /** Tokens that are not safe to paste; non-empty means no command is printed. */
+  unsafe: string[];
 }
 
 /**
- * Paste-ready install command for the package that was just checked.
+ * Windows separators are normalized before the charset check: `\` is literal
+ * inside the quotes every shell we target, but it is not in the safe charset,
+ * so an un-normalized `C:\…` path would omit the command on every Windows host.
+ */
+function commandPath(target: string): string {
+  return target.replace(/\\/g, '/');
+}
+
+/**
+ * Paste-ready install command for the checked package.
  *
  * v2 packages need explicit consent: `--trust <kind>` plus one `--permission`
  * per declared permission token (the manager compares the accepted set with the
  * manifest set). Legacy (v1) packages take neither flag.
+ *
+ * Nothing is assembled unless every token — path, kind and each permission —
+ * matches `SAFE_COMMAND_TOKEN`. Permission tokens are deduped because
+ * `assertConsent` compares sets: a repeated flag can never match a manifest that
+ * lists the token once.
  */
-function installCommand(target: string, result: PluginCheckResult): string {
-  const command = ['mafw', 'plugins', 'install', `"${target}"`];
-  const v2 = result.apiVersion === 2 || result.kind !== undefined;
+function installPlan(target: string, result: PluginCheckResult): InstallPlan {
+  const pathToken = commandPath(target);
+  const v2 = result.apiVersion === 2 || typeof result.kind === 'string';
+  const kind = typeof result.kind === 'string' && result.kind.length > 0 ? result.kind : 'trusted';
+  const permissions = [...new Set(
+    (result.permissions ?? []).filter((permission): permission is string => typeof permission === 'string'),
+  )];
+  const tokens = v2 ? [pathToken, kind, ...permissions] : [pathToken];
+  const unsafe = tokens.filter((token) => !isSafeCommandToken(token));
+  if (unsafe.length > 0) return { command: '', unsafe };
+
+  const command = ['mafw', 'plugins', 'install', `"${pathToken}"`];
   if (v2) {
-    command.push('--trust', result.kind ?? 'trusted');
-    for (const permission of result.permissions ?? []) {
-      command.push('--permission', permission);
-    }
+    command.push('--trust', kind);
+    for (const permission of permissions) command.push('--permission', permission);
   }
-  return command.join(' ');
+  return { command: command.join(' '), unsafe: [] };
 }
 
 /** Planes the manifest allows but `activate()` did not register (legal). */
@@ -117,25 +204,25 @@ function declaredOnly(result: PluginCheckResult): string[] {
   const out: string[] = [];
   for (const [label, all, used] of planes) {
     for (const name of all ?? []) {
-      if (!(used ?? []).includes(name)) out.push(`${label} "${name}"`);
+      if (!(used ?? []).includes(name)) out.push(`${label} "${text(name)}"`);
     }
   }
   return out;
 }
 
-function nextSteps(target: string, result: PluginCheckResult, strictFailure: boolean): string[] {
+function nextSteps(target: string, result: PluginCheckResult, strictFailed: boolean): string[] {
   const steps: string[] = [];
-  if (strictFailure) {
+  if (strictFailed) {
     steps.push('next: fix the manifest warnings above (they come from plugin.json normalization) or drop --strict');
   }
-  if (!result.ok) {
-    const error = result.error ?? '(no reason reported)';
+  if (result.ok !== true) {
+    const error = typeof result.error === 'string' ? result.error : '';
     if (error.includes('is not declared in plugin.json contributes.gateway.')) {
       steps.push('next: add the name to contributes.gateway in plugin.json, or stop registering it in activate()');
     } else if (error.includes('permission denied')) {
       steps.push('next: add the missing permission to plugin.json "permissions"');
     }
-    steps.push(`next: fix the error above, then re-run: mafw plugin check "${target}"`);
+    steps.push(`next: fix the error above, then re-run: mafw plugin check "${text(target)}"`);
   }
   return steps;
 }
@@ -145,74 +232,83 @@ export async function runPluginStandardCommand(
   deps: PluginStandardDeps,
 ): Promise<number> {
   const args = [...argv];
+  // `--json` is decided before any validation so early failures keep the
+  // machine channel a single parseable line too.
+  const asJson = args.includes('--json');
   const command = args.shift();
 
   if (command !== 'check') {
-    if (command !== undefined && command.length > 0) {
-      deps.print(`unknown plugin command: ${command}`);
-    }
-    deps.print(USAGE);
-    return 1;
+    const missing = command === undefined || command.length === 0;
+    const message = missing ? 'missing plugin command' : `unknown plugin command: ${command}`;
+    return fail(
+      deps,
+      asJson,
+      message,
+      missing ? [USAGE] : [`unknown plugin command: ${text(command)}`, USAGE],
+    );
   }
 
   const unknownFlag = args.find((arg) => arg.startsWith('--') && !CHECK_FLAGS.has(arg));
   if (unknownFlag) {
-    deps.print(`unknown flag: ${unknownFlag}`);
-    deps.print(USAGE);
-    return 1;
+    return fail(deps, asJson, `unknown flag: ${unknownFlag}`, [
+      `unknown flag: ${text(unknownFlag)}`,
+      USAGE,
+    ]);
   }
-  const asJson = args.includes('--json');
   const strict = args.includes('--strict');
   const target = args.find((arg) => !arg.startsWith('--'));
   if (!target) {
-    deps.print(USAGE);
-    return 1;
+    return fail(deps, asJson, 'missing path', [USAGE]);
   }
 
   // Rejected here, not by the host: `checkPackage` resolves silently and would
   // turn `./p` into a path relative to whatever directory the CLI happens to
   // run from.
-  if (!isAbsolutePath(target)) {
-    deps.print(`path must be absolute: ${target}`);
+  if (!path.isAbsolute(target)) {
     const suggestion = deps.cwd ? path.resolve(deps.cwd, target) : null;
-    deps.print(
+    return fail(deps, asJson, `path must be absolute: ${target}`, [
+      `path must be absolute: ${text(target)}`,
       'next: pass the absolute path to the package directory'
-      + (suggestion ? ` (e.g. ${suggestion})` : ''),
-    );
-    return 1;
+        + (suggestion ? ` (e.g. ${text(suggestion)})` : ''),
+    ]);
   }
 
   let result: PluginCheckResult;
   try {
     result = await deps.check(target);
   } catch (err) {
-    deps.print(`check failed: ${messageOf(err)}`);
-    deps.print(`next: verify the path exists and is a package directory (plugin.json + index.js)`);
-    return 1;
+    const message = `check failed: ${messageOf(err)}`;
+    return fail(deps, asJson, message, [
+      `check failed: ${text(messageOf(err))}`,
+      'next: verify the path exists and is a package directory (plugin.json + index.js)',
+    ]);
   }
 
-  const warnings = result.warnings ?? [];
-  const strictFailure = strict && warnings.length > 0;
-  const ok = result.ok && !strictFailure;
+  const warnings = (result.warnings ?? []).map((warning) => text(warning));
+  const strictFailed = strict && warnings.length > 0;
+  const checkOk = result.ok === true;
+  const verdictOk = checkOk && !strictFailed;
 
   if (asJson) {
-    deps.print(JSON.stringify(result));
-    return ok ? 0 : 1;
+    // `ok` here is the **command verdict**, not the raw check result: a strict
+    // failure must be visible without reading the exit code.
+    printJson(deps, { ...result, ok: verdictOk, verdict: verdictOk ? 'ok' : 'fail', strictFailed });
+    return verdictOk ? 0 : 1;
   }
 
-  deps.print(`${result.ok ? 'ok' : 'not ok'} ${result.name ?? target} (${target})`);
-  if (result.version) deps.print(`  version: ${result.version}`);
-  if (result.apiVersion !== undefined || result.kind !== undefined) {
-    const api = result.apiVersion !== undefined ? `apiVersion ${result.apiVersion}` : null;
-    const kind = result.kind !== undefined ? `kind ${result.kind}` : null;
-    deps.print(`  ${[api, kind].filter(Boolean).join(', ')}`);
+  deps.print(`${checkOk ? 'ok' : 'not ok'} ${text(result.name ?? target)} (${text(target)})`);
+  if (result.version) deps.print(`  version: ${text(result.version)}`);
+  const apiVersion = typeof result.apiVersion === 'number' ? `apiVersion ${result.apiVersion}` : null;
+  const kind = typeof result.kind === 'string' ? `kind ${text(result.kind)}` : null;
+  const facts = [apiVersion, kind].filter(Boolean);
+  if (facts.length > 0) deps.print(`  ${facts.join(', ')}`);
+  const permissions = (result.permissions ?? [])
+    .filter((permission): permission is string => typeof permission === 'string');
+  if (permissions.length > 0) {
+    deps.print(`  permissions: ${permissions.map((permission) => text(permission)).join(', ')}`);
   }
-  if (result.permissions && result.permissions.length > 0) {
-    deps.print(`  permissions: ${result.permissions.join(', ')}`);
-  }
-  if (result.contributions && result.contributions.length > 0) {
-    deps.print(`  contributions: ${result.contributions.join(', ')}`);
-  }
+  const contributions = (result.contributions ?? []).map((contribution) => text(contribution));
+  if (contributions.length > 0) deps.print(`  contributions: ${contributions.join(', ')}`);
   deps.print(`declared: ${formatDeclared(result.declared)}`);
   deps.print(`registered: ${formatRegistered(result.registered)}`);
 
@@ -222,14 +318,24 @@ export async function runPluginStandardCommand(
     deps.print(`note: declared but not registered: ${unregistered.join(', ')}`);
   }
   for (const warning of warnings) deps.print(`warning: ${warning}`);
-  if (!result.ok) deps.print(`error: ${result.error ?? '(no reason reported)'}`);
-  for (const step of nextSteps(target, result, strictFailure)) deps.print(step);
+  if (!checkOk) deps.print(`error: ${text(result.error ?? '(no reason reported)')}`);
 
-  if (ok) {
-    deps.print(`install: ${installCommand(target, result)}`);
-  } else if (strictFailure && result.ok) {
+  if (verdictOk) {
+    const plan = installPlan(target, result);
+    if (plan.unsafe.length === 0) {
+      deps.print(`install: ${plan.command}`);
+    } else {
+      deps.print(INSTALL_OMITTED);
+      deps.print(
+        'warning: tokens with characters that are unsafe to paste were left out of that '
+        + `command: ${plan.unsafe.map((token) => text(token)).join(', ')}`,
+      );
+    }
+  } else if (strictFailed && checkOk) {
+    // Terminal verdict after the evidence, before any next steps.
     deps.print('not ok: --strict turned the manifest warnings above into failures');
   }
+  for (const step of nextSteps(target, result, strictFailed)) deps.print(step);
 
-  return ok ? 0 : 1;
+  return verdictOk ? 0 : 1;
 }

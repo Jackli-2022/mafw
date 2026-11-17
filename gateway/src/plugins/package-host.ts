@@ -145,17 +145,21 @@ export interface PluginApplyResult {
  *
  * This is an upper bound, not a plan: `registered ⊆ declared` is enforced,
  * the reverse direction never is (packages register conditionally).
+ *
+ * Presence is meaningful per plane: an **absent** property means the plane is
+ * not declared at all and therefore stays unconstrained, while an **explicitly
+ * empty array** is a zero bound (`"actions": []` allows no action at all). A
+ * renderer must not collapse the two.
  */
 export interface PluginCheckDeclared {
-  /**
-   * Names listed for this plane. An **empty list** means the plane is not
-   * declared (so it stays unconstrained), not that zero registrations are
-   * allowed.
-   */
-  actions: string[];
-  events: string[];
-  tools: string[];
-  observers: string[];
+  /** Declared action names; absent = unbounded, `[]` = nothing allowed. */
+  actions?: string[];
+  /** Declared event types; absent = unbounded, `[]` = nothing allowed. */
+  events?: string[];
+  /** Declared tool names; absent = unbounded, `[]` = nothing allowed. */
+  tools?: string[];
+  /** Declared observer ids; absent = unbounded, `[]` = nothing allowed. */
+  observers?: string[];
   /** `contributes.gateway.http` when the manifest opts in or out explicitly. */
   http?: boolean;
 }
@@ -186,6 +190,8 @@ export interface PluginCheckResult {
    * Declared-vs-registered inventory: the manifest's static planes next to what
    * `activate()` tried to register. `declared` is absent for legacy packages
    * without a `contributes.gateway` block; `registered` is always reported.
+   * Within `declared`, an absent plane is unbounded while an explicit `[]` is a
+   * zero bound — see `PluginCheckDeclared`.
    */
   declared?: PluginCheckDeclared;
   registered?: PluginCheckRegistered;
@@ -306,16 +312,22 @@ function registeredFromRaw(raw: unknown, http: number): PluginCheckRegistered {
   };
 }
 
-/** Static upper bound from `plugin.json`; absent when nothing is declared. */
+/**
+ * Static upper bound from `plugin.json`; absent when nothing is declared.
+ *
+ * Absent planes stay absent (unconstrained) — an explicit `"actions": []` is a
+ * zero bound and must survive as `[]`, otherwise the report would tell an author
+ * that a rejected action was legal.
+ */
 function describeDeclared(
   gateway: NonNullable<NormalizedPackageManifest['contributes']>['gateway'],
 ): PluginCheckDeclared | undefined {
   if (!gateway) return undefined;
   return {
-    actions: gateway.actions ?? [],
-    events: gateway.events ?? [],
-    tools: (gateway.tools ?? []).map((tool) => tool.name),
-    observers: gateway.observers ?? [],
+    ...(gateway.actions !== undefined ? { actions: gateway.actions } : {}),
+    ...(gateway.events !== undefined ? { events: gateway.events } : {}),
+    ...(gateway.tools !== undefined ? { tools: gateway.tools.map((tool) => tool.name) } : {}),
+    ...(gateway.observers !== undefined ? { observers: gateway.observers } : {}),
     ...(gateway.http !== undefined ? { http: gateway.http } : {}),
   };
 }
