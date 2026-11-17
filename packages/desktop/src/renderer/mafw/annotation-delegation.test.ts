@@ -227,7 +227,7 @@ describe("annotation delegation", () => {
     expect(first.goalId).toBe("g_new")
     expect(first.error).toMatch(/notify failed/)
     expect(deps.createdGoals).toBe(1)
-    expect(deps.log).toContain("markDelegated:a1:review_1")
+    expect(deps.log).not.toContain("markDelegated:a1:review_1")
 
     failNotify = false
     const retry = await delegateAnnotationBatch({
@@ -239,6 +239,20 @@ describe("annotation delegation", () => {
     expect(retry.goalId).toBe("g_new")
     expect(retry.error).toBeNull()
     expect(deps.createdGoals).toBe(1)
+    expect(deps.log.filter((line) => line === "markDelegated:a1:review_1")).toHaveLength(1)
+  })
+
+  test("retry can reuse an existing target with the original follow-up", async () => {
+    const deps = fakeDeps()
+    const out = await delegateAnnotationBatch({
+      annotations: [annotation("a1")],
+      projectDir: "C:/repo",
+      target: { podId: "pod_1", goalId: "g1", revision: 1 },
+      followUpOverride: { kind: "rework", goalId: "g1" },
+    }, deps)
+    expect(out.error).toBeNull()
+    expect(deps.log).toContain("rejectResult:pod_1:g1")
+    expect(deps.log).toContain("markDelegated:a1:review_1")
   })
 
   test("new Goal item failure still returns the created goal id", async () => {
@@ -251,6 +265,26 @@ describe("annotation delegation", () => {
     }, deps)
     expect(out.goalId).toBe("g_new")
     expect(out.error).toMatch(/db down/)
+  })
+
+  test("new Goal path still rejects dirty, source-less, cross-goal, and cross-project drafts", async () => {
+    const cases = [
+      annotation("dirty", { capturedDirty: true }),
+      annotation("legacy", { source: undefined }),
+      annotation("goal", { source: goalSource("g2", 1), scopeKey: "goal:C:/repo:g2:r1" }),
+      annotation("other-project", { source: { kind: "project", projectDir: "C:/other" } }),
+    ]
+    for (const item of cases) {
+      const deps = fakeDeps()
+      const out = await delegateAnnotationBatch({
+        annotations: [item],
+        projectDir: "C:/repo",
+        target: { podId: "pod_1", newGoal: true },
+      }, deps)
+      expect(out.error).toBeTruthy()
+      expect(deps.createdGoals).toBe(0)
+      expect(deps.log).not.toContain("createGoal")
+    }
   })
 
   test("new Goal keeps composer draft and blocks before items when target verification fails", async () => {

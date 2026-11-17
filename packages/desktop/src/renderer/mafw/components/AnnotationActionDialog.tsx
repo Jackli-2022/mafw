@@ -4,7 +4,7 @@ import { Icon } from "@mafw/ui/icon"
 import type { PodGoal } from "@mafw/sdk"
 import type { Annotation } from "../../../shared/annotation-types"
 import { chatAcceptsAnnotation, type DiscussionTarget } from "../annotation-discussion"
-import { buildNewGoalDraft, eligibleDelegationGoals } from "../annotation-delegation"
+import { buildNewGoalDraft, canCreateNewGoal, eligibleDelegationGoals } from "../annotation-delegation"
 import { PodGoalComposer } from "./PodGoalComposer"
 
 export function AnnotationActionDialog(props: {
@@ -113,9 +113,15 @@ export function AnnotationActionDialog(props: {
                 variant="contrast"
                 size="small"
                 disabled={acting() || props.busy}
-                onClick={() => void run(() => props.onDiscuss({ kind: "free", sessionID: props.currentSessionID! }))}
+                onClick={() => void run(() => props.onDiscuss(props.currentChatGoalId
+                  ? {
+                    kind: "techlead",
+                    podId: props.podId ?? "",
+                    goalId: props.currentChatGoalId,
+                  }
+                  : { kind: "free", sessionID: props.currentSessionID! }))}
               >
-                发给当前会话
+                {props.currentChatGoalId ? "发给当前 Tech Lead" : "发给当前会话"}
               </ButtonV2>
             </Show>
             <ButtonV2
@@ -173,16 +179,22 @@ export function AnnotationActionDialog(props: {
                     )}
                   </For>
                   <Show when={goals().length === 0}>
-                    <p class="mafw-annotation-action-empty">没有可加入的现有 Goal。</p>
+                    <p class="mafw-annotation-action-empty">
+                      {canCreateNewGoal(props.annotations)
+                        ? "没有可加入的现有 Goal。"
+                        : "这些批注已有 Goal 来源；请打开所属 Goal，或先经 Lead 建立后续工作。"}
+                    </p>
                   </Show>
-                  <ButtonV2
-                    variant="ghost"
-                    size="small"
-                    disabled={acting() || props.busy}
-                    onClick={() => setNewGoal(true)}
-                  >
-                    新建 Goal
-                  </ButtonV2>
+                  <Show when={canCreateNewGoal(props.annotations)}>
+                    <ButtonV2
+                      variant="ghost"
+                      size="small"
+                      disabled={acting() || props.busy}
+                      onClick={() => setNewGoal(true)}
+                    >
+                      新建 Goal
+                    </ButtonV2>
+                  </Show>
                 </>
               }
             >

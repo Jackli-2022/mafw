@@ -33,6 +33,7 @@ export class GoalReviewWorkService {
 
     if (input.node === 'plan') {
       const snapshot = captureReviewWorkSnapshot({
+        goalId: input.goalId,
         path: snapshotPath,
         revision: input.revision,
         items: unresolved,
@@ -41,10 +42,11 @@ export class GoalReviewWorkService {
       return this.renderSnapshot(input.revision, snapshot, unresolved);
     }
 
-    let snapshot = readReviewWorkSnapshot(snapshotPath, input.revision);
+    let snapshot = readReviewWorkSnapshot(snapshotPath, input.goalId, input.revision);
     if (!snapshot) {
       // Legacy / mid-flight recovery: freeze once before the first execute.
       snapshot = captureReviewWorkSnapshot({
+        goalId: input.goalId,
         path: snapshotPath,
         revision: input.revision,
         items: unresolved,

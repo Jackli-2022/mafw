@@ -125,7 +125,8 @@ import { addPending, patchPending } from "./annotation-store"
 import { annotationSourceFromScopeKey, draftOwnerKey, goalChangeSetAnnotationScope } from "./annotation-scope"
 import { deliverAnnotationDiscussion, type DiscussionTarget } from "./annotation-discussion"
 import { delegateAnnotationBatch, targetVersionProblem } from "./annotation-delegation"
-import { anchorOccursIn, annotationSourceProblem } from "./annotation-source"
+import { anchorOccursIn, annotationSourceProblem, sourceAnchorMatches } from "./annotation-source"
+import { fileModelFor } from "./documents/file-documents"
 import { AnnotationActionDialog } from "./components/AnnotationActionDialog"
 import type { Annotation } from "../../shared/annotation-types"
 import { getSessionTurnDiffs } from "./session-turn-diffs"
@@ -3079,7 +3080,7 @@ export function MafwShell() {
     // Binary / preview tabs do not have an editor buffer fingerprint; hash the
     // saved file asynchronously. A dirty editor still records the disk version
     // but stays blocked for delegation until it is saved again.
-    if (saved.root && saved.rel && saved.contentVersion == null) {
+    if (saved.root && saved.rel) {
       void window.api.fs.version(saved.root, saved.rel)
         .then((result) => {
           if (result?.ok) patchPending(ownerKey, saved.id, { contentVersion: result.sha256 })
@@ -3092,6 +3093,13 @@ export function MafwShell() {
 
   const [annotationActions, setAnnotationActions] = createSignal<Annotation[] | null>(null)
   const [annotationActionBusy, setAnnotationActionBusy] = createSignal(false)
+  let pendingDelegationBatch: {
+    key: string
+    podId: string
+    goalId: string
+    revision: number
+    followUp: import("./annotation-delegation").DelegationFollowUp
+  } | null = null
   const openAnnotationActions = (items: Annotation[]) => {
     const visible = items.filter((annotation) => !annotation.delegatedAt)
     if (visible.length === 0) return
@@ -3181,12 +3189,23 @@ export function MafwShell() {
       if (sourceProblem) return sourceProblem
       const sourceRoot = annotation.root
       if (!sourceRoot) return `${annotation.rel}: 来源文件根不可用`
+      const editorFile = fileModelFor(sourceRoot)?.files.find((file) => file.rel === annotation.rel)
+      if (editorFile?.dirty) return `${annotation.rel}: 来源文件有未保存修改，请先保存`
+      const sourceRead = await window.api.fs.readFile(sourceRoot, annotation.rel)
+      if (!sourceRead.ok) return `${annotation.rel}: 无法读取来源文件`
       const [sourceVersion, targetVersion] = await Promise.all([
         window.api.fs.version(sourceRoot, annotation.rel),
         window.api.fs.version(targetRoot, annotation.rel),
       ])
       if (!sourceVersion.ok || !targetVersion.ok) {
         return `${annotation.rel}: 无法读取来源或目标版本`
+      }
+      const capturedVersion = String(annotation.contentVersion ?? "")
+      if (/^[a-f0-9]{64}$/.test(capturedVersion) && capturedVersion !== sourceVersion.sha256) {
+        return `${annotation.rel}: 来源文件在批注后已变化，请重新确认锚点`
+      }
+      if (!sourceAnchorMatches(sourceRead.content, annotation)) {
+        return `${annotation.rel}: 来源文件的对应行/引文已变化，请重新批注`
       }
       let textAnchorAvailable = false
       if (sourceVersion.sha256 !== targetVersion.sha256) {
@@ -3220,6 +3239,8 @@ export function MafwShell() {
     setAnnotationActionBusy(true)
     try {
       const podId = await ensureAnnotationPodId(podStore.detail()?.pod.id ?? null)
+      const batchKey = annotations.map((annotation) => annotation.id).sort().join("|")
+      const pending = pendingDelegationBatch?.key === batchKey ? pendingDelegationBatch : null
       const targetGoal = goal ? { ...goal } : null
       const target = targetGoal
         ? {
@@ -3227,13 +3248,17 @@ export function MafwShell() {
           goalId: targetGoal.goalId,
           revision: targetGoal.activeRevision ?? targetGoal.revision ?? 1,
         }
-        : { podId, newGoal: true }
+        : pending
+          ? { podId: pending.podId, goalId: pending.goalId, revision: pending.revision }
+          : { podId, newGoal: true }
+      const followUpOverride = !targetGoal && pending ? pending.followUp : undefined
       const annotationsByID = new Map(annotations.map((annotation) => [annotation.id, annotation]))
       const result = await delegateAnnotationBatch({
         annotations,
         projectDir,
         target,
         goal: targetGoal,
+        followUpOverride,
         newGoalDraft,
       }, {
         createGoal: async (input) => {
@@ -3268,19 +3293,25 @@ export function MafwShell() {
         },
       })
       if (result.error) {
-        const partial = !!result.goalId
-        showToastV2({
-          description: partial
-            ? `Goal ${result.goalId} 已建立，但后续动作失败：${result.error}`
-            : `提交评审失败：${result.error}`,
-          duration: 5200,
-        } as any)
-        if (partial) {
-          setAnnotationActions(null)
-          return
+        if (result.goalId && result.followUp && !targetGoal && !pending) {
+          pendingDelegationBatch = {
+            key: batchKey,
+            podId,
+            goalId: result.goalId,
+            revision: result.revision ?? 1,
+            followUp: result.followUp,
+          }
         }
+        const createdNow = !!result.goalId && !targetGoal && !pending
+        showToastV2({
+          description: createdNow
+            ? `Goal ${result.goalId} 已建立，但后续动作失败：${result.error}。再次提交会复用该 Goal。`
+            : `提交评审失败：${result.error}`,
+          duration: 5600,
+        } as any)
         throw new Error(result.error)
       }
+      if (pendingDelegationBatch?.key === batchKey) pendingDelegationBatch = null
       const label = result.followUp?.kind === "rework"
         ? "已写入评审项并请求按批注修改"
         : result.followUp?.kind === "replan"
@@ -4693,6 +4724,7 @@ export function MafwShell() {
                           annotationOwnerKey={activeSessionId()}
                           annotationScopeKey={currentContentScopeKey()}
                           annotationRoot={contentScopeRoot(contentScope())}
+                          annotationChatGoalId={activeTechLeadGoalId()}
                           onProcessAnnotations={openAnnotationActions}
                           focused
                           canClosePane={false}

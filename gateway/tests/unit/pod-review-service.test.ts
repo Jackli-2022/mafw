@@ -91,6 +91,21 @@ describe('PodReviewService', () => {
     ] })).toThrow(PodError);
   });
 
+  test('rejects cross-goal source provenance at the authority boundary', () => {
+    const { service } = setup();
+    expect(() => service.createItems('pod_1', 'g1', {
+      revision: 1,
+      items: [{
+        rel: 'src/a.ts',
+        comment: 'x',
+        source: {
+          kind: 'goal', projectDir: 'C:/repo', root: 'C:/repo', contentVersion: 'v1',
+          goalId: 'g2', revision: 1,
+        },
+      }],
+    })).toThrow(PodError);
+  });
+
   test('review writes are blocked while an accept/reject mutation is in flight', () => {
     const { service } = setup({ isGoalMutating: () => true });
     try {

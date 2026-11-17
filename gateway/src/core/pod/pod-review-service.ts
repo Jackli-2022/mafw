@@ -189,6 +189,14 @@ export class PodReviewService {
         throw new PodError(400, 'anchor is too large');
       }
       const source = normalizeSource(item?.source);
+      if (source?.source.kind === 'goal') {
+        if (source.source.goalId !== goalId || source.source.revision !== revision) {
+          throw new PodError(
+            409,
+            `review source ${source.source.goalId}#${source.source.revision} does not match target ${goalId}#${revision}`,
+          );
+        }
+      }
       const clientRef = optionalText(item?.clientRef, 'clientRef', MAX_CLIENT_REF);
       if (clientRef) {
         if (seenRefs.has(clientRef)) throw new PodError(400, `duplicate clientRef: ${clientRef}`);

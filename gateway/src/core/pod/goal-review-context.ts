@@ -13,16 +13,24 @@ const MAX_CONTEXT_CHARS = 128 * 1024;
 
 export interface ReviewWorkSnapshot {
   version: 1;
+  goalId: string;
   revision: number;
   capturedAt: string;
   itemIds: string[];
 }
 
 export function reviewWorkSnapshotPath(mafwDir: string, goalId: string, revision: number): string {
+  // Revision 1 artifacts otherwise share an old root; review snapshots must
+  // never be project-global. Rev 2+ is already isolated by goalArtifactRoot.
+  if (revision <= 1) {
+    const safe = String(goalId).replace(/[^A-Za-z0-9._-]/g, '_') || '_';
+    return path.join(mafwDir, 'goals', safe, 'review-work.json');
+  }
   return path.join(goalArtifactRoot(mafwDir, goalId, revision), 'review-work.json');
 }
 
 export function captureReviewWorkSnapshot(input: {
+  goalId: string;
   path: string;
   revision: number;
   items: readonly PodReviewItem[];
@@ -37,6 +45,7 @@ export function captureReviewWorkSnapshot(input: {
   }
   const snapshot: ReviewWorkSnapshot = {
     version: 1,
+    goalId: input.goalId,
     revision: input.revision,
     capturedAt: input.now,
     itemIds,
@@ -48,7 +57,11 @@ export function captureReviewWorkSnapshot(input: {
   return snapshot;
 }
 
-export function readReviewWorkSnapshot(filePath: string, revision: number): ReviewWorkSnapshot | null {
+export function readReviewWorkSnapshot(
+  filePath: string,
+  goalId: string,
+  revision: number,
+): ReviewWorkSnapshot | null {
   if (!fs.existsSync(filePath)) return null;
   let parsed: any;
   try {
@@ -58,6 +71,9 @@ export function readReviewWorkSnapshot(filePath: string, revision: number): Revi
   }
   if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.itemIds)) {
     throw new Error('review snapshot is invalid: unsupported shape');
+  }
+  if (String(parsed.goalId ?? '') !== goalId) {
+    throw new Error(`review snapshot goal mismatch: expected ${goalId}, got ${parsed.goalId}`);
   }
   if (Number(parsed.revision) !== revision) {
     throw new Error(`review snapshot revision mismatch: expected ${revision}, got ${parsed.revision}`);
@@ -69,7 +85,7 @@ export function readReviewWorkSnapshot(filePath: string, revision: number): Revi
   if (itemIds.length !== parsed.itemIds.length) {
     throw new Error('review snapshot is invalid: itemIds must be strings');
   }
-  return { version: 1, revision, capturedAt: parsed.capturedAt, itemIds };
+  return { version: 1, goalId, revision, capturedAt: parsed.capturedAt, itemIds };
 }
 
 function quote(value: unknown): string {

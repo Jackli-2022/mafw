@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   annotationInScope,
+  annotationsVisibleInChat,
   annotationSourceFromScopeKey,
   draftOwnerKey,
   goalChangeSetAnnotationScope,
@@ -65,6 +66,27 @@ describe("annotation scope", () => {
       scopeKey: "goal:c:/repo:g1:r2",
       root: "C:\\worktrees\\g1-r2",
     })
+  })
+
+  test("Goal B drafts are hidden from a Goal A Tech Lead composer", () => {
+    const goalB = annotation({
+      id: "goal-b",
+      scopeKey: "goal:C:/repo:g2:r2",
+      root: "C:/worktrees/g2-r2",
+      source: { kind: "goal", projectDir: "C:/repo", goalId: "g2", revision: 2 },
+    })
+    expect(annotationsVisibleInChat([goalB], {
+      scopeKey: "goal:C:/repo:g2:r2",
+      root: "C:/worktrees/g2-r2",
+      chatKind: "techlead",
+      chatGoalId: "g1",
+    })).toEqual([])
+    expect(annotationsVisibleInChat([goalB], {
+      scopeKey: "goal:C:/repo:g2:r2",
+      root: "C:/worktrees/g2-r2",
+      chatKind: "techlead",
+      chatGoalId: "g2",
+    })).toHaveLength(1)
   })
 
   test("reserved review actions do not alter owner identity", () => {

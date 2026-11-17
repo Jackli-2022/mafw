@@ -64,6 +64,23 @@ export function goalChangeSetAnnotationScope(input: {
   }
 }
 
+export function annotationsVisibleInChat(
+  annotations: readonly Annotation[],
+  input: {
+    scopeKey: string | null | undefined
+    root: string | null | undefined
+    chatKind: "free" | "lead" | "techlead"
+    chatGoalId?: string | null
+  },
+): Annotation[] {
+  return annotations.filter((annotation) => {
+    if (!annotationInScope(annotation, input.scopeKey, input.root)) return false
+    if (input.chatKind !== "techlead") return true
+    if (annotation.source?.kind !== "goal") return true
+    return !!input.chatGoalId && annotation.source.goalId === input.chatGoalId
+  })
+}
+
 export function annotationInScope(
   annotation: Annotation,
   scopeKey: string | null | undefined,

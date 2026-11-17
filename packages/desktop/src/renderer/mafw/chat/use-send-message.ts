@@ -205,6 +205,13 @@ export function useSendMessage(deps: SendMessageDeps) {
     const text = input()
     const atts = attachments()
     const agents = mentionedAgents()
+    // Capture the route at click time, before media uploads / blocked-gate awaits.
+    let techLeadTargetPromise: Promise<{ podId: string; goalId: string } | null>
+    try {
+      techLeadTargetPromise = Promise.resolve(deps.techLeadTarget?.() ?? null)
+    } catch {
+      techLeadTargetPromise = Promise.resolve(null)
+    }
     const webLinks = deps.webLinks?.() ?? []
     const webBlock = formatWebContext(webLinks)
     const pendingCount = sidProp() ? pendingAnnotationCount(sidProp()) : 0
@@ -241,7 +248,7 @@ export function useSendMessage(deps: SendMessageDeps) {
         // W5a：steer / 网关队列优先；带媒体或 runtime 不支持时回落本地 turn-queue。
         // Task 20：Tech Lead 讨论只能经 sendTechLeadMessage 发送（保留身份/ContextManifest），
         // 忙时一律本地排队，等 idle 后由 sendMessage 走同一条通道。
-        const techLeadBusy = !!(await deps.techLeadTarget?.())
+        const techLeadBusy = !!(await techLeadTargetPromise)
         const deliveryKind = techLeadBusy ? "local-queue" : decideBusyDelivery({
           mode,
           steerSupported: deps.steerSupported ? deps.steerSupported() === true : false,
@@ -477,7 +484,7 @@ export function useSendMessage(deps: SendMessageDeps) {
 
     console.log("[mafw] sendMessage", sid)
     try {
-      const techLead = (await deps.techLeadTarget?.()) ?? null
+      const techLead = (await techLeadTargetPromise) ?? null
       if (techLead) {
         // Tech Lead 讨论：身份 + ContextManifest 由 gateway 注入，附件以名称/路径文本
         // 说明随消息带上（媒体附件已在上方转成 A2A 指针，Tech Lead 可用 mafw_media_ask）。

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { anchorOccursIn, annotationSourceProblem, textFingerprint } from "./annotation-source"
+import { anchorOccursIn, annotationSourceProblem, sourceAnchorMatches, textFingerprint } from "./annotation-source"
 import type { Annotation } from "../../shared/annotation-types"
 
 const annotation = (over: Partial<Annotation> = {}): Annotation => ({
@@ -20,6 +20,15 @@ describe("annotation source", () => {
     expect(textFingerprint("hello")).toBe(textFingerprint("hello"))
     expect(textFingerprint("hello")).not.toBe(textFingerprint("hello!"))
     expect(textFingerprint("")).toMatch(/:[0-9]+$/)
+  })
+
+  test("captured lines must still match the source before delegation", () => {
+    expect(sourceAnchorMatches("line1\nconst x = 1\nline3", annotation())).toBe(true)
+    expect(sourceAnchorMatches("line1\nconst x = 2\nline3", annotation())).toBe(false)
+    expect(sourceAnchorMatches("shift\nline1\nconst x = 1", annotation())).toBe(false)
+    expect(sourceAnchorMatches("new text\n原文 A\nmore", annotation({
+      code: "", anchor: { kind: "quote", quote: "原文 A" },
+    }))).toBe(true)
   })
 
   test("dirty captures are discussable but not delegable", () => {

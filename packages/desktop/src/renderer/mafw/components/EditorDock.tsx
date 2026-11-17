@@ -58,7 +58,7 @@ import { buildFileQuote } from "../file-quote"
 import { describeAnchor, jsonPathOf, a1Ref } from "../annotation-anchor"
 import { dragRectPx, cropImageDataUrl, type Rect01 } from "../region-capture"
 import { addMark, clearMarks, marksFor, marksForSession, removeMarkByAnnotation, type MarkVisual } from "../annotation-marks"
-import { draftsFor, removePending, setAnnotationHeld } from "../annotation-store"
+import { draftsFor, hydrateAnnotations, removePending, setAnnotationHeld } from "../annotation-store"
 import { annotationInScope, annotationSourceFromScopeKey } from "../annotation-scope"
 import { textFingerprint } from "../annotation-source"
 import { placeSelectionToolbar } from "../annotation-selection"
@@ -357,6 +357,11 @@ export function EditorDock(props: {
   /** djb2：Markdown 缓存键随内容变化（避免同 tab 内旧渲染被缓存命中）。 */
   const annotationOwner = () => props.annotationOwnerKey ?? props.sessionID ?? ""
   const markOwner = () => `${annotationOwner()}::${props.scopeKey ?? ""}`
+
+  createEffect(() => {
+    const owner = annotationOwner()
+    if (owner) void hydrateAnnotations(owner)
+  })
 
   /** 当前文件的批注反馈标记（pending → responded）。 */
   const fileMarks = () => {

@@ -85,6 +85,29 @@ export function validateDelegationTarget(input: {
   return null
 }
 
+export function canCreateNewGoal(annotations: readonly Annotation[]): boolean {
+  return annotations.every((annotation) =>
+    annotation.source?.kind === "project" && !annotationSourceProblem(annotation))
+}
+
+export function validateNewGoalSources(
+  annotations: readonly Annotation[],
+  projectDir: string,
+): string | null {
+  for (const annotation of annotations) {
+    const problem = annotationSourceProblem(annotation)
+    if (problem) return problem
+    const source = annotation.source!
+    if (source.kind === "goal") {
+      return `Goal ${source.goalId} 的批注不能直接新建 Goal；请交给所属 Goal 或经 Lead 建立后续工作`
+    }
+    if (norm(source.projectDir) !== norm(projectDir)) {
+      return "批注来源与目标项目不一致"
+    }
+  }
+  return null
+}
+
 export function eligibleDelegationGoals(
   goals: readonly PodGoal[],
   annotations: readonly Annotation[],
@@ -140,6 +163,7 @@ export async function delegateAnnotationBatch(input: {
   projectDir: string
   target: { podId: string; goalId?: string; revision?: number; newGoal?: boolean }
   goal?: PodGoal | null
+  followUpOverride?: DelegationFollowUp
   newGoalDraft?: {
     title: string
     objective: string
@@ -176,6 +200,10 @@ export async function delegateAnnotationBatch(input: {
   let followUp: DelegationFollowUp | null = null
 
   if (target.newGoal) {
+    const sourceProblem = validateNewGoalSources(annotations, input.projectDir)
+    if (sourceProblem) {
+      return { goalId: null, revision: null, items: [], followUp: null, error: sourceProblem }
+    }
     try {
       const created = await deps.createGoal(input.newGoalDraft ?? buildNewGoalDraft(annotations))
       goalId = created.goalId
@@ -205,7 +233,7 @@ export async function delegateAnnotationBatch(input: {
         return { goalId, revision, items: [], followUp, error: followUp.reason }
       }
     } else {
-      followUp = { kind: "notify" }
+      followUp = input.followUpOverride ?? { kind: "notify" }
     }
   }
 
@@ -224,7 +252,6 @@ export async function delegateAnnotationBatch(input: {
   } catch (err: any) {
     return { goalId, revision, items: [], followUp, error: String(err?.message ?? err) }
   }
-  deps.markDelegated(annotations.map((annotation) => annotation.id), items.map((item) => item.id))
 
   try {
     if (followUp?.kind === "notify") {
@@ -247,6 +274,7 @@ export async function delegateAnnotationBatch(input: {
         `用户提交了 ${items.length} 条评审意见，请按批注修改并逐条回应。`,
       )
     }
+    deps.markDelegated(annotations.map((annotation) => annotation.id), items.map((item) => item.id))
     return { goalId, revision, items, followUp, error: null }
   } catch (err: any) {
     return { goalId, revision, items, followUp, error: String(err?.message ?? err) }

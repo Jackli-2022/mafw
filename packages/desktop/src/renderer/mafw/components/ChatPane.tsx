@@ -86,7 +86,7 @@ import { annotationIDsForParts } from "../annotation-message-part"
 import { PendingCaptures } from "./PendingCaptures"
 import { buildAnnotationBatch } from "../editor-annotation"
 import { hydrateAnnotations, patchPending, sendableFor } from "../annotation-store"
-import { annotationInScope } from "../annotation-scope"
+import { annotationsVisibleInChat } from "../annotation-scope"
 import { formatCaptureBatch, captureAttachmentName, getPendingCaptures } from "../chat/pending-captures"
 
 import { createInputHistory, shouldNavigateHistory, shouldHintEmptyHistory } from "./input-history"
@@ -169,6 +169,7 @@ export type ChatPaneProps = {
   annotationOwnerKey?: string | null
   annotationScopeKey?: string | null
   annotationRoot?: string | null
+  annotationChatGoalId?: string | null
   onProcessAnnotations?: (items: import("../../../shared/annotation-types").Annotation[]) => void
   focused: boolean
   canClosePane: boolean
@@ -337,8 +338,12 @@ function MediaHistoryAttachment(props: { artifactId: string; name: string; media
 function PaneInner(props: ChatPaneProps & { sid: string }) {
   const sidProp = () => props.sid
   const annotationOwner = () => props.annotationOwnerKey || sidProp()
-  const visibleAnnotations = () => sendableFor(annotationOwner()).filter((annotation) =>
-    annotationInScope(annotation, props.annotationScopeKey, props.annotationRoot))
+  const visibleAnnotations = () => annotationsVisibleInChat(sendableFor(annotationOwner()), {
+    scopeKey: props.annotationScopeKey,
+    root: props.annotationRoot,
+    chatKind: props.annotationChatGoalId ? "techlead" : "free",
+    chatGoalId: props.annotationChatGoalId,
+  })
   const annotationRefIDsForMessage = (messageID: string) =>
     annotationIDsForParts(store.part[messageID] ?? [])
   // workspace 单例直连（store 单一所有权；注册表显式化，不再经 props 穿透）

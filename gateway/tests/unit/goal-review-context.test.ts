@@ -70,18 +70,21 @@ describe('goal review work context', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-review-context-'));
     const snapshotPath = path.join(dir, 'review-work.json');
     try {
-      const snapshot = captureReviewWorkSnapshot({ path: snapshotPath, revision: 2, items: [item()], now });
+      const snapshot = captureReviewWorkSnapshot({ goalId: 'g1', path: snapshotPath, revision: 2, items: [item()], now });
       expect(snapshot.itemIds).toEqual(['review_1']);
-      expect(readReviewWorkSnapshot(snapshotPath, 2)?.itemIds).toEqual(['review_1']);
+      expect(readReviewWorkSnapshot(snapshotPath, 'g1', 2)?.itemIds).toEqual(['review_1']);
+      expect(() => readReviewWorkSnapshot(snapshotPath, 'g2', 2)).toThrow(/goal/);
       fs.writeFileSync(snapshotPath, '{broken');
-      expect(() => readReviewWorkSnapshot(snapshotPath, 2)).toThrow(/snapshot/);
+      expect(() => readReviewWorkSnapshot(snapshotPath, 'g1', 2)).toThrow(/snapshot/);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  test('resolves revision-specific snapshot paths', () => {
-    expect(reviewWorkSnapshotPath('C:/mafw', 'g1', 1)).toBe(path.join('C:/mafw', 'review-work.json'));
+  test('resolves goal-scoped snapshot paths for every revision', () => {
+    expect(reviewWorkSnapshotPath('C:/mafw', 'g1', 1)).toBe(
+      path.join('C:/mafw', 'goals', 'g1', 'review-work.json'),
+    );
     expect(reviewWorkSnapshotPath('C:/mafw', 'g1', 2)).toBe(
       path.join('C:/mafw', 'revisions', 'g1', 'rev-2', 'review-work.json'),
     );

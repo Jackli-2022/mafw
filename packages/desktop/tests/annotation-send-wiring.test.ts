@@ -29,6 +29,7 @@ describe("批注草稿接线", () => {
     expect(editor).toContain("submitAnnotationAnchored")
     expect(editor).toContain("selectionBar")
     expect(editor).toContain("mafw-annot-rail")
+    expect(editor).toContain("hydrateAnnotations(owner)")
   })
   test("diff 行评论同样可加入草稿", () => {
     const diff = read("src/renderer/mafw/components/DiffReviewPanel.tsx")

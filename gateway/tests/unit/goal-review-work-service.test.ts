@@ -75,6 +75,29 @@ describe('GoalReviewWorkService', () => {
     }
   });
 
+  test('two rev-1 goals sharing one mafwDir never read each other snapshots', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-review-work-'));
+    const service = new GoalReviewWorkService({
+      reviews: {
+        unresolved: (_podId, goalId) => goalId === 'g1' ? [item('review_a')] : [item('review_b')],
+      },
+      mafwDirForGoal: () => dir,
+      now: () => now,
+    });
+    try {
+      service.render({ podId: 'pod_1', goalId: 'g1', revision: 1, node: 'plan' });
+      service.render({ podId: 'pod_1', goalId: 'g2', revision: 1, node: 'plan' });
+      const g1 = service.render({ podId: 'pod_1', goalId: 'g1', revision: 1, node: 'execute' }) ?? '';
+      const g2 = service.render({ podId: 'pod_1', goalId: 'g2', revision: 1, node: 'execute' }) ?? '';
+      expect(g1).toContain('review_a');
+      expect(g1).not.toContain('review_b');
+      expect(g2).toContain('review_b');
+      expect(g2).not.toContain('review_a');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test('revision 2 renders only current-revision unresolved rows', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-review-work-'));
     const origin = item('review_rev1_origin', 1);

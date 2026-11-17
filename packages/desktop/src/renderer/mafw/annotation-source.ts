@@ -22,6 +22,23 @@ function normalizeText(value: string): string {
   return value.replace(/\r\n/g, "\n")
 }
 
+/** True when the captured source lines/quote still match the file they came from. */
+export function sourceAnchorMatches(content: string, annotation: Annotation): boolean {
+  const haystack = normalizeText(content)
+  const code = normalizeText(String(annotation.code ?? "").trim())
+  if (code) {
+    const lines = haystack.split("\n")
+    const start = Math.max(1, Number(annotation.startLine) || 1)
+    const end = Math.max(start, Number(annotation.endLine) || start)
+    const actual = lines.slice(start - 1, end).join("\n").trim()
+    return actual === code
+  }
+  const quote = annotation.anchor?.kind === "quote"
+    ? normalizeText(annotation.anchor.quote.trim())
+    : ""
+  return quote ? haystack.includes(quote) : true
+}
+
 /** True only when the captured quote/code occurs exactly once in the target file. */
 export function anchorOccursIn(content: string, annotation: Annotation): boolean {
   const fromAnchor = annotation.anchor?.kind === "quote" ? annotation.anchor.quote : ""

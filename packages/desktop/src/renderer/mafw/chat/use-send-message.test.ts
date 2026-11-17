@@ -189,6 +189,35 @@ describe("sendMessage annotation discussion", () => {
     }
   })
 
+  test("Tech Lead target is captured before async send gates", async () => {
+    let target = "g1"
+    const sentGoals: string[] = []
+    const f = depsFor({
+      input: () => "解释一下",
+      pendingAnnotationCount: () => 0,
+      peekAnnotations: () => [],
+      techLeadTarget: () => ({ podId: "pod_1", goalId: target }),
+      sendBlocked: async () => {
+        target = "g2"
+        return null
+      },
+    })
+    // depsFor replaced window with chat-only API; add the Tech Lead transport.
+    ;(globalThis as any).window.api.mafw.pod = {
+      sendTechLeadMessage: async (_podId: string, goalId: string) => {
+        sentGoals.push(goalId)
+        return { revision: 1 }
+      },
+    }
+    try {
+      const { sendMessage } = useSendMessage(f.deps)
+      await sendMessage()
+      expect(sentGoals).toEqual(["g1"])
+    } finally {
+      delete (globalThis as any).window
+    }
+  })
+
   test("busy annotation send stays local and carries exact annotation ids", async () => {
     const f = depsFor({ sending: () => true, steerSupported: () => true })
     try {
