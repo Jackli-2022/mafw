@@ -109,12 +109,13 @@ api contract     313/313
    `novelty AUC 0.429`、`mismatch AUC 0.567`。novelty 仍低于 0.55——在这个语料上，“离皮层记忆远”与“值得记住”没有正相关。Phase 2 继续关闭。
 2. **episode 级 mismatch 缺数据**。2,370 个 episode 里只有 854 个有 `outcome` 文本，且内容是 `ok` / `已确认` / `[EXTRACTED: 2]` / 问候语；**所有** `t1_turn_features.outcome` 都是 `unknown`。没有可用的成功/失败极性，episode 级 outcome 对比无法实现。
 3. **Phase 3 去重预筛不划算**。对 9,944 个 active unit 抽 1,000 个做精确最近邻：≥0.99 的 5 个（0.5%）、≥0.97 的 11 个（1.1%）、≥0.95 的 34 个（3.4%）、≥0.90 的 105 个（10.5%）。且 0.99 档里已出现“同一 episode 不同轮次”被当成近重（`ScreenSpot 2026-10-14b T8` vs `T3`，cos 0.992）——安全阈值下省不到 1% 的判官调用，还会误折叠。Phase 3 不做。
+4. **session 内相对 surprise 是唯一过线的候选**。对 553 个有上一轮的回合算 `1 − cos(本轮, 上一轮)`：AUC **0.584**（36 正例）；同一子集上当前的 global novelty 0.484、mismatch 0.535。样本小，但方向明确——novelty v2 应该用 session 内预测误差，而不是“到皮层记忆的距离”。
 
-结论：两个阶段都**不启用**；要继续推进，需要换 novelty 的定义（例如 session 内相对 surprise，或带 outcome 的 episode 信号），而不是调阈值。
+结论：Phase 2/3 维持关闭；下一步如果要做，是换 novelty 的定义（session 内 surprise），不是调阈值。
 
 ## 仍 deferred
 
 - **mismatch 定义**：保留字段但**禁止消费**；要换 episode 级对比，先得有成功/失败极性（goal verdict / 显式 outcome 落库）。
-- **novelty 的语义效度**：两个标签下 AUC 都 < 0.5；需要新的定义与验证集，不是调参能解决。
+- **novelty 的语义效度**：global novelty 在两个标签下 AUC 0.43/0.48；session 内 surprise 在同一子集到 0.584（36 正例）。下一步是 novelty v2（session 预测误差）而不是调参。
 - **Phase 2/3**：按上面的测量结果关闭。
 - **历史 `[object Object]` 行**：不再新增，旧行仍在 T1 里（不删原始数据）。
