@@ -523,6 +523,31 @@ describe('contributes enforcement', () => {
     // Omitting the fourth argument keeps the legacy "unconstrained" contract.
     expect(validateUnifiedContributions('example', contributions, CANONICAL)).toEqual([]);
   });
+
+  it('reports only the shape error when the same action is also undeclared', () => {
+    const built = buildActivatedContributions(
+      'example',
+      { actions: { pong: { handler: () => null, timeoutMs: 0 } } },
+      CANONICAL,
+      declared({ actions: ['ping'] }),
+    );
+    expect(built.ok).toBe(false);
+    const errors = built.ok ? [] : built.errors;
+    expect(errors.some((error) => error.includes('timeoutMs'))).toBe(true);
+    // The shape error already fails the package; a derived "not declared" error
+    // for the same name would only bury the first cause.
+    expect(errors.some((error) => error.includes('is not declared'))).toBe(false);
+  });
+
+  it('does not constrain observers when the plane is not declared', () => {
+    const built = buildActivatedContributions(
+      'example',
+      { observers: [{ id: 'audit', onEvent: () => {} }] },
+      CANONICAL,
+      declared({ actions: ['ping'] }),
+    );
+    expect(built.ok).toBe(true);
+  });
 });
 
 describe('ctx.config.update', () => {

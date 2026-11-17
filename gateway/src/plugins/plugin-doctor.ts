@@ -123,6 +123,18 @@ export class PluginDoctor {
       checks.push(check('manifest-warnings', 'warn', parsed.warnings.join('; ')));
     }
 
+    // 1c. contributes-desktop
+    // The contract validates the shape of `contributes.desktop`, but this host
+    // has no execution point for it (desktop loads `ui` from the client
+    // snapshot). Surface the gap instead of implying it is enforced.
+    if (parsed?.manifest?.contributes?.desktop !== undefined) {
+      checks.push(check(
+        'contributes-desktop',
+        'warn',
+        'desktop contributions are declared but not enforced by this host',
+      ));
+    }
+
     // 2. api-version
     const rawApiVersion = rawRecord?.apiVersion;
     if (rawApiVersion === undefined || rawApiVersion === 1 || rawApiVersion === 2) {

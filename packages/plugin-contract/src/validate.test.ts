@@ -641,6 +641,11 @@ test("manifest contributes: accepts gateway observers", () => {
 test("manifest contributes: rejects a non-array observers value", () => {
   const result = validatePluginManifestContributes({ gateway: { observers: "audit" } });
   assert.equal(result.ok, false);
+  // Pinned against `readStringList`, which owns the shared wording and label.
+  assert.match(
+    result.ok ? "" : result.error,
+    /manifest contributes\.gateway\.observers must be an array of non-empty strings/,
+  );
 });
 
 test("manifest contributes: existing client descriptor validation is unchanged", () => {

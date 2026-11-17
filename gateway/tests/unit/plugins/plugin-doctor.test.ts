@@ -61,6 +61,22 @@ describe('PluginDoctor', () => {
     expect(report.checks.find((entry) => entry.id === 'manifest-warnings')).toBeUndefined();
   });
 
+  it('warns that desktop contributions are not enforced by this host', async () => {
+    const { doctor, dir } = makeDoctor();
+    writePackage(dir, 'acme', { apiVersion: 2, contributes: { desktop: { ui: {} } } });
+    const report = await doctor.check('acme');
+    expect(report.checks.find((entry) => entry.id === 'contributes-desktop')?.status).toBe('warn');
+    // Unenforceable is a visibility gap, not a package defect.
+    expect(report.ok).toBe(true);
+  });
+
+  it('adds no contributes-desktop check without a desktop declaration', async () => {
+    const { doctor, dir } = makeDoctor();
+    writePackage(dir, 'acme', { version: '1.0.0' });
+    const report = await doctor.check('acme');
+    expect(report.checks.find((entry) => entry.id === 'contributes-desktop')).toBeUndefined();
+  });
+
   it('fails an unsupported apiVersion without throwing', async () => {
     const { doctor, dir } = makeDoctor();
     writePackage(dir, 'acme', { apiVersion: 3 });
