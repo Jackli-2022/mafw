@@ -5,6 +5,7 @@ import {
   type PodGoalAcceptanceRow,
   type PodReviewItemRow,
   type PodReviewItemStatus,
+  type PodReviewSource,
   type PodStore,
 } from './pod-store';
 
@@ -13,6 +14,8 @@ const MAX_REL = 1000;
 const MAX_COMMENT = 4000;
 const MAX_CODE = 20000;
 const MAX_ANCHOR = 8000;
+const MAX_SOURCE = 16 * 1024;
+const MAX_CLIENT_REF = 200;
 const MAX_RESPONSE = 4000;
 const MAX_NOTE = 2000;
 /** Keep a batch under the route's JSON cap while allowing large single snapshots. */
@@ -36,6 +39,8 @@ export interface PodReviewItem {
   code: string;
   comment: string;
   anchor: PodReviewAnchor | null;
+  source: PodReviewSource | null;
+  clientRef: string | null;
   response: string | null;
   originItemId: string | null;
   originRevision: number | null;
@@ -52,6 +57,8 @@ export interface PodReviewItemInput {
   code?: string;
   comment: string;
   anchor?: PodReviewAnchor;
+  source?: PodReviewSource;
+  clientRef?: string;
 }
 
 export interface PodReviewServiceDeps {
@@ -90,6 +97,8 @@ function toItem(row: PodReviewItemRow): PodReviewItem {
     code: row.code,
     comment: row.comment,
     anchor: parseAnchor(row.anchorJson),
+    source: row.source,
+    clientRef: row.clientRef,
     response: row.response,
     originItemId: row.originItemId,
     originRevision: row.originRevision,
@@ -112,6 +121,33 @@ function optionalText(value: unknown, field: string, max: number): string | null
   const text = String(value).trim();
   if (text.length > max) throw new PodError(400, `${field} is too long`);
   return text || null;
+}
+
+function normalizeSource(raw: unknown): { source: PodReviewSource; json: string } | null {
+  if (raw === undefined || raw === null) return null;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new PodError(400, 'source must be an object');
+  }
+  const input = raw as Record<string, unknown>;
+  const projectDir = requireText(input.projectDir, 'source.projectDir', 1000);
+  const root = requireText(input.root, 'source.root', 1000);
+  const contentVersion = optionalText(input.contentVersion, 'source.contentVersion', 500);
+  let source: PodReviewSource;
+  if (input.kind === 'project') {
+    source = { kind: 'project', projectDir, root, contentVersion };
+  } else if (input.kind === 'goal') {
+    const goalId = requireText(input.goalId, 'source.goalId', 300);
+    const revision = Number(input.revision);
+    if (!Number.isInteger(revision) || revision < 1) {
+      throw new PodError(400, 'source.revision must be a positive integer');
+    }
+    source = { kind: 'goal', projectDir, goalId, revision, root, contentVersion };
+  } else {
+    throw new PodError(400, 'source.kind must be project or goal');
+  }
+  const json = JSON.stringify(source);
+  if (json.length > MAX_SOURCE) throw new PodError(400, 'source is too large');
+  return { source, json };
 }
 
 export class PodReviewService {
@@ -138,6 +174,7 @@ export class PodReviewService {
       throw new PodError(400, `at most ${MAX_REVIEW_ITEMS} review items per request`);
     }
 
+    const seenRefs = new Set<string>();
     const prepared = input.items.map((item) => {
       const rel = requireText(item?.rel, 'rel', MAX_REL);
       const comment = requireText(item?.comment, 'comment', MAX_COMMENT);
@@ -151,36 +188,58 @@ export class PodReviewService {
       if (anchorJson && anchorJson.length > MAX_ANCHOR) {
         throw new PodError(400, 'anchor is too large');
       }
-      return { rel, comment, code, startLine, endLine, anchorJson };
+      const source = normalizeSource(item?.source);
+      const clientRef = optionalText(item?.clientRef, 'clientRef', MAX_CLIENT_REF);
+      if (clientRef) {
+        if (seenRefs.has(clientRef)) throw new PodError(400, `duplicate clientRef: ${clientRef}`);
+        seenRefs.add(clientRef);
+      }
+      return {
+        rel, comment, code, startLine, endLine, anchorJson,
+        sourceJson: source?.json ?? null, clientRef,
+      };
     });
     const totalChars = prepared.reduce(
-      (sum, item) => sum + item.rel.length + item.comment.length + item.code.length + (item.anchorJson?.length ?? 0),
+      (sum, item) => sum + item.rel.length + item.comment.length + item.code.length
+        + (item.anchorJson?.length ?? 0) + (item.sourceJson?.length ?? 0) + (item.clientRef?.length ?? 0),
       0,
     );
     if (totalChars > MAX_BATCH_CHARS) {
       throw new PodError(400, 'review item batch is too large');
     }
 
-    // Validate the whole batch before writing: a later invalid item must not
-    // leave earlier rows/events behind (annotation send retries would duplicate).
+    // Validate the whole batch before writing. Retries reuse rows by clientRef,
+    // so a lost HTTP response cannot duplicate items or their created events.
+    let createdCount = 0;
     const created = this.deps.store.transaction(() => {
       const rows: PodReviewItem[] = [];
       for (const item of prepared) {
+        if (item.clientRef) {
+          const existing = this.deps.store.findReviewItemByClientRef(
+            podId, goalId, revision, item.clientRef,
+          );
+          if (existing) {
+            rows.push(toItem(existing));
+            continue;
+          }
+        }
         const row = this.deps.store.createReviewItem({
           podId, goalId, revision, rel: item.rel, startLine: item.startLine,
           endLine: item.endLine, code: item.code, comment: item.comment,
-          anchorJson: item.anchorJson, now: this.deps.now(),
+          anchorJson: item.anchorJson, sourceJson: item.sourceJson,
+          clientRef: item.clientRef, now: this.deps.now(),
         });
         this.deps.store.appendReviewItemEvent({
           podId, goalId, revision, itemId: row.id, kind: 'created',
           payloadJson: row.originItemId ? JSON.stringify({ originItemId: row.originItemId }) : null,
           now: this.deps.now(),
         });
+        createdCount++;
         rows.push(toItem(row));
       }
       return rows;
     });
-    this.deps.notify?.(podId, 'review', goalId);
+    if (createdCount > 0) this.deps.notify?.(podId, 'review', goalId);
     return created;
   }
 

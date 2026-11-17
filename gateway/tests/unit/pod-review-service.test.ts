@@ -62,6 +62,35 @@ describe('PodReviewService', () => {
     expect(store.listReviewItems('pod_1', 'g1', 1)).toHaveLength(0);
   });
 
+  test('retries reuse clientRef rows without duplicate events', () => {
+    const { service, store } = setup();
+    const source = { kind: 'project' as const, projectDir: 'C:/repo', root: 'C:/repo', contentVersion: 'v1' };
+    const first = service.createItems('pod_1', 'g1', {
+      items: [{ rel: 'src/a.ts', comment: '改这里', source, clientRef: 'ann-1' }],
+    });
+    const second = service.createItems('pod_1', 'g1', {
+      items: [{ rel: 'src/a.ts', comment: '改这里', source, clientRef: 'ann-1' }],
+    });
+    expect(second[0].id).toBe(first[0].id);
+    expect(second[0].source).toEqual(source);
+    expect(store.listReviewItems('pod_1', 'g1', 1)).toHaveLength(1);
+    expect(store.listReviewItemEvents(first[0].id)).toHaveLength(1);
+  });
+
+  test('rejects duplicate clientRefs in one batch and invalid source', () => {
+    const { service } = setup();
+    expect(() => service.createItems('pod_1', 'g1', { items: [
+      { rel: 'a.ts', comment: 'a', clientRef: 'same' },
+      { rel: 'b.ts', comment: 'b', clientRef: 'same' },
+    ] })).toThrow(PodError);
+    expect(() => service.createItems('pod_1', 'g1', { items: [
+      { rel: 'a.ts', comment: 'a', source: { kind: 'goal', projectDir: 'C:/r' } as any },
+    ] })).toThrow(PodError);
+    expect(() => service.createItems('pod_1', 'g1', { items: [
+      { rel: 'a.ts', comment: 'a', clientRef: 'x'.repeat(201) },
+    ] })).toThrow(PodError);
+  });
+
   test('review writes are blocked while an accept/reject mutation is in flight', () => {
     const { service } = setup({ isGoalMutating: () => true });
     try {

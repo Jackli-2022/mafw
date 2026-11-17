@@ -65,6 +65,29 @@ describe('review item routes', () => {
     expect(calls).toEqual(['resolve']);
   });
 
+  test('forwards revision, source, and clientRef to the service', async () => {
+    const calls: any[] = [];
+    const deps = {
+      pods: { get: () => ({ pod: { id: 'pod_1' } }) },
+      reviews: {
+        createItems: (_podId: string, _goalId: string, input: any) => {
+          calls.push(input);
+          return input.items.map((item: any, index: number) => ({ id: `review_${index}`, ...item }));
+        },
+      },
+    } as any as PodRouteDeps;
+    const source = { kind: 'project', projectDir: 'C:/repo', root: 'C:/repo', contentVersion: 'v1' };
+    const res = await call(deps, 'POST', '/api/pods/pod_1/goals/g1/review-items', {
+      revision: 2,
+      items: [{ rel: 'src/a.ts', comment: 'x', source, clientRef: 'ann-1' }],
+    });
+    expect(res.status).toBe(200);
+    expect(calls[0]).toMatchObject({
+      revision: 2,
+      items: [{ rel: 'src/a.ts', comment: 'x', source, clientRef: 'ann-1' }],
+    });
+  });
+
   test('accepts a review batch larger than the generic pod JSON limit', async () => {
     const deps = {
       pods: { get: () => ({ pod: { id: 'pod_1' } }) },
