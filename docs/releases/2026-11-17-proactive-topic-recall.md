@@ -46,10 +46,9 @@
 - root native/fallback tool + prompt：**5/5 passed**
 - TUI chat-store 真实注入 payload：**30/30 passed**
 - 定向合计：**471/471 passed**
-- `gateway` 全量：**1029 suites / 8192 tests；8184 passed，2 skipped，6 failed**
-  - 6 个失败集中在 3 个非本功能 suite：`search-t1-layer`（full-run 5s timeout）、`plugin-standard-command`、`instance-ownership`。
-  - 三个 suite 单独运行 **3 suites / 58 tests 全绿**，判断为 full-run 下的超时/并发 git 分支干扰。
+- `gateway` 全量（review 修复后最终重跑）：**1029 suites / 8195 tests；8193 passed，2 skipped，0 failed**。
 - 类型门禁：`gateway tsc --noEmit -p tsconfig.json` 与根 `tsc --noEmit` 均通过。
+- TUI 定向 `node --test tests/chat-store.test.ts`：30/30。完整 TUI typecheck 仍受本机未安装 `@earendil-works/pi-tui` 依赖阻塞，与本切片无关。
 
 ## 范围外 / 后续
 
