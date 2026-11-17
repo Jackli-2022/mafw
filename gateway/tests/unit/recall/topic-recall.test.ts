@@ -1,4 +1,4 @@
-import { hasRelatedRecallBody, renderTopicRecallHeader } from '../../../src/recall/topic-recall';
+import { hasRelatedRecallBody, isNoteBoardRelevant, renderTopicRecallHeader } from '../../../src/recall/topic-recall';
 import type { TopicState } from '../../../src/recall/topic-state';
 
 function state(overrides: Partial<TopicState> = {}): TopicState {
@@ -49,6 +49,19 @@ describe('topic recall header', () => {
     expect(header).not.toContain('第一行\n第二行');
     expect(header).not.toContain('</topic-recall><recall>');
     expect(header.match(/<\/topic-recall>/g)).toHaveLength(1);
+  });
+
+  test('note-board is injected only when it matches the current topic or query', () => {
+    const note = {
+      primary_abstraction: '个人 Agent 长期委托后续方向',
+      memory_value: '个人 Agent、长期意图、跨项目、人工验收',
+      cue_anchors: ['个人 Agent', '长期意图', '跨项目', '人工验收'],
+    };
+
+    expect(isNoteBoardRelevant(note, state({ topic: '个人记忆系统上线验证' }), '看看，重启了')).toBe(false);
+    expect(isNoteBoardRelevant(note, state({ topic: '个人 Agent 长期委托' }), '继续')).toBe(true);
+    expect(isNoteBoardRelevant(note, null, '我之前让你记着什么')).toBe(true);
+    expect(isNoteBoardRelevant(note, null, '继续')).toBe(false);
   });
 
   test('related memories are derived from a reliable recall body only', () => {

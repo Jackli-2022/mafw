@@ -141,11 +141,13 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
       if (deps.memoryService()) {
         try {
           const { handleNoteBoard } = require('./note-board');
+          const { isNoteBoardRelevant } = require('../recall/topic-recall');
           const { HarmonicUnitFileStore } = require('../memory/harmonic-file-store.js');
           const store = new HarmonicUnitFileStore(deps.mafwDir(), deps.memoryService()!.harmonicIndex);
           const nb = await handleNoteBoard({
             getIndex: () => deps.memoryService()!.harmonicIndex.getIndex(),
             readUnit: (id: string) => store.read(id),
+            includeUnit: (unit: any) => isNoteBoardRelevant(unit, topicState, query),
           });
           noteBoard = nb.board;
         } catch { /* fail-open */ }

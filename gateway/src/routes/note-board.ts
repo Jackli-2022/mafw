@@ -4,6 +4,8 @@ import { NOTE_BOARD_BUDGET } from '../recall/inject-format';
 export interface NoteBoardDeps {
   getIndex(): { entries: any[] };
   readUnit(id: string): Promise<HarmonicUnit | null>;
+  /** Optional relevance gate for automatic recall; omitted by the structured API. */
+  includeUnit?: (unit: HarmonicUnit) => boolean;
 }
 
 export { NOTE_BOARD_BUDGET };
@@ -53,12 +55,13 @@ export async function handleNoteBoard(deps: NoteBoardDeps, now: Date = new Date(
     if (u) units.push(u.sticky_until ? u : { ...u, sticky_until: entry.sticky_until });
   }
 
-  const { board, used } = formatNoteBoard(units, now);
-  if (units.length > used) {
-    console.log(`[Recall] note-board overflow: ${units.length - used} entries dropped`);
+  const selected = deps.includeUnit ? units.filter(deps.includeUnit) : units;
+  const { board, used } = formatNoteBoard(selected, now);
+  if (selected.length > used) {
+    console.log(`[Recall] note-board overflow: ${selected.length - used} entries dropped`);
   }
 
-  const entries = units.slice(0, used).map(u => ({
+  const entries = selected.slice(0, used).map(u => ({
     id: u.id,
     type: u.type,
     primary_abstraction: u.primary_abstraction,
