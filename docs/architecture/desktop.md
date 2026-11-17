@@ -126,6 +126,10 @@
   复用 `DiffReviewPanel`（tab chrome 隐藏左侧文件列表）渲染；改动集不持久化，重启后丢弃。
 - **编辑器**：默认 **Monaco**（VS Code 内核；`mafw-editor-engine=codemirror` 回退，挂载失败自动回退），
   行内 diff 装饰、Ctrl/Cmd+S、MAFW 主题 token 映射、minimap ≥720px。详情见本文件 Monaco 段。
+- **AI 内联编辑（2026-11-17）**：源码选区 toolbar 增加 `AI 编辑`；`InlineEditSheet` 收集指令 +
+  快捷动作（重构 / 修 bug / 注释类型 / 命名可读性）；编辑器有选区时 Ctrl/Cmd+K 直接打开。
+  提交后把文件、行范围、选中代码和指令拼成 `buildInlineEditPrompt()`，走既有
+  `sessions.promptAsync` 交给 agent 改文件；编辑器 watcher 回显 diff，Desktop 不直接应用模型文本。
 - **文件预览**：md（session-ui markdown）、json 折叠树、csv/tsv 表格、svg 预览/源码、图片、pdf（Chromium
   viewer）、docx/xlsx/pptx（懒加载）、legacy office 外部打开；HTML 走 `mafw-file://` 在浏览器面打开。
 - **批注/审阅（2026-11-16 rev5 · ADE 模式）**：选中/落点只出现浮动 toolbar（引用 / 批注），不再自动弹表单；
