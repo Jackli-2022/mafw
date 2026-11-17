@@ -23,6 +23,8 @@
 | `f93f6c66` | schema 修复 | `standardVersion` 上界（拒绝 `1e400`）、把「已知更松」写成文并钉住 |
 | `48c64c07` | E14 规范正文 | `docs/guides/plugin-standard.md`（11 节，五个 plane 的逐字文案与上限） |
 | `65c470c3` | 规范纠偏 | 11 处与代码不符的表述（`host: ""`、icon 字段、`http:true`、check 的 ctx 差异、untrusted 无法本地 dry-run 等） |
+| `351fc18c` | 规范补歧义 | 首次作者实测的 11 处歧义（事件信封的两个 `at`、`check` 的判据范围、`activate()` 内 emit 会被丢弃、`--dir` 语义、BOM、行为验证路径等） |
+| `6dafdffc` | 验收修复 | `next:` 回显 `--strict`、`http` 两种措辞统一、失败路径补 `apiVersion/kind/permissions`、`check` 会真跑 `activate()` 的提示、工具输入不由宿主校验、canonical 名单指向权威源 |
 | 本记录 | E14 收尾 | 版本号 + 交付记录 + spec/plan 入库 |
 
 ## 现在有什么
@@ -69,7 +71,7 @@ mafw plugins install "<abs path>" --trust trusted --permission actions --permiss
 | gateway 类型 | `npx tsc --noEmit -p tsconfig.json` | **exit 0** |
 | 契约包 | `npm run test:plugin-contract` | **47 pass / 0 fail** |
 | gateway 全量 | `npx jest --runInBand --forceExit` | **1028 suites / 8182 tests**：8155 passed、2 skipped、**25 failed**（见下，全部非本波） |
-| 本波相关面 | `npx jest --runInBand --forceExit tests/unit/plugins tests/unit/cli` | **44 suites / 487 tests 全绿** |
+| 本波相关面 | `npx jest --runInBand --forceExit tests/unit/plugins tests/unit/cli` | **44 suites / 493 tests 全绿** |
 | 参考包冒烟 | `node bin/mafw.js plugin check --strict <examples/...>` | 两个示例均 `ok`，exit 0 |
 
 全量那 25 条红与 E14 无关，逐项归因：
@@ -81,7 +83,24 @@ mafw plugins install "<abs path>" --trust trusted --permission actions --permiss
 
 核验方式：逐个 `git show --name-only` 检查本波 13 个 commit，均未触碰 `routes/`、`gateway-sdk/`、`http/`、`runtime/`。
 
-**新增可执行 test case：73**（`plugin-standard-command` 41、`manifest-schema-parity` 13、`standard-doc` 8、`package-check-inventory` 6、`example-packages` 3、`package-manifest` +2）。
+**新增可执行 test case：79**（`plugin-standard-command` 47、`manifest-schema-parity` 13、`standard-doc` 8、`package-check-inventory` 6、`example-packages` 3、`package-manifest` +2）。
+
+## 验收（三个脚本化场景，各用一个无上下文子代理）
+
+| 场景 | 任务 | 结果 |
+|---|---|---|
+| A 最小包 | 「写 `clock`：`now` action + 每秒 `plugin:clock:tick` 事件」 | **首次 `check --strict` 即 `ok`，零告警**；子代理只读规范 + 两个示例，未读任何 `gateway/` 源码；自行用假 ctx 验证了行为 |
+| B 全 plane | 「写 `probe`：`stats` action + `echo` tool + `audit` observer + `GET /status` 路由」 | **首次 `check --strict` 即 `ok`**；四面对齐（`http true` / `1 route(s)`） |
+| C 反例 | 故意让 manifest 只声明 `ping`、`activate()` 返回 `ping` + `pong` | **安装前拒绝**（exit 1），逐字报 `action "pong" is not declared…`，打印 declared/registered 差集，**不打印 `install:`**；`--json` 单行可解析且与退出码一致 |
+
+场景 A/B 的子代理都**没有安装**（安装是人类的动作），也都没有接触 human token。验收过程照出 6 处真缺陷，已由 `6dafdffc` 修复并在同一天重跑 C 确认：
+
+- `next:` 重跑提示会丢掉 `--strict`（照它重跑会静默降级）；
+- `declared:` 与 `registered:` 对 `http` 用了两套措辞（`opted out` vs `0`），而这两行正是让人对比的；
+- 失败路径丢掉了 `apiVersion` / `kind` / `permissions`（最需要排障时反而看不到）；
+- 没有提示「`check` 不是沙箱、`activate()` 真的跑过」；
+- 规范 §8 对 check host 的 ctx 描述不全（漏了 `ctx.http`）；
+- 规范未说明工具 `input` 不由宿主校验、canonical 名单的权威来源。
 
 ## 已知边界
 
@@ -91,3 +110,6 @@ mafw plugins install "<abs path>" --trust trusted --permission actions --permiss
 4. **`PluginCheckResultSchema` / SDK / Desktop 类型尚未补 `declared`/`registered`/`warnings`**：HTTP 原始响应里字段存在，只有文档化 schema 与 SDK 类型滞后。
 5. **`standardVersion` 目前只定义 `1`**：解析要求正整数，不做语义分支。
 6. `~/.mafw/plugins/README.md` 只在目录首次创建时写入，存量安装看不到新增的边界说明。
+7. **所有失败都退 1，没有机器可读的 `code`**：区分「manifest 解析失败 / 身份不符 / 越界」只能匹配 `error` 字符串。已列入后续；当前 `next:` 已能指名修法。
+8. **失败输出没有逐项 delta 标记**：声明的 40 个 action 里多出一个时，只能靠人对比两行列表；`error` 会点名越界条目，但没有 `+pong` 这类标记。
+9. **`check` 会真的执行 `activate()`**（不是沙箱，`ctx.fetch` 是真的），CLI 已加 `note:` 提示；不要把 `check` 当作安全隔离手段。
