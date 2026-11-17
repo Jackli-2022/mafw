@@ -25,7 +25,7 @@ export async function backfillT1Atoms(
   encodeAtoms: (
     turns: Array<{ traceId: string; text: string }>,
   ) => Promise<Map<string, T1SparseAtom[]>>,
-  opts: { limit?: number; batchSize?: number } = {},
+  opts: { limit?: number; batchSize?: number; atomModel?: string } = {},
 ): Promise<T1AtomBackfillResult> {
   const limit = Math.max(0, Math.trunc(opts.limit ?? 128));
   const batchSize = Math.max(1, Math.trunc(opts.batchSize ?? 16));
@@ -85,6 +85,7 @@ export async function backfillT1Atoms(
         encodeT1Turn(turn, deps, {
           atoms: atomsByTrace.get(turn.trace_id) ?? [],
           atomsAttempted: true,
+          atomModel: opts.atomModel,
         });
         result.encoded++;
         sessions.add(turn.session_id);

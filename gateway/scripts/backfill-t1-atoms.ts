@@ -53,7 +53,7 @@ async function main() {
       const result = await backfillT1Atoms(
         db,
         (turns) => encoder.encodeMany(turns),
-        { limit: Math.min(passLimit, remaining) },
+        { limit: Math.min(passLimit, remaining), atomModel: `${runtime.providerId}@${runtime.provider.dims}` },
       );
       if (result.scanned === 0) break;
       for (const sessionId of result.sessionIds) {

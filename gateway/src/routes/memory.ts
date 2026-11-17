@@ -250,6 +250,9 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
         embedding: {
           provider: config.memory.embedding.provider,
           model: config.memory.embedding.model,
+          providerId: getEmbeddingRuntime()?.providerId ?? null,
+          engine: config.memory.embedding.engine ?? 'onnx',
+          dims: getEmbeddingRuntime()?.provider?.dims ?? config.memory.embedding.dimensions ?? null,
           vectors: indexed,
           indexEntries: indexEntries.length,
           coverage: indexEntries.length > 0 ? indexed / indexEntries.length : 0,

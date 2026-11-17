@@ -11,7 +11,7 @@
 import type Database from 'better-sqlite3';
 import { config } from '../config';
 import { log } from '../core/utils/logger';
-import { createEmbeddingProvider, EmbeddingProvider } from './embedding-provider';
+import { createEmbeddingProvider, EmbeddingProvider, embeddingConfigWarnings } from './embedding-provider';
 import { resolveEmbeddingNamespace, type EmbeddingNamespace } from './embedding-namespace';
 import { MemoryVectorStore, EmbeddingIndexer, VectorStoreLike } from './vector-store';
 import { SqliteT1VectorStore } from './sqlite-vector-store';
@@ -64,6 +64,9 @@ export interface InitEmbeddingRuntimeOptions {
 export function initEmbeddingRuntime(opts: InitEmbeddingRuntimeOptions): EmbeddingRuntime | null {
   const cfg = opts.cfg ?? (config as any).memory?.embedding;
   if (!opts.provider && (!cfg || cfg.provider === 'off')) return null;
+  for (const warning of embeddingConfigWarnings(cfg ?? {})) {
+    log.warn(`[Embedding] ${warning}`);
+  }
   try {
     const provider = opts.provider ?? (opts.createProviderFn ?? createEmbeddingProvider)({
       provider: cfg!.provider,

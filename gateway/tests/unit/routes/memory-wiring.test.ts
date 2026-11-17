@@ -428,6 +428,33 @@ describe('memory registry wiring (D1 Task F1)', () => {
     });
   });
 
+  it('stats reports the live embedding provider id and dims', async () => {
+    setEmbeddingRuntime({
+      providerId: 'llamacpp:test.gguf',
+      provider: { dims: 1024 },
+      vectors: { size: () => 0 },
+    } as any);
+    try {
+      const { registry } = setup({
+        memoryService: () => ({ harmonicIndex: { getIndex: () => ({ entries: [] }) } }) as any,
+        getGatewayDb: () => ({
+          count: () => 0,
+          archiveCount: () => 0,
+          t1RetrievalStats: () => ({ total: 0, byKind: { search: 0, recall: 0, redeem: 0 }, uniqueTraces: 0, lastAt: null }),
+        }) as any,
+      });
+      const r = fakeRes();
+      await handlerFor(registry, 'GET', '/api/memory/stats')!(
+        fakeReq({ method: 'GET', url: '/api/memory/stats' }), r.res,
+      );
+      const body = JSON.parse(r.body);
+      expect(body.embedding.providerId).toBe('llamacpp:test.gguf');
+      expect(body.embedding.dims).toBe(1024);
+    } finally {
+      setEmbeddingRuntime(null);
+    }
+  });
+
   it('sticky: no memory service → 503 with the empty note-board budget', async () => {
     const { registry } = setup();
     const r = fakeRes();

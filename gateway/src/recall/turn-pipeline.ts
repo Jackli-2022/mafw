@@ -57,6 +57,8 @@ export interface TurnPipelineOptions {
   ) => Promise<Map<string, T1SparseAtom[]>>;
   /** E2: encode-time novelty/mismatch; fail-open, never blocks archiving. */
   signalsFor?: (turns: TurnSignalInput[]) => Promise<Map<string, TurnSignals>>;
+  /** Provenance: physical embedding provider id used for the atoms. */
+  atomModel?: string;
   /** E2 v2: session-local surprise vs the previous turn; fail-open. */
   surpriseFor?: (turns: SurpriseInput[]) => Promise<Map<string, number>>;
   /** B1: 7-day retrieval hit count per id — the "need" term of the replay
@@ -433,7 +435,7 @@ export class TurnPipeline {
             upsertSparseTerms: (id, terms) => db.upsertSparseTerms(id, terms),
             upsertTurnEncoding: (marker) => db.upsertTurnEncoding(marker),
           },
-          { feature, atoms: atomsByTrace.get(traceId) },
+          { feature, atoms: atomsByTrace.get(traceId), atomModel: this.opts.atomModel },
         );
       } catch { /* fail-open: feature-only / raw T1 path remains */ }
     }

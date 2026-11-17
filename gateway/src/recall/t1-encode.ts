@@ -57,6 +57,8 @@ export interface T1EncodeOptions {
   atoms?: T1SparseAtom[];
   /** The caller attempted atom encoding; marks the turn even when it produced zero atoms. */
   atomsAttempted?: boolean;
+  /** Physical embedding provider id (e.g. `llamacpp:…gguf@1024`); provenance only. */
+  atomModel?: string;
   projectId?: string;
   userActorId?: string;
 }
@@ -100,7 +102,7 @@ export function encodeT1Turn(
     atoms,
   });
   const model = opts.atomsAttempted
-    ? SPARSE_EMBED_MODEL
+    ? opts.atomModel ?? SPARSE_EMBED_MODEL
     : sparse[0]?.model ?? SPARSE_LEX_MODEL;
 
   if (feature) deps.upsertTurnFeature?.(feature);

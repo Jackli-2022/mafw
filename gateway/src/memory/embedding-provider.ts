@@ -40,6 +40,7 @@ export interface EmbeddingProvider {
 }
 
 export interface EmbeddingProviderConfig {
+
   provider: 'off' | 'local' | 'dashscope';
   model?: string;
   dimensions?: number;
@@ -56,6 +57,31 @@ export interface EmbeddingProviderConfig {
   llamacpp?: import('./llamacpp-provider').LlamaCppConfig;
   /** Test seam: inject a model factory for the local provider (no download). */
   localDeps?: { modelFactory?: (model: string) => Promise<any> };
+}
+
+/**
+ * Config-provenance warnings: the `model` string is also used for the vector
+ * namespace, so an engine/model mismatch makes the reported model misleading.
+ * These are warnings, not failures — the provider can still start.
+ */
+export function embeddingConfigWarnings(cfg: {
+  provider?: string;
+  engine?: string;
+  model?: string;
+}): string[] {
+  const warnings: string[] = [];
+  const model = String(cfg.model ?? '');
+  if (cfg.engine === 'llamacpp' && /-ONNX$/i.test(model)) {
+    warnings.push(
+      `embedding engine is llamacpp but model "${model}" is an ONNX id; the sidecar uses its own gguf — record the real provider id in stats/markers`,
+    );
+  }
+  if (cfg.engine === 'onnx' && /\.gguf$/i.test(model)) {
+    warnings.push(
+      `embedding engine is onnx but model "${model}" is a gguf; the ONNX loader expects an ONNX model id`,
+    );
+  }
+  return warnings;
 }
 
 const DASHSCOPE_EMBEDDING_URL =

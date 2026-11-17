@@ -3552,6 +3552,11 @@ class MafwScheduler {
       index: this.memoryService.harmonicIndex,
       workerFor: (sessionID) => this.getPool().getWorker(sessionID, 'extract'),
       staleMs: config.recall.turnStaleMs,
+      // Provenance: record the physical embedding provider on every atom marker.
+      atomModel: (() => {
+        const rt = getEmbeddingRuntime();
+        return rt?.providerId ? `${rt.providerId}@${rt.provider.dims}` : undefined;
+      })(),
       // Phase 1: derived episode index. Shadow writes without recall changes.
       rebuildEpisodes: (sessionID) => {
         const cfg = config.recall.t1Episodes;
