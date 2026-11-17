@@ -147,6 +147,11 @@ export interface PodGoalWorktreeRow {
 
 export type PodReviewItemStatus = 'pending' | 'responded' | 'resolved';
 
+/** Immutable origin of a human review opinion (2026-11-17 annotation spec). */
+export type PodReviewSource =
+  | { kind: 'project'; projectDir: string; root: string; contentVersion: string | null }
+  | { kind: 'goal'; projectDir: string; goalId: string; revision: number; root: string; contentVersion: string | null };
+
 /** A human review opinion tied to one Goal revision (Plan C). */
 export interface PodReviewItemRow {
   id: string;
@@ -160,6 +165,8 @@ export interface PodReviewItemRow {
   code: string;
   comment: string;
   anchorJson: string | null;
+  source: PodReviewSource | null;
+  clientRef: string | null;
   response: string | null;
   originItemId: string | null;
   originRevision: number | null;
@@ -447,6 +454,16 @@ function goalWorktreeFromRow(row: any): PodGoalWorktreeRow {
   };
 }
 
+function reviewSourceFromRow(raw: unknown): PodReviewSource | null {
+  if (typeof raw !== 'string' || !raw.trim()) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed as PodReviewSource : null;
+  } catch {
+    return null;
+  }
+}
+
 function reviewItemFromRow(row: any): PodReviewItemRow {
   return {
     id: row.id,
@@ -460,6 +477,8 @@ function reviewItemFromRow(row: any): PodReviewItemRow {
     code: row.code ?? '',
     comment: row.comment,
     anchorJson: row.anchor_json ?? null,
+    source: reviewSourceFromRow(row.source_json),
+    clientRef: row.client_ref ?? null,
     response: row.response ?? null,
     originItemId: row.origin_item_id ?? null,
     originRevision: row.origin_revision == null ? null : Number(row.origin_revision),
@@ -708,6 +727,8 @@ export class PodStore {
         code TEXT NOT NULL DEFAULT '',
         comment TEXT NOT NULL,
         anchor_json TEXT,
+        source_json TEXT,
+        client_ref TEXT,
         response TEXT,
         origin_item_id TEXT,
         origin_revision INTEGER,
@@ -897,6 +918,13 @@ export class PodStore {
     this.ensureColumn('pod_messages', 'delivered_session_id', 'delivered_session_id TEXT');
     this.ensureColumn('pod_a2a_links', 'state', 'state TEXT');
     this.ensureColumn('pod_goals', 'verdict', 'verdict TEXT');
+    this.ensureColumn('pod_goal_review_items', 'source_json', 'source_json TEXT');
+    this.ensureColumn('pod_goal_review_items', 'client_ref', 'client_ref TEXT');
+    this.db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_pod_review_items_client_ref
+        ON pod_goal_review_items(pod_id, goal_id, revision, client_ref)
+        WHERE client_ref IS NOT NULL;
+    `);
     // Task 3：Goal revision 根指针 + 调度优先级（legacy 行按 DEFAULT 归一为 1/0）。
     this.ensureColumn('pod_goals', 'active_revision', 'active_revision INTEGER NOT NULL DEFAULT 1');
     this.ensureColumn('pod_goals', 'priority', 'priority INTEGER NOT NULL DEFAULT 0');
@@ -1387,6 +1415,8 @@ export class PodStore {
     code?: string;
     comment: string;
     anchorJson?: string | null;
+    sourceJson?: string | null;
+    clientRef?: string | null;
     originItemId?: string | null;
     originRevision?: number | null;
     now: string;
@@ -1394,18 +1424,33 @@ export class PodStore {
     const row = this.db.prepare(`
       INSERT INTO pod_goal_review_items (
         id, pod_id, goal_id, revision, status, rel, start_line, end_line,
-        code, comment, anchor_json, response, origin_item_id, origin_revision,
-        created_at, updated_at, responded_at, resolved_at
-      ) VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, NULL, NULL)
+        code, comment, anchor_json, source_json, client_ref, response,
+        origin_item_id, origin_revision, created_at, updated_at, responded_at, resolved_at
+      ) VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, NULL, NULL)
       RETURNING *
     `).get(
       `review_${randomUUID()}`, input.podId, input.goalId, input.revision,
       input.rel, input.startLine ?? null, input.endLine ?? null,
       input.code ?? '', input.comment, input.anchorJson ?? null,
+      input.sourceJson ?? null, input.clientRef ?? null,
       input.originItemId ?? null, input.originRevision ?? null,
       input.now, input.now,
     ) as any;
     return reviewItemFromRow(row);
+  }
+
+  findReviewItemByClientRef(
+    podId: string,
+    goalId: string,
+    revision: number,
+    clientRef: string,
+  ): PodReviewItemRow | null {
+    const row = this.db.prepare(
+      `SELECT * FROM pod_goal_review_items
+       WHERE pod_id = ? AND goal_id = ? AND revision = ? AND client_ref = ?
+       LIMIT 1`,
+    ).get(podId, goalId, revision, clientRef) as any;
+    return row ? reviewItemFromRow(row) : null;
   }
 
   getReviewItem(itemId: string): PodReviewItemRow | null {
@@ -1525,6 +1570,8 @@ export class PodStore {
           code: item.code,
           comment: item.comment,
           anchorJson: item.anchorJson,
+          sourceJson: item.source ? JSON.stringify(item.source) : null,
+          clientRef: item.clientRef,
           originItemId: item.id,
           originRevision: input.fromRevision,
           now: input.now,
