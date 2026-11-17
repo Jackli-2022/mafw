@@ -539,6 +539,21 @@ describe('contributes enforcement', () => {
     expect(errors.some((error) => error.includes('is not declared'))).toBe(false);
   });
 
+  it('suppresses bound errors for every plane when any plane has a shape error', () => {
+    const built = buildActivatedContributions(
+      'example',
+      {
+        actions: { pong: { handler: () => null, timeoutMs: 0 } },
+        observers: [{ id: 'other', onEvent: () => {} }],
+      },
+      CANONICAL,
+      declared({ actions: ['ping'], observers: ['audit'] }),
+    );
+    expect(built.ok).toBe(false);
+    const errors = built.ok ? [] : built.errors;
+    expect(errors.some((error) => error.includes('is not declared'))).toBe(false);
+  });
+
   it('does not constrain observers when the plane is not declared', () => {
     const built = buildActivatedContributions(
       'example',

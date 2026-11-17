@@ -558,7 +558,7 @@ function enforceDeclared(
   errors: string[],
 ): void {
   // The package already fails shape/identity validation; a derived "not
-  // declared" error per item would bury the first cause.
+  // declared" error for any plane would bury the first cause.
   if (errors.length > 0) return;
 
   const gateway = declared?.gateway;

@@ -105,7 +105,11 @@ export class PluginDoctor {
 
     // 1. manifest
     if (isFile) {
-      checks.push(check('manifest', 'warn', 'legacy single-file package; directory package recommended'));
+      checks.push(check(
+        'manifest',
+        'warn',
+        'legacy single-file package; tools, observers and http are denied without plugin.json',
+      ));
     } else if (rawReadError) {
       checks.push(check('manifest', 'fail', rawReadError, 'restore a valid plugin.json'));
     } else if (parsed && !parsed.ok) {
@@ -127,7 +131,7 @@ export class PluginDoctor {
     // The contract validates the shape of `contributes.desktop`, but this host
     // has no execution point for it (desktop loads `ui` from the client
     // snapshot). Surface the gap instead of implying it is enforced.
-    if (parsed?.manifest?.contributes?.desktop !== undefined) {
+    if (manifest?.contributes?.desktop !== undefined) {
       checks.push(check(
         'contributes-desktop',
         'warn',

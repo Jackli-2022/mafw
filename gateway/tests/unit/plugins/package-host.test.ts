@@ -727,8 +727,12 @@ describe('PluginHost kernel-v2 entries', () => {
   });
 
   it('publishes tool/observer entries on commit and clears them on remove', async () => {
-    const file = path.join(dir, 'toolful.js');
-    fs.writeFileSync(file, TOOLFUL('toolful'));
+    // Tools/observers are a manifest package's surface only: a single-file
+    // package is denied them, so this fixture ships a directory package.
+    const root = path.join(dir, 'toolful');
+    fs.mkdirSync(root, { recursive: true });
+    fs.writeFileSync(path.join(root, 'plugin.json'), JSON.stringify({ name: 'toolful' }));
+    fs.writeFileSync(path.join(root, 'index.js'), TOOLFUL('toolful'));
     host = mkHost(dir);
     const published: Array<{ tools: any[]; observers: any[] }> = [];
     host.bindKernelV2((tools, observers) => {
@@ -749,7 +753,7 @@ describe('PluginHost kernel-v2 entries', () => {
     });
     expect(typeof published.at(-1)!.tools[0].revision).toBe('string');
 
-    fs.unlinkSync(file);
+    fs.rmSync(root, { recursive: true, force: true });
     await host.reload();
     expect(published.at(-1)!.tools).toEqual([]);
     expect(published.at(-1)!.observers).toEqual([]);
@@ -831,5 +835,74 @@ module.exports = { name: 'bound', async activate() {
     const state = host.getState().find((entry) => entry.name === 'bound');
     expect(state).toMatchObject({ status: 'error' });
     expect(state?.error).toContain('action "pong" is not declared');
+  });
+});
+
+describe('PluginHost single-file boundaries', () => {
+  let dir: string;
+  let host: PluginHost | undefined;
+
+  beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-single-file-')); });
+  afterEach(() => {
+    host?.stop();
+    host = undefined;
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('rejects tools from a single-file package', async () => {
+    fs.writeFileSync(path.join(dir, 'solo.js'), `
+module.exports = { name: 'solo', async activate() {
+  return { tools: [{ name: 'echo', description: 'e', inputSchema: { type: 'object' }, handler: () => null }] };
+} };
+`);
+    host = mkHost(dir);
+    await host.init();
+    const state = host.getState().find((entry) => entry.name === 'solo');
+    expect(state).toMatchObject({ status: 'error' });
+    expect(state?.error).toContain('single-file packages cannot contribute tools');
+  });
+
+  it('rejects http routes from a single-file package', async () => {
+    fs.writeFileSync(path.join(dir, 'routed.js'), `
+module.exports = { name: 'routed', async activate(ctx) {
+  ctx.http.route('GET', '/ping', () => ({ body: 'pong' }));
+  return { actions: { ping: { handler: () => null } } };
+} };
+`);
+    host = mkHost(dir);
+    await host.init();
+    const state = host.getState().find((entry) => entry.name === 'routed');
+    expect(state).toMatchObject({ status: 'error' });
+    expect(state?.error).toContain('single-file packages cannot contribute http');
+  });
+
+  it('names every denied plane in one message', async () => {
+    fs.writeFileSync(path.join(dir, 'both.js'), `
+module.exports = { name: 'both', async activate(ctx) {
+  ctx.http.route('GET', '/x', () => ({ body: 'x' }));
+  return {
+    tools: [{ name: 'echo', description: 'e', inputSchema: { type: 'object' }, handler: () => null }],
+    observers: [{ id: 'audit', onEvent: () => {} }],
+  };
+} };
+`);
+    host = mkHost(dir);
+    await host.init();
+    const state = host.getState().find((entry) => entry.name === 'both');
+    expect(state).toMatchObject({ status: 'error' });
+    expect(state?.error).toContain('single-file packages cannot contribute tools, observers, http');
+  });
+
+  it('still activates a single-file package with ui and actions', async () => {
+    fs.writeFileSync(path.join(dir, 'viewer.js'), `
+module.exports = { name: 'viewer', async activate() {
+  return { ui: { panels: [{ id: 'view', title: 'View', viewAction: 'load' }] },
+           actions: { load: { handler: async () => ({ ok: true }) } } };
+} };
+`);
+    host = mkHost(dir);
+    await host.init();
+    expect(host.getState().find((entry) => entry.name === 'viewer')).toMatchObject({ status: 'ok' });
+    expect(host.getClientSnapshot().plugins).toHaveLength(1);
   });
 });

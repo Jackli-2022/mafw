@@ -116,4 +116,28 @@ describe('PluginDoctor', () => {
     expect(report.checks.find((check) => check.id === 'deprecation')?.status).toBe('warn');
     expect(report.checks.find((check) => check.id === 'contract-skew')?.status).toBe('warn');
   });
+
+  it('fires contributes-desktop for a bare desktop block', async () => {
+    const { doctor, dir } = makeDoctor();
+    writePackage(dir, 'acme', { apiVersion: 2, contributes: { desktop: {} } });
+    const report = await doctor.check('acme');
+    expect(report.checks.find((entry) => entry.id === 'contributes-desktop')?.status).toBe('warn');
+  });
+
+  it('does not fire contributes-desktop when the contributes block is invalid', async () => {
+    const { doctor, dir } = makeDoctor();
+    writePackage(dir, 'acme', { apiVersion: 2, contributes: { gateway: { actions: 'x' } } });
+    const report = await doctor.check('acme');
+    expect(report.checks.find((entry) => entry.id === 'manifest')?.status).toBe('fail');
+    expect(report.checks.find((entry) => entry.id === 'contributes-desktop')).toBeUndefined();
+  });
+
+  it('tells the operator which planes a single-file package loses', async () => {
+    const { doctor, dir } = makeDoctor();
+    fs.writeFileSync(path.join(dir, 'solo.js'), 'module.exports = { name: "solo" };');
+    const report = await doctor.check('solo');
+    const manifest = report.checks.find((entry) => entry.id === 'manifest');
+    expect(manifest?.status).toBe('warn');
+    expect(manifest?.message).toContain('tools, observers and http');
+  });
 });

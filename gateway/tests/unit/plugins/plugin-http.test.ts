@@ -411,8 +411,7 @@ module.exports = { name: 'rt', async activate(ctx) {
   return { runtime: { name: 'rt', async createRuntime() { return { name: 'rt', capabilities: {} }; } } };
 } };
 `;
-    const file = path.join(dir, 'rt.js');
-    writeFile(file, body);
+    const file = path.join(writePackage(dir, 'rt', body), 'index.js');
     host = mkHost(dir, { activeRuntime: () => 'rt' });
     await host.init();
 

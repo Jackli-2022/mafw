@@ -1339,6 +1339,22 @@ export class PluginHost {
     );
     if (!built.ok) throw new Error(`invalid contributions: ${built.errors.join('; ')}`);
     const activated = built.value;
+    // A single-file package has no manifest: no `contributes`, no declared
+    // permissions, no install-time consent. It may keep contributing data
+    // planes (ui/actions/events/legacy) but must not widen the agent's tool
+    // surface, subscribe to canonical events, or publish HTTP routes.
+    if (desc.pkgDir === undefined) {
+      const denied: string[] = [];
+      if (activated.tools.length > 0) denied.push('tools');
+      if (activated.observers.length > 0) denied.push('observers');
+      if (httpRecorder.entries.length > 0) denied.push('http');
+      if (denied.length > 0) {
+        throw new Error(
+          `single-file packages cannot contribute ${denied.join(', ')}; `
+          + 'ship a directory package with plugin.json',
+        );
+      }
+    }
     // Web surfaces are the one UI slot with on-disk assets: the shared contract
     // only validates the declaration, so the real files are checked here. A
     // declared entry that does not resolve fails the whole package instead of

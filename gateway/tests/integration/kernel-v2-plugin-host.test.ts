@@ -30,8 +30,12 @@ module.exports = { name: 'toolful', async activate() {
 
 test('package tools and observers auto-register into the live bridge', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-plugin-kernel-v2-'));
-  const file = path.join(dir, 'toolful.js');
-  fs.writeFileSync(file, TOOLFUL);
+  // Tools/observers require a manifest package: a single-file package is denied
+  // those planes, so the fixture ships plugin.json + index.js.
+  const root = path.join(dir, 'toolful');
+  fs.mkdirSync(root, { recursive: true });
+  fs.writeFileSync(path.join(root, 'plugin.json'), JSON.stringify({ name: 'toolful' }));
+  fs.writeFileSync(path.join(root, 'index.js'), TOOLFUL);
   delete (globalThis as any).__mafwObserverHits;
   delete (globalThis as any).__mafwObserverType;
 
@@ -63,7 +67,7 @@ test('package tools and observers auto-register into the live bridge', async () 
     expect((globalThis as any).__mafwObserverHits).toBe(1);
     expect((globalThis as any).__mafwObserverType).toBe('part.updated');
 
-    fs.unlinkSync(file);
+    fs.rmSync(root, { recursive: true, force: true });
     await host.reload();
     expect(live.toolFactory()!('s1')).toEqual([]);
   } finally {

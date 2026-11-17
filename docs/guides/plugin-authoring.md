@@ -49,12 +49,15 @@
 - 包名必须是单个路径段（`^[A-Za-z0-9][A-Za-z0-9._-]*$`），不能含 `:` 或空白。
 - `main` 必须位于包目录内；manifest 不能把 Host 指向任意本地模块。
 - 单文件包 `~/.mafw/plugins/example.js` 仍受支持，等价于单入口包，名字取自文件名。
+- 单文件包没有 `plugin.json`，因此没有 `contributes`、没有声明式权限、也没有安装时授权：`ui` / `actions` / `events` / legacy 面照常可用，但 `tools` / `observers` / `http` 三个面被拒绝——`activate()` 一旦注册任一面，整包以 `single-file packages cannot contribute <planes>; ship a directory package with plugin.json` 激活失败。需要这三个面的包必须提供 `plugin.json`（目录包）。
 - 包内可以 `require` 自己的模块；它们只在 gateway 执行，不会进入 Desktop。
 - `web/` 只在声明了 `ui.webSurfaces` 时被服务；入口文件缺失/逃逸会让**整包激活失败**（fail-closed）。单文件包没有 `web/` 目录，不能声明 Web 页面。
 
 ### 1.1 `contributes`：声明的上界
 
 `plugin.json` 的 `contributes` 是对注册面的**静态上界，不是运行清单**：声明了某个面，`activate()` 注册的条目就必须落在声明集合内；没有声明的面完全不受约束；声明了却没有注册也合法（包可以按能力、配置或 host 版本条件注册）。违反上界会让**整包激活失败**。
+
+诊断顺序：包存在形状 / 身份错误时只报这些错误；把它们修好之后才会报告越界（两者都是激活失败，判决不变），这样派生的「未声明」错误不会掩盖第一个原因。
 
 `contributes.gateway` 支持：
 
