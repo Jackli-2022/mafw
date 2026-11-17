@@ -32,3 +32,7 @@ export function parseAnnotationRefPart(part: unknown): string[] {
     return []
   }
 }
+
+export function annotationIDsForParts(parts: readonly unknown[]): string[] {
+  return [...new Set(parts.flatMap(parseAnnotationRefPart))]
+}

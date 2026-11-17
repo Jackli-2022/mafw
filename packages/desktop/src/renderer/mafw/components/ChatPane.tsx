@@ -81,6 +81,8 @@ import { permissionAriaLabel, permissionPresentation } from "./composer-permissi
 import { type PermissionMode } from "./permission-card-mapping"
 import { getSessionTurnDiffs } from "../session-turn-diffs"
 import { CommentsPill } from "./CommentsPill"
+import { AnnotationMessageRefs } from "./AnnotationMessageRefs"
+import { annotationIDsForParts } from "../annotation-message-part"
 import { PendingCaptures } from "./PendingCaptures"
 import { buildAnnotationBatch } from "../editor-annotation"
 import { hydrateAnnotations, patchPending, sendableFor } from "../annotation-store"
@@ -167,6 +169,7 @@ export type ChatPaneProps = {
   annotationOwnerKey?: string | null
   annotationScopeKey?: string | null
   annotationRoot?: string | null
+  onProcessAnnotations?: (items: import("../../../shared/annotation-types").Annotation[]) => void
   focused: boolean
   canClosePane: boolean
   todos: Record<string, any[]>
@@ -336,6 +339,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const annotationOwner = () => props.annotationOwnerKey || sidProp()
   const visibleAnnotations = () => sendableFor(annotationOwner()).filter((annotation) =>
     annotationInScope(annotation, props.annotationScopeKey, props.annotationRoot))
+  const annotationRefIDsForMessage = (messageID: string) =>
+    annotationIDsForParts(store.part[messageID] ?? [])
   // workspace 单例直连（store 单一所有权；注册表显式化，不再经 props 穿透）
   const store = workspace.store
   const setStore = workspace.setStore as unknown as (fn: (prev: typeof store) => typeof store) => typeof store
@@ -2658,6 +2663,12 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                         renderCard={renderFlowCard}
                       />
                     </SessionTurn>
+                  </Show>
+                  <Show when={msg.role === "user" && annotationRefIDsForMessage(msg.id).length > 0}>
+                    <AnnotationMessageRefs
+                      ids={annotationRefIDsForMessage(msg.id)}
+                      onProcess={(items) => props.onProcessAnnotations?.(items)}
+                    />
                   </Show>
                   {/* 语音回复：渲染在 SessionTurn 之后（跟在助手回复文本下方，
                       而非用户消息上方）；到达时自动播放由上方 effect 统一负责

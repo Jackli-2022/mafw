@@ -9098,3 +9098,13 @@ html[data-theme="light"] body {
 .mafw-episode-detail { margin-bottom: 12px; }
 .mafw-tag-episode { background: var(--accent-dim); color: var(--accent); }
 .mafw-tag-legacy { background: var(--surface-raised-base); color: var(--text-weak); }
+
+/* Annotation refs under a discussed user turn */
+.mafw-annotation-message-refs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 0 12px;
+  font-size: 12px;
+}
+.mafw-annotation-message-refs-label { color: var(--text-3); }
