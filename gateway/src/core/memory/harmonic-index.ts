@@ -343,9 +343,9 @@ export class HarmonicIndexManager {
   searchScored(query: string, topK: number = 20, options: SearchOptions = {}): ScoredEntry[] {
     const retriever = options.retriever ?? 'bm25';
     const recallK = config.search.recallK || 50;
-    const actualRetriever = options.retriever === 'bm25' ? 'bm25' : options.retriever === 'guided' ? 'guided' : 'token';
+    const actualRetriever = retriever === 'bm25' ? 'bm25' : retriever === 'guided' ? 'guided' : 'token';
     let scored: ScoredEntry[];
-    if (options.retriever === 'guided') {
+    if (retriever === 'guided') {
       // GuidedRetriever: multi-hop query expansion with proper BM25 scoring.
       // Lazy-import to avoid circular dependency (GuidedRetriever imports this module).
       const { GuidedRetriever } = require('../../retrieval/guided-retriever');
@@ -355,7 +355,7 @@ export class HarmonicIndexManager {
         entry: this.index.entries.find((e: HarmonicIndexEntry) => e.id === r.id)!,
         score: r.score,
       })).filter((s: ScoredEntry) => s.entry);
-    } else if (options.retriever === 'bm25') {
+    } else if (retriever === 'bm25') {
       scored = this.bm25SearchScored(query, recallK);
     } else {
       scored = this.tokenSearchScored(query, recallK);
@@ -364,7 +364,7 @@ export class HarmonicIndexManager {
     // ── Multi-hop query expansion for comparison/aggregation questions ──
     // Detects questions like "How much older am I than X?" and searches for
     // sub-queries to bridge cross-session gaps that single-query BM25 misses.
-    if (options.retriever !== 'guided' && scored.length > 0) {
+    if (retriever !== 'guided' && scored.length > 0) {
       const expanded = this.expandMultiHopQuery(query, scored, recallK);
       if (expanded.length > 0) {
         // Merge: direct hits keep their score, expansion hits get 0.4× weight
