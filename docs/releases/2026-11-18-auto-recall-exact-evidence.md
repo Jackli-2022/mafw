@@ -1,7 +1,7 @@
 # 2026-11-18 · Auto Recall 精确证据准入与完整滚动窗口
 
 - **分支**：`main`（未 push）
-- **版本**：gateway **5.1.0**（schemaEpoch 1）；基线 `bc7d6e7d1`；Task 4 派发 HEAD `0a53e3207`；docs 交付 `7abefa364`
+- **版本**：gateway **5.1.0**（schemaEpoch 1）；基线 `bc7d6e7d1`；Task 4 派发 HEAD `0a53e3207`；docs 交付 `7abefa364` → `5d06ca907` → `20268c22e`
 - **规格 / 排查**：`docs/research/2026-11-18-auto-recall-fok-divergence.md`
 - **计划**：`docs/superpowers/plans/2026-11-18-auto-recall-exact-evidence.md`
 - **实现与复核**：`gateway/volcengine/deepseek-v4.1-flash` 子代理逐任务实现；每任务独立同模型 reviewer 审查（1–2 轮 fix）；Task 4 由新执行者独立跑全量门禁、构建/热重启与 live before/after。
@@ -14,7 +14,7 @@
 | 1 | `d025e33e0` `3faba895b` `1fe118dc5` | 固定 40 条 personal-recall 评测集、runner、契约测试与基线 |
 | 2 | `bbea0b0b1` `9e42f33b7` `5d69cf0cd` | 确定性精确证据准入（`recall/exact-evidence.ts` + route 接线） |
 | 3 | `8600a1370` `f1bcd5bd1` | snapshot 滚动窗口读 active+archive；helper 缺失时 fail-loud |
-| 4 | `7abefa364` | 验证、live before/after、架构现状与交付记录 |
+| 4 | `7abefa364` `5d06ca907` `20268c22e` | 验证、live before/after、可比性/性能/溯源披露与交付记录 |
 
 ## 根因（摘要）
 
@@ -146,7 +146,8 @@ TDD：三个任务都先观察 RED（模块不存在 / 抑制未解除 / 热表�
 - Task 2：2 轮 fix 后 review clean（精确证据只在非 inject、最终 topK=3、确定性、无 recency）。
 - Task 3：1 轮 fix 后 review clean（归档后窗口、union 去重、接线守卫）。
 - Task 4：本报告的全量与 live 结果由新执行者独立复跑；未复用前序测试输出。
-- 记录：`.superpowers/sdd/2026-11-18-auto-recall-exact-evidence/progress.md` 与各 `task-*-report.md`。
+- 全片 final review：**SHIP**；性能/评测溯源修订 `20268c22e` 后 scoped re-review 仍为 **SHIP**，无未解决的 Critical / Important。
+- 记录：本 release、plan/spec 与上述 task commits；SDD 过程 ledger 在最终 SHIP 后收尾清理。
 
 ## 尚未解决（不声称整体质量完成）
 
