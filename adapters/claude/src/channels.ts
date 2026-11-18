@@ -1,13 +1,17 @@
-import type { RuntimeChannels } from '@mafw/runtime-contract';
+import type { AdapterBackgroundTask, RuntimeChannels } from '@mafw/runtime-contract';
 import type { ClaudeSdk } from './runtime.ts';
 import { normalizeClaudeHistory } from './history.ts';
 import { createClaudeDiscovery } from './skills.ts';
 
 export function createClaudeChannels(
   sdk: ClaudeSdk,
-  opts: { promptAsync?: (sessionID: string, text: string) => Promise<void> } = {},
+  opts: {
+    promptAsync?: (sessionID: string, text: string) => Promise<void>;
+    backgroundTasks?: (opts: { sessionID: string; cursor?: string; limit?: number }) => Promise<AdapterBackgroundTask[]>;
+  } = {},
 ): RuntimeChannels {
   return {
+    ...(opts.backgroundTasks ? { background: { tasks: opts.backgroundTasks } } : {}),
     messages: {
       list: async (sessionID) => ({ data: normalizeClaudeHistory(await sdk.getSessionMessages(sessionID)) }),
       normalize: normalizeClaudeHistory,

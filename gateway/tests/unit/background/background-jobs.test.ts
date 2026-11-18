@@ -388,6 +388,7 @@ function service(over: any = {}) {
     },
     registry,
     listSubagents: over.listSubagents ?? (async () => []),
+    listBackgroundTasks: over.listBackgroundTasks,
     outputShell: over.outputShell,
     cancelShell: over.cancelShell,
     cancelSubagent: over.cancelSubagent,
@@ -404,6 +405,64 @@ describe('BackgroundJobService', () => {
     });
     const jobs = await svc.list('ses_parent');
     expect(jobs.map((j) => j.id).sort()).toEqual(['ses_child', 'task_1']);
+  });
+
+  it('merges managed background tasks with canonical waiting/unknown lifecycle', async () => {
+    const { svc } = service({
+      tasks: { list: () => [] },
+      listBackgroundTasks: async () => [
+        {
+          id: 'task_wait', sessionID: 'ses_parent', kind: 'local_agent', title: 'wait',
+          lifecycle: {
+            phase: 'waiting', observedAt: 30, lastActivityAt: 20, revision: 2,
+            epoch: 'e1', authority: 'runtime', waitingOn: ['input'],
+          },
+        },
+        {
+          id: 'task_unknown', sessionID: 'ses_parent', kind: 'local_bash', title: 'gone',
+          lifecycle: {
+            phase: 'unknown', observedAt: 40, revision: 1, epoch: 'e1',
+            authority: 'runtime', reason: 'missing-from-background-level',
+          },
+        },
+      ],
+    });
+    const jobs = await svc.list('ses_parent');
+    const byId = Object.fromEntries(jobs.map((job) => [job.id, job]));
+    expect(byId.task_wait).toMatchObject({
+      source: 'subagent', kind: 'subagent', status: 'waiting',
+      observedAt: 30, lastActivityAt: 20, epoch: 'e1', authority: 'runtime',
+      waitingOn: ['input'], title: 'wait',
+    });
+    expect(byId.task_wait.childSessionID).toBeUndefined();
+    expect(byId.task_unknown).toMatchObject({
+      status: 'unknown', observedAt: 40, epoch: 'e1', authority: 'runtime',
+    });
+  });
+
+  it('survives an unavailable background task source (fail-open)', async () => {
+    const { svc } = service({
+      tasks: { list: () => [] },
+      listBackgroundTasks: async () => { throw new Error('runtime down'); },
+    });
+    await expect(svc.list('ses_parent')).resolves.toEqual([]);
+  });
+
+  it('refuses to cancel a managed background task through the subagent path', async () => {
+    const cancelSubagent = jest.fn();
+    const { svc } = service({
+      tasks: { list: () => [] },
+      cancelSubagent,
+      listBackgroundTasks: async () => [{
+        id: 'task_wait', sessionID: 'ses_parent', kind: 'local_agent',
+        lifecycle: {
+          phase: 'active', observedAt: 10, revision: 1, epoch: 'e1', authority: 'runtime',
+        },
+      }],
+    });
+    await expect(svc.cancel('ses_parent', 'task_wait'))
+      .rejects.toMatchObject({ status: 503 });
+    expect(cancelSubagent).not.toHaveBeenCalled();
   });
 
   it('rejects an empty session id', async () => {

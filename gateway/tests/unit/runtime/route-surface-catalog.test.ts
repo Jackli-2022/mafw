@@ -398,6 +398,12 @@ export const NON_PRIMARY_GATES: NonPrimaryGate[] = [
     why: '原生 question 通道的 inline 门（无独立 MAFW route）',
   },
   {
+    surface: 'background.tasks',
+    file: 'src/kernel.ts',
+    marker: "can('background.tasks')",
+    why: 'BackgroundJobService 合并 runtime-managed tasks 的注入门（非 HTTP route）',
+  },
+  {
     surface: 'process.completion',
     file: 'src/kernel.ts',
     marker: "can('process.completion')",

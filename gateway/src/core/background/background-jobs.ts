@@ -22,6 +22,7 @@ import {
   backgroundJobFromSynthetic,
   backgroundJobStatusOfSubagent,
   isTerminalBackgroundStatus,
+  jobFromBackgroundTask,
   jobFromRuntimeShell,
   jobFromSubagent,
   runtimeShellRowFromSynthetic,
@@ -29,7 +30,12 @@ import {
   sortBackgroundJobs,
   subagentRowFromJob,
 } from '@mafw/runtime-core';
-import type { BackgroundSubagentRow, BackgroundSubagentStatus, RuntimeShellRow } from '@mafw/runtime-core';
+import type {
+  BackgroundSubagentRow,
+  BackgroundSubagentStatus,
+  BackgroundTaskRow,
+  RuntimeShellRow,
+} from '@mafw/runtime-core';
 
 /**
  * 纯事件/行转换助手已迁至 `@mafw/runtime-core`（Plan 6 Task 2）：
@@ -42,6 +48,7 @@ export {
   backgroundJobStatusOfShell,
   backgroundJobStatusOfSubagent,
   isTerminalBackgroundStatus,
+  jobFromBackgroundTask,
   jobFromRuntimeShell,
   jobFromSubagent,
   runtimeShellRowFromSynthetic,
@@ -49,7 +56,7 @@ export {
   sortBackgroundJobs,
   subagentRowFromJob,
 } from '@mafw/runtime-core';
-export type { BackgroundSubagentRow, BackgroundSubagentStatus, RuntimeShellRow } from '@mafw/runtime-core';
+export type { BackgroundSubagentRow, BackgroundSubagentStatus, BackgroundTaskRow, RuntimeShellRow } from '@mafw/runtime-core';
 
 /** 输出读取结果（游标式增量；绝不携带 runtime 原生 output DTO）。 */
 export interface MafwBackgroundOutput {
@@ -59,11 +66,13 @@ export interface MafwBackgroundOutput {
   truncated: boolean
 }
 
-/** 三源行集合：聚合输入（纯数据，便于单测）。 */
+/** 行集合：聚合输入（纯数据，便于单测）。 */
 export interface BackgroundRows {
   tasks: TaskEntity[]
   runtimeShells: RuntimeShellRow[]
   subagents: BackgroundSubagentRow[]
+  /** runtime-managed tasks that are not child sessions (Claude managed tasks). */
+  backgroundTasks?: BackgroundTaskRow[]
 }
 
 export class BackgroundJobError extends Error {
@@ -150,6 +159,12 @@ export function mergeBackgroundJobs(parentSessionID: string, rows: BackgroundRow
     if (claimedChildren.has(info.id)) continue;
     const job = jobFromSubagent(info, parentSessionID);
     if (!jobs.has(job.id)) jobs.set(job.id, job);
+  }
+
+  for (const task of rows.backgroundTasks ?? []) {
+    if (!task?.id || task.sessionID !== parentSessionID) continue;
+    const job = jobFromBackgroundTask(task);
+    if (job && !jobs.has(job.id)) jobs.set(job.id, job);
   }
 
   return sortBackgroundJobs([...jobs.values()]);
@@ -254,6 +269,11 @@ export interface BackgroundJobServiceDeps {
    * failed/aborted）。缺失/失败按空列表 fail-open。
    */
   listSubagents?(sessionID: string): Promise<BackgroundSubagentRow[]> | BackgroundSubagentRow[];
+  /**
+   * runtime-managed background tasks (RuntimeAccess `background.tasks`).
+   * Missing/unsupported = no rows; failures fail-open.
+   */
+  listBackgroundTasks?(sessionID: string): Promise<BackgroundTaskRow[]> | BackgroundTaskRow[];
   /** runtime shell 输出（经 RuntimeAccess 的 session.shell 门）。 */
   outputShell?(opts: { shellID: string; cursor?: number; limit?: number; directory?: string }): Promise<any>;
   /** runtime shell 终止（DELETE /shell/:id 语义）。 */
@@ -291,6 +311,7 @@ export class BackgroundJobService {
       runtimeShells: this.registry.rows(sessionID),
       // 权威行 + 事件证据：事件只补「权威仍未终态」时的终态，权威终态永不被旧事件覆盖
       subagents: mergeSubagentEvidence(authoritative, this.registry.subagentRows(sessionID)),
+      backgroundTasks: await this.managedTasks(sessionID),
     });
   }
 
@@ -340,6 +361,9 @@ export class BackgroundJobService {
       return this.publish(this.cancelledJob(job));
     }
 
+    if (job.extensions?.runtimeTask === true) {
+      throw new BackgroundJobError(503, 'background task cancel is not available on this runtime');
+    }
     if (!this.deps.cancelSubagent) throw new BackgroundJobError(503, 'subagent cancel is not available on this runtime');
     // 归属校验由 SubagentService.cancel 负责（非本会话子代理 → 404）
     await this.deps.cancelSubagent({
@@ -387,6 +411,17 @@ export class BackgroundJobService {
       return Array.isArray(rows) ? rows : [];
     } catch {
       // fail-open：子代理来源不可用时其余来源照常返回
+      return [];
+    }
+  }
+
+  private async managedTasks(sessionID: string): Promise<BackgroundTaskRow[]> {
+    if (!this.deps.listBackgroundTasks) return [];
+    try {
+      const rows = await this.deps.listBackgroundTasks(sessionID);
+      return Array.isArray(rows) ? rows : [];
+    } catch {
+      // fail-open：managed task 来源不可用时其余来源照常返回
       return [];
     }
   }

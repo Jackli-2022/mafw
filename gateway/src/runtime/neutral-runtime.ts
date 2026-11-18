@@ -323,6 +323,15 @@ export function createNeutralRuntime(
       remove: (opts: any) => channels.shell!.remove(opts.shellID),
     };
   }
+  if (channels.background?.tasks) {
+    runtime.background = {
+      tasks: (opts: any) => channels.background!.tasks!({
+        sessionID: opts.sessionID,
+        ...(opts.cursor !== undefined ? { cursor: opts.cursor } : {}),
+        ...(opts.limit !== undefined ? { limit: opts.limit } : {}),
+      }),
+    };
+  }
   if (channels.providers) runtime.provider = { list: () => channels.providers!.list() };
   if (channels.agents) runtime.app = { agents: () => channels.agents!.list() };
   if (channels.agents) {

@@ -6,6 +6,7 @@ import {
   backgroundJobStatusOfShell,
   backgroundJobStatusOfSubagent,
   isTerminalBackgroundStatus,
+  jobFromBackgroundTask,
   jobFromRuntimeShell,
   jobFromSubagent,
   runtimeShellRowFromSynthetic,
@@ -256,4 +257,28 @@ test('sortBackgroundJobs puts active jobs first, then newest updated, with id ti
 test('subagentRowFromJob type is exported for merge callers', () => {
   const row: BackgroundSubagentRow = { id: 'ses_c' };
   assert.equal(row.id, 'ses_c');
+});
+
+test('jobFromBackgroundTask keeps managed tasks out of the child-session cancel path', () => {
+  const job = jobFromBackgroundTask({
+    id: 'task_wait',
+    sessionID: 'ses_parent',
+    kind: 'local_agent',
+    title: 'wait',
+    lifecycle: {
+      phase: 'waiting', observedAt: 30, lastActivityAt: 20,
+      revision: 2, epoch: 'e1', authority: 'runtime', waitingOn: ['input'],
+    },
+    time: { created: 10, updated: 20 },
+  });
+  assert.equal(job?.status, 'waiting');
+  assert.equal(job?.source, 'subagent');
+  assert.equal(job?.childSessionID, undefined);
+  assert.equal(job?.observedAt, 30);
+  assert.deepEqual(job?.waitingOn, ['input']);
+  assert.equal(job?.extensions?.runtimeTask, true);
+
+  const unknown = jobFromBackgroundTask({ id: 'task_legacy', sessionID: 'ses_parent' });
+  assert.equal(unknown?.status, 'unknown');
+  assert.equal(unknown?.childSessionID, undefined);
 });

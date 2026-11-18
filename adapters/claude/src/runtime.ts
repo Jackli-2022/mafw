@@ -9,6 +9,7 @@
  *
  * 能力声明唯一来源在 index.ts（module.exports.capabilities）；本实例不再声明。
  */
+import type { RuntimeLifecycle } from '@mafw/runtime-contract';
 import {
   createEventBus,
   createSessionRegistry,
@@ -29,6 +30,314 @@ export interface ClaudeRuntimeDeps {
   sdk: ClaudeSdk;
   gatewayPort?: number;
   now?: () => number;
+}
+
+export interface ClaudeBackgroundTask {
+  id: string;
+  sessionID: string;
+  kind: string;
+  title?: string;
+  lifecycle: RuntimeLifecycle;
+  time?: { created?: number; updated?: number; completed?: number };
+}
+
+type ClaudeTaskOutcome = 'completed' | 'failed' | 'cancelled';
+
+interface ClaudeTaskRecord {
+  id: string;
+  kind: string;
+  title?: string;
+  createdAt: number;
+  updatedAt: number;
+  revision: number;
+  epoch: string;
+  /** The task is part of the SDK's live level or was explicitly backgrounded. */
+  backgrounded: boolean;
+  inLevel: boolean;
+  ambient: boolean;
+  paused: boolean;
+  edgeActiveAt?: number;
+  runID?: string;
+  terminal?: { outcome: ClaudeTaskOutcome; at: number };
+}
+
+interface ClaudeTaskSession {
+  epoch: string;
+  levelSeen: boolean;
+  lastLevelAt?: number;
+  live: Set<string>;
+  tasks: Map<string, ClaudeTaskRecord>;
+}
+
+let taskEpochSeq = 0;
+function newTaskEpoch(): string {
+  taskEpochSeq++;
+  return `claude-${Date.now().toString(36)}-${taskEpochSeq}`;
+}
+
+/**
+ * Claude managed-task registry.
+ *
+ * `background_tasks_changed` is a REPLACE level signal (the full live set);
+ * `task_started` / `task_updated` / `task_notification` are edges. A task that
+ * leaves the level without a terminal edge is `unknown`, never `active` — the
+ * same rule the canonical lifecycle applies to legacy child rows.
+ */
+function createClaudeTaskRegistry(now: () => number) {
+  const sessions = new Map<string, ClaudeTaskSession>();
+
+  function stateOf(sessionID: string): ClaudeTaskSession {
+    let state = sessions.get(sessionID);
+    if (!state) {
+      state = { epoch: newTaskEpoch(), levelSeen: false, live: new Set(), tasks: new Map() };
+      sessions.set(sessionID, state);
+    }
+    return state;
+  }
+
+  function text(value: unknown): string | undefined {
+    return typeof value === 'string' && value.trim() ? value : undefined;
+  }
+
+  function upsert(
+    state: ClaudeTaskSession,
+    id: string,
+    patch: { kind?: string; title?: string; runID?: string },
+  ): { task: ClaudeTaskRecord; newRun: boolean } | null {
+    const at = now();
+    const runID = text(patch.runID);
+    const current = state.tasks.get(id);
+    if (!current) {
+      const task: ClaudeTaskRecord = {
+        id,
+        kind: patch.kind ?? 'task',
+        title: patch.title,
+        createdAt: at,
+        updatedAt: at,
+        revision: 1,
+        epoch: state.epoch,
+        backgrounded: false,
+        inLevel: false,
+        ambient: false,
+        paused: false,
+        runID,
+      };
+      state.tasks.set(id, task);
+      trim(state);
+      return { task, newRun: false };
+    }
+
+    // Run ids sort chronologically as plain strings; a frame naming an older
+    // run is late and must not roll the task back.
+    if (runID && current.runID && runID < current.runID) return null;
+    const newRun = !!(runID && current.runID && runID !== current.runID);
+    if (newRun) {
+      current.terminal = undefined;
+      current.paused = false;
+      current.edgeActiveAt = undefined;
+    }
+    if (runID) current.runID = runID;
+    if (patch.kind) current.kind = patch.kind;
+    if (patch.title) current.title = patch.title;
+    current.updatedAt = at;
+    current.revision++;
+    current.epoch = state.epoch;
+    return { task: current, newRun };
+  }
+
+  function trim(state: ClaudeTaskSession): void {
+    if (state.tasks.size <= 200) return;
+    let oldest: ClaudeTaskRecord | undefined;
+    for (const task of state.tasks.values()) {
+      if (!oldest || task.updatedAt < oldest.updatedAt) oldest = task;
+    }
+    if (oldest) state.tasks.delete(oldest.id);
+  }
+
+  function observeLevel(state: ClaudeTaskSession, message: any): void {
+    state.levelSeen = true;
+    state.lastLevelAt = now();
+    state.live.clear();
+    const tasks = Array.isArray(message?.tasks) ? message.tasks : [];
+    for (const raw of tasks) {
+      const id = text(raw?.task_id);
+      if (!id) continue;
+      const ambient = raw?.ambient === true;
+      const current = state.tasks.get(id);
+      if (current) current.ambient = ambient;
+      if (ambient) continue;
+      state.live.add(id);
+      const entry = upsert(state, id, {
+        kind: text(raw?.task_type),
+        title: text(raw?.description),
+        runID: text(raw?.run_id),
+      });
+      if (!entry) continue;
+      entry.task.backgrounded = true;
+      entry.task.inLevel = true;
+      entry.task.ambient = false;
+    }
+    for (const task of state.tasks.values()) {
+      if (!state.live.has(task.id)) task.inLevel = false;
+    }
+  }
+
+  function observeEdge(state: ClaudeTaskSession, message: any): void {
+    const id = text(message?.task_id);
+    if (!id) return;
+    const subtype = message?.subtype;
+    const patch = message?.patch ?? {};
+    const entry = upsert(state, id, {
+      kind: text(message?.task_type),
+      title: text(message?.description) ?? text(message?.summary),
+      runID: text(message?.run_id),
+    });
+    if (!entry) return;
+    const task = entry.task;
+
+    if (subtype === 'task_started') {
+      task.edgeActiveAt = now();
+      task.paused = false;
+      if (message?.is_backgrounded === true) task.backgrounded = true;
+      if (!task.terminal) task.inLevel = task.inLevel || task.backgrounded;
+      return;
+    }
+
+    if (subtype === 'task_notification') {
+      const status = message?.status;
+      const outcome: ClaudeTaskOutcome = status === 'failed'
+        ? 'failed'
+        : status === 'stopped' ? 'cancelled' : 'completed';
+      task.backgrounded = true;
+      task.terminal = { outcome, at: now() };
+      task.paused = false;
+      return;
+    }
+
+    if (subtype !== 'task_updated') return;
+    if (patch?.is_backgrounded === true) task.backgrounded = true;
+    const status = patch?.status;
+    if (status === 'paused') {
+      if (task.terminal) return;
+      task.paused = true;
+      task.edgeActiveAt = now();
+      return;
+    }
+    if (status === 'completed' || status === 'failed' || status === 'killed') {
+      const outcome: ClaudeTaskOutcome = status === 'completed'
+        ? 'completed'
+        : status === 'killed' ? 'cancelled' : 'failed';
+      task.terminal = {
+        outcome,
+        at: Number.isFinite(patch?.end_time) ? Number(patch.end_time) : now(),
+      };
+      task.paused = false;
+      return;
+    }
+    if (status === 'pending' || status === 'running') {
+      if (task.terminal) return;
+      task.paused = false;
+      task.edgeActiveAt = now();
+      task.backgrounded = task.backgrounded || message?.is_backgrounded === true;
+      task.inLevel = task.inLevel || task.backgrounded;
+    }
+  }
+
+  function observe(sessionID: string, message: any): void {
+    if (!sessionID || message?.type !== 'system') return;
+    const state = stateOf(sessionID);
+    if (message.subtype === 'background_tasks_changed') {
+      observeLevel(state, message);
+      return;
+    }
+    if (
+      message.subtype === 'task_started'
+      || message.subtype === 'task_updated'
+      || message.subtype === 'task_notification'
+    ) {
+      observeEdge(state, message);
+    }
+  }
+
+  function beginProcess(sessionID: string): void {
+    const state = sessions.get(sessionID);
+    if (!state) return;
+    state.epoch = newTaskEpoch();
+    state.live.clear();
+    state.lastLevelAt = now();
+    for (const task of state.tasks.values()) {
+      task.inLevel = false;
+      if (!task.terminal) {
+        task.paused = false;
+        task.edgeActiveAt = undefined;
+        task.epoch = state.epoch;
+      }
+    }
+  }
+
+  function lifecycleOf(state: ClaudeTaskSession, task: ClaudeTaskRecord): RuntimeLifecycle {
+    const observedAt = now();
+    const base = {
+      observedAt,
+      lastActivityAt: task.updatedAt,
+      revision: task.revision,
+      epoch: task.epoch,
+      authority: 'runtime' as const,
+    };
+    if (task.terminal) {
+      return {
+        phase: 'settled',
+        outcome: task.terminal.outcome,
+        terminalAt: task.terminal.at,
+        ...base,
+      };
+    }
+    // A level snapshot is authoritative for membership. An edge newer than the
+    // latest snapshot may not have propagated yet; older edges cannot keep a
+    // vanished task alive.
+    const omittedFromLevel = state.levelSeen
+      && !task.inLevel
+      && !(task.edgeActiveAt != null && task.edgeActiveAt > (state.lastLevelAt ?? 0));
+    if (omittedFromLevel) {
+      return { phase: 'unknown', reason: 'missing-from-background-level', ...base };
+    }
+    if (task.paused) {
+      return { phase: 'waiting', waitingOn: ['input'], ...base };
+    }
+    if (task.inLevel || task.edgeActiveAt != null) {
+      return { phase: 'active', ...base };
+    }
+    return { phase: 'unknown', reason: 'no-terminal-evidence', ...base };
+  }
+
+  function clear(sessionID: string): void {
+    sessions.delete(sessionID);
+  }
+
+  function list(sessionID: string): ClaudeBackgroundTask[] {
+    const state = sessions.get(sessionID);
+    if (!state) return [];
+    return [...state.tasks.values()]
+      .filter((task) => task.backgrounded && !task.ambient)
+      .sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id))
+      .map((task) => {
+        const terminalAt = task.terminal?.at;
+        return {
+          id: task.id,
+          sessionID,
+          kind: task.kind,
+          ...(task.title ? { title: task.title } : {}),
+          lifecycle: lifecycleOf(state, task),
+          time: {
+            created: task.createdAt,
+            updated: task.updatedAt,
+            ...(terminalAt !== undefined ? { completed: terminalAt } : {}),
+          },
+        };
+      });
+  }
+
+  return { observe, beginProcess, list, clear };
 }
 
 interface QueueItem {
@@ -61,6 +370,7 @@ export function createClaudeRuntime(deps: ClaudeRuntimeDeps): any {
       sessionID,
     }),
   });
+  const backgroundTasks = createClaudeTaskRegistry(deps.now ?? Date.now);
 
   function failEvent(sid: string, error: unknown, rawSid?: string): void {
     const message = error instanceof Error ? error.message : String(error);
@@ -74,6 +384,9 @@ export function createClaudeRuntime(deps: ClaudeRuntimeDeps): any {
   async function spawn(sid: string, parts: any[], message?: string): Promise<void> {
     const state = sessions.getOrCreate(sid, '');
     sessions.begin(sid);
+    // A new query is a new CLI process: the SDK level is per-process and emits
+    // nothing at startup, so previous live membership cannot be trusted.
+    backgroundTasks.beginProcess(sid);
     const text = message ?? parts.filter((p: any) => p?.type === 'text').map((p: any) => p?.text ?? '').join('\n');
     const options: Record<string, any> = {
       cwd: state.directory,
@@ -89,6 +402,13 @@ export function createClaudeRuntime(deps: ClaudeRuntimeDeps): any {
       for await (const msg of query) {
         const sid0 = msg?.session_id ?? sid;
         rawSid = msg?.session_id;
+        try {
+          // Task snapshots are queried by the gateway session id; SDK frames
+          // may carry a raw session_id, but ownership follows the adapter id.
+          backgroundTasks.observe(sid, msg);
+        } catch {
+          // fail-open: task bookkeeping must never break the turn stream
+        }
         tracker.push({ ...msg, session_id: sid0 }); // raw：gateway 执行器翻译
       }
     } catch (err) {
@@ -150,6 +470,7 @@ export function createClaudeRuntime(deps: ClaudeRuntimeDeps): any {
       },
       async delete(opts: { sessionID: string }) {
         sessions.delete(opts.sessionID);
+        backgroundTasks.clear(opts.sessionID);
       },
       async abort(opts: { sessionID: string }) {
         sessions.get(opts.sessionID)?.controller?.interrupt();
@@ -167,6 +488,14 @@ export function createClaudeRuntime(deps: ClaudeRuntimeDeps): any {
       },
       async todo() { return []; },
       async summarize() { return null; },
+    },
+    background: {
+      async tasks(opts: { sessionID: string; cursor?: string; limit?: number }) {
+        return backgroundTasks.list(opts.sessionID);
+      },
+    },
+    async backgroundTasks(opts: { sessionID: string }) {
+      return backgroundTasks.list(opts.sessionID);
     },
     global: { event: () => bus.event() },
     provider: { async list() { return { all: [], connected: [], default: {} }; } },

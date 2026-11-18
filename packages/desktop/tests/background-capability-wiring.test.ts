@@ -30,6 +30,9 @@ describe("background capability wiring (neutral jobs façade)", () => {
     expect(dock).toContain("cancelJobAndIngest")
     expect(dock).toContain("formatJobOutput")
     expect(dock).toContain("background.jobs.list")
+    // Runtime-managed tasks have no child session: never navigate to task id.
+    expect(dock).toContain("if (job.childSessionID) props.onOpenSession(job.childSessionID)")
+    expect(dock).toContain("job.extensions?.runtimeTask")
     expect(dock).not.toContain("/api/shell")
 
     const bar = read("src/renderer/mafw/components/BackgroundWorkBar.tsx")

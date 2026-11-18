@@ -96,7 +96,9 @@ export function BackgroundDock(props: {
 
   const toggle = (job: BackgroundJob) => {
     if (job.kind === "subagent") {
-      props.onOpenSession(job.childSessionID || job.id)
+      // Runtime-managed tasks (Claude background_tasks_changed) are not child
+      // sessions; opening their task id as a session would 404.
+      if (job.childSessionID) props.onOpenSession(job.childSessionID)
       return
     }
     setConfirming(null)
@@ -130,7 +132,7 @@ export function BackgroundDock(props: {
         ...(job.childSessionID ? { sessionID: job.childSessionID } : {}),
         taskID: job.id,
         kind: job.kind === "shell" ? "background" : "subagent",
-        canCancel: isActiveJobStatus(job.status),
+        canCancel: isActiveJobStatus(job.status) && job.extensions?.runtimeTask !== true,
       },
       (id) => {
         if (id === "panel.openSession" && job.childSessionID) props.onOpenSession(job.childSessionID)

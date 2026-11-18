@@ -29,9 +29,9 @@ export const capabilities = {
   questionApi: false,
   diffApi: false,
   worktreeApi: true,
-  lifecycleApi: false,
+  lifecycleApi: true,
   sessionChildrenApi: false,
-  backgroundTasksApi: false,
+  backgroundTasksApi: true,
 };
 
 export const external = true;
@@ -53,6 +53,7 @@ export async function createClaudeDefinition(
   const transport = createClaudeTransport({ sdk, gatewayPort: ctx?.gatewayPort, runtime });
   const channels = createClaudeChannels(sdk, {
     promptAsync: (sessionID, text) => runtime.session.promptAsync({ sessionID, message: text }),
+    backgroundTasks: (opts) => runtime.backgroundTasks(opts),
   });
   return defineRuntime({
     api: 1,

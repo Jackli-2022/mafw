@@ -208,6 +208,163 @@ test('list → SDK listSessions 映射 SessionInfo', async () => {
   assert.equal(list[0].title, 't');
 });
 
+test('background tasks: level + edges map active/waiting/settled with canonical lifecycle', async () => {
+  const sdk = fakeSdk([
+    (push) => push({
+      type: 'system', subtype: 'background_tasks_changed', session_id: 'S',
+      tasks: [
+        { task_id: 'task_active', task_type: 'local_bash', description: 'build' },
+        { task_id: 'task_wait', task_type: 'local_agent', description: 'wait' },
+        { task_id: 'task_failed', task_type: 'local_agent', description: 'fail' },
+      ],
+    }),
+    (push) => push({
+      type: 'system', subtype: 'task_updated', session_id: 'S', task_id: 'task_wait',
+      patch: { status: 'paused' },
+    }),
+    (push) => push({
+      type: 'system', subtype: 'task_notification', session_id: 'S', task_id: 'task_failed',
+      status: 'failed', summary: 'boom', output_file: '',
+    }),
+  ]);
+  const rt = createClaudeRuntime({ sdk: sdk as any });
+  const s = await rt.session.create({ directory: 'C:/tmp/proj' });
+  await rt.session.promptAsync({ sessionID: s.id, parts: [{ type: 'text', text: 'go' }] });
+  await new Promise((r) => setTimeout(r, 50));
+
+  const rows = await rt.backgroundTasks({ sessionID: s.id });
+  const byId = Object.fromEntries(rows.map((row: any) => [row.id, row]));
+  assert.equal(byId.task_active.lifecycle.phase, 'active');
+  assert.equal(byId.task_wait.lifecycle.phase, 'waiting');
+  assert.deepEqual(byId.task_wait.lifecycle.waitingOn, ['input']);
+  assert.equal(byId.task_failed.lifecycle.phase, 'settled');
+  assert.equal(byId.task_failed.lifecycle.outcome, 'failed');
+  for (const row of rows) {
+    assert.equal(row.sessionID, s.id);
+    assert.equal(typeof row.lifecycle.observedAt, 'number');
+    assert.ok(row.lifecycle.revision >= 1);
+    assert.ok(row.lifecycle.epoch);
+    assert.equal(row.lifecycle.authority, 'runtime');
+  }
+});
+
+test('background tasks: leaving the level without a terminal edge becomes unknown', async () => {
+  const sdk = fakeSdk([
+    (push) => push({
+      type: 'system', subtype: 'background_tasks_changed', session_id: 'S',
+      tasks: [
+        { task_id: 'task_live', task_type: 'local_bash', description: 'live' },
+        { task_id: 'task_gone', task_type: 'local_agent', description: 'gone' },
+      ],
+    }),
+    (push) => push({
+      type: 'system', subtype: 'background_tasks_changed', session_id: 'S',
+      tasks: [{ task_id: 'task_live', task_type: 'local_bash', description: 'live' }],
+    }),
+  ]);
+  const rt = createClaudeRuntime({ sdk: sdk as any });
+  const s = await rt.session.create({ directory: 'C:/tmp/proj' });
+  await rt.session.promptAsync({ sessionID: s.id, parts: [{ type: 'text', text: 'go' }] });
+  await new Promise((r) => setTimeout(r, 50));
+
+  const byId = Object.fromEntries((await rt.backgroundTasks({ sessionID: s.id })).map((row: any) => [row.id, row]));
+  assert.equal(byId.task_live.lifecycle.phase, 'active');
+  assert.equal(byId.task_gone.lifecycle.phase, 'unknown');
+  assert.equal(byId.task_gone.lifecycle.reason, 'missing-from-background-level');
+});
+
+test('background tasks: terminal notification without a level snapshot is still settled', async () => {
+  const sdk = fakeSdk([
+    (push) => push({
+      type: 'system', subtype: 'task_notification', session_id: 'S', task_id: 'task_done',
+      status: 'completed', summary: 'ok', output_file: '',
+    }),
+  ]);
+  const rt = createClaudeRuntime({ sdk: sdk as any });
+  const s = await rt.session.create({ directory: 'C:/tmp/proj' });
+  await rt.session.promptAsync({ sessionID: s.id, parts: [{ type: 'text', text: 'go' }] });
+  await new Promise((r) => setTimeout(r, 50));
+
+  const [row] = await rt.backgroundTasks({ sessionID: s.id });
+  assert.equal(row.id, 'task_done');
+  assert.equal(row.lifecycle.phase, 'settled');
+  assert.equal(row.lifecycle.outcome, 'completed');
+});
+
+test('background tasks: ambient level entries are not activity', async () => {
+  const sdk = fakeSdk([
+    (push) => push({
+      type: 'system', subtype: 'background_tasks_changed', session_id: 'S',
+      tasks: [
+        { task_id: 'task_visible', task_type: 'local_bash', description: 'visible' },
+        { task_id: 'task_ambient', task_type: 'local_bash', description: 'watch', ambient: true },
+      ],
+    }),
+  ]);
+  const rt = createClaudeRuntime({ sdk: sdk as any });
+  const s = await rt.session.create({ directory: 'C:/tmp/proj' });
+  await rt.session.promptAsync({ sessionID: s.id, parts: [{ type: 'text', text: 'go' }] });
+  await new Promise((r) => setTimeout(r, 50));
+
+  const ids = (await rt.backgroundTasks({ sessionID: s.id })).map((row: any) => row.id);
+  assert.deepEqual(ids, ['task_visible']);
+});
+
+test('background tasks: a new process epoch invalidates the previous live level', async () => {
+  let call = 0;
+  const sdk = {
+    async query() {
+      call++;
+      const messages = call === 1
+        ? [
+          { type: 'system', subtype: 'background_tasks_changed', session_id: 'S', tasks: [
+            { task_id: 'task_old', task_type: 'local_bash', description: 'old' },
+          ] },
+          { type: 'result', subtype: 'success', session_id: 'S' },
+        ]
+        : [{ type: 'result', subtype: 'success', session_id: 'S' }];
+      return {
+        async *[Symbol.asyncIterator]() { for (const message of messages) yield message; },
+        interrupt() {},
+      };
+    },
+    async listSessions() { return []; },
+    async getSessionMessages() { return []; },
+  };
+  const rt = createClaudeRuntime({ sdk: sdk as any });
+  const s = await rt.session.create({ directory: 'C:/tmp/proj' });
+  await rt.session.promptAsync({ sessionID: s.id, parts: [{ type: 'text', text: 'one' }] });
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal((await rt.backgroundTasks({ sessionID: s.id }))[0].lifecycle.phase, 'active');
+
+  await rt.session.promptAsync({ sessionID: s.id, parts: [{ type: 'text', text: 'two' }] });
+  await new Promise((r) => setTimeout(r, 50));
+  const rows = await rt.backgroundTasks({ sessionID: s.id });
+  assert.equal(rows[0].lifecycle.phase, 'unknown');
+  assert.equal(rows[0].lifecycle.reason, 'missing-from-background-level');
+});
+
+test('background tasks: unknown session returns an empty snapshot', async () => {
+  const rt = createClaudeRuntime({ sdk: fakeSdk([]) as any });
+  assert.deepEqual(await rt.backgroundTasks({ sessionID: 'missing' }), []);
+});
+
+test('background tasks: deleting the session clears task state', async () => {
+  const sdk = fakeSdk([
+    (push) => push({
+      type: 'system', subtype: 'background_tasks_changed', session_id: 'S',
+      tasks: [{ task_id: 'task_1', task_type: 'local_bash', description: 'build' }],
+    }),
+  ]);
+  const rt = createClaudeRuntime({ sdk: sdk as any });
+  const s = await rt.session.create({ directory: 'C:/tmp/proj' });
+  await rt.session.promptAsync({ sessionID: s.id, parts: [{ type: 'text', text: 'go' }] });
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal((await rt.backgroundTasks({ sessionID: s.id })).length, 1);
+  await rt.session.delete({ sessionID: s.id });
+  assert.deepEqual(await rt.backgroundTasks({ sessionID: s.id }), []);
+});
+
 test('tools.registerTools stash → prompt 时经 mcpServers 透传', async () => {
   const sdk = fakeSdk([(push) => push({ type: 'result', subtype: 'success', session_id: 'S' })]);
   const rt = createClaudeRuntime({ sdk: sdk as any });

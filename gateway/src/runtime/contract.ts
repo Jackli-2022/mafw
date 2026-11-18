@@ -62,6 +62,16 @@ export interface RuntimeChildSession {
   [key: string]: unknown;
 }
 
+/** A runtime-managed background task (not necessarily a child session). */
+export interface RuntimeBackgroundTask {
+  id: string;
+  sessionID: string;
+  kind?: string;
+  title?: string;
+  lifecycle?: RuntimeLifecycle;
+  time?: { created?: number; updated?: number; completed?: number };
+}
+
 export interface RuntimeCapabilities {
   /** session.create/prompt/promptAsync/messages/... 全套会话 API */
   sessionApi: boolean;
@@ -575,6 +585,14 @@ export interface RuntimeClient {
       shellID: string; directory?: string; cursor?: number; limit?: number;
     }): Promise<any>;
     remove(opts: { shellID: string; directory?: string }): Promise<void>;
+  };
+  /**
+   * Runtime-managed background task snapshot (backgroundTasksApi). This is
+   * separate from `session.children`: Claude has managed tasks without child
+   * sessions. Missing = unsupported, never an empty list.
+   */
+  background?: {
+    tasks(opts: { sessionID: string; cursor?: string; limit?: number }): Promise<RuntimeBackgroundTask[]>;
   };
   /**
    * 中性 PTY 通道（terminal.pty surface）。缺实现 = 不支持内嵌终端

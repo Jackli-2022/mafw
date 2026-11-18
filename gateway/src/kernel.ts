@@ -4755,6 +4755,13 @@ class MafwScheduler {
       registry: this.backgroundShells,
       // 权威子代理来源（SubagentService 状态机：running/completed/failed/aborted）
       listSubagents: (sessionID) => this.subagentService.list(sessionID),
+      // runtime-managed tasks (Claude background_tasks_changed); capability-gated
+      listBackgroundTasks: async (sessionID) => {
+        if (!this.runtime?.access.can('background.tasks')) return [];
+        const background = this.runtime?.background;
+        if (!background) return [];
+        return background.tasks({ sessionID });
+      },
       outputShell: async (opts) => {
         if (!this.runtime?.access.can('session.shell')) {
           throw new BackgroundJobError(503, 'runtime shell output is not available on this runtime');

@@ -66,6 +66,16 @@ export interface BackgroundSubagentRow {
   time?: { created?: number; updated?: number; completed?: number }
 }
 
+/** runtime-managed background task (Claude/other runtimes without child sessions). */
+export interface BackgroundTaskRow {
+  id: string
+  sessionID: string
+  kind?: string
+  title?: string
+  lifecycle?: BackgroundSubagentLifecycle
+  time?: { created?: number; updated?: number; completed?: number }
+}
+
 /** SubagentService 状态 + DTO 已有的等待/未知态（input_required 归一为 running）。 */
 export type BackgroundSubagentStatus =
   | 'running'
@@ -254,6 +264,44 @@ export function jobFromSubagent(row: BackgroundSubagentRow, ownerSessionID?: str
     ...(row.lifecycle?.epoch ? { epoch: row.lifecycle.epoch } : {}),
     ...(row.lifecycle?.authority ? { authority: row.lifecycle.authority } : {}),
     ...(row.lifecycle?.waitingOn?.length ? { waitingOn: [...row.lifecycle.waitingOn] } : {}),
+  };
+}
+
+/**
+ * runtime-managed task → MAFW job.
+ *
+ * These are not child sessions, so `childSessionID` is deliberately absent;
+ * cancel/output routing must not treat them as subagents. Missing lifecycle is
+ * `unknown`, never `running`.
+ */
+export function jobFromBackgroundTask(task: BackgroundTaskRow): MafwBackgroundJob | null {
+  if (!task?.id || !task.sessionID) return null;
+  const status = task.lifecycle
+    ? backgroundJobStatusOfLifecycle(task.lifecycle)
+    : 'unknown';
+  const completed = task.lifecycle?.phase === 'settled'
+    ? (task.lifecycle.terminalAt ?? task.lifecycle.observedAt ?? task.time?.completed)
+    : undefined;
+  const time = optionalTime({
+    created: task.time?.created,
+    updated: task.time?.updated ?? task.lifecycle?.lastActivityAt ?? task.lifecycle?.observedAt,
+    completed: task.time?.completed ?? completed,
+  });
+  return {
+    id: task.id,
+    source: 'subagent',
+    kind: 'subagent',
+    status,
+    sessionID: task.sessionID,
+    ...(task.title ? { title: task.title } : {}),
+    ...(time ? { time } : {}),
+    ...(task.lifecycle?.observedAt != null ? { observedAt: task.lifecycle.observedAt } : {}),
+    ...(task.lifecycle?.lastActivityAt != null ? { lastActivityAt: task.lifecycle.lastActivityAt } : {}),
+    ...(task.lifecycle?.epoch ? { epoch: task.lifecycle.epoch } : {}),
+    ...(task.lifecycle?.authority ? { authority: task.lifecycle.authority } : {}),
+    ...(task.lifecycle?.waitingOn?.length ? { waitingOn: [...task.lifecycle.waitingOn] } : {}),
+    ...(task.kind ? { nativeStatus: task.kind } : {}),
+    extensions: { runtimeTask: true },
   };
 }
 

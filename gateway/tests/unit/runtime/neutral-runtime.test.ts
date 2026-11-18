@@ -56,6 +56,20 @@ it('does not expose channels the runtime lacks', () => {
   const rt = createNeutralRuntime(defWith({}), { bus: newBus() });
   expect((rt.session as any).todo).toBeUndefined();
   expect((rt as any).mcp).toBeUndefined();
+  expect((rt as any).background).toBeUndefined();
+});
+
+it('maps background.tasks to runtime.background and declares the capability', async () => {
+  const tasks = jest.fn(async () => [{
+    id: 'task_1', sessionID: 's1', kind: 'local_bash',
+    lifecycle: { phase: 'active' as const, observedAt: 1, revision: 1, epoch: 'e1', authority: 'runtime' as const },
+  }]);
+  const definition = defWith({}, { channels: { background: { tasks } } } as any);
+  const rt = createNeutralRuntime(definition, { bus: newBus() });
+  expect(definition.capabilities.backgroundTasksApi).toBe(true);
+  await expect(rt.background!.tasks({ sessionID: 's1', cursor: 'c1', limit: 5 }))
+    .resolves.toEqual([expect.objectContaining({ id: 'task_1' })]);
+  expect(tasks).toHaveBeenCalledWith({ sessionID: 's1', cursor: 'c1', limit: 5 });
 });
 
 it('fans out bus events to every global.event consumer', async () => {

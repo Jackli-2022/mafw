@@ -197,16 +197,20 @@ runtime 能力集 + 插件扫描状态。能力门：缺能力的 runtime 对应
 - **缺失 lifecycle = `unknown`，绝不推断为 `active`**；非法/半截 payload 归一为 unknown。
 - 原生解释只存在于 adapter：opencode 用 `time.busy` / `time.idle` + `idle_outcome` /
   `time.suspended`(claim) / `resume_attempts` / `time.archived` 映射；durable claim 是恢复记录，
-  不证明进程仍活。Claude 的 `background_tasks_changed` 是 level/REPLACE 信号；dsh 的
-  `running / waiting / settled` 直接映射，`waiting` 不折叠为 idle。
+  不证明进程仍活。Claude 把 `background_tasks_changed` 当 level/REPLACE 集合，`task_started` /
+  `task_updated` / `task_notification` 当边沿：level 内无终态为 active，`paused` 为 waiting，
+  终态边沿为 settled；task 离开 level 且没有终态边沿 → `unknown`（reason
+  `missing-from-background-level`），绝不回退成 active。每次新 query 是一个新进程 epoch，旧 level
+  失效。dsh 的 `running / waiting / settled` 直接映射，`waiting` 不折叠为 idle。
 - `session.children` 行携带 `lifecycle`；非子会话后台任务走独立的 `background.tasks` 能力
-  （Claude 有 managed tasks 但没有 child session 枚举）。`session.children` 本身由
+  （Claude 有 managed tasks 但没有 child session 枚举），经 `BackgroundJobService` 合并到统一
+  `MafwBackgroundJob`，不带 `childSessionID`（不能走子会话 cancel）。`session.children` 本身由
   `sessionChildrenApi` 门控：能力缺失时路由返回中性 503，**不能用 `[]` 伪装支持**（Claude 已移除
   假空实现）。
 - `MafwBackgroundJobStatus` 增加 `waiting / unknown`；`waiting` 不是 active，`unknown` 进入
   历史/需对账区；`isTerminalBackgroundStatus` 只认 `completed / failed / cancelled`。
 - 能力位 `lifecycleApi` / `backgroundTasksApi` 由 adapter 自声明；缺能力返回中性 503，
-  不允许用 `[]` 伪装“没有子会话”。`session.children` 的 legacy 行为保留一个周期，
+  不允许用 `[]` 伪装“没有子会话/没有后台任务”。`session.children` 的 legacy 行为保留一个周期，
   但缺 lifecycle 的旧行只会产生 unknown。
 
 **会话目录契约（2026-10-20）**：`SessionCreateOpts.directory`（**必填、绝对路径**）是会话工作目录的唯一权威来源，
