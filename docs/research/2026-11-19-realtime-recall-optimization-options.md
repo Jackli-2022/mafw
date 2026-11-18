@@ -392,20 +392,20 @@ Gate：热会话同话题 serve ≥90%；所有请求 serve ≥40–60%；质量
 
 ## 9. 外部证据
 
-- **Predictive prefetching for RAG**（ICML 2026）：预测下一步检索并预取，报告最多 43.5% E2E 延迟下降、62.4% TTFT 改善；同步 fallback 保留为底线。  
+- **Predictive prefetching for RAG**（ICML 2026）：预测下一步检索并预取，报告最多 43.5% E2E 延迟下降、62.4% TTFT 改善；同步 fallback 保留为底线。
   https://arxiv.org/abs/2605.17989
-- **RaLMSpec**：speculative retrieval + batched verification，迭代 RAG 提升 1.31–2.39×。  
+- **RaLMSpec**：speculative retrieval + batched verification，迭代 RAG 提升 1.31–2.39×。
   https://proceedings.mlr.press/v235/zhang24cq.html
-- **Zep / Konig**：hot graph 使用 RAM adjacency lists + CSR，vector/BM25/graph 统一检索；p95 retrieval <100ms，完整 retrieval <200ms。  
+- **Zep / Konig**：hot graph 使用 RAM adjacency lists + CSR，vector/BM25/graph 统一检索；p95 retrieval <100ms，完整 retrieval <200ms。
   https://www.getzep.com/blog/why-we-built-a-graph-database-service-for-agent-memory/
-- **Zep scaling**：拆分 vector/BM25 与 graph 服务，图搜索 p95 从600ms降到150ms，完整 context retrieval p95约200ms。  
+- **Zep scaling**：拆分 vector/BM25 与 graph 服务，图搜索 p95 从600ms降到150ms，完整 context retrieval p95约200ms。
   https://www.getzep.com/blog/scaling-agent-memory-zep-30x/
-- **Anyscale production RAG**：多级缓存、prefix caching、adaptive TTL、event-driven invalidation、versioned cache keys。  
+- **Anyscale production RAG**：多级缓存、prefix caching、adaptive TTL、event-driven invalidation、versioned cache keys。
   https://docs.anyscale.com/rag/production-scalability
-- **Proximity approximate cache**：LSH 缓存相似 query 的检索结果，数据库调用减少78.9%，缓存查找约4.8µs；但必须控制相似度容差和错误复用。  
+- **Proximity approximate cache**：LSH 缓存相似 query 的检索结果，数据库调用减少78.9%，缓存查找约4.8µs；但必须控制相似度容差和错误复用。
   https://arxiv.org/html/2503.05530v2
-- **NN/g / RAIL**：100ms 直接操作阈值、1s 思路连续阈值。  
-  https://www.nngroup.com/articles/response-times-3-important-limits/  
+- **NN/g / RAIL**：100ms 直接操作阈值、1s 思路连续阈值。
+  https://www.nngroup.com/articles/response-times-3-important-limits/
   https://web.dev/articles/rail
 
 ## 10. 明确不做
