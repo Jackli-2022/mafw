@@ -82,8 +82,68 @@ export const PluginUpdateResultSchema = Type.Object({
 })
 
 /**
+ * `PluginCheckFailureCode`（`plugins/package-host.ts`）：`ok:false` 的稳定原因。
+ *
+ * 固定枚举——消费方（CLI / CI / agent）switch 这个值而不是匹配 `error` 文案；
+ * 原始错误文本永远不会出现在这里。
+ */
+const PluginCheckFailureCode = Type.Union([
+  Type.Literal('candidate_missing'),
+  Type.Literal('manifest_invalid'),
+  Type.Literal('entry_missing'),
+  Type.Literal('identity_mismatch'),
+  Type.Literal('contribution_bound'),
+  Type.Literal('activation_failed'),
+  Type.Literal('worker_unavailable'),
+], {
+  description: 'Stable failure reason; only present when ok is false.',
+})
+
+/**
+ * `PluginCheckDeclared`（`PluginHost`）：`plugin.json` 的 `contributes.gateway` 静态上界。
+ *
+ * 逐 plane 的**存在性有意义**：缺键 = 该 plane 未声明（不设上界），`[]` = 零上界
+ * （一个都不允许）。渲染方不得把两者合并。
+ */
+const PluginCheckDeclared = Type.Object({
+  actions: Type.Optional(Type.Array(Type.String(), {
+    description: 'Declared action names; absent = unbounded, [] = nothing allowed.',
+  })),
+  events: Type.Optional(Type.Array(Type.String(), {
+    description: 'Declared event types; absent = unbounded, [] = nothing allowed.',
+  })),
+  tools: Type.Optional(Type.Array(Type.String(), {
+    description: 'Declared tool names; absent = unbounded, [] = nothing allowed.',
+  })),
+  observers: Type.Optional(Type.Array(Type.String(), {
+    description: 'Declared observer ids; absent = unbounded, [] = nothing allowed.',
+  })),
+  http: Type.Optional(Type.Boolean({
+    description: 'contributes.gateway.http when the manifest opts in or out explicitly.',
+  })),
+}, {
+  description:
+    'Static plane declarations; absent for legacy packages without a contributes.gateway block.',
+})
+
+/**
+ * `PluginCheckRegistered`：候选包在检查期间**实际尝试注册**的 plane。
+ * `registered ⊆ declared` 被强制执行；反向从不要求（包可以条件注册）。
+ */
+const PluginCheckRegistered = Type.Object({
+  actions: Type.Array(Type.String()),
+  events: Type.Array(Type.String()),
+  tools: Type.Array(Type.String()),
+  observers: Type.Array(Type.String()),
+  http: Type.Number({ description: 'HTTP + WebSocket routes recorded through ctx.http.' }),
+}, {
+  description: 'Planes the candidate actually tried to register while it was checked.',
+})
+
+/**
  * `PluginCheckResult`（`PluginHost.checkPackage` / `PackageManager.checkPath`）：
- * `ok:false` 是**诊断结果**（200），不是 HTTP 失败——`error` 携带原因。
+ * `ok:false` 是**诊断结果**（200），不是 HTTP 失败——`error` 携带原因，`code`
+ * 是同一原因的稳定机器可读分类。
  */
 export const PluginCheckResultSchema = Type.Object({
   ok: Type.Boolean({ description: 'false is a diagnostic answer, still HTTP 200.' }),
@@ -91,6 +151,12 @@ export const PluginCheckResultSchema = Type.Object({
   version: Type.Optional(Type.String()),
   contributions: Type.Optional(Type.Array(Type.String(), {
     description: 'Contribution kinds of the candidate (ui / actions / runtime / …).',
+  })),
+  declared: Type.Optional(PluginCheckDeclared),
+  registered: Type.Optional(PluginCheckRegistered),
+  warnings: Type.Optional(Type.Array(Type.String(), {
+    description:
+      'Non-fatal manifest diagnostics (legacy-permissions, …); `mafw plugin check --strict` fails on a non-empty list.',
   })),
   webSurfaces: Type.Optional(Type.Object({
     count: Type.Number(),
@@ -104,6 +170,11 @@ export const PluginCheckResultSchema = Type.Object({
     description: 'Declared permissions shown by the install consent step.',
   })),
   error: Type.Optional(Type.String()),
+  code: Type.Optional(PluginCheckFailureCode),
+  evaluated: Type.Optional(Type.Boolean({
+    description:
+      'true when activate() returned and its contributions were observed; false when the candidate never produced a contribution set.',
+  })),
 })
 
 /**

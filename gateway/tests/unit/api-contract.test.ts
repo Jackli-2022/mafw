@@ -218,6 +218,7 @@ import {
 } from '../../src/routes/schemas/observability';
 import { A2AAgentCardResponse } from '../../src/routes/schemas/a2a';
 import { PluginsAuditResponse, PluginLastGoodResponse } from '../../src/routes/schemas/plugin-recovery';
+import { PluginCheckResponse } from '../../src/routes/schemas/plugin-write-responses';
 import { handleAttention } from '../../src/routes/attention';
 import { handleDecisionList } from '../../src/routes/decisions';
 import type { PodGoalView } from '../../src/core/pod/pod-view';
@@ -6213,6 +6214,56 @@ describe('api-contract: E10h-R5 mcp/plugin/runtime/platform write responses', ()
     expect(pkg.properties.application.anyOf.map((b: any) => b.const))
       .toEqual(['applied', 'pending', 'failed']);
     expect(pkg.properties.apiVersion.anyOf.map((b: any) => b.const)).toEqual([1, 2]);
+  });
+
+  test('plugin check documents the failure code and the declared-vs-registered inventory', () => {
+    const check = schemaOf('plugins.check');
+    // ok 仍是唯一的 required 键：新字段全部可选，只有 ok/name/error 的旧响应继续合法。
+    expect(check.required).toEqual(['ok']);
+    // code 是固定枚举——原始错误文本不得混进契约。
+    expect(check.properties.code.anyOf.map((branch: any) => branch.const)).toEqual([
+      'candidate_missing', 'manifest_invalid', 'entry_missing', 'identity_mismatch',
+      'contribution_bound', 'activation_failed', 'worker_unavailable',
+    ]);
+    expect(check.properties.evaluated.type).toBe('boolean');
+    // declared 的逐 plane 可选性是语义（缺键 = 不设上界，[] = 零上界），不能收敛成 required。
+    expect(check.properties.declared.required).toBeUndefined();
+    expect(Object.keys(check.properties.declared.properties).sort())
+      .toEqual(['actions', 'events', 'http', 'observers', 'tools']);
+    expect(check.properties.declared.properties.http.type).toBe('boolean');
+    // registered 恒报五个 plane；http 是计数，不是布尔。
+    expect(check.properties.registered.required).toEqual(['actions', 'events', 'tools', 'observers', 'http']);
+    expect(check.properties.registered.properties.http.type).toBe('number');
+    expect(check.properties.warnings.items.type).toBe('string');
+
+    // 失败 wire：contribution_bound 但 evaluated:true —— activate() 返回过，registered 是真证据。
+    const bound = {
+      ok: false,
+      name: 'acme',
+      error: 'invalid contributions: actions.pong',
+      code: 'contribution_bound',
+      evaluated: true,
+      declared: { actions: ['ping'] },
+      registered: { actions: ['pong'], events: [], tools: [], observers: [], http: 0 },
+      warnings: ['legacy-permissions'],
+    };
+    expect(Value.Check(PluginCheckResponse, bound)).toBe(true);
+    expect([...Value.Errors(PluginCheckResponse, bound)]).toEqual([]);
+
+    // 成功 wire：evaluated 恒 true，且没有 code（成功没有可分类的失败原因）。
+    const success = {
+      ok: true,
+      name: 'acme',
+      version: '1.0.0',
+      contributions: ['actions'],
+      evaluated: true,
+      declared: { actions: [], events: [], tools: [], observers: [], http: false },
+      registered: { actions: [], events: [], tools: [], observers: [], http: 0 },
+    };
+    expect(Value.Check(PluginCheckResponse, success)).toBe(true);
+
+    // 枚举外的 code 必须被拒（契约不允许自由文本）。
+    expect(Value.Check(PluginCheckResponse, { ok: false, code: 'boom' })).toBe(false);
   });
 
   test('plugin toggle/delete keep both body branches (package vs legacy)', () => {

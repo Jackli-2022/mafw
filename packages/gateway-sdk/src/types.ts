@@ -2891,6 +2891,31 @@ export interface PluginCheckResult {
   version?: string
   contributions?: string[]
   /**
+   * Static plane declarations from `plugin.json` (`contributes.gateway`) — an
+   * upper bound, not a plan. Per-plane absence is meaningful: a missing key
+   * means the plane is unbounded, while an explicit `[]` is a zero bound.
+   * Absent entirely for legacy packages without a `contributes.gateway` block.
+   */
+  declared?: {
+    actions?: string[]
+    events?: string[]
+    tools?: string[]
+    observers?: string[]
+    /** `contributes.gateway.http` when the manifest opts in or out explicitly. */
+    http?: boolean
+  }
+  /** Planes the candidate actually tried to register while it was checked. */
+  registered?: {
+    actions: string[]
+    events: string[]
+    tools: string[]
+    observers: string[]
+    /** HTTP + WebSocket routes recorded through `ctx.http`. */
+    http: number
+  }
+  /** Non-fatal manifest diagnostics; `mafw plugin check --strict` fails on a non-empty list. */
+  warnings?: string[]
+  /**
    * Web surface summary of a successful check (`ui.webSurfaces` validated by
    * the gateway). Absent when the candidate has no Web surfaces and on
    * `ok:false` diagnostics, so old clients keep the previous shape.
@@ -2901,6 +2926,26 @@ export interface PluginCheckResult {
   kind?: 'trusted' | 'untrusted'
   permissions?: string[]
   error?: string
+  /**
+   * `ok:false` only: stable failure reason, safe to switch on in CI/agents
+   * instead of matching `error` prose. Never raw error text.
+   */
+  code?:
+    | 'candidate_missing'
+    | 'manifest_invalid'
+    | 'entry_missing'
+    | 'identity_mismatch'
+    | 'contribution_bound'
+    | 'activation_failed'
+    | 'worker_unavailable'
+  /**
+   * `true` when `activate()` returned and its contributions were observed;
+   * `false` when the candidate never produced a contribution set (bad manifest,
+   * missing entry, identity mismatch, throwing `activate()`, unavailable worker).
+   * A failure after the set was captured (e.g. a declared-plane violation) still
+   * reports `true`, because `registered` is real evidence.
+   */
+  evaluated?: boolean
 }
 
 export interface PluginDoctorCheck {

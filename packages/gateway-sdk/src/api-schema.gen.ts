@@ -15777,6 +15777,30 @@ export interface operations {
                         version?: string;
                         /** @description Contribution kinds of the candidate (ui / actions / runtime / …). */
                         contributions?: string[];
+                        /** @description Static plane declarations; absent for legacy packages without a contributes.gateway block. */
+                        declared?: {
+                            /** @description Declared action names; absent = unbounded, [] = nothing allowed. */
+                            actions?: string[];
+                            /** @description Declared event types; absent = unbounded, [] = nothing allowed. */
+                            events?: string[];
+                            /** @description Declared tool names; absent = unbounded, [] = nothing allowed. */
+                            tools?: string[];
+                            /** @description Declared observer ids; absent = unbounded, [] = nothing allowed. */
+                            observers?: string[];
+                            /** @description contributes.gateway.http when the manifest opts in or out explicitly. */
+                            http?: boolean;
+                        };
+                        /** @description Planes the candidate actually tried to register while it was checked. */
+                        registered?: {
+                            actions: string[];
+                            events: string[];
+                            tools: string[];
+                            observers: string[];
+                            /** @description HTTP + WebSocket routes recorded through ctx.http. */
+                            http: number;
+                        };
+                        /** @description Non-fatal manifest diagnostics (legacy-permissions, …); `mafw plugin check --strict` fails on a non-empty list. */
+                        warnings?: string[];
                         /** @description Validated Web surface summary; absent when the candidate declares none. */
                         webSurfaces?: {
                             count: number;
@@ -15788,6 +15812,10 @@ export interface operations {
                         /** @description Declared permissions shown by the install consent step. */
                         permissions?: string[];
                         error?: string;
+                        /** @description Stable failure reason; only present when ok is false. */
+                        code?: "candidate_missing" | "manifest_invalid" | "entry_missing" | "identity_mismatch" | "contribution_bound" | "activation_failed" | "worker_unavailable";
+                        /** @description true when activate() returned and its contributions were observed; false when the candidate never produced a contribution set. */
+                        evaluated?: boolean;
                     };
                 };
             };

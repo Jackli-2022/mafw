@@ -24183,6 +24183,92 @@
                         "type": "string"
                       }
                     },
+                    "declared": {
+                      "description": "Static plane declarations; absent for legacy packages without a contributes.gateway block.",
+                      "type": "object",
+                      "properties": {
+                        "actions": {
+                          "description": "Declared action names; absent = unbounded, [] = nothing allowed.",
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "events": {
+                          "description": "Declared event types; absent = unbounded, [] = nothing allowed.",
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "tools": {
+                          "description": "Declared tool names; absent = unbounded, [] = nothing allowed.",
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "observers": {
+                          "description": "Declared observer ids; absent = unbounded, [] = nothing allowed.",
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "http": {
+                          "description": "contributes.gateway.http when the manifest opts in or out explicitly.",
+                          "type": "boolean"
+                        }
+                      }
+                    },
+                    "registered": {
+                      "description": "Planes the candidate actually tried to register while it was checked.",
+                      "type": "object",
+                      "required": [
+                        "actions",
+                        "events",
+                        "tools",
+                        "observers",
+                        "http"
+                      ],
+                      "properties": {
+                        "actions": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "events": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "tools": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "observers": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "http": {
+                          "description": "HTTP + WebSocket routes recorded through ctx.http.",
+                          "type": "number"
+                        }
+                      }
+                    },
+                    "warnings": {
+                      "description": "Non-fatal manifest diagnostics (legacy-permissions, …); `mafw plugin check --strict` fails on a non-empty list.",
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
                     "webSurfaces": {
                       "description": "Validated Web surface summary; absent when the candidate declares none.",
                       "type": "object",
@@ -24224,6 +24310,43 @@
                     },
                     "error": {
                       "type": "string"
+                    },
+                    "code": {
+                      "description": "Stable failure reason; only present when ok is false.",
+                      "anyOf": [
+                        {
+                          "const": "candidate_missing",
+                          "type": "string"
+                        },
+                        {
+                          "const": "manifest_invalid",
+                          "type": "string"
+                        },
+                        {
+                          "const": "entry_missing",
+                          "type": "string"
+                        },
+                        {
+                          "const": "identity_mismatch",
+                          "type": "string"
+                        },
+                        {
+                          "const": "contribution_bound",
+                          "type": "string"
+                        },
+                        {
+                          "const": "activation_failed",
+                          "type": "string"
+                        },
+                        {
+                          "const": "worker_unavailable",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "evaluated": {
+                      "description": "true when activate() returned and its contributions were observed; false when the candidate never produced a contribution set.",
+                      "type": "boolean"
                     }
                   }
                 }
