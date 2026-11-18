@@ -349,11 +349,11 @@ function splitTurn(parts: MafwPart[], opts: { showReasoning: boolean }): TurnEnt
 
 ### 5.3 用户元信息
 
-- chip 高 26px，胶囊；`--bg-float` / `--border-subtle`；时间用 tabular-nums，避免跳动。
-- 每分钟更新一次时间；不因更新改变宽度（固定位数）。
-- popover 320px，三行（时间/地点/语言）+ 说明；地点输入用现有 `TextInputV2`，保存后下一轮生效。
+- 确认版是 **ghost 行**（§3.3 A）：composer 上方 10.5px、无边框；hover 才出现淡底与 `›`，点击打开 popover。
+- 时间用 tabular-nums，避免跳动；每分钟更新一次时间，不因更新改变宽度（固定位数）。
+- popover 300px，三行（时间/地点/语言）+ 说明；地点输入用现有 `TextInputV2`，保存后下一轮生效。
 - 关闭城市：只发时区 + 语言；chip 隐藏城市段。
-- 不出现“定位”“坐标”“IP”字样。
+- 不出现“定位”“坐标”“IP”字样；不显示“随消息发送”。
 
 ---
 

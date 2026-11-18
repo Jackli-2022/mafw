@@ -969,3 +969,11 @@ gateway 每个响应都带 `X-MAFW-Schema-Epoch`（`releaseMetadata` 未加载�
   所以 SSE 订阅不受影响：不发头 = gateway 放行，不会因 epoch 漂移反复重连。
 - 测试：`src/main/human-token.test.ts` 新增 1 条行为用例（epoch 回声 fake fetch：首请求无头、
   第二请求带上学到的值，human token 仍在），文件 **27/27**。
+
+## 记忆回执 / 过程时间线 / 用户元信息（2026-11-18）
+
+- **回执**：回合 footer 渲染药丸。live 走 `memory.recalled`；打开/切换会话时 `window.api.mafw.sessions.memoryReceipts()` 回填（`memory-receipt-store.ts`，按 `updatedAt` 幂等）。用户消息的 `turnKey` 在历史摄取与“真实消息替换乐观消息”时都保留。
+- **时间线**：`SessionTurn.useProcessTimeline`（`ChatPane` 读 `localStorage['mafw-process-timeline'] !== '0'`）。`splitTurn` 是 lossless 分组：只折叠 reasoning / read / list / glob / grep / websearch / webfetch；**所有 output 永远可见**，中间输出与最终输出同款排版。`edit/write/apply_patch/bash/task/审批` 仍是顶层卡，`partDefaultOpen` 与 `assistantActions` 保持不变。
+- **折叠**：只有当前活动段默认展开（`defaultSegmentOpen(working, isLast)`）；用户手动开关优先。
+- **元信息**：composer 上方一行 ghost（10.5px、无边框、hover 才出现底色与 `›`），不是胶囊、不显示语言。popover 300px：时间只读、城市输入 + “发送城市”开关（默认关闭）、语言只读。每轮发送带隐藏 `<latest-reminder>` + `[[turn:...]]`；`stripInjectedUserText` 在历史与实时都剥离。
+- **开关**：`localStorage['mafw-latest-reminder']='0'` 只关 reminder，turn marker 仍保留（回执锚点不能丢）。

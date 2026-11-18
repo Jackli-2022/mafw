@@ -421,3 +421,13 @@ Response: { pointers: string|null }
 - `GET /api/recall/context` 始终在旧召回本体的上方返回 `<topic-recall>`：主题 + `相关记忆：见下方|无`；未设置时明确提示调用 `mafw_topic_set`。旧 BM25/dense/FOK/快照算法本版未改。
 - 首版 MCP 直接调用必须显式传 `sessionID`；OpenCode 原生工具由 host 自动注入 `ctx.sessionID`，不接受 agent 伪造 `sourceTraceId`，gateway 从当前 turn 附加真实 trace。
 - proactive 规则同时写在 `packages/runtime-core/src/host-adapter.ts`（canonical）与 `src/hooks/memory-guide.ts`（gateway-unreachable fallback）；子代理不得调用主题工具。
+
+## 记忆回执（Memory Receipt，2026-11-18）
+
+- **触发**：`GET /api/recall/context` 在 `res.end` 之后用 `setImmediate` 构建/广播 `memory.recalled`；builder 是同步纯函数，不进入 100ms 边界路径。客户端 abort 不发回执。
+- **形状**：`gateway/src/recall/receipt.ts#buildMemoryReceipt` — `version/status/tookMs/topic/memories/t1/filteredT1/counts`。摘要只带 `primary_abstraction`，绝不带 `memory_value` 或原始指针 id。
+- **T1 过滤**：`user_input|user`、`assistant_reply|assistant` 进入；`tool_result`、`reasoning|system` 与黑名单文本（`You are a subagent`、`[object Object]`、`<path>`、`ok | ...`）只计入 `filteredT1`。
+- **锚点**：桌面每次发送带 `[[turn:turn_<uuid>]]` 文本哨兵（synthetic part；runtime 会把它拼进持久化 user 文本）。`src/hooks/session-recall.ts` 从最后一条真实 user 消息提取 `anchorKey`，构建 query 前剥掉哨兵；回执按 `(session_id, anchor_key)` 挂回同一轮。
+- **持久化**：`gateway.db#memory_receipts`（payload JSON；同锚点 soft merge；每会话保留 200 条）。`GET /api/sessions/:id/memory-receipts` 供桌面回填，`memory.recalled` 只做实时增量。
+- **失败隔离**：store / broadcast 抛错只记 warn，响应仍 200；无 `anchorKey` 不生成回执，不猜“最近一轮”。
+- **桌面**：`memory-receipt-store.ts`（SSE + 历史回填，按 `updatedAt` 幂等）；`MemoryReceipt.tsx`（28px 药丸 + 300ms hover 卡）；类型标签只用 `semantic→事实 / procedural→做法 / global→通用 / episodic→往事`。
