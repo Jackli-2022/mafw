@@ -33,4 +33,10 @@ describe('ProcessTimeline', () => {
     expect(css).toContain('border: 0')
     expect(css).toContain('.mafw-process-think-label')
   })
+
+  test('hides the thinking preview once the body is open', () => {
+    const src = read('./process-timeline.tsx')
+    expect(src).toContain('<Show when={!open()}>')
+    expect(src).toContain('mafw-process-think-preview')
+  })
 })

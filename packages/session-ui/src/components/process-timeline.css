@@ -167,6 +167,9 @@
   color: var(--text-weak);
   font-size: 10.5px;
 }
+.mafw-process-think-row [data-slot="collapsible-arrow"] {
+  margin-left: auto;
+}
 .mafw-process-think-body {
   margin: 2px 0 6px 7px;
   padding-left: 12px;

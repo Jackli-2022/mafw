@@ -111,7 +111,9 @@ function ThinkingRow(props: { parts: Extract<ProcessStep, { type: 'thinking' }>[
         <Collapsible.Trigger>
           <div class="mafw-process-think-row">
             <span class="mafw-process-think-label">思考</span>
-            <span class="mafw-process-think-preview">{preview()}</span>
+            <Show when={!open()}>
+              <span class="mafw-process-think-preview">{preview()}</span>
+            </Show>
             <Collapsible.Arrow />
           </div>
         </Collapsible.Trigger>
