@@ -15815,7 +15815,7 @@ export interface operations {
                             media?: {
                                 /** @description Legacy media contribution name; defaults to the package name. */
                                 name?: string;
-                                /** @description Modalities the instance may serve; [] = the manifest left the list open (an explicit empty list is rejected by contract validation). */
+                                /** @description Modalities the manifest allows; [] = the manifest left the list open (unbounded). An explicit empty list is rejected at manifest validation, so [] is never a zero bound. */
                                 modalities: string[];
                             };
                         };
@@ -15837,7 +15837,7 @@ export interface operations {
                             media?: {
                                 /** @description Legacy media contribution name; defaults to the package name. */
                                 name?: string;
-                                /** @description Modalities the instance may serve; [] = the manifest left the list open (an explicit empty list is rejected by contract validation). */
+                                /** @description Modalities activate() returned for this instance; [] = no list was returned (absent, empty, or not an array), so this instance serves no modality. */
                                 modalities: string[];
                             };
                         };

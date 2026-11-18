@@ -102,21 +102,33 @@ const PluginCheckFailureCode = Type.Union([
 /**
  * legacy 单例 plane 的朝向：`media` 除名字外还钉住可服务的 modalities。
  *
- * `name` 缺省时按包名解析（与 host 一致）。契约校验拒绝显式的空列表，所以
- * `modalities: []` 只有一种含义——manifest 省略了列表（不限），不是零上界。
+ * `name` 缺省时按包名解析（与 host 一致）。`modalities` 在两个视图里**不是同一种
+ * 含义**，所以空列表的说明由调用方按侧注入：
+ *   - `declared`：清单省略列表时渲染成 `[]` = 不限；显式 `[]` 在 manifest 校验阶段
+ *     就被拒绝，所以这里的 `[]` 绝不是零上界。
+ *   - `registered`：`activate()` 的原始返回里没有列表、不是数组或为空时都记成
+ *     `[]` = 这个实例一个模态都没注册（不是"不限"）。
  */
-const PluginCheckMediaPlane = Type.Object({
+const mediaPlane = (modalities: string) => Type.Object({
   name: Type.Optional(Type.String({
     description: 'Legacy media contribution name; defaults to the package name.',
   })),
-  modalities: Type.Array(Type.String(), {
-    description:
-      'Modalities the instance may serve; [] = the manifest left the list open '
-      + '(an explicit empty list is rejected by contract validation).',
-  }),
+  modalities: Type.Array(Type.String(), { description: modalities }),
 }, {
   description: 'Legacy media plane: one instance per package, pinned to its modalities.',
 })
+
+/** `declared.media`：清单省略 `modalities` 时由 `[]` 表示（不限）。 */
+const PluginCheckDeclaredMediaPlane = mediaPlane(
+  'Modalities the manifest allows; [] = the manifest left the list open (unbounded). '
+  + 'An explicit empty list is rejected at manifest validation, so [] is never a zero bound.',
+)
+
+/** `registered.media`：`activate()` 原始返回里的模态列表。 */
+const PluginCheckRegisteredMediaPlane = mediaPlane(
+  'Modalities activate() returned for this instance; [] = no list was returned '
+  + '(absent, empty, or not an array), so this instance serves no modality.',
+)
 
 /**
  * `PluginCheckDeclared`（`PluginHost`）：`plugin.json` 的 `contributes.gateway` 静态上界。
@@ -152,7 +164,7 @@ const PluginCheckDeclared = Type.Object({
   usage: Type.Optional(Type.String({
     description: 'Legacy usage contribution name; a one-name bound, absent = unconstrained.',
   })),
-  media: Type.Optional(PluginCheckMediaPlane),
+  media: Type.Optional(PluginCheckDeclaredMediaPlane),
 }, {
   description:
     'Static plane declarations; absent for legacy packages without a contributes.gateway block.',
@@ -179,7 +191,7 @@ const PluginCheckRegistered = Type.Object({
   usage: Type.Optional(Type.String({
     description: 'Legacy usage instance returned by activate(), before validation.',
   })),
-  media: Type.Optional(PluginCheckMediaPlane),
+  media: Type.Optional(PluginCheckRegisteredMediaPlane),
 }, {
   description: 'Planes the candidate actually tried to register while it was checked.',
 })

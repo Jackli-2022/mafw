@@ -24253,7 +24253,7 @@
                               "type": "string"
                             },
                             "modalities": {
-                              "description": "Modalities the instance may serve; [] = the manifest left the list open (an explicit empty list is rejected by contract validation).",
+                              "description": "Modalities the manifest allows; [] = the manifest left the list open (unbounded). An explicit empty list is rejected at manifest validation, so [] is never a zero bound.",
                               "type": "array",
                               "items": {
                                 "type": "string"
@@ -24326,7 +24326,7 @@
                               "type": "string"
                             },
                             "modalities": {
-                              "description": "Modalities the instance may serve; [] = the manifest left the list open (an explicit empty list is rejected by contract validation).",
+                              "description": "Modalities activate() returned for this instance; [] = no list was returned (absent, empty, or not an array), so this instance serves no modality.",
                               "type": "array",
                               "items": {
                                 "type": "string"

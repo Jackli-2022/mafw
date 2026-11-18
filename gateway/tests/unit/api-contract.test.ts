@@ -6273,7 +6273,8 @@ describe('api-contract: E10h-R5 mcp/plugin/runtime/platform write responses', ()
     for (const side of ['declared', 'registered']) {
       const props = check.properties[side].properties;
       expect([props.runtime.type, props.tts.type, props.usage.type]).toEqual(['string', 'string', 'string']);
-      // media.name 缺省时按包名解析；modalities 恒是数组（[] = 零上界）。
+      // media.name 缺省时按包名解析；modalities 恒是数组。
+      // [] 不是零上界：declared 表示清单省略了列表（不限），registered 表示没返回模态。
       expect(props.media.properties.name.type).toBe('string');
       expect(props.media.required).toEqual(['modalities']);
       expect(props.media.properties.modalities.items.type).toBe('string');
@@ -6305,7 +6306,7 @@ describe('api-contract: E10h-R5 mcp/plugin/runtime/platform write responses', ()
         media: { modalities: ['image'] },
       },
     })).toBe(true);
-    // modalities 不能省略——零上界必须显式写成 []。
+    // modalities 不能省略——它是必填数组，省略在 wire 上只能表现为 []。
     expect(Value.Check(PluginCheckResponse, {
       ok: true,
       registered: { actions: [], events: [], tools: [], observers: [], http: 0, media: {} },

@@ -244,7 +244,10 @@ export interface PluginCheckResult {
    * `activate()` tried to register. `declared` is absent for legacy packages
    * without a `contributes.gateway` block; `registered` is always reported.
    * Within `declared`, an absent plane is unbounded while an explicit `[]` is a
-   * zero bound — see `PluginCheckDeclared`.
+   * zero bound — except `media.modalities`, which has no reachable zero bound:
+   * an omitted manifest list is what renders as `[]` (unbounded), and an
+   * explicit empty list is rejected at manifest validation. See
+   * `PluginCheckDeclared`.
    */
   declared?: PluginCheckDeclared;
   registered?: PluginCheckRegistered;
