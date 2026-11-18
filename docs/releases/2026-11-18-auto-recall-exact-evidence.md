@@ -1,7 +1,7 @@
 # 2026-11-18 · Auto Recall 精确证据准入与完整滚动窗口
 
 - **分支**：`main`（未 push）
-- **基线**：`bc7d6e7d1`；Task 4 派发 HEAD `0a53e3207`
+- **版本**：gateway **5.1.0**（schemaEpoch 1）；基线 `bc7d6e7d1`；Task 4 派发 HEAD `0a53e3207`；docs 交付 `7abefa364`
 - **规格 / 排查**：`docs/research/2026-11-18-auto-recall-fok-divergence.md`
 - **计划**：`docs/superpowers/plans/2026-11-18-auto-recall-exact-evidence.md`
 - **实现与复核**：`gateway/volcengine/deepseek-v4.1-flash` 子代理逐任务实现；每任务独立同模型 reviewer 审查（1–2 轮 fix）；Task 4 由新执行者独立跑全量门禁、构建/热重启与 live before/after。
@@ -14,7 +14,7 @@
 | 1 | `d025e33e0` `3faba895b` `1fe118dc5` | 固定 40 条 personal-recall 评测集、runner、契约测试与基线 |
 | 2 | `bbea0b0b1` `9e42f33b7` `5d69cf0cd` | 确定性精确证据准入（`recall/exact-evidence.ts` + route 接线） |
 | 3 | `8600a1370` `f1bcd5bd1` | snapshot 滚动窗口读 active+archive；helper 缺失时 fail-loud |
-| 4 | 本条提交 | 验证、live before/after、架构现状与交付记录 |
+| 4 | `7abefa364` | 验证、live before/after、架构现状与交付记录 |
 
 ## 根因（摘要）
 
@@ -44,27 +44,37 @@ TDD：三个任务都先观察 RED（模块不存在 / 抑制未解除 / 热表�
 - 定向：**76 suites / 549 tests，549 passed，0 failed**（`tests/unit/recall` 全目录 + eval runner + recall 路由/指令 + T1 archive identity + session-recall-hook + pinned + recall-context + lead topic-recall）。
 - 新测试单独复跑：**3 suites / 53 tests，53 passed**。
 - Gateway 全量 `npm test -- --forceExit`：**1038 suites，8291 passed，2 skipped，0 failed**（`2 skipped` 为仓库既有）。
-- `npm run build`（gateway）：**通过**；热重启令牌 `target=gateway, action=restart, commit=0a53e3207..., delayMs=5000`；**pid 28300 → 60752**，`/health` `status=ok`，`last-restart.json` 记录同 commit，令牌已消费。
+- `npm run build`（gateway）：**通过**；热重启令牌 `target=gateway, action=restart, commit=0a53e3207..., delayMs=5000`；**pid 28300 → 60752**，`/health` `status=ok`、`gatewayVersion=5.1.0`、`schemaEpoch=1`，`last-restart.json` 记录同 commit，令牌已消费。
 
-## Live before/after（同一 40 条 fixture）
+## Live before/after（同一 40 条 query，1 条期望刷新）
 
-- BEFORE：`C:\Users\15524\AppData\Local\Temp\opencode\personal-recall-before.json`（10:42，pre-Task2 构建）
-- AFTER：`C:\Users\15524\AppData\Local\Temp\opencode\personal-recall-after.json`（12:00，pid 60752）
+- BEFORE：`C:\Users\15524\AppData\Local\Temp\opencode\personal-recall-before.json`（10:42，**旧构建**，pre-Task2）
+- AFTER：`C:\Users\15524\AppData\Local\Temp\opencode\personal-recall-after.json`（**11:59:21 本地**，pid 60752，gateway v5.1.0，HEAD `0a53e3207`）
 - 命令：`node evaluation/personal-recall/run.js --out <path>`
 
-| 指标 | BEFORE | AFTER |
+**可比性警告（必读）**：
+
+1. Task 4 派发时旧的 pre-change live build **已不存在**（外部已于 11:44:03 构建、11:44:54 重启到含 Task 2/3 的 dist），所以 **BEFORE 无法在旧 live build 上重采**；BEFORE 是 10:42 的原始产物，AFTER 是新构建。
+2. `exact-recent-turn-texts` 的期望刷新为 `g7u8qu` → active head `uidutw`（`g7u8qu` → superseded `0r8ks9` → superseded `uidutw`）；`uidutw` 创建于 11:04，**该新期望从未有过 pre-change 测量**。BEFORE/AFTER 是**同一 40 条 query 文本、但期望集有 1 条不同**。
+3. 因此本表**不是**同口径代码 A/B：`exact` 分类 REST hit@1 90%→80%、总量 REST 60%→60% 都受这条口径变化影响，不能当作代码回归或无变化。
+4. 可作因果归因的增量只有 **4 条 exact AUTO 准入**（且无正向条目反向退化），由 `arbiter-samples.jsonl` 的 post-admission `zone=inject` 与四个场景 body 佐证。
+
+| 指标 | BEFORE（旧构建） | AFTER（新构建） |
 |---|---:|---:|
 | REST hit@1 / hit@3 / MRR | 60.0% / 73.3% / 0.656 | 60.0% / 73.3% / 0.656 |
 | AUTO hit（注入证据） | 46.7%（14/30） | **60.0%（18/30）** |
 | AUTO anchor rank@1 | 12/30 | 13/30 |
 | 有 rank 时平均 anchor rank | 1.29 | 1.39 |
 | false injection（10 negative） | 2/10（20%） | 2/10（20%） |
-| stale injection（`must_exclude`） | 0 | 0 |
+| stale injection（控制集 10→11 条） | 0 | 0（非同控制集，见下） |
 | entrypoint agreement | 73.3%（22/30） | **86.7%（26/30）** |
-| REST p50 / p95 | 84 / 92 ms | 103 / 127 ms |
-| AUTO p50 / p95 | 248 / 411 ms | 307 / 436 ms |
+| REST p50 / p95（max） | 84 / 92（93）ms | 103 / 127（**523**）ms |
+| AUTO p50 / p95（max） | 248 / 411（581）ms | 307 / 436（**604**）ms |
 
-分类（AFTER）：`current-state` auto 60% 不变；`exact` auto **60%→100%**（REST hit@1 90%→80%，见 fixture 刷新）；`implicit` auto 20% 不变；`negative` false 20% 不变。
+- 延迟是同一台机器、同一时段但**未隔离负载**的测量（同时有构建、文档、探针与后台管线）；523/604ms 的 max 是单次抖动，不能当作精确扫描的固定成本。
+- stale 的 `0→0` 不是同一控制集：刷新把 `g7u8qu` 加进 `must_exclude`（10→11）。准确解释是**结构性 0**——`resolveSupersededHeads` 会把 superseded 命中重写到链头，旧 id 本就不可返回；它只证明没有绕过该重写，不证明抑制策略变严。
+
+分类（AFTER）：`current-state` auto 60% 不变；`exact` auto **60%→100%**（同 10 条 query、1 条期望刷新；REST hit@1 90%→80% 属口径变化，非同口径代码回归）；`implicit` auto 20% 不变；`negative` false 20% 不变。
 
 逐条变化（BEFORE→AFTER）：
 
@@ -73,7 +83,8 @@ TDD：三个任务都先观察 RED（模块不存在 / 抑制未解除 / 热表�
 - `exact-graph-commit`：AUTO miss→hit，rank1。
 - `exact-note-board-budget`：AUTO miss→hit，rank2。
 - `implicit-unattended-background`：REST rank2→rank1（AUTO 仍 miss）。
-- 无正向条目从 hit 退化为 miss；新增 `REST hit@3 && AUTO miss` 仍剩 4 条，全部是 implicit paraphrase。
+- `exact-recent-turn-texts`（期望刷新条目，非纯增量）：AFTER REST rank 1→2、AUTO anchor rank 1→2；等价的合法 owner `nl2po5`（"snapshot 只读热表致窗口塌缩"）排第一，目标 `uidutw` 第二。该 entry 的排序确实后移，不能只记增益。
+- 按各自（含刷新后的）期望统计，无正向条目从 hit 退化为 miss；剩余 `REST hit@3 && AUTO miss` 4 条，全部是 implicit paraphrase。
 
 ### 四个原始场景（AFTER，直接读 `/api/recall/context` body）
 
@@ -90,11 +101,13 @@ TDD：三个任务都先观察 RED（模块不存在 / 抑制未解除 / 热表�
 
 `exact-recent-turn-texts`：`must_include` `mem_1794966028575_g7u8qu` → `mem_1794971043993_uidutw`；旧 id 移入 `must_exclude` 作为 stale 对照。链条：`g7u8qu` → superseded by `0r8ks9` → superseded by active head `uidutw`（同一 R1/R3 事实族，保留 `recentTurnTexts` / `readTurnRows` / `listTurns` 锚）。检索会把旧 id 重写到链头，旧期望永远无法返回。README 记录 refresh log，runner 测试新增链头/旧 id 断言。其它 39 条期望未改。
 
+**该刷新对可比性的影响**：`uidutw` 创建于 11:04，晚于 10:42 的 BEFORE 运行，所以**新期望从未有过 pre-change 测量**；旧 live build 又已在 Task 4 派发前被外部替换。因此「同一 40 条 query」不等于同一期望集，相关 REST/AUTO 比率不能当作纯代码 delta（见 Live before/after 的可比性警告）。
+
 ## Snapshot 窗口证据（读取修复）
 
-只读 DB + 编译后 helper（`recentTurnTextsFromDb`，db 包装与 `GatewayDatabase.listSessionTurns`/`readTurnRows` 同 SQL）：
+只读 DB + 编译后 helper（`recentTurnTextsFromDb`，db 包装与 `GatewayDatabase.listSessionTurns`/`readTurnRows` 同 SQL）。**测量时刻 2026-11-18T04:02Z**（gateway **v5.1.0**，pid 60752，HEAD `0a53e3207`）。表里的「热表行 / 归档行」是**时间相关**计数：抽取/压缩还会继续把行从 `t1_observations` 搬到 `t1_archive`，因此这些数字是可复现当时状态的快照，不是稳定常量。
 
-| session | 逻辑轮 / 热表行 / 归档行 | 新窗口（最近 4 轮） | 旧热表窗口 |
+| session | 逻辑轮 / 热表行 / 归档行（04:02Z） | 新窗口（最近 4 轮） | 旧热表窗口 |
 |---|---|---|---|
 | `ses_e7444718cffeVJ3eJOTAReq8F0` | 182 / 14 / 1484 | 4 texts，15 chars（`如何修复 修 让子代理来 继续`） | 0 texts（空查询） |
 | `ses_e757f19d7ffeHwTJPmS4NhuBOY` | 113 / 0 / 1911 | 4 texts，25 chars（`批准设计 native 修 minors 梳理进度`） | 0 texts |
@@ -114,10 +127,10 @@ TDD：三个任务都先观察 RED（模块不存在 / 抑制未解除 / 热表�
 
 ## 尚未解决（不声称整体质量完成）
 
-1. **100ms 契约**：AFTER AUTO p50/p95 = 307/436ms，仍远超插件 100ms abort；本轮同机负载未隔离，不能把 +59ms 全部归因于精确扫描，需独立性能切片（先建 16k 真实语料端点基线，再谈工作预算）。
+1. **100ms 契约**：AFTER AUTO p50/p95 = 307/436ms（max 604ms），仍远超插件 100ms abort；本轮同机负载未隔离，不能把 +59ms p50 全部归因于精确扫描，需独立性能切片（先建 16k 真实语料端点基线，再谈工作预算）。
 2. **尾部弱相关**：`temporalNeighbors.presentation` 的 `↳` 邻居与 BM25 2–3 名仍在；属呈现/候选池问题。
 3. **FOK 观测混合**：`snapshot_build` 与真实 injection 都写 `inj` 样本，准入效果暂不能用 FOK 率校准。
 4. **snapshot 自然刷新不可观测**（上文），以及 post-restart 构建为何未完成未知。
 5. **implicit 覆盖**：4 条 paraphrase 仍 `REST hit@3 && AUTO miss`；精确准入按设计不覆盖普通词面重叠。
-6. **Exact 分类 REST hit@1 回落**是 fixture 刷新的度量口径变化，不是代码回归；但说明该 entry 的 REST 排序仍靠后（rank2）。
+6. **BEFORE/AFTER 非同口径**：旧 live build 在 Task 4 派发前已被外部替换，BEFORE 无法重采；`exact-recent-turn-texts` 的期望刷新（`g7u8qu`→`uidutw`）使 exact REST hit@1 90%→80% 只是口径变化，且该 entry 的 REST/AUTO rank 都从 1 后移到 2（`nl2po5` 第一）。不要把总量 60%→60% 读成同口径代码无变化。
 7. 本切片之外的其他会话未提交改动（`adapters/opencode` 与 3 个 gateway 测试）**未纳入本提交**，也未回滚。

@@ -172,23 +172,33 @@ opencode server 进程                    Gateway 进程
 - **滚动窗口完整化（P2）**：`recentTurnTextsFromDb(db, sessionID, maxTurns)`（`gateway/src/recall/snapshot-builder.ts`）用 `listSessionTurns`（`t1_turns`）+ `readTurnRows`（`t1_archive ∪ t1_observations`）取最近 `maxTurns` 个逻辑轮的 `user_input`/`assistant_reply`（旧→新）；kernel 的防抖快照刷新改走该 helper，并在 helper export 缺失时 `log.warn`（debounced catch 会吞掉构建异常，不 warn 就只剩静默停摆）。T1 抽取/归档后，滚动窗口不再塌成最新一条短指令。
 - **FOK 证据仍不混用**：边界实时门继续用 BM25 比值，snapshot 继续用 reranker 概率；精确准入只是「比值门之外的确定性旁路」，没有把两套阈值合并。
 
-**固定 40 条 personal-recall 的实测（2026-11-18，`evaluation/personal-recall/`，同一 fixture；口径见下）**
+**固定 40 条 personal-recall 的实测（2026-11-18，`evaluation/personal-recall/`，同一 40 条 query、1 条期望刷新）**
 
-| 指标 | 变更前（10:42 artifact） | 变更后（12:00 artifact） |
+**可比性前提（不要当同口径代码 A/B）**：
+
+- Task 4 派发时，旧的 pre-change live build **已不存在**（外部在 11:44 构建、11:44:54 重启，dist 已含 Task 2/3），因此 **BEFORE 无法在旧 live build 上重采**。BEFORE 是 10:42 的原始产物（旧构建，pre-Task2），AFTER 是新构建（pid 60752）。
+- `exact-recent-turn-texts` 的期望在基线之后从 `g7u8qu` 刷新为 active head `uidutw`（g7u8qu → 0r8ks9 → uidutw）；`uidutw` 创建于 11:04，**新期望从未有过 pre-change 测量**。所以 BEFORE/AFTER 是**同一 40 条 query 文本、但有一组不同的期望**。
+- 因此 `exact` 分类 REST hit@1 90%→80%、以及总量 REST 60%→60% **不能读作同口径的代码回归/无变化**：前者来自期望刷新（旧 id 只能被重写到链头），后者的分母里包含这一条口径变化。
+- 唯一可作因果归因的增量是 **4 条 exact AUTO 准入**（hit→miss 的反向为零），并有 `arbiter-samples.jsonl` 的 `zone=inject`（精确准入之后）与四个场景 body 佐证；`exact` AUTO 60%→100% 建立在同一组 10 条 query、仅 1 条期望更新的前提下。
+
+| 指标 | BEFORE（10:42 artifact，旧构建） | AFTER（11:59:21，pid 60752，gateway v5.1.0） |
 |---|---|---|
 | REST hit@1 / hit@3 / MRR | 60.0% / 73.3% / 0.656 | 60.0% / 73.3% / 0.656 |
 | AUTO hit（注入证据） | 46.7%（14/30） | **60.0%（18/30）** |
 | AUTO anchor rank@1 | 12/30 | 13/30 |
 | 有 rank 时的平均 anchor rank | 1.29 | 1.39 |
 | false injection（negative 10 条） | 2/10（20%） | 2/10（20%，同一组 7 个无关指针） |
-| stale injection（`must_exclude`） | 0 | 0 |
+| stale injection（`must_exclude`，控制集 10→11 条） | 0 | 0（非同控制集，见下） |
 | entrypoint agreement | 73.3%（22/30） | **86.7%（26/30）** |
-| REST p50 / p95 | 84 / 92 ms | 103 / 127 ms |
-| AUTO p50 / p95 | 248 / 411 ms | 307 / 436 ms |
+| REST p50 / p95（max） | 84 / 92（93）ms | 103 / 127（**523**）ms |
+| AUTO p50 / p95（max） | 248 / 411（581）ms | 307 / 436（**604**）ms |
+
+- 延迟列是同一台机器、同一时段但不是隔离负载的测量（Task 4 同时跑构建/文档/探针）；max 的 523/604ms 是单次抖动，不能直接当作精确扫描成本。
 
 - 新增的 4 个 AUTO 命中就是排查里的精确分叉案例：`5cd9885f5`（rank1）、`Proactive Topic Recall 主题工具设计`（rank2）、图扩展 commit、`NOTE_BOARD_BUDGET`；`检索路径 parity...` 保持命中。`negative` 冰岛式无答案查询保持 `no-memory`、无 recall 本体。
 - 剩余 `REST hit@3 && AUTO miss` 的 4 条全部是 `implicit`  paraphrase（field-passing / multisession-gap / unattended-background / live-index-overwrite）：精确准入按设计不覆盖普通词面重叠，这类需要候选池/呈现策略另案处理。
-- `exact` 分类 REST hit@1 由 90%→80% 是 **fixture 主动刷新**的结果，不是代码回归：原目标 `g7u8qu` 在基线之后被 `0r8ks9`、再被 active head `uidutw` supersede，检索只会把旧 id 重写到链头，旧期望永远拿不到；刷新只替换这一个 id 并把旧 id 放进 `must_exclude` 做 stale 对照。
+- `exact` 分类 REST hit@1 由 90%→80% 是 **期望刷新**的结果，不是同口径代码回归：原目标 `g7u8qu` 在基线之后被 `0r8ks9`、再被 active head `uidutw` supersede，检索只会把旧 id 重写到链头，旧期望永远拿不到；刷新只替换这一个 id 并把旧 id 放进 `must_exclude` 做 stale 对照。同一 entry 的 AFTER 明细：`exact-recent-turn-texts` REST rank 1→2、AUTO anchor rank 1→2——等价的合法 owner `nl2po5`（"snapshot 只读热表致窗口塌缩"）排第一，目标 `uidutw` 第二；所以这不是只报增益，该 entry 的排序确实后移。
+- stale injection 的 `0→0` **不是同一控制集比较**：刷新把 `g7u8qu` 加入 `must_exclude`，控制集 10→11 条。准确的解释是结构性 0——检索的 `resolveSupersededHeads` 会把 superseded 命中重写到链头，旧 id 本来就不可能出现；这项指标只能证明「没有绕过该重写」，不是「抑制策略变严」。
 - 边界 AUTO 延迟仍远超 100ms 契约（见「未解决」），所以「自动回合真的看到」仍取决于插件 100ms abort 是否触发。
 
 **未解决 / 未声称**
@@ -196,7 +206,7 @@ opencode server 进程                    Gateway 进程
 - 100ms 契约：本轮 AFTER 的 AUTO p50/p95 为 307/436ms，比 BEFORE 更慢（同机其他负载未隔离，不能全部归因于精确扫描）；插件侧 100ms abort 仍可能整块吞掉 recall，需独立性能切片。
 - 尾部弱相关仍来自候选池与 `temporalNeighbors.presentation` 的 `↳` 邻居，未在本切片重设计。
 - FOK 观测仍混合 snapshot build 与真实 injection（R6/P4），暂不能用它校准准入效果。
-- snapshot 自然刷新：重启后 5 分钟内没有观测到新的 `snapshot built`/kv 行（详见 release note），因此本次不声称 snapshot serving 已在真实回合生效；只声称读取 primitive 已有单测 + 只读 helper 探针证据。
+- snapshot 自然刷新：重启后 5 分钟内没有观测到新的 `snapshot built`/kv 行（详见 release note），因此本次不声称 snapshot serving 已在真实回合生效；只声称读取 primitive 已有单测 + 只读 helper 探针证据。探针测量于 2026-11-18T04:02Z（gateway v5.1.0，pid 60752，HEAD `0a53e3207`），快照探针里的「热表行 / 归档行」是**时间相关**的计数（压缩/抽取会继续搬动行），不是稳定常量。
 
 ### 读路径脑对齐切片（R1–R8）交付状态
 
