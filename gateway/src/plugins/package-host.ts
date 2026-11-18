@@ -177,7 +177,23 @@ export interface PluginCheckRegistered {
 /** Mutable accumulator handed to a probe activation. */
 interface PluginCheckInventory {
   registered: PluginCheckRegistered;
+  /** Set once the host `activate()` returned; a failed check reports `false`. */
+  evaluated: boolean;
 }
+
+/**
+ * Stable reason a check answered `ok: false`.
+ *
+ * Consumers (CLI, CI, agents) switch on this instead of matching `error` prose:
+ * the value is always one of these literals, never raw error text.
+ */
+export type PluginCheckFailureCode =
+  | 'manifest_invalid'
+  | 'entry_missing'
+  | 'identity_mismatch'
+  | 'contribution_bound'
+  | 'activation_failed'
+  | 'worker_unavailable';
 
 /** Result of an offline candidate check (nothing is published). */
 export interface PluginCheckResult {
@@ -213,6 +229,17 @@ export interface PluginCheckResult {
   kind?: 'trusted' | 'untrusted';
   permissions?: string[];
   error?: string;
+  /**
+   * Present only when `ok` is false: the stable failure reason. A successful
+   * check never carries a code (there is nothing to classify).
+   */
+  code?: PluginCheckFailureCode;
+  /**
+   * Whether activation was actually evaluated: `true` when the host
+   * `activate()` returned (always true on success), `false` for every failure —
+   * including those that failed before any package code ran.
+   */
+  evaluated?: boolean;
 }
 
 export interface PluginRemoveResult {
@@ -271,6 +298,31 @@ interface PackageFailure {
 function describeError(err: unknown): string {
   if (err instanceof Error) return err.message || err.name;
   return String(err);
+}
+
+/** Phase the offline check had reached when it failed. */
+type PluginCheckStage = 'manifest' | 'entry' | 'activation';
+
+/**
+ * Maps a failed check onto the stable enum.
+ *
+ * Only structural signals are trusted: the stage the check had reached, plus
+ * the three prefixes this module owns (`name mismatch:`,
+ * `invalid contributions:`, `worker_unavailable:`). Message tails are
+ * deliberately never matched, so a reworded error cannot change the code.
+ *
+ * Everything else raised while activating is a plain `activation_failed` —
+ * that is the honest answer for a manifest shape, host range or contribution
+ * factory the package got wrong at runtime.
+ */
+function classifyCheckFailure(stage: PluginCheckStage, err: unknown): PluginCheckFailureCode {
+  if (stage === 'manifest') return 'manifest_invalid';
+  if (stage === 'entry') return 'entry_missing';
+  const message = describeError(err);
+  if (message.startsWith('name mismatch:')) return 'identity_mismatch';
+  if (message.startsWith('invalid contributions:')) return 'contribution_bound';
+  if (message.startsWith('worker_unavailable:')) return 'worker_unavailable';
+  return 'activation_failed';
 }
 
 function hasUiSlots(ui: ActivatedContributions['ui']): boolean {
@@ -874,10 +926,14 @@ export class PluginHost {
     let packageDir: string | undefined;
     let declared: PluginCheckDeclared | undefined;
     let warnings: string[] = [];
+    // Where the check currently is: the only stage signal failure
+    // classification trusts (see `classifyCheckFailure`).
+    let stage: PluginCheckStage = 'manifest';
     // Filled by the activation below; a candidate that never loads reports an
     // empty inventory instead of omitting the field.
     const inventory: PluginCheckInventory = {
       registered: { actions: [], events: [], tools: [], observers: [], http: 0 },
+      evaluated: false,
     };
     try {
       const stat = fs.statSync(pkgDir);
@@ -889,9 +945,13 @@ export class PluginHost {
           throw new Error('plugin.json is missing "name"');
         }
         name = manifest.name;
+        stage = 'entry';
         mainFile = path.join(pkgDir, manifest.main ?? 'index.js');
         if (!fs.existsSync(mainFile)) throw new Error(`main file not found: ${manifest.main ?? 'index.js'}`);
         packageDir = pkgDir;
+        // Only the physical entry resolution above is `entry`-stage; the
+        // normalization below judges the manifest again.
+        stage = 'manifest';
       } else if (!stat.isFile()) {
         throw new Error('candidate is not a file or directory');
       }
@@ -900,6 +960,10 @@ export class PluginHost {
       const parsedManifest = manifest === undefined ? null : parsePackageManifest(manifest);
       declared = describeDeclared(parsedManifest?.manifest?.contributes?.gateway);
       warnings = parsedManifest?.warnings ?? [];
+      // A manifest the normalizer rejects could never activate; failing here
+      // keeps the classification at `manifest_invalid` instead of blaming
+      // activation. The message is exactly the one `activate()` would throw.
+      if (parsedManifest && !parsedManifest.ok) throw new Error(parsedManifest.errors.join('; '));
       const desc: PackageDescriptor = {
         name,
         mainFile,
@@ -907,8 +971,13 @@ export class PluginHost {
         ...(packageDir !== undefined ? { pkgDir: packageDir } : {}),
       };
       const bag = this.createBag();
+      stage = 'activation';
       try {
         const activation = await this.activate(desc, bag, true, inventory);
+        // `activate()` returned: the candidate was really evaluated, even when
+        // it legitimately registered nothing. Only a returned activation sets
+        // this, so `evaluated:false` can never mean "registered an empty set".
+        inventory.evaluated = true;
         // Web surfaces are the only slot with on-disk assets; activation already
         // validated them, so the summary is authoritative for the install preview.
         const webSurfaces = activation.activated.ui.webSurfaces ?? [];
@@ -922,6 +991,7 @@ export class PluginHost {
           ...(manifest?.permissions !== undefined ? { permissions: manifest.permissions } : {}),
           ...(declared !== undefined ? { declared } : {}),
           registered: inventory.registered,
+          evaluated: true,
           ...(warnings.length > 0 ? { warnings } : {}),
         };
         if (webSurfaces.length > 0) {
@@ -943,6 +1013,8 @@ export class PluginHost {
         name,
         version: manifest?.version,
         error: describeError(err),
+        code: classifyCheckFailure(stage, err),
+        evaluated: inventory.evaluated,
         ...(declared !== undefined ? { declared } : {}),
         registered: inventory.registered,
         ...(warnings.length > 0 ? { warnings } : {}),

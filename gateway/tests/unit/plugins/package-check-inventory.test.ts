@@ -106,6 +106,144 @@ module.exports = { name: 'emptybound', async activate() { return { actions: { pi
 });
 
 /**
+ * Failure classification: `code` is the stable, machine-readable half of a
+ * failed check (agents and CI switch on it instead of matching prose), and
+ * `evaluated` says whether `activate()` ever completed. `code` exists only on
+ * failures; a successful check always reports `evaluated: true`.
+ */
+describe('PluginHost.checkPackage failure classification', () => {
+  it('classifies a directory without plugin.json as manifest_invalid', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-code-'));
+    const root = path.join(dir, 'no-manifest');
+    fs.mkdirSync(root, { recursive: true });
+    fs.writeFileSync(path.join(root, 'index.js'), 'module.exports = { name: "no-manifest" };\n');
+    const result = await check(root);
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe('manifest_invalid');
+    expect(result.evaluated).toBe(false);
+  });
+
+  it('classifies a manifest the normalizer rejects as manifest_invalid', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-code-'));
+    const root = writePackage(dir, {
+      name: 'badapi', apiVersion: 3, kind: 'trusted', permissions: ['actions'],
+    }, 'module.exports = { name: "badapi" };\n');
+    const result = await check(root);
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe('manifest_invalid');
+    expect(result.evaluated).toBe(false);
+    expect(result.error).toContain('unsupported apiVersion: 3');
+  });
+
+  it('classifies a missing main file as entry_missing', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-code-'));
+    const root = writePackage(dir, {
+      name: 'gone', apiVersion: 2, kind: 'trusted', permissions: ['actions'], main: 'missing.js',
+    }, 'module.exports = { name: "gone" };\n');
+    const result = await check(root);
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe('entry_missing');
+    expect(result.evaluated).toBe(false);
+    expect(result.error).toContain('main file not found');
+  });
+
+  it('classifies an exported name that differs from the manifest as identity_mismatch', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-code-'));
+    const root = writePackage(dir, {
+      name: 'declared', apiVersion: 2, kind: 'trusted', permissions: ['actions'],
+    }, `
+module.exports = { name: 'other', async activate() {
+  return { actions: { ping: { handler: () => null } } };
+} };
+`);
+    const result = await check(root);
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe('identity_mismatch');
+    expect(result.evaluated).toBe(false);
+    expect(result.error).toContain('name mismatch:');
+  });
+
+  it('classifies an out-of-bound registration as contribution_bound', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-code-'));
+    const root = writePackage(dir, {
+      name: 'bound', apiVersion: 2, kind: 'trusted', permissions: ['actions'],
+      contributes: { gateway: { actions: ['ping'] } },
+    }, `
+module.exports = { name: 'bound', async activate() {
+  return { actions: {
+    ping: { handler: () => null },
+    pong: { handler: () => null },
+  } };
+} };
+`);
+    const result = await check(root);
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe('contribution_bound');
+    expect(result.evaluated).toBe(false);
+    expect(result.declared?.actions).toEqual(['ping']);
+    // The rejected registration stays visible: the diff is the author's fix.
+    expect([...(result.registered?.actions ?? [])].sort()).toEqual(['ping', 'pong']);
+  });
+
+  it('classifies a throwing activate as activation_failed', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-code-'));
+    const root = writePackage(dir, {
+      name: 'boom', apiVersion: 2, kind: 'trusted', permissions: ['actions'],
+      contributes: { gateway: { actions: ['ping'] } },
+    }, `
+module.exports = { name: 'boom', async activate() { throw new Error('kaput'); } };
+`);
+    const result = await check(root);
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe('activation_failed');
+    expect(result.evaluated).toBe(false);
+    expect(result.error).toBe('kaput');
+  });
+
+  it('classifies an unavailable worker as worker_unavailable', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-code-'));
+    const root = writePackage(dir, {
+      name: 'walled', apiVersion: 2, kind: 'untrusted', permissions: ['actions'],
+    }, 'module.exports = { name: "walled" };\n');
+    const result = await check(root);
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe('worker_unavailable');
+    expect(result.evaluated).toBe(false);
+  });
+
+  it('reports evaluated on a clean check and never attaches a code', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-code-'));
+    const root = writePackage(dir, {
+      name: 'fine', apiVersion: 2, kind: 'trusted', permissions: ['actions'],
+      contributes: { gateway: { actions: ['ping'] } },
+    }, `
+module.exports = { name: 'fine', async activate() {
+  return { actions: { ping: { handler: () => null } } };
+} };
+`);
+    const result = await check(root);
+    expect(result.ok).toBe(true);
+    expect(result.evaluated).toBe(true);
+    expect(result.code).toBeUndefined();
+    expect(Object.prototype.hasOwnProperty.call(result, 'code')).toBe(false);
+  });
+
+  it('keeps evaluated:true when activation legitimately registers nothing', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-code-'));
+    const root = writePackage(dir, {
+      name: 'quiet', apiVersion: 2, kind: 'trusted', permissions: [],
+      contributes: { gateway: { actions: [] } },   // zero bound, nothing registered
+    }, `
+module.exports = { name: 'quiet', usage: { name: 'quiet', async fetch() { return {}; } } };
+`);
+    const result = await check(root);
+    expect(result.ok).toBe(true);
+    expect(result.evaluated).toBe(true);
+    expect(result.registered?.actions).toEqual([]);
+  });
+});
+
+/**
  * The init→check round trip: what `mafw plugin init` writes must be accepted by
  * the same host that judges an install (no fixing up by hand in between).
  */
