@@ -154,7 +154,7 @@ TDD：三个任务都先观察 RED（模块不存在 / 抑制未解除 / 热表�
 1. **100ms 契约**：AFTER AUTO p50/p95 = 307/436ms（max 604ms），仍远超插件 100ms abort。该 AFTER 还是冷启动回暖期（sidecar ready 后 ~16s），不能把 +59ms p50 全部归因于精确扫描；精确扫描本身实测为 16,732 条目 / 180,047 anchor 上冷启首扫 ≈55–61ms、热态 p50 13–22ms、高负载最高 ≈42ms（已 inject 轮次 0ms），必须计入边界预算并持续监控。需要独立性能切片（先建真实 16k 语料端点基线，再谈工作预算）。
 2. **尾部弱相关**：`temporalNeighbors.presentation` 的 `↳` 邻居与 BM25 2–3 名仍在；属呈现/候选池问题。
 3. **FOK 观测混合**：`snapshot_build` 与真实 injection 都写 `inj` 样本，准入效果暂不能用 FOK 率校准。
-4. **snapshot 自然刷新不可观测**（上文），以及 post-restart 构建为何未完成未知。
+4. **snapshot 自然刷新不可观测**（上文，仅为当时观察窗口）——后续只读账本证明 13/13 user turn 均成功构建，并有 6 次 served；此前窗口没有新的 user turn，不是调度缺陷。见 `docs/releases/2026-11-18-bm25-postings-latency.md` 的复核。
 5. **implicit 覆盖**：4 条 paraphrase 仍 `REST hit@3 && AUTO miss`；精确准入按设计不覆盖普通词面重叠。
 6. **BEFORE/AFTER 非同口径**：旧 live build 在 Task 4 派发前已被外部替换，BEFORE 无法重采；`exact-recent-turn-texts` 的期望刷新（`g7u8qu`→`uidutw`）使 exact REST hit@1 90%→80% 只是口径变化，且该 entry 的 REST/AUTO rank 都从 1 后移到 2（`nl2po5` 第一）。不要把总量 60%→60% 读成同口径代码无变化。
 7. 本切片之外的其他会话未提交改动（`adapters/opencode` 与 3 个 gateway 测试）**未纳入本提交**，也未回滚。

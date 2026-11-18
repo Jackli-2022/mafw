@@ -61,6 +61,8 @@ Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约的 `comple
 
 **图扩展通道分离（2026-11-18）**：`searchScored` 的图扩展（PPR 与 legacy hop-greedy）只为**新增的 graph-only 候选**写 `score: 0, graphScore: gs`——它们没有词面证据，只保留图通道，单条最高为 `rerankGraphWeight` 档，因此不可能压过最强字面 seed，主要用于尾部补全；经过归一化后 `nbv` 偏低的弱 seed 仍可能被其超过。已在 `scored` 里的词面候选（包括超出 `candidateCap`、未进 seed 窗口的条目）只追加 `graphScore`，不会被降级成 graph-only。REST `/api/memory/search` 额外显式 `graphExpand: false`：它是原始索引面，排序不随共享 index 上挂的图存储状态漂移（parity 前该路由每请求新建无图 index）；MCP 与 boundary recall 按各自路径消费图扩展。
 
+**BM25 倒排 postings 缓存（2026-11-18）**：`bm25RawScored` 不再为每个 query token 扫描全库，而是懒构建 `term → 物理文档下标` postings 并跨 expansion/FOK pass 复用；按物理文档累加和输出，重复 id 也保持旧 df/N 与逐文档评分。缓存由 `searchVersion`、entries 数组引用和文档文本检查共同失效，覆盖 add/remove 与 in-place cue/title 变化；未来若对 entries 原地 splice/sort/reverse 必须同步失效。冻结 40 query 的 id/顺序/分数保持 40/40 一致；live 40 条 AUTO p50/p95 从 307/436ms 降至 134/230ms，质量指标不变。详见 `docs/releases/2026-11-18-bm25-postings-latency.md`。
+
 ### 压缩
 
 `HarmonicUnitFileStore.write()` 输出 `HarmonicUnit` 并自动：
