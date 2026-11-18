@@ -15,6 +15,7 @@ import { ensureEventLayerSchema } from '../core/events/event-store';
 import { ensureStandingSchema } from '../core/standing/standing-store';
 import { DEFAULT_CONCEPT_ALIASES, expandQueryConcepts } from '../recall/t1-concepts';
 import { actorKind, parseActorQuery, type T1TurnActor } from '../recall/t1-actors';
+import { mergeMemoryReceipt, type MemoryReceipt } from '../recall/receipt';
 import type {
   T1EpisodeBoundary,
   T1EpisodeMember,
@@ -787,6 +788,16 @@ export class GatewayDatabase {
         PRIMARY KEY (session_id, id)
       );
       CREATE INDEX IF NOT EXISTS idx_session_data_parts ON session_data_parts(session_id, message_id, created_at);
+
+      CREATE TABLE IF NOT EXISTS memory_receipts (
+        session_id TEXT NOT NULL,
+        anchor_key TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (session_id, anchor_key)
+      );
+      CREATE INDEX IF NOT EXISTS idx_memory_receipts_session ON memory_receipts(session_id, updated_at DESC);
     `);
 
     ensureEventLayerSchema(this.db);
@@ -3772,6 +3783,79 @@ export class GatewayDatabase {
         ...(detail !== undefined ? { detail } : {}),
       } satisfies PluginAuditRow;
     });
+  }
+
+  upsertMemoryReceipt(input: {
+    sessionId: string;
+    anchorKey: string;
+    receipt: MemoryReceipt;
+  }): MemoryReceipt {
+    const sessionId = String(input?.sessionId ?? '').trim();
+    const anchorKey = String(input?.anchorKey ?? '').trim();
+    const receipt = input?.receipt;
+    if (!sessionId || !anchorKey || !receipt) return receipt;
+
+    const existing = this.db.prepare(
+      'SELECT payload, created_at FROM memory_receipts WHERE session_id = ? AND anchor_key = ?',
+    ).get(sessionId, anchorKey) as { payload?: string; created_at?: string } | undefined;
+
+    let merged = receipt;
+    if (existing?.payload) {
+      try {
+        merged = mergeMemoryReceipt(JSON.parse(existing.payload) as MemoryReceipt, receipt);
+      } catch { /* malformed legacy payload: replace with the fresh receipt */ }
+    }
+
+    this.db.prepare(
+      `INSERT INTO memory_receipts (session_id, anchor_key, payload, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(session_id, anchor_key) DO UPDATE SET
+         payload = excluded.payload,
+         updated_at = excluded.updated_at`,
+    ).run(
+      sessionId,
+      anchorKey,
+      JSON.stringify(merged),
+      existing?.created_at || merged.createdAt,
+      merged.updatedAt,
+    );
+    return merged;
+  }
+
+  listMemoryReceipts(
+    sessionId: string,
+    opts?: { limit?: number },
+  ): Array<{ anchorKey: string; receipt: MemoryReceipt }> {
+    const id = String(sessionId ?? '').trim();
+    if (!id) return [];
+    const limit = Math.max(1, Math.min(500, Math.trunc(opts?.limit ?? 100)));
+    const rows = this.db.prepare(
+      `SELECT anchor_key, payload FROM memory_receipts
+       WHERE session_id = ? ORDER BY updated_at DESC LIMIT ?`,
+    ).all(id, limit) as Array<{ anchor_key: string; payload: string }>;
+
+    const out: Array<{ anchorKey: string; receipt: MemoryReceipt }> = [];
+    for (const row of rows) {
+      try {
+        out.push({ anchorKey: row.anchor_key, receipt: JSON.parse(row.payload) as MemoryReceipt });
+      } catch { /* skip malformed row */ }
+    }
+    return out;
+  }
+
+  pruneMemoryReceipts(sessionId: string, keep = 200): number {
+    const id = String(sessionId ?? '').trim();
+    if (!id) return 0;
+    const n = Math.max(0, Math.trunc(keep));
+    const result = this.db.prepare(
+      `DELETE FROM memory_receipts
+       WHERE session_id = ?
+         AND anchor_key NOT IN (
+           SELECT anchor_key FROM memory_receipts
+           WHERE session_id = ? ORDER BY updated_at DESC LIMIT ?
+         )`,
+    ).run(id, id, n);
+    return result.changes;
   }
 
   close(): void {
