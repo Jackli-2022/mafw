@@ -108,8 +108,8 @@ module.exports = { name: 'emptybound', async activate() { return { actions: { pi
 /**
  * Failure classification: `code` is the stable, machine-readable half of a
  * failed check (agents and CI switch on it instead of matching prose), and
- * `evaluated` says whether `activate()` ever completed. `code` exists only on
- * failures; a successful check always reports `evaluated: true`.
+ * `evaluated` says whether the package ever produced a contribution set (i.e.
+ * whether `registered` is evidence). `code` exists only on failures.
  */
 describe('PluginHost.checkPackage failure classification', () => {
   it('classifies a directory without plugin.json as manifest_invalid', async () => {
@@ -133,6 +133,41 @@ describe('PluginHost.checkPackage failure classification', () => {
     expect(result.code).toBe('manifest_invalid');
     expect(result.evaluated).toBe(false);
     expect(result.error).toContain('unsupported apiVersion: 3');
+  });
+
+  it('classifies a non-string main with the normalizer message, not entry_missing', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-code-'));
+    // `path.join(pkgDir, 123)` throws a Node TypeError, so normalizing before
+    // the entry stage is what keeps this a manifest problem.
+    const root = writePackage(dir, {
+      name: 'mainnum', apiVersion: 2, kind: 'trusted', permissions: ['actions'], main: 123,
+    }, 'module.exports = { name: "mainnum" };\n');
+    const result = await check(root);
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe('manifest_invalid');
+    expect(result.evaluated).toBe(false);
+    expect(result.error).toBe('main must be a relative path inside the package');
+    expect(result.error).not.toContain('main file not found');
+  });
+
+  it('prefers the manifest rejection over an entry rejection', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-code-'));
+    const root = writePackage(dir, {
+      name: 'bothbad', apiVersion: 3, kind: 'trusted', permissions: ['actions'], main: 'missing.js',
+    }, 'module.exports = { name: "bothbad" };\n');
+    const result = await check(root);
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe('manifest_invalid');
+    expect(result.error).toContain('unsupported apiVersion: 3');
+    expect(result.error).not.toContain('main file not found');
+  });
+
+  it('classifies a path that does not exist as candidate_missing', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-code-'));
+    const result = await check(path.join(dir, 'typo'));
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe('candidate_missing');
+    expect(result.evaluated).toBe(false);
   });
 
   it('classifies a missing main file as entry_missing', async () => {
@@ -179,10 +214,65 @@ module.exports = { name: 'bound', async activate() {
     const result = await check(root);
     expect(result.ok).toBe(false);
     expect(result.code).toBe('contribution_bound');
-    expect(result.evaluated).toBe(false);
+    // activate() returned and the rejected set is visible: the check saw the
+    // package's contributions even though it refused them.
+    expect(result.evaluated).toBe(true);
     expect(result.declared?.actions).toEqual(['ping']);
     // The rejected registration stays visible: the diff is the author's fix.
     expect([...(result.registered?.actions ?? [])].sort()).toEqual(['ping', 'pong']);
+  });
+
+  it('classifies undeclared http routes as contribution_bound', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-code-'));
+    const root = writePackage(dir, {
+      name: 'silenthttp', apiVersion: 2, kind: 'trusted', permissions: ['actions'],
+      contributes: { gateway: { http: false } },
+    }, `
+module.exports = { name: 'silenthttp', async activate(ctx) {
+  ctx.http.route('GET', '/x', () => ({ body: 'ok' }));
+  return {};
+} };
+`);
+    const result = await check(root);
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe('contribution_bound');
+    expect(result.evaluated).toBe(true);
+    expect(result.error).toContain('http routes are not declared');
+    // The route is part of the rejected contribution set, so it must be quoted.
+    expect(result.registered?.http).toBe(1);
+  });
+
+  it('classifies a manifest-less package widening http as contribution_bound', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-code-'));
+    // Single-file candidate: no plugin.json, so no declared plane at all.
+    const root = path.join(dir, 'solo.js');
+    fs.writeFileSync(root, `
+module.exports = { name: 'solo', async activate(ctx) {
+  ctx.http.route('GET', '/x', () => ({ body: 'ok' }));
+  return {};
+} };
+`);
+    const result = await check(root);
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe('contribution_bound');
+    expect(result.evaluated).toBe(true);
+    expect(result.error).toContain('packages without plugin.json cannot contribute');
+    expect(result.registered?.http).toBe(1);
+  });
+
+  it('classifies an unresolvable web surface entry as contribution_bound', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-code-'));
+    const root = writePackage(dir, { name: 'badweb' }, `
+module.exports = { name: 'badweb', async activate() {
+  return { ui: { webSurfaces: [{ id: 'main', title: 'Main', entry: 'missing.html' }] } };
+} };
+`);
+    const result = await check(root);
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe('contribution_bound');
+    expect(result.evaluated).toBe(true);
+    expect(result.error).toContain('invalid web surfaces:');
+    expect(result.error).toContain('missing.html');
   });
 
   it('classifies a throwing activate as activation_failed', async () => {

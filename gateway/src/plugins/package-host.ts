@@ -177,7 +177,12 @@ export interface PluginCheckRegistered {
 /** Mutable accumulator handed to a probe activation. */
 interface PluginCheckInventory {
   registered: PluginCheckRegistered;
-  /** Set once the host `activate()` returned; a failed check reports `false`. */
+  /**
+   * Set where the candidate's contribution set is captured (the raw
+   * `activate()` result, or the worker's delivered contributions). A candidate
+   * that never produced one — bad manifest, missing entry, identity mismatch,
+   * throwing `activate()`, unavailable worker — keeps `false`.
+   */
   evaluated: boolean;
 }
 
@@ -188,6 +193,7 @@ interface PluginCheckInventory {
  * the value is always one of these literals, never raw error text.
  */
 export type PluginCheckFailureCode =
+  | 'candidate_missing'
   | 'manifest_invalid'
   | 'entry_missing'
   | 'identity_mismatch'
@@ -235,9 +241,12 @@ export interface PluginCheckResult {
    */
   code?: PluginCheckFailureCode;
   /**
-   * Whether activation was actually evaluated: `true` when the host
-   * `activate()` returned (always true on success), `false` for every failure —
-   * including those that failed before any package code ran.
+   * `true` when the package's `activate()` returned and its contributions were
+   * observed; `false` when the package never produced a contribution set
+   * (bad manifest, missing entry, identity mismatch, throwing `activate()`,
+   * unavailable worker). A failure *after* the set was captured — e.g. a
+   * declared-plane violation — still reports `true`, because `registered` is
+   * real evidence of what the package tried to register.
    */
   evaluated?: boolean;
 }
@@ -301,14 +310,35 @@ function describeError(err: unknown): string {
 }
 
 /** Phase the offline check had reached when it failed. */
-type PluginCheckStage = 'manifest' | 'entry' | 'activation';
+type PluginCheckStage = 'candidate' | 'manifest' | 'entry' | 'activation';
+
+/**
+ * Error prefixes that mean "the declaration bound was violated", not "the
+ * package failed to activate". These are *post*-activation validations: the
+ * contribution set was already observed, so they can never be
+ * `activation_failed`.
+ *
+ * The list is closed and contract-owned: every string here is produced by this
+ * module and pinned by tests, so adding one is a contract change, not a
+ * refactor. Message tails are still never matched.
+ */
+const DECLARED_PLANE_ERROR_PREFIXES = [
+  // buildActivatedContributions() rejected a plane outside `contributes`.
+  'invalid contributions:',
+  // `contributes.gateway.http` is false, but activate() registered routes.
+  'http routes are not declared (contributes.gateway.http is false)',
+  // No plugin.json: tools/observers/http would widen the surface undeclared.
+  'packages without plugin.json cannot contribute ',
+  // Declared web surface whose entry does not resolve on disk.
+  'invalid web surfaces:',
+] as const;
 
 /**
  * Maps a failed check onto the stable enum.
  *
  * Only structural signals are trusted: the stage the check had reached, plus
- * the three prefixes this module owns (`name mismatch:`,
- * `invalid contributions:`, `worker_unavailable:`). Message tails are
+ * the closed prefix set above and the two identity/worker prefixes this module
+ * owns (`name mismatch:`, `worker_unavailable:`). Message tails are
  * deliberately never matched, so a reworded error cannot change the code.
  *
  * Everything else raised while activating is a plain `activation_failed` —
@@ -316,12 +346,15 @@ type PluginCheckStage = 'manifest' | 'entry' | 'activation';
  * factory the package got wrong at runtime.
  */
 function classifyCheckFailure(stage: PluginCheckStage, err: unknown): PluginCheckFailureCode {
+  if (stage === 'candidate') return 'candidate_missing';
   if (stage === 'manifest') return 'manifest_invalid';
   if (stage === 'entry') return 'entry_missing';
   const message = describeError(err);
   if (message.startsWith('name mismatch:')) return 'identity_mismatch';
-  if (message.startsWith('invalid contributions:')) return 'contribution_bound';
   if (message.startsWith('worker_unavailable:')) return 'worker_unavailable';
+  if (DECLARED_PLANE_ERROR_PREFIXES.some((prefix) => message.startsWith(prefix))) {
+    return 'contribution_bound';
+  }
   return 'activation_failed';
 }
 
@@ -927,8 +960,10 @@ export class PluginHost {
     let declared: PluginCheckDeclared | undefined;
     let warnings: string[] = [];
     // Where the check currently is: the only stage signal failure
-    // classification trusts (see `classifyCheckFailure`).
-    let stage: PluginCheckStage = 'manifest';
+    // classification trusts (see `classifyCheckFailure`). Nothing has been
+    // observed yet, so a path that does not resolve is `candidate_missing`
+    // rather than a manifest or activation problem.
+    let stage: PluginCheckStage = 'candidate';
     // Filled by the activation below; a candidate that never loads reports an
     // empty inventory instead of omitting the field.
     const inventory: PluginCheckInventory = {
@@ -936,7 +971,13 @@ export class PluginHost {
       evaluated: false,
     };
     try {
+      // A missing path throws ENOENT here; a socket or device is neither shape
+      // we can check. Both mean "there was no candidate", not "bad package".
       const stat = fs.statSync(pkgDir);
+      if (!stat.isDirectory() && !stat.isFile()) {
+        throw new Error('candidate is not a file or directory');
+      }
+      stage = 'manifest';
       if (stat.isDirectory()) {
         const manifestPath = path.join(pkgDir, 'plugin.json');
         if (!fs.existsSync(manifestPath)) throw new Error('plugin.json not found');
@@ -945,25 +986,23 @@ export class PluginHost {
           throw new Error('plugin.json is missing "name"');
         }
         name = manifest.name;
+        // Normalize before touching the entry. The normalizer judges the
+        // manifest itself (`"main": 123`, unsupported apiVersion), and letting
+        // the entry stage run first would turn those into a Node type error or
+        // a bogus `entry_missing`. It also guarantees `declared`/`warnings`
+        // quote exactly the bound activation enforces, including on a failure
+        // that happens later.
+        const parsedManifest = parsePackageManifest(manifest);
+        declared = describeDeclared(parsedManifest.manifest?.contributes?.gateway);
+        warnings = parsedManifest.warnings ?? [];
+        if (!parsedManifest.ok) throw new Error(parsedManifest.errors.join('; '));
         stage = 'entry';
         mainFile = path.join(pkgDir, manifest.main ?? 'index.js');
+        // A `main` that exists but is a directory or an unreadable file passes
+        // this check and surfaces as `activation_failed` from `require()`.
         if (!fs.existsSync(mainFile)) throw new Error(`main file not found: ${manifest.main ?? 'index.js'}`);
         packageDir = pkgDir;
-        // Only the physical entry resolution above is `entry`-stage; the
-        // normalization below judges the manifest again.
-        stage = 'manifest';
-      } else if (!stat.isFile()) {
-        throw new Error('candidate is not a file or directory');
       }
-      // Reuse the manifest normalizer so the inventory quotes exactly the bound
-      // that activation enforces (defaults and warnings included).
-      const parsedManifest = manifest === undefined ? null : parsePackageManifest(manifest);
-      declared = describeDeclared(parsedManifest?.manifest?.contributes?.gateway);
-      warnings = parsedManifest?.warnings ?? [];
-      // A manifest the normalizer rejects could never activate; failing here
-      // keeps the classification at `manifest_invalid` instead of blaming
-      // activation. The message is exactly the one `activate()` would throw.
-      if (parsedManifest && !parsedManifest.ok) throw new Error(parsedManifest.errors.join('; '));
       const desc: PackageDescriptor = {
         name,
         mainFile,
@@ -974,10 +1013,8 @@ export class PluginHost {
       stage = 'activation';
       try {
         const activation = await this.activate(desc, bag, true, inventory);
-        // `activate()` returned: the candidate was really evaluated, even when
-        // it legitimately registered nothing. Only a returned activation sets
-        // this, so `evaluated:false` can never mean "registered an empty set".
-        inventory.evaluated = true;
+        // The success result is `evaluated: true` by construction: `activate()`
+        // returned, so both activation paths captured a contribution set.
         // Web surfaces are the only slot with on-disk assets; activation already
         // validated them, so the summary is authoritative for the install preview.
         const webSurfaces = activation.activated.ui.webSurfaces ?? [];
@@ -1410,9 +1447,14 @@ export class PluginHost {
     try {
       const ready = await worker.start();
       const raw = ready.contributions ?? {};
+      // The worker delivered its contribution set: from here on the check has
+      // observed what the package registers, even if the host rejects it.
       // Untrusted packages cannot own HTTP routes (the worker protocol does not
       // expose `ctx.http`), so the recorded count stays 0.
-      if (inventory) inventory.registered = registeredFromRaw(raw, 0);
+      if (inventory) {
+        inventory.registered = registeredFromRaw(raw, 0);
+        inventory.evaluated = true;
+      }
       const unsupported = Object.keys(raw).filter(
         (key) => raw[key] !== undefined && key !== 'actions' && key !== 'events',
       );
@@ -1530,8 +1572,14 @@ export class PluginHost {
     }
 
     // Record what the candidate tried to register before validation can drop
-    // it: a rejected registration is the half of the diff an author needs.
-    if (inventory) inventory.registered = registeredFromRaw(raw, httpRecorder.entries.length);
+    // it: a rejected registration is the half of the diff an author needs. This
+    // is also the moment the check becomes `evaluated`: the package produced a
+    // contribution set, so every later failure is a declared-plane verdict, not
+    // a "never ran" one.
+    if (inventory) {
+      inventory.registered = registeredFromRaw(raw, httpRecorder.entries.length);
+      inventory.evaluated = true;
+    }
 
     // `contributes.gateway.http` is a static opt-out of the http plane; routes
     // are only observable after activate() returns, so the bound is checked once
