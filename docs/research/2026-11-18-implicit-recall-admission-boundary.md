@@ -80,6 +80,23 @@
 - topic-shift 时不会把旧主题带入；
 - 100ms fallback 不重新引入昂贵模型。
 
+## 附：只改排序的安全尝试也未保留
+
+在拒绝放宽准入后，又尝试了“连续短语支持因子”：对 BM25×energy×salience 后的 recallK 窗口加最多 +50%，不进入 raw FOK 输入。离线 40 条仅把 `current-mcp-transport` 从 miss 变 hit：
+
+- AUTO 18→19，current-state 6→7；
+- exact/implicit/false/stale/agreement 不变。
+
+review 仍否决该实现，原因不是正确性，而是收益/风险不成立：
+
+- 只在短独立问题上有明显份额；真实长 turn 中连续短语占比接近 0，功能基本失效；
+- 4 字 CJK bag 本身即可触发接近满额 boost，会放大本切片试图修复的 unigram 偏差；
+- 长 query 计算为最坏 O(|q|²)，病理输入实测可达数十 ms；
+- 它改变 downstream lexical-support 所见的顺序，因此“admission zone 完全不变”的声明过强；
+- 为一个 fixture 行引入无开关的全局排序因子不划算。
+
+该实现及测试未提交，已撤回。当前生产仍是词级 veto 版本，AUTO 18/30、false 0/10。
+
 ## 当前保留状态
 
 - 生产仍是词级 veto 版本，false injection 0/10。
