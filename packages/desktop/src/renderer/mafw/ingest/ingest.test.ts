@@ -141,6 +141,23 @@ describe('message ingestion', () => {
     expect(parts.u1[0].text).not.toContain('[[turn')
   })
 
+  test('strips the latest reminder from user display text', () => {
+    const raw = '<latest-reminder>2026-11-18 周三 14:32 · Asia/Shanghai · 上海 · 中文</latest-reminder>\n\nhello'
+    const { messages, parts } = ingestHistoryPage(
+      [{
+        id: 'u1',
+        sessionID: 's1',
+        role: 'user',
+        text: raw,
+        time: { created: 1 },
+        content: [{ id: 'p1', type: 'text', text: raw }],
+      }],
+      { sessionID: 's1' },
+    )
+    expect(messages[0].text).toBe('hello')
+    expect(parts.u1[0].text).toBe('hello')
+  })
+
   test('strips every memory block tag in any order, not just facts-first', () => {
     const raw = [
       '<deltas>',

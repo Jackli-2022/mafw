@@ -7,6 +7,7 @@ import { canonicalMessageError, type CanonicalMessageError } from "./errors"
 import { canonicalToolPart } from "./parts"
 import { stripVoiceOriginMarker } from "../chat/voice-origin-marker"
 import { extractTurnMarkerKey, stripTurnMarker } from "../chat/turn-marker"
+import { stripLatestReminder } from "../chat/context-reminder"
 
 /** 记忆注入的 XML 块（deltas/patterns/facts/history）只服务模型；展示层剥离。 */
 const INJECTED_BLOCK = /^<(deltas|patterns|facts|history)>[\s\S]*?<\/\1>\s*/i
@@ -28,7 +29,7 @@ export function stripChatModeDirective(text: string): string {
 
 /** 用户消息展示文本：剥离事实注入、语音来源标记与模式指令。 */
 export function stripInjectedUserText(text: string): string {
-  return stripTurnMarker(stripChatModeDirective(stripVoiceOriginMarker(stripInjectedMemoryBlocks(text))))
+  return stripLatestReminder(stripTurnMarker(stripChatModeDirective(stripVoiceOriginMarker(stripInjectedMemoryBlocks(text)))))
 }
 
 export interface IngestedHistoryPage {
