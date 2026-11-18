@@ -16,7 +16,11 @@ not general retrieval quality.
   `queries.json`. The runner never derives expectations from live ranks.
 - The corpus keeps growing and decaying. Before measuring, the runner resolves
   every frozen id through `GET /api/memory/get?id=<6-char tail>` and fails fast
-  with `unknown memory id(s)` if an answer no longer exists.
+  with `unknown memory id(s)` if an answer no longer exists. It also fails with
+  `superseded memory id(s) in must_include` when a frozen answer has been
+  superseded: retrieval rewrites superseded hits to their chain head
+  (`resolveSupersededHeads`), so such an expectation can never be returned.
+  `must_exclude` members are intentionally superseded and are exempt.
 - Re-select a case only when every member of its answer family was legitimately
   superseded/deleted. Prefer replacing the family over relaxing the query; a
   renamed expectation turns the set into a moving target.
@@ -55,11 +59,16 @@ returned.
 - **Near-duplicate families.** The corpus contains multiple memories stating
   the same fact. `implicit-field-passing` has four equivalent statements of the
   addEntry/whitelist field-drop pit; `implicit-worker-transcript` has three
-  statements of the 2026-08-31 transcript-execution conclusion. All are listed.
+  statements of the 2026-08-31 transcript-execution conclusion;
+  `implicit-live-index-overwrite` has three active statements of the live-singleton
+  overwrite lesson (`jbmd90`, `eip69g`, `6wzvp9`). All are listed.
 - **Merely related memories stay out.** Generic whitelist/security memories,
-  the file:line-drift counterpoint (`m1euw2`), the read-only-subagent tool-ban
-  lesson, and the silent-loss survey that only cites a budget constant are
-  *not* answers to their respective queries and are excluded.
+  the file:line-drift counterpoint (`m1euw2`), the spec-review verdict variants
+  (`wj7z7p` / `i9leno`), the read-only-subagent tool-ban lesson, and the
+  silent-loss survey that only cites a budget constant are *not* answers to
+  their respective queries and are excluded. The file:line audit answer is
+  `c8x8im` (active); its superseded predecessor `86p78z` is not used because
+  retrieval can never return it.
 - **Duplicate-explosion queries were replaced.** `settle-not-meta` has 142
   active near-duplicates and `pipeline-heartbeat` has 58; any frozen sub-family
   would still score correct duplicates as misses. They were replaced by two
@@ -106,7 +115,7 @@ Unit contract: `gateway/tests/unit/eval/personal-recall-runner.test.ts`
 (`npx jest --runInBand --forceExit tests/unit/eval/personal-recall-runner.test.ts`
 from `gateway/`).
 
-## Baseline 2026-11-18 (fix round 1, before admission change)
+## Baseline 2026-11-18 (fix round 2, before admission change)
 
 Artifact: `%TEMP%\opencode\personal-recall-before.json` (40 rows).
 
@@ -121,8 +130,8 @@ Artifact: `%TEMP%\opencode\personal-recall-before.json` (40 rows).
 | False injection (negatives) | 20.0% (2/10) |
 | Stale injection (`must_exclude`) | 0 / 40 |
 | Entrypoint agreement | 73.3% (22/30) |
-| REST latency p50 / p95 | 85 ms / 100 ms |
-| AUTO latency p50 / p95 | 242 ms / 404 ms |
+| REST latency p50 / p95 | 84 ms / 92 ms |
+| AUTO latency p50 / p95 | 248 ms / 411 ms |
 
 By category:
 
@@ -146,6 +155,6 @@ Reading the baseline:
 - **False injection is not 0**: two negatives (`堪培拉降雨量`, `牛仔裤腰围`)
   inject 7 unrelated pointers each. This is the noise cost a broader admission
   rule must not increase.
-- **AUTO latency already violates the 100 ms contract** (p50 242 ms, p95
-  404 ms). The client aborts at 100 ms, so a correctness fix can still be
+- **AUTO latency already violates the 100 ms contract** (p50 248 ms, p95
+  411 ms). The client aborts at 100 ms, so a correctness fix can still be
   invisible in real turns; this needs a separate performance slice.

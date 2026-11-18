@@ -334,6 +334,28 @@ describe('personal-recall runner: fixture validation', () => {
     await expect(runner.verifyFixtureIds(fx, { baseUrl: 'http://gw', fetchImpl })).rejects.toThrow(/unknown/i);
   });
 
+  it('rejects a superseded id in must_include', async () => {
+    const fx = fixture([entry({ id: 'p-one', category: 'exact', query: 'q1', must_include: [STALE] })]);
+    const fetchImpl = mockFetch({ get: { dddddd: { id: STALE, superseded_by: A } } });
+    await expect(runner.verifyFixtureIds(fx, { baseUrl: 'http://gw', fetchImpl })).rejects.toThrow(/superseded/i);
+  });
+
+  it('allows a superseded id in must_exclude (stale controls are intentionally stale)', async () => {
+    const fx = fixture([
+      entry({
+        id: 'c-one',
+        category: 'current-state',
+        query: 'q1',
+        must_include: [A],
+        must_exclude: [STALE],
+      }),
+    ]);
+    const fetchImpl = mockFetch({
+      get: { aaaaaa: { id: A }, dddddd: { id: STALE, superseded_by: A } },
+    });
+    await expect(runner.verifyFixtureIds(fx, { baseUrl: 'http://gw', fetchImpl })).resolves.toBe(true);
+  });
+
   it('rejects empty must_include on a positive query', () => {
     const fx = fixture([entry({ id: 'e-1', category: 'exact', query: 'q1', note: 'targets a memory' })]);
     expect(() => runner.validateFixture(fx)).toThrow(/must_include/i);
@@ -406,11 +428,17 @@ describe('personal-recall runner: fixture validation', () => {
     expect(fx.entries.some((e: Entry) => e.id === 'implicit-settle-not-meta')).toBe(false);
     expect(fx.entries.some((e: Entry) => e.id === 'implicit-pipeline-heartbeat')).toBe(false);
     expect(family('implicit-unattended-background')).toEqual(['mem_1788838727545_igpk6x']);
-    expect(family('implicit-live-index-overwrite')).toEqual(['mem_1791177124326_jbmd90']);
 
-    // C2: the file:line citation rule is the direct answer; the drift lesson
-    // is a counterpoint, not an equivalent answer.
-    expect(family('implicit-audit-file-line')).toEqual(['mem_1788839080327_86p78z']);
+    // C2: the file:line citation rule must be an ACTIVE memory. The predecessor
+    // 86p78z is superseded by jabofg and can never be returned; the spec-review
+    // variants (wj7z7p / i9leno) and the drift counterpoint (m1euw2) are not
+    // audit-report answers.
+    expect(family('implicit-audit-file-line')).toEqual(['mem_1791860617771_c8x8im']);
+
+    // I1: the live-index overwrite lesson has three active equivalent answers.
+    expect(family('implicit-live-index-overwrite')).toEqual(
+      ['mem_1791177124326_jbmd90', 'mem_1790092812824_eip69g', 'mem_1791175982293_6wzvp9'].sort(),
+    );
   });
 });
 

@@ -27,6 +27,7 @@
   },
   "mustIncludeSemantics": {
     "rule": "must_include is an any-of family of frozen, genuinely equivalent correct answers. A hit means at least one family member was returned; it is NOT a ranked gold list.",
+    "activeOnly": "Every must_include member must be ACTIVE at freeze time. Retrieval rewrites superseded hits to their chain head (resolveSupersededHeads), so a superseded expectation can never be returned; verifyFixtureIds fails the run when it finds superseded_by on a must_include id. must_exclude members are intentionally superseded and are exempt.",
     "identifierFamilies": "Identifier queries list every reviewed active owner/answer for that identifier (e.g. all active memories where NOTE_BOARD_BUDGET is the subject, or all memories that directly record a commit). Superseded memories are never included; they belong in must_exclude.",
     "nearDuplicateFamilies": "Paraphrase queries list the reviewed near-duplicate answers for the same fact. Merely related memories are excluded even when they share vocabulary.",
     "rejectedFamilies": "Queries whose answer space is an uncontrolled duplicate explosion (settle-not-meta: 142 active near-duplicates; pipeline-heartbeat: 58) were replaced rather than given an arbitrary sub-family, because any omitted correct duplicate would re-introduce fixture-artifact misses."
@@ -272,9 +273,9 @@
       "id": "implicit-audit-file-line",
       "category": "implicit",
       "query": "审计报告要求 file:line 引用",
-      "must_include": ["mem_1788839080327_86p78z"],
+      "must_include": ["mem_1791860617771_c8x8im"],
       "must_exclude": [],
-      "note": "Implicit rule lookup for audit/measurement report citation precision. Direct answer: audit/research reports must be precise to file:line references (86p78z). Verified NOT equivalent: mem_1794456563041_m1euw2 argues the opposite operational point (file:line drifts; anchor on symbols), so it is a refinement/counterpoint, not a correct answer to this rule."
+      "note": "Implicit rule lookup for audit/measurement report citation precision. Target verified ACTIVE: c8x8im states the research/review evidence discipline (结论 commit 进 docs/research，论断需 file:line 级证据). The previous target 86p78z is SUPERSEDED BY jabofg and can never be returned by retrieval (resolveSupersededHeads rewrites it); it is removed. Also verified and excluded: wj7z7p / i9leno state the spec-review verdict rule (different scope: blocker re-verification, not audit reports), and m1euw2 argues file:line drifts (counterpoint, not the rule)."
     },
     {
       "id": "implicit-unattended-background",
@@ -288,9 +289,13 @@
       "id": "implicit-live-index-overwrite",
       "category": "implicit",
       "query": "为什么记忆回填或迁移会被下一个进程整体覆盖",
-      "must_include": ["mem_1791177124326_jbmd90"],
+      "must_include": [
+        "mem_1791177124326_jbmd90",
+        "mem_1790092812824_eip69g",
+        "mem_1791175982293_6wzvp9"
+      ],
       "must_exclude": [],
-      "note": "Replacement for the pipeline-heartbeat query, which has 58 active near-duplicate answers (silent-failure/heartbeat family). This replacement has one distinctive answer: HarmonicIndex is a live singleton, so a second index instance's backfill is overwritten by the next full save()."
+      "note": "Replacement for the pipeline-heartbeat query, which has 58 active near-duplicate answers (silent-failure/heartbeat family). Family review: jbmd90 states the live-singleton overwrite rule; eip69g records the same incident/fix (temporary index instance's v1→v2 migration overwritten by the live instance's next save, setIndexManagerProvider fix); 6wzvp9 explicitly names the same overwrite root cause (memory-decay migration written back over by the live instance) and the initialization-timing audit path, so it is an equivalent overwrite answer. Other silent-failure memories are related but do not answer this overwrite question and stay out."
     },
     {
       "id": "implicit-response-language",

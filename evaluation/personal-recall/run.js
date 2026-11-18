@@ -208,20 +208,52 @@ function createTailResolver({ baseUrl, fetchImpl, timeoutMs, seed = new Map() })
   };
 }
 
-/** Fail fast when a frozen expectation no longer exists in the live corpus. */
+/** Fail fast when a frozen expectation no longer exists or is superseded. */
+async function fetchMemoryByTail(tail, { baseUrl, fetchImpl, timeoutMs }) {
+  const res = await fetchImpl(`${baseUrl}/api/memory/get?id=${encodeURIComponent(tail)}`, {
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!res.ok) return null;
+  const body = await res.json();
+  const memory = body?.memory ?? body;
+  if (!memory || typeof memory.id !== 'string') return null;
+  return memory;
+}
+
+/**
+ * Fail fast when a frozen expectation no longer exists in the live corpus.
+ *
+ * must_include members must also be ACTIVE: retrieval rewrites superseded hits
+ * to their supersede-chain head (resolveSupersededHeads), so a superseded
+ * expectation can never be returned and would silently become a permanent
+ * miss. must_exclude members are intentionally stale and are exempt.
+ */
 async function verifyFixtureIds(fixture, { baseUrl = DEFAULT_BASE_URL, fetchImpl = fetch, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
-  const resolveTail = createTailResolver({ baseUrl, fetchImpl, timeoutMs });
-  const ids = new Set();
+  const resource = { baseUrl, fetchImpl, timeoutMs };
+  const includeIds = new Set();
+  const excludeIds = new Set();
   for (const entry of fixture.entries) {
-    for (const id of [...entry.must_include, ...entry.must_exclude]) ids.add(id);
+    for (const id of entry.must_include) includeIds.add(id);
+    for (const id of entry.must_exclude) excludeIds.add(id);
   }
   const unknown = [];
-  for (const id of ids) {
-    const found = await resolveTail(tailOf(id));
-    if (found !== id) unknown.push(id);
+  const superseded = [];
+  for (const id of includeIds) {
+    const memory = await fetchMemoryByTail(tailOf(id), resource);
+    if (!memory || memory.id !== id) unknown.push(id);
+    else if (memory.superseded_by) superseded.push(`${id} -> ${memory.superseded_by}`);
+  }
+  for (const id of excludeIds) {
+    const memory = await fetchMemoryByTail(tailOf(id), resource);
+    if (!memory || memory.id !== id) unknown.push(id);
   }
   if (unknown.length > 0) {
     throw new Error(`unknown memory id(s) in fixture (not in live corpus): ${unknown.join(', ')}`);
+  }
+  if (superseded.length > 0) {
+    throw new Error(
+      `superseded memory id(s) in must_include (retrieval rewrites them to the chain head, so they can never be returned): ${superseded.join(', ')}`,
+    );
   }
   return true;
 }
