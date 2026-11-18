@@ -2665,6 +2665,12 @@ class MafwScheduler {
     if (!this.memoryService) return;
     const db = this.getGatewayDb();
     const { buildSnapshot, rerankerEntryFromRecall, recentTurnTextsFromDb } = require('./recall/snapshot-builder');
+    // Fail loud: the debounced refresh swallows build errors (`.catch(() => {})`),
+    // so a renamed/missing export would otherwise stop snapshots with no trace.
+    if (typeof recentTurnTextsFromDb !== 'function') {
+      log.warn('[Recall] snapshot turn-window helper missing from ./recall/snapshot-builder; skipping snapshot build');
+      return;
+    }
     const { searchRecallMemoriesSync, recallNeighbors } = require('./recall/recall-context');
     const { formatRecallContext } = require('./recall/inject-format');
     const { getReranker } = require('./core/memory/reranker-singleton');

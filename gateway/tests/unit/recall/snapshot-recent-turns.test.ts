@@ -12,7 +12,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { GatewayDatabase, ObservationSource } from '../../../src/memory/gateway-db';
-import { recentTurnTextsFromDb } from '../../../src/recall/snapshot-builder';
+import { buildSnapshot, recentTurnTextsFromDb } from '../../../src/recall/snapshot-builder';
 
 /** The pre-fix hot-table-only closure, kept as the RED witness. */
 function hotOnlyTurnTexts(db: GatewayDatabase, sessionID: string, maxTurns: number): string[] {
@@ -140,6 +140,38 @@ describe('recentTurnTextsFromDb — snapshot window reads active + archive', () 
     expect(recentTurnTextsFromDb(db, 's1', -3)).toEqual([]);
   });
 
+  test('an empty newest turn occupies a window slot (maxTurns=1 excludes older text)', () => {
+    appendTurn('s1', { user: 'older q', assistant: 'older a' });
+    db.beginTurn('s1'); // newest logical turn, no rows
+
+    expect(recentTurnTextsFromDb(db, 's1', 1)).toEqual([]);
+    expect(recentTurnTextsFromDb(db, 's1', 2)).toEqual(['older q', 'older a']);
+  });
+
+  test('a partially archived / reopened turn unions archive + active rows without duplicates', () => {
+    const turn = appendTurn('s1', { user: 'archived q', assistant: 'archived a' });
+    expect(db.archiveTurn('s1', turn.turn_seq)).toBe(2);
+
+    // A late observation reopens the same logical turn: archived q/a stay in
+    // t1_archive while the new row lands in t1_observations.
+    db.append({
+      session_id: 's1',
+      turn_id: turn.turn_seq,
+      trace_id: turn.trace_id,
+      source: 'tool_result',
+      content: 'late tool row',
+      failure: 0,
+    });
+    expect(db.readArchiveTurn('s1', turn.turn_seq)).toHaveLength(2);
+    expect(db.readTurn('s1', turn.turn_seq)).toHaveLength(1);
+    expect(recentTurnTextsFromDb(db, 's1', 1)).toEqual(['archived q', 'archived a']);
+
+    // Re-archiving moves the late row over; the union must still not duplicate.
+    expect(db.archiveTurn('s1', turn.turn_seq)).toBe(1);
+    expect(db.readTurnRows('s1', turn.turn_seq)).toHaveLength(3);
+    expect(recentTurnTextsFromDb(db, 's1', 1)).toEqual(['archived q', 'archived a']);
+  });
+
   test('unknown session returns an empty window', () => {
     expect(recentTurnTextsFromDb(db, 'ses_missing', 4)).toEqual([]);
   });
@@ -160,5 +192,52 @@ describe('recentTurnTextsFromDb — snapshot window reads active + archive', () 
     };
 
     expect(recentTurnTextsFromDb(stub, 'ses_stub', 2)).toEqual(['one q', 'one a', 'two a']);
+  });
+});
+
+describe('kernel snapshot turn-window seam', () => {
+  function refreshSnapshotInnerSource(): string {
+    const src = fs.readFileSync(path.join(__dirname, '../../../src/kernel.ts'), 'utf8');
+    const start = src.indexOf('private async refreshSnapshotInner(');
+    expect(start).toBeGreaterThan(-1);
+    const end = src.indexOf('private getScanService(', start);
+    expect(end).toBeGreaterThan(start);
+    return src.slice(start, end);
+  }
+
+  test('snapshot-builder actually exports the helper the kernel requires', () => {
+    // The kernel reaches this module through `require` (any-typed), so a rename
+    // or removal must fail here instead of only in production.
+    const builder = require('../../../src/recall/snapshot-builder');
+    expect(typeof builder.recentTurnTextsFromDb).toBe('function');
+    expect(builder.recentTurnTextsFromDb.length).toBe(3);
+  });
+
+  test('kernel delegates the window and guards a missing helper export', () => {
+    const inner = refreshSnapshotInnerSource();
+
+    expect(inner).toContain("require('./recall/snapshot-builder')");
+    expect(inner).toContain('recentTurnTextsFromDb(db, sid, maxTurns)');
+    // Guard: the debounced refresh swallows build errors, so a missing export
+    // must be reported instead of silently producing no snapshots.
+    expect(inner).toMatch(/typeof recentTurnTextsFromDb !== 'function'/);
+    expect(inner).toMatch(/log\.warn\('[^']*snapshot turn-window helper missing/);
+    // The hot-only path must never come back: it silently loses archived turns.
+    expect(inner).not.toContain('db.listTurns(');
+    expect(inner).not.toContain('db.readTurn(');
+  });
+
+  test('without the helper buildSnapshot throws — why the kernel guard is required', async () => {
+    await expect(
+      buildSnapshot(
+        {
+          recentTurnTexts: undefined as any,
+          search: () => [],
+          render: () => null,
+          store: () => { /* noop */ },
+        },
+        'ses_1',
+      ),
+    ).rejects.toThrow(TypeError);
   });
 });
