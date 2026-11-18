@@ -106,6 +106,7 @@ function setup(over: Partial<WsHubDeps> = {}): {
   const deps: WsHubDeps = {
     wsClients: wsClients as never,
     apiToken: () => TOKEN,
+    verifyDeviceToken: (token: string) => (token === 'dev_good' ? { deviceId: 'dev-1' } : null),
     // The 60s PushGateway maintenance timer would otherwise call into a
     // half-stubbed gateway if it ever outlives the test (see afterEach).
     pushGateway: () => ({
@@ -265,19 +266,34 @@ describe('createWsHub: upgrade routing (voice → terminal → plugin → /api/w
 describe('createWsHub: relay gates (M0)', () => {
   const SECRET = 'a'.repeat(64);
 
-  it('allows /api/ws for a relay principal', () => {
+  it('requires a device token for relayed /api/ws', () => {
     const { upgrade, fire } = setup({ tunnelSecret: SECRET });
     const socket = fakeSocket();
     const req = fakeReq('/api/ws', { headers: { [TUNNEL_HEADER]: SECRET } });
 
     fire(req, socket);
 
+    expect(socket.destroyed).toBe(true);
+    expect(upgrade.ws).not.toHaveBeenCalled();
+  });
+
+  it('allows /api/ws for a tunneled device token', () => {
+    const { upgrade, fire } = setup({ tunnelSecret: SECRET });
+    const socket = fakeSocket();
+    const req = fakeReq('/api/ws', {
+      headers: { [TUNNEL_HEADER]: SECRET, authorization: 'Bearer dev_good' },
+    });
+
+    fire(req, socket);
+
     expect(socket.destroyed).toBe(false);
-    expect((req as any).mafwPrincipal).toEqual({ kind: 'relay', method: 'tunnel' });
+    expect((req as any).mafwPrincipal).toEqual({
+      kind: 'human', method: 'device-token', deviceId: 'dev-1', tunneled: true,
+    });
     expect(upgrade.ws).toHaveBeenCalledTimes(1);
   });
 
-  it('denies terminal, voice and plugin WS for a relay principal', () => {
+  it('denies terminal, voice and plugin WS for a tunneled device token', () => {
     for (const url of [
       '/api/terminal/sessions/s1/connect?ticket=t1',
       '/ws/voice',
@@ -286,7 +302,9 @@ describe('createWsHub: relay gates (M0)', () => {
       const { upgrade, plugin, fire } = setup({ tunnelSecret: SECRET });
       const socket = fakeSocket();
 
-      fire(fakeReq(url, { headers: { [TUNNEL_HEADER]: SECRET } }), socket);
+      fire(fakeReq(url, {
+        headers: { [TUNNEL_HEADER]: SECRET, authorization: 'Bearer dev_good' },
+      }), socket);
 
       expect(`${url}:${socket.destroyed}`).toBe(`${url}:true`);
       expect(upgrade.voice).not.toHaveBeenCalled();

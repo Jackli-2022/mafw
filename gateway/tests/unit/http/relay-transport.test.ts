@@ -101,15 +101,40 @@ async function request(deps: TransportDeps, req: IncomingMessage): Promise<Recor
 }
 
 describe('transport relay principal (M0)', () => {
-  it('allows a relayed mobile request and attaches principal=relay', async () => {
+  it('requires a credential for a relayed API request', async () => {
     const { deps, dispatch } = makeDeps();
     const req = fakeReq({ headers: { [TUNNEL_HEADER]: SECRET } });
 
     const rec = await request(deps, req);
 
+    expect(rec.status).toBe(401);
+    expect(dispatch).not.toHaveBeenCalled();
+    expect((req as any).mafwPrincipal).toEqual({ kind: 'relay', method: 'tunnel', tunneled: true });
+  });
+
+  it('allows relayed pairing verify because the nonce is the credential', async () => {
+    const { deps, dispatch } = makeDeps();
+    const rec = await request(deps, fakeReq({
+      method: 'POST',
+      url: '/api/mobile/pairing/verify',
+      headers: { [TUNNEL_HEADER]: SECRET },
+    }));
+
     expect(rec.status).toBeUndefined();
     expect(dispatch).toHaveBeenCalledTimes(1);
-    expect((req as any).mafwPrincipal).toEqual({ kind: 'relay', method: 'tunnel' });
+  });
+
+  it('allows a tunneled device token on the mobile surface', async () => {
+    const { deps, dispatch } = makeDeps();
+    const req = fakeReq({ headers: { [TUNNEL_HEADER]: SECRET, authorization: 'Bearer dev_good' } });
+
+    const rec = await request(deps, req);
+
+    expect(rec.status).toBeUndefined();
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect((req as any).mafwPrincipal).toEqual({
+      kind: 'human', method: 'device-token', deviceId: 'dev-1', tunneled: true,
+    });
   });
 
   it('denies relay on desktop-only routes before dispatch', async () => {
@@ -125,6 +150,18 @@ describe('transport relay principal (M0)', () => {
       expect(`${method} ${url}:${rec.status}`).toBe(`${method} ${url}:403`);
       expect(dispatch).not.toHaveBeenCalled();
     }
+  });
+
+  it('denies desktop-only routes even with a valid device token', async () => {
+    const { deps, dispatch } = makeDeps();
+    const rec = await request(deps, fakeReq({
+      method: 'GET',
+      url: '/api/terminal/sessions',
+      headers: { [TUNNEL_HEADER]: SECRET, authorization: 'Bearer dev_good' },
+    }));
+
+    expect(rec.status).toBe(403);
+    expect(dispatch).not.toHaveBeenCalled();
   });
 
   it('keeps a real local request local', async () => {
@@ -144,7 +181,7 @@ describe('transport relay principal (M0)', () => {
 
     await request(deps, req);
 
-    expect((req as any).mafwPrincipal).toEqual({ kind: 'human', method: 'device-token', deviceId: 'dev-1' });
+    expect((req as any).mafwPrincipal).toEqual({ kind: 'human', method: 'device-token', deviceId: 'dev-1', tunneled: true });
   });
 
   it('rejects a forged marker from a non-loopback address', async () => {

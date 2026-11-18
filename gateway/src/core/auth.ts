@@ -62,6 +62,8 @@ export interface Principal {
   method: PrincipalMethod;
   /** Present for `device-token` principals; used for push presence. */
   deviceId?: string;
+  /** True when the request arrived through the loopback tunnel terminator. */
+  tunneled?: boolean;
 }
 
 export interface PrincipalResolveOpts {
@@ -91,9 +93,14 @@ export interface PrincipalResolveOpts {
  * fail-closed (a throwing verifier just falls through).
  */
 export function resolvePrincipal(req: AuthRequest, opts: PrincipalResolveOpts): Principal {
+  const marker = String(req.headers[TUNNEL_HEADER] || '').trim();
+  const markerMatches = Boolean(marker && opts.tunnelSecret && constantTimeEqual(marker, opts.tunnelSecret));
+  const tunneled = markerMatches || hasCloudflareForwardingHeaders(req.headers);
+  const mark = (principal: Principal): Principal => (tunneled ? { ...principal, tunneled: true } : principal);
+
   const humanHeader = String(req.headers[HUMAN_TOKEN_HEADER] || '').trim();
   if (humanHeader && constantTimeEqual(humanHeader, opts.humanToken || '')) {
-    return { kind: 'human', method: 'human-token' };
+    return mark({ kind: 'human', method: 'human-token' });
   }
 
   const deviceToken = extractDeviceToken(req);
@@ -105,7 +112,7 @@ export function resolvePrincipal(req: AuthRequest, opts: PrincipalResolveOpts): 
       verified = null;
     }
     if (verified && verified.deviceId) {
-      return { kind: 'human', method: 'device-token', deviceId: verified.deviceId };
+      return mark({ kind: 'human', method: 'device-token', deviceId: verified.deviceId });
     }
     // F4: fall through instead of aborting. Possession of a valid shared
     // apiToken is still a (service) credential; a revoked device token simply
@@ -117,17 +124,15 @@ export function resolvePrincipal(req: AuthRequest, opts: PrincipalResolveOpts): 
     const matches = constantTimeEqual(extractBearer(req), apiToken)
       || constantTimeEqual(extractXApiToken(req), apiToken)
       || constantTimeEqual(extractQueryToken(req), apiToken);
-    if (matches) return { kind: 'service', method: 'api-token' };
+    if (matches) return mark({ kind: 'service', method: 'api-token' });
   }
 
   // M0: a tunneled request without a credential is `relay`, never `local`.
   // The marker is injected by our loopback terminator; Cloudflare's
   // `cf-connecting-ip` is the fail-closed hint when the marker is missing
   // (e.g. an older cloudflared path). A forged marker alone does nothing.
-  const marker = String(req.headers[TUNNEL_HEADER] || '').trim();
-  const markerMatches = Boolean(marker && opts.tunnelSecret && constantTimeEqual(marker, opts.tunnelSecret));
-  if (markerMatches || hasCloudflareForwardingHeaders(req.headers)) {
-    return { kind: 'relay', method: 'tunnel' };
+  if (tunneled) {
+    return { kind: 'relay', method: 'tunnel', tunneled: true };
   }
 
   return fallbackPrincipal(req);

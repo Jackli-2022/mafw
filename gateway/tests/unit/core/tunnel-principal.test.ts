@@ -24,7 +24,7 @@ describe('relay principal (M0)', () => {
       { remoteAddress: '127.0.0.1', headers: { [TUNNEL_HEADER]: SECRET } },
       base,
     );
-    expect(p).toEqual({ kind: 'relay', method: 'tunnel' });
+    expect(p).toEqual({ kind: 'relay', method: 'tunnel', tunneled: true });
     expect(isRelayPrincipal(p)).toBe(true);
     expect(isLocalPrincipal(p)).toBe(false);
   });
@@ -37,7 +37,7 @@ describe('relay principal (M0)', () => {
       },
       { ...base, verifyDeviceToken: () => ({ deviceId: 'd1' }) },
     );
-    expect(p).toEqual({ kind: 'human', method: 'device-token', deviceId: 'd1' });
+    expect(p).toEqual({ kind: 'human', method: 'device-token', deviceId: 'd1', tunneled: true });
   });
 
   it('keeps the human token human through the tunnel', () => {
@@ -48,7 +48,7 @@ describe('relay principal (M0)', () => {
       },
       base,
     );
-    expect(p).toEqual({ kind: 'human', method: 'human-token' });
+    expect(p).toEqual({ kind: 'human', method: 'human-token', tunneled: true });
   });
 
   it('treats a forged marker plus Cloudflare forwarding headers as relay, never local', () => {
@@ -59,7 +59,7 @@ describe('relay principal (M0)', () => {
       },
       base,
     );
-    expect(p).toEqual({ kind: 'relay', method: 'tunnel' });
+    expect(p).toEqual({ kind: 'relay', method: 'tunnel', tunneled: true });
   });
 
   it('leaves a plain loopback request local', () => {

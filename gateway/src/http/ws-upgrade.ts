@@ -332,10 +332,11 @@ export function createWsHub(server: http.Server, deps: WsHubDeps): WsHub {
     // Token auth on upgrade: delegated to core/auth.ts
     const rawAddr = (req.socket as any)?.remoteAddress || (socket as any).remoteAddress || '';
     const principal = resolveUpgradePrincipal(deps, req, rawAddr, url);
+    const tunneled = principal.tunneled === true;
     (req as any).mafwPrincipal = principal;
 
     if (isVoiceUpgradePath(url)) {
-      if (principal.kind === 'relay') {
+      if (tunneled) {
         forbiddenUpgrade(socket);
         return;
       }
@@ -370,7 +371,7 @@ export function createWsHub(server: http.Server, deps: WsHubDeps): WsHub {
     const terminalRequest = matchTerminalConnectUrl(url);
     if (terminalRequest) {
       // 中性终端 WS：local-only + 一次性 ticket（ticket 自带目录绑定）。
-      if (principal.kind !== 'local') {
+      if (tunneled || principal.kind !== 'local') {
         forbiddenUpgrade(socket);
         return;
       }
@@ -398,7 +399,7 @@ export function createWsHub(server: http.Server, deps: WsHubDeps): WsHub {
 
     const pluginWs = parsePluginWsUrl(url);
     if (pluginWs) {
-      if (principal.kind === 'relay') {
+      if (tunneled) {
         forbiddenUpgrade(socket);
         return;
       }
@@ -426,6 +427,11 @@ export function createWsHub(server: http.Server, deps: WsHubDeps): WsHub {
       return;
     }
     if (principal.kind === 'anonymous') {
+      socket.write(WS_UNAUTHORIZED_RESPONSE);
+      socket.destroy();
+      return;
+    }
+    if (tunneled && principal.kind !== 'human') {
       socket.write(WS_UNAUTHORIZED_RESPONSE);
       socket.destroy();
       return;

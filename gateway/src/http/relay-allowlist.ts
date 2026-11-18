@@ -51,8 +51,12 @@ function matchesPrefix(path: string, prefix: string): boolean {
   return path === prefix || path.startsWith(prefix.endsWith('/') ? prefix : `${prefix}/`);
 }
 
+function normalizePath(pathname: string): string {
+  return (pathname.split('?')[0] || '/').replace(/\/+$/, '') || '/';
+}
+
 export function isRelayAllowed(method: string, pathname: string): boolean {
-  const path = (pathname.split('?')[0] || '/').replace(/\/+$/, '') || '/';
+  const path = normalizePath(pathname);
 
   for (const [allowedMethod, allowedPath] of EXACT_ALLOWED) {
     if (path === allowedPath) return method.toUpperCase() === allowedMethod;
@@ -63,5 +67,16 @@ export function isRelayAllowed(method: string, pathname: string): boolean {
   for (const prefix of ALLOWED_PREFIXES) {
     if (matchesPrefix(path, prefix)) return true;
   }
+  return false;
+}
+
+/**
+ * M0: with no credential, a tunneled request may only reach the health probe
+ * and the nonce-based pairing exchange. Everything else needs a device token.
+ */
+export function isAnonymousRelayAllowed(method: string, pathname: string): boolean {
+  const path = normalizePath(pathname);
+  if (method.toUpperCase() === 'GET' && path === '/health') return true;
+  if (method.toUpperCase() === 'POST' && path === '/api/mobile/pairing/verify') return true;
   return false;
 }
