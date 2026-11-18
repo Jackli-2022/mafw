@@ -46,6 +46,8 @@ import { LeadExternalInbox } from "./LeadExternalInbox"
 import { MemoryReceipt } from "./MemoryReceipt"
 import { buildMemoryReceiptView } from "../memory-receipt"
 import { memoryReceiptStore } from "../memory-receipt-store"
+import { ContextChip } from "./ContextChip"
+import { loadContextPrefs, saveContextPrefs } from "../chat/context-reminder"
 import { TopicIndexPanel } from "./TopicIndexPanel"
 import type { LeadTopicListItem } from "../lead-topics"
 import type { LeadBoundaryView } from "@mafw/sdk"
@@ -347,6 +349,11 @@ function MediaHistoryAttachment(props: { artifactId: string; name: string; media
 
 function PaneInner(props: ChatPaneProps & { sid: string }) {
   const sidProp = () => props.sid
+  const [contextPrefs, setContextPrefs] = createSignal(loadContextPrefs())
+  const updateContextPrefs = (next: ReturnType<typeof loadContextPrefs>) => {
+    setContextPrefs(next)
+    saveContextPrefs(next)
+  }
 
   // History backfill: SSE only delivers live receipts; opening/switching a
   // session must restore receipts that arrived before this pane existed.
@@ -2932,6 +2939,9 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             </Show>
           </div>
         </Show>
+        <div class="mafw-composer-context">
+          <ContextChip prefs={contextPrefs()} onChange={updateContextPrefs} />
+        </div>
         <div
           class="mafw-composer"
           classList={{ "mafw-composer-dragging": dragging() }}

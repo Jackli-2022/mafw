@@ -26,10 +26,21 @@ const LANGUAGE_LABELS: Record<string, string> = {
   'en-GB': 'English',
 }
 
-export function formatLatestReminder(prefs: ContextPrefs, now: Date): string {
-  if (prefs?.enabled === false) return ''
+export function languageLabel(locale: string): string {
+  const tag = (locale || '').trim()
+  if (!tag) return '中文'
+  return LANGUAGE_LABELS[tag] ?? (tag.startsWith('zh') ? '中文' : tag)
+}
+
+interface ClockParts {
+  date: string
+  weekday: string
+  time: string
+  timeZone: string
+}
+
+function clockParts(prefs: ContextPrefs, now: Date): ClockParts | null {
   const timeZone = prefs.timeZone || 'UTC'
-  const locale = prefs.locale || 'zh-CN'
   let parts: Intl.DateTimeFormatPart[]
   try {
     parts = new Intl.DateTimeFormat('zh-CN', {
@@ -43,18 +54,41 @@ export function formatLatestReminder(prefs: ContextPrefs, now: Date): string {
       hour12: false,
     }).formatToParts(now)
   } catch {
-    return ''
+    return null
   }
   const value = (type: string) => parts.find((part) => part.type === type)?.value ?? ''
   const date = `${value('year')}-${value('month')}-${value('day')}`
   const time = `${value('hour')}:${value('minute')}`
-  const weekday = value('weekday')
-  if (!date || !time) return ''
+  if (!date || !time) return null
+  return { date, weekday: value('weekday'), time, timeZone }
+}
 
-  const language = LANGUAGE_LABELS[locale] ?? (locale.startsWith('zh') ? '中文' : locale)
-  const city = prefs.sendCity && prefs.city?.trim() ? prefs.city.trim() : ''
-  const segments = [`${date} ${weekday} ${time}`.trim(), timeZone, city, language].filter(Boolean)
+function cityOf(prefs: ContextPrefs): string {
+  return prefs.sendCity && prefs.city?.trim() ? prefs.city.trim() : ''
+}
+
+export function formatLatestReminder(prefs: ContextPrefs, now: Date): string {
+  if (prefs?.enabled === false) return ''
+  const clock = clockParts(prefs, now)
+  if (!clock) return ''
+  const language = languageLabel(prefs.locale)
+  const segments = [`${clock.date} ${clock.weekday} ${clock.time}`.trim(), clock.timeZone, cityOf(prefs), language]
+    .filter(Boolean)
   return segments.join(' · ')
+}
+
+/** Ghost-row label above the composer: `今天 14:32 · 上海`. */
+export function formatContextChip(prefs: ContextPrefs, now: Date): string {
+  const clock = clockParts(prefs, now)
+  if (!clock) return ''
+  return [`今天 ${clock.time}`.trim(), cityOf(prefs)].filter(Boolean).join(' · ')
+}
+
+/** Read-only popover stamp: `2026-11-18 周三 14:32 · Asia/Shanghai`. */
+export function formatContextStamp(prefs: ContextPrefs, now: Date): string {
+  const clock = clockParts(prefs, now)
+  if (!clock) return ''
+  return `${clock.date} ${clock.weekday} ${clock.time} · ${clock.timeZone}`.trim()
 }
 
 export function composeLatestReminderPart(prefs: ContextPrefs, ts: number): LatestReminderPart | null {
@@ -112,6 +146,12 @@ export function loadContextPrefs(): ContextPrefs {
   } catch {
     return fallback
   }
+}
+
+export function saveContextPrefs(prefs: ContextPrefs): void {
+  try {
+    globalThis.localStorage?.setItem('mafw-context-prefs', JSON.stringify(prefs))
+  } catch { /* storage blocked: prefs stay in-memory for this session */ }
 }
 
 export function buildContextParts(
