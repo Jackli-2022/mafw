@@ -210,3 +210,11 @@ pm run drill:plugin-trust\ 固化。
 - plugin doctor 把 `parsePackageManifest` 的 warnings（`legacy-permissions` / `legacy-contributes`）暴露成独立的 `manifest-warnings` 检查（status `warn`，多种 warning 以 `; ` 连接）；`report.ok` 只由 `fail` 派生，warn 不翻转它。
 - 面向 agent 的**规范正文**在 `docs/guides/plugin-standard.md`（§0-§11：60 秒路径、`plugin.json` 字段表、五个 plane 的逐字错误文案与上限、声明上界、trusted/untrusted、`check --strict --json`、人类安装、失败修法、版本分工）；`mafw plugin init/check/schema` 与 `examples/plugins/` 是它的可执行部分。
 
+## `plugin check` 的 untrusted dry-run（2026-11-18）
+
+- `gateway/src/cli/plugin-check-local.ts` 现在给 `PluginHost` 传 `workerAvailable: () => permissionFlagFor(process.execPath) !== null` 与 `workerHostFactory`（镜像 `boot.ts`，去掉 kernel / safety / persistence）：`check` 对 `untrusted` 包走**和网关同一条 worker 路径、同一套 Node 权限旗标**，没有弱化（无 in-process fallback）也没有加强（无额外旗标）。
+- `untrusted` 仍是 manifest 属性而非 CLI 选项：没有 `--allow-worker`，worker 检查始终开启；本机 Node 无权限模型时唯一结果是 `worker_unavailable`（`evaluated: false`）。
+- CLI 侧没有持久化插件配置：worker 的 `config.get()` 返回 `{}`，`config.update(patch)` 抛 `config.update is not available in this host`。
+- 收尾：worker 由 candidate bag 的 `worker.stop('dispose')` 关闭（`checkPackage` 的 `finally` 必然 dispose 该 bag）；进程另注册 `exit` 钩子按 pid 同步兜底，覆盖 Ctrl+C / 未捕获异常在 bag 之前打断 check 的路径（SIGKILL / TerminateProcess 仍无法处理，与网关 subprocess ledger 同一残余缺口）。
+- `check` 依旧不是沙箱：`trusted` 包在主进程真实执行；`untrusted` 包的边界是 worker 的 Node 权限模型 + bootstrap 拦截，`check` 只复用该路径，不额外隔离副作用。
+

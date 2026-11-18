@@ -26,7 +26,7 @@ mafw plugin check --strict "C:/abs/path/.mafw/plugin-drafts/my-plugin"
 
 **完成标准**：`mafw plugin check --strict "<abs path>"` 退出码 `0`（首行 `ok <name> ...`），**并且**你已经把 `install:` 行交给人类。agent 的终点不是安装，是「check 通过 + 交出安装命令」；安装**由人执行**（§9）。
 
-**`untrusted` 包不适用上面的第 3 步**：本地 check host 没有 worker，`kind: "untrusted"` 的包无法完成 dry-run，会返回 `worker_unavailable: no worker host factory`。按 §7 的 restricted 形状写（只有 actions / events / config），把包与 §9 的安装命令交给人在真实 host 上安装验证。
+**`untrusted` 包同样适用上面的第 3 步**：`kind: "untrusted"` 的包在 worker 子进程里 dry-run，走的是网关**同一条 worker 路径、同一套 Node 权限旗标**（§7），所以 `declared` / `registered` 与 `install: … --trust untrusted --permission …` 都照常打印。`untrusted` 是 manifest 属性、不是 CLI 选项：没有 `--allow-worker`，worker 检查永远开启。本机 Node 没有权限模型时只会干净失败（`worker_unavailable`），不会退回进程内加载。形状仍按 §7 的 restricted 形状写（只有 actions / events / config）。
 
 四条会立刻决定成败的规则：
 
@@ -530,7 +530,8 @@ module.exports = {
 - worker 里没有 `fetch` / `WebSocket` / `EventSource`，`http`/`https`/`net`/`tls`/`dns`/`dgram`/`http2`/`child_process`/`worker_threads`/`cluster` 被拦（`not available in untrusted worker: <name>`）；Node 权限模型只给包目录（与 worker bootstrap 目录）**只读**，无写、无子进程、无 addon；单条 IPC 消息 ≤ **1 MiB**。
 - action 超时更短：缺省 **10 s**、硬顶 **30 s**（trusted 是 15 s / 60 s）；超时直接杀 child。
 - child 崩溃按 **0.5 s / 1 s / 2 s** 退避重启，连续 3 次后由 safety 机制 quarantine。
-- 安装时 worker 不可用 → `untrusted packages require a worker host`；**`mafw plugin check` 无法本地校验 untrusted 包**（本地 check host 没有 worker host factory），会返回 `worker_unavailable: no worker host factory`。这类包的自检只能做到「声明与形状正确」，最终验证交给人类的安装 + `mafw plugins doctor`。
+- 安装时 worker 不可用 → `untrusted packages require a worker host`。
+- 本地 `mafw plugin check` 对 `untrusted` 包用**同一个 worker 路径** dry-run：同样的 `permissionFlagFor(process.execPath)` 探测、同样的权限旗标（`--permission` / `--experimental-permission`，只读包目录，无写 / 无子进程 / 无 addon）。本机 Node 没有权限模型 → `worker_unavailable: untrusted packages are not enabled`，**不会**退回进程内加载。
 - `ctx.emit` 在 worker 里是**位置参数** `emit(type, payload)`（trusted 是对象 `emit({ type, properties })`）；类型必须是 `plugin:` 开头。
 
 **没有 `plugin.json` 的包**（单文件 `.js` 或缺少 manifest 的目录）继续以 `trusted` 加载，但**不能**贡献 `tools` / `observers` / `http`：
@@ -549,7 +550,7 @@ packages without plugin.json cannot contribute <planes>; ship a directory packag
 mafw plugin check <absolute-path> [--json] [--strict]
 ```
 
-- **必须绝对路径**（相对路径直接拒绝：`path must be absolute: <path>`）。它在本进程内用**同一个判定函数**跑一次真实激活的 dry-run（`PluginHost.checkPackage`）：不起网关、不读 human token、不注册任何东西，网关停着也能用。但**它不是沙箱、也不是 §3 的 ctx**——见本节末尾「check 的 ctx 与真实 host 的差异」。
+- **必须绝对路径**（相对路径直接拒绝：`path must be absolute: <path>`）。它用**同一个判定函数**跑一次真实激活的 dry-run（`PluginHost.checkPackage`）：不起网关、不读 human token、不注册任何东西，网关停着也能用。`trusted` 包在本进程内 `require`；`untrusted` 包在 worker 子进程里（§7 的同一套权限模型）。但**它不是沙箱、也不是 §3 的 ctx**——见本节末尾「check 的 ctx 与真实 host 的差异」。
 - 人读输出：首行 `ok <name> (<path>)` 或 `not ok …`，随后 `version:` / `apiVersion N, kind K` / `permissions:` / `contributions:` / `declared:` / `registered:`（差集用行内标记：`+name` = 注册了但没声明，`-name` = 声明了但没注册（合法）；标记只出现在**已声明**的 plane 上）/ `note: check is not a sandbox: …`（激活确实跑过时打印）/ `warning: …` / `error[<code>]: …`（没有 code 时退回 `error: …`），最后在判决通过时打印 `install: <可粘贴命令>`。`ok: false` 时同样打印 `apiVersion` / `kind` / `permissions`（结果里没有时回退读 `plugin.json`，读不到就不打印）；`contributions` 只有激活确实产出了贡献才有。
 - **`evaluated: false`** 表示包里 `activate()` 根本没有产出贡献集合（manifest/入口/身份/激活失败等）。此时 `registered:` 渲染为 `(not evaluated)`，不打印 `+`/`-` 标记，也不打印「声明了没注册」的 `note:`——「没评估」不是「没注册」。
 - `--json`：**一行**可解析 JSON。`ok` 是**命令判决**（不是原始 check 结果），另有 `verdict`（`"ok"` / `"fail"`）、`strictFailed`、`code`（失败分类，见下）、`evaluated`（是否产出了贡献集合），以及 `name` / `version` / `contributions` / `apiVersion` / `kind` / `permissions` / `declared` / `registered` / `warnings` / `error` / `webSurfaces`（存在时）。退出码 `0` = 通过，`1` = 不通过。
@@ -576,9 +577,9 @@ mafw plugin check <absolute-path> [--json] [--strict]
 
 `mafw plugin schema` 打印同一份契约的人类可读形式（带缩进的 JSON，无外层信封）；编辑器/agent 拿它当字段真源，比任何文档都准。
 
-**check 的 ctx 与真实 host 的差异**：本地 check host 给的是 §3 能力的一个子集，**不是沙箱**。
+**check 的 ctx 与真实 host 的差异**：本地 check host 给的是 §3 能力的一个子集，**不是沙箱**（`untrusted` 包拿到的是 §7 的 restricted ctx，见下）。
 
-真实可用（`gateway/src/cli/plugin-check-local.ts` 只注入 `projectDir` / `gatewayPort` / registration bag，其余能力由 `createPluginPackageContext` 的默认实现提供）：
+`trusted` 包真实可用（`gateway/src/cli/plugin-check-local.ts` 只注入 `projectDir` / `gatewayPort` / registration bag，其余能力由 `createPluginPackageContext` 的默认实现提供）：
 
 - `ctx.log`；`ctx.fetch`（真实网络，默认 60 s 超时）；
 - `ctx.files.list/stat/read`（真实文件系统，只读，作用域按传入的 `projectDir`）；
@@ -594,7 +595,9 @@ mafw plugin check <absolute-path> [--json] [--strict]
 - `ctx.config.update()` 抛 `ctx.config.update is not available in this host`；
 - `ctx.terminal.create/bridge/resize` 抛 `ctx.terminal is not available: this host did not provide a terminal service`（`kill` 对未拥有的 id 静默返回）。
 
-**check 不是沙箱**：`activate()` 真的执行了，`fetch` / `files` / timer / listener / watcher 等副作用已经发生（`ctx.effect` 只保证在 check 收尾时清理，不保证「没有发生」）；`ctx.http` 注册的路由也不会被服务。别把「check 通过」当成隔离证明。
+`untrusted` 包在 worker 里跑，ctx 就是 §7 的 restricted 形状（`log`、`config.get()`、`config.update(patch)`、`emit(type, payload)`、`effect(dispose)`）：没有 `fetch` / `files` / `http` / `terminal` / `usage` / `apiKey`，也拿不到 `projectDir` / `gatewayPort`。check host 没接持久化配置，所以 `config.get()` 返回 `{}`，`config.update(patch)` 报 `config.update is not available in this host`（仍然要先有 `config.write` token，否则先报 `permission denied: config.write`）。
+
+**check 不是沙箱**：`trusted` 包的 `activate()` 真的在本进程执行了，`fetch` / `files` / timer / listener / watcher 等副作用已经发生（`ctx.effect` 只保证在 check 收尾时清理，不保证「没有发生」）；`ctx.http` 注册的路由也不会被服务。`untrusted` 包真的在 worker 里跑，边界是 worker 的 Node 权限模型与 bootstrap 拦截（§7）——`check` 不在这之上再加隔离，只复用同一条路径；计时器、CPU 占用这类副作用仍然真实发生。别把「check 通过」当成隔离证明。
 
 ### 验证行为（安装后）
 
@@ -655,7 +658,7 @@ mafw plugins install "C:/abs/path/to/my-plugin"
 | `identity_mismatch` | 模块导出名与 manifest 不符/缺失 | 三者对齐 |
 | `contribution_bound` | 注册越界（含 `http: false`、无 manifest 边界、非法 web surface） | 补声明或停止注册 |
 | `activation_failed` | `activate()` 抛错或其它激活期失败 | 看 `error` 文本 |
-| `worker_unavailable` | `untrusted` 包无法本地 dry-run | 交给人安装后验证 |
+| `worker_unavailable` | 本机 Node 没有权限模型，`untrusted` 包的 worker 起不来 | 换用支持 `--permission`（Node 24+）或 `--experimental-permission`（22/23）的 Node 跑 check |
 
 | 症状（逐字或接近逐字） | 原因 | 修法 |
 |---|---|---|
@@ -674,7 +677,7 @@ mafw plugins install "C:/abs/path/to/my-plugin"
 | `error: host range >=6.0.0 does not include 5.1.0` | `host` 范围排除了当前宿主 | 放宽范围或删掉 `host` |
 | `error: name mismatch: exports 'a', package 'b'` / `missing name` | manifest 名与模块导出名不一致 / 模块没导出 name | 三者对齐（manifest、exports、目录名） |
 | `error: plugin.json not found` | 把 `check` 指向了没有 manifest 的目录 | 改成包目录（含 `plugin.json`），或补上 manifest |
-| `error: worker_unavailable: no worker host factory` | 本地 `check` 无法 dry-run untrusted 包（没有 worker host） | 交给人类安装后用 `mafw plugins doctor` 验证；本地只能查声明与形状 |
+| `error: worker_unavailable: untrusted packages are not enabled` | 当前 Node 不支持权限模型（`--permission` / `--experimental-permission` 探测失败），`untrusted` 包的 worker 起不来 | 换用支持权限模型的 Node 重跑 check；不会退回进程内加载 |
 | `warning: legacy-permissions` 且 `--strict` 失败 | `apiVersion: 2` 却没声明 `permissions` | 声明用到的 token，或去掉 `--strict` |
 | `warning: legacy-contributes: …`（v1） | `apiVersion: 1` 的 `contributes` 形状非法，块被丢弃 | 修形状（或升到 apiVersion 2，让它变成硬错误） |
 | `error: main must be a relative path inside the package` | `main` 是绝对路径/盘符/含 `..` 段 | 写成包内相对路径（默认 `index.js`） |

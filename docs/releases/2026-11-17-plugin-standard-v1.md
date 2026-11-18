@@ -104,7 +104,7 @@ mafw plugins install "<abs path>" --trust trusted --permission actions --permiss
 
 ## 已知边界
 
-1. **`check` 无法 dry-run `untrusted` 包**：本地 host 没有 worker factory，返回 `worker_unavailable: no worker host factory`。规范 §0/§7/§10 已写明绕行（按受限形状写、交给人安装验证）。若要给 untrusted 作者完整自查环，需要给 CLI 接一个 worker host。
+1. ~~**`check` 无法 dry-run `untrusted` 包**：本地 host 没有 worker factory，返回 `worker_unavailable: no worker host factory`。规范 §0/§7/§10 已写明绕行（按受限形状写、交给人安装验证）。若要给 untrusted 作者完整自查环，需要给 CLI 接一个 worker host。~~ —— **已由 E15 关闭**（CLI 接上同一 worker 路径，§0/§7/§8 的绕行说明已删除）。
 2. **`check` 的 ctx 不是真实 host 的 ctx**：`ctx.config.update` / `ctx.terminal.*` 会抛错，`ctx.apiKey` 为 `null`，`gatewayPort` 是 3000 占位；`check` 不是沙箱（`ctx.fetch` 是真的）。
 3. **manifest schema 可能更松、永不更严**：JSON Schema 的 `maxLength` 数码点，契约数 UTF-16 单元；已用 parity 测试钉住这一条已知更松的边缘。
 4. ~~`PluginCheckResultSchema` / SDK / Desktop 类型尚未补 `declared`/`registered`/`warnings`~~ —— **已由 E15 关闭**（HTTP 契约与 SDK 现在都带 `declared` / `registered` / `warnings` / `code` / `evaluated`）。
@@ -116,7 +116,7 @@ mafw plugins install "<abs path>" --trust trusted --permission actions --permiss
 
 ## E15 收口（2026-11-18）
 
-把上面第 4-7 条遗留做完，共 5 个 commit：
+把上面第 4-7 条遗留做完，共 6 个 commit：
 
 | commit | 内容 |
 |---|---|
@@ -125,8 +125,11 @@ mafw plugins install "<abs path>" --trust trusted --permission actions --permiss
 | `3046bf4e9` | CLI：`error[<code>]:`、行内 `+name`/`-name` 差集（仅已声明 plane）、重名去重 |
 | `7dac853db` | HTTP 契约 + SDK 类型补 `code`/`evaluated`/`declared`/`registered`/`warnings`，OpenAPI 与 `api-schema.gen.ts` 用仓库脚本重生成（diff 仅限 `plugins.check`） |
 | `be44ed267` | 修正：`evaluated:false` 时渲染 `(not evaluated)`，不打印 `-` 标记与「声明了没注册」，把「没评估」与「没注册」彻底分开 |
+| 本记录 | `untrusted` 包的本地 dry-run：`plugin check` 接上 `WorkerHost`（与网关同一 `workerAvailable` 探测 / 同一 Node 权限旗标），`worker_unavailable` 只剩「本机 Node 没有权限模型」一种含义 |
 
-**新增 25 条用例**（`package-check-inventory` 6→21、`plugin-standard-command` 47→57），另 1 条断言翻转。
+**新增 25 条用例**（E15 前五个 commit）：`package-check-inventory` 6→21、`plugin-standard-command` 47→57，另 1 条断言翻转。
 定向门禁：`package-check-inventory` 21、`plugin-standard-command` 57、`api-contract` 262、SDK 245，全部通过；两个包的 `tsc -p` 均 exit 0。
 
-**仍未做**：`untrusted` 包的本地 dry-run 需要给 CLI 接 worker host；失败输出仍无逐项 `+/-` 之外的定位信息（不给 file:line）。
+**`untrusted` 本地 dry-run（本记录关闭）**：CLI host 现在传 `workerAvailable: () => permissionFlagFor(process.execPath) !== null` 与 `workerHostFactory`（镜像 `boot.ts`，去掉 kernel/safety/persistence；`config.get()` 为空、`config.update()` 直接报错）。worker 由 candidate bag 的 `worker.stop('dispose')` 收尾，`checkPackage` 的 `finally` 会 dispose 该 bag；进程另有 `exit` 钩子按 pid 兜底（Ctrl+C / 未捕获异常打断 check 时），正常路径实测无残留 child。`trusted` 包路径不变。新增 5 条用例（`tests/unit/cli/plugin-check-local.test.ts`：真实 untrusted 包在 worker 里 dry-run 且结束后无残留 child、worker 越界仍报 `contribution_bound`、worker 崩溃后不残留重启的 child、退出钩子的 kill 规则 2 条）。
+
+**仍未做**：失败输出仍无逐项 `+/-` 之外的定位信息（不给 file:line）。
