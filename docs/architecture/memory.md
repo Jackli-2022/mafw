@@ -165,6 +165,25 @@ opencode server 进程                    Gateway 进程
 - **话题判定必须用包含度（overlap/min 侧）而非 Jaccard**：Jaccard 对"600 字符窗口 vs 15 token 追问"有长度偏置，实测 158/246 次快照被误跳过
 - 定位延迟用 `/api/recall/context` 的 `[Recall] timing` debug 日志（search/noteBoard/goal/neighbours 分段）
 
+**secondary expansion 不再重复图扩展（2026-11-18，单变量实测）**
+
+`SearchRecallOptions.graphExpand` 透传给 `index.searchScored`；entity / multi-hop 二次搜索固定传 `false`，基础 pass 不传（沿用 index 默认）。原因是每次 graph pass 要按 seed 做 anchor + coactivation 两次同步 SQLite 查询（seed ≤ 50），538 字查询原来是 5 pass × 100 ≈ **500 次图 SQL**。
+
+这不只是省掉重复计算，也**改变了 secondary pass 的候选与打分口径**：改动前 secondary pass 自己也会做图扩展，graph-only 邻居会进入该 pass 的候选池，并通过组内 BM25/graph 混合与 `maxNormalize` 共同决定 secondary 贡献的分数；改动后 secondary 图邻居不再进入候选池，组内打分口径也随之变化（基础 pass 的候选池与图召回保持不变）。因此「当前冻结 40 条 0 flip」是**实测结果，不是语义等价的证明**——语义上 secondary 贡献集合本就可能不同。
+
+离线重放口径：真实 `gateway/src` 模块 + 冻结的 `.harmonic_index.json` 副本（17,047 条）+ 冻结的三个图表（`anchor_units` 42916 / `anchor_edges` 635692 / `coactivation_units` 5485 / `coactivation_edges` 16866），`gateway.db` 只读，同进程内 before（所有 pass 用 index 默认）与 after 交替跑 15 轮（各 3 轮预热）：
+
+| 查询 | 长度 | search p50 / p95 / max（before → after） | 图 SQL / 次（before → after） |
+|---|---:|---|---|
+| 短英文 | 23 字 | 51.7 / 55.7 / 55.7 → 52.5 / 56.7 / 56.7 ms | 100 → 100（无 secondary pass） |
+| 标识符串 | 69 字 | 58.3 / 63.2 / 63.2 → 58.5 / 62.5 / 62.5 ms | 100 → 100（无 secondary pass） |
+| 长 CN+EN | 538 字 | 570.7 / 595.8 / 595.8 → 283.7 / 294.7 / 294.7 ms | 500 → 100 |
+| 长英文 | 685 字 | 540.5 / 657.9 / 657.9 → 248.2 / 310.8 / 310.8 ms | 500 → 100 |
+
+基础 pass 的图调用保留（每次 100 条 = 50 seed × anchor/coactivation），长查询的 secondary 图调用由 400 次/查询降为 **0**。
+
+**100ms 契约仍未达标**：长查询 in-process search 仍有 248–284ms p50；本切片只去掉 secondary 重复图扩展，不是 100ms 修复。质量重放（before 先跑、after 后跑、未独立预热）里 route-equivalent AUTO 记为 174/167ms、REST 记为 111.3/31.1ms，但 REST 构造完全不变却相差 3.6 倍，说明该顺序存在 order bias，**这些整链路数字不作为收益证据**；性能收益只以上表 3 轮预热 + 15 轮交替的 search p50/p95/max 与图 SQL 500→100 为准。固定 40 条质量在离线重放中 before/after 逐条一致（0 flip、AUTO 17/30、exact 10/10、current-state 6/10、implicit 1/10、false 0/10、stale 0、agreement 25/30，两侧完全相同），且与 live BASELINE 复测 artifact（`personal-recall-before-graph-fanout.json`）逐项一致；与 live 17:44 artifact 的差异只有 `implicit-sidecar-health` 一条（该 query 在当前语料上 FOK `top1/mean`=1.347，阈值 high=1.35，属语料状态边界，非本改动引入）。
+
 ### 精确证据准入与完整滚动窗口（2026-11-18）
 
 排查/规格：`docs/research/2026-11-18-auto-recall-fok-divergence.md`；计划：`docs/superpowers/plans/2026-11-18-auto-recall-exact-evidence.md`；交付与实测：`docs/releases/2026-11-18-auto-recall-exact-evidence.md`。

@@ -140,10 +140,13 @@ function expandQuery(
   // Budget-capped: each search is a full-corpus BM25 pass, and the old
   // 10-entity + 4-subquery fan-out (14 passes ≈ 250ms under load) was the
   // dominant cost of the 100ms boundary path.
+  // Secondary passes never repeat anchor-graph expansion: they re-rank
+  // candidates the base pass already expanded, and each graph pass costs up to
+  // 50 seeds × 2 SQLite queries (~500 sync queries for a 5-pass long query).
   const entities = extractQueryEntities(query);
   for (const entity of entities) {
     if (used >= maxSearches) break;
-    const hits = fetchScored(index, entity, topK, {});
+    const hits = fetchScored(index, entity, topK, { graphExpand: false });
     accumulate(hits, 0.4);
     used++;
   }
@@ -152,7 +155,7 @@ function expandQuery(
   const subQueries = decomposeMultiHopQuery(query);
   for (const sq of subQueries) {
     if (used >= maxSearches) break;
-    const hits = fetchScored(index, sq, topK, {});
+    const hits = fetchScored(index, sq, topK, { graphExpand: false });
     accumulate(hits, 0.35);
     used++;
   }
@@ -192,6 +195,13 @@ export interface SearchRecallOptions {
   denseScores?: Map<string, number>
   /** Include retired cortical `episodic` rows (admin/legacy UI only). */
   includeLegacyEpisodic?: boolean
+  /**
+   * Anchor-graph expansion inside `index.searchScored`. Left undefined the
+   * index default applies (config.search.graph.enabled). Secondary expansion
+   * passes pass `false`: they re-rank already-expanded candidates, so repeating
+   * the per-seed graph SQL per pass is pure cost on the 100ms boundary path.
+   */
+  graphExpand?: boolean
 }
 
 /** Multi-topic blob abstraction (chained MinHash merges) 鈥?dilutes precision. */
@@ -324,6 +334,7 @@ function fetchScored(index: any, query: string, topK: number, options: SearchRec
       retriever: options.retriever ?? 'bm25',
       ...(options.denseScores ? { denseScores: options.denseScores } : {}),
       ...(options.includeLegacyEpisodic ? { includeLegacyEpisodic: true } : {}),
+      ...(options.graphExpand !== undefined ? { graphExpand: options.graphExpand } : {}),
     }) || []
   }
   return (index.search(query, topK, options) || []).map((e: any) => ({ entry: e, score: 0.5 }))
