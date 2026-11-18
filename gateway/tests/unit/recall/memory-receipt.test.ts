@@ -40,8 +40,20 @@ describe('filterT1', () => {
     expect(out.filtered).toBe(3);
   });
 
-  it('drops empty excerpts and caps at 240 chars', () => {
-    const long = 'x'.repeat(300);
+  it('maps durable observation sources and drops tool/reasoning rows', () => {
+    const out = filterT1([
+      t1({ traceId: 'u', source: 'user_input' }),
+      t1({ traceId: 'a', source: 'assistant_reply' }),
+      t1({ traceId: 't', source: 'tool_result', excerpt: 'packages/desktop/app.ts contents' }),
+      t1({ traceId: 'r', source: 'reasoning', excerpt: 'private chain of thought' }),
+    ]);
+    expect(out.kept.map((item) => item.traceId)).toEqual(['u', 'a']);
+    expect(out.kept[0].source).toBe('user');
+    expect(out.kept[1].source).toBe('assistant');
+    expect(out.filtered).toBe(2);
+  });
+
+  it('drops empty excerpts and caps at 240 chars', () => {    const long = 'x'.repeat(300);
     const out = filterT1([
       t1({ traceId: 'empty', excerpt: '   ' }),
       t1({ traceId: 'long', excerpt: long }),

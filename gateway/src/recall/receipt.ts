@@ -80,7 +80,13 @@ function clamp(text: string | undefined | null): string {
 }
 
 function normalizeSource(source: string | undefined): string {
-  return (source ?? '').trim().toLowerCase()
+  const raw = (source ?? '').trim().toLowerCase()
+  // Durable T1 rows use observation sources; the receipt speaks in roles.
+  if (raw === 'user_input' || raw === 'user') return 'user'
+  if (raw === 'assistant_reply' || raw === 'assistant') return 'assistant'
+  if (raw === 'tool_result' || raw === 'tool') return 'tool'
+  if (raw === 'reasoning' || raw === 'system') return 'system'
+  return raw
 }
 
 function isT1Eligible(item: ReceiptT1Input): boolean {
