@@ -591,3 +591,9 @@ D3 鉴权洞独立先行 / D4 沿用桌面 Goal→Tech Lead 范式 / D5 含「�
   （`cadb20dd`；`work_tab`/`tab_shell`/`debug_page` 47/47 + analyze 0，重装真机复验）。已知：通知授权每次启动
   可能重弹（`adb shell pm grant ... POST_NOTIFICATIONS` 可规避）；模拟器上残留旧 `ai.mafw.mafw_mobile` 可卸载。
 
+
+## 客户端渠道与隐藏上下文（2026-11-18）
+
+- `ConnectionConfig.headers` 固定携带 `X-MAFW-Client: mobile`，普通 HTTP 发送（`/api/chat/enriched`）由 gateway 据此注入隐藏的 `<client-channel>手机端</client-channel>`；WS `send` 由 gateway 默认按 mobile 标记。
+- `MafwMessage.displayText` 在展示前剥离 `<latest-reminder>`、`<client-channel>` 与 `<facts|deltas|patterns|history>` 块（runtime 可能把 synthetic part 拼进历史正文）。
+- 这条渠道只服务当前 prompt，不写记忆。

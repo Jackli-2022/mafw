@@ -2840,3 +2840,11 @@ spec `docs/superpowers/specs/2026-11-09-desktop-gateway-managed-runtime-design.m
 领域事件层；默认开启，`MAFW_EVENT_LAYER=0` 关闭。AutomationEngine 通过 `event:github_poll` /
 `event:cron_tick` 动作把事件交给 `EventLayerService`；GitHub 第一版轮询 issues/PRs + comments，
 reviews/CI 归 follow-up。完整表、API、背压与测试见 `docs/architecture/events.md`。
+
+## 客户端渠道（Client Channel，2026-11-18）
+
+- 请求头 `x-mafw-client: desktop|mobile|tui|web|api`（别名：`electron`→desktop、`ios/android/phone`→mobile、`cli/terminal`→tui、`browser`→web、`sdk`→api）。
+- 桌面在自己的 `<latest-reminder>` 末尾带 `渠道：桌面端`；`chat.send`、`chat.sendEnriched` 与 WS `send` 对没有渠道的客户端自动追加一条隐藏 `text` part：`<client-channel>手机端</client-channel>`。
+- 已有 `渠道：` 的 reminder 或已有 `<client-channel>` 时不重复；旧版 reminder（无渠道）仍会补一条。
+- WS `send` 是手机传输，默认按 `mobile` 标记；帧内显式 `channel` 字段优先。
+- 该块只服务当前 prompt，不写记忆；desktop / mobile 展示层都剥离。

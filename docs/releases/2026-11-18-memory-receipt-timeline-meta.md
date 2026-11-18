@@ -24,10 +24,11 @@
 
 ### 3. 用户元信息
 
-- composer 上方 ghost 行（10.5px、无边框、hover 才出现底色与 `›`），popover 300px：时间只读 / 城市输入 + 开关 / 语言只读。
-- 城市默认关闭，只发城市名；每轮发送带隐藏 `<latest-reminder>`（含日期/时区/语言）。
+- composer 上方 ghost 行（10.5px、无边框、hover 才出现底色与 `›`），popover 300px：时间只读 / 渠道只读 / 城市输入 + 开关 / 语言只读。
+- 城市默认关闭，只发城市名；每轮发送带隐藏 `<latest-reminder>`（含日期/时区/语言/**渠道**）。
+- 渠道自动识别：桌面 reminder 写 `渠道：桌面端`；gateway 按 `x-mafw-client` 为手机/TUI/API 补 `<client-channel>…</client-channel>`；WS `send` 默认 mobile。
 - `mafw-latest-reminder=0` 只关 reminder，turn marker 仍保留（回执锚点不能丢）。
-- 历史与实时都由 `stripInjectedUserText` 剥离 reminder / marker。
+- 历史与实时都由 `stripInjectedUserText` 剥离 reminder / marker / 渠道块；手机端 `displayText` 同样剥离。
 
 ## 主要提交
 
@@ -37,11 +38,14 @@
 - `dd27fa559` `18b5ae5a3` `1d73057bf` `1bfb79988` — splitTurn / ProcessTimeline / 接入 / 折叠
 - `f745117ec` `3f716f98f` `57e13fae1` — reminder + marker 发送路径 / ghost chip
 - 验证修复：`d4c9f40c3`（IPC 参数）、`a564c0cff`（工具卡默认展开/actions）、`493910814`（live 替换保留 turnKey）、`be77475c9`（T1 source 映射）、`7a377a8f8`（启动崩溃）、`4a5ae66c7`（快照邻居）、`f058dade7`（旧 preload 兼容）、`e194f9f2b`（路由覆盖账本）、`238c6f9f7`（城市输入溢出）
+- 渠道：`589b2045f`（gateway 注入）、`3c93726e3`（桌面 reminder/popover）、`0c7a7cfee`（TUI 头）、`6cebcb887`（mobile 头 + 展示剥离）
 - 文档：`a1286acaf`
 
 ## 验证
 
-- Desktop：`npm test` → **795 suites / 4157 pass / 0 fail**；`npx tsgo --noEmit -p tsconfig.json` → rc 0。
+- Desktop：`npm test` → **795 suites / 4160 pass / 0 fail**；`npx tsgo --noEmit -p tsconfig.json` → rc 0。
+- Mobile：`flutter test --concurrency=1` → **600 pass / 0 fail**；新增渠道头与 `displayText` 剥离测试。
+- TUI：`npm test` → **325 pass / 0 fail**（1 skip）；`tsc --noEmit` 仍有既有 `src/ui/triage-tab.ts:47` 类型错误（非本轮改动）。
 - Session UI：全部测试（排除既有 `architecture.test.ts`）→ **25 suites / 155 pass / 0 fail**；`tsgo` rc 0。
 - SDK：`npm test` → **246 pass / 0 fail**；`tsc` rc 0。
 - UI：`tsgo` rc 0。
