@@ -27,6 +27,8 @@ import type * as http from 'http';
 const HUMAN_TOKEN_HEADER = 'x-mafw-human-token';
 const DEVICE_TOKEN_HEADER = 'x-mafw-device-token';
 const DEVICE_TOKEN_PREFIX = 'dev_';
+/** Injected by the loopback tunnel terminator; never accepted from clients. */
+export const TUNNEL_HEADER = 'x-mafw-tunnel';
 
 // ---------------------------------------------------------------------------
 // Loopback detection
@@ -52,8 +54,8 @@ export interface AuthRequest {
 // Principal model (E5a)
 // ---------------------------------------------------------------------------
 
-export type PrincipalKind = 'human' | 'service' | 'local' | 'anonymous';
-export type PrincipalMethod = 'human-token' | 'device-token' | 'api-token' | 'loopback' | 'none';
+export type PrincipalKind = 'human' | 'service' | 'local' | 'relay' | 'anonymous';
+export type PrincipalMethod = 'human-token' | 'device-token' | 'api-token' | 'loopback' | 'tunnel' | 'none';
 
 export interface Principal {
   kind: PrincipalKind;
@@ -72,6 +74,12 @@ export interface PrincipalResolveOpts {
    * verifier makes every device token invalid → fail-closed.
    */
   verifyDeviceToken?: (token: string) => { deviceId: string } | null;
+  /**
+   * M0: per-process secret injected by the loopback tunnel terminator. A
+   * request carrying this marker is `relay` (mobile allowlist) unless it also
+   * presents a real credential.
+   */
+  tunnelSecret?: string;
 }
 
 /**
@@ -112,12 +120,36 @@ export function resolvePrincipal(req: AuthRequest, opts: PrincipalResolveOpts): 
     if (matches) return { kind: 'service', method: 'api-token' };
   }
 
+  // M0: a tunneled request without a credential is `relay`, never `local`.
+  // The marker is injected by our loopback terminator; Cloudflare's
+  // `cf-connecting-ip` is the fail-closed hint when the marker is missing
+  // (e.g. an older cloudflared path). A forged marker alone does nothing.
+  const marker = String(req.headers[TUNNEL_HEADER] || '').trim();
+  const markerMatches = Boolean(marker && opts.tunnelSecret && constantTimeEqual(marker, opts.tunnelSecret));
+  if (markerMatches || hasCloudflareForwardingHeaders(req.headers)) {
+    return { kind: 'relay', method: 'tunnel' };
+  }
+
   return fallbackPrincipal(req);
+}
+
+function hasCloudflareForwardingHeaders(headers: Record<string, string | undefined>): boolean {
+  return Boolean(String(headers['cf-connecting-ip'] || '').trim());
 }
 
 /** Human-only routes accept `human` only (human token or device token). */
 export function isHumanPrincipal(principal: Principal | undefined): boolean {
   return principal?.kind === 'human';
+}
+
+/** M0: tunneled requests get the mobile-only relay surface. */
+export function isRelayPrincipal(principal: Principal | undefined): boolean {
+  return principal?.kind === 'relay';
+}
+
+/** M0: true local clients keep the trusted loopback surface. */
+export function isLocalPrincipal(principal: Principal | undefined): boolean {
+  return principal?.kind === 'local';
 }
 
 /** Stable 403 body for every human-only route (spec §4). */
