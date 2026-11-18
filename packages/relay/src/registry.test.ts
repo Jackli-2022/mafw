@@ -20,6 +20,8 @@ test('claims a new room and authenticates only the right token', () => {
   assert.equal(claim!.roomId, input.roomId);
   assert.ok(registry.authenticate(input.roomId, input.roomToken));
   assert.equal(registry.authenticate(input.roomId, 'wrong'), null);
+  assert.equal(registry.routeSecretMatches(input.roomId, input.routeSecret), true);
+  assert.equal(registry.routeSecretMatches(input.roomId, newRouteSecret()), false);
 });
 
 test('re-claim with the right token keeps the room; wrong token is rejected', () => {

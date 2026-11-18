@@ -91,6 +91,11 @@ export class RoomRegistry {
     return Boolean(this.rooms.get(roomId)?.hostConnectionId);
   }
 
+  routeSecretMatches(roomId: string, routeSecret: string): boolean {
+    const record = this.rooms.get(roomId);
+    return Boolean(record && sameHex(record.routeSecretHash, hashSecret(routeSecret)));
+  }
+
   release(roomId: string): void {
     this.rooms.delete(roomId);
   }
