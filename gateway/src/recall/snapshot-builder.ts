@@ -14,6 +14,45 @@ import type { EpisodeHit } from './t1-episode-search';
 
 export const SNAPSHOT_SCOPE = 'recall-snapshot';
 
+/**
+ * Minimal read surface for the rolling window: the durable logical turn list
+ * plus a per-turn row read that also sees archived rows. `GatewayDatabase`
+ * satisfies it directly (`listSessionTurns` / `readTurnRows`). The `turn_id`
+ * alias is accepted because the durable column is `turn_seq` on `T1Turn` while
+ * the legacy turn-summary shape calls the same slot `turn_id`.
+ */
+export interface RecentTurnsDb {
+  listSessionTurns(sessionID: string): Array<{ turn_seq?: number; turn_id?: number }>;
+  readTurnRows(sessionID: string, turnID: number): Array<{ source: string; content: string }>;
+}
+
+/**
+ * Texts for the snapshot rolling window: user/assistant content of the last
+ * `maxTurns` logical turns, oldest → newest.
+ *
+ * Uses active + archive rows. The hot-only `listTurns()` / `readTurn()` pair
+ * collapsed to the newest instruction once extraction archived older turns,
+ * which made the snapshot query (and its reranker probability) meaningless.
+ */
+export function recentTurnTextsFromDb(
+  db: RecentTurnsDb,
+  sessionID: string,
+  maxTurns: number,
+): string[] {
+  // `slice(-0)` would return the WHOLE array, so the empty window is guarded.
+  const limit = Number.isFinite(maxTurns) ? Math.max(0, Math.trunc(maxTurns)) : 0;
+  if (limit <= 0) return [];
+  const out: string[] = [];
+  for (const turn of db.listSessionTurns(sessionID).slice(-limit)) {
+    const turnID = turn.turn_seq ?? turn.turn_id;
+    if (typeof turnID !== 'number') continue;
+    for (const row of db.readTurnRows(sessionID, turnID)) {
+      if (row.source === 'user_input' || row.source === 'assistant_reply') out.push(row.content);
+    }
+  }
+  return out;
+}
+
 /** Reranker input must match the MCP path: abstraction + cue anchors. */
 export function rerankerEntryFromRecall(memory: RecallMemory): {
   id: string;
@@ -30,7 +69,7 @@ export function rerankerEntryFromRecall(memory: RecallMemory): {
 }
 
 export interface SnapshotDeps {
-  /** Recent turn texts, oldest → newest (from T1 observations). */
+  /** Recent turn texts, oldest → newest (from T1 active + archive). */
   recentTurnTexts: (sessionID: string, maxTurns: number) => string[];
   /** Cheap in-memory BM25 + expansion search (sync path); may be async when
    *  the dense channel (R2) needs a query embedding. */

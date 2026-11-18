@@ -2662,7 +2662,7 @@ class MafwScheduler {
   private async refreshSnapshotInner(sessionID: string): Promise<void> {
     if (!this.memoryService) return;
     const db = this.getGatewayDb();
-    const { buildSnapshot, rerankerEntryFromRecall } = require('./recall/snapshot-builder');
+    const { buildSnapshot, rerankerEntryFromRecall, recentTurnTextsFromDb } = require('./recall/snapshot-builder');
     const { searchRecallMemoriesSync, recallNeighbors } = require('./recall/recall-context');
     const { formatRecallContext } = require('./recall/inject-format');
     const { getReranker } = require('./core/memory/reranker-singleton');
@@ -2676,15 +2676,8 @@ class MafwScheduler {
       config.recall.t1Episodes?.enabled !== false &&
       config.recall.t1Episodes?.mode === 'live';
     const snap = await buildSnapshot({
-      recentTurnTexts: (sid: string, maxTurns: number) => {
-        const out: string[] = [];
-        for (const turn of db.listTurns(sid).slice(-maxTurns)) {
-          for (const obs of db.readTurn(sid, turn.turn_id)) {
-            if (obs.source === 'user_input' || obs.source === 'assistant_reply') out.push(obs.content);
-          }
-        }
-        return out;
-      },
+      recentTurnTexts: (sid: string, maxTurns: number) =>
+        recentTurnTextsFromDb(db, sid, maxTurns),
       // R2+R3 wiring for the boundary path: build the snapshot with the dense
       // channel (query embedding ~8ms, background so it is affordable) fused
       // with BM25, then the R3 rerank — the best-measured combination. Falls
