@@ -268,6 +268,26 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
         // R5 FOK gate (fail-open): weak evidence is stated, not silently
         // withheld. Only active when config.search.fok.enabled.
         fokStatus = computeRecallFokZone(deps.memoryService()!.harmonicIndex, query, config.search.fok);
+        // P1 exact-evidence admission: a flattened BM25 ratio must not veto a
+        // target that the index identifies exactly (verbatim title / cue /
+        // identifier). Metadata-only, deterministic, and live-path only —
+        // snapshots keep their own probability gate. Ordinary low-confidence
+        // candidates are untouched (no evidence → same status/candidates).
+        try {
+          const { findExactRecallEvidence, applyExactRecallEvidence } = require('../recall/exact-evidence');
+          const exact = applyExactRecallEvidence(
+            memories,
+            findExactRecallEvidence(
+              deps.memoryService()!.harmonicIndex.getIndex().entries,
+              query,
+              3,
+            ),
+            fokStatus,
+            3,
+          );
+          memories = exact.memories;
+          fokStatus = exact.status;
+        } catch { /* fail-open: keep the FOK/BM25 result */ }
         // G4 parametric arbiter (MARTA): annotate-only in v1 — prepends a
         // note when parametric knowledge likely suffices; never skips.
         if (config.search.arbiter !== false) {
