@@ -1,6 +1,6 @@
 # Mobile Relay M1 (Core) Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Build a locally runnable relay core (SNI routing, room registry, host control mux, quotas, health) with tests, without touching the gateway or mobile app.
 
@@ -41,7 +41,7 @@
 - Produces: `parseClientHelloSni(data: Buffer): string | null`
 - Produces: `TLS_RECORD_HEADER_BYTES = 5`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Capture a real ClientHello with `tls.connect` to a temporary `net` server (no cert validation is needed because the server never replies):
 
@@ -68,23 +68,23 @@ test('parses SNI from a real ClientHello', async () => {
 
 Add cases for: every 1-byte split of the same buffer; no SNI; truncated buffer; `..`/uppercase host stays literal (validation is Task 2).
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd packages/relay && node --test "src/sni.test.ts"`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 - `package.json`: name `@mafw/relay`, `"type": "module"`, scripts `build` (tsc) and `test` (`node --test "src/**/*.test.ts"`); dependencies `ws` via workspace root (no local install).
 - `tsconfig.json`: copy `packages/runtime-core/tsconfig.json` (ES2022, commonjs build, `allowImportingTsExtensions`, `rewriteRelativeImportExtensions`, tests excluded).
 - `sni.ts`: parse TLS record header (type 22), handshake type 1, skip version/random/session/ciphers/compression, walk extensions, find `server_name` (0), return the first host_name; return null on any malformed/truncated input.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cd packages/relay && node --test "src/sni.test.ts"`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/relay
@@ -106,7 +106,7 @@ git commit -m "feat(relay): add sni parser"
 - Produces: `newRoomId(): string`, `newRouteSecret(): string`, `hashSecret(secret: string): string`
 - Produces: `class RoomRegistry { claim(input): RoomClaim; authenticate(roomId, roomToken): RoomClaim | null; attachHost(roomId, conn): boolean; detachHost(roomId, conn): void; get(roomId): RoomClaim | undefined; release(roomId): void; }`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 assert.deepEqual(parseRoomHost(`${roomId}-${secret}.relay.example.com`, 'relay.example.com'), { roomId, routeSecret: secret });
@@ -117,24 +117,24 @@ assert.equal(parseRoomHost(`${roomId.toUpperCase()}-${secret}.relay.example.com`
 
 Registry: first claim stores hashes; wrong token rejected; re-claim with the right token succeeds; `attachHost` replaces the previous connection and marks the old one replaced; `detachHost` only clears if it is the current connection.
 
-- [ ] **Step 2: Run to fail**
+- [x] **Step 2: Run to fail**
 
 Run: `cd packages/relay && node --test "src/room.test.ts" "src/registry.test.ts"`
 Expected: FAIL — modules not found.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 - Base32 lower-case generator (16 bytes → 26 chars) using `crypto.randomBytes`; regex `/^[a-z2-7]{26}$/`.
 - `parseRoomHost` splits the first label on `-`, requires 2 parts and the exact domain suffix.
 - `hashSecret` = `sha256(secret).toString('hex')`; compare with `timingSafeEqual`.
 - `RoomClaim` includes roomId, tokenHash, routeSecretHash, createdAt, lastSeenAt, host connection id; registry is in-memory for M1 (SQLite deferred to M2).
 
-- [ ] **Step 4: Run to pass**
+- [x] **Step 4: Run to pass**
 
 Run: `cd packages/relay && node --test "src/room.test.ts" "src/registry.test.ts"`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/relay
@@ -156,11 +156,11 @@ git commit -m "feat(relay): add room registry"
 - Produces: `decodeFrame(buffer: Buffer): { type; streamId; payload }` (throws on short/oversized)
 - Produces: `class StreamWindow { constructor(initial: number); take(n): boolean; credit(n): void; available(): number; }`
 
-- [ ] **Step 1: Write failing tests** for round-trip DATA/WINDOW/CLOSE, max payload, truncated header; window take/credit/overflow.
-- [ ] **Step 2: Run to fail** (`node --test "src/frames.test.ts" "src/flow.test.ts"`).
-- [ ] **Step 3: Implement** the 10-byte header `[type:1][streamId:4][flags:1][len:4]`, `MAX_FRAME = 256 * 1024`; window starts at 256KB, rejects credit over initial.
-- [ ] **Step 4: Run to pass.**
-- [ ] **Step 5: Commit** `feat(relay): add frame mux primitives`.
+- [x] **Step 1: Write failing tests** for round-trip DATA/WINDOW/CLOSE, max payload, truncated header; window take/credit/overflow.
+- [x] **Step 2: Run to fail** (`node --test "src/frames.test.ts" "src/flow.test.ts"`).
+- [x] **Step 3: Implement** the 10-byte header `[type:1][streamId:4][flags:1][len:4]`, `MAX_FRAME = 256 * 1024`; window starts at 256KB, rejects credit over initial.
+- [x] **Step 4: Run to pass.**
+- [x] **Step 5: Commit** `feat(relay): add frame mux primitives`.
 
 ---
 
@@ -173,11 +173,11 @@ git commit -m "feat(relay): add room registry"
 **Interfaces:**
 - Produces: `class HostHub { constructor(registry: RoomRegistry); attach(ws): void; openStream(roomId: string): Promise<Duplex>; closeStream(roomId, streamId): void; online(roomId): boolean; }`
 
-- [ ] **Step 1: Write failing test** with a real `ws` server/client: hello with room token → `hello-ok`; open a stream → host receives `open`; host data → stream readable; close → both sides end.
-- [ ] **Step 2: Run to fail.**
-- [ ] **Step 3: Implement** JSON control frames + binary DATA frames, heartbeat ping/pong, replace-old-host semantics via `RoomRegistry`.
-- [ ] **Step 4: Run to pass.**
-- [ ] **Step 5: Commit** `feat(relay): add host control hub`.
+- [x] **Step 1: Write failing test** with a real `ws` server/client: hello with room token → `hello-ok`; open a stream → host receives `open`; host data → stream readable; close → both sides end.
+- [x] **Step 2: Run to fail.**
+- [x] **Step 3: Implement** JSON control frames + binary DATA frames, heartbeat ping/pong, replace-old-host semantics via `RoomRegistry`.
+- [x] **Step 4: Run to pass.**
+- [x] **Step 5: Commit** `feat(relay): add host control hub`.
 
 ---
 
@@ -193,11 +193,11 @@ git commit -m "feat(relay): add room registry"
 - Produces: `createTlsRouter({ domain, registry, hosts, listenHost?, listenPort? }): { start(): Promise<number>; stop(): Promise<void>; port(): number | null }`
 - Produces: `createRelayServer({ domain, tlsPort, controlPort, adminPort }): { start(): Promise<void>; stop(): Promise<void>; ports(): {...} }`
 
-- [ ] **Step 1: Write failing test**: real ClientHello → router parses SNI → asks fake host hub for a stream → pipes bytes both ways; unknown room closes; fragmented ClientHello works.
-- [ ] **Step 2: Run to fail.**
-- [ ] **Step 3: Implement** `net.createServer`: buffer until ClientHello complete (max 16KB, 5s), parse SNI, lookup registry, reject offline, open stream, pipe; `server.ts` wires registry + hub + router + `/health`.
-- [ ] **Step 4: Run to pass.**
-- [ ] **Step 5: Commit** `feat(relay): add sni tls router`.
+- [x] **Step 1: Write failing test**: real ClientHello → router parses SNI → asks fake host hub for a stream → pipes bytes both ways; unknown room closes; fragmented ClientHello works.
+- [x] **Step 2: Run to fail.**
+- [x] **Step 3: Implement** `net.createServer`: buffer until ClientHello complete (max 16KB, 5s), parse SNI, lookup registry, reject offline, open stream, pipe; `server.ts` wires registry + hub + router + `/health`.
+- [x] **Step 4: Run to pass.**
+- [x] **Step 5: Commit** `feat(relay): add sni tls router`.
 
 ---
 
@@ -213,11 +213,11 @@ git commit -m "feat(relay): add room registry"
 - Produces: `class Quota { allowRoom(ip): boolean; allowStream(roomId, ip): boolean; allowBytes(roomId, n): boolean; }`
 - Produces: `main()` in `index.ts` reading `RELAY_DOMAIN`, `RELAY_TLS_PORT`, `RELAY_CONTROL_PORT`, `RELAY_ADMIN_PORT`.
 
-- [ ] **Step 1: Write failing tests** for per-IP room/day, per-room streams, token-bucket bytes; e2e: start relay, register host, send ClientHello+payload through TCP, assert echo, `/health` 200.
-- [ ] **Step 2: Run to fail.**
-- [ ] **Step 3: Implement** quotas and CLI bootstrap; document env in `packages/relay/README.md`.
-- [ ] **Step 4: Run to pass** and `npm run build -w @mafw/relay`.
-- [ ] **Step 5: Commit** `feat(relay): add quotas and local bootstrap`.
+- [x] **Step 1: Write failing tests** for per-IP room/day, per-room streams, token-bucket bytes; e2e: start relay, register host, send ClientHello+payload through TCP, assert echo, `/health` 200.
+- [x] **Step 2: Run to fail.**
+- [x] **Step 3: Implement** quotas and CLI bootstrap; document env in `packages/relay/README.md`.
+- [x] **Step 4: Run to pass** and `npm run build -w @mafw/relay`.
+- [x] **Step 5: Commit** `feat(relay): add quotas and local bootstrap`.
 
 ---
 
