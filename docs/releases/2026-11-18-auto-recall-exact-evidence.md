@@ -24,7 +24,7 @@
 
 ## 修复（现状）
 
-- **P1 精确证据准入**（`gateway/src/recall/exact-evidence.ts`）：仅当 FOK 非 `inject` 时，在 active 条目的 `primary_abstraction` / `cue_anchors` 上找确定性证据（整标题等价、整 query 形 identifier、7–40 位十六进制 commit、≥12 ASCII / ≥6 CJK 且 df≤5、覆盖 ≥50% 非空字符的短语）。命中条目按 specificity→id 确定性置前、去重、截到 topK=3，并把 zone 升级为 `inject`。`superseded_by` 与未 pin/sticky 的 legacy `episodic` 不参与；不读正文、不加 embedding/LLM；**未改 FOK 阈值、全局 topK、recency**；无证据时行为与旧版逐字一致。
+- **P1 精确证据准入**（`gateway/src/recall/exact-evidence.ts`）：仅当 FOK 非 `inject` 时，在 active 条目的 `primary_abstraction` / `cue_anchors` 上找确定性证据（整标题等价、整 query 形 identifier、7–40 位十六进制 commit、≥12 ASCII / ≥6 CJK 且 df≤5、覆盖 ≥50% 非空字符的短语）。命中条目按 specificity 排序；**同等特异性时先偏好已在 BM25 候选中的 owner，再用 id 升序 tie-break**（不使用 recency/index 顺序），确定性置前、去重、截到 topK=3，并把 zone 升级为 `inject`。`superseded_by` 与未 pin/sticky 的 legacy `episodic` 不参与；不读正文、不加 embedding/LLM；**未改 FOK 阈值、全局 topK、recency**；无证据时行为与旧版逐字一致。已 `inject` 的轮次跳过整个扫描（0ms）。
 - **P2 完整滚动窗口**（`snapshot-builder.ts: recentTurnTextsFromDb`）：`listSessionTurns`（`t1_turns`）+ `readTurnRows`（`t1_archive ∪ t1_observations`），取最近 4 个逻辑轮的 user/assistant 文本；kernel 刷新改用该 helper，export 缺失时 `log.warn` 而非静默停摆。
 - snapshot 仍走 `rerankDetailed` 概率门，边界仍走比值门；本切片没有合并两套阈值。
 
@@ -45,6 +45,21 @@ TDD：三个任务都先观察 RED（模块不存在 / 抑制未解除 / 热表�
 - 新测试单独复跑：**3 suites / 53 tests，53 passed**。
 - Gateway 全量 `npm test -- --forceExit`：**1038 suites，8291 passed，2 skipped，0 failed**（`2 skipped` 为仓库既有）。
 - `npm run build`（gateway）：**通过**；热重启令牌 `target=gateway, action=restart, commit=0a53e3207..., delayMs=5000`；**pid 28300 → 60752**，`/health` `status=ok`、`gatewayVersion=5.1.0`、`schemaEpoch=1`，`last-restart.json` 记录同 commit，令牌已消费。
+- **部署面披露**：部署的 HEAD `0a53e3207` 是共享 main，**包含与本切片交错提交的其他会话改动**；本切片只排除了当时**未提交**的 sibling work（`adapters/opencode` + 3 个 gateway 测试），没有排除也不会回滚已提交的 sibling 变更。
+
+### 精确扫描成本（实测）
+
+在真实 16,732 条目 / 180,047 anchor 的 live 语料上直接测 `findExactRecallEvidence`：
+
+| 场景 | 实测 |
+|---|---|
+| 冷启动首次（一次性构建 compact/cue 缓存） | **≈55–61ms** |
+| 热态（缓存命中） | **p50 13–22ms** |
+| 高负载时 | 最高 **≈42ms** |
+| 已 `inject` 的轮次 | **0ms**（route 根本不进入扫描） |
+
+这不是「免费」旁路：它只在非 inject 轮次发生，且必须计入边界预算并被监控（见「尚未解决」）。
+
 
 ## Live before/after（同一 40 条 query，1 条期望刷新）
 
@@ -57,7 +72,7 @@ TDD：三个任务都先观察 RED（模块不存在 / 抑制未解除 / 热表�
 1. Task 4 派发时旧的 pre-change live build **已不存在**（外部已于 11:44:03 构建、11:44:54 重启到含 Task 2/3 的 dist），所以 **BEFORE 无法在旧 live build 上重采**；BEFORE 是 10:42 的原始产物，AFTER 是新构建。
 2. `exact-recent-turn-texts` 的期望刷新为 `g7u8qu` → active head `uidutw`（`g7u8qu` → superseded `0r8ks9` → superseded `uidutw`）；`uidutw` 创建于 11:04，**该新期望从未有过 pre-change 测量**。BEFORE/AFTER 是**同一 40 条 query 文本、但期望集有 1 条不同**。
 3. 因此本表**不是**同口径代码 A/B：`exact` 分类 REST hit@1 90%→80%、总量 REST 60%→60% 都受这条口径变化影响，不能当作代码回归或无变化。
-4. 可作因果归因的增量只有 **4 条 exact AUTO 准入**（且无正向条目反向退化），由 `arbiter-samples.jsonl` 的 post-admission `zone=inject` 与四个场景 body 佐证。
+4. 可作因果归因的增量只有 **4 条 exact AUTO 准入**（反向回归 hit→miss 为零），由 `arbiter-samples.jsonl` 的 post-admission `zone=inject` 与四个场景 body 佐证。
 
 | 指标 | BEFORE（旧构建） | AFTER（新构建） |
 |---|---:|---:|
@@ -71,8 +86,16 @@ TDD：三个任务都先观察 RED（模块不存在 / 抑制未解除 / 热表�
 | REST p50 / p95（max） | 84 / 92（93）ms | 103 / 127（**523**）ms |
 | AUTO p50 / p95（max） | 248 / 411（581）ms | 307 / 436（**604**）ms |
 
-- 延迟是同一台机器、同一时段但**未隔离负载**的测量（同时有构建、文档、探针与后台管线）；523/604ms 的 max 是单次抖动，不能当作精确扫描的固定成本。
+- 延迟是同一台机器、无隔离负载控制的测量，且 AFTER 属于**冷启动回暖期**：gateway 进程启动于 03:58:46Z，Laya sidecar 15.0s 后（03:59:04.661Z）才 ready，probe 在 sidecar ready 后约 **16s**（进程启动后约 34s）开始。构建不是并发负载——build 已在写重启令牌（03:58:37Z）之前完成，重启 03:58:45、probe 03:59:21，三者是顺序的。523/604ms 的 max 是单次抖动，不能当作精确扫描的固定成本。
 - stale 的 `0→0` 不是同一控制集：刷新把 `g7u8qu` 加进 `must_exclude`（10→11）。准确解释是**结构性 0**——`resolveSupersededHeads` 会把 superseded 命中重写到链头，旧 id 本就不可返回；它只证明没有绕过该重写，不证明抑制策略变严。
+
+### 评测溯源（fixture / runner provenance）
+
+- 当前 fixture `evaluation/personal-recall/queries.json` 内容 **SHA-256 `9fe1ee4d543dbad982d5272bc03c94d1acc4622d324013042d0c363a65aa6f8a`**（20,639 bytes），最后一次内容变更为 **`7abefa364`**（active-chain refresh；该提交同时改了 runner 契约测试）；runner `run.js` 自 **`1fe118dc5`** 起未变。
+- **BEFORE 早于 Task 1 的最终 ground-truth 提交**：BEFORE `generatedAt 2026-11-18T02:42:49Z`（10:42:49 本地），`1fe118dc5`（test(memory): enforce active recall ground truth）提交于 10:43:30——BEFORE 用的是 Task 1 当晚冻结集合的中间形态，比最终 ground truth 早约 41 秒。
+- 两个 artifact 都**没有嵌入 fixture 摘要或 runner commit**（`fixture` 字段只有 path/version/corpus counts/entries 与一份 note），所以溯源依赖本节 + artifact 时间戳；不要从 JSON 内部自证。
+- 「同一 40 条 query，1 条期望刷新」里的“1 条”**只指 Task 4 的 active-chain refresh**（`g7u8qu`→`uidutw`），**不**表示 Task 1 从未编辑期望：Task 1 的 fix rounds 还改过 `implicit-audit-file-line` 与 `implicit-live-index-overwrite` 两处 ground truth，二者在 Task 1 内被独立复核为**指标中性**（不改变当时的 hit 判定）；本轮不重算、也不改动任何指标。
+
 
 分类（AFTER）：`current-state` auto 60% 不变；`exact` auto **60%→100%**（同 10 条 query、1 条期望刷新；REST hit@1 90%→80% 属口径变化，非同口径代码回归）；`implicit` auto 20% 不变；`negative` false 20% 不变。
 
@@ -83,7 +106,7 @@ TDD：三个任务都先观察 RED（模块不存在 / 抑制未解除 / 热表�
 - `exact-graph-commit`：AUTO miss→hit，rank1。
 - `exact-note-board-budget`：AUTO miss→hit，rank2。
 - `implicit-unattended-background`：REST rank2→rank1（AUTO 仍 miss）。
-- `exact-recent-turn-texts`（期望刷新条目，非纯增量）：AFTER REST rank 1→2、AUTO anchor rank 1→2；等价的合法 owner `nl2po5`（"snapshot 只读热表致窗口塌缩"）排第一，目标 `uidutw` 第二。该 entry 的排序确实后移，不能只记增益。
+- `exact-recent-turn-texts`（期望刷新条目，非纯增量）：AFTER REST rank 1→2、AUTO anchor rank 1→2；等价的合法 owner `nl2po5`（"snapshot 只读热表致窗口塌缩"，**measurement-time active**——本记录只描述 2026-11-18 11:59 的状态，之后若被 supersede 不代表当时判断有误）排第一，目标 `uidutw` 第二。该 entry 的排序确实后移，不能只记增益。
 - 按各自（含刷新后的）期望统计，无正向条目从 hit 退化为 miss；剩余 `REST hit@3 && AUTO miss` 4 条，全部是 implicit paraphrase。
 
 ### 四个原始场景（AFTER，直接读 `/api/recall/context` body）
@@ -127,7 +150,7 @@ TDD：三个任务都先观察 RED（模块不存在 / 抑制未解除 / 热表�
 
 ## 尚未解决（不声称整体质量完成）
 
-1. **100ms 契约**：AFTER AUTO p50/p95 = 307/436ms（max 604ms），仍远超插件 100ms abort；本轮同机负载未隔离，不能把 +59ms p50 全部归因于精确扫描，需独立性能切片（先建 16k 真实语料端点基线，再谈工作预算）。
+1. **100ms 契约**：AFTER AUTO p50/p95 = 307/436ms（max 604ms），仍远超插件 100ms abort。该 AFTER 还是冷启动回暖期（sidecar ready 后 ~16s），不能把 +59ms p50 全部归因于精确扫描；精确扫描本身实测为 16,732 条目 / 180,047 anchor 上冷启首扫 ≈55–61ms、热态 p50 13–22ms、高负载最高 ≈42ms（已 inject 轮次 0ms），必须计入边界预算并持续监控。需要独立性能切片（先建真实 16k 语料端点基线，再谈工作预算）。
 2. **尾部弱相关**：`temporalNeighbors.presentation` 的 `↳` 邻居与 BM25 2–3 名仍在；属呈现/候选池问题。
 3. **FOK 观测混合**：`snapshot_build` 与真实 injection 都写 `inj` 样本，准入效果暂不能用 FOK 率校准。
 4. **snapshot 自然刷新不可观测**（上文），以及 post-restart 构建为何未完成未知。

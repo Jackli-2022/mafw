@@ -179,7 +179,9 @@ function compareEvidence(a: ExactRecallEvidence, b: ExactRecallEvidence): number
 /**
  * Scan index metadata for deterministic exact evidence. Returns at most
  * `limit` entries, strongest first (title > identifier > distinctive cue).
- * Pure and synchronous: safe on the 100ms boundary path.
+ * Pure and synchronous, but NOT free: the caller only runs it on non-inject
+ * turns, and its measured cost (tens of ms on the 16k-entry live corpus) must
+ * be budgeted and monitored against the 100ms boundary contract.
  */
 export function findExactRecallEvidence(
   entries: readonly any[],

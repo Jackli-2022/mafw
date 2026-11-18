@@ -168,7 +168,7 @@ opencode server 进程                    Gateway 进程
 
 **现状（行为）**
 
-- **精确证据准入（P1）**：边界 route 只在 FOK 不是 `inject` 时调用 `gateway/src/recall/exact-evidence.ts`。`findExactRecallEvidence(entries, query, limit)` 只从 **active** 条目的 `primary_abstraction` / `cue_anchors` 里找确定性证据（NFKC+小写+空白折叠后：整标题等价、整 query 形 identifier、7–40 位十六进制 commit、或长度 ≥12 ASCII / ≥6 CJK 且文档频次 ≤5、覆盖 ≥50% 非空字符的短语）；`applyExactRecallEvidence(memories, evidence, status, topK=3)` 将命中条目按 specificity→id 确定性并入、置前、去重并截到 3，命中时把 zone 升级为 `inject`。`superseded_by` 条目与未 pin/sticky 的 legacy `episodic` 不参与准入；不读正文、不加 embedding/LLM、不改 FOK 阈值 / 全局 topK / recency。无证据时结果与旧行为逐字一致——`no-memory` 与普通 `low-confidence` 仍被 `hasRelatedRecallBody` 抑制本体，note-board 仍是独立 must-surface、不计入相关记忆准入。已经 `inject` 的轮次直接跳过整个证据扫描。
+- **精确证据准入（P1）**：边界 route 只在 FOK 不是 `inject` 时调用 `gateway/src/recall/exact-evidence.ts`。`findExactRecallEvidence(entries, query, limit)` 只从 **active** 条目的 `primary_abstraction` / `cue_anchors` 里找确定性证据（NFKC+小写+空白折叠后：整标题等价、整 query 形 identifier、7–40 位十六进制 commit、或长度 ≥12 ASCII / ≥6 CJK 且文档频次 ≤5、覆盖 ≥50% 非空字符的短语）；`applyExactRecallEvidence(memories, evidence, status, topK=3)` 将命中条目按 specificity 排序，**同等特异性时先偏好已在 BM25 候选中的 owner，再用 id 升序 tie-break**（不用 recency/index 顺序），确定性置前、去重并截到 3，命中时把 zone 升级为 `inject`。`superseded_by` 条目与未 pin/sticky 的 legacy `episodic` 不参与准入；不读正文、不加 embedding/LLM、不改 FOK 阈值 / 全局 topK / recency。无证据时结果与旧行为逐字一致——`no-memory` 与普通 `low-confidence` 仍被 `hasRelatedRecallBody` 抑制本体，note-board 仍是独立 must-surface、不计入相关记忆准入。已经 `inject` 的轮次直接跳过整个证据扫描（0ms）。
 - **滚动窗口完整化（P2）**：`recentTurnTextsFromDb(db, sessionID, maxTurns)`（`gateway/src/recall/snapshot-builder.ts`）用 `listSessionTurns`（`t1_turns`）+ `readTurnRows`（`t1_archive ∪ t1_observations`）取最近 `maxTurns` 个逻辑轮的 `user_input`/`assistant_reply`（旧→新）；kernel 的防抖快照刷新改走该 helper，并在 helper export 缺失时 `log.warn`（debounced catch 会吞掉构建异常，不 warn 就只剩静默停摆）。T1 抽取/归档后，滚动窗口不再塌成最新一条短指令。
 - **FOK 证据仍不混用**：边界实时门继续用 BM25 比值，snapshot 继续用 reranker 概率；精确准入只是「比值门之外的确定性旁路」，没有把两套阈值合并。
 
@@ -179,7 +179,7 @@ opencode server 进程                    Gateway 进程
 - Task 4 派发时，旧的 pre-change live build **已不存在**（外部在 11:44 构建、11:44:54 重启，dist 已含 Task 2/3），因此 **BEFORE 无法在旧 live build 上重采**。BEFORE 是 10:42 的原始产物（旧构建，pre-Task2），AFTER 是新构建（pid 60752）。
 - `exact-recent-turn-texts` 的期望在基线之后从 `g7u8qu` 刷新为 active head `uidutw`（g7u8qu → 0r8ks9 → uidutw）；`uidutw` 创建于 11:04，**新期望从未有过 pre-change 测量**。所以 BEFORE/AFTER 是**同一 40 条 query 文本、但有一组不同的期望**。
 - 因此 `exact` 分类 REST hit@1 90%→80%、以及总量 REST 60%→60% **不能读作同口径的代码回归/无变化**：前者来自期望刷新（旧 id 只能被重写到链头），后者的分母里包含这一条口径变化。
-- 唯一可作因果归因的增量是 **4 条 exact AUTO 准入**（hit→miss 的反向为零），并有 `arbiter-samples.jsonl` 的 `zone=inject`（精确准入之后）与四个场景 body 佐证；`exact` AUTO 60%→100% 建立在同一组 10 条 query、仅 1 条期望更新的前提下。
+- 唯一可作因果归因的增量是 **4 条 exact AUTO 准入**（反向回归 hit→miss 为零），并有 `arbiter-samples.jsonl` 的 `zone=inject`（精确准入之后）与四个场景 body 佐证；`exact` AUTO 60%→100% 建立在同一组 10 条 query、仅 1 条期望更新的前提下。
 
 | 指标 | BEFORE（10:42 artifact，旧构建） | AFTER（11:59:21，pid 60752，gateway v5.1.0） |
 |---|---|---|
@@ -197,13 +197,13 @@ opencode server 进程                    Gateway 进程
 
 - 新增的 4 个 AUTO 命中就是排查里的精确分叉案例：`5cd9885f5`（rank1）、`Proactive Topic Recall 主题工具设计`（rank2）、图扩展 commit、`NOTE_BOARD_BUDGET`；`检索路径 parity...` 保持命中。`negative` 冰岛式无答案查询保持 `no-memory`、无 recall 本体。
 - 剩余 `REST hit@3 && AUTO miss` 的 4 条全部是 `implicit`  paraphrase（field-passing / multisession-gap / unattended-background / live-index-overwrite）：精确准入按设计不覆盖普通词面重叠，这类需要候选池/呈现策略另案处理。
-- `exact` 分类 REST hit@1 由 90%→80% 是 **期望刷新**的结果，不是同口径代码回归：原目标 `g7u8qu` 在基线之后被 `0r8ks9`、再被 active head `uidutw` supersede，检索只会把旧 id 重写到链头，旧期望永远拿不到；刷新只替换这一个 id 并把旧 id 放进 `must_exclude` 做 stale 对照。同一 entry 的 AFTER 明细：`exact-recent-turn-texts` REST rank 1→2、AUTO anchor rank 1→2——等价的合法 owner `nl2po5`（"snapshot 只读热表致窗口塌缩"）排第一，目标 `uidutw` 第二；所以这不是只报增益，该 entry 的排序确实后移。
+- `exact` 分类 REST hit@1 由 90%→80% 是 **期望刷新**的结果，不是同口径代码回归：原目标 `g7u8qu` 在基线之后被 `0r8ks9`、再被 active head `uidutw` supersede，检索只会把旧 id 重写到链头，旧期望永远拿不到；刷新只替换这一个 id 并把旧 id 放进 `must_exclude` 做 stale 对照。同一 entry 的 AFTER 明细：`exact-recent-turn-texts` REST rank 1→2、AUTO anchor rank 1→2——等价的合法 owner `nl2po5`（"snapshot 只读热表致窗口塌缩"，**measurement-time active**：只描述 2026-11-18 11:59 的状态，之后若被 supersede 不改写当时的判断）排第一，目标 `uidutw` 第二；所以这不是只报增益，该 entry 的排序确实后移。
 - stale injection 的 `0→0` **不是同一控制集比较**：刷新把 `g7u8qu` 加入 `must_exclude`，控制集 10→11 条。准确的解释是结构性 0——检索的 `resolveSupersededHeads` 会把 superseded 命中重写到链头，旧 id 本来就不可能出现；这项指标只能证明「没有绕过该重写」，不是「抑制策略变严」。
 - 边界 AUTO 延迟仍远超 100ms 契约（见「未解决」），所以「自动回合真的看到」仍取决于插件 100ms abort 是否触发。
 
 **未解决 / 未声称**
 
-- 100ms 契约：本轮 AFTER 的 AUTO p50/p95 为 307/436ms，比 BEFORE 更慢（同机其他负载未隔离，不能全部归因于精确扫描）；插件侧 100ms abort 仍可能整块吞掉 recall，需独立性能切片。
+- 100ms 契约：本轮 AFTER 的 AUTO p50/p95 为 307/436ms（max 604ms），比 BEFORE 更慢（AFTER 处于冷启动回暖期——sidecar ready 后约 16s，属未隔离场景，不能全归因精确扫描）；**精确扫描本身**在 16,732 条目 / 180,047 anchor 上实测：冷启首扫 ≈55–61ms、热态 p50 13–22ms、高负载最高 ≈42ms，已 inject 轮次 0ms——它必须计入边界预算并被监控，不是免费旁路。插件侧 100ms abort 仍可能整块吞掉 recall，需独立性能切片。
 - 尾部弱相关仍来自候选池与 `temporalNeighbors.presentation` 的 `↳` 邻居，未在本切片重设计。
 - FOK 观测仍混合 snapshot build 与真实 injection（R6/P4），暂不能用它校准准入效果。
 - snapshot 自然刷新：重启后 5 分钟内没有观测到新的 `snapshot built`/kv 行（详见 release note），因此本次不声称 snapshot serving 已在真实回合生效；只声称读取 primitive 已有单测 + 只读 helper 探针证据。探针测量于 2026-11-18T04:02Z（gateway v5.1.0，pid 60752，HEAD `0a53e3207`），快照探针里的「热表行 / 归档行」是**时间相关**的计数（压缩/抽取会继续搬动行），不是稳定常量。
