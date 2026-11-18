@@ -230,6 +230,7 @@ import { PushGateway } from './mobile/push-gateway';
 import { DeviceStore } from './mobile/device-store';
 import { PairingService } from './mobile/pairing';
 import { RemoteAccessService } from './mobile/remote-access';
+import { createTunnelTerminator, newTunnelSecret, type TunnelTerminator } from './mobile/tunnel-terminator';
 import { resolveMobileBaseUrl, detectReachableHost } from './mobile/tailscale-url';
 import { normalizeRuntimeEvent } from './runtime/normalize';
 import { UnknownEventTracker } from './runtime/event-telemetry';
@@ -846,6 +847,9 @@ class MafwScheduler {
   private humanToken = '';
   private pairingService?: PairingService;
   private remoteAccessService?: RemoteAccessService;
+  /** M0: marker secret + loopback terminator for Quick Tunnel / relay. */
+  private tunnelSecret = '';
+  private tunnelTerminator?: TunnelTerminator;
   private mdnsAdvertiser?: any; // MdnsAdvertiser
   private mafwDir!: string;
   private instanceLock: InstanceLock | null = null;
@@ -3961,6 +3965,8 @@ class MafwScheduler {
     this.pushGateway?.destroy();
     this.pairingService?.destroy();
     this.remoteAccessService?.destroy();
+    void this.tunnelTerminator?.stop();
+    this.tunnelTerminator = undefined;
     this.mdnsAdvertiser?.stop();
     // if (this.dashboard) {
     //   this.dashboard.stop();
@@ -5180,11 +5186,34 @@ class MafwScheduler {
       this.apiPort,
     );
     this.pairingService = new PairingService({ apiToken, tailscaleUrl });
-    this.remoteAccessService = new RemoteAccessService({
-      port: this.apiPort,
-      onUrl: (url) => this.pairingService?.setBaseUrlOverride(url),
-      onStop: () => this.pairingService?.clearBaseUrlOverride(),
+
+    // M0: cloudflared talks to this terminator, never directly to :3000.
+    // The secret stays in memory; the terminator strips client-supplied values.
+    this.tunnelSecret = newTunnelSecret();
+    const configuredTerminatorPort = Number.parseInt(process.env.MAFW_TUNNEL_TERMINATOR_PORT || '', 10);
+    this.tunnelTerminator = createTunnelTerminator({
+      secret: this.tunnelSecret,
+      targetPort: this.apiPort,
+      listenPort: Number.isFinite(configuredTerminatorPort) && configuredTerminatorPort > 0
+        ? configuredTerminatorPort
+        : 3001,
     });
+    try {
+      const terminatorPort = await this.tunnelTerminator.start();
+      log.info(`[Scheduler] mobile tunnel terminator on 127.0.0.1:${terminatorPort}`);
+    } catch (err: any) {
+      log.error(`[Scheduler] mobile tunnel terminator failed: ${err?.message ?? err}`);
+      this.tunnelTerminator = undefined;
+    }
+
+    if (this.tunnelTerminator) {
+      this.remoteAccessService = new RemoteAccessService({
+        port: this.apiPort,
+        tunnelPort: this.tunnelTerminator.port() ?? 3001,
+        onUrl: (url) => this.pairingService?.setBaseUrlOverride(url),
+        onStop: () => this.pairingService?.clearBaseUrlOverride(),
+      });
+    }
 
     // Mobile mDNS discovery (P1: zero-config LAN connectivity)
     const { MdnsAdvertiser } = require('./mobile/mdns-advertiser');
@@ -6087,6 +6116,7 @@ class MafwScheduler {
       // device verifier reads the live PushGateway; neither is captured by value.
       humanToken: () => this.humanToken,
       verifyDeviceToken: (token) => this.verifyDeviceToken(token),
+      tunnelSecret: this.tunnelSecret,
       // E3-5：live 读取（release metadata 在 boot 阶段加载，attach 早于它就是 null）。
       schemaEpoch: () => this.releaseMetadata?.schemaEpoch ?? null,
       dispatchAuthorized: (req, res, apiToken) =>
@@ -6208,6 +6238,7 @@ class MafwScheduler {
           apiToken: () => (config.raw as any)?.server?.apiToken || '',
           humanToken: () => this.humanToken,
           verifyDeviceToken: (token) => this.verifyDeviceToken(token),
+          tunnelSecret: this.tunnelSecret,
           pushGateway: () => this.pushGateway,
           handleWsMessage: (ws, raw) => this.handleWsMessage(ws, raw),
           getVoiceRuntime: () => this.getVoiceRuntime(),

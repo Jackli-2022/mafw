@@ -36,6 +36,8 @@ export interface TunnelChild {
 export interface RemoteAccessOptions {
   /** Local gateway port the tunnel proxies to. */
   port: number;
+  /** M0: loopback terminator port (default 3001). */
+  tunnelPort?: number;
   /** Called whenever a tunnel URL becomes available. */
   onUrl: (url: string) => void;
   /** Called after the tunnel stops (including unexpected exit). */
@@ -53,6 +55,7 @@ const URL_PATTERN = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/i;
 
 export class RemoteAccessService {
   private readonly port: number;
+  private readonly tunnelPort: number;
   private readonly onUrl: (url: string) => void;
   private readonly onStop?: () => void;
   private readonly cloudflaredPath: string;
@@ -69,6 +72,7 @@ export class RemoteAccessService {
 
   constructor(opts: RemoteAccessOptions) {
     this.port = opts.port;
+    this.tunnelPort = opts.tunnelPort ?? 3001;
     this.onUrl = opts.onUrl;
     this.onStop = opts.onStop;
     this.cloudflaredPath = opts.cloudflaredPath
@@ -140,7 +144,7 @@ export class RemoteAccessService {
       const args = [
         'tunnel',
         '--url',
-        `http://127.0.0.1:${this.port}`,
+        `http://127.0.0.1:${this.tunnelPort}`,
         '--no-autoupdate',
         '--protocol',
         'http2',
