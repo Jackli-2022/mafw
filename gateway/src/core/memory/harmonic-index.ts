@@ -56,14 +56,6 @@ export interface ScoredEntry {
 
 const BM25_K1 = 1.2;
 const BM25_B = 0.75;
-/**
- * How many distinct queries keep their raw BM25 values for reuse. The boundary
- * route scores one query plus up to ~9 expansion/multi-hop sub-queries before
- * the FOK gate asks for the original query again (measured p50 5 / max 10
- * distinct queries per turn), so 16 covers the window with headroom. Values are
- * `Float64Array(N)` each (~134KB at 16.8k entries), i.e. ~2MB at full occupancy.
- */
-const RAW_REUSE_MAX_QUERIES = 16;
 
 /**
  * R7: split an identifier into its component words (camelCase boundaries and
@@ -798,25 +790,6 @@ export class HarmonicIndexManager {
     const docLengths = docs.map(d => d.len);
     const avgdl = docLengths.reduce((a, c) => a + c, 0) / N;
 
-    // Reuse: raw BM25 is deterministic for a given (query, index text,
-    // membership). The `docs` build above just validated every entry's
-    // searchable text and bumped `searchVersion` on any change, so a version
-    // match means the stored values are exact — no stale-window is possible
-    // even for in-place field edits. The boundary route asks for the SAME query
-    // twice per turn (initial scoring, then the FOK gate): measured 43.6ms p50,
-    // and this skips the idf + postings scoring loop on the second ask.
-    const reused = this.rawScoreCache.get(query);
-    if (reused && reused.version === this.searchVersion && reused.values.length === entries.length) {
-      this.rawScoreCache.delete(query); // LRU: most recently used last
-      this.rawScoreCache.set(query, reused);
-      const rows: Array<{ entry: HarmonicIndexEntry; raw: number }> = [];
-      for (let i = 0; i < entries.length; i++) {
-        const raw = reused.values[i];
-        if (raw > 0) rows.push({ entry: entries[i], raw });
-      }
-      return rows;
-    }
-
     // Inverted index: only documents that contain a query term are visited.
     // The pre-2026-11-18 loop walked every doc once per query token
     // (N × |queryTokens|); long prompts tokenize to 200+ terms (CJK unigrams +
@@ -860,16 +833,11 @@ export class HarmonicIndexManager {
     // Emit in entries order by index (not accumulation order) so each physical
     // entry — duplicate ids included — gets exactly its own score, and the
     // stable sort in bm25SearchScored breaks ties exactly as before.
-    const values = new Float64Array(entries.length);
     const scored: Array<{ entry: HarmonicIndexEntry; raw: number }> = [];
     for (let i = 0; i < entries.length; i++) {
       const raw = acc.get(i);
-      if (raw !== undefined && raw > 0) {
-        values[i] = raw;
-        scored.push({ entry: entries[i], raw });
-      }
+      if (raw !== undefined && raw > 0) scored.push({ entry: entries[i], raw });
     }
-    this.rememberRawScores(query, values);
 
     return scored;
   }
@@ -896,30 +864,6 @@ export class HarmonicIndexManager {
   private searchVersion = 0;
   /** term → PHYSICAL document indexes into `entries` (see postingsIndex). */
   private postingsCache: { version: number; entriesRef: HarmonicIndexEntry[]; byTerm: Map<string, number[]> } | null = null;
-
-  /**
-   * Raw BM25 values per query, aligned with `entries` (0 = doc did not match),
-   * for the second identical query of a turn (FOK gate). Raw scoring depends on
-   * nothing but the query and the index text/membership, so `searchVersion` is
-   * the whole invalidation key; numbers-only means there are no entry objects
-   * or score objects for a caller to mutate. `bm25RawScored` still rebuilds the
-   * `docs` (and therefore re-validates every entry's text) before consulting
-   * this cache.
-   */
-  private rawScoreCache = new Map<string, { version: number; values: Float64Array }>();
-
-  /** Store the raw values of the just-scored query, evicting stale/LRU entries. */
-  private rememberRawScores(query: string, values: Float64Array): void {
-    for (const [key, entry] of this.rawScoreCache) {
-      if (entry.version !== this.searchVersion) this.rawScoreCache.delete(key);
-    }
-    this.rawScoreCache.delete(query);
-    this.rawScoreCache.set(query, { version: this.searchVersion, values });
-    while (this.rawScoreCache.size > RAW_REUSE_MAX_QUERIES) {
-      const oldest = this.rawScoreCache.keys().next().value as string;
-      this.rawScoreCache.delete(oldest);
-    }
-  }
 
   /**
    * Inverted index over the live documents' searchable text. Query-independent,
