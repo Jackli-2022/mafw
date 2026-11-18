@@ -48,6 +48,39 @@ describe('GatewayDatabase.listT1RowsForBackfill', () => {
     ]);
     expect(db.listT1RowsForBackfill({ offset: 0, limit: 0 })).toEqual([]);
   });
+
+  test('does not let NULL observation_key archive rows shift the page boundary', () => {
+    const a = turn('s1', 'archive A');
+    db.archiveTurn('s1', a.turn_seq);
+    const gap = turn('s1', 'archive NULL');
+    db.archiveTurn('s1', gap.turn_seq);
+    const b = turn('s1', 'archive B');
+    db.archiveTurn('s1', b.turn_seq);
+    turn('s1', 'active C');
+
+    // Only this test row loses its key. It cannot be embedded, so it must not
+    // be counted when deciding where the archive region ends: counting it
+    // shifts the archive→active handoff and repeats an active row.
+    (db as any).db
+      .prepare('UPDATE t1_archive SET observation_key = NULL WHERE content = ?')
+      .run('archive NULL');
+
+    const page = (offset: number) =>
+      db.listT1RowsForBackfill({ offset, limit: 1 }).map((r) => r.content);
+
+    expect([page(0), page(1), page(2)]).toEqual([['archive A'], ['archive B'], ['active C']]);
+    // Past the last real row the walk ends; it must not replay 'active C'.
+    expect(page(3)).toEqual([]);
+
+    // A full page walk yields each row exactly once and never reads the NULL row.
+    const walked: string[] = [];
+    for (let offset = 0; offset < 10; offset++) {
+      const rows = db.listT1RowsForBackfill({ offset, limit: 1 });
+      if (rows.length === 0) break;
+      walked.push(...rows.map((r) => r.content));
+    }
+    expect(walked).toEqual(['archive A', 'archive B', 'active C']);
+  });
 });
 
 function row(sessionId: string, turnId: number, content: string) {

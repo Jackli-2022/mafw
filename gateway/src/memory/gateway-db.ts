@@ -2117,7 +2117,9 @@ export class GatewayDatabase {
     const offset = Math.max(0, Math.floor(opts.offset || 0));
     const limit = Math.max(0, Math.floor(opts.limit || 0));
     if (limit === 0) return [];
-    const archiveCount = (this.db.prepare('SELECT COUNT(*) AS c FROM t1_archive').get() as { c: number }).c;
+    const archiveCount = (
+      this.db.prepare('SELECT COUNT(*) AS c FROM t1_archive WHERE observation_key IS NOT NULL').get() as { c: number }
+    ).c;
     const rows: Array<{ observationKey: string; sessionId: string; turnId: number; content: string }> = [];
     const select = (table: 't1_archive' | 't1_observations', take: number, skip: number) =>
       this.db
