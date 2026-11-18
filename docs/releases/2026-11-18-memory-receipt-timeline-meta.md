@@ -71,6 +71,8 @@
 - `ea92d374f`：抽屉内所有工具改为复用注册的原生卡（删除 `ToolRow` / `CARD_TOOLS`），只做作用域归一化：标题 11px/550、目标/路径 10.5px、隐藏 task 家族图标、行工具无外框 + hover 淡底 + 一个 chevron；Edit/Write/ApplyPatch 保留 diff 卡，Task/Question/Skill/MAFW family 保留原生操作与 `mafw-tool-box` 内容盒。调研：`docs/research/2026-11-19-tool-card-refactor-survey.md`。
 - Phase 1 门禁：Session UI **26 suites / 165 pass / 0 fail**（排除既有 `architecture.test.ts`），Desktop **795 suites / 4160 pass / 0 fail**，两侧 `tsgo` rc 0，`electron-vite build` 通过。
 - 真机 CSS probe：basic tool 标题 **11px/550**、副标题/args **10.5px**、trigger `0` 边框 + 28px 行高；task 标题 **11px/550**、家族图标 `display:none`；bash code **10.5px**；`mafw-tool-box` padding `6px 8px`；tool-output **11px**。真实历史段中 Edit 卡实测 **11px/550**、相对路径 **10.5px**。
+- `4971632bb`：`read` 原生卡补 `data-component="tool-output"` 折叠体（默认收起、可滚动），与 List/Glob/Grep 一致；普通聊天与过程抽屉同时生效，Read 也重新有了 chevron。
+- Read 门禁：Session UI **27 suites / 166 pass / 0 fail**，Desktop **795 suites / 4160 pass / 0 fail**，`tsgo` rc 0，`electron-vite build` 通过。
 
 ## 已知问题 / 后续
 
