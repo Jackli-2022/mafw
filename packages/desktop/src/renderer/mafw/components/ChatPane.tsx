@@ -43,6 +43,9 @@ import { buildSessionMenu, type SessionMenuActionId } from "./session-header-men
 import { buildLeadGoalStatusCards, type LeadGoalStatusSource } from "../lead-goal-status"
 import { LeadGoalStatusCard } from "./LeadGoalStatusCard"
 import { LeadExternalInbox } from "./LeadExternalInbox"
+import { MemoryReceipt } from "./MemoryReceipt"
+import { buildMemoryReceiptView } from "../memory-receipt"
+import { memoryReceiptStore } from "../memory-receipt-store"
 import { TopicIndexPanel } from "./TopicIndexPanel"
 import type { LeadTopicListItem } from "../lead-topics"
 import type { LeadBoundaryView } from "@mafw/sdk"
@@ -256,6 +259,8 @@ export type ChatPaneProps = {
   leadGoals?: () => LeadGoalStatusSource[]
   /** 当前 Lead 所属 Pod；外部事件回执卡只用该 Pod 的投递。 */
   leadPodId?: () => string | null
+  /** 打开 Memory 页（回执卡底部入口）。 */
+  onOpenMemory?: () => void
   /** Lead 状态卡的人类 attention 计数（与 goals 同源：pod detail）。 */
   leadAttention?: () => { goalId: string }[]
   /** Lead 话题索引（shell 持有数据；面板与状态卡互斥）。 */
@@ -342,6 +347,26 @@ function MediaHistoryAttachment(props: { artifactId: string; name: string; media
 
 function PaneInner(props: ChatPaneProps & { sid: string }) {
   const sidProp = () => props.sid
+
+  // History backfill: SSE only delivers live receipts; opening/switching a
+  // session must restore receipts that arrived before this pane existed.
+  createEffect(() => {
+    const sid = sidProp()
+    if (!sid) return
+    let cancelled = false
+    void window.api.mafw.sessions.memoryReceipts(sid, { limit: 100 })
+      .then((res: any) => {
+        if (!cancelled) memoryReceiptStore.hydrate(sid, res?.items ?? [])
+      })
+      .catch(() => { /* fail-open: receipts are additive */ })
+    onCleanup(() => { cancelled = true })
+  })
+
+  const receiptForTurn = (msg: any) => {
+    const sid = sidProp()
+    const anchor = msg?.turnKey
+    return sid && anchor ? memoryReceiptStore.forAnchor(sid, anchor) : undefined
+  }
   const annotationOwner = () => props.annotationOwnerKey || sidProp()
   const visibleAnnotations = () => annotationsVisibleInChat(sendableFor(annotationOwner()), {
     scopeKey: props.annotationScopeKey,
@@ -2654,6 +2679,16 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                       shellToolDefaultOpen={detailsMode()}
                       editToolDefaultOpen={detailsMode()}
                     >
+                      <Show when={receiptForTurn(msg)}>
+                        {(receipt) => (
+                          <div class="mafw-turn-memory-receipt">
+                            <MemoryReceipt
+                              view={buildMemoryReceiptView(receipt(), Date.now())}
+                              onOpenMemory={() => props.onOpenMemory?.()}
+                            />
+                          </div>
+                        )}
+                      </Show>
                       {/* 过程元数据由内联折叠工具卡承载（发生处、默认折叠）；
                           审批汇总在 turn 末尾一行（v6 追加） */}
                       <Show when={otherCardsForTurn(msg.id).length > 0}>

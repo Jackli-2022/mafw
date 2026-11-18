@@ -122,6 +122,25 @@ describe('message ingestion', () => {
     expect(parts.u1[0].text).toBe('真实问题')
   })
 
+  test('extracts the turn marker and strips it from user display text', () => {
+    const raw = '<facts>\nmemory one\n</facts>\n\nhello\n[[turn:turn_abc]]'
+    const { messages, parts } = ingestHistoryPage(
+      [{
+        id: 'u1',
+        sessionID: 's1',
+        role: 'user',
+        text: raw,
+        time: { created: 1 },
+        content: [{ id: 'p1', type: 'text', text: raw }],
+      }],
+      { sessionID: 's1' },
+    )
+    expect(messages[0].turnKey).toBe('turn_abc')
+    expect(messages[0].text).toContain('hello')
+    expect(messages[0].text).not.toContain('[[turn')
+    expect(parts.u1[0].text).not.toContain('[[turn')
+  })
+
   test('strips every memory block tag in any order, not just facts-first', () => {
     const raw = [
       '<deltas>',

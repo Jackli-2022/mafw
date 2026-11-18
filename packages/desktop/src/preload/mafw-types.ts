@@ -8,6 +8,7 @@ import type {
   DecisionList, DecisionRecord, DecisionDraftInput, DecisionConfirmInput, DecisionShelveInput, DecisionReopenInput,
   TaskEntity, TaskSubmitInput, TaskOutput, QueueItem, SessionConfigState, SessionConfigCategory,
   MafwBackgroundJob, MafwBackgroundOutput,
+  MemoryReceiptsResult,
   PodNamespace, WorkNamespace,
   LeadNamespace, LeadTopicView, LeadTopicIndexMessage, LeadWorkingSet, LeadCompactResult, LeadRecallCandidate,
   LeadBoundaryView, LeadBoundaryDecision,
@@ -108,6 +109,7 @@ export type MafwAPI = {
     get: (id: string) => Promise<Session>
     /** MAFW flat 历史（View DTO：content = 部件数组，无 {info,parts} 信封）。 */
     messages: (sessionID: string, limit?: number, before?: string) => Promise<{ data: MafwMessage[]; nextCursor: string | null }>
+    memoryReceipts: (sessionID: string, opts?: { limit?: number }) => Promise<MemoryReceiptsResult>
     todo: (sessionID: string) => Promise<{ data: any[] }>
     children: (sessionID: string) => Promise<any[]>
     switchAgent: (id: string, agent: string) => Promise<void>

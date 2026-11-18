@@ -6,6 +6,7 @@
 import { canonicalMessageError, type CanonicalMessageError } from "./errors"
 import { canonicalToolPart } from "./parts"
 import { stripVoiceOriginMarker } from "../chat/voice-origin-marker"
+import { extractTurnMarkerKey, stripTurnMarker } from "../chat/turn-marker"
 
 /** 记忆注入的 XML 块（deltas/patterns/facts/history）只服务模型；展示层剥离。 */
 const INJECTED_BLOCK = /^<(deltas|patterns|facts|history)>[\s\S]*?<\/\1>\s*/i
@@ -27,7 +28,7 @@ export function stripChatModeDirective(text: string): string {
 
 /** 用户消息展示文本：剥离事实注入、语音来源标记与模式指令。 */
 export function stripInjectedUserText(text: string): string {
-  return stripChatModeDirective(stripVoiceOriginMarker(stripInjectedMemoryBlocks(text)))
+  return stripTurnMarker(stripChatModeDirective(stripVoiceOriginMarker(stripInjectedMemoryBlocks(text))))
 }
 
 export interface IngestedHistoryPage {
@@ -107,6 +108,7 @@ export function canonicalMessage(
     ? flat.content
     : []
   const parts = canonicalParts(rawParts, { sessionID, messageID: id })
+  const turnKey = flat.role === "user" ? extractTurnMarkerKey(parts) : null
   // Plan 2 D3 / Plan 4：用户消息里的隐藏上下文（事实注入、语音标记、模式指令）
   // 只服务模型；桌面展示层在摄取时剥离——真机历史重载会暴露原始文本。
   if (flat.role === "user") {
@@ -144,6 +146,7 @@ export function canonicalMessage(
     ...(error ? { error } : {}),
     ...(model ? { model } : {}),
     ...(stopReason ? { stopReason } : {}),
+    ...(turnKey ? { turnKey } : {}),
     content: parts,
   }
   // Plan 2：展示 DTO 的 text 同步剥离（部分消费方读 message.text 而非 parts）。

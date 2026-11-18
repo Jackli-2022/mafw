@@ -1,8 +1,8 @@
 import type { MemoryReceiptDTO } from '@mafw/sdk'
 
 export interface MemoryRecallDeps {
-  getReceipt(anchorKey: string): MemoryReceiptDTO | undefined
-  upsertReceipt(anchorKey: string, receipt: MemoryReceiptDTO): void
+  getReceipt(sessionID: string, anchorKey: string): MemoryReceiptDTO | undefined
+  upsertReceipt(sessionID: string, anchorKey: string, receipt: MemoryReceiptDTO): void
 }
 
 /**
@@ -13,15 +13,16 @@ export interface MemoryRecallDeps {
 export function handleMemoryRecallEvent(event: any, deps: MemoryRecallDeps): boolean {
   if (event?.type !== 'memory.recalled') return false
   const properties = event?.properties ?? event
+  const sessionID = String(event?.sessionID ?? properties?.sessionID ?? '')
   const anchorKey = properties?.anchorKey
   const receipt = properties?.receipt
   if (typeof anchorKey !== 'string' || !anchorKey || !receipt) return true
 
-  const current = deps.getReceipt(anchorKey)
+  const current = deps.getReceipt(sessionID, anchorKey)
   if (current && String(current.updatedAt) >= String(receipt.updatedAt)) return true
 
   try {
-    deps.upsertReceipt(anchorKey, receipt)
+    deps.upsertReceipt(sessionID, anchorKey, receipt)
   } catch {
     /* fail-open: a receipt store failure must not break the SSE pump */
   }

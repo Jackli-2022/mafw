@@ -7,28 +7,29 @@ function receipt(updatedAt: string) {
 
 describe('memory.recalled handler', () => {
   test('routes the event to the anchor store', () => {
-    const calls: Array<[string, any]> = []
+    const calls: Array<[string, string, any]> = []
     const handled = handleMemoryRecallEvent(
-      { type: 'memory.recalled', properties: { anchorKey: 'turn_a', receipt: receipt('2026-11-18T06:30:00.000Z') } },
-      { getReceipt: () => undefined, upsertReceipt: (key, value) => calls.push([key, value]) },
+      { type: 'memory.recalled', sessionID: 's1', properties: { anchorKey: 'turn_a', receipt: receipt('2026-11-18T06:30:00.000Z') } },
+      { getReceipt: () => undefined, upsertReceipt: (sid, key, value) => calls.push([sid, key, value]) },
     )
     expect(handled).toBe(true)
     expect(calls).toHaveLength(1)
-    expect(calls[0][0]).toBe('turn_a')
+    expect(calls[0][0]).toBe('s1')
+    expect(calls[0][1]).toBe('turn_a')
   })
 
   test('ignores duplicate and older receipts', () => {
     const calls: any[] = []
     const deps = {
       getReceipt: () => receipt('2026-11-18T06:30:00.000Z'),
-      upsertReceipt: (_key: string, value: any) => calls.push(value),
+      upsertReceipt: (_sid: string, _key: string, value: any) => calls.push(value),
     }
     handleMemoryRecallEvent(
-      { type: 'memory.recalled', properties: { anchorKey: 'turn_a', receipt: receipt('2026-11-18T06:30:00.000Z') } },
+      { type: 'memory.recalled', sessionID: 's1', properties: { anchorKey: 'turn_a', receipt: receipt('2026-11-18T06:30:00.000Z') } },
       deps,
     )
     handleMemoryRecallEvent(
-      { type: 'memory.recalled', properties: { anchorKey: 'turn_a', receipt: receipt('2026-11-18T06:29:00.000Z') } },
+      { type: 'memory.recalled', sessionID: 's1', properties: { anchorKey: 'turn_a', receipt: receipt('2026-11-18T06:29:00.000Z') } },
       deps,
     )
     expect(calls).toHaveLength(0)
@@ -37,10 +38,10 @@ describe('memory.recalled handler', () => {
   test('replaces a newer receipt', () => {
     const calls: any[] = []
     handleMemoryRecallEvent(
-      { type: 'memory.recalled', properties: { anchorKey: 'turn_a', receipt: receipt('2026-11-18T06:31:00.000Z') } },
+      { type: 'memory.recalled', sessionID: 's1', properties: { anchorKey: 'turn_a', receipt: receipt('2026-11-18T06:31:00.000Z') } },
       {
         getReceipt: () => receipt('2026-11-18T06:30:00.000Z'),
-        upsertReceipt: (_key: string, value: any) => calls.push(value),
+        upsertReceipt: (_sid: string, _key: string, value: any) => calls.push(value),
       },
     )
     expect(calls).toHaveLength(1)

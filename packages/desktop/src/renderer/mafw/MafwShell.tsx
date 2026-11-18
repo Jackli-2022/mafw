@@ -36,6 +36,7 @@ import { formatRailTitle, railProjectName } from "./components/rail-display"
 import { LEFT_RAIL_WIDTH, PUSH_PAIR_BUDGET, clampLeftDockWidth, closeLeftDockState, effectiveLeftDockWidth, leftDockPushDragMax, normalizeLeftDockFace, resolveLeftDockWidth, resolveMode, restoreLeftDockOpen, shouldAutoRestoreLeftDock, shouldCloseOnSelect, toggleLeftDockState, type LeftDockFace } from "./left-dock"
 import { SessionStrip } from "./components/SessionStrip"
 import { sessionStore } from "./session-store"
+import { memoryReceiptStore } from "./memory-receipt-store"
 import { needsSessionInfoHydration, sessionInfoEntityFields } from "./session-info"
 import { agentKey, isAgentKey, resolveSessionAgent } from "./agent-identity"
 import { mergeHiddenTodos } from "./todo-presenter"
@@ -1636,6 +1637,10 @@ export function MafwShell() {
     plugins: {
       onChanged: (event) => { void ingestPluginsChanged(event) },
       onEvent: (event) => { ingestPluginEvent(event) },
+    },
+    memory: {
+      getReceipt: memoryReceiptStore.getReceipt,
+      upsertReceipt: memoryReceiptStore.upsertReceipt,
     },
   }
 
@@ -4775,6 +4780,7 @@ export function MafwShell() {
                           techLeadInvite={activeLeadGoalInvite}
                           leadGoals={() => podStore.detail()?.goals ?? []}
                           leadPodId={() => podStore.detail()?.pod.id ?? null}
+                          onOpenMemory={() => { setShowConfig(false); setActiveTab("memory") }}
                           leadAttention={() => podStore.detail()?.attention ?? []}
                           showTopics={showTopics()}
                           topicItems={topicItems()}

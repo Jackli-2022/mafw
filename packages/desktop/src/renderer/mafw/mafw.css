@@ -9303,3 +9303,7 @@ html[data-theme="light"] body {
   font-size: 10px;
   color: var(--text-4);
 }
+
+.mafw-turn-memory-receipt {
+  margin: 8px 0 2px 25px;
+}
