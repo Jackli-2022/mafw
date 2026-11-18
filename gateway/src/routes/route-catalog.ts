@@ -24,7 +24,7 @@
 
 import type { RouteDef } from './registry';
 import { QuestionLedgerErrorSchema, QuotaExceededErrorSchema } from './schemas/errors';
-import { SessionCreateRequest, SessionCreateResponse, SessionListResponse, SessionMessagesResponse, SessionSchema } from './schemas/session';
+import { MemoryReceiptsResponse, SessionCreateRequest, SessionCreateResponse, SessionListResponse, SessionMessagesResponse, SessionSchema } from './schemas/session';
 import {
   EmptyRequest,
   SessionCheckpointRequest,
@@ -569,6 +569,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'DELETE', path: '/api/sessions/:id', operationId: 'session.delete', tags: ['session'], request: EmptyRequest, requestRequired: false, response: SessionDeleteResponse, errors: [503] },
   { method: 'PATCH', path: '/api/sessions/:id', operationId: 'session.rename', tags: ['session'], request: SessionRenameRequest, response: SessionRenameResponse, errors: [400, 503] },
   { method: 'GET', path: '/api/sessions/:id/messages', operationId: 'session.messages', summary: 'Session message history (MAFW flat DTO)', tags: ['session'], response: SessionMessagesResponse },
+  { method: 'GET', path: '/api/sessions/:id/memory-receipts', operationId: 'session.memoryReceipts', summary: 'Structured recall receipts for a session', tags: ['session'], response: MemoryReceiptsResponse },
   { method: 'GET', path: '/api/sessions/:id/todo', operationId: 'session.todo', tags: ['session'], response: SessionTodoResponse },
   { method: 'GET', path: '/api/sessions/:id/children', operationId: 'session.children', tags: ['session'], response: SessionChildrenResponse },
   { method: 'GET', path: '/api/sessions/:id/structured', operationId: 'session.structured', tags: ['session'], response: SessionStructuredResponse },

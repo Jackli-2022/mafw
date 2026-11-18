@@ -28,6 +28,7 @@ import {
   DecisionsNamespace, DecisionList, DecisionRecord,
   DecisionDraftInput, DecisionConfirmInput, DecisionShelveInput, DecisionReopenInput,
   SessionConfigState, SessionConfigCategory, SessionNamespace,
+  MemoryReceiptDTO, MemoryReceiptsResult,
   VoiceStatusResponse,
   PluginClientSnapshot, PluginsListResult, PluginPackageInstallResult, PluginPackageUpdateResult,
   PluginCheckResult, PluginWebTicket, PluginDoctorReport, PluginAuditEvent, PluginLastGoodMeta,
@@ -226,6 +227,14 @@ export class MafwClient implements IMafwClient {
       if (params.query?.limit) q.set('limit', String(params.query.limit))
       if (params.query?.before) q.set('before', params.query.before)
       return this.request<{ data: MafwMessage[]; nextCursor: string | null }>(`/api/sessions/${params.path.id}/messages?${q}`)
+    },
+
+    memoryReceipts: async (
+      id: string,
+      opts?: { limit?: number },
+    ): Promise<MemoryReceiptsResult> => {
+      const q = opts?.limit ? `?limit=${encodeURIComponent(String(opts.limit))}` : ''
+      return this.request<MemoryReceiptsResult>(`/api/sessions/${id}/memory-receipts${q}`)
     },
 
     todo: async (params: { path: { id: string } }): Promise<{ data: Todo[] }> => {

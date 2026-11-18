@@ -471,6 +471,7 @@ export interface SessionNamespace {
   rename(params: { path: { id: string }; body: { title: string } }): Promise<void>
   /** MAFW flat 历史（View DTO `{id,role,content,...}`）；默认且唯一形状。 */
   messages(params: { path: { id: string }; query?: { limit?: number; before?: string } }): Promise<{ data: MafwMessage[]; nextCursor: string | null }>
+  memoryReceipts(id: string, opts?: { limit?: number }): Promise<MemoryReceiptsResult>
   /** 认知门（spec 2026-10-22-cognition-gate-rewrite）：POST /api/cognition/gate */
   cognitionGate(params: { body: Record<string, unknown> }): Promise<unknown>
   cognitionRewrite(params: { body: Record<string, unknown> }): Promise<{ content: unknown[] }>
@@ -3009,3 +3010,44 @@ export interface PluginSafetyResult {
   activated?: string[]
 }
 
+
+// ── Memory receipt (recall -> desktop pill) ─────────────────────────────────
+
+export type MemoryReceiptStatus = 'inject' | 'low-confidence' | 'no-memory'
+
+export interface MemoryReceiptMemory {
+  id: string
+  type: string
+  abstraction: string
+  date: string | null
+  energy?: number
+  pinned?: boolean
+  available: boolean
+  neighborOf?: string
+}
+
+export interface MemoryReceiptT1 {
+  traceId: string | null
+  excerpt: string
+  available: boolean
+  sessionId?: string
+  turnId?: number
+  source?: string
+}
+
+export interface MemoryReceiptDTO {
+  version: 1
+  status: MemoryReceiptStatus
+  tookMs: number
+  createdAt: string
+  updatedAt: string
+  topic: { title: string; hasRelated: boolean } | null
+  memories: MemoryReceiptMemory[]
+  t1: MemoryReceiptT1[]
+  filteredT1: number
+  counts: { memories: number; t1: number }
+}
+
+export interface MemoryReceiptsResult {
+  items: Array<{ anchorKey: string; receipt: MemoryReceiptDTO }>
+}

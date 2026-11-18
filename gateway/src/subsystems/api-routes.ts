@@ -65,6 +65,7 @@ import { attachChatRoutes } from '../routes/chat';
 import { attachObsRoutes } from '../routes/obs';
 import { attachSessionsCoreRoutes } from '../routes/sessions-core';
 import { attachSessionsReadRoutes } from '../routes/sessions-read';
+import { attachSessionsMemoryReceiptsRoutes } from '../routes/sessions-memory-receipts';
 import { attachSessionsPermissionsRoutes } from '../routes/sessions-permissions';
 import { attachMemoryRoutes } from '../routes/memory';
 import { attachDashboardRoutes } from '../routes/dashboard';
@@ -832,6 +833,9 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
     projectDir: () => deps.projectDir,
     listDataParts: (sessionID, messageIds) => deps.getGatewayDb().listSessionDataParts(sessionID, { messageIds }),
     subagentService: () => deps.subagentService,
+  });
+  attachSessionsMemoryReceiptsRoutes(deps.routeRegistry, {
+    getGatewayDb: () => deps.getGatewayDb(),
   });
   // Phase D1 Task E2：sessions 审批 / 子代理面迁 registry dispatch（7 分支；
   // permission-mode GET/POST method 拆分与 subagents 五操作逐字委托）。

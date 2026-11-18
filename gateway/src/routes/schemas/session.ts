@@ -175,3 +175,11 @@ export const SessionMessagesResponse = Type.Object({
   // handler 的 flat 出口恒带 nextCursor（末页为 null）。
   nextCursor: Type.Union([Type.String(), Type.Null()]),
 })
+
+/** GET /api/sessions/:id/memory-receipts — structured recall receipts. */
+export const MemoryReceiptsResponse = Type.Object({
+  items: Type.Array(Type.Object({
+    anchorKey: Type.String(),
+    receipt: Type.Any(),
+  })),
+})

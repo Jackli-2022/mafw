@@ -149,6 +149,15 @@ test("session.messages omits optional query params when absent", async () => {
   expect(url).toBe("http://gw:3000/api/sessions/s1/messages?")
 })
 
+test("session.memoryReceipts calls the receipt route with limit", async () => {
+  fetchMock.mockResolvedValue(okJson({ items: [] }))
+  const c = new MafwClient("http://gw:3000")
+  const out = await c.session.memoryReceipts("s1", { limit: 2 })
+  const url = (fetchMock as any).mock.calls[0][0] as string
+  expect(url).toBe("http://gw:3000/api/sessions/s1/memory-receipts?limit=2")
+  expect(out).toEqual({ items: [] })
+})
+
 test("legacy history / shells / command / skill namespaces are gone", () => {
   const c = new MafwClient("http://gw:3000")
   expect((c.session as any).history).toBeUndefined()
