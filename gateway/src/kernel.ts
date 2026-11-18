@@ -323,6 +323,7 @@ import {
 } from './core/events/event-normalize';
 import { pollGitHubSource } from './core/events/sources/github-source';
 import { eventLayerEnabled } from './core/events/event-flags';
+import { startEventDeliveryRetry } from './core/events/event-delivery-retry';
 import { isLeadDecisionContext, renderDomainEvent, renderExternalEvent, renderLeadDecisionEvent } from './core/events/lead-event';
 import { consumerEnvelope, domainEventForTrigger } from './core/events/domain-event-consumer';
 import type { EventTriggerRow } from './core/events/event-types';
@@ -564,6 +565,7 @@ class MafwScheduler {
   private sessionSweepTimer: TimerHandle | null = null;
   private podEventPruneTimer: TimerHandle | null = null;
   private podEventWakeTimer: TimerHandle | null = null;
+  private eventDeliveryRetryTimer: TimerHandle | null = null;
   // Unified session registry (kernel refactor Phase C) — the gateway's process
   // table. MUST be the default singleton: worker-origin (recall/worker-origin.ts)
   // falls back to getDefaultSessionRegistry(), and a private instance would
@@ -3876,6 +3878,7 @@ class MafwScheduler {
     this.sessionSweepTimer = null;
     this.podEventPruneTimer = null;
     this.podEventWakeTimer = null;
+    this.eventDeliveryRetryTimer = null;
     this.serveLedger?.release();
     this.serveLedger = undefined;
     this.processLedger.disposeAll();
@@ -5590,6 +5593,13 @@ class MafwScheduler {
     if (!this.podEventWakeTimer) {
       this.podEventWakeTimer = this.timers.every('pod:event-wake', 60_000, () => {
         void this.podEventWake?.scan();
+      });
+    }
+    if (!this.eventDeliveryRetryTimer) {
+      this.eventDeliveryRetryTimer = startEventDeliveryRetry({
+        every: (name, ms, fn) => this.timers.every(name, ms, fn),
+        sweep: () => this.eventLayer?.resumeIncompleteDeliveries() ?? Promise.resolve(0),
+        log: (message) => log.warn(message),
       });
     }
   }

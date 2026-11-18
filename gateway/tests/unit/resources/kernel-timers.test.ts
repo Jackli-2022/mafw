@@ -68,10 +68,11 @@ describe('kernel long-lived timers (E8-1)', () => {
     startAll();
 
     expect(kernel.timers.stats()).toEqual({
-      active: 6,
+      active: 7,
       byName: {
         'pod:event-prune': 1,
         'pod:event-wake': 1,
+        'event:delivery-retry': 1,
         'heartbeat:sweep': 1,
         'queue:sweep': 1,
         'session:sweep': 1,
