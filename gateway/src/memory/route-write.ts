@@ -234,8 +234,12 @@ export async function routeAndWrite(
   // Publish the vector routing had to embed on demand, but only once the unit is
   // actually persisted. Doing it in the decision phase (or for `skip`, which
   // writes nothing) would recreate the orphan-vector problem this fixes.
+  // Guarded on absence: the async indexer may flush the exact document vector
+  // while store.write is still in flight, and this embed-on-demand vector was
+  // computed before/independently of that flush — overwriting it would replace
+  // the fresher exact vector with the approximate one.
   const publishVector = (id: string): void => {
-    if (localVector) deps.vectors.upsert(id, localVector);
+    if (localVector && !deps.vectors.get(id)) deps.vectors.upsert(id, localVector);
   };
   if (decision.action === 'skip') {
     routeStats.skip++;

@@ -124,6 +124,7 @@ function expandQuery(
   pushed: Set<string>,
   topK: number = 3,
   maxSearches: number = config.search.expansionMaxSearches ?? 4,
+  secondaryGraphExpand: boolean = true,
 ): { id: string; score: number }[] {
   const expandedScores = new Map<string, number>();
   let used = 0;
@@ -140,13 +141,25 @@ function expandQuery(
   // Budget-capped: each search is a full-corpus BM25 pass, and the old
   // 10-entity + 4-subquery fan-out (14 passes ≈ 250ms under load) was the
   // dominant cost of the 100ms boundary path.
-  // Secondary passes never repeat anchor-graph expansion: they re-rank
-  // candidates the base pass already expanded, and each graph pass costs up to
-  // 50 seeds × 2 SQLite queries (~500 sync queries for a 5-pass long query).
+  //
+  // Secondary passes default to legacy behaviour: no `graphExpand` key, so the
+  // index default (config.search.graph.enabled) applies. Callers may opt out
+  // via `secondaryGraphExpand: false` to stop repeating the per-seed anchor +
+  // coactivation SQL (up to 50 seeds × 2 synchronous queries ≈ 500 graph
+  // queries for a 5-pass long query on the 100ms boundary path).
+  //
+  // The opt-out is NOT a pure re-rank: a graph-running secondary pass also
+  // pulls its own graph-only neighbours into that pass's candidate pool, and
+  // the in-group BM25/graph blend + maxNormalize then set the secondary score.
+  // Skipping graph expansion on secondary passes therefore changes which
+  // candidates contribute and how they score (the base pass keeps both its
+  // candidate pool and its graph recall). The frozen-40 replay's 0 flips is an
+  // empirical result, not a proof of semantic equivalence.
+  const secondaryOptions: SearchRecallOptions = secondaryGraphExpand ? {} : { graphExpand: false };
   const entities = extractQueryEntities(query);
   for (const entity of entities) {
     if (used >= maxSearches) break;
-    const hits = fetchScored(index, entity, topK, { graphExpand: false });
+    const hits = fetchScored(index, entity, topK, secondaryOptions);
     accumulate(hits, 0.4);
     used++;
   }
@@ -155,7 +168,7 @@ function expandQuery(
   const subQueries = decomposeMultiHopQuery(query);
   for (const sq of subQueries) {
     if (used >= maxSearches) break;
-    const hits = fetchScored(index, sq, topK, { graphExpand: false });
+    const hits = fetchScored(index, sq, topK, secondaryOptions);
     accumulate(hits, 0.35);
     used++;
   }
@@ -196,12 +209,25 @@ export interface SearchRecallOptions {
   /** Include retired cortical `episodic` rows (admin/legacy UI only). */
   includeLegacyEpisodic?: boolean
   /**
-   * Anchor-graph expansion inside `index.searchScored`. Left undefined the
-   * index default applies (config.search.graph.enabled). Secondary expansion
-   * passes pass `false`: they re-rank already-expanded candidates, so repeating
-   * the per-seed graph SQL per pass is pure cost on the 100ms boundary path.
+   * Anchor-graph expansion inside `index.searchScored` for the *base* pass.
+   * Left undefined the index default applies (config.search.graph.enabled).
+   * This flag has never reached the secondary expansion passes and still does
+   * not — use `secondaryGraphExpand` for those.
    */
   graphExpand?: boolean
+  /**
+   * Graph expansion on the entity / multi-hop secondary passes *only*.
+   * Default true = legacy behaviour: the secondary calls carry no `graphExpand`
+   * key, so the index default applies (snapshot builder and every other caller
+   * keep the pre-opt-out behaviour). `false` makes those passes pass
+   * `graphExpand: false`; only the live `routes/recall.ts` boundary call does
+   * that to stay inside the 100ms budget.
+   *
+   * Note this changes secondary semantics, not just cost: a graph-running
+   * secondary pass also pulls graph-only neighbours into its candidate pool and
+   * the in-group blend/normalization moves its scores accordingly.
+   */
+  secondaryGraphExpand?: boolean
 }
 
 /** Multi-topic blob abstraction (chained MinHash merges) 鈥?dilutes precision. */
@@ -382,7 +408,7 @@ export async function searchRecallMemories(
   // Query expansion: entity / sub-query hits join with a RELATIVE weight
   // (norm 脳 0.4, capped) instead of flat energy 鈥?wide blobs no longer rack
   // up multiples of a constant.
-  const expandedResults = expandQuery(index, query, pushed, topK)
+  const expandedResults = expandQuery(index, query, pushed, topK, undefined, options.secondaryGraphExpand)
   for (const exp of expandedResults) {
     if (resultMap.has(exp.id)) continue; // Already from BM25 鈥?don't override
     const entry = (index as any).getIndex?.()?.entries?.find((e: any) => e.id === exp.id)

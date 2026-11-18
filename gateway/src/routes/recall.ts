@@ -276,6 +276,11 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
             retriever: config.search.defaultRetriever,
             scanSnapshot,
             denseScores,
+            // Live boundary path only: secondary (entity / multi-hop) passes
+            // skip anchor-graph expansion to stay inside the 100ms contract.
+            // The snapshot builder and every other caller keep the default
+            // (legacy: index default on secondary passes too).
+            secondaryGraphExpand: false,
           },
         );
         // R5 FOK gate (fail-open): weak evidence is stated, not silently

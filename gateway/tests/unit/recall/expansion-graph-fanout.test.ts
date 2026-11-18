@@ -1,19 +1,34 @@
 /**
- * Boundary-recall expansion fan-out: only the base pass may run anchor-graph
- * expansion. The 4 secondary passes (entity extraction + multi-hop
- * decomposition) re-rank candidates that the base pass already graph-expanded,
- * so repeating the per-seed graph SQL per pass is pure cost: a 538-char query
- * ran 5 passes × up to 50 seeds × 2 graph queries ≈ 500 synchronous SQLite
- * calls and blew the 100ms boundary budget.
+ * Boundary-recall expansion fan-out: only the live boundary call may skip
+ * anchor-graph expansion on the secondary passes. The 4 secondary passes
+ * (entity extraction + multi-hop decomposition) each run a full-corpus BM25
+ * pass; when graph expansion also runs there, every pass pays the per-seed
+ * anchor + coactivation SQL (up to 50 seeds × 2 synchronous queries), and a
+ * 538-char query ran 5 passes ≈ 500 graph queries inside the 100ms boundary
+ * budget.
+ *
+ * This is NOT a pure re-rank. Disabling graph expansion on a secondary pass
+ * also removes the graph-only neighbours that pass would otherwise pull into
+ * its candidate pool, and the in-group BM25/graph blend + maxNormalize then
+ * produce different secondary scores. The candidate pool and the graph recall
+ * of the *base* pass are unchanged; the secondary contributions are not
+ * semantically identical to the previous behaviour. The frozen-40 replay's
+ * 0 flips is an empirical result, not a proof of equivalence.
  *
  * Contract under test:
- *  - the first (base) `searchScored` call carries no `graphExpand` key, so the
- *    index default (config.search.graph.enabled) still applies;
- *  - every secondary expansion call carries `graphExpand: false`;
- *  - a caller-supplied `graphExpand` is transported on the base pass;
- *  - expansion candidates still join with the existing relative weights, so
- *    the ranking rules are unchanged.
+ *  - default options (snapshot builder / any legacy caller): every pass carries
+ *    no `graphExpand` key, so the index default (config.search.graph.enabled)
+ *    still applies to the secondary passes — identical to the pre-change code;
+ *  - `secondaryGraphExpand: false` (live `routes/recall.ts` boundary call only):
+ *    secondary passes carry `graphExpand: false`, the base pass still carries
+ *    none;
+ *  - `secondaryGraphExpand: true` is byte-identical to the default;
+ *  - a caller-supplied `graphExpand` is still transported on the base pass;
+ *  - expansion candidates still join with the existing relative weights.
  */
+import * as fs from 'fs';
+import * as path from 'path';
+
 import { searchRecallMemories } from '../../../src/recall/recall-context';
 
 type Scored = { entry: any; score: number };
@@ -55,21 +70,26 @@ function createRecordingIndex(
   } as any;
 }
 
+function recordingFixture() {
+  const calls: Call[] = [];
+  const entries = [
+    entry('base-hit', 'auth token base'),
+    entry('entity-hit', 'auth entity'),
+  ];
+  const index = createRecordingIndex(
+    calls,
+    {
+      [QUERY]: [{ entry: entries[0], score: 6 }],
+      auth: [{ entry: entries[1], score: 3 }],
+    },
+    entries,
+  );
+  return { calls, index };
+}
+
 describe('boundary recall expansion graph fan-out', () => {
-  test('only the base pass leaves graph expansion at the index default', async () => {
-    const calls: Call[] = [];
-    const entries = [
-      entry('base-hit', 'auth token base'),
-      entry('entity-hit', 'auth entity'),
-    ];
-    const index = createRecordingIndex(
-      calls,
-      {
-        [QUERY]: [{ entry: entries[0], score: 6 }],
-        auth: [{ entry: entries[1], score: 3 }],
-      },
-      entries,
-    );
+  test('default options keep every pass at the index default (legacy/snapshot behaviour)', async () => {
+    const { calls, index } = recordingFixture();
 
     await searchRecallMemories(index, QUERY, new Set(), 5, {});
 
@@ -80,10 +100,13 @@ describe('boundary recall expansion graph fan-out', () => {
     expect(base.query).toBe(QUERY);
     expect(base.options && 'graphExpand' in base.options).toBe(false);
 
-    // Every secondary pass: graph expansion explicitly disabled.
+    // Secondary passes: legacy behaviour — no flag either, so the index default
+    // (graph ON) still applies there. 92e9ea57c temporarily forced false on
+    // every caller (including the snapshot builder); only the live boundary
+    // route may opt out.
     expect(secondary).toHaveLength(4);
     for (const call of secondary) {
-      expect(call.options?.graphExpand).toBe(false);
+      expect(call.options && 'graphExpand' in call.options).toBe(false);
     }
 
     // Both secondary strategies actually ran (entity + multi-hop sub-query).
@@ -91,6 +114,35 @@ describe('boundary recall expansion graph fan-out', () => {
     expect(secondaryQueries).toContain('auth');
     expect(secondaryQueries).toContain('token');
     expect(secondaryQueries.filter(q => q === SUBQUERY)).toHaveLength(2);
+  });
+
+  test('secondaryGraphExpand: true is identical to the default', async () => {
+    const { calls, index } = recordingFixture();
+
+    await searchRecallMemories(index, QUERY, new Set(), 5, { secondaryGraphExpand: true });
+
+    expect(calls).toHaveLength(5);
+    for (const call of calls) {
+      expect(call.options && 'graphExpand' in call.options).toBe(false);
+    }
+  });
+
+  test('secondaryGraphExpand: false disables graph expansion on secondary passes only', async () => {
+    const { calls, index } = recordingFixture();
+
+    await searchRecallMemories(index, QUERY, new Set(), 5, { secondaryGraphExpand: false });
+
+    expect(calls.length).toBe(5);
+    const [base, ...secondary] = calls;
+
+    // Base pass keeps the index default (base candidate pool + graph recall).
+    expect(base.options && 'graphExpand' in base.options).toBe(false);
+
+    // Every secondary pass: graph expansion explicitly disabled.
+    expect(secondary).toHaveLength(4);
+    for (const call of secondary) {
+      expect(call.options?.graphExpand).toBe(false);
+    }
   });
 
   test('caller-supplied graphExpand is transported on the base pass', async () => {
@@ -105,6 +157,8 @@ describe('boundary recall expansion graph fan-out', () => {
       { graphExpand: false } as any,
     );
     expect(offCalls[0].options.graphExpand).toBe(false);
+    // The caller's base flag never leaks into the secondary passes.
+    expect(offCalls.slice(1).every(c => !('graphExpand' in (c.options || {})))).toBe(true);
 
     const onCalls: Call[] = [];
     await searchRecallMemories(
@@ -145,5 +199,28 @@ describe('boundary recall expansion graph fan-out', () => {
     expect(res[0].source).toBe('bm25');
     expect(res[1].source).toBe('expansion');
     expect(res[2].source).toBe('expansion');
+  });
+});
+
+describe('secondary-graph opt-out wiring', () => {
+  const src = (rel: string) => fs.readFileSync(path.join(__dirname, '../../../src', rel), 'utf8');
+
+  test('the live boundary call opts out, the snapshot builder stays on the default', () => {
+    const routeSrc = src('routes/recall.ts');
+    const callStart = routeSrc.indexOf('memories = await searchRecallMemories(');
+    expect(callStart).toBeGreaterThan(-1);
+    const callBlock = routeSrc.slice(callStart, routeSrc.indexOf(');', callStart));
+    expect(callBlock).toContain('secondaryGraphExpand: false');
+    // The base pass must keep the index default on this path.
+    expect(callBlock).not.toContain('graphExpand: false');
+
+    // Snapshot builder (kernel) is the legacy path: no opt-out, no base flag —
+    // it must keep the pre-92e9ea57c behaviour.
+    const kernelSrc = src('kernel.ts');
+    const snapStart = kernelSrc.indexOf('searchRecallMemories(this.memoryService!.harmonicIndex, q,');
+    expect(snapStart).toBeGreaterThan(-1);
+    const snapBlock = kernelSrc.slice(snapStart, kernelSrc.indexOf('} as any);', snapStart));
+    expect(snapBlock).not.toContain('secondaryGraphExpand');
+    expect(snapBlock).not.toContain('graphExpand');
   });
 });

@@ -312,6 +312,26 @@ describe('routeAndWrite', () => {
     expect(v.get('n1')).toEqual([1, 0]);
   });
 
+  test('create → a vector the indexer flushed during store.write is not overwritten', async () => {
+    const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
+    const s = {
+      async read() { return null; },
+      async write(x: HarmonicUnit) {
+        // The async indexer flushes the exact document vector while the write is
+        // still in flight — a different value from routing's embed-on-demand
+        // vector ([1, 0] from the stub provider).
+        v.upsert(x.id, [0, 1]);
+        return 'f.md';
+      },
+      async markSuperseded() { /* noop */ },
+    };
+    const out = await routeAndWrite(u('n1'), s as any, { vectors: v, provider, judge: async () => null });
+    expect(out).toEqual({ action: 'create', id: 'n1' });
+    // The post-write publish only fills a vacuum; it must never clobber the
+    // fresher vector the indexer wrote while store.write was running.
+    expect(v.get('n1')).toEqual([0, 1]);
+  });
+
   test('store.write rejects → the vector is never published', async () => {
     const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
     const s = {

@@ -167,9 +167,11 @@ opencode server 进程                    Gateway 进程
 
 **secondary expansion 不再重复图扩展（2026-11-18，单变量实测）**
 
-`SearchRecallOptions.graphExpand` 透传给 `index.searchScored`；entity / multi-hop 二次搜索固定传 `false`，基础 pass 不传（沿用 index 默认）。原因是每次 graph pass 要按 seed 做 anchor + coactivation 两次同步 SQLite 查询（seed ≤ 50），538 字查询原来是 5 pass × 100 ≈ **500 次图 SQL**。
+`SearchRecallOptions.graphExpand` 透传给 `index.searchScored` 的**基础 pass**；secondary（entity / multi-hop）由独立开关 `secondaryGraphExpand` 控制。默认 `true` 表示 legacy 行为——secondary 调用**不传** `graphExpand` 键，沿用 index 默认（config.search.graph.enabled），因此 snapshot builder 与其它调用方的 secondary 行为与改动前完全一致。只有 live 边界路由 `routes/recall.ts` 传 `secondaryGraphExpand: false`，让 secondary 调用显式 `graphExpand: false`。基础 pass 的 `graphExpand` 透传不变（不传则沿用 index 默认）。
 
-这不只是省掉重复计算，也**改变了 secondary pass 的候选与打分口径**：改动前 secondary pass 自己也会做图扩展，graph-only 邻居会进入该 pass 的候选池，并通过组内 BM25/graph 混合与 `maxNormalize` 共同决定 secondary 贡献的分数；改动后 secondary 图邻居不再进入候选池，组内打分口径也随之变化（基础 pass 的候选池与图召回保持不变）。因此「当前冻结 40 条 0 flip」是**实测结果，不是语义等价的证明**——语义上 secondary 贡献集合本就可能不同。
+原因是每次 graph pass 要按 seed 做 anchor + coactivation 两次同步 SQLite 查询（seed ≤ 50），538 字查询原来是 5 pass × 100 ≈ **500 次图 SQL**；live 边界路径关掉 secondary 图调用后降到 100 次。
+
+这不只是省掉重复计算，也**改变了 secondary pass 的候选与打分口径**：改动前（以及默认 `secondaryGraphExpand: true` 的 snapshot/legacy 路径）secondary pass 自己也会做图扩展，graph-only 邻居会进入该 pass 的候选池，并通过组内 BM25/graph 混合与 `maxNormalize` 共同决定 secondary 贡献的分数；live 边界路径关掉后 secondary 图邻居不再进入候选池，组内打分口径也随之变化（基础 pass 的候选池与图召回保持不变）。因此「当前冻结 40 条 0 flip」是**实测结果，不是语义等价的证明**——语义上 secondary 贡献集合本就可能不同。
 
 离线重放口径：真实 `gateway/src` 模块 + 冻结的 `.harmonic_index.json` 副本（17,047 条）+ 冻结的三个图表（`anchor_units` 42916 / `anchor_edges` 635692 / `coactivation_units` 5485 / `coactivation_edges` 16866），`gateway.db` 只读，同进程内 before（所有 pass 用 index 默认）与 after 交替跑 15 轮（各 3 轮预热）：
 
@@ -362,7 +364,7 @@ sticky=OptMem wake（近期可见）、BM25=archival（按需检索）。桌面�
 - `mafw_search_hybrid` / `GET /api/memory/search` 支持 `layer=gist|t1|both`；**省略 layer 时仍只搜 Harmonic**，旧结果形状不变。T1 结果带 `traceId`/`sessionId`/`turnId`/`cosine`/`excerpt`/`sources`/`score`，默认 gist 不产生 `t1Results`。
 - `createGatewayT1Search`（`recall/t1-search.ts`）是 gateway 共享入口：dense 通道惰性读取 embedding runtime（热切换不残留旧 provider），archive 优先、active 回退；词面通道查 `t1_fts`。两路用 RRF 融合（`1/(60+rank)`，`fuseT1Hits`），同 trace 去重并优先保留词面 excerpt；单路失败/关闭时另一路照常返回，dense provider off 时仍有词面结果。`config.recall.t1Recall.lexical=false` 可关闭词面通道。
 - T1 自动回填：每日 `memory:decay` 在 Harmonic 回填后调用 `backfillT1Vectors`，archive 优先分页扫描，跳过已有 key，单次默认最多 3000 条（`config.recall.t1Recall.t1BackfillLimit`，0/负数关闭）；heartbeat 记录 `t1BackfillIndexed`/`t1BackfillMissing`/`t1BackfillFailed`，`/api/memory/stats` 的 `t1.coverage` 暴露覆盖率。旧默认 200 条低于生产 archive 增长（约 485 行/天），覆盖率只会下降；3000 条留出追赶余量，且本地 embedding 约 20 行/秒，仍在 decay 的 30 分钟 watchdog 内。
-  - **返回契约（2026-11-18）**：`T1BackfillResult` 的 `indexed` 只表示 **flush 已确认落盘** 的条数，`queued` 是本次提交进 embed 队列的条数，二者不再混同（flush 部分失败或抛错时 `indexed` 会更小、`failed` 承接差额，`indexed + failed ≤ queued`）。`queued` 是返回值/诊断字段：heartbeat 只记 `t1BackfillIndexed`，**不新增** queued 指标，需要时由调用方自行读返回值。
+  - **返回契约（2026-11-18）**：`T1BackfillResult` 的 `indexed` 只表示 **flush 已确认落盘** 的条数，`queued` 是本次提交进 embed 队列的条数，二者不再混同。**没有 `indexed + failed ≤ queued` 这种不变量**：T1 indexer 队列是 **全进程共享** 的，本次 backfill 的 `flush` 可能顺带落盘同期的 live 捕获（`/api/obs/capture` 等写入路径提交的条目），因此 `indexed` 可以大于本次的 `queued`，`failed` 也不是本次提交的精确差额。这些计数只能作为单次运行的诊断量，**不能按单次 backfill 严格归因**（不要用它做覆盖率算术或回归断言）。`queued` 是返回值/诊断字段：heartbeat 只记 `t1BackfillIndexed`，**不新增** queued 指标，需要时由调用方自行读返回值。
   - **分页口径（2026-11-18）**：`listT1RowsForBackfill` 的 archive 段计数与 SELECT 同为 `WHERE observation_key IS NOT NULL`。此前计数用全部 archive 物理行、SELECT 只取非 NULL，NULL 行会把 archive→active 的 offset 边界整体后移，越过边界后重复返回 active 行（尾页重复而非跳过）。`ORDER BY id`、archive-first、全局 offset 语义与函数签名均未改。
   - **真实缺口仍在（2026-11-18 快照）**：52,319 个 T1 向量 / 84,396 条 active+archive 物理行 ≈ 61.99%；分子是唯一内容 key、分母是物理行，2,538 行与他行共享 key，故该口径理论上限约 97%。真缺口约 29,882 行 / 29,540 唯一 key，集中在 8–9 月历史归档；active 行缺向量为 0。按 3000 条/天约需 10 天。本轮只修落盘计数与分页边界，**没有提高实际覆盖率**；且 `t1Recall.denseIndex='shadow'`（只算不融合），61.99% 不影响当前生产召回。是否补齐全历史需先统一「近端 12k 窗口」与「全历史」策略（见 `docs/research/2026-11-18-memory-health-root-causes.md` §2）。
 - T1 二进制向量：`SqliteT1VectorStore` 把向量存为 `gateway.db` 的 `t1_vectors` Float32 BLOB（按行 flush，无全量 JSON 重写）；无 DB 句柄的测试/评测环境自动回退 JSON store。首次迁移导入 `vectors-t1-<tag>.json` 后改名保留备份。
