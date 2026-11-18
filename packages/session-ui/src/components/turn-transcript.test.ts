@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { splitTurn, type TurnEntry } from './turn-transcript'
 
-const text = (id: string, value: string, extra: Record<string, unknown> = {}) => ({ id, type: 'text', text: value, ...extra })
-const think = (id: string, value: string) => ({ id, type: 'reasoning', text: value })
+const text = (id: string, value: string, extra: Record<string, unknown> = {}) => ({ id, type: 'text' as const, text: value, ...extra })
+const think = (id: string, value: string) => ({ id, type: 'reasoning' as const, text: value })
 const tool = (id: string, name: string, extra: Record<string, unknown> = {}) => ({
-  id, type: 'tool', tool: name, canonicalTool: name, callID: `call_${id}`,
-  state: { status: 'completed', input: {}, content: [] }, ...extra,
+  id, type: 'tool' as const, tool: name, canonicalTool: name, callID: `call_${id}`,
+  state: { status: 'completed' as const, input: {}, content: [] }, ...extra,
 })
 
 function segments(entries: TurnEntry[]) {

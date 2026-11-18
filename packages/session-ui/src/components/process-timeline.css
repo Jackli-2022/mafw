@@ -1,0 +1,126 @@
+.mafw-process-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.mafw-process-segment {
+  position: relative;
+}
+.mafw-process-seg-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  color: var(--text-weak);
+  font-size: 11px;
+  cursor: pointer;
+  user-select: none;
+}
+.mafw-process-seg-head:hover {
+  color: var(--text-strong);
+}
+.mafw-process-seg-icon {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex: none;
+  background: var(--surface-inset-base);
+  color: var(--text-weaker);
+  font-size: 8px;
+}
+.mafw-process-seg-icon.active {
+  color: var(--text-interactive-base);
+  background: var(--surface-base-interactive-active);
+}
+.mafw-process-seg-meta {
+  color: var(--text-weaker);
+  font-size: 10px;
+}
+.mafw-process-steps {
+  position: relative;
+  margin: 2px 0 0 6px;
+  padding-left: 16px;
+}
+.mafw-process-steps::before {
+  content: "";
+  position: absolute;
+  left: 1px;
+  top: 5px;
+  bottom: 8px;
+  width: 1px;
+  background: var(--border-weak-base);
+}
+.mafw-process-step {
+  position: relative;
+  padding: 4px 0 8px;
+}
+.mafw-process-dot {
+  position: absolute;
+  left: -16px;
+  top: 9px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--border-strong-base);
+  box-shadow: 0 0 0 3px var(--surface-base);
+}
+.mafw-process-dot.thinking {
+  background: var(--text-weaker);
+}
+.mafw-process-thinking [data-component="markdown"] {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-weak);
+}
+.mafw-process-tool-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 3px 8px;
+  border: 1px solid var(--border-weak-base);
+  border-radius: 6px;
+  background: var(--surface-inset-base);
+  color: var(--text-base);
+  font-size: 11px;
+}
+.mafw-process-tool-title {
+  color: var(--text-strong);
+}
+.mafw-process-tool-sub {
+  color: var(--text-weak);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mafw-process-tool-status {
+  margin-left: auto;
+  color: var(--text-weaker);
+}
+.mafw-process-tool-status.error {
+  color: var(--text-on-critical-base);
+}
+.mafw-process-tool-detail {
+  padding: 6px 8px;
+  border: 1px solid var(--border-weak-base);
+  border-top: 0;
+  border-radius: 0 0 6px 6px;
+  background: var(--surface-inset-base);
+}
+.mafw-process-tool-detail pre {
+  margin: 0;
+  max-height: 240px;
+  overflow: auto;
+  font-family: var(--font-mono, monospace);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text-weak);
+  white-space: pre-wrap;
+}
+.mafw-process-output [data-component="markdown"] {
+  font-size: 16px;
+  line-height: 1.6;
+}

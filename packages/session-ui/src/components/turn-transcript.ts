@@ -31,16 +31,17 @@ function isSynthetic(part: { synthetic?: boolean }): boolean {
 
 export function splitTurn(parts: MafwPart[], opts: { showReasoning: boolean }): TurnEntry[] {
   const entries: TurnEntry[] = []
-  let segment: Extract<TurnEntry, { type: 'segment' }> | null = null
+  const state: { current: Extract<TurnEntry, { type: 'segment' }> | null } = { current: null }
 
   const flush = () => {
+    const segment = state.current
     if (segment && (segment.process.length > 0 || segment.output.length > 0)) entries.push(segment)
-    segment = null
+    state.current = null
   }
 
   const ensureSegment = (key: string) => {
-    if (!segment) segment = { type: 'segment', key, process: [], output: [] }
-    return segment
+    if (!state.current) state.current = { type: 'segment', key, process: [], output: [] }
+    return state.current
   }
 
   for (const part of parts ?? []) {
@@ -59,7 +60,7 @@ export function splitTurn(parts: MafwPart[], opts: { showReasoning: boolean }): 
       const value = (part as ReasoningPart).text?.trim()
       if (!value) continue
       // Reasoning after output starts a new segment.
-      if (segment?.output.length) flush()
+      if (state.current?.output.length) flush()
       const target = ensureSegment(`seg:${part.id}`)
       const last = target.process.at(-1)
       if (last?.type === 'thinking') last.parts.push(part as ReasoningPart)
@@ -70,7 +71,7 @@ export function splitTurn(parts: MafwPart[], opts: { showReasoning: boolean }): 
     if (part.type === 'tool') {
       const tool = displayToolOf(part as ToolPart)
       if (isTimelineTool(tool)) {
-        if (segment?.output.length) flush()
+        if (state.current?.output.length) flush()
         ensureSegment(`seg:${part.id}`).process.push({
           type: 'tool',
           key: part.id,
