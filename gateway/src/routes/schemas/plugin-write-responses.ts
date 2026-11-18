@@ -100,6 +100,23 @@ const PluginCheckFailureCode = Type.Union([
 })
 
 /**
+ * legacy 单例 plane 的朝向：`media` 除名字外还钉住可服务的 modalities。
+ *
+ * `name` 缺省时按包名解析（与 host 一致），`modalities` 恒是数组——空数组是
+ * 零上界，不是"未声明"。
+ */
+const PluginCheckMediaPlane = Type.Object({
+  name: Type.Optional(Type.String({
+    description: 'Legacy media contribution name; defaults to the package name.',
+  })),
+  modalities: Type.Array(Type.String(), {
+    description: 'Modalities the instance may serve; [] = nothing allowed.',
+  }),
+}, {
+  description: 'Legacy media plane: one instance per package, pinned to its modalities.',
+})
+
+/**
  * `PluginCheckDeclared`（`PluginHost`）：`plugin.json` 的 `contributes.gateway` 静态上界。
  *
  * 逐 plane 的**存在性有意义**：缺键 = 该 plane 未声明（不设上界），`[]` = 零上界
@@ -121,6 +138,18 @@ const PluginCheckDeclared = Type.Object({
   http: Type.Optional(Type.Boolean({
     description: 'contributes.gateway.http when the manifest opts in or out explicitly.',
   })),
+  // legacy 单例 plane：每个包至多一个实例，所以是**一名上界**而不是名字数组。
+  // 清单省略 name 时按包名解析（host 的默认），故 `{}` 与 `{name:'<pkg>'}` 同义。
+  runtime: Type.Optional(Type.String({
+    description: 'Legacy runtime contribution name; a one-name bound, absent = unconstrained.',
+  })),
+  tts: Type.Optional(Type.String({
+    description: 'Legacy TTS contribution name; a one-name bound, absent = unconstrained.',
+  })),
+  usage: Type.Optional(Type.String({
+    description: 'Legacy usage contribution name; a one-name bound, absent = unconstrained.',
+  })),
+  media: Type.Optional(PluginCheckMediaPlane),
 }, {
   description:
     'Static plane declarations; absent for legacy packages without a contributes.gateway block.',
@@ -136,6 +165,18 @@ const PluginCheckRegistered = Type.Object({
   tools: Type.Array(Type.String()),
   observers: Type.Array(Type.String()),
   http: Type.Number({ description: 'HTTP + WebSocket routes recorded through ctx.http.' }),
+  // legacy 单例 plane：只有在可信激活真的观察到该实例时才出现。缺失是合法的
+  // （该 plane 没注册任何东西，或者检查在到达它之前就失败了）。
+  runtime: Type.Optional(Type.String({
+    description: 'Legacy runtime instance observed during a trusted activation.',
+  })),
+  tts: Type.Optional(Type.String({
+    description: 'Legacy TTS instance observed during a trusted activation.',
+  })),
+  usage: Type.Optional(Type.String({
+    description: 'Legacy usage instance observed during a trusted activation.',
+  })),
+  media: Type.Optional(PluginCheckMediaPlane),
 }, {
   description: 'Planes the candidate actually tried to register while it was checked.',
 })

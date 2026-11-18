@@ -24228,6 +24228,38 @@
                         "http": {
                           "description": "contributes.gateway.http when the manifest opts in or out explicitly.",
                           "type": "boolean"
+                        },
+                        "runtime": {
+                          "description": "Legacy runtime contribution name; a one-name bound, absent = unconstrained.",
+                          "type": "string"
+                        },
+                        "tts": {
+                          "description": "Legacy TTS contribution name; a one-name bound, absent = unconstrained.",
+                          "type": "string"
+                        },
+                        "usage": {
+                          "description": "Legacy usage contribution name; a one-name bound, absent = unconstrained.",
+                          "type": "string"
+                        },
+                        "media": {
+                          "description": "Legacy media plane: one instance per package, pinned to its modalities.",
+                          "type": "object",
+                          "required": [
+                            "modalities"
+                          ],
+                          "properties": {
+                            "name": {
+                              "description": "Legacy media contribution name; defaults to the package name.",
+                              "type": "string"
+                            },
+                            "modalities": {
+                              "description": "Modalities the instance may serve; [] = nothing allowed.",
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          }
                         }
                       }
                     },
@@ -24269,6 +24301,38 @@
                         "http": {
                           "description": "HTTP + WebSocket routes recorded through ctx.http.",
                           "type": "number"
+                        },
+                        "runtime": {
+                          "description": "Legacy runtime instance observed during a trusted activation.",
+                          "type": "string"
+                        },
+                        "tts": {
+                          "description": "Legacy TTS instance observed during a trusted activation.",
+                          "type": "string"
+                        },
+                        "usage": {
+                          "description": "Legacy usage instance observed during a trusted activation.",
+                          "type": "string"
+                        },
+                        "media": {
+                          "description": "Legacy media plane: one instance per package, pinned to its modalities.",
+                          "type": "object",
+                          "required": [
+                            "modalities"
+                          ],
+                          "properties": {
+                            "name": {
+                              "description": "Legacy media contribution name; defaults to the package name.",
+                              "type": "string"
+                            },
+                            "modalities": {
+                              "description": "Modalities the instance may serve; [] = nothing allowed.",
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          }
                         }
                       }
                     },

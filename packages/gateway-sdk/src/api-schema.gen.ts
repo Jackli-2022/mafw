@@ -15805,6 +15805,19 @@ export interface operations {
                             observers?: string[];
                             /** @description contributes.gateway.http when the manifest opts in or out explicitly. */
                             http?: boolean;
+                            /** @description Legacy runtime contribution name; a one-name bound, absent = unconstrained. */
+                            runtime?: string;
+                            /** @description Legacy TTS contribution name; a one-name bound, absent = unconstrained. */
+                            tts?: string;
+                            /** @description Legacy usage contribution name; a one-name bound, absent = unconstrained. */
+                            usage?: string;
+                            /** @description Legacy media plane: one instance per package, pinned to its modalities. */
+                            media?: {
+                                /** @description Legacy media contribution name; defaults to the package name. */
+                                name?: string;
+                                /** @description Modalities the instance may serve; [] = nothing allowed. */
+                                modalities: string[];
+                            };
                         };
                         /** @description Planes the candidate actually tried to register while it was checked. */
                         registered?: {
@@ -15814,6 +15827,19 @@ export interface operations {
                             observers: string[];
                             /** @description HTTP + WebSocket routes recorded through ctx.http. */
                             http: number;
+                            /** @description Legacy runtime instance observed during a trusted activation. */
+                            runtime?: string;
+                            /** @description Legacy TTS instance observed during a trusted activation. */
+                            tts?: string;
+                            /** @description Legacy usage instance observed during a trusted activation. */
+                            usage?: string;
+                            /** @description Legacy media plane: one instance per package, pinned to its modalities. */
+                            media?: {
+                                /** @description Legacy media contribution name; defaults to the package name. */
+                                name?: string;
+                                /** @description Modalities the instance may serve; [] = nothing allowed. */
+                                modalities: string[];
+                            };
                         };
                         /** @description Non-fatal manifest diagnostics (legacy-permissions, …); `mafw plugin check --strict` fails on a non-empty list. */
                         warnings?: string[];

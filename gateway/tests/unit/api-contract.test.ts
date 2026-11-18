@@ -6228,8 +6228,9 @@ describe('api-contract: E10h-R5 mcp/plugin/runtime/platform write responses', ()
     expect(check.properties.evaluated.type).toBe('boolean');
     // declared 的逐 plane 可选性是语义（缺键 = 不设上界，[] = 零上界），不能收敛成 required。
     expect(check.properties.declared.required).toBeUndefined();
-    expect(Object.keys(check.properties.declared.properties).sort())
-      .toEqual(['actions', 'events', 'http', 'observers', 'tools']);
+    expect(Object.keys(check.properties.declared.properties).sort()).toEqual([
+      'actions', 'events', 'http', 'media', 'observers', 'runtime', 'tools', 'tts', 'usage',
+    ]);
     expect(check.properties.declared.properties.http.type).toBe('boolean');
     // registered 恒报五个 plane；http 是计数，不是布尔。
     expect(check.properties.registered.required).toEqual(['actions', 'events', 'tools', 'observers', 'http']);
@@ -6264,6 +6265,51 @@ describe('api-contract: E10h-R5 mcp/plugin/runtime/platform write responses', ()
 
     // 枚举外的 code 必须被拒（契约不允许自由文本）。
     expect(Value.Check(PluginCheckResponse, { ok: false, code: 'boom' })).toBe(false);
+  });
+
+  test('plugin check documents the legacy singleton planes as optional', () => {
+    const check = schemaOf('plugins.check');
+    // declared 与 registered 同形：四个 legacy plane 都镜像 host 的形状。
+    for (const side of ['declared', 'registered']) {
+      const props = check.properties[side].properties;
+      expect([props.runtime.type, props.tts.type, props.usage.type]).toEqual(['string', 'string', 'string']);
+      // media.name 缺省时按包名解析；modalities 恒是数组（[] = 零上界）。
+      expect(props.media.properties.name.type).toBe('string');
+      expect(props.media.required).toEqual(['modalities']);
+      expect(props.media.properties.modalities.items.type).toBe('string');
+    }
+    // registered 的 required 仍是五个 plane：legacy plane 只在可信激活观察到时才出现。
+    expect(check.properties.registered.required)
+      .toEqual(['actions', 'events', 'tools', 'observers', 'http']);
+
+    // 真实 wire：声明与观察到的 legacy plane 同时出现在一份响应里。
+    expect(Value.Check(PluginCheckResponse, {
+      ok: true,
+      name: 'acme',
+      evaluated: true,
+      declared: {
+        runtime: 'acme-runtime',
+        tts: 'acme',
+        usage: 'acme',
+        media: { name: 'acme', modalities: ['image', 'audio'] },
+      },
+      registered: {
+        actions: [],
+        events: [],
+        tools: [],
+        observers: [],
+        http: 0,
+        runtime: 'acme-runtime',
+        tts: 'acme',
+        usage: 'acme',
+        media: { modalities: ['image'] },
+      },
+    })).toBe(true);
+    // modalities 不能省略——零上界必须显式写成 []。
+    expect(Value.Check(PluginCheckResponse, {
+      ok: true,
+      registered: { actions: [], events: [], tools: [], observers: [], http: 0, media: {} },
+    })).toBe(false);
   });
 
   test('plugin toggle/delete keep both body branches (package vs legacy)', () => {

@@ -2903,6 +2903,16 @@ export interface PluginCheckResult {
     observers?: string[]
     /** `contributes.gateway.http` when the manifest opts in or out explicitly. */
     http?: boolean
+    /**
+     * Legacy singleton planes: at most one instance per package, so each is a
+     * one-name bound (absent = undeclared = unconstrained). The name resolves
+     * to the package name when the manifest omits it.
+     */
+    runtime?: string
+    tts?: string
+    usage?: string
+    /** `media` additionally pins the modalities the instance may serve. */
+    media?: { name?: string; modalities: string[] }
   }
   /** Planes the candidate actually tried to register while it was checked. */
   registered?: {
@@ -2912,6 +2922,14 @@ export interface PluginCheckResult {
     observers: string[]
     /** HTTP + WebSocket routes recorded through `ctx.http`. */
     http: number
+    /**
+     * Legacy singleton instances observed during a trusted activation. Absent
+     * when the plane registered nothing (legal) or was never reached.
+     */
+    runtime?: string
+    tts?: string
+    usage?: string
+    media?: { name?: string; modalities: string[] }
   }
   /** Non-fatal manifest diagnostics; `mafw plugin check --strict` fails on a non-empty list. */
   warnings?: string[]
