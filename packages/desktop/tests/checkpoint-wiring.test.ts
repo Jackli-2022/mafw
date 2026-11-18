@@ -16,7 +16,11 @@ describe("checkpoint wiring", () => {
     expect(pane).not.toContain("sessions.diff")
     expect(pane).toContain("revertWarning")
     expect(pane).toContain('experienceStore.action("checkpoint.restore")')
-    expect(pane).toContain("时间线")
+    // 时间线入口 2026-11-18 移入标题栏 ⋯ 菜单；入口仍然存在，只是位置变了。
+    expect(pane).toContain("buildSessionMenu")
+    const headerMenu = read("src/renderer/mafw/components/session-header-menu.ts")
+    expect(headerMenu).toContain("时间线 / 检查点")
+    expect(headerMenu).toContain("timeline")
     expect(pane).toContain("sessions.revertDiff")
     // Task 10：runtime 名称/裸能力不得再进聊天业务组件。
     expect(pane).not.toContain("runtimeCaps")

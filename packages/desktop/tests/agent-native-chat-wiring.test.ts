@@ -8,6 +8,7 @@ const shell = read("src/renderer/mafw/MafwShell.tsx")
 const send = read("src/renderer/mafw/chat/use-send-message.ts")
 const queue = read("src/renderer/mafw/components/turn-queue.ts")
 const episodeCss = read("src/renderer/mafw/chat-episodes.css")
+const sessionMenu = read("src/renderer/mafw/components/session-header-menu.ts")
 
 test("composer no longer owns a transient mode", () => {
   assert.doesNotMatch(chat, /ChatModeBar|composerMode|modeActionLabel|modeSendsMessage/)
@@ -20,13 +21,12 @@ test("shell no longer passes mode-only actions to chat", () => {
   assert.doesNotMatch(shell, /openGoalComposerWithDraft|openReviewFromChat/)
 })
 
-test("episode marking lives in the transcript header, not a mode row", () => {
-  const headerStart = chat.indexOf('<div class="mafw-session-titlebar">')
-  const composerStart = chat.indexOf('class="mafw-composer"', headerStart)
-  assert.ok(headerStart >= 0, "missing session titlebar")
-  assert.ok(composerStart > headerStart, "missing composer after titlebar")
-  assert.match(chat.slice(headerStart, composerStart), /mafw-episode-mark/)
+test("episode marking lives in the session header menu, not a mode row", () => {
+  // 2026-11-18：回合级「标记段落」从标题栏按钮收进 ⋯ 菜单（菜单仍在 transcript header 内）。
+  assert.match(chat, /runSessionMenuAction/)
   assert.match(chat, /startEpisode/)
+  assert.match(sessionMenu, /mark-episode/)
+  assert.match(sessionMenu, /从这里开始新段落/)
   assert.doesNotMatch(chat, /mafw-chat-mode-row/)
   assert.doesNotMatch(episodeCss, /\.mafw-chat-mode-row/)
 })

@@ -571,20 +571,23 @@ describe("token v5.1 — streaming 尾光标", () => {
   })
 })
 
-describe("titlebar 收缩契约 — 标题过长只压缩 text，按钮不变形", () => {
+describe("titlebar 收缩契约 — 标题保留可读宽度，工具不抢位", () => {
   test("titlebar 直接子元素默认不收缩，text 是唯一可收缩项", () => {
     const b = cssBlock(".mafw-session-titlebar-inner > *")
     expect(b).toContain("flex-shrink: 0")
     const t = cssBlock(".mafw-session-titlebar-inner > .mafw-session-titlebar-text")
     expect(t).toContain("flex-shrink: 1")
   })
-  test("text 保留 ellipsis + min-width: 0（收缩前提）", () => {
+  test("text keeps ellipsis and a readable floor", () => {
     // 原块是独立规则（行首锚定），复合选择器 .inner > .text 不能截胡
     const anchor = css.indexOf("\n.mafw-session-titlebar-text {")
     const t = css.slice(anchor, css.indexOf("}", anchor))
     expect(t).toContain("overflow: hidden")
     expect(t).toContain("text-overflow: ellipsis")
     expect(t).toContain("min-width: 0")
+    // 2026-11-18：低频工具收进 ⋯ 后，标题保留 120px 下限，不再被压成省略号。
+    const floor = cssBlock(".mafw-session-titlebar-inner > .mafw-session-titlebar-text")
+    expect(floor).toContain("min-width: 120px")
   })
 })
 

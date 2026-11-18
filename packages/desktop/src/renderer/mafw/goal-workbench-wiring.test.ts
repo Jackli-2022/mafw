@@ -8,6 +8,7 @@ const prioritySrc = readFileSync(join(import.meta.dirname, "components/WorkPrior
 const goalDetailSrc = readFileSync(join(import.meta.dirname, "components/GoalDetailPanel.tsx"), "utf8")
 const mafwShellSrc = readFileSync(join(import.meta.dirname, "MafwShell.tsx"), "utf8")
 const chatPaneSrc = readFileSync(join(import.meta.dirname, "components/ChatPane.tsx"), "utf8")
+const sessionMenuSrc = readFileSync(join(import.meta.dirname, "components/session-header-menu.ts"), "utf8")
 const goalUserHeroSrc = readFileSync(join(import.meta.dirname, "components/GoalUserHero.tsx"), "utf8")
 const mafwCssSrc = readFileSync(join(import.meta.dirname, "mafw.css"), "utf8")
 
@@ -136,8 +137,8 @@ test("ChatPane exposes Return to Lead only through the shared context rule", () 
   assert.match(chatPaneSrc, /showReturnLead\?: \(\) => boolean/)
   assert.match(chatPaneSrc, /onReturnLead\?: \(\) => void/)
   assert.match(chatPaneSrc, /props\.showReturnLead\?\.\(\)/)
-  assert.match(chatPaneSrc, /返回项目 Lead/)
-  assert.match(chatPaneSrc, /class="mafw-return-lead"/)
+  // 2026-11-18：入口收进 ⋯ 菜单，规则仍然只由 showReturnLead 决定。
+  assert.match(sessionMenuSrc, /返回项目 Lead/)
   assert.doesNotMatch(chatPaneSrc, /<button\b/)
 })
 
@@ -148,7 +149,6 @@ test("Goal user-view styles use theme tokens and no mounted display:none", () =>
     "mafw-goal-user-progress",
     "mafw-goal-user-next",
     "mafw-goal-technical",
-    "mafw-return-lead",
     "mafw-work-item-owner",
   ]) {
     assert.match(mafwCssSrc, new RegExp(`\\.${className}\\s*\\{[^}]*var\\(--`), `${className} must use theme tokens`)

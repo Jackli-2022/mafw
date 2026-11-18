@@ -5,6 +5,7 @@ import { isWorkingStatus } from "../session-status"
 import { Icon as IconV2 } from "@mafw/ui/v2/icon"
 import { TextareaV2 } from "@mafw/ui/v2/textarea-v2"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
+import { MenuV2 } from "@mafw/ui/v2/menu-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { ProgressCircleV2 } from "@mafw/ui/v2/progress-circle-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
@@ -38,6 +39,7 @@ import { useConnPhase } from "../connection-state"
 import { AgentPicker, type AgentEntry } from "./pickers/AgentPicker"
 import { isAgentKey } from "../agent-identity"
 import { isLeadRole } from "../lead-session"
+import { buildSessionMenu, type SessionMenuActionId } from "./session-header-menu"
 import { buildLeadGoalStatusCards, type LeadGoalStatusSource } from "../lead-goal-status"
 import { LeadGoalStatusCard } from "./LeadGoalStatusCard"
 import { TopicIndexPanel } from "./TopicIndexPanel"
@@ -2415,6 +2417,39 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     return parts.join(" · ")
   })
 
+  // Titlebar overflow (2026-11-18): keep identity + 交给 Lead inline; every other
+  // session action lives in one grouped menu so the title never gets squeezed out.
+  const sessionMenuGroups = createMemo(() => buildSessionMenu({
+    detailsMode: detailsMode(),
+    hasTurns: visibleTurns().length > 0,
+    worktreeEnabled: props.worktreeEnabled === true,
+    isLead: isLead(),
+    topicsOpen: props.showTopics === true,
+    leadStatusOpen: showLeadStatus(),
+    showReturnLead: props.showReturnLead?.() === true,
+    hasParent: !!props.parentID,
+    canClosePane: props.canClosePane === true,
+  }))
+
+  const runSessionMenuAction = (id: SessionMenuActionId) => {
+    switch (id) {
+      case "details": toggleDetails(); return
+      case "timeline": setCheckpointsOpen(true); void loadServerCheckpoints(); return
+      case "mark-episode": startEpisode(); return
+      case "parallel": props.onCreateWorktreeSession?.(); return
+      case "topics": props.onOpenTopics?.(); return
+      case "lead-status":
+        setShowLeadStatus((open) => {
+          if (!open) props.onCloseTopics?.()
+          return !open
+        })
+        return
+      case "return-lead": props.onReturnLead?.(); return
+      case "back-parent": props.onBackToParent?.(); return
+      case "close-pane": props.onClosePane?.(); return
+    }
+  }
+
   return (
     <div class="mafw-pane" data-layout="chat" onClick={props.onFocus}>
       <div class="mafw-chat-scroll-wrap">
@@ -2460,49 +2495,6 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                     <span class="mafw-rail-wt-badge"><Icon name="branch" size="small" /> {worktreeBadgeOf()}</span>
                   </TooltipV2>
                 </Show>
-                <Show when={props.worktreeEnabled && props.onCreateWorktreeSession}>
-                  <TooltipV2 value="在独立 git worktree 中开并行任务（互不踩踏）" openDelay={300}>
-                    <ButtonV2 variant="ghost" size="small" onClick={(e: MouseEvent) => { e.stopPropagation(); props.onCreateWorktreeSession?.() }} aria-label="并行任务"><Icon name="branch" size="small" /> 并行</ButtonV2>
-                  </TooltipV2>
-                </Show>
-                <Show when={isLead()}>
-                  <TooltipV2 value="查看可恢复的话题" openDelay={300}>
-                    <ButtonV2
-                      variant="ghost"
-                      size="small"
-                      aria-pressed={props.showTopics === true}
-                      onClick={(e: MouseEvent) => { e.stopPropagation(); props.onOpenTopics?.() }}
-                    >
-                      话题
-                    </ButtonV2>
-                  </TooltipV2>
-                  <TooltipV2 value="查看当前 Goal 状态（按需）" openDelay={300}>
-                    <ButtonV2
-                      variant="ghost"
-                      size="small"
-                      aria-pressed={showLeadStatus()}
-                      onClick={(e: MouseEvent) => {
-                        e.stopPropagation()
-                        setShowLeadStatus((open) => {
-                          if (!open) props.onCloseTopics?.()
-                          return !open
-                        })
-                      }}
-                    >
-                      状态
-                    </ButtonV2>
-                  </TooltipV2>
-                </Show>
-                <Show when={props.showReturnLead?.()}>
-                  <ButtonV2
-                    variant="outline"
-                    size="small"
-                    class="mafw-return-lead"
-                    onClick={(e: MouseEvent) => { e.stopPropagation(); props.onReturnLead?.() }}
-                  >
-                    返回项目 Lead
-                  </ButtonV2>
-                </Show>
                 <Show when={props.onHandoffToLead && (props.handoffEligible?.() ?? true)}>
                   <TooltipV2 value="把当前讨论作为来源，交给 Lead 创建 Goal 执行" openDelay={300}>
                     <ButtonV2
@@ -2512,44 +2504,49 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                     >交给 Lead</ButtonV2>
                   </TooltipV2>
                 </Show>
-                <TooltipV2 value="检查点 / 回滚时间线" openDelay={300}>
-                  <ButtonV2
+                <MenuV2 gutter={6} placement="bottom-end">
+                  <MenuV2.Trigger
+                    as={ButtonV2}
                     variant="ghost"
                     size="small"
-                    onClick={(e: MouseEvent) => {
-                      e.stopPropagation()
-                      setCheckpointsOpen(true)
-                      void loadServerCheckpoints()
-                    }}
-                  >时间线</ButtonV2>
-                </TooltipV2>
-                <TooltipV2 value="把当前回合标为一段讨论的起点" openDelay={300}>
-                  <ButtonV2
-                    variant="ghost"
-                    size="small"
-                    class="mafw-episode-mark"
-                    disabled={!visibleTurns().length}
-                    onClick={(e: MouseEvent) => { e.stopPropagation(); startEpisode() }}
-                  >标记 Episode</ButtonV2>
-                </TooltipV2>
-                <TooltipV2 value="展开全部细节：工具/编辑卡默认展开 (Ctrl+O)" openDelay={300}>
-                  <ButtonV2
-                    variant={detailsMode() ? "outline" : "ghost"}
-                    size="small"
-                    aria-pressed={detailsMode() ? "true" : "false"}
-                    onClick={(e: MouseEvent) => { e.stopPropagation(); toggleDetails() }}
-                  >{detailsMode() ? "细节 ▾" : "细节 ▸"}</ButtonV2>
-                </TooltipV2>
-                <Show when={props.canClosePane}>
-                  <TooltipV2 value="关闭分屏" openDelay={300}>
-                    <ButtonV2 variant="ghost" size="small" class="mafw-session-close" onClick={(e: MouseEvent) => { e.stopPropagation(); props.onClosePane?.() }} aria-label="关闭分屏"><Icon name="close" size="small" /></ButtonV2>
-                  </TooltipV2>
-                </Show>
-                <Show when={props.parentID && props.onBackToParent}>
-                  <TooltipV2 value="返回父会话" openDelay={300}>
-                    <ButtonV2 variant="outline" size="small" class="mafw-back-parent" onClick={(e: MouseEvent) => { e.stopPropagation(); props.onBackToParent?.() }} aria-label="返回父会话"><Icon name="arrow-left" size="small" /> 返回</ButtonV2>
-                  </TooltipV2>
-                </Show>
+                    icon="outline-dots"
+                    aria-label="更多会话操作"
+                  />
+                  <MenuV2.Portal>
+                    <MenuV2.Content class="mafw-session-menu">
+                      <For each={sessionMenuGroups()}>
+                        {(group) => (
+                          <MenuV2.Group>
+                            <MenuV2.GroupLabel>{group.label}</MenuV2.GroupLabel>
+                            <For each={group.items}>
+                              {(item) => (
+                                <Show
+                                  when={item.kind === "toggle"}
+                                  fallback={
+                                    <MenuV2.Item
+                                      disabled={item.disabled}
+                                      shortcut={item.shortcut}
+                                      closeOnSelect
+                                      onSelect={() => runSessionMenuAction(item.id)}
+                                    >{item.label}</MenuV2.Item>
+                                  }
+                                >
+                                  <MenuV2.CheckboxItem
+                                    checked={item.checked === true}
+                                    disabled={item.disabled}
+                                    shortcut={item.shortcut}
+                                    closeOnSelect
+                                    onChange={() => runSessionMenuAction(item.id)}
+                                  >{item.label}</MenuV2.CheckboxItem>
+                                </Show>
+                              )}
+                            </For>
+                          </MenuV2.Group>
+                        )}
+                      </For>
+                    </MenuV2.Content>
+                  </MenuV2.Portal>
+                </MenuV2>
               </div>
             </div>
             <Show when={hiddenTurnCount() > 0 || props.pageState[sidProp()]?.hasMore}>

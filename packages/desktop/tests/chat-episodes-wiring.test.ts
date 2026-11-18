@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs"
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8")
 const chat = read("src/renderer/mafw/components/ChatPane.tsx")
 const header = read("src/renderer/mafw/components/EpisodeHeader.tsx")
+const sessionMenu = read("src/renderer/mafw/components/session-header-menu.ts")
 const css = read("src/renderer/mafw/chat-episodes.css")
 
 test("ChatPane groups visible turns into episodes", () => {
@@ -15,7 +16,9 @@ test("ChatPane groups visible turns into episodes", () => {
   assert.match(chat, /episodeForMessage/)
   assert.match(chat, /isTurnHidden/)
   assert.match(chat, /resetEpisodeCollapse/)
-  assert.match(chat, /标记 Episode/)
+  // 2026-11-18：标题栏按钮收进 ⋯ 菜单，文案同时从内部术语改成「段落」。
+  assert.match(chat, /runSessionMenuAction/)
+  assert.match(sessionMenu, /从这里开始新段落/)
 })
 
 test("EpisodeHeader renders status, title and human actions", () => {
