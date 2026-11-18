@@ -10,7 +10,10 @@
  * (`PluginHost.checkPackage`, a dry-run activation) inside this CLI process:
  * no gateway, no human token, no network. It prints the declared-vs-registered
  * inventory and a paste-ready install command, so an agent can self-verify a
- * package before asking a human for consent.
+ * package before asking a human for consent. The inventory carries the delta
+ * inline (`+name` = registered but not declared; `-name` = the legal opposite),
+ * and a classified failure is printed as `error[<code>]: …`, so a CI or an agent
+ * can switch on the code instead of the prose.
  *
  * `schema` prints the machine-readable manifest contract
  * (`MANIFEST_JSON_SCHEMA`) for editors and agents. It is deliberately the
@@ -175,44 +178,116 @@ type DeclaredView = PlaneNames & { http?: boolean };
 type RegisteredView = PlaneNames & { http?: number };
 
 /**
- * `[a, b]` / `[]` / the absent marker. Presence is per plane: `[]` is a zero
- * bound and must never be described as unbounded.
+ * One plane on the `declared:` line, as a delta against what was registered.
+ *
+ * `-name` means the manifest allows it and nothing registered it: legal by
+ * design (packages register conditionally), so the marker is informational.
+ * `registered` is only consulted here, never printed: a name that is not
+ * declared does not belong on a line that claims to describe the declaration.
+ * Without a registered view to compare against (legacy result shape), the plane
+ * keeps its plain rendering.
+ *
+ * Plane lists are space-joined (`[ping +pong]`): the markers are per-token, and
+ * a name can never contain a space (the manifest name pattern forbids it), so
+ * one token is always one name on the two lines a human compares.
  */
-function formatPlane(names: string[] | undefined, absent: string): string {
-  if (!names) return absent;
-  if (names.length === 0) return '[]';
-  return `[${names.map((name) => text(name)).join(', ')}]`;
+function formatDeclaredPlane(
+  declared: string[] | undefined,
+  registered: string[] | undefined,
+): string {
+  if (declared === undefined) return '(unbounded)';
+  if (declared.length === 0) return '[]';
+  if (registered === undefined) return `[${declared.map((name) => text(name)).join(' ')}]`;
+  const used = new Set(registered);
+  const missing = declared.filter((name) => !used.has(name));
+  if (missing.length === 0) return `[${declared.map((name) => text(name)).join(' ')}]`;
+  return `[${declared.map((name) => (used.has(name) ? text(name) : `-${text(name)}`)).join(' ')}]`;
 }
 
 /**
- * `actions [a, b], events [], tools (unbounded), observers (unbounded), http true`.
+ * One plane on the `registered:` line, as a delta against the declaration.
+ *
+ * `+name` is registered but not declared — the one shape that fails a check
+ * *because* of this line, so it must be visible without reading the error text.
+ * Declared names come first **in declaration order** (the two lines then line
+ * up), extras follow in registration order. An undeclared plane is unbounded:
+ * nothing on it is a delta, so it is never marked.
+ */
+function formatRegisteredPlane(
+  declared: string[] | undefined,
+  registered: string[] | undefined,
+): string {
+  if (registered === undefined) return '-';
+  if (declared === undefined) {
+    return registered.length === 0 ? '[]' : `[${registered.map((name) => text(name)).join(' ')}]`;
+  }
+  const declaredNames = new Set(declared);
+  const registeredNames = new Set(registered);
+  const inDeclaredOrder = declared.filter((name) => registeredNames.has(name));
+  const extras = registered.filter((name) => !declaredNames.has(name));
+  if (extras.length === 0) {
+    return inDeclaredOrder.length === 0 ? '[]' : `[${inDeclaredOrder.map((name) => text(name)).join(' ')}]`;
+  }
+  const tokens = [
+    ...inDeclaredOrder.map((name) => text(name)),
+    ...extras.map((name) => `+${text(name)}`),
+  ];
+  return `[${tokens.join(' ')}]`;
+}
+
+/**
+ * `actions [a b], events [], tools (unbounded), observers (unbounded), http true`.
  *
  * `declared` and `registered` are the two lines a human is told to compare, so
  * the `http` field uses one vocabulary on both: a boolean flag on the manifest
  * side (`true` / `false`, or `(unbounded)` when the key is absent) and a route
  * count on the activation side (`N route(s)`). Never `declared` / `opted out`.
+ *
+ * Name planes carry the delta inline (see `formatDeclaredPlane` /
+ * `formatRegisteredPlane`): a declared name that never registered is legal, a
+ * registered name that was not declared is the violation.
  */
-function formatDeclared(declared: DeclaredView | undefined): string {
+function formatDeclared(
+  declared: DeclaredView | undefined,
+  registered: RegisteredView | undefined,
+): string {
   if (!declared) return '(no contributes.gateway block — no static upper bound)';
   return [
-    `actions ${formatPlane(declared.actions, '(unbounded)')}`,
-    `events ${formatPlane(declared.events, '(unbounded)')}`,
-    `tools ${formatPlane(declared.tools, '(unbounded)')}`,
-    `observers ${formatPlane(declared.observers, '(unbounded)')}`,
+    `actions ${formatDeclaredPlane(declared.actions, registered?.actions)}`,
+    `events ${formatDeclaredPlane(declared.events, registered?.events)}`,
+    `tools ${formatDeclaredPlane(declared.tools, registered?.tools)}`,
+    `observers ${formatDeclaredPlane(declared.observers, registered?.observers)}`,
     declared.http === undefined ? 'http (unbounded)' : `http ${declared.http}`,
   ].join(', ');
 }
 
-/** `actions [a, b], events -, tools -, observers -, http 2 route(s)`. */
-function formatRegistered(registered: RegisteredView | undefined): string {
+/** `actions [a b], events -, tools -, observers -, http 2 route(s)`. */
+function formatRegistered(
+  registered: RegisteredView | undefined,
+  declared: DeclaredView | undefined,
+): string {
   if (!registered) return '(not reported)';
   return [
-    `actions ${formatPlane(registered.actions, '-')}`,
-    `events ${formatPlane(registered.events, '-')}`,
-    `tools ${formatPlane(registered.tools, '-')}`,
-    `observers ${formatPlane(registered.observers, '-')}`,
+    `actions ${formatRegisteredPlane(declared?.actions, registered.actions)}`,
+    `events ${formatRegisteredPlane(declared?.events, registered.events)}`,
+    `tools ${formatRegisteredPlane(declared?.tools, registered.tools)}`,
+    `observers ${formatRegisteredPlane(declared?.observers, registered.observers)}`,
     `http ${typeof registered.http === 'number' ? registered.http : 0} route(s)`,
   ].join(', ');
+}
+
+/**
+ * The terminal failure line: `error[<code>]: <message>` when the host classified
+ * the failure, `error: <message>` for an older/foreign result shape.
+ *
+ * The code is the machine half (CI and agents switch on it); the message is the
+ * human half and stays byte-identical to what the host produced.
+ */
+function errorLine(result: PluginCheckResult): string {
+  const code = typeof result.code === 'string' && result.code.length > 0
+    ? `[${text(result.code, 40)}]`
+    : '';
+  return `error${code}: ${text(result.error ?? '(no reason reported)')}`;
 }
 
 /** Why the install line could not be printed; the notice names the culprit. */
@@ -616,8 +691,8 @@ export async function runPluginStandardCommand(
   }
   const contributions = (result.contributions ?? []).map((contribution) => text(contribution));
   if (contributions.length > 0) deps.print(`  contributions: ${contributions.join(', ')}`);
-  deps.print(`declared: ${formatDeclared(result.declared)}`);
-  deps.print(`registered: ${formatRegistered(result.registered)}`);
+  deps.print(`declared: ${formatDeclared(result.declared, result.registered)}`);
+  deps.print(`registered: ${formatRegistered(result.registered, result.declared)}`);
   // `check` is a dry-run activation, not a sandbox: the author must know the
   // package's own side effects already happened.
   deps.print(
@@ -631,7 +706,7 @@ export async function runPluginStandardCommand(
     deps.print(`note: declared but not registered: ${unregistered.join(', ')}`);
   }
   for (const warning of warnings) deps.print(`warning: ${warning}`);
-  if (!checkOk) deps.print(`error: ${text(result.error ?? '(no reason reported)')}`);
+  if (!checkOk) deps.print(errorLine(result));
 
   if (verdictOk) {
     const plan = installPlan(target, result);

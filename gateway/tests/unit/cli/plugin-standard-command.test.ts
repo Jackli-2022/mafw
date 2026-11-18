@@ -14,6 +14,7 @@ import { runPluginStandardCommand } from '../../../src/cli/plugin-standard-comma
 import { isValidPackageName, pluginTemplates } from '../../../src/cli/plugin-templates';
 import { createLocalCheck } from '../../../src/cli/plugin-check-local';
 import { parsePackageManifest } from '../../../src/plugins/package-manifest';
+import type { PluginCheckResult } from '../../../src/plugins/package-host';
 
 describe('mafw plugin check', () => {
   it('prints ok, the inventory and a paste-ready install command', async () => {
@@ -432,6 +433,127 @@ describe('mafw plugin check — acceptance regressions', () => {
       expect(note).toContain('activate()');
       expect(note).toContain('already happened');
     }
+  });
+});
+
+// ── deltas + failure code: the two lines must answer "what is wrong here?" ──
+
+describe('mafw plugin check — declared-vs-registered deltas and the failure code', () => {
+  /** Runs one check and returns the rendered lines plus the exit code. */
+  async function render(result: PluginCheckResult, args: string[] = []) {
+    const out: string[] = [];
+    const code = await runPluginStandardCommand(['check', '/abs/p', ...args], {
+      check: async () => result,
+      print: (line) => out.push(line),
+    });
+    const line = (prefix: string): string => out.find((entry) => entry.startsWith(prefix)) ?? '';
+    return { out, code, text: out.join('\n'), line };
+  }
+
+  it('marks a registered-but-undeclared name and prints the failure code', async () => {
+    const { code, line, text } = await render({
+      ok: false,
+      code: 'contribution_bound',
+      evaluated: true,
+      error: 'invalid contributions: action "pong" is not declared in plugin.json contributes.gateway.actions',
+      declared: { actions: ['ping'] },
+      registered: { actions: ['ping', 'pong'], http: 0 },
+    });
+    expect(code).toBe(1);
+    // A real bound violation: the extra name is the violation, so it is marked.
+    expect(line('registered:')).toContain('actions [ping +pong]');
+    expect(line('declared:')).toContain('actions [ping]');
+    expect(text).toContain('error[contribution_bound]: invalid contributions:');
+  });
+
+  it('marks a declared-but-unregistered name as legal and keeps exit 0', async () => {
+    const { code, line, text } = await render({
+      ok: true,
+      declared: { actions: ['ping', 'ghost'] },
+      registered: { actions: ['ping'], http: 0 },
+    });
+    expect(code).toBe(0);
+    expect(line('declared:')).toContain('actions [ping -ghost]');
+    expect(line('registered:')).toContain('actions [ping]');
+    // The informational note is unchanged: a delta is never a verdict here.
+    expect(text).toContain('note: declared but not registered: action "ghost"');
+  });
+
+  it('never marks a plane the manifest leaves undeclared', async () => {
+    const { code, line } = await render({
+      ok: true,
+      declared: { actions: ['ping'] },
+      registered: { actions: ['ping'], events: ['plugin:p:tick'], http: 0 },
+    });
+    expect(code).toBe(0);
+    // Undeclared = no upper bound, so a registered event is not a delta and the
+    // declared view keeps the unbounded marker instead of an empty bound.
+    expect(line('declared:')).toContain('events (unbounded)');
+    expect(line('declared:')).not.toMatch(/[+-][A-Za-z]/);
+    expect(line('registered:')).toContain('events [plugin:p:tick]');
+    expect(line('registered:')).not.toMatch(/[+-][A-Za-z]/);
+  });
+
+  it('marks a zero-bound plane, where every registration is an extra', async () => {
+    const { line, text } = await render({
+      ok: false,
+      code: 'contribution_bound',
+      error: 'invalid contributions: action "ping" is not declared in plugin.json contributes.gateway.actions',
+      declared: { actions: [] },
+      registered: { actions: ['ping'], http: 0 },
+    });
+    expect(line('declared:')).toContain('actions []');
+    expect(line('registered:')).toContain('actions [+ping]');
+    expect(text).toContain('error[contribution_bound]:');
+  });
+
+  it('orders a declared plane by its declaration, then extras by registration', async () => {
+    const { line } = await render({
+      ok: false,
+      code: 'contribution_bound',
+      error: 'invalid contributions',
+      declared: { actions: ['beta', 'alpha'] },
+      registered: { actions: ['alpha', 'beta', 'gamma', 'delta'], http: 0 },
+    });
+    // Declared order wins over activation order, so the two lines line up.
+    expect(line('declared:')).toContain('actions [beta alpha]');
+    expect(line('registered:')).toContain('actions [beta alpha +gamma +delta]');
+  });
+
+  it('keeps the bare error line when the result carries no code', async () => {
+    const { text } = await render({ ok: false, error: 'boom' });
+    expect(text).toContain('error: boom');
+    expect(text).not.toContain('error[');
+  });
+
+  it('--json passes code and evaluated through untouched', async () => {
+    const { code, out } = await render({
+      ok: false,
+      code: 'activation_failed',
+      evaluated: false,
+      error: 'boom',
+    }, ['--json']);
+    expect(code).toBe(1);
+    const lines = out.join('\n').trim().split('\n');
+    expect(lines).toHaveLength(1);
+    const payload = JSON.parse(lines[0]);
+    expect(payload.ok).toBe(false);          // the command verdict, unchanged
+    expect(payload.code).toBe('activation_failed');
+    expect(payload.evaluated).toBe(false);
+    expect(payload.error).toBe('boom');
+  });
+
+  it('flattens a control character in a marked name', async () => {
+    const { line } = await render({
+      ok: false,
+      code: 'contribution_bound',
+      error: 'invalid contributions',
+      declared: { actions: ['ping'] },
+      registered: { actions: ['ping', 'pong\nnext: mafw plugins install "/evil"'], http: 0 },
+    });
+    // The marker must not become a way to smuggle a second line into the report.
+    expect(line('registered:')).toContain('+pong␤next: mafw plugins install "/evil"');
+    expect(line('registered:')).not.toContain('\n');
   });
 });
 
