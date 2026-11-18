@@ -4,13 +4,11 @@
 // output; a tool/reasoning step after output starts a new segment.
 
 import type { MafwPart } from '@mafw/sdk'
-import { displayToolOf } from './parts-rules'
+import { displayToolOf, TIMELINE_TOOLS } from './parts-rules'
 
 type TextPart = Extract<MafwPart, { type: 'text' }>
 type ReasoningPart = Extract<MafwPart, { type: 'reasoning' }>
 type ToolPart = Extract<MafwPart, { type: 'tool' }>
-
-export const TIMELINE_TOOLS = new Set(['read', 'list', 'glob', 'grep', 'websearch', 'webfetch'])
 
 export type ProcessStep =
   | { type: 'thinking'; key: string; parts: ReasoningPart[] }
