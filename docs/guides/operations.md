@@ -49,8 +49,11 @@ mafw pair              # 仅生成当前 LAN/Tailscale URL 的配对码
 ```
 
 - 需要 `cloudflared` 在 PATH（或 `MAFW_CLOUDFLARED_PATH`）；首次 `pair --remote` 需 10–30s 等 URL。
+- cloudflared 只连 loopback terminator `127.0.0.1:3001`（`MAFW_TUNNEL_TERMINATOR_PORT` 可覆盖）；
+  **不要**把 3001 暴露到公网，也不要把 cloudflared 指回 3000。
 - start/stop/status 是 human-only；CLI 读取 `~/.mafw/human.token`（或 `MAFW_HUMAN_TOKEN`）。
-- 隧道 URL 不是认证：仍靠 pairing nonce（5 分钟、单次）+ 设备 token。
+- 隧道 URL 不是认证：匿名隧道请求只允许 `/health` 与 `POST /api/mobile/pairing/verify`；
+  其余 API 需要设备 token，且只能访问 mobile allowlist。
 - Quick Tunnel 是临时验证路径（随机 URL、无 SSE、200 in-flight、无 uptime 保证）；生产换 named tunnel + Cloudflare Access 或自建 relay。
 
 ### 轮换 human token（`mafw rotate-human-token`，2026-11-13 / E11-1）

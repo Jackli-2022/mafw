@@ -53,13 +53,16 @@ M0 必须在 relay M1 之前完成：
 - 新增 principal `relay`（或 `tunnel`），与 `local` 严格区分。
 - Tunnel terminator 为每个转发请求注入**进程内随机** `X-MAFW-Tunnel: <secret>`；
   该 secret 只在 gateway 内存中，不落盘；terminator 先剥离客户端自带的同名头。
-- HTTP/WS 入口：marker 匹配 → `relay` principal；无 marker 的 loopback → `local`；
-  公网/非 loopback → 现有 token/anonymous 路径。
+- HTTP/WS 入口：marker 匹配或 `cf-connecting-ip` → 请求标记 `tunneled`；
+  无凭证 → `relay` principal；无 marker 的真 loopback → `local`；公网/非 loopback → 现有 token/anonymous 路径。
+- **`tunneled` 是传输标记，不是信任级别**：带 device token 的隧道请求仍是 `human`，但同样受 allowlist 限制，
+  不能借 token 访问 terminal/python/tools。
 - `relay` principal 走**路由 allowlist**（mobile 需要的会话/聊天/审批/事件/媒体代理等），
   默认拒绝 terminal WS、python、tools、cognition、A2A、file-history、admin、pairing-code 限流豁免等。
+- 匿名隧道请求只允许 `GET /health` 与 `POST /api/mobile/pairing/verify`；其余 API 需要 device token。
 - 所有 `isLoopbackAddr` 的特权判断改为 `principal.kind === 'local'`；pairing verify 的匿名豁免保持不变。
 - Quick Tunnel 与 relay 共用同一个 terminator marker；两套 provider 都受 M0 保护。
-- 测试：伪造/缺失 marker、relay principal 路由矩阵、terminal WS 拒绝、限流豁免不生效、Quick Tunnel 回归。
+- 测试：伪造/缺失 marker、tunneled human 的路由矩阵、匿名 relay 401、terminal WS 拒绝、限流豁免不生效、Quick Tunnel 回归。
 
 ## 4. 术语
 

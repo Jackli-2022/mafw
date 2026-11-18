@@ -501,7 +501,8 @@ summary, proposedGoal?, state, userAction, deadline, llmSuggestions?, updatedAt?
 目标：没有域名、没有 Tailscale、没有入站端口，也能让手机扫码接入。
 
 - `mafw pair --remote` → gateway `POST /api/mobile/remote-access {enabled:true}` →
-  spawn `cloudflared tunnel --url http://127.0.0.1:3000 --no-autoupdate --protocol http2`；
+  spawn `cloudflared tunnel --url http://127.0.0.1:3001 --no-autoupdate --protocol http2`
+  （`3001` = loopback tunnel terminator，见 §7.16）；
   解析随机 `https://*.trycloudflare.com`，临时 `PairingService.setBaseUrlOverride(url)`。
 - `GET /api/mobile/pairing-code` 随后返回 `orcalore://pair?url=<tunnel>&v=2&exp&nonce`；
   CLI 生成 `~/.mafw/pair-qr.png` 并打开，手机扫码即可（pairing v2 协议不变）。
@@ -513,6 +514,22 @@ summary, proposedGoal?, state, userAction, deadline, llmSuggestions?, updatedAt?
 - P0 限制：Quick Tunnel 随机 URL、重启变化、无 SSE、200 in-flight、无 uptime 保证；
   MAFW mobile 用 WS，不受 SSE 限制。生产应换 named tunnel + Access 或自建 relay。
 - 依赖：`cloudflared` 在 PATH，或 `MAFW_CLOUDFLARED_PATH`。
+
+### 7.16 隧道信任边界（M0，2026-11-18）
+
+修复的漏洞：cloudflared 转发到 `127.0.0.1:3000` 时，gateway 曾把请求判成
+`local`（loopback），不需要任何 token。现在：
+
+- cloudflared 只连 loopback terminator `127.0.0.1:3001`（`MAFW_TUNNEL_TERMINATOR_PORT`
+  可覆盖）；terminator 先剥离客户端自带的 `x-mafw-tunnel`，再注入进程内随机 secret。
+- `resolvePrincipal` 把 marker 或 `cf-connecting-ip` 请求标记为 `tunneled`；没有凭证时
+  是 `relay` principal。
+- `tunneled` 请求只能走 **mobile allowlist**；带 device token 的 tunneled 请求仍是
+  `human`，但仍受 allowlist 限制（不能借设备 token 访问 terminal/python/tools 等桌面面）。
+- 匿名 relay 只允许 `GET /health` 与 `POST /api/mobile/pairing/verify`；其余 API 401。
+- desktop-only（terminal / python / tools / A2A / media upload / cognition / plugins / admin）
+  403；terminal / voice / plugin WS 403；`/api/ws` 必须带 device token。
+- 真正的本机 loopback 请求仍是 `local`，行为不变；`tunneled` 是传输标记，不是新的信任级别。
 
 ---
 
