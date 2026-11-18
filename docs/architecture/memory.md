@@ -158,9 +158,45 @@ opencode server 进程                    Gateway 进程
 - **边界路径没有 dense 的空间**（实测开启后 72–86ms → 100–107ms，护栏在 +25ms 触发且无 dense 收益）→ `search.boundaryDense` 默认 false 保留实验开关；R2 经 R8 快照（后台）进入边界路径
 - 失败排查：`/api/recall/context` 的 snapshot 决策日志带 `containment=` 与查询长度；短指令（"继续"/"可以"）与内容窗口天然零重叠，此时走实时路径是正确的
 
-**R8 预取快照**（`search.snapshot`，默认 off→生产已开）：`/api/obs/capture` 的 `user_input` 触发每会话防抖（2s）后台构建——滚动窗口查询（4 轮/600 字符，最后一轮只含 session 词汇 ~36%）→ hybrid（R2 dense RRF）+ R3 rerank + R5 FOK + R6 邻居 → 渲染块存 kv（scope `recall-snapshot`）；边界路径命中即服务（TTL 10min + **包含度**≥0.25 判定话题未漂移），否则回落实时 BM25。
+**R8 预取快照**（`search.snapshot`，默认 off→生产已开）：`/api/obs/capture` 的 `user_input` 触发每会话防抖（2s）后台构建——滚动窗口查询（**最近 4 个逻辑轮 / 600 字符**，轮次取自 `t1_turns` + `t1_archive ∪ t1_observations` 的 active+archive 视图，见下节；最后一轮只含 session 词汇 ~36%）→ hybrid（R2 dense RRF）+ R3 rerank + R5 FOK + R6 邻居 → 渲染块存 kv（scope `recall-snapshot`）；边界路径命中即服务（TTL 10min + **包含度**≥0.25 判定话题未漂移），否则回落实时 BM25。
 - **话题判定必须用包含度（overlap/min 侧）而非 Jaccard**：Jaccard 对"600 字符窗口 vs 15 token 追问"有长度偏置，实测 158/246 次快照被误跳过
 - 定位延迟用 `/api/recall/context` 的 `[Recall] timing` debug 日志（search/noteBoard/goal/neighbours 分段）
+
+### 精确证据准入与完整滚动窗口（2026-11-18）
+
+排查/规格：`docs/research/2026-11-18-auto-recall-fok-divergence.md`；计划：`docs/superpowers/plans/2026-11-18-auto-recall-exact-evidence.md`；交付与实测：`docs/releases/2026-11-18-auto-recall-exact-evidence.md`。
+
+**现状（行为）**
+
+- **精确证据准入（P1）**：边界 route 只在 FOK 不是 `inject` 时调用 `gateway/src/recall/exact-evidence.ts`。`findExactRecallEvidence(entries, query, limit)` 只从 **active** 条目的 `primary_abstraction` / `cue_anchors` 里找确定性证据（NFKC+小写+空白折叠后：整标题等价、整 query 形 identifier、7–40 位十六进制 commit、或长度 ≥12 ASCII / ≥6 CJK 且文档频次 ≤5、覆盖 ≥50% 非空字符的短语）；`applyExactRecallEvidence(memories, evidence, status, topK=3)` 将命中条目按 specificity→id 确定性并入、置前、去重并截到 3，命中时把 zone 升级为 `inject`。`superseded_by` 条目与未 pin/sticky 的 legacy `episodic` 不参与准入；不读正文、不加 embedding/LLM、不改 FOK 阈值 / 全局 topK / recency。无证据时结果与旧行为逐字一致——`no-memory` 与普通 `low-confidence` 仍被 `hasRelatedRecallBody` 抑制本体，note-board 仍是独立 must-surface、不计入相关记忆准入。已经 `inject` 的轮次直接跳过整个证据扫描。
+- **滚动窗口完整化（P2）**：`recentTurnTextsFromDb(db, sessionID, maxTurns)`（`gateway/src/recall/snapshot-builder.ts`）用 `listSessionTurns`（`t1_turns`）+ `readTurnRows`（`t1_archive ∪ t1_observations`）取最近 `maxTurns` 个逻辑轮的 `user_input`/`assistant_reply`（旧→新）；kernel 的防抖快照刷新改走该 helper，并在 helper export 缺失时 `log.warn`（debounced catch 会吞掉构建异常，不 warn 就只剩静默停摆）。T1 抽取/归档后，滚动窗口不再塌成最新一条短指令。
+- **FOK 证据仍不混用**：边界实时门继续用 BM25 比值，snapshot 继续用 reranker 概率；精确准入只是「比值门之外的确定性旁路」，没有把两套阈值合并。
+
+**固定 40 条 personal-recall 的实测（2026-11-18，`evaluation/personal-recall/`，同一 fixture；口径见下）**
+
+| 指标 | 变更前（10:42 artifact） | 变更后（12:00 artifact） |
+|---|---|---|
+| REST hit@1 / hit@3 / MRR | 60.0% / 73.3% / 0.656 | 60.0% / 73.3% / 0.656 |
+| AUTO hit（注入证据） | 46.7%（14/30） | **60.0%（18/30）** |
+| AUTO anchor rank@1 | 12/30 | 13/30 |
+| 有 rank 时的平均 anchor rank | 1.29 | 1.39 |
+| false injection（negative 10 条） | 2/10（20%） | 2/10（20%，同一组 7 个无关指针） |
+| stale injection（`must_exclude`） | 0 | 0 |
+| entrypoint agreement | 73.3%（22/30） | **86.7%（26/30）** |
+| REST p50 / p95 | 84 / 92 ms | 103 / 127 ms |
+| AUTO p50 / p95 | 248 / 411 ms | 307 / 436 ms |
+
+- 新增的 4 个 AUTO 命中就是排查里的精确分叉案例：`5cd9885f5`（rank1）、`Proactive Topic Recall 主题工具设计`（rank2）、图扩展 commit、`NOTE_BOARD_BUDGET`；`检索路径 parity...` 保持命中。`negative` 冰岛式无答案查询保持 `no-memory`、无 recall 本体。
+- 剩余 `REST hit@3 && AUTO miss` 的 4 条全部是 `implicit`  paraphrase（field-passing / multisession-gap / unattended-background / live-index-overwrite）：精确准入按设计不覆盖普通词面重叠，这类需要候选池/呈现策略另案处理。
+- `exact` 分类 REST hit@1 由 90%→80% 是 **fixture 主动刷新**的结果，不是代码回归：原目标 `g7u8qu` 在基线之后被 `0r8ks9`、再被 active head `uidutw` supersede，检索只会把旧 id 重写到链头，旧期望永远拿不到；刷新只替换这一个 id 并把旧 id 放进 `must_exclude` 做 stale 对照。
+- 边界 AUTO 延迟仍远超 100ms 契约（见「未解决」），所以「自动回合真的看到」仍取决于插件 100ms abort 是否触发。
+
+**未解决 / 未声称**
+
+- 100ms 契约：本轮 AFTER 的 AUTO p50/p95 为 307/436ms，比 BEFORE 更慢（同机其他负载未隔离，不能全部归因于精确扫描）；插件侧 100ms abort 仍可能整块吞掉 recall，需独立性能切片。
+- 尾部弱相关仍来自候选池与 `temporalNeighbors.presentation` 的 `↳` 邻居，未在本切片重设计。
+- FOK 观测仍混合 snapshot build 与真实 injection（R6/P4），暂不能用它校准准入效果。
+- snapshot 自然刷新：重启后 5 分钟内没有观测到新的 `snapshot built`/kv 行（详见 release note），因此本次不声称 snapshot serving 已在真实回合生效；只声称读取 primitive 已有单测 + 只读 helper 探针证据。
 
 ### 读路径脑对齐切片（R1–R8）交付状态
 

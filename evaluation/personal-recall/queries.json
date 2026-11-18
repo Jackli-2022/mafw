@@ -73,9 +73,9 @@
       "id": "exact-recent-turn-texts",
       "category": "exact",
       "query": "recentTurnTexts",
-      "must_include": ["mem_1794966028575_g7u8qu"],
-      "must_exclude": [],
-      "note": "Exact code symbol from root cause R3 (snapshot window collapse after compaction); frozen target is the 2026-11-18 FOK divergence research memory."
+      "must_include": ["mem_1794971043993_uidutw"],
+      "must_exclude": ["mem_1794966028575_g7u8qu"],
+      "note": "Exact code symbol from root cause R3 (snapshot window collapse after compaction); frozen target is the 2026-11-18 FOK divergence research memory. Active-chain refresh 2026-11-18 11:52: the original frozen target g7u8qu was superseded by 0r8ks9, itself superseded by the active head uidutw (same R1/R3 fact family, keeps the recentTurnTexts / readTurnRows / listTurns cues). g7u8qu is kept in must_exclude as the stale predecessor control; retrieval rewrites it to the chain head."
     },
     {
       "id": "exact-note-board-budget",

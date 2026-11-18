@@ -435,6 +435,12 @@ describe('personal-recall runner: fixture validation', () => {
     // audit-report answers.
     expect(family('implicit-audit-file-line')).toEqual(['mem_1791860617771_c8x8im']);
 
+    // C3 (active-chain refresh 2026-11-18 11:52): recentTurnTexts must point at
+    // the ACTIVE supersede-chain head uidutw; its predecessor g7u8qu is now the
+    // stale-injection control.
+    expect(family('exact-recent-turn-texts')).toEqual(['mem_1794971043993_uidutw']);
+    expect(byId.get('exact-recent-turn-texts')!.must_exclude).toEqual(['mem_1794966028575_g7u8qu']);
+
     // I1: the live-index overwrite lesson has three active equivalent answers.
     expect(family('implicit-live-index-overwrite')).toEqual(
       ['mem_1791177124326_jbmd90', 'mem_1790092812824_eip69g', 'mem_1791175982293_6wzvp9'].sort(),

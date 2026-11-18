@@ -27,6 +27,16 @@ not general retrieval quality.
 - `must_exclude` ids are the superseded predecessors of `current-state`
   targets. They are the stale-injection controls.
 
+### Fixture refresh log
+
+| date | entry | change | reason |
+|---|---|---|---|
+| 2026-11-18 11:52 | `exact-recent-turn-texts` | `must_include` `g7u8qu` → `uidutw`; `g7u8qu` moved to `must_exclude` | `g7u8qu` → superseded by `0r8ks9` → superseded by active head `uidutw` (same R1/R3 fact family, keeps the `recentTurnTexts` / `readTurnRows` / `listTurns` cues). Retrieval rewrites the predecessor to the head, so only the head is returnable. |
+
+Refresh rule: only the supersede-chain head is admitted to `must_include`; the
+predecessor stays in `must_exclude` as a stale-injection control. No other id,
+query or expectation was changed.
+
 ## Categories (10 each, 40 total)
 
 | category | what it asks | expectation |
