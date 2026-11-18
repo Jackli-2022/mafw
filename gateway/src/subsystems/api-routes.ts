@@ -774,6 +774,12 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
     mafwDir: () => deps.mafwDir,
     getGatewayDb: () => deps.getGatewayDb(),
     getScanService: () => deps.getScanService(),
+    broadcast: (event) => deps.broadcast(event),
+    saveReceipt: (input) => {
+      const db = deps.getGatewayDb();
+      db.upsertMemoryReceipt(input);
+      db.pruneMemoryReceipts(input.sessionId, 200);
+    },
   });
   // Phase D1 Task C1：automation 面迁 registry dispatch（6 分支；draft 静态段
   // 优先于 :id 由 registry 结构保证，legacy 注册序注释语义不变）。

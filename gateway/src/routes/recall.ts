@@ -26,6 +26,7 @@ import type { InstructionBlocks } from '../recall/instruction-blocks';
 import type { InstructionSyncService } from '../core/instructions/instruction-sync-service';
 import type { LeadSessionRegistry } from '../core/manager/lead-session-registry';
 import type { MemoryService } from '../memory/service';
+import type { MemoryReceipt } from '../recall/receipt';
 import type { RouteRegistry } from './registry';
 
 export interface RecallRouteDeps {
@@ -39,6 +40,10 @@ export interface RecallRouteDeps {
   mafwDir: () => string;
   getGatewayDb: () => GatewayDatabase;
   getScanService: () => IndexScanService | null;
+  /** `memory.recalled` SSE fan-out; optional for tests / older callers. */
+  broadcast?: (event: { type: string; sessionID?: string; properties?: unknown }) => void;
+  /** Best-effort persistence; called after the response ends, never awaited. */
+  saveReceipt?: (input: { sessionId: string; anchorKey: string; receipt: MemoryReceipt }) => unknown;
 }
 
 export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDeps): void {
@@ -103,9 +108,11 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
   // GET /api/recall/context —boundary recall for memory injection
   registry.attachHandler('recall.context', async (req: IncomingMessage, res: ServerResponse) => {
     try {
+      const tStart = Date.now();
       const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
       const query = parsedUrl.searchParams.get('query') || '';
       const sessionID = parsedUrl.searchParams.get('sessionID') || '';
+      const anchorKey = parsedUrl.searchParams.get('anchorKey') || '';
       let topicState: import('../recall/topic-state').TopicState | null = null;
       if (sessionID) {
         try {
@@ -165,6 +172,9 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
       // (falls back to the live cheap search otherwise).
       let snapshotPointers: string | null = null;
       let snapshotFokStatus: string | undefined;
+      let snapshotMemories: any[] | undefined;
+      let snapshotT1: any[] | undefined;
+      let snapshotT1Rendered = false;
       const snapCfg = config.search.snapshot;
       if (snapCfg?.enabled && sessionID) {
         try {
@@ -176,6 +186,9 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
             if (snapFok === 'inject') {
             snapshotPointers = snap.block;
             snapshotFokStatus = snapFok;
+            snapshotMemories = Array.isArray(snap.memories) ? snap.memories : undefined;
+            snapshotT1 = Array.isArray(snap.t1Hits) ? snap.t1Hits : undefined;
+            snapshotT1Rendered = snap.t1Rendered === true;
             // A3: a served snapshot is a real injection — record exposure
             // for the daily ACT-R settlement (fail-open, in-memory only).
             try {
@@ -388,10 +401,65 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
       const blocks = [arbiterWithBody, noteBoard, goalSnap].filter(Boolean);
       const header = renderTopicRecallHeader(topicState, hasRelated);
       const pointers = [header, ...blocks].join('\n\n');
+
+      // Build the structured receipt from data already in hand. Pure and
+      // synchronous: it must never add I/O to the 100ms boundary path.
+      let receipt: MemoryReceipt | null = null;
+      if (anchorKey && sessionID && process.env.MAFW_MEMORY_RECEIPT !== '0') {
+        try {
+          const { buildMemoryReceipt } = require('../recall/receipt');
+          const neighborEntries = neighbors
+            ? [...neighbors.entries()].flatMap(([anchorId, list]) =>
+                (list ?? []).map((entry: any) => ({ ...entry, neighborOf: anchorId })))
+            : [];
+          const receiptMemories = snapshotPointers
+            ? (snapshotMemories ?? [])
+            : [...memories, ...neighborEntries];
+          const receiptT1 = snapshotPointers
+            ? (snapshotT1Rendered ? (snapshotT1 ?? []) : [])
+            : [];
+          const status: 'inject' | 'low-confidence' | 'no-memory' = snapshotPointers
+            ? ((snapshotFokStatus as any) ?? 'inject')
+            : fokStatus;
+          receipt = buildMemoryReceipt({
+            status,
+            tookMs: Date.now() - tStart,
+            now: new Date().toISOString(),
+            topic: topicState ? { title: topicState.topic, hasRelated } : null,
+            memories: receiptMemories,
+            t1: receiptT1,
+            noMemoryBlockRendered: status === 'no-memory',
+          });
+        } catch (err: any) {
+          log.warn(`[Recall] receipt build failed: ${err?.message || err}`);
+        }
+      }
+
       // Latency breakdown (debug): the boundary path has a 100ms contract.
       log.debug(`[Recall] timing session=${sessionID || '-'} search=${snapshotPointers ? 0 : Date.now() - tSearch0}ms noteBoard=${tNoteBoard}ms goal=${tGoal}ms neighbours=${tNeighbors}ms`);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ pointers }));
+
+      if (receipt && !res.destroyed) {
+        const finalReceipt = receipt;
+        // Persistence and fan-out happen after the response; never awaited.
+        setImmediate(() => {
+          try {
+            deps.saveReceipt?.({ sessionId: sessionID, anchorKey, receipt: finalReceipt });
+          } catch (err: any) {
+            log.warn(`[Recall] receipt save failed: ${err?.message || err}`);
+          }
+          try {
+            deps.broadcast?.({
+              type: 'memory.recalled',
+              sessionID,
+              properties: { anchorKey, receipt: finalReceipt },
+            });
+          } catch (err: any) {
+            log.warn(`[Recall] receipt broadcast failed: ${err?.message || err}`);
+          }
+        });
+      }
     } catch (err: any) {
       log.error('[Scheduler] recall/context error:', err.message);
       res.writeHead(200);
