@@ -86,3 +86,9 @@ interface ToolPresentation {
 1. 先做 Phase 1（所有原生卡进抽屉 + 归一化）还是直接写完整 Phase 2 spec？
 2. 普通聊天是否也切到 11px/无框的新密度，还是只让时间线用紧凑密度？
 3. `task/question` 的富操作在抽屉里保留原生卡，还是改成行 + 右侧动作按钮？
+
+## 7. 落地状态（2026-11-19）
+
+- **Phase 1 已完成**（`ea92d374f`）：过程抽屉内所有工具复用注册的原生卡，删除 `ToolRow` / `CARD_TOOLS`；作用域 CSS 统一为 11px/550 标题、10.5px 目标、无家族图标、行工具无外框 + 一个 chevron，同时保留 diff 卡、Task/Question/Skill 操作与 MAFW family 内容盒。
+- 门禁：session-ui 26 suites / 165 pass；desktop 795 suites / 4160 pass；两侧 `tsgo` rc 0；`electron-vite build` 通过。
+- **Phase 2 未开始**：`ToolPresentation` 单一契约、普通聊天/时间线共用 density、`ToolCardSpec` adapter 与 conformance 测试仍在待决。
