@@ -145,6 +145,94 @@ describe('personal-recall runner: auto-recall pointer matching', () => {
   });
 });
 
+describe('personal-recall runner: anchor-relative auto rank', () => {
+  it('does not give an anchor rank to a target injected only as a neighbour', async () => {
+    const fx = fixture([entry({ id: 'p-one', category: 'exact', query: 'alpha', must_include: [A] })]);
+    const fetchImpl = mockFetch({
+      rest: { alpha: [A] },
+      auto: {
+        alpha: [
+          '<recall>',
+          '- #mem-eeeeee "anchor is another memory"',
+          '  ↳ - #mem-aaaaaa "expected appears only as a neighbour"',
+          '</recall>',
+        ].join('\n'),
+      },
+      get: { eeeeee: { id: NOISE } },
+    });
+    const report = await runner.runEvaluation({ fixture: fx, baseUrl: 'http://gw', fetchImpl });
+    const row = report.rows[0];
+    expect(row.auto.anchors).toEqual(['eeeeee']);
+    expect(row.auto.anchorIds).toEqual([NOISE]);
+    expect(row.auto.hit).toBe(true); // neighbour pointers are still injected evidence
+    expect(row.auto.rank).toBeNull(); // ...but they never compete for ranking
+    expect(report.summary.auto.rank1).toBe(0);
+  });
+
+  it('keeps neighbour-before-target ordering from improving the anchor rank', async () => {
+    const fx = fixture([entry({ id: 'p-one', category: 'exact', query: 'alpha', must_include: [B] })]);
+    const fetchImpl = mockFetch({
+      rest: { alpha: [B] },
+      auto: {
+        alpha: [
+          '<recall>',
+          '- #mem-eeeeee "first anchor"',
+          '  ↳ - #mem-aaaaaa "neighbour above the target anchor"',
+          '- #mem-cccccc "second anchor"',
+          '- #mem-bbbbbb "expected anchor"',
+          '</recall>',
+        ].join('\n'),
+      },
+      get: { eeeeee: { id: NOISE }, cccccc: { id: C }, aaaaaa: { id: A } },
+    });
+    const report = await runner.runEvaluation({ fixture: fx, baseUrl: 'http://gw', fetchImpl });
+    expect(report.rows[0].auto.ids).toEqual([NOISE, A, C, B]);
+    expect(report.rows[0].auto.anchors).toEqual(['eeeeee', 'cccccc', 'bbbbbb']);
+    expect(report.rows[0].auto.rank).toBe(3); // anchor rank, not pointer position 4
+    expect(report.summary.auto.rank1).toBe(0);
+  });
+
+  it('counts grouped presentation lines as anchors', async () => {
+    const fx = fixture([entry({ id: 'p-one', category: 'exact', query: 'alpha', must_include: [A] })]);
+    const fetchImpl = mockFetch({
+      rest: { alpha: [A] },
+      auto: {
+        alpha: [
+          '<recall>',
+          '[semantic]',
+          '  - #mem-eeeeee "other semantic memory"',
+          '  - #mem-aaaaaa "expected grouped anchor"',
+          '</recall>',
+        ].join('\n'),
+      },
+      get: { eeeeee: { id: NOISE } },
+    });
+    const report = await runner.runEvaluation({ fixture: fx, baseUrl: 'http://gw', fetchImpl });
+    expect(report.rows[0].auto.anchors).toEqual(['eeeeee', 'aaaaaa']);
+    expect(report.rows[0].auto.rank).toBe(2);
+  });
+});
+
+describe('personal-recall runner: multi-id expected families', () => {
+  it('accepts any genuinely equivalent answer for hit@1/hit@3 and auto inclusion', async () => {
+    const fx = fixture([entry({ id: 'p-family', category: 'exact', query: 'alpha', must_include: [A, B] })]);
+    const fetchImpl = mockFetch({
+      rest: { alpha: [NOISE, B, NOISE] },
+      auto: { alpha: '<recall>\n- #mem-bbbbbb "equivalent answer"\n</recall>' },
+      get: { eeeeee: { id: NOISE } },
+    });
+    const report = await runner.runEvaluation({ fixture: fx, baseUrl: 'http://gw', fetchImpl });
+    const row = report.rows[0];
+    expect(row.rest.hit1).toBe(false);
+    expect(row.rest.hit3).toBe(true);
+    expect(row.rest.rank).toBe(2);
+    expect(row.auto.hit).toBe(true);
+    expect(row.auto.rank).toBe(1);
+    expect(row.auto.included).toEqual([B]);
+    expect(row.entrypointAgreement).toBe(true);
+  });
+});
+
 describe('personal-recall runner: negative false injection', () => {
   it('counts any injected pointer on a no-answer query as false injection', async () => {
     const fx = fixture([
@@ -290,6 +378,39 @@ describe('personal-recall runner: fixture validation', () => {
       expect(fx.entries.filter((e: Entry) => e.category === category)).toHaveLength(10);
     }
     expect(fx.entries.some((e: Entry) => e.query === '5cd9885f5')).toBe(true);
+  });
+
+  it('pins reviewed multi-id owner families in the real fixture', () => {
+    const file = path.resolve(__dirname, '../../../../evaluation/personal-recall/queries.json');
+    const fx = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    const byId = new Map<string, Entry>(fx.entries.map((e: Entry) => [e.id, e]));
+    const family = (id: string) => byId.get(id)!.must_include.slice().sort();
+
+    // Identifier queries legitimately owned by more than one memory.
+    expect(family('exact-5cd9885f5')).toHaveLength(3);
+    expect(family('exact-graph-commit')).toEqual(
+      ['mem_1794933770671_7e41bh', 'mem_1794967266509_lkqxy3'].sort(),
+    );
+    expect(family('exact-dev-adopt')).toHaveLength(3);
+    expect(family('exact-note-board-budget').length).toBeGreaterThanOrEqual(4);
+    expect(family('exact-t1-semantic-encoder')).toHaveLength(3);
+    // DISPATCH_STAGES had 53 owners; it was replaced by a unique identifier.
+    expect(fx.entries.some((e: Entry) => e.query === 'DISPATCH_STAGES')).toBe(false);
+    expect(family('exact-search-recall-memories')).toEqual(['mem_1788246436792_jj0gvx']);
+
+    // Near-duplicate families: every genuinely equivalent answer is allowed.
+    expect(family('implicit-field-passing')).toHaveLength(4);
+    expect(family('implicit-worker-transcript')).toHaveLength(3);
+    // The settle-not-meta / pipeline-heartbeat queries had 142 / 58 active
+    // near-duplicate answers; arbitrary sub-families would understate hits.
+    expect(fx.entries.some((e: Entry) => e.id === 'implicit-settle-not-meta')).toBe(false);
+    expect(fx.entries.some((e: Entry) => e.id === 'implicit-pipeline-heartbeat')).toBe(false);
+    expect(family('implicit-unattended-background')).toEqual(['mem_1788838727545_igpk6x']);
+    expect(family('implicit-live-index-overwrite')).toEqual(['mem_1791177124326_jbmd90']);
+
+    // C2: the file:line citation rule is the direct answer; the drift lesson
+    // is a counterpoint, not an equivalent answer.
+    expect(family('implicit-audit-file-line')).toEqual(['mem_1788839080327_86p78z']);
   });
 });
 

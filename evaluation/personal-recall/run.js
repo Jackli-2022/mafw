@@ -259,13 +259,21 @@ async function runEntry(entry, ctx) {
     autoIds.push(full || `#mem-${tail}`);
   }
   const autoTails = parsed.map((p) => p.tail);
+  // `auto.rank` is anchor-relative: neighbour (`↳`) lines are injected
+  // evidence but never compete for ranking, so they must not improve rank.
+  const anchorTails = parsed.filter((p) => !p.neighbor).map((p) => p.tail);
+  const anchorIds = [];
+  for (const tail of anchorTails) {
+    const full = await resolveTail(tail);
+    anchorIds.push(full || `#mem-${tail}`);
+  }
 
   const expected = entry.must_include || [];
   const excludedIds = entry.must_exclude || [];
   const included = expected.filter((id) => autoTails.includes(tailOf(id)) || autoIds.includes(id));
   const excluded = excludedIds.filter((id) => autoTails.includes(tailOf(id)));
   const restRank = firstRank(expected, restIds);
-  const autoRank = firstRank(expected, autoIds);
+  const autoRank = firstRank(expected, anchorIds);
   const isNegative = entry.category === 'negative';
 
   const row = {
@@ -285,10 +293,12 @@ async function runEntry(entry, ctx) {
       relatedBody: hasRelatedBody(autoBody.pointers),
       ids: autoIds,
       tails: autoTails,
-      anchors: parsed.filter((p) => !p.neighbor).map((p) => p.tail),
+      anchors: anchorTails,
+      anchorIds,
       included,
       excluded,
       hit: isNegative ? autoIds.length === 0 : included.length > 0,
+      // Anchor-relative: neighbour lines never compete for ranking.
       rank: autoRank,
       falseInjection: isNegative ? autoIds.length > 0 : false,
       staleInjection: excluded.length > 0,

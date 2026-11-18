@@ -9,7 +9,7 @@
     "frozenAt": "2026-11-18",
     "indexEntriesAtFreeze": 16732,
     "activeEntriesAtFreeze": 11510,
-    "note": "Queries and expected ids were selected from the live personal corpus and frozen here. The corpus keeps growing and decaying; expectations are never re-derived from live ranks during a run. Re-select a case only when its target is legitimately superseded or deleted."
+    "note": "Queries and expected ids were selected from the live personal corpus and frozen here. The corpus keeps growing and decaying; expectations are never re-derived from live ranks during a run. Re-select a case only when its target is legitimately superseded or deleted. Fix round 1 (2026-11-18) reviewed identifier owner families, corrected the file:line ground truth, and replaced two duplicate-explosion queries; see mustIncludeSemantics."
   },
   "surfaces": {
     "rest": "GET /api/memory/search?query=<q>&topK=3 (raw index surface, no reranker, no graph expansion)",
@@ -18,20 +18,31 @@
   "metricDefinitions": {
     "restHit1": "an expected id appears at REST rank 1",
     "restHit3": "an expected id appears in REST top 3",
-    "autoHit": "an expected id appears in the auto-recall #mem- pointers (neighbour lines included: they are injected evidence)",
+    "autoHit": "an expected id appears in any injected #mem- pointer (neighbour lines count as injected evidence)",
+    "autoRank": "rank of the first expected id among anchor (non-neighbour) lines only; neighbour lines never compete for ranking, so a target injected only as a neighbour has hit=true and rank=null",
     "falseInjection": "a negative entry injects any #mem- pointer at all",
     "staleInjection": "a must_exclude (superseded) id appears in the auto-recall pointers",
     "entrypointAgreement": "REST hit@3 equals auto inclusion on positive entries",
     "noteBoard": "note-board / user-profile / agent-priors blocks are stripped before id parsing; they are must-surface, not related recall"
+  },
+  "mustIncludeSemantics": {
+    "rule": "must_include is an any-of family of frozen, genuinely equivalent correct answers. A hit means at least one family member was returned; it is NOT a ranked gold list.",
+    "identifierFamilies": "Identifier queries list every reviewed active owner/answer for that identifier (e.g. all active memories where NOTE_BOARD_BUDGET is the subject, or all memories that directly record a commit). Superseded memories are never included; they belong in must_exclude.",
+    "nearDuplicateFamilies": "Paraphrase queries list the reviewed near-duplicate answers for the same fact. Merely related memories are excluded even when they share vocabulary.",
+    "rejectedFamilies": "Queries whose answer space is an uncontrolled duplicate explosion (settle-not-meta: 142 active near-duplicates; pipeline-heartbeat: 58) were replaced rather than given an arbitrary sub-family, because any omitted correct duplicate would re-introduce fixture-artifact misses."
   },
   "entries": [
     {
       "id": "exact-5cd9885f5",
       "category": "exact",
       "query": "5cd9885f5",
-      "must_include": ["mem_1794926033952_htv0sz"],
+      "must_include": [
+        "mem_1794926033952_htv0sz",
+        "mem_1794931298999_alpfjc",
+        "mem_1794933770671_7e41bh"
+      ],
       "must_exclude": [],
-      "note": "Known divergence case from docs/research/2026-11-18-auto-recall-fok-divergence.md: the identifier is a cue anchor of the 2026-11-17 retrieval-path parity release memory; REST returns it at rank 3 while boundary auto-recall produced candidates but suppressed the body."
+      "note": "Known divergence case from docs/research/2026-11-18-auto-recall-fok-divergence.md. The identifier is a cue anchor shared by all three active retrieval-parity memories (parity release, live-vs-disk divergence, graph-channel separation), so any of them is a genuine answer; the frozen family makes the query satisfiable without deriving ranks at run time."
     },
     {
       "id": "exact-topic-tool-design",
@@ -53,9 +64,9 @@
       "id": "exact-graph-commit",
       "category": "exact",
       "query": "465a97926",
-      "must_include": ["mem_1794933770671_7e41bh"],
+      "must_include": ["mem_1794933770671_7e41bh", "mem_1794967266509_lkqxy3"],
       "must_exclude": [],
-      "note": "Commit identifier of the graph-expansion channel separation release; frozen target is that release memory."
+      "note": "Commit identifier. Both active memories directly record this commit (graph-expansion channel separation release + the commit-landed note), so both are genuine answers."
     },
     {
       "id": "exact-recent-turn-texts",
@@ -69,33 +80,46 @@
       "id": "exact-note-board-budget",
       "category": "exact",
       "query": "NOTE_BOARD_BUDGET",
-      "must_include": ["mem_1794633525849_geu4qr"],
+      "must_include": [
+        "mem_1794633525849_geu4qr",
+        "mem_1794643320595_l8qg9n",
+        "mem_1792037067486_95peh0",
+        "mem_1794643424880_gzuyiy"
+      ],
       "must_exclude": [],
-      "note": "Exact config constant; frozen target is the note-board budget single-sourcing memory (1600 maxChars, perNoteCap 240)."
+      "note": "Exact config constant. Family = every active memory whose subject is the note-board budget/value/semantics (single-sourcing at 1600, perNoteCap note-board-only rule, sticky budget single source, budget schema equivalence). The silent-loss survey memory (mem_1792465387214_nuyhuz) only cites the constant as one drift instance, so it is related but not an owner; the two superseded budget drafts are excluded, not expected."
     },
     {
       "id": "exact-dev-adopt",
       "category": "exact",
       "query": "MAFW_DEV_ADOPT",
-      "must_include": ["mem_1794246202543_gy2mzd"],
+      "must_include": [
+        "mem_1794246202543_gy2mzd",
+        "mem_1794246755980_x8xqjl",
+        "mem_1794249259569_dy83bd"
+      ],
       "must_exclude": [],
-      "note": "Exact env var; frozen target is the dev/gateway conflict root-cause memory, not the broader single-instance design memories."
+      "note": "Exact env var. All three active memories are primary owners of the dev-adopt/single-instance decision (conflict root cause, one-instance-per-data-dir rule, lock+discovery+attach landing)."
     },
     {
-      "id": "exact-dispatch-stages",
+      "id": "exact-search-recall-memories",
       "category": "exact",
-      "query": "DISPATCH_STAGES",
-      "must_include": ["mem_1794656956326_k8j3by"],
+      "query": "searchRecallMemories",
+      "must_include": ["mem_1788246436792_jj0gvx"],
       "must_exclude": [],
-      "note": "Exact symbol; frozen target is the D2 event-dispatch stage pipeline memory."
+      "note": "Replacement for DISPATCH_STAGES (53 owners, mostly supersede-chain lineage and migration lessons — no defensible frozen owner set). This identifier has exactly one active owner: the sync BM25 boundary-recall change (commit 65161976, scan removed, mergeScanResults extracted)."
     },
     {
       "id": "exact-t1-semantic-encoder",
       "category": "exact",
       "query": "T1SemanticEncoder",
-      "must_include": ["mem_1794809351283_920b4e"],
+      "must_include": [
+        "mem_1794809351283_920b4e",
+        "mem_1794834213033_3bx6ev",
+        "mem_1794819793953_yanh41"
+      ],
       "must_exclude": [],
-      "note": "Exact class name; frozen target is the embedding sparse-coding / calibrated atoms memory."
+      "note": "Exact class name. Three active memories directly document the encoder: its sparse-coding/calibration lesson, what the encoder actually computes (anchor dictionary, not SPLADE), and the Phase C release record. All are equivalent answers to the identifier; the coincidental 'remote' token matches are not."
     },
     {
       "id": "exact-audioworklet",
@@ -207,9 +231,14 @@
       "id": "implicit-field-passing",
       "category": "implicit",
       "query": "字段在白名单包装层被静默丢掉",
-      "must_include": ["mem_1791178780554_qige2r"],
+      "must_include": [
+        "mem_1791178780554_qige2r",
+        "mem_1788760998562_xzeo25",
+        "mem_1791785097270_m8eijx",
+        "mem_1791178652148_joizwn"
+      ],
       "must_exclude": [],
-      "note": "Implicit description of the recurring field-passing pit in wrapper/call-site layers."
+      "note": "Implicit description of the recurring field-passing pit. All four active memories state the same fact family (addEntry whitelist silently drops new fields; wrapper layers must forward created_at/authority/distilled_by), so any is a correct answer. Generic whitelist/security memories are not included."
     },
     {
       "id": "implicit-note-board-must-surface",
@@ -223,9 +252,13 @@
       "id": "implicit-worker-transcript",
       "category": "implicit",
       "query": "worker 把 transcript 当指令执行的风险怎么防",
-      "must_include": ["mem_1788838081204_0ihpdj"],
+      "must_include": [
+        "mem_1788838081204_0ihpdj",
+        "mem_1789702660725_xlpzpb",
+        "mem_1791182366390_4ly7zu"
+      ],
       "must_exclude": [],
-      "note": "Implicit ask about defense-in-depth for memory workers treating transcript content as instructions."
+      "note": "Implicit ask about defense-in-depth for memory workers treating transcript content as instructions. Three active memories state the same 2026-08-31 worker-implemented-plans conclusion (prompt-only guardrails fail; tool whitelist / transcript cap required). The read-only-subagent tool-ban lesson is related but a different scope, so it is excluded."
     },
     {
       "id": "implicit-multisession-gap",
@@ -239,9 +272,25 @@
       "id": "implicit-audit-file-line",
       "category": "implicit",
       "query": "审计报告要求 file:line 引用",
-      "must_include": ["mem_1791603625030_jabofg"],
+      "must_include": ["mem_1788839080327_86p78z"],
       "must_exclude": [],
-      "note": "Implicit rule lookup for audit/measurement report citation precision."
+      "note": "Implicit rule lookup for audit/measurement report citation precision. Direct answer: audit/research reports must be precise to file:line references (86p78z). Verified NOT equivalent: mem_1794456563041_m1euw2 argues the opposite operational point (file:line drifts; anchor on symbols), so it is a refinement/counterpoint, not a correct answer to this rule."
+    },
+    {
+      "id": "implicit-unattended-background",
+      "category": "implicit",
+      "query": "为什么没人看管的后台会话会自己复活，应该怎么约束",
+      "must_include": ["mem_1788838727545_igpk6x"],
+      "must_exclude": [],
+      "note": "Replacement for the settle-not-meta query, which has 142 active near-duplicate answers (any frozen sub-family would understate hits). This replacement has one distinctive answer: unattended background computations (serve sidecar, python kernel, worker sessions) need an owner, TTL and kill-switch."
+    },
+    {
+      "id": "implicit-live-index-overwrite",
+      "category": "implicit",
+      "query": "为什么记忆回填或迁移会被下一个进程整体覆盖",
+      "must_include": ["mem_1791177124326_jbmd90"],
+      "must_exclude": [],
+      "note": "Replacement for the pipeline-heartbeat query, which has 58 active near-duplicate answers (silent-failure/heartbeat family). This replacement has one distinctive answer: HarmonicIndex is a live singleton, so a second index instance's backfill is overwritten by the next full save()."
     },
     {
       "id": "implicit-response-language",
@@ -250,22 +299,6 @@
       "must_include": ["mem_1791601405726_shrlfu"],
       "must_exclude": [],
       "note": "Implicit preference lookup; answer is the stored Chinese response-language preference."
-    },
-    {
-      "id": "implicit-settle-not-meta",
-      "category": "implicit",
-      "query": "定稿改已有记忆状态，不要写元条目",
-      "must_include": ["mem_1794538891217_5q1jpi"],
-      "must_exclude": [],
-      "note": "Implicit curation rule: settle the existing entry instead of writing a meta-entry."
-    },
-    {
-      "id": "implicit-pipeline-heartbeat",
-      "category": "implicit",
-      "query": "后台管线心跳告警缺失导致静默失败",
-      "must_include": ["mem_1791177444152_7n48n2"],
-      "must_exclude": [],
-      "note": "Implicit observability lesson: trigger-only observability let pipelines fail silently for weeks."
     },
 
     {
