@@ -2,6 +2,8 @@
 // The desktop chip edits these prefs; every send carries a hidden synthetic
 // part. Nothing here is written to memory.
 
+import { composeTurnMarkerPart } from './turn-marker'
+
 export interface ContextPrefs {
   city?: string
   sendCity: boolean
@@ -68,4 +70,57 @@ export function composeLatestReminderPart(prefs: ContextPrefs, ts: number): Late
 
 export function stripLatestReminder(text: string): string {
   return text.replace(/<latest-reminder>[\s\S]*?<\/latest-reminder>\s*/gi, '')
+}
+
+function randomId(): string {
+  try {
+    const id = globalThis.crypto?.randomUUID?.()
+    if (id) return id.replace(/-/g, '').slice(0, 12)
+  } catch { /* fall through */ }
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+}
+
+export const DEFAULT_CONTEXT_PREFS: ContextPrefs = {
+  sendCity: false,
+  locale: 'zh-CN',
+  timeZone: 'UTC',
+}
+
+export function loadContextPrefs(): ContextPrefs {
+  const timeZone = (() => {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' } catch { return 'UTC' }
+  })()
+  const locale = (() => {
+    try { return globalThis.navigator?.language || 'zh-CN' } catch { return 'zh-CN' }
+  })()
+  const fallback: ContextPrefs = { ...DEFAULT_CONTEXT_PREFS, timeZone, locale }
+  try {
+    const raw = globalThis.localStorage?.getItem('mafw-context-prefs')
+    if (!raw) return fallback
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return fallback
+    return {
+      ...fallback,
+      ...(typeof parsed.city === 'string' ? { city: parsed.city } : {}),
+      ...(typeof parsed.sendCity === 'boolean' ? { sendCity: parsed.sendCity } : {}),
+      ...(typeof parsed.locale === 'string' && parsed.locale ? { locale: parsed.locale } : {}),
+      ...(typeof parsed.timeZone === 'string' && parsed.timeZone ? { timeZone: parsed.timeZone } : {}),
+      ...(typeof parsed.enabled === 'boolean' ? { enabled: parsed.enabled } : {}),
+    }
+  } catch {
+    return fallback
+  }
+}
+
+export function buildContextParts(
+  prefs: ContextPrefs,
+  ts: number,
+  uuid: string = randomId(),
+): { turnKey: string; parts: Array<LatestReminderPart> } {
+  const marker = composeTurnMarkerPart(ts, uuid)
+  const reminder = composeLatestReminderPart(prefs, ts)
+  return {
+    turnKey: marker.id,
+    parts: [marker, ...(reminder ? [reminder] : [])],
+  }
 }

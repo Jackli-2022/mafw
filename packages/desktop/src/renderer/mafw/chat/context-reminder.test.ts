@@ -3,6 +3,7 @@ import {
   composeLatestReminderPart,
   formatLatestReminder,
   stripLatestReminder,
+  buildContextParts,
   type ContextPrefs,
 } from './context-reminder'
 
@@ -58,5 +59,22 @@ describe('composeLatestReminderPart', () => {
 describe('stripLatestReminder', () => {
   test('removes the hidden block and keeps surrounding text', () => {
     expect(stripLatestReminder('hello\n<latest-reminder>x</latest-reminder>\nworld')).toBe('hello\nworld')
+  })
+})
+
+describe('buildContextParts', () => {
+  test('returns the turn marker and the reminder with the same key', () => {
+    const built = buildContextParts(prefs(), 1000, 'abc')
+    expect(built.turnKey).toBe('turn_abc')
+    expect(built.parts).toHaveLength(2)
+    expect(built.parts[0]).toMatchObject({ id: 'turn_abc', synthetic: true })
+    expect(built.parts[0].text).toBe('[[turn:turn_abc]]')
+    expect(built.parts[1].text).toContain('<latest-reminder>')
+  })
+
+  test('keeps the marker when the reminder is disabled', () => {
+    const built = buildContextParts(prefs({ enabled: false }), 1000, 'abc')
+    expect(built.parts).toHaveLength(1)
+    expect(built.parts[0].id).toBe('turn_abc')
   })
 })
