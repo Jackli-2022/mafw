@@ -40,6 +40,7 @@ export function createTuiClient(baseUrl: string, fetchImpl?: typeof fetch): Mafw
   return new MafwClient(baseUrl, {
     clientToken: readHumanToken(),
     schemaEpoch: 'auto',
+    headers: { 'x-mafw-client': 'tui' },
     ...(fetchImpl ? { fetchImpl } : {}),
   })
 }
