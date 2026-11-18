@@ -60,10 +60,11 @@ export class RoomRegistry {
     return publicClaim(record);
   }
 
-  authenticate(roomId: string, roomToken: string, now = Date.now()): RoomClaim | null {
+  authenticate(roomId: string, roomToken: string, routeSecret?: string, now = Date.now()): RoomClaim | null {
     const record = this.rooms.get(roomId);
     if (!record) return null;
     if (!sameHex(record.tokenHash, hashSecret(roomToken))) return null;
+    if (routeSecret !== undefined && !sameHex(record.routeSecretHash, hashSecret(routeSecret))) return null;
     record.lastSeenAt = now;
     return publicClaim(record);
   }
