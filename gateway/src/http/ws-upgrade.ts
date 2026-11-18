@@ -25,7 +25,7 @@
 import * as http from 'http';
 import { WebSocketServer } from 'ws';
 import type { WebSocket } from 'ws';
-import { isLoopbackAddr, resolvePrincipal, WS_UNAUTHORIZED_RESPONSE } from '../core/auth';
+import { resolvePrincipal, WS_UNAUTHORIZED_RESPONSE } from '../core/auth';
 import { log } from '../core/utils/logger';
 import type { TimerHandle, TimerService } from '../core/timer-service';
 import type { ConnectionKind, ConnectionLease, ConnectionTable } from '../resources/connections';
@@ -49,6 +49,8 @@ export interface WsHubDeps {
   humanToken?(): string;
   /** E5a: device-token verifier (missing = every device token invalid). */
   verifyDeviceToken?: (token: string) => { deviceId: string } | null;
+  /** M0: per-process secret injected by the loopback tunnel terminator. */
+  tunnelSecret?: string;
   pushGateway(): PushGateway | undefined;
   handleWsMessage(ws: WebSocket, raw: Buffer | ArrayBuffer | Buffer[]): void;
   getVoiceRuntime(): Promise<VoiceRuntime>;
@@ -161,6 +163,18 @@ export function refuseUpgrade(socket: UpgradeSocketLike, kind: ConnectionKind): 
   socket.destroy?.();
 }
 
+/** M0: relayed upgrades never reach terminal/voice/plugin surfaces. */
+function forbiddenUpgrade(socket: UpgradeSocketLike): void {
+  const body = JSON.stringify({ error: 'forbidden', code: 'forbidden' });
+  const payload = 'HTTP/1.1 403 Forbidden\r\n'
+    + 'Content-Type: application/json\r\n'
+    + `Content-Length: ${Buffer.byteLength(body)}\r\n`
+    + 'Connection: close\r\n\r\n'
+    + body;
+  try { socket.write(payload); } catch { /* already gone */ }
+  socket.destroy?.();
+}
+
 /**
  * 把 lease 绑到连接生命周期：close / error 都可能先到，`lease.release()` 幂等。
  * 插件 WS 升级后 socket 本身就是底层长连接，绑 socket；voice/terminal/api-ws
@@ -193,6 +207,7 @@ function resolveUpgradePrincipal(
       apiToken: deps.apiToken(),
       humanToken: deps.humanToken?.() ?? '',
       verifyDeviceToken: deps.verifyDeviceToken,
+      tunnelSecret: deps.tunnelSecret,
     },
   );
 }
@@ -316,10 +331,15 @@ export function createWsHub(server: http.Server, deps: WsHubDeps): WsHub {
     const url = req.url || '';
     // Token auth on upgrade: delegated to core/auth.ts
     const rawAddr = (req.socket as any)?.remoteAddress || (socket as any).remoteAddress || '';
+    const principal = resolveUpgradePrincipal(deps, req, rawAddr, url);
+    (req as any).mafwPrincipal = principal;
 
     if (isVoiceUpgradePath(url)) {
-      const voicePrincipal = resolveUpgradePrincipal(deps, req, rawAddr, url);
-      if (voicePrincipal.kind === 'anonymous') {
+      if (principal.kind === 'relay') {
+        forbiddenUpgrade(socket);
+        return;
+      }
+      if (principal.kind === 'anonymous') {
         socket.write(WS_UNAUTHORIZED_RESPONSE);
         socket.destroy();
         return;
@@ -349,10 +369,9 @@ export function createWsHub(server: http.Server, deps: WsHubDeps): WsHub {
 
     const terminalRequest = matchTerminalConnectUrl(url);
     if (terminalRequest) {
-      // 中性终端 WS：loopback-only + 一次性 ticket（ticket 自带目录绑定）。
-      if (!isLoopbackAddr(rawAddr)) {
-        socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
-        socket.destroy();
+      // 中性终端 WS：local-only + 一次性 ticket（ticket 自带目录绑定）。
+      if (principal.kind !== 'local') {
+        forbiddenUpgrade(socket);
         return;
       }
       const admitted = admitUpgrade('terminal', deps.connections);
@@ -379,6 +398,10 @@ export function createWsHub(server: http.Server, deps: WsHubDeps): WsHub {
 
     const pluginWs = parsePluginWsUrl(url);
     if (pluginWs) {
+      if (principal.kind === 'relay') {
+        forbiddenUpgrade(socket);
+        return;
+      }
       // E4-4：插件 WS 是长连接（插件 UI 的 PTY 等），计入 `ws` 名额；拒绝也
       // 消费 socket。lease 绑到 socket 本身——升级后它就是底层连接。
       const admitted = admitUpgrade('ws', deps.connections);
@@ -402,13 +425,11 @@ export function createWsHub(server: http.Server, deps: WsHubDeps): WsHub {
       socket.destroy();
       return;
     }
-    const principal = resolveUpgradePrincipal(deps, req, rawAddr, url);
     if (principal.kind === 'anonymous') {
       socket.write(WS_UNAUTHORIZED_RESPONSE);
       socket.destroy();
       return;
     }
-    (req as any).mafwPrincipal = principal;
     const admitted = admitUpgrade('ws', deps.connections);
     if (!admitted.ok) {
       refuseUpgrade(socket, 'ws');

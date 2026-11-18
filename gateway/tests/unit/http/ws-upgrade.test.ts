@@ -24,6 +24,7 @@ import * as fs from 'fs';
 import * as http from 'http';
 import * as path from 'path';
 import { createWsHub, type WsHubDeps } from '../../../src/http/ws-upgrade';
+import { TUNNEL_HEADER } from '../../../src/core/auth';
 import * as pluginWeb from '../../../src/routes/plugin-web';
 
 const TOKEN = 'sekret';
@@ -81,7 +82,7 @@ interface Spies {
 /** Hubs created by `setup()`; afterEach disposes them so no interval outlives a test. */
 const hubs: Array<ReturnType<typeof createWsHub>> = [];
 
-function setup(): {
+function setup(over: Partial<WsHubDeps> = {}): {
   hub: ReturnType<typeof createWsHub>;
   server: http.Server;
   wsClients: Set<unknown>;
@@ -118,6 +119,7 @@ function setup(): {
     getVoiceRuntime: spies.getVoiceRuntime,
     getTerminalService: spies.getTerminalService,
     pluginWebDeps: spies.pluginWebDeps,
+    ...over,
   };
   const server = http.createServer();
   const hub = createWsHub(server, deps);
@@ -257,5 +259,39 @@ describe('createWsHub: upgrade routing (voice → terminal → plugin → /api/w
 
     expect(clear).toHaveBeenCalledTimes(2);
     server.removeAllListeners();
+  });
+});
+
+describe('createWsHub: relay gates (M0)', () => {
+  const SECRET = 'a'.repeat(64);
+
+  it('allows /api/ws for a relay principal', () => {
+    const { upgrade, fire } = setup({ tunnelSecret: SECRET });
+    const socket = fakeSocket();
+    const req = fakeReq('/api/ws', { headers: { [TUNNEL_HEADER]: SECRET } });
+
+    fire(req, socket);
+
+    expect(socket.destroyed).toBe(false);
+    expect((req as any).mafwPrincipal).toEqual({ kind: 'relay', method: 'tunnel' });
+    expect(upgrade.ws).toHaveBeenCalledTimes(1);
+  });
+
+  it('denies terminal, voice and plugin WS for a relay principal', () => {
+    for (const url of [
+      '/api/terminal/sessions/s1/connect?ticket=t1',
+      '/ws/voice',
+      '/api/plugins/pkg/ws/ui/main',
+    ]) {
+      const { upgrade, plugin, fire } = setup({ tunnelSecret: SECRET });
+      const socket = fakeSocket();
+
+      fire(fakeReq(url, { headers: { [TUNNEL_HEADER]: SECRET } }), socket);
+
+      expect(`${url}:${socket.destroyed}`).toBe(`${url}:true`);
+      expect(upgrade.voice).not.toHaveBeenCalled();
+      expect(upgrade.terminal).not.toHaveBeenCalled();
+      expect(plugin).not.toHaveBeenCalled();
+    }
   });
 });
