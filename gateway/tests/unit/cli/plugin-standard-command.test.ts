@@ -526,6 +526,62 @@ describe('mafw plugin check — declared-vs-registered deltas and the failure co
     expect(text).not.toContain('error[');
   });
 
+  it('renders an unevaluated package as "not evaluated", never as "registered nothing"', async () => {
+    const { code, out, line, text } = await render({
+      ok: false,
+      code: 'entry_missing',
+      evaluated: false,
+      error: 'main file not found: index.js',
+      declared: { actions: ['ping'], events: [], tools: [], observers: [], http: false },
+      registered: { actions: [], events: [], tools: [], observers: [], http: 0 },
+    });
+    expect(code).toBe(1);
+    // `activate()` never ran to completion, so there is no inventory: the
+    // registered line must not claim the package registered nothing.
+    expect(line('registered:')).toBe('registered: (not evaluated)');
+    expect(text).not.toContain('registered: actions []');
+    // The explicit state line sits right after the declared/registered block.
+    const registeredAt = out.indexOf(line('registered:'));
+    expect(out[registeredAt + 1]).toBe('evaluated: false');
+    // No `-name` markers and no "declared but not registered" note: both would
+    // describe a registration that was never observed.
+    expect(line('declared:')).toContain('actions [ping]');
+    expect(text).not.toContain('-ping');
+    expect(text).not.toContain('declared but not registered');
+    // The sandbox sentence is false here ("activate() really ran"), so the true
+    // statement replaces it instead of being printed alongside.
+    expect(text).not.toContain('is not a sandbox');
+    expect(text).toContain('note: activation did not complete; no contribution set was observed');
+    expect(text).toContain('error[entry_missing]: main file not found');
+  });
+
+  it('dedupes duplicate names on both sides so one token is one name', async () => {
+    const { line } = await render({
+      ok: false,
+      code: 'contribution_bound',
+      evaluated: true,
+      error: 'invalid contributions',
+      declared: { actions: ['alpha', 'alpha', 'beta'] },
+      registered: { actions: ['beta', 'beta', 'alpha', 'gamma', 'gamma'], http: 0 },
+    });
+    // First occurrence wins, order preserved: a duplicated declaration must not
+    // be counted twice, and a duplicated registration must not hide behind one
+    // token on the line whose whole purpose is "one token per name".
+    expect(line('declared:')).toContain('actions [alpha beta]');
+    expect(line('registered:')).toContain('actions [alpha beta +gamma]');
+    expect(line('registered:')).not.toContain('+gamma +gamma');
+
+    // The prose note is rendered from the same list, so it dedupes too.
+    const ghosted = await render({
+      ok: true,
+      declared: { actions: ['ghost', 'ghost'] },
+      registered: { actions: [], http: 0 },
+    });
+    expect(ghosted.line('declared:')).toContain('actions [-ghost]');
+    const notes = ghosted.out.filter((entry) => entry.startsWith('note: declared but not registered'));
+    expect(notes).toEqual(['note: declared but not registered: action "ghost"']);
+  });
+
   it('--json passes code and evaluated through untouched', async () => {
     const { code, out } = await render({
       ok: false,

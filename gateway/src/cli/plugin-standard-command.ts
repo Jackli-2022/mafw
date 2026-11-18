@@ -13,7 +13,10 @@
  * package before asking a human for consent. The inventory carries the delta
  * inline (`+name` = registered but not declared; `-name` = the legal opposite),
  * and a classified failure is printed as `error[<code>]: …`, so a CI or an agent
- * can switch on the code instead of the prose.
+ * can switch on the code instead of the prose. A result with
+ * `evaluated: false` never produced a contribution set at all, so it is printed
+ * as `registered: (not evaluated)` plus `evaluated: false` instead of a delta —
+ * "not evaluated" and "registered nothing" are different claims.
  *
  * `schema` prints the machine-readable manifest contract
  * (`MANIFEST_JSON_SCHEMA`) for editors and agents. It is deliberately the
@@ -178,30 +181,49 @@ type DeclaredView = PlaneNames & { http?: boolean };
 type RegisteredView = PlaneNames & { http?: number };
 
 /**
+ * First occurrence wins, order preserved.
+ *
+ * Planes are rendered as space-joined token lists, where one token is meant to
+ * be one name. Neither side is unique-enforced (a manifest may repeat a name; a
+ * package chooses what it registers), so a duplicate rendered twice would report
+ * a count the package never produced — and a duplicate registration would hide
+ * behind a single token. Deduping here keeps both lines honest without changing
+ * what the host actually observed.
+ */
+function uniqueNames(names: string[] | undefined): string[] | undefined {
+  return names === undefined ? undefined : [...new Set(names)];
+}
+
+/**
  * One plane on the `declared:` line, as a delta against what was registered.
  *
  * `-name` means the manifest allows it and nothing registered it: legal by
  * design (packages register conditionally), so the marker is informational.
  * `registered` is only consulted here, never printed: a name that is not
  * declared does not belong on a line that claims to describe the declaration.
- * Without a registered view to compare against (legacy result shape), the plane
- * keeps its plain rendering.
+ * Without a registered view to compare against (legacy result shape, or a check
+ * that was never evaluated — see `runPluginStandardCommand`), the plane keeps
+ * its plain rendering: there is no evidence to mark against.
  *
  * Plane lists are space-joined (`[ping +pong]`): the markers are per-token, and
  * a name can never contain a space (the manifest name pattern forbids it), so
- * one token is always one name on the two lines a human compares.
+ * one token is always one name on the two lines a human compares. Lists are
+ * deduped first (`uniqueNames`): the format is "one token per name", so a
+ * repeated name must not be rendered — and read — as two names.
  */
 function formatDeclaredPlane(
   declared: string[] | undefined,
   registered: string[] | undefined,
 ): string {
-  if (declared === undefined) return '(unbounded)';
-  if (declared.length === 0) return '[]';
-  if (registered === undefined) return `[${declared.map((name) => text(name)).join(' ')}]`;
-  const used = new Set(registered);
-  const missing = declared.filter((name) => !used.has(name));
-  if (missing.length === 0) return `[${declared.map((name) => text(name)).join(' ')}]`;
-  return `[${declared.map((name) => (used.has(name) ? text(name) : `-${text(name)}`)).join(' ')}]`;
+  const names = uniqueNames(declared);
+  if (names === undefined) return '(unbounded)';
+  if (names.length === 0) return '[]';
+  const usedNames = uniqueNames(registered);
+  if (usedNames === undefined) return `[${names.map((name) => text(name)).join(' ')}]`;
+  const used = new Set(usedNames);
+  const missing = names.filter((name) => !used.has(name));
+  if (missing.length === 0) return `[${names.map((name) => text(name)).join(' ')}]`;
+  return `[${names.map((name) => (used.has(name) ? text(name) : `-${text(name)}`)).join(' ')}]`;
 }
 
 /**
@@ -211,20 +233,25 @@ function formatDeclaredPlane(
  * *because* of this line, so it must be visible without reading the error text.
  * Declared names come first **in declaration order** (the two lines then line
  * up), extras follow in registration order. An undeclared plane is unbounded:
- * nothing on it is a delta, so it is never marked.
+ * nothing on it is a delta, so it is never marked. Names are attacker-controlled
+ * (a package chooses what it registers), so they are deduped before rendering:
+ * without that, a duplicate on an unbounded plane reads as two registrations,
+ * and a duplicate of a declared name disappears into the declared-order pass.
  */
 function formatRegisteredPlane(
   declared: string[] | undefined,
   registered: string[] | undefined,
 ): string {
-  if (registered === undefined) return '-';
-  if (declared === undefined) {
-    return registered.length === 0 ? '[]' : `[${registered.map((name) => text(name)).join(' ')}]`;
+  const names = uniqueNames(registered);
+  if (names === undefined) return '-';
+  const declaredNames = uniqueNames(declared);
+  if (declaredNames === undefined) {
+    return names.length === 0 ? '[]' : `[${names.map((name) => text(name)).join(' ')}]`;
   }
-  const declaredNames = new Set(declared);
-  const registeredNames = new Set(registered);
-  const inDeclaredOrder = declared.filter((name) => registeredNames.has(name));
-  const extras = registered.filter((name) => !declaredNames.has(name));
+  const declaredSet = new Set(declaredNames);
+  const registeredSet = new Set(names);
+  const inDeclaredOrder = declaredNames.filter((name) => registeredSet.has(name));
+  const extras = names.filter((name) => !declaredSet.has(name));
   if (extras.length === 0) {
     return inDeclaredOrder.length === 0 ? '[]' : `[${inDeclaredOrder.map((name) => text(name)).join(' ')}]`;
   }
@@ -352,7 +379,9 @@ function declaredOnly(result: PluginCheckResult): string[] {
   ];
   const out: string[] = [];
   for (const [label, all, used] of planes) {
-    for (const name of all ?? []) {
+    // Deduped for the same reason as the plane lines: this note is prose about
+    // a name set, so a repeated declaration must be named once.
+    for (const name of uniqueNames(all) ?? []) {
       if (!(used ?? []).includes(name)) out.push(`${label} "${text(name)}"`);
     }
   }
@@ -691,16 +720,29 @@ export async function runPluginStandardCommand(
   }
   const contributions = (result.contributions ?? []).map((contribution) => text(contribution));
   if (contributions.length > 0) deps.print(`  contributions: ${contributions.join(', ')}`);
-  deps.print(`declared: ${formatDeclared(result.declared, result.registered)}`);
-  deps.print(`registered: ${formatRegistered(result.registered, result.declared)}`);
-  // `check` is a dry-run activation, not a sandbox: the author must know the
-  // package's own side effects already happened.
+  // A result with `evaluated === false` never produced a contribution set: the
+  // package did not get as far as a completed `activate()` (bad manifest,
+  // missing entry, identity mismatch, unavailable worker). There is no
+  // inventory to compare, so the registered line must not be rendered as an
+  // observed "[]", and the declared line must not carry `-name` markers or the
+  // "declared but not registered" note — both would describe a registration
+  // that never happened.
+  const observed = result.evaluated !== false;
   deps.print(
-    'note: check is not a sandbox: the package\'s activate() really ran, '
-    + 'so any side effects it caused have already happened',
+    `declared: ${formatDeclared(result.declared, observed ? result.registered : undefined)}`,
   );
+  deps.print(
+    `registered: ${observed ? formatRegistered(result.registered, result.declared) : '(not evaluated)'}`,
+  );
+  if (!observed) deps.print('evaluated: false');
+  // `check` is a dry-run activation, not a sandbox: when the package was
+  // evaluated, the author must know its own side effects already happened.
+  deps.print(observed
+    ? 'note: check is not a sandbox: the package\'s activate() really ran, '
+      + 'so any side effects it caused have already happened'
+    : 'note: activation did not complete; no contribution set was observed');
 
-  const unregistered = declaredOnly(result);
+  const unregistered = observed ? declaredOnly(result) : [];
   if (unregistered.length > 0) {
     // Legal by design (packages register conditionally) — never a failure.
     deps.print(`note: declared but not registered: ${unregistered.join(', ')}`);
