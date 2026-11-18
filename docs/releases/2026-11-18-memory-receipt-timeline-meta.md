@@ -50,7 +50,7 @@
 - 复跑失败集：**5 pass / 3 fail（6 tests）**，失败仅剩上述并行遗留。
 - 构建：root `npm run build` 通过；`gateway npm run build` 通过；`packages/desktop npx electron-vite build` 通过。
 - 真机 smoke：`GET /api/recall/context?...&anchorKey=...` → 200；`/api/events` 收到 `memory.recalled`（与 anchor 一致）；`GET /api/sessions/:id/memory-receipts` 返回同锚点回执（3 anchors + 3 neighbours，无 `memory_value`）。smoke 行已清理。
-- Gateway 运行状态：本轮结束时 gateway 以 standalone 方式运行在 `:3000`（PID 47436，instance `bc4d7733-b009-4965-a392-7172245666aa`，health `ok`，commit `e194f9f2b`）；托管网关的启动崩溃已由 `7a377a8f8` 修复。
+- Gateway 运行状态：本轮结束时 gateway 以 standalone 方式运行在 `:3000`（PID 47436，instance `bc4d7733-b009-4965-a392-7172245666aa`，health `ok`；构建源 commit `4a5ae66c7`，branch HEAD 以 `git log -1` 为准）；托管网关的启动崩溃已由 `7a377a8f8` 修复。
 - 桌面窗口：本轮重启 gateway 时，两个桌面实例的 supervisor 用尽自动重启（4 次）并进入 failed；需**手动重启一次桌面应用**让它重新拉起 managed gateway（代码已修）。
 
 ## 已知问题 / 后续
