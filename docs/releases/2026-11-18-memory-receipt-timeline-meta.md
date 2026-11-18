@@ -46,7 +46,7 @@
 - Desktop：`npm test` → **795 suites / 4160 pass / 0 fail**；`npx tsgo --noEmit -p tsconfig.json` → rc 0。
 - Mobile：`flutter test --concurrency=1` → **600 pass / 0 fail**；新增渠道头与 `displayText` 剥离测试。
 - TUI：`npm test` → **325 pass / 0 fail**（1 skip）；`tsc --noEmit` 仍有既有 `src/ui/triage-tab.ts:47` 类型错误（非本轮改动）。
-- Session UI：全部测试（排除既有 `architecture.test.ts`）→ **25 suites / 156 pass / 0 fail**；`tsgo` rc 0。
+- Session UI：全部测试（排除既有 `architecture.test.ts`）→ **26 suites / 161 pass / 0 fail**；`tsgo` rc 0。
 - SDK：`npm test` → **246 pass / 0 fail**；`tsc` rc 0。
 - UI：`tsgo` rc 0。
 - Gateway：`npx tsc --noEmit -p tsconfig.json` → rc 0；定向回执/路由/快照/DB 测试全绿。
@@ -57,6 +57,15 @@
 - 真机 smoke：`GET /api/recall/context?...&anchorKey=...` → 200；`/api/events` 收到 `memory.recalled`（与 anchor 一致）；`GET /api/sessions/:id/memory-receipts` 返回同锚点回执（3 anchors + 3 neighbours，无 `memory_value`）。smoke 行已清理。
 - Gateway 运行状态：本轮结束时 gateway 以 standalone 方式运行在 `:3000`（PID 47436，instance `bc4d7733-b009-4965-a392-7172245666aa`，health `ok`；构建源 commit `4a5ae66c7`，branch HEAD 以 `git log -1` 为准）；托管网关的启动崩溃已由 `7a377a8f8` 修复。
 - 桌面窗口：本轮重启 gateway 时，两个桌面实例的 supervisor 用尽自动重启（4 次）并进入 failed；需**手动重启一次桌面应用**让它重新拉起 managed gateway（代码已修）。
+
+## 2026-11-19 · 过程时间线定稿
+
+- 段头只写 `已思考 N 秒`；抽屉里第一行是 `思考`（11px/550，与工具名同字号，默认折叠一行），随后是全部工具（含 bash/edit/write）。
+- 工具行无前置图标、无外框、工具名原样 + 相对路径/命令、右侧一个 chevron；edit/write 保留 diff 卡。
+- 历史无 part time：单段回退整轮 message 时长，多段省略，避免每段重复整轮时长。
+- 两套“已思考”实现对齐：`process-timeline` 与 desktop `ThinkingBlock` 都改为裸时长，并去掉 `✻` 字形。
+- `DataProvider` 的 directory 从 `.` 改为当前会话绝对目录，原生 read/edit/write 卡与时间线统一显示相对路径。
+- 提交 `cd6fa5539`；session-ui **161/161**、desktop **4160/4160**，`tsgo` rc 0。
 
 ## 已知问题 / 后续
 

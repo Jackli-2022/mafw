@@ -337,12 +337,14 @@ function splitTurn(parts: MafwPart[], opts: { showReasoning: boolean }): TurnEnt
 
 ### 5.2 过程时间线
 
-- 段头 28–30px；`✓ 已思考（用时 N 秒）· 工具 M 次`；chevron 右侧。
-- **用时来源**：live 用段内首个/最后一个 part 的到达时间（客户端观测）；历史回放时 reasoning/text part 没有 time，退化为整条 message 的 `time.created/completed`，仍拿不到就省略“用时”。v1 不改 adapter 事件。
-- 段体：左侧 1px 竖线 + 5px 圆点；思考小一号低对比；工具行 29px。
-- 工具行：图标 + 人话动词 + 路径/查询 + 状态；点击展开详情。
+- 段头 28–30px；`✓ 已思考 N 秒`（裸时长；不加“后”、不加“用时”、不拼工具动作/计数）；chevron 在右。
+- **所有工具调用进抽屉**（含 bash/edit/write/apply_patch），只有 output 边界另起一段；编辑/写入保留原生 diff 卡。
+- 思考行：`思考` 两字，字号/字重与工具名一致（11px/550）；后面跟首行预览（10.5px 低对比）；默认折叠，点开看 Markdown 原文。
+- 工具行：无前置图标、无外框；工具名（Read/Grep/Bash/Edit）原样 + 相对路径/命令；右侧一个 chevron；hover 才出现淡底。
+- **用时来源**：live 用段内首个/最后一个 part 的到达时间；历史回放 part 无 time 时，单段回退整条 message 的 `time.created/completed`，多段不回退（避免每段重复整轮时长），仍拿不到就只写“已思考”。
+- 段体：左侧 1px 竖线 + 5px 圆点；思考小一号低对比；工具行 28–30px。
 - 详情：入参、结果、错误、完整输出；大输出“展开全部”。
-- 失败：行内 warning 图标 + 人话（“读取失败”“搜索暂不可用”）；详情保留原始错误。
+- 失败：行内 warning + 人话（“读取失败”“搜索暂不可用”）；详情保留原始错误。
 - 生成中：当前段段头 shimmer；新段开始时上一段自动折叠。
 - 完成后：全部折叠；点击任一段展开。
 - 不出现：工具 JSON、原始参数对象、模型内部字段。

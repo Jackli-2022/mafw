@@ -973,7 +973,7 @@ gateway 每个响应都带 `X-MAFW-Schema-Epoch`（`releaseMetadata` 未加载�
 ## 记忆回执 / 过程时间线 / 用户元信息（2026-11-18）
 
 - **回执**：回合 footer 渲染药丸。live 走 `memory.recalled`；打开/切换会话时 `window.api.mafw.sessions.memoryReceipts()` 回填（`memory-receipt-store.ts`，按 `updatedAt` 幂等）。用户消息的 `turnKey` 在历史摄取与“真实消息替换乐观消息”时都保留。
-- **时间线**：`SessionTurn.useProcessTimeline`（`ChatPane` 读 `localStorage['mafw-process-timeline'] !== '0'`）。`splitTurn` 是 lossless 分组：只折叠 reasoning / read / list / glob / grep / websearch / webfetch；**所有 output 永远可见**，中间输出与最终输出同款排版。`edit/write/apply_patch/bash/task/审批` 仍是顶层卡，`partDefaultOpen` 与 `assistantActions` 保持不变。
+- **时间线**：`SessionTurn.useProcessTimeline`（`ChatPane` 读 `localStorage['mafw-process-timeline'] !== '0'`）。`splitTurn` 把 **所有工具**（含 bash/edit/write）收进过程抽屉，只有 output 边界另起一段；段头只写 `✓ 已思考 N 秒`。抽屉里第一行是 `思考`（11px/550，与工具名同字号，默认折叠一行，点开看 Markdown 原文），随后是工具行：无前置图标、无外框、工具名原样 + 相对路径/命令、右侧一个 chevron；编辑/写入保留原生 diff 卡。历史无 part time 时单段回退整轮 message 时长，多段省略。
 - **折叠**：只有当前活动段默认展开（`defaultSegmentOpen(working, isLast)`）；用户手动开关优先。
 - **元信息**：composer 上方一行 ghost（10.5px、无边框、hover 才出现底色与 `›`），不是胶囊、不显示语言。popover 300px：时间只读、渠道只读（桌面端）、城市输入 + “发送城市”开关（默认关闭）、语言只读。每轮发送带隐藏 `<latest-reminder>`（含 `渠道：桌面端`）+ `[[turn:...]]`；`stripInjectedUserText` 在历史与实时都剥离 reminder / marker / gateway 渠道块。
 - **开关**：`localStorage['mafw-latest-reminder']='0'` 只关 reminder，turn marker 仍保留（回执锚点不能丢）。
