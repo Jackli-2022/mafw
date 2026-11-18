@@ -9,7 +9,7 @@ import { isAbnormalStop, normalizeStopReason, stopReasonLabel } from "../util/st
 import { createEffect, createMemo, createSignal, For, on, ParentProps, Show, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
-import { AssistantParts, Message, MessageDivider, PART_MAPPING, Part, type UserActions, type AssistantActions } from "./message-part"
+import { AssistantParts, Message, MessageDivider, PART_MAPPING, Part, partDefaultOpen, type UserActions, type AssistantActions } from "./message-part"
 import { ProcessTimeline } from "./process-timeline"
 import { splitTurn } from "./turn-transcript"
 import { Card } from "@mafw/ui/card"
@@ -481,17 +481,25 @@ export function SessionTurn(
                       renderCard={(part: any) => {
                         const message = messageOfPart(part)
                         return message
-                          ? <><Part part={part} message={message} />{props.renderAfterPart?.(part, message)}</>
+                          ? <>
+                              <Part
+                                part={part}
+                                message={message}
+                                defaultOpen={partDefaultOpen(part, props.shellToolDefaultOpen, props.editToolDefaultOpen)}
+                                assistantActions={props.assistantActions}
+                              />
+                              {props.renderAfterPart?.(part, message)}
+                            </>
                           : null
                       }}
                       renderData={(part: any) => {
                         const message = messageOfPart(part)
-                        return message ? <Part part={part} message={message} /> : null
+                        return message ? <Part part={part} message={message} assistantActions={props.assistantActions} /> : null
                       }}
                       renderOutput={(part: any) => {
                         const message = messageOfPart(part)
                         return message
-                          ? <Part part={part} message={message} showAssistantCopyPartID={assistantCopyPartID()} />
+                          ? <Part part={part} message={message} showAssistantCopyPartID={assistantCopyPartID()} assistantActions={props.assistantActions} />
                           : null
                       }}
                     />

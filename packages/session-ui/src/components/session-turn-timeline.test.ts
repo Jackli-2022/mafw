@@ -18,4 +18,12 @@ describe('SessionTurn timeline wiring', () => {
     const part = { type: 'tool', tool: 'read', state: { status: 'completed' } } as any
     expect(isTopLevelToolEntry(part)).toBe(false)
   })
+
+  test('timeline cards keep the shell/edit defaults and assistant actions', () => {
+    const src = read('./session-turn.tsx')
+    expect(src).toContain('partDefaultOpen')
+    expect(src).toContain('shellToolDefaultOpen')
+    expect(src).toContain('editToolDefaultOpen')
+    expect(src).toContain('assistantActions={props.assistantActions}')
+  })
 })
