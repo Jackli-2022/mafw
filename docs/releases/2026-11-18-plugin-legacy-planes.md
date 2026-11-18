@@ -82,8 +82,9 @@ manifest contributes.gateway.media.modalities[0] must be one of image, video, au
 
 | 门禁 | 结果 |
 |---|---|
-| gateway `npm test`（全量） | **PENDING**（controller 汇总） |
-| root `npm run build` | **PENDING**（controller 汇总） |
+| gateway `npm test`（全量） | **1041 suites / 8343 tests**：8331 passed、2 skipped、**10 failed**，全部落在 `tests/unit/api-contract.test.ts` 的写操作台账（`writeOps.size` 期望 199、实际 200）。归因：另一会话的 `c89190ffe` 新增了 mobile 写操作但未更新台账；本波四个 commit 未触碰 `routes/` 的 operation 集合（E16 只动 `plugins.check` 的响应 schema）。 |
+| root `npm run build` | **PASS**（契约重建 + stage + gateway emit:openapi + SDK 重生成与 tsc 均成功） |
+| 本波定向 | `tests/unit/plugins` + `tests/unit/cli`：**45 suites / 550 tests 全绿**；`npm run test:plugin-contract`：**51 / 51**；gateway 与 SDK 的 `tsc -p` 均 exit 0 |
 
 ## Fix round 1
 
