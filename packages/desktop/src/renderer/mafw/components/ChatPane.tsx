@@ -2678,6 +2678,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                       }}
                       shellToolDefaultOpen={detailsMode()}
                       editToolDefaultOpen={detailsMode()}
+                      useProcessTimeline={typeof localStorage === "undefined" || localStorage.getItem("mafw-process-timeline") !== "0"}
                     >
                       <Show when={receiptForTurn(msg)}>
                         {(receipt) => (

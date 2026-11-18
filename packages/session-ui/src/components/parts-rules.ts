@@ -13,6 +13,7 @@ export interface PartLike {
 }
 
 export const CONTEXT_GROUP_TOOLS = new Set(["read", "glob", "grep", "list"])
+export const TIMELINE_TOOLS = new Set(["read", "list", "glob", "grep", "websearch", "webfetch"])
 export const HIDDEN_TOOLS = new Set(["todowrite"])
 
 /**
@@ -60,6 +61,7 @@ export function isTopLevelToolEntry(part: PartLike): boolean {
   if (part.type !== "tool" || !part.tool) return false
   if (HIDDEN_TOOLS.has(displayToolOf(part))) return false
   if (CONTEXT_GROUP_TOOLS.has(displayToolOf(part))) return false
+  if (TIMELINE_TOOLS.has(displayToolOf(part))) return false
   if (part.tool === "question") {
     const s = part.state?.status
     if (s === "pending" || s === "running") return false

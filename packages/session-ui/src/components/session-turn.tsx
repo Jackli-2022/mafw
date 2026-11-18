@@ -9,7 +9,9 @@ import { isAbnormalStop, normalizeStopReason, stopReasonLabel } from "../util/st
 import { createEffect, createMemo, createSignal, For, on, ParentProps, Show, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
-import { AssistantParts, Message, MessageDivider, PART_MAPPING, type UserActions, type AssistantActions } from "./message-part"
+import { AssistantParts, Message, MessageDivider, PART_MAPPING, Part, type UserActions, type AssistantActions } from "./message-part"
+import { ProcessTimeline } from "./process-timeline"
+import { splitTurn } from "./turn-transcript"
 import { Card } from "@mafw/ui/card"
 import { Accordion } from "@mafw/ui/accordion"
 import { StickyAccordionHeader } from "@mafw/ui/sticky-accordion-header"
@@ -159,6 +161,8 @@ export function SessionTurn(
     actions?: UserActions
     assistantActions?: AssistantActions
     showReasoningSummaries?: boolean
+    /** Use the segmented process timeline instead of per-tool context cards. */
+    useProcessTimeline?: boolean
     shellToolDefaultOpen?: boolean
     editToolDefaultOpen?: boolean
     /**
@@ -358,6 +362,13 @@ export function SessionTurn(
   })
   const working = createMemo(() => status() !== "idle" && status() !== "unknown" && active())
   const showReasoningSummaries = createMemo(() => props.showReasoningSummaries ?? true)
+  const transcriptParts = createMemo(() =>
+    assistantMessages().flatMap((message) => list(data.store.part?.[message.id], emptyParts)))
+  const transcriptEntries = createMemo(() => splitTurn(transcriptParts(), {
+    showReasoning: showReasoningSummaries(),
+  }))
+  const messageOfPart = (part: any) =>
+    assistantMessages().find((message) => message.id === part?.messageID) ?? assistantMessages().at(-1)
 
   const assistantCopyPartID = createMemo(() => {
     if (working()) return null
@@ -447,17 +458,44 @@ export function SessionTurn(
                   data-turn-time={assistantTime() || undefined}
                   aria-hidden={working()}
                 >
-                  <AssistantParts
-                    messages={assistantMessages()}
-                    showAssistantCopyPartID={assistantCopyPartID()}
-                    turnDurationMs={turnDurationMs()}
-                    working={working()}
-                    showReasoningSummaries={showReasoningSummaries()}
-                    shellToolDefaultOpen={props.shellToolDefaultOpen}
-                    editToolDefaultOpen={props.editToolDefaultOpen}
-                    renderAfterPart={props.renderAfterPart}
-                    assistantActions={props.assistantActions}
-                  />
+                  <Show
+                    when={props.useProcessTimeline}
+                    fallback={
+                      <AssistantParts
+                        messages={assistantMessages()}
+                        showAssistantCopyPartID={assistantCopyPartID()}
+                        turnDurationMs={turnDurationMs()}
+                        working={working()}
+                        showReasoningSummaries={showReasoningSummaries()}
+                        shellToolDefaultOpen={props.shellToolDefaultOpen}
+                        editToolDefaultOpen={props.editToolDefaultOpen}
+                        renderAfterPart={props.renderAfterPart}
+                        assistantActions={props.assistantActions}
+                      />
+                    }
+                  >
+                    <ProcessTimeline
+                      entries={transcriptEntries()}
+                      working={working()}
+                      showReasoning={showReasoningSummaries()}
+                      renderCard={(part: any) => {
+                        const message = messageOfPart(part)
+                        return message
+                          ? <><Part part={part} message={message} />{props.renderAfterPart?.(part, message)}</>
+                          : null
+                      }}
+                      renderData={(part: any) => {
+                        const message = messageOfPart(part)
+                        return message ? <Part part={part} message={message} /> : null
+                      }}
+                      renderOutput={(part: any) => {
+                        const message = messageOfPart(part)
+                        return message
+                          ? <Part part={part} message={message} showAssistantCopyPartID={assistantCopyPartID()} />
+                          : null
+                      }}
+                    />
+                  </Show>
                 </div>
               </Show>
               <Show when={showThinking()}>
