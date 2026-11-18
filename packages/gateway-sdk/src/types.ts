@@ -610,7 +610,7 @@ export interface SubagentRecord {
   depth: number
   agent?: string
   description?: string
-  status: 'running' | 'completed' | 'failed' | 'aborted'
+  status: 'running' | 'waiting' | 'unknown' | 'completed' | 'failed' | 'aborted'
   background?: boolean
   createdAt: number
   updatedAt: number

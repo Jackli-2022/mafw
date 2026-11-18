@@ -66,13 +66,44 @@ describe('SubagentService.spawn', () => {
 });
 
 describe('SubagentService.list/depth', () => {
-  it('merges native children and computes depth', async () => {
+  it('merges native children via canonical lifecycle and computes depth', async () => {
     const { service, deps, sessions } = makeService();
-    sessions.set('native1', { id: 'native1', parentID: 'p1', title: 'native', time: { created: 5, updated: 9, idle: 9 }, outcome: 'succeeded' });
-    deps.children.mockResolvedValueOnce([{ id: 'native1', title: 'native', time: { created: 5, updated: 9 } }]);
+    const lifecycle = {
+      phase: 'settled' as const, outcome: 'completed' as const,
+      observedAt: 20, lastActivityAt: 9, epoch: 'e1', revision: 1, authority: 'adapter' as const,
+    };
+    sessions.set('native1', { id: 'native1', parentID: 'p1', title: 'native', lifecycle });
+    deps.children.mockResolvedValueOnce([
+      { id: 'native1', title: 'native', lifecycle, time: { created: 5, updated: 9 } },
+    ]);
     const rows = await service.list('p1');
     expect(rows).toEqual([expect.objectContaining({ id: 'native1', parentID: 'p1', depth: 1, status: 'completed' })]);
     expect(await service.depthOf('native1')).toBe(1);
+  });
+
+  it('never infers running from native time/outcome without lifecycle', async () => {
+    const { service, deps, sessions } = makeService();
+    sessions.set('legacy', {
+      id: 'legacy', parentID: 'p1', title: 'legacy',
+      time: { created: 5, updated: 9, idle: 9 }, outcome: 'succeeded',
+    });
+    deps.children.mockResolvedValueOnce([
+      { id: 'legacy', title: 'legacy', time: { created: 5, updated: 9, idle: 9 }, outcome: 'succeeded' },
+    ]);
+    const rows = await service.list('p1');
+    expect(rows[0]).toMatchObject({ id: 'legacy', status: 'unknown' });
+  });
+
+  it('maps waiting lifecycle to waiting', async () => {
+    const { service, deps } = makeService();
+    const lifecycle = {
+      phase: 'waiting' as const, waitingOn: ['children' as const],
+      observedAt: 30, lastActivityAt: 29, epoch: 'e1', revision: 1, authority: 'runtime' as const,
+    };
+    deps.children.mockResolvedValueOnce([{ id: 'waiting', parentID: 'p1', lifecycle }]);
+    deps.getSession.mockResolvedValueOnce({ id: 'waiting', parentID: 'p1', lifecycle });
+    const rows = await service.list('p1');
+    expect(rows[0]).toMatchObject({ id: 'waiting', status: 'waiting' });
   });
 
   // N1：瞬时查询失败 = 运行时暂时不可达，绝不能把在跑的子代理说成 aborted/cancelled
@@ -84,17 +115,23 @@ describe('SubagentService.list/depth', () => {
     deps.getSession.mockRejectedValueOnce(new Error('serve restarting'));
     expect(await service.list('p1')).toEqual([expect.objectContaining({ id: 'c1', status: 'running' })]);
 
-    // 再次成功且确有 idle ⇒ 正常报告终态（失败只暂停刷新，不冻结）
-    sessions.set('c1', { id: 'c1', parentID: 'p1', time: { created: 1, updated: 5, idle: 5 }, outcome: 'succeeded' });
+    // 再次成功且拿到终态 lifecycle ⇒ 正常报告终态（失败只暂停刷新，不冻结）
+    sessions.set('c1', {
+      id: 'c1', parentID: 'p1',
+      lifecycle: {
+        phase: 'settled', outcome: 'completed', observedAt: 5, lastActivityAt: 5,
+        epoch: 'e1', revision: 1, authority: 'adapter',
+      },
+    });
     expect(await service.list('p1')).toEqual([expect.objectContaining({ id: 'c1', status: 'completed' })]);
   });
 
-  it('still reports aborted when the lookup succeeds and the session is genuinely gone', async () => {
+  it('reports unknown when the lookup succeeds but the session is genuinely gone', async () => {
     const { service, deps } = makeService();
     await service.spawn({ parentID: 'p1', prompt: 'x' });
-    // 查询成功但会话已不存在（runtime 明确说没有）→ aborted 仍是合法结论
+    // 查询成功但会话已不存在：没有 lifecycle 证据，不能伪造 aborted/completed
     deps.getSession.mockResolvedValueOnce(null);
-    expect(await service.list('p1')).toEqual([expect.objectContaining({ id: 'c1', status: 'aborted' })]);
+    expect(await service.list('p1')).toEqual([expect.objectContaining({ id: 'c1', status: 'unknown' })]);
   });
 
   it('walks parent chains and caps at 32', async () => {
@@ -121,7 +158,13 @@ describe('SubagentService ownership/message/cancel/result', () => {
 
   it('message prefixes sender; cancel marks aborted; result prefers structured', async () => {
     const { service, deps, sessions } = makeService();
-    sessions.set('c1', { id: 'c1', parentID: 'p1', time: { created: 1, updated: 1, idle: 2 }, outcome: 'succeeded' });
+    sessions.set('c1', {
+      id: 'c1', parentID: 'p1',
+      lifecycle: {
+        phase: 'settled', outcome: 'completed', observedAt: 2, lastActivityAt: 1,
+        epoch: 'e1', revision: 1, authority: 'adapter',
+      },
+    });
     deps.submitted.mockReturnValue({ ok: true });
     await service.message('p1', 'c1', 'keep going');
     expect(deps.messageChild).toHaveBeenCalledWith('c1', '[from parent p1] keep going');
@@ -132,7 +175,13 @@ describe('SubagentService ownership/message/cancel/result', () => {
 
   it('falls back to the last assistant text', async () => {
     const { service, deps, sessions } = makeService();
-    sessions.set('c1', { id: 'c1', parentID: 'p1', time: { created: 1, updated: 1, idle: 2 }, outcome: 'succeeded' });
+    sessions.set('c1', {
+      id: 'c1', parentID: 'p1',
+      lifecycle: {
+        phase: 'settled', outcome: 'completed', observedAt: 2, lastActivityAt: 1,
+        epoch: 'e1', revision: 1, authority: 'adapter',
+      },
+    });
     deps.messages.mockResolvedValueOnce({ data: [
       { role: 'assistant', content: [{ type: 'text', text: 'old' }] },
       { role: 'assistant', content: [{ type: 'text', text: 'child-ok' }] },

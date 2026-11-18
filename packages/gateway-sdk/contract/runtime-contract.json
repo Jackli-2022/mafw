@@ -446,6 +446,25 @@
     },
     {
       "direction": "gateway->runtime",
+      "id": "background.tasks",
+      "title": "background task snapshot",
+      "domain": "session",
+      "obligation": "gated",
+      "capability": "backgroundTasksApi",
+      "verification": "presence",
+      "implementation": "background.tasks",
+      "probe": [
+        "background",
+        "tasks"
+      ],
+      "consumer": "BackgroundDock",
+      "impact": "非子会话后台任务不可见",
+      "presets": [
+        "desktop"
+      ]
+    },
+    {
+      "direction": "gateway->runtime",
       "id": "session.delete.persisted",
       "title": "session.delete persistence",
       "domain": "session",
@@ -2304,6 +2323,32 @@
       "degrade": "信息性声明；gateway 不消费"
     },
     {
+      "degradeRule": "none",
+      "id": "lifecycleApi",
+      "title": "canonical child/background lifecycle",
+      "domain": "session",
+      "kind": "strategy",
+      "default": false,
+      "requires": [],
+      "unlocks": [],
+      "degrade": "生命周期缺失一律退化为 unknown；不推断 running"
+    },
+    {
+      "degradeRule": "any-requires-missing",
+      "id": "backgroundTasksApi",
+      "title": "background task snapshot",
+      "domain": "session",
+      "kind": "feature",
+      "default": false,
+      "requires": [
+        "background.tasks"
+      ],
+      "unlocks": [
+        "background.tasks"
+      ],
+      "degrade": "非子会话后台任务不可见"
+    },
+    {
       "degradeRule": "any-requires-missing",
       "id": "sessionStorageApi",
       "title": "session storage direct read",
@@ -3309,6 +3354,7 @@
         "session.todo",
         "session.children",
         "session.summarize",
+        "background.tasks",
         "session.update",
         "session.listByDirectory",
         "session.worktree",

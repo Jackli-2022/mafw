@@ -11,7 +11,7 @@
 // ─── 接口定义（legacy driver 形状，单源在 ./types） ──────────────────────────
 
 import { stopReasonOf } from '@mafw/runtime-core';
-import type { RuntimePtyInbound, RuntimePtyInfo } from '@mafw/runtime-contract';
+import { unknownLifecycle, type RuntimeLifecycle, type RuntimePtyInbound, type RuntimePtyInfo } from '@mafw/runtime-contract';
 import { serveAuthHeaders } from './serve-sidecar';
 import { formToQuestion, formAnswerOf } from './form-question';
 import { canonicalMessage } from './canonical';
@@ -350,7 +350,54 @@ function mapPtyInfo(raw: any): RuntimePtyInfo | null {
 
 // ─── 适配层实现 ─────────────────────────────────────────────
 
+function finiteTime(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+/**
+ * Map opencode's native session timestamps to the canonical lifecycle.
+ *
+ * Durable claims (`time.suspended`) are recovery records, not proof that the
+ * serving process is alive; without a live-owner signal they are `unknown`.
+ * Legacy rows with no timestamps are also `unknown`, never `running`.
+ */
+export function lifecycleOfOpencodeSession(row: any, now: number, epoch: string): RuntimeLifecycle {
+  const time = row?.time ?? {};
+  const lastActivityAt = finiteTime(time.updated) ?? finiteTime(time.created);
+  const base = { observedAt: now, ...(lastActivityAt !== undefined ? { lastActivityAt } : {}), revision: 1, epoch, authority: 'adapter' as const };
+  const archived = finiteTime(time.archived);
+  if (archived !== undefined) {
+    return { phase: 'settled', outcome: 'cancelled', terminalAt: archived, ...base };
+  }
+  const idle = finiteTime(time.idle);
+  if (idle !== undefined) {
+    const outcome = row?.outcome === 'failed' || row?.outcome === 'interrupted'
+      ? (row.outcome === 'failed' ? 'failed' : 'aborted')
+      : 'completed';
+    return { phase: 'settled', outcome, terminalAt: idle, ...base };
+  }
+  const busy = finiteTime(time.busy);
+  if (busy !== undefined) {
+    return { phase: 'active', ...base, lastActivityAt: lastActivityAt ?? busy };
+  }
+  if (finiteTime(time.suspended) !== undefined) {
+    return unknownLifecycle({
+      observedAt: now,
+      epoch,
+      reason: 'claimed-without-live-owner',
+      ...(lastActivityAt !== undefined ? { lastActivityAt } : {}),
+    });
+  }
+  return unknownLifecycle({
+    observedAt: now,
+    epoch,
+    reason: 'legacy-no-idle',
+    ...(lastActivityAt !== undefined ? { lastActivityAt } : {}),
+  });
+}
+
 export async function createOpencodeAdapter(config: { baseUrl: string; headers?: Record<string, string> }): Promise<OpencodeAdapter> {
+  const lifecycleEpoch = `opencode:${process.pid}:${config.baseUrl}:${Date.now()}`;
   const { createOpencodeClient } = await import('@opencode-ai/sdk/v2');
   // 2.1.0 兼容（2026-10-22 事故第三层修复）：
   // ① API 全挂 /api 前缀——SDK 模板（/session/...）拼上 /api 后命中 2.1.0 路由；
@@ -556,7 +603,10 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
         // SDK 默认 throwOnError=false：404 解析为 `{error,...}` 信封（无 data）。
         // 不能把它交给 unwrap（会返回 truthy 信封）——调用方按 undefined = 不存在处理。
         if (result && typeof result === 'object' && (result as any).error) return undefined;
-        return unwrap(result);
+        const info = unwrap(result);
+        return info && typeof info === 'object'
+          ? { ...info, lifecycle: lifecycleOfOpencodeSession(info, Date.now(), lifecycleEpoch) }
+          : info;
       },
 
       async delete(opts: { sessionID: string }) {
@@ -632,15 +682,22 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
         return [] as any[];
       },
 
-      async children(opts: { sessionID: string }) {
+      async children(opts: { sessionID: string; cursor?: string; limit?: number }) {
         // 2.1.0 无 /session/{id}/children 路由；list 的 parentID 过滤是原生面。
         // 走 directNative 而非 SDK：SDK 的 session.list 映射可能丢 parentID 字段。
         try {
+          const limit = Math.max(1, Math.min(opts.limit ?? 200, 1000));
           const body = await directNative(
-            `/session?parentID=${encodeURIComponent(opts.sessionID)}&limit=100`,
+            `/session?parentID=${encodeURIComponent(opts.sessionID)}&limit=${limit}`,
             'GET',
           );
-          return unwrapNative<any[]>(body) ?? [];
+          const rows = unwrapNative<any[]>(body) ?? [];
+          // No native cursor is documented for this route; the caller's limit is
+          // honored so >100 children are not silently truncated at the old cap.
+          return rows.map((row) => ({
+            ...row,
+            lifecycle: lifecycleOfOpencodeSession(row, Date.now(), lifecycleEpoch),
+          }));
         } catch {
           return [] as any[];
         }

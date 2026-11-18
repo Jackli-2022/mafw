@@ -2748,7 +2748,7 @@ describe('api-contract: E10f-A session / task / terminal / usage read response s
     expect(job.properties.source.anyOf?.map((e: any) => e.const))
       .toEqual(['runtime-shell', 'mafw-task', 'subagent']);
     expect(job.properties.status.anyOf?.map((e: any) => e.const))
-      .toEqual(['running', 'input_required', 'completed', 'failed', 'cancelled']);
+      .toEqual(['running', 'waiting', 'input_required', 'completed', 'failed', 'cancelled', 'unknown']);
     // cursor is the next read offset in bytes -> number, and the three output keys are required.
     expect(schemaOf('background.jobs.output').required).toEqual(['cursor', 'data', 'truncated']);
 
@@ -3931,7 +3931,7 @@ describe('api-contract: E10f-D observability / device / A2A read response schema
     const result = schemaOf('session.subagents.result');
     expect(result.required).toEqual(['status']);
     expect(result.properties.status.anyOf.map((e: any) => e.const))
-      .toEqual(['running', 'completed', 'failed', 'aborted']);
+      .toEqual(['running', 'waiting', 'unknown', 'completed', 'failed', 'aborted']);
     // outputSchema-owned JSON / last assistant text: present one at a time.
     expect(result.required).not.toContain('structured');
     expect(result.required).not.toContain('text');

@@ -28,6 +28,10 @@ export interface RuntimeCapabilities {
   mcpConfigApi?: boolean;
   steerApi?: boolean;
   pluginCreatorApi?: boolean;
+  /** Adapter can return canonical lifecycle on child sessions/background tasks. */
+  lifecycleApi?: boolean;
+  /** Adapter exposes background tasks independently of child sessions. */
+  backgroundTasksApi?: boolean;
 }
 
 export interface RuntimeManifest {
@@ -152,6 +156,8 @@ const BASE_CAPABILITIES: RuntimeCapabilities = {
   mcpConfigApi: false,
   steerApi: false,
   pluginCreatorApi: false,
+  lifecycleApi: false,
+  backgroundTasksApi: false,
 };
 
 export function deriveCapabilities(input: RuntimeDefinitionInput): RuntimeCapabilities {
@@ -173,6 +179,9 @@ export function deriveCapabilities(input: RuntimeDefinitionInput): RuntimeCapabi
     discoveryApi: Boolean(v2.discovery),
     instructionsApi: Boolean(v2.instructions),
     checkpointApi: Boolean(v2.checkpoint),
+    lifecycleApi: typeof channels.session?.children === 'function'
+      || typeof channels.background?.tasks === 'function',
+    backgroundTasksApi: typeof channels.background?.tasks === 'function',
     ...input.overrides,
   };
 }

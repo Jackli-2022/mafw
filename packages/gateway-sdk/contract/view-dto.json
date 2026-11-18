@@ -235,6 +235,12 @@
       "time",
       "cursor",
       "exitCode",
+      "observedAt",
+      "lastActivityAt",
+      "epoch",
+      "authority",
+      "waitingOn",
+      "nativeStatus",
       "extensions"
     ]
   }

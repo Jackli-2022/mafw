@@ -4,7 +4,9 @@ import {
   clearSessionBackgroundJobs,
   collectNewTerminals,
   countRunningJobs,
+  isHistoryJobStatus,
   isTerminalJobStatus,
+  isWaitingJobStatus,
   jobLabel,
   jobSort,
   jobsForSession,
@@ -88,7 +90,15 @@ describe("mergeBackgroundJobs / helpers", () => {
     expect(isTerminalJobStatus("failed")).toBe(true)
     expect(isTerminalJobStatus("cancelled")).toBe(true)
     expect(isTerminalJobStatus("running")).toBe(false)
+    expect(isTerminalJobStatus("waiting")).toBe(false)
+    expect(isTerminalJobStatus("unknown")).toBe(false)
     expect(isTerminalJobStatus("input_required")).toBe(false)
+    expect(isWaitingJobStatus("waiting")).toBe(true)
+    expect(isWaitingJobStatus("unknown")).toBe(false)
+    expect(isHistoryJobStatus("unknown")).toBe(true)
+    expect(isHistoryJobStatus("completed")).toBe(true)
+    expect(isHistoryJobStatus("waiting")).toBe(false)
+    expect(isHistoryJobStatus("running")).toBe(false)
   })
 
   test("jobLabel prefers title then command then id", () => {
@@ -102,9 +112,27 @@ describe("mergeBackgroundJobs / helpers", () => {
       job({ id: "a", status: "running" }),
       job({ id: "b", status: "input_required", sessionID: "s2" }),
       job({ id: "c", status: "completed" }),
+      job({ id: "w", status: "waiting" }),
+      job({ id: "u", status: "unknown" }),
     ]
-    expect(jobsForSession(jobs, "s1").map((j) => j.id)).toEqual(["a", "c"])
+    expect(jobsForSession(jobs, "s1").map((j) => j.id)).toEqual(["a", "c", "w", "u"])
     expect(countRunningJobs(jobs)).toBe(2)
+  })
+
+  test("jobSort orders active, waiting, then history", () => {
+    const rows = [
+      job({ id: "done", status: "completed", time: { updated: 999 } }),
+      job({ id: "wait", status: "waiting", time: { updated: 1 } }),
+      job({ id: "run", status: "running", time: { updated: 1 } }),
+      job({ id: "unknown", status: "unknown", time: { updated: 1000 } }),
+    ]
+    expect(jobSort(rows).map((j) => j.id)).toEqual(["run", "wait", "unknown", "done"])
+  })
+
+  test("collectNewTerminals includes waiting-until-settled", () => {
+    const before = [job({ id: "w", status: "waiting" })]
+    const after = [job({ id: "w", status: "completed" })]
+    expect(collectNewTerminals(before, after).map((j) => j.id)).toEqual(["w"])
   })
 
   test("jobSort is stable for equal timestamps", () => {

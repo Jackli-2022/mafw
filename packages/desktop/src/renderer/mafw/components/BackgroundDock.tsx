@@ -16,7 +16,7 @@ import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
 import { openMenuOnKey } from "../context-menu/menu-key"
 import { cancelJobAndIngest, formatJobOutput } from "../background-actions"
 import { backgroundJobs, ingestBackgroundJob, ingestBackgroundJobs } from "../background-store"
-import { isActiveJobStatus, jobLabel, jobsForSession, type BackgroundJob } from "../background-jobs"
+import { isActiveJobStatus, isHistoryJobStatus, jobLabel, jobsForSession, type BackgroundJob } from "../background-jobs"
 import { reconcileBackgroundOnce } from "../background-reconcile"
 import { formatDuration } from "../goal-timeline"
 import {
@@ -29,10 +29,12 @@ import {
 
 const STATUS_LABEL: Record<string, string> = {
   running: "运行中",
+  waiting: "等待子任务",
   input_required: "等待输入",
   completed: "完成",
   failed: "失败",
   cancelled: "已取消",
+  unknown: "状态未知",
 }
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -54,6 +56,7 @@ export function BackgroundDock(props: {
   onOpenSession: (id: string) => void
 }) {
   const [now, setNow] = createSignal(Date.now())
+  const [showHistory, setShowHistory] = createSignal(false)
   const [expanded, setExpanded] = createSignal<string | null>(null)
   const [outputs, setOutputs] = createSignal<Record<string, string>>({})
   const [apiState, setApiState] = createSignal<BackgroundApiState>(backgroundApiState())
@@ -61,6 +64,9 @@ export function BackgroundDock(props: {
   const [cancelTarget, setCancelTarget] = createSignal<string | null>(null)
 
   const jobs = () => jobsForSession(backgroundJobs(), props.activeSessionId ?? "")
+  const history = (job: BackgroundJob) => isHistoryJobStatus(job.status)
+  const visibleJobs = () => jobs().filter((job) => showHistory() || !history(job))
+  const historyCount = () => jobs().filter(history).length
   const sid = () => props.activeSessionId ?? ""
 
   createEffect(() => { void probeBackgroundApi().then(setApiState) })
@@ -144,6 +150,13 @@ export function BackgroundDock(props: {
   return (
     <div class="mafw-bg-dock">
       <div class="mafw-bg-dock-hint">本会话后台任务（shell 可看输出/终止，子代理点击进入子会话）</div>
+      <Show when={historyCount() > 0}>
+        <div class="mafw-bg-dock-history">
+          <ButtonV2 variant="ghost" size="small" onClick={() => setShowHistory((value) => !value)}>
+            {showHistory() ? "只看活跃" : `显示历史（${historyCount()}）`}
+          </ButtonV2>
+        </div>
+      </Show>
       <Show when={shouldShowBackgroundUnavailableHint(apiState(), jobs().length > 0)}>
         <div class="mafw-bg-dock-rest-hint">当前 gateway/runtime 未提供后台作业接口：输出/终止暂不可用</div>
       </Show>
@@ -154,7 +167,13 @@ export function BackgroundDock(props: {
           <div class="mafw-bg-dock-empty-hint">shell 工具加 background 参数，或在 composer 上方「全部转后台」</div>
         </div>
       }>
-        <For each={jobs()}>
+        <Show when={visibleJobs().length > 0} fallback={
+          <div class="mafw-bg-dock-empty">
+            <div class="mafw-bg-dock-empty-text">没有活跃任务</div>
+            <div class="mafw-bg-dock-empty-hint">历史记录可通过上方按钮查看</div>
+          </div>
+        }>
+        <For each={visibleJobs()}>
           {(job) => (
             <div class="mafw-bg-row-wrap">
               <div
@@ -211,6 +230,7 @@ export function BackgroundDock(props: {
             </div>
           )}
         </For>
+        </Show>
       </Show>
       <ConfirmOverlay
         open={cancelTarget() !== null}

@@ -113,6 +113,12 @@ export const CORE_SURFACES: ContractSurface[] = [
 
   // ── session optional / gated ─────────────────────────────────────────
   row({
+    id: 'background.tasks', title: 'background task snapshot', domain: 'session',
+    obligation: 'gated', capability: 'backgroundTasksApi', verification: 'presence',
+    implementation: 'background.tasks', probe: ['background', 'tasks'],
+    consumer: 'BackgroundDock', impact: '非子会话后台任务不可见', presets: DESK,
+  }),
+  row({
     id: 'session.delete.persisted', title: 'session.delete persistence', domain: 'session',
     obligation: 'optional', verification: 'behavior', implementation: 'session.delete', behavior: 'delete-persisted',
     consumer: 'session lifecycle', impact: '只删内存，会话在 list/get 复活', presets: NONE,

@@ -195,6 +195,8 @@ export const SubagentRecordSchema = Type.Object({
   description: Type.Optional(Type.String()),
   status: Type.Union([
     Type.Literal('running'),
+    Type.Literal('waiting'),
+    Type.Literal('unknown'),
     Type.Literal('completed'),
     Type.Literal('failed'),
     Type.Literal('aborted'),

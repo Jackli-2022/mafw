@@ -33,6 +33,8 @@ type AssertEq<A, B> = Equals<A, B> extends true ? true : ['MISMATCH', A, B]
 
 const SubagentStatusSchema = Type.Union([
   Type.Literal('running'),
+  Type.Literal('waiting'),
+  Type.Literal('unknown'),
   Type.Literal('completed'),
   Type.Literal('failed'),
   Type.Literal('aborted'),

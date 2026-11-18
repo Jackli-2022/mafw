@@ -1,6 +1,7 @@
 import type { OutputSchemaSpec } from './structured-output';
+import type { RuntimeChildSession, RuntimeLifecycle } from './contract';
 
-export type SubagentStatus = 'running' | 'completed' | 'failed' | 'aborted';
+export type SubagentStatus = 'running' | 'waiting' | 'unknown' | 'completed' | 'failed' | 'aborted';
 
 export interface SubagentRecord {
   id: string;
@@ -9,6 +10,7 @@ export interface SubagentRecord {
   agent?: string;
   description?: string;
   status: SubagentStatus;
+  lifecycle?: RuntimeLifecycle;
   background?: boolean;
   createdAt: number;
   updatedAt: number;
@@ -28,8 +30,8 @@ export interface SpawnSubagentOpts {
 
 export interface SubagentServiceDeps {
   createSession(opts: { directory: string; parentID: string }): Promise<{ id: string }>;
-  getSession(sessionID: string): Promise<any>;
-  children(parentID: string): Promise<any[]>;
+  getSession(sessionID: string): Promise<RuntimeChildSession | null | undefined>;
+  children(parentID: string, opts?: { cursor?: string; limit?: number }): Promise<RuntimeChildSession[]>;
   promptChild(opts: {
     sessionID: string;
     prompt: string;
@@ -52,14 +54,30 @@ export class SubagentError extends Error {
 
 const DEPTH_CAP = 32;
 
-function statusOf(info: any): SubagentStatus {
-  if (!info) return 'aborted';
-  if (info.time?.idle || info.time?.completed) {
-    if (info.outcome === 'failed') return 'failed';
-    if (info.outcome === 'interrupted') return 'aborted';
-    return 'completed';
+/**
+ * Canonical lifecycle → SubagentStatus. Missing lifecycle is `unknown`, not
+ * `running`: a runtime that cannot prove liveness must not look active.
+ */
+export function statusOfLifecycle(lifecycle: RuntimeLifecycle | undefined | null): SubagentStatus {
+  if (!lifecycle) return 'unknown';
+  switch (lifecycle.phase) {
+    case 'active':
+      return 'running';
+    case 'waiting':
+      return 'waiting';
+    case 'settled':
+      switch (lifecycle.outcome) {
+        case 'failed':
+          return 'failed';
+        case 'cancelled':
+        case 'aborted':
+          return 'aborted';
+        default:
+          return 'completed';
+      }
+    default:
+      return 'unknown';
   }
-  return 'running';
 }
 
 /**
@@ -68,7 +86,7 @@ function statusOf(info: any): SubagentStatus {
  * 把瞬时失败当「不存在」会让在跑的子代理被报成 aborted/cancelled（background
  * jobs 以此为准时就是假终态）。
  */
-type SessionLookup = { ok: true; info: any } | { ok: false };
+type SessionLookup = { ok: true; info: RuntimeChildSession | null | undefined } | { ok: false };
 
 function textOfMessages(result: any): string {
   const list = Array.isArray(result) ? result : (result?.data ?? []);
@@ -157,8 +175,12 @@ export class SubagentService {
     }
 
     const lookup = await this.lookupSession(child.id);
-    // 瞬时失败：只保留 'running'（刚起、尚未观测到任何终态证据）
-    if (lookup.ok) record.status = statusOf(lookup.info);
+    // This spawn is a local fact: until the adapter returns lifecycle evidence,
+    // the child is active. A later list/result without lifecycle becomes unknown.
+    if (lookup.ok) {
+      record.lifecycle = lookup.info?.lifecycle;
+      if (record.lifecycle) record.status = statusOfLifecycle(record.lifecycle);
+    }
     record.updatedAt = Date.now();
     this.emitCreated(record, lookup.ok ? lookup.info : null, directory);
     return record;
@@ -171,8 +193,12 @@ export class SubagentService {
       const lookup = await this.lookupSession(record.id);
       // 瞬时查询失败（serve 重启等）：保留最后已知状态，绝不伪造成 aborted。
       if (lookup.ok) {
-        record.status = statusOf(lookup.info);
-        record.updatedAt = Date.now();
+        record.lifecycle = lookup.info?.lifecycle;
+        record.status = statusOfLifecycle(record.lifecycle);
+        record.updatedAt = record.lifecycle?.observedAt
+          ?? record.lifecycle?.lastActivityAt
+          ?? lookup.info?.time?.updated
+          ?? Date.now();
       }
       rows.set(record.id, { ...record });
     }
@@ -184,16 +210,19 @@ export class SubagentService {
       const lookup = await this.lookupSession(child.id);
       // 瞬时失败 → 用 children 快照（advisory）；只有「查询成功且为空」才算确实不存在
       const info = lookup.ok ? lookup.info : child;
+      const lifecycle = info?.lifecycle ?? child.lifecycle;
       rows.set(child.id, {
         id: child.id,
         parentID,
         depth: typeof child.depth === 'number' ? child.depth : parentDepth + 1,
         agent: info?.agent ?? child.agent,
         description: info?.title ?? child.title,
-        status: statusOf(info),
+        status: statusOfLifecycle(lifecycle),
+        lifecycle,
         background: false,
         createdAt: info?.time?.created ?? child.time?.created ?? Date.now(),
-        updatedAt: Date.now(),
+        updatedAt: lifecycle?.observedAt ?? lifecycle?.lastActivityAt
+          ?? info?.time?.updated ?? child.time?.updated ?? Date.now(),
       });
     }
 
@@ -219,7 +248,7 @@ export class SubagentService {
   async result(parentID: string, childID: string): Promise<{ status: SubagentStatus; structured?: unknown; text?: string }> {
     await this.assertOwnership(parentID, childID);
     const info = await this.deps.getSession(childID).catch(() => null);
-    const status = statusOf(info);
+    const status = statusOfLifecycle(info?.lifecycle);
     const structured = this.deps.submitted(childID);
     if (structured !== undefined) return { status, structured };
     const messages = await this.deps.messages(childID, 5).catch(() => null);
@@ -256,6 +285,7 @@ export class SubagentService {
       title: info?.title ?? record.description ?? 'Subagent',
       agent: info?.agent ?? record.agent,
       directory: info?.directory ?? directory,
+      lifecycle: info?.lifecycle,
       time: info?.time ?? { created: record.createdAt, updated: record.updatedAt },
     };
     this.deps.broadcast({

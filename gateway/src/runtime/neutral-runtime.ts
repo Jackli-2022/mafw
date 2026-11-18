@@ -254,7 +254,12 @@ export function createNeutralRuntime(
   if (channels.session?.update) session.update = (opts: any) => channels.session!.update!(opts.sessionID, { title: opts.title });
   if (channels.session?.delete) session.delete = (opts: any) => channels.session!.delete!(opts.sessionID);
   if (channels.session?.todo) session.todo = (opts: any) => channels.session!.todo!(opts.sessionID);
-  if (channels.session?.children) session.children = (opts: any) => channels.session!.children!(opts.sessionID);
+  if (channels.session?.children) {
+    session.children = (opts: any) => channels.session!.children!(opts.sessionID, {
+      cursor: opts.cursor,
+      limit: opts.limit,
+    });
+  }
   if (channels.session?.summarize) session.summarize = (opts: any) => channels.session!.summarize!(opts);
   if (channels.session?.switchAgent) session.switchAgent = (opts: any) => channels.session!.switchAgent!(opts.sessionID, opts.agent);
   if (channels.session?.switchModel) session.switchModel = (opts: any) => channels.session!.switchModel!(opts.sessionID, opts.model);

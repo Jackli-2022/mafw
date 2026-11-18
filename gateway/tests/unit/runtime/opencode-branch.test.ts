@@ -343,9 +343,18 @@ describe('opencode adapter 2.1.0 children/parentID', () => {
     try {
       const client = await createOpencodeAdapter({ baseUrl: 'http://x' });
       const out = await client.session.children({ sessionID: 'p1' });
-      expect(calls[0].url).toBe('http://x/api/session?parentID=p1&limit=100');
+      expect(calls[0].url).toBe('http://x/api/session?parentID=p1&limit=200');
       expect(calls[0].method).toBe('GET');
-      expect(out).toEqual([{ id: 'c1', parentID: 'p1', title: 'child', time: { created: 1, updated: 2 } }]);
+      expect(out).toEqual([
+        expect.objectContaining({
+          id: 'c1', parentID: 'p1', title: 'child', time: { created: 1, updated: 2 },
+        }),
+      ]);
+      expect(out[0].lifecycle).toMatchObject({
+        phase: 'unknown',
+        reason: 'legacy-no-idle',
+        lastActivityAt: 2,
+      });
     } finally {
       (globalThis as any).fetch = savedFetch;
     }

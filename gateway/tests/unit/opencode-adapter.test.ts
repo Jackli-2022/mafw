@@ -3,7 +3,7 @@
  * directory 路由。SDK 经 jest.mock 工厂注入（@opencode-ai/sdk/v2 是 ESM-only，
  * jest CJS 无法直接解析——见 tests/mocks/opencode-sdk-v2-stub.ts）。
  */
-import { createOpencodeAdapter } from '../../../adapters/opencode/src/adapter';
+import { createOpencodeAdapter, lifecycleOfOpencodeSession } from '../../../adapters/opencode/src/adapter';
 
 const sdkCalls: Array<{ method: string; args: any }> = [];
 // 形状对齐真实 SDK 1.18.x：question 是顶层命名空间，session 上没有
@@ -500,5 +500,44 @@ describe('pty.connect native WS upgrade (location forwarding)', () => {
     const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
     await expect(rt.pty!.connect({ id: 'pty_3', directory: 'C:/work/look' }))
       .rejects.toMatchObject({ status: 403 });
+  });
+});
+
+describe('opencode session lifecycle mapping', () => {
+  const epoch = 'epoch-test';
+
+  it('maps legacy rows without idle to unknown, never running', () => {
+    const lifecycle = lifecycleOfOpencodeSession({ id: 's1', time: { created: 10, updated: 20 } }, 100, epoch);
+    expect(lifecycle).toMatchObject({
+      phase: 'unknown',
+      reason: 'legacy-no-idle',
+      observedAt: 100,
+      lastActivityAt: 20,
+      epoch,
+    });
+  });
+
+  it('maps idle to settled and preserves the outcome', () => {
+    const lifecycle = lifecycleOfOpencodeSession({
+      id: 's1', outcome: 'failed', time: { idle: 30, updated: 25 },
+    }, 100, epoch);
+    expect(lifecycle).toMatchObject({
+      phase: 'settled',
+      outcome: 'failed',
+      terminalAt: 30,
+      lastActivityAt: 25,
+    });
+  });
+
+  it('maps busy to active and claimed-without-idle to unknown', () => {
+    expect(lifecycleOfOpencodeSession({ time: { busy: 40, updated: 39 } }, 100, epoch))
+      .toMatchObject({ phase: 'active', lastActivityAt: 39 });
+    expect(lifecycleOfOpencodeSession({ time: { suspended: 50, updated: 49 } }, 100, epoch))
+      .toMatchObject({ phase: 'unknown', reason: 'claimed-without-live-owner', lastActivityAt: 49 });
+  });
+
+  it('maps archived to a settled cancellation', () => {
+    expect(lifecycleOfOpencodeSession({ time: { archived: 60, updated: 59 } }, 100, epoch))
+      .toMatchObject({ phase: 'settled', outcome: 'cancelled', terminalAt: 60 });
   });
 });

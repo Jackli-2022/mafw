@@ -190,6 +190,23 @@ gateway 与 agent runtime 之间是**能力自声明契约**（`gateway/src/runt
 runtime 能力集 + 插件扫描状态。能力门：缺能力的 runtime 对应端点 503、
 事件订阅跳过，不崩溃。
 
+**Canonical lifecycle（2026-11-18）**：`packages/runtime-contract/src/lifecycle.ts`
+定义 `active / waiting / settled / unknown` 四相，以及 `observedAt`、`lastActivityAt`、
+`outcome`、`waitingOn`、`revision`、`epoch`、`authority`、`reason`。规则：
+
+- **缺失 lifecycle = `unknown`，绝不推断为 `active`**；非法/半截 payload 归一为 unknown。
+- 原生解释只存在于 adapter：opencode 用 `time.busy` / `time.idle` + `idle_outcome` /
+  `time.suspended`(claim) / `resume_attempts` / `time.archived` 映射；durable claim 是恢复记录，
+  不证明进程仍活。Claude 的 `background_tasks_changed` 是 level/REPLACE 信号；dsh 的
+  `running / waiting / settled` 直接映射，`waiting` 不折叠为 idle。
+- `session.children` 行携带 `lifecycle`；非子会话后台任务走独立的 `background.tasks` 能力
+  （Claude 有 managed tasks 但没有 child session 枚举）。
+- `MafwBackgroundJobStatus` 增加 `waiting / unknown`；`waiting` 不是 active，`unknown` 进入
+  历史/需对账区；`isTerminalBackgroundStatus` 只认 `completed / failed / cancelled`。
+- 能力位 `lifecycleApi` / `backgroundTasksApi` 由 adapter 自声明；缺能力返回中性 503，
+  不允许用 `[]` 伪装“没有子会话”。`session.children` 的 legacy 行为保留一个周期，
+  但缺 lifecycle 的旧行只会产生 unknown。
+
 **会话目录契约（2026-10-20）**：`SessionCreateOpts.directory`（**必填、绝对路径**）是会话工作目录的唯一权威来源，
 由 gateway 每次显式传入（内部会话/worker/media 经 `MafwScheduler.resolvedProjectDir()` =
 UI 当前项目 ?? config 项目根）；runtime 侧用 `requireSessionDir(opts.directory, ctx.projectDir)`

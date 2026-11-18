@@ -27,15 +27,25 @@ export function isActiveJobStatus(status: string | undefined): boolean {
   return status === "running" || status === "input_required"
 }
 
+export function isWaitingJobStatus(status: string | undefined): boolean {
+  return status === "waiting"
+}
+
+/** History rows are terminal or explicitly unknown; neither counts as active. */
+export function isHistoryJobStatus(status: string | undefined): boolean {
+  return isTerminalJobStatus(status) || status === "unknown"
+}
+
 export function jobLabel(job: BackgroundJob): string {
   return job.title || job.command || job.id
 }
 
 export function jobSort(jobs: BackgroundJob[]): BackgroundJob[] {
+  const rank = (status: string | undefined) =>
+    isActiveJobStatus(status) ? 0 : isWaitingJobStatus(status) ? 1 : 2
   return [...jobs].sort((a, b) => {
-    const aActive = isActiveJobStatus(a.status) ? 0 : 1
-    const bActive = isActiveJobStatus(b.status) ? 0 : 1
-    if (aActive !== bActive) return aActive - bActive
+    const byRank = rank(a.status) - rank(b.status)
+    if (byRank !== 0) return byRank
     const delta = updatedAt(b) - updatedAt(a)
     if (delta !== 0) return delta
     return a.id.localeCompare(b.id)
@@ -76,7 +86,9 @@ export function collectNewTerminals(prev: BackgroundJob[], next: BackgroundJob[]
   const prevById = new Map(prev.map((job) => [job.id, job]))
   return next.filter((job) => {
     const before = prevById.get(job.id)
-    return !!before && isActiveJobStatus(before.status) && isTerminalJobStatus(job.status)
+    return !!before
+      && (isActiveJobStatus(before.status) || isWaitingJobStatus(before.status))
+      && isTerminalJobStatus(job.status)
   })
 }
 

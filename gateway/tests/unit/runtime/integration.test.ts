@@ -124,7 +124,7 @@ describe('Runtime contract integration', () => {
     for (const cap of Object.keys(rt.capabilities) as (keyof RuntimeCapabilities)[]) {
       // 设计上声明为 false 的能力（gate 关闭是预期）：turnBudget 由 gateway
       // BudgetGuard 承担；revertUndo 在 opencode 2.1（commit 不可逆）无实现。
-      if (cap === 'turnBudgetApi' || cap === 'revertUndoApi') {
+      if (cap === 'turnBudgetApi' || cap === 'revertUndoApi' || cap === 'backgroundTasksApi') {
         expect(capGuard(rt.capabilities, cap)).toBe(true);
         continue;
       }

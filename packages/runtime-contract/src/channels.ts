@@ -3,6 +3,7 @@
  * All blocks are optional; a missing block means the surface is unsupported
  * (ENODEV / 503), never a runtime-specific fallback.
  */
+import type { RuntimeLifecycle } from './lifecycle.ts';
 
 export interface AdapterSession {
   id: string;
@@ -12,6 +13,21 @@ export interface AdapterSession {
   parentID?: string;
   model?: unknown;
   time?: { created?: number; updated?: number };
+  /**
+   * Canonical lifecycle. Missing means `unknown` (legacy adapter), never
+   * `active`; consumers must not infer status from native fields.
+   */
+  lifecycle?: RuntimeLifecycle;
+}
+
+/** A background task that is not necessarily a child session (Claude/dsh jobs). */
+export interface AdapterBackgroundTask {
+  id: string;
+  sessionID: string;
+  kind?: string;
+  title?: string;
+  lifecycle?: RuntimeLifecycle;
+  time?: { created?: number; updated?: number; completed?: number };
 }
 
 export interface AdapterMessage {
@@ -71,8 +87,8 @@ export interface RuntimeChannels {
     abort?(sessionID: string): Promise<void>;
     /** Session todo/plan snapshot (agent task list). Missing = unsupported. */
     todo?(sessionID: string): Promise<unknown[]>;
-    /** Child (subagent) sessions. Missing = unsupported. */
-    children?(sessionID: string): Promise<AdapterSession[]>;
+    /** Child (subagent) sessions. Missing = unsupported; [] means no children. */
+    children?(sessionID: string, opts?: { cursor?: string; limit?: number }): Promise<AdapterSession[]>;
     /** Compact/summarize a session. Missing = unsupported. */
     summarize?(input: { sessionID: string; providerID?: string; modelID?: string }): Promise<unknown>;
     /** Switch the session's agent for subsequent turns. */
@@ -85,6 +101,14 @@ export interface RuntimeChannels {
     permissionList?(opts?: { directory?: string }): Promise<unknown[]>;
     /** Move a blocking tool call to the background. */
     background?(sessionID: string): Promise<void>;
+  };
+  /**
+   * Background tasks owned by a session. This is deliberately separate from
+   * `session.children`: Claude has managed background tasks but no child
+   * session enumeration. Missing = unsupported; [] means no tasks.
+   */
+  background?: {
+    tasks?(opts: { sessionID: string; cursor?: string; limit?: number }): Promise<AdapterBackgroundTask[]>;
   };
   messages?: {
     list(sessionID: string, opts?: { limit?: number; before?: string }): Promise<{ data: AdapterMessage[]; nextCursor?: string }>;

@@ -8,7 +8,7 @@ import { createSignal, createEffect, onCleanup, onMount, Show } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { backgroundJobs, onBackgroundTerminal } from "../background-store"
-import { jobLabel, jobsForSession, type BackgroundJob } from "../background-jobs"
+import { isWaitingJobStatus, jobLabel, jobsForSession, type BackgroundJob } from "../background-jobs"
 import { findBlockingWork } from "../background-detect"
 import { workspace } from "../workspace/session-workspace"
 import { canUseBackgroundApi } from "../background-capability"
@@ -20,6 +20,7 @@ export function BackgroundWorkBar(props: { sessionID: string; onOpenDock: () => 
 
   const jobs = () => jobsForSession(backgroundJobs(), props.sessionID)
   const running = () => jobs().filter((j) => j.status === "running" || j.status === "input_required")
+  const waiting = () => jobs().filter((j) => isWaitingJobStatus(j.status))
   const store = workspace.store
   const blocking = () => findBlockingWork(store.message[props.sessionID] || [], store.part)
 
@@ -50,7 +51,7 @@ export function BackgroundWorkBar(props: { sessionID: string; onOpenDock: () => 
   }
 
   return (
-    <Show when={running().length > 0 || (blocking().length > 0 && canBackground()) || (running().length === 0 && blocking().length === 0 && flash())}>
+    <Show when={running().length > 0 || waiting().length > 0 || (blocking().length > 0 && canBackground()) || (running().length === 0 && waiting().length === 0 && blocking().length === 0 && flash())}>
       <div class="mafw-bg-bar">
         <Show when={running().length > 0}>
           <div
@@ -72,7 +73,20 @@ export function BackgroundWorkBar(props: { sessionID: string; onOpenDock: () => 
             <ButtonV2 variant="ghost" size="small" onClick={() => void backgroundAll()}>全部转后台</ButtonV2>
           </div>
         </Show>
-        <Show when={running().length === 0 && blocking().length === 0 && flash()}>
+        <Show when={waiting().length > 0}>
+          <div
+            class="mafw-bg-bar-row"
+            role="button"
+            tabIndex={0}
+            onClick={() => props.onOpenDock()}
+            onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); props.onOpenDock() } }}
+          >
+            <span class="mafw-bg-bar-count">⏳ 等待 {waiting().length}</span>
+            <span class="mafw-bg-bar-label">{jobLabel(waiting()[0]!)}</span>
+            <span class="mafw-bg-bar-chevron">›</span>
+          </div>
+        </Show>
+        <Show when={running().length === 0 && waiting().length === 0 && blocking().length === 0 && flash()}>
           <div class="mafw-bg-bar-row mafw-bg-bar-flash">
             <span class="mafw-bg-bar-label">{flash()}</span>
           </div>

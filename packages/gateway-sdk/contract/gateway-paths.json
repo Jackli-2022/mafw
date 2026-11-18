@@ -13970,6 +13970,10 @@
                                 "type": "string"
                               },
                               {
+                                "const": "waiting",
+                                "type": "string"
+                              },
+                              {
                                 "const": "input_required",
                                 "type": "string"
                               },
@@ -13983,6 +13987,10 @@
                               },
                               {
                                 "const": "cancelled",
+                                "type": "string"
+                              },
+                              {
+                                "const": "unknown",
                                 "type": "string"
                               }
                             ]
@@ -14024,6 +14032,40 @@
                           },
                           "exitCode": {
                             "type": "number"
+                          },
+                          "observedAt": {
+                            "type": "number"
+                          },
+                          "lastActivityAt": {
+                            "type": "number"
+                          },
+                          "epoch": {
+                            "type": "string"
+                          },
+                          "authority": {
+                            "anyOf": [
+                              {
+                                "const": "runtime",
+                                "type": "string"
+                              },
+                              {
+                                "const": "adapter",
+                                "type": "string"
+                              },
+                              {
+                                "const": "watchdog",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "waitingOn": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "nativeStatus": {
+                            "type": "string"
                           },
                           "extensions": {
                             "type": "object",
@@ -14342,6 +14384,10 @@
                           "type": "string"
                         },
                         {
+                          "const": "waiting",
+                          "type": "string"
+                        },
+                        {
                           "const": "input_required",
                           "type": "string"
                         },
@@ -14355,6 +14401,10 @@
                         },
                         {
                           "const": "cancelled",
+                          "type": "string"
+                        },
+                        {
+                          "const": "unknown",
                           "type": "string"
                         }
                       ]
@@ -14396,6 +14446,40 @@
                     },
                     "exitCode": {
                       "type": "number"
+                    },
+                    "observedAt": {
+                      "type": "number"
+                    },
+                    "lastActivityAt": {
+                      "type": "number"
+                    },
+                    "epoch": {
+                      "type": "string"
+                    },
+                    "authority": {
+                      "anyOf": [
+                        {
+                          "const": "runtime",
+                          "type": "string"
+                        },
+                        {
+                          "const": "adapter",
+                          "type": "string"
+                        },
+                        {
+                          "const": "watchdog",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "waitingOn": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "nativeStatus": {
+                      "type": "string"
                     },
                     "extensions": {
                       "type": "object",
@@ -93716,6 +93800,14 @@
                           "type": "string"
                         },
                         {
+                          "const": "waiting",
+                          "type": "string"
+                        },
+                        {
+                          "const": "unknown",
+                          "type": "string"
+                        },
+                        {
                           "const": "completed",
                           "type": "string"
                         },
@@ -93951,6 +94043,14 @@
                             "anyOf": [
                               {
                                 "const": "running",
+                                "type": "string"
+                              },
+                              {
+                                "const": "waiting",
+                                "type": "string"
+                              },
+                              {
+                                "const": "unknown",
                                 "type": "string"
                               },
                               {
@@ -94501,6 +94601,14 @@
                       "anyOf": [
                         {
                           "const": "running",
+                          "type": "string"
+                        },
+                        {
+                          "const": "waiting",
+                          "type": "string"
+                        },
+                        {
+                          "const": "unknown",
                           "type": "string"
                         },
                         {

@@ -27,6 +27,7 @@ export {
   type RuntimeChannels,
   type RuntimeChannelsV2,
   type AdapterSession,
+  type AdapterBackgroundTask,
   type AdapterMessage,
   type AdapterPart,
   type AdapterProvider,
@@ -55,6 +56,18 @@ export {
   type RuntimeSnapshotTreeChannel,
   type RuntimeBackgroundChannel,
 } from './channels.ts';
+export {
+  normalizeLifecycle,
+  unknownLifecycle,
+  isActiveLifecycle,
+  isTerminalLifecycle,
+  type RuntimeLifecycle,
+  type RuntimeLifecyclePhase,
+  type RuntimeLifecycleOutcome,
+  type RuntimeLifecycleWait,
+  type RuntimeLifecycleAuthority,
+  type RuntimeLifecycleFallback,
+} from './lifecycle.ts';
 export {
   defineRuntime,
   deriveCapabilities,

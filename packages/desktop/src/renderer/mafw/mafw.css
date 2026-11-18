@@ -4886,6 +4886,7 @@ html[data-theme="light"] body {
 .mafw-bg-bar-flash .mafw-bg-bar-label { color: var(--success-text); }
 .mafw-bg-dock { display: flex; flex-direction: column; gap: 6px; padding: 10px; min-height: 0; overflow-y: auto; }
 .mafw-bg-dock-hint { font-size: 10px; color: var(--text-4); line-height: 1.5; }
+.mafw-bg-dock-history { display: flex; justify-content: flex-end; padding: 2px 0 6px; }
 .mafw-bg-dock-rest-hint { font-size: 10px; color: var(--text-4); line-height: 1.5; }
 .mafw-bg-bar-rest-hint { font-size: 10px; color: var(--text-4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mafw-bg-dock-empty {
@@ -4918,6 +4919,8 @@ html[data-theme="light"] body {
 .mafw-bg-meta { display: flex; align-items: center; gap: 8px; font-size: 10px; color: var(--text-4); font-variant-numeric: tabular-nums; }
 .mafw-bg-status { font-weight: 500; }
 .mafw-bg-status-running { color: var(--accent-text, var(--accent)); }
+.mafw-bg-status-waiting { color: var(--warning-text); }
+.mafw-bg-status-unknown { color: var(--text-4); }
 .mafw-bg-status-completed { color: var(--text-3); }
 .mafw-bg-status-failed { color: var(--danger-text, #f7768e); }
 .mafw-bg-status-cancelled { color: var(--text-4); }

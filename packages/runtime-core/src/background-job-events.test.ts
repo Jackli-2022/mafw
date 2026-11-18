@@ -22,18 +22,21 @@ const shell = (row: Partial<RuntimeShellRow> = {}): RuntimeShellRow => ({
   ...row,
 });
 
-test('isTerminalBackgroundStatus: active statuses are not terminal', () => {
+test('isTerminalBackgroundStatus: active, waiting, unknown are not terminal', () => {
   assert.equal(isTerminalBackgroundStatus('running'), false);
   assert.equal(isTerminalBackgroundStatus('input_required'), false);
+  assert.equal(isTerminalBackgroundStatus('waiting'), false);
+  assert.equal(isTerminalBackgroundStatus('unknown'), false);
   assert.equal(isTerminalBackgroundStatus('completed'), true);
   assert.equal(isTerminalBackgroundStatus('failed'), true);
   assert.equal(isTerminalBackgroundStatus('cancelled'), true);
 });
 
-test('backgroundJobStatusOfShell maps native shell statuses; unknown/missing stay running', () => {
+test('backgroundJobStatusOfShell maps native shell statuses; missing stays unknown', () => {
   assert.equal(backgroundJobStatusOfShell('running'), 'running');
-  assert.equal(backgroundJobStatusOfShell(undefined), 'running');
-  assert.equal(backgroundJobStatusOfShell('weird'), 'running');
+  assert.equal(backgroundJobStatusOfShell('started'), 'running');
+  assert.equal(backgroundJobStatusOfShell(undefined), 'unknown');
+  assert.equal(backgroundJobStatusOfShell('weird'), 'unknown');
   assert.equal(backgroundJobStatusOfShell('exited', 0), 'completed');
   assert.equal(backgroundJobStatusOfShell('exited', 2), 'failed');
   assert.equal(backgroundJobStatusOfShell('timeout'), 'failed');
@@ -46,7 +49,9 @@ test('backgroundJobStatusOfSubagent maps authoritative subagent statuses', () =>
   assert.equal(backgroundJobStatusOfSubagent('aborted'), 'cancelled');
   assert.equal(backgroundJobStatusOfSubagent('running'), 'running');
   assert.equal(backgroundJobStatusOfSubagent('input_required'), 'running');
-  assert.equal(backgroundJobStatusOfSubagent(undefined, false), 'running');
+  assert.equal(backgroundJobStatusOfSubagent('waiting'), 'waiting');
+  assert.equal(backgroundJobStatusOfSubagent('unknown'), 'unknown');
+  assert.equal(backgroundJobStatusOfSubagent(undefined, false), 'unknown');
   assert.equal(backgroundJobStatusOfSubagent(undefined, true), 'completed');
 });
 
@@ -56,11 +61,60 @@ test('jobFromSubagent uses the child session as its stable id', () => {
     id: 'ses_child',
     source: 'subagent',
     kind: 'subagent',
-    status: 'running',
+    status: 'unknown',
     sessionID: 'ses_parent',
     title: 'explore',
     childSessionID: 'ses_child',
   });
+});
+
+test('jobFromSubagent maps canonical lifecycle and preserves observation', () => {
+  const waiting = jobFromSubagent({
+    id: 'ses_waiting',
+    parentID: 'ses_parent',
+    lifecycle: {
+      phase: 'waiting',
+      observedAt: 10,
+      lastActivityAt: 9,
+      waitingOn: ['children'],
+      epoch: 'e1',
+      authority: 'runtime',
+    },
+  });
+  assert.equal(waiting.status, 'waiting');
+  assert.equal(waiting.observedAt, 10);
+  assert.equal(waiting.lastActivityAt, 9);
+  assert.deepEqual(waiting.waitingOn, ['children']);
+
+  const settled = jobFromSubagent({
+    id: 'ses_done',
+    parentID: 'ses_parent',
+    lifecycle: {
+      phase: 'settled',
+      outcome: 'completed',
+      observedAt: 20,
+      terminalAt: 19,
+      epoch: 'e1',
+      authority: 'runtime',
+    },
+  });
+  assert.equal(settled.status, 'completed');
+  assert.equal(settled.time?.completed, 19);
+
+  const unknown = jobFromSubagent({
+    id: 'ses_legacy',
+    parentID: 'ses_parent',
+    lifecycle: {
+      phase: 'unknown',
+      reason: 'legacy-no-idle',
+      observedAt: 30,
+      lastActivityAt: 5,
+      epoch: 'e1',
+      authority: 'adapter',
+    },
+  });
+  assert.equal(unknown.status, 'unknown');
+  assert.equal(unknown.lastActivityAt, 5);
 });
 
 test('jobFromSubagent keeps explicit owner session over parentID', () => {

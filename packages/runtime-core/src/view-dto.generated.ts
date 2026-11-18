@@ -320,13 +320,15 @@ export interface MafwQuestionRequest {
 /** background job 来源（runtime shell / MAFW 持久任务 / SSE 派生子代理）。 */
 export type MafwBackgroundJobSource = 'runtime-shell' | 'mafw-task' | 'subagent'
 
-/** 状态机（working/input_required 归一为 running）。 */
+/** 状态机（working/input_required 归一为 running；未知/等待不推断为运行中）。 */
 export type MafwBackgroundJobStatus =
   | 'running'
+  | 'waiting'
   | 'input_required'
   | 'completed'
   | 'failed'
   | 'cancelled'
+  | 'unknown'
 
 export interface MafwBackgroundJob {
   /** 稳定 id（同一作业跨源合并后不变）。 */
@@ -346,6 +348,13 @@ export interface MafwBackgroundJob {
   /** 输出游标（下一次 output 读取的起点）。 */
   cursor?: number
   exitCode?: number
+  /** Canonical lifecycle observation (missing = unknown, never active). */
+  observedAt?: number
+  lastActivityAt?: number
+  epoch?: string
+  authority?: 'runtime' | 'adapter' | 'watchdog'
+  waitingOn?: string[]
+  nativeStatus?: string
   extensions?: Record<string, unknown>
 }
 
@@ -435,7 +444,8 @@ export const VIEW_DTO_FIELD_INVENTORY = {
     fields: [
       'id', 'source', 'kind', 'status', 'sessionID', 'title', 'command',
       'runtimeShellID', 'taskID', 'childSessionID', 'time', 'cursor',
-      'exitCode', 'extensions',
+      'exitCode', 'observedAt', 'lastActivityAt', 'epoch', 'authority',
+      'waitingOn', 'nativeStatus', 'extensions',
     ],
   },
 } as const satisfies Record<string, ViewDtoFieldSpec>

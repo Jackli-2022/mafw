@@ -10987,7 +10987,7 @@ export interface operations {
                             id: string;
                             source: "runtime-shell" | "mafw-task" | "subagent";
                             kind: "shell" | "subagent";
-                            status: "running" | "input_required" | "completed" | "failed" | "cancelled";
+                            status: "running" | "waiting" | "input_required" | "completed" | "failed" | "cancelled" | "unknown";
                             sessionID: string;
                             title?: string;
                             command?: string;
@@ -11001,6 +11001,12 @@ export interface operations {
                             };
                             cursor?: number;
                             exitCode?: number;
+                            observedAt?: number;
+                            lastActivityAt?: number;
+                            epoch?: string;
+                            authority?: "runtime" | "adapter" | "watchdog";
+                            waitingOn?: string[];
+                            nativeStatus?: string;
                             extensions?: {
                                 [key: string]: unknown;
                             };
@@ -11163,7 +11169,7 @@ export interface operations {
                         id: string;
                         source: "runtime-shell" | "mafw-task" | "subagent";
                         kind: "shell" | "subagent";
-                        status: "running" | "input_required" | "completed" | "failed" | "cancelled";
+                        status: "running" | "waiting" | "input_required" | "completed" | "failed" | "cancelled" | "unknown";
                         sessionID: string;
                         title?: string;
                         command?: string;
@@ -11177,6 +11183,12 @@ export interface operations {
                         };
                         cursor?: number;
                         exitCode?: number;
+                        observedAt?: number;
+                        lastActivityAt?: number;
+                        epoch?: string;
+                        authority?: "runtime" | "adapter" | "watchdog";
+                        waitingOn?: string[];
+                        nativeStatus?: string;
                         extensions?: {
                             [key: string]: unknown;
                         };
@@ -42641,7 +42653,7 @@ export interface operations {
                             depth: number;
                             agent?: string;
                             description?: string;
-                            status: "running" | "completed" | "failed" | "aborted";
+                            status: "running" | "waiting" | "unknown" | "completed" | "failed" | "aborted";
                             background?: boolean;
                             createdAt: number;
                             updatedAt: number;
@@ -42747,7 +42759,7 @@ export interface operations {
                         depth: number;
                         agent?: string;
                         description?: string;
-                        status: "running" | "completed" | "failed" | "aborted";
+                        status: "running" | "waiting" | "unknown" | "completed" | "failed" | "aborted";
                         background?: boolean;
                         createdAt: number;
                         updatedAt: number;
@@ -43076,7 +43088,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        status: "running" | "completed" | "failed" | "aborted";
+                        status: "running" | "waiting" | "unknown" | "completed" | "failed" | "aborted";
                         structured?: unknown;
                         text?: string;
                     };

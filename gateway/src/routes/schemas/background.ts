@@ -23,10 +23,12 @@ const BackgroundJobSchema = Type.Object({
   kind: Type.Union([Type.Literal('shell'), Type.Literal('subagent')]),
   status: Type.Union([
     Type.Literal('running'),
+    Type.Literal('waiting'),
     Type.Literal('input_required'),
     Type.Literal('completed'),
     Type.Literal('failed'),
     Type.Literal('cancelled'),
+    Type.Literal('unknown'),
   ]),
   sessionID: Type.String(),
   title: Type.Optional(Type.String()),
@@ -44,6 +46,16 @@ const BackgroundJobSchema = Type.Object({
   /** 输出游标（下一次 output 读取的起点）。 */
   cursor: Type.Optional(Type.Number()),
   exitCode: Type.Optional(Type.Number()),
+  observedAt: Type.Optional(Type.Number()),
+  lastActivityAt: Type.Optional(Type.Number()),
+  epoch: Type.Optional(Type.String()),
+  authority: Type.Optional(Type.Union([
+    Type.Literal('runtime'),
+    Type.Literal('adapter'),
+    Type.Literal('watchdog'),
+  ])),
+  waitingOn: Type.Optional(Type.Array(Type.String())),
+  nativeStatus: Type.Optional(Type.String()),
   extensions: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
 })
 

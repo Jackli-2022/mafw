@@ -152,10 +152,10 @@ describe('status mapping', () => {
     expect(backgroundJobStatusOfTask('cancelled')).toBe('cancelled');
   });
 
-  it('maps runtime shell statuses; unknown/missing stay running', () => {
+  it('maps runtime shell statuses; unknown/missing stay unknown', () => {
     expect(backgroundJobStatusOfShell('running')).toBe('running');
-    expect(backgroundJobStatusOfShell(undefined)).toBe('running');
-    expect(backgroundJobStatusOfShell('weird')).toBe('running');
+    expect(backgroundJobStatusOfShell(undefined)).toBe('unknown');
+    expect(backgroundJobStatusOfShell('weird')).toBe('unknown');
     expect(backgroundJobStatusOfShell('exited', 0)).toBe('completed');
     expect(backgroundJobStatusOfShell('exited', 2)).toBe('failed');
     expect(backgroundJobStatusOfShell('timeout')).toBe('failed');
@@ -184,7 +184,16 @@ describe('row/job builders', () => {
       id: 'ses_child', source: 'subagent', kind: 'subagent', sessionID: 'ses_parent',
       title: 'explore', childSessionID: 'ses_child',
     });
-    expect(info.status).toBe('running');
+    expect(info.status).toBe('unknown');
+  });
+
+  it('64 legacy subagent rows without lifecycle stay unknown, never running', async () => {
+    const rows = Array.from({ length: 64 }, (_, i) => ({ id: `ses_${i}`, parentID: 'ses_parent' }));
+    const service = new BackgroundJobService({ listSubagents: () => rows });
+    const jobs = await service.list('ses_parent');
+    expect(jobs).toHaveLength(64);
+    expect(jobs.filter((job) => job.status === 'running')).toHaveLength(0);
+    expect(jobs.every((job) => job.status === 'unknown')).toBe(true);
   });
 
   it('runtime shell job keeps the native shell id', () => {

@@ -50,6 +50,17 @@ export const CONTRACT_CAPABILITIES: ContractCapability[] = [
     requires: [], unlocks: [], degrade: '信息性声明；gateway 不消费',
   }),
   cap({
+    id: 'lifecycleApi', title: 'canonical child/background lifecycle', domain: 'session', kind: 'strategy', default: false,
+    requires: [], unlocks: [],
+    degrade: '生命周期缺失一律退化为 unknown；不推断 running',
+    degradeRule: 'none',
+  }),
+  cap({
+    id: 'backgroundTasksApi', title: 'background task snapshot', domain: 'session', kind: 'feature', default: false,
+    requires: ['background.tasks'], unlocks: ['background.tasks'],
+    degrade: '非子会话后台任务不可见',
+  }),
+  cap({
     id: 'sessionStorageApi', title: 'session storage direct read', domain: 'session', kind: 'strategy', default: false,
     requires: ['session.listByDirectory'], unlocks: ['session.listByDirectory'],
     degrade: '回退 session.list + 客户端过滤',

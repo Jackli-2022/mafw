@@ -29,6 +29,39 @@ import type {
   RuntimeMcpStatusInfo,
 } from '@mafw/runtime-contract';
 
+/**
+ * Gateway-side structural mirror of the adapter lifecycle DTO. Keeping it
+ * structural avoids coupling gateway typechecking to the adapter package's
+ * dist artifacts; the adapter still owns native→canonical mapping.
+ */
+export interface RuntimeLifecycle {
+  phase: 'active' | 'waiting' | 'settled' | 'unknown';
+  observedAt: number;
+  lastActivityAt?: number;
+  outcome?: 'completed' | 'failed' | 'cancelled' | 'aborted';
+  terminalAt?: number;
+  waitingOn?: string[];
+  leaseExpiresAt?: number;
+  revision: number;
+  epoch: string;
+  authority: 'runtime' | 'adapter' | 'watchdog';
+  reason?: string;
+}
+
+/** Minimal child-session shape consumed by SubagentService. */
+export interface RuntimeChildSession {
+  id: string;
+  parentID?: string;
+  title?: string;
+  description?: string;
+  directory?: string;
+  location?: { directory?: string };
+  agent?: string;
+  lifecycle?: RuntimeLifecycle;
+  time?: { created?: number; updated?: number; completed?: number };
+  [key: string]: unknown;
+}
+
 export interface RuntimeCapabilities {
   /** session.create/prompt/promptAsync/messages/... 全套会话 API */
   sessionApi: boolean;
@@ -82,6 +115,10 @@ export interface RuntimeCapabilities {
    * 身份（列出它会让 agent 无工具可用）。
    */
   pluginCreatorApi?: boolean;
+  /** Adapter returns canonical lifecycle on child sessions/background tasks. */
+  lifecycleApi?: boolean;
+  /** Adapter exposes background tasks independently of child sessions. */
+  backgroundTasksApi?: boolean;
 }
 
 export function fullCapabilities(): RuntimeCapabilities {
@@ -116,6 +153,8 @@ export function fullCapabilities(): RuntimeCapabilities {
     steerApi: true,
     // Creator 的 inspect/manager 工具与随包技能由本插件宿主提供（OpenCode-only）。
     pluginCreatorApi: true,
+    lifecycleApi: true,
+    backgroundTasksApi: false,
   };
 }
 
@@ -137,6 +176,8 @@ export function minimalCapabilities(): RuntimeCapabilities {
     runStateApi: false,
     turnBudgetApi: false,
     questionApi: false,
+    lifecycleApi: false,
+    backgroundTasksApi: false,
     diffApi: false,
     worktreeApi: false,
     instructionsApi: false,
@@ -449,7 +490,7 @@ export interface RuntimeClient {
     list(opts?: { directory?: string }): Promise<any[]>;
     listByDirectory?(directory: string, limit?: number): Promise<SessionInfo[]>;
     todo(opts: { sessionID: string }): Promise<any[]>;
-    children(opts: { sessionID: string }): Promise<any[]>;
+    children(opts: { sessionID: string; cursor?: string; limit?: number }): Promise<RuntimeChildSession[]>;
     /** 2.1 sticky 即时切换（缺实现 = 能力门 503）。 */
     switchAgent?(opts: { sessionID: string; agent: string }): Promise<void>;
     switchModel?(opts: {

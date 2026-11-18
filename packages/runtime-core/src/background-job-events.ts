@@ -40,30 +40,52 @@ export interface RuntimeShellRow {
  * updatedAt`）——`status` 是唯一可信来源，聚合器不再自行从会话时间推算终态。
  * 纯 `SessionInfo` 行（无 status）仅作回退：以 `time.completed` 判断终态。
  */
+export interface BackgroundSubagentLifecycle {
+  phase: 'active' | 'waiting' | 'settled' | 'unknown'
+  observedAt?: number
+  lastActivityAt?: number
+  outcome?: 'completed' | 'failed' | 'cancelled' | 'aborted'
+  terminalAt?: number
+  revision?: number
+  epoch?: string
+  authority?: 'runtime' | 'adapter' | 'watchdog'
+  waitingOn?: string[]
+  reason?: string
+}
+
 export interface BackgroundSubagentRow {
   id: string
   parentID?: string
   title?: string
   description?: string
-  /** SubagentService 状态（running | completed | failed | aborted | input_required）。 */
+  /** SubagentService 状态（running | waiting | unknown | completed | failed | aborted | input_required）。 */
   status?: BackgroundSubagentStatus
+  lifecycle?: BackgroundSubagentLifecycle
   createdAt?: number
   updatedAt?: number
   time?: { created?: number; updated?: number; completed?: number }
 }
 
-/** SubagentService 状态 + DTO 已有的等待态（input_required 归一为 running）。 */
+/** SubagentService 状态 + DTO 已有的等待/未知态（input_required 归一为 running）。 */
 export type BackgroundSubagentStatus =
   | 'running'
+  | 'waiting'
+  | 'unknown'
   | 'input_required'
   | 'completed'
   | 'failed'
   | 'aborted'
 
-const ACTIVE_STATUSES: ReadonlySet<MafwBackgroundJobStatus> = new Set(['running', 'input_required']);
+const ACTIVE_STATUSES: ReadonlySet<MafwBackgroundJobStatus> = new Set([
+  'running', 'input_required',
+]);
+
+const TERMINAL_STATUSES: ReadonlySet<MafwBackgroundJobStatus> = new Set([
+  'completed', 'failed', 'cancelled',
+]);
 
 export function isTerminalBackgroundStatus(status: MafwBackgroundJobStatus): boolean {
-  return !ACTIVE_STATUSES.has(status);
+  return TERMINAL_STATUSES.has(status);
 }
 
 /**
@@ -79,8 +101,12 @@ export function backgroundJobStatusOfShell(status: string | undefined, exitCode?
       return 'failed';
     case 'killed':
       return 'cancelled';
-    default:
+    case 'running':
+    case 'started':
+    case 'pending':
       return 'running';
+    default:
+      return 'unknown';
   }
 }
 
@@ -144,8 +170,14 @@ export function backgroundJobStatusOfSubagent(
     case 'running':
     case 'input_required':
       return 'running';
+    case 'waiting':
+      return 'waiting';
+    case 'unknown':
+      return 'unknown';
     default:
-      return hasCompletedTime ? 'completed' : 'running';
+      // A missing native status is not evidence of running. Legacy rows with
+      // a completed timestamp may be settled; everything else stays unknown.
+      return hasCompletedTime ? 'completed' : 'unknown';
   }
 }
 
@@ -160,21 +192,52 @@ function subagentStatusOfJob(job: MafwBackgroundJob): BackgroundSubagentStatus {
       return 'aborted';
     case 'input_required':
       return 'input_required';
+    case 'waiting':
+      return 'waiting';
+    case 'unknown':
+      return 'unknown';
     default:
+      return 'unknown';
+  }
+}
+
+function backgroundJobStatusOfLifecycle(lifecycle: BackgroundSubagentLifecycle): MafwBackgroundJobStatus {
+  switch (lifecycle.phase) {
+    case 'active':
       return 'running';
+    case 'waiting':
+      return 'waiting';
+    case 'settled':
+      switch (lifecycle.outcome) {
+        case 'failed':
+          return 'failed';
+        case 'cancelled':
+        case 'aborted':
+          return 'cancelled';
+        default:
+          return 'completed';
+      }
+    default:
+      return 'unknown';
   }
 }
 
 export function jobFromSubagent(row: BackgroundSubagentRow, ownerSessionID?: string): MafwBackgroundJob {
   const completedTime = Number.isFinite(row.time?.completed) ? row.time!.completed : undefined;
-  const status = backgroundJobStatusOfSubagent(row.status, completedTime !== undefined);
+  const status = row.lifecycle
+    ? backgroundJobStatusOfLifecycle(row.lifecycle)
+    : backgroundJobStatusOfSubagent(row.status, completedTime !== undefined);
   const terminal = isTerminalBackgroundStatus(status);
   const created = row.createdAt ?? row.time?.created;
-  const updated = row.updatedAt ?? row.time?.updated ?? completedTime;
+  const updated = row.updatedAt ?? row.lifecycle?.lastActivityAt
+    ?? row.lifecycle?.observedAt ?? row.time?.updated ?? completedTime;
+  const completed = row.lifecycle?.phase === 'settled'
+    ? (row.lifecycle.terminalAt ?? row.lifecycle.observedAt ?? completedTime ?? updated)
+    : undefined;
   const time = optionalTime({
     created,
     updated,
-    completed: terminal ? (row.updatedAt ?? completedTime ?? updated) : undefined,
+    completed: terminal ? (row.updatedAt ?? completed ?? updated) : undefined,
   });
   const title = row.title ?? row.description;
   return {
@@ -186,6 +249,11 @@ export function jobFromSubagent(row: BackgroundSubagentRow, ownerSessionID?: str
     childSessionID: row.id,
     ...(title ? { title } : {}),
     ...(time ? { time } : {}),
+    ...(row.lifecycle?.observedAt != null ? { observedAt: row.lifecycle.observedAt } : {}),
+    ...(row.lifecycle?.lastActivityAt != null ? { lastActivityAt: row.lifecycle.lastActivityAt } : {}),
+    ...(row.lifecycle?.epoch ? { epoch: row.lifecycle.epoch } : {}),
+    ...(row.lifecycle?.authority ? { authority: row.lifecycle.authority } : {}),
+    ...(row.lifecycle?.waitingOn?.length ? { waitingOn: [...row.lifecycle.waitingOn] } : {}),
   };
 }
 
