@@ -153,6 +153,10 @@
   草稿交给一个 Goal。Goal revision diff 与 session diff 的批注也进入同一草稿池：前者带 goal
   source，后者带 project source，均不走 session `promptAsync` 旁路，session diff 批注同样可讨论或委托。
   设计：`docs/superpowers/specs/2026-11-17-annotation-goal-collaboration-design.md`。
+- **后台任务（2026-11-18）**：后台面板与 composer work bar 只把 `running / input_required`
+  算作活跃；`waiting` 单独显示“等待子任务”；`unknown`（缺生命周期证据的 legacy 行）与终态
+  进入历史区，默认折叠，点击「显示历史」查看。这样 runtime 返回“没有终态证据”时不会被 UI
+  伪装成永久运行中。
 - **检查点**：`CheckpointOverlay` 时间线（会话回滚 / 文件回滚 / both）；服务端检查点支持只读预览。
 - **托盘与存在感**：15s 轮询 `/api/presence` → tooltip / 菜单状态 / 任务栏进度；
   点击托盘状态行 `navigateToGoal` 跨项目打开（差集通知链已由通知 hub 取代）。
