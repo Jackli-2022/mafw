@@ -24,6 +24,17 @@ describe("applyUserMessageArrival", () => {
     expect(applyUserMessageArrival(state as any, "s1", { id: "m-real", role: "user" })).toBeNull()
   })
 
+  test("keeps the turn anchor so a live receipt can still attach", () => {
+    const state = {
+      message: { s1: [{ id: "user-1", role: "user", turnKey: "turn_abc" }] },
+      part: {},
+    }
+    const out = applyUserMessageArrival(state as any, "s1", {
+      id: "m-real", role: "user", time: { created: 1 },
+    })!
+    expect((out.message.s1[0] as any).turnKey).toBe("turn_abc")
+  })
+
   test("no optimistic → append", () => {
     const state = { message: { s1: [] }, part: {} }
     const out = applyUserMessageArrival(state as any, "s1", { id: "m1", role: "user" })!

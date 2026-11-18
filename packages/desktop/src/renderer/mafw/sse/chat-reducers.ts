@@ -36,6 +36,9 @@ export function applyUserMessageArrival(
       id: msgId,
       sessionID: sid,
       time: info.time || opt.time || { created: Date.now() },
+      // Preserve the turn anchor so a receipt emitted for this turn can attach
+      // after the optimistic message is replaced (live SSE has no marker).
+      turnKey: info.turnKey ?? opt.turnKey,
       // Preserve voice UI fields from optimistic message
       voiceStatus: opt.voiceStatus,
       voiceDuration: opt.voiceDuration,

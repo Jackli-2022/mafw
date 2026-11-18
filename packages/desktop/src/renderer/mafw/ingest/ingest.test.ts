@@ -122,8 +122,7 @@ describe('message ingestion', () => {
     expect(parts.u1[0].text).toBe('真实问题')
   })
 
-  test('extracts the turn marker and strips it from user display text', () => {
-    const raw = '<facts>\nmemory one\n</facts>\n\nhello\n[[turn:turn_abc]]'
+  test('extracts the turn marker and strips it from user display text', () => {    const raw = '<facts>\nmemory one\n</facts>\n\nhello\n[[turn:turn_abc]]'
     const { messages, parts } = ingestHistoryPage(
       [{
         id: 'u1',
@@ -156,6 +155,17 @@ describe('message ingestion', () => {
     )
     expect(messages[0].text).toBe('hello')
     expect(parts.u1[0].text).toBe('hello')
+  })
+
+  test('live user update also carries the turn anchor and strips the hidden text', () => {
+    const raw = '<latest-reminder>2026-11-18 周三 14:32 · Asia/Shanghai · 上海 · 中文</latest-reminder>\n\nhello\n[[turn:turn_abc]]'
+    const ingested = ingestLiveMessage({
+      id: 'm-live', sessionID: 's1', role: 'user', text: raw,
+      content: [{ id: 'p1', type: 'text', text: raw }],
+    }, { sessionID: 's1' })!
+    expect(ingested.message.turnKey).toBe('turn_abc')
+    expect(ingested.message.text.trim()).toBe('hello')
+    expect(ingested.parts[0].text.trim()).toBe('hello')
   })
 
   test('strips every memory block tag in any order, not just facts-first', () => {
