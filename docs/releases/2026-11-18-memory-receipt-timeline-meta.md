@@ -65,7 +65,8 @@
 - 历史无 part time：单段回退整轮 message 时长，多段省略，避免每段重复整轮时长。
 - 两套“已思考”实现对齐：`process-timeline` 与 desktop `ThinkingBlock` 都改为裸时长，并去掉 `✻` 字形。
 - `DataProvider` 的 directory 从 `.` 改为当前会话绝对目录，原生 read/edit/write 卡与时间线统一显示相对路径。
-- 提交 `cd6fa5539`；session-ui **161/161**、desktop **4160/4160**，`tsgo` rc 0。
+- 提交 `cd6fa5539`；session-ui **162/162**、desktop **4160/4160**，`tsgo` rc 0。
+- `ef3352804`：展开思考时隐藏预览行，避免与正文第一行重复。
 
 ## 已知问题 / 后续
 
