@@ -3,7 +3,7 @@
 - **分支**：`main`
 - **提交**：`7d0c6b2d2`（relay principal）、`f2ca4ef11`（terminator）、`be7b3c7e6`（allowlist）、
   `b9905fd0a`（transport）、`618ba5a31`（WS gating）、`f712a25ec`（pairing 限流）、
-  `b9304a72e`（kernel 接线）、`6aaeaa27a`（tunneled 修正）
+  `b9304a72e`（kernel 接线）、`6aaeaa27a`（tunneled 修正）、`94cb495e9`（review 修复）
 - **设计**：`docs/superpowers/specs/2026-11-18-mobile-relay-design.md` §3.1
 - **计划**：`docs/superpowers/plans/2026-11-18-mobile-tunnel-trust-m0.md`
 
