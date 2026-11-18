@@ -30,6 +30,7 @@ const ALLOWED_RULES: readonly AllowRule[] = [
   { method: 'GET', pattern: /^\/api\/sessions$/ },
   { method: 'GET', pattern: /^\/api\/sessions\/[^/]+\/messages$/ },
   { method: 'POST', pattern: /^\/api\/session$/ },
+  { method: 'POST', pattern: /^\/api\/chat$/ },
   { method: 'POST', pattern: /^\/api\/chat\/enriched$/ },
   // memory search surfaces used by the work tab
   { method: 'GET', pattern: /^\/api\/memory\/search$/ },

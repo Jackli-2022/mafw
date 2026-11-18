@@ -27,6 +27,7 @@ Quick Tunnel 之前把 cloudflared 直接指向 `127.0.0.1:3000`。gateway 的
 - 匿名隧道请求只允许 `GET /health` 与 `POST /api/mobile/pairing/verify`；其余 API 401。
   匿名 `/health` 只返回 `{status:"ok"}`。
 - `/api/ws` 在隧道上必须带 device token；terminal/voice/plugin WS 一律 403。
+  v1 共享 apiToken 的 WS 远程连接不支持（LAN/Tailscale 可用）；v2 device token 不受影响。
 - `pairing-code` 的限流豁免改为 loopback 传输判断（本机 CLI 仍豁免，隧道调用受 rate limit 约束）。
 - 真正的本机 loopback 请求仍然是 `local`，桌面/TUI 行为不变。
 - 审查修复：raw-path allowlist 与反代规范化不一致（Critical）、过宽 prefix 授权、route 级

@@ -138,6 +138,32 @@ describe('tunnel terminator (M0)', () => {
     await closeServer(target);
   });
 
+  it('destroys the upstream request when the client aborts', async () => {
+    let closed = false;
+    const target = http.createServer((req) => {
+      req.on('close', () => { closed = true; });
+      // never respond: the client abort is the only way out
+    });
+    const targetPort = await listen(target);
+    const terminator = createTunnelTerminator({ secret: SECRET, targetPort, listenPort: 0 });
+    const port = await terminator.start();
+
+    const req = http.request({ host: '127.0.0.1', port, path: '/hang', method: 'GET' });
+    req.on('error', () => { /* abort is expected */ });
+    req.end();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    req.destroy();
+
+    for (let i = 0; i < 40 && !closed; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    expect(closed).toBe(true);
+
+    await terminator.stop();
+    target.closeAllConnections?.();
+    await closeServer(target);
+  });
+
   it('generates a 32-byte hex secret', () => {
     expect(newTunnelSecret()).toMatch(/^[0-9a-f]{64}$/);
   });

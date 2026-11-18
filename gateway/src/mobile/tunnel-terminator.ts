@@ -79,6 +79,8 @@ export function createTunnelTerminator(opts: TunnelTerminatorOptions): TunnelTer
       }
       res.destroy();
     });
+    res.on('close', () => upstream.destroy());
+    req.on('aborted', () => upstream.destroy());
     req.pipe(upstream);
   }
 
@@ -95,6 +97,8 @@ export function createTunnelTerminator(opts: TunnelTerminatorOptions): TunnelTer
     upstreamReq.on('upgrade', (upstreamRes, upstreamSocket, upstreamHead) => {
       upstreamSockets.add(upstreamSocket as net.Socket);
       upstreamSocket.on('close', () => upstreamSockets.delete(upstreamSocket as net.Socket));
+      upstreamSocket.on('error', () => socket.destroy());
+      socket.on('error', () => upstreamSocket.destroy());
       const lines = [`HTTP/1.1 ${upstreamRes.statusCode ?? 101} ${upstreamRes.statusMessage || 'Switching Protocols'}`];
       for (let i = 0; i < upstreamRes.rawHeaders.length; i += 2) {
         lines.push(`${upstreamRes.rawHeaders[i]}: ${upstreamRes.rawHeaders[i + 1]}`);
@@ -102,8 +106,6 @@ export function createTunnelTerminator(opts: TunnelTerminatorOptions): TunnelTer
       socket.write(`${lines.join('\r\n')}\r\n\r\n`);
       if (upstreamHead.length > 0) socket.write(upstreamHead);
       if (head.length > 0) upstreamSocket.write(head);
-      upstreamSocket.on('error', () => socket.destroy());
-      socket.on('error', () => upstreamSocket.destroy());
       upstreamSocket.pipe(socket);
       socket.pipe(upstreamSocket);
     });

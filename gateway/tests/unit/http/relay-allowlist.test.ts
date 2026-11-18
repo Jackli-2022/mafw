@@ -17,6 +17,7 @@ describe('relay allowlist (M0)', () => {
       ['GET', '/api/sessions'],
       ['GET', '/api/sessions/s1/messages'],
       ['POST', '/api/session'],
+      ['POST', '/api/chat'],
       ['POST', '/api/chat/enriched'],
       ['POST', '/api/pods/p1/goals'],
       ['POST', '/api/pods/p1/goals/handoff'],

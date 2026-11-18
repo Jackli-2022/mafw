@@ -11,6 +11,7 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { authorizeRequest } from '../core/auth';
 import { errorBody, API_ERROR_CODES } from '../core/http/api-error';
+import { isRelayAllowed } from '../http/relay-allowlist';
 import type { RouteRegistry } from './registry';
 
 export interface DispatchAuthorizedDeps {
@@ -45,6 +46,13 @@ export async function dispatchAuthorized(
   // pass just because it isn't `anonymous`. `authorizeRequest` is still the
   // fallback for dispatchers that never resolved a principal.
   const kind = principal?.kind;
+  // M0: a direct dispatcher must not rely on the transport having applied the
+  // relay allowlist. Keep the gate self-contained.
+  if (kind === 'relay' && !isRelayAllowed(req.method || 'GET', req.url || '/')) {
+    res.writeHead(403, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(errorBody('forbidden', API_ERROR_CODES.forbidden)));
+    return true;
+  }
   const principalAllowed = typeof kind === 'string'
     && (kind === 'human' || kind === 'service' || kind === 'local' || kind === 'relay');
   // M0: relay is allowlisted by the transport before dispatch. If a caller

@@ -4,8 +4,13 @@
  * keep `human` even through the tunnel.
  */
 import type { IncomingMessage, ServerResponse } from 'http';
+import * as http from 'http';
+import { once } from 'events';
 import { TUNNEL_HEADER } from '../../../src/core/auth';
 import { createRequestListener, type TransportDeps } from '../../../src/http/transport';
+import { dispatchAuthorized } from '../../../src/routes/registry-dispatch';
+import { RouteRegistry } from '../../../src/routes/registry';
+import { createTunnelTerminator, newTunnelSecret } from '../../../src/mobile/tunnel-terminator';
 
 const SECRET = 'a'.repeat(64);
 const LOOPBACK = '127.0.0.1';
@@ -224,5 +229,57 @@ describe('transport relay principal (M0)', () => {
     const { deps } = makeDeps();
     const rec = await request(deps, fakeReq({ remoteAddress: REMOTE, headers: { [TUNNEL_HEADER]: 'forged' } }));
     expect(rec.status).toBe(401);
+  });
+
+  it('rejects relay in dispatchAuthorized even without the transport gate', async () => {
+    const handler = jest.fn();
+    const registry = new RouteRegistry().register({
+      method: 'GET',
+      path: '/api/terminal/sessions',
+      operationId: 'test.terminal.sessions',
+      handler,
+    });
+    const { res, rec } = fakeRes();
+    const req = fakeReq({ method: 'GET', url: '/api/terminal/sessions' });
+    (req as any).mafwPrincipal = { kind: 'relay', method: 'tunnel', tunneled: true };
+
+    await dispatchAuthorized({ registry, apiToken: 'svc-token' }, req, res);
+
+    expect(rec.status).toBe(403);
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('marks a request relay end-to-end through the real terminator', async () => {
+    const secret = newTunnelSecret();
+    let seen: unknown;
+    const { deps } = makeDeps({
+      tunnelSecret: secret,
+      dispatchAuthorized: jest.fn(async (req: IncomingMessage, res: ServerResponse) => {
+        seen = (req as any).mafwPrincipal;
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end('{}');
+        return true;
+      }),
+    });
+
+    const api = http.createServer(createRequestListener(deps));
+    api.listen(0, '127.0.0.1');
+    await once(api, 'listening');
+    const apiPort = (api.address() as any).port;
+
+    const terminator = createTunnelTerminator({ secret, targetPort: apiPort, listenPort: 0 });
+    const termPort = await terminator.start();
+
+    await fetch(`http://127.0.0.1:${termPort}/api/mobile/pairing/verify`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    });
+
+    expect(seen).toEqual({ kind: 'relay', method: 'tunnel', tunneled: true });
+
+    await terminator.stop();
+    api.closeAllConnections?.();
+    await new Promise<void>((resolve) => api.close(() => resolve()));
   });
 });

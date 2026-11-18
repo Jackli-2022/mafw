@@ -533,7 +533,8 @@ summary, proposedGoal?, state, userAction, deadline, llmSuggestions?, updatedAt?
 - 明确拒绝：设备列表/删除（只允许 `POST /api/mobile/devices/register`）、approvals 规则与 allowlist、
   `goals/control`、session permission-mode/data/revert、非 mobile 的 media upload、terminal / python /
   tools / A2A / cognition / plugins / admin。
-- terminal / voice / plugin WS 403；`/api/ws` 必须带 device token。
+- terminal / voice / plugin WS 403；`/api/ws` 只接受 human（device token）。v1 共享 apiToken 的 WS
+  远程连接不支持，请在 LAN/Tailscale 使用；v2 device token 不受影响。
 - 真正的本机 loopback 请求仍是 `local`，行为不变；`tunneled` 是传输标记，不是新的信任级别。
 
 ---

@@ -31,7 +31,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
-import { resolvePrincipal } from '../core/auth';
+import { resolvePrincipal, isRelayPrincipal } from '../core/auth';
 import { errorBody, API_ERROR_CODES } from '../core/http/api-error';
 import { handleGoalControlCommand } from '../core/goal/control-command';
 import { readBody, PAIRING_VERIFY_MAX_BODY_BYTES } from '../core/http/http-util';
@@ -265,7 +265,7 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
     }
     // The tunnel URL is not authentication: without a device token only the
     // health probe and the nonce-based pairing exchange are reachable.
-    if (principal.kind === 'relay' && !isAnonymousRelayAllowed(req.method || 'GET', pathname)) {
+    if (isRelayPrincipal(principal) && !isAnonymousRelayAllowed(req.method || 'GET', pathname)) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(errorBody('unauthorized', API_ERROR_CODES.unauthorized)));
       return;
