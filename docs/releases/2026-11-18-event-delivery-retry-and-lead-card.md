@@ -1,7 +1,8 @@
 # 2026-11-18 · 失败投递重试 + Lead 外部事件回执卡片
 
 - **版本**：`v5.1.0`（行为增强，不升版本号）
-- **提交**：`a2c40305c`（gateway timer）+ `418dd4419`（desktop card）+ docs
+- **提交**：`a2c40305c`（gateway timer）+ `418dd4419`（desktop card）+
+  `f5b21c5f9`（docs）
 - **前置**：`docs/releases/2026-11-17-receipts-and-domain-consumers.md`
 
 ## 现在
@@ -40,6 +41,9 @@
   - desktop 11：`lead-external-inbox` 8 + `lead-external-inbox-wiring` 3。
 - 类型门禁：gateway `tsc` rc=0；desktop `tsgo` rc=0。
 - gateway `npm run build` 通过（v5.1.0 / epoch 1）。
+- 真机：重启后 `GET /api/kernel/stats` 的 `timers.byName` 含
+  `event:delivery-retry: 1`（gateway pid 28300，instance
+  `7b1f34e4-08e1-4352-b48d-21032eedffa9`）；临时 webhook source 已清理。
 - 全量期间 `recall/exact-evidence` 与 `cli/plugin-standard-command` 各出现一次
   单独复跑全绿的 flake；最终全量干净。
 
