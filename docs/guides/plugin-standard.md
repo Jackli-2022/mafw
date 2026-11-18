@@ -134,6 +134,18 @@ module.exports = {
 | `standardVersion` | integer ≥ 1 | — | — | 写这个包时对照的规范版本（本文 = `1`）。宿主只校验并记录，不用它决定激活（§11）。 |
 | `contributes` | object | — | 无（不上界） | 静态面上界，见 §6。apiVersion 2 下非法 → 激活失败；apiVersion 1 下非法 → warning `legacy-contributes: …` 并丢弃该块。 |
 
+`contributes.gateway` 的键（数组面见 §4.1–§4.4，单例面见 §4.6）：
+
+| 键 | 形状 | 语义 |
+|---|---|---|
+| `actions` / `events` / `observers` | `string[]` | 名字集合上界；显式 `[]` = 零上界（§4.1 / §4.2 / §4.4）。 |
+| `tools` | 描述符数组（`name` + `description` + `inputSchema` …） | 与注册项只按 `name` 匹配（§4.3）。 |
+| `http` | boolean | 只有显式 `false` 生效（§4.5）。 |
+| `runtime` | `{ name?: string }` | legacy 单例面；`name` 缺省 = 包名（§4.6）。 |
+| `media` | `{ name?: string; modalities?: string[] }` | legacy 单例面 + 模态子集（§4.6）。 |
+| `tts` | `{ name?: string }` | legacy 单例面（§4.6）。 |
+| `usage` | `{ name?: string }` | legacy 单例面（§4.6）。 |
+
 `permissions` 的全部合法 token：
 
 - 基础 token（逐字）：`actions`、`events`、`config.read`、`config.write`、`terminal`、`http`、`tools`、`observers`、`ui.web`
@@ -475,6 +487,43 @@ module.exports = {
 
 **只有显式的 `http: false` 会禁止路由**：此时任何一次 `ctx.http.route()` / `ctx.http.ws()` 都让激活失败（即使 `activate()` 正常返回）。**省略 `http` 键 = 该 plane 不受上界约束**（与 §6 一致，`check` 会打印 `http (unbounded)`）；**建议显式写 `http: true`**，让声明面在 `check` 的 inventory 里可见（安装同意看的是 `permissions`——要路由就同时声明 `http` 权限 token，两者不是一回事）。无论声明与否，`http` 本身都不算贡献：仍必须至少返回一个非 http 贡献，否则零贡献拒绝（§3）。
 
+### 4.6 legacy plane 声明
+
+`runtime` / `media` / `tts` / `usage` 是四个 **legacy 单例面**：每包最多一个实例，由 `activate()` 返回值的同名键（或 §3 的 legacy 模块导出）自述，不是数组。它们在 `contributes.gateway` 里是可选的**对象声明**：
+
+```json
+"contributes": {
+  "gateway": {
+    "runtime": { "name": "my-runtime" },
+    "media":   { "name": "my-media", "modalities": ["image", "video"] },
+    "tts":     { "name": "my-tts" },
+    "usage":   { "name": "my-usage" }
+  }
+}
+```
+
+规则与数组面的 `registered ⊆ declared` 不同，这里是**名字 / 模态对齐**：
+
+- **未声明 = 不受约束**：省略任一面，该面完全不受上界约束（存量包零影响，`check` 也不渲染它）。
+- **声明了但没注册 = 合法**：包可以按配置 / host 版本条件注册；`check` 只在 `note: declared but not registered: …` 里列出，永不因此失败。
+- **名字缺省 = 包名**：实际名字取 `spec.name ?? <package>`，声明名字同样按包名解析，所以 `runtime: {}` 与 `runtime: { name: "<package>" }` 等价。**`name` 必须非空白**（`must be a non-empty string`），空白名永远匹配不上实例，在 manifest 阶段就被拒绝。
+- **`media` 多一维模态**：`modalities` 省略 = 不限；给了列表时，实际服务的模态必须是声明的**子集**（少可以，多不行）。
+- 四个面都需要 `trusted`：`untrusted` 包**不能声明**它们（worker 只支持 actions / events / config，永远无法满足），manifest 解析阶段即整包拒绝，一个面一条 `untrusted packages cannot declare contributes.gateway.<plane>`（`<plane>` 是实际键名）。
+
+逐字错误（`error:` 行的诊断部分；`invalid contributions: ` 前缀与 §4 的数组面一致，所以同样归入 `contribution_bound`）：
+
+```text
+invalid contributions: runtime "x" is not declared in plugin.json contributes.gateway.runtime
+invalid contributions: media "x" is not declared in plugin.json contributes.gateway.media
+invalid contributions: media modality "video" is not declared in plugin.json contributes.gateway.media.modalities
+invalid contributions: tts "x" is not declared in plugin.json contributes.gateway.tts
+invalid contributions: usage "x" is not declared in plugin.json contributes.gateway.usage
+```
+
+声明形状（闭合对象，多余字段报 `<label> has unknown field "<key>"`）：`runtime` / `tts` / `usage` 只认 `name`，`media` 只认 `name` + `modalities`。
+
+这是**弱约束**：只比对实例名字与 `media` 的模态，不检查实现、能力或行为——价值在安装审查的可见性与声明漂移检测，不在沙箱。
+
 ---
 
 ## 5. ui 与 web surface（简表）
@@ -501,14 +550,14 @@ module.exports = {
 
 ## 6. 声明即上界
 
-`contributes.gateway` 只约束一个方向：**registered ⊆ declared**。
+`contributes.gateway` 的数组面只约束一个方向：**registered ⊆ declared**；四个 legacy 单例面是名字 / 模态对齐（§4.6）。
 
 - **plane 缺失 = 不设上界**（老包照常激活）；**显式 `[]` = 零上界**（一个也不许）。渲染与判断都必须区分这两者。
 - **声明多于注册是合法的**：包可以按能力/配置/host 版本条件注册。`check` 只会打印 `note: declared but not registered: action "x", …`，**永不**因此失败。
-- 被强制的是四个名字集合（`actions` / `events` / `tools` / `observers`）与一个布尔开关（`http`，**只有显式 `false` 生效**；缺省或 `true` 都不设上界）。`contributes.desktop` 不参与上界。
+- 被强制的是四个名字集合（`actions` / `events` / `tools` / `observers`）、一个布尔开关（`http`，**只有显式 `false` 生效**；缺省或 `true` 都不设上界），以及四个 legacy 单例面的名字 / 模态（§4.6；未声明同样不设上界）。`contributes.desktop` 不参与上界。
 - 诊断顺序：先形状/身份校验；有形状错误时只报那些错误，修好之后才报越界（判决都是激活失败）。`http: false` 的检查在派生贡献构建之前，不受这个顺序影响。
 - `contributes` 本身非法时：`apiVersion: 2` → 激活失败（`contributes: <detail>`）；`apiVersion: 1` → warning `legacy-contributes: <detail>`，块被丢弃且**不构成约束**（合法的 v1 块则和 v2 一样构成约束）。
-- 每条越界消息都在 §4 逐字列出；四个声明式 plane 的消息以 `invalid contributions: ` 前缀出现在 `check` 的 `error:` 行，**`http` 那条是裸的**（§4.5，在派生贡献构建之前单独抛出）。
+- 每条越界消息都在 §4 逐字列出；四个声明式 plane 与四个 legacy 单例面的消息以 `invalid contributions: ` 前缀出现在 `check` 的 `error:` 行，**`http` 那条是裸的**（§4.5，在派生贡献构建之前单独抛出）。
 
 ---
 
@@ -526,6 +575,7 @@ module.exports = {
 `untrusted` 的硬限制（都是代码里的硬检查，不是建议）：
 
 - 返回 `actions` / `events` 之外的键 → `not allowed in untrusted worker: <keys>`（逗号连接，按包上报的键顺序）。
+- manifest 声明四个 legacy 单例面（`runtime` / `media` / `tts` / `usage`）→ `untrusted packages cannot declare contributes.gateway.<plane>`（manifest 解析阶段就整包拒绝，一个面一条；worker 永远无法满足这些面）。
 - 没有对应 token 就注册/使用 → `permission denied: actions`、`permission denied: events`、`permission denied: config.read`、`permission denied: config.write`。
 - worker 里没有 `fetch` / `WebSocket` / `EventSource`，`http`/`https`/`net`/`tls`/`dns`/`dgram`/`http2`/`child_process`/`worker_threads`/`cluster` 被拦（`not available in untrusted worker: <name>`）；Node 权限模型只给包目录（与 worker bootstrap 目录）**只读**，无写、无子进程、无 addon；单条 IPC 消息 ≤ **1 MiB**。
 - action 超时更短：缺省 **10 s**、硬顶 **30 s**（trusted 是 15 s / 60 s）；超时直接杀 child。
@@ -555,6 +605,7 @@ mafw plugin check <absolute-path> [--json] [--strict]
 - **`evaluated: false`** 表示包里 `activate()` 根本没有产出贡献集合（manifest/入口/身份/激活失败等）。此时 `registered:` 渲染为 `(not evaluated)`，不打印 `+`/`-` 标记，也不打印「声明了没注册」的 `note:`——「没评估」不是「没注册」。
 - `--json`：**一行**可解析 JSON。`ok` 是**命令判决**（不是原始 check 结果），另有 `verdict`（`"ok"` / `"fail"`）、`strictFailed`、`code`（失败分类，见下）、`evaluated`（是否产出了贡献集合），以及 `name` / `version` / `contributions` / `apiVersion` / `kind` / `permissions` / `declared` / `registered` / `warnings` / `error` / `webSurfaces`（存在时）。退出码 `0` = 通过，`1` = 不通过。
 - `declared` 缺失 = 没有可用的 `contributes.gateway`（未声明，或 manifest 解析失败——后者同时给出 `error:`）；`declared.actions` 缺失 = 该 plane 无上界；`"actions": []` 会原样出现（零上界）。`registered` 永远存在，且是**尝试注册**的内容——失败时也能看到差集。两行的 `http` 用同一套写法：`declared` 是布尔开关（`http true` / `http false` / 缺省 `http (unbounded)`），`registered` 是路由计数（`http 0 route(s)` / `http 2 route(s)`）。
+- 四个 legacy 单例面（`runtime` / `tts` / `usage` / `media`）只在**已声明**时出现在两行里（未声明 = 不设上界，没有可标记的东西）：名字写成 `runtime [<name>]` / `tts [<name>]` / `usage [<name>]`，`media` 带模态 `media [<name>:<modality>,…]`（如 `runtime [demo-runtime]`、`media [demo-media:image,video]`）。`registered` 侧声明了但没注册渲染成 `runtime []`。差集标记落在整枚 token 前：`runtime [-r1]`（声明 `r1`，实际是别的名字 / 没注册）对 `runtime [+r2]`（注册了未声明的名字）；`media` 的 `+` 同时覆盖名字不符与模态超集。`--json` 原样透传这四个字段（`runtime` / `tts` / `usage` 是字符串，`media` 是 `{ name?, modalities }`），形状见 §4.6。
 - `--strict` 只把 **manifest warning** 变成失败（`not ok: --strict turned the manifest warnings above into failures`）。warning 来自 `plugin.json` 归一化：`legacy-permissions`（apiVersion 2 未声明 `permissions`）、`legacy-contributes: …`（apiVersion 1 的非法 `contributes` 块）。**`--strict` 不会因「声明了没注册」失败**。
 - `check` 也接受单文件包路径（`…/foo.js`），但单文件包不能有 tools/observers/http（§7）。
 - 失败时 `next:` 行按错误给出下一步：`is not declared in …` → 把名字补进 `contributes.gateway`；`permission denied`（只可能来自 `untrusted` worker）→ 补 `permissions`；其余 → 先修错误再按提示重跑 check。
@@ -564,7 +615,7 @@ mafw plugin check <absolute-path> [--json] [--strict]
 1. `plugin.json` 解析成功并归一化：字段形状、`apiVersion`、`host` 范围、`permissions` token；
 2. 模块身份：`main` 文件存在、`require` 成功、导出 `name` 存在且与 manifest 一致；
 3. 一次真实 `activate()` dry-run：贡献形状与跨包引用、零贡献、web surface 落盘、`http: false` 越界；
-4. 四个声明式 plane 的 registered ⊆ declared（§6）；
+4. 四个声明式 plane 的 registered ⊆ declared（§6），以及四个 legacy 单例面的名字 / 模态对齐（§4.6）；
 5. `--strict` 时 manifest warning 变成失败。
 
 **`ok` 不覆盖什么**：`permissions` 与注册面之间**没有任何交叉校验**——`trusted` 包声明 `permissions: ["events"]` 却注册 action，`check` 仍然 `ok`。`permissions` 与 `--permission` 的一致性只在 install 时检查（§9）；token 只在 `untrusted` worker 里当运行时开关（§7）。
@@ -656,13 +707,16 @@ mafw plugins install "C:/abs/path/to/my-plugin"
 | `manifest_invalid` | `plugin.json` 缺失/不可解析/字段非法 | 按 §2 修 manifest |
 | `entry_missing` | `main` 指向的文件不存在 | 补文件或改 `main` |
 | `identity_mismatch` | 模块导出名与 manifest 不符/缺失 | 三者对齐 |
-| `contribution_bound` | 注册越界（含 `http: false`、无 manifest 边界、非法 web surface） | 补声明或停止注册 |
+| `contribution_bound` | 注册越界（含 `http: false`、无 manifest 边界、非法 web surface、legacy 名字 / 模态不符） | 补声明或停止注册 |
 | `activation_failed` | `activate()` 抛错或其它激活期失败 | 看 `error` 文本 |
 | `worker_unavailable` | 本机 Node 没有权限模型，`untrusted` 包的 worker 起不来 | 换用支持 `--permission`（Node 24+）或 `--experimental-permission`（22/23）的 Node 跑 check |
 
 | 症状（逐字或接近逐字） | 原因 | 修法 |
 |---|---|---|
 | `error: invalid contributions: action "ping" is not declared in plugin.json contributes.gateway.actions` | `activate()` 注册了声明集合之外的 action（events / tools / observers 同构） | 把名字加进 `contributes.gateway.<plane>`，或停止注册；显式 `[]` 时一个也不许 |
+| `error: invalid contributions: runtime "r2" is not declared in plugin.json contributes.gateway.runtime` | 声明的 legacy 名字与实际实例不一致（`tts` / `usage` / `media` 同构；两边都按 `name ?? 包名` 解析） | 对齐 `contributes.gateway.<plane>.name` 与 `activate()` 返回的 `name`，或两边都省略 `name`（默认包名） |
+| `error: invalid contributions: media modality "video" is not declared in plugin.json contributes.gateway.media.modalities` | 实际服务的 modalities 超出声明列表（只允许子集） | 把该模态加进 `contributes.gateway.media.modalities`，或省略 `modalities`（= 不限） |
+| `error: untrusted packages cannot declare contributes.gateway.runtime` | `kind: "untrusted"` 的包声明了 legacy 单例面（worker 只支持 actions / events / config，永远无法满足；`media` / `tts` / `usage` 同构） | 删掉 `contributes.gateway.{runtime,media,tts,usage}`，或把包改成 `trusted` |
 | `error: http routes are not declared (contributes.gateway.http is false)` | 声明了 `http: false`（骨架默认）却调用了 `ctx.http.route/ws` | 改成 `"http": true` 并把 `http` 加进 `permissions`，或删掉路由 |
 | observer 收不到自己的事件 | observer 只吃 **canonical** 运行时事件；`plugin:*` 走广播/自动化，永远不进 observer | 用 `events` 广播 + 外部消费者；不要用 observer 观察本包事件 |
 | `path must be absolute: .`（CLI 直接拒绝，不带 `error:` 前缀） | `check` 收到相对路径 | 传绝对路径（`plugin init` 打印的 `next:` 行就是绝对路径） |

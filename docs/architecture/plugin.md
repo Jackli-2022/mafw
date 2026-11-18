@@ -207,6 +207,7 @@ pm run drill:plugin-trust\ 固化。
 - 诊断顺序：`contributes.gateway` 里 `actions` / `events` / `tools` / `observers` 四个 plane 的上界由 `enforceDeclared` 在形状 / 身份校验之后检查——包存在形状 / 身份错误时只报这些错误，修好后才会报越界（判决不变，都是激活失败），派生的「未声明」错误不会掩盖第一个原因。`contributes.gateway.http === false` 的检查在派生贡献构建之前执行，不受这个顺序约束。
 - `contributes.gateway.http: false` 时，任何一次 `ctx.http.route()` / `ctx.http.ws()` 都让激活失败（即使 `activate()` 正常返回）。
 - `apiVersion 2` 下 `contributes` 非法 → 激活失败；`apiVersion 1` 下非法块只产生 warning 且不构成约束，但**合法**的 v1 块与 v2 一样构成约束。
+- `runtime` / `media` / `tts` / `usage` 这四个 legacy 单例面也可在 `contributes.gateway` 里声明：形状是 `{ name?: string }`（`media` 再加 `modalities?: string[]`），`name` 缺省按包名解析；未声明不约束、声明了但没注册合法、`media` 的实际模态必须是声明子集（多一个即激活失败）；`untrusted` 包声明任一面在 manifest 解析阶段就报 `untrusted packages cannot declare contributes.gateway.<plane>`。这是**弱约束**：只比对实例名字与模态，不检查实现或能力——价值在安装审查的可见性与声明漂移检测，不在沙箱。
 - plugin doctor 把 `parsePackageManifest` 的 warnings（`legacy-permissions` / `legacy-contributes`）暴露成独立的 `manifest-warnings` 检查（status `warn`，多种 warning 以 `; ` 连接）；`report.ok` 只由 `fail` 派生，warn 不翻转它。
 - 面向 agent 的**规范正文**在 `docs/guides/plugin-standard.md`（§0-§11：60 秒路径、`plugin.json` 字段表、五个 plane 的逐字错误文案与上限、声明上界、trusted/untrusted、`check --strict --json`、人类安装、失败修法、版本分工）；`mafw plugin init/check/schema` 与 `examples/plugins/` 是它的可执行部分。
 
