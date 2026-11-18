@@ -4147,12 +4147,20 @@ class MafwScheduler {
       })),
       now: () => new Date().toISOString(),
     });
+    // `children` must not be probed while building the service: initServices
+    // runs BEFORE `kernel.createRuntime()`, so `this.runtime` is still null here.
+    // A getter preserves the original "absent = runtime cannot enumerate" contract.
+    const childSessions = () => {
+      const fn = this.runtime?.session.children
+      return fn
+        ? (parentID: string, opts?: { cursor?: string; limit?: number }) =>
+            fn({ sessionID: parentID, ...opts })
+        : undefined
+    }
     this.subagentService = new SubagentService({
       createSession: (o) => this.runtime!.session.create(o),
       getSession: (sid) => this.runtime!.session.get({ sessionID: sid }),
-      children: this.runtime!.session.children
-        ? (parentID) => this.runtime!.session.children!({ sessionID: parentID })
-        : undefined,
+      get children() { return childSessions() },
       promptChild: (o) => this.sdkSession.promptAsync(o.sessionID, o.prompt, undefined, o.agent, o.model, o.outputSchema),
       messageChild: async (sid, text) => {
         await this.runtime!.session.promptAsync({ sessionID: sid, parts: [{ type: 'text', text }], delivery: 'queue' });
