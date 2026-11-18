@@ -56,6 +56,24 @@ describe('decideRouting', () => {
     });
     expect(out).toEqual({ action: 'skip', targetId: 'dup' });
     expect(judged).toBe(0);
+    // A non-write decision must not leave a dangling vector for the skipped unit.
+    expect(v.get('n1')).toBeUndefined();
+    expect(v.size()).toBe(1);
+    expect(v.get('dup')).toEqual([1, 0]);
+  });
+
+  test('create decision → create, and the decision phase does not pre-write the vector', async () => {
+    const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
+    v.upsert('old', [0.9, 0.44]); // cos ≈ 0.898 → candidate band
+    const out = await decideRouting(u('n1'), {
+      vectors: v,
+      provider,
+      judge: async () => ({ action: 'create' }),
+    });
+    expect(out).toEqual({ action: 'create' });
+    // The persisted unit gets its vector from the indexer, not from routing.
+    expect(v.get('n1')).toBeUndefined();
+    expect(v.size()).toBe(1);
   });
 
   test('cos >= dupCosine but DIFFERENT text → judge (value change not dropped)', async () => {
@@ -260,6 +278,54 @@ describe('routeAndWrite', () => {
     expect(s.writes.map((w) => w.id)).toEqual(['n1']);
   });
 
+  test('create → the published vector makes an immediate near-duplicate skip', async () => {
+    const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
+    const s = memStore([]);
+    const first = await routeAndWrite(u('n1'), s as any, { vectors: v, provider, judge: async () => null });
+    expect(first).toEqual({ action: 'create', id: 'n1' });
+
+    // No indexer flush in between: routing must already see the first unit.
+    const second = await routeAndWrite(u('n2'), s as any, {
+      vectors: v,
+      provider,
+      judge: async () => { throw new Error('judge must not be called'); },
+      readEntry: (id) => (id === 'n1' ? { primary_abstraction: 'n2' } : undefined),
+    });
+    expect(second).toEqual({ action: 'skip', id: 'n1', targetId: 'n1' });
+    expect(s.writes.map((w) => w.id)).toEqual(['n1']);
+    // The skipped unit never gets its own vector.
+    expect(v.get('n2')).toBeUndefined();
+    expect(v.get('n1')).toEqual([1, 0]);
+  });
+
+  test('create → the vector is upserted only after store.write resolves', async () => {
+    const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
+    const seenAtWrite: Array<number[] | undefined> = [];
+    const s = {
+      async read() { return null; },
+      async write(x: HarmonicUnit) { seenAtWrite.push(v.get(x.id)); return 'f.md'; },
+      async markSuperseded() { /* noop */ },
+    };
+    const out = await routeAndWrite(u('n1'), s as any, { vectors: v, provider, judge: async () => null });
+    expect(out).toEqual({ action: 'create', id: 'n1' });
+    expect(seenAtWrite).toEqual([undefined]); // still invisible while write is in flight
+    expect(v.get('n1')).toEqual([1, 0]);
+  });
+
+  test('store.write rejects → the vector is never published', async () => {
+    const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
+    const s = {
+      async read() { return null; },
+      async write() { throw new Error('disk full'); },
+      async markSuperseded() { /* noop */ },
+    };
+    await expect(
+      routeAndWrite(u('n1'), s as any, { vectors: v, provider, judge: async () => null }),
+    ).rejects.toThrow('disk full');
+    expect(v.size()).toBe(0);
+    expect(v.get('n1')).toBeUndefined();
+  });
+
   test('skip → no write, returns existing id', async () => {
     const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
     v.upsert('dup', [1, 0]);
@@ -272,6 +338,10 @@ describe('routeAndWrite', () => {
     });
     expect(out).toEqual({ action: 'skip', id: 'dup', targetId: 'dup' });
     expect(s.writes).toHaveLength(0);
+    // skip must not publish the skipped unit's vector (that would be an orphan).
+    expect(v.size()).toBe(1);
+    expect(v.get('n1')).toBeUndefined();
+    expect(v.get('dup')).toEqual([1, 0]);
   });
 
   test('skip with exact provenance reinforces the target and unions ids', async () => {
@@ -293,6 +363,9 @@ describe('routeAndWrite', () => {
     expect(s.writes).toHaveLength(1);
     expect(s.writes[0].source_trace_ids).toEqual(['t1t_new', 't1t_old']);
     expect(s.writes[0].energy).toBeCloseTo(0.82, 5);
+    // Reinforcing the target never publishes the skipped unit's vector.
+    expect(v.get('n1')).toBeUndefined();
+    expect(v.size()).toBe(1);
   });
 
   test('repeated reinforcement never exceeds energy 1.0', async () => {
@@ -346,6 +419,20 @@ describe('routeAndWrite', () => {
     expect(s.writes[0].merged_from).toContain('old');
   });
 
+  test('update → merged unit is visible right away, target vector dropped', async () => {
+    const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
+    v.upsert('old', [0.9, 0.44]);
+    const s = memStore([u('old')]);
+    const out = await routeAndWrite(u('n1'), s as any, {
+      vectors: v,
+      provider,
+      judge: async (_x, ids) => ({ action: 'update', targetId: ids[0] }),
+    });
+    expect(out).toEqual({ action: 'update', id: 'n1', targetId: 'old' });
+    expect(v.get('n1')).toEqual([1, 0]);
+    expect(v.get('old')).toBeUndefined();
+  });
+
   test('update → unions exact T1 provenance from the target', async () => {
     const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
     v.upsert('old', [0.9, 0.44]);
@@ -379,6 +466,21 @@ describe('routeAndWrite', () => {
     expect(s.writes).toHaveLength(1);
     expect(s.writes[0].cue_anchors).toContain('redundant:old');
     expect(s.writes[0].cue_anchors!.length).toBeLessThanOrEqual(8);
+    // The sunk unit is persisted, so its vector is published for later routing.
+    expect(v.get('n1')).toEqual([1, 0]);
+  });
+
+  test('separate → the separated unit is visible right away', async () => {
+    const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
+    v.upsert('old', [0.9, 0.44]);
+    const s = memStore([u('old')]);
+    const out = await routeAndWrite(u('n1'), s as any, {
+      vectors: v,
+      provider,
+      judge: async (_x, ids) => ({ action: 'separate', targetId: ids[0], distinction: 'different region' }),
+    });
+    expect(out).toEqual({ action: 'separate', id: 'n1', targetId: 'old' });
+    expect(v.get('n1')).toEqual([1, 0]);
   });
 
   test('redundant → sunk write (energy 0.05 + redundant anchor) + reinforcement event', async () => {

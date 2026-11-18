@@ -87,7 +87,18 @@ export function isNearIdentical(a: string | undefined, b: string | undefined): b
   return na.length > 0 && na === nb;
 }
 
-export async function decideRouting(unit: HarmonicUnit, deps: RouteWriteDeps): Promise<RoutingOutcome> {
+export async function decideRouting(
+  unit: HarmonicUnit,
+  deps: RouteWriteDeps,
+  /**
+   * Fired only when routing had to embed the unit on demand (its vector is not
+   * in the store yet). The vector is handed back rather than written here:
+   * routing only decides, and publishing it at decision time would leave an
+   * orphan vector behind on every skip/non-write verdict (the unit is never
+   * stored). Callers publish it after the unit is actually persisted.
+   */
+  onLocalVector?: (vector: number[]) => void,
+): Promise<RoutingOutcome> {
   const thetaCand = deps.candidateCosine ?? 0.8;
   const thetaDup = deps.dupCosine ?? 0.95;
   const maxCand = deps.maxCandidates ?? 3;
@@ -95,14 +106,16 @@ export async function decideRouting(unit: HarmonicUnit, deps: RouteWriteDeps): P
   let vector = deps.vectors.get(unit.id);
   if (!vector) {
     // The async indexer may not have flushed yet — embed on demand so routing
-    // sees this unit in vector space immediately.
+    // can search for candidates immediately. The vector is handed to the caller
+    // (when it wants it) instead of being persisted here: a verdict that writes
+    // nothing must not leave an orphan vector behind.
     try {
       const text = EmbeddingIndexer.documentText(unit);
       if (!text) return { action: 'create' };
       const [vec] = await deps.provider.embed([text], 'document');
       if (!vec) return { action: 'create' };
-      deps.vectors.upsert(unit.id, vec);
       vector = vec;
+      onLocalVector?.(vec);
     } catch {
       return { action: 'create' }; // fail-open
     }
@@ -216,7 +229,14 @@ export async function routeAndWrite(
   store: RouteStore,
   deps: RouteWriteDeps,
 ): Promise<{ action: 'skip' | 'create' | 'update' | 'separate' | 'redundant'; id: string; targetId?: string; reinforced?: boolean }> {
-  const decision = await decideRouting(unit, deps);
+  let localVector: number[] | undefined;
+  const decision = await decideRouting(unit, deps, (vec) => { localVector = vec; });
+  // Publish the vector routing had to embed on demand, but only once the unit is
+  // actually persisted. Doing it in the decision phase (or for `skip`, which
+  // writes nothing) would recreate the orphan-vector problem this fixes.
+  const publishVector = (id: string): void => {
+    if (localVector) deps.vectors.upsert(id, localVector);
+  };
   if (decision.action === 'skip') {
     routeStats.skip++;
     // Phase 4B: a duplicate carrying exact provenance reinforces the canonical
@@ -262,6 +282,7 @@ export async function routeAndWrite(
       updated_at: new Date().toISOString(),
     };
     await store.write(sunk);
+    publishVector(sunk.id);
     try {
       getRetrievalEventBuffer().record({ id: decision.targetId, prob: decision.pRedundant, kind: 'recall', ts: Date.now() });
     } catch { /* fail-open */ }
@@ -270,6 +291,7 @@ export async function routeAndWrite(
   }
   if (decision.action === 'create') {
     await store.write(unit);
+    publishVector(unit.id);
     routeStats.create++;
     return { action: 'create', id: unit.id };
   }
@@ -286,6 +308,7 @@ export async function routeAndWrite(
       updated_at: new Date().toISOString(),
     };
     await store.write(separated);
+    publishVector(separated.id);
     routeStats.separate++;
     return { action: 'separate', id: separated.id, targetId: decision.targetId };
   }
@@ -293,6 +316,7 @@ export async function routeAndWrite(
   const target = await store.read(decision.targetId);
   if (!target) {
     await store.write(unit);
+    publishVector(unit.id);
     routeStats.create++;
     return { action: 'create', id: unit.id };
   }
@@ -308,6 +332,7 @@ export async function routeAndWrite(
     updated_at: new Date().toISOString(),
   };
   await store.write(merged);
+  publishVector(merged.id);
   await store.markSuperseded(target.id, merged.id);
   deps.vectors.remove(target.id);
   deps.vectors.flush();
