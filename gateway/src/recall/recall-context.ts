@@ -261,10 +261,40 @@ export function recallNeighbors(
 }
 
 /**
- * R5 FOK zone for the boundary-recall exit. Reads the *raw* BM25 score
- * distribution (never energy×salience-weighted) and classifies it into the
- * three-zone gate. Fail-open: disabled config / missing raw scorer → 'inject'
- * (never suppress recall because the gate itself could not run).
+ * R5 FOK zone for the boundary-recall exit, plus whether the gate actually
+ * evaluated. Reads the *raw* BM25 score distribution (never energy×salience-
+ * weighted) and classifies it into the three-zone gate.
+ *
+ * `evaluated=false` means the gate could not run (config disabled, caller gave
+ * no config, index has no raw scorer, or scoring threw). Those turns keep the
+ * historical fail-open `inject` and downstream admission checks must not treat
+ * that `inject` as evidence.
+ */
+export interface RecallFokEvaluation {
+  zone: FokZone
+  evaluated: boolean
+}
+
+export function evaluateRecallFokZone(
+  index: any,
+  query: string,
+  cfg: ({ enabled: boolean } & FokThresholds) | undefined,
+  topK: number = 10,
+): RecallFokEvaluation {
+  if (!cfg?.enabled) return { zone: 'inject', evaluated: false }
+  try {
+    if (typeof index?.bm25RawScores !== 'function') return { zone: 'inject', evaluated: false }
+    const scores = index.bm25RawScores(query, topK)
+    if (!Array.isArray(scores)) return { zone: 'inject', evaluated: false }
+    return { zone: classifyFok(computeFokFeatures(scores), cfg), evaluated: true }
+  } catch {
+    return { zone: 'inject', evaluated: false }
+  }
+}
+
+/**
+ * Backward-compatible zone-only view. Prefer `evaluateRecallFokZone` when the
+ * caller needs to distinguish "evaluated inject" from "fail-open inject".
  */
 export function computeRecallFokZone(
   index: any,
@@ -272,13 +302,7 @@ export function computeRecallFokZone(
   cfg: ({ enabled: boolean } & FokThresholds) | undefined,
   topK: number = 10,
 ): FokZone {
-  if (!cfg?.enabled) return 'inject'
-  try {
-    if (typeof index?.bm25RawScores !== 'function') return 'inject'
-    return classifyFok(computeFokFeatures(index.bm25RawScores(query, topK)), cfg)
-  } catch {
-    return 'inject'
-  }
+  return evaluateRecallFokZone(index, query, cfg, topK).zone
 }
 
 /**

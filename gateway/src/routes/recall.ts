@@ -160,7 +160,7 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
         return;
       }
       const { formatRecallContext } = require('../recall/inject-format');
-      const { searchRecallMemories, computeRecallFokZone, recallNeighbors } = require('../recall/recall-context');
+      const { searchRecallMemories, evaluateRecallFokZone, recallNeighbors } = require('../recall/recall-context');
       // R8: serve the precomputed snapshot when it still matches the topic
       // (falls back to the live cheap search otherwise).
       let snapshotPointers: string | null = null;
@@ -267,13 +267,45 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
         );
         // R5 FOK gate (fail-open): weak evidence is stated, not silently
         // withheld. Only active when config.search.fok.enabled.
-        fokStatus = computeRecallFokZone(deps.memoryService()!.harmonicIndex, query, config.search.fok);
+        const fokEval = evaluateRecallFokZone(
+          deps.memoryService()!.harmonicIndex,
+          query,
+          config.search.fok,
+        );
+        fokStatus = fokEval.zone;
+        // Word-level support veto: BM25 indexes CJK as unigrams, so a
+        // no-answer query can still dominate top1/mean through scattered
+        // single characters. An `inject` whose every candidate shares no
+        // ASCII word, identifier part, or topical CJK bigram is a ratio
+        // artifact — not evidence. Only an *evaluated* inject is judged:
+        // disabled / missing-scorer / throwing FOK keeps its fail-open inject.
+        // Supported turns drop their unsupported pointers (and therefore their
+        // neighbours); exact evidence below may still rescue a vetoed turn.
+        if (fokEval.evaluated && fokStatus === 'inject') {
+          try {
+            const { selectLexicallySupportedCandidates } = require('../recall/lexical-support');
+            const selection = selectLexicallySupportedCandidates(memories, query);
+            if (selection.applicable && selection.supported.length === 0) {
+              fokStatus = 'no-memory';
+              log.debug(`[Recall] lexical support veto: no word-level overlap (candidates=${memories.length})`);
+            } else if (selection.applicable) {
+              if (selection.supported.length !== memories.length) {
+                log.debug(`[Recall] lexical support filter: kept ${selection.supported.length}/${memories.length} pointers`);
+              }
+              memories = selection.supported;
+            }
+          } catch (err: any) {
+            // Fail-open, but never silently: a broken gate must be visible.
+            log.warn(`[Recall] lexical support check failed, keeping FOK result: ${err?.message || err}`);
+          }
+        }
         // P1 exact-evidence admission: a flattened BM25 ratio must not veto a
         // target that the index identifies exactly (verbatim title / cue /
-        // identifier). Rescue only — an already-inject turn keeps BM25 order
-        // and skips the scan entirely. Metadata-only, deterministic, and live
-        // path only; snapshots keep their own probability gate. Ordinary
-        // low-confidence candidates are untouched (no evidence → same result).
+        // identifier). Rescue only — an inject turn that passed the lexical
+        // support check keeps BM25 order and skips the scan entirely. Metadata-
+        // only, deterministic, and live path only; snapshots keep their own
+        // probability gate. Ordinary low-confidence candidates are untouched
+        // (no evidence → same result).
         if (fokStatus !== 'inject') {
           try {
             const { findExactRecallEvidence, applyExactRecallEvidence } = require('../recall/exact-evidence');
@@ -309,16 +341,6 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
             fs.appendFile(path.join(config.resolvePath(), 'logs', 'arbiter-samples.jsonl'), line, () => {});
           } catch { /* fail-open */ }
         }
-        // A3: record the live-path retrieval for the daily ACT-R
-        // settlement (log-form bonus + exposure discount — the linear
-        // +0.02 direct write was unbounded with popularity feedback).
-        try {
-          const { recordRetrievalFromScored } = require('../core/memory/retrieval-events');
-          recordRetrievalFromScored(
-            memories.map((m: any) => ({ entry: { id: m.id } })),
-            'recall',
-          );
-        } catch { /* fail-open */ }
       }
       // R6 presentation (off by default): bundle chronological neighbours
       // under their anchors. Never re-ranks — presentation only.
@@ -346,6 +368,20 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
         snapshotFokStatus,
       );
       const relatedBody = hasRelated ? (snapshotPointers ?? formatted.pointers) : null;
+      // A3: record the live-path retrieval for the daily ACT-R settlement
+      // (log-form bonus + exposure discount — the linear +0.02 direct write was
+      // unbounded with popularity feedback). Only pointers that actually
+      // rendered count as exposure: a vetoed/no-memory body must not reward
+      // unrelated candidates. Snapshot serving records its own exposure above.
+      if (!snapshotPointers && hasRelated) {
+        try {
+          const { recordRetrievalFromScored } = require('../core/memory/retrieval-events');
+          recordRetrievalFromScored(
+            memories.map((m: any) => ({ entry: { id: m.id } })),
+            'recall',
+          );
+        } catch { /* fail-open */ }
+      }
       const arbiterWithBody = arbiterNote && relatedBody
         ? `${arbiterNote}\n${relatedBody}`
         : relatedBody;

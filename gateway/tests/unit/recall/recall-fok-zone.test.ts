@@ -3,7 +3,7 @@
  * distribution into a three-zone FOK gate. Disabled by default; fail-open
  * (never suppress recall because the gate itself failed).
  */
-import { computeRecallFokZone } from '../../../src/recall/recall-context';
+import { computeRecallFokZone, evaluateRecallFokZone } from '../../../src/recall/recall-context';
 import { HarmonicIndexManager } from '../../../src/core/memory/harmonic-index';
 import { HarmonicUnit } from '../../../src/core/memory/harmonic-types';
 import * as fs from 'fs';
@@ -63,5 +63,38 @@ describe('computeRecallFokZone', () => {
 
   test('no match at all → no-memory (explicit, not silence)', () => {
     expect(computeRecallFokZone(flatIndex(), 'zzz nonexistent term', CFG)).toBe('no-memory');
+  });
+});
+
+describe('evaluateRecallFokZone (evaluated signal)', () => {
+  test('disabled config is not evaluated and stays inject', () => {
+    const result = evaluateRecallFokZone(flatIndex(), 'kubernetes', { ...CFG, enabled: false });
+    expect(result).toEqual({ zone: 'inject', evaluated: false });
+  });
+
+  test('undefined config is not evaluated and stays inject', () => {
+    expect(evaluateRecallFokZone(flatIndex(), 'kubernetes', undefined))
+      .toEqual({ zone: 'inject', evaluated: false });
+  });
+
+  test('index without a raw scorer is not evaluated and stays inject', () => {
+    expect(evaluateRecallFokZone({}, 'kubernetes', CFG))
+      .toEqual({ zone: 'inject', evaluated: false });
+  });
+
+  test('a throwing raw scorer is not evaluated and stays inject', () => {
+    const index = { bm25RawScores: () => { throw new Error('scorer exploded'); } };
+    expect(evaluateRecallFokZone(index, 'kubernetes', CFG))
+      .toEqual({ zone: 'inject', evaluated: false });
+  });
+
+  test('dominant top-1 is an evaluated inject', () => {
+    expect(evaluateRecallFokZone(dominantIndex(), 'kubernetes deployment', CFG))
+      .toEqual({ zone: 'inject', evaluated: true });
+  });
+
+  test('flat distribution is an evaluated no-memory', () => {
+    expect(evaluateRecallFokZone(flatIndex(), 'kubernetes deployment', CFG))
+      .toEqual({ zone: 'no-memory', evaluated: true });
   });
 });

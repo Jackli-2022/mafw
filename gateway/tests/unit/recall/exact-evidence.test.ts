@@ -471,22 +471,25 @@ describe('recall.context exact-evidence wiring', () => {
     expect(await run()).toBe(first);
   });
 
-  test('an already-inject turn keeps BM25 order and never admits an exact-only entry', async () => {
+  test('a lexically supported inject turn keeps BM25 order and never admits an exact-only entry', async () => {
+    // The query shares words with the ranked candidates, so the lexical-support
+    // veto leaves the `inject` zone alone and the exact scan stays a no-op. The
+    // exact-only entry would outrank them if the scan ran (distinctive cue).
     const exactOnly = entry({
       id: 'mem_exact_inject_target',
       primary_abstraction: 'exact but not ranked',
-      cue_anchors: ['5cd9885f5'],
+      cue_anchors: ['检索路径 parity 修复上线与质量缺口'],
     });
     const entries = [
-      entry({ id: 'mem_flat_1', primary_abstraction: 'first ranked' }),
-      entry({ id: 'mem_flat_2', primary_abstraction: 'second ranked' }),
-      entry({ id: 'mem_flat_3', primary_abstraction: 'third ranked' }),
+      entry({ id: 'mem_flat_1', primary_abstraction: '检索路径 parity 修复上线（一）' }),
+      entry({ id: 'mem_flat_2', primary_abstraction: 'parity 修复上线（二）' }),
+      entry({ id: 'mem_flat_3', primary_abstraction: '修复上线（三）' }),
       exactOnly,
     ];
     // Dominant top-1 -> raw FOK inject; the exact merge must be a no-op.
     const { handler } = routeHarness(entries, { rawScores: [10, 1, 1, 1] });
     const res = fakeRes();
-    const url = '/api/recall/context?sessionID=s1&query=5cd9885f5';
+    const url = `/api/recall/context?sessionID=s1&query=${encodeURIComponent('检索路径 parity 修复上线与质量缺口')}`;
     await handler(url)(fakeReq(url), res.res);
 
     expect(res.status).toBe(200);

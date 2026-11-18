@@ -170,7 +170,19 @@ opencode server 进程                    Gateway 进程
 
 **现状（行为）**
 
-- **精确证据准入（P1）**：边界 route 只在 FOK 不是 `inject` 时调用 `gateway/src/recall/exact-evidence.ts`。`findExactRecallEvidence(entries, query, limit)` 只从 **active** 条目的 `primary_abstraction` / `cue_anchors` 里找确定性证据（NFKC+小写+空白折叠后：整标题等价、整 query 形 identifier、7–40 位十六进制 commit、或长度 ≥12 ASCII / ≥6 CJK 且文档频次 ≤5、覆盖 ≥50% 非空字符的短语）；`applyExactRecallEvidence(memories, evidence, status, topK=3)` 将命中条目按 specificity 排序，**同等特异性时先偏好已在 BM25 候选中的 owner，再用 id 升序 tie-break**（不用 recency/index 顺序），确定性置前、去重并截到 3，命中时把 zone 升级为 `inject`。`superseded_by` 条目与未 pin/sticky 的 legacy `episodic` 不参与准入；不读正文、不加 embedding/LLM、不改 FOK 阈值 / 全局 topK / recency。无证据时结果与旧行为逐字一致——`no-memory` 与普通 `low-confidence` 仍被 `hasRelatedRecallBody` 抑制本体，note-board 仍是独立 must-surface、不计入相关记忆准入。已经 `inject` 的轮次直接跳过整个证据扫描（0ms）。
+- **精确证据准入（P1）**：边界 route 只在 FOK 不是 `inject` 时调用 `gateway/src/recall/exact-evidence.ts`。`findExactRecallEvidence(entries, query, limit)` 只从 **active** 条目的 `primary_abstraction` / `cue_anchors` 里找确定性证据（NFKC+小写+空白折叠后：整标题等价、整 query 形 identifier、7–40 位十六进制 commit、或长度 ≥12 ASCII / ≥6 CJK 且文档频次 ≤5、覆盖 ≥50% 非空字符的短语）；`applyExactRecallEvidence(memories, evidence, status, topK=3)` 将命中条目按 specificity 排序，**同等特异性时先偏好已在 BM25 候选中的 owner，再用 id 升序 tie-break**（不用 recency/index 顺序），确定性置前、去重并截到 3，命中时把 zone 升级为 `inject`。`superseded_by` 条目与未 pin/sticky 的 legacy `episodic` 不参与准入；不读正文、不加 embedding/LLM、不改 FOK 阈值 / 全局 topK / recency。无证据时结果与旧行为逐字一致——`no-memory` 与普通 `low-confidence` 仍被 `hasRelatedRecallBody` 抑制本体，note-board 仍是独立 must-surface、不计入相关记忆准入。已经 `inject` 且词级支持成立（见下条）的轮次仍跳过整个证据扫描（0ms）；`inject` 但候选池无词级支持时先降级，再走同一精确证据旁路。
+- **词级候选支持准入（2026-11-18 补充）**：`gateway/src/recall/lexical-support.ts` 的 `selectLexicallySupportedCandidates(memories, query)` / `hasCandidateLexicalSupport`。边界 BM25 把 CJK 切成 **unigram**（`harmonic-index.tokenizeBM25`），所以一个真无答案的 query 也能靠散落单字拿到主导的 `top1/mean` 比值（实测 `堪培拉十二月平均降雨量`、`缝纫机改牛仔裤腰围怎么走线` 各误注入 7 条指针）。规则（只读 `primary_abstraction` + `cue_anchors`，不读正文、不重排、不调阈值）：
+  - **只在 FOK 真正评估过时生效**：route 走 `evaluateRecallFokZone` 拿 `{ zone, evaluated }`；`enabled=false` / 无 `bm25RawScores` / 打分抛错 → `evaluated=false`，保留历史 fail-open `inject`，**不**做否决、也**不**因此多跑精确扫描。默认配置（`fok.enabled=false`）行为不变。
+  - 候选必须与 query 共享一个**词级单位**：ASCII 词（长度 ≥2，**排除常用英文功能词** `the/of/is/how/in/and…`；identifier 用与检索同源的 `splitIdentifierParts`，含 acronym-run 与 snake_case，单字符 camel 段不成词）或**非问句框架**的 CJK bigram。问句框架是一张**有界清单**（`怎么/怎样/什么/如何/在哪/有没有/能不能/会不会/干嘛/需不需要…`），不是"所有问句"的断言；共享框架本身不算证据。
+  - CJK bigram **按字段、按连续 CJK run** 生成，绝不跨 title/cue 或空格断点拼接；因此 `编排接` + `缝三` 不会命中 query 的 `接缝`。
+  - 有支持 → **逐指针过滤**：只保留支持候选（顺序不变），因此 `↳` 邻居只挂到保留下来的 anchor；无任何支持 → `inject → no-memory`（随后仍可被 P1 精确证据救回）。
+  - ACT-R 曝光只在**真正渲染出 recall 本体**时记录，且只记过滤后实际注入的候选；被否决/无本体/无主路径的轮次不奖励无关记忆。snapshot 服务路径仍按原逻辑自行记录。
+  - 不改 FOK 阈值 / topK / recency / note-board / snapshot。
+- **残留边界（本否决不声称覆盖）**：
+  - **snapshot 池不经过实时否决**：R8 快照用自己的 reranker 概率门（`probLow/probHigh`），本检查只看实时 fallback 的 BM25 候选。快照 served 的无关指针仍由快照门负责。
+  - **精确证据救回的尾部**：非 `inject` 轮次被精确证据救回时，`applyExactRecallEvidence` 会用未过滤的 BM25 候选补足 topK；这些补位候选不经过逐指针过滤（它们不属于"实时 inject 池"）。不影响命中/误注入口径，但会出现在 `<recall>` 尾部。
+  - 池级"至少一个候选有词级支持"仍是准入条件；单条文本层面的语义无关（同 bigram 不同义、缩写巧合）无法用确定性规则排除。
+  - `evaluated=false` 的 fail-open inject 仍会注入候选（历史行为），所以「真无答案查询永不注入」只对**已评估**的轮次成立。
 - **滚动窗口完整化（P2）**：`recentTurnTextsFromDb(db, sessionID, maxTurns)`（`gateway/src/recall/snapshot-builder.ts`）用 `listSessionTurns`（`t1_turns`）+ `readTurnRows`（`t1_archive ∪ t1_observations`）取最近 `maxTurns` 个逻辑轮的 `user_input`/`assistant_reply`（旧→新）；kernel 的防抖快照刷新改走该 helper，并在 helper export 缺失时 `log.warn`（debounced catch 会吞掉构建异常，不 warn 就只剩静默停摆）。T1 抽取/归档后，滚动窗口不再塌成最新一条短指令。
 - **FOK 证据仍不混用**：边界实时门继续用 BM25 比值，snapshot 继续用 reranker 概率；精确准入只是「比值门之外的确定性旁路」，没有把两套阈值合并。
 
@@ -203,9 +215,25 @@ opencode server 进程                    Gateway 进程
 - stale injection 的 `0→0` **不是同一控制集比较**：刷新把 `g7u8qu` 加入 `must_exclude`，控制集 10→11 条。准确的解释是结构性 0——检索的 `resolveSupersededHeads` 会把 superseded 命中重写到链头，旧 id 本来就不可能出现；这项指标只能证明「没有绕过该重写」，不是「抑制策略变严」。
 - 边界 AUTO 延迟仍远超 100ms 契约（见「未解决」），所以「自动回合真的看到」仍取决于插件 100ms abort 是否触发。
 
+**词级支持否决的 40 条配对（2026-11-18，同 fixture / 同 live 候选）**
+
+口径：同一 `evaluation/personal-recall/queries.json`（40 条）、同一 live 索引与同一份 route 前产物（`personal-recall-after-fok-rollback.json`）的候选集，在**离线**重放边界 route 管线（search → FOK → 词级否决 → 精确证据旁路 → `hasRelatedRecallBody`）。不是第二次 live 采集：本轮未 build / 未重启 gateway，因此没有新的 REST/AUTO artifact，延迟与 snapshot 行为不在结论内。
+
+| 指标 | before | after |
+|---|---|---|
+| AUTO hit | 18/30 | **18/30** |
+| exact AUTO | 10/10 | **10/10** |
+| current-state AUTO | 6/10 | 6/10 |
+| implicit AUTO | 2/10 | 2/10 |
+| false injection | 2/10（14 个 id） | **0/10** |
+| stale injection | 0 | 0 |
+| entrypoint agreement | 26/30 | **26/30** |
+
+只降级了两条 negative（`negative-canberra-rainfall`、`negative-jeans-waist`），没有任何 positive 的 hit / agreement 翻转；精确证据救回的 5 条 exact 命中（已在 `inject` 区的另外 5 条 exact 不受影响）继续生效。逐指针过滤在 32 条 `inject` 行里只收缩了两行：`current-index-scan` 3→2 候选、`current-plugin-preflight` 3→2 候选（两者命中状态都不变；后者的 hit 本来就是 false）。规则矩阵（同一 40 条上比较的候选规则）：任意 CJK bigram → 仍误注入 `negative-jeans`（只共享问句框架 `怎么`）；去掉 ASCII 支持 → 4 条 exact 只能靠精确证据旁路救回（命中不变，但每轮都跑扫描，且普通 ASCII 内容词失去词级准入）；ASCII 词（去停用词）或「非问句框架 CJK bigram」→ 0 误注入且 18/30 命中不变。40 条在本轮 live 配置下 `evaluated=true` 全覆盖；`evaluated=false` 的 fail-open 分支只有单测覆盖，未用 live 采样。
+
 **未解决 / 未声称**
 
-- 100ms 契约：本轮 AFTER 的 AUTO p50/p95 为 307/436ms（max 604ms），比 BEFORE 更慢（AFTER 处于冷启动回暖期——sidecar ready 后约 16s，属未隔离场景，不能全归因精确扫描）；**精确扫描本身**在 16,732 条目 / 180,047 anchor 上实测：冷启首扫 ≈55–61ms、热态 p50 13–22ms、高负载最高 ≈42ms，已 inject 轮次 0ms——它必须计入边界预算并被监控，不是免费旁路。插件侧 100ms abort 仍可能整块吞掉 recall，需独立性能切片。
+- 100ms 契约：本轮 AFTER 的 AUTO p50/p95 为 307/436ms（max 604ms），比 BEFORE 更慢（AFTER 处于冷启动回暖期——sidecar ready 后约 16s，属未隔离场景，不能全归因精确扫描）；**精确扫描本身**在 16,732 条目 / 180,047 anchor 上实测：冷启首扫 ≈55–61ms、热态 p50 13–22ms、高负载最高 ≈42ms，已支持 `inject` 轮次 0ms（词级准入只做 query+≤3 候选的字段分词）；被词级否决的 `inject` 轮次会付一次精确扫描（与原本非 inject 轮次同成本）——它必须计入边界预算并被监控，不是免费旁路。插件侧 100ms abort 仍可能整块吞掉 recall，需独立性能切片。
 - 尾部弱相关仍来自候选池与 `temporalNeighbors.presentation` 的 `↳` 邻居，未在本切片重设计。
 - FOK 观测仍混合 snapshot build 与真实 injection（R6/P4），暂不能用它校准准入效果。
 - snapshot 自然刷新：重启后 5 分钟内没有观测到新的 `snapshot built`/kv 行（详见 release note），因此本次不声称 snapshot serving 已在真实回合生效；只声称读取 primitive 已有单测 + 只读 helper 探针证据。探针测量于 2026-11-18T04:02Z（gateway v5.1.0，pid 60752，HEAD `0a53e3207`），快照探针里的「热表行 / 归档行」是**时间相关**的计数（压缩/抽取会继续搬动行），不是稳定常量。
