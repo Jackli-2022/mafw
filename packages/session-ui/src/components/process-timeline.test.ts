@@ -34,6 +34,12 @@ describe('ProcessTimeline', () => {
     expect(css).toContain('.mafw-process-think-label')
   })
 
+  test('matches the edit card title size to the tool rows', () => {
+    const css = fs.readFileSync(new URL('./process-timeline.css', import.meta.url), 'utf-8')
+    expect(css).toContain('.mafw-process-step-card [data-slot="message-part-title-text"]')
+    expect(css).toContain('font-size: 11px')
+  })
+
   test('hides the thinking preview once the body is open', () => {
     const src = read('./process-timeline.tsx')
     expect(src).toContain('<Show when={!open()}>')
