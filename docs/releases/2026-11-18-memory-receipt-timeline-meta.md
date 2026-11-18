@@ -36,7 +36,7 @@
 - `2d3397fbc` `9bde569ea` `dbea65429` `034096e91` `cc36bb95f` — 桌面投影 / SSE / 药丸卡 / 历史回填 / 真实数据
 - `dd27fa559` `18b5ae5a3` `1d73057bf` `1bfb79988` — splitTurn / ProcessTimeline / 接入 / 折叠
 - `f745117ec` `3f716f98f` `57e13fae1` — reminder + marker 发送路径 / ghost chip
-- 验证修复：`d4c9f40c3`（IPC 参数）、`a564c0cff`（工具卡默认展开/actions）、`493910814`（live 替换保留 turnKey）、`be77475c9`（T1 source 映射）、`7a377a8f8`（启动崩溃）、`4a5ae66c7`（快照邻居）、`f058dade7`（旧 preload 兼容）
+- 验证修复：`d4c9f40c3`（IPC 参数）、`a564c0cff`（工具卡默认展开/actions）、`493910814`（live 替换保留 turnKey）、`be77475c9`（T1 source 映射）、`7a377a8f8`（启动崩溃）、`4a5ae66c7`（快照邻居）、`f058dade7`（旧 preload 兼容）、`e194f9f2b`（路由覆盖账本）
 - 文档：`a1286acaf`
 
 ## 验证
@@ -45,10 +45,12 @@
 - Session UI：全部测试（排除既有 `architecture.test.ts`）→ **25 suites / 155 pass / 0 fail**；`tsgo` rc 0。
 - SDK：`npm test` → **246 pass / 0 fail**；`tsc` rc 0。
 - UI：`tsgo` rc 0。
-- Gateway：`npx tsc --noEmit -p tsconfig.json` → rc 0；定向回执/路由/快照/DB 测试全绿；全量 jest 见下。
+- Gateway：`npx tsc --noEmit -p tsconfig.json` → rc 0；定向回执/路由/快照/DB 测试全绿。
+- Gateway 全量：`npx jest --runInBand --forceExit` → **8443 pass / 16 failed / 8461 total（8 suites）**。其中 3 个 suite（9 tests）是新增 `/api/sessions/:id/memory-receipts` 的路由覆盖账本，已更新为 336 ops / 329 covered responses 并通过；`pod-worktree-service` 与 `restore-git` 为全量负载下的偶发（单跑通过）；剩余 3 个 suite（6 tests）为并行工作遗留：`runtime/validate-shape`（`sessionChildrenApi` 期望）、`runtime/architecture-boundaries`（`sessions-read.ts` 读 `runtime.capabilities`）、`architecture/legacy-route-inventory`（transport 清单漂移）。
+- 复跑失败集：**5 pass / 3 fail（6 tests）**，失败仅剩上述并行遗留。
 - 构建：root `npm run build` 通过；`gateway npm run build` 通过；`packages/desktop npx electron-vite build` 通过。
 - 真机 smoke：`GET /api/recall/context?...&anchorKey=...` → 200；`/api/events` 收到 `memory.recalled`（与 anchor 一致）；`GET /api/sessions/:id/memory-receipts` 返回同锚点回执（3 anchors + 3 neighbours，无 `memory_value`）。smoke 行已清理。
-- Gateway 运行状态：本轮结束时 gateway 以 standalone 方式运行在 `:3000`（PID 47436，health `ok`）；托管网关的启动崩溃已由 `7a377a8f8` 修复。
+- Gateway 运行状态：本轮结束时 gateway 以 standalone 方式运行在 `:3000`（PID 47436，instance `bc4d7733-b009-4965-a392-7172245666aa`，health `ok`，commit `e194f9f2b`）；托管网关的启动崩溃已由 `7a377a8f8` 修复。
 - 桌面窗口：本轮重启 gateway 时，两个桌面实例的 supervisor 用尽自动重启（4 次）并进入 failed；需**手动重启一次桌面应用**让它重新拉起 managed gateway（代码已修）。
 
 ## 已知问题 / 后续
