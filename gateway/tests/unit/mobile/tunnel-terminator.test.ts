@@ -116,6 +116,28 @@ describe('tunnel terminator (M0)', () => {
     await closeServer(target);
   });
 
+  it('falls back to an ephemeral port when the requested port is busy', async () => {
+    const target = http.createServer((_req, res) => res.end('ok'));
+    const targetPort = await listen(target);
+
+    const first = createTunnelTerminator({ secret: SECRET, targetPort, listenPort: 0 });
+    const firstPort = await first.start();
+    const second = createTunnelTerminator({
+      secret: SECRET,
+      targetPort,
+      listenPort: firstPort,
+      fallbackToEphemeral: true,
+    });
+    const secondPort = await second.start();
+
+    expect(secondPort).not.toBe(firstPort);
+    expect(secondPort).toBeGreaterThan(0);
+
+    await second.stop();
+    await first.stop();
+    await closeServer(target);
+  });
+
   it('generates a 32-byte hex secret', () => {
     expect(newTunnelSecret()).toMatch(/^[0-9a-f]{64}$/);
   });

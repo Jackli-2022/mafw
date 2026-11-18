@@ -37,7 +37,7 @@ import type { PushGateway } from '../mobile/push-gateway';
 import type { PairingService } from '../mobile/pairing';
 import type { RemoteAccessService } from '../mobile/remote-access';
 import type { RouteRegistry } from './registry';
-import { humanOnlyDenied, isHumanPrincipal, isLocalPrincipal } from '../core/auth';
+import { humanOnlyDenied, isHumanPrincipal, isLoopbackTransport } from '../core/auth';
 
 export interface DevicesMobileRouteDeps {
   pushGateway: () => PushGateway | undefined;
@@ -179,7 +179,7 @@ export function attachDevicesMobileRoutes(registry: RouteRegistry, deps: Devices
       }
       const ip = req.socket.remoteAddress || '';
       const result = deps.pairingService()!.generatePairingCode(ip, {
-        local: isLocalPrincipal((req as any).mafwPrincipal),
+        local: isLoopbackTransport(req),
       });
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(result));

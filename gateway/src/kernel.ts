@@ -29,7 +29,7 @@ import {
   type GatewayReleaseMetadata,
   type GatewayRuntimeIdentity,
 } from './release-info';
-import { isLoopbackAddr } from './core/auth';
+import { isLocalRequest } from './core/auth';
 import { loadOrCreateHumanToken, rotateHumanToken } from './core/human-token';
 import { registerLeadSessionRecord, rollbackRejectedLeadRegistration, type LeadRegistrationOutcome } from './core/session/internal-registration';
 import type { Services } from './types';
@@ -2350,7 +2350,7 @@ class MafwScheduler {
       },
       tickets: this.pluginWebTickets,
       httpRegistry: () => this.pluginHost?.getHttpRegistry(),
-      isLoopback: (req) => isLoopbackAddr(req.socket?.remoteAddress || ''),
+      isLoopback: (req) => isLocalRequest(req),
       defaultProjectDir: () => this.resolvedProjectDir(),
       // 复用 gateway 唯一的 broadcast 通道：把过滤 writer 注册成普通 SSE 客户端，
       // broadcast() 照常写帧，writer 只放行 plugin:<pkg>:* 并自行写响应。
@@ -5197,6 +5197,7 @@ class MafwScheduler {
       listenPort: Number.isFinite(configuredTerminatorPort) && configuredTerminatorPort > 0
         ? configuredTerminatorPort
         : 3001,
+      fallbackToEphemeral: true,
     });
     try {
       const terminatorPort = await this.tunnelTerminator.start();

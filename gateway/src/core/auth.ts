@@ -157,6 +157,31 @@ export function isLocalPrincipal(principal: Principal | undefined): boolean {
   return principal?.kind === 'local';
 }
 
+/**
+ * Route-level local gate. A tunneled request can be `human`, but it is never
+ * local: handlers must key privileged loopback surfaces off this helper, not
+ * `isLoopbackAddr`. Missing principal (unit tests) falls back to the socket.
+ */
+export function isLocalRequest(req: {
+  mafwPrincipal?: Principal;
+  socket?: { remoteAddress?: string };
+}): boolean {
+  const principal = req.mafwPrincipal;
+  if (principal) return isLocalPrincipal(principal) && principal.tunneled !== true;
+  return isLoopbackAddr(req.socket?.remoteAddress || '');
+}
+
+/**
+ * True when the request physically came from loopback and did not pass through
+ * the tunnel terminator. Human-token CLI calls qualify; relayed calls do not.
+ */
+export function isLoopbackTransport(req: {
+  mafwPrincipal?: Principal;
+  socket?: { remoteAddress?: string };
+}): boolean {
+  return isLoopbackAddr(req.socket?.remoteAddress || '') && req.mafwPrincipal?.tunneled !== true;
+}
+
 /** Stable 403 body for every human-only route (spec §4). */
 export function humanOnlyDenied(): {
   status: 403;

@@ -12,7 +12,7 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { config } from '../config';
 import { log } from '../core/utils/logger';
-import { isLoopbackAddr } from '../core/auth';
+import { isLocalRequest } from '../core/auth';
 import { streamSentences } from '../tts/sentence-adapter';
 import { handleTtsInterrupt } from './tts-interrupt';
 import { readRouteBody } from './cognition';
@@ -89,7 +89,7 @@ export function attachTtsRoutes(registry: RouteRegistry, deps: TtsRouteDeps): vo
   });
 
   registry.attachHandler('tts.speakStream', async (req, res) => {
-    if (!isLoopbackAddr(req.socket?.remoteAddress || '')) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
+    if (!isLocalRequest(req)) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
     const body = JSON.parse(await readRouteBody(req));
     const text = typeof body?.text === 'string' ? body.text : '';
     if (!text.trim()) { res.writeHead(400); res.end(JSON.stringify({ error: 'text is required' })); return; }
@@ -136,7 +136,7 @@ export function attachTtsRoutes(registry: RouteRegistry, deps: TtsRouteDeps): vo
   });
 
   registry.attachHandler('tts.interrupt', async (req, res) => {
-    if (!isLoopbackAddr(req.socket?.remoteAddress || '')) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
+    if (!isLocalRequest(req)) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
     await handleTtsInterrupt(req, res, { inflight: deps.inflight as any });
   });
 }

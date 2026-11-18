@@ -5,7 +5,7 @@
 import * as http from 'http';
 import { MAFW_TOOL_SPECS, executeWithToolFrames } from '../runtime/mafw-tools';
 import type { MafwToolRegistration } from '../runtime/contract';
-import { isLoopbackAddr } from '../core/auth';
+import { isLocalRequest } from '../core/auth';
 import type { RouteRegistry } from './registry';
 
 export interface ToolsExecuteDeps {
@@ -27,11 +27,11 @@ export interface ToolsRouteWiringDeps {
 
 export function attachToolsRoutes(registry: RouteRegistry, deps: ToolsRouteWiringDeps): void {
   registry.attachHandler('tools.list', async (req, res) => {
-    if (!isLoopbackAddr(req.socket?.remoteAddress || '')) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
+    if (!isLocalRequest(req)) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
     handleToolsList(res);
   });
   registry.attachHandler('tools.execute', async (req, res) => {
-    if (!isLoopbackAddr(req.socket?.remoteAddress || '')) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
+    if (!isLocalRequest(req)) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
     await handleToolsExecute(req, res, { buildFactory: deps.buildFactory, emitEvent: deps.emitEvent });
   });
 }

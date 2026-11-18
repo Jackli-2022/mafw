@@ -8,7 +8,7 @@
  * WS 升级不在此文件（index.ts 的 upgrade 路由按 path 分流）。
  */
 import * as http from 'http';
-import { isLoopbackAddr } from '../core/auth';
+import { isLocalRequest } from '../core/auth';
 import type { RuntimeAccess } from '../runtime/runtime-access';
 import {
   TerminalService,
@@ -22,8 +22,8 @@ export interface TerminalRouteDeps {
   service: TerminalService;
   /** canonical surface gate（terminal.pty）；缺省 null = 由 service 自行判定。 */
   access?: Pick<RuntimeAccess, 'can'> | null;
-  /** 测试注入；缺省 isLoopbackAddr。 */
-  isLoopback?: (addr: string) => boolean;
+  /** 测试注入；缺省 isLocalRequest。 */
+  isLoopback?: (req: import('http').IncomingMessage) => boolean;
 }
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -80,9 +80,8 @@ export async function handleTerminal(
   const sessionMatch = url.match(/^\/api\/terminal\/sessions\/([^/?#]+)(?:\?|$)/);
   if (!isSessions && !ticketMatch && !sessionMatch) return false;
 
-  const loopback = deps.isLoopback ?? isLoopbackAddr;
-  const remote = (req.socket as any)?.remoteAddress ?? '';
-  if (!loopback(remote)) {
+  const loopback = deps.isLoopback ?? isLocalRequest;
+  if (!loopback(req)) {
     json(res, 403, { error: 'terminal endpoints are loopback-only' });
     return true;
   }

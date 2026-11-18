@@ -7,6 +7,8 @@
 import {
   TUNNEL_HEADER,
   isLocalPrincipal,
+  isLocalRequest,
+  isLoopbackTransport,
   isRelayPrincipal,
   resolvePrincipal,
 } from '../../../src/core/auth';
@@ -74,5 +76,26 @@ describe('relay principal (M0)', () => {
       base,
     );
     expect(p).toEqual({ kind: 'anonymous', method: 'none' });
+  });
+
+  it('treats only a real local principal as local for route-level checks', () => {
+    expect(isLocalRequest({
+      mafwPrincipal: { kind: 'local', method: 'loopback' },
+      socket: { remoteAddress: '127.0.0.1' },
+    })).toBe(true);
+    expect(isLocalRequest({
+      mafwPrincipal: { kind: 'human', method: 'device-token', tunneled: true },
+      socket: { remoteAddress: '127.0.0.1' },
+    })).toBe(false);
+    expect(isLocalRequest({ socket: { remoteAddress: '127.0.0.1' } })).toBe(true);
+    expect(isLocalRequest({ socket: { remoteAddress: '203.0.113.9' } })).toBe(false);
+    expect(isLoopbackTransport({
+      mafwPrincipal: { kind: 'human', method: 'human-token' },
+      socket: { remoteAddress: '127.0.0.1' },
+    })).toBe(true);
+    expect(isLoopbackTransport({
+      mafwPrincipal: { kind: 'human', method: 'device-token', tunneled: true },
+      socket: { remoteAddress: '127.0.0.1' },
+    })).toBe(false);
   });
 });

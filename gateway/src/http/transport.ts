@@ -535,7 +535,14 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
     }
 
     // 健康检查
-    if (url === '/health' && req.method === 'GET') {
+    if (pathname === '/health' && req.method === 'GET') {
+      if (tunneled) {
+        // The tunnel URL is not authentication: keep the anonymous health
+        // probe minimal (no project paths / goal ids).
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ok' }));
+        return;
+      }
       res.writeHead(200);
       res.end(JSON.stringify({
         status: 'ok',
@@ -549,7 +556,7 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
     }
 
     // GET /health — standalone health endpoint (not proxied)
-    if (url === '/health') {
+    if (pathname === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: 'ok' }));
       return;
@@ -557,6 +564,14 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
 
     // Reverse proxy to the agent backend for non-MAFW routes —
     // target from the runtime contract (getBaseUrl), config 仅 bootstrap 兜底
+    // M0: a tunneled request that fell through every mobile route is not a
+    // mobile route. Never hand it to the native runtime (the proxy normalizes
+    // dot segments and injects serve credentials).
+    if (tunneled) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(errorBody('forbidden', API_ERROR_CODES.forbidden)));
+      return;
+    }
     const serveUrl = deps.proxyTarget();
     try {
       const proxyUrl = new URL(url || '/', serveUrl);

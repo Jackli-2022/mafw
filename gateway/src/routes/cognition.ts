@@ -81,7 +81,7 @@ export async function handleCognitionRules(deps: { res: ServerResponse; getRules
 // ─── Phase D1 Task 2: registry dispatch wiring ──────────────────────────────
 
 import type { IncomingMessage } from 'http';
-import { isLoopbackAddr } from '../core/auth';
+import { isLocalRequest } from '../core/auth';
 import { config } from '../config';
 import { validateRules } from '../core/cognition/rules';
 import type { RouteRegistry } from './registry';
@@ -138,17 +138,17 @@ export function attachCognitionRoutes(
   deps: CognitionRouteWiringDeps,
 ): void {
   registry.attachHandler('cognition.gate', async (req, res) => {
-    if (!isLoopbackAddr(req.socket?.remoteAddress || '')) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
+    if (!isLocalRequest(req)) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
     const body = await readRouteBody(req);
     await handleCognitionGate({ body: body ? JSON.parse(body) : null, gate: deps.gate(), res });
   });
   registry.attachHandler('cognition.rewrite', async (req, res) => {
-    if (!isLoopbackAddr(req.socket?.remoteAddress || '')) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
+    if (!isLocalRequest(req)) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
     const body = await readRouteBody(req);
     await handleCognitionRewrite({ body: body ? JSON.parse(body) : null, gate: deps.gate(), res });
   });
   registry.attachHandler('cognition.rules', async (_req, res) => {
-    if (!isLoopbackAddr(_req.socket?.remoteAddress || '')) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
+    if (!isLocalRequest(_req)) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
     // config is read per request — identical to the legacy branch (hot-reload parity).
     const raw = config.cognition?.rules;
     await handleCognitionRules({ res, getRules: () => validateRules(raw) });

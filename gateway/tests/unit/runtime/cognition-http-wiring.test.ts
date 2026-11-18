@@ -51,7 +51,7 @@ describe('kernel.ts cognition 接线', () => {
   it('HTTP 动词注册 + loopback 门（D1 Task 2 后在 routes/cognition.ts；D3 Task 6 attach 在 subsystems/api-routes.ts）', () => {
     expect(apiRoutesSrc).toMatch(/attachCognitionRoutes\(/);
     expect(cognitionRouteSrc).toMatch(/\/api\/cognition\/gate/);
-    expect(cognitionRouteSrc).toMatch(/isLoopbackAddr/);
+    expect(cognitionRouteSrc).toMatch(/isLocalRequest/);
   });
 });
 // desktop：TAIL_ACCOUNTED_PREFIXES 含 cognition_（终审 #1 修正：前缀匹配 cognition_gate 事件类型）

@@ -124,6 +124,42 @@ describe('transport relay principal (M0)', () => {
     expect(dispatch).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps anonymous tunneled health minimal', async () => {
+    const { deps } = makeDeps({ dispatchAuthorized: jest.fn(async () => false) });
+    const rec = await request(deps, fakeReq({
+      method: 'GET',
+      url: '/health',
+      headers: { [TUNNEL_HEADER]: SECRET },
+    }));
+
+    expect(rec.status).toBe(200);
+    expect(JSON.parse(rec.body)).toEqual({ status: 'ok' });
+  });
+
+  it('never proxies an unmatched tunneled route to the runtime', async () => {
+    const { deps, dispatch } = makeDeps();
+    const rec = await request(deps, fakeReq({
+      method: 'GET',
+      url: '/api/session/s1/message',
+      headers: { [TUNNEL_HEADER]: SECRET, authorization: 'Bearer dev_good' },
+    }));
+
+    expect(rec.status).toBe(403);
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it('rejects traversal paths before the allowlist', async () => {
+    const { deps, dispatch } = makeDeps();
+    const rec = await request(deps, fakeReq({
+      method: 'POST',
+      url: '/api/mobile/../../api/pty',
+      headers: { [TUNNEL_HEADER]: SECRET, authorization: 'Bearer dev_good' },
+    }));
+
+    expect(rec.status).toBe(403);
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
   it('allows a tunneled device token on the mobile surface', async () => {
     const { deps, dispatch } = makeDeps();
     const req = fakeReq({ headers: { [TUNNEL_HEADER]: SECRET, authorization: 'Bearer dev_good' } });

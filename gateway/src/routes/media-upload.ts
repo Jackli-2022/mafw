@@ -12,7 +12,7 @@
  * Spec: 2026-11-09-gateway-kernel-microkernel-design.md §5.2.
  */
 import type { IncomingMessage, ServerResponse } from 'http';
-import { isLoopbackAddr } from '../core/auth';
+import { isLocalRequest } from '../core/auth';
 import { config } from '../config';
 import { readRouteBody } from './cognition';
 import type { RouteRegistry } from './registry';
@@ -38,7 +38,7 @@ export interface MediaRouteDeps {
 
 export function attachMediaRoutes(registry: RouteRegistry, deps: MediaRouteDeps): void {
   registry.attachHandler('media.analyzeAudio', async (req, res) => {
-    if (!isLoopbackAddr(req.socket?.remoteAddress || '')) { forbidden(res); return; }
+    if (!isLocalRequest(req)) { forbidden(res); return; }
     try {
       const service = deps.getMediaService();
       if (!service) { json(res, 503, { error: 'MediaService not initialized' }); return; }
@@ -58,7 +58,7 @@ export function attachMediaRoutes(registry: RouteRegistry, deps: MediaRouteDeps)
   });
 
   registry.attachHandler('media.upload', async (req, res) => {
-    if (!isLoopbackAddr(req.socket?.remoteAddress || '')) { forbidden(res); return; }
+    if (!isLocalRequest(req)) { forbidden(res); return; }
     try {
       const agent = deps.getMediaAgent();
       if (!agent) { json(res, 503, { error: 'MediaAgent not initialized' }); return; }
@@ -95,7 +95,7 @@ export function attachMediaRoutes(registry: RouteRegistry, deps: MediaRouteDeps)
   });
 
   registry.attachHandler('media.createTaskApi', async (req, res) => {
-    if (!isLoopbackAddr(req.socket?.remoteAddress || '')) { forbidden(res); return; }
+    if (!isLocalRequest(req)) { forbidden(res); return; }
     try {
       const agent = deps.getMediaAgent();
       if (!agent) { json(res, 503, { error: 'MediaAgent not initialized' }); return; }
@@ -136,7 +136,7 @@ export function attachMediaRoutes(registry: RouteRegistry, deps: MediaRouteDeps)
 
   registry.attachHandler('media.uploadAndCreate', async (req, res) => {
     const t0 = Date.now();
-    if (!isLoopbackAddr(req.socket?.remoteAddress || '')) { forbidden(res); return; }
+    if (!isLocalRequest(req)) { forbidden(res); return; }
     try {
       const agent = deps.getMediaAgent();
       if (!agent) { json(res, 503, { error: 'MediaAgent not initialized' }); return; }
@@ -186,7 +186,7 @@ export function attachMediaRoutes(registry: RouteRegistry, deps: MediaRouteDeps)
 
   // GET /api/media/resolve-task/<taskId> — resolve taskId to artifactId (for history)
   registry.attachHandler('media.resolveTask', async (req, res, params: Record<string, string>) => {
-    if (!isLoopbackAddr(req.socket?.remoteAddress || '')) { forbidden(res); return; }
+    if (!isLocalRequest(req)) { forbidden(res); return; }
     try {
       const agent = deps.getMediaAgent();
       if (!agent) { json(res, 503, { error: 'MediaAgent not initialized' }); return; }

@@ -9,7 +9,7 @@
  * Spec: 2026-11-09-gateway-kernel-microkernel-design.md §5.2.
  */
 import type { IncomingMessage, ServerResponse } from 'http';
-import { isLoopbackAddr } from '../core/auth';
+import { isLocalRequest } from '../core/auth';
 import type { SessionKernels } from '../python/kernel-service';
 import { QuotaExceededError } from '../resources/quotas';
 import type { RouteRegistry } from './registry';
@@ -21,7 +21,7 @@ export interface PythonRouteDeps {
 
 export function attachPythonRoutes(registry: RouteRegistry, deps: PythonRouteDeps): void {
   registry.attachHandler('python.execute', async (req, res) => {
-    if (!isLoopbackAddr(req.socket?.remoteAddress || '')) { forbidden(res); return; }
+    if (!isLocalRequest(req)) { forbidden(res); return; }
     try {
       const kernels = serviceOr503(res, deps);
       if (!kernels) return;
@@ -55,7 +55,7 @@ export function attachPythonRoutes(registry: RouteRegistry, deps: PythonRouteDep
   });
 
   registry.attachHandler('python.restart', async (req, res) => {
-    if (!isLoopbackAddr(req.socket?.remoteAddress || '')) { forbidden(res); return; }
+    if (!isLocalRequest(req)) { forbidden(res); return; }
     try {
       const kernels = serviceOr503(res, deps);
       if (!kernels) return;
@@ -70,7 +70,7 @@ export function attachPythonRoutes(registry: RouteRegistry, deps: PythonRouteDep
   });
 
   registry.attachHandler('python.status', async (req, res) => {
-    if (!isLoopbackAddr(req.socket?.remoteAddress || '')) { forbidden(res); return; }
+    if (!isLocalRequest(req)) { forbidden(res); return; }
     try {
       const kernels = serviceOr503(res, deps);
       if (!kernels) return;

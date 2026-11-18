@@ -21,6 +21,8 @@ export interface TunnelTerminatorOptions {
   listenHost?: string;
   /** Default 3001; 0 picks an ephemeral port (tests). */
   listenPort?: number;
+  /** M0: if the requested port is busy, retry on an ephemeral port. */
+  fallbackToEphemeral?: boolean;
 }
 
 export interface TunnelTerminator {
@@ -128,7 +130,7 @@ export function createTunnelTerminator(opts: TunnelTerminatorOptions): TunnelTer
     async start(): Promise<number> {
       if (server && boundPort !== null) return boundPort;
 
-      await new Promise<void>((resolve, reject) => {
+      const startOn = (port: number): Promise<void> => new Promise<void>((resolve, reject) => {
         const next = http.createServer((req, res) => proxyRequest(req, res));
         next.on('upgrade', (req, socket, head) => proxyUpgrade(req, socket as net.Socket, head));
         next.on('connection', (socket) => {
@@ -139,7 +141,7 @@ export function createTunnelTerminator(opts: TunnelTerminatorOptions): TunnelTer
           try { next.close(); } catch { /* already closed */ }
           reject(err);
         });
-        next.listen(listenPort, listenHost, () => {
+        next.listen(port, listenHost, () => {
           next.removeAllListeners('error');
           next.on('error', () => { /* keep serving; errors are per-request */ });
           server = next;
@@ -147,6 +149,13 @@ export function createTunnelTerminator(opts: TunnelTerminatorOptions): TunnelTer
           resolve();
         });
       });
+
+      try {
+        await startOn(listenPort);
+      } catch (err: any) {
+        if (!opts.fallbackToEphemeral || err?.code !== 'EADDRINUSE' || listenPort === 0) throw err;
+        await startOn(0);
+      }
 
       return boundPort as number;
     },
