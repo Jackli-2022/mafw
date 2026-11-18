@@ -478,6 +478,8 @@ export function SessionTurn(
                       entries={transcriptEntries()}
                       working={working()}
                       showReasoning={showReasoningSummaries()}
+                      directory={data.directory}
+                      fallbackDurationMs={turnDurationMs()}
                       renderCard={(part: any) => {
                         const message = messageOfPart(part)
                         return message

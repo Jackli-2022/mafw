@@ -4,7 +4,7 @@
 // output; a tool/reasoning step after output starts a new segment.
 
 import type { MafwPart } from '@mafw/sdk'
-import { displayToolOf, TIMELINE_TOOLS } from './parts-rules'
+import { displayToolOf, HIDDEN_TOOLS } from './parts-rules'
 
 type TextPart = Extract<MafwPart, { type: 'text' }>
 type ReasoningPart = Extract<MafwPart, { type: 'reasoning' }>
@@ -16,12 +16,7 @@ export type ProcessStep =
 
 export type TurnEntry =
   | { type: 'segment'; key: string; process: ProcessStep[]; output: TextPart[] }
-  | { type: 'card'; key: string; part: ToolPart }
   | { type: 'data'; key: string; part: MafwPart }
-
-export function isTimelineTool(tool: string): boolean {
-  return TIMELINE_TOOLS.has(tool)
-}
 
 function isSynthetic(part: { synthetic?: boolean }): boolean {
   return part.synthetic === true
@@ -68,18 +63,17 @@ export function splitTurn(parts: MafwPart[], opts: { showReasoning: boolean }): 
 
     if (part.type === 'tool') {
       const tool = displayToolOf(part as ToolPart)
-      if (isTimelineTool(tool)) {
-        if (state.current?.output.length) flush()
-        ensureSegment(`seg:${part.id}`).process.push({
-          type: 'tool',
-          key: part.id,
-          part: part as ToolPart,
-          tool,
-        })
-      } else {
-        flush()
-        entries.push({ type: 'card', key: part.id, part: part as ToolPart })
-      }
+      if (HIDDEN_TOOLS.has(tool)) continue
+      // Every tool call — including edit/write/bash — belongs to the process
+      // drawer. Only an output boundary starts a new segment; nothing gets
+      // flushed out as a top-level card.
+      if (state.current?.output.length) flush()
+      ensureSegment(`seg:${part.id}`).process.push({
+        type: 'tool',
+        key: part.id,
+        part: part as ToolPart,
+        tool,
+      })
       continue
     }
 

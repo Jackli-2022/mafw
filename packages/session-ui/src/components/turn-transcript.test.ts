@@ -57,7 +57,7 @@ describe('splitTurn', () => {
     expect(segs[1].output[0].id).toBe('x2')
   })
 
-  test('flushes a segment around a write/action card', () => {
+  test('keeps write/action tools inside the process drawer', () => {
     const entries = splitTurn([
       tool('t1', 'read'),
       text('x1', 'before'),
@@ -65,9 +65,18 @@ describe('splitTurn', () => {
       tool('t2', 'grep'),
       text('x2', 'after'),
     ], { showReasoning: true })
-    expect(entries.map((entry) => entry.type)).toEqual(['segment', 'card', 'segment'])
-    const card = entries[1] as Extract<TurnEntry, { type: 'card' }>
-    expect(card.part.id).toBe('e1')
+    expect(entries.map((entry) => entry.type)).toEqual(['segment', 'segment'])
+    const [first, second] = segments(entries)
+    expect(first.process.map((step) => (step.type === 'tool' ? step.tool : 'thinking'))).toEqual(['read'])
+    expect(first.output.map((part) => part.id)).toEqual(['x1'])
+    expect(second.process.map((step) => (step.type === 'tool' ? step.tool : 'thinking'))).toEqual(['edit', 'grep'])
+    expect(second.output.map((part) => part.id)).toEqual(['x2'])
+  })
+
+  test('skips hidden tools (todowrite)', () => {
+    const entries = splitTurn([tool('hide', 'todowrite'), tool('t1', 'read')], { showReasoning: true })
+    const seg = segments(entries)[0]
+    expect(seg.process.map((step) => (step.type === 'tool' ? step.tool : 'thinking'))).toEqual(['read'])
   })
 
   test('treats data/file parts as top-level entries', () => {

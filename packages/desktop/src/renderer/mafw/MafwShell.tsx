@@ -1991,6 +1991,10 @@ export function MafwShell() {
 
   // Current rendering state for SessionTurn
   const currentSessionID = () => active()?.id || ""
+  const sessionDirectory = createMemo(() => {
+    const session = store.session.find((s: any) => s.id === currentSessionID())
+    return session?.directory ?? session?.location?.directory ?? "."
+  })
   createEffect(() => {
     const sid = currentSessionID()
     const directory = experienceDirectory()
@@ -4516,7 +4520,11 @@ export function MafwShell() {
       <DialogProvider>
         <MarkedProvider>
           <FileComponentProvider component={FileSSR}>
-            <DataProvider data={store} directory="." onNavigateToSession={(id) => void openSubagentSession(id)}>
+            <DataProvider
+              data={store}
+              directory={sessionDirectory()}
+              onNavigateToSession={(id) => void openSubagentSession(id)}
+            >
               <div class="mafw-shell" classList={{ maximized: winMaximized() }}>
       <MenuHost controller={menuController} />
       <PluginMenuWiring sessionID={activeSessionId()} />

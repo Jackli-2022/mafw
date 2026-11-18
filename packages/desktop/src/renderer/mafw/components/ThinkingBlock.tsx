@@ -60,7 +60,6 @@ export function ThinkingBlock(props: { part: any; message: any }) {
           onClick={() => setOpen(v => !v)}
           aria-expanded={open() ? "true" : "false"}
         >
-          <span class="mafw-thinking-glyph" classList={{ stream: streaming() }} aria-hidden="true">✻</span>
           <span class="mafw-thinking-label">{label()}</span>
           <span class="mafw-thinking-caret" aria-hidden="true">{open() ? "▾" : "▸"}</span>
         </ButtonV2>

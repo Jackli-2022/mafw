@@ -13,11 +13,18 @@ export interface ProcessTimelineProps {
   entries: TurnEntry[]
   working?: boolean
   showReasoning?: boolean
+  /** Project root for relative-path display. */
+  directory?: string
+  /** Historical fallback when part timestamps are missing (whole turn). */
+  fallbackDurationMs?: number
   renderCard: (part: any) => any
   renderData: (part: MafwPart) => any
   /** Render an output text part with the shell's normal text-part actions. */
   renderOutput?: (part: any) => any
 }
+
+/** Action tools keep their native diff/detail card inside the drawer. */
+const CARD_TOOLS = new Set(['edit', 'write', 'apply_patch'])
 
 function stateOf(part: any): string {
   return part?.state?.status ?? 'completed'
@@ -47,12 +54,13 @@ function outputText(part: any): string {
   return ''
 }
 
-function ToolRow(props: { step: Extract<ProcessStep, { type: 'tool' }> }) {
+function ToolRow(props: { step: Extract<ProcessStep, { type: 'tool' }>; directory?: string }) {
   const [open, setOpen] = createSignal(false)
   const info = createMemo(() => getToolInfo(
     props.step.tool,
     (props.step.part.state as any)?.input ?? {},
     (props.step.part.state as any)?.metadata ?? {},
+    props.directory,
   ))
   const running = createMemo(() => isRunning(props.step.part))
   const input = createMemo(() => {
@@ -67,7 +75,6 @@ function ToolRow(props: { step: Extract<ProcessStep, { type: 'tool' }> }) {
     <Collapsible open={open()} onOpenChange={setOpen} variant="ghost" class="mafw-process-tool">
       <Collapsible.Trigger>
         <div class="mafw-process-tool-row">
-          <span class="mafw-process-tool-icon"><Icon name={info().icon} size="small" /></span>
           <Show when={running()} fallback={<span class="mafw-process-tool-title">{info().title}</span>}>
             <TextShimmer text={info().title} class="mafw-process-tool-title" active />
           </Show>
@@ -75,6 +82,7 @@ function ToolRow(props: { step: Extract<ProcessStep, { type: 'tool' }> }) {
           <span classList={{ 'mafw-process-tool-status': true, error: stateOf(props.step.part) === 'error' }}>
             {statusIcon(props.step.part)}
           </span>
+          <Collapsible.Arrow />
         </div>
       </Collapsible.Trigger>
       <Collapsible.Content>
@@ -86,6 +94,34 @@ function ToolRow(props: { step: Extract<ProcessStep, { type: 'tool' }> }) {
         </div>
       </Collapsible.Content>
     </Collapsible>
+  )
+}
+
+/** Thinking collapsible: label `思考` matches the tool names; body is opt-in. */
+function ThinkingRow(props: { parts: Extract<ProcessStep, { type: 'thinking' }>['parts'] }) {
+  const [open, setOpen] = createSignal(false)
+  const text = createMemo(() => props.parts.map((part) => part.text ?? '').join('\n\n').trim())
+  const preview = createMemo(() => {
+    const first = text().split('\n').map((line) => line.trim()).find(Boolean) ?? ''
+    return first.length > 96 ? `${first.slice(0, 96)}…` : first
+  })
+  return (
+    <Show when={text()}>
+      <Collapsible open={open()} onOpenChange={setOpen} variant="ghost" class="mafw-process-think">
+        <Collapsible.Trigger>
+          <div class="mafw-process-think-row">
+            <span class="mafw-process-think-label">思考</span>
+            <span class="mafw-process-think-preview">{preview()}</span>
+            <Collapsible.Arrow />
+          </div>
+        </Collapsible.Trigger>
+        <Collapsible.Content>
+          <div class="mafw-process-think-body">
+            <Markdown text={text()} cacheKey={props.parts[0]?.id ?? 'thinking'} streaming={false} />
+          </div>
+        </Collapsible.Content>
+      </Collapsible>
+    </Show>
   )
 }
 
@@ -103,22 +139,29 @@ export function ProcessTimeline(props: ProcessTimelineProps) {
   const toggle = (key: string, open: boolean) => {
     setOverrides((prev) => ({ ...prev, [key]: open }))
   }
+  const fallbackDuration = () =>
+    props.entries.filter((entry) => entry.type === 'segment').length === 1
+      ? props.fallbackDurationMs
+      : undefined
 
   return (
     <div class="mafw-process-timeline">
       <For each={props.entries}>
         {(entry) => {
-          if (entry.type === 'card') return props.renderCard(entry.part)
           if (entry.type === 'data') return props.renderData(entry.part)
 
           const summary = createMemo(() => processSummary(entry))
+          const thinkingParts = createMemo(() =>
+            entry.process.flatMap((step) => (step.type === 'thinking' ? step.parts : [])))
+          const toolSteps = createMemo(() =>
+            entry.process.filter((step): step is Extract<ProcessStep, { type: 'tool' }> => step.type === 'tool'))
           const hasProcess = entry.process.length > 0
           const active = () => Boolean(props.working) && entry.key === lastKey()
           const title = () => {
             if (active()) return summary().thinking > 0 ? '正在思考' : '正在执行'
             if (summary().thinking > 0) {
-              const duration = formatDuration(summary().durationMs)
-              return duration ? `已思考（用时 ${duration}）` : '已思考'
+              const duration = formatDuration(summary().durationMs ?? fallbackDuration())
+              return duration ? `已思考 ${duration}` : '已思考'
             }
             return `已执行 ${summary().tools} 个步骤`
           }
@@ -141,31 +184,29 @@ export function ProcessTimeline(props: ProcessTimelineProps) {
                       <Show when={active()} fallback={<span class="mafw-process-seg-title">{title()}</span>}>
                         <TextShimmer text={title()} class="mafw-process-seg-title" active />
                       </Show>
-                      <Show when={summary().tools > 0}>
-                        <span class="mafw-process-seg-meta">· 工具 {summary().tools} 次</span>
-                      </Show>
                       <Collapsible.Arrow />
                     </div>
                   </Collapsible.Trigger>
                   <Collapsible.Content>
                     <div class="mafw-process-steps">
-                      <For each={entry.process}>
+                      <Show when={thinkingParts().length > 0}>
+                        <ThinkingRow parts={thinkingParts()} />
+                      </Show>
+                      <For each={toolSteps()}>
                         {(step) => (
-                          <div class="mafw-process-step">
-                            <span classList={{ 'mafw-process-dot': true, thinking: step.type === 'thinking' }} />
-                            <Show
-                              when={step.type === 'thinking'}
-                              fallback={<ToolRow step={step as Extract<ProcessStep, { type: 'tool' }>} />}
-                            >
-                              <div class="mafw-process-thinking">
-                                <Markdown
-                                  text={step.type === 'thinking' ? step.parts.map((part) => part.text).join('') : ''}
-                                  cacheKey={step.key}
-                                  streaming={active()}
-                                />
+                          <Show
+                            when={CARD_TOOLS.has(step.tool)}
+                            fallback={
+                              <div class="mafw-process-step">
+                                <span class="mafw-process-dot" />
+                                <ToolRow step={step} directory={props.directory} />
                               </div>
-                            </Show>
-                          </div>
+                            }
+                          >
+                            <div class="mafw-process-step-card">
+                              {props.renderCard(step.part)}
+                            </div>
+                          </Show>
                         )}
                       </For>
                     </div>

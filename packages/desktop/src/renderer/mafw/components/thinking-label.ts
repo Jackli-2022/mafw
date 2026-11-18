@@ -5,10 +5,10 @@ export function thinkingLabel(opts: {
   tickingSec?: number | null
 }): string {
   if (opts.streaming) {
-    return opts.tickingSec != null ? `思考中 ${opts.tickingSec}s` : "思考中…"
+    return opts.tickingSec != null ? `思考中 ${opts.tickingSec} 秒` : "思考中…"
   }
   if (opts.durationSec == null) return "已思考"
-  return `已思考 ${opts.durationSec}s`
+  return `已思考 ${opts.durationSec} 秒`
 }
 
 export function thinkingDurationSec(

@@ -33,7 +33,7 @@ import { Checkbox } from "@mafw/ui/checkbox"
 import { DiffChanges } from "@mafw/ui/diff-changes"
 import { Markdown } from "./markdown"
 import { ImagePreview } from "@mafw/ui/image-preview"
-import { getDirectory as _getDirectory, getFilename } from "../util/path"
+import { getDirectory as _getDirectory, getFilename, relativePath } from "../util/path"
 import { AttachmentCardV2 } from "../v2/components/attachment-card-v2"
 import { CommentCardV2 } from "../v2/components/comment-card-v2"
 import { checksum } from "../util/encode"
@@ -496,20 +496,22 @@ export function getToolInfo(
   tool: string,
   input: any = {},
   metadata: Record<string, unknown> | undefined = {},
+  directory?: string,
 ): ToolInfo {
   const i18n = useI18n()
-  switch (tool) {
+  const name = TOOL_NAME_ALIASES[tool] ?? tool
+  switch (name) {
     case "read":
       return {
         icon: "glasses",
         title: i18n.t("ui.tool.read"),
-        subtitle: readPathInput(input) ? getFilename(readPathInput(input)!) : undefined,
+        subtitle: readPathInput(input) ? relativePath(readPathInput(input)!, directory) || getFilename(readPathInput(input)!) : undefined,
       }
     case "list":
       return {
         icon: "bullet-list",
         title: i18n.t("ui.tool.list"),
-        subtitle: input.path ? getFilename(input.path) : undefined,
+        subtitle: input.path ? relativePath(input.path, directory) || getDirectory(input.path) : undefined,
       }
     case "glob":
       return {
@@ -554,13 +556,13 @@ export function getToolInfo(
       return {
         icon: "code-lines",
         title: i18n.t("ui.messagePart.title.edit"),
-        subtitle: readPathInput(input) ? getFilename(readPathInput(input)!) : undefined,
+        subtitle: readPathInput(input) ? relativePath(readPathInput(input)!, directory) || getFilename(readPathInput(input)!) : undefined,
       }
     case "write":
       return {
         icon: "code-lines",
         title: i18n.t("ui.messagePart.title.write"),
-        subtitle: readPathInput(input) ? getFilename(readPathInput(input)!) : undefined,
+        subtitle: readPathInput(input) ? relativePath(readPathInput(input)!, directory) || getFilename(readPathInput(input)!) : undefined,
       }
     case "apply_patch":
       return {
@@ -1936,7 +1938,7 @@ ToolRegistry.register({
           icon="glasses"
           trigger={{
             title: i18n.t("ui.tool.read"),
-            subtitle: subtitlePath ? getFilename(subtitlePath) : "",
+            subtitle: subtitlePath ? relativePath(subtitlePath, data.directory) || getFilename(subtitlePath) : "",
             args,
           }}
         />
@@ -2302,12 +2304,13 @@ ToolRegistry.register({
   render(props) {
     const i18n = useI18n()
     const fileComponent = useFileComponent()
+    const data = useData()
     const filePath = createMemo(() => readPathInput(props.input))
     const diagnostics = createMemo(() => getDiagnostics(props.metadata.diagnostics, filePath()))
     const diffs = createMemo(() => canonicalMetadataFiles(props.metadata))
     const primary = createMemo(() => diffs()[0])
     const path = createMemo(() => primary()?.file || filePath() || "")
-    const filename = () => getFilename(path() ?? "")
+    const filename = () => relativePath(path() ?? "", data.directory) || getFilename(path() ?? "")
     const pending = () => props.status === "pending" || props.status === "running"
     const diffSource = createMemo(
       () => {
@@ -2411,10 +2414,11 @@ ToolRegistry.register({
   render(props) {
     const i18n = useI18n()
     const fileComponent = useFileComponent()
+    const data = useData()
     const filePath = createMemo(() => readPathInput(props.input))
     const diagnostics = createMemo(() => getDiagnostics(props.metadata.diagnostics, filePath()))
     const path = createMemo(() => filePath() || canonicalMetadataFiles(props.metadata)[0]?.file || "")
-    const filename = () => getFilename(path() ?? "")
+    const filename = () => relativePath(path() ?? "", data.directory) || getFilename(path() ?? "")
     const pending = () => props.status === "pending" || props.status === "running"
     return (
       <div data-component="write-tool" data-file-path={filePath()}>

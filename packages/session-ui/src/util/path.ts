@@ -5,6 +5,17 @@ export function getFilename(path: string | undefined) {
   return parts[parts.length - 1] ?? ""
 }
 
+/** Project-relative display path (always forward slashes). */
+export function relativePath(path: string | undefined, directory: string | undefined): string {
+  if (!path) return ""
+  const full = path.replace(/\\/g, "/")
+  const base = (directory ?? "").replace(/\\/g, "/").replace(/\/+$/, "")
+  if (!base) return full
+  if (full === base) return ""
+  if (full.startsWith(base + "/")) return full.slice(base.length + 1)
+  return full
+}
+
 export function getDirectory(path: string | undefined) {
   if (!path) return ""
   const trimmed = path.replace(/[/\\]+$/, "")

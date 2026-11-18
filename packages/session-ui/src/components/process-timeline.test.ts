@@ -15,10 +15,22 @@ describe('ProcessTimeline', () => {
     expect(src).toContain('Markdown')
   })
 
-  test('uses a clean check icon instead of a glyph-in-circle', () => {
+  test('uses the naked thinking duration and a collapsed 思考 row', () => {
     const src = read('./process-timeline.tsx')
-    expect(src).toContain('<Icon name="check"')
-    expect(src).toContain('mafw-process-seg-pulse')
-    expect(src).not.toContain("active() ? '✦'")
+    expect(src).toContain('已思考 ${duration}')
+    expect(src).not.toContain('已思考（用时')
+    expect(src).toContain('mafw-process-think-label')
+    expect(src).toContain('>思考</span>')
+  })
+
+  test('tools are borderless rows without a leading icon', () => {
+    const src = read('./process-timeline.tsx')
+    expect(src).not.toContain('mafw-process-tool-icon')
+    expect(src).toContain('mafw-process-step-card')
+    expect(src).toContain('Collapsible.Arrow')
+    const css = fs.readFileSync(new URL('./process-timeline.css', import.meta.url), 'utf-8')
+    expect(css).toContain('.mafw-process-tool-row')
+    expect(css).toContain('border: 0')
+    expect(css).toContain('.mafw-process-think-label')
   })
 })
