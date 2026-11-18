@@ -15,6 +15,8 @@
  */
 import { HarmonicIndexManager } from '../../../../src/core/memory/harmonic-index';
 import { HarmonicUnit } from '../../../../src/core/memory/harmonic-types';
+import { computeRecallFokZone } from '../../../../src/recall/recall-context';
+import { classifyFok, computeFokFeatures } from '../../../../src/recall/fok-gate';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -243,5 +245,152 @@ describe('BM25 postings (no full-corpus scan per query token)', () => {
     const second = (index as any).postingsCache?.byTerm;
     expect(first).toBeTruthy();
     expect(second).toBe(first);
+  });
+});
+
+/**
+ * The boundary route calls `bm25RawScores(query, 10)` a second time for the same
+ * query after `searchRecallMemories` already scored it (FOK gate). Raw BM25 is
+ * deterministic while the index text/membership is unchanged, so the second
+ * pass must reuse it — measured 43.6ms p50 per turn on the live 16.8k corpus,
+ * of which ~24ms is the idf/postings scoring loop that is safe to skip.
+ *
+ * Oracles are structural (postings consulted or not) or exact value parity,
+ * never wall-clock.
+ */
+describe('BM25 raw-score reuse for the same query (FOK pass)', () => {
+  const corpus: Array<[string, string[]]> = [
+    ['shared topic alpha', ['one']],
+    ['shared topic beta', ['two']],
+    ['shared topic gamma with a much longer tail', ['three']],
+    ['unrelated cooking notes', ['kitchen']],
+  ];
+
+  function seeded(): HarmonicIndexManager {
+    const index = build(corpus.map(([a, c], i) => unit(`d${i}`, a, c)));
+    index.bm25RawScores('warmup', 5); // build docs + postings once
+    return index;
+  }
+
+  function naiveScores(index: HarmonicIndexManager, query: string, topK: number): number[] {
+    const tokenize = (text: string) => (index as any).tokenizeBM25(text) as string[];
+    const docs = (index.getIndex().entries as any[]).map(e => ({ id: e.id, text: searchableText(e) }));
+    return naiveBm25(tokenize, docs, query)
+      .map(r => r.raw)
+      .sort((a, b) => b - a)
+      .slice(0, topK);
+  }
+
+  test('a repeated same-query call does not re-score (postings not consulted)', () => {
+    const index = seeded();
+    const spy = jest.spyOn(index as any, 'postingsIndex');
+    index.bm25RawScores('shared topic', 10);
+    expect(spy).toHaveBeenCalledTimes(1); // first (cold) call still scores
+    spy.mockClear();
+    index.bm25RawScores('shared topic', 10);
+    expect(spy).not.toHaveBeenCalled(); // RED today: scores the corpus again
+  });
+
+  test('topK is a slice of the same deterministic scores (1 / 3 / 10 / 20 agree)', () => {
+    const index = seeded();
+    index.bm25RawScores('shared topic', 10); // warm the reuse entry
+    const spy = jest.spyOn(index as any, 'postingsIndex');
+    const full = index.bm25RawScores('shared topic', 20);
+    expect(index.bm25RawScores('shared topic', 10)).toEqual(full.slice(0, 10));
+    expect(index.bm25RawScores('shared topic', 3)).toEqual(full.slice(0, 3));
+    expect(index.bm25RawScores('shared topic', 1)).toEqual(full.slice(0, 1));
+    expect(spy).not.toHaveBeenCalled();
+    expect(full).toEqual(naiveScores(index, 'shared topic', 20));
+  });
+
+  test('a different query is scored independently (no cross-query contamination)', () => {
+    const index = seeded();
+    const shared = index.bm25RawScores('shared topic', 10); // first scoring of this query
+    const spy = jest.spyOn(index as any, 'postingsIndex');
+    index.bm25RawScores('cooking notes', 10); // different query → must score
+    expect(spy).toHaveBeenCalledTimes(1);
+    spy.mockClear();
+    expect(index.bm25RawScores('cooking notes', 10)).toEqual(naiveScores(index, 'cooking notes', 10));
+    expect(spy).not.toHaveBeenCalled(); // its own reuse entry
+    expect(index.bm25RawScores('shared topic', 10)).toEqual(shared);
+  });
+
+  test('addEntry invalidates the reused scores (df/N move)', () => {
+    const index = seeded();
+    const before = index.bm25RawScores('shared topic', 10);
+    index.addEntry(unit('d5', 'shared topic delta'), 'semantic', { save: false });
+    const after = index.bm25RawScores('shared topic', 10);
+    expect(after.length).toBe(before.length + 1);
+    expect(after).toEqual(naiveScores(index, 'shared topic', 10));
+    expect(after).not.toEqual(before);
+  });
+
+  test('removeEntry invalidates the reused scores (df/N move)', () => {
+    const index = seeded();
+    index.bm25RawScores('shared topic', 10);
+    index.removeEntry('d0');
+    const after = index.bm25RawScores('shared topic', 10);
+    expect(after.length).toBe(2);
+    expect(after).toEqual(naiveScores(index, 'shared topic', 10));
+  });
+
+  test('in-place text mutation invalidates even when only bm25RawScores is called', () => {
+    const index = seeded();
+    const warm = index.bm25RawScores('shared topic', 10);
+    expect(warm.length).toBe(3);
+    const entry = index.getIndex().entries.find((e: any) => e.id === 'd0')!;
+    entry.primary_abstraction = 'rewired_quokka unrelated'; // no addEntry/removeEntry
+    const after = index.bm25RawScores('shared topic', 10);
+    expect(after.length).toBe(2);
+    expect(after).toEqual(naiveScores(index, 'shared topic', 10));
+  });
+
+  test('duplicate ids keep one raw value per physical entry and stay reusable', () => {
+    // Identical text: legacy duplicate rows (same unit written twice) — the
+    // id-keyed token cache does not thrash, so reuse must engage. Differing-text
+    // duplicates are covered by the parity test in the postings suite above.
+    const rawEntries = [
+      { id: 'dup', type: 'semantic', primary_abstraction: 'shared topic alpha', cue_anchors: ['one'], energy: 1, salience: 1 },
+      { id: 'dup', type: 'semantic', primary_abstraction: 'shared topic alpha', cue_anchors: ['one'], energy: 1, salience: 1 },
+      { id: 'other', type: 'semantic', primary_abstraction: 'cooking notes', cue_anchors: ['three'], energy: 1, salience: 1 },
+    ];
+    const index = buildFromFile(rawEntries);
+    const first = index.bm25RawScores('shared topic', 10);
+    expect(first.length).toBe(2); // one value per PHYSICAL entry, not one per id
+    expect(first[0]).toBeCloseTo(first[1], 12);
+    const spy = jest.spyOn(index as any, 'postingsIndex');
+    const second = index.bm25RawScores('shared topic', 10);
+    expect(second).toEqual(first);
+    expect(spy).not.toHaveBeenCalled();
+    expect(second).toEqual(naiveScores(index, 'shared topic', 10));
+  });
+
+  test('callers cannot poison the reused scores or the raw rows', () => {
+    const index = seeded();
+    const expected = index.bm25RawScores('shared topic', 10);
+    const rowsExpected = ((index as any).bm25RawScored('shared topic') as any[]).map(r => ({ id: r.entry.id, raw: r.raw }));
+
+    const scores = index.bm25RawScores('shared topic', 10);
+    scores[0] = 9999;
+    scores.reverse();
+    const rows = (index as any).bm25RawScored('shared topic') as any[];
+    rows[0].raw = -1;
+    rows.reverse();
+    rows.length = 0;
+
+    expect(index.bm25RawScores('shared topic', 10)).toEqual(expected);
+    expect(((index as any).bm25RawScored('shared topic') as any[]).map(r => ({ id: r.entry.id, raw: r.raw }))).toEqual(rowsExpected);
+  });
+
+  test('FOK zone parity: memoized and fresh scoring classify identically', () => {
+    const cfg = { enabled: true, low: 1.2, high: 1.35 };
+    const index = seeded();
+    const expectedTop = naiveScores(index, 'shared topic', 10);
+    const expectedZone = classifyFok(computeFokFeatures(expectedTop), cfg);
+
+    expect(computeRecallFokZone(index, 'shared topic', cfg, 10)).toBe(expectedZone);
+    // Second call is served from the reuse path — same zone, same features.
+    expect(computeRecallFokZone(index, 'shared topic', cfg, 10)).toBe(expectedZone);
+    expect(index.bm25RawScores('shared topic', 10)).toEqual(expectedTop);
   });
 });
