@@ -56,8 +56,9 @@ Runtime Plugin Commands:
 Plugin Package Commands:
   plugin <check|init|schema>   package standard v1 (NOT the same as plugin-check)
   plugin check <path> [--json] [--strict]
-                     In-process package check (no gateway, no token): declared-vs-registered
-                     inventory + paste-ready install command. --strict = warnings are errors.
+                     Package check (no gateway, no token): declared-vs-registered inventory +
+                     paste-ready install command. Dry-run in this process for "trusted"; for
+                     "untrusted" in a permission-confined worker. --strict = warnings are errors.
   plugin init <name> [--dir <parent>] [--force] [--json]
                      Scaffold a package that already passes "plugin check".
   plugin schema [--json]
@@ -270,8 +271,9 @@ async function pluginStandardCommand(args) {
     process.exitCode = 1;
     return;
   }
-  // In-process by design: `plugin check` must work with the gateway stopped and
-  // must never read the human token or reach the network.
+  // Gateway-free by design: `plugin check` must work with the gateway stopped and
+  // must never read the human token or reach the network. `trusted` packages are
+  // dry-run in this process; `untrusted` ones in a permission-confined worker.
   process.exitCode = await standard.runPluginStandardCommand(args, {
     check: local.createLocalCheck(),
     print: (text) => console.log(text),

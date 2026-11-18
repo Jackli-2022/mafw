@@ -20,8 +20,10 @@
  * invocation, but keeping the factory lazy makes repeated checks cheap and lets
  * tests exercise it if needed). `checkPackage` disposes its own bag — including
  * the worker's `stop()` — so a worker never outlives a completed check. The
- * `exit` hook below is the last line of defence for a check that is interrupted
- * (Ctrl+C / uncaught error) before that bag is reached.
+ * `exit` hook below is a best-effort last resort for a check that is interrupted
+ * before that bag is reached: it only runs on the `exit` event (a SIGKILLed
+ * CLI runs no handler at all) and it kills the worker's live child handle with
+ * SIGKILL, not its reported `health()`.
  */
 import * as fs from 'fs';
 import * as os from 'os';
@@ -33,40 +35,81 @@ import { WorkerHost } from '../plugins/worker/worker-host';
 import { permissionFlagFor } from '../plugins/worker/node-flags';
 
 /**
+ * The live child surface the exit hook needs. A real `ChildProcess` satisfies it
+ * structurally; `exitCode` / `signalCode` are the OS truth about liveness.
+ */
+export interface WorkerChild {
+  pid?: number;
+  exitCode: number | null;
+  signalCode: NodeJS.Signals | null;
+  kill(signal?: NodeJS.Signals | number): boolean;
+}
+
+/**
  * The part of `WorkerHost` the exit hook needs. Structural on purpose: tests
  * assert the kill rules with a fake instead of spawning a process.
+ *
+ * `'starting'` is part of the union because the host maps it to `'stopped'`:
+ * during the ready handshake (`require`d, `activate()` awaited, child already
+ * forked) `health()` says `'stopped'` while a pid is alive. A type that cannot
+ * express that state lets a `health()`-based rule look correct.
  */
 export interface LiveWorker {
-  health(): 'healthy' | 'failed' | 'stopped';
+  health(): 'starting' | 'healthy' | 'failed' | 'stopped';
+  /** The host's own pid view (what tests assert on); never the kill source. */
   getPid(): number | undefined;
+  /** Live child handle; hosts that expose only a pid have nothing to kill. */
+  getChild?(): WorkerChild | undefined;
 }
 
 export interface WorkerTracker {
   /** Registers one worker and returns it unchanged (factory-friendly). */
   track<T extends LiveWorker>(worker: T): T;
   /**
-   * Synchronously kills every worker that has not reported `stopped`.
+   * Synchronously kills every worker that still owns a live child handle.
    *
-   * Safe to call from a `process.on('exit')` callback: it only sends signals and
-   * never awaits (the worker's own `stop()` is async and would be cut off by the
-   * exiting process). `kill` is injectable so the rule is testable without a
-   * real child.
+   * Safe to call from a `process.on('exit')` callback: it only signals and never
+   * awaits (the worker's own `stop()` is async and would be cut off by the
+   * exiting process). The signal is SIGKILL because a single SIGTERM can be
+   * swallowed by package code (`process.on('SIGTERM', () => {})`). Entries whose
+   * worker has no live child and reports `stopped` are dropped. `kill` is
+   * injectable so the rule is testable without a real child.
    */
   killRunning(): void;
+}
+
+/**
+ * The worker's live child handle, or `undefined` when it owns none.
+ *
+ * The kill rule is the handle, never `health()` and never a bare pid:
+ * - during the ready handshake the host reports `stopped` with a live child;
+ * - after a crash the host may keep the reaped handle until `stop()`, so the pid
+ *   may already be recycled during the restart backoff;
+ * - `child.kill()` on an exited child is a no-op, while `process.kill(pid)` is
+ *   not. `exitCode` / `signalCode` make the liveness check explicit.
+ *
+ * `getChild()` is optional on the structural type: a host that exposes only a
+ * pid has no handle this hook can safely signal, so it contributes nothing.
+ */
+function liveChild(worker: LiveWorker): WorkerChild | undefined {
+  const child = worker.getChild?.();
+  if (!child) return undefined;
+  if (child.exitCode !== null || child.signalCode !== null) return undefined;
+  return child;
 }
 
 /**
  * Ledger of the workers this CLI process started.
  *
  * A completed check needs none of this (its bag calls `worker.stop()`), but a
- * check interrupted between `fork()` and bag disposal — a hung `activate()`,
- * Ctrl+C, an uncaught error — would otherwise leave the child running until the
- * OS reaps it. `process.kill(pid)` is the only synchronous teardown available;
- * a SIGKILLed / TerminateProcess-ed CLI still cannot run any handler, which is
- * the same residual gap the gateway's subprocess ledger has.
+ * check interrupted between `fork()` and bag disposal — a hung `activate()` or
+ * an abrupt exit — would otherwise leave the child running until the OS reaps
+ * it. Nothing per child is retained here: the handle is read from the worker at
+ * kill time and its own exit state decides, so a crashed-and-reaped worker is
+ * skipped without needing a "forget" call.
  */
 export function createWorkerTracker(
-  kill: (pid: number) => void = (pid) => { process.kill(pid); },
+  kill: (child: WorkerChild) => void = (child) => { child.kill('SIGKILL'); },
 ): WorkerTracker {
   const workers: LiveWorker[] = [];
   return {
@@ -76,14 +119,19 @@ export function createWorkerTracker(
     },
     killRunning: () => {
       for (const worker of workers) {
-        // `stopped` is only set once `stop()` finished (child gone); `failed`
-        // and `starting` may still own a live child, so they are not trusted.
-        if (worker.health() === 'stopped') continue;
-        const pid = worker.getPid();
-        if (typeof pid !== 'number' || pid <= 0) continue;
+        const child = liveChild(worker);
+        if (!child) continue;
         try {
-          kill(pid);
+          kill(child);
         } catch { /* already gone: an exiting CLI must not throw */ }
+      }
+      // Drop only entries the host is done with. A `failed` / `starting` worker
+      // may re-fork during its backoff, and that restarted child must stay
+      // covered by this hook.
+      for (let index = workers.length - 1; index >= 0; index -= 1) {
+        if (!liveChild(workers[index]) && workers[index].health() === 'stopped') {
+          workers.splice(index, 1);
+        }
       }
     },
   };

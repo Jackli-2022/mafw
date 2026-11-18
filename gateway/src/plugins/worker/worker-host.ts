@@ -87,8 +87,22 @@ export class WorkerHost {
     this.ledgerId = `plugin:${options.name}`;
   }
 
+  /**
+   * The live child handle, or `undefined` when there is none to tear down.
+   *
+   * A crashed child keeps its handle until `stop()`; a reaped pid may already
+   * belong to another process, so only a child that has not exited is returned.
+   * This is the handle the process `exit` hook kills: `child.kill()` on an
+   * exited child is a no-op, while `process.kill(pid)` is not.
+   */
+  getChild(): ChildProcess | undefined {
+    const child = this.child;
+    if (!child || child.exitCode !== null || child.signalCode !== null) return undefined;
+    return child;
+  }
+
   getPid(): number | undefined {
-    return this.child?.pid;
+    return this.getChild()?.pid;
   }
 
   getRestarts(): number {

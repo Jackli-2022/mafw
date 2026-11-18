@@ -19,9 +19,10 @@ import {
   createLocalCheck,
   createWorkerTracker,
   type LiveWorker,
+  type WorkerChild,
 } from '../../../src/cli/plugin-check-local';
 import { permissionFlagFor } from '../../../src/plugins/worker/node-flags';
-import type { WorkerHost } from '../../../src/plugins/worker/worker-host';
+import { WorkerHost } from '../../../src/plugins/worker/worker-host';
 
 // One check = one `fork()` + ready handshake; above the 5 s default on a cold
 // Windows filesystem, so give the real-worker cases room without slowing them.
@@ -111,8 +112,50 @@ function watchPids(workers: WorkerHost[]): {
   return { seen, stop: () => clearInterval(timer) };
 }
 
-function fake(health: 'healthy' | 'failed' | 'stopped', pid?: number): LiveWorker {
-  return { health: () => health, getPid: () => pid };
+/** Polls until `ready()` is true; the worker handshake and the kill are async. */
+async function waitUntil(ready: () => boolean, what: string, timeoutMs = 5000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (ready()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`timed out waiting for ${what}`);
+}
+
+interface FakeChild extends WorkerChild {
+  signals: Array<string | number | undefined>;
+}
+
+/** A stand-in for the `ChildProcess` handle a tracked worker owns. */
+function fakeChild(
+  pid: number,
+  exit: { code?: number; signal?: NodeJS.Signals } = {},
+): FakeChild {
+  const signals: Array<string | number | undefined> = [];
+  return {
+    pid,
+    exitCode: exit.code ?? null,
+    signalCode: exit.signal ?? null,
+    signals,
+    kill(signal) {
+      signals.push(signal);
+      return true;
+    },
+  };
+}
+
+/**
+ * A worker whose `health()` is fixed and whose child handle is optional.
+ *
+ * `'starting'` is representable on purpose: the real host maps its `starting`
+ * state to `'stopped'`, so a fake that cannot say `'starting'` would green-light
+ * the very bug these cases exist to pin.
+ */
+function fake(
+  health: 'starting' | 'healthy' | 'failed' | 'stopped',
+  child?: FakeChild,
+): LiveWorker {
+  return { health: () => health, getPid: () => child?.pid, getChild: () => child };
 }
 
 describe('mafw plugin check — untrusted worker path', () => {
@@ -233,26 +276,100 @@ module.exports = {
 
 /**
  * The `process.once('exit')` hook is the only teardown for a check interrupted
- * before its bag is disposed (Ctrl+C inside a hung `activate()`, an uncaught
- * error). It cannot await `WorkerHost.stop()`, so it kills by pid — these cases
- * pin "which workers count as possibly alive" without spawning one.
+ * before its bag is disposed. It cannot await `WorkerHost.stop()`, so it kills
+ * the live child handle itself — these cases pin "which workers count as
+ * possibly alive" without spawning one, and the last case pins the real thing.
  */
 describe('createWorkerTracker', () => {
-  it('kills only the workers that may still own a child', () => {
-    const killed: number[] = [];
-    const tracker = createWorkerTracker((pid) => { killed.push(pid); });
-    tracker.track(fake('healthy', 11));
-    tracker.track(fake('failed', 12));   // crashed, child may still be exiting
-    tracker.track(fake('stopped', 13));  // stop() finished: nothing to kill
-    tracker.track(fake('healthy'));      // never forked
-    tracker.track(fake('healthy', 0));   // defensive: no pid, no signal
+  it('kills every worker that still owns a live child, whatever health() says', () => {
+    const killed: WorkerChild[] = [];
+    const tracker = createWorkerTracker((child) => { killed.push(child); });
+    // The hung ready handshake: the real host is in `starting` (live pid) while
+    // `health()` reports `stopped` — the state that made the old rule a no-op.
+    tracker.track(fake('starting', fakeChild(21)));
+    tracker.track(fake('healthy', fakeChild(11)));
+    tracker.track(fake('failed', fakeChild(12)));   // crashed, exit not observed yet
+    // Crashed and reaped: the host keeps the handle until `stop()`, but the OS
+    // truth is in `exitCode` / `signalCode`, so the restart backoff is skipped.
+    tracker.track(fake('failed', fakeChild(13, { code: 0 })));
+    tracker.track(fake('failed', fakeChild(14, { signal: 'SIGKILL' })));
+    tracker.track(fake('stopped'));                 // stop() cleared the handle
+    tracker.track(fake('healthy'));                 // never forked
     tracker.killRunning();
-    expect(killed).toEqual([11, 12]);
+    expect(killed.map((child) => child.pid)).toEqual([21, 11, 12]);
+  });
+
+  it('sends SIGKILL, not SIGTERM (package code may ignore SIGTERM)', () => {
+    const child = fakeChild(11);
+    const tracker = createWorkerTracker();
+    tracker.track(fake('starting', child));
+    tracker.killRunning();
+    expect(child.signals).toEqual(['SIGKILL']);
   });
 
   it('never throws when the child is already gone', () => {
     const tracker = createWorkerTracker(() => { throw new Error('ESRCH'); });
-    tracker.track(fake('healthy', 11));
+    tracker.track(fake('starting', fakeChild(11)));
     expect(() => tracker.killRunning()).not.toThrow();
+  });
+
+  itWorker('kills a real worker whose ready handshake never resolves', async () => {
+    const base = tempDir('mafw-check-hung-');
+    const root = path.join(base, 'hung');
+    fs.mkdirSync(root, { recursive: true });
+    fs.writeFileSync(path.join(root, 'index.js'), `
+module.exports = {
+  name: 'hung',
+  // The ready handshake awaits activate(): this never resolves, so the child
+  // stays in \`starting\` with a live pid while health() reports \`stopped\`.
+  activate() { return new Promise(() => {}); },
+};
+`);
+    const worker = new WorkerHost({
+      name: 'hung',
+      packageDir: root,
+      entryFile: path.join(root, 'index.js'),
+      manifest: {
+        name: 'hung',
+        main: 'index.js',
+        apiVersion: 2,
+        kind: 'untrusted',
+        permissions: ['actions'],
+        legacy: false,
+      },
+      // Keep the post-crash backoff out of the assertion window: the point here
+      // is the kill, and `stop()` in `finally` is what cancels this timer.
+      backoffMs: [60_000],
+      onEmit: () => {},
+      getConfig: () => ({}),
+      updateConfig: () => {},
+      logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+    });
+    const tracker = createWorkerTracker();
+    tracker.track(worker);
+    const starting = worker.start();       // deliberately not awaited
+    starting.catch(() => { /* the SIGKILL rejects the handshake */ });
+    try {
+      await waitUntil(() => typeof worker.getPid() === 'number', 'worker pid');
+      const pid = worker.getPid()!;
+
+      // The predicate that used to skip the kill: `health()` says stopped while
+      // the forked child is provably alive.
+      expect(worker.health()).toBe('stopped');
+      expect(isAlive(pid)).toBe(true);
+
+      tracker.killRunning();
+
+      await waitUntil(() => !isAlive(pid), 'worker exit');
+      expect(isAlive(pid)).toBe(false);
+      // The host reports only a *live* child: the reaped handle is not reported
+      // (and therefore cannot be signalled by a later exit hook either).
+      await waitUntil(() => worker.getPid() === undefined, 'reaped handle');
+      expect(worker.getPid()).toBeUndefined();
+    } finally {
+      await worker.stop('test');           // cancels the backoff scheduled above
+      await starting.catch(() => { /* already asserted through the pid */ });
+      fs.rmSync(base, { recursive: true, force: true });
+    }
   });
 });

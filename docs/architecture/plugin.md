@@ -215,6 +215,8 @@ pm run drill:plugin-trust\ 固化。
 - `gateway/src/cli/plugin-check-local.ts` 现在给 `PluginHost` 传 `workerAvailable: () => permissionFlagFor(process.execPath) !== null` 与 `workerHostFactory`（镜像 `boot.ts`，去掉 kernel / safety / persistence）：`check` 对 `untrusted` 包走**和网关同一条 worker 路径、同一套 Node 权限旗标**，没有弱化（无 in-process fallback）也没有加强（无额外旗标）。
 - `untrusted` 仍是 manifest 属性而非 CLI 选项：没有 `--allow-worker`，worker 检查始终开启；本机 Node 无权限模型时唯一结果是 `worker_unavailable`（`evaluated: false`）。
 - CLI 侧没有持久化插件配置：worker 的 `config.get()` 返回 `{}`，`config.update(patch)` 抛 `config.update is not available in this host`。
-- 收尾：worker 由 candidate bag 的 `worker.stop('dispose')` 关闭（`checkPackage` 的 `finally` 必然 dispose 该 bag）；进程另注册 `exit` 钩子按 pid 同步兜底，覆盖 Ctrl+C / 未捕获异常在 bag 之前打断 check 的路径（SIGKILL / TerminateProcess 仍无法处理，与网关 subprocess ledger 同一残余缺口）。
+- 收尾：worker 由 candidate bag 的 `worker.stop('dispose')` 关闭（`checkPackage` 的 `finally` 必然 dispose 该 bag）；正常路径与网关同一套升级序列（`shutdown` 消息 → 2 s → `SIGTERM` → 2 s → `SIGKILL`）。
+- `exit` 钩子是**尽力而为的最后兜底**，只在 `exit` 事件上运行：它同步 `SIGKILL` 每个被跟踪 worker 的**活着的 child 句柄**（`exitCode` / `signalCode` 为空），不按 `health()` 判断——ready 握手期间 host 处于 `starting`、`health()` 报 `stopped` 而 child 已 fork，按 `health()` 判断会让钩子恰好在唯一需要它的窗口变成 no-op；崩溃后被回收的 pid 也不会在重启退避期被再次发信号。单次 `SIGTERM` 可被包代码 `process.on('SIGTERM', () => {})` 忽略，所以兜底只用 SIGKILL。
+- 兜底覆盖不到 CLI 自己被 SIGKILL / TerminateProcess 的情况（不会触发 `exit`），与网关 subprocess ledger 同一残余缺口；Ctrl+C 的默认处理与未捕获异常会走到 `exit`，因此在这条路径上有覆盖。
 - `check` 依旧不是沙箱：`trusted` 包在主进程真实执行；`untrusted` 包的边界是 worker 的 Node 权限模型 + bootstrap 拦截，`check` 只复用该路径，不额外隔离副作用。
 
