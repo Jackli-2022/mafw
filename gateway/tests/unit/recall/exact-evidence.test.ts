@@ -189,6 +189,50 @@ describe('findExactRecallEvidence', () => {
     expect(ids).not.toContain(legacyEpisodic.id);
   });
 
+  test('rejects a contained cue that covers under half of the query', () => {
+    const query = 'Proactive Topic Recall 主题工具设计 with a very long unrelated trailing clause for coverage';
+    const longCue = entry({
+      id: 'mem_long_cue',
+      cue_anchors: ['proactive topic recall'],
+    });
+    // 20 ASCII chars, DF 1 and contained, but far below 50% of the query.
+    expect(findExactRecallEvidence([longCue], query)).toEqual([]);
+    // Same cue on the short query clears the coverage rule: only coverage differs.
+    expect(
+      findExactRecallEvidence([longCue], 'Proactive Topic Recall 主题工具设计').map(e => e.entry.id),
+    ).toEqual([longCue.id]);
+  });
+
+  test('admits a 6-CJK contained cue but rejects a 5-CJK one', () => {
+    const positive = entry({
+      id: 'mem_cjk6',
+      primary_abstraction: '另一条标题',
+      cue_anchors: ['主题召回边界'],
+    });
+    const negative = entry({
+      id: 'mem_cjk5',
+      primary_abstraction: '又一条标题',
+      cue_anchors: ['主题召回边'],
+    });
+    const query = '主题召回边界怎么改';
+    expect(findExactRecallEvidence([positive, negative], query).map(e => e.entry.id)).toEqual([
+      positive.id,
+    ]);
+  });
+
+  test('picks up a replaced cue_anchors array on the same entry object', () => {
+    const target = entry({ id: 'mem_swap', cue_anchors: ['legacy-anchor'] });
+    expect(findExactRecallEvidence([target], '5cd9885f5')).toEqual([]);
+
+    // Production writers (kernel dupCandidate / gliner harvest) can assign a
+    // fresh anchors array to the same entry object; the cache must follow it.
+    target.cue_anchors = ['5cd9885f5'];
+    expect(findExactRecallEvidence([target], '5cd9885f5').map(e => e.entry.id)).toEqual([target.id]);
+
+    target.cue_anchors = ['legacy-anchor'];
+    expect(findExactRecallEvidence([target], '5cd9885f5')).toEqual([]);
+  });
+
   test('keeps true no-answer queries and ordinary low-confidence candidates suppressed', () => {
     const query = '冰岛十月份消费和旅游预算怎么样';
     const adjacent = entry({
@@ -252,8 +296,44 @@ describe('applyExactRecallEvidence', () => {
     const applied = applyExactRecallEvidence([], [
       { entry: z, kind: 'cue', specificity: 1.3 },
       { entry: a, kind: 'cue', specificity: 1.3 },
-    ], 'inject');
+    ], 'low-confidence');
     expect(applied.memories.map(m => m.id)).toEqual(['mem_a', 'mem_z']);
+  });
+
+  test('does not reorder or admit anything when the raw FOK zone is already inject', () => {
+    const exact = entry({ id: 'mem_exact_only' });
+    const candidates = [
+      memory({ id: 'mem_bm25_1', primary_abstraction: 'first ranked' }),
+      memory({ id: 'mem_bm25_2', primary_abstraction: 'second ranked' }),
+    ];
+    const applied = applyExactRecallEvidence(
+      candidates,
+      [{ entry: exact, kind: 'title', specificity: 3 }],
+      'inject',
+    );
+    expect(applied.status).toBe('inject');
+    expect(applied.exactIds).toEqual([]);
+    expect(applied.memories).toBe(candidates);
+    expect(applied.memories.map(m => m.id)).toEqual(['mem_bm25_1', 'mem_bm25_2']);
+  });
+
+  test('equal-specificity evidence prefers owners already in the BM25 candidates', () => {
+    const owners = [1, 2, 3, 4, 5].map(i => entry({ id: `mem_owner_${i}` }));
+    const evidence = [owners[4], owners[0], owners[3], owners[1], owners[2]].map(e => ({
+      entry: e,
+      kind: 'cue' as const,
+      specificity: 1.4,
+    }));
+    const candidates = [memory({ id: 'mem_owner_5' }), memory({ id: 'mem_owner_2' })];
+
+    const first = applyExactRecallEvidence(candidates, evidence, 'low-confidence', 3);
+    // Two existing owners outrank the new owners; id breaks the tie among both
+    // groups (owner_2 before owner_5, owner_1 before owner_3/4). No recency.
+    expect(first.memories.map(m => m.id)).toEqual(['mem_owner_2', 'mem_owner_5', 'mem_owner_1']);
+
+    const second = applyExactRecallEvidence(candidates, evidence.slice().reverse(), 'low-confidence', 3);
+    expect(second.memories.map(m => m.id)).toEqual(first.memories.map(m => m.id));
+    expect(second.exactIds).toEqual(first.exactIds);
   });
 });
 
@@ -279,13 +359,13 @@ function fakeRes(): { res: ServerResponse; status: number; body: string } {
   return out;
 }
 
-function routeHarness(entries: any[]) {
+function routeHarness(entries: any[], options: { rawScores?: number[] } = {}) {
   const byId = new Map(entries.map(e => [e.id, e]));
   const flatIds = entries.filter(e => e.id.startsWith('mem_flat_')).map(e => e.id);
   const index = {
     getIndex: () => ({ entries }),
-    // Flat raw distribution -> FOK no-memory, exactly the divergence shape.
-    bm25RawScores: () => [1, 1, 1, 1],
+    // Default: flat raw distribution -> FOK no-memory, the divergence shape.
+    bm25RawScores: () => options.rawScores ?? [1, 1, 1, 1],
     searchScored: () => flatIds.map(id => ({ entry: byId.get(id), score: 1 })),
     search: () => flatIds.map(id => byId.get(id)),
   };
@@ -315,6 +395,7 @@ describe('recall.context exact-evidence wiring', () => {
     snapshot: { ...config.search.snapshot },
     arbiter: config.search.arbiter,
     boundaryDense: config.search.boundaryDense,
+    temporalNeighbors: { ...config.search.temporalNeighbors },
   };
 
   beforeAll(() => {
@@ -322,6 +403,7 @@ describe('recall.context exact-evidence wiring', () => {
     config.search.snapshot = { ...config.search.snapshot, enabled: false };
     config.search.arbiter = false;
     config.search.boundaryDense = false;
+    config.search.temporalNeighbors = { ...config.search.temporalNeighbors, presentation: false };
   });
 
   afterAll(() => {
@@ -329,6 +411,7 @@ describe('recall.context exact-evidence wiring', () => {
     config.search.snapshot = original.snapshot;
     config.search.arbiter = original.arbiter;
     config.search.boundaryDense = original.boundaryDense;
+    config.search.temporalNeighbors = original.temporalNeighbors;
   });
 
   test('the 5cd9885f5 divergence shape now emits a related body containing the exact target', async () => {
@@ -353,6 +436,33 @@ describe('recall.context exact-evidence wiring', () => {
     expect(pointers).toContain('相关记忆：见下方');
     expect(pointers).toContain('<recall>');
     expect(pointers).toContain(`#mem-${exact.id.slice(-6)}`);
+  });
+
+  test('an already-inject turn keeps BM25 order and never admits an exact-only entry', async () => {
+    const exactOnly = entry({
+      id: 'mem_exact_inject_target',
+      primary_abstraction: 'exact but not ranked',
+      cue_anchors: ['5cd9885f5'],
+    });
+    const entries = [
+      entry({ id: 'mem_flat_1', primary_abstraction: 'first ranked' }),
+      entry({ id: 'mem_flat_2', primary_abstraction: 'second ranked' }),
+      entry({ id: 'mem_flat_3', primary_abstraction: 'third ranked' }),
+      exactOnly,
+    ];
+    // Dominant top-1 -> raw FOK inject; the exact merge must be a no-op.
+    const { handler } = routeHarness(entries, { rawScores: [10, 1, 1, 1] });
+    const res = fakeRes();
+    const url = '/api/recall/context?sessionID=s1&query=5cd9885f5';
+    await handler(url)(fakeReq(url), res.res);
+
+    expect(res.status).toBe(200);
+    const pointers = JSON.parse(res.body).pointers as string;
+    expect(pointers).toContain('相关记忆：见下方');
+    expect(pointers).not.toContain(`#mem-${exactOnly.id.slice(-6)}`);
+    expect(pointers.indexOf('#mem-flat_1')).toBeGreaterThanOrEqual(0);
+    expect(pointers.indexOf('#mem-flat_2')).toBeGreaterThan(pointers.indexOf('#mem-flat_1'));
+    expect(pointers.indexOf('#mem-flat_3')).toBeGreaterThan(pointers.indexOf('#mem-flat_2'));
   });
 
   test('a negative shape still reports no related memory and no body', async () => {

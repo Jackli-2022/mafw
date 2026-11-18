@@ -139,10 +139,12 @@ function normalizeCue(cue: string): string | null {
   return /\s/.test(normalized) ? compactRecallText(normalized) : normalized;
 }
 
-// Normalized cues are immutable for a given entry object: writes replace the
-// entry (`addEntry` spreads into a new object), so a WeakMap keyed by the entry
-// is a safe warm-path cache. The route calls this every turn over ~16k entries;
-// compact forms are cached so the scan does no per-cue string work when warm.
+// Normalized cues are immutable for a given anchors ARRAY: production writers
+// (kernel dupCandidate / gliner harvest) can assign a fresh `cue_anchors` array
+// to the SAME entry object, so keying by the entry would keep serving the old
+// anchors. The array itself is replaced on those writes, making it the correct
+// cache identity. The route calls this every turn over ~16k entries; compact
+// forms are cached so the scan does no per-cue string work when warm.
 interface NormalizedCues {
   /** Every cue, NFKC + lowercase + all whitespace removed. */
   compact: string[];
@@ -152,9 +154,10 @@ const normalizedCueCache = new WeakMap<object, NormalizedCues>();
 
 function normalizedCues(entry: any): NormalizedCues {
   if (!entry || typeof entry !== 'object') return { compact: [] };
-  const cached = normalizedCueCache.get(entry);
+  const raw = Array.isArray(entry.cue_anchors) ? entry.cue_anchors : null;
+  if (!raw) return { compact: [] };
+  const cached = normalizedCueCache.get(raw);
   if (cached) return cached;
-  const raw = Array.isArray(entry.cue_anchors) ? entry.cue_anchors : [];
   const compact: string[] = [];
   for (const cue of raw) {
     if (typeof cue !== 'string') continue;
@@ -163,7 +166,7 @@ function normalizedCues(entry: any): NormalizedCues {
     compact.push(normalized);
   }
   const result = { compact };
-  normalizedCueCache.set(entry, result);
+  normalizedCueCache.set(raw, result);
   return result;
 }
 
@@ -296,10 +299,12 @@ function memoryFromEntry(entry: any): RecallMemory {
 }
 
 /**
- * Merge admissible exact entries ahead of the ranked candidates, deduplicated
- * and bounded to `topK`. Any exact evidence upgrades the zone to `inject`;
- * without evidence both the candidate list and the FOK zone are returned
- * unchanged (so ordinary low-confidence suppression keeps working).
+ * Rescue a sub-inject FOK zone with admissible exact entries: they are merged
+ * ahead of the ranked candidates, deduplicated and bounded to `topK`. This is
+ * an admission guard, NOT a second ranker — an already-`inject` turn returns
+ * the candidate list untouched (and the route skips the scan entirely).
+ * Equal-specificity evidence prefers owners already present in the BM25
+ * candidates before the deterministic id tie-break. Recency is never used.
  */
 export function applyExactRecallEvidence(
   memories: RecallMemory[],
@@ -307,9 +312,23 @@ export function applyExactRecallEvidence(
   status: FokZone,
   topK: number = 3,
 ): { memories: RecallMemory[]; status: FokZone; exactIds: string[] } {
+  if (status === 'inject') return { memories, status, exactIds: [] };
+
+  const candidateIds = new Set<string>();
+  for (const memory of memories ?? []) {
+    if (memory && typeof memory.id === 'string') candidateIds.add(memory.id);
+  }
+  const compareWithCandidates = (a: ExactRecallEvidence, b: ExactRecallEvidence): number => {
+    if (b.specificity !== a.specificity) return b.specificity - a.specificity;
+    const aExisting = candidateIds.has(a.entry.id) ? 1 : 0;
+    const bExisting = candidateIds.has(b.entry.id) ? 1 : 0;
+    if (aExisting !== bExisting) return bExisting - aExisting;
+    return a.entry.id < b.entry.id ? -1 : a.entry.id > b.entry.id ? 1 : 0;
+  };
+
   const valid = (Array.isArray(evidence) ? evidence : [])
     .filter(e => e && e.entry && typeof e.entry.id === 'string' && e.entry.id !== '')
-    .sort(compareEvidence);
+    .sort(compareWithCandidates);
   if (valid.length === 0) return { memories, status, exactIds: [] };
 
   const existingById = new Map<string, RecallMemory>();
