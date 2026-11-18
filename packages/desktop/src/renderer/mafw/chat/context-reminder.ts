@@ -95,10 +95,11 @@ export function loadContextPrefs(): ContextPrefs {
   })()
   const fallback: ContextPrefs = { ...DEFAULT_CONTEXT_PREFS, timeZone, locale }
   try {
+    const reminderOff = globalThis.localStorage?.getItem('mafw-latest-reminder') === '0'
     const raw = globalThis.localStorage?.getItem('mafw-context-prefs')
-    if (!raw) return fallback
+    if (!raw) return reminderOff ? { ...fallback, enabled: false } : fallback
     const parsed = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object') return fallback
+    if (!parsed || typeof parsed !== 'object') return reminderOff ? { ...fallback, enabled: false } : fallback
     return {
       ...fallback,
       ...(typeof parsed.city === 'string' ? { city: parsed.city } : {}),
@@ -106,6 +107,7 @@ export function loadContextPrefs(): ContextPrefs {
       ...(typeof parsed.locale === 'string' && parsed.locale ? { locale: parsed.locale } : {}),
       ...(typeof parsed.timeZone === 'string' && parsed.timeZone ? { timeZone: parsed.timeZone } : {}),
       ...(typeof parsed.enabled === 'boolean' ? { enabled: parsed.enabled } : {}),
+      ...(reminderOff ? { enabled: false } : {}),
     }
   } catch {
     return fallback

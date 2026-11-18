@@ -399,10 +399,121 @@ describe("sendMessage busy 排队路径", () => {
       await sendMessage()
       expect(calls).toHaveLength(1)
       expect(calls[0].delivery).toBe("steer")
-      expect(calls[0].message).toBe("排队的消息")
+      expect(calls[0].message).toContain("排队的消息")
       expect(f.queued().length).toBe(0)
       expect(f.history().up("")).toBe("排队的消息") // 插话也进历史
     } finally { delete (globalThis as any).window }
+  })
+
+  // ── Task 4.2：每条发送都带 turn marker；reminder 随偏好 ──
+
+  const markerPartOf = (parts: any[]) => (parts ?? []).find(
+    (part: any) => typeof part?.text === "string" && /\[\[turn:turn_[A-Za-z0-9_-]+\]\]/.test(part.text),
+  )
+  const reminderPartOf = (parts: any[]) => (parts ?? []).find(
+    (part: any) => typeof part?.text === "string" && part.text.startsWith("<latest-reminder>"),
+  )
+  const inlineMarker = (text: string) => /\[\[turn:turn_[A-Za-z0-9_-]+\]\]/.test(text)
+
+  test("空闲发送：parts 前置 marker + reminder，乐观消息带同一个 turnKey", async () => {
+    const sent: any[] = []
+    let state: any = { message: {}, part: {} }
+    ;(globalThis as any).window = { api: { mafw: { chat: { sendEnriched: async (req: any) => { sent.push(req); return { sessionID: "s_test_session" } } } } } }
+    try {
+      const f = baseDeps({
+        sending: () => false,
+        input: () => "你好",
+        pendingAnnotationCount: () => 0,
+        peekAnnotations: () => [],
+        setStore: (fn: any) => { state = fn(state) },
+      })
+      const { sendMessage } = useSendMessage(f.deps)
+      await sendMessage()
+      expect(sent).toHaveLength(1)
+      const parts = sent[0].parts ?? []
+      const marker = markerPartOf(parts)
+      expect(marker).toMatchObject({ type: "text", synthetic: true })
+      expect(String(marker.id).startsWith("turn_")).toBe(true)
+      expect(marker.text).toBe(`[[turn:${marker.id}]]`)
+      expect(reminderPartOf(parts)?.text).toContain("<latest-reminder>")
+      expect(sent[0].message).not.toContain("[[turn:")
+      const optimistic = state.message.s_test_session?.[0]
+      expect(optimistic?.turnKey).toBe(marker.id)
+    } finally { delete (globalThis as any).window }
+  })
+
+  test("忙时 steer：message 内联 marker + reminder", async () => {
+    const calls = mockPromptAsync()
+    try {
+      const f = baseDeps({ steerSupported: () => true })
+      const { sendMessage } = useSendMessage(f.deps)
+      await sendMessage()
+      expect(calls).toHaveLength(1)
+      expect(inlineMarker(calls[0].message)).toBe(true)
+      expect(calls[0].message).toContain("<latest-reminder>")
+      expect(calls[0].message).toContain("排队的消息")
+    } finally { delete (globalThis as any).window }
+  })
+
+  test("忙时网关队列：message 同样内联 marker + reminder", async () => {
+    const calls = mockPromptAsync()
+    try {
+      const f = baseDeps({ steerSupported: () => true })
+      const { sendMessage } = useSendMessage(f.deps)
+      await sendMessage("queue")
+      expect(calls).toHaveLength(1)
+      expect(calls[0].delivery).toBe("queue")
+      expect(inlineMarker(calls[0].message)).toBe(true)
+      expect(calls[0].message).toContain("<latest-reminder>")
+    } finally { delete (globalThis as any).window }
+  })
+
+  test("本地队列重放：flush 时生成 marker + reminder，队列文本保持干净", async () => {
+    const sent: any[] = []
+    ;(globalThis as any).window = { api: { mafw: { chat: { sendEnriched: async (req: any) => { sent.push(req); return { sessionID: "s_test_session" } } } } } }
+    try {
+      let queued: any[] = [{ text: "重放的话", atts: [], agents: [] }]
+      let currentInput = ""
+      const f = baseDeps({
+        sending: () => false,
+        input: () => currentInput,
+        setInput: (v: string) => { currentInput = v },
+        queuedItems: () => queued,
+        setQueuedItems: (fn: (prev: any[]) => any[]) => { queued = fn(queued) },
+        pendingAnnotationCount: () => 0,
+        peekAnnotations: () => [],
+      })
+      expect(queued[0].text).toBe("重放的话")
+      const { flushQueue } = useSendMessage(f.deps)
+      flushQueue()
+      await settle()
+      expect(sent).toHaveLength(1)
+      const parts = sent[0].parts ?? []
+      expect(markerPartOf(parts)).toBeDefined()
+      expect(reminderPartOf(parts)).toBeDefined()
+    } finally { delete (globalThis as any).window }
+  })
+
+  test("mafw-latest-reminder=0：只带 marker，不带 reminder", async () => {
+    const sent: any[] = []
+    ;(globalThis as any).window = { api: { mafw: { chat: { sendEnriched: async (req: any) => { sent.push(req); return { sessionID: "s_test_session" } } } } } }
+    ;(globalThis as any).localStorage = { getItem: (key: string) => (key === "mafw-latest-reminder" ? "0" : null) }
+    try {
+      const f = baseDeps({
+        sending: () => false,
+        input: () => "你好",
+        pendingAnnotationCount: () => 0,
+        peekAnnotations: () => [],
+      })
+      const { sendMessage } = useSendMessage(f.deps)
+      await sendMessage()
+      const parts = sent[0].parts ?? []
+      expect(markerPartOf(parts)).toBeDefined()
+      expect(reminderPartOf(parts)).toBeUndefined()
+    } finally {
+      delete (globalThis as any).window
+      delete (globalThis as any).localStorage
+    }
   })
 
   test("忙时 Ctrl+Enter → promptAsync delivery:queue（gateway 队列）", async () => {
@@ -492,13 +603,13 @@ describe("sendMessage busy 排队路径", () => {
       // parts 只携带 synthetic 标记——首个非 synthetic 展示规则由此保持气泡干净。
       expect(sent[0].message).toBe("你好")
       expect(sent[0].message).not.toContain("[语音输入]")
-      const parts = sent[0].parts ?? []
-      expect(parts).toHaveLength(1)
-      expect(parts[0]).toMatchObject({ type: "text", synthetic: true, text: VOICE_ORIGIN_MARKER_TEXT })
+      const voice = (sent[0].parts ?? []).filter((p: any) => p.text === VOICE_ORIGIN_MARKER_TEXT)
+      expect(voice).toHaveLength(1)
+      expect(voice[0]).toMatchObject({ type: "text", synthetic: true })
     } finally { delete (globalThis as any).window }
   })
 
-  test("空闲非 voice → parts 无 synthetic 标记（回归）", async () => {
+  test("空闲非 voice → parts 无语音 synthetic 标记（回归）", async () => {
     const sent: any[] = []
     ;(globalThis as any).window = { api: { mafw: { chat: { sendEnriched: async (req: any) => { sent.push(req); return { sessionID: "s_test_session" } } } } } }
     try {
@@ -506,7 +617,7 @@ describe("sendMessage busy 排队路径", () => {
       const { sendMessage } = useSendMessage(f.deps)
       await sendMessage()
       expect(sent).toHaveLength(1)
-      expect((sent[0].parts ?? []).some((p: any) => p.synthetic === true)).toBe(false)
+      expect((sent[0].parts ?? []).some((p: any) => p.text === VOICE_ORIGIN_MARKER_TEXT)).toBe(false)
     } finally { delete (globalThis as any).window }
   })
 

@@ -10,6 +10,7 @@ import type { Annotation } from "../../../shared/annotation-types"
 import type { PendingCapture } from "./pending-captures"
 import { formatWebContext } from "./mention-sources"
 import { annotationRefPart } from "../annotation-message-part"
+import { buildContextParts, loadContextPrefs } from "./context-reminder"
 
 /** 解析 "/cmd args" 形态（不做命令表匹配——那由 deps.matchSlash 注入）。 */
 export function parseSlashShape(text: string): { name: string; args: string } | null {
@@ -268,10 +269,14 @@ export function useSendMessage(deps: SendMessageDeps) {
         }
         if (deliveryKind !== "local-queue") {
           try {
+            // 忙时无 parts 通道：turn marker 与 latest-reminder 内联进文本。
+            // 历史展示层按 <latest-reminder> / [[turn:...]] 剥离。
+            const context = buildContextParts(loadContextPrefs(), Date.now())
+            const contextText = context.parts.map((part) => part.text).join("\n")
             await window.api.mafw.sessions.promptAsync({
               sessionID: sid,
               // 忙时无 parts 通道：语音来源标记内联进 message 文本（队列条显示层剥离）。
-              message: busyQueuedText(queuedText, voiceOrigin),
+              message: [busyQueuedText(queuedText, voiceOrigin), contextText].filter(Boolean).join("\n"),
               delivery: deliveryKind === "steer" ? "steer" : "queue",
             })
             finishBusySend()
@@ -374,6 +379,9 @@ export function useSendMessage(deps: SendMessageDeps) {
 
     const userMsgId = `user-${Date.now()}`
     const ts = Date.now()
+    // 每次真实发送都带同一个 hidden turn key：gateway recall hook 用它把回执
+    // 挂回这一轮；desktop 展示层剥掉 marker / reminder。
+    const context = buildContextParts(loadContextPrefs(), ts)
     deps.onSetUserMsgId(sid, userMsgId)
 
     // ── Vision attachments: images go to the gateway A2A VisionAgent first;
@@ -472,7 +480,7 @@ export function useSendMessage(deps: SendMessageDeps) {
     setStore(prev => {
       const msgs = { ...prev.message }
       const sessionMsgs = [...(msgs[sid] || [])]
-      sessionMsgs.push({ id: userMsgId, sessionID: sid, role: "user", parentID: null, time: { created: Date.now() }, text: bodyMessage })
+      sessionMsgs.push({ id: userMsgId, sessionID: sid, role: "user", parentID: null, time: { created: Date.now() }, text: bodyMessage, turnKey: context.turnKey })
       msgs[sid] = sessionMsgs
       return {
         ...prev,
@@ -506,6 +514,7 @@ export function useSendMessage(deps: SendMessageDeps) {
         const voicePart = voiceOrigin ? composeVoiceOriginPart(ts) : null
         const refPart = annotationIDs.length > 0 ? annotationRefPart(annotationIDs) : null
         const sendParts = [
+          ...context.parts,
           ...visionParts, ...fileParts, ...agentParts,
           ...(voicePart ? [voicePart] : []),
           ...(refPart ? [refPart] : []),
