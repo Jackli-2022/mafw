@@ -178,8 +178,23 @@ interface PlaneNames {
   observers?: string[];
 }
 
-type DeclaredView = PlaneNames & { http?: boolean };
-type RegisteredView = PlaneNames & { http?: number };
+/**
+ * The legacy singleton planes: one instance per package, declared by name
+ * (`media` also declares the modalities it may serve).
+ *
+ * They are a different shape from `PlaneNames`: presence of the key is the
+ * declaration, so an undeclared plane stays invisible instead of rendering as
+ * `(unbounded)` — nothing on it can be a delta.
+ */
+interface LegacyPlanes {
+  runtime?: string;
+  tts?: string;
+  usage?: string;
+  media?: { name?: string; modalities?: string[] };
+}
+
+type DeclaredView = PlaneNames & LegacyPlanes & { http?: boolean };
+type RegisteredView = PlaneNames & LegacyPlanes & { http?: number };
 
 /**
  * First occurrence wins, order preserved.
@@ -263,6 +278,103 @@ function formatRegisteredPlane(
   return `[${tokens.join(' ')}]`;
 }
 
+/** The legacy name planes, in the order the inventory renders them. */
+const LEGACY_NAME_PLANES = ['runtime', 'tts', 'usage'] as const;
+
+/**
+ * One legacy token: `name`, or `name:mod1,mod2` for `media`.
+ *
+ * A legacy plane holds exactly one instance, so the token is the whole plane and
+ * the delta markers sit in front of it (never in front of a name only). The
+ * fields are attacker-controlled like every other package string, so each part
+ * is flattened.
+ */
+function legacyToken(name: string | undefined, modalities?: readonly string[]): string {
+  const head = typeof name === 'string' && name.length > 0 ? text(name) : '(unnamed)';
+  const list = (modalities ?? []).map((modality) => text(modality));
+  return list.length > 0 ? `${head}:${list.join(',')}` : head;
+}
+
+/**
+ * `media` is the one legacy plane with a second dimension: the declaration is
+ * satisfied when the instance name matches and every served modality was
+ * declared. An undeclared modality list leaves the plane open.
+ */
+function mediaSatisfies(
+  declared: { name?: string; modalities?: string[] },
+  registered: { name?: string; modalities?: string[] },
+): boolean {
+  if (declared.name !== undefined && registered.name !== declared.name) return false;
+  const allowed = declared.modalities ?? [];
+  if (allowed.length === 0) return true;
+  return (registered.modalities ?? []).every((modality) => allowed.includes(modality));
+}
+
+/**
+ * The legacy planes on the `declared:` line, as deltas against the instances.
+ *
+ * Only declared planes are rendered: an absent key imposes nothing, so there is
+ * no bound to describe and no token that could be marked. `-token` means the
+ * declared instance never registered (legal; packages register conditionally).
+ * Without a registered view to compare against, the token keeps its plain form
+ * — there is no evidence to mark against.
+ */
+function legacyDeclaredSegments(
+  declared: DeclaredView,
+  registered: RegisteredView | undefined,
+): string[] {
+  const segments: string[] = [];
+  for (const plane of LEGACY_NAME_PLANES) {
+    const name = declared[plane];
+    if (name === undefined) continue;
+    const matched = registered === undefined || registered[plane] === name;
+    segments.push(`${plane} [${matched ? '' : '-'}${legacyToken(name)}]`);
+  }
+  if (declared.media !== undefined) {
+    const matched = registered === undefined
+      || (registered.media !== undefined && mediaSatisfies(declared.media, registered.media));
+    const token = legacyToken(declared.media.name, declared.media.modalities);
+    segments.push(`media [${matched ? '' : '-'}${token}]`);
+  }
+  return segments;
+}
+
+/**
+ * The legacy planes on the `registered:` line, as deltas against the declaration.
+ *
+ * Same vocabulary as `formatRegisteredPlane`: a plane the manifest does not
+ * declare is never rendered (nothing could be out of bound), a declared plane
+ * with no instance reads `[]`, and `+token` is the single shape that fails a
+ * check because of this line.
+ */
+function legacyRegisteredSegments(
+  declared: DeclaredView,
+  registered: RegisteredView,
+): string[] {
+  const segments: string[] = [];
+  for (const plane of LEGACY_NAME_PLANES) {
+    const declaredName = declared[plane];
+    if (declaredName === undefined) continue;
+    const name = registered[plane];
+    if (name === undefined) {
+      segments.push(`${plane} []`);
+      continue;
+    }
+    const marker = name === declaredName ? '' : '+';
+    segments.push(`${plane} [${marker}${legacyToken(name)}]`);
+  }
+  if (declared.media !== undefined) {
+    const media = registered.media;
+    if (media === undefined) {
+      segments.push('media []');
+    } else {
+      const marker = mediaSatisfies(declared.media, media) ? '' : '+';
+      segments.push(`media [${marker}${legacyToken(media.name, media.modalities)}]`);
+    }
+  }
+  return segments;
+}
+
 /**
  * `actions [a b], events [], tools (unbounded), observers (unbounded), http true`.
  *
@@ -273,7 +385,8 @@ function formatRegisteredPlane(
  *
  * Name planes carry the delta inline (see `formatDeclaredPlane` /
  * `formatRegisteredPlane`): a declared name that never registered is legal, a
- * registered name that was not declared is the violation.
+ * registered name that was not declared is the violation. The legacy singleton
+ * planes follow `http` and appear only when declared (`legacyDeclaredSegments`).
  */
 function formatDeclared(
   declared: DeclaredView | undefined,
@@ -286,6 +399,7 @@ function formatDeclared(
     `tools ${formatDeclaredPlane(declared.tools, registered?.tools)}`,
     `observers ${formatDeclaredPlane(declared.observers, registered?.observers)}`,
     declared.http === undefined ? 'http (unbounded)' : `http ${declared.http}`,
+    ...legacyDeclaredSegments(declared, registered),
   ].join(', ');
 }
 
@@ -301,6 +415,9 @@ function formatRegistered(
     `tools ${formatRegisteredPlane(declared?.tools, registered.tools)}`,
     `observers ${formatRegisteredPlane(declared?.observers, registered.observers)}`,
     `http ${typeof registered.http === 'number' ? registered.http : 0} route(s)`,
+    // Only declared planes: an undeclared legacy instance is observed but never
+    // a delta, and rendering it would invent a bound the package never accepted.
+    ...(declared ? legacyRegisteredSegments(declared, registered) : []),
   ].join(', ');
 }
 
@@ -385,6 +502,18 @@ function declaredOnly(result: PluginCheckResult): string[] {
     for (const name of uniqueNames(all) ?? []) {
       if (!(used ?? []).includes(name)) out.push(`${label} "${text(name)}"`);
     }
+  }
+  // The legacy planes are singletons: one declared name with no instance is the
+  // same "conditional registration" case, named once. A mismatched instance is
+  // not listed here — the `+` on the registered line already is the diff.
+  const legacy: Array<[string, string | undefined, string | undefined]> = [
+    ['runtime', declared.runtime, registered.runtime],
+    ['tts', declared.tts, registered.tts],
+    ['usage', declared.usage, registered.usage],
+    ['media', declared.media?.name, registered.media?.name],
+  ];
+  for (const [label, expected, actual] of legacy) {
+    if (expected !== undefined && actual === undefined) out.push(`${label} "${text(expected)}"`);
   }
   return out;
 }

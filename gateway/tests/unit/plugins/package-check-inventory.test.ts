@@ -383,3 +383,188 @@ describe('mafw plugin init scaffold', () => {
     expect([...(result.registered?.actions ?? [])].sort()).toEqual(['ping', 'pong']);
   });
 });
+
+/**
+ * The legacy singleton planes (`runtime` / `media` / `tts` / `usage`) are named
+ * declarations, not array memberships: a declared plane pins the instance name
+ * (defaulting to the package name) and, for `media`, the modalities it may
+ * serve. Undeclared means unconstrained; declared-but-not-registered is legal
+ * because packages register conditionally.
+ */
+describe('PluginHost.checkPackage legacy plane declarations', () => {
+  function body(name: string, contributions: string): string {
+    return `module.exports = { name: '${name}', async activate() { return { ${contributions} }; } };`;
+  }
+
+  const runtime = (name: string): string => `
+    runtime: { name: '${name}', async createRuntime() { return { name: '${name}', capabilities: {} }; } },`;
+
+  /** Same instance as `runtime(name)` with the optional name omitted. */
+  const anonymousRuntime = (name: string): string => `
+    runtime: { async createRuntime() { return { name: '${name}', capabilities: {} }; } },`;
+
+  const media = (name: string, modalities: string): string => `
+    media: {
+      name: '${name}',
+      modalities: [${modalities}],
+      createPrompt: async () => async () => ({}),
+    },`;
+
+  const tts = (name: string): string => `
+    tts: {
+      name: '${name}',
+      capabilities: { sampleRate: 24000 },
+      voices() { return []; },
+      async synthesize() { return Buffer.from(''); },
+    },`;
+
+  const usage = (name: string): string => `
+    usage: { name: '${name}', async fetch() { return null; } },`;
+
+  it('fails a runtime whose name is not the declared one', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-legacy-'));
+    const root = writePackage(dir, {
+      name: 'rtpkg', apiVersion: 2, kind: 'trusted', permissions: [],
+      contributes: { gateway: { runtime: { name: 'r1' } } },
+    }, body('rtpkg', runtime('r2')));
+    const result = await check(root);
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe('contribution_bound');
+    // The rejected instance is still evidence: both sides of the diff survive.
+    expect(result.evaluated).toBe(true);
+    expect(result.error).toBe(
+      'invalid contributions: runtime "r2" is not declared in plugin.json contributes.gateway.runtime',
+    );
+    expect(result.declared?.runtime).toBe('r1');
+    expect(result.registered?.runtime).toBe('r2');
+  });
+
+  it('reads an empty runtime declaration as the package name', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-legacy-'));
+    const root = writePackage(dir, {
+      name: 'defrt', apiVersion: 2, kind: 'trusted', permissions: [],
+      // `{}` is a real declaration, not "any name": the default IS the bound.
+      contributes: { gateway: { runtime: {} } },
+    }, body('defrt', anonymousRuntime('defrt')));
+    const result = await check(root);
+    expect(result.ok).toBe(true);
+    expect(result.declared?.runtime).toBe('defrt');
+    expect(result.registered?.runtime).toBe('defrt');
+  });
+
+  it('fails a media modality the declaration does not allow', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-legacy-'));
+    const root = writePackage(dir, {
+      name: 'medpkg', apiVersion: 2, kind: 'trusted', permissions: [],
+      contributes: { gateway: { media: { name: 'm1', modalities: ['image'] } } },
+    }, body('medpkg', media('m1', "'image', 'video'")));
+    const result = await check(root);
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe('contribution_bound');
+    expect(result.error).toBe(
+      'invalid contributions: media modality "video" is not declared '
+      + 'in plugin.json contributes.gateway.media.modalities',
+    );
+    expect(result.declared?.media).toEqual({ name: 'm1', modalities: ['image'] });
+    expect(result.registered?.media).toEqual({ name: 'm1', modalities: ['image', 'video'] });
+  });
+
+  it('accepts media modalities that stay inside the declaration', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-legacy-'));
+    const root = writePackage(dir, {
+      name: 'medok', apiVersion: 2, kind: 'trusted', permissions: [],
+      contributes: { gateway: { media: { name: 'm1', modalities: ['image', 'video'] } } },
+    }, body('medok', media('m1', "'image', 'video'")));
+    const result = await check(root);
+    expect(result.ok).toBe(true);
+    expect(result.declared?.media).toEqual({ name: 'm1', modalities: ['image', 'video'] });
+    expect(result.registered?.media).toEqual({ name: 'm1', modalities: ['image', 'video'] });
+  });
+
+  it('fails a media instance whose name is not the declared one', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-legacy-'));
+    const root = writePackage(dir, {
+      name: 'medname', apiVersion: 2, kind: 'trusted', permissions: [],
+      contributes: { gateway: { media: { name: 'm1', modalities: ['image'] } } },
+    }, body('medname', media('m2', "'image'")));
+    const result = await check(root);
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe(
+      'invalid contributions: media "m2" is not declared in plugin.json contributes.gateway.media',
+    );
+  });
+
+  it('fails a tts name that is not the declared one', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-legacy-'));
+    const root = writePackage(dir, {
+      name: 'ttspkg', apiVersion: 2, kind: 'trusted', permissions: [],
+      contributes: { gateway: { tts: { name: 't1' } } },
+    }, body('ttspkg', tts('t2')));
+    const result = await check(root);
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe('contribution_bound');
+    expect(result.error).toBe(
+      'invalid contributions: tts "t2" is not declared in plugin.json contributes.gateway.tts',
+    );
+    expect(result.declared?.tts).toBe('t1');
+    expect(result.registered?.tts).toBe('t2');
+  });
+
+  it('fails a usage name that is not the declared one', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-legacy-'));
+    const root = writePackage(dir, {
+      name: 'usgpkg', apiVersion: 2, kind: 'trusted', permissions: [],
+      contributes: { gateway: { usage: { name: 'u1' } } },
+    }, body('usgpkg', usage('u2')));
+    const result = await check(root);
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe('contribution_bound');
+    expect(result.error).toBe(
+      'invalid contributions: usage "u2" is not declared in plugin.json contributes.gateway.usage',
+    );
+    expect(result.declared?.usage).toBe('u1');
+    expect(result.registered?.usage).toBe('u2');
+  });
+
+  it('accepts matching tts and usage names', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-legacy-'));
+    const root = writePackage(dir, {
+      name: 'bothok', apiVersion: 2, kind: 'trusted', permissions: [],
+      contributes: { gateway: { tts: { name: 't1' }, usage: { name: 'u1' } } },
+    }, body('bothok', `${tts('t1')}${usage('u1')}`));
+    const result = await check(root);
+    expect(result.ok).toBe(true);
+    expect(result.declared?.tts).toBe('t1');
+    expect(result.declared?.usage).toBe('u1');
+    expect(result.registered?.tts).toBe('t1');
+    expect(result.registered?.usage).toBe('u1');
+  });
+
+  it('imposes nothing on an undeclared legacy plane', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-legacy-'));
+    const root = writePackage(dir, {
+      name: 'freeall', apiVersion: 2, kind: 'trusted', permissions: [],
+      // No contributes block at all: every legacy plane stays unconstrained.
+    }, body('freeall', `${runtime('free-rt')}${media('free-media', "'image'")}${tts('free-tts')}${usage('free-usage')}`));
+    const result = await check(root);
+    expect(result.ok).toBe(true);
+    expect(result.declared).toBeUndefined();
+    expect(result.registered?.runtime).toBe('free-rt');
+    expect(result.registered?.media).toEqual({ name: 'free-media', modalities: ['image'] });
+    expect(result.registered?.tts).toBe('free-tts');
+    expect(result.registered?.usage).toBe('free-usage');
+  });
+
+  it('keeps a declared plane that never registered legal', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-legacy-'));
+    const root = writePackage(dir, {
+      name: 'condrt', apiVersion: 2, kind: 'trusted', permissions: [],
+      contributes: { gateway: { runtime: { name: 'r1' } } },
+    }, body('condrt', usage('u1')));
+    const result = await check(root);
+    // Conditional registration: the declaration is an upper bound, not a plan.
+    expect(result.ok).toBe(true);
+    expect(result.declared?.runtime).toBe('r1');
+    expect(result.registered?.runtime).toBeUndefined();
+  });
+});

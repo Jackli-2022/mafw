@@ -162,6 +162,19 @@ export interface PluginCheckDeclared {
   observers?: string[];
   /** `contributes.gateway.http` when the manifest opts in or out explicitly. */
   http?: boolean;
+  /**
+   * The legacy singleton planes, one instance per package.
+   *
+   * Declaring one is a one-name bound, not an array: the name is resolved to the
+   * package name when the manifest omits it (the same default the host enforces),
+   * so `runtime: {}` and `runtime: { name: '<package>' }` render identically.
+   * Absent = undeclared = unconstrained.
+   */
+  runtime?: string;
+  tts?: string;
+  usage?: string;
+  /** `media` additionally pins the modalities the instance may serve. */
+  media?: { name?: string; modalities: string[] };
 }
 
 /** Planes a candidate actually tried to register while it was checked. */
@@ -172,6 +185,15 @@ export interface PluginCheckRegistered {
   observers: string[];
   /** HTTP + WebSocket routes recorded through `ctx.http`. */
   http: number;
+  /**
+   * Legacy singleton instances observed during a trusted activation. Absent
+   * when the plane registered nothing (legal) or was never reached (the worker
+   * path never carries them, and a check that failed earlier has no evidence).
+   */
+  runtime?: string;
+  tts?: string;
+  usage?: string;
+  media?: { name?: string; modalities: string[] };
 }
 
 /** Mutable accumulator handed to a probe activation. */
@@ -403,17 +425,34 @@ function registeredFromRaw(raw: unknown, http: number): PluginCheckRegistered {
  * Absent planes stay absent (unconstrained) — an explicit `"actions": []` is a
  * zero bound and must survive as `[]`, otherwise the report would tell an author
  * that a rejected action was legal.
+ *
+ * The legacy singleton planes are declared as objects, so their view is a
+ * resolved name: an omitted `name` means the package name (the same default the
+ * host enforces against the registered instance), and declaring the plane at all
+ * is what makes it visible. `media` keeps its declared modality list, which is
+ * `[]` when the manifest leaves modalities open.
  */
 function describeDeclared(
   gateway: NonNullable<NormalizedPackageManifest['contributes']>['gateway'],
+  packageName: string,
 ): PluginCheckDeclared | undefined {
   if (!gateway) return undefined;
+  const legacyName = (plane: { name?: string }): string => plane.name ?? packageName;
   return {
     ...(gateway.actions !== undefined ? { actions: gateway.actions } : {}),
     ...(gateway.events !== undefined ? { events: gateway.events } : {}),
     ...(gateway.tools !== undefined ? { tools: gateway.tools.map((tool) => tool.name) } : {}),
     ...(gateway.observers !== undefined ? { observers: gateway.observers } : {}),
     ...(gateway.http !== undefined ? { http: gateway.http } : {}),
+    ...(gateway.runtime !== undefined ? { runtime: legacyName(gateway.runtime) } : {}),
+    ...(gateway.tts !== undefined ? { tts: legacyName(gateway.tts) } : {}),
+    ...(gateway.usage !== undefined ? { usage: legacyName(gateway.usage) } : {}),
+    ...(gateway.media !== undefined ? {
+      media: {
+        name: legacyName(gateway.media),
+        modalities: gateway.media.modalities !== undefined ? [...gateway.media.modalities] : [],
+      },
+    } : {}),
   };
 }
 
@@ -993,7 +1032,7 @@ export class PluginHost {
         // quote exactly the bound activation enforces, including on a failure
         // that happens later.
         const parsedManifest = parsePackageManifest(manifest);
-        declared = describeDeclared(parsedManifest.manifest?.contributes?.gateway);
+        declared = describeDeclared(parsedManifest.manifest?.contributes?.gateway, name);
         warnings = parsedManifest.warnings ?? [];
         if (!parsedManifest.ok) throw new Error(parsedManifest.errors.join('; '));
         stage = 'entry';
@@ -1636,6 +1675,15 @@ export class PluginHost {
       if (webErrors.length > 0) throw new Error(`invalid web surfaces: ${webErrors.join('; ')}`);
     }
     const contribs: PluginContributions = activated.legacy;
+    // Legacy singleton planes are declared by name (plus modalities for media),
+    // and the declaration is only comparable where the instance is assembled.
+    // Both sides resolve an omitted name to the package name, so `runtime: {}` is
+    // a real one-name bound, not "any runtime". An undeclared plane imposes
+    // nothing, and a declared-but-unregistered one never reaches a comparison:
+    // packages register conditionally.
+    const declaredGateway = parsedManifest?.manifest?.contributes?.gateway;
+    const declaredLegacy = (plane: { name?: string } | undefined): string | undefined =>
+      plane === undefined ? undefined : plane.name ?? modName;
 
     const kinds: string[] = [];
     let runtime: RuntimePackageEntry | undefined;
@@ -1647,6 +1695,16 @@ export class PluginHost {
       const u = contribs.usage;
       if (typeof u.name !== 'string' || !u.name) throw new Error('usage contribution missing name');
       if (typeof u.fetch !== 'function') throw new Error('usage contribution missing fetch(ctx)');
+      // Recorded before the bound check: the rejected instance is the half of the
+      // diff an author needs (same reason `registeredFromRaw` runs first).
+      if (inventory) inventory.registered.usage = u.name;
+      const declaredName = declaredLegacy(declaredGateway?.usage);
+      if (declaredName !== undefined && u.name !== declaredName) {
+        throw new Error(
+          `invalid contributions: usage "${u.name}" is not declared `
+          + 'in plugin.json contributes.gateway.usage',
+        );
+      }
       usage = { mod: u, source: desc.mainFile };
       kinds.push('usage');
     }
@@ -1654,6 +1712,28 @@ export class PluginHost {
       const spec = contribs.media;
       if (!Array.isArray(spec.modalities) || spec.modalities.length === 0
           || !spec.modalities.every((m) => VALID_MODALITIES.has(m))) throw new Error('media: invalid modalities');
+      const declaredMedia = declaredGateway?.media;
+      const name = spec.name ?? modName;
+      if (inventory) inventory.registered.media = { name, modalities: [...spec.modalities] };
+      const declaredMediaName = declaredLegacy(declaredMedia);
+      if (declaredMediaName !== undefined && name !== declaredMediaName) {
+        throw new Error(
+          `invalid contributions: media "${name}" is not declared `
+          + 'in plugin.json contributes.gateway.media',
+        );
+      }
+      // `modalities` is the only second dimension a legacy plane declares: the
+      // instance may serve a subset, never extra.
+      const declaredModalities = declaredMedia?.modalities;
+      if (declaredModalities !== undefined) {
+        const undeclared = spec.modalities.find((modality) => !declaredModalities.includes(modality));
+        if (undeclared !== undefined) {
+          throw new Error(
+            `invalid contributions: media modality "${undeclared}" is not declared `
+            + 'in plugin.json contributes.gateway.media.modalities',
+          );
+        }
+      }
       const hasCreatePrompt = typeof spec.createPrompt === 'function';
       const hasPiEngine = spec.engine === 'pi';
       if (hasCreatePrompt === hasPiEngine) throw new Error('media: createPrompt and engine:"pi" are mutually exclusive');
@@ -1661,7 +1741,7 @@ export class PluginHost {
         ? await spec.createPrompt!(ctx)
         : createPiPromptAdapter({ fixPayload: spec.fixPayload, getApiKey: (p) => ctx.apiKey(p) });
       if (typeof prompt !== 'function') throw new Error('media: createPrompt did not return a function');
-      media = { name: spec.name ?? modName, prompt, modalities: spec.modalities, source: desc.mainFile };
+      media = { name, prompt, modalities: spec.modalities, source: desc.mainFile };
       kinds.push('media');
     }
     if (contribs.tts) {
@@ -1669,8 +1749,17 @@ export class PluginHost {
       if (typeof spec.synthesize !== 'function') throw new Error('tts: missing synthesize(ctx, text, opts)');
       if (typeof spec.voices !== 'function') throw new Error('tts: missing voices()');
       if (!spec.capabilities || typeof spec.capabilities.sampleRate !== 'number') throw new Error('tts: capabilities.sampleRate required');
+      const name = spec.name ?? modName;
+      if (inventory) inventory.registered.tts = name;
+      const declaredName = declaredLegacy(declaredGateway?.tts);
+      if (declaredName !== undefined && name !== declaredName) {
+        throw new Error(
+          `invalid contributions: tts "${name}" is not declared `
+          + 'in plugin.json contributes.gateway.tts',
+        );
+      }
       const engine: TtsEngine = {
-        name: spec.name ?? modName,
+        name,
         // 包贡献面的键名是 `capabilities`（插件公开面），引擎内部叫 `profile`。
         profile: spec.capabilities,
         voices: () => spec.voices(),
@@ -1685,8 +1774,17 @@ export class PluginHost {
     if (contribs.runtime) {
       const spec = contribs.runtime;
       if (typeof spec.createRuntime !== 'function') throw new Error('runtime: missing createRuntime(ctx)');
+      const name = spec.name ?? modName;
+      if (inventory) inventory.registered.runtime = name;
+      const declaredName = declaredLegacy(declaredGateway?.runtime);
+      if (declaredName !== undefined && name !== declaredName) {
+        throw new Error(
+          `invalid contributions: runtime "${name}" is not declared `
+          + 'in plugin.json contributes.gateway.runtime',
+        );
+      }
       runtime = {
-        name: spec.name ?? modName,
+        name,
         // 包 runtime 一律拿统一 ctx（忽略 loader 传入的 legacy ctx）
         createRuntime: (_ignored: any) => spec.createRuntime(ctx),
         capabilities: spec.capabilities ?? {},

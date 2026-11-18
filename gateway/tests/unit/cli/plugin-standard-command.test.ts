@@ -613,6 +613,129 @@ describe('mafw plugin check — declared-vs-registered deltas and the failure co
   });
 });
 
+// ── legacy singleton planes: named declarations, same delta vocabulary ──────
+
+describe('mafw plugin check — legacy singleton planes', () => {
+  async function render(result: PluginCheckResult) {
+    const out: string[] = [];
+    const code = await runPluginStandardCommand(['check', '/abs/p'], {
+      check: async () => result,
+      print: (line) => out.push(line),
+    });
+    const line = (prefix: string): string => out.find((entry) => entry.startsWith(prefix)) ?? '';
+    return { out, code, text: out.join('\n'), line };
+  }
+
+  it('renders all four planes on both inventory lines', async () => {
+    const { code, line } = await render({
+      ok: true,
+      declared: {
+        runtime: 'r1',
+        tts: 't1',
+        usage: 'u1',
+        media: { name: 'm1', modalities: ['image', 'video'] },
+      },
+      registered: {
+        actions: [], events: [], tools: [], observers: [], http: 0,
+        runtime: 'r1',
+        tts: 't1',
+        usage: 'u1',
+        media: { name: 'm1', modalities: ['image'] },
+      },
+    });
+    expect(code).toBe(0);
+    const declared = line('declared:');
+    expect(declared).toContain('runtime [r1]');
+    expect(declared).toContain('tts [t1]');
+    expect(declared).toContain('usage [u1]');
+    // Media carries its modalities: declared on one side, observed on the other.
+    expect(declared).toContain('media [m1:image,video]');
+    const registered = line('registered:');
+    expect(registered).toContain('runtime [r1]');
+    expect(registered).toContain('tts [t1]');
+    expect(registered).toContain('usage [u1]');
+    expect(registered).toContain('media [m1:image]');
+    // A satisfied declaration is never marked.
+    expect(declared).not.toMatch(/[+-][A-Za-z]/);
+    expect(registered).not.toMatch(/[+-][A-Za-z]/);
+  });
+
+  it('marks a legacy plane that disagrees with its declaration', async () => {
+    const { line } = await render({
+      ok: false,
+      code: 'contribution_bound',
+      evaluated: true,
+      error: 'invalid contributions: runtime "r2" is not declared '
+        + 'in plugin.json contributes.gateway.runtime',
+      declared: {
+        runtime: 'r1',
+        tts: 't1',
+        usage: 'u1',
+        media: { name: 'm1', modalities: ['image'] },
+      },
+      registered: {
+        actions: [], events: [], tools: [], observers: [], http: 0,
+        runtime: 'r2',
+        media: { name: 'm1', modalities: ['image', 'video'] },
+      },
+    });
+    // Same markers as the array planes: declared side loses, registered side adds.
+    expect(line('declared:')).toContain('runtime [-r1]');
+    expect(line('registered:')).toContain('runtime [+r2]');
+    // A declared-but-unregistered plane is legal and reads as `[]`.
+    expect(line('declared:')).toContain('tts [-t1]');
+    expect(line('registered:')).toContain('tts []');
+    expect(line('declared:')).toContain('usage [-u1]');
+    expect(line('registered:')).toContain('usage []');
+    // Media is out of bound because `video` was never declared.
+    expect(line('declared:')).toContain('media [-m1:image]');
+    expect(line('registered:')).toContain('media [+m1:image,video]');
+  });
+
+  it('hides a legacy plane the manifest does not declare', async () => {
+    const { code, line } = await render({
+      ok: true,
+      declared: { actions: ['ping'] },
+      registered: {
+        actions: ['ping'], events: [], tools: [], observers: [], http: 0,
+        runtime: 'free-rt',
+        tts: 'free-tts',
+        usage: 'free-usage',
+        media: { name: 'free-media', modalities: ['image'] },
+      },
+    });
+    expect(code).toBe(0);
+    for (const plane of ['runtime', 'tts', 'usage', 'media']) {
+      expect(line('declared:')).not.toContain(plane);
+      expect(line('registered:')).not.toContain(plane);
+    }
+    // Undeclared = unconstrained: nothing to mark and nothing to note.
+    expect(line('declared:')).not.toMatch(/[+-][A-Za-z]/);
+    expect(line('registered:')).not.toMatch(/[+-][A-Za-z]/);
+  });
+
+  it('--json carries the legacy inventory untouched', async () => {
+    const out: string[] = [];
+    await runPluginStandardCommand(['check', '/abs/p', '--json'], {
+      check: async () => ({
+        ok: true,
+        declared: { runtime: 'r1', media: { name: 'm1', modalities: ['image'] } },
+        registered: {
+          actions: [], events: [], tools: [], observers: [], http: 0,
+          runtime: 'r1',
+          media: { name: 'm1', modalities: ['image'] },
+        },
+      }),
+      print: (line) => out.push(line),
+    });
+    const payload = JSON.parse(out.join('\n').trim());
+    expect(payload.declared.runtime).toBe('r1');
+    expect(payload.declared.media).toEqual({ name: 'm1', modalities: ['image'] });
+    expect(payload.registered.runtime).toBe('r1');
+    expect(payload.registered.media).toEqual({ name: 'm1', modalities: ['image'] });
+  });
+});
+
 // ── schema: the machine-readable contract, printed as-is ────────────────────
 
 const noCheck = async (): Promise<never> => {
