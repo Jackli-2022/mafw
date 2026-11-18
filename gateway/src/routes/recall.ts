@@ -277,12 +277,16 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
         if (fokStatus !== 'inject') {
           try {
             const { findExactRecallEvidence, applyExactRecallEvidence } = require('../recall/exact-evidence');
+            // Evidence discovery must be wide enough to keep every equal-
+            // specificity owner that the BM25 candidate set can prefer; the
+            // existing search cap (50) is the bound. Apply still enforces topK=3.
+            const evidenceLimit = config.search.maxMemoryResults || 50;
             const exact = applyExactRecallEvidence(
               memories,
               findExactRecallEvidence(
                 deps.memoryService()!.harmonicIndex.getIndex().entries,
                 query,
-                3,
+                evidenceLimit,
               ),
               fokStatus,
               3,

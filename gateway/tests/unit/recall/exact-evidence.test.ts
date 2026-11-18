@@ -438,6 +438,39 @@ describe('recall.context exact-evidence wiring', () => {
     expect(pointers).toContain(`#mem-${exact.id.slice(-6)}`);
   });
 
+  test('preserves BM25 candidate owners when more than topK equal-specificity owners exist', async () => {
+    // All entries are equally strong identifier owners, and the BM25 candidates
+    // are three of them. Sorted ids put the extra owners first, so a route-level
+    // limit of 3 would truncate the real owners before apply() can prefer them.
+    const ranked = [1, 2, 3].map(i => entry({
+      id: `mem_flat_${i}`,
+      primary_abstraction: `ranked ${i}`,
+      cue_anchors: ['5cd9885f5'],
+    }));
+    const extraOwners = Array.from({ length: 8 }, (_, i) => entry({
+      id: `mem_aaa_owner_${i}`,
+      primary_abstraction: `extra owner ${i}`,
+      cue_anchors: ['5cd9885f5'],
+    }));
+    const { handler } = routeHarness([...ranked, ...extraOwners]);
+    const run = async (): Promise<string> => {
+      const res = fakeRes();
+      const url = '/api/recall/context?sessionID=s1&query=5cd9885f5';
+      await handler(url)(fakeReq(url), res.res);
+      expect(res.status).toBe(200);
+      return JSON.parse(res.body).pointers as string;
+    };
+
+    const first = await run();
+    expect(first).toContain('相关记忆：见下方');
+    expect(first).toContain('#mem-flat_1');
+    expect(first).toContain('#mem-flat_2');
+    expect(first).toContain('#mem-flat_3');
+    // Final output is still topK=3 anchors, and identical on a second call.
+    expect(first.match(/^- #mem-/gm) || []).toHaveLength(3);
+    expect(await run()).toBe(first);
+  });
+
   test('an already-inject turn keeps BM25 order and never admits an exact-only entry', async () => {
     const exactOnly = entry({
       id: 'mem_exact_inject_target',
