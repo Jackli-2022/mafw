@@ -1823,6 +1823,29 @@ html[data-theme="light"] body {
 .mafw-run-count { font-size: 11px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; max-width: 60ch; white-space: nowrap; }
 .mafw-lead-status-card { flex-direction: column; align-items: stretch; gap: 4px; }
 .mafw-lead-status-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* Lead external-delivery receipt card (composer above-row) */
+.mafw-lead-external-inbox { flex-direction: column; align-items: stretch; gap: 4px; }
+.mafw-lead-external-toggle { width: 100%; justify-content: flex-start; padding: 2px 4px; }
+.mafw-lead-external-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--warning); flex: none; }
+.mafw-lead-external-dot.is-done { background: var(--success); }
+.mafw-lead-external-chev { margin-left: auto; }
+.mafw-lead-external-head { display: flex; align-items: center; gap: 8px; }
+.mafw-lead-external-collapse { margin-left: auto; }
+.mafw-lead-external-list { display: flex; flex-direction: column; }
+.mafw-lead-external-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--border-subtle); }
+.mafw-lead-external-row:first-child { border-top: 0; }
+.mafw-lead-external-badge {
+  width: 24px; height: 24px; border-radius: 6px; border: 1px solid var(--border-subtle);
+  display: grid; place-items: center; font-size: 9px; color: var(--text-3); flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.mafw-lead-external-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.mafw-lead-external-title { font-size: 12px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mafw-lead-external-meta { font-size: 10px; color: var(--text-3); }
+.mafw-lead-external-row.done .mafw-lead-external-title { color: var(--text-3); text-decoration: line-through; text-decoration-color: var(--border-base); }
+.mafw-lead-external-done { flex: none; }
+.mafw-lead-external-error { color: var(--warning-text); }
 .mafw-topic-index { flex-direction: column; align-items: stretch; gap: 4px; }
 .mafw-topic-index-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .mafw-topic-index-row { display: flex; align-items: center; }

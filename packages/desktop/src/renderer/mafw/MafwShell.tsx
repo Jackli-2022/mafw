@@ -4774,6 +4774,7 @@ export function MafwShell() {
                           handoffEligible={canHandoffActiveSession}
                           techLeadInvite={activeLeadGoalInvite}
                           leadGoals={() => podStore.detail()?.goals ?? []}
+                          leadPodId={() => podStore.detail()?.pod.id ?? null}
                           leadAttention={() => podStore.detail()?.attention ?? []}
                           showTopics={showTopics()}
                           topicItems={topicItems()}

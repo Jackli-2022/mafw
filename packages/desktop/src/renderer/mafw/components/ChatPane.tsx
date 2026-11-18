@@ -42,6 +42,7 @@ import { isLeadRole } from "../lead-session"
 import { buildSessionMenu, type SessionMenuActionId } from "./session-header-menu"
 import { buildLeadGoalStatusCards, type LeadGoalStatusSource } from "../lead-goal-status"
 import { LeadGoalStatusCard } from "./LeadGoalStatusCard"
+import { LeadExternalInbox } from "./LeadExternalInbox"
 import { TopicIndexPanel } from "./TopicIndexPanel"
 import type { LeadTopicListItem } from "../lead-topics"
 import type { LeadBoundaryView } from "@mafw/sdk"
@@ -253,6 +254,8 @@ export type ChatPaneProps = {
   techLeadInvite?: () => { goalId: string; title: string; stageLabel?: string; sourceLabel?: string } | null
   /** Lead 状态卡数据（按需展示；不常驻）。 */
   leadGoals?: () => LeadGoalStatusSource[]
+  /** 当前 Lead 所属 Pod；外部事件回执卡只用该 Pod 的投递。 */
+  leadPodId?: () => string | null
   /** Lead 状态卡的人类 attention 计数（与 goals 同源：pod detail）。 */
   leadAttention?: () => { goalId: string }[]
   /** Lead 话题索引（shell 持有数据；面板与状态卡互斥）。 */
@@ -2840,6 +2843,12 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             onFork={(id) => props.onForkTopic?.(id)}
             onBoundaryAction={(id, action) => props.onBoundaryAction?.(id, action)}
             onClose={() => props.onCloseTopics?.()}
+          />
+        </Show>
+        <Show when={isLead() && (props.currentProject || props.projectDirectory)}>
+          <LeadExternalInbox
+            projectDir={props.currentProject ?? props.projectDirectory ?? undefined}
+            podId={props.leadPodId?.() ?? null}
           />
         </Show>
         <Show when={isLead() && showLeadStatus()}>
