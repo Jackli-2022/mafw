@@ -70,18 +70,21 @@ export class PairingService {
   }
 
   /**
-   * Generate a one-time pairing URL (v2). Rate-limit applies to non-loopback
-   * only; loopback is exempt because the operator is local and trusted (spec
-   * §6.1 allows local generation without throttling). Documented here for audit.
+   * Generate a one-time pairing URL (v2). Rate-limit applies to non-local
+   * callers only; a true `local` principal is exempt because the operator is
+   * local and trusted (spec §6.1). A relayed caller reaches us over a loopback
+   * socket, so the decision must come from the principal, not the IP.
    *
    * E5a-3: the URL carries `url` / `v=2` / `exp` / `nonce` — never a gateway
    * credential. The nonce is exchanged at `POST /api/mobile/pairing/verify`
    * for a revocable per-device token.
    */
-  generatePairingCode(ip: string): { url: string } {
-    const isLoopback = ip === '127.0.0.1' || ip.startsWith('127.') || ip === '::1' || ip === '::ffff:127.0.0.1';
+  generatePairingCode(ip: string, opts?: { local?: boolean }): { url: string } {
+    const local = opts?.local ?? (
+      ip === '127.0.0.1' || ip.startsWith('127.') || ip === '::1' || ip === '::ffff:127.0.0.1'
+    );
 
-    if (!isLoopback) {
+    if (!local) {
       this.checkRateLimit(ip);
     }
 
