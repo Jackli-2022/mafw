@@ -36,12 +36,12 @@
 - `2d3397fbc` `9bde569ea` `dbea65429` `034096e91` `cc36bb95f` — 桌面投影 / SSE / 药丸卡 / 历史回填 / 真实数据
 - `dd27fa559` `18b5ae5a3` `1d73057bf` `1bfb79988` — splitTurn / ProcessTimeline / 接入 / 折叠
 - `f745117ec` `3f716f98f` `57e13fae1` — reminder + marker 发送路径 / ghost chip
-- 验证修复：`d4c9f40c3`（IPC 参数）、`a564c0cff`（工具卡默认展开/actions）、`493910814`（live 替换保留 turnKey）、`be77475c9`（T1 source 映射）、`7a377a8f8`（启动崩溃）、`4a5ae66c7`（快照邻居）、`f058dade7`（旧 preload 兼容）、`e194f9f2b`（路由覆盖账本）
+- 验证修复：`d4c9f40c3`（IPC 参数）、`a564c0cff`（工具卡默认展开/actions）、`493910814`（live 替换保留 turnKey）、`be77475c9`（T1 source 映射）、`7a377a8f8`（启动崩溃）、`4a5ae66c7`（快照邻居）、`f058dade7`（旧 preload 兼容）、`e194f9f2b`（路由覆盖账本）、`238c6f9f7`（城市输入溢出）
 - 文档：`a1286acaf`
 
 ## 验证
 
-- Desktop：`npm test` → **795 suites / 4156 pass / 0 fail**；`npx tsgo --noEmit -p tsconfig.json` → rc 0。
+- Desktop：`npm test` → **795 suites / 4157 pass / 0 fail**；`npx tsgo --noEmit -p tsconfig.json` → rc 0。
 - Session UI：全部测试（排除既有 `architecture.test.ts`）→ **25 suites / 155 pass / 0 fail**；`tsgo` rc 0。
 - SDK：`npm test` → **246 pass / 0 fail**；`tsc` rc 0。
 - UI：`tsgo` rc 0。
