@@ -77,6 +77,12 @@
 - **Chat 阅读密度（2026-11-16）**：正文 16px / 1.6（`--mafw-chat-leading`，对齐 ChatGPT
   1.5–1.63 / Claude 1.5–1.6 / Gemini 1.55），段距保持 16px；「已思考」到正文只保留
   assistant content 的 12px flex gap，取消 text-part 12px 顶距与 thinking 2px 底距叠加。
+- **Chat 标题栏层级（2026-11-18）**：标题栏只留身份与一个动作——头像、会话标题、token、任务条、
+  Running / worktree 状态，外加「交给 Lead」与 `⋯`；标题下限 120px，不再被工具按钮压成省略号。
+  `⋯` 用 `MenuV2` 按 视图 / 会话 / Lead / 导航 分组：展开细节（Ctrl+O）、时间线 / 检查点、
+  从这里开始新段落、并行任务（worktree）、话题、Goal 状态、返回项目 Lead、返回父会话、关闭分屏。
+  可见性由 `session-header-menu.ts` 的 `buildSessionMenu` 统一决定（7 条单测），不再散落在 JSX
+  条件里；点击任一项后菜单自行关闭。详见 `docs/releases/2026-11-18-session-header-overflow.md`。
 - **Agent-native Chat 意图（2026-11-15 起）**：composer 只保留一个发送面，讨论 / 提议 / 委托 / 解决
   四模式已移除。Lead 按系统提示直接调用 `mafw_create_goal` 建立 `discussing` Goal（带当前话题
   快照，不启动 NodeDriver）；桌面把该工具结果渲染成 `GoalCreatedCard`（打开 Tech Lead 讨论 /
@@ -86,8 +92,8 @@
   Lead 通过 `mafw_create_goal` 的 `contextSummary` 选择 Goal 来源上下文；不再在 chat 内联
   `BoundaryCard`。话题边界提案仅在「话题」面板（`TopicIndexPanel`）里可见，
   `LeadBoundaryService` 作为后台 hint 保留。Episode 仍按会话存
-  `localStorage['mafw-episodes:v1:<sessionID>']`（仅分组视图），「标记 Episode」已从 composer
-  移到 transcript header。详见 `docs/releases/2026-11-15-agent-native-chat-intent.md`、
+  `localStorage['mafw-episodes:v1:<sessionID>']`（仅分组视图），「从这里开始新段落」已从 composer
+  收进 transcript header 的 `⋯` 菜单。详见 `docs/releases/2026-11-15-agent-native-chat-intent.md`、
   `docs/releases/2026-11-15-chat-review-and-boundary-cards.md` 与
   `docs/releases/2026-11-15-lead-selected-goal-context.md`。
 - **Workbench 焦点收口（2026-11-12 Plan 5）**：`WorkbenchShell` 只剩 `FrameBar` /
@@ -245,7 +251,7 @@ MafwShell 的 onmessage（原 ~350 行 if-else）与工作区状态抽为独立�
 - **能力位**：`RuntimeCapabilities.worktreeApi`（opencode true / pi false）——desktop 入口按 `GET /api/runtime` 的 capabilities 显隐
 - **创建**：`POST /api/session` body 加 `worktree?: boolean | string`（`routes/session-worktree.ts` `createSessionWithWorktree`）——`SessionWorktreeManager.create(slug)`：`git worktree add <project>-wt-<slug> -b mafw/<slug>`（平铺于项目同级，与 goal `<proj>-goal-<id>` 约定一致；同名 slug 一律递增 -2/-3，**每会话独立 worktree，无跨调用复用**）→ `session.create({ directory: worktreeDir })` → kv `session-worktree/<sid>` = `{dir, branch, projectDir}`
 - **删除联动**：`session.delete`（wave1 dispatch）成功后 `cleanupWorktreeForSession`——worktree remove + branch -D，全部 fail-open 不阻塞删除
-- **desktop**：ChatPane titlebar「⎇ 并行」按钮（能力门）+ Rail 行 / titlebar 的 `⎇ <slug>` 徽标（`worktree-label.ts` 纯函数判定：`s.directory` basename 前缀 `<base>-wt-` 且 ≠ 项目主目录）
+- **desktop**：ChatPane 标题栏 `⋯` 菜单里的「并行任务（worktree）」（能力门）+ Rail 行 / titlebar 的 `⎇ <slug>` 徽标（`worktree-label.ts` 纯函数判定：`s.directory` basename 前缀 `<base>-wt-` 且 ≠ 项目主目录）
 - **TUI**：`/sessions` picker 行尾 dim `⎇<slug>` 标注（只读）
 - **已知边界**：①TS 类字段初始化器先于 constructor 参数属性——`git = simpleGit(this.projectDir)` 拿到 undefined 回退 process.cwd() 会把 worktree 注册进 gateway 自身 repo（已修：constructor 内赋值）；②worktree 内记忆写入不随 directory 分离（HarmonicUnitFileStore 固定 `~/.mafw`），session 维度记忆融合机制未建（goal 链路的 mergeMemoryFromWorktree 不受影响）；③残留孤儿 worktree 可经 `git worktree prune` + 手动清理。**GoalWorktreeManager 修复（2026-09-20）**：①prepare(archive) 的 projectDir 与 constructor 不一致时重绑 simpleGit cwd（防御性，测试钉扎）；②并行路径改为 `worktree add -b` 直建分支——旧实现先在主仓 checkoutLocalBranch 再 `worktree add <branch>`，主仓分支被切走且 add 必败被吞成"already exists"假日志。另：`POST /api/approvals/:id/respond` 空 stub 已替换为真实现（`routes/approvals-respond.ts`：在注册项目 user-questions/（flat+legacy）定位提问 JSON 写 answered/answer/answeredAt，goal askUser 轮询消费；id 路径逃逸防护）
 
