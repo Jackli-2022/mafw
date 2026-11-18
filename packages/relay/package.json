@@ -1,0 +1,25 @@
+{
+  "name": "@mafw/relay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MAFW mobile relay: SNI router + host control hub",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "package.json"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --test \"src/**/*.test.ts\""
+  },
+  "dependencies": {
+    "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.7.0"
+  }
+}
