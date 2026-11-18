@@ -94,6 +94,18 @@ export function LeadExternalInbox(props: {
   const answer = async (deliveryId: string): Promise<void> => {
     setBusy(true);
     try {
+      const current = items().find((item) => item.deliveryId === deliveryId);
+      if (current?.state === 'delivered') {
+        // Answer requires a read first; cover the race where the expand-time
+        // read is still in flight or previously failed.
+        try {
+          await window.api.mafw.events.readDelivery(deliveryId);
+          setItems((prev) => prev.map((item) =>
+            item.deliveryId === deliveryId ? { ...item, state: 'read' } : item));
+        } catch {
+          // answerDelivery below returns the authoritative 409 / 404.
+        }
+      }
       await window.api.mafw.events.answerDelivery(deliveryId);
       setItems((prev) => prev.map((item) =>
         item.deliveryId === deliveryId ? { ...item, state: 'answered' } : item));
