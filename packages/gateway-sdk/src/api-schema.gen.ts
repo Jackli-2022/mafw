@@ -15815,7 +15815,7 @@ export interface operations {
                             media?: {
                                 /** @description Legacy media contribution name; defaults to the package name. */
                                 name?: string;
-                                /** @description Modalities the instance may serve; [] = nothing allowed. */
+                                /** @description Modalities the instance may serve; [] = the manifest left the list open (an explicit empty list is rejected by contract validation). */
                                 modalities: string[];
                             };
                         };
@@ -15827,17 +15827,17 @@ export interface operations {
                             observers: string[];
                             /** @description HTTP + WebSocket routes recorded through ctx.http. */
                             http: number;
-                            /** @description Legacy runtime instance observed during a trusted activation. */
+                            /** @description Legacy runtime instance returned by activate(), before validation. */
                             runtime?: string;
-                            /** @description Legacy TTS instance observed during a trusted activation. */
+                            /** @description Legacy TTS instance returned by activate(), before validation. */
                             tts?: string;
-                            /** @description Legacy usage instance observed during a trusted activation. */
+                            /** @description Legacy usage instance returned by activate(), before validation. */
                             usage?: string;
                             /** @description Legacy media plane: one instance per package, pinned to its modalities. */
                             media?: {
                                 /** @description Legacy media contribution name; defaults to the package name. */
                                 name?: string;
-                                /** @description Modalities the instance may serve; [] = nothing allowed. */
+                                /** @description Modalities the instance may serve; [] = the manifest left the list open (an explicit empty list is rejected by contract validation). */
                                 modalities: string[];
                             };
                         };

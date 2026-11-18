@@ -32,6 +32,21 @@ const DECLARATION_ERRORS = [
   'observer "<id>" is not declared in plugin.json contributes.gateway.observers',
 ];
 
+/** The four legacy singleton planes plus `media`'s modality bound. */
+const LEGACY_PLANE_ERRORS = [
+  'invalid contributions: runtime "x" is not declared in plugin.json contributes.gateway.runtime',
+  'invalid contributions: media "x" is not declared in plugin.json contributes.gateway.media',
+  'invalid contributions: media modality "video" is not declared in plugin.json contributes.gateway.media.modalities',
+  'invalid contributions: tts "x" is not declared in plugin.json contributes.gateway.tts',
+  'invalid contributions: usage "x" is not declared in plugin.json contributes.gateway.usage',
+];
+
+/** Contract-level rejects: an empty list would be ambiguous, a typo unsatisfiable. */
+const MEDIA_DECLARATION_ERRORS = [
+  'manifest contributes.gateway.media.modalities must not be empty',
+  'manifest contributes.gateway.media.modalities[0] must be one of image, video, audio',
+];
+
 it('documents every bound error string verbatim', () => {
   const doc = DOC();
   for (const text of [
@@ -54,6 +69,28 @@ it('quotes strings that the producing source still contains', () => {
   const host = HOST();
   expect(host).toContain('http routes are not declared (contributes.gateway.http is false)');
   expect(host).toContain('packages without plugin.json cannot contribute ');
+});
+
+it('documents every legacy plane bound error verbatim', () => {
+  const doc = DOC();
+  for (const text of [...LEGACY_PLANE_ERRORS, ...MEDIA_DECLARATION_ERRORS]) {
+    expect(doc).toContain(text);
+  }
+
+  // The host wraps each sentence over two template literals and interpolates
+  // the offending value, so compare after collapsing both.
+  const host = HOST()
+    .replace(/\$\{[^}]*\}/g, '…')
+    .replace(/`\s*\+\s*'/g, '')
+    .replace(/\s+/g, ' ');
+  for (const text of LEGACY_PLANE_ERRORS) {
+    expect(host).toContain(text.replace(/"[^"]*"/, '"…"'));
+  }
+
+  // The emptiness / material-set rules live in the shared contract, not the host.
+  const contract = source('packages', 'plugin-contract', 'src', 'validate.ts');
+  expect(contract).toContain('${label}.modalities must not be empty');
+  expect(contract).toContain('must be one of ${MEDIA_MODALITIES.join(", ")}');
 });
 
 it('names the three CLI entry points and the strict/json flags', () => {

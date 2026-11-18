@@ -201,7 +201,7 @@ module.exports = { name: 'my-plugin', usage: { /* … */ } };
 
 ---
 
-## 4. 五个 plane（actions / events / tools / observers / http）
+## 4. 声明式 plane（actions / events / tools / observers / http）
 
 Handler 永远来自 `activate()` 的返回值；`plugin.json` 只声明**名字**（`tools` 是半个例外：声明项本身必须是一个合法描述符，但与本包注册项的匹配只按 `name`）。
 
@@ -489,7 +489,7 @@ module.exports = {
 
 ### 4.6 legacy plane 声明
 
-`runtime` / `media` / `tts` / `usage` 是四个 **legacy 单例面**：每包最多一个实例，由 `activate()` 返回值的同名键（或 §3 的 legacy 模块导出）自述，不是数组。它们在 `contributes.gateway` 里是可选的**对象声明**：
+`runtime` / `media` / `tts` / `usage` 是 §4.1–§4.5 五个声明式 plane 之外的四个 **legacy 单例面**：每包最多一个实例，由 `activate()` 返回值的同名键（或 §3 的 legacy 模块导出）自述，不是数组。它们在 `contributes.gateway` 里是可选的**对象声明**：
 
 ```json
 "contributes": {
@@ -507,7 +507,7 @@ module.exports = {
 - **未声明 = 不受约束**：省略任一面，该面完全不受上界约束（存量包零影响，`check` 也不渲染它）。
 - **声明了但没注册 = 合法**：包可以按配置 / host 版本条件注册；`check` 只在 `note: declared but not registered: …` 里列出，永不因此失败。
 - **名字缺省 = 包名**：实际名字取 `spec.name ?? <package>`，声明名字同样按包名解析，所以 `runtime: {}` 与 `runtime: { name: "<package>" }` 等价。**`name` 必须非空白**（`must be a non-empty string`），空白名永远匹配不上实例，在 manifest 阶段就被拒绝。
-- **`media` 多一维模态**：`modalities` 省略 = 不限；给了列表时，实际服务的模态必须是声明的**子集**（少可以，多不行）。
+- **`media` 多一维模态**：`modalities` 省略 = 不限；给了列表时，实际服务的模态必须是声明的**子集**（少可以，多不行）。列表本身必须是 `image` / `video` / `audio` 的**非空**子集：显式 `[]` 与未知名字都在 manifest 阶段被拒（`check` 把「省略」也渲染成 `[]`，所以空列表不能再表示零上界；未知名字否则会造出一个永远无法满足的上界）。
 - 四个面都需要 `trusted`：`untrusted` 包**不能声明**它们（worker 只支持 actions / events / config，永远无法满足），manifest 解析阶段即整包拒绝，一个面一条 `untrusted packages cannot declare contributes.gateway.<plane>`（`<plane>` 是实际键名）。
 
 逐字错误（`error:` 行的诊断部分；`invalid contributions: ` 前缀与 §4 的数组面一致，所以同样归入 `contribution_bound`）：
@@ -518,6 +518,13 @@ invalid contributions: media "x" is not declared in plugin.json contributes.gate
 invalid contributions: media modality "video" is not declared in plugin.json contributes.gateway.media.modalities
 invalid contributions: tts "x" is not declared in plugin.json contributes.gateway.tts
 invalid contributions: usage "x" is not declared in plugin.json contributes.gateway.usage
+```
+
+`media.modalities` 的形状错误在 manifest 阶段就拒绝（`check` 里是 `error[manifest_invalid]: contributes: …`），不会等到激活：
+
+```text
+manifest contributes.gateway.media.modalities must not be empty
+manifest contributes.gateway.media.modalities[0] must be one of image, video, audio
 ```
 
 声明形状（闭合对象，多余字段报 `<label> has unknown field "<key>"`）：`runtime` / `tts` / `usage` 只认 `name`，`media` 只认 `name` + `modalities`。
@@ -552,7 +559,7 @@ invalid contributions: usage "x" is not declared in plugin.json contributes.gate
 
 `contributes.gateway` 的数组面只约束一个方向：**registered ⊆ declared**；四个 legacy 单例面是名字 / 模态对齐（§4.6）。
 
-- **plane 缺失 = 不设上界**（老包照常激活）；**显式 `[]` = 零上界**（一个也不许）。渲染与判断都必须区分这两者。
+- **plane 缺失 = 不设上界**（老包照常激活）；**显式 `[]` = 零上界**（一个也不许）。渲染与判断都必须区分这两者。唯一例外是 `media.modalities`：显式 `[]` 被契约拒绝，所以那里的 `[]` 只表示清单省略了列表（不限）。
 - **声明多于注册是合法的**：包可以按能力/配置/host 版本条件注册。`check` 只会打印 `note: declared but not registered: action "x", …`，**永不**因此失败。
 - 被强制的是四个名字集合（`actions` / `events` / `tools` / `observers`）、一个布尔开关（`http`，**只有显式 `false` 生效**；缺省或 `true` 都不设上界），以及四个 legacy 单例面的名字 / 模态（§4.6；未声明同样不设上界）。`contributes.desktop` 不参与上界。
 - 诊断顺序：先形状/身份校验；有形状错误时只报那些错误，修好之后才报越界（判决都是激活失败）。`http: false` 的检查在派生贡献构建之前，不受这个顺序影响。
@@ -605,10 +612,10 @@ mafw plugin check <absolute-path> [--json] [--strict]
 - **`evaluated: false`** 表示包里 `activate()` 根本没有产出贡献集合（manifest/入口/身份/激活失败等）。此时 `registered:` 渲染为 `(not evaluated)`，不打印 `+`/`-` 标记，也不打印「声明了没注册」的 `note:`——「没评估」不是「没注册」。
 - `--json`：**一行**可解析 JSON。`ok` 是**命令判决**（不是原始 check 结果），另有 `verdict`（`"ok"` / `"fail"`）、`strictFailed`、`code`（失败分类，见下）、`evaluated`（是否产出了贡献集合），以及 `name` / `version` / `contributions` / `apiVersion` / `kind` / `permissions` / `declared` / `registered` / `warnings` / `error` / `webSurfaces`（存在时）。退出码 `0` = 通过，`1` = 不通过。
 - `declared` 缺失 = 没有可用的 `contributes.gateway`（未声明，或 manifest 解析失败——后者同时给出 `error:`）；`declared.actions` 缺失 = 该 plane 无上界；`"actions": []` 会原样出现（零上界）。`registered` 永远存在，且是**尝试注册**的内容——失败时也能看到差集。两行的 `http` 用同一套写法：`declared` 是布尔开关（`http true` / `http false` / 缺省 `http (unbounded)`），`registered` 是路由计数（`http 0 route(s)` / `http 2 route(s)`）。
-- 四个 legacy 单例面（`runtime` / `tts` / `usage` / `media`）只在**已声明**时出现在两行里（未声明 = 不设上界，没有可标记的东西）：名字写成 `runtime [<name>]` / `tts [<name>]` / `usage [<name>]`，`media` 带模态 `media [<name>:<modality>,…]`（如 `runtime [demo-runtime]`、`media [demo-media:image,video]`）。`registered` 侧声明了但没注册渲染成 `runtime []`。差集标记落在整枚 token 前：`runtime [-r1]`（声明 `r1`，实际是别的名字 / 没注册）对 `runtime [+r2]`（注册了未声明的名字）；`media` 的 `+` 同时覆盖名字不符与模态超集。`--json` 原样透传这四个字段（`runtime` / `tts` / `usage` 是字符串，`media` 是 `{ name?, modalities }`），形状见 §4.6。
+- 四个 legacy 单例面（`runtime` / `tts` / `usage` / `media`）只在**已声明**时出现在两行里（未声明 = 不设上界，没有可标记的东西）：名字写成 `runtime [<name>]` / `tts [<name>]` / `usage [<name>]`，`media` 带模态 `media [<name>:<modality>,…]`（如 `runtime [demo-runtime]`、`media [demo-media:image,video]`）。`registered` 侧声明了但没注册渲染成 `runtime []`。差集标记落在整枚 token 前：`runtime [-r1]`（声明 `r1`，实际是别的名字 / 没注册）对 `runtime [+r2]`（注册了未声明的名字）；`media` 的 `+` 同时覆盖名字不符与模态超集。`--json` 输出这两个 inventory 字段的**解析后**形状（`declared` 的 legacy 名字已按 `name ?? 包名` 解析成字符串，`media` 是 `{ name?, modalities }`；`registered` 的字段来自 `activate()` 的原始返回，早先 plane 的校验失败不会抹掉它们），形状见 §4.6。
 - `--strict` 只把 **manifest warning** 变成失败（`not ok: --strict turned the manifest warnings above into failures`）。warning 来自 `plugin.json` 归一化：`legacy-permissions`（apiVersion 2 未声明 `permissions`）、`legacy-contributes: …`（apiVersion 1 的非法 `contributes` 块）。**`--strict` 不会因「声明了没注册」失败**。
 - `check` 也接受单文件包路径（`…/foo.js`），但单文件包不能有 tools/observers/http（§7）。
-- 失败时 `next:` 行按错误给出下一步：`is not declared in …` → 把名字补进 `contributes.gateway`；`permission denied`（只可能来自 `untrusted` worker）→ 补 `permissions`；其余 → 先修错误再按提示重跑 check。
+- 失败时 `next:` 行按错误给出下一步：`is not declared in …contributes.gateway.media.modalities` → 把该模态补进 `contributes.gateway.media.modalities`（或省略该键 = 不限）；其它 `is not declared in …` → 把名字补进 `contributes.gateway`；`permission denied`（只可能来自 `untrusted` worker）→ 补 `permissions`；其余 → 先修错误再按提示重跑 check。
 
 **`ok: true` 覆盖哪些判定**（别把它读成「包一定对」）：
 
@@ -716,6 +723,8 @@ mafw plugins install "C:/abs/path/to/my-plugin"
 | `error: invalid contributions: action "ping" is not declared in plugin.json contributes.gateway.actions` | `activate()` 注册了声明集合之外的 action（events / tools / observers 同构） | 把名字加进 `contributes.gateway.<plane>`，或停止注册；显式 `[]` 时一个也不许 |
 | `error: invalid contributions: runtime "r2" is not declared in plugin.json contributes.gateway.runtime` | 声明的 legacy 名字与实际实例不一致（`tts` / `usage` / `media` 同构；两边都按 `name ?? 包名` 解析） | 对齐 `contributes.gateway.<plane>.name` 与 `activate()` 返回的 `name`，或两边都省略 `name`（默认包名） |
 | `error: invalid contributions: media modality "video" is not declared in plugin.json contributes.gateway.media.modalities` | 实际服务的 modalities 超出声明列表（只允许子集） | 把该模态加进 `contributes.gateway.media.modalities`，或省略 `modalities`（= 不限） |
+| `error[manifest_invalid]: contributes: manifest contributes.gateway.media.modalities must not be empty` | 显式 `[]`：`check` 用 `[]` 表示「清单省略了列表」，空列表不能再表示零上界 | 删掉 `modalities` 键（= 不限），或写至少一个模态 |
+| `error[manifest_invalid]: contributes: manifest contributes.gateway.media.modalities[0] must be one of image, video, audio` | 模态名拼错或不在运行时支持集（如 `imag`），否则会声明一个永远无法满足的上界 | 改成 `image` / `video` / `audio` |
 | `error: untrusted packages cannot declare contributes.gateway.runtime` | `kind: "untrusted"` 的包声明了 legacy 单例面（worker 只支持 actions / events / config，永远无法满足；`media` / `tts` / `usage` 同构） | 删掉 `contributes.gateway.{runtime,media,tts,usage}`，或把包改成 `trusted` |
 | `error: http routes are not declared (contributes.gateway.http is false)` | 声明了 `http: false`（骨架默认）却调用了 `ctx.http.route/ws` | 改成 `"http": true` 并把 `http` 加进 `permissions`，或删掉路由 |
 | observer 收不到自己的事件 | observer 只吃 **canonical** 运行时事件；`plugin:*` 走广播/自动化，永远不进 observer | 用 `events` 广播 + 外部消费者；不要用 observer 观察本包事件 |

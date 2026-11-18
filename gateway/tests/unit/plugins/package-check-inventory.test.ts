@@ -452,6 +452,68 @@ describe('PluginHost.checkPackage legacy plane declarations', () => {
     expect(result.registered?.runtime).toBe('defrt');
   });
 
+  it('fails an anonymous runtime declaration whose instance uses another name', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-legacy-'));
+    const root = writePackage(dir, {
+      name: 'defbad', apiVersion: 2, kind: 'trusted', permissions: [],
+      contributes: { gateway: { runtime: {} } },
+    }, body('defbad', runtime('other-runtime')));
+    const result = await check(root);
+    // The default-name rule has two halves: omitting `name` on both sides
+    // matches, omitting it on the declaration but not on the instance does not.
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe('contribution_bound');
+    expect(result.error).toBe(
+      'invalid contributions: runtime "other-runtime" is not declared '
+      + 'in plugin.json contributes.gateway.runtime',
+    );
+    expect(result.declared?.runtime).toBe('defbad');
+    expect(result.registered?.runtime).toBe('other-runtime');
+  });
+
+  it('keeps a returned legacy instance when an earlier plane fails validation', async () => {
+    // Regression: the legacy planes used to be recorded only inside their own
+    // validated branch, so an undeclared action (validated first) erased the
+    // runtime the package had returned — `check` printed `runtime []` plus a
+    // "declared but not registered" note for an instance it had just seen.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-legacy-'));
+    const root = writePackage(dir, {
+      name: 'mixedfail', apiVersion: 2, kind: 'trusted', permissions: [],
+      contributes: { gateway: { actions: ['a'], runtime: {} } },
+    }, `
+module.exports = { name: 'mixedfail', async activate() {
+  return {
+    actions: { b: { handler: () => ({ ok: true }) } },
+    runtime: {
+      name: 'mixed-runtime',
+      async createRuntime() { return { name: 'mixed-runtime', capabilities: {} }; },
+    },
+  };
+} };
+`);
+    const result = await check(root);
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe('contribution_bound');
+    expect(result.error).toContain('action "b" is not declared');
+    // The action bound is the reported failure, but the runtime the package
+    // returned is still evidence: validation order must not rewrite history.
+    expect(result.evaluated).toBe(true);
+    expect(result.declared?.runtime).toBe('mixedfail');
+    expect(result.registered?.runtime).toBe('mixed-runtime');
+
+    const out: string[] = [];
+    await runPluginStandardCommand(['check', root], {
+      check: async () => result,
+      print: (line) => out.push(line),
+    });
+    const registered = out.find((line) => line.startsWith('registered:')) ?? '';
+    // The instance is not a zero bound and not "never registered": it is an
+    // extra against the default-name declaration, so it carries the `+` marker.
+    expect(registered).toContain('runtime [+mixed-runtime]');
+    expect(registered).not.toContain('runtime []');
+    expect(out.join('\n')).not.toContain('declared but not registered: runtime');
+  });
+
   it('fails a media modality the declaration does not allow', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-legacy-'));
     const root = writePackage(dir, {
@@ -479,6 +541,19 @@ describe('PluginHost.checkPackage legacy plane declarations', () => {
     expect(result.ok).toBe(true);
     expect(result.declared?.media).toEqual({ name: 'm1', modalities: ['image', 'video'] });
     expect(result.registered?.media).toEqual({ name: 'm1', modalities: ['image', 'video'] });
+  });
+
+  it('accepts a proper subset of the declared media modalities', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-legacy-'));
+    const root = writePackage(dir, {
+      name: 'medsubset', apiVersion: 2, kind: 'trusted', permissions: [],
+      contributes: { gateway: { media: { name: 'm1', modalities: ['image', 'video', 'audio'] } } },
+    }, body('medsubset', media('m1', "'image'")));
+    const result = await check(root);
+    // The subset rule is one-directional: serving fewer modalities is legal.
+    expect(result.ok).toBe(true);
+    expect(result.declared?.media).toEqual({ name: 'm1', modalities: ['image', 'video', 'audio'] });
+    expect(result.registered?.media).toEqual({ name: 'm1', modalities: ['image'] });
   });
 
   it('fails a media instance whose name is not the declared one', async () => {

@@ -24243,7 +24243,7 @@
                               "type": "string"
                             },
                             "modalities": {
-                              "description": "Modalities the instance may serve; [] = nothing allowed.",
+                              "description": "Modalities the instance may serve; [] = the manifest left the list open (an explicit empty list is rejected by contract validation).",
                               "type": "array",
                               "items": {
                                 "type": "string"
@@ -24293,15 +24293,15 @@
                           "type": "number"
                         },
                         "runtime": {
-                          "description": "Legacy runtime instance observed during a trusted activation.",
+                          "description": "Legacy runtime instance returned by activate(), before validation.",
                           "type": "string"
                         },
                         "tts": {
-                          "description": "Legacy TTS instance observed during a trusted activation.",
+                          "description": "Legacy TTS instance returned by activate(), before validation.",
                           "type": "string"
                         },
                         "usage": {
-                          "description": "Legacy usage instance observed during a trusted activation.",
+                          "description": "Legacy usage instance returned by activate(), before validation.",
                           "type": "string"
                         },
                         "media": {
@@ -24316,7 +24316,7 @@
                               "type": "string"
                             },
                             "modalities": {
-                              "description": "Modalities the instance may serve; [] = nothing allowed.",
+                              "description": "Modalities the instance may serve; [] = the manifest left the list open (an explicit empty list is rejected by contract validation).",
                               "type": "array",
                               "items": {
                                 "type": "string"

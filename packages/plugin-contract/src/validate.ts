@@ -1610,12 +1610,22 @@ const GATEWAY_CONTRIBUTES_KEYS = [
 /**
  * Legacy singleton planes: at most one instance per package, so a declaration
  * is an object carrying an optional `name` (and, for `media`, optional
- * `modalities`) rather than an array. The schema in `gateway/src/plugins/
- * manifest-schema.ts` mirrors these exact shapes.
+ * `modalities`) rather than an array. `media.modalities` may only name
+ * modalities the gateway can serve, and an explicit empty list is rejected:
+ * `check` renders an omitted list as `[]`, so an empty list has to mean "open".
+ * The schema in `gateway/src/plugins/manifest-schema.ts` mirrors these exact
+ * shapes.
  */
 const LEGACY_PLANE_KEYS = ["runtime", "media", "tts", "usage"] as const
 const LEGACY_NAME_PLANE_KEYS = ["name"] as const
 const LEGACY_MEDIA_PLANE_KEYS = ["name", "modalities"] as const
+/**
+ * The material set a media engine can serve (the gateway's `VALID_MODALITIES`).
+ * A typo such as `imag` would otherwise declare an unsatisfiable bound and only
+ * fail later, at activation, with a message about the instance rather than the
+ * manifest.
+ */
+const MEDIA_MODALITIES: readonly string[] = ["image", "video", "audio"]
 const TOOL_DESCRIPTOR_KEYS = [
   "name",
   "title",
@@ -1693,7 +1703,24 @@ function readLegacyMediaPlane(
   const name = readLegacyPlaneName(value.name, `${label}.name`, errors)
   if (name !== undefined) plane.name = name
   const modalities = readStringList(value.modalities, `${label}.modalities`, errors)
-  if (modalities !== undefined) plane.modalities = modalities
+  if (modalities !== undefined) {
+    // An explicit `[]` is rejected rather than read as a zero bound: `check`
+    // reports an omitted list as `[]` on the wire, so the two states would be
+    // indistinguishable there (and one of them silently looked satisfied).
+    if (modalities.length === 0) {
+      addError(errors, `${label}.modalities must not be empty`)
+    } else {
+      const unknownIndex = modalities.findIndex((modality) => !MEDIA_MODALITIES.includes(modality))
+      if (unknownIndex >= 0) {
+        addError(
+          errors,
+          `${label}.modalities[${unknownIndex}] must be one of ${MEDIA_MODALITIES.join(", ")}`,
+        )
+      } else {
+        plane.modalities = modalities
+      }
+    }
+  }
   return plane
 }
 

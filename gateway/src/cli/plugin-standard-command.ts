@@ -298,7 +298,10 @@ function legacyToken(name: string | undefined, modalities?: readonly string[]): 
 /**
  * `media` is the one legacy plane with a second dimension: the declaration is
  * satisfied when the instance name matches and every served modality was
- * declared. An undeclared modality list leaves the plane open.
+ * declared. An absent or empty modality list leaves the plane open:
+ * `contributes.gateway.media.modalities: []` is rejected by contract validation,
+ * so on the wire `[]` can only mean "the manifest omitted the list", never a
+ * zero bound.
  */
 function mediaSatisfies(
   declared: { name?: string; modalities?: string[] },
@@ -578,7 +581,14 @@ function nextSteps(
   }
   if (result.ok !== true) {
     const error = typeof result.error === 'string' ? result.error : '';
-    if (error.includes('is not declared in plugin.json contributes.gateway.')) {
+    // The modality bound has its own path: "add the name" would be the wrong
+    // edit for a missing modality (the name is already declared by then).
+    if (error.includes('is not declared in plugin.json contributes.gateway.media.modalities')) {
+      steps.push(
+        'next: add the modality to contributes.gateway.media.modalities in plugin.json, '
+        + 'or omit the key to leave modalities open',
+      );
+    } else if (error.includes('is not declared in plugin.json contributes.gateway.')) {
       steps.push('next: add the name to contributes.gateway in plugin.json, or stop registering it in activate()');
     } else if (error.includes('permission denied')) {
       steps.push('next: add the missing permission to plugin.json "permissions"');

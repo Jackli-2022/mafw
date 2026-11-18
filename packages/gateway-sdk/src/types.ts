@@ -2894,6 +2894,8 @@ export interface PluginCheckResult {
    * Static plane declarations from `plugin.json` (`contributes.gateway`) — an
    * upper bound, not a plan. Per-plane absence is meaningful: a missing key
    * means the plane is unbounded, while an explicit `[]` is a zero bound.
+   * `media.modalities` is the one exception: an explicit empty list is rejected
+   * by contract validation, so `[]` there only means the manifest omitted it.
    * Absent entirely for legacy packages without a `contributes.gateway` block.
    */
   declared?: {
@@ -2923,8 +2925,9 @@ export interface PluginCheckResult {
     /** HTTP + WebSocket routes recorded through `ctx.http`. */
     http: number
     /**
-     * Legacy singleton instances observed during a trusted activation. Absent
-     * when the plane registered nothing (legal) or was never reached.
+     * Legacy singleton instances returned by `activate()`, recorded before
+     * validation so an earlier plane's failure cannot erase them. Absent when
+     * the package returned nothing for that plane (legal).
      */
     runtime?: string
     tts?: string

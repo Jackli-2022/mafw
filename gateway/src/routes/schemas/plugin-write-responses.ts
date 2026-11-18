@@ -102,15 +102,17 @@ const PluginCheckFailureCode = Type.Union([
 /**
  * legacy 单例 plane 的朝向：`media` 除名字外还钉住可服务的 modalities。
  *
- * `name` 缺省时按包名解析（与 host 一致），`modalities` 恒是数组——空数组是
- * 零上界，不是"未声明"。
+ * `name` 缺省时按包名解析（与 host 一致）。契约校验拒绝显式的空列表，所以
+ * `modalities: []` 只有一种含义——manifest 省略了列表（不限），不是零上界。
  */
 const PluginCheckMediaPlane = Type.Object({
   name: Type.Optional(Type.String({
     description: 'Legacy media contribution name; defaults to the package name.',
   })),
   modalities: Type.Array(Type.String(), {
-    description: 'Modalities the instance may serve; [] = nothing allowed.',
+    description:
+      'Modalities the instance may serve; [] = the manifest left the list open '
+      + '(an explicit empty list is rejected by contract validation).',
   }),
 }, {
   description: 'Legacy media plane: one instance per package, pinned to its modalities.',
@@ -120,7 +122,8 @@ const PluginCheckMediaPlane = Type.Object({
  * `PluginCheckDeclared`（`PluginHost`）：`plugin.json` 的 `contributes.gateway` 静态上界。
  *
  * 逐 plane 的**存在性有意义**：缺键 = 该 plane 未声明（不设上界），`[]` = 零上界
- * （一个都不允许）。渲染方不得把两者合并。
+ * （一个都不允许）。渲染方不得把两者合并。唯一例外是 `media.modalities`：
+ * 契约拒绝显式空列表，所以那里的 `[]` 只表示"清单省略了列表"（不限）。
  */
 const PluginCheckDeclared = Type.Object({
   actions: Type.Optional(Type.Array(Type.String(), {
@@ -165,16 +168,16 @@ const PluginCheckRegistered = Type.Object({
   tools: Type.Array(Type.String()),
   observers: Type.Array(Type.String()),
   http: Type.Number({ description: 'HTTP + WebSocket routes recorded through ctx.http.' }),
-  // legacy 单例 plane：只有在可信激活真的观察到该实例时才出现。缺失是合法的
-  // （该 plane 没注册任何东西，或者检查在到达它之前就失败了）。
+  // legacy 单例 plane：从 activate() 的原始返回里记录，所以某个更早 plane 的
+  // 校验失败不会把它们抹掉。缺失是合法的（该 plane 确实没注册任何东西）。
   runtime: Type.Optional(Type.String({
-    description: 'Legacy runtime instance observed during a trusted activation.',
+    description: 'Legacy runtime instance returned by activate(), before validation.',
   })),
   tts: Type.Optional(Type.String({
-    description: 'Legacy TTS instance observed during a trusted activation.',
+    description: 'Legacy TTS instance returned by activate(), before validation.',
   })),
   usage: Type.Optional(Type.String({
-    description: 'Legacy usage instance observed during a trusted activation.',
+    description: 'Legacy usage instance returned by activate(), before validation.',
   })),
   media: Type.Optional(PluginCheckMediaPlane),
 }, {

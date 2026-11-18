@@ -714,6 +714,62 @@ describe('mafw plugin check — legacy singleton planes', () => {
     expect(line('registered:')).not.toMatch(/[+-][A-Za-z]/);
   });
 
+  it('lists a declared-but-unregistered legacy plane in the note', async () => {
+    const { code, out } = await render({
+      ok: true,
+      declared: {
+        runtime: 'r1',
+        tts: 't1',
+        media: { name: 'm1', modalities: ['image'] },
+      },
+      registered: { actions: [], events: [], tools: [], observers: [], http: 0 },
+    });
+    expect(code).toBe(0);
+    // Conditional registration is legal: the note is the only trace, and the
+    // `-` markers stay on the declared line (the registered line reads `[]`).
+    expect(out).toContain(
+      'note: declared but not registered: runtime "r1", tts "t1", media "m1"',
+    );
+  });
+
+  it('reads an empty declared modality list as open, never as a zero bound', async () => {
+    // `contributes.gateway.media.modalities: []` is rejected by contract
+    // validation, so this shape can only mean "the manifest omitted the list".
+    const { code, line } = await render({
+      ok: true,
+      declared: { media: { name: 'm1', modalities: [] } },
+      registered: {
+        actions: [], events: [], tools: [], observers: [], http: 0,
+        media: { name: 'm1', modalities: ['image', 'video'] },
+      },
+    });
+    expect(code).toBe(0);
+    expect(line('declared:')).toContain('media [m1]');
+    expect(line('registered:')).toContain('media [m1:image,video]');
+    expect(line('declared:')).not.toContain('media [-m1]');
+    expect(line('registered:')).not.toContain('media [+m1');
+  });
+
+  it('names the modality path in the next step for a modality bound', async () => {
+    const { code, out } = await render({
+      ok: false,
+      code: 'contribution_bound',
+      evaluated: true,
+      error: 'invalid contributions: media modality "video" is not declared '
+        + 'in plugin.json contributes.gateway.media.modalities',
+      declared: { media: { name: 'm1', modalities: ['image'] } },
+      registered: {
+        actions: [], events: [], tools: [], observers: [], http: 0,
+        media: { name: 'm1', modalities: ['image', 'video'] },
+      },
+    });
+    expect(code).toBe(1);
+    expect(out).toContain(
+      'next: add the modality to contributes.gateway.media.modalities in plugin.json, '
+      + 'or omit the key to leave modalities open',
+    );
+  });
+
   it('--json carries the legacy inventory untouched', async () => {
     const out: string[] = [];
     await runPluginStandardCommand(['check', '/abs/p', '--json'], {

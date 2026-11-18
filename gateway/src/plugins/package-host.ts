@@ -174,7 +174,15 @@ export interface PluginCheckDeclared {
   tts?: string;
   usage?: string;
   /** `media` additionally pins the modalities the instance may serve. */
-  media?: { name?: string; modalities: string[] };
+  media?: {
+    name?: string;
+    /**
+     * Modalities the instance may serve; `[]` means the manifest left the list
+     * open. Contract validation rejects an explicit empty manifest list, so `[]`
+     * can never be a zero bound on this field.
+     */
+    modalities: string[];
+  };
 }
 
 /** Planes a candidate actually tried to register while it was checked. */
@@ -186,9 +194,10 @@ export interface PluginCheckRegistered {
   /** HTTP + WebSocket routes recorded through `ctx.http`. */
   http: number;
   /**
-   * Legacy singleton instances observed during a trusted activation. Absent
-   * when the plane registered nothing (legal) or was never reached (the worker
-   * path never carries them, and a check that failed earlier has no evidence).
+   * Legacy singleton instances observed in the raw `activate()` result — the
+   * same object validation consumes, so a failure in an earlier plane cannot
+   * erase what the package returned. Absent when the raw contribution set has no
+   * such key (legal; the untrusted worker only delivers actions/events).
    */
   runtime?: string;
   tts?: string;
@@ -407,15 +416,42 @@ function namesIn(value: unknown, key: 'type' | 'name' | 'id'): string[] {
  *
  * A failing check is exactly the case the inventory exists for: the rejected
  * registration is what the author has to see next to the declaration it broke.
+ *
+ * The legacy singleton planes are seeded here too, from the same raw object.
+ * Validation walks plane by plane and throws on the first violation, so an
+ * undeclared action would otherwise erase a runtime the package did return and
+ * the CLI would print `runtime []` — "never registered" instead of "rejected
+ * later". `spec.name ?? packageName` is the same default the bound uses in
+ * `activate()`, and `media` keeps whatever modality list the package returned.
  */
-function registeredFromRaw(raw: unknown, http: number): PluginCheckRegistered {
+function registeredFromRaw(
+  raw: unknown,
+  http: number,
+  packageName: string,
+): PluginCheckRegistered {
   const contributions = asRecord(raw) ?? {};
+  /** Name of a singleton plane, defaulting exactly like the validated branch. */
+  const legacyName = (plane: Record<string, unknown>): string =>
+    typeof plane.name === 'string' ? plane.name : packageName;
+  const runtime = asRecord(contributions.runtime);
+  const tts = asRecord(contributions.tts);
+  const usage = asRecord(contributions.usage);
+  const media = asRecord(contributions.media);
   return {
     actions: Object.keys(asRecord(contributions.actions) ?? {}),
     events: namesIn(contributions.events, 'type'),
     tools: namesIn(contributions.tools, 'name'),
     observers: namesIn(contributions.observers, 'id'),
     http,
+    ...(runtime ? { runtime: legacyName(runtime) } : {}),
+    ...(tts ? { tts: legacyName(tts) } : {}),
+    ...(usage ? { usage: legacyName(usage) } : {}),
+    ...(media ? {
+      media: {
+        name: legacyName(media),
+        modalities: Array.isArray(media.modalities) ? [...media.modalities] as string[] : [],
+      },
+    } : {}),
   };
 }
 
@@ -430,7 +466,8 @@ function registeredFromRaw(raw: unknown, http: number): PluginCheckRegistered {
  * resolved name: an omitted `name` means the package name (the same default the
  * host enforces against the registered instance), and declaring the plane at all
  * is what makes it visible. `media` keeps its declared modality list, which is
- * `[]` when the manifest leaves modalities open.
+ * `[]` only when the manifest leaves modalities open — contract validation
+ * rejects an explicit `[]` precisely so this field cannot mean two things.
  */
 function describeDeclared(
   gateway: NonNullable<NormalizedPackageManifest['contributes']>['gateway'],
@@ -1491,7 +1528,7 @@ export class PluginHost {
       // Untrusted packages cannot own HTTP routes (the worker protocol does not
       // expose `ctx.http`), so the recorded count stays 0.
       if (inventory) {
-        inventory.registered = registeredFromRaw(raw, 0);
+        inventory.registered = registeredFromRaw(raw, 0, desc.name);
         inventory.evaluated = true;
       }
       const unsupported = Object.keys(raw).filter(
@@ -1616,7 +1653,7 @@ export class PluginHost {
     // contribution set, so every later failure is a declared-plane verdict, not
     // a "never ran" one.
     if (inventory) {
-      inventory.registered = registeredFromRaw(raw, httpRecorder.entries.length);
+      inventory.registered = registeredFromRaw(raw, httpRecorder.entries.length, modName);
       inventory.evaluated = true;
     }
 

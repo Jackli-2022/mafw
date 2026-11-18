@@ -223,6 +223,11 @@ describe('plugin.json JSON Schema parity', () => {
         true,
       ],
       ['legacy plane without fields', { gateway: { media: {} } }, true],
+      // `modalities: []` and an unknown modality are manifest errors: `[]` would
+      // be indistinguishable from "omitted" on the check wire, and a typo would
+      // declare an unsatisfiable bound.
+      ['media modalities empty', { gateway: { media: { modalities: [] } } }, false],
+      ['media modality unknown', { gateway: { media: { modalities: ['imag'] } } }, false],
       ['unknown plane', { gatewayx: {} }, false],
       ['unknown gateway plane', { gateway: { observer: [] } }, false],
       ['actions not an array', { gateway: { actions: 'ping' } }, false],
@@ -257,6 +262,7 @@ describe('plugin.json JSON Schema parity', () => {
       // A malformed legacy plane is part of the same lenient block: the parser
       // warns and drops the whole declaration, so the schema must stay silent.
       { gateway: { runtime: 'x' } },
+      { gateway: { media: { modalities: [] } } },
       { gatewayx: {} },
       { desktop: { ui: [] } },
       { desktop: { main: { legacy: false } } },

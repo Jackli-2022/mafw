@@ -240,7 +240,14 @@ export const MANIFEST_JSON_SCHEMA = {
       additionalProperties: false,
       properties: {
         name: { type: 'string', minLength: 1, pattern: '\\S' },
-        modalities: { $ref: '#/$defs/stringList' },
+        // A closed material set with at least one entry: `[]` must stay
+        // "omitted" on the check wire, and a typo would otherwise declare an
+        // unsatisfiable bound that only fails at activation.
+        modalities: {
+          type: 'array',
+          minItems: 1,
+          items: { type: 'string', enum: ['image', 'video', 'audio'] },
+        },
       },
     },
     desktopContributes: {

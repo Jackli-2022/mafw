@@ -534,6 +534,34 @@ test("manifest contributes: rejects malformed legacy plane declarations", () => 
   }
 })
 
+test("manifest contributes: media modalities must be a non-empty known subset", () => {
+  // An explicit `[]` is not a zero bound: `check` renders an omitted list as
+  // `[]` on the wire, so the two states have to collapse in one direction only.
+  const empty = validatePluginManifestContributes({ gateway: { media: { modalities: [] } } })
+  assert.equal(empty.ok, false)
+  assert.equal(
+    empty.ok ? "" : empty.error,
+    "manifest contributes.gateway.media.modalities must not be empty",
+  )
+
+  // A typo currently fails at activation with a message about the instance;
+  // the manifest is the thing that is wrong, so it is rejected here.
+  const unknown = validatePluginManifestContributes({ gateway: { media: { modalities: ["imag"] } } })
+  assert.equal(unknown.ok, false)
+  assert.equal(
+    unknown.ok ? "" : unknown.error,
+    "manifest contributes.gateway.media.modalities[0] must be one of image, video, audio",
+  )
+
+  // Duplicates are not a bound problem, and every known modality is legal.
+  const known = validatePluginManifestContributes({
+    gateway: { media: { modalities: ["audio", "image", "video"] } },
+  })
+  assert.equal(known.ok, true)
+  if (!known.ok) return
+  assert.deepEqual(known.value.gateway?.media?.modalities, ["audio", "image", "video"])
+})
+
 test("menuItems: accepts a valid menu declaration", () => {
   const result = validateClientDescriptor({
     ...validDescriptor(),
