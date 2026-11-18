@@ -1,0 +1,352 @@
+{
+  "version": 1,
+  "createdAt": "2026-11-18",
+  "evalKind": "personal-recall",
+  "status": "personal-regression-set",
+  "corpus": {
+    "kind": "live-personal-memory",
+    "dataRoot": "~/.mafw/memory",
+    "frozenAt": "2026-11-18",
+    "indexEntriesAtFreeze": 16732,
+    "activeEntriesAtFreeze": 11510,
+    "note": "Queries and expected ids were selected from the live personal corpus and frozen here. The corpus keeps growing and decaying; expectations are never re-derived from live ranks during a run. Re-select a case only when its target is legitimately superseded or deleted."
+  },
+  "surfaces": {
+    "rest": "GET /api/memory/search?query=<q>&topK=3 (raw index surface, no reranker, no graph expansion)",
+    "auto": "GET /api/recall/context?query=<q> (boundary recall; no sessionID so snapshot/topic/goal are inert; live search + FOK outlet)"
+  },
+  "metricDefinitions": {
+    "restHit1": "an expected id appears at REST rank 1",
+    "restHit3": "an expected id appears in REST top 3",
+    "autoHit": "an expected id appears in the auto-recall #mem- pointers (neighbour lines included: they are injected evidence)",
+    "falseInjection": "a negative entry injects any #mem- pointer at all",
+    "staleInjection": "a must_exclude (superseded) id appears in the auto-recall pointers",
+    "entrypointAgreement": "REST hit@3 equals auto inclusion on positive entries",
+    "noteBoard": "note-board / user-profile / agent-priors blocks are stripped before id parsing; they are must-surface, not related recall"
+  },
+  "entries": [
+    {
+      "id": "exact-5cd9885f5",
+      "category": "exact",
+      "query": "5cd9885f5",
+      "must_include": ["mem_1794926033952_htv0sz"],
+      "must_exclude": [],
+      "note": "Known divergence case from docs/research/2026-11-18-auto-recall-fok-divergence.md: the identifier is a cue anchor of the 2026-11-17 retrieval-path parity release memory; REST returns it at rank 3 while boundary auto-recall produced candidates but suppressed the body."
+    },
+    {
+      "id": "exact-topic-tool-design",
+      "category": "exact",
+      "query": "Proactive Topic Recall 主题工具设计",
+      "must_include": ["mem_1794907437402_fuy5mr"],
+      "must_exclude": [],
+      "note": "First exact-title case from the divergence probe. Target is the personal-memory redesign / proactive-topic-recall plan memory; the superseded per-session Topic State entries are deliberately not the frozen target."
+    },
+    {
+      "id": "exact-parity-title",
+      "category": "exact",
+      "query": "检索路径 parity 修复上线与质量缺口",
+      "must_include": ["mem_1794926033952_htv0sz"],
+      "must_exclude": [],
+      "note": "Second exact-title case: title verbatim from the parity-fix release memory. This is the working comparison point where the boundary path did inject."
+    },
+    {
+      "id": "exact-graph-commit",
+      "category": "exact",
+      "query": "465a97926",
+      "must_include": ["mem_1794933770671_7e41bh"],
+      "must_exclude": [],
+      "note": "Commit identifier of the graph-expansion channel separation release; frozen target is that release memory."
+    },
+    {
+      "id": "exact-recent-turn-texts",
+      "category": "exact",
+      "query": "recentTurnTexts",
+      "must_include": ["mem_1794966028575_g7u8qu"],
+      "must_exclude": [],
+      "note": "Exact code symbol from root cause R3 (snapshot window collapse after compaction); frozen target is the 2026-11-18 FOK divergence research memory."
+    },
+    {
+      "id": "exact-note-board-budget",
+      "category": "exact",
+      "query": "NOTE_BOARD_BUDGET",
+      "must_include": ["mem_1794633525849_geu4qr"],
+      "must_exclude": [],
+      "note": "Exact config constant; frozen target is the note-board budget single-sourcing memory (1600 maxChars, perNoteCap 240)."
+    },
+    {
+      "id": "exact-dev-adopt",
+      "category": "exact",
+      "query": "MAFW_DEV_ADOPT",
+      "must_include": ["mem_1794246202543_gy2mzd"],
+      "must_exclude": [],
+      "note": "Exact env var; frozen target is the dev/gateway conflict root-cause memory, not the broader single-instance design memories."
+    },
+    {
+      "id": "exact-dispatch-stages",
+      "category": "exact",
+      "query": "DISPATCH_STAGES",
+      "must_include": ["mem_1794656956326_k8j3by"],
+      "must_exclude": [],
+      "note": "Exact symbol; frozen target is the D2 event-dispatch stage pipeline memory."
+    },
+    {
+      "id": "exact-t1-semantic-encoder",
+      "category": "exact",
+      "query": "T1SemanticEncoder",
+      "must_include": ["mem_1794809351283_920b4e"],
+      "must_exclude": [],
+      "note": "Exact class name; frozen target is the embedding sparse-coding / calibrated atoms memory."
+    },
+    {
+      "id": "exact-audioworklet",
+      "category": "exact",
+      "query": "AudioWorkletNode",
+      "must_include": ["mem_1793703983271_p2jj8n"],
+      "must_exclude": [],
+      "note": "Exact web API symbol; frozen target is the zero-gain sink audio capture memory."
+    },
+
+    {
+      "id": "current-note-board-gaps",
+      "category": "current-state",
+      "query": "get-by-id 和 note-board 两个缺口补上了吗",
+      "must_include": ["mem_1788759645410_h2hcz5"],
+      "must_exclude": ["mem_1788757340366_ruf9u1"],
+      "note": "Current state is the closure memory (get-by-id + note-board shipped); the earlier 'two gaps' memory is superseded and must not be injected."
+    },
+    {
+      "id": "current-index-scan",
+      "category": "current-state",
+      "query": "index-scan 冷扫描根因是什么",
+      "must_include": ["mem_1788859431106_jnn3yf"],
+      "must_exclude": ["mem_1788851297761_ql5hsp"],
+      "note": "Current root-cause statement supersedes the first TTL/cache write-up. Same topic, distinguishable only by supersede chain."
+    },
+    {
+      "id": "current-self-update",
+      "category": "current-state",
+      "query": "self-update 在全局目录下 update 动作现在怎么做",
+      "must_include": ["mem_1788882913435_zinqjl"],
+      "must_exclude": ["mem_1788879689211_ghkv88"],
+      "note": "The fix memory is current; the earlier 'pack+install+restart required' memory is superseded."
+    },
+    {
+      "id": "current-commit-push",
+      "category": "current-state",
+      "query": "提交只做本地 commit 不 push 的约定",
+      "must_include": ["mem_1794459717493_n5lwp4"],
+      "must_exclude": ["mem_1789387370504_ag5tkz"],
+      "note": "Current rule is 'commit locally, push only on explicit request'; the older 'direct commit main, confirm before push' wording is superseded."
+    },
+    {
+      "id": "current-boot-ladder",
+      "category": "current-state",
+      "query": "desktop gateway 启动 adopt 阶梯现在什么顺序",
+      "must_include": ["mem_1789109121081_yzoefc"],
+      "must_exclude": ["mem_1789038084335_99rrtk"],
+      "note": "Current boot ladder (adopt → cli probe → bundle) supersedes the earlier sidecar decision-contract memory."
+    },
+    {
+      "id": "current-permission-card",
+      "category": "current-state",
+      "query": "权限卡内联挂载在工具卡后面吗",
+      "must_include": ["mem_1789713743276_4wlgkh"],
+      "must_exclude": ["mem_1789376659698_3o0cu2"],
+      "note": "Current placement (inline after the tool card, callID anchor + turn-bottom fallback) supersedes the earlier streaming/pagination mechanism memory."
+    },
+    {
+      "id": "current-right-dock",
+      "category": "current-state",
+      "query": "右 dock 现在还是 pill 切换吗",
+      "must_include": ["mem_1794560800567_wb9uym"],
+      "must_exclude": ["mem_1788492209946_wjzi9b"],
+      "note": "Answer changed from TabsV2 pill to a unified tab strip; the pill memory is superseded."
+    },
+    {
+      "id": "current-plugin-preflight",
+      "category": "current-state",
+      "query": "插件安装预检有几道门",
+      "must_include": ["mem_1789474091162_do8qi8"],
+      "must_exclude": ["mem_1789452875607_6ogs03"],
+      "note": "Current count is four preflight gates; the older builtin-list/raw-install delivery memory is superseded."
+    },
+    {
+      "id": "current-mcp-transport",
+      "category": "current-state",
+      "query": "MCP 双传输部署坑与孤儿会话结论",
+      "must_include": ["mem_1788937442138_bi7f9p"],
+      "must_exclude": ["mem_1788926531082_azqrjk"],
+      "note": "Current deployment conclusions include orphan-session cleanup; the single-Server/SSE timeout root cause is superseded."
+    },
+    {
+      "id": "current-docs-authority",
+      "category": "current-state",
+      "query": "记忆管线文档 gateway.md 和 plugin.md 哪份权威",
+      "must_include": ["mem_1789357614302_9v22hr"],
+      "must_exclude": ["mem_1789355037072_r2fdvc"],
+      "note": "Current authority: the rewritten gateway.md is canonical and plugin.md content is legacy; supersedes the 'gateway.md authoritative, plugin.md legacy' note."
+    },
+
+    {
+      "id": "implicit-sidecar-health",
+      "category": "implicit",
+      "query": "sidecar 健康检查 flapping 为什么改用原始 HTTP",
+      "must_include": ["mem_1787036415135_puhuzt"],
+      "must_exclude": [],
+      "note": "Paraphrase continuation with no exact identifier: asks why isServeHealthy uses raw HTTP and what 3 consecutive failures do."
+    },
+    {
+      "id": "implicit-log-redaction",
+      "category": "implicit",
+      "query": "日志脱敏要盖住哪些 token 请求头",
+      "must_include": ["mem_1794470583261_v4jnir"],
+      "must_exclude": [],
+      "note": "Paraphrase of the credential redaction scope rule; the concrete header names live only in the target's anchors."
+    },
+    {
+      "id": "implicit-field-passing",
+      "category": "implicit",
+      "query": "字段在白名单包装层被静默丢掉",
+      "must_include": ["mem_1791178780554_qige2r"],
+      "must_exclude": [],
+      "note": "Implicit description of the recurring field-passing pit in wrapper/call-site layers."
+    },
+    {
+      "id": "implicit-note-board-must-surface",
+      "category": "implicit",
+      "query": "便签板上的提醒会被相关性门控挡掉吗",
+      "must_include": ["mem_1794920445217_1uljga"],
+      "must_exclude": [],
+      "note": "Asks for the must-surface rule; answer is the dedicated note-board independence memory, not the note-board budget memory."
+    },
+    {
+      "id": "implicit-worker-transcript",
+      "category": "implicit",
+      "query": "worker 把 transcript 当指令执行的风险怎么防",
+      "must_include": ["mem_1788838081204_0ihpdj"],
+      "must_exclude": [],
+      "note": "Implicit ask about defense-in-depth for memory workers treating transcript content as instructions."
+    },
+    {
+      "id": "implicit-multisession-gap",
+      "category": "implicit",
+      "query": "多会话 LongMemEval 只有 0.375 的原因",
+      "must_include": ["mem_1788836646433_2aa585"],
+      "must_exclude": [],
+      "note": "Implicit benchmark-gap question; frozen target is the persistent multi-session weak-spot conclusion."
+    },
+    {
+      "id": "implicit-audit-file-line",
+      "category": "implicit",
+      "query": "审计报告要求 file:line 引用",
+      "must_include": ["mem_1791603625030_jabofg"],
+      "must_exclude": [],
+      "note": "Implicit rule lookup for audit/measurement report citation precision."
+    },
+    {
+      "id": "implicit-response-language",
+      "category": "implicit",
+      "query": "回答语言固定中文吗",
+      "must_include": ["mem_1791601405726_shrlfu"],
+      "must_exclude": [],
+      "note": "Implicit preference lookup; answer is the stored Chinese response-language preference."
+    },
+    {
+      "id": "implicit-settle-not-meta",
+      "category": "implicit",
+      "query": "定稿改已有记忆状态，不要写元条目",
+      "must_include": ["mem_1794538891217_5q1jpi"],
+      "must_exclude": [],
+      "note": "Implicit curation rule: settle the existing entry instead of writing a meta-entry."
+    },
+    {
+      "id": "implicit-pipeline-heartbeat",
+      "category": "implicit",
+      "query": "后台管线心跳告警缺失导致静默失败",
+      "must_include": ["mem_1791177444152_7n48n2"],
+      "must_exclude": [],
+      "note": "Implicit observability lesson: trigger-only observability let pipelines fail silently for weeks."
+    },
+
+    {
+      "id": "negative-iceland-budget",
+      "category": "negative",
+      "query": "冰岛旅行十天的消费预算怎么分配",
+      "must_include": [],
+      "must_exclude": [],
+      "note": "true no-answer control: travel/budget topic absent from the frozen corpus (no 冰岛/消费预算 memories)."
+    },
+    {
+      "id": "negative-penguin-molt",
+      "category": "negative",
+      "query": "企鹅换羽期一般持续多久",
+      "must_include": [],
+      "must_exclude": [],
+      "note": "true no-answer control: biology topic absent (no 企鹅/换羽 memories)."
+    },
+    {
+      "id": "negative-sourdough-hydration",
+      "category": "negative",
+      "query": "sourdough starter 的水粉比例",
+      "must_include": [],
+      "must_exclude": [],
+      "note": "true no-answer control: baking topic absent (no sourdough memories)."
+    },
+    {
+      "id": "negative-canberra-rainfall",
+      "category": "negative",
+      "query": "堪培拉十二月平均降雨量",
+      "must_include": [],
+      "must_exclude": [],
+      "note": "true no-answer control: climatology topic absent (no 堪培拉 memories)."
+    },
+    {
+      "id": "negative-guitar-frets",
+      "category": "negative",
+      "query": "古典吉他怎么换品丝",
+      "must_include": [],
+      "must_exclude": [],
+      "note": "true no-answer control: instrument repair topic absent (no 品丝 memories)."
+    },
+    {
+      "id": "negative-cert-manager",
+      "category": "negative",
+      "query": "cert-manager 自动续期 ingress 证书怎么配",
+      "must_include": [],
+      "must_exclude": [],
+      "note": "true no-answer control: kubernetes certificate topic absent (no cert-manager memories)."
+    },
+    {
+      "id": "negative-tomato-eggs",
+      "category": "negative",
+      "query": "番茄炒蛋先放糖还是先放盐",
+      "must_include": [],
+      "must_exclude": [],
+      "note": "true no-answer control: cooking topic absent (no 番茄 memories)."
+    },
+    {
+      "id": "negative-marathon-carb",
+      "category": "negative",
+      "query": "马拉松赛前两周碳水负荷怎么安排",
+      "must_include": [],
+      "must_exclude": [],
+      "note": "true no-answer control: endurance training topic absent (no 马拉松 memories)."
+    },
+    {
+      "id": "negative-jeans-waist",
+      "category": "negative",
+      "query": "缝纫机改牛仔裤腰围怎么走线",
+      "must_include": [],
+      "must_exclude": [],
+      "note": "true no-answer control: sewing topic absent (no 牛仔裤 memories)."
+    },
+    {
+      "id": "negative-tern-migration",
+      "category": "negative",
+      "query": "北极燕鸥迁徙路线有多长",
+      "must_include": [],
+      "must_exclude": [],
+      "note": "true no-answer control: ornithology topic absent (no 燕鸥 memories)."
+    }
+  ]
+}
