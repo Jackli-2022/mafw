@@ -1,0 +1,58 @@
+# 2026-11-18 · 记忆回执 / 过程时间线 / 用户元信息
+
+- 分支：`main`（本地；未 push、未 merge、未发布）
+- 设计：`docs/superpowers/specs/2026-11-18-memory-receipt-timeline-meta-design.md`
+- 计划：`docs/superpowers/plans/2026-11-18-memory-receipt-timeline-meta.md`
+
+## 交付内容
+
+### 1. 记忆回执
+
+- 每次 recall 后生成结构化回执：`gateway/src/recall/receipt.ts#buildMemoryReceipt`（摘要优先，不含 `memory_value` / 指针 id）。
+- T1 只保留 `user_input|user`、`assistant_reply|assistant`；`tool_result` / `reasoning|system` 与工具噪声计入 `filteredT1`。
+- 锚点：桌面每次发送带 `[[turn:turn_<uuid>]]` 文本哨兵；host hook 提取 `anchorKey`，回执按 `(session_id, anchor_key)` 挂回同一轮。
+- 持久化：`gateway.db#memory_receipts`（同锚点 soft merge，每会话 200 条）；`GET /api/sessions/:id/memory-receipts` 供历史回填。
+- 实时：响应结束后 `setImmediate` 广播 `memory.recalled`；持久化/广播都在 `res.end` 之后，abort 不发。
+- 桌面：28px 药丸 + 300ms hover 卡；类型标签只用 `semantic→事实 / procedural→做法 / global→通用 / episodic→往事`；邻居标 `↳` 且不计入主计数。
+- 快照路径把 R6 temporal neighbors 一并写入回执（`renderWithNeighbors`），与 live 路径对齐。
+
+### 2. 过程时间线
+
+- `splitTurn` 做 lossless 分组：只折叠 reasoning / read / list / glob / grep / websearch / webfetch；**所有 output 永远可见**，中间输出与最终输出同款排版。
+- `edit/write/apply_patch/bash/task/审批` 仍是顶层卡；`partDefaultOpen` + `assistantActions` 保留。
+- 只有当前活动段默认展开（`defaultSegmentOpen`）；用户手动开关优先。桌面开关：`localStorage['mafw-process-timeline']='0'` 回退旧卡。
+
+### 3. 用户元信息
+
+- composer 上方 ghost 行（10.5px、无边框、hover 才出现底色与 `›`），popover 300px：时间只读 / 城市输入 + 开关 / 语言只读。
+- 城市默认关闭，只发城市名；每轮发送带隐藏 `<latest-reminder>`（含日期/时区/语言）。
+- `mafw-latest-reminder=0` 只关 reminder，turn marker 仍保留（回执锚点不能丢）。
+- 历史与实时都由 `stripInjectedUserText` 剥离 reminder / marker。
+
+## 主要提交
+
+- `461692e75` `c3f531bc3` `44d460249` `51699be6f` — turn marker（文本哨兵）与 hook anchorKey
+- `94ac6b3ac` `b0e16f603` `793363046` `9ede56b41` `c4c92c7ff` — 回执 builder / 快照结构 / 持久化 / emit / 历史路由 + SDK
+- `2d3397fbc` `9bde569ea` `dbea65429` `034096e91` `cc36bb95f` — 桌面投影 / SSE / 药丸卡 / 历史回填 / 真实数据
+- `dd27fa559` `18b5ae5a3` `1d73057bf` `1bfb79988` — splitTurn / ProcessTimeline / 接入 / 折叠
+- `f745117ec` `3f716f98f` `57e13fae1` — reminder + marker 发送路径 / ghost chip
+- 验证修复：`d4c9f40c3`（IPC 参数）、`a564c0cff`（工具卡默认展开/actions）、`493910814`（live 替换保留 turnKey）、`be77475c9`（T1 source 映射）、`7a377a8f8`（启动崩溃）、`4a5ae66c7`（快照邻居）、`f058dade7`（旧 preload 兼容）
+- 文档：`a1286acaf`
+
+## 验证
+
+- Desktop：`npm test` → **795 suites / 4156 pass / 0 fail**；`npx tsgo --noEmit -p tsconfig.json` → rc 0。
+- Session UI：全部测试（排除既有 `architecture.test.ts`）→ **25 suites / 155 pass / 0 fail**；`tsgo` rc 0。
+- SDK：`npm test` → **246 pass / 0 fail**；`tsc` rc 0。
+- UI：`tsgo` rc 0。
+- Gateway：`npx tsc --noEmit -p tsconfig.json` → rc 0；定向回执/路由/快照/DB 测试全绿；全量 jest 见下。
+- 构建：root `npm run build` 通过；`gateway npm run build` 通过；`packages/desktop npx electron-vite build` 通过。
+- 真机 smoke：`GET /api/recall/context?...&anchorKey=...` → 200；`/api/events` 收到 `memory.recalled`（与 anchor 一致）；`GET /api/sessions/:id/memory-receipts` 返回同锚点回执（3 anchors + 3 neighbours，无 `memory_value`）。smoke 行已清理。
+- Gateway 运行状态：本轮结束时 gateway 以 standalone 方式运行在 `:3000`（PID 47436，health `ok`）；托管网关的启动崩溃已由 `7a377a8f8` 修复。
+- 桌面窗口：本轮重启 gateway 时，两个桌面实例的 supervisor 用尽自动重启（4 次）并进入 failed；需**手动重启一次桌面应用**让它重新拉起 managed gateway（代码已修）。
+
+## 已知问题 / 后续
+
+- `packages/session-ui/src/architecture.test.ts` 在当前工作树为既有红：10 个无关文件命中 `opencode|claude` runtime-literal（`markdown.tsx`、`pierre/*`、stories 等），与本次改动无关；本次用单文件/全量排除该守卫作为门禁。
+- 实时宿主 hook 需要 agent/serve 重启后才生效：当前被 gateway 采纳的 serve 早于 `src/hooks/session-recall.ts` 的改动，所以真机聊天发送暂时不会带锚点；`mafw restart-agent` 或重启桌面应用后生效（gateway 已重启）。
+- 回执药丸/时间线/ghost 行的视觉验收（hover、520px 窄窗、折叠顺序）待人眼确认。
