@@ -1596,7 +1596,26 @@ export type PluginManifestContributesValidation =
   | { ok: false; error: string }
 
 const MANIFEST_CONTRIBUTES_KEYS = ["gateway", "desktop"] as const
-const GATEWAY_CONTRIBUTES_KEYS = ["actions", "events", "tools", "observers", "http"] as const
+const GATEWAY_CONTRIBUTES_KEYS = [
+  "actions",
+  "events",
+  "tools",
+  "observers",
+  "http",
+  "runtime",
+  "media",
+  "tts",
+  "usage",
+] as const
+/**
+ * Legacy singleton planes: at most one instance per package, so a declaration
+ * is an object carrying an optional `name` (and, for `media`, optional
+ * `modalities`) rather than an array. The schema in `gateway/src/plugins/
+ * manifest-schema.ts` mirrors these exact shapes.
+ */
+const LEGACY_PLANE_KEYS = ["runtime", "media", "tts", "usage"] as const
+const LEGACY_NAME_PLANE_KEYS = ["name"] as const
+const LEGACY_MEDIA_PLANE_KEYS = ["name", "modalities"] as const
 const TOOL_DESCRIPTOR_KEYS = [
   "name",
   "title",
@@ -1619,6 +1638,63 @@ function readStringList(value: unknown, label: string, errors: string[]): string
     return undefined
   }
   return [...value]
+}
+
+/** Optional singleton-plane name; empty/whitespace can never match an instance. */
+function readLegacyPlaneName(
+  value: unknown,
+  label: string,
+  errors: string[],
+): string | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== "string" || value.trim().length === 0) {
+    addError(errors, `${label} must be a non-empty string`)
+    return undefined
+  }
+  return value
+}
+
+/**
+ * Reads one legacy singleton plane (`runtime` / `tts` / `usage`).
+ *
+ * `{}` is a real declaration: the name then defaults to the package name. The
+ * object is closed so a typo fails loudly instead of being ignored.
+ */
+function readLegacyNamePlane(
+  value: unknown,
+  label: string,
+  errors: string[],
+): { name?: string } | undefined {
+  if (value === undefined) return undefined
+  if (!isPlainObject(value)) {
+    addError(errors, `${label} must be an object`)
+    return undefined
+  }
+  checkKnownFields(value, LEGACY_NAME_PLANE_KEYS, label, errors)
+  const plane: { name?: string } = {}
+  const name = readLegacyPlaneName(value.name, `${label}.name`, errors)
+  if (name !== undefined) plane.name = name
+  return plane
+}
+
+/** `media` is the only legacy plane that also declares modalities. */
+function readLegacyMediaPlane(
+  value: unknown,
+  label: string,
+  errors: string[],
+): { name?: string; modalities?: string[] } | undefined {
+  if (value === undefined) return undefined
+  if (!isPlainObject(value)) {
+    addError(errors, `${label} must be an object`)
+    return undefined
+  }
+  checkKnownFields(value, LEGACY_MEDIA_PLANE_KEYS, label, errors)
+  const plane: { name?: string; modalities?: string[] } = {}
+  const name = readLegacyPlaneName(value.name, `${label}.name`, errors)
+  if (name !== undefined) plane.name = name
+  const modalities = readStringList(value.modalities, `${label}.modalities`, errors)
+  if (modalities !== undefined) plane.modalities = modalities
+  return plane
 }
 
 function readSlotArray(value: unknown, label: string, errors: string[]): unknown[] | undefined {
@@ -1742,6 +1818,13 @@ export function validatePluginManifestContributes(
         } else {
           gateway.http = value.gateway.http
         }
+      }
+      for (const plane of LEGACY_PLANE_KEYS) {
+        const label = `manifest contributes.gateway.${plane}`
+        const declaration = plane === "media"
+          ? readLegacyMediaPlane(value.gateway[plane], label, errors)
+          : readLegacyNamePlane(value.gateway[plane], label, errors)
+        if (declaration !== undefined) gateway[plane] = declaration
       }
       out.gateway = gateway
     }

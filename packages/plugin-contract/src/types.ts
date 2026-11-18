@@ -289,6 +289,20 @@ export interface PluginToolDescriptor {
   scope?: "global" | "session"
 }
 
+/**
+ * A legacy singleton plane declaration: at most one instance per package, so
+ * the host compares the registered **name** against this declaration instead of
+ * bounding an array. `name` defaults to the package name when omitted.
+ */
+export interface PluginGatewayNamePlane {
+  name?: string
+}
+
+/** `media` additionally declares the modalities the package may serve. */
+export interface PluginGatewayMediaPlane extends PluginGatewayNamePlane {
+  modalities?: string[]
+}
+
 /** Gateway-plane declarations. Handlers still come from `activate()`. */
 export interface PluginGatewayContributes {
   actions?: string[]
@@ -300,6 +314,18 @@ export interface PluginGatewayContributes {
    */
   observers?: string[]
   http?: boolean
+  /**
+   * Legacy singleton planes. They are named declarations, not arrays: the
+   * registered instance (name defaulting to the package name, plus `media`
+   * modalities) must stay inside the declaration. Omitting one leaves it
+   * unconstrained; declaring one without registering it is legal.
+   * `untrusted` packages may not declare any of them (the worker only supports
+   * actions/events), which `parsePackageManifest` rejects.
+   */
+  runtime?: PluginGatewayNamePlane
+  media?: PluginGatewayMediaPlane
+  tts?: PluginGatewayNamePlane
+  usage?: PluginGatewayNamePlane
 }
 
 /** Declarative Desktop UI plane. Rendered by the host; no plugin components. */

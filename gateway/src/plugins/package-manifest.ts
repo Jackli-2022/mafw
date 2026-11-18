@@ -15,6 +15,15 @@ export const SUPPORTED_PLUGIN_API_VERSIONS = [1, 2] as const;
 export type PluginApiVersion = (typeof SUPPORTED_PLUGIN_API_VERSIONS)[number];
 export type PluginKind = 'trusted' | 'untrusted';
 
+/**
+ * Legacy singleton contribution planes (`contributes.gateway.<plane>`).
+ *
+ * An untrusted worker only supports actions/events, so it can never honour one
+ * of these declarations: they are refused at manifest time, not at activation.
+ * Exported so the host's legacy assembly binds against the same list.
+ */
+export const LEGACY_GATEWAY_PLANES = ['runtime', 'media', 'tts', 'usage'] as const;
+
 export interface PluginIntegrity {
   algorithm: 'sha256';
   files: Record<string, string>;
@@ -276,6 +285,18 @@ export function parsePackageManifest(raw: unknown): PackageManifestParseResult {
     if (validated.ok) contributes = validated.value;
     else if (apiVersion === 1) warnings.push(`legacy-contributes: ${validated.error}`);
     else errors.push(`contributes: ${validated.error}`);
+  }
+
+  // A legacy plane declaration is checked after normalization, so the error
+  // names the plane the author actually wrote. Untrusted workers only support
+  // actions/events; declaring one of these is unfixable at activation, so it
+  // fails the manifest instead of surfacing later as a missing registration.
+  if (kind === 'untrusted' && contributes?.gateway !== undefined) {
+    for (const plane of LEGACY_GATEWAY_PLANES) {
+      if (contributes.gateway[plane] !== undefined) {
+        errors.push(`untrusted packages cannot declare contributes.gateway.${plane}`);
+      }
+    }
   }
 
   let host: string | undefined;

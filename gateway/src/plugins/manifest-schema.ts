@@ -158,6 +158,31 @@ export const MANIFEST_JSON_SCHEMA = {
       if: { properties: { kind: { const: 'untrusted' } }, required: ['kind'] },
       then: { properties: { apiVersion: { const: 2 } }, required: ['apiVersion'] },
     },
+    {
+      // Untrusted workers only support actions/events, so a legacy plane
+      // declaration is refused by the parser at manifest time. Mirroring it
+      // here cannot become stricter than the parser: `untrusted` already
+      // implies apiVersion 2 (previous rule), where `contributes` is strict.
+      if: { properties: { kind: { const: 'untrusted' } }, required: ['kind'] },
+      then: {
+        properties: {
+          contributes: {
+            properties: {
+              gateway: {
+                not: {
+                  anyOf: [
+                    { required: ['runtime'] },
+                    { required: ['media'] },
+                    { required: ['tts'] },
+                    { required: ['usage'] },
+                  ],
+                },
+              },
+            },
+          },
+        },
+      },
+    },
   ],
   $defs: {
     stringList: { type: 'array', items: { type: 'string', minLength: 1 } },
@@ -193,6 +218,29 @@ export const MANIFEST_JSON_SCHEMA = {
         tools: { type: 'array', items: { $ref: '#/$defs/toolDescriptor' } },
         observers: { $ref: '#/$defs/stringList' },
         http: { type: 'boolean' },
+        // Legacy singleton planes: named declarations, not arrays. `{}` is a
+        // declaration whose name defaults to the package name.
+        runtime: { $ref: '#/$defs/legacyNamePlane' },
+        media: { $ref: '#/$defs/legacyMediaPlane' },
+        tts: { $ref: '#/$defs/legacyNamePlane' },
+        usage: { $ref: '#/$defs/legacyNamePlane' },
+      },
+    },
+    legacyNamePlane: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        // Mirrors `readLegacyPlaneName`: a blank name can never match an
+        // instance, so it is rejected rather than silently normalized.
+        name: { type: 'string', minLength: 1, pattern: '\\S' },
+      },
+    },
+    legacyMediaPlane: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        name: { type: 'string', minLength: 1, pattern: '\\S' },
+        modalities: { $ref: '#/$defs/stringList' },
       },
     },
     desktopContributes: {

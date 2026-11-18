@@ -100,6 +100,77 @@ describe('package manifest v2', () => {
     expect(result.manifest?.contributes?.gateway?.actions).toEqual(['ping']);
   });
 
+  it('normalizes the four legacy contribution planes', () => {
+    const result = parsePackageManifest({
+      name: 'demo',
+      apiVersion: 2,
+      contributes: {
+        gateway: {
+          runtime: { name: 'demo-runtime' },
+          media: { name: 'demo-media', modalities: ['image', 'video'] },
+          tts: {},
+          usage: { name: 'demo-usage' },
+        },
+      },
+    });
+    expect(result.ok).toBe(true);
+    expect(result.manifest?.contributes?.gateway?.runtime).toEqual({ name: 'demo-runtime' });
+    expect(result.manifest?.contributes?.gateway?.media).toEqual({
+      name: 'demo-media',
+      modalities: ['image', 'video'],
+    });
+    // An empty object is still a declaration: the name defaults to the package.
+    expect(result.manifest?.contributes?.gateway?.tts).toEqual({});
+    expect(result.manifest?.contributes?.gateway?.usage).toEqual({ name: 'demo-usage' });
+  });
+
+  it('rejects every legacy plane declaration on an untrusted package', () => {
+    for (const plane of ['runtime', 'media', 'tts', 'usage'] as const) {
+      const result = parsePackageManifest({
+        name: 'demo',
+        apiVersion: 2,
+        kind: 'untrusted',
+        contributes: { gateway: { [plane]: {} } },
+      });
+      expect(result.ok).toBe(false);
+      expect(result.errors).toContain(
+        `untrusted packages cannot declare contributes.gateway.${plane}`,
+      );
+    }
+  });
+
+  it('reports one error per legacy plane declared by an untrusted package', () => {
+    const result = parsePackageManifest({
+      name: 'demo',
+      apiVersion: 2,
+      kind: 'untrusted',
+      contributes: { gateway: { runtime: {}, tts: {} } },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.errors.filter((error) => error.startsWith('untrusted packages cannot declare')))
+      .toEqual([
+        'untrusted packages cannot declare contributes.gateway.runtime',
+        'untrusted packages cannot declare contributes.gateway.tts',
+      ]);
+  });
+
+  it('accepts legacy plane declarations on a trusted package', () => {
+    const result = parsePackageManifest({
+      name: 'demo',
+      apiVersion: 2,
+      contributes: {
+        gateway: {
+          runtime: {},
+          media: { modalities: ['image'] },
+          tts: {},
+          usage: {},
+        },
+      },
+    });
+    expect(result.ok).toBe(true);
+    expect(result.manifest?.contributes?.gateway?.media?.modalities).toEqual(['image']);
+  });
+
   // `standardVersion` names the manifest standard the package was written
   // against. It is optional (legacy manifests predate it) and only carries a
   // positive integer: the parser is the one place that decides, and the

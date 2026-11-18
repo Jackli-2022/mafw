@@ -465,6 +465,75 @@ test("manifest contributes: rejects non-object ui and invalid main", () => {
   assert.equal(main.ok, false)
 })
 
+test("manifest contributes: accepts the legacy singleton planes", () => {
+  const result = validatePluginManifestContributes({
+    gateway: {
+      runtime: { name: "my-runtime" },
+      media: { name: "my-media", modalities: ["image", "video"] },
+      tts: { name: "my-tts" },
+      usage: { name: "my-usage" },
+    },
+  })
+  assert.equal(result.ok, true)
+  if (!result.ok) return
+  assert.deepEqual(result.value.gateway?.runtime, { name: "my-runtime" })
+  assert.deepEqual(result.value.gateway?.media, {
+    name: "my-media",
+    modalities: ["image", "video"],
+  })
+  assert.deepEqual(result.value.gateway?.tts, { name: "my-tts" })
+  assert.deepEqual(result.value.gateway?.usage, { name: "my-usage" })
+})
+
+test("manifest contributes: accepts a legacy plane declared without fields", () => {
+  // `{}` is a real declaration: the name then defaults to the package name.
+  const result = validatePluginManifestContributes({ gateway: { runtime: {}, media: {} } })
+  assert.equal(result.ok, true)
+  if (!result.ok) return
+  assert.deepEqual(result.value.gateway?.runtime, {})
+  assert.deepEqual(result.value.gateway?.media, {})
+})
+
+test("manifest contributes: rejects malformed legacy plane declarations", () => {
+  const runtime = validatePluginManifestContributes({ gateway: { runtime: "x" } })
+  assert.equal(runtime.ok, false)
+  assert.match(
+    runtime.ok ? "" : runtime.error,
+    /manifest contributes\.gateway\.runtime must be an object/,
+  )
+
+  const modalities = validatePluginManifestContributes({
+    gateway: { media: { modalities: "image" } },
+  })
+  assert.equal(modalities.ok, false)
+
+  // The planes are closed objects: an unknown field is a typo, not vendor
+  // metadata (handlers still come from `activate()`).
+  const extra = validatePluginManifestContributes({
+    gateway: { runtime: { name: "r", extra: 1 } },
+  })
+  assert.equal(extra.ok, false)
+  assert.match(extra.ok ? "" : extra.error, /manifest contributes\.gateway\.runtime has unknown field "extra"/)
+
+  const mediaExtra = validatePluginManifestContributes({
+    gateway: { media: { name: "m", modalities: ["image"], extra: 1 } },
+  })
+  assert.equal(mediaExtra.ok, false)
+
+  for (const contributes of [
+    { gateway: { tts: { name: 2 } } },
+    { gateway: { usage: { name: "" } } },
+    { gateway: { media: { modalities: [1] } } },
+    { gateway: { media: [] } },
+  ]) {
+    assert.equal(
+      validatePluginManifestContributes(contributes).ok,
+      false,
+      JSON.stringify(contributes),
+    )
+  }
+})
+
 test("menuItems: accepts a valid menu declaration", () => {
   const result = validateClientDescriptor({
     ...validDescriptor(),

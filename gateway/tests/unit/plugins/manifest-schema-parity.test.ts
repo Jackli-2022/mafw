@@ -49,6 +49,21 @@ const ACCEPTED: unknown[] = [
   },
   { name: 'demo', standardVersion: 1 },
   { name: 'demo', unknownTopLevelKey: 1 },
+  {
+    name: 'demo',
+    apiVersion: 2,
+    contributes: {
+      gateway: {
+        runtime: { name: 'demo-runtime' },
+        media: { name: 'demo-media', modalities: ['image', 'video'] },
+        tts: {},
+        usage: { name: 'demo-usage' },
+      },
+    },
+  },
+  // Declaring a legacy plane without registering it is legal (conditional
+  // registration); only `untrusted` may not declare one at all.
+  { name: 'demo', apiVersion: 2, contributes: { gateway: { runtime: {}, media: {} } } },
   // apiVersion 1 downgrades a broken `contributes` block to a warning, so the
   // package still parses — the schema must not reject what the parser accepts.
   { name: 'demo', contributes: { gateway: { actions: 'ping' } } },
@@ -63,6 +78,14 @@ const REJECTED: unknown[] = [
   { name: 'demo', standardVersion: 0 },
   { name: 'demo', apiVersion: 2, contributes: { gateway: { actions: 'ping' } } },
   { name: 'demo', apiVersion: 2, contributes: { gateway: { observer: [] } } },
+  // An untrusted worker only supports actions/events, so a legacy plane
+  // declaration can never be honoured: the parser refuses it at manifest time.
+  {
+    name: 'demo',
+    apiVersion: 2,
+    kind: 'untrusted',
+    contributes: { gateway: { runtime: {} } },
+  },
   { name: 'bad name' },
 ];
 
@@ -187,12 +210,36 @@ describe('plugin.json JSON Schema parity', () => {
       ['desktop web surfaces', { desktop: { web: { webSurfaces: [{ id: 'w' }] } } }, true],
       ['desktop main legacy', { desktop: { main: { legacy: true } } }, true],
       ['desktop main not legacy', { desktop: { main: { legacy: false } } }, false],
+      [
+        'legacy planes',
+        {
+          gateway: {
+            runtime: { name: 'r' },
+            media: { name: 'm', modalities: ['image', 'video'] },
+            tts: {},
+            usage: { name: 'u' },
+          },
+        },
+        true,
+      ],
+      ['legacy plane without fields', { gateway: { media: {} } }, true],
       ['unknown plane', { gatewayx: {} }, false],
       ['unknown gateway plane', { gateway: { observer: [] } }, false],
       ['actions not an array', { gateway: { actions: 'ping' } }, false],
       ['http not boolean', { gateway: { http: 'yes' } }, false],
       ['ui not an array', { desktop: { ui: [] } }, false],
       ['unknown desktop key', { desktop: { unknown: {} } }, false],
+      // The legacy singleton planes are closed objects with one (or two) known
+      // fields; a typo is rejected instead of silently ignored.
+      ['runtime not an object', { gateway: { runtime: 'x' } }, false],
+      ['runtime unknown field', { gateway: { runtime: { name: 'r', extra: 1 } } }, false],
+      ['runtime empty name', { gateway: { runtime: { name: '' } } }, false],
+      ['media not an object', { gateway: { media: [] } }, false],
+      ['media modalities not an array', { gateway: { media: { modalities: 'image' } } }, false],
+      ['media modalities entry not a string', { gateway: { media: { modalities: [1] } } }, false],
+      ['media unknown field', { gateway: { media: { name: 'm', modalities: ['image'], extra: 1 } } }, false],
+      ['tts unknown field', { gateway: { tts: { extra: 1 } } }, false],
+      ['usage empty name', { gateway: { usage: { name: '' } } }, false],
     ];
     for (const [label, contributes, expected] of blocks) {
       expect({ label, ...parity({ name: 'demo', apiVersion: 2, contributes }) })
@@ -207,6 +254,9 @@ describe('plugin.json JSON Schema parity', () => {
     const blocks: unknown[] = [
       { gateway: { actions: 'ping' } },
       { gateway: { observer: [] } },
+      // A malformed legacy plane is part of the same lenient block: the parser
+      // warns and drops the whole declaration, so the schema must stay silent.
+      { gateway: { runtime: 'x' } },
       { gatewayx: {} },
       { desktop: { ui: [] } },
       { desktop: { main: { legacy: false } } },
