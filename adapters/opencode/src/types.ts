@@ -208,7 +208,7 @@ export interface RuntimeClient {
     list(opts?: { directory?: string }): Promise<any[]>;
     listByDirectory?(directory: string, limit?: number): Promise<SessionInfo[]>;
     todo(opts: { sessionID: string }): Promise<any[]>;
-    children(opts: { sessionID: string }): Promise<any[]>;
+    children(opts: { sessionID: string; cursor?: string; limit?: number }): Promise<any[]>;
     switchAgent?(opts: { sessionID: string; agent: string }): Promise<void>;
     switchModel?(opts: {
       sessionID: string;
@@ -341,5 +341,7 @@ export function fullCapabilities(): RuntimeCapabilities {
     mcpConfigApi: true,
     steerApi: true,
     pluginCreatorApi: true,
+    lifecycleApi: true,
+    backgroundTasksApi: false,
   };
 }
