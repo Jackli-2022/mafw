@@ -12,6 +12,12 @@ describe('memory receipt ChatPane wiring', () => {
     expect(pane).toContain('<MemoryReceipt')
   })
 
+  test('does not crash when an older preload lacks the receipts call', () => {
+    const pane = read('./components/ChatPane.tsx')
+    expect(pane).toContain('const memoryReceipts = window.api.mafw.sessions.memoryReceipts')
+    expect(pane).toContain('typeof memoryReceipts !== "function"')
+  })
+
   test('MafwShell passes the Memory page opener', () => {
     const shell = read('./MafwShell.tsx')
     expect(shell).toContain('onOpenMemory={() =>')

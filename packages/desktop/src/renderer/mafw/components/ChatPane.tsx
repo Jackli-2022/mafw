@@ -357,11 +357,15 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
   // History backfill: SSE only delivers live receipts; opening/switching a
   // session must restore receipts that arrived before this pane existed.
+  // Feature-detect: a hot-reloaded renderer can run against an older preload
+  // (dev), and a missing method must not take down the whole chat pane.
   createEffect(() => {
     const sid = sidProp()
     if (!sid) return
+    const memoryReceipts = window.api.mafw.sessions.memoryReceipts
+    if (typeof memoryReceipts !== "function") return
     let cancelled = false
-    void window.api.mafw.sessions.memoryReceipts(sid, { limit: 100 })
+    void memoryReceipts(sid, { limit: 100 })
       .then((res: any) => {
         if (!cancelled) memoryReceiptStore.hydrate(sid, res?.items ?? [])
       })
