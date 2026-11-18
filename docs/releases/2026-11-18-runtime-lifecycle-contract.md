@@ -1,6 +1,6 @@
 # Runtime lifecycle contract & background unknown states (2026-11-18)
 
-**Commits:** `2dc020739` (contract/adapter/gateway/UI), `54e88017a` (opencode capability declaration), `d4c23dac8` (docs), `ec2270fb4` (child-session gating + observation round-trip)
+**Commits:** `2dc020739` (contract/adapter/gateway/UI), `54e88017a` (opencode capability declaration), `d4c23dac8` (docs), `ec2270fb4` (child-session gating + observation round-trip), `ba28e6bd1` (Claude managed background tasks)
 **Version:** `mafw-gateway@4.19.0`
 
 ## Problem
@@ -34,27 +34,37 @@ gateway then counted them in the background work bar forever.
 - `MafwBackgroundJobStatus` adds `waiting` / `unknown`; jobs carry
   `observedAt`, `lastActivityAt`, `epoch`, `authority`, `waitingOn`.
   `isTerminalBackgroundStatus` only accepts `completed / failed / cancelled`.
+- Claude managed tasks are now implemented in the adapter:
+  `background_tasks_changed` is treated as a REPLACE level,
+  `task_started` / `task_updated` / `task_notification` as edges. A task that
+  leaves the level without a terminal edge becomes `unknown`
+  (`missing-from-background-level`); `paused` maps to `waiting`; each query
+  starts a new process epoch and invalidates the previous live level.
+  `background.tasks` flows through the neutral runtime into
+  `BackgroundJobService`; managed tasks carry no `childSessionID` and cannot be
+  cancelled through the subagent path.
 - Desktop background bar counts only `running / input_required`; `waiting` has
   its own row, and `unknown`/terminal rows live behind a "显示历史" toggle.
 
 ## Verification
 
-- runtime-contract: 29/29
-- runtime-core: 51/51
-- gateway focused (lifecycle/background/opencode/contract): 186/186
-- SDK: 245/245
-- desktop: 4100/4100 (776 suites)
-- desktop `tsgo -p` rc=0; `electron-vite build` rc=0
-- gateway full suite has 12 unrelated failures from concurrent uncommitted
-  work (`api-contract` write/error ledgers and `legacy-route-inventory`);
-  no lifecycle/background/opencode test fails.
+- runtime-contract: 30/30
+- runtime-core: 53/53
+- Claude adapter: 39/39
+- gateway focused (lifecycle/background/opencode/contract/routes): 186/186
+- gateway `tsc -p` rc=0; desktop `tsgo -p` rc=0
+- desktop background wiring: 2/2
+- SDK: 245/245 and desktop 4100/4100 (776 suites) from the original lifecycle
+  delivery; this follow-up does not touch those runtimes beyond the dock guard.
+- The last full gateway run before the concurrent agent commits landed had 12
+  unrelated failures (`api-contract` write/error ledgers and
+  `legacy-route-inventory`); no lifecycle/background/opencode test fails.
 
 ## Deferred
 
-- Claude adapter now declares `sessionChildrenApi: false` and no longer fakes
-  `children() === []`; the SDK's managed `background_tasks_changed` level signal
-  is still the next step for `background.tasks`.
-- dsh adapter is not in this checkout; its `running / waiting / settled`
-  mapping is pinned by a contract fixture but not yet wired to a real adapter.
-- `session.children` is now gated by `sessionChildrenApi`; missing capability
-  returns neutral 503 instead of an empty list.
+- dsh adapter is not in this checkout (`adapters/dsh` and the
+  `@deepseek-ai/dsh` SDK are absent); its `running / waiting / settled` mapping
+  is pinned by a contract fixture but has no real adapter to wire.
+- Claude still declares `sessionChildrenApi: false`: managed tasks are not
+  child sessions, so `session.children` stays unsupported and returns neutral
+  503 instead of an empty list.
