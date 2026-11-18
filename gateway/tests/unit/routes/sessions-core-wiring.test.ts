@@ -11,13 +11,13 @@ import { RouteRegistry } from '../../../src/routes/registry';
 import { buildRouteCatalog } from '../../../src/routes/route-catalog';
 import { attachSessionsCoreRoutes } from '../../../src/routes/sessions-core';
 
-function fakeReq(opts: { url: string; method: string; body?: string }): IncomingMessage {
+function fakeReq(opts: { url: string; method: string; body?: string; headers?: Record<string, string> }): IncomingMessage {
   const listeners: Record<string, Array<(c?: unknown) => void>> = {};
   const req = {
     method: opts.method,
     url: opts.url,
     socket: { remoteAddress: '127.0.0.1' },
-    headers: {},
+    headers: opts.headers ?? {},
     on(ev: string, fn: (c?: unknown) => void) {
       (listeners[ev] = listeners[ev] || []).push(fn);
       return req;
@@ -49,6 +49,8 @@ interface SetupOpts {
 
 function setup(opts: SetupOpts = {}) {
   const calls: string[] = [];
+  const prompted: Array<{ message: any; parts: any[] }> = [];
+  const promptedSync: any[][] = [];
   const held = new Set(opts.holdSessions ?? []);
   const emitArgs: Array<[string, string, string | undefined]> = [];
   const queueItems: any[] = [{ id: 'q1', text: 'hello' }];
@@ -61,10 +63,12 @@ function setup(opts: SetupOpts = {}) {
     get: opts.sdkSessionGet ?? (async (id: string) => (id === 'known' ? { id: 'known', title: 'T' } : null)),
     delete: async (id: string) => { calls.push(`sdk.delete:${id}`); },
     prompt: async (sessionID: string, parts: any[], system: any, outputSchema: any, o: any) => {
+      promptedSync.push(parts);
       calls.push(`sdk.prompt:${sessionID}:${parts.length}:${o.thinkingLevel ?? '-'}:${o.variant ?? '-'}`);
       return { ok: true };
     },
     promptAsync: async (sessionID: string, message: any, parts: any, agent: any, model: any, outputSchema: any, o: any) => {
+      prompted.push({ message, parts });
       calls.push(`sdk.promptAsync:${sessionID}:${o.delivery ?? '-'}:${o.idempotencyKey ?? '-'}:${o.expectReply ?? '-'}`);
     },
   };
@@ -118,7 +122,7 @@ function setup(opts: SetupOpts = {}) {
     },
   });
 
-  return { registry, calls, queueItems, emitArgs };
+  return { registry, calls, queueItems, emitArgs, prompted, promptedSync };
 }
 
 /** Registry dispatch always passes matched params — mirror it here (the legacy
@@ -357,6 +361,41 @@ describe('sessions core registry wiring (D1 Task D1)', () => {
     expect(r.status).toBe(200);
     expect(JSON.parse(r.body)).toEqual({ ok: true });
     expect(calls).toEqual(['sdk.prompt:s1:1:high:v2']);
+  });
+
+  it('promptAsync stamps the tui channel as a separate part', async () => {
+    const { registry, prompted } = setup();
+    const r = fakeRes();
+    await handlerFor(registry, 'POST', '/api/session/s1/promptAsync')!(
+      fakeReq({
+        url: '/api/session/s1/promptAsync',
+        method: 'POST',
+        headers: { 'x-mafw-client': 'tui' },
+        body: JSON.stringify({ message: 'hi' }),
+      }),
+      r.res,
+    );
+    expect(r.status).toBe(200);
+    expect(prompted[0].message).toBe('hi');
+    expect(prompted[0].parts).toHaveLength(1);
+    expect(prompted[0].parts[0].text).toBe('<client-channel>终端</client-channel>');
+  });
+
+  it('prompt stamps the channel on the parts array', async () => {
+    const { registry, promptedSync } = setup();
+    const r = fakeRes();
+    await handlerFor(registry, 'POST', '/api/session/s1/prompt')!(
+      fakeReq({
+        url: '/api/session/s1/prompt',
+        method: 'POST',
+        headers: { 'x-mafw-client': 'mobile' },
+        body: JSON.stringify({ parts: [{ type: 'text', text: 'a' }] }),
+      }),
+      r.res,
+    );
+    expect(r.status).toBe(200);
+    expect(promptedSync[0]).toHaveLength(2);
+    expect(promptedSync[0][1].text).toBe('<client-channel>手机端</client-channel>');
   });
 
   it('queue list returns the queue snapshot', async () => {

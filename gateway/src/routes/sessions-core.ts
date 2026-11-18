@@ -24,6 +24,11 @@ import { resolveWorktreeAvailability, probeGitWorktreeSupport } from '../core/wo
 import type { GatewayDatabase } from '../memory/gateway-db';
 import type { RouteRegistry } from './registry';
 import { readRouteBody } from './cognition';
+import {
+  CLIENT_CHANNEL_HEADER,
+  normalizeClientChannel,
+  withClientChannel,
+} from '../runtime/client-channel';
 import { handleSessionCreate } from './session-create';
 import { handleSessionBackground } from './session-background';
 
@@ -159,6 +164,13 @@ export function attachSessionsCoreRoutes(registry: RouteRegistry, deps: Sessions
       const body = await readRouteBody(req);
       const { message, parts, agent, model, maxTurns, maxCostUsd, delivery, idempotencyKey, expectReply, thinkingLevel, variant, outputSchema } = body ? JSON.parse(body) : {};
       if (!message && !Array.isArray(parts)) { res.writeHead(400); res.end(JSON.stringify({ error: 'message or parts required' })); return; }
+      // User metadata: clients that compose their own <latest-reminder> already
+      // carry 渠道；others (TUI/API/mobile HTTP) get the hidden channel part.
+      const clientParts = withClientChannel(
+        parts,
+        message,
+        normalizeClientChannel(req.headers[CLIENT_CHANNEL_HEADER]),
+      );
       if (thinkingLevel !== undefined && !isThinkingLevel(thinkingLevel)) {
         res.writeHead(400);
         res.end(JSON.stringify({ error: `invalid thinkingLevel: ${String(thinkingLevel)}` }));
@@ -183,7 +195,7 @@ export function attachSessionsCoreRoutes(registry: RouteRegistry, deps: Sessions
         try {
           const parsedBody = body ? JSON.parse(body) : {};
           const q = await deps.enqueueQueuedPrompt({
-            sessionID, text: message, parts, agent, model, idempotencyKey,
+            sessionID, text: message, parts: clientParts, agent, model, idempotencyKey,
             ...(parsedBody.expectReply !== undefined ? { expectReply: parsedBody.expectReply } : {}),
             ...(thinkingLevel ? { thinkingLevel } : {}),
             ...(variant ? { variant } : {}),
@@ -199,7 +211,7 @@ export function attachSessionsCoreRoutes(registry: RouteRegistry, deps: Sessions
       // P0-2：per-prompt 预算（guard 须先于 promptAsync 挂载——step 事件在回合执行中流出；
       // 放在队列短路口之后：入队/暂停分支不挂 guard）。
       deps.attachBudgetGuardForPrompt(sessionID, maxTurns, maxCostUsd);
-      await deps.sdkSession().promptAsync(sessionID, message, parts, agent, model, outputSchema, {
+      await deps.sdkSession().promptAsync(sessionID, message, clientParts, agent, model, outputSchema, {
         ...(delivery ? { delivery } : {}),
         ...(idempotencyKey ? { idempotencyKey } : {}),
         ...(expectReply !== undefined ? { expectReply } : {}),
@@ -230,10 +242,16 @@ export function attachSessionsCoreRoutes(registry: RouteRegistry, deps: Sessions
         res.end(JSON.stringify({ error: `invalid thinkingLevel: ${String(opts.thinkingLevel)}` }));
         return;
       }
-      const result = await deps.sdkSession().prompt(sessionID, opts.parts || [], opts.system, opts.outputSchema, {
-        ...(opts.thinkingLevel ? { thinkingLevel: opts.thinkingLevel } : {}),
-        ...(opts.variant ? { variant: opts.variant } : {}),
-      });
+      const result = await deps.sdkSession().prompt(
+        sessionID,
+        withClientChannel(opts.parts || [], opts.message, normalizeClientChannel(req.headers[CLIENT_CHANNEL_HEADER])),
+        opts.system,
+        opts.outputSchema,
+        {
+          ...(opts.thinkingLevel ? { thinkingLevel: opts.thinkingLevel } : {}),
+          ...(opts.variant ? { variant: opts.variant } : {}),
+        },
+      );
       res.writeHead(200);
       res.end(JSON.stringify(result));
     } catch (err: any) {
