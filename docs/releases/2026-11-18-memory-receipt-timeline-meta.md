@@ -52,6 +52,7 @@
 - Gateway：`npx tsc --noEmit -p tsconfig.json` → rc 0；定向回执/路由/快照/DB 测试全绿。
 - Gateway 全量：`npx jest --runInBand --forceExit` → **8443 pass / 16 failed / 8461 total（8 suites）**。其中 3 个 suite（9 tests）是新增 `/api/sessions/:id/memory-receipts` 的路由覆盖账本，已更新为 336 ops / 329 covered responses 并通过；`pod-worktree-service` 与 `restore-git` 为全量负载下的偶发（单跑通过）；剩余 3 个 suite（6 tests）为并行工作遗留：`runtime/validate-shape`（`sessionChildrenApi` 期望）、`runtime/architecture-boundaries`（`sessions-read.ts` 读 `runtime.capabilities`）、`architecture/legacy-route-inventory`（transport 清单漂移）。
 - 复跑失败集：**5 pass / 3 fail（6 tests）**，失败仅剩上述并行遗留。
+- 渠道增补：gateway 新增 11 条（client-channel 6 + chat-wiring 3 + sessions-core 2），定向 **36/36**；desktop +3、mobile +3、TUI +1 条用例。gateway 全量基线未重跑（本轮无新增路由/契约变化）。
 - 构建：root `npm run build` 通过；`gateway npm run build` 通过；`packages/desktop npx electron-vite build` 通过。
 - 真机 smoke：`GET /api/recall/context?...&anchorKey=...` → 200；`/api/events` 收到 `memory.recalled`（与 anchor 一致）；`GET /api/sessions/:id/memory-receipts` 返回同锚点回执（3 anchors + 3 neighbours，无 `memory_value`）。smoke 行已清理。
 - Gateway 运行状态：本轮结束时 gateway 以 standalone 方式运行在 `:3000`（PID 47436，instance `bc4d7733-b009-4965-a392-7172245666aa`，health `ok`；构建源 commit `4a5ae66c7`，branch HEAD 以 `git log -1` 为准）；托管网关的启动崩溃已由 `7a377a8f8` 修复。
@@ -62,3 +63,5 @@
 - `packages/session-ui/src/architecture.test.ts` 在当前工作树为既有红：10 个无关文件命中 `opencode|claude` runtime-literal（`markdown.tsx`、`pierre/*`、stories 等），与本次改动无关；本次用单文件/全量排除该守卫作为门禁。
 - 实时宿主 hook 需要 agent/serve 重启后才生效：当前被 gateway 采纳的 serve 早于 `src/hooks/session-recall.ts` 的改动，所以真机聊天发送暂时不会带锚点；`mafw restart-agent` 或重启桌面应用后生效（gateway 已重启）。
 - 回执药丸/时间线/ghost 行的视觉验收（hover、520px 窄窗、折叠顺序）待人眼确认。
+- TUI `tsc --noEmit` 既有红：`src/ui/triage-tab.ts:47`（与本轮渠道头无关）。
+- 手机端 `flutter test` 默认并发下偶发 `did not complete`（widget 测试互相抢占）；`--concurrency=1` 全量 **600/600** 通过。
