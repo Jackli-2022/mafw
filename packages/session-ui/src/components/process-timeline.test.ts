@@ -2,12 +2,20 @@ import * as fs from 'node:fs'
 import { describe, expect, test } from 'bun:test'
 
 const read = (relative: string) => fs.readFileSync(new URL(relative, import.meta.url), 'utf-8')
+const css = () => fs.readFileSync(new URL('./process-timeline.css', import.meta.url), 'utf-8')
 
 describe('ProcessTimeline', () => {
+  test('renders every tool step through the registered native card', () => {
+    const src = read('./process-timeline.tsx')
+    expect(src).toContain('props.renderCard(step.part)')
+    expect(src).not.toContain('ToolRow')
+    expect(src).not.toContain('CARD_TOOLS')
+    expect(src).not.toContain('getToolInfo')
+  })
+
   test('renders process inside a collapsible and output outside it', () => {
     const src = read('./process-timeline.tsx')
     expect(src).toContain('Collapsible')
-    expect(src).toContain('ToolRow')
     expect(src).toContain('entry.output')
     expect(src).toContain('正在思考')
     expect(src).toContain('已思考')
@@ -23,21 +31,32 @@ describe('ProcessTimeline', () => {
     expect(src).toContain('>思考</span>')
   })
 
-  test('tools are borderless rows without a leading icon', () => {
+  test('normalises native cards to the drawer rhythm', () => {
     const src = read('./process-timeline.tsx')
-    expect(src).not.toContain('mafw-process-tool-icon')
     expect(src).toContain('mafw-process-step-card')
     expect(src).toContain('Collapsible.Arrow')
-    const css = fs.readFileSync(new URL('./process-timeline.css', import.meta.url), 'utf-8')
-    expect(css).toContain('.mafw-process-tool-row')
-    expect(css).toContain('border: 0')
-    expect(css).toContain('.mafw-process-think-label')
+    const styles = css()
+    expect(styles).not.toContain('.mafw-process-tool-row')
+    expect(styles).toContain('.mafw-process-step-card [data-slot="basic-tool-tool-title"]')
+    expect(styles).toContain('.mafw-process-step-card [data-slot="basic-tool-tool-subtitle"]')
+    expect(styles).toContain('.mafw-process-step-card [data-component="task-tool-title"]')
+    expect(styles).toContain('.mafw-process-step-card [data-component="task-tool-icon"]')
+    expect(styles).toContain('font-size: 11px')
+    expect(styles).toContain('border: 0')
+    expect(styles).toContain('.mafw-process-think-label')
+  })
+
+  test('keeps the card body while shrinking it to the drawer density', () => {
+    const styles = css()
+    expect(styles).toContain('.mafw-process-step-card [data-component="tool-output"]')
+    expect(styles).toContain('.mafw-process-step-card [data-component="bash-output"] [data-slot="bash-pre"] code')
+    expect(styles).toContain('.mafw-process-step-card .mafw-tool-box')
   })
 
   test('matches the edit card title size to the tool rows', () => {
-    const css = fs.readFileSync(new URL('./process-timeline.css', import.meta.url), 'utf-8')
-    expect(css).toContain('.mafw-process-step-card [data-slot="message-part-title-text"]')
-    expect(css).toContain('font-size: 11px')
+    const styles = css()
+    expect(styles).toContain('.mafw-process-step-card [data-slot="message-part-title-text"]')
+    expect(styles).toContain('font-size: 11px')
   })
 
   test('hides the thinking preview once the body is open', () => {
