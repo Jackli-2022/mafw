@@ -94,10 +94,11 @@
 - **无损**：折叠只改可见性，不删 part、不截断数据；大输出在渲染层做“展开全部”/虚拟化，数据层保留全量。
 - **记忆不进时间线**：回执属于整轮，固定在回答末尾。
 
-### 3.3 用户元信息（默认 A，待人类最终确认）
+### 3.3 用户元信息（A 已确认）
 
-- **位置**：composer 上方一行 chip（A）。B（回合头部）与 C（仅设置）保留为备选。
-- **内容**：`周三 14:32 · 上海 · 中文`；未设置城市时 `周三 14:32 · 中文`。
+- **位置**：composer 上方一行 ghost（A）；不是胶囊、不是消息。B（回合头部）与 C（仅设置）不进入 v1。
+- **内容**：`◐ 周三 14:32 · 上海`；未设置城市时 `◐ 周三 14:32`。语言只显示在 popover 里；不显示“随消息发送”。
+- **交互**：10.5px、无边框；hover 才出现淡底和 `›`；点击打开 popover。
 - **Popover**：
   - 时间：系统时间，自动，只读。
   - 地点：手动输入城市；默认关闭；只发城市名，不发坐标。
@@ -174,7 +175,11 @@ interface MemoryReceipt {
     available: boolean         // 当时能定位到 trace
     sessionId?: string
     turnId?: number
+    /** T1 行的来源；用于过滤工具输出 / 子代理提示词。 */
+    source?: 'user' | 'assistant' | 'tool' | 'system' | 'unknown'
   }>
+  /** 被过滤掉的非对话 T1 数量（工具输出 / 子代理提示词等），用于透明展示。 */
+  filteredT1?: number
   counts: { memories: number; t1: number }
 }
 ```
@@ -182,6 +187,7 @@ interface MemoryReceipt {
 约束：
 
 - 最多 5 条记忆、5 条 T1（与 recall block 的预算一致）。
+- **T1 资格**：只展示 `source` 为 `user` / `assistant` 且像自然语言的摘要。`tool` / `system` / 子代理提示词（如 `You are a subagent...`）/ 含 `<path>`、`[object Object]`、`ok | packages\...` 的行一律过滤；过滤数量记入 `filteredT1`。
 - `abstraction` / `excerpt` 已经过 recall 的截断/清洗；不超过 240 字符。
 - 不包含 `memory_value` 全文、不包含工具输出、不包含 `#mem-` 指针。
 - `available` 是**快照时**的判断；之后原文被清理时，点击链接可能 404，前端 toast “原文已不可用”，不回写回执。
@@ -324,6 +330,7 @@ function splitTurn(parts: MafwPart[], opts: { showReasoning: boolean }): TurnEnt
   - 摘要 = violet
 - `no-memory` 状态：灰点 + “没找到相关记忆”，仍然可展开（显示主题/无结果说明）。
 - `low-confidence`：黄点 + “有点印象，但不确定”。
+- **T1 分组**只展示过滤后的 `user/assistant` 原话；`filteredT1 > 0` 时在分组底部显示一行灰字“已过滤 N 段工具/子代理输出”，不展开原始内容。
 - 键盘：Tab 聚焦药丸，Enter/Space 打开，Esc 关闭；卡片内链接可 Tab。
 - 移动端：药丸换行不溢出；卡片改为底部浮层（后置，不阻塞 v1）。
 
@@ -376,6 +383,11 @@ function splitTurn(parts: MafwPart[], opts: { showReasoning: boolean }): TurnEnt
 - 快照路径：
   - 结构化 `memories` 缺失（旧快照）→ 不生成回执，不解析 block
   - `t1Rendered=false` 时即使有 `t1Hits` 也不进回执
+- T1 过滤：
+  - `source=user/assistant` 的“元信息怎么展示”保留
+  - `source=tool` 的 `ok | packages\desktop...Select-String...` 丢弃
+  - `source=system` 的 `You are a subagent spawned...` 丢弃
+  - `filteredT1` 计数正确；过滤后为 0 时不显示“原话”分组
 - 路由：
   - `res.end` 之后才 emit（fake broadcaster 断言顺序）
   - 客户端 abort 时不 emit
@@ -531,6 +543,7 @@ function splitTurn(parts: MafwPart[], opts: { showReasoning: boolean }): TurnEnt
 | 6 | 类型→偏好/约定/教训的映射 | 缺 schema；v1 选 B：只用类型（事实 / 做法 / 通用 / 往事）。等记忆系统新增 subtype 后再升级，不做启发式。见 §12 / §14。 |
 | 7 | “已被更新”分支永远不会触发 | v1 删除该分支与 `supersededBy` 字段；recall 已过滤 superseded。 |
 | 8 | `↳` 邻居是否算回执记忆 | 计入 payload 但标 `neighborOf`，显示为锚点行的补充，不增加“想起了 N 件事”的计数。 |
+| 9 | T1 可能是工具输出 / 子代理提示词，不像人话 | 按 `source` 过滤 `tool/system`；未知来源用内容黑名单（`You are a subagent`、`[object Object]`、`<path>`、`ok \| ...`）；`filteredT1` 透明计数。见 §4.2 / §7.1。 |
 
 ---
 
