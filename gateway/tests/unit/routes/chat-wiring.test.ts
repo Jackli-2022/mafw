@@ -5,13 +5,13 @@ import { RouteRegistry } from '../../../src/routes/registry';
 import { buildRouteCatalog } from '../../../src/routes/route-catalog';
 import { attachChatRoutes } from '../../../src/routes/chat';
 
-function fakeReq(opts: { url: string; method: string; body?: string }): IncomingMessage {
+function fakeReq(opts: { url: string; method: string; body?: string; headers?: Record<string, string> }): IncomingMessage {
   const listeners: Record<string, Array<(c?: unknown) => void>> = {};
   const req = {
     method: opts.method,
     url: opts.url,
     socket: { remoteAddress: '127.0.0.1' },
-    headers: {},
+    headers: opts.headers ?? {},
     on(ev: string, fn: (c?: unknown) => void) {
       (listeners[ev] = listeners[ev] || []).push(fn);
       return req;
@@ -153,6 +153,53 @@ describe('chat registry wiring (D1 Task C2)', () => {
     );
     expect(JSON.parse(r.body)).toEqual({ sessionID: 's-new' });
     expect(created[0]).toEqual({ directory: '/proj/p1' });
+    expect(prompted[0].parts).toEqual([{ type: 'text', text: 'hi' }]);
+  });
+
+  it('stamps the client channel from x-mafw-client', async () => {
+    const { registry, prompted } = setup({ memory: [] });
+    const r = fakeRes();
+    await handlerFor(registry, 'POST', '/api/chat/enriched')!(
+      fakeReq({
+        url: '/api/chat/enriched', method: 'POST',
+        headers: { 'x-mafw-client': 'mobile' },
+        body: JSON.stringify({ message: 'hi' }),
+      }),
+      r.res,
+    );
+    const parts = prompted[0].parts;
+    expect(parts).toHaveLength(2);
+    expect(parts[1]).toMatchObject({ type: 'text', synthetic: true });
+    expect(parts[1].text).toBe('<client-channel>手机端</client-channel>');
+  });
+
+  it('does not stamp twice when the reminder already carries the channel', async () => {
+    const { registry, prompted } = setup({ memory: [] });
+    const reminder = {
+      type: 'text',
+      text: '<latest-reminder>2026-11-18 周三 14:32 · 中文 · 渠道：桌面端</latest-reminder>',
+      synthetic: true,
+    };
+    const r = fakeRes();
+    await handlerFor(registry, 'POST', '/api/chat/enriched')!(
+      fakeReq({
+        url: '/api/chat/enriched', method: 'POST',
+        headers: { 'x-mafw-client': 'desktop' },
+        body: JSON.stringify({ message: 'hi', parts: [reminder] }),
+      }),
+      r.res,
+    );
+    const parts = prompted[0].parts;
+    expect(parts).toHaveLength(2);
+    expect(JSON.stringify(parts)).not.toContain('<client-channel>');
+  });
+
+  it('leaves a client without a channel header unstamped', async () => {
+    const { registry, prompted } = setup({ memory: [] });
+    const r = fakeRes();
+    await handlerFor(registry, 'POST', '/api/chat/enriched')!(
+      fakeReq({ url: '/api/chat/enriched', method: 'POST', body: JSON.stringify({ message: 'hi' }) }), r.res,
+    );
     expect(prompted[0].parts).toEqual([{ type: 'text', text: 'hi' }]);
   });
 

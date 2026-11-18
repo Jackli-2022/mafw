@@ -12,6 +12,11 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { log } from '../core/utils/logger';
 import { readRouteBody } from './cognition';
+import {
+  CLIENT_CHANNEL_HEADER,
+  normalizeClientChannel,
+  withClientChannel,
+} from '../runtime/client-channel';
 import type { RouteRegistry } from './registry';
 import type { RuntimeFacade } from '../runtime/runtime-facade';
 import type { MemoryService } from '../memory/service';
@@ -48,7 +53,11 @@ export function attachChatRoutes(registry: RouteRegistry, deps: ChatRouteDeps): 
 
       const result = await runtime.session.promptAsync({
         sessionID,
-        parts: [{ type: 'text', text: message }],
+        parts: withClientChannel(
+          [{ type: 'text', text: message }],
+          message,
+          normalizeClientChannel(req.headers[CLIENT_CHANNEL_HEADER]),
+        ),
       });
       if (result?.error) {
         log.warn(`[Scheduler] promptAsync failed for ${sessionID}: ${JSON.stringify(result.error)}`);
@@ -109,7 +118,14 @@ export function attachChatRoutes(registry: RouteRegistry, deps: ChatRouteDeps): 
       const promptParts: any[] = [];
       if (enrichedMessage) promptParts.push({ type: 'text', text: enrichedMessage });
       if (Array.isArray(parts) && parts.length > 0) promptParts.push(...parts);
-      const promptOpts: any = { sessionID, parts: promptParts };
+      const promptOpts: any = {
+        sessionID,
+        parts: withClientChannel(
+          promptParts,
+          enrichedMessage,
+          normalizeClientChannel(req.headers[CLIENT_CHANNEL_HEADER]),
+        ),
+      };
       if (agent) promptOpts.agent = agent;
       if (model?.providerID && model?.modelID) promptOpts.model = model;
       const result = await runtime.session.promptAsync(promptOpts);

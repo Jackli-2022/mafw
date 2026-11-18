@@ -248,6 +248,7 @@ import { rebuildSessionEpisodes } from './recall/t1-episode-rebuild';
 import { isHiddenSession, selectVisibleSessions } from './core/session-visibility';
 
 import { mafwBroadcast, projectRegisteredEvent } from './runtime/event-broadcast';
+import { normalizeClientChannel, withClientChannel, type ClientChannel } from './runtime/client-channel';
 import { MAFW } from './runtime/mafw-vocabulary';
 import { activateRuntimeTools } from './runtime/mafw-tools';
 import { handleToolsList, handleToolsExecute } from './routes/tools';
@@ -3836,7 +3837,10 @@ class MafwScheduler {
         return;
       }
       try {
-        const result = await this.sendEnrichedInternal(message, sessionID, parts, agent, model);
+        // WS `send` is the mobile transport; an explicit frame channel wins so
+        // future web/TUI clients on the same socket can label themselves.
+        const channel = normalizeClientChannel(msg.channel ?? 'mobile');
+        const result = await this.sendEnrichedInternal(message, sessionID, parts, agent, model, channel);
         ws.send(JSON.stringify({ type: 'send_ack', sessionID: result.sessionID }));
       } catch (err: any) {
         ws.send(JSON.stringify({ type: 'ws_error', error: err?.message || String(err) }));
@@ -3857,6 +3861,7 @@ class MafwScheduler {
     parts?: any[],
     agent?: string,
     model?: any,
+    channel: ClientChannel = 'unknown',
   ): Promise<{ sessionID: string }> {
     // E1-3: the current project (resolvedProjectDir), never "the first
     // registered project" — that put multi-project sends in the wrong project.
@@ -3882,7 +3887,7 @@ class MafwScheduler {
     const promptParts: any[] = [];
     if (enrichedMessage) promptParts.push({ type: 'text', text: enrichedMessage });
     if (Array.isArray(parts) && parts.length > 0) promptParts.push(...parts);
-    const promptOpts: any = { sessionID, parts: promptParts };
+    const promptOpts: any = { sessionID, parts: withClientChannel(promptParts, enrichedMessage, channel) };
     if (agent) promptOpts.agent = agent;
     if (model?.providerID && model?.modelID) promptOpts.model = model;
     const result = await this.runtime.session.promptAsync(promptOpts);
