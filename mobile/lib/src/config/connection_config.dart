@@ -102,6 +102,9 @@ class ConnectionConfig {
 
   Map<String, String> get headers => {
         'Content-Type': 'application/json',
+        // User metadata: the gateway stamps this channel into the hidden
+        // per-turn context (desktop composes its own reminder with the same id).
+        'X-MAFW-Client': 'mobile',
         if (apiToken.isNotEmpty) 'Authorization': 'Bearer $apiToken',
       };
 

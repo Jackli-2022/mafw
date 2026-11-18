@@ -43,6 +43,16 @@ MafwMessage _message(List<Map<String, dynamic>> content) =>
     }, sessionID: 'ses_1');
 
 void main() {
+  test('displayText strips hidden per-turn context blocks', () {
+    final msg = _message([
+      _textPart(
+        't1',
+        '<latest-reminder>2026-11-18 周三 14:32 · 渠道：桌面端</latest-reminder>\n'
+        '<client-channel>手机端</client-channel>\n\n真实问题',
+      ),
+    ]);
+    expect(msg.displayText, '真实问题');
+  });
   group('MafwMessage.displayText', () {
     test('keeps the post-tool conclusion of a text → tool → text turn', () {
       final msg = _message([

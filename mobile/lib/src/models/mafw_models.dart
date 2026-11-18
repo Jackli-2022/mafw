@@ -177,18 +177,30 @@ class MafwMessage {
   /// 复制 / 朗读 / 缓存必须用这个 getter，否则工具调用后的结论整段消失。
   ///
   /// parts 没有可用文本时回退 [text]（缓存快照、纯文本消息）；空白片段跳过。
+  /// 每轮注入的隐藏上下文（`<latest-reminder>` / `<client-channel>` /
+  /// `<facts>` 等）在历史文本里可能已拼进正文，展示前剥离。
   String get displayText {
     final pieces = <String>[];
     for (final part in parts) {
       if (part.type != 'text' || part.synthetic) continue;
       final value = part.text;
       if (value == null || value.isEmpty) continue;
-      pieces.add(value);
+      final cleaned = _stripInjectedBlocks(value);
+      if (cleaned.trim().isEmpty) continue;
+      pieces.add(cleaned);
     }
-    if (pieces.isEmpty) return text ?? '';
+    if (pieces.isEmpty) return _stripInjectedBlocks(text ?? '').trim();
     return pieces.join('\n');
   }
 }
+
+final RegExp _injectedBlockPattern = RegExp(
+  r'<(latest-reminder|client-channel|facts|deltas|patterns|history)>[\s\S]*?</\1>\s*',
+  caseSensitive: false,
+);
+
+String _stripInjectedBlocks(String value) =>
+    value.replaceAll(_injectedBlockPattern, '');
 
 /// Flat MAFW View DTO part.
 ///
