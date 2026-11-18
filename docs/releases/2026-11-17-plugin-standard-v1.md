@@ -107,9 +107,26 @@ mafw plugins install "<abs path>" --trust trusted --permission actions --permiss
 1. **`check` 无法 dry-run `untrusted` 包**：本地 host 没有 worker factory，返回 `worker_unavailable: no worker host factory`。规范 §0/§7/§10 已写明绕行（按受限形状写、交给人安装验证）。若要给 untrusted 作者完整自查环，需要给 CLI 接一个 worker host。
 2. **`check` 的 ctx 不是真实 host 的 ctx**：`ctx.config.update` / `ctx.terminal.*` 会抛错，`ctx.apiKey` 为 `null`，`gatewayPort` 是 3000 占位；`check` 不是沙箱（`ctx.fetch` 是真的）。
 3. **manifest schema 可能更松、永不更严**：JSON Schema 的 `maxLength` 数码点，契约数 UTF-16 单元；已用 parity 测试钉住这一条已知更松的边缘。
-4. **`PluginCheckResultSchema` / SDK / Desktop 类型尚未补 `declared`/`registered`/`warnings`**：HTTP 原始响应里字段存在，只有文档化 schema 与 SDK 类型滞后。
+4. ~~`PluginCheckResultSchema` / SDK / Desktop 类型尚未补 `declared`/`registered`/`warnings`~~ —— **已由 E15 关闭**（HTTP 契约与 SDK 现在都带 `declared` / `registered` / `warnings` / `code` / `evaluated`）。
 5. **`standardVersion` 目前只定义 `1`**：解析要求正整数，不做语义分支。
 6. `~/.mafw/plugins/README.md` 只在目录首次创建时写入，存量安装看不到新增的边界说明。
 7. **所有失败都退 1，没有机器可读的 `code`**：区分「manifest 解析失败 / 身份不符 / 越界」只能匹配 `error` 字符串。已列入后续；当前 `next:` 已能指名修法。
 8. **失败输出没有逐项 delta 标记**：声明的 40 个 action 里多出一个时，只能靠人对比两行列表；`error` 会点名越界条目，但没有 `+pong` 这类标记。
 9. **`check` 会真的执行 `activate()`**（不是沙箱，`ctx.fetch` 是真的），CLI 已加 `note:` 提示；不要把 `check` 当作安全隔离手段。
+
+## E15 收口（2026-11-18）
+
+把上面第 4-7 条遗留做完，共 5 个 commit：
+
+| commit | 内容 |
+|---|---|
+| `1ff98c652` | host 侧失败分类 `code`（7 值）+ `evaluated` |
+| `fb6a2454b` | 修正：`evaluated` 在「拿到贡献集合」时置真（不再等价于 `!ok`）；manifest 归一化提到 entry 检查之前；`http: false` / 无 manifest 边界 / web surface 归入 `contribution_bound`；新增 `candidate_missing` |
+| `3046bf4e9` | CLI：`error[<code>]:`、行内 `+name`/`-name` 差集（仅已声明 plane）、重名去重 |
+| `7dac853db` | HTTP 契约 + SDK 类型补 `code`/`evaluated`/`declared`/`registered`/`warnings`，OpenAPI 与 `api-schema.gen.ts` 用仓库脚本重生成（diff 仅限 `plugins.check`） |
+| `be44ed267` | 修正：`evaluated:false` 时渲染 `(not evaluated)`，不打印 `-` 标记与「声明了没注册」，把「没评估」与「没注册」彻底分开 |
+
+**新增 25 条用例**（`package-check-inventory` 6→21、`plugin-standard-command` 47→57），另 1 条断言翻转。
+定向门禁：`package-check-inventory` 21、`plugin-standard-command` 57、`api-contract` 262、SDK 245，全部通过；两个包的 `tsc -p` 均 exit 0。
+
+**仍未做**：`untrusted` 包的本地 dry-run 需要给 CLI 接 worker host；失败输出仍无逐项 `+/-` 之外的定位信息（不给 file:line）。

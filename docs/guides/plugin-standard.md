@@ -550,8 +550,9 @@ mafw plugin check <absolute-path> [--json] [--strict]
 ```
 
 - **必须绝对路径**（相对路径直接拒绝：`path must be absolute: <path>`）。它在本进程内用**同一个判定函数**跑一次真实激活的 dry-run（`PluginHost.checkPackage`）：不起网关、不读 human token、不注册任何东西，网关停着也能用。但**它不是沙箱、也不是 §3 的 ctx**——见本节末尾「check 的 ctx 与真实 host 的差异」。
-- 人读输出：首行 `ok <name> (<path>)` 或 `not ok …`，随后 `version:` / `apiVersion N, kind K` / `permissions:` / `contributions:` / `declared:` / `registered:` / `note: check is not a sandbox: …`（每次运行都打印，见下）/ `note: declared but not registered: …`（合法）/ `warning: …` / `error: …`，最后在判决通过时打印 `install: <可粘贴命令>`。`ok: false` 时同样打印 `apiVersion` / `kind` / `permissions`（结果里没有时回退读 `plugin.json`，读不到就不打印）；`contributions` 只有激活确实产出了贡献才有。
-- `--json`：**一行**可解析 JSON。`ok` 是**命令判决**（不是原始 check 结果），另有 `verdict`（`"ok"` / `"fail"`）、`strictFailed`，以及 `name` / `version` / `contributions` / `apiVersion` / `kind` / `permissions` / `declared` / `registered` / `warnings` / `error` / `webSurfaces`（存在时）。退出码 `0` = 通过，`1` = 不通过。
+- 人读输出：首行 `ok <name> (<path>)` 或 `not ok …`，随后 `version:` / `apiVersion N, kind K` / `permissions:` / `contributions:` / `declared:` / `registered:`（差集用行内标记：`+name` = 注册了但没声明，`-name` = 声明了但没注册（合法）；标记只出现在**已声明**的 plane 上）/ `note: check is not a sandbox: …`（激活确实跑过时打印）/ `warning: …` / `error[<code>]: …`（没有 code 时退回 `error: …`），最后在判决通过时打印 `install: <可粘贴命令>`。`ok: false` 时同样打印 `apiVersion` / `kind` / `permissions`（结果里没有时回退读 `plugin.json`，读不到就不打印）；`contributions` 只有激活确实产出了贡献才有。
+- **`evaluated: false`** 表示包里 `activate()` 根本没有产出贡献集合（manifest/入口/身份/激活失败等）。此时 `registered:` 渲染为 `(not evaluated)`，不打印 `+`/`-` 标记，也不打印「声明了没注册」的 `note:`——「没评估」不是「没注册」。
+- `--json`：**一行**可解析 JSON。`ok` 是**命令判决**（不是原始 check 结果），另有 `verdict`（`"ok"` / `"fail"`）、`strictFailed`、`code`（失败分类，见下）、`evaluated`（是否产出了贡献集合），以及 `name` / `version` / `contributions` / `apiVersion` / `kind` / `permissions` / `declared` / `registered` / `warnings` / `error` / `webSurfaces`（存在时）。退出码 `0` = 通过，`1` = 不通过。
 - `declared` 缺失 = 没有可用的 `contributes.gateway`（未声明，或 manifest 解析失败——后者同时给出 `error:`）；`declared.actions` 缺失 = 该 plane 无上界；`"actions": []` 会原样出现（零上界）。`registered` 永远存在，且是**尝试注册**的内容——失败时也能看到差集。两行的 `http` 用同一套写法：`declared` 是布尔开关（`http true` / `http false` / 缺省 `http (unbounded)`），`registered` 是路由计数（`http 0 route(s)` / `http 2 route(s)`）。
 - `--strict` 只把 **manifest warning** 变成失败（`not ok: --strict turned the manifest warnings above into failures`）。warning 来自 `plugin.json` 归一化：`legacy-permissions`（apiVersion 2 未声明 `permissions`）、`legacy-contributes: …`（apiVersion 1 的非法 `contributes` 块）。**`--strict` 不会因「声明了没注册」失败**。
 - `check` 也接受单文件包路径（`…/foo.js`），但单文件包不能有 tools/observers/http（§7）。
@@ -643,6 +644,18 @@ mafw plugins install "C:/abs/path/to/my-plugin"
 ---
 
 ## 10. 常见失败与修法
+
+### 失败分类（`error[<code>]` / `--json` 的 `code`）
+
+| code | 含义 | 修法 |
+|---|---|---|
+| `candidate_missing` | 路径不存在 | 传包目录的绝对路径 |
+| `manifest_invalid` | `plugin.json` 缺失/不可解析/字段非法 | 按 §2 修 manifest |
+| `entry_missing` | `main` 指向的文件不存在 | 补文件或改 `main` |
+| `identity_mismatch` | 模块导出名与 manifest 不符/缺失 | 三者对齐 |
+| `contribution_bound` | 注册越界（含 `http: false`、无 manifest 边界、非法 web surface） | 补声明或停止注册 |
+| `activation_failed` | `activate()` 抛错或其它激活期失败 | 看 `error` 文本 |
+| `worker_unavailable` | `untrusted` 包无法本地 dry-run | 交给人安装后验证 |
 
 | 症状（逐字或接近逐字） | 原因 | 修法 |
 |---|---|---|
