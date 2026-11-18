@@ -38,6 +38,18 @@ export interface RecallSnapshot {
   top1prob?: number;
   /** V1: verbatim t1 hits fused into this snapshot (trace-aware). */
   t1Hits?: T1Hit[];
+  /** True only when `[t1|...]` lines were actually appended to the block. */
+  t1Rendered?: boolean;
+  /** Structured anchors rendered in the block (receipt source; ≤ topK). */
+  memories?: Array<{
+    id: string;
+    type?: string;
+    abstraction: string;
+    date?: string;
+    energy?: number;
+    pinned?: boolean;
+    neighborOf?: string;
+  }>;
   /** Episode hits fused into this snapshot when episodes are live. */
   episodes?: import('./t1-episode-search').EpisodeHit[];
 }

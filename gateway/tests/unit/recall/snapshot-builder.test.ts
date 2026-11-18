@@ -97,6 +97,43 @@ describe('buildSnapshot', () => {
     expect(snap!.fokStatus).toBe('inject');
   });
 
+  test('records structured anchor memories and t1Rendered for the receipt', async () => {
+    const snap = await buildSnapshot(
+      deps({
+        search: () => [
+          { id: 'a', primary_abstraction: 'abs a', memory_value: '', energy: 0.8, score: 1, type: 'semantic', created_at: '2026-10-01T00:00:00Z' },
+          { id: 'b', primary_abstraction: 'abs b', memory_value: '', energy: 0.7, score: 0.9, type: 'procedural', created_at: '2026-10-02T00:00:00Z' },
+        ],
+        searchT1: async () => [
+          { sessionId: 's', turnId: 1, traceId: 't1t_x', cosine: 0.9, excerpt: 'hello', source: 'user' },
+        ],
+      }),
+      'ses_1',
+    );
+    expect(snap!.memories).toEqual([
+      { id: 'a', type: 'semantic', abstraction: 'abs a', date: '2026-10-01T00:00:00Z', energy: 0.8 },
+      { id: 'b', type: 'procedural', abstraction: 'abs b', date: '2026-10-02T00:00:00Z', energy: 0.7 },
+    ]);
+    expect(snap!.t1Rendered).toBe(true);
+    expect(snap!.t1Hits![0].source).toBe('user');
+  });
+
+  test('episodes branch does not mark T1 as rendered', async () => {
+    const snap = await buildSnapshot(
+      deps({
+        searchT1: async () => [
+          { sessionId: 's', turnId: 1, traceId: 't1t_x', cosine: 0.9, excerpt: 'hello', source: 'user' },
+        ],
+        searchEpisodes: async () => [{
+          episodeId: 'e1', sessionId: 's', startTurn: 1, endTurn: 2, status: 'closed' as const,
+          startedAt: null, boundarySource: 'test', actors: [], conceptIds: [],
+        }],
+      }),
+      'ses_1',
+    );
+    expect(snap!.t1Rendered).toBe(false);
+  });
+
   test('fail-open: verify throwing leaves the snapshot at the normal zone', async () => {
     const snap = await buildSnapshot(
       deps({

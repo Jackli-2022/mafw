@@ -26,6 +26,8 @@ export interface T1Hit {
   traceId?: string | null;
   cosine: number;
   excerpt: string;
+  /** Durable T1 row source (`user_input` / `assistant_reply` / tool/system). */
+  source?: string;
   /** Retrieval channels that produced this fused hit. */
   sources?: T1HitSource[];
   /** Fused RRF score (higher is better); absent on raw dense hits. */
@@ -121,7 +123,8 @@ export function makeT1Search(deps: T1SearchDeps): (query: string, k: number) => 
         const excerpt = excerptFromRows(rows, matchKey, 220);
         if (excerpt) {
           const traceId = matchedRow(rows, matchKey)?.trace_id ?? rows[0].trace_id ?? null;
-          out.push({ sessionId: t.sessionId, turnId: t.turnId, traceId, cosine: t.cosine, excerpt });
+          const source = matchedRow(rows, matchKey)?.source ?? rows[0].source;
+          out.push({ sessionId: t.sessionId, turnId: t.turnId, traceId, cosine: t.cosine, excerpt, source });
         }
       }
       return out;
