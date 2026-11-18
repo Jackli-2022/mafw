@@ -295,6 +295,7 @@ export class HarmonicIndexManager {
     } else {
       this.index.entries.push(entry);
     }
+    this.searchVersion++; // membership / searchable text may have changed
     if (opts.save !== false) this.save();
     this.hookManager?.execute('memory.write', {
       unit,
@@ -313,6 +314,7 @@ export class HarmonicIndexManager {
 
   removeEntry(id: string): void {
     this.index.entries = this.index.entries.filter(e => e.id !== id);
+    this.searchVersion++; // postings must drop the removed id (df would inflate)
     this.save();
   }
 
@@ -749,6 +751,10 @@ export class HarmonicIndexManager {
     const queryTokens = this.tokenizeBM25(query);
     if (queryTokens.length === 0) return [];
 
+    // NOTE: `docs` (built below) is the input to the postings index, so it is
+    // rebuilt before the index — text changes detected here are what invalidate
+    // the cached postings.
+
     // LongMemEval (98% of session transcripts >1000 chars) proved truncating
     // abstractions for retrieval destroys answer recall — BM25's length
     // normalization (b=0.75) already handles long documents. Mega-merge blob
@@ -768,6 +774,10 @@ export class HarmonicIndexManager {
       const tf = new Map<string, number>();
       for (const t of toks) tf.set(t, (tf.get(t) || 0) + 1);
       this.tokenCache.set(entry.id, { text, tf, len: toks.length });
+      // Searchable text changed (or the entry is new): the postings index no
+      // longer describes this entry. Bumping here also covers in-place field
+      // mutations that bypass addEntry (the text check is the only signal).
+      this.searchVersion++;
       return { entry, tf, len: toks.length };
     });
     // Bound the cache: drop entries that no longer exist in the index.
@@ -780,30 +790,54 @@ export class HarmonicIndexManager {
     const docLengths = docs.map(d => d.len);
     const avgdl = docLengths.reduce((a, c) => a + c, 0) / N;
 
-    const df = new Map<string, number>();
-    for (const d of docs) {
-      for (const t of d.tf.keys()) {
-        df.set(t, (df.get(t) || 0) + 1);
-      }
-    }
+    // Inverted index: only documents that contain a query term are visited.
+    // The pre-2026-11-18 loop walked every doc once per query token
+    // (N × |queryTokens|); long prompts tokenize to 200+ terms (CJK unigrams +
+    // identifier parts) and the boundary path runs this scorer 5–10 times per
+    // turn, so that was ~3.7M Map lookups per pass (measured p50 279ms + 101ms
+    // FOK on the live 16.8k-entry corpus).
+    //
+    // Buckets hold PHYSICAL document indexes, not entry ids: legacy index files
+    // may carry duplicate ids (load() deliberately does not dedupe them), and
+    // the old scorer emitted one independent score per physical entry. Keying by
+    // id would merge those documents and double their raw score.
+    const postings = this.postingsIndex(docs);
 
     const idf = new Map<string, number>();
     for (const t of queryTokens) {
-      const dfT = df.get(t) || 0;
+      if (idf.has(t)) continue;
+      // The clamp is defensive only — postings are rebuilt whenever the entries
+      // array or any searchable text changed, so df ≤ N holds in normal state.
+      const dfT = Math.min(postings.get(t)?.length ?? 0, N);
       idf.set(t, Math.log((N - dfT + 0.5) / (dfT + 0.5) + 1));
     }
 
-    const scored: Array<{ entry: HarmonicIndexEntry; raw: number }> = [];
-    docs.forEach((d, i) => {
-      const dl = docLengths[i];
-      let score = 0;
-      for (const t of queryTokens) {
-        const tf = d.tf.get(t) || 0;
+    // Accumulate per physical document in query-token order (duplicates
+    // included) so the floating-point sum is bit-identical to the old
+    // per-document accumulation, including for duplicate-id files.
+    const acc = new Map<number, number>();
+    for (const t of queryTokens) {
+      const bucket = postings.get(t);
+      if (!bucket) continue;
+      const weight = idf.get(t) || 0;
+      for (const docIndex of bucket) {
+        const doc = docs[docIndex];
+        if (!doc) continue; // stale index beyond the live entry list
+        const tf = doc.tf.get(t) || 0;
         if (tf === 0) continue;
-        score += (idf.get(t) || 0) * (tf * (BM25_K1 + 1)) / (tf + BM25_K1 * (1 - BM25_B + BM25_B * (dl / avgdl)));
+        const denom = tf + BM25_K1 * (1 - BM25_B + BM25_B * (doc.len / avgdl));
+        acc.set(docIndex, (acc.get(docIndex) || 0) + weight * (tf * (BM25_K1 + 1)) / denom);
       }
-      if (score > 0) scored.push({ entry: d.entry, raw: score });
-    });
+    }
+
+    // Emit in entries order by index (not accumulation order) so each physical
+    // entry — duplicate ids included — gets exactly its own score, and the
+    // stable sort in bm25SearchScored breaks ties exactly as before.
+    const scored: Array<{ entry: HarmonicIndexEntry; raw: number }> = [];
+    for (let i = 0; i < entries.length; i++) {
+      const raw = acc.get(i);
+      if (raw !== undefined && raw > 0) scored.push({ entry: entries[i], raw });
+    }
 
     return scored;
   }
@@ -820,6 +854,50 @@ export class HarmonicIndexManager {
    * (~18ms warm at 3.8k entries) and the boundary path's five passes ~90ms.
    */
   private tokenCache = new Map<string, { text: string; tf: Map<string, number>; len: number }>();
+
+  /**
+   * Bumped whenever entry membership or searchable text can change (addEntry /
+   * removeEntry). Keys the postings cache: any write invalidates it, and the
+   * rebuild happens lazily on the next query (~34ms for 16.8k entries) instead
+   * of on every query pass.
+   */
+  private searchVersion = 0;
+  /** term → PHYSICAL document indexes into `entries` (see postingsIndex). */
+  private postingsCache: { version: number; entriesRef: HarmonicIndexEntry[]; byTerm: Map<string, number[]> } | null = null;
+
+  /**
+   * Inverted index over the live documents' searchable text. Query-independent,
+   * so it is reused across every BM25 pass of a turn (initial + expansion +
+   * FOK). Built from the `docs` array the caller just produced — that array is
+   * `entries.map(...)` in order, so its indexes are entries indexes, and it is
+   * the only place that sees per-physical-document tokens (duplicate ids each
+   * keep their own tf, like the old scorer).
+   *
+   * Invalidation covers the three ways searchable content changes: the text
+   * check in the `docs` build (bumps `searchVersion`), addEntry/removeEntry
+   * (bump `searchVersion`), and a replaced `entries` array (reference check —
+   * defensive against direct index surgery).
+   */
+  private postingsIndex(
+    docs: Array<{ entry: HarmonicIndexEntry; tf: Map<string, number>; len: number }>,
+  ): Map<string, number[]> {
+    const entries = this.index.entries;
+    if (this.postingsCache
+      && this.postingsCache.version === this.searchVersion
+      && this.postingsCache.entriesRef === entries) {
+      return this.postingsCache.byTerm;
+    }
+    const byTerm = new Map<string, number[]>();
+    for (let i = 0; i < docs.length; i++) {
+      for (const term of docs[i].tf.keys()) {
+        const bucket = byTerm.get(term);
+        if (bucket) bucket.push(i);
+        else byTerm.set(term, [i]);
+      }
+    }
+    this.postingsCache = { version: this.searchVersion, entriesRef: entries, byTerm };
+    return byTerm;
+  }
 
   private tokenizeBM25(text: string): string[] {
     const tokens: string[] = [];
