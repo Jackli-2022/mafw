@@ -88,6 +88,8 @@ describe('ContextChip wiring', () => {
     expect(src).toContain('TextInputV2')
     expect(src).toContain('Switch')
     expect(src).toContain('formatContextChip')
+    expect(src).toContain('channelLabel')
+    expect(src).toContain('渠道')
     expect(src).not.toContain('随消息发送')
     expect(src).not.toContain('定位')
   })

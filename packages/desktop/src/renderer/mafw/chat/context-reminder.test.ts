@@ -14,23 +14,30 @@ const prefs = (over: Partial<ContextPrefs> = {}): ContextPrefs => ({
   sendCity: true,
   locale: 'zh-CN',
   timeZone: 'Asia/Shanghai',
+  channel: 'desktop',
   ...over,
 })
 
 describe('formatLatestReminder', () => {
-  test('formats date, weekday, time, timezone, city and language', () => {
+  test('formats date, weekday, time, timezone, city, language and channel', () => {
     expect(formatLatestReminder(prefs(), NOW)).toBe(
-      '2026-11-18 周三 14:32 · Asia/Shanghai · 上海 · 中文',
+      '2026-11-18 周三 14:32 · Asia/Shanghai · 上海 · 中文 · 渠道：桌面端',
     )
   })
 
   test('omits the city when disabled or empty', () => {
     expect(formatLatestReminder(prefs({ sendCity: false }), NOW)).toBe(
-      '2026-11-18 周三 14:32 · Asia/Shanghai · 中文',
+      '2026-11-18 周三 14:32 · Asia/Shanghai · 中文 · 渠道：桌面端',
     )
     expect(formatLatestReminder(prefs({ city: '' }), NOW)).toBe(
-      '2026-11-18 周三 14:32 · Asia/Shanghai · 中文',
+      '2026-11-18 周三 14:32 · Asia/Shanghai · 中文 · 渠道：桌面端',
     )
+  })
+
+  test('labels the channel', () => {
+    expect(formatLatestReminder(prefs({ channel: 'mobile' }), NOW)).toContain('渠道：手机端')
+    expect(formatLatestReminder(prefs({ channel: 'tui' }), NOW)).toContain('渠道：终端')
+    expect(formatLatestReminder(prefs({ channel: 'web' }), NOW)).toContain('渠道：网页')
   })
 
   test('can be disabled entirely', () => {

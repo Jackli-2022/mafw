@@ -141,7 +141,24 @@ describe('message ingestion', () => {
   })
 
   test('strips the latest reminder from user display text', () => {
-    const raw = '<latest-reminder>2026-11-18 周三 14:32 · Asia/Shanghai · 上海 · 中文</latest-reminder>\n\nhello'
+    const raw = '<latest-reminder>2026-11-18 周三 14:32 · Asia/Shanghai · 上海 · 中文 · 渠道：桌面端</latest-reminder>\n\nhello'
+    const { messages, parts } = ingestHistoryPage(
+      [{
+        id: 'u1',
+        sessionID: 's1',
+        role: 'user',
+        text: raw,
+        time: { created: 1 },
+        content: [{ id: 'p1', type: 'text', text: raw }],
+      }],
+      { sessionID: 's1' },
+    )
+    expect(messages[0].text).toBe('hello')
+    expect(parts.u1[0].text).toBe('hello')
+  })
+
+  test('strips a gateway-injected client channel from user display text', () => {
+    const raw = '<client-channel>手机端</client-channel>\n\nhello'
     const { messages, parts } = ingestHistoryPage(
       [{
         id: 'u1',

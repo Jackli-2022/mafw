@@ -47,6 +47,7 @@ export function createGatewayClient(baseUrl: string, fetchImpl?: typeof fetch): 
   return new MafwClient(baseUrl, {
     clientToken: readHumanToken(),
     schemaEpoch: 'auto',
+    headers: { 'x-mafw-client': 'desktop' },
     ...(fetchImpl ? { fetchImpl } : {}),
   })
 }

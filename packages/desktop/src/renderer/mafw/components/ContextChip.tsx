@@ -4,6 +4,7 @@ import { Switch } from '@mafw/ui/v2/switch-v2'
 import { TextInputV2 } from '@mafw/ui/v2/text-input-v2'
 import { PopoverShell } from './pickers/PopoverShell'
 import {
+  channelLabel,
   formatContextChip,
   formatContextStamp,
   languageLabel,
@@ -72,6 +73,11 @@ export function ContextChip(props: {
         <div class="mafw-context-pop-row">
           <span class="mafw-context-pop-label">时间</span>
           <span class="mafw-context-pop-value mafw-context-pop-nums">{stamp()}</span>
+        </div>
+
+        <div class="mafw-context-pop-row">
+          <span class="mafw-context-pop-label">渠道</span>
+          <span class="mafw-context-pop-value">{channelLabel(props.prefs.channel)}</span>
         </div>
 
         <div class="mafw-context-pop-row">

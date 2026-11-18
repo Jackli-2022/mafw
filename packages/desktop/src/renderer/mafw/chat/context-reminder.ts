@@ -9,7 +9,23 @@ export interface ContextPrefs {
   sendCity: boolean
   locale: string
   timeZone: string
+  /** Where this client sends from; desktop defaults to `desktop`. */
+  channel?: ContextChannel
   enabled?: boolean
+}
+
+export type ContextChannel = 'desktop' | 'mobile' | 'tui' | 'web' | 'api'
+
+const CHANNEL_LABELS: Record<ContextChannel, string> = {
+  desktop: '桌面端',
+  mobile: '手机端',
+  tui: '终端',
+  web: '网页',
+  api: 'API',
+}
+
+export function channelLabel(channel: ContextChannel | undefined): string {
+  return CHANNEL_LABELS[channel ?? 'desktop'] ?? '桌面端'
 }
 
 export interface LatestReminderPart {
@@ -72,8 +88,13 @@ export function formatLatestReminder(prefs: ContextPrefs, now: Date): string {
   const clock = clockParts(prefs, now)
   if (!clock) return ''
   const language = languageLabel(prefs.locale)
-  const segments = [`${clock.date} ${clock.weekday} ${clock.time}`.trim(), clock.timeZone, cityOf(prefs), language]
-    .filter(Boolean)
+  const segments = [
+    `${clock.date} ${clock.weekday} ${clock.time}`.trim(),
+    clock.timeZone,
+    cityOf(prefs),
+    language,
+    `渠道：${channelLabel(prefs.channel)}`,
+  ].filter(Boolean)
   return segments.join(' · ')
 }
 
@@ -106,6 +127,11 @@ export function stripLatestReminder(text: string): string {
   return text.replace(/<latest-reminder>[\s\S]*?<\/latest-reminder>\s*/gi, '')
 }
 
+/** Gateway-stamped channel block (mobile / TUI / API clients). */
+export function stripClientChannel(text: string): string {
+  return text.replace(/<client-channel>[\s\S]*?<\/client-channel>\s*/gi, '')
+}
+
 function randomId(): string {
   try {
     const id = globalThis.crypto?.randomUUID?.()
@@ -118,6 +144,7 @@ export const DEFAULT_CONTEXT_PREFS: ContextPrefs = {
   sendCity: false,
   locale: 'zh-CN',
   timeZone: 'UTC',
+  channel: 'desktop',
 }
 
 export function loadContextPrefs(): ContextPrefs {

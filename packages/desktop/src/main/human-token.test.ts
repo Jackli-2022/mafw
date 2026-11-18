@@ -129,8 +129,17 @@ describe("createGatewayClient", () => {
     expect(headersOf(calls[0]).get("content-type")).toBe("application/json")
   })
 
-  test("sends no header when the token file is missing", async () => {
-    process.env[ENV_KEY] = join(tempRoot(), "absent.token")
+  test("declares the desktop client channel", async () => {
+    process.env[ENV_KEY] = writeTokenFile(TOKEN)
+    const calls: Captured[] = []
+    const client = createGatewayClient("http://127.0.0.1:4321", fakeFetch(calls))
+
+    await client.project.current()
+
+    expect(headersOf(calls[0]).get("x-mafw-client")).toBe("desktop")
+  })
+
+  test("sends no header when the token file is missing", async () => {    process.env[ENV_KEY] = join(tempRoot(), "absent.token")
     const calls: Captured[] = []
     const client = createGatewayClient("http://127.0.0.1:4321", fakeFetch(calls))
 
