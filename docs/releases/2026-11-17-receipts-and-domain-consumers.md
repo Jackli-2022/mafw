@@ -35,8 +35,9 @@
 
 ## 测试
 
-- gateway：`domain-event-consumer`、`domain-event-consumer-wiring`、
-  `event-delivery-receipt-routes` 新增 8 tests；api-contract ledger 更新（+2 POST ops）。
+- gateway：`domain-event-consumer`（5）、`domain-event-consumer-wiring`（2）、
+  `event-delivery-receipt-routes`（3）、`event-delivery-receipts`（+1）共新增 11 tests；
+  api-contract ledger 更新（+2 POST ops）。
 - SDK：新增 2 个 client 测试；`npm test` 245/245。
 - gateway 全量：**1024 / 1024 suites**，**8117 passed / 2 skipped / 0 failed**。
 - Desktop `tsgo`：rc=0（补上 preload 的 `readDelivery` / `answerDelivery` 后）。

@@ -48,7 +48,8 @@ Source → Trigger → Thread → Subscription → Decision → Delivery → Cha
 - 归档：`PodGoalService.onGoalArchived(..., { inTransaction })` 在同一个 SQLite 事务里写
   goal 状态 + domain event + pod event + lead outbox；任一失败整体回滚。
 - 投影：`goal-view-projector.ts` 从事件重建 `GoalLifecycleProjection`；Phase 2 只做 parity，
-  读路径仍是 `buildPodGoalView`（Phase 3 接管）。
+  默认读路径仍是 `buildPodGoalView`。Phase 3 只增加了 `MAFW_GOAL_REPLAY_READ=1` 的
+  history 回放读路径；**projector 接管读路径仍未做**（Desktop 统一分类继续延后）。
 
 ### Goal history / snapshots（Phase 3，2026-11-16）
 
@@ -83,6 +84,8 @@ Source → Trigger → Thread → Subscription → Decision → Delivery → Cha
 - 失败 delivery：默认 5 次后进入 `dropped`（`dead-letter: ...`），未达阈值按 2s→60s
   退避；重启后到期的 failed delivery 继续重试。阈值可用
   `MAFW_EVENT_MAX_DELIVERY_ATTEMPTS` 覆盖。
+- 退避重试由 kernel 的 `event:delivery-retry` timer 每 30s 扫一次
+  （`event-delivery-retry.ts`，in-flight 去重），不再只依赖新事件或重启。
 - 重启恢复：boot 时 `resumeIncompleteDeliveries` 扫 pending（context 与 work）以及到期的
   failed delivery；work 消费者按 trigger id（eventId）幂等。
 - receipt 找不到对应 outbox 行时（external trigger 且订阅者是 Lead），记录
@@ -102,6 +105,9 @@ Source → Trigger → Thread → Subscription → Decision → Delivery → Cha
   domain event（`domainEventForTrigger` / `consumerEnvelope`）；decision/internal 没有
   对应事件，回退 trigger。Standing 的幂等键保持 `trigger.id`，切换内容来源不会重复执行。
 - Tech Lead 的 evaluate / decision 仍由 `event_*` 承担。
+- Desktop Lead 会话在 composer 上方展示 `delivered` / `read` 的外部投递卡片：
+  展开卡片时对可见投递写 `read`；逐条「已回答」写 `answered`；Lead 聊天回复不算
+  `answered`。卡片只读当前 Pod 的 Lead 订阅，最多显示 5 条。
 
 ### Lead read / ack（2026-11-16 定案）
 
@@ -157,7 +163,7 @@ Source → Trigger → Thread → Subscription → Decision → Delivery → Cha
 - `event_deliveries.delivered` 与 `pod_events.wake_state='delivered'` 都只表示已成功写入
   outbox，**不代表 Lead 已收到**；实际发送状态看 `event_outbox.state`
   （`pending` / `sent` / `failed` / `dropped`）。
-- 仍不做：read / ack、agent-set timers、dispatcher watchdog；这些留在后续阶段。
+- 仍不做：agent-set timers、dispatcher watchdog；这些留在后续阶段。
 - `internal` / `cron` 系统 source 在事件层启动时 ensure；外部 GitHub / webhook source 仍需显式创建。
 
 ## GitHub 来源
@@ -196,6 +202,8 @@ normalize / thread 路径。registry handler 读取 raw body 交给 HMAC，避�
 | POST | `/api/event-threads/:id/subscriptions` | `events.threads.subscriptions.create` |
 | DELETE | `/api/event-subscriptions/:id` | `events.subscriptions.delete` |
 | GET | `/api/event-deliveries?threadId=` | `events.deliveries.list` |
+| POST | `/api/event-deliveries/:id/read` | `events.deliveries.read`（human-only） |
+| POST | `/api/event-deliveries/:id/answer` | `events.deliveries.answer`（human-only） |
 | POST | `/api/event-sources/:id/webhook` | `events.webhook.receive`（internal） |
 
 SDK：`@mafw/sdk` 的 `events.sources/threads/subscriptions/deliveries`；桌面 Config → Gateway
