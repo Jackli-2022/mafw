@@ -9386,6 +9386,12 @@ html[data-theme="light"] body {
   min-width: 0;
   flex: 1;
 }
+/* TextInputV2 ships a fixed 280px width; it must shrink to the popover column
+   (otherwise the field overflows the 300px popover by ~35px). */
+.mafw-context-pop-city [data-component="text-input-v2"] {
+  width: 100%;
+  min-width: 0;
+}
 .mafw-context-pop-note {
   margin: 10px 0 0;
   padding-top: 8px;

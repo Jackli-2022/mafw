@@ -101,4 +101,9 @@ describe('ContextChip wiring', () => {
     expect(css).toContain('.mafw-context-chip')
     expect(css).toContain('font-size: 10.5px')
   })
+
+  test('the city input shrinks to the popover content width', () => {
+    const css = read('../mafw.css')
+    expect(css).toContain('.mafw-context-pop-city [data-component="text-input-v2"]')
+  })
 })
