@@ -29,9 +29,18 @@ export interface EmbeddingRuntimeState {
   providerId: string | null;
   modelTag: string | null;
   dims: number | null;
+  /** Raw vector-store key count (includes orphan keys). */
   vectors: number;
+  /** Raw Harmonic index row count (includes superseded rows). */
   indexEntries: number;
+  /** Active intersection: activeWithVectors / activeEntries. */
   coverage: number;
+  /** Optional diagnostics: active denominators + orphan keys (see memory/vector-coverage.ts). */
+  activeEntries?: number;
+  activeWithVectors?: number;
+  orphanVectors?: number;
+  /** Retired mixed ratio (vectors / indexEntries), never clamped. */
+  rawCoverage?: number;
 }
 
 export interface EmbeddingConfigDeps {

@@ -266,7 +266,14 @@ export const EmbeddingRuntimeStateSchema = Type.Object({
   dims: Type.Union([Type.Number(), Type.Null()]),
   vectors: Type.Number(),
   indexEntries: Type.Number(),
+  /** Active intersection (not vectors/indexEntries); see memory/vector-coverage.ts. */
   coverage: Type.Number(),
+  // Optional diagnostics emitted by kernel.runtimeState(); old payloads stay valid.
+  activeEntries: Type.Optional(Type.Number()),
+  activeWithVectors: Type.Optional(Type.Number()),
+  orphanVectors: Type.Optional(Type.Number()),
+  /** Retired mixed ratio (vectors / indexEntries), never clamped. */
+  rawCoverage: Type.Optional(Type.Number()),
 })
 
 /** `GET /api/memory/embedding-config` → `{current, runtime, available}`。 */

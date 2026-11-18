@@ -65,6 +65,7 @@ import {
   GoalTimelineResponse,
 } from '../../src/routes/schemas/goals';
 import { MemoryGetResponse, MemorySearchResponse } from '../../src/routes/schemas/memory';
+import { MemoryStatsResponse } from '../../src/routes/schemas/memory-stats';
 import {
   RecallContextResponse,
   RecallInstructionsResponse,
@@ -182,6 +183,7 @@ import {
 import {
   AgentCapabilitiesResponse,
   EmbeddingGetResponse,
+  EmbeddingRuntimeStateSchema,
   MediaPluginsResponse,
   MediaResolveTaskResponse,
   ModelConfigGetResponse,
@@ -611,6 +613,119 @@ describe('api-contract: E8-3 六个核心读接口 response schema', () => {
     });
     expect(Value.Check(DecisionListResponse, decisions.body)).toBe(true);
     expect([...Value.Errors(DecisionListResponse, decisions.body)]).toEqual([]);
+  });
+});
+
+describe('api-contract: memory.stats Harmonic coverage diagnostics', () => {
+  const t1 = {
+    vectors: 0,
+    activeRows: 0,
+    archiveRows: 0,
+    coverage: 0,
+    retrieval: { total: 0, byKind: { search: 0, recall: 0, redeem: 0 }, uniqueTraces: 0, lastAt: null },
+    provenance: { memories: 0, withExact: 0, coverage: 0 },
+    activation: { traces: 0, mean: 0, max: 0 },
+    activationRanking: { mode: 'shadow', evaluations: 0, wouldReorder: 0, applied: 0 },
+  };
+
+  const baseBody = {
+    embedding: { provider: 'local', model: 'm', vectors: 3, indexEntries: 3, coverage: 1 },
+    t1,
+    consolidation: null,
+    routing: null,
+    dedup: null,
+    commitment: null,
+    reconsolidation: null,
+    pipelines: [],
+    coactivation: null,
+    abstractionLevels: {},
+    fok: null,
+    retrievalEvents: null,
+  };
+
+  test('the pre-existing memory.stats body still validates without the new diagnostics', () => {
+    expect(Value.Check(MemoryStatsResponse, baseBody)).toBe(true);
+    expect([...Value.Errors(MemoryStatsResponse, baseBody)]).toEqual([]);
+  });
+
+  test('embedding keeps the old required fields; coverage diagnostics are optional', () => {
+    const embedding = MemoryStatsResponse.properties.embedding;
+    expect(embedding.required).toEqual(['provider', 'model', 'vectors', 'indexEntries', 'coverage']);
+    for (const field of ['activeEntries', 'activeWithVectors', 'orphanVectors', 'rawCoverage']) {
+      expect({ field, present: Boolean(embedding.properties[field]) }).toEqual({ field, present: true });
+    }
+  });
+
+  test('a body carrying the active-intersection diagnostics validates', () => {
+    const body = {
+      ...baseBody,
+      embedding: {
+        provider: 'local',
+        model: 'm',
+        vectors: 3,
+        indexEntries: 3,
+        coverage: 1,
+        activeEntries: 2,
+        activeWithVectors: 2,
+        orphanVectors: 1,
+        rawCoverage: 1.5,
+      },
+    };
+    expect([...Value.Errors(MemoryStatsResponse, body)]).toEqual([]);
+  });
+});
+
+describe('api-contract: embedding runtime coverage diagnostics', () => {
+  const findOp = (operationId: string): any => {
+    for (const methods of Object.values<any>(contract.paths)) {
+      for (const candidate of Object.values<any>(methods)) {
+        if (candidate?.operationId === operationId) return candidate;
+      }
+    }
+    return null;
+  };
+
+  const LEGACY_REQUIRED = ['active', 'providerId', 'modelTag', 'dims', 'vectors', 'indexEntries', 'coverage'];
+  const DIAGNOSTICS = ['activeEntries', 'activeWithVectors', 'orphanVectors', 'rawCoverage'];
+
+  const legacyRuntime = {
+    active: null, providerId: null, modelTag: null, dims: null,
+    vectors: 3, indexEntries: 2, coverage: 1,
+  };
+
+  test('EmbeddingRuntimeStateSchema declares the new diagnostics as optional', () => {
+    // kernel.runtimeState() returns these four fields; the schema must own them,
+    // but the pre-existing required list is a wire guarantee and may not grow.
+    expect(EmbeddingRuntimeStateSchema.required).toEqual(LEGACY_REQUIRED);
+    for (const field of DIAGNOSTICS) {
+      expect({ field, present: Boolean((EmbeddingRuntimeStateSchema.properties as any)[field]) })
+        .toEqual({ field, present: true });
+    }
+  });
+
+  test('legacy runtime bodies validate and the diagnostics are typed numbers', () => {
+    expect([...Value.Errors(EmbeddingRuntimeStateSchema, legacyRuntime)]).toEqual([]);
+    const withDiagnostics = {
+      ...legacyRuntime,
+      activeEntries: 2,
+      activeWithVectors: 2,
+      orphanVectors: 1,
+      rawCoverage: 1.5,
+    };
+    expect([...Value.Errors(EmbeddingRuntimeStateSchema, withDiagnostics)]).toEqual([]);
+    // Typed, not merely additionalProperties: a string must fail.
+    expect(Value.Check(EmbeddingRuntimeStateSchema, { ...withDiagnostics, orphanVectors: '1' })).toBe(false);
+  });
+
+  test('the merged openapi artifact carries the optional runtime diagnostics for embedding.get', () => {
+    const op = findOp('embedding.get');
+    expect(op).not.toBeNull();
+    const runtime = op.responses?.['200']?.content?.['application/json']?.schema?.properties?.runtime;
+    expect(runtime).toBeDefined();
+    expect(runtime.required).toEqual(LEGACY_REQUIRED);
+    for (const field of DIAGNOSTICS) {
+      expect({ field, present: Boolean(runtime.properties?.[field]) }).toEqual({ field, present: true });
+    }
   });
 });
 

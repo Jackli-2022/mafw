@@ -19,7 +19,14 @@ const EmbeddingStatsSchema = Type.Object({
   model: Type.String(),
   vectors: Type.Number(),
   indexEntries: Type.Number(),
+  // Active intersection (not vectors/indexEntries); see memory/vector-coverage.ts.
   coverage: Type.Number(),
+  // Diagnostics: optional so older bodies/payloads stay valid.
+  activeEntries: Type.Optional(Type.Number()),
+  activeWithVectors: Type.Optional(Type.Number()),
+  orphanVectors: Type.Optional(Type.Number()),
+  /** Legacy mixed ratio (vectors / indexEntries), never clamped. */
+  rawCoverage: Type.Optional(Type.Number()),
 })
 
 const T1RetrievalStatsSchema = Type.Object({

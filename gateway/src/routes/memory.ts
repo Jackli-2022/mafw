@@ -24,6 +24,7 @@ import { getRetrievalEventBuffer } from '../core/memory/retrieval-events';
 import { getReconsolidationQueue } from '../recall/reconsolidation';
 import { computeDenseScores, getEmbeddingRuntime } from '../memory/embedding-runtime';
 import { getRouteStats } from '../memory/route-write';
+import { computeHarmonicVectorCoverage } from '../memory/vector-coverage';
 import { HarmonicUnitFileStore } from '../memory/harmonic-file-store';
 import type { ConsolidationService } from '../memory/consolidation-service';
 import type { GatewayDatabase } from '../memory/gateway-db';
@@ -111,7 +112,9 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
       const embeddingRuntime = getEmbeddingRuntime();
       const consolidation = deps.consolidationService()?.getStats() ?? null;
       const indexEntries = deps.memoryService()?.harmonicIndex.getIndex().entries ?? [];
-      const indexed = embeddingRuntime ? embeddingRuntime.vectors.size() : 0;
+      // Shared active-intersection statistic (also used by kernel.runtimeState):
+      // raw counts stay raw, `coverage` is the active set that actually has a vector.
+      const harmonicCoverage = computeHarmonicVectorCoverage(indexEntries, embeddingRuntime?.vectors ?? null);
       const t1 = (() => {
         const emptyStats = {
           total: 0,
@@ -256,9 +259,15 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
           providerId: providerName,
           engine: config.memory.embedding.engine ?? 'onnx',
           dims: embeddingRuntime?.provider?.dims ?? config.memory.embedding.dimensions ?? null,
-          vectors: indexed,
-          indexEntries: indexEntries.length,
-          coverage: indexEntries.length > 0 ? indexed / indexEntries.length : 0,
+          vectors: harmonicCoverage.vectors,
+          indexEntries: harmonicCoverage.indexEntries,
+          coverage: harmonicCoverage.coverage,
+          // Diagnostics (optional): active denominators + orphan keys make a
+          // >100% raw ratio explainable instead of silently clamped.
+          activeEntries: harmonicCoverage.activeEntries,
+          activeWithVectors: harmonicCoverage.activeWithVectors,
+          orphanVectors: harmonicCoverage.orphanVectors,
+          rawCoverage: harmonicCoverage.rawCoverage,
         },
         t1,
         consolidation,

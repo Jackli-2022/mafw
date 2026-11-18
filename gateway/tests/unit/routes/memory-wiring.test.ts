@@ -14,6 +14,7 @@ import { buildRouteCatalog } from '../../../src/routes/route-catalog';
 import { attachMemoryRoutes, type MemoryRouteDeps } from '../../../src/routes/memory';
 import { emptyNoteBoardBudget } from '../../../src/routes/note-board';
 import { setEmbeddingRuntime } from '../../../src/memory/embedding-runtime';
+import { computeHarmonicVectorCoverage } from '../../../src/memory/vector-coverage';
 import { HarmonicIndexManager } from '../../../src/core/memory/harmonic-index';
 
 function fakeReq(opts: { method: string; url: string; body?: string }): IncomingMessage {
@@ -365,7 +366,7 @@ describe('memory registry wiring (D1 Task F1)', () => {
 
   it('stats includes T1 coverage and retrieval counters', async () => {    const since = Math.floor(Date.now() / 1000) - 7 * 86400;
     setEmbeddingRuntime({
-      vectors: { size: () => 0 },
+      vectors: { size: () => 0, ids: () => [] },
       t1Vectors: { size: () => 5 },
     } as any);
     try {
@@ -421,6 +422,54 @@ describe('memory registry wiring (D1 Task F1)', () => {
           redundant: 0,
         },
       });
+    } finally {
+      setEmbeddingRuntime(null);
+    }
+  });
+
+  it('stats reports active-intersection Harmonic coverage plus orphan diagnostics', async () => {
+    // A/C are the active index rows (both vectored); superseded B has no vector
+    // and is no longer an index row; ORPHAN is a vector key with no index row.
+    const entries = [{ id: 'a' }, { id: 'c' }];
+    const vectorIds = ['a', 'c', 'orphan'];
+    setEmbeddingRuntime({
+      provider: { dims: 4, name: 'test:embed' },
+      providerId: 'test:embed',
+      vectors: { size: () => vectorIds.length, ids: () => [...vectorIds] },
+    } as any);
+    try {
+      const { registry } = setup({
+        memoryService: () => ({
+          harmonicIndex: { getIndex: () => ({ entries }) },
+        }) as any,
+        getGatewayDb: () => ({
+          count: () => 0,
+          archiveCount: () => 0,
+          t1RetrievalStats: () => ({ total: 0, byKind: { search: 0, recall: 0, redeem: 0 }, uniqueTraces: 0, lastAt: null }),
+        }) as any,
+      });
+      const r = fakeRes();
+      await handlerFor(registry, 'GET', '/api/memory/stats')!(
+        fakeReq({ method: 'GET', url: '/api/memory/stats' }), r.res,
+      );
+      expect(r.status).toBe(200);
+      const body = JSON.parse(r.body);
+      // The route must publish exactly the shared helper's numbers (raw counts
+      // keep their old meaning; coverage is the active intersection).
+      const expected = computeHarmonicVectorCoverage(entries, {
+        size: () => vectorIds.length,
+        ids: () => [...vectorIds],
+      });
+      expect(expected).toEqual({
+        vectors: 3,
+        indexEntries: 2,
+        activeEntries: 2,
+        activeWithVectors: 2,
+        orphanVectors: 1,
+        coverage: 1,
+        rawCoverage: 1.5,
+      });
+      expect(body.embedding).toEqual(expect.objectContaining(expected));
     } finally {
       setEmbeddingRuntime(null);
     }
@@ -514,7 +563,7 @@ describe('memory registry wiring (D1 Task F1)', () => {
     setEmbeddingRuntime({
       providerId: 'llamacpp:test.gguf',
       provider: { dims: 1024, name: 'llamacpp:test.gguf' },
-      vectors: { size: () => 0 },
+      vectors: { size: () => 0, ids: () => [] },
     } as any);
     try {
       const { registry } = setup({

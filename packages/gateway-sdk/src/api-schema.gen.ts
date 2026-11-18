@@ -26631,6 +26631,10 @@ export interface operations {
                             vectors: number;
                             indexEntries: number;
                             coverage: number;
+                            activeEntries?: number;
+                            activeWithVectors?: number;
+                            orphanVectors?: number;
+                            rawCoverage?: number;
                         };
                         available: {
                             providers: string[];
@@ -26754,6 +26758,10 @@ export interface operations {
                             vectors: number;
                             indexEntries: number;
                             coverage: number;
+                            activeEntries?: number;
+                            activeWithVectors?: number;
+                            orphanVectors?: number;
+                            rawCoverage?: number;
                         };
                         /** @description embedding runtime rebuilt (backfill scheduled) | provider off (dense channel disabled). */
                         note: string;
@@ -39411,6 +39419,10 @@ export interface operations {
                             vectors: number;
                             indexEntries: number;
                             coverage: number;
+                            activeEntries?: number;
+                            activeWithVectors?: number;
+                            orphanVectors?: number;
+                            rawCoverage?: number;
                         };
                         t1: {
                             vectors: number;

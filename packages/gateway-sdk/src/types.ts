@@ -135,7 +135,22 @@ export interface T1RetrievalStats {
 
 /** GET /api/memory/stats — every field is optional (fail-open endpoint). */
 export interface MemoryStats {
-  embedding?: { provider: string; model?: string; vectors: number; indexEntries: number; coverage: number } | null
+  embedding?: {
+    provider: string
+    model?: string
+    /** Raw vector-store key count (includes orphan keys). */
+    vectors: number
+    /** Raw Harmonic index row count (includes superseded rows). */
+    indexEntries: number
+    /** Active intersection: activeWithVectors / activeEntries. */
+    coverage: number
+    /** Diagnostics (optional): active denominators + orphan keys. */
+    activeEntries?: number
+    activeWithVectors?: number
+    orphanVectors?: number
+    /** Retired mixed ratio (vectors / indexEntries), never clamped. */
+    rawCoverage?: number
+  } | null
   consolidation?: { judged: number; updates: number; creates: number; skipped: number; updateRatio: number } | null
   routing?: Record<string, unknown> | null
   reconsolidation?: { eligible: number } | null
@@ -954,9 +969,18 @@ export interface EmbeddingRuntimeState {
   providerId: string | null
   modelTag: string | null
   dims: number | null
+  /** Raw vector-store key count (includes orphan keys). */
   vectors: number
+  /** Raw Harmonic index row count (includes superseded rows). */
   indexEntries: number
+  /** Active intersection: activeWithVectors / activeEntries. */
   coverage: number
+  /** Optional diagnostics: active denominators + orphan keys. */
+  activeEntries?: number
+  activeWithVectors?: number
+  orphanVectors?: number
+  /** Retired mixed ratio (vectors / indexEntries), never clamped. */
+  rawCoverage?: number
 }
 
 export interface EmbeddingConfigGetResponse {

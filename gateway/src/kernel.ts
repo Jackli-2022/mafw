@@ -182,6 +182,7 @@ import { setRouteWriteDeps, getRouteWriteDeps, routeAndWrite } from "./memory/ro
 import { buildSchemaClusters, Cluster } from "./memory/schema-clusters";
 import { getReconsolidationQueue } from "./recall/reconsolidation";
 import { HarmonicUnitFileStore } from "./memory/harmonic-file-store";
+import { computeHarmonicVectorCoverage } from "./memory/vector-coverage";
 import { deoptSkill as deoptInstalledSkill } from './memory/skill-install';
 import { observeSkillInvocation } from './core/skills/skill-invocation';
 import { shouldDeoptSkill } from './memory/skill-health';
@@ -2555,16 +2556,22 @@ class MafwScheduler {
       },
       runtimeState: () => {
         const rt = getEmbeddingRuntime();
-        const indexEntries = this.memoryService?.harmonicIndex.getIndex().entries.length ?? 0;
-        const vectors = rt?.vectors.size() ?? 0;
+        const entries = this.memoryService?.harmonicIndex.getIndex().entries ?? [];
+        // Same shared statistic as GET /api/memory/stats: coverage is the active
+        // intersection, raw counts and the unclamped legacy ratio stay visible.
+        const harmonicCoverage = computeHarmonicVectorCoverage(entries, rt?.vectors ?? null);
         return {
           active: rt?.provider.name ?? null,
           providerId: rt?.providerId ?? null,
           modelTag: rt?.modelTag ?? null,
           dims: rt?.dims ?? null,
-          vectors,
-          indexEntries,
-          coverage: indexEntries > 0 ? vectors / indexEntries : 1,
+          vectors: harmonicCoverage.vectors,
+          indexEntries: harmonicCoverage.indexEntries,
+          coverage: harmonicCoverage.coverage,
+          activeEntries: harmonicCoverage.activeEntries,
+          activeWithVectors: harmonicCoverage.activeWithVectors,
+          orphanVectors: harmonicCoverage.orphanVectors,
+          rawCoverage: harmonicCoverage.rawCoverage,
         };
       },
       scheduleBackfill: () => {
