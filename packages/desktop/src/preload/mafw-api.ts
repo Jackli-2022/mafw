@@ -144,7 +144,7 @@ export function createMafwApi(): MafwAPI {
       create: (opts?) => invoke("session", "create", opts || {}),
       get: (id) => invoke("session", "get", { path: { id } }),
       messages: (sessionID, limit?, before?) => invoke("session", "messages", { path: { id: sessionID }, query: { limit, before } }),
-      memoryReceipts: (sessionID, opts?) => invoke("session", "memoryReceipts", { path: { id: sessionID }, query: { limit: opts?.limit } }),
+      memoryReceipts: (sessionID, opts?) => invoke("session", "memoryReceipts", sessionID, opts),
       todo: (sessionID) => invoke("session", "todo", { path: { id: sessionID } }),
       children: (sessionID) => invoke("session", "children", { path: { id: sessionID } }),
       switchAgent: (id, agent) => invoke("session", "switchAgent", { path: { id }, body: { agent } }),

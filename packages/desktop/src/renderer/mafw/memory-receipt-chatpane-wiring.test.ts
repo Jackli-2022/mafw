@@ -20,5 +20,6 @@ describe('memory receipt ChatPane wiring', () => {
   test('preload exposes the receipts call', () => {
     const preload = read('../../preload/mafw-api.ts')
     expect(preload).toContain('memoryReceipts')
+    expect(preload).toContain('invoke("session", "memoryReceipts", sessionID, opts)')
   })
 })
