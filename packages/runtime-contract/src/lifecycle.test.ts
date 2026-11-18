@@ -66,6 +66,21 @@ test('unknown reasons are preserved; invalid shapes fall back to unknown', () =>
   assert.equal(settledWithoutOutcome.reason, 'settled-without-outcome');
 });
 
+test('dsh continuation states keep waiting distinct from active', () => {
+  const dsh = (status: 'running' | 'waiting' | 'settled') => normalizeLifecycle({
+    phase: status === 'running' ? 'active' : status === 'waiting' ? 'waiting' : 'settled',
+    ...(status === 'settled' ? { outcome: 'completed' as const } : {}),
+    ...(status === 'waiting' ? { waitingOn: ['children'] } : {}),
+    observedAt: 6000,
+  }, fallback);
+  assert.equal(dsh('running').phase, 'active');
+  assert.equal(dsh('waiting').phase, 'waiting');
+  assert.deepEqual(dsh('waiting').waitingOn, ['children']);
+  assert.equal(dsh('settled').phase, 'settled');
+  assert.equal(dsh('settled').outcome, 'completed');
+  assert.equal(isActiveLifecycle(dsh('waiting')), false);
+});
+
 test('unknownLifecycle requires an explicit reason and observation', () => {
   const lifecycle = unknownLifecycle({
     observedAt: 5000,

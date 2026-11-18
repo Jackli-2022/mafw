@@ -45,6 +45,9 @@ export const PI_CAPABILITIES: RuntimeCapabilities = {
   steerApi: true,
   // Creator tools/skills are OpenCode plugin-host artifacts; pi does not materialize mafw-create.
   pluginCreatorApi: false,
+  lifecycleApi: false,
+  sessionChildrenApi: false,
+  backgroundTasksApi: false,
 };
 
 interface PiNativeTool {

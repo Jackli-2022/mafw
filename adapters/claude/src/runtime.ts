@@ -166,7 +166,6 @@ export function createClaudeRuntime(deps: ClaudeRuntimeDeps): any {
         }));
       },
       async todo() { return []; },
-      async children() { return []; },
       async summarize() { return null; },
     },
     global: { event: () => bus.event() },

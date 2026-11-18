@@ -243,14 +243,26 @@ describe('sessions read models registry wiring (D1 Task E1)', () => {
     expect(JSON.parse(r.body)).toEqual({ items: [{ id: 'c1', depth: 3 }, { id: 'c2', depth: 4 }] });
   });
 
-  it('children: 200 {items:[]} on a null runtime AND on a throwing runtime', async () => {
+  it('children: 503 on a null/unsupported runtime, 200 {items:[]} on a throwing supported runtime', async () => {
     let r = fakeRes();
     const { registry } = setup();
     await handlerFor(registry, 'GET', '/api/sessions/s1/children')!(
       fakeReq({ url: '/api/sessions/s1/children', method: 'GET' }), r.res,
     );
-    expect(r.status).toBe(200);
-    expect(JSON.parse(r.body)).toEqual({ items: [] });
+    expect(r.status).toBe(503);
+    expect(JSON.parse(r.body)).toEqual({ error: 'runtime does not support session.children' });
+
+    const { registry: unsupported } = setup({
+      runtime: {
+        capabilities: { sessionChildrenApi: false },
+        session: { children: async () => [{ id: 'ignored' }] },
+      },
+    });
+    r = fakeRes();
+    await handlerFor(unsupported, 'GET', '/api/sessions/s1/children')!(
+      fakeReq({ url: '/api/sessions/s1/children', method: 'GET' }), r.res,
+    );
+    expect(r.status).toBe(503);
 
     const { registry: throwing } = setup({
       runtime: { session: { children: async () => { throw new Error('boom'); } } },

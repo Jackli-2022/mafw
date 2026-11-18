@@ -407,7 +407,8 @@
       "id": "session.children",
       "title": "session.children",
       "domain": "session",
-      "obligation": "required",
+      "obligation": "gated",
+      "capability": "sessionChildrenApi",
       "verification": "presence",
       "implementation": "session.children",
       "probe": [
@@ -415,7 +416,7 @@
         "children"
       ],
       "consumer": "subagent UI",
-      "impact": "子会话不可见",
+      "impact": "子会话面 503；不伪造空列表",
       "presets": [
         "core",
         "conversation",
@@ -2217,7 +2218,6 @@
         "session.abort",
         "session.list",
         "session.todo",
-        "session.children",
         "session.summarize"
       ],
       "unlocks": [
@@ -2230,7 +2230,6 @@
         "session.abort",
         "session.list",
         "session.todo",
-        "session.children",
         "session.summarize"
       ],
       "degrade": "会话/回合 API 不可用"
@@ -2321,6 +2320,21 @@
       "requires": [],
       "unlocks": [],
       "degrade": "信息性声明；gateway 不消费"
+    },
+    {
+      "degradeRule": "any-requires-missing",
+      "id": "sessionChildrenApi",
+      "title": "child session enumeration",
+      "domain": "session",
+      "kind": "feature",
+      "default": false,
+      "requires": [
+        "session.children"
+      ],
+      "unlocks": [
+        "session.children"
+      ],
+      "degrade": "子会话面 503；不伪造空列表"
     },
     {
       "degradeRule": "none",

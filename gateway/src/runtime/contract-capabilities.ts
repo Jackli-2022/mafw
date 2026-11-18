@@ -10,7 +10,7 @@ const cap = (p: ContractCapability): ContractCapability => ({ degradeRule: 'any-
 
 const SESSION_CORE = [
   'session.create', 'session.promptAsync', 'session.prompt', 'session.messages', 'session.get',
-  'session.delete', 'session.abort', 'session.list', 'session.todo', 'session.children', 'session.summarize',
+  'session.delete', 'session.abort', 'session.list', 'session.todo', 'session.summarize',
 ];
 
 export const CONTRACT_CAPABILITIES: ContractCapability[] = [
@@ -48,6 +48,11 @@ export const CONTRACT_CAPABILITIES: ContractCapability[] = [
   cap({
     id: 'perLlmCallTransform', title: 'per-LLM-call transform (informational)', domain: 'prompt', kind: 'informational', default: false,
     requires: [], unlocks: [], degrade: '信息性声明；gateway 不消费',
+  }),
+  cap({
+    id: 'sessionChildrenApi', title: 'child session enumeration', domain: 'session', kind: 'feature', default: false,
+    requires: ['session.children'], unlocks: ['session.children'],
+    degrade: '子会话面 503；不伪造空列表',
   }),
   cap({
     id: 'lifecycleApi', title: 'canonical child/background lifecycle', domain: 'session', kind: 'strategy', default: false,

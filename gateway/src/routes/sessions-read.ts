@@ -119,12 +119,13 @@ export function attachSessionsReadRoutes(registry: RouteRegistry, deps: Sessions
   registry.attachHandler('session.children', async (_req: IncomingMessage, res: ServerResponse, params: Record<string, string>) => {
     const id = params.id;
     try {
-      if (!deps.runtime()) {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ items: [] }));
+      const runtime = deps.runtime();
+      if (!runtime?.session?.children || runtime.capabilities?.sessionChildrenApi === false) {
+        res.writeHead(503, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'runtime does not support session.children' }));
         return;
       }
-      const result = await deps.runtime().session.children({ sessionID: id });
+      const result = await runtime.session.children({ sessionID: id });
       const items = Array.isArray(result) ? result : [];
       const parentDepth = await deps.subagentService().depthOf(id);
       res.writeHead(200, { 'Content-Type': 'application/json' });

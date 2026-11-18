@@ -102,8 +102,9 @@ export const CORE_SURFACES: ContractSurface[] = [
   }),
   row({
     id: 'session.children', title: 'session.children', domain: 'session',
-    obligation: 'required', verification: 'presence', implementation: 'session.children',
-    probe: ['session', 'children'], consumer: 'subagent UI', impact: '子会话不可见', presets: ALL,
+    obligation: 'gated', capability: 'sessionChildrenApi', verification: 'presence',
+    implementation: 'session.children', probe: ['session', 'children'],
+    consumer: 'subagent UI', impact: '子会话面 503；不伪造空列表', presets: ALL,
   }),
   row({
     id: 'session.summarize', title: 'session.summarize', domain: 'session',

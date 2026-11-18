@@ -106,10 +106,13 @@ describe('core surfaces', () => {
     expect(surface('plugin.eventMappings')).toMatchObject({ obligation: 'gated', capability: 'eventStream', probe: ['declaration', 'eventMappings'] });
   });
 
-  it('covers the 11 required session methods', () => {
-    for (const id of ['session.create', 'session.promptAsync', 'session.prompt', 'session.messages', 'session.get', 'session.delete', 'session.abort', 'session.list', 'session.todo', 'session.children', 'session.summarize']) {
+  it('covers the 10 required session methods and gates child enumeration', () => {
+    for (const id of ['session.create', 'session.promptAsync', 'session.prompt', 'session.messages', 'session.get', 'session.delete', 'session.abort', 'session.list', 'session.todo', 'session.summarize']) {
       expect(surface(id)).toMatchObject({ obligation: 'required', verification: 'presence' });
     }
+    expect(surface('session.children')).toMatchObject({
+      obligation: 'gated', capability: 'sessionChildrenApi', verification: 'presence',
+    });
   });
 
   it('marks rename optional and branch surfaces gated', () => {

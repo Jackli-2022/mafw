@@ -257,13 +257,39 @@ export function jobFromSubagent(row: BackgroundSubagentRow, ownerSessionID?: str
   };
 }
 
-/** registry job → 子代理行（merge 输入；状态往返保持）。 */
+function lifecycleFromJob(job: MafwBackgroundJob): BackgroundSubagentLifecycle {
+  const base = {
+    ...(job.observedAt != null ? { observedAt: job.observedAt } : {}),
+    ...(job.lastActivityAt != null ? { lastActivityAt: job.lastActivityAt } : {}),
+    ...(job.epoch ? { epoch: job.epoch } : {}),
+    ...(job.authority ? { authority: job.authority } : {}),
+    ...(job.waitingOn?.length ? { waitingOn: [...job.waitingOn] } : {}),
+  };
+  switch (job.status) {
+    case 'running':
+    case 'input_required':
+      return { phase: 'active', ...base };
+    case 'waiting':
+      return { phase: 'waiting', ...base };
+    case 'completed':
+      return { phase: 'settled', outcome: 'completed', ...base };
+    case 'failed':
+      return { phase: 'settled', outcome: 'failed', ...base };
+    case 'cancelled':
+      return { phase: 'settled', outcome: 'cancelled', ...base };
+    default:
+      return { phase: 'unknown', reason: 'registry-roundtrip', ...base };
+  }
+}
+
+/** registry job → 子代理行（merge 输入；状态与观察字段往返保持）。 */
 export function subagentRowFromJob(job: MafwBackgroundJob): BackgroundSubagentRow {
   return {
     id: job.childSessionID ?? job.id,
     parentID: job.sessionID,
     ...(job.title ? { title: job.title } : {}),
     status: subagentStatusOfJob(job),
+    lifecycle: lifecycleFromJob(job),
     ...(Number.isFinite(job.time?.created) ? { createdAt: job.time!.created } : {}),
     ...(Number.isFinite(job.time?.updated ?? job.time?.completed)
       ? { updatedAt: job.time?.updated ?? job.time?.completed }

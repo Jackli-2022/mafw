@@ -342,6 +342,7 @@ export function fullCapabilities(): RuntimeCapabilities {
     steerApi: true,
     pluginCreatorApi: true,
     lifecycleApi: true,
+    sessionChildrenApi: true,
     backgroundTasksApi: false,
   };
 }

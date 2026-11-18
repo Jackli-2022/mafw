@@ -51,10 +51,10 @@ gateway then counted them in the background work bar forever.
 
 ## Deferred
 
-- Claude adapter still exposes `children()` as `[]`; the SDK's managed
-  `background_tasks_changed` level signal is the next step, using the
-  `background.tasks` surface.
+- Claude adapter now declares `sessionChildrenApi: false` and no longer fakes
+  `children() === []`; the SDK's managed `background_tasks_changed` level signal
+  is still the next step for `background.tasks`.
 - dsh adapter is not in this checkout; its `running / waiting / settled`
-  mapping is specified by the contract but not yet wired.
-- `session.children` remains a required legacy surface; making it fully
-  optional/gated is a separate contract change.
+  mapping is pinned by a contract fixture but not yet wired to a real adapter.
+- `session.children` is now gated by `sessionChildrenApi`; missing capability
+  returns neutral 503 instead of an empty list.

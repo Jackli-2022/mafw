@@ -29,6 +29,9 @@ export const capabilities = {
   questionApi: false,
   diffApi: false,
   worktreeApi: true,
+  lifecycleApi: false,
+  sessionChildrenApi: false,
+  backgroundTasksApi: false,
 };
 
 export const external = true;

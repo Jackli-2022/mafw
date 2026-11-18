@@ -50,8 +50,7 @@ describe('claude adapter behavior gaps', () => {
     await new Promise((r) => setTimeout(r, 10)); // prompt() returns before spawn() awaits query()
     expect(result.usage).toBeUndefined();
     expect(sdk.calls[0].prompt).toBe('');
-    expect(rt.session.children).toBeDefined();
-    expect(await rt.session.children({ sessionID: s.id })).toEqual([]);
+    expect(rt.session.children).toBeUndefined();
 
     const coverage = computeCoverage({ rt, source: 'active' }, buildRuntimeContractManifest());
     const applied = applyBehaviorResults(coverage, [

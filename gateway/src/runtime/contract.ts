@@ -117,6 +117,8 @@ export interface RuntimeCapabilities {
   pluginCreatorApi?: boolean;
   /** Adapter returns canonical lifecycle on child sessions/background tasks. */
   lifecycleApi?: boolean;
+  /** Adapter exposes session.children (child session enumeration). */
+  sessionChildrenApi?: boolean;
   /** Adapter exposes background tasks independently of child sessions. */
   backgroundTasksApi?: boolean;
 }
@@ -154,6 +156,7 @@ export function fullCapabilities(): RuntimeCapabilities {
     // Creator 的 inspect/manager 工具与随包技能由本插件宿主提供（OpenCode-only）。
     pluginCreatorApi: true,
     lifecycleApi: true,
+    sessionChildrenApi: true,
     backgroundTasksApi: false,
   };
 }
@@ -177,6 +180,7 @@ export function minimalCapabilities(): RuntimeCapabilities {
     turnBudgetApi: false,
     questionApi: false,
     lifecycleApi: false,
+    sessionChildrenApi: false,
     backgroundTasksApi: false,
     diffApi: false,
     worktreeApi: false,
@@ -490,7 +494,7 @@ export interface RuntimeClient {
     list(opts?: { directory?: string }): Promise<any[]>;
     listByDirectory?(directory: string, limit?: number): Promise<SessionInfo[]>;
     todo(opts: { sessionID: string }): Promise<any[]>;
-    children(opts: { sessionID: string; cursor?: string; limit?: number }): Promise<RuntimeChildSession[]>;
+    children?(opts: { sessionID: string; cursor?: string; limit?: number }): Promise<RuntimeChildSession[]>;
     /** 2.1 sticky 即时切换（缺实现 = 能力门 503）。 */
     switchAgent?(opts: { sessionID: string; agent: string }): Promise<void>;
     switchModel?(opts: {

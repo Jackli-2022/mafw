@@ -31,6 +31,7 @@ describe('runtime contract capabilities', () => {
       steerApi: true,
       pluginCreatorApi: true,
       lifecycleApi: true,
+      sessionChildrenApi: true,
       backgroundTasksApi: false,
     });
   });
@@ -62,6 +63,7 @@ describe('runtime contract capabilities', () => {
       steerApi: false,
       pluginCreatorApi: false,
       lifecycleApi: false,
+      sessionChildrenApi: false,
       backgroundTasksApi: false,
     });
   });

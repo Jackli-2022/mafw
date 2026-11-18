@@ -156,6 +156,21 @@ test('subagentRowFromJob round-trips a subagent job without changing status', ()
   assert.equal(jobFromSubagent(row).status, 'cancelled');
 });
 
+test('subagentRowFromJob preserves unknown observation fields', () => {
+  const job = jobFromSubagent({
+    id: 'ses_legacy',
+    parentID: 'ses_parent',
+    lifecycle: {
+      phase: 'unknown', reason: 'legacy-no-idle', observedAt: 10,
+      lastActivityAt: 5, epoch: 'e1', authority: 'adapter',
+    },
+  });
+  const row = subagentRowFromJob(job);
+  assert.equal(row.lifecycle?.phase, 'unknown');
+  assert.equal(row.lifecycle?.lastActivityAt, 5);
+  assert.equal(jobFromSubagent(row).status, 'unknown');
+});
+
 test('runtimeShellRowFromSynthetic normalises shell metadata (legacy + normalized)', () => {
   assert.deepEqual(runtimeShellRowFromSynthetic('ses_1', { source: 'shell', shellID: 'sh_1', command: 'pwd' }, 42), {
     id: 'sh_1',

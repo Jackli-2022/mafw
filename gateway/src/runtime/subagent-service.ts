@@ -31,7 +31,8 @@ export interface SpawnSubagentOpts {
 export interface SubagentServiceDeps {
   createSession(opts: { directory: string; parentID: string }): Promise<{ id: string }>;
   getSession(sessionID: string): Promise<RuntimeChildSession | null | undefined>;
-  children(parentID: string, opts?: { cursor?: string; limit?: number }): Promise<RuntimeChildSession[]>;
+  /** Missing = the runtime has no child-session enumeration (do not fake []). */
+  children?(parentID: string, opts?: { cursor?: string; limit?: number }): Promise<RuntimeChildSession[]>;
   promptChild(opts: {
     sessionID: string;
     prompt: string;
@@ -203,7 +204,9 @@ export class SubagentService {
       rows.set(record.id, { ...record });
     }
 
-    const children = await this.deps.children(parentID).catch(() => []);
+    const children = this.deps.children
+      ? await this.deps.children(parentID).catch(() => [])
+      : [];
     const parentDepth = await this.depthOf(parentID);
     for (const child of Array.isArray(children) ? children : []) {
       if (!child?.id || rows.has(child.id)) continue;
