@@ -20,25 +20,35 @@ Quick Tunnel 之前把 cloudflared 直接指向 `127.0.0.1:3000`。gateway 的
   cloudflared 只连它；它剥离客户端伪造的 `x-mafw-tunnel`，注入进程内随机 secret。
 - `resolvePrincipal` 把 marker 或 `cf-connecting-ip` 请求标记为 `tunneled`；无凭证时是 `relay`。
 - `tunneled` 是传输标记，不是新的信任级别：带 device token 的隧道请求仍是 `human`，
-  但同样受 mobile allowlist 限制，不能访问 terminal/python/tools/A2A/media upload/cognition/admin。
+  但同样受 method+path mobile allowlist 限制，不能访问 terminal/python/tools/A2A/media upload/cognition/admin。
+- allowlist 拒绝 `.` / `..` / `%2e` / `%2f` / 反斜杠；未匹配的 tunneled 请求不会落到 runtime
+  反代（封掉 `/api/mobile/../../api/pty` 这类规范化绕过）。设备列表/删除、approvals 规则、
+  `goals/control`、session permission-mode/data/revert 均拒绝。
 - 匿名隧道请求只允许 `GET /health` 与 `POST /api/mobile/pairing/verify`；其余 API 401。
+  匿名 `/health` 只返回 `{status:"ok"}`。
 - `/api/ws` 在隧道上必须带 device token；terminal/voice/plugin WS 一律 403。
-- `pairing-code` 的 loopback 限流豁免改为 `local` principal 判断；隧道调用受 rate limit 约束。
+- `pairing-code` 的限流豁免改为 loopback 传输判断（本机 CLI 仍豁免，隧道调用受 rate limit 约束）。
 - 真正的本机 loopback 请求仍然是 `local`，桌面/TUI 行为不变。
+- 审查修复：raw-path allowlist 与反代规范化不一致（Critical）、过宽 prefix 授权、route 级
+  `isLoopbackAddr` 残留、匿名 health 泄露项目路径、terminator 端口冲突无回退，均已修。
 
 ## 验证
 
-- gateway 宽口径：`tests/unit/core` + `http` + `mobile` + `routes` **1174 passed / 2 skipped（145 suites）**。
+- gateway 宽口径：`tests/unit/core` + `http` + `mobile` + `routes` **1179 passed / 2 skipped（145 suites）**。
 - `npx tsc --noEmit -p tsconfig.json` rc=0；`npm run build` 成功。
 - Quick Tunnel 真链路 smoke（隧道已停止）：
-  - `GET /health` → **200**
+  - `GET /health` → **200**，body `{"status":"ok"}`（无项目路径）
   - `GET /api/presence`（无 token）→ **401**
   - `GET /api/terminal/sessions`（无 token）→ **403**
   - `POST /a2a`（无 token）→ **403**
+  - `POST /api/mobile/../../api/pty`（device token）→ **403**
   - pairing verify → 设备 token
-  - `GET /api/presence`（device token）→ **200**
+  - `GET /api/presence` / `GET /api/sessions` / `GET /api/sessions/s1/messages`（device token）→ **200**
   - `GET /api/terminal/sessions`（device token）→ **403**
   - `POST /api/python/execute`（device token）→ **403**
+  - `GET /api/mobile/devices`（device token）→ **403**
+  - `POST /api/goals/control`（device token）→ **403**
+  - `POST /api/sessions/s1/permission-mode`（device token）→ **403**
   - `wss://<tunnel>/api/ws`（device token）→ `connected` 帧；无 token → **401**
 - gateway 已重启，terminator 日志：`mobile tunnel terminator on 127.0.0.1:3001`。
 

@@ -524,11 +524,16 @@ summary, proposedGoal?, state, userAction, deadline, llmSuggestions?, updatedAt?
   可覆盖）；terminator 先剥离客户端自带的 `x-mafw-tunnel`，再注入进程内随机 secret。
 - `resolvePrincipal` 把 marker 或 `cf-connecting-ip` 请求标记为 `tunneled`；没有凭证时
   是 `relay` principal。
-- `tunneled` 请求只能走 **mobile allowlist**；带 device token 的 tunneled 请求仍是
+- `tunneled` 请求只能走 **method + path 的 mobile allowlist**；带 device token 的 tunneled 请求仍是
   `human`，但仍受 allowlist 限制（不能借设备 token 访问 terminal/python/tools 等桌面面）。
+- allowlist 拒绝 `.` / `..` / `%2e` / `%2f` / 反斜杠；未匹配的 tunneled 请求不会落到 runtime
+  反代（避免 `/api/mobile/../../api/pty` 这类规范化绕过）。
 - 匿名 relay 只允许 `GET /health` 与 `POST /api/mobile/pairing/verify`；其余 API 401。
-- desktop-only（terminal / python / tools / A2A / media upload / cognition / plugins / admin）
-  403；terminal / voice / plugin WS 403；`/api/ws` 必须带 device token。
+  匿名 `/health` 只返回 `{status:"ok"}`，不含项目路径 / Goal ID。
+- 明确拒绝：设备列表/删除（只允许 `POST /api/mobile/devices/register`）、approvals 规则与 allowlist、
+  `goals/control`、session permission-mode/data/revert、非 mobile 的 media upload、terminal / python /
+  tools / A2A / cognition / plugins / admin。
+- terminal / voice / plugin WS 403；`/api/ws` 必须带 device token。
 - 真正的本机 loopback 请求仍是 `local`，行为不变；`tunneled` 是传输标记，不是新的信任级别。
 
 ---
