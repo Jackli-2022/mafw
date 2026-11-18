@@ -1,4 +1,5 @@
 import { TtlMap } from '../utils/ttl-map'
+import { extractTurnMarkerKey, stripTurnMarker } from './turn-marker'
 
 const GATEWAY_PORT = process.env.MAFW_SERVER_API_PORT || process.env.MAFW_GATEWAY_PORT || '3000'
 const RECALL_URL = `http://127.0.0.1:${GATEWAY_PORT}/api/recall/context`
@@ -63,12 +64,18 @@ function buildQueryWithFallback(realMessages: any[], increment: any[]): string {
   return [base, tail].filter((s) => s.trim()).join('\n').slice(0, 500)
 }
 
-async function fetchRecall(query: string, sessionID: string): Promise<{ pointers: string | null }> {
+export function buildRecallUrl(query: string, sessionID: string, anchorKey?: string): string {
+  const params = new URLSearchParams({ sessionID, query })
+  if (anchorKey) params.set('anchorKey', anchorKey)
+  return `${RECALL_URL}?${params.toString()}`
+}
+
+async function fetchRecall(query: string, sessionID: string, anchorKey?: string): Promise<{ pointers: string | null }> {
   if (!query.trim()) return { pointers: null }
   try {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 100)
-    const res = await fetch(`${RECALL_URL}?sessionID=${encodeURIComponent(sessionID)}&query=${encodeURIComponent(query)}`, {
+    const res = await fetch(buildRecallUrl(query, sessionID, anchorKey), {
       signal: controller.signal,
     })
     clearTimeout(timeout)
@@ -96,10 +103,12 @@ export async function sessionRecallHook(input: any, output: any): Promise<any> {
 
   const increment = getIncrementalMessages(messages, cursorBySession.get(sessionID))
   const real = messages.filter((m: any) => !isInjectedMessage(m))
-  const query = buildQueryWithFallback(real, increment)
+  const lastUser = real.filter((m: any) => m.info?.role === 'user').pop()
+  const anchorKey = extractTurnMarkerKey(lastUser?.parts) ?? undefined
+  const query = stripTurnMarker(buildQueryWithFallback(real, increment))
   if (!query.trim()) return output
 
-  const recall = await fetchRecall(query, sessionID)
+  const recall = await fetchRecall(query, sessionID, anchorKey)
 
   // Advance cursor past the last real message (injected parts excluded).
   const lastReal = real[real.length - 1]
@@ -108,7 +117,6 @@ export async function sessionRecallHook(input: any, output: any): Promise<any> {
   if (recall.pointers) {
     // Inject into a real user message's parts (valid message shape — a bare
     // `{ role, content }` push crashes toModelMessagesEffect's parts scan).
-    const lastUser = real.filter((m: any) => m.info?.role === 'user').pop()
     if (lastUser && Array.isArray(lastUser.parts)) {
       lastUser.parts.push({ type: 'text', text: recall.pointers, synthetic: true })
     }

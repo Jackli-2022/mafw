@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { extractTurnMarkerKey, stripTurnMarker } from '../../../src/hooks/turn-marker'
+import { buildRecallUrl } from '../../../src/hooks/session-recall'
 
 describe('host turn marker', () => {
   test('extracts the same marker the desktop composes', () => {
@@ -23,5 +24,12 @@ describe('host turn marker', () => {
 
   test('strips the marker before the query is built', () => {
     expect(stripTurnMarker('hello\n[[turn:turn_abc]]')).toBe('hello\n')
+  })
+
+  test('buildRecallUrl carries anchorKey and omits it when absent', () => {
+    const withKey = buildRecallUrl('q', 's1', 'turn_abc')
+    expect(withKey).toContain('anchorKey=turn_abc')
+    const withoutKey = buildRecallUrl('q', 's1')
+    expect(withoutKey).not.toContain('anchorKey')
   })
 })
