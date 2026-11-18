@@ -48,8 +48,8 @@
 - Produces:
   - `TURN_MARKER_PREFIX = 'turn_'`
   - `composeTurnMarkerPart(ts: number, uuid: string): { type: 'text'; id: string; text: string; synthetic: true }`
-  - `extractTurnMarkerPart(parts: Array<{ id?: string; type?: string; synthetic?: boolean }>): string | null`
-  - `extractTurnMarkerKey(parts): string | null`（返回 `turn_<uuid>` 或 null）
+  - `extractTurnMarkerKey(parts): string | null`（优先 part id，其次扫描文本 `[[turn:<key>]]`）
+  - `stripTurnMarker(text: string): string`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -62,7 +62,7 @@ describe('turn marker', () => {
   test('composes a synthetic text part with a stable id', () => {
     const part = composeTurnMarkerPart(1000, 'abc')
     expect(part).toMatchObject({ type: 'text', id: 'turn_abc', synthetic: true })
-    expect(part.text).toBe('[[turn]]')
+    expect(part.text).toBe('[[turn:turn_abc]]')
   })
 
   test('extracts the marker id from parts', () => {
@@ -72,9 +72,19 @@ describe('turn marker', () => {
     ])).toBe('turn_abc')
   })
 
+  test('extracts the marker from persisted text', () => {
+    expect(extractTurnMarkerKey([
+      { id: 'msg-p0', type: 'text', text: 'hello\n[[turn:turn_abc]]' },
+    ])).toBe('turn_abc')
+  })
+
   test('ignores non-synthetic or non-turn parts', () => {
     expect(extractTurnMarkerKey([{ id: 'turn_abc', type: 'text', synthetic: false }])).toBeNull()
     expect(extractTurnMarkerKey([{ id: 'prt_1', type: 'text', synthetic: true }])).toBeNull()
+  })
+
+  test('strips the marker from display text', () => {
+    expect(stripTurnMarker('hello\n[[turn:turn_abc]]')).toBe('hello\n')
   })
 })
 ```
@@ -131,7 +141,7 @@ git commit -m "feat(chat): add hidden turn marker helper"
 
 **Interfaces:**
 - `fetchRecall(query, sessionID, anchorKey?)` appends `&anchorKey=<key>` when present.
-- `sessionRecallHook` extracts the marker from the last real user message's `parts`; if absent, still fetches recall but the gateway will not emit a receipt.
+- `sessionRecallHook` extracts the text marker from the last real user message's text/parts; strips it before building the query; if absent, still fetches recall but the gateway will not emit a receipt.
 
 - [ ] **Step 1: Write a failing test** for `buildRecallUrl(query, sessionID, anchorKey)` (export it from `src/hooks/session-recall.ts` or a small helper) — with anchor it contains `anchorKey=turn_abc`, without it omits the param.
 - [ ] **Step 2: Run fail** with the desktop single-file test command.

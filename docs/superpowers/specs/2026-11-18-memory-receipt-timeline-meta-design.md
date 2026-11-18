@@ -258,16 +258,17 @@ CREATE INDEX IF NOT EXISTS idx_memory_receipts_session
 - 会话打开/切换时：调用 `sessions.memoryReceipts` 回填；SSE 只负责实时增量。
 - SSE 重连：回填是兜底；事件重复到达不会重复渲染（按 anchor + updatedAt 去重）。
 
-### 4.6 锚点（主方案：隐藏 turn part）
+### 4.6 锚点（主方案：文本 turn marker）
 
 Builder check 发现：桌面发送用本地 `user-<ts>`，runtime 真实 user message id 在 live 不一定拿得到。为了让 live 和 reload 都能挂上，主方案不依赖真实 id：
 
-1. 桌面每次发送带一条 synthetic text part：`[[turn:<uuid>]]`（与 `voiceOrigin` 同一条通路）。
-2. `src/hooks/session-recall.ts` 从最后一条真实 user message 的 parts 里提取这个 marker，作为 `anchorKey` 传给 gateway。
-3. 回执按 `(session_id, anchor_key)` 存；桌面从同一条 user message 的 parts 里读同一个 marker，挂到对应回合。
-4. marker 对用户不可见：`stripInjectedUserText` 增加 `[[turn:...]]` 剥离；模型看到也无害。
+1. 桌面每次发送带一条 synthetic text part：`[[turn:turn_<uuid>]]`（与 `voiceOrigin` 同一条通路）。
+2. **Spike 实测（2026-11-18）**：runtime 不保留 part id，但会把 synthetic part 的文本拼进持久化的 user message。marker 因此以文本形式存在。
+3. `src/hooks/session-recall.ts` 从最后一条真实 user message 的文本/parts 里正则提取 `[[turn:(turn_[A-Za-z0-9_-]+)]]`，作为 `anchorKey` 传给 gateway；构建 recall query 前先剥掉 marker。
+4. 回执按 `(session_id, anchor_key)` 存；桌面从同一条 user message 的文本里读同一个 marker，挂到对应回合；展示层剥掉 marker。
+5. marker 对用户不可见：`stripInjectedUserText` 增加 `stripTurnMarker`；模型看到也无害。
 
-Spike 验证（Phase 0）：marker 是否随 parts 进入 `output.messages`、是否持久化到历史、reload 后是否还在。任一项失败 → 回退到“send 返回 `turnID`”方案；`anchorKey` 抽象不变。
+兜底：如果某 runtime 不再拼接文本或不持久化，回退到“send 返回 `userMessageID`”；`anchorKey` 抽象不变。
 
 - 如果 `lastUser` 不存在（assistant continuation / 无 user）或没有 marker → 不生成回执。
 - 找不到锚点（历史裁剪 / 旧客户端）→ 回执丢弃，不猜“最近一轮”。
@@ -535,7 +536,7 @@ function splitTurn(parts: MafwPart[], opts: { showReasoning: boolean }): TurnEnt
 
 | # | Builder 问题 | 决议 |
 |---|---|---|
-| 1 | live 回执如何找到回合（本地 id vs 真实 id） | 主方案：隐藏 `[[turn:<uuid>]]` part；hook 与桌面读同一个 marker。Phase 0 只验证 marker 的透传与持久化；失败回退 send 返回 `turnID`。见 §4.6。 |
+| 1 | live 回执如何找到回合（本地 id vs 真实 id） | 主方案：文本 `[[turn:turn_<uuid>]]` sentinel；实测 runtime 会拼进持久化 user message、丢掉 part id。hook/桌面从文本提取；失败回退 send 返回 `userMessageID`。见 §4.6。 |
 | 2 | 快照路径没有结构化 memories | additive 扩展 `RecallSnapshot`（`memories?` / `t1Rendered?`）；旧快照缺字段则不生成回执，不解析 block。见 §4.4.1。 |
 | 3 | snapshot / FOK / neighbors 默认关闭 | 不改变现有配置；关闭时优雅降级：无 T1 摘要、只有 `inject` 态、邻居不显示。不为了 UI 打开检索特性。 |
 | 4 | 0 结果时是否发回执 | 0/0 不发；`no-memory` 只在模型真的收到 `no-reliable-memory` 块时发。见 §4.2。 |
