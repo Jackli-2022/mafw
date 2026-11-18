@@ -1941,7 +1941,19 @@ ToolRegistry.register({
             subtitle: subtitlePath ? relativePath(subtitlePath, data.directory) || getFilename(subtitlePath) : "",
             args,
           }}
-        />
+        >
+          <Show when={props.output}>
+            <div
+              data-component="tool-output"
+              data-scrollable
+              tabIndex={0}
+              role="region"
+              aria-label={i18n.t("ui.scrollView.ariaLabel")}
+            >
+              <Markdown text={props.output!} />
+            </div>
+          </Show>
+        </BasicTool>
         <For each={loaded()}>
           {(filepath) => (
             <div data-component="tool-loaded-file">

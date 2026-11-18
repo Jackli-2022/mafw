@@ -1,5 +1,18 @@
+import * as fs from "node:fs"
 import { describe, expect, test } from "bun:test"
 import { readPartText } from "./message-part-text"
+
+const componentSource = fs.readFileSync(new URL("./message-part.tsx", import.meta.url), "utf-8")
+
+describe("read tool card", () => {
+  test("renders its output in a collapsible body like list/glob/grep", () => {
+    const start = componentSource.indexOf('name: "read"')
+    const end = componentSource.indexOf('name: "list"')
+    const block = componentSource.slice(start, end)
+    expect(block).toContain('data-component="tool-output"')
+    expect(block).toContain("Markdown text={props.output!}")
+  })
+})
 
 describe("readPartText", () => {
   test("returns empty string when accum is undefined and part text is undefined", () => {
