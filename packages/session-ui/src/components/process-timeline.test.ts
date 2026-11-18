@@ -14,4 +14,11 @@ describe('ProcessTimeline', () => {
     expect(src).toContain('TextShimmer')
     expect(src).toContain('Markdown')
   })
+
+  test('uses a clean check icon instead of a glyph-in-circle', () => {
+    const src = read('./process-timeline.tsx')
+    expect(src).toContain('<Icon name="check"')
+    expect(src).toContain('mafw-process-seg-pulse')
+    expect(src).not.toContain("active() ? '✦'")
+  })
 })

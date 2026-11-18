@@ -134,7 +134,9 @@ export function ProcessTimeline(props: ProcessTimelineProps) {
                   <Collapsible.Trigger>
                     <div class="mafw-process-seg-head">
                       <span classList={{ 'mafw-process-seg-icon': true, active: active() }}>
-                        {active() ? '✦' : '✓'}
+                        <Show when={active()} fallback={<Icon name="check" size="small" />}>
+                          <span class="mafw-process-seg-pulse" aria-hidden="true" />
+                        </Show>
                       </span>
                       <Show when={active()} fallback={<span class="mafw-process-seg-title">{title()}</span>}>
                         <TextShimmer text={title()} class="mafw-process-seg-title" active />

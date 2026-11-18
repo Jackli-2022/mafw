@@ -22,17 +22,24 @@
 .mafw-process-seg-icon {
   width: 14px;
   height: 14px;
-  border-radius: 50%;
   display: grid;
   place-items: center;
   flex: none;
-  background: var(--surface-inset-base);
   color: var(--text-weaker);
-  font-size: 8px;
+  font-size: 0;
+}
+.mafw-process-seg-icon [data-component="icon"] {
+  opacity: .9;
 }
 .mafw-process-seg-icon.active {
   color: var(--text-interactive-base);
-  background: var(--surface-base-interactive-active);
+}
+.mafw-process-seg-pulse {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: .85;
 }
 .mafw-process-seg-meta {
   color: var(--text-weaker);
