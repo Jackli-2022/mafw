@@ -55,11 +55,14 @@ function row(sessionId: string, turnId: number, content: string) {
 }
 
 function deps(rows: ReturnType<typeof row>[], existing: Set<string> = new Set()) {
+  const enqueued: string[] = [];
   return {
     listRows: jest.fn((offset: number, limit: number) => rows.slice(offset, offset + limit)),
     hasVector: jest.fn((key: string) => existing.has(key)),
-    enqueue: jest.fn(),
-    flush: jest.fn(async () => ({ indexed: 1, failed: 0 })),
+    enqueue: jest.fn((key: string) => {
+      enqueued.push(key);
+    }),
+    flush: jest.fn(async () => ({ indexed: enqueued.length, failed: 0 })),
   };
 }
 
@@ -74,7 +77,7 @@ describe('backfillT1Vectors', () => {
     const d = deps(rows, existing);
     const res = await backfillT1Vectors(d, { pageSize: 10 });
 
-    expect(res).toEqual({ scanned: 3, indexed: 2, missing: 0, failed: 0 });
+    expect(res).toEqual({ scanned: 3, queued: 2, indexed: 2, missing: 0, failed: 0 });
     expect(d.enqueue).toHaveBeenCalledTimes(2);
     expect(d.enqueue).toHaveBeenCalledWith(
       t1VectorKey('s1', 2, 'second raw row'),
@@ -88,6 +91,7 @@ describe('backfillT1Vectors', () => {
     const d = deps(rows);
     const res = await backfillT1Vectors(d, { limit: 1, pageSize: 2 });
     expect(res.indexed).toBe(1);
+    expect(res.queued).toBe(1);
     expect(d.enqueue).toHaveBeenCalledTimes(1);
     expect(d.flush).toHaveBeenCalledTimes(1);
   });
@@ -99,29 +103,48 @@ describe('backfillT1Vectors', () => {
     expect((d.enqueue.mock.calls[0] as any[])[1]).toHaveLength(2000);
   });
 
+  test('flush reports partial success without over-reporting indexed', async () => {
+    const d = deps([row('s1', 1, 'raw one'), row('s1', 2, 'raw two')]);
+    d.flush.mockResolvedValueOnce({ indexed: 1, failed: 1 });
+    const res = await backfillT1Vectors(d, {});
+    expect(res).toEqual({ scanned: 2, queued: 2, indexed: 1, missing: 0, failed: 1 });
+  });
+
   test('flush failure counts as failed and never throws', async () => {
     const d = deps([row('s1', 1, 'raw row')]);
     d.flush.mockRejectedValue(new Error('embed down'));
     const res = await backfillT1Vectors(d, {});
-    expect(res).toEqual({ scanned: 1, indexed: 1, missing: 0, failed: 1 });
+    expect(res).toEqual({ scanned: 1, queued: 1, indexed: 0, missing: 0, failed: 1 });
   });
 
   test('empty content counts as missing, not indexed', async () => {
     const d = deps([row('s1', 1, '')]);
     const res = await backfillT1Vectors(d, {});
-    expect(res).toEqual({ scanned: 1, indexed: 0, missing: 1, failed: 0 });
+    expect(res).toEqual({ scanned: 1, queued: 0, indexed: 0, missing: 1, failed: 0 });
     expect(d.enqueue).not.toHaveBeenCalled();
   });
 
   test('empty table returns zeroed counts without flushing', async () => {
     const d = deps([]);
-    expect(await backfillT1Vectors(d, {})).toEqual({ scanned: 0, indexed: 0, missing: 0, failed: 0 });
+    expect(await backfillT1Vectors(d, {})).toEqual({
+      scanned: 0,
+      queued: 0,
+      indexed: 0,
+      missing: 0,
+      failed: 0,
+    });
     expect(d.flush).not.toHaveBeenCalled();
   });
 
   test('limit 0 disables backfill', async () => {
     const d = deps([row('s1', 1, 'raw')]);
-    expect(await backfillT1Vectors(d, { limit: 0 })).toEqual({ scanned: 0, indexed: 0, missing: 0, failed: 0 });
+    expect(await backfillT1Vectors(d, { limit: 0 })).toEqual({
+      scanned: 0,
+      queued: 0,
+      indexed: 0,
+      missing: 0,
+      failed: 0,
+    });
     expect(d.listRows).not.toHaveBeenCalled();
   });
 

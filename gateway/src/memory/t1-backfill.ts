@@ -25,6 +25,7 @@ export interface T1BackfillDeps {
 
 export interface T1BackfillResult {
   scanned: number;
+  queued: number;
   indexed: number;
   missing: number;
   failed: number;
@@ -36,7 +37,7 @@ export async function backfillT1Vectors(
 ): Promise<T1BackfillResult> {
   const limit = opts.limit ?? 200;
   const pageSize = Math.max(1, opts.pageSize ?? 500);
-  const result: T1BackfillResult = { scanned: 0, indexed: 0, missing: 0, failed: 0 };
+  const result: T1BackfillResult = { scanned: 0, queued: 0, indexed: 0, missing: 0, failed: 0 };
   if (limit <= 0) return result;
 
   let offset = 0;
@@ -65,10 +66,11 @@ export async function backfillT1Vectors(
     offset += rows.length;
   }
 
-  result.indexed = queued;
+  result.queued = queued;
   if (queued > 0) {
     try {
       const flushed = await deps.flush();
+      result.indexed = flushed.indexed;
       result.failed += flushed.failed;
     } catch {
       result.failed += queued;
