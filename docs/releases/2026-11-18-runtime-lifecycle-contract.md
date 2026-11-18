@@ -1,6 +1,6 @@
 # Runtime lifecycle contract & background unknown states (2026-11-18)
 
-**Commit:** `2dc020739`
+**Commits:** `2dc020739` (contract/adapter/gateway/UI), `54e88017a` (opencode capability declaration), `d4c23dac8` (docs)
 **Version:** `mafw-gateway@4.19.0`
 
 ## Problem
