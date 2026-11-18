@@ -2,7 +2,7 @@
 
 - **版本**：`v5.1.0`（行为增强，不升版本号）
 - **提交**：`a2c40305c`（gateway timer）+ `418dd4419`（desktop card）+
-  `f5b21c5f9`（docs）
+  `2b9eef265`（read-before-answer）+ `f5b21c5f9` / `a86f035c8`（docs）
 - **前置**：`docs/releases/2026-11-17-receipts-and-domain-consumers.md`
 
 ## 现在
@@ -23,8 +23,9 @@
   最多 5 条，来源限定 `github` / `webhook` / `cron`（internal 线程不进入）。
 - 展开卡片时对可见的 `delivered` 投递写一次 `read`（同一 delivery 只写一次，
   新增投递在展开态下也会补 read）。
-- 每条有「已回答」按钮，写 `answered`；完成后该行变灰、标题划线，全部完成后
-  卡片头部变绿 `外部事件 · 已全部处理`。
+- 每条有「已回答」按钮，写 `answered`；若该投递仍是 `delivered`（展开时的 read
+  还没落或失败），会先补一次 `read` 再 answer，避免 409。完成后该行变灰、
+  标题划线，全部完成后卡片头部变绿 `外部事件 · 已全部处理`。
 - Lead 聊天回复不算 `answered`：它回的是 Lead，不是外部线程；只有卡片按钮
   写回执。
 - 刷新时机：进入 Lead tab / project 或 Pod 变化 / 操作完成后。没有新增
