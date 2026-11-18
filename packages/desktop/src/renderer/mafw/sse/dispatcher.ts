@@ -5,6 +5,7 @@ import { planSessionEvent, isTailAccountedAtShell, type RawSessionEvent } from "
 import { handleFlowCardEvent, type FlowCardDeps } from "./handlers/flow-cards"
 import { handleDockEvent, type DockDeps } from "./handlers/dock"
 import { handleChatStreamEvent, handleMediaSpeakEvent, type ChatDeps } from "./handlers/chat-stream"
+import { handleMemoryRecallEvent, type MemoryRecallDeps } from "./handlers/memory-recall"
 import { handleDiffEvent, type DiffDeps } from "./handlers/diff"
 import { handleQueueEvent } from "./handlers/queue"
 import { handleSubagentEvent, mapSessionLifecycleEvent } from "./handlers/subagents"
@@ -110,6 +111,8 @@ export interface ShellEventDeps {
   pod: PodDeps
   decisions: DecisionDeps
   plugins: PluginDeps
+  /** 记忆回执：`memory.recalled` → per-anchor store（可选，旧测试可缺省）。 */
+  memory?: MemoryRecallDeps
 }
 
 /** sid 级处理器挂这里；返回 true = 已消费。 */
@@ -211,6 +214,13 @@ export function dispatchShellEvent(event: any, deps: ShellEventDeps): void {
   if (event.type === "pod.event") {
     deps.core.trace(event, "pod:event")
     deps.pod.onPodEvent(event)
+    return
+  }
+
+  // 记忆回执：全局消费，不走 sid handler；store 缺失时也消费，防 miss 刷屏。
+  if (event.type === "memory.recalled") {
+    deps.core.trace(event, "memory:recalled")
+    if (deps.memory) handleMemoryRecallEvent(event, deps.memory)
     return
   }
 
