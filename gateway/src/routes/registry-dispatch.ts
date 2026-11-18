@@ -46,19 +46,24 @@ export async function dispatchAuthorized(
   // fallback for dispatchers that never resolved a principal.
   const kind = principal?.kind;
   const principalAllowed = typeof kind === 'string'
-    && (kind === 'human' || kind === 'service' || kind === 'local');
+    && (kind === 'human' || kind === 'service' || kind === 'local' || kind === 'relay');
+  // M0: relay is allowlisted by the transport before dispatch. If a caller
+  // reaches this gate without that check, never let loopback re-authorize it.
+  const loopbackFallback = kind === 'relay'
+    ? false
+    : authorizeRequest(
+      {
+        remoteAddress,
+        headers: req.headers as any,
+        url: req.url,
+        host: String(req.headers.host || ''),
+      },
+      deps.apiToken,
+    );
   const allowed = hmacAuthenticated
     || pairingVerify
     || principalAllowed
-    || authorizeRequest(
-    {
-      remoteAddress,
-      headers: req.headers as any,
-      url: req.url,
-      host: String(req.headers.host || ''),
-    },
-    deps.apiToken,
-  );
+    || loopbackFallback;
   if (!allowed) {
     res.writeHead(401, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(errorBody('unauthorized', API_ERROR_CODES.unauthorized)));

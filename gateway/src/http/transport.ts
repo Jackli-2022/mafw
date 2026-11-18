@@ -31,10 +31,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
-import { isLoopbackAddr, resolvePrincipal } from '../core/auth';
+import { resolvePrincipal } from '../core/auth';
 import { errorBody, API_ERROR_CODES } from '../core/http/api-error';
 import { handleGoalControlCommand } from '../core/goal/control-command';
 import { readBody, PAIRING_VERIFY_MAX_BODY_BYTES } from '../core/http/http-util';
+import { isRelayAllowed } from './relay-allowlist';
 import { log } from '../core/utils/logger';
 import { injectServeAuth } from '../runtime/proxy-auth';
 import { QuotaExceededError } from '../resources/quotas';
@@ -107,6 +108,8 @@ export interface TransportDeps {
   humanToken?: () => string;
   /** E5a: device-token verifier (Task 3 wires this to the DeviceStore). */
   verifyDeviceToken?: (token: string) => { deviceId: string } | null;
+  /** M0: per-process secret injected by the loopback tunnel terminator. */
+  tunnelSecret?: string;
   /**
    * E3-5: schema epoch from release metadata (`releaseMetadata.schemaEpoch`).
    * null = release metadata not loaded yet → no response header, no enforcement.
@@ -192,9 +195,6 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
       return;
     }
 
-    // Loopback detection (delegated to core/auth.ts)
-    const isLoopback = isLoopbackAddr(req.socket.remoteAddress || '');
-
     // E5a principal auth: human token → device token → shared apiToken →
     // loopback → anonymous. human/service/local pass ordinary routes; only
     // `anonymous` is rejected here (human-only checks live in the routes).
@@ -210,9 +210,13 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
         apiToken,
         humanToken: deps.humanToken?.() ?? '',
         verifyDeviceToken: deps.verifyDeviceToken,
+        tunnelSecret: deps.tunnelSecret,
       },
     );
     (req as any).mafwPrincipal = principal;
+    // Loopback detection is now a principal decision: a tunneled request is
+    // `relay`, only a real loopback client is `local`.
+    const isLocal = principal.kind === 'local';
     // E5a-3: `POST /api/mobile/pairing/verify` is credential-less by design —
     // the single-use nonce is the credential. Only this exact route skips the
     // 401; no human/service principal is granted and every other anonymous
@@ -250,6 +254,15 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
       }
     }
 
+    // M0: relayed traffic is the mobile surface only. This gate runs before
+    // registry dispatch and every legacy branch, so desktop-only routes never
+    // see a relay principal.
+    if (principal.kind === 'relay' && !isRelayAllowed(req.method || 'GET', pathname)) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(errorBody('forbidden', API_ERROR_CODES.forbidden)));
+      return;
+    }
+
     // P5 Wave 1: registry dispatch —— attach 过 handler 的路由在 legacy 链之前
     // 统一接管（shadow 条目无 handler 自然落回内联链）。**必须在鉴权之后**（P0-1）：
     // goals.sessions 须先于 dashboard 兜底、embedding-config 须先于 /api/memory/*
@@ -262,11 +275,11 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
     if (await deps.pluginWebWildcard(req, res)) return;
 
     // 文件级历史（loopback-only）：office 技能保存前快照 / 桌面 / 调试。
-    if (await deps.fileHistory(req, res, isLoopback)) return;
+    if (await deps.fileHistory(req, res, isLocal)) return;
 
     // POST /a2a — A2A JSON-RPC (standard protocol methods)
     if (url === "/a2a" && req.method === "POST") {
-      if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify(errorBody('forbidden', API_ERROR_CODES.forbidden))); return; }
+      if (!isLocal) { res.writeHead(403); res.end(JSON.stringify(errorBody('forbidden', API_ERROR_CODES.forbidden))); return; }
       try {
         if (!deps.mediaAgent()) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaAgent not initialized' })); return; }
         const rawBody = await readBody(req);
@@ -287,7 +300,7 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
 
     // GET /.well-known/agent-card.json — A2A agent discovery
     if (url === '/.well-known/agent-card.json' && req.method === 'GET') {
-      if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify(errorBody('forbidden', API_ERROR_CODES.forbidden))); return; }
+      if (!isLocal) { res.writeHead(403); res.end(JSON.stringify(errorBody('forbidden', API_ERROR_CODES.forbidden))); return; }
       try {
         if (!deps.mediaAgent()) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaAgent not initialized' })); return; }
         res.setHeader('Content-Type', 'application/a2a+json');
@@ -302,7 +315,7 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
     // GET /a2a/artifacts/<id> — task artifact download (spec §6.7 output reference)
     const artifactId = matchArtifactId(url);
     if (artifactId && req.method === 'GET') {
-      if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify(errorBody('forbidden', API_ERROR_CODES.forbidden))); return; }
+      if (!isLocal) { res.writeHead(403); res.end(JSON.stringify(errorBody('forbidden', API_ERROR_CODES.forbidden))); return; }
       try {
         if (!deps.mediaAgent()) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaAgent not initialized' })); return; }
         const artifact = deps.mediaAgent()!.getArtifact(artifactId);
