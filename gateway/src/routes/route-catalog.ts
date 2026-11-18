@@ -537,7 +537,7 @@ import {
   AutomationHistoryResponse,
   AutomationsListResponse,
 } from './schemas/automations';
-import { DeviceListResponse, PairingCodeResponse } from './schemas/devices';
+import { DeviceListResponse, PairingCodeResponse, RemoteAccessRequest, RemoteAccessStatusResponse } from './schemas/devices';
 import {
   DashboardStatsResponse,
   HealthResponse,
@@ -921,6 +921,8 @@ const NON_SDK_ROUTES: RouteDef[] = [
   { method: 'DELETE', path: '/api/mobile/devices/:id', operationId: 'mobile.devicesDelete', tags: ['internal'], request: EmptyRequest, requestRequired: false, response: MobileDevicesDeleteResponse, errors: [404] },
   { method: 'POST', path: '/api/mobile/devices/register', operationId: 'mobile.devicesRegister', tags: ['internal'], request: MobileDevicesRegisterRequest, response: MobileDevicesRegisterResponse, errors: [400] },
   { method: 'GET', path: '/api/mobile/pairing-code', operationId: 'mobile.pairingCode', tags: ['internal'], response: PairingCodeResponse },
+  { method: 'GET', path: '/api/mobile/remote-access', operationId: 'mobile.remoteAccessStatus', tags: ['internal'], response: RemoteAccessStatusResponse },
+  { method: 'POST', path: '/api/mobile/remote-access', operationId: 'mobile.remoteAccess', tags: ['internal'], request: RemoteAccessRequest, response: RemoteAccessStatusResponse, errors: [400, 502, 503] },
   { method: 'POST', path: '/api/mobile/pairing/verify', operationId: 'mobile.pairingVerify', tags: ['internal'], request: MobilePairingVerifyRequest, response: MobilePairingVerifyResponse, errors: [400, 409, 413, 503] },
   // 设备注册（mobile 的 legacy 别名族）
   { method: 'POST', path: '/api/devices', operationId: 'devices.register', tags: ['internal'], request: DevicesRegisterRequest, response: DevicesRegisterResponse, errors: [400] },

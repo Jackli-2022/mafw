@@ -170,6 +170,8 @@ const E10_COVERED_OPS = [
   'mobile.mediaTaskUpload',
   'mobile.pairingCode',
   'mobile.pairingVerify',
+  'mobile.remoteAccess',
+  'mobile.remoteAccessStatus',
   'models.get',
   'models.update',
   'obs.capture',
@@ -369,8 +371,9 @@ const E10_COVERED_OPS = [
 ];
 
 // Pinned: 317 through E10b, +1 for `humanToken.rotate` (E11-1) = 318,
-// +7 Phase 6 device-trust routes = 325, +2 last-good/rollback = 327.
-const TOTAL_OPS = 333;
+// +7 Phase 6 device-trust routes = 325, +2 last-good/rollback = 327,
+// +2 mobile remote access P0 (2026-11-18) = 335.
+const TOTAL_OPS = 335;
 
 function catalogOps(): Array<{ operationId: string; hasResponse: boolean }> {
   return buildRouteCatalog().map((def) => ({
@@ -384,7 +387,7 @@ function catalogOps(): Array<{ operationId: string; hasResponse: boolean }> {
  * E10g: write ops = everything that is not a GET (query-only surface).
  * 188 before main's Phase 6 merge, +7 plugin recovery POSTs + 2 receipt routes = 197.
  */
-const WRITE_OPS_TOTAL = 199;
+const WRITE_OPS_TOTAL = 200;
 
 /** P0 pilots：requestBody 管线的第一批（始终保留，不随批次回退）。 */
 const E10G_P0_REQUEST_OPS = ['pods.tasks.create', 'session.create', 'tasks.submit'];
@@ -606,8 +609,9 @@ const E10H_R5_WRITE_RESPONSE_OPS = [
 
 /**
  * E10h-R6：memory / media / tts / chat / python / obs / embedding / tools /
- * eval / llm / mobile / devices / skills 共 31 个写 op 的 200 响应
- * （`tts.speakStream` 是音频流，按 spec §1.1 排除，见 `E10H_R6_EXCLUDED_OPS`）。
+ * eval / llm / mobile / devices / skills 共 32 个写 op 的 200 响应
+ * （`tts.speakStream` 是音频流，按 spec §1.1 排除，见 `E10H_R6_EXCLUDED_OPS`；
+ * 2026-11-18 追加 `mobile.remoteAccess`）。
  * 与 R1-R5 同一台账（163 → 194）；按名钉住，删一个 `response:` 立刻按名失败。
  */
 const E10H_R6_WRITE_RESPONSE_OPS = [
@@ -635,6 +639,7 @@ const E10H_R6_WRITE_RESPONSE_OPS = [
   'mobile.mediaTaskAsk',
   'mobile.mediaTaskUpload',
   'mobile.pairingVerify',
+  'mobile.remoteAccess',
   'obs.capture',
   'python.execute',
   'python.restart',
@@ -1019,9 +1024,10 @@ const E10G_W6_EXCLUDED_OPS: Record<string, string> = {
 
 /**
  * E10g-W7：memory / media / tts / chat / python / obs / models / embedding /
- * tools / eval / llm / mobile / devices / a2a / skills（30 个已覆盖）。
- * P0 3 + W1 35 + W2W3 33 + W4 29 + W5 24 + W6 26 + 这 30 = 180（W8 再补 cognition 2）。
- * 分母 188 = W8 后 182 covered + 6 excluded（W6 1 + W7 5）。
+ * tools / eval / llm / mobile / devices / a2a / skills（31 个已覆盖；
+ * 2026-11-18 追加 `mobile.remoteAccess`）。
+ * P0 3 + W1 35 + W2W3 33 + W4 29 + W5 24 + W6 26 + 这 31 = 181（W8 再补 cognition 2）。
+ * 分母 189 = W8 后 183 covered + 6 excluded（W6 1 + W7 5）。
  */
 const E10G_W7_REQUEST_OPS = [
   // memory / embedding
@@ -1054,6 +1060,7 @@ const E10G_W7_REQUEST_OPS = [
   'mobile.mediaTaskAsk',
   'mobile.devicesRegister',
   'mobile.pairingVerify',
+  'mobile.remoteAccess',
   'devices.register',
   'devices.delete',
   'mobile.devicesDelete',
@@ -1101,8 +1108,8 @@ const E10G_W7_EXCLUDED_OPS: Record<string, string> = {
 
 /**
  * E10g-W8：cognition gate / rewrite（2 个，最后一个写批）。
- * P0 3 + W1 35 + W2W3 33 + W4 29 + W5 24 + W6 26 + W7 30 + 这 2 = 182。
- * 分母 188 = **182 covered + 6 excluded**（W6 1 + W7 5）；W7 遗留的两个
+ * P0 3 + W1 35 + W2W3 33 + W4 29 + W5 24 + W6 26 + W7 31 + 这 2 = 183。
+ * 分母 189 = **183 covered + 6 excluded**（W6 1 + W7 5）；W7 遗留的两个
  * cognition op 在此归位（body 归 cognition gate 契约，handler 是事实源）。
  */
 const E10G_W8_REQUEST_OPS = ['cognition.gate', 'cognition.rewrite'];
@@ -1180,7 +1187,7 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(lost).toEqual([]);
   });
 
-  it('the catalog covered set equals the ledger exactly, and the catalog still has 333 ops', () => {
+  it('the catalog covered set equals the ledger exactly, and the catalog still has 335 ops', () => {
     const ops = catalogOps();
     const covered = ops
       .filter((op) => op.hasResponse)
@@ -1216,7 +1223,7 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
 
   // E10g-P0: request ledger shares the same parser so the write-op denominator
   // (197 after the Phase 6 merge) and the grown coverage set stay pinned while W1-W7 land.
-  it('the script reports request coverage over the 199 write ops', () => {
+  it('the script reports request coverage over the 200 write ops', () => {
     const report = runScript();
     const write = catalogWriteOps();
     const covered = write.filter((op) => op.hasRequest).map((op) => op.operationId).sort();
@@ -1242,7 +1249,7 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
   // mcp/plugin/runtime/platform writes + 31 R6 memory/media/tts/chat/python/obs/tools/
   // eval/llm/mobile/devices/skills writes = 196/197 (tts.speakStream excluded).
   // Later batches only append, so the count is a floor.
-  it('the script reports write-response coverage over the 199 write ops', () => {
+  it('the script reports write-response coverage over the 200 write ops', () => {
     const report = runScript();
     const write = catalogWriteOps();
     const covered = write.filter((op) => op.hasResponse).map((op) => op.operationId).sort();
@@ -1877,7 +1884,7 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
 
   // E10g-W8: the last two writes (cognition gate / rewrite) now declare their
   // request bodies, so the write-op denominator is fully accounted for:
-  // 188 = 182 covered + 6 excluded (W6 1 + W7 5).
+  // 189 = 183 covered + 6 excluded (W6 1 + W7 5).
   it('every W8 cognition write op declares a request schema (catalog requests >= 182)', () => {
     const byId = catalogById();
     const missing = E10G_W8_REQUEST_OPS.filter((id) => !byId.get(id)?.hasRequest);
@@ -1934,9 +1941,9 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(rewriteSchema.properties.input.type).toBe('object');
   });
 
-  // E10g-fix: main's Phase 6 plugin recovery writes join the ledger. 199 write
-  // ops = 193 covered + 6 excluded.
-  it('every Phase 6 plugin recovery write op declares a request schema (catalog requests >= 193)', () => {
+  // E10g-fix: main's Phase 6 plugin recovery writes join the ledger. 200 write
+  // ops = 194 covered + 6 excluded.
+  it('every Phase 6 plugin recovery write op declares a request schema (catalog requests >= 194)', () => {
     const byId = catalogById();
     const missing = E10G_P6_REQUEST_OPS.filter((id) => !byId.get(id)?.hasRequest);
     expect(missing).toEqual([]);
@@ -1965,9 +1972,9 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(quarantine.requestRequired).toBeUndefined();
   });
 
-  // Closing arithmetic for the E10g(-fix) scope: 199 write ops = 193 declared
-  // requests + 6 excluded (W6 1 + W7 5). Nothing is left unaccounted for.
-  it('E10g request arithmetic closes on 199 (193 covered + 6 excluded)', () => {
+  // E10g-fix: main's Phase 6 plugin recovery writes join the ledger. 200 write
+  // ops now (199 + mobile.remoteAccess P0), 194 declared requests + 6 excluded.
+  it('E10g request arithmetic closes on 200 (194 covered + 6 excluded)', () => {
     const covered = new Set(catalogWriteOps().filter((op) => op.hasRequest).map((op) => op.operationId));
     const excluded = new Set([
       ...Object.keys(E10G_W6_EXCLUDED_OPS),
@@ -1982,7 +1989,7 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
       'plugins.install',
       'pods.a2a',
     ]);
-    expect(covered.size).toBe(193);
+    expect(covered.size).toBe(194);
     expect(excluded.size).toBe(6);
     expect([...covered].filter((id) => excluded.has(id))).toEqual([]);
     expect(covered.size + excluded.size).toBe(WRITE_OPS_TOTAL);
@@ -2127,14 +2134,15 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
   });
 
   // E10h-R6: memory / media / tts / chat / python / obs / tools / eval / llm /
-  // mobile / devices / skills 写响应（31 个）。与 R1-R5 同一台账（163 → 194）；
-  // 按名钉住，删一个 `response:` 立刻按名失败，而不是只掉一个计数。
-  it('R6 memory/media/internal/device write ops declare a 200 response schema (write responses >= 197)', () => {
+  // mobile / devices / skills 写响应（32 个，含 2026-11-18 `mobile.remoteAccess`）。
+  // 与 R1-R5 同一台账（163 → 194，+1）；按名钉住，删一个 `response:` 立刻按名失败，
+  // 而不是只掉一个计数。
+  it('R6 memory/media/internal/device write ops declare a 200 response schema (write responses >= 198)', () => {
     const writes = catalogWriteOps();
     const responded = new Set(writes.filter((op) => op.hasResponse).map((op) => op.operationId));
 
     expect(E10H_R6_WRITE_RESPONSE_OPS.filter((id) => !responded.has(id))).toEqual([]);
-    expect(E10H_R6_WRITE_RESPONSE_OPS).toHaveLength(31);
+    expect(E10H_R6_WRITE_RESPONSE_OPS).toHaveLength(32);
     // No duplicates inside the batch …
     expect(new Set(E10H_R6_WRITE_RESPONSE_OPS).size).toBe(E10H_R6_WRITE_RESPONSE_OPS.length);
     // … and no overlap with the earlier batches.
@@ -2148,8 +2156,8 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     ]) {
       expect(E10H_R6_WRITE_RESPONSE_OPS.filter((id) => earlier.includes(id))).toEqual([]);
     }
-    // 194 = humanToken.rotate + P0 2 + R1 35 + R2 35 + R3 31 + R4 24 + R5 35 + R6 31.
-    expect(responded.size).toBeGreaterThanOrEqual(197);
+    // 195 = humanToken.rotate + P0 2 + R1 35 + R2 35 + R3 31 + R4 24 + R5 35 + R6 32.
+    expect(responded.size).toBeGreaterThanOrEqual(198);
     // 音频流那一支不在响应台账里（排除，不是漏项）。
     expect(responded.has('tts.speakStream')).toBe(false);
   });

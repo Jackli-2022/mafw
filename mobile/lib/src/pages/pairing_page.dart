@@ -130,17 +130,16 @@ class _PairingPageState extends State<PairingPage> {
   }
 
   Future<void> _verifyAndConnect(String url, String token, String nonce) async {
-    // App-layer policy (spec §6): v1 is Tailscale/private only. Public cleartext
-    // and malformed URLs are hard-rejected; LAN / bare-IP cleartext still
-    // connects with a warning. (Native media is governed separately by the
-    // Android NSC ts.net allowlist; Dart/package:http sockets are not NSC-bound.)
+    // App-layer policy (spec §6): public cleartext is rejected. LAN / bare-IP
+    // cleartext still connects with a warning. HTTPS is always allowed — that is
+    // what the Cloudflare/OpenTunnel remote path uses (no Tailscale required).
     final check = checkBaseUrl(url);
     if (!canPairWithUrl(url)) {
       if (mounted) {
         setState(() {
           _error = check == UrlCheck.publicPlaintext
-              ? '公网明文 http 连接被拒绝：请使用 https，或 Tailscale/局域网地址'
-              : '连接地址无效：请使用 http(s):// 主机名:端口（推荐 MagicDNS 主机名 *.ts.net）';
+              ? '公网明文 http 连接被拒绝：请使用 https（安全隧道/反向代理）或局域网地址'
+              : '连接地址无效：请使用 http(s):// 主机名:端口（推荐安全隧道或 MagicDNS 主机名）';
           _processing = false;
         });
       }
@@ -148,7 +147,7 @@ class _PairingPageState extends State<PairingPage> {
     }
     if (check == UrlCheck.bareIpWarn && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('提示：裸 IP 明文连接，建议改用 MagicDNS 主机名（*.ts.net）')),
+        const SnackBar(content: Text('提示：裸 IP 明文连接，建议改用安全隧道（https）或 MagicDNS 主机名')),
       );
     } else if (check == UrlCheck.plaintextLanWarn && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

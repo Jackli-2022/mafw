@@ -24,10 +24,10 @@ import { buildRouteCatalog } from '../../../src/routes/route-catalog';
  * Every non-GET catalog op (the request-body denominator established in E10g-P0).
  * 188 through E10g-W8, +7 Phase 6 plugin recovery POSTs (E10g-fix) + 2 receipt routes = 197.
  */
-const WRITE_OPS_TOTAL = 199;
+const WRITE_OPS_TOTAL = 200;
 
 /** Ops that declare a `request` schema (JSON body, optional body, or empty object). */
-const COVERED_TOTAL = 193;
+const COVERED_TOTAL = 194;
 
 /**
  * Declared request bodies with no enumerable fields (`EmptyRequest` / bare
@@ -110,7 +110,7 @@ describe('request-coverage: ledger for catalog request bodies (E10g)', () => {
     expect(Object.keys(REQUEST_EXCLUDED)).toHaveLength(6);
   });
 
-  it('closes on 199 = 193 covered + 6 excluded', () => {
+  it('closes on 200 = 194 covered + 6 excluded', () => {
     const ops = writeOps();
     const covered = ops.filter((op) => Boolean(op.request)).map((op) => op.operationId);
     expect(ops).toHaveLength(WRITE_OPS_TOTAL);

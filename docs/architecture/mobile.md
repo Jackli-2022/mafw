@@ -84,6 +84,12 @@ Firebase Test Lab / BrowserStack / AWS Device Farm 上传 APK 跑真机矩阵；
 - **连接**：Tailscale 优先（https/wss）> LAN http（仅 192.168/10.x 放行）> 手动；`MAFW_SERVER_API_TOKEN` 三通道鉴权（Bearer/x-api-token/?token）；human-only 动作需设备/人类凭据，旧共享 token 仅能普通 API（E5a）
 - **发现（P1）**：网关 `bonjour-service` 广播 `_mafw._tcp`（TXT 含 port/auth）；App `multicast_dns` 扫描，配对页自动列出同网网关
 - **配对 URL 自动探测**：网关按 环境变量 `MAFW_MOBILE_TAILSCALE_URL` > Tailscale IP > LAN IP > 127.0.0.1 生成，杜绝“手机连自己 localhost”
+- **远程配对（P0，2026-11-18）**：`mafw pair --remote` 在 gateway 内启动 **Cloudflare Quick Tunnel**
+  （出站，无入站端口/域名/Tailscale），解析 `https://<random>.trycloudflare.com` 后临时覆盖
+  `PairingService` 的 base URL；`mafw pair` 打印一次性 `orcalore://pair?...` 链接并生成
+  `~/.mafw/pair-qr.png`。手机扫码后仍走 pairing v2（nonce → device token）。`mafw pair --stop`
+  关闭隧道并恢复配置的 LAN/Tailscale URL。`/api/mobile/remote-access` 的 start/stop/status
+  全部 human-only。
 
 ---
 
@@ -489,6 +495,24 @@ summary, proposedGoal?, state, userAction, deadline, llmSuggestions?, updatedAt?
 - 契约更新：work_tab 的“非空桶 / 历史 sheet / 页头新建”、tab_shell 的“无 FAB + 自定义底栏”、
   sessions 的“无头像索引”、goal detail 的“灰描边 done / 单行 meta”均已有测试；
   全量逐文件数字见 `docs/releases/2026-11-16-mobile-editorial-ink.md`。
+
+### 7.15 远程配对：Cloudflare Quick Tunnel（P0，2026-11-18）
+
+目标：没有域名、没有 Tailscale、没有入站端口，也能让手机扫码接入。
+
+- `mafw pair --remote` → gateway `POST /api/mobile/remote-access {enabled:true}` →
+  spawn `cloudflared tunnel --url http://127.0.0.1:3000 --no-autoupdate --protocol http2`；
+  解析随机 `https://*.trycloudflare.com`，临时 `PairingService.setBaseUrlOverride(url)`。
+- `GET /api/mobile/pairing-code` 随后返回 `orcalore://pair?url=<tunnel>&v=2&exp&nonce`；
+  CLI 生成 `~/.mafw/pair-qr.png` 并打开，手机扫码即可（pairing v2 协议不变）。
+- `mafw pair --stop` → `POST {enabled:false}` → kill cloudflared + clear override；配对链接恢复
+  到 `MAFW_MOBILE_TAILSCALE_URL` / `mobile.tailscaleUrl` / LAN 探测。
+- `mafw pair --status` 查看；`mafw pair`（无 `--remote`）只出本地/LAN 配对码。
+- 安全：start/stop/status 全部 human-only；隧道 URL 不是认证，仍靠 5 分钟单次 nonce + 设备 token；
+  gateway 不监听公网端口。
+- P0 限制：Quick Tunnel 随机 URL、重启变化、无 SSE、200 in-flight、无 uptime 保证；
+  MAFW mobile 用 WS，不受 SSE 限制。生产应换 named tunnel + Access 或自建 relay。
+- 依赖：`cloudflared` 在 PATH，或 `MAFW_CLOUDFLARED_PATH`。
 
 ---
 

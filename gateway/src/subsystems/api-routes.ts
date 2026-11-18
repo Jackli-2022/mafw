@@ -55,6 +55,7 @@ import { attachMafwCommandRoutes } from '../routes/mafw-commands';
 import { attachMergeMemoryRoutes } from '../routes/merge-memory';
 import { attachTriageRoutes } from '../routes/triage';
 import { attachSkillRoutes } from '../routes/skills';
+import type { RemoteAccessService } from '../mobile/remote-access';
 import { attachApprovalsRoutes } from '../routes/approvals';
 import { attachQuestionsPermissionsRoutes } from '../routes/questions-permissions';
 import { attachUsageRoutes } from '../routes/usage';
@@ -236,6 +237,7 @@ export interface ApiRouteDeps {
   mediaService: MediaService | undefined;
   memoryService: ReturnType<ChatDeps['memoryService']>;
   pairingService: ReturnType<DevicesMobileDeps['pairingService']>;
+  remoteAccess: RemoteAccessService | undefined;
   podAccess: PodAccess;
   podDirectionService: PodDirectionService;
   podEventService: ReturnType<PodsEventsDeps['podEventService']>;
@@ -943,6 +945,7 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
   attachDevicesMobileRoutes(deps.routeRegistry, {
     pushGateway: () => deps.pushGateway,
     pairingService: () => deps.pairingService,
+    remoteAccess: () => deps.remoteAccess,
   });
   // E11-1：human token 轮换（kernel 的 rotateHumanToken 原子写盘后立刻重绑
   // `this.humanToken`，现有 live getter 让下一次请求即用新值；无需重启）。

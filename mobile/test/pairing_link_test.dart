@@ -34,6 +34,18 @@ String _link({
 
 void main() {
   group('pairing link v2', () {
+    test('accepts a Cloudflare Quick Tunnel HTTPS URL', () {
+      final result = parsePairingLink(_link(
+        url: 'https://happy-dog.trycloudflare.com',
+        token: null,
+        v: '2',
+      ));
+
+      expect(result.ok, isTrue);
+      expect(result.link!.url, 'https://happy-dog.trycloudflare.com');
+      expect(result.link!.version, 2);
+    });
+
     test('parses without a token and yields an empty token', () {
       final result = parsePairingLink(_link(token: null, v: '2', nonce: 'a' * 32));
 

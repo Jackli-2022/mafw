@@ -32,7 +32,8 @@ export interface PairingConfig {
 export class PairingService {
   private nonces: Map<string, PairingNonce> = new Map();
   private rateLimits: Map<string, RateLimitBucket> = new Map();
-  private tailscaleUrl: string;
+  private configuredBaseUrl: string;
+  private overrideBaseUrl: string | null = null;
   private readonly ttlMs: number;
   private readonly rateLimit: number;
   private cleanupTimer: NodeJS.Timeout | null = null;
@@ -40,13 +41,32 @@ export class PairingService {
   constructor(config: PairingConfig) {
     // `config.apiToken` is intentionally ignored (v2 pairs a device token via
     // `/api/mobile/pairing/verify`); the parameter stays for compatibility.
-    this.tailscaleUrl = config.tailscaleUrl;
+    this.configuredBaseUrl = config.tailscaleUrl;
     this.ttlMs = config.ttlMs ?? 5 * 60 * 1000;
     this.rateLimit = config.rateLimit ?? 5;
     // Periodic cleanup every 60s — unref so it doesn't pin the process exit
     this.cleanupTimer = setInterval(() => this.cleanup(), 60_000);
     // allow process to exit gracefully when this is the last handle
     if ((this.cleanupTimer as any).unref) (this.cleanupTimer as any).unref();
+  }
+
+  /** Current base URL serialized into pairing links (override > configured). */
+  get baseUrl(): string {
+    return this.overrideBaseUrl ?? this.configuredBaseUrl;
+  }
+
+  /**
+   * Temporary remote-access URL (Cloudflare/OpenTunnel). While set, pairing
+   * links use it; stopping the tunnel clears it and restores the configured
+   * LAN/Tailscale URL. Runtime-only: never persisted.
+   */
+  setBaseUrlOverride(url: string): void {
+    const normalized = url.trim().replace(/\/+$/, '');
+    this.overrideBaseUrl = normalized || null;
+  }
+
+  clearBaseUrlOverride(): void {
+    this.overrideBaseUrl = null;
   }
 
   /**
@@ -71,7 +91,7 @@ export class PairingService {
     this.nonces.set(hashNonce(nonce), { hash: hashNonce(nonce), expiresAt: exp });
 
     const params = new URLSearchParams({
-      url: this.tailscaleUrl,
+      url: this.baseUrl,
       v: '2',
       exp: String(exp),
       nonce,
@@ -128,7 +148,7 @@ export class PairingService {
    * `apiToken` is accepted for compatibility but no longer embedded in links.
    */
   updateConfig(opts: { apiToken?: string; tailscaleUrl?: string }): void {
-    if (opts.tailscaleUrl !== undefined) this.tailscaleUrl = opts.tailscaleUrl;
+    if (opts.tailscaleUrl !== undefined) this.configuredBaseUrl = opts.tailscaleUrl;
   }
 
   destroy(): void {

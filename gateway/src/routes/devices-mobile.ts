@@ -35,12 +35,15 @@ import { toPublicDevice, validateDeviceCredentialInput } from '../mobile/device-
 import { PAIRING_VERIFY_MAX_BODY_BYTES } from '../core/http/http-util';
 import type { PushGateway } from '../mobile/push-gateway';
 import type { PairingService } from '../mobile/pairing';
+import type { RemoteAccessService } from '../mobile/remote-access';
 import type { RouteRegistry } from './registry';
 import { humanOnlyDenied, isHumanPrincipal } from '../core/auth';
 
 export interface DevicesMobileRouteDeps {
   pushGateway: () => PushGateway | undefined;
   pairingService: () => PairingService | undefined;
+  /** P0 remote access tunnel (Cloudflare Quick Tunnel); absent = disabled. */
+  remoteAccess?: () => RemoteAccessService | undefined;
 }
 
 const DEVICE_TOKEN_PREFIX = 'dev_';
@@ -274,6 +277,71 @@ export function attachDevicesMobileRoutes(registry: RouteRegistry, deps: Devices
     } catch (err: any) {
       res.writeHead(500);
       res.end(JSON.stringify({ error: err.message }));
+    }
+  });
+
+  // GET /api/mobile/remote-access — human-only tunnel status.
+  registry.attachHandler('mobile.remoteAccessStatus', async (req, res) => {
+    if (!isHumanPrincipal((req as any).mafwPrincipal)) {
+      const denied = humanOnlyDenied();
+      res.writeHead(denied.status, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(denied.body));
+      return;
+    }
+    const service = deps.remoteAccess?.();
+    if (!service) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Remote access not available' }));
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(service.status()));
+  });
+
+  // POST /api/mobile/remote-access — human-only start/stop.
+  //
+  // Starting exposes the gateway to the internet; service/local callers must
+  // never be able to do that (same privilege-escalation reason as pairing-code).
+  registry.attachHandler('mobile.remoteAccess', async (req, res) => {
+    if (!isHumanPrincipal((req as any).mafwPrincipal)) {
+      const denied = humanOnlyDenied();
+      res.writeHead(denied.status, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(denied.body));
+      return;
+    }
+    const service = deps.remoteAccess?.();
+    if (!service) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Remote access not available' }));
+      return;
+    }
+
+    let body: any;
+    try {
+      body = JSON.parse(await readRouteBody(req, { maxBytes: 4_096 }));
+    } catch (err: any) {
+      if (err instanceof PayloadTooLargeError || err?.code === 'payload_too_large') {
+        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'payload too large', code: 'payload_too_large' }));
+        return;
+      }
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'invalid JSON body' }));
+      return;
+    }
+    if (typeof body?.enabled !== 'boolean') {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'enabled (boolean) required' }));
+      return;
+    }
+
+    try {
+      const status = body.enabled ? await service.start() : await service.stop();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(status));
+    } catch (err: any) {
+      res.writeHead(502, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err?.message || String(err) }));
     }
   });
 }

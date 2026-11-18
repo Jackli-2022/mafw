@@ -229,6 +229,7 @@ import { WebSocket } from 'ws';
 import { PushGateway } from './mobile/push-gateway';
 import { DeviceStore } from './mobile/device-store';
 import { PairingService } from './mobile/pairing';
+import { RemoteAccessService } from './mobile/remote-access';
 import { resolveMobileBaseUrl, detectReachableHost } from './mobile/tailscale-url';
 import { normalizeRuntimeEvent } from './runtime/normalize';
 import { UnknownEventTracker } from './runtime/event-telemetry';
@@ -844,6 +845,7 @@ class MafwScheduler {
    */
   private humanToken = '';
   private pairingService?: PairingService;
+  private remoteAccessService?: RemoteAccessService;
   private mdnsAdvertiser?: any; // MdnsAdvertiser
   private mafwDir!: string;
   private instanceLock: InstanceLock | null = null;
@@ -3958,6 +3960,7 @@ class MafwScheduler {
     }
     this.pushGateway?.destroy();
     this.pairingService?.destroy();
+    this.remoteAccessService?.destroy();
     this.mdnsAdvertiser?.stop();
     // if (this.dashboard) {
     //   this.dashboard.stop();
@@ -5177,6 +5180,11 @@ class MafwScheduler {
       this.apiPort,
     );
     this.pairingService = new PairingService({ apiToken, tailscaleUrl });
+    this.remoteAccessService = new RemoteAccessService({
+      port: this.apiPort,
+      onUrl: (url) => this.pairingService?.setBaseUrlOverride(url),
+      onStop: () => this.pairingService?.clearBaseUrlOverride(),
+    });
 
     // Mobile mDNS discovery (P1: zero-config LAN connectivity)
     const { MdnsAdvertiser } = require('./mobile/mdns-advertiser');
@@ -5950,6 +5958,7 @@ class MafwScheduler {
       get mediaService() { return self.mediaService; },
       get memoryService() { return self.memoryService; },
       get pairingService() { return self.pairingService; },
+      get remoteAccess() { return self.remoteAccessService; },
       get podAccess() { return self.podAccess; },
       get podDirectionService() { return self.podDirectionService; },
       get podEventService() { return self.podEventService; },

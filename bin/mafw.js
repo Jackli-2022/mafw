@@ -44,6 +44,12 @@ API Commands:
   approvals          List pending approvals (GET /api/approvals)
   triage             List triage items (GET /api/triage)
 
+Mobile Pairing:
+  pair               Print a one-time pairing QR (LAN/Tailscale URL)
+  pair --remote      Start a Cloudflare Quick Tunnel and print its pairing QR
+  pair --status      Show remote-access tunnel status
+  pair --stop        Stop the tunnel; pairing falls back to the configured URL
+
 Runtime Plugin Commands:
   plugins <list|doctor|install|kill|resume|quarantine|unquarantine|audit>
   plugin-check <file> [--preset core|conversation|autonomous|desktop] [--strict] [--json]
@@ -88,6 +94,7 @@ const COMMANDS = [
     'automations', 'approvals', 'triage', 'restart-agent', 'plugin-test', 'plugin-check', 'plugin', 'plugins', 'route-check',
   'rotate-human-token',
   'office',
+  'pair',
   'service-register', 'service-unregister',
   'config', 'dashboard', 'uninstall', 'version', 'update', 'tui',
 ];
@@ -294,6 +301,150 @@ async function callApi(name, method, urlPath, body) {
     console.error(`Is the gateway running? Try: mafw start`);
   }
 }
+
+function readCliHumanToken() {
+  if (process.env.MAFW_HUMAN_TOKEN) return process.env.MAFW_HUMAN_TOKEN;
+  const file = process.env.MAFW_HUMAN_TOKEN_FILE || path.join(os.homedir(), '.mafw', 'human.token');
+  try {
+    return fs.readFileSync(file, 'utf-8').trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+function humanHeaders() {
+  const token = readCliHumanToken();
+  return token ? { 'X-MAFW-Human-Token': token } : {};
+}
+
+function requireHumanHeaders() {
+  const headers = humanHeaders();
+  if (!headers['X-MAFW-Human-Token']) {
+    console.error('Human credential missing: start the gateway once (mafw start) or set MAFW_HUMAN_TOKEN.');
+    process.exitCode = 1;
+    return null;
+  }
+  return headers;
+}
+
+async function printPairingLink(link) {
+  console.log('');
+  console.log('Pair link (one-time, expires in 5 minutes):');
+  console.log(`  ${link}`);
+  console.log('');
+  try {
+    const QRCode = require('qrcode');
+    const qrPath = path.join(os.homedir(), '.mafw', 'pair-qr.png');
+    fs.mkdirSync(path.dirname(qrPath), { recursive: true });
+    await QRCode.toFile(qrPath, link, {
+      width: 480,
+      margin: 2,
+      errorCorrectionLevel: 'M',
+    });
+    console.log(`QR image: ${qrPath}`);
+    const opener = process.platform === 'win32'
+      ? `start "" "${qrPath}"`
+      : process.platform === 'darwin'
+        ? `open "${qrPath}"`
+        : `xdg-open "${qrPath}"`;
+    try { execSync(opener, { stdio: 'ignore' }); } catch { /* headless / no viewer */ }
+    console.log('Scan the opened QR with Orcalore Mobile.');
+  } catch (err) {
+    console.error(`[pair] QR renderer unavailable: ${err.message}`);
+    console.error('Use the link above (paste it into the app if your build supports it).');
+  }
+  console.log('');
+}
+
+async function pairCommand(args) {
+  const wantRemote = args.includes('--remote');
+  const wantStop = args.includes('--stop');
+  const wantStatus = args.includes('--status');
+  const headers = requireHumanHeaders();
+  if (!headers) return;
+
+  if (wantStatus) {
+    try {
+      const res = await httpRequest('GET', '/api/mobile/remote-access', undefined, 15000, headers);
+      if (res.status >= 400) {
+        console.error(`Remote access status failed (${res.status}): ${JSON.stringify(res.body)}`);
+        process.exitCode = 1;
+        return;
+      }
+      const body = res.body || {};
+      console.log(body.enabled
+        ? `Remote access: enabled (${body.provider || 'tunnel'}) ${body.url || ''}`.trim()
+        : 'Remote access: disabled');
+    } catch (err) {
+      console.error(`API call failed: ${err.message}`);
+      console.error('Is the gateway running? Try: mafw start');
+      process.exitCode = 1;
+    }
+    return;
+  }
+
+  if (wantStop) {
+    try {
+      const res = await httpRequest('POST', '/api/mobile/remote-access', { enabled: false }, 15000, headers);
+      if (res.status >= 400) {
+        console.error(`Stopping remote access failed (${res.status}): ${JSON.stringify(res.body)}`);
+        process.exitCode = 1;
+        return;
+      }
+      console.log('Remote access stopped. Pairing links fall back to the configured LAN/Tailscale URL.');
+    } catch (err) {
+      console.error(`API call failed: ${err.message}`);
+      console.error('Is the gateway running? Try: mafw start');
+      process.exitCode = 1;
+    }
+    return;
+  }
+
+  if (wantRemote) {
+    try {
+      const started = await httpRequest('POST', '/api/mobile/remote-access', { enabled: true }, 60000, headers);
+      if (started.status >= 400) {
+        console.error(`Starting remote access failed (${started.status}): ${JSON.stringify(started.body)}`);
+        process.exitCode = 1;
+        return;
+      }
+      const status = started.body || {};
+      if (!status.url) {
+        console.error('Remote access started without a URL; inspect: mafw pair --status');
+        process.exitCode = 1;
+        return;
+      }
+      console.log(`Remote access: ${status.url}`);
+      console.log('Tunnel stays in the gateway; stop with: mafw pair --stop');
+    } catch (err) {
+      console.error(`API call failed: ${err.message}`);
+      console.error('Is the gateway running? Try: mafw start');
+      process.exitCode = 1;
+      return;
+    }
+  }
+
+  try {
+    const res = await httpRequest('GET', '/api/mobile/pairing-code', undefined, 15000, headers);
+    if (res.status >= 400) {
+      console.error(`Pairing code failed (${res.status}): ${JSON.stringify(res.body)}`);
+      process.exitCode = 1;
+      return;
+    }
+    const link = res.body && res.body.url;
+    if (!link) {
+      console.error('Pairing code response did not include a URL.');
+      process.exitCode = 1;
+      return;
+    }
+    await printPairingLink(link);
+  } catch (err) {
+    console.error(`API call failed: ${err.message}`);
+    console.error('Is the gateway running? Try: mafw start');
+    process.exitCode = 1;
+  }
+}
+
 
 // `mafw rotate-human-token` (E11-1): prove possession of the current human
 // token, ask the gateway to rotate it, and print only the timestamp. The new
@@ -572,6 +723,7 @@ async function main() {
     case 'automations': await callApi('automations', 'GET', '/api/automations'); break;
     case 'approvals': await callApi('approvals', 'GET', '/api/approvals'); break;
     case 'triage': await callApi('triage', 'GET', '/api/triage'); break;
+    case 'pair': await pairCommand(process.argv.slice(3)); break;
 
     case 'register': {
       const dir = process.argv[3];

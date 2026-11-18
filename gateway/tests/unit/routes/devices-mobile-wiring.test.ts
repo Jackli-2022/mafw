@@ -81,6 +81,32 @@ function pairingService() {
   };
 }
 
+function remoteAccess() {
+  const calls: string[] = [];
+  let status: any = { enabled: false };
+  return {
+    calls,
+    svc: {
+      status: () => status,
+      start: async () => {
+        calls.push('start');
+        status = {
+          enabled: true,
+          provider: 'cloudflare-quick',
+          url: 'https://sample.trycloudflare.com',
+          startedAt: 1,
+        };
+        return status;
+      },
+      stop: async () => {
+        calls.push('stop');
+        status = { enabled: false };
+        return status;
+      },
+    } as any,
+  };
+}
+
 function setup(over: Partial<DevicesMobileRouteDeps> = {}) {
   const registry = new RouteRegistry().register(...buildRouteCatalog());
   attachDevicesMobileRoutes(registry, { pushGateway: () => undefined, pairingService: () => undefined, ...over });
@@ -105,6 +131,8 @@ describe('devices + mobile registry wiring (D1 Task H2)', () => {
       ['DELETE', '/api/mobile/devices/dev-1', 'mobile.devicesDelete'],
       ['POST', '/api/mobile/devices/register', 'mobile.devicesRegister'],
       ['GET', '/api/mobile/pairing-code', 'mobile.pairingCode'],
+      ['GET', '/api/mobile/remote-access', 'mobile.remoteAccessStatus'],
+      ['POST', '/api/mobile/remote-access', 'mobile.remoteAccess'],
       ['POST', '/api/mobile/pairing/verify', 'mobile.pairingVerify'],
     ];
     for (const [method, url, op] of bindings) {
@@ -229,6 +257,91 @@ describe('devices + mobile registry wiring (D1 Task H2)', () => {
       expect(JSON.parse(r.body)).toEqual({ error: 'human principal required', code: 'human_principal_required' });
     }
     expect(ps.codes).toEqual([]);
+  });
+
+  it('remote-access starts, reports status and stops', async () => {
+    const human = { kind: 'human', method: 'human-token' };
+    const ra = remoteAccess();
+    const registry = setup({ remoteAccess: () => ra.svc });
+
+    let r = fakeRes();
+    await handlerFor(registry, 'GET', '/api/mobile/remote-access')!(
+      fakeReq({ method: 'GET', url: '/api/mobile/remote-access', principal: human }), r.res,
+    );
+    expect(r.status).toBe(200);
+    expect(JSON.parse(r.body)).toEqual({ enabled: false });
+
+    r = fakeRes();
+    await handlerFor(registry, 'POST', '/api/mobile/remote-access')!(
+      fakeReq({
+        method: 'POST',
+        url: '/api/mobile/remote-access',
+        body: JSON.stringify({ enabled: true }),
+        principal: human,
+      }),
+      r.res,
+    );
+    expect(r.status).toBe(200);
+    expect(JSON.parse(r.body)).toMatchObject({
+      enabled: true,
+      provider: 'cloudflare-quick',
+      url: 'https://sample.trycloudflare.com',
+    });
+
+    r = fakeRes();
+    await handlerFor(registry, 'POST', '/api/mobile/remote-access')!(
+      fakeReq({
+        method: 'POST',
+        url: '/api/mobile/remote-access',
+        body: JSON.stringify({ enabled: false }),
+        principal: human,
+      }),
+      r.res,
+    );
+    expect(r.status).toBe(200);
+    expect(JSON.parse(r.body)).toEqual({ enabled: false });
+    expect(ra.calls).toEqual(['start', 'stop']);
+  });
+
+  it('remote-access is human-only for status and start/stop', async () => {
+    const ra = remoteAccess();
+    const registry = setup({ remoteAccess: () => ra.svc });
+    for (const principal of [
+      { kind: 'service', method: 'api-token' },
+      { kind: 'local', method: 'loopback' },
+    ]) {
+      for (const [method, body] of [
+        ['GET', undefined],
+        ['POST', JSON.stringify({ enabled: true })],
+      ] as const) {
+        const r = fakeRes();
+        await handlerFor(registry, method, '/api/mobile/remote-access')!(
+          fakeReq({ method, url: '/api/mobile/remote-access', body, principal }), r.res,
+        );
+        expect(r.status).toBe(403);
+        expect(JSON.parse(r.body).code).toBe('human_principal_required');
+      }
+    }
+    expect(ra.calls).toEqual([]);
+  });
+
+  it('remote-access rejects a malformed body', async () => {
+    const human = { kind: 'human', method: 'human-token' };
+    const ra = remoteAccess();
+    const registry = setup({ remoteAccess: () => ra.svc });
+    const r = fakeRes();
+    await handlerFor(registry, 'POST', '/api/mobile/remote-access')!(
+      fakeReq({
+        method: 'POST',
+        url: '/api/mobile/remote-access',
+        body: JSON.stringify({ enabled: 'yes' }),
+        principal: human,
+      }),
+      r.res,
+    );
+    expect(r.status).toBe(400);
+    expect(JSON.parse(r.body).error).toMatch(/enabled/);
+    expect(ra.calls).toEqual([]);
   });
 
   it('pairing/verify consumes the nonce and issues a device credential (v2)', async () => {

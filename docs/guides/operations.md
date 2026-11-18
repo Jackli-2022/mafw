@@ -37,6 +37,22 @@ mafw dashboard         # 打开 Web Dashboard
 mafw version           # 版本号
 ```
 
+### 手机远程配对（2026-11-18 / P0）
+
+没有域名 / Tailscale 时，用 Cloudflare Quick Tunnel 让手机扫码接入：
+
+```bash
+mafw pair --remote     # 起隧道 + 打印一次性 QR（~/.mafw/pair-qr.png）
+mafw pair --status     # 查看隧道 URL / 状态
+mafw pair --stop       # 关闭隧道，配对链接恢复 LAN/Tailscale
+mafw pair              # 仅生成当前 LAN/Tailscale URL 的配对码
+```
+
+- 需要 `cloudflared` 在 PATH（或 `MAFW_CLOUDFLARED_PATH`）；首次 `pair --remote` 需 10–30s 等 URL。
+- start/stop/status 是 human-only；CLI 读取 `~/.mafw/human.token`（或 `MAFW_HUMAN_TOKEN`）。
+- 隧道 URL 不是认证：仍靠 pairing nonce（5 分钟、单次）+ 设备 token。
+- Quick Tunnel 是临时验证路径（随机 URL、无 SSE、200 in-flight、无 uptime 保证）；生产换 named tunnel + Cloudflare Access 或自建 relay。
+
 ### 轮换 human token（`mafw rotate-human-token`，2026-11-13 / E11-1）
 
 human token 是 human-only 动作（验收、计划批准、triage 决策、permission 应答…）的唯一凭据，固定放在

@@ -53,9 +53,9 @@ class _ConnectionSettingsPageState extends State<ConnectionSettingsPage> {
       UrlCheck.bareIpWarn =>
         '提示：建议改用 MagicDNS 主机名（http://<机器名>.<tailnet>.ts.net:3000）。裸 IP 明文仅建议调试使用。',
       UrlCheck.plaintextLanWarn =>
-        '警告：局域网明文连接，仅限可信网络。远程访问请使用 Tailscale（https 或 *.ts.net 主机名）。',
+        '警告：局域网明文连接，仅限可信网络。远程访问请使用安全隧道/反向代理（https），或 Tailscale。',
       UrlCheck.publicPlaintext =>
-        '公网地址不允许明文 http：请使用 https，或 Tailscale / 局域网地址（应用层策略，仅放行 ts.net 与私网明文）。',
+        '公网地址不允许明文 http：请使用 https（安全隧道/反向代理），或 Tailscale / 局域网地址（应用层策略，仅放行 ts.net 与私网明文）。',
       UrlCheck.invalid => '地址无效：需以 http:// 或 https:// 开头，并包含主机名（如 http://pc.tailnet.ts.net:3000）。',
     };
   }

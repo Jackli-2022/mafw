@@ -35,27 +35,28 @@ import {
   QuestionLedgerErrorSchema,
 } from '../../../src/routes/schemas/errors';
 
-/** Whole catalog after E10h/E10i (330 ops / 296 paths). */
-const CATALOG_OPS_TOTAL = 333;
+/** Whole catalog after E10h/E10i + mobile remote access P0 (335 ops). */
+const CATALOG_OPS_TOTAL = 335;
 
 /** Ops whose path starts with `/api/` — the set that carries transport 401/403. */
-const API_PREFIX_OPS_TOTAL = 324;
+const API_PREFIX_OPS_TOTAL = 326;
 
 /** Ops that declare at least one explicit error status. */
-const EXPLICIT_ERROR_OPS_TOTAL = 162;
+const EXPLICIT_ERROR_OPS_TOTAL = 163;
 
 /** Sum of `errors.length` over those ops (individual status entries, not distinct statuses). */
-const EXPLICIT_ERROR_ENTRIES_TOTAL = 370;
+const EXPLICIT_ERROR_ENTRIES_TOTAL = 373;
 
 /** Explicit status distribution after E10i (pinned; a status may only move by editing this). */
 const EXPLICIT_STATUS_SPLIT: Record<number, number> = {
-  400: 128,
+  400: 129,
   403: 2,
   404: 81,
   409: 57,
   413: 6,
   429: 3,
-  503: 93,
+  502: 1,
+  503: 94,
 };
 
 /**
@@ -212,7 +213,7 @@ function auditErrorCoverage(ops: ErrorOpView[] = errorOpViews()): string[] {
 }
 
 describe('error-coverage: ledger for catalog error responses (E10i)', () => {
-  it('every catalog op projects a `default` ErrorEnvelope (333/333)', () => {
+  it('every catalog op projects a `default` ErrorEnvelope (335/335)', () => {
     const ops = errorOpViews();
     expect(ops).toHaveLength(CATALOG_OPS_TOTAL);
     expect(auditErrorCoverage(ops)).toEqual([]);

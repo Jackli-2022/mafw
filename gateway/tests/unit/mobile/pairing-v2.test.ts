@@ -73,4 +73,29 @@ describe('PairingService v2 (E5a-3)', () => {
       expect(() => service.generatePairingCode('127.0.0.1')).not.toThrow();
     }
   });
+
+  it('uses a temporary remote-access override and restores the configured URL', () => {
+    service = new PairingService({ apiToken: 'x', tailscaleUrl: 'http://192.168.1.5:3000' });
+
+    service.setBaseUrlOverride('https://happy-dog.trycloudflare.com/');
+    expect(new URL(service.generatePairingCode('127.0.0.1').url).searchParams.get('url'))
+      .toBe('https://happy-dog.trycloudflare.com');
+
+    service.clearBaseUrlOverride();
+    expect(new URL(service.generatePairingCode('127.0.0.1').url).searchParams.get('url'))
+      .toBe('http://192.168.1.5:3000');
+  });
+
+  it('keeps the override across a config hot-update until it is cleared', () => {
+    service = new PairingService({ apiToken: 'x', tailscaleUrl: 'http://pc:3000' });
+    service.setBaseUrlOverride('https://tunnel.example.com');
+
+    service.updateConfig({ tailscaleUrl: 'http://new-lan:3000' });
+    expect(new URL(service.generatePairingCode('127.0.0.1').url).searchParams.get('url'))
+      .toBe('https://tunnel.example.com');
+
+    service.clearBaseUrlOverride();
+    expect(new URL(service.generatePairingCode('127.0.0.1').url).searchParams.get('url'))
+      .toBe('http://new-lan:3000');
+  });
 });

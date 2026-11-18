@@ -46,6 +46,19 @@ export const PairingCodeResponse = Type.Object({
   url: Type.String(),
 })
 
+/** Remote-access tunnel lifecycle status (`/api/mobile/remote-access`). */
+export const RemoteAccessStatusResponse = Type.Object({
+  enabled: Type.Boolean(),
+  provider: Type.Optional(Type.String()),
+  url: Type.Optional(Type.String()),
+  startedAt: Type.Optional(Type.Number()),
+})
+
+/** `POST /api/mobile/remote-access` body. */
+export const RemoteAccessRequest = Type.Object({
+  enabled: Type.Boolean(),
+})
+
 /** schema ↔ `PublicDeviceEntry` 漂移即 gateway tsc 红（`npx tsc --noEmit -p tsconfig.json`）。 */
 const _PUBLIC_DEVICE_SCHEMA_MATCHES_STORE: AssertEq<Static<typeof PublicDeviceEntrySchema>, PublicDeviceEntry> = true
 export { _PUBLIC_DEVICE_SCHEMA_MATCHES_STORE }

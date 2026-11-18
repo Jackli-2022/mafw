@@ -24,14 +24,14 @@
 import { buildRouteCatalog } from '../../../src/routes/route-catalog';
 
 /** Every non-GET catalog op (the write-response denominator, same set as E10g requests). */
-const WRITE_OPS_TOTAL = 199;
+const WRITE_OPS_TOTAL = 200;
 
 /** Write ops that declare a `response` schema (all but `tts.speakStream`). */
-const COVERED_TOTAL = 198;
+const COVERED_TOTAL = 199;
 
 /** Whole-catalog size and response coverage after E10h (127 pre-wave → 323). */
-const CATALOG_OPS_TOTAL = 333;
-const CATALOG_RESPONSES_TOTAL = 326;
+const CATALOG_OPS_TOTAL = 335;
+const CATALOG_RESPONSES_TOTAL = 328;
 
 /**
  * Write ops whose 200 is *not* a JSON body, with the reason it is excluded.
@@ -143,7 +143,7 @@ describe('write-response-coverage: ledger for catalog write responses (E10h)', (
     expect(Object.keys(WRITE_RESPONSE_EXCLUDED)).toEqual(['tts.speakStream']);
   });
 
-  it('closes on 199 write ops = 198 covered + 1 excluded', () => {
+  it('closes on 200 write ops = 199 covered + 1 excluded', () => {
     const ops = writeOps();
     const covered = ops.filter((op) => Boolean(op.response)).map((op) => op.operationId);
     expect(ops).toHaveLength(WRITE_OPS_TOTAL);
@@ -159,7 +159,7 @@ describe('write-response-coverage: ledger for catalog write responses (E10h)', (
     expect(unaccounted).toEqual([]);
   });
 
-  it('whole-catalog arithmetic: 326/333 with the 7 gaps fully accounted for', () => {
+  it('whole-catalog arithmetic: 328/335 with the 7 gaps fully accounted for', () => {
     const ops = opViews();
     expect(ops).toHaveLength(CATALOG_OPS_TOTAL);
     const covered = ops.filter((op) => Boolean(op.response)).map((op) => op.operationId);
