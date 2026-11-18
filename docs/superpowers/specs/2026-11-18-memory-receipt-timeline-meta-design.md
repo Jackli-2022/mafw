@@ -258,19 +258,19 @@ CREATE INDEX IF NOT EXISTS idx_memory_receipts_session
 - 会话打开/切换时：调用 `sessions.memoryReceipts` 回填；SSE 只负责实时增量。
 - SSE 重连：回填是兜底；事件重复到达不会重复渲染（按 anchor + updatedAt 去重）。
 
-### 4.6 锚点（需先做 spike，不得直接锁 PK）
+### 4.6 锚点（主方案：隐藏 turn part）
 
-Builder check 发现：`src/hooks/session-recall.ts` 能拿到 runtime 的真实 user message id，但桌面发送用的是本地 `user-<ts>`，且当前 2.1 方言没有稳定的 live user `message.updated` 来把它换成真实 id。因此“直接按真实 user message id 锚定”可能让**实时回执永远找不到回合**，只能等历史 reload。
+Builder check 发现：桌面发送用本地 `user-<ts>`，runtime 真实 user message id 在 live 不一定拿得到。为了让 live 和 reload 都能挂上，主方案不依赖真实 id：
 
-决议：
+1. 桌面每次发送带一条 synthetic text part：`[[turn:<uuid>]]`（与 `voiceOrigin` 同一条通路）。
+2. `src/hooks/session-recall.ts` 从最后一条真实 user message 的 parts 里提取这个 marker，作为 `anchorKey` 传给 gateway。
+3. 回执按 `(session_id, anchor_key)` 存；桌面从同一条 user message 的 parts 里读同一个 marker，挂到对应回合。
+4. marker 对用户不可见：`stripInjectedUserText` 增加 `[[turn:...]]` 剥离；模型看到也无害。
 
-- 把 key 抽象成 `anchorKey`（不透明字符串），而不是写死 user message id。
-- Plan 第一步做一个 1 小时 spike，三选一：
-  1. **send 返回 turnID**：gateway `/api/chat/enriched`（或发送路径）返回一个稳定的 `turnID`，桌面存在乐观消息上；hook 从消息 metadata/parts 读到同一个 `turnID`。
-  2. **隐藏 turn part**：桌面在发送 parts 里带 `[[turn:<uuid>]]`（synthetic），hook 读取并回传；回执持久化时同时存 `turnID` 与真实 message id（若可得）。
-  3. **接受 reload-only**：live 不显示，历史回执才显示。**不满足成功标准**，只作为兜底。
-- 在 spike 结论出来前，`memory_receipts` 的 PK、SSE 字段、桌面查找逻辑都按 `anchorKey` 设计，不绑定具体 id。
-- 找不到锚点（历史裁剪 / 旧会话）→ 回执丢弃，不猜“最近一轮”。
+Spike 验证（Phase 0）：marker 是否随 parts 进入 `output.messages`、是否持久化到历史、reload 后是否还在。任一项失败 → 回退到“send 返回 `turnID`”方案；`anchorKey` 抽象不变。
+
+- 如果 `lastUser` 不存在（assistant continuation / 无 user）或没有 marker → 不生成回执。
+- 找不到锚点（历史裁剪 / 旧客户端）→ 回执丢弃，不猜“最近一轮”。
 
 ### 4.7 时间线数据模型
 
@@ -494,7 +494,7 @@ function splitTurn(parts: MafwPart[], opts: { showReasoning: boolean }): TurnEnt
 
 ### host hook
 
-- `src/hooks/session-recall.ts`：增加 `anchorKey` 查询参数。
+- `src/hooks/session-recall.ts`：从最后一条 user message 的 parts 提取 `[[turn:<uuid>]]`，作为 `anchorKey` 查询参数。
 - `src/plugin.ts`：无需改（hook 已在）。
 
 ### desktop
@@ -503,8 +503,8 @@ function splitTurn(parts: MafwPart[], opts: { showReasoning: boolean }): TurnEnt
 - `packages/desktop/src/renderer/mafw/components/MemoryReceipt.tsx`（新）：药丸 + 卡片。
 - `packages/desktop/src/renderer/mafw/sse/handlers/memory-recall.ts`（新）+ `dispatcher.ts` 接线。
 - `packages/desktop/src/renderer/mafw/components/ChatPane.tsx`：渲染回执；元信息 chip。
-- `packages/desktop/src/renderer/mafw/chat/use-send-message.ts`：`composeLatestReminderPart`。
-- `packages/desktop/src/renderer/mafw/ingest/messages.ts`：剥离 `<latest-reminder>`。
+- `packages/desktop/src/renderer/mafw/chat/use-send-message.ts`：`composeLatestReminderPart` + `composeTurnMarkerPart`（每次发送带 `[[turn:<uuid>]]`）。
+- `packages/desktop/src/renderer/mafw/ingest/messages.ts`：剥离 `<latest-reminder>` 与 `[[turn:...]]`。
 - `packages/desktop/src/renderer/mafw/mafw.css`：药丸/卡片/chip 样式（token）。
 - `packages/gateway-sdk/src/{client,types}.ts`：`sessions.memoryReceipts` + DTO。
 
@@ -535,7 +535,7 @@ function splitTurn(parts: MafwPart[], opts: { showReasoning: boolean }): TurnEnt
 
 | # | Builder 问题 | 决议 |
 |---|---|---|
-| 1 | live 回执如何找到回合（本地 id vs 真实 id） | 抽象为 `anchorKey`；plan 先做 1 小时 spike（send 返回 turnID / 隐藏 turn part / reload-only 兜底），不锁 PK。见 §4.6。 |
+| 1 | live 回执如何找到回合（本地 id vs 真实 id） | 主方案：隐藏 `[[turn:<uuid>]]` part；hook 与桌面读同一个 marker。Phase 0 只验证 marker 的透传与持久化；失败回退 send 返回 `turnID`。见 §4.6。 |
 | 2 | 快照路径没有结构化 memories | additive 扩展 `RecallSnapshot`（`memories?` / `t1Rendered?`）；旧快照缺字段则不生成回执，不解析 block。见 §4.4.1。 |
 | 3 | snapshot / FOK / neighbors 默认关闭 | 不改变现有配置；关闭时优雅降级：无 T1 摘要、只有 `inject` 态、邻居不显示。不为了 UI 打开检索特性。 |
 | 4 | 0 结果时是否发回执 | 0/0 不发；`no-memory` 只在模型真的收到 `no-reliable-memory` 块时发。见 §4.2。 |
