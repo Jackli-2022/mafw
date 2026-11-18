@@ -4,7 +4,7 @@ import { Icon } from '@mafw/ui/icon'
 import { TextShimmer } from '@mafw/ui/text-shimmer'
 import { Markdown } from './markdown'
 import { getToolInfo } from './message-part'
-import { formatDuration, processSummary } from './process-timeline-model'
+import { formatDuration, processSummary, defaultSegmentOpen } from './process-timeline-model'
 import type { MafwPart } from '@mafw/sdk'
 import type { ProcessStep, TurnEntry } from './turn-transcript'
 import './process-timeline.css'
@@ -15,6 +15,8 @@ export interface ProcessTimelineProps {
   showReasoning?: boolean
   renderCard: (part: any) => any
   renderData: (part: MafwPart) => any
+  /** Render an output text part with the shell's normal text-part actions. */
+  renderOutput?: (part: any) => any
 }
 
 function stateOf(part: any): string {
@@ -96,7 +98,7 @@ export function ProcessTimeline(props: ProcessTimelineProps) {
   const isOpen = (key: string) => {
     const override = overrides()[key]
     if (override !== undefined) return override
-    return Boolean(props.working) && key === lastKey()
+    return defaultSegmentOpen(Boolean(props.working), key === lastKey())
   }
   const toggle = (key: string, open: boolean) => {
     setOverrides((prev) => ({ ...prev, [key]: open }))
@@ -171,7 +173,9 @@ export function ProcessTimeline(props: ProcessTimelineProps) {
               <div class="mafw-process-output">
                 <For each={entry.output}>
                   {(part) => (
-                    <Markdown text={part.text} cacheKey={part.id} streaming={active()} />
+                    props.renderOutput
+                      ? props.renderOutput(part)
+                      : <Markdown text={part.text} cacheKey={part.id} streaming={active()} />
                   )}
                 </For>
               </div>

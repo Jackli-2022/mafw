@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { formatDuration, processSummary } from './process-timeline-model'
+import { formatDuration, processSummary, defaultSegmentOpen } from './process-timeline-model'
 import type { TurnEntry } from './turn-transcript'
 
 describe('formatDuration', () => {
@@ -24,5 +24,13 @@ describe('processSummary', () => {
       output: [],
     }
     expect(processSummary(segment)).toEqual({ tools: 1, thinking: 1, durationMs: 5900 })
+  })
+})
+
+describe('defaultSegmentOpen', () => {
+  test('opens only the active segment while working', () => {
+    expect(defaultSegmentOpen(true, true)).toBe(true)
+    expect(defaultSegmentOpen(true, false)).toBe(false)
+    expect(defaultSegmentOpen(false, true)).toBe(false)
   })
 })

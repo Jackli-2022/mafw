@@ -9,6 +9,11 @@ export function formatDuration(ms: number | null | undefined): string {
   return `${minutes} 分 ${String(rest).padStart(2, '0')} 秒`
 }
 
+/** Only the active segment opens by default while the turn is running. */
+export function defaultSegmentOpen(working: boolean, isLast: boolean): boolean {
+  return Boolean(working) && Boolean(isLast)
+}
+
 export function processSummary(segment: Extract<TurnEntry, { type: 'segment' }>): {
   tools: number
   thinking: number
