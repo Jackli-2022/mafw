@@ -68,6 +68,21 @@ export function rerankerEntryFromRecall(memory: RecallMemory): {
   };
 }
 
+export interface SnapshotNeighborMemory {
+  id: string;
+  type?: string;
+  abstraction: string;
+  date?: string;
+  energy?: number;
+  neighborOf: string;
+}
+
+export interface RenderedSnapshotBlock {
+  block: string;
+  /** Temporal-neighbor rows bundled into the block (receipt source). */
+  neighbors?: SnapshotNeighborMemory[];
+}
+
 export interface SnapshotDeps {
   /** Recent turn texts, oldest → newest (from T1 active + archive). */
   recentTurnTexts: (sessionID: string, maxTurns: number) => string[];
@@ -84,6 +99,11 @@ export interface SnapshotDeps {
   verify?: (query: string, memories: RecallMemory[]) => Promise<{ memories: RecallMemory[]; fokStatus?: FokZone; top1prob?: number }>;
   /** Render the pointer block (formatRecallContext + neighbours + status). */
   render: (memories: RecallMemory[], status?: FokZone) => string | null;
+  /**
+   * Richer renderer used by the live kernel: reports the temporal-neighbor
+   * rows it bundled into the block so the receipt can show them too.
+   */
+  renderWithNeighbors?: (memories: RecallMemory[], status?: FokZone) => RenderedSnapshotBlock | null;
   /** V1 verbatim layer: dense search over t1 rounds (fail-open — absence
    *  keeps the snapshot harmonic-only). */
   searchT1?: (query: string, k: number) => Promise<T1Hit[]> | T1Hit[];
@@ -210,7 +230,17 @@ export async function buildSnapshot(
       top1prob = verified?.top1prob;
     } catch { /* fail-open: keep the un-reranked ranking, no gate */ }
   }
-  let block = memories.length > 0 ? deps.render(memories, fokStatus) : null;
+  let block: string | null = null;
+  let neighbors: SnapshotNeighborMemory[] | undefined;
+  if (memories.length > 0) {
+    if (deps.renderWithNeighbors) {
+      const rendered = deps.renderWithNeighbors(memories, fokStatus);
+      block = rendered?.block ?? null;
+      neighbors = rendered?.neighbors;
+    } else {
+      block = deps.render(memories, fokStatus);
+    }
+  }
   if (episodes) {
     block = renderLayeredRecall({
       episodes,
@@ -229,13 +259,16 @@ export async function buildSnapshot(
     query,
     block,
     ids: memories.slice(0, topK).map(m => m.id),
-    memories: memories.slice(0, topK).map((memory) => ({
-      id: memory.id,
-      ...(memory.type ? { type: memory.type } : {}),
-      abstraction: memory.primary_abstraction,
-      ...(memory.created_at ? { date: memory.created_at } : {}),
-      ...(typeof memory.energy === 'number' && Number.isFinite(memory.energy) ? { energy: memory.energy } : {}),
-    })),
+    memories: [
+      ...memories.slice(0, topK).map((memory) => ({
+        id: memory.id,
+        ...(memory.type ? { type: memory.type } : {}),
+        abstraction: memory.primary_abstraction,
+        ...(memory.created_at ? { date: memory.created_at } : {}),
+        ...(typeof memory.energy === 'number' && Number.isFinite(memory.energy) ? { energy: memory.energy } : {}),
+      })),
+      ...(neighbors ?? []),
+    ],
     t1Rendered: !!t1Lines && !episodes,
     builtAt: (deps.now?.() ?? new Date()).toISOString(),
     fokStatus,

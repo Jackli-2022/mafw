@@ -118,6 +118,22 @@ describe('buildSnapshot', () => {
     expect(snap!.t1Hits![0].source).toBe('user');
   });
 
+  test('records neighbor rows reported by the renderer', async () => {
+    const snap = await buildSnapshot(
+      deps({
+        renderWithNeighbors: (ms) => ({
+          block: `<recall>${ms.map((m) => m.id).join(',')}</recall>`,
+          neighbors: [{ id: 'n1', type: 'semantic', abstraction: 'neighbor gist', neighborOf: 'a' }],
+        }),
+      }),
+      'ses_1',
+    );
+    expect(snap!.memories?.map((m) => m.id)).toEqual(['a', 'b', 'c', 'n1']);
+    expect(snap!.memories?.at(-1)).toMatchObject({
+      id: 'n1', abstraction: 'neighbor gist', neighborOf: 'a',
+    });
+  });
+
   test('episodes branch does not mark T1 as rendered', async () => {
     const snap = await buildSnapshot(
       deps({

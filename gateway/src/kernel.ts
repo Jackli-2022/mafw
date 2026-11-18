@@ -2753,6 +2753,29 @@ class MafwScheduler {
           neighbors: neighbors && neighbors.size > 0 ? neighbors : undefined,
         }).pointers;
       },
+      // Same renderer, but reports the neighbour rows it bundled so the
+      // receipt can show `↳` without re-running recallNeighbors.
+      renderWithNeighbors: (ms: any[], status?: any) => {
+        const tn = config.search.temporalNeighbors;
+        const neighbors = tn?.presentation
+          ? recallNeighbors(this.memoryService!.harmonicIndex, ms, tn)
+          : undefined;
+        const block = formatRecallContext(ms, {
+          status: status ?? 'inject',
+          neighbors: neighbors && neighbors.size > 0 ? neighbors : undefined,
+        }).pointers;
+        const rows = neighbors && neighbors.size > 0
+          ? [...neighbors.entries()].flatMap(([anchorId, list]) => (list as any[]).map((memory: any) => ({
+              id: memory.id,
+              ...(memory.type ? { type: memory.type } : {}),
+              abstraction: memory.primary_abstraction,
+              ...(memory.created_at ? { date: memory.created_at } : {}),
+              ...(typeof memory.energy === 'number' && Number.isFinite(memory.energy) ? { energy: memory.energy } : {}),
+              neighborOf: anchorId,
+            })))
+          : undefined;
+        return { block, ...(rows && rows.length > 0 ? { neighbors: rows } : {}) };
+      },
       // R3 + R5 in ONE reranker pass: the same scoring call yields both the
       // reranked order and the top-1 relevance probability used by the FOK gate
       // (two separate calls doubled the GPU cost and starved the boundary path).

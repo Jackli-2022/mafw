@@ -40,7 +40,8 @@ export interface RecallSnapshot {
   t1Hits?: T1Hit[];
   /** True only when `[t1|...]` lines were actually appended to the block. */
   t1Rendered?: boolean;
-  /** Structured anchors rendered in the block (receipt source; ≤ topK). */
+  /** Structured anchors rendered in the block + bundled temporal neighbours
+   *  (receipt source; anchors ≤ topK, neighbours carry `neighborOf`). */
   memories?: Array<{
     id: string;
     type?: string;
