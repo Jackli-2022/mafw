@@ -301,6 +301,7 @@ const E10_COVERED_OPS = [
   'session.get',
   'session.list',
   'session.messages',
+  'session.memoryReceipts',
   'session.prompt',
   'session.promptAsync',
   'session.queue.cancel',
@@ -373,7 +374,7 @@ const E10_COVERED_OPS = [
 // Pinned: 317 through E10b, +1 for `humanToken.rotate` (E11-1) = 318,
 // +7 Phase 6 device-trust routes = 325, +2 last-good/rollback = 327,
 // +2 mobile remote access P0 (2026-11-18) = 335.
-const TOTAL_OPS = 335;
+const TOTAL_OPS = 336;
 
 function catalogOps(): Array<{ operationId: string; hasResponse: boolean }> {
   return buildRouteCatalog().map((def) => ({
@@ -1187,7 +1188,7 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(lost).toEqual([]);
   });
 
-  it('the catalog covered set equals the ledger exactly, and the catalog still has 335 ops', () => {
+  it('the catalog covered set equals the ledger exactly, and the catalog still has 336 ops', () => {
     const ops = catalogOps();
     const covered = ops
       .filter((op) => op.hasResponse)

@@ -36,10 +36,10 @@ import {
 } from '../../../src/routes/schemas/errors';
 
 /** Whole catalog after E10h/E10i + mobile remote access P0 (335 ops). */
-const CATALOG_OPS_TOTAL = 335;
+const CATALOG_OPS_TOTAL = 336;
 
 /** Ops whose path starts with `/api/` — the set that carries transport 401/403. */
-const API_PREFIX_OPS_TOTAL = 326;
+const API_PREFIX_OPS_TOTAL = 327;
 
 /** Ops that declare at least one explicit error status. */
 const EXPLICIT_ERROR_OPS_TOTAL = 163;
@@ -213,7 +213,7 @@ function auditErrorCoverage(ops: ErrorOpView[] = errorOpViews()): string[] {
 }
 
 describe('error-coverage: ledger for catalog error responses (E10i)', () => {
-  it('every catalog op projects a `default` ErrorEnvelope (335/335)', () => {
+  it('every catalog op projects a `default` ErrorEnvelope (336/336)', () => {
     const ops = errorOpViews();
     expect(ops).toHaveLength(CATALOG_OPS_TOTAL);
     expect(auditErrorCoverage(ops)).toEqual([]);
