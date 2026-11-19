@@ -1585,6 +1585,7 @@ import { ToolRegistry } from "./tool-registry"
 import { resolveToolRender, readPathInput, TOOL_NAME_ALIASES } from "./tool-canonical"
 import { isTaskPart } from "./tool-canonical"
 import { shouldRenderToolError } from "./tool-render-routing"
+import { presentRowTool } from "./tool-presenters"
 import { displayToolOf } from "./parts-rules"
 
 function ToolFileAccordion(props: { path: string; actions?: JSX.Element; children: JSX.Element }) {
@@ -1918,6 +1919,7 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
 
 ToolRegistry.register({
   name: "read",
+  present: (ctx) => presentRowTool("read", ctx),
   render(props) {
     const data = useData()
     const i18n = useI18n()
@@ -1971,6 +1973,7 @@ ToolRegistry.register({
 
 ToolRegistry.register({
   name: "list",
+  present: (ctx) => presentRowTool("list", ctx),
   render(props) {
     const i18n = useI18n()
     return (
@@ -1997,6 +2000,7 @@ ToolRegistry.register({
 
 ToolRegistry.register({
   name: "glob",
+  present: (ctx) => presentRowTool("glob", ctx),
   render(props) {
     const i18n = useI18n()
     return (
@@ -2027,6 +2031,7 @@ ToolRegistry.register({
 
 ToolRegistry.register({
   name: "grep",
+  present: (ctx) => presentRowTool("grep", ctx),
   render(props) {
     const i18n = useI18n()
     const args: string[] = []
@@ -2060,6 +2065,7 @@ ToolRegistry.register({
 
 ToolRegistry.register({
   name: "webfetch",
+  present: (ctx) => presentRowTool("webfetch", ctx),
   render(props) {
     const i18n = useI18n()
     const pending = createMemo(() => props.status === "pending" || props.status === "running")
@@ -2106,6 +2112,7 @@ ToolRegistry.register({
 
 ToolRegistry.register({
   name: "websearch",
+  present: (ctx) => presentRowTool("websearch", ctx),
   render(props) {
     const query = createMemo(() => {
       const value = props.input.query
@@ -2244,6 +2251,7 @@ ToolRegistry.register({
 
 ToolRegistry.register({
   name: "bash",
+  present: (ctx) => presentRowTool("bash", ctx),
   render(props) {
     const i18n = useI18n()
     const pending = () => props.status === "pending" || props.status === "running"

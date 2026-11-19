@@ -340,3 +340,5 @@ export function GenericTool(props: {
     />
   )
 }
+
+export { genericPresentation } from "./tool-presenters"
