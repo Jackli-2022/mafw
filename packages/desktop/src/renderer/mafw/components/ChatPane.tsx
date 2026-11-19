@@ -126,6 +126,7 @@ import { allHunksPatches, isInvertiblePatch, revertWarning } from "./checkpoint-
 import { sameQuoteSelection, snapshotQuoteSelection, type QuoteSelectionSnapshot } from "./quote-selection"
 import { createFocusScheduler } from "./composer-focus-scheduler"
 import { computeContextUsage, formatContextUsage, latestContextTokens } from "../context-usage"
+import { cacheHitPercent, lastTurnTokensPerSecond } from "../chat/composer-footer-metrics"
 import { ingestHistoryPage } from "../ingest/messages"
 import { mergeRemoteCommands, mergeDiscoveryCommands, type RuntimeCommandMeta } from "./command-merge"
 import { getDraft, setDraft, clearDraft } from "./session-drafts"
@@ -2484,6 +2485,22 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   // const 只会在挂载时算一次 → 打开会话早期快照会永久显示 0%）。
   const contextText = createMemo(() => formatContextUsage(contextUsage()))
 
+  // Composer footer: one line under the input bar. The time/city chip stays at
+  // the far left; the session pulse is centered; the right cell is reserved for
+  // future status (draft saved / hints).
+  const fmtPercent = (n: number): string => `${n.toFixed(1).replace(/\.0$/, "")}%`
+  const footerMetrics = createMemo(() => {
+    const s = sessionTokenSummary()
+    const hit = cacheHitPercent(s.input, s.cacheRead)
+    const speed = lastTurnTokensPerSecond(sidProp() ? store.message[sidProp()] || [] : [])
+    return {
+      cacheHit: hit === null ? null : fmtPercent(hit),
+      total: s.total > 0 ? fmtCtx(s.total) : null,
+      speed: speed === null ? null : `${speed} tok/s`,
+      turns: s.turns > 0 ? `${s.turns} 回合` : null,
+    }
+  })
+
   // Titlebar overflow (2026-11-18): keep identity + 交给 Lead inline; every other
   // session action lives in one grouped menu so the title never gets squeezed out.
   const sessionMenuGroups = createMemo(() => buildSessionMenu({
@@ -2964,9 +2981,6 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             </Show>
           </div>
         </Show>
-        <div class="mafw-composer-context">
-          <ContextChip prefs={contextPrefs()} onChange={updateContextPrefs} />
-        </div>
         <div
           class="mafw-composer"
           classList={{ "mafw-composer-dragging": dragging() }}
@@ -3255,6 +3269,38 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
               </ButtonV2>
             </div>
           </Show>
+        </div>
+        {/* Composer footer: time/city at the far left, session pulse centered,
+            right cell reserved for future status (draft / hints). */}
+        <div class="mafw-composer-footer">
+          <div class="mafw-composer-footer-side">
+            <ContextChip prefs={contextPrefs()} onChange={updateContextPrefs} />
+          </div>
+          <div class="mafw-composer-footer-metrics" aria-label="会话消耗">
+            <Show when={footerMetrics().cacheHit !== null}>
+              <span class="mafw-footer-metric">
+                <span class="mafw-footer-metric-label">缓存命中</span>
+                <span class="mafw-footer-metric-value">{footerMetrics().cacheHit}</span>
+              </span>
+            </Show>
+            <Show when={footerMetrics().total !== null}>
+              <span class="mafw-footer-metric">
+                <span class="mafw-footer-metric-value">{footerMetrics().total}</span>
+                <span class="mafw-footer-metric-label">tokens</span>
+              </span>
+            </Show>
+            <Show when={footerMetrics().speed !== null}>
+              <span class="mafw-footer-metric">
+                <span class="mafw-footer-metric-value">{footerMetrics().speed}</span>
+              </span>
+            </Show>
+            <Show when={footerMetrics().turns !== null}>
+              <span class="mafw-footer-metric">
+                <span class="mafw-footer-metric-value">{footerMetrics().turns}</span>
+              </span>
+            </Show>
+          </div>
+          <div class="mafw-composer-footer-side mafw-composer-footer-right" aria-hidden="true" />
         </div>
         <Show when={shot()}>
         <ScreenshotCropper shot={shot()!} onCancel={() => setShot(null)} onConfirm={confirmShot} />

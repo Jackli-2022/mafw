@@ -12,7 +12,7 @@ import {
 } from '../chat/context-reminder'
 
 /**
- * Ghost row above the composer: `◐ 今天 14:32 · 上海`.
+ * Ghost row below the composer: `◐ 今天 14:32 · 上海`.
  *
  * Not a capsule, no divider, no language badge — the language and the exact
  * timezone live in the popover. The row only reflects what the next send will
@@ -63,7 +63,7 @@ export function ContextChip(props: {
       <PopoverShell
         open={open()}
         trigger={anchor()}
-        anchor="below-center"
+        anchor="below-start"
         width={300}
         onClose={() => setOpen(false)}
         class="mafw-context-chip-pop"

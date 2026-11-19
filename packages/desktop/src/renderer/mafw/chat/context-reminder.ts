@@ -98,7 +98,7 @@ export function formatLatestReminder(prefs: ContextPrefs, now: Date): string {
   return segments.join(' · ')
 }
 
-/** Ghost-row label above the composer: `今天 14:32 · 上海`. */
+/** Ghost-row label below the composer: `今天 14:32 · 上海`. */
 export function formatContextChip(prefs: ContextPrefs, now: Date): string {
   const clock = clockParts(prefs, now)
   if (!clock) return ''

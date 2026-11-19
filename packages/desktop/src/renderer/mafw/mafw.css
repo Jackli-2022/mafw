@@ -9489,11 +9489,48 @@ html[data-theme="light"] body {
   margin: 10px 0 0;
 }
 
-/* ── Composer context ghost row (date / city / language) ── */
-.mafw-composer-context {
+/* ── Composer footer — time/city left, session pulse centered, right slot ── */
+.mafw-composer-footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 3px 8px 0;
+}
+.mafw-composer-footer-side {
   display: flex;
   align-items: center;
-  padding: 0 8px 4px;
+  min-width: 0;
+  overflow: hidden;
+}
+.mafw-composer-footer-right { justify-content: flex-end; }
+.mafw-composer-footer-metrics {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  color: var(--text-4);
+  font-size: 10.5px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.mafw-footer-metric {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.mafw-footer-metric + .mafw-footer-metric::before {
+  content: "·";
+  margin: 0 7px;
+  color: var(--text-5);
+}
+.mafw-footer-metric-label { color: var(--text-4); }
+.mafw-footer-metric-value { color: var(--text-2); font-weight: 600; }
+/* Ultra-narrow chat column: the time chip would be cut mid-label. Drop it
+   instead of showing a broken fragment; the pulse stays centered. */
+@container (max-width: 430px) {
+  .mafw-composer-footer > .mafw-composer-footer-side:first-child { display: none; }
 }
 .mafw-context-chip[data-component="button-v2"] {
   height: 22px;
