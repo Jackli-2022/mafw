@@ -416,7 +416,8 @@ chatview 是指挥列，左侧 rail 负责导航与团队状态。
   `work.overview` 五桶、就地 `PodGoalComposer` 与统一 Goal 详情入口；插件 surface 仍强制回落
   `workbench`，不会因默认 `work` 被搁浅。
 - **路由独立**：`workbenchSplit/workbenchShellHidden({content,open})` 取代 `chatActive()` 门控；
-  Memory/Approvals/Triage/Automation 保持右工作台可见，Config 只视觉隐藏不卸载状态。
+  Memory/Approvals/Triage/Automation 保持右工作台可见；2026-11-19 起 Approvals/Triage/Automation/MCP/Config
+  也全部进右工作台，主区只留 chat（见下节）。
 - **Focus**：`workbenchFocusActive({focus,content,open})` 只在项目路由 + dock 打开时把 chat 列收为 0；
   手动隐藏 dock 或项目切换自动退出；不持久化。默认快捷键 `Ctrl+Alt+F`（`Ctrl+Shift+M` 保留给
   main 进程全局 Quick Entry）。
@@ -470,6 +471,32 @@ chatview 是指挥列，左侧 rail 负责导航与团队状态。
   ③ **班底焦点行**：`memberFocus` 纯函数（Tech Lead 恒走 `{kind:"techlead"}` → openTechLead ensure 讨论会话，其余成员 live/transcript；行内显示「讨论/实施/评审「Goal 标题」」，无 live 显示待命不可点），`ProjectResources` + `PodDock` 双面接入，techlead 目标经模块单例桥梁路由（零新 props 穿透）。
   两入口均汇到既有 `openTechLead` → `ensureSession` 通路；**gateway / SDK / 运行时契约零改动**，成员消息维持邮箱 + A2A。业界依据：Devin（任务为中心/一步可达）、Claude Code Agent View（roster）、Naive 公司板、aweb 焦点、Jira/Elixion 任务挂人（详见 deck）。commits `1a759b1e`/`62812009`/`1c3b4259`/`57b85245`/`145342ef`/`4535df25`/`a8415a29`/`6707c681`/`1350602f`；desktop **2809/2809（617 suites，本批净 +18）**、`tsgo --noEmit -p tsconfig.json` rc=0、`electron-vite build` rc=0。终审（deepseek-v4.1-flash）：1 Critical（终态入口走 ensure 必 409）已修——`techLeadEntryMode` 分支 + `techLeadTranscript` 走已归档 discussion transcript（无快照给诚实提示）；1 Important（班底 live 会话挂终态 Goal 仍走 ensure）已修（memberFocus 只认非终态 Goal）；另 1 Important（入口 B 契约测试抓不到分支回归）已由 `techLeadEntryMode` 纯函数单测补上。
   **真机冒烟（2026-11-04，dev app + CDP 9222，截图 `.mafw/qa/techlead-entry-resources*.png`）**：终态 Goal 入口 B →「查看 Tech Lead 讨论」→ 打开归档 transcript（无 409）；新建 discussing Goal 后：入口 A 邀请条带阶段标签「Tech Lead 讨论中」、入口 B 按钮「与 Tech Lead 讨论」→ 点击关浮层 + 打开「Tech Lead · <Goal 标题>」tab、班底 Tech Lead 行「讨论「<Goal 标题>」」点击进同一 tab——全部通过。冒烟抓到并修复：① 真实讨论会话用 `scopeKind:"discussion"` 标记（node 为空），焦点词表只认 node → 显示成「工作」；已与 `podSessionRoute` 同口径（commit `1350602f`）。② 用户报「项目资源页按钮全是加号」根因 = `@mafw/ui/v2` 图标注册表缺 `refresh`/`square-arrow-top-right`/`layout-grid`，`ButtonV2 icon=` 未知名静默回退 `plus`；补三个字形（路径取自 v1）+ 新增 `icon-registry-coverage.test.ts` 扫描全部 ButtonV2/IconButtonV2 用法（commit `6707c681`）。**冒烟发现的产品缺口（非本批引入，未修）**：`取消 Goal`（goals.control ABORT）对 discussing 阶段是 no-op——讨论中的 Goal 无法取消，冒烟 Goal 留在项目「进行中」。**方向裁定选项 B 追加点验（2026-11-04，用户拍板）**：goal 进入 planning 后 Lead 邀请条仍显示且阶段标签变为「Tech Lead 规划中」，点击打开同一 Tech Lead 讨论 tab（未新建）——跨阶段持续与验收 1 通过；冒烟 Goal 的 Tech Lead 还抓到 Lead 焦点行「协调「未命名目标」」编造标题（协调会话 goalId 为空），已修（无 Goal 归属时显示「协调中」，`8a6b63dd`，+2 用例）。desktop 最终 **2810/2810（617 suites，本批净 +19）**、`tsgo -p` rc=0、`electron-vite build` rc=0。**冒烟暴露 goal driver 缺口并已修（2026-11-04，commit `4a6d6cbb`）**：plan 节点复用 Tech Lead 讨论会话时，若模型走结构化交卷（`mafw_submit_result`）而不写 `waves.json`，唯一的完成 idle 会被「复用会话陈旧 idle 宽容」吞掉 → 节点卡在 running 直到 30 分钟 watchdog（真机：attempt 1 卡死，retry attempt 2 才走通）。修复：宽容分支先查结构化交卷（有交卷即按完成收账）+ grace 改为每个节点派发独享（派发时清除）。TDD：`plan-package-driver` 新增无文件产物 + 结构化交卷用例（无修复 RED → 修复 GREEN），goal 套件 **407/407（51 suites）**、gateway `tsc` rc=0。**运行中的 gateway 未重启，修复待部署生效**（冒烟 Goal 已用 retry 解开并进入 execute）。
+
+### 主区只留 Chat / 页面进右工作台（2026-11-19）
+
+spec `docs/superpowers/specs/2026-11-19-workbench-pages-design.md`，plan
+`docs/superpowers/plans/2026-11-19-main-chat-only-workbench-pages.md`。
+
+- **主区唯一内容**：`.mafw-content` 只渲染 chat（含 Welcome 空态）；`activeTab` 保留 chat 兼容，
+  但 chat-only guard 会把任何非 chat 值立即回正；`workbenchContent()` 恒为 `"project"`。
+- **通用 page subject**：`{ kind: "page"; id: "approvals" | "triage" | "automation" | "mcp" | "config" }`，
+  `subjectKey = page:<id>`，scene tab `scene:page:<id>` 按项目持久化；`WorkbenchPageId` /
+  `WORKBENCH_PAGE_META` 在 `focus/workbench-pages.ts`。
+- **打开语义**：`openPageFocus(id)` = `revealWorkbench()` + `openSceneTab` + `selectFocus`（重复打开不重复入栈）；
+  左栏 / 命令面板 / `/` 命令 / deep link 统一走 `navigateWorkbench(tab)`（chat / goals / memory / page / config）。
+- **关闭语义**：只有 FrameBar back / tab close 关页面；切会话、点 chat、开 subagent、`revealWorkbench`
+  都不再关闭右 dock 页面（旧 `setShowConfig(false)` 副作用全部删除）。
+- **Config section**：`openConfigPage(section?)` 先聚焦再 `requestAnimationFrame` 派发
+  `mafw:open-config`，已挂载的 ConfigPage 靠事件切 section，未挂载靠 `initialSection`；
+  usage 圆环 → `config/usage`。
+- **Compact 契约**：每个页面接受 `compact`；隐藏 `PageHeader`、页面自身滚动（padding 12/14/24）、
+  动作行 `flex-wrap`、表单 100%。Config 隐藏 200px 左导航，改用顶部 `SelectV2` section picker；
+  MCP 用 compact action row；Automations 字段全宽。
+- **离线 / 重启**：`connDown()` 不再替换有 page focus 的 dock（Config 离线可达）；
+  `focus-persistence.isSubject` 接受 page / memory；恢复时 `isStalePageActiveTab` 清掉没有焦点支撑的
+  page activeId。
+- **门禁**：desktop **4226/4226（803 suites，本批净 +29）**、`tsgo --noEmit -p tsconfig.json` rc=0、
+  `electron-vite build` rc=0（44.46s）。
 
 ### Goal 用户视图与角色连续性（2026-11-11）
 
