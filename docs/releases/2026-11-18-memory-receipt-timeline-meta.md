@@ -72,7 +72,9 @@
 - Phase 1 门禁：Session UI **26 suites / 165 pass / 0 fail**（排除既有 `architecture.test.ts`），Desktop **795 suites / 4160 pass / 0 fail**，两侧 `tsgo` rc 0，`electron-vite build` 通过。
 - 真机 CSS probe：basic tool 标题 **11px/550**、副标题/args **10.5px**、trigger `0` 边框 + 28px 行高；task 标题 **11px/550**、家族图标 `display:none`；bash code **10.5px**；`mafw-tool-box` padding `6px 8px`；tool-output **11px**。真实历史段中 Edit 卡实测 **11px/550**、相对路径 **10.5px**。
 - `4971632bb`：`read` 原生卡补 `data-component="tool-output"` 折叠体（默认收起、可滚动），与 List/Glob/Grep 一致；普通聊天与过程抽屉同时生效，Read 也重新有了 chevron。
+- `ae6d021d8`：展开正文与折叠标题对齐同一条左边缘（`--mafw-tool-content-left: 6px`）；diff 卡头 padding 12→6，bash 正文、tool-output、MAFW 内容盒统一使用该 token，不再向轨内多缩进一格。
 - Read 门禁：Session UI **27 suites / 166 pass / 0 fail**，Desktop **795 suites / 4160 pass / 0 fail**，`tsgo` rc 0，`electron-vite build` 通过。
+- 对齐门禁：Session UI **27 suites / 167 pass / 0 fail**，Desktop **795 suites / 4160 pass / 0 fail**，`tsgo` rc 0，`electron-vite build` 通过。
 
 ## 已知问题 / 后续
 
