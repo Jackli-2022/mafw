@@ -57,6 +57,7 @@ class HostStream extends Duplex {
 }
 
 export interface HostQuota {
+  allowRoom?(ip: string): boolean;
   allowBytes(roomId: string, bytes: number): boolean;
 }
 
@@ -76,6 +77,7 @@ export class HostHub {
 
   attach(ws: WebSocket): void {
     let connection: HostConnection | null = null;
+    const ip = String((ws as any)._socket?.remoteAddress || '').replace(/^::ffff:/, '');
 
     ws.on('message', (data, isBinary) => {
       if (!connection) {
@@ -83,7 +85,7 @@ export class HostHub {
           ws.close(1008, 'hello required');
           return;
         }
-        connection = this.handleHello(ws, Buffer.from(data as Buffer));
+        connection = this.handleHello(ws, Buffer.from(data as Buffer), ip);
         return;
       }
       if (isBinary) {
@@ -121,7 +123,7 @@ export class HostHub {
     try { connection!.ws.send(JSON.stringify({ type: 'close', streamId })); } catch { /* gone */ }
   }
 
-  private handleHello(ws: WebSocket, raw: Buffer): HostConnection | null {
+  private handleHello(ws: WebSocket, raw: Buffer, ip: string): HostConnection | null {
     let hello: any;
     try {
       hello = JSON.parse(raw.toString('utf8'));
@@ -138,6 +140,11 @@ export class HostHub {
 
     let claim = this.registry.authenticate(hello.roomId, hello.roomToken, hello.routeSecret);
     if (!claim) {
+      if (!this.registry.get(hello.roomId) && this.quota?.allowRoom && !this.quota.allowRoom(ip)) {
+        ws.send(JSON.stringify({ type: 'error', code: 'room_quota' }));
+        ws.close(1008, 'room_quota');
+        return null;
+      }
       // First host connection creates the room claim; later connections must
       // present the same token (claim() returns null on a mismatch).
       claim = this.registry.claim({

@@ -33,6 +33,28 @@ function nextBinary(ws: WebSocket): Promise<Buffer> {
   });
 }
 
+test('refuses a first claim when the room quota is exhausted', async () => {
+  const registry = new RoomRegistry();
+  const roomId = newRoomId();
+  const routeSecret = newRouteSecret();
+  const roomToken = 't'.repeat(64);
+
+  const hub = new HostHub(registry, { allowRoom: () => false, allowBytes: () => true });
+  const wss = new WebSocketServer({ port: 0, host: '127.0.0.1' });
+  wss.on('connection', (ws) => hub.attach(ws));
+  await once(wss, 'listening');
+  const port = (wss.address() as any).port;
+
+  const host = new WebSocket(`ws://127.0.0.1:${port}`);
+  await once(host, 'open');
+  host.send(JSON.stringify({ type: 'hello', protocolVersion: 1, roomId, roomToken, routeSecret }));
+  assert.equal((await nextJson(host)).code, 'room_quota');
+  assert.equal(registry.get(roomId), undefined);
+
+  host.close();
+  await new Promise((resolve) => wss.close(resolve));
+});
+
 test('closes a stream when the room byte budget is exhausted', async () => {
   const registry = new RoomRegistry();
   const roomId = newRoomId();
