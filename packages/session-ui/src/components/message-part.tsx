@@ -578,29 +578,6 @@ function sessionLink(id: string | undefined, path: string, href?: (id: string) =
   return `${path.slice(0, idx)}/session/${id}`
 }
 
-function currentSession(path: string) {
-  return path.match(/\/session\/([^/?#]+)/)?.[1]
-}
-
-function taskSession(
-  input: Record<string, any>,
-  path: string,
-  sessions: Session[] | undefined,
-  agents?: readonly { name: string; color?: string }[],
-) {
-  const parentID = currentSession(path)
-  if (!parentID) return
-  const description = typeof input.description === "string" ? input.description : ""
-  const agent = taskAgent(typeof input.agent === "string" ? input.agent : undefined, agents).name
-  // MafwSession 不建模 runtime 的 archived 标记（会话可见性由 gateway 出口过滤），
-  // 子会话定位只依赖 parentID + 标题匹配。
-  return (sessions ?? [])
-    .filter((session) => session.parentID === parentID)
-    .filter((session) => (description ? (session.title ?? "").startsWith(description) : true))
-    .filter((session) => (agent ? (session.title ?? "").includes(`@${agent}`) : true))
-    .sort((a, b) => (b.time?.created ?? 0) - (a.time?.created ?? 0))[0]?.id
-}
-
 import { CONTEXT_GROUP_TOOLS, HIDDEN_TOOLS, renderable as renderableCore } from "./parts-rules"
 import { isDataPartType } from "./data-part-model"
 import { DataPartCard } from "./data-part"
@@ -1486,7 +1463,6 @@ export type ToolComponent = Component<ToolProps>
 function TaskBody(props: ToolProps) {
   const data = useData()
   const i18n = useI18n()
-  const location = useLocation()
   const input = () => props.input ?? {}
   const agent = createMemo(() =>
     taskAgent(typeof input().agent === "string" ? input().agent : undefined, data.store.agent),
@@ -1494,16 +1470,18 @@ function TaskBody(props: ToolProps) {
   const child = createMemo(
     () =>
       (props.metadata.sessionID as string | undefined) ??
-      taskSession(input(), location.pathname, data.store.session, data.store.agent),
+      taskSessionForParent(input(), props.sessionID, data.store.session, data.store.agent),
   )
   const description = () => (typeof input().description === "string" ? input().description : "")
 
   return (
     <div data-component="task-detail" class="mafw-tool-card-detail">
-      <div class="mafw-tool-card-detail-row">
-        <span class="mafw-tool-card-detail-label">{i18n.t("ui.tool.agent.default")}</span>
-        <span class="mafw-tool-card-detail-value">{agent().name ?? i18n.t("ui.tool.agent.default")}</span>
-      </div>
+      <Show when={agent().name}>
+        <div class="mafw-tool-card-detail-row">
+          <span class="mafw-tool-card-detail-label">{i18n.t("ui.tool.agent.default")}</span>
+          <span class="mafw-tool-card-detail-value">{agent().name}</span>
+        </div>
+      </Show>
       <Show when={description()}>
         <p class="mafw-tool-card-detail-text">{description()}</p>
       </Show>
@@ -1521,7 +1499,7 @@ function QuestionBody(props: ToolProps) {
 
   return (
     <Show
-      when={answers().length > 0}
+      when={questions().length > 0 && answers().length > 0}
       fallback={<div class="mafw-tool-card-empty">{i18n.t("ui.question.review.notAnswered")}</div>}
     >
       <div data-component="question-answers">
@@ -1549,7 +1527,6 @@ function QuestionBody(props: ToolProps) {
 export function ToolPresentationFallback(props: ToolProps & { entry: ToolRegistryEntry }) {
   const data = useData()
   const i18n = useI18n()
-  const location = useLocation()
   const context = (): ToolPresentationContext => ({
     props,
     directory: data.directory,
@@ -1559,7 +1536,7 @@ export function ToolPresentationFallback(props: ToolProps & { entry: ToolRegistr
     agent: (name) => presentationAgent(name, data.store.agent),
     subagentSession: (taskInput) =>
       (props.metadata.sessionID as string | undefined) ??
-      taskSession(taskInput, location.pathname, data.store.session, data.store.agent),
+      taskSessionForParent(taskInput, props.sessionID, data.store.session, data.store.agent),
   })
   const presentation = createMemo(() => resolvePresentation(props.entry.present?.(context()), context()))
   return (
@@ -1569,6 +1546,7 @@ export function ToolPresentationFallback(props: ToolProps & { entry: ToolRegistr
       defaultOpen={props.defaultOpen}
       renderCollapsed={props.entry.renderCollapsed}
       renderBody={props.entry.renderBody}
+      onOpenSession={data.navigateToSession ? (id) => data.navigateToSession?.(id) : undefined}
     />
   )
 }
@@ -1591,6 +1569,7 @@ import {
 } from "./tool-presenters"
 import { ApplyPatchBody, EditBody, WriteBody } from "./diff-tool-card"
 import { canonicalMetadataFiles } from "./diff-tool-model"
+import { taskSessionForParent } from "./task-tool-model"
 import { displayToolOf } from "./parts-rules"
 
 PART_MAPPING["tool"] = function ToolPartDisplay(props) {
@@ -1616,7 +1595,10 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
   })
   const taskChildID = createMemo(() => {
     if (!isTaskPart(part())) return
-    return partMetadata().sessionID as string | undefined
+    return (
+      (partMetadata().sessionID as string | undefined) ??
+      taskSessionForParent(input(), part().sessionID, data.store.session, data.store.agent)
+    )
   })
   const taskHref = createMemo(() => {
     if (!isTaskPart(part())) return
@@ -1660,7 +1642,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
     agent: (name) => presentationAgent(name, data.store.agent),
     subagentSession: (taskInput) =>
       (partMetadata().sessionID as string | undefined) ??
-      taskSession(taskInput, location.pathname, data.store.session, data.store.agent),
+      taskSessionForParent(taskInput, part().sessionID, data.store.session, data.store.agent),
   })
   const presentation = createMemo(() => {
     const current = entry()

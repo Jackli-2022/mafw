@@ -43,6 +43,12 @@ describe("ToolCard shell", () => {
     expect(css).toContain(".mafw-tool-card-detail")
   })
 
+  test("hardens session actions and hides empty action containers", () => {
+    expect(tsx).toContain("visibleActions")
+    expect(tsx).toContain("event.button !== 0")
+    expect(tsx).toContain("(?!\\/)")
+  })
+
   test("normalises the diff body header to the chat density", () => {
     expect(css).toContain('[data-scope="apply-patch"] h3 > button')
     expect(css).toMatch(/\[data-scope="apply-patch"\] h3 > button\s*\{[^}]*padding-left:\s*0/)

@@ -85,7 +85,7 @@ describe("rich tools use the shared presentation path", () => {
   test("the presentation context resolves agent and child session", () => {
     expect(componentSource).toContain("agent: (name) => presentationAgent(name, data.store.agent)")
     expect(componentSource).toContain("subagentSession:")
-    expect(componentSource).toContain("taskSession(taskInput")
+    expect(componentSource).toContain("taskSessionForParent(taskInput")
   })
 })
 
@@ -99,6 +99,26 @@ describe("rich card bodies", () => {
 
   test("ToolCard receives the session navigation callback", () => {
     expect(componentSource).toContain("onOpenSession")
+  })
+
+  test("fallback keeps subagent navigation and part-parent resolution", () => {
+    const start = componentSource.indexOf("export function ToolPresentationFallback")
+    const end = componentSource.indexOf('PART_MAPPING["tool"]', start)
+    const fallback = componentSource.slice(start, end)
+    expect(fallback).toContain("onOpenSession")
+    expect(fallback).toContain("taskSessionForParent(taskInput, props.sessionID")
+    expect(fallback).toContain("presentationAgent(name, data.store.agent)")
+  })
+
+  test("task body resolves against the part parent, not the route", () => {
+    const start = componentSource.indexOf("function TaskBody")
+    const end = componentSource.indexOf("function QuestionBody", start)
+    const body = componentSource.slice(start, end)
+    expect(body).toContain("taskSessionForParent(input(), props.sessionID")
+  })
+
+  test("question body falls back when there are no questions", () => {
+    expect(componentSource).toContain("questions().length > 0 && answers().length > 0")
   })
 })
 

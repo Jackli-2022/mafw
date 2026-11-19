@@ -55,7 +55,13 @@ export function ToolCard(input: ToolCardProps) {
   const actions = () => input.presentation.expanded.actions ?? []
   const linkAction = () => actions().find((action) => action.kind === "link" && safeHref(action.href))
   const state = () => (open() ? "expanded" : "collapsed")
-  const internalHref = (href: string | undefined) => (href && href.startsWith("/") ? href : undefined)
+  const internalHref = (href: string | undefined) => (href && /^\/(?!\/)/.test(href) ? href : undefined)
+  const visibleActions = () =>
+    actions().filter((action) => {
+      if (action.kind === "link") return !!safeHref(action.href)
+      if (action.kind !== "open-subagent" || !action.sessionID) return false
+      return !!internalHref(action.href) || !!input.onOpenSession
+    })
 
   const renderAction = (action: ToolAction) => {
     if (action.kind === "link") {
@@ -77,6 +83,7 @@ export function ToolCard(input: ToolCardProps) {
           href={href}
           onClick={(event) => {
             if (!input.onOpenSession) return
+            if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
             event.preventDefault()
             input.onOpenSession(sessionID)
           }}
@@ -184,9 +191,9 @@ export function ToolCard(input: ToolCardProps) {
         <Collapsible.Content>
           <div class="mafw-tool-card-body" data-state={state()}>
             {body()}
-            <Show when={actions().length > 0}>
+            <Show when={visibleActions().length > 0}>
               <div class="mafw-tool-card-actions" data-component="tool-card-actions">
-                <For each={actions()}>{(action) => renderAction(action)}</For>
+                <For each={visibleActions()}>{(action) => renderAction(action)}</For>
               </div>
             </Show>
           </div>

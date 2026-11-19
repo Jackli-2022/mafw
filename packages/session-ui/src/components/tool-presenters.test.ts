@@ -201,6 +201,21 @@ describe("rich tool presentations", () => {
     })
   })
 
+  test("task labels the action with the agent, not 'Agent Agent'", () => {
+    const t = (key: string, params?: Record<string, string | number | boolean>) =>
+      key === "ui.tool.agent" ? `${params?.type} Agent` : key === "ui.tool.agent.default" ? "Agent" : key
+    const withAgent = rich(
+      { tool: "task", input: { agent: "build" }, metadata: {}, status: "completed" },
+      { t },
+    )
+    expect(resolvePresentation(presentTask(withAgent), withAgent).expanded.actions?.[0]?.label).toBe("Build Agent")
+
+    const withoutAgent = rich({ tool: "task", input: {}, metadata: {}, status: "completed" }, { t })
+    const out = resolvePresentation(presentTask(withoutAgent), withoutAgent)
+    expect(out.collapsed.title).toBe("Agent")
+    expect(out.expanded.actions?.[0]?.label).toBe("Agent")
+  })
+
   test("task prefers metadata.sessionID and omits the action without a child", () => {
     const withMeta = rich({
       tool: "task",

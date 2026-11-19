@@ -171,7 +171,8 @@ export type PresentedRichTool = (typeof PRESENTED_RICH_TOOLS)[number]
 export function presentTask(ctx: ToolPresentationContext): ToolPresentation {
   const input = ctx.props.input ?? {}
   const agent = ctx.agent?.(typeof input.agent === "string" ? input.agent : undefined)
-  const title = agent?.name ?? ctx.t("ui.tool.agent.default")
+  const agentName = agent?.name
+  const title = agentName ?? ctx.t("ui.tool.agent.default")
   const metadataSession =
     typeof ctx.props.metadata?.sessionID === "string" ? ctx.props.metadata.sessionID : undefined
   const child = metadataSession ?? ctx.subagentSession?.(input)
@@ -191,7 +192,7 @@ export function presentTask(ctx: ToolPresentationContext): ToolPresentation {
               kind: "open-subagent",
               sessionID: child,
               href: ctx.sessionHref?.(child),
-              label: ctx.t("ui.tool.agent", { type: title }),
+              label: agentName ? ctx.t("ui.tool.agent", { type: title }) : title,
             },
           ]
         : undefined,
