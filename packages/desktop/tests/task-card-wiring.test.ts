@@ -29,7 +29,7 @@ describe("task card + v2.1.0 tool identity wiring", () => {
     expect(part).toContain("partMetadata().sessionID")
     expect(part).toContain("isTaskPart(part())")
     expect(part).toContain("props.metadata.sessionID")
-    expect(part).toContain("input.agent")
+    expect(read("../session-ui/src/components/tool-presenters.ts")).toContain("input.agent")
     expect(part).toContain("TOOL_NAME_ALIASES")
     expect(part).toContain("onNavigate={")
     const canonical = read("../session-ui/src/components/tool-canonical.ts")
