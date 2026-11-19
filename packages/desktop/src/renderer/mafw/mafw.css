@@ -1701,7 +1701,7 @@ html[data-theme="light"] body {
 }
 /* 会话配置菜单：子行缩进（复用 picker-row 基础样式） */
 .mafw-config-subrow { padding-left: 22px; }
-/* 上下文占用：14px 圆环（hover 出全量信息，点击开 UsageDock） */
+/* 上下文占用：14px 圆环（hover 出占用 / 容量 / 比率，点击开 UsageDock） */
 .mafw-context-ring {
   position: relative;
   display: inline-flex;
