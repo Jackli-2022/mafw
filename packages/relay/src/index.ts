@@ -20,6 +20,7 @@ async function main(): Promise<void> {
     tlsPort: port('RELAY_TLS_PORT', 443),
     controlPort: port('RELAY_CONTROL_PORT', 8444),
     adminPort: port('RELAY_ADMIN_PORT', 8080),
+    dbPath: process.env.RELAY_DB || undefined,
   });
 
   await relay.start();

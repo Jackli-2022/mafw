@@ -3,6 +3,7 @@ import { once } from 'node:events';
 import { WebSocketServer } from 'ws';
 import { HostHub } from './host-hub.ts';
 import { RoomRegistry } from './registry.ts';
+import { SqliteRoomStore } from './room-store.ts';
 import { createTlsRouter, type TlsRouter } from './tls-router.ts';
 
 export interface RelayServerOptions {
@@ -11,6 +12,8 @@ export interface RelayServerOptions {
   tlsPort?: number;
   controlPort?: number;
   adminPort?: number;
+  /** M4: SQLite file for durable room claims; omit for in-memory (tests). */
+  dbPath?: string;
   registry?: RoomRegistry;
 }
 
@@ -30,7 +33,10 @@ export interface RelayServer {
 
 export function createRelayServer(opts: RelayServerOptions): RelayServer {
   const listenHost = opts.listenHost ?? '127.0.0.1';
-  const registry = opts.registry ?? new RoomRegistry();
+  const ownsRegistry = !opts.registry;
+  const registry = opts.registry ?? new RoomRegistry(
+    opts.dbPath ? new SqliteRoomStore(opts.dbPath) : undefined,
+  );
   const hub = new HostHub(registry);
   const router: TlsRouter = createTlsRouter({
     domain: opts.domain,
@@ -85,6 +91,7 @@ export function createRelayServer(opts: RelayServerOptions): RelayServer {
         await new Promise<void>((resolve) => admin!.close(() => resolve()));
         admin = null;
       }
+      if (ownsRegistry) registry.close();
       ports = null;
     },
 

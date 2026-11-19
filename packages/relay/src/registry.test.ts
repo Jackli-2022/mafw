@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { RoomRegistry } from './registry.ts';
+import { MemoryRoomStore } from './room-store.ts';
 import { newRoomId, newRouteSecret } from './room.ts';
 
 function claimInput() {
@@ -58,4 +59,20 @@ test('release removes the claim', () => {
   registry.release(input.roomId);
   assert.equal(registry.get(input.roomId), undefined);
   assert.equal(registry.authenticate(input.roomId, input.roomToken), null);
+});
+
+test('reloads claims from a persistent store', () => {
+  const store = new MemoryRoomStore();
+  const input = claimInput();
+
+  const first = new RoomRegistry(store);
+  first.claim(input);
+  first.attachHost(input.roomId, 'host-1');
+
+  const second = new RoomRegistry(store);
+  assert.equal(second.authenticate(input.roomId, input.roomToken)?.roomId, input.roomId);
+  assert.equal(second.online(input.roomId), true);
+
+  second.release(input.roomId);
+  assert.equal(new RoomRegistry(store).get(input.roomId), undefined);
 });

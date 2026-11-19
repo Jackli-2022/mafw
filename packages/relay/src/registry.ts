@@ -1,5 +1,6 @@
 import * as crypto from 'node:crypto';
 import { hashSecret } from './room.ts';
+import type { RoomStore, StoredRoom } from './room-store.ts';
 
 export interface RoomClaimInput {
   roomId: string;
@@ -34,11 +35,20 @@ function publicClaim(record: RoomRecord): RoomClaim {
 }
 
 /**
- * M1: in-memory room claims. SQLite persistence lands with the deploy milestone.
- * Claims are never dropped by idleness: only an explicit release removes one.
+ * Room claims are never dropped by idleness: only an explicit release removes
+ * one. An optional RoomStore (M4: SQLite) makes claims survive restarts.
  */
 export class RoomRegistry {
   private readonly rooms = new Map<string, RoomRecord>();
+  private readonly store?: RoomStore;
+  private closed = false;
+
+  constructor(store?: RoomStore) {
+    this.store = store;
+    for (const stored of store?.load() ?? []) {
+      this.rooms.set(stored.roomId, { ...stored });
+    }
+  }
 
   claim(input: RoomClaimInput, now = Date.now()): RoomClaim | null {
     const tokenHash = hashSecret(input.roomToken);
@@ -46,6 +56,7 @@ export class RoomRegistry {
     if (existing) {
       if (!sameHex(existing.tokenHash, tokenHash)) return null;
       existing.lastSeenAt = now;
+      this.persist(existing);
       return publicClaim(existing);
     }
 
@@ -57,6 +68,7 @@ export class RoomRegistry {
       routeSecretHash: hashSecret(input.routeSecret),
     };
     this.rooms.set(input.roomId, record);
+    this.persist(record);
     return publicClaim(record);
   }
 
@@ -66,6 +78,7 @@ export class RoomRegistry {
     if (!sameHex(record.tokenHash, hashSecret(roomToken))) return null;
     if (routeSecret !== undefined && !sameHex(record.routeSecretHash, hashSecret(routeSecret))) return null;
     record.lastSeenAt = now;
+    this.persist(record);
     return publicClaim(record);
   }
 
@@ -74,12 +87,16 @@ export class RoomRegistry {
     if (!record) return { ok: false };
     const replaced = record.hostConnectionId;
     record.hostConnectionId = connectionId;
+    this.persist(record);
     return replaced && replaced !== connectionId ? { ok: true, replaced } : { ok: true };
   }
 
   detachHost(roomId: string, connectionId: string): void {
     const record = this.rooms.get(roomId);
-    if (record?.hostConnectionId === connectionId) delete record.hostConnectionId;
+    if (record?.hostConnectionId === connectionId) {
+      delete record.hostConnectionId;
+      this.persist(record);
+    }
   }
 
   get(roomId: string): RoomClaim | undefined {
@@ -98,5 +115,17 @@ export class RoomRegistry {
 
   release(roomId: string): void {
     this.rooms.delete(roomId);
+    this.store?.delete(roomId);
+  }
+
+  private persist(record: RoomRecord): void {
+    if (this.closed) return;
+    this.store?.save(record as StoredRoom);
+  }
+
+  close(): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.store?.close?.();
   }
 }
